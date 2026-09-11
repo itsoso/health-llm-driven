@@ -1,6 +1,6 @@
 # Agent Interaction Quality and Reliability Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **2026-09-11 更新：** 当前优先级、补充语义约束及验收口径见 [健康 Agent 改进计划](2026-09-11-health-agent-reliability-improvement.md)。本文件保留为既有方案；任务是否已完成须以当前代码和新鲜验证核对。已停用的旧流程不再适用，实施按仓库 Router 与 AGENTS.md 执行。
 
 **Goal:** 消除健康 Agent 对话中的正文污染、重复执行、状态误报和长尾时延，让每一轮回答都可渲染、可验证、可恢复，并在健康安全边界内提供足够的信息密度。
 

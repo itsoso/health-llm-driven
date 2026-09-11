@@ -219,7 +219,45 @@ def _tool_limitation(
         detail = "本轮数据查询失败"
     elif isinstance(payload, Mapping):
         status = str(payload.get("status") or "").strip().lower()
-        if status in {"no_data", "empty", "unavailable", "failed", "error"}:
+        if tool_name == "health_query" and "window" in payload:
+            from datetime import date
+            from app.services.agent_query_window import parse_query_window
+
+            try:
+                window = parse_query_window(payload.get("window") or {})
+                records = payload.get("records")
+                if not isinstance(records, list) or payload.get("dimension") != dimension:
+                    raise ValueError("calendar_result_invalid")
+                for row in records:
+                    if not isinstance(row, Mapping):
+                        raise ValueError("calendar_row_invalid")
+                    day = date.fromisoformat(str(row.get("record_date")))
+                    if not window.start_date <= day <= window.end_date:
+                        raise ValueError("calendar_row_outside_window")
+            except ValueError:
+                detail = "返回记录的目标日期或领域无法核验，未将其作为本轮依据"
+            else:
+                notes = []
+                availability = payload.get("availability")
+                if availability == "no_data":
+                    notes.append("目标日期没有可用记录，未使用旧数据替代")
+                elif availability == "partial":
+                    notes.append("部分目标记录或指标缺失，缺失不代表异常")
+                elif availability != "available":
+                    notes.append("目标数据可用性无法核验")
+                # Only fixed reason codes become client text; arbitrary metadata
+                # and nested health payloads never enter the evidence whitelist.
+                codes = payload.get("limitations")
+                if isinstance(codes, list):
+                    if "sync_status_unknown" in codes:
+                        notes.append("设备同步状态未知")
+                    if "daily_rows_not_full_episode_timestamps" in codes:
+                        notes.append("日记录不能证明完整睡眠事件")
+                if len(records) > MAX_BASIS_ITEMS:
+                    notes.append("部分记录未在依据面板展开")
+                if notes:
+                    detail = f"{window.start_date.isoformat()} 至 {window.end_date.isoformat()}（{window.timezone}）：" + "；".join(notes)
+        elif status in {"no_data", "empty", "unavailable", "failed", "error"}:
             detail = _text(payload.get("message"), limit=160) or "本轮没有可用数据"
         elif tool_name == "health_query_batch":
             queries = payload.get("queries")

@@ -1506,7 +1506,7 @@ async def test_exact_yesterday_diet_list_is_projected_from_turn_scope(policy_mod
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
-async def test_last_night_sleep_read_is_normalized_to_two_day_window(policy_mode):
+async def test_last_night_sleep_read_is_bound_to_target_wake_date(policy_mode):
     gateway = ToolGateway(_snapshot("昨晚睡得怎样，是否适合锻炼", policy_mode=policy_mode))
     calls = []
 
@@ -1524,7 +1524,8 @@ async def test_last_night_sleep_read_is_normalized_to_two_day_window(policy_mode
 
     assert result.decision is not None
     assert result.decision.action == "allow"
-    assert calls == [{"dimension": "sleep", "days": 2}]
+    assert calls == [{"dimension": "sleep", "start_date": "2026-07-17",
+                      "end_date": "2026-07-17", "timezone": "Asia/Shanghai"}]
 
 
 @pytest.mark.asyncio

@@ -2,10 +2,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 
 DEFAULT_AGENT_PERSISTENCE_MAX_CHARS = 50_000
 _TRUNCATION_NOTICE = "\n\n> 回答超过显示上限，已按段落截断。你可以继续追问具体部分。"
+_CODE_SPANS = re.compile(r"```[\s\S]*?(?:```|$)|`[^`\n]*`")
+_PROTOCOL_TAG = re.compile(
+    r"</?(?:(?:minimax:)?tool_call|tool_response|function_call|invoke)(?:\s|>|=)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +37,11 @@ def enforce_agent_output_quality(
     max_chars: int = DEFAULT_AGENT_PERSISTENCE_MAX_CHARS,
 ) -> AgentOutputQualityResult:
     text = str(value or "")
+    if _PROTOCOL_TAG.search(_CODE_SPANS.sub("", text)):
+        notice = "这次没有完成：回答格式异常。请重新发起查询；涉及记录时请先核对是否已保存，避免重复提交。"
+        return AgentOutputQualityResult(
+            notice, ("protocol_leak",), len(text), len(notice)
+        )
     limit = max(256, int(max_chars))
     if len(text) <= limit:
         flags = () if text.strip() else ("empty_content",)

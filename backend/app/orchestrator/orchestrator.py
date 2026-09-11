@@ -1498,7 +1498,7 @@ async def _call_llm(
     system_prompt: str, user_prompt: str, *, lite_mode: bool = False,
     allow_synthesis_override: bool = False,
 ) -> str:
-    """调用 LLM，失败时尝试 openai fallback。返回空字符串表示失败。
+    """调用 LLM；基础设施故障尝试 fallback，预算/授权阻断原样抛出。
 
     主路径走 settings.llm_provider (默认 tokenplan / 阿里云 MiniMax),
     失败回退到 openai (DashScope vision key 也可作 OpenAI-兼容).
@@ -1519,7 +1519,12 @@ async def _call_llm(
             from app.services.llm.factory import create_llm_provider, create_provider_for_user
 
             if provider_type:
-                provider = create_llm_provider(provider_type)
+                from app.services.llm.usage_tracker import wrap_provider
+                from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+
+                # A manually selected fallback must retain the same pre-call
+                # budget, consent and PII boundaries as the primary factory.
+                provider = wrap_provider_pii_scrub(wrap_provider(create_llm_provider(provider_type)))
             else:
                 # 深报告 mega 合成模型覆盖(2026-07-15, D 组换快):仅当调用方显式
                 # allow_synthesis_override=True(= run_orchestrator 的报告 mega 合成)且 settings
@@ -1559,9 +1564,17 @@ async def _call_llm(
                 return (result.get("content") or "").strip() or None
             return str(result or "").strip() or None
         except Exception as e:
+            from app.services.llm.recovery import diagnose_llm_error
+
+            diagnosis = diagnose_llm_error(e)
             logger.warning(
-                f"[orchestrator] LLM provider={provider_type or 'default'} 失败: {str(e)[:200]}"
+                "[orchestrator] LLM provider=%s error_type=%s error_class=%s",
+                provider_type or "default", type(e).__name__, diagnosis.error_class,
             )
+            if diagnosis.execution_status == "blocked":
+                # A different provider cannot repair budget/consent authority.
+                # Preserve the real policy error for callers and evaluation.
+                raise
             return None
 
     text = await _try(None)

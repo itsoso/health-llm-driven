@@ -53,6 +53,7 @@ from app.services.intake_intent_classifier import (
 from app.services.diet_media_storage import StoredDietPhoto, store_diet_image
 from app.services.internal_diet_correction import (
     INTERNAL_DIET_PORTION_SIGNATURE_HEADER,
+    diet_portion_baseline_matches,
     verify_internal_diet_portion_signature,
 )
 # D1(garmin-sync 治理 Wave 3):图片 URL 签名抽到 utils 做单一真源,供 api 的
@@ -841,6 +842,7 @@ def _convert_to_response(record) -> DietRecordResponse:
         carbs=record.carbs,
         fat=record.fat,
         fiber=record.fiber,
+        alcohol_units=record.alcohol_units,
         notes=record.notes,
         image_url=image_urls[0] if image_urls else legacy_image_url,
         image_urls=image_urls,
@@ -1626,7 +1628,7 @@ def update_diet_record(
     """更新饮食记录（需登录，且只能更新自己的记录）"""
     record = db.query(DietRecordModel).filter(
         DietRecordModel.id == record_id
-    ).with_for_update().first()
+    ).populate_existing().with_for_update().first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
     if record.user_id != current_user.id:
@@ -1639,6 +1641,16 @@ def update_diet_record(
         record_id,
         update_dict,
     )
+    if internal_portion_signature is not None:
+        # An obsolete/forged internal header must never silently fall back to
+        # an unprotected public update. v1 lacks a baseline and is rejected.
+        if not preserve_explicit_nutrients:
+            raise HTTPException(status_code=403, detail="份量修正凭证无效，请重新查询记录")
+        if not diet_portion_baseline_matches(
+            internal_portion_signature,
+            _convert_to_response(record).model_dump(mode="json"),
+        ):
+            raise HTTPException(status_code=409, detail="饮食记录已更新，请刷新后重试")
     if update_dict.get("food_items") is not None:
         _assert_diet_food_items_allowed(update_dict["food_items"])
     food_changed = (

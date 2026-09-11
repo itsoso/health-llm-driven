@@ -258,6 +258,8 @@ def test_client_events_stats_empty(db):
 
     since = datetime.now(timezone.utc) - timedelta(days=7)
     stats = client_events_stats(db, since, user_id=None)
+    v2 = stats.pop("agent_turn_milestones_v2_ms")
+    assert v2 == stats["agent_turn_milestones_ms"]
     assert stats == {
         "total": 0,
         "by_event": {},

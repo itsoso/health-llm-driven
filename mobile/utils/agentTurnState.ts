@@ -12,6 +12,20 @@ export type AgentTurnPhase =
   | 'failed'
   | 'interrupted';
 
+export type AgentRecoveredPhase = 'completed' | 'failed' | 'interrupted'
+  | 'waiting_for_user' | 'blocked' | 'refused' | 'reconciliation_required';
+
+export function recoveredAgentPhase(
+  completionStatus: unknown, terminalStatus: unknown, missingWriteReceipt: boolean,
+): AgentRecoveredPhase {
+  if (missingWriteReceipt) return 'failed';
+  if (terminalStatus === 'waiting_for_user' || terminalStatus === 'blocked'
+      || terminalStatus === 'failed' || terminalStatus === 'refused'
+      || terminalStatus === 'reconciliation_required') return terminalStatus;
+  if (completionStatus === 'interrupted') return 'interrupted';
+  return completionStatus === 'error' ? 'failed' : 'completed';
+}
+
 export type AgentRetryMode = 'resubmit' | 'retry_source';
 
 export interface AgentTurnState {
@@ -64,7 +78,7 @@ export type AgentTurnEvent =
   | {
       type: 'recover';
       at: number;
-      serverStatus: 'running' | 'completed' | 'failed' | 'interrupted';
+      serverStatus: 'running' | AgentRecoveredPhase;
       conversationId?: number;
       messageId?: number;
       errorCode?: string;
@@ -305,13 +319,7 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
       const recoveredIsRetryable = event.recoverable === true;
       return {
         ...state,
-        phase: event.serverStatus === 'completed'
-          ? 'completed'
-          : event.serverStatus === 'failed'
-            ? 'failed'
-            : event.serverStatus === 'interrupted'
-              ? 'interrupted'
-              : 'running',
+        phase: event.serverStatus,
         conversationId: event.conversationId ?? state.conversationId,
         messageId: event.messageId ?? state.messageId,
         updatedAt: event.at,
@@ -320,7 +328,9 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
           ? (event.errorCode ?? 'recovery_failed')
           : event.serverStatus === 'interrupted'
             ? (event.errorCode ?? 'stream_interrupted')
-            : undefined,
+            : event.serverStatus !== 'completed' && event.serverStatus !== 'running'
+              ? event.errorCode
+              : undefined,
         recoverable: recoveredIsRunning
           ? true
           : recoveredIsCompleted

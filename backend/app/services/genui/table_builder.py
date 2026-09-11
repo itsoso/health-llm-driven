@@ -34,6 +34,8 @@ health_query(medical_exam) 走 `read_medical_indicators` 也是文本 —— 结
 from __future__ import annotations
 
 import json
+import math
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.genui.chart_builder import render_reva_ui_block
@@ -425,6 +427,74 @@ def _table_from_water(payload: Any) -> Optional[dict]:
     return _make_block("饮水概览", [("item", "项目"), ("value", "数值")], rows)
 
 
+def _table_from_calendar_query(payload: dict, dimension: str) -> Optional[dict]:
+    """Render exact-day results without reusing today's summaries or old rows."""
+    from app.services.agent_query_window import parse_query_window
+
+    try:
+        window = parse_query_window(payload.get("window") or {})
+    except ValueError:
+        return None
+    if payload.get("dimension") != dimension or payload.get("availability") not in {"available", "partial"}:
+        return None
+    records = payload.get("records")
+    if not isinstance(records, list) or not records:
+        return None
+    for row in records:
+        if not isinstance(row, dict):
+            return None
+        try:
+            record_date = date.fromisoformat(str(row.get("record_date")))
+        except ValueError:
+            return None
+        if not window.start_date <= record_date <= window.end_date:
+            return None
+
+    def number(value: Any, unit: str = "") -> str:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return ""
+        return _fmt_num(value, unit) or ""
+
+    rows: List[Dict[str, str]] = []
+    if dimension == "sleep":
+        columns = [("date", "日期")]
+        for key, label, field, unit in (("dur", "时长", "total_sleep_duration", "分钟"),
+                                       ("deep", "深睡", "deep_sleep_duration", "分钟"),
+                                       ("score", "评分", "sleep_score", "")):
+            if any(number(row.get(field), unit) for row in records):
+                columns.append((key, label))
+        for row in records:
+            projected = {"date": row["record_date"],
+                         "dur": number(row.get("total_sleep_duration"), "分钟"),
+                         "deep": number(row.get("deep_sleep_duration"), "分钟"),
+                         "score": number(row.get("sleep_score"))}
+            if any(projected[key] for key in ("dur", "deep", "score")):
+                rows.append(projected)
+        title = "睡眠记录"
+    else:
+        columns = [("date", "日期"), ("meal", "餐次"), ("food", "内容"), ("nutrition", "营养")]
+        for row in records:
+            food = row.get("food_items") or row.get("food_name")
+            if not isinstance(food, str) or not food.strip():
+                continue
+            meal = row.get("meal_type")
+            meal = meal.strip() if isinstance(meal, str) else ""
+            nutrition = []
+            for field, label, unit in (("calories", "热量", "kcal"), ("protein", "蛋白", "g")):
+                value = number(row.get(field), unit)
+                if value:
+                    nutrition.append(f"{label} {value}")
+            rows.append({"date": row["record_date"], "meal": _MEAL_LABEL.get(meal, meal),
+                         "food": food.strip(), "nutrition": "；".join(nutrition)})
+        title = "饮食记录"
+    footnote = f"查询日期 {window.start_date.isoformat()} 至 {window.end_date.isoformat()}（{window.timezone}）"
+    if payload.get("availability") == "partial":
+        footnote += " · 部分数据缺失，空值不代表正常或异常"
+    if len(rows) > _MAX_ROWS:
+        footnote += f" · 显示 {len(rows)} 条中的前 {_MAX_ROWS} 条"
+    return _make_block(title, columns, rows, footnote=footnote)
+
+
 def _table_from_sleep(payload: Any) -> Optional[dict]:
     """health_query(sleep): analyze_sleep_quality dict, 逐日行来自 daily_data。
 
@@ -547,6 +617,10 @@ def build_table_from_tool_call(
         return _table_from_lab(payload)
     if tool_name == "health_query":
         dim = str((args or {}).get("dimension") or "").strip().lower()
+        if isinstance(payload, dict) and "window" in payload:
+            if dim not in {"sleep", "diet"}:
+                return None
+            return _table_from_calendar_query(payload, dim)
         builder = _SINGLE_QUERY_TABLE.get(dim)
         return builder(payload) if builder else None
     return None

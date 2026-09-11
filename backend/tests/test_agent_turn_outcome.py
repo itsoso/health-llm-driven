@@ -211,3 +211,59 @@ def test_write_without_tool_is_action_not_executed():
     assert result["category"] == "action_not_executed"
     assert result["reason_code"] == "write_without_tool"
     assert result["retryable"] is True
+
+
+def test_failed_action_cannot_be_hidden_by_an_unrelated_verified_action():
+    result = classify_agent_turn_outcome(
+        completion_status='complete', final_text='第一项完成，第二项未完成。',
+        write_receipts=[{'verified': True, 'resource_id': 'synthetic'}],
+        action_outcomes=[{'status': 'verified'}, {'status': 'rejected', 'reason_code': 'wrong_domain'}],
+    )
+    assert result['status'] != 'complete'
+    assert result['retryable'] is False
+    assert result['reason_code'] == 'wrong_domain'
+
+
+def test_unresolved_action_requires_reconciliation_even_without_redundant_flags():
+    result = classify_agent_turn_outcome(
+        completion_status='complete', final_text='状态核对中。',
+        action_outcomes=[{'status': 'reconciliation_required', 'reason_code': 'missing_receipt'}],
+    )
+    assert result['status'] == 'reconciliation_required'
+    assert result['retryable'] is False
+
+
+def test_output_protocol_failure_cannot_be_successful():
+    result = classify_agent_turn_outcome(
+        completion_status='complete', final_text='这次没有完成，请重试。',
+        output_quality_flags=['protocol_leak'],
+    )
+    assert result['status'] == 'failed'
+    assert result['reason_code'] == 'protocol_leak'
+
+
+def test_action_display_limit_does_not_hide_later_failure():
+    result = classify_agent_turn_outcome(
+        completion_status='complete', final_text='处理完成。',
+        action_outcomes=[{'status':'verified'} for _ in range(32)] + [{'status':'failed', 'reason_code':'late_failure'}],
+    )
+    assert result['status'] == 'failed'
+    assert result['reason_code'] == 'late_failure'
+
+
+def test_mixed_failure_and_waiting_does_not_depend_on_action_order():
+    first = {'status':'waiting_for_user'}
+    second = {'status':'failed', 'reason_code':'write_failed'}
+    results = [classify_agent_turn_outcome(completion_status='complete', final_text='待处理', action_outcomes=items)
+               for items in ([first, second], [second, first])]
+    assert results[0]['status'] == results[1]['status'] == 'failed'
+
+
+def test_medical_hold_does_not_count_as_an_answered_advice_task():
+    result = classify_agent_turn_outcome(
+        completion_status='complete', final_text='该建议需要先核验。',
+        medical_boundary_flags=['unverified_dose_action'],
+    )
+    assert result['status'] == 'blocked'
+    assert result['category'] == 'medical_evidence_required'
+    assert result['retryable'] is False

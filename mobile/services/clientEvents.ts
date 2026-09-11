@@ -339,6 +339,8 @@ export function sanitizeClientEventMeta(
     const durationMs = meta.duration_ms;
     const actionType = meta.action_type;
     const hasImage = meta.has_image;
+    const metricVersion = meta.metric_version;
+    const clientTurnId = meta.client_turn_id;
     if (
       typeof phase !== 'string'
       || !AGENT_TURN_MILESTONE_PHASES.has(phase)
@@ -349,6 +351,12 @@ export function sanitizeClientEventMeta(
       || typeof actionType !== 'string'
       || !AGENT_TURN_MILESTONE_ACTION_TYPES.has(actionType)
       || typeof hasImage !== 'boolean'
+      || (metricVersion !== undefined && metricVersion !== 1 && metricVersion !== 2)
+      || (clientTurnId !== undefined && (
+        typeof clientTurnId !== 'string'
+        || !/^turn-[0-9]{1,12}-[0-9]{10,16}$/.test(clientTurnId)
+        || clientTurnId.includes('\n')
+      ))
     ) {
       return {};
     }
@@ -357,6 +365,8 @@ export function sanitizeClientEventMeta(
       duration_ms: durationMs,
       action_type: actionType,
       has_image: hasImage,
+      ...(metricVersion !== undefined ? { metric_version: metricVersion } : {}),
+      ...(clientTurnId !== undefined ? { client_turn_id: clientTurnId } : {}),
     };
   }
   if (name === 'agent_turn_dedupe_hit') {

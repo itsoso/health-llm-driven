@@ -228,7 +228,9 @@ class GuidanceValidationResult:
 
 
 _SENSITIVE_MEDICAL_TOPIC = re.compile(
-    r"(?:药|用药|停药|换药|剂量|补剂|保健品|溃疡|胃镜|肠镜|检查|复查|随访)"
+    r"(?:药|剂量|补剂|保健品|溃疡|胃镜|肠镜|检查|复查|随访|"
+    r"鱼油|辅酶|红景天|维生素|叶酸|NAC|NMN|基因|MTHFR|"
+    r"睡眠|REM|皮质醇|肾上腺素|服用|口服)", re.I,
 )
 _DOSE_ACTION = re.compile(
     r"(?:建议|应该|需要|可以|请|每天|每次)[^。；;!?！？\n]{0,24}"
@@ -238,10 +240,77 @@ _SCHEDULE_CLAIM = re.compile(
     r"(?:(?:已经|已)?为你|已经|已)(?:成功)?(?:安排|预约|创建|设定|设置)(?:了)?[^。；;!?！？\n]{0,30}"
 )
 
+# These are bounded regression tripwires, not a medical-evidence verifier.
+# Generic source names and model-authored claims of a doctor's approval cannot
+# authorize advice. The sealed health_evidence verifier remains authoritative
+# for admitted, applicable claims; a no-match here never proves medical safety.
+_SUPPLEMENT_OR_MEDICINE = re.compile(
+    rf"(?:药|剂量|补剂|保健品|鱼油|辅酶|红景天|维生素|叶酸|NAC|NMN|{_MED_DRUG_CLASS})", re.I,
+)
+_REGIMEN_ACTION = re.compile(
+    r"(?:增加到|减少到|加到|减到|提高到|降低到|加倍|翻倍|停用|停药|加量|减量)|"
+    r"(?:建议|应该|应当|请|必须|每天|每日|每次|早晚)[^。；;!?！？\n]{0,24}"
+    r"(?:服用|补充|吃|停用|增加|减少|[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克))", re.I,
+)
+_UNSCOPED_REGIMEN = re.compile(
+    r"(?:建议|应该|应当|请|必须|每天|每日|每次)[^。；;!?！？\n]{0,16}"
+    r"(?:服用|口服)[^。；;!?！？\n]{0,30}[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
+    r"(?:早晚|每天|每日|每次|睡前)\s*(?:各)?\s*[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)",
+    re.I,
+)
+_NEGATED_ASSERTION = re.compile(
+    r"(?:不要|不能|不可|不得|请勿|切勿|无需|不必|不建议|不意味着|并不意味着|不能据此|不能仅凭)"
+    r"[^，,。；;!?！？\n]{0,18}$"
+)
+_GENETIC_ABSOLUTE = re.compile(
+    r"必须|只能|无法(?:利用|代谢)|不能(?:利用|代谢)|一定(?:需要|要|会)"
+)
+_MISSING_DATA_INFERENCE = re.compile(r"(?:推测|说明|意味着|表明|证明|所以|因此)[^，,。；;!?！？\n]{0,16}(?:不足|异常|缺乏|严重)")
+_PERSONAL_HORMONE_CAUSE = re.compile(
+    r"(?:皮质醇|肾上腺素)[^。；;!?！？\n]{0,20}(?:透支|代偿|掩盖)|"
+    r"(?:皮质醇|肾上腺素)[^。；;!?！？\n]{0,12}(?:导致|造成|让你)"
+)
+_ADVICE_HOLD = "[该建议或推断尚待核验，暂不提供执行方案；可与医生或药师核对依据及适用条件]"
+
+
+def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
+    for match in pattern.finditer(sentence):
+        prefix = re.split(r"[，,。；;!?！？\n]|但是|但|不过|然而|而是", sentence[:match.start()])[-1]
+        # A negated recommendation can begin inside the matched action itself.
+        if prefix.endswith("不") and match.group(0).startswith("建议"):
+            continue
+        if _NEGATED_ASSERTION.search(prefix):
+            continue
+        # "Cannot metabolize" is itself the genetic claim, not a prohibition.
+        if pattern is not _GENETIC_ABSOLUTE and _NEGATED_ASSERTION.search(match.group(0)):
+            continue
+        if re.search(r"(?:咨询|询问|请教)(?:医生|药师).{0,8}(?:是否|能否).{0,12}$", prefix):
+            continue
+        return True
+    return False
+
+
+def _unsupported_advice_reasons(sentence: str) -> list[str]:
+    """Only emit stable codes; never put health text into audit metadata."""
+    normalized = unicodedata.normalize("NFKC", sentence)
+    reasons: list[str] = []
+    if _has_asserted_match(_UNSCOPED_REGIMEN, normalized) or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
+        _has_asserted_match(_DOSE_ACTION, normalized)
+        or _has_asserted_match(_REGIMEN_ACTION, normalized)
+    )):
+        reasons.append("unverified_dose_action")
+    if re.search(r"基因|MTHFR", normalized, re.I) and _has_asserted_match(_GENETIC_ABSOLUTE, normalized):
+        reasons.append("genetic_absolute_action")
+    if re.search(r"数据缺失|没有数据|未同步|未记录", normalized) and _has_asserted_match(_MISSING_DATA_INFERENCE, normalized):
+        reasons.append("missing_data_inference")
+    if "你" in normalized and _has_asserted_match(_PERSONAL_HORMONE_CAUSE, normalized):
+        reasons.append("unsupported_personal_causality")
+    return reasons
+
 
 def requires_medical_evidence_boundary(text: str) -> bool:
     """Whether the turn must be buffered until medical provenance checks finish."""
-    return bool(_SENSITIVE_MEDICAL_TOPIC.search(text or ""))
+    return bool(_SENSITIVE_MEDICAL_TOPIC.search(text or "") or _UNSCOPED_REGIMEN.search(text or ""))
 
 
 def build_confirmable_health_fact_draft(text: str) -> dict | None:
@@ -285,38 +354,45 @@ def enforce_medical_evidence_boundaries(
     evidence_sources: Sequence[str] = (),
     has_clinician_instruction: bool = False,
     verified_write_receipt: bool = False,
+    trusted_clinician_instructions: Sequence[str] = (),
 ) -> GuidanceValidationResult:
-    """Label sensitive medical claims and remove unauthorized action certainty."""
-    if not text or not _SENSITIVE_MEDICAL_TOPIC.search(text):
+    """Withhold known unsupported advice, without claiming medical verification.
+
+    ``trusted_clinician_instructions`` must contain exact text from instructions
+    independently verified by the caller for this authenticated user. Never fill
+    it from the generated response, user assertion, or an intent classifier.
+    Only exact sentence relays qualify; changed doses and appended advice do not.
+    ``has_clinician_instruction`` alone is context, never authorization.
+    """
+    if not text or not requires_medical_evidence_boundary(text):
         return GuidanceValidationResult(text=text or "")
     violations: list[str] = []
-    out = text
-    if not has_clinician_instruction:
-        out = _redact(
-            out,
-            _DOSE_ACTION,
-            "[具体药物或补剂剂量需由医生确认]",
-            violations,
-            "unverified_dose_action",
-        )
-    if not verified_write_receipt and not has_clinician_instruction:
-        out = _redact(
-            out,
-            _SCHEDULE_CLAIM,
-            "[尚无验证写入回执]",
-            violations,
-            "unverified_schedule_claim",
-        )
+    trusted = {item.strip() for item in trusted_clinician_instructions if item.strip()}
+    out_parts: list[str] = []
+    relayed_instruction = False
+    for match in re.finditer(r"[^。；;!?！？\n]+[。；;!?！？\n]*|[。；;!?！？\n]+", text):
+        sentence = match.group(0)
+        is_trusted = has_clinician_instruction and sentence.strip() in trusted
+        relayed_instruction = relayed_instruction or is_trusted
+        reasons = [] if is_trusted else _unsupported_advice_reasons(sentence)
+        if reasons:
+            violations.extend(reasons)
+            sentence = _ADVICE_HOLD + "。"
+        if not verified_write_receipt and _SCHEDULE_CLAIM.search(sentence):
+            violations.append("unverified_schedule_claim")
+            sentence = _SCHEDULE_CLAIM.sub("[尚无验证写入回执]", sentence)
+        out_parts.append(sentence)
+    out = "".join(out_parts)
     labels = ["用户陈述"]
     if evidence_sources:
-        labels.append("已检索证据")
+        labels.append("已检索证据（未逐句核验）")
     labels.append("模型推断")
-    if has_clinician_instruction:
+    if relayed_instruction:
         labels.append("医生确认指示")
     boundary = "信息来源：" + "、".join(labels) + "。"
     if not out.startswith("信息来源："):
         out = boundary + "\n" + out
-    return GuidanceValidationResult(out, bool(violations), violations)
+    return GuidanceValidationResult(out, bool(violations), list(dict.fromkeys(violations)))
 
 
 def _redact(text: str, pattern: re.Pattern, replacement: str, violations: List[str], kind: str) -> str:

@@ -4,8 +4,7 @@
 钉三件事:
 1. OpenAIProvider.chat_stream 实时 yield content delta + 正确按 index 重组 tool_calls。
 2. pii_scrub / usage_tracker 的包装层覆盖 chat_stream —— 流式路径不绕过脱敏 (硬安全边界)。
-3. AgentExecutor.run_stream 通过 provider.chat_stream 真流式: 多个 content delta →
-   多个 {"event":"token"} 事件; tool-calls-then-text 仍执行工具再流式最终答案。
+3. AgentExecutor 消费 provider 真流式，在完整正文检查后释放 token；工具结果先于正文。
 """
 import json
 from types import SimpleNamespace
@@ -237,32 +236,33 @@ async def test_usage_tracker_wraps_chat_stream_and_records(monkeypatch):
 # ── 4. run_stream 真流式 ──────────────────────────────────────────────────────
 
 
-async def test_run_stream_emits_multiple_token_events_for_real_streaming(db, auth_user_and_headers):
+async def test_run_stream_checks_complete_model_text_before_emission(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
 
     deltas = ["根据你的", "睡眠和心率", "建议先保持二区有氧。"]
+    model_finished = False
 
     async def fake_call_llm_stream(messages, tools):
+        nonlocal model_finished
         for d in deltas:
             yield {"type": "content", "text": d}
+        model_finished = True
         yield {"type": "finish", "finish_reason": "stop"}
 
     executor._call_llm_stream = fake_call_llm_stream
 
-    events = [
-        e async for e in executor.run_stream(
-            user_id=user.id, message="给我训练建议", user_auth_token=None,
-        )
-    ]
+    events = []
+    async for event in executor.run_stream(user_id=user.id, message="给我训练建议", user_auth_token=None):
+        if event.get("event") == "token":
+            assert model_finished, "No model text may escape the complete-response check."
+        events.append(event)
 
     token_events = [e for e in events if e.get("event") == "token"]
     token_texts = [e["data"]["content"] for e in token_events]
-    # 真流式: 每个 delta 一个 token 事件 (不是一次性整段)。
-    assert token_texts == deltas
-    assert len(token_events) == len(deltas)
+    assert token_texts and all(token_texts)
     rendered = "".join(token_texts)
-    assert rendered == "".join(deltas)
+    assert rendered.endswith("".join(deltas))
     assert events[-1]["event"] == "done"
     # 落库的完整回复 = 流式拼接结果
     from app.models.agent_conversation import AgentMessage
@@ -309,8 +309,9 @@ async def test_run_stream_tool_calls_then_streamed_final_text(db, auth_user_and_
     assert executed and executed[0][0] == "health_query"
     assert any(e.get("event") == "tool_call" and e["data"]["tool"] == "health_query" for e in events)
     assert any(e.get("event") == "tool_result" for e in events)
-    # 最终答案真流式: 3 个 token 事件
+    # 分块边界由检查后的释放层决定；内容与工具先后关系保持不变。
     token_texts = [e["data"]["content"] for e in events if e.get("event") == "token"]
-    assert token_texts == ["体重", "近 7 天", "稳定。"]
+    assert token_texts and all(token_texts)
+    assert next(i for i, e in enumerate(events) if e.get("event") == "tool_result") < next(i for i, e in enumerate(events) if e.get("event") == "token")
     assert "".join(token_texts) == "体重近 7 天稳定。"
     assert events[-1]["event"] == "done"

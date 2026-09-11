@@ -131,7 +131,7 @@ _RELIABILITY_EVENT_SCHEMAS = {
     },
 }
 _AGENT_TURN_MILESTONE_SCHEMA = {
-    "allowed": frozenset({"phase", "duration_ms", "action_type", "has_image"}),
+    "allowed": frozenset({"phase", "duration_ms", "action_type", "has_image", "metric_version", "client_turn_id"}),
     "required": frozenset({"phase", "duration_ms", "action_type", "has_image"}),
     "phases": frozenset({
         "local_feedback",
@@ -414,6 +414,16 @@ class EventIn(BaseModel):
                     "agent turn milestone meta missing fields: "
                     f"{sorted(missing)}"
                 )
+            if "client_turn_id" in self.meta and (
+                not isinstance(self.meta["client_turn_id"], str)
+                or re.fullmatch(r"turn-[0-9]{1,12}-[0-9]{10,16}", self.meta["client_turn_id"]) is None
+            ):
+                raise ValueError("invalid agent turn milestone client_turn_id")
+            if "metric_version" in self.meta and (
+                type(self.meta["metric_version"]) is not int
+                or self.meta["metric_version"] not in {1, 2}
+            ):
+                raise ValueError("invalid agent turn milestone metric_version")
             if self.meta.get("phase") not in _AGENT_TURN_MILESTONE_SCHEMA["phases"]:
                 raise ValueError("invalid agent turn milestone phase")
             duration_ms = self.meta.get("duration_ms")

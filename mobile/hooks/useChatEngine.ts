@@ -20,6 +20,8 @@ import {
   createIdleAgentTurn,
   isAgentTurnTerminal,
   reduceAgentTurn,
+  recoveredAgentPhase,
+  type AgentRecoveredPhase,
   resolveAgentTurnStatusLabel,
   type AgentTurnEvent,
   type AgentTurnState,
@@ -554,6 +556,7 @@ export type AgentContentPaintKind =
   | 'write_receipt';
 
 interface AgentTurnMilestoneContext {
+  clientTurnId: string;
   startedAt: number;
   actionType: AgentTurnActionType;
   hasImage: boolean;
@@ -571,6 +574,8 @@ function emitAgentMilestone(
     Math.max(0, Math.round(Date.now() - context.startedAt)),
   );
   void emitClientEvent('agent_turn_milestone', {
+    metric_version: 2,
+    client_turn_id: context.clientTurnId,
     phase,
     duration_ms: durationMs,
     action_type: context.actionType,
@@ -849,10 +854,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const emitAgentTurnTerminal = useCallback((
     turnId: string,
     startedAt: number,
-    phase: 'completed' | 'failed' | 'interrupted',
+    phase: AgentRecoveredPhase,
     errorCode?: string,
   ) => {
-    const key = `${turnId}:${phase}`;
+    if (phase === 'waiting_for_user') return;
+    const metricPhase = phase === 'completed' || phase === 'interrupted' ? phase : 'failed';
+    const key = `${turnId}:${metricPhase}`;
     if (terminalTelemetryKeysRef.current.has(key)) return;
     terminalTelemetryKeysRef.current.add(key);
     if (terminalTelemetryKeysRef.current.size > 200) {
@@ -860,7 +867,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       if (oldest) terminalTelemetryKeysRef.current.delete(oldest);
     }
     void emitClientEvent('agent_turn_terminal', {
-      phase,
+      phase: metricPhase,
       duration_bucket: durationBucket(startedAt),
       ...(errorCode ? { error_code: errorCode } : {}),
     });
@@ -873,7 +880,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     if (!context) return;
     if (kind === 'progress') {
       emitAgentMilestone(context, 'first_semantic_progress');
-      emitAgentMilestone(context, 'first_interactive');
       return;
     }
     if (kind === 'text') {
@@ -882,10 +888,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
     if (kind === 'citation') {
       emitAgentMilestone(context, 'citations_painted');
-      emitAgentMilestone(context, 'first_key_content');
       emitAgentMilestone(context, 'first_interactive');
       return;
     }
+    emitAgentMilestone(context, 'first_interactive');
     emitAgentMilestone(context, 'first_key_content');
   }, []);
   const hydrationGateRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
@@ -1032,11 +1038,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         console.warn('[chat] recovered write receipt persistence failed');
       });
     }
-    const recoveredStatus = completionStatus === 'interrupted'
-      ? 'interrupted'
-      : completionStatus === 'error' || missingWriteReceipt
-        ? 'failed'
-        : 'completed';
+    const recoveredStatus = recoveredAgentPhase(completionStatus, turnOutcome?.status, missingWriteReceipt);
     const recoveredErrorCode = completionStatus === 'interrupted'
       ? 'stream_interrupted'
       : missingWriteReceipt
@@ -1148,11 +1150,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         completionStatus: typeof completionStatus === 'string'
           ? completionStatus
           : undefined,
-        terminalPhase: completionStatus === 'error' || missingWriteReceipt
-          ? 'failed' as const
-          : completionStatus === 'interrupted'
-            ? 'interrupted' as const
-            : 'completed' as const,
+        terminalPhase: recoveredAgentPhase(
+          completionStatus, (assistantAnswer as any)?.meta?.turn_outcome?.status, missingWriteReceipt,
+        ),
       };
     } catch {
       return false;
@@ -1480,6 +1480,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const emittedMilestones = new Set<AgentTurnMilestonePhase>();
     let lastDietStatusLabel: string | undefined;
     const milestoneContext: AgentTurnMilestoneContext = {
+      clientTurnId: turnId,
       startedAt: turnStartedAt,
       actionType: initialAgentTurnActionType(
         finalMsg,
@@ -1620,8 +1621,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     let keepPendingStreamForRecovery = false;
     let deferQueuedPump = false;
     const writeToolStartedAt = new Map<string, number>();
-    const emitRecoveredTerminal = (phase: 'completed' | 'failed' | 'interrupted') => {
-      if (phase === 'failed') {
+    const emitRecoveredTerminal = (phase: AgentRecoveredPhase) => {
+      if (phase === 'waiting_for_user') return;
+      if (phase !== 'completed' && phase !== 'interrupted') {
         emitAgentTerminal('failed', 'recovered_server_error');
       } else if (phase === 'interrupted') {
         emitAgentTerminal('interrupted', 'recovered_server_interrupted');

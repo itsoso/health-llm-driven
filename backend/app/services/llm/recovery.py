@@ -21,6 +21,8 @@ class LLMErrorDiagnosis:
     error_class: str
     recoverable: bool
     recommended_action: str
+    execution_status: str = "failed"
+    retry_at: Optional[str] = None
 
 
 def _error_text(error: BaseException | str | None) -> str:
@@ -29,11 +31,36 @@ def _error_text(error: BaseException | str | None) -> str:
 
 def diagnose_llm_error(error: BaseException | str | None) -> LLMErrorDiagnosis:
     """Classify provider errors into a small stable policy vocabulary."""
+    # Policy errors are evaluated before transport status codes. In particular,
+    # consent verification uses HTTP 503: changing providers cannot repair that
+    # authorization boundary and must never trigger an external fallback call.
+    if getattr(error, "error_code", None) == "llm_budget_exceeded":
+        reason = getattr(error, "reason", None)
+        unavailable = reason == "budget_guard_unavailable"
+        return LLMErrorDiagnosis(
+            "budget_guard_unavailable" if unavailable else "budget_exhausted",
+            False,
+            "retry_guard_later" if unavailable else "wait_budget_period",
+            "blocked",
+            getattr(error, "retry_at", None),
+        )
+    detail = getattr(error, "detail", None)
+    policy_code = detail.get("code") if isinstance(detail, dict) else None
+    policy_errors = {
+        "ai_consent_required": ("consent_required", "request_consent"),
+        "ai_consent_unavailable": ("consent_unavailable", "retry_consent_verification"),
+        "ai_recipient_not_disclosed": ("recipient_not_disclosed", "surface_error"),
+        "ai_consent_policy_changed": ("consent_required", "request_consent"),
+        "auth_session_changed": ("auth_session_changed", "refresh_session"),
+    }
+    if policy_code in policy_errors:
+        error_class, action = policy_errors[policy_code]
+        return LLMErrorDiagnosis(error_class, False, action, "blocked")
     text = _error_text(error)
     if not text:
         return LLMErrorDiagnosis("unknown", False, "surface_error")
     if "monthly token quota" in text or "llm_budget_exceeded" in text:
-        return LLMErrorDiagnosis("budget_exhausted", False, "alert_admin")
+        return LLMErrorDiagnosis("budget_exhausted", False, "alert_admin", "blocked")
     if "insufficient_quota" in text or "quota" in text or "token-plan quota" in text:
         return LLMErrorDiagnosis("quota_exhausted", True, "fallback_model")
     if "rate_limit" in text or "rate limit" in text or "429" in text:
@@ -112,11 +139,17 @@ async def try_recover_chat(
         )
         return True, result, recovery_model_id, diagnosis
     except Exception as fallback_error:  # noqa: BLE001
+        fallback_diagnosis = diagnose_llm_error(fallback_error)
         logger.warning(
-            "[llm.recovery] fallback failed primary=%s/%s recovery=%s: %s",
+            "[llm.recovery] fallback failed primary=%s/%s recovery=%s error_type=%s error_class=%s",
             primary_provider,
             primary_model,
             recovery_model_id,
-            fallback_error,
+            type(fallback_error).__name__,
+            fallback_diagnosis.error_class,
         )
-        return False, None, recovery_model_id, diagnosis
+        if fallback_diagnosis.execution_status == "blocked":
+            # The primary transport failure is independently recorded by the
+            # usage wrapper. Surface the final policy boundary to the caller.
+            raise
+        return False, None, recovery_model_id, fallback_diagnosis

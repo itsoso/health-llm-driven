@@ -126,6 +126,13 @@ def validate_plan(
             return None, None, (
                 f"Error: queries[{i}] 必须是对象 {{dimension, days, agg?}}。" + _EXAMPLE_HINT
             )
+        # fetch(dimension, days) cannot express a fixed calendar range. Never
+        # silently drop the dates and return a different, recent window.
+        if any(key in q for key in ("start_date", "end_date", "timezone")):
+            return None, None, (
+                f"Error: queries[{i}] 的明确日期窗口不支持批查询；"
+                "请使用单条 health_query 查询该日期。"
+            )
         normalized = normalize_health_query_args(q)  # 别名归一 + time_range→days
         dim = normalized.get("dimension")
         if not isinstance(dim, str) or not dim.strip():

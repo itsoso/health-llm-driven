@@ -86,6 +86,9 @@ HEALTH_QUERY_CANONICAL_KEYS = (
     "keyword",
     "uploaded_days",
     "uploaded_since",
+    "start_date",
+    "end_date",
+    "timezone",
 )
 ILLNESS_MAX_QUERY_DAYS = 36500
 

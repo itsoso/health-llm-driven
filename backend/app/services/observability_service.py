@@ -627,7 +627,7 @@ def _latency_percentiles_ms(values: list[float]) -> dict:
     }
 
 
-def _agent_turn_milestone_stats(rows: list[tuple[str, object]]) -> dict:
+def _agent_turn_milestone_stats(rows: list[tuple[str, object]], *, metric_version: int = 1) -> dict:
     """Aggregate content-free user-perceived Agent latency milestones.
 
     API validation protects new writes, but dashboards can span historical rows
@@ -648,6 +648,12 @@ def _agent_turn_milestone_stats(rows: list[tuple[str, object]]) -> dict:
         if name != "agent_turn_milestone":
             continue
         meta = raw_meta if isinstance(raw_meta, dict) else {}
+        version = meta.get("metric_version", 1)
+        if type(version) is not int or version not in {1, 2}:
+            invalid += 1
+            continue
+        if version != metric_version:
+            continue
         phase = meta.get("phase")
         duration_ms = meta.get("duration_ms")
         action_type = meta.get("action_type")
@@ -977,6 +983,7 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
         "total": sum(by_event.values()),
         "by_event": by_event,
         "agent_turn_milestones_ms": agent_turn_milestones_ms,
+        "agent_turn_milestones_v2_ms": _agent_turn_milestone_stats(rows, metric_version=2),
         "app_update": {
             "launches": app_update_launches,
             "checks": app_update_checks,

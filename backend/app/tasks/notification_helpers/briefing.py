@@ -8,6 +8,36 @@ from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 
+class BriefingNarrativeBlocked(RuntimeError):
+    """Stable verdict from the existing medical-advice verifier."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+def ai_generation_failure(error: BaseException) -> tuple[dict, str]:
+    """Separate generated interpretation from delivered data, without raw errors."""
+    from app.services.llm.recovery import diagnose_llm_error
+
+    if isinstance(error, BriefingNarrativeBlocked):
+        return ({"status": "blocked", "reason": error.reason},
+                "本次提供数据汇总；个性化 AI 解读尚缺通过审核的医学依据，暂不生成执行建议。")
+
+    diagnosis = diagnose_llm_error(error)
+    metadata = {"status": diagnosis.execution_status, "reason": diagnosis.error_class}
+    if diagnosis.retry_at is not None:
+        metadata["retry_at"] = diagnosis.retry_at
+    explanation = {
+        "budget_exhausted": "AI 解读受调用额度限制，待预算周期恢复后重新核验",
+        "budget_guard_unavailable": "暂时无法核验调用预算，已停止 AI 解读",
+        "consent_required": "AI 服务授权尚未确认，暂不生成 AI 解读",
+        "consent_unavailable": "暂时无法核验 AI 服务授权，已停止 AI 解读",
+        "recipient_not_disclosed": "AI 服务提供方尚未完成授权披露，暂不生成 AI 解读",
+    }.get(diagnosis.error_class, "AI 解读本次生成失败")
+    return metadata, f"本次提供数据汇总；{explanation}。"
+
+
 def status_emoji(
     value: Optional[float],
     good_threshold: float,

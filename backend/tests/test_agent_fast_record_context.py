@@ -5,6 +5,7 @@
 assistant 回合做消歧上下文(其余长历史仍剔除,保持 compact)。
 """
 from app.services.agent_executor import _build_fast_record_messages
+import pytest
 
 
 def _roles(out):
@@ -86,3 +87,32 @@ def test_picks_most_recent_assistant_not_older():
     out = _build_fast_record_messages(messages)
     u = out[-1]["content"]
     assert "鼻炎" in u and "无关" not in u
+
+
+@pytest.mark.parametrize("record_text", [
+    "记录饮水350毫升", "记录刚才打了一个喷嚏", "记录体重68公斤",
+    "记录午餐吃了米饭和青菜", "记录补剂示例甲两粒",
+])
+def test_self_contained_record_does_not_inherit_unrelated_question(record_text):
+    out = _build_fast_record_messages([
+        {"role": "assistant", "content": "要查看化验项目甲的风险吗？"},
+        {"role": "user", "content": record_text},
+    ])
+    assert out[-1]["content"] == record_text
+
+
+def test_followup_does_not_reach_across_intervening_user_turn():
+    out = _build_fast_record_messages([
+        {"role": "assistant", "content": "要记录昨天的头痛症状吗？"},
+        {"role": "user", "content": "先不记录，我想换个话题"},
+        {"role": "user", "content": "记录"},
+    ])
+    assert out[-1]["content"] == "记录"
+
+
+def test_assistant_after_latest_user_is_not_prior_context():
+    out = _build_fast_record_messages([
+        {"role": "user", "content": "记录"},
+        {"role": "assistant", "content": "要记录头痛症状吗？"},
+    ])
+    assert out[-1]["content"] == "记录"

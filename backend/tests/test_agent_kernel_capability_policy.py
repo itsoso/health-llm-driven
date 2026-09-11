@@ -1213,8 +1213,9 @@ def test_supplement_label_colon_authorizes_only_the_explicit_named_items():
     ] == [
         "allow",
         "allow",
-        "allow",
+        "block",
     ]
+    assert decisions["营养素丙"].reason == "supplement_dosage_requires_clarification"
     assert decisions["未提及成分"].action == "block"
 
 
@@ -1307,7 +1308,7 @@ def test_supplement_label_colon_does_not_authorize_name_from_unlabeled_clause(
         "记录补剂：一粒营养素甲和两粒营养素甲",
     ),
 )
-def test_conflicting_supplement_quantities_do_not_bind_a_dosage(message):
+def test_conflicting_supplement_quantities_require_clarification(message):
     decision = decide_tool_capability(
         _snapshot(message),
         _request(
@@ -1322,8 +1323,8 @@ def test_conflicting_supplement_quantities_do_not_bind_a_dosage(message):
         ),
     )
 
-    assert decision.action == "allow"
-    assert decision.normalized_args["data"] == {"supplement_name": "营养素甲"}
+    assert decision.action == "block"
+    assert decision.reason == "supplement_dosage_requires_clarification"
 
 
 def test_rejected_supplement_item_cannot_supply_metadata_to_authorized_item():
@@ -1365,13 +1366,13 @@ def test_leading_rejected_supplement_item_cannot_supply_metadata():
 
 
 @pytest.mark.parametrize(
-    "message",
+    "message, expected_action",
     (
-        "记录补剂：早上一粒营养素甲和晚上两粒营养素乙",
-        "记录补剂：早上一粒营养素甲和晚上两粒营养素甲",
+        ("记录补剂：早上一粒营养素甲和晚上两粒营养素乙", "allow"),
+        ("记录补剂：早上一粒营养素甲和晚上两粒营养素甲", "block"),
     ),
 )
-def test_multi_item_supplement_clause_does_not_guess_timing(message):
+def test_multi_item_supplement_clause_does_not_guess_timing(message, expected_action):
     decision = decide_tool_capability(
         _snapshot(message),
         _request(
@@ -1386,8 +1387,11 @@ def test_multi_item_supplement_clause_does_not_guess_timing(message):
         ),
     )
 
-    assert decision.action == "allow"
-    assert decision.normalized_args["data"] == {"supplement_name": "营养素甲"}
+    assert decision.action == expected_action
+    if expected_action == "allow":
+        assert decision.normalized_args["data"] == {"supplement_name": "营养素甲"}
+    else:
+        assert decision.reason == "supplement_dosage_requires_clarification"
 
 
 def test_conflicting_supplement_metadata_across_clauses_is_not_selected():
@@ -1408,8 +1412,8 @@ def test_conflicting_supplement_metadata_across_clauses_is_not_selected():
         ),
     )
 
-    assert decision.action == "allow"
-    assert decision.normalized_args["data"] == {"supplement_name": "营养素甲"}
+    assert decision.action == "block"
+    assert decision.reason == "supplement_dosage_requires_clarification"
 
 
 def test_write_action_residue_is_not_authorized_as_a_supplement_name():

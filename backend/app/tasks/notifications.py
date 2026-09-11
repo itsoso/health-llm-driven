@@ -1051,7 +1051,7 @@ def _get_or_create_briefing_conversation(db, user_id: int, target_date: date):
     return conv
 
 
-def _write_briefing_message(db, user_id: int, content: str, target_date: date):
+def _write_briefing_message(db, user_id: int, content: str, target_date: date, *, ai_generation: dict | None = None):
     """将日报内容作为 assistant 消息写入当日「每日健康简报」对话.
 
     幂等: 同日已有 assistant message 则 UPDATE content (Garmin 2h sync 会多次重新生成;
@@ -1075,6 +1075,8 @@ def _write_briefing_message(db, user_id: int, content: str, target_date: date):
     )
     if existing:
         existing.content = content
+        if ai_generation is not None:
+            existing.meta = {**(existing.meta or {}), "ai_generation": ai_generation}
         # 后台刷新不是用户活动, 不推进 updated_at, 避免简报抢占默认续接会话。
         db.commit()
         db.refresh(existing)
@@ -1084,6 +1086,7 @@ def _write_briefing_message(db, user_id: int, content: str, target_date: date):
         conversation_id=conv.id,
         role="assistant",
         content=content,
+        meta={"ai_generation": ai_generation} if ai_generation is not None else None,
     )
     db.add(msg)
     conv.updated_at = datetime.now(UTC)
@@ -1433,29 +1436,27 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
         water_emoji = "✅" if water_pct >= 100 else "⚠️"
         lines.append(f"| 饮水 | {water_total}ml/{target_water}ml | {water_emoji} {water_pct}% |")
 
-        # 今日建议
+        # Non-generative record observations, never an unreviewed action plan.
         suggestions = []
 
         # HRV 建议
         if hrv_val and hrv_7d_avg and ((hrv_val - hrv_7d_avg) / hrv_7d_avg) < -0.05:
-            suggestions.append("HRV轻度下降，建议今天以恢复性运动为主")
+            suggestions.append("HRV低于所选7日记录均值；该比较不能解释原因")
 
         # 饮水建议
         if water_pct < 100:
-            deficit = target_water - water_total
-            suggestions.append(f"饮水未达标，上午补充{min(deficit, 500)}ml")
+            suggestions.append("本日记录饮水量未达到已设置目标")
 
         # 基因建议
-        for gv in gene_risks:
-            desc = gv.description or gv.result_label or ""
-            suggestions.append(f"基因提示：{gv.gene_name} {gv.genotype} {desc[:30]}")
+        if gene_risks:
+            suggestions.append("基因条目尚需结合审定证据核验，未据此生成个体干预方案")
 
         # 异常预警建议
         for alert in alerts[:2]:
             suggestions.append(f"预警：{alert.message[:50]}")
 
         if suggestions:
-            lines.append("\n**📌 今日建议：**")
+            lines.append("\n**📌 记录提示：**")
             for i, s in enumerate(suggestions[:5], 1):
                 lines.append(f"{i}. {s}")
 
@@ -1463,15 +1464,35 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
 
         # AI 叙事：用 LLM 把数据转为一段自然语言分析
         ai_narrative = None  # 默认 None, try 失败时保留, 供后面写 SOAP 用
+        ai_generation = {"status": "complete"}
         try:
+            from dataclasses import replace
+            from app.services.advice_guard import AdviceCandidate
+            from app.services.health_advice_verifier import verify_advice
+            from app.tasks.notification_helpers.briefing import BriefingNarrativeBlocked
+
+            # This free-form personalized narrative has no admitted claim pack.
+            # Treat it as high risk before paying for generation; a prompt,
+            # gene-risk label or model citation cannot grant medical authority.
+            narrative_candidate = AdviceCandidate(
+                user_id=user_id, source="daily_briefing", source_id=target_date.isoformat(),
+                domain="daily_briefing", title="每日健康解读", body="",
+                risk_level="high", evidence_refs=[], valid_for_date=target_date,
+            )
+            admission = verify_advice(narrative_candidate, {}, {}, [])
+            if not admission.allowed:
+                raise BriefingNarrativeBlocked(admission.reason)
             from app.services.llm.factory import get_llm_provider
             from app.services.llm.usage_tracker import set_caller
             set_caller("daily_briefing.ai_narrative", user_id=user_id)
             provider = get_llm_provider()
+            from app.utils.number_format import format_display_number
+
+            hrv_average = format_display_number(hrv_7d_avg) if hrv_7d_avg is not None else "无数据"
 
             data_summary = (
                 f"用户昨日数据：睡眠{sleep or '无'}分，HRV {hrv_val or '无'}ms"
-                f"（7日均值{hrv_7d_avg:.0f}ms），步数{steps}，压力{stress or '无'}，"
+                f"（7日均值{hrv_average}ms），步数{steps}，压力{stress or '无'}，"
                 f"身体电量峰值{battery or '无'}，饮水{water_total}ml/{target_water}ml，"
                 f"饮食{diet_calories:.0f}kcal。综合评分{total_score}/100。"
             )
@@ -1485,14 +1506,29 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
                 f"不要重复数字，而是解读含义和给出建议。语气像朋友聊天，不要太正式。\n\n{data_summary}"
             )
 
-            ai_narrative = run_async(provider.chat(ai_prompt))
+            ai_narrative = run_async(provider.chat([{"role": "user", "content": ai_prompt}]))
             if ai_narrative and len(ai_narrative) > 20:
+                verification = verify_advice(replace(narrative_candidate, body=ai_narrative), {}, {}, [])
+                if not verification.allowed:
+                    raise BriefingNarrativeBlocked(verification.reason)
                 briefing_md += f"\n\n---\n\n💬 **AI 解读：**\n{ai_narrative.strip()}"
+            else:
+                raise ValueError("empty_briefing_narrative")
         except Exception as e:
-            logger.warning(f"[每日简报] 用户 {user_id} AI 叙事生成失败（不影响简报）: {e}")
+            from app.tasks.notification_helpers.briefing import ai_generation_failure
+
+            ai_narrative = None
+            ai_generation, generation_message = ai_generation_failure(e)
+            briefing_md += f"\n\n{generation_message}"
+            logger.warning(
+                "[每日简报] AI generation user=%s status=%s reason=%s",
+                user_id, ai_generation["status"], ai_generation["reason"],
+            )
 
         # 写入对话
-        conv_id, msg_id = _write_briefing_message(db, user_id, briefing_md, target_date)
+        conv_id, msg_id = _write_briefing_message(
+            db, user_id, briefing_md, target_date, ai_generation=ai_generation,
+        )
         logger.info(f"[每日简报] 用户 {user_id} 简报已写入对话")
 
         # 旁路: Clinical Journal 记一条 briefing SOAP entry (阶段 3 v1)

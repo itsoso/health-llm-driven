@@ -2084,6 +2084,7 @@ class TestDietAPI:
             trusted_original["user_id"],
             trusted_original["id"],
             trusted_payload,
+            baseline_record=trusted_original,
         )
 
         trusted_update = client.put(

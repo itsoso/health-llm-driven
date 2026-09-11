@@ -2098,12 +2098,16 @@ describe('useChatEngine', () => {
     act(() => {
       result.current.markAgentContentPainted(assistant!.id, 'citation');
     });
-    for (const phase of ['citations_painted', 'first_key_content', 'first_interactive']) {
+    for (const phase of ['citations_painted', 'first_interactive']) {
       expect(mockEmitClientEvent).toHaveBeenCalledWith(
         'agent_turn_milestone',
         expect.objectContaining({ phase }),
       );
     }
+
+    expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+      'agent_turn_milestone', expect.objectContaining({ phase: 'first_key_content' }),
+    );
 
     await act(async () => {
       finishStream?.();
@@ -2137,8 +2141,8 @@ describe('useChatEngine', () => {
       .map(([, metadata]) => metadata.phase);
     expect(phases).toEqual([
       'first_semantic_progress',
-      'first_interactive',
       'first_content_painted',
+      'first_interactive',
       'first_key_content',
     ]);
 
@@ -2776,6 +2780,27 @@ describe('useChatEngine', () => {
         recoverable: false,
       });
     });
+  });
+
+  it.each(['blocked', 'failed', 'reconciliation_required', 'waiting_for_user', 'refused'])('preserves %s outcome when recovering a complete response', async (status) => {
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '323';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1, phase: 'interrupted', turnId: 'turn-blocked-recovery',
+      conversationId: 323, startedAt: Date.now() - 1000,
+      updatedAt: Date.now() - 500, recoverable: true, hadWrite: false,
+    });
+    mockGetConversationMessages.mockResolvedValue({ total_messages: 2, messages: [
+      { id: 1, role: 'user', content: '查询记录', meta: { client_turn_id: 'turn-blocked-recovery' } },
+      { id: 2, role: 'assistant', content: '这次未执行。', meta: {
+        completion_status: 'complete', client_turn_id: 'turn-blocked-recovery',
+        client_turn_finalized: true, turn_outcome: { status, reason_code: 'test_block', retryable: false },
+      } },
+    ] });
+    const { result } = renderHook(() => useChatEngine());
+    await waitFor(() => expect(result.current.activeTurn.turnId).toBe('turn-blocked-recovery'));
+    await act(async () => { await result.current.loadLatestConversation(); });
+    await waitFor(() => expect(result.current.activeTurn.phase).toBe(status));
+    expect(result.current.activeTurn.recoverable).toBe(false);
   });
 
   it('preserves interrupted recovery and emits one interrupted terminal event', async () => {

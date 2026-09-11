@@ -74,7 +74,6 @@ from app.services.agent_processing_summary import build_processing_summary
 from app.services.guidance_validator import (
     build_confirmable_health_fact_draft,
     enforce_medical_evidence_boundaries,
-    requires_medical_evidence_boundary,
 )
 from app.services.agent_turn_retry import (
     RetryableTurnRecovery,
@@ -2925,9 +2924,8 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
     request plus strict routing instructions.
 
     **但跟进式记录必须保留紧邻的上一条助手回合**:助手刚问「要不要记录鼻炎症状(打喷嚏/流鼻涕)?」
-    用户答「记录」时,若只把最新一条用户消息「记录」发给模型,它**无从知道记什么** → 重新泛问
-    「什么症状?」(实测 bug:上下文丢失)。故保留最后一条非空 assistant 回合(截断保持 compact),
-    其余长历史/Twin/KB 仍剔除。
+    用户答「记录」时需要消歧。仅对明确短回应或同主题数量补充保留紧邻提问；
+    自足的新记录不继承上一问，避免夹带无关健康背景。
     """
 
     default_user_prompt = "请记录这条健康数据。"
@@ -2939,20 +2937,39 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
     # **折进 user 消息**(而非单独发一条 assistant):fast-record 走弱/代理模型(qwen/deepseek
     # via tokenplan),[system, assistant, user] 这种 assistant 先于任何 user 的序列易被严格
     # OpenAI 兼容适配器拒;折进单条 user 保持 [system, user] 稳态,且对弱模型更显式。
-    last_assistant = next(
-        (
-            m for m in reversed(messages)
-            if m.get("role") == "assistant" and str(m.get("content") or "").strip()
-        ),
-        None,
+    last_user_index = next(
+        (i for i in range(len(messages) - 1, -1, -1)
+         if messages[i].get("role") == "user"),
+        0,
     )
-    # **只在上一轮助手确实在提问时才折进它做消歧** —— 否则上一轮是分析/陈述(如刚分析完
-    # 麦当劳那餐)时,把它折进一条自足的新记录("记录刚才打了一个喷嚏")会串味,让模型
-    # 幻觉出「麦当劳店记录打了喷嚏」(founder 2026-07-17 实测)。跟进确认(助手问「要不要
-    # 记录鼻炎症状?」→ 用户答「记录」)仍照旧折入,消歧不丢。
+    last_assistant = None
+    for previous in reversed(messages[:last_user_index]):
+        if previous.get("role") == "user":
+            break
+        if previous.get("role") == "assistant" and str(previous.get("content") or "").strip():
+            last_assistant = previous
+            break
+    # Context narrows extraction only; the original user turn still controls
+    # write authorization downstream. Never treat a question as new user data.
     if last_assistant:
         prior = str(last_assistant.get("content") or "").strip()
-        if _assistant_turn_is_question(prior):
+        reply = re.sub(r"[\s,，。.!！?？]", "", str(user_content))
+        short_followup = re.fullmatch(
+            r"(?:(?:好(?:的)?|嗯|可以)[，,]?)?"
+            r"(?:(?:帮我)?(?:记录|记|补记)(?:一下|下来|上)?(?:症状|这条|这个|这一条)?(?:吧)?|好(?:的)?|嗯|可以)",
+            reply,
+        ) is not None
+        quantity_followup = re.fullmatch(
+            r"(?P<subject>[\u4e00-\u9fff]{2,12})[0-9]+(?:\.[0-9]+)?"
+            r"(?:次|毫升|升|公斤|千克|kg|克|g|杯|粒|片)",
+            str(user_content).strip(), re.IGNORECASE,
+        )
+        same_subject_quantity = bool(
+            quantity_followup
+            and quantity_followup.group("subject") in prior
+            and not re.search(r"记录|补记|帮我", quantity_followup.group("subject"))
+        )
+        if _assistant_turn_is_question(prior) and (short_followup or same_subject_quantity):
             user_content = f"[上一轮助手问我:{prior[:400]}]\n我的回复:{user_content}"
 
     return [
@@ -11541,6 +11558,9 @@ class AgentExecutor:
         self._turn_twin_write_occurred = False
         self._turn_diet_correction_unresolved_reason = None
         self._trusted_diet_portion_update_keys: set[str] = set()
+        # Authoritative GET baselines, scoped to this turn and exact payload;
+        # retained across retries so an old update never loses its CAS header.
+        self._trusted_diet_portion_baselines: Dict[str, Dict[str, Any]] = {}
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
@@ -11629,6 +11649,7 @@ class AgentExecutor:
         self._agent_kernel_turn_finished = False
         self._agent_kernel_last_decision = None
         self._agent_kernel_capability_block_reasons = []
+        self._agent_kernel_blocked_request_cache = {}
         self._agent_kernel_recovered_capability_block_reasons = []
         self._agent_kernel_unresolved_manage_mismatch_targets = set()
         self._agent_kernel_tool_failure_tools = []
@@ -11924,6 +11945,7 @@ class AgentExecutor:
                     self._agent_kernel_recovered_capability_block_reasons.append(
                         reason
                     )
+        from app.services.agent_policy_retry import is_terminal_policy_reason
         if (
             policy_blocked
             and snapshot is not None
@@ -11932,7 +11954,8 @@ class AgentExecutor:
         ):
             self._force_no_tools_synthesis = True
             if (
-                decision.reason
+                not is_terminal_policy_reason(decision.reason)
+                and decision.reason
                 not in self._agent_kernel_recovered_capability_block_reasons
             ):
                 self._agent_kernel_recovered_capability_block_reasons.append(
@@ -12970,6 +12993,7 @@ class AgentExecutor:
         import asyncio as _asyncio
         from app.services.llm.usage_tracker import set_caller
         from app.services.llm.factory import create_provider_for_model_id
+        from app.services.llm.recovery import diagnose_llm_error
 
         set_caller("agent_executor.multi_model", user_id=user_id)
         # A model panel has no confirmation-card terminal contract. Mark this
@@ -13030,9 +13054,9 @@ class AgentExecutor:
         except Exception as exc:  # noqa: BLE001 - context loss must not abort the turn
             logger.warning(
                 "[agent_executor] multi-model actionable context projection failed "
-                "conversation=%s error=%s",
+                "conversation=%s error_type=%s",
                 conv.id,
-                exc,
+                type(exc).__name__,
             )
 
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
@@ -13070,6 +13094,33 @@ class AgentExecutor:
         tools = get_health_tools()
         full_reply = ""
         completion_status = "complete"
+        panel_quality_flags: set[str] = set()
+        panel_medical_flags: set[str] = set()
+        protocol_failure_text = ""
+        terminal_diagnosis = None
+
+        def _guard_panel_narrative(value: str) -> str:
+            # Model agreement is not medical evidence. Guard each contribution
+            # before it can be amplified by synthesis, then guard the synthesis
+            # again before the one user-visible release below.
+            nonlocal protocol_failure_text
+            quality = enforce_agent_output_quality(value)
+            panel_quality_flags.update(quality.flags)
+            if "protocol_leak" in quality.flags:
+                protocol_failure_text = quality.text
+            safe = _strip_reva_ui_from_llm_text(quality.text)
+            safe = _strip_botched_text_tool_leak(safe)
+            safe = _strip_scope_refusal_preamble(safe)
+            boundary = enforce_medical_evidence_boundaries(
+                safe,
+                evidence_sources=sources_used[1:],
+                verified_write_receipt=any(
+                    isinstance(receipt, dict) and receipt.get("verified") is True
+                    for receipt in write_receipts
+                ),
+            )
+            panel_medical_flags.update(boundary.violations)
+            return boundary.text
 
         def _progress(tool: str, text: str) -> Dict:
             return {"event": "tool_result", "data": {"tool": tool, "success": True, "preview": text, "result": text}}
@@ -13469,6 +13520,7 @@ class AgentExecutor:
                         else:
                             # Wave 2: 心跳 + per-tool 超时(同主路径)。
                             result = None
+                            self._agent_kernel_last_decision = None
                             async for _hb_kind, _hb_val in self._run_tool_with_progress(
                                 fn, fa, user_auth_token, _tool_progress_label(fn),
                             ):
@@ -13660,6 +13712,9 @@ class AgentExecutor:
                     continue
                 # 兜底:内联标记(括号 / XML `<invoke>`)未恢复成 tool_call(name 不在白名单等)时,
                 # 绝不能把裸工具语法当 lead 分析落进 final_text / 喂给下游多方分析。cheap-precheck no-op。
+                if not content.strip():
+                    raise ValueError("empty_panel_lead")
+                content = _guard_panel_narrative(content)
                 content = _strip_bracket_tool_markers(content)
                 content = _strip_xml_tool_markers(content)
                 lead_text = content
@@ -13706,18 +13761,30 @@ class AgentExecutor:
             ]
 
             async def _perspective(model_id: str) -> str:
-                try:
-                    p = create_provider_for_model_id(model_id)
-                    r = await p.chat(messages=persp_messages, model=None, temperature=0.4,
-                                     max_tokens=4000, stream=False, return_metadata=True)
-                    return (r.get("content") if isinstance(r, dict) else str(r)) or ""
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("[multi_model] perspective %s failed: %s", model_id, e)
-                    return ""
+                p = create_provider_for_model_id(model_id)
+                r = await p.chat(messages=persp_messages, model=None, temperature=0.4,
+                                 max_tokens=4000, stream=False, return_metadata=True)
+                perspective_text = (r.get("content") if isinstance(r, dict) else str(r)) or ""
+                if not perspective_text.strip():
+                    raise ValueError("empty_panel_perspective")
+                return _guard_panel_narrative(perspective_text)
 
-            gpt_text, gemini_text = await _asyncio.gather(
-                _perspective("gpt-5.5"), _perspective("gemini-3.1-pro")
+            # Both independent calls may already be in flight when one blocks.
+            # Settle them, preserve any policy verdict, and never start synthesis
+            # after a failed dependency. This does not claim zero prior calls.
+            perspectives = await _asyncio.gather(
+                _perspective("gpt-5.5"), _perspective("gemini-3.1-pro"),
+                return_exceptions=True,
             )
+            failures = [item for item in perspectives if isinstance(item, BaseException)]
+            if failures:
+                policy_failure = next(
+                    (failure for failure in failures
+                     if diagnose_llm_error(failure).execution_status == "blocked"),
+                    failures[0],
+                )
+                raise policy_failure
+            gpt_text, gemini_text = perspectives
 
             # 3) 综合 (Claude Opus 4.7)
             yield _progress("多模型·综合", "综合三方观点…")
@@ -13726,62 +13793,86 @@ class AgentExecutor:
                 {"role": "system", "content": "你是健康分析综合专家，把多个模型的分析整合成一份清晰、专业、可执行的中文报告。"},
                 {"role": "user", "content": _build_multi_model_synthesis_prompt(message, analyses)},
             ]
-            try:
-                synth_provider = create_provider_for_model_id(MULTI_MODEL_SYNTH_ID)
-                synth_resp = await synth_provider.chat(messages=synth_messages, model=None, temperature=0.3,
-                                                       max_tokens=ANSWER_MAX_TOKENS, stream=False, return_metadata=True)
-                final_text = (synth_resp.get("content") if isinstance(synth_resp, dict) else str(synth_resp)) or ""
-            except Exception as e:  # noqa: BLE001
-                logger.error("[multi_model] synthesis failed: %s", e)
-                completion_status = "error"
-                final_text = lead_text or "多模型综合分析未能生成最终结论，请重试或改用单模型。"
+            synth_provider = create_provider_for_model_id(MULTI_MODEL_SYNTH_ID)
+            synth_resp = await synth_provider.chat(messages=synth_messages, model=None, temperature=0.3,
+                                                   max_tokens=ANSWER_MAX_TOKENS, stream=False, return_metadata=True)
+            final_text = (synth_resp.get("content") if isinstance(synth_resp, dict) else str(synth_resp)) or ""
 
             if not final_text.strip():
-                final_text = lead_text or "多模型综合分析未能生成最终结论，请重试。"
+                raise ValueError("empty_panel_synthesis")
             final_text = _ground_query_response_date_labels(
                 final_text,
                 message,
                 reference_now=self._agent_kernel_reference_now(),
             )
-            for i in range(0, len(final_text), 24):
-                yield {"event": "token", "data": {"content": final_text[i:i + 24]}}
             full_reply = final_text
         except _SimpleRecordTerminal as terminal:
             completion_status = "complete" if terminal.satisfied else "error"
             full_reply = terminal.message
-            for i in range(0, len(full_reply), 24):
-                yield {
-                    "event": "token",
-                    "data": {"content": full_reply[i:i + 24]},
-                }
         except _UnverifiedWriteResult:
             completion_status = "error"
             full_reply = _UNVERIFIED_WRITE_USER_MESSAGE
-            for i in range(0, len(full_reply), 24):
-                yield {"event": "token", "data": {"content": full_reply[i:i + 24]}}
         except Exception as e:  # noqa: BLE001
+            terminal_diagnosis = diagnose_llm_error(e)
             logger.error(
-                "多模型综合执行异常 user=%s error_type=%s",
+                "多模型综合执行异常 user=%s error_type=%s error_class=%s",
                 user_id,
                 type(e).__name__,
+                terminal_diagnosis.error_class,
             )
             completion_status = "error"
-            full_reply = "多模型综合分析遇到问题，请稍后重试。"
-            yield {"event": "token", "data": {"content": full_reply}}
+            full_reply = (
+                "多模型分析已停止：当前授权或调用额度未通过核验，未继续生成综合结论。"
+                if terminal_diagnosis.execution_status == "blocked"
+                else "多模型综合分析遇到问题，本次未完成。"
+            )
         finally:
             if self._http_client:
                 await self._http_client.aclose()
                 self._http_client = None
 
-        # 确定性护栏 (R4): 多模型综合是 LLM 生成文本 → 剥掉任何伪造的 reva-ui block。
-        full_reply = _strip_reva_ui_from_llm_text(full_reply)
-        full_reply = _strip_botched_text_tool_leak(full_reply)
-        full_reply = _strip_scope_refusal_preamble(full_reply)
+        # All model and terminal branches converge before any prose is emitted.
+        full_reply = _guard_panel_narrative(full_reply)
+        if protocol_failure_text:
+            full_reply = protocol_failure_text
+            completion_status = "error"
+        elif panel_medical_flags:
+            full_reply = "部分模型建议缺少可核验依据，已暂缓提供执行方案。\n\n" + full_reply
         full_reply = _ground_query_response_date_labels(
             full_reply,
             message,
             reference_now=self._agent_kernel_reference_now(),
         )
+        output_quality = enforce_agent_output_quality(
+            full_reply,
+            max_chars=int(getattr(settings, "agent_answer_persistence_max_chars", 50_000) or 50_000),
+        )
+        panel_quality_flags.update(output_quality.flags)
+        full_reply = output_quality.text
+        turn_outcome = classify_agent_turn_outcome(
+            completion_status=completion_status,
+            final_text=full_reply,
+            capability_block_reasons=self._agent_kernel_capability_block_reasons,
+            tool_failure_tools=self._agent_kernel_tool_failure_tools,
+            pending_confirmation_tools=self._agent_kernel_pending_confirmation_tools,
+            write_receipts=write_receipts,
+            dispatch_started=bool(write_receipts),
+            output_quality_flags=panel_quality_flags,
+        )
+        if panel_medical_flags and turn_outcome["status"] == "complete":
+            turn_outcome.update(status="blocked", category="medical_evidence_boundary",
+                                reason_code="medical_evidence_boundary", retryable=False)
+        if terminal_diagnosis is not None and turn_outcome["status"] != "reconciliation_required":
+            turn_outcome.update(
+                status=terminal_diagnosis.execution_status,
+                category="generation_policy" if terminal_diagnosis.execution_status == "blocked" else "generation_failed",
+                reason_code=terminal_diagnosis.error_class,
+                retryable=False,
+            )
+            if terminal_diagnosis.retry_at is not None:
+                turn_outcome["retry_at"] = terminal_diagnosis.retry_at
+        for i in range(0, len(full_reply), 24):
+            yield {"event": "token", "data": {"content": full_reply[i:i + 24]}}
         ai_msg = svc.save_message(
             conv.id,
             "assistant",
@@ -13808,6 +13899,9 @@ class AgentExecutor:
                 "fallback_reasons": [],
                 "sources_used": sources_used,
                 "mode": "multi_model",
+                "turn_outcome": turn_outcome,
+                "output_quality_flags": sorted(panel_quality_flags),
+                "medical_boundary_flags": sorted(panel_medical_flags),
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"kernel_trace": kernel_trace} if kernel_trace else {}),
                 "write_receipts": write_receipts,
@@ -13834,6 +13928,9 @@ class AgentExecutor:
             "fallback_reasons": [],
             "sources_used": sources_used,
             "mode": "multi_model",
+            "turn_outcome": turn_outcome,
+            "output_quality_flags": sorted(panel_quality_flags),
+            "medical_boundary_flags": sorted(panel_medical_flags),
             **({"citation_anchor": citation_anchor} if citation_anchor else {}),
             **({"kernel_trace": kernel_trace} if kernel_trace else {}),
             "write_receipts": write_receipts,
@@ -14106,6 +14203,7 @@ class AgentExecutor:
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
         self._trusted_diet_portion_update_keys.clear()
+        self._trusted_diet_portion_baselines.clear()
         self._current_turn_recent_messages = []
         self._turn_contextual_supplement_names = ()
         self._current_turn_has_attachment = bool(images or file_base64)
@@ -14305,6 +14403,26 @@ class AgentExecutor:
                     })
                     return
 
+            pending_choice_resolution = None
+            choice_conversation_id = (
+                recovered_user_message.conversation_id
+                if recovered_user_message is not None else conversation_id
+            )
+            if (
+                not effective_images and not file_base64
+                and isinstance(choice_conversation_id, int)
+                and needs_input_clarification(effective_message)
+            ):
+                from app.services.agent_pending_choice import resolve_pending_choice
+                pending_choice_resolution = resolve_pending_choice(
+                    self.db, user_id=user_id, conversation_id=choice_conversation_id,
+                    reply=effective_message, now=datetime.now(UTC),
+                    current_user_message_id=(
+                        recovered_user_message.id if recovered_user_message is not None else None
+                    ),
+                )
+                if pending_choice_resolution is not None and pending_choice_resolution.status == "resolved":
+                    effective_message = pending_choice_resolution.query
             self._current_turn_user_message = effective_message
             self._current_turn_has_attachment = bool(
                 effective_images or file_base64
@@ -14420,7 +14538,10 @@ class AgentExecutor:
                 recovered_user_message=recovered_user_message,
                 client_caps=client_caps,
                 client_time_context=client_time_context,
-                read_only_tools=read_only_tools,
+                read_only_tools=read_only_tools or bool(
+                    pending_choice_resolution is not None and pending_choice_resolution.status == "resolved"
+                ),
+                pending_choice_resolution=pending_choice_resolution,
                 display_message=display_message,
                 persist_images=persist_images,
                 retry_recovery=retry_recovery,
@@ -14463,6 +14584,7 @@ class AgentExecutor:
         client_time_context: Optional[Dict[str, Any]] = None,
         read_only_tools: bool = False,
         display_message: Optional[str] = None,
+        pending_choice_resolution: Any = None,
         persist_images: Optional[List[dict]] = None,
         retry_recovery: RetryableTurnRecovery | None = None,
         request_started_at: Optional[float] = None,
@@ -14596,15 +14718,9 @@ class AgentExecutor:
                     user_id,
                     type(exc).__name__,
                 )
-        medical_boundary_buffered = (
-            health_evidence_turn is None
-            and requires_medical_evidence_boundary(message)
-        )
-        # Keep the sealed evidence runtime separate from the output-only medical
-        # boundary buffer.  The former intentionally removes tools and pins the
-        # evidence model; the latter must only delay user-visible text until the
-        # deterministic boundary sanitizer has run.  Conflating the two causes
-        # ordinary medication/supplement queries and writes to lose their tools.
+        # Sealed medical evidence controls tool admission; every ordinary model
+        # answer is held until the final medical and format gates. A harmless
+        # request cannot prove the model will not generate unsafe advice.
         health_advice_buffered = health_evidence_turn is not None
         completion_intent = classify_agent_utterance(message)
         record_write_requested = (
@@ -14612,9 +14728,7 @@ class AgentExecutor:
             and completion_intent.is_write
             and completion_intent.domain != "aigc_media"
         )
-        response_output_buffered = (
-            health_advice_buffered or medical_boundary_buffered
-        )
+        response_output_buffered = True
         deterministic_health_release = bool(
             health_evidence_turn is not None
             and health_evidence_turn.sufficiency != "sufficient"
@@ -14662,6 +14776,7 @@ class AgentExecutor:
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         if (
             _extract_multi_model_flag(extra_context)
+            and not read_only_tools
             and not _is_recovery_exercise_advice_message(message)
             and not health_advice_buffered
             and not images
@@ -15415,7 +15530,9 @@ class AgentExecutor:
         )
         if self._turn_contextual_supplement_names:
             self._ensure_agent_kernel_turn(channel=channel)
-        if retry_recovery is not None:
+        if retry_recovery is not None or (
+            pending_choice_resolution is not None and pending_choice_resolution.status == "resolved"
+        ):
             for history_message in reversed(messages):
                 if history_message.get("role") == "user":
                     history_message["content"] = message
@@ -15598,6 +15715,7 @@ class AgentExecutor:
 
         # 5. Agent 循环
         full_reply = ""
+        unrecovered_output_quality = None
         streamed_cards: list[dict] = []
         post_record_qualities: list[dict] = []
         _mark_perf_milestone("first_progress_ms")
@@ -17194,6 +17312,14 @@ class AgentExecutor:
                                 else:
                                     result = _hb_val
                             result_for_record_card = result
+                            executed_decision = self._agent_kernel_last_decision
+                            if (
+                                func_name == "health_query"
+                                and executed_decision is not None
+                                and executed_decision.action == "allow"
+                                and executed_decision.normalized_tool_name == "health_query"
+                            ):
+                                parsed_tool_args = dict(executed_decision.normalized_args)
                         if _is_orch_tool:
                             try:
                                 orchestrator_tool_ms = int((time.time() - _tool_call_start) * 1000)
@@ -17630,7 +17756,7 @@ class AgentExecutor:
                             }
                         if (
                             not transient_local_rejection
-                            and not response_output_buffered
+                            and not health_advice_buffered
                             and func_name in _GENUI_TABLE_TOOLS
                             and not replayed_read
                             and (
@@ -17835,6 +17961,18 @@ class AgentExecutor:
                                     },
                                 }
                         full_reply += _unverified_msg
+                        break
+
+                    from app.services.agent_policy_retry import terminal_policy_notice
+                    policy_notice = terminal_policy_notice(
+                        self._agent_kernel_capability_block_reasons,
+                        has_verified_writes=any(r.get("verified") is True for r in write_receipts),
+                    )
+                    if policy_notice is not None:
+                        full_reply = policy_notice
+                        final_finish_reason = "stop"
+                        if not response_output_buffered:
+                            yield {"event": "token", "data": {"content": policy_notice}}
                         break
 
                     # ``NEEDS_CONFIRMATION`` is an intentional manual-confirm
@@ -18042,6 +18180,14 @@ class AgentExecutor:
                     else:
                         final_text = response.get("content") or ""
                         final_text = _append_interrupted_notice(final_text, response.get("finish_reason"))
+                    candidate_quality = enforce_agent_output_quality(final_text)
+                    if "protocol_leak" in candidate_quality.flags:
+                        unrecovered_output_quality = candidate_quality
+                        full_reply = candidate_quality.text
+                        final_finish_reason = "error"
+                        if not response_output_buffered:
+                            yield {"event": "token", "data": {"content": full_reply}}
+                        break
                     # 兜底:括号工具标记没能恢复成 tool_call(name 不在白名单/参数解析失败)时,
                     # 也绝不能把裸 `[工具调用: ...]` 留在用户可见正文里。剥离后若空,走下方空回复重试链。
                     stripped = _strip_bracket_tool_markers(final_text)
@@ -18414,6 +18560,10 @@ class AgentExecutor:
         # 6. 保存回复
         # 确定性护栏 (R4, 防御纵深): full_reply 是 LLM 生成文本 —— 剥掉任何伪造的
         # reva-ui 图表 block (数值只能来自确定性 genui 短路; 短路走独立路径不经此处)。
+        raw_output_quality = unrecovered_output_quality or enforce_agent_output_quality(full_reply)
+        if "protocol_leak" in raw_output_quality.flags:
+            full_reply = raw_output_quality.text
+            final_finish_reason = "error"
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
         full_reply = _strip_botched_text_tool_leak(full_reply)
         full_reply = _strip_scope_refusal_preamble(full_reply)
@@ -18438,6 +18588,10 @@ class AgentExecutor:
             and not last_recoverable_write_rejection
             and not runtime_control_terminal
             and not deterministic_diet_correction_terminal
+            and not any(
+                reason == "supplement_dosage_requires_clarification"
+                for reason in self._agent_kernel_capability_block_reasons
+            )
         )
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
@@ -18532,21 +18686,6 @@ class AgentExecutor:
                 sources_used.append(
                     "个人健康上下文：" + "、".join(context_categories)
                 )
-            if first_token_at is None:
-                first_token_at = time.time()
-            for i in range(0, len(full_reply), 24):
-                yield {
-                    "event": "token",
-                    "data": {"content": full_reply[i:i + 24]},
-                }
-        elif medical_boundary_buffered:
-            if first_token_at is None:
-                first_token_at = time.time()
-            for i in range(0, len(full_reply), 24):
-                yield {
-                    "event": "token",
-                    "data": {"content": full_reply[i:i + 24]},
-                }
         # [guidance-probe · 2026-07-17] 主对话 R4 guidance 红线的**纯影子测量**(只打 log)。
         # 现状(对抗评审揪出): diet_prescription_red_line(CRITICAL) / movement_imperative_red_line
         # 只扫 twin.acute.pending_guidance_texts, 而 builder 永不填充、agent_executor 零调用
@@ -18651,7 +18790,10 @@ class AgentExecutor:
                     _mark_perf_milestone("first_card_ms")
                     _mark_perf_milestone("first_useful_ms")
                     yield {"event": "token", "data": {"content": _chunk}}
-                    full_reply += _chunk
+                    if response_output_buffered:
+                        early_genui_fences.append(_fence)
+                    else:
+                        full_reply += _chunk
             except Exception as e:  # noqa: BLE001 — 建卡/建表/emit 失败绝不断回合
                 logger.warning(
                     "[agent_executor] GenUI card/table build/emit failed: %s", e
@@ -18670,7 +18812,20 @@ class AgentExecutor:
                 or 50_000
             ),
         )
+        if "protocol_leak" in raw_output_quality.flags:
+            output_quality = raw_output_quality
+            final_finish_reason = "error"
         full_reply = output_quality.text
+        if response_output_buffered:
+            release_text = full_reply
+            if early_genui_fences and "protocol_leak" not in output_quality.flags:
+                prefix = "\n\n".join(early_genui_fences)
+                if release_text.startswith(prefix):
+                    release_text = release_text[len(prefix):].lstrip("\n")
+            if first_token_at is None:
+                first_token_at = time.time()
+            for i in range(0, len(release_text), 24):
+                yield {"event": "token", "data": {"content": release_text[i:i + 24]}}
         ai_msg = svc.save_message(
             conv.id,
             "assistant",
@@ -18836,6 +18991,8 @@ class AgentExecutor:
             dispatch_started=bool(write_receipts or unverified_write_operations),
             claimed_write_action_count=len(write_receipts) + len(unverified_write_operations),
             action_outcomes=action_outcomes,
+            output_quality_flags=output_quality.flags,
+            medical_boundary_flags=medical_boundary.violations,
         )
         kernel_snapshot = self._agent_kernel_snapshot
         health_write_requested = bool(
@@ -19052,6 +19209,7 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "output_quality_flags": list(output_quality.flags),
                 "output_persisted_chars": output_quality.persisted_length,
+                "medical_boundary_flags": list(medical_boundary.violations),
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
                 **(
@@ -19089,7 +19247,12 @@ class AgentExecutor:
                 **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+                **({"resolved_pending_choice_source_id": pending_choice_resolution.source_message_id}
+                   if pending_choice_resolution is not None and pending_choice_resolution.status == "resolved" else {}),
             }
+            from app.services.agent_pending_choice import attach_pending_choice
+            attach_pending_choice(ai_msg, now=datetime.now(UTC),
+                                  timezone_name=self._ensure_agent_kernel_turn().context.timezone)
         except Exception as e:
             logger.warning(
                 "[agent_executor] write meta 失败 user=%s error_type=%s",
@@ -19140,6 +19303,7 @@ class AgentExecutor:
                 "output_quality_flags": list(output_quality.flags),
                 "output_persisted_chars": output_quality.persisted_length,
                 "record_intent_no_tool": record_intent_no_tool,
+                "medical_boundary_flags": list(medical_boundary.violations),
                 "turn_outcome": turn_outcome,
                 **(
                     {
@@ -23185,9 +23349,9 @@ class AgentExecutor:
             if update_data is not None:
                 record_id = candidate_rows[0].get("id") or candidate_rows[0].get("record_id")
                 if correction.get("consumed_fraction") is not None:
-                    self._trusted_diet_portion_update_keys.add(
-                        diet_portion_update_fingerprint(record_id, update_data)
-                    )
+                    trusted_key = diet_portion_update_fingerprint(record_id, update_data)
+                    self._trusted_diet_portion_update_keys.add(trusted_key)
+                    self._trusted_diet_portion_baselines[trusted_key] = dict(candidate_rows[0])
                 resolved_args = {
                     "record_type": "diet",
                     "operation": "update",
@@ -23342,6 +23506,18 @@ class AgentExecutor:
     ) -> str:
         """Kernel-instrumented tool boundary used by every executable surface."""
         self._ensure_agent_kernel_turn()
+        from app.services.agent_policy_retry import is_terminal_policy_reason
+
+        parsed_args = _parse_tool_arguments_for_telemetry(args_raw)
+        request_key = (source, tool_name, json.dumps(parsed_args, sort_keys=True, ensure_ascii=False, default=str))
+        blocked_request_cache = getattr(self, "_agent_kernel_blocked_request_cache", None)
+        if blocked_request_cache is None:
+            blocked_request_cache = {}
+            self._agent_kernel_blocked_request_cache = blocked_request_cache
+        cached = blocked_request_cache.get(request_key)
+        if cached is not None:
+            self._agent_kernel_last_decision, cached_result = cached
+            return cached_result
         self._agent_kernel_last_decision = None
         if self._agent_kernel_event_bus is not None:
             self._agent_kernel_event_bus.tool_requested(
@@ -23354,11 +23530,14 @@ class AgentExecutor:
         result = await self._execute_tool_impl(
             tool_name, args_raw, user_token, source=source
         )
-        return self._agent_kernel_record_tool_result(
-            tool_name,
-            _parse_tool_arguments_for_telemetry(args_raw),
-            result,
-        )
+        decision = self._agent_kernel_last_decision
+        if (
+            decision is not None and decision.action == "block"
+            and self._ensure_agent_kernel_turn().policy_mode == "enforce"
+            and is_terminal_policy_reason(decision.reason)
+        ):
+            self._agent_kernel_blocked_request_cache[request_key] = (decision, result)
+        return self._agent_kernel_record_tool_result(tool_name, parsed_args, result)
 
     async def _execute_recipe_step(
         self, tool_name: str, args_raw: Any, user_token: Optional[str]
@@ -24236,6 +24415,23 @@ class AgentExecutor:
         """执行健康数据查询"""
         args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
+        if any(key in args for key in ("start_date", "end_date", "timezone")):
+            from app.services.agent_query_window import (
+                parse_query_window, read_calendar_health_query, resolve_calendar_query_window,
+            )
+            snapshot = self._ensure_agent_kernel_turn()
+            expected = resolve_calendar_query_window(
+                snapshot.envelope.text, snapshot.context.current_time, dim,
+                timezone_name=snapshot.context.timezone,
+            )
+            try:
+                window = parse_query_window(args)
+            except ValueError as exc:
+                return f"Error: {exc}"
+            if expected is None or window.as_dict() != expected:
+                return "Error: 查询日期与当前请求不一致，请明确要查询的日期。"
+            result = read_calendar_health_query(self.db, self._current_user_id, dim, window)
+            return json.dumps(result, ensure_ascii=False, default=str)
         days = args.get("days")
         if days is None and dim != "illness":
             days = 7
@@ -25392,6 +25588,13 @@ class AgentExecutor:
                             "例如“记录「正官庄红参液」10mL”。"
                         ),
                     )
+                from app.services.agent_kernel.capability_policy import supplement_dosage_requires_clarification
+                if supplement_dosage_requires_clarification(current_message, str(name)):
+                    return local_write_rejection(
+                        "supplement_dosage_requires_clarification",
+                        message="这项补剂的服用时间或数量还存在歧义，本次未写入。",
+                        recovery_guidance="请确认这次要记录的服用时间和数量。",
+                    )
                 # 查找匹配的补剂定义 (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
                 supps, err = await self._api_get_json(f"{base}/supplements/me/definitions", headers)
                 if err:
@@ -26010,17 +26213,27 @@ class AgentExecutor:
             if record_type == "diet":
                 trusted_key = diet_portion_update_fingerprint(record_id, data)
                 if trusted_key in self._trusted_diet_portion_update_keys:
-                    self._trusted_diet_portion_update_keys.discard(trusted_key)
+                    baseline = self._trusted_diet_portion_baselines.get(trusted_key)
+                    if baseline is None:
+                        return local_write_rejection(
+                            "diet_portion_baseline_missing",
+                            message="份量修正缺少已核对的记录，请重新查询后重试。",
+                        )
                     signature = build_internal_diet_portion_signature(
                         self._current_user_id,
                         record_id,
                         data,
+                        baseline_record=baseline,
                     )
-                    if signature:
-                        put_headers = {
-                            **headers,
-                            INTERNAL_DIET_PORTION_SIGNATURE_HEADER: signature,
-                        }
+                    if not signature:
+                        return local_write_rejection(
+                            "diet_portion_signature_unavailable",
+                            message="暂时无法安全保存份量修正，请稍后重试。",
+                        )
+                    put_headers = {
+                        **headers,
+                        INTERNAL_DIET_PORTION_SIGNATURE_HEADER: signature,
+                    }
             result = await self._api_put(f"{base}{path}", put_headers, data)
             self._invalidate_twin_after_mutation()
             if record_type == "diet" and not str(result).startswith("Error:"):

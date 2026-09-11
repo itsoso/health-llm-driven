@@ -106,6 +106,8 @@ def classify_agent_turn_outcome(
     dispatch_started: bool = False,
     claimed_write_action_count: int = 0,
     action_outcomes: Iterable[dict[str, Any]] = (),
+    output_quality_flags: Iterable[str] = (),
+    medical_boundary_flags: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Return a stable, content-free outcome payload for ``done.meta``.
 
@@ -122,7 +124,8 @@ def classify_agent_turn_outcome(
         for receipt in receipts
         if isinstance(receipt, dict) and receipt.get("verified") is True
     )
-    actions = _public_action_outcomes(action_outcomes)
+    raw_actions = tuple(action for action in (action_outcomes or ()) if isinstance(action, dict))
+    actions = _public_action_outcomes(raw_actions)
 
     def outcome(
         *,
@@ -150,7 +153,11 @@ def classify_agent_turn_outcome(
     missing_claimed_receipt = (
         max(0, int(claimed_write_action_count or 0)) > verified_receipt_count
     )
-    if write_reconciliation_required or missing_claimed_receipt or (dispatch_started and failures):
+    if (
+        write_reconciliation_required or missing_claimed_receipt
+        or (dispatch_started and failures)
+        or any(action.get("status") == "reconciliation_required" for action in raw_actions)
+    ):
         return outcome(
             status="reconciliation_required",
             category="write_reconciliation_required",
@@ -164,6 +171,13 @@ def classify_agent_turn_outcome(
             reason_code="runtime_control_unavailable",
             retryable=False,
         )
+    failed_action = next((action for action in raw_actions if action.get("status") in {"failed", "rejected"}), None)
+    if failed_action is not None:
+        return outcome(
+            status="failed", category="action_not_executed",
+            reason_code=str(failed_action.get("reason_code") or "action_not_executed")[:240],
+            retryable=False,
+        )
     if confirmations:
         return outcome(
             status="waiting_for_user",
@@ -172,6 +186,13 @@ def classify_agent_turn_outcome(
             retryable=False,
             confirmation_required=True,
         )
+    for action in raw_actions:
+        if action.get("status") == "waiting_for_user":
+            return outcome(
+                status="waiting_for_user", category="confirmation_required",
+                reason_code=action.get("reason_code") or "confirmation_required",
+                retryable=False, confirmation_required=True,
+            )
     if blocks:
         return outcome(
             status="blocked",
@@ -193,6 +214,18 @@ def classify_agent_turn_outcome(
             category="action_not_executed",
             reason_code=reason,
             retryable=True,
+        )
+
+    if tuple(medical_boundary_flags):
+        return outcome(
+            status="blocked", category="medical_evidence_required",
+            reason_code="medical_evidence_required", retryable=False,
+        )
+
+    if "protocol_leak" in output_quality_flags:
+        return outcome(
+            status="failed", category="invalid_answer", reason_code="protocol_leak",
+            retryable=not bool(dispatch_started or verified_receipt_count),
         )
 
     if completion_status != "complete":

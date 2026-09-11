@@ -1463,6 +1463,28 @@ def _health_read_cancelled_by_user(text: str) -> bool:
     return health_read_cancelled(text)
 
 
+def _calendar_question_dimension(text: str) -> str | None:
+    """A direct dated question is a read; quoted/hypothetical speech is not.
+
+    This closed grammar recognizes only the supported daily domains and an
+    optional activity-suitability follow-up. It cannot authorize mixed reads.
+    """
+    match = re.fullmatch(
+        r"(?:我(?:的)?)?(?:昨晚|昨夜|昨天|昨日|前天|今天|今日|"
+        r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}(?:日|号)?|"
+        r"(?:本周|这周|上周)[一二三四五六日天])"
+        r"(?:晚上|夜里|夜间)?(?:的)?(?:我(?:的)?)?"
+        r"(?:(?P<sleep>睡眠|睡得|睡的|睡觉)(?:记录|数据|质量|情况)?|"
+        r"(?P<diet>饮食|餐食)(?:记录|数据|情况)?)"
+        r"(?:怎么样|怎样|如何)[?？。！!]*"
+        r"(?:[，,](?:今天)?(?:是否|能否)适合(?:锻炼|运动)[?？。！!]*)?",
+        _query_scope_text(text),
+    )
+    if match is None:
+        return None
+    return "sleep" if match.group("sleep") else "diet"
+
+
 def _has_explicit_read_request(text: str) -> bool:
     """Identify an explicit read speech act anywhere in a compound request."""
     return has_explicit_health_read_request(text)
@@ -2572,6 +2594,28 @@ def decide_tool_capability(
                 args,
                 receipt_required=True,
             )
+        if (
+            health_record_target_authorized
+            and args.get("record_type") == "supplement"
+        ):
+            data = args.get("data") if isinstance(args.get("data"), dict) else {}
+            requested_name = _effective_argument_value(
+                args,
+                data,
+                data_keys=("supplement_name", "name"),
+                arg_keys=("supplement_name", "name"),
+            )
+            if supplement_dosage_requires_clarification(
+                snapshot.envelope.text,
+                str(requested_name or ""),
+            ):
+                return _decision(
+                    "block",
+                    "supplement_dosage_requires_clarification",
+                    tool_name,
+                    args,
+                    receipt_required=True,
+                )
 
     # Procedure recipes are user-owned, exact-triggered, server-stored tool
     # sequences. Their AUTO/typed-only confirmation semantics are still applied
@@ -2638,60 +2682,43 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
-        # 睡眠跨午夜，单查“今天”会漏掉昨夜入睡段。把明确的“昨晚睡眠”
-        # 绑定为最近 2 个自然日的只读窗口；合成层再取最新一夜。该特例只
-        # 放行 sleep，不扩大其他尚不可精确表达的日历窗口。
-        last_night_sleep_read = bool(
-            proposed_dimension == "sleep"
-            and _LAST_NIGHT_SLEEP_WINDOW_RE.search(_query_scope_text(turn_text))
+        from app.services.agent_query_window import resolve_calendar_query_window
+
+        question_dimension = _calendar_question_dimension(turn_text)
+        expected_dimension = question_dimension or _query_text_known_dimension(turn_text)
+        # Ambiguous mixed-domain text must not inherit the classifier's one
+        # primary domain and silently authorize a narrower query.
+        calendar_window = resolve_calendar_query_window(
+            _query_scope_text(turn_text), snapshot.context.current_time,
+            expected_dimension or "", timezone_name=snapshot.context.timezone,
         )
+        requested_window = any(key in canonical_args for key in ("start_date", "end_date", "timezone"))
         if (
-            not last_night_sleep_read
+            calendar_window is None
             and medical_exam_args is None
-            and _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(_query_scope_text(turn_text))
+            and (requested_window or _UNSUPPORTED_CALENDAR_QUERY_WINDOW_RE.search(_query_scope_text(turn_text)))
         ):
-            return _decision(
-                "block",
-                "health_query_calendar_window_unsupported",
-                tool_name,
-                canonical_args,
-            )
+            return _decision("block", "health_query_calendar_window_unsupported", tool_name, canonical_args)
         if _query_contains_unresolved_reference(turn_text):
-            return _decision(
-                "block",
-                "health_query_semantics_unresolved",
-                tool_name,
-                canonical_args,
-            )
+            return _decision("block", "health_query_semantics_unresolved", tool_name, canonical_args)
         if illness_read_has_unowned_subject(_query_scope_text(turn_text)):
-            return _decision(
-                "block",
-                "health_query_subject_not_current_user",
-                tool_name,
-                canonical_args,
-            )
+            return _decision("block", "health_query_subject_not_current_user", tool_name, canonical_args)
         if _is_non_read_health_observation(turn_text):
+            return _decision("block", "health_query_not_requested", tool_name, canonical_args)
+        if calendar_window is not None:
+            if proposed_dimension != expected_dimension:
+                return _decision("block", "health_query_dimension_conflict", tool_name, canonical_args)
+            if not (_has_explicit_read_request(turn_text) or question_dimension == expected_dimension):
+                return _decision("block", "health_query_not_requested", tool_name, canonical_args)
+            if any(key in canonical_args and canonical_args[key] != calendar_window[key]
+                   for key in ("start_date", "end_date", "timezone")):
+                return _decision("block", "health_query_calendar_window_conflict", tool_name, canonical_args)
             return _decision(
-                "block",
-                "health_query_not_requested",
-                tool_name,
-                canonical_args,
-            )
-        if last_night_sleep_read:
-            canonical_args["days"] = 2
-            return _decision(
-                "allow",
-                "last_night_sleep_projected_to_two_day_window",
-                tool_name,
-                canonical_args,
+                "allow", "health_query_projected_to_calendar_window", tool_name,
+                {"dimension": expected_dimension, **calendar_window},
             )
         if medical_exam_args is not None and _has_explicit_read_request(turn_text):
-            return _decision(
-                "allow",
-                "health_query_projected_to_turn_semantics",
-                tool_name,
-                medical_exam_args,
-            )
+            return _decision("allow", "health_query_projected_to_turn_semantics", tool_name, medical_exam_args)
         explicit_record_type = _manage_list_turn_record_type(turn_text)
         scoped_metric_read = bool(
             _has_explicit_read_request(turn_text)
@@ -4620,6 +4647,41 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
         known = tuple(term for term in _SUPPLEMENT_TARGET_TERMS if term in clause)
         return tuple(dict.fromkeys(known))
     return ()
+
+
+def supplement_dosage_requires_clarification(message: str, name: str) -> bool:
+    """Narrow an authorized intake when the same item has conflicting amounts.
+
+    A missing dosage is not a conflict. Distinct units (e.g. capsule count and
+    strength) are not compared, and an ambiguous sibling never contaminates an
+    otherwise explicit item. This helper supplies no write authority.
+    """
+    from app.services.write_intent_scope import authorized_health_record_clauses
+
+    target = _normalize_entity_name(name)
+    if not target:
+        return False
+    amounts_by_unit: dict[str, set[str]] = {}
+    for clause in authorized_health_record_clauses(message):
+        clause_names = _named_item_targets(clause, "supplement")
+        for item in re.split(r"[、，,]|(?:以及|和|与|及)", clause):
+            item_names = _named_item_targets(item, "supplement")
+            if (
+                not item_names
+                and len(clause_names) == 1
+                and _supplement_item_is_current_metadata(item)
+            ):
+                item_names = clause_names
+            if (
+                len(item_names) != 1
+                or _normalize_entity_name(item_names[0]) != target
+            ):
+                continue
+            for match in _SUPPLEMENT_DOSE_RE.finditer(item):
+                canonical = normalize_supplement_dosage(match.group(0))
+                unit = re.sub(r"^[\d.]+", "", canonical)
+                amounts_by_unit.setdefault(unit, set()).add(canonical)
+    return any(len(amounts) > 1 for amounts in amounts_by_unit.values())
 
 
 def _supplement_item_is_non_authorizing(

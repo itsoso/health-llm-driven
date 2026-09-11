@@ -1179,6 +1179,25 @@ async def test_deterministic_portion_execution_signs_the_exact_internal_update()
     )
     assert "source" not in args["data"]
 
+    # Retrying the same operation must retain its original baseline header;
+    # a conflict is neither an unsigned retry nor a successful update receipt.
+    executor._api_put.return_value = 'Error: API 返回 409: 饮食记录已更新，请刷新后重试'
+    retry = await executor._exec_health_manage(
+        "http://internal.test/api/v1", {"Authorization": "Bearer test-token"}, args,
+    )
+    assert retry.startswith("Error:") and "409" in retry
+    assert "已更新晚餐" not in retry
+    assert executor._api_put.await_args.args[1][INTERNAL_DIET_PORTION_SIGNATURE_HEADER] == signature
+
+    # A damaged internal binding cannot silently turn into a public PUT.
+    executor._trusted_diet_portion_baselines.clear()
+    executor._api_put.reset_mock()
+    rejected = await executor._exec_health_manage(
+        "http://internal.test/api/v1", {"Authorization": "Bearer test-token"}, args,
+    )
+    assert "diet_portion_baseline_missing" in rejected
+    executor._api_put.assert_not_awaited()
+
 
 @pytest.mark.asyncio
 async def test_explicit_diet_correction_terminates_when_target_is_ambiguous():

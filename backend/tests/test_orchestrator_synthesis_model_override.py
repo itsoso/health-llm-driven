@@ -57,12 +57,13 @@ def test_override_not_applied_without_explicit_flag(monkeypatch):
         raising=False,
     )
     import app.services.llm as _llm
-    monkeypatch.setattr(
-        _llm, "get_llm_provider",
-        lambda: calls.setdefault("default", True) or _fake_provider(),
-        raising=False,
-    )
-    asyncio.run(orch._call_llm("sys", "user"))  # 默认 allow_synthesis_override=False
+    def fake_default():
+        calls["default"] = True
+        return _fake_provider()
+
+    monkeypatch.setattr(_llm, "get_llm_provider", fake_default, raising=False)
+    assert asyncio.run(orch._call_llm("sys", "user")) == "综合报告"
+    assert calls["default"] is True
     assert "model_id" not in calls, "未开显式开关(Siri/仲裁) → 即使 settings 非空也不覆盖"
 
 
