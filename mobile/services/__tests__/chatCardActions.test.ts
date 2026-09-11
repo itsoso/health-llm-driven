@@ -585,6 +585,32 @@ describe('dispatchChatCardAction', () => {
     );
   });
 
+  it.each([
+    Array.from({ length: 10 }, (_, index) => `蔬菜${index + 1} 1份`),
+    `米饭 1碗 ${'搭配清炒时蔬少油少盐 '.repeat(60)}末项番茄`,
+    [`米饭 1碗 ${'搭配清炒时蔬少油少盐 '.repeat(60)}末项番茄`, '豆腐 1份'],
+  ].map(foodItems => ({ foodItems })))('posts complete food descriptions without silent truncation (%#)', async ({ foodItems }) => {
+    mockApiPost.mockResolvedValueOnce({ data: { id: 77 } });
+    await dispatchChatCardAction({
+      label: '确认记录', action: 'diet_record.create', endpoint: '/diet/records',
+      requires_manual_confirm: true, ...DIET_WRITE_POLICY,
+      payload: { record: { food_items: foodItems, meal_type: 'lunch', calories: 600, protein: 30, carbs: 60, fat: 20 } },
+    }, 'complete-food-test');
+    expect(mockApiPost).toHaveBeenCalledTimes(1);
+    expect(mockApiPost).toHaveBeenCalledWith('/diet/records', expect.objectContaining({
+      food_items: Array.isArray(foodItems) ? foodItems.join(' + ') : foodItems,
+    }), { headers: { 'Idempotency-Key': 'complete-food-test' } });
+  });
+
+  it('checks forbidden intake signals beyond the former 500-character cutoff', async () => {
+    await expect(dispatchChatCardAction({
+      label: '确认记录', action: 'diet_record.create', endpoint: '/diet/records',
+      requires_manual_confirm: true, ...DIET_WRITE_POLICY,
+      payload: { record: { food_items: `${'米饭和时蔬 '.repeat(110)}阿司匹林 1片`, meal_type: 'lunch' } },
+    })).rejects.toThrow('invalid_diet_food_items_non_diet');
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
   it('preserves an owner-bound photo draft when a food portion uses 片', async () => {
     const photoDraftToken = 'photo-draft-token-1234567890';
     const foodItems = '小米粥 约1碗 + 虾仁炒时蔬 约1小碗 + 煎蛋 1个 + 玉米 约1/4根 + 胡萝卜 约3片 + 南瓜 约2块';

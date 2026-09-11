@@ -580,16 +580,23 @@ function readFoodItems(
   raw: unknown,
   options: { ownerBoundPhotoDraft?: boolean } = {},
 ): string {
+  // Food descriptions are persisted data, not a bounded UI label. Preserve the
+  // full text so both the intake guard and the API see the same complete meal.
+  const foodText = (value: unknown): string | undefined => (
+    typeof value === 'string' && value.trim() ? value.trim() : undefined
+  );
   let foodItems: string;
   if (Array.isArray(raw)) {
-    const items = raw.map(optionalText).filter((item): item is string => Boolean(item));
+    const items = raw.map(foodText).filter((item): item is string => Boolean(item));
     if (items.length > 0) {
-      foodItems = items.slice(0, 8).join(' + ');
+      foodItems = items.join(' + ');
       assertDietFoodItemsAllowed(foodItems, options);
       return foodItems;
     }
   }
-  foodItems = readRequiredText(raw, 'invalid_diet_food_items');
+  const value = foodText(raw);
+  if (!value) throw new Error('invalid_diet_food_items');
+  foodItems = value;
   assertDietFoodItemsAllowed(foodItems, options);
   return foodItems;
 }
