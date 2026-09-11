@@ -1,11 +1,7 @@
-"""思考流可视化: qwen reasoning_content 增量 → 节流的 thinking status 事件填死气。
-
-零质量风险的感知延迟优化(纯 UI, 答案 byte-identical)。合成/答案轮首个可见 token 之前
-有 ~20-34s 纯 reasoning 死气(探针 scripts/probe_qwen_thinking_budget.py)。executor 把
-provider 产出的 {"type":"reasoning",...} 增量节流成既有 thinking status 事件的 detail。
+"""完整正文检查期间，不通过 thinking status 旁路暴露模型内部推理。
 
 锁死不变量:
-  (a) reasoning 增量 → 节流的 stage='thinking' + snippet detail, **首个可见 token 后停发**;
+  (a) reasoning 增量在缓冲期间不进入 stage='thinking' 的 detail;
   (b) reasoning 文本绝不进 token 流 / full_reply / 持久化 assistant 消息内容;
   (c) 无 reasoning 的模型 → 零 reasoning-derived 事件(byte-identical 路径);
   (d) 长得像工具结果 JSON 的 reasoning 片段被 _streaming_leak_forming 跳过。
@@ -65,10 +61,10 @@ def _tokens(events):
 
 
 @pytest.mark.asyncio
-async def test_reasoning_throttled_into_thinking_status_and_absent_from_answer(
+async def test_buffered_reasoning_is_absent_from_status_and_answer(
     db, auth_user_and_headers, monkeypatch
 ):
-    """(a) + (b): reasoning → thinking status(首 token 前停),且绝不进答案/持久化。"""
+    """(a) + (b): 正文释放前后，内部推理均不得经状态、答案或持久化旁路暴露。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire_min(executor, monkeypatch, with_tools=False)
@@ -89,10 +85,7 @@ async def test_reasoning_throttled_into_thinking_status_and_absent_from_answer(
     events = await _run(executor, "分析我的状态", user_id=user.id)
 
     details = _thinking_details(events)
-    # (a) reasoning 片段以 thinking status 出现,首 token 后的 late reasoning 不出现。
-    assert any("HRV" in d for d in details)
-    assert any("睡眠结构" in d for d in details)
-    assert not any("surface" in d for d in details), "首个可见 token 后 reasoning 必须停发"
+    assert details == [], "raw reasoning must not bypass the response boundary"
 
     # (b) 答案 token 流 = 纯 content,绝不含 reasoning 文本。
     tokens = _tokens(events)
@@ -115,10 +108,10 @@ async def test_reasoning_throttled_into_thinking_status_and_absent_from_answer(
 
 
 @pytest.mark.asyncio
-async def test_reasoning_status_is_throttled_by_char_budget(
+async def test_long_reasoning_cannot_bypass_response_buffering(
     db, auth_user_and_headers, monkeypatch
 ):
-    """(a) 节流: 默认 120 字预算下,300 字 reasoning 分 10 个 30 字 delta → 恰 2 条 status。"""
+    """即使累积超过旧节流预算，也不得释放未检查的推理文本。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire_min(executor, monkeypatch, with_tools=False)
@@ -134,9 +127,8 @@ async def test_reasoning_status_is_throttled_by_char_budget(
     monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
     events = await _run(executor, "分析", user_id=user.id)
 
-    details = [d for d in _thinking_details(events) if "分析" in d]
-    # 累积到 120 / 240 各发一次,300 收尾差 60<120 不发 → 恰 2 条。
-    assert len(details) == 2
+    assert _thinking_details(events) == []
+    assert _tokens(events) == "结论。"
 
 
 @pytest.mark.asyncio
