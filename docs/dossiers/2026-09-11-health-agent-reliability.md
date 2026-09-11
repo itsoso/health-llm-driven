@@ -4,12 +4,12 @@
 |---|---|
 | slug | health-agent-reliability |
 | 创建日期 | 2026-09-11 |
-| 当前阶段 | G5 阻断，候选 CI 通过，服务器 GitHub 连接持续超时 |
+| 当前阶段 | G5 阻断，源码准备超时进入 NEEDS_OPERATOR，禁止重跑 |
 | 状态 | parked |
 | 负责 | Codex |
 | 反馈环 | 合成回放、PostgreSQL、Mobile、真实模型与发布验证 |
 
-- 状态：代码已提交并推送，最终候选 CI 与工程安全复审通过；发布在只读服务器就绪检查失败，后端与 OTA 均未上线。
+- 状态：代码已提交并推送，最终候选 CI 与工程安全复审通过；续跑已通过服务器就绪检查，但正式源码准备超时进入 NEEDS_OPERATOR，后端与 OTA 均未上线。
 - 授权：用户先授权“按照计划执行”，随后明确要求提交和部署已修复代码。本轮 commit、必要 push 与部署已获授权，执行仍须通过对应 Gate；未授权修改生产历史健康记录。
 - 计划：`docs/plans/2026-09-11-health-agent-reliability-improvement.md`
 - 规格：`docs/specs/active/2026-09-11-health-agent-reliability.md`
@@ -31,7 +31,7 @@
 | T7 | 快速记录只保留必要的上一问；确定性数据卡片可先显示，模型正文审后释放 | 部分完成；普通非快路径背景注入尚未全面收敛，无同请求性能提升结论 |
 | T8 | v2 绘制指标分流；匿名任务快照、已有元数据导出与评测 CLI；owner/turn/run 严格匹配，成本缺失保留 unknown | 本地工具完成；部署 revision/客户端版本绑定、别名映射、自动采集和人工任务质量标注尚缺 |
 | T9 | 预算/授权阻断不切换供应方绕行，错误脱敏，日报保留确定性摘要与显式失败/hold 状态 | 定向回归通过；外部供应方真实恢复未验证 |
-| T10 | 发布推进中 | 已获提交部署授权，隔离真实模型通过；完整 CI、模拟器路径与上线后观察待完成，医学审阅另行补齐 |
+| T10 | 发布受阻 | 已获提交部署授权，隔离真实模型与候选 CI 通过；源码准备超时需受审处置，模拟器路径与上线后观察待完成，医学审阅另行补齐 |
 
 ## 新鲜验证
 
@@ -85,7 +85,18 @@ G5：**BLOCK**。受审发布 validate `34581923448` 成功；backend 发布 `34
 
 ## 交接断点
 
-下一步先恢复服务器到 canonical GitHub 的稳定 Git 连接，再按受审流程为当前 main 的精确绿色 SHA 配置新短期授权。7498ab01a 的旧授权已撤销，不能直接重用旧身份或重置审计。仍需完成 T7 非快速背景策略、T8 真实版本/别名/标注与持续采集、完整回归和模拟器验收；不得把本次部分本地实现标成 T0–T10 全量交付。
+最新断点以下方续跑记录为准：5fe8c3d83 的授权已经消费并进入 NEEDS_OPERATOR，不能重新 dispatch、重置标记、直接撤权轮换，或因没有业务 lease 就推断可退役。先完成这一类源码下载超时的受审取证与处置方案，再恢复发布。仍需完成 T7 非快速背景策略、T8 真实版本/别名/标注与持续采集、模拟器验收；不得把本次部分实现标成 T0–T10 全量交付。
+
+## 发布续跑（2026-09-11）
+
+- 候选 `5fe8c3d83f526e6b529bf1684b0ff956f6ede4ff` 的 CI `34582936629` 成功。与真实模型及固定独立复审提交相比仅测试和文档不同，应用及 eval 字节未变；原报告保留原 SHA 与时间，关联证据为私有 `5fe8c3d83/source-equivalence.json`。
+- validate `34586153621` 成功；backend workflow `34586693554` 的 preflight 和服务器 readiness 均成功，backend 最终失败。没有执行原生构建或 TestFlight。
+- 网络诊断发现系统 Git 2.34.1 未采用诊断参数 `http.curloptResolve`，实际目标须从连接证据核对。经公共 DNS 和 GitHub 官方地址清单校验的节点，实际 `ls-remote` 连续三次通过，且 root canonical staging 的精确 SHA 下载成功；这些小规模请求通过仍未证明正式 clone 稳定。
+- 受审 bootstrap 已安全退役 7498ab01a 并安装候选专用六小时身份。正式 prepare 的前两次 clone 以 exit 128 低速超时失败，最后一次触发执行器的有界超时；`completed.json` 为 **NEEDS_OPERATOR**，原始日志为五行。不能将其改记 PREPARATION_FAILED，也不满足现有历史四行初始 clone 失败恢复入口。
+- 新鲜只读取证：`prepared.json`、`deployment-started.json` 与 native 标记均不存在，业务 lease 不存在，没有观察到残余发布/Git 进程；这仅是取证，不解除终态阻断。线上仍为 `5ddd9402d22c8124bc84b578662ea87c1f6e432c`，backend、worker、beat 均 active，未迁移或切换业务服务。
+- 单条 hosts 临时调整已经精确恢复原文件，摘要 `b3bc3f05707892989a6ec855943cdf9718538a060fc82c4b050dbe48662f4114`。本次短期身份和失败现场按 NEEDS_OPERATOR 规则保留供调查，未重置或轮换；这不同于上一轮未消费身份已清理的状态。
+- OTA source guard 通过，Mobile/shared 摘要未变；按后端健康门前置规则，**OTA 未发布**。现有 1.3.1 模拟器仍不能证明 1.3.3 更新验收。
+- 私有证据：`/Users/liqiuhua/.codex/artifacts/reva-release-20260911/5fe8c3d83/failed-preparation-evidence.json`、`backend-workflow-result.json`、`network-repair.json`。网络记录中的调整摘要是过程中间态，最终恢复结果见本节与收尾回执。
 
 ## 私有证据归档
 
@@ -101,4 +112,4 @@ G5：**BLOCK**。受审发布 validate `34581923448` 成功；backend 发布 `34
 
 ## G3 · 当前验收裁决
 
-裁决：PASS（工程范围）。最终候选 CI、源码等价的真实模型证据与独立复审具备；医学、完整产品体验不据此宣称通过。当前 parked 的原因是 G5 服务器 Git 网络阻断，不代表已上线。
+裁决：PASS（工程范围）。最终候选 CI、源码等价的真实模型证据与独立复审具备；医学、完整产品体验不据此宣称通过。当前 parked 的原因是 G5 源码准备超时的 NEEDS_OPERATOR 终态，不代表已上线。
