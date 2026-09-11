@@ -5957,7 +5957,7 @@ _DIET_NON_FOOD_FIELD_RE = re.compile(
 )
 _DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
     r"(?:没吃那么多|没有吃那么多|没全吃|没有全吃|没吃完|没有吃完|"
-    r"实际.{0,8}只吃|只吃了?|只有吃了?)",
+    r"实际.{0,8}只吃|只吃了?|只有吃了?|我吃了)",
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
@@ -6007,6 +6007,7 @@ _DIET_PARTIAL_CORRECTION_RESIDUAL_NEGATION_RE = re.compile(
 _DIET_PARTIAL_FRACTIONS = {
     "一半": 0.5,
     "半份": 0.5,
+    "二分之一": 0.5,
     "三分之一": 1 / 3,
     "三分之二": 2 / 3,
     "四分之一": 0.25,
@@ -6017,7 +6018,7 @@ _DIET_PARTIAL_FRACTIONS = {
     "五分之四": 0.8,
 }
 _DIET_FRACTION_TOKEN_RE = re.compile(
-    r"三分之一|三分之二|四分之一|四分之三|"
+    r"二分之一|三分之一|三分之二|四分之一|四分之三|"
     r"五分之一|五分之二|五分之三|五分之四|一半|半份|"
     r"(?<![\d.+-])[+-]?\d+\s*/\s*[+-]?\d+(?![\d.])",
     re.I,
@@ -6064,7 +6065,7 @@ _DIET_MEASUREMENT_SUFFIX_RE = re.compile(
 )
 _CONTEXTUAL_MEAL_PORTION_RE = re.compile(
     r"(?:吃了|吃掉了|实际吃了|只吃了?)\s*"
-    r"(?P<fraction>三分之一|三分之二|四分之一|四分之三|"
+    r"(?P<fraction>二分之一|三分之一|三分之二|四分之一|四分之三|"
     r"五分之一|五分之二|五分之三|五分之四|一半|半份|"
     r"(?<![\d.+-])[+-]?\d+\s*/\s*[+-]?\d+(?![\d.]))",
     re.I,
@@ -6112,6 +6113,21 @@ _DIET_FACTUAL_CORRECTION_SHAPE_RE = re.compile(
     r"(?:实际(?:上)?(?:我)?\s*只吃(?:了)?|只吃了|只有吃了)\s*"
     rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
     rf"(?:{_DIET_FACTUAL_WRITE_SUFFIX_PATTERN})?\s*[。！!]*$",
+    re.I,
+)
+# A spoken correction can put the consumed fraction before the named meal.
+# Diner count is descriptive context, never another divisor. Full-match only:
+# questions, conflicting portions, item-level ratios and cancellation still fail closed.
+_DIET_FACTUAL_CONSUMPTION_FIRST_CORRECTION_RE = re.compile(
+    rf"^(?:{_DIET_FACTUAL_DATE_PATTERN}\s*)?我(?:只)?吃了\s*"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}\s*[,，]\s*"
+    r"(?:(?:其实|实际|原来)是\s*(?:[1-9]\d?|[一二两三四五六七八九十]{1,3})"
+    r"人份\s*[,，]\s*)?"
+    r"(?:(?:请|麻烦)\s*)?(?:帮我\s*)?(?:重新\s*)?"
+    r"(?:修改|更正|修正|更新|调整)\s*"
+    rf"{_DIET_FACTUAL_MEAL_PATTERN}(?:的)?\s*"
+    r"(?:记录|热量(?:[和与及][份分]量)?|[份分]量(?:[和与及]热量)?)"
+    r"\s*[。！!]*$",
     re.I,
 )
 _DIET_FACTUAL_PHOTO_SUBJECT_PATTERN = (
@@ -6219,6 +6235,7 @@ def _meal_fraction_utterance_has_factual_shape(
         return bool(_DIET_FACTUAL_LATEST_CORRECTION_SHAPE_RE.fullmatch(marked))
     return any(pattern.fullmatch(marked) for pattern in (
         _DIET_FACTUAL_CORRECTION_SHAPE_RE,
+        _DIET_FACTUAL_CONSUMPTION_FIRST_CORRECTION_RE,
         _DIET_FACTUAL_PHOTO_SHAPE_RE,
         _DIET_FACTUAL_BARE_PHOTO_SHAPE_RE,
     ))

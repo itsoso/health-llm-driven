@@ -936,7 +936,6 @@ async def test_partial_meal_correction_replaces_the_previous_nutrition_fraction(
         "晚餐只吃了 50％ 修改记录",
         "晚餐只吃了 0.5 修改记录",
         "晚餐只吃了 ½ 修改记录",
-        "晚餐只吃了 二分之一 修改记录",
         "晚餐只吃一半好吗",
         "晚餐是不是只吃一半",
         "晚餐不是只吃了1/2，修改记录",
