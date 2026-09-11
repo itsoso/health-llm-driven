@@ -199,4 +199,7 @@ async def test_data_insufficiency_is_buffered_until_recovery_answer(db, auth_use
     )
     assert fallback_calls == 1
     assert "目前没有足够数据" not in rendered
-    assert rendered == "我还缺少最近 7 天的睡眠记录，请提供最近一晚的入睡和起床时间。"
+    assert rendered == (
+        "信息来源：用户陈述、模型推断。\n"
+        "我还缺少最近 7 天的睡眠记录，请提供最近一晚的入睡和起床时间。"
+    )

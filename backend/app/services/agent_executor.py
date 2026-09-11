@@ -15756,6 +15756,7 @@ class AgentExecutor:
         passthrough_synthesis_round_ms: Optional[int] = None  # shadow: 二次合成轮壁钟(=可省时延)
         passthrough_taken = False                      # on: 本回合是否真短路了二次合成
         deterministic_query_mode = _resolve_deterministic_query_reply_mode()
+        deterministic_query_text: Optional[str] = None
         deterministic_query_eligible = False
         deterministic_query_candidate_chars = 0
         # 后置校验: record 意图的 turn 必须真的执行了写工具。0 次 = 模型可能只是
@@ -18626,6 +18627,11 @@ class AgentExecutor:
             )
         medical_boundary = enforce_medical_evidence_boundaries(
             full_reply,
+            model_generated=not (
+                deterministic_query_mode == "on"
+                and deterministic_query_text
+                and full_reply == deterministic_query_text
+            ),
             evidence_sources=sources_used,
             has_clinician_instruction=(
                 clinician_turn_decision.kind in {

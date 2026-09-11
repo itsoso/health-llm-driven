@@ -225,6 +225,7 @@ async def test_flag_on_batch_query_is_deterministic_single_round(
         ("health_query_batch", json.dumps(batch_args, ensure_ascii=False)),
     ]
     assert _tokens(events) == (
+        "信息来源：工具读取结果。\n"
         "近7天 HRV 平均值 58 ms。\n\n"
         "近7天 睡眠评分 平均值 76 分。"
     )

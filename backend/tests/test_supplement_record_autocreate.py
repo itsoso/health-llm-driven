@@ -667,10 +667,12 @@ async def test_registered_supplement_requires_strict_tap_receipt(db, tap_payload
 
 
 @pytest.mark.asyncio
-async def test_colon_delimited_supplement_list_grounds_each_exact_name(db):
+@pytest.mark.parametrize("ambiguous_last", [False, True])
+async def test_colon_delimited_supplement_list_grounds_each_exact_name(db, ambiguous_last):
     ex = _executor(db)
     ex._current_turn_user_message = (
-        "记录补剂：一粒营养素甲、一粒营养素乙和一粒两粒营养素丙。"
+        "记录补剂：一粒营养素甲、一粒营养素乙和"
+        + ("一粒两粒" if ambiguous_last else "一粒") + "营养素丙。"
     )
     definitions = [
         {"id": 41, "name": "营养素甲", "is_active": True},
@@ -704,9 +706,12 @@ async def test_colon_delimited_supplement_list_grounds_each_exact_name(db):
                     "data": {"supplement_name": name},
                 },
             )
-            assert json.loads(result)["record_id"] == 1000 + tapped_ids[-1]
+            if ambiguous_last and name == "营养素丙":
+                assert json.loads(result)["error_code"] == "supplement_dosage_requires_clarification"
+            else:
+                assert json.loads(result)["record_id"] == 1000 + tapped_ids[-1]
 
-    assert tapped_ids == [41, 42, 43]
+    assert tapped_ids == ([41, 42] if ambiguous_last else [41, 42, 43])
     create.assert_not_awaited()
 
 

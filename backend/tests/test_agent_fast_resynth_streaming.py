@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-"""A3: fast 工具轮直接答文本被丢弃后, 强模型重合成走**流式**路径 (tokens 逐 delta
-下发), 消除 ttft≈total 空洞 (生产 turn 5960 ttft 39.5s ≈ total)。
+"""Fast 直接正文丢弃后，流式收集强模型重合成，再经完整正文检查释放。
 
 不变量:
   1. fast 模型正文从未下发给用户;
-  2. 强模型重合成的答案**分多个 token 事件流式**到达 (证明非一次性整块 emit);
-  3. _tool_round_fast_routed 在合成轮已重置 → 强模型 tokens 不被抑制。
+  2. 强模型仍使用流式供应方，但用户 token 在生成完成前不得释放;
+  3. 强模型答案完整释放，不沿用 fast 工具轮的正文抑制。
 """
 import json
 
@@ -39,13 +38,14 @@ def _wire(executor, monkeypatch, provider_factory, *, user_provider):
 
 
 @pytest.mark.asyncio
-async def test_fast_direct_answer_resynthesis_streams_token_by_token(
+async def test_fast_direct_answer_resynthesis_buffers_before_release(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
 
     strong_deltas = ["综合", "分析", "结论"]
+    state = {"strong_finished": False}
 
     class FakeProvider:
         def __init__(self, model_id):
@@ -60,20 +60,22 @@ async def test_fast_direct_answer_resynthesis_streams_token_by_token(
             # 强模型重合成: 多 delta 流式。
             for d in strong_deltas:
                 yield {"type": "content", "text": d}
+            state["strong_finished"] = True
             yield {"type": "finish", "finish_reason": "stop"}
 
         async def chat(self, **kwargs):
-            # 若走到非流式 (不该), 整块返回 —— 测试会因 token 事件数=1 而失败, 暴露回退。
-            return {"content": "".join(strong_deltas), "finish_reason": "stop"}
+            raise AssertionError("resynthesis must consume the streaming provider")
 
     _wire(executor, monkeypatch, lambda mid: FakeProvider(mid),
           user_provider=FakeProvider("qwen3.7-max"))
 
-    events = [
-        e async for e in executor.run_stream(
-            user_id=user.id, message="我胃还有点痛，怎么办？", user_auth_token="test-token"
-        )
-    ]
+    events = []
+    async for event in executor.run_stream(
+        user_id=user.id, message="我胃还有点痛，怎么办？", user_auth_token="test-token"
+    ):
+        if event.get("event") == "token" and event["data"].get("content"):
+            assert state["strong_finished"], "unreviewed partial prose leaked"
+        events.append(event)
     token_events = [e for e in events if e.get("event") == "token" and e["data"].get("content")]
     rendered = "".join(e["data"]["content"] for e in token_events)
 
@@ -82,7 +84,5 @@ async def test_fast_direct_answer_resynthesis_streams_token_by_token(
     assert "must not reach user" not in rendered
     # (2) 强模型答案完整
     assert rendered == "综合分析结论"
-    # (3) 流式: 3 个 delta → >=2 个 token 事件 (整块 emit 只会有 1 个)
-    assert len(token_events) >= 2, [e["data"]["content"] for e in token_events]
     done = events[-1]["data"]
     assert "fast_tool_round_direct_answer_resynthesized" in done["fallback_reasons"]

@@ -69,8 +69,13 @@ def test_single_query_tool_description_does_not_claim_calendar_days_aliases():
     ]
 
     assert '问"昨天" → days=1' not in description
-    assert "不能表示昨天" in description
-    assert "不能表达其他昨天/上周/去年" in days_description
+    assert "包含今天的最近 N 个自然日" in description
+    assert "diet/sleep" in description
+    assert "由服务端从当前请求绑定" in description
+    assert "其他维度或含糊日历区间仍不支持" in description
+    assert "不能自行扩大为最近 N 天" in description
+    assert "包含今天的最近 N 个自然日" in days_description
+    assert "明确日历日期由服务端独立绑定，不能用 days 冒充" in days_description
 
 
 def test_query_schema_describes_only_rolling_upload_and_batch_windows():

@@ -63,3 +63,11 @@ def test_verified_clinician_instruction_and_receipt_keep_claim_but_label_source(
     assert result.flagged is False
     assert text in result.text
     assert "医生确认指示" in result.text
+def test_deterministic_source_label_does_not_exempt_unsafe_advice():
+    result = enforce_medical_evidence_boundaries(
+        "建议每天服用鱼油2粒。", model_generated=False,
+    )
+    assert result.flagged
+    assert "unverified_dose_action" in result.violations
+    assert "建议每天服用鱼油2粒" not in result.text
+    assert result.text.startswith("信息来源：工具读取结果。")

@@ -355,6 +355,7 @@ def enforce_medical_evidence_boundaries(
     has_clinician_instruction: bool = False,
     verified_write_receipt: bool = False,
     trusted_clinician_instructions: Sequence[str] = (),
+    model_generated: bool = True,
 ) -> GuidanceValidationResult:
     """Withhold known unsupported advice, without claiming medical verification.
 
@@ -383,10 +384,12 @@ def enforce_medical_evidence_boundaries(
             sentence = _SCHEDULE_CLAIM.sub("[尚无验证写入回执]", sentence)
         out_parts.append(sentence)
     out = "".join(out_parts)
-    labels = ["用户陈述"]
+    # Provenance affects the label only; deterministic output keeps every check.
+    labels = ["用户陈述"] if model_generated else ["工具读取结果"]
     if evidence_sources:
         labels.append("已检索证据（未逐句核验）")
-    labels.append("模型推断")
+    if model_generated:
+        labels.append("模型推断")
     if relayed_instruction:
         labels.append("医生确认指示")
     boundary = "信息来源：" + "、".join(labels) + "。"
