@@ -45,6 +45,11 @@ LEGACY_RETIREMENTS = {
 LEGACY_CLONE_EXECUTORS = {
     "9625c8eb15032a5e82cb5aed5a8617723ce1dd57eb0922933055fac70ed2abd7",
 }
+# Audited phase-aware executor: fixed Git only before durable DEPLOYING intent.
+# This is an implementation profile, never permission to retry a consumed SHA.
+PHASE_CLONE_TIMEOUT_EXECUTORS = {
+    "cae7d46a45778db0bacd9c86f8f31b15b289d1f030ad3a50d8d947d330af313f",
+}
 PROC = Path("/proc")
 
 
@@ -721,6 +726,68 @@ def _legacy_clone_evidence(sha):
     return {"executor_sha256": digest, "manifest": _preparation_manifest(workspace)}
 
 
+def _recoverable_clone_evidence(sha):
+    source = canonical_source(sha)
+    digest = hashlib.sha256((source / "scripts/trusted_release_server.py").read_bytes()).hexdigest()
+    if digest not in PHASE_CLONE_TIMEOUT_EXECUTORS:
+        return _legacy_clone_evidence(sha)
+    workspace = STATE / sha
+    secure(workspace)
+    required = {"started.json", "preparation-started.json", "completed.json",
+                "preparation.log", "home", "source"}
+    if (not workspace.is_dir() or stat.S_IMODE(workspace.lstat().st_mode) != 0o700
+            or {p.name for p in workspace.iterdir()} != required):
+        raise BootstrapError("phase clone-only inventory unproven")
+    for name, state in (("started.json", "STARTED"), ("preparation-started.json", "PREPARING"),
+                        ("completed.json", "NEEDS_OPERATOR")):
+        expected = {"sha": sha, "state": state}
+        if name == "preparation-started.json":
+            expected["executor_sha256"] = digest
+        secure(workspace / name, private=True)
+        if _read_json(workspace / name) != expected:
+            raise BootstrapError("phase clone receipt differs")
+    for name in ("home", "source", "source/.git"):
+        path = workspace / name
+        secure(path)
+        if (path.is_symlink() or not path.is_dir()
+                or stat.S_IMODE(path.lstat().st_mode) != 0o700):
+            raise BootstrapError("phase clone directory is not private")
+    if (list((workspace / "home").iterdir())
+            or {p.name for p in (workspace / "source").iterdir()} != {".git"}):
+        raise BootstrapError("phase clone contains checkout or HOME content")
+    log = workspace / "preparation.log"
+    secure(log, private=True)
+    clone = f"Cloning into '{workspace}/source'...\n"
+    failure = (f"fatal: unable to access '{ORIGIN}/': "
+               "Operation too slow. Less than 1024 bytes/sec transferred the last 30 seconds\n")
+    expected_log = ((clone + failure) * 2 + clone).encode()
+    if log.stat().st_size != len(expected_log) or log.read_bytes() != expected_log:
+        raise BootstrapError("phase clone timeout transcript unproven")
+    # Never run Git/imports in this partial tree. Hash every retained object,
+    # including .git, with the original ownership/link/size/race checks.
+    return {"profile": "phase-clone-timeout", "executor_sha256": digest,
+            "manifest": _preparation_manifest(workspace)}
+
+
+def _recovery_build_identity(sha, workspace):
+    path = STATE / sha / "build.lock"
+    if workspace.get("profile") == "phase-clone-timeout":
+        if os.path.lexists(path):
+            raise BootstrapError("absent historical build lock appeared")
+        return None
+    return _recovery_file_identity(path)
+
+
+def _assert_recovery_build_lock(sha, fd, workspace):
+    if workspace.get("profile") == "phase-clone-timeout":
+        if fd is not None or _recovery_build_identity(sha, workspace) is not None:
+            raise BootstrapError("phase clone build lock must remain absent")
+    elif fd is None:
+        raise BootstrapError("original build lock required")
+    else:
+        _assert_original_lock(STATE / sha / "build.lock", fd)
+
+
 def _recovery_process_proof():
     # A detached Git HTTP/index-pack helper need not name the release in argv.
     # Inspect cwd and environment too; never output process data or credentials.
@@ -814,7 +881,7 @@ def _recovery_snapshot(old_sha, sha, production_sha, source):
         raise BootstrapError("business lease blocks historical recovery")
     _assert_idle()
     _recovery_process_proof()
-    workspace = _legacy_clone_evidence(old_sha)
+    workspace = _recoverable_clone_evidence(old_sha)
     config = _inventory(CONFIG, {"known_hosts", "loopback.conf", "authorized-release.json",
                                  "loopback.pub", "cloud.pub", "loopback.key"})
     library = _inventory(INSTALLED.parent, {INSTALLED.name})
@@ -839,13 +906,13 @@ def _recovery_snapshot(old_sha, sha, production_sha, source):
     toolchain = _recovery_toolchain_proof()
     _assert_idle()
     _recovery_process_proof()
-    if workspace != _legacy_clone_evidence(old_sha) or os.path.lexists(BUSINESS_LEASE):
+    if workspace != _recoverable_clone_evidence(old_sha) or os.path.lexists(BUSINESS_LEASE):
         raise BootstrapError("historical evidence changed during proof")
     return {"old_sha": old_sha, "recovery_sha": sha, "production_sha": production_sha,
             "workspace": workspace, "config": config, "library": library,
             "authorized": _recovery_file_identity(AUTHORIZED),
             "locks": {"launcher": _recovery_file_identity(STATE / "launcher.lock"),
-                      "build": _recovery_file_identity(STATE / old_sha / "build.lock")},
+                      "build": _recovery_build_identity(old_sha, workspace)},
             "toolchain": toolchain}
 
 
@@ -866,8 +933,9 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         build_fd = _acquire_existing_build_lock(old_sha)
-        if build_fd is None:
-            raise BootstrapError("original build lock required")
+        # Missing locks are accepted only by the audited backend-only profile.
+        # Do not create one: its durable absence is part of every later proof.
+        _assert_recovery_build_lock(old_sha, build_fd, _recoverable_clone_evidence(old_sha))
         record = STATE / "recoveries" / old_sha
         if os.path.lexists(record):
             raise BootstrapError("historical recovery already attempted; no retry")
@@ -878,7 +946,7 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
         evidence = _recovery_snapshot(old_sha, sha, production_sha, source)
         digest = _digest_json(evidence)
         _assert_original_lock(lock, fd)
-        _assert_original_lock(STATE / old_sha / "build.lock", build_fd)
+        _assert_recovery_build_lock(old_sha, build_fd, evidence["workspace"])
         if evidence_sha256 is None:
             return {"sha": old_sha, "state": "RECOVERABLE_PREPARATION_FAILURE", "evidence_sha256": digest}
         if digest != evidence_sha256:
@@ -898,7 +966,7 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
         if _recovery_snapshot(old_sha, sha, production_sha, source) != evidence:
             raise BootstrapError("recovery evidence drift after intent; retain operation")
         _assert_original_lock(lock, fd)
-        _assert_original_lock(STATE / old_sha / "build.lock", build_fd)
+        _assert_recovery_build_lock(old_sha, build_fd, evidence["workspace"])
         # This separate operator action only revokes the exact two old keys.
         # It never calls deploy, rewrites old receipts, or creates a new identity.
         policy = _read_json(CONFIG / "authorized-release.json")
@@ -913,13 +981,13 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
         (CONFIG / "loopback.key").unlink()
         _sync_parent(CONFIG / "loopback.key")
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
-        if _legacy_clone_evidence(old_sha) != evidence["workspace"]:
+        if _recoverable_clone_evidence(old_sha) != evidence["workspace"]:
             raise BootstrapError("recovery changed original evidence")
         _assert_idle()
         _recovery_process_proof()
         _recovery_production_proof(production_sha, source)
         _assert_original_lock(lock, fd)
-        _assert_original_lock(STATE / old_sha / "build.lock", build_fd)
+        _assert_recovery_build_lock(old_sha, build_fd, evidence["workspace"])
         if os.path.lexists(BUSINESS_LEASE):
             raise BootstrapError("business lease appeared during recovery")
         _write(record / "completed.json", json.dumps({"old_sha": old_sha,
@@ -946,7 +1014,7 @@ def _recovered_preparation_evidence(sha, *, recovery_receipt=None):
             or completed["intent_sha256"] != _digest_json(intent)
             or intent["evidence_sha256"] != _digest_json({k: v for k, v in intent.items()
                                                         if k not in {"receipt_sha256", "evidence_sha256"}})
-            or intent["workspace"] != _legacy_clone_evidence(sha)):
+            or intent["workspace"] != _recoverable_clone_evidence(sha)):
         raise BootstrapError("historical recovery audit differs")
     if (not isinstance(recovery_receipt, str) or re.fullmatch(r"[0-9a-f]{64}", recovery_receipt) is None
             or not isinstance(intent["receipt_sha256"], str)
@@ -961,7 +1029,7 @@ def _recovered_preparation_evidence(sha, *, recovery_receipt=None):
                 "library": intent["library"]}
             or intent["locks"] != {
                 "launcher": _recovery_file_identity(STATE / "launcher.lock"),
-                "build": _recovery_file_identity(STATE / sha / "build.lock")}):
+                "build": _recovery_build_identity(sha, intent["workspace"])}):
         raise BootstrapError("historical recovery bindings differ")
     config, library = _archives(sha)
     if not os.path.lexists(config) and not os.path.lexists(library):

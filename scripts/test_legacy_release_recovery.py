@@ -336,3 +336,137 @@ def test_parent_exit_during_enumeration_is_unknown_not_quiescent(monkeypatch, tm
     monkeypatch.setattr(Path, "read_bytes", spawn_and_exit)
     with pytest.raises(b.BootstrapError):
         b._recovery_process_proof()
+
+
+def phase_timeout_fixture(monkeypatch, tmp_path, _base=recovery_fixture):
+    b, w, calls = _base(monkeypatch, tmp_path)
+    digest = hashlib.sha256(b.INSTALLED.read_bytes()).hexdigest()
+    monkeypatch.setattr(b, "LEGACY_CLONE_EXECUTORS", set())
+    monkeypatch.setattr(b, "PHASE_CLONE_TIMEOUT_EXECUTORS", {digest}, raising=False)
+    (w / "build.lock").unlink()
+    b._write(w / "preparation-started.json", json.dumps({
+        "sha": SHA, "state": "PREPARING", "executor_sha256": digest,
+    }).encode())
+    clone = f"Cloning into '{w}/source'...\n"
+    failure = ("fatal: unable to access 'https://github.com/itsoso/health-llm-driven.git/': "
+               "Operation too slow. Less than 1024 bytes/sec transferred the last 30 seconds\n")
+    (w / "preparation.log").write_text((clone + failure) * 2 + clone)
+    (w / "source").mkdir(mode=0o700)
+    (w / "source/.git").mkdir(mode=0o700)
+    b._write(w / "source/.git/HEAD", b"ref: refs/heads/main\n")
+    return b, w, calls
+
+
+def test_phase_timeout_recovery_preserves_scene_and_absent_build_lock(monkeypatch, tmp_path):
+    b, w, calls = phase_timeout_fixture(monkeypatch, tmp_path)
+    original = b._preparation_manifest(w)
+    keys = b.AUTHORIZED.read_bytes()
+    plan = inspect(b)
+    assert b.AUTHORIZED.read_bytes() == keys
+    assert not (w / "build.lock").exists()
+    result = recover(b, plan["evidence_sha256"])
+    assert result["state"] == "RECOVERED_PREPARATION_FAILURE"
+    assert b._preparation_manifest(w) == original
+    assert b._read_json(w / "completed.json")["state"] == "NEEDS_OPERATOR"
+    assert not (w / "build.lock").exists()
+    intent = b._read_json(b.STATE / "recoveries" / SHA / "intent.json")
+    assert intent["locks"]["build"] is None
+    assert b._workspace_evidence(SHA, recovery_receipt=result["receipt"])["state"] == "RECOVERED_PREPARATION_FAILURE"
+    assert not any("deploy.sh" in str(arg) for arg in calls)
+    with pytest.raises(b.BootstrapError):
+        inspect(b)
+
+
+@pytest.mark.parametrize("fault", [
+    "unknown_executor", "preparing_digest", "prepared", "deploying", "native", "build_claim",
+    "build_lock", "home", "source_file", "source_missing", "source_symlink", "log",
+    "log_append", "source_extra", "lease", "completed", "preparing_missing",
+])
+def test_phase_timeout_rejects_unknown_or_started_scenes(monkeypatch, tmp_path, fault):
+    b, w, _ = phase_timeout_fixture(monkeypatch, tmp_path)
+    keys = b.AUTHORIZED.read_bytes()
+    if fault == "unknown_executor":
+        b.PHASE_CLONE_TIMEOUT_EXECUTORS.clear()
+    elif fault == "preparing_digest":
+        (w / "preparation-started.json").write_bytes(b"{}")
+    elif fault in {"prepared", "deploying", "native", "build_claim", "build_lock"}:
+        name = {"prepared": "prepared.json", "deploying": "deployment-started.json",
+                "native": "native-started.json", "build_claim": "build-started.json", "build_lock": "build.lock"}[fault]
+        b._write(w / name, b"{}")
+    elif fault == "home":
+        b._write(w / "home/.gitconfig", b"unsafe")
+    elif fault in {"source_file", "source_extra"}:
+        b._write(w / "source" / ("deploy.sh" if fault == "source_file" else "extra"), b"unsafe")
+    elif fault == "source_missing":
+        (w / "source").rename(w / "other")
+    elif fault == "source_symlink":
+        (w / "source").rename(tmp_path / "moved")
+        (w / "source").symlink_to(tmp_path / "moved", target_is_directory=True)
+    elif fault in {"log", "log_append"}:
+        data = (w / "preparation.log").read_bytes()
+        (w / "preparation.log").write_bytes(data[:-1] if fault == "log" else data + b"checkout\n")
+    elif fault == "completed":
+        (w / "completed.json").write_text(json.dumps({"sha": SHA, "state": "SUCCEEDED"}))
+    elif fault == "preparing_missing":
+        (w / "preparation-started.json").unlink()
+    else:
+        b.BUSINESS_LEASE.mkdir()
+    with pytest.raises((b.BootstrapError, FileNotFoundError)):
+        inspect(b)
+    assert b.AUTHORIZED.read_bytes() == keys
+    assert not (b.STATE / "recoveries").exists()
+
+
+def test_phase_timeout_lock_appearance_during_proof_blocks(monkeypatch, tmp_path):
+    b, w, _ = phase_timeout_fixture(monkeypatch, tmp_path)
+    keys = b.AUTHORIZED.read_bytes()
+    monkeypatch.setattr(b, "_recovery_production_proof", lambda *a: b._write(w / "build.lock", b""))
+    with pytest.raises(b.BootstrapError):
+        inspect(b)
+    assert b.AUTHORIZED.read_bytes() == keys
+
+
+def test_phase_timeout_recovery_rotation_checks_persistent_absence(monkeypatch, tmp_path):
+    b, w, _ = phase_timeout_fixture(monkeypatch, tmp_path)
+    result = recover(b, inspect(b)["evidence_sha256"])
+    run = b._run
+    def new_key(args, **kwargs):
+        response = run(args, **kwargs)
+        if args[0] == "/usr/bin/ssh-keygen" and "-q" in args:
+            (b.CONFIG / "loopback.key.pub").write_text(NEW_LOOPBACK + "\n")
+        return response
+    monkeypatch.setattr(b, "_run", new_key)
+    assert b.rotate(SHA, NEW_SHA, 200, HOST, recovery_receipt=result["receipt"])["state"] == "INSTALLED"
+    assert b._retired_history()[SHA]["workspace"]["state"] == "RECOVERED_PREPARATION_FAILURE"
+    b._write(w / "build.lock", b"")
+    with pytest.raises(b.BootstrapError):
+        b._retired_history()
+
+
+@pytest.mark.parametrize("boundary", ["intent", "authorized", "private", "terminal"])
+def test_phase_timeout_retains_unknown_at_every_mutation_boundary(monkeypatch, tmp_path, boundary):
+    monkeypatch.setattr(__import__(__name__), "recovery_fixture", phase_timeout_fixture)
+    test_every_mutation_boundary_preserves_unknown_operation(monkeypatch, tmp_path, boundary)
+
+
+@pytest.mark.parametrize("boundary", ["file_fsync", "directory_fsync"])
+def test_phase_timeout_does_not_issue_receipt_before_terminal_fsync(monkeypatch, tmp_path, boundary):
+    monkeypatch.setattr(__import__(__name__), "recovery_fixture", phase_timeout_fixture)
+    test_visible_but_not_durable_terminal_is_not_accepted(monkeypatch, tmp_path, boundary)
+
+
+@pytest.mark.parametrize("fault", ["delete_workspace", "change_receipt", "change_intent", "reauthorize", "restore_private", "change_lock"])
+def test_phase_timeout_historical_audit_rejects_drift(monkeypatch, tmp_path, fault):
+    monkeypatch.setattr(__import__(__name__), "recovery_fixture", phase_timeout_fixture)
+    test_recovered_audit_cannot_mask_drift(monkeypatch, tmp_path, fault)
+
+
+@pytest.mark.parametrize("proof", ["_recovery_process_proof", "_recovery_production_proof", "_recovery_toolchain_proof"])
+def test_phase_timeout_does_not_relax_existing_proofs(monkeypatch, tmp_path, proof):
+    monkeypatch.setattr(__import__(__name__), "recovery_fixture", phase_timeout_fixture)
+    test_failed_proof_never_mutates_authorization(monkeypatch, tmp_path, proof)
+
+
+def test_phase_timeout_original_launcher_lock_is_still_required(monkeypatch, tmp_path):
+    monkeypatch.setattr(__import__(__name__), "recovery_fixture", phase_timeout_fixture)
+    test_recovery_holds_original_locks(monkeypatch, tmp_path, "launcher.lock")

@@ -92,6 +92,18 @@ cwd/exe 与进程身份、无业务 lease，并复用隔离 Git revision proof �
 及原有全部发布闸。此处置不部署、不恢复审核数据、不构建/上传，也不证明线上修复已生效。
 为获得新恢复工具的精确 CI，可在固定代码独立 G4 GO 且远端主干 CI 绿色后推送受审代码；
 这只发布源码，不解除历史事故、不 dispatch 发布或改变旧授权。实际生产处置仍须上述闸。
+
+已获明确恢复授权的 phase-aware 初始 clone 超时也可使用该两阶段 operator，但必须
+命中独立受审的完整 executor 实现摘要，不能按发布 SHA 或任意超时日志放行。仅接受
+PREPARING（绑定同一 executor）、STARTED、NEEDS_OPERATOR 的精确回执、两次低速失败
+后第三次初始 clone 的完整五行日志、空私有 HOME，以及只含 `.git` 的未 checkout
+source；整个保留树须通过所有权、链接、边界和不可变 manifest 校验，不执行其中的
+Git、hook 或 Python。任何 prepared、业务/native/build 意图或其他库存均 BLOCK。
+这个 backend-only 类型必须证明 build.lock 从未出现，审计以 `build: null` 表示，并在
+持原 launcher flock 的每个快照、intent 后、撤权前后及后续轮换复证缺失；禁止补建锁。
+legacy 类型仍要求原 build 锁。所有进程、真实生产 revision、授权精确撤销、单次 intent、
+终态 fsync 后才交付随机回执的规则不变。原 NEEDS_OPERATOR 永久保留；这只收尾旧权限，
+不重跑旧 SHA、不启动业务、不修复用户数据，也不证明下一轮下载已经恢复。
 上传 job 只依赖 ios-build 成功，默认与 backend 部署并行；`claim-testflight` 使用
 独立于 launcher 的短 build.lock，锁内核验时间窗、同 SHA 的 build claim 与未撤销的
 loopback 授权，再持久化一次性上传权限。后端 READY/STARTED 不要求等待，已知

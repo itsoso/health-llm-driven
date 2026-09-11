@@ -1,5 +1,15 @@
 # Dossier: 饮食修正重算与餐食大图滑动关闭
 
+## 2026-09-11 · 中文食用比例修复与发布超时恢复（进行中）
+
+- 用户授权先修复“二分之一”口语比例，再部署；本轮另明确授权处理旧发布失败的恢复流程。
+- 工作副本为最新 main `573c2e76f` 的独立干净 clone；原工作区含其他未完成修改，未清理、覆盖或混入。
+- 比例修复提交 `465a813432560caa9e8fa06735c67b4236514103`：整餐绝对比例 1/2 不再被拒绝；“三人份”不再充当第二个除数。沿用唯一目标、鉴权、CAS 与幂等边界。
+- 最新生产仍为 `5ddd9402d22c8124bc84b578662ea87c1f6e432c`。旧发布 `5fe8c3d83f526e6b529bf1684b0ff956f6ede4ff` 的 NEEDS_OPERATOR 原证据保持不变，backend/worker/beat 正常。
+- 恢复方案仅为完整 phase-aware executor 摘要识别的初始 clone 超时新增独立取证类型；原 launcher 锁与缺失 build 锁证明、进程扫描、无业务 lease、真实 revision、精确双身份撤销及一次性回执规则不减。
+- 初始新恢复类型测试先失败（4 failed，16 passed，含两项 fixture 初始化错误）；修正 fixture 后完整 bootstrap/legacy/server 回归 279 passed。比例与 CAS 的新 main PostgreSQL 回归 260 passed。不同分组有重叠，不累加为独立场景总数。
+- 本地私有证据 `/tmp/reva-fraction-recovery.Z72PPN/`；trace `bca7b79798eb`。固定提交独立复审、完整 CI、恢复 operator、实际部署及上线验证仍待完成。没有把本地通过写成已上线。
+
 | 字段 | 值 |
 |---|---|
 | slug | `diet-correction-recalculation-photo-dismiss` |
