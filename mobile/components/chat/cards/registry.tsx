@@ -630,7 +630,8 @@ function textValue(value: unknown): string | undefined {
 function foodItemsValue(value: unknown): string | undefined {
   if (Array.isArray(value)) {
     const items = value.map(textValue).filter((item): item is string => Boolean(item));
-    return items.length ? items.slice(0, 8).join(' + ') : undefined;
+    // This value feeds record writes and correction seeds, not a display preview.
+    return items.length ? items.join(' + ') : undefined;
   }
   return textValue(value);
 }

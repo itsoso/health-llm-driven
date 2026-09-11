@@ -1857,6 +1857,77 @@ describe('renderCard 安全降级', () => {
     expect(queryByText('萝卜片 少量')).toBeNull();
   });
 
+  describe.each(['array', 'string'] as const)('diet drafts with more than eight items (%s)', (format) => {
+    const foods = Array.from({ length: 10 }, (_, index) => `测试食材${index + 1} 1份`);
+    const foodItems = format === 'array' ? foods : foods.join(' + ');
+
+    it('dispatches all items through save-and-confirm with manual confirmation intact', () => {
+      const onAction = jest.fn();
+      const record = { meal_type: 'dinner', food_items: foodItems, calories: 600, protein: 30, carbs: 60, fat: 20 };
+      const element = renderCard({
+        type: 'diet_draft',
+        data: record,
+        actions: [{
+          id: 'confirm-diet-draft', label: '确认记录', action: 'diet_record.create',
+          endpoint: '/diet/records', requires_manual_confirm: true,
+          ...DIET_WRITE_POLICY, style: 'primary', payload: { record },
+        }],
+      } as any, { onAction });
+      const { getByLabelText } = render(element!);
+      fireEvent.press(getByLabelText('修正饮食草稿'));
+      expect(onAction).not.toHaveBeenCalled();
+      fireEvent.press(getByLabelText('保存并确认饮食记录'));
+      expect(onAction).toHaveBeenCalledTimes(1);
+      expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'diet_record.create', requires_manual_confirm: true,
+        ...DIET_WRITE_POLICY,
+        payload: expect.objectContaining({ record: expect.objectContaining({
+          ...record, food_items: foods.join(' + '),
+        }) }),
+      }), expect.objectContaining({ type: 'diet_draft' }));
+    });
+
+    it('counts all items and reveals every item without expanding by default', () => {
+      const { getByText, queryByText } = render(
+        <DietDraftCardView food_items={foodItems} meal_type="dinner" />,
+      );
+      expect(getByText('已识别 10 项，可直接调整份量')).toBeTruthy();
+      expect(queryByText(foods[9])).toBeNull();
+      fireEvent.press(getByText('查看其余 6 项'));
+      foods.forEach(food => expect(getByText(food)).toBeTruthy());
+      fireEvent.press(getByText('收起'));
+      expect(queryByText(foods[9])).toBeNull();
+    });
+
+    it('seeds the editor with every item and preserves them when finishing unchanged', () => {
+      const onDraftChange = jest.fn();
+      const { getByLabelText } = render(
+        <DietDraftCardView food_items={foodItems} meal_type="dinner" onDraftChange={onDraftChange} />,
+      );
+      fireEvent.press(getByLabelText('修正饮食草稿'));
+      expect(getByLabelText('食物描述').props.value).toBe(foods.join(' + '));
+      expect(onDraftChange).not.toHaveBeenCalled();
+      fireEvent.press(getByLabelText('完成饮食草稿修正'));
+      expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining({
+        food_items: foods.join(' + '),
+        meal_type: 'dinner',
+      }));
+    });
+
+    it('does not drop food items when only the meal type changes', () => {
+      const onDraftChange = jest.fn();
+      const { getByLabelText } = render(
+        <DietDraftCardView food_items={foodItems} meal_type="dinner" onDraftChange={onDraftChange} />,
+      );
+      fireEvent.press(getByLabelText('修正饮食草稿'));
+      fireEvent.press(getByLabelText('餐次 午餐'));
+      expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining({
+        food_items: foods.join(' + '),
+        meal_type: 'lunch',
+      }));
+    });
+  });
+
   it('does not show an ingredient disclosure when every item is already visible', () => {
     const element = renderCard({
       type: 'diet_draft',

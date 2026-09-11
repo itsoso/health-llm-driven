@@ -152,7 +152,8 @@ function text(value: unknown): string | undefined {
 function foodText(value: unknown): string | undefined {
   if (Array.isArray(value)) {
     const items = value.map(text).filter((item): item is string => Boolean(item));
-    return items.length ? items.slice(0, 6).join(' + ') : undefined;
+    // Editor seeds must be lossless; only the collapsed presentation may be shortened.
+    return items.length ? items.join(' + ') : undefined;
   }
   return text(value);
 }
@@ -160,15 +161,14 @@ function foodText(value: unknown): string | undefined {
 /** 拆 food_items 成独立食材条 (数组 or " + " 分隔的字符串), 供 chip 渲染。 */
 function foodChips(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.map(text).filter((item): item is string => Boolean(item)).slice(0, 8);
+    return value.map(text).filter((item): item is string => Boolean(item));
   }
   const joined = text(value);
   if (!joined) return [];
   return joined
     .split(/\s*[+＋]\s*/)
     .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 8);
+    .filter(Boolean);
 }
 
 function numberValue(value: unknown): number | undefined {
