@@ -108,8 +108,18 @@ def _isolate_simple_diet_nutrition_estimator(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_twin_cache(isolated_agent_protocol_transport):
-    """Override the live-cache cleanup fixture only in this protocol suite."""
+def _isolate_twin_cache(isolated_agent_protocol_transport, monkeypatch):
+    """Keep Pi and safety evaluation with a synthetic owner-scoped Twin.
+
+    These protocol tests do not exercise Twin ingestion. Real builders open
+    concurrent SessionLocal readers outside the test transaction; safety-card
+    tests replace this default explicitly with their own alert fixtures.
+    """
+    from app.twin.schema import HealthTwin, TwinMeta
+
+    monkeypatch.setattr("app.twin.builder.build_twin", lambda _db, user_id, **kwargs: HealthTwin(
+        meta=TwinMeta(user_id=user_id, generated_at=datetime.now(timezone.utc)),
+    ))
 
 
 def test_agent_protocol_suite_never_probes_a_live_redis():
@@ -125,6 +135,22 @@ def test_agent_protocol_suite_never_probes_a_live_redis():
         patch.setattr(socket.socket, 'connect', record_connect)
         get_redis_client()
     assert not calls, 'Protocol tests must not probe host Redis connectivity'
+
+
+def test_agent_protocol_twin_does_not_open_secondary_database_sessions(db, auth_user_and_headers, monkeypatch):
+    from app.twin.builder import build_twin
+
+    user, _headers = auth_user_and_headers
+    session_attempts = []
+
+    def reject_secondary_session():
+        session_attempts.append(True)
+        raise AssertionError("Protocol Twin must not open independent database sessions")
+
+    monkeypatch.setattr("app.database.SessionLocal", reject_secondary_session)
+    twin = build_twin(db, user.id, use_cache=False)
+    assert not session_attempts, "Protocol fixture must isolate Twin's parallel database readers"
+    assert twin.meta.user_id == user.id
 
 
 def test_completion_status_marks_length_finish_reason_as_interrupted():

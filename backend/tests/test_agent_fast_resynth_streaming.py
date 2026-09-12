@@ -38,22 +38,28 @@ def _wire(executor, monkeypatch, provider_factory, *, user_provider):
 
 
 @pytest.mark.asyncio
-async def test_fast_direct_answer_resynthesis_buffers_before_release(
-    db, auth_user_and_headers, monkeypatch
+@pytest.mark.parametrize("message,uses_fast_tool_round", [
+    ("分析一下我最近的运动记录", True),
+    ("我胃还有点痛，怎么办？", False),
+])
+async def test_quality_answer_buffers_before_release(
+    db, auth_user_and_headers, monkeypatch, message, uses_fast_tool_round,
 ):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
 
     strong_deltas = ["综合", "分析", "结论"]
     state = {"strong_finished": False}
+    called_models = []
 
     class FakeProvider:
         def __init__(self, model_id):
             self.model = model_id
 
         async def chat_stream(self, **kwargs):
+            called_models.append(self.model)
             if self.model == "qwen3.6-flash":
-                # fast 工具轮直接答医疗正文 (无 tool_call) → 必被丢弃, 绝不外泄。
+                # 低风险工具轮直接输出正文，无 tool_call 时必须丢弃。
                 yield {"type": "content", "text": "FAST PROSE (must not reach user)"}
                 yield {"type": "finish", "finish_reason": "stop"}
                 return
@@ -71,7 +77,7 @@ async def test_fast_direct_answer_resynthesis_buffers_before_release(
 
     events = []
     async for event in executor.run_stream(
-        user_id=user.id, message="我胃还有点痛，怎么办？", user_auth_token="test-token"
+        user_id=user.id, message=message, user_auth_token="test-token"
     ):
         if event.get("event") == "token" and event["data"].get("content"):
             assert state["strong_finished"], "unreviewed partial prose leaked"
@@ -85,4 +91,10 @@ async def test_fast_direct_answer_resynthesis_buffers_before_release(
     # (2) 强模型答案完整
     assert rendered == "综合分析结论"
     done = events[-1]["data"]
-    assert "fast_tool_round_direct_answer_resynthesized" in done["fallback_reasons"]
+    if uses_fast_tool_round:
+        assert called_models == ["qwen3.6-flash", "qwen3.7-max"]
+        assert "fast_tool_round_direct_answer_resynthesized" in done["fallback_reasons"]
+    else:
+        # Clinical questions now stay on the strong model from the first round.
+        assert called_models == ["qwen3.7-max"]
+        assert "fast_tool_round_direct_answer_resynthesized" not in done["fallback_reasons"]

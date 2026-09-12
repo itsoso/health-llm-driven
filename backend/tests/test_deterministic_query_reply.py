@@ -10,6 +10,12 @@ from app.services.llm import model_registry as reg
 
 
 _FAST_ID = "deepseek-v4-flash"
+_QUALITY_ID = "qwen3.8-max"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_protocol_io(isolated_agent_protocol_transport):
+    """Keep real Pi transport while prohibiting external provider/cache calls."""
 
 _WATER_RESULT = json.dumps({
     "record_date": "2026-07-12",
@@ -105,9 +111,10 @@ def _wire(executor, monkeypatch, provider_factory):
     # this test depend on a configured TokenPlan key.
     monkeypatch.setattr(
         "app.services.llm.factory.create_provider_for_user",
-        lambda *_args, **_kwargs: provider_factory("test-default"),
+        lambda *_args, **_kwargs: provider_factory(_QUALITY_ID),
     )
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    monkeypatch.setattr(executor, "_compute_system_knowledge_evidence_card", lambda *a, **k: None)
 
 
 def _tokens(events) -> str:
@@ -131,9 +138,10 @@ def _make_executor(
 ):
     """Wire an executor whose health_query returns a canned result. Returns (executor, state)."""
     executor = AgentExecutor(db)
-    state = {"stream_calls": [], "executed": []}
+    state = {"stream_calls": [], "executed": [], "provider_models": []}
 
     def factory(model_id):
+        state["provider_models"].append(model_id)
         return _ToolThenAnswerProvider(
             model_id,
             tool_args or {"dimension": "water"},
@@ -399,7 +407,7 @@ async def test_flag_on_safety_suffix_falls_through_to_synthesis(db, auth_user_an
 
 @pytest.mark.asyncio
 async def test_flag_on_uncovered_dimension_falls_through(db, auth_user_and_headers, monkeypatch):
-    """flag ON 但维度未覆盖 (genetic) → fail-open 回落合成轮。"""
+    """Genetic queries retain Pi synthesis and the clinical model-quality floor."""
     user, _ = auth_user_and_headers
     executor, state = _make_executor(
         db, monkeypatch,
@@ -411,5 +419,12 @@ async def test_flag_on_uncovered_dimension_falls_through(db, auth_user_and_heade
     events = await _run(executor, "查一下我的基因 MTHFR", user.id)
 
     assert len(state["stream_calls"]) == 2  # 回落合成轮
+    assert executor._requires_quality_floor()
+    assert executor._staged_answer_task_tier == "high_stakes"
+    assert _QUALITY_ID in state["provider_models"]
+    assert _FAST_ID not in state["provider_models"]
+    assert state["executed"] == [("health_query", '{"dimension": "genetic"}')]
     tokens = _tokens(events)
     assert tokens == _SYNTH_ANSWER
+    assert events[-1]["data"]["completion_status"] == "complete"
+    assert events[-1]["data"]["perf"]["agent_kernel"] == "pi"
