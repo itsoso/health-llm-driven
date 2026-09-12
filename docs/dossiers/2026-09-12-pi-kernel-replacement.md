@@ -167,6 +167,44 @@ and all 26 runtime tests passed against that fresh installation. Application and
 eval bytes remain identical to the reviewed/live-tested candidate. Evidence:
 `/tmp/reva-pi-public-install.log`, `/tmp/reva-pi-public-runtime-tests.log`.
 
-AGENTS section 7 stops external writes while main CI is red. The repair is
-prepared locally; publication needs explicit permission to repair red main,
-then a new exact-SHA confirmation/CI and the normal release gates.
+The user explicitly authorized fixing all discovered problems and then pushing.
+The registry repair was published as `fa69806888f11d7815f5bc3dadf5f3b9589f2b39`.
+This authorization permits the following red-main repairs; exact-SHA CI and the
+normal release gates remain mandatory before deployment.
+
+
+## Full CI regression repair
+
+Exact CI `34683544112` reached all tests after public npm installation. It failed
+on old Python-loop assertions (synthesis schema removal, silent fallback and
+pre-model meal execution), one real plain-text protocol disclosure, missing
+metadata-only tool count logging, and an unsynchronized packaged gate script.
+No failure was skipped or relabeled as a passing CI run.
+
+The shared final-output boundary now rejects plain tool protocol lists in normal
+chat and every multi-model stage, reporting error without executing text or
+requesting another model repair. Negative tests preserve ordinary prose and code
+examples. Pi still completes two explicit structured read-only calls before its
+answer. Meal integration providers now make structured proposals while existing
+canonicalization rejects forged ID 999, binds owned ID 101/calories 300, and
+checks exactly one write and its durable receipt. The authenticated real API meal
+fixture still checks canonical user food, enrichment and retry deduplication.
+Honest refusal/data-insufficiency no longer expects a hidden fallback answer.
+Tool count observability contains metadata only. The packaged LLM gate is an exact
+copy of its repository source.
+
+Fresh verification:
+- CI repair regressions: 79 passed, 1 PostgreSQL-only skip (20.96 seconds).
+- Meal persistence, privacy and real Pi executor: 12 passed (7.46 seconds).
+- PostgreSQL latest-meal, durable meal and reconciliation: 36 passed (76.10 seconds).
+- Full live gate: invariants 12/12, core 50/50, synthesis 5/5 (average 0.96).
+  Same isolated synthetic subject and enforced budget/consent; no production data.
+- Final completion/output/structured-chain regression: 214 passed; undefined-name
+  lint and whitespace checks passed. Evidence: `/tmp/reva-pi-output-final.log`.
+- Independent safety-gate review: GO. Executor SHA-256
+  `224c7b7682197ed89c9da8f49c10ee1b367393094475040877e6d25b8c0361ca`;
+  output quality SHA-256
+  `9f39d5fabaf880743fa8920eefca52a36743554d21cb0630b990d5e11068cc38`.
+Evidence: `/tmp/reva-pi-final-ci-repairs.log`,
+`/tmp/reva-pi-meal-privacy-final.log`, `/tmp/reva-pi-post-ci-postgres.log`,
+`/tmp/reva-pi-live-post-ci-fixes.log`. Candidate CI/deployment still pending.

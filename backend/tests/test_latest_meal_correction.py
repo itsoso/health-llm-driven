@@ -121,7 +121,7 @@ async def test_latest_lookup_must_be_recent_complete_unique_and_successful(rows,
 
 
 @pytest.mark.asyncio
-async def test_stream_corrects_previous_meal_before_asking_model_to_choose_a_tool(db, auth_user_and_headers):
+async def test_pi_stream_binds_previous_meal_proposal_before_dispatch(db, auth_user_and_headers):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     executor._agent_kernel_reference_now = lambda: NOW
@@ -134,7 +134,11 @@ async def test_stream_corrects_previous_meal_before_asking_model_to_choose_a_too
         return json.dumps({"id": 101, "resource_type": "diet_record", "message": "已更新午餐记录"})
 
     async def model(messages, tools):
-        assert calls, "a clear relative correction must run before model synthesis"
+        if not calls:
+            yield {"type": "tool_calls", "tool_calls": [tool_call()]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        assert any(m.get("role") == "tool" for m in messages)
         yield {"type": "content", "text": "已按实际食用1/3修正上一餐。"}
         yield {"type": "finish", "finish_reason": "stop"}
 
@@ -143,6 +147,7 @@ async def test_stream_corrects_previous_meal_before_asking_model_to_choose_a_too
     events = [event async for event in executor.run_stream(user_id=user.id, message=MESSAGE, user_auth_token="owner-token")]
     assert len(calls) == 1 and calls[0][1]["operation"] == "update"
     assert calls[0][1]["record_id"] == 101 and calls[0][1]["data"]["calories"] == 300
+    assert all(args.get("record_id") != 999 for _, args in calls)
     assert events[-1]["data"].get("write_receipts")
     assert events[-1]["data"]["completion_status"] == "complete"
 

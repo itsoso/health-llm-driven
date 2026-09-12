@@ -13,6 +13,14 @@ _PROTOCOL_TAG = re.compile(
     re.IGNORECASE,
 )
 
+# A plain protocol heading followed by a function identifier is not prose.
+# Strip code spans before matching so documentation remains visible.
+_PROTOCOL_TOOL_LIST = re.compile(
+    r"^\s*(?:tool[ _]?calls?|工具调用|要调用的工具)\s*[:：]"
+    r"[ \t]*(?:\n[ \t]*)?(?:[-*][ \t]*)?[a-z][a-z0-9]*_[a-z0-9_]+\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class AgentOutputQualityResult:
@@ -37,7 +45,8 @@ def enforce_agent_output_quality(
     max_chars: int = DEFAULT_AGENT_PERSISTENCE_MAX_CHARS,
 ) -> AgentOutputQualityResult:
     text = str(value or "")
-    if _PROTOCOL_TAG.search(_CODE_SPANS.sub("", text)):
+    outside_code = _CODE_SPANS.sub("", text)
+    if _PROTOCOL_TAG.search(outside_code) or _PROTOCOL_TOOL_LIST.search(outside_code):
         notice = "这次没有完成：回答格式异常。请重新发起查询；涉及记录时请先核对是否已保存，避免重复提交。"
         return AgentOutputQualityResult(
             notice, ("protocol_leak",), len(text), len(notice)

@@ -16974,6 +16974,10 @@ class AgentExecutor:
                                 self._persist_turn_expected_writes(user_msg, planned_writes)
                                 messages.append({"role": "assistant", "content": "", "tool_calls": proposed_calls})
                             remaining_batch_tools = len(proposed_calls)
+                            logger.info(
+                                "[pi] model response user=%s round=%s tool_call_count=%s elapsed_ms=%s",
+                                user_id, round_idx + 1, remaining_batch_tools, elapsed,
+                            )
                             await pi.respond(
                                 request, content="" if proposed_calls else candidate,
                                 tool_calls=proposed_calls,

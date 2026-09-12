@@ -1,16 +1,5 @@
 # -*- coding: utf-8 -*-
-"""A2 (plan rank4): 合成轮不再重发 18KB 工具 schema。
-
-上一轮已执行过工具 → 本轮实际是合成轮, 对**所有**模型置 round_tools=[], 省 ~5k
-tokens/轮 prefill。2+-round 回合 = 55% 的回合。
-
-硬安全不变量 (本文件钉死):
-  1. 合成轮不发 tools (省 schema), 但输出侧的文本式/内联工具调用抑制**照旧生效**
-     (_detect_tools 用完整 tools 词表, 不随 round_tools 置空而失守);
-  2. 自纠: 若合成轮模型其实还想再调工具 (文本式 "Tool calls:") → 重开 tools, 下一轮
-     结构化调用, 多轮链式工具回合不被裁 (正确性 > 省 token);
-  3. 首个工具决策轮仍带 tools (模型得以决策)。
-"""
+"""Pi retains structured tools across turns; text never starts another tool loop."""
 import json
 
 import pytest
@@ -55,8 +44,8 @@ async def _run(executor, message, user_id):
 
 
 @pytest.mark.asyncio
-async def test_synthesis_round_after_tool_drops_tool_schema(db, auth_user_and_headers, monkeypatch):
-    """核心: round0 调工具 → round1 合成轮不再带 tools (round_tools=[])。"""
+async def test_pi_keeps_structured_tools_until_model_finishes(db, auth_user_and_headers, monkeypatch):
+    """A read result alone does not prove the structured tool chain is finished."""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -90,18 +79,15 @@ async def test_synthesis_round_after_tool_drops_tool_schema(db, auth_user_and_he
     events = await _run(executor, "帮我分析一下最近的饮食", user.id)
     rendered = "".join(e["data"].get("content", "") for e in events if e.get("event") == "token")
 
-    # round0 带 tools (决策), round1 合成轮**不**带 tools (省 18KB schema)。
-    assert calls[0] is True, calls
-    assert calls[1] is False, calls
+    assert calls == [True, True]
     assert "综合分析结论" in rendered
 
 
 @pytest.mark.asyncio
-async def test_synthesis_round_self_corrects_on_botched_text_tool_call(
+async def test_pi_text_tool_list_fails_without_another_model_or_write(
     db, auth_user_and_headers, monkeypatch
 ):
-    """自纠: 合成轮 (无 tools) 模型吐文本式 "Tool calls:" → 检测(用完整词表)→ 重开
-    tools → 下一轮结构化真调工具。链式工具回合不被 A2 裁掉, 且裸标记不外泄。"""
+    """A text protocol list fails without reviving the former repair loop."""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -123,22 +109,11 @@ async def test_synthesis_round_self_corrects_on_botched_text_tool_call(
                 yield {"type": "finish", "finish_reason": "tool_calls"}
                 return
             if n == 2:
-                # round1 (合成轮, 无 tools): 模型其实还想调工具, 但只会吐文本式清单
+                # Plain text does not grant another model/tool attempt.
                 yield {"type": "content", "text": "Tool calls:\n- health_record"}
                 yield {"type": "finish", "finish_reason": "stop"}
                 return
-            if n == 3:
-                # round2 (自纠后重开 tools): 结构化真调 health_record
-                yield {"type": "tool_calls", "tool_calls": [{
-                    "id": "c2", "type": "function",
-                    "function": {"name": "health_record",
-                                 "arguments": json.dumps({"record_type": "note", "data": {}})},
-                }]}
-                yield {"type": "finish", "finish_reason": "tool_calls"}
-                return
-            # round3: 写入后合成最终答案 (收尾, 不再链式)
-            yield {"type": "content", "text": "已完成记录与分析"}
-            yield {"type": "finish", "finish_reason": "stop"}
+            raise AssertionError("text must not trigger another model request")
 
         async def chat(self, **kwargs):
             calls.append(bool(kwargs.get("tools")))
@@ -154,14 +129,43 @@ async def test_synthesis_round_self_corrects_on_botched_text_tool_call(
     events = await _run(executor, "帮我分析一下最近的饮食", user.id)
     rendered = "".join(e["data"].get("content", "") for e in events if e.get("event") == "token")
 
-    # round0 tools, round1 合成轮无 tools (被 A2 置空), round2 自纠后重开 tools。
-    assert calls[0] is True, calls
-    assert calls[1] is False, calls
-    assert calls[2] is True, calls  # keep_tools_after_synthesis_miss 生效
-    # 分析请求是只读目标。模型即使在自纠轮结构化提出 health_record，也必须被
-    # 目标守卫拒绝，随后进入无工具合成轮，而不是执行隐藏写入。
-    assert calls[3] is False, calls
-    assert executed == ["health_query"], executed
-    assert "已完成记录与分析" in rendered
-    # 裸 "Tool calls:" 文本清单绝不外泄给用户。
-    assert "Tool calls:" not in rendered
+    assert calls == [True, True]
+    assert executed == ["health_query"]
+    assert rendered.strip() and "没有完成" in rendered
+    assert "Tool calls:" not in rendered and "health_record" not in rendered
+    assert events[-1]["data"]["completion_status"] == "error"
+    assert not events[-1]["data"].get("write_receipts")
+
+
+@pytest.mark.asyncio
+async def test_pi_continues_two_explicit_readonly_calls_before_answer(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    requested = []
+    executed = []
+    class Provider:
+        model = "qwen3.7-max"
+        async def chat_stream(self, **kwargs):
+            requested.append(bool(kwargs.get("tools")))
+            turn = len(requested)
+            if turn <= 2:
+                yield {"type": "tool_calls", "tool_calls": [{
+                    "id": f"read-{turn}", "type": "function", "function": {
+                        "name": "health_query", "arguments": json.dumps({"dimension": "diet" if turn == 1 else "sleep"}),
+                    },
+                }]}
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+            else:
+                assert sum(m.get("role") == "tool" for m in kwargs["messages"]) == 2
+                yield {"type": "content", "text": "两项查询均未找到记录，暂时无法分析。"}
+                yield {"type": "finish", "finish_reason": "stop"}
+    async def execute(name, args, token):
+        executed.append((name, json.loads(args)))
+        return '{"records":[],"count":0}'
+    _wire(executor, monkeypatch, Provider())
+    monkeypatch.setattr(executor, "_execute_tool", execute)
+    events = await _run(executor, "查询最近饮食和睡眠记录", user.id)
+    assert requested == [True, True, True]
+    assert executed == [("health_query", {"dimension": "diet"}), ("health_query", {"dimension": "sleep"})]
+    assert events[-1]["data"]["completion_status"] == "complete"
+    assert not events[-1]["data"].get("write_receipts")

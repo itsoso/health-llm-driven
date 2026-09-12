@@ -95,7 +95,7 @@ async def test_model_scope_refusal_recovery_discards_another_refusal(db):
 
 
 @pytest.mark.asyncio
-async def test_model_scope_refusal_is_buffered_until_recovery_answer(db, auth_user_and_headers, monkeypatch):
+async def test_pi_refusal_does_not_switch_to_unrequested_fallback(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     fallback_calls = 0
@@ -130,9 +130,10 @@ async def test_model_scope_refusal_is_buffered_until_recovery_answer(db, auth_us
         for event in events
         if event.get("event") == "token"
     )
-    assert fallback_calls == 1
-    assert "抱歉" not in rendered
-    assert rendered == "可以基于已有记录分析，并给出下一步建议。"
+    assert fallback_calls == 0
+    assert "无法提供分析和建议" in rendered
+    assert "可以基于已有记录分析" not in rendered
+    assert not events[-1]["data"].get("write_receipts")
 
 
 @pytest.mark.asyncio
@@ -159,7 +160,7 @@ async def test_data_insufficiency_recovery_returns_one_honest_next_step(db):
 
 
 @pytest.mark.asyncio
-async def test_data_insufficiency_is_buffered_until_recovery_answer(db, auth_user_and_headers, monkeypatch):
+async def test_pi_data_insufficiency_remains_honest_without_fallback(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     fallback_calls = 0
@@ -197,9 +198,7 @@ async def test_data_insufficiency_is_buffered_until_recovery_answer(db, auth_use
         for event in events
         if event.get("event") == "token"
     )
-    assert fallback_calls == 1
-    assert "目前没有足够数据" not in rendered
-    assert rendered == (
-        "信息来源：用户陈述、模型推断。\n"
-        "我还缺少最近 7 天的睡眠记录，请提供最近一晚的入睡和起床时间。"
-    )
+    assert fallback_calls == 0
+    assert "目前没有足够数据，无法分析你的睡眠。" in rendered
+    assert "信息来源：" in rendered
+    assert not events[-1]["data"].get("write_receipts")

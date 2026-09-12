@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.agent_output_quality import enforce_agent_output_quality
 
 
@@ -32,3 +34,28 @@ def test_documented_protocol_inside_code_is_not_a_tool_reply():
     result = enforce_agent_output_quality(answer)
     assert result.text == answer
     assert not result.flags
+
+
+@pytest.mark.parametrize("answer", [
+    "Tool calls:\n- health_record",
+    "工具调用：health_query",
+    "要调用的工具：\n* health_query_batch",
+    "tool_calls: synthetic_read",
+])
+def test_plaintext_tool_lists_are_nonempty_protocol_failures(answer):
+    result = enforce_agent_output_quality(answer)
+    assert result.flags == ("protocol_leak",)
+    assert result.text.strip() and "没有完成" in result.text
+    assert answer not in result.text
+
+
+@pytest.mark.parametrize("answer", [
+    "格式示例：\n```text\nTool calls:\n- health_query\n```\n这只是说明。",
+    "示例 `工具调用：health_query` 不会执行。",
+    "工具调用：用于按你的授权查询数据。",
+    "health_query 是查询工具；本次没有执行它。",
+])
+def test_tool_documentation_remains_visible_without_false_protocol_failure(answer):
+    result = enforce_agent_output_quality(answer)
+    assert result.text == answer
+    assert result.flags == ()

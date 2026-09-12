@@ -12,6 +12,7 @@ from app.services.llm.usage_tracker import LLMBudgetExceeded
 @pytest.mark.parametrize("candidate,forbidden,flag", [
     ("建议每天服用布洛芬两片。", "服用布洛芬两片", "medical_evidence_boundary"),
     ("<tool_response>PRIVATE_PROTOCOL</tool_response>", "PRIVATE_PROTOCOL", "protocol_leak"),
+    ("Tool calls:\n- health_record", "health_record", "protocol_leak"),
 ])
 async def test_panel_output_is_guarded_before_downstream_or_user_release(
     db, auth_user_and_headers, monkeypatch, stage, candidate, forbidden, flag,

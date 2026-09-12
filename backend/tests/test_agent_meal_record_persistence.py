@@ -1,5 +1,6 @@
 """Synthetic reviewer requests must reach the real authenticated diet API."""
 
+import json
 from urllib.parse import urlsplit
 
 import pytest
@@ -31,9 +32,20 @@ async def test_reviewer_meal_reaches_authenticated_api_and_durable_receipt(
     async def no_llm(*args, **kwargs):
         raise AssertionError("A clear single meal must not need tool-decision repair")
 
-    async def no_llm_stream(*args, **kwargs):
-        raise AssertionError("A clear single meal must not need tool-decision repair")
-        yield  # pragma: no cover
+    async def structured_proposal(messages, tools):
+        if not posts:
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": "synthetic-meal-proposal", "type": "function", "function": {
+                    "name": "health_record", "arguments": json.dumps({
+                        "record_type": "diet", "data": {"food_items": "model must not override user food"},
+                    }),
+                },
+            }]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+        else:
+            assert any(m.get("role") == "tool" for m in messages)
+            yield {"type": "content", "text": "已保存这餐。"}
+            yield {"type": "finish", "finish_reason": "stop"}
 
     async def in_process_post(url, headers, data):
         path = urlsplit(url).path
@@ -45,7 +57,7 @@ async def test_reviewer_meal_reaches_authenticated_api_and_durable_receipt(
 
     monkeypatch.setattr("app.services.agent_executor._estimate_simple_diet_nutrition", estimate)
     monkeypatch.setattr(executor, "_call_llm", no_llm)
-    monkeypatch.setattr(executor, "_call_llm_stream", no_llm_stream)
+    monkeypatch.setattr(executor, "_call_llm_stream", structured_proposal)
     monkeypatch.setattr(executor, "_api_post", in_process_post)
     token = headers["Authorization"].removeprefix("Bearer ")
     events = [event async for event in executor.run_stream(
