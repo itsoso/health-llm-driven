@@ -130,6 +130,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.19.0"
+          cache: npm
+          cache-dependency-path: backend/pi-runtime/package-lock.json
+
+      - name: Install and verify official Pi kernel
+        working-directory: backend/pi-runtime
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm audit --omit=dev
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -368,6 +381,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.19.0"
+
+      - name: Install official Pi for PostgreSQL integration
+        working-directory: backend/pi-runtime
+        run: npm ci --ignore-scripts --no-fund
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -444,6 +465,9 @@ jobs:
           tests/test_agent_runtime_tool_operations.py
           tests/test_agent_runtime_reconciliation.py
           tests/test_latest_meal_correction.py
+          tests/test_diet_spoken_fraction_correction.py
+          tests/test_pi_kernel_executor.py
+          tests/test_pi_kernel_write_reconciliation.py
           tests/test_medication_intake_batch.py
           tests/test_write_intent_medication_batch_schema.py
           tests/test_medication_intake_batch_postgres.py

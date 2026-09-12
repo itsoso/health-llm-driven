@@ -356,7 +356,7 @@ def test_named_knowledge_source_only_request_needs_preceding_health_query():
 
 
 @pytest.mark.asyncio
-async def test_named_knowledge_fallback_buffers_model_denial_until_source_result(
+async def test_named_knowledge_preflight_precedes_first_model_response(
     db,
     auth_user_and_headers,
     monkeypatch,
@@ -396,10 +396,10 @@ async def test_named_knowledge_fallback_buffers_model_denial_until_source_result
     async def fake_stream(messages, round_tools):
         nonlocal rounds
         rounds += 1
-        if rounds == 1:
-            yield {"type": "content", "text": "错误地说：我没有访问这个知识库的能力。"}
-        else:
+        if any(item.get("role") == "tool" and "source_status=not_released" in str(item.get("content")) for item in messages):
             yield {"type": "content", "text": "该来源存在，但尚未进入已审定知识库。"}
+        else:
+            yield {"type": "content", "text": "错误地说：我没有访问这个知识库的能力。"}
         yield {"type": "finish", "finish_reason": "stop"}
 
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -420,6 +420,7 @@ async def test_named_knowledge_fallback_buffers_model_denial_until_source_result
         for event in events
         if event.get("event") == "token"
     )
+    assert rounds == 1
     assert "错误地说" not in visible
     assert "该来源存在" in visible
     assert executed == [(
@@ -796,7 +797,7 @@ async def test_executor_uses_canonical_runtime_identity(
 
 
 @pytest.mark.asyncio
-async def test_clear_symptom_is_written_when_model_only_returns_text(
+async def test_clear_symptom_text_without_structured_call_does_not_write(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _ = auth_user_and_headers
@@ -844,19 +845,12 @@ async def test_clear_symptom_is_written_when_model_only_returns_text(
         channel="typed",
     )
 
-    assert len(executed) == 1
-    assert executed[0][0] == "health_record"
-    args = json.loads(executed[0][1])
-    assert args["record_type"] == "symptom"
-    assert args["data"]["body_part"] == "musculoskeletal"
-    assert args["data"]["description"] == "还是有腰疼的症状"
-    assert "已记录" in "".join(
-        event["data"].get("content", "")
-        for event in events
-        if event.get("event") == "token"
-    )
+    assert executed == []
+    visible = "".join(event["data"].get("content", "") for event in events if event.get("event") == "token")
+    assert visible.strip()
+    assert "已记录" not in visible
     done = next(event for event in events if event.get("event") == "done")
-    assert done["data"]["write_receipts"][0]["resource_id"] == "42"
+    assert done["data"]["write_receipts"] == []
 
 
 @pytest.mark.asyncio
@@ -1814,22 +1808,17 @@ def _wire_min(executor, monkeypatch):
     # Keep legacy-event assertions independent from the developer's local .env;
     # staged-response tests below opt in explicitly on the executor instance.
     monkeypatch.setattr("app.services.agent_executor.settings.staged_response_mode", "off")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [{
-        "type": "function",
-        "function": {"name": "health_query", "description": "x",
-                     "parameters": {"type": "object", "properties": {}}},
-    }])
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
 
 
 # ──── status events: order on a mocked tool turn ────
 
 @pytest.mark.asyncio
-async def test_status_events_order_vision_thinking_tool_synthesis(
+async def test_status_events_order_vision_and_pi_model_turns(
     db, auth_user_and_headers, monkeypatch
 ):
     """A photo turn that calls a tool then synthesizes emits, in order:
-    vision → thinking(r1) → tool(r1) → synthesis(r2)."""
+    vision → thinking(r1) → tool(r1) → thinking(r2)."""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire_min(executor, monkeypatch)
@@ -1854,7 +1843,7 @@ async def test_status_events_order_vision_thinking_tool_synthesis(
         if calls["round"] == 1:
             yield {"type": "tool_calls", "tool_calls": [{
                 "id": "c1",
-                "function": {"name": "health_query", "arguments": "{}"},
+                "function": {"name": "health_query", "arguments": json.dumps({"dimension": "activity"})},
             }]}
             yield {"type": "finish", "finish_reason": "tool_calls"}
         else:
@@ -1889,7 +1878,7 @@ async def test_status_events_order_vision_thinking_tool_synthesis(
         ("vision", None, None),
         ("thinking", None, 1),
         ("tool", "查询健康数据", 1),
-        ("synthesis", None, 2),
+        ("thinking", None, 2),
     ]
 
 

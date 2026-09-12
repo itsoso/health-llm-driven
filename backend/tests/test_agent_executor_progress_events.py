@@ -378,7 +378,7 @@ async def test_staged_response_shadow_keeps_user_visible_event_unchanged(
 
 @pytest.mark.asyncio
 async def test_progress_sequence_tool_turn(db, auth_user_and_headers, monkeypatch):
-    """带工具的一回合 → 契约序列: accepted → tool(round=1) → synthesis → done。"""
+    """带工具的一回合 → 契约序列: accepted → thinking(1) → tool(1) → thinking(2) → done。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire_min(executor, monkeypatch)
@@ -417,15 +417,16 @@ async def test_progress_sequence_tool_turn(db, auth_user_and_headers, monkeypatc
     # flat 进度事件的精确有序契约。
     assert seq == [
         ("accepted", None, None),
+        ("thinking", 1, None),
         ("tool", 1, "查看健康数据…"),
-        ("synthesis", None, None),
+        ("thinking", 2, None),
     ]
 
     # done 事件在 synthesis 之后 (整条链 accepted→tool→synthesis→done)。
     done_idx = next(i for i, e in enumerate(events) if e.get("event") == "done")
     synth_idx = next(
         i for i, e in enumerate(events)
-        if e.get("type") == "status" and e.get("stage") == "synthesis"
+        if e.get("type") == "status" and e.get("stage") == "thinking" and e.get("round") == 2
     )
     tool_idx = next(
         i for i, e in enumerate(events)

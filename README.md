@@ -125,11 +125,16 @@ packages/       Workspace packages
 
 ### Backend
 
+Agent execution requires Node.js >=22.19.0 and npm for the official Pi runtime.
+The local bridge uses the existing Python model configuration and health tools;
+see [runtime setup and protocol](backend/pi-runtime/README.md).
+
 ```bash
 cd backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+bash pi-runtime/install.sh
 
 # Configure backend/.env.
 # Use PostgreSQL for development and production.

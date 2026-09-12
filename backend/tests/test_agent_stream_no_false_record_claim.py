@@ -33,7 +33,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.services.agent_executor import AgentExecutor
+from app.services.agent_executor import AgentExecutor, _claims_unverified_write_success
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.supplement import SupplementDefinition
@@ -238,13 +238,13 @@ async def test_verified_write_still_confirms_record(db, auth_user_and_headers):
     assert len(rounds) == 1, rounds
 
 
-async def test_water_record_without_model_tool_call_uses_one_deterministic_write(
+async def test_water_record_without_structured_call_never_writes_or_claims_success(
     db, auth_user_and_headers
 ):
     """A weak model may claim success without calling health_record.
 
-    The server-owned goal must recover the exact amount, execute once through the
-    normal write path, and replace the unverified prose with the verified receipt.
+    Text is not a structured dispatch capability. The final boundary must
+    report the missing write honestly without changing data.
     """
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -284,29 +284,13 @@ async def test_water_record_without_model_tool_call_uses_one_deterministic_write
     reply = _tokens(events)
     done = next(event for event in events if event.get("event") == "done")
 
-    assert calls == [(
-        "health_record",
-        {
-            "record_type": "water",
-            "data": {
-                "amount": 500,
-                "record_date": executor._agent_kernel_reference_now().date().isoformat(),
-                "confirmed": True,
-            },
-            "confirmed": True,
-        },
-    )]
-    assert reply == "已记录饮水 500ml"
-    assert done["data"]["write_receipts"] == [{
-        "operation_id": "health_record:water_record:801",
-        "status": "verified",
-        "resource_type": "water_record",
-        "resource_id": "801",
-        "completed_at": done["data"]["write_receipts"][0]["completed_at"],
-        "verified": True,
-        "action": "create",
-        "date": executor._agent_kernel_reference_now().date().isoformat(),
-    }]
+    assert calls == []
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["record_intent_no_tool"] is True
+    assert not _claims_unverified_write_success(_tokens(events))
+    saved = db.get(AgentMessage, done["data"]["message_id"])
+    assert saved.meta["write_receipts"] == []
+    assert not _claims_unverified_write_success(saved.content)
 
 
 @pytest.mark.parametrize(
@@ -322,7 +306,7 @@ async def test_water_record_without_model_tool_call_uses_one_deterministic_write
         ),
     ),
 )
-async def test_multiple_supplements_without_model_tool_calls_write_every_item_once(
+async def test_multiple_supplements_without_structured_calls_never_write_or_claim_success(
     db,
     auth_user_and_headers,
     message,
@@ -367,13 +351,13 @@ async def test_multiple_supplements_without_model_tool_calls_write_every_item_on
     ]
     done = next(event for event in events if event.get("event") == "done")
 
-    assert [
-        args["data"]["supplement_name"] for _, args in calls
-    ] == expected_names
-    assert all(tool_name == "health_record" for tool_name, _ in calls)
-    assert len(done["data"]["write_receipts"]) == len(expected_names)
-    assert done["data"]["completion_status"] == "complete"
-    assert done["data"]["record_intent_no_tool"] is False
+    assert calls == []
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["record_intent_no_tool"] is True
+    assert not _claims_unverified_write_success(_tokens(events))
+    saved = db.get(AgentMessage, done["data"]["message_id"])
+    assert saved.meta["write_receipts"] == []
+    assert not _claims_unverified_write_success(saved.content)
 
 
 @pytest.mark.parametrize(
@@ -507,9 +491,18 @@ async def test_all_taken_context_writes_each_active_owner_supplement_once(
     executor = AgentExecutor(db)
     calls = []
 
-    async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
-        yield {"type": "content", "text": "好的，已经记录。"}
-        yield {"type": "finish", "finish_reason": "stop"}
+    async def fake_call_llm_stream(messages, tools):
+        if not calls:
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": f"supplement-{index}", "type": "function",
+                "function": {"name": "health_record", "arguments": json.dumps({
+                    "record_type": "supplement", "data": {"supplement_name": name},
+                }, ensure_ascii=False)},
+            } for index, name in enumerate(["NOW Melatonin 3mg", "甘氨酸镁"])]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+        else:
+            yield {"type": "content", "text": "补剂处理完毕。"}
+            yield {"type": "finish", "finish_reason": "stop"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
         args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
@@ -556,9 +549,18 @@ async def test_multiple_supplements_partial_failure_keeps_turn_incomplete(
     executor = AgentExecutor(db)
     calls = []
 
-    async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
-        yield {"type": "content", "text": "好的，已经记录。"}
-        yield {"type": "finish", "finish_reason": "stop"}
+    async def fake_call_llm_stream(messages, tools):
+        if not calls:
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": f"supplement-{index}", "type": "function",
+                "function": {"name": "health_record", "arguments": json.dumps({
+                    "record_type": "supplement", "data": {"supplement_name": name},
+                }, ensure_ascii=False)},
+            } for index, name in enumerate(["褪黑素", "甘氨酸镁"])]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+        else:
+            yield {"type": "content", "text": "补剂处理完毕。"}
+            yield {"type": "finish", "finish_reason": "stop"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
         args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
@@ -634,9 +636,13 @@ async def test_historical_water_supplement_uses_one_date_bound_write(
     calls = []
 
     async def fake_call_llm_stream(messages, tools):
-        for ch in "好的，已经补充记录。":
-            yield {"type": "content", "text": ch}
-        yield {"type": "finish", "finish_reason": "stop"}
+        yield {"type": "tool_calls", "tool_calls": [{
+            "id": "historical-water", "type": "function",
+            "function": {"name": "health_record", "arguments": json.dumps({
+                "record_type": "water", "data": {"amount": 1200, "record_date": "2026-07-16"},
+            })},
+        }]}
+        yield {"type": "finish", "finish_reason": "tool_calls"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
@@ -951,12 +957,17 @@ async def test_bare_chinese_water_record_never_falls_through_to_profile_analysis
         history_loads += 1
         return original_build_messages(self, *args, **kwargs)
 
-    async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
+    async def fake_call_llm_stream(messages, tools):
         nonlocal model_calls
         model_calls += 1
-        for character in unrelated_reply:
-            yield {"type": "content", "text": character}
-        yield {"type": "finish", "finish_reason": "stop"}
+        yield {"type": "content", "text": unrelated_reply}
+        yield {"type": "tool_calls", "tool_calls": [{
+            "id": "failed-water", "type": "function",
+            "function": {"name": "health_record", "arguments": json.dumps({
+                "record_type": "water", "data": {"amount": 800},
+            })},
+        }]}
+        yield {"type": "finish", "finish_reason": "tool_calls"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
         args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
@@ -981,7 +992,7 @@ async def test_bare_chinese_water_record_never_falls_through_to_profile_analysis
     ]
     reply = _tokens(events)
 
-    assert model_calls == 0, "typed water writes should skip model tool selection"
+    assert model_calls == 1, "Pi requests the structured write once"
     assert history_loads == 0, "typed water writes should not load model history"
     assert len(executed) == 1
     tool_name, args = executed[0]
@@ -995,7 +1006,7 @@ async def test_bare_chinese_water_record_never_falls_through_to_profile_analysis
     assert all(term not in reply for term in ("青海湖", "胃溃疡", "血氧", "复测"))
 
 
-async def test_failed_deterministic_symptom_write_never_streams_the_claim(
+async def test_failed_structured_symptom_write_never_streams_the_claim(
     db, auth_user_and_headers
 ):
     """founder 2026-07-17 09:21 生产现场逐字复现(user=3, 24h 内 2 次)。
@@ -1023,10 +1034,15 @@ async def test_failed_deterministic_symptom_write_never_streams_the_claim(
     tools_called = []
 
     async def fake_call_llm_stream(messages, tools):
-        # 生产现场:零 tool_calls, 直接把"已记录"当答案吐出来。
         for ch in the_lie:
             yield {"type": "content", "text": ch}
-        yield {"type": "finish", "finish_reason": "stop"}
+        yield {"type": "tool_calls", "tool_calls": [{
+            "id": "failed-symptom", "type": "function",
+            "function": {"name": "health_record", "arguments": json.dumps({
+                "record_type": "symptom", "data": {"description": sneeze_msg, "body_part": "respiratory"},
+            }, ensure_ascii=False)},
+        }]}
+        yield {"type": "finish", "finish_reason": "tool_calls"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         tools_called.append(tool_name)
@@ -1042,7 +1058,7 @@ async def test_failed_deterministic_symptom_write_never_streams_the_claim(
     ]
     reply = _tokens(events)
 
-    assert tools_called == ["health_record"], "明确症状应尝试确定性写入"
+    assert tools_called == ["health_record"], "结构化症状写入只能派发一次"
     # 承重墙: 未经验证的写入声明**绝不**出现在下发给用户的 token 流里。
     assert "已记录" not in reply, f"未验证的『已记录』流到了用户屏幕上: {reply!r}"
     assert "✅" not in reply, reply
@@ -1050,7 +1066,7 @@ async def test_failed_deterministic_symptom_write_never_streams_the_claim(
     assert reply.strip(), "抑制之后必须补发诚实回复, 不能什么都不发"
 
 
-async def test_partial_diet_correction_uses_deterministic_update_without_false_claim(
+async def test_partial_diet_correction_uses_structured_update_without_false_claim(
     db, auth_user_and_headers
 ):
     user, _headers = auth_user_and_headers
@@ -1062,14 +1078,22 @@ async def test_partial_diet_correction_uses_deterministic_update_without_false_c
     async def fake_call_llm_stream(messages, tools):
         nonlocal rounds
         rounds += 1
-        text = (
-            "好的，已经帮你保存晚餐。"
-            if rounds == 1
-            else "已按实际吃掉的四分之一更新晚餐。"
-        )
-        for ch in text:
-            yield {"type": "content", "text": ch}
-        yield {"type": "finish", "finish_reason": "stop"}
+        if rounds == 1:
+            yield {"type": "content", "text": "好的，已经帮你保存晚餐。"}
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": "quarter-dinner", "type": "function",
+                "function": {"name": "health_manage", "arguments": json.dumps({
+                    "record_type": "diet", "operation": "update", "record_id": 829,
+                    "data": {
+                        "meal_type": "dinner", "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪（按实际食用四分之一计）",
+                        "calories": 500.0, "protein": 20.0, "carbs": 30.0, "fat": 25.0, "fiber": 4.0,
+                    },
+                }, ensure_ascii=False)},
+            }]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+        else:
+            yield {"type": "content", "text": "已按实际吃掉的四分之一更新晚餐。"}
+            yield {"type": "finish", "finish_reason": "stop"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
@@ -1167,8 +1191,13 @@ async def test_ambiguous_partial_diet_correction_never_claims_an_update(
     assert rounds == 1
     assert executed == []
     assert "已按三分之一更新午餐" not in reply
-    assert "多条" in reply and "选择" in reply
-    assert events[-1]["data"]["completion_status"] == "error"
+    assert not _claims_unverified_write_success(reply)
+    assert "没有" in reply
+    executor._api_get_json.assert_not_awaited()
+    assert events[-1]["data"]["completion_status"] == "complete"
+    assert events[-1]["data"]["turn_outcome"]["status"] == "failed"
+    assert events[-1]["data"]["turn_outcome"]["category"] == "action_not_executed"
+    assert events[-1]["data"]["turn_outcome"]["reason_code"] == "mutation_without_tool"
     assert not events[-1]["data"].get("write_receipts")
 
 
@@ -1438,8 +1467,8 @@ async def test_clinician_basis_compound_action_is_not_executed_or_retried(
     reply = _tokens(events)
     done = next(event for event in events if event.get("event") == "done")
 
-    assert rounds == 2
-    assert exposed_tools == [[], []]
+    assert rounds == 1
+    assert exposed_tools == [[]]
     assert reply == guarded_reply
     assert "没有执行" in reply and "保存" in reply
     assert "去掉" in reply and "临床依据子句" in reply
@@ -1620,7 +1649,7 @@ async def test_medical_basis_analysis_exposes_read_schema_without_writes(
     assert done["data"]["completion_status"] == "complete"
 
 
-async def test_clinician_basis_hallucinated_tools_exhaust_to_safe_success(
+async def test_clinician_basis_hallucinated_tools_stop_immediately_with_safe_reply(
     db, auth_user_and_headers
 ):
     user, _headers = auth_user_and_headers
@@ -1681,7 +1710,7 @@ async def test_clinician_basis_hallucinated_tools_exhaust_to_safe_success(
     reply = _tokens(events)
     done = next(event for event in events if event.get("event") == "done")
 
-    assert model_rounds == 8
+    assert model_rounds == 1
     assert forced_synthesis_calls == 0
     assert "没有执行" in reply and "保存" in reply
     assert "去掉" in reply and "临床依据子句" in reply
@@ -1854,6 +1883,7 @@ async def test_explicit_clinician_feedback_stream_uses_typed_gateway_once(
     done = next(event for event in events if event.get("event") == "done")
 
     assert exposed_tools[0] == ["record_doctor_feedback"]
+    assert len(exposed_tools) == 2, (reply, done["data"]["completion_status"], done["data"]["write_receipts"])
     assert exposed_tools[1] == []
     assert rounds == 2
     assert reply == final_reply
@@ -1877,6 +1907,14 @@ async def test_explicit_clinician_feedback_stream_uses_typed_gateway_once(
     assert entries[0].assessment == assessment
     assert entries[0].plan is None
     assert receipt["resource_id"] == str(entries[0].id)
+
+    source = db.get(AgentMessage, executor._current_turn_source_message_id)
+    assert source.meta["write_plan"]["sealed"] is True
+    planned_fingerprints = set(source.meta["write_plan"]["fingerprints"])
+    operations = source.meta["write_operations"]
+    assert len(planned_fingerprints) == 1
+    assert planned_fingerprints == set(operations)
+    assert all(item["status"] == "verified" for item in operations.values())
 
     operation = db.query(AgentToolOperation).one()
     assert operation.tool_name == "record_doctor_feedback"

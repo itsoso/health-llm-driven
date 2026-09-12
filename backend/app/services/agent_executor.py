@@ -3614,6 +3614,13 @@ def _write_operation_fingerprint(
         )
 
         canonical_args = normalize_health_record_dispatch_args(canonical_args)
+    elif tool_name == "record_doctor_feedback":
+        # Pi omits absent optional strings; the domain writer persists explicit
+        # nulls. Both representations must identify the same doctor note.
+        # Keep the existing canonical dispatch identity for replay safety.
+        for field in ("summary", "assessment", "plan"):
+            value = canonical_args.get(field)
+            canonical_args[field] = (value.strip() or None) if isinstance(value, str) else value
     return runtime_hmac_digest(
         "write-operation-fingerprint-v1",
         tool_name,
@@ -12650,6 +12657,7 @@ class AgentExecutor:
         tool_name: str,
         parsed_args: Dict[str, Any],
         receipt: Optional[Dict[str, Any]] = None,
+        preserve_dispatch_summary: bool = False,
     ) -> None:
         """Checkpoint a write boundary on the durable user turn.
 
@@ -12675,18 +12683,26 @@ class AgentExecutor:
             for item in existing_receipts
         ):
             existing_receipts.append(dict(receipt))
+        previous_summary = meta.get("write_state") or {}
+        updated_at = datetime.now(UTC).isoformat()
         meta["write_state"] = {
             "status": status,
             "tool": tool_name,
             "fingerprint": fingerprint,
-            "updated_at": datetime.now(UTC).isoformat(),
+            "updated_at": updated_at,
         }
+        if preserve_dispatch_summary and previous_summary.get("status") in {
+            "in_flight", "uncertain", "failed",
+        }:
+            # A cancelled sibling has no side effect; it cannot resolve an
+            # earlier dispatched operation. Preserve that summary atomically.
+            meta["write_state"] = previous_summary
         operations = dict(meta.get("write_operations") or {})
         operation = dict(operations.get(fingerprint) or {})
         operation.update({
             "status": status,
             "tool": tool_name,
-            "updated_at": meta["write_state"]["updated_at"],
+            "updated_at": updated_at,
         })
         if receipt:
             operation["receipt_operation_id"] = receipt.get("operation_id")
@@ -13172,575 +13188,664 @@ class AgentExecutor:
             goal_lookup_completed = False
             goal_allowed_record_ids: set[str] = set()
             lead_force_no_tools_synthesis = False
-            for _round in range(MULTI_MODEL_MAX_LEAD_ROUNDS):
-                resp = await self._call_llm(
-                    lead_messages,
-                    [] if lead_force_no_tools_synthesis else tools,
-                )
-                tool_calls = resp.get("tool_calls") if isinstance(resp, dict) else None
-                content = ((resp.get("content") if isinstance(resp, dict) else str(resp)) or "")
-                if not tool_calls:
-                    recovered = _extract_inline_tool_call(
-                        content,
-                        tools,
-                        user_message=message,
-                    )
-                    if recovered:
-                        tool_calls = [recovered]
-                        content = ""
-                # 文本式工具调用(Tool calls:\n- xxx)无参数可解析 → 重提示结构化重试。
-                if not tool_calls and _is_botched_text_tool_call(content, tools):
-                    if _round < MULTI_MODEL_MAX_LEAD_ROUNDS - 1:
-                        logger.warning(
-                            "[agent_executor] 文本式工具调用(多模型路), 重提示重试. chars=%s",
-                            len(content),
-                        )
-                        lead_messages.append({"role": "assistant", "content": content})
-                        lead_messages.append({"role": "user", "content": (
-                            "你刚才把工具调用写成了文本(例如 \"Tool calls:\\n- health_query\"),"
-                            "并没有真正调用工具。请立刻用结构化 function calling 真正调用所需工具并带正确参数"
-                            "(例如查看补剂库用 health_query 且 dimension=\"supplements\")。"
-                        )})
+            lead_finish_reason = "error"
+            pending_pi_writes: dict[str, tuple[str, Dict[str, Any]]] = {}
+
+            def _reconcile_pi_preflight_rejections(transcript, completed_round, *, settled=False):
+                nonlocal last_recoverable_write_rejection
+                nonlocal last_recoverable_write_rejection_code
+                result_ids = {
+                    item.get("tool_call_id") for item in transcript
+                    if item.get("role") == "tool"
+                }
+                for call_id in list(pending_pi_writes):
+                    if not settled and call_id not in result_ids:
                         continue
-                    content = _strip_text_tool_call(content)
-                if not deterministic_supplement_fallback_attempted:
-                    deterministic_supplement_calls = (
-                        _build_deterministic_supplement_record_tool_calls(
-                            message,
-                            contextual_supplement_names=tuple(
-                                getattr(
-                                    self,
-                                    "_turn_contextual_supplement_names",
-                                    (),
-                                )
-                                or ()
-                            ),
-                            write_receipts=write_receipts,
-                        )
+                    # A tool result or clean done proves that Pi finished
+                    # without requesting this Python effect (validation or
+                    # terminal sibling cancellation). Never infer from prose.
+                    name, args = pending_pi_writes.pop(call_id)
+                    identity_args = _turn_write_identity_args(
+                        name, args, user_message=self._current_turn_user_message,
+                        recent_messages=self._current_turn_recent_messages,
                     )
-                    if deterministic_supplement_calls and (
-                        len(deterministic_supplement_calls) > 1
-                        or self._turn_contextual_supplement_names
-                        or not tool_calls
-                        or _should_replace_with_deterministic_supplement_calls(
-                            tool_calls,
-                            deterministic_supplement_calls,
-                        )
-                    ):
-                        deterministic_supplement_fallback_attempted = True
-                        tool_calls = deterministic_supplement_calls
-                        content = ""
-                if (
-                    not tool_calls
-                    and not deterministic_simple_record_fallback_attempted
-                ):
-                    deterministic_simple_record_call = (
-                        _build_deterministic_simple_record_tool_call(
-                            (
-                                self._agent_kernel_snapshot.goal
-                                if self._agent_kernel_snapshot is not None else None
-                            ),
-                            write_receipts=write_receipts,
-                        )
-                    )
-                    if deterministic_simple_record_call:
-                        deterministic_simple_record_fallback_attempted = True
-                        tool_calls = [deterministic_simple_record_call]
-                        content = ""
-                        logger.info(
-                            "[agent_executor] deterministic simple record fallback "
-                            "user=%s record_type=%s",
-                            user_id,
-                            (
-                                self._agent_kernel_snapshot.goal.target_record_type
-                                if self._agent_kernel_snapshot is not None
-                                and self._agent_kernel_snapshot.goal is not None
-                                else "unknown"
-                            ),
-                        )
-                if (
-                    not tool_calls
-                    and not deterministic_goal_lookup_attempted
-                ):
-                    deterministic_goal_call = _build_deterministic_goal_lookup_tool_call(
-                        (
-                            self._agent_kernel_snapshot.goal
-                            if self._agent_kernel_snapshot is not None else None
-                        ),
-                        write_receipts=write_receipts,
-                    )
-                    if deterministic_goal_call:
-                        deterministic_goal_lookup_attempted = True
-                        tool_calls = [deterministic_goal_call]
-                        content = ""
-                if (
-                    not tool_calls
-                    and goal_lookup_completed
-                    and not deterministic_goal_delete_attempted
-                ):
-                    deterministic_delete_calls = (
-                        _build_deterministic_goal_delete_tool_calls(
-                            (
-                                self._agent_kernel_snapshot.goal
-                                if self._agent_kernel_snapshot is not None
-                                else None
-                            ),
-                            allowed_record_ids=goal_allowed_record_ids,
-                        )
-                    )
-                    if deterministic_delete_calls:
-                        deterministic_goal_delete_attempted = True
-                        tool_calls = deterministic_delete_calls
-                        content = ""
-                if not tool_calls:
-                    verification_call = _build_goal_verification_tool_call(
-                        (
-                            self._agent_kernel_snapshot.goal
-                            if self._agent_kernel_snapshot is not None else None
-                        ),
-                        write_receipts=write_receipts,
-                        already_attempted=goal_verification_attempted,
-                    )
-                    if verification_call:
-                        goal_verification_attempted = True
-                        tool_calls = [verification_call]
-                        content = ""
-                if (
-                    not tool_calls
-                    and not deterministic_diet_correction_fallback_attempted
-                ):
-                    deterministic_diet_call = (
-                        _build_deterministic_diet_correction_tool_call(
-                            message,
-                            write_receipts=write_receipts,
-                            reference_now=self._agent_kernel_reference_now(),
-                        )
-                    )
-                    if deterministic_diet_call:
-                        deterministic_diet_correction_fallback_attempted = True
-                        tool_calls = [deterministic_diet_call]
-                        content = ""
-                        logger.info(
-                            "[agent_executor] deterministic diet correction fallback "
-                            "user=%s message_chars=%s",
-                            user_id,
-                            len(message or ""),
-                        )
-                if (
-                    not tool_calls
-                    and goal_verification_attempted
-                    and goal_verification_result is not None
-                ):
-                    postcondition = verify_goal_postconditions(
-                        (
-                            self._agent_kernel_snapshot.goal
-                            if self._agent_kernel_snapshot is not None else None
-                        ),
-                        write_receipts=write_receipts,
-                        verification_result=goal_verification_result,
-                    )
-                    if self._agent_kernel_event_bus is not None:
-                        self._agent_kernel_event_bus.goal_evaluated(
-                            satisfied=postcondition.satisfied,
-                            verified_target_count=len(
-                                postcondition.verified_resource_ids
-                            ),
-                            reason=postcondition.reason,
-                        )
-                    if not postcondition.satisfied:
-                        content = (
-                            "更新操作已执行，但读回核验未覆盖全部目标餐次，"
-                            "因此本轮不能确认已经全部完成。请重试，系统会继续核对现有记录。"
-                        )
-                goal = (
-                    self._agent_kernel_snapshot.goal
-                    if self._agent_kernel_snapshot is not None else None
-                )
-                if (
-                    not tool_calls
-                    and not receipt_goal_evaluated
-                    and deterministic_simple_record_fallback_attempted
-                    and goal is not None
-                    and goal.kind == "simple_health_record"
-                ):
-                    receipt_goal_evaluated = True
-                    postcondition = verify_goal_postconditions(
-                        goal,
-                        write_receipts=write_receipts,
-                        verification_result=None,
-                    )
-                    if self._agent_kernel_event_bus is not None:
-                        self._agent_kernel_event_bus.goal_evaluated(
-                            satisfied=postcondition.satisfied,
-                            verified_target_count=len(
-                                postcondition.verified_resource_ids
-                            ),
-                            reason=postcondition.reason,
-                        )
-                    terminal_completed = postcondition.satisfied
-                    if postcondition.satisfied:
-                        terminal_text = _simple_record_goal_completion_text(goal)
-                    elif last_recoverable_write_rejection:
-                        rejection_is_terminal = bool(
-                            last_recoverable_write_rejection_code
-                            in {"diet_nutrition_incomplete", "non_diet_intake"}
-                            or _claims_unverified_write_success(content)
-                            or not content.strip()
-                        )
-                        if rejection_is_terminal:
-                            terminal_text = _write_rejection_with_receipt_context(
-                                last_recoverable_write_rejection,
-                                write_receipts,
-                            )
-                        else:
-                            terminal_text = _write_rejection_with_receipt_context(
-                                content,
-                                write_receipts,
-                            )
-                            terminal_completed = True
-                    else:
-                        terminal_text = (
-                            "记录请求已执行，但没有取得与目标类型一致的可验证回执，"
-                            "因此本轮不能确认已经完成。请重试。"
-                        )
-                    raise _SimpleRecordTerminal(
-                        terminal_text,
-                        satisfied=terminal_completed,
-                    )
-                if tool_calls:
-                    proposed_tool_calls = list(tool_calls)
-                    tool_calls = self._normalize_query_only_health_manage_tool_calls(
-                        tool_calls,
-                    )
-                    tool_calls = await self._normalize_latest_diet_delete_tool_calls(
-                        tool_calls,
-                        user_auth_token,
-                    )
-                    tool_calls = await self._normalize_explicit_diet_update_tool_calls(
-                        tool_calls,
-                        user_auth_token,
-                    )
-                    tool_calls = _normalize_goal_guarded_tool_calls(
-                        tool_calls,
-                        (
-                            self._agent_kernel_snapshot.goal
-                            if self._agent_kernel_snapshot is not None else None
-                        ),
-                        lookup_completed=goal_lookup_completed,
-                        allowed_record_ids=goal_allowed_record_ids,
-                    )
-                    tool_calls, simple_diet_nutrition_estimation_attempted = (
-                        await _enrich_simple_diet_goal_tool_calls(
-                            tool_calls,
-                            (
-                                self._agent_kernel_snapshot.goal
-                                if self._agent_kernel_snapshot is not None
-                                else None
-                            ),
-                            estimation_attempted=(
-                                simple_diet_nutrition_estimation_attempted
-                            ),
-                            runtime_write_blocked=bool(
-                                self._runtime_write_block_reason
-                            ),
-                        )
-                    )
-                    rejected_goal_writes = _goal_guard_rejected_writes(
-                        proposed_tool_calls,
-                        tool_calls,
-                    )
-                    for rejected_tool_name, rejected_args in rejected_goal_writes:
+                    fingerprint = _write_operation_fingerprint(name, identity_args)
+                    operation = (user_msg.meta or {}).get("write_operations", {}).get(fingerprint, {})
+                    if operation.get("status") in {None, "planned"}:
                         self._persist_turn_write_state(
-                            user_msg,
-                            status="rejected",
-                            tool_name=rejected_tool_name,
-                            parsed_args=rejected_args,
+                            user_msg, status="rejected", tool_name=name, parsed_args=args,
+                            preserve_dispatch_summary=True,
                         )
-                    if proposed_tool_calls and not tool_calls:
-                        logger.warning(
-                            "[agent_executor] all multi-model lead tool calls were "
-                            "blocked by the goal contract; recovering with a "
-                            "text-only lead answer user=%s rejected_writes=%s",
-                            user_id,
-                            len(rejected_goal_writes),
-                        )
-                        if content.strip():
-                            lead_messages.append({
-                                "role": "assistant",
-                                "content": content,
-                            })
-                        lead_messages.append({
-                            "role": "user",
-                            "content": _GOAL_GUARD_RECOVERY_PROMPT,
-                        })
-                        lead_force_no_tools_synthesis = True
-                        continue
-                    self._prepare_medication_tool_plan(tool_calls)
-                    planned_writes: List[tuple[str, Dict[str, Any]]] = []
-                    for tc in tool_calls:
-                        fn = tc["function"]["name"]
-                        fa = tc["function"]["arguments"]
-                        try:
-                            parsed_args = (
-                                json.loads(fa)
-                                if isinstance(fa, str)
-                                else dict(fa or {})
-                            )
-                        except (json.JSONDecodeError, TypeError, ValueError):
-                            parsed_args = {}
-                        if (
-                            fn in _WRITE_RECEIPT_TOOL_NAMES
-                            and _write_tool_attempted(fn, parsed_args)
-                        ):
-                            planned_writes.append((fn, parsed_args))
-                    self._persist_turn_expected_writes(user_msg, planned_writes)
-                    lead_messages.append({"role": "assistant", "content": "", "tool_calls": tool_calls})
-                    for tc in tool_calls:
-                        fn = tc["function"]["name"]
-                        fa = tc["function"]["arguments"]
-                        try:
-                            parsed_args = json.loads(fa) if isinstance(fa, str) else dict(fa or {})
-                        except (json.JSONDecodeError, TypeError, ValueError):
-                            parsed_args = {}
-                        write_attempted = (
-                            fn in _WRITE_RECEIPT_TOOL_NAMES
-                            and _write_tool_attempted(fn, parsed_args)
-                        )
-                        write_identity_args = _turn_write_identity_args(
-                            fn,
-                            parsed_args,
-                            user_message=self._current_turn_user_message,
-                            recent_messages=self._current_turn_recent_messages,
-                        )
-                        write_fingerprint = (
-                            _write_operation_fingerprint(fn, write_identity_args)
-                            if write_attempted else None
-                        )
-                        recoverable_write_key = (
-                            _recoverable_write_operation_key(
-                                fn,
-                                write_identity_args,
-                                default_record_date=(
-                                    self._agent_kernel_reference_now()
-                                    .date()
-                                    .isoformat()
-                                ),
-                            )
-                            if write_attempted else None
-                        )
-                        replayed_write = bool(
-                            write_fingerprint
-                            and write_fingerprint in write_results_by_fingerprint
-                        )
-                        if replayed_write:
-                            result = write_results_by_fingerprint[write_fingerprint]
+                    key = _recoverable_write_operation_key(
+                        name, identity_args,
+                        default_record_date=self._agent_kernel_reference_now().date().isoformat(),
+                    )
+                    pending_recoverable_write_rejections[key] = (
+                        "部分请求未通过执行检查，没有写入；本轮不能确认已全部完成。请补充或修正记录信息。",
+                        "pi_tool_not_dispatched",
+                    )
+                    pending_recoverable_write_rejection_rounds[key] = completed_round
+                    pending_recoverable_write_rejection_scopes[key] = _recoverable_write_scope_key(name, args)
+                (
+                    last_recoverable_write_rejection,
+                    last_recoverable_write_rejection_code,
+                ) = _summarize_recoverable_write_rejections(pending_recoverable_write_rejections)
+
+            async def _execute_pi_lead_tool(tc: Dict[str, Any], _round: int):
+                nonlocal goal_lookup_completed, goal_allowed_record_ids
+                nonlocal goal_verification_result
+                nonlocal last_recoverable_write_rejection
+                nonlocal last_recoverable_write_rejection_code
+                pending_pi_writes.pop(tc["id"], None)
+                fn = tc["function"]["name"]
+                fa = tc["function"]["arguments"]
+                try:
+                    parsed_args = json.loads(fa) if isinstance(fa, str) else dict(fa or {})
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    parsed_args = {}
+                write_attempted = (
+                    fn in _WRITE_RECEIPT_TOOL_NAMES
+                    and _write_tool_attempted(fn, parsed_args)
+                )
+                write_identity_args = _turn_write_identity_args(
+                    fn,
+                    parsed_args,
+                    user_message=self._current_turn_user_message,
+                    recent_messages=self._current_turn_recent_messages,
+                )
+                write_fingerprint = (
+                    _write_operation_fingerprint(fn, write_identity_args)
+                    if write_attempted else None
+                )
+                recoverable_write_key = (
+                    _recoverable_write_operation_key(
+                        fn,
+                        write_identity_args,
+                        default_record_date=(
+                            self._agent_kernel_reference_now()
+                            .date()
+                            .isoformat()
+                        ),
+                    )
+                    if write_attempted else None
+                )
+                replayed_write = bool(
+                    write_fingerprint
+                    and write_fingerprint in write_results_by_fingerprint
+                )
+                if replayed_write:
+                    result = write_results_by_fingerprint[write_fingerprint]
+                else:
+                    # Wave 2: 心跳 + per-tool 超时(同主路径)。
+                    result = None
+                    self._agent_kernel_last_decision = None
+                    async for _hb_kind, _hb_val in self._run_tool_with_progress(
+                        fn, fa, user_auth_token, _tool_progress_label(fn),
+                    ):
+                        if _hb_kind == "heartbeat":
+                            yield _hb_val
                         else:
-                            # Wave 2: 心跳 + per-tool 超时(同主路径)。
-                            result = None
-                            self._agent_kernel_last_decision = None
-                            async for _hb_kind, _hb_val in self._run_tool_with_progress(
-                                fn, fa, user_auth_token, _tool_progress_label(fn),
-                            ):
-                                if _hb_kind == "heartbeat":
-                                    yield _hb_val
-                                else:
-                                    result = _hb_val
-                            if write_fingerprint:
-                                write_results_by_fingerprint[write_fingerprint] = result
-                        if (
-                            fn == "health_manage"
-                            and _goal_lookup_call_matches(
-                                (
-                                    self._agent_kernel_snapshot.goal
-                                    if self._agent_kernel_snapshot is not None
-                                    else None
-                                ),
-                                parsed_args,
-                            )
-                            and not str(result or "").startswith("Error")
-                        ):
-                            goal_lookup_completed = True
-                            goal_allowed_record_ids = _goal_target_record_ids(
-                                (
-                                    self._agent_kernel_snapshot.goal
-                                    if self._agent_kernel_snapshot is not None else None
-                                ),
-                                result,
-                            )
-                            if str(tc.get("id") or "").startswith("goal-verify-"):
-                                goal_verification_result = result
-                        tool_content = _model_tool_result_content(
+                            result = _hb_val
+                    if write_fingerprint:
+                        write_results_by_fingerprint[write_fingerprint] = result
+                if (
+                    fn == "health_manage"
+                    and _goal_lookup_call_matches(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None
+                            else None
+                        ),
+                        parsed_args,
+                    )
+                    and not str(result or "").startswith("Error")
+                ):
+                    goal_lookup_completed = True
+                    goal_allowed_record_ids = _goal_target_record_ids(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        result,
+                    )
+                    if str(tc.get("id") or "").startswith("goal-verify-"):
+                        goal_verification_result = result
+                tool_content = _model_tool_result_content(
+                    fn,
+                    parsed_args,
+                    result,
+                    reference_now=self._agent_kernel_reference_now(),
+                    timezone_label=self._ensure_agent_kernel_turn().context.timezone,
+                )
+                if (
+                    fn == "health_manage"
+                    and _goal_lookup_call_matches(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None
+                            else None
+                        ),
+                        parsed_args,
+                    )
+                ):
+                    tool_content += _goal_lookup_resolution_prompt(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        result,
+                    )
+                lead_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": tool_content,
+                })
+                lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
+                if lbl and lbl not in sources_used:
+                    sources_used.append(lbl)
+                tool_event_data = {
+                    "tool": fn,
+                    "success": not result.startswith("Error"),
+                    "preview": result[:200],
+                    "result": result,
+                }
+                if replayed_write:
+                    tool_event_data["replayed"] = True
+                checkpoint_status = None
+                if fn in _WRITE_RECEIPT_TOOL_NAMES:
+                    write_completed = _write_tool_completed(fn, parsed_args, result)
+                    tool_event_data["write_attempted"] = write_attempted
+                    tool_event_data["write_completed"] = write_completed
+                    if write_attempted and not write_completed:
+                        tool_event_data["success"] = False
+                    if write_completed:
+                        receipt = _write_receipt_from_tool_result(
                             fn,
                             parsed_args,
                             result,
-                            reference_now=self._agent_kernel_reference_now(),
-                            timezone_label=self._ensure_agent_kernel_turn().context.timezone,
                         )
-                        if (
-                            fn == "health_manage"
-                            and _goal_lookup_call_matches(
+                        if receipt:
+                            tool_event_data["receipt"] = receipt
+                            if not any(
+                                item.get("operation_id") == receipt.get("operation_id")
+                                for item in write_receipts
+                            ):
+                                write_receipts.append(receipt)
+                    else:
+                        receipt = None
+                    tool_event_data.update(
+                        _write_outcome_event_fields(result, receipt)
+                    )
+                    if write_attempted and not replayed_write:
+                        checkpoint_status = _write_checkpoint_status_after_dispatch(
+                            result,
+                            receipt,
+                        )
+                        self._persist_turn_write_state(
+                            user_msg,
+                            status=checkpoint_status,
+                            tool_name=fn,
+                            parsed_args=parsed_args,
+                            receipt=receipt,
+                        )
+                transient_local_rejection = bool(
+                    write_attempted
+                    and _write_result_is_pre_dispatch_validation_error(result)
+                )
+                if transient_local_rejection:
+                    assert recoverable_write_key is not None
+                    pending_recoverable_write_rejections.pop(
+                        recoverable_write_key,
+                        None,
+                    )
+                    pending_recoverable_write_rejections[
+                        recoverable_write_key
+                    ] = (
+                        _pre_dispatch_validation_user_message(result),
+                        classify_write_execution(result).error_code,
+                    )
+                    pending_recoverable_write_rejection_rounds[
+                        recoverable_write_key
+                    ] = _round
+                    pending_recoverable_write_rejection_scopes[
+                        recoverable_write_key
+                    ] = _recoverable_write_scope_key(
+                        fn,
+                        parsed_args,
+                    )
+                elif write_attempted and write_completed:
+                    assert recoverable_write_key is not None
+                    recoverable_scope_key = (
+                        _recoverable_write_scope_key(fn, parsed_args)
+                    )
+                    _clear_repaired_write_rejections(
+                        pending_recoverable_write_rejections,
+                        pending_recoverable_write_rejection_rounds,
+                        pending_recoverable_write_rejection_scopes,
+                        operation_key=recoverable_write_key,
+                        scope_key=recoverable_scope_key,
+                        current_round=_round,
+                        allow_scope_repair=(
+                            _goal_binds_recoverable_write(
                                 (
                                     self._agent_kernel_snapshot.goal
-                                    if self._agent_kernel_snapshot is not None
+                                    if self._agent_kernel_snapshot
+                                    is not None
                                     else None
                                 ),
+                                fn,
                                 parsed_args,
                             )
+                        ),
+                    )
+                (
+                    last_recoverable_write_rejection,
+                    last_recoverable_write_rejection_code,
+                ) = _summarize_recoverable_write_rejections(
+                    pending_recoverable_write_rejections
+                )
+                if (
+                    last_recoverable_write_rejection_code == "diet_nutrition_incomplete"
+                    and self._agent_kernel_snapshot is not None
+                    and self._agent_kernel_snapshot.goal is not None
+                    and self._agent_kernel_snapshot.goal.kind == "simple_health_record"
+                    and self._agent_kernel_snapshot.goal.target_record_type == "diet"
+                ):
+                    simple_diet_nutrition_rejection_rounds.add(_round)
+                if not transient_local_rejection:
+                    yield {"event": "tool_result", "data": tool_event_data}
+                if (
+                    write_attempted
+                    and checkpoint_status == "uncertain"
+                ):
+                    raise _UnverifiedWriteResult()
+                yield {"event": "_pi_lead_tool_response", "data": {
+                    "content": tool_content,
+                    "is_error": not bool(tool_event_data["success"]),
+                    "terminate": bool(
+                        len(simple_diet_nutrition_rejection_rounds) >= 2
+                        and last_recoverable_write_rejection
+                    ),
+                }}
+
+            from app.services.pi_kernel import PiKernelSession
+
+            blocked_lead_calls: set[str] = set()
+            async with PiKernelSession() as pi:
+                await pi.start(
+                    messages=lead_messages, tools=tools,
+                    max_turns=MULTI_MODEL_MAX_LEAD_ROUNDS,
+                )
+                _round = -1
+                async for request in pi:
+                    if request["type"] == "model_request":
+                        _reconcile_pi_preflight_rejections(request["messages"], _round)
+                        _round += 1
+                        lead_messages = request["messages"]
+                        resp = await self._call_llm(
+                            lead_messages,
+                            [] if lead_force_no_tools_synthesis else request["tools"],
+                        )
+                        content = ((resp.get("content") if isinstance(resp, dict) else str(resp)) or "")
+                        tool_calls = [
+                            {**call, "type": call.get("type", "function")}
+                            for call in ((resp.get("tool_calls") if isinstance(resp, dict) else None) or [])
+                        ]
+                        finish_reason = resp.get("finish_reason") if isinstance(resp, dict) else "stop"
+                        if finish_reason in {"length", "error"}:
+                            # Incomplete provider output cannot initiate writes
+                            # or enter independent panel synthesis.
+                            await pi.respond(
+                                request, content=content, tool_calls=[],
+                                finish_reason=finish_reason,
+                            )
+                            continue
+                        if not deterministic_supplement_fallback_attempted:
+                            deterministic_supplement_calls = (
+                                _build_deterministic_supplement_record_tool_calls(
+                                    message,
+                                    contextual_supplement_names=tuple(
+                                        getattr(
+                                            self,
+                                            "_turn_contextual_supplement_names",
+                                            (),
+                                        )
+                                        or ()
+                                    ),
+                                    write_receipts=write_receipts,
+                                )
+                            )
+                            if deterministic_supplement_calls and (
+                                len(deterministic_supplement_calls) > 1
+                                or self._turn_contextual_supplement_names
+                                or not tool_calls
+                                or _should_replace_with_deterministic_supplement_calls(
+                                    tool_calls,
+                                    deterministic_supplement_calls,
+                                )
+                            ):
+                                deterministic_supplement_fallback_attempted = True
+                                tool_calls = deterministic_supplement_calls
+                                content = ""
+                        if (
+                            not tool_calls
+                            and not deterministic_simple_record_fallback_attempted
                         ):
-                            tool_content += _goal_lookup_resolution_prompt(
+                            deterministic_simple_record_call = (
+                                _build_deterministic_simple_record_tool_call(
+                                    (
+                                        self._agent_kernel_snapshot.goal
+                                        if self._agent_kernel_snapshot is not None else None
+                                    ),
+                                    write_receipts=write_receipts,
+                                )
+                            )
+                            if deterministic_simple_record_call:
+                                deterministic_simple_record_fallback_attempted = True
+                                tool_calls = [deterministic_simple_record_call]
+                                content = ""
+                                logger.info(
+                                    "[agent_executor] deterministic simple record fallback "
+                                    "user=%s record_type=%s",
+                                    user_id,
+                                    (
+                                        self._agent_kernel_snapshot.goal.target_record_type
+                                        if self._agent_kernel_snapshot is not None
+                                        and self._agent_kernel_snapshot.goal is not None
+                                        else "unknown"
+                                    ),
+                                )
+                        if (
+                            not tool_calls
+                            and not deterministic_goal_lookup_attempted
+                        ):
+                            deterministic_goal_call = _build_deterministic_goal_lookup_tool_call(
                                 (
                                     self._agent_kernel_snapshot.goal
                                     if self._agent_kernel_snapshot is not None else None
                                 ),
-                                result,
+                                write_receipts=write_receipts,
                             )
-                        lead_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc["id"],
-                            "content": tool_content,
-                        })
-                        lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
-                        if lbl and lbl not in sources_used:
-                            sources_used.append(lbl)
-                        tool_event_data = {
-                            "tool": fn,
-                            "success": not result.startswith("Error"),
-                            "preview": result[:200],
-                            "result": result,
-                        }
-                        if replayed_write:
-                            tool_event_data["replayed"] = True
-                        if fn in _WRITE_RECEIPT_TOOL_NAMES:
-                            write_completed = _write_tool_completed(fn, parsed_args, result)
-                            tool_event_data["write_attempted"] = write_attempted
-                            tool_event_data["write_completed"] = write_completed
-                            if write_attempted and not write_completed:
-                                tool_event_data["success"] = False
-                            if write_completed:
-                                receipt = _write_receipt_from_tool_result(
-                                    fn,
-                                    parsed_args,
-                                    result,
+                            if deterministic_goal_call:
+                                deterministic_goal_lookup_attempted = True
+                                tool_calls = [deterministic_goal_call]
+                                content = ""
+                        if (
+                            not tool_calls
+                            and goal_lookup_completed
+                            and not deterministic_goal_delete_attempted
+                        ):
+                            deterministic_delete_calls = (
+                                _build_deterministic_goal_delete_tool_calls(
+                                    (
+                                        self._agent_kernel_snapshot.goal
+                                        if self._agent_kernel_snapshot is not None
+                                        else None
+                                    ),
+                                    allowed_record_ids=goal_allowed_record_ids,
                                 )
-                                if receipt:
-                                    tool_event_data["receipt"] = receipt
-                                    if not any(
-                                        item.get("operation_id") == receipt.get("operation_id")
-                                        for item in write_receipts
-                                    ):
-                                        write_receipts.append(receipt)
+                            )
+                            if deterministic_delete_calls:
+                                deterministic_goal_delete_attempted = True
+                                tool_calls = deterministic_delete_calls
+                                content = ""
+                        if not tool_calls:
+                            verification_call = _build_goal_verification_tool_call(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                write_receipts=write_receipts,
+                                already_attempted=goal_verification_attempted,
+                            )
+                            if verification_call:
+                                goal_verification_attempted = True
+                                tool_calls = [verification_call]
+                                content = ""
+                        if (
+                            not tool_calls
+                            and not deterministic_diet_correction_fallback_attempted
+                        ):
+                            deterministic_diet_call = (
+                                _build_deterministic_diet_correction_tool_call(
+                                    message,
+                                    write_receipts=write_receipts,
+                                    reference_now=self._agent_kernel_reference_now(),
+                                )
+                            )
+                            if deterministic_diet_call:
+                                deterministic_diet_correction_fallback_attempted = True
+                                tool_calls = [deterministic_diet_call]
+                                content = ""
+                                logger.info(
+                                    "[agent_executor] deterministic diet correction fallback "
+                                    "user=%s message_chars=%s",
+                                    user_id,
+                                    len(message or ""),
+                                )
+                        goal = (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        )
+                        if (
+                            not tool_calls
+                            and not receipt_goal_evaluated
+                            and deterministic_simple_record_fallback_attempted
+                            and goal is not None
+                            and goal.kind == "simple_health_record"
+                        ):
+                            receipt_goal_evaluated = True
+                            postcondition = verify_goal_postconditions(
+                                goal,
+                                write_receipts=write_receipts,
+                                verification_result=None,
+                            )
+                            if self._agent_kernel_event_bus is not None:
+                                self._agent_kernel_event_bus.goal_evaluated(
+                                    satisfied=postcondition.satisfied,
+                                    verified_target_count=len(
+                                        postcondition.verified_resource_ids
+                                    ),
+                                    reason=postcondition.reason,
+                                )
+                            terminal_completed = postcondition.satisfied
+                            if postcondition.satisfied:
+                                terminal_text = _simple_record_goal_completion_text(goal)
+                            elif last_recoverable_write_rejection:
+                                rejection_is_terminal = bool(
+                                    last_recoverable_write_rejection_code
+                                    in {"diet_nutrition_incomplete", "non_diet_intake", "pi_tool_not_dispatched"}
+                                    or _claims_unverified_write_success(content)
+                                    or not content.strip()
+                                )
+                                if rejection_is_terminal:
+                                    terminal_text = _write_rejection_with_receipt_context(
+                                        last_recoverable_write_rejection,
+                                        write_receipts,
+                                    )
+                                else:
+                                    terminal_text = _write_rejection_with_receipt_context(
+                                        content,
+                                        write_receipts,
+                                    )
+                                    terminal_completed = True
                             else:
-                                receipt = None
-                            tool_event_data.update(
-                                _write_outcome_event_fields(result, receipt)
-                            )
-                            if write_attempted and not replayed_write:
-                                checkpoint_status = _write_checkpoint_status_after_dispatch(
-                                    result,
-                                    receipt,
+                                terminal_text = (
+                                    "记录请求已执行，但没有取得与目标类型一致的可验证回执，"
+                                    "因此本轮不能确认已经完成。请重试。"
                                 )
+                            raise _SimpleRecordTerminal(
+                                terminal_text,
+                                satisfied=terminal_completed,
+                            )
+                        if tool_calls:
+                            proposed_tool_calls = list(tool_calls)
+                            tool_calls = self._normalize_query_only_health_manage_tool_calls(
+                                tool_calls,
+                            )
+                            tool_calls = await self._normalize_latest_diet_delete_tool_calls(
+                                tool_calls,
+                                user_auth_token,
+                            )
+                            tool_calls = await self._normalize_explicit_diet_update_tool_calls(
+                                tool_calls,
+                                user_auth_token,
+                            )
+                            tool_calls = _normalize_goal_guarded_tool_calls(
+                                tool_calls,
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                lookup_completed=goal_lookup_completed,
+                                allowed_record_ids=goal_allowed_record_ids,
+                            )
+                            tool_calls, simple_diet_nutrition_estimation_attempted = (
+                                await _enrich_simple_diet_goal_tool_calls(
+                                    tool_calls,
+                                    (
+                                        self._agent_kernel_snapshot.goal
+                                        if self._agent_kernel_snapshot is not None
+                                        else None
+                                    ),
+                                    estimation_attempted=(
+                                        simple_diet_nutrition_estimation_attempted
+                                    ),
+                                    runtime_write_blocked=bool(
+                                        self._runtime_write_block_reason
+                                    ),
+                                )
+                            )
+                            rejected_goal_writes = _goal_guard_rejected_writes(
+                                proposed_tool_calls,
+                                tool_calls,
+                            )
+                            for rejected_tool_name, rejected_args in rejected_goal_writes:
                                 self._persist_turn_write_state(
                                     user_msg,
-                                    status=checkpoint_status,
-                                    tool_name=fn,
-                                    parsed_args=parsed_args,
-                                    receipt=receipt,
+                                    status="rejected",
+                                    tool_name=rejected_tool_name,
+                                    parsed_args=rejected_args,
                                 )
-                        transient_local_rejection = bool(
-                            write_attempted
-                            and _write_result_is_pre_dispatch_validation_error(result)
+                            if proposed_tool_calls and not tool_calls:
+                                # Pi receives the denied calls only to attach explicit
+                                # error results. Python never grants them tool effects.
+                                # The next Pi model request uses a text-only transport.
+                                blocked_lead_calls.update(call["id"] for call in proposed_tool_calls)
+                                tool_calls = proposed_tool_calls
+                                lead_force_no_tools_synthesis = True
+                        if tool_calls:
+                            # Canonicalize the complete batch before its durable
+                            # checkpoint. Pi and dispatch see this exact payload.
+                            for call in tool_calls:
+                                function = call["function"]
+                                args = function["arguments"]
+                                args = json.loads(args) if isinstance(args, str) else args
+                                if not isinstance(args, dict):
+                                    raise ValueError("invalid_panel_tool_arguments")
+                                args = _recover_clear_symptom_args(
+                                    function["name"], args, self._current_turn_user_message,
+                                )
+                                if function["name"] == "health_manage" and isinstance(args.get("data"), str):
+                                    data = json.loads(args["data"])
+                                    if not isinstance(data, dict):
+                                        raise ValueError("invalid_panel_tool_arguments")
+                                    args["data"] = data
+                                function["arguments"] = json.dumps(args, ensure_ascii=False)
+                            dispatchable_calls = [
+                                call for call in tool_calls if call["id"] not in blocked_lead_calls
+                            ]
+                            self._prepare_medication_tool_plan(dispatchable_calls)
+                            planned_writes: List[tuple[str, Dict[str, Any]]] = []
+                            for call in dispatchable_calls:
+                                function = call["function"]
+                                args = json.loads(function["arguments"])
+                                name = function["name"]
+                                if name in _WRITE_RECEIPT_TOOL_NAMES:
+                                    if not _tool_call_is_read_only(name, args):
+                                        pending_pi_writes[call["id"]] = (name, args)
+                                    if _write_tool_attempted(name, args):
+                                        planned_writes.append((name, args))
+                            self._persist_turn_expected_writes(user_msg, planned_writes)
+                            lead_messages.append({"role": "assistant", "content": "", "tool_calls": tool_calls})
+                        await pi.respond(
+                            request, content="" if tool_calls else content,
+                            tool_calls=tool_calls,
+                            finish_reason="tool_calls" if tool_calls else "stop",
                         )
-                        if transient_local_rejection:
-                            assert recoverable_write_key is not None
-                            pending_recoverable_write_rejections.pop(
-                                recoverable_write_key,
-                                None,
+                    elif request["type"] == "tool_request":
+                        if request["tool_call_id"] in blocked_lead_calls:
+                            await pi.respond(
+                                request, content=_GOAL_GUARD_RECOVERY_PROMPT,
+                                is_error=True, terminate=False,
                             )
-                            pending_recoverable_write_rejections[
-                                recoverable_write_key
-                            ] = (
-                                _pre_dispatch_validation_user_message(result),
-                                classify_write_execution(result).error_code,
-                            )
-                            pending_recoverable_write_rejection_rounds[
-                                recoverable_write_key
-                            ] = _round
-                            pending_recoverable_write_rejection_scopes[
-                                recoverable_write_key
-                            ] = _recoverable_write_scope_key(
-                                fn,
-                                parsed_args,
-                            )
-                        elif write_attempted and write_completed:
-                            assert recoverable_write_key is not None
-                            recoverable_scope_key = (
-                                _recoverable_write_scope_key(fn, parsed_args)
-                            )
-                            _clear_repaired_write_rejections(
-                                pending_recoverable_write_rejections,
-                                pending_recoverable_write_rejection_rounds,
-                                pending_recoverable_write_rejection_scopes,
-                                operation_key=recoverable_write_key,
-                                scope_key=recoverable_scope_key,
-                                current_round=_round,
-                                allow_scope_repair=(
-                                    _goal_binds_recoverable_write(
-                                        (
-                                            self._agent_kernel_snapshot.goal
-                                            if self._agent_kernel_snapshot
-                                            is not None
-                                            else None
-                                        ),
-                                        fn,
-                                        parsed_args,
-                                    )
-                                ),
-                            )
-                        (
-                            last_recoverable_write_rejection,
-                            last_recoverable_write_rejection_code,
-                        ) = _summarize_recoverable_write_rejections(
-                            pending_recoverable_write_rejections
-                        )
-                        if (
-                            last_recoverable_write_rejection_code == "diet_nutrition_incomplete"
-                            and self._agent_kernel_snapshot is not None
-                            and self._agent_kernel_snapshot.goal is not None
-                            and self._agent_kernel_snapshot.goal.kind == "simple_health_record"
-                            and self._agent_kernel_snapshot.goal.target_record_type == "diet"
-                        ):
-                            simple_diet_nutrition_rejection_rounds.add(_round)
-                        if not transient_local_rejection:
-                            yield {"event": "tool_result", "data": tool_event_data}
-                        if (
-                            write_attempted
-                            and checkpoint_status == "uncertain"
-                        ):
-                            raise _UnverifiedWriteResult()
-                    if (
-                        len(simple_diet_nutrition_rejection_rounds) >= 2
-                        and last_recoverable_write_rejection
-                    ):
-                        # One repair opportunity is enough for a single bounded
-                        # meal; never spend the remaining rounds repeating a
-                        # known invalid write. The terminal rejection below
-                        # preserves the no-write outcome and retry action.
-                        break
-                    continue
-                # 兜底:内联标记(括号 / XML `<invoke>`)未恢复成 tool_call(name 不在白名单等)时,
-                # 绝不能把裸工具语法当 lead 分析落进 final_text / 喂给下游多方分析。cheap-precheck no-op。
-                if not content.strip():
-                    raise ValueError("empty_panel_lead")
-                content = _guard_panel_narrative(content)
-                content = _strip_bracket_tool_markers(content)
-                content = _strip_xml_tool_markers(content)
-                lead_text = content
-                break
+                            continue
+                        call = {
+                            "id": request["tool_call_id"], "type": "function",
+                            "function": {
+                                "name": request["name"],
+                                "arguments": json.dumps(request["arguments"], ensure_ascii=False),
+                            },
+                        }
+                        response = None
+                        async for event in _execute_pi_lead_tool(call, _round):
+                            if event.get("event") == "_pi_lead_tool_response":
+                                response = event["data"]
+                            else:
+                                yield event
+                        if response is None:
+                            raise RuntimeError("pi_panel_tool_response_missing")
+                        await pi.respond(request, **response)
+                    elif request["type"] == "done":
+                        lead_messages = request["messages"]
+                        _reconcile_pi_preflight_rejections(lead_messages, _round, settled=True)
+                        lead_text = request["content"]
+                        lead_finish_reason = request["finish_reason"]
+                        lead_text = _guard_panel_narrative(lead_text)
+                        lead_text = _strip_bracket_tool_markers(lead_text)
+                        lead_text = _strip_xml_tool_markers(lead_text)
+
+            # A bounded Pi run may finish immediately after its final tool
+            # batch. Goal readback is a mandatory domain verification step,
+            # independent of whether the lead asks for another model turn.
+            from app.services.agent_kernel.postconditions import registered_goal_verifier_kinds
+
+            goal = self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None
+            if goal is not None and goal.kind in registered_goal_verifier_kinds() and write_receipts:
+                verification_call = _build_goal_verification_tool_call(
+                    goal, write_receipts=write_receipts,
+                    already_attempted=goal_verification_result is not None,
+                )
+                if verification_call is not None:
+                    lead_messages.append({"role": "assistant", "content": "", "tool_calls": [verification_call]})
+                    async for event in _execute_pi_lead_tool(verification_call, max(0, _round)):
+                        if event.get("event") != "_pi_lead_tool_response":
+                            yield event
+                postcondition = verify_goal_postconditions(
+                    goal, write_receipts=write_receipts,
+                    verification_result=goal_verification_result,
+                )
+                if self._agent_kernel_event_bus is not None:
+                    self._agent_kernel_event_bus.goal_evaluated(
+                        satisfied=postcondition.satisfied,
+                        verified_target_count=len(postcondition.verified_resource_ids),
+                        reason=postcondition.reason,
+                    )
+                if not postcondition.satisfied:
+                    raise _SimpleRecordTerminal(
+                        "部分操作已取得回执，但结果核验没有覆盖全部目标，本轮不能确认已经全部完成。",
+                        satisfied=False,
+                    )
+
+            if lead_finish_reason != "stop":
+                raise ValueError("incomplete_panel_lead")
+            if not lead_text.strip() and not last_recoverable_write_rejection:
+                raise ValueError("empty_panel_lead")
 
             if last_recoverable_write_rejection:
                 rejection_is_terminal = bool(
                     last_recoverable_write_rejection_code
-                    in {"diet_nutrition_incomplete", "non_diet_intake"}
+                    in {"diet_nutrition_incomplete", "non_diet_intake", "pi_tool_not_dispatched"}
                     or _claims_unverified_write_success(lead_text)
                     or not lead_text.strip()
                 )
@@ -13758,6 +13863,14 @@ class AgentExecutor:
                 raise _SimpleRecordTerminal(
                     terminal_text,
                     satisfied=not rejection_is_terminal,
+                )
+
+            if not write_receipts and (
+                _has_explicit_record_write_intent(message)
+                or _has_destructive_or_sync_intent(message)
+            ):
+                raise _SimpleRecordTerminal(
+                    _record_intent_needs_detail_message(message), satisfied=False,
                 )
 
             data_ctx = _gathered_data_context(lead_messages)
@@ -15520,6 +15633,13 @@ class AgentExecutor:
             if preplanned_water_turn_call is not None
             else svc.build_messages(conv.id, limit=history_limit)
         )
+        if recovered_user_message is not None and (
+            not messages or messages[-1] != {"role": "user", "content": user_content}
+        ):
+            # Retry authorization was checked before entering this method.
+            # Keep the failed answer as history, then re-present the original
+            # request to Pi without creating another persisted user message.
+            messages.append({"role": "user", "content": user_content})
         logger.info(
             "[agent_executor] history-window user=%s limit=%s profile=%s",
             user_id,
@@ -15668,24 +15788,9 @@ class AgentExecutor:
         except Exception:  # noqa: BLE001
             pre_llm_ms = 0
 
-        # 4. 工具定义(2026-07-11 token 优化 #2)
-        # fast 简单回合(记录/简单查询)只发固定 big-3 白名单:实测工具 prefill
-        # 18,064→~6,700 chars(-62%),且缩短 flash 模型 prefill 时延。固定子集
-        # 保前缀字节稳定(不拆 provider 前缀缓存)。模型若吐出子集外工具名 →
-        # 下面 round loop 里升级回全集重跑该轮(fail-open,绝不静默丢调用)。
-        turn_tool_names = _tool_names_for_turn(
-            message,
-            fast_route=self._fast_route_simple_turn,
-            analysis_subset=self._analysis_turn_subset,
-            domain_subset=getattr(
-                settings, "domain_prompt_optimization", False
-            ),
-            has_attachments=bool(images or file_base64),
-        )
-        if turn_tool_names is not None:
-            tools = get_health_tools(subset=list(turn_tool_names))
-        else:
-            tools = get_health_tools()
+        # Pi receives the actual registered capabilities once. Clinical/tool
+        # authorization below can narrow this set; prose cannot expand it.
+        tools = get_health_tools()
         if (
             clinician_turn_decision.kind in _CLINICIAN_ZERO_TOOL_KINDS
             or clinician_turn_decision.reason_code
@@ -15717,18 +15822,6 @@ class AgentExecutor:
                 if (tool.get("function") or {}).get("name")
                 not in blocked_attachment_write_tools
             ]
-        # 任一真实子集(fast big-3 或 analysis 只读)激活 → 走 withheld-upgrade。
-        # health evidence 不是“可升级子集”：它是强制零工具的临床边界。
-        tool_subset_active = bool(
-            turn_tool_names is not None
-            and clinician_turn_decision.kind
-            not in {
-                *_CLINICIAN_ZERO_TOOL_KINDS,
-                "explicit_doctor_feedback_write",
-            }
-            and clinician_turn_decision.reason_code
-            not in _CLINICIAN_ZERO_TOOL_REASON_CODES
-        )
 
         # 5. Agent 循环
         full_reply = ""
@@ -15827,6 +15920,48 @@ class AgentExecutor:
         pending_recoverable_write_rejection_scopes: dict[str, str] = {}
         last_recoverable_write_rejection: Optional[str] = None
         last_recoverable_write_rejection_code: Optional[str] = None
+        pending_pi_writes: dict[str, tuple[str, Dict[str, Any]]] = {}
+
+        def _reconcile_pi_preflight_rejections(transcript, completed_round, *, settled=False):
+            nonlocal last_recoverable_write_rejection
+            nonlocal last_recoverable_write_rejection_code
+            result_ids = {
+                item.get("tool_call_id") for item in transcript
+                if item.get("role") == "tool"
+            }
+            for call_id in list(pending_pi_writes):
+                if not settled and call_id not in result_ids:
+                    continue
+                # A tool result or clean done proves that Pi finished
+                # without requesting this Python effect (validation or
+                # terminal sibling cancellation). Never infer from prose.
+                name, args = pending_pi_writes.pop(call_id)
+                identity_args = _turn_write_identity_args(
+                    name, args, user_message=self._current_turn_user_message,
+                    recent_messages=self._current_turn_recent_messages,
+                )
+                fingerprint = _write_operation_fingerprint(name, identity_args)
+                operation = (user_msg.meta or {}).get("write_operations", {}).get(fingerprint, {})
+                if operation.get("status") in {None, "planned"}:
+                    self._persist_turn_write_state(
+                        user_msg, status="rejected", tool_name=name, parsed_args=args,
+                        preserve_dispatch_summary=True,
+                    )
+                key = _recoverable_write_operation_key(
+                    name, identity_args,
+                    default_record_date=self._agent_kernel_reference_now().date().isoformat(),
+                )
+                pending_recoverable_write_rejections[key] = (
+                    "部分请求未通过执行检查，没有写入；本轮不能确认已全部完成。请补充或修正记录信息。",
+                    "pi_tool_not_dispatched",
+                )
+                pending_recoverable_write_rejection_rounds[key] = completed_round
+                pending_recoverable_write_rejection_scopes[key] = _recoverable_write_scope_key(name, args)
+            (
+                last_recoverable_write_rejection,
+                last_recoverable_write_rejection_code,
+            ) = _summarize_recoverable_write_rejections(pending_recoverable_write_rejections)
+
         # Slice 3 配方候选: 本轮**成功完成**的 health_record 写步骤 (sanitize 掉
         # 一次性确认标志 + 日期模板化)。≥2 步时 done 附 save_recipe 描述符
         # (仅描述符, 移动端渲染"存为配方"入口; 存不存由用户点)。
@@ -15838,2744 +15973,1157 @@ class AgentExecutor:
         # 流式模型 detail 恒为 None (不发此附加事件), mac 走正常滚动。fail-soft (解析异常=不发)。
         answer_model_non_streaming = self._resolved_answer_model_is_non_streaming()
 
-        # A2 (plan rank4) 自纠开关: 若合成轮被置空 tools 后模型其实还想再调工具
-        # (下面 botched 文本式工具调用被识别), 置位 → 本回合后续轮重新带上工具。
-        # 正确性 > 省 token: 多轮链式工具回合 (orchestrator 后还想 knowledge_search 等) 不被裁掉。
-        keep_tools_after_synthesis_miss = False
-        # 可恢复的模型拒答/数据缺口只允许一次恢复，避免重问循环或放宽安全边界。
-        model_recovery_attempted = False
-        self._http_client = httpx.AsyncClient(timeout=90.0)
-        try:
-            for round_idx in range(MAX_TOOL_ROUNDS):
-                if (
-                    self._turn_contextual_diet_write_blocked_reason
-                    == "confirmation_pending"
-                    and self._turn_contextual_diet_cards
-                ):
-                    # Structured vision has already persisted an owner-scoped
-                    # confirmation draft and built its actionable card.  A
-                    # model tool round cannot improve this state: if it calls
-                    # health_record, the write adapter must reject the duplicate
-                    # attempt, which previously turned a successful manual pause
-                    # into a false write failure and hid the card.  Finish from
-                    # the observed draft instead, with no second write attempt.
-                    if (
-                        "health_record"
-                        not in self._agent_kernel_pending_confirmation_tools
-                    ):
-                        self._agent_kernel_pending_confirmation_tools.append(
-                            "health_record"
-                        )
-                    full_reply = _contextual_diet_confirmation_reply()
-                    final_finish_reason = "stop"
-                    if first_token_at is None:
-                        first_token_at = time.time()
-                    if not response_output_buffered:
-                        for index in range(0, len(full_reply), 20):
-                            yield {
-                                "event": "token",
-                                "data": {"content": full_reply[index:index + 20]},
-                            }
-                    rounds.append({
-                        "llm_gen_ms": 0,
-                        "tool_exec_ms": 0,
-                        "tools": [],
-                    })
-                    break
-                if deterministic_health_release:
-                    # Sufficiency is a pre-synthesis policy decision. Clarify,
-                    # high/emergency, and authority-miss turns are rendered by
-                    # the deterministic verifier, so waiting for a model whose
-                    # prose will be discarded only adds latency and cost.
-                    full_reply = "本轮由确定性健康策略直接生成。"
-                    final_finish_reason = "stop"
-                    break
-                # 快路由逃生门(见 FAST_ROUTE_ESCALATE_AFTER_ROUNDS 常量注释):整轮快路由用掉
-                # N 轮仍未收敛 → 换回强模型跑完剩下的轮。恢复 _request_model_id=None 即回到
-                # 快路由介入**前**的默认路由(admin global / user pref)—— 因为快路由本就只在
-                # _request_model_id is None 时才接管(:5735),故这是精确还原、不是新路由。
-                # 只作用于**整轮**快路由:显式选模型(_request_model_id 由 extra_context 填)
-                # 与工具轮快路由(_tool_round_fast_routed,每轮自行判定)都不受影响。
-                # 加层不减层:换模型后既有的安全/R4/诚实门原样生效(它们与模型无关)。
-                if (
-                    self._fast_route_simple_turn
-                    and round_idx >= FAST_ROUTE_ESCALATE_AFTER_ROUNDS
-                ):
-                    self._fast_route_simple_turn = False
-                    self._request_model_id = None
-                    self._record_model_fallback_reason("fast_route_simple_turn_escalated")
-                    logger.warning(
-                        "[agent_executor] 快路由 %d 轮未收敛 → 升级强模型 "
-                        "user=%s message_chars=%s",
-                        round_idx,
-                        user_id,
-                        len(message or ""),
-                    )
-                # A tool may reveal that a seemingly ordinary question needs a
-                # deep health analysis. Upgrade only the model auto-selected by
-                # staged routing; user-selected models remain untouched.
-                self._maybe_escalate_staged_answer_model()
-                # 真流式调用 LLM：content delta 实时 yield 给客户端,同时累积 tool_calls。
-                # _call_llm_stream 内部已做 provider 路由 + failover (镜像 _call_llm)。
-                # round_tools = 本轮**发给模型**的工具; _detect_tools = 扫描模型**输出**用的
-                # 完整词表 (A2 把合成轮 round_tools 置空只是不再重发 18KB schema, 输出侧的
-                # 文本式/内联工具调用抑制词表不能跟着消失 —— 见 _detect_tools 用法)。
-                if self._force_no_tools_synthesis:
-                    # A3: fast 工具轮直接答文本被丢弃 → 本轮强制无 tools 合成 (强/显式模型),
-                    # 走主循环流式路径重合成 (tokens 逐 delta 下发)。
-                    round_tools = []
-                elif self._should_synthesize_with_requested_model_after_tools(tool_executed_count):
-                    # 既有: 显式选的不可靠工具模型, 工具后由它自己产出最终答案 (不重发 tools)。
-                    round_tools = []
-                elif tool_executed_count > 0 and not keep_tools_after_synthesis_miss:
-                    # A2: 上一轮已执行过工具 → 本轮实际是合成轮, 对**所有**模型置空 tools,
-                    # 省 ~5k tokens/轮 prefill (18,064-char schema)。2+-round 回合 = 55% 的回合。
-                    round_tools = []
-                else:
-                    round_tools = tools
-                # 扫描输出的工具词表: round_tools 非空则用它, 否则回退本回合完整 tools
-                # (合成轮词表稳定, 默认路径历来带非空 tools, 这层保护逐字节不变)。
-                _detect_tools = round_tools or tools
-                preplanned_simple_diet_call = None
-                preplanned_simple_water_call = None
-                preplanned_symptom_call = None
-                preplanned_diet_history_call = None
-                preplanned_diet_correction_call = None
-                preplanned_query_call = None
-                if round_idx == 0 and not images and not file_base64:
-                    correction = _parse_explicit_diet_correction(
-                        message, reference_now=self._agent_kernel_reference_now(),
-                    )
-                    if correction and correction.get("target") == "latest":
-                        preplanned_diet_correction_call = _build_deterministic_diet_correction_tool_call(
-                            message, write_receipts=write_receipts,
-                            reference_now=self._agent_kernel_reference_now(),
-                        )
-                        deterministic_diet_correction_fallback_attempted = True
-                    preplanned_diet_history_call = (
-                        _build_preplanned_diet_history_tool_call(
-                            self._agent_kernel_snapshot
-                        )
-                    )
-                    if preplanned_diet_history_call is not None:
-                        decision_route = "deterministic_diet_history"
-                        logger.info(
-                            "[agent_executor] deterministic diet history decision "
-                            "user=%s message_chars=%s",
-                            user_id,
-                            len(message or ""),
-                        )
-                if (
-                    round_idx == 0
-                    and deterministic_query_mode == "on"
-                    and self._fast_route_simple_turn
-                    and not self._prefer_fast_record_model
-                    and not health_advice_buffered
-                    and not images
-                    and not file_base64
-                    and any(
-                        (tool.get("function") or {}).get("name")
-                        == "health_query_batch"
-                        for tool in tools
-                    )
-                ):
-                    from app.services import query_readouts
-
-                    preplanned_query_args = (
-                        query_readouts.preplanned_batch_query_args(message or "")
-                    )
-                    if preplanned_query_args is not None:
-                        preplanned_query_call = {
-                            "id": "deterministic-query-batch",
-                            "type": "function",
-                            "function": {
-                                "name": "health_query_batch",
-                                "arguments": json.dumps(
-                                    preplanned_query_args,
-                                    ensure_ascii=False,
-                                ),
-                            },
-                        }
-                        decision_route = "deterministic_batch_query"
-                        logger.info(
-                            "[agent_executor] deterministic batch query decision "
-                            "user=%s query_count=%s",
-                            user_id,
-                            len(preplanned_query_args["queries"]),
-                        )
-                if (
-                    round_idx == 0
-                    and not health_advice_buffered
-                    and self._agent_kernel_snapshot is not None
-                    and self._agent_kernel_snapshot.intent.primary == "write"
-                    and self._agent_kernel_snapshot.intent.operation == "create"
-                    and _is_proven_pure_symptom_record_request(message)
-                    and not deterministic_symptom_fallback_attempted
-                    and any(
-                        (tool.get("function") or {}).get("name")
-                        == "health_record"
-                        for tool in tools
-                    )
-                ):
-                    preplanned_symptom_call = _build_deterministic_symptom_tool_call(
-                        message,
-                        write_receipts=write_receipts,
-                        has_attachment=bool(images or file_base64),
-                    )
-                    if preplanned_symptom_call is not None:
-                        deterministic_symptom_fallback_attempted = True
-                        decision_route = "deterministic_symptom"
-                        logger.info(
-                            "[agent_executor] deterministic symptom decision "
-                            "user=%s message_chars=%s",
-                            user_id,
-                            len(message or ""),
-                        )
-                if (
-                    round_idx == 0
-                    and not health_advice_buffered
-                    and any(
-                        (tool.get("function") or {}).get("name")
-                        == "health_record"
-                        for tool in tools
-                    )
-                ):
-                    preplanned_simple_diet_call = (
-                        _build_preplanned_simple_diet_tool_call(
-                            (
-                                self._agent_kernel_snapshot.goal
-                                if self._agent_kernel_snapshot is not None
-                                else None
-                            ),
-                            write_receipts=write_receipts,
-                            has_attachment=bool(images or file_base64),
-                            runtime_write_blocked=bool(
-                                self._runtime_write_block_reason
-                            ),
-                            read_only_turn=bool(read_only_tools),
-                        )
-                    )
-                    preplanned_simple_water_call = (
-                        preplanned_water_turn_call
-                        if round_idx == 0
-                        else _build_preplanned_simple_water_tool_call(
-                            (
-                                self._agent_kernel_snapshot.goal
-                                if self._agent_kernel_snapshot is not None
-                                else None
-                            ),
-                            write_receipts=write_receipts,
-                            has_attachment=bool(images or file_base64),
-                            runtime_write_blocked=bool(
-                                self._runtime_write_block_reason
-                            ),
-                            read_only_turn=bool(read_only_tools),
-                        )
-                    )
-                if preplanned_simple_water_call is not None:
-                    deterministic_simple_record_fallback_attempted = True
-                    decision_route = "deterministic_simple_water"
-                    _mark_perf_milestone("first_useful_ms")
-                    logger.info(
-                        "[agent_executor] deterministic simple water decision "
-                        "user=%s message_chars=%s",
-                        user_id,
-                        len(message or ""),
-                    )
-                if preplanned_simple_diet_call is not None:
-                    # The text fast path is allowed to skip the tool-decision
-                    # model only when the existing bounded estimator produced
-                    # the complete nutrition payload required by the write
-                    # validator.  If estimation is unavailable, fall back to
-                    # the original model-assisted repair path instead of
-                    # dispatching a write that is already known to be invalid.
-                    _mark_perf_milestone("first_useful_ms")
-                    yield self._progress_event("diet_parsed")
-                    yield self._progress_event("diet_estimating")
-                    nutrition_estimate_started_at = time.time()
-                    simple_diet_nutrition_estimate_calls += 1
-                    try:
-                        async with asyncio.timeout(
-                            _SIMPLE_DIET_NUTRITION_FAST_PATH_TIMEOUT_SECONDS
-                        ):
-                            (
-                                enriched_preplanned_calls,
-                                simple_diet_nutrition_estimation_attempted,
-                            ) = await _enrich_simple_diet_goal_tool_calls(
-                                [preplanned_simple_diet_call],
-                                (
-                                    self._agent_kernel_snapshot.goal
-                                    if self._agent_kernel_snapshot is not None
-                                    else None
-                                ),
-                                estimation_attempted=(
-                                    simple_diet_nutrition_estimation_attempted
-                                ),
-                                runtime_write_blocked=bool(
-                                    self._runtime_write_block_reason
-                                ),
-                            )
-                    except TimeoutError:
-                        simple_diet_nutrition_estimate_timed_out = True
-                        simple_diet_nutrition_estimation_attempted = True
-                        enriched_preplanned_calls = [preplanned_simple_diet_call]
-                        logger.warning(
-                            "[agent_executor] simple diet fast estimate timed out "
-                            "budget_ms=%s",
-                            int(
-                                _SIMPLE_DIET_NUTRITION_FAST_PATH_TIMEOUT_SECONDS
-                                * 1000
-                            ),
-                        )
-                    finally:
-                        simple_diet_nutrition_estimate_ms = max(
-                            0,
-                            int(
-                                (time.time() - nutrition_estimate_started_at)
-                                * 1000
-                            ),
-                        )
-                        simple_diet_nutrition_estimate_model = (
-                            _simple_diet_nutrition_estimator_model_name()
-                        )
-                    candidate_function = (
-                        enriched_preplanned_calls[0].get("function")
-                        if enriched_preplanned_calls
-                        else {}
-                    ) or {}
-                    try:
-                        candidate_arguments = json.loads(
-                            candidate_function.get("arguments") or "{}"
-                        )
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        candidate_arguments = {}
-                    candidate_data = candidate_arguments.get("data")
-                    if not (
-                        isinstance(candidate_data, dict)
-                        and _simple_diet_nutrition_is_complete(candidate_data)
-                    ):
-                        preplanned_simple_diet_call = None
-                        decision_route = "deterministic_simple_diet_fallback_llm"
-                    else:
-                        preplanned_simple_diet_call = enriched_preplanned_calls[0]
-                if preplanned_simple_diet_call is not None:
-                    deterministic_simple_record_fallback_attempted = True
-                    decision_route = "deterministic_simple_diet"
-                    _mark_perf_milestone("first_useful_ms")
-                    logger.info(
-                        "[agent_executor] deterministic simple diet decision "
-                        "user=%s message_chars=%s",
-                        user_id,
-                        len(message or ""),
-                    )
-                elif (
-                    decision_route == "deterministic_simple_diet"
-                    and round_idx > 0
-                ):
-                    decision_route = "deterministic_simple_diet_fallback_llm"
-                preplanned_tool_calls = (
-                    [preplanned_diet_correction_call]
-                    if preplanned_diet_correction_call is not None
-                    else [preplanned_symptom_call]
-                    if preplanned_symptom_call is not None
-                    else [preplanned_simple_water_call]
-                    if preplanned_simple_water_call is not None
-                    else [preplanned_simple_diet_call]
-                    if preplanned_simple_diet_call is not None
-                    else [preplanned_diet_history_call]
-                    if preplanned_diet_history_call is not None
-                    else [preplanned_query_call]
-                    if preplanned_query_call is not None
-                    else None
+        # Pi owns the model/tool loop. Reva's callback retains health-specific
+        # receipts, safety checks and client projections; it never chooses the
+        # next model turn or interprets prose as executable tool calls.
+        async def _execute_pi_tool(tc, round_idx):
+            nonlocal diet_verified_emitted, diet_writing_emitted, first_token_at
+            nonlocal goal_allowed_record_ids, goal_lookup_completed, goal_verification_result
+            nonlocal last_recoverable_write_rejection, last_recoverable_write_rejection_code
+            nonlocal orchestrator_perf, orchestrator_tool_ms, passthrough_orch_calls, passthrough_orch_text
+            nonlocal runtime_control_terminal, streamed_answer_evidence_digest, streamed_cards, tool_executed_count
+            pending_pi_writes.pop(tc["id"], None)
+            _round_tool_names = []
+            _tool_started = time.time()
+            func_name = tc["function"]["name"]
+            func_args = tc["function"]["arguments"]
+            # 收集工具名 (去重、按首次调用顺序) 供 done/meta 的 tools_used。
+            if func_name and func_name not in tools_used:
+                tools_used.append(func_name)
+            if func_name:
+                _round_tool_names.append(func_name)
+            if self._prefer_fast_record_model:
+                func_args = _auto_confirm_fast_record_args(
+                    func_name,
+                    func_args,
+                    channel=self._turn_channel,
+                    user_message=self._current_turn_user_message,
                 )
-                preplanned_tool_decision = preplanned_tool_calls is not None
-                # 真实思考过程: 本轮 LLM prefill/decide 等待即将开始 (TTFT 主来源)。
-                # synthesis = 前面轮已执行过工具 且 本轮不再带工具 (模型正在写最终答案);
-                # 否则 thinking (还在决策/可能再调工具)。纯附加、fail-soft (dict 构造不会抛)。
-                if preplanned_tool_decision:
+            parsed_tool_args_before_recovery = (
+                _parse_tool_arguments_for_telemetry(func_args)
+            )
+            parsed_tool_args_before_recovery_json = json.dumps(
+                parsed_tool_args_before_recovery,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            )
+            parsed_tool_args = _recover_clear_symptom_args(
+                func_name,
+                parsed_tool_args_before_recovery,
+                self._current_turn_user_message,
+            )
+            if (
+                func_name == "health_record"
+                and json.dumps(
+                    parsed_tool_args,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                )
+                != parsed_tool_args_before_recovery_json
+            ):
+                # Execute and expose the same canonical symptom-only
+                # payload that the validator will persist.  Keeping
+                # the model's compound request in ``func_args`` would
+                # make tool progress metadata disagree with the
+                # audited write even though _execute_tool_impl later
+                # repairs it again.
+                func_args = json.dumps(
+                    parsed_tool_args,
+                    ensure_ascii=False,
+                )
+            write_attempted = (
+                func_name in _WRITE_RECEIPT_TOOL_NAMES
+                and _write_tool_attempted(func_name, parsed_tool_args)
+            )
+            write_identity_args = _turn_write_identity_args(
+                func_name,
+                parsed_tool_args,
+                user_message=self._current_turn_user_message,
+                recent_messages=self._current_turn_recent_messages,
+            )
+            write_fingerprint = (
+                _write_operation_fingerprint(
+                    func_name,
+                    write_identity_args,
+                )
+                if write_attempted else None
+            )
+            runtime_write_fingerprint = (
+                _runtime_write_operation_fingerprint(
+                    func_name,
+                    write_identity_args,
+                    default_record_date=(
+                        self._agent_kernel_reference_now().strftime("%Y-%m-%d")
+                    ),
+                )
+                if write_attempted else None
+            )
+            recoverable_write_key = (
+                _recoverable_write_operation_key(
+                    func_name,
+                    write_identity_args,
+                    default_record_date=(
+                        self._agent_kernel_reference_now()
+                        .date()
+                        .isoformat()
+                    ),
+                )
+                if write_attempted else None
+            )
+            replayed_write = bool(
+                write_fingerprint
+                and write_fingerprint in write_results_by_fingerprint
+            )
+            # 只读去重: 只对只读工具(与写集天然不相交, belt-and-suspenders 再排一次写集)。
+            read_attempted = (
+                _READ_DEDUP_ENABLED
+                and _tool_call_is_read_only(
+                    func_name,
+                    parsed_tool_args,
+                )
+            )
+            read_fingerprint = (
+                _read_operation_fingerprint(
+                    func_name,
+                    parsed_tool_args,
+                    snapshot=self._agent_kernel_snapshot,
+                )
+                if read_attempted else None
+            )
+            replayed_read = bool(
+                read_fingerprint
+                and read_fingerprint in read_results_by_fingerprint
+            )
+            tool_id = tc["id"]
+
+            if (
+                not diet_photo_progress_turn
+                and not diet_writing_emitted
+                and func_name == "health_record"
+                and str(parsed_tool_args.get("record_type") or "")
+                .strip()
+                .lower()
+                == "diet"
+            ):
+                diet_writing_emitted = True
+                _mark_perf_milestone("first_useful_ms")
+                yield self._progress_event("diet_writing")
+
+            # 通知前端正在执行工具
+            yield {
+                "event": "tool_call",
+                "data": {
+                    "tool": func_name,
+                    "args": func_args if isinstance(func_args, str) else json.dumps(func_args, ensure_ascii=False),
+                    "round": round_idx + 1,
+                },
+            }
+            # 真实思考过程: 本工具即将在串行循环里执行 (short 中文名给"正在……"胶囊)。
+            # 纯附加、fail-soft (dict 构造不会抛)。与上面 tool_call (带 args, UI 用)
+            # 独立: status 走思考过程可视化通道, 客户端可只订阅其一。
+            yield self._status_event(
+                "tool", detail=_tool_status_label(func_name), round=round_idx + 1
+            )
+            # 2026-07-05 P0-1: 进度事件 (flat 契约) —— 每轮工具执行前发,
+            # label 来自确定性映射表 (完整人话动词短语)。纯附加。
+            yield self._progress_event(
+                "tool", round=round_idx + 1, label=_tool_progress_label(func_name)
+            )
+            # 2026-05-14: tool_call 加进 sources_used
+            _tool_label = _TOOL_TO_SOURCE_LABEL.get(func_name)
+            if _tool_label and _tool_label not in sources_used:
+                sources_used.append(_tool_label)
+
+            # 执行工具
+            # 2026-07-01: 若本工具是 health_analysis(type=orchestrator) → 捕获其
+            # 单工具壁钟给 orchestrator_tool_ms; best-effort 从 result JSON 透传 perf。
+            _is_orch_tool = (
+                func_name == "health_analysis"
+                and parsed_tool_args.get("analysis_type") == "orchestrator"
+            )
+            if write_attempted and not replayed_write:
+                # A4: 本回合发生 Twin-mutating 写 (health_record/health_manage/
+                # intervention_cycle) → done 侧 KB 证据卡强制重算 (反映写后 Twin,
+                # 不复用 pre-round-1 memo)。保守: 即便写最终软失败也重算 (无害多一次)。
+                self._turn_twin_write_occurred = True
+            _tool_call_start = time.time()
+            if replayed_write:
+                result, result_for_record_card = (
+                    write_results_by_fingerprint[write_fingerprint]
+                )
+            elif replayed_read:
+                # 同名+同参只读调用本回合已跑过 → 复用结果, 不重复真执行(省空转)。
+                result, result_for_record_card = (
+                    read_results_by_fingerprint[read_fingerprint]
+                )
+            else:
+                # Wave 2: 心跳 + per-tool 超时(慢工具不再冻结转圈/被 nginx 掐断)。
+                result = None
+                async for _hb_kind, _hb_val in self._run_tool_with_progress(
+                    func_name, func_args, user_auth_token,
+                    _tool_progress_label(func_name),
+                ):
+                    if _hb_kind == "heartbeat":
+                        yield _hb_val
+                    else:
+                        result = _hb_val
+                result_for_record_card = result
+                executed_decision = self._agent_kernel_last_decision
+                if (
+                    func_name == "health_query"
+                    and executed_decision is not None
+                    and executed_decision.action == "allow"
+                    and executed_decision.normalized_tool_name == "health_query"
+                ):
+                    parsed_tool_args = dict(executed_decision.normalized_args)
+            if _is_orch_tool:
+                try:
+                    orchestrator_tool_ms = int((time.time() - _tool_call_start) * 1000)
+                except Exception:  # noqa: BLE001
+                    orchestrator_tool_ms = None
+                try:
+                    _orch_json = json.loads(result) if isinstance(result, str) else None
+                    if isinstance(_orch_json, dict):
+                        if _orch_json.get("perf") is not None:
+                            orchestrator_perf = _orch_json.get("perf")
+                        # rank7: 捕获 orchestrator 自产 synthesis(已过 _safety_wrap/R4)
+                        # 供 shadow 记录 / on 短路。仅在 flag 非 off 时捕获(off 零开销)。
+                        if passthrough_mode != "off":
+                            _synth = _orch_json.get("synthesis")
+                            if isinstance(_synth, str) and _synth.strip():
+                                passthrough_orch_text = _synth
+                                passthrough_orch_calls += 1
+                except Exception:  # noqa: BLE001
                     pass
-                elif tool_executed_count > 0 and not round_tools:
-                    yield self._status_event("synthesis", round=round_idx + 1)
-                    # 2026-07-05 P0-1: 进度事件 (flat 契约) —— 最终回答开始生成前发。
-                    # 命中条件与既有 synthesis status 一致: 前面轮已跑过工具且本轮不带工具。
-                    yield self._progress_event("synthesis")
+            safety_cards: list[dict] = []
+            if not replayed_write and not replayed_read:
+                tool_executed_count += 1
+                # 旁路给 _maybe_fast_route_tool_round: 一旦跑过工具, 后续 (合成) 轮
+                # 即便仍带 tools 也不再降 fast (留在强模型产出医疗正文)。
+                self._turn_any_tool_executed = True
+
+            # 写操作成功后内联安全检查。
+            # 注意: 软失败(如"未找到…"/"暂时没成功")不含 "Error" 字样, 旧逻辑会把
+            # 无关的安全告警拼到一条失败回复上(截图里"未找到活跃药物 ⚠️夜间血氧…"),
+            # 故显式排除软失败。
+            _soft_fail = any(m in result for m in ("未找到", "暂时没成功", "没成功", "记录失败"))
+            if (
+                not replayed_write
+                and
+                # 写后内联安全筛查覆盖**所有**写工具(health_record/health_manage/
+                # intervention_cycle), 不只 health_record。此前按 func_name=="health_record"
+                # 判定 →「把刚才那条血压改成 190/120」走 health_manage(update) 漏筛
+                # (under-alarm: 严重血压读数零告警)。_write_tool_completed 精确判"确有可
+                # 验证写回执"(operation=list / 读操作不触发), 与配方重放路径 any_write 同源。
+                _write_tool_completed(func_name, parsed_tool_args, result)
+                and "Error" not in result
+                and not result.startswith("[NEEDS_CONFIRMATION]")
+                and not _soft_fail
+            ):
+                try:
+                    from app.twin.builder import build_twin
+                    from app.agents.safety_guardian import evaluate_safety
+                    twin = build_twin(self.db, user_id, use_cache=True)
+                    report = evaluate_safety(twin)
+                    critical = [a for a in report.alerts if int(a.severity) >= 3]
+                    if critical:
+                        alert_msgs = "; ".join(a.title for a in critical[:3])
+                        safety_cards = [
+                            card for card in (
+                                _safety_alert_card_descriptor(a)
+                                for a in critical[:3]
+                            )
+                            if card
+                        ]
+                        result += f"\n\n⚠️ 安全提示: {alert_msgs}"
+                except Exception as e:
+                    # 安全筛查是记录后的确定性护栏 —— 它抛错绝不能静默"已记录"放行
+                    # (否则刚记的血压危象/卒中症状零告警)。fail-loud:ERROR + 兜底提醒。
+                    logger.error("Safety check after write failed: %s", e, exc_info=True)
+                    result += (
+                        "\n\n⚠️ 安全提示: 记录已保存,但自动安全筛查暂未完成。"
+                        "如你此刻有明显不适、或刚记录的数值明显异常,请及时就医。"
+                    )
+            if write_fingerprint and not replayed_write:
+                write_results_by_fingerprint[write_fingerprint] = (
+                    result,
+                    result_for_record_card,
+                )
+                # 回合内写后失效读缓存: 写→同参"列出"应含该写, 不复用写前陈旧读
+                # (安全评审 fast-follow; 自然顺序是先写后读=新鲜, 此处兜住 read→write→read)。
+                read_results_by_fingerprint.clear()
+            if read_fingerprint and not replayed_read:
+                read_results_by_fingerprint[read_fingerprint] = (
+                    result,
+                    result_for_record_card,
+                )
+            if (
+                func_name == "health_manage"
+                and _goal_lookup_call_matches(
+                    (
+                        self._agent_kernel_snapshot.goal
+                        if self._agent_kernel_snapshot is not None
+                        else None
+                    ),
+                    parsed_tool_args,
+                )
+                and not str(result or "").startswith("Error")
+            ):
+                goal_lookup_completed = True
+                goal_allowed_record_ids = _goal_target_record_ids(
+                    (
+                        self._agent_kernel_snapshot.goal
+                        if self._agent_kernel_snapshot is not None else None
+                    ),
+                    result,
+                )
+                if str(tc.get("id") or "").startswith("goal-verify-"):
+                    goal_verification_result = result
+
+            recovery_guard_decision: Optional[
+                RecoveryDataGuardDecision
+            ] = None
+            if _is_recovery_exercise_advice_context(
+                message,
+                tool_name=func_name,
+                args=parsed_tool_args,
+            ):
+                recovery_guard_decision = self._evaluate_recovery_data_guard_safely(
+                    message,
+                    tool_name=func_name,
+                    args=parsed_tool_args,
+                    result=result,
+                )
+                if (
+                    recovery_guard_decision is not None
+                    and recovery_guard_decision.status == "degraded"
+                ):
+                    self._activate_recovery_data_guard(
+                        recovery_guard_decision
+                    )
+                elif self._recovery_data_guard_decision is None:
+                    self._recovery_data_guard_decision = (
+                        recovery_guard_decision
+                    )
+
+            # 追加 tool_result 到 messages
+            tool_content = _model_tool_result_content(
+                func_name,
+                parsed_tool_args,
+                result,
+                reference_now=self._agent_kernel_reference_now(),
+                timezone_label=self._ensure_agent_kernel_turn().context.timezone,
+            )
+            if (
+                recovery_guard_decision is not None
+                and recovery_guard_decision.status == "degraded"
+            ):
+                tool_content += (
+                    "\n\n" + recovery_guard_decision.model_directive
+                )
+            if (
+                func_name == "health_manage"
+                and _goal_lookup_call_matches(
+                    (
+                        self._agent_kernel_snapshot.goal
+                        if self._agent_kernel_snapshot is not None
+                        else None
+                    ),
+                    parsed_tool_args,
+                )
+            ):
+                tool_content += _goal_lookup_resolution_prompt(
+                    (
+                        self._agent_kernel_snapshot.goal
+                        if self._agent_kernel_snapshot is not None else None
+                    ),
+                    result,
+                )
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": tool_content,
+            })
+
+            # GenUI metric_table (rank1): 记下只读数据查询工具的
+            # (name, args, result), 合成后确定性建表/卡 (零 LLM)。声明
+            # genui-table-v1 或 genui-diet-summary-v1 任一即追踪 (无 cap → 零开销)。
+            if func_name in _GENUI_TABLE_TOOLS and not replayed_read:
+                answer_evidence_tool_calls.append(
+                    (func_name, parsed_tool_args, result)
+                )
+                if (
+                    genui_table_on
+                    or genui_diet_summary_on
+                    or genui_sleep_summary_on
+                    or genui_medication_list_on
+                ):
+                    genui_tool_calls.append(
+                        (func_name, parsed_tool_args, result)
+                    )
+
+            # tool_result 事件给前端用. health_record 时附 args 让前端能识别
+            # 是哪种 record + 提取关键内容显示 summary 卡 (I Phase 2).
+            tool_event_data = {
+                "tool": func_name,
+                "success": not result.startswith("Error"),
+                "preview": result[:200],
+                "result": result,
+            }
+            tool_event_data["processing_summary"] = build_processing_summary(
+                func_name,
+                parsed_tool_args,
+                result,
+                success=bool(tool_event_data["success"]),
+            )
+            if replayed_write:
+                tool_event_data["replayed"] = True
+            if func_name in _WRITE_RECEIPT_TOOL_NAMES:
+                write_completed = _write_tool_completed(
+                    func_name,
+                    parsed_tool_args,
+                    result_for_record_card,
+                )
+                tool_event_data["write_attempted"] = write_attempted
+                tool_event_data["write_completed"] = write_completed
+                if write_attempted and not write_completed:
+                    tool_event_data["success"] = False
+                if write_completed and func_name == "health_record" and not replayed_write:
+                    # Slice 3: 收集配方候选步骤 (只收成功写入的;
+                    # sanitize 剥 confirmed — 一次性确认绝不进模板)。
+                    try:
+                        from app.services import procedure_recipe_service as _recipe_svc
+                        recipe_candidate_steps.append({
+                            "tool": func_name,
+                            "args_template": _recipe_svc.template_step_args(
+                                _recipe_svc.sanitize_step_args(parsed_tool_args)
+                            ),
+                        })
+                    except Exception as e:  # noqa: BLE001 — 候选收集失败不影响写主链路
+                        logger.warning(f"[agent_executor] recipe candidate 收集失败: {e}")
+                if write_completed:
+                    receipt = _write_receipt_from_tool_result(
+                        func_name,
+                        parsed_tool_args,
+                        result_for_record_card,
+                    )
+                    if receipt:
+                        tool_event_data["receipt"] = receipt
+                        if not any(
+                            item.get("operation_id") == receipt.get("operation_id")
+                            for item in write_receipts
+                        ):
+                            write_receipts.append(receipt)
+                        if receipt.get("verified") is True:
+                            _mark_perf_milestone("write_verified_ms")
                 else:
-                    yield self._status_event("thinking", round=round_idx + 1)
-                # 非流式模型: 多发一条带 detail 的 thinking 状态 (整段生成需等待)。
+                    receipt = None
+                write_outcome_fields = _write_outcome_event_fields(
+                    result_for_record_card,
+                    receipt,
+                )
+                tool_event_data.update(write_outcome_fields)
                 if (
-                    not preplanned_tool_decision
-                    and answer_model_non_streaming
+                    write_attempted
+                    and write_outcome_fields.get("error_code")
+                    == "runtime_control_unavailable"
+                    and write_outcome_fields.get("dispatch_started") is False
                 ):
-                    yield self._status_event(
-                        "thinking",
-                        detail="该模型整段生成,需等待完整回答",
-                        round=round_idx + 1,
+                    runtime_control_terminal = True
+                if write_attempted and not replayed_write:
+                    checkpoint_status = _write_checkpoint_status_after_dispatch(
+                        result_for_record_card,
+                        receipt,
                     )
-                # rank7 passthrough(on): 本轮是二次合成轮(前面已跑工具、本轮不带 tools),且本回合
-                # 唯一实质工具就是那一次 orchestrator health_analysis —— 直接把它已过 R4 的 synthesis
-                # 过同一条出站护栏后流式下发,跳过第二次强模型合成。fail-closed:tool_executed_count>1
-                # (还需融合记录/查询/二次分析的回合)或非 orchestrator → 落到下面正常二次合成分支。
-                if (
-                    passthrough_mode == "on"
-                    and not round_tools
-                    and tool_executed_count == 1
-                    and passthrough_orch_calls == 1
-                    and passthrough_orch_text
-                ):
-                    passthrough_final = _apply_passthrough_outbound_guards(
-                        passthrough_orch_text, messages
+                    self._persist_turn_write_state(
+                        user_msg,
+                        status=checkpoint_status,
+                        tool_name=func_name,
+                        parsed_args=parsed_tool_args,
+                        receipt=receipt,
                     )
-                    if passthrough_final.strip():
+                    if runtime_write_fingerprint:
+                        if checkpoint_status == "uncertain":
+                            failed_write_operations.pop(
+                                runtime_write_fingerprint,
+                                None,
+                            )
+                            unverified_write_operations[
+                                runtime_write_fingerprint
+                            ] = func_name
+                        elif checkpoint_status == "verified":
+                            unverified_write_operations.pop(
+                                runtime_write_fingerprint,
+                                None,
+                            )
+                            failed_write_operations.pop(
+                                runtime_write_fingerprint,
+                                None,
+                            )
+                        elif (
+                            checkpoint_status in {"failed", "rejected"}
+                            and not (
+                                self._agent_kernel_last_decision is not None
+                                and self._agent_kernel_last_decision.action
+                                == "block"
+                                and self._agent_kernel_snapshot is not None
+                                and self._agent_kernel_snapshot.policy_mode
+                                == "enforce"
+                            )
+                            and not _write_result_is_pre_dispatch_validation_error(
+                                result_for_record_card
+                            )
+                            and not str(result_for_record_card or "")
+                            .lstrip()
+                            .startswith("[NEEDS_CONFIRMATION]")
+                        ):
+                            unverified_write_operations.pop(
+                                runtime_write_fingerprint,
+                                None,
+                            )
+                            failed_write_operations[
+                                runtime_write_fingerprint
+                            ] = func_name
+            record_card = None
+            quality_cards: list[dict] = []
+            transient_local_rejection = bool(
+                write_attempted
+                and _write_result_is_pre_dispatch_validation_error(
+                    result_for_record_card
+                )
+            )
+            if transient_local_rejection:
+                assert recoverable_write_key is not None
+                pending_recoverable_write_rejections.pop(
+                    recoverable_write_key,
+                    None,
+                )
+                pending_recoverable_write_rejections[
+                    recoverable_write_key
+                ] = (
+                    _pre_dispatch_validation_user_message(
+                        result_for_record_card
+                    ),
+                    classify_write_execution(
+                        result_for_record_card
+                    ).error_code,
+                )
+                pending_recoverable_write_rejection_rounds[
+                    recoverable_write_key
+                ] = round_idx
+                pending_recoverable_write_rejection_scopes[
+                    recoverable_write_key
+                ] = _recoverable_write_scope_key(
+                    func_name,
+                    parsed_tool_args,
+                )
+            elif write_attempted and write_completed:
+                assert recoverable_write_key is not None
+                recoverable_scope_key = (
+                    _recoverable_write_scope_key(
+                        func_name,
+                        parsed_tool_args,
+                    )
+                )
+                _clear_repaired_write_rejections(
+                    pending_recoverable_write_rejections,
+                    pending_recoverable_write_rejection_rounds,
+                    pending_recoverable_write_rejection_scopes,
+                    operation_key=recoverable_write_key,
+                    scope_key=recoverable_scope_key,
+                    current_round=round_idx,
+                    allow_scope_repair=(
+                        _goal_binds_recoverable_write(
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot
+                                is not None
+                                else None
+                            ),
+                            func_name,
+                            parsed_tool_args,
+                        )
+                    ),
+                )
+            (
+                last_recoverable_write_rejection,
+                last_recoverable_write_rejection_code,
+            ) = _summarize_recoverable_write_rejections(
+                pending_recoverable_write_rejections
+            )
+            if (
+                last_recoverable_write_rejection_code == "diet_nutrition_incomplete"
+                and self._agent_kernel_snapshot is not None
+                and self._agent_kernel_snapshot.goal is not None
+                and self._agent_kernel_snapshot.goal.kind == "simple_health_record"
+                and self._agent_kernel_snapshot.goal.target_record_type == "diet"
+            ):
+                simple_diet_nutrition_rejection_rounds.add(round_idx)
+            suppress_contextual_diet_replay_card = (
+                func_name == "health_record"
+                and bool(self._turn_contextual_diet_cards)
+                and _is_contextual_meal_photo_replay_result(result_for_record_card)
+            )
+            if (
+                func_name == "health_record"
+                and not replayed_write
+                and not transient_local_rejection
+                and not suppress_contextual_diet_replay_card
+            ):
+                try:
+                    tool_event_data["record_type"] = (
+                        parsed_tool_args.get("record_type")
+                        or parsed_tool_args.get("type")
+                    )
+                    tool_event_data["record_data"] = parsed_tool_args.get("data") or {}
+                    quality_response = _post_record_quality_response(
+                        tool_event_data["record_type"],
+                        tool_event_data["record_data"],
+                        result_for_record_card,
+                        personal_context=system_content,
+                        db=self.db,
+                        user_id=user_id,
+                        write_verified=bool(
+                            receipt and receipt.get("verified") is True
+                        ),
+                    )
+                    if quality_response:
+                        post_record_qualities.append(quality_response)
+                        quality_cards = [
+                            card for card in quality_response.get("cards", [])
+                            if isinstance(card, dict)
+                        ]
+                    else:
+                        record_card = _health_record_card_descriptor(
+                            tool_event_data["record_type"],
+                            tool_event_data["record_data"],
+                            result_for_record_card,
+                            write_verified=bool(
+                                receipt and receipt.get("verified") is True
+                            ),
+                        )
+                except Exception:
+                    pass
+
+            if not transient_local_rejection:
+                yield {
+                    "event": "tool_result",
+                    "data": tool_event_data,
+                }
+            if (
+                not transient_local_rejection
+                and not health_advice_buffered
+                and func_name in _GENUI_TABLE_TOOLS
+                and not replayed_read
+                and (
+                    genui_table_on
+                    or genui_diet_summary_on
+                    or genui_sleep_summary_on
+                    or genui_medication_list_on
+                )
+            ):
+                try:
+                    readout_fences = _genui_readout_fences(
+                        [(func_name, parsed_tool_args, result)],
+                        table_on=genui_table_on,
+                        diet_summary_on=genui_diet_summary_on,
+                        sleep_summary_on=genui_sleep_summary_on,
+                        medication_list_on=genui_medication_list_on,
+                    )
+                    for fence in readout_fences:
+                        if fence in emitted_genui_fences:
+                            continue
+                        has_early_fence = bool(early_genui_fences)
+                        emitted_genui_fences.add(fence)
+                        early_genui_fences.append(fence)
+                        chunk = f"\n\n{fence}" if has_early_fence else fence
                         if first_token_at is None:
                             first_token_at = time.time()
-                        # 内层调用整段一次返回 → 切成 20-char token 让端逐块渲染
-                        # (镜像既有非流式兜底口径 4827/5024)。
-                        if not response_output_buffered:
-                            for i in range(0, len(passthrough_final), 20):
-                                yield {
-                                    "event": "token",
-                                    "data": {
-                                        "content": passthrough_final[i:i + 20]
-                                    },
-                                }
-                        full_reply += passthrough_final
-                        passthrough_taken = True
-                        # 透传答案是一段完整回答(非待决工具调用)→ finish_reason 与二次合成
-                        # 答案路径对齐为 'stop'(completion_status → complete),不留 round1 的
-                        # 'tool_calls' 陈值。
-                        final_finish_reason = "stop"
-                        rounds.append({"llm_gen_ms": 0, "tool_exec_ms": 0, "tools": []})
-                        break
-                    # 护栏把文本清空(异常)→ 不短路, 落到正常二次合成兜底(下方 else 分支)。
-                _round_start = time.time()
-                streamed_text = ""
-                # 思考流可视化 (qwen reasoning_content): 本轮首个可见 token 之前, 把
-                # reasoning 增量节流成 thinking status 事件填死气。纯 UI, 绝不进答案/持久化。
-                reasoning_buf = ""
-                reasoning_last_emit_at = _round_start
-                reasoning_last_emit_len = 0
-                streamed_tool_calls: List[Dict[str, Any]] = []
-                stream_finish_reason: Optional[str] = None
-                streamed_to_client = False
-                tool_round_output_buffered = bool(round_tools)
-                streamed_content_deltas: List[str] = []
-                # 每轮入口重置工具决策轮快路由标记; _call_llm_stream → _resolve_chat_provider
-                # → _maybe_fast_route_tool_round 会在本轮命中时置 True (仅带 tools 的轮可能命中)。
-                self._tool_round_fast_routed = False
-                # 弱模型会把 tool-call JSON 当正文吐出(无结构化 tool_calls)。一旦累积
-                # 文本可被 _extract_inline_tool_call 识别成工具调用,立刻停止 live 下发
-                # 并撤回已发标记 —— 这段 JSON 后面会被恢复成真正的 tool_call (content 置空),
-                # 绝不能泄漏给用户。结构化 tool_calls 的正常模型不受影响。
-                inline_suppressed = False
-                recoverable_response_buffered = False
-                async for evt in _stream_llm_or_preplanned_tool_calls(
-                    self._call_llm_stream,
-                    messages,
-                    round_tools,
-                    preplanned_tool_calls=preplanned_tool_calls,
-                ):
-                    etype = evt.get("type")
-                    if etype == "content":
-                        delta = evt.get("text") or ""
-                        if not delta:
-                            continue
-                        streamed_text += delta
-                        streamed_content_deltas.append(delta)
-                        if (
-                            not recoverable_response_buffered
-                            and should_buffer_recovery_response(streamed_text)
-                        ):
-                            # 先不把可能需要恢复的道歉式拒答发到客户端。
-                            recoverable_response_buffered = True
-                        if (
-                            not inline_suppressed
-                            and not streamed_tool_calls
-                            and _detect_tools
-                            and (
-                                _extract_inline_tool_call(
-                                    streamed_text,
-                                    _detect_tools,
-                                    user_message=message,
-                                )
-                                # 括号标记 `[工具调用: ...` 可能正在逐 token 形成,`)` 还没到
-                                # → 上面的精确解析此刻 match 不到。一旦看到标记前缀就提前抑制,
-                                # 避免裸标记被逐 delta 泄漏(即便最终参数解析不出也不外漏)。
-                                or "工具调用" in streamed_text
-                                # Markdown 清单式 "Tool calls:" 同样抑制(英文标记)。
-                                or _TEXT_TOOLCALL_PREFIX_RE.search(streamed_text)
-                                # XML `<invoke ...` / `<minimax:tool_call>` 逐 token 形成中,
-                                # `</invoke>` 闭标签还没到 → 精确解析 match 不到。见到前缀即抑制。
-                                or _XML_TOOLCALL_PREFIX_RE.search(streamed_text)
-                                # call{ / <call: / {name: 行首前导(qwen 畸形文本工具调用泄漏)
-                                or _TEXTCALL_LEAK_PREFIX_RE.search(streamed_text)
-                                # 裸 `health_manage(` 在闭括号到达前也要从首 token 抑制。
-                                or _starts_like_bare_registered_tool_call(streamed_text, _detect_tools)
-                            )
-                        ):
-                            # 检测到内联工具调用(JSON 或括号标记) → 进入抑制模式,本轮不再 live 下发。
-                            inline_suppressed = True
-                            streamed_to_client = False
-                        # 合成轮(round_tools 空)弱模型把工具结果原始 JSON 数组粘进 QUERY 回答
-                        # (`让我查一下…[{"record_date":...,"meal_type":...}]`)。上面那条 gate 在
-                        # round_tools 上,合成轮跳过它 → 这里独立、不依赖 round_tools 做锚定检测。
-                        # 用"泄漏正在形成"的早停版本(不等整段 JSON 可解析):一见到 JSON 结构起
-                        # + 带引号冒号的白名单字段键就抑制,把逐 token 泄漏压到最多一两个 delta。
-                        # 锚定到真实字段名(非"任何 JSON"),且遇 fenced 块直接豁免,详见谓词。
-                        if (
-                            not inline_suppressed
-                            and not streamed_tool_calls
-                            and _streaming_leak_forming(streamed_text)
-                        ):
-                            inline_suppressed = True
-                            streamed_to_client = False
-                        # 健康记录意图 + 尚无写入回执: content 绝不 live 下发。
-                        # 生产实锤(2026-07-17, user=3 ×2/24h): 弱模型对「麦当劳店记录打了一个
-                        # 喷嚏。」直接吐出「✅ **症状已记录**:打喷嚏(上午 09:21)」却**一个工具都没调**
-                        # (它调的是只读 health_query) → 用户看到绿对勾, 不会重记, 那条症状永久丢失。
-                        # :7228 的诚实覆盖(final_text=_record_intent_needs_detail_message +
-                        # streamed_to_client=False)本身是对的, 但它跑在 token 已经 yield 出去之后 ——
-                        # 只改了落库消息, **救不回已经流到屏幕上的字**。故必须在下发前就抑制:
-                        # 只有写入回执才能证明完成；模型路由和只读工具都不能替代回执。
-                        # 与上面 _tool_round_fast_routed 同一范式(先抑制、后按真实结果补发)。
-                        _record_claim_unverified = bool(
-                            record_write_requested and not write_receipts
-                        )
-                        _diet_correction_claim_unverified = (
-                            partial_diet_correction_requested
-                            and not write_receipts
-                        )
-                        # Mutation turns remain buffered for the whole model round.
-                        # A later tool call in the same turn may still fail even
-                        # after an earlier write produced a verified receipt.
-                        _mutation_claim_unverified = write_action_requested
-                        # Clinician context/ambiguous turns are server-buffered.
-                        # If a weak model emits a forbidden structured tool call
-                        # after prose, the prose must not reach the client before
-                        # the guard has filtered and recovered that round.
-                        _clinician_response_guarded = (
-                            clinician_turn_decision.kind
-                            in _CLINICIAN_ZERO_TOOL_KINDS
-                            or clinician_turn_decision.reason_code
-                            in _CLINICIAN_ZERO_TOOL_REASON_CODES
-                        )
-                        _named_knowledge_response_guarded = (
-                            named_knowledge_request_guarded
-                            and tool_executed_count == 0
-                        )
-                        # 工具决策轮快路由 (fast 模型): 本轮输出只当工具决策, content 绝不
-                        # live 下发 —— 若最终是直接答文本 (无 tool_calls), 会被丢弃并在强模型
-                        # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
-                        # 普通工具决策轮也先缓冲: 有些 provider 会先吐 preamble
-                        # ("Let me query...") 再给结构化 tool_calls。若本轮最后没有
-                        # tool_calls, 纯文本最终答案分支会一次性释放完整 content。
-                        if (
-                            not inline_suppressed
-                            and not tool_round_output_buffered
-                            and not response_output_buffered
-                            and not self._tool_round_fast_routed
-                            and not _record_claim_unverified
-                            and not _diet_correction_claim_unverified
-                            and not _mutation_claim_unverified
-                            and not _clinician_response_guarded
-                            and not _named_knowledge_response_guarded
-                            and not recoverable_response_buffered
-                        ):
-                            streamed_to_client = True
-                            # 2026-07-01: TTFT — 第一个真正下发给客户端的 token 时刻 (纯埋点)。
-                            if first_token_at is None:
-                                first_token_at = time.time()
-                            # 真流式:逐 delta 即时下发,不再切 20-char 假块。
-                            yield {"event": "token", "data": {"content": delta}}
-                    elif etype == "reasoning":
-                        # 思考流可视化: 把 qwen 的 reasoning_content 增量节流成既有
-                        # thinking status 事件, 填掉首个可见 token 前的死气。
-                        # reasoning 文本绝不进 streamed_text/full_reply/messages/持久化答案 ——
-                        # 只塞进 status 事件的 detail (客户端已有的 live 思考通道)。
-                        # 门控 (全部满足才发一条):
-                        #   1. 本轮尚未产出任何可见 content —— 答案流一开始就交棒停发;
-                        #   2. 非 fast 工具决策轮 —— fast 模型内部文本不外 surface (安全不变量);
-                        #   3. 距上次发 ≥ 间隔 且 新增 reasoning ≥ 字符阈值 (whichever later);
-                        #   4. 累积 reasoning 未形成工具结果 JSON 泄漏 (复用 _streaming_leak_forming);
-                        #   5. 清洗后片段非空。
-                        if (
-                            response_output_buffered
-                            or streamed_text
-                            or tool_round_output_buffered
-                            or self._tool_round_fast_routed
-                        ):
-                            continue
-                        rdelta = evt.get("text") or ""
-                        if not rdelta:
-                            continue
-                        reasoning_buf += rdelta
-                        _now = time.time()
-                        if (
-                            (_now - reasoning_last_emit_at) >= _REASONING_STATUS_MIN_INTERVAL_S
-                            and (len(reasoning_buf) - reasoning_last_emit_len)
-                            >= _REASONING_STATUS_MIN_CHARS
-                            and not _streaming_leak_forming(reasoning_buf)
-                        ):
-                            _snippet = _clean_reasoning_snippet(reasoning_buf)
-                            if _snippet:
-                                reasoning_last_emit_at = _now
-                                reasoning_last_emit_len = len(reasoning_buf)
-                                yield self._status_event(
-                                    "thinking", detail=_snippet, round=round_idx + 1
-                                )
-                    elif etype == "tool_calls":
-                        streamed_tool_calls = evt.get("tool_calls") or []
-                    elif etype == "finish":
-                        stream_finish_reason = evt.get("finish_reason")
-                # 把流式结果整理成与 _call_llm 等价的 response dict, 复用后续既有逻辑
-                # (inline tool 恢复 / tool 执行 / 空回复重试)。
-                response: Any = {
-                    "content": streamed_text,
-                    "finish_reason": stream_finish_reason,
-                }
-                if streamed_tool_calls:
-                    response["tool_calls"] = streamed_tool_calls
-                final_finish_reason = stream_finish_reason or final_finish_reason
-                _round_llm_gen_ms = (
-                    0
-                    if preplanned_tool_decision
-                    else int((time.time() - _round_start) * 1000)
-                )
-                if not preplanned_tool_decision:
-                    llm_rounds_ms.append(_round_llm_gen_ms)
-                # 2026-07-01: per-round split — 本轮 LLM 生成耗时 (纯埋点)。tool_exec_ms /
-                # tools 在下面工具执行块填充; 无工具调用的最终答案轮 tool_exec_ms=0。
-                _round_tool_exec_ms = 0
-                _round_tool_names: List[str] = []
-                _round_write_receipts_before = len(write_receipts)
-                if model_name is None and not preplanned_tool_decision:
-                    if self._last_provider_model_name:
-                        model_name = self._last_provider_model_name
-                    else:
-                        try:
-                            # 2026-05-14: 显示给前端看的 model name 也走用户偏好
-                            # (之前 bug: get_llm_provider() 是全局, 用户切了仍显示 MiniMax)
-                            if self._request_model_id:
-                                from app.services.llm.model_registry import get_model
-                                entry = get_model(self._request_model_id)
-                                model_name = entry.model if entry else self._request_model_id
-                            elif self._current_user_id:
-                                from app.services.llm.factory import create_provider_for_user
-                                p = create_provider_for_user(self._current_user_id, self.db)
-                                model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
-                            else:
-                                from app.services.llm.factory import get_llm_provider
-                                p = get_llm_provider()
-                                model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
-                        except Exception:
-                            pass
-                response_is_dict = isinstance(response, dict)
-                response_tool_calls = response.get("tool_calls") if response_is_dict else None
-                response_content = response.get("content") if response_is_dict else None
-                logger.info(
-                    "LLM response type=%s is_dict=%s has_tool_calls=%s "
-                    "tool_call_count=%s content_chars=%s",
-                    type(response).__name__,
-                    response_is_dict,
-                    bool(response_tool_calls),
-                    len(response_tool_calls) if isinstance(response_tool_calls, list) else 0,
-                    len(str(response_content or "")),
-                )
-
-                if (
-                    health_advice_buffered
-                    and isinstance(response, dict)
-                    and response.get("tool_calls")
-                ):
-                    # A provider can hallucinate structured calls even when sent
-                    # tools=[]. Health synthesis is a sealed evidence envelope:
-                    # never upgrade to the full tool set and never execute a
-                    # model-authored read/write call.
+                        _mark_perf_milestone("first_card_ms")
+                        _mark_perf_milestone("first_useful_ms")
+                        yield {
+                            "event": "token",
+                            "data": {"content": chunk},
+                        }
+                except Exception as exc:  # noqa: BLE001 - optional read projection
                     logger.warning(
-                        "[health_evidence] discarded model tool calls user=%s count=%s",
+                        "[agent_executor] early GenUI readout skipped "
+                        "user=%s tool=%s error_type=%s",
                         user_id,
-                        len(response.get("tool_calls") or []),
+                        func_name,
+                        type(exc).__name__,
                     )
-                    response = {
-                        **response,
-                        "content": "本轮模型未生成可发布的健康回答。",
-                        "tool_calls": [],
-                        "finish_reason": "stop",
+            if (
+                answer_evidence_tool_calls
+                and getattr(
+                    settings,
+                    "answer_evidence_streaming_enabled",
+                    True,
+                )
+            ):
+                try:
+                    from app.services.answer_evidence import (
+                        answer_evidence_sha256,
+                        build_answer_evidence,
+                    )
+
+                    streamed_answer_evidence = build_answer_evidence(
+                        tool_calls=answer_evidence_tool_calls,
+                    )
+                    if streamed_answer_evidence is not None:
+                        evidence_digest = answer_evidence_sha256(
+                            streamed_answer_evidence
+                        )
+                        if (
+                            evidence_digest
+                            and evidence_digest
+                            != streamed_answer_evidence_digest
+                        ):
+                            streamed_answer_evidence_digest = evidence_digest
+                            _mark_perf_milestone("first_evidence_ms")
+                            _mark_perf_milestone("first_useful_ms")
+                            yield {
+                                "event": "answer_evidence",
+                                "data": {
+                                    "answer_evidence": streamed_answer_evidence,
+                                },
+                            }
+                except Exception as exc:  # noqa: BLE001 - projection is optional
+                    logger.warning(
+                        "[agent_executor] streaming answer evidence skipped "
+                        "user=%s error_type=%s",
+                        user_id,
+                        type(exc).__name__,
+                    )
+            if (
+                not diet_photo_progress_turn
+                and not diet_verified_emitted
+                and func_name == "health_record"
+                and str(parsed_tool_args.get("record_type") or "")
+                .strip()
+                .lower()
+                == "diet"
+                and tool_event_data.get("receipt", {}).get("verified")
+                is True
+            ):
+                diet_verified_emitted = True
+                yield self._progress_event("diet_verified")
+            for quality_card in quality_cards:
+                before = len(streamed_cards)
+                streamed_cards = _merge_agent_card_descriptors(streamed_cards, [quality_card])
+                if len(streamed_cards) > before:
+                    _mark_perf_milestone("first_card_ms")
+                    _mark_perf_milestone("first_useful_ms")
+                    yield {
+                        "event": "card",
+                        "data": {
+                            "anchor": "post_record_quality",
+                            "descriptor": quality_card,
+                        },
                     }
+            if record_card:
+                before = len(streamed_cards)
+                streamed_cards = _merge_agent_card_descriptors(streamed_cards, [record_card])
+                if len(streamed_cards) > before:
+                    _mark_perf_milestone("first_card_ms")
+                    _mark_perf_milestone("first_useful_ms")
+                    yield {
+                        "event": "card",
+                        "data": {
+                            "anchor": "tool_result",
+                            "descriptor": record_card,
+                        },
+                    }
+            for safety_card in safety_cards:
+                before = len(streamed_cards)
+                streamed_cards = _merge_agent_card_descriptors(streamed_cards, [safety_card])
+                if len(streamed_cards) > before:
+                    yield {
+                        "event": "card",
+                        "data": {
+                            "anchor": "safety_alert",
+                            "descriptor": safety_card,
+                        },
+                    }
+            medication_confirmation_card = self._turn_medication_tool_confirmation_card
+            if medication_confirmation_card is not None:
+                streamed_cards = _merge_agent_card_descriptors(
+                    streamed_cards, [medication_confirmation_card],
+                )
+            rounds[-1]["tool_exec_ms"] += max(0, int((time.time() - _tool_started) * 1000))
+            rounds[-1]["tools"].extend(_round_tool_names)
+            yield {"event": "_pi_tool_response", "data": {
+                "content": tool_content,
+                "is_error": not bool(tool_event_data["success"]),
+            }}
 
-                if isinstance(response, dict) and not response.get("tool_calls"):
-                    _resp_content = response.get("content") or ""
-                    # 数据完整性硬门:**数组形工具结果回显**(`[{` + 白名单字段键)绝不参与
-                    # inline 工具调用恢复 —— 查询结果 record 形字段会被误认成 health_record
-                    # 写意图,把用户已有记录重复写一遍(测试实测:泄漏回显被恢复成
-                    # health_record ×7)。写意图 payload 是单对象({"record_type":...}),
-                    # 工具结果是数组,形态可区分;只挡数组形,合法弱模型写恢复不受影响。
-                    _is_result_echo = bool(
-                        re.search(r"\[\s*\{", _resp_content)
-                        and _QUOTED_ALLOWLIST_KEY_RE.search(_resp_content)
+        self._http_client = httpx.AsyncClient(timeout=90.0)
+        pi_started = False
+        pi_terminal_text = None
+        try:
+            if (
+                self._turn_contextual_diet_write_blocked_reason == "confirmation_pending"
+                and self._turn_contextual_diet_cards
+            ):
+                if "health_record" not in self._agent_kernel_pending_confirmation_tools:
+                    self._agent_kernel_pending_confirmation_tools.append("health_record")
+                full_reply = _contextual_diet_confirmation_reply()
+                final_finish_reason = "stop"
+            elif deterministic_health_release:
+                full_reply = "本轮由确定性健康策略直接生成。"
+                final_finish_reason = "stop"
+            else:
+                from app.services.pi_kernel import PiKernelSession
+
+                if named_knowledge_boundary_required:
+                    # Resolve an explicitly requested authority as a scoped
+                    # evidence prerequisite, before giving Pi the sealed
+                    # clinical context. The model cannot skip this boundary.
+                    source_call = _build_deterministic_named_knowledge_tool_call(
+                        message, recent_messages=self._current_turn_recent_messages,
                     )
-                    inline_tool_call = (
-                        None if _is_result_echo
-                        else _extract_inline_tool_call(
-                            _resp_content,
-                            _detect_tools,
-                            user_message=message,
-                        )
-                    )
-                    if inline_tool_call:
-                        logger.warning(
-                            "[agent_executor] recovered inline tool JSON as tool_call: %s",
-                            inline_tool_call["function"]["name"],
-                        )
-                        response = {
-                            **response,
-                            "content": "",
-                            "finish_reason": "tool_calls",
-                            "tool_calls": [inline_tool_call],
-                        }
-
-                # 模型把工具调用写成 Markdown 文本(`Tool calls:\n- health_query`)、无结构化调用
-                # 也无参数可解析 → 不能当最终答案(否则零数据 + 泄漏标记)。本代理大多数时候能正确
-                # 结构化(日志大量 has_tool_calls=True),只是偶发降级 → 重提示一次让它用结构化重试。
-                if (
-                    isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and _is_botched_text_tool_call(response.get("content") or "", _detect_tools)
-                ):
-                    botched = response.get("content") or ""
-                    if round_idx < MAX_TOOL_ROUNDS - 1:
-                        if not round_tools:
-                            # A2 自纠: 本轮已被 A2/合成条件置空 tools, 但模型仍想调工具
-                            # (文本式)。重开工具, 让重提示轮真能结构化调用 (否则重提示后
-                            # 仍无 tools = 空转)。正确性 > 省 token。
-                            keep_tools_after_synthesis_miss = True
-                        logger.warning(
-                            "[agent_executor] 文本式工具调用未结构化, 重提示重试 "
-                            "(round %d). chars=%s",
-                            round_idx + 1,
-                            len(botched),
-                        )
-                        messages.append({"role": "assistant", "content": botched})
-                        messages.append({"role": "user", "content": (
-                            "你刚才把工具调用写成了文本(例如 \"Tool calls:\\n- health_query\"),"
-                            "并没有真正调用工具,所以没有任何数据返回。请立刻用结构化 function calling "
-                            "真正调用所需工具并带上正确参数(例如查看补剂库用 health_query 且 "
-                            "dimension=\"supplements\"),不要再输出 \"Tool calls:\" 这类文本。"
-                        )})
-                        continue  # 进入下一轮,模型用结构化 tool_calls 重试
-                    # 轮次用尽仍是文本式 → 剥掉标记避免泄漏(用户至少不看到裸 "Tool calls:")。
-                    response = {**response, "content": _strip_text_tool_call(botched)}
-
-                if (
-                    not health_advice_buffered
-                    and isinstance(response, dict)
-                    and not deterministic_supplement_fallback_attempted
-                ):
-                    deterministic_supplement_calls = (
-                        _build_deterministic_supplement_record_tool_calls(
-                            message,
-                            contextual_supplement_names=tuple(
-                                getattr(
-                                    self,
-                                    "_turn_contextual_supplement_names",
-                                    (),
+                    if source_call is not None:
+                        rounds.append({"llm_gen_ms": 0, "tool_exec_ms": 0, "tools": []})
+                        messages.append({"role": "assistant", "content": "", "tool_calls": [source_call]})
+                        async for event in _execute_pi_tool(source_call, 0):
+                            if event.get("event") != "_pi_tool_response":
+                                yield event
+                        if health_advice_buffered:
+                            tools = []
+                decision_route = "pi"
+                async with PiKernelSession() as pi:
+                    await pi.start(messages=messages, tools=tools, max_turns=MAX_TOOL_ROUNDS)
+                    pi_started = True
+                    round_idx = -1
+                    remaining_batch_tools = 0
+                    async for request in pi:
+                        if request["type"] == "model_request":
+                            _reconcile_pi_preflight_rejections(request["messages"], round_idx)
+                            round_idx += 1
+                            messages = request["messages"]
+                            self._maybe_escalate_staged_answer_model()
+                            yield self._status_event("thinking", round=round_idx + 1)
+                            yield self._progress_event("thinking", round=round_idx + 1)
+                            if answer_model_non_streaming:
+                                yield self._status_event(
+                                    "thinking", detail="整段生成，需等待完整回答", round=round_idx + 1,
                                 )
-                                or ()
-                            ),
-                            write_receipts=write_receipts,
-                            has_attachment=bool(images or file_base64),
-                        )
-                    )
-                    if deterministic_supplement_calls and (
-                        len(deterministic_supplement_calls) > 1
-                        or self._turn_contextual_supplement_names
-                        or not response.get("tool_calls")
-                        or _should_replace_with_deterministic_supplement_calls(
-                            response.get("tool_calls") or [],
-                            deterministic_supplement_calls,
-                        )
-                    ):
-                        deterministic_supplement_fallback_attempted = True
-                        response = {
-                            **response,
-                            "content": "",
-                            "finish_reason": "tool_calls",
-                            "tool_calls": deterministic_supplement_calls,
-                        }
-                        logger.info(
-                            "[agent_executor] deterministic supplement fallback "
-                            "user=%s targets=%s",
-                            user_id,
-                            len(deterministic_supplement_calls),
-                        )
+                            started = time.time()
+                            candidate = ""
+                            proposed_calls = []
+                            finish_reason = None
+                            self._tool_round_fast_routed = False
+                            round_tools = (
+                                [] if self._force_no_tools_synthesis
+                                or self._turn_doctor_feedback_write_attempted
+                                or self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
+                                else request["tools"]
+                            )
+                            async for event in self._call_llm_stream(messages, round_tools):
+                                if event.get("type") == "content":
+                                    candidate += event.get("text") or ""
+                                    if first_token_at is None and candidate:
+                                        first_token_at = time.time()
+                                elif event.get("type") == "tool_calls":
+                                    proposed_calls = [
+                                        {**call, "type": call.get("type", "function")}
+                                        for call in (event.get("tool_calls") or [])
+                                    ]
+                                elif event.get("type") == "finish":
+                                    finish_reason = event.get("finish_reason")
+                            if proposed_calls:
+                                proposed_calls = [
+                                    call for call in proposed_calls
+                                    if _clinician_turn_allows_tool(
+                                        clinician_turn_decision,
+                                        (call.get("function") or {}).get("name"),
+                                    )
+                                ]
+                                if clinician_turn_decision.kind == "explicit_doctor_feedback_write":
+                                    proposed_calls = (
+                                        [] if self._turn_doctor_feedback_write_attempted
+                                        else proposed_calls[:1]
+                                    )
+                                    for call in proposed_calls:
+                                        bound = _bind_doctor_feedback_args_to_turn(
+                                            clinician_turn_decision,
+                                            reference_now=self._agent_kernel_reference_now(),
+                                        )
+                                        if bound is None:
+                                            raise RuntimeError("doctor_feedback_turn_binding_failed")
+                                        # Optional absent fields stay absent in
+                                        # Pi's strict schema. The domain gateway
+                                        # canonicalizes them when persisting.
+                                        call["function"]["arguments"] = json.dumps(
+                                            {key: value for key, value in bound.items() if value is not None},
+                                            ensure_ascii=False,
+                                        )
+                                if not proposed_calls:
+                                    finish_reason = "stop"
+                            if proposed_calls:
+                                self._record_tool_model_name(self._last_provider_model_name)
+                            if self._tool_round_fast_routed and not proposed_calls and candidate.strip():
+                                # Tool-routing models have no authority to write
+                                # the final health answer. This bounded provider
+                                # handoff stays inside one Pi model request; the
+                                # discarded prose never enters its transcript.
+                                self._record_model_fallback_reason("fast_tool_round_direct_answer_resynthesized")
+                                self._tool_round_fast_routed = False
+                                candidate = ""
+                                finish_reason = None
+                                round_tools = []
+                                async for event in self._call_llm_stream(messages, round_tools):
+                                    if event.get("type") == "content":
+                                        candidate += event.get("text") or ""
+                                    elif event.get("type") == "tool_calls":
+                                        proposed_calls = [
+                                            {**call, "type": call.get("type", "function")}
+                                            for call in (event.get("tool_calls") or [])
+                                        ]
+                                    elif event.get("type") == "finish":
+                                        finish_reason = event.get("finish_reason")
+                            elapsed = max(0, int((time.time() - started) * 1000))
+                            llm_rounds_ms.append(elapsed)
+                            rounds.append({"llm_gen_ms": elapsed, "tool_exec_ms": 0, "tools": []})
+                            model_name = self._last_provider_model_name or model_name
+                            if (health_advice_buffered or not round_tools) and proposed_calls:
+                                # Clinical evidence is sealed before synthesis.
+                                # Hallucinated tool calls never widen that seal.
+                                proposed_calls = []
+                                candidate = "本轮模型未生成可发布的健康回答。"
+                                finish_reason = "stop"
+                            if proposed_calls:
+                                supplement_calls = _build_deterministic_supplement_record_tool_calls(
+                                    message,
+                                    contextual_supplement_names=self._turn_contextual_supplement_names,
+                                    write_receipts=write_receipts,
+                                    has_attachment=bool(images or file_base64),
+                                )
+                                if _should_replace_with_deterministic_supplement_calls(
+                                    proposed_calls, supplement_calls,
+                                ):
+                                    # Bind a proposed write to the user's exact
+                                    # intake before its Pi schema/ledger check.
+                                    # This never creates a call from model prose.
+                                    proposed_calls = [{
+                                        **supplement_calls[0], "id": proposed_calls[0]["id"],
+                                    }]
+                                proposed_calls = self._normalize_query_only_health_manage_tool_calls(proposed_calls)
+                                proposed_calls = await self._normalize_latest_diet_delete_tool_calls(
+                                    proposed_calls, user_auth_token,
+                                )
+                                proposed_calls = await self._normalize_explicit_diet_update_tool_calls(
+                                    proposed_calls, user_auth_token,
+                                )
+                                proposed_calls = _normalize_goal_guarded_tool_calls(
+                                    proposed_calls,
+                                    self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
+                                    lookup_completed=goal_lookup_completed,
+                                    allowed_record_ids=goal_allowed_record_ids,
+                                )
+                                proposed_calls, simple_diet_nutrition_estimation_attempted = (
+                                    await _enrich_simple_diet_goal_tool_calls(
+                                        proposed_calls,
+                                        self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
+                                        estimation_attempted=simple_diet_nutrition_estimation_attempted,
+                                        runtime_write_blocked=bool(self._runtime_write_block_reason),
+                                    )
+                                )
+                                # Canonicalize once before issuing the call to
+                                # Pi so the durable plan and dispatch identity
+                                # describe the same authorized health payload.
+                                for call in proposed_calls:
+                                    function = call["function"]
+                                    name = function["name"]
+                                    args = function["arguments"]
+                                    if self._prefer_fast_record_model:
+                                        args = _auto_confirm_fast_record_args(
+                                            name, args, channel=self._turn_channel,
+                                            user_message=self._current_turn_user_message,
+                                        )
+                                    args = _recover_clear_symptom_args(
+                                        name, _parse_tool_arguments_for_telemetry(args),
+                                        self._current_turn_user_message,
+                                    )
+                                    if name == "health_manage" and isinstance(args.get("data"), str):
+                                        try:
+                                            data_object = json.loads(args["data"])
+                                        except json.JSONDecodeError:
+                                            data_object = None
+                                        if isinstance(data_object, dict):
+                                            args["data"] = data_object
+                                    function["arguments"] = json.dumps(args, ensure_ascii=False)
+                                if not proposed_calls:
+                                    candidate = "本轮请求未通过目标操作检查，没有执行变更。"
+                                    finish_reason = "stop"
+                                self._prepare_medication_tool_plan(proposed_calls)
+                                planned_writes = []
+                                for call in proposed_calls:
+                                    function = call.get("function") or {}
+                                    name = function.get("name")
+                                    args = _parse_tool_arguments_for_telemetry(function.get("arguments"))
+                                    if name in _WRITE_RECEIPT_TOOL_NAMES:
+                                        if not _tool_call_is_read_only(name, args):
+                                            pending_pi_writes[call["id"]] = (name, args)
+                                        if _write_tool_attempted(name, args):
+                                            planned_writes.append((name, args))
+                                # Persist the complete batch before Pi can ask
+                                # to execute even its first tool.
+                                self._persist_turn_expected_writes(user_msg, planned_writes)
+                                messages.append({"role": "assistant", "content": "", "tool_calls": proposed_calls})
+                            remaining_batch_tools = len(proposed_calls)
+                            await pi.respond(
+                                request, content="" if proposed_calls else candidate,
+                                tool_calls=proposed_calls,
+                                finish_reason=finish_reason or ("tool_calls" if proposed_calls else "stop"),
+                            )
+                        elif request["type"] == "tool_request":
+                            call = {
+                                "id": request["tool_call_id"],
+                                "type": "function",
+                                "function": {"name": request["name"], "arguments": json.dumps(request["arguments"], ensure_ascii=False)},
+                            }
+                            response = None
+                            async for event in _execute_pi_tool(call, round_idx):
+                                if event.get("event") == "_pi_tool_response":
+                                    response = event["data"]
+                                else:
+                                    yield event
+                            if response is None:
+                                raise RuntimeError("pi_tool_response_missing")
+                            remaining_batch_tools -= 1
+                            if runtime_control_terminal:
+                                pi_terminal_text = _runtime_control_unavailable_message(write_receipts)
+                                final_finish_reason = "error"
+                            elif failed_write_operations:
+                                pi_terminal_text = _failed_write_message(
+                                    write_receipts, also_unverified=bool(unverified_write_operations),
+                                )
+                                final_finish_reason = "error"
+                            elif unverified_write_operations:
+                                pi_terminal_text = _unverified_write_message(write_receipts)
+                                final_finish_reason = "error"
+                            elif len(simple_diet_nutrition_rejection_rounds) >= 2 and last_recoverable_write_rejection:
+                                pi_terminal_text = _write_rejection_with_receipt_context(
+                                    last_recoverable_write_rejection, write_receipts,
+                                )
+                                final_finish_reason = "error"
+                            elif remaining_batch_tools == 0:
+                                from app.services.agent_policy_retry import terminal_policy_notice
 
-                # 确定性症状写入兜底:当前用户句子已经被分类为明确症状陈述,
-                # 但模型只返回文字/只读查询时,不能把这条症状降级成“还没记下来”。
-                # 合成一个最小 health_record 调用,仍沿用下方完整的 validator、
-                # ToolGateway、write_state、receipt 和安全检查;只尝试一次,避免
-                # 上游返回异常时产生重复写入。问题句(如“腰疼怎么办”)不会命中
-                # _extract_clear_symptom_record,仍保持建议路径。
-                if (
-                    not health_advice_buffered
-                    and isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and not deterministic_simple_record_fallback_attempted
-                ):
-                    deterministic_simple_record_call = (
-                        _build_deterministic_simple_record_tool_call(
-                            (
-                                self._agent_kernel_snapshot.goal
-                                if self._agent_kernel_snapshot is not None else None
-                            ),
-                            write_receipts=write_receipts,
-                            has_attachment=bool(images or file_base64),
-                        )
-                    )
-                    if deterministic_simple_record_call:
-                        deterministic_simple_record_fallback_attempted = True
-                        response = {
-                            **response,
-                            "content": "",
-                            "finish_reason": "tool_calls",
-                            "tool_calls": [deterministic_simple_record_call],
-                        }
-                        logger.info(
-                            "[agent_executor] deterministic simple record fallback "
-                            "user=%s record_type=%s",
-                            user_id,
-                            (
-                                self._agent_kernel_snapshot.goal.target_record_type
-                                if self._agent_kernel_snapshot is not None
-                                and self._agent_kernel_snapshot.goal is not None
-                                else "unknown"
-                            ),
-                        )
+                                pi_terminal_text = terminal_policy_notice(
+                                    self._agent_kernel_capability_block_reasons,
+                                    has_verified_writes=any(r.get("verified") is True for r in write_receipts),
+                                )
+                                if pi_terminal_text is None and self._agent_kernel_pending_confirmation_tools:
+                                    pi_terminal_text = _pending_confirmation_reply_from_tool_results(messages) or None
+                                if (
+                                    pi_terminal_text is None and self._prefer_fast_record_model
+                                    and write_receipts and not last_recoverable_write_rejection
+                                ):
+                                    quality = combine_post_record_quality_responses(post_record_qualities)
+                                    pi_terminal_text = (
+                                        str(quality.get("reply") or "").strip() if quality else ""
+                                    ) or _fast_record_reply_from_tool_results(messages) or None
+                                    safety_suffix = _safety_warning_suffix_from_tool_results(messages)
+                                    if safety_suffix and pi_terminal_text and safety_suffix not in pi_terminal_text:
+                                        pi_terminal_text += "\n\n" + safety_suffix
+                                if pi_terminal_text:
+                                    final_finish_reason = "stop"
+                            await pi.respond(request, **response, terminate=pi_terminal_text is not None)
+                        elif request["type"] == "done":
+                            messages = request["messages"]
+                            _reconcile_pi_preflight_rejections(messages, round_idx, settled=True)
+                            full_reply = pi_terminal_text or _append_interrupted_notice(
+                                request["content"], request["finish_reason"],
+                            )
+                            final_finish_reason = (
+                                final_finish_reason if pi_terminal_text is not None else request["finish_reason"]
+                            )
+                            if not full_reply.strip():
+                                full_reply = "本轮没有生成有效回答，请稍后重试。"
+                                final_finish_reason = "error"
+                            if not unverified_write_operations and not failed_write_operations and last_recoverable_write_rejection and (
+                                _claims_unverified_write_success(full_reply)
+                                or last_recoverable_write_rejection_code in {"diet_nutrition_incomplete", "non_diet_intake", "pi_tool_not_dispatched"}
+                                or not full_reply.strip()
+                            ):
+                                full_reply = _write_rejection_with_receipt_context(
+                                    last_recoverable_write_rejection, write_receipts,
+                                )
+                                final_finish_reason = "error"
 
+                goal = self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None
+                from app.services.agent_kernel.postconditions import registered_goal_verifier_kinds
                 if (
-                    not health_advice_buffered
-                    and isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and not deterministic_goal_lookup_attempted
-                ):
-                    deterministic_goal_call = _build_deterministic_goal_lookup_tool_call(
-                        (
-                            self._agent_kernel_snapshot.goal
-                            if self._agent_kernel_snapshot is not None else None
-                        ),
-                        write_receipts=write_receipts,
-                        has_attachment=bool(images or file_base64),
-                    )
-                    if deterministic_goal_call:
-                        deterministic_goal_lookup_attempted = True
-                        response = {
-                            **response,
-                            "content": "",
-                            "finish_reason": "tool_calls",
-                            "tool_calls": [deterministic_goal_call],
-                        }
-
-                if (
-                    not health_advice_buffered
-                    and isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and goal_lookup_completed
-                    and not deterministic_goal_delete_attempted
-                ):
-                    deterministic_delete_calls = (
-                        _build_deterministic_goal_delete_tool_calls(
-                            (
-                                self._agent_kernel_snapshot.goal
-                                if self._agent_kernel_snapshot is not None
-                                else None
-                            ),
-                            allowed_record_ids=goal_allowed_record_ids,
-                        )
-                    )
-                    if deterministic_delete_calls:
-                        deterministic_goal_delete_attempted = True
-                        response = {
-                            **response,
-                            "content": "",
-                            "finish_reason": "tool_calls",
-                            "tool_calls": deterministic_delete_calls,
-                        }
-
-                if (
-                    not health_advice_buffered
-                    and isinstance(response, dict)
-                    and not response.get("tool_calls")
+                    goal is not None and goal.kind in registered_goal_verifier_kinds()
+                    and write_receipts and not unverified_write_operations
+                    and not failed_write_operations and not runtime_control_terminal
                 ):
                     verification_call = _build_goal_verification_tool_call(
-                        (
-                            self._agent_kernel_snapshot.goal
-                            if self._agent_kernel_snapshot is not None else None
-                        ),
-                        write_receipts=write_receipts,
-                        already_attempted=goal_verification_attempted,
+                        goal, write_receipts=write_receipts, already_attempted=False,
                     )
-                    if verification_call:
-                        goal_verification_attempted = True
-                        response = {
-                            **response,
-                            "content": "",
-                            "finish_reason": "tool_calls",
-                            "tool_calls": [verification_call],
-                        }
-
-                if (
-                    not health_advice_buffered
-                    and isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and not deterministic_diet_correction_fallback_attempted
-                ):
-                    deterministic_diet_call = (
-                        _build_deterministic_diet_correction_tool_call(
-                            message,
-                            write_receipts=write_receipts,
-                            has_attachment=bool(images or file_base64),
-                            reference_now=self._agent_kernel_reference_now(),
-                        )
-                    )
-                    if deterministic_diet_call:
-                        deterministic_diet_correction_fallback_attempted = True
-                        response = {
-                            **response,
-                            "content": "",
-                            "finish_reason": "tool_calls",
-                            "tool_calls": [deterministic_diet_call],
-                        }
-                        logger.info(
-                            "[agent_executor] deterministic diet correction fallback "
-                            "user=%s message_chars=%s",
-                            user_id,
-                            len(message or ""),
-                        )
-
-                if (
-                    isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and goal_verification_attempted
-                    and goal_verification_result is not None
-                ):
+                    if verification_call is not None:
+                        messages.append({"role": "assistant", "content": "", "tool_calls": [verification_call]})
+                        async for event in _execute_pi_tool(verification_call, max(0, round_idx)):
+                            if event.get("event") != "_pi_tool_response":
+                                yield event
                     postcondition = verify_goal_postconditions(
-                        (
-                            self._agent_kernel_snapshot.goal
-                            if self._agent_kernel_snapshot is not None else None
-                        ),
-                        write_receipts=write_receipts,
+                        goal, write_receipts=write_receipts,
                         verification_result=goal_verification_result,
                     )
                     if self._agent_kernel_event_bus is not None:
                         self._agent_kernel_event_bus.goal_evaluated(
                             satisfied=postcondition.satisfied,
-                            verified_target_count=len(
-                                postcondition.verified_resource_ids
-                            ),
+                            verified_target_count=len(postcondition.verified_resource_ids),
                             reason=postcondition.reason,
                         )
                     if not postcondition.satisfied:
-                        response = {
-                            **response,
-                            "content": (
-                                "更新操作已执行，但读回核验未覆盖全部目标餐次，"
-                                "因此本轮不能确认已经全部完成。请重试，系统会继续核对现有记录。"
-                            ),
-                        }
-
-                goal = (
-                    self._agent_kernel_snapshot.goal
-                    if self._agent_kernel_snapshot is not None else None
-                )
-                if (
-                    isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and not receipt_goal_evaluated
-                    and goal is not None
-                    and goal.kind == "simple_health_record"
-                    and write_receipts
-                ):
-                    receipt_goal_evaluated = True
-                    postcondition = verify_goal_postconditions(
-                        goal,
-                        write_receipts=write_receipts,
-                        verification_result=None,
-                    )
-                    if self._agent_kernel_event_bus is not None:
-                        self._agent_kernel_event_bus.goal_evaluated(
-                            satisfied=postcondition.satisfied,
-                            verified_target_count=len(
-                                postcondition.verified_resource_ids
-                            ),
-                            reason=postcondition.reason,
-                        )
-                    if not postcondition.satisfied:
-                        response = {
-                            **response,
-                            "content": (
-                                "记录请求已执行，但没有取得与目标类型一致的可验证回执，"
-                                "因此本轮不能确认已经完成。请重试。"
-                            ),
-                        }
-
-                if (
-                    not health_advice_buffered
-                    and isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and not deterministic_symptom_fallback_attempted
-                ):
-                    deterministic_symptom_call = _build_deterministic_symptom_tool_call(
-                        message,
-                        write_receipts=write_receipts,
-                        has_attachment=bool(images or file_base64),
-                    )
-                    if deterministic_symptom_call:
-                        deterministic_symptom_fallback_attempted = True
-                        response = {
-                            **response,
-                            "content": "",
-                            "finish_reason": "tool_calls",
-                            "tool_calls": [deterministic_symptom_call],
-                        }
-                        logger.info(
-                            "[agent_executor] deterministic symptom write fallback "
-                            "user=%s message_chars=%s",
-                            user_id,
-                            len(message or ""),
-                        )
-
-                if (
-                    (not health_advice_buffered or named_knowledge_boundary_required)
-                    and isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and not deterministic_named_knowledge_fallback_attempted
-                ):
-                    deterministic_named_call = (
-                        _build_deterministic_named_knowledge_tool_call(
-                            message,
-                            recent_messages=self._current_turn_recent_messages,
-                        )
-                    )
-                    if deterministic_named_call:
-                        deterministic_named_knowledge_fallback_attempted = True
-                        response = {
-                            **response,
-                            "content": "",
-                            "finish_reason": "tool_calls",
-                            "tool_calls": [deterministic_named_call],
-                        }
-                        logger.info(
-                            "[agent_executor] deterministic named knowledge fallback "
-                            "user=%s message_chars=%s",
-                            user_id,
-                            len(message or ""),
-                        )
-
-                # ──── 工具决策轮快路由安全兜底: fast 模型直接答文本时丢弃, 强模型重合成 ────
-                # 到这里所有 tool-call 恢复 (结构化 / inline JSON / 文本式重试) 都已尝试完。
-                # 若本轮是 fast 工具决策轮却仍**没有** tool_calls 而是产出了用户可见正文,
-                # 那是 fast 模型在直接回答医疗问题 —— 安全不变量禁止 (面向用户医疗正文绝不
-                # 来自 fast 模型)。该 content 已被上面的下发门控抑制 (从未 live 发出)。
-                # A3 (2026-07-12): 不再清空 content 落到**非流式**空回复重试链 (ttft≈total 空洞:
-                # 生产 turn 5960 ttft 39.5s ≈ total) —— 改为置 _force_no_tools_synthesis + continue,
-                # 让主循环下一轮以**无 tools 合成轮**在强/显式模型上流式重合成 (round_tools=[] →
-                # pass_tools falsy → 不再快路由; _tool_round_fast_routed 在轮首重置 → tokens 不被
-                # 抑制; 主循环既有 leak 抑制照旧生效)。fast 正文从未进 messages/full_reply。
-                if (
-                    self._tool_round_fast_routed
-                    and isinstance(response, dict)
-                    and not response.get("tool_calls")
-                    and (response.get("content") or "").strip()
-                ):
-                    logger.info(
-                        "[agent_executor] fast tool-round answered directly (no tool_call); "
-                        "discarding fast-model text, streaming re-synthesis on strong/selected model."
-                    )
-                    self._record_model_fallback_reason("fast_tool_round_direct_answer_resynthesized")
-                    # 记本 fast 轮的 per-round split (纯埋点, 无工具执行)。
-                    rounds.append({
-                        "llm_gen_ms": _round_llm_gen_ms,
-                        "tool_exec_ms": 0,
-                        "tools": [],
-                    })
-                    self._force_no_tools_synthesis = True
-                    continue
-
-                # 检查是否有 tool_call
-                if isinstance(response, dict) and response.get("tool_calls"):
-                    proposed_clinician_tool_calls = list(response["tool_calls"])
-                    tool_calls = [
-                        tool_call
-                        for tool_call in proposed_clinician_tool_calls
-                        if _clinician_turn_allows_tool(
-                            clinician_turn_decision,
-                            (tool_call.get("function") or {}).get("name"),
-                        )
-                    ]
-                    tool_calls = _bind_named_knowledge_source_to_tool_calls(
-                        tool_calls,
-                        message=message,
-                        recent_messages=self._current_turn_recent_messages,
-                    )
-                    if (
-                        clinician_turn_decision.kind
-                        == "explicit_doctor_feedback_write"
-                    ):
-                        # One explicit user object maps to one typed write. Model
-                        # attempts to fan it out into alternate SOAP plans are
-                        # discarded before any tool event or Gateway dispatch.
-                        tool_calls = (
-                            []
-                            if self._turn_doctor_feedback_write_attempted
-                            else tool_calls[:1]
-                        )
-                    rejected_clinician_tool_count = (
-                        len(proposed_clinician_tool_calls) - len(tool_calls)
-                    )
-                    if rejected_clinician_tool_count:
-                        logger.warning(
-                            "[agent_executor] clinician provenance guard rejected "
-                            "model tools kind=%s reason=%s count=%s user=%s",
-                            clinician_turn_decision.kind,
-                            clinician_turn_decision.reason_code,
-                            rejected_clinician_tool_count,
-                            user_id,
-                        )
-                    if not tool_calls:
-                        # Recover as a normal, successful text turn. No rejected
-                        # call reaches ToolGateway, persistence or retry state.
-                        messages.append({"role": "assistant", "content": ""})
-                        messages.append({
-                            "role": "user",
-                            "content": (
-                                clinician_turn_guidance
-                                or "不要调用工具，直接用中文回答。"
-                            ),
-                        })
-                        rounds.append({
-                            "llm_gen_ms": _round_llm_gen_ms,
-                            "tool_exec_ms": 0,
-                            "tools": [],
-                        })
-                        if (
-                            clinician_turn_decision.kind
-                            in _CLINICIAN_ZERO_TOOL_KINDS
-                            or clinician_turn_decision.reason_code
-                            in _CLINICIAN_ZERO_TOOL_REASON_CODES
-                        ):
-                            self._force_no_tools_synthesis = True
-                        continue
-
-                    self._record_tool_model_name(
-                        self._last_provider_model_name or model_name
-                    )
-                    proposed_tool_calls = list(tool_calls)
-                    text_content = response.get("content") or ""
-
-                    # 工具子集守卫(token 优化 #2 fast + R5 analysis):模型想调的工具不在
-                    # 已发子集(意图误判/幻觉工具名/分析轮要写)→ 升级回全集重跑本轮。fail-open:
-                    # 绝不因裁剪静默丢调用或喂"未知工具"错误。
-                    if tool_subset_active and not preplanned_tool_decision:
-                        # 双发防护:fast 轮正文被 _tool_round_fast_routed 抑制(未 live 下发)→ 重跑安全;
-                        # analysis 轮正文 live 流式,本轮已发可见正文再重跑会双发 → fallthrough 不重跑。
-                        _withheld, _action = _tool_subset_withheld_upgrade(
-                            tool_calls, tools,
-                            live_text_already_sent=bool(streamed_to_client),
-                        )
-                        if _action == "fallthrough":
-                            logger.warning(
-                                "[agent_executor] 工具子集升级但本轮已 live 流式正文,"
-                                "放行不重跑避免双发 (模型请求: %s)", _withheld,
-                            )
-                            tool_subset_active = False  # 本轮后不再守卫,被扣工具按 name 执行
-                        elif _action == "rerun":
-                            logger.info(
-                                "[agent_executor] 工具子集升级回全集重跑本轮 (模型请求: %s)",
-                                _withheld,
-                            )
-                            tools = get_health_tools()
-                            if self._turn_attachment_write_receipts:
-                                tools = [
-                                    tool
-                                    for tool in tools
-                                    if (tool.get("function") or {}).get("name")
-                                    != "upload_medical_exam_text"
-                                ]
-                            tool_subset_active = False
-                            self._record_model_fallback_reason("tool_subset_upgraded_full_tools")
-                            continue
-
-                    tool_calls = self._normalize_query_only_health_manage_tool_calls(
-                        tool_calls,
-                    )
-                    tool_calls = await self._normalize_latest_diet_delete_tool_calls(
-                        tool_calls,
-                        user_auth_token,
-                    )
-                    tool_calls = await self._normalize_explicit_diet_update_tool_calls(
-                        tool_calls,
-                        user_auth_token,
-                    )
-                    tool_calls = _normalize_goal_guarded_tool_calls(
-                        tool_calls,
-                        (
-                            self._agent_kernel_snapshot.goal
-                            if self._agent_kernel_snapshot is not None else None
-                        ),
-                        lookup_completed=goal_lookup_completed,
-                        allowed_record_ids=goal_allowed_record_ids,
-                    )
-                    tool_calls, simple_diet_nutrition_estimation_attempted = (
-                        await _enrich_simple_diet_goal_tool_calls(
-                            tool_calls,
-                            (
-                                self._agent_kernel_snapshot.goal
-                                if self._agent_kernel_snapshot is not None
-                                else None
-                            ),
-                            estimation_attempted=(
-                                simple_diet_nutrition_estimation_attempted
-                            ),
-                            runtime_write_blocked=bool(
-                                self._runtime_write_block_reason
-                            ),
-                        )
-                    )
-                    rejected_goal_writes = _goal_guard_rejected_writes(
-                        proposed_tool_calls,
-                        tool_calls,
-                    )
-                    for rejected_tool_name, rejected_args in rejected_goal_writes:
-                        self._persist_turn_write_state(
-                            user_msg,
-                            status="rejected",
-                            tool_name=rejected_tool_name,
-                            parsed_args=rejected_args,
-                        )
-                    if proposed_tool_calls and not tool_calls:
-                        logger.warning(
-                            "[agent_executor] all model tool calls were blocked by "
-                            "the goal contract; recovering with a text-only answer "
-                            "user=%s rejected_writes=%s",
-                            user_id,
-                            len(rejected_goal_writes),
-                        )
-                        if text_content.strip():
-                            messages.append({
-                                "role": "assistant",
-                                "content": text_content,
-                            })
-                        messages.append({
-                            "role": "user",
-                            "content": _GOAL_GUARD_RECOVERY_PROMPT,
-                        })
-                        rounds.append({
-                            "llm_gen_ms": _round_llm_gen_ms,
-                            "tool_exec_ms": 0,
-                            "tools": [],
-                        })
-                        self._force_no_tools_synthesis = True
-                        keep_tools_after_synthesis_miss = False
-                        continue
-
-                    self._prepare_medication_tool_plan(tool_calls)
-
-                    planned_writes: List[tuple[str, Dict[str, Any]]] = []
-                    for tc in tool_calls:
-                        planned_name = tc["function"]["name"]
-                        planned_args = tc["function"]["arguments"]
-                        if self._prefer_fast_record_model:
-                            planned_args = _auto_confirm_fast_record_args(
-                                planned_name,
-                                planned_args,
-                                channel=self._turn_channel,
-                                user_message=self._current_turn_user_message,
-                            )
-                        parsed_planned_args = _parse_tool_arguments_for_telemetry(planned_args)
-                        parsed_planned_args = _recover_clear_symptom_args(
-                            planned_name,
-                            parsed_planned_args,
-                            self._current_turn_user_message,
-                        )
-                        if (
-                            planned_name in _WRITE_RECEIPT_TOOL_NAMES
-                            and _write_tool_attempted(
-                                planned_name,
-                                parsed_planned_args,
-                            )
-                        ):
-                            planned_writes.append(
-                                (planned_name, parsed_planned_args)
-                            )
-                    self._persist_turn_expected_writes(user_msg, planned_writes)
-
-                    # 只读收敛护栏: 若本轮 tool_calls **全是**"本回合已跑过"的只读调用(模型空转
-                    # 重发同参 health_query 等)→ 本轮复用结果后强制进合成轮, 停住 loop(否则会
-                    # 一直空转到 MAX_TOOL_ROUNDS)。用**执行前**的 read_results_by_fingerprint 判定。
-                    planned_reads_all_seen = (
-                        _READ_DEDUP_ENABLED
-                        and bool(tool_calls)
-                        and all(
-                            _is_seen_readonly_call(
-                                tc,
-                                read_results_by_fingerprint,
-                                snapshot=self._agent_kernel_snapshot,
-                            )
-                            for tc in tool_calls
-                        )
-                    )
-
-                    # 工具调用轮的 content 是 provider/tool-call preamble, 不属于最终回答。
-                    # 只保留结构化 tool_calls 进入协议上下文; preamble 不下发、不落库。
-                    if text_content:
-                        logger.info(
-                            "[agent_executor] suppressed tool-call round content "
-                            "user=%s chars=%s tools=%s",
-                            user_id,
-                            len(text_content),
-                            len(tool_calls),
-                        )
-
-                    # 追加 assistant message（含 tool_calls）
-                    messages.append({
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": tool_calls,
-                    })
-
-                    # 执行每个工具
-                    # 2026-07-01: per-round tool_exec 壁钟起点 (纯埋点, 串行执行的墙钟)。
-                    _round_tool_start = time.time()
-                    for tc in tool_calls:
-                        func_name = tc["function"]["name"]
-                        func_args = tc["function"]["arguments"]
-                        # 收集工具名 (去重、按首次调用顺序) 供 done/meta 的 tools_used。
-                        if func_name and func_name not in tools_used:
-                            tools_used.append(func_name)
-                        if func_name:
-                            _round_tool_names.append(func_name)
-                        if self._prefer_fast_record_model:
-                            func_args = _auto_confirm_fast_record_args(
-                                func_name,
-                                func_args,
-                                channel=self._turn_channel,
-                                user_message=self._current_turn_user_message,
-                            )
-                        parsed_tool_args_before_recovery = (
-                            _parse_tool_arguments_for_telemetry(func_args)
-                        )
-                        parsed_tool_args_before_recovery_json = json.dumps(
-                            parsed_tool_args_before_recovery,
-                            ensure_ascii=False,
-                            sort_keys=True,
-                            default=str,
-                        )
-                        parsed_tool_args = _recover_clear_symptom_args(
-                            func_name,
-                            parsed_tool_args_before_recovery,
-                            self._current_turn_user_message,
-                        )
-                        if (
-                            func_name == "health_record"
-                            and json.dumps(
-                                parsed_tool_args,
-                                ensure_ascii=False,
-                                sort_keys=True,
-                                default=str,
-                            )
-                            != parsed_tool_args_before_recovery_json
-                        ):
-                            # Execute and expose the same canonical symptom-only
-                            # payload that the validator will persist.  Keeping
-                            # the model's compound request in ``func_args`` would
-                            # make tool progress metadata disagree with the
-                            # audited write even though _execute_tool_impl later
-                            # repairs it again.
-                            func_args = json.dumps(
-                                parsed_tool_args,
-                                ensure_ascii=False,
-                            )
-                        write_attempted = (
-                            func_name in _WRITE_RECEIPT_TOOL_NAMES
-                            and _write_tool_attempted(func_name, parsed_tool_args)
-                        )
-                        write_identity_args = _turn_write_identity_args(
-                            func_name,
-                            parsed_tool_args,
-                            user_message=self._current_turn_user_message,
-                            recent_messages=self._current_turn_recent_messages,
-                        )
-                        write_fingerprint = (
-                            _write_operation_fingerprint(
-                                func_name,
-                                write_identity_args,
-                            )
-                            if write_attempted else None
-                        )
-                        runtime_write_fingerprint = (
-                            _runtime_write_operation_fingerprint(
-                                func_name,
-                                write_identity_args,
-                                default_record_date=(
-                                    self._agent_kernel_reference_now().strftime("%Y-%m-%d")
-                                ),
-                            )
-                            if write_attempted else None
-                        )
-                        recoverable_write_key = (
-                            _recoverable_write_operation_key(
-                                func_name,
-                                write_identity_args,
-                                default_record_date=(
-                                    self._agent_kernel_reference_now()
-                                    .date()
-                                    .isoformat()
-                                ),
-                            )
-                            if write_attempted else None
-                        )
-                        replayed_write = bool(
-                            write_fingerprint
-                            and write_fingerprint in write_results_by_fingerprint
-                        )
-                        # 只读去重: 只对只读工具(与写集天然不相交, belt-and-suspenders 再排一次写集)。
-                        read_attempted = (
-                            _READ_DEDUP_ENABLED
-                            and _tool_call_is_read_only(
-                                func_name,
-                                parsed_tool_args,
-                            )
-                        )
-                        read_fingerprint = (
-                            _read_operation_fingerprint(
-                                func_name,
-                                parsed_tool_args,
-                                snapshot=self._agent_kernel_snapshot,
-                            )
-                            if read_attempted else None
-                        )
-                        replayed_read = bool(
-                            read_fingerprint
-                            and read_fingerprint in read_results_by_fingerprint
-                        )
-                        tool_id = tc["id"]
-
-                        if (
-                            not diet_photo_progress_turn
-                            and not diet_writing_emitted
-                            and func_name == "health_record"
-                            and str(parsed_tool_args.get("record_type") or "")
-                            .strip()
-                            .lower()
-                            == "diet"
-                        ):
-                            diet_writing_emitted = True
-                            _mark_perf_milestone("first_useful_ms")
-                            yield self._progress_event("diet_writing")
-
-                        # 通知前端正在执行工具
-                        yield {
-                            "event": "tool_call",
-                            "data": {
-                                "tool": func_name,
-                                "args": func_args if isinstance(func_args, str) else json.dumps(func_args, ensure_ascii=False),
-                                "round": round_idx + 1,
-                            },
-                        }
-                        # 真实思考过程: 本工具即将在串行循环里执行 (short 中文名给"正在……"胶囊)。
-                        # 纯附加、fail-soft (dict 构造不会抛)。与上面 tool_call (带 args, UI 用)
-                        # 独立: status 走思考过程可视化通道, 客户端可只订阅其一。
-                        yield self._status_event(
-                            "tool", detail=_tool_status_label(func_name), round=round_idx + 1
-                        )
-                        # 2026-07-05 P0-1: 进度事件 (flat 契约) —— 每轮工具执行前发,
-                        # label 来自确定性映射表 (完整人话动词短语)。纯附加。
-                        yield self._progress_event(
-                            "tool", round=round_idx + 1, label=_tool_progress_label(func_name)
-                        )
-                        # 2026-05-14: tool_call 加进 sources_used
-                        _tool_label = _TOOL_TO_SOURCE_LABEL.get(func_name)
-                        if _tool_label and _tool_label not in sources_used:
-                            sources_used.append(_tool_label)
-
-                        # 执行工具
-                        # 2026-07-01: 若本工具是 health_analysis(type=orchestrator) → 捕获其
-                        # 单工具壁钟给 orchestrator_tool_ms; best-effort 从 result JSON 透传 perf。
-                        _is_orch_tool = (
-                            func_name == "health_analysis"
-                            and parsed_tool_args.get("analysis_type") == "orchestrator"
-                        )
-                        if write_attempted and not replayed_write:
-                            # A4: 本回合发生 Twin-mutating 写 (health_record/health_manage/
-                            # intervention_cycle) → done 侧 KB 证据卡强制重算 (反映写后 Twin,
-                            # 不复用 pre-round-1 memo)。保守: 即便写最终软失败也重算 (无害多一次)。
-                            self._turn_twin_write_occurred = True
-                        _tool_call_start = time.time()
-                        if replayed_write:
-                            result, result_for_record_card = (
-                                write_results_by_fingerprint[write_fingerprint]
-                            )
-                        elif replayed_read:
-                            # 同名+同参只读调用本回合已跑过 → 复用结果, 不重复真执行(省空转)。
-                            result, result_for_record_card = (
-                                read_results_by_fingerprint[read_fingerprint]
-                            )
-                        else:
-                            # Wave 2: 心跳 + per-tool 超时(慢工具不再冻结转圈/被 nginx 掐断)。
-                            result = None
-                            async for _hb_kind, _hb_val in self._run_tool_with_progress(
-                                func_name, func_args, user_auth_token,
-                                _tool_progress_label(func_name),
-                            ):
-                                if _hb_kind == "heartbeat":
-                                    yield _hb_val
-                                else:
-                                    result = _hb_val
-                            result_for_record_card = result
-                            executed_decision = self._agent_kernel_last_decision
-                            if (
-                                func_name == "health_query"
-                                and executed_decision is not None
-                                and executed_decision.action == "allow"
-                                and executed_decision.normalized_tool_name == "health_query"
-                            ):
-                                parsed_tool_args = dict(executed_decision.normalized_args)
-                        if _is_orch_tool:
-                            try:
-                                orchestrator_tool_ms = int((time.time() - _tool_call_start) * 1000)
-                            except Exception:  # noqa: BLE001
-                                orchestrator_tool_ms = None
-                            try:
-                                _orch_json = json.loads(result) if isinstance(result, str) else None
-                                if isinstance(_orch_json, dict):
-                                    if _orch_json.get("perf") is not None:
-                                        orchestrator_perf = _orch_json.get("perf")
-                                    # rank7: 捕获 orchestrator 自产 synthesis(已过 _safety_wrap/R4)
-                                    # 供 shadow 记录 / on 短路。仅在 flag 非 off 时捕获(off 零开销)。
-                                    if passthrough_mode != "off":
-                                        _synth = _orch_json.get("synthesis")
-                                        if isinstance(_synth, str) and _synth.strip():
-                                            passthrough_orch_text = _synth
-                                            passthrough_orch_calls += 1
-                            except Exception:  # noqa: BLE001
-                                pass
-                        safety_cards: list[dict] = []
-                        if not replayed_write and not replayed_read:
-                            tool_executed_count += 1
-                            # 旁路给 _maybe_fast_route_tool_round: 一旦跑过工具, 后续 (合成) 轮
-                            # 即便仍带 tools 也不再降 fast (留在强模型产出医疗正文)。
-                            self._turn_any_tool_executed = True
-
-                        # 写操作成功后内联安全检查。
-                        # 注意: 软失败(如"未找到…"/"暂时没成功")不含 "Error" 字样, 旧逻辑会把
-                        # 无关的安全告警拼到一条失败回复上(截图里"未找到活跃药物 ⚠️夜间血氧…"),
-                        # 故显式排除软失败。
-                        _soft_fail = any(m in result for m in ("未找到", "暂时没成功", "没成功", "记录失败"))
-                        if (
-                            not replayed_write
-                            and
-                            # 写后内联安全筛查覆盖**所有**写工具(health_record/health_manage/
-                            # intervention_cycle), 不只 health_record。此前按 func_name=="health_record"
-                            # 判定 →「把刚才那条血压改成 190/120」走 health_manage(update) 漏筛
-                            # (under-alarm: 严重血压读数零告警)。_write_tool_completed 精确判"确有可
-                            # 验证写回执"(operation=list / 读操作不触发), 与配方重放路径 any_write 同源。
-                            _write_tool_completed(func_name, parsed_tool_args, result)
-                            and "Error" not in result
-                            and not result.startswith("[NEEDS_CONFIRMATION]")
-                            and not _soft_fail
-                        ):
-                            try:
-                                from app.twin.builder import build_twin
-                                from app.agents.safety_guardian import evaluate_safety
-                                twin = build_twin(self.db, user_id, use_cache=True)
-                                report = evaluate_safety(twin)
-                                critical = [a for a in report.alerts if int(a.severity) >= 3]
-                                if critical:
-                                    alert_msgs = "; ".join(a.title for a in critical[:3])
-                                    safety_cards = [
-                                        card for card in (
-                                            _safety_alert_card_descriptor(a)
-                                            for a in critical[:3]
-                                        )
-                                        if card
-                                    ]
-                                    result += f"\n\n⚠️ 安全提示: {alert_msgs}"
-                            except Exception as e:
-                                # 安全筛查是记录后的确定性护栏 —— 它抛错绝不能静默"已记录"放行
-                                # (否则刚记的血压危象/卒中症状零告警)。fail-loud:ERROR + 兜底提醒。
-                                logger.error("Safety check after write failed: %s", e, exc_info=True)
-                                result += (
-                                    "\n\n⚠️ 安全提示: 记录已保存,但自动安全筛查暂未完成。"
-                                    "如你此刻有明显不适、或刚记录的数值明显异常,请及时就医。"
-                                )
-                        if write_fingerprint and not replayed_write:
-                            write_results_by_fingerprint[write_fingerprint] = (
-                                result,
-                                result_for_record_card,
-                            )
-                            # 回合内写后失效读缓存: 写→同参"列出"应含该写, 不复用写前陈旧读
-                            # (安全评审 fast-follow; 自然顺序是先写后读=新鲜, 此处兜住 read→write→read)。
-                            read_results_by_fingerprint.clear()
-                        if read_fingerprint and not replayed_read:
-                            read_results_by_fingerprint[read_fingerprint] = (
-                                result,
-                                result_for_record_card,
-                            )
-                        if (
-                            func_name == "health_manage"
-                            and _goal_lookup_call_matches(
-                                (
-                                    self._agent_kernel_snapshot.goal
-                                    if self._agent_kernel_snapshot is not None
-                                    else None
-                                ),
-                                parsed_tool_args,
-                            )
-                            and not str(result or "").startswith("Error")
-                        ):
-                            goal_lookup_completed = True
-                            goal_allowed_record_ids = _goal_target_record_ids(
-                                (
-                                    self._agent_kernel_snapshot.goal
-                                    if self._agent_kernel_snapshot is not None else None
-                                ),
-                                result,
-                            )
-                            if str(tc.get("id") or "").startswith("goal-verify-"):
-                                goal_verification_result = result
-
-                        recovery_guard_decision: Optional[
-                            RecoveryDataGuardDecision
-                        ] = None
-                        if _is_recovery_exercise_advice_context(
-                            message,
-                            tool_name=func_name,
-                            args=parsed_tool_args,
-                        ):
-                            recovery_guard_decision = self._evaluate_recovery_data_guard_safely(
-                                message,
-                                tool_name=func_name,
-                                args=parsed_tool_args,
-                                result=result,
-                            )
-                            if (
-                                recovery_guard_decision is not None
-                                and recovery_guard_decision.status == "degraded"
-                            ):
-                                self._activate_recovery_data_guard(
-                                    recovery_guard_decision
-                                )
-                            elif self._recovery_data_guard_decision is None:
-                                self._recovery_data_guard_decision = (
-                                    recovery_guard_decision
-                                )
-
-                        # 追加 tool_result 到 messages
-                        tool_content = _model_tool_result_content(
-                            func_name,
-                            parsed_tool_args,
-                            result,
-                            reference_now=self._agent_kernel_reference_now(),
-                            timezone_label=self._ensure_agent_kernel_turn().context.timezone,
-                        )
-                        if (
-                            recovery_guard_decision is not None
-                            and recovery_guard_decision.status == "degraded"
-                        ):
-                            tool_content += (
-                                "\n\n" + recovery_guard_decision.model_directive
-                            )
-                        if (
-                            func_name == "health_manage"
-                            and _goal_lookup_call_matches(
-                                (
-                                    self._agent_kernel_snapshot.goal
-                                    if self._agent_kernel_snapshot is not None
-                                    else None
-                                ),
-                                parsed_tool_args,
-                            )
-                        ):
-                            tool_content += _goal_lookup_resolution_prompt(
-                                (
-                                    self._agent_kernel_snapshot.goal
-                                    if self._agent_kernel_snapshot is not None else None
-                                ),
-                                result,
-                            )
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_id,
-                            "content": tool_content,
-                        })
-
-                        # GenUI metric_table (rank1): 记下只读数据查询工具的
-                        # (name, args, result), 合成后确定性建表/卡 (零 LLM)。声明
-                        # genui-table-v1 或 genui-diet-summary-v1 任一即追踪 (无 cap → 零开销)。
-                        if func_name in _GENUI_TABLE_TOOLS and not replayed_read:
-                            answer_evidence_tool_calls.append(
-                                (func_name, parsed_tool_args, result)
-                            )
-                            if (
-                                genui_table_on
-                                or genui_diet_summary_on
-                                or genui_sleep_summary_on
-                                or genui_medication_list_on
-                            ):
-                                genui_tool_calls.append(
-                                    (func_name, parsed_tool_args, result)
-                                )
-
-                        # tool_result 事件给前端用. health_record 时附 args 让前端能识别
-                        # 是哪种 record + 提取关键内容显示 summary 卡 (I Phase 2).
-                        tool_event_data = {
-                            "tool": func_name,
-                            "success": not result.startswith("Error"),
-                            "preview": result[:200],
-                            "result": result,
-                        }
-                        tool_event_data["processing_summary"] = build_processing_summary(
-                            func_name,
-                            parsed_tool_args,
-                            result,
-                            success=bool(tool_event_data["success"]),
-                        )
-                        if replayed_write:
-                            tool_event_data["replayed"] = True
-                        if func_name in _WRITE_RECEIPT_TOOL_NAMES:
-                            write_completed = _write_tool_completed(
-                                func_name,
-                                parsed_tool_args,
-                                result_for_record_card,
-                            )
-                            tool_event_data["write_attempted"] = write_attempted
-                            tool_event_data["write_completed"] = write_completed
-                            if write_attempted and not write_completed:
-                                tool_event_data["success"] = False
-                            if write_completed and func_name == "health_record" and not replayed_write:
-                                # Slice 3: 收集配方候选步骤 (只收成功写入的;
-                                # sanitize 剥 confirmed — 一次性确认绝不进模板)。
-                                try:
-                                    from app.services import procedure_recipe_service as _recipe_svc
-                                    recipe_candidate_steps.append({
-                                        "tool": func_name,
-                                        "args_template": _recipe_svc.template_step_args(
-                                            _recipe_svc.sanitize_step_args(parsed_tool_args)
-                                        ),
-                                    })
-                                except Exception as e:  # noqa: BLE001 — 候选收集失败不影响写主链路
-                                    logger.warning(f"[agent_executor] recipe candidate 收集失败: {e}")
-                            if write_completed:
-                                receipt = _write_receipt_from_tool_result(
-                                    func_name,
-                                    parsed_tool_args,
-                                    result_for_record_card,
-                                )
-                                if receipt:
-                                    tool_event_data["receipt"] = receipt
-                                    if not any(
-                                        item.get("operation_id") == receipt.get("operation_id")
-                                        for item in write_receipts
-                                    ):
-                                        write_receipts.append(receipt)
-                                    if receipt.get("verified") is True:
-                                        _mark_perf_milestone("write_verified_ms")
-                            else:
-                                receipt = None
-                            write_outcome_fields = _write_outcome_event_fields(
-                                result_for_record_card,
-                                receipt,
-                            )
-                            tool_event_data.update(write_outcome_fields)
-                            if (
-                                write_attempted
-                                and write_outcome_fields.get("error_code")
-                                == "runtime_control_unavailable"
-                                and write_outcome_fields.get("dispatch_started") is False
-                            ):
-                                runtime_control_terminal = True
-                            if write_attempted and not replayed_write:
-                                checkpoint_status = _write_checkpoint_status_after_dispatch(
-                                    result_for_record_card,
-                                    receipt,
-                                )
-                                self._persist_turn_write_state(
-                                    user_msg,
-                                    status=checkpoint_status,
-                                    tool_name=func_name,
-                                    parsed_args=parsed_tool_args,
-                                    receipt=receipt,
-                                )
-                                if runtime_write_fingerprint:
-                                    if checkpoint_status == "uncertain":
-                                        failed_write_operations.pop(
-                                            runtime_write_fingerprint,
-                                            None,
-                                        )
-                                        unverified_write_operations[
-                                            runtime_write_fingerprint
-                                        ] = func_name
-                                    elif checkpoint_status == "verified":
-                                        unverified_write_operations.pop(
-                                            runtime_write_fingerprint,
-                                            None,
-                                        )
-                                        failed_write_operations.pop(
-                                            runtime_write_fingerprint,
-                                            None,
-                                        )
-                                    elif (
-                                        checkpoint_status in {"failed", "rejected"}
-                                        and not (
-                                            self._agent_kernel_last_decision is not None
-                                            and self._agent_kernel_last_decision.action
-                                            == "block"
-                                            and self._agent_kernel_snapshot is not None
-                                            and self._agent_kernel_snapshot.policy_mode
-                                            == "enforce"
-                                        )
-                                        and not _write_result_is_pre_dispatch_validation_error(
-                                            result_for_record_card
-                                        )
-                                        and not str(result_for_record_card or "")
-                                        .lstrip()
-                                        .startswith("[NEEDS_CONFIRMATION]")
-                                    ):
-                                        unverified_write_operations.pop(
-                                            runtime_write_fingerprint,
-                                            None,
-                                        )
-                                        failed_write_operations[
-                                            runtime_write_fingerprint
-                                        ] = func_name
-                        record_card = None
-                        quality_cards: list[dict] = []
-                        transient_local_rejection = bool(
-                            write_attempted
-                            and _write_result_is_pre_dispatch_validation_error(
-                                result_for_record_card
-                            )
-                        )
-                        if transient_local_rejection:
-                            assert recoverable_write_key is not None
-                            pending_recoverable_write_rejections.pop(
-                                recoverable_write_key,
-                                None,
-                            )
-                            pending_recoverable_write_rejections[
-                                recoverable_write_key
-                            ] = (
-                                _pre_dispatch_validation_user_message(
-                                    result_for_record_card
-                                ),
-                                classify_write_execution(
-                                    result_for_record_card
-                                ).error_code,
-                            )
-                            pending_recoverable_write_rejection_rounds[
-                                recoverable_write_key
-                            ] = round_idx
-                            pending_recoverable_write_rejection_scopes[
-                                recoverable_write_key
-                            ] = _recoverable_write_scope_key(
-                                func_name,
-                                parsed_tool_args,
-                            )
-                        elif write_attempted and write_completed:
-                            assert recoverable_write_key is not None
-                            recoverable_scope_key = (
-                                _recoverable_write_scope_key(
-                                    func_name,
-                                    parsed_tool_args,
-                                )
-                            )
-                            _clear_repaired_write_rejections(
-                                pending_recoverable_write_rejections,
-                                pending_recoverable_write_rejection_rounds,
-                                pending_recoverable_write_rejection_scopes,
-                                operation_key=recoverable_write_key,
-                                scope_key=recoverable_scope_key,
-                                current_round=round_idx,
-                                allow_scope_repair=(
-                                    _goal_binds_recoverable_write(
-                                        (
-                                            self._agent_kernel_snapshot.goal
-                                            if self._agent_kernel_snapshot
-                                            is not None
-                                            else None
-                                        ),
-                                        func_name,
-                                        parsed_tool_args,
-                                    )
-                                ),
-                            )
-                        (
-                            last_recoverable_write_rejection,
-                            last_recoverable_write_rejection_code,
-                        ) = _summarize_recoverable_write_rejections(
-                            pending_recoverable_write_rejections
-                        )
-                        if (
-                            last_recoverable_write_rejection_code == "diet_nutrition_incomplete"
-                            and self._agent_kernel_snapshot is not None
-                            and self._agent_kernel_snapshot.goal is not None
-                            and self._agent_kernel_snapshot.goal.kind == "simple_health_record"
-                            and self._agent_kernel_snapshot.goal.target_record_type == "diet"
-                        ):
-                            simple_diet_nutrition_rejection_rounds.add(round_idx)
-                        suppress_contextual_diet_replay_card = (
-                            func_name == "health_record"
-                            and bool(self._turn_contextual_diet_cards)
-                            and _is_contextual_meal_photo_replay_result(result_for_record_card)
-                        )
-                        if (
-                            func_name == "health_record"
-                            and not replayed_write
-                            and not transient_local_rejection
-                            and not suppress_contextual_diet_replay_card
-                        ):
-                            try:
-                                tool_event_data["record_type"] = (
-                                    parsed_tool_args.get("record_type")
-                                    or parsed_tool_args.get("type")
-                                )
-                                tool_event_data["record_data"] = parsed_tool_args.get("data") or {}
-                                quality_response = _post_record_quality_response(
-                                    tool_event_data["record_type"],
-                                    tool_event_data["record_data"],
-                                    result_for_record_card,
-                                    personal_context=system_content,
-                                    db=self.db,
-                                    user_id=user_id,
-                                    write_verified=bool(
-                                        receipt and receipt.get("verified") is True
-                                    ),
-                                )
-                                if quality_response:
-                                    post_record_qualities.append(quality_response)
-                                    quality_cards = [
-                                        card for card in quality_response.get("cards", [])
-                                        if isinstance(card, dict)
-                                    ]
-                                else:
-                                    record_card = _health_record_card_descriptor(
-                                        tool_event_data["record_type"],
-                                        tool_event_data["record_data"],
-                                        result_for_record_card,
-                                        write_verified=bool(
-                                            receipt and receipt.get("verified") is True
-                                        ),
-                                    )
-                            except Exception:
-                                pass
-
-                        if not transient_local_rejection:
-                            yield {
-                                "event": "tool_result",
-                                "data": tool_event_data,
-                            }
-                        if (
-                            not transient_local_rejection
-                            and not health_advice_buffered
-                            and func_name in _GENUI_TABLE_TOOLS
-                            and not replayed_read
-                            and (
-                                genui_table_on
-                                or genui_diet_summary_on
-                                or genui_sleep_summary_on
-                                or genui_medication_list_on
-                            )
-                        ):
-                            try:
-                                readout_fences = _genui_readout_fences(
-                                    [(func_name, parsed_tool_args, result)],
-                                    table_on=genui_table_on,
-                                    diet_summary_on=genui_diet_summary_on,
-                                    sleep_summary_on=genui_sleep_summary_on,
-                                    medication_list_on=genui_medication_list_on,
-                                )
-                                for fence in readout_fences:
-                                    if fence in emitted_genui_fences:
-                                        continue
-                                    has_early_fence = bool(early_genui_fences)
-                                    emitted_genui_fences.add(fence)
-                                    early_genui_fences.append(fence)
-                                    chunk = f"\n\n{fence}" if has_early_fence else fence
-                                    if first_token_at is None:
-                                        first_token_at = time.time()
-                                    _mark_perf_milestone("first_card_ms")
-                                    _mark_perf_milestone("first_useful_ms")
-                                    yield {
-                                        "event": "token",
-                                        "data": {"content": chunk},
-                                    }
-                            except Exception as exc:  # noqa: BLE001 - optional read projection
-                                logger.warning(
-                                    "[agent_executor] early GenUI readout skipped "
-                                    "user=%s tool=%s error_type=%s",
-                                    user_id,
-                                    func_name,
-                                    type(exc).__name__,
-                                )
-                        if (
-                            answer_evidence_tool_calls
-                            and getattr(
-                                settings,
-                                "answer_evidence_streaming_enabled",
-                                True,
-                            )
-                        ):
-                            try:
-                                from app.services.answer_evidence import (
-                                    answer_evidence_sha256,
-                                    build_answer_evidence,
-                                )
-
-                                streamed_answer_evidence = build_answer_evidence(
-                                    tool_calls=answer_evidence_tool_calls,
-                                )
-                                if streamed_answer_evidence is not None:
-                                    evidence_digest = answer_evidence_sha256(
-                                        streamed_answer_evidence
-                                    )
-                                    if (
-                                        evidence_digest
-                                        and evidence_digest
-                                        != streamed_answer_evidence_digest
-                                    ):
-                                        streamed_answer_evidence_digest = evidence_digest
-                                        _mark_perf_milestone("first_evidence_ms")
-                                        _mark_perf_milestone("first_useful_ms")
-                                        yield {
-                                            "event": "answer_evidence",
-                                            "data": {
-                                                "answer_evidence": streamed_answer_evidence,
-                                            },
-                                        }
-                            except Exception as exc:  # noqa: BLE001 - projection is optional
-                                logger.warning(
-                                    "[agent_executor] streaming answer evidence skipped "
-                                    "user=%s error_type=%s",
-                                    user_id,
-                                    type(exc).__name__,
-                                )
-                        if (
-                            not diet_photo_progress_turn
-                            and not diet_verified_emitted
-                            and func_name == "health_record"
-                            and str(parsed_tool_args.get("record_type") or "")
-                            .strip()
-                            .lower()
-                            == "diet"
-                            and tool_event_data.get("receipt", {}).get("verified")
-                            is True
-                        ):
-                            diet_verified_emitted = True
-                            yield self._progress_event("diet_verified")
-                        for quality_card in quality_cards:
-                            before = len(streamed_cards)
-                            streamed_cards = _merge_agent_card_descriptors(streamed_cards, [quality_card])
-                            if len(streamed_cards) > before:
-                                _mark_perf_milestone("first_card_ms")
-                                _mark_perf_milestone("first_useful_ms")
-                                yield {
-                                    "event": "card",
-                                    "data": {
-                                        "anchor": "post_record_quality",
-                                        "descriptor": quality_card,
-                                    },
-                                }
-                        if record_card:
-                            before = len(streamed_cards)
-                            streamed_cards = _merge_agent_card_descriptors(streamed_cards, [record_card])
-                            if len(streamed_cards) > before:
-                                _mark_perf_milestone("first_card_ms")
-                                _mark_perf_milestone("first_useful_ms")
-                                yield {
-                                    "event": "card",
-                                    "data": {
-                                        "anchor": "tool_result",
-                                        "descriptor": record_card,
-                                    },
-                                }
-                        for safety_card in safety_cards:
-                            before = len(streamed_cards)
-                            streamed_cards = _merge_agent_card_descriptors(streamed_cards, [safety_card])
-                            if len(streamed_cards) > before:
-                                yield {
-                                    "event": "card",
-                                    "data": {
-                                        "anchor": "safety_alert",
-                                        "descriptor": safety_card,
-                                    },
-                                }
-                        if runtime_control_terminal:
-                            break
-
-                    medication_confirmation_card = getattr(
-                        self,
-                        "_turn_medication_tool_confirmation_card",
-                        None,
-                    )
-                    if medication_confirmation_card is not None:
-                        streamed_cards = _merge_agent_card_descriptors(
-                            streamed_cards,
-                            [medication_confirmation_card],
-                        )
-                        # This card authorizes a health write. Deliver it only
-                        # in final ``done.cards``, after the completed assistant
-                        # checkpoint is committed. Streaming it here would let
-                        # a fast client click an authorization the server cannot
-                        # yet prove was fully presented.
-
-                    # 2026-07-01: 关闭本轮 tool_exec 壁钟 + 记录 per-round split (纯埋点)。
-                    try:
-                        _round_tool_exec_ms = int((time.time() - _round_tool_start) * 1000)
-                    except Exception:  # noqa: BLE001
-                        _round_tool_exec_ms = 0
-                    rounds.append({
-                        "llm_gen_ms": _round_llm_gen_ms,
-                        "tool_exec_ms": _round_tool_exec_ms,
-                        "tools": list(_round_tool_names),
-                    })
-
-                    if runtime_control_terminal:
+                        full_reply = "部分操作已取得回执，但结果核验没有覆盖全部目标，本轮不能确认已经全部完成。"
                         final_finish_reason = "error"
-                        terminal_text = _runtime_control_unavailable_message(
-                            write_receipts
-                        )
-                        if not response_output_buffered:
-                            for i in range(0, len(terminal_text), 20):
-                                yield {
-                                    "event": "token",
-                                    "data": {"content": terminal_text[i:i + 20]},
-                                }
-                        full_reply += terminal_text
-                        break
-
-                    if failed_write_operations:
-                        final_finish_reason = "error"
-                        failed_text = _failed_write_message(
-                            write_receipts,
-                            also_unverified=bool(unverified_write_operations),
-                        )
-                        if not response_output_buffered:
-                            for i in range(0, len(failed_text), 20):
-                                yield {
-                                    "event": "token",
-                                    "data": {"content": failed_text[i:i + 20]},
-                                }
-                        full_reply += failed_text
-                        break
-
-                    if unverified_write_operations:
-                        final_finish_reason = "error"
-                        # 部分成功要点名(write_receipts=本轮已验证写入),不一刀切否定
-                        _unverified_msg = _unverified_write_message(write_receipts)
-                        if not response_output_buffered:
-                            for i in range(0, len(_unverified_msg), 20):
-                                yield {
-                                    "event": "token",
-                                    "data": {
-                                        "content": _unverified_msg[i:i + 20]
-                                    },
-                                }
-                        full_reply += _unverified_msg
-                        break
-
-                    from app.services.agent_policy_retry import terminal_policy_notice
-                    policy_notice = terminal_policy_notice(
-                        self._agent_kernel_capability_block_reasons,
-                        has_verified_writes=any(r.get("verified") is True for r in write_receipts),
-                    )
-                    if policy_notice is not None:
-                        full_reply = policy_notice
-                        final_finish_reason = "stop"
-                        if not response_output_buffered:
-                            yield {"event": "token", "data": {"content": policy_notice}}
-                        break
-
-                    # ``NEEDS_CONFIRMATION`` is an intentional manual-confirm
-                    # terminal state, not a failed/no-tool write.  Finish from
-                    # the observed tool results now instead of asking another
-                    # model round to reinterpret (or overwrite) that state.
-                    pure_pending_confirmation = bool(
-                        self._agent_kernel_pending_confirmation_tools
-                        and not self._agent_kernel_tool_failure_tools
-                        and not self._agent_kernel_capability_block_reasons
-                    )
-                    _fast_record_receipt_only_allowed = bool(
-                        self._prefer_fast_record_model
-                        and not (
-                            self._agent_kernel_snapshot is not None
-                            and self._agent_kernel_snapshot.intent.domain == "symptom"
-                            and not _is_proven_pure_symptom_record_request(message)
-                        )
-                    )
-                    if (
-                        _fast_record_receipt_only_allowed
-                        and pure_pending_confirmation
-                    ):
-                        pending_text = _pending_confirmation_reply_from_tool_results(
-                            messages
-                        )
-                        if pending_text:
-                            if write_receipts:
-                                pending_text = (
-                                    f"另有 {len(write_receipts)} 项记录已完成并取得回执。\n\n"
-                                    f"{pending_text}"
-                                )
-                            if not response_output_buffered:
-                                for i in range(0, len(pending_text), 20):
-                                    chunk = pending_text[i:i + 20]
-                                    yield {
-                                        "event": "token",
-                                        "data": {"content": chunk},
-                                    }
-                            full_reply += pending_text
-                            final_finish_reason = "stop"
-                            break
-
-                    # 硬门(诚实不变量):确定性"已记录…"回复只允许在本轮产生了**可验证的写入回执**
-                    # (write_receipts,由 _write_tool_attempted / _write_receipt_from_tool_result 判定)
-                    # 后出现。名字级判断(工具名 ∈ {health_record, health_manage})会把 health_manage
-                    # 的 list/query(读,用来找记录 ID)误判为写 —— 2026-07-13 prod turn 6334 实锤:
-                    # 分析问句「从 HRV 记录…推断胃溃疡根因」曾被旧关键词路由误判为记录意图，
-                    # 本轮只调 health_query×5 + health_manage(list),
-                    # 无任何写入(write_receipts=[]),却吐出假"✅ 已记录"+记录味兜底("请再说一次要改哪一条")。
-                    # 上面 unverified_write_operations 已先行拦掉"尝试写但无回执"的情形,故走到这里时
-                    # write_receipts 非空 ⟺ 本轮确有可验证写入。无回执 → fall through 到 continue,
-                    # 让下一轮 LLM 用工具结果作答(合成/查询直出),绝不谎报写入。
-                    _round_executed_write_tool = any(
-                        t in ("health_record", "health_manage") for t in _round_tool_names
-                    )
-                    _turn_had_verified_write = bool(write_receipts)
-                    _round_verified_create_only = bool(
-                        decision_route == "deterministic_symptom"
-                        and self._agent_kernel_snapshot is not None
-                        and self._agent_kernel_snapshot.intent.primary == "write"
-                        and self._agent_kernel_snapshot.intent.operation == "create"
-                        and _is_proven_pure_symptom_record_request(message)
-                        and _round_tool_names
-                        and all(name == "health_record" for name in _round_tool_names)
-                        and len(write_receipts) - _round_write_receipts_before
-                        == len(_round_tool_names)
-                        and not self._agent_kernel_pending_confirmation_tools
-                        and not self._agent_kernel_tool_failure_tools
-                        and not self._agent_kernel_capability_block_reasons
-                    )
-                    if (
-                        (
-                            _fast_record_receipt_only_allowed
-                            or _round_verified_create_only
-                        )
-                        and _turn_had_verified_write
-                        and not last_recoverable_write_rejection
-                    ):
-                        combined_post_record_quality = combine_post_record_quality_responses(post_record_qualities)
-                        final_text = (
-                            str(combined_post_record_quality.get("reply") or "").strip()
-                            if combined_post_record_quality else ""
-                        )
-                        if not final_text:
-                            final_text = _fast_record_reply_from_tool_results(messages)
-                        # 安全文本强制携带(加层不减层):quality 模板不看 tool result,
-                        # 曾把写后安全评估的 '⚠️ 安全提示' 从回复里整体丢掉 —— 老客户端
-                        # 不渲染 safety 卡,这行文本是其唯一载体。
-                        safety_suffix = _safety_warning_suffix_from_tool_results(messages)
-                        if safety_suffix and safety_suffix not in final_text:
-                            final_text = f"{final_text}\n\n{safety_suffix}" if final_text else safety_suffix
-                        if final_text:
-                            if first_token_at is None:
-                                first_token_at = time.time()
-                            _mark_perf_milestone("first_useful_ms")
-                            if (
-                                _round_verified_create_only
-                                and not self._prefer_fast_record_model
-                                and decision_route == "llm"
-                            ):
-                                decision_route = "verified_create_receipt"
-                            if not response_output_buffered:
-                                for i in range(0, len(final_text), 20):
-                                    chunk = final_text[i:i + 20]
-                                    yield {
-                                        "event": "token",
-                                        "data": {"content": chunk},
-                                    }
-                            full_reply += final_text
-                            break
-
-                    # 确定性查询直出 (Phase-2 rank2, flag 门控, ships-OFF): 镜像上面记录路径的
-                    # "确定性回复 + 跳过合成轮 break"。只对 fast-route 的**只读**查询回合 (非记录):
-                    # 本轮无写工具、执行过工具, 且本回合所有 health_query 结果都能被 top-5 维度
-                    # 格式化器覆盖 (且无安全告警后缀) → 从真实 tool result 渲染人话读数并 break,
-                    # 跳过强模型合成轮。任一未覆盖维度/写工具/安全后缀 → 短路返回 None,
-                    # fall-open 落到下方 continue 走正常合成 (fail-open: 宁可慢而对)。
-                    if (
-                        deterministic_query_mode != "off"
-                        and self._fast_route_simple_turn
-                        and not self._prefer_fast_record_model
-                        and not _round_executed_write_tool
-                        and tool_executed_count > 0
-                    ):
-                        from app.services import query_readouts
-
-                        deterministic_query_text = query_readouts.deterministic_query_reply(messages)
-                        if deterministic_query_text:
-                            deterministic_query_eligible = True
-                            deterministic_query_candidate_chars = len(
-                                deterministic_query_text
-                            )
-                            if deterministic_query_mode == "on":
-                                if first_token_at is None:
-                                    first_token_at = time.time()
-                                _mark_perf_milestone("first_useful_ms")
-                                if not response_output_buffered:
-                                    for i in range(0, len(deterministic_query_text), 20):
-                                        chunk = deterministic_query_text[i:i + 20]
-                                        yield {
-                                            "event": "token",
-                                            "data": {"content": chunk},
-                                        }
-                                full_reply += deterministic_query_text
-                                # 最终答案路径 → finish_reason 对齐 'stop' (completion_status → complete),
-                                # 不留工具轮的 'tool_calls' 陈值 (镜像 rank7 passthrough 收尾)。
-                                final_finish_reason = "stop"
-                                break
-                        if (
-                            deterministic_query_mode == "on"
-                            and decision_route == "deterministic_batch_query"
-                        ):
-                            decision_route = (
-                                "deterministic_batch_query_fallback_llm"
-                            )
-
-                    # 只读收敛护栏: 本轮全是"已跑过"的只读调用(纯空转重发)→ 强制下轮进合成轮,
-                    # 停住 loop(_force_no_tools_synthesis 在轮首最先判, 压过 keep_tools_after_synthesis_miss)。
-                    if planned_reads_all_seen:
-                        self._force_no_tools_synthesis = True
-
-                    if (
-                        (
-                            round_idx == MAX_TOOL_ROUNDS - 1
-                            or len(simple_diet_nutrition_rejection_rounds) >= 2
-                        )
-                        and last_recoverable_write_rejection
-                    ):
-                        final_finish_reason = "error"
-                        terminal_rejection = _write_rejection_with_receipt_context(
-                            last_recoverable_write_rejection,
-                            write_receipts,
-                        )
-                        if not response_output_buffered:
-                            for i in range(
-                                0,
-                                len(terminal_rejection),
-                                20,
-                            ):
-                                yield {
-                                    "event": "token",
-                                    "data": {
-                                        "content": terminal_rejection[i:i + 20]
-                                    },
-                                }
-                        full_reply += terminal_rejection
-                        break
-
-                    # 继续循环让模型处理 tool_result
-                    continue
-
-                else:
-                    # 纯文本回复 — 最终答案。本轮 content 已在上面逐 delta 真流式
-                    # 下发给客户端 (streamed_to_client)。这里只补 interrupted notice
-                    # 后缀 + full_reply,不再切 20-char 假块重发。
-                    if self._last_provider_model_name:
-                        # done.model 表示最终用户可见答案的模型。工具门控 fallback
-                        # 只负责拿数据,不能覆盖用户手动选择模型的最终归属。
-                        model_name = self._last_provider_model_name
-                    if isinstance(response, str):
-                        # 已经是完整文本（理论上流式路径不会进这里,保险留着）
-                        final_text = response
-                        streamed_to_client = False
-                    else:
-                        final_text = response.get("content") or ""
-                        final_text = _append_interrupted_notice(final_text, response.get("finish_reason"))
-                    candidate_quality = enforce_agent_output_quality(final_text)
-                    if "protocol_leak" in candidate_quality.flags:
-                        unrecovered_output_quality = candidate_quality
-                        full_reply = candidate_quality.text
-                        final_finish_reason = "error"
-                        if not response_output_buffered:
-                            yield {"event": "token", "data": {"content": full_reply}}
-                        break
-                    # 兜底:括号工具标记没能恢复成 tool_call(name 不在白名单/参数解析失败)时,
-                    # 也绝不能把裸 `[工具调用: ...]` 留在用户可见正文里。剥离后若空,走下方空回复重试链。
-                    stripped = _strip_bracket_tool_markers(final_text)
-                    if stripped != final_text:
-                        final_text = stripped
-                        streamed_to_client = False
-                    # 同理:XML `<invoke>…</invoke>` 块 / 孤立 `<minimax:tool_call>` 标记(MiniMax 经代理)
-                    # 没能恢复成 tool_call 时,绝不能把裸 XML 语法留给用户。剥离后若空走空回复重试链。
-                    stripped_xml = _strip_xml_tool_markers(final_text)
-                    if stripped_xml != final_text:
-                        final_text = stripped_xml
-                        streamed_to_client = False
-                    # 兜底:弱模型(如 deepseek-v4-pro)把工具结果/参数裸 JSON 当最终回复
-                    # 回显(用户截图:记录后正文是 {"id":231,...} / {"record_date":...})。
-                    # 整条是裸 JSON 且本轮确有工具结果 → 用工具结果合成"已记录…",绝不裸露。
-                    if _looks_like_bare_tool_json(final_text):
-                        # 按本轮兜底口径:**可验证写入回执**(write_receipts)才允许合成"已记录…";
-                        # 只读回合(含 health_manage 的 list/query)→ 查询味自然语言,绝不谎报"✅ 已记录"。
-                        # 名字级 tools_used ∋ health_manage 会把查 ID 的 list 误判为写(同 turn 6334 病根)。
-                        if write_receipts:
-                            synthesized = _fast_record_reply_from_tool_results(messages)
-                        else:
-                            # 查询回合:绝不谎报"已记录"。工具结果无现成人话字段时给
-                            # 非空中性兜底 —— 空串会触发空回复重试链,弱模型每轮重放
-                            # 同样的裸 JSON,越试漏得越多(测试实测)。
-                            synthesized = _natural_language_from_tool_results(messages) or (
-                                "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
-                            )
-                        if synthesized.strip():
-                            final_text = synthesized
-                            streamed_to_client = False
-                    # QUERY 泄漏:短前言 + 内嵌工具结果 JSON 数组(qwen3.7-max:`让我查一下…
-                    # [{"record_date":...,"meal_type":...}]`)。_looks_like_bare_tool_json 只认
-                    # "整条即 JSON",这种带前言的漏过 → 锚定检测命中就必须清掉,绝不落库/回显。
-                    # 流式期已被上面的 suppressor 拦下(streamed_to_client 应已 False),这里做
-                    # 落库侧兜底:优先用工具结果里现成人话;没有则清空,交给下方空回复重试链让
-                    # 模型用自然语言重答。写回 final_text 保证 message.meta / reload 也是干净的。
-                    elif _leaks_tool_result_json(final_text):
-                        streamed_to_client = False
-                        # 非空兜底:空串会走空回复重试链,弱模型每轮重放同样的泄漏,
-                        # 越试漏得越多(测试实测:前言 ×7 + 最终不可用)。宁可一句
-                        # 中性话术收尾,也不给重试风暴机会。
-                        final_text = _natural_language_from_tool_results(messages) or (
-                            "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
-                        )
-                    if (
-                        not model_recovery_attempted
-                        and is_model_scope_refusal(final_text)
-                    ):
-                        model_recovery_attempted = True
-                        recovered_text = await self._recover_model_scope_refusal(messages)
-                        if recovered_text:
-                            final_text = recovered_text
-                            streamed_to_client = False
-                            self._record_model_fallback_reason("model_scope_refusal_recovered")
-                    if (
-                        not model_recovery_attempted
-                        and is_data_insufficiency_response(final_text)
-                    ):
-                        model_recovery_attempted = True
-                        recovered_text = await self._recover_data_insufficiency(messages)
-                        if recovered_text:
-                            final_text = recovered_text
-                            streamed_to_client = False
-                            self._record_model_fallback_reason("data_insufficiency_recovered")
-                    if is_internal_process_response(final_text):
-                        final_text = (
-                            "这次没有完成数据查询，因此没有生成可靠回答。"
-                            "请点“重试”重新查询。"
-                        )
-                        final_finish_reason = "error"
-                        streamed_to_client = False
-                        self._record_model_fallback_reason(
-                            "internal_process_response_blocked"
-                        )
-                    if not final_text.strip():
-                        # 空回复 → 走非流式重试链 (这些是新生成文本,需要 emit)。
-                        streamed_to_client = False
-                        messages.append({
-                            "role": "user",
-                            "content": (
-                                "上一轮没有生成任何用户可见回复。请不要调用工具，"
-                                "直接用中文给出完整回答。"
-                            ),
-                        })
-                        _round_start = time.time()
-                        retry_response = await self._call_llm(messages, [])
-                        if isinstance(retry_response, dict):
-                            final_finish_reason = retry_response.get("finish_reason") or final_finish_reason
-                        llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
-                        final_text = _response_text(retry_response)
-                        if isinstance(retry_response, dict):
-                            final_text = _append_interrupted_notice(final_text, retry_response.get("finish_reason"))
-                        if not final_text.strip():
-                            # 诚实不变量:兜底的"已完成记录/操作"口径只在本轮有可验证
-                            # 写入回执时允许;查询/分析回合(write_receipts 空)用查询味。
-                            final_text = _fallback_text_from_tool_results(
-                                messages, has_verified_write=bool(write_receipts),
-                            )
-                        if not final_text.strip():
-                            compact_messages = _build_compact_empty_retry_messages(messages)
-                            logger.warning(
-                                "[agent_executor] empty LLM reply after retry; compacting context "
-                                "from chars=%s to chars=%s",
-                                len(str(messages[0].get("content") or "")) if messages else 0,
-                                len(str(compact_messages[0].get("content") or "")),
-                            )
-                            _round_start = time.time()
-                            compact_response = await self._call_llm(compact_messages, [])
-                            if isinstance(compact_response, dict):
-                                final_finish_reason = compact_response.get("finish_reason") or final_finish_reason
-                            llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
-                            final_text = _response_text(compact_response)
-                            if isinstance(compact_response, dict):
-                                final_text = _append_interrupted_notice(
-                                    final_text,
-                                    compact_response.get("finish_reason"),
-                                )
-                        if not final_text.strip():
-                            logger.warning(
-                                "[agent_executor] compact retry also empty; using stable fallback provider"
-                            )
-                            _round_start = time.time()
-                            fallback_response = await self._call_llm_fallback_provider(
-                                _build_compact_empty_retry_messages(messages)
-                            )
-                            if isinstance(fallback_response, dict):
-                                final_finish_reason = (
-                                    fallback_response.get("finish_reason")
-                                    or final_finish_reason
-                                )
-                            llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
-                            final_text = _response_text(fallback_response)
-                            if isinstance(fallback_response, dict):
-                                final_text = _append_interrupted_notice(
-                                    final_text,
-                                    fallback_response.get("finish_reason"),
-                                )
-                        if not final_text.strip():
-                            final_text = "我这次没有收到模型的有效回复，请稍后重试或切换模型。"
-                    pure_pending_confirmation = bool(
-                        self._agent_kernel_pending_confirmation_tools
-                        and not self._agent_kernel_tool_failure_tools
-                        and not self._agent_kernel_capability_block_reasons
-                    )
-                    if (
-                        last_recoverable_write_rejection
-                        and (
-                            last_recoverable_write_rejection_code
-                            in {"diet_nutrition_incomplete", "non_diet_intake"}
-                            or _claims_unverified_write_success(final_text)
-                        )
-                    ):
-                        final_text = _write_rejection_with_receipt_context(
-                            last_recoverable_write_rejection,
-                            write_receipts,
-                        )
-                        final_finish_reason = "error"
-                        streamed_to_client = False
-                    elif last_recoverable_write_rejection and write_receipts:
-                        final_text = _write_rejection_with_receipt_context(
-                            final_text,
-                            write_receipts,
-                        )
-                        streamed_to_client = False
-                    elif pure_pending_confirmation:
-                        pending_text = _pending_confirmation_reply_from_tool_results(
-                            messages
-                        )
-                        if pending_text:
-                            if write_receipts:
-                                pending_text = (
-                                    f"另有 {len(write_receipts)} 项记录已完成并取得回执。\n\n"
-                                    f"{pending_text}"
-                                )
-                            final_text = pending_text
-                            streamed_to_client = False
-                    elif (
-                        record_write_requested
-                        and not write_receipts
-                        and not last_recoverable_write_rejection
-                    ):
-                        final_text = _record_intent_needs_detail_message(message)
-                        streamed_to_client = False
-                    elif (
-                        partial_diet_correction_requested
-                        and not write_receipts
-                        and self._turn_diet_correction_unresolved_reason
-                    ):
-                        final_text = _diet_correction_unresolved_message(
-                            self._turn_diet_correction_unresolved_reason
-                        )
-                        streamed_to_client = False
-                    elif (
-                        _has_destructive_or_sync_intent(message or "")
-                        and tool_executed_count == 0
-                    ):
-                        # 破坏性/同步意图但 0 工具执行 = 动作未执行 → 诚实覆盖(加层不减层)。
-                        final_text = _destructive_or_sync_not_performed_message(message)
-                        streamed_to_client = False
-                    clinician_reply = _clinician_deterministic_reply(
-                        clinician_turn_decision,
-                        final_text,
-                    )
-                    if clinician_reply is not None:
-                        final_text = clinician_reply
-                        final_finish_reason = "stop"
-                        streamed_to_client = False
-                    if (
-                        not response_output_buffered
-                        and streamed_to_client
-                        and final_text.startswith(streamed_text)
-                    ):
-                        # 正文已实时下发,只补 interrupted notice 等未流式的后缀。
-                        tail = final_text[len(streamed_text):]
-                        if tail:
-                            if first_token_at is None:
-                                first_token_at = time.time()
-                            yield {"event": "token", "data": {"content": tail}}
-                    elif (
-                        not response_output_buffered
-                        and tool_round_output_buffered
-                        and not streamed_to_client
-                        and not streamed_tool_calls
-                        and not inline_suppressed
-                        and not recoverable_response_buffered
-                        and streamed_content_deltas
-                        and final_text.startswith(streamed_text)
-                        and not _streaming_leak_forming(streamed_text)
-                    ):
-                        # Tool-capable rounds are buffered until finish so model
-                        # preambles cannot leak before a later structured
-                        # tool_call. If the same round finishes as a plain text
-                        # answer, release the original provider deltas instead
-                        # of collapsing the answer into one synthetic token.
-                        if first_token_at is None:
-                            first_token_at = time.time()
-                        for delta in streamed_content_deltas:
-                            yield {"event": "token", "data": {"content": delta}}
-                        tail = final_text[len(streamed_text):]
-                        if tail:
-                            yield {"event": "token", "data": {"content": tail}}
-                    elif not response_output_buffered:
-                        # 重试/兜底产生的新文本 (非流式来源) → 一次性下发。
-                        if final_text:
-                            if first_token_at is None:
-                                first_token_at = time.time()
-                            yield {"event": "token", "data": {"content": final_text}}
-                    full_reply += final_text
-                    # rank7 shadow: 本轮就是被短路的目标(单次 orchestrator 深分析回合的二次合成)——
-                    # 记下这次二次合成轮壁钟 = passthrough 可省的时延。shadow 下行为不变(照跑),只观测。
-                    if (
-                        passthrough_mode == "shadow"
-                        and tool_executed_count == 1
-                        and passthrough_orch_calls == 1
-                        and passthrough_orch_text
-                    ):
-                        passthrough_synthesis_round_ms = _round_llm_gen_ms
-                    # 2026-07-01: 无工具的最终答案轮 — per-round split (tool_exec_ms=0)。
-                    rounds.append({
-                        "llm_gen_ms": _round_llm_gen_ms,
-                        "tool_exec_ms": 0,
-                        "tools": [],
-                    })
-                    break
-
-            else:
-                # 达到工具轮次上限后，不要把半成品直接返回给用户。
-                # DeepSeek 这类模型更容易连续拆分工具查询；上限命中时强制做一次
-                # no-tools synthesis，用已有 tool_result 汇总成最终答案。
-                # 2026-07-05 P0-1: 进度事件 (flat 契约) —— 强制合成也是"最终回答开始生成",
-                # 命中 accepted→tool*→synthesis→done 契约的轮次耗尽分支。纯附加。
-                yield self._progress_event("synthesis")
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "工具查询轮次已经用完。请停止继续调用工具，"
-                        "只基于上文已经返回的健康数据、体检/基因/知识库结果，"
-                        "给出完整的最终分析和可执行建议。"
-                    ),
-                })
-                _round_start = time.time()
-                clinician_exhausted_reply = _clinician_deterministic_reply(
-                    clinician_turn_decision,
-                    "",
-                    force=True,
-                )
-                if clinician_exhausted_reply is not None:
-                    response = {
-                        "content": clinician_exhausted_reply,
-                        "finish_reason": "stop",
-                    }
-                else:
-                    response = await self._call_llm(messages, [])
-                if self._last_provider_model_name:
-                    model_name = self._last_provider_model_name
-                if isinstance(response, dict):
-                    final_finish_reason = response.get("finish_reason") or final_finish_reason
-                llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
-                if isinstance(response, str):
-                    final_text = response
-                elif isinstance(response, dict):
-                    final_text = response.get("content") or ""
-                    final_text = _append_interrupted_notice(final_text, response.get("finish_reason"))
-                    if not final_text and response.get("tool_calls"):
-                        final_text = (
-                            "我已经完成了多轮数据查询，但模型仍尝试继续调用工具。"
-                            "请缩小问题范围，或稍后使用更强模型重新分析。"
-                        )
-                else:
-                    final_text = str(response or "")
-
-                if not final_text.strip():
-                    final_text = (
-                        "我已经完成了多轮数据查询，但没有生成足够明确的最终结论。"
-                        "请缩小问题范围，或稍后使用更强模型重新分析。"
-                    )
-                if not response_output_buffered:
-                    for i in range(0, len(final_text), 20):
-                        chunk = final_text[i:i + 20]
-                        yield {"event": "token", "data": {"content": chunk}}
-                full_reply += final_text
 
         except _SimpleRecordTerminal as terminal:
-            deterministic_diet_correction_terminal = True
-            full_reply = terminal.message
-            final_finish_reason = "stop" if terminal.satisfied else "error"
-            if not response_output_buffered:
-                for i in range(0, len(full_reply), 20):
-                    yield {
-                        "event": "token",
-                        "data": {"content": full_reply[i:i + 20]},
-                    }
-        except Exception as e:
-            logger.error(
-                "Agent 执行异常 user=%s error_type=%s",
-                user_id,
-                type(e).__name__,
+            # Domain resolution can reject a proposed meal mutation before Pi
+            # receives it. Preserve any earlier uncertain/failed write outcome.
+            full_reply = (
+                _unverified_write_message(write_receipts)
+                if unverified_write_operations
+                else _failed_write_message(write_receipts)
+                if failed_write_operations
+                else terminal.message
             )
-            if self._turn_attachment_write_receipts and vision_description:
-                asks_for_analysis = _medical_report_analysis_requested(
-                    message,
-                    persisted=True,
-                )
-                if asks_for_analysis:
-                    error_msg = (
-                        "报告已保存，OCR 识别文字也已保留但尚待核对；"
-                        "本次个性化解读服务暂时不可用。"
-                        "请稍后重试分析，系统不会重复保存这份报告。\n\n"
-                        f"{vision_description}"
-                    )
-                else:
-                    error_msg = (
-                        "报告已保存并取得持久化回执；OCR 内容尚待核对。\n\n"
-                        f"{vision_description}"
-                    )
-                    final_finish_reason = "stop"
-            else:
-                error_msg = safe_llm_error_message(e)
-            if not response_output_buffered:
-                yield {"event": "token", "data": {"content": error_msg}}
-            full_reply = error_msg
-            if final_finish_reason != "stop":
-                final_finish_reason = "error"
+            final_finish_reason = (
+                "stop" if terminal.satisfied and not unverified_write_operations
+                and not failed_write_operations else "error"
+            )
+        except Exception as exc:
+            logger.error("Pi agent failed user=%s error_type=%s", user_id, type(exc).__name__)
+            full_reply = (
+                _unverified_write_message(write_receipts)
+                if unverified_write_operations
+                else _failed_write_message(write_receipts)
+                if write_receipts
+                else safe_llm_error_message(exc)
+            )
+            final_finish_reason = "error"
         finally:
             if self._http_client:
                 await self._http_client.aclose()
                 self._http_client = None
 
         # 6. 保存回复
+        if is_internal_process_response(full_reply):
+            full_reply = "这次没有完成数据查询，因此没有生成可靠回答。请点“重试”重新查询。"
+            final_finish_reason = "error"
+            self._record_model_fallback_reason("internal_process_response_blocked")
+        elif _looks_like_bare_tool_json(full_reply) or _leaks_tool_result_json(full_reply):
+            full_reply = (
+                _fast_record_reply_from_tool_results(messages) if write_receipts else ""
+            ) or _natural_language_from_tool_results(messages) or (
+                "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
+            )
         # 确定性护栏 (R4, 防御纵深): full_reply 是 LLM 生成文本 —— 剥掉任何伪造的
         # reva-ui 图表 block (数值只能来自确定性 genui 短路; 短路走独立路径不经此处)。
         raw_output_quality = unrecovered_output_quality or enforce_agent_output_quality(full_reply)
@@ -18918,6 +17466,7 @@ class AgentExecutor:
             **perf_milestones,
             "action_type": perf_action_type,
             "decision_route": decision_route,
+            "agent_kernel": "pi" if pi_started else "deterministic",
             "nutrition_estimate_ms": simple_diet_nutrition_estimate_ms,
             "nutrition_estimate_calls": simple_diet_nutrition_estimate_calls,
             "nutrition_estimate_timed_out": (

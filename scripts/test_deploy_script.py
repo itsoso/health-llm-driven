@@ -71,6 +71,15 @@ def test_backend_dependency_cache_is_lock_addressed_and_fail_closed():
     assert "|| true" not in body
 
 
+def test_pi_install_is_required_even_when_python_dependency_cache_is_reused():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("remote_dependency_sync_command() {")
+    end = script.index("compute_release_input_digests() {", start)
+    body = script[start:end]
+    assert "bash pi-runtime/install.sh || return 1" in body
+    assert body.index("bash pi-runtime/install.sh") < body.index("dependency lock unchanged")
+
+
 def test_release_state_markers_are_verified_and_written_atomically():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     decide_start = script.index("determine_system_kb_activation_need() {")
@@ -92,6 +101,9 @@ def test_release_state_markers_are_verified_and_written_atomically():
 def test_dependency_marker_never_skips_an_unverified_or_symlinked_environment(
     tmp_path: Path,
 ):
+    pi_runtime = tmp_path / "pi-runtime"
+    pi_runtime.mkdir()
+    (pi_runtime / "install.sh").write_text("#!/bin/sh\nexit 0\n")
     env_file = tmp_path / "deploy.env"
     env_file.write_text(
         "DEPLOY_SERVER=fake-server\n"
@@ -168,6 +180,7 @@ test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 2
 """
     result = subprocess.run(
         ["bash", "-c", harness],
+        cwd=tmp_path,
         text=True,
         capture_output=True,
         check=False,
@@ -188,6 +201,9 @@ def test_matching_dependency_marker_repairs_each_stale_chroma_package_and_keeps_
     tmp_path: Path,
     residual_package: str,
 ):
+    pi_runtime = tmp_path / "pi-runtime"
+    pi_runtime.mkdir()
+    (pi_runtime / "install.sh").write_text("#!/bin/sh\nexit 0\n")
     env_file = tmp_path / "deploy.env"
     env_file.write_text(
         "DEPLOY_SERVER=fake-server\n"
@@ -267,6 +283,7 @@ test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 2
 """
     result = subprocess.run(
         ["bash", "-c", harness],
+        cwd=tmp_path,
         text=True,
         capture_output=True,
         check=False,
@@ -1212,6 +1229,8 @@ def test_guard_lost_lease_after_pip_never_runs_migration_or_restarts_writers(
     migration_marker = tmp_path / "migration-ran"
     fake_migration_env = tmp_path / "migration.env"
     backend.mkdir(parents=True)
+    (backend / "pi-runtime").mkdir()
+    (backend / "pi-runtime" / "install.sh").write_text("#!/bin/sh\nexit 0\n")
     fake_bin.mkdir()
     lease_dir.mkdir()
     stage_dir.mkdir()

@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.agent_executor import AgentExecutor, MAX_TOOL_ROUNDS
+from app.services.agent_executor import AgentExecutor, MAX_TOOL_ROUNDS, INTERRUPTED_COMPLETION_NOTICE
 
 
 def _stream_from(fake_call_llm):
@@ -25,17 +25,10 @@ def _stream_from(fake_call_llm):
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_synthesizes_final_answer_when_tool_round_limit_is_hit(
+async def test_pi_tool_round_limit_interrupts_without_extra_model_call(
     db, auth_user_and_headers
 ):
-    """贪婪模型(即使 A2 合成轮不带 tools schema 仍持续吐结构化工具调用,
-    DeepSeek 类实测行为)→ 只能靠 MAX_TOOL_ROUNDS 兜底,耗尽后强制 no-tools
-    合成出最终答案,绝不把半成品/报错文案丢给用户。
-
-    fake 的"该出最终答案了"信号锚定轮次耗尽的强制合成提示语,而不是
-    `not tools`:A2(243e8cc8d)后工具执行过的下一轮就已不带 tools,
-    `not tools` 不再等价于"轮次耗尽"。
-    """
+    """Pi stops at its configured turn budget and reports an honest interruption."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -80,28 +73,29 @@ async def test_agent_stream_synthesizes_final_answer_when_tool_round_limit_is_hi
         for event in events
         if event.get("event") == "token"
     )
-    assert "最终分析" in rendered
-    assert "已达到最大推理轮次" not in rendered
-    assert calls[-1]["tool_count"] == 0
-    assert len(calls) == MAX_TOOL_ROUNDS + 1
+    assert INTERRUPTED_COMPLETION_NOTICE in rendered
+    assert "最终分析" not in rendered
+    assert "继续查询数据" not in rendered
+    assert len(calls) == MAX_TOOL_ROUNDS
     assert events[-1]["event"] == "done"
-    assert events[-1]["data"]["llm_rounds"] == MAX_TOOL_ROUNDS + 1
+    assert events[-1]["data"]["llm_rounds"] == MAX_TOOL_ROUNDS
+    assert events[-1]["data"]["completion_status"] == "interrupted"
+    assert events[-1]["data"]["write_receipts"] == []
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_synthesis_round_drops_tools_after_tool_execution(
+async def test_pi_retains_declared_tools_until_model_finishes_after_tool_result(
     db, auth_user_and_headers
 ):
-    """A2(243e8cc8d)契约:上一轮执行过工具 → 下一轮是合成轮,对所有模型
-    置空 tools(省 18KB schema prefill)。守规矩的模型(拿不到 tools 就直接
-    作答)在第 2 轮产出最终答案,总共恰好 2 次 LLM 调用。"""
+    """The model sees its real tool result and finishes while tools stay declared."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
 
     async def fake_call_llm(messages, tools):
         calls.append({"messages": messages, "tool_count": len(tools or [])})
-        if not tools:
+        if len(calls) == 2:
+            assert any(item.get("role") == "tool" for item in messages)
             return "最终分析：已基于前面查到的数据完成代谢健康复盘。"
         return {
             "content": "继续查询数据。\n",
@@ -141,6 +135,6 @@ async def test_agent_stream_synthesis_round_drops_tools_after_tool_execution(
     assert "最终分析" in rendered
     assert len(calls) == 2
     assert calls[0]["tool_count"] > 0
-    assert calls[1]["tool_count"] == 0
+    assert calls[1]["tool_count"] == calls[0]["tool_count"]
     assert events[-1]["event"] == "done"
     assert events[-1]["data"]["llm_rounds"] == 2

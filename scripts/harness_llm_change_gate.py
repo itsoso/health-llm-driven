@@ -26,6 +26,8 @@ HIGH_RISK_RULES: tuple[tuple[str, str], ...] = (
     ("backend/app/orchestrator/**", "orchestrator runtime"),
     ("backend/app/api/orchestrator.py", "orchestrator runtime"),
     ("backend/app/services/agent_executor.py", "agent executor runtime"),
+    ("backend/app/services/pi_kernel.py", "Pi kernel transport"),
+    ("backend/pi-runtime/**", "official Pi kernel runtime"),
     ("backend/app/services/tool_schema_registry.py", "tool schema runtime"),
     ("backend/app/services/llm/**", "LLM service/runtime"),
     ("backend/app/services/*llm*.py", "LLM service/runtime"),

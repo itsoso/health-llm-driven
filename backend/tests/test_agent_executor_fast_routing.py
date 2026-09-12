@@ -1773,7 +1773,7 @@ async def test_run_stream_emits_thinking_detail_for_non_streaming(db, auth_user_
         for e in events
         if e.get("event") == "status" and e["data"].get("stage") == "thinking"
     ]
-    assert "该模型整段生成,需等待完整回答" in details
+    assert "整段生成，需等待完整回答" in details
 
 
 @pytest.mark.asyncio

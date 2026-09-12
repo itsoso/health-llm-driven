@@ -706,10 +706,10 @@ async def test_named_released_source_resolves_before_buffered_health_synthesis(
             "knowledge_source": "益家知研",
         },
     )]
-    assert [tool["function"]["name"] for tool in captured_tools[0]] == [
-        "knowledge_search"
-    ]
-    assert captured_tools[1] == []
+    # Required authority resolution now precedes the Pi model loop; the
+    # clinical model receives its result and no executable capabilities.
+    assert captured_tools == [[]]
+    assert any(message.get("role") == "tool" for message in captured_messages[0])
     assert events[-1]["data"]["tools_used"] == ["knowledge_search"]
 
 

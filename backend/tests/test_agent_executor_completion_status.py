@@ -38,8 +38,8 @@ def _stream_from(fake_call_llm):
     """把旧式 fake_call_llm(messages, tools) -> dict 适配成 run_stream 现在用的
     _call_llm_stream(messages, tools) -> AsyncIterator[event]。
 
-    run_stream 第一轮走 _call_llm_stream (真流式 seam); 空回复重试/兜底仍走
-    _call_llm。共用同一个 fake_call_llm 保证调用计数序列不变。
+    Pi 发起的模型请求通过真实 _call_llm_stream seam 接收这些事件；
+    只替换模型传输，工具选择和循环仍由官方 Pi 执行。
     """
     async def fake_call_llm_stream(messages, tools):
         result = await fake_call_llm(messages, tools)
@@ -317,7 +317,6 @@ async def test_identityless_write_result_cannot_render_or_finish_as_success(
         return '{"message":"Record deleted successfully"}'
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -346,7 +345,7 @@ async def test_identityless_write_result_cannot_render_or_finish_as_success(
 
 
 @pytest.mark.asyncio
-async def test_later_verified_same_write_clears_uncertain_checkpoint(
+async def test_uncertain_write_stops_sibling_retry_before_second_dispatch(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _ = auth_user_and_headers
@@ -405,7 +404,6 @@ async def test_later_verified_same_write_clears_uncertain_checkpoint(
         )
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -425,12 +423,17 @@ async def test_later_verified_same_write_clears_uncertain_checkpoint(
         if event.get("event") == "token"
     )
 
-    assert "不能确认" not in rendered
-    assert "已删除这条饮食记录" in rendered
+    assert executions == 1
+    assert "不能确认" in rendered
+    assert not _claims_unverified_write_success(rendered)
     done = next(event for event in events if event.get("event") == "done")
-    assert done["data"]["completion_status"] == "complete"
-    assert done["data"]["write_receipts"][0]["resource_type"] == "diet_record"
-    assert done["data"]["write_receipts"][0]["resource_id"] == "829"
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
+    user_message = db.query(AgentMessage).filter_by(
+        role="user", content="删除这条饮食记录",
+    ).one()
+    assert user_message.meta["write_state"]["status"] == "uncertain"
+    assert user_message.meta["write_receipts"] == []
 
 
 @pytest.mark.asyncio
@@ -489,7 +492,6 @@ async def test_contextual_diet_receipt_does_not_emit_second_diet_card(
         }, ensure_ascii=False)
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -544,7 +546,6 @@ async def test_http_500_after_dispatched_write_is_uncertain_and_orphan_retry_doe
         return "Error: upstream returned 500 after request dispatch"
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", first_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(first_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", committed_then_500)
@@ -645,7 +646,6 @@ async def test_pre_dispatch_sleep_validation_returns_to_model_without_unverified
         return validation_error
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(
         "app.services.agent_executor._has_fast_record_write_intent",
         lambda _message: False,
@@ -729,7 +729,6 @@ async def test_pre_dispatch_validation_rejects_model_success_claim_without_recei
         )
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -796,7 +795,6 @@ async def test_duplicate_writes_in_one_model_response_execute_once(
         })
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -899,7 +897,6 @@ async def test_contextual_event_calls_differing_only_in_discarded_fields_execute
         )
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -1193,7 +1190,6 @@ async def test_sealed_planned_only_checkpoint_can_resume_before_any_dispatch(
         })
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -1277,7 +1273,6 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
         return original_persist(user_message, **kwargs)
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
@@ -1763,7 +1758,7 @@ async def test_agent_stream_reports_tools_used_in_done_and_meta(db, auth_user_an
                         "type": "function",
                         "function": {
                             "name": "health_query",
-                            "arguments": json.dumps({"metric": "heart_rate"}, ensure_ascii=False),
+                            "arguments": json.dumps({"dimension": "heart_rate"}, ensure_ascii=False),
                         },
                     },
                 ],
@@ -2394,7 +2389,7 @@ async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_retries_when_model_returns_empty_visible_reply(db, auth_user_and_headers):
+async def test_agent_stream_fails_closed_on_empty_visible_reply(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -2423,9 +2418,11 @@ async def test_agent_stream_retries_when_model_returns_empty_visible_reply(db, a
         if event.get("event") == "token"
     )
 
-    assert "补发回答" in rendered
-    assert calls[-1]["tool_count"] == 0
-    assert events[-1]["event"] == "done"
+    assert "没有生成有效回答" in rendered
+    assert len(calls) == 1
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
 
 
 @pytest.mark.asyncio
@@ -2469,7 +2466,7 @@ async def test_agent_stream_injects_mac_desktop_markdown_instruction(db, auth_us
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_compacts_context_after_repeated_empty_visible_reply(db, auth_user_and_headers, monkeypatch):
+async def test_agent_stream_fails_closed_without_rewriting_long_context(db, auth_user_and_headers, monkeypatch):
     """Commercial gateways can return stop+empty for long system prompts."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -2510,16 +2507,16 @@ async def test_agent_stream_compacts_context_after_repeated_empty_visible_reply(
         if event.get("event") == "token"
     )
 
-    assert "压缩上下文后回答" in rendered
-    assert len(calls) == 3
-    assert calls[2]["tool_count"] == 0
-    assert len(calls[2]["messages"][0]["content"]) < len(calls[0]["messages"][0]["content"])
-    assert "## 用户健康档案" in calls[2]["messages"][0]["content"]
+    assert "没有生成有效回答" in rendered
+    assert len(calls) == 1
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_falls_back_to_stable_provider_when_compact_retry_is_empty(db, auth_user_and_headers, monkeypatch):
-    """If the selected commercial model keeps returning empty, use a stable fallback."""
+async def test_agent_stream_fails_closed_without_hidden_provider_fallback(db, auth_user_and_headers, monkeypatch):
+    """A failed candidate must not trigger hidden model substitution."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -2563,14 +2560,15 @@ async def test_agent_stream_falls_back_to_stable_provider_when_compact_retry_is_
         if event.get("event") == "token"
     )
 
-    assert "稳定模型兜底回答" in rendered
-    assert len(calls) == 3
-    assert len(fallback_calls) == 1
-    assert fallback_calls[0][0]["role"] == "system"
+    assert "没有生成有效回答" in rendered
+    assert len(calls) == 1
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_executes_inline_tool_json_instead_of_rendering_it(db, auth_user_and_headers):
+async def test_agent_stream_inline_delete_text_never_dispatches_or_claims_success(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -2611,16 +2609,24 @@ async def test_agent_stream_executes_inline_tool_json_instead_of_rendering_it(db
         if event.get("event") == "token"
     )
 
-    assert executed == [
-        ("health_manage", '{"record_type": "diet", "operation": "delete", "record_id": 625}', "test-token")
-    ]
-    assert any(event.get("event") == "tool_call" and event["data"]["tool"] == "health_manage" for event in events)
-    assert "已删除最后一条饮食记录" in rendered
-    assert '"name":"health_manage"' not in rendered
+    assert executed == []
+    assert not any(event.get("event") in {"tool_call", "tool_result"} for event in events)
+    assert rendered.strip()
+    assert not _claims_unverified_write_success(rendered)
+    assert "health_record" not in rendered
+    assert "health_manage" not in rendered
+    assert "<tool_call>" not in rendered
+    assert "<tool_code>" not in rendered
+    assert '"parameters"' not in rendered
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["write_receipts"] == []
+    saved = db.get(AgentMessage, done["data"]["message_id"])
+    assert saved.meta["write_receipts"] == []
+    assert not _claims_unverified_write_success(saved.content)
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, auth_user_and_headers):
+async def test_agent_stream_inline_diet_text_never_dispatches_or_claims_receipt(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     executed = []
@@ -2666,54 +2672,27 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
         if event.get("event") == "token"
     )
 
-    assert executed[0][0] == "health_record"
-    assert executed[0][1]["record_type"] == "diet"
-    assert executed[0][1]["data"]["protein"] == 32
-    assert any(
-        event.get("event") == "tool_result"
-        and event["data"]["record_type"] == "diet"
-        and event["data"]["record_data"]["calories"] == 520
-        and event["data"]["write_completed"] is True
-        and event["data"]["receipt"]["resource_type"] == "diet_record"
-        and event["data"]["receipt"]["resource_id"] == "701"
-        and event["data"]["receipt"]["action"] == "create"
-        and event["data"]["receipt"]["verified"] is True
-        and event["data"]["result"] == (
-            '{"id":701,"message":"已记录晚餐：约 520 kcal，蛋白质 32g",'
-            '"food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g","calories":520}'
-        )
-        for event in events
-    )
+    assert executed == []
+    assert not any(event.get("event") in {"tool_call", "tool_result"} for event in events)
+    assert rendered.strip()
+    assert not _claims_unverified_write_success(rendered)
+    assert "health_record" not in rendered
+    assert "health_manage" not in rendered
+    assert "<tool_call>" not in rendered
+    assert "<tool_code>" not in rendered
+    assert '"parameters"' not in rendered
     done = next(event for event in events if event.get("event") == "done")
-    assert done["data"]["write_receipts"] == [
-        {
-            "operation_id": "health_record:diet_record:701",
-            "status": "verified",
-            "resource_type": "diet_record",
-            "resource_id": "701",
-            "completed_at": done["data"]["write_receipts"][0]["completed_at"],
-            "verified": True,
-            "action": "create",
-        }
-    ]
-    from app.models.agent_conversation import AgentMessage
-
-    saved_assistant = (
-        db.query(AgentMessage)
-        .filter(AgentMessage.role == "assistant")
-        .order_by(AgentMessage.id.desc())
-        .first()
-    )
-    assert saved_assistant.meta["write_receipts"] == done["data"]["write_receipts"]
-    assert "已记录晚餐" in rendered
-    assert '"name":"health_record"' not in rendered
+    assert done["data"]["write_receipts"] == []
+    saved = db.get(AgentMessage, done["data"]["message_id"])
+    assert saved.meta["write_receipts"] == []
+    assert not _claims_unverified_write_success(saved.content)
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_executes_founder_sneeze_tool_code_and_returns_receipt(
+async def test_agent_stream_python_tool_text_never_dispatches_or_claims_receipt(
     db, auth_user_and_headers, monkeypatch
 ):
-    """Founder 2026-07-16: Python-style pseudo tool call must become a real write."""
+    """Model-authored Python text is not a structured dispatch capability."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     executed = []
@@ -2770,26 +2749,24 @@ async def test_agent_stream_executes_founder_sneeze_tool_code_and_returns_receip
         if event.get("event") == "token"
     )
 
-    assert executed[0][0] == "health_record"
-    assert executed[0][1]["record_type"] == "symptom"
-    assert executed[0][1]["data"]["description"] == (
-        "我准备睡觉了，记录刚才我打了一个喷嚏"
-    )
-    assert executed[0][2] == "test-token"
-    assert llm_calls == 0
-    assert "<tool_code>" not in rendered and "print(health_record" not in rendered
-    assert "已记录症状：打喷嚏" in rendered
+    assert executed == []
+    assert not any(event.get("event") in {"tool_call", "tool_result"} for event in events)
+    assert rendered.strip()
+    assert not _claims_unverified_write_success(rendered)
+    assert "health_record" not in rendered
+    assert "health_manage" not in rendered
+    assert "<tool_call>" not in rendered
+    assert "<tool_code>" not in rendered
+    assert '"parameters"' not in rendered
     done = next(event for event in events if event.get("event") == "done")
-    assert done["data"]["write_receipts"][0]["resource_type"] == "symptom_record"
-    assert done["data"]["write_receipts"][0]["resource_id"] == "75"
-    assert done["data"]["write_receipts"][0]["verified"] is True
-    assert done["data"]["llm_rounds"] == 0
-    assert done["data"]["perf"]["model_call_count"] == 0
-    assert done["data"]["perf"]["end_to_end_ttft_ms"] is not None
+    assert done["data"]["write_receipts"] == []
+    saved = db.get(AgentMessage, done["data"]["message_id"])
+    assert saved.meta["write_receipts"] == []
+    assert not _claims_unverified_write_success(saved.content)
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_executes_function_parameter_event_call_without_leaking_protocol(
+async def test_agent_stream_xml_event_text_never_dispatches_or_leaks_protocol(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _headers = auth_user_and_headers
@@ -2861,17 +2838,20 @@ async def test_agent_stream_executes_function_parameter_event_call_without_leaki
         if event.get("event") == "token"
     )
 
-    assert len(posted) == 1
-    url, headers, payload = posted[0]
-    assert url.endswith("/episodes/life-event")
-    assert headers["Authorization"] == "Bearer test-token"
-    assert payload == {"title": "测试行程"}
-    assert llm_calls == 1
-    assert "已记录" in rendered
-    assert "<tool_call>" not in rendered
+    assert posted == []
+    assert not any(event.get("event") in {"tool_call", "tool_result"} for event in events)
+    assert rendered.strip()
+    assert not _claims_unverified_write_success(rendered)
     assert "health_record" not in rendered
+    assert "health_manage" not in rendered
+    assert "<tool_call>" not in rendered
+    assert "<tool_code>" not in rendered
+    assert '"parameters"' not in rendered
     done = next(event for event in events if event.get("event") == "done")
-    assert done["data"]["write_receipts"][0]["verified"] is True
+    assert done["data"]["write_receipts"] == []
+    saved = db.get(AgentMessage, done["data"]["message_id"])
+    assert saved.meta["write_receipts"] == []
+    assert not _claims_unverified_write_success(saved.content)
 
 
 @pytest.mark.parametrize(
@@ -3031,12 +3011,8 @@ async def test_verified_compound_write_advice_still_uses_quality_synthesis(
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_user_and_headers):
-    """Regression: weaker fast-record models emit the tool-call JSON FIRST and a
-    human-readable confirmation/analysis AFTER it. Previously the inline extractor
-    bailed on any trailing text, so the raw JSON leaked to the user AND the tool
-    never ran (the '已记录' was a hallucination, data not saved). Now the call must
-    be recovered+executed and the JSON must never render."""
+async def test_agent_stream_inline_json_with_success_prose_never_claims_write(db, auth_user_and_headers):
+    """Inline JSON and a forged success claim must not authorize a health write."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -3084,15 +3060,20 @@ async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_
         if event.get("event") == "token"
     )
 
-    # 1) the tool actually executed → data persisted (not a hallucinated 已记录)
-    assert executed and executed[0][0] == "health_record"
-    assert executed[0][1]["record_type"] == "symptom"
-    # 2) the raw tool-call JSON never leaks into the visible reply
-    assert '"name":"health_record"' not in rendered
+    assert executed == []
+    assert not any(event.get("event") in {"tool_call", "tool_result"} for event in events)
+    assert rendered.strip()
+    assert not _claims_unverified_write_success(rendered)
+    assert "health_record" not in rendered
+    assert "health_manage" not in rendered
+    assert "<tool_call>" not in rendered
+    assert "<tool_code>" not in rendered
     assert '"parameters"' not in rendered
-    assert "record_type" not in rendered
-    # 3) the user still sees a confirmation
-    assert "已记录" in rendered
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["write_receipts"] == []
+    saved = db.get(AgentMessage, done["data"]["message_id"])
+    assert saved.meta["write_receipts"] == []
+    assert not _claims_unverified_write_success(saved.content)
 
 
 @pytest.mark.asyncio
@@ -3288,7 +3269,7 @@ async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_em
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
+async def test_agent_stream_saves_explicit_text_diet_from_structured_pi_tool_call(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _headers = auth_user_and_headers
@@ -3300,11 +3281,6 @@ async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
         nonlocal llm_calls
         llm_calls += 1
         if llm_calls == 1:
-            return {
-                "content": "我需要你补充记录类型和值。",
-                "finish_reason": "stop",
-            }
-        if llm_calls == 2:
             return {
                 "content": "",
                 "finish_reason": "tool_calls",
@@ -3395,7 +3371,7 @@ async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
+async def test_agent_stream_preserves_structured_peach_nutrition_before_single_dispatch(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _headers = auth_user_and_headers
@@ -3412,7 +3388,7 @@ async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
                 "content": "",
                 "finish_reason": "tool_calls",
                 "tool_calls": [{
-                    "id": "peach-without-nutrition",
+                    "id": "peach-with-nutrition",
                     "function": {
                         "name": "health_record",
                         "arguments": json.dumps({
@@ -3420,6 +3396,11 @@ async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
                             "data": {
                                 "meal_type": "snack",
                                 "food_items": "一个桃子",
+                                "calories": 58,
+                                "protein": 1.4,
+                                "carbs": 14,
+                                "fat": 0.4,
+                                "fiber": 2.3,
                             },
                         }, ensure_ascii=False),
                     },
@@ -3476,7 +3457,7 @@ async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
     )
     done = next(event for event in events if event.get("event") == "done")
 
-    assert estimate_calls == ["一个桃子"]
+    assert estimate_calls == []
     assert len(dispatched) == 1
     dispatched_data = dispatched[0][1]["data"]
     assert dispatched_data["food_items"] == "一个桃子"
@@ -3492,26 +3473,41 @@ async def test_agent_stream_enriches_anchor_peach_before_single_dispatch(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("estimate_delay", (0, 3.05))
-async def test_agent_stream_clear_text_diet_uses_verified_progressive_fast_path(
-    db, auth_user_and_headers, monkeypatch, estimate_delay
+@pytest.mark.parametrize("model_delay", (0, 3.05))
+async def test_agent_stream_structured_pi_diet_preserves_progress_and_replay(
+    db, auth_user_and_headers, monkeypatch, model_delay
 ):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     dispatched = []
     estimate_calls = []
 
-    async def fail_llm(*_args, **_kwargs):
-        raise AssertionError("clear text diet must not wait for a tool-decision LLM")
-
-    async def fail_llm_stream(*_args, **_kwargs):
-        raise AssertionError("clear text diet must not wait for a tool-decision LLM")
-        yield  # pragma: no cover
+    async def fake_call_llm(messages, tools):
+        await asyncio.sleep(model_delay)
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "structured-progressive-peach",
+                "type": "function",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "diet",
+                        "data": {
+                            "meal_type": "snack", "food_items": "一个桃子",
+                            "calories": 58, "protein": 1.4, "carbs": 14,
+                            "fat": 0.4, "fiber": 2.3,
+                        },
+                    }, ensure_ascii=False),
+                },
+            }],
+        }
 
     async def fake_estimate(food_items):
         assert food_items == "一个桃子"
         estimate_calls.append(food_items)
-        await asyncio.sleep(estimate_delay)
+        await asyncio.sleep(model_delay)
         return {
             "calories": 58,
             "protein": 1.4,
@@ -3532,8 +3528,8 @@ async def test_agent_stream_clear_text_diet_uses_verified_progressive_fast_path(
             ensure_ascii=False,
         )
 
-    monkeypatch.setattr(executor, "_call_llm", fail_llm)
-    monkeypatch.setattr(executor, "_call_llm_stream", fail_llm_stream)
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(
         "app.services.agent_executor._estimate_simple_diet_nutrition",
         fake_estimate,
@@ -3557,8 +3553,6 @@ async def test_agent_stream_clear_text_diet_uses_verified_progressive_fast_path(
         and str(event.get("stage") or "").startswith("diet_")
     ]
     assert diet_stages == [
-        "diet_parsed",
-        "diet_estimating",
         "diet_writing",
         "diet_verified",
     ]
@@ -3579,14 +3573,14 @@ async def test_agent_stream_clear_text_diet_uses_verified_progressive_fast_path(
 
     done = next(event for event in events if event.get("event") == "done")
     assert done["data"]["completion_status"] == "complete"
-    assert done["data"]["llm_rounds"] == 0
+    assert done["data"]["llm_rounds"] == 1
     assert done["data"]["perf"]["action_type"] == "diet_record"
-    assert done["data"]["perf"]["decision_route"] == "deterministic_simple_diet"
+    assert done["data"]["perf"]["decision_route"] == "pi"
     assert done["data"]["perf"]["first_useful_ms"] is not None
     assert done["data"]["perf"]["write_verified_ms"] is not None
-    assert done["data"]["perf"]["nutrition_estimate_ms"] is not None
+    assert done["data"]["perf"]["nutrition_estimate_ms"] is None
     assert done["data"]["perf"]["nutrition_estimate_timed_out"] is False
-    assert done["data"]["perf"]["nutrition_estimate_calls"] == 1
+    assert done["data"]["perf"]["nutrition_estimate_calls"] == 0
     assert done["data"]["perf"]["model_call_count"] == 1
     assert done["data"]["perf"]["model_wait_ms"] >= 0
     assert done["data"]["write_receipts"][0]["resource_id"] == "111"
@@ -3604,7 +3598,7 @@ async def test_agent_stream_clear_text_diet_uses_verified_progressive_fast_path(
         event for event in replayed_events if event.get("event") == "done"
     )
 
-    assert estimate_calls == ["一个桃子"]
+    assert estimate_calls == []
     assert len(dispatched) == 1
     assert replayed_done["data"]["replayed"] is True
     assert replayed_done["data"]["write_receipts"] == done["data"]["write_receipts"]
@@ -3625,7 +3619,16 @@ async def test_agent_stream_yesterday_diet_advice_queries_exact_day_before_synth
     async def fake_call_llm(messages, tools):
         nonlocal llm_calls
         llm_calls += 1
-        assert tools == []
+        if llm_calls == 1:
+            return {
+                "content": "", "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "yesterday-diet", "type": "function",
+                    "function": {"name": "health_manage", "arguments": json.dumps({
+                        "record_type": "diet", "operation": "list", "date": expected_date,
+                    })},
+                }],
+            }
         assert any(message.get("role") == "tool" for message in messages)
         return {
             "content": "昨晚和全天的饮食分析已基于查询结果完成。",
@@ -3658,7 +3661,7 @@ async def test_agent_stream_yesterday_diet_advice_queries_exact_day_before_synth
         )
     ]
 
-    assert llm_calls == 1
+    assert llm_calls == 2
     assert dispatched == [(
         "health_manage",
         {
@@ -3677,11 +3680,11 @@ async def test_agent_stream_yesterday_diet_advice_queries_exact_day_before_synth
     assert "<tool_call>" not in rendered
     done = next(event for event in events if event.get("event") == "done")
     assert done["data"]["completion_status"] == "complete"
-    assert done["data"]["perf"]["decision_route"] == "deterministic_diet_history"
+    assert done["data"]["perf"]["decision_route"] == "pi"
 
 
 @pytest.mark.asyncio
-async def test_agent_stream_times_out_slow_fast_path_estimate_and_uses_model_repair(
+async def test_agent_stream_complete_structured_nutrition_skips_secondary_estimator(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _headers = auth_user_and_headers
@@ -3762,17 +3765,17 @@ async def test_agent_stream_times_out_slow_fast_path_estimate_and_uses_model_rep
     done = next(event for event in events if event.get("event") == "done")
 
     assert elapsed < 1.5
-    assert estimate_cancelled is True
+    assert estimate_cancelled is False
     assert llm_calls == 1
     assert len(dispatched) == 1
     assert done["data"]["completion_status"] == "complete"
     assert done["data"]["perf"]["decision_route"] == (
-        "deterministic_simple_diet_fallback_llm"
+        "pi"
     )
-    assert done["data"]["perf"]["nutrition_estimate_timed_out"] is True
-    assert done["data"]["perf"]["nutrition_estimate_ms"] < 200
-    assert done["data"]["perf"]["nutrition_estimate_calls"] == 1
-    assert done["data"]["perf"]["model_call_count"] == 2
+    assert done["data"]["perf"]["nutrition_estimate_timed_out"] is False
+    assert done["data"]["perf"]["nutrition_estimate_ms"] is None
+    assert done["data"]["perf"]["nutrition_estimate_calls"] == 0
+    assert done["data"]["perf"]["model_call_count"] == 1
     assert done["data"]["perf"]["model_wait_ms"] >= 0
     diet_stages = [
         event["stage"]
@@ -3781,8 +3784,6 @@ async def test_agent_stream_times_out_slow_fast_path_estimate_and_uses_model_rep
         and str(event.get("stage") or "").startswith("diet_")
     ]
     assert diet_stages == [
-        "diet_parsed",
-        "diet_estimating",
         "diet_writing",
         "diet_verified",
     ]
@@ -3795,7 +3796,23 @@ async def test_agent_stream_reports_nutrition_rejection_instead_of_model_success
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
 
+    llm_calls = 0
+
     async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "", "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "incomplete-breakfast", "type": "function",
+                    "function": {"name": "health_record", "arguments": json.dumps({
+                        "record_type": "diet", "data": {
+                            "meal_type": "breakfast", "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                        },
+                    }, ensure_ascii=False)},
+                }],
+            }
         return {
             "content": "早餐已经记录好了。",
             "finish_reason": "stop",
@@ -4124,7 +4141,7 @@ async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
                     "arguments": json.dumps({
                         "record_type": "water",
                         "data": (
-                            {} if amount is None else {"amount": amount}
+                            {} if amount is None else {"amount": amount, "record_date": executor._agent_kernel_reference_now().date().isoformat()}
                         ),
                     }),
                 },
@@ -4162,7 +4179,7 @@ async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
         "record_type": "water",
         "data": {
             "amount": 500,
-            "record_date": date.today().isoformat(),
+            "record_date": executor._agent_kernel_reference_now().date().isoformat(),
         },
     }]
     assert "这次没有写入" not in rendered
@@ -4290,6 +4307,8 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
             operation = "update"
             data = "not-json"
         elif llm_calls == 3:
+            rejected = next(item for item in messages if item.get("role") == "tool" and item.get("tool_call_id") == "water-2-update")
+            assert "Validation failed" in rejected["content"]
             operation = "delete"
             data = None
         elif llm_calls == 4:
@@ -4312,7 +4331,7 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
             "content": "",
             "finish_reason": "tool_calls",
             "tool_calls": [{
-                "id": f"water-{operation}",
+                "id": f"water-{llm_calls}-{operation}",
                 "function": {
                     "name": "health_manage",
                     "arguments": json.dumps(arguments, ensure_ascii=False),
@@ -4372,12 +4391,12 @@ async def test_update_retry_never_deletes_and_reports_verified_update(
 
     assert [item["operation"] for item in dispatched] == ["list", "update"]
     assert dispatched[-1]["data"] == {"amount": 350}
-    # Recoverable validation failures are intentionally withheld from the UI
-    # event stream, so capture the exact outcome fields before that suppression.
-    assert len(write_outcomes) == 4
+    # Pi rejects the invalid object before Python dispatch; its error reaches
+    # the next model turn, while Python still rejects the unauthorized delete.
+    assert len(write_outcomes) == 3
     _assert_pre_dispatch_outcome(
         write_outcomes[1],
-        error_code="tool_validation_failed",
+        error_code="manage_operation_mismatch",
     )
     assert len(tool_results) == 3
     _assert_pre_dispatch_rejection(
@@ -4494,7 +4513,7 @@ async def test_update_retry_different_target_is_blocked_without_owner_scoped_evi
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("second_proposed_ids", ((), (977,)))
-async def test_typed_batch_delete_executes_full_server_plan_after_owner_lookup(
+async def test_typed_batch_delete_requires_structured_continuation_after_owner_lookup(
     db, auth_user_and_headers, monkeypatch, second_proposed_ids
 ):
     user, _headers = auth_user_and_headers
@@ -4508,8 +4527,8 @@ async def test_typed_batch_delete_executes_full_server_plan_after_owner_lookup(
         if llm_calls == 1:
             proposed_ids = (977, 979)
         elif llm_calls == 2:
-            # Whether the model omits every target or only one after lookup,
-            # the server-owned goal restores the complete current-turn set.
+            # A structured proposal is bounded to the full authorized goal;
+            # final text alone cannot dispatch another write.
             proposed_ids = second_proposed_ids
             if not proposed_ids:
                 return {
@@ -4526,7 +4545,7 @@ async def test_typed_batch_delete_executes_full_server_plan_after_owner_lookup(
             "finish_reason": "tool_calls",
             "tool_calls": [
                 {
-                    "id": f"diet-delete-{record_id}",
+                    "id": f"diet-delete-{llm_calls}-{record_id}",
                     "function": {
                         "name": "health_manage",
                         "arguments": json.dumps({
@@ -4567,6 +4586,17 @@ async def test_typed_batch_delete_executes_full_server_plan_after_owner_lookup(
         )
     ]
     done = next(event for event in events if event.get("event") == "done")
+
+    if not second_proposed_ids:
+        assert [item["operation"] for item in dispatched] == ["list"]
+        assert done["data"]["write_receipts"] == []
+        rendered = "".join(event["data"].get("content", "") for event in events if event.get("event") == "token")
+        assert rendered.strip()
+        assert not _claims_unverified_write_success(rendered)
+        saved = db.get(AgentMessage, done["data"]["message_id"])
+        assert saved.meta["write_receipts"] == []
+        assert not _claims_unverified_write_success(saved.content)
+        return
 
     assert [item["operation"] for item in dispatched] == [
         "list",

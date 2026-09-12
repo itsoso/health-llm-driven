@@ -1,16 +1,8 @@
 # -*- coding: utf-8 -*-
-"""rank7 深分析短路二次合成(orchestrator synthesis passthrough)—— 三态 off/shadow/on。
+"""Pi keeps ownership of synthesis regardless of obsolete passthrough flags.
 
-背景(见 docs/plans/2026-07-08-llm-token-perf-optimization-plan.md §7):
-深分析回合里,对话 Agent 调 localhost 非流式 orchestrator(内层 p50 ~32s)拿到**已合成**
-的答案后,又跑一整轮强模型把它复述一遍(再 ~17s)—— 同一内容付两次强模型钱。passthrough
-把那第二次合成短路掉,直接透传 orchestrator 自产的(已过 _safety_wrap/R4)synthesis。
-
-本 flag ships-off。上线序:先在 prod 翻 'shadow' 收真实回合 + 离线 pairwise judge,过闸再翻 'on'。
-
-护栏契约(降级/兜底路径逃 R4 是已知雷):passthrough 文本必须过与二次合成答案**同一条**
-出站护栏链 —— bracket/xml marker strip + tool-result leak 抑制(本文件 leak/menu_share 两向
-钉死)+ post-loop reva-ui strip + 消费层 menu_share 提取 / thinking_steps。
+The final model answer still passes the shared output guard and preserves safe
+menu-share cards. Tool-side candidate answers are never stored as shadow text.
 """
 import json
 
@@ -42,11 +34,11 @@ def _orch_tool_result(synthesis: str) -> str:
     )
 
 
-def _make_executor(db, *, orch_synthesis: str = _ORCH_SYNTH, extra_tool: bool = False):
+def _make_executor(db, *, orch_synthesis: str = _ORCH_SYNTH, extra_tool: bool = False, final_synthesis: str = _RESYNTH):
     """装配一个 executor,round1 调 orchestrator(可选再并一个 health_query),round2 二次合成。
 
     返回 (executor, rounds_list)。rounds_list 记录 _call_llm_stream 被调用的次数 ——
-    passthrough('on' 命中)会让 round2 在调 _call_llm_stream **之前**短路,故 len==1。
+    Pi 完整执行工具轮和最终回答轮，旧 passthrough 开关不改变循环所有权。
     """
     executor = AgentExecutor(db)
     rounds: list = []
@@ -82,7 +74,7 @@ def _make_executor(db, *, orch_synthesis: str = _ORCH_SYNTH, extra_tool: bool = 
             yield {"type": "finish", "finish_reason": "tool_calls"}
         else:
             # round2 = 二次合成轮(仅在未短路时到达):产出可区分的复述文本。
-            yield {"type": "content", "text": _RESYNTH}
+            yield {"type": "content", "text": final_synthesis}
             yield {"type": "finish", "finish_reason": "stop"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
@@ -135,7 +127,7 @@ async def test_off_is_byte_identical_double_synthesis(db, auth_user_and_headers,
 # ── shadow:用户可见行为不变(双合成),但落 would-be passthrough 到 meta ───────────
 
 
-async def test_shadow_behavior_unchanged_but_meta_captured(db, auth_user_and_headers, monkeypatch):
+async def test_legacy_shadow_flag_does_not_store_candidate_answers(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     monkeypatch.setattr(settings, "orchestrator_synthesis_passthrough", "shadow", raising=False)
     executor, rounds = _make_executor(db)
@@ -147,45 +139,37 @@ async def test_shadow_behavior_unchanged_but_meta_captured(db, auth_user_and_hea
     assert _ORCH_SYNTH not in tokens
 
     saved = db.query(AgentMessage).filter_by(role="assistant").one()
-    sp = (saved.meta or {}).get("shadow_passthrough")
-    assert isinstance(sp, dict)
-    assert sp["orchestrator_text"] == _ORCH_SYNTH
-    assert sp["orchestrator_ms"] is not None  # 内层 orchestrator 壁钟已捕获
-    assert isinstance(sp["final_text_ms"], int)  # 二次合成轮壁钟 = 可省时延
-    # shadow 不短路 → 无 taken 标记。
+    assert "shadow_passthrough" not in (saved.meta or {})
     assert "synthesis_passthrough" not in (saved.meta or {})
 
 
-async def test_shadow_truncates_orchestrator_text_to_4000(db, auth_user_and_headers, monkeypatch):
+async def test_legacy_shadow_flag_does_not_persist_long_orchestrator_candidate(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     monkeypatch.setattr(settings, "orchestrator_synthesis_passthrough", "shadow", raising=False)
     long_synth = "长" * 5000
     executor, _rounds = _make_executor(db, orch_synthesis=long_synth)
     await _run(executor)
     saved = db.query(AgentMessage).filter_by(role="assistant").one()
-    assert len((saved.meta or {})["shadow_passthrough"]["orchestrator_text"]) == 4000
+    assert "shadow_passthrough" not in (saved.meta or {})
+    assert "长" * 4000 not in saved.content
 
 
 # ── on:单工具深分析回合短路二次合成(透传 orchestrator synthesis) ──────────────
 
 
-async def test_on_single_tool_skips_second_synthesis(db, auth_user_and_headers, monkeypatch):
+async def test_legacy_passthrough_flag_keeps_pi_final_model_turn(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     monkeypatch.setattr(settings, "orchestrator_synthesis_passthrough", "on", raising=False)
     executor, rounds = _make_executor(db)
     _events, tokens, done = await _run(executor)
 
-    # 关键:第二次强模型合成**没被调用**(只有 round1 的工具决策轮)。
-    assert len(rounds) == 1
-    # 用户看到的正是 orchestrator 自产 synthesis,不是复述。
-    assert _ORCH_SYNTH in tokens
-    assert _RESYNTH not in tokens
-
+    assert len(rounds) == 2
+    assert _RESYNTH in tokens
+    assert _ORCH_SYNTH not in tokens
     saved = db.query(AgentMessage).filter_by(role="assistant").one()
-    assert _ORCH_SYNTH in saved.content
-    assert (saved.meta or {}).get("synthesis_passthrough", {}).get("taken") is True
-    assert done.get("synthesis_passthrough", {}).get("taken") is True
-    # 透传答案与二次合成答案一样是完整回答(finish_reason=stop → completion_status=complete)。
+    assert _RESYNTH in saved.content
+    assert "synthesis_passthrough" not in (saved.meta or {})
+    assert "synthesis_passthrough" not in done
     assert done.get("completion_status") == "complete"
 
 
@@ -205,7 +189,7 @@ async def test_on_multi_tool_still_resynthesizes_fail_closed(db, auth_user_and_h
 # ── on:passthrough 文本过同一条出站护栏链(两向钉死) ─────────────────────────
 
 
-async def test_on_passthrough_suppresses_raw_json_leak(db, auth_user_and_headers, monkeypatch):
+async def test_pi_final_answer_suppresses_raw_json_leak(db, auth_user_and_headers, monkeypatch):
     """orchestrator synthesis 若混入裸工具结果 JSON,passthrough 也要抑制(不逃 leak 护栏)。"""
     user, _ = auth_user_and_headers
     monkeypatch.setattr(settings, "orchestrator_synthesis_passthrough", "on", raising=False)
@@ -213,10 +197,10 @@ async def test_on_passthrough_suppresses_raw_json_leak(db, auth_user_and_headers
         "查询结果如下:"
         '[{"record_date":"2026-07-01","meal_type":"breakfast","calories":500}]'
     )
-    executor, rounds = _make_executor(db, orch_synthesis=leak)
+    executor, rounds = _make_executor(db, orch_synthesis=leak, final_synthesis=leak)
     _events, tokens, _done = await _run(executor)
 
-    assert len(rounds) == 1  # 仍短路(护栏在 passthrough 分支内生效)
+    assert len(rounds) == 2  # Shared final-answer guard, after the real Pi model turn.
     # 裸 JSON / 字段名绝不外泄(token 侧)。
     assert "record_date" not in tokens
     assert "meal_type" not in tokens
@@ -227,7 +211,7 @@ async def test_on_passthrough_suppresses_raw_json_leak(db, auth_user_and_headers
     assert "meal_type" not in saved.content
 
 
-async def test_on_passthrough_preserves_menu_share_fence_for_extraction(
+async def test_pi_final_answer_preserves_menu_share_fence_for_extraction(
     db, auth_user_and_headers, monkeypatch
 ):
     """orchestrator synthesis 带 ```menu_share 围栏 → 不被 leak 护栏吃掉,消费层可提取成卡。"""
@@ -239,10 +223,10 @@ async def test_on_passthrough_preserves_menu_share_fence_for_extraction(
         '{"title":"高蛋白晚餐","items":[{"name":"鸡胸肉","kcal":220},{"name":"西兰花"}]}\n'
         "```"
     )
-    executor, rounds = _make_executor(db, orch_synthesis=menu)
+    executor, rounds = _make_executor(db, orch_synthesis=menu, final_synthesis=menu)
     _events, tokens, _done = await _run(executor)
 
-    assert len(rounds) == 1
+    assert len(rounds) == 2
     # 围栏原样透传到 token 流(未被 marker/leak 护栏剥离)。
     assert "```menu_share" in tokens
     assert "鸡胸肉" in tokens

@@ -1,10 +1,16 @@
+FROM node:22.19.0-bookworm-slim AS pi-runtime
+WORKDIR /pi-runtime
+COPY backend/pi-runtime/package.json backend/pi-runtime/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY backend/pi-runtime/index.mjs ./
+
 FROM python:3.11-slim
 
 WORKDIR /app
 
 # Install system dependencies for PostgreSQL and compilation
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libpq-dev && \
+    apt-get install -y --no-install-recommends gcc libpq-dev libstdc++6 && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies first (layer caching)
@@ -13,6 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY backend/ .
+COPY --from=pi-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=pi-runtime /pi-runtime /app/pi-runtime
+RUN cd /app/pi-runtime && node --input-type=module -e "await import('@earendil-works/pi-agent-core'); await import('@earendil-works/pi-ai')"
 
 # Copy and prepare entrypoint script
 COPY backend/docker-entrypoint.sh /docker-entrypoint.sh

@@ -503,23 +503,28 @@ LLM)、Redis 缓存增量折叠、回执行代码逐字保留(不经 LLM)、陈�
 
 **Todo**：体重/血压等高风险记录路径，识别意图后强制 tool_choice，避免 LLM "决定先聊一句不调工具"。
 
-### 11.4.1 XiaoBa Agent Kernel ✅（2026-07-17）
+### 11.4.1 Reva Agent Kernel（2026-09-12）
 
-健康 Agent 采用 Pi harness 的边界做法：用户输入、模型消息和工具执行是不同阶段，prompt、关键词或 UI 文案不能兼任权限系统。
+健康 Agent 的模型与工具循环接入官方 `@earendil-works/pi-agent-core`，锁定版本见 `backend/pi-runtime/package-lock.json`。Pi 负责消息状态、结构化工具校验、顺序执行和停止；Python 保留模型供应商访问、用户权限、领域工具、持久化操作账本和最终输出验证。实现入口为 `backend/app/services/pi_kernel.py` 与 `backend/pi-runtime/index.mjs`；本次本地验证及上线状态见 `docs/dossiers/2026-09-12-pi-kernel-replacement.md`。
 
 ```text
 surface input
   -> AgentEnvelope
   -> immutable TurnSnapshot (server time + user timezone + channel)
   -> IntentFrame (read/write/mutate/advice/unknown)
+  -> Pi model/tool loop (Python provider transport)
+  -> planned-write checkpoint
   -> ToolGateway + CapabilityPolicy
   -> deterministic confirmation / receipt
+  -> goal readback / medical evidence / output verification
   -> response and atomic dynamic UI actions
 ```
 
 硬规则：
 
-- `health_record`、`health_manage(update/delete)`、`intervention_cycle` 都必须经过 `ToolGateway`；文本工具恢复只解析，不能授权。
+- `health_record`、`health_manage(update/delete)`、`intervention_cycle` 都必须经过 `ToolGateway`；普通文本、XML 或伪工具标记不触发工具调用。
+- 工具整批计划在首次派发前落检查点；不确定写入停止同批后续工具。Pi 不可用或通信失败时明确失败，不自动切回旧循环。
+- Pi 子进程不接收供应商或数据库凭据，不提供文件、Shell 或网络工具；这不是操作系统沙箱，子进程仍以后端服务账户运行。
 - `unknown`、读取、分析、否定或教程语境不能写入。上下文补全只允许在已挂起的动作中发生，例如上一轮收集提醒时段后的 `9点到20点`。
 - 每轮只生成一次系统时间和用户时区；相对日期、时间提示和工具归一共享 `ExecutionContext`。
 - 语音快捷入口只产生带数值的记录草稿，并经同一网关进入确认态；不得直接写库或声称完成。

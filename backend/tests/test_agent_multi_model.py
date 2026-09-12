@@ -10,6 +10,7 @@ import pytest
 
 from app.services.agent_executor import (
     AgentExecutor,
+    get_health_tools as _real_health_tools,
     _build_multi_model_synthesis_prompt,
     _extract_multi_model_flag,
     _gathered_data_context,
@@ -69,7 +70,7 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
     executor = AgentExecutor(db)
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: _real_health_tools())
 
     # Lead loop: round 1 → one write tool call; round 2 → final analysis text.
     lead_calls = {"n": 0}
@@ -182,10 +183,7 @@ async def test_multi_model_advice_recovers_when_lead_selects_write_tool(
 ):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
-    lead_tools = [{
-        "type": "function",
-        "function": {"name": "health_record"},
-    }]
+    lead_tools = _real_health_tools()
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
     monkeypatch.setattr(
         "app.services.agent_executor.get_health_tools",
@@ -279,7 +277,7 @@ async def test_multi_model_simple_record_stops_after_verified_receipt(
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
     monkeypatch.setattr(
         "app.services.agent_executor.get_health_tools",
-        lambda subset=None: [],
+        lambda subset=None: _real_health_tools(),
     )
     lead_calls = 0
     executed = []
@@ -356,7 +354,7 @@ async def test_multi_model_nutrition_rejection_stops_before_panel_synthesis(
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: _real_health_tools())
     lead_calls = 0
 
     async def fake_call_llm(messages, tools):
@@ -367,7 +365,7 @@ async def test_multi_model_nutrition_rejection_stops_before_panel_synthesis(
                 "content": "",
                 "finish_reason": "tool_calls",
                 "tool_calls": [{
-                    "id": "incomplete-breakfast",
+                    "id": f"incomplete-breakfast-{lead_calls}",
                     "type": "function",
                     "function": {
                         "name": "health_record",
@@ -439,7 +437,7 @@ async def test_multi_model_validation_rejects_success_claim_without_receipt(
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: _real_health_tools())
     lead_calls = 0
 
     async def fake_call_llm(messages, tools):
@@ -517,7 +515,7 @@ async def test_multi_model_partial_success_cannot_hide_independent_rejection(
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: _real_health_tools())
     lead_calls = 0
 
     async def fake_call_llm(messages, tools):
@@ -612,14 +610,18 @@ async def test_multi_model_identityless_write_fails_closed_before_panel_synthesi
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: _real_health_tools())
+
+    lead_calls = 0
 
     async def fake_call_llm(messages, tools):
+        nonlocal lead_calls
+        lead_calls += 1
         return {
             "content": "",
             "finish_reason": "tool_calls",
             "tool_calls": [{
-                "id": "delete-1",
+                "id": f"delete-{lead_calls}",
                 "type": "function",
                 "function": {
                     "name": "health_manage",
@@ -679,7 +681,7 @@ async def test_multi_model_http_500_write_is_uncertain_and_retry_bypasses_panel(
     message = "记录午餐并综合分析"
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: _real_health_tools())
 
     async def first_llm_call(messages, tools):
         return {
@@ -763,7 +765,7 @@ async def test_multi_model_duplicate_writes_execute_once(
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: _real_health_tools())
     arguments = json.dumps({
         "record_type": "diet",
         "data": {"food_items": "鸡胸肉", "meal_type": "lunch"},
@@ -838,7 +840,7 @@ async def test_multi_model_checkpoints_all_planned_writes_before_dispatch(
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: _real_health_tools())
     arguments = [
         json.dumps({"record_type": "diet", "operation": "delete", "record_id": 1201}),
         json.dumps({"record_type": "diet", "operation": "delete", "record_id": 1202}),
@@ -899,3 +901,53 @@ async def test_multi_model_checkpoints_all_planned_writes_before_dispatch(
     ]
     assert checked is True
     assert events[-1]["data"]["completion_status"] == "error"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("finish_reason", ["tool_calls", "length", "error"])
+async def test_multi_model_pi_never_dispatches_unknown_or_incomplete_calls(
+    db, auth_user_and_headers, monkeypatch, finish_reason,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *_a, **_k: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: _real_health_tools())
+    lead_calls = 0
+    dispatched = []
+    panel_calls = []
+
+    async def lead(messages, tools):
+        nonlocal lead_calls
+        lead_calls += 1
+        if lead_calls == 1:
+            return {
+                "content": "", "finish_reason": finish_reason,
+                "tool_calls": [{
+                    "id": "untrusted-call", "type": "function",
+                    "function": {"name": "undeclared_tool", "arguments": "{}"},
+                }],
+            }
+        return {"content": "可核验的数据尚不足。", "finish_reason": "stop"}
+
+    async def execute(name, args, token):
+        dispatched.append(name)
+        return "unexpected execution"
+
+    class Provider:
+        async def chat(self, **kwargs):
+            panel_calls.append(kwargs)
+            return {"content": "数据不足，需要补充记录。", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm", lead)
+    monkeypatch.setattr(executor, "_execute_tool", execute)
+    monkeypatch.setattr("app.services.llm.factory.create_provider_for_model_id", lambda *_: Provider())
+    events = [event async for event in executor._run_multi_model_stream(
+        user.id, "综合分析近况", None, None, '{"multi_model":true}',
+    )]
+    assert dispatched == []
+    if finish_reason in {"length", "error"}:
+        assert panel_calls == []
+        assert events[-1]["data"]["completion_status"] == "error"
+    else:
+        assert lead_calls == 2
+        assert events[-1]["data"]["completion_status"] == "complete"

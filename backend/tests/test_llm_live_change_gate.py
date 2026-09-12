@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import yaml
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,6 +56,20 @@ def test_llm_change_gate_blocks_orchestrator_changes_without_live_confirmation(c
     assert "python scripts/harness_llm_regression_gate.py --include-live-llm" in payload["next_steps"]
     assert "gh variable set HARNESS_LIVE_LLM_EVAL_CONFIRMED" in payload["next_steps"]
     assert "git rev-parse HEAD" in payload["next_steps"]
+
+
+@pytest.mark.parametrize("path", [
+    "backend/app/services/pi_kernel.py",
+    "backend/pi-runtime/index.mjs",
+    "backend/pi-runtime/package-lock.json",
+])
+def test_llm_change_gate_requires_live_validation_for_pi_runtime(capsys, path):
+    module = _load_gate_module()
+    assert module.main(["--json", "--path", path], env={}) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["live_llm_required"] is True
+    assert payload["confirmed"] is False
+    assert [match["path"] for match in payload["matched_paths"]] == [path]
 
 
 def test_llm_change_gate_passes_when_live_confirmation_is_explicit(capsys):

@@ -2813,6 +2813,8 @@ remote_dependency_sync_command() {
     fi
     cat <<REMOTE_DEPENDENCY_SYNC
 sync_backend_dependencies() {
+    # Pi is a required backend runtime; the Python lock cache cannot prove it.
+    bash pi-runtime/install.sh || return 1
     release_state_dir='$REMOTE_RELEASE_STATE_DIR'
     requirements_marker="\${release_state_dir}/requirements-lock.sha256"
     requirements_expected='$REQUIREMENTS_LOCK_SHA'

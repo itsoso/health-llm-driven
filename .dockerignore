@@ -4,6 +4,7 @@
 
 # Node.js
 frontend/node_modules
+backend/pi-runtime/node_modules
 frontend/.next
 frontend/out
 
