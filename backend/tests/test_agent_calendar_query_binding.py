@@ -64,6 +64,31 @@ def test_calendar_question_is_a_read_without_command_verb(message):
     assert result.normalized_args['start_date'] == result.normalized_args['end_date']
 
 
+@pytest.mark.parametrize('message,target', [
+    ('今天我吃了啥', '2026-07-17'),
+    ('我今天吃了什么？', '2026-07-17'),
+    ('今天都吃了些什么', '2026-07-17'),
+    ('昨天我吃过哪些东西？', '2026-07-16'),
+    ('前天吃了什么', '2026-07-15'),
+])
+def test_colloquial_diet_recall_binds_exact_business_day(message, target):
+    result = decision(message, {'dimension': 'diet', 'days': 30})
+    assert result.action == 'allow', result.reason
+    assert result.normalized_args == {
+        'dimension': 'diet', 'start_date': target, 'end_date': target,
+        'timezone': 'Asia/Shanghai',
+    }
+
+
+@pytest.mark.parametrize('message', [
+    '今天妈妈吃了啥', '假如我问今天我吃了啥', '今天我应该吃什么',
+    '今天我吃了米饭', '今天我吃了什么药', '今天我吃了什么补剂',
+    '不要查询今天我吃了啥', '昨天和今天我吃了啥',
+])
+def test_colloquial_diet_recall_does_not_grant_other_speech_acts(message):
+    assert decision(message, {'dimension': 'diet'}).action == 'block'
+
+
 @pytest.mark.parametrize('message', ['昨晚妈妈的睡眠怎么样', '昨晚张三睡眠怎么样',
                                       '本周一张三的睡眠如何', '2026-07-15妈妈的睡眠如何',
                                       '我在想昨晚睡眠怎么样', '假如查询昨天饮食会怎样',

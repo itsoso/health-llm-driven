@@ -53,6 +53,49 @@ async def test_production_executor_uses_pi_for_tool_loop(db, auth_user_and_heade
 
 
 @pytest.mark.asyncio
+async def test_colloquial_diet_recall_reaches_gateway_and_returns_to_pi(
+    db, auth_user_and_headers, monkeypatch,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls, dispatched = [], []
+
+    async def provider(messages, tools):
+        calls.append(messages)
+        if len(calls) == 1:
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": "diet-recall", "type": "function", "function": {
+                    "name": "health_query", "arguments": '{"dimension":"diet","days":30}',
+                },
+            }]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+        else:
+            assert any(m.get("role") == "tool" and "燕麦" in m.get("content", "") for m in messages)
+            yield {"type": "content", "text": "今天记录了燕麦。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    async def dispatch(request, token):
+        dispatched.append(request)
+        return json.dumps({"records": [{"food_name": "燕麦"}], "availability": "available"}, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "Use tools to read data.")
+    monkeypatch.setattr(executor, "_call_llm_stream", provider)
+    # Keep the production executor and capability gateway; replace only data I/O.
+    monkeypatch.setattr(executor, "_dispatch_tool_request", dispatch)
+    events = [e async for e in executor.run_stream(user.id, "今天我吃了啥", client_turn_id="pi-diet-recall")]
+    assert len(dispatched) == 1
+    assert dispatched[0].tool_name == "health_query"
+    args = dispatched[0].arguments
+    assert args == {
+        "dimension": "diet", "start_date": args["end_date"],
+        "end_date": args["end_date"], "timezone": "Asia/Shanghai",
+    }
+    assert len(calls) == 2
+    assert events[-1]["data"]["perf"]["agent_kernel"] == "pi"
+    assert events[-1]["data"]["completion_status"] == "complete"
+
+
+@pytest.mark.asyncio
 async def test_plain_text_tool_instructions_never_dispatch(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
