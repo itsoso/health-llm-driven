@@ -16892,7 +16892,11 @@ class AgentExecutor:
                                 # Clinical evidence is sealed before synthesis.
                                 # Hallucinated tool calls never widen that seal.
                                 proposed_calls = []
-                                candidate = "本轮模型未生成可发布的健康回答。"
+                                candidate = _write_rejection_with_receipt_context(
+                                    "本轮模型未生成可发布的回答。请勿重复提交已保存的记录。"
+                                    if write_receipts else "本轮模型未生成可发布的健康回答。",
+                                    write_receipts,
+                                )
                                 finish_reason = "error"
                             if proposed_calls:
                                 supplement_calls = _build_deterministic_supplement_record_tool_calls(
@@ -17620,6 +17624,13 @@ class AgentExecutor:
                         sources_used.append("系统知识库")
             except Exception as e:
                 logger.warning(f"[agent_executor] system knowledge evidence card failed: {e}")
+        verified_diet_ids = {
+            str(receipt["resource_id"])
+            for receipt in write_receipts
+            if receipt.get("verified") is True
+            and receipt.get("resource_type") == "diet_record"
+            and receipt.get("resource_id") is not None
+        }
         response_cards = (
             _merge_agent_card_descriptors(
                 self._turn_contextual_diet_cards,
@@ -17627,7 +17638,13 @@ class AgentExecutor:
                 evidence_cards,
             )
             if completion_status == "complete"
-            else []
+            else _merge_agent_card_descriptors([
+                card for card in self._turn_contextual_diet_cards
+                if card.get("type") == "diet_draft"
+                and isinstance(card.get("data"), dict)
+                and card["data"].get("recorded") is True
+                and str(card["data"].get("record_id")) in verified_diet_ids
+            ])
         )
         if completion_status == "complete" and self._turn_aigc_media_cards:
             response_cards = _merge_agent_card_descriptors(

@@ -250,3 +250,30 @@ The strengthened receipt test rejects non-stream model repair and asserts one
 actual write; its full file passed 8 tests. Evidence:
 `/tmp/reva-pi-terminal-core.log`, `/tmp/reva-pi-clean-d-rest.log`,
 `/tmp/reva-pi-empty-receipt-final.log`.
+
+
+## Saved photo receipt on rejected synthesis
+
+Candidate `fdc74a9b94d5d0c919a5be7934d58a11d26b4440`, CI `34685380029`,
+passed every job except one photo test in balanced-08. Completion-status also
+passed this fresh run; the earlier isolated rerun passed without changing limits.
+No assertion or timeout was waived.
+
+Rejected model proposals remain errors and compound requests still run through
+Pi. A previously persisted photo meal now retains its verified receipt and
+resubmission warning. Error responses expose only internal diet cards whose
+recorded flag is true and whose record ID matches a verified diet receipt.
+Unmatched cards, pending drafts and generated evidence remain excluded.
+
+Fresh exact shard verification: food 115 passed and t-f-v-rest 325 passed;
+PostgreSQL receipt regression 1 passed with exactly one persisted meal and photo
+association. Injected unmatched and pending cards were both excluded. The
+food/refusal/fallback group passed 127 tests, and the strengthened negative card
+test passed. Full live gate on the unchanged execution path and receipt text
+passed invariants 12, core 50, synthesis 5 (average 0.94), trajectories 12 and
+goldens 9; the subsequent card projection is covered by the DB-backed tests.
+Independent safety-gate: GO; final runtime SHA-256
+`dbd03d51b2f2227822b6edc36d449fdef658f1d2be72da08df1b8ea18fc2919d`.
+Evidence: `/tmp/reva-pi-final-card-ci.log`, `/tmp/reva-pi-final-card-pg.log`,
+`/tmp/reva-pi-photo-card-final.log`, `/tmp/reva-pi-photo-card-guard.log`,
+`/tmp/reva-pi-final-receipt-live.log`. New exact-SHA CI and deployment remain pending.

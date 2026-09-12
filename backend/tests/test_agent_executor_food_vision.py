@@ -118,13 +118,26 @@ def _food_photo_executor(db, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_image_nutrition_label_auto_save_ignores_redundant_incomplete_write(
+async def test_image_nutrition_label_rejected_model_write_preserves_saved_receipt(
     db, tmp_path, monkeypatch
 ):
     from app.services.ai.food_recognition import food_recognition_service
 
     executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
     llm_calls = 0
+    upsert_card = executor._upsert_turn_contextual_diet_card
+
+    def append_unverified_card(card):
+        upsert_card(card)
+        executor._turn_contextual_diet_cards.append({
+            "type": "diet_draft", "data": {"card_id": "unverified", "record_id": 999, "recorded": True},
+        })
+
+        executor._turn_contextual_diet_cards.append({
+            "type": "diet_draft", "data": {"card_id": "pending", "record_id": card["data"].get("record_id"), "recorded": False},
+        })
+
+    monkeypatch.setattr(executor, "_upsert_turn_contextual_diet_card", append_unverified_card)
 
     async def recognize_food(*_args, **_kwargs):
         return _nutrition_label_food_result()
@@ -201,8 +214,10 @@ async def test_image_nutrition_label_auto_save_ignores_redundant_incomplete_writ
     assert record.protein == pytest.approx(2.9)
     assert photo.diet_record_id == record.id
     assert "这次没有写入" not in rendered
-    assert "另有 1 项记录已完成并取得回执" not in rendered
-    assert done["data"]["completion_status"] == "complete"
+    assert "1 项记录已完成并取得回执" in rendered
+    assert "请勿重复提交" in rendered
+    assert llm_calls == 1
+    assert done["data"]["completion_status"] == "error"
     assert len(done["data"]["write_receipts"]) == 1
     assert done["data"]["write_receipts"][0]["resource_id"] == str(record.id)
     assert len(diet_cards) == 1
