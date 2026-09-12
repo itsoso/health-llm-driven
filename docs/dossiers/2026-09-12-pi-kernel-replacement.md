@@ -321,3 +321,55 @@ release private keys and copied production configuration were deleted.
 Server audit: `/var/backups/health-app/local-delivery-011084fef183863b112aebd83fde16dd64e2550f/completed.json`.
 Local evidence: `/tmp/reva-pi-local-deployment.log`,
 `/tmp/reva-pi-local-release-completed.json`, `/tmp/reva-pi-production-probe.log`.
+
+## Production regression: dated colloquial diet recall (2026-09-12)
+
+The reported 20:55 query "今天我吃了啥" reached the official Pi runtime at
+`011084fef183`. The production event trace identified a current-user diet read
+and a structured `health_query`, then rejected it with
+`health_query_semantics_unresolved`. No data query ran. The terminal policy
+notice ended the turn before requested-model synthesis; the UI consequently
+showed the last tool-decision provider. This is a retained capability grammar
+defect, not evidence that Pi or the selected model failed to understand the request.
+
+Fix `46d2a44430f9f3337dc9bb5aef91518a34b039bf` extends the existing complete
+dated-question grammar to first-person diet recall. The existing owner, speech
+act, domain and explicit calendar-window checks remain authoritative. It does
+not trust a classifier label or arbitrary model date as permission.
+
+Validation:
+- Before the fix, all five positive colloquial cases failed; eight negative
+  speech-act/owner/medication/supplement cases remained blocked.
+- Calendar/policy regressions: 2734 passed. Pi executor and selected-model
+  routing regressions: 20 passed. The new Pi test retains the real gateway and
+  substitutes only data I/O after authorization.
+- PostgreSQL calendar tests: 36 passed; full API integration: 3 passed after
+  configuring a restricted synthetic runtime database role. Initial attempts
+  failed on missing local runtime identity and forbidden admin privileges;
+  those were environment failures, not waived assertions.
+- Live calls through the normal executor and real PostgreSQL read path: both
+  "今天我吃了啥" and "我今天吃了什么？" read exactly the Beijing business day,
+  referenced seeded synthetic food in persisted answers, and returned final
+  answers from `qwen3.8-max-preview`; `qwen3.6-flash` was only the tool provider.
+  The synthetic environment was completed after missing optional model tables
+  caused prompt-context errors. No production health data was used locally.
+- Zero-cost synthesis gate, pre-commit lint/System Map/document drift passed.
+- Independent safety review: GO; 41 target tests plus 16 independent owner,
+  date/zone, dimension and speech-act boundary probes passed.
+
+The earlier production validation proved service health and Pi transport, but
+did not cover this basic end-user wording. That acceptance gap is now covered
+by a permanent gateway test and a real Pi/executor regression.
+
+Release evidence at this checkpoint:
+- Exact runtime CI `34695674953` and trusted validate `34696078320` passed.
+- `deploy.sh -b -y` installed and verified `46d2a44430f9`; health 60/60.
+- A later SSH revision read returned no SHA after KB staging. The deploy
+  script failed, restored its reviewed guard floor at the same candidate,
+  quarantined the runtime-only KB pack, and finalized the transaction.
+- Fresh independent readback proved clean candidate HEAD, all three services
+  active, public/internal health working, and no business release lease.
+  The rollback terminal is known, not an unresolved in-flight operation.
+- This is not a completed staged KB release. A normal subsequent release
+  must restore staging through `deploy.sh`; no marker, receipt, authorization
+  or gate was changed to turn the failed attempt into success.
