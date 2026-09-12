@@ -1,6 +1,6 @@
 # Query and response reliability
 
-Status: implementing. Updated: 2026-09-12. Evidence: `docs/analysis/2026-09-12-query-response-quality-review.md`.
+Status: shipped. Updated: 2026-09-13. Release verification: `docs/dossiers/2026-09-12-query-response-reliability.md`. Evidence: `docs/analysis/2026-09-12-query-response-quality-review.md`.
 
 ## Decision and admission
 
