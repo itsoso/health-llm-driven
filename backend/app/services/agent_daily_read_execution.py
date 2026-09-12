@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.services.agent_kernel.daily_read_plan import DailyReadPlan
 from app.services.genui.table_builder import load_tool_result_json
 from app.services.agent_write_outcome import result_declares_explicit_failure
+from app.utils.number_format import format_display_number
 
 
 def planned_daily_calls(plan: DailyReadPlan) -> list[dict[str, Any]]:
@@ -74,7 +78,8 @@ def daily_result_goal(plan: DailyReadPlan, decision: Any, result: Any) -> dict[s
         if plan.meal_type and row.get('meal_type') is not None:
             scope_conflict |= row['meal_type'] != plan.meal_type
     truncated = name == 'health_manage' and len(rows) >= int(args.get('limit') or 20)
-    verified = not truncated and decision.action == 'allow' and has_result and not scope_conflict and not result_declares_explicit_failure(result)
+    summary_readable = not plan.is_summary or _summary_rows(plan, dimension, payload) is not None
+    verified = summary_readable and not truncated and decision.action == 'allow' and has_result and not scope_conflict and not result_declares_explicit_failure(result)
     return {'goal_id': dimension, 'kind': 'query', 'status': 'verified' if verified else 'failed',
             'evidence_kind': 'read_result' if verified else '',
             'reason_code': ('query_verified' if verified else
@@ -87,3 +92,142 @@ def daily_goal_outcomes(plan: DailyReadPlan | None, completed: dict[str, dict[st
         return []
     return [completed.get(d, {'goal_id': d, 'kind': 'query', 'status': 'failed',
                              'reason_code': 'query_not_executed'}) for d in plan.dimensions]
+
+
+def summary_advice_contract_failure(text: str) -> str | None:
+    """Check only the qualitative advice contract after verified daily facts.
+
+    This finite language boundary is not a general grounding or medical-safety
+    verifier. The caller must preserve failures, not rewrite rejected advice.
+    """
+    if not text.strip():
+        return 'summary_advice_unavailable'
+    number = r'(?:\d+(?:[.,]\d+)*|[零〇一二两三四五六七八九十百千万点半]+)'
+    if re.search(
+        rf'{number}\s*(?:个\s*)?(?:千卡|kcal|卡路里|小时|分钟|评分|分)'
+        rf'|评分\s*(?:为|是|约为|约|[:：])?\s*{number}', text, re.IGNORECASE,
+    ):
+        return 'summary_advice_repeats_measurement'
+    intake_claim = re.compile(
+        r'(?:今天|今日|全天)[^。！？!?；;\n]{0,24}?(?:只吃|总共摄入)'
+        r'|摄入\s*(?:明显|严重|已经|确实)?\s*(?:不足|过量)'
+    )
+    uncertainty = re.compile(
+        r'(?:不能|无法|不应|不可|不足以)[^。！？!?；;\n]{0,24}(?:判断|认定|推断|说明|证明|断言)'
+        r'|(?:不代表|不意味着|没有证据说明|没有证据表明)'
+    )
+    for clause in re.split(r'[。！？!?；;，,\n]|但是|但|然而|不过', text):
+        for match in intake_claim.finditer(clause):
+            prefix = clause[:match.start()]
+            if uncertainty.search(prefix) or re.search(r'(?:避免|防止)\s*$', prefix):
+                continue
+            return 'summary_advice_infers_complete_intake'
+    return None
+
+
+def _summary_decimal(value: Any) -> Decimal | None:
+    """Missing, nonnumeric, negative and nonfinite measurements stay unknown."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        return None
+    try:
+        number = Decimal(str(value))
+        if not number.is_finite() or number < 0 or not math.isfinite(float(number)):
+            return None
+        return number
+    except (InvalidOperation, ValueError, OverflowError):
+        return None
+
+
+def _summary_display(number: Decimal) -> str | None:
+    try:
+        value = float(number)
+    except (OverflowError, ValueError):
+        return None
+    return str(format_display_number(value)) if math.isfinite(value) else None
+
+
+def _summary_rows(plan: DailyReadPlan, dimension: str, payload: Any) -> list[dict] | None:
+    if not isinstance(payload, dict) or result_declares_explicit_failure(payload):
+        return None
+    rows = payload.get('records')
+    if not isinstance(rows, list) or payload.get('dimension', dimension) != dimension:
+        return None
+    if 'window' in payload and payload['window'] != {
+        'start_date': plan.start_date, 'end_date': plan.end_date, 'timezone': plan.timezone,
+    }:
+        return None
+    if payload.get('availability') not in (None, 'available', 'partial', 'no_data'):
+        return None
+    if rows and payload.get('availability') == 'no_data':
+        return None
+    for row in rows:
+        if not isinstance(row, dict):
+            return None
+        try:
+            row_date = date.fromisoformat(str(row.get('record_date'))).isoformat()
+        except ValueError:
+            return None
+        if not plan.start_date <= row_date <= plan.end_date:
+            return None
+    return rows
+
+
+def verified_daily_summary(
+    plan: DailyReadPlan, payloads: dict[str, dict], goals: dict[str, dict],
+    *, include_food_names: bool = True,
+) -> str:
+    """Render facts from already owner-scoped, verified current-turn reads.
+
+    This is a presentation projection, not an authorization or query step.
+    Record identity/cardinality is preserved: equal food names never cause a
+    row to disappear. Sleep duration is stored/projected in minutes by the
+    wearable ingestion contract, and is converted to hours only for display.
+    """
+    if not plan.is_summary:
+        return ''
+    date_label = plan.start_date if plan.start_date == plan.end_date else f'{plan.start_date}至{plan.end_date}'
+    zone_label = '北京时间' if plan.timezone == 'Asia/Shanghai' else plan.timezone
+    lines = [f'本次总结仅覆盖饮食与睡眠记录（{date_label}，{zone_label}）。'
+             '已记录饮食不代表全天完整摄入，未记录不等于没有发生。']
+    for dimension, label in (('diet', '饮食'), ('sleep', '睡眠')):
+        goal = goals.get(dimension) or {}
+        if goal.get('status') != 'verified' or goal.get('evidence_kind') != 'read_result':
+            lines.append(f'{label}：本轮查询未完成，暂不汇总。')
+            continue
+        rows = _summary_rows(plan, dimension, payloads.get(dimension))
+        if rows is None:
+            lines.append(f'{label}：本轮查询结果无法核对，暂不汇总。')
+            continue
+        if not rows:
+            suffix = '，不代表没有进食' if dimension == 'diet' else '，不能据此判断睡眠情况'
+            lines.append(f'{label}：目标日期没有可用记录{suffix}。')
+            continue
+        count = format_display_number(len(rows))
+        if dimension == 'diet':
+            line = f'饮食：已记录{count}条。'
+            known = [value for row in rows if (value := _summary_decimal(row.get('calories'))) is not None]
+            total = _summary_display(sum(known, Decimal(0))) if known else None
+            if total is None:
+                line += '缺少可汇总的有效热量读数，无法给出已记录热量合计。'
+            elif len(known) == len(rows):
+                line += f'已记录热量合计{total}千卡。'
+            else:
+                missing = format_display_number(len(rows) - len(known))
+                line += f'已知热量小计{total}千卡；另{missing}条缺少有效热量读数，无法给出完整合计。'
+            for row in rows if include_food_names else ():
+                food = row.get('food_name') or row.get('food_items')
+                if isinstance(food, str) and food.strip() and not any(marker in food for marker in ('{', '}', '[', ']')):
+                    line += f'记录中包括“{" ".join(food.split())[:36]}”。'
+                    break
+            lines.append(line)
+        elif len(rows) != 1:
+            lines.append(f'睡眠：查询到{count}条记录，未合并为单一读数，请查看明细。')
+        else:
+            duration = _summary_decimal(rows[0].get('total_sleep_duration'))
+            score = _summary_decimal(rows[0].get('sleep_score'))
+            hours_text = _summary_display(duration / Decimal(60)) if duration is not None else None
+            score_text = _summary_display(score) if score is not None else None
+            duration_fact = f'时长{hours_text}小时' if hours_text is not None else '时长缺少有效读数'
+            score_fact = f'评分{score_text}' if score_text is not None else '评分缺少有效读数'
+            lines.append(f'睡眠：{duration_fact}；{score_fact}。')
+    return '\n\n'.join(lines)

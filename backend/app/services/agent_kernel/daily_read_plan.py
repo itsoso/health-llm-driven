@@ -92,6 +92,11 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
     return None
 
 
+def is_daily_summary_request(text: str) -> bool:
+    frame = _daily_read_frame(text)
+    return bool(frame and frame[3])
+
+
 def daily_question_dimension(text: str) -> str | None:
     frame = _daily_read_frame(text)
     return frame[1][0] if frame and len(frame[1]) == 1 else None

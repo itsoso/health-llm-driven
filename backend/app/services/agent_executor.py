@@ -67,8 +67,9 @@ from app.services.agent_turn_recovery import (
 from app.services.agent_turn_outcome import classify_agent_turn_outcome, agent_completion_metadata
 from app.services.agent_daily_read_execution import (
     planned_daily_calls, daily_read_prompt, daily_result_goal, daily_goal_outcomes,
+    verified_daily_summary, summary_advice_contract_failure,
 )
-from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan
+from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan, is_daily_summary_request
 from app.services.agent_output_quality import (
     clarification_reply,
     enforce_agent_output_quality,
@@ -10733,6 +10734,8 @@ def _is_fast_eligible_turn(
     """
     if has_images or has_file:
         return False
+    if is_daily_summary_request(message):
+        return False
     intent = classify_agent_utterance(message)
     if intent.primary == "advice":
         return False
@@ -11554,6 +11557,7 @@ class AgentExecutor:
         self._current_turn_user_message = ""
         self._turn_daily_read_plan = None
         self._turn_daily_read_results: dict[str, dict[str, str]] = {}
+        self._turn_daily_read_payloads: dict[str, dict] = {}
         self._turn_sync_queued = False
         self._turn_sync_reply = None
         self._current_turn_recent_messages: list[dict] = []
@@ -11706,6 +11710,7 @@ class AgentExecutor:
             timezone_name=self._agent_kernel_snapshot.context.timezone,
         )
         self._turn_daily_read_results = {}
+        self._turn_daily_read_payloads = {}
         self._turn_sync_queued = False
         self._turn_sync_reply = None
         self._agent_kernel_blocked_request_cache = {}
@@ -11942,7 +11947,14 @@ class AgentExecutor:
         if self._turn_daily_read_plan is not None:
             read_goal = daily_result_goal(self._turn_daily_read_plan, decision, result)
             if read_goal is not None:
-                self._turn_daily_read_results[read_goal['goal_id']] = read_goal
+                goal_id = read_goal['goal_id']
+                self._turn_daily_read_results[goal_id] = read_goal
+                self._turn_daily_read_payloads.pop(goal_id, None)
+                if read_goal['status'] == 'verified' and read_goal['evidence_kind'] == 'read_result':
+                    from app.services.genui.table_builder import load_tool_result_json
+                    payload = load_tool_result_json(result)
+                    if isinstance(payload, dict):
+                        self._turn_daily_read_payloads[goal_id] = payload
                 if read_goal['reason_code'] in {'query_result_scope_conflict', 'query_result_truncated'}:
                     result = json.dumps({
                         'status': 'failed', 'error_code': read_goal['reason_code'],
@@ -12170,8 +12182,8 @@ class AgentExecutor:
     ) -> None:
         """Classify answer difficulty and optionally select its quality model.
 
-        The high-stakes quality floor applies in every routing mode. For
-        other turns, shadow observes only and on may select an unset model.
+        The high-stakes and daily-summary quality floors apply in every routing
+        mode. For other turns, shadow observes only and on may select an unset model.
         """
         self._staged_response_mode = _staged_response_mode()
         self._staged_answer_task_tier = None
@@ -12208,14 +12220,21 @@ class AgentExecutor:
                 )
         if tier is None:
             tier = "high_stakes"
-        if self._staged_response_mode == "off" and tier != "high_stakes":
+        summary_floor = bool(
+            getattr(getattr(self, "_turn_daily_read_plan", None), "is_summary", False)
+            or is_daily_summary_request(message)
+        )
+        if summary_floor and tier == "casual":
+            tier = "balanced"
+        quality_required = tier == "high_stakes" or summary_floor
+        if self._staged_response_mode == "off" and not quality_required:
             return
         self._staged_answer_task_tier = tier
 
         # Revoke a fast/unknown explicit model *before* model picking.  Picker,
         # classifier, or registry failures must therefore fall back to the
         # default quality provider instead of preserving a weak model.
-        if tier == "high_stakes":
+        if quality_required:
             current_model = None
             model_lookup_failed = False
             if self._request_model_id:
@@ -12257,6 +12276,8 @@ class AgentExecutor:
                     reason = "staged_high_stakes_revoked_compact_record_context"
                 else:
                     reason = "staged_high_stakes_overrode_fast_model"
+                if summary_floor and tier != "high_stakes":
+                    reason = reason.replace("staged_high_stakes_", "staged_summary_")
                 self._record_model_fallback_reason(reason)
 
         selected = None
@@ -12271,7 +12292,7 @@ class AgentExecutor:
                 )
         self._staged_answer_would_model_id = selected
         if (
-            (self._staged_response_mode == "on" or tier == "high_stakes")
+            (self._staged_response_mode == "on" or quality_required)
             and self._request_model_id is None
             and selected
         ):
@@ -12529,7 +12550,8 @@ class AgentExecutor:
 
     def _requires_quality_floor(self) -> bool:
         return (getattr(self, "_recovery_data_guard_requires_non_fast_model", False)
-                or getattr(self, "_staged_answer_task_tier", None) == "high_stakes")
+                or getattr(self, "_staged_answer_task_tier", None) == "high_stakes"
+                or getattr(getattr(self, "_turn_daily_read_plan", None), "is_summary", False))
 
     def _assert_recovery_quality_model(self, model_id: Optional[str]) -> None:
         """Block direct/alternate routes that bypass the non-fast quality floor."""
@@ -16863,6 +16885,22 @@ class AgentExecutor:
                             _reconcile_pi_preflight_rejections(request["messages"], round_idx)
                             round_idx += 1
                             messages = request["messages"]
+                            if round_idx > 0 and self._turn_daily_read_plan is not None and self._turn_daily_read_plan.is_summary:
+                                facts = verified_daily_summary(
+                                    self._turn_daily_read_plan, self._turn_daily_read_payloads,
+                                    self._turn_daily_read_results, include_food_names=False,
+                                )
+                                instruction = (
+                                    "系统已核验的日总结事实如下。事实段由系统直接展示，请只生成用户所需的建议，"
+                                    "仅给出定性建议，不要复述或重新计算热量、睡眠时长、评分等观测数字；"
+                                    "不能把未记录视为没有发生，也不能由这些记录判断全天摄入不足或过量。\n" + facts
+                                )
+                                messages = [dict(item) for item in messages]
+                                system_index = next((i for i, item in enumerate(messages) if item.get("role") == "system"), None)
+                                if system_index is None:
+                                    messages.insert(0, {"role": "system", "content": instruction})
+                                else:
+                                    messages[system_index]["content"] = str(messages[system_index].get("content") or "") + "\n\n" + instruction
                             self._maybe_escalate_staged_answer_model()
                             yield self._status_event("thinking", round=round_idx + 1)
                             yield self._progress_event("thinking", round=round_idx + 1)
@@ -17284,6 +17322,28 @@ class AgentExecutor:
             )
         if completion_intent.operation == "sync" and self._turn_sync_queued:
             full_reply = _garmin_sync_queued_message()
+        daily_summary_advice_goal = None
+        if (
+            self._turn_daily_read_plan is not None and self._turn_daily_read_plan.is_summary
+            and final_finish_reason == "stop" and not health_advice_buffered
+        ):
+            facts = verified_daily_summary(
+                self._turn_daily_read_plan, self._turn_daily_read_payloads,
+                self._turn_daily_read_results,
+            )
+            if self._turn_daily_read_plan.asks_advice:
+                advice_failure = summary_advice_contract_failure(full_reply)
+                daily_summary_advice_goal = {
+                    "goal_id": "summary_advice", "kind": "answer",
+                    "status": "failed" if advice_failure else "verified",
+                    "reason_code": advice_failure or "summary_advice_contract_passed",
+                }
+                if advice_failure:
+                    self._record_model_fallback_reason(advice_failure)
+                    full_reply = "建议未能通过本次事实校验，暂未提供；以上已核验的记录仍可查看。"
+                full_reply = facts + "\n\n" + full_reply
+            else:
+                full_reply = facts
         medical_boundary = enforce_medical_evidence_boundaries(
             full_reply,
             model_generated=not (
@@ -17642,7 +17702,8 @@ class AgentExecutor:
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
-            goal_outcomes=daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results),
+            goal_outcomes=daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results)
+            + ([daily_summary_advice_goal] if daily_summary_advice_goal else []),
             capability_block_reasons=[
                 reason
                 for reason in self._agent_kernel_capability_block_reasons
@@ -19761,7 +19822,7 @@ class AgentExecutor:
 
         if not getattr(settings, "task_tiered_routing", False):
             return None
-        if getattr(self, "_staged_answer_task_tier", None) == "high_stakes":
+        if self._requires_quality_floor():
             return None
         # 不叠加既有整轮快路由 (那两条已把含合成的整轮降 fast)。显式 UI 选模型不在此
         # 豁免 —— 只有下面 _turn_any_tool_executed 门放行的**首个工具决策轮**会被降 fast,

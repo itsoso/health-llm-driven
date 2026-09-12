@@ -16,9 +16,11 @@ import argparse
 import asyncio
 from contextlib import ExitStack
 from datetime import datetime
+from decimal import Decimal
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import time
@@ -28,12 +30,13 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "pi-query-trajectories.v1"
+SCORER_VERSION = "diet-sleep-record-facts.v3"
 FIXTURE_SOURCE = "pi_query_trajectory_v1"
 CASES = (
     {"id": "oral_diet", "query": "今日我吃了啥", "facts": (("燕麦",),), "read": True},
     {"id": "dinner_advice", "query": "今天晚上我吃了什么？给我一些建议。", "facts": (("番茄",), ("建议", "可以", "适当", "注意")), "read": True},
-    {"id": "daily_recap", "query": "给我今天总结", "facts": (("燕麦", "番茄"), ("睡眠", "睡了"), ("运动", "步数", "散步")), "read": True},
-    {"id": "daily_recap_advice", "query": "给我今天总结，给我建议", "facts": (("燕麦", "番茄"), ("睡眠", "睡了"), ("建议", "可以", "注意")), "read": True},
+    {"id": "daily_recap", "query": "给我今天总结", "facts": (("燕麦", "番茄"), ("睡眠", "睡了")), "read": True, "read_dimensions": ("diet", "sleep")},
+    {"id": "daily_recap_advice", "query": "给我今天总结，给我建议", "facts": (("燕麦", "番茄"), ("睡眠", "睡了")), "answer_facts": (("建议", "可以", "注意"),), "read": True, "read_dimensions": ("diet", "sleep")},
     {"id": "quoted_advice", "query": "分析以下建议：\n如果家里有的话不用再买。出门前检查水杯和舒适的鞋，行程按自己的体力调整。", "facts": (), "read": False},
 )
 _FAILURE_NOTICES = ("这次查询未执行", "已停止这次查询", "未生成可发布", "请明确要查询哪类记录", "请明确查询日期")
@@ -61,11 +64,43 @@ def validate_database_url(url: str, expected_name: str) -> None:
         raise ValueError("requires an explicitly named loopback PostgreSQL evaluation database without query overrides")
 
 
+def expected_record_facts(rows: list[dict]) -> dict:
+    """Independent oracle over every returned row, including similar foods."""
+    values = [Decimal(str(row["calories"])) for row in rows
+              if isinstance(row.get("calories"), (int, float, Decimal))
+              and not isinstance(row["calories"], bool)]
+    known = [value for value in values if value.is_finite() and value >= 0]
+    return {"record_count": len(rows), "known_calorie_count": len(known),
+            "missing_calorie_count": len(rows) - len(known),
+            "known_calories_total": format(sum(known, Decimal(0)).normalize(), "f")}
+
+
+def score_record_facts(answer: str, expected: dict) -> dict[str, bool]:
+    normalized = re.sub(r"[\s*,]", "", answer)
+    counts = re.findall(r"已记录(\d+)条", normalized)
+    totals = re.findall(r"(?:已记录热量合计|已知热量小计)(\d+(?:\.\d+)?)(?:千卡|kcal)", normalized)
+    incomplete = bool(re.search(
+        r"(?:不代表|不等于|不是|并非|不能视为).{0,12}(?:全天|完整).{0,12}(?:摄入|饮食)|"
+        r"(?:记录|数据).{0,8}(?:可能|尚)?不完整|无法确认.{0,12}全天.{0,12}完整", normalized))
+    actual_intake_claim = bool(re.search(
+        r"(?:今天|今日|全天).{0,8}(?:实际摄入(?:只有|为)|只吃了|仅吃了)\d", normalized))
+    return {
+        "daily_record_count": bool(counts) and all(int(value) == expected["record_count"] for value in counts),
+        "daily_recorded_calorie_total": bool(totals) and all(
+            Decimal(value) == Decimal(expected["known_calories_total"]) for value in totals),
+        "daily_recorded_not_complete_day": incomplete and not actual_intake_claim,
+    }
+
+
 def score_case(case: dict, done: dict, answer: str, tools: list[str], *, unchanged: bool) -> dict:
     trace = done.get("kernel_trace") or {}
     outcome = done.get("turn_outcome") or {}
     basis = (done.get("answer_evidence") or {}).get("basis") or []
     basis_text = json.dumps(basis, ensure_ascii=False)
+    dimensions = case.get("read_dimensions", ())
+    # Displayed query evidence is part of the answer surface; the summary need
+    # not duplicate records already rendered in its evidence cards.
+    visible_facts = answer + basis_text if dimensions else answer
     checks = {
         "real_pi_kernel": (done.get("perf") or {}).get("agent_kernel") == "pi",
         "completed_generation": done.get("completion_status") == "complete",
@@ -75,9 +110,35 @@ def score_case(case: dict, done: dict, answer: str, tools: list[str], *, unchang
         "query_evidence": not case["read"] or bool(
             tools and basis and any(term in basis_text for term in case["facts"][0])
         ),
-        "expected_fact_coverage": all(any(term in answer for term in group) for group in case["facts"]),
+        "expected_fact_coverage": all(any(term in visible_facts for term in group) for group in case["facts"])
+            and all(any(term in answer for term in group) for group in case.get("answer_facts", ())),
         "health_data_unchanged": unchanged and not done.get("write_receipts"),
     }
+    if dimensions:
+        goals = outcome.get("goals") or []
+        checks["daily_read_goals"] = all(any(
+            goal.get("goal_id") == dimension and goal.get("kind") == "query"
+            and goal.get("status") == "verified" and goal.get("evidence_kind") == "read_result"
+            for goal in goals) for dimension in dimensions)
+        checks["daily_dimension_evidence"] = all(any(
+            item.get("source") == "健康数据查询" and label in item.get("label", "")
+            and any(marker in item.get("observation", "") for marker in markers)
+            for item in basis) for label, markers in (
+                ("饮食", ("合成早餐燕麦", "合成晚餐番茄蛋饭")),
+                ("睡眠", ("420 分钟", "7 小时", "7.0 小时"))))
+        scope_text = re.sub(r"[\s*]", "", answer)
+        checks["daily_scope_disclosed"] = bool(re.search(
+            r"(?:只|仅)(?:覆盖|总结|汇总|包含|包括|含|限于|基于|查了|查询了|调取了).{0,40}"
+            r"(?:饮食.{0,20}睡眠|睡眠.{0,20}饮食)|"
+            r"(?:其他|其余|运动|活动).{0,30}(?:未查询|没有查询|未查|不在|未覆盖)", scope_text)) and not bool(re.search(
+            r"(?:只|仅)(?:覆盖|查询了|查了|调取了)[^。；;！？!?]{0,80}"
+            r"(?:所有|全部)健康(?:维度|领域)", scope_text))
+        if "expected_record_facts" in case:
+            checks.update(score_record_facts(answer, case["expected_record_facts"]))
+            actual_model = done.get("answer_model") or ""
+            checks["daily_nonfast_answer"] = bool(actual_model) and "flash" not in actual_model.lower()
+            checks["daily_nonfast_tool_rounds"] = all(
+                "flash" not in model.lower() for model in done.get("tool_models") or [])
     return {"passed": all(checks.values()), "checks": checks,
             "failed_checks": [name for name, passed in checks.items() if not passed]}
 
@@ -129,9 +190,13 @@ def _preflight(args):
 
 def _seed(db, user_id: int, today) -> None:
     from app.models.daily_health import DietRecord, ExerciseRecord, GarminData
-    for meal, food, calories in (("breakfast", "合成早餐燕麦", 300), ("dinner", "合成晚餐番茄蛋饭", 420)):
-        if not db.query(DietRecord).filter_by(user_id=user_id, record_date=today, source=FIXTURE_SOURCE, meal_type=meal).first():
-            db.add(DietRecord(user_id=user_id, record_date=today, source=FIXTURE_SOURCE, meal_type=meal,
+    for meal, food, calories, source in (
+        ("breakfast", "合成早餐燕麦", 300, FIXTURE_SOURCE),
+        ("breakfast", "合成早餐燕麦", 300, FIXTURE_SOURCE + "_duplicate"),
+        ("dinner", "合成晚餐番茄蛋饭", 420, FIXTURE_SOURCE),
+    ):
+        if not db.query(DietRecord).filter_by(user_id=user_id, record_date=today, source=source, meal_type=meal).first():
+            db.add(DietRecord(user_id=user_id, record_date=today, source=source, meal_type=meal,
                               food_name=food, food_items=food, calories=calories))
     if not db.query(GarminData).filter_by(user_id=user_id, record_date=today, data_source=FIXTURE_SOURCE).first():
         db.add(GarminData(user_id=user_id, record_date=today, data_source=FIXTURE_SOURCE,
@@ -173,7 +238,8 @@ async def _run(args, SessionLocal, engine) -> dict:
     from app.utils import redis_cache
 
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
-    report = {"version": VERSION, "fixture_date": str(today), "timezone": "Asia/Shanghai",
+    report = {"version": VERSION, "scorer_version": SCORER_VERSION,
+              "fixture_date": str(today), "timezone": "Asia/Shanghai",
               "models": args.model, "cases": args.case or [c["id"] for c in CASES],
               "source_sha256": source_fingerprints(),
               "status": "running", "results": [], "provider_calls": 0}
@@ -275,6 +341,13 @@ async def _run(args, SessionLocal, engine) -> dict:
                 started = time.monotonic()
                 with SessionLocal() as db:
                     db.info["app_user_id"] = args.user_id
+                    if case.get("read_dimensions"):
+                        from app.models.daily_health import DietRecord
+                        rows = db.query(DietRecord).filter(
+                            DietRecord.user_id == args.user_id, DietRecord.record_date == today).all()
+                        expected = expected_record_facts([{"calories": row.calories} for row in rows])
+                        case = {**case, "expected_record_facts": expected}
+                        result["expected_record_facts"] = expected
                     before = _health_fingerprint(db, args.user_id)
                     executor = AgentExecutor(db)
                     dispatch = executor._dispatch_tool_request
@@ -323,6 +396,7 @@ async def _run(args, SessionLocal, engine) -> dict:
                                   outcome_status=(done.get("turn_outcome") or {}).get("status"),
                                   goal_kind=(done.get("kernel_trace") or {}).get("goal_kind"),
                                   goal_satisfied=(done.get("kernel_trace") or {}).get("goal_satisfied"),
+                                  goals=(done.get("turn_outcome") or {}).get("goals") or [],
                                   evidence_count=len((done.get("answer_evidence") or {}).get("basis") or []))
                 report["results"].append(result)
                 report.update(provider_calls=spent["calls"], reserved_tokens=spent["reserved_tokens"],

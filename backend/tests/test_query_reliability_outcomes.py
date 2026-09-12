@@ -17,7 +17,7 @@ def _isolate_twin_cache(isolated_agent_protocol_transport):
     """Keep real Pi subprocess transport, prohibit external network access."""
 
 
-async def _run_scripted(db, user, monkeypatch, *, query, first_tool, first_args, dispatch, reply, turn_id, forbidden_tool_text=None, actual_sync=False):
+async def _run_scripted(db, user, monkeypatch, *, query, first_tool, first_args, dispatch, reply, turn_id, forbidden_tool_text=None, actual_sync=False, required_context_text=None, answer_finish_reason="stop"):
     executor = AgentExecutor(db)
     rounds = []
     dispatched = []
@@ -34,13 +34,17 @@ async def _run_scripted(db, user, monkeypatch, *, query, first_tool, first_args,
             }]}
             yield {"type": "finish", "finish_reason": "tool_calls"}
         else:
+            if required_context_text and not any(
+                required_context_text in str(m.get("content", "")) for m in messages if m.get("role") == "system"
+            ):
+                dispatch_errors.append(AssertionError("Verified summary context missing"))
             if forbidden_tool_text and any(
                 forbidden_tool_text in str(message.get("content", ""))
                 for message in messages if message.get("role") == "tool"
             ):
                 leaked_tool_data.append(True)
             yield {"type": "content", "text": reply}
-            yield {"type": "finish", "finish_reason": "stop"}
+            yield {"type": "finish", "finish_reason": answer_finish_reason}
 
     async def data_dispatch(request, token):
         dispatched.append(request)
@@ -293,3 +297,67 @@ async def test_real_dinner_list_reaches_answer_evidence_without_table_capability
     persisted = db.query(AgentMessage).filter(AgentMessage.id == done["message_id"]).one()
     assert persisted.meta["answer_evidence"] == evidence
     assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("advice", [False, True])
+async def test_daily_summary_keeps_duplicate_rows_and_uses_verified_arithmetic(db, auth_user_and_headers, monkeypatch, advice):
+    user, _ = auth_user_and_headers
+    def dispatch(request):
+        day = request.arguments["start_date"]
+        if request.arguments["dimension"] == "diet":
+            rows = [{"id": index, "record_date": day, "meal_type": "breakfast" if index < 3 else "lunch", "food_name": "燕麦" if index < 3 else "番茄蛋饭", "calories": calories} for index, calories in [(1, 300), (2, 300), (3, 420)]]
+        else:
+            rows = [{"record_date": day, "sleep_score": 80, "total_sleep_duration": 420}]
+        return _calendar_payload(request, records=rows)
+    _, done, persisted, public, _ = await _run_scripted(
+        db, user, monkeypatch, query="给我今天总结" + ("，给我建议" if advice else ""),
+        first_tool="health_analysis", first_args={"analysis_type": "orchestrator"}, dispatch=dispatch,
+        reply="建议：根据已记录数据规律安排饮食与睡眠。" if advice else "今天只吃了720千卡，睡眠正常。",
+        turn_id=f"summary-duplicate-{advice}", required_context_text="1020",
+    )
+    assert done["turn_outcome"]["status"] == "complete"
+    assert "1020" in public and "1020" in persisted.content
+    assert "720" not in public
+    assert "已记录" in public and "睡眠" in public
+    assert "7" in public and "80" in public
+    assert "今天只吃了" not in public
+    if advice:
+        assert "建议" in public
+
+
+@pytest.mark.asyncio
+async def test_summary_advice_cannot_publish_contradictory_total(db,auth_user_and_headers,monkeypatch):
+    user,_=auth_user_and_headers
+    def dispatch(request):
+        day=request.arguments['start_date']
+        if request.arguments['dimension']=='diet':
+            rows=[{'id':index,'record_date':day,'meal_type':'breakfast' if index<3 else 'dinner','food_name':'燕麦' if index<3 else '番茄蛋饭','calories':calories} for index,calories in [(1,300),(2,300),(3,420)]]
+        else:
+            rows=[{'record_date':day,'sleep_score':80,'total_sleep_duration':420}]
+        return _calendar_payload(request,records=rows)
+    _,done,persisted,public,_=await _run_scripted(db,user,monkeypatch,query='给我今天总结，给我建议',first_tool='health_analysis',first_args={'analysis_type':'orchestrator'},dispatch=dispatch,reply='建议：今天只吃了720千卡，摄入不足，明天增加一餐。',turn_id='independent-summary-advice-wrongtotal',required_context_text='1020')
+    assert done['turn_outcome']['status'] == 'partial'
+    assert done['completion_status'] == 'error'
+    assert '1020' in persisted.content
+    assert '摄入不足' not in public
+    assert any(goal['goal_id'] == 'summary_advice' and goal['status'] == 'failed' for goal in done['turn_outcome']['goals'])
+    assert '720' not in public and '720' not in persisted.content
+    assert '今天只吃了' not in public
+
+
+@pytest.mark.asyncio
+async def test_daily_facts_do_not_turn_provider_error_into_success(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    def dispatch(request):
+        return _calendar_payload(request, records=[], availability="no_data")
+    _, done, persisted, public, _ = await _run_scripted(
+        db, user, monkeypatch, query="给我今天总结", first_tool="health_analysis",
+        first_args={"analysis_type": "orchestrator"}, dispatch=dispatch,
+        reply="本轮生成失败，请重试。", turn_id="summary-generation-error",
+        answer_finish_reason="error",
+    )
+    assert done["generation_status"] == "error"
+    assert done["completion_status"] == "error"
+    assert done["turn_outcome"]["status"] != "complete"
+    assert "本轮生成失败" in public and "本轮生成失败" in persisted.content
