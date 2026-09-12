@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 |---|---|
-| 状态 | implementing |
-| 当前阶段 | S6 verification |
+| 状态 | shipped |
+| 当前阶段 | S8 verified |
 | slug | query-response-reliability |
 
 ## G1 需求准入
@@ -12,13 +12,15 @@
 
 ## Engineering delivery
 
-Status: implementing. Controller: health-harness-orchestrator. Overlay: safety-gate.
+Status: shipped. Controller: health-harness-orchestrator. Overlay: safety-gate.
 Trace: `docs/_generated/harness-runs/ca612203e657.jsonl`.
 Spec: `docs/specs/active/2026-09-12-query-response-reliability.md`.
 
 User approved the analysis plan and retained prior push/deploy authorization. Scope is consistent query interpretation, quoted-input authority, correction recovery, risk-first routing and honest outcomes. Unrelated Mac shopping/model catalog changes and model-registry tests present at startup are protected.
 
-## Evidence and gates
+## Candidate history and evidence
+
+The entries below preserve earlier candidate failures and intermediate gates. The final release verdict is recorded in Release closure.
 
 - Admission: accepted maintenance of current health observation and verified execution contracts; bounded daily summary semantics documented.
 - Baseline: 31 owned production requests inspected read-only; sample spans versions. Current pure functions reproduced equivalent-tool conflict, compound query denial and quoted cancellation. Historical two ratio phrases now parse, but reordered variant does not.
@@ -33,7 +35,18 @@ User approved the analysis plan and retained prior push/deploy authorization. Sc
 - Candidate `57d3e3c` passed the consolidated CI-mode regression (1349 passed, 8 PostgreSQL-only skips covered separately), but remained NO-GO: live advice exposed broader false positives for an existing sleep target and future screen-off duration, and four real Pi cases proved an empty advice heading incorrectly counted as completed. The follow-up removes fixed phrase allowlists and recognizes explicit observed-duration semantics, preserves future schedules/targets, and requires substantive advice after the heading. Both exact prior synthetic drafts now pass offline, their mixed false-observation variants remain rejected, and the helper suite passed 84 tests. Final candidate review and live four-case verification are pending.
 - Candidate `c88e18e0` received independent safety GO and passed all four source-bound real Pi daily-summary trajectories, including explicit fast-model requests upgraded to known non-fast providers. Both arithmetic and substantive advice were verified. Exact GitHub CI run `34706044177` then failed in four test shards, so deployment remained withheld. Follow-up separates existing record confirmation policy from model selection; confirmed flags remain stripped at the real gateway and authenticated turn intent controls authority. Six real-Pi/gateway positive and negative cases cover completed intake, future, denial, quote, query and readonly. The affected module passed 156 tests; three remaining CI failure modules passed 31. Destructive multi-model requests are tested through the ordinary Pi owner lookup and persist both planned deletes before dispatch. Outdated completion, unverified-write wording and clinical quality-floor assertions were updated to current contracts. New fixed-commit review and exact full CI remain required.
 - Candidate `f97dc88c` received independent safety GO (199 tests) and passed the final source-bound four real Pi summary cases (8 calls, 79871 reserved tokens). A clean no-dotenv release checkout passed 390 additional routing/outcome checks; an earlier root-dotenv diagnostic is retained as an invalid-environment run, not a product regression. GitHub run `34707312963` passed the previously failed modules but exposed two later stale fixtures: clinical requests correctly skip fast resynthesis, and genetic queries correctly reject a nonexistent fake provider. The follow-up only updates tests to cover both balanced fast-prose withholding and clinical first-round quality, using a known non-fast genetic mock. The repaired full shards passed 347 and 112 tests. The same CI run also exhausted both 256-second attempts of the completion-status shard without an assertion failure; a first-red isolation check confirmed that Twin readers opened independent sessions outside the protocol fixture. The protocol suite now supplies a synthetic owner-scoped Twin while dedicated safety-card fixtures retain their overrides and the real safety evaluator remains active. The original CI worker passed 177 tests on its first attempt (84.26 seconds total including startup, pytest 9.1.1), keeping the 256-second process deadline and 120-second per-test timeout. No timeout threshold or production logic changed. Runtime source is unchanged from the safety-reviewed and live-tested `f97dc88c`; exact CI is still required.
-- CI / deployment / production verification: pending. Production remains healthy at the prior revision; no current candidate has been deployed.
+- Final CI, deployment and production verification completed; see Release closure. Earlier failed candidates were withheld until repaired and reviewed.
+
+## Release closure
+
+裁决：PASS。Verified at 2026-09-13 01:50 Asia/Shanghai.
+
+- Released runtime: `deab5edcd6f6853c34cd6bbb2f6d94043001b159`. Independent final safety review: GO. Exact [GitHub CI run 34708256310](https://github.com/itsoso/health-llm-driven/actions/runs/34708256310): success, including all backend shards and PostgreSQL integration. The final commit only adjusts tests and this dossier relative to `f97dc88c`; every live-tested runtime fingerprint matches. The v6 four-case live report digest is `e68547991d19ab2640f61ce53ef252fc8078f43683d34977dec9244461a37e80`.
+- Backend and Web: clean verified release checkout, `deploy.sh -a` exited 0. Database backup, full restore drill, encrypted offsite hash/authenticity verification, rollback compatibility and runtime transaction passed; transaction committed. Production Git and running backend were independently verified at the released revision. Health score: 60/60; backend, worker and beat active, backend restart count 0. Public health and assistant page returned 200; protected conversations route returned 401 without authentication.
+- Git transport: production SSH authentication, Git refs and actual fetch succeeded. The verified local source bundle was uploaded as fallback but was not used. Earlier HTTPS failures do not establish a blocked SSH transport or prove a firewall cause.
+- Production behavior: four owned read-only Pi queries (explicit historical date, oral today-diet, dinner, daily summary) passed exact query-goal and evidence checks with no health writes. The eight provider calls used the ordinary fast model for simple queries and a known non-fast model for summary. A separate read of those same four persisted answers verified nonempty text, no false date/type clarification, complete outcomes and no write receipts; it made no further model calls. No production fixture or health record was created or altered by verification.
+- iOS OTA: production runtime `1.3.3`, group `d9169932-fef3-4fbe-a3bf-87beff01ed46`, update `01a096bc-1168-7914-9ca5-8ad4953d3534`, source commit equal to released runtime. EAS readback and the public update manifest using client headers both selected that exact update. [OTA release](https://expo.dev/accounts/itsoso/projects/health-pilot/updates/d9169932-fef3-4fbe-a3bf-87beff01ed46). Publication and serving are verified; installation/activation on the user's device is not claimed.
+- Limits: this is a correctness release, not a latency improvement claim. Daily summaries intentionally cover the declared diet/sleep dimensions, and the finite advice-output contract is not a universal clinical verifier. Unrelated Mac shopping/model work was excluded and preserved.
 
 ## Ownership
 
