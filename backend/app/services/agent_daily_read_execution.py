@@ -97,38 +97,43 @@ def daily_goal_outcomes(plan: DailyReadPlan | None, completed: dict[str, dict[st
 def summary_advice_text(text: str) -> str:
     """Keep an explicitly headed advice section, including its heading text."""
     heading = re.search(
-        r'^[ \t]*(?:#{1,6}[ \t]+建议(?:[（(][^\n）)]*[）)])?[ \t]*$'
+        r'^[ \t]*(?:#{1,6}[ \t]*建议(?:[（(][^\n）)]*[）)])?[ \t]*$'
         r'|\*\*建议\*\*[ \t]*$|建议[：:])', text, re.MULTILINE,
     )
     return text[heading.start():] if heading else text
 
 
 def summary_advice_contract_failure(text: str) -> str | None:
-    """Check only the qualitative advice contract after verified daily facts.
+    """Check only the action-advice contract after verified daily facts.
 
     This finite language boundary is not a general grounding or medical-safety
     verifier. The caller must preserve failures, not rewrite rejected advice.
     """
-    if not text.strip():
-        return 'summary_advice_unavailable'
     # Formatting must not turn a permitted future action into a measurement.
     text = text.replace('**', '').replace('__', '')
+    body = re.sub(
+        r'^\s*(?:#{1,6}\s*)?建议(?:[（(][^\n）)]*[）)])?\s*[：:]?', '', text, count=1,
+    )
+    if not body.strip(' \t\r\n-*#_>'):
+        return 'summary_advice_unavailable'
     number = r'(?:\d+(?:[.,]\d+)*|[零〇一二两三四五六七八九十百千万点半]+)'
-    # Exempt only bounded imperative/future action spans, never an entire reply.
-    # The same duration in an observation ("你今天睡了7小时") stays rejected.
-    action_spans = [match.span() for match in re.finditer(
-        rf'(?:^|[。！？!?；;，,\n])\s*(?:'
-        rf'(?:建议|可以|可|不妨)?(?:睡前{number}\s*(?:小时|分钟)减少屏幕使用'
-        rf'|饭后散步{number}\s*分钟)'
-        rf'|建议把入睡安排在接下来{number}\s*(?:小时|分钟)内)', text,
-    )]
-    for match in re.finditer(
-        rf'{number}\s*(?:个\s*)?(?:千卡|大卡|kcal|卡路里|小时|分钟|评分|分)'
+    if re.search(
+        rf'{number}\s*(?:千卡|大卡|kcal|卡路里|评分|分(?!钟))'
         rf'|评分\s*(?:为|是|约为|约|[:：])?\s*{number}'
         r'(?![\d零〇一二两三四五六七八九十百千万点半]|\s*项)', text, re.IGNORECASE,
     ):
-        if not any(start <= match.start() and match.end() <= end for start, end in action_spans):
-            return 'summary_advice_repeats_measurement'
+        return 'summary_advice_repeats_measurement'
+    duration = rf'\s*(?:约|大约|只有|仅)?\s*{number}\s*(?:个\s*)?(?:小时|分钟)'
+    # Completed actions assert observations; duration labels need local context.
+    # Future schedules and goals are not observations merely because they use time.
+    if re.search(
+        rf'(?:睡了|睡过|实际(?:散步|走路)|(?:你)?(?:今天|今日|昨晚)(?:饭后)?(?:散步|走路)){duration}', text,
+    ):
+        return 'summary_advice_repeats_measurement'
+    for clause in re.split(r'[。！？!?；;，,\n]|但是|但|然而|不过', text):
+        for match in re.finditer(rf'(?:睡眠(?:时长)?|总?时长)\s*(?:为|是|[:：])?{duration}', clause):
+            if not re.search(r'目标|建议|计划|打算|未来|接下来|准备|可以|应当', clause[:match.start()]):
+                return 'summary_advice_repeats_measurement'
     intake_claim = re.compile(
         r'(?:今天|今日|全天)[^。！？!?；;\n]{0,24}?(?:只吃|总共摄入|总摄入只有)'
         r'|摄入\s*(?:明显|严重|已经|确实)?\s*(?:不足|过量)'

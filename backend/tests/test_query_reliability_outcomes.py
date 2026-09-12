@@ -381,3 +381,20 @@ async def test_summary_uses_verified_facts_and_only_model_advice_section(db, aut
     assert "已记录热量合计300千卡" in public
     assert "720" not in public and "模型重复总结" not in persisted.content
     assert "睡前半小时减少屏幕使用" in public
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('reply', ['### 建议', '**建议**', '建议：', '## 今日总结\n今天只吃了720大卡。\n### 建议\n'])
+async def test_heading_only_is_missing_advice(db, auth_user_and_headers, monkeypatch, reply):
+    user,_ = auth_user_and_headers
+    def dispatch(request):
+        day=request.arguments['start_date']
+        rows=[{'record_date':day,'food_name':'合成食物','calories':300}] if request.arguments['dimension']=='diet' else []
+        return _calendar_payload(request,records=rows,availability='available' if rows else 'no_data')
+    _,done,persisted,public,_ = await _run_scripted(db,user,monkeypatch,query='给我今天总结，给我建议',first_tool='health_analysis',first_args={'analysis_type':'orchestrator'},dispatch=dispatch,reply=reply,turn_id='readonly-review-empty-advice')
+    assert done['turn_outcome']['status'] == 'partial'
+    assert done['completion_status'] == 'error'
+    assert persisted.meta['turn_outcome']['status'] == 'partial'
+    assert '已记录热量合计300千卡' in public
+    assert '720' not in public
+    assert any(g['goal_id'] == 'summary_advice' and g['status'] == 'failed' for g in done['turn_outcome']['goals'])

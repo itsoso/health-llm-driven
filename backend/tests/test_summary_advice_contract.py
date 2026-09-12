@@ -7,7 +7,8 @@ from app.services import agent_daily_read_execution as daily
 from app.services.agent_kernel.daily_read_plan import DailyReadPlan
 
 
-@pytest.mark.parametrize("text", ["", " \n\t "])
+@pytest.mark.parametrize("text", ["", " \n\t ", "###建议", "### 建议（可执行）\n", "**建议**", "建议：",
+                                  "### 建议\n-", "**建议**\n**", "建议：\n---"])
 def test_empty_advice_is_not_a_completed_advice_goal(text):
     assert daily.summary_advice_contract_failure(text) == "summary_advice_unavailable"
 
@@ -90,3 +91,21 @@ def test_ordinary_daily_query_keeps_existing_attestation_contract():
 def test_actual_markdown_action_duration_is_not_an_observation():
     text = "### 建议\n**现在最该做的是收工睡觉。** 已经过零点了，建议把入睡安排在**接下来半小时内**，别再往后拖。"
     assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("suffix,reason", [
+    ("", None), ("但你今天只睡了3小时。", "summary_advice_repeats_measurement"),
+])
+def test_actual_goal_and_future_timing_does_not_hide_observation(suffix, reason):
+    text = "如果打算现在上床，按你的7.5小时睡眠目标倒推，明早8:10左右起床比较合适；屏幕调暗、离开手机15–20分钟更容易入睡。"
+    assert daily.summary_advice_contract_failure(text + suffix) == reason
+
+
+@pytest.mark.parametrize("text", ["建议每天睡8小时。", "目标睡眠时长为8小时。", "可以散步15–20分钟。"])
+def test_future_actions_and_goals_do_not_require_fixed_wording(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", ["昨晚睡眠7小时。", "睡眠时长为7小时。", "实际散步十分钟。", "睡眠：7小时。"])
+def test_duration_with_explicit_observation_cue_is_rejected(text):
+    assert daily.summary_advice_contract_failure(text) == "summary_advice_repeats_measurement"
