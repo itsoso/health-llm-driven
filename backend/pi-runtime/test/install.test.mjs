@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -28,3 +28,12 @@ for (const scenario of ['missing-node', 'old-node', 'missing-npm']) {
     }
   });
 }
+
+test('deployment lock uses public registry with immutable integrity pins', () => {
+  const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+  for (const [name, entry] of Object.entries(lock.packages)) {
+    if (!name) continue;
+    assert.equal(new URL(entry.resolved).origin, 'https://registry.npmjs.org');
+    assert.match(entry.integrity, /^sha512-/);
+  }
+});

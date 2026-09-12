@@ -148,3 +148,25 @@ PostgreSQL integration completed: 33/33 passed, including real owned-meal
 updates and foreign-user preservation, actual Pi executor and write reconciliation.
 Report: `/tmp/reva-pi-postgres-final.log`. CI now installs Pi in its PostgreSQL
 job and includes these regressions.
+
+
+## Candidate CI and distribution repair
+
+Candidate `8b7e195d329df5f21fcd5dac289f48e564a1d1d9` was committed in the
+existing clean release checkout with every applicable pre-commit gate passing,
+then fast-forwarded to main and pushed. Exact CI `34683056697` failed before
+backend tests: the lockfile inherited a developer-only registry host inaccessible
+to hosted runners. Other completed quality/build/release-invariant jobs passed;
+no trusted deployment was dispatched and production remains on `9ddcb9d2f`.
+
+The repair changes only package tarball origins to public npm, preserving every
+version and SHA-512 integrity value, and pins the package registry in `.npmrc`.
+An origin/integrity regression test failed first and now passes. A new empty
+cache fetched the public archives successfully; audit found zero vulnerabilities
+and all 26 runtime tests passed against that fresh installation. Application and
+eval bytes remain identical to the reviewed/live-tested candidate. Evidence:
+`/tmp/reva-pi-public-install.log`, `/tmp/reva-pi-public-runtime-tests.log`.
+
+AGENTS section 7 stops external writes while main CI is red. The repair is
+prepared locally; publication needs explicit permission to repair red main,
+then a new exact-SHA confirmation/CI and the normal release gates.
