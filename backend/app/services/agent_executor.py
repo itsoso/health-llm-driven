@@ -11583,6 +11583,7 @@ class AgentExecutor:
         self._multi_model_turn = False
         self._diet_photo_auto_save = False
         self._prefer_fast_record_model = False
+        self._turn_record_confirmation_policy_active = False
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
         # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
         self._fast_route_simple_turn = False
@@ -11709,6 +11710,7 @@ class AgentExecutor:
             message or "", self._agent_kernel_snapshot.context.current_time,
             timezone_name=self._agent_kernel_snapshot.context.timezone,
         )
+        self._turn_record_confirmation_policy_active = False
         self._turn_daily_read_results = {}
         self._turn_daily_read_payloads = {}
         self._turn_sync_queued = False
@@ -13104,6 +13106,7 @@ class AgentExecutor:
         # 故此前 Wave 2 顺手加的 `saved_image_urls = []` 兜底已成 dead code,一并清掉。
         self._current_user_id = user_id
         self._prefer_fast_record_model = False
+        self._turn_record_confirmation_policy_active = False
         self._last_provider_model_name = None
         self._model_fallback_reasons = []
         self._tool_model_names = []
@@ -15084,6 +15087,11 @@ class AgentExecutor:
             and not file_base64
             and _has_fast_record_write_intent(message or "")
         )
+        # Preserve the existing semantic/channel confirmation policy independently
+        # of model selection. A quality upgrade does not revoke or grant consent.
+        self._turn_record_confirmation_policy_active = bool(
+            self._prefer_fast_record_model and not self._read_only_turn
+        )
         partial_diet_correction_requested = bool(
             (
                 _parse_explicit_diet_correction(
@@ -16068,7 +16076,7 @@ class AgentExecutor:
                 tools_used.append(func_name)
             if func_name:
                 _round_tool_names.append(func_name)
-            if self._prefer_fast_record_model:
+            if self._turn_record_confirmation_policy_active:
                 func_args = _auto_confirm_fast_record_args(
                     func_name,
                     func_args,
@@ -17054,7 +17062,7 @@ class AgentExecutor:
                                     function = call["function"]
                                     name = function["name"]
                                     args = function["arguments"]
-                                    if self._prefer_fast_record_model:
+                                    if self._turn_record_confirmation_policy_active:
                                         args = _auto_confirm_fast_record_args(
                                             name, args, channel=self._turn_channel,
                                             user_message=self._current_turn_user_message,

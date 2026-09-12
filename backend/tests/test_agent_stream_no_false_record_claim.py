@@ -40,14 +40,84 @@ from app.models.supplement import SupplementDefinition
 
 
 @pytest.fixture(autouse=True)
-def _isolate_twin_cache(isolated_agent_protocol_transport):
-    """Override live Redis cleanup; this suite mocks LLM/tool protocol boundaries."""
+def _isolate_twin_cache(isolated_agent_protocol_transport, monkeypatch):
+    """Keep protocol/safety evaluation, with a synthetic owner-scoped Twin.
+
+    Real Twin builders open concurrent sessions outside this module's SQLite
+    transaction; network isolation alone does not isolate those database reads.
+    """
+    from app.twin.schema import HealthTwin, TwinMeta
+
+    monkeypatch.setattr("app.twin.builder.build_twin", lambda _db, user_id, **kwargs: HealthTwin(
+        meta=TwinMeta(user_id=user_id, generated_at=datetime.now(ZoneInfo("UTC"))),
+    ))
 
 
 def _tokens(events) -> str:
     return "".join(
         e["data"]["content"] for e in events if e.get("event") == "token"
     )
+
+
+@pytest.mark.parametrize("message,read_only,authorized", [
+    ("吃了两粒红景天", False, True),
+    ("我打算吃两粒红景天", False, False),
+    ("我没有吃红景天", False, False),
+    ('朋友说：“我吃了两粒红景天”', False, False),
+    ("今天我吃了什么补剂？", False, False),
+    ("吃了两粒红景天", True, False),
+])
+async def test_quality_route_preserves_only_existing_record_confirmation_authority(
+    db, auth_user_and_headers, monkeypatch, message, read_only, authorized,
+):
+    """Real Pi/gateway: choosing a stronger model neither grants nor revokes consent."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    rounds, dispatched = [], []
+    monkeypatch.setattr("app.services.llm.task_routing.classify_answer_task_tier", lambda *a, **k: "high_stakes")
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "Use the authorized health tools.")
+
+    async def provider(messages, tools):
+        rounds.append(messages)
+        if len(rounds) == 1:
+            yield {"type": "tool_calls", "tool_calls": [{"id": "record-intake", "type": "function", "function": {
+                "name": "health_record", "arguments": json.dumps({"record_type": "supplement", "data": {
+                    "supplement_name": "红景天", "dosage": "2粒",
+                }}, ensure_ascii=False),
+            }}]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+        else:
+            yield {"type": "content", "text": "本轮工具没有完成记录。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    async def dispatch(request, token):
+        dispatched.append(request)
+        return json.dumps({"id": 991, "record_id": 991, "resource_type": "supplement_log",
+                           "status": "verified", "success": True, "message": "补剂记录已保存。"}, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm_stream", provider)
+    monkeypatch.setattr(executor, "_dispatch_tool_request", dispatch)
+    events = [event async for event in executor.run_stream(
+        user_id=user.id, message=message, user_auth_token="test-token", read_only_tools=read_only,
+    )]
+    done = events[-1]["data"]
+    assert done["perf"]["agent_kernel"] == "pi"
+    assert executor._prefer_fast_record_model is False
+    assert executor._turn_record_confirmation_policy_active is authorized
+    if authorized:
+        assert len(dispatched) == 1
+        # The gateway strips writable confirmation flags; its server snapshot,
+        # not those flags, authorizes the exact current-turn intake payload.
+        assert executor._agent_kernel_snapshot.intent.is_write
+        assert dispatched[0].arguments["data"]["supplement_name"] == "红景天"
+        assert dispatched[0].arguments["data"]["dosage"] == "2粒"
+        assert dispatched[0].arguments.get("_fast_record_requires_confirmation") is not True
+        assert len(done["write_receipts"]) == 1
+        assert done["completion_status"] == "complete"
+    else:
+        assert dispatched == []
+        assert not done.get("write_receipts")
+        assert not _claims_unverified_write_success(_tokens(events))
 
 
 # ── Test 1: 旗舰复现 — 分析问句 + 只读工具(query + manage-list) → 绝不谎报写入 ──
@@ -385,8 +455,15 @@ async def test_rhodiola_intake_replaces_conflicting_model_write_with_supplement(
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
+    rounds = 0
 
     async def fake_call_llm_stream(messages, tools):  # noqa: ARG001
+        nonlocal rounds
+        rounds += 1
+        if rounds > 1:
+            yield {"type": "content", "text": "已记录红景天2粒。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+            return
         yield {
             "type": "tool_calls",
             "tool_calls": [
@@ -1194,11 +1271,16 @@ async def test_ambiguous_partial_diet_correction_never_claims_an_update(
     assert not _claims_unverified_write_success(reply)
     assert "没有" in reply
     executor._api_get_json.assert_not_awaited()
-    assert events[-1]["data"]["completion_status"] == "complete"
+    assert events[-1]["data"]["generation_status"] == "complete"
+    assert events[-1]["data"]["completion_status"] == "error"
     assert events[-1]["data"]["turn_outcome"]["status"] == "failed"
     assert events[-1]["data"]["turn_outcome"]["category"] == "action_not_executed"
     assert events[-1]["data"]["turn_outcome"]["reason_code"] == "mutation_without_tool"
     assert not events[-1]["data"].get("write_receipts")
+    saved = db.get(AgentMessage, events[-1]["data"]["message_id"])
+    assert saved.meta["generation_status"] == "complete"
+    assert saved.meta["completion_status"] == "error"
+    assert saved.meta["turn_outcome"] == events[-1]["data"]["turn_outcome"]
 
 
 async def test_bare_clinician_report_is_understood_without_write_or_retry(

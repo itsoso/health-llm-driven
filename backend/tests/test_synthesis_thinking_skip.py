@@ -48,8 +48,10 @@ class TestSynthesisThinkingSkip:
 
 
 class TestFastEligibleClassificationForThinkingSkip:
-    def test_list_and_lookup_intents_are_simple(self):
-        assert _is_fast_eligible_turn("列出我正在吃的胃药", has_images=False, has_file=False) is True
+    def test_medication_lookup_keeps_clinical_quality_floor(self):
+        assert _is_fast_eligible_turn("列出我正在吃的胃药", has_images=False, has_file=False) is False
+
+    def test_nonclinical_lookup_remains_simple(self):
         assert _is_fast_eligible_turn("显示我的血压记录", has_images=False, has_file=False) is True
 
     def test_analysis_intents_are_not_simple(self):

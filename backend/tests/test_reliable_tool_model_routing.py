@@ -79,8 +79,9 @@ def test_fast_eligible_excludes_compound_write_and_analysis():
 
 
 def test_not_performed_message_is_honest():
-    # 破坏性/同步 0 工具执行的兜底文案:不谎报已删/已改/已同步 + 明确数据无改动
+    # 没有完成确认时不谎报成功，也不把缺少回执当作全局数据未变化的证明。
     msg = _destructive_or_sync_not_performed_message("删除早餐 1")
-    assert "没有任何改动" in msg
+    assert "没有取得" in msg and "完成确认" in msg
+    assert "没有任何改动" not in msg
     for forbidden in ("已删除", "已删", "已修改", "已改", "已同步", "已经删除", "删除成功", "同步成功"):
         assert forbidden not in msg

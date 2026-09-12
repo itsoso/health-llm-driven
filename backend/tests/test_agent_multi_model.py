@@ -860,11 +860,18 @@ async def test_multi_model_checkpoints_all_planned_writes_before_dispatch(
 
     async def fake_execute_tool(name, args, token):
         nonlocal checked
+        payload = json.loads(args)
+        if payload.get("operation") == "list":
+            return json.dumps([
+                {"id": record_id, "user_id": user.id, "food_name": "test meal"}
+                for record_id in (1201, 1202)
+            ])
+        assert payload["operation"] == "delete"
         if not checked:
             db.expire_all()
             user_message = db.query(AgentMessage).filter(
                 AgentMessage.role == "user",
-                AgentMessage.content == "多模型删除两条记录",
+                AgentMessage.content == "删除饮食记录1201和1202",
             ).one()
             operations = user_message.meta["write_operations"]
             assert len(operations) == 2
@@ -880,7 +887,18 @@ async def test_multi_model_checkpoints_all_planned_writes_before_dispatch(
             "resource_type": "diet_record",
         })
 
-    monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
+    # Destructive requests use the ordinary reliable Pi route even when panel
+    # mode was requested; its complete write plan must precede first dispatch.
+    provider_rounds = 0
+    async def fake_stream(messages, tools):
+        nonlocal provider_rounds
+        provider_rounds += 1
+        if provider_rounds > 2:
+            raise RuntimeError("test stops after proving the plan checkpoint")
+        response = await fake_llm_call(messages, tools)
+        yield {"type": "tool_calls", "tool_calls": response["tool_calls"]}
+        yield {"type": "finish", "finish_reason": "tool_calls"}
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
     monkeypatch.setattr(
         "app.services.llm.factory.create_provider_for_model_id",
@@ -893,7 +911,7 @@ async def test_multi_model_checkpoints_all_planned_writes_before_dispatch(
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="多模型删除两条记录",
+            message="删除饮食记录1201和1202",
             user_auth_token="test-token",
             extra_context='{"multi_model": true}',
             client_turn_id="turn-multi-planned-writes",
