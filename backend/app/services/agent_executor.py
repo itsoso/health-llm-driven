@@ -64,7 +64,11 @@ from app.services.agent_turn_recovery import (
     should_buffer_recovery_response,
     should_retry_tool_failure,
 )
-from app.services.agent_turn_outcome import classify_agent_turn_outcome
+from app.services.agent_turn_outcome import classify_agent_turn_outcome, agent_completion_metadata
+from app.services.agent_daily_read_execution import (
+    planned_daily_calls, daily_read_prompt, daily_result_goal, daily_goal_outcomes,
+)
+from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan
 from app.services.agent_output_quality import (
     clarification_reply,
     enforce_agent_output_quality,
@@ -3233,6 +3237,11 @@ def _diet_correction_unresolved_message(reason: str) -> str:
             "我无法确认这个食用比例，因此没有修改。"
             "请用 1/2 这类大于 0 且不超过 1 的比例重试。"
         )
+    if reason == "portion_scope_unclear":
+        return (
+            "本次没有修改。这个比例本身有效，但还不能确认它对应整餐还是其中一种食物。"
+            "请说明要调整哪一餐，以及该比例是否相对于原记录的整餐。"
+        )
     if reason == "ambiguous_target":
         return (
             "我找到多条符合日期和餐次的饮食记录，暂时没有修改。"
@@ -5797,15 +5806,18 @@ def _record_intent_needs_detail_message(record_text: str) -> str:
     return f"我看你想记一条,但还没记下来 —— 你想记什么、值是多少?{hint}"
 
 
-def _destructive_or_sync_not_performed_message(message: str) -> str:
-    """破坏性(删/改/撤销)或同步意图被路由但 0 工具执行 = 动作**未执行**。
+def _garmin_sync_queued_message() -> str:
+    return ("已提交 Garmin 后台同步任务。数据是否已更新尚未确认，"
+            "请稍后到「设置 → 设备」查看同步状态。")
 
-    honesty(与 record 版同源、加层不减层):破坏性/同步意图从 fast 路径排除后(留强模型),
-    若强模型这一轮既没调起对应工具、又没被写回执诚实闸接住(0 工具 = 从未尝试),必须如实
-    说"没执行成功、数据无改动",绝不谎报已删/已改/已同步。写回执诚实闸只管**尝试过**的写
-    (count≥1);这条补上**从未尝试**(count==0)的破坏性/同步意图缺口。"""
+
+def _destructive_or_sync_not_performed_message(message: str) -> str:
+    """Report missing action confirmation without inventing a data-state claim."""
+    if classify_agent_utterance(message or "").operation == "sync":
+        return ("这次没有取得同步任务已提交的确认，也没有确认数据已更新。"
+                "已有记录不能证明本次同步成功，请先到「设置 → 设备」查看同步状态。")
     return (
-        "这次我没有执行成功 —— 没有调起对应的删除/修改/同步动作,你的数据没有任何改动。"
+        "这次没有取得所请求修改的完成确认，请先核对记录状态。"
         "请再说清楚一点(比如要删哪一条、改成什么),我重试。"
     )
 
@@ -6117,7 +6129,7 @@ _DIET_FACTUAL_CORRECTION_SHAPE_RE = re.compile(
     rf"{_DIET_FACTUAL_MEAL_PATTERN}\s*"
     rf"{_DIET_FACTUAL_CALORIE_DESCRIPTOR_PATTERN}\s*"
     rf"(?:{_DIET_FACTUAL_SHORTFALL_PATTERN}\s*[,，]\s*)?"
-    r"(?:实际(?:上)?(?:我)?\s*只吃(?:了)?|只吃了|只有吃了)\s*"
+    r"(?:实际(?:上)?(?:我)?\s*只吃(?:了)?|(?:我\s*)?(?:只)?吃了|只有吃了)\s*"
     rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
     rf"(?:{_DIET_FACTUAL_WRITE_SUFFIX_PATTERN})?\s*[。！!]*$",
     re.I,
@@ -10724,6 +10736,18 @@ def _is_fast_eligible_turn(
     intent = classify_agent_utterance(message)
     if intent.primary == "advice":
         return False
+    # A question can request a personalized intervention without containing
+    # the literal word 'advice'. Reuse the clinical task classifier.
+    if intent.primary != "write":
+        try:
+            from app.services.llm.task_routing import classify_answer_task_tier
+
+            high_risk = classify_answer_task_tier(message, has_attachments=False) == "high_stakes"
+        except Exception as exc:  # unavailable risk classification cannot authorize speed optimization
+            logger.warning("[agent_executor] risk classification unavailable; keep quality route: %s", type(exc).__name__)
+            return False
+        if high_risk:
+            return False
     # 破坏性/同步意图 → 必须强模型做工具决策(弱 fast 不可靠),整轮不降 fast。
     if intent.requires_reliable_tool_model:
         return False
@@ -11528,6 +11552,10 @@ class AgentExecutor:
         self._turn_recovery_wearable_snapshot: Any = _TURN_CARD_UNSET
         self._turn_channel: Optional[str] = None
         self._current_turn_user_message = ""
+        self._turn_daily_read_plan = None
+        self._turn_daily_read_results: dict[str, dict[str, str]] = {}
+        self._turn_sync_queued = False
+        self._turn_sync_reply = None
         self._current_turn_recent_messages: list[dict] = []
         self._turn_contextual_supplement_names: tuple[str, ...] = ()
         self._current_turn_source_message_id: Optional[int] = None
@@ -11673,6 +11701,13 @@ class AgentExecutor:
         self._agent_kernel_turn_finished = False
         self._agent_kernel_last_decision = None
         self._agent_kernel_capability_block_reasons = []
+        self._turn_daily_read_plan = resolve_daily_read_plan(
+            message or "", self._agent_kernel_snapshot.context.current_time,
+            timezone_name=self._agent_kernel_snapshot.context.timezone,
+        )
+        self._turn_daily_read_results = {}
+        self._turn_sync_queued = False
+        self._turn_sync_reply = None
         self._agent_kernel_blocked_request_cache = {}
         self._agent_kernel_recovered_capability_block_reasons = []
         self._agent_kernel_unresolved_manage_mismatch_targets = set()
@@ -11902,13 +11937,21 @@ class AgentExecutor:
         if bus is None:
             return result
         parsed_args = args if isinstance(args, dict) else {}
-        self._capture_owner_scoped_manage_list_reference(
-            tool_name,
-            parsed_args,
-            result,
-        )
         decision = self._agent_kernel_last_decision
         result_text = str(result or "").lstrip()
+        if self._turn_daily_read_plan is not None:
+            read_goal = daily_result_goal(self._turn_daily_read_plan, decision, result)
+            if read_goal is not None:
+                self._turn_daily_read_results[read_goal['goal_id']] = read_goal
+                if read_goal['reason_code'] in {'query_result_scope_conflict', 'query_result_truncated'}:
+                    result = json.dumps({
+                        'status': 'failed', 'error_code': read_goal['reason_code'],
+                        'message': ('本次记录达到查询上限，无法确认已返回全部记录。'
+                                    if read_goal['reason_code'] == 'query_result_truncated' else
+                                    '查询结果与请求的日期或餐次不一致，本轮没有采用这些数据。'),
+                    }, ensure_ascii=False)
+                    result_text = result
+        self._capture_owner_scoped_manage_list_reference(tool_name, parsed_args, result)
         snapshot = self._agent_kernel_snapshot
         policy_blocked = bool(
             decision is not None
@@ -12127,18 +12170,13 @@ class AgentExecutor:
     ) -> None:
         """Classify answer difficulty and optionally select its quality model.
 
-        ``shadow`` computes the exact same decision but never mutates the
-        provider. ``on`` fills an otherwise-unselected answer model and keeps
-        explicit quality-model choices, but a high-stakes turn overrides any
-        fast answer model to enforce the medical quality floor.
+        The high-stakes quality floor applies in every routing mode. For
+        other turns, shadow observes only and on may select an unset model.
         """
         self._staged_response_mode = _staged_response_mode()
         self._staged_answer_task_tier = None
         self._staged_answer_model_selected = False
         self._staged_answer_would_model_id = None
-        if self._staged_response_mode == "off":
-            return
-
         tier = preclassified_tier
         classifier_failed = preclassification_failed
         try:
@@ -12170,12 +12208,14 @@ class AgentExecutor:
                 )
         if tier is None:
             tier = "high_stakes"
+        if self._staged_response_mode == "off" and tier != "high_stakes":
+            return
         self._staged_answer_task_tier = tier
 
         # Revoke a fast/unknown explicit model *before* model picking.  Picker,
         # classifier, or registry failures must therefore fall back to the
         # default quality provider instead of preserving a weak model.
-        if self._staged_response_mode == "on" and tier == "high_stakes":
+        if tier == "high_stakes":
             current_model = None
             model_lookup_failed = False
             if self._request_model_id:
@@ -12231,7 +12271,7 @@ class AgentExecutor:
                 )
         self._staged_answer_would_model_id = selected
         if (
-            self._staged_response_mode == "on"
+            (self._staged_response_mode == "on" or tier == "high_stakes")
             and self._request_model_id is None
             and selected
         ):
@@ -12487,9 +12527,13 @@ class AgentExecutor:
             return BALANCED_ANSWER_MAX_TOKENS
         return ANSWER_MAX_TOKENS
 
+    def _requires_quality_floor(self) -> bool:
+        return (getattr(self, "_recovery_data_guard_requires_non_fast_model", False)
+                or getattr(self, "_staged_answer_task_tier", None) == "high_stakes")
+
     def _assert_recovery_quality_model(self, model_id: Optional[str]) -> None:
         """Block direct/alternate routes that bypass the non-fast quality floor."""
-        if not self._recovery_data_guard_requires_non_fast_model:
+        if not self._requires_quality_floor():
             return
         from app.services.llm.model_registry import MODELS
 
@@ -13124,7 +13168,9 @@ class AgentExecutor:
             f"{multi_model_context_text}\n"
             f"[用户消息]\n{message}"
         )
-        tools = get_health_tools()
+        from app.services.agent_input_tool_scope import scope_tools_for_analyzed_material
+
+        tools = scope_tools_for_analyzed_material(get_health_tools(), message)
         full_reply = ""
         completion_status = "complete"
         panel_quality_flags: set[str] = set()
@@ -14035,7 +14081,7 @@ class AgentExecutor:
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"kernel_trace": kernel_trace} if kernel_trace else {}),
                 "write_receipts": write_receipts,
-                "completion_status": completion_status,
+                **agent_completion_metadata(completion_status, turn_outcome),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             }
@@ -14064,7 +14110,7 @@ class AgentExecutor:
             **({"citation_anchor": citation_anchor} if citation_anchor else {}),
             **({"kernel_trace": kernel_trace} if kernel_trace else {}),
             "write_receipts": write_receipts,
-            "completion_status": completion_status,
+            **agent_completion_metadata(completion_status, turn_outcome),
             "client_turn_finalized": True,
             **({"client_turn_id": client_turn_id} if client_turn_id else {}),
         }}
@@ -14907,6 +14953,8 @@ class AgentExecutor:
         if (
             _extract_multi_model_flag(extra_context)
             and not read_only_tools
+            and self._turn_daily_read_plan is None
+            and not _has_destructive_or_sync_intent(message or "")
             and not _is_recovery_exercise_advice_message(message)
             and not health_advice_buffered
             and not images
@@ -15462,6 +15510,8 @@ class AgentExecutor:
         for source_label in _source_labels_from_system_prompt(system_content):
             if source_label not in sources_used:
                 sources_used.append(source_label)
+        if self._turn_daily_read_plan is not None:
+            system_content += daily_read_prompt(self._turn_daily_read_plan)
         pre_stages["system_prompt_ms"] = _pre_stage(_t_stage)
         if self._fast_route_simple_turn:
             # 可观测性: 记录 lite prompt 的实际字符数, 用来看 prefill 削减 (对比 full)。
@@ -15823,6 +15873,10 @@ class AgentExecutor:
                 not in blocked_attachment_write_tools
             ]
 
+        from app.services.agent_input_tool_scope import scope_tools_for_analyzed_material
+
+        tools = scope_tools_for_analyzed_material(tools, message)
+
         # 5. Agent 循环
         full_reply = ""
         unrecovered_output_quality = None
@@ -16172,11 +16226,11 @@ class AgentExecutor:
                 result_for_record_card = result
                 executed_decision = self._agent_kernel_last_decision
                 if (
-                    func_name == "health_query"
-                    and executed_decision is not None
+                    executed_decision is not None
                     and executed_decision.action == "allow"
-                    and executed_decision.normalized_tool_name == "health_query"
+                    and executed_decision.normalized_tool_name in {"health_query", "health_manage"}
                 ):
+                    func_name = executed_decision.normalized_tool_name
                     parsed_tool_args = dict(executed_decision.normalized_args)
             if _is_orch_tool:
                 try:
@@ -16347,13 +16401,19 @@ class AgentExecutor:
                 "content": tool_content,
             })
 
-            # GenUI metric_table (rank1): 记下只读数据查询工具的
-            # (name, args, result), 合成后确定性建表/卡 (零 LLM)。声明
-            # genui-table-v1 或 genui-diet-summary-v1 任一即追踪 (无 cap → 零开销)。
-            if func_name in _GENUI_TABLE_TOOLS and not replayed_read:
+            # Evidence collection is independent of visual card support.
+            # Diet list reads use a different endpoint but the same date/meal
+            # evidence contract; update/delete results must not enter it.
+            evidence_read = func_name in _GENUI_TABLE_TOOLS or (
+                func_name == "health_manage"
+                and parsed_tool_args.get("record_type") == "diet"
+                and parsed_tool_args.get("operation") == "list"
+            )
+            if evidence_read and not replayed_read:
                 answer_evidence_tool_calls.append(
                     (func_name, parsed_tool_args, result)
                 )
+            if func_name in _GENUI_TABLE_TOOLS and not replayed_read:
                 if (
                     genui_table_on
                     or genui_diet_summary_on
@@ -16864,7 +16924,10 @@ class AgentExecutor:
                                     finish_reason = "stop"
                             if proposed_calls:
                                 self._record_tool_model_name(self._last_provider_model_name)
-                            if self._tool_round_fast_routed and not proposed_calls and candidate.strip():
+                            if (
+                                self._tool_round_fast_routed and not proposed_calls and candidate.strip()
+                                and not (round_idx == 0 and self._turn_daily_read_plan is not None and round_tools)
+                            ):
                                 # Tool-routing models have no authority to write
                                 # the final health answer. This bounded provider
                                 # handoff stays inside one Pi model request; the
@@ -16888,6 +16951,16 @@ class AgentExecutor:
                             llm_rounds_ms.append(elapsed)
                             rounds.append({"llm_gen_ms": elapsed, "tool_exec_ms": 0, "tools": []})
                             model_name = self._last_provider_model_name or model_name
+                            if (
+                                round_idx == 0 and self._turn_daily_read_plan is not None
+                                and round_tools and not health_advice_buffered
+                            ):
+                                # A server-owned read plan is independent of
+                                # the model's spelling, tool choice or prose.
+                                # Pi still validates and dispatches every call.
+                                proposed_calls = planned_daily_calls(self._turn_daily_read_plan)
+                                candidate = ""
+                                finish_reason = "tool_calls"
                             if (health_advice_buffered or not round_tools) and proposed_calls:
                                 # Clinical evidence is sealed before synthesis.
                                 # Hallucinated tool calls never widen that seal.
@@ -17183,7 +17256,9 @@ class AgentExecutor:
             and not record_intent_no_tool
             and not deterministic_diet_correction_terminal
             and _has_destructive_or_sync_intent(message or "")
-            and tool_executed_count == 0
+            and (tool_executed_count == 0 or (
+                completion_intent.operation == "sync" and not self._turn_sync_queued
+            ))
         )
         if record_intent_no_tool:
             fail_closed_reply = _record_intent_needs_detail_message(message)
@@ -17197,7 +17272,7 @@ class AgentExecutor:
                 len(message or ""),
             )
         elif destructive_or_sync_no_tool:
-            fail_closed_reply = _destructive_or_sync_not_performed_message(message)
+            fail_closed_reply = self._turn_sync_reply or _destructive_or_sync_not_performed_message(message)
             if full_reply.strip() != fail_closed_reply:
                 full_reply = fail_closed_reply
             logger.warning(
@@ -17207,6 +17282,8 @@ class AgentExecutor:
                 user_id,
                 len(message or ""),
             )
+        if completion_intent.operation == "sync" and self._turn_sync_queued:
+            full_reply = _garmin_sync_queued_message()
         medical_boundary = enforce_medical_evidence_boundaries(
             full_reply,
             model_generated=not (
@@ -17565,6 +17642,7 @@ class AgentExecutor:
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
+            goal_outcomes=daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results),
             capability_block_reasons=[
                 reason
                 for reason in self._agent_kernel_capability_block_reasons
@@ -17808,7 +17886,7 @@ class AgentExecutor:
                 "pending_write_intent_kinds": self._turn_pending_write_intent_kinds,
                 "cards": cards_for_persistence(response_cards),
                 "finish_reason": final_finish_reason,
-                "completion_status": completion_status,
+                **agent_completion_metadata(completion_status, turn_outcome),
                 "output_quality_flags": list(output_quality.flags),
                 "output_persisted_chars": output_quality.persisted_length,
                 "medical_boundary_flags": list(medical_boundary.violations),
@@ -17901,7 +17979,7 @@ class AgentExecutor:
                 "mode": "agent",
                 "cards": response_cards,
                 "finish_reason": final_finish_reason,
-                "completion_status": completion_status,
+                **agent_completion_metadata(completion_status, turn_outcome),
                 "output_quality_flags": list(output_quality.flags),
                 "output_persisted_chars": output_quality.persisted_length,
                 "record_intent_no_tool": record_intent_no_tool,
@@ -18750,7 +18828,7 @@ class AgentExecutor:
             "pending_write_intent_kinds": pending_kinds,
             "cards": cards_for_persistence(cards),
             "finish_reason": "stop" if completion_status == "complete" else "error",
-            "completion_status": completion_status,
+            **agent_completion_metadata(completion_status, turn_outcome),
             "record_intent_no_tool": False,
             "turn_outcome": turn_outcome,
             "mode": "medication_intake_batch",
@@ -19590,14 +19668,14 @@ class AgentExecutor:
                     self._request_model_id,
                     e,
                 )
-                if self._recovery_data_guard_requires_non_fast_model:
+                if self._requires_quality_floor():
                     raise RuntimeError(
                         "recovery quality provider unavailable"
                     ) from e
                 provider = None
 
         if request_model_dead:
-            if self._recovery_data_guard_requires_non_fast_model:
+            if self._requires_quality_floor():
                 raise RuntimeError("recovery quality provider unavailable")
             # 首选模型本回合已死: 记一条日志, 直接落到稳定回退 (工具轮走可靠工具模型)。
             logger.info(
@@ -19652,6 +19730,9 @@ class AgentExecutor:
             if gated is not None:
                 provider, effective_model_id = gated
 
+        self._assert_recovery_quality_model(
+            getattr(provider, "model", None) or getattr(provider, "default_model", None) or effective_model_id
+        )
         self._last_effective_model_id = effective_model_id
         return provider, pass_tools
 
@@ -19679,6 +19760,8 @@ class AgentExecutor:
         from app.config import settings
 
         if not getattr(settings, "task_tiered_routing", False):
+            return None
+        if getattr(self, "_staged_answer_task_tier", None) == "high_stakes":
             return None
         # 不叠加既有整轮快路由 (那两条已把含合成的整轮降 fast)。显式 UI 选模型不在此
         # 豁免 —— 只有下面 _turn_any_tool_executed 门放行的**首个工具决策轮**会被降 fast,
@@ -19852,6 +19935,8 @@ class AgentExecutor:
         始终 fail-open 到"有一个可用 provider": 可靠模型不可用 → 默认 tokenplan;
         默认 tokenplan 也建不了 → 全局单例 provider。任何一步都不把回合打死。
         """
+        if self._requires_quality_floor():
+            raise RuntimeError("quality provider unavailable; refusing unverified downgrade")
         from app.services.llm.factory import create_llm_provider, get_llm_provider
         from app.services.llm.pii_scrub import wrap_provider_pii_scrub
         from app.services.llm.usage_tracker import wrap_provider
@@ -20014,7 +20099,7 @@ class AgentExecutor:
             logger.warning(
                 "[agent_executor] 选定 provider chat() 失败,回退稳定 provider: %s", e
             )
-            if self._recovery_data_guard_requires_non_fast_model:
+            if self._requires_quality_floor():
                 raise RuntimeError("recovery quality provider unavailable") from e
             self._remember_dead_provider(tool_specific=bool(pass_tools))
             if pass_tools and self._request_model_id:
@@ -20114,7 +20199,7 @@ class AgentExecutor:
                 logger.warning(
                     "[agent_executor] 非流式桥 chat() 失败,回退稳定 provider: %s", e
                 )
-                if self._recovery_data_guard_requires_non_fast_model:
+                if self._requires_quality_floor():
                     raise RuntimeError("recovery quality provider unavailable") from e
                 self._remember_dead_provider(tool_specific=bool(pass_tools))
                 if pass_tools and self._request_model_id:
@@ -20157,7 +20242,7 @@ class AgentExecutor:
                 )
                 yield {"type": "finish", "finish_reason": "error"}
                 return
-            if self._recovery_data_guard_requires_non_fast_model:
+            if self._requires_quality_floor():
                 raise RuntimeError("recovery quality provider unavailable") from e
             # 流开始前/未发任何内容就报错 → 回退稳定 provider (F2: 带工具时经可靠工具模型)。
             logger.warning(
@@ -20255,6 +20340,8 @@ class AgentExecutor:
         OpenAIProvider._apply_thinking_controls 把 thinking_budget 折进 extra_body。
         fail-soft: 任何判定异常都不注入(=现状), 绝不断合成链路。
         """
+        if self._requires_quality_floor():
+            return
         try:
             from app.config import settings
 
@@ -20521,7 +20608,7 @@ class AgentExecutor:
         from app.services.llm.pii_scrub import wrap_provider_pii_scrub
         from app.services.llm.usage_tracker import wrap_provider
 
-        if self._recovery_data_guard_requires_non_fast_model:
+        if self._requires_quality_floor():
             from app.services.llm.factory import create_provider_for_model_id
             from app.services.llm.task_routing import pick_model_id_by_tier
 
@@ -21829,7 +21916,9 @@ class AgentExecutor:
         immediately with a deterministic no-write clarification so a model
         mistake cannot create a duplicate or edit an arbitrary meal.
         """
-        current_message = getattr(self, "_current_turn_user_message", "")
+        from app.services.agent_kernel.health_semantics import active_health_instruction_text
+
+        current_message = active_health_instruction_text(getattr(self, "_current_turn_user_message", ""))
         correction = _parse_explicit_diet_correction(
             current_message,
             reference_now=self._agent_kernel_reference_now(),
@@ -21858,6 +21947,9 @@ class AgentExecutor:
                             )
                             else "invalid_fraction"
                         )
+                        fraction_tokens = list(_DIET_FRACTION_TOKEN_RE.finditer(current_message))
+                        if reason != "cancelled" and len(fraction_tokens) == 1 and _parse_meal_fraction_token(fraction_tokens[0].group()) is not None:
+                            reason = "portion_scope_unclear"
                         self._turn_diet_correction_unresolved_reason = reason
                         logger.warning(
                             "[health_manage] unsafe diet correction rejected "
@@ -22139,6 +22231,10 @@ class AgentExecutor:
             and is_terminal_policy_reason(decision.reason)
         ):
             self._agent_kernel_blocked_request_cache[request_key] = (decision, result)
+        if decision is not None and decision.action == "allow":
+            return self._agent_kernel_record_tool_result(
+                decision.normalized_tool_name, decision.normalized_args, result,
+            )
         return self._agent_kernel_record_tool_result(tool_name, parsed_args, result)
 
     async def _execute_recipe_step(
@@ -23022,10 +23118,18 @@ class AgentExecutor:
                 parse_query_window, read_calendar_health_query, resolve_calendar_query_window,
             )
             snapshot = self._ensure_agent_kernel_turn()
-            expected = resolve_calendar_query_window(
-                snapshot.envelope.text, snapshot.context.current_time, dim,
+            daily_plan = resolve_daily_read_plan(
+                snapshot.envelope.text, snapshot.context.current_time,
                 timezone_name=snapshot.context.timezone,
             )
+            if daily_plan is not None:
+                query = next((q for q in daily_plan.queries() if q["dimension"] == dim), None)
+                expected = {key: value for key, value in query.items() if key != "dimension"} if query else None
+            else:
+                expected = resolve_calendar_query_window(
+                    snapshot.envelope.text, snapshot.context.current_time, dim,
+                    timezone_name=snapshot.context.timezone,
+                )
             try:
                 window = parse_query_window(args)
             except ValueError as exc:
@@ -24476,7 +24580,8 @@ class AgentExecutor:
                     "停留几秒,它会自动把最新数据上传上来;如果还没连接,先到「设置 → 设备」"
                     "连接 Apple 健康。传好之后我就能用这些数据帮你查看和分析了。"
                 )
-            return await self._trigger_garmin_sync()
+            self._turn_sync_reply = await self._trigger_garmin_sync()
+            return self._turn_sync_reply
 
         record_map = {
             "weight": ("/weight/records", "POST", data),
@@ -24604,14 +24709,14 @@ class AgentExecutor:
         try:
             from app.tasks.garmin_sync import sync_user_garmin_data
             sync_user_garmin_data.delay(user_id, days=1, notify_on_failure=True)
+            self._turn_sync_queued = True
         except Exception as e:  # 入队失败(如 broker 不可用)也 fail-loud,不谎报成功
             logger.warning(f"[garmin_sync] enqueue 失败 user={user_id}: {e}")
-            return ("同步服务暂时不可用,没能发起后台同步。"
-                    "请稍后重试,或到「设置 → 设备」手动同步。")
+            return ("同步服务暂时不可用，没有取得任务已提交的确认。"
+                    "请先到「设置 → 设备」查看同步状态，避免重复提交。")
 
         logger.info(f"[garmin_sync] enqueued background sync user={user_id}")
-        return ("已经在后台开始同步你的 Garmin 数据了,通常一分钟内完成。"
-                "同步好之后我会用最新数据刷新今日概览;万一没成功,我也会告诉你。")
+        return _garmin_sync_queued_message()
 
     async def _exec_health_manage(
         self, base: str, headers: dict, args: dict

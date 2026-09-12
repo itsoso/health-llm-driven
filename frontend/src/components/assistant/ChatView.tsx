@@ -447,6 +447,7 @@ function areMessageRowEqual(prev: MessageRowProps, next: MessageRowProps): boole
     a.sources_used === b.sources_used &&
     a.tools_used === b.tools_used &&
     a.completion_status === b.completion_status &&
+    a.turn_outcome === b.turn_outcome &&
     prev.done === next.done &&
     prev.copied === next.copied &&
     prev.canSelectForShare === next.canSelectForShare &&
@@ -550,6 +551,7 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
         sourcesUsed: msg.sources_used,
         toolsUsed: msg.tools_used,
         completionStatus: msg.completion_status,
+        terminalStatus: msg.turn_outcome?.status,
         perf: msg.perf,
       }),
     [
@@ -561,6 +563,7 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
       msg.sources_used,
       msg.tools_used,
       msg.completion_status,
+      msg.turn_outcome?.status,
       msg.perf,
     ],
   );

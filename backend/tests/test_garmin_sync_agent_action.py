@@ -103,6 +103,7 @@ async def test_happy_path_enqueues_and_acks(db, monkeypatch):
     out = await _executor(db)._trigger_garmin_sync()
     # 乐观 ack:告诉用户后台在跑、会刷新、失败会告知(不谎报"已完成")
     assert "后台" in out
+    assert "尚未确认" in out
     assert "完成" not in out.split("。")[0] or "通常" in out  # 不是"已完成"式谎报
     # 恰好入队一次,带 notify_on_failure=True(fail-loud 前提)
     assert len(calls) == 1

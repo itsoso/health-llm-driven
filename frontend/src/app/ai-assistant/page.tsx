@@ -524,6 +524,8 @@ function AIAssistantInner() {
             // 2026-05-14 #4: 可解释性 sources
             sources_used: Array.isArray(data.sources_used) ? data.sources_used : undefined,
             tools_used: Array.isArray(data.tools_used) ? data.tools_used : undefined,
+            turn_outcome: data.turn_outcome && typeof data.turn_outcome === 'object' ? data.turn_outcome : undefined,
+            generation_status: data.generation_status,
             completion_status: typeof data.completion_status === 'string'
               ? data.completion_status
               : undefined,
@@ -1164,6 +1166,8 @@ function restoreWebConversationMessages(rawMessages: any[]): ChatMessage[] {
       sources_used: meta.sources_used,
       tools_used: meta.tools_used,
       completion_status: meta.completion_status,
+      generation_status: meta.generation_status,
+      turn_outcome: meta.turn_outcome,
       ...(serverCard ? {
         card_type: serverCard.type,
         card_data: serverCard.data,

@@ -661,7 +661,7 @@ async def test_staged_answer_routes_quality_model_by_difficulty(
     done = events[-1]["data"]
 
     assert picked == [expected_tier]
-    assert created == [expected_model]
+    assert created and set(created) == {expected_model}
     assert executor._request_model_id == expected_model
     assert done["answer_task_tier"] == expected_tier
     assert done["staged_response_mode"] == "on"
@@ -971,7 +971,7 @@ async def test_staged_mode_keeps_low_risk_record_fast_path(
 
 
 @pytest.mark.asyncio
-async def test_staged_answer_shadow_observes_without_changing_model(
+async def test_staged_answer_shadow_keeps_high_risk_quality_floor(
     db,
     auth_user_and_headers,
     monkeypatch,
@@ -1002,8 +1002,8 @@ async def test_staged_answer_shadow_observes_without_changing_model(
     done = events[-1]["data"]
 
     assert picked == ["high_stakes"]
-    assert executor._request_model_id is None
-    assert done["model"] == "qwen3.7-plus"
+    assert executor._request_model_id == "qwen3.7-max"
+    assert done["model"] == "qwen3.7-max"
     assert done["answer_task_tier"] == "high_stakes"
     assert done["staged_response_mode"] == "shadow"
 

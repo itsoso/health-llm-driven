@@ -996,6 +996,8 @@ export default function ChatScreen() {
         label: activeTurn.label || (
           activeTurnHasErrorTone
             ? '上一轮未完成，内容已保留'
+            : activeTurn.phase === 'partial'
+              ? '部分完成，请查看未完成的事项'
             : activeTurn.phase === 'waiting_for_user'
               ? '等待你确认或补充信息'
               : '小巴正在处理…'

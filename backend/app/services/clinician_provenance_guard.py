@@ -2000,7 +2000,18 @@ def _ambiguous_candidate(
 
 
 def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
-    """Classify clinician provenance without authorizing general actions."""
+    """Classify active clinician provenance without authorizing general actions.
+
+    Resolve material boundaries before constructing spans. The decision's raw
+    text and all offsets refer to this same active instruction, so downstream
+    feedback binding cannot slice a shorter projection against the full input.
+    The caller retains the original message separately for the conversation.
+    """
+    # Lazy import avoids the kernel -> utterance classifier -> clinician guard
+    # module initialization cycle. Every caller gets the same authority scope.
+    from app.services.agent_kernel.health_semantics import active_health_instruction_text
+
+    raw = active_health_instruction_text(raw)
 
     segments = _segments(raw)
     candidates = tuple(

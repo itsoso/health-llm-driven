@@ -2782,7 +2782,7 @@ describe('useChatEngine', () => {
     });
   });
 
-  it.each(['blocked', 'failed', 'reconciliation_required', 'waiting_for_user', 'refused'])('preserves %s outcome when recovering a complete response', async (status) => {
+  it.each(['partial', 'blocked', 'failed', 'reconciliation_required', 'waiting_for_user', 'refused'])('preserves %s outcome when recovering a complete response', async (status) => {
     mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '323';
     mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
       version: 1, phase: 'interrupted', turnId: 'turn-blocked-recovery',

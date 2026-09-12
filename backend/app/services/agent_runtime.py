@@ -89,6 +89,9 @@ _KNOWN_ERROR_CODES = frozenset(
         "capacity_unavailable",
         "completed",
         "completion_error",
+        "partial_goal_completion",
+        "missing_goal_evidence",
+        "goal_not_completed",
         "confirmation_required",
         "empty_final_text",
         "executor_exception",
@@ -329,7 +332,7 @@ def runtime_outcome_from_done(
         return "waiting_for_user", reason_code or "clarification_required", False
     if terminal_status == "reconciliation_required":
         return "reconciliation_required", reason_code or "missing_receipt", False
-    if terminal_status in {"blocked", "failed", "refused"}:
+    if terminal_status in {"blocked", "failed", "refused", "partial"}:
         return "failed", reason_code or "completion_error", bool(outcome.get("retryable"))
     if terminal_status == "complete":
         return "succeeded", None, False

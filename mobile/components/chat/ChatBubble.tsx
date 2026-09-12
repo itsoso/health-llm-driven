@@ -243,6 +243,7 @@ function ChatBubbleInner({
       sourcesUsed: item.sourcesUsed,
       toolsUsed: item.toolsUsed,
       completionStatus: item.completionStatus,
+      terminalStatus: item.terminalStatus,
       perf: item.perf,
     }),
     [
@@ -254,6 +255,7 @@ function ChatBubbleInner({
       item.sourcesUsed,
       item.toolsUsed,
       item.completionStatus,
+      item.terminalStatus,
       item.perf,
     ],
   );

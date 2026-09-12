@@ -32,7 +32,7 @@ KB_SENTINEL = "<<KB_LITE_TEST_SENTINEL>>"
 
 # advice/分析 回合: _prefer_fast_record_model=False 且 _is_fast_eligible_turn=False
 # → 全量栈回合, 其**首个工具决策轮**会被 fast-route (若 flag 开)。
-ADVICE_MSG = "综合分析我最近的睡眠和肝功能趋势，我该怎么调整"
+ADVICE_MSG = "分析我的运动趋势"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -444,7 +444,7 @@ async def test_followup_advice_fast_round_carries_prior_assistant(db, monkeypatc
     monkeypatch.setattr(executor, "_execute_tool", _tool_result)
 
     await _run(
-        executor, "再来一杯，帮我综合分析今天咖啡因会不会超标", user.id,
+        executor, "分析我的睡眠趋势", user.id,
         conversation_id=conv.id,
     )
 

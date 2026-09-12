@@ -59,6 +59,7 @@ export interface AgentTransparencyInput {
   sourcesUsed?: string[] | null;
   toolsUsed?: string[] | null;
   completionStatus?: string | null;
+  terminalStatus?: string | null;
   perf?: AgentPerfProfileLike | null;
   // 2026-07-06: 模型路由透明化 — 后端 done.fallback_reasons / meta.fallback_reasons
   fallbackReasons?: string[] | null;
@@ -285,6 +286,12 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
     || positive(input.elapsedMs);
   const roundsCount = positive(input.llmRounds) || positive(input.perf?.rounds?.length);
   const headlineParts: string[] = [];
+  const outcomeLabels: Record<string, string> = {
+    partial: '部分完成', waiting_for_user: '待确认', blocked: '未执行',
+    failed: '执行失败', refused: '未完成', reconciliation_required: '状态待核对',
+  };
+  const outcomeLabel = outcomeLabels[input.terminalStatus || ''];
+  if (outcomeLabel) headlineParts.push(outcomeLabel);
   const model = String(input.model || '').trim();
   const planCost = formatCostCny(input.llmUsage?.tokenplan_cost_cny);
   if (planCost) headlineParts.push(`约${planCost}`);
@@ -294,8 +301,8 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
 
   const sources = uniqueClean(input.sourcesUsed);
   const tools = uniqueClean(input.toolsUsed);
-  const toolLabel = input.completionStatus != null
-    && input.completionStatus !== 'complete'
+  const toolLabel = Boolean(outcomeLabel) || (input.completionStatus != null
+    && input.completionStatus !== 'complete')
     ? '尝试调用 Skill'
     : '调用 Skill';
   // 去重在映射之后:不同 reason 可能映射同一中文标签(如 stream/chat failed)。

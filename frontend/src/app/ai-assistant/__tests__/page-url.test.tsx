@@ -661,3 +661,31 @@ describe('ai-assistant URL state', () => {
     expect(screen.queryByRole('list', { name: '逐项写入回执' })).not.toBeInTheDocument();
   });
 });
+
+
+it('restores authoritative partial outcome from persisted history', async () => {
+  searchParamsGet.mockReturnValue('42');
+  getConversation.mockResolvedValue({ data: { messages: [{
+    id: 901, role: 'assistant', content: '已查到睡眠，血氧本次未完成。',
+    created_at: '2026-09-12T10:00:00Z',
+    meta: { completion_status: 'complete', turn_outcome: { status: 'partial' } },
+  }] } });
+  render(<AIAssistantPage />);
+  expect(await screen.findByText('透视 · 部分完成')).toBeInTheDocument();
+});
+
+it('shows rejected execution even when SSE generation completed normally', async () => {
+  searchParamsGet.mockReturnValue(null);
+  streamMessage.mockImplementationOnce(async function* () {
+    yield { event: 'token', data: { content: '这次没有完成同步。' } };
+    yield { event: 'done', data: {
+      conversation_id: 88, message_id: 902, completion_status: 'complete',
+      turn_outcome: { status: 'failed', reason_code: 'action_not_executed' },
+    } };
+  });
+  render(<AIAssistantPage />);
+  const input = await screen.findByPlaceholderText(/发消息/);
+  fireEvent.change(input, { target: { value: '同步昨天的数据' } });
+  fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+  expect(await screen.findByText('透视 · 执行失败')).toBeInTheDocument();
+});

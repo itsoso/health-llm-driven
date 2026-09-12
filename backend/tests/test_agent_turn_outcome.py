@@ -267,3 +267,74 @@ def test_medical_hold_does_not_count_as_an_answered_advice_task():
     assert result['status'] == 'blocked'
     assert result['category'] == 'medical_evidence_required'
     assert result['retryable'] is False
+
+
+def test_partial_query_preserves_verified_goal_without_claiming_whole_task_success():
+    result = classify_agent_turn_outcome(
+        completion_status="complete", final_text="已查到睡眠，本次未查到血氧。",
+        capability_block_reasons=["semantics_unresolved"],
+        goal_outcomes=[
+            {"goal_id": "sleep", "kind": "query", "status": "verified", "evidence_kind": "read_result"},
+            {"goal_id": "oxygen", "kind": "query", "status": "rejected", "reason_code": "semantics_unresolved"},
+        ],
+    )
+    assert result["status"] == "partial"
+    assert result["reason_code"] == "partial_goal_completion"
+    assert result["retryable"] is False
+    assert [goal["status"] for goal in result["goals"]] == ["verified", "rejected"]
+
+
+def test_existing_read_result_cannot_verify_requested_sync():
+    result = classify_agent_turn_outcome(
+        completion_status="complete", final_text="系统里已经有昨天的数据。",
+        goal_outcomes=[
+            {"goal_id": "sync", "kind": "sync", "status": "verified", "evidence_kind": "read_result"},
+        ],
+    )
+    assert result["status"] == "failed"
+    assert result["reason_code"] == "missing_goal_evidence"
+
+
+def test_goal_confirmation_and_uncertainty_override_partial_success():
+    for pending, expected in [("waiting_for_user", "waiting_for_user"), ("reconciliation_required", "reconciliation_required")]:
+        result = classify_agent_turn_outcome(
+            completion_status="complete", final_text="查询完成，写入还需确认。",
+            goal_outcomes=[
+                {"goal_id": "sleep", "kind": "query", "status": "verified", "evidence_kind": "read_result"},
+                {"goal_id": "record", "kind": "write", "status": pending},
+            ],
+        )
+        assert result["status"] == expected
+        assert result["retryable"] is False
+
+
+def test_task_completion_metadata_preserves_generation_and_marks_failed_action():
+    from app.services.agent_turn_outcome import agent_completion_metadata
+
+    for status in ("failed", "blocked", "refused", "partial", "reconciliation_required"):
+        assert agent_completion_metadata("complete", {"status": status}) == {
+            "generation_status": "complete", "completion_status": "error",
+        }
+    assert agent_completion_metadata("complete", {"status": "waiting_for_user"}) == {
+        "generation_status": "complete", "completion_status": "complete",
+    }
+    assert agent_completion_metadata("interrupted", {"status": "failed"}) == {
+        "generation_status": "interrupted", "completion_status": "interrupted",
+    }
+
+
+def test_partial_results_do_not_override_medical_or_protocol_safety():
+    goals = [
+        {"goal_id": "sleep", "kind": "query", "status": "verified", "evidence_kind": "read_result"},
+        {"goal_id": "oxygen", "kind": "query", "status": "failed"},
+    ]
+    for flags, expected in [
+        ({"medical_boundary_flags": ["unsupported_claim"]}, "medical_evidence_required"),
+        ({"output_quality_flags": ["protocol_leak"]}, "protocol_leak"),
+    ]:
+        result = classify_agent_turn_outcome(
+            completion_status="complete", final_text="部分数据已读取。",
+            goal_outcomes=goals, **flags,
+        )
+        assert result["reason_code"] == expected
+        assert result["status"] != "partial"

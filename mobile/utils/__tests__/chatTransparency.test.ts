@@ -190,3 +190,10 @@ describe('chatTransparency routing (模型路由透明化)', () => {
     expect(profile.routing).toEqual([]);
   });
 });
+
+
+it('retains partial outcome meaning when legacy status is error', () => {
+  const profile = buildAgentTransparency({ completionStatus: 'error', terminalStatus: 'partial', toolsUsed: ['health_query'] });
+  expect(profile.headline).toContain('部分完成');
+  expect(profile.toolLabel).toBe('尝试调用 Skill');
+});

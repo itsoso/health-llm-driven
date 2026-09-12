@@ -70,6 +70,13 @@ export interface ChatMessage {
   tools_used?: string[];
   /** 服务端终态；错误/中断回合里的 tools_used 仅表示尝试调用。 */
   completion_status?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  generation_status?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  /** 用户目标的权威结果，优先于兼容的生成终态。 */
+  turn_outcome?: {
+    status: 'complete' | 'partial' | 'waiting_for_user' | 'blocked' | 'failed' | 'refused' | 'reconciliation_required';
+    reason_code?: string;
+    retryable?: boolean;
+  };
 }
 
 export interface LlmUsageCall {

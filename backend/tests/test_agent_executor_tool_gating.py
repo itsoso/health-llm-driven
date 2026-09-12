@@ -405,7 +405,7 @@ async def test_provider_error_fallback_for_tools_returns_to_manual_model_for_fin
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="来北京之后有点头疼，怎么办？",
+            message="查询北京天气",
             user_auth_token="test-token",
             extra_context=json.dumps({"client": "mac", "model_id": "claude-opus-4.7"}),
         )

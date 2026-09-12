@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v7"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v8"
 
 
 @dataclass(frozen=True)
@@ -885,9 +885,86 @@ def _illness_lookup_key(value: str) -> str:
     return ILLNESS_ENTITY_ALIASES.get(normalized, normalized)
 
 
+ANALYZED_MATERIAL_INTRO_RE = re.compile(
+    r"(?:请|帮我)?(?:分析|评估|评价|审阅|解读|总结|解释|翻译)(?:一下|下)?"
+    r"(?:以下|下面|这段|这份)(?:的)?"
+    r"(?:建议|内容|文字|文本|材料|文章|对话|消息|指令|命令|计划|方案)"
+    r"\s*[：:]\s*"
+)
+ANALYZED_MATERIAL_QUOTE_PAIRS = {
+    "“": "”",
+    "‘": "’",
+    "「": "」",
+    "『": "』",
+    '"': '"',
+}
+
+
+def _analyzed_material_end(text: str, start: int) -> int:
+    """Find an explicit boundary; an unframed pasted body owns the remainder."""
+    if start >= len(text):
+        return len(text)
+    opener = text[start]
+    closer = ANALYZED_MATERIAL_QUOTE_PAIRS.get(opener)
+    if closer:
+        depth = 1
+        for index in range(start + 1, len(text)):
+            if text[index] in {opener, closer}:
+                escape_start = index
+                while escape_start > start and text[escape_start - 1] == "\\":
+                    escape_start -= 1
+                if (index - escape_start) % 2:
+                    continue
+            if text[index] == closer:
+                depth -= 1
+                if depth == 0:
+                    return index + 1
+            elif opener != closer and text[index] == opener:
+                depth += 1
+        return len(text)
+    fence = re.match(r"(`{3,}|~{3,})[^\n]*\n", text[start:])
+    if fence:
+        marker = fence.group(1)
+        close = re.search(
+            rf"(?m)^[ \t]{{0,3}}{re.escape(marker[0])}{{{len(marker)},}}[ \t]*(?:\n|$)",
+            text[start + fence.end() :],
+        )
+        return start + fence.end() + close.end() if close else len(text)
+    if opener == ">":
+        # Only an explicit blank line ends a Markdown quote. Lazy continuation
+        # lines are still quoted content and cannot become tool instructions.
+        for close in re.finditer(r"\n[ \t]*\n", text[start:]):
+            end = start + close.end()
+            if not text[end:].lstrip().startswith(">"):
+                return end
+        return len(text)
+    return len(text)
+
+
+def active_health_instruction_text(text: str) -> str:
+    """Project active instructions, excluding explicitly analyzed material.
+
+    This is a deterministic authority boundary, not a semantic interpretation
+    of the material. Keep the original text for the model's analysis. A quoted
+    body may neither cancel an outside instruction nor authorize a tool. Plain
+    pasted text has no trustworthy end delimiter, so its remaining content
+    stays non-authorizing, including apparent instructions inside that body.
+    """
+    original = str(text or "")
+    parts: list[str] = []
+    cursor = 0
+    while match := ANALYZED_MATERIAL_INTRO_RE.search(original, cursor):
+        # Remove the introducer as well, so applying this projection again at
+        # the next authorization layer cannot consume a following real act.
+        parts.append(original[cursor : match.start()].rstrip())
+        cursor = _analyzed_material_end(original, match.end())
+    parts.append(original[cursor:])
+    return "\n".join(parts).strip()
+
+
 def resolve_health_read_act(text: str) -> HealthReadActResolution:
     """Resolve read authority clause by clause, with later clauses winning."""
-    normalized = str(text or "").strip()
+    normalized = active_health_instruction_text(text)
     if not normalized:
         return HealthReadActResolution("none")
     if is_health_tool_meta_command(normalized):

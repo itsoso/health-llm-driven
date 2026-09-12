@@ -172,7 +172,7 @@ def test_v39_medical_exam_resolution_rejects_unpunctuated_nonself_subject(text):
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v7"
+    assert payload["version"] == "health-semantics-v8"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 

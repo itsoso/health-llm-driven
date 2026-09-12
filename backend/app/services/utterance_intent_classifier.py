@@ -283,14 +283,25 @@ def classify_agent_utterance(
     *,
     reference_now: Optional[datetime] = None,
 ) -> AgentUtteranceIntent:
-    raw = "" if message is None else str(message).strip()
-    clinician_decision = classify_clinician_turn(raw)
-    if clinician_decision.kind != "none":
-        return _clinician_intent(raw, clinician_decision)
+    # Import lazily: the kernel's public package also imports this classifier.
+    from app.services.agent_kernel.health_semantics import active_health_instruction_text
 
-    normalized = _normalize(raw)
-    media_control_text = _normalize_media_control(raw)
+    raw = "" if message is None else str(message).strip()
+    instruction_text = active_health_instruction_text(raw)
+    clinician_decision = classify_clinician_turn(instruction_text)
+    if clinician_decision.kind != "none":
+        return _clinician_intent(
+            raw, clinician_decision, instruction_text=instruction_text
+        )
+
+    normalized = _normalize(instruction_text)
+    media_control_text = _normalize_media_control(instruction_text)
     if not normalized:
+        if raw and instruction_text != raw:
+            return _intent(
+                raw, normalized, "advice", "unknown", "analyze", 0.96,
+                "analyzed_material", requires_reliable_tool_model=True,
+            )
         return _intent(raw, normalized, "unknown", "unknown", "none", 0.0, "empty")
 
     write_capability_question = is_write_capability_question(normalized)
@@ -650,6 +661,8 @@ def classify_agent_utterance(
 def _clinician_intent(
     raw: str,
     decision: ClinicianTurnDecision,
+    *,
+    instruction_text: Optional[str] = None,
 ) -> AgentUtteranceIntent:
     frames = {
         "clinician_context": ("chat", "acknowledge", False, 0.96),
@@ -660,7 +673,7 @@ def _clinician_intent(
     primary, operation, is_write, confidence = frames[decision.kind]
     return _intent(
         raw,
-        _normalize(raw),
+        _normalize(raw if instruction_text is None else instruction_text),
         primary,
         "clinical_context",
         operation,

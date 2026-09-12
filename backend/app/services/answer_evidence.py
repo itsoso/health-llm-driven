@@ -8,11 +8,14 @@ arbitrary nested health payloads.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import date
 import hashlib
 import json
 from typing import Any
 
 from app.services.genui.table_builder import build_table_from_tool_call
+from app.services.agent_query_window import DEFAULT_TIMEZONE
+from app.services.agent_write_outcome import result_declares_explicit_failure
 from app.utils.number_format import format_display_number
 
 
@@ -67,6 +70,7 @@ _SOURCE_LABELS = {
     "manual": "手动记录",
     "health_query": "健康数据查询",
     "health_query_batch": "健康数据查询",
+    "health_manage": "健康数据查询",
     "query_lab_indicators": "化验指标查询",
 }
 
@@ -398,6 +402,69 @@ def _packet_limitations(personal_packet: Any) -> list[dict[str, str]]:
     return output
 
 
+def _diet_list_calendar_projection(
+    args: Mapping[str, Any], result: Any,
+) -> tuple[dict[str, str], str] | None:
+    """Adapt an executed dated diet read to the existing calendar projection.
+
+    A list endpoint and a query endpoint describe the same evidence only when
+    their actual rows match the requested date and meal. Writes never enter
+    this adapter, and failed responses cannot lend their attached rows as facts.
+    """
+    if args.get("record_type") != "diet" or args.get("operation") != "list":
+        return None
+    try:
+        requested_date = date.fromisoformat(args.get("date")).isoformat()
+    except (TypeError, ValueError):
+        return None
+    meal_type = args.get("meal_type")
+    if meal_type is not None and (
+        not isinstance(meal_type, str)
+        or meal_type not in {"breakfast", "lunch", "dinner", "snack", "extra"}
+    ):
+        return None
+    projected_args = {"dimension": "diet"}
+    try:
+        payload = json.loads(result) if isinstance(result, str) else result
+    except (TypeError, ValueError):
+        payload = None
+    if (
+        result_declares_explicit_failure(result)
+        or isinstance(result, str) and result.lstrip().startswith("Error")
+        or isinstance(payload, Mapping) and (
+            payload.get("status") in ("pending", "processing", "unavailable")
+            or payload.get("availability") == "unavailable"
+        )
+    ):
+        return projected_args, json.dumps({"status": "failed", "message": "本轮饮食记录查询失败"}, ensure_ascii=False)
+    rows = payload if isinstance(payload, list) else next((
+        payload[key] for key in ("records", "items", "data")
+        if isinstance(payload, Mapping) and isinstance(payload.get(key), list)
+    ), None)
+    valid = isinstance(rows, list) and (
+        not isinstance(payload, Mapping) or payload.get("record_type", "diet") == "diet"
+    )
+    if valid:
+        valid = all(
+            isinstance(row, Mapping)
+            and row.get("record_date") == requested_date
+            and (meal_type is None or row.get("meal_type") == meal_type)
+            for row in rows
+        )
+    availability = payload.get("availability") if isinstance(payload, Mapping) else None
+    if availability not in ("available", "partial", "no_data"):
+        availability = "available" if valid and rows else "no_data"
+    if availability == "no_data" and rows:
+        valid = False
+    projected_result = {
+        "dimension": "diet",
+        "window": {"start_date": requested_date, "end_date": requested_date, "timezone": DEFAULT_TIMEZONE},
+        "records": rows if valid else None,
+        "availability": availability,
+    }
+    return projected_args, json.dumps(projected_result, ensure_ascii=False)
+
+
 def build_answer_evidence(
     *,
     tool_calls: Sequence[tuple[str, Mapping[str, Any] | None, Any]] = (),
@@ -413,7 +480,14 @@ def build_answer_evidence(
         if len(basis) >= MAX_BASIS_ITEMS and len(limitations) >= MAX_LIMITATIONS:
             break
         args = raw_args if isinstance(raw_args, Mapping) else {}
-        block = build_table_from_tool_call(tool_name, dict(args), str(result or ""))
+        projection_tool = tool_name
+        if tool_name == "health_manage":
+            projection = _diet_list_calendar_projection(args, result)
+            if projection is None:
+                continue
+            args, result = projection
+            projection_tool = "health_query"
+        block = build_table_from_tool_call(projection_tool, dict(args), str(result or ""))
         if block is not None and len(basis) < MAX_BASIS_ITEMS:
             basis.extend(
                 _table_rows(
@@ -425,7 +499,7 @@ def build_answer_evidence(
         if len(limitations) < MAX_LIMITATIONS:
             limitation = _tool_limitation(
                 tool_index=tool_index,
-                tool_name=tool_name,
+                tool_name=projection_tool,
                 args=args,
                 result=result,
             )

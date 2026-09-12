@@ -442,6 +442,23 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('preserves partial task status separately from normal generation', async () => {
+    const iter = streamChat('查询睡眠和血氧');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText = 'data: ' + JSON.stringify({ event: 'done', data: {
+      conversation_id: 42, message_id: 99, completion_status: 'error', generation_status: 'complete',
+      turn_outcome: { status: 'partial', reason_code: 'partial_goal_completion', retryable: false },
+    } }) + '\n\n';
+    xhr.onprogress?.();
+    await expect(first).resolves.toMatchObject({ value: {
+      type: 'done', terminalStatus: 'partial', completionStatus: 'error',
+      generationStatus: 'complete', terminalRetryable: false,
+    } });
+    await iter.return?.(undefined as any);
+  });
+
   it('distinguishes health-manage queries from writes at tool-call time', async () => {
     const queryIter = streamChat('查询饮食');
     const queryEvent = queryIter.next();

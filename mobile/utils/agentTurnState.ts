@@ -1,3 +1,24 @@
+export type AgentTerminalStatus =
+  | 'complete'
+  | 'partial'
+  | 'waiting_for_user'
+  | 'blocked'
+  | 'failed'
+  | 'refused'
+  | 'reconciliation_required';
+
+export function normalizeAgentTerminalStatus(value: unknown): AgentTerminalStatus | undefined {
+  return value === 'complete'
+    || value === 'partial'
+    || value === 'waiting_for_user'
+    || value === 'blocked'
+    || value === 'failed'
+    || value === 'refused'
+    || value === 'reconciliation_required'
+    ? value
+    : undefined;
+}
+
 export type AgentTurnPhase =
   | 'idle'
   | 'submitted'
@@ -8,18 +29,19 @@ export type AgentTurnPhase =
   | 'blocked'
   | 'refused'
   | 'reconciliation_required'
+  | 'partial'
   | 'completed'
   | 'failed'
   | 'interrupted';
 
-export type AgentRecoveredPhase = 'completed' | 'failed' | 'interrupted'
+export type AgentRecoveredPhase = 'partial' | 'completed' | 'failed' | 'interrupted'
   | 'waiting_for_user' | 'blocked' | 'refused' | 'reconciliation_required';
 
 export function recoveredAgentPhase(
   completionStatus: unknown, terminalStatus: unknown, missingWriteReceipt: boolean,
 ): AgentRecoveredPhase {
   if (missingWriteReceipt) return 'failed';
-  if (terminalStatus === 'waiting_for_user' || terminalStatus === 'blocked'
+  if (terminalStatus === 'partial' || terminalStatus === 'waiting_for_user' || terminalStatus === 'blocked'
       || terminalStatus === 'failed' || terminalStatus === 'refused'
       || terminalStatus === 'reconciliation_required') return terminalStatus;
   if (completionStatus === 'interrupted') return 'interrupted';
@@ -66,7 +88,7 @@ export type AgentTurnEvent =
       type: 'done';
       at: number;
       completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
-      terminalStatus?: 'complete' | 'waiting_for_user' | 'blocked' | 'failed' | 'refused' | 'reconciliation_required';
+      terminalStatus?: 'complete' | 'partial' | 'waiting_for_user' | 'blocked' | 'failed' | 'refused' | 'reconciliation_required';
       conversationId?: number;
       messageId?: number;
       retryable?: boolean;
@@ -102,6 +124,7 @@ export function createIdleAgentTurn(): AgentTurnState {
 
 export function isAgentTurnTerminal(state: AgentTurnState): boolean {
   return state.phase === 'completed'
+    || state.phase === 'partial'
     || state.phase === 'waiting_for_user'
     || state.phase === 'blocked'
     || state.phase === 'failed'

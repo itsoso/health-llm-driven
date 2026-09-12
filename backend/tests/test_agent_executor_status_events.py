@@ -1334,7 +1334,9 @@ async def test_duplicate_turn_never_replays_an_unfinalized_assistant(
     )
     assert "尚未写完回执 metadata" not in replayed_text
     done = next(event for event in events if event.get("event") == "done")
-    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["generation_status"] == "complete"
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["turn_outcome"]["status"] != "complete"
 
 
 @pytest.mark.asyncio

@@ -304,3 +304,86 @@ def test_normalizer_rejects_unknown_fields_and_hash_binds_projection():
     tampered = {**evidence, "private_prompt": "do not expose"}
     assert normalize_answer_evidence(tampered) is None
     assert answer_evidence_sha256(tampered) != digest
+
+
+def _diet_list_args(**overrides):
+    return {"record_type": "diet", "operation": "list", "date": "2026-09-12", "meal_type": "dinner", **overrides}
+
+
+def _diet_list_row(**overrides):
+    return {"id": 42, "record_date": "2026-09-12", "meal_type": "dinner", "food_items": "燕麦", "calories": 200, **overrides}
+
+
+def test_diet_manage_list_explains_verified_date_and_meal_evidence():
+    evidence = build_answer_evidence(tool_calls=[(
+        "health_manage", _diet_list_args(), json.dumps({"records": [_diet_list_row()]}, ensure_ascii=False),
+    )])
+    assert evidence is not None
+    assert len(evidence["basis"]) == 1
+    item = evidence["basis"][0]
+    assert "2026-09-12" in item["label"]
+    assert "晚餐" in item["observation"]
+    assert "燕麦" in item["observation"]
+    assert item["source"] == "健康数据查询"
+    assert not evidence["limitations"]
+    assert normalize_answer_evidence(evidence) == evidence
+
+
+def test_diet_manage_list_empty_result_is_explicit_no_data():
+    evidence = build_answer_evidence(tool_calls=[("health_manage", _diet_list_args(), "[]")])
+    assert evidence is not None and not evidence["basis"]
+    assert "没有可用记录" in evidence["limitations"][0]["detail"]
+    assert "2026-09-12" in evidence["limitations"][0]["detail"]
+
+
+def test_diet_manage_write_result_is_never_projected_as_read_evidence():
+    for operation in ("create", "update", "delete"):
+        evidence = build_answer_evidence(tool_calls=[(
+            "health_manage", _diet_list_args(operation=operation), json.dumps({"records": [_diet_list_row()]}),
+        )])
+        assert evidence is None
+
+
+def test_failed_diet_list_never_promotes_attached_records_to_basis():
+    for failure in ({"status": "failed"}, {"success": False}, {"error": "lookup_failed"}):
+        evidence = build_answer_evidence(tool_calls=[(
+            "health_manage", _diet_list_args(), json.dumps({"records": [_diet_list_row()], **failure}),
+        )])
+        assert evidence is not None and not evidence["basis"]
+        assert "失败" in evidence["limitations"][0]["detail"]
+
+
+def test_diet_manage_list_must_match_requested_date_and_meal():
+    for overrides in ({"record_date": "2026-09-11"}, {"meal_type": "breakfast"}, {"record_date": None}):
+        evidence = build_answer_evidence(tool_calls=[(
+            "health_manage", _diet_list_args(), json.dumps({"records": [_diet_list_row(**overrides)]}),
+        )])
+        assert evidence is not None and not evidence["basis"]
+        assert "核验" in evidence["limitations"][0]["detail"]
+
+
+def test_diet_list_projection_accepts_existing_list_envelopes_and_bounds_output():
+    rows = [_diet_list_row() for _ in range(6)]
+    for payload in (rows, {"records": rows}, {"items": rows}, {"data": rows}):
+        evidence = build_answer_evidence(tool_calls=[("health_manage", _diet_list_args(), json.dumps(payload))])
+        assert len(evidence["basis"]) == 4
+        assert "未在依据面板展开" in evidence["limitations"][0]["detail"]
+
+
+def test_diet_list_keeps_partial_availability_instead_of_claiming_complete_evidence():
+    evidence = build_answer_evidence(tool_calls=[(
+        "health_manage", _diet_list_args(),
+        json.dumps({"records": [_diet_list_row()], "availability": "partial"}),
+    )])
+    assert evidence["basis"]
+    assert evidence["limitations"]
+    assert "缺失" in evidence["limitations"][0]["detail"]
+
+
+def test_diet_list_nested_fields_are_never_serialized_into_basis():
+    evidence = build_answer_evidence(tool_calls=[(
+        "health_manage", _diet_list_args(), json.dumps({"records": [_diet_list_row(food_items={"private": "never-render"})]}),
+    )])
+    assert evidence is None or not evidence["basis"]
+    assert "never-render" not in json.dumps(evidence)
+    assert build_answer_evidence(tool_calls=[("health_manage", _diet_list_args(meal_type={"private": "never-render"}), "[]")]) is None

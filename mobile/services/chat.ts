@@ -1,3 +1,4 @@
+import { normalizeAgentTerminalStatus, type AgentTerminalStatus } from '../utils/agentTurnState';
 import { getToken } from './auth';
 import { BASE_URL, WEB_SESSION_AUTH_SENTINEL } from './api';
 import { buildClientCapsHeader } from './clientCaps';
@@ -146,13 +147,7 @@ export interface MedicationBatchStreamDecision {
   safetyAlerts: MedicationSafetyAlert[];
 }
 
-export type AgentTerminalStatus =
-  | 'complete'
-  | 'waiting_for_user'
-  | 'blocked'
-  | 'failed'
-  | 'refused'
-  | 'reconciliation_required';
+export type { AgentTerminalStatus } from '../utils/agentTurnState';
 
 export interface AgentActionOutcome {
   actionId?: string;
@@ -216,6 +211,7 @@ export interface StreamEvent {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  generationStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
   terminalStatus?: AgentTerminalStatus;
   terminalRetryable?: boolean;
   terminalErrorCode?: string;
@@ -703,6 +699,7 @@ export async function* streamChat(
           answerEvidence: normalizeAnswerEvidence(parsed.data?.answer_evidence),
           toolsUsed: Array.isArray(parsed.data?.tools_used) ? parsed.data.tools_used : undefined,
           completionStatus: parsed.data?.completion_status,
+          generationStatus: parsed.data?.generation_status,
           ...(terminalStatus ? { terminalStatus } : {}),
           ...(typeof turnOutcome?.reason_code === 'string'
             ? { terminalErrorCode: turnOutcome.reason_code }
@@ -791,16 +788,6 @@ export async function* streamChat(
   }
 }
 
-function normalizeAgentTerminalStatus(value: unknown): AgentTerminalStatus | undefined {
-  return value === 'complete'
-    || value === 'waiting_for_user'
-    || value === 'blocked'
-    || value === 'failed'
-    || value === 'refused'
-    || value === 'reconciliation_required'
-    ? value
-    : undefined;
-}
 
 function normalizeAgentActionOutcomes(value: unknown): AgentActionOutcome[] {
   if (!Array.isArray(value)) return [];

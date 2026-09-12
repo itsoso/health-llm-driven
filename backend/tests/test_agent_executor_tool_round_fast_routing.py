@@ -288,7 +288,7 @@ async def test_advice_turn_tool_round_fast_synthesis_strong(db, auth_user_and_he
     )
     monkeypatch.setattr(executor, "_execute_tool", fake_exec_tool)
 
-    events = await _run(executor, "来北京之后有点头疼，怎么办？", user.id)
+    events = await _run(executor, "分析我的运动趋势", user.id)
     rendered = "".join(
         e["data"].get("content", "") for e in events if e.get("event") == "token"
     )
@@ -361,7 +361,7 @@ async def test_flag_off_tool_round_stays_on_strong(db, auth_user_and_headers, mo
     _wire(executor, monkeypatch, factory, user_provider=user_provider)
     monkeypatch.setattr(executor, "_execute_tool", _ok)
 
-    events = await _run(executor, "我胃还有点痛，怎么办？", user.id)
+    events = await _run(executor, "分析我的睡眠趋势", user.id)
     done = events[-1]["data"]
 
     # flag 关: 两轮都在强模型上, 从未选 fast, 从未建 fast provider。
@@ -406,7 +406,7 @@ async def test_fast_tool_round_direct_answer_discarded_and_resynthesized(
     strong = FakeProvider("qwen3.7-max")
     _wire(executor, monkeypatch, lambda mid: FakeProvider(mid), user_provider=strong)
 
-    events = await _run(executor, "我胃还有点痛，怎么办？", user.id)
+    events = await _run(executor, "分析我的睡眠趋势", user.id)
     rendered = "".join(
         e["data"].get("content", "") for e in events if e.get("event") == "token"
     )
@@ -479,7 +479,7 @@ async def test_explicit_model_tool_round_fast_answer_on_explicit(
     monkeypatch.setattr(executor, "_execute_tool", fake_exec_tool)
 
     events = await _run(
-        executor, "来北京之后有点头疼，怎么办？", user.id,
+        executor, "分析我的运动趋势", user.id,
         extra_context=json.dumps({"model_id": "qwen3.7-max"}),
     )
     rendered = "".join(
@@ -532,7 +532,7 @@ async def test_explicit_model_fast_direct_answer_resynthesized_on_explicit(
           user_provider=FakeProvider("qwen3.7-max"))
 
     events = await _run(
-        executor, "我胃还有点痛，怎么办？", user.id,
+        executor, "分析我的睡眠趋势", user.id,
         extra_context=json.dumps({"model_id": "qwen3.7-max"}),
     )
     rendered = "".join(

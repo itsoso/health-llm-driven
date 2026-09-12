@@ -741,3 +741,12 @@ def test_executor_done_maps_to_runtime_state(
         expected_error,
         expected_retryable,
     )
+
+
+def test_partial_goal_outcome_never_becomes_durable_success_from_legacy_complete():
+    from app.services.agent_runtime import runtime_outcome_from_done
+
+    assert runtime_outcome_from_done({
+        "completion_status": "complete",
+        "turn_outcome": {"status": "partial", "reason_code": "partial_goal_completion", "retryable": False},
+    }) == ("failed", "partial_goal_completion", False)

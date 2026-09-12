@@ -1,3 +1,4 @@
+import { normalizeAgentTerminalStatus, type AgentTerminalStatus } from '../utils/agentTurnState';
 import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
@@ -85,6 +86,8 @@ export interface UIMessage extends ChatMessage {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used / meta.tools_used), 对齐 mac/web
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  generationStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  terminalStatus?: AgentTerminalStatus;
   writeReceipts?: WriteReceipt[];
   safetyAlerts?: MedicationSafetyAlert[];
   decisionStatus?: MedicationDecisionStatus;
@@ -207,6 +210,8 @@ function applyMeta(msg: any): Partial<UIMessage> {
     sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
     answerEvidence: normalizeAnswerEvidence(meta.answer_evidence),
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
+    terminalStatus: normalizeAgentTerminalStatus(meta.turn_outcome?.status),
+    generationStatus: meta.generation_status,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
     medicalCitations: normalizeMedicalCitations(meta.medical_citations),
     thinkingSteps: normalizeThinkingSteps(meta.thinking_steps ?? meta.thought_steps),
@@ -2174,6 +2179,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             evt.requestPersisted !== false
             && (
               terminalTurn.phase === 'completed'
+              || terminalTurn.phase === 'partial'
               || terminalTurn.phase === 'waiting_for_user'
             )
             && typeof evt.messageId === 'number'
@@ -2222,6 +2228,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               toolsUsed: evt.toolsUsed,
               medicalCitations: evt.medicalCitations,
               completionStatus: effectiveCompletionStatus,
+              terminalStatus: evt.terminalStatus,
+              generationStatus: evt.generationStatus,
               sourceMessageId: (
                 evt.requestPersisted !== false
                 && typeof evt.messageId === 'number'

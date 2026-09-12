@@ -68,6 +68,44 @@ _ACTION_STATUSES = frozenset(
 )
 
 
+def agent_completion_metadata(
+    generation_status: str, turn_outcome: dict[str, Any],
+) -> dict[str, str]:
+    """Keep transport diagnostics while old clients fail closed on task failure.
+
+    ``turn_outcome`` is authoritative, including intentional confirmation pauses
+    and partial results. ``generation_status`` retains the model finish state;
+    the legacy completion enum stays compatible with deployed clients.
+    """
+    completion = generation_status
+    if generation_status == "complete" and turn_outcome.get("status") in {
+        "partial", "failed", "blocked", "refused", "reconciliation_required",
+    }:
+        completion = "error"
+    return {"generation_status": generation_status, "completion_status": completion}
+
+
+def _goal_evidence_outcomes(values: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project executor-verified postconditions, never model prose or health data."""
+    goals = []
+    evidence_by_kind = {"query": "read_result", "sync": "sync_result", "write": "write_receipt"}
+    for raw in values or ():
+        if not isinstance(raw, dict) or raw.get("status") not in _ACTION_STATUSES:
+            continue
+        kind = raw.get("kind")
+        if kind not in {*evidence_by_kind, "answer"}:
+            continue
+        goal = {"goal_id": str(raw.get("goal_id") or kind)[:80], "kind": kind, "status": raw["status"]}
+        if raw.get("evidence_kind") in evidence_by_kind.values():
+            goal["evidence_kind"] = raw["evidence_kind"]
+        if isinstance(raw.get("reason_code"), str):
+            goal["reason_code"] = raw["reason_code"][:120]
+        if goal["status"] == "verified" and kind in evidence_by_kind and goal.get("evidence_kind") != evidence_by_kind[kind]:
+            goal.update(status="failed", reason_code="missing_goal_evidence")
+        goals.append(goal)
+    return goals
+
+
 def _public_action_outcomes(values: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return a bounded, stack-trace-free per-action projection."""
     actions: list[dict[str, Any]] = []
@@ -106,6 +144,7 @@ def classify_agent_turn_outcome(
     dispatch_started: bool = False,
     claimed_write_action_count: int = 0,
     action_outcomes: Iterable[dict[str, Any]] = (),
+    goal_outcomes: Iterable[dict[str, Any]] = (),
     output_quality_flags: Iterable[str] = (),
     medical_boundary_flags: Iterable[str] = (),
 ) -> dict[str, Any]:
@@ -126,6 +165,7 @@ def classify_agent_turn_outcome(
     )
     raw_actions = tuple(action for action in (action_outcomes or ()) if isinstance(action, dict))
     actions = _public_action_outcomes(raw_actions)
+    goals = _goal_evidence_outcomes(goal_outcomes)
 
     def outcome(
         *,
@@ -148,6 +188,7 @@ def classify_agent_turn_outcome(
             "capability_block_count": len(blocks),
             "tool_failure_count": len(failures),
             "confirmation_required": confirmation_required,
+            **({"goals": goals[:32]} if goals else {}),
         }
 
     missing_claimed_receipt = (
@@ -157,6 +198,7 @@ def classify_agent_turn_outcome(
         write_reconciliation_required or missing_claimed_receipt
         or (dispatch_started and failures)
         or any(action.get("status") == "reconciliation_required" for action in raw_actions)
+        or any(goal["status"] == "reconciliation_required" for goal in goals)
     ):
         return outcome(
             status="reconciliation_required",
@@ -193,6 +235,33 @@ def classify_agent_turn_outcome(
                 reason_code=action.get("reason_code") or "confirmation_required",
                 retryable=False, confirmation_required=True,
             )
+    if any(goal["status"] == "waiting_for_user" for goal in goals):
+        return outcome(
+            status="waiting_for_user", category="confirmation_required",
+            reason_code="confirmation_required", retryable=False,
+            confirmation_required=True,
+        )
+    if tuple(medical_boundary_flags):
+        return outcome(
+            status="blocked", category="medical_evidence_required",
+            reason_code="medical_evidence_required", retryable=False,
+        )
+
+    if "protocol_leak" in output_quality_flags:
+        return outcome(
+            status="failed", category="invalid_answer", reason_code="protocol_leak",
+            retryable=not bool(dispatch_started or verified_receipt_count),
+        )
+
+    failed_goals = [goal for goal in goals if goal["status"] in {"failed", "rejected"}]
+    if failed_goals:
+        partial = any(goal["status"] == "verified" for goal in goals)
+        return outcome(
+            status="partial" if partial else "failed",
+            category="partial_goal_completion" if partial else "action_not_executed",
+            reason_code="partial_goal_completion" if partial else failed_goals[0].get("reason_code", "goal_not_completed"),
+            retryable=False,
+        )
     if blocks:
         return outcome(
             status="blocked",
@@ -214,18 +283,6 @@ def classify_agent_turn_outcome(
             category="action_not_executed",
             reason_code=reason,
             retryable=True,
-        )
-
-    if tuple(medical_boundary_flags):
-        return outcome(
-            status="blocked", category="medical_evidence_required",
-            reason_code="medical_evidence_required", retryable=False,
-        )
-
-    if "protocol_leak" in output_quality_flags:
-        return outcome(
-            status="failed", category="invalid_answer", reason_code="protocol_leak",
-            retryable=not bool(dispatch_started or verified_receipt_count),
         )
 
     if completion_status != "complete":

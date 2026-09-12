@@ -139,3 +139,15 @@ describe('chatTransparency', () => {
     expect(formatTokenCount(2460)).toBe('2.5k');
   });
 });
+
+it('shows authoritative partial result even when generation stopped normally', () => {
+  const profile = buildAgentTransparency({
+    completionStatus: 'complete', terminalStatus: 'partial', toolsUsed: ['health_query'],
+  });
+  expect(profile.headline).toContain('部分完成');
+  expect(profile.toolLabel).toBe('尝试调用 Skill');
+});
+
+it('shows confirmation as a pause instead of a successful task', () => {
+  expect(buildAgentTransparency({ terminalStatus: 'waiting_for_user' }).headline).toBe('待确认');
+});

@@ -3,6 +3,7 @@ import {
   createIdleAgentTurn,
   isAgentTurnTerminal,
   reduceAgentTurn,
+  recoveredAgentPhase,
 } from '../agentTurnState';
 
 describe('agentTurnState', () => {
@@ -194,6 +195,7 @@ describe('agentTurnState', () => {
   });
 
   it.each([
+    ['partial', 'partial'],
     ['waiting_for_user', 'waiting_for_user'],
     ['blocked', 'blocked'],
     ['failed', 'failed'],
@@ -359,4 +361,8 @@ describe('agentTurnState', () => {
     });
     expect(isAgentTurnTerminal(interrupted)).toBe(true);
   });
+});
+
+it('recovers a partial result instead of treating the generated answer as completed', () => {
+  expect(recoveredAgentPhase('complete', 'partial', false)).toBe('partial');
 });

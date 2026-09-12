@@ -12,6 +12,11 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.services.agent_kernel.daily_read_plan import (
+    daily_question_dimension,
+    daily_read_plan_contract_payload,
+    resolve_daily_read_plan,
+)
 from app.services.agent_kernel.goal_spec import (
     SIMPLE_ILLNESS_CREATE_RE,
     goal_spec_contract_payload,
@@ -24,6 +29,7 @@ from app.services.agent_kernel.health_semantics import (
     HEALTH_ENTITY_CONNECTOR_RE,
     READ_VERB_RE,
     active_health_read_clause,
+    active_health_instruction_text,
     authorization_behavior_digest,
     authorization_grammar_digest,
     authorization_imported_behavior_names,
@@ -1464,26 +1470,8 @@ def _health_read_cancelled_by_user(text: str) -> bool:
 
 
 def _calendar_question_dimension(text: str) -> str | None:
-    """A direct dated question is a read; quoted/hypothetical speech is not.
-
-    This closed grammar recognizes only the supported daily domains and an
-    optional activity-suitability follow-up. It cannot authorize mixed reads.
-    """
-    match = re.fullmatch(
-        r"(?:我(?:的)?)?(?:昨晚|昨夜|昨天|昨日|前天|今天|今日|"
-        r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}(?:日|号)?|"
-        r"(?:本周|这周|上周)[一二三四五六日天])"
-        r"(?:晚上|夜里|夜间)?(?:的)?(?:我(?:的)?)?"
-        r"(?:(?:(?P<sleep>睡眠|睡得|睡的|睡觉)(?:记录|数据|质量|情况)?|"
-        r"(?:饮食|餐食)(?:记录|数据|情况)?)(?:怎么样|怎样|如何)|"
-        r"(?:都)?吃(?:了|过)(?:些)?(?:什么|啥|哪些)(?:东西|食物)?)"
-        r"[?？。！!]*"
-        r"(?:[，,](?:今天)?(?:是否|能否)适合(?:锻炼|运动)[?？。！!]*)?",
-        _query_scope_text(text),
-    )
-    if match is None:
-        return None
-    return "sleep" if match.group("sleep") else "diet"
+    """Use the same read goal as manage-list and executor planning."""
+    return daily_question_dimension(text)
 
 
 def _has_explicit_read_request(text: str) -> bool:
@@ -1957,6 +1945,12 @@ def project_diet_manage_list_to_turn(
     never from model arguments. A compound request that asks about both dinner
     and the whole day reads the whole day once so synthesis can answer both.
     """
+    daily_plan = resolve_daily_read_plan(
+        snapshot.envelope.text, snapshot.context.current_time,
+        timezone_name=snapshot.context.timezone,
+    )
+    if daily_plan is not None:
+        return daily_plan.diet_list_args()
     intent = snapshot.intent
     if (
         intent.domain != "diet"
@@ -2429,6 +2423,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
             "domain_types": dict(sorted(_HEALTH_RECORD_DOMAIN_TYPES.items())),
         },
         "health_semantics": health_semantics_contract_payload(),
+        "daily_read_plan": daily_read_plan_contract_payload(),
         "goal_spec": goal_spec_contract_payload(),
         "authorization_grammar_digest": authorization_grammar_digest(globals()),
         "authorization_behavior_digest": authorization_behavior_digest(
@@ -2564,6 +2559,20 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
+    if (tool_name == "health_record" and args.get("record_type") == "garmin_sync"
+            and request.source not in {"procedure_recipe_replay", "telegram_directive"}):
+        scoped = re.sub(r"\s+", "", normalize_health_authorization_text(
+            active_health_instruction_text(snapshot.envelope.text)))
+        generic_owned_sync = re.fullmatch(
+            r"(?:请|请你|麻烦)?(?:帮我|给我)?同步(?:一下)?(?:我的?)?"
+            r"(?:garmin|佳明)(?:的)?数据[。.!！]?", scoped, re.IGNORECASE)
+        if (generic_owned_sync and snapshot.intent.operation == "sync"
+                and args.get("data") == {}):
+            return _decision("allow", "explicit_owned_garmin_sync", tool_name,
+                             {"record_type": "garmin_sync", "data": {}},
+                             receipt_required=False)
+        return _decision("block", "garmin_sync_scope_unresolved", tool_name, args,
+                         receipt_required=False)
     if tool_name == "health_record" and request.source != "procedure_recipe_replay":
         target_status = _health_record_target_status(snapshot, args)
         if target_status == "mismatch":
@@ -2683,6 +2692,25 @@ def decide_tool_capability(
                 tool_name,
                 canonical_args,
             )
+        daily_plan = resolve_daily_read_plan(
+            turn_text, snapshot.context.current_time,
+            timezone_name=snapshot.context.timezone,
+        )
+        if daily_plan is not None:
+            bound_query = next((query for query in daily_plan.queries()
+                                if query["dimension"] == proposed_dimension), None)
+            if bound_query is None:
+                return _decision("block", "health_query_dimension_conflict", tool_name, canonical_args)
+            if any(key in canonical_args and canonical_args[key] != bound_query[key]
+                   for key in ("start_date", "end_date", "timezone")):
+                return _decision("block", "health_query_calendar_window_conflict", tool_name, canonical_args)
+            if daily_plan.meal_type:
+                # Calendar diet reads currently return the whole day. The
+                # record-list adapter can honor the explicitly requested meal.
+                return _decision("allow", "health_manage_list_is_read_only",
+                                 "health_manage", daily_plan.diet_list_args())
+            return _decision("allow", "health_query_projected_to_calendar_window",
+                             tool_name, bound_query)
         from app.services.agent_query_window import resolve_calendar_query_window
 
         question_dimension = _calendar_question_dimension(turn_text)
@@ -3000,6 +3028,19 @@ def decide_tool_capability(
                     tool_name,
                     args,
                 )
+            daily_plan = resolve_daily_read_plan(
+                turn_text, snapshot.context.current_time,
+                timezone_name=snapshot.context.timezone,
+            )
+            if (guarding_user_read and daily_plan is not None
+                    and len(daily_plan.dimensions) == 1 and not daily_plan.meal_type):
+                # The generic list adapter has a recent-row limit and some
+                # domains lack date filters. Use the exact date data plane for
+                # the same read, independent of the model's chosen entry point.
+                if canonical_health_manage_record_type(args.get("record_type")) != daily_plan.dimensions[0]:
+                    return _decision("block", "health_query_dimension_conflict", tool_name, args)
+                return _decision("allow", "health_query_projected_to_calendar_window",
+                                 "health_query", daily_plan.queries()[0])
             if (
                 _query_contains_unresolved_reference(turn_text)
                 and (guarding_user_read or _has_explicit_read_request(turn_text))
