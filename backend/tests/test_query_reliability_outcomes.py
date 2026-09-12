@@ -361,3 +361,23 @@ async def test_daily_facts_do_not_turn_provider_error_into_success(db, auth_user
     assert done["completion_status"] == "error"
     assert done["turn_outcome"]["status"] != "complete"
     assert "本轮生成失败" in public and "本轮生成失败" in persisted.content
+
+
+@pytest.mark.asyncio
+async def test_summary_uses_verified_facts_and_only_model_advice_section(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    def dispatch(request):
+        day = request.arguments["start_date"]
+        rows = ([{"id": 1, "record_date": day, "food_name": "燕麦", "calories": 300}]
+                if request.arguments["dimension"] == "diet" else [])
+        return _calendar_payload(request, records=rows, availability="available" if rows else "no_data")
+    _, done, persisted, public, _ = await _run_scripted(
+        db, user, monkeypatch, query="给我今天总结，给我建议", first_tool="health_analysis",
+        first_args={"analysis_type": "orchestrator"}, dispatch=dispatch,
+        reply="## 模型重复总结\n今天只吃了720大卡。\n### 建议\n睡前半小时减少屏幕使用。",
+        turn_id="summary-model-section", required_context_text="300",
+    )
+    assert done["turn_outcome"]["status"] == "complete"
+    assert "已记录热量合计300千卡" in public
+    assert "720" not in public and "模型重复总结" not in persisted.content
+    assert "睡前半小时减少屏幕使用" in public

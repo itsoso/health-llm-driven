@@ -67,7 +67,7 @@ from app.services.agent_turn_recovery import (
 from app.services.agent_turn_outcome import classify_agent_turn_outcome, agent_completion_metadata
 from app.services.agent_daily_read_execution import (
     planned_daily_calls, daily_read_prompt, daily_result_goal, daily_goal_outcomes,
-    verified_daily_summary, summary_advice_contract_failure,
+    verified_daily_summary, summary_advice_contract_failure, summary_advice_text,
 )
 from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan, is_daily_summary_request
 from app.services.agent_output_quality import (
@@ -16891,8 +16891,9 @@ class AgentExecutor:
                                     self._turn_daily_read_results, include_food_names=False,
                                 )
                                 instruction = (
-                                    "系统已核验的日总结事实如下。事实段由系统直接展示，请只生成用户所需的建议，"
-                                    "仅给出定性建议，不要复述或重新计算热量、睡眠时长、评分等观测数字；"
+                                    "系统已核验的日总结事实如下。事实段由系统直接展示，不要再生成总结或事实段。"
+                                    "请以单独的“建议”标题开头，只给出接下来可以采取的行动，"
+                                    "不要复述或重新计算热量、睡眠时长、评分等观测数字；"
                                     "不能把未记录视为没有发生，也不能由这些记录判断全天摄入不足或过量。\n" + facts
                                 )
                                 messages = [dict(item) for item in messages]
@@ -17332,6 +17333,7 @@ class AgentExecutor:
                 self._turn_daily_read_results,
             )
             if self._turn_daily_read_plan.asks_advice:
+                full_reply = summary_advice_text(full_reply)
                 advice_failure = summary_advice_contract_failure(full_reply)
                 daily_summary_advice_goal = {
                     "goal_id": "summary_advice", "kind": "answer",

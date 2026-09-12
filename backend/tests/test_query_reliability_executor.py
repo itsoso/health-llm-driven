@@ -32,7 +32,7 @@ async def test_daily_read_runs_through_pi_with_verified_scope(db, auth_user_and_
                 'function': {'name': tool, 'arguments': json.dumps(args)}}]}
             yield {'type': 'finish', 'finish_reason': 'tool_calls'}
         else:
-            yield {'type': 'content', 'text': '已查询，本次没有可用记录。'}
+            yield {'type': 'content', 'text': '已查询，本次没有可用记录。建议先补充漏记的饮食与睡眠，再作回顾。'}
             yield {'type': 'finish', 'finish_reason': 'stop'}
 
     async def dispatch(request, token):
@@ -51,7 +51,10 @@ async def test_daily_read_runs_through_pi_with_verified_scope(db, auth_user_and_
     if '晚上' in query:
         assert dispatched[0].arguments['meal_type'] == 'dinner'
     assert done['turn_outcome']['status'] == 'complete'
-    assert {g['goal_id'] for g in done['turn_outcome']['goals']} == set(expected)
+    assert {g['goal_id'] for g in done['turn_outcome']['goals'] if g['kind'] == 'query'} == set(expected)
+    if '总结' in query:
+        assert any(g['goal_id'] == 'summary_advice' and g['status'] == 'verified'
+                   for g in done['turn_outcome']['goals'])
 
 
 @pytest.mark.parametrize('message', [

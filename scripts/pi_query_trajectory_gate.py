@@ -149,6 +149,19 @@ def terminal_event_data(event: dict) -> dict | None:
     return event.get("data") or {}
 
 
+def observe_llm_candidates(original, observations: list[dict]):
+    """Observe synthetic output only, forwarding requests and events unchanged."""
+    async def observed(*args, **kwargs):
+        record = {"round": len(observations), "candidate": "", "completed": False}
+        observations.append(record)
+        async for event in original(*args, **kwargs):
+            if isinstance(event, dict) and event.get("type") == "content" and isinstance(event.get("text"), str):
+                record["candidate"] += event["text"]
+            yield event
+        record["completed"] = True
+    return observed
+
+
 def _preflight(args):
     database_url = os.environ.get("DATABASE_URL", "")
     validate_database_url(database_url, args.database_name)
@@ -217,8 +230,8 @@ def _health_fingerprint(db, user_id: int) -> str:
 
 
 def _save(path: Path, report: dict) -> None:
-    # Metadata only. Neither configuration values nor response/source health
-    # payloads are placed into stdout or the report.
+    # Main reports contain metadata only. Optional diagnostic output contains
+    # synthetic candidates, never configuration or request payloads.
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     os.fchmod(fd, 0o600)
     with os.fdopen(fd, "w") as stream:
@@ -246,6 +259,7 @@ async def _run(args, SessionLocal, engine) -> dict:
     spent = {"calls": 0, "reserved_tokens": 0}
     safety_violations = []
     blocked_auxiliary_requests = []
+    diagnostic_cases = []
     original_guard = usage_tracker._enforce_monthly_token_quota
 
     def bounded_guard(**kwargs):
@@ -350,6 +364,9 @@ async def _run(args, SessionLocal, engine) -> dict:
                         result["expected_record_facts"] = expected
                     before = _health_fingerprint(db, args.user_id)
                     executor = AgentExecutor(db)
+                    candidates = []
+                    if args.diagnostic_candidates:
+                        executor._call_llm_stream = observe_llm_candidates(executor._call_llm_stream, candidates)
                     dispatch = executor._dispatch_tool_request
                     tool_names = []
 
@@ -399,6 +416,14 @@ async def _run(args, SessionLocal, engine) -> dict:
                                   goals=(done.get("turn_outcome") or {}).get("goals") or [],
                                   evidence_count=len((done.get("answer_evidence") or {}).get("basis") or []))
                 report["results"].append(result)
+                if args.diagnostic_candidates:
+                    diagnostic_cases.append({"case_id": case["id"], "requested_model": model,
+                                             "candidates": candidates})
+                    _save(args.diagnostic_candidates, {
+                        "synthetic_only": True, "source_sha256": report["source_sha256"],
+                        "cases": diagnostic_cases,
+                    })
+                    result["diagnostic_candidates"] = str(args.diagnostic_candidates)
                 report.update(provider_calls=spent["calls"], reserved_tokens=spent["reserved_tokens"],
                               blocked_auxiliary_request_count=len(blocked_auxiliary_requests))
                 _save(args.output, report)
@@ -425,6 +450,8 @@ def main(argv=None) -> int:
     parser.add_argument("--max-reserved-tokens", type=int, default=600000)
     parser.add_argument("--case-timeout", type=int, default=120)
     parser.add_argument("--output", type=Path, default=Path("/tmp/reva-pi-query-trajectories.json"))
+    parser.add_argument("--diagnostic-candidates", type=Path,
+                        help="Opt-in private local output of synthetic model candidates; never request/config payloads")
     args = parser.parse_args(argv)
     if not args.include_live_llm and not args.preflight:
         print(json.dumps({"version": VERSION, "status": "not_run", "cases": [c["id"] for c in CASES], "paid_calls": 0}))

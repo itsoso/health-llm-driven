@@ -1,6 +1,7 @@
 """Offline checks for live trajectory admission and honest result scoring."""
 import importlib.util
 import copy
+import asyncio
 from pathlib import Path
 import unittest
 
@@ -162,6 +163,41 @@ class PiQueryTrajectoryGateTests(unittest.TestCase):
         done["tool_models"] = ["qwen3.6-flash"]
         self.assertIn("daily_nonfast_tool_rounds", self.gate.score_case(
             case, done, answer, ["health_query"], unchanged=True)["failed_checks"])
+
+    def test_candidate_observer_preserves_arguments_and_event_identity(self):
+        messages, tools, received, observations = [], [], [], []
+        events = [{"type": "content", "text": "建议休息"},
+                  {"type": "tool_calls", "tool_calls": [{"id": "x"}]},
+                  {"type": "content", "text": "二十分钟。"},
+                  {"type": "finish", "finish_reason": "stop"}]
+        async def original(actual_messages, actual_tools):
+            self.assertIs(actual_messages, messages)
+            self.assertIs(actual_tools, tools)
+            for event in events:
+                yield event
+        async def run():
+            observed = self.gate.observe_llm_candidates(original, observations)
+            async for event in observed(messages, tools):
+                received.append(event)
+        asyncio.run(run())
+        self.assertEqual(len(received), len(events))
+        self.assertTrue(all(actual is expected for actual, expected in zip(received, events)))
+        self.assertEqual(observations[0]["candidate"], "建议休息二十分钟。")
+        self.assertTrue(observations[0]["completed"])
+
+    def test_candidate_observer_preserves_stream_failure(self):
+        observations = []
+        failure = RuntimeError("synthetic stream failure")
+        async def original(*args):
+            yield {"type": "content", "text": "部分建议"}
+            raise failure
+        async def run():
+            with self.assertRaises(RuntimeError) as caught:
+                async for event in self.gate.observe_llm_candidates(original, observations)([], []):
+                    self.assertEqual(event["text"], "部分建议")
+            self.assertIs(caught.exception, failure)
+        asyncio.run(run())
+        self.assertFalse(observations[0]["completed"])
 
 
 if __name__ == "__main__":
