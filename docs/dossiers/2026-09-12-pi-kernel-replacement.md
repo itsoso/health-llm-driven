@@ -373,3 +373,50 @@ Release evidence at this checkpoint:
 - This is not a completed staged KB release. A normal subsequent release
   must restore staging through `deploy.sh`; no marker, receipt, authorization
   or gate was changed to turn the failed attempt into success.
+
+## Diet recall incident closure and recovered release
+
+The diet recall fix is now deployed at `4c669270b791ffec985d1e4d456f801cda7540e7`
+(runtime code unchanged from reviewed fix `46d2a44430f9`). Exact candidate CI
+`34697250020` and trusted validation `34697332605` both passed.
+
+The first recovery attempt lost its local SSH connection during backup upload
+(`Can't assign requested address`, then `Broken pipe`), returned exit 1, and
+correctly retained its original lease/stage. It never reached code/env/service
+mutation. The remote backup was allowed to finish; its unknown result was not
+relabelled successful. Before resuming, independent review and live inspection
+proved the original local/remote process trees had exited, no new runtime
+journal/preparing/reap existed, the original terminal bytes and production env
+were unchanged, and the original lease/stage identity remained intact.
+
+The supported same-token `REVA_RELEASE_LOCK_ADOPT=1` path of unmodified
+`deploy.sh -b -y` reused the sealed stage for the same candidate and re-ran the
+entire backup/restore/offsite verification. A per-release SSH wrapper reused
+connections and added keepalives; no global network or SSH configuration changed.
+An initial local socket-path-length error occurred before lease acquisition;
+it made no remote change and was corrected before the successful resume.
+
+The resumed deployment returned exit 0. Backup `health_db_2026-09-12_22-03-36_1151291`
+passed full restore, remote cipher hash and HMAC verification. Both staged KB
+serving checks passed; the skills manifest and final health/revision/stability
+gates passed. Durable terminal is `COMMITTED / candidate / finalized`, with
+old SHA `46d2a44430f9`, candidate `4c669270b791`, transaction
+`3b8690f24c6e0f1680fa7c5fac544469`. Independent readback confirmed a clean
+production tree, absent business lease, all three services active with zero
+restarts, and public health HTTP 200. Runtime-only KB staging is restored;
+the health-evidence feature flag remains false as required by this release.
+
+Private local diagnostics preserve the failed attempts and the successful
+resume: `/tmp/reva-diet-recall-deployment.log`,
+`/tmp/reva-diet-recall-recovery-deployment.log`, and
+`/tmp/reva-diet-recall-resumed-deployment.log` with its exit receipt.
+
+Final production user-path verification at the recovered candidate ran the
+reported "今天我吃了啥" through the actual Pi executor, configured live provider
+and production current-user diet read. Exactly one diet query dispatched for
+the Beijing business date; the persisted answer contained a real recorded food,
+used `qwen3.8-max-preview`, and completed successfully. The before/after diet
+record sets were identical. The probe used read-only tools and emitted only
+verification booleans/model metadata and an answer hash to private logs.
+`/tmp/reva-diet-recall-production-verified.log` contains the final clean result.
+The incident is closed; no failed attempt was rewritten as success.
