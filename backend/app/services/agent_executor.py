@@ -16893,7 +16893,7 @@ class AgentExecutor:
                                 # Hallucinated tool calls never widen that seal.
                                 proposed_calls = []
                                 candidate = "本轮模型未生成可发布的健康回答。"
-                                finish_reason = "stop"
+                                finish_reason = "error"
                             if proposed_calls:
                                 supplement_calls = _build_deterministic_supplement_record_tool_calls(
                                     message,
@@ -16957,7 +16957,7 @@ class AgentExecutor:
                                     function["arguments"] = json.dumps(args, ensure_ascii=False)
                                 if not proposed_calls:
                                     candidate = "本轮请求未通过目标操作检查，没有执行变更。"
-                                    finish_reason = "stop"
+                                    finish_reason = "error"
                                 self._prepare_medication_tool_plan(proposed_calls)
                                 planned_writes = []
                                 for call in proposed_calls:
@@ -17047,7 +17047,13 @@ class AgentExecutor:
                                 final_finish_reason if pi_terminal_text is not None else request["finish_reason"]
                             )
                             if not full_reply.strip():
-                                full_reply = "本轮没有生成有效回答，请稍后重试。"
+                                full_reply = (
+                                    _write_rejection_with_receipt_context(
+                                        "本轮没有生成有效回答。已保存的记录请勿重复提交。",
+                                        write_receipts,
+                                    )
+                                    if write_receipts else "本轮没有生成有效回答，请稍后重试。"
+                                )
                                 final_finish_reason = "error"
                             if not unverified_write_operations and not failed_write_operations and last_recoverable_write_rejection and (
                                 _claims_unverified_write_success(full_reply)
@@ -17089,6 +17095,9 @@ class AgentExecutor:
                         final_finish_reason = "error"
 
         except _SimpleRecordTerminal as terminal:
+            deterministic_diet_correction_terminal = bool(
+                self._turn_diet_correction_unresolved_reason
+            )
             # Domain resolution can reject a proposed meal mutation before Pi
             # receives it. Preserve any earlier uncertain/failed write outcome.
             full_reply = (

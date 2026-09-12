@@ -31,11 +31,15 @@ def test_system_prompt_does_not_turn_sleep_advice_into_an_implicit_write(db):
 
 
 @pytest.mark.asyncio
-async def test_advice_turn_recovers_from_model_selected_write_tool_without_user_retry(
+@pytest.mark.parametrize("tools_available", [True, False])
+async def test_advice_turn_rejects_model_selected_write_without_hidden_retry(
     db,
     auth_user_and_headers,
     monkeypatch,
+    tools_available,
 ):
+    if not tools_available:
+        monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda **kwargs: [])
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -71,11 +75,7 @@ async def test_advice_turn_recovers_from_model_selected_write_tool_without_user_
                     }
                 ],
             }
-        assert tools == []
-        return {
-            "content": "睡前先调暗灯光，停止摄入咖啡因，并把室温调整到舒适范围。",
-            "finish_reason": "stop",
-        }
+        raise AssertionError("sealed advice must not open a hidden repair loop")
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
@@ -108,18 +108,20 @@ async def test_advice_turn_recovers_from_model_selected_write_tool_without_user_
     )
     done = events[-1]
 
-    assert len(calls) == 2
-    assert "睡前先调暗灯光" in visible_text
+    assert len(calls) == 1
+    assert visible_text.strip()
+    assert "睡前先调暗灯光" not in visible_text
     assert "写入回执" not in visible_text
     assert "状态暂时无法确认" not in visible_text
     assert done["event"] == "done"
-    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["completion_status"] == "error", (visible_text, done["data"].get("finish_reason"), done["data"].get("turn_outcome"))
+    assert not done["data"].get("write_receipts")
 
     saved = db.query(AgentMessage).filter_by(role="assistant").one()
     assert saved.content == visible_text
-    assert saved.meta["turn_outcome"]["category"] == "success"
+    assert saved.meta["turn_outcome"]["category"] != "success"
     saved_user = db.query(AgentMessage).filter_by(role="user").one()
-    assert saved_user.meta["write_state"]["status"] == "rejected"
+    assert (saved_user.meta or {}).get("write_state", {}).get("status") not in {"verified", "in_flight", "uncertain"}
     assert "in_flight" not in checkpoint_statuses
 
 

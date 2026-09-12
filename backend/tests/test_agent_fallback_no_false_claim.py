@@ -1,25 +1,7 @@
 # -*- coding: utf-8 -*-
-"""诚实不变量第三宣称面: 空回复重试链的 _fallback_text_from_tool_results 绝不谎报写入。
+"""Pi empty output fails without retry; verified receipts remain visible.
 
-与 turn 6334 修复(test_agent_stream_no_false_record_claim.py)同一不变量、不同出口:
-模型两轮都返回空文本时,空回复重试链会从最新工具结果组装兜底文案 —— 旧实现不看
-本轮是否真的写入,只要 dict 里有 food_items/summary/preview 就答"已完成记录：…",
-有 id/record_id 就答"已完成记录。",纯文本结果答"已完成操作：…"。若在**纯查询/分析
-回合**(health_query 读数、health_manage list)触发双空重试,就是查询回合谎报写入。
-
-prod 频率实测 0 次(content LIKE '%已完成记录%' / '%已完成操作%' 均无),但逻辑上是活洞。
-
-修复(fail-closed): _fallback_text_from_tool_results 增加 keyword-only 参数
-has_verified_write(默认 False —— 新调用点忘传参也绝不凭空宣称写入),调用点按
-write_receipts(可验证写入回执,与 turn 6334 修复同一权威判定)传入:
-  - 无回执: food_items/summary/preview → "查到：…"(查询味,不宣称写入);
-    id-only 字典 / 结构化残片(含 manage-list 数组)→ 空串交回重试链
-    (链有界: compact retry → fallback provider → 硬兜底文案,不会重试风暴);
-  - 有回执: 人话字段与旧行为逐字节一致("已完成记录：…" / "已完成记录。" /
-    "已完成操作：…"),不 over-suppress(memory「加固一道闸后必对加固本身跑对抗
-    复审」的双向钉死);唯一例外是结构化残片(首字符 { / [)—— 旧行为会
-    "已完成操作：{…" 回显裸 JSON 前 120 字,现镜像无回执分支的护栏改中性
-    "已完成记录。"(safety-privacy-reviewer 2026-07-13 GO 裁决的可选跟进项)。
+Legacy renderer unit tests remain independently pinned.
 """
 import json
 
@@ -164,10 +146,8 @@ def test_unit_tool_message_passthrough_both_modes():
 # ── 流式对抗: 纯查询回合 + 双空重试 → 兜底绝不谎报写入 ────────────────────────
 
 
-async def test_query_turn_double_empty_retry_fallback_never_claims_write(db, auth_user_and_headers):
-    """对抗主case: 纯查询问句(疑问守卫兜住,非记录路由) + 只读工具返回带 food_items 的
-    dict + 模型合成轮与重试轮都吐空 → 兜底文本必须是查询味,绝不含
-    已完成记录/已完成操作/已记录。"""
+async def test_pi_empty_query_answer_has_no_retry_or_write_claim(db, auth_user_and_headers):
+    """An empty answer after a read cannot invent a receipt or retry the model."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     rounds = []
@@ -198,8 +178,7 @@ async def test_query_turn_double_empty_retry_fallback_never_claims_write(db, aut
         )
 
     async def fake_call_llm(messages, tools):
-        # 重试轮也空 → 走 _fallback_text_from_tool_results。
-        return {"content": "", "finish_reason": "stop"}
+        raise AssertionError("Pi must not call a hidden empty-answer repair")
 
     executor._call_llm_stream = fake_call_llm_stream
     executor._execute_tool = fake_execute_tool
@@ -217,7 +196,10 @@ async def test_query_turn_double_empty_retry_fallback_never_claims_write(db, aut
     assert "✅" not in reply, reply
     # 非空承重(防重试风暴/防静默空回复),且把查到的数据用查询味口径带出来。
     assert reply.strip(), reply
-    assert "燕麦粥" in reply, reply
+    assert "没有生成有效回答" in reply
+    assert len(rounds) == 2
+    assert events[-1]["data"]["completion_status"] == "error"
+    assert not events[-1]["data"].get("write_receipts")
 
     # 落库(reload 侧)同样干净。
     saved = db.query(AgentMessage).filter_by(role="assistant").one()
@@ -274,14 +256,14 @@ async def test_query_turn_list_result_double_empty_retry_no_claim_no_leak(db, au
 # ── 正向控制: 真写入回合的双空重试,兜底仍确认"已完成记录" ──────────────────────
 
 
-async def test_verified_write_double_empty_retry_still_confirms(
+async def test_pi_empty_answer_preserves_verified_write_without_retry(
     db, auth_user_and_headers, monkeypatch
 ):
-    """反向证伪(不 over-suppress): 非 fast-record 路由 + health_record 真写入
-    (结构化回执 → write_receipts 非空) + 双空重试 → 兜底照常"已完成记录：…"。"""
+    """An empty answer cannot erase a verified receipt or invite a duplicate."""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     rounds = []
+    writes = []
 
     record_message = "晚饭吃的牛排和沙拉,帮我登记一下。"
     # 饮食分类器现在会把这条自然语言送入 fast-record。这个测试只验证普通
@@ -306,14 +288,15 @@ async def test_verified_write_double_empty_retry_still_confirms(
             yield {"type": "finish", "finish_reason": "stop"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
-        # 结构化写入回执(id + resource_type,无 message 字段 → 兜底走 food_items 分支)。
+        writes.append(tool_name)
+        # Return one verified receipt from the synthetic adapter.
         return json.dumps(
             {"id": 702, "resource_type": "diet_record", "food_items": "牛排、沙拉"},
             ensure_ascii=False,
         )
 
     async def fake_call_llm(messages, tools):
-        return {"content": "", "finish_reason": "stop"}
+        raise AssertionError("Pi must not retry a completed write through model repair")
 
     executor._call_llm_stream = fake_call_llm_stream
     executor._execute_tool = fake_execute_tool
@@ -326,6 +309,11 @@ async def test_verified_write_double_empty_retry_still_confirms(
     ]
     reply = _tokens(events)
 
-    # 真写入 + 双空重试 → 兜底确认照常产出。
-    assert "已完成记录" in reply, reply
-    assert "牛排、沙拉" in reply, reply
+    assert "1 项记录已完成并取得回执" in reply
+    assert "请勿重复提交" in reply
+    assert len(rounds) == 2
+    assert writes == ["health_record"]
+    assert events[-1]["data"]["completion_status"] == "error"
+    receipts = events[-1]["data"]["write_receipts"]
+    assert len(receipts) == 1 and receipts[0]["resource_id"] == "702"
+    assert receipts[0]["verified"] is True

@@ -1,9 +1,4 @@
-"""端到端: 确定性查询直出 (Phase-2 rank2) 通过 /api/v1/agent/stream。
-
-flag ON + 覆盖维度的只读查询回合 → 从真实 tool result 渲染确定性读数并**跳过合成轮**。
-窄范围多指标请求还会确定性构造批查询, 省掉工具决策轮 (0 次 LLM)。flag OFF / 安全
-告警后缀 / 未覆盖维度 → fail-open 回落正常模型路径。
-"""
+"""Pi owns query/synthesis loops even when a retired deterministic flag is set."""
 import json
 
 import pytest
@@ -46,7 +41,7 @@ async def _run(executor, message, user_id):
 class _ToolThenAnswerProvider:
     """Round 1: health_query tool_call; round 2+: 纯文本合成答案。
 
-    stream_calls 累积每次 chat_stream 调用 = LLM 轮数 (确定性短路后不该有第二次)。
+    stream_calls records both the structured decision and synthesis requests.
     """
 
     def __init__(self, model_id, tool_args, stream_calls, tool_name="health_query"):
@@ -157,29 +152,28 @@ def _make_executor(
 
 
 @pytest.mark.asyncio
-async def test_flag_on_water_query_is_deterministic_single_round(db, auth_user_and_headers, monkeypatch):
-    """flag ON + 水查询 → 确定性读数, 恰好 1 次 LLM 调用 (无合成轮)。"""
+async def test_pi_water_query_retains_model_synthesis_with_old_flag(db, auth_user_and_headers, monkeypatch):
+    """The old flag cannot bypass Pi's structured tool/result/answer loop."""
     user, _ = auth_user_and_headers
     executor, state = _make_executor(db, monkeypatch)
     _set_flag(monkeypatch, True)
 
     events = await _run(executor, "今天喝了多少水", user.id)
 
-    # 恰好 1 次 LLM 调用 = 工具决策轮; 合成轮被 break 跳过。
-    assert len(state["stream_calls"]) == 1
+    # Pi requests the decision and then synthesis using the returned tool data.
+    assert len(state["stream_calls"]) == 2
     # health_query 执行了一次。
     assert state["executed"] == [("health_query", '{"dimension": "water"}')]
-    # 面向用户 tokens = 确定性读数, 且不含合成答案。
+    # The selected synthesis provider owns the answer.
     tokens = _tokens(events)
-    assert tokens == "今日饮水 1200ml,目标 2000ml(完成 60%)。"
-    assert _SYNTH_ANSWER not in tokens
+    assert tokens == _SYNTH_ANSWER
     # done 事件正常, completion_status complete。
     done = events[-1]["data"]
     assert done["completion_status"] == "complete"
 
 
 @pytest.mark.asyncio
-async def test_flag_on_batch_query_is_deterministic_single_round(
+async def test_pi_batch_query_requires_structured_model_decision(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _ = auth_user_and_headers
@@ -220,24 +214,20 @@ async def test_flag_on_batch_query_is_deterministic_single_round(
 
     events = await _run(executor, "查一下最近7天的HRV和睡眠平均值", user.id)
 
-    assert len(state["stream_calls"]) == 0
+    assert len(state["stream_calls"]) == 2
     assert state["executed"] == [
         ("health_query_batch", json.dumps(batch_args, ensure_ascii=False)),
     ]
-    assert _tokens(events) == (
-        "信息来源：工具读取结果。\n"
-        "近7天 HRV 平均值 58 ms。\n\n"
-        "近7天 睡眠评分 平均值 76 分。"
-    )
+    assert _tokens(events) == _SYNTH_ANSWER
     done = events[-1]["data"]
     assert done["completion_status"] == "complete"
-    assert done["llm_rounds"] == 0
+    assert done["llm_rounds"] == 2
     assert done["perf"]["end_to_end_ttft_ms"] is not None
     assert done["perf"]["first_useful_ms"] is not None
 
 
 @pytest.mark.asyncio
-async def test_implicit_batch_aggregation_skips_decision_model_but_uses_synthesis(
+async def test_pi_implicit_batch_aggregation_keeps_decision_and_synthesis(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _ = auth_user_and_headers
@@ -277,18 +267,18 @@ async def test_implicit_batch_aggregation_skips_decision_model_but_uses_synthesi
 
     events = await _run(executor, "查一下最近7天的HRV和睡眠数据", user.id)
 
-    assert len(state["stream_calls"]) == 1
+    assert len(state["stream_calls"]) == 2
     assert state["executed"] == [
         ("health_query_batch", json.dumps(batch_args, ensure_ascii=False)),
     ]
     assert _tokens(events) == _SYNTH_ANSWER
     assert events[-1]["data"]["perf"]["decision_route"] == (
-        "deterministic_batch_query_fallback_llm"
+        "pi"
     )
 
 
 @pytest.mark.asyncio
-async def test_preplanned_batch_failure_falls_open_to_one_synthesis_round(
+async def test_pi_batch_partial_failure_stays_in_structured_loop(
     db, auth_user_and_headers, monkeypatch
 ):
     user, _ = auth_user_and_headers
@@ -328,13 +318,13 @@ async def test_preplanned_batch_failure_falls_open_to_one_synthesis_round(
 
     events = await _run(executor, "查一下最近7天的HRV和睡眠平均值", user.id)
 
-    assert len(state["stream_calls"]) == 1
+    assert len(state["stream_calls"]) == 2
     assert state["executed"] == [
         ("health_query_batch", json.dumps(batch_args, ensure_ascii=False)),
     ]
     assert _tokens(events) == _SYNTH_ANSWER
     assert events[-1]["data"]["perf"]["decision_route"] == (
-        "deterministic_batch_query_fallback_llm"
+        "pi"
     )
 
 
@@ -356,7 +346,7 @@ async def test_flag_off_falls_through_to_synthesis(db, auth_user_and_headers, mo
 
 
 @pytest.mark.asyncio
-async def test_shadow_keeps_synthesis_and_reports_content_free_eligibility(
+async def test_pi_shadow_flag_cannot_enable_deterministic_shortcut(
     db, auth_user_and_headers, monkeypatch,
 ):
     user, _ = auth_user_and_headers
@@ -369,8 +359,8 @@ async def test_shadow_keeps_synthesis_and_reports_content_free_eligibility(
     assert _tokens(events) == _SYNTH_ANSWER
     assert events[-1]["data"]["perf"]["deterministic_query"] == {
         "mode": "shadow",
-        "eligible": True,
-        "candidate_chars": len("今日饮水 1200ml,目标 2000ml(完成 60%)。"),
+        "eligible": False,
+        "candidate_chars": 0,
     }
 
 

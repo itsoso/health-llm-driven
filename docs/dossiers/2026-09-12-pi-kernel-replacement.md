@@ -208,3 +208,45 @@ Fresh verification:
 Evidence: `/tmp/reva-pi-final-ci-repairs.log`,
 `/tmp/reva-pi-meal-privacy-final.log`, `/tmp/reva-pi-post-ci-postgres.log`,
 `/tmp/reva-pi-live-post-ci-fixes.log`. Candidate CI/deployment still pending.
+
+
+## Deferred CI shard repair
+
+Candidate `1e79ae9939d65deb3070d359e1300bbffe01e2e7`, CI `34684310680`,
+exposed previously unreached downstream shards because workers stop on a failed
+shard. The earlier fixes passed. Newly reached failures included old deterministic
+query/empty-answer retry expectations and real terminal-output issues.
+
+Domain meal-resolution failures now retain their existing specific messages;
+zero-tool guards no longer overwrite ambiguous/missing/failed lookup guidance.
+A completely rejected proposed tool batch or a proposal outside the sealed tool
+scope returns error. Empty synthesis after a verified write retains the exact
+receipt and warns against resubmission; no model retry or new write is introduced.
+Tests retain actual official Pi transport and structured model/tool assertions.
+
+Fresh targeted tests: 24 passed. Exact CI shard entrypoint locally: agent-a-d
+139 passed, agent-f-h 315 passed. Previously unreached b: 197 passed; q: 83 passed.
+The d-rest full run had 111 pass plus the known unrelated dirty Mac dossier
+failure, which must be revalidated from the isolated release checkout.
+PostgreSQL terminal/reconciliation: 13 passed. Actual complete LLM gate again
+passed invariants 12, core 50, synthesis 5 (average 0.96), trajectories 12, goldens 9.
+Independent source safety review: GO, runtime digest
+`7334ed29f3fa9eaca5089f3f57991b2fd4943c4b4dac4f17b9b19f5904f53593`.
+Evidence: `/tmp/reva-pi-terminal-ci-full.log`, `/tmp/reva-pi-d-rest-q-full.log`,
+`/tmp/reva-pi-repair-next-final.log`, `/tmp/reva-pi-terminal-pg.log`,
+`/tmp/reva-pi-terminal-live.log`.
+
+The completion-status shard also hit its 256-second process deadline twice,
+without an assertion failure; its previous exact CI run passed with individual
+cases at or below 3.57 seconds. An isolated same-source CI rerun is investigating
+this variance. Existing per-test/process limits and all assertions are unchanged.
+No production release has been dispatched.
+
+Final core regression: 359 passed, 1 PostgreSQL-only skip (199.13 seconds);
+the separately run PostgreSQL terminal/reconciliation set passed all 13.
+The isolated release checkout installed the pinned official runtime with public
+npm and zero audit findings, then the complete d-rest shard passed all 112.
+The strengthened receipt test rejects non-stream model repair and asserts one
+actual write; its full file passed 8 tests. Evidence:
+`/tmp/reva-pi-terminal-core.log`, `/tmp/reva-pi-clean-d-rest.log`,
+`/tmp/reva-pi-empty-receipt-final.log`.
