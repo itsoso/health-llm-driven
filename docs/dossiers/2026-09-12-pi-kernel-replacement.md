@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 |---|---|
-| 状态 | shipping |
-| 当前阶段 | S6 verified, release preparation |
+| 状态 | shipped |
+| 当前阶段 | S7 production verified |
 | slug | pi-kernel-replacement |
 
 ## G1 需求准入
@@ -13,8 +13,9 @@
 
 ## Engineering delivery
 
-Status: release preparation authorized; implementation, regression, independent
-safety review and live LLM gates passed. Candidate CI and deployment pending.
+Status: production deployed and independently verified at `011084fef183`.
+Implementation, regression, safety review, live LLM gates and exact CI passed.
+See the final deployment evidence below; earlier sections retain historical runs.
 Trace run: `2a203e0ed6c7`.
 
 The user authorized direct replacement of Reva's self-written agent kernel.
@@ -44,8 +45,9 @@ readback and success claims. Registered goal verification, medical evidence,
 final output sanitization, retry idempotency and selected-model authority remain.
 
 The Docker build, CI test workers and backend deployment dependency installer
-include the pinned runtime. Local setup is documented in README.md. No deployment
-was executed; Docker is unavailable locally, so the image build was not run.
+include the pinned runtime. Local setup is documented in README.md. Production
+deployment is verified below; Docker is unavailable locally, so the image build
+was not run.
 Unrelated Mac shopping changes present at task start remain untouched.
 
 ## Verification evidence
@@ -88,11 +90,11 @@ asserted, and no real health data was accessed to work around the failure.
 - Implementation: complete locally.
 - Local QA/safety: passed, including extended no-false-write regression.
 - Live LLM gate: passed after isolated configuration and diagnostic criterion correction below.
-- User explicitly authorized production deployment; source publication and backend-only release preparation are in progress.
-- Production validation: not performed; local evidence does not establish rollout.
+- User authorized production deployment and local source delivery on Git failure; backend deployment completed.
+- Production validation: passed for the exact deployed SHA, durable terminal state, service health and official Pi transport.
 
-Before publication, complete live validation in a correctly configured isolated
-environment and follow the existing revision-bound CI and deployment gates.
+Live validation and revision-bound CI were completed before publication.
+The later explicit local-delivery authorization and deployment evidence are below.
 
 ## Production release preparation (2026-09-12, Asia/Shanghai)
 
@@ -277,3 +279,45 @@ Independent safety-gate: GO; final runtime SHA-256
 Evidence: `/tmp/reva-pi-final-card-ci.log`, `/tmp/reva-pi-final-card-pg.log`,
 `/tmp/reva-pi-photo-card-final.log`, `/tmp/reva-pi-photo-card-guard.log`,
 `/tmp/reva-pi-final-receipt-live.log`. New exact-SHA CI and deployment remain pending.
+
+
+## Production deployment completed
+
+Deployed and independently verified `011084fef183863b112aebd83fde16dd64e2550f`.
+Exact CI `34686234488` attempt 2 and trusted validate `34686968992` passed.
+The first CI attempt timed out in agent-s-v; an unchanged isolated rerun passed
+all remaining shards on their first process attempt. Clean local agent-s-v also
+passed 534 with 3 platform/DB skips in 140 seconds; diagnostic no-false-write
+150 tests passed without DNS attempts or faulthandler stalls. Timeout cause was
+not reproduced; limits and assertions were unchanged.
+
+Canonical HTTPS bootstrap fetch failed again with the low-speed deadline. The
+user explicitly authorized local source delivery when production Git fetch
+fails. A clean isolated main checkout ran the unmodified `deploy.sh -b` after
+independent fallback review GO, exact current-main CI attestation and secret
+scan. Only the production-derived configuration plus deployment address/path
+was used in a temporary 0600 file. The HEAD bundle was uploaded; the business
+checkout's existing origin fetch succeeded, so the bundle remained a fallback.
+No cloud release capability was issued or consumed for this local deployment.
+
+Database backup, full restore drill, encrypted offsite upload/hash/manifest,
+rollback schema, runtime schema/migration, exact revision, process stability,
+knowledge serving and skills-manifest gates all passed. Health score was 60/60.
+The durable terminal marker binds this SHA with COMMITTED/finalized, and the
+business lease is absent. Backend, worker and beat are active with zero restarts.
+The actual mobile public endpoint returns expected unauthenticated 401; local
+health returns 200. As the packaged skill's old health-api hostname no longer
+resolves, the public probe uses the actual client/Nginx health.executor.life URL.
+
+The official Pi production probe ran as health-app with the service Node PATH:
+two scripted model frames, one synthetic read-only tool, final marker and child
+exit 0. This proves installed runtime transport, not live-provider quality; the
+real-provider/LLM gates are documented above. No production health data was used.
+
+Temporary repo-local HTTP/1.1 and low-speed settings bounded the inherited global
+unlimited Git transfer configuration. After terminal/lease proof and exact config
+comparison, the original config bytes were restored. All locally generated
+release private keys and copied production configuration were deleted.
+Server audit: `/var/backups/health-app/local-delivery-011084fef183863b112aebd83fde16dd64e2550f/completed.json`.
+Local evidence: `/tmp/reva-pi-local-deployment.log`,
+`/tmp/reva-pi-local-release-completed.json`, `/tmp/reva-pi-production-probe.log`.
