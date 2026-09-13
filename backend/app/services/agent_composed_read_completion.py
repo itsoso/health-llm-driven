@@ -163,8 +163,9 @@ def _evidence_gap_notices(evidence: dict) -> list[str]:
 # A bounded meal log has no full-day intake attestation. Even complete nutrient
 # fields in its rows cannot establish individual nutritional sufficiency.
 _NUTRITION_DEFICIT = re.compile(
-    r"(?:营养(?:覆盖)?|蛋白质|蔬果|蔬菜|水果|总摄入)(?:摄入|覆盖|量)?"
-    r"(?:可能|似乎|或许|比较|偏|仍|明显|存在|有)?(?:不足|不够|缺乏)"
+    r"(?:营养(?:覆盖|结构)?|蛋白质|蔬果|蔬菜|水果|总摄入)(?:摄入量|摄入|覆盖|吃得|量)?"
+    r"(?:可能|似乎|或许|比较|仍|明显|存在|有)?"
+    r"(?:(?:偏)?(?:不足|不够|缺乏)|(?:偏|太|过|较|很)(?:低|少)|不均衡|单一)"
 )
 
 
@@ -178,6 +179,7 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
             or not any(q["query"]["dimension"] == "diet" for q in evidence["queries"])):
         return GuidanceValidationResult(text=text)
     normalized = _medical_assertion_matching_text(text)
+    normalized = normalized.replace("不等于", "不意味着")
     # Uncertainty about whether a deficit exists is not an affirmative deficit.
     # Keep the same clause and contrast boundaries as the medical assertion gate.
     normalized = re.sub(
@@ -334,7 +336,7 @@ def _facts(dimension: str, payload: dict) -> str:
 
 
 def read_scope_synthesis_instructions(scope) -> str:
-    if not any("days" in query for query in scope.queries):
+    if len(scope.queries) < 2 and not any("days" in query for query in scope.queries):
         return ""
     return (
         "\n[实际记录分析的证据边界]\n"

@@ -435,6 +435,8 @@ async def test_record_field_request_completion_retains_medical_boundary(
     ("已记录饮食种类较重复，但全天营养是否充足无法判断。既往感冒不能直接说明当前恢复状态。", False),
     ("饮食记录比较重复，可能营养覆盖不足。", True),
     ("你可能蛋白质不足。", True),
+    ("蛋白质摄入可能偏低。", True),
+    ("没有证据表明蛋白质摄入偏低。", False),
     ("请补充：具体补剂名称和剂量、每天三餐与饮水、睡眠上床/入睡/醒来时间、当前主要症状、情绪压力情况。", True),
     ("请补充具体补剂名称和剂量；每天服用两片。", True),
 ])
@@ -518,3 +520,73 @@ def test_composed_nutrition_assertion_polarity(text, blocked):
     assert result.flagged is blocked
     assert (text in result.text) is not blocked
     assert not enforce_composed_synthesis_boundaries(text, None).flagged
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+async def test_explicit_calendar_scope_keeps_composed_responsibility(
+    db, four_domain_user, monkeypatch, panel, continuation,
+):
+    dimensions = ("diet", "sleep")
+    queries = [{"dimension": d, "start_date": "2026-09-13", "end_date": "2026-09-13", "timezone": "Asia/Shanghai"}
+               for d in dimensions]
+    monkeypatch.setattr("tests.test_agent_composed_synthesis_projection.QUERIES", queries)
+    monkeypatch.setattr("tests.test_agent_composed_synthesis_projection.BAD", [])
+    query = "查询2026年9月13日的饮食和睡眠并分析"
+    _, calls, _, done, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel, query=query)
+    if continuation:
+        _, calls, _, done, _ = await run_projection(
+            db, four_domain_user, monkeypatch, panel=panel, query="继续分析", conversation_id=done["conversation_id"],
+        )
+    assert done["turn_outcome"]["status"] == "complete"
+    for call in calls[1:]:
+        system, payload = [m["content"] for m in call["messages"]]
+        assert "不生成数据采集任务或追问清单" in system
+        data = json.loads(payload)
+        assert all(q["query"]["start_date"] == q["query"]["end_date"] == "2026-09-13" for q in data["read_evidence"]["queries"])
+        assert all("days" not in q["query"] for q in data["read_evidence"]["queries"])
+
+
+@pytest.mark.parametrize("text,blocked", [
+    ("蛋白质摄入可能偏低。", True),
+    ("蔬果吃得太少。", True),
+    ("营养不均衡。", True),
+    ("营养结构单一。", True),
+    ("记录结构单一不等于营养结构单一。", False),
+    ("记录结构单一不等于营养结构单一，但蛋白质摄入偏低。", True),
+    ("总摄入偏少。", True),
+    ("无法判断蛋白质摄入是否偏低。", False),
+    ("没有证据表明蔬果吃得太少。", False),
+    ("不能据此认为营养不均衡。", False),
+    ("已记录的餐食种类较重复。", False),
+    ("已记录食物种类较少，但全天营养是否充足无法判断。", False),
+    ("不能据此认为营养不足，但蛋白质摄入可能偏低。", True),
+])
+def test_composed_nutrition_inference_paraphrases(text, blocked):
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, enforce_composed_synthesis_boundaries
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [
+        execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}]),
+    ])
+    result = enforce_composed_synthesis_boundaries(text, completion)
+    assert result.flagged is blocked
+    assert (text in result.text) is not blocked
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+async def test_explicit_calendar_unsupported_scope_stays_closed(db, four_domain_user, monkeypatch, panel):
+    # This grammar has no four-domain calendar authorization today. Prompt
+    # responsibility must not manufacture the missing read scope.
+    queries = [{"dimension": d, "start_date": "2026-09-13", "end_date": "2026-09-13", "timezone": "Asia/Shanghai"}
+               for d in ("diet", "sleep", "workout", "supplements")]
+    monkeypatch.setattr("tests.test_agent_composed_synthesis_projection.QUERIES", queries)
+    monkeypatch.setattr("tests.test_agent_composed_synthesis_projection.BAD", [])
+    executor, _, dispatched, done, _ = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel,
+        query="查询2026年9月13日的饮食、睡眠、运动和实际补剂服用记录并分析",
+    )
+    assert done["turn_outcome"]["status"] == "blocked"
+    assert "longitudinal_read_scope_unresolved" in executor._agent_kernel_capability_block_reasons
+    assert not dispatched and not done["write_receipts"]
