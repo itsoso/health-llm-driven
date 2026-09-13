@@ -101,13 +101,25 @@ def sync_status_goal(payload: Any) -> dict[str, str]:
     status = payload.get('sync_check') if isinstance(payload, dict) else None
     valid = (isinstance(status, dict) and status.get('lookup_status') == 'available'
              and project_garmin_status(status)['lookup_status'] == 'available')
+    job = payload.get('sync_job') if isinstance(payload, dict) else None
+    if isinstance(job, dict) and job.get('version') == 'garmin-sync-status.v1':
+        from uuid import UUID
+        try:
+            job_id = str(UUID(job.get('job_id')))
+        except (ValueError, TypeError, AttributeError):
+            job_id = None
+        observed = (job_id is not None and job_id == job.get('job_id')
+                    and job.get('status') in {'completed', 'failed', 'running'}
+                    and type(job.get('job_success_verified')) is bool
+                    and job['job_success_verified'] == (job['status'] == 'completed'))
+        valid = valid or observed
     return {'goal_id': 'garmin_sync_status', 'kind': 'query',
             'status': 'verified' if valid else 'failed',
             'evidence_kind': 'read_result' if valid else '',
             'reason_code': 'sync_status_read' if valid else 'sync_status_unavailable'}
 
 
-def sleep_sync_reply(plan: DailyReadPlan, payloads: dict, goals: dict) -> str:
+def sleep_sync_reply(plan: DailyReadPlan, payloads: dict, goals: dict, *, include_task_uncertainty: bool = True) -> str:
     """Use verified facts for a compound read; no model-generated sync claims."""
     from app.services.agent_garmin_status import garmin_status_text
     payload = payloads.get('sleep')
@@ -129,7 +141,7 @@ def sleep_sync_reply(plan: DailyReadPlan, payloads: dict, goals: dict) -> str:
         sleep += f'睡眠评分：{score_text}。' if score_text is not None else '睡眠评分暂无有效读数。'
         sleep += '以上是已收到的设备记录，不代表医学诊断。'
     status = payload.get('sync_check') if isinstance(payload, dict) else None
-    return f'睡眠记录（按醒来日期 {plan.start_date}，{plan.timezone}）：\n{sleep}\n\n{garmin_status_text(status)}'
+    return f'睡眠记录（按醒来日期 {plan.start_date}，{plan.timezone}）：\n{sleep}\n\n{garmin_status_text(status, include_task_uncertainty=include_task_uncertainty)}'
 
 
 def summary_advice_text(text: str) -> str:

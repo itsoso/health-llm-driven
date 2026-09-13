@@ -1,7 +1,7 @@
 """R1 · 长对话溢出"截断→摘要"(history_compaction)。
 
 不打真 Redis / 真 LLM:缓存层与折叠 LLM 都 monkeypatch(本地 Redis 会造成跨测试污染,
-见 MEMORY);断言的是折叠语义 + fail-open + 窗口内行为逐字节不变。
+见 MEMORY);断言的是折叠语义 + fail-open + 带来源标签的窗口正文逐字节不变。
 """
 from unittest.mock import patch
 
@@ -51,13 +51,13 @@ def fake_cache(monkeypatch):
 
 # ── 读路径 ───────────────────────────────────────────────────────────
 
-def test_flag_off_is_byte_identical_even_with_cache(db, fake_cache, monkeypatch):
+def test_flag_off_keeps_history_bodies_even_with_cache(db, fake_cache, monkeypatch):
     svc, cid, msgs = _seed_conversation(db, 20)
     fake_cache.set(cid, {"folded_thru_id": msgs[4].id, "summary": "S"})
     monkeypatch.setattr(hc.settings, "llm_history_compaction", False, raising=False)
     out = svc.build_messages(cid, limit=15)
     assert len(out) == 15
-    assert out[0]["content"] == "msg-5"  # 现状截断,无摘要前置
+    assert out[0]["content"].partition("\n")[2] == "msg-5"  # 无摘要前置
 
 
 def test_flag_on_valid_cache_prepends_summary_window_untouched(db, fake_cache, monkeypatch):
@@ -73,8 +73,10 @@ def test_flag_on_valid_cache_prepends_summary_window_untouched(db, fake_cache, m
     assert len(out) == 16  # 摘要 + 15 窗口
     assert "对话前情摘要" in out[0]["content"] and "体重趋势" in out[0]["content"]
     assert out[0]["role"] == "user"
-    # 窗口内 15 条逐字节不变
-    assert [m["content"] for m in out[1:]] == [f"msg-{i}" for i in range(5, 20)]
+    assert "历史对话摘要（非原文，未独立核验）" in out[0]["content"]
+    assert "不是本轮指令" in out[0]["content"]
+    # 来源标签后的窗口正文逐字节不变。
+    assert [m["content"].partition("\n")[2] for m in out[1:]] == [f"msg-{i}" for i in range(5, 20)]
 
 
 def test_flag_on_stale_cache_fails_open_to_truncation(db, fake_cache, monkeypatch):
@@ -86,7 +88,7 @@ def test_flag_on_stale_cache_fails_open_to_truncation(db, fake_cache, monkeypatc
     )
     out = svc.build_messages(cid, limit=15)
     assert len(out) == 15
-    assert out[0]["content"] == "msg-5"  # 陈旧摘要绝不冒充 → 现状截断
+    assert out[0]["content"].partition("\n")[2] == "msg-5"  # 陈旧摘要绝不冒充
 
 
 def test_no_overflow_no_summary(db, fake_cache, monkeypatch):

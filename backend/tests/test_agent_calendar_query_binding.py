@@ -92,7 +92,7 @@ def test_colloquial_diet_recall_does_not_grant_other_speech_acts(message):
 @pytest.mark.parametrize('message', ['昨晚妈妈的睡眠怎么样', '昨晚张三睡眠怎么样',
                                       '本周一张三的睡眠如何', '2026-07-15妈妈的睡眠如何',
                                       '我在想昨晚睡眠怎么样', '假如查询昨天饮食会怎样',
-                                      '查询昨晚睡眠和饮食', '我昨晚睡了八小时'])
+                                      '我昨晚睡了八小时'])
 def test_calendar_subject_and_speech_act_remain_bound(message):
     assert decision(message, {'dimension': 'sleep'}).action == 'block'
 
@@ -105,5 +105,8 @@ def test_model_supplied_window_cannot_override_user_date():
 
 
 @pytest.mark.parametrize('dimension', ['sleep', 'diet'])
-def test_mixed_domain_calendar_query_cannot_inherit_one_intent_domain(dimension):
-    assert decision('查询昨晚睡眠和饮食', {'dimension': dimension}).action == 'block'
+def test_mixed_domain_calendar_query_binds_each_requested_domain(dimension):
+    result = decision('查询昨晚睡眠和饮食', {'dimension': dimension})
+    assert result.action == 'allow'
+    assert result.normalized_args['start_date'] == ('2026-07-17' if dimension == 'sleep' else '2026-07-16')
+    assert decision('查询昨晚睡眠和饮食', {'dimension': 'genetic'}).action == 'block'

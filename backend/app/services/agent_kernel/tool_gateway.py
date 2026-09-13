@@ -28,7 +28,7 @@ _HARD_BLOCK_REASONS = frozenset(
         "health_query_cancelled_by_user",
         "health_query_calendar_window_unsupported",
         "health_query_calendar_window_conflict",
-    "garmin_sync_scope_unresolved",
+        "garmin_sync_scope_unresolved",
         "health_query_not_requested",
         "health_query_subject_not_current_user",
     }
@@ -39,6 +39,10 @@ def _is_hard_policy_denial(
     snapshot: TurnSnapshot,
     decision: CapabilityDecision,
 ) -> bool:
+    from app.services.agent_policy_retry import is_terminal_policy_reason
+
+    if is_terminal_policy_reason(decision.reason):
+        return True
     # Shadow mode may observe compatibility policy, but it must never dispatch
     # a health write that deterministic target authorization rejected. Doing so
     # would turn telemetry rollout into real cross-domain or field expansion.
@@ -125,6 +129,10 @@ class ToolGateway:
 def blocked_tool_result(decision: CapabilityDecision) -> str:
     tool_name = decision.normalized_tool_name or "unknown"
     recovery_guidance = {
+        "health_query_semantics_unresolved": "读取尚未执行。根据当前用户原话和历史澄清目标，只补缺少的查询维度或时间，不扩大授权范围。",
+        "health_query_calendar_window_unsupported": "读取尚未执行。将原话中的日期归一为明确日历范围；不同目标分别查询。确有日期歧义时只问该歧义。",
+        "health_query_calendar_window_conflict": "模型参数与本轮日期冲突。按本轮日期修正参数后重试，不使用旧窗口。",
+        "health_query_dimension_conflict": "该数据域不在本轮读取范围内。改查用户已请求的维度，不得用其他个人数据代替。",
         "write_tool_without_write_intent": "先澄清用户是要查询、记录还是修改，未明确保存意图前不要写入。",
         "manage_write_without_mutate_intent": "先确认用户要修改或删除哪条记录，再执行变更。",
         "manage_operation_mismatch": "保留现有记录，仅重试用户明确要求的操作，不要改用其他变更方式。",
@@ -144,13 +152,36 @@ def blocked_tool_result(decision: CapabilityDecision) -> str:
         decision.reason,
         "请换用明确且已注册的操作，必要时先向用户澄清目标。",
     )
+    from app.services.agent_policy_retry import (
+        is_repairable_read_failure, is_terminal_policy_reason, policy_failure_category,
+        terminal_policy_notice,
+    )
+    retryable = is_repairable_read_failure(decision.reason, tool_name, decision.normalized_args)
+    terminal = is_terminal_policy_reason(decision.reason)
+    category = policy_failure_category(decision.reason)
+    message = "[NEEDS_CLARIFICATION] 工具调用未执行。"
+    if category in {"permission_denied", "cancelled"}:
+        message = terminal_policy_notice([decision.reason]) or message
+        recovery_guidance = (
+            "立即停止此请求，不要更换工具、参数或入口绕过权限或用户取消。"
+            "当前回合没有取得该操作授权；只说明未执行的原因。"
+        )
+    elif retryable:
+        message = "[PARAMETERS_REJECTED] 本次读取未执行，可按用户已授权的范围修正参数。"
+    elif category == "read_parameters":
+        # A reason string alone cannot turn a write or unknown tool into a read.
+        recovery_guidance = "本次调用未执行。该工具不适用只读参数修复；不要据此重试写入。"
     return json.dumps(
         {
+            "retryable": retryable,
+            "terminal": terminal,
+            "error_category": category,
             "status": "rejected",
+            "success": False,
             "error_code": decision.reason,
             "dispatch_started": False,
             "tool": tool_name,
-            "message": "[NEEDS_CLARIFICATION] 工具调用未执行。",
+            "message": message,
             "recovery_guidance": recovery_guidance,
         },
         ensure_ascii=False,

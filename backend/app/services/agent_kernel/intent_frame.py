@@ -44,12 +44,17 @@ def build_intent_frame(
         evidence.extend(f"scope:{key}={value}" for key, value in sorted(intent.scope.items()))
 
     cancelled_write_intent = write_cancelled and intent.is_write
+    from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
+
+    owned_sync = not write_cancelled and has_owned_sync_instruction(text)
+    if owned_sync:
+        evidence.append("semantic:owned_garmin_sync")
     return IntentFrame(
         raw=intent.raw,
         normalized=intent.normalized,
         primary="chat" if cancelled_write_intent else intent.primary,
         domain=intent.domain,
-        operation="none" if cancelled_write_intent else intent.operation,
+        operation="none" if cancelled_write_intent else "sync" if owned_sync else intent.operation,
         confidence=intent.confidence,
         evidence=tuple(evidence),
         ambiguity=tuple(ambiguity),

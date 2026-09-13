@@ -890,7 +890,7 @@ def test_punctuated_clinician_basis_mutations_fail_closed(message):
             "生成一张运动图片",
             ("write", "aigc_media", "create", True, True),
         ),
-        ("制定康复计划", ("write", "plan", "create", True, True)),
+        ("制定康复计划", ("advice", "plan", "analyze", False, True)),
         ("提醒我明天复查", ("write", "reminder", "create", True, True)),
         (
             "查看医生诊断记录",
@@ -1537,7 +1537,7 @@ def test_every_clinician_guard_decision_bypasses_legacy_authorizers(monkeypatch)
             ("write", "diet"),
         ),
         ("_mutation_operation", "删除午餐记录", ("mutate", "diet")),
-        ("_plan_operation", "制定康复计划", ("write", "plan")),
+        ("_plan_operation", "保存康复计划", ("write", "plan")),
         ("_reminder_operation", "提醒我明天复查", ("write", "reminder")),
         (
             "_is_media_generation_request",
@@ -1872,13 +1872,13 @@ def test_destructive_command_after_analysis_preface_stays_mutation():
     assert intent.requires_reliable_tool_model is True
 
 
-def test_plan_generation_is_a_write_intent():
+def test_plan_generation_is_answer_generation_without_persistence():
     intent = classify_agent_utterance("生成本周健康计划")
 
-    assert intent.primary == "write"
+    assert intent.primary == "advice"
     assert intent.domain == "plan"
-    assert intent.operation == "create"
-    assert intent.is_write is True
+    assert intent.operation == "analyze"
+    assert intent.is_write is False
 
 
 def test_explicit_reminder_creation_is_not_misrouted_to_water_or_medication():

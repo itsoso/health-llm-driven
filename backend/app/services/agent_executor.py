@@ -4152,16 +4152,26 @@ def _summarize_recoverable_write_rejections(
     return summary, summary_code
 
 
+def _trusted_receipt_summary(write_receipts: Sequence[Mapping[str, Any]]) -> str:
+    verified = {
+        str(receipt.get("operation_id") or (receipt.get("resource_type"), receipt.get("resource_id")))
+        for receipt in write_receipts
+        if isinstance(receipt, Mapping) and receipt.get("verified") is True
+        and receipt.get("resource_type") and receipt.get("resource_id") is not None
+    }
+    noun = '操作' if any(isinstance(r, Mapping) and r.get('verified') is True
+                        and r.get('action') in {'delete', 'update'} for r in write_receipts) else '记录'
+    return f"另有 {len(verified)} 项{noun}已完成并取得回执。" if verified else ""
+
+
 def _write_rejection_with_receipt_context(
     rejection: str,
     write_receipts: Sequence[Mapping[str, Any]],
 ) -> str:
-    if not write_receipts:
+    summary = _trusted_receipt_summary(write_receipts)
+    if not summary:
         return rejection
-    return (
-        f"另有 {len(write_receipts)} 项记录已完成并取得回执。\n\n"
-        f"{rejection}"
-    )
+    return f"{summary}\n\n{rejection}"
 
 
 # 只读工具回合级去重(founder 2026-07-14「列出喝水记录」→ health_query 空转 7 次 70s 根因)。
@@ -8595,10 +8605,11 @@ def _named_knowledge_source_only_text(message: str, source: str) -> bool:
 
 
 def _previous_named_knowledge_query(recent_messages: Sequence[dict[str, Any]]) -> str:
+    from app.services.agent_conversation_service import history_retrieval_text
     for item in reversed(list(recent_messages or [])):
         if item.get("role") != "user":
             continue
-        content = str(item.get("content") or "").strip()
+        content = history_retrieval_text(str(item.get("content") or "")).strip()
         if not content:
             continue
         source = _named_knowledge_source_from_message(content)
@@ -11560,6 +11571,9 @@ class AgentExecutor:
         self._turn_daily_read_results: dict[str, dict[str, str]] = {}
         self._turn_daily_read_payloads: dict[str, dict] = {}
         self._turn_sync_queued = False
+        self._turn_garmin_sync_job = None
+        self._turn_composed_read_executions = []
+        self._turn_sync_status_result = None
         self._turn_sync_reply = None
         self._current_turn_recent_messages: list[dict] = []
         self._turn_contextual_supplement_names: tuple[str, ...] = ()
@@ -11608,6 +11622,7 @@ class AgentExecutor:
         # 复用主循环的流式路径在强/显式模型上重合成 (tokens 逐 delta 下发, 消除 ttft=total
         # 空洞)。round_tools=[] → pass_tools falsy → 不再快路由 → 落在强/显式模型。
         self._force_no_tools_synthesis = False
+        self._read_repair_failures = 0
         # A4: 每回合系统知识库证据卡 memo —— pre-round-1 算一次, done 复用, 避免同回合
         # 第二次 build_twin 全量重建 (拖慢 done/receipts 与 /send 回复)。若回合内发生写操作
         # (_turn_twin_write_occurred), done 侧强制重算一次以反映写后 Twin。
@@ -11715,8 +11730,13 @@ class AgentExecutor:
         self._turn_daily_read_results = {}
         self._turn_daily_read_payloads = {}
         self._turn_sync_queued = False
+        self._turn_garmin_sync_job = None
+        self._turn_composed_read_executions = []
+        self._turn_sync_status_result = None
         self._turn_sync_reply = None
         self._agent_kernel_blocked_request_cache = {}
+        self._read_repair_failures = 0
+        self._force_no_tools_synthesis = False
         self._agent_kernel_recovered_capability_block_reasons = []
         self._agent_kernel_unresolved_manage_mismatch_targets = set()
         self._agent_kernel_tool_failure_tools = []
@@ -11947,6 +11967,10 @@ class AgentExecutor:
         parsed_args = args if isinstance(args, dict) else {}
         decision = self._agent_kernel_last_decision
         result_text = str(result or "").lstrip()
+        from app.services.agent_kernel.types import ToolExecutionResult
+        self._turn_composed_read_executions.append(ToolExecutionResult(
+            tool_name=tool_name, content=result, decision=decision,
+        ))
         if self._turn_daily_read_plan is not None:
             read_goal = daily_result_goal(self._turn_daily_read_plan, decision, result)
             if read_goal is not None:
@@ -12029,22 +12053,22 @@ class AgentExecutor:
                     self._agent_kernel_recovered_capability_block_reasons.append(
                         reason
                     )
-        from app.services.agent_policy_retry import is_terminal_policy_reason
-        if (
-            policy_blocked
-            and snapshot is not None
-            and not snapshot.intent.is_write
-            and decision is not None
-        ):
-            self._force_no_tools_synthesis = True
-            if (
-                not is_terminal_policy_reason(decision.reason)
-                and decision.reason
-                not in self._agent_kernel_recovered_capability_block_reasons
-            ):
-                self._agent_kernel_recovered_capability_block_reasons.append(
-                    decision.reason
-                )
+        from app.services.agent_policy_retry import (
+            is_repairable_read_reason, is_repairable_read_failure, MAX_READ_REPAIR_FAILURES,
+        )
+        if policy_blocked and snapshot is not None and not snapshot.intent.is_write and decision is not None:
+            if is_repairable_read_failure(decision.reason, tool_name, decision.normalized_args):
+                failures = getattr(self, "_read_repair_failures", 0) + 1
+                self._read_repair_failures = failures
+                self._force_no_tools_synthesis = failures >= MAX_READ_REPAIR_FAILURES
+            else:
+                self._force_no_tools_synthesis = True
+        elif (not policy_blocked and not explicit_failure and not result_text.startswith("Error:")
+              and self._all_scoped_reads_verified()):
+            for reason in self._agent_kernel_capability_block_reasons:
+                if (is_repairable_read_reason(reason)
+                        and reason not in self._agent_kernel_recovered_capability_block_reasons):
+                    self._agent_kernel_recovered_capability_block_reasons.append(reason)
         bus.tool_result(
             tool_name=tool_name,
             success=(
@@ -12059,6 +12083,76 @@ class AgentExecutor:
             receipt=receipt,
         )
         return result
+
+    def _composed_read_completion(self):
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+        from app.services.agent_composed_read_completion import evaluate_composed_read_completion
+        if self._turn_daily_read_plan is not None:
+            return None
+        scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+        return (evaluate_composed_read_completion(scope, self._turn_composed_read_executions)
+                if scope is not None else None)
+
+    def _all_scoped_reads_verified(self) -> bool:
+        if self._turn_daily_read_plan is not None:
+            goals = daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results)
+            return bool(goals) and all(goal['status'] == 'verified' for goal in goals)
+        completion = self._composed_read_completion()
+        return completion is not None and completion.complete
+
+    def _read_task_metadata(self):
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope, resolve_sync_status_query
+        from app.services.agent_read_task_continuation import read_task_metadata
+        snapshot = self._ensure_agent_kernel_turn()
+        status_query = resolve_sync_status_query(snapshot)
+        return read_task_metadata(snapshot, resolve_owned_read_scope(snapshot),
+                                  sync_status=status_query is not None,
+                                  sync_window=({key: status_query[key] for key in ('start_date', 'end_date', 'timezone')}
+                                               if status_query is not None else None))
+
+    def _trusted_sync_summary(self) -> str:
+        from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
+        if resolve_sync_status_query(self._ensure_agent_kernel_turn()) is None:
+            return ""
+        status = self._turn_sync_status_result
+        if isinstance(status, dict) and status.get('job_success_verified') is True:
+            return "本会话对应的佳明同步任务已返回成功；下方记录的日期单独核对，不能据此保证活动数据完整。"
+        if isinstance(status, dict) and status.get('status') == 'failed':
+            return "本会话对应的佳明同步任务失败；已有记录不能证明这次同步成功。"
+        if self._turn_sync_queued or isinstance(status, dict) and status.get('submission_status') == 'accepted':
+            return "佳明同步任务已提交，尚未核实完成；已有记录可能早于这次同步。稍后可继续查询。"
+        return "目前没有核实本会话的佳明同步已完成；已有睡眠记录不能作为本次同步成功的证明。"
+
+    def _sync_goal_outcomes(self) -> list[dict]:
+        if not self._turn_sync_queued or self._composed_read_completion() is None:
+            return []
+        verified = (self._turn_sync_status_result or {}).get('job_success_verified') is True
+        return [{'goal_id': 'garmin_sync', 'kind': 'sync',
+                 'status': 'verified' if verified else 'failed', 'evidence_kind': 'sync_result',
+                 'reason_code': 'sync_completion_observed' if verified else 'sync_completion_unverified'}]
+
+    def _trusted_read_summary(self) -> str:
+        if self._turn_daily_read_plan is not None:
+            if self._turn_daily_read_plan.sync_status_requested:
+                facts = sleep_sync_reply(self._turn_daily_read_plan, self._turn_daily_read_payloads,
+                                         self._turn_daily_read_results, include_task_uncertainty=False)
+            else:
+                facts = verified_daily_summary(self._turn_daily_read_plan, self._turn_daily_read_payloads,
+                                               self._turn_daily_read_results)
+        else:
+            completion = self._composed_read_completion()
+            facts = completion.trusted_fact_summary if completion is not None else ''
+        return '\n\n'.join(part for part in (self._trusted_sync_summary(), facts) if part)
+
+    def _bind_read_task_reference(self, user_id: int, conversation_id: int) -> None:
+        from app.services.agent_read_task_continuation import load_read_task_reference
+        snapshot = self._ensure_agent_kernel_turn()
+        reference = load_read_task_reference(self.db, user_id, conversation_id, snapshot)
+        if reference is not None:
+            self._agent_kernel_snapshot = replace(snapshot, actionable_references=(
+                *snapshot.actionable_references, reference,
+            ))
+            self._agent_kernel_event_bus.rebind_snapshot(self._agent_kernel_snapshot, reason='owned_read_task_continuation')
 
     def _capture_owner_scoped_manage_list_reference(
         self,
@@ -13164,9 +13258,17 @@ class AgentExecutor:
                 type(exc).__name__,
             )
 
+        self._bind_read_task_reference(user_id, conv.id)
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
+        from app.services.agent_composed_read_completion import read_scope_notices
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+        panel_read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+        if panel_read_scope is not None:
+            system_content += ('\n本轮必须逐项完成的服务端只读范围：'
+                + json.dumps(list(panel_read_scope.queries), ensure_ascii=False)
+                + '。同步入队不是完成，不完整查询不能作完整复盘。' + '\n'.join(read_scope_notices(panel_read_scope)))
         turn_time_context = self._agent_kernel_time_context(client_time_context)
         from app.services.medical_citation_policy import (
             build_medical_citation_bundle,
@@ -13199,6 +13301,8 @@ class AgentExecutor:
         from app.services.agent_input_tool_scope import scope_tools_for_analyzed_material
 
         tools = scope_tools_for_analyzed_material(get_health_tools(), message)
+        if classify_agent_utterance(message).reason == "conversation_feedback":
+            tools = []
         full_reply = ""
         completion_status = "complete"
         panel_quality_flags: set[str] = set()
@@ -13225,6 +13329,8 @@ class AgentExecutor:
                     isinstance(receipt, dict) and receipt.get("verified") is True
                     for receipt in write_receipts
                 ),
+                trusted_write_summary=_trusted_receipt_summary(write_receipts),
+                trusted_fact_summary=self._trusted_read_summary(),
             )
             panel_medical_flags.update(boundary.violations)
             return boundary.text
@@ -13558,7 +13664,7 @@ class AgentExecutor:
                         lead_messages = request["messages"]
                         resp = await self._call_llm(
                             lead_messages,
-                            [] if lead_force_no_tools_synthesis else request["tools"],
+                            [] if lead_force_no_tools_synthesis or self._force_no_tools_synthesis else request["tools"],
                         )
                         content = ((resp.get("content") if isinstance(resp, dict) else str(resp)) or "")
                         tool_calls = [
@@ -13939,7 +14045,7 @@ class AgentExecutor:
                     satisfied=not rejection_is_terminal,
                 )
 
-            if not write_receipts and (
+            if not write_receipts and not self._turn_sync_queued and (
                 _has_explicit_record_write_intent(message)
                 or _has_destructive_or_sync_intent(message)
             ):
@@ -14036,6 +14142,14 @@ class AgentExecutor:
                 self._http_client = None
 
         # All model and terminal branches converge before any prose is emitted.
+        panel_completion = self._composed_read_completion()
+        if panel_completion is not None and not panel_completion.complete:
+            full_reply = panel_completion.trusted_fact_summary
+        panel_sync_summary = self._trusted_sync_summary()
+        if panel_sync_summary:
+            full_reply = panel_sync_summary + '\n\n' + full_reply
+        if panel_read_scope is not None and panel_read_scope.limitations:
+            full_reply = '\n\n'.join((*read_scope_notices(panel_read_scope), full_reply))
         full_reply = _guard_panel_narrative(full_reply)
         if protocol_failure_text:
             full_reply = protocol_failure_text
@@ -14056,7 +14170,9 @@ class AgentExecutor:
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
-            capability_block_reasons=self._agent_kernel_capability_block_reasons,
+            capability_block_reasons=[reason for reason in self._agent_kernel_capability_block_reasons
+                                      if reason not in self._agent_kernel_recovered_capability_block_reasons],
+            goal_outcomes=(list(panel_completion.goals) if panel_completion else []) + self._sync_goal_outcomes(),
             tool_failure_tools=self._agent_kernel_tool_failure_tools,
             pending_confirmation_tools=self._agent_kernel_pending_confirmation_tools,
             write_receipts=write_receipts,
@@ -14103,6 +14219,8 @@ class AgentExecutor:
                 "fallback_reasons": [],
                 "sources_used": sources_used,
                 "mode": "multi_model",
+                **({"read_task": self._read_task_metadata()} if self._read_task_metadata() is not None else {}),
+                **({"garmin_sync_job": self._turn_garmin_sync_job.as_metadata()} if self._turn_garmin_sync_job is not None else {}),
                 "turn_outcome": turn_outcome,
                 "output_quality_flags": sorted(panel_quality_flags),
                 "medical_boundary_flags": sorted(panel_medical_flags),
@@ -14132,6 +14250,8 @@ class AgentExecutor:
             "fallback_reasons": [],
             "sources_used": sources_used,
             "mode": "multi_model",
+            **({"read_task": self._read_task_metadata()} if self._read_task_metadata() is not None else {}),
+            **({"garmin_sync_job": self._turn_garmin_sync_job.as_metadata()} if self._turn_garmin_sync_job is not None else {}),
             "turn_outcome": turn_outcome,
             "output_quality_flags": sorted(panel_quality_flags),
             "medical_boundary_flags": sorted(panel_medical_flags),
@@ -15069,6 +15189,7 @@ class AgentExecutor:
         self._lite_tool_round_messages = None
         self._turn_any_tool_executed = False
         self._force_no_tools_synthesis = False
+        self._read_repair_failures = 0
         self._turn_evidence_card = _TURN_CARD_UNSET
         self._turn_evidence_card_key = None
         self._turn_twin_write_occurred = False
@@ -15418,6 +15539,8 @@ class AgentExecutor:
                 conv.id,
                 exc,
             )
+
+        self._bind_read_task_reference(user_id, conv.id)
 
         # Multi-medication intake is a server-owned two-turn transaction:
         # source-bound proposal now, strict immediate confirmation next turn.
@@ -15909,6 +16032,19 @@ class AgentExecutor:
         from app.services.agent_input_tool_scope import scope_tools_for_analyzed_material
 
         tools = scope_tools_for_analyzed_material(tools, message)
+        if completion_intent.reason == "conversation_feedback":
+            tools = []
+
+        from app.services.agent_composed_read_completion import read_scope_notices
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+        read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+        if read_scope is not None:
+            messages[0]["content"] += (
+                "\n本轮服务端确定的只读范围（逐项完成，参数可修正但不得扩展）："
+                + json.dumps(list(read_scope.queries), ensure_ascii=False)
+                + "。查询后分析；缺失项目明确说明。同步任务状态与数据可用性必须分开回答，入队不代表完成。"
+                + "\n".join(read_scope_notices(read_scope))
+            )
 
         # 5. Agent 循环
         full_reply = ""
@@ -17333,8 +17469,18 @@ class AgentExecutor:
                 len(message or ""),
             )
         if completion_intent.operation == "sync" and self._turn_sync_queued:
-            full_reply = _garmin_sync_queued_message()
+            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+            if resolve_owned_read_scope(self._ensure_agent_kernel_turn()) is None:
+                full_reply = _garmin_sync_queued_message()
         daily_summary_advice_goal = None
+        composed_completion = self._composed_read_completion()
+        sync_summary = self._trusted_sync_summary()
+        if composed_completion is not None and not composed_completion.complete:
+            full_reply = composed_completion.trusted_fact_summary
+        if sync_summary:
+            full_reply = sync_summary + "\n\n" + full_reply
+        if read_scope is not None and read_scope.limitations:
+            full_reply = "\n\n".join((*read_scope_notices(read_scope), full_reply))
         if (
             self._turn_daily_read_plan is not None and self._turn_daily_read_plan.is_summary
             and final_finish_reason == "stop" and not health_advice_buffered
@@ -17358,10 +17504,7 @@ class AgentExecutor:
             else:
                 full_reply = facts
         if self._turn_daily_read_plan is not None and self._turn_daily_read_plan.sync_status_requested:
-            full_reply = sleep_sync_reply(
-                self._turn_daily_read_plan, self._turn_daily_read_payloads,
-                self._turn_daily_read_results,
-            )
+            full_reply = self._trusted_read_summary()
         medical_boundary = enforce_medical_evidence_boundaries(
             full_reply,
             model_generated=not (
@@ -17381,6 +17524,8 @@ class AgentExecutor:
                 isinstance(receipt, dict) and receipt.get("verified") is True
                 for receipt in write_receipts
             ),
+            trusted_write_summary=_trusted_receipt_summary(write_receipts),
+            trusted_fact_summary=self._trusted_read_summary(),
         )
         if medical_boundary.flagged:
             logger.warning(
@@ -17721,7 +17866,9 @@ class AgentExecutor:
             completion_status=completion_status,
             final_text=full_reply,
             goal_outcomes=daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results)
-            + ([daily_summary_advice_goal] if daily_summary_advice_goal else []),
+            + ([daily_summary_advice_goal] if daily_summary_advice_goal else [])
+            + (list(composed_completion.goals) if composed_completion else [])
+            + self._sync_goal_outcomes(),
             capability_block_reasons=[
                 reason
                 for reason in self._agent_kernel_capability_block_reasons
@@ -17961,6 +18108,9 @@ class AgentExecutor:
                     else {}
                 ),
                 "write_receipts": write_receipts,
+                **({"read_task": self._read_task_metadata()} if self._read_task_metadata() is not None else {}),
+                **({"garmin_sync_job": self._turn_garmin_sync_job.as_metadata()}
+                   if getattr(self, "_turn_garmin_sync_job", None) is not None else {}),
                 "pending_write_intent_ids": self._turn_pending_write_intent_ids,
                 "pending_write_intent_kinds": self._turn_pending_write_intent_kinds,
                 "cards": cards_for_persistence(response_cards),
@@ -18053,6 +18203,9 @@ class AgentExecutor:
                     else {}
                 ),
                 "write_receipts": write_receipts,
+                **({"read_task": self._read_task_metadata()} if self._read_task_metadata() is not None else {}),
+                **({"garmin_sync_job": self._turn_garmin_sync_job.as_metadata()}
+                   if getattr(self, "_turn_garmin_sync_job", None) is not None else {}),
                 "pending_write_intent_ids": self._turn_pending_write_intent_ids,
                 "pending_write_intent_kinds": self._turn_pending_write_intent_kinds,
                 "mode": "agent",
@@ -19304,6 +19457,14 @@ class AgentExecutor:
             classify_context_profile,
         )
 
+        prompt_snapshot = getattr(self, '_agent_kernel_snapshot', None)
+        if prompt_snapshot is not None and "classifier:conversation_feedback" in prompt_snapshot.intent.evidence:
+            return (
+                "你是 Reva 健康助手小巴。用户正在反馈对话质量。结合历史原话和实际工具结果，"
+                "明确上一轮哪里没有完成任务，简短回应；不要把反馈当作新的健康查询或写入授权。"
+                "不得声称操作完成，也不提供未经核实的健康建议。历史回答仅是先前回答，不是本轮核验事实。"
+            )
+
         domain_prompt_enabled = bool(
             getattr(settings, "domain_prompt_optimization", False)
             and not lite
@@ -19337,6 +19498,7 @@ class AgentExecutor:
             "## 工作方式",
             "1. 分析用户请求，决定需要调用哪些工具",
             "2. 调用工具获取或记录数据",
+            "- 组合任务保留每个子目标；同步入队后可查询数据，但不能宣称该任务已完成。问佳明同步状态时用 health_query(dimension=garmin)，系统会关联本会话的真实同步回执。只询问同步状态不代表要重新同步。",
             "3. 基于返回的数据进行分析和推理",
             "4. 给出有据可依的建议",
             "5. 复合意图时在一次对话中同时处理（如'记一下吃了鱼油，看看对基因有什么影响' → 先记录后查询）",
@@ -22292,6 +22454,16 @@ class AgentExecutor:
             self._agent_kernel_last_decision, cached_result = cached
             return cached_result
         self._agent_kernel_last_decision = None
+        from app.services.agent_policy_retry import MAX_READ_REPAIR_FAILURES
+        if (getattr(self, '_read_repair_failures', 0) >= MAX_READ_REPAIR_FAILURES
+                and (tool_name in {'health_query', 'health_query_batch'}
+                     or tool_name == 'health_manage' and parsed_args.get('operation') == 'list')):
+            decision = CapabilityDecision('block', 'read_repair_budget_exhausted', tool_name, parsed_args)
+            self._agent_kernel_record_capability_decision(tool_name, decision)
+            result = json.dumps({'status': 'failed', 'success': False,
+                'error_code': decision.reason, 'retryable': False, 'dispatch_started': False,
+                'message': '本轮读取参数两次未通过核验，已停止重试；请说明仍缺少的具体信息。'}, ensure_ascii=False)
+            return self._agent_kernel_record_tool_result(tool_name, parsed_args, result)
         if self._agent_kernel_event_bus is not None:
             self._agent_kernel_event_bus.tool_requested(
                 ToolExecutionRequest(
@@ -23192,6 +23364,23 @@ class AgentExecutor:
         """执行健康数据查询"""
         args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
+        if dim == "garmin":
+            from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
+            from app.services.agent_query_window import parse_query_window
+            from app.services.agent_garmin_sync_status import read_garmin_sync_status
+            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+            query = resolve_sync_status_query(self._ensure_agent_kernel_turn())
+            if query is not None:
+                if any(key in args and args[key] != query[key] for key in ("start_date", "end_date", "timezone")):
+                    return "Error: 同步状态查询日期与本轮不一致。"
+                status = read_garmin_sync_status(self.db, self._current_user_id,
+                    self._current_turn_conversation_id, parse_query_window(query),
+                    current_job=getattr(self, "_turn_garmin_sync_job", None),
+                    include_date_availability=bool(
+                        (status_scope := resolve_owned_read_scope(self._ensure_agent_kernel_turn())) is not None
+                        and status_scope.query('sleep') is not None))
+                self._turn_sync_status_result = status
+                return json.dumps(status, ensure_ascii=False, default=str)
         if any(key in args for key in ("start_date", "end_date", "timezone")):
             from app.services.agent_query_window import (
                 parse_query_window, read_calendar_health_query, resolve_calendar_query_window,
@@ -23205,23 +23394,37 @@ class AgentExecutor:
                 query = next((q for q in daily_plan.queries() if q["dimension"] == dim), None)
                 expected = {key: value for key, value in query.items() if key != "dimension"} if query else None
             else:
-                expected = resolve_calendar_query_window(
-                    snapshot.envelope.text, snapshot.context.current_time, dim,
-                    timezone_name=snapshot.context.timezone,
-                )
+                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+                scope = resolve_owned_read_scope(snapshot)
+                query = scope.query(dim) if scope is not None else None
+                expected = ({key: value for key, value in query.items() if key not in {"dimension", "days"}}
+                            if query else resolve_calendar_query_window(
+                                snapshot.envelope.text, snapshot.context.current_time, dim,
+                                timezone_name=snapshot.context.timezone))
             try:
                 window = parse_query_window(args)
             except ValueError as exc:
                 return f"Error: {exc}"
             if expected is None or window.as_dict() != expected:
                 return "Error: 查询日期与当前请求不一致，请明确要查询的日期。"
-            result = read_calendar_health_query(self.db, self._current_user_id, dim, window)
+            if query is not None and 'days' in query:
+                from app.services.agent_longitudinal_read import read_longitudinal_health_query
+                if type(args.get('days')) is not int or args['days'] != query['days']:
+                    return "Error: 查询天数与当前请求不一致。"
+                result = read_longitudinal_health_query(self.db, self._current_user_id, dim, window)
+            else:
+                result = read_calendar_health_query(self.db, self._current_user_id, dim, window)
             if daily_plan is not None and daily_plan.sync_status_requested:
                 from app.services.agent_garmin_status import project_garmin_status
                 status, error = await self._api_get_json(
                     f'{base}/data-collection/garmin/me/credential-status', headers,
                 )
                 result['sync_check'] = project_garmin_status(None if error else status)
+            if dim == 'sleep':
+                from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
+                sync_query = resolve_sync_status_query(snapshot)
+                if sync_query is not None:
+                    result['sync_job'] = json.loads(await self._exec_health_query(base, headers, sync_query))
             return json.dumps(result, ensure_ascii=False, default=str)
         days = args.get("days")
         if days is None and dim != "illness":
@@ -23398,6 +23601,23 @@ class AgentExecutor:
         (复用既有取数, 产出数值序列), 其余维度复用 _exec_health_query 的紧凑原文。
         """
         from app.services import health_query_batch as hqb
+
+        queries = args.get("queries")
+        if isinstance(queries, list) and any(
+            isinstance(q, dict) and any(key in q for key in ("start_date", "end_date", "timezone"))
+            for q in queries
+        ):
+            if not 1 <= len(queries) <= 6 or args.get("compare") is not None:
+                return "Error: 日历批查询参数无效，请分别读取所需日期。"
+            results = []
+            for query in queries:
+                if not isinstance(query, dict) or not all(key in query for key in ("dimension", "start_date", "end_date")):
+                    return "Error: 日历批查询需要每个子查询的明确日期。"
+                raw = await self._exec_health_query(base, headers, query)
+                if raw.startswith("Error:") or result_declares_explicit_failure(raw):
+                    return raw
+                results.append(json.loads(raw))
+            return json.dumps({"status": "success", "results": results}, ensure_ascii=False, default=str)
 
         async def _fetch(dimension: str, days: int) -> hqb.BatchFetchResult:
             if dimension in hqb.SERIES_DIMENSIONS:
@@ -24767,6 +24987,10 @@ class AgentExecutor:
         if not user_id:
             return "无法确定当前用户身份,暂时不能发起同步,请稍后重试。"
 
+        job = getattr(self, '_turn_garmin_sync_job', None)
+        if self._turn_sync_queued and job is not None and job.owner_id == user_id:
+            return _garmin_sync_queued_message()
+
         from app.models.user import GarminCredential
 
         credential = (
@@ -24793,7 +25017,9 @@ class AgentExecutor:
         # ── 护栏②:不内联阻塞;交给 Celery worker,乐观 ack 立即返回 ──
         try:
             from app.tasks.garmin_sync import sync_user_garmin_data
-            sync_user_garmin_data.delay(user_id, days=1, notify_on_failure=True)
+            job = sync_user_garmin_data.delay(user_id, days=1, notify_on_failure=True)
+            from app.services.agent_garmin_sync_status import VerifiedGarminSyncJob
+            self._turn_garmin_sync_job = VerifiedGarminSyncJob(user_id, job.id, self._agent_kernel_reference_now())
             self._turn_sync_queued = True
         except Exception as e:  # 入队失败(如 broker 不可用)也 fail-loud,不谎报成功
             logger.warning(f"[garmin_sync] enqueue 失败 user={user_id}: {e}")

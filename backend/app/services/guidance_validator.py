@@ -270,7 +270,7 @@ _PERSONAL_HORMONE_CAUSE = re.compile(
     r"(?:皮质醇|肾上腺素)[^。；;!?！？\n]{0,20}(?:透支|代偿|掩盖)|"
     r"(?:皮质醇|肾上腺素)[^。；;!?！？\n]{0,12}(?:导致|造成|让你)"
 )
-_ADVICE_HOLD = "[该建议或推断尚待核验，暂不提供执行方案；可与医生或药师核对依据及适用条件]"
+_ADVICE_HOLD = "部分建议或推断缺少已核验证据，暂不提供执行方案。可与医生或药师核对依据及适用条件。"
 
 
 def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
@@ -355,6 +355,8 @@ def enforce_medical_evidence_boundaries(
     has_clinician_instruction: bool = False,
     verified_write_receipt: bool = False,
     trusted_clinician_instructions: Sequence[str] = (),
+    trusted_write_summary: str = "",
+    trusted_fact_summary: str = "",
     model_generated: bool = True,
 ) -> GuidanceValidationResult:
     """Withhold known unsupported advice, without claiming medical verification.
@@ -364,26 +366,59 @@ def enforce_medical_evidence_boundaries(
     it from the generated response, user assertion, or an intent classifier.
     Only exact sentence relays qualify; changed doses and appended advice do not.
     ``has_clinician_instruction`` alone is context, never authorization.
+    Trusted summaries must be rendered independently from verified tool facts
+    or durable receipts, never extracted from model-authored completion claims.
+    A receipt boolean alone cannot identify which generated claim is true.
     """
     if not text or not requires_medical_evidence_boundary(text):
         return GuidanceValidationResult(text=text or "")
     violations: list[str] = []
     trusted = {item.strip() for item in trusted_clinician_instructions if item.strip()}
     out_parts: list[str] = []
+    trusted_relays: list[str] = []
     relayed_instruction = False
     for match in re.finditer(r"[^。；;!?！？\n]+[。；;!?！？\n]*|[。；;!?！？\n]+", text):
         sentence = match.group(0)
         is_trusted = has_clinician_instruction and sentence.strip() in trusted
         relayed_instruction = relayed_instruction or is_trusted
         reasons = [] if is_trusted else _unsupported_advice_reasons(sentence)
+        unverified_schedule = any(
+            not (verified_write_receipt and claim.group(0).strip() in trusted_write_summary)
+            for claim in _SCHEDULE_CLAIM.finditer(sentence)
+        )
+        if unverified_schedule:
+            violations.append("unverified_schedule_claim")
+            # Strip only the unverified operation from an independently trusted
+            # clinician relay; its exact admitted instruction remains available.
+            sentence = _SCHEDULE_CLAIM.sub("", sentence)
+            sentence = re.sub(r"[，,]\s*([。；;!?！？])", r"\1", sentence)
         if reasons:
             violations.extend(reasons)
-            sentence = _ADVICE_HOLD + "。"
-        if not verified_write_receipt and _SCHEDULE_CLAIM.search(sentence):
-            violations.append("unverified_schedule_claim")
-            sentence = _SCHEDULE_CLAIM.sub("[尚无验证写入回执]", sentence)
+        elif is_trusted and sentence.strip():
+            trusted_relays.append(sentence.strip())
         out_parts.append(sentence)
     out = "".join(out_parts)
+    if violations:
+        # Sentence replacement leaves table headers, dangling lists and repeated
+        # placeholders. Withhold the untrusted document as a whole, retaining
+        # only independently verified material in a complete short answer.
+        safe_parts = list(dict.fromkeys(trusted_relays))
+        for summary, is_receipt in ((trusted_fact_summary, False), (trusted_write_summary, True)):
+            if not summary.strip() or (is_receipt and not verified_write_receipt):
+                continue
+            summary_reasons = _unsupported_advice_reasons(summary)
+            if summary_reasons:
+                violations.extend(summary_reasons)
+                continue
+            if not is_receipt and _SCHEDULE_CLAIM.search(summary):
+                violations.append("unverified_schedule_claim")
+                continue
+            safe_parts.append(summary.strip())
+        if any(reason != "unverified_schedule_claim" for reason in violations):
+            safe_parts.append(_ADVICE_HOLD)
+        if "unverified_schedule_claim" in violations:
+            safe_parts.append("相关安排尚无已核验的完成回执，不能确认已经完成。")
+        out = "\n\n".join(dict.fromkeys(safe_parts))
     # Provenance affects the label only; deterministic output keeps every check.
     labels = ["用户陈述"] if model_generated else ["工具读取结果"]
     if evidence_sources:

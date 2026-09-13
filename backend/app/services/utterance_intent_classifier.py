@@ -21,14 +21,19 @@ from app.services.intake_intent_classifier import classify_intake_intent
 from app.services.utterance_intent_lexicon import (
     CLINICIAN_FEEDBACK_OBJECT_NOUNS,
     CLINICIAN_PROVIDER_TERMS,
+    CONVERSATION_FEEDBACK_FRAGMENTS,
+    CONVERSATION_FEEDBACK_SIGNALS,
     MEDIA_CREATE_ACTIONS,
     MEDIA_TERMS,
     MUTATE_ACTIONS,
     MUTATION_NEGATION_EXCEPTIONS,
     MUTATION_NEGATIONS,
-    PLAN_CREATE_ACTIONS,
+    PLAN_DRAFT_ACTIONS,
+    PLAN_DRAFT_TERMS,
+    PLAN_CANCELLATION_FRAGMENTS,
+    PLAN_MUTATION_ACTIONS,
+    PLAN_PERSIST_ACTIONS,
     PLAN_TERMS,
-    PLAN_UPDATE_ACTIONS,
     HEALTH_QUESTION_SIGNALS,
     READ_ACTIONS,
     REMINDER_CREATE_ACTIONS,
@@ -304,6 +309,9 @@ def classify_agent_utterance(
             )
         return _intent(raw, normalized, "unknown", "unknown", "none", 0.0, "empty")
 
+    if _is_conversation_feedback_only(normalized):
+        return _intent(raw, normalized, "chat", "unknown", "none", 0.94, "conversation_feedback")
+
     write_capability_question = is_write_capability_question(normalized)
     has_read = (
         _has_any(normalized, READ_ACTIONS)
@@ -407,6 +415,25 @@ def classify_agent_utterance(
         )
 
     plan_operation = _plan_operation(normalized, domain, has_question)
+    if plan_operation in {"create", "update"}:
+        domain = "plan"
+    elif _is_plan_draft_request(normalized) and not has_write_command:
+        return _intent(
+            raw, normalized, "advice", "plan", "analyze", 0.92,
+            "plan_draft_request", scope, requires_reliable_tool_model=True,
+        )
+    elif plan_operation == "reference" and not (
+        has_write_command and domain != "plan" and any(
+            not _has_any(clause, PLAN_DRAFT_TERMS)
+            and has_explicit_authorizing_write_request(clause)
+            for clause in _media_clauses(normalized)
+        )
+    ):
+        return _intent(
+            raw, normalized, "read" if has_question or has_read else "chat", "plan",
+            "ask" if has_question else "list" if has_read else "none", 0.9,
+            "plan_action_without_authority", scope,
+        )
 
     if _goal_operation(normalized, domain, has_question) == "create":
         return _intent(
@@ -1131,14 +1158,81 @@ def _infer_domain(text: str) -> str:
     return "unknown"
 
 
+def _is_conversation_feedback_only(text: str) -> bool:
+    clauses = _media_clauses(text)
+    return bool(clauses) and all(
+        clause in CONVERSATION_FEEDBACK_FRAGMENTS
+        or (_has_any(clause, CONVERSATION_FEEDBACK_SIGNALS)
+            and not _has_any(clause, (*WRITE_COMMAND_ACTIONS, *PLAN_DRAFT_TERMS))
+            and _infer_domain(clause) == "unknown")
+        for clause in clauses
+    )
+
+
+def _is_plan_draft_request(text: str) -> bool:
+    return any(
+        _has_any(clause, PLAN_DRAFT_TERMS) and _has_any(clause, PLAN_DRAFT_ACTIONS)
+        and not _has_any(clause, ("制定的", "生成的", "起草的", "保存的"))
+        for clause in _media_clauses(text)
+    )
+
+
 def _plan_operation(text: str, domain: str, has_question: bool) -> Optional[str]:
-    """Recognize explicit plan actions without turning plan advice into writes."""
-    if domain != "plan" or has_question:
-        return None
-    if _has_any(text, PLAN_UPDATE_ACTIONS):
-        return "update"
-    if _has_any(text, PLAN_CREATE_ACTIONS):
-        return "create"
+    """Recognize plan side effects through the shared speech-act authorizer.
+
+    Translating a plan verb only adapts the existing ownership, quoted-text,
+    negation and cancellation checks; it does not authorize an executable tool.
+    """
+    del domain
+    operations = [(action, "update") for action in PLAN_MUTATION_ACTIONS]
+    operations += [(action, "create") for action in PLAN_PERSIST_ACTIONS]
+    clauses = _media_clauses(text)
+    for clause in clauses:
+        if not _has_any(clause, PLAN_DRAFT_TERMS):
+            continue
+        for action, operation in operations:
+            if action not in clause:
+                continue
+            if action in {"更新", "调整", "修改"} and "草稿" in clause:
+                continue
+            after_action = clause.split(action, 1)[1]
+            before_action = clause.split(action, 1)[0]
+            action_target = after_action
+            for connector in ("并且", "然后", "并", "再"):
+                target, separator, followup = action_target.partition(connector)
+                if separator and followup.startswith(PLAN_DRAFT_ACTIONS):
+                    action_target = target
+            if not _has_any(before_action + action_target, PLAN_DRAFT_TERMS):
+                continue
+            if "记录" in after_action and not _has_any(after_action.split("记录", 1)[0], PLAN_DRAFT_TERMS):
+                continue
+            if clauses[-1] in PLAN_CANCELLATION_FRAGMENTS:
+                return "reference"
+            policy_text = text.replace(action, "保存")
+            plan_clause = clause.replace(action, "保存")
+            direct_draft = before_action
+            for prefix in ("请", "麻烦", "帮我", "先"):
+                direct_draft = direct_draft.removeprefix(prefix)
+            if direct_draft.startswith(PLAN_DRAFT_ACTIONS):
+                for connector in ("并且", "然后", "并", "再"):
+                    if not before_action.endswith(connector):
+                        continue
+                    # Preserve the entire preceding provenance and trailing
+                    # cancellation, while closing the explicit second speech act.
+                    draft_prefix = before_action[:-len(connector)].replace("给我", "起草", 1)
+                    command = f'{draft_prefix}，保存{after_action or "计划"}'
+                    plan_clause = command
+                    policy_text = text.replace(clause, command, 1)
+                    break
+            # This is a UI destination, not a person's arrival event. Retain
+            # every ownership/provenance/negation span for the shared gate.
+            if plan_clause.endswith("到首页"):
+                policy_text = policy_text.replace(plan_clause, plan_clause.removesuffix("到首页"), 1)
+                plan_clause = plan_clause.removesuffix("到首页")
+            if (not has_question and has_explicit_authorizing_write_request(policy_text)
+                    and has_explicit_authorizing_write_request(plan_clause)):
+                return operation
+            return "reference"
     return None
 
 

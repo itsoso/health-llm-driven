@@ -31,8 +31,12 @@ async def test_queued_sync_exact_turn_replay_does_not_enqueue_again(
     )
     db.commit()
     enqueued = []
+    from types import SimpleNamespace
+    def queued(*args, **kwargs):
+        enqueued.append((args, kwargs))
+        return SimpleNamespace(id='873a4765-48b5-49d5-a989-fcc234ba3e88')
     monkeypatch.setattr(
-        task.sync_user_garmin_data, "delay", lambda *a, **k: enqueued.append((a, k))
+        task.sync_user_garmin_data, "delay", queued
     )
     executor, done, persisted, public, dispatched = await _run_scripted(
         db,

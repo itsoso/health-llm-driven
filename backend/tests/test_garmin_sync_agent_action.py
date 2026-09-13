@@ -96,9 +96,13 @@ async def test_mfa_degrades_to_guidance_no_enqueue(db, monkeypatch):
 # ── 护栏②:满足前提 → enqueue(notify_on_failure=True)+ 乐观 ack ─────────
 @pytest.mark.asyncio
 async def test_happy_path_enqueues_and_acks(db, monkeypatch):
+    from types import SimpleNamespace
     calls = []
+    def queued(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(id='873a4765-48b5-49d5-a989-fcc234ba3e88')
     monkeypatch.setattr(garmin_task.sync_user_garmin_data, "delay",
-                        lambda *a, **k: calls.append((a, k)))
+                        queued)
     _add_cred(db)
     out = await _executor(db)._trigger_garmin_sync()
     # 乐观 ack:告诉用户后台在跑、会刷新、失败会告知(不谎报"已完成")

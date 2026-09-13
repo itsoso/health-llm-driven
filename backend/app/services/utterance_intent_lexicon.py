@@ -297,6 +297,22 @@ PLAN_CREATE_ACTIONS = (
     "保存",
 )
 
+# Answer drafting has no persistence effect. Keep PLAN_CREATE_ACTIONS as the
+# legacy clinician-provenance vocabulary; new routing uses these separate acts.
+PLAN_DRAFT_ACTIONS = ("生成", "制定", "起草", "拟个", "拟一", "拟定", "规划", "安排", "给我", "给个", "出个", "草稿")
+PLAN_PERSIST_ACTIONS = ("加入", "列入", "保存", "存下来", "写入")
+PLAN_MUTATION_ACTIONS = ("标记完成", "完成", "执行", "更新", "调整", "修改")
+PLAN_DRAFT_TERMS = (*PLAN_TERMS, "方案")
+PLAN_CANCELLATION_FRAGMENTS = ("先别", "算了", "取消", "算了取消", "先不要", "先不", "不要了")
+
+CONVERSATION_FEEDBACK_SIGNALS = (
+    "变弱智", "变笨", "变傻", "你怎么这么笨", "回答越来越差",
+    "不理解我", "不能理解我", "没理解我", "没听懂", "没明白我的意思", "理解错了",
+    "不是这个意思", "答非所问", "回答太差", "回答很差", "这回答太差", "答偏了",
+    "重新理解", "你没懂",
+)
+CONVERSATION_FEEDBACK_FRAGMENTS = ("这么差", "太差了", "真差", "完全不对", "不对", "不对啊")
+
 PLAN_UPDATE_ACTIONS = (
     "完成",
     "标记完成",

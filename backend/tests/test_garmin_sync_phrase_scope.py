@@ -42,6 +42,9 @@ def _decide(text, data=None):
     "获取佳明的数据，同步一下。",
     "请获取我的Garmin数据，帮我同步一下。",
     "同步佳明的数据，主动触发一下同步。",
+    # Repeated wording still grants only one effect; real Pi deduplication is
+    # covered by test_sync_intent_frame_scope's repeated-command trajectory.
+    "获取佳明的数据，同步一下，同步一下，同步一下。",
 ])
 def test_explicit_owned_sync_imperative_is_authorized(text):
     decision = _decide(text)
@@ -71,7 +74,6 @@ def test_explicit_owned_sync_imperative_is_authorized(text):
     "朋友说：获取佳明的数据，同步一下。",
     "获取佳明的数据，同步一下，然后删除全部数据。",
     "明天获取佳明的数据，同步一下。",
-    "获取佳明的数据，同步一下，同步一下，同步一下。",
 ])
 def test_non_authorizing_sync_scope_is_blocked(text):
     assert _decide(text).action == "block"

@@ -57,6 +57,7 @@ def test_verified_clinician_instruction_and_receipt_keep_claim_but_label_source(
         text,
         has_clinician_instruction=True,
         verified_write_receipt=True,
+        trusted_write_summary="已安排复查。",
         trusted_clinician_instructions=(text,),
     )
 

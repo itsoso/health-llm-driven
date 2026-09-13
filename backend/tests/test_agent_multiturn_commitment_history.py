@@ -102,7 +102,8 @@ def test_build_messages_stable_order_when_created_at_ties(db, auth_user_and_head
     db.commit()
 
     got = svc.build_messages(conv.id, limit=15)
-    assert [(m["role"], m["content"]) for m in got] == [
+    assert [(m["role"], m["content"].partition("\n")[2] if index < 2 else m["content"])
+            for index, m in enumerate(got)] == [
         ("user", "首问"),
         ("assistant", "首答"),
         ("user", "追问"),

@@ -90,6 +90,7 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
                         "type": "string",
                         "enum": [
                             "comprehensive",
+                            "garmin",
                             "sleep",
                             "heart_rate",
                             "hrv",
@@ -115,13 +116,16 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
                             "illness",
                             "events",
                         ],
-                        "description": "数据维度. 见 function description 里的选择指南",
+                        "description": "数据维度。garmin 仅查询本会话对应佳明同步任务状态，不会发起同步；已有记录不代表该任务完成。见 function description 里的选择指南",
                     },
                     "days": {
                         "type": "integer",
                         "description": "包含今天的最近 N 个自然日；diet/sleep 的明确日历日期由服务端独立绑定，不能用 days 冒充。"
                         "illness 支持最长 36500 天；问上一次且未给时间窗时省略，查询全部历史",
                     },
+                    "start_date": {"type": "string", "description": "明确日历开始日期 YYYY-MM-DD，必须来自本轮用户授权日期。"},
+                    "end_date": {"type": "string", "description": "明确日历结束日期 YYYY-MM-DD（含当天）。"},
+                    "timezone": {"type": "string", "description": "本轮业务时区，如 Asia/Shanghai。"},
                     "indicator": {
                         "type": "string",
                         "description": "具体指标名 (仅 medical_exam / genetic). 例: HCY, LDL, HbA1c, MTHFR, APOE",
@@ -155,6 +159,7 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
 
 plan 结构:
 - queries: 1-6 条子查询, 每条 = {dimension, days, agg?}
+    - 明确日历日期的饮食/睡眠查询可用 {dimension, start_date, end_date, timezone}；省略日期时系统仍按本轮用户请求绑定。日历查询不支持 agg/compare，不得用 days 代替昨天或昨晚。
     - dimension: 与 health_query 同一套维度枚举 (sleep/hrv/activity/heart_rate/
       blood_pressure/weight/diet/medication/medical_exam/...)；暂不支持 illness，
       病症名称和“上一次”语义必须用单条 health_query 保留 keyword/全历史窗口。
@@ -194,6 +199,9 @@ plan 结构:
                                     "type": "integer",
                                     "description": "最近几天窗口, 默认 7",
                                 },
+                                "start_date": {"type": "string", "description": "用户请求的日历开始日期 YYYY-MM-DD，仅饮食/睡眠；服务端按本轮授权核对。"},
+                                "end_date": {"type": "string", "description": "日历结束日期 YYYY-MM-DD（含当日）。"},
+                                "timezone": {"type": "string", "description": "本轮业务时区，如 Asia/Shanghai。"},
                                 "agg": {
                                     "type": "string",
                                     "enum": ["latest", "avg", "min", "max", "trend"],

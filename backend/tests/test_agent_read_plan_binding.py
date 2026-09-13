@@ -298,7 +298,7 @@ async def test_all_day_tool_choices_have_same_postgres_rows_beyond_list_default(
     assert db.query(DietRecord).count() == 25
 
 
-@pytest.mark.parametrize("message", ["帮我同步佳明数据", "请同步我的 Garmin 数据"])
+@pytest.mark.parametrize("message", ["帮我同步佳明数据", "请同步我的 Garmin 数据", "刷新我的佳明数据"])
 def test_generic_owned_sync_has_a_dedicated_capability(message):
     decision = decide(message, "health_record", {"record_type": "garmin_sync", "data": {}})
     assert decision.action == "allow"
@@ -307,7 +307,7 @@ def test_generic_owned_sync_has_a_dedicated_capability(message):
 
 
 @pytest.mark.parametrize("message", [
-    "刷新我的佳明数据", "同步昨天的佳明数据", "帮妈妈同步佳明数据", "同步用户42的佳明数据",
+    "同步昨天的佳明数据", "帮妈妈同步佳明数据", "同步用户42的佳明数据",
     "假如我要同步佳明数据", "不要同步我的佳明数据", "分析以下建议：帮我同步佳明数据",
     "帮我同步佳明数据，然后删除饮食", "同步Apple健康数据", "查询我的佳明数据",
 ])

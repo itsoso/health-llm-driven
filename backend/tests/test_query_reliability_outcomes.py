@@ -221,7 +221,11 @@ async def test_queued_sync_never_claims_data_updated_in_stream_or_history(db, au
                            credentials_valid=True, requires_mfa=False))
     db.commit()
     enqueued = []
-    monkeypatch.setattr(garmin_task.sync_user_garmin_data, "delay", lambda *a, **k: enqueued.append((a, k)))
+    from types import SimpleNamespace
+    def queued(*args, **kwargs):
+        enqueued.append((args, kwargs))
+        return SimpleNamespace(id='873a4765-48b5-49d5-a989-fcc234ba3e88')
+    monkeypatch.setattr(garmin_task.sync_user_garmin_data, "delay", queued)
     executor, done, persisted, public_text, dispatched = await _run_scripted(
         db, user, monkeypatch, query="帮我同步佳明数据", first_tool="health_record",
         first_args={"record_type": "garmin_sync", "data": {}}, dispatch=lambda request: {},

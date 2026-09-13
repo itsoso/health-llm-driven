@@ -2404,7 +2404,13 @@ def _owner_scoped_manage_list_records(
 
 def capability_policy_contract_payload() -> dict[str, Any]:
     """Return static, content-free metadata that governs tool authorization."""
+    from app.services.agent_kernel.read_task_scope import read_task_scope_contract_payload
+    from app.services.agent_read_task_continuation import read_task_continuation_contract_payload
+    from app.services.agent_longitudinal_read import longitudinal_read_contract_payload
     return {
+        "read_task_scope": read_task_scope_contract_payload(),
+        "read_task_continuation": read_task_continuation_contract_payload(),
+        "longitudinal_read": longitudinal_read_contract_payload(),
         "contract_version": _CAPABILITY_POLICY_CONTRACT_VERSION,
         "whole_record_delete_evidence_version": (_WHOLE_RECORD_DELETE_EVIDENCE_VERSION),
         "health_manage_update_evidence_version": (
@@ -2585,9 +2591,9 @@ def decide_tool_capability(
         )
     if (tool_name == "health_record" and args.get("record_type") == "garmin_sync"
             and request.source not in {"procedure_recipe_replay", "telegram_directive"}):
-        if (_explicit_owned_garmin_sync(snapshot.envelope.text)
-                and snapshot.intent.operation == "sync"
-                and args.get("data") == {}):
+        from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
+        if (has_owned_sync_instruction(snapshot.envelope.text)
+                and snapshot.intent.operation == "sync" and args.get("data") == {}):
             return _decision("allow", "explicit_owned_garmin_sync", tool_name,
                              {"record_type": "garmin_sync", "data": {}},
                              receipt_required=False)
@@ -2692,6 +2698,60 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
+
+    if tool_name == "health_query" and normalize_health_query_args(args).get("dimension") == "garmin":
+        from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
+        status_query = resolve_sync_status_query(snapshot)
+        if status_query is not None:
+            if any(key in args for key in ("user_id", "owner_id", "tenant_id", "job_id")):
+                return _decision("block", "health_query_subject_not_current_user", tool_name, args)
+            if any(key in args and args[key] != status_query[key]
+                   for key in ("start_date", "end_date", "timezone")):
+                return _decision("block", "health_query_calendar_window_conflict", tool_name, args)
+            return _decision("allow", "owned_garmin_sync_status", tool_name, status_query)
+
+    if tool_name in {"health_query", "health_query_batch"}:
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+        from app.services.agent_longitudinal_read import longitudinal_read_scope_requested
+        # Preserve the existing exact-day/meal binder where it applies.
+        daily = resolve_daily_read_plan(snapshot.envelope.text, snapshot.context.current_time,
+                                        timezone_name=snapshot.context.timezone)
+        scope = None if daily is not None else resolve_owned_read_scope(snapshot)
+        if scope is not None:
+            plan = args.get("plan", args)
+            if not isinstance(plan, dict):
+                return _decision("block", "health_query_semantics_unresolved", tool_name, args)
+            if any(key in candidate for candidate in (args, plan)
+                   for key in ("user_id", "owner_id", "tenant_id")):
+                return _decision("block", "health_query_subject_not_current_user", tool_name, args)
+            proposals = ([normalize_health_query_args(args)] if tool_name == "health_query"
+                         else plan.get("queries"))
+            if not isinstance(proposals, list) or not 1 <= len(proposals) <= 6:
+                return _decision("block", "health_query_semantics_unresolved", tool_name, args)
+            bound = []
+            for proposal in proposals:
+                if not isinstance(proposal, dict):
+                    return _decision("block", "health_query_semantics_unresolved", tool_name, args)
+                query = scope.query(str(proposal.get("dimension") or "").lower())
+                if query is None:
+                    return _decision("block", "health_query_dimension_conflict", tool_name, args)
+                if ("days" in query and "days" in proposal
+                        and (type(proposal["days"]) is not int or proposal["days"] != query["days"])):
+                    return _decision("block", "health_query_calendar_window_conflict", tool_name, args)
+                if any(key in proposal and proposal[key] != query[key]
+                       for key in ("start_date", "end_date", "timezone")):
+                    return _decision("block", "health_query_calendar_window_conflict", tool_name, args)
+                if any(key in proposal for key in ("user_id", "owner_id", "tenant_id")):
+                    return _decision("block", "health_query_subject_not_current_user", tool_name, args)
+                bound.append(query)
+            if tool_name == "health_query_batch" and "compare" in plan:
+                return _decision("block", "health_query_semantics_unresolved", tool_name, args)
+            return _decision("allow", "health_query_projected_to_calendar_window", tool_name,
+                             bound[0] if tool_name == "health_query" else {"queries": bound})
+        if daily is None and longitudinal_read_scope_requested(snapshot):
+            # Unsupported requested history is not permission to substitute
+            # the legacy rolling default; new user scope is required.
+            return _decision("block", "longitudinal_read_scope_unresolved", tool_name, args)
 
     if tool_name == "health_query":
         turn_text = snapshot.envelope.text

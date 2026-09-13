@@ -32,10 +32,10 @@ def project_garmin_status(payload: Any) -> dict:
     return result
 
 
-def garmin_status_text(payload: Any) -> str:
+def garmin_status_text(payload: Any, *, include_task_uncertainty: bool = True) -> str:
     status = project_garmin_status(payload)
     if not isinstance(payload, dict) or payload.get('lookup_status') != 'available' or status['lookup_status'] != 'available':
-        return '佳明同步状态：本轮状态查询未成功，无法确认刚才的任务是否完成。'
+        return '佳明账号状态：本轮状态查询未成功。' + ('无法确认刚才的任务是否完成。' if include_task_uncertainty else '')
     if not status['bound']:
         return '佳明同步状态：当前账号尚未绑定佳明，请先到「设置 → 设备」绑定。'
     if status['requires_mfa']:
@@ -54,4 +54,4 @@ def garmin_status_text(payload: Any) -> str:
         detail += f"最近一次成功同步时间：{status['last_sync_at']}。"
     else:
         detail += '尚无成功同步时间记录。'
-    return f'佳明同步状态：{detail}仍无法确认刚才的任务是否完成；已有睡眠记录不代表本次同步已完成。'
+    return f'佳明同步状态：{detail}' + ('仍无法确认刚才的任务是否完成；已有睡眠记录不代表本次同步已完成。' if include_task_uncertainty else '')
