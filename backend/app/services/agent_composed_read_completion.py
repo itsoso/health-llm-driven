@@ -164,9 +164,37 @@ def _evidence_gap_notices(evidence: dict) -> list[str]:
 # fields in its rows cannot establish individual nutritional sufficiency.
 _NUTRITION_DEFICIT = re.compile(
     r"(?:营养(?:覆盖|结构)?|蛋白质|蔬果|蔬菜|水果|总摄入)(?:摄入量|摄入|覆盖|吃得|量)?"
-    r"(?:可能|似乎|或许|比较|仍|明显|存在|有)?"
-    r"(?:(?:偏)?(?:不足|不够|缺乏)|(?:偏|太|过|较|很)(?:低|少)|不均衡|单一)"
+    r"(?:可能|似乎|或许|比较|较为|较|过于|相对|稍微|稍显|略显|有些|有点|仍|明显|存在|有|非常|十分|极其|严重|完全|很|太|偏|过|稍|略){0,4}"
+    r"(?:不足|不够|缺乏|不均衡|单一|(?:低|少)(?=\W|_|$|但|却|而|了|的))"
 )
+
+
+_NUTRITION_EXISTENCE_UNCERTAINTY = re.compile(
+    r"(?:(?:是否(?:存在)?|有无)[^\S\n]*" + _NUTRITION_DEFICIT.pattern
+    + r"|" + _NUTRITION_DEFICIT.pattern + r"[^\S\n]*与否)"
+    + r"[^\S\n]*[，,]?[^\S\n]*"
+    r"(?:(?:目前|当前|现在|尚|仍|还|暂时|暂|仍然)[^\S\n]*){0,3}"
+    r"(?:(?:无法|不能|难以)(?:判断|确认|确定)|不确定|不明确|未知)"
+    r"(?=\W|_|$|但|却|而)"
+)
+
+
+_NUTRITION_NEGATION_TOKEN = (
+    r"(?:并不是|并没有|不是|并非|并无|并不|没有|不存在|未发现|未见|未必|不一定|不能说|不意味着|不等于)"
+)
+_NUTRITION_NEGATION_CHAIN = re.compile(
+    rf"(?:{_NUTRITION_NEGATION_TOKEN}[^\S\n]*(?:(?:完全|绝对|一点也|就)[^\S\n]*)?)+"
+)
+
+
+def _nutrition_negation_matching_text(text: str) -> str:
+    def normalize_chain(match: re.Match) -> str:
+        count = len(re.findall(_NUTRITION_NEGATION_TOKEN, match.group(0)))
+        # Adjacent double negatives cannot erase an affirmative deficit. This
+        # matching-only view never crosses a sentence or changes shown text.
+        return "不能据此" if count % 2 else ""
+
+    return _NUTRITION_NEGATION_CHAIN.sub(normalize_chain, text)
 
 
 def enforce_composed_synthesis_boundaries(text: str, completion):
@@ -179,7 +207,9 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
             or not any(q["query"]["dimension"] == "diet" for q in evidence["queries"])):
         return GuidanceValidationResult(text=text)
     normalized = _medical_assertion_matching_text(text)
-    normalized = normalized.replace("不等于", "不意味着")
+    normalized = re.sub(r"[*_`]", "", normalized)
+    normalized = _NUTRITION_EXISTENCE_UNCERTAINTY.sub("该项状态尚未确定", normalized)
+    normalized = _nutrition_negation_matching_text(normalized)
     # Uncertainty about whether a deficit exists is not an affirmative deficit.
     # Keep the same clause and contrast boundaries as the medical assertion gate.
     normalized = re.sub(

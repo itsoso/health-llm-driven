@@ -437,6 +437,14 @@ async def test_record_field_request_completion_retains_medical_boundary(
     ("你可能蛋白质不足。", True),
     ("蛋白质摄入可能偏低。", True),
     ("没有证据表明蛋白质摄入偏低。", False),
+    ("营养结构较单一。", True),
+    ("并非营养不均衡。", False),
+    ("没有营养不均衡。", False),
+    ("并非没有营养不均衡。", True),
+    ("蛋白质摄入并非没有偏低。", True),
+    ("蛋白质摄入未见偏低。", False),
+    ("是否营养不均衡尚无法判断。", False),
+    ("营养不均衡，但原因尚无法判断。", True),
     ("请补充：具体补剂名称和剂量、每天三餐与饮水、睡眠上床/入睡/醒来时间、当前主要症状、情绪压力情况。", True),
     ("请补充具体补剂名称和剂量；每天服用两片。", True),
 ])
@@ -590,3 +598,133 @@ async def test_explicit_calendar_unsupported_scope_stays_closed(db, four_domain_
     assert done["turn_outcome"]["status"] == "blocked"
     assert "longitudinal_read_scope_unresolved" in executor._agent_kernel_capability_block_reasons
     assert not dispatched and not done["write_receipts"]
+
+
+@pytest.mark.parametrize("text,blocked", [
+    ("营养结构较单一。", True),
+    ("营养结构比较单一。", True),
+    ("营养结构过于单一。", True),
+    ("蛋白质摄入可能有点偏低。", True),
+    ("蔬果摄入明显偏少。", True),
+    ("并非营养不均衡。", False),
+    ("并不是营养不均衡。", False),
+    ("不是营养不均衡。", False),
+    ("并不意味着营养不均衡。", False),
+    ("蛋白质摄入并不偏低。", False),
+    ("并非营养结构较单一。", False),
+    ("并非营养不均衡，但蛋白质摄入可能偏低。", True),
+    ("不是营养结构单一，而是蔬果吃得太少。", True),
+    ("不是。营养结构较单一。", True),
+    ("并非没有营养不均衡。", True),
+])
+def test_composed_nutrition_degree_and_negation(text, blocked):
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, enforce_composed_synthesis_boundaries
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [
+        execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}]),
+    ])
+    result = enforce_composed_synthesis_boundaries(text, completion)
+    assert result.flagged is blocked
+    assert (text in result.text) is not blocked
+
+
+@pytest.mark.parametrize("text,blocked", [
+    ("并无营养不均衡。", False),
+    ("不存在营养不均衡。", False),
+    ("没有营养不均衡。", False),
+    ("并没有营养不均衡。", False),
+    ("未见营养不均衡。", False),
+    ("未发现营养不均衡。", False),
+    ("未必营养不均衡。", False),
+    ("不一定营养不均衡。", False),
+    ("不能说蛋白质摄入偏低。", False),
+    ("并非并无营养不均衡。", True),
+    ("并非不存在营养不均衡。", True),
+    ("并非没有营养不均衡。", True),
+    ("并不是没有营养不均衡。", True),
+    ("不是并无营养不均衡。", True),
+    ("并非并没有营养不均衡。", True),
+    ("并非没有证据表明营养不均衡。", True),
+    ("并非完全没有营养不均衡。", True),
+    ("并非绝对不存在营养不均衡。", True),
+    ("并非一点也没有营养不均衡。", True),
+    ("并无营养不均衡，但蛋白质摄入偏低。", True),
+    ("未发现营养不均衡。总摄入偏少。", True),
+    ("不是。营养不均衡。", True),
+    ("并非\n营养不均衡。", True),
+    ("没有证据表明营养不均衡。", False),
+    ("记录结构单一不等于营养结构单一。", False),
+    ("营养结构非常单一。", True),
+    ("总摄入严重偏少。", True),
+    ("已记录食物种类非常单一。", False),
+])
+def test_composed_nutrition_negation_family(text, blocked):
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, enforce_composed_synthesis_boundaries
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [
+        execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}]),
+    ])
+    result = enforce_composed_synthesis_boundaries(text, completion)
+    assert result.flagged is blocked
+    assert (text in result.text) is not blocked
+
+
+@pytest.mark.parametrize("text,blocked", [
+    ("营养并非没有不均衡。", True),
+    ("营养并不是没有不均衡。", True),
+    ("蛋白质摄入并非没有偏低。", True),
+    ("总摄入不是不存在偏少。", True),
+    ("营养并无不均衡。", False),
+    ("蛋白质摄入未见偏低。", False),
+    ("总摄入不一定偏少。", False),
+    ("营养不能说不均衡。", False),
+    ("营养结构很单一。", True),
+    ("营养结构太单一。", True),
+    ("营养结构偏单一。", True),
+    ("营养结构稍显单一。", True),
+    ("蛋白质摄入低。", True),
+    ("**蛋白质摄入偏低**。", True),
+    ("`蔬菜吃得少`。", True),
+    ("（蛋白质摄入低）", True),
+    ("蔬菜吃得少。", True),
+    ("蔬果吃得少了。", True),
+    ("不能说蛋白质摄入低。", False),
+    ("蔬菜少油烹调。", False),
+    ("蔬菜较少油烹调。", False),
+    ("蔬菜少盐烹调。", False),
+    ("已记录食物种类稍显单一。", False),
+])
+def test_composed_nutrition_subject_negation_and_predicate_boundaries(text, blocked):
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, enforce_composed_synthesis_boundaries
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [
+        execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}]),
+    ])
+    result = enforce_composed_synthesis_boundaries(text, completion)
+    assert result.flagged is blocked
+    assert (text in result.text) is not blocked
+
+
+@pytest.mark.parametrize("text,blocked", [
+    ("是否营养不均衡尚无法判断。", False),
+    ("营养不均衡与否目前无法判断。", False),
+    ("是否存在营养不均衡仍不确定。", False),
+    ("营养不均衡与否尚不明确。", False),
+    ("是否**营养不均衡**，目前无法判断。", False),
+    ("_营养不均衡_与否目前无法判断。", False),
+    ("营养不均衡，但原因尚无法判断。", True),
+    ("**蛋白质摄入偏低**的原因尚无法判断。", True),
+    ("营养不均衡，但严重程度尚无法判断。", True),
+    ("是否营养不均衡尚无法判断，但蛋白质摄入偏低。", True),
+    ("营养不均衡与否尚不明确。总摄入偏少。", True),
+    ("营养不均衡的严重程度是否明确尚无法判断。", True),
+])
+def test_composed_nutrition_existence_uncertainty(text, blocked):
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, enforce_composed_synthesis_boundaries
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [
+        execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}]),
+    ])
+    result = enforce_composed_synthesis_boundaries(text, completion)
+    assert result.flagged is blocked
+    assert (text in result.text) is not blocked
