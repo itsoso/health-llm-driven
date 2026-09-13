@@ -104,3 +104,29 @@ def test_explicit_dose_change_does_not_require_repeating_medicine_name(text):
 @pytest.mark.parametrize("text", ["记录每天增加到两杯水。", "散步每日增加到十分钟。"])
 def test_general_quantity_is_not_a_medicine_dose(text):
     assert not enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "我不知道你每天吃几种补剂。每天吃两片。",
+    "我无法确认补剂数量；建议睡前服用。",
+    "请睡前服用。",
+    "每天吃两片。",
+    "每次吃一粒即可。",
+    "建议每天随餐口服。",
+    "明白了。每天吃两片。",
+    "明白了；每次吃一粒即可。",
+    "明白了\n每天吃两片。",
+])
+def test_separate_or_bare_regimen_instruction_is_still_an_action(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "每天喝两杯水。", "建议睡前散步十分钟。",
+    "每天吃两片全麦面包。", "每次吃一粒葡萄。",
+    "请告诉我你是否睡前服用。", "请告诉我你是否每天吃两片。",
+    "请告诉我实际服用时间。", "我不知道你每天吃几种补剂。",
+    "不建议睡前服用。", "不要每天吃两片。",
+])
+def test_bare_regimen_guard_preserves_food_information_and_negation(text):
+    assert not enforce_medical_evidence_boundaries(text).flagged

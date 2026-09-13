@@ -251,7 +251,8 @@ async def test_profile_context_uses_existing_owned_projection_as_background(db, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("panel", [False, True])
-@pytest.mark.parametrize("answer,finish_reason", [("", "stop"), ("生成中尚未完成", "length")])
+@pytest.mark.parametrize("answer,finish_reason", [("", "stop"),
+    ("INCOMPLETE_SINGLE_SENTINEL", "length"), ("INCOMPLETE_SINGLE_SENTINEL", "error")])
 async def test_complete_reads_do_not_disguise_empty_or_truncated_advice(db, four_domain_user, monkeypatch, panel, answer, finish_reason):
     _, _, _, done, saved = await run_projection(
         db, four_domain_user, monkeypatch, panel=panel, answer=answer, finish_reason=finish_reason,
@@ -260,6 +261,7 @@ async def test_complete_reads_do_not_disguise_empty_or_truncated_advice(db, four
     assert done["turn_outcome"]["status"] != "complete"
     assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
     assert "运动：已记录1条" in saved.content
+    assert "INCOMPLETE_SINGLE_SENTINEL" not in saved.content
 
 
 @pytest.mark.asyncio

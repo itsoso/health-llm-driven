@@ -17760,6 +17760,10 @@ class AgentExecutor:
             if final_finish_reason != "stop":
                 full_reply += "\n\n本轮没有生成有效回答，请稍后重试。"
         elif composed_synthesis_used and composed_completion is not None:
+            if final_finish_reason != "stop":
+                # A status flag does not make an incomplete model candidate
+                # safe to publish. Retain verified facts, not partial prose.
+                full_reply = "本轮没有生成有效回答，请稍后重试。"
             full_reply = composed_completion.trusted_fact_summary + "\n\n" + full_reply
         if sync_summary:
             full_reply = sync_summary + "\n\n" + full_reply
