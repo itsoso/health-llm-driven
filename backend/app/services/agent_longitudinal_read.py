@@ -17,6 +17,10 @@ from app.services.agent_kernel.health_semantics import (
 )
 from app.services.agent_query_window import (
     QueryWindow,
+    resolve_calendar_query_window,
+    _DATE_RE,
+    _RELATIVE_RE,
+    _WEEKDAY_RE,
     parse_query_window,
     read_calendar_health_query,
     MAX_CALENDAR_ROWS,
@@ -45,6 +49,12 @@ _TOOL_READ = re.compile(
     r"查询|查看|读取|调取|查一下|调用[^。\n]*(?:工具|接口|模块|skills)|"
     r"发起[^。\n]*(?:HTTP|请求)|(?:MCP|Skills)的?调用",
     re.I,
+)
+
+# These clauses restrict a read; an unrecognized remainder must not disappear
+# into the default recent window or a separate calendar clause.
+_RESTRICTION_PREFIX = re.compile(
+    r"^\s*(?:请)?(?:(?:只|仅)(?:查询|查看|读取|调取|查|看)|仅限|限定(?:范围)?(?:为|在)?|只限)(?:于)?\s*"
 )
 
 
@@ -86,6 +96,67 @@ def longitudinal_read_scope_requested(snapshot) -> bool:
     )
 
 
+def _restricted_read_text(snapshot, active: str) -> str | None:
+    """Consume every independent restriction; return None for unknown scope.
+
+    Accepted scope tokens come from the existing recent/calendar/domain grammar.
+    Calendar matches must consume the entire scope, not merely find a day in it.
+    This is a rejection boundary, not an alternative source of read authority.
+    """
+    clauses = re.split(r"[，,。；;！？!?\n]", active)
+    normalized = []
+    domain_limits = []
+    requested_domains = {key for key, pattern in _DOMAINS.items() if re.search(pattern, active)}
+    for clause in clauses:
+        prefix = _RESTRICTION_PREFIX.match(clause)
+        if prefix is None:
+            normalized.append(clause)
+            continue
+        body = clause[prefix.end():].strip()
+        scope = re.sub(r"(?:并|再|然后)(?:分析|复盘|总结)(?:一下)?$", "", body)
+        domains = {key for key, pattern in _DOMAINS.items() if re.search(pattern, scope)}
+        residue = scope
+        for pattern in _DOMAINS.values():
+            residue = re.sub(pattern, "", residue)
+        residue = re.sub(r"(?:我|本人|自己)?的|记录|数据|\s", "", residue)
+        if domains:
+            domain_limits.append(domains)
+        recent = _RECENT.fullmatch(residue)
+        if recent is not None:
+            days = _number(recent[1]) * (7 if recent[2] == "周" else 1)
+            if not 1 <= days <= 31:
+                return None
+        elif residue in {"", "近期", "最近"}:
+            if not domains:
+                return None
+        else:
+            # Reuse calendar lexical tokens and the actual window validator.
+            # Unknown subday/event-relative suffixes remain and fail closed.
+            calendar_remainder = _WEEKDAY_RE.sub("", _RELATIVE_RE.sub("", _DATE_RE.sub("", residue)))
+            if calendar_remainder not in {"", "到", "至", "~", "～"}:
+                return None
+            if resolve_calendar_query_window(
+                residue, snapshot.context.current_time,
+                "sleep" if domains == {"sleep"} else "diet",
+                timezone_name=snapshot.context.timezone,
+            ) is None:
+                return None
+        normalized.append(body)
+    if any(not requested_domains <= limit for limit in domain_limits):
+        return None
+    return "。".join(normalized)
+
+
+def longitudinal_read_restrictions_unresolved(snapshot) -> bool:
+    """Reject unknown explicit limits before any rolling/calendar fallback."""
+    active = active_health_instruction_text(snapshot.envelope.text)
+    active = re.sub(
+        r"“[^”]*”|「[^」]*」|『[^』]*』|\"[^\"\n]*\"|'[^'\n]*'|‘[^’]*’|`[^`]*`",
+        "", active,
+    )
+    return _restricted_read_text(snapshot, active) is None
+
+
 def _request(snapshot) -> tuple[str, int, bool] | None:
     owner = snapshot.context.user_id
     if (
@@ -111,6 +182,9 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
         r"朋友|他人|别人|同事|家人|妈妈|爸爸|父亲|母亲|妻子|丈夫|孩子|他们|她们|他的|她的",
         active,
     ):
+        return None
+    active = _restricted_read_text(snapshot, active)
+    if active is None:
         return None
     # Identify subjects at each requested domain, including names without 的.
     # A beneficiary such as 给我建议 in another clause is not a record owner.

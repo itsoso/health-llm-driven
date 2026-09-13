@@ -150,7 +150,10 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         )
     from app.services.agent_longitudinal_read import (
         resolve_longitudinal_read_queries, longitudinal_read_limitations,
+        longitudinal_read_restrictions_unresolved,
     )
+    if longitudinal_read_restrictions_unresolved(snapshot):
+        return None
     longitudinal = resolve_longitudinal_read_queries(snapshot)
     if longitudinal is not None:
         return OwnedReadScope(longitudinal, longitudinal_read_limitations(snapshot))

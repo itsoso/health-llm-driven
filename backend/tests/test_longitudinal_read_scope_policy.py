@@ -109,3 +109,38 @@ def test_explicit_split_day_uses_exact_calendar_binder_not_longitudinal_default(
 def test_unsupported_explicit_day_never_gets_a_seven_day_read(text, dimension):
     assert resolve_owned_read_scope(snapshot(text)) is None
     assert decide({'dimension': dimension, 'days': 7}, text=text).action == 'block'
+
+
+@pytest.mark.parametrize('restriction', [
+    '只看今早', '只看今晨', '只看午睡前', '限定在那次检查之后',
+    '只看最近一次运动后的记录', '仅查询今天上午',
+])
+@pytest.mark.parametrize('body', ['查询我的饮食并分析', '查询我今天的饮食并分析'])
+def test_unknown_restrictor_blocks_rolling_and_calendar_fallback(restriction, body):
+    text = f'{restriction}，{body}'
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    assert decide({'dimension': 'diet', 'days': 7}, text=text).action == 'block'
+    assert decide({'dimension': 'diet', 'start_date': '2026-09-13',
+                   'end_date': '2026-09-13', 'timezone': 'Asia/Shanghai'}, text=text).action == 'block'
+
+
+@pytest.mark.parametrize('restriction,expected_start', [
+    ('只看今天', '2026-09-13'), ('只看本周一', '2026-09-07'),
+    ('只看最近一周', '2026-09-07'), ('只看饮食', '2026-09-07'),
+])
+def test_supported_restrictor_preserves_exact_read_scope(restriction, expected_start):
+    text = f'{restriction}，查询我的饮食并分析'
+    scope = resolve_owned_read_scope(snapshot(text))
+    assert scope is not None
+    query = scope.query('diet')
+    assert query['start_date'] == expected_start
+    assert decide(dict(query), text=text).action == 'allow'
+    assert decide({'dimension': 'sleep'}, text=text).action == 'block'
+
+
+@pytest.mark.parametrize('restriction', ['只看今晨', '只看午睡前', '仅查询今天上午'])
+def test_unknown_restrictor_cannot_use_manage_list_calendar_bypass(restriction):
+    text = f'{restriction}，查询我今天的饮食并分析'
+    decision = decide({'record_type': 'diet', 'operation': 'list', 'date': '2026-09-13'},
+                      text=text, tool='health_manage')
+    assert decision.action == 'block'

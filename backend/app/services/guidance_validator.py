@@ -276,12 +276,6 @@ _ADVICE_HOLD = "部分建议或推断缺少已核验证据，暂不提供执行�
 def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
     for match in pattern.finditer(sentence):
         prefix = re.split(r"[，,。；;!?！？\n]|但是|但|不过|然而|而是", sentence[:match.start()])[-1]
-        # Asking when an existing regimen is taken is information collection,
-        # not a new regimen. Keep numeric or subsequent instructions guarded.
-        if (pattern is _REGIMEN_ACTION
-                and re.search(r"什么时间|何时", match.group(0))
-                and re.search(r"(?:告诉|说明|提供|列出|核对)[^。；;!?！？\n]{0,45}$", re.split(r"什么时间|何时", sentence[:match.end()])[-2])):
-            continue
         # A negated recommendation can begin inside the matched action itself.
         if prefix.endswith("不") and match.group(0).startswith("建议"):
             continue
@@ -296,13 +290,40 @@ def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
     return False
 
 
+def _regimen_assertion_text(sentence: str) -> str:
+    """Separate data-field nouns and a directed question from actual actions.
+
+    Never exempt an entire greedy action match: a second instruction must still
+    be checked, including nonnumeric timing instructions after a question.
+    """
+    # Only a request to supply a field is neutral. "调整服用时间" is still
+    # an action and must retain the original tripwire.
+    projected = re.sub(
+        r"服用(?=时间(?:\*\*)?\s*(?:补上|补齐)(?:[，,。；;!?！？\n]|$))",
+        "用药", sentence,
+    )
+    projected = re.sub(
+        r"(^\s*请告诉我[^。；;!?！？\n]{0,40})服用(?=时间[。；;!?！？\n]*$)",
+        r"\1用药", projected,
+    )
+    inquiry = re.search(r"(?:每天|每日|每次)?(?:什么时间|何时)(?:吃|服用)", projected)
+    directed = re.match(
+        r"^\s*(?:要评估[，,]\s*)?(?:请告诉我|我需要你(?:直接)?告诉我)", projected
+    )
+    if inquiry is not None and directed is not None:
+        remainder = projected[inquiry.end():]
+        if not re.search(r"服用|口服|补充|吃|停用|停药|加量|减量|增加到|减少到", remainder):
+            return projected[:inquiry.start()] + "既有用药信息" + remainder
+    return projected
+
+
 def _unsupported_advice_reasons(sentence: str) -> list[str]:
     """Only emit stable codes; never put health text into audit metadata."""
     normalized = unicodedata.normalize("NFKC", sentence)
     reasons: list[str] = []
     if _has_asserted_match(_UNSCOPED_REGIMEN, normalized) or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
         _has_asserted_match(_DOSE_ACTION, normalized)
-        or _has_asserted_match(_REGIMEN_ACTION, normalized)
+        or _has_asserted_match(_REGIMEN_ACTION, _regimen_assertion_text(normalized))
     )):
         reasons.append("unverified_dose_action")
     if re.search(r"基因|MTHFR", normalized, re.I) and _has_asserted_match(_GENETIC_ABSOLUTE, normalized):

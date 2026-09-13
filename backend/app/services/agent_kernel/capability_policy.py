@@ -2712,7 +2712,11 @@ def decide_tool_capability(
 
     if tool_name in {"health_query", "health_query_batch"}:
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
-        from app.services.agent_longitudinal_read import longitudinal_read_scope_requested
+        from app.services.agent_longitudinal_read import (
+            longitudinal_read_scope_requested, longitudinal_read_restrictions_unresolved,
+        )
+        if longitudinal_read_restrictions_unresolved(snapshot):
+            return _decision("block", "longitudinal_read_scope_unresolved", tool_name, args)
         # Preserve the existing exact-day/meal binder where it applies.
         daily = resolve_daily_read_plan(snapshot.envelope.text, snapshot.context.current_time,
                                         timezone_name=snapshot.context.timezone)
@@ -3099,6 +3103,9 @@ def decide_tool_capability(
                 )
             internal_mutation_lookup = _server_authorized_manage_lookup(args)
             guarding_user_read = not internal_mutation_lookup
+            from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+            if guarding_user_read and longitudinal_read_restrictions_unresolved(snapshot):
+                return _decision("block", "longitudinal_read_scope_unresolved", tool_name, args)
             if guarding_user_read and _health_read_is_explicitly_non_authorizing(
                 turn_text
             ):

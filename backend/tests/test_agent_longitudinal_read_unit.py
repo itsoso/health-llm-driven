@@ -215,3 +215,38 @@ def test_split_calendar_prefix_never_defaults_to_recent_seven_days(day):
 def test_explicit_day_survives_removing_historical_diagnosis_context():
     s = snapshot('只看今天。我的既往诊断是几个月前的事情。查询我的饮食并分析。')
     assert resolve_longitudinal_read_queries(s) is None
+
+
+@pytest.mark.parametrize('restriction', [
+    '只看今早', '只看今晨', '只看午睡前', '限定在那次检查之后',
+    '只看最近一次运动后的记录', '仅查询今天上午',
+])
+def test_unconsumed_independent_restriction_cannot_default_window(restriction):
+    turn = snapshot(f'{restriction}，查询我的饮食并分析')
+    assert resolve_longitudinal_read_queries(turn) is None
+    assert longitudinal_read_limitations(turn) == ()
+
+
+@pytest.mark.parametrize('restriction,days,defaulted', [
+    ('只看最近一周', 7, False), ('限定近3天', 3, False),
+    ('只看饮食', 7, True), ('仅限我的饮食记录', 7, True),
+])
+def test_fully_consumed_recent_or_domain_restriction_remains_readable(restriction, days, defaulted):
+    turn = snapshot(f'{restriction}，查询我的饮食并分析')
+    queries = resolve_longitudinal_read_queries(turn)
+    assert queries and len(queries) == 1 and queries[0]['dimension'] == 'diet'
+    assert queries[0]['days'] == days
+    assert ('default_recent_7_days' in longitudinal_read_limitations(turn)) is defaulted
+
+
+@pytest.mark.parametrize('text,unresolved', [
+    ('只看今晨，查询我今天的饮食并分析', True),
+    ('仅限饮食，查询我的饮食和睡眠并分析', True),
+    ('限定今天的饮食，查询我的饮食并分析', False),
+    ('只看本周一，查询我的饮食并分析', False),
+    ('只看最近一周，查询我的饮食并分析', False),
+    ('有人说“只看午睡前”。查询我的饮食并分析', False),
+])
+def test_restriction_discriminator_consumes_full_scope_without_granting_authority(text, unresolved):
+    from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+    assert longitudinal_read_restrictions_unresolved(snapshot(text)) is unresolved
