@@ -359,3 +359,20 @@ Review21's four intake examples and main/panel regression are retained alongside
 
 
 Final shared-unit verification passed 1,572/1,572 tests across 27 modules (`reva-feedback-integrated-qk_69x_n/receipt.json`), source unchanged, exit 0, no failures/errors/skips. System Map, Skill governance, blocking Ruff, dossier and diff checks passed. This is a new frozen candidate for independent G4, not a release or actual-model completion claim.
+
+
+## Complete record-field lists — actual-model repair after review 22
+
+Candidate `258b85691e74d938f88d782c3188db4297a98f4a` received independent G4 GO (`/tmp/reva-coherence-review22-g4.json`, 2,107 checks), then failed the first actual-model case. All four owned reads, date windows, scope, and SSE/persisted equality checks passed; generation/outcome failed because a non-colon request for missing record fields was mistaken for a regimen recommendation. The actual run stopped after two provider calls; no later gate or deployment ran. Evidence is retained in `/tmp/reva-coherence-258b8569-actual-failure-manifest.json`.
+
+The matching view now recognizes explicit record-field lists with or without a colon, including the actual missing symptom, supplement name/unit/time, sleep, and mood/work-pressure fields. It must consume the complete list through a sentence/semicolon/newline boundary. Commas may connect recognized fields but cannot terminate an incomplete list before an unrecognized medication object. Only this local information object is projected; later administration predicates, original response bytes, and trusted clinician relay verification remain unchanged.
+
+The initial new regression run `reva-feedback-integrated-je26kuen/receipt.json` had 6 failures / 241 passes. A first focused repair passed 540 tests (`reva-feedback-integrated-1_j9q5yw`), but independent inspection identified comma-connected medication objects being erased from the request scope. Added Chinese/ASCII comma controls then failed as expected: 2 failures / 247 passes (`reva-feedback-integrated-p3z7ct4s`). The earlier reserved pytest parameter collection error is retained separately in `reva-feedback-integrated-yz3olfe0` and is not counted as behavioral RED evidence. The repaired full-list grammar is undergoing fresh regression before a new fixed-revision G4.
+
+Release order remains fresh G4, actual original/follow-up cases with independent full-answer quality review, affected PostgreSQL tests, formal live gate, full CI, exact remote revision CI, deployment, then production acceptance. Prior revision GO results are not transferred.
+
+
+The complete-list focused regression passed 542/542 tests with no failures/errors/skips, source unchanged, exit 0 (`reva-feedback-integrated-tyrgst4g/receipt.json`). The follow-up full regression is running before freeze.
+
+
+Final unchanged-source complete-list regression passed 1,603/1,603 tests across 27 modules, no failures/errors/skips, exit 0 (`reva-feedback-integrated-dc3jqpux/receipt.json`). System Map, governance, dossier consistency, blocking Ruff, tracked-secret and diff checks passed. This freezes a new candidate for independent G4; actual-model and release gates remain pending.

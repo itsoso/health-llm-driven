@@ -249,3 +249,67 @@ def test_named_food_and_water_are_not_medication_administration(text):
     result = enforce_medical_evidence_boundaries(text)
     assert not result.flagged
     assert text in result.text
+
+
+_ACTUAL_MISSING_FIELDS_REQUEST = (
+    "为了给出更精准建议，需要补充当前症状、午餐/加餐、补剂具体名称/剂量/单位/服用时间、"
+    "睡眠起止时间，以及情绪和工作压力情况。"
+)
+
+
+@pytest.mark.parametrize("field_request", [
+    _ACTUAL_MISSING_FIELDS_REQUEST,
+    "需要补充当前症状、补剂具体名称/剂量/单位/服用时间。",
+    "请提供补剂具体名称、剂量、单位、服用时间。",
+    "建议补齐补剂具体名称/剂量/单位/服用时间。",
+])
+def test_explicit_record_fields_without_colon_are_information_objects(field_request):
+    result = enforce_medical_evidence_boundaries(field_request)
+    assert not result.flagged
+    assert field_request in result.text
+
+
+@pytest.mark.parametrize("separator", ["，", "。", "；", "\n"])
+@pytest.mark.parametrize("action", ["每天服用两片。", "请睡前服用。", "剂量增加到200mg。", "核对以后再吃2片。"])
+def test_noncolon_record_fields_do_not_hide_a_later_action(separator, action):
+    text = "需要补充当前症状、补剂具体名称/剂量/单位/服用时间" + separator + action
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged
+    assert action not in result.text
+
+
+@pytest.mark.parametrize("text", [
+    "建议补充维生素。", "需要补充补剂剂量200mg。",
+    "建议补齐补剂具体名称/剂量/单位/服用时间改为睡前。",
+])
+def test_noncolon_field_projection_does_not_accept_medication_or_assigned_values(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("action", ["", "核对记录以后再吃2片。"])
+async def test_main_and_panel_complete_only_the_information_request(
+    db, four_domain_user, monkeypatch, panel, action,
+):
+    answer = _ACTUAL_MISSING_FIELDS_REQUEST + action
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel, answer=answer,
+    )
+    if action:
+        assert done["turn_outcome"]["status"] == "blocked"
+        assert action not in saved.content
+    else:
+        assert done["completion_status"] == "complete"
+        assert done["turn_outcome"]["status"] == "complete"
+        assert _ACTUAL_MISSING_FIELDS_REQUEST in saved.content
+
+
+@pytest.mark.parametrize("text", [
+    "为了给出建议，需要补充当前症状、维生素D。",
+    "建议补充：补剂名称/剂量/服用时间、维生素D。",
+    "建议补充当前症状、补剂具体名称/剂量/单位/服用时间，维生素D。",
+    "建议补充当前症状、补剂具体名称/剂量/单位/服用时间, 维生素D。",
+])
+def test_mixed_record_field_and_medicine_objects_are_not_projected(text):
+    assert enforce_medical_evidence_boundaries(text).flagged

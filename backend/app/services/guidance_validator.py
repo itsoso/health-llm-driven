@@ -312,17 +312,22 @@ def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
     return False
 
 
-# A colon-delimited request can ask for record fields rather than ingestion.
+# A request can ask for record fields rather than ingestion, with or without
+# a colon. Require the complete field list before a clause boundary so a
+# medicine appended to that list cannot be mistaken for a field-name object.
 # Match only field-name objects; do not erase the surrounding sentence or an
 # appended command. The original response is never rewritten by this view.
 _RECORD_FIELD_OBJECT = (
-    r"(?:补剂(?:的)?(?:真实|准确)?名称|(?:补剂(?:的)?)?剂量|"
-    r"(?:实际)?服用时间|(?:午餐|加餐)(?:记录)?)"
+    r"(?:补剂(?:的)?(?:真实|准确|具体)?名称|(?:补剂(?:的)?)?剂量|单位|"
+    r"(?:实际)?服用时间|(?:午餐|加餐)(?:记录)?|当前症状|"
+    r"睡眠(?:起止时间|入睡与醒来时间)|设备同步记录|"
+    r"情绪和工作压力情况|情绪评分|(?:简单的)?情绪/压力评分)"
 )
 _RECORD_FIELD_REQUEST = re.compile(
-    r"(?:补充|提供)\s*[:：]\s*" + _RECORD_FIELD_OBJECT
-    + r"(?:\s*[/、+和及]\s*" + _RECORD_FIELD_OBJECT + r")*"
-    + r"(?=\s*(?:[，,。；;!?！？\n、]|$))"
+    r"(?:补充|提供|补齐)\s*[:：]?\s*" + _RECORD_FIELD_OBJECT
+    + r"(?:\s*(?:[/、+和及或]|[，,]\s*(?:以及|以及简单的)?)\s*"
+    + _RECORD_FIELD_OBJECT + r")*"
+    + r"(?=\s*(?:[。；;!?！？\n]|$))"
 )
 
 
