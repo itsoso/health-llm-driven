@@ -184,3 +184,39 @@ def test_record_error_negation_applies_to_the_verdict_after_its_subject(text):
 ])
 def test_record_error_prevention_is_an_action_not_a_claim(text):
     assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("field", [
+    "蛋白质的记录", "蛋白质摄入记录", "蛋白质的摄入记录",
+    "蛋白质摄入量的记录", "蛋白质含量的数据",
+])
+def test_nutrient_missing_data_noun_phrase_is_not_a_deficit(field):
+    assert daily.summary_advice_contract_failure(f"建议：目前缺少{field}，请补全记录。") is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：缺少蛋白质的记录，说明你的蛋白质摄入不足。",
+    "建议：缺少蛋白质的摄入记录且蛋白质缺乏。",
+])
+def test_data_noun_suffix_cannot_hide_a_later_deficit_claim(text):
+    assert daily.summary_advice_contract_failure(text) == "summary_advice_infers_nutrient_gap"
+
+
+@pytest.mark.parametrize("text", [
+    "建议：是否存在重复录入需要先核对。",
+    "建议：是否有重复记录，需要先检查。",
+    "建议：有没有重复录入，需要核对明细。",
+    "建议：这两条记录是否重复，需要先核对。",
+    "建议：午餐是否被标成晚餐需要先核对。",
+])
+def test_local_question_modifier_can_precede_the_check_action(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：是否存在重复录入需要核对，但这些记录是重复录入。",
+    "建议：是否需要补充份量，存在重复录入。",
+    "建议：核对是否完整后确认这是重复录入。",
+])
+def test_unrelated_or_earlier_question_does_not_excuse_record_assertion(text):
+    assert daily.summary_advice_contract_failure(text) == "summary_advice_infers_record_error"

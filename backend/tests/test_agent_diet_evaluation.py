@@ -70,6 +70,9 @@ LIVE_CANDIDATE = """## 今天查到的饮食事实
     ("建议：蛋白数据缺失，说明今天缺口大概率在蛋白侧。建议多吃鸡蛋。", "stop"),
     ("建议：两条早餐名称和热量相同，说明是重复录入，建议删除其中一条。", "stop"),
     ("建议：餐次标签比当前时间晚，午餐被标成了晚餐，建议更正。", "stop"),
+    ("建议：缺少蛋白质的记录，说明你的蛋白质摄入不足。", "stop"),
+    ("建议：是否存在重复录入需要核对，但这些记录是重复录入。", "stop"),
+    ("建议：核对是否完整后确认这是重复录入。", "stop"),
     ("本轮生成失败，请重试。", "error"),
     ("我会先查询今天的饮食记录，然后给出建议。", "stop"),
 ])
@@ -149,3 +152,22 @@ async def test_explained_evaluation_limit_is_a_substantive_answer(db, auth_user_
     )
     assert done["turn_outcome"]["status"] == "complete"
     assert reply in saved.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reply", [
+    "建议：目前缺少蛋白质的记录，请补充食物份量和营养信息。",
+    "建议：是否存在重复录入需要先核对，不能直接删除记录。",
+])
+async def test_missing_field_noun_and_unresolved_record_question_are_retained(db, auth_user_and_headers, monkeypatch, reply):
+    user, _ = auth_user_and_headers
+    _, done, saved, streamed, dispatched = await _run_scripted(
+        db, user, monkeypatch, query="今天我吃的怎么样?", first_tool="health_query", first_args={"dimension": "diet"},
+        dispatch=dietary_rows, reply=reply, turn_id="diet-local-uncertainty",
+    )
+    assert len(dispatched) == 1 and dispatched[0].arguments["dimension"] == "diet"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
+    for text in (saved.content, streamed):
+        assert "已记录热量合计1020千卡" in text and "睡眠" not in text
+        assert reply in text

@@ -202,9 +202,10 @@ def summary_advice_contract_failure(text: str) -> str | None:
     # record count/calorie projection. Missing fields are not nutrient deficits;
     # similar rows and meal labels are not proof of duplicate or mistaken data.
     nutrient = r'(?:蛋白质|蛋白|碳水化合物|碳水|脂肪|膳食纤维|营养)(?!质|化合物)'
+    data_noun = r'(?:的)?(?:(?:摄入量?|含量)(?:的)?)?(?:数据|字段|信息|记录)'
     nutrient_claim = re.compile(
         rf'{nutrient}(?:摄入|量)?(?:明显|严重|偏)?(?:不足|缺乏|欠缺|太少|偏少)'
-        rf'|(?:缺少|缺乏|缺){nutrient}(?!数据|字段|信息|记录)'
+        rf'|(?:缺少|缺乏|缺){nutrient}(?!{data_noun})'
         rf'|缺口[^。！？!?；;，,\n]{{0,12}}?{nutrient}'
     )
     record_error_claim = re.compile(
@@ -225,11 +226,15 @@ def summary_advice_contract_failure(text: str) -> str | None:
                 uncertainty_scope = clause[:match.end()] if pattern is record_error_claim else prefix
                 if uncertainty.search(uncertainty_scope) or re.search(r'(?:避免|防止)\s*$', prefix):
                     continue
-                if pattern is record_error_claim and re.search(
-                    r'(?:核对|确认|检查|查看)[^。！？!?；;，,\n]{0,24}?(?:是否|有没有)',
-                    clause[:match.end()],
-                ):
-                    continue
+                if pattern is record_error_claim:
+                    # A local question may precede or follow a check request.
+                    # Bind it to the verdict, never to an earlier unrelated 是否.
+                    verdict = re.search(r'重复|误录|误记|错录|误标|标错|记错|错标|被标成', match.group())
+                    if verdict is not None and re.search(
+                        r'(?:是否|有没有)(?:存在|属于|为|是|有)?$',
+                        clause[:match.start() + verdict.start()],
+                    ):
+                        continue
                 return reason
     return None
 
