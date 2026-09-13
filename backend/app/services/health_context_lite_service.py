@@ -8,6 +8,8 @@
 - 任何失败优雅降级，不影响对话
 """
 import logging
+import math
+from statistics import mean
 import re
 import threading
 import time
@@ -16,6 +18,8 @@ from typing import Optional
 
 from sqlalchemy import func, case
 from sqlalchemy.orm import Session
+
+from app.utils.number_format import format_display_number
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +282,68 @@ def build_lite_health_context(
     return _with_clinician_feedback_overlay(db, user_id, budget, base_context)
 
 
+
+def _recent_wearable_trend_lines(rows, since: date, today: date) -> list[str]:
+    """Summarize owned bounded rows by valid calendar day, not source-row count."""
+    from app.services.multi_source_merger import merge_rows
+
+    metrics = (
+        ('steps', '步数', '', 1, False),
+        ('total_sleep_duration', '睡眠', 'h', 60, False),
+        ('deep_sleep_duration', '深睡', 'min', 1, False),
+        ('resting_heart_rate', '静息心率', '', 1, True),
+        ('stress_level', '压力', '', 1, True),
+        ('hrv', 'HRV', 'ms', 1, False),
+    )
+    def valid_number(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        try:
+            number = float(value)
+        except OverflowError:
+            return None
+        return number if math.isfinite(number) and number >= 0 else None
+
+    by_day = {}
+    for row in rows:
+        if since <= row.record_date <= today:
+            # Invalid readings cannot displace a lower-priority valid source.
+            clean = {'data_source': row.data_source}
+            clean.update({field: valid_number(getattr(row, field, None)) for field, *_ in metrics})
+            by_day.setdefault(row.record_date, []).append(clean)
+    if len(by_day) < 3:
+        return []
+    fields = [field for field, *_ in metrics]
+    daily = {day: merge_rows(candidates, fields)['values'] for day, candidates in by_day.items()}
+    trend_parts, changes = [], []
+    for field, label, unit, divisor, reverse in metrics:
+        values = [day[field] for day in daily.values() if day[field] is not None]
+        if values:
+            average = format_display_number(mean(values) / divisor)
+            coverage = format_display_number(len(values))
+            trend_parts.append(f'{label}{average}{unit}（有效{coverage}/7天）')
+        if field == 'hrv':
+            continue  # HRV had no direction heuristic in this compact section.
+        early_days = [since + timedelta(days=i) for i in range(3)]
+        late_days = [today - timedelta(days=i) for i in range(3)]
+        early = [daily.get(day, {}).get(field) for day in early_days]
+        late = [daily.get(day, {}).get(field) for day in late_days]
+        if any(value is None for value in (*early, *late)):
+            continue
+        avg_e, avg_l = mean(early), mean(late)
+        if avg_e > 0:
+            pct = (avg_l - avg_e) / avg_e * 100
+            if math.isfinite(pct) and abs(pct) > 10:
+                direction = '↑' if pct > 0 else '↓'
+                icon = '✅' if (pct > 0) != reverse else '⚠️'
+                changes.append(f'{icon}{label}{direction}{format_display_number(abs(pct))}%（前3日3/3天，后3日3/3天）')
+    lines = []
+    if trend_parts:
+        lines.append(f'7日均值（{since.isoformat()}至{today.isoformat()}，按各指标有效日计算）: ' + ', '.join(trend_parts))
+    if changes:
+        lines.append('趋势: ' + ', '.join(changes))
+    return lines
+
 def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> str:
     """按固定 profile 构建上下文；FULL 保持历史行为，MINIMAL 只留基础画像。"""
     minimal = budget == INJECTION_MINIMAL
@@ -391,15 +457,15 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
     if profile:
         goal_parts = []
         if profile.target_steps:
-            goal_parts.append(f"步数{profile.target_steps}")
+            goal_parts.append(f"步数{format_display_number(profile.target_steps)}")
         if profile.target_sleep_hours:
-            goal_parts.append(f"睡眠{profile.target_sleep_hours}h")
+            goal_parts.append(f"睡眠{format_display_number(profile.target_sleep_hours)}h")
         if profile.target_water_ml:
-            goal_parts.append(f"饮水{profile.target_water_ml}ml")
+            goal_parts.append(f"饮水{format_display_number(profile.target_water_ml)}ml")
         if profile.target_exercise_minutes:
-            goal_parts.append(f"运动{profile.target_exercise_minutes}min")
+            goal_parts.append(f"运动{format_display_number(profile.target_exercise_minutes)}min")
         if goal_parts:
-            parts.append(f"健康目标: 每日{' | '.join(goal_parts)}")
+            parts.append(f"档案目标（可能为默认值，未确认由用户设定）: 每日{' | '.join(goal_parts)}")
 
     # ── 1c. 过敏与饮食偏好 ───────────────────────────────
     if profile:
@@ -464,71 +530,14 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
             parts.append(f"{date_label}: {', '.join(garmin_items)}")
 
     # ── 3. 7 日趋势 + 变化方向 ─────────────────────────
-    week_ago = today - timedelta(days=7)
-    garmin_7d = []
+    week_ago = today - timedelta(days=6)
     if include_recovery:
         garmin_7d = db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date >= week_ago,
-        ).order_by(GarminData.record_date).all()
-
-    if len(garmin_7d) >= 3:
-        steps_list = [g.steps for g in garmin_7d if g.steps is not None]
-        sleep_list = [g.total_sleep_duration for g in garmin_7d if g.total_sleep_duration is not None]
-        rhr_list = [g.resting_heart_rate for g in garmin_7d if g.resting_heart_rate is not None]
-        stress_list = [g.stress_level for g in garmin_7d if g.stress_level is not None]
-        hrv_list = [g.hrv for g in garmin_7d if g.hrv is not None]
-        deep_list = [g.deep_sleep_duration for g in garmin_7d if g.deep_sleep_duration is not None]
-
-        trend_parts = []
-        if steps_list:
-            avg = sum(steps_list) // len(steps_list)
-            trend_parts.append(f"步数{avg}")
-        if sleep_list:
-            avg_h = sum(sleep_list) / len(sleep_list) / 60
-            trend_parts.append(f"睡眠{avg_h:.1f}h")
-        if deep_list:
-            avg_deep = sum(deep_list) // len(deep_list)
-            trend_parts.append(f"深睡{avg_deep}min")
-        if rhr_list:
-            trend_parts.append(f"静息心率{sum(rhr_list) // len(rhr_list)}")
-        if stress_list:
-            trend_parts.append(f"压力{sum(stress_list) // len(stress_list)}")
-        if hrv_list:
-            avg_hrv = sum(hrv_list) / len(hrv_list)
-            trend_parts.append(f"HRV{avg_hrv:.0f}ms")
-
-        if trend_parts:
-            parts.append(f"7日均值: {', '.join(trend_parts)}")
-
-        # 趋势方向：对比前 3 天 vs 后 3 天
-        if len(garmin_7d) >= 6:
-            first_half = garmin_7d[:3]
-            second_half = garmin_7d[-3:]
-            changes = []
-
-            def _trend(items_early, items_late, field, label, reverse=False):
-                vals_e = [getattr(g, field) for g in items_early if getattr(g, field) is not None]
-                vals_l = [getattr(g, field) for g in items_late if getattr(g, field) is not None]
-                if vals_e and vals_l:
-                    avg_e = sum(vals_e) / len(vals_e)
-                    avg_l = sum(vals_l) / len(vals_l)
-                    if avg_e > 0:
-                        pct = (avg_l - avg_e) / avg_e * 100
-                        if abs(pct) > 10:
-                            direction = "↑" if pct > 0 else "↓"
-                            good = (pct > 0) != reverse
-                            icon = "✅" if good else "⚠️"
-                            changes.append(f"{icon}{label}{direction}{abs(pct):.0f}%")
-
-            _trend(first_half, second_half, "steps", "步数")
-            _trend(first_half, second_half, "total_sleep_duration", "睡眠")
-            _trend(first_half, second_half, "deep_sleep_duration", "深睡")
-            _trend(first_half, second_half, "resting_heart_rate", "静息心率", reverse=True)
-            _trend(first_half, second_half, "stress_level", "压力", reverse=True)
-
-            if changes:
-                parts.append(f"趋势: {', '.join(changes)}")
+            GarminData.record_date <= today,
+        ).order_by(GarminData.record_date, GarminData.id).all()
+        parts.extend(_recent_wearable_trend_lines(garmin_7d, week_ago, today))
 
     # ── 3b. 可穿戴 7 日紧凑摘要 ───────────────────────────
     if include_recovery:
@@ -538,7 +547,7 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
                 format_wearable_context_summary_for_prompt,
             )
 
-            wearable_summary = build_wearable_context_summary(db, user_id, days=7)
+            wearable_summary = build_wearable_context_summary(db, user_id, days=7, as_of=today)
             if wearable_summary:
                 parts.append(format_wearable_context_summary_for_prompt(wearable_summary))
         except Exception as e:

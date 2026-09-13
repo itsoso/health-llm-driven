@@ -236,3 +236,110 @@ def test_all_result_limits_remain_bounded_and_do_not_echo_failures():
     result = build_batch(mutate=mutate)
     assert not result["basis"] and len(result["limitations"]) == MAX_LIMITATIONS
     assert "PRIVATE_PAYLOAD" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("shape", ["separate", "batch", "mixed", "reverse"])
+@pytest.mark.parametrize("with_packet", [False, True])
+def test_global_domain_coverage_is_independent_of_call_grouping(shape, with_packet):
+    from types import SimpleNamespace
+    dimensions = ("diet", "sleep", "workout", "supplements")
+    items = []
+    for dimension in dimensions:
+        data = payload(dimension)
+        data["records"] *= 6
+        items.append(("health_query", query(dimension), data))
+    if shape == "batch":
+        calls = [("health_query_batch", {"queries": [item[1] for item in items]},
+                  {"status": "success", "results": [item[2] for item in items]})]
+    elif shape == "mixed":
+        calls = [("health_query_batch", {"queries": [item[1] for item in items[:2]]},
+                  {"status": "success", "results": [item[2] for item in items[:2]]}), *items[2:]]
+    else:
+        calls = items if shape == "separate" else list(reversed(items))
+    packet = SimpleNamespace(evidence=[SimpleNamespace(
+        value=1, unit=None, label=f"其他指标{i}", evidence_id=f"packet-{i}",
+        category="metric", source_kind="manual",
+    ) for i in range(4)]) if with_packet else None
+    result = build_answer_evidence(tool_calls=calls, personal_packet=packet)
+    assert len(result["basis"]) == MAX_BASIS_ITEMS
+    assert {item["label"].split(" · ")[0] for item in result["basis"]} == {"饮食", "睡眠", "运动", "补剂"}
+    assert normalize_answer_evidence(result) == result
+
+
+def test_multidomain_reserves_actual_read_then_fills_packet_before_extra_rows():
+    from types import SimpleNamespace
+    packet = SimpleNamespace(evidence=[SimpleNamespace(
+        value=1, unit=None, label=f"其他指标{i}", evidence_id=f"packet-{i}",
+        category="metric", source_kind="manual",
+    ) for i in range(4)])
+    calls = []
+    for dimension in ("diet", "sleep"):
+        data = payload(dimension)
+        data["records"] *= 5
+        calls.append(("health_query", query(dimension), data))
+    result = build_answer_evidence(tool_calls=calls, personal_packet=packet)
+    assert [r["label"].split(" · ")[0] for r in result["basis"]] == ["饮食", "睡眠", "其他指标0", "其他指标1"]
+    # A single read and packet-only projection retain the original priority.
+    single = build_answer_evidence(tool_calls=calls[:1], personal_packet=packet)
+    packet_only = build_answer_evidence(personal_packet=packet)
+    assert single["basis"] == packet_only["basis"]
+    assert [r["id"] for r in single["basis"]] == [f"packet-{i}" for i in range(4)]
+
+
+@pytest.mark.parametrize("failure", ["missing", "failed", "empty", "source"])
+def test_global_fairness_never_creates_basis_for_unverified_or_empty_domain(failure):
+    calls = []
+    for dimension in ("diet", "sleep", "workout", "supplements"):
+        data = payload(dimension)
+        data["records"] *= 5
+        if dimension == "workout":
+            if failure == "missing":
+                data = None
+            elif failure == "failed":
+                data.update(status="failed")
+            elif failure == "empty":
+                data.update(records=[], availability="no_data")
+            else:
+                data["source_scope"] = "definitions"
+        calls.append(("health_query", query(dimension), data))
+    result = build_answer_evidence(tool_calls=calls)
+    assert {item["label"].split(" · ")[0] for item in result["basis"]} == {"饮食", "睡眠", "补剂"}
+    assert len(result["basis"]) == MAX_BASIS_ITEMS
+    assert any("运动" in note["title"] for note in result["limitations"])
+
+
+def test_same_dimension_different_verified_windows_keep_both_comparison_facts():
+    calls = []
+    for days, start, duration in [(7, "2026-09-07", 1800), (30, "2026-08-15", 3600)]:
+        args = {**query("workout"), "days": days, "start_date": start}
+        data = payload("workout")
+        data["window"]["start_date"] = start
+        data["records"][0]["duration_seconds"] = duration
+        data["records"] *= 5
+        calls.append(("health_query", args, data))
+    result = build_answer_evidence(tool_calls=calls)
+    assert len(result["basis"]) == MAX_BASIS_ITEMS
+    assert {row["observation"] for row in result["basis"]} == {
+        "运动时长 30 分钟", "运动时长 60 分钟",
+    }
+
+
+@pytest.mark.parametrize("unavailable", ["failed", "empty"])
+def test_packet_order_is_unchanged_with_only_one_available_query(unavailable):
+    from types import SimpleNamespace
+
+    packet = SimpleNamespace(evidence=[SimpleNamespace(
+        value=1, unit=None, label=f"其他指标{i}", evidence_id=f"packet-{i}",
+        category="metric", source_kind="manual",
+    ) for i in range(4)])
+    second = payload("sleep")
+    if unavailable == "failed":
+        second["status"] = "failed"
+    else:
+        second.update(records=[], availability="no_data")
+    result = build_answer_evidence(tool_calls=[
+        ("health_query", query("diet"), payload("diet")),
+        ("health_query", query("sleep"), second),
+    ], personal_packet=packet)
+    assert result["basis"] == build_answer_evidence(personal_packet=packet)["basis"]
+    assert result["limitations"]

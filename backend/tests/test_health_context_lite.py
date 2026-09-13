@@ -763,3 +763,87 @@ def test_clinician_feedback_format_failure_is_fail_soft_and_log_safe(
     assert "operation=load_clinician_feedback" in caplog.text
     assert "ValueError" in caplog.text
     assert private_text not in caplog.text
+
+
+class TestCalendarMeanCoverage:
+    @staticmethod
+    def _row(day, source='garmin', **values):
+        from types import SimpleNamespace
+        fields = ('steps', 'total_sleep_duration', 'deep_sleep_duration', 'resting_heart_rate', 'stress_level', 'hrv')
+        return SimpleNamespace(record_date=day, data_source=source, **{field: values.get(field) for field in fields})
+
+    def test_owned_current_seven_calendar_days_exclude_old_and_future(self, db, test_user, monkeypatch):
+        from app.services import health_context_lite_service as service
+        frozen = date(2026, 9, 13)
+        class FrozenDate(date):
+            @classmethod
+            def today(cls):
+                return frozen
+        monkeypatch.setattr(service, 'date', FrozenDate)
+        db.add_all([GarminData(user_id=test_user.id, record_date=frozen-timedelta(days=offset), steps=6000,
+                               total_sleep_duration=420 if offset != 2 else None) for offset in (0, 2, 6)])
+        db.add_all([GarminData(user_id=test_user.id, record_date=frozen-timedelta(days=7), steps=99000),
+                    GarminData(user_id=test_user.id, record_date=frozen+timedelta(days=1), steps=99000)])
+        other = User(username='coverage-other', email='coverage-other@example.com', name='覆盖测试另一用户', hashed_password='synthetic')
+        db.add(other); db.flush()
+        db.add(GarminData(user_id=other.id, record_date=frozen, steps=99000))
+        db.commit()
+        context = service._build_context(db, test_user.id, budget=service.INJECTION_RECOVERY)
+        line = next(line for line in context.splitlines() if line.startswith('7日均值'))
+        assert '2026-09-07' in line and '2026-09-13' in line
+        assert '步数6000（有效3/7天）' in line
+        assert '睡眠7h（有效2/7天）' in line
+        assert '99000' not in line and '趋势:' not in context
+
+    def test_shared_source_priority_and_valid_days_not_source_rows(self):
+        from app.services.health_context_lite_service import _recent_wearable_trend_lines
+        end = date(2026, 9, 13); start = end-timedelta(days=6)
+        rows = []
+        for offset in (0, 2, 6):
+            day = end-timedelta(days=offset)
+            rows.extend([self._row(day, steps=9000), self._row(day, 'apple-watch', steps=6000)])
+        result = '\n'.join(_recent_wearable_trend_lines(rows, start, end))
+        assert '步数6000（有效3/7天）' in result
+        assert '趋势:' not in result
+
+    def test_each_metric_ignores_invalid_values_and_missing_days_not_zero(self):
+        from app.services.health_context_lite_service import _recent_wearable_trend_lines
+        end = date(2026, 9, 13); start = end-timedelta(days=6)
+        rows = [self._row(start, steps=0, hrv=30.126), self._row(start+timedelta(days=1), steps=6000, hrv=float('inf')),
+                self._row(end, steps=float('nan'), hrv=-1)]
+        result = '\n'.join(_recent_wearable_trend_lines(rows, start, end))
+        assert '步数3000（有效2/7天）' in result
+        assert 'HRV30.13ms（有效1/7天）' in result
+        assert 'nan' not in result and 'inf' not in result
+
+    def test_invalid_primary_value_can_use_existing_lower_priority_valid_source(self):
+        from app.services.health_context_lite_service import _recent_wearable_trend_lines
+        end = date(2026, 9, 13); start = end-timedelta(days=6)
+        rows = [self._row(end-timedelta(days=i), steps=6000) for i in (0,1,2)]
+        rows.append(self._row(end, 'apple-watch', steps=float('inf')))
+        result = '\n'.join(_recent_wearable_trend_lines(rows, start, end))
+        assert '步数6000（有效3/7天）' in result
+
+    @pytest.mark.parametrize('missing', [False, True])
+    def test_trend_requires_valid_calendar_halves(self, missing):
+        from app.services.health_context_lite_service import _recent_wearable_trend_lines
+        end = date(2026, 9, 13); start = end-timedelta(days=6)
+        rows = [self._row(start+timedelta(days=i), steps=6000 if i<3 else 7200) for i in range(7)]
+        if missing:
+            rows[0].steps = None
+        result = '\n'.join(_recent_wearable_trend_lines(rows, start, end))
+        assert ('趋势:' in result) is not missing
+        if not missing:
+            assert '步数↑20%' in result and '前3日3/3天，后3日3/3天' in result
+
+    @pytest.mark.parametrize('steps', [None, 8000, 12345])
+    def test_profile_target_provenance_remains_unknown_even_for_nondefault_values(self, db, test_user, steps):
+        from app.services import health_context_lite_service as service
+        profile = UserProfile(user_id=test_user.id)
+        if steps is not None:
+            profile.target_steps = steps
+        db.add(profile); db.commit()
+        context = service._build_context(db, test_user.id, budget=service.INJECTION_MINIMAL)
+        assert '档案目标（可能为默认值，未确认由用户设定）' in context
+        assert f'步数{steps or 8000}' in context and '睡眠7.5h' in context
+        assert '健康目标:' not in context

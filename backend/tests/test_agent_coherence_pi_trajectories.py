@@ -549,3 +549,65 @@ async def test_four_domain_batch_evidence_uses_executed_scope_and_review_has_no_
     assert not any("[系统恢复数据安全闸]" in content for content in tool_messages)
     assert "recovery_data_guard" not in done
     assert done["turn_outcome"]["status"] == "complete"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shape", ["separate", "batch", "mixed"])
+async def test_multiline_four_domain_evidence_survives_real_pi_call_grouping(
+    db, owned_data, clock, monkeypatch, shape,
+):
+    from app.models.daily_health import WorkoutRecord
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+
+    definition = SupplementDefinition(
+        user_id=owned_data.id, name="Synthetic multirow evidence", is_active=False,
+    )
+    db.add(definition)
+    db.flush()
+    for offset in range(3):
+        day = clock[0].date() - timedelta(days=offset)
+        db.add_all([
+            DietRecord(user_id=owned_data.id, record_date=day, meal_type="breakfast",
+                       food_name="合成早餐", food_items="合成早餐", calories=300),
+            WorkoutRecord(user_id=owned_data.id, workout_date=day,
+                          workout_name="Synthetic walk", workout_type="walking",
+                          duration_seconds=1200, source="synthetic"),
+            SupplementRecord(user_id=owned_data.id, supplement_id=definition.id,
+                             record_date=day, taken=True),
+        ])
+        if offset:
+            db.add(GarminData(user_id=owned_data.id, record_date=day,
+                              sleep_score=80, total_sleep_duration=420))
+    db.commit()
+    dimensions = ("diet", "sleep", "workout", "supplements")
+    queries = [{"dimension": dimension, "days": 7} for dimension in dimensions]
+    if shape == "batch":
+        calls = [("health_query_batch", {"queries": queries})]
+    elif shape == "mixed":
+        calls = [("health_query_batch", {"queries": queries[:2]}),
+                 *(("health_query", query) for query in queries[2:])]
+    else:
+        calls = [("health_query", query) for query in queries]
+    trace = script_executor(db, monkeypatch, [*calls,
+        "已核对本轮饮食、睡眠、运动与实际服用记录。记录未覆盖的部分仍未知。",
+    ])
+    done, saved = await run(db, trace, owned_data,
+        "我的既往诊断是几个月前的事情。请基于诊断时间判断当前状况，"
+        "结合我每天实际服用的补剂、睡眠、运动、情绪、工作和饮食，先调用工具查询已有记录，再给建议。")
+    assert len(trace.dispatches) == len(calls)
+    executed = [query for request in trace.dispatches
+                for query in request.arguments.get("queries", [request.arguments])]
+    assert {query["dimension"] for query in executed} == set(dimensions)
+    assert all(query == {"dimension": query["dimension"], "days": 7,
+                         "start_date": "2026-09-07", "end_date": "2026-09-13",
+                         "timezone": "Asia/Shanghai"} for query in executed)
+    for evidence in (done["answer_evidence"], saved.meta["answer_evidence"]):
+        assert len(evidence["basis"]) == 4
+        assert {item["label"].split(" · ")[0] for item in evidence["basis"]} == {
+            "饮食", "睡眠", "运动", "补剂",
+        }
+    assert {goal["goal_id"]: goal["status"] for goal in done["turn_outcome"]["goals"]} == {
+        dimension: "verified" for dimension in dimensions
+    }
+    assert done["turn_outcome"]["status"] == done["completion_status"] == "complete"
+    assert not done["write_receipts"]
