@@ -344,9 +344,23 @@ def _regimen_assertion_text(sentence: str) -> str:
     return projected
 
 
+def _medical_assertion_matching_text(text: str) -> str:
+    """Use the same matching view at the early gate and per-sentence guard.
+
+    Normalize typography and bounded list markers only for matching. Keep the
+    original text for output and exact independently trusted clinician relays.
+    """
+    normalized = unicodedata.normalize("NFKC", text or "")
+    return re.sub(
+        r"(^|[。；;!?！？\n])[^\S\n]*"
+        r"(?:[-*+•][^\S\n]+|(?:\d+[.)、]|\(\d+\))[^\S\n]*)",
+        r"\1", normalized,
+    )
+
+
 def _unsupported_advice_reasons(sentence: str) -> list[str]:
     """Only emit stable codes; never put health text into audit metadata."""
-    normalized = unicodedata.normalize("NFKC", sentence)
+    normalized = _medical_assertion_matching_text(sentence)
     reasons: list[str] = []
     if _has_asserted_match(_UNSCOPED_REGIMEN, normalized) or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
         _has_asserted_match(_DOSE_ACTION, normalized)
@@ -364,7 +378,8 @@ def _unsupported_advice_reasons(sentence: str) -> list[str]:
 
 def requires_medical_evidence_boundary(text: str) -> bool:
     """Whether the turn must be buffered until medical provenance checks finish."""
-    return bool(_SENSITIVE_MEDICAL_TOPIC.search(text or "") or _UNSCOPED_REGIMEN.search(text or ""))
+    normalized = _medical_assertion_matching_text(text)
+    return bool(_SENSITIVE_MEDICAL_TOPIC.search(normalized) or _UNSCOPED_REGIMEN.search(normalized))
 
 
 def build_confirmable_health_fact_draft(text: str) -> dict | None:

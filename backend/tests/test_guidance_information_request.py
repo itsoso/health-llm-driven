@@ -147,3 +147,30 @@ def test_bare_regimen_mass_units_are_detected_before_sentence_checks(prefix, ins
 ])
 def test_bare_mass_units_do_not_turn_questions_into_instructions(text):
     assert not enforce_medical_evidence_boundaries(text).flagged
+
+
+_REGIMEN_PRESENTATION_PREFIXES = ["", "- ", "* ", "1. ", "1、", "（1）", "明白了。\n- ", "明白了；（1）"]
+
+
+@pytest.mark.parametrize("prefix", _REGIMEN_PRESENTATION_PREFIXES)
+@pytest.mark.parametrize("body", ["每天吃200mg。", "每天吃２００ｍｇ。", "每天吃200㎎。", "每天吃１０００ＩＵ。"])
+def test_regimen_presentation_cannot_bypass_early_or_sentence_matching(prefix, body):
+    from app.services.guidance_validator import requires_medical_evidence_boundary
+    text = prefix + body
+    assert requires_medical_evidence_boundary(text)
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged
+    assert body not in result.text
+
+
+@pytest.mark.parametrize("prefix", _REGIMEN_PRESENTATION_PREFIXES)
+@pytest.mark.parametrize("body", [
+    "请告诉我是否每天吃２００ｍｇ。", "我不知道每天吃多少毫克。",
+    "每天吃两片全麦面包。", "每天喝２００ｍｌ水。", "建议睡前散步十分钟。",
+    "不建议睡前服用。", "不要每天吃２００ｍｇ。",
+])
+def test_presentation_matching_preserves_benign_original_text(prefix, body):
+    text = prefix + body
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
