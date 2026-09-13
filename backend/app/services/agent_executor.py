@@ -10098,32 +10098,45 @@ def _is_recovery_exercise_advice_message(message: Optional[str]) -> bool:
     has_data = any(marker in normalized for marker in _RECOVERY_ADVICE_DATA_MARKERS)
     if not has_data:
         return False
-    # A retrospective list may mention sleep, exercise and generic advice in
-    # different clauses. Require an actual exercise decision in its own clause;
-    # a later explicit decision still counts after a separate records request.
-    for clause in re.split(r"[，,。；;、\n]", normalized):
-        exercise_actions = (
-            match
-            for marker in _RECOVERY_ADVICE_EXERCISE_MARKERS
-            for match in re.finditer(re.escape(marker), clause)
-            if not re.match(r"(?:的)?(?:记录|数据|状态)", clause[match.end():])
+    # Bind full registered exercise nouns before checking short action tokens:
+    # 跑 inside 跑步记录 and 力量 inside 力量训练记录 are read objects.
+    # Keep the remaining turn intact so a later decision clause can refer back
+    # to an exercise action across punctuation.
+    from app.services.agent_kernel.capability_policy import (
+        _EXERCISE_TARGET_TERMS, _QUERY_DIMENSION_TEXT_TERMS,
+    )
+    exercise_nouns = sorted(
+        set(_EXERCISE_TARGET_TERMS)
+        | set(_QUERY_DIMENSION_TEXT_TERMS["workout"])
+        | set(_RECOVERY_ADVICE_EXERCISE_MARKERS),
+        key=len, reverse=True,
+    )
+    record_objects = (
+        r"(?:" + "|".join(re.escape(noun) for noun in exercise_nouns)
+        + r")(?:的)?(?:历史)?(?:记录|数据|状态)"
+    )
+    exercise_context = re.sub(record_objects, "", normalized)
+    from app.services.agent_longitudinal_read import (
+        _CONTEXT_DOMAIN_SCOPE, _has_read_clause, _record_domains,
+    )
+    if _has_read_clause(normalized) or re.search(r"分析|复盘|总结", normalized):
+        # A complete multi-domain record list is also a read object. Consume
+        # that shared noun grammar, not every isolated exercise word in a turn.
+        exercise_context = _CONTEXT_DOMAIN_SCOPE.sub(
+            lambda match: (
+                re.sub("|".join(re.escape(noun) for noun in exercise_nouns), "", match[0])
+                if len(_record_domains(match[0])) > 1 else match[0]
+            ),
+            exercise_context,
         )
-        if next(exercise_actions, None) is None:
-            continue
-        has_decision = any(
-            marker in clause
-            for marker in _RECOVERY_ADVICE_DECISION_MARKERS
-            if marker != "建议"
-        )
-        advice_about_exercise = bool(re.search(
-            r"(?:运动|锻炼|训练)(?:强度|计划|方案|安排|建议)|"
-            r"建议(?:今天|现在|本次)?(?:去|做)?(?:运动|锻炼|训练|跑|练)",
-            clause,
-        ))
-        asks_exercise_question = any(marker in clause for marker in ("?", "？"))
-        if has_decision or advice_about_exercise or asks_exercise_question:
-            return True
-    return False
+    has_exercise = any(
+        marker in exercise_context for marker in _RECOVERY_ADVICE_EXERCISE_MARKERS
+    )
+    has_decision = any(
+        marker in exercise_context for marker in _RECOVERY_ADVICE_DECISION_MARKERS
+    )
+    asks_current_question = any(marker in exercise_context for marker in ("?", "？"))
+    return bool(has_exercise and (has_decision or asks_current_question))
 
 
 

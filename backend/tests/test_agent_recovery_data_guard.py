@@ -605,3 +605,22 @@ def test_explicit_recovery_exercise_decision_still_receives_safety_directive(mes
     decision = _evaluate(message=message, result='{"status":"success"}', snapshot={"metrics": {}})
     assert decision.status == "degraded"
     assert "不得建议高强度" in decision.model_directive
+
+
+@pytest.mark.parametrize("message,expected", [
+    ("昨晚没睡好，今天想做间歇，能不能？", True),
+    ("昨晚没睡好，运动给点建议", True),
+    ("睡眠不好，给我点运动建议", True),
+    ("查询睡眠和力量训练记录怎么样？", False),
+    ("查询睡眠和跑步记录怎么样？", False),
+    ("我睡不好，能否分析一下运动历史记录？", False),
+    ("请查睡眠和运动记录；我恢复如何，今天能跑间歇吗？", True),
+    ("请查睡眠和运动记录；根据恢复状态，给我训练强度建议", True),
+    ("查询我的力量训练历史记录；昨晚没睡好，今天想做间歇，能不能？", True),
+])
+def test_complete_record_objects_do_not_break_cross_clause_exercise_decisions(message, expected):
+    assert ae._is_recovery_exercise_advice_message(message) is expected
+    decision = _evaluate(message=message, result='{"status":"success"}', snapshot={"metrics": {}})
+    assert (decision is not None) is expected
+    if expected:
+        assert "不得建议高强度" in decision.model_directive
