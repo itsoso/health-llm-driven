@@ -17523,7 +17523,7 @@ class AgentExecutor:
                             await pi.respond(
                                 request, content="" if proposed_calls else candidate,
                                 tool_calls=proposed_calls,
-                                finish_reason=finish_reason or ("tool_calls" if proposed_calls else "stop"),
+                                finish_reason=finish_reason or ("tool_calls" if proposed_calls else "error"),
                             )
                         elif request["type"] == "tool_request":
                             call = {

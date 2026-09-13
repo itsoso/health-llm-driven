@@ -262,7 +262,8 @@ _UNSCOPED_REGIMEN = re.compile(
     # name. Clause anchors exclude requests to describe an existing regimen;
     # terminal tablet units exclude named foods such as slices of bread.
     r"(?:^|[，,。；;!?！？\n])\s*(?:建议|应该|应当|请|必须)?\s*(?:每天|每日|每次)\s*吃\s*"
-    r"[一二两三四五六七八九十\d]+\s*(?:粒|片)(?=\s*(?:[，,。；;!?！？\n]|$|即可|就行))|"
+    r"[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克)"
+    r"(?=\s*(?:[，,。；;!?！？\n]|$|即可|就行))|"
     r"(?:^|[，,。；;!?！？\n])\s*(?:建议|应该|应当|请|必须)?\s*(?:(?:每天|每日)\s*)?"
     r"(?:睡前|早上|晚上|早晚|餐前|餐后|随餐)\s*(?:服用|口服)(?=\s*(?:[，,。；;!?！？\n]|$))",
     re.I,

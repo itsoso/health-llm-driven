@@ -20,7 +20,7 @@ from tests.test_agent_read_repair_round_budget import (
 
 async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", partial=False,
                          answer=ANSWER, rogue_tool=False, finish_reason="stop", query=QUERY, conversation_id=None,
-                         stage_reply=None):
+                         stage_reply=None, omit_finish_event=False):
     _context_sentinels(monkeypatch)
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *a, **k: "OLD_KNOWLEDGE_SENTINEL")
@@ -72,7 +72,8 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
                 yield {"type": "tool_calls", "tool_calls": result["tool_calls"]}
             else:
                 yield {"type": "content", "text": result["content"]}
-            yield {"type": "finish", "finish_reason": result["finish_reason"]}
+            if not (omit_finish_event and not result.get("tool_calls")):
+                yield {"type": "finish", "finish_reason": result["finish_reason"]}
 
     monkeypatch.setattr("app.services.llm.factory.create_provider_for_model_id", lambda model_id, **k: Provider(model_id))
     for factory in ("create_provider_for_user", "get_llm_provider"):
@@ -262,6 +263,20 @@ async def test_complete_reads_do_not_disguise_empty_or_truncated_advice(db, four
     assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
     assert "运动：已记录1条" in saved.content
     assert "INCOMPLETE_SINGLE_SENTINEL" not in saved.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("omit_event", [False, True])
+async def test_composed_stream_requires_explicit_finish_metadata(db, four_domain_user, monkeypatch, omit_event):
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, answer="MISSING_FINISH_SENTINEL",
+        finish_reason=None, omit_finish_event=omit_event,
+    )
+    assert done["completion_status"] != "complete"
+    assert done["turn_outcome"]["status"] != "complete"
+    assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
+    assert "运动：已记录1条" in saved.content
+    assert "MISSING_FINISH_SENTINEL" not in saved.content
 
 
 @pytest.mark.asyncio

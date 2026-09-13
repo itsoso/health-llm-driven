@@ -130,3 +130,20 @@ def test_separate_or_bare_regimen_instruction_is_still_an_action(text):
 ])
 def test_bare_regimen_guard_preserves_food_information_and_negation(text):
     assert not enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("prefix", ["", "明白了。", "明白了；", "明白了\n"])
+@pytest.mark.parametrize("instruction", ["每天吃500mg。", "每次吃1000 IU。", "每天 吃 500 MG。",
+    "每日吃0.5毫克。", "每次吃二百微克。", "每天吃 10 iu。"])
+def test_bare_regimen_mass_units_are_detected_before_sentence_checks(prefix, instruction):
+    from app.services.guidance_validator import requires_medical_evidence_boundary
+    assert requires_medical_evidence_boundary(prefix + instruction)
+    assert enforce_medical_evidence_boundaries(prefix + instruction).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "请告诉我你是否每天吃500mg。", "请告诉我你是否每次吃1000 IU。",
+    "不要每天吃500mg。", "我不知道你每天吃多少毫克。",
+])
+def test_bare_mass_units_do_not_turn_questions_into_instructions(text):
+    assert not enforce_medical_evidence_boundaries(text).flagged
