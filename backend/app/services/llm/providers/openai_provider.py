@@ -316,7 +316,7 @@ class OpenAIProvider(LLMProvider):
         max_tokens: int = 2000,
         stream: bool = False,
         **kwargs,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> Union[str, Dict[str, Any], AsyncIterator[str]]:
         """
         调用 OpenAI Chat Completions API
 

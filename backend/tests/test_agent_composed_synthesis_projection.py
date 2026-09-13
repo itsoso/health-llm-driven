@@ -20,7 +20,7 @@ from tests.test_agent_read_repair_round_budget import (
 
 async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", partial=False,
                          answer=ANSWER, rogue_tool=False, finish_reason="stop", query=QUERY, conversation_id=None,
-                         stage_reply=None, omit_finish_event=False):
+                         stage_reply=None, omit_finish_event=False, stage_result=None, use_base_stream=False):
     _context_sentinels(monkeypatch)
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *a, **k: "OLD_KNOWLEDGE_SENTINEL")
@@ -54,6 +54,9 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
                         "name": name, "arguments": json.dumps(args)}}
                     for i, (name, args) in enumerate([*BAD, *reads])
                 ]}
+            stage = "lead" if len(calls) == 2 else self.model
+            if stage_result is not None and stage == stage_result[0]:
+                return copy.deepcopy(stage_result[1])
             if rogue_tool:
                 return {"content": "", "finish_reason": "tool_calls", "tool_calls": [{
                     "id": "unauthorized-after-read", "type": "function", "function": {
@@ -74,6 +77,10 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
                 yield {"type": "content", "text": result["content"]}
             if not (omit_finish_event and not result.get("tool_calls")):
                 yield {"type": "finish", "finish_reason": result["finish_reason"]}
+
+    if use_base_stream:
+        from app.services.llm.base import LLMProvider
+        Provider.chat_stream = LLMProvider.chat_stream
 
     monkeypatch.setattr("app.services.llm.factory.create_provider_for_model_id", lambda model_id, **k: Provider(model_id))
     for factory in ("create_provider_for_user", "get_llm_provider"):
@@ -277,6 +284,53 @@ async def test_composed_stream_requires_explicit_finish_metadata(db, four_domain
     assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
     assert "运动：已记录1条" in saved.content
     assert "MISSING_FINISH_SENTINEL" not in saved.content
+
+
+_UNFINISHED_RESPONSES = [
+    "UNVERIFIED_METADATA_SENTINEL",
+    {"content": "UNVERIFIED_METADATA_SENTINEL"},
+    {"content": "UNVERIFIED_METADATA_SENTINEL", "finish_reason": None},
+    {"content": "UNVERIFIED_METADATA_SENTINEL", "finish_reason": "length"},
+    {"content": "UNVERIFIED_METADATA_SENTINEL", "finish_reason": "error"},
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["lead", "gpt-5.5", "gemini-3.1-pro", "claude-opus-4.7"])
+@pytest.mark.parametrize("response", _UNFINISHED_RESPONSES)
+async def test_panel_every_answer_stage_requires_completion_metadata(db, four_domain_user, monkeypatch, stage, response):
+    _, calls, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=True, stage_result=(stage, response),
+    )
+    assert done["completion_status"] != "complete"
+    assert done["turn_outcome"]["status"] != "complete"
+    assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
+    assert "运动：已记录1条" in saved.content
+    assert "UNVERIFIED_METADATA_SENTINEL" not in saved.content
+    assert len(calls) == (2 if stage == "lead" else 5 if stage == "claude-opus-4.7" else 4)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", _UNFINISHED_RESPONSES)
+async def test_default_provider_stream_cannot_invent_completion(db, four_domain_user, monkeypatch, response):
+    _, calls, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, use_base_stream=True, stage_result=("lead", response),
+    )
+    assert done["completion_status"] != "complete"
+    assert done["turn_outcome"]["status"] != "complete"
+    assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
+    assert "运动：已记录1条" in saved.content
+    assert "UNVERIFIED_METADATA_SENTINEL" not in saved.content
+    assert all(call.get("return_metadata") is True for call in calls)
+
+
+@pytest.mark.asyncio
+async def test_default_provider_stream_preserves_explicit_completion(db, four_domain_user, monkeypatch):
+    _, calls, _, done, saved = await run_projection(db, four_domain_user, monkeypatch, use_base_stream=True)
+    assert done["completion_status"] == "complete"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert "运动：已记录1条" in saved.content
+    assert all(call.get("return_metadata") is True for call in calls)
 
 
 @pytest.mark.asyncio

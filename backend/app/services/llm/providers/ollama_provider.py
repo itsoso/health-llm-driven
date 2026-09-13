@@ -42,14 +42,15 @@ class OllamaProvider(LLMProvider):
         max_tokens: int = 2000,
         stream: bool = False,
         **kwargs,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> Union[str, Dict[str, Any], AsyncIterator[str]]:
         """
         调用 Ollama /api/chat 接口
 
-        stream=False: 返回完整文本
+        stream=False: 默认返回文本；return_metadata=True 返回真实结束元数据
         stream=True: 返回 AsyncIterator 逐 token yield (NDJSON)
         """
         use_model = model or self.model
+        return_metadata = bool(kwargs.pop("return_metadata", False))
 
         payload = {
             "model": use_model,
@@ -73,6 +74,12 @@ class OllamaProvider(LLMProvider):
 
         # Ollama 非流式响应格式: {"message": {"role": "assistant", "content": "..."}, ...}
         content = data.get("message", {}).get("content", "")
+        if return_metadata:
+            reason = data.get("done_reason")
+            return {
+                "content": content.strip(),
+                "finish_reason": reason if data.get("done") is True and isinstance(reason, str) and reason else "error",
+            }
         return content.strip()
 
     async def _stream_chat(self, payload: Dict[str, Any]) -> AsyncIterator[str]:

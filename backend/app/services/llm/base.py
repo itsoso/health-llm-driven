@@ -26,7 +26,7 @@ class LLMProvider(ABC):
         max_tokens: int = 2000,
         stream: bool = False,
         **kwargs,
-    ) -> Union[str, AsyncIterator[str]]:
+    ) -> Union[str, Dict[str, Any], AsyncIterator[str]]:
         """
         发送聊天请求
 
@@ -39,7 +39,9 @@ class LLMProvider(ABC):
             **kwargs: 额外参数（如 tools 用于 function calling）
 
         Returns:
-            stream=False: 返回完整的响应字符串，或当 LLM 返回 tool_calls 时返回 dict
+            stream=False: 默认返回响应字符串；return_metadata=True 时返回含
+                content/finish_reason 的 dict，保留实际结束原因，未知不能推断为 stop。
+                LLM 返回 tool_calls 时也返回 dict。
             stream=True: 返回 AsyncIterator[str]，逐 token yield
         """
         ...
@@ -101,6 +103,7 @@ class LLMProvider(ABC):
         if tools:
             call_kwargs["tools"] = tools
         call_kwargs.update(kwargs)
+        call_kwargs["return_metadata"] = True
         result = await self.chat(**call_kwargs)
 
         if isinstance(result, dict):
@@ -115,7 +118,8 @@ class LLMProvider(ABC):
             text = str(result or "")
             if text:
                 yield {"type": "content", "text": text}
-            yield {"type": "finish", "finish_reason": "stop"}
+            # A legacy text-only result cannot prove normal completion.
+            yield {"type": "finish", "finish_reason": "error"}
 
     async def multi_model_analyze(
         self,

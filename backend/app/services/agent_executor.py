@@ -13834,22 +13834,24 @@ class AgentExecutor:
                             panel_synthesis_messages or lead_messages,
                             [] if panel_synthesis_messages is not None or lead_force_no_tools_synthesis or self._force_no_tools_synthesis else request["tools"],
                         )
-                        content = ((resp.get("content") if isinstance(resp, dict) else str(resp)) or "")
+                        if not isinstance(resp, dict):
+                            raise ValueError("missing_panel_lead_metadata")
+                        content = resp.get("content") or ""
                         tool_calls = [
                             {**call, "type": call.get("type", "function")}
                             for call in ((resp.get("tool_calls") if isinstance(resp, dict) else None) or [])
                         ]
-                        finish_reason = resp.get("finish_reason") if isinstance(resp, dict) else "stop"
+                        finish_reason = resp.get("finish_reason")
                         if panel_synthesis_messages is not None and tool_calls:
                             tool_calls = []
                             content = "本轮模型未生成可发布的健康回答。"
                             finish_reason = "error"
-                        if finish_reason in {"length", "error"}:
+                        if finish_reason != ("tool_calls" if tool_calls else "stop"):
                             # Incomplete provider output cannot initiate writes
                             # or enter independent panel synthesis.
                             await pi.respond(
-                                request, content=content, tool_calls=[],
-                                finish_reason=finish_reason,
+                                request, content="", tool_calls=[],
+                                finish_reason=finish_reason if finish_reason in {"length", "error"} else "error",
                             )
                             continue
                         if not deterministic_supplement_fallback_attempted:
@@ -14249,7 +14251,7 @@ class AgentExecutor:
                 p = create_provider_for_model_id(model_id)
                 r = await p.chat(messages=persp_messages, model=None, temperature=0.4,
                                  max_tokens=4000, stream=False, return_metadata=True)
-                if isinstance(r, dict) and r.get("finish_reason") != "stop":
+                if not isinstance(r, dict) or r.get("finish_reason") != "stop":
                     raise ValueError("incomplete_panel_perspective")
                 perspective_text = (r.get("content") if isinstance(r, dict) else str(r)) or ""
                 if not perspective_text.strip():
@@ -14289,7 +14291,7 @@ class AgentExecutor:
             synth_provider = create_provider_for_model_id(MULTI_MODEL_SYNTH_ID)
             synth_resp = await synth_provider.chat(messages=synth_messages, model=None, temperature=0.3,
                                                    max_tokens=ANSWER_MAX_TOKENS, stream=False, return_metadata=True)
-            if isinstance(synth_resp, dict) and synth_resp.get("finish_reason") != "stop":
+            if not isinstance(synth_resp, dict) or synth_resp.get("finish_reason") != "stop":
                 raise ValueError("incomplete_panel_synthesis")
             final_text = (synth_resp.get("content") if isinstance(synth_resp, dict) else str(synth_resp)) or ""
 
@@ -20726,6 +20728,7 @@ class AgentExecutor:
             "messages": round_messages,
             "model": None,
             "temperature": 0.3,
+            "return_metadata": True,
             # fast-routed 简单回合把答案 token 收紧到 2000 (长尾解码是延迟一部分),
             # 其它回合保持 8000。见 _answer_max_tokens。
             "max_tokens": self._answer_max_tokens(),
@@ -21107,7 +21110,7 @@ class AgentExecutor:
             text = str(result or "")
             if text:
                 yield {"type": "content", "text": text}
-            yield {"type": "finish", "finish_reason": "stop"}
+            yield {"type": "finish", "finish_reason": "error"}
 
     async def _recover_model_scope_refusal(self, messages: List[Dict]) -> str:
         """Re-ask once when the model incorrectly narrows the Agent's scope.
