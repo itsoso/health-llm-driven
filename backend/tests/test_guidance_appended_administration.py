@@ -313,3 +313,63 @@ async def test_main_and_panel_complete_only_the_information_request(
 ])
 def test_mixed_record_field_and_medicine_objects_are_not_projected(text):
     assert enforce_medical_evidence_boundaries(text).flagged
+
+
+_ACTUAL_RECORDING_FIELDS = (
+    "2. **补全关键记录**：把每天午餐/加餐、实际补剂名称+剂量+服用时间、"
+    "入睡/醒来时间、情绪和工作压力简单记录下来，后续才能做更个体化的分析；"
+)
+
+
+@pytest.mark.parametrize("text", [
+    _ACTUAL_RECORDING_FIELDS,
+    "请记录每天的补剂具体名称、剂量和服用时间。",
+    "每天的服用时间不明确，不能判断补剂方案。",
+    "请告诉我已有的服用时间。",
+    "已记录的服用时间：睡前。",
+    "不要调整服用时间。",
+])
+def test_intake_time_field_is_not_an_administration_verb(text):
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("text", [
+    "补剂应该调整服用时间为睡前。",
+    "建议把补剂服用时间改为睡前。",
+    "请将维生素服用时间改为早上。",
+    "修改服用时间。", "改变服用时间。", "指定服用时间。",
+    "设置服用时间。", "安排服用时间。",
+    "服用时间改到睡前。", "服用时间调整为早上。",
+    "服用时间调整到晚上。", "服用时间设为早上。",
+    "服用时间定在睡前。", "服用时间安排在晚上。",
+    "服用时间提前到早上。", "服用时间推迟到晚上。",
+    "服用时间应为睡前。", "服用时间应该为早上。",
+    "建议服用时间：睡前。", "请将服用时间设为０８：３０。",
+])
+def test_explicit_intake_time_actions_need_verified_evidence(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("action", [
+    "每天服用两片。", "请睡前服用。", "剂量增加到200mg。", "服用时间改到睡前。",
+])
+@pytest.mark.parametrize("separator", ["，", "。", "；", "\n"])
+def test_time_field_noun_does_not_hide_later_administration(action, separator):
+    assert enforce_medical_evidence_boundaries(_ACTUAL_RECORDING_FIELDS + separator + action).flagged
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("action", ["", "服用时间改到睡前。"])
+async def test_main_and_panel_distinguish_time_field_from_timing_action(
+    db, four_domain_user, monkeypatch, panel, action,
+):
+    text = _ACTUAL_RECORDING_FIELDS + action
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, answer=text, panel=panel,
+    )
+    assert done['completion_status'] == ('error' if action else 'complete')
+    assert done['turn_outcome']['status'] == ('blocked' if action else 'complete')
+    assert (text in saved.content) is not bool(action)

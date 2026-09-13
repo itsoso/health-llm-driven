@@ -260,7 +260,7 @@ _SUPPLEMENT_OR_MEDICINE = re.compile(
 _REGIMEN_ACTION = re.compile(
     r"(?:增加到|减少到|加到|减到|提高到|降低到|加倍|翻倍|停用|停药|加量|减量)|"
     r"(?:建议|应该|应当|请|必须|每天|每日|每次|早晚)[^。；;!?！？\n]{0,24}"
-    r"(?:服用|补充(?!剂)|吃|停用|增加|减少|" + _DOSE_NUMBER + r"\s*" + _DOSE_REGIMEN_UNIT + r")",
+    r"(?:服用(?!时间)|补充(?!剂)|吃|停用|增加|减少|" + _DOSE_NUMBER + r"\s*" + _DOSE_REGIMEN_UNIT + r")",
     re.I,
 )
 _UNSCOPED_REGIMEN = re.compile(
@@ -279,6 +279,14 @@ _UNSCOPED_REGIMEN = re.compile(
     r"吃\s*" + _DOSE_NUMBER + r"\s*" + _DOSE_REGIMEN_UNIT
     + r"(?=\s*(?:[，,。；;!?！？\n]|$|即可|就行))",
     re.I,
+)
+# 服用时间 is a field noun, not the administration verb 服用. Changing or
+# assigning that field remains an action, including without a medicine name.
+_INTAKE_TIME_ACTION = re.compile(
+    r"(?:调整|修改|改变|指定|设置|安排)[^，,。；;!?！？\n]{0,12}服用时间|"
+    r"服用时间\s*(?:改为|改到|调整为|调整到|设为|定在|安排在|提前到|推迟到|应为|应该为)|"
+    r"(?:建议|应该|应当|必须)[^，,。；;!?！？\n]{0,12}服用时间\s*[:：为]\s*"
+    r"(?:睡前|早上|晚上|早晚|餐前|餐后|随餐|\d{1,2}[:：点])"
 )
 _NEGATED_ASSERTION = re.compile(
     r"(?:不要|不能|不可|不得|请勿|切勿|无需|不必|不建议|不意味着|并不意味着|不能据此|不能仅凭)"
@@ -405,10 +413,12 @@ def _unsupported_advice_reasons(sentence: str) -> list[str]:
     normalized = _medical_assertion_matching_text(sentence)
     reasons: list[str] = []
     assertion = _regimen_assertion_text(normalized)
-    if _has_asserted_match(_UNSCOPED_REGIMEN, assertion) or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
+    if (_has_asserted_match(_UNSCOPED_REGIMEN, assertion)
+        or _has_asserted_match(_INTAKE_TIME_ACTION, assertion)
+        or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
         _has_asserted_match(_DOSE_ACTION, normalized)
         or _has_asserted_match(_REGIMEN_ACTION, assertion)
-    )):
+    ))):
         reasons.append("unverified_dose_action")
     if re.search(r"基因|MTHFR", normalized, re.I) and _has_asserted_match(_GENETIC_ABSOLUTE, normalized):
         reasons.append("genetic_absolute_action")

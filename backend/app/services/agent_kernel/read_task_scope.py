@@ -21,6 +21,10 @@ from app.services.agent_query_window import resolve_calendar_query_window
 from app.services.agent_read_task_continuation import resolve_read_task_continuation
 from app.services.write_intent_scope import _TRAILING_REVOCATION_CLAUSE_RE
 
+OWNED_MULTI_READ_TOOL_NAMES = frozenset({
+    "health_query", "health_query_batch", "knowledge_search",
+})
+
 _READ = re.compile(
     r"查询|查看|看一下|看看|获取|分析|复盘|总结|怎么样|怎样|如何|什么|啥"
 )
@@ -339,6 +343,7 @@ def read_task_scope_contract_payload():
 
     return {
         "version": "read-task-scope-v1",
+        "multi_read_tool_names": sorted(OWNED_MULTI_READ_TOOL_NAMES),
         "grammar": authorization_grammar_digest(globals()),
         "behavior": authorization_behavior_digest(
             globals(), authorization_module_behavior_names(globals(), __name__)

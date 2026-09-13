@@ -13458,9 +13458,10 @@ class AgentExecutor:
             f"{multi_model_context_text}\n"
             f"[用户消息]\n{message}"
         )
-        from app.services.agent_input_tool_scope import scope_tools_for_analyzed_material
+        from app.services.agent_input_tool_scope import scope_tools_for_analyzed_material, scope_tools_for_owned_read
 
         tools = scope_tools_for_analyzed_material(get_health_tools(), message)
+        tools = scope_tools_for_owned_read(tools, panel_read_scope)
         if classify_agent_utterance(message).reason == "conversation_feedback":
             tools = []
         full_reply = ""
@@ -16236,6 +16237,8 @@ class AgentExecutor:
         from app.services.agent_composed_read_completion import read_scope_notices, read_scope_synthesis_instructions
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+        from app.services.agent_input_tool_scope import scope_tools_for_owned_read
+        tools = scope_tools_for_owned_read(tools, read_scope)
         if read_scope is not None:
             messages[0]["content"] += (
                 "\n本轮服务端确定的只读范围（逐项完成，参数可修正但不得扩展）："

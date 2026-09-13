@@ -38,6 +38,7 @@ def terminal_policy_notice(reasons: Iterable[str], *, has_verified_writes: bool 
 READ_REPAIR_REASONS = frozenset({
     'health_query_semantics_unresolved', 'health_query_calendar_window_unsupported',
     'health_query_calendar_window_conflict', 'health_query_dimension_conflict',
+    'owned_read_tool_out_of_scope',
 })
 MAX_READ_REPAIR_FAILURES = 2
 
@@ -50,6 +51,10 @@ def is_repairable_read_failure(reason: str, tool_name: str, args: Any) -> bool:
     """Only a rejected known read may advertise automatic parameter repair."""
     if not is_repairable_read_reason(reason):
         return False
+    if reason == 'owned_read_tool_out_of_scope' and tool_name == 'health_analysis':
+        # Recover by choosing the bounded read adapters, never by replaying
+        # the rejected analysis (which can read broadly or persist artifacts).
+        return True
     return tool_name in {'health_query', 'health_query_batch'} or (
         tool_name == 'health_manage' and isinstance(args, dict) and args.get('operation') == 'list'
     )

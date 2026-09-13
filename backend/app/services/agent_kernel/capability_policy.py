@@ -2599,6 +2599,16 @@ def decide_tool_capability(
                              receipt_required=False)
         return _decision("block", "garmin_sync_scope_unresolved", tool_name, args,
                          receipt_required=False)
+    from app.services.agent_kernel.read_task_scope import (
+        OWNED_MULTI_READ_TOOL_NAMES, resolve_owned_read_scope,
+    )
+    owned_scope = resolve_owned_read_scope(snapshot)
+    if (owned_scope is not None and len(owned_scope.queries) > 1
+            and tool_name not in OWNED_MULTI_READ_TOOL_NAMES):
+        # General analysis can read outside the frozen window and persist
+        # caches/actions. Schema exposure is not an authorization boundary.
+        # Allowed adapters still pass through the detailed checks below.
+        return _decision("block", "owned_read_tool_out_of_scope", tool_name, args)
     if tool_name == "health_record" and request.source != "procedure_recipe_replay":
         target_status = _health_record_target_status(snapshot, args)
         if target_status == "mismatch":
