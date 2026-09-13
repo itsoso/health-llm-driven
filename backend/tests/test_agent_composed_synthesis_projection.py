@@ -404,3 +404,25 @@ async def test_continuity_reference_cannot_expose_other_owner_or_conversation(db
     assert messages is not None
     assert "previous_answer_for_continuity" not in json.loads(messages[1]["content"])
     assert "FOREIGN_ANSWER_SENTINEL" not in json.dumps(messages)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("instruction", ["", "，服用200mg。"])
+async def test_record_field_request_completion_retains_medical_boundary(
+    db, four_domain_user, monkeypatch, panel, instruction,
+):
+    request = "建议后续补充：午餐/加餐、补剂准确名称/剂量/服用时间"
+    answer = request + instruction if instruction else request + "。"
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel, answer=answer,
+    )
+    assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
+    assert not done["write_receipts"]
+    if instruction:
+        assert done["turn_outcome"]["status"] == "blocked"
+        assert instruction not in saved.content
+    else:
+        assert done["completion_status"] == "complete"
+        assert done["turn_outcome"]["status"] == "complete"
+        assert answer in saved.content

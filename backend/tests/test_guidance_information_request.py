@@ -174,3 +174,76 @@ def test_presentation_matching_preserves_benign_original_text(prefix, body):
     result = enforce_medical_evidence_boundaries(text)
     assert not result.flagged
     assert text in result.text
+
+
+_RECORD_FIELD_REQUEST = "建议后续补充：午餐/加餐、补剂准确名称/剂量/服用时间"
+
+
+@pytest.mark.parametrize("text", [
+    _RECORD_FIELD_REQUEST + "、睡眠入睡与醒来时间或设备同步记录，以及简单的情绪/压力评分。",
+    "建议补充：补剂名称/剂量/服用时间。",
+    "请补充：补剂的真实名称、剂量、实际服用时间。",
+    "建议提供：补剂准确名称 + 剂量 + 服用时间。",
+    "请提供：午餐记录、加餐记录、补剂名称、服用时间。",
+])
+def test_colon_record_field_request_preserves_original_answer(text):
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("separator", ["，", "。", "；", "\n"])
+@pytest.mark.parametrize("instruction", [
+    "每天增加到200mg。", "每天服用200mg。", "服用200mg。", "请睡前服用。",
+])
+def test_record_field_request_does_not_hide_appended_regimen(separator, instruction):
+    result = enforce_medical_evidence_boundaries(_RECORD_FIELD_REQUEST + separator + instruction)
+    assert result.flagged
+    assert instruction not in result.text
+
+
+@pytest.mark.parametrize("text", [
+    "建议补充：维生素每天200mg。",
+    "请补充：红景天。",
+    "建议补充：补剂名称/剂量/服用时间改为睡前。",
+    "建议提供：补剂名称，然后每天服用200mg。",
+    "请补充：补剂剂量增加到200mg。",
+    "建议补充：补剂名称，服用200㎎。",
+])
+def test_colon_or_field_words_cannot_authorize_medication_actions(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "请告诉我是否口服200mg。", "不建议口服200mg。", "我不知道是否服用200mg。",
+])
+def test_intake_information_and_negation_remain_distinct_from_commands(text):
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("suffix", [
+    "，每天增加到400mg。", "。口服300mg。", "，请睡前服用。",
+])
+def test_intake_question_does_not_hide_a_following_command(suffix):
+    assert enforce_medical_evidence_boundaries("请告诉我是否口服200mg" + suffix).flagged
+
+
+@pytest.mark.parametrize("prefix", [
+    "请告诉我是否", "请告诉我能否", "能否告诉我是否", "我想确认是否",
+])
+def test_explicit_intake_inquiry_prefix_preserves_question(prefix):
+    text = prefix + "口服200mg。"
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("separator", ["。", "？", "，", "；", "\n"])
+@pytest.mark.parametrize("instruction", ["请每天口服200mg。", "口服300mg。", "请睡前服用。"])
+def test_intake_inquiry_punctuation_keeps_appended_instruction_visible(separator, instruction):
+    text = "请告诉我能否口服200mg" + separator + instruction
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged
+    assert instruction not in result.text

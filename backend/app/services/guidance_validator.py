@@ -255,6 +255,8 @@ _REGIMEN_ACTION = re.compile(
 _UNSCOPED_REGIMEN = re.compile(
     r"(?:建议|应该|应当|请|必须|每天|每日|每次)[^。；;!?！？\n]{0,16}"
     r"(?:服用|口服)[^。；;!?！？\n]{0,30}[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
+    r"(?:^|[，,。；;!?！？\n])\s*(?:服用|口服)\s*"
+    r"[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克)|"
     r"(?:早晚|每天|每日|每次|睡前)\s*(?:各)?\s*[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
     r"(?:每天|每日|每次)\s*(?:增加到|减少到|加到|减到|提高到|降低到)\s*"
     r"[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
@@ -300,12 +302,36 @@ def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
     return False
 
 
+# A colon-delimited request can ask for record fields rather than ingestion.
+# Match only field-name objects; do not erase the surrounding sentence or an
+# appended command. The original response is never rewritten by this view.
+_RECORD_FIELD_OBJECT = (
+    r"(?:补剂(?:的)?(?:真实|准确)?名称|(?:补剂(?:的)?)?剂量|"
+    r"(?:实际)?服用时间|(?:午餐|加餐)(?:记录)?)"
+)
+_RECORD_FIELD_REQUEST = re.compile(
+    r"(?:补充|提供)\s*[:：]\s*" + _RECORD_FIELD_OBJECT
+    + r"(?:\s*[/、+和及]\s*" + _RECORD_FIELD_OBJECT + r")*"
+    + r"(?=\s*(?:[，,。；;!?！？\n、]|$))"
+)
+
+
 def _regimen_assertion_text(sentence: str) -> str:
     """Separate data-field nouns and a directed question from actual actions.
 
     Never exempt an entire greedy action match: a second instruction must still
     be checked, including nonnumeric timing instructions after a question.
     """
+    sentence = re.sub(
+        r"(^\s*(?:请告诉我|能否告诉我|(?:我)?想确认)(?:是否|能否))(?:服用|口服)\s*"
+        r"[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克)"
+        r"(?=\s*(?:[，,。；;!?！？\n]|$))",
+        r"\1有该用药记录", sentence, flags=re.I,
+    )
+    sentence = _RECORD_FIELD_REQUEST.sub(
+        lambda match: match.group(0).replace("补充", "提供", 1).replace("服用时间", "用药时间"),
+        sentence,
+    )
     # Only a request to supply a field is neutral. "调整服用时间" is still
     # an action and must retain the original tripwire.
     projected = re.sub(
@@ -362,9 +388,10 @@ def _unsupported_advice_reasons(sentence: str) -> list[str]:
     """Only emit stable codes; never put health text into audit metadata."""
     normalized = _medical_assertion_matching_text(sentence)
     reasons: list[str] = []
-    if _has_asserted_match(_UNSCOPED_REGIMEN, normalized) or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
+    assertion = _regimen_assertion_text(normalized)
+    if _has_asserted_match(_UNSCOPED_REGIMEN, assertion) or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
         _has_asserted_match(_DOSE_ACTION, normalized)
-        or _has_asserted_match(_REGIMEN_ACTION, _regimen_assertion_text(normalized))
+        or _has_asserted_match(_REGIMEN_ACTION, assertion)
     )):
         reasons.append("unverified_dose_action")
     if re.search(r"基因|MTHFR", normalized, re.I) and _has_asserted_match(_GENETIC_ABSOLUTE, normalized):
