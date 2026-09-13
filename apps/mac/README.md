@@ -14,6 +14,10 @@ This app is a first-class desktop execution client: it should support daily oper
 - Implemented: Trace Viewer for provider/model/timing/tool/evidence diagnostics.
 - Implemented: Settings for auth token, API base URL, voice preference, and privacy/file handling notes.
 
+## User message actions
+
+Each text prompt has Copy and Edit buttons below its bubble. Copy preserves the original text. Edit opens a separate editor; Cancel leaves the composer draft unchanged. Resend submits the edited text as a new turn and preserves the original conversation history. Pending composer attachments must be sent or removed first, so they cannot accidentally accompany the edited prompt.
+
 ## Current Boundaries
 
 - Raw files are classified and hashed locally. P0 creates desktop import jobs with source metadata; it does not yet upload raw file bytes to object storage.

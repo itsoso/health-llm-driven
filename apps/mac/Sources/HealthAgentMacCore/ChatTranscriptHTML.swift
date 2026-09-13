@@ -1689,6 +1689,7 @@ public enum ChatTranscriptHTML {
         public let bodyHTML: String
         public let isStreaming: Bool       // 流式中(plain 文本、无复制按钮)
         public let showCopy: Bool
+        public let showEdit: Bool
         /// meta footer 片段(模型/数据源/Skill);流式中或无 meta 时为空 → JS 不渲染 footer。
         public let footerHTML: String
         /// Short hover label (HH:mm) and full tooltip/accessibility label.
@@ -1702,6 +1703,7 @@ public enum ChatTranscriptHTML {
             bodyHTML: String,
             isStreaming: Bool,
             showCopy: Bool,
+            showEdit: Bool = false,
             footerHTML: String = "",
             sentAtShort: String = "",
             sentAtFull: String = "",
@@ -1712,6 +1714,7 @@ public enum ChatTranscriptHTML {
             self.bodyHTML = bodyHTML
             self.isStreaming = isStreaming
             self.showCopy = showCopy
+            self.showEdit = showEdit
             self.footerHTML = footerHTML
             self.sentAtShort = sentAtShort
             self.sentAtFull = sentAtFull
@@ -1721,7 +1724,7 @@ public enum ChatTranscriptHTML {
         /// 序列化为 JS 对象字面量字符串(不依赖 Foundation JSONEncoder 的键序,字段固定)。
         public var jsonObject: String {
             let sentAtEpoch = sentAtEpochMs.map(String.init) ?? "null"
-            return "{\"id\":\(Self.jsString(id)),\"role\":\(Self.jsString(role)),\"html\":\(Self.jsString(bodyHTML)),\"streaming\":\(isStreaming ? "true" : "false"),\"copy\":\(showCopy ? "true" : "false"),\"footer\":\(Self.jsString(footerHTML)),\"sentAtShort\":\(Self.jsString(sentAtShort)),\"sentAtFull\":\(Self.jsString(sentAtFull)),\"sentAtEpochMs\":\(sentAtEpoch)}"
+            return "{\"id\":\(Self.jsString(id)),\"role\":\(Self.jsString(role)),\"html\":\(Self.jsString(bodyHTML)),\"streaming\":\(isStreaming ? "true" : "false"),\"copy\":\(showCopy ? "true" : "false"),\"edit\":\(showEdit ? "true" : "false"),\"footer\":\(Self.jsString(footerHTML)),\"sentAtShort\":\(Self.jsString(sentAtShort)),\"sentAtFull\":\(Self.jsString(sentAtFull)),\"sentAtEpochMs\":\(sentAtEpoch)}"
         }
 
         /// JSON 字符串字面量编码(含引号)。用于安全注入 evaluateJavaScript 的字符串实参。

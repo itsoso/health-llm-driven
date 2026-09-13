@@ -925,6 +925,18 @@ public final class AgentChatViewModel {
         preparedDraft = text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    public func copyableText(messageID: String) -> String? {
+        guard let message = messages.first(where: { $0.id.uuidString == messageID }) else { return nil }
+        return message.role == .user ? message.content : displayContent(for: message)
+    }
+
+    public func editableUserMessage(messageID: String) -> AgentChatMessage? {
+        messages.first {
+            $0.id.uuidString == messageID && $0.role == .user
+                && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
     public func prepareDraftForNewConversation(_ text: String, contextItem: AgentContextItem? = nil) {
         prepareDraftForNewConversation(text, contextItems: contextItem.map { [$0] } ?? [])
     }
@@ -1896,7 +1908,7 @@ public final class AgentChatViewModel {
                 let textHTML = content.isEmpty ? "" : ChatTranscriptHTML.renderMessageBody(markdown: content)
                 bodyHTML = cardHTML + trace + textHTML
             }
-            let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
+            let showCopy = !isStreamingThis && !content.isEmpty
             let footerHTML: String
             if message.role == .assistant && !isStreamingThis && message.hasMeta {
                 footerHTML = ChatTranscriptHTML.metaFooterHTML(
@@ -1924,6 +1936,7 @@ public final class AgentChatViewModel {
                 bodyHTML: bodyHTML,
                 isStreaming: isStreamingThis,
                 showCopy: showCopy,
+                showEdit: message.role == .user && !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 footerHTML: footerHTML,
                 sentAtShort: timeLabels?.short ?? "",
                 sentAtFull: timeLabels?.full ?? "",

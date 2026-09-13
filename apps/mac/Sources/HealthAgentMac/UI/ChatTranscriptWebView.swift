@@ -18,6 +18,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
     let fontScale: Double
     /// 复制回调:JS 端点复制按钮 → messageHandler → 这里拿 messageID 写 NSPasteboard。
     let onCopy: (String) -> Void
+    var onEdit: (String) -> Void = { _ in }
     /// 动态卡片动作回调:JS 拦截安全内部 route.open → 上层解释 route。
     let onRouteOpen: (String) -> Void
     /// AIGC 确认卡只传 opaque confirmation ID, never prompt/source data.
@@ -30,6 +31,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onCopy: onCopy,
+            onEdit: onEdit,
             onRouteOpen: onRouteOpen,
             onAIGCConfirm: onAIGCConfirm,
             onDietDraftConfirm: onDietDraftConfirm,
@@ -46,6 +48,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
 
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: "copy")
+        controller.add(context.coordinator, name: "edit")
         controller.add(context.coordinator, name: "routeOpen")
         controller.add(context.coordinator, name: "aigcConfirm")
         controller.add(context.coordinator, name: "dietDraftConfirm")
@@ -65,6 +68,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
         context.coordinator.onCopy = onCopy
+        context.coordinator.onEdit = onEdit
         context.coordinator.onRouteOpen = onRouteOpen
         context.coordinator.onAIGCConfirm = onAIGCConfirm
         context.coordinator.onDietDraftConfirm = onDietDraftConfirm
@@ -75,6 +79,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var onCopy: (String) -> Void
+        var onEdit: (String) -> Void
         var onRouteOpen: (String) -> Void
         var onAIGCConfirm: (String) -> Void
         var onDietDraftConfirm: (String) -> Void
@@ -91,12 +96,14 @@ struct ChatTranscriptWebView: NSViewRepresentable {
 
         init(
             onCopy: @escaping (String) -> Void,
+            onEdit: @escaping (String) -> Void = { _ in },
             onRouteOpen: @escaping (String) -> Void,
             onAIGCConfirm: @escaping (String) -> Void,
             onDietDraftConfirm: @escaping (String) -> Void,
             onMedicationBatchAction: @escaping (String) -> Void
         ) {
             self.onCopy = onCopy
+            self.onEdit = onEdit
             self.onRouteOpen = onRouteOpen
             self.onAIGCConfirm = onAIGCConfirm
             self.onDietDraftConfirm = onDietDraftConfirm
@@ -165,6 +172,11 @@ struct ChatTranscriptWebView: NSViewRepresentable {
             case "copy":
                 if let id = message.body as? String {
                     onCopy(id)
+                }
+            case "edit":
+                if let id = message.body as? String,
+                   pendingMessages.contains(where: { $0.id == id && $0.role == "user" && $0.showEdit }) {
+                    onEdit(id)
                 }
             case "routeOpen":
                 if let route = message.body as? String {

@@ -90,6 +90,10 @@
   .row { display: flex; position: relative; }
   .row.user { justify-content: flex-end; }
   .row.assistant { justify-content: flex-start; }
+  .user-message { display: flex; flex-direction: column; align-items: flex-end; max-width: 100%; }
+  .user-actions { display: flex; gap: 4px; margin-top: 4px; }
+  .user-actions .copy-btn { width: 32px; height: 32px; }
+  .copy-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .message-time-divider {
     display: flex;
     justify-content: center;
@@ -1109,6 +1113,36 @@
       : '<svg class="copy-btn-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>';
   }
 
+  function makeCopyButton(id) {
+    var button = document.createElement("button");
+    button.className = "copy-btn";
+    button.type = "button";
+    setCopyButtonState(button, false);
+    button.addEventListener("click", function () {
+      postCopy(id);
+      setCopyButtonState(button, true);
+      setTimeout(function () { setCopyButtonState(button, false); }, 1500);
+    });
+    return button;
+  }
+
+  function makeEditButton(id) {
+    var button = document.createElement("button");
+    button.className = "copy-btn edit-btn";
+    button.type = "button";
+    button.setAttribute("aria-label", "编辑消息");
+    button.setAttribute("title", "编辑消息");
+    button.innerHTML = '<svg class="copy-btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5L8 21H3v-5L16 3Z"/><path d="m13 6 5 5"/></svg>';
+    button.addEventListener("click", function () {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.edit) {
+        window.webkit.messageHandlers.edit.postMessage(String(id));
+      } else {
+        console.error("Native edit handler unavailable");
+      }
+    });
+    return button;
+  }
+
   function postRouteOpen(route) {
     try {
       if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.routeOpen) {
@@ -1701,18 +1735,7 @@
       }
       meta.appendChild(metaLeft);
       if (msg.copy) {
-        var btn = document.createElement("button");
-        btn.className = "copy-btn";
-        btn.type = "button";
-        setCopyButtonState(btn, false);
-        btn.addEventListener("click", function () {
-          postCopy(msg.id);
-          setCopyButtonState(btn, true);
-          setTimeout(function () {
-            setCopyButtonState(btn, false);
-          }, 1500);
-        });
-        meta.appendChild(btn);
+        meta.appendChild(makeCopyButton(msg.id));
       }
       bubble.appendChild(meta);
     }
@@ -1741,7 +1764,23 @@
       userTime.textContent = msg.sentAtShort;
       row.appendChild(userTime);
     }
-    row.appendChild(bubble);
+    if (msg.role === "user") {
+      var userMessage = document.createElement("div");
+      userMessage.className = "user-message";
+      userMessage.appendChild(bubble);
+      if (msg.copy || msg.edit) {
+        var actions = document.createElement("div");
+        actions.className = "user-actions";
+        actions.setAttribute("role", "group");
+        actions.setAttribute("aria-label", "消息操作");
+        if (msg.copy) actions.appendChild(makeCopyButton(msg.id));
+        if (msg.edit) actions.appendChild(makeEditButton(msg.id));
+        userMessage.appendChild(actions);
+      }
+      row.appendChild(userMessage);
+    } else {
+      row.appendChild(bubble);
+    }
     return row;
   }
 

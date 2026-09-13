@@ -19,6 +19,7 @@ struct AgentChatView: View {
     @State private var isAttachImporterPresented = false
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
+    @State private var editingMessage: AgentChatMessage?
     @State private var historyPage = 0
     @State private var historySearch = ""
     @State private var historySearchTask: Task<Void, Never>?
@@ -131,6 +132,19 @@ struct AgentChatView: View {
         }
         .sheet(item: $selectedToolActivity) { activity in
             ToolActivityDetailSheet(activity: activity)
+        }
+        .sheet(item: $editingMessage) { message in
+            UserPromptEditor(
+                text: message.content,
+                hasPendingAttachments: !viewModel.attachments.isEmpty,
+                onCancel: { editingMessage = nil },
+                onSend: { text in
+                    guard viewModel.editableUserMessage(messageID: message.id.uuidString) != nil,
+                          viewModel.attachments.isEmpty, viewModel.canSubmit(text) else { return }
+                    editingMessage = nil
+                    viewModel.submit(text)
+                }
+            )
         }
     }
 
@@ -625,6 +639,7 @@ struct AgentChatView: View {
             messages: viewModel.renderedTranscript(language: appLanguageRaw),
             fontScale: AppFontScale(level: appFontScaleLevel).pointScale,
             onCopy: { id in handleWebCopy(messageID: id) },
+            onEdit: { id in editingMessage = viewModel.editableUserMessage(messageID: id) },
             onRouteOpen: { route in handleWebRouteOpen(route) },
             onAIGCConfirm: { confirmationID in
                 Task { await viewModel.confirmAIGCMediaDraft(id: confirmationID) }
@@ -640,8 +655,7 @@ struct AgentChatView: View {
 
     /// JS 复制按钮回调:按 messageID 找回原文写 NSPasteboard(原生剪贴板,非 WebView 内复制)。
     private func handleWebCopy(messageID: String) {
-        guard let message = viewModel.messages.first(where: { $0.id.uuidString == messageID }) else { return }
-        let text = viewModel.displayContent(for: message)
+        guard let text = viewModel.copyableText(messageID: messageID) else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
