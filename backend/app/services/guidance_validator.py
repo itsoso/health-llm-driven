@@ -232,9 +232,19 @@ _SENSITIVE_MEDICAL_TOPIC = re.compile(
     r"鱼油|辅酶|红景天|维生素|叶酸|NAC|NMN|基因|MTHFR|"
     r"睡眠|REM|皮质醇|肾上腺素|服用|口服)", re.I,
 )
+# One unit vocabulary feeds both information-object projection and action
+# matching. Gram units are shared with food, so unscoped 吃 and dose changes
+# use only medication-specific measures/counts; explicit oral actions may use g.
+_DOSE_MEASURE_UNIT = r"(?:mg|μg|ug|IU|单位|毫克|微克)"
+_DOSE_COUNT_UNIT = r"(?:粒|片)"
+_DOSE_FOOD_MASS_UNIT = r"(?:克|g)"
+_DOSE_REGIMEN_UNIT = rf"(?:{_DOSE_MEASURE_UNIT}|{_DOSE_COUNT_UNIT})"
+_DOSE_ORAL_UNIT = rf"(?:{_DOSE_REGIMEN_UNIT}|{_DOSE_FOOD_MASS_UNIT})"
+_DOSE_NUMBER = r"[一二两三四五六七八九十百千\d]+(?:\.\d+)?"
 _DOSE_ACTION = re.compile(
     r"(?:建议|应该|需要|可以|请|每天|每次)[^。；;!?！？\n]{0,24}"
-    r"\d+(?:\.\d+)?\s*(?:mg|μg|ug|IU|单位|毫克|微克|克)"
+    r"\d+(?:\.\d+)?\s*" + rf"(?:{_DOSE_MEASURE_UNIT}|{_DOSE_FOOD_MASS_UNIT})",
+    re.I,
 )
 _SCHEDULE_CLAIM = re.compile(
     r"(?:(?:已经|已)?为你|已经|已)(?:成功)?(?:安排|预约|创建|设定|设置)(?:了)?[^。；;!?！？\n]{0,30}"
@@ -250,29 +260,24 @@ _SUPPLEMENT_OR_MEDICINE = re.compile(
 _REGIMEN_ACTION = re.compile(
     r"(?:增加到|减少到|加到|减到|提高到|降低到|加倍|翻倍|停用|停药|加量|减量)|"
     r"(?:建议|应该|应当|请|必须|每天|每日|每次|早晚)[^。；;!?！？\n]{0,24}"
-    r"(?:服用|补充(?!剂)|吃|停用|增加|减少|[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克))", re.I,
+    r"(?:服用|补充(?!剂)|吃|停用|增加|减少|" + _DOSE_NUMBER + r"\s*" + _DOSE_REGIMEN_UNIT + r")",
+    re.I,
 )
 _UNSCOPED_REGIMEN = re.compile(
     r"(?:建议|应该|应当|请|必须|每天|每日|每次)[^。；;!?！？\n]{0,16}"
-    r"(?:服用|口服)[^。；;!?！？\n]{0,30}[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
-    # These are complete administration predicates, wherever they occur in a
-    # clause. Information projection removes only the questioned object; a
-    # later predicate must not depend on distance from the first 请/建议.
-    r"(?:服用|口服)\s*[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克)|"
+    r"(?:服用|口服)[^。；;!?！？\n]{0,30}" + _DOSE_NUMBER + r"\s*" + _DOSE_ORAL_UNIT + r"|"
+    # Complete administration predicates do not depend on distance from 请/建议.
+    r"(?:服用|口服)\s*" + _DOSE_NUMBER + r"\s*" + _DOSE_ORAL_UNIT + r"|"
     r"(?:增加到|减少到|加到|减到|提高到|降低到)\s*"
-    r"[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:mg|IU|毫克|微克)|"
+    + _DOSE_NUMBER + r"\s*" + _DOSE_MEASURE_UNIT + r"|"
     r"(?:每天|每日|每次|早上|晚上|早晚|睡前|餐前|餐后|随餐)\s*(?:服用|口服)(?!时间)|"
-    r"(?:早晚|每天|每日|每次|睡前)\s*(?:各)?\s*[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
+    r"(?:早晚|每天|每日|每次|睡前)\s*(?:各)?\s*" + _DOSE_NUMBER + r"\s*" + _DOSE_REGIMEN_UNIT + r"|"
     r"(?:每天|每日|每次)\s*(?:增加到|减少到|加到|减到|提高到|降低到)\s*"
-    r"[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
-    # Standalone regimen commands remain actions without repeating a medicine
-    # name. Clause anchors exclude requests to describe an existing regimen;
-    # terminal tablet units exclude named foods such as slices of bread.
-    r"(?:^|[，,。；;!?！？\n])\s*(?:建议|应该|应当|请|必须)?\s*(?:每天|每日|每次)\s*吃\s*"
-    r"[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克)"
-    r"(?=\s*(?:[，,。；;!?！？\n]|$|即可|就行))|"
-    r"(?:^|[，,。；;!?！？\n])\s*(?:建议|应该|应当|请|必须)?\s*(?:(?:每天|每日)\s*)?"
-    r"(?:睡前|早上|晚上|早晚|餐前|餐后|随餐)\s*(?:服用|口服)(?=\s*(?:[，,。；;!?！？\n]|$))",
+    + _DOSE_NUMBER + r"\s*" + _DOSE_REGIMEN_UNIT + r"|"
+    # A terminal 吃 quantity is actionable anywhere in a clause. Requiring the
+    # object boundary keeps named foods such as 两片全麦面包 out of this rule.
+    r"吃\s*" + _DOSE_NUMBER + r"\s*" + _DOSE_REGIMEN_UNIT
+    + r"(?=\s*(?:[，,。；;!?！？\n]|$|即可|就行))",
     re.I,
 )
 _NEGATED_ASSERTION = re.compile(
@@ -329,8 +334,8 @@ def _regimen_assertion_text(sentence: str) -> str:
     """
     sentence = re.sub(
         r"(^\s*(?:请告诉我|能否告诉我|(?:我)?(?:想确认|不知道|不清楚|无法确认|未能确认|未核实))(?:你)?(?:是否|能否))"
-        r"(?:(?:每天|每日|每次|早上|晚上|早晚|睡前|餐前|餐后|随餐)\s*)?(?:服用|口服)"
-        r"(?:\s*[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克))?"
+        r"(?:(?:每天|每日|每次|早上|晚上|早晚|睡前|餐前|餐后|随餐)\s*)?(?:服用|口服|吃)"
+        r"(?:\s*" + _DOSE_NUMBER + r"\s*" + _DOSE_ORAL_UNIT + r")?"
         r"(?=\s*(?:[，,。；;!?！？\n]|$))",
         r"\1有该用药记录", sentence, flags=re.I,
     )

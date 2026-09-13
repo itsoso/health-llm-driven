@@ -347,3 +347,15 @@ A subsequent existing positive control, an unknown whether-intake statement, exp
 
 
 Final unchanged-source verification for the administration repair passed 1,492/1,492 tests across the existing 26 modules plus the new independent-administration regression module (`reva-feedback-integrated-g_2yvuu9/receipt.json`), exit 0 with no failures/errors/skips. System Map, governance, blocking Ruff, dossier, and diff checks passed. The candidate is ready for fresh independent G4; PostgreSQL, actual-model quality, CI, push, deployment and production acceptance remain subsequent gates.
+
+
+## Shared administration units and terminal intake — review 21 repair
+
+Independent G4 rejected `47ed4ff81b48ddeebe80b49220ed82a73584a602` (`/tmp/reva-coherence-review21-g4.json`, SHA-256 `7e2bb06ee120a6ec7b4514636ecf7e1af960fbed389c92fab0caa98788cabb3c`). Prior administration oracles passed, but long-connected terminal 吃 quantities still depended on clause-start/leading-request matching, and the new oral matcher omitted the existing ug/μg aliases. An appended tablet command incorrectly completed in main and panel execution. No later release gate was run on that candidate.
+
+The repair now recognizes a terminal 吃 quantity anywhere in the remaining assertion while retaining its object boundary, so named foods remain distinct. Administration action and inquiry-object matching share one unit vocabulary composed from medication measures, counted units, and food-shared mass units. Explicit oral actions can use gram units; unscoped eating/dose-change predicates do not gain food-shared gram units. Existing dose-action matching reuses these definitions instead of a separate alias list.
+
+Review21's four intake examples and main/panel regression are retained alongside a verb/unit cross product, unchanged inquiry wording, explicit oral gram cases, and named-food/water controls. The expanded RED run `reva-feedback-integrated-fiumdikk` had 29 failures / 189 passes. The focused repaired run `reva-feedback-integrated-7jo6a6f7/receipt.json` passed all 511 tests, exit 0, no failures/errors/skips, with unchanged source. Full regression and fresh G4 remain required; old NO-GO and paid-actual failures remain retained.
+
+
+Final shared-unit verification passed 1,572/1,572 tests across 27 modules (`reva-feedback-integrated-qk_69x_n/receipt.json`), source unchanged, exit 0, no failures/errors/skips. System Map, Skill governance, blocking Ruff, dossier and diff checks passed. This is a new frozen candidate for independent G4, not a release or actual-model completion claim.
