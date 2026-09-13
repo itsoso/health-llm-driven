@@ -250,3 +250,45 @@ def test_fully_consumed_recent_or_domain_restriction_remains_readable(restrictio
 def test_restriction_discriminator_consumes_full_scope_without_granting_authority(text, unresolved):
     from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
     assert longitudinal_read_restrictions_unresolved(snapshot(text)) is unresolved
+
+
+@pytest.mark.parametrize('text', [
+    '请你只看今早，查询我的饮食并分析',
+    '范围仅限今早，查询我的饮食并分析',
+    '请查询我的饮食并分析，范围限定在那次检查之后',
+    '今天上午，查询我的饮食并分析',
+    '查询我今天上午的饮食并分析',
+    '今早，查询我的饮食并分析',
+])
+def test_restriction_v3_unknown_scope_is_detected_independent_of_marker_position(text):
+    from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+    assert longitudinal_read_restrictions_unresolved(snapshot(text))
+    assert resolve_longitudinal_read_queries(snapshot(text)) is None
+
+
+@pytest.mark.parametrize('text', [
+    '不要记录脑梗，只查询近半年脑梗记录',
+    '别看体重，只查步数',
+    '不查SLE，只查脑梗',
+])
+def test_restriction_v3_unrelated_domain_is_left_to_existing_binder(text):
+    from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+    assert not longitudinal_read_restrictions_unresolved(snapshot(text))
+
+
+@pytest.mark.parametrize('prefix', ['只看', '请你只看', '范围仅限'])
+@pytest.mark.parametrize('connector', ['和', '与', '及', '、'])
+def test_restriction_v3_multiple_domains_are_complete_scope_tokens(prefix, connector):
+    text = f'{prefix}饮食{connector}睡眠，查询我的饮食、睡眠并分析'
+    result = resolve_longitudinal_read_queries(snapshot(text))
+    assert result and {q['dimension'] for q in result} == {'diet', 'sleep'}
+
+
+@pytest.mark.parametrize('text', [
+    '小王只看饮食，查询我的饮食并分析',
+    '查询小王的饮食只看饮食，给我建议',
+    '不要只看饮食，查询我的饮食并分析',
+    '如果只看饮食，查询我的饮食并分析',
+])
+def test_restriction_v3_prefix_still_carries_authority_constraints(text):
+    assert resolve_longitudinal_read_queries(snapshot(text)) is None

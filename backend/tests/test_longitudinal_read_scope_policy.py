@@ -144,3 +144,31 @@ def test_unknown_restrictor_cannot_use_manage_list_calendar_bypass(restriction):
     decision = decide({'record_type': 'diet', 'operation': 'list', 'date': '2026-09-13'},
                       text=text, tool='health_manage')
     assert decision.action == 'block'
+
+
+@pytest.mark.parametrize('text', [
+    '请你只看今早，查询我的饮食并分析',
+    '范围仅限今早，查询我的饮食并分析',
+    '请查询我的饮食并分析，范围限定在那次检查之后',
+    '今天上午，查询我的饮食并分析',
+    '查询我今天上午的饮食并分析',
+    '今早，查询我的饮食并分析',
+])
+def test_restriction_v3_no_query_or_list_bypass(text):
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    assert decide({'dimension': 'diet'}, text=text).action == 'block'
+    assert decide({'queries': [{'dimension': 'diet'}]}, text=text, tool='health_query_batch').action == 'block'
+    assert decide({'record_type': 'diet', 'operation': 'list', 'date': '2026-09-13'},
+                  text=text, tool='health_manage').action == 'block'
+
+
+@pytest.mark.parametrize('text', [
+    '只看饮食和睡眠，查询我的饮食、睡眠并分析',
+    '范围仅限饮食和睡眠，查询我的饮食、睡眠并分析',
+])
+def test_restriction_v3_valid_multiple_domains_keep_actual_scope(text):
+    scope = resolve_owned_read_scope(snapshot(text))
+    assert scope and {q['dimension'] for q in scope.queries} == {'diet', 'sleep'}
+    assert all(q['start_date'] == '2026-09-07' and q['end_date'] == '2026-09-13' for q in scope.queries)
+    assert decide({'queries': list(scope.queries)}, text=text, tool='health_query_batch').action == 'allow'
+    assert decide({'dimension': 'workout'}, text=text).action == 'block'

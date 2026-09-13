@@ -18,6 +18,7 @@ _CANCELLATION_NOTICES = {
 # Parameter/model repair failures intentionally do not appear here.
 _TERMINAL_NOTICES = {
     **_PERMISSION_NOTICES, **_CANCELLATION_NOTICES,
+    'longitudinal_read_scope_unresolved': '这次查询未执行。你的范围限制尚不能完整解析；请明确要查询的日期或日期范围。',
     'supplement_dosage_requires_clarification': '这项补剂尚未写入。请确认本次服用的时间和数量。',
 }
 

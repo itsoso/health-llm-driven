@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.services.agent_kernel.health_semantics import (
     active_health_instruction_text,
     health_read_has_nonself_subject,
+    _strip_exam_request_scaffolding,
 )
 from app.services.agent_query_window import (
     QueryWindow,
@@ -54,8 +55,29 @@ _TOOL_READ = re.compile(
 # These clauses restrict a read; an unrecognized remainder must not disappear
 # into the default recent window or a separate calendar clause.
 _RESTRICTION_PREFIX = re.compile(
-    r"^\s*(?:请)?(?:(?:只|仅)(?:查询|查看|读取|调取|查|看)|仅限|限定(?:范围)?(?:为|在)?|只限)(?:于)?\s*"
+    r"(?:(?:只|仅)(?:查询|查看|读取|调取|查|看)|仅限|限定(?:范围)?(?:为|在)?|只限)(?:于)?\s*"
 )
+
+
+_DOMAIN_SCOPE = re.compile(
+    r"(?:我|本人|自己)?的?(?:" + "|".join(_DOMAINS.values()) + r")(?:记录|数据)?"
+    r"(?:\s*(?:以及|和|与|及|、)\s*(?:我|本人|自己)?的?(?:"
+    + "|".join(_DOMAINS.values()) + r")(?:记录|数据)?)*"
+)
+# Subday records are not representable by this calendar-day adapter. These are
+# temporal tokens, not allowed/disallowed request phrases or politeness forms.
+_SUBDAY_SCOPE = re.compile(r"(?:今|昨|前|明|后)(?:早|晨|午)|上午|下午|中午|凌晨|清晨|早上|早晨|午后")
+_RETROSPECTIVE_SCOPE = re.compile(r"(?:分析|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
+
+
+def _diagnosis_background_clause(clause: str) -> bool:
+    return bool(
+        not _RESTRICTION_PREFIX.search(clause)
+        and re.search(r"诊断|确诊|病史|既往|[一二两三四五六七八九十几\d]+个?多?月前", clause)
+        and not re.search(
+            r"查询|查看|读取|调取|调用|记录|分析|复盘|结合|" + "|".join(_DOMAINS.values()), clause,
+        )
+    )
 
 
 def _number(text: str) -> int:
@@ -103,21 +125,23 @@ def _restricted_read_text(snapshot, active: str) -> str | None:
     Calendar matches must consume the entire scope, not merely find a day in it.
     This is a rejection boundary, not an alternative source of read authority.
     """
+    if not any(re.search(pattern, active) for pattern in _DOMAINS.values()) and not _RETROSPECTIVE_SCOPE.search(active):
+        return active
     clauses = re.split(r"[，,。；;！？!?\n]", active)
     normalized = []
     domain_limits = []
     requested_domains = {key for key, pattern in _DOMAINS.items() if re.search(pattern, active)}
     for clause in clauses:
-        prefix = _RESTRICTION_PREFIX.match(clause)
+        if not _diagnosis_background_clause(clause) and _SUBDAY_SCOPE.search(clause):
+            return None
+        prefix = _RESTRICTION_PREFIX.search(clause)
         if prefix is None:
             normalized.append(clause)
             continue
         body = clause[prefix.end():].strip()
         scope = re.sub(r"(?:并|再|然后)(?:分析|复盘|总结)(?:一下)?$", "", body)
         domains = {key for key, pattern in _DOMAINS.items() if re.search(pattern, scope)}
-        residue = scope
-        for pattern in _DOMAINS.values():
-            residue = re.sub(pattern, "", residue)
+        residue = _DOMAIN_SCOPE.sub("", scope)
         residue = re.sub(r"(?:我|本人|自己)?的|记录|数据|\s", "", residue)
         if domains:
             domain_limits.append(domains)
@@ -141,6 +165,18 @@ def _restricted_read_text(snapshot, active: str) -> str | None:
                 timezone_name=snapshot.context.timezone,
             ) is None:
                 return None
+        # Preserve pre-marker content: it may carry a subject or another read
+        # request. Separating a scope declaration must not erase that authority.
+        lead = clause[:prefix.start()].strip()
+        if lead:
+            lead_scope = _strip_exam_request_scaffolding(lead)
+            if lead_scope not in {"", "你", "您"} and not re.fullmatch(
+                r"(?:查询|读取|时间|日期|数据)?范围", lead_scope,
+            ):
+                # An unknown pre-marker subject must not be discarded when
+                # the marker is no longer constrained to the clause start.
+                return None
+            normalized.append(lead)
         normalized.append(body)
     if any(not requested_domains <= limit for limit in domain_limits):
         return None
@@ -216,20 +252,7 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
     # Only standalone diagnosis-history clauses may lose background dates.
     # A clause requesting records since diagnosis must remain and fail closed.
     clauses = re.split(r"[，,。；;\n]", active)
-    relevant = [
-        clause
-        for clause in clauses
-        if not (
-            re.search(
-                r"诊断|确诊|病史|既往|[一二两三四五六七八九十几\d]+个?多?月前", clause
-            )
-            and not re.search(
-                r"查询|查看|读取|调取|调用|记录|分析|复盘|结合|"
-                + "|".join(_DOMAINS.values()),
-                clause,
-            )
-        )
-    ]
+    relevant = [clause for clause in clauses if not _diagnosis_background_clause(clause)]
     request = "。".join(relevant)
     hits = list(_RECENT.finditer(request))
     if len(hits) > 1:

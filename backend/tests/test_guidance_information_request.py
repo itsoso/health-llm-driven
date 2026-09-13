@@ -55,3 +55,19 @@ def test_request_to_complete_actual_record_fields_is_not_a_regimen():
 )
 def test_field_nouns_or_later_questions_cannot_hide_prescription(text):
     assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "成分的功效、安全性、推荐摄入量和药物相互作用，请以美国国立医学图书馆《草药与膳食补充剂资料库》为准核对，并与医生或药师确认——我不会替你新增补剂、调整剂量或安排服用时点。",
+    "请查看补充剂的名称和已有记录。",
+])
+def test_supplement_noun_in_information_request_is_not_an_action(text):
+    assert not enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "请参考膳食补充剂资料库，然后每天服用两片。",
+    "维生素应该每天补充。",
+])
+def test_supplement_noun_does_not_hide_an_actual_action(text):
+    assert enforce_medical_evidence_boundaries(text).flagged

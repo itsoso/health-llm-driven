@@ -13542,7 +13542,10 @@ class AgentExecutor:
                     sources_used.append(lbl)
                 tool_event_data = {
                     "tool": fn,
-                    "success": not result.startswith("Error"),
+                    "success": (
+                        not result.startswith("Error")
+                        and not result_declares_explicit_failure(result)
+                    ),
                     "preview": result[:200],
                     "result": result,
                 }
@@ -16615,7 +16618,10 @@ class AgentExecutor:
             # 是哪种 record + 提取关键内容显示 summary 卡 (I Phase 2).
             tool_event_data = {
                 "tool": func_name,
-                "success": not result.startswith("Error"),
+                "success": (
+                    not result.startswith("Error")
+                    and not result_declares_explicit_failure(result)
+                ),
                 "preview": result[:200],
                 "result": result,
             }
@@ -19238,7 +19244,10 @@ class AgentExecutor:
 
                 tool_event_data: Dict[str, Any] = {
                     "tool": tool,
-                    "success": not result.startswith("Error"),
+                    "success": (
+                        not result.startswith("Error")
+                        and not result_declares_explicit_failure(result)
+                    ),
                     "preview": result[:200],
                     "result": result,
                     "write_attempted": write_attempted,

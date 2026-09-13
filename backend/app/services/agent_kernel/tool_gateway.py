@@ -129,6 +129,7 @@ class ToolGateway:
 def blocked_tool_result(decision: CapabilityDecision) -> str:
     tool_name = decision.normalized_tool_name or "unknown"
     recovery_guidance = {
+        "longitudinal_read_scope_unresolved": "范围限制尚未绑定。停止本轮读取，向用户澄清日期或范围；不得更换工具、参数或入口扩大查询。",
         "health_query_semantics_unresolved": "读取尚未执行。根据当前用户原话和历史澄清目标，只补缺少的查询维度或时间，不扩大授权范围。",
         "health_query_calendar_window_unsupported": "读取尚未执行。将原话中的日期归一为明确日历范围；不同目标分别查询。确有日期歧义时只问该歧义。",
         "health_query_calendar_window_conflict": "模型参数与本轮日期冲突。按本轮日期修正参数后重试，不使用旧窗口。",
@@ -159,7 +160,7 @@ def blocked_tool_result(decision: CapabilityDecision) -> str:
     retryable = is_repairable_read_failure(decision.reason, tool_name, decision.normalized_args)
     terminal = is_terminal_policy_reason(decision.reason)
     category = policy_failure_category(decision.reason)
-    message = "[NEEDS_CLARIFICATION] 工具调用未执行。"
+    message = (terminal_policy_notice([decision.reason]) if terminal else None) or "[NEEDS_CLARIFICATION] 工具调用未执行。"
     if category in {"permission_denied", "cancelled"}:
         message = terminal_policy_notice([decision.reason]) or message
         recovery_guidance = (
