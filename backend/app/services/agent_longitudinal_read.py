@@ -19,6 +19,8 @@ from app.services.agent_kernel.health_semantics import (
     _strip_current_user_owner,
     resolve_illness_entity,
     has_positive_health_read_verb,
+    ANALYZED_MATERIAL_QUOTE_PAIRS,
+    _analyzed_material_end,
 )
 from app.services.agent_query_window import (
     QueryWindow,
@@ -358,6 +360,10 @@ def _query_object_scope(clause: str) -> str:
 def _restricted_read_text(snapshot, active: str) -> str | None:
     if not _record_domains(active) and not _RETROSPECTIVE_SCOPE.search(active):
         return active
+    if re.search(r"[“”「」『』\"'‘’`]", active):
+        # An attached quotation is an unresolved object or scope, not empty
+        # syntax that can be discarded to manufacture default read authority.
+        return None
     # These checks still run in the original policy. The read projection must
     # neither replace their owner error nor reinterpret an observation as a task.
     if (not has_positive_health_read_verb(active) and not _TOOL_READ.search(active)
@@ -429,6 +435,66 @@ def _restricted_read_text(snapshot, active: str) -> str | None:
     return "。".join(normalized)
 
 
+def _read_quote_projection(active: str) -> str | None:
+    """Preserve quote positions; only independent reported material is context.
+
+    Inline quoted owners/objects/filters stay intact for complete consumption.
+    The shared material scanner keeps punctuation inside quotes from creating
+    new active clauses. Quoted bodies never become executable instructions.
+    """
+    pairs = {**ANALYZED_MATERIAL_QUOTE_PAIRS, "'": "'", "`": "`"}
+    if not any(char in active for char in pairs):
+        return active
+    clauses = []
+    raw = []
+    outside = []
+    quoted = False
+    had_quote = False
+
+    def finish_clause(separator=""):
+        nonlocal raw, outside, quoted
+        body = "".join(raw).strip()
+        shape = "".join(outside).strip()
+        independent = quoted and re.fullmatch(
+            r"(?:(?:有人|医生|他|她)(?:说|提到|表示)[:：]?)?"
+            r"\ufffc(?:(?:以及|和|与|、)\ufffc)*", shape,
+        )
+        if body and not independent:
+            clauses.append(body + separator)
+        raw, outside, quoted = [], [], False
+
+    index = 0
+    while index < len(active):
+        char = active[index]
+        # Apostrophes inside a Latin name are not quoted material delimiters.
+        apostrophe = char == "'" and index > 0 and index + 1 < len(active) and (
+            active[index - 1].isascii() and active[index - 1].isalpha()
+            and active[index + 1].isascii() and active[index + 1].isalpha()
+        )
+        if char in pairs and not apostrophe:
+            if char in ANALYZED_MATERIAL_QUOTE_PAIRS:
+                end = _analyzed_material_end(active, index)
+            else:
+                match = re.search(r"(?<!\\)" + re.escape(char), active[index + 1:])
+                end = index + 2 + match.start() if match else len(active)
+            if end <= index + 1 or active[end - 1] != pairs[char]:
+                return None
+            raw.append(active[index:end])
+            outside.append("\ufffc")
+            quoted = had_quote = True
+            index = end
+            continue
+        if char in "，,。；;！？!?\n":
+            finish_clause(char)
+        else:
+            raw.append(char)
+            outside.append(char)
+        index += 1
+    finish_clause()
+    projected = "".join(clauses).strip()
+    return None if had_quote and not projected else projected
+
+
 def longitudinal_read_projection_text(snapshot, *, text_override: str | None = None) -> str | None:
     """Server-only read projection; callers must retain original authority checks.
 
@@ -436,10 +502,9 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     never model-authored authority. None means unsupported scope, not no request.
     """
     active = active_health_instruction_text(snapshot.envelope.text if text_override is None else text_override)
-    active = re.sub(
-        r"“[^”]*”|「[^」]*」|『[^』]*』|\"[^\"\n]*\"|'[^'\n]*'|‘[^’]*’|`[^`]*`",
-        "", active,
-    )
+    active = _read_quote_projection(active)
+    if active is None:
+        return None
     return _restricted_read_text(snapshot, active)
 
 
@@ -458,11 +523,9 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
     ):
         return None
     active = active_health_instruction_text(snapshot.envelope.text)
-    active = re.sub(
-        r"""“[^”]*”|「[^」]*」|『[^』]*』|"[^"\n]*"|'[^'\n]*'|‘[^’]*’|`[^`]*`""",
-        "",
-        active,
-    )
+    active = _read_quote_projection(active)
+    if active is None:
+        return None
     if (
         re.search(r"""[“”「」『』"'‘’`]""", active)
         or _NEGATIVE.search(active)

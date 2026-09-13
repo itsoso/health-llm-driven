@@ -489,3 +489,12 @@ def test_actual_record_kind_malformed_or_nonactual_fails_closed(dimension, kind)
     read.content["records"][0]["record_kind"] = kind
     result = evaluate_composed_read_completion(longitudinal_scope(read), [read])
     assert not result.complete
+
+
+@pytest.mark.parametrize("executions", [[], [execution(rows=[])], [execution(rows=[{}])]])
+def test_absent_or_unverified_diet_does_not_imply_existing_records(executions):
+    result = evaluate_composed_read_completion(scope("diet"), executions)
+    assert "已记录" not in result.trusted_fact_summary
+    assert "饮食" in result.trusted_fact_summary
+    if not executions or executions[0].content["records"]:
+        assert not result.complete

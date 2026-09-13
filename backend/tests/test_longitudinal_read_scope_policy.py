@@ -356,3 +356,83 @@ def test_projection_v6_other_domain_cannot_exempt_independent_restricted_read():
     assert decide({'dimension': 'diet'}, text).action == 'block'
     assert decide({'queries': [{'dimension': 'blood_pressure'}, {'dimension': 'diet'}]}, text, 'health_query_batch').action == 'block'
     assert decide({'record_type': 'diet', 'operation': 'list'}, text, 'health_manage').action == 'block'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text', [
+    '查询我“早餐后”的饮食记录并分析',
+    '查询我的饮食记录，只看“早餐后”，再分析',
+    '查询我的饮食记录，只看“三个月前”，再分析',
+    '查询“张三”的饮食记录，给我建议',
+])
+@pytest.mark.parametrize('mode', ['enforce', 'shadow'])
+@pytest.mark.parametrize('tool,args', [
+    ('health_query', {'dimension': 'diet'}),
+    ('health_query_batch', {'queries': [{'dimension': 'diet'}]}),
+    ('health_manage', {'record_type': 'diet', 'operation': 'list'}),
+])
+async def test_projection_v7_quoted_object_cannot_authorize_after_erasure(text, mode, tool, args):
+    from dataclasses import replace
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    dispatched = []
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{"records":[]}'
+    turn = replace(snapshot(text), policy_mode=mode)
+    result = await ToolGateway(turn).execute(ToolExecutionRequest(tool, args), dispatch)
+    assert not dispatched
+    assert result.decision.action == 'block'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool,args', [
+    ('health_query', {'dimension': 'diet'}),
+    ('health_query_batch', {'queries': [{'dimension': 'diet'}]}),
+])
+async def test_projection_v7_independent_report_preserves_outside_owned_query(tool, args):
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    text = '医生说“注意休息”。查询我的饮食记录并分析'
+    dispatched = []
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{"records":[]}'
+    result = await ToolGateway(snapshot(text)).execute(ToolExecutionRequest(tool, args), dispatch)
+    assert dispatched
+    assert result.decision.action == 'allow'
+
+
+@pytest.mark.parametrize('quotation', ['“早餐后”', '「早餐后」', '『早餐后』', '‘早餐后’', '"早餐后"', "'早餐后'", '`早餐后`', '“早餐后'])
+def test_projection_v7_quote_delimiters_preserve_object_constraints(quotation):
+    assert resolve_owned_read_scope(snapshot(f'查询我{quotation}的饮食记录并分析')) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text,allowed', [
+    ('查询我的饮食记录并分析', True),
+    ('医生说“注意休息”。查询我的饮食记录并分析', False),
+])
+async def test_projection_v7_manage_keeps_existing_owner_boundary(text, allowed):
+    # The reported-prefix restriction was reproduced using unmodified 54a7
+    # helper bytes; quote repair must not broaden this separate list boundary.
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    dispatched = []
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{"records":[]}'
+    result = await ToolGateway(snapshot(text)).execute(
+        ToolExecutionRequest('health_manage', {'record_type': 'diet', 'operation': 'list'}), dispatch,
+    )
+    assert bool(dispatched) is allowed
+    if not allowed:
+        assert result.decision.reason == 'health_query_subject_not_current_user'
+
+
+@pytest.mark.parametrize('text', [
+    '“查询我的饮食记录并分析”',
+    '“查询我的饮食记录并分析”，给我建议',
+    '解释例句：“查询我的饮食记录并分析”',
+])
+def test_projection_v7_whole_quoted_request_is_not_authority(text):
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    assert decide({'dimension': 'diet'}, text).action == 'block'
+    assert decide({'record_type': 'diet', 'operation': 'list'}, text, 'health_manage').action == 'block'

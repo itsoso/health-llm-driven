@@ -324,7 +324,7 @@ def evaluate_composed_read_completion(
                 goals[dimension]["reason_code"] = reason
     missing = tuple(d for d in bounds if d not in verified)
     lines = list(read_scope_notices(scope))
-    if "diet" in bounds:
+    if "diet" in verified and verified["diet"]["records"]:
         lines.append("已记录饮食不代表全天完整摄入，未记录不等于没有发生。")
     for dimension, query in bounds.items():
         day = (

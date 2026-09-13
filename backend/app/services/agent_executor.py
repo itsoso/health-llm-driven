@@ -17501,6 +17501,8 @@ class AgentExecutor:
         sync_summary = self._trusted_sync_summary()
         if composed_completion is not None and not composed_completion.complete:
             full_reply = composed_completion.trusted_fact_summary
+            if final_finish_reason != "stop":
+                full_reply += "\n\n本轮没有生成有效回答，请稍后重试。"
         if sync_summary:
             full_reply = sync_summary + "\n\n" + full_reply
         if read_scope is not None and read_scope.limitations:
