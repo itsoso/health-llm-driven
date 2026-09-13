@@ -255,7 +255,9 @@ _REGIMEN_ACTION = re.compile(
 _UNSCOPED_REGIMEN = re.compile(
     r"(?:建议|应该|应当|请|必须|每天|每日|每次)[^。；;!?！？\n]{0,16}"
     r"(?:服用|口服)[^。；;!?！？\n]{0,30}[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
-    r"(?:早晚|每天|每日|每次|睡前)\s*(?:各)?\s*[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)",
+    r"(?:早晚|每天|每日|每次|睡前)\s*(?:各)?\s*[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
+    r"(?:每天|每日|每次)\s*(?:增加到|减少到|加到|减到|提高到|降低到)\s*"
+    r"[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)",
     re.I,
 )
 _NEGATED_ASSERTION = re.compile(
@@ -305,6 +307,23 @@ def _regimen_assertion_text(sentence: str) -> str:
     projected = re.sub(
         r"(^\s*请告诉我[^。；;!?！？\n]{0,40})服用(?=时间[。；;!?！？\n]*$)",
         r"\1用药", projected,
+    )
+    def existing_quantity(match: re.Match) -> str:
+        prefix = re.split(
+            r"[，,。；;!?！？\n]|但是|但|不过|然而|而是", projected[:match.start()]
+        )[-1]
+        if re.search(
+            r"(?:不知道|不清楚|无法确认|无法还原|未能确认)"
+            r"[^，,。；;!?！？\n]{0,45}$", prefix,
+        ):
+            # Replace only the unknown quantity object, never its surrounding
+            # sentence: an appended dose/timing instruction remains visible.
+            return "既有用药数量信息"
+        return match.group(0)
+
+    projected = re.sub(
+        r"(?:每天|每日|每次)(?:吃|服用)(?:了)?(?:多少种|几种|几粒|几片|多少)",
+        existing_quantity, projected,
     )
     inquiry = re.search(r"(?:每天|每日|每次)?(?:什么时间|何时)(?:吃|服用)", projected)
     directed = re.match(

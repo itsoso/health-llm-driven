@@ -71,3 +71,36 @@ def test_supplement_noun_in_information_request_is_not_an_action(text):
 ])
 def test_supplement_noun_does_not_hide_an_actual_action(text):
     assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "因此我无法还原你实际在吃的补剂方案是什么、每天吃几种、剂量多少。",
+    "我不知道你每天服用多少种补剂。",
+    "现有补剂记录无法确认你每次吃几粒。",
+    "我不清楚你每日服用几片维生素。",
+])
+def test_unknown_existing_regimen_quantity_is_not_prescribed(text):
+    assert not enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "我不知道你每天吃几种补剂，建议每天吃两片。",
+    "我不知道你每天吃几种补剂但每天吃两片。",
+    "补剂每天吃两片，我不清楚你每天吃几种。",
+    "我无法确认你每次吃几粒补剂，所以请睡前服用。",
+    "我不清楚你的补剂记录，每天服用两片。",
+    "我不知道你每天吃几种补剂；每次增加到两片。",
+    "我不清楚你每日服用几片维生素，不过应该每天补充。",
+])
+def test_unknown_regimen_object_cannot_hide_an_instruction(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", ["每次增加到两片。", "每天减少到一粒。", "每日提高到500毫克。"])
+def test_explicit_dose_change_does_not_require_repeating_medicine_name(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", ["记录每天增加到两杯水。", "散步每日增加到十分钟。"])
+def test_general_quantity_is_not_a_medicine_dose(text):
+    assert not enforce_medical_evidence_boundaries(text).flagged

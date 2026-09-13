@@ -215,11 +215,28 @@ async def test_real_pi_provider_projection_and_notices_once(db, seeded, monkeypa
     events = [e async for e in executor.run_stream(seeded.id, ANALYSIS_REQUESTS[0],
         extra_context=json.dumps({'multi_model': panel, 'model_id': 'qwen3.8-max-preview'}))]
     assert len(calls) >= 2
-    for messages in calls[:2]:
-        assert_profile_prompt(messages[0]['content'])
-    tool_text = json.dumps([m for messages in calls for m in messages if m['role'] == 'tool'], ensure_ascii=False)
-    assert 'KNOWN_FOOD' in tool_text and 'KNOWN_ITEMS' in tool_text
-    assert '\\"protein\\": null' in tool_text
+    assert_profile_prompt(calls[0][0]['content'])
+    if outcome == 'complete':
+        for messages in calls[1:]:
+            assert [m['role'] for m in messages] == ['system', 'user']
+            system = messages[0]['content']
+            data = json.loads(messages[1]['content'])
+            for value in ('PROFILE_CONDITION', 'PROFILE_ALLERGY', 'PROFILE_MEDICATION', 'OWNED_CLINICIAN'):
+                assert value not in system
+            assert_profile_prompt(system + '\n' + data['profile_context']['text'])
+            assert data['profile_context']['authority'] == 'background_not_current_read_or_new_consent'
+            diet = next(q for q in data['read_evidence']['queries'] if q['query']['dimension'] == 'diet')
+            assert diet['record_count'] == len(diet['records']) == 1
+            row = diet['records'][0]
+            assert row['known_fields']['food_name'] == 'KNOWN_FOOD'
+            assert row['known_fields']['food_items'] == 'KNOWN_ITEMS'
+            assert 'protein' not in row['known_fields']
+            assert row['unknown_fields']['protein'] == 'null_in_result'
+    else:
+        assert_profile_prompt(calls[1][0]['content'])
+        tool_text = json.dumps([m for messages in calls for m in messages if m['role'] == 'tool'], ensure_ascii=False)
+        assert 'KNOWN_FOOD' in tool_text and 'KNOWN_ITEMS' in tool_text
+        assert '\\"protein\\": null' in tool_text
     done = events[-1]['data']
     saved = db.get(AgentMessage, done['message_id'])
     scope = resolve_owned_read_scope(executor._agent_kernel_snapshot)
