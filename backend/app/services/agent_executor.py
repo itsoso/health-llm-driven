@@ -16903,6 +16903,10 @@ class AgentExecutor:
                             _reconcile_pi_preflight_rejections(request["messages"], round_idx)
                             round_idx += 1
                             messages = request["messages"]
+                            diet_synthesis_round = bool(
+                                round_idx > 0 and daily_diet_evaluation
+                                and not health_advice_buffered
+                            )
                             if (round_idx > 0 and self._turn_daily_read_plan is not None
                                     and (self._turn_daily_read_plan.is_summary or daily_diet_evaluation)
                                     and not health_advice_buffered):
@@ -16919,12 +16923,45 @@ class AgentExecutor:
                                     "营养字段缺失不能证明营养缺乏；名称相同或餐次标签与当前时间的差异"
                                     "不能证明重复、误录，核对建议不得预设需要删除或改写。\n" + facts
                                 )
-                                messages = [dict(item) for item in messages]
-                                system_index = next((i for i, item in enumerate(messages) if item.get("role") == "system"), None)
-                                if system_index is None:
-                                    messages.insert(0, {"role": "system", "content": instruction})
+                                if diet_synthesis_round:
+                                    # Project only the provider input. Pi retains
+                                    # its original transcript, tool results and
+                                    # permission ledger; none grants new consent.
+                                    static_rules = self._build_system_prompt(
+                                        user_id, conv.id, user_auth_token,
+                                        intent_query=message, static_rules_only=True,
+                                    )
+                                    instruction = (
+                                        "系统已核验的本次查询事实如下：\n" + facts
+                                        + "\n请以单独的‘建议’标题开头。事实由系统直接展示，不要复述或重新计算观测数字。"
+                                        "本轮任务仅为评价上述饮食证据能说明什么、有哪些局限；"
+                                        "最多给出一条直接相关的下一步，不展开其他健康领域。"
+                                        "未提供的营养或份量信息是未知，不宣称字段为空或实际摄入不足。"
+                                        "证据不足时不提供个体食物、剂量、用餐时机处方，"
+                                        "不推断记录重复、餐次错误或缺少某一餐，不主动提议删改、补录或提醒。"
+                                        "只生成简短的建议段，事实和原始记录由系统另行展示。"
+                                        "本轮是只读评价，未授权新增、修改、删除记录或设置提醒；不得声称已执行。"
+                                    )
+                                    window = {
+                                        "start_date": self._turn_daily_read_plan.start_date,
+                                        "end_date": self._turn_daily_read_plan.end_date,
+                                        "timezone": self._turn_daily_read_plan.timezone,
+                                        "dimensions": list(self._turn_daily_read_plan.dimensions),
+                                    }
+                                    messages = [
+                                        {"role": "system", "content": static_rules + "\n\n" + instruction},
+                                        {"role": "user", "content": (
+                                            "本轮已冻结查询范围：" + json.dumps(window, ensure_ascii=False)
+                                            + "\n本轮用户原问题：\n" + message
+                                        )},
+                                    ]
                                 else:
-                                    messages[system_index]["content"] = str(messages[system_index].get("content") or "") + "\n\n" + instruction
+                                    messages = [dict(item) for item in messages]
+                                    system_index = next((i for i, item in enumerate(messages) if item.get("role") == "system"), None)
+                                    if system_index is None:
+                                        messages.insert(0, {"role": "system", "content": instruction})
+                                    else:
+                                        messages[system_index]["content"] = str(messages[system_index].get("content") or "") + "\n\n" + instruction
                             self._maybe_escalate_staged_answer_model()
                             yield self._status_event("thinking", round=round_idx + 1)
                             yield self._progress_event("thinking", round=round_idx + 1)
@@ -16938,7 +16975,7 @@ class AgentExecutor:
                             finish_reason = None
                             self._tool_round_fast_routed = False
                             round_tools = (
-                                [] if self._force_no_tools_synthesis
+                                [] if diet_synthesis_round or self._force_no_tools_synthesis
                                 or self._turn_doctor_feedback_write_attempted
                                 or self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
                                 else request["tools"]
@@ -19307,6 +19344,7 @@ class AgentExecutor:
         lite: bool = False, intent_query: Optional[str] = None,
         health_evidence_runtime: bool = False,
         force_full_personal_context: bool = False,
+        static_rules_only: bool = False,
     ) -> str:
         """构建统一 Agent 的 system prompt。
 
@@ -19325,8 +19363,12 @@ class AgentExecutor:
             classify_context_profile,
         )
 
+        # Provider-only diet synthesis may reuse all static rules without
+        # reintroducing unrelated personal evidence. This flag changes neither
+        # model routing nor clinical admission/consent state.
         domain_prompt_enabled = bool(
-            getattr(settings, "domain_prompt_optimization", False)
+            not static_rules_only
+            and getattr(settings, "domain_prompt_optimization", False)
             and not lite
             and not health_evidence_runtime
             and not force_full_personal_context
@@ -19343,7 +19385,8 @@ class AgentExecutor:
             if domain_prompt_enabled
             else INJECTION_FULL
         )
-        self._prompt_context_profile = context_profile
+        if not static_rules_only:
+            self._prompt_context_profile = context_profile
 
         parts = [
             "你是用户的 AI 健康助理。你可以通过工具调用获取、记录和分析用户的健康数据。",
@@ -19448,7 +19491,7 @@ class AgentExecutor:
 
         # 健康证据运行时已经从一份冻结 Twin 编译了 query-specific packet；
         # 不再叠加旧版泛化档案，避免重复、冲突和“表里有就声称用过”。
-        if not health_evidence_runtime:
+        if not health_evidence_runtime and not static_rules_only:
             try:
                 from app.services.health_context_lite_service import (
                     build_lite_health_context, _get_time_period,
@@ -19478,7 +19521,7 @@ class AgentExecutor:
         # (lite=True) 全部跳过 —— 对「记录喝水」「今天喝了多少水」无用, 只增加 prefill 与噪音。
         if not lite and not health_evidence_runtime:
             # 注入原研药可换建议(基于在用药;已采纳/忽略的已被抑制,不会重复推荐)
-            if context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
+            if not static_rules_only and context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
                 try:
                     from app.services.originator_recommendations import originator_recs_prompt_blob
                     blob = originator_recs_prompt_blob(self.db, user_id)
@@ -19495,7 +19538,7 @@ class AgentExecutor:
                 logger.warning(f"Agent 世界观注入失败: {e}")
 
             # 注入肝脏趋势(消费历史肝酶;FIB-4/脂肪肝风险提示,非诊断)
-            if context_profile in {INJECTION_FULL, INJECTION_LABS}:
+            if not static_rules_only and context_profile in {INJECTION_FULL, INJECTION_LABS}:
                 try:
                     from app.services.liver_health import liver_prompt_blob
                     from app.models.user import User as _User
@@ -19513,7 +19556,7 @@ class AgentExecutor:
                     logger.warning(f"Agent 肝脏趋势注入失败: {e}")
 
             # 注入血常规趋势(消费历史 CBC;红细胞系同向偏高/中性-淋巴倒置提示,非诊断)
-            if context_profile in {INJECTION_FULL, INJECTION_LABS}:
+            if not static_rules_only and context_profile in {INJECTION_FULL, INJECTION_LABS}:
                 try:
                     from app.services.blood_routine import blood_routine_prompt_blob
                     from app.models.user import User as _User
@@ -19526,7 +19569,7 @@ class AgentExecutor:
                     logger.warning(f"Agent 血常规趋势注入失败: {e}")
 
             # 注入用药疗程提醒(即将结束的疗程 + 建议复查;胃溃疡 PPI 疗程等)
-            if context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
+            if not static_rules_only and context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
                 try:
                     from app.services.medication_course_service import course_prompt_blob
                     blob = course_prompt_blob(self.db, user_id)
@@ -19536,7 +19579,7 @@ class AgentExecutor:
                     logger.warning(f"Agent 疗程提醒注入失败: {e}")
 
             # 注入干预闭环主动提议(有异常代谢杠杆 + 无 active 周期 → 可提议开 N-of-1 周期)
-            if context_profile == INJECTION_FULL:
+            if not static_rules_only and context_profile == INJECTION_FULL:
                 try:
                     from app.services.intervention_cycle_service import intervention_proposal_prompt_blob
                     blob = intervention_proposal_prompt_blob(self.db, user_id)
@@ -19547,7 +19590,7 @@ class AgentExecutor:
 
             # 注入 N-of-1 干预效应估计(active/近期周期 + 复查数据 → 个人化效应后验)。
             # 无周期/无复查 → 空串不注入(Phase 1, effect_estimator)。
-            if context_profile == INJECTION_FULL:
+            if not static_rules_only and context_profile == INJECTION_FULL:
                 try:
                     from app.services.effect_estimator import effect_estimate_prompt_blob
                     blob = effect_estimate_prompt_blob(self.db, user_id)
