@@ -65,6 +65,11 @@ LIVE_CANDIDATE = """## 今天查到的饮食事实
     ("### 建议", "stop"),
     ("建议：我会先查询今天的饮食记录，然后给出建议。", "stop"),
     ("建议：暂无建议。", "stop"),
+    ("建议：我会先分析。", "stop"),
+    ("建议：我会先查询，然后给出建议。", "stop"),
+    ("建议：蛋白数据缺失，说明今天缺口大概率在蛋白侧。建议多吃鸡蛋。", "stop"),
+    ("建议：两条早餐名称和热量相同，说明是重复录入，建议删除其中一条。", "stop"),
+    ("建议：餐次标签比当前时间晚，午餐被标成了晚餐，建议更正。", "stop"),
     ("本轮生成失败，请重试。", "error"),
     ("我会先查询今天的饮食记录，然后给出建议。", "stop"),
 ])
@@ -82,6 +87,7 @@ async def test_failed_evaluation_keeps_successful_read_in_stream_and_history(db,
     assert done["completion_status"] == "error"
     if finish == "error": assert done["generation_status"] == "error"
     for text in (streamed, saved.content):
+        assert reply not in text
         assert "已记录热量合计1020千卡" in text
         assert "建议" in text and "睡眠" not in text
         for false_claim in ("720", "缺口大概率在蛋白侧", "午餐被标成了晚餐", "没有完成数据查询", "查询未执行"):

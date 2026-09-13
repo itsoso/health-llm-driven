@@ -165,8 +165,8 @@ def summary_advice_contract_failure(text: str) -> str | None:
     # Only a sequence of assistant future-work clauses is a pending answer.
     # A real user action or explained limit alongside a promise is substantive.
     action = r'(?:查询|查阅|读取|检索|查看|核对|分析|整理|给出|提供)'
-    promise = rf'(?:我|我们|助手|系统)(?:会|将|准备|打算)(?:先|再)?{action}.+'
-    continuation = rf'(?:然后|之后|随后|再)(?:再)?{action}.+'
+    promise = rf'(?:我|我们|助手|系统)(?:会|将|准备|打算)(?:先|再)?{action}.*'
+    continuation = rf'(?:然后|之后|随后|再)(?:再)?{action}.*'
     clauses = [part.strip(' \t-*#_>') for part in re.split(r'[。！？!?；;，,\n]+', body) if part.strip()]
     if (clauses and re.fullmatch(promise, clauses[0])
             and all(re.fullmatch(rf'(?:{promise}|{continuation})', part) for part in clauses)):
@@ -196,14 +196,41 @@ def summary_advice_contract_failure(text: str) -> str | None:
     )
     uncertainty = re.compile(
         r'(?:不能|无法|不应|不可|不足以)[^。！？!?；;\n]{0,24}(?:判断|认定|推断|说明|证明|断言)'
-        r'|(?:不代表|不意味着|没有证据说明|没有证据表明)'
+        r'|(?:不代表|不意味着|不等于|没有(?:足够)?证据(?:说明|表明|判断|证明))'
+    )
+    # These two observed failure categories cannot be derived from a daily
+    # record count/calorie projection. Missing fields are not nutrient deficits;
+    # similar rows and meal labels are not proof of duplicate or mistaken data.
+    nutrient = r'(?:蛋白质|蛋白|碳水化合物|碳水|脂肪|膳食纤维|营养)(?!质|化合物)'
+    nutrient_claim = re.compile(
+        rf'{nutrient}(?:摄入|量)?(?:明显|严重|偏)?(?:不足|缺乏|欠缺|太少|偏少)'
+        rf'|(?:缺少|缺乏|缺){nutrient}(?!数据|字段|信息|记录)'
+        rf'|缺口[^。！？!?；;，,\n]{{0,12}}?{nutrient}'
+    )
+    record_error_claim = re.compile(
+        r'重复(?:录入|记录|记账|记了)'
+        r'|(?:记录|条目|早餐|午餐|晚餐|餐次)[^。！？!?；;，,\n]{0,16}?重复(?:的|了)?$'
+        r'|(?:误录|误记|错录|误标|标错|记错|错标|被标成)'
     )
     for clause in re.split(r'[。！？!?；;，,\n]|但是|但|然而|不过', text):
-        for match in intake_claim.finditer(clause):
-            prefix = clause[:match.start()]
-            if uncertainty.search(prefix) or re.search(r'(?:避免|防止)\s*$', prefix):
-                continue
-            return 'summary_advice_infers_complete_intake'
+        for pattern, reason in (
+            (nutrient_claim, 'summary_advice_infers_nutrient_gap'),
+            (record_error_claim, 'summary_advice_infers_record_error'),
+            (intake_claim, 'summary_advice_infers_complete_intake'),
+        ):
+            for match in pattern.finditer(clause):
+                # Record claims may include a subject before a negated verdict.
+                # Bind uncertainty to that verdict, not to the subject's start.
+                prefix = clause[:match.start()]
+                uncertainty_scope = clause[:match.end()] if pattern is record_error_claim else prefix
+                if uncertainty.search(uncertainty_scope) or re.search(r'(?:避免|防止)\s*$', prefix):
+                    continue
+                if pattern is record_error_claim and re.search(
+                    r'(?:核对|确认|检查|查看)[^。！？!?；;，,\n]{0,24}?(?:是否|有没有)',
+                    clause[:match.end()],
+                ):
+                    continue
+                return reason
     return None
 
 

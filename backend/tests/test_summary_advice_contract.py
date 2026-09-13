@@ -134,3 +134,53 @@ def test_heading_cannot_verify_placeholder_or_only_a_promise_to_answer(text):
 ])
 def test_explained_limits_or_real_actions_are_not_empty_advice(text):
     assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text,reason", [
+    ("建议：我会先分析。", "summary_advice_not_delivered"),
+    ("建议：我会先查询，然后给出建议。", "summary_advice_not_delivered"),
+    ("建议：蛋白数据缺失，说明今天缺口大概率在蛋白侧。", "summary_advice_infers_nutrient_gap"),
+    ("建议：你的蛋白质摄入不足，应补充食物。", "summary_advice_infers_nutrient_gap"),
+    ("建议：你今天缺少膳食纤维。", "summary_advice_infers_nutrient_gap"),
+    ("建议：营养缺乏，需要调整饮食。", "summary_advice_infers_nutrient_gap"),
+    ("建议：两条早餐名称和热量相同，说明是重复录入，建议删除其中一条。", "summary_advice_infers_record_error"),
+    ("建议：两条记录重复，建议删掉一条。", "summary_advice_infers_record_error"),
+    ("建议：午餐被标成了晚餐，建议改正餐次。", "summary_advice_infers_record_error"),
+    ("建议：不能认定是重复录入，但这两条记录重复。", "summary_advice_infers_record_error"),
+])
+def test_retained_advice_cannot_assert_known_unsupported_inference_categories(text, reason):
+    assert daily.summary_advice_contract_failure(text) == reason
+
+
+@pytest.mark.parametrize("text", [
+    "建议：缺少蛋白质数据，请补充记录。",
+    "建议：营养字段缺失不代表营养缺乏。",
+    "建议：没有足够证据判断蛋白质摄入不足。",
+    "建议：不能据此判断缺口在蛋白质侧。",
+    "建议：可以先核对是否存在重复录入。",
+    "建议：可以检查两条记录是否重复。",
+    "建议：不能认定两条记录重复。",
+    "建议：餐次标签与当前时间不同，不代表午餐被标成了晚餐。",
+    "建议：先核对餐次和实际用餐时间是否一致。",
+    "建议：我会先分析。你可以先核对记录是否完整。",
+])
+def test_missing_data_and_non_presupposing_record_checks_still_complete(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：两条记录相同不代表重复录入。",
+    "建议：餐次标签差异不足以证明误录。",
+    "建议：晚餐标记不能说明午餐被标成了晚餐。",
+    "建议：需要时可以对记录重复查询。",
+])
+def test_record_error_negation_applies_to_the_verdict_after_its_subject(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：避免重复录入。",
+    "建议：防止重复记录，先核对已保存条目。",
+])
+def test_record_error_prevention_is_an_action_not_a_claim(text):
+    assert daily.summary_advice_contract_failure(text) is None
