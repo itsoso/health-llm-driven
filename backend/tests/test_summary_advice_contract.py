@@ -298,3 +298,28 @@ def test_one_uncertainty_operator_can_cover_complete_alternative_complements(tex
 ])
 def test_alternative_binding_cannot_admit_a_check_or_new_affirmative_proposition(text):
     assert daily.summary_advice_contract_failure(text) is not None
+
+
+PLAIN_HEADING_LIVE_CANDIDATE = '建议  \n目前只能评价已记录部分，不能据此判断全天整体饮食是否均衡或充足；未提供的食物份量、营养细节属于未知。若想更准确评估，可提供具体食物和份量信息。'
+
+@pytest.mark.parametrize('text', [PLAIN_HEADING_LIVE_CANDIDATE, PLAIN_HEADING_LIVE_CANDIDATE.replace('\n','\r\n'), '\n\n' + PLAIN_HEADING_LIVE_CANDIDATE, '旧事实不进入建议。\n\n' + PLAIN_HEADING_LIVE_CANDIDATE, '建议\n\n目前提供的信息不足以评价营养是否均衡。', '建议\t\r\n目前提供的信息不足以评价营养是否均衡。'])
+def test_plain_line_advice_retained(text):
+    advice = daily.summary_advice_text(text, require_heading=True)
+    assert advice.strip().startswith('建议')
+    assert '旧事实' not in advice
+    assert daily.summary_advice_contract_failure(advice) is None
+
+@pytest.mark.parametrize('text', ['我的建议是补充份量信息。', '建议补充份量信息。', '以下是建议，请核对份量。'])
+def test_inline_prose_is_not_a_heading(text):
+    assert daily.summary_advice_text(text, require_heading=True) == ''
+
+@pytest.mark.parametrize('text,reason', [
+    ('建议', 'summary_advice_unavailable'), ('建议  \r\n\r\n', 'summary_advice_unavailable'),
+    ('建议\n暂无建议。', 'summary_advice_unavailable'),
+    ('建议\n我会先分析。', 'summary_advice_not_delivered'),
+    ('建议\n蛋白质摄入不足，应增加蛋白质食物。', 'summary_advice_infers_nutrient_gap'),
+    ('建议\n这些记录确实重复录入，建议删除一条。', 'summary_advice_infers_record_error'),
+])
+def test_heading_does_not_prove_answer_delivered(text, reason):
+    extracted = daily.summary_advice_text(text, require_heading=True)
+    assert daily.summary_advice_contract_failure(extracted) == reason

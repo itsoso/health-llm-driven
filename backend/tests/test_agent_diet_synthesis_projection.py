@@ -51,7 +51,7 @@ def test_static_projection_retains_same_rules_without_loading_personal_context(d
     assert '本轮权威医学证据已由健康证据运行时完成' not in projected
 
 
-async def _run(db, user, monkeypatch, *, query, panel=False, result_kind='valid', model_id='qwen3.8-max-preview', answer_kind='valid'):
+async def _run(db, user, monkeypatch, *, query, panel=False, result_kind='valid', model_id='qwen3.8-max-preview', answer_kind='valid', answer_text=None):
     _context_sentinels(monkeypatch)
     from app.services.agent_conversation_service import AgentConversationService
     original_history = AgentConversationService.build_messages
@@ -77,7 +77,7 @@ async def _run(db, user, monkeypatch, *, query, panel=False, result_kind='valid'
                 yield {'type': 'tool_calls', 'tool_calls': [{'id': 'unrequested-write', 'type': 'function', 'function': {'name': 'health_record', 'arguments': '{"record_type":"water","data":{"amount":200}}'}}]}
                 yield {'type': 'finish', 'finish_reason': 'tool_calls'}
             else:
-                yield {'type': 'content', 'text': '建议：当前提供的信息不足以评价营养是否均衡，可以补充实际食物份量供后续核对。'}
+                yield {'type': 'content', 'text': answer_text if answer_text is not None else '建议：当前提供的信息不足以评价营养是否均衡，可以补充实际食物份量供后续核对。'}
                 yield {'type': 'finish', 'finish_reason': 'stop'}
     provider = Provider()
     monkeypatch.setattr('app.services.llm.factory.create_provider_for_model_id', lambda model_id, **k: Provider(model_id))
@@ -190,4 +190,18 @@ async def test_synthesis_tool_proposal_cannot_write_or_claim_completion(db, auth
     assert len(dispatched) == 1 and dispatched[0].tool_name == 'health_query'
     assert not done['write_receipts'] and done['turn_outcome']['status'] == 'partial'
     assert next(goal for goal in done['turn_outcome']['goals'] if goal['goal_id'] == 'diet_advice')['status'] == 'failed'
+    assert '已记录3条' in saved.content and '1020' in saved.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('heading', ['建议  \n', '建议  \r\n', '建议\n\n'])
+async def test_plain_heading_live_candidate_survives_real_provider_and_persistence(db, auth_user_and_headers, monkeypatch, heading):
+    user, _ = auth_user_and_headers
+    answer = heading + '目前只能评价已记录部分，不能据此判断全天整体饮食是否均衡或充足；未提供的食物份量、营养细节属于未知。若想更准确评估，可提供具体食物和份量信息。'
+    _, calls, dispatched, done, saved = await _run(db, user, monkeypatch, query='今天我吃的怎么样?', answer_text=answer)
+    assert len(calls) == 2 and len(dispatched) == 1
+    assert done['turn_outcome']['status'] == 'complete'
+    assert next(goal for goal in done['turn_outcome']['goals'] if goal['goal_id'] == 'diet_advice')['status'] == 'verified'
+    assert '目前只能评价已记录部分' in saved.content
+    assert '建议未能生成' not in saved.content
     assert '已记录3条' in saved.content and '1020' in saved.content

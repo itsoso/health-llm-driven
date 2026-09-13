@@ -148,7 +148,7 @@ def summary_advice_text(text: str, *, require_heading: bool = False) -> str:
     """Keep an explicitly headed advice section, including its heading text."""
     heading = re.search(
         r'^[ \t]*(?:#{1,6}[ \t]*建议(?:[（(][^\n）)]*[）)])?[ \t]*$'
-        r'|\*\*建议\*\*[ \t]*$|建议[：:])', text, re.MULTILINE,
+        r'|\*\*建议\*\*[ \t]*$|建议[ \t]*\r?$|建议[：:])', text, re.MULTILINE,
     )
     return text[heading.start():] if heading else ('' if require_heading else text)
 
