@@ -237,20 +237,42 @@ def summary_advice_contract_failure(text: str) -> str | None:
         rf'|[一二两三几多\d]+条|记录|条目|早餐|午餐|晚餐|餐次|{nutrient}'
         r'|是否|有没有|存在|属于|为|是|有){0,12}'
     )
+    claim_patterns = (
+        (nutrient_claim, 'summary_advice_infers_nutrient_gap'),
+        (record_error_claim, 'summary_advice_infers_record_error'),
+        (intake_claim, 'summary_advice_infers_complete_intake'),
+    )
+
+    def claim_prefix(value: str, pattern: Any, match: re.Match) -> str:
+        start = match.start()
+        if pattern is record_error_claim:
+            verdict = re.search(r'重复|误录|误记|错录|误标|标错|记错|错标|被标成', match.group())
+            if verdict is not None:
+                start += verdict.start()
+        return value[:start]
+
+    def complete_alternative(value: str) -> bool:
+        # A preceding alternative must be a whole detected proposition with a
+        # permitted subject, not a completed check or arbitrary connecting prose.
+        return any(
+            match.end() == len(value)
+            and uncertainty_subject.fullmatch(claim_prefix(value, pattern, match))
+            for pattern, _ in claim_patterns for match in pattern.finditer(value)
+        )
+
+    def uncertainty_covers(prefix: str) -> bool:
+        for operator in uncertainty.finditer(prefix):
+            alternatives = re.split(r'或者|或', prefix[operator.end():])
+            if (uncertainty_subject.fullmatch(alternatives[-1])
+                    and all(complete_alternative(item) for item in alternatives[:-1])):
+                return True
+        return False
+
     for clause in re.split(r'[。！？!?；;，,\n]|但是|但|然而|不过', text):
-        for pattern, reason in (
-            (nutrient_claim, 'summary_advice_infers_nutrient_gap'),
-            (record_error_claim, 'summary_advice_infers_record_error'),
-            (intake_claim, 'summary_advice_infers_complete_intake'),
-        ):
+        for pattern, reason in claim_patterns:
             for match in pattern.finditer(clause):
-                prefix = clause[:match.start()]
-                if pattern is record_error_claim:
-                    verdict = re.search(r'重复|误录|误记|错录|误标|标错|记错|错标|被标成', match.group())
-                    if verdict is not None:
-                        prefix = clause[:match.start() + verdict.start()]
-                if any(uncertainty_subject.fullmatch(prefix[operator.end():])
-                       for operator in uncertainty.finditer(prefix)):
+                prefix = claim_prefix(clause, pattern, match)
+                if uncertainty_covers(prefix):
                     continue
                 if re.search(r'(?:避免|防止)\s*$', prefix):
                     continue

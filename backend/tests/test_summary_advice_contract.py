@@ -274,3 +274,27 @@ def test_uncertainty_only_qualifies_its_own_proposition(text):
 ])
 def test_local_uncertainty_with_a_subject_remains_substantive(text):
     assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：无法判断是否存在重复录入或误录。",
+    "建议：无法判断是否存在重复录入或者误录。",
+    "建议：无法判断是否蛋白质摄入不足或膳食纤维不足。",
+    "建议：不代表蛋白质摄入不足或者营养缺乏。",
+    "建议：不能判断是否重复录入或误录或者蛋白质摄入不足。",
+    "建议：无法判断这些记录重复或营养缺乏。",
+])
+def test_one_uncertainty_operator_can_cover_complete_alternative_complements(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：无法判断是否存在重复录入或核对后确认这些记录重复录入。",
+    "建议：无法判断记录是否完整或这些记录确实重复录入。",
+    "建议：无法判断是否存在重复录入或是否完整后确认蛋白质摄入不足。",
+    "建议：无法判断是否蛋白质摄入不足或者记录核对后确认存在重复录入。",
+    "建议：无法判断是否存在重复录入或误录且这些记录确实重复录入。",
+    "建议：不能判断是否缺蛋白或膳食纤维不足但蛋白质摄入不足。",
+])
+def test_alternative_binding_cannot_admit_a_check_or_new_affirmative_proposition(text):
+    assert daily.summary_advice_contract_failure(text) is not None

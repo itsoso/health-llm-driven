@@ -75,6 +75,8 @@ LIVE_CANDIDATE = """## 今天查到的饮食事实
     ("建议：核对是否完整后确认这是重复录入。", "stop"),
     ("建议：无法判断是否重复录入且这些记录确实重复录入，建议删除一条。", "stop"),
     ("建议：不能判断是否缺蛋白且蛋白质摄入不足，应增加蛋白质食物。", "stop"),
+    ("建议：无法判断是否存在重复录入或误录且这些记录确实重复录入。", "stop"),
+    ("建议：无法判断记录是否完整或这些记录确实重复录入。", "stop"),
     ("本轮生成失败，请重试。", "error"),
     ("我会先查询今天的饮食记录，然后给出建议。", "stop"),
 ])
@@ -160,6 +162,8 @@ async def test_explained_evaluation_limit_is_a_substantive_answer(db, auth_user_
 @pytest.mark.parametrize("reply", [
     "建议：目前缺少蛋白质的记录，请补充食物份量和营养信息。",
     "建议：是否存在重复录入需要先核对，不能直接删除记录。",
+    "建议：无法判断是否存在重复录入或误录，请先核对明细。",
+    "建议：无法判断是否蛋白质摄入不足或膳食纤维不足，请先补全营养信息。",
 ])
 async def test_missing_field_noun_and_unresolved_record_question_are_retained(db, auth_user_and_headers, monkeypatch, reply):
     user, _ = auth_user_and_headers
