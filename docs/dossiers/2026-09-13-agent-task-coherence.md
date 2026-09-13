@@ -392,3 +392,17 @@ New scope tests first failed with 36 failures / 7 passes (`reva-feedback-integra
 
 
 Final related verification passed 6,604/6,604 tests across 32 modules, no failures/errors/skips, exit 0, with unchanged application source (`reva-feedback-integrated-_8tqljaa/receipt.json`). System Map, Skill governance, dossier consistency, blocking Ruff, tracked-secret and diff checks passed. This freezes the combined timing-field and multi-read tool-scope repair for fresh independent G4. No previous actual-model, PostgreSQL, formal or CI result is promoted to a verdict for this revision.
+
+## Composed answer responsibility — current repair
+
+Candidate `9fa57bf84507d56919af01e3b39cd92e38337c80` retained independent review24 GO, but its v4 actual run stopped after the first Max case. The owned reads, window, proposal/dispatch accounting and persistence checks passed; the model's freely generated field-request checklist hit the unchanged medical guard. Two calls reserved 23,597 tokens. The original failed output and hashes remain in `/tmp/reva-coherence-9fa57bf8-v4-actual-failure-manifest.json`; downstream release gates did not run.
+
+The repair assigns missing-field disclosures to the deterministic verified-record summary. It distinguishes fields missing from every record from fields missing in only some records; zero remains a known value. Unverified results and empty result sets do not generate field inventories. Only a fixed vocabulary derived from the typed known/unknown states is displayed, never arbitrary record text.
+
+The composed answer model supplies supported qualitative observations and optional conditional next steps. It does not generate collection tasks, repeat missing-field checklists, or turn incomplete meal logs into individual nutritional-deficiency claims. The same contract applies to ordinary, panel and continuation responses. The existing medical guidance validator remains unchanged. A composed-only nutritional assertion backstop preserves trusted facts and marks unsupported candidate conclusions as blocked; this is a bounded backstop, not a claim of exhaustive medical inference verification.
+
+Pre-fix focused run `reva-feedback-integrated-ou4vk81e` recorded 21 failures and 588 passes with unchanged application sources. Fresh fixed-source G4, all four actual model cases with full-answer review, PostgreSQL, formal live, wide CI, exact remote CI and production verification remain required. No full candidate deployment is claimed.
+
+Focused implementation verification passed 609/609 (`reva-feedback-integrated-7tenjgy6`). Additional assertion-polarity regressions retained the two expected pre-fix failures (`reva-feedback-integrated-5w5eizyh`) and then passed 10/10 (`reva-feedback-integrated-hh9zwaad`), including partial-field coverage and zero-valued nutrients. Full fixed-source verification is still pending.
+
+Full associated regression passed 6,635/6,635 across 32 modules with no skips, failures or errors (`reva-feedback-integrated-2zzhh5lb`, 359.939 seconds). Service-source fingerprints were unchanged throughout. System Map, blocking Ruff, dossier consistency, Skill governance, tracked-secret scan and diff checks passed. This evidence prepares the fixed candidate for fresh G4; actual and downstream release gates remain pending.

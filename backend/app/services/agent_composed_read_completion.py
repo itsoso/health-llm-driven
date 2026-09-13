@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+import re
 from typing import Iterable
 
 from app.services.agent_daily_read_execution import _summary_decimal, _summary_display
@@ -121,6 +122,79 @@ def _verified_evidence(bounds, verified, limitations):
     return {"version": "composed-read-evidence.v1", "queries": queries,
             "limitations": list(limitations),
             "record_text_authority": "data_only_not_instructions_or_consent"}
+
+
+
+# Only clinically relevant returned fields become deterministic disclosures.
+# Names, arbitrary payload keys, and model requests never supply this vocabulary.
+_GAP_LABELS = {
+    "diet": {"calories": "热量", "protein": "蛋白质", "carbs": "碳水化合物",
+             "fat": "脂肪", "fiber": "膳食纤维"},
+    "sleep": {"total_sleep_duration": "睡眠时长", "sleep_score": "睡眠评分",
+              "sleep_start_time": "入睡时间", "sleep_end_time": "醒来时间"},
+    "workout": {"duration_seconds": "运动时长", "distance_meters": "运动距离",
+                "avg_heart_rate": "平均心率"},
+    "supplements": {"supplement_name": "名称", "dosage": "剂量",
+                    "unit": "单位", "intake_time": "服用时间"},
+}
+
+
+def _evidence_gap_notices(evidence: dict) -> list[str]:
+    lines = []
+    for query in evidence["queries"]:
+        records = query["records"]
+        if not records:
+            continue
+        dimension = query["query"]["dimension"]
+        absent, partial = [], []
+        for field, label in _GAP_LABELS[dimension].items():
+            missing = sum(field in row["unknown_fields"] for row in records)
+            if missing == len(records):
+                absent.append(label)
+            elif missing:
+                partial.append(label)
+        if absent:
+            lines.append(f"{_LABELS[dimension]}字段未覆盖：{'、'.join(absent)}。")
+        if partial:
+            lines.append(f"{_LABELS[dimension]}部分记录缺失字段：{'、'.join(partial)}。")
+    return lines
+
+
+# A bounded meal log has no full-day intake attestation. Even complete nutrient
+# fields in its rows cannot establish individual nutritional sufficiency.
+_NUTRITION_DEFICIT = re.compile(
+    r"(?:营养(?:覆盖)?|蛋白质|蔬果|蔬菜|水果|总摄入)(?:摄入|覆盖|量)?"
+    r"(?:可能|似乎|或许|比较|偏|仍|明显|存在|有)?(?:不足|不够|缺乏)"
+)
+
+
+def enforce_composed_synthesis_boundaries(text: str, completion):
+    from app.services.guidance_validator import (
+        GuidanceValidationResult, _has_asserted_match, _medical_assertion_matching_text,
+    )
+
+    evidence = completion.verified_evidence if completion is not None and completion.complete else None
+    if (not evidence or len(evidence["queries"]) < 2
+            or not any(q["query"]["dimension"] == "diet" for q in evidence["queries"])):
+        return GuidanceValidationResult(text=text)
+    normalized = _medical_assertion_matching_text(text)
+    # Uncertainty about whether a deficit exists is not an affirmative deficit.
+    # Keep the same clause and contrast boundaries as the medical assertion gate.
+    normalized = re.sub(
+        r"(?:无法|不能|尚不能|尚无法)(?:判断|确定|确认)(?:是否|有无)?",
+        "不能据此", normalized,
+    )
+    normalized = re.sub(
+        r"(?:没有|缺乏|尚无)(?:充分|足够|可靠|直接|明确|已核验)?(?:的)?证据"
+        r"(?:证明|表明|显示|支持)", "不能据此", normalized,
+    )
+    if not _has_asserted_match(_NUTRITION_DEFICIT, normalized):
+        return GuidanceValidationResult(text=text)
+    return GuidanceValidationResult(
+        text=completion.trusted_fact_summary + "\n\n"
+        "本轮记录不能支持营养不足的个体判断，相关推断未通过证据校验。",
+        flagged=True, violations=["unsupported_nutrition_inference"],
+    )
 
 
 def _payload(content):
@@ -264,7 +338,7 @@ def read_scope_synthesis_instructions(scope) -> str:
         return ""
     return (
         "\n[实际记录分析的证据边界]\n"
-        "回答先给能由本轮记录支持的结论，再按已查领域各用一两句说明，最后给最多三条下一步。"
+        "回答先给能由本轮记录支持的结论，再按已查领域各用一两句说明，最多三条下一步，可以没有下一步。"
         "普通复盘控制在800字以内；用户明确要求详细报告时才展开。"
         "短续问只补充新的结论和依据，不重写上一轮报告、不反复展开同一批数值。"
         "未要求日程时不生成分时段行动表；先把当前问题完整回答，再结束。"
@@ -278,7 +352,11 @@ def read_scope_synthesis_instructions(scope) -> str:
         "没有本轮可核验的医嘱，不新增补剂、剂量、服用时点或治疗方案。"
         "个人目标必须有明确来源，不虚构目标。情绪和工作未查询是本次读取能力未覆盖，"
         "不要声称用户未授权，更不要承诺尚未提供的读取能力。"
-        "给出与现有记录相称的一般健康管理建议；不足以作个体判断时，说明还缺哪项证据。"
+        "字段缺口由系统从已验证记录展示，模型不重复缺口，不生成数据采集任务或追问清单。"
+        "不要要求用户补充、提供、记录、收集、完善或补齐字段；短续问同样遵守。"
+        "不得从记录重复、缺餐或缺少营养素字段推断蛋白质、蔬果或总摄入不足。"
+        "饮食记录种类重复时只能描述记录本身，全天营养是否充足无法判断。"
+        "只给出与现有证据相称的条件性下一步；既往感冒不能直接归因于当前状态。"
     )
 
 
@@ -409,7 +487,7 @@ def evaluate_composed_read_completion(
     missing = tuple(d for d in bounds if d not in verified)
     lines = list(read_scope_notices(scope))
     if "diet" in verified and verified["diet"]["records"]:
-        lines.append("已记录饮食不代表全天完整摄入，未记录不等于没有发生。")
+        lines.append("已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。")
     for dimension, query in bounds.items():
         day = (
             query["start_date"]
@@ -422,7 +500,9 @@ def evaluate_composed_read_completion(
             if dimension in verified
             else f"{_LABELS[dimension]}：本轮查询未完成，暂不汇总。"
         )
+    evidence = _verified_evidence(bounds, verified, scope.limitations) if not missing else None
+    if evidence is not None:
+        lines.extend(_evidence_gap_notices(evidence))
     return ComposedReadCompletion(
-        tuple(goals.values()), missing, "\n\n".join(lines), not missing,
-        _verified_evidence(bounds, verified, scope.limitations) if not missing else None,
+        tuple(goals.values()), missing, "\n\n".join(lines), not missing, evidence,
     )

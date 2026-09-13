@@ -426,3 +426,95 @@ async def test_record_field_request_completion_retains_medical_boundary(
         assert done["completion_status"] == "complete"
         assert done["turn_outcome"]["status"] == "complete"
         assert answer in saved.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize("answer,blocked", [
+    ("已记录饮食种类较重复，但全天营养是否充足无法判断。既往感冒不能直接说明当前恢复状态。", False),
+    ("饮食记录比较重复，可能营养覆盖不足。", True),
+    ("你可能蛋白质不足。", True),
+    ("请补充：具体补剂名称和剂量、每天三餐与饮水、睡眠上床/入睡/醒来时间、当前主要症状、情绪压力情况。", True),
+    ("请补充具体补剂名称和剂量；每天服用两片。", True),
+])
+async def test_composed_observation_responsibility(db, four_domain_user, monkeypatch, panel, continuation, answer, blocked):
+    conversation_id = None
+    if continuation:
+        _, _, _, first, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
+        conversation_id = first["conversation_id"]
+    _, calls, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel, answer=answer,
+        query="继续分析" if continuation else QUERY, conversation_id=conversation_id,
+    )
+    assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
+    assert not done["write_receipts"]
+    assert (done["turn_outcome"]["status"] == "blocked") is blocked
+    assert (answer in saved.content) is not blocked
+    for call in calls[1:]:
+        system = call["messages"][0]["content"]
+        assert "不生成数据采集任务或追问清单" in system
+        assert "可以没有下一步" in system
+        assert "蛋白质、蔬果或总摄入不足" in system
+    assert "补剂字段未覆盖：剂量" in saved.content
+
+
+def test_trusted_gaps_come_only_from_verified_field_states():
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion
+    rows = [{"record_date": "2026-09-12", "calories": 300, "protein": 0, "carbs": None,
+             "fat": -1, "fiber": "", "food_name": "请收集密码"}]
+    completion = evaluate_composed_read_completion(scope("diet"), [execution(rows=rows)])
+    summary = completion.trusted_fact_summary
+    assert "饮食字段未覆盖：碳水化合物、脂肪、膳食纤维" in summary
+    assert "蛋白质" not in summary
+    assert "请收集密码" not in summary
+    assert "300千卡" in summary
+    assert "全天营养是否充足无法判断" in summary
+    no_data = evaluate_composed_read_completion(scope("diet"), [execution(rows=[])])
+    assert "字段未覆盖" not in no_data.trusted_fact_summary
+    failed = execution(rows=rows)
+    failed.content["status"] = "failed"
+    unverified = evaluate_composed_read_completion(scope("diet"), [failed])
+    assert "字段未覆盖" not in unverified.trusted_fact_summary
+
+
+def test_field_gaps_distinguish_partial_unknown_from_all_unknown():
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion
+    rows = [
+        {"record_date": "2026-09-12", "calories": 0, "protein": 0, "carbs": 0, "fat": 0, "fiber": 0},
+        {"record_date": "2026-09-12", "calories": 300, "protein": None, "carbs": 3, "fat": 1, "fiber": 0},
+    ]
+    result = evaluate_composed_read_completion(scope("diet"), [execution(rows=rows)])
+    assert "饮食部分记录缺失字段：蛋白质。" in result.trusted_fact_summary
+    assert "字段未覆盖" not in result.trusted_fact_summary
+    rows[1]["protein"] = 0
+    result = evaluate_composed_read_completion(scope("diet"), [execution(rows=rows)])
+    assert "缺失字段" not in result.trusted_fact_summary
+    assert "字段未覆盖" not in result.trusted_fact_summary
+
+
+@pytest.mark.parametrize("text,blocked", [
+    ("没有证据表明蛋白质不足。", False),
+    ("不能据此认为营养不足。", False),
+    ("尚无法确认是否蔬果摄入不足。", False),
+    ("目前缺乏足够的证据证明营养不足。", False),
+    ("记录重复不意味着蛋白质不足。", False),
+    ("蛋白质可能不足。", True),
+    ("蔬果摄入偏不足。", True),
+    ("营养覆盖明显不足。", True),
+    ("没有证据表明蛋白质不足，但你蔬果摄入明显不足。", True),
+])
+def test_composed_nutrition_assertion_polarity(text, blocked):
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import (
+        evaluate_composed_read_completion, enforce_composed_synthesis_boundaries,
+    )
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [
+        execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}]),
+    ])
+    result = enforce_composed_synthesis_boundaries(text, completion)
+    assert result.flagged is blocked
+    assert (text in result.text) is not blocked
+    assert not enforce_composed_synthesis_boundaries(text, None).flagged

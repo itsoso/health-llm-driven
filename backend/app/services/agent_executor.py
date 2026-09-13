@@ -12197,7 +12197,8 @@ class AgentExecutor:
         )
         instruction = (
             "本轮已完成已授权范围的读取，接下来只生成简短的定性观察与最多三条相关下一步。"
-            "事实段由系统展示，不重新计算或复述热量、时长等观测数值，不按相同名称去重。"
+            "事实与字段缺口由系统展示，模型只分析已验证观察，不重复系统缺口。"
+            "不重新计算或复述热量、时长等观测数值，不按相同名称去重。"
             "先说明本轮已知记录支持的观察，不把信息齐全作为一切评价的前提。"
             "不新增个体用药、补剂、剂量、治疗或训练处方，不自发生成作息时间表。"
             "数据未覆盖不能解释为用户未授权或未记录，不承诺新增读取能力。"
@@ -13484,8 +13485,14 @@ class AgentExecutor:
             safe = _strip_reva_ui_from_llm_text(quality.text)
             safe = _strip_botched_text_tool_leak(safe)
             safe = _strip_scope_refusal_preamble(safe)
+            from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
+
+            composed_boundary = enforce_composed_synthesis_boundaries(
+                safe, self._composed_read_completion() if panel_synthesis_messages is not None else None,
+            )
+            panel_medical_flags.update(composed_boundary.violations)
             boundary = enforce_medical_evidence_boundaries(
-                safe,
+                composed_boundary.text,
                 evidence_sources=sources_used[1:],
                 verified_write_receipt=any(
                     isinstance(receipt, dict) and receipt.get("verified") is True
@@ -17812,8 +17819,13 @@ class AgentExecutor:
                 full_reply = facts
         if self._turn_daily_read_plan is not None and self._turn_daily_read_plan.sync_status_requested:
             full_reply = self._trusted_read_summary()
+        from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
+
+        composed_boundary = enforce_composed_synthesis_boundaries(
+            full_reply, composed_completion if composed_synthesis_used else None,
+        )
         medical_boundary = enforce_medical_evidence_boundaries(
-            full_reply,
+            composed_boundary.text,
             model_generated=not (
                 deterministic_query_mode == "on"
                 and deterministic_query_text
@@ -17834,6 +17846,11 @@ class AgentExecutor:
             trusted_write_summary=_trusted_receipt_summary(write_receipts),
             trusted_fact_summary=self._trusted_read_summary(),
         )
+        if composed_boundary.flagged:
+            medical_boundary.flagged = True
+            medical_boundary.violations = list(dict.fromkeys(
+                [*medical_boundary.violations, *composed_boundary.violations],
+            ))
         if medical_boundary.flagged:
             logger.warning(
                 "[agent_executor] medical boundary sanitized response violations=%s",
