@@ -14249,6 +14249,8 @@ class AgentExecutor:
                 p = create_provider_for_model_id(model_id)
                 r = await p.chat(messages=persp_messages, model=None, temperature=0.4,
                                  max_tokens=4000, stream=False, return_metadata=True)
+                if isinstance(r, dict) and r.get("finish_reason") != "stop":
+                    raise ValueError("incomplete_panel_perspective")
                 perspective_text = (r.get("content") if isinstance(r, dict) else str(r)) or ""
                 if not perspective_text.strip():
                     raise ValueError("empty_panel_perspective")
@@ -14287,6 +14289,8 @@ class AgentExecutor:
             synth_provider = create_provider_for_model_id(MULTI_MODEL_SYNTH_ID)
             synth_resp = await synth_provider.chat(messages=synth_messages, model=None, temperature=0.3,
                                                    max_tokens=ANSWER_MAX_TOKENS, stream=False, return_metadata=True)
+            if isinstance(synth_resp, dict) and synth_resp.get("finish_reason") != "stop":
+                raise ValueError("incomplete_panel_synthesis")
             final_text = (synth_resp.get("content") if isinstance(synth_resp, dict) else str(synth_resp)) or ""
 
             if not final_text.strip():

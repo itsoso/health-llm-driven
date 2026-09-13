@@ -19,7 +19,8 @@ from tests.test_agent_read_repair_round_budget import (
 
 
 async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", partial=False,
-                         answer=ANSWER, rogue_tool=False, finish_reason="stop", query=QUERY, conversation_id=None):
+                         answer=ANSWER, rogue_tool=False, finish_reason="stop", query=QUERY, conversation_id=None,
+                         stage_reply=None):
     _context_sentinels(monkeypatch)
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *a, **k: "OLD_KNOWLEDGE_SENTINEL")
@@ -58,6 +59,8 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
                     "id": "unauthorized-after-read", "type": "function", "function": {
                         "name": "health_record", "arguments": '{"record_type":"water","data":{"amount":200}}'},
                 }]}
+            if stage_reply is not None and len(calls) > 2 and self.model == stage_reply[0]:
+                return {"content": stage_reply[1], "finish_reason": stage_reply[2]}
             return {"content": answer, "finish_reason": finish_reason}
 
         async def chat(self, **kwargs):
@@ -257,6 +260,29 @@ async def test_complete_reads_do_not_disguise_empty_or_truncated_advice(db, four
     assert done["turn_outcome"]["status"] != "complete"
     assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
     assert "运动：已记录1条" in saved.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage_model", ["gpt-5.5", "gemini-3.1-pro", "claude-opus-4.7"])
+@pytest.mark.parametrize("text,reason", [("INCOMPLETE_STAGE_SENTINEL", "length"),
+                                         ("INCOMPLETE_STAGE_SENTINEL", "error"), ("", "stop")])
+async def test_panel_later_stage_failure_cannot_publish_complete_answer(
+    db, four_domain_user, monkeypatch, stage_model, text, reason,
+):
+    _, calls, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=True,
+        stage_reply=(stage_model, text, reason),
+    )
+    assert done["completion_status"] == "error"
+    assert done["turn_outcome"]["status"] != "complete"
+    assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
+    assert "运动：已记录1条" in saved.content
+    assert "INCOMPLETE_STAGE_SENTINEL" not in saved.content
+    assert not done["write_receipts"]
+    # Both already-started perspectives settle; a failed dependency never
+    # starts final synthesis. A synthesis failure is the fifth provider call.
+    assert [call["provider_model"] for call in calls[2:4]] == ["gpt-5.5", "gemini-3.1-pro"]
+    assert len(calls) == (5 if stage_model == "claude-opus-4.7" else 4)
 
 
 @pytest.mark.asyncio
