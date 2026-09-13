@@ -288,6 +288,35 @@ _INTAKE_TIME_ACTION = re.compile(
     r"(?:建议|应该|应当|必须)[^，,。；;!?！？\n]{0,12}服用时间\s*[:：为]\s*"
     r"(?:睡前|早上|晚上|早晚|餐前|餐后|随餐|\d{1,2}[:：点])"
 )
+# Explicit course changes are actionable even after a harmless clinician
+# question. A duration/state description alone is not a treatment instruction.
+_COURSE_OBJECT = r"(?:疗程|用药周期|服用周期|治疗周期)"
+# Formatting separators are part of the matching view, not new semantic words.
+_COURSE_GAP = r"[ \t\r*_`]*(?:\n[ \t\r*_`]*)?"
+_COURSE_DURATION = _DOSE_NUMBER + _COURSE_GAP + r"(?:天|日|周|星期|个月|月)"
+_COURSE_DURATION_ACTION = re.compile(
+    _COURSE_OBJECT + _COURSE_GAP + r"[:：]?" + _COURSE_GAP
+    + r"(?:改为|改成|调整为|调整到|设为|定为|变更为|延长到|延长至|延长为|缩短到|缩短至|缩短为)"
+    + _COURSE_GAP + _COURSE_DURATION + r"|(?:延长|缩短)" + _COURSE_GAP + _COURSE_OBJECT
+    + _COURSE_GAP + r"(?:到|至|为)" + _COURSE_GAP + _COURSE_DURATION
+)
+
+
+def _course_sentence_view(text: str) -> str:
+    """Keep a wrapped course action in one clause without changing output.
+
+    Replace only newlines inside this finite action grammar, preserving source
+    offsets. A preceding negation on a separate line remains a separate clause;
+    exact trusted clinician relays are compared against the original text.
+    """
+    view = list(text)
+    for match in _COURSE_DURATION_ACTION.finditer(text):
+        for index in range(match.start(), match.end()):
+            if view[index] == "\n":
+                view[index] = " "
+    return "".join(view)
+
+
 _NEGATED_ASSERTION = re.compile(
     r"(?:不要|不能|不可|不得|请勿|切勿|无需|不必|不建议|不意味着|并不意味着|不能据此|不能仅凭)"
     r"[^，,。；;!?！？\n]{0,18}$"
@@ -322,7 +351,9 @@ def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
         # "Cannot metabolize" is itself the genetic claim, not a prohibition.
         if pattern is not _GENETIC_ABSOLUTE and _NEGATED_ASSERTION.search(match.group(0)):
             continue
-        if re.search(r"(?:咨询|询问|请教)(?:医生|药师).{0,8}(?:是否|能否).{0,12}$", prefix):
+        if pattern is not _COURSE_DURATION_ACTION and re.search(
+            r"(?:咨询|询问|请教)(?:医生|药师).{0,8}(?:是否|能否).{0,12}$", prefix,
+        ):
             continue
         return True
     return False
@@ -438,6 +469,7 @@ def _unsupported_advice_reasons(sentence: str) -> list[str]:
     reasons: list[str] = []
     assertion = _regimen_assertion_text(normalized)
     if (_has_asserted_match(_UNSCOPED_REGIMEN, assertion)
+        or _has_asserted_match(_COURSE_DURATION_ACTION, normalized)
         or _has_asserted_match(_INTAKE_TIME_ACTION, assertion)
         or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
         _has_asserted_match(_DOSE_ACTION, normalized)
@@ -456,7 +488,8 @@ def _unsupported_advice_reasons(sentence: str) -> list[str]:
 def requires_medical_evidence_boundary(text: str) -> bool:
     """Whether the turn must be buffered until medical provenance checks finish."""
     normalized = _medical_assertion_matching_text(text)
-    return bool(_SENSITIVE_MEDICAL_TOPIC.search(normalized) or _UNSCOPED_REGIMEN.search(normalized))
+    return bool(_SENSITIVE_MEDICAL_TOPIC.search(normalized) or _UNSCOPED_REGIMEN.search(normalized)
+                or _COURSE_DURATION_ACTION.search(normalized))
 
 
 def build_confirmable_health_fact_draft(text: str) -> dict | None:
@@ -523,8 +556,8 @@ def enforce_medical_evidence_boundaries(
     out_parts: list[str] = []
     trusted_relays: list[str] = []
     relayed_instruction = False
-    for match in re.finditer(r"[^。；;!?！？\n]+[。；;!?！？\n]*|[。；;!?！？\n]+", text):
-        sentence = match.group(0)
+    for match in re.finditer(r"[^。；;!?！？\n]+[。；;!?！？\n]*|[。；;!?！？\n]+", _course_sentence_view(text)):
+        sentence = text[match.start():match.end()]
         is_trusted = has_clinician_instruction and sentence.strip() in trusted
         relayed_instruction = relayed_instruction or is_trusted
         reasons = [] if is_trusted else _unsupported_advice_reasons(sentence)

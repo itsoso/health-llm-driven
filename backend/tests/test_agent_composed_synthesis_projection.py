@@ -899,3 +899,29 @@ def test_composed_meta_query_invitation_local_projection(text, removed, retained
     assert project_composed_answer_quality(original, replace(completion, complete=False)) is original
     single = replace(completion, verified_evidence={"queries": completion.verified_evidence["queries"][:1]})
     assert project_composed_answer_quality(original, single) is original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize("prefix", [
+    "是否需要停用补剂，应由医生判断；",
+    "如需更细的分析，可指定某一天或某个问题。",
+])
+@pytest.mark.parametrize("course_action", ["疗程改为两周。", "**疗程**：延长为\n**6周**。"])
+async def test_composed_course_duration_appended_action(
+    db, four_domain_user, monkeypatch, panel, continuation, prefix, course_action,
+):
+    conversation_id = None
+    if continuation:
+        _, _, _, first, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
+        conversation_id = first["conversation_id"]
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel,
+        answer="已记录活动以散步为主。" + prefix + course_action,
+        query="继续分析" if continuation else QUERY, conversation_id=conversation_id,
+    )
+    assert done["turn_outcome"]["status"] == "blocked"
+    assert course_action not in saved.content
+    assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
+    assert not done["write_receipts"]

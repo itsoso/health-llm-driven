@@ -373,3 +373,102 @@ async def test_main_and_panel_distinguish_time_field_from_timing_action(
     assert done['completion_status'] == ('error' if action else 'complete')
     assert done['turn_outcome']['status'] == ('blocked' if action else 'complete')
     assert (text in saved.content) is not bool(action)
+
+
+@pytest.mark.parametrize("object_name", ["疗程", "用药周期", "服用周期", "治疗周期"])
+@pytest.mark.parametrize("change", ["改为", "改成", "调整为", "调整到", "设为", "定为", "变更为", "延长到", "缩短到", "延长至", "缩短至", "延长为", "缩短为"])
+@pytest.mark.parametrize("duration", ["14天", "两周", "一个月"])
+@pytest.mark.parametrize("prefix", ["", "是否需要停用补剂，应由医生判断；"])
+def test_course_duration_assignment_is_an_unverified_action(object_name, change, duration, prefix):
+    from app.services.guidance_validator import enforce_medical_evidence_boundaries, requires_medical_evidence_boundary
+    text = prefix + object_name + change + duration + "。"
+    assert requires_medical_evidence_boundary(text)
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "既往疗程为两周。", "记录中的疗程时长为14天。", "上次疗程持续一个月。",
+    "疗程已改为两周。", "疗程曾调整为14天。", "既往疗程已延长到两周。",
+    "疗程是否需要调整，应由医生判断。", "疗程时长应由医生决定。",
+    "不要将疗程改为两周。", "不建议把疗程延长到14天。",
+])
+def test_course_duration_records_and_deferred_decisions_are_not_instructions(text):
+    from app.services.guidance_validator import enforce_medical_evidence_boundaries
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+def test_course_duration_requires_exact_independent_clinician_relay():
+    from app.services.guidance_validator import enforce_medical_evidence_boundaries
+    text = "疗程改为两周。"
+    assert not enforce_medical_evidence_boundaries(
+        text, has_clinician_instruction=True, trusted_clinician_instructions=[text],
+    ).flagged
+    assert enforce_medical_evidence_boundaries(text, has_clinician_instruction=True).flagged
+    assert enforce_medical_evidence_boundaries("医生说疗程改为两周。").flagged
+    assert enforce_medical_evidence_boundaries(
+        "疗程改为三周。", has_clinician_instruction=True, trusted_clinician_instructions=[text],
+    ).flagged
+
+
+@pytest.mark.parametrize("text", [
+    "延长疗程至6周。", "缩短治疗周期到5天。", "延长用药周期为两个月。",
+    "缩短服用周期至三星期。", "疗程调整到14日。",
+    "不要自行改疗程，然后疗程改为两周。", "不要自行改疗程，但疗程改为两周。",
+    "是否将疗程延长到两周，应由医生判断。", "请咨询医生是否将疗程延长到两周。",
+])
+def test_course_duration_reversed_and_appended_actions_still_block(text):
+    from app.services.guidance_validator import enforce_medical_evidence_boundaries
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("text,blocked", [
+    ("**疗程**改为两周。", True), ("疗程：改为两周。", True), ("疗程改为**两周**。", True),
+    ("`疗程`调整为`14天`。", True), ("疗程 **延长为** 6周。", True), ("延长**疗程**至6周。", True),
+    ("不建议**疗程**改为两周。", False), ("**疗程**已改为两周。", False),
+    ("记录中的**疗程**为两周。", False), ("不要自行将疗程延长为6周。", False),
+    ("既往疗程已缩短为5天。", False),
+])
+def test_course_duration_presentation_preserves_action_polarity(text, blocked):
+    from app.services.guidance_validator import enforce_medical_evidence_boundaries, requires_medical_evidence_boundary
+    if blocked:
+        assert requires_medical_evidence_boundary(text)
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged is blocked
+    if not blocked:
+        assert text in result.text
+
+
+@pytest.mark.parametrize("text,blocked", [
+    ("疗程\n改为两周。", True), ("疗程改为\n两周。", True), ("延长\n疗程至6周。", True),
+    ("是否需要停用补剂，应由医生判断；**疗程**\n改为两周。", True),
+    ("如需更细的分析，可指定日期。疗程改为\n**两周**。", True),
+    ("不要将疗程\n改为两周。", False), ("**不要将疗程**\n改为两周。", False),
+    ("不要\n疗程改为两周。", True),
+])
+def test_course_duration_line_boundaries(text, blocked):
+    from app.services.guidance_validator import enforce_medical_evidence_boundaries, requires_medical_evidence_boundary
+    if blocked:
+        assert requires_medical_evidence_boundary(text)
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged is blocked
+    if not blocked:
+        assert text in result.text
+
+
+def test_course_duration_trusted_relay_keeps_negated_multiline_claim_safe():
+    from app.services.guidance_validator import enforce_medical_evidence_boundaries
+    trusted = "疗程改为两周。"
+    text = trusted + "不要将疗程\n延长到三周。"
+    result = enforce_medical_evidence_boundaries(text, has_clinician_instruction=True, trusted_clinician_instructions=[trusted])
+    assert not result.flagged and text in result.text
+
+
+@pytest.mark.parametrize("text", ["疗程\n改为两周。", "**疗程**：改为\n**两周**。"])
+def test_course_duration_wrapped_trusted_relay_keeps_original_text(text):
+    from app.services.guidance_validator import enforce_medical_evidence_boundaries
+    result = enforce_medical_evidence_boundaries(text, has_clinician_instruction=True, trusted_clinician_instructions=[text])
+    assert not result.flagged and text in result.text
+    changed = text.replace("两周", "三周")
+    assert enforce_medical_evidence_boundaries(changed, has_clinician_instruction=True, trusted_clinician_instructions=[text]).flagged
