@@ -335,3 +335,15 @@ RED evidence is retained: `reva-feedback-integrated-hy8g_kgg` had five failures 
 
 
 Final field-request repair verification: 293/293 focused tests passed (`reva-feedback-integrated-anw4ivcg/receipt.json`), followed by 1,354/1,354 tests across the 26-module unchanged-source run (`reva-feedback-integrated-85h5rddz/receipt.json`), both exit 0 with no failures/errors/skips. System Map, Skill governance, dossier consistency, blocking Ruff, and diff checks passed. This freezes the repair for a new independent G4; it does not transfer the prior revision's PostgreSQL/actual/CI verdicts or claim deployment.
+
+
+## Independent administration predicates — review 20 repair
+
+Fresh independent G4 rejected `cacfe041cc4faf2746394b445c4562c93e130a45` as critical (`/tmp/reva-coherence-review20-g4.json`, SHA-256 `8c935213792f48bd67da31df296352c23b50b7b84f2a129f226812089e212f78`). The information projection removed an earlier false signal, but an actual later administration command beyond the leading request's bounded window could escape. The independent oracle had 16 failures / 46 passes; the two exact examples were incorrectly complete in both main and panel execution. No PG, paid actual, wide CI, push, or deployment proceeded for that candidate.
+
+The independent oracle is retained as `backend/tests/test_guidance_appended_administration.py` with additional punctuation, connector-length, explicit-action, and unknown-intake controls. The initial expanded RED run `reva-feedback-integrated-g8u20apm` had 76 failures / 50 passes. Administration predicates now match independently of the original request's position: explicit oral dose, mass-unit dose change, and frequency/timing administration each remain visible after local information-object projection. Food quantity wording is not promoted to a medication solely by this new mass-unit branch.
+
+A subsequent existing positive control, an unknown whether-intake statement, exposed a false positive (`reva-feedback-integrated-380y3hzr`: one failure / 418 passes). Its object is now handled by the same local inquiry projection; no global negation or sentence exemption was added. Four unknown-object positive controls and eight appended-command negatives were added. The resulting focused run `reva-feedback-integrated-x0_iscng/receipt.json` passed all 431 tests, source unchanged, exit 0. All prior red receipts remain retained. Full regression and a new fixed-revision G4 are pending before further release activity.
+
+
+Final unchanged-source verification for the administration repair passed 1,492/1,492 tests across the existing 26 modules plus the new independent-administration regression module (`reva-feedback-integrated-g_2yvuu9/receipt.json`), exit 0 with no failures/errors/skips. System Map, governance, blocking Ruff, dossier, and diff checks passed. The candidate is ready for fresh independent G4; PostgreSQL, actual-model quality, CI, push, deployment and production acceptance remain subsequent gates.

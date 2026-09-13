@@ -255,8 +255,13 @@ _REGIMEN_ACTION = re.compile(
 _UNSCOPED_REGIMEN = re.compile(
     r"(?:建议|应该|应当|请|必须|每天|每日|每次)[^。；;!?！？\n]{0,16}"
     r"(?:服用|口服)[^。；;!?！？\n]{0,30}[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
-    r"(?:^|[，,。；;!?！？\n])\s*(?:服用|口服)\s*"
-    r"[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克)|"
+    # These are complete administration predicates, wherever they occur in a
+    # clause. Information projection removes only the questioned object; a
+    # later predicate must not depend on distance from the first 请/建议.
+    r"(?:服用|口服)\s*[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克)|"
+    r"(?:增加到|减少到|加到|减到|提高到|降低到)\s*"
+    r"[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:mg|IU|毫克|微克)|"
+    r"(?:每天|每日|每次|早上|晚上|早晚|睡前|餐前|餐后|随餐)\s*(?:服用|口服)(?!时间)|"
     r"(?:早晚|每天|每日|每次|睡前)\s*(?:各)?\s*[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
     r"(?:每天|每日|每次)\s*(?:增加到|减少到|加到|减到|提高到|降低到)\s*"
     r"[一二两三四五六七八九十\d]+\s*(?:粒|片|mg|IU|毫克|微克)|"
@@ -323,8 +328,9 @@ def _regimen_assertion_text(sentence: str) -> str:
     be checked, including nonnumeric timing instructions after a question.
     """
     sentence = re.sub(
-        r"(^\s*(?:请告诉我|能否告诉我|(?:我)?想确认)(?:是否|能否))(?:服用|口服)\s*"
-        r"[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克)"
+        r"(^\s*(?:请告诉我|能否告诉我|(?:我)?(?:想确认|不知道|不清楚|无法确认|未能确认|未核实))(?:你)?(?:是否|能否))"
+        r"(?:(?:每天|每日|每次|早上|晚上|早晚|睡前|餐前|餐后|随餐)\s*)?(?:服用|口服)"
+        r"(?:\s*[一二两三四五六七八九十百千\d]+(?:\.\d+)?\s*(?:粒|片|mg|IU|毫克|微克))?"
         r"(?=\s*(?:[，,。；;!?！？\n]|$))",
         r"\1有该用药记录", sentence, flags=re.I,
     )
