@@ -305,6 +305,14 @@ _ADVICE_HOLD = "部分建议或推断缺少已核验证据，暂不提供执行�
 
 def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
     for match in pattern.finditer(sentence):
+        if pattern is _REGIMEN_ACTION and any(
+            question.start("question") <= match.start()
+            and match.end() <= question.end("question")
+            for question in _CLINICIAN_ASSESSMENT_QUESTION.finditer(sentence)
+        ):
+            # This narrow decision question cannot authorize a dose, timing,
+            # administration predicate, or a later second regimen action.
+            continue
         prefix = re.split(r"[，,。；;!?！？\n]|但是|但|不过|然而|而是", sentence[:match.start()])[-1]
         # A negated recommendation can begin inside the matched action itself.
         if prefix.endswith("不") and match.group(0).startswith("建议"):
@@ -336,6 +344,22 @@ _RECORD_FIELD_REQUEST = re.compile(
     + r"(?:\s*(?:[/、+和及或]|[，,]\s*(?:以及|以及简单的)?)\s*"
     + _RECORD_FIELD_OBJECT + r")*"
     + r"(?=\s*(?:[。；;!?！？\n]|$))"
+)
+
+
+# A question that explicitly leaves a decision to a clinician is not an
+# instruction or a claimed clinician approval. Admit only this complete grammar;
+# preserve all surrounding text so appended actions still reach the tripwires.
+_ASSESSMENT_MEDICINE = r"(?:补剂|药物|药品|用药|维生素)(?:[/和或及、](?:补剂|药物|药品|用药|维生素))*"
+_ASSESSMENT_DECISION = r"(?:继续|停用|调整|停药|加量|减量)(?:[、或和及](?:继续|停用|调整|停药|加量|减量))*"
+_CLINICIAN_ASSESSMENT_QUESTION = re.compile(
+    r"(?P<lead>^\s*|[，,]\s*)"
+    r"(?P<question>" + _ASSESSMENT_MEDICINE + r"(?:是否|能否)(?:需要|可以)?" + _ASSESSMENT_DECISION
+    + r"|(?:是否|能否)(?:需要|可以)?" + _ASSESSMENT_DECISION + _ASSESSMENT_MEDICINE
+    + r"|(?:是否|能否)(?:需要|可以)?停药)"
+    r"(?P<referral>[，,]\s*(?:应|需|需要|请|须)?由(?:医生|药师)(?:或(?:医生|药师))?"
+    r"(?:结合(?:当前)?(?:症状|检查)(?:(?:和|及)(?:症状|检查))?)?(?:判断|评估|确认))"
+    r"(?=\s*(?:[，,。；;!?！？\n]|$))"
 )
 
 

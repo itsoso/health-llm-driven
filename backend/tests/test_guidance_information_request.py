@@ -247,3 +247,47 @@ def test_intake_inquiry_punctuation_keeps_appended_instruction_visible(separator
     result = enforce_medical_evidence_boundaries(text)
     assert result.flagged
     assert instruction not in result.text
+
+
+@pytest.mark.parametrize("text", [
+    "是否需要继续、停用或调整补剂/药物，应由医生结合当前症状和检查判断；本轮记录不支持个体化剂量或疗效判断。",
+    "是否需要停用补剂，应由医生判断。",
+    "是否调整补剂，需由医生评估。",
+    "是否停药，需由医生评估。",
+    "是否停用补剂，应由药师判断。",
+    "能否停用药物，请由医生判断。",
+    "补剂是否需要停用，应由医生判断。",
+    "是否继续或停用药物，应由医生结合检查评估。",
+    "是否停用补剂，应由医生或药师评估。",
+    "是否停用补剂，应由医生判断；不要自行停药。",
+])
+def test_clinician_assessment_question_is_not_a_regimen(text):
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("text", [
+    "停用补剂，应由医生判断。",
+    "建议停用补剂，医生会评估。",
+    "是否需要停用补剂，应由医生判断，但现在先停用补剂。",
+    "是否需要停用补剂，应由医生判断。每天服用两片。",
+    "是否需要停用补剂，应由医生判断；建议睡前服用。",
+    "是否需要停用补剂，应由医生判断，然后加量。",
+    "是否需要停用补剂，应由医生判断并建议每天服用两片。",
+    "是否需要停用补剂，医生已经判断可以停用。",
+    "是否需要停用补剂，我判断应当停用。",
+    "是否需要停用补剂，按我说的停药。",
+    "是否需要停用补剂，应由医生判断；服用时间改为睡前。",
+    "请告诉医生把补剂停用。",
+    "是否停药，应由医生判断；先停药两周。",
+    "是否停药，应由医生判断，并先停药。",
+    "是否停药，应由医生判断，但你先停药。",
+    "是否停药，应由医生判断后停药。",
+    "是否需要每天服用两片，应由医生判断。",
+    "是否调整服用时间，应由医生判断。",
+    "先停用补剂，再问医生。",
+
+])
+def test_clinician_assessment_question_cannot_authorize_actions(text):
+    assert enforce_medical_evidence_boundaries(text).flagged

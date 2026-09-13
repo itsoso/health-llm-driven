@@ -445,6 +445,7 @@ async def test_record_field_request_completion_retains_medical_boundary(
     ("蛋白质摄入未见偏低。", False),
     ("是否营养不均衡尚无法判断。", False),
     ("营养不均衡，但原因尚无法判断。", True),
+    ("是否需要继续、停用或调整补剂/药物，应由医生结合当前症状和检查判断；本轮记录不支持个体化剂量或疗效判断。", False),
     ("营养并不均衡。", True),
     ("蔬菜吃得并不多。", True),
     ("蛋白质摄入并不低。", False),
@@ -824,3 +825,77 @@ def test_composed_nutrition_semantic_family(category, text, blocked):
     result = enforce_composed_synthesis_boundaries(text, completion)
     assert result.flagged is blocked, category
     assert (text in result.text) is not blocked
+
+
+_META_QUERY_INVITATION = (
+    '2. **如需更细的分析，可指定某一天或某个问题**\n'
+    '例如“分析 9 月 13 日”“只看睡眠”“只看运动”或“分析某一次散步后的状态”。'
+    '我会基于已验证记录继续做单日或单领域对比，不扩展到未读取的内容。'
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize("instruction", ["", "每天服用两片。"])
+async def test_composed_meta_query_invitation_projection(
+    db, four_domain_user, monkeypatch, panel, continuation, instruction,
+):
+    conversation_id = None
+    if continuation:
+        _, _, _, first, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
+        conversation_id = first["conversation_id"]
+    observation = "已记录活动以散步为主，不能代表全部活动。"
+    advice = "若出现胸闷或气短，应及时就医。"
+    answer = ("**接下来三条**\n\n1. " + observation + "\n\n" + _META_QUERY_INVITATION
+              + instruction + "\n\n3. " + advice)
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel, answer=answer,
+        query="继续分析" if continuation else QUERY, conversation_id=conversation_id,
+    )
+    assert "可指定" not in saved.content
+    assert "例如“分析" not in saved.content
+    assert "我会基于" not in saved.content
+    assert not done["write_receipts"]
+    assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
+    if instruction:
+        assert done["turn_outcome"]["status"] == "blocked"
+        assert instruction not in saved.content
+    else:
+        assert done["turn_outcome"]["status"] == "complete"
+        assert observation in saved.content and advice in saved.content
+        assert "接下来三条" not in saved.content
+        assert "2. " + advice in saved.content
+        assert "meta_query_invitation_removed" in done["output_quality_flags"]
+        assert saved.meta["output_quality_flags"] == done["output_quality_flags"]
+
+
+@pytest.mark.parametrize("text,removed,retained", [
+    ("已记录散步。请指定日期。比如只看睡眠。若出现胸闷，应及时就医。", True, "若出现胸闷，应及时就医。"),
+    ("已记录散步。你想先看睡眠还是运动？", True, "已记录散步。"),
+    ("已记录散步。你可以告诉我想查询的日期。", True, "已记录散步。"),
+    ("已记录散步。如果想分析睡眠，可以选择日期。", True, "已记录散步。"),
+    ("已记录散步。若出现胸闷，应及时就医。", False, "若出现胸闷，应及时就医。"),
+    ("已记录散步。请告诉我你的症状。", False, "请告诉我你的症状。"),
+    ("已按日期分析睡眠。实际情况仍不确定。", False, "实际情况仍不确定。"),
+    ("是否需要停用补剂，应由医生判断。", False, "是否需要停用补剂，应由医生判断。"),
+])
+def test_composed_meta_query_invitation_local_projection(text, removed, retained):
+    from app.services.agent_output_quality import enforce_agent_output_quality
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, project_composed_answer_quality
+    from tests.test_agent_composed_read_completion import execution, scope
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [
+        execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}]),
+    ])
+    original = enforce_agent_output_quality(text)
+    result = project_composed_answer_quality(original, completion)
+    assert ("meta_query_invitation_removed" in result.flags) is removed
+    assert retained in result.text
+    assert result.original_length == len(text) and result.persisted_length == len(result.text)
+    if not removed:
+        assert result is original
+    assert project_composed_answer_quality(original, None) is original
+    from dataclasses import replace
+    assert project_composed_answer_quality(original, replace(completion, complete=False)) is original
+    single = replace(completion, verified_evidence={"queries": completion.verified_evidence["queries"][:1]})
+    assert project_composed_answer_quality(original, single) is original

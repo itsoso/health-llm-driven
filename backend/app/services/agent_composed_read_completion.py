@@ -251,6 +251,63 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
     )
 
 
+# Re-asking an already resolved date/module is navigation text, not analysis.
+# This presentation projection runs only AFTER medical checks on the full text.
+_META_QUERY_INVITATION = re.compile(
+    r"(?:如需|如果|若|想要|希望)[^。！？!?\n]{0,24}(?:分析|复盘|比较)[^。！？!?\n]{0,8}"
+    r"(?:可|可以|请|你可以)(?:指定|选择|告诉我)[^。！？!?\n]{0,20}(?:某一天|日期|某个问题|范围|模块)|"
+    r"(?:请|你可以)(?:指定|选择|告诉我)[^。！？!?\n]{0,20}(?:想分析|想查询|查询范围|日期|模块)|"
+    r"(?:你想|你希望)(?:先)?(?:看|分析|查询)[^。！？!?\n]{0,20}(?:还是|哪个)"
+)
+_META_QUERY_FOLLOWUP = re.compile(
+    r"^(?:例如|比如)[^。！？!?\n]*(?:分析|只看|查询)|"
+    r"^我(?:会|将)(?:基于已验证记录)?继续做(?:单日|单领域)"
+)
+
+
+def project_composed_answer_quality(quality, completion):
+    """Remove resolved-scope solicitations without granting any safety exemption.
+
+    Call only after checking the complete unfiltered model answer. An audit flag
+    distinguishes this presentation correction from a medical/task failure.
+    """
+    if (completion is None or not completion.complete or not completion.verified_evidence
+            or len(completion.verified_evidence["queries"]) < 2):
+        return quality
+    from app.services.agent_output_quality import AgentOutputQualityResult
+
+    kept, removed, in_invitation = [], False, False
+    for segment in re.findall(r"[^。！？!?\n]+[。！？!?]*|[。！？!?\n]+", quality.text):
+        matching = re.sub(r"^[ \t]*(?:\d+[.)、]|[-*+] )?[ \t]*", "", segment)
+        matching = re.sub(r"[*_`]", "", matching).strip()
+        if re.match(r"^[ \t]*(?:\d+[.)、]|[-*+] )", segment):
+            in_invitation = False
+        if _META_QUERY_INVITATION.search(matching):
+            removed, in_invitation = True, True
+            continue
+        if in_invitation and _META_QUERY_FOLLOWUP.search(matching):
+            continue
+        if matching:
+            in_invitation = False
+        kept.append(segment)
+    if not removed:
+        return quality
+    text = re.sub(r"\n{3,}", "\n\n", "".join(kept)).strip()
+    text = re.sub(r"(?m)^(\*{0,2})(接下来|下一步)[一二三四五\d]+条(\*{0,2})\s*$", r"\1\2\3", text)
+    lines, ordinal = [], 0
+    for line in text.splitlines():
+        if re.match(r"^\s*(?:#{1,6}\s|\*\*.*\*\*\s*$|接下来$|下一步$)", line):
+            ordinal = 0
+        number = re.match(r"^(\s*)\d+([.)、])(?=\s)", line)
+        if number:
+            ordinal += 1
+            line = number.group(1) + str(ordinal) + number.group(2) + line[number.end():]
+        lines.append(line)
+    text = "\n".join(lines)
+    flags = tuple(dict.fromkeys((*quality.flags, "meta_query_invitation_removed")))
+    return AgentOutputQualityResult(text, flags, quality.original_length, len(text))
+
+
 def _payload(content):
     return load_tool_result_json(content) if isinstance(content, str) else content
 

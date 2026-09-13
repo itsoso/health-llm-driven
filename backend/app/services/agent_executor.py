@@ -14367,6 +14367,11 @@ class AgentExecutor:
             full_reply,
             max_chars=int(getattr(settings, "agent_answer_persistence_max_chars", 50_000) or 50_000),
         )
+        from app.services.agent_composed_read_completion import project_composed_answer_quality
+
+        output_quality = project_composed_answer_quality(
+            output_quality, panel_completion if panel_synthesis_messages is not None else None,
+        )
         panel_quality_flags.update(output_quality.flags)
         full_reply = output_quality.text
         turn_outcome = classify_agent_turn_outcome(
@@ -18027,6 +18032,11 @@ class AgentExecutor:
         if "protocol_leak" in raw_output_quality.flags:
             output_quality = raw_output_quality
             final_finish_reason = "error"
+        from app.services.agent_composed_read_completion import project_composed_answer_quality
+
+        output_quality = project_composed_answer_quality(
+            output_quality, composed_completion if composed_synthesis_used else None,
+        )
         full_reply = output_quality.text
         if response_output_buffered:
             release_text = full_reply
