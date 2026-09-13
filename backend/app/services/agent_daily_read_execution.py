@@ -211,7 +211,7 @@ def summary_advice_contract_failure(text: str) -> str | None:
     evidence_noun = r'(?:这些|这|当前|现有|本次|以上|已记录|的|记录|数据|信息|今天|今日|健康|设备|[一二两三几多\d]+条)'
     evidence_basis = rf'(?:(?:仅|只|单独)?(?:根据|依据|基于|凭借|凭){evidence_noun}{{1,8}}|(?:仅|只)?据此)?'
     uncertainty = re.compile(
-        rf'(?:不能|无法|不应|不可|不足以){evidence_basis}(?:判断|认定|推断|说明|证明|断言)'
+        rf'(?:不能|无法|不应|不可|不足以|不要|不得){evidence_basis}(?:判断|认定|推断|说明|证明|断言)'
         r'|(?:不代表|不意味着|不等于|没有(?:足够)?证据(?:说明|表明|判断|证明))'
     )
     # These two observed failure categories cannot be derived from a daily

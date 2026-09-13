@@ -235,3 +235,15 @@ async def test_known_fields_reach_provider_as_data_without_gaining_write_authori
     assert len(dispatched) == 1 and dispatched[0].tool_name == 'health_query'
     if answer_kind == 'tool':
         assert done['turn_outcome']['status'] == 'partial'
+
+
+PROHIBITED_INFERENCE_LIVE_CANDIDATE = '建议\n\n当前结果只能作为部分饮食记录的评价依据：能说明今天已有饮食被记录，但不足以判断营养是否均衡或是否合适，因为份量与主要营养素信息未纳入本次可评价范围，且已记录不等于全天完整摄入。下一步：请把它视为部分证据，不要据此推断全天摄入不足或过量。'
+
+@pytest.mark.asyncio
+async def test_actual_pi_provider_preserves_safe_live_candidate_as_completed(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    _, calls, dispatched, done, saved = await _run(db, user, monkeypatch, query='今天我吃的怎么样?', answer_text=PROHIBITED_INFERENCE_LIVE_CANDIDATE)
+    assert len(calls) == 2 and len(dispatched) == 1
+    assert done['turn_outcome']['status'] == 'complete'
+    assert '不要据此推断全天摄入不足或过量' in saved.content
+    assert '1020' in saved.content and '已记录3条' in saved.content

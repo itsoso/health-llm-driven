@@ -323,3 +323,29 @@ def test_inline_prose_is_not_a_heading(text):
 def test_heading_does_not_prove_answer_delivered(text, reason):
     extracted = daily.summary_advice_text(text, require_heading=True)
     assert daily.summary_advice_contract_failure(extracted) == reason
+
+
+PROHIBITED_INFERENCE_LIVE_CANDIDATE = '建议\n\n当前结果只能作为部分饮食记录的评价依据：能说明今天已有饮食被记录，但不足以判断营养是否均衡或是否合适，因为份量与主要营养素信息未纳入本次可评价范围，且已记录不等于全天完整摄入。下一步：请把它视为部分证据，不要据此推断全天摄入不足或过量。'
+
+@pytest.mark.parametrize('operator', ['不要', '不得'])
+@pytest.mark.parametrize('claim', ['全天摄入不足或过量', '蛋白质摄入不足或膳食纤维不足', '存在重复录入或误录'])
+def test_prohibited_inference_remains_bound_to_its_complements(operator, claim):
+    assert daily.summary_advice_contract_failure(f'建议\n{operator}据此推断{claim}。') is None
+
+@pytest.mark.parametrize('operator', ['不要', '不得'])
+@pytest.mark.parametrize('text,reason', [
+    ('据此推断全天摄入不足且全天摄入确实不足。', 'summary_advice_infers_complete_intake'),
+    ('据此推断蛋白质摄入不足，但蛋白质摄入不足。', 'summary_advice_infers_nutrient_gap'),
+    ('据此推断存在重复录入或误录且这些记录确实重复录入。', 'summary_advice_infers_record_error'),
+    ('据此判断记录是否完整后确认蛋白质摄入不足。', 'summary_advice_infers_nutrient_gap'),
+])
+def test_prohibition_cannot_excuse_another_affirmative_proposition(operator, text, reason):
+    assert daily.summary_advice_contract_failure('建议\n' + operator + text) == reason
+
+@pytest.mark.parametrize('operator', ['不得不', '不能不'])
+def test_double_negation_does_not_gain_a_prohibition_exception(operator):
+    assert daily.summary_advice_contract_failure('建议\n' + operator + '推断全天摄入不足。') == 'summary_advice_infers_complete_intake'
+
+
+def test_exact_safe_live_candidate_is_accepted():
+    assert daily.summary_advice_contract_failure(daily.summary_advice_text(PROHIBITED_INFERENCE_LIVE_CANDIDATE, require_heading=True)) is None
