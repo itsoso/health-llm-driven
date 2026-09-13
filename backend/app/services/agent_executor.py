@@ -11571,6 +11571,7 @@ class AgentExecutor:
         self._turn_daily_read_results: dict[str, dict[str, str]] = {}
         self._turn_daily_read_payloads: dict[str, dict] = {}
         self._turn_sync_queued = False
+        self._turn_sync_attempted = False
         self._turn_garmin_sync_job = None
         self._turn_composed_read_executions = []
         self._turn_sync_status_result = None
@@ -11730,6 +11731,7 @@ class AgentExecutor:
         self._turn_daily_read_results = {}
         self._turn_daily_read_payloads = {}
         self._turn_sync_queued = False
+        self._turn_sync_attempted = False
         self._turn_garmin_sync_job = None
         self._turn_composed_read_executions = []
         self._turn_sync_status_result = None
@@ -12110,10 +12112,22 @@ class AgentExecutor:
                                   sync_window=({key: status_query[key] for key in ('start_date', 'end_date', 'timezone')}
                                                if status_query is not None else None))
 
+    def _garmin_sync_metadata(self) -> dict:
+        from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
+        if self._turn_garmin_sync_job is not None:
+            return {"garmin_sync_job": self._turn_garmin_sync_job.as_metadata()}
+        if self._turn_sync_attempted or has_owned_sync_instruction(self._current_turn_user_message):
+            # A failed new request is a receipt boundary, not permission to reuse
+            # an older success. The existing reader stops at this explicit null.
+            return {"garmin_sync_job": None}
+        return {}
+
     def _trusted_sync_summary(self) -> str:
         from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
         if resolve_sync_status_query(self._ensure_agent_kernel_turn()) is None:
             return ""
+        if self._turn_sync_attempted and not self._turn_sync_queued:
+            return '本轮同步没有取得已提交确认；之前的成功任务不能证明本次同步成功。'
         status = self._turn_sync_status_result
         if isinstance(status, dict) and status.get('job_success_verified') is True:
             return "本会话对应的佳明同步任务已返回成功；下方记录的日期单独核对，不能据此保证活动数据完整。"
@@ -12124,6 +12138,9 @@ class AgentExecutor:
         return "目前没有核实本会话的佳明同步已完成；已有睡眠记录不能作为本次同步成功的证明。"
 
     def _sync_goal_outcomes(self) -> list[dict]:
+        if self._turn_sync_attempted and not self._turn_sync_queued:
+            return [{'goal_id': 'garmin_sync', 'kind': 'sync', 'status': 'failed',
+                     'reason_code': 'sync_submission_unverified'}]
         if not self._turn_sync_queued or self._composed_read_completion() is None:
             return []
         verified = (self._turn_sync_status_result or {}).get('job_success_verified') is True
@@ -13262,13 +13279,13 @@ class AgentExecutor:
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
-        from app.services.agent_composed_read_completion import read_scope_notices
+        from app.services.agent_composed_read_completion import read_scope_notices, read_scope_synthesis_instructions
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         panel_read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
         if panel_read_scope is not None:
             system_content += ('\n本轮必须逐项完成的服务端只读范围：'
                 + json.dumps(list(panel_read_scope.queries), ensure_ascii=False)
-                + '。同步入队不是完成，不完整查询不能作完整复盘。' + '\n'.join(read_scope_notices(panel_read_scope)))
+                + '。同步入队不是完成，不完整查询不能作完整复盘。' + '\n'.join(read_scope_notices(panel_read_scope)) + read_scope_synthesis_instructions(panel_read_scope))
         turn_time_context = self._agent_kernel_time_context(client_time_context)
         from app.services.medical_citation_policy import (
             build_medical_citation_bundle,
@@ -14220,7 +14237,7 @@ class AgentExecutor:
                 "sources_used": sources_used,
                 "mode": "multi_model",
                 **({"read_task": self._read_task_metadata()} if self._read_task_metadata() is not None else {}),
-                **({"garmin_sync_job": self._turn_garmin_sync_job.as_metadata()} if self._turn_garmin_sync_job is not None else {}),
+                **self._garmin_sync_metadata(),
                 "turn_outcome": turn_outcome,
                 "output_quality_flags": sorted(panel_quality_flags),
                 "medical_boundary_flags": sorted(panel_medical_flags),
@@ -14251,7 +14268,7 @@ class AgentExecutor:
             "sources_used": sources_used,
             "mode": "multi_model",
             **({"read_task": self._read_task_metadata()} if self._read_task_metadata() is not None else {}),
-            **({"garmin_sync_job": self._turn_garmin_sync_job.as_metadata()} if self._turn_garmin_sync_job is not None else {}),
+            **self._garmin_sync_metadata(),
             "turn_outcome": turn_outcome,
             "output_quality_flags": sorted(panel_quality_flags),
             "medical_boundary_flags": sorted(panel_medical_flags),
@@ -16035,7 +16052,7 @@ class AgentExecutor:
         if completion_intent.reason == "conversation_feedback":
             tools = []
 
-        from app.services.agent_composed_read_completion import read_scope_notices
+        from app.services.agent_composed_read_completion import read_scope_notices, read_scope_synthesis_instructions
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
         if read_scope is not None:
@@ -16044,6 +16061,7 @@ class AgentExecutor:
                 + json.dumps(list(read_scope.queries), ensure_ascii=False)
                 + "。查询后分析；缺失项目明确说明。同步任务状态与数据可用性必须分开回答，入队不代表完成。"
                 + "\n".join(read_scope_notices(read_scope))
+                + read_scope_synthesis_instructions(read_scope)
             )
 
         # 5. Agent 循环
@@ -18109,8 +18127,7 @@ class AgentExecutor:
                 ),
                 "write_receipts": write_receipts,
                 **({"read_task": self._read_task_metadata()} if self._read_task_metadata() is not None else {}),
-                **({"garmin_sync_job": self._turn_garmin_sync_job.as_metadata()}
-                   if getattr(self, "_turn_garmin_sync_job", None) is not None else {}),
+                **self._garmin_sync_metadata(),
                 "pending_write_intent_ids": self._turn_pending_write_intent_ids,
                 "pending_write_intent_kinds": self._turn_pending_write_intent_kinds,
                 "cards": cards_for_persistence(response_cards),
@@ -18204,8 +18221,7 @@ class AgentExecutor:
                 ),
                 "write_receipts": write_receipts,
                 **({"read_task": self._read_task_metadata()} if self._read_task_metadata() is not None else {}),
-                **({"garmin_sync_job": self._turn_garmin_sync_job.as_metadata()}
-                   if getattr(self, "_turn_garmin_sync_job", None) is not None else {}),
+                **self._garmin_sync_metadata(),
                 "pending_write_intent_ids": self._turn_pending_write_intent_ids,
                 "pending_write_intent_kinds": self._turn_pending_write_intent_kinds,
                 "mode": "agent",
@@ -23368,6 +23384,7 @@ class AgentExecutor:
             from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
             from app.services.agent_query_window import parse_query_window
             from app.services.agent_garmin_sync_status import read_garmin_sync_status
+            from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
             from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
             query = resolve_sync_status_query(self._ensure_agent_kernel_turn())
             if query is not None:
@@ -23376,6 +23393,7 @@ class AgentExecutor:
                 status = read_garmin_sync_status(self.db, self._current_user_id,
                     self._current_turn_conversation_id, parse_query_window(query),
                     current_job=getattr(self, "_turn_garmin_sync_job", None),
+                    allow_history=not has_owned_sync_instruction(self._current_turn_user_message),
                     include_date_availability=bool(
                         (status_scope := resolve_owned_read_scope(self._ensure_agent_kernel_turn())) is not None
                         and status_scope.query('sleep') is not None))
@@ -24990,6 +25008,9 @@ class AgentExecutor:
         job = getattr(self, '_turn_garmin_sync_job', None)
         if self._turn_sync_queued and job is not None and job.owner_id == user_id:
             return _garmin_sync_queued_message()
+
+        self._turn_sync_attempted = True
+        self._turn_sync_status_result = None
 
         from app.models.user import GarminCredential
 

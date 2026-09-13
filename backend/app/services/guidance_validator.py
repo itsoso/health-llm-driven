@@ -276,6 +276,12 @@ _ADVICE_HOLD = "部分建议或推断缺少已核验证据，暂不提供执行�
 def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
     for match in pattern.finditer(sentence):
         prefix = re.split(r"[，,。；;!?！？\n]|但是|但|不过|然而|而是", sentence[:match.start()])[-1]
+        # Asking when an existing regimen is taken is information collection,
+        # not a new regimen. Keep numeric or subsequent instructions guarded.
+        if (pattern is _REGIMEN_ACTION
+                and re.search(r"什么时间|何时", match.group(0))
+                and re.search(r"(?:告诉|说明|提供|列出|核对)[^。；;!?！？\n]{0,45}$", re.split(r"什么时间|何时", sentence[:match.end()])[-2])):
+            continue
         # A negated recommendation can begin inside the matched action itself.
         if prefix.endswith("不") and match.group(0).startswith("建议"):
             continue

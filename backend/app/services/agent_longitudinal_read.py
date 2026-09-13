@@ -36,7 +36,9 @@ _NEGATIVE = re.compile(
 _MUTATION = re.compile(r"删除|撤销|写入|保存|添加|记下来|修改|更新|执行计划")
 _RECENT = re.compile(r"(?:最近|近|过去)([0-9]+|[一二两三四五六七八九十]+)(天|日|周)")
 _AMBIGUOUS_DATE = re.compile(
-    r"\d{4}[-/年]|\d{1,2}月|昨天|昨日|前天|明天|后天|上周|本周|这周|下周|"
+    r"\d{4}[-/年]|\d{1,2}月|(?<!\d)\d{1,2}[-/]\d{1,2}(?!\d)|"
+    r"(?<![当目])(?:今|昨|前|明|后)(?:天|日|晚|夜)|"
+    r"(?:周|星期|礼拜)[一二三四五六日天]|上周|本周|这周|下周|"
     r"上个月|本月|今年|去年|几天|几周|个月|半年|数月|几月|月前|至今|以来|截至|截止|全部|所有|完整历史"
 )
 _TOOL_READ = re.compile(
@@ -163,6 +165,8 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
         hit = hits[0]
         days = _number(hit[1]) * (7 if hit[2] == "周" else 1)
     remainder = _RECENT.sub("", request)
+    # Calendar scope can be expressed in a separate active clause. Leave it
+    # to the exact calendar binder; never replace an explicit day with 7 days.
     if not 1 <= days <= 31 or _AMBIGUOUS_DATE.search(remainder):
         return None
     return request, days, not hits

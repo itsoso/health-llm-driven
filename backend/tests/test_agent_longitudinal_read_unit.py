@@ -200,3 +200,18 @@ def test_invalid_longitudinal_request_is_distinguishable_from_not_applicable(tex
     from app.services.agent_longitudinal_read import longitudinal_read_scope_requested
     assert longitudinal_read_scope_requested(snapshot(text))
     assert resolve_longitudinal_read_queries(snapshot(text)) is None
+
+
+@pytest.mark.parametrize('day', [
+    '今天', '今日', '今晚', '今夜', '昨晚', '昨夜', '前晚', '前夜',
+    '明晚', '明日', '后晚', '前日', '周二', '9/12',
+])
+def test_split_calendar_prefix_never_defaults_to_recent_seven_days(day):
+    s = snapshot(f'只看{day}，查询我的饮食并分析')
+    assert resolve_longitudinal_read_queries(s) is None
+    assert longitudinal_read_limitations(s) == ()
+
+
+def test_explicit_day_survives_removing_historical_diagnosis_context():
+    s = snapshot('只看今天。我的既往诊断是几个月前的事情。查询我的饮食并分析。')
+    assert resolve_longitudinal_read_queries(s) is None

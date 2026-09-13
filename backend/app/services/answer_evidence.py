@@ -52,6 +52,7 @@ _DIMENSION_LABELS = {
     "blood_pressure": "血压",
     "water": "饮水",
     "diet": "饮食",
+    "workout": "运动",
     "supplements": "补剂",
     "medication": "用药",
     "medical_exam": "化验",
@@ -423,7 +424,8 @@ def _diet_list_calendar_projection(
         or meal_type not in {"breakfast", "lunch", "dinner", "snack", "extra"}
     ):
         return None
-    projected_args = {"dimension": "diet"}
+    projected_args = {"dimension": "diet", "start_date": requested_date,
+                      "end_date": requested_date, "timezone": DEFAULT_TIMEZONE}
     try:
         payload = json.loads(result) if isinstance(result, str) else result
     except (TypeError, ValueError):
@@ -465,6 +467,189 @@ def _diet_list_calendar_projection(
     return projected_args, json.dumps(projected_result, ensure_ascii=False)
 
 
+_CALENDAR_DIMENSIONS = frozenset({"diet", "sleep", "workout", "supplements"})
+_CALENDAR_SUCCESS = frozenset({"success", "completed", "complete", "ok", "succeeded"})
+
+
+def _calendar_limitation(
+    identifier: str, dimension: str, detail: str
+) -> dict[str, str]:
+    return {
+        "id": identifier,
+        "title": f"{_DIMENSION_LABELS.get(dimension, '健康')}数据不足",
+        "detail": detail,
+        "handling": "未将缺失或未核验数据作为确定依据",
+    }
+
+
+def _calendar_item_evidence(identifier: str, args: Mapping[str, Any], payload: Any):
+    """Project one executed, exactly bounded result without trusting row prose."""
+    from decimal import Decimal
+    from app.services.agent_composed_read_completion import _validate
+    from app.services.agent_daily_read_execution import (
+        _summary_decimal,
+        _summary_display,
+    )
+    from app.services.agent_query_window import parse_query_window
+
+    dimension = args.get("dimension")
+    invalid = (
+        [],
+        [
+            _calendar_limitation(
+                f"{identifier}-limitation",
+                dimension if isinstance(dimension, str) else "",
+                "返回记录的范围、来源或执行状态无法核验，未将其作为本轮依据",
+            )
+        ],
+    )
+    if not isinstance(dimension, str) or dimension not in _CALENDAR_DIMENSIONS:
+        return invalid
+    if result_declares_explicit_failure(payload):
+        return [], [_calendar_limitation(
+            f"{identifier}-limitation", dimension,
+            "本轮数据查询失败，未将返回记录作为本轮依据",
+        )]
+    try:
+        window = parse_query_window(args)
+        canonical = {"dimension": dimension, **window.as_dict()}
+        if "days" in args:
+            if (
+                type(args["days"]) is not int
+                or args["days"] != (window.end_date - window.start_date).days + 1
+            ):
+                return invalid
+            canonical["days"] = args["days"]
+        if args != canonical or _validate(canonical, payload) is not None:
+            return invalid
+    except (TypeError, ValueError, KeyError):
+        return invalid
+
+    # Serialize only the projection consumed below, never private metadata or
+    # arbitrary nested values attached to the actual result.
+    fields = {"record_date", "food_name", "food_items", "meal_type", "calories", "protein",
+              "total_sleep_duration", "deep_sleep_duration", "sleep_score"}
+    projection = {
+        "dimension": dimension, "window": window.as_dict(),
+        "availability": payload["availability"], "limitations": payload.get("limitations", []),
+        "records": [{k: v for k, v in row.items() if k in fields
+                     and isinstance(v, (str, int, float)) and not isinstance(v, bool)}
+                    for row in payload["records"]],
+    }
+    serialized = json.dumps(projection, ensure_ascii=False)
+    limitation = _tool_limitation(
+        tool_index=1, tool_name="health_query", args=args, result=serialized
+    )
+    limits = [{**limitation, "id": f"{identifier}-limitation"}] if limitation else []
+    if dimension in {"diet", "sleep"}:
+        block = build_table_from_tool_call("health_query", dict(args), serialized)
+        rows = (
+            _table_rows(tool_index=1, tool_name="health_query", block=block)
+            if block
+            else []
+        )
+        return (
+            [
+                {**row, "id": f"{identifier}-row-{i}"}
+                for i, row in enumerate(rows[:MAX_BASIS_ITEMS], 1)
+            ],
+            limits,
+        )
+
+    rows = []
+    for index, row in enumerate(payload["records"][:MAX_BASIS_ITEMS], 1):
+        label = f"{_DIMENSION_LABELS[dimension]} · {row['record_date']}"
+        observation = "实际服用记录 1 条"
+        if dimension == "workout":
+            seconds = _summary_decimal(row.get("duration_seconds"))
+            minutes = (
+                _summary_display(seconds / Decimal(60)) if seconds is not None else None
+            )
+            observation = (
+                f"运动时长 {minutes} 分钟"
+                if minutes is not None
+                else "实际运动记录 1 条；时长未知"
+            )
+        rows.append(
+            {
+                "id": f"{identifier}-row-{index}",
+                "label": label,
+                "observation": observation,
+                "source": "健康数据查询",
+                "purpose": "用于核对实际服用记录"
+                if dimension == "supplements"
+                else "用于核对已记录运动",
+            }
+        )
+    return rows, limits
+
+
+def _calendar_batch_evidence(tool_index: int, args: Mapping[str, Any], payload: Any):
+    """Match calendar results by frozen dimension; never fall back to legacy data."""
+    identifier = f"tool-{tool_index}"
+    invalid = (
+        [],
+        [
+            _calendar_limitation(
+                f"{identifier}-limitation",
+                "",
+                "本轮批量查询未完整返回可核验结果",
+            )
+        ],
+    )
+    queries = args.get("queries")
+    if (
+        set(args) != {"queries"}
+        or not isinstance(queries, list)
+        or not 1 <= len(queries) <= 4
+        or any(
+            not isinstance(q, Mapping) or not isinstance(q.get("dimension"), str)
+            for q in queries
+        )
+        or len({q["dimension"] for q in queries}) != len(queries)
+        or not isinstance(payload, Mapping)
+        or not isinstance(payload.get("status"), str)
+        or payload["status"] not in _CALENDAR_SUCCESS
+        or result_declares_explicit_failure(payload)
+        or not isinstance(payload.get("results"), list)
+    ):
+        return invalid
+    results = payload["results"]
+    per_query, limits = [], []
+    for index, query in enumerate(queries, 1):
+        matches = [
+            r
+            for r in results
+            if isinstance(r, Mapping) and r.get("dimension") == query["dimension"]
+        ]
+        rows, notes = _calendar_item_evidence(
+            f"{identifier}-item-{index}",
+            query,
+            matches[0] if len(matches) == 1 else None,
+        )
+        per_query.append(rows)
+        limits.extend(notes)
+    # Prefer one actual observation per requested domain before displaying a
+    # second row, so the four-item display cap does not hide entire domains.
+    basis = [
+        rows[index]
+        for index in range(MAX_BASIS_ITEMS)
+        for rows in per_query
+        if len(rows) > index
+    ][:MAX_BASIS_ITEMS]
+    if any(
+        not isinstance(r, Mapping)
+        or r.get("dimension") not in {q["dimension"] for q in queries}
+        for r in results
+    ):
+        limits.append(
+            _calendar_limitation(
+                f"{identifier}-extra", "", "未使用请求范围之外的批量结果"
+            )
+        )
+    return basis, limits[:MAX_LIMITATIONS]
+
+
 def build_answer_evidence(
     *,
     tool_calls: Sequence[tuple[str, Mapping[str, Any] | None, Any]] = (),
@@ -487,6 +672,35 @@ def build_answer_evidence(
                 continue
             args, result = projection
             projection_tool = "health_query"
+        try:
+            payload = json.loads(result) if isinstance(result, str) else result
+        except (TypeError, ValueError):
+            payload = None
+        calendar_projection = None
+        if projection_tool == "health_query_batch" and (
+            isinstance(payload, Mapping)
+            and "results" in payload
+            or isinstance(args.get("queries"), list)
+            and any(
+                isinstance(q, Mapping) and ("start_date" in q or "end_date" in q)
+                for q in args["queries"]
+            )
+        ):
+            calendar_projection = _calendar_batch_evidence(tool_index, args, payload)
+        elif projection_tool == "health_query" and (
+            isinstance(payload, Mapping)
+            and "window" in payload
+            or "start_date" in args
+            or "end_date" in args
+        ):
+            calendar_projection = _calendar_item_evidence(
+                f"tool-{tool_index}", args, payload
+            )
+        if calendar_projection is not None:
+            rows, notes = calendar_projection
+            basis.extend(rows[: MAX_BASIS_ITEMS - len(basis)])
+            limitations.extend(notes[: MAX_LIMITATIONS - len(limitations)])
+            continue
         block = build_table_from_tool_call(projection_tool, dict(args), str(result or ""))
         if block is not None and len(basis) < MAX_BASIS_ITEMS:
             basis.extend(

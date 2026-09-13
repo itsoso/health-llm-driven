@@ -174,6 +174,7 @@ def read_garmin_sync_status(
     current_job: VerifiedGarminSyncJob | None = None,
     result_reader: Callable[[str], Any] | None = None,
     include_date_availability: bool = False,
+    allow_history: bool = True,
 ) -> dict[str, Any]:
     """Observe one server-correlated job and independently query owned date rows.
 
@@ -192,7 +193,7 @@ def read_garmin_sync_status(
     with db.no_autoflush if db is not None else nullcontext():
         job = current_job or (
             latest_owned_garmin_sync_job(db, user_id, conversation_id)
-            if conversation_id is not None
+            if allow_history and conversation_id is not None
             else None
         )
         data = (
@@ -229,7 +230,13 @@ def read_garmin_sync_status(
         ],
     }
     if job is None:
-        output["limitations"].append("only_recent_owned_conversation_receipts_searched")
+        output["limitations"].append(
+            "only_recent_owned_conversation_receipts_searched"
+            if allow_history
+            else "new_sync_submission_not_verified"
+        )
+        if not allow_history:
+            output["reason_code"] = "new_sync_submission_unverified"
         return output
     output.update(job_id=job.job_id, submitted_at=job.submitted_at.isoformat())
     try:

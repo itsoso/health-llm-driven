@@ -175,6 +175,24 @@ def _facts(dimension: str, payload: dict) -> str:
     return text
 
 
+def read_scope_synthesis_instructions(scope) -> str:
+    if not any("days" in query for query in scope.queries):
+        return ""
+    return (
+        "\n[实际记录分析的证据边界]\n"
+        "先区分实际查到的记录、未知项目与一般建议。病史时间是用户背景，"
+        "不能据此断言已经痊愈、仍在患病或当前恢复程度。"
+        "记录热量和时长只能称为已记录合计，不能当作全天实际摄入或全部活动。"
+        "不同来源内容相似不证明是同一次事件；无共同事件标识，不得自行去重或猜测实际时长。"
+        "餐次名称和当前时刻不证明该餐未发生，也不证明误录或预录。"
+        "指标缺失只能说明未覆盖，不能推出恢复差、营养不足或据此制定训练禁令。"
+        "没有本轮可核验的医嘱，不新增补剂、剂量、服用时点或治疗方案。"
+        "个人目标必须有明确来源，不虚构目标。情绪和工作未查询是本次读取能力未覆盖，"
+        "不要声称用户未授权，更不要承诺尚未提供的读取能力。"
+        "给出与现有记录相称的一般健康管理建议；不足以作个体判断时，说明还缺哪项证据。"
+    )
+
+
 def read_scope_notices(scope) -> tuple[str, ...]:
     """One disclosure source for the prompt, final answer, and trusted facts."""
     lines = []

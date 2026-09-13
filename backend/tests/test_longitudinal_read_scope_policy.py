@@ -84,3 +84,28 @@ def test_rejected_longitudinal_range_cannot_fall_through_to_legacy_rolling_read(
     assert decide({'dimension': dimension, 'days': 7}, text=text).action == 'block'
     assert decide({'queries': [{'dimension': dimension, 'days': 7}]},
                   text=text, tool='health_query_batch').action == 'block'
+
+
+@pytest.mark.parametrize('day,dimension', [('今天', 'diet'), ('今日', 'diet'), ('今天', 'sleep'), ('昨晚', 'sleep')])
+def test_explicit_split_day_uses_exact_calendar_binder_not_longitudinal_default(day, dimension):
+    domain = '饮食' if dimension == 'diet' else '睡眠'
+    text = f'只看{day}，查询我的{domain}并分析'
+    scope = resolve_owned_read_scope(snapshot(text))
+    assert scope is not None
+    assert scope.query(dimension) == {'dimension': dimension, 'start_date': '2026-09-13',
+                                     'end_date': '2026-09-13', 'timezone': 'Asia/Shanghai'}
+    assert 'default_recent_7_days' not in scope.limitations
+    decision = decide({'dimension': dimension}, text=text)
+    assert decision.action == 'allow', decision.reason
+    assert decision.normalized_args == scope.query(dimension)
+
+
+@pytest.mark.parametrize('text,dimension', [
+    ('只查今日，查询我的运动记录并分析', 'workout'),
+    ('只看今天，查询我的补剂记录并分析', 'supplements'),
+    ('只看今晚，查询我的睡眠并分析', 'sleep'),
+    ('只看前晚，查询我的睡眠并分析', 'sleep'),
+])
+def test_unsupported_explicit_day_never_gets_a_seven_day_read(text, dimension):
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    assert decide({'dimension': dimension, 'days': 7}, text=text).action == 'block'
