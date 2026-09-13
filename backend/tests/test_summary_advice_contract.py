@@ -247,3 +247,30 @@ def test_meal_list_wrapper_never_invents_the_record_day(row):
                          end_date="2026-09-12", timezone="Asia/Shanghai", meal_type="dinner", asks_advice=True)
     decision = SimpleNamespace(normalized_tool_name="health_manage", normalized_args=plan.diet_list_args(), action="allow")
     assert daily.daily_result_goal(plan, decision, [row])["status"] == "failed"
+
+
+@pytest.mark.parametrize("text", [
+    "建议：无法判断是否重复录入且这些记录确实重复录入。",
+    "建议：不能判断是否缺蛋白并且蛋白质摄入不足。",
+    "建议：无法判断是否重复录入然后确认这些记录重复录入。",
+    "建议：不能判断是否缺蛋白随后确认蛋白质摄入不足。",
+    "建议：不能判断是否缺蛋白并存在重复录入。",
+    "建议：无法判断记录是否完整然后确认这是重复录入。",
+    "建议：没有证据说明数据是否完整这些记录确实重复录入。",
+    "建议：无法核对记录所以判断存在重复录入。",
+    "建议：无法检查记录然后认定蛋白质摄入不足。",
+])
+def test_uncertainty_only_qualifies_its_own_proposition(text):
+    assert daily.summary_advice_contract_failure(text) is not None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：无法判断这些记录是否确实重复录入。",
+    "建议：不能据此判断你今天是否真的缺蛋白。",
+    "建议：不意味着你的蛋白质摄入不足。",
+    "建议：无法断言这2条记录是重复录入。",
+    "建议：不能仅根据这些记录判断你的蛋白质摄入不足。",
+    "建议：无法判断是否重复录入且也无法判断蛋白质摄入不足。",
+])
+def test_local_uncertainty_with_a_subject_remains_substantive(text):
+    assert daily.summary_advice_contract_failure(text) is None

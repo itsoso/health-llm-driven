@@ -206,8 +206,12 @@ def summary_advice_contract_failure(text: str) -> str | None:
         r'|摄入\s*(?:明显|严重|已经|确实)?\s*(?:不足|过量)'
         r'|摄入的热量\s*(?:太少|太多)'
     )
+    # An uncertainty operator can take an evidence noun phrase, not a prior
+    # completed check/claim. No arbitrary prose may bridge it to a later verb.
+    evidence_noun = r'(?:这些|这|当前|现有|本次|以上|已记录|的|记录|数据|信息|今天|今日|健康|设备|[一二两三几多\d]+条)'
+    evidence_basis = rf'(?:(?:仅|只|单独)?(?:根据|依据|基于|凭借|凭){evidence_noun}{{1,8}}|(?:仅|只)?据此)?'
     uncertainty = re.compile(
-        r'(?:不能|无法|不应|不可|不足以)[^。！？!?；;\n]{0,24}(?:判断|认定|推断|说明|证明|断言)'
+        rf'(?:不能|无法|不应|不可|不足以){evidence_basis}(?:判断|认定|推断|说明|证明|断言)'
         r'|(?:不代表|不意味着|不等于|没有(?:足够)?证据(?:说明|表明|判断|证明))'
     )
     # These two observed failure categories cannot be derived from a daily
@@ -225,6 +229,14 @@ def summary_advice_contract_failure(text: str) -> str | None:
         r'|(?:记录|条目|早餐|午餐|晚餐|餐次)[^。！？!?；;，,\n]{0,16}?重复(?:的|了)?$'
         r'|(?:误录|误记|错录|误标|标错|记错|错标|被标成)'
     )
+    # Only subject nouns, modifiers and question/copula links may intervene
+    # between an uncertainty operator and this claim. Another proposition's
+    # predicate cannot carry the exemption forward, with or without punctuation.
+    uncertainty_subject = re.compile(
+        rf'(?:你|我|的|这些|那些|这|当前|本次|目前|今天|今日|全天|实际|已经|确实|真的|明显|严重'
+        rf'|[一二两三几多\d]+条|记录|条目|早餐|午餐|晚餐|餐次|{nutrient}'
+        r'|是否|有没有|存在|属于|为|是|有){0,12}'
+    )
     for clause in re.split(r'[。！？!?；;，,\n]|但是|但|然而|不过', text):
         for pattern, reason in (
             (nutrient_claim, 'summary_advice_infers_nutrient_gap'),
@@ -232,21 +244,20 @@ def summary_advice_contract_failure(text: str) -> str | None:
             (intake_claim, 'summary_advice_infers_complete_intake'),
         ):
             for match in pattern.finditer(clause):
-                # Record claims may include a subject before a negated verdict.
-                # Bind uncertainty to that verdict, not to the subject's start.
                 prefix = clause[:match.start()]
-                uncertainty_scope = clause[:match.end()] if pattern is record_error_claim else prefix
-                if uncertainty.search(uncertainty_scope) or re.search(r'(?:避免|防止)\s*$', prefix):
-                    continue
                 if pattern is record_error_claim:
-                    # A local question may precede or follow a check request.
-                    # Bind it to the verdict, never to an earlier unrelated 是否.
                     verdict = re.search(r'重复|误录|误记|错录|误标|标错|记错|错标|被标成', match.group())
-                    if verdict is not None and re.search(
-                        r'(?:是否|有没有)(?:存在|属于|为|是|有)?$',
-                        clause[:match.start() + verdict.start()],
-                    ):
-                        continue
+                    if verdict is not None:
+                        prefix = clause[:match.start() + verdict.start()]
+                if any(uncertainty_subject.fullmatch(prefix[operator.end():])
+                       for operator in uncertainty.finditer(prefix)):
+                    continue
+                if re.search(r'(?:避免|防止)\s*$', prefix):
+                    continue
+                if pattern is record_error_claim and re.search(
+                    r'(?:是否|有没有)(?:存在|属于|为|是|有)?$', prefix,
+                ):
+                    continue
                 return reason
     return None
 
