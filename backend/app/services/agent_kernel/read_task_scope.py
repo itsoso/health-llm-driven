@@ -150,7 +150,7 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         )
     from app.services.agent_longitudinal_read import (
         resolve_longitudinal_read_queries, longitudinal_read_limitations,
-        longitudinal_read_restrictions_unresolved,
+        longitudinal_read_restrictions_unresolved, longitudinal_read_projection_text,
     )
     if longitudinal_read_restrictions_unresolved(snapshot):
         return None
@@ -173,6 +173,11 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
             for clause in clauses
             if not re.search(r"计划|草稿", clause) and _READ.search(clause)
         )
+    # Parse the same scoped request used by the longitudinal binder. The
+    # original owner/cancellation checks and draft exclusion remain above.
+    text = longitudinal_read_projection_text(snapshot, text_override=text)
+    if text is None:
+        return None
     dimensions = tuple(d for d, pattern in _DOMAINS.items() if pattern.search(text))
     broad = bool(_RETROSPECTIVE.search(text)) and not plan_draft
     if not dimensions and broad:

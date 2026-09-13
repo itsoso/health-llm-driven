@@ -15,6 +15,10 @@ from app.services.agent_kernel.health_semantics import (
     active_health_instruction_text,
     health_read_has_nonself_subject,
     _strip_exam_request_scaffolding,
+    _health_read_entity_expression,
+    _strip_current_user_owner,
+    resolve_illness_entity,
+    has_positive_health_read_verb,
 )
 from app.services.agent_query_window import (
     QueryWindow,
@@ -118,79 +122,290 @@ def longitudinal_read_scope_requested(snapshot) -> bool:
     )
 
 
-def _restricted_read_text(snapshot, active: str) -> str | None:
-    """Consume every independent restriction; return None for unknown scope.
+def _record_domains(text: str) -> set[str]:
+    """A clinical entity containing a record-domain word is still an illness."""
+    domains = set()
+    for clause in re.split(r"[，,。；;！？!?\n]", text):
+        entity, _ = _strip_current_user_owner(_health_read_entity_expression(clause))
+        if resolve_illness_entity(entity).status == "exact":
+            continue
+        domains.update(key for key, pattern in _DOMAINS.items() if re.search(pattern, clause))
+    return domains
 
-    Accepted scope tokens come from the existing recent/calendar/domain grammar.
-    Calendar matches must consume the entire scope, not merely find a day in it.
-    This is a rejection boundary, not an alternative source of read authority.
+
+def _consumed_sync_clause(active: str, clause: str) -> bool:
+    """Only a known sync act/status with no leftover constraint is ancillary."""
+    from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
+    command = has_owned_sync_instruction(active)
+    status = bool(re.search(r"同步.*(?:吗|完成|状态)|(?:是否|有没有).*同步", clause))
+    if not re.search(r"佳明|garmin|同步|刷新|拉取", clause, re.I) or not (command or status):
+        return False
+    rest = re.sub(r"garmin|佳明|同步|刷新|拉取", "", clause, flags=re.I)
+    rest = _strip_exam_request_scaffolding(rest)
+    return bool(re.fullmatch(
+        r"(?:我|我的|的|数据|一下|主动|触发|说说|是否|有没有|完成|完了|好了|状态|成功|吗|了|\s)*", rest,
+    ))
+
+
+def _legacy_scope_residue(scope: str) -> str | None:
+    """Reuse exact registered read entities, retaining every non-entity token."""
+    from app.services.agent_kernel.capability_policy import (
+        _illness_query_entities, _query_entity_known_dimensions,
+    )
+    entities = _illness_query_entities("查询" + scope)
+    if not entities or any(len(_query_entity_known_dimensions(entity)) != 1 for entity in entities):
+        return None
+    rest = scope
+    for entity in entities:
+        # Positional qualifiers are scope, even if a legacy entity parser can
+        # associate them with a health dimension. Never erase their spelling.
+        if (_DATE_RE.search(entity) or _RELATIVE_RE.search(entity)
+                or _RECENT.search(entity) or _SUBDAY_SCOPE.search(entity)
+                or re.search(r"之前|之后|以前|以后|前|后", entity)):
+            return None
+        rest, count = re.subn(re.escape(entity), "", rest, count=1, flags=re.I)
+        if count != 1:
+            return None
+    return re.sub(r"的|记录|数据|历史|病史|和|与|及|、|\s", "", rest)
+
+
+def _legacy_comparison_scope(active: str) -> bool:
+    """Recognize a fully consumed existing multi-window comparison frame.
+
+    This only delegates to the original batch binder; that binder still checks
+    every proposed child window, dimension and comparison operation.
     """
-    if not any(re.search(pattern, active) for pattern in _DOMAINS.values()) and not _RETROSPECTIVE_SCOPE.search(active):
+    from app.services.agent_kernel.capability_policy import (
+        _query_scope_text, _illness_query_entities, _query_entity_known_dimensions,
+        _explicit_query_windows, _HISTORY_QUERY_MULTI_ENTITY_RE,
+        _HISTORY_QUERY_LEADING_VERB_RE, _HISTORY_QUERY_TRAILING_VERB_RE,
+    )
+    text = _query_scope_text(active)
+    if _RESTRICTION_PREFIX.search(text):
+        return False
+    entities = _illness_query_entities(text)
+    windows = _explicit_query_windows(text)
+    if len(entities) < 2 or not windows or any(
+        len(_query_entity_known_dimensions(entity)) != 1 for entity in entities
+    ):
+        return False
+    residue = text
+    for start, end, _days in reversed(windows):
+        residue = residue[:start] + residue[end:]
+    for entity in entities:
+        # Exact entity removal must leave all unrepresented filters intact.
+        residue, count = re.subn(re.escape(entity), "", residue, count=1, flags=re.I)
+        if count != 1:
+            return False
+    residue = _strip_exam_request_scaffolding(residue)
+    residue = _HISTORY_QUERY_LEADING_VERB_RE.sub("", residue)
+    residue = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", residue)
+    residue = _HISTORY_QUERY_MULTI_ENTITY_RE.sub("", residue)
+    return bool(re.fullmatch(r"(?:的|比较|倍数|几倍|比例|比率|ratio|之比|占比|占多少|\s)*", residue, re.I))
+
+
+def _complete_read_background(clause: str) -> bool:
+    """Only affirmative narrative predicates can remove a clause from scope."""
+    if _RESTRICTION_PREFIX.search(clause) or re.search(r"范围|时段|时限|要求|条件|限制", clause):
+        return False
+    if _diagnosis_background_clause(clause):
+        return True
+    if re.fullmatch(r"(?:有人|医生|他|她)(?:说|提到|表示)", clause):
+        return True  # Empty reporting introduction after quoted material removal.
+    return bool(
+        re.search(r"(?:我|本人)", clause)
+        and re.search(r"(?:感觉|觉得|感到|比较|有点|不太|很|挺|是|已经|正在).+", clause)
+    )
+
+
+def _has_read_clause(clause: str) -> bool:
+    # The shared scaffold parser consumes command prefixes. Searching the
+    # whole clause for 查/比较 would turn 检查之前 or 工作比较忙 into read acts.
+    core = _strip_exam_request_scaffolding(clause)
+    consumed = clause[:len(clause) - len(core)] if core != clause else ""
+    return bool(_TOOL_READ.search(clause) or has_positive_health_read_verb(consumed))
+
+
+def _read_projection_parts(active: str) -> list[tuple[str, bool]]:
+    """Select request/scope clauses positively; retain narrative for the model only."""
+    parts = []
+    listing = False
+    domain_words = "|".join(_DOMAINS.values()) + "|情绪|心情|工作"
+    list_item = (
+        r"(?:我|本人|自己)?(?:的|日常|每天|实际|在|服用|近期|最近)*"
+        r"(?:" + domain_words + r")(?:的|记录|数据|状态|情况|等等)*"
+    )
+    nominal_list = re.compile(r"(?:以及|和|与|及)?" + list_item + r"(?:(?:、|以及|和|与|及)" + list_item + r")*")
+    for clause in re.split(r"[，,。；;！？!?\n]", active):
+        clause = clause.strip()
+        if not clause:
+            continue
+        if _consumed_sync_clause(active, clause):
+            continue
+        from app.services.utterance_intent_classifier import _is_plan_draft_request
+        if _is_plan_draft_request(clause) and not _has_read_clause(clause):
+            # A separate answer-generation task supplies no read scope. The
+            # original write/owner gates remain authoritative on the full turn.
+            continue
+        explicit = bool(_has_read_clause(clause) or _RESTRICTION_PREFIX.search(clause))
+        domain_request = bool(
+            re.search(r"结合|包括|针对|基于|分析|复盘|总结", clause)
+            and re.search(domain_words, clause)
+        )
+        if explicit or domain_request:
+            parts.append((clause, False))
+            listing = domain_request
+        elif listing and nominal_list.fullmatch(clause):
+            parts.append((clause, False))
+        elif re.search(r"(?:给|给到|给出|提供).*(?:建议|意见)|分析|复盘|总结|判断.*状况|推断.*状况", clause):
+            parts.append((clause, False))
+            listing = False
+        elif _complete_read_background(clause):
+            listing = False
+        else:
+            # Unknown nominal fragments are restrictions, not ignorable
+            # context. A failed full consumption cannot become default 7 days.
+            parts.append((clause, True))
+            listing = False
+    return parts
+
+
+def _consume_read_scope(snapshot, scope: str, domains: set[str]) -> bool:
+    """Consume a complete date/recent/domain expression, never a date substring."""
+    residue = _DOMAIN_SCOPE.sub("", scope)
+    residue = re.sub(r"(?:我|本人|自己)?的|记录|数据|\s", "", residue)
+    deep_read = bool(re.search(r"分析|复盘|总结|建议|状况", snapshot.envelope.text))
+    if not deep_read:
+        from app.services.agent_kernel.capability_policy import _query_window_days
+        legacy = _legacy_scope_residue(scope)
+        if legacy is not None and (not legacy or _query_window_days(legacy) is not None):
+            return True
+    recent = _RECENT.fullmatch(residue)
+    if recent is not None:
+        days = _number(recent[1]) * (7 if recent[2] == "周" else 1)
+        return 1 <= days <= 31
+    if residue in {"", "近期", "最近"}:
+        return bool(domains)
+    calendar_remainder = _WEEKDAY_RE.sub("", _RELATIVE_RE.sub("", _DATE_RE.sub("", residue)))
+    night = bool(re.search(r"昨晚|昨夜", residue))
+    if calendar_remainder not in {"", "到", "至", "~", "～"}:
+        # Only the existing sleep calendar adapter represents this qualifier:
+        # sleep belongs to its wake date. Diet night reads need a meal binder.
+        if domains != {"sleep"} or not re.fullmatch(r"(?:晚上|夜晚|晚间|夜间|晚|夜)", calendar_remainder):
+            return False
+    if night and domains != {"sleep"}:
+        return False
+    return resolve_calendar_query_window(
+        residue, snapshot.context.current_time,
+        "sleep" if domains == {"sleep"} else "diet",
+        timezone_name=snapshot.context.timezone,
+    ) is not None
+
+
+def _query_temporal_scope(clause: str) -> str | None:
+    """Extract only query-associated time; event-relative filters have no adapter."""
+    relation = any(
+        re.search(r".+(?:之前|之后|以前|以后|前|后)(?:的)?$", clause[:target.start()])
+        for target in re.finditer("|".join(_DOMAINS.values()), clause)
+    )
+    if not (relation or _DATE_RE.search(clause) or _RELATIVE_RE.search(clause)
+            or _WEEKDAY_RE.search(clause) or _RECENT.search(clause)
+            or _SUBDAY_SCOPE.search(clause) or _AMBIGUOUS_DATE.search(clause)):
+        return None
+    scope = re.sub(r"(?:并|再|然后)(?:请)?(?:分析|复盘|总结).*$", "", clause)
+    scope = _strip_exam_request_scaffolding(scope)
+    scope = re.sub(r"^(?:先|再|然后)?(?:分析|复盘|总结)(?:一下)?", "", scope)
+    scope = re.sub(r"^(?:我|本人|自己)(?:的)?", "", scope)
+    if _RETROSPECTIVE_SCOPE.search(clause):
+        scope = re.sub(r"行动|健康情况|健康状态|一天|日程", "", scope)
+    return scope
+
+
+def _restricted_read_text(snapshot, active: str) -> str | None:
+    if not _record_domains(active) and not _RETROSPECTIVE_SCOPE.search(active):
         return active
-    clauses = re.split(r"[，,。；;！？!?\n]", active)
+    # These checks still run in the original policy. The read projection must
+    # neither replace their owner error nor reinterpret an observation as a task.
+    if (not has_positive_health_read_verb(active) and not _TOOL_READ.search(active)
+            and not re.search(r"分析|复盘|总结|建议|状况", active)
+            and not _RESTRICTION_PREFIX.search(active)):
+        return active
+    from app.services.agent_kernel.capability_policy import (
+        project_diet_manage_list_to_turn, _query_text_known_dimension, _FULL_DAY_DIET_QUERY_RE,
+    )
+    diet = project_diet_manage_list_to_turn(snapshot)
+    if diet is not None and not diet.get("meal_type") and _FULL_DAY_DIET_QUERY_RE.search(active):
+        return active
+    known = _query_text_known_dimension(active)
+    if known is not None and known not in _DOMAINS:
+        actual_read = _health_read_entity_expression(active)
+        if not _record_domains(actual_read):
+            return active
+    if _legacy_comparison_scope(active):
+        return active
+    from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan
+    if resolve_daily_read_plan(active, snapshot.context.current_time, timezone_name=snapshot.context.timezone) is not None:
+        return active
+    clauses = _read_projection_parts(active)
+    projected = "。".join(clause for clause, _ in clauses)
+    requested_domains = _record_domains(projected)
+    if not requested_domains and _RETROSPECTIVE_SCOPE.search(projected):
+        requested_domains = {"diet", "sleep"}
     normalized = []
     domain_limits = []
-    requested_domains = {key for key, pattern in _DOMAINS.items() if re.search(pattern, active)}
-    for clause in clauses:
-        if not _diagnosis_background_clause(clause) and _SUBDAY_SCOPE.search(clause):
-            return None
-        prefix = _RESTRICTION_PREFIX.search(clause)
-        if prefix is None:
-            normalized.append(clause)
-            continue
-        body = clause[prefix.end():].strip()
-        scope = re.sub(r"(?:并|再|然后)(?:分析|复盘|总结)(?:一下)?$", "", body)
-        domains = {key for key, pattern in _DOMAINS.items() if re.search(pattern, scope)}
-        residue = _DOMAIN_SCOPE.sub("", scope)
-        residue = re.sub(r"(?:我|本人|自己)?的|记录|数据|\s", "", residue)
-        if domains:
-            domain_limits.append(domains)
-        recent = _RECENT.fullmatch(residue)
-        if recent is not None:
-            days = _number(recent[1]) * (7 if recent[2] == "周" else 1)
-            if not 1 <= days <= 31:
+    for clause, is_scope in clauses:
+        marker = _RESTRICTION_PREFIX.search(clause)
+        if marker:
+            body = clause[marker.end():].strip()
+            scope = re.sub(r"(?:并|再|然后)(?:分析|复盘|总结)(?:一下)?$", "", body)
+            domains = {key for key, pattern in _DOMAINS.items() if re.search(pattern, scope)}
+            if domains:
+                domain_limits.append(domains)
+            if not _consume_read_scope(snapshot, scope, domains or requested_domains):
                 return None
-        elif residue in {"", "近期", "最近"}:
-            if not domains:
+            lead = clause[:marker.start()].strip()
+            if lead:
+                lead_scope = _strip_exam_request_scaffolding(lead)
+                if lead_scope not in {"", "你", "您"} and not re.fullmatch(r"(?:查询|读取|时间|日期|数据)?范围", lead_scope):
+                    return None
+                normalized.append(lead)
+            normalized.append(body)
+            continue
+        if is_scope:
+            if not _consume_read_scope(snapshot, clause, requested_domains):
                 return None
         else:
-            # Reuse calendar lexical tokens and the actual window validator.
-            # Unknown subday/event-relative suffixes remain and fail closed.
-            calendar_remainder = _WEEKDAY_RE.sub("", _RELATIVE_RE.sub("", _DATE_RE.sub("", residue)))
-            if calendar_remainder not in {"", "到", "至", "~", "～"}:
-                return None
-            if resolve_calendar_query_window(
-                residue, snapshot.context.current_time,
-                "sleep" if domains == {"sleep"} else "diet",
-                timezone_name=snapshot.context.timezone,
-            ) is None:
-                return None
-        # Preserve pre-marker content: it may carry a subject or another read
-        # request. Separating a scope declaration must not erase that authority.
-        lead = clause[:prefix.start()].strip()
-        if lead:
-            lead_scope = _strip_exam_request_scaffolding(lead)
-            if lead_scope not in {"", "你", "您"} and not re.fullmatch(
-                r"(?:查询|读取|时间|日期|数据)?范围", lead_scope,
-            ):
-                # An unknown pre-marker subject must not be discarded when
-                # the marker is no longer constrained to the clause start.
-                return None
-            normalized.append(lead)
-        normalized.append(body)
+            temporal = _query_temporal_scope(clause)
+            if temporal is not None:
+                exact_question = resolve_daily_read_plan(
+                    _strip_exam_request_scaffolding(clause), snapshot.context.current_time,
+                    timezone_name=snapshot.context.timezone,
+                )
+                if exact_question is None and not _consume_read_scope(snapshot, temporal, requested_domains):
+                    return None
+        normalized.append(clause)
     if any(not requested_domains <= limit for limit in domain_limits):
         return None
     return "。".join(normalized)
 
 
-def longitudinal_read_restrictions_unresolved(snapshot) -> bool:
-    """Reject unknown explicit limits before any rolling/calendar fallback."""
-    active = active_health_instruction_text(snapshot.envelope.text)
+def longitudinal_read_projection_text(snapshot, *, text_override: str | None = None) -> str | None:
+    """Server-only read projection; callers must retain original authority checks.
+
+    text_override is an already narrowed server input (e.g. removed plan clauses),
+    never model-authored authority. None means unsupported scope, not no request.
+    """
+    active = active_health_instruction_text(snapshot.envelope.text if text_override is None else text_override)
     active = re.sub(
         r"“[^”]*”|「[^」]*」|『[^』]*』|\"[^\"\n]*\"|'[^'\n]*'|‘[^’]*’|`[^`]*`",
         "", active,
     )
-    return _restricted_read_text(snapshot, active) is None
+    return _restricted_read_text(snapshot, active)
+
+
+def longitudinal_read_restrictions_unresolved(snapshot) -> bool:
+    """The same projection gates both rolling and calendar fallback consumers."""
+    return longitudinal_read_projection_text(snapshot) is None
 
 
 def _request(snapshot) -> tuple[str, int, bool] | None:
@@ -219,7 +434,7 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
         active,
     ):
         return None
-    active = _restricted_read_text(snapshot, active)
+    active = longitudinal_read_projection_text(snapshot)
     if active is None:
         return None
     # Identify subjects at each requested domain, including names without 的.
@@ -249,11 +464,7 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
         return None
     if not _TOOL_READ.search(active):
         return None
-    # Only standalone diagnosis-history clauses may lose background dates.
-    # A clause requesting records since diagnosis must remain and fail closed.
-    clauses = re.split(r"[，,。；;\n]", active)
-    relevant = [clause for clause in clauses if not _diagnosis_background_clause(clause)]
-    request = "。".join(relevant)
+    request = active
     hits = list(_RECENT.finditer(request))
     if len(hits) > 1:
         return None

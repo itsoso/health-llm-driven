@@ -2716,7 +2716,12 @@ def decide_tool_capability(
             longitudinal_read_scope_requested, longitudinal_read_restrictions_unresolved,
         )
         if longitudinal_read_restrictions_unresolved(snapshot):
-            return _decision("block", "longitudinal_read_scope_unresolved", tool_name, args)
+            # Preserve the existing ownership denial when both checks fail;
+            # ownership can change the rejection reason, never grant scope.
+            reason = ("health_query_subject_not_current_user"
+                      if illness_read_has_unowned_subject(_query_scope_text(snapshot.envelope.text))
+                      else "longitudinal_read_scope_unresolved")
+            return _decision("block", reason, tool_name, args)
         # Preserve the existing exact-day/meal binder where it applies.
         daily = resolve_daily_read_plan(snapshot.envelope.text, snapshot.context.current_time,
                                         timezone_name=snapshot.context.timezone)
@@ -2797,12 +2802,16 @@ def decide_tool_capability(
                              tool_name, bound_query)
         from app.services.agent_query_window import resolve_calendar_query_window
 
-        question_dimension = _calendar_question_dimension(turn_text)
-        expected_dimension = question_dimension or _query_text_known_dimension(turn_text)
+        from app.services.agent_longitudinal_read import longitudinal_read_projection_text
+        calendar_text = longitudinal_read_projection_text(snapshot)
+        if calendar_text is None:
+            return _decision("block", "longitudinal_read_scope_unresolved", tool_name, canonical_args)
+        question_dimension = _calendar_question_dimension(calendar_text)
+        expected_dimension = question_dimension or _query_text_known_dimension(calendar_text)
         # Ambiguous mixed-domain text must not inherit the classifier's one
         # primary domain and silently authorize a narrower query.
         calendar_window = resolve_calendar_query_window(
-            _query_scope_text(turn_text), snapshot.context.current_time,
+            _query_scope_text(calendar_text), snapshot.context.current_time,
             expected_dimension or "", timezone_name=snapshot.context.timezone,
         )
         requested_window = any(key in canonical_args for key in ("start_date", "end_date", "timezone"))
@@ -3105,7 +3114,10 @@ def decide_tool_capability(
             guarding_user_read = not internal_mutation_lookup
             from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
             if guarding_user_read and longitudinal_read_restrictions_unresolved(snapshot):
-                return _decision("block", "longitudinal_read_scope_unresolved", tool_name, args)
+                reason = ("health_query_subject_not_current_user"
+                          if illness_read_has_unowned_subject(_query_scope_text(turn_text))
+                          else "longitudinal_read_scope_unresolved")
+                return _decision("block", reason, tool_name, args)
             if guarding_user_read and _health_read_is_explicitly_non_authorizing(
                 turn_text
             ):

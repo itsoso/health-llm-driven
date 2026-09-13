@@ -172,3 +172,126 @@ def test_restriction_v3_valid_multiple_domains_keep_actual_scope(text):
     assert all(q['start_date'] == '2026-09-07' and q['end_date'] == '2026-09-13' for q in scope.queries)
     assert decide({'queries': list(scope.queries)}, text=text, tool='health_query_batch').action == 'allow'
     assert decide({'dimension': 'workout'}, text=text).action == 'block'
+
+
+@pytest.mark.parametrize('time_scope', [
+    '今天晚上', '昨天晚上', '今天任意未支持时段', '早餐前', '早餐后',
+    '午餐前', '午餐后', '晚餐前', '晚餐后', '运动前', '运动后', '那次检查之后',
+])
+def test_projection_v4_no_adapter_can_drop_event_or_day_qualifier(time_scope):
+    text = f'{time_scope}，查询我的饮食并分析'
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    assert decide({'dimension': 'diet'}, text=text).action == 'block'
+    assert decide({'queries': [{'dimension': 'diet'}]}, text=text, tool='health_query_batch').action == 'block'
+    assert decide({'record_type': 'diet', 'operation': 'list', 'date': '2026-09-13'},
+                  text=text, tool='health_manage').action == 'block'
+
+
+@pytest.mark.parametrize('background', ['我上午工作比较忙', '我今天早上感觉有点累'])
+@pytest.mark.parametrize('window', ['最近7天', '今天'])
+def test_projection_v4_calendar_and_rolling_use_the_same_background_free_query(background, window):
+    text = f'{background}。请查询我{window}的睡眠记录并分析。'
+    scope = resolve_owned_read_scope(snapshot(text))
+    assert scope and len(scope.queries) == 1
+    query = scope.query('sleep')
+    assert query['start_date'] == ('2026-09-07' if window == '最近7天' else '2026-09-13')
+    assert query['end_date'] == '2026-09-13'
+    assert decide(dict(query), text=text).action == 'allow'
+
+
+@pytest.mark.parametrize('time_scope', ['昨晚', '昨天晚上'])
+def test_projection_v4_sleep_night_keeps_wake_date(time_scope):
+    text = f'{time_scope}，查询我的睡眠并分析'
+    scope = resolve_owned_read_scope(snapshot(text))
+    assert scope and scope.query('sleep')['start_date'] == '2026-09-13'
+    assert scope.query('sleep')['end_date'] == '2026-09-13'
+    assert decide(dict(scope.query('sleep')), text=text).action == 'allow'
+
+
+def test_projection_v4_exact_dinner_plan_keeps_meal_filter():
+    text = '我昨天晚上吃了什么'
+    decision = decide({'dimension': 'diet'}, text=text)
+    assert decision.action == 'allow'
+    assert decision.normalized_args['meal_type'] == 'dinner'
+    assert decision.normalized_args['date'] == '2026-09-12'
+
+
+@pytest.mark.parametrize('text,dimension', [
+    ('同步一下佳明，再分析昨晚睡眠。', 'sleep'),
+    ('帮我看一下昨晚的睡眠，再说说数据有没有同步。', 'sleep'),
+    ('分析我昨天的行动。', 'diet'), ('分析我昨天的行动。', 'sleep'),
+    ('复盘我2026-09-13的饮食和睡眠。', 'diet'),
+])
+def test_projection_v5_existing_composed_read_frames_survive(text, dimension):
+    result = decide({'dimension': dimension}, text=text)
+    assert result.action == 'allow', result.reason
+
+
+@pytest.mark.parametrize('text,days', [
+    ('查一下我近半年睡眠的记录', 183),
+    ('查询近一周补剂服用记录', 7),
+])
+def test_projection_v5_existing_plain_history_keeps_bound_window(text, days):
+    dimension = 'supplements' if '补剂' in text else 'sleep'
+    result = decide({'dimension': dimension}, text=text)
+    assert result.action == 'allow', result.reason
+    assert result.normalized_args['days'] == days
+
+
+@pytest.mark.parametrize('text', [
+    '查询我昨天晚上的饮食', '请查我早餐后的饮食',
+    '傍晚同步佳明，再查询我今天的饮食',
+    '同步一下佳明，傍晚，查询我的睡眠并分析',
+])
+def test_projection_v5_existing_actions_do_not_erase_unbound_restrictions(text):
+    assert decide({'dimension': 'diet' if '饮食' in text else 'sleep'}, text=text).action == 'block'
+
+
+@pytest.mark.parametrize('disease', ['运动神经元病', '睡眠呼吸暂停综合征', '饮食失调症'])
+def test_projection_v5_exact_clinical_entity_is_not_a_record_domain_substring(disease):
+    result = decide({'dimension': 'illness'}, text=f'查询近半年{disease}的记录')
+    assert result.action == 'allow', result.reason
+
+
+def test_projection_v5_clinical_clause_does_not_exempt_independent_diet_restriction():
+    text = '查询近半年运动神经元病的记录。只看今早，查询我的饮食并分析。'
+    assert decide({'dimension': 'diet'}, text=text).action == 'block'
+
+
+@pytest.mark.parametrize('text', [
+    '比较近7天睡眠和近30天HRV',
+    '比较睡眠近7天和HRV近30天',
+    '睡眠近7天对比HRV近30天',
+])
+def test_projection_v5_legacy_comparison_keeps_each_window(text):
+    args = {'queries': [{'dimension': 'sleep', 'days': 7, 'agg': 'avg'},
+                        {'dimension': 'hrv', 'days': 30, 'agg': 'avg'}],
+            'compare': {'a': 0, 'b': 1, 'op': 'diff'}}
+    assert decide(args, text, 'health_query_batch').action == 'allow'
+    args['queries'][0]['days'] = 30
+    assert decide(args, text, 'health_query_batch').action == 'block'
+
+
+@pytest.mark.parametrize('restriction', ['只看晚上', '早餐后', '范围限定在那次检查之后'])
+def test_projection_v5_comparison_does_not_consume_unknown_restrictions(restriction):
+    args = {'queries': [{'dimension': 'sleep', 'days': 7}, {'dimension': 'hrv', 'days': 30}]}
+    assert decide(args, f'比较近7天睡眠和近30天HRV，{restriction}', 'health_query_batch').action == 'block'
+
+
+@pytest.mark.parametrize('text,day', [
+    ('麻烦把我的佳明数据刷新一下，然后看看昨晚睡得怎么样。', '2026-09-13'),
+    ('先分析昨天的睡眠，再起草今天的计划', '2026-09-12'),
+])
+def test_projection_v5_composed_frames_keep_the_read_date(text, day):
+    scope = resolve_owned_read_scope(snapshot(text))
+    assert scope is not None
+    assert scope.query('sleep')['start_date'] == day
+
+
+@pytest.mark.parametrize('text', [
+    '先分析我的睡眠，再起草今天的计划',
+    '先分析早餐后的睡眠，再起草今天的计划',
+    '先分析昨天上午的睡眠，再起草今天的计划',
+])
+def test_projection_v5_draft_never_supplies_or_erases_read_time(text):
+    assert resolve_owned_read_scope(snapshot(text)) is None

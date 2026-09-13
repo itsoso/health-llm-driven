@@ -106,7 +106,14 @@ def test_model_supplied_window_cannot_override_user_date():
 
 @pytest.mark.parametrize('dimension', ['sleep', 'diet'])
 def test_mixed_domain_calendar_query_binds_each_requested_domain(dimension):
-    result = decision('查询昨晚睡眠和饮食', {'dimension': dimension})
+    result = decision('查询昨天睡眠和饮食', {'dimension': dimension})
     assert result.action == 'allow'
-    assert result.normalized_args['start_date'] == ('2026-07-17' if dimension == 'sleep' else '2026-07-16')
-    assert decision('查询昨晚睡眠和饮食', {'dimension': 'genetic'}).action == 'block'
+    assert result.normalized_args['start_date'] == '2026-07-16'
+    assert decision('查询昨天睡眠和饮食', {'dimension': 'genetic'}).action == 'block'
+
+
+@pytest.mark.parametrize('dimension', ['sleep', 'diet'])
+def test_mixed_night_query_cannot_widen_diet_to_a_whole_day(dimension):
+    result = decision('查询昨晚睡眠和饮食', {'dimension': dimension})
+    assert result.action == 'block'
+    assert result.reason == 'longitudinal_read_scope_unresolved'

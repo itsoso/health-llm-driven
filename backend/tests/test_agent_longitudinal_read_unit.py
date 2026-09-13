@@ -292,3 +292,54 @@ def test_restriction_v3_multiple_domains_are_complete_scope_tokens(prefix, conne
 ])
 def test_restriction_v3_prefix_still_carries_authority_constraints(text):
     assert resolve_longitudinal_read_queries(snapshot(text)) is None
+
+
+@pytest.mark.parametrize('time_scope', [
+    '今天晚上', '昨天晚上', '今天任意未支持时段', '2026-09-01饭点附近',
+    '早餐前', '早餐后', '午餐前', '午餐后', '晚餐前', '晚餐后',
+    '运动前', '运动后', '那次检查之前', '那次检查之后',
+])
+def test_projection_v4_scope_fragments_must_be_completely_consumed(time_scope):
+    from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+    text = f'{time_scope}，查询我的饮食并分析'
+    assert longitudinal_read_restrictions_unresolved(snapshot(text))
+    assert resolve_longitudinal_read_queries(snapshot(text)) is None
+
+
+@pytest.mark.parametrize('background,domain', [
+    ('我上午工作比较忙', '饮食'),
+    ('我今天早上感觉有点累', '睡眠'),
+    ('今天早上我感觉有点累', '睡眠'),
+    ('我昨天的睡眠不太好', '饮食'),
+])
+def test_projection_v4_narrative_background_cannot_override_explicit_query(background, domain):
+    from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+    text = f'{background}。请查询我最近7天的{domain}记录并分析。'
+    turn = snapshot(text)
+    assert not longitudinal_read_restrictions_unresolved(turn)
+    result = resolve_longitudinal_read_queries(turn)
+    assert result and len(result) == 1 and result[0]['days'] == 7
+    assert result[0]['dimension'] == ('diet' if domain == '饮食' else 'sleep')
+
+
+@pytest.mark.parametrize('fragment', ['傍晚', '黄昏', '临睡时', '我傍晚', '早餐后的记录', '晚上', '只要晚上', '我的要求是晚上'])
+def test_projection_v4_unknown_nominal_fragment_is_not_silently_background(fragment):
+    from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+    turn = snapshot(f'{fragment}，查询我的饮食并分析')
+    assert longitudinal_read_restrictions_unresolved(turn)
+    assert resolve_longitudinal_read_queries(turn) is None
+
+
+@pytest.mark.parametrize('event', ['早餐后', '运动后', '运动前'])
+def test_projection_v4_inline_event_before_any_domain_is_unrepresentable(event):
+    from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+    turn = snapshot(f'查询我{event}的饮食并分析')
+    assert longitudinal_read_restrictions_unresolved(turn)
+    assert resolve_longitudinal_read_queries(turn) is None
+
+
+def test_projection_v4_override_does_not_restore_removed_plan_scope():
+    from app.services.agent_longitudinal_read import longitudinal_read_projection_text
+    turn = snapshot('给我制定明天计划。请查询我今天的睡眠并分析。')
+    result = longitudinal_read_projection_text(turn, text_override='请查询我今天的睡眠并分析')
+    assert result and '今天' in result and '明天' not in result and '计划' not in result
