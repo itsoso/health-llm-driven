@@ -28,6 +28,7 @@ def daily_read_prompt(plan: DailyReadPlan) -> str:
     return (
         f'\n[本轮查询范围]\n{plan.start_date} 至 {plan.end_date}，{plan.timezone}，{domains}。'
         + ('饮食只查询晚餐。' if plan.meal_type == 'dinner' else '')
+        + ('另读取当前账号同步状态；最近成功时间不证明本次任务完成，不得自动触发同步。' if plan.sync_status_requested else '')
         + '必须用本轮工具结果回答；无记录不等于没有发生。'
         + ('本次今日总结仅覆盖饮食与睡眠，开头简短说明范围；不要暗示其他健康领域也已查询。' if plan.is_summary else '')
         + '分别说明查到的事实、未查到的项目和依据这些结果可给出的建议。'
@@ -90,8 +91,45 @@ def daily_result_goal(plan: DailyReadPlan, decision: Any, result: Any) -> dict[s
 def daily_goal_outcomes(plan: DailyReadPlan | None, completed: dict[str, dict[str, str]]) -> list[dict[str, str]]:
     if plan is None:
         return []
+    dimensions = (*plan.dimensions, 'garmin_sync_status') if plan.sync_status_requested else plan.dimensions
     return [completed.get(d, {'goal_id': d, 'kind': 'query', 'status': 'failed',
-                             'reason_code': 'query_not_executed'}) for d in plan.dimensions]
+                             'reason_code': 'query_not_executed'}) for d in dimensions]
+
+
+def sync_status_goal(payload: Any) -> dict[str, str]:
+    from app.services.agent_garmin_status import project_garmin_status
+    status = payload.get('sync_check') if isinstance(payload, dict) else None
+    valid = (isinstance(status, dict) and status.get('lookup_status') == 'available'
+             and project_garmin_status(status)['lookup_status'] == 'available')
+    return {'goal_id': 'garmin_sync_status', 'kind': 'query',
+            'status': 'verified' if valid else 'failed',
+            'evidence_kind': 'read_result' if valid else '',
+            'reason_code': 'sync_status_read' if valid else 'sync_status_unavailable'}
+
+
+def sleep_sync_reply(plan: DailyReadPlan, payloads: dict, goals: dict) -> str:
+    """Use verified facts for a compound read; no model-generated sync claims."""
+    from app.services.agent_garmin_status import garmin_status_text
+    payload = payloads.get('sleep')
+    goal = goals.get('sleep') or {}
+    rows = (_summary_rows(plan, 'sleep', payload) if goal.get('status') == 'verified'
+            and goal.get('evidence_kind') == 'read_result' else None)
+    if rows is None:
+        sleep = '睡眠：本轮查询未完成，暂时无法评价。'
+    elif not rows:
+        sleep = '睡眠：目标日期暂无可用记录，不能据此判断你没有睡觉或睡得不好。'
+    elif len(rows) != 1:
+        sleep = '睡眠：查到多条记录，不能合并成一个睡眠评分，请查看明细。'
+    else:
+        duration = _summary_decimal(rows[0].get('total_sleep_duration'))
+        score = _summary_decimal(rows[0].get('sleep_score'))
+        hours = _summary_display(duration / Decimal(60)) if duration is not None else None
+        score_text = _summary_display(score) if score is not None else None
+        sleep = (f'睡眠时长：{hours}小时。' if hours is not None else '睡眠时长暂无有效读数。')
+        sleep += f'睡眠评分：{score_text}。' if score_text is not None else '睡眠评分暂无有效读数。'
+        sleep += '以上是已收到的设备记录，不代表医学诊断。'
+    status = payload.get('sync_check') if isinstance(payload, dict) else None
+    return f'睡眠记录（按醒来日期 {plan.start_date}，{plan.timezone}）：\n{sleep}\n\n{garmin_status_text(status)}'
 
 
 def summary_advice_text(text: str) -> str:

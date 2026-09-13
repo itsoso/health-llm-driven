@@ -2453,6 +2453,30 @@ def capability_policy_digest() -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _explicit_owned_garmin_sync(text: str) -> bool:
+    """Bind only a complete owned-data imperative, not a nearby sync keyword.
+
+    Spoken requests often name the data first and repeat the sync imperative.
+    Each trailing clause must itself be a bounded sync command; arbitrary
+    owners, dates, status questions and additional actions remain unbound.
+    Fetching data alone is read intent and must never enqueue a sync job.
+    """
+    scoped = re.sub(r"\s+", "", normalize_health_authorization_text(
+        active_health_instruction_text(text)))
+    polite = r"(?:请你?|麻烦)?(?:帮我|给我)?"
+    owned_data = r"(?:我的?)?(?:garmin|佳明)(?:的)?数据"
+    sync_command = rf"{polite}(?:同步(?:一下)?|(?:主动)?触发(?:一下)?同步)"
+    separator = r"[，,。;；]"
+    return bool(re.fullmatch(
+        rf"(?:{polite}同步(?:一下)?{owned_data}"
+        rf"(?:{separator}{sync_command}){{0,2}}"
+        rf"|{polite}获取{owned_data}(?:{separator}{sync_command}){{1,2}})"
+        r"[。.!！]?",
+        scoped,
+        re.IGNORECASE,
+    ))
+
+
 def decide_tool_capability(
     snapshot: TurnSnapshot,
     request: ToolExecutionRequest,
@@ -2561,12 +2585,8 @@ def decide_tool_capability(
         )
     if (tool_name == "health_record" and args.get("record_type") == "garmin_sync"
             and request.source not in {"procedure_recipe_replay", "telegram_directive"}):
-        scoped = re.sub(r"\s+", "", normalize_health_authorization_text(
-            active_health_instruction_text(snapshot.envelope.text)))
-        generic_owned_sync = re.fullmatch(
-            r"(?:请|请你|麻烦)?(?:帮我|给我)?同步(?:一下)?(?:我的?)?"
-            r"(?:garmin|佳明)(?:的)?数据[。.!！]?", scoped, re.IGNORECASE)
-        if (generic_owned_sync and snapshot.intent.operation == "sync"
+        if (_explicit_owned_garmin_sync(snapshot.envelope.text)
+                and snapshot.intent.operation == "sync"
                 and args.get("data") == {}):
             return _decision("allow", "explicit_owned_garmin_sync", tool_name,
                              {"record_type": "garmin_sync", "data": {}},

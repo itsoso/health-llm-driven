@@ -68,6 +68,7 @@ from app.services.agent_turn_outcome import classify_agent_turn_outcome, agent_c
 from app.services.agent_daily_read_execution import (
     planned_daily_calls, daily_read_prompt, daily_result_goal, daily_goal_outcomes,
     verified_daily_summary, summary_advice_contract_failure, summary_advice_text,
+    sleep_sync_reply, sync_status_goal,
 )
 from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan, is_daily_summary_request
 from app.services.agent_output_quality import (
@@ -11957,6 +11958,8 @@ class AgentExecutor:
                     payload = load_tool_result_json(result)
                     if isinstance(payload, dict):
                         self._turn_daily_read_payloads[goal_id] = payload
+                        if self._turn_daily_read_plan.sync_status_requested and goal_id == 'sleep':
+                            self._turn_daily_read_results['garmin_sync_status'] = sync_status_goal(payload)
                 if read_goal['reason_code'] in {'query_result_scope_conflict', 'query_result_truncated'}:
                     result = json.dumps({
                         'status': 'failed', 'error_code': read_goal['reason_code'],
@@ -17354,6 +17357,11 @@ class AgentExecutor:
                 full_reply = facts + "\n\n" + full_reply
             else:
                 full_reply = facts
+        if self._turn_daily_read_plan is not None and self._turn_daily_read_plan.sync_status_requested:
+            full_reply = sleep_sync_reply(
+                self._turn_daily_read_plan, self._turn_daily_read_payloads,
+                self._turn_daily_read_results,
+            )
         medical_boundary = enforce_medical_evidence_boundaries(
             full_reply,
             model_generated=not (
@@ -23208,6 +23216,12 @@ class AgentExecutor:
             if expected is None or window.as_dict() != expected:
                 return "Error: 查询日期与当前请求不一致，请明确要查询的日期。"
             result = read_calendar_health_query(self.db, self._current_user_id, dim, window)
+            if daily_plan is not None and daily_plan.sync_status_requested:
+                from app.services.agent_garmin_status import project_garmin_status
+                status, error = await self._api_get_json(
+                    f'{base}/data-collection/garmin/me/credential-status', headers,
+                )
+                result['sync_check'] = project_garmin_status(None if error else status)
             return json.dumps(result, ensure_ascii=False, default=str)
         days = args.get("days")
         if days is None and dim != "illness":

@@ -46,6 +46,11 @@ _ADVICE_SUFFIX_RE = re.compile(
     r"(?:今天)?(?:是否|能否)适合(?:锻炼|运动))"
     r"[，,。.!！?？；;]*$"
 )
+_SYNC_STATUS_SUFFIX_RE = re.compile(
+    r'[，,。.!！?？；;]+(?:我的?)?(?:佳明|garmin)(?:的)?(?:数据)?'
+    r'同步(?:完了|完成了|完成|好了|好|完)(?:吗|了没有|没有)[？?。.!！]*$',
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -57,6 +62,7 @@ class DailyReadPlan:
     meal_type: str | None = None
     asks_advice: bool = False
     is_summary: bool = False
+    sync_status_requested: bool = False
 
     def queries(self) -> tuple[dict[str, str], ...]:
         return tuple({"dimension": dimension, "start_date": self.start_date,
@@ -73,11 +79,14 @@ class DailyReadPlan:
         return args
 
 
-def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str | None] | None:
+def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str | None, bool] | None:
     if health_read_cancelled(text):
         return None
     normalized = re.sub(r"\s+", "", normalize_health_authorization_text(
         active_health_read_clause(text)))
+    sync_status = _SYNC_STATUS_SUFFIX_RE.search(normalized)
+    if sync_status:
+        normalized = normalized[:sync_status.start()]
     suffix = _ADVICE_SUFFIX_RE.search(normalized)
     core = normalized[:suffix.start()] if suffix else normalized
     core = core.strip("，,。.!！?？；;")
@@ -86,9 +95,13 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
         dimension = "sleep" if question.group("sleep") else "diet"
         meal = ("dinner" if dimension == "diet" and
                 (question.group("evening") or re.search(r"昨晚|昨夜", core)) else None)
-        return core, (dimension,), suffix is not None, False, meal
+        if sync_status and (dimension != 'sleep' or suffix):
+            return None
+        return core, (dimension,), suffix is not None, False, meal, sync_status is not None
     if _SUMMARY_RE.fullmatch(core):
-        return core, DAILY_SUMMARY_DIMENSIONS, suffix is not None, True, None
+        if sync_status:
+            return None
+        return core, DAILY_SUMMARY_DIMENSIONS, suffix is not None, True, None, False
     return None
 
 
@@ -109,13 +122,14 @@ def resolve_daily_read_plan(
     frame = _daily_read_frame(text)
     if frame is None:
         return None
-    core, dimensions, asks_advice, is_summary, meal = frame
+    core, dimensions, asks_advice, is_summary, meal, sync_status = frame
     window = resolve_calendar_query_window(
         core, reference_now, dimensions[0], timezone_name=timezone_name)
     if window is None:
         return None
     return DailyReadPlan(dimensions=dimensions, **window, meal_type=meal,
-                         asks_advice=asks_advice, is_summary=is_summary)
+                         asks_advice=asks_advice, is_summary=is_summary,
+                         sync_status_requested=sync_status)
 
 
 def daily_read_plan_contract_payload() -> dict[str, str]:
