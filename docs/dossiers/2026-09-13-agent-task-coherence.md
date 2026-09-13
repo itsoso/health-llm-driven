@@ -157,3 +157,15 @@ Fixed daily `a239238d8` passed the original thirteen malformed-result oracle cas
 The shared read projection preserves quotation spans and their host clauses. Complete standalone reported material may be excluded as context; embedded owners, objects and restrictions remain unresolved unless safely bound. The same projection feeds authorization and longitudinal scope construction. Original manage-list limits on reported third-party context remain unchanged, independently reproduced from the previous committed helper.
 
 Final unchanged-source validation passed 5,602 policy cases, 860 coherence/failure cases with eight explicit skips, and 214 PostgreSQL cases with no skips. The unchanged independent matrix passed eighty-four cases. The existing no-false-write/empty-answer test remains unmodified and now passes. All application fingerprints stayed fixed; static, map and tracked-secret checks passed. Fixed-commit independent G4, CI-mode and real-model acceptance remain required; no deployment has occurred.
+
+
+## Shared sync quotation and uncertainty alternatives — review follow-up
+
+Fixed `8d034c68` passed the read quote matrices and independent 405-case safety/empty-answer checks, but G4 returned NO-GO because the sync scope's separate active-text helper still erased quoted owners and dates. Four actual gateway probes incorrectly authorized a current-user sync. The repair reuses the pure quote-role projection before sync authorization; it must not call the full read resolver recursively or revive the old sync fallback. The independent CI run stopped gracefully after 1,202 passes and no failures, with eighteen unstarted groups explicitly retained. This is not a completed CI gate.
+
+Daily `2daeec4b` fixed the prior affirmative-claim escape and passed the old twenty-six-case oracle. Independent review found two valid alternative complements under the same uncertainty operator were over-rejected, producing six failures across the three colloquial queries. This remains a local proposition-binding compatibility defect; it is not waived by the successful prior cases. The repair must admit complete coordinated uncertain claims while preserving all subsequent independent-assertion denials. Subsequent fixed candidates will undergo new G4 before broad CI/PG and paid acceptance run in parallel, avoiding repeated broad validation of rejected candidates. No batch has been pushed or deployed.
+
+
+## Shared quotation authority — fixed review candidate
+
+Sync and status reads now reuse the same pure quote-role projection as read scope. Every optional-projection consumer explicitly denies unresolved text; the full read resolver is deliberately not invoked recursively by sync binding. The focused repair passed 402 cases, the original sync matrix twelve, and the unchanged read matrix eighty-four. Source hashes are fixed in the validation manifest. New independent fixed-commit G4 precedes the final wide CI-mode/PostgreSQL and actual-model checks; those final gates remain pending.

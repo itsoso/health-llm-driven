@@ -42,18 +42,18 @@ _SYNC_TARGET_TIME = re.compile(
 )
 
 
-def _active(text: str) -> str:
-    active = active_health_instruction_text(text)
-    # Quoted examples cannot supply an owner, read act, domain, or date.
-    active = re.sub(
-        r"""“[^”]*”|「[^」]*」|『[^』]*』|"[^"\n]*"|'[^'\n]*'|‘[^’]*’|`[^`]*`""",
-        "",
-        active,
-    )
+def _active(text: str) -> str | None:
+    # Reuse the pure quote-role projection rather than deleting operands. The
+    # full read-scope projector calls this sync binder, so it is not used here.
+    from app.services.agent_longitudinal_read import project_active_quote_roles
+
+    active = project_active_quote_roles(active_health_instruction_text(text))
+    if active is None:
+        return None
     return normalize_health_authorization_text(active).strip()
 
 
-def _owned_active(text: str) -> bool:
+def _owned_active(text: str | None) -> bool:
     if (
         not text
         or _NON_AUTHORIZING.search(text)
@@ -94,7 +94,7 @@ def _owned_active(text: str) -> bool:
 def has_owned_sync_instruction(text: str) -> bool:
     """An explicit refresh act is distinct from asking whether a job finished."""
     active = _active(text)
-    if not _owned_active(active) or _MUTATION.search(active):
+    if active is None or not _owned_active(active) or _MUTATION.search(active):
         return False
     if not re.search(r"garmin|佳明", active, re.I):
         return False
@@ -158,7 +158,7 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     if longitudinal is not None:
         return OwnedReadScope(longitudinal, longitudinal_read_limitations(snapshot))
     text = _active(snapshot.envelope.text)
-    if not _owned_active(text) or _MUTATION.search(text) or not _READ.search(text):
+    if text is None or not _owned_active(text) or _MUTATION.search(text) or not _READ.search(text):
         return None
     # Prospective diet/medical advice does not implicitly authorize history.
     if re.search(r"应该|该吃|吃什么药|吃什么补剂|吃了什么药|吃了什么补剂", text):
@@ -215,7 +215,7 @@ def resolve_sync_status_query(snapshot) -> dict[str, str] | None:
         )
         return {**sleep, "dimension": "garmin"} if sleep else None
     text = _active(snapshot.envelope.text)
-    if not _owned_active(text) or _MUTATION.search(text):
+    if text is None or not _owned_active(text) or _MUTATION.search(text):
         return None
     if not re.search(r"garmin|佳明", text, re.I) or not re.search(
         r"同步|刷新|拉取", text

@@ -435,7 +435,7 @@ def _restricted_read_text(snapshot, active: str) -> str | None:
     return "。".join(normalized)
 
 
-def _read_quote_projection(active: str) -> str | None:
+def project_active_quote_roles(active: str) -> str | None:
     """Preserve quote positions; only independent reported material is context.
 
     Inline quoted owners/objects/filters stay intact for complete consumption.
@@ -502,7 +502,7 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     never model-authored authority. None means unsupported scope, not no request.
     """
     active = active_health_instruction_text(snapshot.envelope.text if text_override is None else text_override)
-    active = _read_quote_projection(active)
+    active = project_active_quote_roles(active)
     if active is None:
         return None
     return _restricted_read_text(snapshot, active)
@@ -523,7 +523,7 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
     ):
         return None
     active = active_health_instruction_text(snapshot.envelope.text)
-    active = _read_quote_projection(active)
+    active = project_active_quote_roles(active)
     if active is None:
         return None
     if (
