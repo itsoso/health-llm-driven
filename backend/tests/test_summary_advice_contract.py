@@ -109,3 +109,28 @@ def test_future_actions_and_goals_do_not_require_fixed_wording(text):
 @pytest.mark.parametrize("text", ["昨晚睡眠7小时。", "睡眠时长为7小时。", "实际散步十分钟。", "睡眠：7小时。"])
 def test_duration_with_explicit_observation_cue_is_rejected(text):
     assert daily.summary_advice_contract_failure(text) == "summary_advice_repeats_measurement"
+
+
+def test_diet_evaluation_requires_explicit_advice_section_without_changing_summary_default():
+    prose = "我会先查询今天的饮食记录，然后给出建议。"
+    assert daily.summary_advice_text(prose) == prose
+    assert daily.summary_advice_text(prose, require_heading=True) == ""
+    assert daily.summary_advice_contract_failure(daily.summary_advice_text(prose, require_heading=True)) == "summary_advice_unavailable"
+
+
+@pytest.mark.parametrize("text", [
+    "建议：暂无建议。", "### 建议\n目前没有建议。", "建议：建议待补充。",
+    "建议：我会先查询今天的饮食记录，然后给出建议。",
+    "建议：我将读取记录，再分析你的饮食。",
+])
+def test_heading_cannot_verify_placeholder_or_only_a_promise_to_answer(text):
+    assert daily.summary_advice_contract_failure(text) is not None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：当前记录缺少份量和营养字段，暂不足以评价营养是否均衡。",
+    "建议：目前没有足够信息给出个性化建议，可以先补充食物份量。",
+    "建议：我会先查询记录。你可以先核对每条记录的份量。",
+])
+def test_explained_limits_or_real_actions_are_not_empty_advice(text):
+    assert daily.summary_advice_contract_failure(text) is None

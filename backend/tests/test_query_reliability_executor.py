@@ -32,7 +32,7 @@ async def test_daily_read_runs_through_pi_with_verified_scope(db, auth_user_and_
                 'function': {'name': tool, 'arguments': json.dumps(args)}}]}
             yield {'type': 'finish', 'finish_reason': 'tool_calls'}
         else:
-            yield {'type': 'content', 'text': '已查询，本次没有可用记录。建议先补充漏记的饮食与睡眠，再作回顾。'}
+            yield {'type': 'content', 'text': '建议：先核对并补充漏记的记录，再作回顾。'}
             yield {'type': 'finish', 'finish_reason': 'stop'}
 
     async def dispatch(request, token):

@@ -132,13 +132,13 @@ def sleep_sync_reply(plan: DailyReadPlan, payloads: dict, goals: dict) -> str:
     return f'睡眠记录（按醒来日期 {plan.start_date}，{plan.timezone}）：\n{sleep}\n\n{garmin_status_text(status)}'
 
 
-def summary_advice_text(text: str) -> str:
+def summary_advice_text(text: str, *, require_heading: bool = False) -> str:
     """Keep an explicitly headed advice section, including its heading text."""
     heading = re.search(
         r'^[ \t]*(?:#{1,6}[ \t]*建议(?:[（(][^\n）)]*[）)])?[ \t]*$'
         r'|\*\*建议\*\*[ \t]*$|建议[：:])', text, re.MULTILINE,
     )
-    return text[heading.start():] if heading else text
+    return text[heading.start():] if heading else ('' if require_heading else text)
 
 
 def summary_advice_contract_failure(text: str) -> str | None:
@@ -154,6 +154,23 @@ def summary_advice_contract_failure(text: str) -> str | None:
     )
     if not body.strip(' \t\r\n-*#_>'):
         return 'summary_advice_unavailable'
+    # A heading is formatting, not evidence that the answer was delivered.
+    # Reject whole-body placeholders; explanations of limitations remain valid.
+    plain_body = body.strip(' \t\r\n-*#_>。.!！?？；;')
+    if re.fullmatch(
+        r'(?:(?:目前|现在|暂时|暂)?(?:无|没有)(?:更多|可提供的)?(?:建议|意见)'
+        r'|(?:建议|意见)(?:待补充|暂缺|暂无|缺失))', plain_body,
+    ):
+        return 'summary_advice_unavailable'
+    # Only a sequence of assistant future-work clauses is a pending answer.
+    # A real user action or explained limit alongside a promise is substantive.
+    action = r'(?:查询|查阅|读取|检索|查看|核对|分析|整理|给出|提供)'
+    promise = rf'(?:我|我们|助手|系统)(?:会|将|准备|打算)(?:先|再)?{action}.+'
+    continuation = rf'(?:然后|之后|随后|再)(?:再)?{action}.+'
+    clauses = [part.strip(' \t-*#_>') for part in re.split(r'[。！？!?；;，,\n]+', body) if part.strip()]
+    if (clauses and re.fullmatch(promise, clauses[0])
+            and all(re.fullmatch(rf'(?:{promise}|{continuation})', part) for part in clauses)):
+        return 'summary_advice_not_delivered'
     number = r'(?:\d+(?:[.,]\d+)*|[零〇一二两三四五六七八九十百千万点半]+)'
     if re.search(
         rf'{number}\s*(?:千卡|大卡|kcal|卡路里|评分|分(?!钟))'
@@ -239,7 +256,7 @@ def _summary_rows(plan: DailyReadPlan, dimension: str, payload: Any) -> list[dic
 
 def verified_daily_summary(
     plan: DailyReadPlan, payloads: dict[str, dict], goals: dict[str, dict],
-    *, include_food_names: bool = True,
+    *, include_food_names: bool = True, include_non_summary: bool = False,
 ) -> str:
     """Render facts from already owner-scoped, verified current-turn reads.
 
@@ -248,13 +265,18 @@ def verified_daily_summary(
     row to disappear. Sleep duration is stored/projected in minutes by the
     wearable ingestion contract, and is converted to hours only for display.
     """
-    if not plan.is_summary:
+    if not plan.is_summary and not include_non_summary:
         return ''
     date_label = plan.start_date if plan.start_date == plan.end_date else f'{plan.start_date}至{plan.end_date}'
     zone_label = '北京时间' if plan.timezone == 'Asia/Shanghai' else plan.timezone
-    lines = [f'本次总结仅覆盖饮食与睡眠记录（{date_label}，{zone_label}）。'
-             '已记录饮食不代表全天完整摄入，未记录不等于没有发生。']
-    for dimension, label in (('diet', '饮食'), ('sleep', '睡眠')):
+    labels = {'diet': '饮食', 'sleep': '睡眠'}
+    domains = '与'.join(labels[dimension] for dimension in plan.dimensions)
+    kind = '总结' if plan.is_summary else '查询'
+    lines = [f'本次{kind}仅覆盖{domains}记录（{date_label}，{zone_label}）。'
+             + ('已记录饮食不代表全天完整摄入，未记录不等于没有发生。'
+                if 'diet' in plan.dimensions else '')]
+    for dimension in plan.dimensions:
+        label = labels[dimension]
         goal = goals.get(dimension) or {}
         if goal.get('status') != 'verified' or goal.get('evidence_kind') != 'read_result':
             lines.append(f'{label}：本轮查询未完成，暂不汇总。')

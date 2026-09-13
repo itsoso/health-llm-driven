@@ -101,7 +101,7 @@ async def test_original_question_completes_through_pi(
             }]}
             yield {"type": "finish", "finish_reason": "tool_calls"}
         else:
-            yield {"type": "content", "text": "已查询今天的饮食，没有可用记录，暂时无法评价。"}
+            yield {"type": "content", "text": "建议：先补充饮食记录和份量信息，方便后续评价。"}
             yield {"type": "finish", "finish_reason": "stop"}
 
     async def dispatch(request, token):

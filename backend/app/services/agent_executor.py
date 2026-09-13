@@ -11956,6 +11956,10 @@ class AgentExecutor:
                 if read_goal['status'] == 'verified' and read_goal['evidence_kind'] == 'read_result':
                     from app.services.genui.table_builder import load_tool_result_json
                     payload = load_tool_result_json(result)
+                    # A verified meal-list API returns rows directly. Preserve
+                    # them for the same factual projection without inventing dates.
+                    if isinstance(payload, list):
+                        payload = {"records": payload}
                     if isinstance(payload, dict):
                         self._turn_daily_read_payloads[goal_id] = payload
                         if self._turn_daily_read_plan.sync_status_requested and goal_id == 'sleep':
@@ -14927,6 +14931,14 @@ class AgentExecutor:
         # request cannot prove the model will not generate unsafe advice.
         health_advice_buffered = health_evidence_turn is not None
         completion_intent = classify_agent_utterance(message)
+        # Evaluation is an answer obligation within the existing owned read,
+        # not a new summary request or authority to read another domain.
+        daily_diet_evaluation = bool(
+            self._turn_daily_read_plan is not None
+            and self._turn_daily_read_plan.dimensions == ("diet",)
+            and self._turn_daily_read_plan.start_date == self._turn_daily_read_plan.end_date
+            and self._turn_daily_read_plan.asks_advice
+        )
         record_write_requested = (
             completion_intent.primary == "write"
             and completion_intent.is_write
@@ -16896,16 +16908,21 @@ class AgentExecutor:
                             _reconcile_pi_preflight_rejections(request["messages"], round_idx)
                             round_idx += 1
                             messages = request["messages"]
-                            if round_idx > 0 and self._turn_daily_read_plan is not None and self._turn_daily_read_plan.is_summary:
+                            if (round_idx > 0 and self._turn_daily_read_plan is not None
+                                    and (self._turn_daily_read_plan.is_summary or daily_diet_evaluation)
+                                    and not health_advice_buffered):
                                 facts = verified_daily_summary(
                                     self._turn_daily_read_plan, self._turn_daily_read_payloads,
                                     self._turn_daily_read_results, include_food_names=False,
+                                    include_non_summary=daily_diet_evaluation,
                                 )
                                 instruction = (
-                                    "系统已核验的日总结事实如下。事实段由系统直接展示，不要再生成总结或事实段。"
+                                    "系统已核验的本次查询事实如下。事实段由系统直接展示，不要再生成总结或事实段。"
                                     "请以单独的“建议”标题开头，只给出接下来可以采取的行动，"
                                     "不要复述或重新计算热量、睡眠时长、评分等观测数字；"
-                                    "不能把未记录视为没有发生，也不能由这些记录判断全天摄入不足或过量。\n" + facts
+                                    "不能把未记录视为没有发生，也不能由这些记录判断全天摄入不足或过量。"
+                                    "营养字段缺失不能证明营养缺乏；名称相同或餐次标签与当前时间的差异"
+                                    "不能证明重复、误录，核对建议不得预设需要删除或改写。\n" + facts
                                 )
                                 messages = [dict(item) for item in messages]
                                 system_index = next((i for i, item in enumerate(messages) if item.get("role") == "system"), None)
@@ -17336,24 +17353,33 @@ class AgentExecutor:
             full_reply = _garmin_sync_queued_message()
         daily_summary_advice_goal = None
         if (
-            self._turn_daily_read_plan is not None and self._turn_daily_read_plan.is_summary
-            and final_finish_reason == "stop" and not health_advice_buffered
+            self._turn_daily_read_plan is not None
+            and ((self._turn_daily_read_plan.is_summary and final_finish_reason == "stop")
+                 or daily_diet_evaluation)
+            and not health_advice_buffered
         ):
             facts = verified_daily_summary(
                 self._turn_daily_read_plan, self._turn_daily_read_payloads,
-                self._turn_daily_read_results,
+                self._turn_daily_read_results, include_non_summary=daily_diet_evaluation,
             )
-            if self._turn_daily_read_plan.asks_advice:
-                full_reply = summary_advice_text(full_reply)
-                advice_failure = summary_advice_contract_failure(full_reply)
+            if self._turn_daily_read_plan.asks_advice or daily_diet_evaluation:
+                full_reply = summary_advice_text(full_reply, require_heading=daily_diet_evaluation)
+                advice_failure = (
+                    "daily_advice_generation_incomplete" if final_finish_reason != "stop"
+                    else summary_advice_contract_failure(full_reply)
+                )
                 daily_summary_advice_goal = {
-                    "goal_id": "summary_advice", "kind": "answer",
+                    "goal_id": "diet_advice" if daily_diet_evaluation else "summary_advice", "kind": "answer",
                     "status": "failed" if advice_failure else "verified",
                     "reason_code": advice_failure or "summary_advice_contract_passed",
                 }
                 if advice_failure:
                     self._record_model_fallback_reason(advice_failure)
-                    full_reply = "建议未能通过本次事实校验，暂未提供；以上已核验的记录仍可查看。"
+                    full_reply = (
+                        "建议未能生成或通过本次事实校验，暂未提供；查询结果见上。"
+                        if daily_diet_evaluation else
+                        "建议未能通过本次事实校验，暂未提供；以上已核验的记录仍可查看。"
+                    )
                 full_reply = facts + "\n\n" + full_reply
             else:
                 full_reply = facts

@@ -33,7 +33,7 @@ _QUESTION_RE = re.compile(
     r"(?:(?:(?P<sleep>睡眠|睡得|睡的|睡觉)(?:记录|数据|质量|情况)?|"
     r"(?:饮食|餐食)(?:记录|数据|情况)?)(?:怎么样|怎样|如何)|"
     r"吃(?:得|的)(?:怎么样|怎样|如何)|"
-    r"(?:都)?吃(?:了|过)(?:些)?(?:什么|啥|哪些)(?:东西|食物)?)"
+    r"(?P<recall>(?:都)?吃(?:了|过)(?:些)?(?:什么|啥|哪些)(?:东西|食物)?))"
 )
 _SUMMARY_RE = re.compile(
     r"(?:(?:请)?(?:给我|帮我)?(?:做|做个|做一份)?(?:今天|今日)(?:的)?"
@@ -98,7 +98,8 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
                 (question.group("evening") or re.search(r"昨晚|昨夜", core)) else None)
         if sync_status and (dimension != 'sleep' or suffix):
             return None
-        return core, (dimension,), suffix is not None, False, meal, sync_status is not None
+        asks_advice = suffix is not None or (dimension == "diet" and not question.group("recall"))
+        return core, (dimension,), asks_advice, False, meal, sync_status is not None
     if _SUMMARY_RE.fullmatch(core):
         if sync_status:
             return None
