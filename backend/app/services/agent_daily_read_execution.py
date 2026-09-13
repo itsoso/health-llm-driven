@@ -36,6 +36,14 @@ def daily_read_prompt(plan: DailyReadPlan) -> str:
     )
 
 
+def is_daily_diet_evaluation(plan: DailyReadPlan | None) -> bool:
+    """The answer and its read attestation share one server-owned scope."""
+    return bool(
+        plan is not None and plan.dimensions == ('diet',)
+        and plan.start_date == plan.end_date and plan.asks_advice
+    )
+
+
 def daily_result_goal(plan: DailyReadPlan, decision: Any, result: Any) -> dict[str, str] | None:
     if decision is None:
         return None
@@ -79,8 +87,12 @@ def daily_result_goal(plan: DailyReadPlan, decision: Any, result: Any) -> dict[s
         if plan.meal_type and row.get('meal_type') is not None:
             scope_conflict |= row['meal_type'] != plan.meal_type
     truncated = name == 'health_manage' and len(rows) >= int(args.get('limit') or 20)
-    summary_readable = not plan.is_summary or _summary_rows(plan, dimension, payload) is not None
-    verified = summary_readable and not truncated and decision.action == 'allow' and has_result and not scope_conflict and not result_declares_explicit_failure(result)
+    # Match the existing verified meal-list cache envelope; row dates remain
+    # mandatory and unsupported health_query data/items shapes stay unsupported.
+    projection_payload = {'records': payload} if name == 'health_manage' and isinstance(payload, list) else payload
+    requires_facts = plan.is_summary or is_daily_diet_evaluation(plan)
+    projectable = not requires_facts or _summary_rows(plan, dimension, projection_payload) is not None
+    verified = projectable and not truncated and decision.action == 'allow' and has_result and not scope_conflict and not result_declares_explicit_failure(result)
     return {'goal_id': dimension, 'kind': 'query', 'status': 'verified' if verified else 'failed',
             'evidence_kind': 'read_result' if verified else '',
             'reason_code': ('query_verified' if verified else

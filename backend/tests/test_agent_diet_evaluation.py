@@ -171,3 +171,33 @@ async def test_missing_field_noun_and_unresolved_record_question_are_retained(db
     for text in (saved.content, streamed):
         assert "已记录热量合计1020千卡" in text and "睡眠" not in text
         assert reply in text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("shape", ["missing_date", "data_key", "items_key", "no_data_with_rows", "wrong_date"])
+async def test_unprojectable_evaluation_result_never_verifies_read_or_completes(db, auth_user_and_headers, monkeypatch, shape, panel):
+    user, _ = auth_user_and_headers
+    def dispatch(request):
+        row = {"record_date": request.arguments["start_date"], "calories": 300}
+        payload = _calendar_payload(request, records=[row])
+        if shape == "missing_date":
+            del row["record_date"]
+        elif shape in {"data_key", "items_key"}:
+            payload[shape.removesuffix("_key")] = payload.pop("records")
+        elif shape == "no_data_with_rows":
+            payload["availability"] = "no_data"
+        else:
+            row["record_date"] = "2001-01-01"
+        return payload
+    _, done, saved, streamed, _ = await _run_scripted(
+        db, user, monkeypatch, query="今天我吃的怎么样?", first_tool="health_query", first_args={"dimension": "diet"},
+        dispatch=dispatch, reply="建议：请先补全记录后再评估。", turn_id="diet-unprojectable",
+        extra_context=json.dumps({"multi_model": panel}),
+    )
+    diet = next(g for g in done["turn_outcome"]["goals"] if g["goal_id"] == "diet")
+    assert diet["status"] == "failed" and diet.get("evidence_kind", "") != "read_result"
+    assert done["turn_outcome"]["status"] != "complete"
+    assert done["completion_status"] != "complete"
+    for text in (saved.content, streamed):
+        assert "已记录热量合计300千卡" not in text

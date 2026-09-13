@@ -72,9 +72,10 @@ def test_qualitative_advice_and_explicit_uncertainty_pass(text):
     {"data": [{"record_date": "2026-09-12"}]},
     {"records": [{"record_date": "2026-09-12"}], "availability": "no_data"},
 ])
-def test_summary_goal_cannot_verify_payload_that_fact_projection_rejects(payload):
-    plan = DailyReadPlan(dimensions=("diet", "sleep"), start_date="2026-09-12",
-                         end_date="2026-09-12", timezone="Asia/Shanghai", is_summary=True)
+@pytest.mark.parametrize("summary", [False, True])
+def test_summary_goal_cannot_verify_payload_that_fact_projection_rejects(payload, summary):
+    plan = DailyReadPlan(dimensions=("diet", "sleep") if summary else ("diet",), start_date="2026-09-12",
+                         end_date="2026-09-12", timezone="Asia/Shanghai", is_summary=summary, asks_advice=True)
     decision = SimpleNamespace(normalized_tool_name="health_query", normalized_args=plan.queries()[0], action="allow")
     goal = daily.daily_result_goal(plan, decision, payload)
     assert goal["status"] == "failed"
@@ -220,3 +221,29 @@ def test_local_question_modifier_can_precede_the_check_action(text):
 ])
 def test_unrelated_or_earlier_question_does_not_excuse_record_assertion(text):
     assert daily.summary_advice_contract_failure(text) == "summary_advice_infers_record_error"
+
+
+@pytest.mark.parametrize("meal", [False, True])
+@pytest.mark.parametrize("empty", [False, True])
+def test_evaluation_attests_projectable_query_and_real_meal_list_shapes(meal, empty):
+    plan = DailyReadPlan(dimensions=("diet",), start_date="2026-09-12",
+                         end_date="2026-09-12", timezone="Asia/Shanghai",
+                         meal_type="dinner" if meal else None, asks_advice=True)
+    rows = [] if empty else [{"record_date": plan.start_date, "meal_type": "dinner", "calories": 300}]
+    payload = rows if meal else {"records": rows, "availability": "no_data" if empty else "available"}
+    decision = SimpleNamespace(normalized_tool_name="health_manage" if meal else "health_query",
+                               normalized_args=plan.diet_list_args() if meal else plan.queries()[0], action="allow")
+    goal = daily.daily_result_goal(plan, decision, payload)
+    assert goal["status"] == "verified"
+    projected_payload = {"records": rows} if meal else payload
+    facts = daily.verified_daily_summary(plan, {"diet": projected_payload}, {"diet": goal}, include_non_summary=True)
+    assert "无法核对" not in facts and "查询未完成" not in facts
+    assert ("没有可用记录" if empty else "已记录热量合计300千卡") in facts
+
+
+@pytest.mark.parametrize("row", [{"calories": 300}, {"record_date": "2001-01-01", "calories": 300}])
+def test_meal_list_wrapper_never_invents_the_record_day(row):
+    plan = DailyReadPlan(dimensions=("diet",), start_date="2026-09-12",
+                         end_date="2026-09-12", timezone="Asia/Shanghai", meal_type="dinner", asks_advice=True)
+    decision = SimpleNamespace(normalized_tool_name="health_manage", normalized_args=plan.diet_list_args(), action="allow")
+    assert daily.daily_result_goal(plan, decision, [row])["status"] == "failed"

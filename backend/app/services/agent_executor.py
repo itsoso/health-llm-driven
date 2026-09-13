@@ -68,7 +68,7 @@ from app.services.agent_turn_outcome import classify_agent_turn_outcome, agent_c
 from app.services.agent_daily_read_execution import (
     planned_daily_calls, daily_read_prompt, daily_result_goal, daily_goal_outcomes,
     verified_daily_summary, summary_advice_contract_failure, summary_advice_text,
-    sleep_sync_reply, sync_status_goal,
+    sleep_sync_reply, sync_status_goal, is_daily_diet_evaluation,
 )
 from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan, is_daily_summary_request
 from app.services.agent_output_quality import (
@@ -14933,12 +14933,7 @@ class AgentExecutor:
         completion_intent = classify_agent_utterance(message)
         # Evaluation is an answer obligation within the existing owned read,
         # not a new summary request or authority to read another domain.
-        daily_diet_evaluation = bool(
-            self._turn_daily_read_plan is not None
-            and self._turn_daily_read_plan.dimensions == ("diet",)
-            and self._turn_daily_read_plan.start_date == self._turn_daily_read_plan.end_date
-            and self._turn_daily_read_plan.asks_advice
-        )
+        daily_diet_evaluation = is_daily_diet_evaluation(self._turn_daily_read_plan)
         record_write_requested = (
             completion_intent.primary == "write"
             and completion_intent.is_write
