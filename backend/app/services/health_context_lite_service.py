@@ -45,6 +45,9 @@ _CLINICIAN_FEEDBACK_SECTION_MAX_CHARS = 2048
 # RECOVERY/DIET/MEDICATION/LABS: 单域个人问题的固定窄档；公共安全字段始终保留。
 INJECTION_FULL = "full"
 INJECTION_MINIMAL = "minimal"
+# Owned multi-query turns obtain current observations from their tool results.
+# Keep the same baseline profile as MINIMAL, plus owner-scoped clinician feedback.
+INJECTION_OWNED_READ_PROFILE = "owned_read_profile"
 INJECTION_RECOVERY = "recovery"
 INJECTION_DIET = "diet"
 INJECTION_MEDICATION = "medication"
@@ -52,6 +55,7 @@ INJECTION_LABS = "labs"
 _INJECTION_BUDGETS = (
     INJECTION_FULL,
     INJECTION_MINIMAL,
+    INJECTION_OWNED_READ_PROFILE,
     INJECTION_RECOVERY,
     INJECTION_DIET,
     INJECTION_MEDICATION,
@@ -240,6 +244,7 @@ def build_lite_health_context(
     intent: Optional[str] = None,
     *,
     domain_scoped: bool = False,
+    owned_read_profile: bool = False,
 ) -> Optional[str]:
     """构建健康上下文（~800-1200 tokens）。
 
@@ -247,8 +252,12 @@ def build_lite_health_context(
     intent 为纯知识意图字符串 (见 classify_injection_budget): 降级 MINIMAL,
     只留基础画像, 裁掉具体时序数值。判据保守 fail-open —— 拿不准一律 FULL。
     domain_scoped=True: 单域问题使用固定窄 profile；未知或跨域仍回退 FULL。
+    owned_read_profile=True: 调用方已冻结组合查询范围，只注入基础档案和医生反馈；
+    当前观测由本轮工具结果提供。独立缓存档位沿用同一用户失效机制。
     """
-    if domain_scoped:
+    if owned_read_profile:
+        budget = INJECTION_OWNED_READ_PROFILE
+    elif domain_scoped:
         budget = classify_context_profile(intent)
     else:
         budget = classify_injection_budget(intent) if intent is not None else INJECTION_FULL
@@ -346,7 +355,7 @@ def _recent_wearable_trend_lines(rows, since: date, today: date) -> list[str]:
 
 def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> str:
     """按固定 profile 构建上下文；FULL 保持历史行为，MINIMAL 只留基础画像。"""
-    minimal = budget == INJECTION_MINIMAL
+    minimal = budget in {INJECTION_MINIMAL, INJECTION_OWNED_READ_PROFILE}
     include_general = budget == INJECTION_FULL
     include_recovery = budget in {
         INJECTION_FULL,

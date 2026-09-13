@@ -11651,7 +11651,7 @@ class AgentExecutor:
         # 复用主循环的流式路径在强/显式模型上重合成 (tokens 逐 delta 下发, 消除 ttft=total
         # 空洞)。round_tools=[] → pass_tools falsy → 不再快路由 → 落在强/显式模型。
         self._force_no_tools_synthesis = False
-        self._read_repair_failures = 0
+        self._reset_read_repair_budget()
         # A4: 每回合系统知识库证据卡 memo —— pre-round-1 算一次, done 复用, 避免同回合
         # 第二次 build_twin 全量重建 (拖慢 done/receipts 与 /send 回复)。若回合内发生写操作
         # (_turn_twin_write_occurred), done 侧强制重算一次以反映写后 Twin。
@@ -11765,7 +11765,7 @@ class AgentExecutor:
         self._turn_sync_status_result = None
         self._turn_sync_reply = None
         self._agent_kernel_blocked_request_cache = {}
-        self._read_repair_failures = 0
+        self._reset_read_repair_budget()
         self._force_no_tools_synthesis = False
         self._agent_kernel_recovered_capability_block_reasons = []
         self._agent_kernel_unresolved_manage_mismatch_targets = set()
@@ -12088,13 +12088,16 @@ class AgentExecutor:
                         reason
                     )
         from app.services.agent_policy_retry import (
-            is_repairable_read_reason, is_repairable_read_failure, MAX_READ_REPAIR_FAILURES,
+            is_repairable_read_reason, is_repairable_read_failure,
         )
         if policy_blocked and snapshot is not None and not snapshot.intent.is_write and decision is not None:
             if is_repairable_read_failure(decision.reason, tool_name, decision.normalized_args):
-                failures = getattr(self, "_read_repair_failures", 0) + 1
-                self._read_repair_failures = failures
-                self._force_no_tools_synthesis = failures >= MAX_READ_REPAIR_FAILURES
+                if self._read_repair_batch_active:
+                    self._read_repair_batch_failed = True
+                else:
+                    # Direct tool invocations have no model feedback boundary;
+                    # retain their existing conservative per-call limit.
+                    self._consume_read_repair_failure()
             else:
                 self._force_no_tools_synthesis = True
         elif (not policy_blocked and not explicit_failure and not result_text.startswith("Error:")
@@ -12117,6 +12120,33 @@ class AgentExecutor:
             receipt=receipt,
         )
         return result
+
+    def _reset_read_repair_budget(self) -> None:
+        self._read_repair_failures = 0
+        self._read_repair_batch_active = False
+        self._read_repair_batch_failed = False
+
+    def _consume_read_repair_failure(self) -> None:
+        from app.services.agent_policy_retry import MAX_READ_REPAIR_FAILURES
+
+        self._read_repair_failures += 1
+        if self._read_repair_failures >= MAX_READ_REPAIR_FAILURES:
+            self._force_no_tools_synthesis = True
+
+    def _settle_read_repair_batch(self) -> None:
+        if not self._read_repair_batch_active:
+            return
+        failed = self._read_repair_batch_failed
+        self._read_repair_batch_active = False
+        self._read_repair_batch_failed = False
+        if failed and not self._all_scoped_reads_verified():
+            self._consume_read_repair_failure()
+
+    def _begin_read_repair_batch(self) -> None:
+        # A model sees all sibling results together. Settle once only when
+        # that feedback is available, never while its batch is still running.
+        self._settle_read_repair_batch()
+        self._read_repair_batch_active = True
 
     def _composed_read_completion(self):
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
@@ -13712,6 +13742,7 @@ class AgentExecutor:
                 async for request in pi:
                     if request["type"] == "model_request":
                         _reconcile_pi_preflight_rejections(request["messages"], _round)
+                        self._begin_read_repair_batch()
                         _round += 1
                         lead_messages = request["messages"]
                         resp = await self._call_llm(
@@ -14031,6 +14062,7 @@ class AgentExecutor:
                     elif request["type"] == "done":
                         lead_messages = request["messages"]
                         _reconcile_pi_preflight_rejections(lead_messages, _round, settled=True)
+                        self._settle_read_repair_batch()
                         lead_text = request["content"]
                         lead_finish_reason = request["finish_reason"]
                         lead_text = _guard_panel_narrative(lead_text)
@@ -14200,7 +14232,11 @@ class AgentExecutor:
         panel_sync_summary = self._trusted_sync_summary()
         if panel_sync_summary:
             full_reply = panel_sync_summary + '\n\n' + full_reply
-        if panel_read_scope is not None and panel_read_scope.limitations:
+        if (
+            panel_read_scope is not None and panel_read_scope.limitations
+            and (panel_completion is None or panel_completion.complete)
+        ):
+            # Incomplete trusted summaries already carry the canonical notices.
             full_reply = '\n\n'.join((*read_scope_notices(panel_read_scope), full_reply))
         full_reply = _guard_panel_narrative(full_reply)
         if protocol_failure_text:
@@ -15244,7 +15280,7 @@ class AgentExecutor:
         self._lite_tool_round_messages = None
         self._turn_any_tool_executed = False
         self._force_no_tools_synthesis = False
-        self._read_repair_failures = 0
+        self._reset_read_repair_budget()
         self._turn_evidence_card = _TURN_CARD_UNSET
         self._turn_evidence_card_key = None
         self._turn_twin_write_occurred = False
@@ -16437,6 +16473,20 @@ class AgentExecutor:
                 result, result_for_record_card = (
                     read_results_by_fingerprint[read_fingerprint]
                 )
+                # Repeated rejected arguments still form unsuccessful model
+                # feedback, even though the gateway result itself is cached.
+                from app.services.agent_policy_retry import is_repairable_read_failure
+
+                cached_payload = _recover_tool_result_payload(str(result or ""))
+                if (
+                    isinstance(cached_payload, dict)
+                    and result_declares_explicit_failure(cached_payload)
+                    and isinstance(cached_payload.get("error_code"), str)
+                    and is_repairable_read_failure(
+                        cached_payload.get("error_code", ""), func_name, parsed_tool_args,
+                    )
+                ):
+                    self._read_repair_batch_failed = True
             else:
                 # Wave 2: 心跳 + per-tool 超时(慢工具不再冻结转圈/被 nginx 掐断)。
                 result = None
@@ -17089,6 +17139,7 @@ class AgentExecutor:
                     async for request in pi:
                         if request["type"] == "model_request":
                             _reconcile_pi_preflight_rejections(request["messages"], round_idx)
+                            self._begin_read_repair_batch()
                             round_idx += 1
                             messages = request["messages"]
                             diet_synthesis_round = bool(
@@ -17419,6 +17470,7 @@ class AgentExecutor:
                         elif request["type"] == "done":
                             messages = request["messages"]
                             _reconcile_pi_preflight_rejections(messages, round_idx, settled=True)
+                            self._settle_read_repair_batch()
                             full_reply = pi_terminal_text or _append_interrupted_notice(
                                 request["content"], request["finish_reason"],
                             )
@@ -17597,7 +17649,11 @@ class AgentExecutor:
                 full_reply += "\n\n本轮没有生成有效回答，请稍后重试。"
         if sync_summary:
             full_reply = sync_summary + "\n\n" + full_reply
-        if read_scope is not None and read_scope.limitations:
+        if (
+            read_scope is not None and read_scope.limitations
+            and (composed_completion is None or composed_completion.complete)
+        ):
+            # Incomplete trusted summaries already carry the canonical notices.
             full_reply = "\n\n".join((*read_scope_notices(read_scope), full_reply))
         if (
             self._turn_daily_read_plan is not None
@@ -19594,6 +19650,22 @@ class AgentExecutor:
                 "不得声称操作完成，也不提供未经核实的健康建议。历史回答仅是先前回答，不是本轮核验事实。"
             )
 
+        # Only a server-bound multi-query scope selects this projection. Do not
+        # start a turn here, infer authority from prompt text, or alter sealed
+        # clinical / provider-only single-day synthesis paths.
+        owned_read_profile = False
+        if (
+            prompt_snapshot is not None
+            and not health_evidence_runtime
+            and not static_rules_only
+            and prompt_snapshot.envelope.user_id == user_id
+            and prompt_snapshot.context.user_id == user_id
+        ):
+            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+
+            prompt_read_scope = resolve_owned_read_scope(prompt_snapshot)
+            owned_read_profile = bool(prompt_read_scope and len(prompt_read_scope.queries) > 1)
+
         # Provider-only diet synthesis may reuse all static rules without
         # reintroducing unrelated personal evidence. This flag changes neither
         # model routing nor clinical admission/consent state.
@@ -19710,8 +19782,10 @@ class AgentExecutor:
         if (
             not lite
             and not health_evidence_runtime
-            and context_profile
-            in {INJECTION_FULL, INJECTION_LABS, INJECTION_MEDICATION}
+            and (
+                owned_read_profile
+                or context_profile in {INJECTION_FULL, INJECTION_LABS, INJECTION_MEDICATION}
+            )
         ):
             try:
                 from app.services.gene_rules_registry import get_registry
@@ -19737,6 +19811,7 @@ class AgentExecutor:
                     user_id,
                     intent=(None if force_full_personal_context else intent_query),
                     domain_scoped=domain_prompt_enabled,
+                    **({"owned_read_profile": True} if owned_read_profile else {}),
                 )
                 if health_ctx:
                     parts.append("\n## 用户健康档案")
@@ -19753,7 +19828,7 @@ class AgentExecutor:
         # (lite=True) 全部跳过 —— 对「记录喝水」「今天喝了多少水」无用, 只增加 prefill 与噪音。
         if not lite and not health_evidence_runtime:
             # 注入原研药可换建议(基于在用药;已采纳/忽略的已被抑制,不会重复推荐)
-            if not static_rules_only and context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
+            if not static_rules_only and not owned_read_profile and context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
                 try:
                     from app.services.originator_recommendations import originator_recs_prompt_blob
                     blob = originator_recs_prompt_blob(self.db, user_id)
@@ -19770,7 +19845,7 @@ class AgentExecutor:
                 logger.warning(f"Agent 世界观注入失败: {e}")
 
             # 注入肝脏趋势(消费历史肝酶;FIB-4/脂肪肝风险提示,非诊断)
-            if not static_rules_only and context_profile in {INJECTION_FULL, INJECTION_LABS}:
+            if not static_rules_only and not owned_read_profile and context_profile in {INJECTION_FULL, INJECTION_LABS}:
                 try:
                     from app.services.liver_health import liver_prompt_blob
                     from app.models.user import User as _User
@@ -19788,7 +19863,7 @@ class AgentExecutor:
                     logger.warning(f"Agent 肝脏趋势注入失败: {e}")
 
             # 注入血常规趋势(消费历史 CBC;红细胞系同向偏高/中性-淋巴倒置提示,非诊断)
-            if not static_rules_only and context_profile in {INJECTION_FULL, INJECTION_LABS}:
+            if not static_rules_only and not owned_read_profile and context_profile in {INJECTION_FULL, INJECTION_LABS}:
                 try:
                     from app.services.blood_routine import blood_routine_prompt_blob
                     from app.models.user import User as _User
@@ -19801,7 +19876,7 @@ class AgentExecutor:
                     logger.warning(f"Agent 血常规趋势注入失败: {e}")
 
             # 注入用药疗程提醒(即将结束的疗程 + 建议复查;胃溃疡 PPI 疗程等)
-            if not static_rules_only and context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
+            if not static_rules_only and not owned_read_profile and context_profile in {INJECTION_FULL, INJECTION_MEDICATION}:
                 try:
                     from app.services.medication_course_service import course_prompt_blob
                     blob = course_prompt_blob(self.db, user_id)
@@ -19811,7 +19886,7 @@ class AgentExecutor:
                     logger.warning(f"Agent 疗程提醒注入失败: {e}")
 
             # 注入干预闭环主动提议(有异常代谢杠杆 + 无 active 周期 → 可提议开 N-of-1 周期)
-            if not static_rules_only and context_profile == INJECTION_FULL:
+            if not static_rules_only and not owned_read_profile and context_profile == INJECTION_FULL:
                 try:
                     from app.services.intervention_cycle_service import intervention_proposal_prompt_blob
                     blob = intervention_proposal_prompt_blob(self.db, user_id)
@@ -19822,7 +19897,7 @@ class AgentExecutor:
 
             # 注入 N-of-1 干预效应估计(active/近期周期 + 复查数据 → 个人化效应后验)。
             # 无周期/无复查 → 空串不注入(Phase 1, effect_estimator)。
-            if not static_rules_only and context_profile == INJECTION_FULL:
+            if not static_rules_only and not owned_read_profile and context_profile == INJECTION_FULL:
                 try:
                     from app.services.effect_estimator import effect_estimate_prompt_blob
                     blob = effect_estimate_prompt_blob(self.db, user_id)
@@ -22596,7 +22671,7 @@ class AgentExecutor:
             self._agent_kernel_record_capability_decision(tool_name, decision)
             result = json.dumps({'status': 'failed', 'success': False,
                 'error_code': decision.reason, 'retryable': False, 'dispatch_started': False,
-                'message': '本轮读取参数两次未通过核验，已停止重试；请说明仍缺少的具体信息。'}, ensure_ascii=False)
+                'message': '两轮读取参数仍未通过核验，已停止重试；请说明仍缺少的具体信息。'}, ensure_ascii=False)
             return self._agent_kernel_record_tool_result(tool_name, parsed_args, result)
         if self._agent_kernel_event_bus is not None:
             self._agent_kernel_event_bus.tool_requested(

@@ -727,7 +727,9 @@ def _validate_query(
     args: Dict[str, Any], warnings: list, db, user_id: Optional[int],
 ) -> Optional[str]:
     normalized = normalize_health_query_args(args)
-    args.clear()
+    # Canonicalize known fields without erasing the original proposal before
+    # capability policy inspects it (including owner/plan constraints). The
+    # policy and final query adapter perform the public-schema projection.
     args.update(normalized)
     dimension = args.get("dimension")
     if not dimension:
