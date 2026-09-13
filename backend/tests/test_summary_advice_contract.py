@@ -72,9 +72,10 @@ def test_qualitative_advice_and_explicit_uncertainty_pass(text):
     {"data": [{"record_date": "2026-09-12"}]},
     {"records": [{"record_date": "2026-09-12"}], "availability": "no_data"},
 ])
-def test_summary_goal_cannot_verify_payload_that_fact_projection_rejects(payload):
-    plan = DailyReadPlan(dimensions=("diet", "sleep"), start_date="2026-09-12",
-                         end_date="2026-09-12", timezone="Asia/Shanghai", is_summary=True)
+@pytest.mark.parametrize("summary", [False, True])
+def test_summary_goal_cannot_verify_payload_that_fact_projection_rejects(payload, summary):
+    plan = DailyReadPlan(dimensions=("diet", "sleep") if summary else ("diet",), start_date="2026-09-12",
+                         end_date="2026-09-12", timezone="Asia/Shanghai", is_summary=summary, asks_advice=True)
     decision = SimpleNamespace(normalized_tool_name="health_query", normalized_args=plan.queries()[0], action="allow")
     goal = daily.daily_result_goal(plan, decision, payload)
     assert goal["status"] == "failed"
@@ -109,3 +110,242 @@ def test_future_actions_and_goals_do_not_require_fixed_wording(text):
 @pytest.mark.parametrize("text", ["昨晚睡眠7小时。", "睡眠时长为7小时。", "实际散步十分钟。", "睡眠：7小时。"])
 def test_duration_with_explicit_observation_cue_is_rejected(text):
     assert daily.summary_advice_contract_failure(text) == "summary_advice_repeats_measurement"
+
+
+def test_diet_evaluation_requires_explicit_advice_section_without_changing_summary_default():
+    prose = "我会先查询今天的饮食记录，然后给出建议。"
+    assert daily.summary_advice_text(prose) == prose
+    assert daily.summary_advice_text(prose, require_heading=True) == ""
+    assert daily.summary_advice_contract_failure(daily.summary_advice_text(prose, require_heading=True)) == "summary_advice_unavailable"
+
+
+@pytest.mark.parametrize("text", [
+    "建议：暂无建议。", "### 建议\n目前没有建议。", "建议：建议待补充。",
+    "建议：我会先查询今天的饮食记录，然后给出建议。",
+    "建议：我将读取记录，再分析你的饮食。",
+])
+def test_heading_cannot_verify_placeholder_or_only_a_promise_to_answer(text):
+    assert daily.summary_advice_contract_failure(text) is not None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：当前记录缺少份量和营养字段，暂不足以评价营养是否均衡。",
+    "建议：目前没有足够信息给出个性化建议，可以先补充食物份量。",
+    "建议：我会先查询记录。你可以先核对每条记录的份量。",
+])
+def test_explained_limits_or_real_actions_are_not_empty_advice(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text,reason", [
+    ("建议：我会先分析。", "summary_advice_not_delivered"),
+    ("建议：我会先查询，然后给出建议。", "summary_advice_not_delivered"),
+    ("建议：蛋白数据缺失，说明今天缺口大概率在蛋白侧。", "summary_advice_infers_nutrient_gap"),
+    ("建议：你的蛋白质摄入不足，应补充食物。", "summary_advice_infers_nutrient_gap"),
+    ("建议：你今天缺少膳食纤维。", "summary_advice_infers_nutrient_gap"),
+    ("建议：营养缺乏，需要调整饮食。", "summary_advice_infers_nutrient_gap"),
+    ("建议：两条早餐名称和热量相同，说明是重复录入，建议删除其中一条。", "summary_advice_infers_record_error"),
+    ("建议：两条记录重复，建议删掉一条。", "summary_advice_infers_record_error"),
+    ("建议：午餐被标成了晚餐，建议改正餐次。", "summary_advice_infers_record_error"),
+    ("建议：不能认定是重复录入，但这两条记录重复。", "summary_advice_infers_record_error"),
+])
+def test_retained_advice_cannot_assert_known_unsupported_inference_categories(text, reason):
+    assert daily.summary_advice_contract_failure(text) == reason
+
+
+@pytest.mark.parametrize("text", [
+    "建议：缺少蛋白质数据，请补充记录。",
+    "建议：营养字段缺失不代表营养缺乏。",
+    "建议：没有足够证据判断蛋白质摄入不足。",
+    "建议：不能据此判断缺口在蛋白质侧。",
+    "建议：可以先核对是否存在重复录入。",
+    "建议：可以检查两条记录是否重复。",
+    "建议：不能认定两条记录重复。",
+    "建议：餐次标签与当前时间不同，不代表午餐被标成了晚餐。",
+    "建议：先核对餐次和实际用餐时间是否一致。",
+    "建议：我会先分析。你可以先核对记录是否完整。",
+])
+def test_missing_data_and_non_presupposing_record_checks_still_complete(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：两条记录相同不代表重复录入。",
+    "建议：餐次标签差异不足以证明误录。",
+    "建议：晚餐标记不能说明午餐被标成了晚餐。",
+    "建议：需要时可以对记录重复查询。",
+])
+def test_record_error_negation_applies_to_the_verdict_after_its_subject(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：避免重复录入。",
+    "建议：防止重复记录，先核对已保存条目。",
+])
+def test_record_error_prevention_is_an_action_not_a_claim(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("field", [
+    "蛋白质的记录", "蛋白质摄入记录", "蛋白质的摄入记录",
+    "蛋白质摄入量的记录", "蛋白质含量的数据",
+])
+def test_nutrient_missing_data_noun_phrase_is_not_a_deficit(field):
+    assert daily.summary_advice_contract_failure(f"建议：目前缺少{field}，请补全记录。") is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：缺少蛋白质的记录，说明你的蛋白质摄入不足。",
+    "建议：缺少蛋白质的摄入记录且蛋白质缺乏。",
+])
+def test_data_noun_suffix_cannot_hide_a_later_deficit_claim(text):
+    assert daily.summary_advice_contract_failure(text) == "summary_advice_infers_nutrient_gap"
+
+
+@pytest.mark.parametrize("text", [
+    "建议：是否存在重复录入需要先核对。",
+    "建议：是否有重复记录，需要先检查。",
+    "建议：有没有重复录入，需要核对明细。",
+    "建议：这两条记录是否重复，需要先核对。",
+    "建议：午餐是否被标成晚餐需要先核对。",
+])
+def test_local_question_modifier_can_precede_the_check_action(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：是否存在重复录入需要核对，但这些记录是重复录入。",
+    "建议：是否需要补充份量，存在重复录入。",
+    "建议：核对是否完整后确认这是重复录入。",
+])
+def test_unrelated_or_earlier_question_does_not_excuse_record_assertion(text):
+    assert daily.summary_advice_contract_failure(text) == "summary_advice_infers_record_error"
+
+
+@pytest.mark.parametrize("meal", [False, True])
+@pytest.mark.parametrize("empty", [False, True])
+def test_evaluation_attests_projectable_query_and_real_meal_list_shapes(meal, empty):
+    plan = DailyReadPlan(dimensions=("diet",), start_date="2026-09-12",
+                         end_date="2026-09-12", timezone="Asia/Shanghai",
+                         meal_type="dinner" if meal else None, asks_advice=True)
+    rows = [] if empty else [{"record_date": plan.start_date, "meal_type": "dinner", "calories": 300}]
+    payload = rows if meal else {"records": rows, "availability": "no_data" if empty else "available"}
+    decision = SimpleNamespace(normalized_tool_name="health_manage" if meal else "health_query",
+                               normalized_args=plan.diet_list_args() if meal else plan.queries()[0], action="allow")
+    goal = daily.daily_result_goal(plan, decision, payload)
+    assert goal["status"] == "verified"
+    projected_payload = {"records": rows} if meal else payload
+    facts = daily.verified_daily_summary(plan, {"diet": projected_payload}, {"diet": goal}, include_non_summary=True)
+    assert "无法核对" not in facts and "查询未完成" not in facts
+    assert ("没有可用记录" if empty else "已记录热量合计300千卡") in facts
+
+
+@pytest.mark.parametrize("row", [{"calories": 300}, {"record_date": "2001-01-01", "calories": 300}])
+def test_meal_list_wrapper_never_invents_the_record_day(row):
+    plan = DailyReadPlan(dimensions=("diet",), start_date="2026-09-12",
+                         end_date="2026-09-12", timezone="Asia/Shanghai", meal_type="dinner", asks_advice=True)
+    decision = SimpleNamespace(normalized_tool_name="health_manage", normalized_args=plan.diet_list_args(), action="allow")
+    assert daily.daily_result_goal(plan, decision, [row])["status"] == "failed"
+
+
+@pytest.mark.parametrize("text", [
+    "建议：无法判断是否重复录入且这些记录确实重复录入。",
+    "建议：不能判断是否缺蛋白并且蛋白质摄入不足。",
+    "建议：无法判断是否重复录入然后确认这些记录重复录入。",
+    "建议：不能判断是否缺蛋白随后确认蛋白质摄入不足。",
+    "建议：不能判断是否缺蛋白并存在重复录入。",
+    "建议：无法判断记录是否完整然后确认这是重复录入。",
+    "建议：没有证据说明数据是否完整这些记录确实重复录入。",
+    "建议：无法核对记录所以判断存在重复录入。",
+    "建议：无法检查记录然后认定蛋白质摄入不足。",
+])
+def test_uncertainty_only_qualifies_its_own_proposition(text):
+    assert daily.summary_advice_contract_failure(text) is not None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：无法判断这些记录是否确实重复录入。",
+    "建议：不能据此判断你今天是否真的缺蛋白。",
+    "建议：不意味着你的蛋白质摄入不足。",
+    "建议：无法断言这2条记录是重复录入。",
+    "建议：不能仅根据这些记录判断你的蛋白质摄入不足。",
+    "建议：无法判断是否重复录入且也无法判断蛋白质摄入不足。",
+])
+def test_local_uncertainty_with_a_subject_remains_substantive(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：无法判断是否存在重复录入或误录。",
+    "建议：无法判断是否存在重复录入或者误录。",
+    "建议：无法判断是否蛋白质摄入不足或膳食纤维不足。",
+    "建议：不代表蛋白质摄入不足或者营养缺乏。",
+    "建议：不能判断是否重复录入或误录或者蛋白质摄入不足。",
+    "建议：无法判断这些记录重复或营养缺乏。",
+])
+def test_one_uncertainty_operator_can_cover_complete_alternative_complements(text):
+    assert daily.summary_advice_contract_failure(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "建议：无法判断是否存在重复录入或核对后确认这些记录重复录入。",
+    "建议：无法判断记录是否完整或这些记录确实重复录入。",
+    "建议：无法判断是否存在重复录入或是否完整后确认蛋白质摄入不足。",
+    "建议：无法判断是否蛋白质摄入不足或者记录核对后确认存在重复录入。",
+    "建议：无法判断是否存在重复录入或误录且这些记录确实重复录入。",
+    "建议：不能判断是否缺蛋白或膳食纤维不足但蛋白质摄入不足。",
+])
+def test_alternative_binding_cannot_admit_a_check_or_new_affirmative_proposition(text):
+    assert daily.summary_advice_contract_failure(text) is not None
+
+
+PLAIN_HEADING_LIVE_CANDIDATE = '建议  \n目前只能评价已记录部分，不能据此判断全天整体饮食是否均衡或充足；未提供的食物份量、营养细节属于未知。若想更准确评估，可提供具体食物和份量信息。'
+
+@pytest.mark.parametrize('text', [PLAIN_HEADING_LIVE_CANDIDATE, PLAIN_HEADING_LIVE_CANDIDATE.replace('\n','\r\n'), '\n\n' + PLAIN_HEADING_LIVE_CANDIDATE, '旧事实不进入建议。\n\n' + PLAIN_HEADING_LIVE_CANDIDATE, '建议\n\n目前提供的信息不足以评价营养是否均衡。', '建议\t\r\n目前提供的信息不足以评价营养是否均衡。'])
+def test_plain_line_advice_retained(text):
+    advice = daily.summary_advice_text(text, require_heading=True)
+    assert advice.strip().startswith('建议')
+    assert '旧事实' not in advice
+    assert daily.summary_advice_contract_failure(advice) is None
+
+@pytest.mark.parametrize('text', ['我的建议是补充份量信息。', '建议补充份量信息。', '以下是建议，请核对份量。'])
+def test_inline_prose_is_not_a_heading(text):
+    assert daily.summary_advice_text(text, require_heading=True) == ''
+
+@pytest.mark.parametrize('text,reason', [
+    ('建议', 'summary_advice_unavailable'), ('建议  \r\n\r\n', 'summary_advice_unavailable'),
+    ('建议\n暂无建议。', 'summary_advice_unavailable'),
+    ('建议\n我会先分析。', 'summary_advice_not_delivered'),
+    ('建议\n蛋白质摄入不足，应增加蛋白质食物。', 'summary_advice_infers_nutrient_gap'),
+    ('建议\n这些记录确实重复录入，建议删除一条。', 'summary_advice_infers_record_error'),
+])
+def test_heading_does_not_prove_answer_delivered(text, reason):
+    extracted = daily.summary_advice_text(text, require_heading=True)
+    assert daily.summary_advice_contract_failure(extracted) == reason
+
+
+PROHIBITED_INFERENCE_LIVE_CANDIDATE = '建议\n\n当前结果只能作为部分饮食记录的评价依据：能说明今天已有饮食被记录，但不足以判断营养是否均衡或是否合适，因为份量与主要营养素信息未纳入本次可评价范围，且已记录不等于全天完整摄入。下一步：请把它视为部分证据，不要据此推断全天摄入不足或过量。'
+
+@pytest.mark.parametrize('operator', ['不要', '不得'])
+@pytest.mark.parametrize('claim', ['全天摄入不足或过量', '蛋白质摄入不足或膳食纤维不足', '存在重复录入或误录'])
+def test_prohibited_inference_remains_bound_to_its_complements(operator, claim):
+    assert daily.summary_advice_contract_failure(f'建议\n{operator}据此推断{claim}。') is None
+
+@pytest.mark.parametrize('operator', ['不要', '不得'])
+@pytest.mark.parametrize('text,reason', [
+    ('据此推断全天摄入不足且全天摄入确实不足。', 'summary_advice_infers_complete_intake'),
+    ('据此推断蛋白质摄入不足，但蛋白质摄入不足。', 'summary_advice_infers_nutrient_gap'),
+    ('据此推断存在重复录入或误录且这些记录确实重复录入。', 'summary_advice_infers_record_error'),
+    ('据此判断记录是否完整后确认蛋白质摄入不足。', 'summary_advice_infers_nutrient_gap'),
+])
+def test_prohibition_cannot_excuse_another_affirmative_proposition(operator, text, reason):
+    assert daily.summary_advice_contract_failure('建议\n' + operator + text) == reason
+
+@pytest.mark.parametrize('operator', ['不得不', '不能不'])
+def test_double_negation_does_not_gain_a_prohibition_exception(operator):
+    assert daily.summary_advice_contract_failure('建议\n' + operator + '推断全天摄入不足。') == 'summary_advice_infers_complete_intake'
+
+
+def test_exact_safe_live_candidate_is_accepted():
+    assert daily.summary_advice_contract_failure(daily.summary_advice_text(PROHIBITED_INFERENCE_LIVE_CANDIDATE, require_heading=True)) is None

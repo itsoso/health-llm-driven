@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from datetime import date
+from datetime import date, time as time_of_day
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -33,6 +33,14 @@ def daily_read_prompt(plan: DailyReadPlan) -> str:
         + ('本次今日总结仅覆盖饮食与睡眠，开头简短说明范围；不要暗示其他健康领域也已查询。' if plan.is_summary else '')
         + '分别说明查到的事实、未查到的项目和依据这些结果可给出的建议。'
         '卡片已展示的完整记录不要再重复为同一张表；正文解释重点和不确定性。'
+    )
+
+
+def is_daily_diet_evaluation(plan: DailyReadPlan | None) -> bool:
+    """The answer and its read attestation share one server-owned scope."""
+    return bool(
+        plan is not None and plan.dimensions == ('diet',)
+        and plan.start_date == plan.end_date and plan.asks_advice
     )
 
 
@@ -79,8 +87,12 @@ def daily_result_goal(plan: DailyReadPlan, decision: Any, result: Any) -> dict[s
         if plan.meal_type and row.get('meal_type') is not None:
             scope_conflict |= row['meal_type'] != plan.meal_type
     truncated = name == 'health_manage' and len(rows) >= int(args.get('limit') or 20)
-    summary_readable = not plan.is_summary or _summary_rows(plan, dimension, payload) is not None
-    verified = summary_readable and not truncated and decision.action == 'allow' and has_result and not scope_conflict and not result_declares_explicit_failure(result)
+    # Match the existing verified meal-list cache envelope; row dates remain
+    # mandatory and unsupported health_query data/items shapes stay unsupported.
+    projection_payload = {'records': payload} if name == 'health_manage' and isinstance(payload, list) else payload
+    requires_facts = plan.is_summary or is_daily_diet_evaluation(plan)
+    projectable = not requires_facts or _summary_rows(plan, dimension, projection_payload) is not None
+    verified = projectable and not truncated and decision.action == 'allow' and has_result and not scope_conflict and not result_declares_explicit_failure(result)
     return {'goal_id': dimension, 'kind': 'query', 'status': 'verified' if verified else 'failed',
             'evidence_kind': 'read_result' if verified else '',
             'reason_code': ('query_verified' if verified else
@@ -144,13 +156,13 @@ def sleep_sync_reply(plan: DailyReadPlan, payloads: dict, goals: dict, *, includ
     return f'睡眠记录（按醒来日期 {plan.start_date}，{plan.timezone}）：\n{sleep}\n\n{garmin_status_text(status, include_task_uncertainty=include_task_uncertainty)}'
 
 
-def summary_advice_text(text: str) -> str:
+def summary_advice_text(text: str, *, require_heading: bool = False) -> str:
     """Keep an explicitly headed advice section, including its heading text."""
     heading = re.search(
         r'^[ \t]*(?:#{1,6}[ \t]*建议(?:[（(][^\n）)]*[）)])?[ \t]*$'
-        r'|\*\*建议\*\*[ \t]*$|建议[：:])', text, re.MULTILINE,
+        r'|\*\*建议\*\*[ \t]*$|建议[ \t]*\r?$|建议[：:])', text, re.MULTILINE,
     )
-    return text[heading.start():] if heading else text
+    return text[heading.start():] if heading else ('' if require_heading else text)
 
 
 def summary_advice_contract_failure(text: str) -> str | None:
@@ -166,6 +178,23 @@ def summary_advice_contract_failure(text: str) -> str | None:
     )
     if not body.strip(' \t\r\n-*#_>'):
         return 'summary_advice_unavailable'
+    # A heading is formatting, not evidence that the answer was delivered.
+    # Reject whole-body placeholders; explanations of limitations remain valid.
+    plain_body = body.strip(' \t\r\n-*#_>。.!！?？；;')
+    if re.fullmatch(
+        r'(?:(?:目前|现在|暂时|暂)?(?:无|没有)(?:更多|可提供的)?(?:建议|意见)'
+        r'|(?:建议|意见)(?:待补充|暂缺|暂无|缺失))', plain_body,
+    ):
+        return 'summary_advice_unavailable'
+    # Only a sequence of assistant future-work clauses is a pending answer.
+    # A real user action or explained limit alongside a promise is substantive.
+    action = r'(?:查询|查阅|读取|检索|查看|核对|分析|整理|给出|提供)'
+    promise = rf'(?:我|我们|助手|系统)(?:会|将|准备|打算)(?:先|再)?{action}.*'
+    continuation = rf'(?:然后|之后|随后|再)(?:再)?{action}.*'
+    clauses = [part.strip(' \t-*#_>') for part in re.split(r'[。！？!?；;，,\n]+', body) if part.strip()]
+    if (clauses and re.fullmatch(promise, clauses[0])
+            and all(re.fullmatch(rf'(?:{promise}|{continuation})', part) for part in clauses)):
+        return 'summary_advice_not_delivered'
     number = r'(?:\d+(?:[.,]\d+)*|[零〇一二两三四五六七八九十百千万点半]+)'
     if re.search(
         rf'{number}\s*(?:千卡|大卡|kcal|卡路里|评分|分(?!钟))'
@@ -189,16 +218,81 @@ def summary_advice_contract_failure(text: str) -> str | None:
         r'|摄入\s*(?:明显|严重|已经|确实)?\s*(?:不足|过量)'
         r'|摄入的热量\s*(?:太少|太多)'
     )
+    # An uncertainty operator can take an evidence noun phrase, not a prior
+    # completed check/claim. No arbitrary prose may bridge it to a later verb.
+    evidence_noun = r'(?:这些|这|当前|现有|本次|以上|已记录|的|记录|数据|信息|今天|今日|健康|设备|[一二两三几多\d]+条)'
+    evidence_basis = rf'(?:(?:仅|只|单独)?(?:根据|依据|基于|凭借|凭){evidence_noun}{{1,8}}|(?:仅|只)?据此)?'
     uncertainty = re.compile(
-        r'(?:不能|无法|不应|不可|不足以)[^。！？!?；;\n]{0,24}(?:判断|认定|推断|说明|证明|断言)'
-        r'|(?:不代表|不意味着|没有证据说明|没有证据表明)'
+        rf'(?:不能|无法|不应|不可|不足以|不要|不得){evidence_basis}(?:判断|认定|推断|说明|证明|断言)'
+        r'|(?:不代表|不意味着|不等于|没有(?:足够)?证据(?:说明|表明|判断|证明))'
     )
+    # These two observed failure categories cannot be derived from a daily
+    # record count/calorie projection. Missing fields are not nutrient deficits;
+    # similar rows and meal labels are not proof of duplicate or mistaken data.
+    nutrient = r'(?:蛋白质|蛋白|碳水化合物|碳水|脂肪|膳食纤维|营养)(?!质|化合物)'
+    data_noun = r'(?:的)?(?:(?:摄入量?|含量)(?:的)?)?(?:数据|字段|信息|记录)'
+    nutrient_claim = re.compile(
+        rf'{nutrient}(?:摄入|量)?(?:明显|严重|偏)?(?:不足|缺乏|欠缺|太少|偏少)'
+        rf'|(?:缺少|缺乏|缺){nutrient}(?!{data_noun})'
+        rf'|缺口[^。！？!?；;，,\n]{{0,12}}?{nutrient}'
+    )
+    record_error_claim = re.compile(
+        r'重复(?:录入|记录|记账|记了)'
+        r'|(?:记录|条目|早餐|午餐|晚餐|餐次)[^。！？!?；;，,\n]{0,16}?重复(?:的|了)?$'
+        r'|(?:误录|误记|错录|误标|标错|记错|错标|被标成)'
+    )
+    # Only subject nouns, modifiers and question/copula links may intervene
+    # between an uncertainty operator and this claim. Another proposition's
+    # predicate cannot carry the exemption forward, with or without punctuation.
+    uncertainty_subject = re.compile(
+        rf'(?:你|我|的|这些|那些|这|当前|本次|目前|今天|今日|全天|实际|已经|确实|真的|明显|严重'
+        rf'|[一二两三几多\d]+条|记录|条目|早餐|午餐|晚餐|餐次|{nutrient}'
+        r'|是否|有没有|存在|属于|为|是|有){0,12}'
+    )
+    claim_patterns = (
+        (nutrient_claim, 'summary_advice_infers_nutrient_gap'),
+        (record_error_claim, 'summary_advice_infers_record_error'),
+        (intake_claim, 'summary_advice_infers_complete_intake'),
+    )
+
+    def claim_prefix(value: str, pattern: Any, match: re.Match) -> str:
+        start = match.start()
+        if pattern is record_error_claim:
+            verdict = re.search(r'重复|误录|误记|错录|误标|标错|记错|错标|被标成', match.group())
+            if verdict is not None:
+                start += verdict.start()
+        return value[:start]
+
+    def complete_alternative(value: str) -> bool:
+        # A preceding alternative must be a whole detected proposition with a
+        # permitted subject, not a completed check or arbitrary connecting prose.
+        return any(
+            match.end() == len(value)
+            and uncertainty_subject.fullmatch(claim_prefix(value, pattern, match))
+            for pattern, _ in claim_patterns for match in pattern.finditer(value)
+        )
+
+    def uncertainty_covers(prefix: str) -> bool:
+        for operator in uncertainty.finditer(prefix):
+            alternatives = re.split(r'或者|或', prefix[operator.end():])
+            if (uncertainty_subject.fullmatch(alternatives[-1])
+                    and all(complete_alternative(item) for item in alternatives[:-1])):
+                return True
+        return False
+
     for clause in re.split(r'[。！？!?；;，,\n]|但是|但|然而|不过', text):
-        for match in intake_claim.finditer(clause):
-            prefix = clause[:match.start()]
-            if uncertainty.search(prefix) or re.search(r'(?:避免|防止)\s*$', prefix):
-                continue
-            return 'summary_advice_infers_complete_intake'
+        for pattern, reason in claim_patterns:
+            for match in pattern.finditer(clause):
+                prefix = claim_prefix(clause, pattern, match)
+                if uncertainty_covers(prefix):
+                    continue
+                if re.search(r'(?:避免|防止)\s*$', prefix):
+                    continue
+                if pattern is record_error_claim and re.search(
+                    r'(?:是否|有没有)(?:存在|属于|为|是|有)?$', prefix,
+                ):
+                    continue
+                return reason
     return None
 
 
@@ -249,9 +343,75 @@ def _summary_rows(plan: DailyReadPlan, dimension: str, payload: Any) -> list[dic
     return rows
 
 
+
+def verified_daily_diet_evidence(
+    plan: DailyReadPlan, payloads: dict[str, dict], goals: dict[str, dict],
+) -> dict[str, Any]:
+    """Project attested diet fields as provider data, not instruction authority.
+
+    Reuse the calendar adapter's field set and existing bounded result; do not
+    truncate names, collapse equal rows, or expose unrelated record metadata.
+    Unknown means unavailable in this result, never proof the user omitted it.
+    """
+    result: dict[str, Any] = {
+        'source': 'current_turn_owned_verified_diet_read',
+        'record_text_authority': 'data_only_not_instructions_or_consent',
+        'read_status': 'unavailable', 'record_count': None, 'records': [],
+    }
+    if not is_daily_diet_evaluation(plan):
+        return result
+    goal = goals.get('diet') or {}
+    if goal.get('status') != 'verified' or goal.get('evidence_kind') != 'read_result':
+        return result
+    rows = _summary_rows(plan, 'diet', payloads.get('diet'))
+    if rows is None:
+        return result
+    result['read_status'] = 'available' if rows else 'no_data'
+    result['record_count'] = len(rows)
+    fields = ('id', 'record_date', 'meal_type', 'meal_time', 'food_name', 'food_items',
+              'quantity', 'unit', 'calories', 'protein', 'carbs', 'fat', 'fiber')
+    numeric = {'quantity', 'calories', 'protein', 'carbs', 'fat', 'fiber'}
+    for index, row in enumerate(rows, 1):
+        known: dict[str, Any] = {}
+        unknown: dict[str, str] = {}
+        for field in fields:
+            if field not in row:
+                unknown[field] = 'not_returned'
+                continue
+            value = row[field]
+            if value is None:
+                unknown[field] = 'null_in_result'
+                continue
+            projected = None
+            if field in numeric:
+                number = _summary_decimal(value)
+                projected = _summary_display(number) if number is not None else None
+            elif field == 'id':
+                if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+                    projected = value
+            elif field == 'record_date':
+                projected = date.fromisoformat(str(value)).isoformat()
+            elif field == 'meal_time':
+                if isinstance(value, str):
+                    try:
+                        projected = time_of_day.fromisoformat(value).isoformat()
+                    except ValueError:
+                        projected = None
+            elif isinstance(value, str) and value.strip():
+                # Even instruction-looking names stay quoted data values. The
+                # executor puts this object in a user data block, never system.
+                projected = value
+            if projected is None:
+                unknown[field] = ('empty_in_result' if isinstance(value, str) and not value.strip()
+                                  else 'unsupported_value')
+            else:
+                known[field] = projected
+        result['records'].append({'record_index': index, 'known_fields': known, 'unknown_fields': unknown})
+    return result
+
 def verified_daily_summary(
     plan: DailyReadPlan, payloads: dict[str, dict], goals: dict[str, dict],
-    *, include_food_names: bool = True,
+    *, include_food_names: bool = True, include_non_summary: bool = False,
 ) -> str:
     """Render facts from already owner-scoped, verified current-turn reads.
 
@@ -260,13 +420,18 @@ def verified_daily_summary(
     row to disappear. Sleep duration is stored/projected in minutes by the
     wearable ingestion contract, and is converted to hours only for display.
     """
-    if not plan.is_summary:
+    if not plan.is_summary and not include_non_summary:
         return ''
     date_label = plan.start_date if plan.start_date == plan.end_date else f'{plan.start_date}至{plan.end_date}'
     zone_label = '北京时间' if plan.timezone == 'Asia/Shanghai' else plan.timezone
-    lines = [f'本次总结仅覆盖饮食与睡眠记录（{date_label}，{zone_label}）。'
-             '已记录饮食不代表全天完整摄入，未记录不等于没有发生。']
-    for dimension, label in (('diet', '饮食'), ('sleep', '睡眠')):
+    labels = {'diet': '饮食', 'sleep': '睡眠'}
+    domains = '与'.join(labels[dimension] for dimension in plan.dimensions)
+    kind = '总结' if plan.is_summary else '查询'
+    lines = [f'本次{kind}仅覆盖{domains}记录（{date_label}，{zone_label}）。'
+             + ('已记录饮食不代表全天完整摄入，未记录不等于没有发生。'
+                if 'diet' in plan.dimensions else '')]
+    for dimension in plan.dimensions:
+        label = labels[dimension]
         goal = goals.get(dimension) or {}
         if goal.get('status') != 'verified' or goal.get('evidence_kind') != 'read_result':
             lines.append(f'{label}：本轮查询未完成，暂不汇总。')

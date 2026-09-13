@@ -17,7 +17,7 @@ def _isolate_twin_cache(isolated_agent_protocol_transport):
     """Keep real Pi subprocess transport, prohibit external network access."""
 
 
-async def _run_scripted(db, user, monkeypatch, *, query, first_tool, first_args, dispatch, reply, turn_id, forbidden_tool_text=None, actual_sync=False, required_context_text=None, answer_finish_reason="stop"):
+async def _run_scripted(db, user, monkeypatch, *, query, first_tool, first_args, dispatch, reply, turn_id, forbidden_tool_text=None, actual_sync=False, required_context_text=None, answer_finish_reason="stop", extra_context=None):
     executor = AgentExecutor(db)
     rounds = []
     dispatched = []
@@ -60,7 +60,7 @@ async def _run_scripted(db, user, monkeypatch, *, query, first_tool, first_args,
     monkeypatch.setattr(executor, "_call_llm_stream", provider)
     monkeypatch.setattr(executor, "_dispatch_tool_request", data_dispatch)
     events = [event async for event in executor.run_stream(
-        user.id, query, client_turn_id=turn_id, client_caps=["genui-table-v1"],
+        user.id, query, client_turn_id=turn_id, client_caps=["genui-table-v1"], extra_context=extra_context,
     )]
     assert not dispatch_errors, f"Scripted dispatcher failed: {dispatch_errors!r}"
     assert not leaked_tool_data, "Unattested tool data must not reach the model"
@@ -267,7 +267,7 @@ async def test_real_dinner_list_reaches_answer_evidence_without_table_capability
             }]}
             yield {"type": "finish", "finish_reason": "tool_calls"}
         else:
-            yield {"type": "content", "text": "今天晚餐记录了番茄。建议根据记录回顾饮食。"}
+            yield {"type": "content", "text": "建议：可以根据已记录的食物核对餐次和份量。"}
             yield {"type": "finish", "finish_reason": "stop"}
 
     async def local_api_get(url, request_headers):
@@ -300,6 +300,11 @@ async def test_real_dinner_list_reaches_answer_evidence_without_table_capability
     assert "不应混入" not in basis_text
     persisted = db.query(AgentMessage).filter(AgentMessage.id == done["message_id"]).one()
     assert persisted.meta["answer_evidence"] == evidence
+    streamed = "".join(e.get("data", {}).get("content", "") for e in events if e.get("event") == "token")
+    for text in (persisted.content, streamed):
+        assert "已记录热量合计200千卡" in text
+        assert "本轮查询未完成" not in text
+        assert "睡眠" not in text
     assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 3
 
 
