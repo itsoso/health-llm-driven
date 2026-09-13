@@ -9,8 +9,8 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
-import { Alert, AppState, StyleSheet } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Alert, Animated, AppState, BackHandler, Keyboard, Modal, PanResponder, StyleSheet } from 'react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 
 import ChatInputBar from '../ChatInputBar';
 import { acceptAIConsentRevision, aiConsentRevision, invalidateAIConsent, setAIConsentIdentity } from '../../../services/aiConsentState';
@@ -230,12 +230,95 @@ describe('ChatInputBar', () => {
       .toBe(revaColors.surface);
   });
 
+  it('opens inline above the composer without a modal, title or redundant descriptions', () => {
+    const dismiss = jest.spyOn(Keyboard, 'dismiss');
+    const view = render(<ChatInputBar onSend={jest.fn()} isStreaming={false} />);
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    expect(view.UNSAFE_queryAllByType(Modal)).toHaveLength(0);
+    expect(view.queryByText('添加内容')).toBeNull();
+    expect(view.queryByText('确认后写入')).toBeNull();
+    expect(view.queryByText('最多9张')).toBeNull();
+    expect(within(view.getByTestId('chat-composer-surface')).getByTestId('attachment-menu-sheet')).toBeTruthy();
+    expect(view.getByRole('button', { name: '关闭附件菜单' }).props.accessibilityState.expanded).toBe(true);
+    expect(dismiss).toHaveBeenCalled();
+    dismiss.mockRestore();
+  });
+
+  it('collapses attachments when returning to typing without clearing the draft', () => {
+    const view = render(<ChatInputBar onSend={jest.fn()} isStreaming={false} />);
+    enterKeyboardMode(view);
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    fireEvent(view.getByLabelText('消息输入框'), 'focus');
+    fireEvent.changeText(view.getByLabelText('消息输入框'), '记录午餐');
+    expect(view.queryByTestId('attachment-menu-sheet')).toBeNull();
+    expect(view.getByLabelText('消息输入框').props.value).toBe('记录午餐');
+  });
+
+  it('dismisses the tray using accessibility escape or a downward handle swipe', () => {
+    // Jest has no native animation driver; exercise the actual gesture callbacks.
+    jest.spyOn(Animated, 'spring').mockReturnValue({ start: jest.fn(), stop: jest.fn(), reset: jest.fn() });
+    const create = PanResponder.create;
+    let gestures: Parameters<typeof create>[0] = {};
+    jest.spyOn(PanResponder, 'create').mockImplementation(config => {
+      gestures = config;
+      return create(config);
+    });
+    const onSend = jest.fn();
+    const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    act(() => view.getByTestId('attachment-menu-sheet').props.onAccessibilityEscape());
+    expect(view.queryByTestId('attachment-menu-sheet')).toBeNull();
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    act(() => {
+      gestures.onPanResponderRelease?.({} as any, {
+        dy: 80, dx: 0, vy: 0.2, numberActiveTouches: 1,
+      } as any);
+    });
+    expect(view.queryByTestId('attachment-menu-sheet')).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('accepts a downward swipe across tray padding without enlarging the handle row', () => {
+    const view = render(<ChatInputBar onSend={jest.fn()} isStreaming={false} />);
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    const tray = view.getByTestId('attachment-menu-sheet');
+    expect(tray.props.onMoveShouldSetResponder).toEqual(expect.any(Function));
+    expect(view.getByTestId('attachment-menu-drag-header').props.onMoveShouldSetResponder).toBeUndefined();
+    expect(StyleSheet.flatten(view.getByTestId('attachment-menu-drag-header').props.style).height).toBe(16);
+  });
+
+  it('handles system back only while the attachment tray is open', () => {
+    let back: (() => boolean | null | undefined) | undefined;
+    const remove = jest.fn();
+    jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+      back = handler;
+      return { remove };
+    });
+    const view = render(<ChatInputBar onSend={jest.fn()} isStreaming={false} />);
+    expect(back).toBeUndefined();
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    act(() => { expect(back?.()).toBe(true); });
+    expect(view.queryByTestId('attachment-menu-sheet')).toBeNull();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps close available when a draft arrives while the tray is open', () => {
+    const onSend = jest.fn();
+    const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    view.rerender(<ChatInputBar onSend={onSend} isStreaming={false} initialText="记录午餐" initialTextKey={1} />);
+    fireEvent.press(view.getByLabelText('关闭附件菜单'));
+    expect(view.queryByTestId('attachment-menu-sheet')).toBeNull();
+    expect(view.getByLabelText('发送消息')).toBeTruthy();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it('exposes attachment controls without an accessible grouping container and can close without sending', () => {
     const onSend = jest.fn();
     const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
     fireEvent.press(view.getByLabelText('附件菜单'));
     expect(view.getByTestId('attachment-menu-sheet').props.accessible).toBe(false);
-    expect(view.getByTestId('attachment-menu-drag-header').props.onMoveShouldSetResponder).toEqual(expect.any(Function));
+    expect(view.getByTestId('attachment-menu-sheet').props.onMoveShouldSetResponder).toEqual(expect.any(Function));
     for (let node = view.getByRole('button', { name: '拍照记餐' }).parent; node; node = node.parent) {
       if (typeof node.type === 'string') expect(node.props.accessible).not.toBe(true);
     }
@@ -285,6 +368,11 @@ describe('ChatInputBar', () => {
     expect(getByText('相册')).toBeTruthy();
     expect(getByText('文件')).toBeTruthy();
     expect(getByLabelText('导入体检报告')).toBeTruthy();
+    const item = getByLabelText('导入体检报告');
+    const itemStyle = StyleSheet.flatten(item.props.style);
+    expect(itemStyle.flexGrow).toBe(1);
+    expect(itemStyle.minHeight).toBeGreaterThanOrEqual(44);
+    expect(getByText('导入体检报告').props.numberOfLines).toBeUndefined();
   });
 
   it('stages a meal photo so the user can continue shooting before one combined send', async () => {

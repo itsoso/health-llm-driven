@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
-  Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
+  BackHandler, Pressable, ActivityIndicator, TextStyle, ScrollView,
   Alert, AppState, Keyboard, NativeSyntheticEvent, TextInputContentSizeChangeEventData, Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -175,6 +175,14 @@ export default function ChatInputBar({
   const [showMenu, setShowMenu] = useState(false);
   const closeAttachmentMenu = useCallback(() => setShowMenu(false), []);
   const attachmentDismiss = useSheetDismiss(closeAttachmentMenu, showMenu);
+  React.useEffect(() => {
+    if (!showMenu) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeAttachmentMenu();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [closeAttachmentMenu, showMenu]);
   const [showMedicalImportFlow, setShowMedicalImportFlow] = useState(false);
   const [cancelHint, setCancelHint] = useState(false);
   const [holdTranscript, setHoldTranscript] = useState('');
@@ -756,6 +764,7 @@ export default function ChatInputBar({
 
   const handleHoldStart = useCallback(async (pageX: number, pageY: number) => {
     if (!canStartHold(composerRef.current) || dictationRealtimeActiveRef.current) return;
+    setShowMenu(false);
     cancelledRef.current = false;
     voiceGestureActiveRef.current = true;
     voiceCommitModeRef.current = 'send';
@@ -868,6 +877,7 @@ export default function ChatInputBar({
   }, [handleHoldMove]);
 
   const handleVoiceModeToggle = useCallback(async () => {
+    setShowMenu(false);
     const state = composerRef.current;
     if (
       state.phase === 'hold_starting'
@@ -942,11 +952,13 @@ export default function ChatInputBar({
   }, []);
 
   const focusTextInput = useCallback(() => {
+    setShowMenu(false);
     setTextInputFocused(true);
     textInputRef.current?.focus();
   }, []);
 
   const handleTextInputFocus = useCallback(() => {
+    setShowMenu(false);
     setTextInputFocused(true);
   }, []);
 
@@ -1061,7 +1073,12 @@ export default function ChatInputBar({
 
   const toggleMenu = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowMenu(!showMenu);
+    if (!showMenu) {
+      textInputRef.current?.blur();
+      Keyboard.dismiss();
+      setTextInputFocused(false);
+    }
+    setShowMenu(current => !current);
   };
   const pendingImageLimit = pendingPhotoContextRef.current?.intent === 'diet_photo_record' ? 3 : 9;
 
@@ -1156,6 +1173,35 @@ export default function ChatInputBar({
       )}
 
       <View testID="chat-composer-surface" style={styles.composerSurface}>
+        {/* Inline attachment tray: keep the conversation and composer available. */}
+        {showMenu && (
+          <Animated.View
+            testID="attachment-menu-sheet"
+            accessible={false}
+            onAccessibilityEscape={closeAttachmentMenu}
+            style={[styles.menuSheet, { transform: [{ translateY: attachmentDismiss.translateY }] }]}
+            {...attachmentDismiss.panHandlers}
+          >
+            {/* The entire tray owns downward drags; button taps retain their responder. */}
+            <View testID="attachment-menu-drag-header" style={styles.menuDragHeader} accessible={false}>
+              <View testID="attachment-menu-handle" style={styles.menuHandle} accessible={false} />
+            </View>
+            <View testID="attachment-action-grid" style={styles.attachmentGrid}>
+              <AttachmentGridItem icon="camera-outline" label="拍照记餐" hint="拍照后先预览，发送后记录这餐" onPress={handleCaptureMealPhoto} />
+              <AttachmentGridItem icon="images-outline" label="相册" hint={`从相册选择照片，当前最多${pendingImageLimit}张`} onPress={handlePickImage} />
+              <AttachmentGridItem icon="document-outline" label="文件" hint="选择文档或报告" onPress={handlePickFile} />
+              <AttachmentGridItem
+                icon="document-text-outline"
+                label="导入体检报告"
+                hint="先预览，再保存"
+                onPress={() => {
+                  setShowMenu(false);
+                  setShowMedicalImportFlow(true);
+                }}
+              />
+            </View>
+          </Animated.View>
+        )}
         {/* 输入栏 */}
         <View style={styles.inputBar}>
           <Pressable
@@ -1263,7 +1309,7 @@ export default function ChatInputBar({
             </Pressable>
           )}
 
-          {canSend ? (
+          {canSend && !showMenu ? (
             <TouchableOpacity
               onPress={() => handleSend()}
               style={styles.sendBtn}
@@ -1274,7 +1320,7 @@ export default function ChatInputBar({
             >
               <Ionicons name="arrow-up" size={20} color="#fff" />
             </TouchableOpacity>
-          ) : justSent ? (
+          ) : justSent && !showMenu ? (
             <View style={[styles.sendBtn, { opacity: 0.4 }]}>
               <Ionicons name="checkmark" size={20} color="#fff" />
             </View>
@@ -1282,56 +1328,18 @@ export default function ChatInputBar({
             <TouchableOpacity
               testID="composer-plus"
               onPress={toggleMenu}
-              style={styles.plusBtn}
+              style={[styles.plusBtn, showMenu && styles.voiceModeBtnActive]}
               hitSlop={COMPOSER_HIT_SLOP}
               accessibilityRole="button"
               accessibilityState={{ expanded: showMenu }}
-              accessibilityLabel="附件菜单"
-              accessibilityHint="打开拍照、相册、文件和输入模式菜单"
+              accessibilityLabel={showMenu ? '关闭附件菜单' : '附件菜单'}
+              accessibilityHint={showMenu ? '收起附件选项，回到对话' : '展开拍照、相册、文件和体检报告选项'}
             >
               <Ionicons name={showMenu ? 'close' : 'add'} size={26} color={COMPOSER_ICON} />
             </TouchableOpacity>
           )}
         </View>
       </View>
-
-      {/* 附件菜单 */}
-      <Modal visible={showMenu} transparent animationType="slide" onRequestClose={closeAttachmentMenu}>
-        <View style={styles.menuOverlay} accessible={false}>
-          <Pressable style={StyleSheet.absoluteFill} accessible={false} onPress={closeAttachmentMenu} />
-          <Animated.View
-            testID="attachment-menu-sheet"
-            accessible={false}
-            accessibilityViewIsModal
-            onAccessibilityEscape={closeAttachmentMenu}
-            style={[styles.menuSheet, { transform: [{ translateY: attachmentDismiss.translateY }] }]}
-          >
-            <View testID="attachment-menu-drag-header" {...attachmentDismiss.panHandlers} accessible={false}>
-              <View testID="attachment-menu-handle" style={styles.menuHandle} accessible={false} />
-              <View style={styles.attachmentHeader}>
-                <Text style={styles.attachmentTitle} accessibilityRole="header">添加内容</Text>
-                <TouchableOpacity onPress={closeAttachmentMenu} accessibilityRole="button" accessibilityLabel="关闭附件菜单" style={styles.attachmentClose}>
-                  <Ionicons name="close" size={22} color={C.ink2} />
-                </TouchableOpacity>
-              </View>
-            </View>
-            <View testID="attachment-action-grid" style={styles.attachmentGrid}>
-              <AttachmentGridItem icon="camera-outline" label="拍照记餐" desc="确认后写入" onPress={handleCaptureMealPhoto} />
-              <AttachmentGridItem icon="image-outline" label="相册" desc="最多9张" onPress={handlePickImage} />
-              <AttachmentGridItem icon="document-outline" label="文件" desc="文档/报告" onPress={handlePickFile} />
-              <AttachmentGridItem
-                icon="document-text-outline"
-                label="导入体检报告"
-                desc="先预览再保存"
-                onPress={() => {
-                  setShowMenu(false);
-                  setShowMedicalImportFlow(true);
-                }}
-              />
-            </View>
-          </Animated.View>
-        </View>
-      </Modal>
 
       <MedicalExamImportFlow
         visible={showMedicalImportFlow}
@@ -1342,7 +1350,7 @@ export default function ChatInputBar({
   );
 }
 
-function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
+function AttachmentGridItem({ icon, label, hint, onPress }: { icon: any; label: string; hint: string; onPress: () => void }) {
   return (
     <TouchableOpacity
       style={styles.attachmentGridItem}
@@ -1350,13 +1358,13 @@ function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: 
       activeOpacity={0.68}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityHint={hint}
     >
       <View style={styles.attachmentGridIconWrap}>
-        <Ionicons name={icon} size={18} color={C.ink1} />
+        <Ionicons name={icon} size={22} color={C.green500} />
       </View>
       <View style={styles.attachmentGridText}>
-        <Text style={styles.attachmentGridLabel} numberOfLines={1}>{label}</Text>
-        <Text style={styles.attachmentGridDesc} numberOfLines={1}>{desc}</Text>
+        <Text style={styles.attachmentGridLabel}>{label}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -1365,9 +1373,6 @@ function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: 
 // Reva 设计语言: 暖白 paper 输入栏 / surface 卡 / green500 发送 / ink 文字.
 // 实时录音态沿用 Reva 的纸张、墨色与健康绿,避免脱离对话页主题.
 const styles = StyleSheet.create({
-  attachmentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  attachmentTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1 },
-  attachmentClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   /* ── 输入栏 ── */
   composerSurface: {
     marginHorizontal: 0,
@@ -1573,14 +1578,20 @@ const styles = StyleSheet.create({
   previewCount: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink3, marginLeft: 4 } as TextStyle,
 
   /* ── 附件菜单 ── */
-  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
   menuSheet: {
-    backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: revaSpacing.s5, paddingBottom: 24, paddingTop: 8,
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    marginHorizontal: 10, marginTop: 6, marginBottom: 2,
+    paddingHorizontal: 8, paddingBottom: 8, paddingTop: 0,
+  },
+  menuDragHeader: {
+    height: 16, alignItems: 'center', justifyContent: 'center',
   },
   menuHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: C.ink4,
-    alignSelf: 'center', marginBottom: 8,
+    width: 28, height: 3, borderRadius: 2, backgroundColor: C.lineStrong,
+    alignSelf: 'center', marginBottom: 0,
   },
   medicalImportHeader: {
     paddingHorizontal: 4,
@@ -1598,26 +1609,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 2,
   },
   attachmentGridItem: {
-    width: '48%',
-    minHeight: 62,
+    flexBasis: '45%',
+    flexGrow: 1,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 9,
-    borderRadius: revaRadii.lg,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    borderRadius: revaRadii.md,
     backgroundColor: C.paper,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
   },
   attachmentGridIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    backgroundColor: C.surface,
+    width: 26,
+    height: 26,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1627,15 +1636,9 @@ const styles = StyleSheet.create({
   },
   attachmentGridLabel: {
     fontFamily: revaFonts.sans,
-    fontSize: 13,
+    fontSize: 15,
     color: C.ink1,
-    fontWeight: '800',
-  } as TextStyle,
-  attachmentGridDesc: {
-    fontFamily: revaFonts.sans,
-    fontSize: 11,
-    color: C.ink3,
-    marginTop: 1,
+    fontWeight: '600',
   } as TextStyle,
   menuLabel: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '500', color: C.ink1 } as TextStyle,
   menuDesc: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 1 } as TextStyle,
