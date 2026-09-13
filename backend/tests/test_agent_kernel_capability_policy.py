@@ -6202,7 +6202,7 @@ def test_v45_query_then_unrelated_assessment_language_is_allowed(
         ("查询本人晨起的血压记录", "blood_pressure"),
         ("查询我服药后的血压记录", "blood_pressure"),
         ("查询我午后的血压记录", "blood_pressure"),
-        ("查询我夜间的睡眠记录", "sleep"),
+        ("查询我最近的睡眠记录", "sleep"),
         ("查询我起床后的体重记录", "weight"),
         ("查询我的今早血压记录", "blood_pressure"),
     ),
@@ -6224,6 +6224,19 @@ def test_v45_explicit_self_temporal_read_is_allowed(
     )
 
     assert decision.action == "allow", decision.reason
+
+
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_sleep_night_filter_cannot_be_replaced_by_daily_aggregate(tool_name):
+    # The reader merges wake-date rows, including non-Garmin sources. It has
+    # no episode/night filter; self ownership cannot establish that capability.
+    arguments = ({"dimension": "sleep"} if tool_name == "health_query"
+                 else {"record_type": "sleep", "operation": "list"})
+    decision = decide_tool_capability(
+        _snapshot("查询我夜间的睡眠记录"), _request(tool_name, arguments),
+    )
+    assert decision.action == "block"
+    assert decision.reason == "longitudinal_read_scope_unresolved"
 
 
 @pytest.mark.parametrize("scope", ("刚测", "刚刚测", "刚测量", "刚刚测量"))

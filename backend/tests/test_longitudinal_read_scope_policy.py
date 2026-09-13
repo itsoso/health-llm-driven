@@ -295,3 +295,64 @@ def test_projection_v5_composed_frames_keep_the_read_date(text, day):
 ])
 def test_projection_v5_draft_never_supplies_or_erases_read_time(text):
     assert resolve_owned_read_scope(snapshot(text)) is None
+
+
+@pytest.mark.parametrize('modifier', [
+    '饮食记录（早餐后）', '饮食中早餐后的记录', '饮食记录（傍晚）',
+    '饮食记录（那次检查之后）', '饮食里运动完以后的记录',
+    '饮食记录中的夜间部分', '饮食记录并分析早餐后的数据',
+])
+def test_projection_v6_query_object_modifiers_cannot_disappear(modifier):
+    text = f'查询我的{modifier}并分析'
+    for tool, args in [
+        ('health_query', {'dimension': 'diet'}),
+        ('health_query_batch', {'queries': [{'dimension': 'diet'}]}),
+        ('health_manage', {'record_type': 'diet', 'operation': 'list'}),
+    ]:
+        assert decide(args, text, tool).action == 'block'
+
+
+@pytest.mark.parametrize('predicate', [
+    '我是要早餐后的', '我想要那次检查之后的', '我需要夜间那部分',
+    '我觉得应该只取运动后的', '我是想看傍晚的那部分',
+])
+def test_projection_v6_intended_scope_is_not_background(predicate):
+    text = f'查询我的饮食记录并分析，{predicate}'
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    assert decide({'dimension': 'diet'}, text).action == 'block'
+
+
+@pytest.mark.parametrize('predicate', ['我是要三个月前的', '我想要既往诊断之后的'])
+def test_projection_v6_request_predicate_is_not_a_diagnosis_background(predicate):
+    text = f'查询我的饮食记录并分析，{predicate}'
+    assert decide({'dimension': 'diet'}, text).action == 'block'
+
+
+def test_projection_v6_comparison_clauses_keep_bound_child_windows():
+    text = '睡眠近7天，HRV近30天，对比一下'
+    args = {'queries': [{'dimension': 'sleep', 'days': 7, 'agg': 'avg'},
+                        {'dimension': 'hrv', 'days': 30, 'agg': 'avg'}],
+            'compare': {'a': 0, 'b': 1, 'op': 'diff'}}
+    assert decide(args, text, 'health_query_batch').action == 'allow'
+    assert decide(args, text + '，只要晚上', 'health_query_batch').action == 'block'
+
+
+def test_projection_v6_undated_night_sleep_is_not_a_supported_episode_filter():
+    text = '查询我夜间的睡眠记录'
+    assert decide({'dimension': 'sleep'}, text).action == 'block'
+    assert decide({'record_type': 'sleep', 'operation': 'list'}, text, 'health_manage').action == 'block'
+
+
+@pytest.mark.parametrize('text', [
+    '查询我运动后的血压记录',
+    '查询我的血压记录，看看哪些运动不允许',
+])
+def test_projection_v6_legacy_nonfour_domain_keeps_its_binder(text):
+    assert decide({'record_type': 'blood_pressure', 'operation': 'list'}, text, 'health_manage').action == 'allow'
+
+
+def test_projection_v6_other_domain_cannot_exempt_independent_restricted_read():
+    text = '查询我的血压记录，查询我的饮食记录（早餐后）并分析'
+    assert decide({'dimension': 'diet'}, text).action == 'block'
+    assert decide({'queries': [{'dimension': 'blood_pressure'}, {'dimension': 'diet'}]}, text, 'health_query_batch').action == 'block'
+    assert decide({'record_type': 'diet', 'operation': 'list'}, text, 'health_manage').action == 'block'

@@ -2715,7 +2715,16 @@ def decide_tool_capability(
         from app.services.agent_longitudinal_read import (
             longitudinal_read_scope_requested, longitudinal_read_restrictions_unresolved,
         )
-        if longitudinal_read_restrictions_unresolved(snapshot):
+        plan_args = args.get("plan", args)
+        read_proposals = ([args] if tool_name == "health_query" else
+                          plan_args.get("queries", []) if isinstance(plan_args, dict) else [])
+        guarding_longitudinal_domain = isinstance(read_proposals, list) and any(
+            isinstance(proposal, dict)
+            and normalize_health_query_args(proposal).get("dimension")
+            in {"diet", "sleep", "workout", "supplements"}
+            for proposal in read_proposals
+        )
+        if guarding_longitudinal_domain and longitudinal_read_restrictions_unresolved(snapshot):
             # Preserve the existing ownership denial when both checks fail;
             # ownership can change the rejection reason, never grant scope.
             reason = ("health_query_subject_not_current_user"
@@ -2805,7 +2814,10 @@ def decide_tool_capability(
         from app.services.agent_longitudinal_read import longitudinal_read_projection_text
         calendar_text = longitudinal_read_projection_text(snapshot)
         if calendar_text is None:
-            return _decision("block", "longitudinal_read_scope_unresolved", tool_name, canonical_args)
+            reason = ("health_query_subject_not_current_user"
+                      if illness_read_has_unowned_subject(_query_scope_text(turn_text))
+                      else "longitudinal_read_scope_unresolved")
+            return _decision("block", reason, tool_name, canonical_args)
         question_dimension = _calendar_question_dimension(calendar_text)
         expected_dimension = question_dimension or _query_text_known_dimension(calendar_text)
         # Ambiguous mixed-domain text must not inherit the classifier's one
@@ -3113,7 +3125,10 @@ def decide_tool_capability(
             internal_mutation_lookup = _server_authorized_manage_lookup(args)
             guarding_user_read = not internal_mutation_lookup
             from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
-            if guarding_user_read and longitudinal_read_restrictions_unresolved(snapshot):
+            if (guarding_user_read
+                    and canonical_health_manage_record_type(args.get("record_type"))
+                    in {"diet", "sleep", "workout", "supplements"}
+                    and longitudinal_read_restrictions_unresolved(snapshot)):
                 reason = ("health_query_subject_not_current_user"
                           if illness_read_has_unowned_subject(_query_scope_text(turn_text))
                           else "longitudinal_read_scope_unresolved")

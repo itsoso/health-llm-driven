@@ -119,3 +119,27 @@ The broader projection compatibility repair passed its 253 focused cases, then c
 The shared projection now defers only fully resolved existing comparison windows/clinical entities to their original binders, consumes unknown restrictions completely, and uses the existing read-act/draft/sync semantics. Full policy revalidation passed 5,600 tests; the complete coherence lane plus query outcomes passed 791 with eight explicit skips. Both processes exited zero and every application source fingerprint stayed unchanged. The previous thirteen failures and wrong-cwd runner remain retained historical failures. Additional unchanged-source evidence/guidance and PostgreSQL verification is running before final G3 acceptance.
 
 The larger read/continuation repair does not depend on the newer daily evaluation synthesis experiment. These are independently reviewed release batches under this same controller. The first batch to pass its own fixed-source review, live acceptance and exact-revision CI may release serially; success in one batch does not complete the other user's acceptance path. No concurrent push or deployment is authorized by this arrangement.
+
+
+## Fifth independent review — historical rejection
+
+Fixed `36c7cb32fb1133a374ca488c4f5ea9348158d204` passed the full 5,600 policy cases, 791 coherence/outcome cases with eight skips, 1,152 evidence/guidance cases and 214 PostgreSQL cases. Source hashes remained stable; independent original-request coverage also passed 32 cases. Nevertheless, new G4 returned NO-GO: the query projection still conditioned complete consumption on a recognized time token. A post-domain parenthesis or modifier could disappear, and a request predicate shaped like 我是要早餐后的 was erased as narrative. The independent gateway matrix recorded twenty failures and twenty-eight passes across enforce/shadow and single/batch dispatch; the existing nearby 331 cases passed. No paid run or deployment was started. The repair now requires complete query-object/modifier consumption instead of detecting additional time keywords.
+
+The separate daily-evaluation repair is fixed as `5a2e539310df1ff9b0421ab887c448649a309ffd`, with 430 passing executions and one PostgreSQL-only skip. The original independent four negative cases pass unchanged; this is regression evidence, not a replacement for a new independent review. The new reviewer and fresh CI-mode/PostgreSQL checks are running. That batch remains unpublished.
+
+
+## Projection and daily qualifier repairs — verification in progress
+
+The broader projection now consumes every relevant query object and modifier regardless of temporal keyword presence. Historical diagnosis background requires a complete past diagnostic statement; a request such as 我是要三个月前的 remains a restriction. Existing comparison scopes and non-longitudinal blood-pressure query binders retain their own behavior; the new restriction gate applies only to requested longitudinal domains. Night-only sleep is rejected because the available wake-date aggregate cannot prove that filter across sources. The unchanged independent gateway matrix passes all forty-eight cases. Fresh full regression remains in progress on frozen application bytes.
+
+The second independent daily-evaluation review rejected `5a2e5393` on two false positives: missing nutrient records and a question about possible duplicate entries. That revision passed CI-mode 726 cases with ten skips and PostgreSQL 75 cases, but remained unpublished. The local qualifier repair is now fixed at `628e713f7ed24292f355d607469882860bd1354a`; 453 nearby cases pass with one PostgreSQL-only skip, and the prior independent oracle passes 277 with one skip. A new independent reviewer and new CI-mode/PostgreSQL runs are active. Neither passing unit tests nor a producer replay substitutes for their verdict or real-model acceptance.
+
+
+## Daily evaluation third review — historical rejection
+
+Fixed `628e713f7` independently passed the original 277-case oracle (one PostgreSQL-only skip) and nine new qualifier pairs. A separate thirteen-case Pi check failed three malformed/unprojectable result cases: missing record dates, an unsupported payload key, and a no-data flag contradicting nonempty rows. The presentation correctly withheld facts, but the query goal and whole turn still claimed completion. G4 returned NO-GO on this common result-contract mismatch. The repair must reuse the same existing projection requirement for single-day evaluation and summaries while preserving plain query behavior. No paid replay, push or deployment occurred for this revision.
+
+
+## Complete query-object repair — fixed review candidate
+
+Fresh final-source policy validation passed 5,602 cases; coherence and complete query outcomes passed 810 with eight explicit skips. The unchanged independent gateway matrix passed forty-eight. Both test processes exited zero and all application hashes remained stable. The preceding 1,152 evidence/guidance and 214 PostgreSQL checks passed before the final owner-denial reason-only change; their boundary is retained rather than claimed as identical final-source evidence. Independent fixed-SHA original-request and CI-mode verification will cover the final source. Static error lint, System Map, tracked-secret, governance and dossier checks pass. Fixed-commit G4 and real-model original-request/continuation acceptance remain pending; this candidate is not released.

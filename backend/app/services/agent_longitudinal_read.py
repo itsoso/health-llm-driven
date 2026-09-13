@@ -63,10 +63,22 @@ _RESTRICTION_PREFIX = re.compile(
 )
 
 
-_DOMAIN_SCOPE = re.compile(
-    r"(?:我|本人|自己)?的?(?:" + "|".join(_DOMAINS.values()) + r")(?:记录|数据)?"
-    r"(?:\s*(?:以及|和|与|及|、)\s*(?:我|本人|自己)?的?(?:"
-    + "|".join(_DOMAINS.values()) + r")(?:记录|数据)?)*"
+_DOMAIN_ITEM_PREFIX = r"(?:我|本人|自己)?(?:的|日常|每天|实际|在|服用|近期|最近)*"
+_DOMAIN_ITEM_SUFFIX = r"(?:的|记录|数据|状态|情况|等等)*"
+_DOMAIN_ITEM = _DOMAIN_ITEM_PREFIX + r"(?:" + "|".join(_DOMAINS.values()) + r")" + _DOMAIN_ITEM_SUFFIX
+_DOMAIN_SCOPE = re.compile(_DOMAIN_ITEM + r"(?:(?:以及|和|与|及|、)" + _DOMAIN_ITEM + r")*")
+_CONTEXT_DOMAIN_ITEM = _DOMAIN_ITEM_PREFIX + r"(?:" + "|".join(_DOMAINS.values()) + r"|情绪|心情|工作)" + _DOMAIN_ITEM_SUFFIX
+_CONTEXT_DOMAIN_SCOPE = re.compile(r"(?:以及|和|与|及)?" + _CONTEXT_DOMAIN_ITEM + r"(?:(?:以及|和|与|及|、)" + _CONTEXT_DOMAIN_ITEM + r")*")
+_ANALYSIS_GOAL = (
+    r"(?:(?:并且|然后|并|再|也|来|这样才能)(?:请)?)?"
+    r"(?:(?:依据|基于)(?:真实|已有)(?:数据|记录))?"
+    r"(?:(?:分析|复盘|总结)(?:一下)?(?:(?:我(?:的)?)?(?:当前|现在)?(?:的)?(?:状况|情况|状态))?|"
+    r"(?:给|给到|给出|提供)(?:我)?(?:一些|一点|些|点|精准的)?(?:建议|意见))"
+)
+_ANALYSIS_GOAL_RE = re.compile(_ANALYSIS_GOAL)
+_METHOD_CLAUSE_RE = re.compile(
+    r"(?:要|请|先|再|然后|分别|去|或者|或|的|对应|相关|各个|各|模块|"
+    r"工具|接口|HTTP|MCP|Skills|调用|发起|请求|查询|读取|已有|记录|数据|\s)+", re.I,
 )
 # Subday records are not representable by this calendar-day adapter. These are
 # temporal tokens, not allowed/disallowed request phrases or politeness forms.
@@ -75,13 +87,32 @@ _RETROSPECTIVE_SCOPE = re.compile(r"(?:分析|复盘|总结).*(?:行动|健康�
 
 
 def _diagnosis_background_clause(clause: str) -> bool:
-    return bool(
-        not _RESTRICTION_PREFIX.search(clause)
-        and re.search(r"诊断|确诊|病史|既往|[一二两三四五六七八九十几\d]+个?多?月前", clause)
-        and not re.search(
-            r"查询|查看|读取|调取|调用|记录|分析|复盘|结合|" + "|".join(_DOMAINS.values()), clause,
-        )
+    """A historical diagnosis assertion is context; a date alone is not."""
+    past = r"[一二两三四五六七八九十几\d]+个?多?月前"
+    assertion = re.fullmatch(
+        r"(?:我|本人)(?:的)?(?P<subject>.+?)(?:其实)?是(?:" + past + r")(?:的)?(?:事情|事)?", clause,
     )
+    if assertion:
+        subject = assertion["subject"]
+        return subject in {"既往诊断", "诊断", "病史"} or resolve_illness_entity(subject).status == "exact"
+    diagnosis = re.fullmatch(
+        r"(?:我|本人)(?:在)?(?:" + past + r")(?:被)?(?:确诊|诊断)(?:为|了)?(?P<entity>.+)", clause,
+    )
+    return bool(diagnosis and resolve_illness_entity(diagnosis["entity"]).status == "exact")
+
+
+def _diagnosis_context_goal(clause: str) -> bool:
+    """A complete request to interpret diagnosis timing contains no read filter."""
+    goal = re.fullmatch(
+        r"(?:你)?(?:要|请)?基于(?P<context>.+?)(?:来)?(?:判断|推断)(?:我)?(?:当前|现在)(?:的)?状况",
+        clause,
+    )
+    if not goal:
+        return False
+    context = goal["context"].replace("的", "")
+    if context == "诊断时间":
+        return True
+    return context.endswith("诊断时间") and resolve_illness_entity(context[:-4]).status == "exact"
 
 
 def _number(text: str) -> int:
@@ -201,7 +232,10 @@ def _legacy_comparison_scope(active: str) -> bool:
     residue = _HISTORY_QUERY_LEADING_VERB_RE.sub("", residue)
     residue = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", residue)
     residue = _HISTORY_QUERY_MULTI_ENTITY_RE.sub("", residue)
-    return bool(re.fullmatch(r"(?:的|比较|倍数|几倍|比例|比率|ratio|之比|占比|占多少|\s)*", residue, re.I))
+    residue = _strip_exam_request_scaffolding(residue)
+    residue = _HISTORY_QUERY_LEADING_VERB_RE.sub("", residue)
+    residue = _HISTORY_QUERY_TRAILING_VERB_RE.sub("", residue)
+    return bool(re.fullmatch(r"(?:的|一下|比较|倍数|几倍|比例|比率|ratio|之比|占比|占多少|\s)*", residue, re.I))
 
 
 def _complete_read_background(clause: str) -> bool:
@@ -214,7 +248,8 @@ def _complete_read_background(clause: str) -> bool:
         return True  # Empty reporting introduction after quoted material removal.
     return bool(
         re.search(r"(?:我|本人)", clause)
-        and re.search(r"(?:感觉|觉得|感到|比较|有点|不太|很|挺|是|已经|正在).+", clause)
+        and re.search(r"(?:感觉|感到|比较|有点|不太|很|挺|已经|正在).+", clause)
+        and not re.search(r"要|想|希望|需要|应该|应当|取|限定|之前|之后|以前|以后|前|后", clause)
     )
 
 
@@ -247,7 +282,8 @@ def _read_projection_parts(active: str) -> list[tuple[str, bool]]:
             # A separate answer-generation task supplies no read scope. The
             # original write/owner gates remain authoritative on the full turn.
             continue
-        explicit = bool(_has_read_clause(clause) or _RESTRICTION_PREFIX.search(clause))
+        explicit = bool(_has_read_clause(clause) or _RESTRICTION_PREFIX.search(clause)
+                        or _RETROSPECTIVE_SCOPE.search(clause))
         domain_request = bool(
             re.search(r"结合|包括|针对|基于|分析|复盘|总结", clause)
             and re.search(domain_words, clause)
@@ -257,7 +293,8 @@ def _read_projection_parts(active: str) -> list[tuple[str, bool]]:
             listing = domain_request
         elif listing and nominal_list.fullmatch(clause):
             parts.append((clause, False))
-        elif re.search(r"(?:给|给到|给出|提供).*(?:建议|意见)|分析|复盘|总结|判断.*状况|推断.*状况", clause):
+        elif (_ANALYSIS_GOAL_RE.fullmatch(clause) or _METHOD_CLAUSE_RE.fullmatch(clause)
+              or _diagnosis_context_goal(clause)):
             parts.append((clause, False))
             listing = False
         elif _complete_read_background(clause):
@@ -272,9 +309,9 @@ def _read_projection_parts(active: str) -> list[tuple[str, bool]]:
 
 def _consume_read_scope(snapshot, scope: str, domains: set[str]) -> bool:
     """Consume a complete date/recent/domain expression, never a date substring."""
-    residue = _DOMAIN_SCOPE.sub("", scope)
-    residue = re.sub(r"(?:我|本人|自己)?的|记录|数据|\s", "", residue)
     deep_read = bool(re.search(r"分析|复盘|总结|建议|状况", snapshot.envelope.text))
+    residue = (_CONTEXT_DOMAIN_SCOPE if deep_read else _DOMAIN_SCOPE).sub("", scope)
+    residue = re.sub(r"(?:我|本人|自己)?的|记录|数据|\s", "", residue)
     if not deep_read:
         from app.services.agent_kernel.capability_policy import _query_window_days
         legacy = _legacy_scope_residue(scope)
@@ -302,19 +339,16 @@ def _consume_read_scope(snapshot, scope: str, domains: set[str]) -> bool:
     ) is not None
 
 
-def _query_temporal_scope(clause: str) -> str | None:
-    """Extract only query-associated time; event-relative filters have no adapter."""
-    relation = any(
-        re.search(r".+(?:之前|之后|以前|以后|前|后)(?:的)?$", clause[:target.start()])
-        for target in re.finditer("|".join(_DOMAINS.values()), clause)
-    )
-    if not (relation or _DATE_RE.search(clause) or _RELATIVE_RE.search(clause)
-            or _WEEKDAY_RE.search(clause) or _RECENT.search(clause)
-            or _SUBDAY_SCOPE.search(clause) or _AMBIGUOUS_DATE.search(clause)):
-        return None
-    scope = re.sub(r"(?:并|再|然后)(?:请)?(?:分析|复盘|总结).*$", "", clause)
+def _query_object_scope(clause: str) -> str:
+    """Return the entire query object; every leftover modifier needs binding.
+
+    This deliberately has no temporal keyword trigger. Object-internal,
+    parenthesized and postposed filters remain part of the object, including
+    qualifiers after a word such as records or an analysis verb.
+    """
+    scope = re.sub(r"(?:并|再|然后)(?:请)?" + _ANALYSIS_GOAL + r"$", "", clause)
     scope = _strip_exam_request_scaffolding(scope)
-    scope = re.sub(r"^(?:先|再|然后)?(?:分析|复盘|总结)(?:一下)?", "", scope)
+    scope = re.sub(r"^(?:先|再|然后)?(?:分析|复盘|总结|结合|包括|针对|基于)(?:一下)?", "", scope)
     scope = re.sub(r"^(?:我|本人|自己)(?:的)?", "", scope)
     if _RETROSPECTIVE_SCOPE.search(clause):
         scope = re.sub(r"行动|健康情况|健康状态|一天|日程", "", scope)
@@ -375,7 +409,13 @@ def _restricted_read_text(snapshot, active: str) -> str | None:
             if not _consume_read_scope(snapshot, clause, requested_domains):
                 return None
         else:
-            temporal = _query_temporal_scope(clause)
+            # Domain-free method/advice clauses are auxiliary only when their
+            # complete grammar is recognized, never from a keyword hit.
+            if (_ANALYSIS_GOAL_RE.fullmatch(clause) or _METHOD_CLAUSE_RE.fullmatch(clause)
+                    or _diagnosis_context_goal(clause)):
+                normalized.append(clause)
+                continue
+            temporal = _query_object_scope(clause)
             if temporal is not None:
                 exact_question = resolve_daily_read_plan(
                     _strip_exam_request_scaffolding(clause), snapshot.context.current_time,
