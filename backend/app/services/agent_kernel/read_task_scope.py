@@ -13,10 +13,13 @@ from zoneinfo import ZoneInfo
 from app.services.agent_kernel.health_semantics import (
     active_health_instruction_text,
     health_read_has_nonself_subject,
+    health_read_cancelled,
+    has_positive_health_read_verb,
     normalize_health_authorization_text,
 )
 from app.services.agent_query_window import resolve_calendar_query_window
 from app.services.agent_read_task_continuation import resolve_read_task_continuation
+from app.services.write_intent_scope import _TRAILING_REVOCATION_CLAUSE_RE
 
 _READ = re.compile(
     r"查询|查看|看一下|看看|获取|分析|复盘|总结|怎么样|怎样|如何|什么|啥"
@@ -91,34 +94,109 @@ def _owned_active(text: str | None) -> bool:
     return True
 
 
+def _complete_sync_clause(clause: str, has_target: bool) -> tuple[bool, bool] | None:
+    """Normalize only complete known aliases, then use the existing binder."""
+    from app.services.agent_kernel.capability_policy import _explicit_owned_garmin_sync
+
+    clause = re.sub(r"^(?:先|再|然后)", "", clause)
+    if _explicit_owned_garmin_sync(clause):
+        return True, True
+    # These are the already supported prefix/postfix spoken action forms.
+    # Every character belongs to the command; modifiers are never removed.
+    polite = r"(?:请你?|麻烦)?(?:帮我|给我)?"
+    owned = r"(?:我的?)?(?:garmin|佳明)(?:的)?(?:数据)?"
+    prefix = re.fullmatch(
+        rf"{polite}(?:同步|刷新|拉取)(?:一下)?(?P<target>{owned})", clause, re.I,
+    )
+    postfix = re.fullmatch(
+        rf"{polite}(?:把)?(?P<target>{owned})(?:同步|刷新|拉取)(?:一下)?", clause, re.I,
+    )
+    alias = prefix or postfix
+    if alias:
+        target = alias['target']
+        if not target.endswith("数据"):
+            target += "数据"
+        if _explicit_owned_garmin_sync("同步" + target):
+            return True, True
+    if _explicit_owned_garmin_sync(clause + "，同步一下"):
+        return True, False  # A target declaration alone does not enqueue.
+    if has_target and _explicit_owned_garmin_sync("获取佳明数据，" + clause):
+        return True, True
+    return None
+
+
+def _independent_sync_read_clause(clause: str) -> bool:
+    """Recognize complete ancillary read roles without the recursive projector.
+
+    This establishes only that the clause is independent of the sync target.
+    The actual read still binds its dates and owner through its normal policy.
+    """
+    from app.services.agent_kernel.daily_read_plan import _daily_read_frame, _SYNC_STATUS_SUFFIX_RE
+    from app.services.agent_kernel.health_semantics import _strip_exam_request_scaffolding
+    from app.services.agent_longitudinal_read import (
+        _ANALYSIS_GOAL_RE, _DOMAIN_SCOPE, _has_read_clause, _query_object_scope,
+        _record_domains, _RECENT,
+    )
+    from app.services.agent_query_window import _DATE_RE, _RELATIVE_RE, _WEEKDAY_RE
+
+    if _SYNC_STATUS_SUFFIX_RE.fullmatch("，" + clause) or _ANALYSIS_GOAL_RE.fullmatch(clause):
+        return True
+    core = _strip_exam_request_scaffolding(clause)
+    if _daily_read_frame(core) is not None:
+        return True
+    if not (_has_read_clause(clause) or re.match(r"(?:先|再)?(?:分析|复盘|总结)", clause)):
+        return False
+    if health_read_cancelled(clause):
+        return True  # A cancelled independent read cannot reopen sync authority.
+    if not _record_domains(clause):
+        return False
+    scope = _query_object_scope(clause)
+    scope = _DOMAIN_SCOPE.sub("", scope)
+    scope = re.sub(r"的|记录|数据|\s", "", scope)
+    return bool(
+        scope in {"", "近期", "最近"}
+        or _RECENT.fullmatch(scope)
+        or _DATE_RE.fullmatch(scope)
+        or _RELATIVE_RE.fullmatch(scope)
+        or _WEEKDAY_RE.fullmatch(scope)
+    )
+
+
 def has_owned_sync_instruction(text: str) -> bool:
-    """An explicit refresh act is distinct from asking whether a job finished."""
+    """Consume the whole owned sync act; unknown clauses never grant a job."""
     active = _active(text)
     if active is None or not _owned_active(active) or _MUTATION.search(active):
         return False
-    if not re.search(r"garmin|佳明", active, re.I):
-        return False
-    clauses = re.split(r"[，,。；;！？!?\n]|然后|再分析|再看看", active)
-    # The enqueue adapter currently supports its fixed current window only.
-    # A date on the device target or sync command cannot be silently discarded;
-    # a separate read clause keeps its independently bound historical date.
-    if any(
-        re.search(r"garmin|佳明|同步|刷新|拉取", clause, re.I)
-        and _SYNC_TARGET_TIME.search(clause)
-        for clause in clauses
-    ):
-        return False
+    active = re.sub(r"\s+", "", active)
+    clauses = re.split(r"[，,。；;！？!?\n]|然后|(?=再(?:分析|看看))", active)
+    authorized = False
+    has_target = False
     for clause in clauses:
-        if not re.search(r"同步|刷新|拉取", clause):
+        clause = clause.strip()
+        if not clause:
             continue
-        if re.search(
-            r"是否|有没有|了吗|完了|完成|完没|状态|成功|需要|应该|怎么|如何|吗|没|好不好|已经|刚才|昨天|之前",
-            clause,
+        sync = re.search(r"同步|刷新|拉取", clause)
+        if _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause) or (
+            not has_positive_health_read_verb(clause) and health_read_cancelled(clause)
         ):
+            authorized = False
             continue
-        if re.search(r"同步|刷新|拉取", clause):
-            return True
-    return False
+        if sync is not None and (health_read_cancelled(clause) or any(
+            _TRAILING_REVOCATION_CLAUSE_RE.fullmatch(clause[offset:])
+            for offset in range(sync.end(), len(clause))
+        )):
+            authorized = False
+            continue
+        command = _complete_sync_clause(clause, has_target)
+        if command is not None:
+            has_target, starts_sync = command
+            if starts_sync:
+                authorized = True
+            continue
+        if _independent_sync_read_clause(clause):
+            continue
+        return False
+    return authorized
 
 
 @dataclass(frozen=True)

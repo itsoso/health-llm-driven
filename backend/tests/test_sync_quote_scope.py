@@ -67,3 +67,70 @@ def test_readonly_snapshot_cannot_gain_sync_authority():
 @pytest.mark.parametrize('text', ['“张三”的佳明数据同步完成了吗', '我的“昨天”佳明数据同步完成了吗'])
 def test_quoted_sync_status_scope_cannot_become_current_owned_status(text):
     assert resolve_sync_status_query(snapshot(text)) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["enforce", "shadow"])
+@pytest.mark.parametrize("text,expected", [
+    ("同步我的佳明数据，算了", False),
+    ("同步我的佳明数据还是算了", False),
+    ("同步我的佳明数据，先放一放", False),
+    ("刷新我的佳明数据，我改主意了", False),
+    ("拉取我的佳明数据，当我没说", False),
+    ("同步我的佳明数据，算了，再查询我昨天的睡眠", False),
+    ("同步我的佳明数据，算了。再同步我的佳明数据", True),
+    ("算了。同步我的佳明数据", True),
+    ("医生说“算了”。同步我的佳明数据", True),
+    ("同步我的佳明数据。医生说“算了”", True),
+    ("“同步我的佳明数据，算了”", False),
+    ("同步我的佳明数据。查询昨天睡眠还是算了", True),
+])
+async def test_sync_withdrawal_binds_action_order_without_reviving_cancelled_sync(text, expected, mode):
+    turn = snapshot(text, mode)
+    dispatched = []
+
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{"job_id":"synthetic-authorized-sync"}'
+
+    result = await ToolGateway(turn).execute(
+        ToolExecutionRequest("health_record", {"record_type": "garmin_sync", "data": {}}), dispatch,
+    )
+    assert bool(dispatched) is expected
+    assert has_owned_sync_instruction(text) is expected
+    assert ("semantic:owned_garmin_sync" in turn.intent.evidence) is expected
+    if not expected:
+        assert result.decision.action == "block"
+        assert result.decision.reason == "garmin_sync_scope_unresolved"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["enforce", "shadow"])
+@pytest.mark.parametrize("text,expected", [
+    ("同步我的佳明数据，仅限昨天", False),
+    ("同步我的佳明数据，仅限早餐后", False),
+    ("同步我的佳明数据，先等我确认", False),
+    ("同步我的佳明数据，然后查询昨天睡眠", True),
+    ("同步我的佳明数据早餐后", False),
+    ("同步我的佳明数据，仅在我批准以后", False),
+    ("同步我的佳明数据，有空再执行", False),
+    ("同步我的佳明数据。查询昨天的睡眠。仅限早餐后", False),
+    ("同步我的佳明数据。查询昨天的睡眠。给我建议", True),
+    ("先分析昨天的睡眠，再同步佳明数据", True),
+])
+async def test_sync_authority_requires_every_clause_to_be_consumed(text, expected, mode):
+    turn = snapshot(text, mode)
+    dispatched = []
+
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{"job_id":"synthetic-authorized-sync"}'
+
+    result = await ToolGateway(turn).execute(
+        ToolExecutionRequest("health_record", {"record_type": "garmin_sync", "data": {}}), dispatch,
+    )
+    assert bool(dispatched) is expected
+    assert has_owned_sync_instruction(text) is expected
+    if not expected:
+        assert result.decision.action == "block"
+        assert result.decision.reason == "garmin_sync_scope_unresolved"
