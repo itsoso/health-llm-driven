@@ -579,3 +579,29 @@ async def test_recovery_tool_result_escalates_before_synthesis_and_exposes_safe_
         "reason_codes": ["missing_core_signal", "read_failed"],
         "model_escalated": True,
     }
+
+
+@pytest.mark.parametrize("message", [
+    "我的既往诊断是几个月前的事情。请基于诊断时间判断当前状况，结合我每天实际服用的补剂、睡眠、运动、情绪、工作和饮食，先调用工具查询已有记录，再给建议。",
+    "请查询我最近7天的饮食、睡眠、运动和实际服用的补剂记录并分析，给我建议。",
+    "复盘我近期的睡眠和运动记录，给我健康管理建议。",
+    "请查询我最近7天的睡眠和运动记录怎么样？",
+    "查看我近期睡眠和运动的数据，给我建议。",
+])
+def test_record_review_is_not_a_recovery_based_exercise_decision(message):
+    assert not ae._is_recovery_exercise_advice_message(message)
+    assert _evaluate(message=message, result='{"status":"success"}',
+                     snapshot={"metrics": {}}, tool_name="health_query_batch",
+                     args={"queries": [{"dimension": "sleep"}, {"dimension": "workout"}]}) is None
+
+
+@pytest.mark.parametrize("message", [
+    "我恢复情况允许跑间歇吗？",
+    "请查询我最近7天的饮食、睡眠、运动记录并分析。结合恢复情况，今天能跑间歇吗？",
+    "请根据我的睡眠和恢复状态给我今天训练强度的建议。",
+])
+def test_explicit_recovery_exercise_decision_still_receives_safety_directive(message):
+    assert ae._is_recovery_exercise_advice_message(message)
+    decision = _evaluate(message=message, result='{"status":"success"}', snapshot={"metrics": {}})
+    assert decision.status == "degraded"
+    assert "不得建议高强度" in decision.model_directive

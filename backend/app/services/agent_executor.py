@@ -10096,20 +10096,35 @@ def _is_recovery_exercise_advice_message(message: Optional[str]) -> bool:
     ):
         return False
     has_data = any(marker in normalized for marker in _RECOVERY_ADVICE_DATA_MARKERS)
-    has_exercise = any(
-        marker in normalized for marker in _RECOVERY_ADVICE_EXERCISE_MARKERS
-    )
-    has_decision = any(
-        marker in normalized for marker in _RECOVERY_ADVICE_DECISION_MARKERS
-    )
-    # After excluding context-free causal/relationship questions above, an
-    # explicit question that combines recovery and exercise is itself a
-    # decision request. Chinese users commonly omit both the pronoun and a
-    # fixed modal (for example, "睡得不好，还去健身？").
-    asks_current_question = any(marker in normalized for marker in ("?", "？"))
-    return bool(
-        has_data and has_exercise and (has_decision or asks_current_question)
-    )
+    if not has_data:
+        return False
+    # A retrospective list may mention sleep, exercise and generic advice in
+    # different clauses. Require an actual exercise decision in its own clause;
+    # a later explicit decision still counts after a separate records request.
+    for clause in re.split(r"[，,。；;、\n]", normalized):
+        exercise_actions = (
+            match
+            for marker in _RECOVERY_ADVICE_EXERCISE_MARKERS
+            for match in re.finditer(re.escape(marker), clause)
+            if not re.match(r"(?:的)?(?:记录|数据|状态)", clause[match.end():])
+        )
+        if next(exercise_actions, None) is None:
+            continue
+        has_decision = any(
+            marker in clause
+            for marker in _RECOVERY_ADVICE_DECISION_MARKERS
+            if marker != "建议"
+        )
+        advice_about_exercise = bool(re.search(
+            r"(?:运动|锻炼|训练)(?:强度|计划|方案|安排|建议)|"
+            r"建议(?:今天|现在|本次)?(?:去|做)?(?:运动|锻炼|训练|跑|练)",
+            clause,
+        ))
+        asks_exercise_question = any(marker in clause for marker in ("?", "？"))
+        if has_decision or advice_about_exercise or asks_exercise_question:
+            return True
+    return False
+
 
 
 def _is_recovery_exercise_advice_context(
@@ -16418,7 +16433,7 @@ class AgentExecutor:
                 if (
                     executed_decision is not None
                     and executed_decision.action == "allow"
-                    and executed_decision.normalized_tool_name in {"health_query", "health_manage"}
+                    and executed_decision.normalized_tool_name in {"health_query", "health_query_batch", "health_manage"}
                 ):
                     func_name = executed_decision.normalized_tool_name
                     parsed_tool_args = dict(executed_decision.normalized_args)

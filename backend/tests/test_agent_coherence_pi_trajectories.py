@@ -505,3 +505,47 @@ async def test_explicit_calendar_batch_reads_both_owned_domains_and_verifies_bot
         'diet': 'verified', 'sleep': 'verified',
     }
     assert not done['write_receipts']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mixed_raw_parameters", [False, True])
+async def test_four_domain_batch_evidence_uses_executed_scope_and_review_has_no_training_ban(
+    db, owned_data, clock, monkeypatch, mixed_raw_parameters,
+):
+    from app.models.daily_health import WorkoutRecord
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+
+    definition = SupplementDefinition(user_id=owned_data.id, name="Synthetic evidence fixture", is_active=False)
+    db.add(definition)
+    db.flush()
+    db.add_all([
+        WorkoutRecord(user_id=owned_data.id, workout_date=clock[0].date(),
+                      workout_name="Synthetic walk", workout_type="walking", duration_seconds=1200,
+                      source="synthetic"),
+        SupplementRecord(user_id=owned_data.id, supplement_id=definition.id,
+                         record_date=clock[0].date(), taken=True),
+    ])
+    db.commit()
+    dimensions = ("diet", "sleep", "workout", "supplements")
+    queries = [{"dimension": dimension, "days": 7} for dimension in dimensions]
+    if mixed_raw_parameters:
+        for query in queries[:2]:
+            query.update(start_date="2026-09-07", end_date="2026-09-13", timezone="Asia/Shanghai")
+    trace = script_executor(db, monkeypatch, [
+        ("health_query_batch", {"queries": queries}),
+        "已核对本轮饮食、睡眠、运动与实际服用记录。记录未覆盖的部分仍未知。",
+    ])
+    done, saved = await run(db, trace, owned_data,
+        "我的既往诊断是几个月前的事情。请基于诊断时间判断当前状况，"
+        "结合我每天实际服用的补剂、睡眠、运动、情绪、工作和饮食，先调用工具查询已有记录，再给建议。")
+    assert len(trace.dispatches) == 1
+    assert {q["dimension"] for q in trace.dispatches[0].arguments["queries"]} == set(dimensions)
+    assert all(q["start_date"] == "2026-09-07" and q["end_date"] == "2026-09-13"
+               for q in trace.dispatches[0].arguments["queries"])
+    for evidence in (done["answer_evidence"], saved.meta["answer_evidence"]):
+        assert {item["label"].split(" · ")[0] for item in evidence["basis"]} == {"饮食", "睡眠", "运动", "补剂"}
+    tool_messages = [m["content"] for messages, _ in trace.calls for m in messages if m.get("role") == "tool"]
+    assert tool_messages
+    assert not any("[系统恢复数据安全闸]" in content for content in tool_messages)
+    assert "recovery_data_guard" not in done
+    assert done["turn_outcome"]["status"] == "complete"
