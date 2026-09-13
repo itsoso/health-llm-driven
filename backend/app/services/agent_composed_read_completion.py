@@ -160,67 +160,89 @@ def _evidence_gap_notices(evidence: dict) -> list[str]:
     return lines
 
 
-# A bounded meal log has no full-day intake attestation. Even complete nutrient
-# fields in its rows cannot establish individual nutritional sufficiency.
-_NUTRITION_DEFICIT = re.compile(
-    r"(?:营养(?:覆盖|结构)?|蛋白质|蔬果|蔬菜|水果|总摄入)(?:摄入量|摄入|覆盖|吃得|量)?"
-    r"(?:可能|似乎|或许|比较|较为|较|过于|相对|稍微|稍显|略显|有些|有点|仍|明显|存在|有|非常|十分|极其|严重|完全|很|太|偏|过|稍|略){0,4}"
-    r"(?:不足|不够|缺乏|不均衡|单一|(?:低|少)(?=\W|_|$|但|却|而|了|的))"
+# A bounded meal log cannot attest full-day nutritional sufficiency. Parse only
+# a finite evaluative grammar; record descriptions are not nutritional claims.
+_NUTRITION_SUBJECT = re.compile(
+    r"(?:营养|膳食|饮食)(?:摄入|覆盖|结构|搭配|种类|质量)?"
+    r"|(?:蛋白质|蔬果|蔬菜|水果)(?:摄入量|摄入|吃得|量)?|总摄入"
 )
-
-
-_NUTRITION_EXISTENCE_UNCERTAINTY = re.compile(
-    r"(?:(?:是否(?:存在)?|有无)[^\S\n]*" + _NUTRITION_DEFICIT.pattern
-    + r"|" + _NUTRITION_DEFICIT.pattern + r"[^\S\n]*与否)"
-    + r"[^\S\n]*[，,]?[^\S\n]*"
-    r"(?:(?:目前|当前|现在|尚|仍|还|暂时|暂|仍然)[^\S\n]*){0,3}"
-    r"(?:(?:无法|不能|难以)(?:判断|确认|确定)|不确定|不明确|未知)"
-    r"(?=\W|_|$|但|却|而)"
+_NUTRITION_NEGATION = (
+    r"并不意味着|不意味着|不等于|不代表|并不是|并没有|不是|并非|并无|并不|"
+    r"不存在|没有|未发现|未见|未必|不一定|不能说|不"
 )
-
-
-_NUTRITION_NEGATION_TOKEN = (
-    r"(?:并不是|并没有|不是|并非|并无|并不|没有|不存在|未发现|未见|未必|不一定|不能说|不意味着|不等于)"
+_NUTRITION_MODIFIER = (
+    r"可能|似乎|或许|比较|较为|较|过于|相对|稍微|稍显|略显|有些|有点|仍|"
+    r"明显|存在|有|非常|十分|极其|严重|完全|绝对|一点也|就|几乎|基本|很|太|偏|过|稍|略|够"
 )
-_NUTRITION_NEGATION_CHAIN = re.compile(
-    rf"(?:{_NUTRITION_NEGATION_TOKEN}[^\S\n]*(?:(?:完全|绝对|一点也|就)[^\S\n]*)?)+"
+_NUTRITION_OPERATOR = re.compile(_NUTRITION_NEGATION)
+_NUTRITION_EPISTEMIC_OPERATOR = re.compile(r"未发现|未见|未必|不一定|不能说|不意味着|不等于|不代表")
+_NUTRITION_PREDICATE = re.compile(
+    rf"(?P<operators>(?:(?:{_NUTRITION_NEGATION}|{_NUTRITION_MODIFIER})[^\S\n]*){{0,12}})"
+    r"(?P<deficit>不足|不够|缺乏|欠缺|欠均衡|失衡|欠佳|单一|单调|有限|不佳|没吃|未吃|低|少|差)"
+    r"(?=\W|$|了|的|与否|尚|仍|目前|无法|并不)"
+    r"|(?P<adequate_operators>(?:(?:" + _NUTRITION_NEGATION + "|" + _NUTRITION_MODIFIER
+    + r")[^\S\n]*){0,12})(?P<adequate>均衡|多样|合理|充足|全面|丰富|多|高)"
+    r"(?=\W|$|了|的|与否|尚|仍|目前|无法|并不)"
 )
+_NUTRITION_PREFIX_CHAIN = re.compile(
+    rf"(?:(?:{_NUTRITION_NEGATION})[^\S\n]*(?:(?:完全|绝对|一点也|就)[^\S\n]*)?)+"
+    r"(?:证据(?:证明|表明|显示|支持))?[^\S\n]*$"
+)
+_NUTRITION_UNKNOWN = re.compile(
+    r"(?:无法|不能|难以)(?:判断|确认|确定)|不确定|不明确|未知|不清楚"
+)
+_NUTRITION_UNKNOWN_PREFIX = re.compile(
+    r"(?:不能据此|不能仅凭|无法证明|无法判断|无法确认|无法确定|尚无证据|"
+    r"缺乏(?:充分|足够|可靠|直接|明确|已核验)?的?证据)"
+)
+_NUTRITION_CLAUSE_BREAK = re.compile(r"[。；;!?！？\n]|但是|但|不过|然而|而是|却")
 
 
-def _nutrition_negation_matching_text(text: str) -> str:
-    def normalize_chain(match: re.Match) -> str:
-        count = len(re.findall(_NUTRITION_NEGATION_TOKEN, match.group(0)))
-        # Adjacent double negatives cannot erase an affirmative deficit. This
-        # matching-only view never crosses a sentence or changes shown text.
-        return "不能据此" if count % 2 else ""
-
-    return _NUTRITION_NEGATION_CHAIN.sub(normalize_chain, text)
+def _nutrition_assertion_in_clause(clause: str) -> bool:
+    for subject in _NUTRITION_SUBJECT.finditer(clause):
+        rest = clause[subject.end():]
+        # An evaluative predicate must directly follow this subject. Searching
+        # arbitrary later text would attribute record counts to personal intake.
+        predicate = _NUTRITION_PREDICATE.match(rest.lstrip())
+        if predicate is None:
+            continue
+        prefix = re.split(r"[，,]", clause[:subject.start()])[-1]
+        suffix = rest.lstrip()[predicate.end():]
+        operators = predicate.group("operators") or predicate.group("adequate_operators") or ""
+        negations = _NUTRITION_OPERATOR.findall(operators)
+        deficit = bool(predicate.group("deficit")) ^ bool(len(negations) % 2)
+        if not deficit:
+            continue
+        # Unknown existence covers the claim; unknown cause or severity does not.
+        if ((re.search(r"(?:是否(?:存在)?|有无)\s*$", prefix)
+             or re.match(r"\s*与否", suffix)) and _NUTRITION_UNKNOWN.search(suffix)):
+            continue
+        if re.match(r"\s*的?证据(?:不足|不够|缺乏|有限)", suffix):
+            continue
+        if _NUTRITION_UNKNOWN_PREFIX.search(prefix):
+            continue
+        chain = _NUTRITION_PREFIX_CHAIN.search(prefix)
+        if chain and len(_NUTRITION_OPERATOR.findall(chain.group())) % 2:
+            continue
+        if _NUTRITION_EPISTEMIC_OPERATOR.search(operators) and len(negations) % 2:
+            continue
+        return True
+    return False
 
 
 def enforce_composed_synthesis_boundaries(text: str, completion):
     from app.services.guidance_validator import (
-        GuidanceValidationResult, _has_asserted_match, _medical_assertion_matching_text,
+        GuidanceValidationResult, _medical_assertion_matching_text,
     )
 
     evidence = completion.verified_evidence if completion is not None and completion.complete else None
     if (not evidence or len(evidence["queries"]) < 2
             or not any(q["query"]["dimension"] == "diet" for q in evidence["queries"])):
         return GuidanceValidationResult(text=text)
-    normalized = _medical_assertion_matching_text(text)
-    normalized = re.sub(r"[*_`]", "", normalized)
-    normalized = _NUTRITION_EXISTENCE_UNCERTAINTY.sub("该项状态尚未确定", normalized)
-    normalized = _nutrition_negation_matching_text(normalized)
-    # Uncertainty about whether a deficit exists is not an affirmative deficit.
-    # Keep the same clause and contrast boundaries as the medical assertion gate.
-    normalized = re.sub(
-        r"(?:无法|不能|尚不能|尚无法)(?:判断|确定|确认)(?:是否|有无)?",
-        "不能据此", normalized,
-    )
-    normalized = re.sub(
-        r"(?:没有|缺乏|尚无)(?:充分|足够|可靠|直接|明确|已核验)?(?:的)?证据"
-        r"(?:证明|表明|显示|支持)", "不能据此", normalized,
-    )
-    if not _has_asserted_match(_NUTRITION_DEFICIT, normalized):
+    # Formatting normalization is confined to the matching view. Accepted text
+    # is returned byte-for-byte, including its uncertainty and record qualifiers.
+    normalized = re.sub(r"[*_`]", "", _medical_assertion_matching_text(text))
+    if not any(_nutrition_assertion_in_clause(c) for c in _NUTRITION_CLAUSE_BREAK.split(normalized)):
         return GuidanceValidationResult(text=text)
     return GuidanceValidationResult(
         text=completion.trusted_fact_summary + "\n\n"

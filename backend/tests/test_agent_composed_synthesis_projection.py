@@ -445,6 +445,11 @@ async def test_record_field_request_completion_retains_medical_boundary(
     ("蛋白质摄入未见偏低。", False),
     ("是否营养不均衡尚无法判断。", False),
     ("营养不均衡，但原因尚无法判断。", True),
+    ("营养并不均衡。", True),
+    ("蔬菜吃得并不多。", True),
+    ("蛋白质摄入并不低。", False),
+    ("膳食结构不均衡的证据不足。", False),
+    ("饮食记录种类单一不等于饮食结构单一，但营养搭配欠佳。", True),
     ("请补充：具体补剂名称和剂量、每天三餐与饮水、睡眠上床/入睡/醒来时间、当前主要症状、情绪压力情况。", True),
     ("请补充具体补剂名称和剂量；每天服用两片。", True),
 ])
@@ -727,4 +732,95 @@ def test_composed_nutrition_existence_uncertainty(text, blocked):
     ])
     result = enforce_composed_synthesis_boundaries(text, completion)
     assert result.flagged is blocked
+    assert (text in result.text) is not blocked
+
+
+# Fixed-archive Review27 family: descriptive records and uncertainty are not deficits.
+_REVIEWED_NUTRITION_FAMILY_CASES = [('affirmative', '营养结构不太均衡。', True),
+ ('affirmative', '营养结构欠均衡。', True),
+ ('affirmative', '营养结构失衡。', True),
+ ('affirmative', '营养搭配不均衡。', True),
+ ('affirmative', '膳食结构不均衡。', True),
+ ('affirmative', '膳食搭配欠佳。', True),
+ ('affirmative', '饮食结构单一。', True),
+ ('affirmative', '饮食搭配不够均衡。', True),
+ ('affirmative', '饮食种类单调。', True),
+ ('affirmative', '蔬菜吃得不多。', True),
+ ('affirmative', '蔬果摄入不多。', True),
+ ('affirmative', '水果吃得很少。', True),
+ ('affirmative', '蛋白质摄入不够多。', True),
+ ('affirmative', '蛋白质摄入偏低。', True),
+ ('affirmative', '总摄入偏少。', True),
+ ('affirmative', '营养并不均衡。', True),
+ ('affirmative', '营养结构并不多样。', True),
+ ('affirmative', '膳食搭配并不合理。', True),
+ ('affirmative', '饮食结构不够多样。', True),
+ ('affirmative', '蔬菜吃得并不多。', True),
+ ('affirmative', '蛋白质摄入并不充足。', True),
+ ('affirmative', '营养结构比较单调。', True),
+ ('affirmative', '膳食结构较为单一。', True),
+ ('affirmative', '蔬果摄入欠缺。', True),
+ ('affirmative', '营养覆盖有限。', True),
+ ('affirmative', '蔬菜几乎没吃。', True),
+ ('affirmative', '水果基本没吃。', True),
+ ('affirmative', '蛋白质摄入明显不足。', True),
+ ('affirmative', '饮食不均衡。', True),
+ ('affirmative', '膳食失衡。', True),
+ ('affirmative', '营养欠佳。', True),
+ ('affirmative', '营养搭配单一。', True),
+ ('affirmative', '饮食结构较差。', True),
+ ('affirmative', '膳食质量不佳。', True),
+ ('affirmative', '营养摄入不全面。', True),
+ ('affirmative', '总摄入不高。', True),
+ ('negated_uncertain_or_record', '并非营养结构不太均衡。', False),
+ ('negated_uncertain_or_record', '不是营养结构欠均衡。', False),
+ ('negated_uncertain_or_record', '并非膳食结构失衡。', False),
+ ('negated_uncertain_or_record', '饮食结构并非单一。', False),
+ ('negated_uncertain_or_record', '蛋白质摄入并不低。', False),
+ ('negated_uncertain_or_record', '蔬菜吃得并不少。', False),
+ ('negated_uncertain_or_record', '营养结构并非不多样。', False),
+ ('negated_uncertain_or_record', '没有证据表明饮食结构单一。', False),
+ ('negated_uncertain_or_record', '不能据此认为膳食搭配不均衡。', False),
+ ('negated_uncertain_or_record', '是否饮食结构不均衡尚无法判断。', False),
+ ('negated_uncertain_or_record', '膳食搭配欠佳与否无法判断。', False),
+ ('negated_uncertain_or_record', '是否蔬菜吃得不多仍不确定。', False),
+ ('negated_uncertain_or_record', '记录结构单一不等于饮食结构单一。', False),
+ ('negated_uncertain_or_record', '已记录食物种类单调。', False),
+ ('negated_uncertain_or_record', '饮食记录种类比较单一。', False),
+ ('negated_uncertain_or_record', '已记录蔬菜条目较少。', False),
+ ('negated_uncertain_or_record', '蔬菜少油烹调。', False),
+ ('negated_uncertain_or_record', '蛋白质低温保存。', False),
+ ('negated_uncertain_or_record', '建议选择少盐少油烹调。', False),
+ ('negated_uncertain_or_record', '蔬菜种类记录较少，不代表蔬菜吃得不多。', False),
+ ('negated_uncertain_or_record', '未见营养结构失衡。', False),
+ ('negated_uncertain_or_record', '营养搭配未见不均衡。', False),
+ ('negated_uncertain_or_record', '总摄入不一定偏少。', False),
+ ('negated_uncertain_or_record', '不存在膳食结构单一的证据。', False),
+ ('negated_uncertain_or_record', '膳食结构不均衡的证据不足。', False),
+ ('negated_uncertain_or_record', '营养搭配是否欠佳并不明确。', False),
+ ('negated_uncertain_or_record', '不能说营养结构欠佳。', False),
+ ('negated_uncertain_or_record', '蔬菜吃得少与否尚不明确。', False),
+ ('negated_uncertain_or_record', '营养是否均衡尚不清楚。', False),
+ ('negated_uncertain_or_record', '现有记录无法证明饮食结构较差。', False),
+ ('negated_uncertain_or_record', '不能仅凭这些记录说膳食质量不佳。', False),
+ ('negated_uncertain_or_record', '是否存在营养摄入不全面仍未知。', False),
+ ('transition_positive', '并非营养不均衡，但蔬菜吃得不多。', True),
+ ('transition_positive', '是否膳食结构失衡尚无法判断。蛋白质摄入偏低。', True),
+ ('transition_positive', '记录条目少不代表总摄入偏少，但饮食结构单一。', True),
+ ('transition_positive', '蛋白质摄入并不低，而是蔬果吃得少。', True),
+ ('transition_positive', '不能说营养欠佳；膳食搭配不均衡。', True),
+ ('transition_positive', '饮食记录种类单一不等于饮食结构单一，但营养搭配欠佳。', True),
+ ('transition_positive', '未见营养结构失衡。总摄入不高。', True),
+ ('transition_positive', '蔬菜少油烹调，但蛋白质摄入并不充足。', True)]
+
+
+@pytest.mark.parametrize("category,text,blocked", _REVIEWED_NUTRITION_FAMILY_CASES)
+def test_composed_nutrition_semantic_family(category, text, blocked):
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, enforce_composed_synthesis_boundaries
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [
+        execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}]),
+    ])
+    result = enforce_composed_synthesis_boundaries(text, completion)
+    assert result.flagged is blocked, category
     assert (text in result.text) is not blocked
