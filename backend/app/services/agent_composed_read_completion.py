@@ -280,7 +280,7 @@ _HEALTH_CONCLUSION_PROHIBITION = (
 )
 _HEALTH_INABILITY_OPERATION = (
     r"(?:不能|无法|难以){gap}(?:(?:据此|由此|因此){gap})?(?:直接{gap})?"
-    r"(?:得出|推断|断言|断定|认定|说明|证明|判断)"
+    r"(?:得出|推出|推断|断言|断定|认定|说明|证明|判断)"
 )
 _HEALTH_CONCLUSION_ENUMERATION = (
     r"(?:(?:你{gap})?(?:当前{gap})?(?:的{gap})?"
@@ -593,6 +593,47 @@ def _completed_scope_invitation(text: str) -> bool:
     return False
 
 
+_RECORD_PROVENANCE = re.compile(r"模板(?:化)?|占位|固定来源")
+_RECORD_DIMENSIONS = {
+    "diet": re.compile(r"饮食|早餐|午餐|晚餐|摄入"),
+    "sleep": re.compile(r"睡眠|睡觉"),
+    "workout": _EXERCISE_TOPIC,
+    "supplements": _SUPPLEMENT_OBJECT,
+}
+
+
+def _uncertain_record_statement(text: str, position: int) -> bool:
+    prefix = re.split(r"[，,]|但是|但|不过|然而|而是|却", text[:position])[-1]
+    unknown = _HEALTH_CONCLUSION_UNKNOWN.search(prefix)
+    return bool(unknown and not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:unknown.start()]))
+
+
+def _record_description_flags(text: str, completion) -> list[str]:
+    flags = []
+    if any(not _uncertain_record_statement(text, m.start()) for m in _RECORD_PROVENANCE.finditer(text)):
+        flags.append("unsupported_record_provenance_removed")
+    daily = re.search(r"每天|每日", text)
+    if daily and not _uncertain_record_statement(text, daily.start()):
+        for dimension, pattern in _RECORD_DIMENSIONS.items():
+            if not pattern.search(text):
+                continue
+            query = next((q for q in completion.verified_evidence["queries"]
+                          if q["query"]["dimension"] == dimension), None)
+            if query is None:
+                flags.append("unsupported_daily_coverage_removed")
+                break
+            window = query["query"]
+            days = (date.fromisoformat(window["end_date"]) - date.fromisoformat(window["start_date"])).days + 1
+            covered = {row["known_fields"].get("record_date") for row in query["records"]}
+            covered.discard(None)
+            # Date presence alone does not verify a repeated per-day quantity
+            # or activity subtype. Authoritative details remain in the summary.
+            if len(covered) != days or _EXERCISE_QUANTITY.search(text):
+                flags.append("unsupported_daily_coverage_removed")
+                break
+    return flags
+
+
 def project_composed_answer_quality(quality, completion):
     """Remove resolved-scope solicitations without granting any safety exemption.
 
@@ -602,14 +643,22 @@ def project_composed_answer_quality(quality, completion):
     if (completion is None or not completion.complete or not completion.verified_evidence
             or len(completion.verified_evidence["queries"]) < 2):
         return quality
-    from app.services.agent_output_quality import AgentOutputQualityResult
+    from app.services.agent_output_quality import AgentOutputQualityResult, enforce_agent_output_quality
 
-    kept, removed, in_invitation = [], False, False
-    for segment in re.findall(r"[^。；;！？!?\n]+[。；;！？!?]*|[。；;！？!?\n]+", quality.text):
+    trusted = enforce_agent_output_quality(completion.trusted_fact_summary).text
+    trusted_end = quality.text.find(trusted) + len(trusted) if trusted in quality.text else 0
+    prefix, body = quality.text[:trusted_end], quality.text[trusted_end:]
+    kept, removed, in_invitation, record_flags = [], False, False, []
+    for segment in re.findall(r"[^。；;！？!?\n]+[。；;！？!?]*|[。；;！？!?\n]+", body):
         matching = re.sub(r"^[ \t]*(?:\d+[.)、]|[-*+] )?[ \t]*", "", segment)
         matching = re.sub(r"[*_`]", "", matching).strip()
         if re.match(r"^[ \t]*(?:\d+[.)、]|[-*+] )", segment):
             in_invitation = False
+        flags = _record_description_flags(matching, completion)
+        if flags:
+            record_flags.extend(flags)
+            in_invitation = False
+            continue
         if _completed_scope_invitation(matching):
             removed, in_invitation = True, True
             continue
@@ -618,7 +667,7 @@ def project_composed_answer_quality(quality, completion):
         if matching:
             in_invitation = False
         kept.append(segment)
-    if not removed:
+    if not removed and not record_flags:
         return quality
     text = re.sub(r"\n{3,}", "\n\n", "".join(kept)).strip()
     text = re.sub(r"(?m)^(\*{0,2})(接下来|下一步)[一二三四五\d]+条(\*{0,2})\s*$", r"\1\2\3", text)
@@ -648,7 +697,12 @@ def project_composed_answer_quality(quality, completion):
     if normalized_lines and re.sub(r"[*#:：\s]", "", normalized_lines[-1]) in {"下一步", "接下来"}:
         normalized_lines.pop()
     text = "\n".join(normalized_lines).strip()
-    flags = tuple(dict.fromkeys((*quality.flags, "meta_query_invitation_removed")))
+    if prefix:
+        text = prefix + ("\n\n" + text if text else "")
+    if record_flags:
+        text += "\n\n部分描述缺少记录依据，未展示；已核验记录见上。"
+    flags = tuple(dict.fromkeys((*quality.flags, *record_flags,
+                                *(("meta_query_invitation_removed",) if removed else ()))))
     return AgentOutputQualityResult(text, flags, quality.original_length, len(text))
 
 

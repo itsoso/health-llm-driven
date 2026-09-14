@@ -1398,3 +1398,80 @@ async def test_composed_uncertain_conclusion_unsuitable_and_existing_regimen(
     assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"] if g["kind"] == "query")
     assert not done["write_receipts"]
     assert (answer in saved.content) is not unsafe
+
+
+@pytest.mark.parametrize("operation", ["不能推出", "无法推出", "难以直接推出"])
+@pytest.mark.parametrize("outer", ["", "并非完全"])
+@pytest.mark.parametrize("space", ["", "\n"])
+def test_composed_current_evidence_deduction(operation, outer, space):
+    text = f'{outer}{space}{operation}{space}“睡眠质量稳定”“恢复良好”等个体结论。'
+    test_composed_current_evidence_claim_boundaries(text, bool(outer))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+async def test_composed_deduction_runtime(db, four_domain_user, monkeypatch, panel, continuation):
+    answer = "已返回的睡眠记录在评分和时长上非常接近，只能说明记录层面稳定，不能推出“睡眠质量稳定”“恢复良好”等个体结论。"
+    conv = None
+    if continuation:
+        _, _, _, first, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
+        conv = first["conversation_id"]
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel, answer=answer,
+        query="继续分析" if continuation else QUERY, conversation_id=conv,
+    )
+    assert done["completion_status"] == "complete"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"] if g["kind"] == "query")
+    assert answer in saved.content and not done["write_receipts"]
+
+
+@pytest.mark.parametrize("description", [
+    "运动记录：每天有一条30分钟的散步记录和一条约21分钟的步行记录。",
+    "记录重复/模板化较明显。", "这只能说明记录本身重复或较模板化。",
+    "睡眠记录来自固定来源。",
+])
+def test_composed_record_description_projection_preserves_trusted_facts(description):
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, project_composed_answer_quality
+    from app.services.agent_output_quality import enforce_agent_output_quality
+    from tests.test_agent_composed_read_completion import execution, scope
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}])])
+    trusted = enforce_agent_output_quality(completion.trusted_fact_summary).text
+    safe = "不能证明记录是模板或占位。"
+    result = project_composed_answer_quality(enforce_agent_output_quality(trusted + "\n\n" + description + safe), completion)
+    assert result.text.startswith(trusted)
+    assert description not in result.text and safe in result.text
+    assert set(result.flags) & {"unsupported_record_provenance_removed", "unsupported_daily_coverage_removed"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("unsafe", [False, True])
+async def test_composed_record_description_projection_runtime_safety_order(db, four_domain_user, monkeypatch, panel, unsafe):
+    answer = "运动记录：每天有一条30分钟的散步记录和一条约21分钟的步行记录。记录重复/模板化较明显。"
+    if unsafe:
+        answer += "建议每天服用两粒鱼油。"
+    _, _, _, done, saved = await run_projection(db, four_domain_user, monkeypatch, panel=panel, answer=answer)
+    assert done["turn_outcome"]["status"] == ("blocked" if unsafe else "complete")
+    assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"] if g["kind"] == "query")
+    assert "运动：已记录1条" in saved.content
+    assert "每天有一条30分钟" not in saved.content and "模板化较明显" not in saved.content
+    assert "建议每天服用两粒鱼油" not in saved.content and not done["write_receipts"]
+    if not unsafe:
+        assert {"unsupported_record_provenance_removed", "unsupported_daily_coverage_removed"}.issubset(done["output_quality_flags"])
+        assert done["output_quality_flags"] == saved.meta["output_quality_flags"]
+
+
+def test_composed_record_description_projection_preserves_summary_after_metadata():
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, project_composed_answer_quality
+    from app.services.agent_output_quality import enforce_agent_output_quality
+    from tests.test_agent_composed_read_completion import execution, scope
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}, {"record_date": "2026-09-12", "total_sleep_duration": 420}])])
+    completion.verified_evidence["queries"][1]["query"]["start_date"] = "2026-09-11"
+    trusted = enforce_agent_output_quality(completion.trusted_fact_summary).text
+    raw = "信息来源：已检索证据。\n\n" + trusted + "\n\n记录较模板化。"
+    result = project_composed_answer_quality(enforce_agent_output_quality(raw), completion)
+    assert trusted in result.text
+    assert "记录较模板化" not in result.text
+    assert "信息来源" in result.text
