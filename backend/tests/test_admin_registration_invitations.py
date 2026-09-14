@@ -218,9 +218,10 @@ def test_manual_delivery_create_returns_credentials_without_sms_attempt(
     assert row.send_attempt_count == 0
     audit = (
         db.query(AgentAuditLog)
-        .filter(AgentAuditLog.action == "registration_invitation_manual_credentials_prepared")
+        .filter(AgentAuditLog.action == "registration_invitation_manual_prepared")
         .one()
     )
+    assert len(audit.action) <= AgentAuditLog.__table__.c.action.type.length
     assert audit.user_id == admin.id
     serialized_audit = str(audit.result_detail)
     assert "13800138000" not in serialized_audit
