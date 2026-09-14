@@ -11,6 +11,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => mocks.useAuth() }));
 vi.mock('@/services/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  WEB_SESSION_TOKEN: '__web_cookie_session__',
 }));
 
 describe('AdminPage access gate', () => {
