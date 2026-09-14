@@ -179,6 +179,9 @@ def test_v39_medical_exam_resolution_rejects_unpunctuated_nonself_subject(text):
         "麻烦将我的体检报告打开",
         "请帮忙将我的MRI报告打开",
         "将我刚导入的医学检查报告打开",
+        "请打开属于我的体检报告",
+        "请打开只属于我的体检报告",
+        "请打开归我所有的体检报告",
     ),
 )
 def test_owned_report_advice_is_an_explicit_current_user_read(text):
@@ -605,6 +608,9 @@ def test_owned_report_with_safe_coordinated_clinical_target_is_current_user(text
         "请查看我的血压，还有我的睡眠",
         "请查看我的体检报告；还有我的血压和我的睡眠",
         "请查看我的体检报告，顺带我的血压",
+        "请查看我的体检报告，包括我的血压",
+        "请查看我的体检报告，也包括我的睡眠",
+        "请查看我的体检报告，包含我的血压和睡眠",
     ),
 )
 def test_owned_report_with_safe_coordinated_self_target_is_current_user(text):

@@ -571,6 +571,12 @@ HEALTH_READ_LEADING_SCOPE_RE = re.compile(
 def _is_current_user_scope_owner(owner: str) -> bool:
     """Recognize an explicit self owner followed only by a read scope."""
     normalized = str(owner or "").strip()
+    if re.fullmatch(
+        r"(?:(?:只|仅)?属于(?:我|我自己|我本人|我个人|本人)|"
+        r"归(?:我|我自己|我本人|我个人|本人)(?:个人)?所有)",
+        normalized,
+    ):
+        return True
     self_prefixes = tuple(
         sorted(
             CURRENT_USER_OWNERS | {"我个人", "我本人"},
@@ -1559,7 +1565,9 @@ def _nonhealth_root(value: str) -> bool:
 
 def _strip_current_user_owner(value: str) -> tuple[str, bool]:
     match = re.match(
-        r"^(?:我(?:自己|本人|个人)?(?:的)?|本人(?:的)?|自己(?:的)?)",
+        r"^(?:(?:只|仅)?属于(?:我|我自己|我本人|我个人|本人)(?:的)?|"
+        r"归(?:我|我自己|我本人|我个人|本人)(?:个人)?所有(?:的)?|"
+        r"我(?:自己|本人|个人)?(?:的)?|本人(?:的)?|自己(?:的)?)",
         value,
     )
     if match is None:
@@ -1670,7 +1678,8 @@ def illness_target_is_unowned_or_referential(value: str) -> bool:
 def _strip_exam_request_scaffolding(value: str) -> str:
     candidate = value.strip("，,。.!！；;：:?？ ")
     prefix_re = re.compile(
-        r"^(?:然后|顺带|顺便|另外|同时|并且|接着|随后|一并|但|不过|而是|"
+        r"^(?:然后|顺带|顺便|另外|同时|并且|接着|随后|一并|"
+        r"(?:也)?包括|包含|含有|涵盖|连带|但|不过|而是|"
         r"方便的话|请问|请您|烦请|劳烦|有劳|劳驾|"
         r"拜托|请|麻烦你?|能不能|可不可以|能否|可否|"
         r"现在|立即|马上|此刻|这次|本次|我想(?:在)?|"
@@ -1791,7 +1800,9 @@ _HEALTH_REPORT_DOMAIN = (
 )
 _REPORT_TIME_SCOPE = r"(?:(?:最近|最新|上|最后)(?:一)?次(?:的)?)?"
 CURRENT_USER_REPORT_REFERENCE_RE = re.compile(
-    rf"(?:我(?:自己|本人|个人)?|本人|自己)(?:的)?"
+    rf"(?:我(?:自己|本人|个人)?|本人|自己|"
+    rf"(?:只|仅)?属于(?:我|我自己|我本人|我个人|本人)|"
+    rf"归(?:我|我自己|我本人|我个人|本人)(?:个人)?所有)(?:的)?"
     rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
     re.IGNORECASE,
 )
@@ -2315,7 +2326,8 @@ def _coordinated_prefix_has_safe_health_target(value: str) -> bool:
         candidate = candidate[read_matches[-1].end():].strip()
     candidate = re.sub(
         r"^(?:请|麻烦你?|帮我|给我|替我|为我|基于|结合|根据|参考|参照|依据|按|"
-        r"还有|以及|顺带|顺便|另外|同时|并且|接着|随后|然后|一并)",
+        r"还有|以及|顺带|顺便|另外|同时|并且|接着|随后|然后|一并|"
+        r"(?:也)?包括|包含|含有|涵盖|连带)",
         "",
         candidate,
     ).strip()
@@ -2369,7 +2381,8 @@ def _owned_health_context_has_safe_owner(left_context: str) -> bool:
                 continue
             return True
         discourse = re.search(
-            r"(?:顺带|顺便|另外|同时|并且|接着|随后|然后|一并)\s*$",
+            r"(?:顺带|顺便|另外|同时|并且|接着|随后|然后|一并|"
+            r"(?:也)?包括|包含|含有|涵盖|连带)\s*$",
             prefix,
         )
         if (

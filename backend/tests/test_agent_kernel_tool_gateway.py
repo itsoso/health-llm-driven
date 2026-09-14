@@ -9790,6 +9790,9 @@ async def test_v38_third_party_medical_exam_read_never_dispatches(
         "麻烦将我的体检报告打开",
         "请帮忙将我的MRI报告打开",
         "将我刚导入的医学检查报告打开",
+        "请打开属于我的体检报告",
+        "请打开只属于我的体检报告",
+        "请打开归我所有的体检报告",
     ),
 )
 async def test_owned_report_advice_projects_a_current_user_medical_exam_read(
@@ -9834,6 +9837,9 @@ async def test_owned_report_advice_projects_a_current_user_medical_exam_read(
         ("请查看我的体检报告，以及我的睡眠", "medical_exam"),
         ("请查看我的体检报告；还有我的血压和我的睡眠", "medical_exam"),
         ("请查看我的体检报告，顺带我的血压", "medical_exam"),
+        ("请查看我的体检报告，包括我的血压", "medical_exam"),
+        ("请查看我的体检报告，也包括我的睡眠", "medical_exam"),
+        ("请查看我的体检报告，包含我的血压和睡眠", "medical_exam"),
     ),
 )
 async def test_coordinated_current_user_health_reads_dispatch(
