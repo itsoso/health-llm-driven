@@ -2235,6 +2235,20 @@ def _has_exact_clinical_report_target(text: str) -> bool:
     return bool(match and _is_exact_clinical_report_base(match.group("base")))
 
 
+def _is_health_target_expression(value: str) -> bool:
+    """Recognize a bounded health object independently of its owner."""
+    candidate = str(value or "").strip(" \t\n\r，,；;。.!！?？、")
+    candidate = HEALTH_READ_LEADING_SCOPE_RE.sub("", candidate, count=1)
+    candidate = _strip_exam_request_scaffolding(candidate)
+    candidate = re.sub(r"(?:记录|历史|数据)$", "", candidate).strip()
+    return bool(
+        resolve_illness_entity(candidate).status == "exact"
+        or HEALTH_METRIC_ENTITY_RE.fullmatch(candidate)
+        or HEALTH_RECORD_DOMAIN_ENTITY_RE.fullmatch(candidate)
+        or EXACT_MEDICAL_EXAM_ENTITY_RE.fullmatch(candidate)
+    )
+
+
 def _health_read_segment_has_target(text: str) -> bool:
     """Recognize a health object before independently evaluating a read segment."""
     if _has_exact_clinical_report_target(text):
@@ -2244,14 +2258,7 @@ def _health_read_segment_has_target(text: str) -> bool:
         return False
     possessive = re.fullmatch(r"(?P<owner>.+?)的(?P<target>.+)", entity)
     candidate = possessive.group("target").strip() if possessive else entity
-    candidate = HEALTH_READ_LEADING_SCOPE_RE.sub("", candidate, count=1)
-    candidate = _strip_exam_request_scaffolding(candidate)
-    return bool(
-        resolve_illness_entity(candidate).status == "exact"
-        or HEALTH_METRIC_ENTITY_RE.fullmatch(candidate)
-        or HEALTH_RECORD_DOMAIN_ENTITY_RE.fullmatch(candidate)
-        or EXACT_MEDICAL_EXAM_ENTITY_RE.fullmatch(candidate)
-    )
+    return _is_health_target_expression(candidate)
 
 
 def health_read_has_nonself_subject(text: str) -> bool:
@@ -2297,15 +2304,34 @@ def health_read_has_nonself_subject(text: str) -> bool:
             )
     if _has_owned_report_use_request(subject_scope):
         return False
-    if _has_exact_clinical_report_target(subject_scope):
-        return False
+    has_exact_clinical_report_target = _has_exact_clinical_report_target(subject_scope)
     read_act = resolve_health_read_act(subject_scope)
     scoped_text = (
         read_act.active_clause if read_act.status == "active" else subject_scope
     )
+    owned_target_scope = _strip_exam_request_scaffolding(scoped_text)
+    for part in HEALTH_ENTITY_CONNECTOR_RE.split(owned_target_scope):
+        possessive_part = re.fullmatch(
+            r"(?P<owner>.+?)的(?P<target>.+)",
+            part.strip(" \t\n\r，,；;。.!！?？、"),
+        )
+        if possessive_part is None:
+            continue
+        owner = possessive_part.group("owner").strip()
+        target = possessive_part.group("target").strip()
+        if _is_health_target_expression(target) and not (
+            _is_current_user_scope_owner(owner)
+            or BODY_OR_TIME_OWNER_RE.fullmatch(owner)
+            or HEALTH_READ_SCOPE_OWNER_RE.fullmatch(owner)
+            or re.fullmatch(_REPORT_TIME_SCOPE, owner)
+            or _is_exact_clinical_report_base(owner)
+        ):
+            return True
     exam = resolve_medical_exam_query(scoped_text)
     if exam.status == "nonself":
         return True
+    if has_exact_clinical_report_target:
+        return False
     entity = _health_read_entity_expression(scoped_text)
     if not entity:
         return False
