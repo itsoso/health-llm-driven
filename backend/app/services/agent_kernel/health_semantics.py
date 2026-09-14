@@ -2244,6 +2244,14 @@ def _is_health_target_expression(value: str) -> bool:
     candidate = HEALTH_READ_LEADING_SCOPE_RE.sub("", candidate, count=1)
     candidate = _strip_exam_request_scaffolding(candidate)
     candidate = re.sub(
+        r"^(?:最近|最新|当前|本次|此次|这次|上次|上一次|最后一次|"
+        r"今日|今天|昨日|昨天|前天|本周|上周|本月|上月|今年|去年|"
+        r"(?:近|过去)[0-9零〇一二两三四五六七八九十百半]+"
+        r"(?:个)?(?:小时|天|周|月|年)(?:内|里|中)?)(?:的)?",
+        "",
+        candidate,
+    ).strip()
+    candidate = re.sub(
         r"(?:记录|历史|数据|趋势|情况|信息|读数)$",
         "",
         candidate,
