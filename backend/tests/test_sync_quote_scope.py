@@ -42,6 +42,12 @@ async def test_quoted_sync_operand_never_dispatches_or_receives_owned_evidence(t
     '同步~~张三的~~佳明数据',
     '同步我`昨天`的佳明数据',
     '“例子”仅限张三。仅限张三。同步我的佳明数据',
+    '“例子”仅限张三。同步我的佳明数据',
+    '`例子`仅限张三。同步我的佳明数据',
+    '~~例子~~仅限张三。同步我的佳明数据',
+    '“例子”仅限昨天。同步我的佳明数据',
+    '“例子”先等我确认。同步我的佳明数据',
+    '“例子”不要执行。同步我的佳明数据',
 ])
 @pytest.mark.parametrize('mode', ['enforce', 'shadow'])
 async def test_markdown_material_cannot_erase_sync_owner_or_scope(text, mode):

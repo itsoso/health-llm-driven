@@ -1357,6 +1357,9 @@ _SYNC_AUTHORITY_DEVICE_RE = re.compile(r"garmin|佳明", re.IGNORECASE)
 _SYNC_AUTHORITY_ADJACENT_RE = re.compile(
     r"同步|刷新|拉取|触发(?:一下)?同步|garmin|佳明", re.IGNORECASE,
 )
+_SYNC_INDEPENDENT_MATERIAL_RESIDUE_RE = re.compile(
+    r"(?:已结束|结束了|(?:医生|有人|他|她)(?:说|提到|表示)[:：]?)"
+)
 
 
 def active_health_sync_authority_text(text: str) -> str:
@@ -1394,7 +1397,7 @@ def active_health_sync_authority_text(text: str) -> str:
             residue = (preceding + following).strip()
             if _SYNC_AUTHORITY_ADJACENT_RE.search(residue):
                 return ""
-            if residue:
+            if residue and _SYNC_INDEPENDENT_MATERIAL_RESIDUE_RE.fullmatch(residue):
                 prefix_projection, _ = _strip_html_material(prefix)
                 prefix_projection, _, malformed = _strip_backtick_code_material(
                     prefix_projection
