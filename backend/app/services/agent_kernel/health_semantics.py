@@ -1811,6 +1811,13 @@ REPORT_ELLIPTIC_READ_OWNER_RE = re.compile(
     rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
     re.IGNORECASE,
 )
+REPORT_ELLIPTIC_DEICTIC_OWNER_RE = re.compile(
+    rf"(?:{READ_VERB_RE.pattern})\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)"
+    rf"(?:这|那|该)(?:一)?(?:份|个|张)"
+    rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
+    re.IGNORECASE,
+)
 REPORT_BASIS_OWNER_RE = re.compile(
     rf"(?:基于|结合|根据|参考|依据)"
     rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
@@ -2101,12 +2108,14 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
         REPORT_PREFIX_COORDINATED_OWNER_RE,
         REPORT_TRAILING_COORDINATED_OWNER_RE,
         REPORT_ELLIPTIC_READ_OWNER_RE,
+        REPORT_ELLIPTIC_DEICTIC_OWNER_RE,
     ):
         for coordinated_owner in pattern.finditer(normalized):
             owner = coordinated_owner.group("owner").strip().removesuffix("的")
             if not (
                 _is_current_user_scope_owner(owner)
                 or _is_exact_clinical_report_base(owner)
+                or re.fullmatch(_HEALTH_REPORT_DOMAIN, owner, re.IGNORECASE)
             ):
                 return True
 
