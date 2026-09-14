@@ -1351,3 +1351,50 @@ def test_completed_scope_reselection_preserves_separate_clinician_decisions(text
     assert retained in result.text
     if not removed:
         assert result.text == text
+
+
+@pytest.mark.parametrize("outer", ["", "并非", "并非完全"])
+@pytest.mark.parametrize("operation", ["不宜判断", "不宜用来判断", "不宜用于判断"])
+def test_composed_current_evidence_unsuitable_judgment(outer, operation):
+    test_composed_current_evidence_claim_boundaries(
+        f"{outer}{operation}感冒后恢复、整体健康状态或训练安全性。", bool(outer),
+    )
+
+
+@pytest.mark.parametrize("text,blocked", [
+    ("如已有医生或既定方案，请继续按原方案执行。", True),
+    ("请继续按既定方案执行。", True),
+    ("建议维持原有方案。", True),
+    ("继续执行原来的治疗方案。", True),
+    ("继续遵循既往的补剂方案。", True),
+    ("并非不建议继续按原方案执行。", True),
+    ("不要继续按原方案执行。", False),
+    ("不能据此建议继续按原方案执行。", False),
+    ("原方案是否继续执行，应由医生评估。", False),
+    ("请向医生核实原方案是否仍适用。", False),
+    ("记录显示用户曾按原方案执行。", False),
+    ("继续查看原方案的记录。", False),
+    ("不要继续按原方案执行；但请维持既定方案。", True),
+])
+def test_composed_current_evidence_existing_regimen(text, blocked):
+    test_composed_current_evidence_claim_boundaries(text, blocked)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("unsafe", [False, True])
+async def test_composed_uncertain_conclusion_unsuitable_and_existing_regimen(
+    db, four_domain_user, monkeypatch, panel, unsafe,
+):
+    answer = "不宜用来判断感冒后恢复、整体健康状态或训练安全性。"
+    if unsafe:
+        answer += "如已有医生或既定方案，请继续按原方案执行。"
+    _, _, _, first, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel, query="继续分析",
+        conversation_id=first["conversation_id"], answer=answer,
+    )
+    assert done["turn_outcome"]["status"] == ("blocked" if unsafe else "complete")
+    assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"] if g["kind"] == "query")
+    assert not done["write_receipts"]
+    assert (answer in saved.content) is not unsafe

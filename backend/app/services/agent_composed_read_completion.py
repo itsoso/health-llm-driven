@@ -269,14 +269,14 @@ _CLAIM_UNKNOWN_PREFIX = re.compile(
 )
 # One finite operation grammar for both normal text and presentation wrapping.
 # It must end at a conclusion action, never span unrelated advice or punctuation.
-_HEALTH_PROHIBITION_OPERATOR = r"(?:不必|不要|不应|不可|避免|不建议)"
+_HEALTH_PROHIBITION_OPERATOR = r"(?:不必|不要|不应|不可|避免|不建议|不宜)"
 _HEALTH_CONCLUSION_PROHIBITION = (
     _HEALTH_PROHIBITION_OPERATOR + r"{gap}(?:(?:急于|急着|轻易|贸然|直接){gap})?"
     r"(?:(?:仅凭|只凭|根据|依据|凭){gap}"
     r"(?:(?:(?:(?:最近|过去){gap})?几天|这些|少量|部分|本轮|当前|现有){gap})?(?:的{gap})?"
     r"(?:记录(?:{gap}样本)?|样本|生活数据){gap})?"
     r"(?:(?:给|为){gap}(?:自己|你){gap})?"
-    r"(?:下|得出|做出|作出|判断|认定|认为|断言|推断)"
+    r"(?:(?:用来|用于){gap})?(?:下|得出|做出|作出|判断|认定|认为|断言|推断)"
 )
 _HEALTH_INABILITY_OPERATION = (
     r"(?:不能|无法|难以){gap}(?:(?:据此|由此|因此){gap})?(?:直接{gap})?"
@@ -452,6 +452,26 @@ def _supplement_adherence_nudge(clause: str) -> bool:
     return False
 
 
+_EXISTING_REGIMEN_CONTINUATION = re.compile(
+    r"(?:继续\s*(?:按(?:照)?|执行|遵循)?|维持|沿用)\s*"
+    r"(?:原(?:来|有)?|既定|既往|现有)的?(?:治疗|用药|补剂|运动)?方案"
+)
+_REGIMEN_PROHIBITION = re.compile(r"(?:不要|不建议|请勿|不得|不能(?:据此)?(?:建议)?)\s*$")
+
+
+def _unverified_regimen_continuation(clause: str) -> bool:
+    # A read-only record bundle does not verify a currently applicable clinician
+    # plan. Conditional mentions of a doctor cannot authorize regimen adherence.
+    for part in re.split(r"[，,]|但是|但|不过|然而|而是|却", clause):
+        for match in _EXISTING_REGIMEN_CONTINUATION.finditer(part):
+            prefix = part[:match.start()]
+            prohibition = _REGIMEN_PROHIBITION.search(prefix)
+            if prohibition and not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:prohibition.start()]):
+                continue
+            return True
+    return False
+
+
 def enforce_composed_synthesis_boundaries(text: str, completion):
     from app.services.guidance_validator import (
         GuidanceValidationResult, _medical_assertion_matching_text,
@@ -484,9 +504,12 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
         reasons.append("unsupported_exercise_program")
     if any(_supplement_adherence_nudge(c) for c in clauses):
         reasons.append("unsupported_supplement_adherence")
+    if any(_unverified_regimen_continuation(c) for c in clauses):
+        reasons.append("unsupported_existing_regimen")
     if not reasons:
         return GuidanceValidationResult(text=text)
     notices = {
+        "unsupported_existing_regimen": "本轮记录未核实当前适用的医嘱，不能据此建议继续原有或既定方案。",
         "unsupported_nutrition_inference": "本轮记录不能支持营养不足的个体判断，相关推断未通过证据校验。",
         "unsupported_current_health_inference": "本轮记录不能证明当前恢复质量、训练安全或没有健康异常。",
         "unsupported_exercise_program": "本轮记录不足以制定或背书个体化的量化运动方案。",
