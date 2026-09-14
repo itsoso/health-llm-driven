@@ -2296,6 +2296,31 @@ def _contains_health_target_expression(value: str) -> bool:
     )
 
 
+def _coordinated_prefix_has_safe_health_target(value: str) -> bool:
+    """Allow ``血压和我的…`` but not ``张三和我的…``."""
+    candidate = str(value or "").strip()
+    if not candidate:
+        return False
+    clauses = re.split(r"[\n\r，,；;：:。.!！?？、]", candidate)
+    candidate = clauses[-1].strip()
+    read_matches = tuple(READ_VERB_RE.finditer(candidate))
+    if read_matches:
+        candidate = candidate[read_matches[-1].end():].strip()
+    candidate = re.sub(
+        r"^(?:请|麻烦你?|帮我|给我|替我|为我|基于|结合|根据|参考|参照|依据|按)",
+        "",
+        candidate,
+    ).strip()
+    if _is_health_target_expression(candidate):
+        return True
+    possessive = re.fullmatch(r"(?P<owner>.+?)的(?P<target>.+)", candidate)
+    return bool(
+        possessive
+        and _is_current_user_scope_owner(possessive.group("owner").strip())
+        and _is_health_target_expression(possessive.group("target").strip())
+    )
+
+
 def _owned_health_context_has_safe_owner(left_context: str) -> bool:
     """Resolve the nearest bounded owner before an owned health object."""
     normalized = str(left_context or "").rstrip()
@@ -2303,13 +2328,10 @@ def _owned_health_context_has_safe_owner(left_context: str) -> bool:
         owner = normalized[-size:].strip()
         if not owner:
             continue
-        # An explicit first-person suffix is itself authoritative; request
-        # scaffolding before it (``基于我`` / ``给我的``) cannot turn it into a
-        # third-party owner.
-        if _is_current_user_scope_owner(owner):
-            return True
+        explicit_self_owner = _is_current_user_scope_owner(owner)
         owner_is_safe = bool(
-            BODY_OR_TIME_OWNER_RE.fullmatch(owner)
+            explicit_self_owner
+            or BODY_OR_TIME_OWNER_RE.fullmatch(owner)
             or HEALTH_READ_SCOPE_OWNER_RE.fullmatch(owner)
             or re.fullmatch(_REPORT_TIME_SCOPE, owner)
             or re.fullmatch(
@@ -2323,13 +2345,22 @@ def _owned_health_context_has_safe_owner(left_context: str) -> bool:
         prefix = normalized[:-size].rstrip()
         if not prefix:
             return True
-        if re.search(r"[\n\r，,；;：:。.!！?？、/／|｜&＆+＋]$", prefix):
+        if re.search(r"(?:基于|结合|根据|参考|参照|依据|按|针对|关于|利用)\s*$", prefix):
             return True
-        if re.search(
-            rf"(?:{READ_VERB_RE.pattern}|{HEALTH_ENTITY_CONNECTOR_RE.pattern}|同|并)\s*$",
+        if re.search(rf"(?:{READ_VERB_RE.pattern})\s*$", prefix, re.IGNORECASE):
+            return True
+        connector = re.search(
+            rf"(?:{HEALTH_ENTITY_CONNECTOR_RE.pattern}|同|并)\s*$",
             prefix,
             re.IGNORECASE,
-        ):
+        )
+        if connector is not None:
+            if explicit_self_owner and not _coordinated_prefix_has_safe_health_target(
+                prefix[:connector.start()]
+            ):
+                continue
+            return True
+        if re.search(r"[\n\r，,；;：:。.!！?？、/／|｜&＆+＋]$", prefix):
             return True
         if re.fullmatch(r"(?:从|在|于)", prefix):
             return True
