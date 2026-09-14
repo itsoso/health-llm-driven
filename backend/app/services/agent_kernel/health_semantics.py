@@ -1182,7 +1182,7 @@ def _strip_html_material(
         else:
             # Formatting is not quotation: retain its body and only drop tags.
             projected = projected[: opener.start()] + body + suffix
-        cursor = opener.start() + 1
+        cursor = opener.start()
     return projected, tuple(removed)
 
 
@@ -1237,16 +1237,45 @@ def active_health_instruction_text(text: str) -> str:
     return "\n".join(parts).strip()
 
 
-READ_MATERIAL_NON_AUTHORITY_RE = re.compile(
-    r"(?:仅供|只供|用于)(?:讨论|分析|参考)|"
-    r"(?:不是|并非)(?:请求|指令|命令)|"
-    r"(?:原话|原句|原文|示例|例子|引用|转述|转发|来自聊天)|"
-    r"(?:取消|暂缓|先不|不要|别)(?:执行|读取|查询|查看|打开)?",
-    re.IGNORECASE,
-)
 READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE = re.compile(
     r"(?:[\n\r；;。.!！?？]|但|不过|然而|可是|然后)"
 )
+HTML_BLOCK_PREFIX_BOUNDARY_RE = re.compile(r"(?:^|[\n\r；;。.!！?？])\s*$")
+
+
+def _material_adjacent_clause_has_read(
+    span: str,
+    prefix: str,
+    suffix: str,
+    *,
+    block_boundary: bool,
+) -> bool:
+    """Reject an inline material span that shares a clause with a health read."""
+    if block_boundary and HTML_BLOCK_PREFIX_BOUNDARY_RE.search(prefix):
+        return False
+    preceding_clause = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(prefix)[-1]
+    following_clause = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
+    interpretation_value = bool(
+        READ_VERB_RE.search(span) is None
+        and any(owner in preceding_clause for owner in CURRENT_USER_OWNERS)
+        and READ_VERB_RE.search(preceding_clause)
+        and READ_VERB_RE.search(following_clause) is None
+        and re.search(
+            r"(?:意思|含义|理解|解读|分析|说明|代表|意味)",
+            following_clause,
+        )
+    )
+    if interpretation_value:
+        return False
+    for clause in (preceding_clause, following_clause):
+        if READ_VERB_RE.search(clause):
+            return True
+        if (
+            REPORT_USE_ACTION_RE.search(clause)
+            and CURRENT_USER_REPORT_REFERENCE_RE.search(clause)
+        ):
+            return True
+    return False
 
 
 def active_health_read_authority_text(text: str) -> str:
@@ -1272,33 +1301,13 @@ def active_health_read_authority_text(text: str) -> str:
     projected, quote_removed = _strip_paired_material_spans(projected)
     removed = (*html_removed, *code_removed, *struck_removed, *quote_removed)
     if any(
-        READ_MATERIAL_NON_AUTHORITY_RE.search(span)
-        and (
-            READ_VERB_RE.search(prefix)
-            or (
-                REPORT_USE_ACTION_RE.search(prefix)
-                and CURRENT_USER_REPORT_REFERENCE_RE.search(prefix)
-            )
+        _material_adjacent_clause_has_read(
+            span,
+            prefix,
+            suffix,
+            block_boundary=block_boundary,
         )
-        for span, prefix, _suffix, _block_boundary in removed
-    ):
-        return ""
-    if any(
-        not block_boundary
-        and (
-            READ_VERB_RE.search(
-                READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
-            )
-            or (
-                REPORT_USE_ACTION_RE.search(
-                    READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
-                )
-                and CURRENT_USER_REPORT_REFERENCE_RE.search(
-                    READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
-                )
-            )
-        )
-        for _span, _prefix, suffix, block_boundary in removed
+        for span, prefix, suffix, block_boundary in removed
     ):
         return ""
     orphan_closers = set(STANDALONE_MATERIAL_QUOTE_PAIRS.values()).difference(

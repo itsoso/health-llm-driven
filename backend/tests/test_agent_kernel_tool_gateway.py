@@ -10050,6 +10050,11 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "请`勿`打开我的体检报告",
         "请``勿``打开我的体检报告",
         "请~~勿~~打开我的体检报告",
+        "请<blockquote>勿</blockquote>打开我的体检报告",
+        "请<pre>勿</pre>打开我的体检报告",
+        "请<textarea>勿</textarea>打开我的体检报告",
+        "请打开“张三的”体检报告",
+        "请打开[张三的]体检报告",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
@@ -10179,6 +10184,7 @@ async def test_html_material_preserves_later_direct_owned_read(tool_name):
     (
         "<br>现在请打开我的体检报告",
         "<strong>现在请打开我的体检报告</strong>",
+        "<strong><em>现在请打开我的体检报告</em></strong>",
     ),
 )
 async def test_html_formatting_preserves_direct_owned_read(message, tool_name):

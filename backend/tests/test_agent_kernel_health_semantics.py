@@ -411,6 +411,11 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "请`勿`打开我的体检报告",
         "请``勿``打开我的体检报告",
         "请~~勿~~打开我的体检报告",
+        "请<blockquote>勿</blockquote>打开我的体检报告",
+        "请<pre>勿</pre>打开我的体检报告",
+        "请<textarea>勿</textarea>打开我的体检报告",
+        "请打开“张三的”体检报告",
+        "请打开[张三的]体检报告",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
@@ -440,6 +445,7 @@ def test_html_material_does_not_create_false_nonself_owner_for_later_read():
     (
         "<br>现在请打开我的体检报告",
         "<strong>现在请打开我的体检报告</strong>",
+        "<strong><em>现在请打开我的体检报告</em></strong>",
     ),
 )
 def test_html_formatting_preserves_direct_owned_read(text):
