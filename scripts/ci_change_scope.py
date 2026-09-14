@@ -31,6 +31,7 @@ RELEASE_ONLY_FILES = {
     "deploy.sh",
     "backend/scripts/activate_health_evidence_runtime.sh",
     "backend/scripts/archive_backup_offsite.sh",
+    "backend/scripts/verify_recent_offsite_backup.sh",
     "backend/scripts/backup_db.sh",
     "backend/scripts/rollback_release.sh",
     "scripts/release-preflight.sh",

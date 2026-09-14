@@ -23,6 +23,7 @@ BACKUP_FILE="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env"
 if [ -f "$ENV_FILE" ]; then
+    HEALTH_BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-$(grep -m1 '^HEALTH_BACKUP_ROOT=' "$ENV_FILE" | cut -d= -f2- || true)}"
     BACKUP_AGE_RECIPIENT="${BACKUP_AGE_RECIPIENT:-$(grep -m1 '^BACKUP_AGE_RECIPIENT=' "$ENV_FILE" | cut -d= -f2- || true)}"
     BACKUP_OFFSITE_RCLONE_DEST="${BACKUP_OFFSITE_RCLONE_DEST:-$(grep -m1 '^BACKUP_OFFSITE_RCLONE_DEST=' "$ENV_FILE" | cut -d= -f2- || true)}"
     BACKUP_OFFSITE_RETENTION_DAYS="${BACKUP_OFFSITE_RETENTION_DAYS:-$(grep -m1 '^BACKUP_OFFSITE_RETENTION_DAYS=' "$ENV_FILE" | cut -d= -f2- || true)}"
@@ -33,6 +34,8 @@ RECIPIENT="${BACKUP_AGE_RECIPIENT:-}"
 DEST="${BACKUP_OFFSITE_RCLONE_DEST:-}"
 RETENTION_DAYS="${BACKUP_OFFSITE_RETENTION_DAYS:-35}"
 INTEGRITY_KEY="${BACKUP_INTEGRITY_KEY:-}"
+BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"
+RECEIPT_PATH="$BACKUP_ROOT/state/offsite-last-verified"
 
 if [ -z "$RECIPIENT" ] && [ -z "$DEST" ] && [ -z "$INTEGRITY_KEY" ] && [ "$REQUIRED" != "1" ]; then
     echo "[$(date)] ⚠️ 未配置站外备份，已保留本地可恢复副本"
@@ -57,6 +60,10 @@ command -v python3 >/dev/null || { echo "[$(date)] ❌ 缺少 python3" >&2; exit
 
 SOURCE_SHA=$(sha256sum "$BACKUP_FILE" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
 NAME="$(basename "$BACKUP_FILE").${SOURCE_SHA:0:16}.age"
+if ! [[ "$NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "[$(date)] ❌ 站外备份对象名包含不安全字符" >&2
+    exit 1
+fi
 REMOTE="${DEST%/}/$NAME"
 CHECKSUM_NAME="$NAME.sha256"
 CHECKSUM_REMOTE="${DEST%/}/$CHECKSUM_NAME"
@@ -154,6 +161,66 @@ PY
     log_offsite_timing "remote_manifest" "$REMOTE_MANIFEST_STARTED_AT" "success"
 }
 
+write_verified_receipt() {
+    BACKUP_RECEIPT_PATH="$RECEIPT_PATH" \
+    BACKUP_RECEIPT_OBJECT="$NAME" \
+    python3 <<'PY'
+import os
+import stat
+import tempfile
+import time
+from pathlib import Path
+
+path = Path(os.environ["BACKUP_RECEIPT_PATH"])
+object_name = os.environ["BACKUP_RECEIPT_OBJECT"]
+if not object_name or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for ch in object_name):
+    raise SystemExit("站外备份验证凭证对象名无效")
+parent = path.parent
+if parent.exists():
+    parent_stat = parent.lstat()
+    if not stat.S_ISDIR(parent_stat.st_mode) or stat.S_ISLNK(parent_stat.st_mode):
+        raise SystemExit("站外备份验证凭证目录不安全")
+    if parent_stat.st_uid != os.geteuid():
+        raise SystemExit("站外备份验证凭证目录 owner 不匹配")
+    os.chmod(parent, 0o700)
+else:
+    parent.mkdir(parents=True, mode=0o700)
+    os.chmod(parent, 0o700)
+if path.exists() or path.is_symlink():
+    current = path.lstat()
+    if (
+        not stat.S_ISREG(current.st_mode)
+        or stat.S_ISLNK(current.st_mode)
+        or current.st_nlink != 1
+        or current.st_uid != os.geteuid()
+    ):
+        raise SystemExit("站外备份验证凭证文件不安全")
+payload = (
+    "version=1\n"
+    f"verified_at_epoch={int(time.time())}\n"
+    f"object={object_name}\n"
+).encode("utf-8")
+fd, temporary_name = tempfile.mkstemp(prefix=".offsite-last-verified.", dir=parent)
+try:
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "wb", closefd=True) as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary_name, path)
+    directory_fd = os.open(parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+finally:
+    try:
+        os.unlink(temporary_name)
+    except FileNotFoundError:
+        pass
+PY
+}
+
 REMOTE_LIST=$(rclone lsf "${DEST%/}" --files-only 2>/dev/null || true)
 if grep -Fxq "$NAME" <<< "$REMOTE_LIST" || \
    grep -Fxq "$CHECKSUM_NAME" <<< "$REMOTE_LIST" || \
@@ -165,6 +232,7 @@ if grep -Fxq "$NAME" <<< "$REMOTE_LIST" || \
         exit 1
     fi
     verify_remote_archive
+    write_verified_receipt
     log_offsite_timing "total" "$OFFSITE_PERF_STARTED_AT" "success"
     echo "[$(date)] ✅ 站外既有加密副本哈希与 HMAC 真实性已验证: $NAME"
     exit 0
@@ -187,6 +255,7 @@ if ! {
 fi
 log_offsite_timing "upload" "$UPLOAD_STARTED_AT" "success"
 verify_remote_archive
+write_verified_receipt
 
 rclone delete "${DEST%/}" --min-age "${RETENTION_DAYS}d" \
     --include '*.sql.gz.age' \

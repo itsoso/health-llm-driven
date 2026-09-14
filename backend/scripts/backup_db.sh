@@ -165,17 +165,35 @@ if ! "$SCRIPT_DIR/verify_backup_restore.sh" "$BACKUP_FILE"; then
 fi
 log_backup_timing "restore_drill" "$RESTORE_STARTED_AT" "success"
 
-# 站外副本必须先在本机用 age 加密，再上传并回读远端清单确认。
-export BACKUP_AGE_RECIPIENT BACKUP_OFFSITE_RCLONE_DEST BACKUP_OFFSITE_RETENTION_DAYS BACKUP_INTEGRITY_KEY
-export BACKUP_OFFSITE_REQUIRED="${BACKUP_OFFSITE_REQUIRED:-0}"
+# upload: 本机 age 加密、上传并回读远端清单确认（夜间任务、迁移发布、凭证过期时使用）。
+# skip: 仅跳过本次站外上传；本地 dump 与完整恢复演练始终已经完成。
+BACKUP_OFFSITE_MODE="${BACKUP_OFFSITE_MODE:-upload}"
+case "$BACKUP_OFFSITE_MODE" in
+    upload|skip) ;;
+    *)
+        echo "[$(date)] ❌ BACKUP_OFFSITE_MODE 仅支持 upload 或 skip" >&2
+        exit 1
+        ;;
+esac
 OFFSITE_STARTED_AT=$(date +%s)
-if ! "$SCRIPT_DIR/archive_backup_offsite.sh" "$BACKUP_FILE"; then
-    log_backup_timing "offsite_archive" "$OFFSITE_STARTED_AT" "failure"
-    exit 1
+if [ "$BACKUP_OFFSITE_MODE" = "upload" ]; then
+    export BACKUP_AGE_RECIPIENT BACKUP_OFFSITE_RCLONE_DEST BACKUP_OFFSITE_RETENTION_DAYS BACKUP_INTEGRITY_KEY
+    export BACKUP_OFFSITE_REQUIRED="${BACKUP_OFFSITE_REQUIRED:-0}"
+    if ! "$SCRIPT_DIR/archive_backup_offsite.sh" "$BACKUP_FILE"; then
+        log_backup_timing "offsite_archive" "$OFFSITE_STARTED_AT" "failure"
+        exit 1
+    fi
+    log_backup_timing "offsite_archive" "$OFFSITE_STARTED_AT" "success"
+else
+    if ! "$SCRIPT_DIR/verify_recent_offsite_backup.sh"; then
+        log_backup_timing "offsite_archive" "$OFFSITE_STARTED_AT" "failure"
+        echo "[$(date)] ❌ 拒绝跳过站外上传：最近站外备份凭证无效" >&2
+        exit 1
+    fi
+    log_backup_timing "offsite_archive" "$OFFSITE_STARTED_AT" "skipped"
 fi
-log_backup_timing "offsite_archive" "$OFFSITE_STARTED_AT" "success"
 
-# 本地保留多份供快速恢复；只有恢复演练和站外归档都成功后才执行清理。
+# 本地保留多份供快速恢复；只有恢复演练和所选站外策略成功后才执行清理。
 BACKUP_LOCAL_RETENTION_COUNT="${BACKUP_LOCAL_RETENTION_COUNT:-7}"
 if ! [[ "$BACKUP_LOCAL_RETENTION_COUNT" =~ ^[1-9][0-9]*$ ]]; then
     echo "[$(date)] ❌ BACKUP_LOCAL_RETENTION_COUNT 必须是正整数"

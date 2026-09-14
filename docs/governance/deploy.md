@@ -114,7 +114,7 @@ NEEDS_OPERATOR/PREPARATION_FAILED 则拒绝新的上传 claim。仅提交本轮 
 若后端在上传开始后失败，保留已有 build/submission ID，发布仍未完成；不得以上传成功
 替代后端恢复。无凭据的 release-result job 汇合两端，失败/取消/跳过均返回失败。
 Apple 处理和不依赖新后端的同包静态检查可并行；完整验收结论与正式送审必须在两端
-最终汇合后给出；备份按 §8.4 的显式开关执行，不因并行删除回滚闸。
+最终汇合后给出，不因并行删除备份、恢复或回滚闸。
 后端失败后的修复使用新受审 SHA/授权的 backend-only 流程，旧 build ID 作为既有制品保留，
 旧 release-result 仍为失败。不得把旧包自动视为新 SHA 的产物或跨 revision 续跑原上传 job；
 跨版本组合的送审需另行受审的制品关联与兼容性验收，未具备该证据时保持阻断。
@@ -125,7 +125,7 @@ EAS 调用响应丢失时按 source SHA 查询已有构建，记录其 build/sub
 权限到期/SSH 撤权不证明已启动的 EAS 任务或部署进程终止；准备失败伴随 build/native 意图
 仍禁止按 preparation-only 退役，不拓宽既有恢复/轮换边界。
 
-该入口遵循下面的备份开关、迁移、运行态、健康和回滚规则，也不提交正式 App Review。
+该入口不替代下面的备份、恢复、迁移、运行态、健康和回滚规则，也不提交正式 App Review。
 
 #### checkout 前停服事故的旧服务恢复
 
@@ -349,10 +349,11 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
 2. 把本次提交的 backup/rollback/schema-probe 工具和生产 systemd runtime
    drop-in 上传到 root-only stage，并逐文件校验 Git blob hash；候选 effective
    unit 还必须通过目标 systemd 版本的 `systemd-analyze verify`。
-3. 按项目所有者 2026-09-14 的明确要求，默认跳过数据库备份、临时库恢复演练和站外
-   归档。只有显式执行 `DEPLOY_DATABASE_BACKUP=1 ./deploy.sh -b` 才运行这组步骤；
-   显式启用后任一步失败仍停止。发布工具校验、代码/配置回滚、schema 兼容性与健康
-   检查始终保留；此设置不删除已有备份，也不修改独立定时备份任务。
+3. 每次在 Git 工作树外创建数据库备份并完成临时库恢复演练。普通无迁移发布还必须
+   证明存在 24 小时内、已完成远端哈希和 HMAC 校验的 age 加密站外归档；证明有效时
+   本次不重复上传。证明缺失/过期/远端三件套不完整，或无法证明本次不含 managed
+   migration 时，发布前同步补做加密站外归档。任一步失败即停止。夜间任务仍每天执行
+   完整本地备份、恢复演练和站外归档验证。
 4. 在修改 live env、checkout 或停服前，使用 staged probe 验证“当前生产 SHA 与
    实时 schema 兼容”。只有 stage hash、HEAD、clean tree、完整表/列/零行写探针及
    release token 前后均通过，才记录 rollback point。

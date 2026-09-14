@@ -125,6 +125,28 @@ def test_production_invitation_sms_accepts_effective_fallback_access_keys():
     configured.validate_required_security()
 
 
+def test_production_manual_invitation_delivery_does_not_require_sms_config():
+    configured = Settings(
+        _env_file=None,
+        secret_key="A" * 32,
+        app_env="production",
+        debug=False,
+        garmin_encryption_key="B" * 44,
+        device_encryption_key="C" * 44,
+        registration_invitation_digest_key="D" * 32,
+        registration_invitation_rollout_enabled=True,
+        registration_invitation_enforcement_enabled=True,
+        registration_invitation_delivery_mode="manual",
+    )
+
+    configured.validate_required_security()
+
+
+def test_settings_rejects_unknown_registration_invitation_delivery_mode():
+    with pytest.raises(ValidationError, match="registration_invitation_delivery_mode"):
+        Settings(_env_file=None, registration_invitation_delivery_mode="email")
+
+
 @pytest.mark.parametrize(
     ("dedicated_id", "dedicated_secret"),
     [("dedicated-id", None), (None, "dedicated-secret")],

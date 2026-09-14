@@ -21,7 +21,7 @@ const WEB_SESSION_HEADERS = { Authorization: `Bearer ${WEB_SESSION_TOKEN}` };
 const ACTIVE_STATUSES = new Set(['created', 'sent', 'send_failed']);
 const TERMINAL_STATUSES = new Set(['consumed', 'revoked', 'expired']);
 const STATUS_LABELS: Record<string, string> = {
-  created: '已创建', sent: '已发送', send_failed: '发送失败', consumed: '已使用', revoked: '已撤销', expired: '已过期', invalid: '状态异常',
+  created: '待转发', sent: '已发送', send_failed: '发送失败', consumed: '已使用', revoked: '已撤销', expired: '已过期', invalid: '状态异常',
 };
 const STATUS_STYLES: Record<string, string> = {
   created: 'border-sky-400/30 bg-sky-400/10 text-sky-200', sent: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
@@ -57,6 +57,7 @@ function safeErrorMessage(error: unknown): string {
 }
 
 function deliveryMessage(prepared: PreparedInvitation): string {
+  if (prepared.delivery_status === 'manual') return '邀请已生成，请立即复制并通过可信渠道发送给本人。';
   if (prepared.delivery_status === 'sent') return '短信已提交发送。';
   if (prepared.delivery_status === 'send_failed') {
     const safeReasons: Record<string, string> = {
@@ -66,7 +67,7 @@ function deliveryMessage(prepared: PreparedInvitation): string {
     const reason = prepared.delivery_error_code ? (safeReasons[prepared.delivery_error_code] ?? '短信发送未成功') : '短信发送未成功';
     return `短信发送失败（${reason}），请立即复制下方凭据通过可信渠道发送。`;
   }
-  return '邀请已生成，请确认短信状态，并复制凭据作为备用。';
+  return '邀请已生成，请复制凭据并通过可信渠道发送给本人。';
 }
 
 function formatDate(value: string): string {
@@ -356,7 +357,7 @@ export default function RegistrationInvitationPanel() {
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">Registration access</p>
             <h2 id="registration-invitations-title" className="text-xl font-semibold text-white">手机号注册邀请</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">仅受邀手机号可完成首次注册。创建并发送即代表管理员批准；一次性凭据只在当前弹窗展示。</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">仅受邀手机号可完成首次注册。创建即代表管理员批准；系统不发送邀请短信，一次性凭据只在当前弹窗展示。</p>
           </div>
           <button type="button" onClick={() => void load(offset)} className="self-start rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 hover:bg-white/10">刷新列表</button>
         </div>
@@ -364,7 +365,7 @@ export default function RegistrationInvitationPanel() {
 
       <div className="grid gap-6 p-5 md:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.7fr)] md:p-6">
         <form className="space-y-4 rounded-xl border border-white/10 bg-white/[0.04] p-4" onSubmit={(event) => { event.preventDefault(); operationTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setConfirming(true); }}>
-          <div><h3 className="font-medium text-white">创建并发送</h3><p className="mt-1 text-xs leading-5 text-amber-100/80">提交前会再次显示脱敏手机号供确认。</p></div>
+          <div><h3 className="font-medium text-white">创建一次性邀请</h3><p className="mt-1 text-xs leading-5 text-amber-100/80">提交前会再次显示脱敏手机号供确认；创建后请手工转发。</p></div>
           <label className="block text-sm text-slate-200">受邀手机号<input required disabled={interactionLocked} maxLength={32} autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} className="mt-1.5 w-full rounded-lg border border-white/15 bg-slate-950/40 px-3 py-2.5 text-white outline-none focus:border-emerald-300" placeholder="+86 138 0013 8000" /></label>
           <label className="block text-sm text-slate-200">备注<textarea disabled={interactionLocked} maxLength={200} value={note} onChange={(event) => setNote(event.target.value)} className="mt-1.5 min-h-20 w-full resize-y rounded-lg border border-white/15 bg-slate-950/40 px-3 py-2.5 text-white outline-none focus:border-emerald-300" placeholder="邀请原因或归属（可选）" /></label>
           <label className="block text-sm text-slate-200">有效期<input required disabled={interactionLocked} type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} className="mt-1.5 w-full rounded-lg border border-white/15 bg-slate-950/40 px-3 py-2.5 text-white outline-none focus:border-emerald-300" /></label>
@@ -378,7 +379,7 @@ export default function RegistrationInvitationPanel() {
                 const capability = invitationCapability(item);
                 const status = capability.status;
                 return <article key={item.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><span className="font-mono font-medium text-white">{item.phone_masked}</span><span className={`rounded-full border px-2 py-0.5 text-xs ${STATUS_STYLES[status] ?? STATUS_STYLES.invalid}`}>{STATUS_LABELS[status] ?? STATUS_LABELS.invalid}</span></div>{item.note ? <p className="mt-2 text-sm text-slate-300">{item.note}</p> : null}</div><div className="flex gap-2"><button data-focus-key={`resend-${item.id}`} type="button" aria-label={`重发 ${item.phone_masked} 的邀请`} disabled={!capability.actionable || interactionLocked} onClick={(event) => void resend(item, event.currentTarget)} className="rounded-md border border-emerald-300/25 px-3 py-1.5 text-sm text-emerald-200 disabled:opacity-35">重发</button><button type="button" aria-label={`撤销 ${item.phone_masked} 的邀请`} disabled={!capability.actionable || interactionLocked} onClick={() => void revoke(item)} className="rounded-md border border-rose-300/25 px-3 py-1.5 text-sm text-rose-200 disabled:opacity-35">撤销</button></div></div>
+                  <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><span className="font-mono font-medium text-white">{item.phone_masked}</span><span className={`rounded-full border px-2 py-0.5 text-xs ${STATUS_STYLES[status] ?? STATUS_STYLES.invalid}`}>{STATUS_LABELS[status] ?? STATUS_LABELS.invalid}</span></div>{item.note ? <p className="mt-2 text-sm text-slate-300">{item.note}</p> : null}</div><div className="flex gap-2"><button data-focus-key={`resend-${item.id}`} type="button" aria-label={`重新生成 ${item.phone_masked} 的邀请`} disabled={!capability.actionable || interactionLocked} onClick={(event) => void resend(item, event.currentTarget)} className="rounded-md border border-emerald-300/25 px-3 py-1.5 text-sm text-emerald-200 disabled:opacity-35">重新生成</button><button type="button" aria-label={`撤销 ${item.phone_masked} 的邀请`} disabled={!capability.actionable || interactionLocked} onClick={() => void revoke(item)} className="rounded-md border border-rose-300/25 px-3 py-1.5 text-sm text-rose-200 disabled:opacity-35">撤销</button></div></div>
                   <dl className="mt-3 grid gap-1 text-xs text-slate-400 sm:grid-cols-2"><div><dt className="inline">创建：</dt><dd className="inline">{formatDate(item.created_at)}</dd></div><div><dt className="inline">到期：</dt><dd className="inline">{formatDate(item.expires_at)}</dd></div></dl>
                 </article>;
               })}
@@ -402,11 +403,11 @@ export default function RegistrationInvitationPanel() {
             <p className="mt-3 text-sm text-slate-300">注册资格将绑定到：</p>
             <p className="mt-2 font-mono text-xl text-emerald-200">{maskPhone(phone)}</p>
             <p className="mt-3 text-sm text-slate-300">有效期：{localTimezoneDescription(expiresAt)}</p>
-            <p className="mt-3 text-sm leading-6 text-amber-100/80">确认后系统会立即创建凭据并尝试发送短信，无需再次审批。</p>
+            <p className="mt-3 text-sm leading-6 text-amber-100/80">确认后系统会立即创建一次性凭据，但不会发送邀请短信。请复制后通过可信渠道转发给本人。</p>
           </div>
           <div className="mt-6 flex justify-end gap-3">
             <button data-autofocus type="button" onClick={() => setConfirming(false)} className="rounded-lg border border-white/15 px-4 py-2 text-slate-200">返回修改</button>
-            <button type="button" onClick={() => void submitCreate()} className="rounded-lg bg-emerald-500 px-4 py-2 font-medium text-slate-950">确认创建并发送</button>
+            <button type="button" onClick={() => void submitCreate()} className="rounded-lg bg-emerald-500 px-4 py-2 font-medium text-slate-950">确认创建</button>
           </div>
         </AccessibleModal>
       ) : null}
@@ -423,7 +424,7 @@ export default function RegistrationInvitationPanel() {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">One-time credentials</p>
           <h3 id="prepared-invitation-title" className="mt-1 text-xl font-semibold text-white">一次性注册凭据</h3>
           <div id="prepared-invitation-description" className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-sm leading-6 text-amber-50">
-            {deliveryMessage(prepared)}{preparedFromResend ? ' 本次为重发，旧凭据已失效。' : ' 关闭后本页面不会保留这些凭据。'}
+            {deliveryMessage(prepared)}{preparedFromResend ? ' 本次为重新生成，旧凭据已失效。' : ' 关闭后本页面不会保留这些凭据。'}
           </div>
           <div className="mt-5 space-y-4">
             <label className="block text-sm text-slate-300">手动邀请码<div className="mt-1.5 flex gap-2"><input data-secret-autofocus aria-label="手动邀请码" readOnly value={prepared.manual_code} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-lg border border-white/15 bg-slate-950/50 px-3 py-2 font-mono text-white" /><button type="button" onClick={() => void copy(prepared.manual_code)} className="rounded-lg border border-white/15 px-3 text-sm text-white">复制手动邀请码</button></div></label>
