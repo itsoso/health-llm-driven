@@ -925,7 +925,7 @@ ANALYZED_MATERIAL_INTRO_RE = re.compile(
     r"\s*(?:[：:]|[。.!！]|[\n\r]+)\s*"
 )
 MARKDOWN_FENCED_MATERIAL_START_RE = re.compile(
-    r"(?m)^[ \t]{0,3}(?P<fence>`{3,}|~{3,})[^\n\r]*(?:\r\n?|\n)"
+    r"(?m)^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?P<info>[^\n\r]*)(?:\r\n?|\n)"
 )
 INLINE_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?P<fence>`{3,}|~{3,})[^\n\r]*?(?P=fence)"
@@ -1013,6 +1013,11 @@ def _is_escaped_delimiter(text: str, index: int) -> bool:
     return (index - escape_start) % 2 == 1
 
 
+def _markdown_fence_opener_is_valid(marker: str, info: str) -> bool:
+    """Apply the CommonMark restriction specific to backtick info strings."""
+    return not (marker.startswith("`") and "`" in info)
+
+
 def _analyzed_material_end(text: str, start: int) -> int:
     """Find an explicit boundary; an unframed pasted body owns the remainder."""
     if start >= len(text):
@@ -1036,11 +1041,14 @@ def _analyzed_material_end(text: str, start: int) -> int:
                 # Mismatched nesting has no trustworthy in-band boundary.
                 return len(text)
         return len(text)
-    fence = re.match(r"(`{3,}|~{3,})[^\n]*\n", text[start:])
+    fence = re.match(r"(?P<fence>`{3,}|~{3,})(?P<info>[^\n\r]*)(?:\r\n?|\n)", text[start:])
     if fence:
-        marker = fence.group(1)
+        marker = fence.group("fence")
+        if not _markdown_fence_opener_is_valid(marker, fence.group("info")):
+            return len(text)
         close = re.search(
-            rf"(?m)^[ \t]{{0,3}}{re.escape(marker[0])}{{{len(marker)},}}[ \t]*(?:\n|$)",
+            rf"(?m)^[ \t]{{0,3}}{re.escape(marker[0])}{{{len(marker)},}}"
+            r"[ \t]*(?:\r\n?|\n|$)",
             text[start + fence.end() :],
         )
         return start + fence.end() + close.end() if close else len(text)
@@ -1076,6 +1084,9 @@ def _strip_markdown_fenced_material(text: str, *, replacement: str) -> str:
     cursor = 0
     while opener := MARKDOWN_FENCED_MATERIAL_START_RE.search(projected, cursor):
         marker = opener.group("fence")
+        if not _markdown_fence_opener_is_valid(marker, opener.group("info")):
+            cursor = opener.end()
+            continue
         closer = re.search(
             rf"(?m)^[ \t]{{0,3}}{re.escape(marker[0])}{{{len(marker)},}}"
             r"[ \t]*(?:\r\n?|\n|$)",

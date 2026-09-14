@@ -10479,6 +10479,42 @@ async def test_closed_block_material_preserves_later_owned_read_gateway(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "分析以下建议：\n```bad`\n仅限张三，不要查询饮食记录\n```\n\n查询我的饮食记录并分析",
+        "分析以下建议：\n````lang```\n仅限张三，不要查询饮食记录\n````\n\n查询我的饮食记录并分析",
+    ),
+)
+async def test_invalid_backtick_fence_cannot_create_read_authority(
+    message,
+    tool_name,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "diet"}
+        if tool_name == "health_query"
+        else {"record_type": "diet", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
 @pytest.mark.parametrize(
     "message",
