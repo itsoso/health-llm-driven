@@ -124,6 +124,17 @@ def test_ci_blocks_on_release_invariants_and_exercises_macos_bash3():
     )
 
 
+def test_release_invariants_checkout_includes_origin_main_for_ota_guard():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    checkout = next(
+        step
+        for step in workflow["jobs"]["release-invariants"]["steps"]
+        if str(step.get("uses") or "").startswith("actions/checkout@")
+    )
+
+    assert checkout["with"]["fetch-depth"] == 0
+
+
 def test_ci_classifies_changes_before_selecting_expensive_jobs():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
