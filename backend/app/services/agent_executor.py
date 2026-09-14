@@ -12164,6 +12164,35 @@ class AgentExecutor:
         completion = self._composed_read_completion()
         return completion is not None and completion.complete
 
+    def _initial_composed_read_calls(self, round_index: int, tools: list[dict]) -> list[dict]:
+        """Propose a skipped owned read through Pi; never dispatch outside its gateway."""
+        snapshot = self._agent_kernel_snapshot
+        if (
+            round_index != 0 or snapshot is None or snapshot.intent.is_write
+            or self._turn_daily_read_plan is not None or self._turn_composed_read_executions
+            or self._force_no_tools_synthesis or self._read_repair_failures
+            or self._turn_sync_attempted
+            or classify_clinician_turn(self._current_turn_user_message).kind != "none"
+            or not any((tool.get("function") or {}).get("name") == "health_query_batch" for tool in tools)
+        ):
+            return []
+        from app.services.agent_kernel.read_task_scope import (
+            has_owned_sync_instruction, resolve_owned_read_scope,
+        )
+
+        if has_owned_sync_instruction(snapshot.envelope.text):
+            return []
+        scope = resolve_owned_read_scope(snapshot)
+        if scope is None or len(scope.queries) < 2:
+            return []
+        return [{
+            "id": "server-owned-composed-read", "type": "function",
+            "function": {
+                "name": "health_query_batch",
+                "arguments": json.dumps({"queries": list(scope.queries)}, ensure_ascii=False),
+            },
+        }]
+
     def _composed_synthesis_messages(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str],
         message: str, *, sealed: bool = False,
@@ -13838,10 +13867,11 @@ class AgentExecutor:
                         panel_synthesis_messages = self._composed_synthesis_messages(
                             user_id, conv.id, user_auth_token, message,
                         )
-                        resp = await self._call_llm(
-                            panel_synthesis_messages or lead_messages,
-                            [] if panel_synthesis_messages is not None or lead_force_no_tools_synthesis or self._force_no_tools_synthesis else request["tools"],
+                        lead_round_tools = (
+                            [] if panel_synthesis_messages is not None or lead_force_no_tools_synthesis
+                            or self._force_no_tools_synthesis else request["tools"]
                         )
+                        resp = await self._call_llm(panel_synthesis_messages or lead_messages, lead_round_tools)
                         if not isinstance(resp, dict):
                             raise ValueError("missing_panel_lead_metadata")
                         content = resp.get("content") or ""
@@ -13862,6 +13892,11 @@ class AgentExecutor:
                                 finish_reason=finish_reason if finish_reason in {"length", "error"} else "error",
                             )
                             continue
+                        if not tool_calls:
+                            tool_calls = self._initial_composed_read_calls(_round, lead_round_tools)
+                            if tool_calls:
+                                content = ""
+                                finish_reason = "tool_calls"
                         if not deterministic_supplement_fallback_attempted:
                             deterministic_supplement_calls = (
                                 _build_deterministic_supplement_record_tool_calls(
@@ -17406,6 +17441,11 @@ class AgentExecutor:
                                     finish_reason = "stop"
                             if proposed_calls:
                                 self._record_tool_model_name(self._last_provider_model_name)
+                            if not proposed_calls and finish_reason == "stop" and not health_advice_buffered:
+                                proposed_calls = self._initial_composed_read_calls(round_idx, round_tools)
+                                if proposed_calls:
+                                    candidate = ""
+                                    finish_reason = "tool_calls"
                             if (
                                 self._tool_round_fast_routed and not proposed_calls and candidate.strip()
                                 and not (round_idx == 0 and self._turn_daily_read_plan is not None and round_tools)

@@ -56,6 +56,8 @@ def batch_trace(db, monkeypatch, steps):
         trace.calls.append(copy.deepcopy((messages, tools)))
         assert index < len(steps), "No unplanned model retries"
         step = steps[index]
+        if isinstance(step, dict):
+            return step
         if isinstance(step, str):
             return {"content": step, "finish_reason": "stop"}
         return {"content": "", "finish_reason": "tool_calls", "tool_calls": [
@@ -86,10 +88,11 @@ def batch_trace(db, monkeypatch, steps):
     return trace
 
 
-async def consume(db, trace, user, *, panel=False, query=QUERY):
+async def consume(db, trace, user, *, panel=False, query=QUERY, conversation_id=None):
     stream = trace.executor.run_stream(
         user.id, query, channel="typed", client_turn_id=str(uuid4()),
         extra_context=json.dumps({"multi_model": panel}),
+        conversation_id=conversation_id,
     )
     events = [event async for event in stream]
     done = next(event["data"] for event in reversed(events) if event.get("event") == "done")
@@ -100,6 +103,90 @@ async def consume(db, trace, user, *, panel=False, query=QUERY):
     assert "".join(event["data"].get("content", "") for event in events if event.get("event") == "token") == saved.content
     assert not done["write_receipts"]
     return done, saved
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+async def test_owned_composed_read_cannot_be_skipped_by_model_prose(
+    db, four_domain_user, monkeypatch, panel, continuation,
+):
+    conversation_id = None
+    if continuation:
+        previous = batch_trace(db, monkeypatch, [GOOD, ANSWER])
+        done, _ = await consume(db, previous, four_domain_user, panel=panel)
+        conversation_id = done["conversation_id"]
+    skipped = "本轮不再重复取数，下面沿用上一轮数据继续分析。"
+    trace = batch_trace(db, monkeypatch, [skipped, ANSWER])
+    done, saved = await consume(
+        db, trace, four_domain_user, panel=panel,
+        query="继续分析" if continuation else QUERY,
+        conversation_id=conversation_id,
+    )
+    assert len(trace.dispatches) == 1
+    assert trace.dispatches[0].tool_name == "health_query_batch"
+    assert {q["dimension"] for q in trace.dispatches[0].arguments["queries"]} == set(DIMENSIONS)
+    assert all(q["start_date"] == "2026-09-07" and q["end_date"] == "2026-09-13"
+               for q in trace.dispatches[0].arguments["queries"])
+    assert len(trace.calls) == 2
+    assert done["turn_outcome"]["status"] == "complete"
+    assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"])
+    assert skipped not in saved.content
+    assert trace.executor._read_repair_failures == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("finish_reason", ["length", "error"])
+async def test_incomplete_model_prose_cannot_initiate_composed_read(
+    db, four_domain_user, monkeypatch, panel, finish_reason,
+):
+    trace = batch_trace(db, monkeypatch, [{"content": "我会继续分析", "finish_reason": finish_reason}])
+    done, _ = await consume(db, trace, four_domain_user, panel=panel)
+    assert not trace.dispatches
+    assert len(trace.calls) == 1
+    assert done["turn_outcome"]["status"] != "complete"
+
+
+@pytest.mark.parametrize("boundary", [
+    "later_round", "no_tools", "batch_removed", "terminal", "repair_exhausted",
+    "already_executed", "daily_plan", "sync_started",
+])
+def test_required_composed_read_preserves_execution_boundaries(db, four_domain_user, boundary):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_turn_user_message = QUERY
+    executor._start_agent_kernel_turn(user_id=four_domain_user.id, message=QUERY, channel="typed")
+    tools = [{"function": {"name": "health_query_batch"}}]
+    if boundary == "terminal":
+        executor._force_no_tools_synthesis = True
+    elif boundary == "repair_exhausted":
+        executor._read_repair_failures = 2
+    elif boundary == "already_executed":
+        executor._turn_composed_read_executions = [object()]
+    elif boundary == "daily_plan":
+        executor._turn_daily_read_plan = object()
+    elif boundary == "sync_started":
+        executor._turn_sync_attempted = True
+    elif boundary == "no_tools":
+        tools = []
+    elif boundary == "batch_removed":
+        tools = [{"function": {"name": "health_query"}}]
+    assert executor._initial_composed_read_calls(int(boundary == "later_round"), tools) == []
+
+
+@pytest.mark.parametrize("query", [
+    "不要查询我的饮食和睡眠", "查询朋友的饮食和睡眠", "记录体重70公斤",
+    "同步佳明后分析我的睡眠和饮食", "医生建议我调整用药，应该怎么做？",
+])
+def test_required_composed_read_cannot_manufacture_authorization(db, four_domain_user, query):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_turn_user_message = query
+    executor._start_agent_kernel_turn(user_id=four_domain_user.id, message=query, channel="typed")
+    assert executor._initial_composed_read_calls(0, [{"function": {"name": "health_query_batch"}}]) == []
 
 
 @pytest.mark.asyncio
