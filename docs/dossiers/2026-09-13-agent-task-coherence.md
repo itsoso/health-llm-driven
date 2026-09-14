@@ -542,3 +542,12 @@ Review33 independently accepted `ac84e27c` (6,010 tests, canonical archive and s
 The repair recognizes only the local uncertain-conclusion grammar for current-health claims; explicit negation of that uncertainty still asserts a conclusion. It preserves true conclusions appended after comma, contrast, semicolon or full stop. Exact retained-candidate and ordinary/panel initial/continuation tests first reproduced the failure. The original candidate now passes offline unchanged; fresh focused, full affected, fixed-source review and actual gates remain necessary. This does not convert a real medical safety rejection into completed output or introduce a generic rewrite path.
 
 Review34 focused verification passed 131 cases; the fresh full affected run passed 9,484 tests (605 composed, 8,879 adjacent), with no failure/error/skip/timeout/residual process and stable source/test fingerprints. Full receipt SHA-256: `14754a2d68c54020a15508ec89ab581526cf01f160745507958c1fa67b079bfc`. Ruff, System Map, dossier, governance and tracked-secret checks passed. These are pre-freeze checks only; a new independent G4, actual all-four run and downstream release gates remain required.
+
+
+## Review35 — one local uncertainty polarity check
+
+Review34 rejected `7b1e41bc` before any actual call: legacy uncertainty forms returned before the new double-negation check, allowing a negated inability to assert recovery. Eight exact adversarial cases reproduced the bypass. A follow-up root probe found four equivalent bypasses in the separate evidence-absence branch. Both RED receipts are retained; Review34 remains NO-GO.
+
+Current-health checks now combine the existing uncertainty, uncertain conclusion and evidence-absence grammars before one local polarity decision. Their independent early exits were removed. Other patterns retain their prior behavior. Tests preserve ordinary uncertainty and lack-of-evidence language while blocking double-negated versions and affirmative conclusions after contrast, semicolon or sentence boundaries. Fresh focused/full verification and a new frozen G4 remain required.
+
+Review35 focused verification passed 152 cases; fresh Full34 passed 9,505 cases (626 composed, 8,879 adjacent), with no failure/error/skip/timeout/residual process and stable source/test fingerprints. Receipt SHA-256: `067fe187b470b176152353474d6d93e342f6dfa4a795e9646ea61cdbfe6d766d`. Static checks passed. The new frozen candidate still requires independent G4 and every subsequent actual/database/CI/release gate.

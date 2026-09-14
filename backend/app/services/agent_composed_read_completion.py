@@ -267,8 +267,10 @@ _CLAIM_UNKNOWN_PREFIX = re.compile(
     + r"|不代表|不意味着|不等于|不能说明|不能证明|不能断言|不支持|不能判断|难以判断"
 )
 _HEALTH_CONCLUSION_UNKNOWN = re.compile(
-    r"(?:无法|不能|难以)(?:据此|由此|因此)?(?:得出|推断|断言|断定|认定)"
+    _CLAIM_UNKNOWN_PREFIX.pattern
+    + r"|(?:无法|不能|难以)(?:据此|由此|因此)?(?:得出|推断|断言|断定|认定)"
     r"|(?:没有|缺乏|缺少)(?:足够|充分|可靠)?的?(?:依据|证据)(?:来)?(?:得出|推断|断言|断定|认定)"
+    r"|(?:没有|尚无|缺乏)[^，,]{0,10}证据(?:证明|表明|显示|支持)?\s*$"
 )
 _EXERCISE_TOPIC = re.compile(r"运动|训练|锻炼|练|走|健身|力量|有氧|阻力|散步|步行|跑步|深蹲|划船|弹力带|俯卧撑|骑行|游泳")
 _EXERCISE_QUANTITY = re.compile(
@@ -303,23 +305,20 @@ def _asserted_record_only_claim(pattern: re.Pattern, clause: str) -> bool:
     for match in pattern.finditer(clause):
         prefix = re.split(r"[，,]|但是|但|不过|然而|而是|却|——", clause[:match.start()])[-1]
         suffix = clause[match.end():]
-        if _CLAIM_UNKNOWN_PREFIX.search(prefix):
+        unknown_pattern = _HEALTH_CONCLUSION_UNKNOWN if pattern is _CURRENT_HEALTH_CLAIM else _CLAIM_UNKNOWN_PREFIX
+        unknown = unknown_pattern.search(prefix)
+        # Every current-health uncertainty form uses the same local polarity
+        # check; the older grammar must not bypass it with an early exemption.
+        if unknown and (pattern is not _CURRENT_HEALTH_CLAIM
+                        or not re.search(r"(?:并非|不是|并不|不|未必|不一定)\s*$", prefix[:unknown.start()])):
             continue
         if pattern is _CURRENT_HEALTH_CLAIM:
-            # A locally negated conclusion is uncertainty, including quoted
-            # alternatives such as 不能得出“已恢复”“恢复差”. Negating that
-            # uncertainty again (并非不能得出) still asserts a conclusion.
-            unknown = _HEALTH_CONCLUSION_UNKNOWN.search(prefix)
-            if unknown and not re.search(r"(?:并非|不是|并不|不|未必|不一定)\s*$", prefix[:unknown.start()]):
-                continue
             if (match.group("subject") is None
                     or (match.group("subject") == "状态" and match.group("evaluation") == "正常")) and _RECORD_OPERATION_SUBJECT.search(prefix):
                 continue
             if (match.group("evaluation") in {"稳定", "规律"}
                     and re.search(r"(?:已记录|记录中的|本轮已返回)[^，,]{0,8}$", prefix)
                     and not re.search(r"你|身体|生活", match.group("subject") or "")):
-                continue
-            if re.search(r"(?:没有|尚无|缺乏)[^，,]{0,10}证据(?:证明|表明|显示|支持)?\s*$", prefix):
                 continue
         else:
             chain = _NUTRITION_PREFIX_CHAIN.search(prefix)
