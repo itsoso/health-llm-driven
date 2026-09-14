@@ -933,6 +933,18 @@ HTML_MATERIAL_TOKEN_RE = re.compile(
     r'''(?is)<!--|</?(?P<tag>[a-z][a-z0-9:-]*)\b'''
     r'''(?:"[^"]*"|'[^']*'|[^'">])*>'''
 )
+HTML_MATERIAL_BODY_TAGS = frozenset(
+    {
+        "blockquote", "q", "code", "pre", "kbd", "s", "del",
+        "textarea", "template", "script", "style", "xmp", "noscript",
+    }
+)
+HTML_VOID_TAGS = frozenset(
+    {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+)
 UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?ms)^[ \t]{0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
 )
@@ -947,8 +959,17 @@ ANALYZED_MATERIAL_QUOTE_PAIRS = {
     "〈": "〉",
     "〔": "〕",
     '"': '"',
+    "＂": "＂",
     "'": "'",
     "＇": "＇",
+    "„": "”",
+    "‟": "”",
+    "‚": "’",
+    "‛": "’",
+    "〝": "〞",
+    "〟": "〞",
+    "❝": "❞",
+    "❛": "❜",
 }
 STANDALONE_MATERIAL_QUOTE_PAIRS = {
     **ANALYZED_MATERIAL_QUOTE_PAIRS,
@@ -1050,61 +1071,76 @@ def _strip_backtick_code_material(text: str) -> str:
     return projected
 
 
-def _strip_html_material(text: str) -> str:
-    """Remove comments and balanced material elements, including nesting."""
+def _strip_html_material(
+    text: str,
+) -> tuple[str, tuple[tuple[str, str, str], ...]]:
+    """Project HTML without erasing semantic text in formatting elements."""
     projected = str(text or "")
+    removed: list[tuple[str, str, str]] = []
     cursor = 0
     while opener := HTML_MATERIAL_TOKEN_RE.search(projected, cursor):
         token = opener.group()
         if token.startswith("<!--"):
             close_index = projected.find("-->", opener.end())
             end = close_index + 3 if close_index >= 0 else len(projected)
+            projected = projected[: opener.start()] + " " + projected[end:]
+            cursor = opener.start() + 1
+            continue
         elif token.startswith("</"):
+            # An orphan closer cannot establish where quoted material began.
+            return "", tuple(removed)
+        root_tag = str(opener.group("tag") or "").casefold()
+        if token.rstrip().endswith("/>") or root_tag in HTML_VOID_TAGS:
             projected = projected[: opener.start()] + " " + projected[opener.end() :]
             cursor = opener.start() + 1
             continue
-        elif token.rstrip().endswith("/>"):
-            projected = projected[: opener.start()] + " " + projected[opener.end() :]
-            cursor = opener.start() + 1
-            continue
+        tag_stack = [root_tag]
+        scan_cursor = opener.end()
+        closer = None
+        malformed = False
+        while candidate := HTML_MATERIAL_TOKEN_RE.search(projected, scan_cursor):
+            candidate_token = candidate.group()
+            scan_cursor = candidate.end()
+            if candidate_token.startswith("<!--"):
+                comment_end = projected.find("-->", candidate.end())
+                if comment_end < 0:
+                    malformed = True
+                    break
+                scan_cursor = comment_end + 3
+                continue
+            candidate_tag = str(candidate.group("tag") or "").casefold()
+            if candidate_token.rstrip().endswith("/>") or candidate_tag in HTML_VOID_TAGS:
+                continue
+            if candidate_token.startswith("</"):
+                if candidate_tag != tag_stack[-1]:
+                    malformed = True
+                    break
+                tag_stack.pop()
+                if not tag_stack:
+                    closer = candidate
+                    break
+            else:
+                tag_stack.append(candidate_tag)
+        if malformed or closer is None:
+            return "", tuple(removed)
+        body = projected[opener.end() : closer.start()]
+        suffix = projected[closer.end() :]
+        if root_tag in HTML_MATERIAL_BODY_TAGS:
+            removed.append((body, projected[: opener.start()], suffix))
+            projected = projected[: opener.start()] + " " + suffix
         else:
-            root_tag = str(opener.group("tag") or "").casefold()
-            tag_stack = [root_tag]
-            scan_cursor = opener.end()
-            end = len(projected)
-            while candidate := HTML_MATERIAL_TOKEN_RE.search(projected, scan_cursor):
-                candidate_token = candidate.group()
-                scan_cursor = candidate.end()
-                if candidate_token.startswith("<!--"):
-                    comment_end = projected.find("-->", candidate.end())
-                    if comment_end < 0:
-                        break
-                    scan_cursor = comment_end + 3
-                    continue
-                candidate_tag = str(candidate.group("tag") or "").casefold()
-                if candidate_token.rstrip().endswith("/>"):
-                    continue
-                if candidate_token.startswith("</"):
-                    if candidate_tag != tag_stack[-1]:
-                        # Malformed nesting has no trustworthy closing boundary.
-                        break
-                    tag_stack.pop()
-                    if not tag_stack:
-                        end = candidate.end()
-                        break
-                else:
-                    tag_stack.append(candidate_tag)
-        projected = projected[: opener.start()] + " " + projected[end:]
+            # Formatting is not quotation: retain its body and only drop tags.
+            projected = projected[: opener.start()] + body + suffix
         cursor = opener.start() + 1
-    return projected
+    return projected, tuple(removed)
 
 
 def _strip_paired_material_spans(
     text: str,
-) -> tuple[str, tuple[tuple[str, str], ...]]:
+) -> tuple[str, tuple[tuple[str, str, str], ...]]:
     """Replace quoted/bracketed spans and retain them for authority checks."""
     projected = str(text or "")
-    removed: list[tuple[str, str]] = []
+    removed: list[tuple[str, str, str]] = []
     while True:
         starts = tuple(
             index
@@ -1115,7 +1151,7 @@ def _strip_paired_material_spans(
             return projected, tuple(removed)
         start = min(starts)
         end = _analyzed_material_end(projected, start)
-        removed.append((projected[start:end], projected[:start]))
+        removed.append((projected[start:end], projected[:start], projected[end:]))
         projected = projected[:start] + " " + projected[end:]
 
 
@@ -1155,6 +1191,14 @@ READ_MATERIAL_NON_AUTHORITY_RE = re.compile(
     r"(?:取消|暂缓|先不|不要|别)(?:执行|读取|查询|查看|打开)?",
     re.IGNORECASE,
 )
+READ_MATERIAL_PROSPECTIVE_DENIAL_RE = re.compile(
+    r"(?:不要|别|先不|不许|禁止|取消|撤回|暂缓|暂停|"
+    r"等我(?:确认|同意|授权|批准)后再|确认后再|批准后再|授权后再)",
+    re.IGNORECASE,
+)
+READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE = re.compile(
+    r"(?:[\n\r；;。.!！?？]|但|不过|然而|可是|然后)"
+)
 
 
 def active_health_read_authority_text(text: str) -> str:
@@ -1167,8 +1211,11 @@ def active_health_read_authority_text(text: str) -> str:
     read request and therefore fails closed instead of being erased.
     """
     projected = active_health_instruction_text(text)
-    projected = _strip_html_material(projected)
-    projected, removed = _strip_paired_material_spans(projected)
+    projected, html_removed = _strip_html_material(projected)
+    if not projected:
+        return ""
+    projected, quote_removed = _strip_paired_material_spans(projected)
+    removed = (*html_removed, *quote_removed)
     if any(
         READ_MATERIAL_NON_AUTHORITY_RE.search(span)
         and (
@@ -1178,8 +1225,32 @@ def active_health_read_authority_text(text: str) -> str:
                 and CURRENT_USER_REPORT_REFERENCE_RE.search(prefix)
             )
         )
-        for span, prefix in removed
+        for span, prefix, _suffix in removed
     ):
+        return ""
+    if any(
+        READ_MATERIAL_PROSPECTIVE_DENIAL_RE.search(span)
+        and READ_VERB_RE.search(span) is None
+        and (
+            READ_VERB_RE.search(
+                READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
+            )
+            or (
+                REPORT_USE_ACTION_RE.search(
+                    READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
+                )
+                and CURRENT_USER_REPORT_REFERENCE_RE.search(
+                    READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
+                )
+            )
+        )
+        for span, _prefix, suffix in removed
+    ):
+        return ""
+    orphan_closers = set(STANDALONE_MATERIAL_QUOTE_PAIRS.values()).difference(
+        STANDALONE_MATERIAL_QUOTE_PAIRS
+    )
+    if any(closer in projected for closer in orphan_closers):
         return ""
     return projected.strip()
 

@@ -387,6 +387,14 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "<textarea>打开我的体检报告</textarea>",
         "<template>打开我的体检报告</template>",
         "<script>打开我的体检报告</script>",
+        "＂打开我的体检报告＂",
+        "„打开我的体检报告”",
+        "</blockquote>打开我的体检报告",
+        "请<strong>不要</strong>打开我的体检报告",
+        "请<span>不要</span>打开我的体检报告",
+        "请<em>等我确认后再</em>打开我的体检报告",
+        "请“不要”打开我的体检报告",
+        "请<q>不要</q>打开我的体检报告",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
@@ -402,6 +410,18 @@ def test_quoted_report_example_does_not_hide_later_direct_read_request():
 def test_html_material_does_not_create_false_nonself_owner_for_later_read():
     text = "<blockquote>这是示例</blockquote>现在请打开我的体检报告"
 
+    assert semantics.health_read_has_nonself_subject(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "<br>现在请打开我的体检报告",
+        "<strong>现在请打开我的体检报告</strong>",
+    ),
+)
+def test_html_formatting_preserves_direct_owned_read(text):
+    assert semantics.has_explicit_health_read_request(text) is True
     assert semantics.health_read_has_nonself_subject(text) is False
 
 
