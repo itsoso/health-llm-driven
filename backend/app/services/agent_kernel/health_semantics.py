@@ -1805,9 +1805,7 @@ REPORT_TRAILING_COORDINATED_OWNER_RE = re.compile(
     rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
     re.IGNORECASE,
 )
-REPORT_TRAILING_READ_OWNER_RE = re.compile(
-    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}"
-    rf"[^\n\r；;。.!！?？]{{0,48}}?"
+REPORT_ELLIPTIC_READ_OWNER_RE = re.compile(
     rf"(?:{READ_VERB_RE.pattern})\s*"
     rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)的"
     rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
@@ -2102,7 +2100,7 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
     for pattern in (
         REPORT_PREFIX_COORDINATED_OWNER_RE,
         REPORT_TRAILING_COORDINATED_OWNER_RE,
-        REPORT_TRAILING_READ_OWNER_RE,
+        REPORT_ELLIPTIC_READ_OWNER_RE,
     ):
         for coordinated_owner in pattern.finditer(normalized):
             owner = coordinated_owner.group("owner").strip().removesuffix("的")
