@@ -267,7 +267,7 @@ _UNSCOPED_REGIMEN = re.compile(
     r"(?:建议|应该|应当|请|必须|每天|每日|每次)[^。；;!?！？\n]{0,16}"
     r"(?:服用|口服)[^。；;!?！？\n]{0,30}" + _DOSE_NUMBER + r"\s*" + _DOSE_ORAL_UNIT + r"|"
     # Complete administration predicates do not depend on distance from 请/建议.
-    r"(?:服用|口服)\s*" + _DOSE_NUMBER + r"\s*" + _DOSE_ORAL_UNIT + r"|"
+    r"(?:服用|口服|服)\s*" + _DOSE_NUMBER + r"\s*" + _DOSE_ORAL_UNIT + r"|"
     r"(?:增加到|减少到|加到|减到|提高到|降低到)\s*"
     + _DOSE_NUMBER + r"\s*" + _DOSE_MEASURE_UNIT + r"|"
     r"(?:每天|每日|每次|早上|晚上|早晚|睡前|餐前|餐后|随餐)\s*(?:服用|口服)(?!时间)|"
@@ -300,20 +300,35 @@ _COURSE_DURATION_ACTION = re.compile(
     + _COURSE_GAP + _COURSE_DURATION + r"|(?:延长|缩短)" + _COURSE_GAP + _COURSE_OBJECT
     + _COURSE_GAP + r"(?:到|至|为)" + _COURSE_GAP + _COURSE_DURATION
 )
+_FUTURE_DOSE_ACTION = re.compile(
+    r"(?:明天|后天|明早|明晚|之后|以后|后续|下周|次日|翌日|今后)"
+    + _COURSE_GAP + r"[:：]?" + _COURSE_GAP + _DOSE_NUMBER + _COURSE_GAP
+    + r"(?P<unit>" + _DOSE_REGIMEN_UNIT + r")"
+    + r"(?P<object>[^，,。；;!?！？\n]{0,24})(?=[，,。；;!?！？\n]|$)",
+    re.I,
+)
+# Only complete food nouns can disambiguate particle/slice counts. An unknown
+# product, pronoun, dosage form, or appended instruction is not food evidence.
+_EXPLICIT_COUNTED_FOOD = re.compile(
+    r"(?:(?:全麦|黑麦|杂粮|多谷物|白)?面包|吐司|(?:红|绿|青|紫)?葡萄|"
+    r"花生(?:米)?|玉米(?:粒)?|米粒|苹果|黄瓜|西红柿|番茄|"
+    r"奶酪|芝士|饼干|火腿|土豆|马铃薯|胡萝卜)(?:即可|就行)?"
+)
 
 
-def _course_sentence_view(text: str) -> str:
-    """Keep a wrapped course action in one clause without changing output.
+def _medical_sentence_view(text: str) -> str:
+    """Keep a wrapped finite medical action in one clause without changing output.
 
     Replace only newlines inside this finite action grammar, preserving source
     offsets. A preceding negation on a separate line remains a separate clause;
     exact trusted clinician relays are compared against the original text.
     """
     view = list(text)
-    for match in _COURSE_DURATION_ACTION.finditer(text):
-        for index in range(match.start(), match.end()):
-            if view[index] == "\n":
-                view[index] = " "
+    for pattern in (_COURSE_DURATION_ACTION, _FUTURE_DOSE_ACTION):
+        for match in pattern.finditer(text):
+            for index in range(match.start(), match.end()):
+                if view[index] == "\n":
+                    view[index] = " "
     return "".join(view)
 
 
@@ -334,6 +349,15 @@ _ADVICE_HOLD = "部分建议或推断缺少已核验证据，暂不提供执行�
 
 def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
     for match in pattern.finditer(sentence):
+        if pattern is _FUTURE_DOSE_ACTION:
+            object_text = re.sub(r"[\s*_`]+", "", match.group("object"))
+            medical_object = (_SUPPLEMENT_OR_MEDICINE.search(object_text)
+                              or re.search(_MED_DOSAGE_FORM, object_text))
+            if (match.group("unit") in {"粒", "片"} and not medical_object
+                and _EXPLICIT_COUNTED_FOOD.fullmatch(object_text)):
+                # Explicit food objects (e.g. four slices of bread) are not
+                # medication quantities. Bare counts remain actionable.
+                continue
         if pattern is _REGIMEN_ACTION and any(
             question.start("question") <= match.start()
             and match.end() <= question.end("question")
@@ -351,7 +375,7 @@ def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
         # "Cannot metabolize" is itself the genetic claim, not a prohibition.
         if pattern is not _GENETIC_ABSOLUTE and _NEGATED_ASSERTION.search(match.group(0)):
             continue
-        if pattern is not _COURSE_DURATION_ACTION and re.search(
+        if pattern not in (_COURSE_DURATION_ACTION, _FUTURE_DOSE_ACTION) and re.search(
             r"(?:咨询|询问|请教)(?:医生|药师).{0,8}(?:是否|能否).{0,12}$", prefix,
         ):
             continue
@@ -394,12 +418,27 @@ _CLINICIAN_ASSESSMENT_QUESTION = re.compile(
 )
 
 
+_COMPLETED_INTAKE_ACKNOWLEDGEMENT = re.compile(
+    r"(?P<prefix>^\s*(?:已|已经)记录\s*[:：]?\s*"
+    r"(?:今天|昨天|昨日|昨晚|今早|刚才|此前)\s*)"
+    r"(?:服用|口服|服)(?:了)?\s*" + _DOSE_NUMBER + r"\s*" + _DOSE_ORAL_UNIT,
+    re.I,
+)
+
+
 def _regimen_assertion_text(sentence: str) -> str:
     """Separate data-field nouns and a directed question from actual actions.
 
     Never exempt an entire greedy action match: a second instruction must still
     be checked, including nonnumeric timing instructions after a question.
     """
+    if not sentence.rstrip().endswith(("?", "？")):
+        # A completed, dated intake acknowledgement is not a new prescription.
+        # Project only that intake predicate; its object and every appended
+        # dose, schedule, or course action still reach the existing tripwires.
+        sentence = _COMPLETED_INTAKE_ACKNOWLEDGEMENT.sub(
+            r"\g<prefix>既有摄入量", sentence,
+        )
     sentence = re.sub(
         r"(^\s*(?:请告诉我|能否告诉我|(?:我)?(?:想确认|不知道|不清楚|无法确认|未能确认|未核实))(?:你)?(?:是否|能否))"
         r"(?:(?:每天|每日|每次|早上|晚上|早晚|睡前|餐前|餐后|随餐)\s*)?(?:服用|口服|吃)"
@@ -470,6 +509,7 @@ def _unsupported_advice_reasons(sentence: str) -> list[str]:
     assertion = _regimen_assertion_text(normalized)
     if (_has_asserted_match(_UNSCOPED_REGIMEN, assertion)
         or _has_asserted_match(_COURSE_DURATION_ACTION, normalized)
+        or _has_asserted_match(_FUTURE_DOSE_ACTION, normalized)
         or _has_asserted_match(_INTAKE_TIME_ACTION, assertion)
         or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
         _has_asserted_match(_DOSE_ACTION, normalized)
@@ -489,7 +529,7 @@ def requires_medical_evidence_boundary(text: str) -> bool:
     """Whether the turn must be buffered until medical provenance checks finish."""
     normalized = _medical_assertion_matching_text(text)
     return bool(_SENSITIVE_MEDICAL_TOPIC.search(normalized) or _UNSCOPED_REGIMEN.search(normalized)
-                or _COURSE_DURATION_ACTION.search(normalized))
+                or _COURSE_DURATION_ACTION.search(normalized) or _FUTURE_DOSE_ACTION.search(normalized))
 
 
 def build_confirmable_health_fact_draft(text: str) -> dict | None:
@@ -556,7 +596,7 @@ def enforce_medical_evidence_boundaries(
     out_parts: list[str] = []
     trusted_relays: list[str] = []
     relayed_instruction = False
-    for match in re.finditer(r"[^。；;!?！？\n]+[。；;!?！？\n]*|[。；;!?！？\n]+", _course_sentence_view(text)):
+    for match in re.finditer(r"[^。；;!?！？\n]+[。；;!?！？\n]*|[。；;!?！？\n]+", _medical_sentence_view(text)):
         sentence = text[match.start():match.end()]
         is_trusted = has_clinician_instruction and sentence.strip() in trusted
         relayed_instruction = relayed_instruction or is_trusted

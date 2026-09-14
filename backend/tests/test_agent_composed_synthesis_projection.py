@@ -925,3 +925,29 @@ async def test_composed_course_duration_appended_action(
     assert course_action not in saved.content
     assert all(goal["status"] == "verified" for goal in done["turn_outcome"]["goals"])
     assert not done["write_receipts"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize("appended", ["", "然后口服300mg。", "明天四粒这个。", "明天\n四粒。"])
+async def test_composed_completed_intake_acknowledgement(
+    db, four_domain_user, monkeypatch, panel, continuation, appended,
+):
+    conversation_id = None
+    if continuation:
+        _, _, _, first_done, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
+        conversation_id = first_done["conversation_id"]
+    acknowledgement = "已记录今天服用两粒鱼油。"
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel,
+        query="继续分析" if continuation else QUERY,
+        conversation_id=conversation_id, answer=acknowledgement + appended,
+    )
+    assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"] if g["kind"] == "query")
+    if appended:
+        assert done["turn_outcome"]["status"] != "complete"
+        assert appended not in saved.content
+    else:
+        assert done["turn_outcome"]["status"] == "complete"
+        assert acknowledgement in saved.content

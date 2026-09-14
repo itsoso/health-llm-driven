@@ -472,3 +472,77 @@ def test_course_duration_wrapped_trusted_relay_keeps_original_text(text):
     assert not result.flagged and text in result.text
     changed = text.replace("两周", "三周")
     assert enforce_medical_evidence_boundaries(changed, has_clinician_instruction=True, trusted_clinician_instructions=[text]).flagged
+
+
+@pytest.mark.parametrize("recorded", ["已记录", "已经记录"])
+@pytest.mark.parametrize("when", ["今天", "昨天", "昨日", "昨晚", "今早", "刚才", "此前"])
+@pytest.mark.parametrize("intake", ["服用两粒鱼油", "口服200mg药物", "服用了１片药物", "服两粒鱼油"])
+def test_completed_intake_acknowledgement_is_not_a_new_prescription(recorded, when, intake):
+    text = f"{recorded}{when}{intake}。"
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("prefix", ["已记录", "已记录明天", "已记录后天", "已记录下周", "已记录今天计划", "已记录今天建议", "请记录今天", "记录今天", "建议今天", "是否已记录今天"])
+def test_record_word_cannot_authorize_future_or_requested_intake(prefix):
+    result = enforce_medical_evidence_boundaries(prefix + "服用两粒鱼油。")
+    assert result.flagged
+    assert "unverified_dose_action" in result.violations
+
+
+@pytest.mark.parametrize("separator", ["，", "。", "；", "\n", "然后", "并且"])
+@pytest.mark.parametrize("instruction", ["每天服用三粒。", "明天服用四粒。", "口服300mg。", "请睡前服用。", "疗程改为两周。", "把鱼油增加到四粒。", "剂量加到四粒。"])
+def test_completed_intake_does_not_authorize_appended_action(separator, instruction):
+    result = enforce_medical_evidence_boundaries("已记录今天服用两粒鱼油" + separator + instruction)
+    assert result.flagged
+    assert instruction not in result.text
+
+
+@pytest.mark.parametrize("text", [
+    "已记录今天服用两粒鱼油，服用时间改为睡前。",
+    "已记录今天服用两粒鱼油，医生说疗程改为两周。",
+    "建议已记录今天服用两粒鱼油。",
+    "已记录今天服用两粒鱼油，以后每天服用三粒。",
+])
+def test_record_acknowledgement_is_not_blanket_medical_authority(text):
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged
+
+
+def test_record_acknowledgement_question_does_not_exempt_intake_action():
+    result = enforce_medical_evidence_boundaries("已记录今天服用两粒鱼油？")
+    assert result.flagged
+
+
+@pytest.mark.parametrize("appendix", [
+    "。\n明天服3粒。", "，明天四粒。", "，后天四粒。", "，明早四粒。", "，之后四粒。",
+    "，**明天四粒**。", "：明天四粒。", "。明天四粒。", "。明天四片药物。",
+    "。明天200mg。", "。明天3粒鱼油。", "，明天：**四粒**。", "。明天\n四粒。",
+])
+def test_completed_intake_cannot_hide_future_shorthand(appendix):
+    result = enforce_medical_evidence_boundaries("已记录今天服用两粒鱼油" + appendix)
+    assert result.flagged
+    assert "unverified_dose_action" in result.violations
+
+
+@pytest.mark.parametrize("appendix", [
+    "不建议明天服用四粒。", "不要自行加量。", "不要明天四粒。", "不建议睡前服用。",
+    "明天四片全麦面包。", "明天三粒葡萄。", "今天吃两片面包。",
+])
+def test_completed_intake_preserves_negation_and_explicit_food(appendix):
+    text = "已记录今天服用两粒鱼油，" + appendix
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("object_text", ["胶囊", "软胶囊", "这个", "复合B", "保持一周", "坚持", "继续", "就可以了", "全麦面包胶囊", "葡萄胶囊"])
+def test_completed_intake_future_unknown_objects_are_not_food_authority(object_text):
+    result = enforce_medical_evidence_boundaries("已记录今天服用两粒鱼油，明天四粒" + object_text + "。")
+    assert result.flagged
+
+
+@pytest.mark.parametrize("text", ["明天服3粒。", "建议服3片。", "记录今天服两粒鱼油。", "已记录明天服两粒鱼油。"])
+def test_record_word_cannot_authorize_short_intake_verb(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
