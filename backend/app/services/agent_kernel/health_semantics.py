@@ -1241,6 +1241,26 @@ READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE = re.compile(
     r"(?:[\n\r；;。.!！?？]|但|不过|然而|可是|然后)"
 )
 HTML_BLOCK_PREFIX_BOUNDARY_RE = re.compile(r"(?:^|[\n\r；;。.!！?？])\s*$")
+CLINICAL_VALUE_MATERIAL_RE = re.compile(
+    r"^\s*(?:ALT|AST|GGT|ALP|CRP|HRV|BMI|LDL(?:-C)?|HDL(?:-C)?|"
+    r"HbA1c|HGB|WBC|RBC|PLT|eGFR|CREA|UA|FBG|FPG|GLU|TC|TG|"
+    r"血红蛋白|血色素|白细胞|红细胞|血小板|红细胞压积|"
+    r"空腹血糖|餐后血糖|血糖|葡萄糖|肌酐|尿酸|总胆固醇|"
+    r"低密度脂蛋白(?:胆固醇)?|高密度脂蛋白(?:胆固醇)?|甘油三酯|"
+    r"谷丙转氨酶|谷草转氨酶|转氨酶|胆红素|白蛋白|尿蛋白)"
+    r"\s*(?:(?:[:：=<>≤≥+\-]?\s*\d+(?:\.\d+)?\s*"
+    r"[A-Za-zµμ%/·^0-9²³⁹\-]*)|"
+    r"(?:偏高|偏低|升高|降低|异常|正常|阳性|阴性|临界))*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_clinical_value_material(span: str) -> bool:
+    """Recognize a narrow value-only span, never control or owner language."""
+    candidate = str(span or "").strip().strip(
+        "`~“”‘’\"'＂＇„「」『』《》【】〔〕[]［］()（）{}｛｝〈〉"
+    )
+    return CLINICAL_VALUE_MATERIAL_RE.fullmatch(candidate) is not None
 
 
 def _material_adjacent_clause_has_read(
@@ -1256,7 +1276,7 @@ def _material_adjacent_clause_has_read(
     preceding_clause = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(prefix)[-1]
     following_clause = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
     interpretation_value = bool(
-        READ_VERB_RE.search(span) is None
+        _is_clinical_value_material(span)
         and any(owner in preceding_clause for owner in CURRENT_USER_OWNERS)
         and READ_VERB_RE.search(preceding_clause)
         and READ_VERB_RE.search(following_clause) is None

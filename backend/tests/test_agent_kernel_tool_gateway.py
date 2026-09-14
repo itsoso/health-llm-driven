@@ -10055,6 +10055,10 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "请<textarea>勿</textarea>打开我的体检报告",
         "请打开“张三的”体检报告",
         "请打开[张三的]体检报告",
+        "请打开我的体检报告（不要），说明一下",
+        "请打开我的体检报告（等我批准后），说明一下",
+        "请打开我的体检报告（这是张三的），说明一下",
+        "请打开我的体检报告`先别`，说说含义",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
