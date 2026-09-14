@@ -918,11 +918,11 @@ INLINE_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?P<fence>`{3,}|~{3,})[^\n\r]*?(?P=fence)"
 )
 INLINE_CODE_MATERIAL_RE = re.compile(
-    r"(?s)(?<!`)`(?!`)[^`\n\r]+(?<!`)`(?!`)|<code\b[^>]*>.*?</code\s*>",
+    r"(?s)(?<!`)`(?!`)[^`]+(?<!`)`(?!`)|<code\b[^>]*>.*?</code\s*>",
     re.IGNORECASE,
 )
 UNCLOSED_INLINE_CODE_MATERIAL_RE = re.compile(
-    r"(?s)(?<!`)`(?!`)[^`\n\r]*$|<code\b[^>]*>.*$",
+    r"(?s)(?<!`)`(?!`)[^`]*$|<code\b[^>]*>.*$",
     re.IGNORECASE,
 )
 MARKDOWN_BLOCKQUOTE_START_RE = re.compile(
@@ -935,6 +935,11 @@ INLINE_STRUCK_MATERIAL_RE = re.compile(
 UNCLOSED_STRUCK_MATERIAL_RE = re.compile(
     r"(?s)~~(?!.*~~).*$|<del\b[^>]*>.*$",
     re.IGNORECASE,
+)
+HTML_QUOTED_MATERIAL_RE = re.compile(
+    r"(?is)<!--.*?(?:-->|$)|"
+    r"<(?P<tag>blockquote|q|s|pre|kbd)\b[^>]*>.*?"
+    r"(?:</(?P=tag)\s*>|$)"
 )
 UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?ms)^[ \t]{0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
@@ -965,36 +970,12 @@ STANDALONE_MATERIAL_QUOTE_PAIRS = {
     "«": "»",
     "‹": "›",
 }
-STANDALONE_MATERIAL_ATTRIBUTION_RE = re.compile(
-    r"^(?:原句|原文|转述|引用|示例|例子|摘录|内容|消息|说法)"
-    r"[。.!！?？\s]*$",
-    re.IGNORECASE,
-)
-
-
-def _is_standalone_wrapped_material(text: str) -> bool:
-    """Treat a fully quoted/bracketed utterance as material, not authority."""
-    candidate = str(text or "").strip()
-    if not candidate:
-        return False
-    if candidate.startswith("`"):
-        return True
-    closer = STANDALONE_MATERIAL_QUOTE_PAIRS.get(candidate[0])
-    if closer is None:
-        return False
-    if closer not in candidate[1:]:
-        return True
-    close_index = candidate.find(closer, 1)
-    trailing = candidate[close_index + len(closer) :]
-    return not trailing or STANDALONE_MATERIAL_ATTRIBUTION_RE.fullmatch(trailing) is not None
-
-
 def _analyzed_material_end(text: str, start: int) -> int:
     """Find an explicit boundary; an unframed pasted body owns the remainder."""
     if start >= len(text):
         return len(text)
     opener = text[start]
-    closer = ANALYZED_MATERIAL_QUOTE_PAIRS.get(opener)
+    closer = STANDALONE_MATERIAL_QUOTE_PAIRS.get(opener)
     if closer:
         depth = 1
         for index in range(start + 1, len(text)):
@@ -1040,6 +1021,24 @@ def _strip_markdown_blockquote_material(text: str) -> str:
     return projected
 
 
+def _strip_paired_material_spans(text: str) -> tuple[str, tuple[str, ...]]:
+    """Replace quoted/bracketed spans and retain them for authority checks."""
+    projected = str(text or "")
+    removed: list[str] = []
+    while True:
+        starts = tuple(
+            index
+            for opener in STANDALONE_MATERIAL_QUOTE_PAIRS
+            if (index := projected.find(opener)) >= 0
+        )
+        if not starts:
+            return projected, tuple(removed)
+        start = min(starts)
+        end = _analyzed_material_end(projected, start)
+        removed.append(projected[start:end])
+        projected = projected[:start] + " " + projected[end:]
+
+
 def active_health_instruction_text(text: str) -> str:
     """Project active instructions, excluding explicitly analyzed material.
 
@@ -1050,8 +1049,6 @@ def active_health_instruction_text(text: str) -> str:
     stays non-authorizing, including apparent instructions inside that body.
     """
     original = str(text or "")
-    if _is_standalone_wrapped_material(original):
-        return ""
     original = MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
     original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
     original = INLINE_CODE_MATERIAL_RE.sub(" ", original)
@@ -1072,13 +1069,40 @@ def active_health_instruction_text(text: str) -> str:
     return "\n".join(parts).strip()
 
 
+READ_MATERIAL_NON_AUTHORITY_RE = re.compile(
+    r"(?:仅供|只供|用于)(?:讨论|分析|参考)|"
+    r"(?:不是|并非)(?:请求|指令|命令)|"
+    r"(?:原话|原句|原文|示例|例子|引用|转述|转发|来自聊天)|"
+    r"(?:取消|暂缓|先不|不要|别)(?:执行|读取|查询|查看|打开)?",
+    re.IGNORECASE,
+)
+
+
+def active_health_read_authority_text(text: str) -> str:
+    """Project only text that may authorize access to private health data.
+
+    General intent classification deliberately retains ordinary quotations so
+    it can understand clinical phrases. Read authorization is narrower: quoted,
+    bracketed, linked and HTML material is evidence to discuss, never consent.
+    A non-authorizing qualifier inside a removed span applies to the surrounding
+    read request and therefore fails closed instead of being erased.
+    """
+    projected = active_health_instruction_text(text)
+    projected = HTML_QUOTED_MATERIAL_RE.sub(" ", projected)
+    projected, removed = _strip_paired_material_spans(projected)
+    if any(READ_MATERIAL_NON_AUTHORITY_RE.search(span) for span in removed):
+        return ""
+    return projected.strip()
+
+
 def resolve_health_read_act(text: str) -> HealthReadActResolution:
     """Resolve read authority clause by clause, with later clauses winning."""
-    normalized = active_health_instruction_text(text)
+    intent_text = active_health_instruction_text(text)
+    if is_health_tool_meta_command(intent_text):
+        return HealthReadActResolution("none", intent_text)
+    normalized = active_health_read_authority_text(text)
     if not normalized:
         return HealthReadActResolution("none")
-    if is_health_tool_meta_command(normalized):
-        return HealthReadActResolution("none", normalized)
 
     clause_spans: list[tuple[int, int]] = []
     cursor = 0
@@ -1669,7 +1693,7 @@ REPORT_USE_TRAILING_WITHDRAWAL_RE = re.compile(
 
 def _active_owned_report_use_clause(text: str) -> str:
     """Resolve the last active current-user report-use speech act."""
-    normalized = active_health_instruction_text(str(text or "")).strip()
+    normalized = active_health_read_authority_text(str(text or "")).strip()
     if (
         CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is None
         or REPORT_USE_ACTION_RE.search(normalized) is None

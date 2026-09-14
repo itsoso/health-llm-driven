@@ -10002,6 +10002,20 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "（打开我的体检报告）转述",
         "这段代码：`打开我的体检报告",
         "这段删除：<del>打开我的体检报告",
+        "“打开我的体检报告”这句原文",
+        "“打开我的体检报告”来自聊天",
+        "[打开我的体检报告](https://example.com)",
+        "<blockquote>打开我的体检报告</blockquote>",
+        "<!-- 打开我的体检报告 -->",
+        "代码：`这一段未闭合\n打开我的体检报告",
+        "“外层“打开我的体检报告”原句”",
+        "“打开我的体检报告”这句话",
+        "“打开我的体检报告”——医生原话",
+        "[打开我的体检报告]这段文本",
+        "（打开我的体检报告）原始内容",
+        "<q>打开我的体检报告</q>",
+        "<s>打开我的体检报告</s>",
+        "原文：`\n打开我的体检报告",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
@@ -10064,6 +10078,32 @@ async def test_recent_owned_report_request_dispatches(message, tool_name):
         else arguments
     )
     assert calls == [expected_arguments]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+async def test_quoted_report_example_preserves_later_direct_read(tool_name):
+    gateway = ToolGateway(
+        _snapshot("“打开我的体检报告”只是示例；现在请打开我的体检报告")
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls
 
 
 @pytest.mark.asyncio

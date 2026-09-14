@@ -31,6 +31,7 @@ from app.services.agent_kernel.health_semantics import (
     READ_VERB_RE,
     active_health_read_clause,
     active_health_instruction_text,
+    active_health_read_authority_text,
     authorization_behavior_digest,
     authorization_grammar_digest,
     authorization_imported_behavior_names,
@@ -106,7 +107,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v51"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v52"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v35"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -1487,7 +1488,7 @@ def _health_read_is_explicitly_non_authorizing(text: str) -> bool:
     raw_text = str(text or "")
     resolution = resolve_health_read_act(raw_text)
     material_projection_changed = (
-        active_health_instruction_text(raw_text) != raw_text.strip()
+        active_health_read_authority_text(raw_text) != raw_text.strip()
     )
     report_use_mention = bool(
         re.search(r"(?:基于|结合|根据|参考|依据)", str(text or ""))

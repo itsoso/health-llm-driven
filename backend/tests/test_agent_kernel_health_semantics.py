@@ -363,10 +363,30 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "（打开我的体检报告）转述",
         "这段代码：`打开我的体检报告",
         "这段删除：<del>打开我的体检报告",
+        "“打开我的体检报告”这句原文",
+        "“打开我的体检报告”来自聊天",
+        "[打开我的体检报告](https://example.com)",
+        "<blockquote>打开我的体检报告</blockquote>",
+        "<!-- 打开我的体检报告 -->",
+        "代码：`这一段未闭合\n打开我的体检报告",
+        "“外层“打开我的体检报告”原句”",
+        "“打开我的体检报告”这句话",
+        "“打开我的体检报告”——医生原话",
+        "[打开我的体检报告]这段文本",
+        "（打开我的体检报告）原始内容",
+        "<q>打开我的体检报告</q>",
+        "<s>打开我的体检报告</s>",
+        "原文：`\n打开我的体检报告",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
     assert semantics.has_explicit_health_read_request(text) is False
+
+
+def test_quoted_report_example_does_not_hide_later_direct_read_request():
+    text = "“打开我的体检报告”只是示例；现在请打开我的体检报告"
+
+    assert semantics.has_explicit_health_read_request(text) is True
 
 
 @pytest.mark.parametrize("connector", ("和", "还有", "跟", "连同"))
