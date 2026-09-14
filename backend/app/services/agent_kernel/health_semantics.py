@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v8"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v15"
 
 
 @dataclass(frozen=True)
@@ -556,7 +556,7 @@ HEALTH_READ_SCOPE_OWNER_RE = re.compile(
     r"近期|最近(?:[0-9一二两三四五六七八九十半]+)?"
     r"(?:个)?(?:小时|天|周|月|年)?|过去.+|近.+|本周|上周|本月|"
     r"今早|晨起|早上|上午|中午|午后|下午|晚上|夜间|运动后|锻炼后|导入|"
-    r"服药后|早餐后|午餐后|晚餐后|餐后|睡前|起床后|醒来后)"
+    r"服药后|早餐后|午餐后|晚餐后|餐后|睡前|起床后|醒来后|实际服用)"
     r"(?:测|测量|上传|导入|生成)?$|(?:刚测|刚刚测|刚测量|刚刚测量)$"
 )
 
@@ -571,6 +571,12 @@ HEALTH_READ_LEADING_SCOPE_RE = re.compile(
 def _is_current_user_scope_owner(owner: str) -> bool:
     """Recognize an explicit self owner followed only by a read scope."""
     normalized = str(owner or "").strip()
+    if re.fullmatch(
+        r"(?:(?:只|仅)?属于(?:我|我自己|我本人|我个人|本人)|"
+        r"归(?:我|我自己|我本人|我个人|本人)(?:个人)?所有)",
+        normalized,
+    ):
+        return True
     self_prefixes = tuple(
         sorted(
             CURRENT_USER_OWNERS | {"我个人", "我本人"},
@@ -584,7 +590,14 @@ def _is_current_user_scope_owner(owner: str) -> bool:
         if not normalized.startswith(prefix):
             continue
         remainder = normalized[len(prefix) :].lstrip("的")
-        if remainder and HEALTH_READ_SCOPE_OWNER_RE.fullmatch(remainder):
+        if remainder and (
+            HEALTH_READ_SCOPE_OWNER_RE.fullmatch(remainder)
+            or re.fullmatch(_REPORT_TIME_SCOPE, remainder)
+            or re.fullmatch(
+                r"(?:刚刚?|最近|近期)?(?:上传|导入|生成|保存)",
+                remainder,
+            )
+        ):
             return True
     return False
 
@@ -779,7 +792,8 @@ _NEGATED_READ_PREFIX_PATTERN = (
     r"(?:(?:我)?(?:不要|别|不用|无需|不必|请勿|勿|甭|不想|不打算|"
     r"取消|不需要|不希望|停止|撤销|暂停|终止|放弃|"
     r"不(?=查询|查找|查看|查到|查下|查|找出|找一下|找|回顾|回看|检索|"
-    r"列出|比较|对比|翻看|翻一下|看|搜索|搜|调取|调出)))"
+    r"列出|比较|对比|翻看|翻一下|看|搜索|搜|调取|调出|调阅|打开|"
+    r"展示|发我|发给我|呈现)))"
 )
 _NEGATED_READ_INTERPOSER_PATTERN = (
     r"(?:(?:帮我|给我|替我|为我|麻烦你?|请你?|让你|你|再|去|继续)){0,6}"
@@ -886,18 +900,147 @@ def _illness_lookup_key(value: str) -> str:
 
 
 ANALYZED_MATERIAL_INTRO_RE = re.compile(
+    r"(?:"
     r"(?:请|帮我)?(?:分析|评估|评价|审阅|解读|总结|解释|翻译)(?:一下|下)?"
     r"(?:以下|下面|这段|这份)(?:的)?"
-    r"(?:建议|内容|文字|文本|材料|文章|对话|消息|指令|命令|计划|方案)"
-    r"\s*[：:]\s*"
+    r"(?:建议|内容|文字|文本|材料|文章|对话|消息|指令|命令|计划|方案)|"
+    r"(?:以下|下面|这段|这份)(?:的)?"
+    r"(?:内容|文字|文本|材料|文章|对话|消息|指令|命令|计划|方案)"
+    r"(?:仅供)?(?:分析|参考|讨论)|"
+    r"\A(?:"
+    r"(?:医生|朋友|同事|领导|家人)(?:的)?"
+    r"(?:原话|消息|转述|说法)(?:是|为|如下|是这样的|如下所示)?|"
+    r"(?:医生|朋友|同事|领导|家人)"
+    r"(?:说|表示|提到|写道|写着|问|让我|要求我|建议我|告诉我|发来|转发)"
+    r"(?:如下|是|的内容)?|"
+    r"(?:以下|下面|下列|接下来)(?:是|为|属于|来自|出自|摘自)?"
+    r"[^\n\r，,；;：:。.!！?？]{0,32}|"
+    r"(?:这|这段|这些)(?:只是|是|是一段)?"
+    r"[^\n\r，,；;：:。.!！?？]{0,24}"
+    r"(?:例子|示例|引用|转发|转述|消息|内容|材料|原话)|"
+    r"(?:引用|转述|转发|示例)(?:内容|文本|文字|材料)?"
+    r"(?:是|为|如下|是这样的|如下所示)?"
+    r")"
+    r")"
+    r"\s*(?:[：:]|[。.!！]|[\n\r]+)\s*"
+)
+MARKDOWN_LINE_START_PATTERN = r"(?:\A|(?<=\n)|(?<=\r))"
+UNTRUSTED_INVALID_FENCE_MARKER = "INVALID_FENCE_AUTHORITY_BLOCK"
+BENIGN_INVALID_FENCE_INFO = frozenset(
+    {
+        "bad", "text", "txt", "python", "py", "json", "yaml", "yml",
+        "bash", "sh", "shell", "typescript", "ts", "javascript", "js",
+        "markdown", "md", "sql", "html", "css", "xml", "toml", "ini",
+        "conf", "dockerfile",
+    }
+)
+MARKDOWN_FENCED_MATERIAL_START_RE = re.compile(
+    MARKDOWN_LINE_START_PATTERN
+    + r" {0,3}(?P<fence>`{3,}|~{3,})(?P<info>[^\n\r]*)(?:\r\n?|\n)"
+)
+INLINE_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
+    r"(?P<fence>`{3,}|~{3,})[^\n\r]*?(?P=fence)"
+)
+BACKTICK_RUN_RE = re.compile(r"`+")
+MARKDOWN_BLOCKQUOTE_START_RE = re.compile(
+    MARKDOWN_LINE_START_PATTERN + r"[ \t]*>"
+)
+INLINE_STRUCK_MATERIAL_RE = re.compile(
+    r"(?s)~~.+?~~|<del\b[^>]*>.*?</del\s*>",
+    re.IGNORECASE,
+)
+MARKDOWN_FORMATTING_SPAN_RE = re.compile(
+    r"(?s)(?P<marker>\*\*|__|\*|_)(?=\S)(?P<body>.*?\S)(?P=marker)"
+)
+UNCLOSED_STRUCK_MATERIAL_RE = re.compile(
+    r"(?s)~~(?!.*~~).*$|<del\b[^>]*>.*$",
+    re.IGNORECASE,
+)
+HTML_MATERIAL_TOKEN_RE = re.compile(
+    r'''(?is)<!--|</?(?P<tag>[a-z][a-z0-9:-]*)\b'''
+    r'''(?:"[^"]*"|'[^']*'|[^'">])*>'''
+)
+HTML_MATERIAL_BODY_TAGS = frozenset(
+    {
+        "blockquote", "q", "code", "pre", "kbd", "s", "del",
+        "textarea", "template", "script", "style", "xmp", "noscript",
+    }
+)
+HTML_BLOCK_MATERIAL_TAGS = frozenset(
+    {"blockquote", "pre", "textarea", "template", "script", "style", "xmp", "noscript"}
+)
+HTML_VOID_TAGS = frozenset(
+    {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+)
+UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
+    r"(?s)" + MARKDOWN_LINE_START_PATTERN
+    + r" {0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
+)
+INDENTED_CODE_MATERIAL_RE = re.compile(
+    MARKDOWN_LINE_START_PATTERN
+    + r"(?: {4,}| {0,3}\t)[^\n\r]*(?:\r\n?|\n|$)"
+)
+INDENTED_FENCE_LIKE_MATERIAL_RE = re.compile(
+    MARKDOWN_LINE_START_PATTERN
+    + r"(?: {4,}| {0,3}\t)[ \t]*(?:`{3,}|~{3,})[^\n\r]*(?:\r\n?|\n|$)"
 )
 ANALYZED_MATERIAL_QUOTE_PAIRS = {
     "“": "”",
     "‘": "’",
     "「": "」",
     "『": "』",
+    "〈": "〉",
+    "〔": "〕",
     '"': '"',
+    "＂": "＂",
+    "'": "'",
+    "＇": "＇",
+    "„": "”",
+    "‟": "”",
+    "‚": "’",
+    "‛": "’",
+    "〝": "〞",
+    "〟": "〞",
+    "❝": "❞",
+    "❛": "❜",
 }
+STANDALONE_MATERIAL_QUOTE_PAIRS = {
+    **ANALYZED_MATERIAL_QUOTE_PAIRS,
+    "《": "》",
+    "【": "】",
+    "（": "）",
+    "(": ")",
+    "[": "]",
+    "［": "］",
+    "{": "}",
+    "｛": "｝",
+    "〖": "〗",
+    "«": "»",
+    "‹": "›",
+}
+
+
+def _is_escaped_delimiter(text: str, index: int) -> bool:
+    escape_start = index
+    while escape_start > 0 and text[escape_start - 1] == "\\":
+        escape_start -= 1
+    return (index - escape_start) % 2 == 1
+
+
+def _markdown_fence_opener_is_valid(marker: str, info: str) -> bool:
+    """Apply the CommonMark restriction specific to backtick info strings."""
+    return not (marker.startswith("`") and "`" in info)
+
+
+def _invalid_fence_replacement(info: str) -> str:
+    """Neutralize delimiters while retaining or denying meaningful residue."""
+    residue = str(info or "").replace("`", "").strip()
+    if not residue or residue.casefold() in BENIGN_INVALID_FENCE_INFO:
+        return "“”\n"
+    return f"{UNTRUSTED_INVALID_FENCE_MARKER} {residue}\n"
 
 
 def _analyzed_material_end(text: str, start: int) -> int:
@@ -905,40 +1048,259 @@ def _analyzed_material_end(text: str, start: int) -> int:
     if start >= len(text):
         return len(text)
     opener = text[start]
-    closer = ANALYZED_MATERIAL_QUOTE_PAIRS.get(opener)
+    closer = STANDALONE_MATERIAL_QUOTE_PAIRS.get(opener)
     if closer:
-        depth = 1
+        closer_stack = [closer]
+        known_closers = set(STANDALONE_MATERIAL_QUOTE_PAIRS.values())
         for index in range(start + 1, len(text)):
-            if text[index] in {opener, closer}:
-                escape_start = index
-                while escape_start > start and text[escape_start - 1] == "\\":
-                    escape_start -= 1
-                if (index - escape_start) % 2:
-                    continue
-            if text[index] == closer:
-                depth -= 1
-                if depth == 0:
+            character = text[index]
+            if _is_escaped_delimiter(text, index):
+                continue
+            if character == closer_stack[-1]:
+                closer_stack.pop()
+                if not closer_stack:
                     return index + 1
-            elif opener != closer and text[index] == opener:
-                depth += 1
+            elif nested_closer := STANDALONE_MATERIAL_QUOTE_PAIRS.get(character):
+                closer_stack.append(nested_closer)
+            elif character in known_closers:
+                # Mismatched nesting has no trustworthy in-band boundary.
+                return len(text)
         return len(text)
-    fence = re.match(r"(`{3,}|~{3,})[^\n]*\n", text[start:])
+    fence = re.match(r"(?P<fence>`{3,}|~{3,})(?P<info>[^\n\r]*)(?:\r\n?|\n)", text[start:])
     if fence:
-        marker = fence.group(1)
+        marker = fence.group("fence")
+        if not _markdown_fence_opener_is_valid(marker, fence.group("info")):
+            return len(text)
         close = re.search(
-            rf"(?m)^[ \t]{{0,3}}{re.escape(marker[0])}{{{len(marker)},}}[ \t]*(?:\n|$)",
+            rf"{MARKDOWN_LINE_START_PATTERN} {{0,3}}"
+            rf"{re.escape(marker[0])}{{{len(marker)},}}"
+            r"[ \t]*(?:\r\n?|\n|$)",
             text[start + fence.end() :],
         )
         return start + fence.end() + close.end() if close else len(text)
     if opener == ">":
         # Only an explicit blank line ends a Markdown quote. Lazy continuation
         # lines are still quoted content and cannot become tool instructions.
-        for close in re.finditer(r"\n[ \t]*\n", text[start:]):
+        for close in re.finditer(
+            r"(?:\r\n?|\n)[ \t]*(?:\r\n?|\n)", text[start:]
+        ):
             end = start + close.end()
             if not text[end:].lstrip().startswith(">"):
                 return end
         return len(text)
     return len(text)
+
+
+def _strip_markdown_blockquote_material(text: str, *, replacement: str = "\n") -> str:
+    """Remove blockquotes with CommonMark lazy continuation as one body."""
+    projected = str(text or "")
+    while match := MARKDOWN_BLOCKQUOTE_START_RE.search(projected):
+        quote_start = match.end() - 1
+        quote_end = _analyzed_material_end(projected, quote_start)
+        projected = projected[: match.start()] + replacement + projected[quote_end:]
+    return projected
+
+
+def _strip_markdown_fenced_material(text: str, *, replacement: str) -> str:
+    """Remove closed CommonMark fences without weakening their close rule.
+
+    A closing fence must use the opener's character and may be longer than the
+    opener.  Python regex backreferences only match the exact opener, so scan
+    the closer explicitly and leave unclosed material for the fail-closed pass.
+    """
+    projected = str(text or "")
+    cursor = 0
+    while opener := MARKDOWN_FENCED_MATERIAL_START_RE.search(projected, cursor):
+        marker = opener.group("fence")
+        if not _markdown_fence_opener_is_valid(marker, opener.group("info")):
+            # Do not let generic code-span parsing pair this invalid opener
+            # with a later line that is itself a valid, unclosed fence opener.
+            # Mask only this line; the later opener must remain fail-closed.
+            invalid_placeholder = _invalid_fence_replacement(opener.group("info"))
+            projected = (
+                projected[: opener.start()]
+                + invalid_placeholder
+                + projected[opener.end() :]
+            )
+            cursor = opener.start() + len(invalid_placeholder)
+            continue
+        closer = re.search(
+            rf"{MARKDOWN_LINE_START_PATTERN} {{0,3}}"
+            rf"{re.escape(marker[0])}{{{len(marker)},}}"
+            r"[ \t]*(?:\r\n?|\n|$)",
+            projected[opener.end() :],
+        )
+        if closer is None:
+            cursor = opener.end()
+            continue
+        end = opener.end() + closer.end()
+        projected = projected[: opener.start()] + replacement + projected[end:]
+        cursor = opener.start() + len(replacement)
+    return projected
+
+
+def _mask_indented_fence_like_material(text: str) -> str:
+    """Keep an invalid column-four fence from becoming a trusted boundary."""
+    return INDENTED_FENCE_LIKE_MATERIAL_RE.sub("invalid fenced material\n", text)
+
+
+def _strip_backtick_code_material(
+    text: str,
+    *,
+    replacement: str = " ",
+) -> tuple[str, tuple[tuple[str, str, str, bool], ...], bool]:
+    """Remove Markdown code spans of any delimiter length across newlines."""
+    projected = str(text or "")
+    removed: list[tuple[str, str, str, bool]] = []
+    cursor = 0
+    while opener := BACKTICK_RUN_RE.search(projected, cursor):
+        if _is_escaped_delimiter(projected, opener.start()):
+            cursor = opener.end()
+            continue
+        marker_length = len(opener.group())
+        close_cursor = opener.end()
+        closer = None
+        while candidate := BACKTICK_RUN_RE.search(projected, close_cursor):
+            close_cursor = candidate.end()
+            if (
+                len(candidate.group()) == marker_length
+                and not _is_escaped_delimiter(projected, candidate.start())
+            ):
+                closer = candidate
+                break
+        if closer is None:
+            return projected[: opener.start()], tuple(removed), True
+        end = closer.end()
+        removed.append(
+            (projected[opener.end() : closer.start()], projected[: opener.start()], projected[end:], False)
+        )
+        projected = projected[: opener.start()] + replacement + projected[end:]
+        cursor = opener.start() + 1
+    return projected, tuple(removed), False
+
+
+def _strip_struck_material(
+    text: str,
+    *,
+    replacement: str = " ",
+) -> tuple[str, tuple[tuple[str, str, str, bool], ...], bool]:
+    """Remove paired Markdown strike spans and surface malformed boundaries."""
+    projected = str(text or "")
+    removed: list[tuple[str, str, str, bool]] = []
+    while (start := projected.find("~~")) >= 0:
+        end_start = projected.find("~~", start + 2)
+        if end_start < 0:
+            return projected[:start], tuple(removed), True
+        end = end_start + 2
+        removed.append(
+            (projected[start + 2 : end_start], projected[:start], projected[end:], False)
+        )
+        projected = projected[:start] + replacement + projected[end:]
+    return projected, tuple(removed), False
+
+
+def _strip_markdown_formatting_markers(text: str) -> str:
+    """Keep emphasized text semantic while removing paired presentation marks."""
+    projected = str(text or "")
+    previous = None
+    while projected != previous:
+        previous = projected
+        projected = MARKDOWN_FORMATTING_SPAN_RE.sub(r"\g<body>", projected)
+    return projected
+
+
+def _strip_html_material(
+    text: str,
+) -> tuple[str, tuple[tuple[str, str, str, bool], ...]]:
+    """Project HTML without erasing semantic text in formatting elements."""
+    projected = str(text or "")
+    removed: list[tuple[str, str, str, bool]] = []
+    cursor = 0
+    while opener := HTML_MATERIAL_TOKEN_RE.search(projected, cursor):
+        token = opener.group()
+        if token.startswith("<!--"):
+            close_index = projected.find("-->", opener.end())
+            if close_index < 0:
+                return "", tuple(removed)
+            end = close_index + 3
+            suffix = projected[end:]
+            removed.append(
+                (projected[opener.end() : close_index], projected[: opener.start()], suffix, False)
+            )
+            projected = projected[: opener.start()] + " " + suffix
+            cursor = opener.start() + 1
+            continue
+        elif token.startswith("</"):
+            # An orphan closer cannot establish where quoted material began.
+            return "", tuple(removed)
+        root_tag = str(opener.group("tag") or "").casefold()
+        if token.rstrip().endswith("/>") or root_tag in HTML_VOID_TAGS:
+            projected = projected[: opener.start()] + " " + projected[opener.end() :]
+            cursor = opener.start() + 1
+            continue
+        tag_stack = [root_tag]
+        scan_cursor = opener.end()
+        closer = None
+        malformed = False
+        while candidate := HTML_MATERIAL_TOKEN_RE.search(projected, scan_cursor):
+            candidate_token = candidate.group()
+            scan_cursor = candidate.end()
+            if candidate_token.startswith("<!--"):
+                comment_end = projected.find("-->", candidate.end())
+                if comment_end < 0:
+                    malformed = True
+                    break
+                scan_cursor = comment_end + 3
+                continue
+            candidate_tag = str(candidate.group("tag") or "").casefold()
+            if candidate_token.rstrip().endswith("/>") or candidate_tag in HTML_VOID_TAGS:
+                continue
+            if candidate_token.startswith("</"):
+                if candidate_tag != tag_stack[-1]:
+                    malformed = True
+                    break
+                tag_stack.pop()
+                if not tag_stack:
+                    closer = candidate
+                    break
+            else:
+                tag_stack.append(candidate_tag)
+        if malformed or closer is None:
+            return "", tuple(removed)
+        body = projected[opener.end() : closer.start()]
+        suffix = projected[closer.end() :]
+        if root_tag in HTML_MATERIAL_BODY_TAGS:
+            removed.append(
+                (body, projected[: opener.start()], suffix, root_tag in HTML_BLOCK_MATERIAL_TAGS)
+            )
+            projected = projected[: opener.start()] + " " + suffix
+        else:
+            # Formatting is not quotation: retain its body and only drop tags.
+            projected = projected[: opener.start()] + body + suffix
+        cursor = opener.start()
+    return projected, tuple(removed)
+
+
+def _strip_paired_material_spans(
+    text: str,
+) -> tuple[str, tuple[tuple[str, str, str, bool], ...]]:
+    """Replace quoted/bracketed spans and retain them for authority checks."""
+    projected = str(text or "")
+    removed: list[tuple[str, str, str, bool]] = []
+    while True:
+        starts = tuple(
+            index
+            for opener in STANDALONE_MATERIAL_QUOTE_PAIRS
+            if (index := projected.find(opener)) >= 0
+        )
+        if not starts:
+            return projected, tuple(removed)
+        start = min(starts)
+        end = _analyzed_material_end(projected, start)
+        removed.append(
+            (projected[start:end], projected[:start], projected[end:], False)
+        )
+        projected = projected[:start] + " " + projected[end:]
 
 
 def active_health_instruction_text(text: str) -> str:
@@ -951,6 +1313,26 @@ def active_health_instruction_text(text: str) -> str:
     stays non-authorizing, including apparent instructions inside that body.
     """
     original = str(text or "")
+    material_placeholder = "“”"
+    block_material_placeholder = "“”。"
+    original = _strip_markdown_fenced_material(
+        original, replacement=block_material_placeholder
+    )
+    original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub(material_placeholder, original)
+    original = _mask_indented_fence_like_material(original)
+    # A leading tab reaches CommonMark column four and denotes indented code,
+    # not a fence. Remove such lines before generic backtick-span handling so
+    # an invalid tab-indented closer cannot manufacture a trusted boundary.
+    original = INDENTED_CODE_MATERIAL_RE.sub(block_material_placeholder, original)
+    original, _code_removed, _code_malformed = _strip_backtick_code_material(
+        original, replacement=material_placeholder
+    )
+    original = _strip_markdown_blockquote_material(
+        original, replacement=block_material_placeholder
+    )
+    original = INLINE_STRUCK_MATERIAL_RE.sub(material_placeholder, original)
+    original = UNCLOSED_STRUCK_MATERIAL_RE.sub(" ", original)
+    original = UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
     parts: list[str] = []
     cursor = 0
     while match := ANALYZED_MATERIAL_INTRO_RE.search(original, cursor):
@@ -959,16 +1341,211 @@ def active_health_instruction_text(text: str) -> str:
         parts.append(original[cursor : match.start()].rstrip())
         cursor = _analyzed_material_end(original, match.end())
     parts.append(original[cursor:])
-    return "\n".join(parts).strip()
+    # Empty quotes are internal sentinels used only to preserve a trustworthy
+    # boundary while scanning. They must not masquerade as a real reported
+    # quote in downstream owner policy.
+    return "\n".join(parts).replace(material_placeholder, "").strip()
+
+
+READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE = re.compile(
+    r"(?:[\n\r；;。.!！?？]|但|不过|然而|可是|然后)"
+)
+HTML_BLOCK_PREFIX_BOUNDARY_RE = re.compile(r"(?:^|[\n\r；;。.!！?？])\s*$")
+CLINICAL_VALUE_MATERIAL_RE = re.compile(
+    r"^\s*(?:ALT|AST|GGT|ALP|CRP|HRV|BMI|LDL(?:-C)?|HDL(?:-C)?|"
+    r"HbA1c|HGB|WBC|RBC|PLT|eGFR|CREA|UA|FBG|FPG|GLU|TC|TG|"
+    r"血红蛋白|血色素|白细胞|红细胞|血小板|红细胞压积|"
+    r"空腹血糖|餐后血糖|血糖|葡萄糖|肌酐|尿酸|总胆固醇|"
+    r"低密度脂蛋白(?:胆固醇)?|高密度脂蛋白(?:胆固醇)?|甘油三酯|"
+    r"谷丙转氨酶|谷草转氨酶|转氨酶|胆红素|白蛋白|尿蛋白)"
+    r"\s*(?:(?:[:：=<>≤≥+\-]?\s*\d+(?:\.\d+)?\s*"
+    r"(?:%|U/L|IU/L|g/L|mg/(?:dL|L)|mmol/L|(?:µ|μ|u)mol/L|"
+    r"ng/mL|pg/mL|mIU/L|10(?:\^9|⁹)/L|bpm|kg/m(?:2|²))?)|"
+    r"(?:偏高|偏低|升高|降低|异常|正常|阳性|阴性|临界))*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_clinical_value_material(span: str) -> bool:
+    """Recognize a narrow value-only span, never control or owner language."""
+    candidate = str(span or "").strip().strip(
+        "`~“”‘’\"'＂＇„「」『』《》【】〔〕[]［］()（）{}｛｝〈〉"
+    )
+    return CLINICAL_VALUE_MATERIAL_RE.fullmatch(candidate) is not None
+
+
+def _material_adjacent_clause_has_read(
+    span: str,
+    prefix: str,
+    suffix: str,
+    *,
+    block_boundary: bool,
+) -> bool:
+    """Reject an inline material span that shares a clause with a health read."""
+    if block_boundary and HTML_BLOCK_PREFIX_BOUNDARY_RE.search(prefix):
+        return False
+    preceding_clause = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(prefix)[-1]
+    following_clause = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
+    interpretation_value = bool(
+        _is_clinical_value_material(span)
+        and any(owner in preceding_clause for owner in CURRENT_USER_OWNERS)
+        and READ_VERB_RE.search(preceding_clause)
+        and READ_VERB_RE.search(following_clause) is None
+        and re.search(
+            r"(?:意思|含义|理解|解读|分析|说明|代表|意味)",
+            following_clause,
+        )
+    )
+    if interpretation_value:
+        return False
+    for clause in (preceding_clause, following_clause):
+        if READ_VERB_RE.search(clause):
+            return True
+        if (
+            REPORT_USE_ACTION_RE.search(clause)
+            and CURRENT_USER_REPORT_REFERENCE_RE.search(clause)
+        ):
+            return True
+    return False
+
+
+def active_health_read_authority_text(text: str) -> str:
+    """Project only text that may authorize access to private health data.
+
+    General intent classification deliberately retains ordinary quotations so
+    it can understand clinical phrases. Read authorization is narrower: quoted,
+    bracketed, linked and HTML material is evidence to discuss, never consent.
+    A non-authorizing qualifier inside a removed span applies to the surrounding
+    read request and therefore fails closed instead of being erased.
+    """
+    block_material_placeholder = "“”。"
+    material_source = _strip_markdown_fenced_material(
+        str(text or ""), replacement=block_material_placeholder
+    )
+    if UNTRUSTED_INVALID_FENCE_MARKER in material_source:
+        return ""
+    material_source = _mask_indented_fence_like_material(material_source)
+    material_source = _strip_markdown_blockquote_material(
+        material_source, replacement=block_material_placeholder
+    )
+    material_source = INDENTED_CODE_MATERIAL_RE.sub(
+        block_material_placeholder, material_source
+    )
+    projected, html_removed = _strip_html_material(material_source)
+    if not projected:
+        return ""
+    projected, code_removed, code_malformed = _strip_backtick_code_material(projected)
+    if code_malformed:
+        return ""
+    projected, struck_removed, struck_malformed = _strip_struck_material(projected)
+    if struck_malformed:
+        return ""
+    projected = active_health_instruction_text(projected)
+    projected = _strip_markdown_formatting_markers(projected)
+    projected, quote_removed = _strip_paired_material_spans(projected)
+    removed = (*html_removed, *code_removed, *struck_removed, *quote_removed)
+    if any(
+        _material_adjacent_clause_has_read(
+            span,
+            prefix,
+            suffix,
+            block_boundary=block_boundary,
+        )
+        for span, prefix, suffix, block_boundary in removed
+    ):
+        return ""
+    orphan_closers = set(STANDALONE_MATERIAL_QUOTE_PAIRS.values()).difference(
+        STANDALONE_MATERIAL_QUOTE_PAIRS
+    )
+    if any(closer in projected for closer in orphan_closers):
+        return ""
+    return projected.strip()
+
+
+_SYNC_AUTHORITY_ACTION_RE = re.compile(r"同步|刷新|拉取|触发(?:一下)?同步")
+_SYNC_AUTHORITY_DEVICE_RE = re.compile(r"garmin|佳明", re.IGNORECASE)
+_SYNC_AUTHORITY_ADJACENT_RE = re.compile(
+    r"同步|刷新|拉取|触发(?:一下)?同步|garmin|佳明", re.IGNORECASE,
+)
+_SYNC_INDEPENDENT_MATERIAL_RESIDUE_RE = re.compile(
+    r"(?:已结束|结束了|(?:医生|有人|他|她)(?:说|提到|表示)[:：]?)"
+)
+
+
+def active_health_sync_authority_text(text: str) -> str:
+    """Keep material projection from manufacturing an owned sync operand.
+
+    Quoted or Markdown material may be discussed beside a real command, but a
+    span attached to the active sync action/device is part of its unresolved
+    owner or scope. Removing that span must fail closed instead of turning a
+    third-party or time-qualified request into the default current-user sync.
+    """
+    raw = str(text or "")
+    projected, html_removed = _strip_html_material(raw)
+    if not projected:
+        return ""
+    projected, code_removed, code_malformed = _strip_backtick_code_material(projected)
+    if code_malformed:
+        return ""
+    projected, struck_removed, struck_malformed = _strip_struck_material(projected)
+    if struck_malformed:
+        return ""
+    projected = active_health_instruction_text(projected)
+    projected = _strip_markdown_formatting_markers(projected)
+    inspection, quote_removed = _strip_paired_material_spans(projected)
+    removed = (*html_removed, *code_removed, *struck_removed, *quote_removed)
+    independent_clause_indexes: set[int] = set()
+    if (
+        _SYNC_AUTHORITY_ACTION_RE.search(inspection)
+        and _SYNC_AUTHORITY_DEVICE_RE.search(inspection)
+    ):
+        for _span, prefix, suffix, block_boundary in removed:
+            if block_boundary and HTML_BLOCK_PREFIX_BOUNDARY_RE.search(prefix):
+                continue
+            preceding = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(prefix)[-1]
+            following = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
+            residue = (preceding + following).strip()
+            if _SYNC_AUTHORITY_ADJACENT_RE.search(residue):
+                return ""
+            if residue and _SYNC_INDEPENDENT_MATERIAL_RESIDUE_RE.fullmatch(residue):
+                prefix_projection, _ = _strip_html_material(prefix)
+                prefix_projection, _, malformed = _strip_backtick_code_material(
+                    prefix_projection
+                )
+                if malformed:
+                    return ""
+                prefix_projection, _, malformed = _strip_struck_material(
+                    prefix_projection
+                )
+                if malformed:
+                    return ""
+                prefix_projection = active_health_instruction_text(prefix_projection)
+                prefix_projection = _strip_markdown_formatting_markers(prefix_projection)
+                prefix_projection, _ = _strip_paired_material_spans(prefix_projection)
+                independent_clause_indexes.add(len(tuple(
+                    READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.finditer(prefix_projection)
+                )))
+    if independent_clause_indexes:
+        parts = re.split(
+            f"({READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.pattern})", inspection
+        )
+        clause_index = 0
+        for index in range(0, len(parts), 2):
+            if clause_index in independent_clause_indexes:
+                parts[index] = ""
+            clause_index += 1
+        inspection = "".join(parts).strip("，,。；;！？!?\n ")
+    return inspection.strip()
 
 
 def resolve_health_read_act(text: str) -> HealthReadActResolution:
     """Resolve read authority clause by clause, with later clauses winning."""
-    normalized = active_health_instruction_text(text)
+    intent_text = active_health_instruction_text(text)
+    if is_health_tool_meta_command(intent_text):
+        return HealthReadActResolution("none", intent_text)
+    normalized = active_health_read_authority_text(text)
     if not normalized:
         return HealthReadActResolution("none")
-    if is_health_tool_meta_command(normalized):
-        return HealthReadActResolution("none", normalized)
 
     clause_spans: list[tuple[int, int]] = []
     cursor = 0
@@ -1044,7 +1621,7 @@ def resolve_health_read_act(text: str) -> HealthReadActResolution:
     if status == "none" and not saw_read:
         return HealthReadActResolution("none", normalized)
     active_clause = (
-        normalized[active_start:].strip("，,。.!！；;：:?？ ")
+        normalized[active_start:].strip("，,。.!！；;：:?？ \t\r\n")
         if status == "active" and active_start is not None
         else ""
     )
@@ -1102,6 +1679,16 @@ def has_positive_health_read_verb(text: str) -> bool:
 
 def active_health_read_clause(text: str) -> str:
     """Return the active clause from the structured read-act resolution."""
+    report_clause = _active_owned_report_use_clause(text)
+    normalized = active_health_instruction_text(str(text or ""))
+    report_use_candidate = bool(
+        CURRENT_USER_REPORT_REFERENCE_RE.search(normalized)
+        and REPORT_USE_ACTION_RE.search(normalized)
+    )
+    if report_clause or report_use_candidate:
+        # A rejected report-use act must not fall through to the generic read
+        # grammar, where the ``查`` inside ``检查`` could create new authority.
+        return report_clause
     return resolve_health_read_act(text).active_clause
 
 
@@ -1115,7 +1702,7 @@ def has_explicit_health_read_request(text: str) -> bool:
     scoped = active_health_read_clause(text)
     if not scoped:
         return False
-    return has_positive_health_read_verb(scoped)
+    return has_positive_health_read_verb(scoped) or _has_owned_report_use_request(text)
 
 
 def is_unresolved_health_reference(value: str) -> bool:
@@ -1123,7 +1710,7 @@ def is_unresolved_health_reference(value: str) -> bool:
         "的了，,。.!！；;：:?？ "
     )
     scoped = re.sub(
-        r"^(?:请|麻烦你?|帮我|给我|替我|为我|把)*",
+        r"^(?:请|麻烦你?|帮我|给我|替我|为我|把|将)*",
         "",
         normalized,
     )
@@ -1164,7 +1751,9 @@ def _nonhealth_root(value: str) -> bool:
 
 def _strip_current_user_owner(value: str) -> tuple[str, bool]:
     match = re.match(
-        r"^(?:我(?:自己|本人|个人)?(?:的)?|本人(?:的)?|自己(?:的)?)",
+        r"^(?:(?:只|仅)?属于(?:我|我自己|我本人|我个人|本人)(?:的)?|"
+        r"归(?:我|我自己|我本人|我个人|本人)(?:个人)?所有(?:的)?|"
+        r"我(?:自己|本人|个人)?(?:的)?|本人(?:的)?|自己(?:的)?)",
         value,
     )
     if match is None:
@@ -1275,10 +1864,13 @@ def illness_target_is_unowned_or_referential(value: str) -> bool:
 def _strip_exam_request_scaffolding(value: str) -> str:
     candidate = value.strip("，,。.!！；;：:?？ ")
     prefix_re = re.compile(
-        r"^(?:然后|但|不过|而是|方便的话|请问|请您|烦请|劳烦|有劳|劳驾|"
-        r"拜托|请|麻烦你?|能不能|可不可以|能否|可否|我想(?:在)?|"
+        r"^(?:然后|顺带|顺便|另外|同时|并且|接着|随后|一并|"
+        r"(?:也)?包括|包含|含有|涵盖|连带|但|不过|而是|"
+        r"方便的话|请问|请您|烦请|劳烦|有劳|劳驾|"
+        r"拜托|请|麻烦你?|能不能|可不可以|能否|可否|"
+        r"现在|立即|马上|此刻|这次|本次|我想(?:在)?|"
         r"想(?:在)?|能(?=给我|帮我|帮忙|替我|为我|查询|查找|查看|找出|"
-        r"翻看|调取|调出|查|看)|给我|帮我|帮忙|替我|为我|把|仅|只|再)"
+        r"翻看|调取|调出|查|看)|给我|帮我|帮忙|替我|为我|把|将|仅|只|再)"
     )
     while candidate:
         reduced = prefix_re.sub("", candidate, count=1).lstrip()
@@ -1392,6 +1984,285 @@ _HEALTH_REPORT_DOMAIN = (
     r"(?:医学检查报告|检查记录|体检报告|化验报告|检验报告|检查报告|"
     r"检查结果|报告)"
 )
+_REPORT_TIME_SCOPE = r"(?:(?:最近|最新|上|最后)(?:一)?次(?:的)?)?"
+CURRENT_USER_REPORT_REFERENCE_RE = re.compile(
+    rf"(?:我(?:自己|本人|个人)?|本人|自己|"
+    rf"(?:只|仅)?属于(?:我|我自己|我本人|我个人|本人)|"
+    rf"归(?:我|我自己|我本人|我个人|本人)(?:个人)?所有)(?:的)?"
+    rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
+    re.IGNORECASE,
+)
+_REPORT_OWNER_CONNECTOR = (
+    r"(?:还有|连同|以及|再加|外加|加上|和|与|跟|及|同|并|加|或|"
+    r"、|/|／|\||｜|&|＆|\+|＋)"
+)
+REPORT_PREFIX_COORDINATED_OWNER_RE = re.compile(
+    rf"(?:我(?:自己|本人|个人)?(?:的)?|本人(?:的)?|自己(?:的)?)\s*"
+    rf"{_REPORT_OWNER_CONNECTOR}\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)的\s*"
+    rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
+    re.IGNORECASE,
+)
+REPORT_TRAILING_COORDINATED_OWNER_RE = re.compile(
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}[\s，,；;]*"
+    rf"{_REPORT_OWNER_CONNECTOR}\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)的"
+    rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
+    re.IGNORECASE,
+)
+REPORT_ELLIPTIC_READ_OWNER_RE = re.compile(
+    rf"(?:{READ_VERB_RE.pattern})\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)的"
+    rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
+    re.IGNORECASE,
+)
+REPORT_ELLIPTIC_DEICTIC_OWNER_RE = re.compile(
+    rf"(?P<read>{READ_VERB_RE.pattern})\s*"
+    rf"(?P<reference>"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)"
+    rf"(?:这|那|该)(?:一)?(?:份(?:儿)?|个|张|套|版|本|组|批|件))"
+    rf"(?P<boundary>[\n\r，,；;：:。.!！?？、]|$)",
+    re.IGNORECASE,
+)
+REPORT_BASIS_OWNER_RE = re.compile(
+    rf"(?:基于|结合|根据|参考|依据)"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
+    rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
+    re.IGNORECASE,
+)
+REPORT_ADDITIONAL_OWNER_RE = re.compile(
+    rf"(?={_HEALTH_REPORT_DOMAIN}"
+    rf"\s*(?:{HEALTH_ENTITY_CONNECTOR_RE.pattern})\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
+    rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN})",
+    re.IGNORECASE,
+)
+REPORT_USE_ACTION_RE = re.compile(
+    r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)",
+    re.IGNORECASE,
+)
+_REPORT_DIRECT_ACTION_SUFFIX = (
+    r"(?:"
+    r"(?:给(?:我)?|帮我|为我)?(?:做|作|提供|提出|制定)?"
+    r"(?:一些|相关|改善|健康|个性化)?"
+    r"(?:建议|分析|解读|解释|评估|评价|判断|方案)(?:一下|下)?|"
+    r"(?:给我)?(?:说说|讲讲|说下|讲下)"
+    r"(?:改善|健康|相关)?(?:建议|看法|方案)?"
+    r")"
+)
+REPORT_USE_DIRECT_REQUEST_RE = re.compile(
+    rf"(?:"
+    rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
+    rf"(?:(?:请(?:你)?|麻烦你?|帮我|我想(?:请你)?|我希望(?:你)?|"
+    rf"我明确(?:授权|同意|允许|批准)(?:你)?)\s*)?"
+    rf"(?:基于|结合|根据|参考|依据)[^\n\r：:]{{0,48}}"
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}\s*"
+    rf"{_REPORT_DIRECT_ACTION_SUFFIX}\s*$|"
+    rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
+    rf"(?:请(?:你)?|麻烦你?|帮我|给我)\s*"
+    rf"(?:"
+    rf"(?:给我|提供|提出|制定|做|作)?"
+    rf"(?:一些|相关|改善|健康|个性化)?(?:建议|方案|看法)|"
+    rf"(?:说说|讲讲|说下|讲下)(?:改善|健康|相关)?(?:建议|看法|方案)?"
+    rf")"
+    rf"[，,]\s*"
+    rf"(?:基于|结合|根据|参考|依据)[^\n\r：:]{{0,32}}"
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}"
+    rf"(?:有什么)?(?:建议|看法|方案)?\s*$|"
+    rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
+    rf"(?:(?:请(?:你)?|麻烦你?|帮我|给我)\s*)?"
+    rf"(?:分析|解读|解释|评估|评价)(?:一下|下)?\s*"
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}\s*$"
+    rf")",
+    re.IGNORECASE,
+)
+REPORT_USE_QUESTION_RE = re.compile(
+    r"(?:[?？]|吗|么|行不行|可不可以|能不能|会不会)\s*$",
+    re.IGNORECASE,
+)
+REPORT_USE_POST_ACTION_TAIL_RE = re.compile(
+    r"(?:基于|结合|根据|参考|依据)"
+    r"[^\n\r。.!！?？；;]{0,96}"
+    r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)"
+    r"[^\n\r。.!！?？；;]{0,24}[，,]\s*\S",
+    re.IGNORECASE,
+)
+REPORT_USE_DENIAL_RE = re.compile(
+    r"(?:反对|拒绝|不接受|禁止|(?:请)?避免|不同意|不允许|"
+    r"未同意|未经(?:我|本人)?(?:的)?授权|暂缓|"
+    r"不是(?:要|让你)?|并非(?:要|让你)?|没有必要|没必要|先不|暂不|"
+    r"不想|不希望|不愿意|不打算|没有要求|没要求|未要求|并未要求|"
+    r"不要|别|无需|不用|不必|请勿|勿|甭)"
+    r"[^\n\r。.!！?？；;]{0,32}"
+    r"(?:基于|结合|根据|参考|依据|建议|分析|解读|解释|评估|评价|判断)",
+    re.IGNORECASE,
+)
+QUOTED_REPORT_USE_RE = re.compile(
+    r"(?:"
+    r"`[^`\n\r]{0,96}(?:基于|结合|根据|参考|依据)[^`\n\r]{0,96}`|"
+    r"[“‘\"'《「『【（(\[{〈〔]"
+    r"[^”’\"'》」』】）)\]}〉〕\n\r]{0,96}(?:基于|结合|根据|参考|依据)"
+    r"[^”’\"'》」』】）)\]}〉〕\n\r]{0,96}[”’\"'》」』】）)\]}〉〕]|"
+    r"(?m:^\s*>\s*[^\n\r]{0,96}(?:基于|结合|根据|参考|依据)[^\n\r]{0,96}$)"
+    r")",
+    re.IGNORECASE,
+)
+REPORT_USE_HYPOTHETICAL_RE = re.compile(
+    r"(?:如果|假如|要是|假设)"
+    r"[^\n\r。.!！?？；;]{0,48}(?:基于|结合|根据|参考|依据)",
+    re.IGNORECASE,
+)
+REPORT_USE_PROVENANCE_RE = re.compile(
+    r"(?:"
+    r"^(?:转述|聊天截图)(?:如下|是)?\s*[：:]|"
+    r"^(?!(?:我想|我希望|请|麻烦|帮我|给我|现在|基于|结合|根据|参考|依据))"
+    r"[^\n\r，,。.!！?？；;：:]{1,32}?"
+    r"(?:说|表示|提到|写道|写着|问|让我|要求我|建议我|嘱咐我|叫我|"
+    r"提醒我|告诉我|发来|转发|引用)\s*[：:]?|"
+    r"^[^\n\r，,。.!！?？；;：:]{1,32}?"
+    r"(?:内容|记录|原文|消息|邮件|聊天记录|转述|聊天截图)(?:如下|是)?\s*[：:]"
+    r")",
+    re.IGNORECASE,
+)
+REPORT_USE_MATERIAL_CONTEXT_RE = re.compile(
+    r"(?:"
+    r"^(?:以下|下面|下列|接下来)(?:是|为|属于|来自|出自|摘自)?"
+    r"[^\n\r，,；;：:。.!！?？]{0,24}"
+    r"(?:医生|原话|引用|引文|摘录|转发|转述|内容|文字|文本|材料|"
+    r"消息|截图|示例|例子)|"
+    r"^(?:这是|这是一段|这段是|这些是)?"
+    r"[^\n\r，,；;：:。.!！?？]{0,20}"
+    r"(?:原话|引用|引文|摘录|转发|转述|复制(?:过来)?的消息|"
+    r"聊天记录|截图|示例|例子)"
+    r"(?:是|为|如下|是这样的|如下所示)?|"
+    r"^(?:医生|朋友|同事|领导|家人)(?:的)?原话"
+    r"(?:是|为|如下|是这样的|如下所示)?|"
+    r"^(?:引用|转述|转发|示例)(?:内容|文本|文字|材料)?"
+    r"(?:是|为|如下|是这样的|如下所示)?|"
+    r"(?:仅供|供)(?:讨论|分析|参考)"
+    r")\s*$",
+    re.IGNORECASE,
+)
+REPORT_USE_DEFERRED_RE = re.compile(
+    r"(?:明天|稍后|晚点|以后|之后|改天|回头|待会儿|周末|有空(?:时)?|"
+    r"下周|下个月|(?:等|待)[^\n\r。.!！?？；;]{0,12}(?:确认|同意)(?:后)?)"
+    r"[^\n\r。.!！?？；;]{0,20}(?:再)?"
+    r"(?:基于|结合|根据|参考|依据|分析|解读|解释|评估|评价)",
+    re.IGNORECASE,
+)
+REPORT_USE_PERMISSION_QUESTION_RE = re.compile(
+    r"(?:"
+    r"^(?:请问)?(?:你)?(?:能否|是否能|可否|可不可以|可以不可以|能不能|是否可以)"
+    r"[^\n\r。.!！?？；;]{0,48}(?:基于|结合|根据|参考|依据)|"
+    r"^(?:请问)?(?:你)?(?:能|可以)"
+    r"[^\n\r。.!！?？；;]{0,48}(?:基于|结合|根据|参考|依据)"
+    r"[^\n\r。.!！?？；;]{0,64}(?:吗|么)\s*[?？]?$"
+    r")",
+    re.IGNORECASE,
+)
+_REPORT_USE_SCOPE_BOUNDARY_RE = re.compile(
+    r"(?:[\n\r；;。.!！?？]|但|不过|然而|而是|却|可是|然后|改为)"
+)
+REPORT_USE_TRAILING_WITHDRAWAL_RE = re.compile(
+    r"(?:取消|撤销|撤回|作废|作罢|停止|终止|中止|打住|算了|"
+    r"到此为止|到这儿|到这里|先放一放|先搁着|先不要了|不要了|"
+    r"先等等|缓一缓|暂缓|"
+    r"不要执行|别执行|不执行|停)"
+    r"[，,。.!！?？\s]*$",
+    re.IGNORECASE,
+)
+
+
+def _active_owned_report_use_clause(text: str) -> str:
+    """Resolve the last active current-user report-use speech act."""
+    normalized = active_health_read_authority_text(str(text or "")).strip()
+    if (
+        CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is None
+        or REPORT_USE_ACTION_RE.search(normalized) is None
+    ):
+        return ""
+
+    clauses: list[tuple[str, str]] = []
+    cursor = 0
+    for boundary in _REPORT_USE_SCOPE_BOUNDARY_RE.finditer(normalized):
+        clause = normalized[cursor : boundary.start()].strip("，,：:、 ")
+        if clause:
+            clauses.append((clause, boundary.group()))
+        cursor = boundary.end()
+    trailing_clause = normalized[cursor:].strip("，,：:、 ")
+    if trailing_clause:
+        clauses.append((trailing_clause, ""))
+    active_clause = ""
+    saw_report_use = False
+    material_context_active = False
+    for clause, trailing_boundary in clauses:
+        owns_report = CURRENT_USER_REPORT_REFERENCE_RE.search(clause) is not None
+        has_action = REPORT_USE_ACTION_RE.search(clause) is not None
+        has_basis = re.search(
+            r"(?:基于|结合|根据|参考|依据)", clause, re.IGNORECASE
+        ) is not None
+        direct_analysis = re.match(
+            r"^(?:请|麻烦你?|帮我|给我)?"
+            r"(?:分析|解读|解释|评估|评价)(?:一下|下)?",
+            clause,
+            re.IGNORECASE,
+        )
+        is_report_use = owns_report and has_action and bool(
+            has_basis or direct_analysis
+        )
+        introduces_material_context = bool(
+            REPORT_USE_MATERIAL_CONTEXT_RE.search(clause)
+            or REPORT_USE_PROVENANCE_RE.search(clause)
+            or READ_NON_AUTHORIZING_RE.search(clause)
+        )
+        if is_report_use:
+            saw_report_use = True
+            authorized = not bool(
+                REPORT_USE_DIRECT_REQUEST_RE.search(clause) is None
+                or material_context_active
+                or has_explicit_nonself_health_owner(clause)
+                or is_health_tool_meta_command(clause)
+                or QUOTED_REPORT_USE_RE.search(clause)
+                or REPORT_USE_DENIAL_RE.search(clause)
+                or REPORT_USE_HYPOTHETICAL_RE.search(clause)
+                or REPORT_USE_PROVENANCE_RE.search(clause)
+                or REPORT_USE_DEFERRED_RE.search(clause)
+                or REPORT_USE_PERMISSION_QUESTION_RE.search(clause)
+                or READ_NON_AUTHORIZING_RE.search(clause)
+                or READ_AUTHORITY_WITHDRAWAL_RE.search(clause)
+                or READ_TRAILING_WITHDRAWAL_RE.search(clause)
+                or REPORT_USE_TRAILING_WITHDRAWAL_RE.search(clause)
+                or REPORT_USE_QUESTION_RE.search(clause + trailing_boundary)
+                or REPORT_USE_POST_ACTION_TAIL_RE.search(clause)
+            )
+            active_clause = clause if authorized else ""
+            if not authorized:
+                # An unauthorized report-use clause may itself be quoted or
+                # pasted material whose introducer was not recognizable. It
+                # cannot establish an in-band boundary for a later clause.
+                material_context_active = True
+        elif introduces_material_context or not saw_report_use:
+            # An unframed leading body has no trustworthy in-band closing
+            # delimiter: words such as "引用结束" may themselves be quoted.
+            # Keep the rest of this message non-authorizing; a later user turn
+            # can issue a fresh direct request.
+            material_context_active = True
+            if saw_report_use:
+                active_clause = ""
+        elif saw_report_use:
+            # Once a direct request is followed by any distinct, non-empty
+            # clause, its authority is no longer the final speech act. Only a
+            # later clause that independently matches the direct allowlist can
+            # establish authority again.
+            active_clause = ""
+    return active_clause
+
+
+def _has_owned_report_use_request(text: str) -> bool:
+    """Treat an explicit request to use one's report as bounded read consent."""
+    return bool(_active_owned_report_use_clause(text))
+
+
 def has_explicit_nonself_health_owner(text: str) -> bool:
     """Detect explicit third-party ownership across natural clause orderings."""
     normalized = clinical_interpretation_query_scope(str(text or ""))
@@ -1421,6 +2292,47 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
     )
     if beneficiary is not None:
         return not _is_current_user_scope_owner(beneficiary.group("owner"))
+
+    basis_owner = REPORT_BASIS_OWNER_RE.search(normalized)
+    if basis_owner is not None:
+        owner = basis_owner.group("owner").strip().removesuffix("的")
+        if not (
+            _is_current_user_scope_owner(owner)
+            or _is_exact_clinical_report_base(owner)
+        ):
+            return True
+
+    for additional_owner in REPORT_ADDITIONAL_OWNER_RE.finditer(normalized):
+        owner = additional_owner.group("owner").strip().removesuffix("的")
+        if not (
+            _is_current_user_scope_owner(owner)
+            or _is_exact_clinical_report_base(owner)
+        ):
+            return True
+
+    for pattern in (
+        REPORT_PREFIX_COORDINATED_OWNER_RE,
+        REPORT_TRAILING_COORDINATED_OWNER_RE,
+        REPORT_ELLIPTIC_READ_OWNER_RE,
+        REPORT_ELLIPTIC_DEICTIC_OWNER_RE,
+    ):
+        for coordinated_owner in pattern.finditer(normalized):
+            owner = coordinated_owner.group("owner").strip().removesuffix("的")
+            if not (
+                _is_current_user_scope_owner(owner)
+                or _is_exact_clinical_report_base(owner)
+                or re.fullmatch(_HEALTH_REPORT_DOMAIN, owner, re.IGNORECASE)
+            ):
+                return True
+
+    report_targets = tuple(
+        re.finditer(_HEALTH_REPORT_DOMAIN, normalized, re.IGNORECASE)
+    )
+    if (
+        len(report_targets) == 1
+        and CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is not None
+    ):
+        return asserted_nonself
 
     scoped = re.sub(
         r"^(?:请|麻烦你?|帮我|给我|替我|为我|查询|查找|查看|调取|调出|"
@@ -1528,20 +2440,283 @@ def _has_exact_clinical_report_target(text: str) -> bool:
     return bool(match and _is_exact_clinical_report_base(match.group("base")))
 
 
+def _is_health_target_expression(value: str) -> bool:
+    """Recognize a bounded health object independently of its owner."""
+    candidate = str(value or "").strip(" \t\n\r，,；;。.!！?？、")
+    candidate = HEALTH_READ_LEADING_SCOPE_RE.sub("", candidate, count=1)
+    candidate = _strip_exam_request_scaffolding(candidate)
+    leading_modifier_re = re.compile(
+        r"^(?:"
+        r"最近(?:一)?次|最后一次|上一次|"
+        r"(?:近|过去)[0-9零〇一二两三四五六七八九十百半]+"
+        r"(?:个)?(?:小时|天|周|月|年)(?:内|里|中)?|"
+        r"(?:20[0-9]{2}年)?[0-9]{1,2}月(?:[0-9]{1,2}日)?|"
+        r"20[0-9]{2}[-/][0-9]{1,2}(?:[-/][0-9]{1,2})?|"
+        r"近期|近来|目前|刚刚|最近|最新|当前|实时|平均|累计|历史|"
+        r"本次|此次|这次|上次|今日|今天|昨日|昨天|前天|"
+        r"本周|上周|本月|上月|今年|去年"
+        r")(?:的)?",
+        re.IGNORECASE,
+    )
+    previous = None
+    while candidate and candidate != previous:
+        previous = candidate
+        candidate = leading_modifier_re.sub("", candidate, count=1).strip()
+    candidate = re.sub(
+        r"(?:记录|历史|数据|趋势|情况|信息|读数)$",
+        "",
+        candidate,
+    ).strip()
+    return bool(
+        resolve_illness_entity(candidate).status == "exact"
+        or HEALTH_METRIC_ENTITY_RE.fullmatch(candidate)
+        or HEALTH_RECORD_DOMAIN_ENTITY_RE.fullmatch(candidate)
+        or EXACT_MEDICAL_EXAM_ENTITY_RE.fullmatch(candidate)
+    )
+
+
+def _starts_with_health_target_expression(value: str) -> bool:
+    """Recognize a leading health target even when more objects follow it."""
+    candidate = str(value or "").lstrip()
+    return any(
+        _is_health_target_expression(candidate[:end])
+        for end in range(1, min(len(candidate), 64) + 1)
+    )
+
+
+def _contains_health_target_expression(value: str) -> bool:
+    """Fail closed when an unknown modifier precedes a health target."""
+    candidate = str(value or "").lstrip()
+    return any(
+        _is_health_target_expression(candidate[start:end])
+        for start in range(len(candidate))
+        for end in range(start + 1, min(len(candidate), start + 64) + 1)
+    )
+
+
+def _coordinated_prefix_has_safe_health_target(value: str) -> bool:
+    """Allow ``血压和我的…`` but not ``张三和我的…``."""
+    candidate = str(value or "").strip()
+    if not candidate:
+        return False
+    clauses = tuple(
+        part.strip()
+        for part in re.split(r"[\n\r，,；;：:。.!！?？、]", candidate)
+        if part.strip()
+    )
+    if not clauses:
+        return False
+    candidate = clauses[-1]
+    read_matches = tuple(READ_VERB_RE.finditer(candidate))
+    if read_matches:
+        candidate = candidate[read_matches[-1].end():].strip()
+    candidate = re.sub(
+        r"^(?:请|麻烦你?|帮我|给我|替我|为我|基于|结合|根据|参考|参照|依据|按|"
+        r"还有|以及|顺带|顺便|另外|同时|并且|接着|随后|然后|一并|"
+        r"(?:也)?包括|包含|含有|涵盖|连带)",
+        "",
+        candidate,
+    ).strip()
+    if _is_health_target_expression(candidate):
+        return True
+    possessive = re.fullmatch(r"(?P<owner>.+?)的(?P<target>.+)", candidate)
+    return bool(
+        possessive
+        and _is_current_user_scope_owner(possessive.group("owner").strip())
+        and _is_health_target_expression(possessive.group("target").strip())
+    )
+
+
+def _owned_health_context_has_safe_owner(left_context: str) -> bool:
+    """Resolve the nearest bounded owner before an owned health object."""
+    normalized = str(left_context or "").rstrip()
+    for size in range(1, min(len(normalized), 32) + 1):
+        owner = normalized[-size:].strip()
+        if not owner:
+            continue
+        explicit_self_owner = _is_current_user_scope_owner(owner)
+        owner_is_safe = bool(
+            explicit_self_owner
+            or BODY_OR_TIME_OWNER_RE.fullmatch(owner)
+            or HEALTH_READ_SCOPE_OWNER_RE.fullmatch(owner)
+            or re.fullmatch(_REPORT_TIME_SCOPE, owner)
+            or re.fullmatch(
+                r"(?:病历|病例|记录|报告|体检|检查|化验|检验)(?:中|里|内)",
+                owner,
+            )
+            or _is_exact_clinical_report_base(owner)
+        )
+        if not owner_is_safe:
+            continue
+        prefix = normalized[:-size].rstrip()
+        if not prefix:
+            return True
+        if re.search(r"(?:基于|结合|根据|参考|参照|依据|按|针对|关于|利用)\s*$", prefix):
+            return True
+        if re.search(rf"(?:{READ_VERB_RE.pattern})\s*$", prefix, re.IGNORECASE):
+            return True
+        connector = re.search(
+            rf"(?:{HEALTH_ENTITY_CONNECTOR_RE.pattern}|同|并)\s*$",
+            prefix,
+            re.IGNORECASE,
+        )
+        if connector is not None:
+            if explicit_self_owner and not _coordinated_prefix_has_safe_health_target(
+                prefix[:connector.start()]
+            ):
+                continue
+            return True
+        discourse = re.search(
+            r"(?:顺带|顺便|另外|同时|并且|接着|随后|然后|一并|"
+            r"(?:也)?包括|包含|含有|涵盖|连带)\s*$",
+            prefix,
+        )
+        if (
+            discourse is not None
+            and explicit_self_owner
+            and _coordinated_prefix_has_safe_health_target(prefix[:discourse.start()])
+        ):
+            return True
+        if re.search(r"[\n\r，,；;：:。.!！?？、/／|｜&＆+＋]$", prefix):
+            return True
+        if re.fullmatch(r"(?:从|在|于)", prefix):
+            return True
+        if any(
+            _is_health_target_expression(prefix[-tail_size:])
+            for tail_size in range(1, min(len(prefix), 32) + 1)
+        ):
+            return True
+    return False
+
+
+def _health_read_segment_has_target(text: str) -> bool:
+    """Recognize a health object before independently evaluating a read segment."""
+    if _has_exact_clinical_report_target(text):
+        return True
+    entity = _health_read_entity_expression(text)
+    if not entity:
+        return False
+    possessive = re.fullmatch(r"(?P<owner>.+?)的(?P<target>.+)", entity)
+    candidate = possessive.group("target").strip() if possessive else entity
+    return _is_health_target_expression(candidate)
+
+
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
-    if has_explicit_nonself_health_owner(text):
+    subject_scope = clinical_interpretation_query_scope(
+        active_health_read_authority_text(text)
+    )
+    if has_explicit_nonself_health_owner(subject_scope):
         return True
-    subject_scope = clinical_interpretation_query_scope(text)
-    if _has_exact_clinical_report_target(subject_scope):
+
+    def normalize_safe_deictic_report(match: re.Match[str]) -> str:
+        owner = match.group("owner").strip().removesuffix("的")
+        if not (
+            _is_current_user_scope_owner(owner)
+            or _is_exact_clinical_report_base(owner)
+            or re.fullmatch(_HEALTH_REPORT_DOMAIN, owner, re.IGNORECASE)
+        ):
+            return match.group(0)
+        return f"{match.group('read')}{owner}报告{match.group('boundary')}"
+
+    subject_scope = REPORT_ELLIPTIC_DEICTIC_OWNER_RE.sub(
+        normalize_safe_deictic_report,
+        subject_scope,
+    )
+    owned_target_scope = _strip_exam_request_scaffolding(subject_scope)
+    for possessive_marker in re.finditer("的", owned_target_scope):
+        target_context = owned_target_scope[possessive_marker.end():]
+        # Punctuation is not an ownership boundary: natural health phrases use
+        # it inside one object (for example ``张三的以下指标：血压``).  A later
+        # possessive marker does start a new provenance candidate and is checked
+        # independently by the next loop iteration.
+        next_possessive = target_context.find("的")
+        if next_possessive >= 0:
+            target_context = target_context[:next_possessive]
+        owner_is_safe = _owned_health_context_has_safe_owner(
+            owned_target_scope[:possessive_marker.start()]
+        )
+        if (
+            _starts_with_health_target_expression(target_context)
+            or (
+                not owner_is_safe
+                and _contains_health_target_expression(target_context)
+            )
+        ) and not owner_is_safe:
+            return True
+    read_starts = tuple(match.start() for match in READ_VERB_RE.finditer(subject_scope))
+    if len(read_starts) > 1:
+        read_segments = tuple(
+            subject_scope[start:end].strip(" \t\n\r，,；;。.!！?？、")
+            for start, end in zip(
+                read_starts,
+                (*read_starts[1:], len(subject_scope)),
+            )
+        )
+        health_segments = tuple(
+            segment
+            for segment in read_segments
+            if segment and _health_read_segment_has_target(segment)
+        )
+        if health_segments:
+            return any(
+                health_read_has_nonself_subject(segment)
+                for segment in health_segments
+            )
+    if _has_owned_report_use_request(subject_scope):
         return False
+    has_exact_clinical_report_target = _has_exact_clinical_report_target(subject_scope)
     read_act = resolve_health_read_act(subject_scope)
     scoped_text = (
         read_act.active_clause if read_act.status == "active" else subject_scope
     )
+    owned_target_scope = _strip_exam_request_scaffolding(scoped_text)
+    for part in HEALTH_ENTITY_CONNECTOR_RE.split(owned_target_scope):
+        normalized_part = _strip_exam_request_scaffolding(
+            part.strip(" \t\n\r，,；;。.!！?？、")
+        )
+        possessive_part = re.fullmatch(
+            r"(?P<owner>.+?)的(?P<target>.+)",
+            normalized_part,
+        )
+        if possessive_part is None:
+            continue
+        owner = possessive_part.group("owner").strip()
+        target = possessive_part.group("target").strip()
+        if _is_health_target_expression(target) and not (
+            _is_current_user_scope_owner(owner)
+            or BODY_OR_TIME_OWNER_RE.fullmatch(owner)
+            or HEALTH_READ_SCOPE_OWNER_RE.fullmatch(owner)
+            or re.fullmatch(_REPORT_TIME_SCOPE, owner)
+            or _is_exact_clinical_report_base(owner)
+        ):
+            return True
+    coordinated_parts = tuple(
+        _strip_exam_request_scaffolding(
+            part.strip(" \t\n\r，,；;。.!！?？、")
+        )
+        for part in HEALTH_ENTITY_CONNECTOR_RE.split(owned_target_scope)
+        if _strip_exam_request_scaffolding(
+            part.strip(" \t\n\r，,；;。.!！?？、")
+        )
+    )
+    if len(coordinated_parts) > 1 and all(
+        (
+            _starts_with_health_target_expression(part.split("的", 1)[-1])
+            and (
+                "的" not in part
+                or _owned_health_context_has_safe_owner(part.rsplit("的", 1)[0])
+            )
+        )
+        or _has_exact_clinical_report_target(f"查看{part}")
+        for part in coordinated_parts
+    ):
+        return False
     exam = resolve_medical_exam_query(scoped_text)
     if exam.status == "nonself":
         return True
+    if has_exact_clinical_report_target:
+        return False
     entity = _health_read_entity_expression(scoped_text)
     if not entity:
         return False

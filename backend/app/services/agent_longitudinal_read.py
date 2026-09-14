@@ -244,6 +244,8 @@ def _complete_read_background(clause: str) -> bool:
     """Only affirmative narrative predicates can remove a clause from scope."""
     if _RESTRICTION_PREFIX.search(clause) or re.search(r"范围|时段|时限|要求|条件|限制", clause):
         return False
+    if re.fullmatch(r"(?:这|以下|上面)?是?(?:一个|一段)?示例(?:文本|内容)?", clause):
+        return True
     if _diagnosis_background_clause(clause):
         return True
     if re.fullmatch(r"(?:有人|医生|他|她)(?:说|提到|表示)", clause):
@@ -501,7 +503,15 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     text_override is an already narrowed server input (e.g. removed plan clauses),
     never model-authored authority. None means unsupported scope, not no request.
     """
-    active = active_health_instruction_text(snapshot.envelope.text if text_override is None else text_override)
+    source_text = snapshot.envelope.text if text_override is None else text_override
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+
+    # The role projector intentionally drops independent quoted material, but
+    # an inline material span attached to the requested owner/object must first
+    # fail the stricter read-authority boundary instead of becoming empty syntax.
+    if not active_health_read_authority_text(source_text):
+        return None
+    active = active_health_instruction_text(source_text)
     active = project_active_quote_roles(active)
     if active is None:
         return None

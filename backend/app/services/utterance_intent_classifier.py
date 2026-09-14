@@ -1171,7 +1171,11 @@ def _is_conversation_feedback_only(text: str) -> bool:
 
 def _is_plan_draft_request(text: str) -> bool:
     return any(
-        _has_any(clause, PLAN_DRAFT_TERMS) and _has_any(clause, PLAN_DRAFT_ACTIONS)
+        _has_any(clause, PLAN_DRAFT_TERMS)
+        and (
+            _has_any(clause, PLAN_DRAFT_ACTIONS)
+            or clause.startswith(("定我", "请定我", "帮我定"))
+        )
         and not _has_any(clause, ("制定的", "生成的", "起草的", "保存的"))
         for clause in _media_clauses(text)
     )

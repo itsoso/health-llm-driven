@@ -9783,6 +9783,868 @@ async def test_v38_third_party_medical_exam_read_never_dispatches(
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
 @pytest.mark.parametrize(
+    "text",
+    (
+        "给我一些建议，基于我的体检报告。",
+        "请将我的体检报告打开",
+        "麻烦将我的体检报告打开",
+        "请帮忙将我的MRI报告打开",
+        "将我刚导入的医学检查报告打开",
+        "请打开属于我的体检报告",
+        "请打开只属于我的体检报告",
+        "请打开归我所有的体检报告",
+    ),
+)
+async def test_owned_report_advice_projects_a_current_user_medical_exam_read(
+    tool_name,
+    policy_mode,
+    text,
+):
+    gateway = ToolGateway(
+        _snapshot(
+            text,
+            policy_mode=policy_mode,
+        )
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert len(calls) == 1
+    assert all(calls[0].get(key) == value for key, value in arguments.items())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    ("text", "record_type"),
+    (
+        ("请查看我的体检报告，还有我的血压", "medical_exam"),
+        ("请查看我的体检报告，以及我的睡眠", "medical_exam"),
+        ("请查看我的体检报告；还有我的血压和我的睡眠", "medical_exam"),
+        ("请查看我的体检报告，顺带我的血压", "medical_exam"),
+        ("请查看我的体检报告，包括我的血压", "medical_exam"),
+        ("请查看我的体检报告，也包括我的睡眠", "medical_exam"),
+        ("请查看我的体检报告，包含我的血压和睡眠", "medical_exam"),
+    ),
+)
+async def test_coordinated_current_user_health_reads_dispatch(
+    text,
+    record_type,
+    tool_name,
+):
+    gateway = ToolGateway(_snapshot(text))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    arguments = (
+        {"dimension": record_type}
+        if tool_name == "health_query"
+        else {"record_type": record_type, "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+async def test_third_party_report_advice_never_dispatches(tool_name):
+    gateway = ToolGateway(_snapshot("给我一些建议，基于张三的体检报告。"))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我不想基于我的体检报告获得建议。",
+        "我没有要求你基于我的体检报告给建议。",
+        "如果我让你基于我的体检报告给建议，你会怎么做？",
+        "‘基于我的体检报告给建议’是什么意思？",
+        "朋友说：基于我的体检报告给建议。",
+        "基于我的体检报告和张三的体检报告给建议。",
+        "我反对基于我的体检报告给建议。",
+        "我不接受基于我的体检报告给建议。",
+        "禁止基于我的体检报告给建议。",
+        "请避免基于我的体检报告给建议。",
+        "朋友让我基于我的体检报告给建议。",
+        "同事发来：基于我的体检报告给建议。",
+        "`基于我的体检报告给建议`是什么意思？",
+        "这只是一个例子：基于我的体检报告给建议。",
+        "不是要基于我的体检报告给建议。",
+        "没有必要基于我的体检报告给建议。",
+        "先不基于我的体检报告给建议。",
+        "基于我的体检报告还有张三的体检报告给建议。",
+        "基于我的体检报告跟张三的体检报告给建议。",
+        "基于我的体检报告连同张三的体检报告给建议。",
+        "基于我的体检报告给建议，取消。",
+        "基于我的体检报告给建议，到此为止。",
+        "老板让我基于我的体检报告给建议。",
+        "领导要求我基于我的体检报告给建议。",
+        "张三说：基于我的体检报告给建议。",
+        "妈妈发来：基于我的体检报告给建议。",
+        "聊天记录里写着：基于我的体检报告给建议。",
+        "邮件内容：基于我的体检报告给建议。",
+        "[基于我的体检报告给建议]",
+        "{基于我的体检报告给建议}",
+        "> 基于我的体检报告给建议",
+        "下周再基于我的体检报告给建议。",
+        "等我确认后再基于我的体检报告给建议。",
+        "王五建议我基于我的体检报告给建议。",
+        "消息内容如下：基于我的体检报告给建议。",
+        "以下文字仅供分析：基于我的体检报告给建议。",
+        "```基于我的体检报告给建议```",
+        "```text\n基于我的体检报告给建议。\n```",
+        "基于我的体检报告给建议，先不要了。",
+        "基于我的体检报告给建议，停。",
+        "能否基于我的体检报告给建议？",
+        "周末再基于我的体检报告给建议。",
+        "等医生确认后再基于我的体检报告给建议。",
+        "等我确认，再基于我的体检报告给建议。",
+        "有空再基于我的体检报告给建议。",
+        "能不能基于我的体检报告给建议？",
+        "你能基于我的体检报告给建议吗？",
+        "可以基于我的体检报告给建议吗？",
+        "是否可以基于我的体检报告给建议？",
+        "医生提醒我基于我的体检报告给建议。",
+        "朋友告诉我基于我的体检报告给建议。",
+        "转述如下：基于我的体检报告给建议。",
+        "聊天截图：基于我的体检报告给建议。",
+        "```text\n基于我的体检报告给建议。",
+        "~~~\n基于我的体检报告给建议。",
+        "    基于我的体检报告给建议。",
+        "〈基于我的体检报告给建议〉",
+        "〔基于我的体检报告给建议〕",
+        "我未同意基于我的体检报告给建议。",
+        "未经我授权基于我的体检报告给建议。",
+        "暂缓基于我的体检报告给建议。",
+        "基于我的体检报告给建议，先等等。",
+        "基于我的体检报告给建议，缓一缓。",
+        "基于我的体检报告给建议，暂缓。",
+        "基于我的体检报告，同时参考张三检查结果给建议。",
+        "今晚再基于我的体检报告给建议。",
+        "下次再基于我的体检报告给建议。",
+        "过几天再基于我的体检报告给建议。",
+        "等会儿再基于我的体检报告给建议。",
+        "待我批准后再基于我的体检报告给建议。",
+        "等我授权后再基于我的体检报告给建议。",
+        "确认后再基于我的体检报告给建议。",
+        "可基于我的体检报告给建议吗？",
+        "基于我的体检报告给建议可以吗？",
+        "基于我的体检报告给建议行不行？",
+        "会不会基于我的体检报告给建议？",
+        "是否支持基于我的体检报告给建议？",
+        "你是否愿意基于我的体检报告给建议？",
+        "医生吩咐我基于我的体检报告给建议。",
+        "医生提议我基于我的体检报告给建议。",
+        "医生推荐我基于我的体检报告给建议。",
+        "医生要求：基于我的体检报告给建议。",
+        "医生原话：基于我的体检报告给建议。",
+        "转发如下：基于我的体检报告给建议。",
+        "截图文字：基于我的体检报告给建议。",
+        "“基于我的体检报告给建议。",
+        "[基于我的体检报告给建议。",
+        "〖基于我的体检报告给建议〗",
+        "«基于我的体检报告给建议»",
+        "［基于我的体检报告给建议］",
+        "~~基于我的体检报告给建议~~",
+        "<del>基于我的体检报告给建议</del>",
+        "我还没同意基于我的体检报告给建议。",
+        "我没有许可基于我的体检报告给建议。",
+        "我反悔了，基于我的体检报告给建议。",
+        "我收回同意，基于我的体检报告给建议。",
+        "基于我的体检报告给建议，先缓着。",
+        "基于我的体检报告给建议，等等再说。",
+        "基于我的体检报告给建议，暂停一下。",
+        "基于我的体检报告，医生建议我调整饮食。",
+        "给我看这句话，基于我的体检报告给建议。",
+        "基于我的体检报告给建议属于错误示范。",
+        "基于我的体检报告给建议是医生的原话。",
+        "基于我的体检报告给建议等我批准后再做。",
+        "基于我的体检报告给建议是否合适。",
+        "基于我的体检报告给建议我还没决定。",
+        "基于我的体检报告给建议不是现在。",
+        "基于我的体检报告给建议由医生提出。",
+        "基于我的体检报告给建议——这不是请求。",
+        "基于我的体检报告给建议（仅供讨论）。",
+        "给我判断这句话是否是建议，基于我的体检报告。",
+        "基于我的体检报告给建议；这只是一个例子。",
+        "基于我的体检报告给建议。但这是医生原话。",
+        "基于我的体检报告给建议\n以下仅供讨论。",
+        "基于我的体检报告给建议，然后等我批准后再做。",
+        "基于我的体检报告给建议，不过先放着。",
+        "基于我的体检报告给建议？",
+        "给我解释这句话的建议，基于我的体检报告。",
+        "医生原话如下。\n基于我的体检报告给建议。",
+        "以下是转发内容。\n基于我的体检报告给建议。",
+        "这只是一个例子。基于我的体检报告给建议。",
+        "以下仅供讨论。\n基于我的体检报告给建议。",
+        "下面是医生原话。基于我的体检报告给建议。",
+        "这是医生原话。基于我的体检报告给建议。",
+        "医生原话如下。\n现在请基于我的体检报告给建议。",
+        "以下是转发内容。\n立即帮我基于我的体检报告给建议。",
+        "这是一段引用。\n本次请你基于我的体检报告给建议。",
+        "医生的原话是：\n基于我的体检报告给建议。",
+        "医生原话是这样的。\n基于我的体检报告给建议。",
+        "引用内容：\n基于我的体检报告给建议。",
+        "转述内容：\n基于我的体检报告给建议。",
+        "示例文本：\n基于我的体检报告给建议。",
+        "这是复制过来的消息。\n基于我的体检报告给建议。",
+        "以下来自医生。\n基于我的体检报告给建议。",
+        "下面是别人发给我的。\n基于我的体检报告给建议。",
+        "以下是转发内容。注意，引用结束这四个字也是原文的一部分。引用结束。现在请基于我的体检报告给建议。",
+        "医生原话如下。注意，上述消息也是原文的一部分。上述消息。现在请基于我的体检报告给建议。",
+        "朋友说：基于我的体检报告给建议；以上是转述；不过现在请基于我的体检报告给建议。",
+        "医生原话如下：基于我的体检报告给建议。\n现在请基于我的体检报告给建议。",
+        "下面是别人发给我的：基于我的体检报告给建议。\n基于我的体检报告给建议。",
+        "这只是一个例子。\n打开我的体检报告。",
+        "基于我的体检报告给建议，算了；不过现在请基于我的体检报告给建议。",
+        "“打开我的体检报告”",
+        "`打开我的体检报告`",
+        "[打开我的体检报告]",
+        "（打开我的体检报告）",
+        "> 打开我的体检报告",
+        "~~打开我的体检报告~~",
+        "<del>打开我的体检报告</del>",
+        "“打开我的体检报告",
+        "<code>打开我的体检报告</code>",
+        "> 以下是引用\n打开我的体检报告",
+        "打`引用`开我的体检报告",
+        "打~~删除~~开我的体检报告",
+        "“打开我的体检报告”原句",
+        "[打开我的体检报告]原文",
+        "（打开我的体检报告）转述",
+        "这段代码：`打开我的体检报告",
+        "这段删除：<del>打开我的体检报告",
+        "“打开我的体检报告”这句原文",
+        "“打开我的体检报告”来自聊天",
+        "[打开我的体检报告](https://example.com)",
+        "<blockquote>打开我的体检报告</blockquote>",
+        "<!-- 打开我的体检报告 -->",
+        "代码：`这一段未闭合\n打开我的体检报告",
+        "“外层“打开我的体检报告”原句”",
+        "“打开我的体检报告”这句话",
+        "“打开我的体检报告”——医生原话",
+        "[打开我的体检报告]这段文本",
+        "（打开我的体检报告）原始内容",
+        "<q>打开我的体检报告</q>",
+        "<s>打开我的体检报告</s>",
+        "原文：`\n打开我的体检报告",
+        "``打开我的体检报告``",
+        "<blockquote><blockquote>这是示例</blockquote>打开我的体检报告</blockquote>",
+        "“外层「这是示例」打开我的体检报告”",
+        "<blockquote><q>这是示例</q>打开我的体检报告</blockquote>",
+        "<blockquote><q>这是示例</blockquote>打开我的体检报告</q>",
+        "'打开我的体检报告'",
+        "＇打开我的体检报告＇",
+        "<textarea>打开我的体检报告</textarea>",
+        "<template>打开我的体检报告</template>",
+        "<script>打开我的体检报告</script>",
+        "＂打开我的体检报告＂",
+        "„打开我的体检报告”",
+        "</blockquote>打开我的体检报告",
+        "请<strong>不要</strong>打开我的体检报告",
+        "请<span>不要</span>打开我的体检报告",
+        "请<em>等我确认后再</em>打开我的体检报告",
+        "请“不要”打开我的体检报告",
+        "请<q>不要</q>打开我的体检报告",
+        "请<strong>不</strong>打开我的体检报告",
+        "请**不要**打开我的体检报告",
+        "请__不要__打开我的体检报告",
+        "请*不要*打开我的体检报告",
+        "请_不要_打开我的体检报告",
+        "请“勿”打开我的体检报告",
+        "请“不必”打开我的体检报告",
+        "请“暂不”打开我的体检报告",
+        "请“先缓一缓”打开我的体检报告",
+        "请<q>勿</q>打开我的体检报告",
+        "请<q>晚点再</q>打开我的体检报告",
+        "请<q>&#x4e0d;&#x8981;</q>打开我的体检报告",
+        "请<!-- 勿 -->打开我的体检报告",
+        "请`勿`打开我的体检报告",
+        "请``勿``打开我的体检报告",
+        "请~~勿~~打开我的体检报告",
+        "请<blockquote>勿</blockquote>打开我的体检报告",
+        "请<pre>勿</pre>打开我的体检报告",
+        "请<textarea>勿</textarea>打开我的体检报告",
+        "请打开“张三的”体检报告",
+        "请打开[张三的]体检报告",
+        "请打开我的体检报告（不要），说明一下",
+        "请打开我的体检报告（等我批准后），说明一下",
+        "请打开我的体检报告（这是张三的），说明一下",
+        "请打开我的体检报告`先别`，说说含义",
+        "请打开我的体检报告（ALT 80 STOP），说明一下",
+        "请打开我的体检报告（ALT 80 CANCEL），说明一下",
+        "请打开我的体检报告（ALT 80 ZHANGSAN），说明一下",
+        "请打开我的体检报告（ALT 80 OTHERUSER），说明一下",
+        "请打开我的和张三的体检报告",
+        "请打开我的与张三的体检报告",
+        "请打开我的跟张三的体检报告",
+        "请打开我的还有张三的体检报告",
+        "请打开我的连同张三的体检报告",
+        "请打开我的以及张三的体检报告",
+        "请打开我的及张三的体检报告",
+        "请打开我的体检报告和张三的",
+        "请打开我的体检报告，与张三的",
+        "请打开我的体检报告，跟张三的",
+        "请打开我的体检报告，还有张三的",
+        "请打开我的体检报告，连同张三的",
+        "请打开我的体检报告，以及张三的",
+        "请打开我的体检报告，及张三的",
+        "请打开我的、张三的体检报告",
+        "请打开我的同张三的体检报告",
+        "请打开我的并张三的体检报告",
+        "请打开我的加张三的体检报告",
+        "请打开我的再加张三的体检报告",
+        "请打开我的体检报告，也打开张三的",
+        "请打开我的体检报告，再打开张三的",
+        "请打开我的体检报告，并打开张三的",
+        "请打开我的体检报告，同时打开张三的",
+        "请打开我的体检报告，另外打开张三的",
+        "请打开我的体检报告，顺便打开张三的",
+        "请打开我的体检报告，随后打开张三的",
+        "请打开我的体检报告，接下来打开张三的",
+        "请打开我的体检报告，继而打开张三的",
+        "请打开我的体检报告，又打开张三的",
+        "请打开我的体检报告，下一步打开张三的",
+        "请打开我的体检报告，一并打开张三的",
+        "请打开我的体检报告，外加打开张三的",
+        "请打开我的体检报告。再打开张三的",
+        "请打开我的体检报告；再打开张三的",
+        "请打开我的体检报告！再打开张三的",
+        "请打开我的体检报告？再打开张三的",
+        "请打开我的体检报告\n再打开张三的",
+        "请打开张三的。再打开我的体检报告",
+        "请打开我的体检报告。再打开张三那份",
+        "请打开我的体检报告，也打开张三那份",
+        "请打开我的体检报告；再打开张三那一份",
+        "请打开我的体检报告，然后打开我妈那份",
+        "请打开我的体检报告，再看王五那个",
+        "请打开我的体检报告，再打开张三那一份儿",
+        "请打开我的体检报告，再打开张三那套",
+        "请打开我的体检报告，再打开张三那版",
+        "请打开我的体检报告，再打开张三那本",
+        "请打开我的体检报告，再打开张三那组",
+        "请打开我的体检报告，再打开张三那批",
+        "请打开我的体检报告，再打开张三那件",
+        "请打开张三那份。再打开我的体检报告",
+        "请打开我的＋张三的体检报告",
+        "请打开我的/张三的体检报告",
+        "请打开我的／张三的体检报告",
+        "请打开我的|张三的体检报告",
+        "请打开我的｜张三的体检报告",
+    ),
+)
+async def test_non_authorizing_report_mentions_never_dispatch(
+    tool_name,
+    message,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请结合我最近一次体检报告给我建议。",
+        "解读我最近一次体检报告。",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+async def test_recent_owned_report_request_dispatches(message, tool_name):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    expected_arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_manage"
+        else arguments
+    )
+    assert calls == [expected_arguments]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+async def test_clinical_exam_deictic_dispatches_as_current_user_read(tool_name):
+    gateway = ToolGateway(_snapshot("请打开我的体检报告，再打开MRI那份"))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [arguments]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请打开我的体检报告，再打开MRI那份，再查妈妈的血压",
+        "请打开我的体检报告，打开MRI那份，随即查妈妈的血压",
+        "请打开MRI那份。再查张三的睡眠",
+        "请打开MRI那份、张三的睡眠",
+        "请查看我的体检报告和张三的血压",
+        "请查看我的体检报告同张三的血压",
+        "请查看我的体检报告并张三的血压",
+        "请查看我的体检报告＋张三的血压",
+        "请查看我的体检报告和张三的血压趋势",
+        "请查看我的体检报告和张三的睡眠情况",
+        "请查看我的体检报告以及张三的最近血压趋势",
+        "请查看我的体检报告以及张三的昨日血压",
+        "请查看我的体检报告以及张三的最新血压记录",
+        "请查看我的体检报告以及张三的当前睡眠情况",
+        "请查看我的体检报告以及张三的最近一次血压记录",
+        "请查看我的体检报告以及张三的上周最新血压趋势",
+        "请查看我的体检报告以及张三的本月当前睡眠情况",
+        "请查看我的体检报告以及张三的过去7天平均血压数据",
+        "请查看我的体检报告以及张三的近期血压",
+        "请查看我的体检报告以及张三的近来睡眠",
+        "请查看我的体检报告以及张三的目前体重",
+        "请查看我的体检报告以及张三的刚刚血压",
+        "请查看我的体检报告以及张三的2026年9月血压",
+        "请查看我的体检报告以及张三的9月睡眠",
+        "请查看我的体检报告以及张三的阶段性综合血压走势",
+        "请查看我的体检报告以及张三的非常新的睡眠摘要",
+        "请查看我的体检报告以及张三的最新一次血压记录",
+        "请查看我的体检报告以及张三的平时血压趋势",
+        "请查看我的体检报告以及张三的日常睡眠情况",
+        "请查看我的体检报告以及张三的现有血压读数",
+        "请查看我的体检报告以及张三的刚才血压读数",
+        "请查看我的体检报告以及张三的过去两星期平均血压",
+        "请查看我的体检报告以及张三的近三个月来平均血压",
+        "请查看我的体检报告以及张三的2026年9月15号血压",
+        "请查看我的体检报告以及张三的2026.09.15血压",
+        "请查看我的体检报告以及张三的9月份血压",
+        "请查看我的体检报告以及张三的上季度血压",
+        "请查看张三的最新一次血压和我的体检报告",
+        "请查看我的体检报告以及张三的复查血压记录",
+        "请查看我的体检报告以及张三的待查血压记录",
+        "请查看我的体检报告以及张三的回看血压记录",
+        "请查看我的体检报告以及张三的复查后血压趋势",
+        "请查看我的体检报告以及张三的以下指标：血压",
+        "请查看我的体检报告以及张三的最新、平均血压趋势",
+        "请查看我的体检报告以及张三的2026年9月15日，晨起血压记录",
+        "请查看我的体检报告顺带张三在昨天的血压",
+        "请查看我的体检报告顺带张三从上周的血压记录",
+        "请查看我的体检报告，还有张三和我的血压",
+        "请查看我的体检报告；张三与我的血压",
+        "请查看我的体检报告，张三同我的血压也看一下",
+        "请查看我的体检报告顺带张三、我的血压",
+        "请查看我的体检报告顺带张三或我的血压",
+        "请查看我的体检报告以及张三的"
+        + "非常" * 18
+        + "血压记录",
+        "请查看我的体检报告、张三的睡眠记录和妈妈的血压",
+        "请查看ALT那版，然后调出同事的检查报告",
+    ),
+)
+async def test_clinical_deictic_does_not_hide_nonself_gateway_request(
+    message,
+    tool_name,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请查看我的体检报告和MRI报告",
+        "请查看我的体检报告和上一次的SLE记录",
+    ),
+)
+async def test_owned_report_with_safe_clinical_target_dispatches(message, tool_name):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "“这只是一个示例”已结束；现在请打开我的体检报告",
+        "“勿打开我的体检报告”已结束；现在请打开我的体检报告",
+        "<q>这是示例</q>；现在请打开我的体检报告",
+    ),
+)
+async def test_quoted_report_example_preserves_later_direct_read(message, tool_name):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+async def test_html_material_preserves_later_direct_owned_read(tool_name):
+    gateway = ToolGateway(
+        _snapshot("<blockquote>这是示例</blockquote>现在请打开我的体检报告")
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "分析以下建议：\n```\n查询张三的饮食记录\n````\n\n查询我的饮食记录并分析",
+        "分析以下建议：\n~~~\n查询张三的饮食记录\n~~~~\n\n查询我的饮食记录并分析",
+        "分析以下建议：\r```\r查询张三的饮食记录\r````\r\r查询我的饮食记录并分析",
+        "```bad`\n这是示例\n```\n块内文本\n```\n\n查询我的饮食记录并分析",
+        "```bad`\r\n这是示例\r\n```\r\n块内文本\r\n```\r\n\r\n查询我的饮食记录并分析",
+        "```bad`\r这是示例\r```\r块内文本\r```\r\r查询我的饮食记录并分析",
+        "> 这是示例\r\n\r\n查询我的饮食记录并分析",
+        "> 这是示例\r\r查询我的饮食记录并分析",
+        "分析以下建议：\n    不用再买。\n\n查询我的饮食记录并分析",
+    ),
+)
+async def test_closed_block_material_preserves_later_owned_read_gateway(
+    message,
+    tool_name,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "diet"}
+        if tool_name == "health_query"
+        else {"record_type": "diet", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "分析以下建议：\n```bad`\n仅限张三，不要查询饮食记录\n```\n\n查询我的饮食记录并分析",
+        "分析以下建议：\n````lang```\n仅限张三，不要查询饮食记录\n````\n\n查询我的饮食记录并分析",
+        "```bad`\n这是示例\n```\n\n查询我的饮食记录并分析",
+        "```bad`\r\n这是示例\r\n```\r\n\r\n查询我的饮食记录并分析",
+        "```bad`\r这是示例\r```\r\r查询我的饮食记录并分析",
+        "````lang```\n这是示例\n````\n\n查询我的饮食记录并分析",
+        "```bad` 仅限张三\n查询我的饮食记录并分析",
+        "```bad` 张三的\n查询我的饮食记录并分析",
+        "```bad` 不要执行\n查询我的饮食记录并分析",
+        "```bad` 先等我确认\n查询我的饮食记录并分析",
+        "```bad` 同时参考张三的\n查询我的饮食记录并分析",
+        "```bad` 仅查询上周\n查询我的饮食记录并分析",
+        "```bad` 饮食\n查询我的饮食记录并分析",
+        "```bad` 查询张三\n查询我的饮食记录并分析",
+        "```bad` 保存\n查询我的饮食记录并分析",
+        "```Alice`\n查询我的饮食记录并分析",
+    ),
+)
+async def test_invalid_backtick_fence_cannot_create_read_authority(
+    message,
+    tool_name,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "diet"}
+        if tool_name == "health_query"
+        else {"record_type": "diet", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "分析以下建议：\n```\n仅限张三，不要查询饮食记录\n\t```\n\n查询我的饮食记录并分析",
+        "分析以下建议：\n\t```\n仅限张三，不要查询饮食记录\n\t```\n\n查询我的饮食记录并分析",
+        "分析以下建议：\n```\n仅限张三，不要查询饮食记录\n \t```\n\n查询我的饮食记录并分析",
+        "分析以下建议：\n    ```\n仅限张三，不要查询饮食记录\n    ```\n\n查询我的饮食记录并分析",
+    ),
+)
+async def test_tab_indented_fence_cannot_create_read_authority(
+    message,
+    tool_name,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "diet"}
+        if tool_name == "health_query"
+        else {"record_type": "diet", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "```\r仅限张三，不要查询饮食记录\r\t```\r\r查询我的饮食记录并分析",
+        "```\r仅限张三，不要查询饮食记录\r \t```\r\r查询我的饮食记录并分析",
+        "```\r仅限张三，不要查询饮食记录\r    ```\r\r查询我的饮食记录并分析",
+    ),
+)
+async def test_bare_cr_indented_closer_never_dispatches(
+    message,
+    tool_name,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "diet"}
+        if tool_name == "health_query"
+        else {"record_type": "diet", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "<br>现在请打开我的体检报告",
+        "<strong>现在请打开我的体检报告</strong>",
+        "<strong><em>现在请打开我的体检报告</em></strong>",
+    ),
+)
+async def test_html_formatting_preserves_direct_owned_read(message, tool_name):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
     "message",
     (
         "查服务器异常记录",

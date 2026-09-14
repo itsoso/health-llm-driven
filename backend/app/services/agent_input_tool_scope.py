@@ -1,7 +1,35 @@
 """Limit tools to the user's active instruction, keeping pasted text as data."""
 from typing import Any
 
+from app.services.agent_kernel.tool_registry import get_tool_spec
+from app.services.agent_kernel.types import GoalSpec
 from app.services.utterance_intent_classifier import classify_agent_utterance
+
+
+def scope_tools_for_goal(
+    tools: list[dict[str, Any]], goal: GoalSpec | None,
+) -> list[dict[str, Any]]:
+    """Hide pure write capabilities when the compiled goal forbids every write.
+
+    Mixed tools remain visible because their arguments may describe an allowed
+    read.  The argument-level goal guard remains authoritative at dispatch.
+    """
+    if goal is None or not {"create", "update", "delete"}.issubset(
+        set(goal.prohibited_operations)
+    ):
+        return tools
+    scoped: list[dict[str, Any]] = []
+    for tool in tools:
+        name = str((tool.get("function") or {}).get("name") or "")
+        try:
+            effect = get_tool_spec(name).effect
+        except (KeyError, RuntimeError):
+            # Unknown future capabilities receive no model authority in a
+            # fully read-only goal.
+            continue
+        if effect != "write":
+            scoped.append(tool)
+    return scoped
 
 
 def scope_tools_for_owned_read(tools: list[dict[str, Any]], scope) -> list[dict[str, Any]]:

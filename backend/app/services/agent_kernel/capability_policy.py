@@ -26,10 +26,13 @@ from app.services.agent_kernel.goal_spec import (
     simple_illness_target,
 )
 from app.services.agent_kernel.health_semantics import (
+    CURRENT_USER_REPORT_REFERENCE_RE,
     HEALTH_ENTITY_CONNECTOR_RE,
     READ_VERB_RE,
     active_health_read_clause,
     active_health_instruction_text,
+    active_health_sync_authority_text,
+    active_health_read_authority_text,
     authorization_behavior_digest,
     authorization_grammar_digest,
     authorization_imported_behavior_names,
@@ -105,7 +108,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v50"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v52"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v35"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -1466,7 +1469,9 @@ def _normalize_query_text(text: str) -> str:
 
 def _health_read_cancelled_by_user(text: str) -> bool:
     """Return whether the active read speech act is explicitly cancelled."""
-    return health_read_cancelled(text)
+    return health_read_cancelled(text) and not has_explicit_health_read_request(
+        text
+    )
 
 
 def _calendar_question_dimension(text: str) -> str | None:
@@ -1481,9 +1486,29 @@ def _has_explicit_read_request(text: str) -> bool:
 
 def _health_read_is_explicitly_non_authorizing(text: str) -> bool:
     """Reject deferred, completed, reported or hypothetical read wording."""
-    resolution = resolve_health_read_act(text)
+    raw_text = str(text or "")
+    resolution = resolve_health_read_act(raw_text)
+    material_projection_changed = (
+        active_health_read_authority_text(raw_text) != raw_text.strip()
+    )
+    report_use_mention = bool(
+        re.search(r"(?:基于|结合|根据|参考|依据)", str(text or ""))
+        and re.search(r"(?:体检|化验|检验|检查|医学检查)?报告", str(text or ""))
+        and re.search(
+            r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)",
+            str(text or ""),
+        )
+    )
     return (
-        resolution.status == "none" and READ_VERB_RE.search(str(text or "")) is not None
+        resolution.status == "none"
+        and (
+            READ_VERB_RE.search(str(text or "")) is not None
+            or material_projection_changed
+            or (
+                report_use_mention
+                and not has_explicit_health_read_request(text)
+            )
+        )
     )
 
 
@@ -1868,10 +1893,15 @@ def _project_medical_exam_query_to_turn(text: str) -> dict[str, Any] | None:
         return {"dimension": "medical_exam", "keyword": resolution.entity}
     if is_clinical_result_interpretation(text):
         return {"dimension": "medical_exam"}
-    if _has_explicit_read_request(text) and re.search(
-        r"(?:我(?:自己|个人|本人)?|本人)(?:的)?(?:刚导入的)?"
-        r"(?:医学)?(?:检查|体检|化验|检验)?报告",
-        _query_scope_text(text),
+    if _has_explicit_read_request(
+        text
+    ) and (
+        CURRENT_USER_REPORT_REFERENCE_RE.search(_query_scope_text(text))
+        or re.search(
+            r"(?:我(?:自己|个人|本人)?|本人)(?:的)?(?:刚导入的)?"
+            r"(?:医学)?(?:检查|体检|化验|检验)?报告",
+            _query_scope_text(text),
+        )
     ):
         return {"dimension": "medical_exam"}
     return None
@@ -2468,7 +2498,7 @@ def _explicit_owned_garmin_sync(text: str) -> bool:
     Fetching data alone is read intent and must never enqueue a sync job.
     """
     scoped = re.sub(r"\s+", "", normalize_health_authorization_text(
-        active_health_instruction_text(text)))
+        active_health_sync_authority_text(text)))
     polite = r"(?:请你?|麻烦)?(?:帮我|给我)?"
     owned_data = r"(?:我的?)?(?:garmin|佳明)(?:的)?数据"
     sync_command = rf"{polite}(?:同步(?:一下)?|(?:主动)?触发(?:一下)?同步)"
@@ -2592,7 +2622,8 @@ def decide_tool_capability(
     if (tool_name == "health_record" and args.get("record_type") == "garmin_sync"
             and request.source not in {"procedure_recipe_replay", "telegram_directive"}):
         from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
-        if (has_owned_sync_instruction(snapshot.envelope.text)
+        if ((has_owned_sync_instruction(snapshot.envelope.text)
+                or _explicit_owned_garmin_sync(snapshot.envelope.text))
                 and snapshot.intent.operation == "sync" and args.get("data") == {}):
             return _decision("allow", "explicit_owned_garmin_sync", tool_name,
                              {"record_type": "garmin_sync", "data": {}},
@@ -2819,6 +2850,20 @@ def decide_tool_capability(
                                  "health_manage", daily_plan.diet_list_args())
             return _decision("allow", "health_query_projected_to_calendar_window",
                              tool_name, bound_query)
+        if medical_exam_args is not None and _has_explicit_read_request(turn_text):
+            if illness_read_has_unowned_subject(_query_scope_text(turn_text)):
+                return _decision(
+                    "block",
+                    "health_query_subject_not_current_user",
+                    tool_name,
+                    canonical_args,
+                )
+            return _decision(
+                "allow",
+                "health_query_projected_to_turn_semantics",
+                tool_name,
+                medical_exam_args,
+            )
         from app.services.agent_query_window import resolve_calendar_query_window
 
         from app.services.agent_longitudinal_read import longitudinal_read_projection_text
@@ -2861,8 +2906,6 @@ def decide_tool_capability(
                 "allow", "health_query_projected_to_calendar_window", tool_name,
                 {"dimension": expected_dimension, **calendar_window},
             )
-        if medical_exam_args is not None and _has_explicit_read_request(turn_text):
-            return _decision("allow", "health_query_projected_to_turn_semantics", tool_name, medical_exam_args)
         explicit_record_type = _manage_list_turn_record_type(turn_text)
         scoped_metric_read = bool(
             _has_explicit_read_request(turn_text)
@@ -3134,7 +3177,26 @@ def decide_tool_capability(
                 )
             internal_mutation_lookup = _server_authorized_manage_lookup(args)
             guarding_user_read = not internal_mutation_lookup
-            from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+            from app.services.agent_longitudinal_read import (
+                longitudinal_read_restrictions_unresolved,
+                project_active_quote_roles,
+            )
+            active_turn_text = active_health_instruction_text(turn_text)
+            reported_projection = project_active_quote_roles(active_turn_text)
+            if (
+                guarding_user_read
+                and reported_projection is not None
+                and reported_projection.strip() != active_turn_text.strip()
+            ):
+                # Generic list adapters retain their historical strict owner
+                # boundary; only health_query may consume a separately reported
+                # prefix through the richer longitudinal projection.
+                return _decision(
+                    "block",
+                    "health_query_subject_not_current_user",
+                    tool_name,
+                    args,
+                )
             if (guarding_user_read
                     and canonical_health_manage_record_type(args.get("record_type"))
                     in {"diet", "sleep", "workout", "supplements"}
@@ -3165,6 +3227,36 @@ def decide_tool_capability(
                     return _decision("block", "health_query_dimension_conflict", tool_name, args)
                 return _decision("allow", "health_query_projected_to_calendar_window",
                                  "health_query", daily_plan.queries()[0])
+            medical_exam_args = _project_medical_exam_query_to_turn(turn_text)
+            if (
+                guarding_user_read
+                and medical_exam_args is not None
+                and _has_explicit_read_request(turn_text)
+                and CURRENT_USER_REPORT_REFERENCE_RE.search(
+                    _query_scope_text(turn_text)
+                )
+                and _query_contains_unresolved_reference(turn_text)
+            ):
+                if illness_read_has_unowned_subject(_query_scope_text(turn_text)):
+                    return _decision(
+                        "block",
+                        "health_query_subject_not_current_user",
+                        tool_name,
+                        args,
+                    )
+                if (
+                    canonical_health_manage_record_type(args.get("record_type"))
+                    != "medical_exam"
+                ):
+                    return _decision(
+                        "block", "health_query_dimension_conflict", tool_name, args
+                    )
+                return _decision(
+                    "allow",
+                    "health_query_projected_to_turn_semantics",
+                    "health_query",
+                    medical_exam_args,
+                )
             if (
                 _query_contains_unresolved_reference(turn_text)
                 and (guarding_user_read or _has_explicit_read_request(turn_text))
