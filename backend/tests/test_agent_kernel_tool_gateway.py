@@ -9994,6 +9994,14 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "<del>打开我的体检报告</del>",
         "“打开我的体检报告",
         "<code>打开我的体检报告</code>",
+        "> 以下是引用\n打开我的体检报告",
+        "打`引用`开我的体检报告",
+        "打~~删除~~开我的体检报告",
+        "“打开我的体检报告”原句",
+        "[打开我的体检报告]原文",
+        "（打开我的体检报告）转述",
+        "这段代码：`打开我的体检报告",
+        "这段删除：<del>打开我的体检报告",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(

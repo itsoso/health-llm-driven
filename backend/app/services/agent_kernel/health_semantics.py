@@ -921,11 +921,19 @@ INLINE_CODE_MATERIAL_RE = re.compile(
     r"(?s)(?<!`)`(?!`)[^`\n\r]+(?<!`)`(?!`)|<code\b[^>]*>.*?</code\s*>",
     re.IGNORECASE,
 )
-MARKDOWN_BLOCKQUOTE_MATERIAL_RE = re.compile(
-    r"(?m)^[ \t]*>[^\n\r]*(?:\r?\n|$)"
+UNCLOSED_INLINE_CODE_MATERIAL_RE = re.compile(
+    r"(?s)(?<!`)`(?!`)[^`\n\r]*$|<code\b[^>]*>.*$",
+    re.IGNORECASE,
+)
+MARKDOWN_BLOCKQUOTE_START_RE = re.compile(
+    r"(?m)^[ \t]*>"
 )
 INLINE_STRUCK_MATERIAL_RE = re.compile(
     r"(?s)~~.+?~~|<del\b[^>]*>.*?</del\s*>",
+    re.IGNORECASE,
+)
+UNCLOSED_STRUCK_MATERIAL_RE = re.compile(
+    r"(?s)~~(?!.*~~).*$|<del\b[^>]*>.*$",
     re.IGNORECASE,
 )
 UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
@@ -957,6 +965,11 @@ STANDALONE_MATERIAL_QUOTE_PAIRS = {
     "«": "»",
     "‹": "›",
 }
+STANDALONE_MATERIAL_ATTRIBUTION_RE = re.compile(
+    r"^(?:原句|原文|转述|引用|示例|例子|摘录|内容|消息|说法)"
+    r"[。.!！?？\s]*$",
+    re.IGNORECASE,
+)
 
 
 def _is_standalone_wrapped_material(text: str) -> bool:
@@ -971,7 +984,9 @@ def _is_standalone_wrapped_material(text: str) -> bool:
         return False
     if closer not in candidate[1:]:
         return True
-    return candidate.endswith(closer)
+    close_index = candidate.find(closer, 1)
+    trailing = candidate[close_index + len(closer) :]
+    return not trailing or STANDALONE_MATERIAL_ATTRIBUTION_RE.fullmatch(trailing) is not None
 
 
 def _analyzed_material_end(text: str, start: int) -> int:
@@ -1015,6 +1030,16 @@ def _analyzed_material_end(text: str, start: int) -> int:
     return len(text)
 
 
+def _strip_markdown_blockquote_material(text: str) -> str:
+    """Remove blockquotes with CommonMark lazy continuation as one body."""
+    projected = str(text or "")
+    while match := MARKDOWN_BLOCKQUOTE_START_RE.search(projected):
+        quote_start = match.end() - 1
+        quote_end = _analyzed_material_end(projected, quote_start)
+        projected = projected[: match.start()] + "\n" + projected[quote_end:]
+    return projected
+
+
 def active_health_instruction_text(text: str) -> str:
     """Project active instructions, excluding explicitly analyzed material.
 
@@ -1027,13 +1052,15 @@ def active_health_instruction_text(text: str) -> str:
     original = str(text or "")
     if _is_standalone_wrapped_material(original):
         return ""
-    original = MARKDOWN_FENCED_MATERIAL_RE.sub("", original)
-    original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub("", original)
-    original = INLINE_CODE_MATERIAL_RE.sub("", original)
-    original = MARKDOWN_BLOCKQUOTE_MATERIAL_RE.sub("", original)
-    original = INLINE_STRUCK_MATERIAL_RE.sub("", original)
-    original = UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE.sub("", original)
-    original = INDENTED_CODE_MATERIAL_RE.sub("", original)
+    original = MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
+    original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
+    original = INLINE_CODE_MATERIAL_RE.sub(" ", original)
+    original = UNCLOSED_INLINE_CODE_MATERIAL_RE.sub(" ", original)
+    original = _strip_markdown_blockquote_material(original)
+    original = INLINE_STRUCK_MATERIAL_RE.sub(" ", original)
+    original = UNCLOSED_STRUCK_MATERIAL_RE.sub(" ", original)
+    original = UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
+    original = INDENTED_CODE_MATERIAL_RE.sub(" ", original)
     parts: list[str] = []
     cursor = 0
     while match := ANALYZED_MATERIAL_INTRO_RE.search(original, cursor):

@@ -355,6 +355,14 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "<del>打开我的体检报告</del>",
         "“打开我的体检报告",
         "<code>打开我的体检报告</code>",
+        "> 以下是引用\n打开我的体检报告",
+        "打`引用`开我的体检报告",
+        "打~~删除~~开我的体检报告",
+        "“打开我的体检报告”原句",
+        "[打开我的体检报告]原文",
+        "（打开我的体检报告）转述",
+        "这段代码：`打开我的体检报告",
+        "这段删除：<del>打开我的体检报告",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):

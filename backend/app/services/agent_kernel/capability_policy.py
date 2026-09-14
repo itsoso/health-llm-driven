@@ -106,7 +106,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v50"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v51"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v35"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -1484,7 +1484,11 @@ def _has_explicit_read_request(text: str) -> bool:
 
 def _health_read_is_explicitly_non_authorizing(text: str) -> bool:
     """Reject deferred, completed, reported or hypothetical read wording."""
-    resolution = resolve_health_read_act(text)
+    raw_text = str(text or "")
+    resolution = resolve_health_read_act(raw_text)
+    material_projection_changed = (
+        active_health_instruction_text(raw_text) != raw_text.strip()
+    )
     report_use_mention = bool(
         re.search(r"(?:基于|结合|根据|参考|依据)", str(text or ""))
         and re.search(r"(?:体检|化验|检验|检查|医学检查)?报告", str(text or ""))
@@ -1497,6 +1501,7 @@ def _health_read_is_explicitly_non_authorizing(text: str) -> bool:
         resolution.status == "none"
         and (
             READ_VERB_RE.search(str(text or "")) is not None
+            or material_projection_changed
             or (
                 report_use_mention
                 and not has_explicit_health_read_request(text)
