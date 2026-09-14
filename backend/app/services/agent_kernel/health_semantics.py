@@ -587,6 +587,10 @@ def _is_current_user_scope_owner(owner: str) -> bool:
         if remainder and (
             HEALTH_READ_SCOPE_OWNER_RE.fullmatch(remainder)
             or re.fullmatch(_REPORT_TIME_SCOPE, remainder)
+            or re.fullmatch(
+                r"(?:刚刚?|最近|近期)?(?:上传|导入|生成|保存)",
+                remainder,
+            )
         ):
             return True
     return False
@@ -2283,12 +2287,11 @@ def _starts_with_health_target_expression(value: str) -> bool:
 
 
 def _contains_health_target_expression(value: str) -> bool:
-    """Fail closed when an unknown short modifier precedes a health target."""
+    """Fail closed when an unknown modifier precedes a health target."""
     candidate = str(value or "").lstrip()
-    search_limit = min(len(candidate), 32)
     return any(
         _is_health_target_expression(candidate[start:end])
-        for start in range(search_limit)
+        for start in range(len(candidate))
         for end in range(start + 1, min(len(candidate), start + 64) + 1)
     )
 
@@ -2323,6 +2326,8 @@ def _owned_health_context_has_safe_owner(left_context: str) -> bool:
             prefix,
             re.IGNORECASE,
         ):
+            return True
+        if re.search(r"(?:从|在|于)\s*$", prefix):
             return True
         if any(
             _is_health_target_expression(prefix[-tail_size:])
@@ -2366,6 +2371,26 @@ def health_read_has_nonself_subject(text: str) -> bool:
         normalize_safe_deictic_report,
         subject_scope,
     )
+    owned_target_scope = _strip_exam_request_scaffolding(subject_scope)
+    for possessive_marker in re.finditer("的", owned_target_scope):
+        target_context = owned_target_scope[possessive_marker.end():]
+        structural_boundary = re.search(
+            r"(?:[\n\r，,；;：:。!！?？、]|(?<!\d)\.(?!\d))",
+            target_context,
+        )
+        if structural_boundary is not None:
+            target_context = target_context[:structural_boundary.start()]
+        owner_is_safe = _owned_health_context_has_safe_owner(
+            owned_target_scope[:possessive_marker.start()]
+        )
+        if (
+            _starts_with_health_target_expression(target_context)
+            or (
+                not owner_is_safe
+                and _contains_health_target_expression(target_context)
+            )
+        ) and not owner_is_safe:
+            return True
     read_starts = tuple(match.start() for match in READ_VERB_RE.finditer(subject_scope))
     if len(read_starts) > 1:
         read_segments = tuple(
@@ -2393,22 +2418,6 @@ def health_read_has_nonself_subject(text: str) -> bool:
         read_act.active_clause if read_act.status == "active" else subject_scope
     )
     owned_target_scope = _strip_exam_request_scaffolding(scoped_text)
-    for possessive_marker in re.finditer("的", owned_target_scope):
-        target_context = owned_target_scope[possessive_marker.end():]
-        next_read = READ_VERB_RE.search(target_context)
-        if next_read is not None:
-            target_context = target_context[:next_read.start()]
-        owner_is_safe = _owned_health_context_has_safe_owner(
-            owned_target_scope[:possessive_marker.start()]
-        )
-        if (
-            _starts_with_health_target_expression(target_context)
-            or (
-                not owner_is_safe
-                and _contains_health_target_expression(target_context)
-            )
-        ) and not owner_is_safe:
-            return True
     for part in HEALTH_ENTITY_CONNECTOR_RE.split(owned_target_scope):
         possessive_part = re.fullmatch(
             r"(?P<owner>.+?)的(?P<target>.+)",
