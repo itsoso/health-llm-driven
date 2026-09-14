@@ -63,7 +63,9 @@ G1 裁决：`PASS`。该需求不引入 Health OS 一等对象，按认证安全
 ```text
 admin confirms masked phone
   -> backend creates and sends bound invitation
-  -> user verifies phone OTP
+  -> user enters phone; backend allows active approved users or phones with an active invitation
+  -> otherwise no OTP is issued and Mobile shows “该手机号尚未开通，请联系管理员”
+  -> admitted phone verifies OTP
   -> existing user logs in OR new phone receives one-time verified ticket
   -> backend matches invitation and phone in one transaction
   -> user created + invitation consumed + token issued
@@ -86,6 +88,7 @@ apis:
   - GET /admin/registration-invitations
   - POST /admin/registration-invitations/{id}/resend
   - POST /admin/registration-invitations/{id}/revoke
+  - POST /auth/phone/code
   - POST /auth/phone/verify
   - POST /auth/invitations/inspect
   - POST /auth/invited-registration
@@ -112,6 +115,7 @@ migration: additive PostgreSQL managed migration; no emergency down migration
 - 手机号密文用于投递，keyed HMAC 用于匹配，后台只返回掩码。
 - 邀请码、deep-link token、OTP 和 verified ticket 不进入日志、遥测、错误详情或普通存储。
 - 邀请操作和核销写审计日志；审计只保存资源 ID、actor、状态枚举和手机号掩码。
+- OTP 准入读取对邀请行加事务锁并保持到投递完成；资格以锁内检查时刻为准，注册时再次校验。
 - 管理员权限由 Backend 强制，Mobile/Web UI 隐藏不构成授权。
 - 无健康数据、药物、诊断或医疗结论；不需要 SafetyGuardian 医疗规则。
 - 实现提交必须按项目 `safety-gate` 做独立认证/隐私复核，`GO` 后才能部署。
@@ -130,6 +134,10 @@ Then the backend issues a login token and consumes no invitation
 Given a verified phone that has no user and no matching invitation
 When registration is attempted
 Then no user is created and REGISTRATION_INVITATION_REQUIRED is returned
+
+Given a phone that has no user and no active matching invitation
+When an OTP is requested
+Then no OTP is created or delivered and REGISTRATION_INVITATION_REQUIRED is returned with “该手机号尚未开通，请联系管理员”
 
 Given an admin-created active invitation bound to a phone
 When that phone proves OTP ownership and submits the invitation
@@ -163,11 +171,14 @@ Then the backend returns 403 and writes no invitation mutation
 
 ## 14. Open Questions
 
-无阻塞问题。国际短信国家范围、邀请默认有效期是否按租户配置属于后续增量。
+产品/隐私 Owner 已于 2026-09-14 明确接受：对未获准手机号返回 403 和指定文案会形成
+“active + approved 老用户或有效邀请”的存在性探测信号。上线后监控 `/phone/code` 的 403 比例
+与异常来源；出现枚举或骚扰迹象时回退为统一公开响应并对未准入号码静默不投递。国际短信国家
+范围、邀请默认有效期是否按租户配置属于后续增量。
 
 ## 15. Changelog
 
 | Date | Change | Reason |
 |---|---|---|
+| 2026-09-14 | Check existing-user or active-invitation eligibility before OTP delivery | 避免未获准手机号收到验证码，并在手机号页直接给出可行动提示 |
 | 2026-08-01 | Approved definition | 用户确认绑定手机号、短信+手工兜底、发邀即审批 |
-

@@ -182,6 +182,26 @@ def phone_lookup_hmac(raw_phone: str) -> str:
     return _digest(normalize_phone(raw_phone), _PHONE_PURPOSE)
 
 
+def find_usable_invitation_by_phone(
+    db: Session,
+    raw_phone: str,
+    *,
+    now: datetime | None = None,
+) -> RegistrationInvitation | None:
+    """Find the active, unexpired invitation bound to a normalized phone."""
+
+    invitation = (
+        db.query(RegistrationInvitation)
+        .filter(RegistrationInvitation.phone_hmac == phone_lookup_hmac(raw_phone))
+        .filter(RegistrationInvitation.status.in_(("created", "sent", "send_failed")))
+        .with_for_update()
+        .one_or_none()
+    )
+    if invitation is None or not invitation.is_usable(_aware(now or _now())):
+        return None
+    return invitation
+
+
 def _manual_code_digest(value: Any) -> str:
     return _digest(_credential_text(value, purpose=_CODE_PURPOSE), _CODE_PURPOSE)
 

@@ -58,6 +58,10 @@ const INVITATION_ERROR_MESSAGES: Record<string, string> = {
   REGISTRATION_STATE_CONFLICT: '注册状态暂时冲突，请稍后重试。',
   REGISTRATION_USER_ALREADY_EXISTS: '该手机号已注册，请返回使用手机号登录。',
 };
+const PHONE_VERIFICATION_ERROR_MESSAGES: Record<string, string> = {
+  REGISTRATION_CLOSED: '该手机号尚未开通，请联系管理员',
+  REGISTRATION_INVITATION_REQUIRED: '该手机号尚未开通，请联系管理员',
+};
 
 function normalizeInternationalPhone(value: string): string | null {
   const normalized = value.replace(/[\s()-]/g, '');
@@ -180,9 +184,13 @@ export default function LoginScreen({
       setCountdown(60);
       if (result.dev_code) setCode(result.dev_code);
     } catch (error) {
-      setInlineError(isNetworkError(error)
-        ? '网络暂时不可用，请检查网络后重试。'
-        : '验证码发送失败，请稍后重试。');
+      const codeValue = registrationAuthErrorCode(error);
+      setInlineError(
+        (codeValue && PHONE_VERIFICATION_ERROR_MESSAGES[codeValue])
+        || (isNetworkError(error)
+          ? '网络暂时不可用，请检查网络后重试。'
+          : '验证码发送失败，请稍后重试。'),
+      );
     } finally {
       setLoading(false);
     }
@@ -203,9 +211,13 @@ export default function LoginScreen({
         onInvitationLinkCleared?.();
       }
     } catch (error) {
-      setInlineError(isNetworkError(error)
-        ? '网络暂时不可用，请检查网络后重试。'
-        : '验证码无效或已过期，请重新获取。');
+      const codeValue = registrationAuthErrorCode(error);
+      setInlineError(
+        (codeValue && PHONE_VERIFICATION_ERROR_MESSAGES[codeValue])
+        || (isNetworkError(error)
+          ? '网络暂时不可用，请检查网络后重试。'
+          : '验证码无效或已过期，请重新获取。'),
+      );
     } finally {
       setLoading(false);
     }

@@ -1,14 +1,167 @@
 from datetime import UTC, datetime, timedelta
 import json
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from app.config import settings
+from app.models.phone_auth import PhoneAuthCode
 from app.models.user import User
+from app.services.registration_invitation import create_registration_invitation
 
 
 def _enable_dev_codes(monkeypatch):
     monkeypatch.setattr(settings, "auth_phone_code_dev_echo", True, raising=False)
     monkeypatch.setattr(settings, "auth_phone_code_resend_seconds", 0, raising=False)
+
+
+def _enable_invitation_enforcement(monkeypatch):
+    _enable_dev_codes(monkeypatch)
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)
+    monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "registration_invitation_digest_key",
+        "phone-code-invitation-tests-key-with-32-bytes",
+    )
+
+
+def test_phone_code_rejects_uninvited_unknown_phone_before_issuing_code(
+    client, db, monkeypatch
+):
+    _enable_invitation_enforcement(monkeypatch)
+    from app.api import auth as auth_api
+
+    issue_phone_code = Mock()
+    monkeypatch.setattr(auth_api, "issue_phone_code", issue_phone_code)
+
+    response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138100"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == {
+        "code": "REGISTRATION_INVITATION_REQUIRED",
+        "message": "该手机号尚未开通，请联系管理员",
+    }
+    issue_phone_code.assert_not_called()
+    assert db.query(PhoneAuthCode).filter(PhoneAuthCode.phone == "+8613800138100").count() == 0
+
+
+def test_phone_code_allows_unknown_phone_with_active_invitation(client, db, monkeypatch):
+    _enable_invitation_enforcement(monkeypatch)
+    create_registration_invitation(db, "13800138101")
+    db.commit()
+
+    response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138101"})
+
+    assert response.status_code == 200
+    assert response.json()["phone"] == "+8613800138101"
+    assert db.query(PhoneAuthCode).filter(PhoneAuthCode.phone == "+8613800138101").count() == 1
+
+
+def test_phone_code_allows_send_failed_invitation(client, db, monkeypatch):
+    _enable_invitation_enforcement(monkeypatch)
+    created = create_registration_invitation(db, "13800138106")
+    created.invitation.status = "send_failed"
+    db.commit()
+
+    response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138106"})
+
+    assert response.status_code == 200
+
+
+def test_phone_code_rejects_expired_revoked_and_consumed_invitations(
+    client, db, monkeypatch
+):
+    _enable_invitation_enforcement(monkeypatch)
+    cases = (
+        ("13800138103", "expired"),
+        ("13800138104", "revoked"),
+        ("13800138105", "consumed"),
+        ("13800138107", "active_consumed"),
+    )
+    for phone, invitation_status in cases:
+        created = create_registration_invitation(db, phone)
+        created.invitation.status = invitation_status
+        if invitation_status == "expired":
+            created.invitation.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        if invitation_status == "active_consumed":
+            created.invitation.status = "created"
+            created.invitation.consumed_at = datetime.now(UTC)
+        db.commit()
+
+        response = client.post("/api/v1/auth/phone/code", json={"phone": phone})
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
+
+    assert db.query(PhoneAuthCode).count() == 0
+
+
+def test_phone_code_allows_existing_phone_without_invitation(client, db, monkeypatch):
+    _enable_invitation_enforcement(monkeypatch)
+    db.add(
+        User(
+            username="existing_phone_code_user",
+            name="Existing phone user",
+            phone="+8613800138102",
+            phone_verified_at=datetime.now(UTC),
+            is_active=True,
+            is_approved=True,
+        )
+    )
+    db.commit()
+
+    response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138102"})
+
+    assert response.status_code == 200
+    assert response.json()["phone"] == "+8613800138102"
+
+
+def test_phone_code_rejects_inactive_or_unapproved_existing_phone(
+    client, db, monkeypatch
+):
+    _enable_invitation_enforcement(monkeypatch)
+    users = (
+        User(
+            username="inactive_phone_code_user",
+            name="Inactive phone user",
+            phone="+8613800138108",
+            phone_verified_at=datetime.now(UTC),
+            is_active=False,
+            is_approved=True,
+        ),
+        User(
+            username="unapproved_phone_code_user",
+            name="Unapproved phone user",
+            phone="+8613800138109",
+            phone_verified_at=datetime.now(UTC),
+            is_active=True,
+            is_approved=False,
+        ),
+    )
+    db.add_all(users)
+    create_registration_invitation(db, "13800138108")
+    create_registration_invitation(db, "13800138109")
+    db.commit()
+
+    for phone in ("13800138108", "13800138109"):
+        response = client.post("/api/v1/auth/phone/code", json={"phone": phone})
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
+
+
+def test_phone_code_rejects_unknown_phone_during_rollout_rollback(
+    client, db, monkeypatch
+):
+    _enable_invitation_enforcement(monkeypatch)
+    create_registration_invitation(db, "13800138110")
+    db.commit()
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", False)
+
+    response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138110"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
+    assert db.query(PhoneAuthCode).count() == 0
 
 
 def test_phone_code_login_auto_registers_and_reuses_existing_user(client, db, monkeypatch):

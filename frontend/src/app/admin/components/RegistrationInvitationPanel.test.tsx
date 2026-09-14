@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api } from '@/services/api/client';
+import { api, WEB_SESSION_TOKEN } from '@/services/api/client';
 import RegistrationInvitationPanel from './RegistrationInvitationPanel';
 
-vi.mock('@/services/api/client', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('@/services/api/client', () => ({
+  api: { get: vi.fn(), post: vi.fn() },
+  WEB_SESSION_TOKEN: '__web_cookie_session__',
+}));
 const rows = [
   { id: 7, phone_masked: '+86 138****8000', note: '内测成员', status: 'send_failed', expires_at: '2999-08-09T12:00:00Z', created_at: '2026-08-02T12:00:00Z', updated_at: '2026-08-02T12:00:00Z', prepared_for_delivery: true },
   { id: 8, phone_masked: '+86 139****9000', note: null, status: 'consumed', expires_at: '2999-08-09T12:00:00Z', created_at: '2026-08-02T12:00:00Z', updated_at: '2026-08-02T12:00:00Z', prepared_for_delivery: false },
@@ -23,6 +26,9 @@ describe('RegistrationInvitationPanel', () => {
   it('lists only safe fields with Chinese statuses and terminal controls', async () => {
     render(<RegistrationInvitationPanel />);
     expect(await screen.findByText('+86 138****8000')).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith('/admin/registration-invitations', expect.objectContaining({
+      headers: { Authorization: `Bearer ${WEB_SESSION_TOKEN}` },
+    }));
     expect(screen.getByText('发送失败')).toBeInTheDocument(); expect(screen.getByText('已使用')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '撤销 +86 138****8000 的邀请' })).toBeEnabled();
@@ -75,7 +81,11 @@ describe('RegistrationInvitationPanel', () => {
     const confirmation = screen.getByRole('dialog', { name: '确认创建手机号注册邀请' });
     expect(within(confirmation).getByText('+86 138****8000')).toBeInTheDocument(); expect(within(confirmation).queryByText('+8613800138000')).not.toBeInTheDocument();
     fireEvent.click(within(confirmation).getByRole('button', { name: '确认创建并发送' }));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/admin/registration-invitations', { phone: '+8613800138000', note: '产品内测', expires_at: new Date('2999-08-09T20:00').toISOString() }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/admin/registration-invitations',
+      { phone: '+8613800138000', note: '产品内测', expires_at: new Date('2999-08-09T20:00').toISOString() },
+      { headers: { Authorization: `Bearer ${WEB_SESSION_TOKEN}` } },
+    ));
     expect(await screen.findByRole('dialog', { name: '一次性注册凭据' })).toBeInTheDocument(); expect(Storage.prototype.setItem).not.toHaveBeenCalled();
   });
 
@@ -83,7 +93,11 @@ describe('RegistrationInvitationPanel', () => {
     vi.mocked(api.post).mockResolvedValue({ data: prepared }); render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000');
     fireEvent.click(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' }));
     const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' });
-    expect(api.post).toHaveBeenCalledWith('/admin/registration-invitations/7/resend');
+    expect(api.post).toHaveBeenCalledWith(
+      '/admin/registration-invitations/7/resend',
+      undefined,
+      { headers: { Authorization: `Bearer ${WEB_SESSION_TOKEN}` } },
+    );
     expect(within(dialog).getByDisplayValue('A8M2K9QX')).toBeInTheDocument(); expect(within(dialog).getByDisplayValue('health://invite?token=opaque-link-token')).toBeInTheDocument();
     expect(screen.queryByText('link-token-must-not-render')).not.toBeInTheDocument(); expect(within(dialog).getByText(/旧凭据已失效/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: '复制手动邀请码' })); await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('A8M2K9QX'));
@@ -110,7 +124,11 @@ describe('RegistrationInvitationPanel', () => {
     vi.mocked(api.post).mockRejectedValueOnce({ response: { status: 500, data: { detail: 'SQL SELECT phone_ciphertext' } } }); render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000');
     fireEvent.click(screen.getByRole('button', { name: '撤销 +86 138****8000 的邀请' }));
     expect(confirm).toHaveBeenCalledWith('确认撤销发给 +86 138****8000 的注册邀请？撤销后凭据立即失效。');
-    expect(api.post).toHaveBeenCalledWith('/admin/registration-invitations/7/revoke');
+    expect(api.post).toHaveBeenCalledWith(
+      '/admin/registration-invitations/7/revoke',
+      undefined,
+      { headers: { Authorization: `Bearer ${WEB_SESSION_TOKEN}` } },
+    );
     expect(await screen.findByText('服务暂时不可用，请稍后重试。')).toBeInTheDocument(); expect(screen.queryByText(/SQL SELECT|phone_ciphertext/)).not.toBeInTheDocument();
   });
 

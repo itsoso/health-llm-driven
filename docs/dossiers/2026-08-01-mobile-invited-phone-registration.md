@@ -99,6 +99,15 @@
 - 非阻断运营风险：iOS 卸载时 AsyncStorage 与 Keychain 生命周期不同，后续宜增加服务端 token 撤销或 Keychain 同生命周期 generation marker；PostgreSQL 连接中断仍有 commit 结果不确定窗口，运维重试前必须先查 `admin_user_merge_completed` 终态审计。
 - **裁决：PASS / GO。** 允许进入 G5，不代表已部署。
 
+### 2026-09-14 OTP 前置准入复审与 Owner 裁决
+
+- 新增 OTP 前置准入：仅 active + approved 老用户，或持有 active、未过期、未撤销、未消费邀请的陌生手机号可以进入短信投递；其他号码在生成/投递前返回 `REGISTRATION_INVITATION_REQUIRED`。
+- Mobile 固定展示“该手机号尚未开通，请联系管理员”，停留在手机号步骤并保留输入；不渲染服务端 detail。
+- 邀请准入读取与撤销使用同一行锁；资格以锁内检查时刻为准，注册核销时再次验证邀请。
+- 独立 safety/privacy 复审：代码实现 **GO**。拒绝路径未调用 OTP 生成/投递，inactive/unapproved、rollout rollback、send_failed、expired/revoked/consumed 均有回归覆盖。
+- 已知隐私取舍：未认证调用方可由 200/403 探测手机号是否属于 active + approved 老用户或有效邀请名单；IP `10/min` 限流不能消除分布式探测。
+- **Owner 裁决：ACCEPTED。** 2026-09-14 用户明确回复“接受该风险并上线”，授权按指定 403 文案发布。监控关注 `/phone/code` 403 比例和异常来源；若出现枚举或骚扰迹象，立即回退为统一公开响应并对未准入号码静默不投递。
+
 ## G5 · 部署健康闸
 
 **PARTIAL / BLOCKED**：2026-08-02 已用根目录 `deploy.sh -b` 将 `e966281cd50b45bbf98bd623923705b9b2cce2c0` 部署到生产，保持 registration invitation rollout/enforcement 默认关闭。

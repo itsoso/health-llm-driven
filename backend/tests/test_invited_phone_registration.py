@@ -12,6 +12,7 @@ from app.models.registration_invitation import (
 )
 from app.models.user import User
 from app.services.registration_invitation import (
+    create_phone_registration_grant,
     create_registration_invitation,
     registration_source_hmac,
 )
@@ -59,6 +60,8 @@ def _create_user(db, phone: str) -> User:
 
 
 def test_unknown_phone_verify_returns_ticket_without_creating_user(client, db):
+    create_registration_invitation(db, "13800138000")
+    db.commit()
     response = _verify(client, "13800138000")
 
     assert response.status_code == 200
@@ -355,15 +358,15 @@ def test_terminal_invitation_is_rejected_without_consuming_grant(
             else datetime.now(UTC) + timedelta(days=1)
         ),
     )
+    issued = create_phone_registration_grant(db, "13800138004")
     if terminal_status == "revoked":
         created.invitation.status = "revoked"
     db.commit()
-    ticket = _verify(client, "13800138004").json()["verified_phone_ticket"]
 
     response = client.post(
         "/api/v1/auth/invited-registration",
         json={
-            "verified_phone_ticket": ticket,
+            "verified_phone_ticket": issued.token,
             "manual_code": created.manual_code,
             "idempotency_key": "registration-attempt-0004",
         },
@@ -387,14 +390,14 @@ def test_terminal_invitation_is_rejected_without_consuming_grant(
 
 def test_phone_mismatch_and_invalid_input_do_not_echo_secrets_or_mutate(client, db):
     created = create_registration_invitation(db, "13800138005")
+    issued = create_phone_registration_grant(db, "13800138006")
     db.commit()
-    ticket = _verify(client, "13800138006").json()["verified_phone_ticket"]
     secret = "this-ticket-must-never-be-echoed!"
 
     mismatch = client.post(
         "/api/v1/auth/invited-registration",
         json={
-            "verified_phone_ticket": ticket,
+            "verified_phone_ticket": issued.token,
             "manual_code": created.manual_code,
             "idempotency_key": "registration-attempt-0005",
         },
@@ -456,11 +459,7 @@ def test_invitation_inspect_is_read_only_and_returns_masked_metadata(client, db)
 def test_enforced_legacy_login_blocks_unknown_but_existing_user_still_logs_in(
     client, db
 ):
-    unknown_code = _otp(client, "13800138008")
-    blocked = client.post(
-        "/api/v1/auth/phone/login",
-        json={"phone": "13800138008", "code": unknown_code},
-    )
+    blocked = client.post("/api/v1/auth/phone/code", json={"phone": "13800138008"})
 
     assert blocked.status_code == 403
     assert blocked.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
@@ -619,9 +618,9 @@ def test_rejected_attempt_audit_failure_preserves_original_safe_error(
     from app.api import auth as auth_api
 
     created = create_registration_invitation(db, "13800138013")
+    issued = create_phone_registration_grant(db, "13800138013")
     created.invitation.status = "revoked"
     db.commit()
-    ticket = _verify(client, "13800138013").json()["verified_phone_ticket"]
 
     def fail_terminal_audit(*args, **kwargs):
         raise RuntimeError("audit-sensitive-marker")
@@ -630,7 +629,7 @@ def test_rejected_attempt_audit_failure_preserves_original_safe_error(
     response = client.post(
         "/api/v1/auth/invited-registration",
         json={
-            "verified_phone_ticket": ticket,
+            "verified_phone_ticket": issued.token,
             "manual_code": created.manual_code,
             "idempotency_key": "registration-attempt-0013",
         },

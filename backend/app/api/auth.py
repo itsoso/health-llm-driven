@@ -36,12 +36,14 @@ from app.services.phone_auth import (
     consume_phone_code,
     issue_phone_code,
     mask_phone,
+    normalize_phone,
 )
 from app.services.registration_invitation import (
     create_phone_registration_grant,
     find_invitation_by_code,
     find_invitation_by_link_token,
     find_invitation_for_update,
+    find_usable_invitation_by_phone,
     find_phone_registration_grant_for_update,
     registration_idempotency_digest,
     registration_source_hmac,
@@ -439,9 +441,29 @@ async def send_phone_code(
 ):
     """发送手机号验证码，用于一期手机号一体化登录/注册。"""
     try:
+        phone = normalize_phone(payload.phone)
+        from app.config import settings
+
+        if settings.registration_invitation_enforcement_enabled:
+            existing_user = auth_service.get_user_by_phone(db, phone)
+            if existing_user is not None:
+                phone_is_admitted = bool(
+                    existing_user.is_active and existing_user.is_approved
+                )
+            else:
+                phone_is_admitted = bool(
+                    settings.registration_invitation_rollout_enabled
+                    and find_usable_invitation_by_phone(db, phone) is not None
+                )
+            if not phone_is_admitted:
+                raise _auth_error(
+                    status.HTTP_403_FORBIDDEN,
+                    "REGISTRATION_INVITATION_REQUIRED",
+                    "该手机号尚未开通，请联系管理员",
+                )
         issued = issue_phone_code(
             db,
-            payload.phone,
+            phone,
             purpose=payload.purpose,
             request_ip=request.client.host if request.client else None,
         )

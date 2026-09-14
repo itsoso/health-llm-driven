@@ -5,7 +5,7 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { isAxiosError, isCancel } from 'axios';
 import type { components } from '@/types/api.generated';
-import { api } from '@/services/api/client';
+import { api, WEB_SESSION_TOKEN } from '@/services/api/client';
 
 type Invitation = components['schemas']['RegistrationInvitationSafe'];
 type InvitationList = components['schemas']['RegistrationInvitationList'];
@@ -17,6 +17,7 @@ type PreparedInvitation = Pick<ApiPreparedInvitation,
 type CreateInvitation = components['schemas']['RegistrationInvitationCreate'];
 
 const PAGE_SIZE = 20;
+const WEB_SESSION_HEADERS = { Authorization: `Bearer ${WEB_SESSION_TOKEN}` };
 const ACTIVE_STATUSES = new Set(['created', 'sent', 'send_failed']);
 const TERMINAL_STATUSES = new Set(['consumed', 'revoked', 'expired']);
 const STATUS_LABELS: Record<string, string> = {
@@ -254,6 +255,7 @@ export default function RegistrationInvitationPanel() {
     try {
       // The shared client mounts at /api; Next rewrites this to the backend's /api/v1 route.
       const response = await api.get<InvitationList>('/admin/registration-invitations', {
+        headers: WEB_SESSION_HEADERS,
         params: { limit: PAGE_SIZE, offset: nextOffset },
         signal: controller.signal,
       });
@@ -294,7 +296,11 @@ export default function RegistrationInvitationPanel() {
       const payload: CreateInvitation = {
         phone: phone.trim(), note: note.trim() || null, expires_at: new Date(parsedExpiry).toISOString(),
       };
-      const response = await api.post<ApiPreparedInvitation>('/admin/registration-invitations', payload);
+      const response = await api.post<ApiPreparedInvitation>(
+        '/admin/registration-invitations',
+        payload,
+        { headers: WEB_SESSION_HEADERS },
+      );
       setPrepared(retainDisplayCredentials(response.data)); setPreparedFromResend(false);
       setPhone(''); setNote(''); setExpiresAt(defaultExpiryLocal()); await load(0);
     } catch (caught) { setError(safeErrorMessage(caught)); }
@@ -305,7 +311,11 @@ export default function RegistrationInvitationPanel() {
     operationTriggerRef.current = trigger;
     startOperation(invitation.id);
     try {
-      const response = await api.post<ApiPreparedInvitation>(`/admin/registration-invitations/${invitation.id}/resend`);
+      const response = await api.post<ApiPreparedInvitation>(
+        `/admin/registration-invitations/${invitation.id}/resend`,
+        undefined,
+        { headers: WEB_SESSION_HEADERS },
+      );
       setPrepared(retainDisplayCredentials(response.data)); setPreparedFromResend(true); await load(offset);
     } catch (caught) { setError(safeErrorMessage(caught)); }
     finally { setBusyId(null); }
@@ -314,7 +324,14 @@ export default function RegistrationInvitationPanel() {
   const revoke = async (invitation: Invitation) => {
     if (!confirm(`确认撤销发给 ${invitation.phone_masked} 的注册邀请？撤销后凭据立即失效。`)) return;
     startOperation(invitation.id);
-    try { await api.post<Invitation>(`/admin/registration-invitations/${invitation.id}/revoke`); await load(offset); }
+    try {
+      await api.post<Invitation>(
+        `/admin/registration-invitations/${invitation.id}/revoke`,
+        undefined,
+        { headers: WEB_SESSION_HEADERS },
+      );
+      await load(offset);
+    }
     catch (caught) { setError(safeErrorMessage(caught)); }
     finally { setBusyId(null); }
   };

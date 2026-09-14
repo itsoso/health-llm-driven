@@ -106,8 +106,8 @@ def test_enforcement_blocks_all_public_legacy_account_creation_paths(
     db.commit()
 
     phone_response = client.post(
-        "/api/v1/auth/phone/login",
-        json={"phone": "13800138203", "code": _otp(client, "13800138203")},
+        "/api/v1/auth/phone/code",
+        json={"phone": "13800138203"},
     )
     register_response = client.post(
         "/api/v1/auth/register",
@@ -460,8 +460,8 @@ def test_safe_rollback_closes_new_registration_but_keeps_existing_login(
         json={"phone": "13800138207", "code": _otp(client, "13800138207")},
     )
     unknown_response = client.post(
-        "/api/v1/auth/phone/verify",
-        json={"phone": "13800138208", "code": _otp(client, "13800138208")},
+        "/api/v1/auth/phone/code",
+        json={"phone": "13800138208"},
     )
     inspect_response = client.post(
         "/api/v1/auth/invitations/inspect",
@@ -479,7 +479,9 @@ def test_safe_rollback_closes_new_registration_but_keeps_existing_login(
     assert existing_response.status_code == 200
     assert existing_response.json()["outcome"] == "authenticated"
     assert existing_response.json()["user"]["id"] == existing.id
-    for response in (unknown_response, inspect_response, register_response):
+    assert unknown_response.status_code == 403
+    assert unknown_response.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
+    for response in (inspect_response, register_response):
         assert response.status_code == 403
         assert response.json()["detail"]["code"] == "REGISTRATION_CLOSED"
     assert db.query(User).count() == 1

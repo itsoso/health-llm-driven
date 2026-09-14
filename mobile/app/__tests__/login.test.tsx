@@ -138,6 +138,48 @@ describe('LoginScreen invitation-gated phone auth', () => {
     expect(mockReplace).not.toHaveBeenCalledWith('/reva-onboarding');
   });
 
+  it('shows the invitation-list message instead of claiming a fresh OTP expired', async () => {
+    mockVerifyPhoneCode.mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: {
+            code: 'REGISTRATION_CLOSED',
+            message: 'SERVER_DETAIL_MUST_NOT_RENDER',
+          },
+        },
+      },
+    });
+    const view = render(<LoginScreen />);
+    beginOtp(view);
+    await waitFor(() => expect(view.getByLabelText('验证码输入框')).toBeTruthy());
+    fireEvent.changeText(view.getByLabelText('验证码输入框'), '123456');
+    fireEvent.press(view.getByText('验证并登录'));
+
+    expect(await view.findByText('该手机号尚未开通，请联系管理员')).toBeTruthy();
+    expect(view.queryByText('验证码无效或已过期，请重新获取。')).toBeNull();
+    expect(view.queryByText('SERVER_DETAIL_MUST_NOT_RENDER')).toBeNull();
+  });
+
+  it('keeps the phone step and shows the invitation-list message before sending an OTP', async () => {
+    mockRequestPhoneCode.mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: {
+            code: 'REGISTRATION_INVITATION_REQUIRED',
+            message: 'SERVER_DETAIL_MUST_NOT_RENDER',
+          },
+        },
+      },
+    });
+    const view = render(<LoginScreen />);
+    beginOtp(view);
+
+    expect(await view.findByText('该手机号尚未开通，请联系管理员')).toBeTruthy();
+    expect(view.getByLabelText('手机号输入框').props.value).toBe('+86 138 0013 8000');
+    expect(view.queryByLabelText('验证码输入框')).toBeNull();
+    expect(view.queryByText('SERVER_DETAIL_MUST_NOT_RENDER')).toBeNull();
+  });
+
   it('discards a deep-link credential locally after an existing phone authenticates', async () => {
     const clearLink = jest.fn();
     const view = render(
