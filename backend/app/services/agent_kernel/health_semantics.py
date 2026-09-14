@@ -1814,7 +1814,7 @@ REPORT_ELLIPTIC_READ_OWNER_RE = re.compile(
 REPORT_ELLIPTIC_DEICTIC_OWNER_RE = re.compile(
     rf"(?:{READ_VERB_RE.pattern})\s*"
     rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)"
-    rf"(?:这|那|该)(?:一)?(?:份|个|张)"
+    rf"(?:这|那|该)(?:一)?(?:份(?:儿)?|个|张|套|版|本|组|批|件)"
     rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
     re.IGNORECASE,
 )
@@ -2241,6 +2241,17 @@ def health_read_has_nonself_subject(text: str) -> bool:
     )
     if has_explicit_nonself_health_owner(subject_scope):
         return True
+    deictic_report_owners = tuple(
+        match.group("owner").strip().removesuffix("的")
+        for match in REPORT_ELLIPTIC_DEICTIC_OWNER_RE.finditer(subject_scope)
+    )
+    if deictic_report_owners and all(
+        _is_current_user_scope_owner(owner)
+        or _is_exact_clinical_report_base(owner)
+        or re.fullmatch(_HEALTH_REPORT_DOMAIN, owner, re.IGNORECASE)
+        for owner in deictic_report_owners
+    ):
+        return False
     if _has_owned_report_use_request(subject_scope):
         return False
     if _has_exact_clinical_report_target(subject_scope):

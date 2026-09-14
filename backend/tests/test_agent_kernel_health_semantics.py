@@ -477,6 +477,13 @@ def test_elliptic_mixed_report_owners_remain_nonself(connector, template):
         "请打开我的体检报告；再打开张三那一份",
         "请打开我的体检报告，然后打开我妈那份",
         "请打开我的体检报告，再看王五那个",
+        "请打开我的体检报告，再打开张三那一份儿",
+        "请打开我的体检报告，再打开张三那套",
+        "请打开我的体检报告，再打开张三那版",
+        "请打开我的体检报告，再打开张三那本",
+        "请打开我的体检报告，再打开张三那组",
+        "请打开我的体检报告，再打开张三那批",
+        "请打开我的体检报告，再打开张三那件",
         "请打开张三那份。再打开我的体检报告",
         "请打开我的＋张三的体检报告",
         "请打开我的/张三的体检报告",
@@ -498,6 +505,13 @@ def test_scaffolded_or_symbolic_mixed_report_owners_remain_nonself(text):
     ),
 )
 def test_non_read_followup_does_not_create_a_report_owner(text):
+    assert semantics.has_explicit_nonself_health_owner(text) is False
+    assert semantics.health_read_has_nonself_subject(text) is False
+
+
+def test_clinical_exam_deictic_is_not_misclassified_as_an_owner():
+    text = "请打开我的体检报告，再打开MRI那份"
+
     assert semantics.has_explicit_nonself_health_owner(text) is False
     assert semantics.health_read_has_nonself_subject(text) is False
 
