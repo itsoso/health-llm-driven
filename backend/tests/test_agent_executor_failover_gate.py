@@ -465,8 +465,9 @@ async def test_stable_fallback_stream_has_its_own_total_deadline(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('partial_buffer', [False, True])
 @pytest.mark.parametrize('retry_result', ['stop', 'error', 'length', 'timeout'])
-async def test_verified_composed_timeout_retries_same_quality_model_once(monkeypatch, retry_result):
+async def test_verified_composed_timeout_retries_same_quality_model_once(monkeypatch, retry_result, partial_buffer):
     from types import SimpleNamespace
     import app.services.agent_executor as ae
     attempts = []
@@ -475,6 +476,8 @@ async def test_verified_composed_timeout_retries_same_quality_model_once(monkeyp
         model = 'qwen3.8-max'
         async def chat_stream(self, **kwargs):
             attempts.append(kwargs)
+            if len(attempts) == 1 and partial_buffer:
+                yield {'type': 'content', 'text': 'UNRELEASED_PARTIAL_SENTINEL'}
             if len(attempts) == 1 or retry_result == 'timeout':
                 while True:
                     await asyncio.sleep(0.002)
@@ -500,7 +503,8 @@ async def test_verified_composed_timeout_retries_same_quality_model_once(monkeyp
             await asyncio.wait_for(_drain(stream), 0.2)
     else:
         events = await asyncio.wait_for(_drain(stream), 0.2)
-        assert events[-1]['finish_reason'] == retry_result
+        assert events[-1]['finish_reason'] == ('stop' if retry_result == 'stop' else 'error')
+        assert not any('UNRELEASED_PARTIAL_SENTINEL' in e.get('text', '') for e in events)
     assert len(attempts) == 2
     assert attempts[0] == attempts[1]
     assert 'composed_synthesis_timeout_retry' in ex._model_fallback_reasons
@@ -528,7 +532,8 @@ async def test_composed_timeout_retry_does_not_expand_authority(monkeypatch, con
                 yield {'type': 'reasoning', 'text': 'thinking'}
     ex = _executor()
     ex._staged_answer_task_tier = 'high_stakes'
-    ex._composed_synthesis_retry_eligible = condition != 'inactive'
+    # The content case is actually released, unlike a composed internal buffer.
+    ex._composed_synthesis_retry_eligible = condition not in {'inactive', 'content'}
     provider = Provider()
     tools = [{'type': 'function'}] if condition == 'tools' else []
     monkeypatch.setattr(ex, '_resolve_chat_provider', lambda _: (provider, tools))

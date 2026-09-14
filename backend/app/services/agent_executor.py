@@ -12228,7 +12228,8 @@ class AgentExecutor:
             self.db, user_id, intent=message, owned_read_profile=True,
         )
         instruction = (
-            "本轮已完成已授权范围的读取，接下来只生成简短的定性观察与最多三条相关下一步。"
+            "本轮已完成已授权范围的读取，接下来最多给两条简短记录观察和一条必要的下一步。"
+            "模型分析全文不超过200字，不逐模块展开；完整事实与证据限制另由系统展示。"
             "事实与字段缺口由系统展示，模型只分析已验证观察，不重复系统缺口。"
             "不重新计算或复述热量、时长等观测数值，不按相同名称去重。"
             "仅对本轮已返回样本作观察，不能把样本规律性提升为个人健康或恢复结论。"
@@ -20906,7 +20907,7 @@ class AgentExecutor:
                     self._last_provider_model_name,
                     emitted_content,
                 )
-            if emitted_content:
+            if emitted_content and not buffer_composed:
                 # 已经向用户发出部分内容 → 不能再切 provider 重发 (会重复)。
                 # 优雅收尾: 记日志 + 发一个带 error finish_reason 的事件让上层感知。
                 logger.warning(
@@ -20924,9 +20925,24 @@ class AgentExecutor:
                     # No recursion: a second failure propagates to the normal
                     # incomplete-generation gate; partial prose is never success.
                     self._record_model_fallback_reason("composed_synthesis_timeout_retry")
+                    # Neither the initial buffered partial nor an incomplete
+                    # recovery may escape. Only a complete, tool-free retry is
+                    # released to the unchanged final evidence and quality gates.
+                    retry_events = []
                     async with asyncio.timeout(_COMPOSED_SYNTHESIS_RETRY_TIMEOUT_S):
                         async for event in provider.chat_stream(**stream_kwargs):
+                            retry_events.append(event)
+                    retry_finishes = [event.get("finish_reason") for event in retry_events
+                                      if event.get("type") == "finish"]
+                    if (retry_finishes == ["stop"]
+                            and any(event.get("type") == "content" and event.get("text", "").strip()
+                                    for event in retry_events)
+                            and not any(event.get("type") == "tool_calls" for event in retry_events)):
+                        for event in retry_events:
                             yield event
+                    else:
+                        self._record_model_fallback_reason("composed_synthesis_timeout_retry_incomplete")
+                        yield {"type": "finish", "finish_reason": "error"}
                     return
                 raise RuntimeError("recovery quality provider unavailable") from e
             # 流开始前/未发任何内容就报错 → 回退稳定 provider (F2: 带工具时经可靠工具模型)。

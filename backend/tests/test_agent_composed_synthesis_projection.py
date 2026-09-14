@@ -85,6 +85,8 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
                 yield {"type": "tool_calls", "tool_calls": result["tool_calls"]}
             else:
                 yield {"type": "content", "text": result["content"]}
+                if result.get('timeout_after_content'):
+                    raise TimeoutError('synthetic buffered stream timeout')
             if not (omit_finish_event and not result.get("tool_calls")):
                 yield {"type": "finish", "finish_reason": result["finish_reason"]}
 
@@ -1636,3 +1638,38 @@ async def test_unknown_boundary_reason_does_not_start_correction(db, four_domain
         answer="恢复良好，继续原有方案。", correction_result={"content": ANSWER, "finish_reason": "stop"})
     assert len(calls) == 2 and done["turn_outcome"]["status"] == "blocked"
     assert "composed_synthesis_boundary_retry" not in done["fallback_reasons"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result,complete", [
+    ({"content": ANSWER, "finish_reason": "stop"}, True),
+    ({"content": "建议维生素C每天服用500mg。", "finish_reason": "stop"}, False),
+    ({"content": "RETRY_PARTIAL_SENTINEL", "finish_reason": "length"}, False),
+    ({"content": "RETRY_PARTIAL_SENTINEL", "finish_reason": "error"}, False),
+    ({"content": "RETRY_PARTIAL_SENTINEL", "finish_reason": None}, False),
+    ({"content": "", "finish_reason": "tool_calls", "tool_calls": [
+        {"id": "forbidden-timeout-write", "type": "function", "function": {
+            "name": "health_record", "arguments": '{"record_type":"water","data":{"amount":200}}'}}]}, False),
+    ({"content": "RETRY_PARTIAL_SENTINEL", "finish_reason": "stop", "timeout_after_content": True}, False),
+])
+async def test_buffered_partial_timeout_is_replaced_once_and_finally_checked(
+    db, four_domain_user, monkeypatch, result, complete,
+):
+    _, calls, dispatches, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch,
+        stage_result=("lead", {"content": "UNRELEASED_PARTIAL_SENTINEL", "finish_reason": "stop", "timeout_after_content": True}),
+        correction_result=result,
+    )
+    assert len(calls) == 3
+    assert (done["completion_status"] == "complete") is complete
+    assert (done["turn_outcome"]["status"] == "complete") is complete
+    assert "composed_synthesis_timeout_retry" in done["fallback_reasons"]
+    assert "composed_synthesis_boundary_retry" not in done["fallback_reasons"]
+    assert calls[1]["provider_model"] == calls[2]["provider_model"]
+    assert not calls[2].get("tools")
+    assert calls[1]["messages"] == calls[2]["messages"]
+    assert "UNRELEASED_PARTIAL_SENTINEL" not in saved.content
+    assert "RETRY_PARTIAL_SENTINEL" not in saved.content
+    assert "每天服用500mg" not in saved.content
+    assert not done.get("write_receipts")
+    assert all(request.tool_name != "health_record" for request in dispatches)
