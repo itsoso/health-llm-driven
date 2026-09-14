@@ -892,9 +892,23 @@ ANALYZED_MATERIAL_INTRO_RE = re.compile(
     r"(?:建议|内容|文字|文本|材料|文章|对话|消息|指令|命令|计划|方案)|"
     r"(?:以下|下面|这段|这份)(?:的)?"
     r"(?:内容|文字|文本|材料|文章|对话|消息|指令|命令|计划|方案)"
-    r"(?:仅供)?(?:分析|参考|讨论)"
+    r"(?:仅供)?(?:分析|参考|讨论)|"
+    r"\A(?:"
+    r"(?:医生|朋友|同事|领导|家人)(?:的)?"
+    r"(?:原话|消息|转述|说法)(?:是|为|如下|是这样的|如下所示)?|"
+    r"(?:医生|朋友|同事|领导|家人)"
+    r"(?:说|表示|提到|写道|写着|问|让我|要求我|建议我|告诉我|发来|转发)"
+    r"(?:如下|是|的内容)?|"
+    r"(?:以下|下面|下列|接下来)(?:是|为|属于|来自|出自|摘自)?"
+    r"[^\n\r，,；;：:。.!！?？]{0,32}|"
+    r"(?:这|这段|这些)(?:只是|是|是一段)?"
+    r"[^\n\r，,；;：:。.!！?？]{0,24}"
+    r"(?:例子|示例|引用|转发|转述|消息|内容|材料|原话)|"
+    r"(?:引用|转述|转发|示例)(?:内容|文本|文字|材料)?"
+    r"(?:是|为|如下|是这样的|如下所示)?"
     r")"
-    r"\s*[：:]\s*"
+    r")"
+    r"\s*(?:[：:]|[。.!！]|[\n\r]+)\s*"
 )
 MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?ms)^[ \t]{0,3}(?P<fence>`{3,}|~{3,})[^\n\r]*[\n\r]+"
@@ -1643,7 +1657,10 @@ def _active_owned_report_use_clause(text: str) -> str:
                 or REPORT_USE_POST_ACTION_TAIL_RE.search(clause)
             )
             active_clause = clause if authorized else ""
-            if not authorized and introduces_material_context:
+            if not authorized:
+                # An unauthorized report-use clause may itself be quoted or
+                # pasted material whose introducer was not recognizable. It
+                # cannot establish an in-band boundary for a later clause.
                 material_context_active = True
         elif introduces_material_context or not saw_report_use:
             # An unframed leading body has no trustworthy in-band closing
