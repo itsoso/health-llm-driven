@@ -334,3 +334,31 @@ def test_longitudinal_scope_consumer_preserves_validated_four_domain_queries():
     assert resolved is not None
     assert list(resolved.queries) == raw["queries"]
     assert list(resolved.limitations) == raw["limitations"]
+
+
+@pytest.mark.parametrize("dimension", ["diet", "sleep", "workout", "supplements"])
+def test_v2_absolute_single_day_roundtrips_as_frozen_task(dimension):
+    from app.services.agent_read_task_continuation import _validated_task
+    data = metadata()
+    data["version"] = "owned-read-task.v2"
+    data["queries"][0]["dimension"] = dimension
+    assert _validated_task(data, NOW + timedelta(minutes=2)) == data
+
+
+@pytest.mark.parametrize("dimension", ["workout", "supplements"])
+@pytest.mark.parametrize("mutation", ["v1", "interval", "future", "owner_argument"])
+def test_event_day_task_rejects_unsupported_metadata(dimension, mutation):
+    from app.services.agent_read_task_continuation import _validated_task
+    data = metadata()
+    data["version"] = "owned-read-task.v2"
+    query = data["queries"][0]
+    query["dimension"] = dimension
+    if mutation == "v1":
+        data["version"] = "owned-read-task.v1"
+    elif mutation == "interval":
+        query["start_date"] = "2026-09-12"
+    elif mutation == "future":
+        query["end_date"] = query["start_date"] = "2026-09-14"
+    else:
+        query["user_id"] = 999
+    assert _validated_task(data, NOW) is None

@@ -95,7 +95,7 @@ def _validated_task(raw, now: datetime) -> dict | None:
                 if type(query["days"]) is not int or query["days"] != span:
                     return None
                 canonical_query["days"] = query["days"]
-            elif span != 1 or dimension not in {"diet", "sleep"}:
+            elif span != 1 or (raw["version"] != _VERSION and dimension not in {"diet", "sleep"}):
                 return None
             if query != canonical_query:
                 return None

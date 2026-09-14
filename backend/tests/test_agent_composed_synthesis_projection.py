@@ -1567,7 +1567,7 @@ async def test_production_explicit_date_reference_executes_four_owned_reads(db, 
                for d in ("diet", "sleep", "workout", "supplements")]
     monkeypatch.setattr("tests.test_agent_composed_synthesis_projection.QUERIES", queries)
     monkeypatch.setattr("tests.test_agent_composed_synthesis_projection.BAD", [])
-    _, calls, dispatched, done, _ = await run_projection(db, four_domain_user, monkeypatch,
+    _, calls, dispatched, done, saved = await run_projection(db, four_domain_user, monkeypatch,
         query="请查询2026-09-13的饮食、睡眠、运动和实际服用的补剂记录，并基于这些记录分析。")
     assert done["turn_outcome"]["status"] == "complete"
     assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"])
@@ -1577,6 +1577,15 @@ async def test_production_explicit_date_reference_executes_four_owned_reads(db, 
         evidence = json.loads(call["messages"][1]["content"])["read_evidence"]["queries"]
         assert {q["query"]["dimension"] for q in evidence} == {"diet", "sleep", "workout", "supplements"}
         assert all(q["query"]["start_date"] == q["query"]["end_date"] == "2026-09-13" for q in evidence)
+    task = saved.meta["read_task"]
+    assert task is not None and len(task["queries"]) == 4
+    _, next_calls, _, continued, next_saved = await run_projection(db, four_domain_user, monkeypatch,
+        query="继续分析", conversation_id=done["conversation_id"])
+    assert continued["turn_outcome"]["status"] == "complete"
+    assert next_saved.meta["read_task"] == task
+    assert "证据未变时允许直接说明没有新增结论" in next_calls[1]["messages"][0]["content"]
+    assert all(q["query"]["start_date"] == q["query"]["end_date"] == "2026-09-13"
+               for q in json.loads(next_calls[1]["messages"][1]["content"])["read_evidence"]["queries"])
 
 
 @pytest.mark.asyncio
