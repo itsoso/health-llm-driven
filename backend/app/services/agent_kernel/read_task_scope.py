@@ -43,6 +43,10 @@ _DOMAINS = {
     "diet": re.compile(r"饮食|餐食|早餐|午餐|晚餐|吃了(?:什么|啥)|吃过(?:什么|啥)"),
 }
 _RETROSPECTIVE = re.compile(r"(?:分析|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
+_OWNED_ANALYSIS_REFERENCE = re.compile(
+    r"(?:并|再)?(?:基于|结合|根据)(?:这些记录|上述数据|以上记录)"
+    r"(?:进行)?(?:分析|总结|评价|评估|复盘)(?:一下)?"
+)
 _SYNC_TARGET_TIME = re.compile(
     r"昨天|昨日|昨晚|昨夜|前天|今天|今日|明天|后天|最近|过去|历史|"
     r"上周|本周|这周|下周|上个月|本月|去年|今年|\d{4}[-/年]|"
@@ -55,10 +59,7 @@ def _active(text: str) -> str | None:
     # full read-scope projector calls this sync binder, so it is not used here.
     from app.services.agent_longitudinal_read import project_active_quote_roles
 
-    sync_authority = active_health_sync_authority_text(text)
-    if not sync_authority:
-        return None
-    active = project_active_quote_roles(sync_authority)
+    active = project_active_quote_roles(active_health_instruction_text(text))
     if active is None:
         return None
     return normalize_health_authorization_text(active).strip()
@@ -73,6 +74,8 @@ def _owned_active(text: str | None) -> bool:
     ):
         return False
     for clause in re.split(r"[，,。；;！？!?\n]|然后", text):
+        if _OWNED_ANALYSIS_REFERENCE.fullmatch(clause.strip()):
+            continue
         device = re.search(r"garmin|佳明", clause, re.I)
         if device:
             # Device ownership is checked on its subject span, not by the
@@ -176,7 +179,8 @@ def _independent_sync_read_clause(clause: str) -> bool:
 
 def has_owned_sync_instruction(text: str) -> bool:
     """Consume the whole owned sync act; unknown clauses never grant a job."""
-    active = _active(text)
+    sync_authority = active_health_sync_authority_text(text)
+    active = _active(sync_authority) if sync_authority else None
     if active is None or not _owned_active(active) or _MUTATION.search(active):
         return False
     active = re.sub(r"\s+", "", active)

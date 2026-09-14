@@ -501,7 +501,15 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     text_override is an already narrowed server input (e.g. removed plan clauses),
     never model-authored authority. None means unsupported scope, not no request.
     """
-    active = active_health_instruction_text(snapshot.envelope.text if text_override is None else text_override)
+    source_text = snapshot.envelope.text if text_override is None else text_override
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+
+    # The role projector intentionally drops independent quoted material, but
+    # an inline material span attached to the requested owner/object must first
+    # fail the stricter read-authority boundary instead of becoming empty syntax.
+    if not active_health_read_authority_text(source_text):
+        return None
+    active = active_health_instruction_text(source_text)
     active = project_active_quote_roles(active)
     if active is None:
         return None

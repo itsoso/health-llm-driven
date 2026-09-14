@@ -3177,7 +3177,26 @@ def decide_tool_capability(
                 )
             internal_mutation_lookup = _server_authorized_manage_lookup(args)
             guarding_user_read = not internal_mutation_lookup
-            from app.services.agent_longitudinal_read import longitudinal_read_restrictions_unresolved
+            from app.services.agent_longitudinal_read import (
+                longitudinal_read_restrictions_unresolved,
+                project_active_quote_roles,
+            )
+            active_turn_text = active_health_instruction_text(turn_text)
+            reported_projection = project_active_quote_roles(active_turn_text)
+            if (
+                guarding_user_read
+                and reported_projection is not None
+                and reported_projection.strip() != active_turn_text.strip()
+            ):
+                # Generic list adapters retain their historical strict owner
+                # boundary; only health_query may consume a separately reported
+                # prefix through the richer longitudinal projection.
+                return _decision(
+                    "block",
+                    "health_query_subject_not_current_user",
+                    tool_name,
+                    args,
+                )
             if (guarding_user_read
                     and canonical_health_manage_record_type(args.get("record_type"))
                     in {"diet", "sleep", "workout", "supplements"}
