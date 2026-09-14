@@ -925,7 +925,7 @@ ANALYZED_MATERIAL_INTRO_RE = re.compile(
     r"\s*(?:[：:]|[。.!！]|[\n\r]+)\s*"
 )
 MARKDOWN_FENCED_MATERIAL_START_RE = re.compile(
-    r"(?m)^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?P<info>[^\n\r]*)(?:\r\n?|\n)"
+    r"(?m)^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>[^\n\r]*)(?:\r\n?|\n)"
 )
 INLINE_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?P<fence>`{3,}|~{3,})[^\n\r]*?(?P=fence)"
@@ -965,10 +965,13 @@ HTML_VOID_TAGS = frozenset(
     }
 )
 UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
-    r"(?ms)^[ \t]{0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
+    r"(?ms)^ {0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
 )
 INDENTED_CODE_MATERIAL_RE = re.compile(
-    r"(?m)^(?: {4,}|\t)[^\n\r]*(?:\r?\n|$)"
+    r"(?m)^(?: {4,}| {0,3}\t)[^\n\r]*(?:\r?\n|$)"
+)
+INDENTED_FENCE_LIKE_MATERIAL_RE = re.compile(
+    r"(?m)^(?: {4,}| {0,3}\t)[ \t]*(?:`{3,}|~{3,})[^\n\r]*(?:\r?\n|$)"
 )
 ANALYZED_MATERIAL_QUOTE_PAIRS = {
     "“": "”",
@@ -1047,7 +1050,7 @@ def _analyzed_material_end(text: str, start: int) -> int:
         if not _markdown_fence_opener_is_valid(marker, fence.group("info")):
             return len(text)
         close = re.search(
-            rf"(?m)^[ \t]{{0,3}}{re.escape(marker[0])}{{{len(marker)},}}"
+            rf"(?m)^ {{0,3}}{re.escape(marker[0])}{{{len(marker)},}}"
             r"[ \t]*(?:\r\n?|\n|$)",
             text[start + fence.end() :],
         )
@@ -1088,7 +1091,7 @@ def _strip_markdown_fenced_material(text: str, *, replacement: str) -> str:
             cursor = opener.end()
             continue
         closer = re.search(
-            rf"(?m)^[ \t]{{0,3}}{re.escape(marker[0])}{{{len(marker)},}}"
+            rf"(?m)^ {{0,3}}{re.escape(marker[0])}{{{len(marker)},}}"
             r"[ \t]*(?:\r\n?|\n|$)",
             projected[opener.end() :],
         )
@@ -1099,6 +1102,11 @@ def _strip_markdown_fenced_material(text: str, *, replacement: str) -> str:
         projected = projected[: opener.start()] + replacement + projected[end:]
         cursor = opener.start() + len(replacement)
     return projected
+
+
+def _mask_indented_fence_like_material(text: str) -> str:
+    """Keep an invalid column-four fence from becoming a trusted boundary."""
+    return INDENTED_FENCE_LIKE_MATERIAL_RE.sub("invalid fenced material\n", text)
 
 
 def _strip_backtick_code_material(
@@ -1276,6 +1284,11 @@ def active_health_instruction_text(text: str) -> str:
         original, replacement=block_material_placeholder
     )
     original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub(material_placeholder, original)
+    original = _mask_indented_fence_like_material(original)
+    # A leading tab reaches CommonMark column four and denotes indented code,
+    # not a fence. Remove such lines before generic backtick-span handling so
+    # an invalid tab-indented closer cannot manufacture a trusted boundary.
+    original = INDENTED_CODE_MATERIAL_RE.sub(block_material_placeholder, original)
     original, _code_removed, _code_malformed = _strip_backtick_code_material(
         original, replacement=material_placeholder
     )
@@ -1285,7 +1298,6 @@ def active_health_instruction_text(text: str) -> str:
     original = INLINE_STRUCK_MATERIAL_RE.sub(material_placeholder, original)
     original = UNCLOSED_STRUCK_MATERIAL_RE.sub(" ", original)
     original = UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
-    original = INDENTED_CODE_MATERIAL_RE.sub(block_material_placeholder, original)
     parts: list[str] = []
     cursor = 0
     while match := ANALYZED_MATERIAL_INTRO_RE.search(original, cursor):
@@ -1372,6 +1384,7 @@ def active_health_read_authority_text(text: str) -> str:
     material_source = _strip_markdown_fenced_material(
         str(text or ""), replacement=block_material_placeholder
     )
+    material_source = _mask_indented_fence_like_material(material_source)
     material_source = _strip_markdown_blockquote_material(
         material_source, replacement=block_material_placeholder
     )
