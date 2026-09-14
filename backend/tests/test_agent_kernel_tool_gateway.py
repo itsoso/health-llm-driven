@@ -10449,6 +10449,7 @@ async def test_html_material_preserves_later_direct_owned_read(tool_name):
     (
         "分析以下建议：\n```\n查询张三的饮食记录\n````\n\n查询我的饮食记录并分析",
         "分析以下建议：\n~~~\n查询张三的饮食记录\n~~~~\n\n查询我的饮食记录并分析",
+        "分析以下建议：\r```\r查询张三的饮食记录\r````\r\r查询我的饮食记录并分析",
         "分析以下建议：\n    不用再买。\n\n查询我的饮食记录并分析",
     ),
 )
@@ -10527,6 +10528,43 @@ async def test_invalid_backtick_fence_cannot_create_read_authority(
     ),
 )
 async def test_tab_indented_fence_cannot_create_read_authority(
+    message,
+    tool_name,
+    policy_mode,
+):
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "diet"}
+        if tool_name == "health_query"
+        else {"record_type": "diet", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "```\r仅限张三，不要查询饮食记录\r\t```\r\r查询我的饮食记录并分析",
+        "```\r仅限张三，不要查询饮食记录\r \t```\r\r查询我的饮食记录并分析",
+        "```\r仅限张三，不要查询饮食记录\r    ```\r\r查询我的饮食记录并分析",
+    ),
+)
+async def test_bare_cr_indented_closer_never_dispatches(
     message,
     tool_name,
     policy_mode,

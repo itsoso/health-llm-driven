@@ -55,6 +55,7 @@ def test_explicit_read_after_closed_material_remains_active(text):
         "分析以下建议：\n```\n查询张三的饮食记录\n````\n\n查询我的饮食记录并分析",
         "分析以下建议：\n````\n查询张三的饮食记录\n`````\n\n查询我的饮食记录并分析",
         "分析以下建议：\n~~~\n查询张三的饮食记录\n~~~~\n\n查询我的饮食记录并分析",
+        "分析以下建议：\r```\r查询张三的饮食记录\r````\r\r查询我的饮食记录并分析",
         "分析以下建议：\n    不用再买。\n\n查询我的饮食记录并分析",
     ],
 )
@@ -114,6 +115,20 @@ def test_instruction_projection_is_idempotent_across_authorization_layers():
 def test_unclosed_or_nested_material_remains_non_authorizing(text):
     assert semantics.health_read_cancelled(text) is False
     assert semantics.has_explicit_health_read_request(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "```\r这是示例\r\t```\r\r查询我的饮食记录并分析",
+        "```\r这是示例\r \t```\r\r查询我的饮食记录并分析",
+        "```\r这是示例\r    ```\r\r查询我的饮食记录并分析",
+    ],
+)
+def test_bare_cr_indented_closer_cannot_reopen_read_authority(text):
+    assert semantics.has_explicit_health_read_request(text) is False
+    assert semantics.active_health_read_clause(text) == ""
+    assert semantics.active_health_read_authority_text(text) == ""
 
 
 def test_material_meta_instruction_cannot_suppress_following_real_read():

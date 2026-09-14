@@ -924,15 +924,17 @@ ANALYZED_MATERIAL_INTRO_RE = re.compile(
     r")"
     r"\s*(?:[：:]|[。.!！]|[\n\r]+)\s*"
 )
+MARKDOWN_LINE_START_PATTERN = r"(?:\A|(?<=\n)|(?<=\r))"
 MARKDOWN_FENCED_MATERIAL_START_RE = re.compile(
-    r"(?m)^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>[^\n\r]*)(?:\r\n?|\n)"
+    MARKDOWN_LINE_START_PATTERN
+    + r" {0,3}(?P<fence>`{3,}|~{3,})(?P<info>[^\n\r]*)(?:\r\n?|\n)"
 )
 INLINE_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?P<fence>`{3,}|~{3,})[^\n\r]*?(?P=fence)"
 )
 BACKTICK_RUN_RE = re.compile(r"`+")
 MARKDOWN_BLOCKQUOTE_START_RE = re.compile(
-    r"(?m)^[ \t]*>"
+    MARKDOWN_LINE_START_PATTERN + r"[ \t]*>"
 )
 INLINE_STRUCK_MATERIAL_RE = re.compile(
     r"(?s)~~.+?~~|<del\b[^>]*>.*?</del\s*>",
@@ -965,13 +967,16 @@ HTML_VOID_TAGS = frozenset(
     }
 )
 UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
-    r"(?ms)^ {0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
+    r"(?s)" + MARKDOWN_LINE_START_PATTERN
+    + r" {0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
 )
 INDENTED_CODE_MATERIAL_RE = re.compile(
-    r"(?m)^(?: {4,}| {0,3}\t)[^\n\r]*(?:\r?\n|$)"
+    MARKDOWN_LINE_START_PATTERN
+    + r"(?: {4,}| {0,3}\t)[^\n\r]*(?:\r\n?|\n|$)"
 )
 INDENTED_FENCE_LIKE_MATERIAL_RE = re.compile(
-    r"(?m)^(?: {4,}| {0,3}\t)[ \t]*(?:`{3,}|~{3,})[^\n\r]*(?:\r?\n|$)"
+    MARKDOWN_LINE_START_PATTERN
+    + r"(?: {4,}| {0,3}\t)[ \t]*(?:`{3,}|~{3,})[^\n\r]*(?:\r\n?|\n|$)"
 )
 ANALYZED_MATERIAL_QUOTE_PAIRS = {
     "“": "”",
@@ -1050,7 +1055,8 @@ def _analyzed_material_end(text: str, start: int) -> int:
         if not _markdown_fence_opener_is_valid(marker, fence.group("info")):
             return len(text)
         close = re.search(
-            rf"(?m)^ {{0,3}}{re.escape(marker[0])}{{{len(marker)},}}"
+            rf"{MARKDOWN_LINE_START_PATTERN} {{0,3}}"
+            rf"{re.escape(marker[0])}{{{len(marker)},}}"
             r"[ \t]*(?:\r\n?|\n|$)",
             text[start + fence.end() :],
         )
@@ -1091,7 +1097,8 @@ def _strip_markdown_fenced_material(text: str, *, replacement: str) -> str:
             cursor = opener.end()
             continue
         closer = re.search(
-            rf"(?m)^ {{0,3}}{re.escape(marker[0])}{{{len(marker)},}}"
+            rf"{MARKDOWN_LINE_START_PATTERN} {{0,3}}"
+            rf"{re.escape(marker[0])}{{{len(marker)},}}"
             r"[ \t]*(?:\r\n?|\n|$)",
             projected[opener.end() :],
         )
