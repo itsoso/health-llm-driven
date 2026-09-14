@@ -917,14 +917,7 @@ MARKDOWN_FENCED_MATERIAL_RE = re.compile(
 INLINE_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?P<fence>`{3,}|~{3,})[^\n\r]*?(?P=fence)"
 )
-INLINE_CODE_MATERIAL_RE = re.compile(
-    r"(?s)(?<!`)`(?!`)[^`]+(?<!`)`(?!`)|<code\b[^>]*>.*?</code\s*>",
-    re.IGNORECASE,
-)
-UNCLOSED_INLINE_CODE_MATERIAL_RE = re.compile(
-    r"(?s)(?<!`)`(?!`)[^`]*$|<code\b[^>]*>.*$",
-    re.IGNORECASE,
-)
+BACKTICK_RUN_RE = re.compile(r"`+")
 MARKDOWN_BLOCKQUOTE_START_RE = re.compile(
     r"(?m)^[ \t]*>"
 )
@@ -936,10 +929,8 @@ UNCLOSED_STRUCK_MATERIAL_RE = re.compile(
     r"(?s)~~(?!.*~~).*$|<del\b[^>]*>.*$",
     re.IGNORECASE,
 )
-HTML_QUOTED_MATERIAL_RE = re.compile(
-    r"(?is)<!--.*?(?:-->|$)|"
-    r"<(?P<tag>blockquote|q|s|pre|kbd)\b[^>]*>.*?"
-    r"(?:</(?P=tag)\s*>|$)"
+HTML_MATERIAL_TOKEN_RE = re.compile(
+    r"(?is)<!--|</?(?P<tag>blockquote|q|s|pre|kbd|code|del)\b[^>]*>"
 )
 UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?ms)^[ \t]{0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
@@ -1021,10 +1012,90 @@ def _strip_markdown_blockquote_material(text: str) -> str:
     return projected
 
 
-def _strip_paired_material_spans(text: str) -> tuple[str, tuple[str, ...]]:
+def _is_escaped_delimiter(text: str, index: int) -> bool:
+    escape_start = index
+    while escape_start > 0 and text[escape_start - 1] == "\\":
+        escape_start -= 1
+    return (index - escape_start) % 2 == 1
+
+
+def _strip_backtick_code_material(text: str) -> str:
+    """Remove Markdown code spans of any delimiter length across newlines."""
+    projected = str(text or "")
+    cursor = 0
+    while opener := BACKTICK_RUN_RE.search(projected, cursor):
+        if _is_escaped_delimiter(projected, opener.start()):
+            cursor = opener.end()
+            continue
+        marker_length = len(opener.group())
+        close_cursor = opener.end()
+        closer = None
+        while candidate := BACKTICK_RUN_RE.search(projected, close_cursor):
+            close_cursor = candidate.end()
+            if (
+                len(candidate.group()) == marker_length
+                and not _is_escaped_delimiter(projected, candidate.start())
+            ):
+                closer = candidate
+                break
+        end = closer.end() if closer is not None else len(projected)
+        projected = projected[: opener.start()] + " " + projected[end:]
+        cursor = opener.start() + 1
+    return projected
+
+
+def _strip_html_material(text: str) -> str:
+    """Remove comments and balanced material elements, including nesting."""
+    projected = str(text or "")
+    cursor = 0
+    while opener := HTML_MATERIAL_TOKEN_RE.search(projected, cursor):
+        token = opener.group()
+        if token.startswith("<!--"):
+            close_index = projected.find("-->", opener.end())
+            end = close_index + 3 if close_index >= 0 else len(projected)
+        elif token.startswith("</"):
+            projected = projected[: opener.start()] + " " + projected[opener.end() :]
+            cursor = opener.start() + 1
+            continue
+        elif token.rstrip().endswith("/>"):
+            projected = projected[: opener.start()] + " " + projected[opener.end() :]
+            cursor = opener.start() + 1
+            continue
+        else:
+            root_tag = str(opener.group("tag") or "").casefold()
+            depth = 1
+            scan_cursor = opener.end()
+            end = len(projected)
+            while candidate := HTML_MATERIAL_TOKEN_RE.search(projected, scan_cursor):
+                candidate_token = candidate.group()
+                scan_cursor = candidate.end()
+                if candidate_token.startswith("<!--"):
+                    comment_end = projected.find("-->", candidate.end())
+                    if comment_end < 0:
+                        break
+                    scan_cursor = comment_end + 3
+                    continue
+                candidate_tag = str(candidate.group("tag") or "").casefold()
+                if candidate_tag != root_tag or candidate_token.rstrip().endswith("/>"):
+                    continue
+                if candidate_token.startswith("</"):
+                    depth -= 1
+                    if depth == 0:
+                        end = candidate.end()
+                        break
+                else:
+                    depth += 1
+        projected = projected[: opener.start()] + " " + projected[end:]
+        cursor = opener.start() + 1
+    return projected
+
+
+def _strip_paired_material_spans(
+    text: str,
+) -> tuple[str, tuple[tuple[str, str], ...]]:
     """Replace quoted/bracketed spans and retain them for authority checks."""
     projected = str(text or "")
-    removed: list[str] = []
+    removed: list[tuple[str, str]] = []
     while True:
         starts = tuple(
             index
@@ -1035,7 +1106,7 @@ def _strip_paired_material_spans(text: str) -> tuple[str, tuple[str, ...]]:
             return projected, tuple(removed)
         start = min(starts)
         end = _analyzed_material_end(projected, start)
-        removed.append(projected[start:end])
+        removed.append((projected[start:end], projected[:start]))
         projected = projected[:start] + " " + projected[end:]
 
 
@@ -1051,8 +1122,7 @@ def active_health_instruction_text(text: str) -> str:
     original = str(text or "")
     original = MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
     original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
-    original = INLINE_CODE_MATERIAL_RE.sub(" ", original)
-    original = UNCLOSED_INLINE_CODE_MATERIAL_RE.sub(" ", original)
+    original = _strip_backtick_code_material(original)
     original = _strip_markdown_blockquote_material(original)
     original = INLINE_STRUCK_MATERIAL_RE.sub(" ", original)
     original = UNCLOSED_STRUCK_MATERIAL_RE.sub(" ", original)
@@ -1088,9 +1158,19 @@ def active_health_read_authority_text(text: str) -> str:
     read request and therefore fails closed instead of being erased.
     """
     projected = active_health_instruction_text(text)
-    projected = HTML_QUOTED_MATERIAL_RE.sub(" ", projected)
+    projected = _strip_html_material(projected)
     projected, removed = _strip_paired_material_spans(projected)
-    if any(READ_MATERIAL_NON_AUTHORITY_RE.search(span) for span in removed):
+    if any(
+        READ_MATERIAL_NON_AUTHORITY_RE.search(span)
+        and (
+            READ_VERB_RE.search(prefix)
+            or (
+                REPORT_USE_ACTION_RE.search(prefix)
+                and CURRENT_USER_REPORT_REFERENCE_RE.search(prefix)
+            )
+        )
+        for span, prefix in removed
+    ):
         return ""
     return projected.strip()
 
