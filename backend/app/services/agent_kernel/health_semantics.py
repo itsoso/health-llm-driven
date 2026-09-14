@@ -1787,6 +1787,21 @@ CURRENT_USER_REPORT_REFERENCE_RE = re.compile(
     rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
     re.IGNORECASE,
 )
+_REPORT_OWNER_CONNECTOR = r"(?:还有|连同|以及|和|与|跟|及)"
+REPORT_PREFIX_COORDINATED_OWNER_RE = re.compile(
+    rf"(?:我(?:自己|本人|个人)?(?:的)?|本人(?:的)?|自己(?:的)?)\s*"
+    rf"{_REPORT_OWNER_CONNECTOR}\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)的\s*"
+    rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
+    re.IGNORECASE,
+)
+REPORT_TRAILING_COORDINATED_OWNER_RE = re.compile(
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}[\s，,、]*"
+    rf"{_REPORT_OWNER_CONNECTOR}\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
+    rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
+    re.IGNORECASE,
+)
 REPORT_BASIS_OWNER_RE = re.compile(
     rf"(?:基于|结合|根据|参考|依据)"
     rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
@@ -2072,6 +2087,18 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
             or _is_exact_clinical_report_base(owner)
         ):
             return True
+
+    for pattern in (
+        REPORT_PREFIX_COORDINATED_OWNER_RE,
+        REPORT_TRAILING_COORDINATED_OWNER_RE,
+    ):
+        for coordinated_owner in pattern.finditer(normalized):
+            owner = coordinated_owner.group("owner").strip().removesuffix("的")
+            if not (
+                _is_current_user_scope_owner(owner)
+                or _is_exact_clinical_report_base(owner)
+            ):
+                return True
 
     report_targets = tuple(
         re.finditer(_HEALTH_REPORT_DOMAIN, normalized, re.IGNORECASE)

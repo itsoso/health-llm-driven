@@ -430,6 +430,21 @@ def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
     assert semantics.has_explicit_health_read_request(text) is False
 
 
+@pytest.mark.parametrize("connector", ("和", "与", "跟", "还有", "连同", "以及", "及"))
+@pytest.mark.parametrize(
+    "template",
+    (
+        "请打开我的{connector}张三的体检报告",
+        "请打开我的体检报告，{connector}张三的",
+    ),
+)
+def test_elliptic_mixed_report_owners_remain_nonself(connector, template):
+    text = template.format(connector=connector)
+
+    assert semantics.has_explicit_nonself_health_owner(text) is True
+    assert semantics.health_read_has_nonself_subject(text) is True
+
+
 @pytest.mark.parametrize(
     "text",
     (
