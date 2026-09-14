@@ -448,6 +448,27 @@ def test_elliptic_mixed_report_owners_remain_nonself(connector, template):
 @pytest.mark.parametrize(
     "text",
     (
+        "请打开我的、张三的体检报告",
+        "请打开我的同张三的体检报告",
+        "请打开我的并张三的体检报告",
+        "请打开我的加张三的体检报告",
+        "请打开我的再加张三的体检报告",
+        "请打开我的体检报告，也打开张三的",
+        "请打开我的体检报告，再打开张三的",
+        "请打开我的体检报告，并打开张三的",
+        "请打开我的体检报告，同时打开张三的",
+        "请打开我的体检报告，另外打开张三的",
+        "请打开我的体检报告，顺便打开张三的",
+    ),
+)
+def test_scaffolded_or_symbolic_mixed_report_owners_remain_nonself(text):
+    assert semantics.has_explicit_nonself_health_owner(text) is True
+    assert semantics.health_read_has_nonself_subject(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
         "“这只是一个示例”已结束；现在请打开我的体检报告",
         "“勿打开我的体检报告”已结束；现在请打开我的体检报告",
         "<q>这是示例</q>；现在请打开我的体检报告",
