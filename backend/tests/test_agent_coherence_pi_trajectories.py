@@ -126,6 +126,21 @@ def script_executor(db, monkeypatch, steps):
         if isinstance(step, str):
             yield {"type": "content", "text": step}
             yield {"type": "finish", "finish_reason": "stop"}
+        elif isinstance(step, list):
+            calls = []
+            for position, item in enumerate(step):
+                if len(item) == 3:
+                    call_id, name, args = item
+                else:
+                    name, args = item
+                    call_id = f"coherence-{index}-{position}"
+                calls.append({
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": name, "arguments": json.dumps(args)},
+                })
+            yield {"type": "tool_calls", "tool_calls": calls}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
         else:
             name, args = step
             yield {
@@ -415,6 +430,59 @@ async def test_plan_advice_recovery_cannot_claim_an_unverified_save(
     assert not trace.dispatches and not done["write_receipts"]
     assert db.query(WeeklyPlan).count() == db.query(PlanItem).count() == 0
     assert saved.content != false_success
+    assert "没有执行" in saved.content or "未执行" in saved.content
+    assert done["turn_outcome"]["status"] != "complete"
+
+
+@pytest.mark.parametrize(
+    "calls",
+    (
+        [
+            ("write", "manage_plan", {"action": "generate_weekly"}),
+            ("read", "knowledge_search", {"query": "运动计划"}),
+        ],
+        [
+            ("read", "knowledge_search", {"query": "运动计划"}),
+            ("write", "manage_plan", {"action": "generate_weekly"}),
+        ],
+        [
+            ("write", "manage_plan", {"action": "generate_weekly"}),
+            ("read-1", "knowledge_search", {"query": "运动计划"}),
+            ("read-2", "knowledge_search", {"query": "本周运动"}),
+        ],
+        [
+            ("duplicate", "manage_plan", {"action": "generate_weekly"}),
+            ("duplicate", "knowledge_search", {"query": "运动计划"}),
+        ],
+    ),
+)
+@pytest.mark.asyncio
+async def test_plan_advice_mixed_read_write_batch_terminates_without_model_retry(
+    db, owned_data, monkeypatch, calls
+):
+    trace = script_executor(
+        db,
+        monkeypatch,
+        [calls, "计划已加入首页，已经为你制定好了。"],
+    )
+
+    async def synthetic_read_dispatch(request, _token):
+        trace.dispatches.append(request)
+        return json.dumps({"results": []}, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        trace.executor,
+        "_dispatch_tool_request",
+        synthetic_read_dispatch,
+    )
+
+    done, saved = await run(db, trace, owned_data, "定我本周的运动计划。")
+
+    assert len(trace.calls) == 1
+    assert all(request.tool_name == "knowledge_search" for request in trace.dispatches)
+    assert not done["write_receipts"]
+    assert db.query(WeeklyPlan).count() == db.query(PlanItem).count() == 0
+    assert saved.content != "计划已加入首页，已经为你制定好了。"
     assert "没有执行" in saved.content or "未执行" in saved.content
     assert done["turn_outcome"]["status"] != "complete"
 

@@ -9874,6 +9874,16 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "[基于我的体检报告给建议]",
         "{基于我的体检报告给建议}",
         "> 基于我的体检报告给建议",
+        "下周再基于我的体检报告给建议。",
+        "等我确认后再基于我的体检报告给建议。",
+        "王五建议我基于我的体检报告给建议。",
+        "消息内容如下：基于我的体检报告给建议。",
+        "以下文字仅供分析：基于我的体检报告给建议。",
+        "```基于我的体检报告给建议```",
+        "```text\n基于我的体检报告给建议。\n```",
+        "基于我的体检报告给建议，先不要了。",
+        "基于我的体检报告给建议，停。",
+        "能否基于我的体检报告给建议？",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
@@ -9929,6 +9939,42 @@ async def test_later_explicit_report_request_dispatches(message):
     assert result.decision is not None
     assert result.decision.action == "allow"
     assert calls == [{"dimension": "medical_exam"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请结合我最近一次体检报告给我建议。",
+        "解读我最近一次体检报告。",
+    ),
+)
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+async def test_recent_owned_report_request_dispatches(message, tool_name):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    expected_arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_manage"
+        else arguments
+    )
+    assert calls == [expected_arguments]
 
 
 @pytest.mark.asyncio

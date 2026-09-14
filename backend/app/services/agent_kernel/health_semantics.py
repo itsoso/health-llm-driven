@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v12"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v13"
 
 
 @dataclass(frozen=True)
@@ -886,10 +886,22 @@ def _illness_lookup_key(value: str) -> str:
 
 
 ANALYZED_MATERIAL_INTRO_RE = re.compile(
+    r"(?:"
     r"(?:请|帮我)?(?:分析|评估|评价|审阅|解读|总结|解释|翻译)(?:一下|下)?"
     r"(?:以下|下面|这段|这份)(?:的)?"
-    r"(?:建议|内容|文字|文本|材料|文章|对话|消息|指令|命令|计划|方案)"
+    r"(?:建议|内容|文字|文本|材料|文章|对话|消息|指令|命令|计划|方案)|"
+    r"(?:以下|下面|这段|这份)(?:的)?"
+    r"(?:内容|文字|文本|材料|文章|对话|消息|指令|命令|计划|方案)"
+    r"(?:仅供)?(?:分析|参考|讨论)"
+    r")"
     r"\s*[：:]\s*"
+)
+MARKDOWN_FENCED_MATERIAL_RE = re.compile(
+    r"(?ms)^[ \t]{0,3}(?P<fence>`{3,}|~{3,})[^\n\r]*[\n\r]+"
+    r".*?^[ \t]{0,3}(?P=fence)[ \t]*(?:[\n\r]+|$)"
+)
+INLINE_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
+    r"(?P<fence>`{3,}|~{3,})[^\n\r]*?(?P=fence)"
 )
 ANALYZED_MATERIAL_QUOTE_PAIRS = {
     "“": "”",
@@ -950,7 +962,8 @@ def active_health_instruction_text(text: str) -> str:
     pasted text has no trustworthy end delimiter, so its remaining content
     stays non-authorizing, including apparent instructions inside that body.
     """
-    original = str(text or "")
+    original = MARKDOWN_FENCED_MATERIAL_RE.sub("", str(text or ""))
+    original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub("", original)
     parts: list[str] = []
     cursor = 0
     while match := ANALYZED_MATERIAL_INTRO_RE.search(original, cursor):
@@ -1444,16 +1457,22 @@ REPORT_USE_PROVENANCE_RE = re.compile(
     r"(?:"
     r"^(?!(?:我想|我希望|请|麻烦|帮我|给我|现在|基于|结合|根据|参考|依据))"
     r"[^\n\r，,。.!！?？；;：:]{1,32}?"
-    r"(?:说|表示|提到|写道|写着|问|让我|要求我|发来|转发|引用)\s*[：:]?|"
+    r"(?:说|表示|提到|写道|写着|问|让我|要求我|建议我|嘱咐我|叫我|发来|转发|引用)\s*[：:]?|"
     r"^[^\n\r，,。.!！?？；;：:]{1,32}?"
-    r"(?:内容|记录|原文|消息|邮件|聊天记录)\s*[：:]"
+    r"(?:内容|记录|原文|消息|邮件|聊天记录)(?:如下|是)?\s*[：:]"
     r")",
     re.IGNORECASE,
 )
 REPORT_USE_DEFERRED_RE = re.compile(
-    r"(?:明天|稍后|晚点|以后|之后|改天|回头|待会儿)"
+    r"(?:明天|稍后|晚点|以后|之后|改天|回头|待会儿|下周|下个月|"
+    r"等我确认后|待我确认后|等我同意后|待我同意后)"
     r"[^\n\r。.!！?？；;]{0,20}(?:再)?"
     r"(?:基于|结合|根据|参考|依据|分析|解读|解释|评估|评价)",
+    re.IGNORECASE,
+)
+REPORT_USE_PERMISSION_QUESTION_RE = re.compile(
+    r"^(?:请问)?(?:你)?(?:能否|是否能|可否|可不可以|可以不可以)"
+    r"[^\n\r。.!！?？；;]{0,48}(?:基于|结合|根据|参考|依据)",
     re.IGNORECASE,
 )
 _REPORT_USE_SCOPE_BOUNDARY_RE = re.compile(
@@ -1461,7 +1480,8 @@ _REPORT_USE_SCOPE_BOUNDARY_RE = re.compile(
 )
 REPORT_USE_TRAILING_WITHDRAWAL_RE = re.compile(
     r"(?:取消|撤销|撤回|作废|作罢|停止|终止|中止|打住|算了|"
-    r"到此为止|到这儿|到这里|先放一放|先搁着|不要执行|别执行|不执行)"
+    r"到此为止|到这儿|到这里|先放一放|先搁着|先不要了|不要了|"
+    r"不要执行|别执行|不执行|停)"
     r"[，,。.!！?？\s]*$",
     re.IGNORECASE,
 )
@@ -1508,6 +1528,7 @@ def _active_owned_report_use_clause(text: str) -> str:
                 or REPORT_USE_HYPOTHETICAL_RE.search(clause)
                 or REPORT_USE_PROVENANCE_RE.search(clause)
                 or REPORT_USE_DEFERRED_RE.search(clause)
+                or REPORT_USE_PERMISSION_QUESTION_RE.search(clause)
                 or READ_NON_AUTHORIZING_RE.search(clause)
                 or REPORT_USE_TRAILING_WITHDRAWAL_RE.search(clause)
             )

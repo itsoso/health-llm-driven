@@ -264,6 +264,86 @@ async def test_multi_model_advice_fails_closed_when_lead_selects_write_tool(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("shared_call_id", (False, True))
+async def test_multi_model_advice_mixed_read_write_stops_without_lead_retry(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    shared_call_id,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: _real_health_tools(),
+    )
+    lead_calls = []
+
+    async def fake_call_llm(messages, tools):
+        lead_calls.append(tools)
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "mixed" if shared_call_id else "mistaken-write",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "event",
+                            "data": {"description": "准备睡觉"},
+                        }),
+                    },
+                },
+                {
+                    "id": "mixed" if shared_call_id else "safe-read",
+                    "type": "function",
+                    "function": {
+                        "name": "knowledge_search",
+                        "arguments": json.dumps({"query": "睡眠建议"}),
+                    },
+                },
+            ],
+        }
+
+    executed = []
+
+    async def execute_read(name, args, _token):
+        executed.append((name, json.loads(args)))
+        assert name == "knowledge_search"
+        return json.dumps({"results": []})
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_execute_tool", execute_read)
+
+    events = [
+        event
+        async for event in executor._run_multi_model_stream(
+            user.id,
+            "我准备睡觉了，给我一些建议。",
+            None,
+            None,
+            '{"multi_model": true}',
+            f"turn-multi-advice-mixed-{shared_call_id}",
+        )
+    ]
+
+    assert len(lead_calls) == 1
+    assert executed == [("knowledge_search", {"query": "睡眠建议"})]
+    assert events[-1]["data"]["completion_status"] == "error"
+
+    from app.models.agent_conversation import AgentMessage
+
+    saved_user = db.query(AgentMessage).filter_by(role="user").one()
+    assert saved_user.meta["write_state"]["status"] == "rejected"
+    assert saved_user.meta["write_receipts"] == []
+    saved_assistant = db.query(AgentMessage).filter_by(role="assistant").one()
+    assert "没有执行或保存任何变更" in saved_assistant.content
+
+
+@pytest.mark.asyncio
 async def test_multi_model_simple_record_stops_after_verified_receipt(
     db, auth_user_and_headers, monkeypatch
 ):

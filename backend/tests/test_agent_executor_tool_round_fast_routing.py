@@ -404,7 +404,13 @@ async def test_fast_tool_round_direct_answer_discarded_and_resynthesized(
             return {"content": "STRONG RESYNTH", "finish_reason": "stop"}
 
     strong = FakeProvider("qwen3.7-max")
-    _wire(executor, monkeypatch, lambda mid: FakeProvider(mid), user_provider=strong)
+    _wire(
+        executor,
+        monkeypatch,
+        lambda mid: FakeProvider(mid),
+        user_provider=strong,
+        tool_name="knowledge_search",
+    )
 
     events = await _run(executor, "分析我的睡眠趋势", user.id)
     rendered = "".join(
@@ -528,8 +534,13 @@ async def test_explicit_model_fast_direct_answer_resynthesized_on_explicit(
                                    "nonstream": True})
             return {"content": "EXPLICIT RESYNTH", "finish_reason": "stop"}
 
-    _wire(executor, monkeypatch, lambda mid: FakeProvider(mid),
-          user_provider=FakeProvider("qwen3.7-max"))
+    _wire(
+        executor,
+        monkeypatch,
+        lambda mid: FakeProvider(mid),
+        user_provider=FakeProvider("qwen3.7-max"),
+        tool_name="knowledge_search",
+    )
 
     events = await _run(
         executor, "分析我的睡眠趋势", user.id,

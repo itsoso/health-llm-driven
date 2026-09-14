@@ -24,7 +24,7 @@ def _wire(executor, monkeypatch, provider_factory, *, user_provider):
         "app.services.agent_executor.get_health_tools",
         lambda **k: [{
             "type": "function",
-            "function": {"name": "health_record", "description": "r",
+            "function": {"name": "knowledge_search", "description": "r",
                          "parameters": {"type": "object", "properties": {}}},
         }],
     )

@@ -26,6 +26,7 @@ from app.services.agent_kernel.goal_spec import (
     simple_illness_target,
 )
 from app.services.agent_kernel.health_semantics import (
+    CURRENT_USER_REPORT_REFERENCE_RE,
     HEALTH_ENTITY_CONNECTOR_RE,
     READ_VERB_RE,
     active_health_read_clause,
@@ -1885,10 +1886,15 @@ def _project_medical_exam_query_to_turn(text: str) -> dict[str, Any] | None:
         return {"dimension": "medical_exam", "keyword": resolution.entity}
     if is_clinical_result_interpretation(text):
         return {"dimension": "medical_exam"}
-    if _has_explicit_read_request(text) and re.search(
-        r"(?:我(?:自己|个人|本人)?|本人)(?:的)?(?:刚导入的)?"
-        r"(?:医学)?(?:检查|体检|化验|检验)?报告",
-        _query_scope_text(text),
+    if _has_explicit_read_request(
+        text
+    ) and (
+        CURRENT_USER_REPORT_REFERENCE_RE.search(_query_scope_text(text))
+        or re.search(
+            r"(?:我(?:自己|个人|本人)?|本人)(?:的)?(?:刚导入的)?"
+            r"(?:医学)?(?:检查|体检|化验|检验)?报告",
+            _query_scope_text(text),
+        )
     ):
         return {"dimension": "medical_exam"}
     return None
@@ -2836,6 +2842,13 @@ def decide_tool_capability(
                                  "health_manage", daily_plan.diet_list_args())
             return _decision("allow", "health_query_projected_to_calendar_window",
                              tool_name, bound_query)
+        if medical_exam_args is not None and _has_explicit_read_request(turn_text):
+            return _decision(
+                "allow",
+                "health_query_projected_to_turn_semantics",
+                tool_name,
+                medical_exam_args,
+            )
         from app.services.agent_query_window import resolve_calendar_query_window
 
         from app.services.agent_longitudinal_read import longitudinal_read_projection_text
@@ -2878,8 +2891,6 @@ def decide_tool_capability(
                 "allow", "health_query_projected_to_calendar_window", tool_name,
                 {"dimension": expected_dimension, **calendar_window},
             )
-        if medical_exam_args is not None and _has_explicit_read_request(turn_text):
-            return _decision("allow", "health_query_projected_to_turn_semantics", tool_name, medical_exam_args)
         explicit_record_type = _manage_list_turn_record_type(turn_text)
         scoped_metric_read = bool(
             _has_explicit_read_request(turn_text)
@@ -3182,6 +3193,29 @@ def decide_tool_capability(
                     return _decision("block", "health_query_dimension_conflict", tool_name, args)
                 return _decision("allow", "health_query_projected_to_calendar_window",
                                  "health_query", daily_plan.queries()[0])
+            medical_exam_args = _project_medical_exam_query_to_turn(turn_text)
+            if (
+                guarding_user_read
+                and medical_exam_args is not None
+                and _has_explicit_read_request(turn_text)
+                and CURRENT_USER_REPORT_REFERENCE_RE.search(
+                    _query_scope_text(turn_text)
+                )
+                and _query_contains_unresolved_reference(turn_text)
+            ):
+                if (
+                    canonical_health_manage_record_type(args.get("record_type"))
+                    != "medical_exam"
+                ):
+                    return _decision(
+                        "block", "health_query_dimension_conflict", tool_name, args
+                    )
+                return _decision(
+                    "allow",
+                    "health_query_projected_to_turn_semantics",
+                    "health_query",
+                    medical_exam_args,
+                )
             if (
                 _query_contains_unresolved_reference(turn_text)
                 and (guarding_user_read or _has_explicit_read_request(turn_text))
