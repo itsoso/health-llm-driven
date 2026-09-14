@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v14"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v15"
 
 
 @dataclass(frozen=True)
@@ -1448,6 +1448,36 @@ REPORT_USE_ACTION_RE = re.compile(
     r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)",
     re.IGNORECASE,
 )
+REPORT_USE_DIRECT_REQUEST_RE = re.compile(
+    rf"(?:"
+    rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
+    rf"(?:(?:请(?:你)?|麻烦你?|帮我|我想(?:请你)?|我希望(?:你)?)\s*)?"
+    rf"(?:基于|结合|根据|参考|依据)[^\n\r：:]{{0,48}}"
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}[^\n\r：:]{{0,48}}"
+    rf"{REPORT_USE_ACTION_RE.pattern}|"
+    rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
+    rf"(?:请(?:你)?|麻烦你?|帮我|给我)"
+    rf"[^\n\r：:]{{0,48}}[，,]\s*"
+    rf"(?:基于|结合|根据|参考|依据)[^\n\r：:]{{0,32}}"
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}|"
+    rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
+    rf"(?:(?:请(?:你)?|麻烦你?|帮我|给我)\s*)?"
+    rf"(?:分析|解读|解释|评估|评价)(?:一下|下)?[^\n\r：:]{{0,32}}"
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}"
+    rf")",
+    re.IGNORECASE,
+)
+REPORT_USE_QUESTION_RE = re.compile(
+    r"(?:[?？]|吗|么|行不行|可不可以|能不能|会不会)\s*$",
+    re.IGNORECASE,
+)
+REPORT_USE_POST_ACTION_TAIL_RE = re.compile(
+    r"(?:基于|结合|根据|参考|依据)"
+    r"[^\n\r。.!！?？；;]{0,96}"
+    r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)"
+    r"[^\n\r。.!！?？；;]{0,24}[，,]\s*\S",
+    re.IGNORECASE,
+)
 REPORT_USE_DENIAL_RE = re.compile(
     r"(?:反对|拒绝|不接受|禁止|(?:请)?避免|不同意|不允许|"
     r"未同意|未经(?:我|本人)?(?:的)?授权|暂缓|"
@@ -1549,7 +1579,8 @@ def _active_owned_report_use_clause(text: str) -> str:
         if is_report_use:
             saw_report_use = True
             authorized = not bool(
-                has_explicit_nonself_health_owner(clause)
+                REPORT_USE_DIRECT_REQUEST_RE.search(clause) is None
+                or has_explicit_nonself_health_owner(clause)
                 or is_health_tool_meta_command(clause)
                 or QUOTED_REPORT_USE_RE.search(clause)
                 or REPORT_USE_DENIAL_RE.search(clause)
@@ -1561,6 +1592,8 @@ def _active_owned_report_use_clause(text: str) -> str:
                 or READ_AUTHORITY_WITHDRAWAL_RE.search(clause)
                 or READ_TRAILING_WITHDRAWAL_RE.search(clause)
                 or REPORT_USE_TRAILING_WITHDRAWAL_RE.search(clause)
+                or REPORT_USE_QUESTION_RE.search(clause)
+                or REPORT_USE_POST_ACTION_TAIL_RE.search(clause)
             )
             active_clause = clause if authorized else ""
         elif saw_report_use and (
