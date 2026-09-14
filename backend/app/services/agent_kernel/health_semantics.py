@@ -1448,22 +1448,33 @@ REPORT_USE_ACTION_RE = re.compile(
     r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)",
     re.IGNORECASE,
 )
+_REPORT_DIRECT_ACTION_SUFFIX = (
+    r"(?:"
+    r"(?:给(?:我)?|帮我|为我)?(?:做|作|提供|提出|制定)?"
+    r"(?:一些|相关|改善|健康|个性化)?"
+    r"(?:建议|分析|解读|解释|评估|评价|判断|方案)(?:一下|下)?|"
+    r"(?:给我)?(?:说说|讲讲|说下|讲下)"
+    r"(?:改善|健康|相关)?(?:建议|看法|方案)?"
+    r")"
+)
 REPORT_USE_DIRECT_REQUEST_RE = re.compile(
     rf"(?:"
     rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
     rf"(?:(?:请(?:你)?|麻烦你?|帮我|我想(?:请你)?|我希望(?:你)?)\s*)?"
     rf"(?:基于|结合|根据|参考|依据)[^\n\r：:]{{0,48}}"
-    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}[^\n\r：:]{{0,48}}"
-    rf"{REPORT_USE_ACTION_RE.pattern}|"
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}\s*"
+    rf"{_REPORT_DIRECT_ACTION_SUFFIX}\s*$|"
     rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
     rf"(?:请(?:你)?|麻烦你?|帮我|给我)"
-    rf"[^\n\r：:]{{0,48}}[，,]\s*"
+    rf"[^\n\r，,：:]{{0,24}}(?:建议|方案|看法|说说|讲讲|说下|讲下)"
+    rf"[，,]\s*"
     rf"(?:基于|结合|根据|参考|依据)[^\n\r：:]{{0,32}}"
-    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}|"
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}"
+    rf"(?:有什么)?(?:建议|看法|方案)?\s*$|"
     rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
     rf"(?:(?:请(?:你)?|麻烦你?|帮我|给我)\s*)?"
     rf"(?:分析|解读|解释|评估|评价)(?:一下|下)?[^\n\r：:]{{0,32}}"
-    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}"
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}\s*$"
     rf")",
     re.IGNORECASE,
 )
