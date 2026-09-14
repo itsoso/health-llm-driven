@@ -9827,6 +9827,44 @@ async def test_owned_report_advice_projects_a_current_user_medical_exam_read(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    ("text", "record_type"),
+    (
+        ("请查看我的体检报告，还有我的血压", "medical_exam"),
+        ("请查看我的体检报告，以及我的睡眠", "medical_exam"),
+        ("请查看我的体检报告；还有我的血压和我的睡眠", "medical_exam"),
+        ("请查看我的体检报告，顺带我的血压", "medical_exam"),
+    ),
+)
+async def test_coordinated_current_user_health_reads_dispatch(
+    text,
+    record_type,
+    tool_name,
+):
+    gateway = ToolGateway(_snapshot(text))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    arguments = (
+        {"dimension": record_type}
+        if tool_name == "health_query"
+        else {"record_type": record_type, "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
 async def test_third_party_report_advice_never_dispatches(tool_name):
     gateway = ToolGateway(_snapshot("给我一些建议，基于张三的体检报告。"))
     calls = []

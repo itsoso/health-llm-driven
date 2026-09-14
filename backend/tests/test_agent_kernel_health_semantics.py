@@ -600,6 +600,20 @@ def test_owned_report_with_safe_coordinated_clinical_target_is_current_user(text
 @pytest.mark.parametrize(
     "text",
     (
+        "请查看我的体检报告，还有我的血压",
+        "请查看我的体检报告，以及我的睡眠",
+        "请查看我的血压，还有我的睡眠",
+        "请查看我的体检报告；还有我的血压和我的睡眠",
+        "请查看我的体检报告，顺带我的血压",
+    ),
+)
+def test_owned_report_with_safe_coordinated_self_target_is_current_user(text):
+    assert semantics.health_read_has_nonself_subject(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
         "“这只是一个示例”已结束；现在请打开我的体检报告",
         "“勿打开我的体检报告”已结束；现在请打开我的体检报告",
         "<q>这是示例</q>；现在请打开我的体检报告",

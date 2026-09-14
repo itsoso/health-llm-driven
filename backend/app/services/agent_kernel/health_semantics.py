@@ -1670,7 +1670,8 @@ def illness_target_is_unowned_or_referential(value: str) -> bool:
 def _strip_exam_request_scaffolding(value: str) -> str:
     candidate = value.strip("，,。.!！；;：:?？ ")
     prefix_re = re.compile(
-        r"^(?:然后|但|不过|而是|方便的话|请问|请您|烦请|劳烦|有劳|劳驾|"
+        r"^(?:然后|顺带|顺便|另外|同时|并且|接着|随后|一并|但|不过|而是|"
+        r"方便的话|请问|请您|烦请|劳烦|有劳|劳驾|"
         r"拜托|请|麻烦你?|能不能|可不可以|能否|可否|"
         r"现在|立即|马上|此刻|这次|本次|我想(?:在)?|"
         r"想(?:在)?|能(?=给我|帮我|帮忙|替我|为我|查询|查找|查看|找出|"
@@ -2301,13 +2302,20 @@ def _coordinated_prefix_has_safe_health_target(value: str) -> bool:
     candidate = str(value or "").strip()
     if not candidate:
         return False
-    clauses = re.split(r"[\n\r，,；;：:。.!！?？、]", candidate)
-    candidate = clauses[-1].strip()
+    clauses = tuple(
+        part.strip()
+        for part in re.split(r"[\n\r，,；;：:。.!！?？、]", candidate)
+        if part.strip()
+    )
+    if not clauses:
+        return False
+    candidate = clauses[-1]
     read_matches = tuple(READ_VERB_RE.finditer(candidate))
     if read_matches:
         candidate = candidate[read_matches[-1].end():].strip()
     candidate = re.sub(
-        r"^(?:请|麻烦你?|帮我|给我|替我|为我|基于|结合|根据|参考|参照|依据|按)",
+        r"^(?:请|麻烦你?|帮我|给我|替我|为我|基于|结合|根据|参考|参照|依据|按|"
+        r"还有|以及|顺带|顺便|另外|同时|并且|接着|随后|然后|一并)",
         "",
         candidate,
     ).strip()
@@ -2359,6 +2367,16 @@ def _owned_health_context_has_safe_owner(left_context: str) -> bool:
                 prefix[:connector.start()]
             ):
                 continue
+            return True
+        discourse = re.search(
+            r"(?:顺带|顺便|另外|同时|并且|接着|随后|然后|一并)\s*$",
+            prefix,
+        )
+        if (
+            discourse is not None
+            and explicit_self_owner
+            and _coordinated_prefix_has_safe_health_target(prefix[:discourse.start()])
+        ):
             return True
         if re.search(r"[\n\r，,；;：:。.!！?？、/／|｜&＆+＋]$", prefix):
             return True
@@ -2455,9 +2473,12 @@ def health_read_has_nonself_subject(text: str) -> bool:
     )
     owned_target_scope = _strip_exam_request_scaffolding(scoped_text)
     for part in HEALTH_ENTITY_CONNECTOR_RE.split(owned_target_scope):
+        normalized_part = _strip_exam_request_scaffolding(
+            part.strip(" \t\n\r，,；;。.!！?？、")
+        )
         possessive_part = re.fullmatch(
             r"(?P<owner>.+?)的(?P<target>.+)",
-            part.strip(" \t\n\r，,；;。.!！?？、"),
+            normalized_part,
         )
         if possessive_part is None:
             continue
@@ -2472,9 +2493,13 @@ def health_read_has_nonself_subject(text: str) -> bool:
         ):
             return True
     coordinated_parts = tuple(
-        part.strip(" \t\n\r，,；;。.!！?？、")
+        _strip_exam_request_scaffolding(
+            part.strip(" \t\n\r，,；;。.!！?？、")
+        )
         for part in HEALTH_ENTITY_CONNECTOR_RE.split(owned_target_scope)
-        if part.strip(" \t\n\r，,；;。.!！?？、")
+        if _strip_exam_request_scaffolding(
+            part.strip(" \t\n\r，,；;。.!！?？、")
+        )
     )
     if len(coordinated_parts) > 1 and all(
         (
