@@ -1058,6 +1058,8 @@ _CURRENT_EVIDENCE_SAFE = [
     "不能断言恢复良好。", "不代表恢复良好。", "不能得出恢复良好。",
     "尚无证据证明恢复良好。", "缺乏证据证明恢复良好。",
     "缺乏证据支持恢复良好。",
+    "完全不能断言恢复良好。", "真的无法得出恢复良好。",
+    "这份不完整的记录不能得出恢复良好。",
 ]
 
 
@@ -1072,6 +1074,15 @@ def test_composed_current_evidence_claim_boundaries(text, blocked):
     assert result.flagged is blocked
     assert (text in result.text) is not blocked
     assert not enforce_composed_synthesis_boundaries(text, None).flagged
+
+
+@pytest.mark.parametrize("outer", ["并非", "并不是", "不是", "并不", "未必", "不一定"])
+@pytest.mark.parametrize("bridge", ["说", "真的", "完全", "绝对", "一定"])
+@pytest.mark.parametrize("uncertainty", ["不能断言", "不能得出", "没有证据表明"])
+def test_composed_current_evidence_negation_bridge(outer, bridge, uncertainty):
+    test_composed_current_evidence_claim_boundaries(
+        f"{outer}{bridge}{uncertainty}恢复良好。", True,
+    )
 
 
 @pytest.mark.asyncio

@@ -272,6 +272,9 @@ _HEALTH_CONCLUSION_UNKNOWN = re.compile(
     r"|(?:没有|缺乏|缺少)(?:足够|充分|可靠)?的?(?:依据|证据)(?:来)?(?:得出|推断|断言|断定|认定)"
     r"|(?:没有|尚无|缺乏)[^，,]{0,10}证据(?:证明|表明|显示|支持)?\s*$"
 )
+_HEALTH_UNCERTAINTY_NEGATION = re.compile(
+    r"(?:并非|不是|并不|不|未必|不一定)\s*(?:(?:说|真的|完全|绝对|一定)\s*)?$"
+)
 _EXERCISE_TOPIC = re.compile(r"运动|训练|锻炼|练|走|健身|力量|有氧|阻力|散步|步行|跑步|深蹲|划船|弹力带|俯卧撑|骑行|游泳")
 _EXERCISE_QUANTITY = re.compile(
     r"半(?:个)?小时|(?:[一二两三四五六七八九十百\d]+(?:\.\d+)?\s*"
@@ -310,7 +313,7 @@ def _asserted_record_only_claim(pattern: re.Pattern, clause: str) -> bool:
         # Every current-health uncertainty form uses the same local polarity
         # check; the older grammar must not bypass it with an early exemption.
         if unknown and (pattern is not _CURRENT_HEALTH_CLAIM
-                        or not re.search(r"(?:并非|不是|并不|不|未必|不一定)\s*$", prefix[:unknown.start()])):
+                        or not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:unknown.start()])):
             continue
         if pattern is _CURRENT_HEALTH_CLAIM:
             if (match.group("subject") is None
