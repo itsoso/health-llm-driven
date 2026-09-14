@@ -1530,6 +1530,18 @@ REPORT_USE_PROVENANCE_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+REPORT_USE_MATERIAL_CONTEXT_RE = re.compile(
+    r"(?:原话|转发(?:内容)?|转述|引用|引文|摘录|截图|聊天记录|"
+    r"(?:示|事|反)?例|仅供(?:讨论|分析|参考)|供(?:讨论|分析|参考)|"
+    r"(?:内容|文字|文本|材料)(?:如下|是)|如下)"
+    r"[，,。.!！?？\s]*$",
+    re.IGNORECASE,
+)
+REPORT_USE_STRONG_REAUTHORIZATION_RE = re.compile(
+    r"^(?:现在|立即|马上|本次|这次)\s*"
+    r"(?:请(?:你)?|麻烦你?|帮我|给我)",
+    re.IGNORECASE,
+)
 REPORT_USE_DEFERRED_RE = re.compile(
     r"(?:明天|稍后|晚点|以后|之后|改天|回头|待会儿|周末|有空(?:时)?|"
     r"下周|下个月|(?:等|待)[^\n\r。.!！?？；;]{0,12}(?:确认|同意)(?:后)?)"
@@ -1581,6 +1593,7 @@ def _active_owned_report_use_clause(text: str) -> str:
         clauses.append((trailing_clause, ""))
     active_clause = ""
     saw_report_use = False
+    material_context_active = False
     for clause, trailing_boundary in clauses:
         owns_report = CURRENT_USER_REPORT_REFERENCE_RE.search(clause) is not None
         has_action = REPORT_USE_ACTION_RE.search(clause) is not None
@@ -1600,6 +1613,10 @@ def _active_owned_report_use_clause(text: str) -> str:
             saw_report_use = True
             authorized = not bool(
                 REPORT_USE_DIRECT_REQUEST_RE.search(clause) is None
+                or (
+                    material_context_active
+                    and REPORT_USE_STRONG_REAUTHORIZATION_RE.search(clause) is None
+                )
                 or has_explicit_nonself_health_owner(clause)
                 or is_health_tool_meta_command(clause)
                 or QUOTED_REPORT_USE_RE.search(clause)
@@ -1616,6 +1633,16 @@ def _active_owned_report_use_clause(text: str) -> str:
                 or REPORT_USE_POST_ACTION_TAIL_RE.search(clause)
             )
             active_clause = clause if authorized else ""
+            if authorized:
+                material_context_active = False
+        elif (
+            REPORT_USE_MATERIAL_CONTEXT_RE.search(clause)
+            or REPORT_USE_PROVENANCE_RE.search(clause)
+            or READ_NON_AUTHORIZING_RE.search(clause)
+        ):
+            material_context_active = True
+            if saw_report_use:
+                active_clause = ""
         elif saw_report_use:
             # Once a direct request is followed by any distinct, non-empty
             # clause, its authority is no longer the final speech act. Only a

@@ -321,6 +321,12 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "基于我的体检报告给建议，不过先放着。",
         "基于我的体检报告给建议？",
         "给我解释这句话的建议，基于我的体检报告。",
+        "医生原话如下。\n基于我的体检报告给建议。",
+        "以下是转发内容。\n基于我的体检报告给建议。",
+        "这只是一个例子。基于我的体检报告给建议。",
+        "以下仅供讨论。\n基于我的体检报告给建议。",
+        "下面是医生原话。基于我的体检报告给建议。",
+        "这是医生原话。基于我的体检报告给建议。",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
@@ -352,6 +358,12 @@ def test_mixed_report_owner_with_secondary_basis_remains_nonself():
     ),
 )
 def test_later_explicit_report_request_restores_read_authority(text):
+
+    assert semantics.has_explicit_health_read_request(text) is True
+
+
+def test_strong_report_request_after_material_context_restores_read_authority():
+    text = "这只是一个例子。现在请基于我的体检报告给建议。"
 
     assert semantics.has_explicit_health_read_request(text) is True
 

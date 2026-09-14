@@ -9961,6 +9961,12 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "基于我的体检报告给建议，不过先放着。",
         "基于我的体检报告给建议？",
         "给我解释这句话的建议，基于我的体检报告。",
+        "医生原话如下。\n基于我的体检报告给建议。",
+        "以下是转发内容。\n基于我的体检报告给建议。",
+        "这只是一个例子。基于我的体检报告给建议。",
+        "以下仅供讨论。\n基于我的体检报告给建议。",
+        "下面是医生原话。基于我的体检报告给建议。",
+        "这是医生原话。基于我的体检报告给建议。",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
