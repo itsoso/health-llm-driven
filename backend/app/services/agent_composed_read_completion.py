@@ -195,7 +195,7 @@ _NUTRITION_UNKNOWN_PREFIX = re.compile(
     r"(?:不能据此|不能仅凭|无法证明|无法判断|无法确认|无法确定|尚无证据|"
     r"缺乏(?:充分|足够|可靠|直接|明确|已核验)?的?证据)"
 )
-_NUTRITION_CLAUSE_BREAK = re.compile(r"[。；;!?！？\n]|但是|但|不过|然而|而是|却")
+_NUTRITION_CLAUSE_BREAK = re.compile(r"[。；;!?！？\n]|但是|但|不过(?!量|度|高|低)|然而|而是|却")
 
 
 def _nutrition_assertion_in_clause(clause: str) -> bool:
@@ -230,24 +230,198 @@ def _nutrition_assertion_in_clause(clause: str) -> bool:
     return False
 
 
+# A record-only read cannot attest clinical recovery, training safety, or a
+# regimen. Unlike meal descriptions, these claims remain unsupported even if
+# every requested row and field was returned: there is no clinical assessment
+# or prescribed plan in this evidence contract.
+_HEALTH_SUBJECT = (
+    r"(?:睡眠(?:恢复|质量)|恢复(?:水平|质量|状态|程度|能力|情况)?|"
+    r"你(?:的)?(?:身体)?状态|身体(?:状态|状况)?|生活(?:节奏|作息|状态)|作息|"
+    r"训练(?:量|负荷|状态|强度)?|运动(?:量|负荷|强度|安全性)?|(?:总体)?情况|(?:各项)?指标|一切|状态|你)"
+)
+_HEALTH_LINK = (
+    r"(?:的|得|是|为|属于|呈现(?:出|为)?|表现为|处于|达到|已经|目前|总体|整体|"
+    r"看起来|显得|似乎|可能|相对|比较|较为|非常|很|太|偏|稍|仍然|仍|还|了|"
+    r"并非|并不|并没有|没有|并|不|是否|有无|能否|较)"
+)
+_HEALTH_EVALUATION = (
+    r"(?:中等偏好|不错|尚可|理想|还可以|良好|稳定|规律|正常|安全|合理|适宜|适量|充分|充足|足够|"
+    r"健康|欠佳|不佳|较差|过量|过度|康复|痊愈|恢复|好|差)"
+)
+_HEALTH_ABSENCE = (
+    r"(?:没有(?:发现|看到)?|未见|未发现|不存在|看不到|无|没什么|没啥|没)"
+    r"(?:(?:明显|任何|显著|需要(?:紧急)?关注的)\s*){0,3}"
+    r"(?:异常(?:信号|情况)?|过度训练|安全风险|健康风险|值得担心|问题)"
+)
+_CURRENT_HEALTH_CLAIM = re.compile(
+    r"(?P<subject>" + _HEALTH_SUBJECT + r")\s*(?:" + _HEALTH_LINK + r"\s*){0,12}"
+    r"(?P<evaluation>" + _HEALTH_EVALUATION + r")|" + _HEALTH_ABSENCE
+    + r"|中等偏好|(?:稳定|良好|充分)(?:的)?恢复|(?:早已|已经)痊愈"
+)
+_RECORD_OPERATION_SUBJECT = re.compile(
+    r"(?:查询|调用|返回|接口|字段|格式|解析|记录校验|记录本身|记录格式)"
+    r"(?:结果|过程|状态|结构)?[^，,。；;!?！？\n]{0,8}$"
+)
+_CLAIM_UNKNOWN_PREFIX = re.compile(
+    _NUTRITION_UNKNOWN_PREFIX.pattern
+    + r"|不代表|不意味着|不等于|不能说明|不能证明|不能断言|不支持|不能判断|难以判断"
+)
+_EXERCISE_TOPIC = re.compile(r"运动|训练|锻炼|练|走|健身|力量|有氧|阻力|散步|步行|跑步|深蹲|划船|弹力带|俯卧撑|骑行|游泳")
+_EXERCISE_QUANTITY = re.compile(
+    r"半(?:个)?小时|(?:[一二两三四五六七八九十百\d]+(?:\.\d+)?\s*"
+    r"(?:[–—~～至到-]\s*[一二两三四五六七八九十百\d]+(?:\.\d+)?)?"
+    r"\s*(?:次|回|组|分钟|个小时|小时|公里|km|米|个))"
+)
+_EXERCISE_PLAN_ACTION = re.compile(
+    r"建议|可以|应该|应当|请|加入|增加|提高|过渡到|开始|安排|合理的起点|即可|就行|照做|做|练|锻炼|运动|走"
+)
+_EXERCISE_RECORD_CHECK = re.compile(
+    r"(?:(?:建议|可以|应该|请)\s*)?(?:(?:每周|每天|每日|一周)\s*)?"
+    r"(?:查看|核对|检查|回看|对比|整理|统计|分析)"
+    r"[^，,。；;!?！？\n]{0,24}?(?:记录|条目)"
+)
+_EXERCISE_EVENT_READ = re.compile(
+    r"(?:分析|只看|查询|查看|回看|对比|统计)(?:一下)?\s*"
+    r"(?:某|这|那|第)?[一二两三四五六七八九十\d]+次(?:的)?\s*"
+    r"(?:运动|训练|锻炼|散步|步行|跑步|骑行|游泳)"
+    r"(?:后的(?:状态|情况)|的(?:记录|详情|数据))?"
+)
+_SUPPLEMENT_REMINDER_ACTION = re.compile(
+    r"留意|注意|记得|别忘(?:了)?|不要忘(?:记)?|别漏(?:掉)?|别落下|不要漏(?:掉)?|提醒|"
+    r"(?:可以)?(?:看看|检查|核对)"
+)
+_SUPPLEMENT_OBJECT = re.compile(r"补剂|保健品|维生素|鱼油|辅酶(?:Q10)?|红景天|叶酸|NAC|NMN", re.I)
+_INTAKE_OR_ADHERENCE_ACTION = re.compile(r"服用(?!时间|记录)|漏(?:服|吃|了|掉)?|吃|补打卡")
+_RECORD_OR_HANDLING_OBJECT = re.compile(r"记录|字段|名称|剂量|单位|服用时间|包装|标签|批号|照片")
+
+
+def _asserted_record_only_claim(pattern: re.Pattern, clause: str) -> bool:
+    for match in pattern.finditer(clause):
+        prefix = re.split(r"[，,]|但是|但|不过|然而|而是|却|——", clause[:match.start()])[-1]
+        suffix = clause[match.end():]
+        if _CLAIM_UNKNOWN_PREFIX.search(prefix):
+            continue
+        if pattern is _CURRENT_HEALTH_CLAIM:
+            if (match.group("subject") is None
+                    or (match.group("subject") == "状态" and match.group("evaluation") == "正常")) and _RECORD_OPERATION_SUBJECT.search(prefix):
+                continue
+            if (match.group("evaluation") in {"稳定", "规律"}
+                    and re.search(r"(?:已记录|记录中的|本轮已返回)[^，,]{0,8}$", prefix)
+                    and not re.search(r"你|身体|生活", match.group("subject") or "")):
+                continue
+            if re.search(r"(?:没有|尚无|缺乏)[^，,]{0,10}证据(?:证明|表明|显示|支持)?\s*$", prefix):
+                continue
+        else:
+            chain = _NUTRITION_PREFIX_CHAIN.search(prefix)
+            if chain and len(_NUTRITION_OPERATOR.findall(chain.group())) % 2:
+                continue
+        if re.match(r"\s*的?证据(?:不足|不够|缺乏|有限)", suffix):
+            continue
+        decision_unknown = (_NUTRITION_UNKNOWN.search(suffix)
+                            or re.search(r"(?:应|需|需要)(?:由)?(?:医生|药师)(?:判断|评估|确认)", suffix))
+        if ("是否" in prefix + match.group() or "有无" in prefix + match.group()) and decision_unknown:
+            continue
+        if pattern is _CURRENT_HEALTH_CLAIM and re.match(r"\s*(?:如果|若|假如)", prefix):
+            # A hypothetical recovery condition is not a claimed assessment.
+            # Exercise prescriptions are independently checked below.
+            continue
+        if pattern is not _CURRENT_HEALTH_CLAIM and re.search(r"(?:不要|不建议|请勿|不得|不能)[^，,]{0,24}$", prefix):
+            continue
+        return True
+    return False
+
+
+def _quantified_exercise_plan(clause: str) -> bool:
+    # Carry an exercise proposal only into adjacent short clauses without a new
+    # record/read subject or another domain. This supports "力量训练，每周两次"
+    # without pairing a factual duration with an unrelated record-check request.
+    carried = ""
+    for part in re.split(r"[，,]|然后|接下来", clause):
+        part = part.strip()
+        record_only = (re.match(r"(?:每周|每天)?(?:已记录|记录显示|记录中|本轮返回的记录|(?:运动|训练|锻炼)(?:记录|日志))", part)
+                       and not re.search(r"建议|应该|应当|可以|请|安排|加入", part))
+        if record_only:
+            carried = ""
+            continue
+        part = _EXERCISE_RECORD_CHECK.sub("", part)
+        # Project the finite read operation, including its event count, rather
+        # than interpreting "分析某一次散步" as a prescribed exercise frequency.
+        # Later actions in this clause remain visible to the safety check.
+        part = _EXERCISE_EVENT_READ.sub("", part)
+        if re.search(r"睡眠|饮食|补剂|情绪|工作", part) and not _EXERCISE_TOPIC.search(part):
+            carried = ""
+            continue
+        window = (carried + "，" + part) if carried else part
+        if (_EXERCISE_TOPIC.search(window) and _EXERCISE_QUANTITY.search(window)
+                and _asserted_record_only_claim(_EXERCISE_PLAN_ACTION, window)):
+            return True
+        carried = window if _EXERCISE_TOPIC.search(window) and len(window) <= 80 else ""
+    return False
+
+
+def _supplement_adherence_nudge(clause: str) -> bool:
+    previous_object = False
+    previous_missing_log = False
+    for part in re.split(r"[，,]|然后|接下来", clause):
+        local_object = bool(_SUPPLEMENT_OBJECT.search(part))
+        for action in _SUPPLEMENT_REMINDER_ACTION.finditer(part):
+            prefix, tail = part[:action.start()], part[action.end():]
+            if (_CLAIM_UNKNOWN_PREFIX.search(prefix)
+                    or re.search(r"(?:不要|不建议|请勿|不得|不能)[^，,]{0,18}$", prefix)):
+                continue
+            # The recipient/purpose is a clinician, not an ingestion action.
+            # Only this local action is exempt; later reminders are examined.
+            if (re.match(r"(?:了)?(?:问|咨询|请教|告诉|提醒|告知)[^，,]{0,8}(?:医生|药师)", tail)
+                    or re.match(r"(?:医生|药师)", tail)
+                    or re.match(r"(?:带|携带)[^，,]{0,20}(?:医生|药师)", tail)):
+                continue
+            intake = _INTAKE_OR_ADHERENCE_ACTION.search(tail)
+            if intake and (local_object or previous_object or re.search(r"服用(?!时间|记录)|漏服", tail)):
+                return True
+            if (local_object and re.match(r"别忘|不要忘|别漏|别落下|不要漏", action.group())
+                    and not _RECORD_OR_HANDLING_OBJECT.search(tail)):
+                return True
+            if previous_missing_log and re.match(r"提醒", action.group()) and "自己" in tail:
+                return True
+        previous_object = local_object
+        previous_missing_log = local_object and bool(re.search(r"(?:没|未|暂无)[^，,]{0,8}(?:打卡|记录)", part))
+    return False
+
+
 def enforce_composed_synthesis_boundaries(text: str, completion):
     from app.services.guidance_validator import (
         GuidanceValidationResult, _medical_assertion_matching_text,
     )
 
     evidence = completion.verified_evidence if completion is not None and completion.complete else None
-    if (not evidence or len(evidence["queries"]) < 2
-            or not any(q["query"]["dimension"] == "diet" for q in evidence["queries"])):
+    if not evidence or len(evidence["queries"]) < 2:
         return GuidanceValidationResult(text=text)
     # Formatting normalization is confined to the matching view. Accepted text
     # is returned byte-for-byte, including its uncertainty and record qualifiers.
     normalized = re.sub(r"[*_`]", "", _medical_assertion_matching_text(text))
-    if not any(_nutrition_assertion_in_clause(c) for c in _NUTRITION_CLAUSE_BREAK.split(normalized)):
+    clauses = _NUTRITION_CLAUSE_BREAK.split(normalized)
+    reasons = []
+    if (any(q["query"]["dimension"] == "diet" for q in evidence["queries"])
+            and any(_nutrition_assertion_in_clause(c) for c in clauses)):
+        reasons.append("unsupported_nutrition_inference")
+    if any(_asserted_record_only_claim(_CURRENT_HEALTH_CLAIM, c) for c in clauses):
+        reasons.append("unsupported_current_health_inference")
+    if any(_quantified_exercise_plan(c) for c in clauses):
+        reasons.append("unsupported_exercise_program")
+    if any(_supplement_adherence_nudge(c) for c in clauses):
+        reasons.append("unsupported_supplement_adherence")
+    if not reasons:
         return GuidanceValidationResult(text=text)
+    notices = {
+        "unsupported_nutrition_inference": "本轮记录不能支持营养不足的个体判断，相关推断未通过证据校验。",
+        "unsupported_current_health_inference": "本轮记录不能证明当前恢复质量、训练安全或没有健康异常。",
+        "unsupported_exercise_program": "本轮记录不足以制定或背书个体化的量化运动方案。",
+        "unsupported_supplement_adherence": "缺少服用计划和时点证据，不能根据未见记录提示服用或推断漏服。",
+    }
     return GuidanceValidationResult(
         text=completion.trusted_fact_summary + "\n\n"
-        "本轮记录不能支持营养不足的个体判断，相关推断未通过证据校验。",
-        flagged=True, violations=["unsupported_nutrition_inference"],
+        + "\n".join(notices[reason] for reason in reasons),
+        flagged=True, violations=reasons,
     )
 
 
@@ -257,12 +431,65 @@ _META_QUERY_INVITATION = re.compile(
     r"(?:如需|如果|若|想要|希望)[^。！？!?\n]{0,24}(?:分析|复盘|比较)[^。！？!?\n]{0,8}"
     r"(?:可|可以|请|你可以)(?:指定|选择|告诉我)[^。！？!?\n]{0,20}(?:某一天|日期|某个问题|范围|模块)|"
     r"(?:请|你可以)(?:指定|选择|告诉我)[^。！？!?\n]{0,20}(?:想分析|想查询|查询范围|日期|模块)|"
-    r"(?:你想|你希望)(?:先)?(?:看|分析|查询)[^。！？!?\n]{0,20}(?:还是|哪个)"
+    r"(?:你想|你希望)(?:先)?(?:看|分析|查询)[^。！？!?\n]{0,20}(?:还是|哪个)|"
+    r"(?:如果|若|如需|希望|想要)[^。！？!?\n]{0,80}(?:告诉我|指定|选择)"
+    r"[^。！？!?\n]{0,80}(?:分析|评估|判断|记录|补剂|睡眠|饮食|运动|日期|某一天|方向|范围)|"
+    r"需要我[^。！？!?\n]{0,16}(?:哪个方向|哪(?:个|一)?(?:模块|方面))"
+    r"[^。！？!?\n]{0,16}(?:展开|分析|继续)"
 )
 _META_QUERY_FOLLOWUP = re.compile(
     r"^(?:例如|比如)[^。！？!?\n]*(?:分析|只看|查询)|"
     r"^我(?:会|将)(?:基于已验证记录)?继续做(?:单日|单领域)"
 )
+
+_META_CONTINUE_ACTION = re.compile(r"继续|接着|深入|展开|分析|评估|查询|看看|看")
+_META_SELECTION = re.compile(r"哪个|哪一项|哪一方面|哪方面|哪(?:个|一)?方向|要不要")
+_META_COLLECTION_ACTION = re.compile(r"告诉我|补充|提供|补齐|补全|记录|收集|完善")
+_META_COLLECTION_FIELD = re.compile(
+    r"补剂(?:名称)?|剂量|服用时间|单位|情绪|主观感受|工作压力|午餐|加餐|"
+    r"入睡时间|醒来时间|睡眠时间|设备(?:名称|信息|来源)"
+)
+_META_COLLECTION_REQUEST = re.compile(
+    r"(?:请|建议(?:后续|你)?|需要|你可以|可以|记得|希望你|希望)"
+    r"(?:再|先|继续|后续|简单地?|主动)?\s*$"
+)
+
+_META_GENERAL_QUESTION = re.compile(
+    r"(?:还|你还|你|您)?(?:想|要|需要)(?:我)?(?:接着|继续)?"
+    r"(?:了解|分析|展开|深入|做|继续)(?:什么|吗)[?？]?"
+)
+_META_HELP_OFFER = re.compile(
+    r"(?:有(?:其他)?问题|如需|如果需要|若需)(?:更多|进一步|其他|更深入)?"
+    r"(?:分析|帮助|复盘|信息|建议|解答)?(?:请|可以|可)?(?:随时)?"
+    r"(?:继续问|告诉我|提问|问我)[。.!！]?"
+)
+
+
+def _completed_scope_invitation(text: str) -> bool:
+    if (_META_QUERY_INVITATION.search(text) or _META_GENERAL_QUESTION.fullmatch(text)
+            or _META_HELP_OFFER.fullmatch(text)):
+        return True
+    if (_META_CONTINUE_ACTION.search(text) and _META_SELECTION.search(text)
+            and re.search(r"想|希望|需要我|还有|要不要|你", text)
+            and not re.search(r"医生|药师", text)):
+        return True
+    # Request cue, collection verb and field object must belong to the same
+    # clause. A prior clinician decision cannot turn the later noun 记录 into
+    # a request to collect data.
+    for clause in re.split(r"[，,；;]", text):
+        if not _META_COLLECTION_FIELD.search(clause):
+            continue
+        for collector in _META_COLLECTION_ACTION.finditer(clause):
+            prefix = clause[:collector.start()].strip()
+            if re.search(r"(?:不要|无需|不必|不建议|不需要)[^，,]{0,8}$", prefix):
+                continue
+            if _META_COLLECTION_REQUEST.search(prefix):
+                return True
+            if re.match(r"(?:请|建议|你可以|可以|需要)?(?:把|将)", prefix):
+                return True
+            if not prefix.strip() and collector.group() != "记录":
+                return True
+    return False
 
 
 def project_composed_answer_quality(quality, completion):
@@ -277,12 +504,12 @@ def project_composed_answer_quality(quality, completion):
     from app.services.agent_output_quality import AgentOutputQualityResult
 
     kept, removed, in_invitation = [], False, False
-    for segment in re.findall(r"[^。！？!?\n]+[。！？!?]*|[。！？!?\n]+", quality.text):
+    for segment in re.findall(r"[^。；;！？!?\n]+[。；;！？!?]*|[。；;！？!?\n]+", quality.text):
         matching = re.sub(r"^[ \t]*(?:\d+[.)、]|[-*+] )?[ \t]*", "", segment)
         matching = re.sub(r"[*_`]", "", matching).strip()
         if re.match(r"^[ \t]*(?:\d+[.)、]|[-*+] )", segment):
             in_invitation = False
-        if _META_QUERY_INVITATION.search(matching):
+        if _completed_scope_invitation(matching):
             removed, in_invitation = True, True
             continue
         if in_invitation and _META_QUERY_FOLLOWUP.search(matching):
@@ -303,7 +530,23 @@ def project_composed_answer_quality(quality, completion):
             ordinal += 1
             line = number.group(1) + str(ordinal) + number.group(2) + line[number.end():]
         lines.append(line)
-    text = "\n".join(lines)
+    # Removing all optional invitations must not leave a promised numbered
+    # section with no content. Only next-step headings are normalized here.
+    normalized_lines = []
+    for line in lines:
+        heading = re.sub(r"[*#:：\s]", "", line)
+        if re.fullmatch(
+            r"(?:(?:最多)?[一二三四五\d]+条(?:下一步)?建议|"
+            r"(?:接下来|下一步)(?:可以做的)?[一二三四五\d]+(?:条|件事)|"
+            r"下一步[（(]最多[一二三四五\d]+条[）)])", heading,
+        ):
+            line = "下一步"
+        normalized_lines.append(line)
+    while normalized_lines and not normalized_lines[-1].strip():
+        normalized_lines.pop()
+    if normalized_lines and re.sub(r"[*#:：\s]", "", normalized_lines[-1]) in {"下一步", "接下来"}:
+        normalized_lines.pop()
+    text = "\n".join(normalized_lines).strip()
     flags = tuple(dict.fromkeys((*quality.flags, "meta_query_invitation_removed")))
     return AgentOutputQualityResult(text, flags, quality.original_length, len(text))
 
@@ -452,6 +695,7 @@ def read_scope_synthesis_instructions(scope) -> str:
         "回答先给能由本轮记录支持的结论，再按已查领域各用一两句说明，最多三条下一步，可以没有下一步。"
         "普通复盘控制在800字以内；用户明确要求详细报告时才展开。"
         "短续问只补充新的结论和依据，不重写上一轮报告、不反复展开同一批数值。"
+        "完成冻结范围的查询后不要再邀请用户选择日期、模块、评估方向或收集新字段。"
         "未要求日程时不生成分时段行动表；先把当前问题完整回答，再结束。"
         "先区分实际查到的记录、未知项目与一般建议。病史时间是用户背景，"
         "不能据此断言已经痊愈、仍在患病或当前恢复程度。"
@@ -460,6 +704,12 @@ def read_scope_synthesis_instructions(scope) -> str:
         "数值相同不能证明是模板、占位或未称量；缺少记录不能推出没有做，更不能据此要求补吃一餐。"
         "餐次名称和当前时刻不证明该餐未发生，也不证明误录或预录。"
         "指标缺失只能说明未覆盖，不能推出恢复差、营养不足或据此制定训练禁令。"
+        "部分样本不能支持恢复良好、中等偏好、作息稳定、睡眠足够、训练安全、没有过度训练或没有异常信号等个体判断；"
+        "即使返回了全部请求字段，记录也不是临床评估或完整生活覆盖。只描述已记录样本的分布与重复。"
+        "不与档案中的默认目标作差距比较，不给健康或恢复状态分级。"
+        "不提供量化运动方案，包括每周次数、每次时长、组数；轻度、自重、循序渐进也不例外。"
+        "不要根据今日暂无记录提醒留意是否已经服用、检查漏服或补打卡；没有日志不证明没有摄入，当前时刻不证明已到服用时间。"
+        "短续问不复述或背书上一答的运动、用药或恢复判断，先前模型建议不构成事实或安全依据。"
         "没有本轮可核验的医嘱，不新增补剂、剂量、服用时点或治疗方案。"
         "个人目标必须有明确来源，不虚构目标。情绪和工作未查询是本次读取能力未覆盖，"
         "不要声称用户未授权，更不要承诺尚未提供的读取能力。"

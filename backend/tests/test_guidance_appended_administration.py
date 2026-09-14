@@ -302,7 +302,8 @@ async def test_main_and_panel_complete_only_the_information_request(
     else:
         assert done["completion_status"] == "complete"
         assert done["turn_outcome"]["status"] == "complete"
-        assert _ACTUAL_MISSING_FIELDS_REQUEST in saved.content
+        assert _ACTUAL_MISSING_FIELDS_REQUEST not in saved.content
+        assert "meta_query_invitation_removed" in done["output_quality_flags"]
 
 
 @pytest.mark.parametrize("text", [
@@ -372,7 +373,9 @@ async def test_main_and_panel_distinguish_time_field_from_timing_action(
     )
     assert done['completion_status'] == ('error' if action else 'complete')
     assert done['turn_outcome']['status'] == ('blocked' if action else 'complete')
-    assert (text in saved.content) is not bool(action)
+    assert text not in saved.content
+    if not action:
+        assert "meta_query_invitation_removed" in done["output_quality_flags"]
 
 
 @pytest.mark.parametrize("object_name", ["疗程", "用药周期", "服用周期", "治疗周期"])

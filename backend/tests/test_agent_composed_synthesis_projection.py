@@ -425,7 +425,10 @@ async def test_record_field_request_completion_retains_medical_boundary(
     else:
         assert done["completion_status"] == "complete"
         assert done["turn_outcome"]["status"] == "complete"
-        assert answer in saved.content
+        # A record-field request is medically neutral, but after the scoped
+        # reads complete it is a redundant collection task, removed for quality.
+        assert answer not in saved.content
+        assert "meta_query_invitation_removed" in done["output_quality_flags"]
 
 
 @pytest.mark.asyncio
@@ -963,3 +966,198 @@ async def test_composed_completed_intake_acknowledgement(
     else:
         assert done["turn_outcome"]["status"] == "complete"
         assert acknowledgement + appended in saved.content
+
+
+_CURRENT_EVIDENCE_UNSAFE = [
+    "整体节奏规律，属于中等偏好的恢复水平。",
+    "这呈现的是一个稳定恢复后的维持状态。",
+    "没有过度训练的迹象。", "没有看到需要紧急关注的异常信号。",
+    "这种高度规律性说明你目前的生活作息非常稳定。",
+    "7小时对你可能已经足够。", "你的睡眠质量良好。",
+    "你的恢复状态较差。", "运动负荷是安全的。",
+    "可以从散步过渡到每周加入1–2次轻度力量训练，每次15–20分钟即可。",
+    "上一轮提到的每周加入1–2次轻度力量训练仍然是合理的起点。",
+    "如果通常在上午服用，你可以留意一下是否已经服用。",
+    "今天暂无补剂记录，记得检查有没有漏服。",
+    "不能判断恢复状态，但你没有过度训练的迹象。",
+]
+_CURRENT_EVIDENCE_UNSAFE += [
+    "恢复得很好。", "整体恢复不错。", "你的状态很稳定。", "未见明显异常。",
+    "没有发现异常。", "目前看起来没什么问题。", "训练量不过量。", "运动量适宜。",
+    "睡眠恢复充分。", "作息很规律。", "身体状态不错。", "你已经恢复。",
+    "建议力量训练，每周两次。", "每次练15分钟就行。", "建议每周锻炼两次。",
+    "今天还没记补剂，别忘了吃。", "记得吃鱼油。", "可以看看是不是漏了补剂。",
+    "别漏掉今天的补剂。", "建议核对运动记录，然后每周做两次力量训练。",
+    "已记录30分钟散步，建议力量训练，每周两次。",
+]
+
+_CURRENT_EVIDENCE_UNSAFE += [
+    "看来恢复尚可。", "现在状态还可以。", "总体情况不错。", "各项指标看起来正常。",
+    "从记录看一切正常。", "没有值得担心的地方。", "恢复情况比较理想。", "目前身体没啥问题。",
+    "建议每隔一天练半小时。", "隔天做十五分钟力量训练。", "每周运动三回，每回半小时。",
+    "建议力量训练，一周两回。", "每天走半个小时即可。", "别忘了补剂。", "今天鱼油别落下。",
+    "记得把维生素吃了。", "今天还没打卡鱼油，提醒自己一下。",
+    "建议查看两次运动记录，然后做两组深蹲。",
+    "记得带鱼油去看医生，然后记得吃鱼油。",
+    "每周运动三次。",
+    "分析某一次散步后的状态，然后每周运动三次。",
+    "查询这一次运动后，每周做两组深蹲。",
+]
+
+_CURRENT_EVIDENCE_SAFE = [
+    "有记录的4天睡眠时长和评分相同，不能据此判断恢复状态。",
+    "已记录运动以散步为主，不能代表全部活动。",
+    "不能仅凭这些记录断言没有过度训练的迹象。",
+    "没有证据表明恢复良好。", "是否恢复良好尚无法判断。",
+    "生活作息是否稳定无法判断。", "睡眠质量良好的证据不足。",
+    "已记录每周两次力量训练，每次20分钟。",
+    "不要根据这些记录制定每周两次力量训练的计划。",
+    "今天截至上午暂无补剂记录，不代表没有服用。",
+    "补剂服用时间未覆盖，无法判断实际摄入情况。",
+    "请确认明天是否仍然服用两粒鱼油？",
+    "明天把两片药带给医生核对。",
+    "若运动后出现胸闷或气短，应及时就医。",
+    "已记录运动30分钟，建议留意睡眠记录。",
+    "建议核对这条30分钟的散步记录是否重复。",
+    "训练是否安全应由医生评估。",
+    "是否恢复良好需要医生判断。",
+    "本轮查询过程没有发现异常。", "不能据此认为恢复得很好。",
+    "没有证据表明你的状态很稳定。", "训练量是否过量需要医生判断。",
+    "今天没有补剂记录，不能据此提醒用户服用。",
+    "不要提醒用户吃鱼油。", "请核对补剂名称和服用时间。",
+    "已记录每天锻炼两次，建议查看这些记录。",
+    "建议每周查看2次运动记录。", "每周查看两次运动记录即可。",
+    "别忘了问医生鱼油是否适合。", "记得带鱼油去看医生。",
+    "记得提醒医生我在吃鱼油。", "留意鱼油是否引起不适。",
+    "本轮返回的运动状态正常。", "查询状态正常。",
+    "例如“分析 9 月 13 日”“只看睡眠”“只看运动”或“分析某一次散步后的状态”",
+    "分析某一次散步后的状态。", "只看这一次运动。", "查询某一次训练。",
+]
+
+
+@pytest.mark.parametrize("text,blocked", [(t, True) for t in _CURRENT_EVIDENCE_UNSAFE] + [(t, False) for t in _CURRENT_EVIDENCE_SAFE])
+def test_composed_current_evidence_claim_boundaries(text, blocked):
+    from tests.test_agent_composed_read_completion import execution, scope
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, enforce_composed_synthesis_boundaries
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [
+        execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}]),
+    ])
+    result = enforce_composed_synthesis_boundaries(text, completion)
+    assert result.flagged is blocked
+    assert (text in result.text) is not blocked
+    assert not enforce_composed_synthesis_boundaries(text, None).flagged
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize("answer", [_CURRENT_EVIDENCE_UNSAFE[i] for i in (0, 3, 9, 11)])
+async def test_composed_current_evidence_runtime_blocks_unsupported_claims(db, four_domain_user, monkeypatch, panel, continuation, answer):
+    conversation_id = None
+    if continuation:
+        _, _, _, first, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
+        conversation_id = first["conversation_id"]
+    _, calls, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel, answer=answer,
+        query="继续分析" if continuation else QUERY, conversation_id=conversation_id,
+    )
+    assert done["turn_outcome"]["status"] == "blocked"
+    assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"])
+    assert not done["write_receipts"] and answer not in saved.content
+    for call in calls[1:]:
+        system = call["messages"][0]["content"]
+        assert "不能支持恢复良好" in system
+        assert "不提供量化运动方案" in system
+        assert "不要根据今日暂无记录提醒" in system
+
+
+_RESELECTION_INVITATIONS = [
+    "如果你想看某一天的饮食、睡眠或运动情况，可以指定某一天，我按该天已记录数据继续分析。",
+    "需要我在哪个方向展开，随时说。",
+    "需要我在哪个方向继续展开，随时告诉我。",
+    "如果你希望了解情绪和工作压力对恢复的影响，可以主动告诉我近期的主观感受，我会作为背景参考纳入分析。",
+    "如果你想让我评估补剂方案是否合理，可以单独告诉我你目前在吃哪些补剂、剂量和服用时间，我可以结合背景做交叉参考。",
+]
+
+_RESELECTION_INVITATIONS += [
+    "想继续哪个方向？", "你希望我接着分析哪一项？", "还有哪个方面想深入？",
+    "要不要继续看饮食？", "你可以告诉我补剂名称和剂量。", "如果愿意，可以补充你的情绪。",
+]
+
+_RESELECTION_INVITATIONS += [
+    "还想了解什么？", "要继续吗？", "要不要再深入一点？", "还需要我做什么？",
+    "有问题可以继续问。", "如需更多分析请告诉我。",
+]
+
+
+@pytest.mark.parametrize("invitation", _RESELECTION_INVITATIONS)
+def test_completed_scope_reselection_projection(invitation):
+    from app.services.agent_output_quality import enforce_agent_output_quality
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, project_composed_answer_quality
+    from tests.test_agent_composed_read_completion import execution, scope
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}])])
+    observation = "已记录活动以散步为主。"
+    result = project_composed_answer_quality(enforce_agent_output_quality(observation + invitation), completion)
+    assert observation in result.text and invitation not in result.text
+    assert "meta_query_invitation_removed" in result.flags
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize("unsafe_tail", ["", "每天服用两片。"])
+async def test_completed_scope_reselection_runtime_keeps_medical_order(db, four_domain_user, monkeypatch, panel, continuation, unsafe_tail):
+    conversation_id = None
+    if continuation:
+        _, _, _, first, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
+        conversation_id = first["conversation_id"]
+    observation = "已记录活动以散步为主。"
+    invitation = _RESELECTION_INVITATIONS[0]
+    _, _, _, done, saved = await run_projection(db, four_domain_user, monkeypatch, panel=panel, answer=observation + invitation + unsafe_tail,
+        query="继续分析" if continuation else QUERY, conversation_id=conversation_id)
+    assert invitation not in saved.content
+    assert (done["turn_outcome"]["status"] == "blocked") is bool(unsafe_tail)
+    if not unsafe_tail:
+        assert observation in saved.content
+        assert done["output_quality_flags"] == saved.meta["output_quality_flags"]
+    assert not done["write_receipts"]
+
+
+@pytest.mark.parametrize("text,removed", [
+    ("补全关键记录：把补剂名称、剂量和情绪记录下来，后续才能分析。", True),
+    ("你可以告诉我补剂名称和剂量。", True),
+    ("补剂名称和剂量已记录。", False),
+    ("请核对補剂名称和服用时间。", False),
+    ("本轮记录未返回补剂名称和剂量。", False),
+    ("下一步（最多三条）：\n\n1. 想继续哪个方向？", True),
+])
+def test_completed_scope_reselection_collection_contract(text, removed):
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, project_composed_answer_quality
+    from app.services.agent_output_quality import enforce_agent_output_quality
+    from tests.test_agent_composed_read_completion import execution, scope
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}])])
+    result = project_composed_answer_quality(enforce_agent_output_quality(text), completion)
+    assert ("meta_query_invitation_removed" in result.flags) is removed
+    if removed:
+        assert text not in result.text
+        assert "下一步" not in result.text
+    else:
+        assert text in result.text
+
+
+@pytest.mark.parametrize("text,removed,retained", [
+    ("是否需要继续、停用或调整补剂/药物，应由医生结合当前症状和检查判断；本轮记录不支持个体化剂量或疗效判断。", False, "本轮记录不支持个体化剂量或疗效判断。"),
+    ("若需要评估补剂，应由医生判断；已记录的剂量不能证明安全。", False, "已记录的剂量不能证明安全。"),
+    ("需要我从哪个方向展开？本轮记录不支持个体化剂量或疗效判断。", True, "本轮记录不支持个体化剂量或疗效判断。"),
+    ("请补充补剂名称和剂量；是否停用应由医生判断。", True, "是否停用应由医生判断。"),
+])
+def test_completed_scope_reselection_preserves_separate_clinician_decisions(text, removed, retained):
+    from app.services.agent_composed_read_completion import evaluate_composed_read_completion, project_composed_answer_quality
+    from app.services.agent_output_quality import enforce_agent_output_quality
+    from tests.test_agent_composed_read_completion import execution, scope
+    completion = evaluate_composed_read_completion(scope("diet", "sleep"), [execution(), execution("sleep", rows=[{"record_date": "2026-09-12", "total_sleep_duration": 420}])])
+    result = project_composed_answer_quality(enforce_agent_output_quality(text), completion)
+    assert ("meta_query_invitation_removed" in result.flags) is removed
+    assert retained in result.text
+    if not removed:
+        assert result.text == text
