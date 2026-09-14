@@ -10059,6 +10059,10 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "请打开我的体检报告（等我批准后），说明一下",
         "请打开我的体检报告（这是张三的），说明一下",
         "请打开我的体检报告`先别`，说说含义",
+        "请打开我的体检报告（ALT 80 STOP），说明一下",
+        "请打开我的体检报告（ALT 80 CANCEL），说明一下",
+        "请打开我的体检报告（ALT 80 ZHANGSAN），说明一下",
+        "请打开我的体检报告（ALT 80 OTHERUSER），说明一下",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(

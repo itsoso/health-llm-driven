@@ -420,6 +420,10 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "请打开我的体检报告（等我批准后），说明一下",
         "请打开我的体检报告（这是张三的），说明一下",
         "请打开我的体检报告`先别`，说说含义",
+        "请打开我的体检报告（ALT 80 STOP），说明一下",
+        "请打开我的体检报告（ALT 80 CANCEL），说明一下",
+        "请打开我的体检报告（ALT 80 ZHANGSAN），说明一下",
+        "请打开我的体检报告（ALT 80 OTHERUSER），说明一下",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
