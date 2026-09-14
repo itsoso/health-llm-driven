@@ -9,10 +9,12 @@ import time
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARD_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def _shards_by_label() -> dict[str, dict]:
@@ -430,6 +432,21 @@ def test_shard_timeout_seconds_scales_and_caps_historical_duration():
         "estimated_seconds": 300,
         "timeout_seconds": 1200,
     }) == 1200
+
+
+def test_backend_shard_job_timeout_covers_slowest_retry_and_runner_overhead():
+    from scripts.run_ci_pytest_shard import DEFAULT_MAX_ATTEMPTS
+    from scripts.run_ci_pytest_worker import shard_timeout_seconds
+
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    job_timeout_minutes = workflow["jobs"]["backend-test-shards"]["timeout-minutes"]
+    catalog = json.loads(SHARD_CATALOG.read_text(encoding="utf-8"))["shards"]
+    slowest_attempt_seconds = max(shard_timeout_seconds(shard) for shard in catalog)
+
+    # A process-level timeout is explicitly retried once. Leave five minutes
+    # for checkout, dependency installation, adjacent shards, and artifact cleanup.
+    required_seconds = slowest_attempt_seconds * DEFAULT_MAX_ATTEMPTS + 5 * 60
+    assert job_timeout_minutes * 60 >= required_seconds
 
 
 def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_path):
