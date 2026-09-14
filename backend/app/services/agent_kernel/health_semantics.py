@@ -961,6 +961,15 @@ STANDALONE_MATERIAL_QUOTE_PAIRS = {
     "«": "»",
     "‹": "›",
 }
+
+
+def _is_escaped_delimiter(text: str, index: int) -> bool:
+    escape_start = index
+    while escape_start > 0 and text[escape_start - 1] == "\\":
+        escape_start -= 1
+    return (index - escape_start) % 2 == 1
+
+
 def _analyzed_material_end(text: str, start: int) -> int:
     """Find an explicit boundary; an unframed pasted body owns the remainder."""
     if start >= len(text):
@@ -968,20 +977,21 @@ def _analyzed_material_end(text: str, start: int) -> int:
     opener = text[start]
     closer = STANDALONE_MATERIAL_QUOTE_PAIRS.get(opener)
     if closer:
-        depth = 1
+        closer_stack = [closer]
+        known_closers = set(STANDALONE_MATERIAL_QUOTE_PAIRS.values())
         for index in range(start + 1, len(text)):
-            if text[index] in {opener, closer}:
-                escape_start = index
-                while escape_start > start and text[escape_start - 1] == "\\":
-                    escape_start -= 1
-                if (index - escape_start) % 2:
-                    continue
-            if text[index] == closer:
-                depth -= 1
-                if depth == 0:
+            character = text[index]
+            if _is_escaped_delimiter(text, index):
+                continue
+            if character == closer_stack[-1]:
+                closer_stack.pop()
+                if not closer_stack:
                     return index + 1
-            elif opener != closer and text[index] == opener:
-                depth += 1
+            elif nested_closer := STANDALONE_MATERIAL_QUOTE_PAIRS.get(character):
+                closer_stack.append(nested_closer)
+            elif character in known_closers:
+                # Mismatched nesting has no trustworthy in-band boundary.
+                return len(text)
         return len(text)
     fence = re.match(r"(`{3,}|~{3,})[^\n]*\n", text[start:])
     if fence:
@@ -1010,13 +1020,6 @@ def _strip_markdown_blockquote_material(text: str) -> str:
         quote_end = _analyzed_material_end(projected, quote_start)
         projected = projected[: match.start()] + "\n" + projected[quote_end:]
     return projected
-
-
-def _is_escaped_delimiter(text: str, index: int) -> bool:
-    escape_start = index
-    while escape_start > 0 and text[escape_start - 1] == "\\":
-        escape_start -= 1
-    return (index - escape_start) % 2 == 1
 
 
 def _strip_backtick_code_material(text: str) -> str:
@@ -1063,7 +1066,7 @@ def _strip_html_material(text: str) -> str:
             continue
         else:
             root_tag = str(opener.group("tag") or "").casefold()
-            depth = 1
+            tag_stack = [root_tag]
             scan_cursor = opener.end()
             end = len(projected)
             while candidate := HTML_MATERIAL_TOKEN_RE.search(projected, scan_cursor):
@@ -1076,15 +1079,18 @@ def _strip_html_material(text: str) -> str:
                     scan_cursor = comment_end + 3
                     continue
                 candidate_tag = str(candidate.group("tag") or "").casefold()
-                if candidate_tag != root_tag or candidate_token.rstrip().endswith("/>"):
+                if candidate_token.rstrip().endswith("/>"):
                     continue
                 if candidate_token.startswith("</"):
-                    depth -= 1
-                    if depth == 0:
+                    if candidate_tag != tag_stack[-1]:
+                        # Malformed nesting has no trustworthy closing boundary.
+                        break
+                    tag_stack.pop()
+                    if not tag_stack:
                         end = candidate.end()
                         break
                 else:
-                    depth += 1
+                    tag_stack.append(candidate_tag)
         projected = projected[: opener.start()] + " " + projected[end:]
         cursor = opener.start() + 1
     return projected

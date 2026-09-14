@@ -379,6 +379,9 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "原文：`\n打开我的体检报告",
         "``打开我的体检报告``",
         "<blockquote><blockquote>这是示例</blockquote>打开我的体检报告</blockquote>",
+        "“外层「这是示例」打开我的体检报告”",
+        "<blockquote><q>这是示例</q>打开我的体检报告</blockquote>",
+        "<blockquote><q>这是示例</blockquote>打开我的体检报告</q>",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):

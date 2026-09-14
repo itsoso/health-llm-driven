@@ -10018,6 +10018,9 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "原文：`\n打开我的体检报告",
         "``打开我的体检报告``",
         "<blockquote><blockquote>这是示例</blockquote>打开我的体检报告</blockquote>",
+        "“外层「这是示例」打开我的体检报告”",
+        "<blockquote><q>这是示例</q>打开我的体检报告</blockquote>",
+        "<blockquote><q>这是示例</blockquote>打开我的体检报告</q>",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
