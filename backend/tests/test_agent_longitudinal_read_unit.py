@@ -343,3 +343,33 @@ def test_projection_v4_override_does_not_restore_removed_plan_scope():
     turn = snapshot('给我制定明天计划。请查询我今天的睡眠并分析。')
     result = longitudinal_read_projection_text(turn, text_override='请查询我今天的睡眠并分析')
     assert result and '今天' in result and '明天' not in result and '计划' not in result
+
+
+@pytest.mark.parametrize("reference", ["这些记录", "上述数据", "以上记录"])
+def test_explicit_date_four_domain_analysis_reference(reference):
+    from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+    text = f"请查询2026-09-13的饮食、睡眠、运动和实际服用的补剂记录，并基于{reference}分析。"
+    scope = resolve_owned_read_scope(snapshot(text))
+    assert scope is not None
+    assert {q["dimension"] for q in scope.queries} == {"diet", "sleep", "workout", "supplements"}
+    assert all(q["start_date"] == q["end_date"] == "2026-09-13" for q in scope.queries)
+    assert all(q["timezone"] == "Asia/Shanghai" and "days" not in q for q in scope.queries)
+
+
+@pytest.mark.parametrize("suffix", [
+    "基于这些记录删除", "基于这些记录修改", "基于这些记录写入",
+    "基于朋友的记录分析", "基于那些记录分析",
+])
+def test_analysis_reference_does_not_expand_authority(suffix):
+    from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+    assert resolve_owned_read_scope(snapshot(
+        f"请查询2026-09-13的饮食、睡眠、运动和实际服用的补剂记录，并{suffix}。"
+    )) is None
+
+
+@pytest.mark.parametrize("day", ["今天", "昨日", "上周一", "2035-01-01", "2026-09-12到2026-09-13", "2026-09-13上午"])
+def test_extended_calendar_domains_keep_unsupported_windows_closed(day):
+    from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+    assert resolve_owned_read_scope(snapshot(
+        f"请查询{day}的饮食、睡眠、运动和实际服用的补剂记录，并基于这些记录分析。"
+    )) is None

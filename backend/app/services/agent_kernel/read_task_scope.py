@@ -233,6 +233,7 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     from app.services.agent_longitudinal_read import (
         resolve_longitudinal_read_queries, longitudinal_read_limitations,
         longitudinal_read_restrictions_unresolved, longitudinal_read_projection_text,
+        _record_domains,
     )
     if longitudinal_read_restrictions_unresolved(snapshot):
         return None
@@ -261,6 +262,14 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     if text is None:
         return None
     dimensions = tuple(d for d, pattern in _DOMAINS.items() if pattern.search(text))
+    # Extend only a single explicit absolute day to actual-event adapters.
+    # Relative/overnight/interval semantics remain with their existing binders.
+    event_domains = _record_domains(text) & {"workout", "supplements"}
+    if event_domains:
+        from app.services.agent_query_window import _DATE_RE, _RELATIVE_RE, _WEEKDAY_RE
+        if len(list(_DATE_RE.finditer(text))) != 1 or _RELATIVE_RE.search(text) or _WEEKDAY_RE.search(text):
+            return None
+    dimensions += tuple(d for d in ("workout", "supplements") if d in event_domains)
     broad = bool(_RETROSPECTIVE.search(text)) and not plan_draft
     if not dimensions and broad:
         dimensions = ("diet", "sleep")
@@ -271,7 +280,7 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         window = resolve_calendar_query_window(
             text,
             snapshot.context.current_time,
-            dimension,
+            "diet" if dimension in {"workout", "supplements"} else dimension,
             timezone_name=snapshot.context.timezone,
         )
         if window is None:

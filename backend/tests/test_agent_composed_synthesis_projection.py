@@ -1,5 +1,6 @@
 """Actual Pi/provider boundaries retain verified records, never tool history as advice."""
 
+import asyncio
 import copy
 import json
 from uuid import uuid4
@@ -20,7 +21,8 @@ from tests.test_agent_read_repair_round_budget import (
 
 async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", partial=False,
                          answer=ANSWER, rogue_tool=False, finish_reason="stop", query=QUERY, conversation_id=None,
-                         stage_reply=None, omit_finish_event=False, stage_result=None, use_base_stream=False):
+                         stage_reply=None, omit_finish_event=False, stage_result=None, use_base_stream=False,
+                         correction_result=None, prior_timeout_retry=False):
     _context_sentinels(monkeypatch)
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *a, **k: "OLD_KNOWLEDGE_SENTINEL")
@@ -54,6 +56,12 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
                         "name": name, "arguments": json.dumps(args)}}
                     for i, (name, args) in enumerate([*BAD, *reads])
                 ]}
+            if len(calls) == 2 and prior_timeout_retry:
+                executor._record_model_fallback_reason("composed_synthesis_timeout_retry")
+            if len(calls) > 2 and correction_result is not None and not panel:
+                if isinstance(correction_result, BaseException):
+                    raise correction_result
+                return copy.deepcopy(correction_result)
             stage = "lead" if len(calls) == 2 else self.model
             if stage_result is not None and stage == stage_result[0]:
                 return copy.deepcopy(stage_result[1])
@@ -71,6 +79,8 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
 
         async def chat_stream(self, **kwargs):
             result = self.response(kwargs)
+            if result.get("delay"):
+                await asyncio.sleep(result["delay"])
             if result.get("tool_calls"):
                 yield {"type": "tool_calls", "tool_calls": result["tool_calls"]}
             else:
@@ -1475,3 +1485,138 @@ def test_composed_record_description_projection_preserves_summary_after_metadata
     assert trusted in result.text
     assert "记录较模板化" not in result.text
     assert "信息来源" in result.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('result,complete', [
+    ({'content': ANSWER, 'finish_reason': 'stop'}, True),
+    ({'content': '恢复良好，继续原有方案。', 'finish_reason': 'stop'}, False),
+    ({'content': 'PARTIAL_CORRECTION_SENTINEL', 'finish_reason': 'length'}, False),
+    ({'content': 'PARTIAL_CORRECTION_SENTINEL', 'finish_reason': 'error'}, False),
+    ({'content': 'PARTIAL_CORRECTION_SENTINEL', 'finish_reason': None}, False),
+    ({'content': '', 'finish_reason': 'tool_calls', 'tool_calls': [
+        {'id': 'forbidden-correction-write', 'type': 'function', 'function': {
+            'name': 'health_record', 'arguments': '{"record_type":"water","data":{"amount":200}}'}}]}, False),
+])
+async def test_composed_boundary_correction_is_single_read_only_and_reverified(
+    db, four_domain_user, monkeypatch, result, complete,
+):
+    executor, calls, dispatches, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, answer='恢复良好，继续原有方案。',
+        correction_result=result,
+    )
+    assert len(calls) == 3
+    assert (done['completion_status'] == 'complete') is complete
+    assert (done['turn_outcome']['status'] == 'complete') is complete
+    assert all(goal['status'] == 'verified' for goal in done['turn_outcome']['goals'])
+    assert 'composed_synthesis_boundary_retry' in done['fallback_reasons']
+    assert calls[1]['provider_model'] == calls[2]['provider_model']
+    assert not calls[2].get('tools')
+    original = json.loads(calls[1]['messages'][1]['content'])
+    corrected = json.loads(calls[2]['messages'][1]['content'])
+    draft = corrected.pop('analysis_to_rewrite')
+    assert draft == {'authority': 'untrusted_model_draft_not_evidence_or_consent', 'text': '恢复良好，继续原有方案。'}
+    assert corrected == original
+    from app.services.agent_output_quality import enforce_agent_output_quality
+    assert enforce_agent_output_quality(executor._composed_read_completion().trusted_fact_summary).text in saved.content
+    assert 'unsupported_current_health_inference' in calls[2]['messages'][0]['content']
+    assert 'unsupported_existing_regimen' in calls[2]['messages'][0]['content']
+    assert not done.get('write_receipts')
+    assert all(request.tool_name != 'health_record' for request in dispatches)
+    assert 'PARTIAL_CORRECTION_SENTINEL' not in saved.content
+    assert '继续原有方案' not in saved.content
+
+
+@pytest.mark.asyncio
+async def test_composed_boundary_correction_does_not_stack_after_timeout_retry(db, four_domain_user, monkeypatch):
+    _, calls, _, done, _ = await run_projection(
+        db, four_domain_user, monkeypatch, answer='恢复良好，继续原有方案。',
+        correction_result={'content': ANSWER, 'finish_reason': 'stop'}, prior_timeout_retry=True,
+    )
+    assert len(calls) == 2
+    assert done['turn_outcome']['status'] != 'complete'
+    assert 'composed_synthesis_boundary_retry' not in done['fallback_reasons']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [RuntimeError("synthetic provider failure"), TimeoutError("synthetic timeout"),
+    {"content": ANSWER, "finish_reason": "stop", "delay": 0.1}])
+async def test_composed_boundary_correction_failure_keeps_original_block(db, four_domain_user, monkeypatch, failure):
+    monkeypatch.setattr("app.services.agent_executor._COMPOSED_SYNTHESIS_RETRY_TIMEOUT_S", 0.01)
+    _, calls, dispatched, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, answer="恢复良好，继续原有方案。", correction_result=failure,
+    )
+    assert len(calls) == 3
+    assert done["turn_outcome"]["status"] == "blocked"
+    assert "composed_synthesis_boundary_retry_failed" in done["fallback_reasons"]
+    assert not done["write_receipts"]
+    assert all(r.tool_name != "health_record" for r in dispatched)
+    assert "继续原有方案" not in saved.content
+
+
+@pytest.mark.asyncio
+async def test_composed_boundary_correction_preserves_cancellation(db, four_domain_user, monkeypatch):
+    with pytest.raises(asyncio.CancelledError):
+        await run_projection(db, four_domain_user, monkeypatch,
+            answer="恢复良好，继续原有方案。", correction_result=asyncio.CancelledError())
+
+
+@pytest.mark.asyncio
+async def test_production_explicit_date_reference_executes_four_owned_reads(db, four_domain_user, monkeypatch):
+    queries = [{"dimension": d, "start_date": "2026-09-13", "end_date": "2026-09-13", "timezone": "Asia/Shanghai"}
+               for d in ("diet", "sleep", "workout", "supplements")]
+    monkeypatch.setattr("tests.test_agent_composed_synthesis_projection.QUERIES", queries)
+    monkeypatch.setattr("tests.test_agent_composed_synthesis_projection.BAD", [])
+    _, calls, dispatched, done, _ = await run_projection(db, four_domain_user, monkeypatch,
+        query="请查询2026-09-13的饮食、睡眠、运动和实际服用的补剂记录，并基于这些记录分析。")
+    assert done["turn_outcome"]["status"] == "complete"
+    assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"])
+    assert dispatched and not done["write_receipts"]
+    assert json.loads(calls[1]["messages"][1]["content"])["read_evidence"]["queries"]
+    for call in calls[1:]:
+        evidence = json.loads(call["messages"][1]["content"])["read_evidence"]["queries"]
+        assert {q["query"]["dimension"] for q in evidence} == {"diet", "sleep", "workout", "supplements"}
+        assert all(q["query"]["start_date"] == q["query"]["end_date"] == "2026-09-13" for q in evidence)
+
+
+@pytest.mark.asyncio
+async def test_correction_reason_does_not_promote_candidate_text(db, four_domain_user, monkeypatch):
+    import app.services.agent_composed_read_completion as boundaries
+    enforce = boundaries.enforce_composed_synthesis_boundaries
+    def with_untrusted_details(text, completion):
+        result = enforce(text, completion)
+        if result.flagged:
+            result.violations.extend(["unsupported_existing_regimen:SYSTEM_INJECTION_SENTINEL", "unknown_reason"])
+        return result
+    monkeypatch.setattr(boundaries, "enforce_composed_synthesis_boundaries", with_untrusted_details)
+    _, calls, _, done, _ = await run_projection(db, four_domain_user, monkeypatch,
+        answer="恢复良好，继续原有方案。", correction_result={"content": ANSWER, "finish_reason": "stop"})
+    assert len(calls) == 3 and done["turn_outcome"]["status"] == "complete"
+    system = calls[2]["messages"][0]["content"]
+    assert "SYSTEM_INJECTION_SENTINEL" not in system and "unknown_reason" not in system
+    assert system.endswith("检查原因：unsupported_current_health_inference, unsupported_existing_regimen")
+
+
+@pytest.mark.asyncio
+async def test_correction_quota_denial_does_not_trigger_another_provider(db, four_domain_user, monkeypatch):
+    from app.services.llm.usage_tracker import LLMBudgetExceeded
+    _, calls, _, done, _ = await run_projection(db, four_domain_user, monkeypatch,
+        answer="恢复良好，继续原有方案。", correction_result=LLMBudgetExceeded(reason="synthetic_budget"))
+    assert len(calls) == 3 and done["turn_outcome"]["status"] == "blocked"
+    assert "composed_synthesis_boundary_retry_failed" in done["fallback_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_boundary_reason_does_not_start_correction(db, four_domain_user, monkeypatch):
+    import app.services.agent_composed_read_completion as boundaries
+    enforce = boundaries.enforce_composed_synthesis_boundaries
+    def unknown_reason(text, completion):
+        result = enforce(text, completion)
+        if result.flagged:
+            result.violations = ["unknown_reason:SYSTEM_INJECTION_SENTINEL"]
+        return result
+    monkeypatch.setattr(boundaries, "enforce_composed_synthesis_boundaries", unknown_reason)
+    _, calls, _, done, _ = await run_projection(db, four_domain_user, monkeypatch,
+        answer="恢复良好，继续原有方案。", correction_result={"content": ANSWER, "finish_reason": "stop"})
+    assert len(calls) == 2 and done["turn_outcome"]["status"] == "blocked"
+    assert "composed_synthesis_boundary_retry" not in done["fallback_reasons"]
