@@ -1021,6 +1021,16 @@ _CURRENT_EVIDENCE_UNSAFE += [
     "没有证据表明恢复差，但恢复良好。",
     "尚无证据证明恢复差；状态正常。",
     "缺乏证据支持恢复差。没有异常。",
+    "并非\n完全不能断言恢复良好。",
+    "并非完全\n不能断言恢复良好。",
+    "并非\n完全\n不能断言恢复良好。",
+    "不能断言恢复差。\n状态正常。",
+    "不能断言恢复差\n但恢复良好。",
+    "没有证据表明恢复差\n状态正常。",
+    "不能断言\n\n恢复良好。",
+    "并非\n完全\n不能得出\n“已恢复”“恢复差”的结论。",
+    "并非\n完全\n不能断言\n**恢复良好**。",
+    "已恢复。", "已经恢复。", "你已恢复。", "恢复了。", "目前已恢复。",
 ]
 
 _CURRENT_EVIDENCE_SAFE = [
@@ -1060,6 +1070,12 @@ _CURRENT_EVIDENCE_SAFE = [
     "缺乏证据支持恢复良好。",
     "完全不能断言恢复良好。", "真的无法得出恢复良好。",
     "这份不完整的记录不能得出恢复良好。",
+    "不能断言恢复良好。\n没有证据表明状态正常。",
+    "不能断言恢复良好\n没有证据表明状态正常。",
+    "并非\n\n完全不能断言恢复良好。",
+    "不能得出\n“已恢复”“恢复差”的结论。",
+    "不能断言\n“恢复良好”。",
+    "恢复情况无法判断。", "这是恢复记录。", "查询已恢复。",
 ]
 
 
@@ -1083,6 +1099,23 @@ def test_composed_current_evidence_negation_bridge(outer, bridge, uncertainty):
     test_composed_current_evidence_claim_boundaries(
         f"{outer}{bridge}{uncertainty}恢复良好。", True,
     )
+
+
+@pytest.mark.parametrize("parts", [("不能", "断言"), ("不能", "得出"), ("没有证据", "表明"), ("不", "代表"), ("难以", "判断")])
+@pytest.mark.parametrize("space", [" ", "\n", "\r\n"])
+@pytest.mark.parametrize("outer", ["", "并非\n完全\n"])
+def test_composed_current_evidence_wrapped_uncertainty(parts, space, outer):
+    text = outer + space.join((*parts, "恢复良好")) + "。"
+    test_composed_current_evidence_claim_boundaries(text, bool(outer))
+
+
+@pytest.mark.parametrize("claim", ["已恢复", "已经恢复", "你已恢复", "恢复了", "目前已恢复"])
+@pytest.mark.parametrize("quotes", [("“", "”"), ('"', '"'), ("'", "'")])
+@pytest.mark.parametrize("space", [" ", "\n", "\r\n"])
+@pytest.mark.parametrize("outer", ["", "并非完全"])
+def test_composed_current_evidence_standalone_recovery(claim, quotes, space, outer):
+    text = f"{outer}不能得出{space}{quotes[0]}{claim}{quotes[1]}的结论。"
+    test_composed_current_evidence_claim_boundaries(text, bool(outer))
 
 
 @pytest.mark.asyncio

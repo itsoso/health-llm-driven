@@ -426,3 +426,29 @@ def test_shard_timeout_seconds_scales_and_caps_historical_duration():
         "estimated_seconds": 300,
         "timeout_seconds": 240,
     }) == 240
+    assert shard_timeout_seconds({
+        "estimated_seconds": 300,
+        "timeout_seconds": 1200,
+    }) == 1200
+
+
+def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_path):
+    from scripts.build_ci_pytest_matrix import load_catalog
+    from scripts.run_ci_pytest_worker import expand_path_inputs, run_worker
+
+    catalog = load_catalog(SHARD_CATALOG)
+    expected_paths = expand_path_inputs(["tests/test_agent_[a-d]*.py"], cwd=ROOT / "backend")
+    calls = []
+
+    def execute(paths, args, *, timeout_seconds):
+        assert paths == expected_paths
+        assert timeout_seconds == 1200
+        assert "--timeout=120" in args
+        calls.append(paths)
+        return 0
+
+    assert run_worker(
+        ["agent-a-d"], catalog, cwd=ROOT / "backend",
+        junit_dir=tmp_path / "results", shard_runner=execute,
+    ) == 0
+    assert len(calls) == 1

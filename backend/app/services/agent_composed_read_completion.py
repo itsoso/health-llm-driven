@@ -257,6 +257,7 @@ _CURRENT_HEALTH_CLAIM = re.compile(
     r"(?P<subject>" + _HEALTH_SUBJECT + r")\s*(?:" + _HEALTH_LINK + r"\s*){0,12}"
     r"(?P<evaluation>" + _HEALTH_EVALUATION + r")|" + _HEALTH_ABSENCE
     + r"|中等偏好|(?:稳定|良好|充分)(?:的)?恢复|(?:早已|已经)痊愈"
+    r"|(?:目前)?(?:已经|已)恢复|恢复了"
 )
 _RECORD_OPERATION_SUBJECT = re.compile(
     r"(?:查询|调用|返回|接口|字段|格式|解析|记录校验|记录本身|记录格式)"
@@ -274,6 +275,22 @@ _HEALTH_CONCLUSION_UNKNOWN = re.compile(
 )
 _HEALTH_UNCERTAINTY_NEGATION = re.compile(
     r"(?:并非|不是|并不|不|未必|不一定)\s*(?:(?:说|真的|完全|绝对|一定)\s*)?$"
+)
+_HEALTH_FORMAT_GAP = r"[^\S\r\n]*(?:\r?\n[^\S\r\n]*)?"
+_HEALTH_UNCERTAINTY_OPERATION_WRAP = re.compile(
+    r"(?:(?:不能|无法|难以)(?:" + _HEALTH_FORMAT_GAP + r"(?:据此|由此|因此))?"
+    + _HEALTH_FORMAT_GAP + r"(?:得出|推断|断言|断定|认定|说明|证明|判断)"
+    r"|(?:没有|尚无|缺乏|缺少)(?:" + _HEALTH_FORMAT_GAP + r"(?:足够|充分|可靠))?"
+    r"(?:" + _HEALTH_FORMAT_GAP + r"的)?" + _HEALTH_FORMAT_GAP + r"(?:依据|证据)"
+    r"(?:" + _HEALTH_FORMAT_GAP + r"来)?" + _HEALTH_FORMAT_GAP
+    + r"(?:得出|推断|断言|断定|认定|证明|表明|显示|支持)"
+    r"|不" + _HEALTH_FORMAT_GAP + r"(?:代表|意味着|等于|支持))"
+    + _HEALTH_FORMAT_GAP + r"(?=[“‘\"'（(]*(?:" + _CURRENT_HEALTH_CLAIM.pattern
+    + r"|(?:已|已经)?" + _HEALTH_SUBJECT + r"))"
+)
+_HEALTH_UNCERTAINTY_WRAP = re.compile(
+    _HEALTH_UNCERTAINTY_NEGATION.pattern.removesuffix("$").replace(r"\s*", _HEALTH_FORMAT_GAP)
+    + r"(?=不能|无法|难以|没有|尚无|缺乏|缺少|不代表|不意味着|不等于|不支持)"
 )
 _EXERCISE_TOPIC = re.compile(r"运动|训练|锻炼|练|走|健身|力量|有氧|阻力|散步|步行|跑步|深蹲|划船|弹力带|俯卧撑|骑行|游泳")
 _EXERCISE_QUANTITY = re.compile(
@@ -416,7 +433,17 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
     if (any(q["query"]["dimension"] == "diet" for q in evidence["queries"])
             and any(_nutrition_assertion_in_clause(c) for c in clauses)):
         reasons.append("unsupported_nutrition_inference")
-    if any(_asserted_record_only_claim(_CURRENT_HEALTH_CLAIM, c) for c in clauses):
+    # Fold only finite uncertainty operations and an adjacent health predicate,
+    # then their outer-negation chain. A gap cannot span an empty paragraph.
+    # Sentence boundaries and other domain matching views remain unchanged.
+    health_normalized = _HEALTH_UNCERTAINTY_OPERATION_WRAP.sub(
+        lambda match: re.sub(r"\s+", "", match.group()), normalized,
+    )
+    health_normalized = _HEALTH_UNCERTAINTY_WRAP.sub(
+        lambda match: re.sub(r"\s+", " ", match.group()), health_normalized,
+    )
+    if any(_asserted_record_only_claim(_CURRENT_HEALTH_CLAIM, c)
+           for c in _NUTRITION_CLAUSE_BREAK.split(health_normalized)):
         reasons.append("unsupported_current_health_inference")
     if any(_quantified_exercise_plan(c) for c in clauses):
         reasons.append("unsupported_exercise_program")
