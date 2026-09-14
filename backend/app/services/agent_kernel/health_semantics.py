@@ -1352,6 +1352,49 @@ def active_health_read_authority_text(text: str) -> str:
     return projected.strip()
 
 
+_SYNC_AUTHORITY_ACTION_RE = re.compile(r"同步|刷新|拉取|触发(?:一下)?同步")
+_SYNC_AUTHORITY_DEVICE_RE = re.compile(r"garmin|佳明", re.IGNORECASE)
+_SYNC_AUTHORITY_ADJACENT_RE = re.compile(
+    r"同步|刷新|拉取|触发(?:一下)?同步|garmin|佳明", re.IGNORECASE,
+)
+
+
+def active_health_sync_authority_text(text: str) -> str:
+    """Keep material projection from manufacturing an owned sync operand.
+
+    Quoted or Markdown material may be discussed beside a real command, but a
+    span attached to the active sync action/device is part of its unresolved
+    owner or scope. Removing that span must fail closed instead of turning a
+    third-party or time-qualified request into the default current-user sync.
+    """
+    raw = str(text or "")
+    projected, html_removed = _strip_html_material(raw)
+    if not projected:
+        return ""
+    projected, code_removed, code_malformed = _strip_backtick_code_material(projected)
+    if code_malformed:
+        return ""
+    projected, struck_removed, struck_malformed = _strip_struck_material(projected)
+    if struck_malformed:
+        return ""
+    projected = active_health_instruction_text(projected)
+    projected = _strip_markdown_formatting_markers(projected)
+    inspection, quote_removed = _strip_paired_material_spans(projected)
+    removed = (*html_removed, *code_removed, *struck_removed, *quote_removed)
+    if (
+        _SYNC_AUTHORITY_ACTION_RE.search(inspection)
+        and _SYNC_AUTHORITY_DEVICE_RE.search(inspection)
+    ):
+        for _span, prefix, suffix, block_boundary in removed:
+            if block_boundary and HTML_BLOCK_PREFIX_BOUNDARY_RE.search(prefix):
+                continue
+            preceding = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(prefix)[-1]
+            following = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
+            if _SYNC_AUTHORITY_ADJACENT_RE.search(preceding + following):
+                return ""
+    return active_health_instruction_text(raw)
+
+
 def resolve_health_read_act(text: str) -> HealthReadActResolution:
     """Resolve read authority clause by clause, with later clauses winning."""
     intent_text = active_health_instruction_text(text)

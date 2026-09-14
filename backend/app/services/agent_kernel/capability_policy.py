@@ -31,6 +31,7 @@ from app.services.agent_kernel.health_semantics import (
     READ_VERB_RE,
     active_health_read_clause,
     active_health_instruction_text,
+    active_health_sync_authority_text,
     active_health_read_authority_text,
     authorization_behavior_digest,
     authorization_grammar_digest,
@@ -2497,7 +2498,7 @@ def _explicit_owned_garmin_sync(text: str) -> bool:
     Fetching data alone is read intent and must never enqueue a sync job.
     """
     scoped = re.sub(r"\s+", "", normalize_health_authorization_text(
-        active_health_instruction_text(text)))
+        active_health_sync_authority_text(text)))
     polite = r"(?:请你?|麻烦)?(?:帮我|给我)?"
     owned_data = r"(?:我的?)?(?:garmin|佳明)(?:的)?数据"
     sync_command = rf"{polite}(?:同步(?:一下)?|(?:主动)?触发(?:一下)?同步)"

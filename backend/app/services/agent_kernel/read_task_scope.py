@@ -11,6 +11,7 @@ import re
 from zoneinfo import ZoneInfo
 
 from app.services.agent_kernel.health_semantics import (
+    active_health_sync_authority_text,
     active_health_instruction_text,
     health_read_has_nonself_subject,
     health_read_cancelled,
@@ -54,7 +55,10 @@ def _active(text: str) -> str | None:
     # full read-scope projector calls this sync binder, so it is not used here.
     from app.services.agent_longitudinal_read import project_active_quote_roles
 
-    active = project_active_quote_roles(active_health_instruction_text(text))
+    sync_authority = active_health_sync_authority_text(text)
+    if not sync_authority:
+        return None
+    active = project_active_quote_roles(sync_authority)
     if active is None:
         return None
     return normalize_health_authorization_text(active).strip()

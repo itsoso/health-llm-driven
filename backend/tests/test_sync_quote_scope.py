@@ -36,6 +36,33 @@ async def test_quoted_sync_operand_never_dispatches_or_receives_owned_evidence(t
     assert result.decision.reason == 'garmin_sync_scope_unresolved'
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text', [
+    '同步`张三的`佳明数据',
+    '同步~~张三的~~佳明数据',
+    '同步我`昨天`的佳明数据',
+])
+@pytest.mark.parametrize('mode', ['enforce', 'shadow'])
+async def test_markdown_material_cannot_erase_sync_owner_or_scope(text, mode):
+    turn = snapshot(text, mode)
+    dispatched = []
+
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{"job_id":"must-not-enqueue"}'
+
+    result = await ToolGateway(turn).execute(
+        ToolExecutionRequest('health_record', {'record_type': 'garmin_sync', 'data': {}}),
+        dispatch,
+    )
+
+    assert not dispatched
+    assert not has_owned_sync_instruction(text)
+    assert 'semantic:owned_garmin_sync' not in turn.intent.evidence
+    assert result.decision.action == 'block'
+    assert result.decision.reason == 'garmin_sync_scope_unresolved'
+
+
 @pytest.mark.parametrize('text', [
     '同步我「昨天」的佳明数据', '同步我\'昨天\'的佳明数据',
     '同步我`昨天`的佳明数据', '同步我“昨天的佳明数据',
