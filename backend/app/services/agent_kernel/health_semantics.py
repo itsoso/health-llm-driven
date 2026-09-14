@@ -2282,6 +2282,17 @@ def _starts_with_health_target_expression(value: str) -> bool:
     )
 
 
+def _contains_health_target_expression(value: str) -> bool:
+    """Fail closed when an unknown short modifier precedes a health target."""
+    candidate = str(value or "").lstrip()
+    search_limit = min(len(candidate), 32)
+    return any(
+        _is_health_target_expression(candidate[start:end])
+        for start in range(search_limit)
+        for end in range(start + 1, min(len(candidate), start + 64) + 1)
+    )
+
+
 def _owned_health_context_has_safe_owner(left_context: str) -> bool:
     """Resolve the nearest bounded owner before an owned health object."""
     normalized = str(left_context or "").rstrip()
@@ -2311,6 +2322,11 @@ def _owned_health_context_has_safe_owner(left_context: str) -> bool:
             rf"(?:{READ_VERB_RE.pattern}|{HEALTH_ENTITY_CONNECTOR_RE.pattern}|同|并)\s*$",
             prefix,
             re.IGNORECASE,
+        ):
+            return True
+        if any(
+            _is_health_target_expression(prefix[-tail_size:])
+            for tail_size in range(1, min(len(prefix), 32) + 1)
         ):
             return True
     return False
@@ -2378,13 +2394,20 @@ def health_read_has_nonself_subject(text: str) -> bool:
     )
     owned_target_scope = _strip_exam_request_scaffolding(scoped_text)
     for possessive_marker in re.finditer("的", owned_target_scope):
-        if not _starts_with_health_target_expression(
-            owned_target_scope[possessive_marker.end():]
-        ):
-            continue
-        if not _owned_health_context_has_safe_owner(
+        target_context = owned_target_scope[possessive_marker.end():]
+        next_read = READ_VERB_RE.search(target_context)
+        if next_read is not None:
+            target_context = target_context[:next_read.start()]
+        owner_is_safe = _owned_health_context_has_safe_owner(
             owned_target_scope[:possessive_marker.start()]
-        ):
+        )
+        if (
+            _starts_with_health_target_expression(target_context)
+            or (
+                not owner_is_safe
+                and _contains_health_target_expression(target_context)
+            )
+        ) and not owner_is_safe:
             return True
     for part in HEALTH_ENTITY_CONNECTOR_RE.split(owned_target_scope):
         possessive_part = re.fullmatch(
