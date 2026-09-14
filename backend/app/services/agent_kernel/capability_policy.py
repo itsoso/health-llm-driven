@@ -1466,7 +1466,9 @@ def _normalize_query_text(text: str) -> str:
 
 def _health_read_cancelled_by_user(text: str) -> bool:
     """Return whether the active read speech act is explicitly cancelled."""
-    return health_read_cancelled(text)
+    return health_read_cancelled(text) and not has_explicit_health_read_request(
+        text
+    )
 
 
 def _calendar_question_dimension(text: str) -> str | None:

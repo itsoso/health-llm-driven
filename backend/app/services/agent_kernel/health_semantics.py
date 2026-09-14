@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v11"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v12"
 
 
 @dataclass(frozen=True)
@@ -1102,7 +1102,8 @@ def has_positive_health_read_verb(text: str) -> bool:
 
 def active_health_read_clause(text: str) -> str:
     """Return the active clause from the structured read-act resolution."""
-    return resolve_health_read_act(text).active_clause
+    report_clause = _active_owned_report_use_clause(text)
+    return report_clause or resolve_health_read_act(text).active_clause
 
 
 def health_read_cancelled(text: str) -> bool:
@@ -1115,9 +1116,7 @@ def has_explicit_health_read_request(text: str) -> bool:
     scoped = active_health_read_clause(text)
     if not scoped:
         return False
-    return has_positive_health_read_verb(scoped) or _has_owned_report_use_request(
-        scoped
-    )
+    return has_positive_health_read_verb(scoped) or _has_owned_report_use_request(text)
 
 
 def is_unresolved_health_reference(value: str) -> bool:
@@ -1429,9 +1428,10 @@ REPORT_USE_DENIAL_RE = re.compile(
 QUOTED_REPORT_USE_RE = re.compile(
     r"(?:"
     r"`[^`\n\r]{0,96}(?:基于|结合|根据|参考|依据)[^`\n\r]{0,96}`|"
-    r"[“‘\"'《「『【（(]"
-    r"[^”’\"'》」』】）)\n\r]{0,96}(?:基于|结合|根据|参考|依据)"
-    r"[^”’\"'》」』】）)\n\r]{0,96}[”’\"'》」』】）)]"
+    r"[“‘\"'《「『【（(\[{]"
+    r"[^”’\"'》」』】）)\]}\n\r]{0,96}(?:基于|结合|根据|参考|依据)"
+    r"[^”’\"'》」』】）)\]}\n\r]{0,96}[”’\"'》」』】）)\]}]|"
+    r"(?m:^\s*>\s*[^\n\r]{0,96}(?:基于|结合|根据|参考|依据)[^\n\r]{0,96}$)"
     r")",
     re.IGNORECASE,
 )
@@ -1441,9 +1441,13 @@ REPORT_USE_HYPOTHETICAL_RE = re.compile(
     re.IGNORECASE,
 )
 REPORT_USE_PROVENANCE_RE = re.compile(
-    r"(?:朋友|同事|同学|医生|家人|亲戚|别人|有人|他|她|他们|她们|对方)"
-    r"[^\n\r。.!！?？；;]{0,16}"
-    r"(?:说|表示|提到|写道|问|让我|要求我|发来|转发|引用)\s*[：:]?",
+    r"(?:"
+    r"^(?!(?:我想|我希望|请|麻烦|帮我|给我|现在|基于|结合|根据|参考|依据))"
+    r"[^\n\r，,。.!！?？；;：:]{1,32}?"
+    r"(?:说|表示|提到|写道|写着|问|让我|要求我|发来|转发|引用)\s*[：:]?|"
+    r"^[^\n\r，,。.!！?？；;：:]{1,32}?"
+    r"(?:内容|记录|原文|消息|邮件|聊天记录)\s*[：:]"
+    r")",
     re.IGNORECASE,
 )
 REPORT_USE_DEFERRED_RE = re.compile(
@@ -1455,24 +1459,29 @@ REPORT_USE_DEFERRED_RE = re.compile(
 _REPORT_USE_SCOPE_BOUNDARY_RE = re.compile(
     r"(?:[\n\r；;。.!！?？]|但|不过|然而|而是|却|可是|然后|改为)"
 )
+REPORT_USE_TRAILING_WITHDRAWAL_RE = re.compile(
+    r"(?:取消|撤销|撤回|作废|作罢|停止|终止|中止|打住|算了|"
+    r"到此为止|到这儿|到这里|先放一放|先搁着|不要执行|别执行|不执行)"
+    r"[，,。.!！?？\s]*$",
+    re.IGNORECASE,
+)
 
 
-def _has_owned_report_use_request(text: str) -> bool:
-    """Treat an explicit request to use one's report as bounded read consent."""
+def _active_owned_report_use_clause(text: str) -> str:
+    """Resolve the last active current-user report-use speech act."""
     normalized = active_health_instruction_text(str(text or "")).strip()
     if (
         CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is None
         or REPORT_USE_ACTION_RE.search(normalized) is None
-        or has_explicit_nonself_health_owner(normalized)
     ):
-        return False
+        return ""
 
     clauses = tuple(
         clause.strip("，,：:、 ")
         for clause in _REPORT_USE_SCOPE_BOUNDARY_RE.split(normalized)
         if clause.strip("，,：:、 ")
     )
-    authorized = False
+    active_clause = ""
     saw_report_use = False
     for clause in clauses:
         owns_report = CURRENT_USER_REPORT_REFERENCE_RE.search(clause) is not None
@@ -1492,20 +1501,29 @@ def _has_owned_report_use_request(text: str) -> bool:
         if is_report_use:
             saw_report_use = True
             authorized = not bool(
-                is_health_tool_meta_command(clause)
+                has_explicit_nonself_health_owner(clause)
+                or is_health_tool_meta_command(clause)
                 or QUOTED_REPORT_USE_RE.search(clause)
                 or REPORT_USE_DENIAL_RE.search(clause)
                 or REPORT_USE_HYPOTHETICAL_RE.search(clause)
                 or REPORT_USE_PROVENANCE_RE.search(clause)
                 or REPORT_USE_DEFERRED_RE.search(clause)
                 or READ_NON_AUTHORIZING_RE.search(clause)
+                or REPORT_USE_TRAILING_WITHDRAWAL_RE.search(clause)
             )
+            active_clause = clause if authorized else ""
         elif saw_report_use and (
             READ_TRAILING_WITHDRAWAL_RE.search(clause)
             or READ_AUTHORITY_WITHDRAWAL_RE.search(clause)
+            or REPORT_USE_TRAILING_WITHDRAWAL_RE.search(clause)
         ):
-            authorized = False
-    return authorized
+            active_clause = ""
+    return active_clause
+
+
+def _has_owned_report_use_request(text: str) -> bool:
+    """Treat an explicit request to use one's report as bounded read consent."""
+    return bool(_active_owned_report_use_clause(text))
 
 
 def has_explicit_nonself_health_owner(text: str) -> bool:

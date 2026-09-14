@@ -7159,6 +7159,9 @@ _GOAL_GUARD_RECOVERY_PROMPT = (
     "请不要调用任何工具，直接回答用户原本的问题；"
     "不得声称已经记录、修改或删除任何数据，也不要向用户暴露内部工具或策略。"
 )
+_GOAL_GUARD_TERMINAL_MESSAGE = (
+    "本轮没有执行或保存任何变更。暂时未能生成计划草稿，请稍后重试。"
+)
 
 
 def _goal_target_record_ids(
@@ -13121,7 +13124,10 @@ class AgentExecutor:
             )
             fingerprint = _write_operation_fingerprint(tool_name, identity_args)
             planned_fingerprints.add(fingerprint)
-            if fingerprint not in operations:
+            if (
+                fingerprint not in operations
+                or operations[fingerprint].get("status") == "rejected"
+            ):
                 operations[fingerprint] = {
                     "status": "planned",
                     "tool": tool_name,
@@ -13598,6 +13604,7 @@ class AgentExecutor:
             goal_lookup_completed = False
             goal_allowed_record_ids: set[str] = set()
             lead_force_no_tools_synthesis = False
+            lead_goal_guard_rejected_write = False
             lead_finish_reason = "error"
             pending_pi_writes: dict[str, tuple[str, Dict[str, Any]]] = {}
 
@@ -14157,12 +14164,23 @@ class AgentExecutor:
                                     parsed_args=rejected_args,
                                 )
                             if proposed_tool_calls and not tool_calls:
-                                # Pi receives the denied calls only to attach explicit
-                                # error results. Python never grants them tool effects.
-                                # The next Pi model request uses a text-only transport.
-                                blocked_lead_calls.update(call["id"] for call in proposed_tool_calls)
-                                tool_calls = proposed_tool_calls
-                                lead_force_no_tools_synthesis = True
+                                if (
+                                    rejected_goal_writes
+                                    and len(rejected_goal_writes)
+                                    == len(proposed_tool_calls)
+                                ):
+                                    # The server already proved every proposed
+                                    # effect is outside the read-only goal. End
+                                    # deterministically; model prose cannot
+                                    # reinterpret a rejected effect as success.
+                                    lead_goal_guard_rejected_write = True
+                                    content = _GOAL_GUARD_TERMINAL_MESSAGE
+                                else:
+                                    blocked_lead_calls.update(
+                                        call["id"] for call in proposed_tool_calls
+                                    )
+                                    tool_calls = proposed_tool_calls
+                                    lead_force_no_tools_synthesis = True
                         if tool_calls:
                             # Canonicalize the complete batch before its durable
                             # checkpoint. Pi and dispatch see this exact payload.
@@ -14206,7 +14224,8 @@ class AgentExecutor:
                         if request["tool_call_id"] in blocked_lead_calls:
                             await pi.respond(
                                 request, content=_GOAL_GUARD_RECOVERY_PROMPT,
-                                is_error=True, terminate=False,
+                                is_error=True,
+                                terminate=lead_goal_guard_rejected_write,
                             )
                             continue
                         call = {
@@ -14234,6 +14253,12 @@ class AgentExecutor:
                         lead_text = _guard_panel_narrative(lead_text)
                         lead_text = _strip_bracket_tool_markers(lead_text)
                         lead_text = _strip_xml_tool_markers(lead_text)
+
+            if lead_goal_guard_rejected_write:
+                raise _SimpleRecordTerminal(
+                    _GOAL_GUARD_TERMINAL_MESSAGE,
+                    satisfied=False,
+                )
 
             # A bounded Pi run may finish immediately after its final tool
             # batch. Goal readback is a mandatory domain verification step,
@@ -17572,6 +17597,13 @@ class AgentExecutor:
                                     goal_guard_candidates,
                                     proposed_calls,
                                 )
+                                for rejected_tool_name, rejected_args in rejected_goal_writes:
+                                    self._persist_turn_write_state(
+                                        user_msg,
+                                        status="rejected",
+                                        tool_name=rejected_tool_name,
+                                        parsed_args=rejected_args,
+                                    )
                                 proposed_calls, simple_diet_nutrition_estimation_attempted = (
                                     await _enrich_simple_diet_goal_tool_calls(
                                         proposed_calls,
@@ -17586,19 +17618,15 @@ class AgentExecutor:
                                     and len(rejected_goal_writes)
                                     == len(goal_guard_candidates)
                                 ):
-                                    # Let official Pi attach explicit denied
-                                    # tool results, then request one bounded
-                                    # text-only answer. No denied call reaches
-                                    # Python's tool gateway.
+                                    # End from the deterministic server boundary.
+                                    # No denied call or follow-up model prose can
+                                    # claim that the rejected effect succeeded.
                                     goal_guard_write_recovery_attempted = True
-                                    blocked_pi_calls.update(
-                                        str(call["id"])
-                                        for call in goal_guard_candidates
-                                    )
-                                    proposed_calls = goal_guard_candidates
-                                    pi_force_no_tools_synthesis = True
-                                    candidate = ""
-                                    finish_reason = "tool_calls"
+                                    pi_terminal_text = _GOAL_GUARD_TERMINAL_MESSAGE
+                                    final_finish_reason = "error"
+                                    proposed_calls = []
+                                    candidate = _GOAL_GUARD_TERMINAL_MESSAGE
+                                    finish_reason = "error"
                                 # Canonicalize once before issuing the call to
                                 # Pi so the durable plan and dispatch identity
                                 # describe the same authorized health payload.
@@ -17624,7 +17652,11 @@ class AgentExecutor:
                                             args["data"] = data_object
                                     function["arguments"] = json.dumps(args, ensure_ascii=False)
                                 if not proposed_calls:
-                                    candidate = "本轮请求未通过目标操作检查，没有执行变更。"
+                                    candidate = (
+                                        _GOAL_GUARD_TERMINAL_MESSAGE
+                                        if goal_guard_write_recovery_attempted
+                                        else "本轮请求未通过目标操作检查，没有执行变更。"
+                                    )
                                     finish_reason = "error"
                                 dispatchable_calls = [
                                     call for call in proposed_calls
@@ -17662,7 +17694,7 @@ class AgentExecutor:
                                     request,
                                     content=_GOAL_GUARD_RECOVERY_PROMPT,
                                     is_error=True,
-                                    terminate=False,
+                                    terminate=True,
                                 )
                                 continue
                             call = {
@@ -17746,15 +17778,8 @@ class AgentExecutor:
                                     last_recoverable_write_rejection, write_receipts,
                                 )
                                 final_finish_reason = "error"
-                            if (
-                                goal_guard_write_recovery_attempted
-                                and not write_receipts
-                                and _claims_unverified_write_success(full_reply)
-                            ):
-                                full_reply = (
-                                    "本轮没有执行任何变更。刚才的写入操作已被系统拒绝，"
-                                    "请重新请求计划草稿。"
-                                )
+                            if goal_guard_write_recovery_attempted and not write_receipts:
+                                full_reply = _GOAL_GUARD_TERMINAL_MESSAGE
                                 final_finish_reason = "error"
 
                 goal = self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None

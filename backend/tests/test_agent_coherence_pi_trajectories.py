@@ -362,7 +362,7 @@ async def test_plan_draft_is_an_answer_without_plan_database_write(
     ),
 )
 @pytest.mark.asyncio
-async def test_plan_advice_recovers_when_model_proposes_weekly_plan_write(
+async def test_plan_advice_fails_closed_when_model_proposes_weekly_plan_write(
     db, owned_data, monkeypatch, message
 ):
     trace = script_executor(
@@ -377,26 +377,36 @@ async def test_plan_advice_recovers_when_model_proposes_weekly_plan_write(
     assert not trace.dispatches and not done["write_receipts"]
     assert db.query(WeeklyPlan).count() == db.query(PlanItem).count() == 0
     assert "已保存" not in saved.content
-    assert "计划草稿" in saved.content
-    assert done["turn_outcome"]["status"] == "complete"
-    assert len(trace.calls) == 2
+    assert "没有执行" in saved.content or "未执行" in saved.content
+    assert done["turn_outcome"]["status"] != "complete"
+    assert len(trace.calls) == 1
     assert "manage_plan" not in {
         (tool.get("function") or {}).get("name")
         for tool in trace.calls[0][1]
     }
-    assert not trace.calls[1][1]
 
 
+@pytest.mark.parametrize(
+    "false_success",
+    (
+        "你的本周运动计划已经保存成功。",
+        "计划已加入首页。",
+        "本周计划已经生成好了。",
+        "已经为你制定好了本周计划。",
+        "本周计划已经放到首页。",
+        "搞定，本周运动安排已经在首页了。",
+    ),
+)
 @pytest.mark.asyncio
 async def test_plan_advice_recovery_cannot_claim_an_unverified_save(
-    db, owned_data, monkeypatch
+    db, owned_data, monkeypatch, false_success
 ):
     trace = script_executor(
         db,
         monkeypatch,
         [
             ("manage_plan", {"action": "generate_weekly"}),
-            "你的本周运动计划已经保存成功。",
+            false_success,
         ],
     )
 
@@ -404,7 +414,7 @@ async def test_plan_advice_recovery_cannot_claim_an_unverified_save(
 
     assert not trace.dispatches and not done["write_receipts"]
     assert db.query(WeeklyPlan).count() == db.query(PlanItem).count() == 0
-    assert "保存成功" not in saved.content
+    assert saved.content != false_success
     assert "没有执行" in saved.content or "未执行" in saved.content
     assert done["turn_outcome"]["status"] != "complete"
 

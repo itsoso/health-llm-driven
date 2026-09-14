@@ -176,7 +176,7 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
 
 
 @pytest.mark.asyncio
-async def test_multi_model_advice_recovers_when_lead_selects_write_tool(
+async def test_multi_model_advice_fails_closed_when_lead_selects_write_tool(
     db,
     auth_user_and_headers,
     monkeypatch,
@@ -246,20 +246,21 @@ async def test_multi_model_advice_recovers_when_lead_selects_write_tool(
         )
     ]
 
-    assert len(lead_calls) == 2
+    assert len(lead_calls) == 1
     first_round_tool_names = {
         tool["function"]["name"] for tool in lead_calls[0]
     }
     assert "health_record" not in first_round_tool_names
     assert "knowledge_search" in first_round_tool_names
-    assert lead_calls[1] == []
     assert events[-1]["event"] == "done"
-    assert events[-1]["data"]["completion_status"] == "complete"
+    assert events[-1]["data"]["completion_status"] == "error"
 
     from app.models.agent_conversation import AgentMessage
 
     saved_user = db.query(AgentMessage).filter_by(role="user").one()
     assert saved_user.meta["write_state"]["status"] == "rejected"
+    saved_assistant = db.query(AgentMessage).filter_by(role="assistant").one()
+    assert "没有执行或保存任何变更" in saved_assistant.content
 
 
 @pytest.mark.asyncio

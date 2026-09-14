@@ -224,6 +224,17 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "不是要基于我的体检报告给建议。",
         "没有必要基于我的体检报告给建议。",
         "先不基于我的体检报告给建议。",
+        "基于我的体检报告给建议，取消。",
+        "基于我的体检报告给建议，到此为止。",
+        "老板让我基于我的体检报告给建议。",
+        "领导要求我基于我的体检报告给建议。",
+        "张三说：基于我的体检报告给建议。",
+        "妈妈发来：基于我的体检报告给建议。",
+        "聊天记录里写着：基于我的体检报告给建议。",
+        "邮件内容：基于我的体检报告给建议。",
+        "[基于我的体检报告给建议]",
+        "{基于我的体检报告给建议}",
+        "> 基于我的体检报告给建议",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
@@ -239,16 +250,40 @@ def test_mixed_report_owners_remain_nonself(connector):
     assert semantics.has_explicit_health_read_request(text) is False
 
 
-def test_later_explicit_report_request_restores_read_authority():
-    text = "如果基于我的体检报告给建议会怎样？现在请基于我的体检报告给建议。"
+@pytest.mark.parametrize(
+    "text",
+    (
+        "如果基于我的体检报告给建议会怎样？现在请基于我的体检报告给建议。",
+        "基于我的体检报告给建议，算了；不过现在请基于我的体检报告给建议。",
+        "朋友说：基于我的体检报告给建议；不过现在请基于我的体检报告给建议。",
+    ),
+)
+def test_later_explicit_report_request_restores_read_authority(text):
 
+    assert semantics.has_explicit_health_read_request(text) is True
+
+
+def test_direct_request_with_say_scaffolding_remains_authorized():
+    text = "请你说说，基于我的体检报告有什么建议。"
+
+    assert semantics.has_explicit_health_read_request(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "基于我的体检报告给我说说建议。",
+        "结合我的体检报告说下改善建议。",
+    ),
+)
+def test_report_first_request_with_say_scaffolding_remains_authorized(text):
     assert semantics.has_explicit_health_read_request(text) is True
 
 
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v11"
+    assert payload["version"] == "health-semantics-v12"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 
