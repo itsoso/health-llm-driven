@@ -1034,6 +1034,9 @@ _CURRENT_EVIDENCE_UNSAFE += [
     "不必仅凭几天记录给自己下恢复差的结论，但恢复良好。",
     "不要轻易判断恢复差；状态正常。",
     "不要服药，然后认定恢复良好。",
+    "不建议仅凭最近几天的记录样本判断恢复差，但恢复良好。",
+    "不建议服药，然后判断恢复良好。",
+    "不建议仅凭最近几天的记录样本判断恢复差；状态正常。",
 ]
 
 _CURRENT_EVIDENCE_SAFE = [
@@ -1081,6 +1084,7 @@ _CURRENT_EVIDENCE_SAFE = [
     "恢复情况无法判断。", "这是恢复记录。", "查询已恢复。",
     '不必仅凭几天记录给自己下"恢复好或不好"的结论。',
     '不能据此判断你"感冒后恢复良好"或"存在健康问题"。',
+    '不建议仅凭最近几天的记录样本判断“恢复良好/不足”或调整补剂。',
 ]
 
 
@@ -1126,6 +1130,7 @@ def test_composed_current_evidence_standalone_recovery(claim, quotes, space, out
 @pytest.mark.parametrize("operation", [
     "不必仅凭几天记录给自己下", "不必给自己下", "不要轻易得出",
     "不应仅凭少量记录判断", "避免根据这些样本认定",
+    "不建议仅凭最近几天的记录样本判断", "不建议仅凭过去几天的记录判断",
 ])
 @pytest.mark.parametrize("outer", ["", "并非", "并非完全"])
 @pytest.mark.parametrize("space", ["", "\n", "\r\n"])
@@ -1136,8 +1141,12 @@ def test_composed_current_evidence_prohibition(operation, outer, space):
 
 @pytest.mark.parametrize("space", [" ", "\n", "\r\n"])
 @pytest.mark.parametrize("outer", ["", "并非完全"])
-def test_composed_current_evidence_wrapped_prohibition(space, outer):
-    operation = space.join(["不必", "仅凭", "几天", "记录", "给", "自己", "下"])
+@pytest.mark.parametrize("parts", [
+    ["不必", "仅凭", "几天", "记录", "给", "自己", "下"],
+    ["不建议", "仅凭", "最近", "几天", "的", "记录", "样本", "判断"],
+])
+def test_composed_current_evidence_wrapped_prohibition(space, outer, parts):
+    operation = space.join(parts)
     text = f'{outer}{space}{operation}{space}"恢复良好"的结论。'
     test_composed_current_evidence_claim_boundaries(text, bool(outer))
 
@@ -1154,6 +1163,7 @@ def test_composed_current_evidence_prohibition_keeps_independent_assertions(sepa
 @pytest.mark.parametrize("answer", [
     "仅凭目前这批记录，不能得出“已恢复”“恢复差”或“需要调整补剂/运动”的个体结论。",
     '当前样本较短且维度有限，建议以自身体感为主、数据为辅，不必仅凭几天记录给自己下"恢复好或不好"的结论。',
+    '不建议仅凭最近几天的记录样本判断“恢复良好/不足”或调整补剂。是否需要调整，应由医生结合当前症状、实际补充剂清单和必要检查来评估。',
 ])
 async def test_composed_uncertain_conclusion_completes_owned_read(
     db, four_domain_user, monkeypatch, panel, continuation, answer,
@@ -1171,6 +1181,23 @@ async def test_composed_uncertain_conclusion_completes_owned_read(
     assert done["turn_outcome"]["status"] == "complete"
     assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"] if g["kind"] == "query")
     assert answer in saved.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("separator", ["；", "\n\n"])
+async def test_composed_current_evidence_prohibition_keeps_later_dose_guard(
+    db, four_domain_user, monkeypatch, panel, separator,
+):
+    answer = ('不建议仅凭最近几天的记录样本判断“恢复良好/不足”'
+              + separator + "建议每天服用两粒鱼油。")
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel, answer=answer,
+    )
+    assert done["turn_outcome"]["status"] == "blocked"
+    assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"])
+    assert "建议每天服用两粒鱼油" not in saved.content
+    assert not done["write_receipts"]
 
 
 @pytest.mark.asyncio

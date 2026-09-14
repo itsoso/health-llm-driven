@@ -594,3 +594,12 @@ The executor now supplies a single exact frozen `health_query_batch` proposal wh
 Four initial/continuation and normal/panel RED cases reproduced the defect, then all four passed. The expanded boundary and repair suite passed 32 selected cases. Fresh full validation and frozen G4 remain required. Review38 offline evidence was also corrected without changing product source: the original local receipt selected the preface, while a superseding receipt and the independent oracle tested the full prior synthetic synthesis unchanged.
 
 Fresh Full34 passed 9,827 cases (926 composed and 8,901 adjacent) with unchanged source, no failures/errors/skips/timeouts and no residual process groups. Composed execution took about 501 seconds. Static checks remain green; these proofs authorize only the next frozen independent review, not release.
+
+
+## Review40 — preserve uncertainty about recent record samples
+
+Review39 G4 passed on `4e6e1b25`. Actual attempt 1 verified all four reads, then the provider emitted no synthesis before the unchanged deadline; independent review classified it as inconclusive and permitted one same-revision retry. Both attempts and costs remain separate. Attempt 2 again verified all four reads, but the output boundary blocked a completed uncertainty statement using “不建议”, “最近几天” and “记录样本”. Independent clause-level review confirmed this single current-health false positive; no downstream gate advanced.
+
+The finite prohibition grammar now also recognizes “不建议”, the optional recent/past modifier before “几天”, and the compound record-sample object. One operator constant is shared by ordinary and formatting/polarity views. No unrestricted sentence exemption was added. Outer negation, clause/paragraph boundaries, independent affirmative conclusions and subsequent supplement-dose advice remain checked. The new RED reproduced 14 failures in 483 cases; the expanded 488-case suite passed, including both executor paths. The complete failed synthetic candidate at index 1 now passes byte-for-byte in a separately retained before/after proof. Full validation and new frozen G4 are still required.
+
+Fresh Full34 passed 9,863 cases (962 composed and 8,901 adjacent), with unchanged source and no failures/errors/skips/timeouts/residual process groups. The composed process completed in about 527 seconds. Static checks passed. The candidate still requires new independent G4, fresh actual four-case quality, PostgreSQL, formal live, wide CI, exact remote CI and production readback.

@@ -269,11 +269,12 @@ _CLAIM_UNKNOWN_PREFIX = re.compile(
 )
 # One finite operation grammar for both normal text and presentation wrapping.
 # It must end at a conclusion action, never span unrelated advice or punctuation.
+_HEALTH_PROHIBITION_OPERATOR = r"(?:不必|不要|不应|不可|避免|不建议)"
 _HEALTH_CONCLUSION_PROHIBITION = (
-    r"(?:不必|不要|不应|不可|避免){gap}(?:(?:急于|急着|轻易|贸然|直接){gap})?"
+    _HEALTH_PROHIBITION_OPERATOR + r"{gap}(?:(?:急于|急着|轻易|贸然|直接){gap})?"
     r"(?:(?:仅凭|只凭|根据|依据|凭){gap}"
-    r"(?:(?:几天|这些|少量|部分|本轮|当前|现有){gap})?(?:的{gap})?"
-    r"(?:记录|样本|生活数据){gap})?"
+    r"(?:(?:(?:(?:最近|过去){gap})?几天|这些|少量|部分|本轮|当前|现有){gap})?(?:的{gap})?"
+    r"(?:记录(?:{gap}样本)?|样本|生活数据){gap})?"
     r"(?:(?:给|为){gap}(?:自己|你){gap})?"
     r"(?:下|得出|做出|作出|判断|认定|认为|断言|推断)"
 )
@@ -302,7 +303,8 @@ _HEALTH_UNCERTAINTY_OPERATION_WRAP = re.compile(
 )
 _HEALTH_UNCERTAINTY_WRAP = re.compile(
     _HEALTH_UNCERTAINTY_NEGATION.pattern.removesuffix("$").replace(r"\s*", _HEALTH_FORMAT_GAP)
-    + r"(?=不能|无法|难以|没有|尚无|缺乏|缺少|不代表|不意味着|不等于|不支持|不必|不要|不应|不可|避免)"
+    + r"(?=不能|无法|难以|没有|尚无|缺乏|缺少|不代表|不意味着|不等于|不支持|"
+    + _HEALTH_PROHIBITION_OPERATOR + r")"
 )
 _EXERCISE_TOPIC = re.compile(r"运动|训练|锻炼|练|走|健身|力量|有氧|阻力|散步|步行|跑步|深蹲|划船|弹力带|俯卧撑|骑行|游泳")
 _EXERCISE_QUANTITY = re.compile(
