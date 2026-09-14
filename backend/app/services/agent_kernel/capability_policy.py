@@ -2843,6 +2843,13 @@ def decide_tool_capability(
             return _decision("allow", "health_query_projected_to_calendar_window",
                              tool_name, bound_query)
         if medical_exam_args is not None and _has_explicit_read_request(turn_text):
+            if illness_read_has_unowned_subject(_query_scope_text(turn_text)):
+                return _decision(
+                    "block",
+                    "health_query_subject_not_current_user",
+                    tool_name,
+                    canonical_args,
+                )
             return _decision(
                 "allow",
                 "health_query_projected_to_turn_semantics",
@@ -3203,6 +3210,13 @@ def decide_tool_capability(
                 )
                 and _query_contains_unresolved_reference(turn_text)
             ):
+                if illness_read_has_unowned_subject(_query_scope_text(turn_text)):
+                    return _decision(
+                        "block",
+                        "health_query_subject_not_current_user",
+                        tool_name,
+                        args,
+                    )
                 if (
                     canonical_health_manage_record_type(args.get("record_type"))
                     != "medical_exam"
