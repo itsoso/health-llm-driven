@@ -779,7 +779,8 @@ _NEGATED_READ_PREFIX_PATTERN = (
     r"(?:(?:我)?(?:不要|别|不用|无需|不必|请勿|勿|甭|不想|不打算|"
     r"取消|不需要|不希望|停止|撤销|暂停|终止|放弃|"
     r"不(?=查询|查找|查看|查到|查下|查|找出|找一下|找|回顾|回看|检索|"
-    r"列出|比较|对比|翻看|翻一下|看|搜索|搜|调取|调出)))"
+    r"列出|比较|对比|翻看|翻一下|看|搜索|搜|调取|调出|调阅|打开|"
+    r"展示|发我|发给我|呈现)))"
 )
 _NEGATED_READ_INTERPOSER_PATTERN = (
     r"(?:(?:帮我|给我|替我|为我|麻烦你?|请你?|让你|你|再|去|继续)){0,6}"
@@ -925,6 +926,9 @@ INLINE_STRUCK_MATERIAL_RE = re.compile(
     r"(?s)~~.+?~~|<del\b[^>]*>.*?</del\s*>",
     re.IGNORECASE,
 )
+MARKDOWN_FORMATTING_SPAN_RE = re.compile(
+    r"(?s)(?P<marker>\*\*|__|\*|_)(?=\S)(?P<body>.*?\S)(?P=marker)"
+)
 UNCLOSED_STRUCK_MATERIAL_RE = re.compile(
     r"(?s)~~(?!.*~~).*$|<del\b[^>]*>.*$",
     re.IGNORECASE,
@@ -938,6 +942,9 @@ HTML_MATERIAL_BODY_TAGS = frozenset(
         "blockquote", "q", "code", "pre", "kbd", "s", "del",
         "textarea", "template", "script", "style", "xmp", "noscript",
     }
+)
+HTML_BLOCK_MATERIAL_TAGS = frozenset(
+    {"blockquote", "pre", "textarea", "template", "script", "style", "xmp", "noscript"}
 )
 HTML_VOID_TAGS = frozenset(
     {
@@ -1046,9 +1053,12 @@ def _strip_markdown_blockquote_material(text: str) -> str:
     return projected
 
 
-def _strip_backtick_code_material(text: str) -> str:
+def _strip_backtick_code_material(
+    text: str,
+) -> tuple[str, tuple[tuple[str, str, str, bool], ...], bool]:
     """Remove Markdown code spans of any delimiter length across newlines."""
     projected = str(text or "")
+    removed: list[tuple[str, str, str, bool]] = []
     cursor = 0
     while opener := BACKTICK_RUN_RE.search(projected, cursor):
         if _is_escaped_delimiter(projected, opener.start()):
@@ -1065,25 +1075,64 @@ def _strip_backtick_code_material(text: str) -> str:
             ):
                 closer = candidate
                 break
-        end = closer.end() if closer is not None else len(projected)
+        if closer is None:
+            return projected[: opener.start()], tuple(removed), True
+        end = closer.end()
+        removed.append(
+            (projected[opener.end() : closer.start()], projected[: opener.start()], projected[end:], False)
+        )
         projected = projected[: opener.start()] + " " + projected[end:]
         cursor = opener.start() + 1
+    return projected, tuple(removed), False
+
+
+def _strip_struck_material(
+    text: str,
+) -> tuple[str, tuple[tuple[str, str, str, bool], ...], bool]:
+    """Remove paired Markdown strike spans and surface malformed boundaries."""
+    projected = str(text or "")
+    removed: list[tuple[str, str, str, bool]] = []
+    while (start := projected.find("~~")) >= 0:
+        end_start = projected.find("~~", start + 2)
+        if end_start < 0:
+            return projected[:start], tuple(removed), True
+        end = end_start + 2
+        removed.append(
+            (projected[start + 2 : end_start], projected[:start], projected[end:], False)
+        )
+        projected = projected[:start] + " " + projected[end:]
+    return projected, tuple(removed), False
+
+
+def _strip_markdown_formatting_markers(text: str) -> str:
+    """Keep emphasized text semantic while removing paired presentation marks."""
+    projected = str(text or "")
+    previous = None
+    while projected != previous:
+        previous = projected
+        projected = MARKDOWN_FORMATTING_SPAN_RE.sub(r"\g<body>", projected)
     return projected
 
 
 def _strip_html_material(
     text: str,
-) -> tuple[str, tuple[tuple[str, str, str], ...]]:
+) -> tuple[str, tuple[tuple[str, str, str, bool], ...]]:
     """Project HTML without erasing semantic text in formatting elements."""
     projected = str(text or "")
-    removed: list[tuple[str, str, str]] = []
+    removed: list[tuple[str, str, str, bool]] = []
     cursor = 0
     while opener := HTML_MATERIAL_TOKEN_RE.search(projected, cursor):
         token = opener.group()
         if token.startswith("<!--"):
             close_index = projected.find("-->", opener.end())
-            end = close_index + 3 if close_index >= 0 else len(projected)
-            projected = projected[: opener.start()] + " " + projected[end:]
+            if close_index < 0:
+                return "", tuple(removed)
+            end = close_index + 3
+            suffix = projected[end:]
+            removed.append(
+                (projected[opener.end() : close_index], projected[: opener.start()], suffix, False)
+            )
+            projected = projected[: opener.start()] + " " + suffix
             cursor = opener.start() + 1
             continue
         elif token.startswith("</"):
@@ -1126,7 +1175,9 @@ def _strip_html_material(
         body = projected[opener.end() : closer.start()]
         suffix = projected[closer.end() :]
         if root_tag in HTML_MATERIAL_BODY_TAGS:
-            removed.append((body, projected[: opener.start()], suffix))
+            removed.append(
+                (body, projected[: opener.start()], suffix, root_tag in HTML_BLOCK_MATERIAL_TAGS)
+            )
             projected = projected[: opener.start()] + " " + suffix
         else:
             # Formatting is not quotation: retain its body and only drop tags.
@@ -1137,10 +1188,10 @@ def _strip_html_material(
 
 def _strip_paired_material_spans(
     text: str,
-) -> tuple[str, tuple[tuple[str, str, str], ...]]:
+) -> tuple[str, tuple[tuple[str, str, str, bool], ...]]:
     """Replace quoted/bracketed spans and retain them for authority checks."""
     projected = str(text or "")
-    removed: list[tuple[str, str, str]] = []
+    removed: list[tuple[str, str, str, bool]] = []
     while True:
         starts = tuple(
             index
@@ -1151,7 +1202,9 @@ def _strip_paired_material_spans(
             return projected, tuple(removed)
         start = min(starts)
         end = _analyzed_material_end(projected, start)
-        removed.append((projected[start:end], projected[:start], projected[end:]))
+        removed.append(
+            (projected[start:end], projected[:start], projected[end:], False)
+        )
         projected = projected[:start] + " " + projected[end:]
 
 
@@ -1167,7 +1220,7 @@ def active_health_instruction_text(text: str) -> str:
     original = str(text or "")
     original = MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
     original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
-    original = _strip_backtick_code_material(original)
+    original, _code_removed, _code_malformed = _strip_backtick_code_material(original)
     original = _strip_markdown_blockquote_material(original)
     original = INLINE_STRUCK_MATERIAL_RE.sub(" ", original)
     original = UNCLOSED_STRUCK_MATERIAL_RE.sub(" ", original)
@@ -1191,11 +1244,6 @@ READ_MATERIAL_NON_AUTHORITY_RE = re.compile(
     r"(?:取消|暂缓|先不|不要|别)(?:执行|读取|查询|查看|打开)?",
     re.IGNORECASE,
 )
-READ_MATERIAL_PROSPECTIVE_DENIAL_RE = re.compile(
-    r"(?:不要|别|先不|不许|禁止|取消|撤回|暂缓|暂停|"
-    r"等我(?:确认|同意|授权|批准)后再|确认后再|批准后再|授权后再)",
-    re.IGNORECASE,
-)
 READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE = re.compile(
     r"(?:[\n\r；;。.!！?？]|但|不过|然而|可是|然后)"
 )
@@ -1210,12 +1258,19 @@ def active_health_read_authority_text(text: str) -> str:
     A non-authorizing qualifier inside a removed span applies to the surrounding
     read request and therefore fails closed instead of being erased.
     """
-    projected = active_health_instruction_text(text)
-    projected, html_removed = _strip_html_material(projected)
+    projected, html_removed = _strip_html_material(str(text or ""))
     if not projected:
         return ""
+    projected, code_removed, code_malformed = _strip_backtick_code_material(projected)
+    if code_malformed:
+        return ""
+    projected, struck_removed, struck_malformed = _strip_struck_material(projected)
+    if struck_malformed:
+        return ""
+    projected = active_health_instruction_text(projected)
+    projected = _strip_markdown_formatting_markers(projected)
     projected, quote_removed = _strip_paired_material_spans(projected)
-    removed = (*html_removed, *quote_removed)
+    removed = (*html_removed, *code_removed, *struck_removed, *quote_removed)
     if any(
         READ_MATERIAL_NON_AUTHORITY_RE.search(span)
         and (
@@ -1225,12 +1280,11 @@ def active_health_read_authority_text(text: str) -> str:
                 and CURRENT_USER_REPORT_REFERENCE_RE.search(prefix)
             )
         )
-        for span, prefix, _suffix in removed
+        for span, prefix, _suffix, _block_boundary in removed
     ):
         return ""
     if any(
-        READ_MATERIAL_PROSPECTIVE_DENIAL_RE.search(span)
-        and READ_VERB_RE.search(span) is None
+        not block_boundary
         and (
             READ_VERB_RE.search(
                 READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
@@ -1244,7 +1298,7 @@ def active_health_read_authority_text(text: str) -> str:
                 )
             )
         )
-        for span, _prefix, suffix in removed
+        for _span, _prefix, suffix, block_boundary in removed
     ):
         return ""
     orphan_closers = set(STANDALONE_MATERIAL_QUOTE_PAIRS.values()).difference(

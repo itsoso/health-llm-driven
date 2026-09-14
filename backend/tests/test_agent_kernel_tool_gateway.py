@@ -10034,6 +10034,22 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "请<em>等我确认后再</em>打开我的体检报告",
         "请“不要”打开我的体检报告",
         "请<q>不要</q>打开我的体检报告",
+        "请<strong>不</strong>打开我的体检报告",
+        "请**不要**打开我的体检报告",
+        "请__不要__打开我的体检报告",
+        "请*不要*打开我的体检报告",
+        "请_不要_打开我的体检报告",
+        "请“勿”打开我的体检报告",
+        "请“不必”打开我的体检报告",
+        "请“暂不”打开我的体检报告",
+        "请“先缓一缓”打开我的体检报告",
+        "请<q>勿</q>打开我的体检报告",
+        "请<q>晚点再</q>打开我的体检报告",
+        "请<q>&#x4e0d;&#x8981;</q>打开我的体检报告",
+        "请<!-- 勿 -->打开我的体检报告",
+        "请`勿`打开我的体检报告",
+        "请``勿``打开我的体检报告",
+        "请~~勿~~打开我的体检报告",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
@@ -10100,10 +10116,16 @@ async def test_recent_owned_report_request_dispatches(message, tool_name):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
-async def test_quoted_report_example_preserves_later_direct_read(tool_name):
-    gateway = ToolGateway(
-        _snapshot("“这只是一个示例”已结束；现在请打开我的体检报告")
-    )
+@pytest.mark.parametrize(
+    "message",
+    (
+        "“这只是一个示例”已结束；现在请打开我的体检报告",
+        "“勿打开我的体检报告”已结束；现在请打开我的体检报告",
+        "<q>这是示例</q>；现在请打开我的体检报告",
+    ),
+)
+async def test_quoted_report_example_preserves_later_direct_read(message, tool_name):
+    gateway = ToolGateway(_snapshot(message))
     calls = []
 
     async def dispatch(request):

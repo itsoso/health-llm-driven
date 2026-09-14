@@ -395,15 +395,37 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "请<em>等我确认后再</em>打开我的体检报告",
         "请“不要”打开我的体检报告",
         "请<q>不要</q>打开我的体检报告",
+        "请<strong>不</strong>打开我的体检报告",
+        "请**不要**打开我的体检报告",
+        "请__不要__打开我的体检报告",
+        "请*不要*打开我的体检报告",
+        "请_不要_打开我的体检报告",
+        "请“勿”打开我的体检报告",
+        "请“不必”打开我的体检报告",
+        "请“暂不”打开我的体检报告",
+        "请“先缓一缓”打开我的体检报告",
+        "请<q>勿</q>打开我的体检报告",
+        "请<q>晚点再</q>打开我的体检报告",
+        "请<q>&#x4e0d;&#x8981;</q>打开我的体检报告",
+        "请<!-- 勿 -->打开我的体检报告",
+        "请`勿`打开我的体检报告",
+        "请``勿``打开我的体检报告",
+        "请~~勿~~打开我的体检报告",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
     assert semantics.has_explicit_health_read_request(text) is False
 
 
-def test_quoted_report_example_does_not_hide_later_direct_read_request():
-    text = "“这只是一个示例”已结束；现在请打开我的体检报告"
-
+@pytest.mark.parametrize(
+    "text",
+    (
+        "“这只是一个示例”已结束；现在请打开我的体检报告",
+        "“勿打开我的体检报告”已结束；现在请打开我的体检报告",
+        "<q>这是示例</q>；现在请打开我的体检报告",
+    ),
+)
+def test_quoted_report_example_does_not_hide_later_direct_read_request(text):
     assert semantics.has_explicit_health_read_request(text) is True
 
 
