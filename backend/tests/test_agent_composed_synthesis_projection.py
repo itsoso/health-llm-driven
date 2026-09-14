@@ -115,6 +115,10 @@ async def test_verified_four_domain_provider_projection(db, four_domain_user, mo
         from app.services.agent_executor import _CLINICIAN_PROVENANCE_PROMPT_BLOCK
         assert all(rule in system for rule in _CLINICIAN_PROVENANCE_PROMPT_BLOCK)
         projected = json.loads(user)
+        assert "不得把已返回字段称为未返回或缺失" in system
+        assert "calories" in projected["returned_field_names"]["diet"]
+        assert "supplement_name" in projected["returned_field_names"]["supplements"]
+        assert "dosage" not in projected["returned_field_names"]["supplements"]
         evidence = projected["read_evidence"]
         assert [q["query"]["dimension"] for q in evidence["queries"]] == ["diet", "sleep", "workout", "supplements"]
         assert all(q["record_count"] == len(q["records"]) == 1 for q in evidence["queries"])
@@ -1039,6 +1043,9 @@ _CURRENT_EVIDENCE_UNSAFE += [
     "不建议仅凭最近几天的记录样本判断恢复差；状态正常。",
     "不能直接推断运动不安全；恢复良好。",
     "不能直接推断运动不安全，但运动安全。",
+    "你的健康背景已经返回，但你很健康。",
+    "运动：每天两次，每次30分钟。",
+    "运动：9/14有一条30分钟散步，但建议每天跑步20分钟。",
 ]
 
 _CURRENT_EVIDENCE_SAFE = [
@@ -1088,6 +1095,8 @@ _CURRENT_EVIDENCE_SAFE = [
     '不能据此判断你"感冒后恢复良好"或"存在健康问题"。',
     '不建议仅凭最近几天的记录样本判断“恢复良好/不足”或调整补剂。',
     "不能直接推断你当前的免疫、恢复、运动安全或补剂需求。",
+    "我会结合你的健康背景做有针对性的评估。",
+    "运动：以散步和步行为主，9/11–9/13每天约两条记录（30分钟散步+约21分钟步行），9/14有一条30分钟散步。",
 ]
 
 
@@ -1252,7 +1261,23 @@ _RESELECTION_INVITATIONS += [
 _RESELECTION_INVITATIONS += [
     "还想了解什么？", "要继续吗？", "要不要再深入一点？", "还需要我做什么？",
     "有问题可以继续问。", "如需更多分析请告诉我。",
+    "午餐记录长期缺失——如果你实际有吃午餐，建议随手记一下，这样饮食数据才接近真实全天摄入，后续分析才有意义。",
+    "补剂记录缺少名称和剂量——下次打卡时带上具体品名和剂量，我才能结合你的健康背景做有针对性的评估。",
+    "如果你希望我针对某个模块做更深入的分析，或者补充感冒当时的具体诊断内容，随时告诉我。",
 ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+async def test_composed_record_description_and_profile_noun_are_not_prescriptions(
+    db, four_domain_user, monkeypatch, panel,
+):
+    answer = ("运动：以散步和步行为主，9/11–9/13每天约两条记录（30分钟散步+约21分钟步行），"
+              "9/14有一条30分钟散步。\n我会结合你的健康背景做有针对性的评估。")
+    _, _, _, done, saved = await run_projection(db, four_domain_user, monkeypatch, panel=panel, answer=answer)
+    assert done["turn_outcome"]["status"] == "complete"
+    assert not done["write_receipts"]
+    assert "健康背景" in saved.content
 
 
 @pytest.mark.parametrize("invitation", _RESELECTION_INVITATIONS)

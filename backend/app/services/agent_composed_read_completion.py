@@ -324,6 +324,14 @@ _EXERCISE_QUANTITY = re.compile(
 _EXERCISE_PLAN_ACTION = re.compile(
     r"建议|可以|应该|应当|请|加入|增加|提高|过渡到|开始|安排|合理的起点|即可|就行|照做|做|练|锻炼|运动|走"
 )
+_EXERCISE_RECORD_DATE = r"(?:\d{4}[-/年])?\d{1,2}[-/月.]\d{1,2}日?"
+_EXERCISE_RECORD_COUNT = re.compile(
+    r"^(?:" + _EXERCISE_RECORD_DATE
+    + r"(?:\s*[–—~～至到-]\s*" + _EXERCISE_RECORD_DATE + r")?\s*)?"
+    r"(?:(?:每天|每日|当天|当日)\s*)?(?:约\s*)?"
+    r"(?:[一二两三四五六七八九十百\d]+\s*条\s*记录|"
+    r"(?:有|共|记录了)(?:约\s*)?[一二两三四五六七八九十百\d]+\s*条)"
+)
 _EXERCISE_RECORD_CHECK = re.compile(
     r"(?:(?:建议|可以|应该|请)\s*)?(?:(?:每周|每天|每日|一周)\s*)?"
     r"(?:查看|核对|检查|回看|对比|整理|统计|分析)"
@@ -356,6 +364,9 @@ def _asserted_record_only_claim(pattern: re.Pattern, clause: str) -> bool:
                         or not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:unknown.start()])):
             continue
         if pattern is _CURRENT_HEALTH_CLAIM:
+            if match.group("evaluation") == "健康" and re.match(r"(?:背景|档案|资料|记录)", suffix):
+                # A health-profile noun does not assert that its owner is healthy.
+                continue
             if (match.group("subject") is None
                     or (match.group("subject") == "状态" and match.group("evaluation") == "正常")) and _RECORD_OPERATION_SUBJECT.search(prefix):
                 continue
@@ -390,8 +401,9 @@ def _quantified_exercise_plan(clause: str) -> bool:
     carried = ""
     for part in re.split(r"[，,]|然后|接下来", clause):
         part = part.strip()
-        record_only = (re.match(r"(?:每周|每天)?(?:已记录|记录显示|记录中|本轮返回的记录|(?:运动|训练|锻炼)(?:记录|日志))", part)
-                       and not re.search(r"建议|应该|应当|可以|请|安排|加入", part))
+        record_only = ((re.match(r"(?:每周|每天)?(?:已记录|记录显示|记录中|本轮返回的记录|(?:运动|训练|锻炼)(?:记录|日志))", part)
+                        or _EXERCISE_RECORD_COUNT.match(part))
+                       and not re.search(r"建议|应该|应当|可以|请|安排|加入|增加|提高|开始|计划|方案|处方", part))
         if record_only:
             carried = ""
             continue
@@ -505,7 +517,11 @@ _META_QUERY_FOLLOWUP = re.compile(
 )
 
 _META_CONTINUE_ACTION = re.compile(r"继续|接着|深入|展开|分析|评估|查询|看看|看")
-_META_SELECTION = re.compile(r"哪个|哪一项|哪一方面|哪方面|哪(?:个|一)?方向|要不要")
+_META_SELECTION = re.compile(r"哪个|哪一项|哪一方面|哪方面|哪(?:个|一)?方向|要不要|某个模块")
+_META_RECORD_CAPTURE = re.compile(
+    r"(?:如果|若)你(?:实际)?有吃午餐[，,]\s*建议(?:随手)?记一下|"
+    r"(?:下次|后续)打卡时(?:请)?(?:带上|填上|补上|附上|提供)(?:具体)?(?:品名|名称|剂量)"
+)
 _META_COLLECTION_ACTION = re.compile(r"告诉我|补充|提供|补齐|补全|记录|收集|完善")
 _META_COLLECTION_FIELD = re.compile(
     r"补剂(?:名称)?|剂量|服用时间|单位|情绪|主观感受|工作压力|午餐|加餐|"
@@ -529,7 +545,7 @@ _META_HELP_OFFER = re.compile(
 
 def _completed_scope_invitation(text: str) -> bool:
     if (_META_QUERY_INVITATION.search(text) or _META_GENERAL_QUESTION.fullmatch(text)
-            or _META_HELP_OFFER.fullmatch(text)):
+            or _META_HELP_OFFER.fullmatch(text) or _META_RECORD_CAPTURE.search(text)):
         return True
     if (_META_CONTINUE_ACTION.search(text) and _META_SELECTION.search(text)
             and re.search(r"想|希望|需要我|还有|要不要|你", text)

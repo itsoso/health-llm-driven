@@ -12232,6 +12232,10 @@ class AgentExecutor:
             "不新增个体用药、补剂、剂量、治疗或训练处方，不自发生成作息时间表。"
             "数据未覆盖不能解释为用户未授权或未记录，不承诺新增读取能力。"
             "known_fields是本次真实返回的字段；unknown_fields区分未返回、空值和不支持的值。"
+            "不得把已返回字段称为未返回或缺失；尤其不能把已有热量或补剂名称说成缺失。"
+            "returned_field_names表示至少一条记录返回了该字段，不代表每条记录都有。"
+            "名称无法识别用途不等于名称未返回。不要重复任何字段覆盖陈述，系统会展示权威缺口。"
+            "不要要求用户补录信息、重选模块或再提问题；直接给已有证据支持的有限观察。"
             "字段单位以field_units为准，补剂剂量必须连同该行实际unit理解，未知单位不能补全。"
             "profile_context是已有档案及用户转述的医生背景，不是本轮实际记录；保留其过敏、"
             "慢病和用药约束，不把默认目标当已确认目标，不将转述当本轮新医嘱或同意执行。"
@@ -12245,6 +12249,11 @@ class AgentExecutor:
             "question": message,
             "time_context": self._agent_kernel_time_context(None),
             "read_evidence": completion.verified_evidence,
+            "returned_field_names": {
+                query["query"]["dimension"]: sorted({
+                    field for row in query["records"] for field in row["known_fields"]
+                }) for query in completion.verified_evidence["queries"]
+            },
             "trusted_fact_summary": completion.trusted_fact_summary,
             "profile_context": {
                 "source": "owner_profile_and_user_reported_clinician_context",
