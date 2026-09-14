@@ -10213,6 +10213,7 @@ async def test_clinical_exam_deictic_dispatches_as_current_user_read(tool_name):
     "message",
     (
         "请打开我的体检报告，再打开MRI那份，再查妈妈的血压",
+        "请打开我的体检报告，打开MRI那份，随即查妈妈的血压",
         "请打开MRI那份。再查张三的睡眠",
         "请查看ALT那版，然后调出同事的检查报告",
     ),

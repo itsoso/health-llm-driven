@@ -1819,16 +1819,6 @@ REPORT_ELLIPTIC_DEICTIC_OWNER_RE = re.compile(
     rf"(?P<boundary>[\n\r，,；;：:。.!！?？、]|$)",
     re.IGNORECASE,
 )
-_HEALTH_READ_SEGMENT_SEPARATOR_RE = re.compile(
-    rf"(?:"
-    rf"[\n\r，,；;。.!！?？]\s*"
-    rf"(?:(?:然后|也|再|并|同时|另外|顺便|随后|接下来|继而|又|下一步|一并|外加)\s*)?|"
-    rf"(?:然后|也|再|并|同时|另外|顺便|随后|接下来|继而|又|下一步|一并|外加)\s*"
-    rf")"
-    rf"(?=(?:(?:请(?:你|您)?|麻烦(?:你|您)?|帮我|给我|替我|为我)\s*)*"
-    rf"(?:{READ_VERB_RE.pattern}))",
-    re.IGNORECASE,
-)
 REPORT_BASIS_OWNER_RE = re.compile(
     rf"(?:基于|结合|根据|参考|依据)"
     rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
@@ -2286,16 +2276,19 @@ def health_read_has_nonself_subject(text: str) -> bool:
         normalize_safe_deictic_report,
         subject_scope,
     )
-    read_segments = tuple(
-        segment.strip()
-        for segment in _HEALTH_READ_SEGMENT_SEPARATOR_RE.split(subject_scope)
-        if segment.strip()
-    )
-    if len(read_segments) > 1:
+    read_starts = tuple(match.start() for match in READ_VERB_RE.finditer(subject_scope))
+    if len(read_starts) > 1:
+        read_segments = tuple(
+            subject_scope[start:end].strip(" \t\n\r，,；;。.!！?？、")
+            for start, end in zip(
+                read_starts,
+                (*read_starts[1:], len(subject_scope)),
+            )
+        )
         health_segments = tuple(
             segment
             for segment in read_segments
-            if _health_read_segment_has_target(segment)
+            if segment and _health_read_segment_has_target(segment)
         )
         if health_segments:
             return any(
