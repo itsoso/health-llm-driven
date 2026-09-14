@@ -1031,6 +1031,9 @@ _CURRENT_EVIDENCE_UNSAFE += [
     "并非\n完全\n不能得出\n“已恢复”“恢复差”的结论。",
     "并非\n完全\n不能断言\n**恢复良好**。",
     "已恢复。", "已经恢复。", "你已恢复。", "恢复了。", "目前已恢复。",
+    "不必仅凭几天记录给自己下恢复差的结论，但恢复良好。",
+    "不要轻易判断恢复差；状态正常。",
+    "不要服药，然后认定恢复良好。",
 ]
 
 _CURRENT_EVIDENCE_SAFE = [
@@ -1076,6 +1079,8 @@ _CURRENT_EVIDENCE_SAFE = [
     "不能得出\n“已恢复”“恢复差”的结论。",
     "不能断言\n“恢复良好”。",
     "恢复情况无法判断。", "这是恢复记录。", "查询已恢复。",
+    '不必仅凭几天记录给自己下"恢复好或不好"的结论。',
+    '不能据此判断你"感冒后恢复良好"或"存在健康问题"。',
 ]
 
 
@@ -1118,17 +1123,45 @@ def test_composed_current_evidence_standalone_recovery(claim, quotes, space, out
     test_composed_current_evidence_claim_boundaries(text, bool(outer))
 
 
+@pytest.mark.parametrize("operation", [
+    "不必仅凭几天记录给自己下", "不必给自己下", "不要轻易得出",
+    "不应仅凭少量记录判断", "避免根据这些样本认定",
+])
+@pytest.mark.parametrize("outer", ["", "并非", "并非完全"])
+@pytest.mark.parametrize("space", ["", "\n", "\r\n"])
+def test_composed_current_evidence_prohibition(operation, outer, space):
+    text = f'{outer}{space}{operation}{space}"恢复好或不好"的结论。'
+    test_composed_current_evidence_claim_boundaries(text, bool(outer))
+
+
+@pytest.mark.parametrize("space", [" ", "\n", "\r\n"])
+@pytest.mark.parametrize("outer", ["", "并非完全"])
+def test_composed_current_evidence_wrapped_prohibition(space, outer):
+    operation = space.join(["不必", "仅凭", "几天", "记录", "给", "自己", "下"])
+    text = f'{outer}{space}{operation}{space}"恢复良好"的结论。'
+    test_composed_current_evidence_claim_boundaries(text, bool(outer))
+
+
+@pytest.mark.parametrize("separator", ["，", "；", "。", "但是", "\n\n"])
+def test_composed_current_evidence_prohibition_keeps_independent_assertions(separator):
+    text = f"不必仅凭几天记录给自己下{separator}恢复良好的结论。"
+    test_composed_current_evidence_claim_boundaries(text, True)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("panel", [False, True])
 @pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize("answer", [
+    "仅凭目前这批记录，不能得出“已恢复”“恢复差”或“需要调整补剂/运动”的个体结论。",
+    '当前样本较短且维度有限，建议以自身体感为主、数据为辅，不必仅凭几天记录给自己下"恢复好或不好"的结论。',
+])
 async def test_composed_uncertain_conclusion_completes_owned_read(
-    db, four_domain_user, monkeypatch, panel, continuation,
+    db, four_domain_user, monkeypatch, panel, continuation, answer,
 ):
     conversation_id = None
     if continuation:
         _, _, _, first_done, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
         conversation_id = first_done["conversation_id"]
-    answer = "仅凭目前这批记录，不能得出“已恢复”“恢复差”或“需要调整补剂/运动”的个体结论。"
     _, _, _, done, saved = await run_projection(
         db, four_domain_user, monkeypatch, panel=panel,
         query="继续分析" if continuation else QUERY,

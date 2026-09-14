@@ -267,11 +267,22 @@ _CLAIM_UNKNOWN_PREFIX = re.compile(
     _NUTRITION_UNKNOWN_PREFIX.pattern
     + r"|不代表|不意味着|不等于|不能说明|不能证明|不能断言|不支持|不能判断|难以判断"
 )
+# One finite operation grammar for both normal text and presentation wrapping.
+# It must end at a conclusion action, never span unrelated advice or punctuation.
+_HEALTH_CONCLUSION_PROHIBITION = (
+    r"(?:不必|不要|不应|不可|避免){gap}(?:(?:急于|急着|轻易|贸然|直接){gap})?"
+    r"(?:(?:仅凭|只凭|根据|依据|凭){gap}"
+    r"(?:(?:几天|这些|少量|部分|本轮|当前|现有){gap})?(?:的{gap})?"
+    r"(?:记录|样本|生活数据){gap})?"
+    r"(?:(?:给|为){gap}(?:自己|你){gap})?"
+    r"(?:下|得出|做出|作出|判断|认定|认为|断言|推断)"
+)
 _HEALTH_CONCLUSION_UNKNOWN = re.compile(
     _CLAIM_UNKNOWN_PREFIX.pattern
     + r"|(?:无法|不能|难以)(?:据此|由此|因此)?(?:得出|推断|断言|断定|认定)"
     r"|(?:没有|缺乏|缺少)(?:足够|充分|可靠)?的?(?:依据|证据)(?:来)?(?:得出|推断|断言|断定|认定)"
     r"|(?:没有|尚无|缺乏)[^，,]{0,10}证据(?:证明|表明|显示|支持)?\s*$"
+    + r"|" + _HEALTH_CONCLUSION_PROHIBITION.replace("{gap}", "")
 )
 _HEALTH_UNCERTAINTY_NEGATION = re.compile(
     r"(?:并非|不是|并不|不|未必|不一定)\s*(?:(?:说|真的|完全|绝对|一定)\s*)?$"
@@ -284,13 +295,14 @@ _HEALTH_UNCERTAINTY_OPERATION_WRAP = re.compile(
     r"(?:" + _HEALTH_FORMAT_GAP + r"的)?" + _HEALTH_FORMAT_GAP + r"(?:依据|证据)"
     r"(?:" + _HEALTH_FORMAT_GAP + r"来)?" + _HEALTH_FORMAT_GAP
     + r"(?:得出|推断|断言|断定|认定|证明|表明|显示|支持)"
-    r"|不" + _HEALTH_FORMAT_GAP + r"(?:代表|意味着|等于|支持))"
+    r"|不" + _HEALTH_FORMAT_GAP + r"(?:代表|意味着|等于|支持)"
+    + r"|" + _HEALTH_CONCLUSION_PROHIBITION.replace("{gap}", _HEALTH_FORMAT_GAP) + r")"
     + _HEALTH_FORMAT_GAP + r"(?=[“‘\"'（(]*(?:" + _CURRENT_HEALTH_CLAIM.pattern
     + r"|(?:已|已经)?" + _HEALTH_SUBJECT + r"))"
 )
 _HEALTH_UNCERTAINTY_WRAP = re.compile(
     _HEALTH_UNCERTAINTY_NEGATION.pattern.removesuffix("$").replace(r"\s*", _HEALTH_FORMAT_GAP)
-    + r"(?=不能|无法|难以|没有|尚无|缺乏|缺少|不代表|不意味着|不等于|不支持)"
+    + r"(?=不能|无法|难以|没有|尚无|缺乏|缺少|不代表|不意味着|不等于|不支持|不必|不要|不应|不可|避免)"
 )
 _EXERCISE_TOPIC = re.compile(r"运动|训练|锻炼|练|走|健身|力量|有氧|阻力|散步|步行|跑步|深蹲|划船|弹力带|俯卧撑|骑行|游泳")
 _EXERCISE_QUANTITY = re.compile(
