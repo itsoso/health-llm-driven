@@ -266,6 +266,10 @@ _CLAIM_UNKNOWN_PREFIX = re.compile(
     _NUTRITION_UNKNOWN_PREFIX.pattern
     + r"|不代表|不意味着|不等于|不能说明|不能证明|不能断言|不支持|不能判断|难以判断"
 )
+_HEALTH_CONCLUSION_UNKNOWN = re.compile(
+    r"(?:无法|不能|难以)(?:据此|由此|因此)?(?:得出|推断|断言|断定|认定)"
+    r"|(?:没有|缺乏|缺少)(?:足够|充分|可靠)?的?(?:依据|证据)(?:来)?(?:得出|推断|断言|断定|认定)"
+)
 _EXERCISE_TOPIC = re.compile(r"运动|训练|锻炼|练|走|健身|力量|有氧|阻力|散步|步行|跑步|深蹲|划船|弹力带|俯卧撑|骑行|游泳")
 _EXERCISE_QUANTITY = re.compile(
     r"半(?:个)?小时|(?:[一二两三四五六七八九十百\d]+(?:\.\d+)?\s*"
@@ -302,6 +306,12 @@ def _asserted_record_only_claim(pattern: re.Pattern, clause: str) -> bool:
         if _CLAIM_UNKNOWN_PREFIX.search(prefix):
             continue
         if pattern is _CURRENT_HEALTH_CLAIM:
+            # A locally negated conclusion is uncertainty, including quoted
+            # alternatives such as 不能得出“已恢复”“恢复差”. Negating that
+            # uncertainty again (并非不能得出) still asserts a conclusion.
+            unknown = _HEALTH_CONCLUSION_UNKNOWN.search(prefix)
+            if unknown and not re.search(r"(?:并非|不是|并不|不|未必|不一定)\s*$", prefix[:unknown.start()]):
+                continue
             if (match.group("subject") is None
                     or (match.group("subject") == "状态" and match.group("evaluation") == "正常")) and _RECORD_OPERATION_SUBJECT.search(prefix):
                 continue

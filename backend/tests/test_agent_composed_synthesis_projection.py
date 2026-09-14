@@ -1002,6 +1002,16 @@ _CURRENT_EVIDENCE_UNSAFE += [
     "每周运动三次。",
     "分析某一次散步后的状态，然后每周运动三次。",
     "查询这一次运动后，每周做两组深蹲。",
+    "不能得出恢复差的结论，但恢复良好。",
+    "并非不能得出恢复良好的结论。",
+    "不是无法得出恢复良好的结论。",
+    "不能不得出恢复良好的结论。",
+    "不能得出恢复差的结论，但没有异常。",
+    "不能得出恢复差的结论，所以训练安全。",
+    "不能得出恢复差的结论；恢复良好。",
+    "不能得出恢复差的结论。状态正常。",
+    "不能得出恢复差的结论，但是恢复良好。",
+    "并非没有依据得出恢复良好。",
 ]
 
 _CURRENT_EVIDENCE_SAFE = [
@@ -1032,6 +1042,10 @@ _CURRENT_EVIDENCE_SAFE = [
     "本轮返回的运动状态正常。", "查询状态正常。",
     "例如“分析 9 月 13 日”“只看睡眠”“只看运动”或“分析某一次散步后的状态”",
     "分析某一次散步后的状态。", "只看这一次运动。", "查询某一次训练。",
+    "仅凭目前这批记录，不能得出“已恢复”“恢复差”或“需要调整补剂/运动”的个体结论。",
+    "无法得出恢复良好的结论。", "不能据此推断恢复良好。",
+    "难以断定身体状态不错。",
+    "没有依据得出恢复良好。", "不能由此断言状态正常。",
 ]
 
 
@@ -1046,6 +1060,28 @@ def test_composed_current_evidence_claim_boundaries(text, blocked):
     assert result.flagged is blocked
     assert (text in result.text) is not blocked
     assert not enforce_composed_synthesis_boundaries(text, None).flagged
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("continuation", [False, True])
+async def test_composed_uncertain_conclusion_completes_owned_read(
+    db, four_domain_user, monkeypatch, panel, continuation,
+):
+    conversation_id = None
+    if continuation:
+        _, _, _, first_done, _ = await run_projection(db, four_domain_user, monkeypatch, panel=panel)
+        conversation_id = first_done["conversation_id"]
+    answer = "仅凭目前这批记录，不能得出“已恢复”“恢复差”或“需要调整补剂/运动”的个体结论。"
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, panel=panel,
+        query="继续分析" if continuation else QUERY,
+        conversation_id=conversation_id, answer=answer,
+    )
+    assert done["completion_status"] == "complete"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"] if g["kind"] == "query")
+    assert answer in saved.content
 
 
 @pytest.mark.asyncio
