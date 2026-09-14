@@ -20962,8 +20962,18 @@ class AgentExecutor:
                     "unsupported_exercise_program", "unsupported_supplement_adherence",
                     "unsupported_existing_regimen",
                 }
-                reason_codes = sorted({v.split(":", 1)[0] for v in boundary.violations} & allowed_reasons)
-                if boundary.flagged and reason_codes:
+                # The final medical gate also rejects dose instructions that
+                # the record-only synthesis rules do not classify. Give that
+                # draft the same single repair, without weakening either gate.
+                medical_draft = enforce_medical_evidence_boundaries(candidate)
+                dose_reasons = {
+                    v.split(":", 1)[0] for v in medical_draft.violations
+                } & {"unverified_dose_action"}
+                reason_codes = sorted(
+                    ({v.split(":", 1)[0] for v in boundary.violations} & allowed_reasons)
+                    | dose_reasons
+                )
+                if (boundary.flagged or medical_draft.flagged) and reason_codes:
                     # Repair only the analysis. Facts, scope, consent, quota and
                     # provider stay unchanged; the final release gates still run.
                     self._record_model_fallback_reason("composed_synthesis_boundary_retry")

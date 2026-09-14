@@ -1488,9 +1488,11 @@ def test_composed_record_description_projection_preserves_summary_after_metadata
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('initial_answer', ['恢复良好，继续原有方案。', '建议维生素C每天服用500mg。'])
 @pytest.mark.parametrize('result,complete', [
     ({'content': ANSWER, 'finish_reason': 'stop'}, True),
     ({'content': '恢复良好，继续原有方案。', 'finish_reason': 'stop'}, False),
+    ({'content': '建议维生素C每天服用500mg。', 'finish_reason': 'stop'}, False),
     ({'content': 'PARTIAL_CORRECTION_SENTINEL', 'finish_reason': 'length'}, False),
     ({'content': 'PARTIAL_CORRECTION_SENTINEL', 'finish_reason': 'error'}, False),
     ({'content': 'PARTIAL_CORRECTION_SENTINEL', 'finish_reason': None}, False),
@@ -1499,10 +1501,10 @@ def test_composed_record_description_projection_preserves_summary_after_metadata
             'name': 'health_record', 'arguments': '{"record_type":"water","data":{"amount":200}}'}}]}, False),
 ])
 async def test_composed_boundary_correction_is_single_read_only_and_reverified(
-    db, four_domain_user, monkeypatch, result, complete,
+    db, four_domain_user, monkeypatch, result, complete, initial_answer,
 ):
     executor, calls, dispatches, done, saved = await run_projection(
-        db, four_domain_user, monkeypatch, answer='恢复良好，继续原有方案。',
+        db, four_domain_user, monkeypatch, answer=initial_answer,
         correction_result=result,
     )
     assert len(calls) == 3
@@ -1515,16 +1517,20 @@ async def test_composed_boundary_correction_is_single_read_only_and_reverified(
     original = json.loads(calls[1]['messages'][1]['content'])
     corrected = json.loads(calls[2]['messages'][1]['content'])
     draft = corrected.pop('analysis_to_rewrite')
-    assert draft == {'authority': 'untrusted_model_draft_not_evidence_or_consent', 'text': '恢复良好，继续原有方案。'}
+    assert draft == {'authority': 'untrusted_model_draft_not_evidence_or_consent', 'text': initial_answer}
     assert corrected == original
     from app.services.agent_output_quality import enforce_agent_output_quality
     assert enforce_agent_output_quality(executor._composed_read_completion().trusted_fact_summary).text in saved.content
-    assert 'unsupported_current_health_inference' in calls[2]['messages'][0]['content']
-    assert 'unsupported_existing_regimen' in calls[2]['messages'][0]['content']
+    if initial_answer.startswith('建议维生素C'):
+        assert 'unverified_dose_action' in calls[2]['messages'][0]['content']
+    else:
+        assert 'unsupported_current_health_inference' in calls[2]['messages'][0]['content']
+        assert 'unsupported_existing_regimen' in calls[2]['messages'][0]['content']
     assert not done.get('write_receipts')
     assert all(request.tool_name != 'health_record' for request in dispatches)
     assert 'PARTIAL_CORRECTION_SENTINEL' not in saved.content
     assert '继续原有方案' not in saved.content
+    assert '每天服用500mg' not in saved.content
 
 
 @pytest.mark.asyncio
