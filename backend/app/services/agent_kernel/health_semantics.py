@@ -1465,15 +1465,19 @@ REPORT_USE_DIRECT_REQUEST_RE = re.compile(
     rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}\s*"
     rf"{_REPORT_DIRECT_ACTION_SUFFIX}\s*$|"
     rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
-    rf"(?:请(?:你)?|麻烦你?|帮我|给我)"
-    rf"[^\n\r，,：:]{{0,24}}(?:建议|方案|看法|说说|讲讲|说下|讲下)"
+    rf"(?:请(?:你)?|麻烦你?|帮我|给我)\s*"
+    rf"(?:"
+    rf"(?:给我|提供|提出|制定|做|作)?"
+    rf"(?:一些|相关|改善|健康|个性化)?(?:建议|方案|看法)|"
+    rf"(?:说说|讲讲|说下|讲下)(?:改善|健康|相关)?(?:建议|看法|方案)?"
+    rf")"
     rf"[，,]\s*"
     rf"(?:基于|结合|根据|参考|依据)[^\n\r：:]{{0,32}}"
     rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}"
     rf"(?:有什么)?(?:建议|看法|方案)?\s*$|"
     rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
     rf"(?:(?:请(?:你)?|麻烦你?|帮我|给我)\s*)?"
-    rf"(?:分析|解读|解释|评估|评价)(?:一下|下)?[^\n\r：:]{{0,32}}"
+    rf"(?:分析|解读|解释|评估|评价)(?:一下|下)?\s*"
     rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}\s*$"
     rf")",
     re.IGNORECASE,
@@ -1565,14 +1569,19 @@ def _active_owned_report_use_clause(text: str) -> str:
     ):
         return ""
 
-    clauses = tuple(
-        clause.strip("，,：:、 ")
-        for clause in _REPORT_USE_SCOPE_BOUNDARY_RE.split(normalized)
-        if clause.strip("，,：:、 ")
-    )
+    clauses: list[tuple[str, str]] = []
+    cursor = 0
+    for boundary in _REPORT_USE_SCOPE_BOUNDARY_RE.finditer(normalized):
+        clause = normalized[cursor : boundary.start()].strip("，,：:、 ")
+        if clause:
+            clauses.append((clause, boundary.group()))
+        cursor = boundary.end()
+    trailing_clause = normalized[cursor:].strip("，,：:、 ")
+    if trailing_clause:
+        clauses.append((trailing_clause, ""))
     active_clause = ""
     saw_report_use = False
-    for clause in clauses:
+    for clause, trailing_boundary in clauses:
         owns_report = CURRENT_USER_REPORT_REFERENCE_RE.search(clause) is not None
         has_action = REPORT_USE_ACTION_RE.search(clause) is not None
         has_basis = re.search(
@@ -1603,15 +1612,15 @@ def _active_owned_report_use_clause(text: str) -> str:
                 or READ_AUTHORITY_WITHDRAWAL_RE.search(clause)
                 or READ_TRAILING_WITHDRAWAL_RE.search(clause)
                 or REPORT_USE_TRAILING_WITHDRAWAL_RE.search(clause)
-                or REPORT_USE_QUESTION_RE.search(clause)
+                or REPORT_USE_QUESTION_RE.search(clause + trailing_boundary)
                 or REPORT_USE_POST_ACTION_TAIL_RE.search(clause)
             )
             active_clause = clause if authorized else ""
-        elif saw_report_use and (
-            READ_TRAILING_WITHDRAWAL_RE.search(clause)
-            or READ_AUTHORITY_WITHDRAWAL_RE.search(clause)
-            or REPORT_USE_TRAILING_WITHDRAWAL_RE.search(clause)
-        ):
+        elif saw_report_use:
+            # Once a direct request is followed by any distinct, non-empty
+            # clause, its authority is no longer the final speech act. Only a
+            # later clause that independently matches the direct allowlist can
+            # establish authority again.
             active_clause = ""
     return active_clause
 
