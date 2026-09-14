@@ -1787,13 +1787,9 @@ CURRENT_USER_REPORT_REFERENCE_RE = re.compile(
     rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
     re.IGNORECASE,
 )
-_REPORT_OWNER_CONNECTOR = r"(?:还有|连同|以及|再加|和|与|跟|及|同|并|加|、|&|＆|\+)"
-_REPORT_OWNER_TRAILING_TRANSITION = (
-    rf"(?:{_REPORT_OWNER_CONNECTOR}|也|再|同时|另外|顺便|然后|接着|还(?:要|需)?)"
-)
-_REPORT_OWNER_READ_SCAFFOLD = (
-    rf"(?:(?:请(?:你)?|麻烦你?|帮我|给我|替我|为我)\s*)*"
-    rf"(?:{READ_VERB_RE.pattern})?"
+_REPORT_OWNER_CONNECTOR = (
+    r"(?:还有|连同|以及|再加|外加|加上|和|与|跟|及|同|并|加|或|"
+    r"、|/|／|\||｜|&|＆|\+|＋)"
 )
 REPORT_PREFIX_COORDINATED_OWNER_RE = re.compile(
     rf"(?:我(?:自己|本人|个人)?(?:的)?|本人(?:的)?|自己(?:的)?)\s*"
@@ -1804,9 +1800,16 @@ REPORT_PREFIX_COORDINATED_OWNER_RE = re.compile(
 )
 REPORT_TRAILING_COORDINATED_OWNER_RE = re.compile(
     rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}[\s，,；;]*"
-    rf"{_REPORT_OWNER_TRAILING_TRANSITION}\s*"
-    rf"{_REPORT_OWNER_READ_SCAFFOLD}\s*"
-    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
+    rf"{_REPORT_OWNER_CONNECTOR}\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)的"
+    rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
+    re.IGNORECASE,
+)
+REPORT_TRAILING_READ_OWNER_RE = re.compile(
+    rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}"
+    rf"[^\n\r；;。.!！?？]{{0,48}}?"
+    rf"(?:{READ_VERB_RE.pattern})\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)的"
     rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
     re.IGNORECASE,
 )
@@ -2099,6 +2102,7 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
     for pattern in (
         REPORT_PREFIX_COORDINATED_OWNER_RE,
         REPORT_TRAILING_COORDINATED_OWNER_RE,
+        REPORT_TRAILING_READ_OWNER_RE,
     ):
         for coordinated_owner in pattern.finditer(normalized):
             owner = coordinated_owner.group("owner").strip().removesuffix("的")
