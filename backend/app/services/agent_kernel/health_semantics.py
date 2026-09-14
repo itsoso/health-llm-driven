@@ -1812,10 +1812,21 @@ REPORT_ELLIPTIC_READ_OWNER_RE = re.compile(
     re.IGNORECASE,
 )
 REPORT_ELLIPTIC_DEICTIC_OWNER_RE = re.compile(
-    rf"(?:{READ_VERB_RE.pattern})\s*"
+    rf"(?P<read>{READ_VERB_RE.pattern})\s*"
+    rf"(?P<reference>"
     rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)"
-    rf"(?:这|那|该)(?:一)?(?:份(?:儿)?|个|张|套|版|本|组|批|件)"
-    rf"(?:[\n\r，,；;：:。.!！?？、]|$)",
+    rf"(?:这|那|该)(?:一)?(?:份(?:儿)?|个|张|套|版|本|组|批|件))"
+    rf"(?P<boundary>[\n\r，,；;：:。.!！?？、]|$)",
+    re.IGNORECASE,
+)
+_HEALTH_READ_SEGMENT_SEPARATOR_RE = re.compile(
+    rf"(?:"
+    rf"[\n\r，,；;。.!！?？]\s*"
+    rf"(?:(?:然后|也|再|并|同时|另外|顺便|随后|接下来|继而|又|下一步|一并|外加)\s*)?|"
+    rf"(?:然后|也|再|并|同时|另外|顺便|随后|接下来|继而|又|下一步|一并|外加)\s*"
+    rf")"
+    rf"(?=(?:(?:请(?:你|您)?|麻烦(?:你|您)?|帮我|给我|替我|为我)\s*)*"
+    rf"(?:{READ_VERB_RE.pattern}))",
     re.IGNORECASE,
 )
 REPORT_BASIS_OWNER_RE = re.compile(
@@ -2234,6 +2245,25 @@ def _has_exact_clinical_report_target(text: str) -> bool:
     return bool(match and _is_exact_clinical_report_base(match.group("base")))
 
 
+def _health_read_segment_has_target(text: str) -> bool:
+    """Recognize a health object before independently evaluating a read segment."""
+    if _has_exact_clinical_report_target(text):
+        return True
+    entity = _health_read_entity_expression(text)
+    if not entity:
+        return False
+    possessive = re.fullmatch(r"(?P<owner>.+?)的(?P<target>.+)", entity)
+    candidate = possessive.group("target").strip() if possessive else entity
+    candidate = HEALTH_READ_LEADING_SCOPE_RE.sub("", candidate, count=1)
+    candidate = _strip_exam_request_scaffolding(candidate)
+    return bool(
+        resolve_illness_entity(candidate).status == "exact"
+        or HEALTH_METRIC_ENTITY_RE.fullmatch(candidate)
+        or HEALTH_RECORD_DOMAIN_ENTITY_RE.fullmatch(candidate)
+        or EXACT_MEDICAL_EXAM_ENTITY_RE.fullmatch(candidate)
+    )
+
+
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
     subject_scope = clinical_interpretation_query_scope(
@@ -2241,17 +2271,37 @@ def health_read_has_nonself_subject(text: str) -> bool:
     )
     if has_explicit_nonself_health_owner(subject_scope):
         return True
-    deictic_report_owners = tuple(
-        match.group("owner").strip().removesuffix("的")
-        for match in REPORT_ELLIPTIC_DEICTIC_OWNER_RE.finditer(subject_scope)
+
+    def normalize_safe_deictic_report(match: re.Match[str]) -> str:
+        owner = match.group("owner").strip().removesuffix("的")
+        if not (
+            _is_current_user_scope_owner(owner)
+            or _is_exact_clinical_report_base(owner)
+            or re.fullmatch(_HEALTH_REPORT_DOMAIN, owner, re.IGNORECASE)
+        ):
+            return match.group(0)
+        return f"{match.group('read')}{owner}报告{match.group('boundary')}"
+
+    subject_scope = REPORT_ELLIPTIC_DEICTIC_OWNER_RE.sub(
+        normalize_safe_deictic_report,
+        subject_scope,
     )
-    if deictic_report_owners and all(
-        _is_current_user_scope_owner(owner)
-        or _is_exact_clinical_report_base(owner)
-        or re.fullmatch(_HEALTH_REPORT_DOMAIN, owner, re.IGNORECASE)
-        for owner in deictic_report_owners
-    ):
-        return False
+    read_segments = tuple(
+        segment.strip()
+        for segment in _HEALTH_READ_SEGMENT_SEPARATOR_RE.split(subject_scope)
+        if segment.strip()
+    )
+    if len(read_segments) > 1:
+        health_segments = tuple(
+            segment
+            for segment in read_segments
+            if _health_read_segment_has_target(segment)
+        )
+        if health_segments:
+            return any(
+                health_read_has_nonself_subject(segment)
+                for segment in health_segments
+            )
     if _has_owned_report_use_request(subject_scope):
         return False
     if _has_exact_clinical_report_target(subject_scope):

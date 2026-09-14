@@ -519,6 +519,18 @@ def test_clinical_exam_deictic_is_not_misclassified_as_an_owner():
 @pytest.mark.parametrize(
     "text",
     (
+        "请打开我的体检报告，再打开MRI那份，再查妈妈的血压",
+        "请打开MRI那份。再查张三的睡眠",
+        "请查看ALT那版，然后调出同事的检查报告",
+    ),
+)
+def test_clinical_deictic_does_not_hide_later_nonself_subject(text):
+    assert semantics.health_read_has_nonself_subject(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
         "“这只是一个示例”已结束；现在请打开我的体检报告",
         "“勿打开我的体检报告”已结束；现在请打开我的体检报告",
         "<q>这是示例</q>；现在请打开我的体检报告",
