@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v9"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v10"
 
 
 @dataclass(frozen=True)
@@ -1406,8 +1406,33 @@ REPORT_BASIS_OWNER_RE = re.compile(
     rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
     re.IGNORECASE,
 )
+REPORT_ADDITIONAL_OWNER_RE = re.compile(
+    rf"(?={_HEALTH_REPORT_DOMAIN}"
+    rf"\s*(?:和|与|及|以及|、)\s*"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
+    rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN})",
+    re.IGNORECASE,
+)
 REPORT_USE_ACTION_RE = re.compile(
     r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)",
+    re.IGNORECASE,
+)
+REPORT_NON_AUTHORIZING_PREFIX_RE = re.compile(
+    r"(?:"
+    r"(?:不想|不希望|不愿意|不打算|没有要求|没要求|未要求|并未要求)"
+    r"[^\n\r。.!！?？；;]{0,20}|"
+    r"(?:如果|假如|要是|假设)"
+    r"[^\n\r。.!！?？；;]{0,32}|"
+    r"(?:朋友|同事|医生|家人|别人|有人|他|她|他们|她们|对方)"
+    r"[^\n\r。.!！?？；;]{0,12}(?:说|表示|提到|写道|问)\s*[：:]\s*"
+    r")$",
+    re.IGNORECASE,
+)
+QUOTED_REPORT_USE_RE = re.compile(
+    r"[“‘\"'《「『【（(]"
+    r"[^”’\"'》」』】）)]{0,48}(?:基于|结合|根据|参考|依据)"
+    r"[^”’\"'》」』】）)]{0,64}(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)"
+    r"[^”’\"'》」』】）)]{0,24}[”’\"'》」』】）)]",
     re.IGNORECASE,
 )
 NEGATED_REPORT_USE_RE = re.compile(
@@ -1420,9 +1445,21 @@ NEGATED_REPORT_USE_RE = re.compile(
 
 def _has_owned_report_use_request(text: str) -> bool:
     """Treat an explicit request to use one's report as bounded read consent."""
-    normalized = str(text or "").strip()
+    normalized = active_health_instruction_text(str(text or "")).strip()
+    basis_matches = tuple(
+        re.finditer(r"(?:基于|结合|根据|参考|依据)", normalized, re.IGNORECASE)
+    )
+    last_basis = basis_matches[-1] if basis_matches else None
+    sentence_prefix = (
+        re.split(r"[\n\r。.!！?？；;]", normalized[: last_basis.start()])[-1]
+        if last_basis is not None
+        else ""
+    )
     if (
-        NEGATED_REPORT_USE_RE.search(normalized)
+        is_health_tool_meta_command(normalized)
+        or QUOTED_REPORT_USE_RE.search(normalized)
+        or REPORT_NON_AUTHORIZING_PREFIX_RE.search(sentence_prefix)
+        or NEGATED_REPORT_USE_RE.search(normalized)
         or CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is None
         or REPORT_USE_ACTION_RE.search(normalized) is None
         or has_explicit_nonself_health_owner(normalized)
@@ -1472,10 +1509,19 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
     basis_owner = REPORT_BASIS_OWNER_RE.search(normalized)
     if basis_owner is not None:
         owner = basis_owner.group("owner").strip().removesuffix("的")
-        return not (
+        if not (
             _is_current_user_scope_owner(owner)
             or _is_exact_clinical_report_base(owner)
-        )
+        ):
+            return True
+
+    for additional_owner in REPORT_ADDITIONAL_OWNER_RE.finditer(normalized):
+        owner = additional_owner.group("owner").strip().removesuffix("的")
+        if not (
+            _is_current_user_scope_owner(owner)
+            or _is_exact_clinical_report_base(owner)
+        ):
+            return True
 
     report_targets = tuple(
         re.finditer(_HEALTH_REPORT_DOMAIN, normalized, re.IGNORECASE)

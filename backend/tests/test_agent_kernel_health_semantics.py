@@ -205,10 +205,32 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
     assert semantics.has_explicit_health_read_request(text) is False
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "我不想基于我的体检报告获得建议。",
+        "我没有要求你基于我的体检报告给建议。",
+        "如果我让你基于我的体检报告给建议，你会怎么做？",
+        "‘基于我的体检报告给建议’是什么意思？",
+        "朋友说：基于我的体检报告给建议。",
+    ),
+)
+def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
+    assert semantics.has_explicit_health_read_request(text) is False
+
+
+def test_mixed_report_owners_remain_nonself():
+    text = "基于我的体检报告和张三的体检报告给建议。"
+
+    assert semantics.has_explicit_nonself_health_owner(text) is True
+    assert semantics.health_read_has_nonself_subject(text) is True
+    assert semantics.has_explicit_health_read_request(text) is False
+
+
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v9"
+    assert payload["version"] == "health-semantics-v10"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 

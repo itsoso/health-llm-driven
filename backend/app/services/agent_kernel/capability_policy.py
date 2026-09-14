@@ -1482,8 +1482,23 @@ def _has_explicit_read_request(text: str) -> bool:
 def _health_read_is_explicitly_non_authorizing(text: str) -> bool:
     """Reject deferred, completed, reported or hypothetical read wording."""
     resolution = resolve_health_read_act(text)
+    report_use_mention = bool(
+        re.search(r"(?:基于|结合|根据|参考|依据)", str(text or ""))
+        and re.search(r"(?:体检|化验|检验|检查|医学检查)?报告", str(text or ""))
+        and re.search(
+            r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)",
+            str(text or ""),
+        )
+    )
     return (
-        resolution.status == "none" and READ_VERB_RE.search(str(text or "")) is not None
+        resolution.status == "none"
+        and (
+            READ_VERB_RE.search(str(text or "")) is not None
+            or (
+                report_use_mention
+                and not has_explicit_health_read_request(text)
+            )
+        )
     )
 
 

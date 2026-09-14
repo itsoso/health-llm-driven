@@ -16432,6 +16432,7 @@ class AgentExecutor:
         pending_recoverable_write_rejection_scopes: dict[str, str] = {}
         last_recoverable_write_rejection: Optional[str] = None
         last_recoverable_write_rejection_code: Optional[str] = None
+        goal_guard_write_recovery_attempted = False
         pending_pi_writes: dict[str, tuple[str, Dict[str, Any]]] = {}
 
         def _reconcile_pi_preflight_rejections(transcript, completed_round, *, settled=False):
@@ -17589,6 +17590,7 @@ class AgentExecutor:
                                     # tool results, then request one bounded
                                     # text-only answer. No denied call reaches
                                     # Python's tool gateway.
+                                    goal_guard_write_recovery_attempted = True
                                     blocked_pi_calls.update(
                                         str(call["id"])
                                         for call in goal_guard_candidates
@@ -17742,6 +17744,16 @@ class AgentExecutor:
                             ):
                                 full_reply = _write_rejection_with_receipt_context(
                                     last_recoverable_write_rejection, write_receipts,
+                                )
+                                final_finish_reason = "error"
+                            if (
+                                goal_guard_write_recovery_attempted
+                                and not write_receipts
+                                and _claims_unverified_write_success(full_reply)
+                            ):
+                                full_reply = (
+                                    "本轮没有执行任何变更。刚才的写入操作已被系统拒绝，"
+                                    "请重新请求计划草稿。"
                                 )
                                 final_finish_reason = "error"
 

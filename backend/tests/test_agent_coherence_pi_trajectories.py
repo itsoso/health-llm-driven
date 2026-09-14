@@ -388,6 +388,28 @@ async def test_plan_advice_recovers_when_model_proposes_weekly_plan_write(
 
 
 @pytest.mark.asyncio
+async def test_plan_advice_recovery_cannot_claim_an_unverified_save(
+    db, owned_data, monkeypatch
+):
+    trace = script_executor(
+        db,
+        monkeypatch,
+        [
+            ("manage_plan", {"action": "generate_weekly"}),
+            "你的本周运动计划已经保存成功。",
+        ],
+    )
+
+    done, saved = await run(db, trace, owned_data, "定我本周的运动计划。")
+
+    assert not trace.dispatches and not done["write_receipts"]
+    assert db.query(WeeklyPlan).count() == db.query(PlanItem).count() == 0
+    assert "保存成功" not in saved.content
+    assert "没有执行" in saved.content or "未执行" in saved.content
+    assert done["turn_outcome"]["status"] != "complete"
+
+
+@pytest.mark.asyncio
 async def test_owned_medical_exam_advice_reads_report_before_synthesis(
     db, owned_data, monkeypatch, clock
 ):

@@ -9839,6 +9839,45 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我不想基于我的体检报告获得建议。",
+        "我没有要求你基于我的体检报告给建议。",
+        "如果我让你基于我的体检报告给建议，你会怎么做？",
+        "‘基于我的体检报告给建议’是什么意思？",
+        "朋友说：基于我的体检报告给建议。",
+        "基于我的体检报告和张三的体检报告给建议。",
+    ),
+)
+async def test_non_authorizing_report_mentions_never_dispatch(
+    tool_name,
+    message,
+):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
 @pytest.mark.parametrize(
