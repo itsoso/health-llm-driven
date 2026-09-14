@@ -654,13 +654,13 @@ def project_composed_answer_quality(quality, completion):
         matching = re.sub(r"[*_`]", "", matching).strip()
         if re.match(r"^[ \t]*(?:\d+[.)、]|[-*+] )", segment):
             in_invitation = False
+        if _completed_scope_invitation(matching):
+            removed, in_invitation = True, True
+            continue
         flags = _record_description_flags(matching, completion)
         if flags:
             record_flags.extend(flags)
             in_invitation = False
-            continue
-        if _completed_scope_invitation(matching):
-            removed, in_invitation = True, True
             continue
         if in_invitation and _META_QUERY_FOLLOWUP.search(matching):
             continue
