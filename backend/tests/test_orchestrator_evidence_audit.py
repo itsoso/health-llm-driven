@@ -170,3 +170,23 @@ def test_planner_evidence_policy_keeps_unsupported_safety_alerts():
     assert filtered == [safety, supported]
     assert trace["blocked_count"] == 0
     assert safety.raw.get("planner_evidence_policy", {}).get("kept_reason") == "safety_or_data_gap"
+
+
+def test_synthesis_preserves_hrv_observations_without_licensing_diagnosis():
+    twin = HealthTwin(
+        meta=TwinMeta(user_id=1, generated_at=datetime(2026, 9, 14)),
+        physiological={'hrv_latest': 32},
+    )
+    finding = SpecialistFinding(
+        specialist_name='recovery_coach', category='recovery',
+        summary='Readiness 38/100, 主因睡眠不足',
+        findings=[{'title': '睡眠债累积'}],
+    )
+    for source in (None, 'siri'):
+        system, user = _build_synthesis_prompt('最近睡得差', twin, [finding], source=source)
+        assert '不得从单次或少量可穿戴读数推断确定的疾病或生理机制' in system
+        assert '不得套用未经提供与核验的群体正常阈值' in system
+        assert '免责声明不能抵消正文中的确定性断言' in system
+        assert '32' in user
+        assert 'Readiness 38/100' in user
+        assert 'support_status=model_inference' in user

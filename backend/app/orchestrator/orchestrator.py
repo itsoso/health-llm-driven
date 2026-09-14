@@ -869,6 +869,19 @@ def _build_synthesis_prompt(
             if persona_addendum:
                 system_prompt = system_prompt + "\n\n" + persona_addendum
 
+    # Apply the same observation/inference boundary to chat and voice synthesis.
+    system_prompt += (
+        "\n\n医疗推断边界（优先于严重度排序、教练语气和健康世界观）："
+        "不得从单次或少量可穿戴读数推断确定的疾病或生理机制。"
+        "HRV 等指标缺少同一测量方法下的个人基线和连续趋势时，"
+        "只能陈述已提供的观测及不确定性，不得套用未经提供与核验的群体正常阈值，"
+        "也不能据此断言恢复极差、交感神经持续主导或身体系统已失衡。"
+        "specialist 的评分、严重度和解释仍是其评估，不是确诊证据；应明确归因，"
+        "不得把带有 model_inference 的判断改写成事实。"
+        "免责声明不能抵消正文中的确定性断言。保持对用户问题的具体回应，"
+        "可依据已知睡眠记录讨论日常作息和复测，不为填补证据缺口虚构病因。"
+    )
+
     user_prompt_parts = [
         f"【用户原始问题】\n{query}",
         f"【用户当前健康快照】\n{twin_blob or '(数据暂缺)'}",
