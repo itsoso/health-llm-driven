@@ -917,6 +917,17 @@ MARKDOWN_FENCED_MATERIAL_RE = re.compile(
 INLINE_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?P<fence>`{3,}|~{3,})[^\n\r]*?(?P=fence)"
 )
+INLINE_CODE_MATERIAL_RE = re.compile(
+    r"(?s)(?<!`)`(?!`)[^`\n\r]+(?<!`)`(?!`)|<code\b[^>]*>.*?</code\s*>",
+    re.IGNORECASE,
+)
+MARKDOWN_BLOCKQUOTE_MATERIAL_RE = re.compile(
+    r"(?m)^[ \t]*>[^\n\r]*(?:\r?\n|$)"
+)
+INLINE_STRUCK_MATERIAL_RE = re.compile(
+    r"(?s)~~.+?~~|<del\b[^>]*>.*?</del\s*>",
+    re.IGNORECASE,
+)
 UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?ms)^[ \t]{0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
 )
@@ -932,6 +943,35 @@ ANALYZED_MATERIAL_QUOTE_PAIRS = {
     "〔": "〕",
     '"': '"',
 }
+STANDALONE_MATERIAL_QUOTE_PAIRS = {
+    **ANALYZED_MATERIAL_QUOTE_PAIRS,
+    "《": "》",
+    "【": "】",
+    "（": "）",
+    "(": ")",
+    "[": "]",
+    "［": "］",
+    "{": "}",
+    "｛": "｝",
+    "〖": "〗",
+    "«": "»",
+    "‹": "›",
+}
+
+
+def _is_standalone_wrapped_material(text: str) -> bool:
+    """Treat a fully quoted/bracketed utterance as material, not authority."""
+    candidate = str(text or "").strip()
+    if not candidate:
+        return False
+    if candidate.startswith("`"):
+        return True
+    closer = STANDALONE_MATERIAL_QUOTE_PAIRS.get(candidate[0])
+    if closer is None:
+        return False
+    if closer not in candidate[1:]:
+        return True
+    return candidate.endswith(closer)
 
 
 def _analyzed_material_end(text: str, start: int) -> int:
@@ -984,8 +1024,14 @@ def active_health_instruction_text(text: str) -> str:
     pasted text has no trustworthy end delimiter, so its remaining content
     stays non-authorizing, including apparent instructions inside that body.
     """
-    original = MARKDOWN_FENCED_MATERIAL_RE.sub("", str(text or ""))
+    original = str(text or "")
+    if _is_standalone_wrapped_material(original):
+        return ""
+    original = MARKDOWN_FENCED_MATERIAL_RE.sub("", original)
     original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub("", original)
+    original = INLINE_CODE_MATERIAL_RE.sub("", original)
+    original = MARKDOWN_BLOCKQUOTE_MATERIAL_RE.sub("", original)
+    original = INLINE_STRUCK_MATERIAL_RE.sub("", original)
     original = UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE.sub("", original)
     original = INDENTED_CODE_MATERIAL_RE.sub("", original)
     parts: list[str] = []

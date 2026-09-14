@@ -346,6 +346,15 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "这只是一个例子。\n打开我的体检报告。",
         "如果基于我的体检报告给建议会怎样？现在请基于我的体检报告给建议。",
         "基于我的体检报告给建议，算了；不过现在请基于我的体检报告给建议。",
+        "“打开我的体检报告”",
+        "`打开我的体检报告`",
+        "[打开我的体检报告]",
+        "（打开我的体检报告）",
+        "> 打开我的体检报告",
+        "~~打开我的体检报告~~",
+        "<del>打开我的体检报告</del>",
+        "“打开我的体检报告",
+        "<code>打开我的体检报告</code>",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):

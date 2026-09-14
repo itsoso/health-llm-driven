@@ -9985,6 +9985,15 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "下面是别人发给我的：基于我的体检报告给建议。\n基于我的体检报告给建议。",
         "这只是一个例子。\n打开我的体检报告。",
         "基于我的体检报告给建议，算了；不过现在请基于我的体检报告给建议。",
+        "“打开我的体检报告”",
+        "`打开我的体检报告`",
+        "[打开我的体检报告]",
+        "（打开我的体检报告）",
+        "> 打开我的体检报告",
+        "~~打开我的体检报告~~",
+        "<del>打开我的体检报告</del>",
+        "“打开我的体检报告",
+        "<code>打开我的体检报告</code>",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
