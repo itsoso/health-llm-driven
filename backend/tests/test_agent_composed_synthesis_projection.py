@@ -1037,6 +1037,8 @@ _CURRENT_EVIDENCE_UNSAFE += [
     "不建议仅凭最近几天的记录样本判断恢复差，但恢复良好。",
     "不建议服药，然后判断恢复良好。",
     "不建议仅凭最近几天的记录样本判断恢复差；状态正常。",
+    "不能直接推断运动不安全；恢复良好。",
+    "不能直接推断运动不安全，但运动安全。",
 ]
 
 _CURRENT_EVIDENCE_SAFE = [
@@ -1085,6 +1087,7 @@ _CURRENT_EVIDENCE_SAFE = [
     '不必仅凭几天记录给自己下"恢复好或不好"的结论。',
     '不能据此判断你"感冒后恢复良好"或"存在健康问题"。',
     '不建议仅凭最近几天的记录样本判断“恢复良好/不足”或调整补剂。',
+    "不能直接推断你当前的免疫、恢复、运动安全或补剂需求。",
 ]
 
 
@@ -1157,6 +1160,15 @@ def test_composed_current_evidence_prohibition_keeps_independent_assertions(sepa
     test_composed_current_evidence_claim_boundaries(text, True)
 
 
+@pytest.mark.parametrize("outer", ["", "并非完全"])
+@pytest.mark.parametrize("space", ["", "\n", "\r\n"])
+@pytest.mark.parametrize("quotes", [("", ""), ("“", "”")])
+def test_composed_current_evidence_direct_inference_enumeration(outer, space, quotes):
+    text = (f"{outer}{space}不能{space}直接{space}推断{space}"
+            f"你当前的免疫、恢复、{space}{quotes[0]}运动安全{quotes[1]}或补剂需求。")
+    test_composed_current_evidence_claim_boundaries(text, bool(outer))
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("panel", [False, True])
 @pytest.mark.parametrize("continuation", [False, True])
@@ -1164,6 +1176,7 @@ def test_composed_current_evidence_prohibition_keeps_independent_assertions(sepa
     "仅凭目前这批记录，不能得出“已恢复”“恢复差”或“需要调整补剂/运动”的个体结论。",
     '当前样本较短且维度有限，建议以自身体感为主、数据为辅，不必仅凭几天记录给自己下"恢复好或不好"的结论。',
     '不建议仅凭最近几天的记录样本判断“恢复良好/不足”或调整补剂。是否需要调整，应由医生结合当前症状、实际补充剂清单和必要检查来评估。',
+    "三个多月前的感冒诊断只能作为病史背景，不能直接推断你当前的免疫、恢复、运动安全或补剂需求。",
 ])
 async def test_composed_uncertain_conclusion_completes_owned_read(
     db, four_domain_user, monkeypatch, panel, continuation, answer,

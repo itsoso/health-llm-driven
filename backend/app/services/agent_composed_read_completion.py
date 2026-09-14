@@ -278,9 +278,18 @@ _HEALTH_CONCLUSION_PROHIBITION = (
     r"(?:(?:给|为){gap}(?:自己|你){gap})?"
     r"(?:下|得出|做出|作出|判断|认定|认为|断言|推断)"
 )
+_HEALTH_INABILITY_OPERATION = (
+    r"(?:不能|无法|难以){gap}(?:(?:据此|由此|因此){gap})?(?:直接{gap})?"
+    r"(?:得出|推断|断言|断定|认定|说明|证明|判断)"
+)
+_HEALTH_CONCLUSION_ENUMERATION = (
+    r"(?:(?:你{gap})?(?:当前{gap})?(?:的{gap})?"
+    r"(?:(?:免疫|恢复|运动|补剂|状态|训练){gap}(?:、|和|及|与|或){gap})+)?"
+)
 _HEALTH_CONCLUSION_UNKNOWN = re.compile(
     _CLAIM_UNKNOWN_PREFIX.pattern
-    + r"|(?:无法|不能|难以)(?:据此|由此|因此)?(?:得出|推断|断言|断定|认定)"
+    + r"|" + _HEALTH_INABILITY_OPERATION.replace("{gap}", "")
+    +
     r"|(?:没有|缺乏|缺少)(?:足够|充分|可靠)?的?(?:依据|证据)(?:来)?(?:得出|推断|断言|断定|认定)"
     r"|(?:没有|尚无|缺乏)[^，,]{0,10}证据(?:证明|表明|显示|支持)?\s*$"
     + r"|" + _HEALTH_CONCLUSION_PROHIBITION.replace("{gap}", "")
@@ -290,15 +299,15 @@ _HEALTH_UNCERTAINTY_NEGATION = re.compile(
 )
 _HEALTH_FORMAT_GAP = r"[^\S\r\n]*(?:\r?\n[^\S\r\n]*)?"
 _HEALTH_UNCERTAINTY_OPERATION_WRAP = re.compile(
-    r"(?:(?:不能|无法|难以)(?:" + _HEALTH_FORMAT_GAP + r"(?:据此|由此|因此))?"
-    + _HEALTH_FORMAT_GAP + r"(?:得出|推断|断言|断定|认定|说明|证明|判断)"
-    r"|(?:没有|尚无|缺乏|缺少)(?:" + _HEALTH_FORMAT_GAP + r"(?:足够|充分|可靠))?"
+    r"(?:" + _HEALTH_INABILITY_OPERATION.replace("{gap}", _HEALTH_FORMAT_GAP)
+    + r"|(?:没有|尚无|缺乏|缺少)(?:" + _HEALTH_FORMAT_GAP + r"(?:足够|充分|可靠))?"
     r"(?:" + _HEALTH_FORMAT_GAP + r"的)?" + _HEALTH_FORMAT_GAP + r"(?:依据|证据)"
     r"(?:" + _HEALTH_FORMAT_GAP + r"来)?" + _HEALTH_FORMAT_GAP
     + r"(?:得出|推断|断言|断定|认定|证明|表明|显示|支持)"
     r"|不" + _HEALTH_FORMAT_GAP + r"(?:代表|意味着|等于|支持)"
     + r"|" + _HEALTH_CONCLUSION_PROHIBITION.replace("{gap}", _HEALTH_FORMAT_GAP) + r")"
-    + _HEALTH_FORMAT_GAP + r"(?=[“‘\"'（(]*(?:" + _CURRENT_HEALTH_CLAIM.pattern
+    + _HEALTH_FORMAT_GAP + _HEALTH_CONCLUSION_ENUMERATION.replace("{gap}", _HEALTH_FORMAT_GAP)
+    + r"(?=[“‘\"'（(]*(?:" + _CURRENT_HEALTH_CLAIM.pattern
     + r"|(?:已|已经)?" + _HEALTH_SUBJECT + r"))"
 )
 _HEALTH_UNCERTAINTY_WRAP = re.compile(
