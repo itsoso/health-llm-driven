@@ -462,3 +462,98 @@ async def test_stable_fallback_stream_has_its_own_total_deadline(monkeypatch):
     assert fallback_calls["n"] == 1
     assert len(error_finishes) == 1
     assert events[-1] == {"type": "finish", "finish_reason": "error"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('retry_result', ['stop', 'error', 'length', 'timeout'])
+async def test_verified_composed_timeout_retries_same_quality_model_once(monkeypatch, retry_result):
+    from types import SimpleNamespace
+    import app.services.agent_executor as ae
+    attempts = []
+
+    class Provider:
+        model = 'qwen3.8-max'
+        async def chat_stream(self, **kwargs):
+            attempts.append(kwargs)
+            if len(attempts) == 1 or retry_result == 'timeout':
+                while True:
+                    await asyncio.sleep(0.002)
+                    yield {'type': 'reasoning', 'text': 'thinking'}
+            yield {'type': 'content', 'text': 'record-based answer'}
+            yield {'type': 'finish', 'finish_reason': retry_result}
+
+    ex = _executor()
+    ex._staged_answer_task_tier = 'high_stakes'
+    ex._composed_synthesis_retry_eligible = True
+    provider = Provider()
+    monkeypatch.setattr(ex, '_resolve_chat_provider', lambda tools: (provider, []))
+    monkeypatch.setattr(ex, '_composed_read_completion', lambda: SimpleNamespace(complete=True))
+    monkeypatch.setattr(ex, '_effective_model_is_non_streaming', lambda: False)
+    monkeypatch.setattr(ex, '_stable_fallback_provider', lambda *a, **k: pytest.fail('no downgrade'))
+    monkeypatch.setattr(ae, '_LLM_STREAM_ATTEMPT_TIMEOUT_S', 0.02)
+    monkeypatch.setattr(ae, '_COMPOSED_SYNTHESIS_RETRY_TIMEOUT_S', 0.02, raising=False)
+    monkeypatch.setattr(ae.settings, 'agent_base_url', None)
+    monkeypatch.setattr(ae.settings, 'agent_api_key', None)
+    stream = ex._call_llm_stream([{'role': 'user', 'content': 'verified evidence'}], [])
+    if retry_result == 'timeout':
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(_drain(stream), 0.2)
+    else:
+        events = await asyncio.wait_for(_drain(stream), 0.2)
+        assert events[-1]['finish_reason'] == retry_result
+    assert len(attempts) == 2
+    assert attempts[0] == attempts[1]
+    assert 'composed_synthesis_timeout_retry' in ex._model_fallback_reasons
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('condition', ['incomplete', 'not_composed', 'inactive', 'tools', 'content', 'cancelled', 'policy'])
+async def test_composed_timeout_retry_does_not_expand_authority(monkeypatch, condition):
+    from types import SimpleNamespace
+    import app.services.agent_executor as ae
+    calls = []
+    class Provider:
+        model = 'qwen3.8-max'
+        async def chat_stream(self, **kwargs):
+            calls.append(kwargs)
+            if condition == 'cancelled':
+                raise asyncio.CancelledError()
+            if condition == 'policy':
+                from app.services.llm.usage_tracker import LLMBudgetExceeded
+                raise LLMBudgetExceeded(reason='budget_exhausted')
+            if condition == 'content':
+                yield {'type': 'content', 'text': 'partial'}
+            while True:
+                await asyncio.sleep(0.002)
+                yield {'type': 'reasoning', 'text': 'thinking'}
+    ex = _executor()
+    ex._staged_answer_task_tier = 'high_stakes'
+    ex._composed_synthesis_retry_eligible = condition != 'inactive'
+    provider = Provider()
+    tools = [{'type': 'function'}] if condition == 'tools' else []
+    monkeypatch.setattr(ex, '_resolve_chat_provider', lambda _: (provider, tools))
+    monkeypatch.setattr(ex, '_composed_read_completion', lambda: None if condition == 'not_composed' else SimpleNamespace(complete=condition != 'incomplete'))
+    monkeypatch.setattr(ex, '_effective_model_is_non_streaming', lambda: False)
+    monkeypatch.setattr(ae, '_LLM_STREAM_ATTEMPT_TIMEOUT_S', 0.02)
+    monkeypatch.setattr(ae.settings, 'agent_base_url', None)
+    monkeypatch.setattr(ae.settings, 'agent_api_key', None)
+    stream = ex._call_llm_stream([{'role': 'user', 'content': 'evidence'}], tools)
+    if condition == 'content':
+        assert (await _drain(stream))[-1]['finish_reason'] == 'error'
+    else:
+        with pytest.raises(asyncio.CancelledError if condition == 'cancelled' else RuntimeError):
+            await _drain(stream)
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_composed_retry_eligibility_is_consumed_before_direct_early_return(monkeypatch):
+    from unittest.mock import AsyncMock
+    import app.services.agent_executor as ae
+    ex = _executor()
+    ex._composed_synthesis_retry_eligible = True
+    monkeypatch.setattr(ae.settings, 'agent_base_url', 'https://agent.invalid')
+    monkeypatch.setattr(ae.settings, 'agent_api_key', 'synthetic-key')
+    monkeypatch.setattr(ex, '_call_llm_direct', AsyncMock(return_value={'content': 'direct', 'finish_reason': 'stop'}))
+    await _drain(ex._call_llm_stream([], []))
+    assert ex._composed_synthesis_retry_eligible is False

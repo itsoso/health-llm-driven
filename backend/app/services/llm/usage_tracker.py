@@ -9,6 +9,7 @@ LLM 用量/成本追踪.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import json
@@ -1035,6 +1036,10 @@ def wrap_provider(provider):
                     if isinstance(evt, dict) and evt.get("type") == "content":
                         collected.append(evt.get("text") or "")
                     yield evt
+            except asyncio.CancelledError as exc:
+                success = False
+                caught_error = exc
+                raise
             except Exception as exc:
                 success = False
                 caught_error = exc
@@ -1051,7 +1056,8 @@ def wrap_provider(provider):
                 if caught_error is not None:
                     from app.services.llm.recovery import diagnose_llm_error
 
-                    error_class = diagnose_llm_error(caught_error).error_class
+                    error_class = ("cancelled" if isinstance(caught_error, asyncio.CancelledError)
+                                   else diagnose_llm_error(caught_error).error_class)
                 record_usage(
                     provider=provider.provider_name,
                     model=actual_model,
@@ -1060,7 +1066,8 @@ def wrap_provider(provider):
                     latency_ms=latency_ms,
                     success=success,
                     error_class=error_class,
-                    error_type=_pick_error_field(caught_error, "type") if caught_error else None,
+                    error_type=(type(caught_error).__name__ if isinstance(caught_error, asyncio.CancelledError)
+                                else _pick_error_field(caught_error, "type") if caught_error else None),
                     error_code=_pick_error_field(caught_error, "code") if caught_error else None,
                     error_message=_compact_error_message(caught_error) if caught_error else None,
                 )

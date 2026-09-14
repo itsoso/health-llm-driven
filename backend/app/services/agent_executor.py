@@ -508,6 +508,7 @@ _TOOL_TIMEOUT_OVERRIDES: Dict[str, float] = {
 # 但永不结束，仍可一直占住 conversation。每次流式 provider 尝试另设 wall-clock 总预算：
 # 主 provider 超时后可用剩余 runtime 预算回退一次，fallback 自己也受同样边界保护。
 _LLM_STREAM_ATTEMPT_TIMEOUT_S = 120.0
+_COMPOSED_SYNTHESIS_RETRY_TIMEOUT_S = 60.0
 
 # 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
 # 旧值 4000 会把 Opus 4.7 的长回复硬截断(用户需手动点"继续")。
@@ -11602,6 +11603,7 @@ class AgentExecutor:
         self._turn_sync_attempted = False
         self._turn_garmin_sync_job = None
         self._turn_composed_read_executions = []
+        self._composed_synthesis_retry_eligible = False
         self._turn_sync_status_result = None
         self._turn_sync_reply = None
         self._current_turn_recent_messages: list[dict] = []
@@ -11762,6 +11764,7 @@ class AgentExecutor:
         self._turn_sync_attempted = False
         self._turn_garmin_sync_job = None
         self._turn_composed_read_executions = []
+        self._composed_synthesis_retry_eligible = False
         self._turn_sync_status_result = None
         self._turn_sync_reply = None
         self._agent_kernel_blocked_request_cache = {}
@@ -17409,6 +17412,7 @@ class AgentExecutor:
                                 or self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
                                 else request["tools"]
                             )
+                            self._composed_synthesis_retry_eligible = composed_messages is not None
                             async for event in self._call_llm_stream(messages, round_tools):
                                 if event.get("type") == "content":
                                     candidate += event.get("text") or ""
@@ -20789,6 +20793,8 @@ class AgentExecutor:
         Streaming failover: provider 流式报错时回退 tokenplan,镜像 _call_llm
         (df3ae2d8)。已 yield 过 content 后再报错则优雅收尾,不重复回退 (避免双发)。
         """
+        retry_composed = self._composed_synthesis_retry_eligible
+        self._composed_synthesis_retry_eligible = False
         agent_base = settings.agent_base_url
         agent_key = settings.agent_api_key
         if agent_base and agent_key:
@@ -20896,6 +20902,17 @@ class AgentExecutor:
                 yield {"type": "finish", "finish_reason": "error"}
                 return
             if self._requires_quality_floor():
+                completion = self._composed_read_completion() if retry_composed else None
+                if isinstance(e, TimeoutError) and not pass_tools and completion is not None and completion.complete:
+                    # Retry only this frozen, read-only synthesis. Reuse the same
+                    # wrapped provider so consent, quota and quality stay intact.
+                    # No recursion: a second failure propagates to the normal
+                    # incomplete-generation gate; partial prose is never success.
+                    self._record_model_fallback_reason("composed_synthesis_timeout_retry")
+                    async with asyncio.timeout(_COMPOSED_SYNTHESIS_RETRY_TIMEOUT_S):
+                        async for event in provider.chat_stream(**stream_kwargs):
+                            yield event
+                    return
                 raise RuntimeError("recovery quality provider unavailable") from e
             # 流开始前/未发任何内容就报错 → 回退稳定 provider (F2: 带工具时经可靠工具模型)。
             logger.warning(

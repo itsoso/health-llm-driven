@@ -483,3 +483,21 @@ def test_report_api_usage_ignores_empty_and_never_raises():
     assert _consume_api_usage() is None
     report_api_usage(prompt_tokens="bad", completion_tokens=object())  # type: ignore[arg-type]
     # fail-soft: 非法输入不抛, 也不留下半残条目被后续消费成错值
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('partial', [False, True])
+async def test_cancelled_stream_is_failed_usage_and_propagates(patch_session, partial):
+    class CancelledProvider(_FakeProvider):
+        async def chat_stream(self, messages, **kwargs):
+            if partial:
+                yield {'type': 'content', 'text': 'partial'}
+            raise asyncio.CancelledError()
+    provider = wrap_provider(CancelledProvider())
+    with pytest.raises(asyncio.CancelledError):
+        async for _ in provider.chat_stream(messages=[{'role': 'user', 'content': 'test'}]):
+            pass
+    row = patch_session.query(LlmUsageLog).one()
+    assert row.success == 0
+    assert row.error_type == 'CancelledError'
+    assert row.error_class == 'cancelled'
