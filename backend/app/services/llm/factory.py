@@ -127,6 +127,11 @@ def _create_tokenplan_provider() -> LLMProvider:
     api_key = settings.tokenplan_api_key
     base_url = settings.tokenplan_base_url
     model = settings.tokenplan_model
+    from app.services.llm.model_registry import get_model
+
+    entry = get_model(model)
+    if entry is not None and entry.provider == "tokenplan":
+        model = entry.model
 
     if not api_key:
         raise ValueError("TOKENPLAN_API_KEY 未配置")

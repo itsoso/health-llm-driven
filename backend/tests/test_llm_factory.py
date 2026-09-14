@@ -144,3 +144,58 @@ class TestExtractionProvider:
             got = create_provider_for_extraction("nope")
         assert got is sentinel
         gp.assert_called_once()
+
+
+@pytest.mark.parametrize("model_id,wire_model", [
+    ("qwen3.8-max-preview", "qwen3.8-max"),
+    ("qwen3.8-max", "qwen3.8-max"),
+])
+def test_registered_preview_uses_stable_wire_model(monkeypatch, model_id, wire_model):
+    from app.services.llm.factory import create_provider_for_model_id
+    from app.services.llm.model_registry import get_model
+    monkeypatch.setattr("app.services.llm.factory.settings.tokenplan_api_key", "synthetic-key")
+    monkeypatch.setattr("app.services.llm.factory.settings.tokenplan_base_url", "https://example.test/v1")
+    provider = create_provider_for_model_id(model_id)
+    assert provider.provider_name == "tokenplan"
+    assert provider.model == wire_model
+    assert get_model(model_id).id == model_id
+    assert get_model(model_id).supports_thinking_budget is False
+
+
+@pytest.mark.parametrize("model_id,wire_model", [
+    ("qwen3.8-max-preview", "qwen3.8-max"),
+    ("qwen3.8-max", "qwen3.8-max"),
+    ("custom-tokenplan-model", "custom-tokenplan-model"),
+])
+def test_tokenplan_default_reuses_registered_wire_model(monkeypatch, model_id, wire_model):
+    from app.services.llm.factory import _create_tokenplan_provider
+    monkeypatch.setattr("app.services.llm.factory.settings.tokenplan_api_key", "synthetic-key")
+    monkeypatch.setattr("app.services.llm.factory.settings.tokenplan_base_url", "https://example.test/v1")
+    monkeypatch.setattr("app.services.llm.factory.settings.tokenplan_model", model_id)
+    assert _create_tokenplan_provider().model == wire_model
+
+
+def test_preview_selection_and_actual_provider_remain_distinct(monkeypatch):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.llm.factory import create_provider_for_model_id
+    monkeypatch.setattr("app.services.llm.factory.settings.tokenplan_api_key", "synthetic-key")
+    monkeypatch.setattr("app.services.llm.factory.settings.tokenplan_base_url", "https://example.test/v1")
+    executor = AgentExecutor.__new__(AgentExecutor)
+    assert executor._display_model_name_for_id("qwen3.8-max-preview") == "qwen3.8-max-preview"
+    assert create_provider_for_model_id("qwen3.8-max-preview").model == "qwen3.8-max"
+
+
+def test_saved_preview_preference_resolves_without_profile_rewrite(db, auth_user_and_headers, monkeypatch):
+    from app.models.user_profile import UserProfile
+    from app.services.llm.factory import create_provider_for_user
+    user, _ = auth_user_and_headers
+    profile = db.query(UserProfile).filter_by(user_id=user.id).first()
+    if profile is None:
+        profile = UserProfile(user_id=user.id)
+        db.add(profile)
+    profile.llm_model_id = "qwen3.8-max-preview"
+    db.flush()
+    monkeypatch.setattr("app.services.llm.factory.settings.tokenplan_api_key", "synthetic-key")
+    monkeypatch.setattr("app.services.ai_consent.is_disclosed_model", lambda entry: entry.provider == "tokenplan")
+    assert create_provider_for_user(user.id, db).model == "qwen3.8-max"
+    assert profile.llm_model_id == "qwen3.8-max-preview"

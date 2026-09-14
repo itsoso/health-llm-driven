@@ -12467,6 +12467,10 @@ class AgentExecutor:
             from app.services.llm.model_registry import get_model
 
             entry = get_model(model_id)
+            if entry and not entry.chat_selectable and entry.model != entry.id:
+                # Preserve the requested legacy alias in selection metadata;
+                # actual provider/usage metadata records the resolved wire model.
+                return entry.id
             return entry.model if entry else model_id
         except Exception:  # noqa: BLE001
             return model_id

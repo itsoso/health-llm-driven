@@ -97,7 +97,8 @@ def test_owner_latest_models_are_registered_with_capabilities():
     for model_id, capabilities in EXPECTED_MODELS.items():
         entry = by_id.get(model_id)
         assert entry is not None, f"{model_id} is not registered"
-        assert entry.model == model_id if model_id != "minimax-m2.5" else entry.model == "MiniMax-M2.5"
+        wire_models = {"minimax-m2.5": "MiniMax-M2.5", "qwen3.8-max-preview": "qwen3.8-max"}
+        assert entry.model == wire_models.get(model_id, model_id)
         for capability in capabilities:
             assert capability in entry.capabilities
 
@@ -136,6 +137,10 @@ def test_qwen38_models_preserve_preview_compatibility_and_conservative_flags():
     assert flash.supports_explicit_cache is False
     assert preview is not None
     assert preview.chat_selectable is False
+    assert preview.model == stable.model
+    assert preview.supports_thinking_budget is False
+    assert preview.supports_forced_tool_choice is False
+    assert preview.supports_explicit_cache is False
 
 
 def test_only_top_tokenplan_chat_models_are_chat_selectable():
