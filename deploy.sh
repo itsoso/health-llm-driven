@@ -37,6 +37,7 @@ REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
 REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"
 REMOTE_BACKUP_PREFLIGHT_DIR="/tmp/health-app-backup-preflight-$$-$(date +%s)"
 REMOTE_BACKUP_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/backup_db.sh"
+REMOTE_VERIFY_RECENT_OFFSITE="$REMOTE_BACKUP_PREFLIGHT_DIR/verify_recent_offsite_backup.sh"
 REMOTE_ROLLBACK_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/rollback_release.sh"
 REMOTE_ACTIVATION_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/activate_health_evidence_runtime.sh"
 REMOTE_BACKEND_ENV_CANDIDATE="$REMOTE_BACKUP_PREFLIGHT_DIR/backend.env.candidate"
@@ -78,6 +79,7 @@ set_remote_backup_preflight_dir() {
     fi
     REMOTE_BACKUP_PREFLIGHT_DIR="$stage_dir"
     REMOTE_BACKUP_RUNNER="$stage_dir/backup_db.sh"
+    REMOTE_VERIFY_RECENT_OFFSITE="$stage_dir/verify_recent_offsite_backup.sh"
     REMOTE_ROLLBACK_RUNNER="$stage_dir/rollback_release.sh"
     REMOTE_ACTIVATION_RUNNER="$stage_dir/activate_health_evidence_runtime.sh"
     REMOTE_BACKEND_ENV_CANDIDATE="$stage_dir/backend.env.candidate"
@@ -350,6 +352,7 @@ stage_backup_preflight_scripts() {
         "$SCRIPT_DIR/backend/scripts/backup_db.sh"
         "$SCRIPT_DIR/backend/scripts/verify_backup_restore.sh"
         "$SCRIPT_DIR/backend/scripts/archive_backup_offsite.sh"
+        "$SCRIPT_DIR/backend/scripts/verify_recent_offsite_backup.sh"
         "$SCRIPT_DIR/backend/scripts/rollback_release.sh"
         "$SCRIPT_DIR/backend/scripts/activate_health_evidence_runtime.sh"
         "$SCRIPT_DIR/backend/scripts/verify_locked_requirements.py"
@@ -395,6 +398,7 @@ for entry in "$stage_dir"/*; do
         backup_db.sh|\
         verify_backup_restore.sh|\
         archive_backup_offsite.sh|\
+        verify_recent_offsite_backup.sh|\
         rollback_release.sh|\
         activate_health_evidence_runtime.sh|\
         verify_locked_requirements.py|\
@@ -440,6 +444,7 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
         backup_db.sh
         verify_backup_restore.sh
         archive_backup_offsite.sh
+        verify_recent_offsite_backup.sh
         rollback_release.sh
         activate_health_evidence_runtime.sh
         verify_locked_requirements.py
@@ -468,6 +473,7 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
         $2 == "backup_db.sh" ||
         $2 == "verify_backup_restore.sh" ||
         $2 == "archive_backup_offsite.sh" ||
+        $2 == "verify_recent_offsite_backup.sh" ||
         $2 == "rollback_release.sh" ||
         $2 == "activate_health_evidence_runtime.sh" ||
         $2 == "verify_locked_requirements.py" ||
@@ -511,8 +517,8 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
                 backend_candidate == 0 &&
                 activation_candidate == 1 &&
                 activation_guard == 1
-            if (allowed != 13 &&
-                !(allowed == 15 && (backend_pair || activation_pair))) {
+            if (allowed != 14 &&
+                !(allowed == 16 && (backend_pair || activation_pair))) {
                 exit 1
             }
         }
@@ -570,6 +576,7 @@ REMOTE_REUSE_RELEASE_STAGE
                 backup_db.sh \
                 verify_backup_restore.sh \
                 archive_backup_offsite.sh \
+                verify_recent_offsite_backup.sh \
                 rollback_release.sh \
                 activate_health_evidence_runtime.sh \
                 verify_locked_requirements.py \
@@ -857,7 +864,7 @@ inspect_runtime_state_transaction_before_deploy() {
         cd '$REMOTE_BACKUP_PREFLIGHT_DIR'
         test \"\$(
             awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-        )\" = 15
+        )\" = 16
         sha256sum --strict -c staged.sha256 >/dev/null
         test -f backend.env.candidate
         test ! -L backend.env.candidate
@@ -1054,15 +1061,14 @@ show_help() {
 HEALTH_CHECK_URL=""  # 在 deploy_backend/deploy_frontend 中设置
 DEPLOY_SCORE_THRESHOLD=35  # 部署后健康度最低分（满分60，skip-tests模式）
 
-# 准备发布工具；数据库备份、恢复演练和站外归档仅显式启用时执行。
+# 备份数据库；每次恢复演练，站外上传按 24 小时凭证与迁移范围分层执行。
 backup_database() {
     local delegation_owner=0
-    local backup_enabled="${DEPLOY_DATABASE_BACKUP:-0}"
-    if [[ "$backup_enabled" != "0" && "$backup_enabled" != "1" ]]; then
-        print_error "DEPLOY_DATABASE_BACKUP 只接受 0/1"
-        return 1
-    fi
-    print_step "准备发布工具..."
+    local production_sha=""
+    local migration_release=1
+    local diff_status=0
+    local offsite_mode="upload"
+    print_step "备份数据库..."
     if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
         _REMOTE_RELEASE_LOCK_DELEGATED=1
         delegation_owner=1
@@ -1075,25 +1081,41 @@ backup_database() {
         print_error "远端 stage 结果不明确；发布锁与现场保留"
         return 1
     fi
-    # 发布工具还承担回滚和运行态事务职责，跳过备份时仍必须准备并校验。
-    if [[ "$backup_enabled" = "0" ]]; then
-        if [ "$delegation_owner" -eq 1 ]; then
-            _REMOTE_RELEASE_LOCK_DELEGATED=0
+    production_sha="$(ssh "$SERVER" "cd '$REMOTE_PATH' && git rev-parse HEAD" 2>/dev/null || true)"
+    if [[ "$production_sha" =~ ^[0-9a-f]{40}$ ]] &&
+       git cat-file -e "${production_sha}^{commit}" 2>/dev/null &&
+       git merge-base --is-ancestor "$production_sha" "$DEPLOY_EXPECTED_SHA" 2>/dev/null; then
+        if git diff --quiet "$production_sha" "$DEPLOY_EXPECTED_SHA" -- backend/migrations/managed; then
+            migration_release=0
+        else
+            diff_status=$?
+            if [ "$diff_status" -ne 1 ]; then
+                print_warning "无法可靠比较数据库迁移范围；按迁移发布执行同步站外备份"
+            fi
         fi
-        print_warning "已跳过数据库备份、恢复演练与站外归档（默认关闭）"
-        return 0
+    else
+        print_warning "无法确认生产基线 revision 为候选祖先；按迁移发布执行同步站外备份"
     fi
-    print_step "备份数据库..."
-    if ! ssh "$SERVER" "set -a; source '$REMOTE_PATH/backend/.env'; set +a; BACKUP_OFFSITE_REQUIRED=1 bash \"$REMOTE_BACKUP_RUNNER\""; then
+    if [ "$migration_release" -eq 0 ]; then
+        if ssh "$SERVER" "set -a; source '$REMOTE_PATH/backend/.env'; set +a; BACKUP_OFFSITE_MAX_AGE_SECONDS=86400 bash '$REMOTE_VERIFY_RECENT_OFFSITE'"; then
+            offsite_mode="skip"
+            print_step "已有 24 小时内经验证的站外备份；本次仅做本地备份与恢复演练"
+        else
+            print_warning "站外备份凭证缺失、过期或不完整；本次将同步补做加密站外备份"
+        fi
+    else
+        print_step "检测到数据库迁移或无法证明无迁移；本次同步执行加密站外备份"
+    fi
+    if ! ssh "$SERVER" "set -a; source '$REMOTE_PATH/backend/.env'; set +a; BACKUP_OFFSITE_REQUIRED=1 BACKUP_OFFSITE_MODE='$offsite_mode' bash \"$REMOTE_BACKUP_RUNNER\""; then
         _REMOTE_RELEASE_LOCK_ABANDONED=1
-        print_error "数据库备份、恢复演练或站外归档失败，阻断部署"
+        print_error "数据库备份、恢复演练或所需站外归档失败，阻断部署"
         print_error "远端备份结果不明确；发布锁与现场保留"
         return 1
     fi
     if [ "$delegation_owner" -eq 1 ]; then
         _REMOTE_RELEASE_LOCK_DELEGATED=0
     fi
-    print_success "数据库备份、恢复演练和站外归档完成"
+    print_success "数据库备份、恢复演练和站外策略检查完成"
 }
 
 # 记录当前 commit 用于回滚
@@ -1482,7 +1504,7 @@ if [ -e "$rollback_snapshot" ]; then
             cd "$stage_dir"
             test "$(
                 awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-            )" = "15"
+            )" = "16"
             sha256sum --strict -c staged.sha256 >/dev/null
         )
         test -f "$candidate_snapshot"
@@ -1710,7 +1732,7 @@ test "$(sha256sum "$candidate_snapshot" | awk '{print $1}')" = \
     current_count="$(
         awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
     )"
-    if [ "$current_count" = "15" ]; then
+    if [ "$current_count" = "16" ]; then
         for name in backend.env.rollback backend.env.candidate; do
             awk -v expected="$name" '
                 $2 == expected { matches += 1 }
@@ -1719,11 +1741,12 @@ test "$(sha256sum "$candidate_snapshot" | awk '{print $1}')" = \
         done
         exit 0
     fi
-    test "$current_count" = "13"
+    test "$current_count" = "14"
     sha256sum \
         backup_db.sh \
         verify_backup_restore.sh \
         archive_backup_offsite.sh \
+        verify_recent_offsite_backup.sh \
         rollback_release.sh \
         activate_health_evidence_runtime.sh \
         verify_locked_requirements.py \
@@ -1748,7 +1771,7 @@ fi
     cd "$stage_dir"
     test "$(
         awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-    )" = "15"
+    )" = "16"
     sha256sum --strict -c staged.sha256 >/dev/null
 )
 test -r "$release_lock_dir/token"
@@ -3038,7 +3061,7 @@ deploy_backend() {
     # 摘要由后续上传阶段复用；文件若在预检后改变，则会自动重新校验。
     validate_deploy_env_preflight
 
-    # 1. 准备发布工具（默认不备份数据库）+ 记录发布前回滚点
+    # 1. 新建本地备份并恢复演练，按站外凭证/迁移策略归档 + 记录发布前回滚点
     backup_database
     determine_system_kb_activation_need
     inspect_runtime_state_transaction_before_deploy
@@ -3550,6 +3573,7 @@ rm -f "$stage_dir/staged.sha256"
         backup_db.sh \
         verify_backup_restore.sh \
         archive_backup_offsite.sh \
+        verify_recent_offsite_backup.sh \
         rollback_release.sh \
         activate_health_evidence_runtime.sh \
         verify_locked_requirements.py \
@@ -3565,7 +3589,7 @@ rm -f "$stage_dir/staged.sha256"
         > staged.sha256
     chmod 0400 staged.sha256
     test "$(awk 'NF {count += 1} END {print count + 0}' staged.sha256)" \
-        -eq 15
+        -eq 16
     sha256sum -c staged.sha256 >/dev/null
 )
 

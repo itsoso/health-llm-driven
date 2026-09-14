@@ -22,7 +22,7 @@ class ProofError(RuntimeError):
 UNITS = ("health-backend.socket", "health-backend.service", "celery-worker.service", "celery-beat.service")
 ACTIVATION = b"[Service]\nEnvironmentFile=-/var/lib/reva-health-evidence-runtime/enabled.env\n"
 ARTIFACTS = {name: "backend/scripts/" + name for name in (
-    "backup_db.sh", "verify_backup_restore.sh", "archive_backup_offsite.sh", "rollback_release.sh",
+    "backup_db.sh", "verify_backup_restore.sh", "archive_backup_offsite.sh", "verify_recent_offsite_backup.sh", "rollback_release.sh",
     "activate_health_evidence_runtime.sh", "verify_locked_requirements.py",
     "verify_runtime_schema_compatibility.py", "quarantine_runtime_only_kb.py", "runtime_state_release_transaction.py")}
 ARTIFACTS.update({"review_manifest.json": "backend/data/system_kb_v2_seed/review_manifest.json"})

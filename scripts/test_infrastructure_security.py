@@ -169,13 +169,15 @@ def test_deploy_stages_current_backup_scripts_before_preflight() -> None:
     body = (ROOT / "deploy.sh").read_text()
     backup_body = body[body.index("backup_database() {") :]
     stage_call = backup_body.index("stage_backup_preflight_scripts")
-    backup_call = backup_body.index('BACKUP_OFFSITE_REQUIRED=1 bash \\"$REMOTE_BACKUP_RUNNER\\"')
+    freshness_call = backup_body.index("REMOTE_VERIFY_RECENT_OFFSITE")
+    backup_call = backup_body.index('BACKUP_OFFSITE_MODE=')
 
-    assert stage_call < backup_call
+    assert stage_call < freshness_call < backup_call
     for script_name in (
         "backup_db.sh",
         "verify_backup_restore.sh",
         "archive_backup_offsite.sh",
+        "verify_recent_offsite_backup.sh",
     ):
         assert script_name in body
 

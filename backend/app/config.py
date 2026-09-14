@@ -518,6 +518,9 @@ class Settings(BaseSettings):
     registration_invitation_expiry_days: int = 7
     registration_invitation_rollout_enabled: bool = False
     registration_invitation_enforcement_enabled: bool = False
+    # manual: 只生成一次性凭据，由管理员通过可信渠道转发；绝不调用短信供应商。
+    # sms: 使用独立审核过的邀请短信签名与模板。
+    registration_invitation_delivery_mode: Literal["manual", "sms"] = "sms"
     aliyun_sms_access_key_id: Optional[str] = None  # 为空则复用 aliyun_access_key_id
     aliyun_sms_access_key_secret: Optional[str] = None  # 为空则复用 aliyun_access_key_secret
     aliyun_sms_sign_name: Optional[str] = None
@@ -643,7 +646,7 @@ class Settings(BaseSettings):
             if (
                 self.registration_invitation_rollout_enabled
                 or self.registration_invitation_enforcement_enabled
-            ):
+            ) and self.registration_invitation_delivery_mode == "sms":
                 invitation_sms_values = self.registration_invitation_sms_delivery_config
                 if not all(invitation_sms_values):
                     raise ValueError(

@@ -37,6 +37,7 @@ REQUIRED_STAGED_ARTIFACTS=(
     backup_db.sh
     verify_backup_restore.sh
     archive_backup_offsite.sh
+    verify_recent_offsite_backup.sh
     rollback_release.sh
     activate_health_evidence_runtime.sh
     verify_locked_requirements.py

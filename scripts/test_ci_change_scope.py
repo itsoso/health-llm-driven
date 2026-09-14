@@ -69,6 +69,7 @@ def test_release_only_changes_do_not_start_application_builds() -> None:
         "deploy.sh",
         "backend/scripts/backup_db.sh",
         "backend/scripts/archive_backup_offsite.sh",
+        "backend/scripts/verify_recent_offsite_backup.sh",
         "scripts/test_backup_security.py",
         "scripts/test_release_rollback.py",
     ):

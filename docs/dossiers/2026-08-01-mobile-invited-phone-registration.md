@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-invited-phone-registration` |
 | 创建日期 | 2026-08-01 |
-| 当前阶段 | G5 部分完成；后端已 dormant 部署，等待生产邀请配置后继续 |
-| 状态 | shipping · backend deployed fail-closed, OTA/enforcement pending |
+| 当前阶段 | G5 进行中；OTP 前置准入与 Mobile 文案已上线，手工邀请模式待发布启用 |
+| 状态 | shipping · manual delivery implementation verified locally, production activation pending |
 | 负责 | Codex |
 | 反馈环 | Backend PostgreSQL auth tests / Mobile Jest + TypeScript / Web tests / iOS real device |
 
@@ -17,7 +17,7 @@
 
 - 邀请只限制新手机号首次注册；已注册用户以后手机号登录无需邀请码。
 - 邀请必须预绑定目标手机号。
-- 默认由系统短信发送“邀请链接 + 8 位邀请码”，管理员复制凭证作为兜底。
+- 管理员创建后手工转发“邀请链接或 8 位邀请码”，系统不发送邀请短信。
 - 管理员创建并发送邀请即代表审批通过，不再二次人工审核。
 
 ## S1 · Discovery
@@ -108,6 +108,18 @@
 - 已知隐私取舍：未认证调用方可由 200/403 探测手机号是否属于 active + approved 老用户或有效邀请名单；IP `10/min` 限流不能消除分布式探测。
 - **Owner 裁决：ACCEPTED。** 2026-09-14 用户明确回复“接受该风险并上线”，授权按指定 403 文案发布。监控关注 `/phone/code` 403 比例和异常来源；若出现枚举或骚扰迹象，立即回退为统一公开响应并对未准入号码静默不投递。
 
+### 2026-09-14 手工邀请投递决策
+
+- 用户明确要求“管理员创建后手工转发一次性邀请码，不发送邀请短信”。
+- 新增 `manual|sms` 有界投递模式；生产 `manual` 模式仍强制独立 digest key，但不要求
+  短信签名/模板，也不得调用短信供应商。
+- 创建和重新生成都只在当前响应返回一次性邀请码/链接；不持久化明文，不增加发送次数。
+  重新生成会原子替换摘要，使旧凭据立即失效。
+- Web 明确提示“不发送邀请短信”，管理员复制后通过可信渠道交付；审计仅保存邀请 ID、
+  actor、状态和动作枚举，不记录手机号或凭据。
+- focused Backend `56 passed`，Web 面板 `21 passed`。完整 CI、部署与生产真实邀请 smoke
+  尚未执行，因此本节只证明代码行为，不代表已上线。
+
 ## G5 · 部署健康闸
 
 **PARTIAL / BLOCKED**：2026-08-02 已用根目录 `deploy.sh -b` 将 `e966281cd50b45bbf98bd623923705b9b2cce2c0` 部署到生产，保持 registration invitation rollout/enforcement 默认关闭。
@@ -116,9 +128,13 @@
 - managed migration `20260801_230000_registration_invitations` 已应用，完整 runtime schema probe 通过。
 - 发布事务已 `COMMITTED` / `finalized`，远端 SHA 两次核验一致，部署后健康分三次均为 `60/60 PASS`。
 - 后端进程为 `active (running)`，`GET /api/v1/health` 返回 200；公开无凭据探测 `POST /api/v1/auth/invitations/inspect` 返回 `403 REGISTRATION_CLOSED`，证明路由已部署且新注册 fail-closed。
-- 当前生产配置缺少稳定的 `REGISTRATION_INVITATION_DIGEST_KEY`、独立审核的 `REGISTRATION_INVITATION_SMS_SIGN_NAME` 与 `REGISTRATION_INVITATION_SMS_TEMPLATE_CODE`。按安全约束不得复用 OTP 模板或虚构配置，因此管理员真实发邀 smoke、Mobile OTA 和 enforcement 尚未执行。
+- 2026-09-14 OTP 前置准入与 Mobile 指定文案已随 `8f3dbbc4c` 上线；随后统一查询修复
+  `b93349978e4fe395a7dbc72672913c65f8705bf0` 已部署，健康 60/60，三条真实查询通过。
+- 手工邀请模式代码、独立 digest key 与 rollout/enforcement 开关尚未部署/启用；生产仍
+  不应尝试管理员创建邀请。待本次候选通过正式 CI 后发布，再原子同步配置并真实 smoke。
 - 2026-08-03 用户明确要求发布 production OTA；发布源为干净 `main` 提交 `d19c536032f3e815cf20649734eb73fd45804543`，CI 全绿且发布前 Mobile TypeScript 复验通过。iOS bundle 三次均成功导出（Hermes 两次、官方 `--no-bytecode + --skip-bundler` 兜底一次），但 EAS 对唯一 launch asset 的服务端 processing 全部超时，命令在生成 update group/ID 前 fail loud。production channel 查询仍指向上一已知可用 runtime `1.3.2`、group `5ae84fdf-0e71-4121-a34a-86dd6a747f51`、iOS update `019fc0af-ce41-7259-8800-1d3451bb3682`；没有半发布或错误切换。该故障与 Garmin dossier 已记录的 EAS per-asset processing 故障一致，重复同哈希上传已有失败证据，因此不继续无界重试。
-- **裁决：G5 尚未 PASS。** 配置就绪后必须按 rollout=true/enforcement=false → 受控手机号管理员发邀 smoke → Mobile OTA → 覆盖率确认 → enforcement=true 的顺序继续。
+- **裁决：G5 尚未 PASS。** 手工模式候选发布并启用后，必须证明管理员生成不调用短信、
+  未邀号码拒绝、既有用户继续登录、受邀注册与一次性核销，再结束 G5/G6。
 
 ## G6 · 验证闸
 

@@ -12,7 +12,7 @@ const rows = [
   { id: 7, phone_masked: '+86 138****8000', note: '内测成员', status: 'send_failed', expires_at: '2999-08-09T12:00:00Z', created_at: '2026-08-02T12:00:00Z', updated_at: '2026-08-02T12:00:00Z', prepared_for_delivery: true },
   { id: 8, phone_masked: '+86 139****9000', note: null, status: 'consumed', expires_at: '2999-08-09T12:00:00Z', created_at: '2026-08-02T12:00:00Z', updated_at: '2026-08-02T12:00:00Z', prepared_for_delivery: false },
 ];
-const prepared = { ...rows[0], status: 'sent', manual_code: 'A8M2K9QX', link_token: 'link-token-must-not-render', deep_link: 'health://invite?token=opaque-link-token', delivery_status: 'sent', delivery_error_code: null };
+const prepared = { ...rows[0], status: 'created', manual_code: 'A8M2K9QX', link_token: 'link-token-must-not-render', deep_link: 'health://invite?token=opaque-link-token', delivery_status: 'manual', delivery_error_code: null };
 const mockList = () => vi.mocked(api.get).mockResolvedValue({ data: { items: rows, total: rows.length, limit: 20, offset: 0 } });
 
 describe('RegistrationInvitationPanel', () => {
@@ -30,7 +30,7 @@ describe('RegistrationInvitationPanel', () => {
       headers: { Authorization: `Bearer ${WEB_SESSION_TOKEN}` },
     }));
     expect(screen.getByText('发送失败')).toBeInTheDocument(); expect(screen.getByText('已使用')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '撤销 +86 138****8000 的邀请' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '撤销 +86 139****9000 的邀请' })).toBeDisabled();
     expect(screen.queryByText(/13800138000/)).not.toBeInTheDocument(); expect(screen.queryByText(/digest|ciphertext/i)).not.toBeInTheDocument();
@@ -40,7 +40,7 @@ describe('RegistrationInvitationPanel', () => {
     vi.mocked(api.get).mockResolvedValue({ data: { items: [{ ...rows[0], status: 'sent', expires_at: '2000-01-01T00:00:00Z' }], total: 1, limit: 20, offset: 0 } });
     render(<RegistrationInvitationPanel />);
     expect(await screen.findByText('已过期')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '撤销 +86 138****8000 的邀请' })).toBeDisabled();
   });
 
@@ -54,7 +54,7 @@ describe('RegistrationInvitationPanel', () => {
     render(<RegistrationInvitationPanel />);
     expect(await screen.findAllByText('状态异常')).toHaveLength(3);
     for (const phone of ['+86 131****1000', '+86 132****2000', '+86 133****3000']) {
-      expect(screen.getByRole('button', { name: `重发 ${phone} 的邀请` })).toBeDisabled();
+      expect(screen.getByRole('button', { name: `重新生成 ${phone} 的邀请` })).toBeDisabled();
       expect(screen.getByRole('button', { name: `撤销 ${phone} 的邀请` })).toBeDisabled();
     }
   });
@@ -80,7 +80,8 @@ describe('RegistrationInvitationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '预览并确认' }));
     const confirmation = screen.getByRole('dialog', { name: '确认创建手机号注册邀请' });
     expect(within(confirmation).getByText('+86 138****8000')).toBeInTheDocument(); expect(within(confirmation).queryByText('+8613800138000')).not.toBeInTheDocument();
-    fireEvent.click(within(confirmation).getByRole('button', { name: '确认创建并发送' }));
+    expect(within(confirmation).getByText(/不会发送邀请短信/)).toBeInTheDocument();
+    fireEvent.click(within(confirmation).getByRole('button', { name: '确认创建' }));
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
       '/admin/registration-invitations',
       { phone: '+8613800138000', note: '产品内测', expires_at: new Date('2999-08-09T20:00').toISOString() },
@@ -91,7 +92,7 @@ describe('RegistrationInvitationPanel', () => {
 
   it('shows prepared credentials once, copies them, and clears them when closed', async () => {
     vi.mocked(api.post).mockResolvedValue({ data: prepared }); render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000');
-    fireEvent.click(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' }));
+    fireEvent.click(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' }));
     const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' });
     expect(api.post).toHaveBeenCalledWith(
       '/admin/registration-invitations/7/resend',
@@ -99,6 +100,7 @@ describe('RegistrationInvitationPanel', () => {
       { headers: { Authorization: `Bearer ${WEB_SESSION_TOKEN}` } },
     );
     expect(within(dialog).getByDisplayValue('A8M2K9QX')).toBeInTheDocument(); expect(within(dialog).getByDisplayValue('health://invite?token=opaque-link-token')).toBeInTheDocument();
+    expect(within(dialog).getByText(/请立即复制并通过可信渠道发送给本人/)).toBeInTheDocument();
     expect(screen.queryByText('link-token-must-not-render')).not.toBeInTheDocument(); expect(within(dialog).getByText(/旧凭据已失效/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: '复制手动邀请码' })); await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('A8M2K9QX'));
     fireEvent.click(within(dialog).getByRole('button', { name: '关闭一次性凭据' })); expect(screen.queryByDisplayValue('A8M2K9QX')).not.toBeInTheDocument(); expect(Storage.prototype.setItem).not.toHaveBeenCalled();
@@ -106,7 +108,7 @@ describe('RegistrationInvitationPanel', () => {
 
   it('keeps credentials selectable when clipboard access fails', async () => {
     vi.mocked(api.post).mockResolvedValue({ data: prepared }); vi.mocked(navigator.clipboard.writeText).mockRejectedValue(new Error('blocked'));
-    render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000'); fireEvent.click(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' }));
+    render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000'); fireEvent.click(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' }));
     const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' }); fireEvent.click(within(dialog).getByRole('button', { name: '复制手动邀请码' }));
     expect(await within(dialog).findByText('复制失败，请手动选择上方内容。')).toBeInTheDocument(); expect(within(dialog).getByLabelText('手动邀请码')).toHaveAttribute('readonly');
   });
@@ -114,7 +116,7 @@ describe('RegistrationInvitationPanel', () => {
   it('maps delivery failures without exposing provider details', async () => {
     vi.mocked(api.post).mockResolvedValue({ data: { ...prepared, delivery_status: 'send_failed', delivery_error_code: 'sms_not_configured' } });
     render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000');
-    fireEvent.click(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' }));
+    fireEvent.click(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' }));
     const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' });
     expect(within(dialog).getByText(/短信服务未配置/)).toBeInTheDocument();
     expect(within(dialog).queryByText('sms_not_configured')).not.toBeInTheDocument();
@@ -160,8 +162,8 @@ describe('RegistrationInvitationPanel', () => {
     vi.mocked(api.post).mockImplementationOnce(() => new Promise((resolve) => { resolvePost = resolve; }) as never);
     render(<RegistrationInvitationPanel />); await screen.findByText('+86 137****7000');
 
-    fireEvent.click(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' }));
-    const secondResend = screen.getByRole('button', { name: '重发 +86 137****7000 的邀请' });
+    fireEvent.click(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' }));
+    const secondResend = screen.getByRole('button', { name: '重新生成 +86 137****7000 的邀请' });
     expect(secondResend).toBeDisabled();
     fireEvent.click(secondResend);
     expect(api.post).toHaveBeenCalledTimes(1);
@@ -169,11 +171,11 @@ describe('RegistrationInvitationPanel', () => {
     resolvePost?.({ data: prepared });
     const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' });
     expect(screen.getByLabelText('受邀手机号')).toBeDisabled();
-    expect(screen.getByRole('button', { name: '重发 +86 137****7000 的邀请', hidden: true })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: '重发 +86 137****7000 的邀请', hidden: true }));
+    expect(screen.getByRole('button', { name: '重新生成 +86 137****7000 的邀请', hidden: true })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '重新生成 +86 137****7000 的邀请', hidden: true }));
     expect(api.post).toHaveBeenCalledTimes(1);
     fireEvent.click(within(dialog).getByRole('button', { name: '关闭一次性凭据' }));
-    expect(screen.getByRole('button', { name: '重发 +86 137****7000 的邀请' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '重新生成 +86 137****7000 的邀请' })).toBeEnabled();
   });
 
   it('traps confirmation focus, closes on Escape, and restores its trigger without submitting', async () => {
@@ -184,7 +186,7 @@ describe('RegistrationInvitationPanel', () => {
     const dialog = screen.getByRole('dialog', { name: '确认创建手机号注册邀请' });
     expect(dialog).toHaveAttribute('aria-describedby', 'confirm-invitation-description');
     const first = within(dialog).getByRole('button', { name: '返回修改' });
-    const last = within(dialog).getByRole('button', { name: '确认创建并发送' });
+    const last = within(dialog).getByRole('button', { name: '确认创建' });
     await waitFor(() => expect(first).toHaveFocus());
     last.focus(); fireEvent.keyDown(dialog, { key: 'Tab' }); expect(first).toHaveFocus();
     fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true }); expect(last).toHaveFocus();
@@ -243,7 +245,7 @@ describe('RegistrationInvitationPanel', () => {
     const dialog = screen.getByRole('dialog', { name: '确认创建手机号注册邀请' });
     fireEvent.change(expiry, { target: { value: '' } });
     expect(within(dialog).getByText(/有效期：时间格式无效/)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: '确认创建并发送' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认创建' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('有效期必须晚于当前时间，请修改后重试。');
     expect(api.post).not.toHaveBeenCalled();
     expect(phoneInput).toBeEnabled();
@@ -258,7 +260,7 @@ describe('RegistrationInvitationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '预览并确认' }));
     const dialog = screen.getByRole('dialog', { name: '确认创建手机号注册邀请' });
     fireEvent.change(expiry, { target: { value: '2000-01-01T00:00' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '确认创建并发送' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认创建' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('有效期必须晚于当前时间，请修改后重试。');
     expect(api.post).not.toHaveBeenCalled();
     expect(phoneInput).toBeEnabled();
@@ -266,7 +268,7 @@ describe('RegistrationInvitationPanel', () => {
 
   it('traps prepared focus, clears secrets on Escape, and restores the row trigger', async () => {
     vi.mocked(api.post).mockResolvedValue({ data: prepared }); render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000');
-    const trigger = screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' }); trigger.focus(); fireEvent.click(trigger);
+    const trigger = screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' }); trigger.focus(); fireEvent.click(trigger);
     const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' });
     expect(dialog).toHaveAttribute('aria-describedby', 'prepared-invitation-description');
     const first = within(dialog).getByLabelText('手动邀请码');
@@ -275,7 +277,7 @@ describe('RegistrationInvitationPanel', () => {
     last.focus(); fireEvent.keyDown(dialog, { key: 'Tab' }); expect(first).toHaveFocus();
     fireEvent.keyDown(dialog, { key: 'Escape' });
     expect(screen.queryByDisplayValue('A8M2K9QX')).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: '重发 +86 138****8000 的邀请' })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' })).toHaveFocus());
   });
 
   it('keeps only the latest list response when older requests finish late', async () => {

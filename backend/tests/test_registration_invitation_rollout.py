@@ -519,6 +519,7 @@ def test_environment_example_documents_all_modes_and_required_production_secrets
         "true/true = enforced",
         "false/true = rollback_closed",
         "REGISTRATION_INVITATION_DIGEST_KEY=",
+        "REGISTRATION_INVITATION_DELIVERY_MODE=manual",
         "ALIYUN_SMS_ACCESS_KEY_ID=",
         "ALIYUN_SMS_ACCESS_KEY_SECRET=",
         "ALIYUN_ACCESS_KEY_ID=",
@@ -533,3 +534,4 @@ def test_environment_example_documents_all_modes_and_required_production_secrets
     assert "专用 key 为空时复用" in example
     assert "ID 与 SECRET 必须成对设置" in example
     assert "生产邀请值不得与其相同" in example
+    assert "manual 不发邀请短信" in example

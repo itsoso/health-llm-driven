@@ -108,6 +108,14 @@ def _delivered_payload(
     }
 
 
+def _manual_payload(credential_snapshot: dict) -> dict:
+    return {
+        **credential_snapshot,
+        "delivery_status": "manual",
+        "delivery_error_code": None,
+    }
+
+
 def _audit(admin: User, invitation: RegistrationInvitation, *, event: str, action: str) -> AgentAuditLog:
     return AgentAuditLog(
         user_id=admin.id,
@@ -326,11 +334,22 @@ def create_invitation(
                 action="create",
             )
         )
-        delivery_payload = freeze_registration_invitation_delivery(
-            created.invitation,
-            manual_code=created.manual_code,
-            link_token=created.link_token,
-        )
+        delivery_payload = None
+        if settings.registration_invitation_delivery_mode == "sms":
+            delivery_payload = freeze_registration_invitation_delivery(
+                created.invitation,
+                manual_code=created.manual_code,
+                link_token=created.link_token,
+            )
+        else:
+            db.add(
+                _audit(
+                    admin,
+                    created.invitation,
+                    event="registration_invitation_manual_credentials_prepared",
+                    action="manual_prepare",
+                )
+            )
         db.flush()
         credential_snapshot = _credential_payload_snapshot(
             created.invitation,
@@ -346,6 +365,11 @@ def create_invitation(
         raise _error(422, "registration_invitation_phone_invalid", "手机号格式不正确") from None
     except (IntegrityError, SQLAlchemyError) as exc:
         _rollback_and_raise(db, exc)
+
+    if delivery_payload is None:
+        return RegistrationInvitationPrepared(
+            **_manual_payload(credential_snapshot)
+        )
 
     # Phase 1 is durable before any provider side effect. Everything below uses
     # frozen plain values because commit expires ORM state by default.
@@ -411,11 +435,22 @@ def prepare_resend(
                 action="resend_prepare",
             )
         )
-        delivery_payload = freeze_registration_invitation_delivery(
-            invitation,
-            manual_code=rotated.manual_code,
-            link_token=rotated.link_token,
-        )
+        delivery_payload = None
+        if settings.registration_invitation_delivery_mode == "sms":
+            delivery_payload = freeze_registration_invitation_delivery(
+                invitation,
+                manual_code=rotated.manual_code,
+                link_token=rotated.link_token,
+            )
+        else:
+            db.add(
+                _audit(
+                    admin,
+                    invitation,
+                    event="registration_invitation_manual_credentials_prepared",
+                    action="manual_regenerate",
+                )
+            )
         db.flush()
         credential_snapshot = _credential_payload_snapshot(
             invitation,
@@ -428,6 +463,11 @@ def prepare_resend(
         raise
     except (IntegrityError, SQLAlchemyError) as exc:
         _rollback_and_raise(db, exc)
+
+    if delivery_payload is None:
+        return RegistrationInvitationPrepared(
+            **_manual_payload(credential_snapshot)
+        )
 
     outcome = _send_after_phase_one(delivery_payload)
     return _persist_delivery_outcome(

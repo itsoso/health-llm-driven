@@ -2091,7 +2091,7 @@ def test_release_env_snapshots_are_sealed_into_verified_stage_before_deactivatio
     for snapshot in ("backend.env.rollback", "backend.env.candidate"):
         assert snapshot in seal_body
     assert "sha256sum --strict -c staged.sha256" in seal_body
-    assert '" = "15"' in seal_body
+    assert '" = "16"' in seal_body
     assert sync_body.index("upload_backend_env_file") < sync_body.index(
         "seal_release_env_snapshots"
     )
@@ -3432,6 +3432,7 @@ _ADOPTED_STAGE_ARTIFACTS = (
     ("backup_db.sh", "backend/scripts/backup_db.sh"),
     ("verify_backup_restore.sh", "backend/scripts/verify_backup_restore.sh"),
     ("archive_backup_offsite.sh", "backend/scripts/archive_backup_offsite.sh"),
+    ("verify_recent_offsite_backup.sh", "backend/scripts/verify_recent_offsite_backup.sh"),
     ("rollback_release.sh", "backend/scripts/rollback_release.sh"),
     (
         "verify_locked_requirements.py",

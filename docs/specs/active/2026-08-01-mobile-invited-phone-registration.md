@@ -62,7 +62,8 @@ G1 裁决：`PASS`。该需求不引入 Health OS 一等对象，按认证安全
 
 ```text
 admin confirms masked phone
-  -> backend creates and sends bound invitation
+  -> backend creates bound one-time credentials without sending invitation SMS
+  -> admin copies credentials and forwards them through a trusted channel
   -> user enters phone; backend allows active approved users or phones with an active invitation
   -> otherwise no OTP is issued and Mobile shows “该手机号尚未开通，请联系管理员”
   -> admitted phone verifies OTP
@@ -77,7 +78,7 @@ admin confirms masked phone
 | Surface | Responsibility | Contract |
 |---|---|---|
 | Mobile | 手机号、OTP、邀请深链/手工码和恢复状态 | 不自行判断资格；只按 Backend outcome 路由 |
-| Web | 管理员创建、发送、重发、撤销和列表 | 仅管理员；只显示脱敏手机号与状态 |
+| Web | 管理员创建、重新生成、复制、撤销和列表 | 仅管理员；只显示脱敏手机号与状态；不发送邀请短信 |
 | Backend | 准入真源、加密、匹配、核销、建号、token、审计 | PostgreSQL 原子事务；失败显式 |
 
 ## 8. Data Contract
@@ -115,6 +116,8 @@ migration: additive PostgreSQL managed migration; no emergency down migration
 - 手机号密文用于投递，keyed HMAC 用于匹配，后台只返回掩码。
 - 邀请码、deep-link token、OTP 和 verified ticket 不进入日志、遥测、错误详情或普通存储。
 - 邀请操作和核销写审计日志；审计只保存资源 ID、actor、状态枚举和手机号掩码。
+- `manual` 投递模式不得调用短信供应商；创建和重新生成只返回当前响应可见的一次性凭据，
+  管理员必须通过可信渠道手工转发，重新生成后旧凭据立即失效。
 - OTP 准入读取对邀请行加事务锁并保持到投递完成；资格以锁内检查时刻为准，注册时再次校验。
 - 管理员权限由 Backend 强制，Mobile/Web UI 隐藏不构成授权。
 - 无健康数据、药物、诊断或医疗结论；不需要 SafetyGuardian 医疗规则。
@@ -180,5 +183,6 @@ Then the backend returns 403 and writes no invitation mutation
 
 | Date | Change | Reason |
 |---|---|---|
+| 2026-09-14 | Invitation delivery defaults to manual forwarding without invitation SMS | 用户明确选择管理员创建后手工转发一次性邀请码，避免依赖尚未审核的邀请短信签名/模板 |
 | 2026-09-14 | Check existing-user or active-invitation eligibility before OTP delivery | 避免未获准手机号收到验证码，并在手机号页直接给出可行动提示 |
-| 2026-08-01 | Approved definition | 用户确认绑定手机号、短信+手工兜底、发邀即审批 |
+| 2026-08-01 | Approved definition | 用户确认绑定手机号、发邀即审批；投递方式后续改为手工转发 |

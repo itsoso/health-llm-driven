@@ -33,6 +33,7 @@ SAFE_ITEM_FIELDS = {
 @pytest.fixture(autouse=True)
 def _registration_invitation_rollout(monkeypatch):
     monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)
+    monkeypatch.setattr(settings, "registration_invitation_delivery_mode", "sms")
 
 
 def _admin_headers(db, auth_user_and_headers):
@@ -182,6 +183,45 @@ def test_create_uses_default_expiry_returns_credentials_once_and_audits(
         "action": "create",
         "actor_id": admin.id,
     }
+    serialized_audit = str(audit.result_detail)
+    assert "13800138000" not in serialized_audit
+    assert payload["manual_code"] not in serialized_audit
+    assert payload["link_token"] not in serialized_audit
+
+
+def test_manual_delivery_create_returns_credentials_without_sms_attempt(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    admin, headers = _admin_headers(db, auth_user_and_headers)
+    monkeypatch.setattr(settings, "registration_invitation_delivery_mode", "manual")
+
+    def unexpected_sms(_payload):
+        raise AssertionError("manual delivery must not call the SMS provider")
+
+    monkeypatch.setattr(
+        admin_api,
+        "send_frozen_registration_invitation_sms",
+        unexpected_sms,
+    )
+
+    response = _create(client, headers, note="管理员线下转发")
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["status"] == "created"
+    assert payload["prepared_for_delivery"] is True
+    assert payload["delivery_status"] == "manual"
+    assert payload["delivery_error_code"] is None
+    assert payload["manual_code"]
+    assert payload["deep_link"] == f"health://invite?token={payload['link_token']}"
+    row = db.get(RegistrationInvitation, payload["id"])
+    assert row.send_attempt_count == 0
+    audit = (
+        db.query(AgentAuditLog)
+        .filter(AgentAuditLog.action == "registration_invitation_manual_credentials_prepared")
+        .one()
+    )
+    assert audit.user_id == admin.id
     serialized_audit = str(audit.result_detail)
     assert "13800138000" not in serialized_audit
     assert payload["manual_code"] not in serialized_audit
@@ -362,6 +402,37 @@ def test_resend_rotates_credentials_on_same_row_and_invalidates_old_credentials(
     listed = client.get(PATH, headers=headers).text
     assert payload["manual_code"] not in listed
     assert payload["link_token"] not in listed
+
+
+def test_manual_delivery_regeneration_rotates_without_sms_attempt(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    _, headers = _admin_headers(db, auth_user_and_headers)
+    monkeypatch.setattr(settings, "registration_invitation_delivery_mode", "manual")
+
+    def unexpected_sms(_payload):
+        raise AssertionError("manual delivery must not call the SMS provider")
+
+    monkeypatch.setattr(
+        admin_api,
+        "send_frozen_registration_invitation_sms",
+        unexpected_sms,
+    )
+    created = _create(client, headers).json()
+
+    response = client.post(f"{PATH}/{created['id']}/resend", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["delivery_status"] == "manual"
+    assert payload["delivery_error_code"] is None
+    assert payload["manual_code"] != created["manual_code"]
+    assert payload["link_token"] != created["link_token"]
+    row = db.get(RegistrationInvitation, created["id"])
+    assert row.status == "created"
+    assert row.send_attempt_count == 0
+    assert find_invitation_by_code(db, created["manual_code"]) is None
+    assert find_invitation_by_link_token(db, created["link_token"]) is None
 
 
 def test_resend_rejects_terminal_invitation(client, db, auth_user_and_headers):
