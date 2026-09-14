@@ -213,24 +213,42 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "如果我让你基于我的体检报告给建议，你会怎么做？",
         "‘基于我的体检报告给建议’是什么意思？",
         "朋友说：基于我的体检报告给建议。",
+        "我反对基于我的体检报告给建议。",
+        "我不接受基于我的体检报告给建议。",
+        "禁止基于我的体检报告给建议。",
+        "请避免基于我的体检报告给建议。",
+        "朋友让我基于我的体检报告给建议。",
+        "同事发来：基于我的体检报告给建议。",
+        "`基于我的体检报告给建议`是什么意思？",
+        "这只是一个例子：基于我的体检报告给建议。",
+        "不是要基于我的体检报告给建议。",
+        "没有必要基于我的体检报告给建议。",
+        "先不基于我的体检报告给建议。",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
     assert semantics.has_explicit_health_read_request(text) is False
 
 
-def test_mixed_report_owners_remain_nonself():
-    text = "基于我的体检报告和张三的体检报告给建议。"
+@pytest.mark.parametrize("connector", ("和", "还有", "跟", "连同"))
+def test_mixed_report_owners_remain_nonself(connector):
+    text = f"基于我的体检报告{connector}张三的体检报告给建议。"
 
     assert semantics.has_explicit_nonself_health_owner(text) is True
     assert semantics.health_read_has_nonself_subject(text) is True
     assert semantics.has_explicit_health_read_request(text) is False
 
 
+def test_later_explicit_report_request_restores_read_authority():
+    text = "如果基于我的体检报告给建议会怎样？现在请基于我的体检报告给建议。"
+
+    assert semantics.has_explicit_health_read_request(text) is True
+
+
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v10"
+    assert payload["version"] == "health-semantics-v11"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 

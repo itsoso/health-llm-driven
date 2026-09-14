@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v10"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v11"
 
 
 @dataclass(frozen=True)
@@ -1408,7 +1408,7 @@ REPORT_BASIS_OWNER_RE = re.compile(
 )
 REPORT_ADDITIONAL_OWNER_RE = re.compile(
     rf"(?={_HEALTH_REPORT_DOMAIN}"
-    rf"\s*(?:和|与|及|以及|、)\s*"
+    rf"\s*(?:{HEALTH_ENTITY_CONNECTOR_RE.pattern})\s*"
     rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
     rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN})",
     re.IGNORECASE,
@@ -1417,63 +1417,95 @@ REPORT_USE_ACTION_RE = re.compile(
     r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)",
     re.IGNORECASE,
 )
-REPORT_NON_AUTHORIZING_PREFIX_RE = re.compile(
-    r"(?:"
-    r"(?:不想|不希望|不愿意|不打算|没有要求|没要求|未要求|并未要求)"
-    r"[^\n\r。.!！?？；;]{0,20}|"
-    r"(?:如果|假如|要是|假设)"
-    r"[^\n\r。.!！?？；;]{0,32}|"
-    r"(?:朋友|同事|医生|家人|别人|有人|他|她|他们|她们|对方)"
-    r"[^\n\r。.!！?？；;]{0,12}(?:说|表示|提到|写道|问)\s*[：:]\s*"
-    r")$",
+REPORT_USE_DENIAL_RE = re.compile(
+    r"(?:反对|拒绝|不接受|禁止|(?:请)?避免|不同意|不允许|"
+    r"不是(?:要|让你)?|并非(?:要|让你)?|没有必要|没必要|先不|暂不|"
+    r"不想|不希望|不愿意|不打算|没有要求|没要求|未要求|并未要求|"
+    r"不要|别|无需|不用|不必|请勿|勿|甭)"
+    r"[^\n\r。.!！?？；;]{0,32}"
+    r"(?:基于|结合|根据|参考|依据|建议|分析|解读|解释|评估|评价|判断)",
     re.IGNORECASE,
 )
 QUOTED_REPORT_USE_RE = re.compile(
+    r"(?:"
+    r"`[^`\n\r]{0,96}(?:基于|结合|根据|参考|依据)[^`\n\r]{0,96}`|"
     r"[“‘\"'《「『【（(]"
-    r"[^”’\"'》」』】）)]{0,48}(?:基于|结合|根据|参考|依据)"
-    r"[^”’\"'》」』】）)]{0,64}(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)"
-    r"[^”’\"'》」』】）)]{0,24}[”’\"'》」』】）)]",
+    r"[^”’\"'》」』】）)\n\r]{0,96}(?:基于|结合|根据|参考|依据)"
+    r"[^”’\"'》」』】）)\n\r]{0,96}[”’\"'》」』】）)]"
+    r")",
     re.IGNORECASE,
 )
-NEGATED_REPORT_USE_RE = re.compile(
-    r"(?:不要|别|无需|不用|不必|请勿)"
-    r"[^\n\r，,；;：:。.!！?？、]{0,16}"
-    r"(?:基于|结合|根据|参考|依据|建议|分析|解读|解释|评估|评价|判断)",
+REPORT_USE_HYPOTHETICAL_RE = re.compile(
+    r"(?:如果|假如|要是|假设)"
+    r"[^\n\r。.!！?？；;]{0,48}(?:基于|结合|根据|参考|依据)",
     re.IGNORECASE,
+)
+REPORT_USE_PROVENANCE_RE = re.compile(
+    r"(?:朋友|同事|同学|医生|家人|亲戚|别人|有人|他|她|他们|她们|对方)"
+    r"[^\n\r。.!！?？；;]{0,16}"
+    r"(?:说|表示|提到|写道|问|让我|要求我|发来|转发|引用)\s*[：:]?",
+    re.IGNORECASE,
+)
+REPORT_USE_DEFERRED_RE = re.compile(
+    r"(?:明天|稍后|晚点|以后|之后|改天|回头|待会儿)"
+    r"[^\n\r。.!！?？；;]{0,20}(?:再)?"
+    r"(?:基于|结合|根据|参考|依据|分析|解读|解释|评估|评价)",
+    re.IGNORECASE,
+)
+_REPORT_USE_SCOPE_BOUNDARY_RE = re.compile(
+    r"(?:[\n\r；;。.!！?？]|但|不过|然而|而是|却|可是|然后|改为)"
 )
 
 
 def _has_owned_report_use_request(text: str) -> bool:
     """Treat an explicit request to use one's report as bounded read consent."""
     normalized = active_health_instruction_text(str(text or "")).strip()
-    basis_matches = tuple(
-        re.finditer(r"(?:基于|结合|根据|参考|依据)", normalized, re.IGNORECASE)
-    )
-    last_basis = basis_matches[-1] if basis_matches else None
-    sentence_prefix = (
-        re.split(r"[\n\r。.!！?？；;]", normalized[: last_basis.start()])[-1]
-        if last_basis is not None
-        else ""
-    )
     if (
-        is_health_tool_meta_command(normalized)
-        or QUOTED_REPORT_USE_RE.search(normalized)
-        or REPORT_NON_AUTHORIZING_PREFIX_RE.search(sentence_prefix)
-        or NEGATED_REPORT_USE_RE.search(normalized)
-        or CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is None
+        CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is None
         or REPORT_USE_ACTION_RE.search(normalized) is None
         or has_explicit_nonself_health_owner(normalized)
     ):
         return False
-    return bool(
-        re.search(r"(?:基于|结合|根据|参考|依据)", normalized, re.IGNORECASE)
-        or re.match(
+
+    clauses = tuple(
+        clause.strip("，,：:、 ")
+        for clause in _REPORT_USE_SCOPE_BOUNDARY_RE.split(normalized)
+        if clause.strip("，,：:、 ")
+    )
+    authorized = False
+    saw_report_use = False
+    for clause in clauses:
+        owns_report = CURRENT_USER_REPORT_REFERENCE_RE.search(clause) is not None
+        has_action = REPORT_USE_ACTION_RE.search(clause) is not None
+        has_basis = re.search(
+            r"(?:基于|结合|根据|参考|依据)", clause, re.IGNORECASE
+        ) is not None
+        direct_analysis = re.match(
             r"^(?:请|麻烦你?|帮我|给我)?"
             r"(?:分析|解读|解释|评估|评价)(?:一下|下)?",
-            normalized,
+            clause,
             re.IGNORECASE,
         )
-    )
+        is_report_use = owns_report and has_action and bool(
+            has_basis or direct_analysis
+        )
+        if is_report_use:
+            saw_report_use = True
+            authorized = not bool(
+                is_health_tool_meta_command(clause)
+                or QUOTED_REPORT_USE_RE.search(clause)
+                or REPORT_USE_DENIAL_RE.search(clause)
+                or REPORT_USE_HYPOTHETICAL_RE.search(clause)
+                or REPORT_USE_PROVENANCE_RE.search(clause)
+                or REPORT_USE_DEFERRED_RE.search(clause)
+                or READ_NON_AUTHORIZING_RE.search(clause)
+            )
+        elif saw_report_use and (
+            READ_TRAILING_WITHDRAWAL_RE.search(clause)
+            or READ_AUTHORITY_WITHDRAWAL_RE.search(clause)
+        ):
+            authorized = False
+    return authorized
 
 
 def has_explicit_nonself_health_owner(text: str) -> bool:
