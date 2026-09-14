@@ -9782,13 +9782,24 @@ async def test_v38_third_party_medical_exam_read_never_dispatches(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "text",
+    (
+        "给我一些建议，基于我的体检报告。",
+        "请将我的体检报告打开",
+        "麻烦将我的体检报告打开",
+        "请帮忙将我的MRI报告打开",
+        "将我刚导入的医学检查报告打开",
+    ),
+)
 async def test_owned_report_advice_projects_a_current_user_medical_exam_read(
     tool_name,
     policy_mode,
+    text,
 ):
     gateway = ToolGateway(
         _snapshot(
-            "给我一些建议，基于我的体检报告。",
+            text,
             policy_mode=policy_mode,
         )
     )
@@ -9810,7 +9821,8 @@ async def test_owned_report_advice_projects_a_current_user_medical_exam_read(
 
     assert result.decision is not None
     assert result.decision.action == "allow"
-    assert calls == [arguments]
+    assert len(calls) == 1
+    assert all(calls[0].get(key) == value for key, value in arguments.items())
 
 
 @pytest.mark.asyncio

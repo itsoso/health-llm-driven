@@ -1518,7 +1518,7 @@ def is_unresolved_health_reference(value: str) -> bool:
         "的了，,。.!！；;：:?？ "
     )
     scoped = re.sub(
-        r"^(?:请|麻烦你?|帮我|给我|替我|为我|把)*",
+        r"^(?:请|麻烦你?|帮我|给我|替我|为我|把|将)*",
         "",
         normalized,
     )
@@ -1674,7 +1674,7 @@ def _strip_exam_request_scaffolding(value: str) -> str:
         r"拜托|请|麻烦你?|能不能|可不可以|能否|可否|"
         r"现在|立即|马上|此刻|这次|本次|我想(?:在)?|"
         r"想(?:在)?|能(?=给我|帮我|帮忙|替我|为我|查询|查找|查看|找出|"
-        r"翻看|调取|调出|查|看)|给我|帮我|帮忙|替我|为我|把|仅|只|再)"
+        r"翻看|调取|调出|查|看)|给我|帮我|帮忙|替我|为我|把|将|仅|只|再)"
     )
     while candidate:
         reduced = prefix_re.sub("", candidate, count=1).lstrip()

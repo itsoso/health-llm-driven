@@ -175,6 +175,10 @@ def test_v39_medical_exam_resolution_rejects_unpunctuated_nonself_subject(text):
         "给我一些建议，基于我的体检报告。",
         "请结合我最近一次体检报告给我建议。",
         "解读我最近一次体检报告。",
+        "请将我的体检报告打开",
+        "麻烦将我的体检报告打开",
+        "请帮忙将我的MRI报告打开",
+        "将我刚导入的医学检查报告打开",
     ),
 )
 def test_owned_report_advice_is_an_explicit_current_user_read(text):
