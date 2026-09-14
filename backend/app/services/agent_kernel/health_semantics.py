@@ -1550,20 +1550,6 @@ REPORT_USE_MATERIAL_CONTEXT_RE = re.compile(
     r")\s*$",
     re.IGNORECASE,
 )
-REPORT_USE_MATERIAL_EXIT_RE = re.compile(
-    r"^(?:(?:以上|上面|上述|前面)(?:这些|这段|这份)?(?:是|为)?"
-    r"(?:引用|原话|引文|摘录|转发(?:内容)?|转述(?:内容)?|示例|例子|"
-    r"内容|文本|材料|消息)(?:到此)?(?:结束|完毕)?|"
-    r"(?:引用|原话|引文|摘录|转发|转述|示例|例子)(?:到此)?"
-    r"(?:结束|完毕))\s*$",
-    re.IGNORECASE,
-)
-REPORT_USE_STRONG_REAUTHORIZATION_RE = re.compile(
-    r"^(?:(?:现在|立即|马上|本次|这次)\s*"
-    r"(?:请(?:你)?|麻烦你?|帮我|给我)|"
-    r"(?:现在|本次|这次)?\s*我明确(?:授权|同意|允许|批准)(?:你)?)",
-    re.IGNORECASE,
-)
 REPORT_USE_DEFERRED_RE = re.compile(
     r"(?:明天|稍后|晚点|以后|之后|改天|回头|待会儿|周末|有空(?:时)?|"
     r"下周|下个月|(?:等|待)[^\n\r。.!！?？；;]{0,12}(?:确认|同意)(?:后)?)"
@@ -1616,7 +1602,6 @@ def _active_owned_report_use_clause(text: str) -> str:
     active_clause = ""
     saw_report_use = False
     material_context_active = False
-    material_context_requires_reauthorization = False
     for clause, trailing_boundary in clauses:
         owns_report = CURRENT_USER_REPORT_REFERENCE_RE.search(clause) is not None
         has_action = REPORT_USE_ACTION_RE.search(clause) is not None
@@ -1642,10 +1627,6 @@ def _active_owned_report_use_clause(text: str) -> str:
             authorized = not bool(
                 REPORT_USE_DIRECT_REQUEST_RE.search(clause) is None
                 or material_context_active
-                or (
-                    material_context_requires_reauthorization
-                    and REPORT_USE_STRONG_REAUTHORIZATION_RE.search(clause) is None
-                )
                 or has_explicit_nonself_health_owner(clause)
                 or is_health_tool_meta_command(clause)
                 or QUOTED_REPORT_USE_RE.search(clause)
@@ -1662,20 +1643,14 @@ def _active_owned_report_use_clause(text: str) -> str:
                 or REPORT_USE_POST_ACTION_TAIL_RE.search(clause)
             )
             active_clause = clause if authorized else ""
-            if authorized:
-                material_context_active = False
-                material_context_requires_reauthorization = False
-            elif introduces_material_context:
+            if not authorized and introduces_material_context:
                 material_context_active = True
-                material_context_requires_reauthorization = True
-        elif material_context_active and REPORT_USE_MATERIAL_EXIT_RE.search(clause):
-            material_context_active = False
-            material_context_requires_reauthorization = True
-            if saw_report_use:
-                active_clause = ""
-        elif introduces_material_context:
+        elif introduces_material_context or not saw_report_use:
+            # An unframed leading body has no trustworthy in-band closing
+            # delimiter: words such as "引用结束" may themselves be quoted.
+            # Keep the rest of this message non-authorizing; a later user turn
+            # can issue a fresh direct request.
             material_context_active = True
-            material_context_requires_reauthorization = True
             if saw_report_use:
                 active_clause = ""
         elif saw_report_use:
