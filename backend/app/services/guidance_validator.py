@@ -300,10 +300,33 @@ _COURSE_DURATION_ACTION = re.compile(
     + _COURSE_GAP + _COURSE_DURATION + r"|(?:延长|缩短)" + _COURSE_GAP + _COURSE_OBJECT
     + _COURSE_GAP + r"(?:到|至|为)" + _COURSE_GAP + _COURSE_DURATION
 )
+_FUTURE_DOSE_CHANGE = (
+    r"(?:增加|减少|提高|降低|恢复|调整|补充|补|加|减|增|降|改|换|服用|服|吃|用)"
+    r"(?:到|至|为|成)"
+)
+_FUTURE_DOSE_CONTINUATION = (
+    r"(?:也|再|仍(?:然|旧)?|依(?:然|旧)|还(?:是)?|继续|维持|保持|接着|各|都|先|"
+    r"要|需|照(?:旧|常|样)|是|为|在|按|开始|起|"
+    r"共|总共|一共|固定|至少|最多|约|大约|大概|"
+    + _MED_ADVISORY + r"|" + _MED_DOSE_VERB
+    + r"|坚持|推荐|可(?:以)?|将|计划|准备|打算|改(?:用|服)|换(?:用|服)|"
+    + _FUTURE_DOSE_CHANGE
+    + r"|(?:口服|服用|服|吃|用)(?:上)?|补(?:充|服|上)?|添(?:加|上)?|"
+    r"续(?:服|用|上|补)?|每天|每日|每次|早晚|"
+    + _MED_TIMING + r"|随餐|(?:早|午|晚)餐(?:前|后))"
+)
+_FUTURE_DOSE_TIME = (
+    r"(?:明天|明日|后天|后日|明早|明晨|明晚|今晚|之后|以后|后续|"
+    r"下周|下星期|下次|下一次|下回|次日|翌日|今后|往后|接下来)"
+)
+# Detect clause structure, not a vocabulary of allowed connecting words. Count
+# units need medical context below; an explicit food/document object takes
+# precedence over context inherited from a preceding intake acknowledgement.
 _FUTURE_DOSE_ACTION = re.compile(
-    r"(?:明天|后天|明早|明晚|之后|以后|后续|下周|次日|翌日|今后)"
-    + _COURSE_GAP + r"[:：]?" + _COURSE_GAP + _DOSE_NUMBER + _COURSE_GAP
-    + r"(?P<unit>" + _DOSE_REGIMEN_UNIT + r")"
+    _FUTURE_DOSE_TIME
+    + r"(?P<prefix>[^，,。；;!?！？]{0,48}?)"
+    + r"(?P<quantity>" + _DOSE_NUMBER + _COURSE_GAP
+    + r"(?P<unit>" + _DOSE_REGIMEN_UNIT + r"))"
     + r"(?P<object>[^，,。；;!?！？\n]{0,24})(?=[，,。；;!?！？\n]|$)",
     re.I,
 )
@@ -315,11 +338,38 @@ _EXPLICIT_COUNTED_FOOD = re.compile(
     r"奶酪|芝士|饼干|火腿|土豆|马铃薯|胡萝卜)(?:即可|就行)?"
 )
 
+_EXPLICIT_COUNTED_DOCUMENT = re.compile(r"(?:检查影像|影像|病理切片|报告)")
+_EXPLICIT_ADMINISTRATION = re.compile(r"(?:服用|口服|服(?:上)?|用药|给药|补服)")
+_REGIMEN_CONTEXT = re.compile(
+    r"(?:剂量|原量|加量|减量|增量|减药|服用|口服|补服|用药|给药)"
+)
+
+
+def _future_count_is_medical(match: re.Match, *, regimen_context: bool) -> bool:
+    if match.group("unit").lower() not in {"粒", "片"}:
+        return True
+    prefix = re.sub(r"[\s*_`：:]+", "", match.group("prefix"))
+    object_text = re.sub(r"[\s*_`]+", "", match.group("object"))
+    local = prefix + object_text
+    medical = bool(_SUPPLEMENT_OR_MEDICINE.search(local)
+                   or re.search(_MED_DOSAGE_FORM, local)
+                   or _EXPLICIT_ADMINISTRATION.search(local))
+    if not medical:
+        food_prefix = re.sub(_FUTURE_DOSE_CONTINUATION, "", prefix).strip("的")
+        if (_EXPLICIT_COUNTED_FOOD.fullmatch(object_text)
+            or (not object_text and _EXPLICIT_COUNTED_FOOD.fullmatch(food_prefix))
+            or _EXPLICIT_COUNTED_DOCUMENT.search(local)):
+            return False
+    # Preserve the narrow legacy shorthand trigger, including bare quantity
+    # questions. Arbitrary intervening words alone do not establish a regimen.
+    bare_shorthand = re.fullmatch(r"(?:" + _FUTURE_DOSE_CONTINUATION + r"){0,8}", prefix)
+    return bool(medical or regimen_context or _REGIMEN_CONTEXT.search(local) or bare_shorthand)
+
 
 def _medical_sentence_view(text: str) -> str:
-    """Keep a wrapped finite medical action in one clause without changing output.
+    """Keep a wrapped bounded medical action in one clause without changing output.
 
-    Replace only newlines inside this finite action grammar, preserving source
+    Replace only newlines inside this bounded action grammar, preserving source
     offsets. A preceding negation on a separate line remains a separate clause;
     exact trusted clinician relays are compared against the original text.
     """
@@ -347,16 +397,20 @@ _PERSONAL_HORMONE_CAUSE = re.compile(
 _ADVICE_HOLD = "部分建议或推断缺少已核验证据，暂不提供执行方案。可与医生或药师核对依据及适用条件。"
 
 
-def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
+def _has_asserted_match(
+    pattern: re.Pattern, sentence: str, *, regimen_context: bool = False,
+) -> bool:
     for match in pattern.finditer(sentence):
         if pattern is _FUTURE_DOSE_ACTION:
-            object_text = re.sub(r"[\s*_`]+", "", match.group("object"))
-            medical_object = (_SUPPLEMENT_OR_MEDICINE.search(object_text)
-                              or re.search(_MED_DOSAGE_FORM, object_text))
-            if (match.group("unit") in {"粒", "片"} and not medical_object
-                and _EXPLICIT_COUNTED_FOOD.fullmatch(object_text)):
-                # Explicit food objects (e.g. four slices of bread) are not
-                # medication quantities. Bare counts remain actionable.
+            if not _future_count_is_medical(match, regimen_context=regimen_context):
+                continue
+            # Only a negation preceding this quantity can negate its action.
+            # "明天两粒不要加量" asserts a dose before the negative tail.
+            quantity_prefix = re.split(
+                r"[，,。；;!?！？\n]|但是|但|不过|然而|而是",
+                sentence[:match.start("quantity")],
+            )[-1]
+            if _NEGATED_ASSERTION.search(re.sub(r"[*_`]+", "", quantity_prefix)):
                 continue
         if pattern is _REGIMEN_ACTION and any(
             question.start("question") <= match.start()
@@ -373,7 +427,7 @@ def _has_asserted_match(pattern: re.Pattern, sentence: str) -> bool:
         if _NEGATED_ASSERTION.search(prefix):
             continue
         # "Cannot metabolize" is itself the genetic claim, not a prohibition.
-        if pattern is not _GENETIC_ABSOLUTE and _NEGATED_ASSERTION.search(match.group(0)):
+        if pattern not in (_GENETIC_ABSOLUTE, _FUTURE_DOSE_ACTION) and _NEGATED_ASSERTION.search(match.group(0)):
             continue
         if pattern not in (_COURSE_DURATION_ACTION, _FUTURE_DOSE_ACTION) and re.search(
             r"(?:咨询|询问|请教)(?:医生|药师).{0,8}(?:是否|能否).{0,12}$", prefix,
@@ -425,6 +479,45 @@ _COMPLETED_INTAKE_ACKNOWLEDGEMENT = re.compile(
     re.I,
 )
 
+# Handling a medicine's physical object is distinct from administering it.
+# Require a complete finite action/object/purpose clause, never an arbitrary
+# non-administration verb or a prefix that could swallow a later instruction.
+_HANDLED_MEDICINE = (
+    r"(?:药(?:物|品|片)?|(?:补剂|鱼油|辅酶(?:Q10)?|红景天|"
+    r"(?:复合)?维生素(?:\s*[A-EK]\d{0,2})?|叶酸|NAC|NMN)"
+    r"(?:软?胶囊|片剂|片)?|" + _MED_DRUG_CLASS + r"(?:片|胶囊)?|" + _MED_DOSAGE_FORM + r")"
+)
+_HANDLED_QUANTITY = _DOSE_NUMBER + r"\s*" + _DOSE_REGIMEN_UNIT + r"\s*" + _HANDLED_MEDICINE
+_FUTURE_MEDICINE_HANDLING = re.compile(
+    r"\s*" + _FUTURE_DOSE_TIME + r"\s*(?:"
+    + r"把\s*" + _HANDLED_QUANTITY + r"(?:带|携带)给(?:医生|药师)核对|"
+    + r"(?:带|携带)" + _HANDLED_QUANTITY + r"给(?:医生|药师)核对|"
+    + r"(?:拍|拍摄)" + _HANDLED_QUANTITY + r"的?(?:包装)?(?:照片|图片)|"
+    + r"(?:核对|查看)" + _HANDLED_QUANTITY + r"的?(?:包装标签|包装|标签|批号)"
+    + r")[。；;]?\s*", re.I,
+)
+
+
+# Full-clause directed questions ask for information. The complete grammar is
+# deliberately narrower than arbitrary model-authored questions or suggestions.
+_DIRECTED_FUTURE_DOSE_QUESTION = re.compile(
+    r"\s*(?:请确认|请告诉我|能否告诉我|我想确认)\s*" + _FUTURE_DOSE_TIME
+    + r"(?:的?剂量)?\s*(?:是否|是不是)(?:" + _FUTURE_DOSE_CONTINUATION + r"\s*){0,8}"
+    + _DOSE_NUMBER + r"\s*" + _DOSE_ORAL_UNIT
+    + r"\s*(?:药物|药品|" + _SUPPLEMENT_OR_MEDICINE.pattern + r"|" + _MED_DOSAGE_FORM + r")?"
+    + r"\s*[?？]\s*", re.I,
+)
+
+
+def _sentence_has_regimen_context(sentence: str) -> bool:
+    normalized = _medical_assertion_matching_text(sentence)
+    completed = (_COMPLETED_INTAKE_ACKNOWLEDGEMENT.match(normalized)
+                 and not normalized.rstrip().endswith(("?", "？")))
+    clinician = (re.search(r"(?:医生|药师)[^。；;!?！？\n]{0,24}(?:判断|评估|确认)", normalized)
+                 and (_SUPPLEMENT_OR_MEDICINE.search(normalized)
+                      or re.search(_COURSE_OBJECT, normalized)))
+    return bool(completed or clinician)
+
 
 def _regimen_assertion_text(sentence: str) -> str:
     """Separate data-field nouns and a directed question from actual actions.
@@ -432,6 +525,10 @@ def _regimen_assertion_text(sentence: str) -> str:
     Never exempt an entire greedy action match: a second instruction must still
     be checked, including nonnumeric timing instructions after a question.
     """
+    if _FUTURE_MEDICINE_HANDLING.fullmatch(sentence):
+        return "待核对的药品实物信息。"
+    if _DIRECTED_FUTURE_DOSE_QUESTION.fullmatch(sentence):
+        return "待确认的用药记录？"
     if not sentence.rstrip().endswith(("?", "？")):
         # A completed, dated intake acknowledgement is not a new prescription.
         # Project only that intake predicate; its object and every appended
@@ -502,17 +599,22 @@ def _medical_assertion_matching_text(text: str) -> str:
     )
 
 
-def _unsupported_advice_reasons(sentence: str) -> list[str]:
+def _unsupported_advice_reasons(
+    sentence: str, *, inherited_regimen_context: bool = False,
+) -> list[str]:
     """Only emit stable codes; never put health text into audit metadata."""
     normalized = _medical_assertion_matching_text(sentence)
     reasons: list[str] = []
     assertion = _regimen_assertion_text(normalized)
     if (_has_asserted_match(_UNSCOPED_REGIMEN, assertion)
         or _has_asserted_match(_COURSE_DURATION_ACTION, normalized)
-        or _has_asserted_match(_FUTURE_DOSE_ACTION, normalized)
+        or _has_asserted_match(
+            _FUTURE_DOSE_ACTION, assertion,
+            regimen_context=inherited_regimen_context or _sentence_has_regimen_context(normalized),
+        )
         or _has_asserted_match(_INTAKE_TIME_ACTION, assertion)
         or (_SUPPLEMENT_OR_MEDICINE.search(normalized) and (
-        _has_asserted_match(_DOSE_ACTION, normalized)
+        _has_asserted_match(_DOSE_ACTION, assertion)
         or _has_asserted_match(_REGIMEN_ACTION, assertion)
     ))):
         reasons.append("unverified_dose_action")
@@ -596,11 +698,15 @@ def enforce_medical_evidence_boundaries(
     out_parts: list[str] = []
     trusted_relays: list[str] = []
     relayed_instruction = False
+    inherited_regimen_context = False
     for match in re.finditer(r"[^。；;!?！？\n]+[。；;!?！？\n]*|[。；;!?！？\n]+", _medical_sentence_view(text)):
         sentence = text[match.start():match.end()]
         is_trusted = has_clinician_instruction and sentence.strip() in trusted
         relayed_instruction = relayed_instruction or is_trusted
-        reasons = [] if is_trusted else _unsupported_advice_reasons(sentence)
+        reasons = [] if is_trusted else _unsupported_advice_reasons(
+            sentence, inherited_regimen_context=inherited_regimen_context,
+        )
+        inherited_regimen_context = _sentence_has_regimen_context(sentence)
         unverified_schedule = any(
             not (verified_write_receipt and claim.group(0).strip() in trusted_write_summary)
             for claim in _SCHEDULE_CLAIM.finditer(sentence)

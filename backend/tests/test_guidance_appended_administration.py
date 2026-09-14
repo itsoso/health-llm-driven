@@ -546,3 +546,117 @@ def test_completed_intake_future_unknown_objects_are_not_food_authority(object_t
 @pytest.mark.parametrize("text", ["明天服3粒。", "建议服3片。", "记录今天服两粒鱼油。", "已记录明天服两粒鱼油。"])
 def test_record_word_cannot_authorize_short_intake_verb(text):
     assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("continuation", [
+    "也", "再", "仍", "仍然", "依然", "依旧", "还是", "还", "继续", "维持", "保持",
+    "各", "都", "先", "要", "需", "需要", "照旧", "照常", "照样", "也是", "仍为",
+    "继续维持", "继续保持在", "还是应该继续维持在", "也依旧继续保持在",
+    "睡前再", "晚餐后仍", "固定", "一共", "共", "按", "改为", "开始继续",
+    "接着", "接着再", "补充", "再补充", "增加到", "减少到", "提高到", "降低到",
+    "加到", "减到", "吃上", "服上", "仍旧", "仍旧保持", "恢复到",
+    "补上", "再补", "补服", "续上", "用上", "恢复为", "增加至", "换成", "补充到",
+    "坚持", "务必", "最好", "记得", "一定要", "可以", "推荐", "计划", "准备", "改用", "换服",
+])
+@pytest.mark.parametrize("when", ["明天", "之后", "后续", "明早", "下一次", "下次", "明日", "今晚"])
+@pytest.mark.parametrize("separator", ["，", "。", "\n"])
+def test_completed_intake_cannot_authorize_future_continuation_particles(when, continuation, separator):
+    result = enforce_medical_evidence_boundaries(
+        "已记录今天服了两粒鱼油" + separator + when + continuation + "两粒。"
+    )
+    assert result.flagged
+    assert "unverified_dose_action" in result.violations
+
+
+@pytest.mark.parametrize("tail", [
+    "明天也两片全麦面包。", "后续仍三粒葡萄。", "明天再两粒花生。",
+    "不要明天也两粒。", "不建议后续继续两粒。", "无需明早仍两粒。",
+])
+def test_completed_intake_future_continuation_keeps_food_and_negation(tail):
+    text = "已记录今天服了两粒鱼油，" + tail
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("reference", ["照原量", "同样", "保持原来", "还是按原计划", "剂量", "鱼油", "鱼油还是", "的鱼油", "鱼油用", "每种补剂", "剂量维持"])
+@pytest.mark.parametrize("when", ["明天", "之后", "下次", "接下来"])
+def test_completed_intake_cannot_authorize_reordered_future_quantity(reference, when):
+    result = enforce_medical_evidence_boundaries("已记录今天服了两粒鱼油。" + when + reference + "两粒。")
+    assert result.flagged
+
+
+@pytest.mark.parametrize("lead", ["请确认", "请告诉我", "能否告诉我", "我想确认"])
+@pytest.mark.parametrize("predicate", ["是否仍然服用两粒鱼油", "是不是继续口服200mg药物"])
+def test_record_acknowledgement_future_directed_question_is_not_a_prescription(lead, predicate):
+    text = lead + "明天" + predicate + "？"
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("text", [
+    "明天还是两粒吗？", "明天两粒，不要加量。", "明天两粒不要加量。",
+    "请确认明天是否仍然服用两粒鱼油？明天还是两粒。",
+    "请确认明天是否仍然服用两粒鱼油，然后每天服用四粒？",
+])
+def test_record_acknowledgement_question_and_tail_negation_do_not_grant_authority(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("tail", ["明天面包两片。", "明天全麦面包还是两片。", "后续葡萄三粒。", "明天的葡萄再三粒。"])
+def test_completed_intake_future_explicit_food_before_quantity(tail):
+    text = "已记录今天服了两粒鱼油。" + tail
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("history", ["", "已记录今天服了两粒鱼油。"])
+@pytest.mark.parametrize("text", ["明天需要带两片检查影像给医生。", "明天整理两片病理切片。", "明天整理报告两片。"])
+def test_completed_intake_does_not_turn_document_counts_into_doses(history, text):
+    result = enforce_medical_evidence_boundaries(history + text)
+    assert not result.flagged
+    assert history + text in result.text
+
+
+def test_record_acknowledgement_future_dose_field_question_is_not_an_action():
+    text = "请确认明天的剂量是不是两粒？"
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("history", ["", "已记录今天服了两粒鱼油。"])
+@pytest.mark.parametrize("text", [
+    "明天把两片药带给医生核对。", "明天带两片药给医生核对。",
+    "明天拍两片药片的包装照片。", "明天核对两片鱼油软胶囊的批号。",
+    "明天查看两片药的包装标签。", "明天携带两片药给药师核对。",
+    "下次拍摄两粒胶囊的照片。",
+])
+def test_completed_intake_preserves_explicit_medicine_handling(history, text):
+    result = enforce_medical_evidence_boundaries(history + text)
+    assert not result.flagged
+    assert history + text in result.text
+
+
+@pytest.mark.parametrize("text", [
+    "明天核对后服两片药。", "明天拍照后仍服两片药。",
+    "明天带两片药给医生核对，然后服两片药。",
+    "明天把两片药带给医生核对。明天还是两片。",
+    "明天拍两片药片的包装照片后服两片药。",
+    "明天核对两片鱼油软胶囊的批号并加量到四粒。",
+])
+def test_completed_intake_medicine_handling_cannot_authorize_administration(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("history", ["", "已记录今天服了两粒鱼油。"])
+@pytest.mark.parametrize("medicine", ["辅酶Q10软胶囊", "维生素D3胶囊", "复合维生素片"])
+@pytest.mark.parametrize("appended", ["", "然后口服两片药。"])
+def test_completed_intake_named_supplement_handling_keeps_actions_visible(history, medicine, appended):
+    text = history + "明天核对两粒" + medicine + "的批号。" + appended
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged is bool(appended)
+    if not appended:
+        assert text in result.text

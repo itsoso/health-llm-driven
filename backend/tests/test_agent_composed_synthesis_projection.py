@@ -930,9 +930,21 @@ async def test_composed_course_duration_appended_action(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("panel", [False, True])
 @pytest.mark.parametrize("continuation", [False, True])
-@pytest.mark.parametrize("appended", ["", "然后口服300mg。", "明天四粒这个。", "明天\n四粒。"])
+@pytest.mark.parametrize("appended,blocked", [
+    ("", False), ("然后口服300mg。", True), ("明天四粒这个。", True),
+    ("明天\n四粒。", True), ("明天也两粒。", True), ("下一次还是两粒。", True),
+    ("明天接着再补充两粒。", True), ("之后恢复到两粒。", True),
+    ("明天鱼油还是两粒。", True), ("明天两粒不要加量。", True),
+    ("请确认明天是否仍然服用两粒鱼油？", False),
+    ("请确认明天是否仍然服用两粒鱼油？明天还是两粒。", True),
+    ("明天需要带两片检查影像给医生。", False),
+    ("明天把两片药带给医生核对。", False),
+    ("明天核对后服两片药。", True),
+    ("明天核对两粒辅酶Q10软胶囊的批号。", False),
+    ("明天核对两粒辅酶Q10软胶囊的批号。然后服两片药。", True),
+])
 async def test_composed_completed_intake_acknowledgement(
-    db, four_domain_user, monkeypatch, panel, continuation, appended,
+    db, four_domain_user, monkeypatch, panel, continuation, appended, blocked,
 ):
     conversation_id = None
     if continuation:
@@ -945,9 +957,9 @@ async def test_composed_completed_intake_acknowledgement(
         conversation_id=conversation_id, answer=acknowledgement + appended,
     )
     assert all(g["status"] == "verified" for g in done["turn_outcome"]["goals"] if g["kind"] == "query")
-    if appended:
+    if blocked:
         assert done["turn_outcome"]["status"] != "complete"
         assert appended not in saved.content
     else:
         assert done["turn_outcome"]["status"] == "complete"
-        assert acknowledgement in saved.content
+        assert acknowledgement + appended in saved.content
