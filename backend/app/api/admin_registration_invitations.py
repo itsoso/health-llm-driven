@@ -39,6 +39,7 @@ from app.services.registration_invitation_sms import (
 
 
 router = APIRouter(prefix="/admin/registration-invitations", tags=["admin-registration-invitations"])
+_MANUAL_PREPARED_AUDIT_ACTION = "registration_invitation_manual_prepared"
 logger = logging.getLogger(__name__)
 _ACTIVE_STATUSES = ("created", "sent", "send_failed")
 _MAX_PHONE_INPUT_LENGTH = 32
@@ -346,7 +347,7 @@ def create_invitation(
                 _audit(
                     admin,
                     created.invitation,
-                    event="registration_invitation_manual_credentials_prepared",
+                    event=_MANUAL_PREPARED_AUDIT_ACTION,
                     action="manual_prepare",
                 )
             )
@@ -447,7 +448,7 @@ def prepare_resend(
                 _audit(
                     admin,
                     invitation,
-                    event="registration_invitation_manual_credentials_prepared",
+                    event=_MANUAL_PREPARED_AUDIT_ACTION,
                     action="manual_regenerate",
                 )
             )
