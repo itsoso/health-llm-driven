@@ -1056,18 +1056,20 @@ def _analyzed_material_end(text: str, start: int) -> int:
     return len(text)
 
 
-def _strip_markdown_blockquote_material(text: str) -> str:
+def _strip_markdown_blockquote_material(text: str, *, replacement: str = "\n") -> str:
     """Remove blockquotes with CommonMark lazy continuation as one body."""
     projected = str(text or "")
     while match := MARKDOWN_BLOCKQUOTE_START_RE.search(projected):
         quote_start = match.end() - 1
         quote_end = _analyzed_material_end(projected, quote_start)
-        projected = projected[: match.start()] + "\n" + projected[quote_end:]
+        projected = projected[: match.start()] + replacement + projected[quote_end:]
     return projected
 
 
 def _strip_backtick_code_material(
     text: str,
+    *,
+    replacement: str = " ",
 ) -> tuple[str, tuple[tuple[str, str, str, bool], ...], bool]:
     """Remove Markdown code spans of any delimiter length across newlines."""
     projected = str(text or "")
@@ -1094,13 +1096,15 @@ def _strip_backtick_code_material(
         removed.append(
             (projected[opener.end() : closer.start()], projected[: opener.start()], projected[end:], False)
         )
-        projected = projected[: opener.start()] + " " + projected[end:]
+        projected = projected[: opener.start()] + replacement + projected[end:]
         cursor = opener.start() + 1
     return projected, tuple(removed), False
 
 
 def _strip_struck_material(
     text: str,
+    *,
+    replacement: str = " ",
 ) -> tuple[str, tuple[tuple[str, str, str, bool], ...], bool]:
     """Remove paired Markdown strike spans and surface malformed boundaries."""
     projected = str(text or "")
@@ -1113,7 +1117,7 @@ def _strip_struck_material(
         removed.append(
             (projected[start + 2 : end_start], projected[:start], projected[end:], False)
         )
-        projected = projected[:start] + " " + projected[end:]
+        projected = projected[:start] + replacement + projected[end:]
     return projected, tuple(removed), False
 
 
@@ -1231,14 +1235,20 @@ def active_health_instruction_text(text: str) -> str:
     stays non-authorizing, including apparent instructions inside that body.
     """
     original = str(text or "")
-    original = MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
-    original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
-    original, _code_removed, _code_malformed = _strip_backtick_code_material(original)
-    original = _strip_markdown_blockquote_material(original)
-    original = INLINE_STRUCK_MATERIAL_RE.sub(" ", original)
+    material_placeholder = "“”"
+    block_material_placeholder = "“”。"
+    original = MARKDOWN_FENCED_MATERIAL_RE.sub(block_material_placeholder, original)
+    original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub(material_placeholder, original)
+    original, _code_removed, _code_malformed = _strip_backtick_code_material(
+        original, replacement=material_placeholder
+    )
+    original = _strip_markdown_blockquote_material(
+        original, replacement=block_material_placeholder
+    )
+    original = INLINE_STRUCK_MATERIAL_RE.sub(material_placeholder, original)
     original = UNCLOSED_STRUCK_MATERIAL_RE.sub(" ", original)
     original = UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE.sub(" ", original)
-    original = INDENTED_CODE_MATERIAL_RE.sub(" ", original)
+    original = INDENTED_CODE_MATERIAL_RE.sub(block_material_placeholder, original)
     parts: list[str] = []
     cursor = 0
     while match := ANALYZED_MATERIAL_INTRO_RE.search(original, cursor):
@@ -1321,7 +1331,17 @@ def active_health_read_authority_text(text: str) -> str:
     A non-authorizing qualifier inside a removed span applies to the surrounding
     read request and therefore fails closed instead of being erased.
     """
-    projected, html_removed = _strip_html_material(str(text or ""))
+    block_material_placeholder = "“”。"
+    material_source = MARKDOWN_FENCED_MATERIAL_RE.sub(
+        block_material_placeholder, str(text or "")
+    )
+    material_source = _strip_markdown_blockquote_material(
+        material_source, replacement=block_material_placeholder
+    )
+    material_source = INDENTED_CODE_MATERIAL_RE.sub(
+        block_material_placeholder, material_source
+    )
+    projected, html_removed = _strip_html_material(material_source)
     if not projected:
         return ""
     projected, code_removed, code_malformed = _strip_backtick_code_material(projected)
