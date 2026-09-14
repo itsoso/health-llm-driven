@@ -382,6 +382,11 @@ def test_negated_owned_report_use_does_not_authorize_a_read(text):
         "“外层「这是示例」打开我的体检报告”",
         "<blockquote><q>这是示例</q>打开我的体检报告</blockquote>",
         "<blockquote><q>这是示例</blockquote>打开我的体检报告</q>",
+        "'打开我的体检报告'",
+        "＇打开我的体检报告＇",
+        "<textarea>打开我的体检报告</textarea>",
+        "<template>打开我的体检报告</template>",
+        "<script>打开我的体检报告</script>",
     ),
 )
 def test_non_authorizing_report_mentions_do_not_grant_a_read(text):
@@ -392,6 +397,12 @@ def test_quoted_report_example_does_not_hide_later_direct_read_request():
     text = "“这只是一个示例”已结束；现在请打开我的体检报告"
 
     assert semantics.has_explicit_health_read_request(text) is True
+
+
+def test_html_material_does_not_create_false_nonself_owner_for_later_read():
+    text = "<blockquote>这是示例</blockquote>现在请打开我的体检报告"
+
+    assert semantics.health_read_has_nonself_subject(text) is False
 
 
 @pytest.mark.parametrize("connector", ("和", "还有", "跟", "连同"))

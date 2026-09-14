@@ -10021,6 +10021,11 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "“外层「这是示例」打开我的体检报告”",
         "<blockquote><q>这是示例</q>打开我的体检报告</blockquote>",
         "<blockquote><q>这是示例</blockquote>打开我的体检报告</q>",
+        "'打开我的体检报告'",
+        "＇打开我的体检报告＇",
+        "<textarea>打开我的体检报告</textarea>",
+        "<template>打开我的体检报告</template>",
+        "<script>打开我的体检报告</script>",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
@@ -10090,6 +10095,32 @@ async def test_recent_owned_report_request_dispatches(message, tool_name):
 async def test_quoted_report_example_preserves_later_direct_read(tool_name):
     gateway = ToolGateway(
         _snapshot("“这只是一个示例”已结束；现在请打开我的体检报告")
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+async def test_html_material_preserves_later_direct_owned_read(tool_name):
+    gateway = ToolGateway(
+        _snapshot("<blockquote>这是示例</blockquote>现在请打开我的体检报告")
     )
     calls = []
 

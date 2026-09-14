@@ -930,7 +930,8 @@ UNCLOSED_STRUCK_MATERIAL_RE = re.compile(
     re.IGNORECASE,
 )
 HTML_MATERIAL_TOKEN_RE = re.compile(
-    r"(?is)<!--|</?(?P<tag>blockquote|q|s|pre|kbd|code|del)\b[^>]*>"
+    r'''(?is)<!--|</?(?P<tag>[a-z][a-z0-9:-]*)\b'''
+    r'''(?:"[^"]*"|'[^']*'|[^'">])*>'''
 )
 UNCLOSED_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?ms)^[ \t]{0,3}(?:`{3,}|~{3,})[^\n\r]*(?:[\n\r]+|$).*\Z"
@@ -946,6 +947,8 @@ ANALYZED_MATERIAL_QUOTE_PAIRS = {
     "〈": "〉",
     "〔": "〕",
     '"': '"',
+    "'": "'",
+    "＇": "＇",
 }
 STANDALONE_MATERIAL_QUOTE_PAIRS = {
     **ANALYZED_MATERIAL_QUOTE_PAIRS,
@@ -1506,7 +1509,8 @@ def _strip_exam_request_scaffolding(value: str) -> str:
     candidate = value.strip("，,。.!！；;：:?？ ")
     prefix_re = re.compile(
         r"^(?:然后|但|不过|而是|方便的话|请问|请您|烦请|劳烦|有劳|劳驾|"
-        r"拜托|请|麻烦你?|能不能|可不可以|能否|可否|我想(?:在)?|"
+        r"拜托|请|麻烦你?|能不能|可不可以|能否|可否|"
+        r"现在|立即|马上|此刻|这次|本次|我想(?:在)?|"
         r"想(?:在)?|能(?=给我|帮我|帮忙|替我|为我|查询|查找|查看|找出|"
         r"翻看|调取|调出|查|看)|给我|帮我|帮忙|替我|为我|把|仅|只|再)"
     )
@@ -2031,9 +2035,11 @@ def _has_exact_clinical_report_target(text: str) -> bool:
 
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
-    if has_explicit_nonself_health_owner(text):
+    subject_scope = clinical_interpretation_query_scope(
+        active_health_read_authority_text(text)
+    )
+    if has_explicit_nonself_health_owner(subject_scope):
         return True
-    subject_scope = clinical_interpretation_query_scope(text)
     if _has_owned_report_use_request(subject_scope):
         return False
     if _has_exact_clinical_report_target(subject_scope):
