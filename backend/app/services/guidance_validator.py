@@ -557,6 +557,13 @@ def _regimen_assertion_text(sentence: str) -> str:
         r"(^\s*请告诉我[^。；;!?！？\n]{0,40})服用(?=时间[。；;!?！？\n]*$)",
         r"\1用药", projected,
     )
+    # A completed check-in-format predicate describes a record noun. Project
+    # only its noun token in the matching view: never skip a greedy regimen
+    # match, which could also contain an earlier real administration command.
+    projected = re.sub(
+        r"服用(?=打卡形式出现\s*(?:[，,。；;!?！？\n]|$))",
+        "记录", projected,
+    )
     def existing_quantity(match: re.Match) -> str:
         prefix = re.split(
             r"[，,。；;!?！？\n]|但是|但|不过|然而|而是", projected[:match.start()]

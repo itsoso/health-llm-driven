@@ -1491,6 +1491,7 @@ def test_composed_record_description_projection_preserves_summary_after_metadata
 @pytest.mark.parametrize('initial_answer', ['恢复良好，继续原有方案。', '建议维生素C每天服用500mg。'])
 @pytest.mark.parametrize('result,complete', [
     ({'content': ANSWER, 'finish_reason': 'stop'}, True),
+    ({'content': '睡眠和补剂分别以每日睡眠条目及服用打卡形式出现。\n\n这些记录不足以判断当前健康状态。', 'finish_reason': 'stop'}, True),
     ({'content': '恢复良好，继续原有方案。', 'finish_reason': 'stop'}, False),
     ({'content': '建议维生素C每天服用500mg。', 'finish_reason': 'stop'}, False),
     ({'content': 'PARTIAL_CORRECTION_SENTINEL', 'finish_reason': 'length'}, False),

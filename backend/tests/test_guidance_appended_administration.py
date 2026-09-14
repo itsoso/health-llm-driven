@@ -663,3 +663,44 @@ def test_completed_intake_named_supplement_handling_keeps_actions_visible(histor
     assert result.flagged is bool(appended)
     if not appended:
         assert text in result.text
+
+
+@pytest.mark.parametrize("separator", ["。", "，", "；", "\n"])
+def test_intake_checkin_format_is_a_record_noun(separator):
+    text = "睡眠和补剂分别以每日睡眠条目及服用打卡形式出现" + separator
+    result = enforce_medical_evidence_boundaries(text)
+    assert not result.flagged
+    assert text in result.text
+
+
+@pytest.mark.parametrize("instruction", [
+    "每日服用两粒鱼油。", "请睡前服用。", "明天200mg。", "疗程改为两周。",
+    "服用时间改为睡前。", "建议鱼油每天服用。",
+])
+@pytest.mark.parametrize("placement", ["before", "after"])
+def test_record_format_noun_never_hides_other_administration(instruction, placement):
+    record = "睡眠和补剂分别以每日睡眠条目及服用打卡形式出现，"
+    text = instruction + record if placement == "before" else record + instruction
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged
+    assert "unverified_dose_action" in result.violations
+
+
+@pytest.mark.parametrize("text", [
+    "建议每日服用打卡形式出现的药物。",
+    "补剂每日服用打卡形式出现的两粒药物。",
+    "补剂每日服用打卡形式出现后再加两粒。",
+    "补剂每日服用打卡形式出现然后服用两粒。",
+])
+def test_record_format_prefix_does_not_authorize_a_medical_object(text):
+    assert enforce_medical_evidence_boundaries(text).flagged
+
+
+@pytest.mark.parametrize("instruction", [
+    "补剂建议服用鱼油", "建议按既有情况服用补剂", "补剂请在睡前服用",
+])
+def test_greedy_regimen_match_cannot_hide_before_record_format(instruction):
+    text = instruction + "，记录以服用打卡形式出现。"
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged
+    assert "unverified_dose_action" in result.violations
