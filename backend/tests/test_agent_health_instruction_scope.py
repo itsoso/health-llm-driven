@@ -52,6 +52,20 @@ def test_explicit_read_after_closed_material_remains_active(text):
 @pytest.mark.parametrize(
     "text",
     [
+        "分析以下建议：\n```\n查询张三的饮食记录\n````\n\n查询我的饮食记录并分析",
+        "分析以下建议：\n````\n查询张三的饮食记录\n`````\n\n查询我的饮食记录并分析",
+        "分析以下建议：\n~~~\n查询张三的饮食记录\n~~~~\n\n查询我的饮食记录并分析",
+        "分析以下建议：\n    不用再买。\n\n查询我的饮食记录并分析",
+    ],
+)
+def test_closed_block_material_preserves_later_owned_read(text):
+    assert semantics.has_explicit_health_read_request(text) is True
+    assert semantics.active_health_read_clause(text) == "查询我的饮食记录并分析"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         "不要查我的睡眠记录。分析以下建议：“查询我的睡眠记录。”",
         "分析以下建议：“查询我的睡眠记录。”；不要查我的睡眠记录",
         "查询我的睡眠记录。分析以下建议：“如果家里有不用再买。”；先不要继续",

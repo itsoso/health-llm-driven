@@ -924,9 +924,8 @@ ANALYZED_MATERIAL_INTRO_RE = re.compile(
     r")"
     r"\s*(?:[：:]|[。.!！]|[\n\r]+)\s*"
 )
-MARKDOWN_FENCED_MATERIAL_RE = re.compile(
-    r"(?ms)^[ \t]{0,3}(?P<fence>`{3,}|~{3,})[^\n\r]*[\n\r]+"
-    r".*?^[ \t]{0,3}(?P=fence)[ \t]*(?:[\n\r]+|$)"
+MARKDOWN_FENCED_MATERIAL_START_RE = re.compile(
+    r"(?m)^[ \t]{0,3}(?P<fence>`{3,}|~{3,})[^\n\r]*(?:\r\n?|\n)"
 )
 INLINE_MARKDOWN_FENCED_MATERIAL_RE = re.compile(
     r"(?P<fence>`{3,}|~{3,})[^\n\r]*?(?P=fence)"
@@ -1063,6 +1062,31 @@ def _strip_markdown_blockquote_material(text: str, *, replacement: str = "\n") -
         quote_start = match.end() - 1
         quote_end = _analyzed_material_end(projected, quote_start)
         projected = projected[: match.start()] + replacement + projected[quote_end:]
+    return projected
+
+
+def _strip_markdown_fenced_material(text: str, *, replacement: str) -> str:
+    """Remove closed CommonMark fences without weakening their close rule.
+
+    A closing fence must use the opener's character and may be longer than the
+    opener.  Python regex backreferences only match the exact opener, so scan
+    the closer explicitly and leave unclosed material for the fail-closed pass.
+    """
+    projected = str(text or "")
+    cursor = 0
+    while opener := MARKDOWN_FENCED_MATERIAL_START_RE.search(projected, cursor):
+        marker = opener.group("fence")
+        closer = re.search(
+            rf"(?m)^[ \t]{{0,3}}{re.escape(marker[0])}{{{len(marker)},}}"
+            r"[ \t]*(?:\r\n?|\n|$)",
+            projected[opener.end() :],
+        )
+        if closer is None:
+            cursor = opener.end()
+            continue
+        end = opener.end() + closer.end()
+        projected = projected[: opener.start()] + replacement + projected[end:]
+        cursor = opener.start() + len(replacement)
     return projected
 
 
@@ -1237,7 +1261,9 @@ def active_health_instruction_text(text: str) -> str:
     original = str(text or "")
     material_placeholder = "“”"
     block_material_placeholder = "“”。"
-    original = MARKDOWN_FENCED_MATERIAL_RE.sub(block_material_placeholder, original)
+    original = _strip_markdown_fenced_material(
+        original, replacement=block_material_placeholder
+    )
     original = INLINE_MARKDOWN_FENCED_MATERIAL_RE.sub(material_placeholder, original)
     original, _code_removed, _code_malformed = _strip_backtick_code_material(
         original, replacement=material_placeholder
@@ -1332,8 +1358,8 @@ def active_health_read_authority_text(text: str) -> str:
     read request and therefore fails closed instead of being erased.
     """
     block_material_placeholder = "“”。"
-    material_source = MARKDOWN_FENCED_MATERIAL_RE.sub(
-        block_material_placeholder, str(text or "")
+    material_source = _strip_markdown_fenced_material(
+        str(text or ""), replacement=block_material_placeholder
     )
     material_source = _strip_markdown_blockquote_material(
         material_source, replacement=block_material_placeholder
@@ -1531,7 +1557,7 @@ def resolve_health_read_act(text: str) -> HealthReadActResolution:
     if status == "none" and not saw_read:
         return HealthReadActResolution("none", normalized)
     active_clause = (
-        normalized[active_start:].strip("，,。.!！；;：:?？ ")
+        normalized[active_start:].strip("，,。.!！；;：:?？ \t\r\n")
         if status == "active" and active_start is not None
         else ""
     )
