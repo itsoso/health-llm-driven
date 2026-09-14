@@ -17,6 +17,9 @@ from app.services.utterance_intent_classifier import classify_agent_utterance
         "给我一个今日方案",
         "先看看昨天的睡眠，再起草今天的计划",
         "给我拟个饮食计划",
+        "给我计划这周我应该怎么吃怎么运动。",
+        "定我本周的运动计划。",
+        "制定我本周的运动的计划。",
         "起草今天计划，不要保存",
         "别保存，先给我看看今天的计划草稿",
         "修改今天的计划草稿",
@@ -96,6 +99,12 @@ def test_plan_mentions_negation_quotes_and_cancellation_do_not_authorize_writes(
     message,
 ):
     assert classify_agent_utterance(message).is_write is False
+
+
+def test_uncertainty_about_a_plan_is_not_misread_as_compact_plan_drafting():
+    intent = classify_agent_utterance("我不确定我的运动计划是否合理")
+
+    assert intent.reason != "plan_draft_request"
 
 
 @pytest.mark.parametrize(

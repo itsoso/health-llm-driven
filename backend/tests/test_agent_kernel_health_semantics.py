@@ -169,10 +169,46 @@ def test_v39_medical_exam_resolution_rejects_unpunctuated_nonself_subject(text):
     assert semantics.resolve_medical_exam_query(text).status == "nonself"
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "给我一些建议，基于我的体检报告。",
+        "请结合我最近一次体检报告给我建议。",
+        "解读我最近一次体检报告。",
+    ),
+)
+def test_owned_report_advice_is_an_explicit_current_user_read(text):
+    assert semantics.has_explicit_nonself_health_owner(text) is False
+    assert semantics.health_read_has_nonself_subject(text) is False
+    assert semantics.has_explicit_health_read_request(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "给我一些建议，基于张三的体检报告。",
+        "请结合我同事最近一次体检报告给我建议。",
+    ),
+)
+def test_third_party_report_advice_remains_nonself(text):
+    assert semantics.health_read_has_nonself_subject(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "不要给我建议，基于我的体检报告。",
+        "给我一般建议，不要基于我的体检报告。",
+    ),
+)
+def test_negated_owned_report_use_does_not_authorize_a_read(text):
+    assert semantics.has_explicit_health_read_request(text) is False
+
+
 def test_v39_health_semantics_contract_is_versioned_and_content_digested():
     payload = semantics.health_semantics_contract_payload()
 
-    assert payload["version"] == "health-semantics-v8"
+    assert payload["version"] == "health-semantics-v9"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["content_digest"])
 
 

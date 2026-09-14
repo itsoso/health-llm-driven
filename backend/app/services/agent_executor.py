@@ -13511,10 +13511,19 @@ class AgentExecutor:
             f"{multi_model_context_text}\n"
             f"[用户消息]\n{message}"
         )
-        from app.services.agent_input_tool_scope import scope_tools_for_analyzed_material, scope_tools_for_owned_read
+        from app.services.agent_input_tool_scope import (
+            scope_tools_for_analyzed_material,
+            scope_tools_for_goal,
+            scope_tools_for_owned_read,
+        )
 
         tools = scope_tools_for_analyzed_material(get_health_tools(), message)
         tools = scope_tools_for_owned_read(tools, panel_read_scope)
+        tools = scope_tools_for_goal(
+            tools,
+            self._agent_kernel_snapshot.goal
+            if self._agent_kernel_snapshot is not None else None,
+        )
         if classify_agent_utterance(message).reason == "conversation_feedback":
             tools = []
         full_reply = ""
@@ -16298,9 +16307,17 @@ class AgentExecutor:
                 not in blocked_attachment_write_tools
             ]
 
-        from app.services.agent_input_tool_scope import scope_tools_for_analyzed_material
+        from app.services.agent_input_tool_scope import (
+            scope_tools_for_analyzed_material,
+            scope_tools_for_goal,
+        )
 
         tools = scope_tools_for_analyzed_material(tools, message)
+        tools = scope_tools_for_goal(
+            tools,
+            self._agent_kernel_snapshot.goal
+            if self._agent_kernel_snapshot is not None else None,
+        )
         if completion_intent.reason == "conversation_feedback":
             tools = []
 
@@ -17316,6 +17333,8 @@ class AgentExecutor:
                     pi_started = True
                     round_idx = -1
                     remaining_batch_tools = 0
+                    blocked_pi_calls: set[str] = set()
+                    pi_force_no_tools_synthesis = False
                     async for request in pi:
                         if request["type"] == "model_request":
                             _reconcile_pi_preflight_rejections(request["messages"], round_idx)
@@ -17417,6 +17436,7 @@ class AgentExecutor:
                             self._tool_round_fast_routed = False
                             round_tools = (
                                 [] if composed_messages is not None or diet_synthesis_round or self._force_no_tools_synthesis
+                                or pi_force_no_tools_synthesis
                                 or self._turn_doctor_feedback_write_attempted
                                 or self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
                                 else request["tools"]
@@ -17540,11 +17560,16 @@ class AgentExecutor:
                                 proposed_calls = await self._normalize_explicit_diet_update_tool_calls(
                                     proposed_calls, user_auth_token,
                                 )
+                                goal_guard_candidates = list(proposed_calls)
                                 proposed_calls = _normalize_goal_guarded_tool_calls(
                                     proposed_calls,
                                     self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
                                     lookup_completed=goal_lookup_completed,
                                     allowed_record_ids=goal_allowed_record_ids,
+                                )
+                                rejected_goal_writes = _goal_guard_rejected_writes(
+                                    goal_guard_candidates,
+                                    proposed_calls,
                                 )
                                 proposed_calls, simple_diet_nutrition_estimation_attempted = (
                                     await _enrich_simple_diet_goal_tool_calls(
@@ -17554,6 +17579,24 @@ class AgentExecutor:
                                         runtime_write_blocked=bool(self._runtime_write_block_reason),
                                     )
                                 )
+                                if (
+                                    goal_guard_candidates
+                                    and not proposed_calls
+                                    and len(rejected_goal_writes)
+                                    == len(goal_guard_candidates)
+                                ):
+                                    # Let official Pi attach explicit denied
+                                    # tool results, then request one bounded
+                                    # text-only answer. No denied call reaches
+                                    # Python's tool gateway.
+                                    blocked_pi_calls.update(
+                                        str(call["id"])
+                                        for call in goal_guard_candidates
+                                    )
+                                    proposed_calls = goal_guard_candidates
+                                    pi_force_no_tools_synthesis = True
+                                    candidate = ""
+                                    finish_reason = "tool_calls"
                                 # Canonicalize once before issuing the call to
                                 # Pi so the durable plan and dispatch identity
                                 # describe the same authorized health payload.
@@ -17581,9 +17624,13 @@ class AgentExecutor:
                                 if not proposed_calls:
                                     candidate = "本轮请求未通过目标操作检查，没有执行变更。"
                                     finish_reason = "error"
-                                self._prepare_medication_tool_plan(proposed_calls)
+                                dispatchable_calls = [
+                                    call for call in proposed_calls
+                                    if str(call.get("id")) not in blocked_pi_calls
+                                ]
+                                self._prepare_medication_tool_plan(dispatchable_calls)
                                 planned_writes = []
-                                for call in proposed_calls:
+                                for call in dispatchable_calls:
                                     function = call.get("function") or {}
                                     name = function.get("name")
                                     args = _parse_tool_arguments_for_telemetry(function.get("arguments"))
@@ -17607,6 +17654,15 @@ class AgentExecutor:
                                 finish_reason=finish_reason or ("tool_calls" if proposed_calls else "error"),
                             )
                         elif request["type"] == "tool_request":
+                            if request["tool_call_id"] in blocked_pi_calls:
+                                remaining_batch_tools -= 1
+                                await pi.respond(
+                                    request,
+                                    content=_GOAL_GUARD_RECOVERY_PROMPT,
+                                    is_error=True,
+                                    terminate=False,
+                                )
+                                continue
                             call = {
                                 "id": request["tool_call_id"],
                                 "type": "function",

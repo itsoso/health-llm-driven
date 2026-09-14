@@ -9782,6 +9782,65 @@ async def test_v38_third_party_medical_exam_read_never_dispatches(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+async def test_owned_report_advice_projects_a_current_user_medical_exam_read(
+    tool_name,
+    policy_mode,
+):
+    gateway = ToolGateway(
+        _snapshot(
+            "给我一些建议，基于我的体检报告。",
+            policy_mode=policy_mode,
+        )
+    )
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls == [arguments]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+async def test_third_party_report_advice_never_dispatches(tool_name):
+    gateway = ToolGateway(_snapshot("给我一些建议，基于张三的体检报告。"))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments),
+        dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
 @pytest.mark.parametrize(
     "message",
     (

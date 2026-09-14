@@ -247,7 +247,11 @@ async def test_multi_model_advice_recovers_when_lead_selects_write_tool(
     ]
 
     assert len(lead_calls) == 2
-    assert lead_calls[0] == lead_tools
+    first_round_tool_names = {
+        tool["function"]["name"] for tool in lead_calls[0]
+    }
+    assert "health_record" not in first_round_tool_names
+    assert "knowledge_search" in first_round_tool_names
     assert lead_calls[1] == []
     assert events[-1]["event"] == "done"
     assert events[-1]["data"]["completion_status"] == "complete"

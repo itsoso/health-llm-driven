@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v8"
+HEALTH_SEMANTICS_CONTRACT_VERSION = "health-semantics-v9"
 
 
 @dataclass(frozen=True)
@@ -1115,7 +1115,9 @@ def has_explicit_health_read_request(text: str) -> bool:
     scoped = active_health_read_clause(text)
     if not scoped:
         return False
-    return has_positive_health_read_verb(scoped)
+    return has_positive_health_read_verb(scoped) or _has_owned_report_use_request(
+        scoped
+    )
 
 
 def is_unresolved_health_reference(value: str) -> bool:
@@ -1392,6 +1394,51 @@ _HEALTH_REPORT_DOMAIN = (
     r"(?:医学检查报告|检查记录|体检报告|化验报告|检验报告|检查报告|"
     r"检查结果|报告)"
 )
+_REPORT_TIME_SCOPE = r"(?:(?:最近|最新|上|最后)(?:一)?次(?:的)?)?"
+CURRENT_USER_REPORT_REFERENCE_RE = re.compile(
+    rf"(?:我(?:自己|本人|个人)?|本人|自己)(?:的)?"
+    rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
+    re.IGNORECASE,
+)
+REPORT_BASIS_OWNER_RE = re.compile(
+    rf"(?:基于|结合|根据|参考|依据)"
+    rf"(?P<owner>[^\n\r，,；;：:。.!！?？、]{{1,32}}?)(?:的)?"
+    rf"{_REPORT_TIME_SCOPE}{_HEALTH_REPORT_DOMAIN}",
+    re.IGNORECASE,
+)
+REPORT_USE_ACTION_RE = re.compile(
+    r"(?:建议|分析|解读|解释|评估|评价|判断|行动|方案)",
+    re.IGNORECASE,
+)
+NEGATED_REPORT_USE_RE = re.compile(
+    r"(?:不要|别|无需|不用|不必|请勿)"
+    r"[^\n\r，,；;：:。.!！?？、]{0,16}"
+    r"(?:基于|结合|根据|参考|依据|建议|分析|解读|解释|评估|评价|判断)",
+    re.IGNORECASE,
+)
+
+
+def _has_owned_report_use_request(text: str) -> bool:
+    """Treat an explicit request to use one's report as bounded read consent."""
+    normalized = str(text or "").strip()
+    if (
+        NEGATED_REPORT_USE_RE.search(normalized)
+        or CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is None
+        or REPORT_USE_ACTION_RE.search(normalized) is None
+        or has_explicit_nonself_health_owner(normalized)
+    ):
+        return False
+    return bool(
+        re.search(r"(?:基于|结合|根据|参考|依据)", normalized, re.IGNORECASE)
+        or re.match(
+            r"^(?:请|麻烦你?|帮我|给我)?"
+            r"(?:分析|解读|解释|评估|评价)(?:一下|下)?",
+            normalized,
+            re.IGNORECASE,
+        )
+    )
+
+
 def has_explicit_nonself_health_owner(text: str) -> bool:
     """Detect explicit third-party ownership across natural clause orderings."""
     normalized = clinical_interpretation_query_scope(str(text or ""))
@@ -1421,6 +1468,23 @@ def has_explicit_nonself_health_owner(text: str) -> bool:
     )
     if beneficiary is not None:
         return not _is_current_user_scope_owner(beneficiary.group("owner"))
+
+    basis_owner = REPORT_BASIS_OWNER_RE.search(normalized)
+    if basis_owner is not None:
+        owner = basis_owner.group("owner").strip().removesuffix("的")
+        return not (
+            _is_current_user_scope_owner(owner)
+            or _is_exact_clinical_report_base(owner)
+        )
+
+    report_targets = tuple(
+        re.finditer(_HEALTH_REPORT_DOMAIN, normalized, re.IGNORECASE)
+    )
+    if (
+        len(report_targets) == 1
+        and CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is not None
+    ):
+        return asserted_nonself
 
     scoped = re.sub(
         r"^(?:请|麻烦你?|帮我|给我|替我|为我|查询|查找|查看|调取|调出|"
@@ -1533,6 +1597,8 @@ def health_read_has_nonself_subject(text: str) -> bool:
     if has_explicit_nonself_health_owner(text):
         return True
     subject_scope = clinical_interpretation_query_scope(text)
+    if _has_owned_report_use_request(subject_scope):
+        return False
     if _has_exact_clinical_report_target(subject_scope):
         return False
     read_act = resolve_health_read_act(subject_scope)

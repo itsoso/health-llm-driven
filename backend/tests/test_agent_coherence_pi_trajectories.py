@@ -9,6 +9,7 @@ import pytest
 
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.daily_health import DietRecord, GarminData
+from app.models.medical_exam import MedicalExam
 from app.models.smart_plan import WeeklyPlan, PlanItem
 from app.models.user import GarminCredential, User
 from app.services.agent_executor import AgentExecutor
@@ -352,9 +353,17 @@ async def test_plan_draft_is_an_answer_without_plan_database_write(
     assert "计划草稿" in saved.content
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "给我计划这周我应该怎么吃怎么运动。",
+        "定我本周的运动计划。",
+        "制定我本周的运动的计划。",
+    ),
+)
 @pytest.mark.asyncio
-async def test_plan_draft_cannot_escalate_a_model_proposed_save(
-    db, owned_data, monkeypatch
+async def test_plan_advice_recovers_when_model_proposes_weekly_plan_write(
+    db, owned_data, monkeypatch, message
 ):
     trace = script_executor(
         db,
@@ -364,11 +373,54 @@ async def test_plan_draft_cannot_escalate_a_model_proposed_save(
             "以下只是计划草稿，尚未保存。",
         ],
     )
-    done, saved = await run(db, trace, owned_data, "给我起草今天的计划")
+    done, saved = await run(db, trace, owned_data, message)
     assert not trace.dispatches and not done["write_receipts"]
     assert db.query(WeeklyPlan).count() == db.query(PlanItem).count() == 0
     assert "已保存" not in saved.content
-    assert done["turn_outcome"]["status"] != "complete"
+    assert "计划草稿" in saved.content
+    assert done["turn_outcome"]["status"] == "complete"
+    assert len(trace.calls) == 2
+    assert "manage_plan" not in {
+        (tool.get("function") or {}).get("name")
+        for tool in trace.calls[0][1]
+    }
+    assert not trace.calls[1][1]
+
+
+@pytest.mark.asyncio
+async def test_owned_medical_exam_advice_reads_report_before_synthesis(
+    db, owned_data, monkeypatch, clock
+):
+    db.add(
+        MedicalExam(
+            user_id=owned_data.id,
+            exam_date=clock[0].date(),
+            exam_type="comprehensive",
+            overall_assessment="合成体检报告：低密度脂蛋白偏高，建议复核。",
+        )
+    )
+    db.commit()
+    trace = script_executor(
+        db,
+        monkeypatch,
+        [
+            ("health_query", {"dimension": "medical_exam"}),
+            "基于这份报告，可以先复核血脂并与医生确认长期目标。",
+        ],
+    )
+
+    done, saved = await run(
+        db,
+        trace,
+        owned_data,
+        "给我一些建议，基于我的体检报告。",
+    )
+
+    assert len(trace.dispatches) == 1
+    assert trace.dispatches[0].arguments == {"dimension": "medical_exam"}
+    assert "合成体检报告" in trace.results[0][1]
+    assert done["turn_outcome"]["status"] == "complete"
+    assert "基于这份报告" in saved.content
 
 
 @pytest.mark.asyncio
