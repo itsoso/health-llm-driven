@@ -9967,6 +9967,16 @@ async def test_third_party_report_advice_never_dispatches(tool_name):
         "以下仅供讨论。\n基于我的体检报告给建议。",
         "下面是医生原话。基于我的体检报告给建议。",
         "这是医生原话。基于我的体检报告给建议。",
+        "医生原话如下。\n现在请基于我的体检报告给建议。",
+        "以下是转发内容。\n立即帮我基于我的体检报告给建议。",
+        "这是一段引用。\n本次请你基于我的体检报告给建议。",
+        "医生的原话是：\n基于我的体检报告给建议。",
+        "医生原话是这样的。\n基于我的体检报告给建议。",
+        "引用内容：\n基于我的体检报告给建议。",
+        "转述内容：\n基于我的体检报告给建议。",
+        "示例文本：\n基于我的体检报告给建议。",
+        "这是复制过来的消息。\n基于我的体检报告给建议。",
+        "以下来自医生。\n基于我的体检报告给建议。",
     ),
 )
 async def test_non_authorizing_report_mentions_never_dispatch(
@@ -10000,7 +10010,7 @@ async def test_non_authorizing_report_mentions_never_dispatch(
     "message",
     (
         "基于我的体检报告给建议，算了；不过现在请基于我的体检报告给建议。",
-        "朋友说：基于我的体检报告给建议；不过现在请基于我的体检报告给建议。",
+        "朋友说：基于我的体检报告给建议；以上是转述；不过现在请基于我的体检报告给建议。",
     ),
 )
 async def test_later_explicit_report_request_dispatches(message):

@@ -1460,7 +1460,8 @@ _REPORT_DIRECT_ACTION_SUFFIX = (
 REPORT_USE_DIRECT_REQUEST_RE = re.compile(
     rf"(?:"
     rf"^(?:(?:现在|立即|马上|本次|这次)\s*)?"
-    rf"(?:(?:请(?:你)?|麻烦你?|帮我|我想(?:请你)?|我希望(?:你)?)\s*)?"
+    rf"(?:(?:请(?:你)?|麻烦你?|帮我|我想(?:请你)?|我希望(?:你)?|"
+    rf"我明确(?:授权|同意|允许|批准)(?:你)?)\s*)?"
     rf"(?:基于|结合|根据|参考|依据)[^\n\r：:]{{0,48}}"
     rf"{CURRENT_USER_REPORT_REFERENCE_RE.pattern}\s*"
     rf"{_REPORT_DIRECT_ACTION_SUFFIX}\s*$|"
@@ -1531,15 +1532,36 @@ REPORT_USE_PROVENANCE_RE = re.compile(
     re.IGNORECASE,
 )
 REPORT_USE_MATERIAL_CONTEXT_RE = re.compile(
-    r"(?:原话|转发(?:内容)?|转述|引用|引文|摘录|截图|聊天记录|"
-    r"(?:示|事|反)?例|仅供(?:讨论|分析|参考)|供(?:讨论|分析|参考)|"
-    r"(?:内容|文字|文本|材料)(?:如下|是)|如下)"
-    r"[，,。.!！?？\s]*$",
+    r"(?:"
+    r"^(?:以下|下面|下列|接下来)(?:是|为|属于|来自|出自|摘自)?"
+    r"[^\n\r，,；;：:。.!！?？]{0,24}"
+    r"(?:医生|原话|引用|引文|摘录|转发|转述|内容|文字|文本|材料|"
+    r"消息|截图|示例|例子)|"
+    r"^(?:这是|这是一段|这段是|这些是)?"
+    r"[^\n\r，,；;：:。.!！?？]{0,20}"
+    r"(?:原话|引用|引文|摘录|转发|转述|复制(?:过来)?的消息|"
+    r"聊天记录|截图|示例|例子)"
+    r"(?:是|为|如下|是这样的|如下所示)?|"
+    r"^(?:医生|朋友|同事|领导|家人)(?:的)?原话"
+    r"(?:是|为|如下|是这样的|如下所示)?|"
+    r"^(?:引用|转述|转发|示例)(?:内容|文本|文字|材料)?"
+    r"(?:是|为|如下|是这样的|如下所示)?|"
+    r"(?:仅供|供)(?:讨论|分析|参考)"
+    r")\s*$",
+    re.IGNORECASE,
+)
+REPORT_USE_MATERIAL_EXIT_RE = re.compile(
+    r"^(?:(?:以上|上面|上述|前面)(?:这些|这段|这份)?(?:是|为)?"
+    r"(?:引用|原话|引文|摘录|转发(?:内容)?|转述(?:内容)?|示例|例子|"
+    r"内容|文本|材料|消息)(?:到此)?(?:结束|完毕)?|"
+    r"(?:引用|原话|引文|摘录|转发|转述|示例|例子)(?:到此)?"
+    r"(?:结束|完毕))\s*$",
     re.IGNORECASE,
 )
 REPORT_USE_STRONG_REAUTHORIZATION_RE = re.compile(
-    r"^(?:现在|立即|马上|本次|这次)\s*"
-    r"(?:请(?:你)?|麻烦你?|帮我|给我)",
+    r"^(?:(?:现在|立即|马上|本次|这次)\s*"
+    r"(?:请(?:你)?|麻烦你?|帮我|给我)|"
+    r"(?:现在|本次|这次)?\s*我明确(?:授权|同意|允许|批准)(?:你)?)",
     re.IGNORECASE,
 )
 REPORT_USE_DEFERRED_RE = re.compile(
@@ -1594,6 +1616,7 @@ def _active_owned_report_use_clause(text: str) -> str:
     active_clause = ""
     saw_report_use = False
     material_context_active = False
+    material_context_requires_reauthorization = False
     for clause, trailing_boundary in clauses:
         owns_report = CURRENT_USER_REPORT_REFERENCE_RE.search(clause) is not None
         has_action = REPORT_USE_ACTION_RE.search(clause) is not None
@@ -1609,12 +1632,18 @@ def _active_owned_report_use_clause(text: str) -> str:
         is_report_use = owns_report and has_action and bool(
             has_basis or direct_analysis
         )
+        introduces_material_context = bool(
+            REPORT_USE_MATERIAL_CONTEXT_RE.search(clause)
+            or REPORT_USE_PROVENANCE_RE.search(clause)
+            or READ_NON_AUTHORIZING_RE.search(clause)
+        )
         if is_report_use:
             saw_report_use = True
             authorized = not bool(
                 REPORT_USE_DIRECT_REQUEST_RE.search(clause) is None
+                or material_context_active
                 or (
-                    material_context_active
+                    material_context_requires_reauthorization
                     and REPORT_USE_STRONG_REAUTHORIZATION_RE.search(clause) is None
                 )
                 or has_explicit_nonself_health_owner(clause)
@@ -1635,12 +1664,18 @@ def _active_owned_report_use_clause(text: str) -> str:
             active_clause = clause if authorized else ""
             if authorized:
                 material_context_active = False
-        elif (
-            REPORT_USE_MATERIAL_CONTEXT_RE.search(clause)
-            or REPORT_USE_PROVENANCE_RE.search(clause)
-            or READ_NON_AUTHORIZING_RE.search(clause)
-        ):
+                material_context_requires_reauthorization = False
+            elif introduces_material_context:
+                material_context_active = True
+                material_context_requires_reauthorization = True
+        elif material_context_active and REPORT_USE_MATERIAL_EXIT_RE.search(clause):
+            material_context_active = False
+            material_context_requires_reauthorization = True
+            if saw_report_use:
+                active_clause = ""
+        elif introduces_material_context:
             material_context_active = True
+            material_context_requires_reauthorization = True
             if saw_report_use:
                 active_clause = ""
         elif saw_report_use:
