@@ -2621,7 +2621,8 @@ def decide_tool_capability(
     if (tool_name == "health_record" and args.get("record_type") == "garmin_sync"
             and request.source not in {"procedure_recipe_replay", "telegram_directive"}):
         from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
-        if (has_owned_sync_instruction(snapshot.envelope.text)
+        if ((has_owned_sync_instruction(snapshot.envelope.text)
+                or _explicit_owned_garmin_sync(snapshot.envelope.text))
                 and snapshot.intent.operation == "sync" and args.get("data") == {}):
             return _decision("allow", "explicit_owned_garmin_sync", tool_name,
                              {"record_type": "garmin_sync", "data": {}},

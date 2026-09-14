@@ -83,7 +83,11 @@ def _owned_active(text: str | None) -> bool:
                 return False
             # The device is not an owner. Inspect the suffix too, projecting
             # its generic data noun into a health target for the shared parser.
-            suffix = re.sub(r"^(?:里|中|上)(?:的)?", "", clause[device.end() :].strip())
+            suffix = re.sub(
+                r"^(?:的|(?:里|中|上)(?:的)?)",
+                "",
+                clause[device.end() :].strip(),
+            )
             if health_read_has_nonself_subject("查询" + suffix.replace("数据", "睡眠")):
                 return False
             continue
