@@ -244,6 +244,8 @@ def _complete_read_background(clause: str) -> bool:
     """Only affirmative narrative predicates can remove a clause from scope."""
     if _RESTRICTION_PREFIX.search(clause) or re.search(r"范围|时段|时限|要求|条件|限制", clause):
         return False
+    if re.fullmatch(r"(?:这|以下|上面)?是?(?:一个|一段)?示例(?:文本|内容)?", clause):
+        return True
     if _diagnosis_background_clause(clause):
         return True
     if re.fullmatch(r"(?:有人|医生|他|她)(?:说|提到|表示)", clause):

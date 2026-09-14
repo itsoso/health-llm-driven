@@ -1064,7 +1064,9 @@ def _analyzed_material_end(text: str, start: int) -> int:
     if opener == ">":
         # Only an explicit blank line ends a Markdown quote. Lazy continuation
         # lines are still quoted content and cannot become tool instructions.
-        for close in re.finditer(r"\n[ \t]*\n", text[start:]):
+        for close in re.finditer(
+            r"(?:\r\n?|\n)[ \t]*(?:\r\n?|\n)", text[start:]
+        ):
             end = start + close.end()
             if not text[end:].lstrip().startswith(">"):
                 return end
@@ -1094,7 +1096,16 @@ def _strip_markdown_fenced_material(text: str, *, replacement: str) -> str:
     while opener := MARKDOWN_FENCED_MATERIAL_START_RE.search(projected, cursor):
         marker = opener.group("fence")
         if not _markdown_fence_opener_is_valid(marker, opener.group("info")):
-            cursor = opener.end()
+            # Do not let generic code-span parsing pair this invalid opener
+            # with a later line that is itself a valid, unclosed fence opener.
+            # Mask only this line; the later opener must remain fail-closed.
+            invalid_placeholder = "“”\n"
+            projected = (
+                projected[: opener.start()]
+                + invalid_placeholder
+                + projected[opener.end() :]
+            )
+            cursor = opener.start() + len(invalid_placeholder)
             continue
         closer = re.search(
             rf"{MARKDOWN_LINE_START_PATTERN} {{0,3}}"
@@ -1313,7 +1324,10 @@ def active_health_instruction_text(text: str) -> str:
         parts.append(original[cursor : match.start()].rstrip())
         cursor = _analyzed_material_end(original, match.end())
     parts.append(original[cursor:])
-    return "\n".join(parts).strip()
+    # Empty quotes are internal sentinels used only to preserve a trustworthy
+    # boundary while scanning. They must not masquerade as a real reported
+    # quote in downstream owner policy.
+    return "\n".join(parts).replace(material_placeholder, "").strip()
 
 
 READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE = re.compile(
