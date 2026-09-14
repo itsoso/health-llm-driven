@@ -41,6 +41,7 @@ async def test_quoted_sync_operand_never_dispatches_or_receives_owned_evidence(t
     '同步`张三的`佳明数据',
     '同步~~张三的~~佳明数据',
     '同步我`昨天`的佳明数据',
+    '“例子”仅限张三。仅限张三。同步我的佳明数据',
 ])
 @pytest.mark.parametrize('mode', ['enforce', 'shadow'])
 async def test_markdown_material_cannot_erase_sync_owner_or_scope(text, mode):
@@ -61,6 +62,34 @@ async def test_markdown_material_cannot_erase_sync_owner_or_scope(text, mode):
     assert 'semantic:owned_garmin_sync' not in turn.intent.evidence
     assert result.decision.action == 'block'
     assert result.decision.reason == 'garmin_sync_scope_unresolved'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text', [
+    '“这只是例子”已结束。同步我的佳明数据',
+    '`这只是例子`已结束；同步我的佳明数据',
+    '~~这只是例子~~已结束；同步我的佳明数据',
+    '同步我的佳明数据；`独立例子`已结束',
+    '同步我的佳明数据；~~独立例子~~已结束',
+])
+@pytest.mark.parametrize('mode', ['enforce', 'shadow'])
+async def test_independent_material_does_not_block_owned_sync(text, mode):
+    turn = snapshot(text, mode)
+    dispatched = []
+
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{"job_id":"synthetic-authorized-sync"}'
+
+    result = await ToolGateway(turn).execute(
+        ToolExecutionRequest('health_record', {'record_type': 'garmin_sync', 'data': {}}),
+        dispatch,
+    )
+
+    assert len(dispatched) == 1
+    assert has_owned_sync_instruction(text)
+    assert 'semantic:owned_garmin_sync' in turn.intent.evidence
+    assert result.decision.action == 'allow'
 
 
 @pytest.mark.parametrize('text', [

@@ -1381,6 +1381,7 @@ def active_health_sync_authority_text(text: str) -> str:
     projected = _strip_markdown_formatting_markers(projected)
     inspection, quote_removed = _strip_paired_material_spans(projected)
     removed = (*html_removed, *code_removed, *struck_removed, *quote_removed)
+    independent_clause_indexes: set[int] = set()
     if (
         _SYNC_AUTHORITY_ACTION_RE.search(inspection)
         and _SYNC_AUTHORITY_DEVICE_RE.search(inspection)
@@ -1390,9 +1391,38 @@ def active_health_sync_authority_text(text: str) -> str:
                 continue
             preceding = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(prefix)[-1]
             following = READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.split(suffix, 1)[0]
-            if _SYNC_AUTHORITY_ADJACENT_RE.search(preceding + following):
+            residue = (preceding + following).strip()
+            if _SYNC_AUTHORITY_ADJACENT_RE.search(residue):
                 return ""
-    return active_health_instruction_text(raw)
+            if residue:
+                prefix_projection, _ = _strip_html_material(prefix)
+                prefix_projection, _, malformed = _strip_backtick_code_material(
+                    prefix_projection
+                )
+                if malformed:
+                    return ""
+                prefix_projection, _, malformed = _strip_struck_material(
+                    prefix_projection
+                )
+                if malformed:
+                    return ""
+                prefix_projection = active_health_instruction_text(prefix_projection)
+                prefix_projection = _strip_markdown_formatting_markers(prefix_projection)
+                prefix_projection, _ = _strip_paired_material_spans(prefix_projection)
+                independent_clause_indexes.add(len(tuple(
+                    READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.finditer(prefix_projection)
+                )))
+    if independent_clause_indexes:
+        parts = re.split(
+            f"({READ_MATERIAL_FOLLOWING_CLAUSE_BOUNDARY_RE.pattern})", inspection
+        )
+        clause_index = 0
+        for index in range(0, len(parts), 2):
+            if clause_index in independent_clause_indexes:
+                parts[index] = ""
+            clause_index += 1
+        inspection = "".join(parts).strip("，,。；;！？!?\n ")
+    return inspection.strip()
 
 
 def resolve_health_read_act(text: str) -> HealthReadActResolution:
