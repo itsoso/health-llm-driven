@@ -10217,6 +10217,11 @@ async def test_clinical_exam_deictic_dispatches_as_current_user_read(tool_name):
         "请打开MRI那份。再查张三的睡眠",
         "请打开MRI那份、张三的睡眠",
         "请查看我的体检报告和张三的血压",
+        "请查看我的体检报告同张三的血压",
+        "请查看我的体检报告并张三的血压",
+        "请查看我的体检报告＋张三的血压",
+        "请查看我的体检报告和张三的血压趋势",
+        "请查看我的体检报告和张三的睡眠情况",
         "请查看我的体检报告、张三的睡眠记录和妈妈的血压",
         "请查看ALT那版，然后调出同事的检查报告",
     ),
@@ -10244,6 +10249,37 @@ async def test_clinical_deictic_does_not_hide_nonself_gateway_request(
     assert result.decision is not None
     assert result.decision.action == "block"
     assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请查看我的体检报告和MRI报告",
+        "请查看我的体检报告和上一次的SLE记录",
+    ),
+)
+async def test_owned_report_with_safe_clinical_target_dispatches(message, tool_name):
+    gateway = ToolGateway(_snapshot(message))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "ok"
+
+    arguments = (
+        {"dimension": "medical_exam"}
+        if tool_name == "health_query"
+        else {"record_type": "medical_exam", "operation": "list"}
+    )
+    result = await gateway.execute(
+        ToolExecutionRequest(tool_name=tool_name, arguments=arguments), dispatch,
+    )
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert calls
 
 
 @pytest.mark.asyncio

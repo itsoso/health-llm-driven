@@ -584,7 +584,10 @@ def _is_current_user_scope_owner(owner: str) -> bool:
         if not normalized.startswith(prefix):
             continue
         remainder = normalized[len(prefix) :].lstrip("的")
-        if remainder and HEALTH_READ_SCOPE_OWNER_RE.fullmatch(remainder):
+        if remainder and (
+            HEALTH_READ_SCOPE_OWNER_RE.fullmatch(remainder)
+            or re.fullmatch(_REPORT_TIME_SCOPE, remainder)
+        ):
             return True
     return False
 
@@ -2240,13 +2243,60 @@ def _is_health_target_expression(value: str) -> bool:
     candidate = str(value or "").strip(" \t\n\r，,；;。.!！?？、")
     candidate = HEALTH_READ_LEADING_SCOPE_RE.sub("", candidate, count=1)
     candidate = _strip_exam_request_scaffolding(candidate)
-    candidate = re.sub(r"(?:记录|历史|数据)$", "", candidate).strip()
+    candidate = re.sub(
+        r"(?:记录|历史|数据|趋势|情况|信息|读数)$",
+        "",
+        candidate,
+    ).strip()
     return bool(
         resolve_illness_entity(candidate).status == "exact"
         or HEALTH_METRIC_ENTITY_RE.fullmatch(candidate)
         or HEALTH_RECORD_DOMAIN_ENTITY_RE.fullmatch(candidate)
         or EXACT_MEDICAL_EXAM_ENTITY_RE.fullmatch(candidate)
     )
+
+
+def _starts_with_health_target_expression(value: str) -> bool:
+    """Recognize a leading health target even when more objects follow it."""
+    candidate = str(value or "").lstrip()
+    return any(
+        _is_health_target_expression(candidate[:end])
+        for end in range(1, min(len(candidate), 64) + 1)
+    )
+
+
+def _owned_health_context_has_safe_owner(left_context: str) -> bool:
+    """Resolve the nearest bounded owner before an owned health object."""
+    normalized = str(left_context or "").rstrip()
+    for size in range(1, min(len(normalized), 32) + 1):
+        owner = normalized[-size:].strip()
+        if not owner:
+            continue
+        owner_is_safe = bool(
+            _is_current_user_scope_owner(owner)
+            or BODY_OR_TIME_OWNER_RE.fullmatch(owner)
+            or HEALTH_READ_SCOPE_OWNER_RE.fullmatch(owner)
+            or re.fullmatch(_REPORT_TIME_SCOPE, owner)
+            or re.fullmatch(
+                r"(?:病历|病例|记录|报告|体检|检查|化验|检验)(?:中|里|内)",
+                owner,
+            )
+            or _is_exact_clinical_report_base(owner)
+        )
+        if not owner_is_safe:
+            continue
+        prefix = normalized[:-size].rstrip()
+        if not prefix:
+            return True
+        if re.search(r"[\n\r，,；;：:。.!！?？、/／|｜&＆+＋]$", prefix):
+            return True
+        if re.search(
+            rf"(?:{READ_VERB_RE.pattern}|{HEALTH_ENTITY_CONNECTOR_RE.pattern}|同|并)\s*$",
+            prefix,
+            re.IGNORECASE,
+        ):
+            return True
+    return False
 
 
 def _health_read_segment_has_target(text: str) -> bool:
@@ -2310,6 +2360,15 @@ def health_read_has_nonself_subject(text: str) -> bool:
         read_act.active_clause if read_act.status == "active" else subject_scope
     )
     owned_target_scope = _strip_exam_request_scaffolding(scoped_text)
+    for possessive_marker in re.finditer("的", owned_target_scope):
+        if not _starts_with_health_target_expression(
+            owned_target_scope[possessive_marker.end():]
+        ):
+            continue
+        if not _owned_health_context_has_safe_owner(
+            owned_target_scope[:possessive_marker.start()]
+        ):
+            return True
     for part in HEALTH_ENTITY_CONNECTOR_RE.split(owned_target_scope):
         possessive_part = re.fullmatch(
             r"(?P<owner>.+?)的(?P<target>.+)",
@@ -2327,6 +2386,23 @@ def health_read_has_nonself_subject(text: str) -> bool:
             or _is_exact_clinical_report_base(owner)
         ):
             return True
+    coordinated_parts = tuple(
+        part.strip(" \t\n\r，,；;。.!！?？、")
+        for part in HEALTH_ENTITY_CONNECTOR_RE.split(owned_target_scope)
+        if part.strip(" \t\n\r，,；;。.!！?？、")
+    )
+    if len(coordinated_parts) > 1 and all(
+        (
+            _starts_with_health_target_expression(part.split("的", 1)[-1])
+            and (
+                "的" not in part
+                or _owned_health_context_has_safe_owner(part.rsplit("的", 1)[0])
+            )
+        )
+        or _has_exact_clinical_report_target(f"查看{part}")
+        for part in coordinated_parts
+    ):
+        return False
     exam = resolve_medical_exam_query(scoped_text)
     if exam.status == "nonself":
         return True

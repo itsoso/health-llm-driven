@@ -524,12 +524,28 @@ def test_clinical_exam_deictic_is_not_misclassified_as_an_owner():
         "请打开MRI那份。再查张三的睡眠",
         "请打开MRI那份、张三的睡眠",
         "请查看我的体检报告和张三的血压",
+        "请查看我的体检报告同张三的血压",
+        "请查看我的体检报告并张三的血压",
+        "请查看我的体检报告＋张三的血压",
+        "请查看我的体检报告和张三的血压趋势",
+        "请查看我的体检报告和张三的睡眠情况",
         "请查看我的体检报告、张三的睡眠记录和妈妈的血压",
         "请查看ALT那版，然后调出同事的检查报告",
     ),
 )
 def test_clinical_deictic_does_not_hide_later_nonself_subject(text):
     assert semantics.health_read_has_nonself_subject(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "请查看我的体检报告和MRI报告",
+        "请查看我的体检报告和上一次的SLE记录",
+    ),
+)
+def test_owned_report_with_safe_coordinated_clinical_target_is_current_user(text):
+    assert semantics.health_read_has_nonself_subject(text) is False
 
 
 @pytest.mark.parametrize(
