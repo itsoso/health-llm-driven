@@ -2303,9 +2303,13 @@ def _owned_health_context_has_safe_owner(left_context: str) -> bool:
         owner = normalized[-size:].strip()
         if not owner:
             continue
+        # An explicit first-person suffix is itself authoritative; request
+        # scaffolding before it (``基于我`` / ``给我的``) cannot turn it into a
+        # third-party owner.
+        if _is_current_user_scope_owner(owner):
+            return True
         owner_is_safe = bool(
-            _is_current_user_scope_owner(owner)
-            or BODY_OR_TIME_OWNER_RE.fullmatch(owner)
+            BODY_OR_TIME_OWNER_RE.fullmatch(owner)
             or HEALTH_READ_SCOPE_OWNER_RE.fullmatch(owner)
             or re.fullmatch(_REPORT_TIME_SCOPE, owner)
             or re.fullmatch(
@@ -2327,7 +2331,7 @@ def _owned_health_context_has_safe_owner(left_context: str) -> bool:
             re.IGNORECASE,
         ):
             return True
-        if re.search(r"(?:从|在|于)\s*$", prefix):
+        if re.fullmatch(r"(?:从|在|于)", prefix):
             return True
         if any(
             _is_health_target_expression(prefix[-tail_size:])
@@ -2374,12 +2378,13 @@ def health_read_has_nonself_subject(text: str) -> bool:
     owned_target_scope = _strip_exam_request_scaffolding(subject_scope)
     for possessive_marker in re.finditer("的", owned_target_scope):
         target_context = owned_target_scope[possessive_marker.end():]
-        structural_boundary = re.search(
-            r"(?:[\n\r，,；;：:。!！?？、]|(?<!\d)\.(?!\d))",
-            target_context,
-        )
-        if structural_boundary is not None:
-            target_context = target_context[:structural_boundary.start()]
+        # Punctuation is not an ownership boundary: natural health phrases use
+        # it inside one object (for example ``张三的以下指标：血压``).  A later
+        # possessive marker does start a new provenance candidate and is checked
+        # independently by the next loop iteration.
+        next_possessive = target_context.find("的")
+        if next_possessive >= 0:
+            target_context = target_context[:next_possessive]
         owner_is_safe = _owned_health_context_has_safe_owner(
             owned_target_scope[:possessive_marker.start()]
         )
