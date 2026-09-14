@@ -10496,6 +10496,16 @@ async def test_closed_block_material_preserves_later_owned_read_gateway(
         "```bad`\r\n这是示例\r\n```\r\n\r\n查询我的饮食记录并分析",
         "```bad`\r这是示例\r```\r\r查询我的饮食记录并分析",
         "````lang```\n这是示例\n````\n\n查询我的饮食记录并分析",
+        "```bad` 仅限张三\n查询我的饮食记录并分析",
+        "```bad` 张三的\n查询我的饮食记录并分析",
+        "```bad` 不要执行\n查询我的饮食记录并分析",
+        "```bad` 先等我确认\n查询我的饮食记录并分析",
+        "```bad` 同时参考张三的\n查询我的饮食记录并分析",
+        "```bad` 仅查询上周\n查询我的饮食记录并分析",
+        "```bad` 饮食\n查询我的饮食记录并分析",
+        "```bad` 查询张三\n查询我的饮食记录并分析",
+        "```bad` 保存\n查询我的饮食记录并分析",
+        "```Alice`\n查询我的饮食记录并分析",
     ),
 )
 async def test_invalid_backtick_fence_cannot_create_read_authority(

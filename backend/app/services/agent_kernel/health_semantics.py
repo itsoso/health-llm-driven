@@ -925,6 +925,15 @@ ANALYZED_MATERIAL_INTRO_RE = re.compile(
     r"\s*(?:[：:]|[。.!！]|[\n\r]+)\s*"
 )
 MARKDOWN_LINE_START_PATTERN = r"(?:\A|(?<=\n)|(?<=\r))"
+UNTRUSTED_INVALID_FENCE_MARKER = "INVALID_FENCE_AUTHORITY_BLOCK"
+BENIGN_INVALID_FENCE_INFO = frozenset(
+    {
+        "bad", "text", "txt", "python", "py", "json", "yaml", "yml",
+        "bash", "sh", "shell", "typescript", "ts", "javascript", "js",
+        "markdown", "md", "sql", "html", "css", "xml", "toml", "ini",
+        "conf", "dockerfile",
+    }
+)
 MARKDOWN_FENCED_MATERIAL_START_RE = re.compile(
     MARKDOWN_LINE_START_PATTERN
     + r" {0,3}(?P<fence>`{3,}|~{3,})(?P<info>[^\n\r]*)(?:\r\n?|\n)"
@@ -1026,6 +1035,14 @@ def _markdown_fence_opener_is_valid(marker: str, info: str) -> bool:
     return not (marker.startswith("`") and "`" in info)
 
 
+def _invalid_fence_replacement(info: str) -> str:
+    """Neutralize delimiters while retaining or denying meaningful residue."""
+    residue = str(info or "").replace("`", "").strip()
+    if not residue or residue.casefold() in BENIGN_INVALID_FENCE_INFO:
+        return "“”\n"
+    return f"{UNTRUSTED_INVALID_FENCE_MARKER} {residue}\n"
+
+
 def _analyzed_material_end(text: str, start: int) -> int:
     """Find an explicit boundary; an unframed pasted body owns the remainder."""
     if start >= len(text):
@@ -1099,7 +1116,7 @@ def _strip_markdown_fenced_material(text: str, *, replacement: str) -> str:
             # Do not let generic code-span parsing pair this invalid opener
             # with a later line that is itself a valid, unclosed fence opener.
             # Mask only this line; the later opener must remain fail-closed.
-            invalid_placeholder = "“”\n"
+            invalid_placeholder = _invalid_fence_replacement(opener.group("info"))
             projected = (
                 projected[: opener.start()]
                 + invalid_placeholder
@@ -1405,6 +1422,8 @@ def active_health_read_authority_text(text: str) -> str:
     material_source = _strip_markdown_fenced_material(
         str(text or ""), replacement=block_material_placeholder
     )
+    if UNTRUSTED_INVALID_FENCE_MARKER in material_source:
+        return ""
     material_source = _mask_indented_fence_like_material(material_source)
     material_source = _strip_markdown_blockquote_material(
         material_source, replacement=block_material_placeholder
