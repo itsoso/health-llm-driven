@@ -2,6 +2,8 @@ import * as Linking from 'expo-linking';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const APP_INVITE_SCHEMES = new Set(['health:', 'mobile:']);
+const APP_LINK_ORIGIN = 'https://health.executor.life';
+const APP_LINK_PATH = '/open/invite';
 const LINK_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22,128}$/;
 
 /**
@@ -13,13 +15,21 @@ export function parseRegistrationInviteToken(url: string | null | undefined): st
   if (!url) return null;
   try {
     const parsed = new URL(url);
-    if (!APP_INVITE_SCHEMES.has(parsed.protocol)) return null;
-    if (parsed.username || parsed.password || parsed.port || parsed.hash) return null;
-    if (parsed.hostname !== 'invite' || (parsed.pathname !== '' && parsed.pathname !== '/')) {
+    if (parsed.username || parsed.password || parsed.port) return null;
+    const isCustomScheme = APP_INVITE_SCHEMES.has(parsed.protocol)
+      && parsed.hostname === 'invite'
+      && (parsed.pathname === '' || parsed.pathname === '/');
+    const isPublicAppLink = parsed.origin === APP_LINK_ORIGIN && parsed.pathname === APP_LINK_PATH;
+    if (!isCustomScheme && !isPublicAppLink) {
       return null;
     }
-    if (Array.from(parsed.searchParams.keys()).some((key) => key !== 'token')) return null;
-    const values = parsed.searchParams.getAll('token');
+    if (isCustomScheme && parsed.hash) return null;
+    if (isPublicAppLink && parsed.search) return null;
+    const credentialParams = isPublicAppLink
+      ? new URLSearchParams(parsed.hash.startsWith('#') ? parsed.hash.slice(1) : '')
+      : parsed.searchParams;
+    if (Array.from(credentialParams.keys()).some((key) => key !== 'token')) return null;
+    const values = credentialParams.getAll('token');
     if (values.length !== 1 || !LINK_TOKEN_PATTERN.test(values[0])) return null;
     return values[0];
   } catch {

@@ -9,7 +9,7 @@
     "service_files": 436,
     "specialists": 13,
     "twin_partitions": 15,
-    "web_pages": 73
+    "web_pages": 75
   },
   "coverage": {
     "api_boundaries": {
@@ -3433,6 +3433,34 @@
     },
     {
       "coverage": "complete",
+      "id": "surface.web.open.invite",
+      "kind": "surface",
+      "name": "Web /open/invite",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/open/invite/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
+      "id": "surface.web.overview",
+      "kind": "surface",
+      "name": "Web /overview",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/overview/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
       "id": "surface.web.personal-outcome",
       "kind": "surface",
       "name": "Web /personal-outcome",
@@ -4393,6 +4421,26 @@
         "type": "code"
       },
       "to": "surface.web.onboarding",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
+        "path": "frontend/src/app/open/invite/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.open.invite",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
+        "path": "frontend/src/app/overview/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.overview",
       "type": "renders"
     },
     {

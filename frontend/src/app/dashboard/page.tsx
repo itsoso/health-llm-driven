@@ -629,7 +629,7 @@ function DashboardContent() {
             { icon: '📋', label: '体检报告', path: '/family/reports' },
             { icon: '🏃', label: '运动', path: '/workout' },
             { icon: '🧬', label: '基因', path: '/genetic' },
-            { icon: '📊', label: '总览', path: '/overview' },
+            { icon: '📊', label: '总览', path: '/dashboard' },
           ].map(item => (
             <button
               key={item.path}

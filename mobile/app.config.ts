@@ -26,6 +26,7 @@ const BUNDLE_ID_BASE = 'life.executor.health';
 const APP_LINK_DOMAIN = 'health.executor.life';
 const ASSOCIATED_DOMAIN = `applinks:${APP_LINK_DOMAIN}`;
 const APP_OPEN_PATH_PREFIX = '/open/shared';
+const REGISTRATION_INVITE_PATH = '/open/invite';
 const ROKID_QUERY_SCHEMES = ['rokidai'];
 const PHOTO_LIBRARY_USAGE_DESCRIPTION =
   '用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析';
@@ -38,6 +39,18 @@ const SHARED_LINK_INTENT_FILTER: AndroidIntentFilter = {
       scheme: 'https',
       host: APP_LINK_DOMAIN,
       pathPrefix: APP_OPEN_PATH_PREFIX,
+    },
+  ],
+  category: ['BROWSABLE', 'DEFAULT'],
+};
+const REGISTRATION_INVITE_INTENT_FILTER: AndroidIntentFilter = {
+  action: 'VIEW',
+  autoVerify: true,
+  data: [
+    {
+      scheme: 'https',
+      host: APP_LINK_DOMAIN,
+      path: REGISTRATION_INVITE_PATH,
     },
   ],
   category: ['BROWSABLE', 'DEFAULT'],
@@ -201,6 +214,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     intentFilters: [
       ...(((config.android as any)?.intentFilters ?? []) as AndroidIntentFilter[]),
       SHARED_LINK_INTENT_FILTER,
+      REGISTRATION_INVITE_INTENT_FILTER,
     ],
   },
   extra: {

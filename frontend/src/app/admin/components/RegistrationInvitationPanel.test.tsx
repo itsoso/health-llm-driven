@@ -12,7 +12,7 @@ const rows = [
   { id: 7, phone_masked: '+86 138****8000', note: '内测成员', status: 'send_failed', expires_at: '2999-08-09T12:00:00Z', created_at: '2026-08-02T12:00:00Z', updated_at: '2026-08-02T12:00:00Z', prepared_for_delivery: true },
   { id: 8, phone_masked: '+86 139****9000', note: null, status: 'consumed', expires_at: '2999-08-09T12:00:00Z', created_at: '2026-08-02T12:00:00Z', updated_at: '2026-08-02T12:00:00Z', prepared_for_delivery: false },
 ];
-const prepared = { ...rows[0], status: 'created', manual_code: 'A8M2K9QX', link_token: 'link-token-must-not-render', deep_link: 'health://invite?token=opaque-link-token', delivery_status: 'manual', delivery_error_code: null };
+const prepared = { ...rows[0], status: 'created', manual_code: 'A8M2K9QX', link_token: 'link-token-must-not-render', deep_link: 'https://health.executor.life/open/invite#token=opaque-link-token', delivery_status: 'manual', delivery_error_code: null };
 const mockList = () => vi.mocked(api.get).mockResolvedValue({ data: { items: rows, total: rows.length, limit: 20, offset: 0 } });
 
 describe('RegistrationInvitationPanel', () => {
@@ -99,10 +99,13 @@ describe('RegistrationInvitationPanel', () => {
       undefined,
       { headers: { Authorization: `Bearer ${WEB_SESSION_TOKEN}` } },
     );
-    expect(within(dialog).getByDisplayValue('A8M2K9QX')).toBeInTheDocument(); expect(within(dialog).getByDisplayValue('health://invite?token=opaque-link-token')).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue('A8M2K9QX')).toBeInTheDocument(); expect(within(dialog).getByDisplayValue('https://health.executor.life/open/invite#token=opaque-link-token')).toBeInTheDocument();
     expect(within(dialog).getByText(/请立即复制并通过可信渠道发送给本人/)).toBeInTheDocument();
     expect(screen.queryByText('link-token-must-not-render')).not.toBeInTheDocument(); expect(within(dialog).getByText(/旧凭据已失效/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: '复制手动邀请码' })); await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('A8M2K9QX'));
+    fireEvent.click(within(dialog).getByRole('button', { name: '复制 App 注册链接' }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://health.executor.life/open/invite#token=opaque-link-token'));
+    expect(within(dialog).getByRole('status')).toHaveTextContent('注册链接已复制');
     fireEvent.click(within(dialog).getByRole('button', { name: '关闭一次性凭据' })); expect(screen.queryByDisplayValue('A8M2K9QX')).not.toBeInTheDocument(); expect(Storage.prototype.setItem).not.toHaveBeenCalled();
   });
 
@@ -111,6 +114,32 @@ describe('RegistrationInvitationPanel', () => {
     render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000'); fireEvent.click(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' }));
     const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' }); fireEvent.click(within(dialog).getByRole('button', { name: '复制手动邀请码' }));
     expect(await within(dialog).findByText('复制失败，请手动选择上方内容。')).toBeInTheDocument(); expect(within(dialog).getByLabelText('手动邀请码')).toHaveAttribute('readonly');
+  });
+
+  it('falls back to a synchronous document copy when the Clipboard API is blocked', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: prepared }); vi.mocked(navigator.clipboard.writeText).mockRejectedValue(new Error('blocked'));
+    document.execCommand = vi.fn(() => true);
+    render(<RegistrationInvitationPanel />); await screen.findByText('+86 138****8000'); fireEvent.click(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' }));
+    const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' }); fireEvent.click(within(dialog).getByRole('button', { name: '复制 App 注册链接' }));
+    await waitFor(() => expect(document.execCommand).toHaveBeenCalledWith('copy'));
+    expect(within(dialog).getByRole('status')).toHaveTextContent('注册链接已复制');
+  });
+
+  it('removes the secret fallback node and reports failure when selection throws', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: prepared });
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValue(new Error('blocked'));
+    vi.spyOn(HTMLTextAreaElement.prototype, 'select').mockImplementationOnce(() => {
+      throw new Error('selection blocked');
+    });
+    render(<RegistrationInvitationPanel />);
+    await screen.findByText('+86 138****8000');
+    fireEvent.click(screen.getByRole('button', { name: '重新生成 +86 138****8000 的邀请' }));
+    const dialog = await screen.findByRole('dialog', { name: '一次性注册凭据' });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '复制 App 注册链接' }));
+
+    expect(await within(dialog).findByText('复制失败，请手动选择上方内容。')).toBeInTheDocument();
+    expect(document.body.querySelector('textarea[readonly]')).toBeNull();
   });
 
   it('maps delivery failures without exposing provider details', async () => {

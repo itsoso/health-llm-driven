@@ -13,7 +13,7 @@ describe('app link verification files', () => {
     expect(body.applinks.apps).toEqual([]);
     expect(body.applinks.details).toContainEqual({
       appID: 'QA2U724DAN.life.executor.health',
-      paths: ['/open/shared/*'],
+      paths: ['/open/shared/*', '/open/invite'],
     });
     expect(body.applinks.details).not.toContainEqual({
       appID: 'QA2U724DAN.life.executor.health',

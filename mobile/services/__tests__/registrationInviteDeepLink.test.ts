@@ -14,7 +14,7 @@ jest.mock('expo-linking', () => ({
 }));
 
 const token = 'abcdefghijklmnopqrstuvwxyz_123456';
-const backendCanonicalLink = `health://invite?token=${token}`;
+const backendCanonicalLink = `https://health.executor.life/open/invite#token=${token}`;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -29,6 +29,7 @@ describe('registration invite deep links', () => {
 
   it.each([
     [backendCanonicalLink],
+    [`health://invite?token=${token}`],
     [`mobile://invite?token=${token}`],
   ])('accepts only the app invite target: %s', (url) => {
     expect(parseRegistrationInviteToken(url)).toBe(token);
@@ -36,6 +37,12 @@ describe('registration invite deep links', () => {
 
   it.each([
     [`https://evil.example/invite?token=${token}`],
+    [`https://health.executor.life/other?token=${token}`],
+    [`http://health.executor.life/open/invite?token=${token}`],
+    [`https://health.executor.life/open/invite?token=${token}`],
+    [`https://health.executor.life/open/invite#token=${token}&phone=13800138000`],
+    [`https://health.executor.life/open/invite#token=${token}&token=${token}`],
+    [`https://health.executor.life/open/invite#token=short`],
     [`health://other?token=${token}`],
     [`health://invite/extra?token=${token}`],
     ['health://invite?token=short'],

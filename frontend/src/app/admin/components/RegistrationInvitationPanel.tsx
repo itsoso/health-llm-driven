@@ -241,6 +241,7 @@ export default function RegistrationInvitationPanel() {
   const [prepared, setPrepared] = useState<PreparedInvitation | null>(null);
   const [preparedFromResend, setPreparedFromResend] = useState(false);
   const [copyError, setCopyError] = useState(false);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const operationTriggerRef = useRef<HTMLElement | null>(null);
   const mountedRef = useRef(false);
   const requestSequenceRef = useRef(0);
@@ -283,7 +284,7 @@ export default function RegistrationInvitationPanel() {
   }, [load]);
 
   const startOperation = (id: number | 'create') => {
-    setPrepared(null); setCopyError(false); setError(null); setBusyId(id);
+    setPrepared(null); setCopyError(false); setCopyMessage(null); setError(null); setBusyId(id);
   };
 
   const submitCreate = async () => {
@@ -337,10 +338,33 @@ export default function RegistrationInvitationPanel() {
     finally { setBusyId(null); }
   };
 
-  const copy = async (value: string) => {
-    setCopyError(false);
-    try { await navigator.clipboard.writeText(value); }
-    catch { setCopyError(true); }
+  const copy = async (value: string, successMessage: string) => {
+    setCopyError(false); setCopyMessage(null);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyMessage(successMessage);
+      return;
+    } catch {
+      let fallback: HTMLTextAreaElement | null = null;
+      try {
+        fallback = document.createElement('textarea');
+        fallback.value = value;
+        fallback.setAttribute('readonly', '');
+        fallback.style.position = 'fixed';
+        fallback.style.opacity = '0';
+        document.body.appendChild(fallback);
+        fallback.select();
+        if (document.execCommand('copy')) {
+          setCopyMessage(successMessage);
+          return;
+        }
+      } catch {
+        // The visible read-only field remains selectable for manual copying.
+      } finally {
+        fallback?.remove();
+      }
+      setCopyError(true);
+    }
   };
 
   const parsedPreviewExpiry = Date.parse(expiresAt);
@@ -417,7 +441,7 @@ export default function RegistrationInvitationPanel() {
           labelledBy="prepared-invitation-title"
           describedBy="prepared-invitation-description"
           initialFocusSelector="[data-secret-autofocus]"
-          onClose={() => { setPrepared(null); setCopyError(false); }}
+          onClose={() => { setPrepared(null); setCopyError(false); setCopyMessage(null); }}
           widthClass="max-w-xl"
           restoreFocusTo={operationTriggerRef.current}
         >
@@ -427,11 +451,12 @@ export default function RegistrationInvitationPanel() {
             {deliveryMessage(prepared)}{preparedFromResend ? ' 本次为重新生成，旧凭据已失效。' : ' 关闭后本页面不会保留这些凭据。'}
           </div>
           <div className="mt-5 space-y-4">
-            <label className="block text-sm text-slate-300">手动邀请码<div className="mt-1.5 flex gap-2"><input data-secret-autofocus aria-label="手动邀请码" readOnly value={prepared.manual_code} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-lg border border-white/15 bg-slate-950/50 px-3 py-2 font-mono text-white" /><button type="button" onClick={() => void copy(prepared.manual_code)} className="rounded-lg border border-white/15 px-3 text-sm text-white">复制手动邀请码</button></div></label>
-            <label className="block text-sm text-slate-300">注册链接<div className="mt-1.5 flex gap-2"><input aria-label="注册链接" readOnly value={prepared.deep_link} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-lg border border-white/15 bg-slate-950/50 px-3 py-2 font-mono text-xs text-white" /><button type="button" onClick={() => void copy(prepared.deep_link)} className="rounded-lg border border-white/15 px-3 text-sm text-white">复制注册链接</button></div></label>
+            <label className="block text-sm text-slate-300">手动邀请码<div className="mt-1.5 flex gap-2"><input data-secret-autofocus aria-label="手动邀请码" readOnly value={prepared.manual_code} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-lg border border-white/15 bg-slate-950/50 px-3 py-2 font-mono text-white" /><button type="button" onClick={() => void copy(prepared.manual_code, '手动邀请码已复制')} className="rounded-lg border border-white/15 px-3 text-sm text-white">复制手动邀请码</button></div></label>
+            <label className="block text-sm text-slate-300">App 注册链接<div className="mt-1.5 flex gap-2"><input aria-label="App 注册链接" readOnly value={prepared.deep_link} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-lg border border-white/15 bg-slate-950/50 px-3 py-2 font-mono text-xs text-white" /><button type="button" onClick={() => void copy(prepared.deep_link, '注册链接已复制')} className="rounded-lg border border-white/15 px-3 text-sm text-white">复制 App 注册链接</button></div></label>
           </div>
+          {copyMessage ? <p role="status" className="mt-3 text-sm text-emerald-200">{copyMessage}</p> : null}
           {copyError ? <p role="status" className="mt-3 text-sm text-amber-200">复制失败，请手动选择上方内容。</p> : null}
-          <div className="mt-6 flex justify-end"><button type="button" onClick={() => { setPrepared(null); setCopyError(false); }} className="rounded-lg bg-white px-4 py-2 font-medium text-slate-900">关闭一次性凭据</button></div>
+          <div className="mt-6 flex justify-end"><button type="button" onClick={() => { setPrepared(null); setCopyError(false); setCopyMessage(null); }} className="rounded-lg bg-white px-4 py-2 font-medium text-slate-900">关闭一次性凭据</button></div>
         </AccessibleModal>
       ) : null}
     </section>

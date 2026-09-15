@@ -158,7 +158,9 @@ def test_create_uses_default_expiry_returns_credentials_once_and_audits(
     assert payload["delivery_error_code"] == "sms_not_configured"
     assert len(payload["manual_code"]) == 8
     assert payload["link_token"]
-    assert payload["deep_link"] == f"health://invite?token={payload['link_token']}"
+    assert payload["deep_link"] == (
+        "https://health.executor.life/open/invite#token=" + payload["link_token"]
+    )
     assert before + timedelta(days=6, hours=23) < datetime.fromisoformat(payload["expires_at"])
     assert "phone" not in payload
     assert "phone_hmac" not in payload
@@ -213,7 +215,9 @@ def test_manual_delivery_create_returns_credentials_without_sms_attempt(
     assert payload["delivery_status"] == "manual"
     assert payload["delivery_error_code"] is None
     assert payload["manual_code"]
-    assert payload["deep_link"] == f"health://invite?token={payload['link_token']}"
+    assert payload["deep_link"] == (
+        "https://health.executor.life/open/invite#token=" + payload["link_token"]
+    )
     row = db.get(RegistrationInvitation, payload["id"])
     assert row.send_attempt_count == 0
     audit = (

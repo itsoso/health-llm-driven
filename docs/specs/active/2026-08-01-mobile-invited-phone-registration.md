@@ -77,8 +77,8 @@ admin confirms masked phone
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | 手机号、OTP、邀请深链/手工码和恢复状态 | 不自行判断资格；只按 Backend outcome 路由 |
-| Web | 管理员创建、重新生成、复制、撤销和列表 | 仅管理员；只显示脱敏手机号与状态；不发送邀请短信 |
+| Mobile | 手机号、OTP、邀请 App Link/手工码和恢复状态 | 新链接只接受 `https://health.executor.life/open/invite#token=...`；fragment 由客户端读取后立即从地址栏清除；兼容旧 App scheme；不自行判断资格 |
+| Web | 管理员创建、重新生成、复制、撤销和列表；公开 App Link landing | 管理操作仅管理员；landing 只在客户端内存读取 fragment 并立即清除地址栏，不让凭据进入首跳 HTTP 请求或 SSR |
 | Backend | 准入真源、加密、匹配、核销、建号、token、审计 | PostgreSQL 原子事务；失败显式 |
 
 ## 8. Data Contract
@@ -183,6 +183,7 @@ Then the backend returns 403 and writes no invitation mutation
 
 | Date | Change | Reason |
 |---|---|---|
+| 2026-09-15 | Replace copied custom-scheme invites with a validated HTTPS App Link | 让 Web 管理页可复制、短信可点击，并保持 Mobile 精确 host/path/fragment 校验与首跳日志隔离 |
 | 2026-09-14 | Invitation delivery defaults to manual forwarding without invitation SMS | 用户明确选择管理员创建后手工转发一次性邀请码，避免依赖尚未审核的邀请短信签名/模板 |
 | 2026-09-14 | Check existing-user or active-invitation eligibility before OTP delivery | 避免未获准手机号收到验证码，并在手机号页直接给出可行动提示 |
 | 2026-08-01 | Approved definition | 用户确认绑定手机号、发邀即审批；投递方式后续改为手工转发 |

@@ -107,21 +107,21 @@ describe('app.config app links', () => {
     expect(config.ios?.associatedDomains).toContain('applinks:health.executor.life');
   });
 
-  it('adds an Android verified app link for app-open shared pages', () => {
+  it('adds Android verified app links for shared pages and registration invites', () => {
     const config = configForVariant();
 
-    expect(config.android?.intentFilters).toContainEqual({
-      action: 'VIEW',
-      autoVerify: true,
-      data: [
-        {
+    expect(config.android?.intentFilters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ data: [expect.objectContaining({
           scheme: 'https',
           host: 'health.executor.life',
           pathPrefix: '/open/shared',
-        },
-      ],
-      category: ['BROWSABLE', 'DEFAULT'],
-    });
+      })] }),
+      expect.objectContaining({ data: [expect.objectContaining({
+        scheme: 'https',
+        host: 'health.executor.life',
+        path: '/open/invite',
+      })] }),
+    ]));
   });
 
   it('passes Expo app version to the watch target injector', () => {
