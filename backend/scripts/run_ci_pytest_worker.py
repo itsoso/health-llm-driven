@@ -14,10 +14,18 @@ from typing import Any
 
 try:
     from scripts.build_ci_pytest_matrix import DEFAULT_CATALOG, load_catalog
-    from scripts.run_ci_pytest_shard import instrument_pytest_args, run_shard
+    from scripts.run_ci_pytest_shard import (
+        DEFAULT_MAX_ATTEMPTS,
+        instrument_pytest_args,
+        run_shard,
+    )
 except ModuleNotFoundError:  # Direct execution from backend/scripts.
     from build_ci_pytest_matrix import DEFAULT_CATALOG, load_catalog
-    from run_ci_pytest_shard import instrument_pytest_args, run_shard
+    from run_ci_pytest_shard import (
+        DEFAULT_MAX_ATTEMPTS,
+        instrument_pytest_args,
+        run_shard,
+    )
 
 
 MIN_SHARD_TIMEOUT_SECONDS = 180
@@ -71,6 +79,13 @@ def shard_timeout_seconds(shard: dict[str, Any]) -> int:
     if timeout_seconds < 1:
         raise ValueError("timeout_seconds must be at least 1")
     return timeout_seconds
+
+
+def shard_max_attempts(shard: dict[str, Any]) -> int:
+    max_attempts = int(shard.get("max_attempts", DEFAULT_MAX_ATTEMPTS))
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
+    return max_attempts
 
 
 def shard_processes(
@@ -141,6 +156,7 @@ def run_worker(
         shard = by_label[label]
         try:
             timeout_seconds = shard_timeout_seconds(shard)
+            max_attempts = shard_max_attempts(shard)
         except ValueError as exc:
             raise ValueError(f"{label} {exc}") from exc
         for process_label, paths, process_args in shard_processes(shard, cwd=cwd):
@@ -160,6 +176,7 @@ def run_worker(
                         "shard": process_label,
                         "paths": len(paths),
                         "deadline_seconds": timeout_seconds,
+                        "max_attempts": max_attempts,
                     },
                     sort_keys=True,
                     separators=(",", ":"),
@@ -170,6 +187,7 @@ def run_worker(
                 paths,
                 pytest_args,
                 timeout_seconds=timeout_seconds,
+                max_attempts=max_attempts,
             )
             if return_code != 0:
                 return return_code

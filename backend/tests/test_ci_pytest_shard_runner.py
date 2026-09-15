@@ -336,12 +336,16 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
     tests_dir.mkdir()
     (tests_dir / "test_alpha.py").write_text("", encoding="utf-8")
     (tests_dir / "test_beta.py").write_text("", encoding="utf-8")
-    calls: list[tuple[list[str], list[str], int]] = []
+    calls: list[tuple[list[str], list[str], int, int]] = []
 
     def fake_runner(
-        paths: list[str], args: list[str], *, timeout_seconds: int
+        paths: list[str],
+        args: list[str],
+        *,
+        timeout_seconds: int,
+        max_attempts: int,
     ) -> int:
-        calls.append((paths, args, timeout_seconds))
+        calls.append((paths, args, timeout_seconds, max_attempts))
         return 0
 
     catalog = [
@@ -378,6 +382,7 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
                 f"--junitxml={tmp_path / 'results' / 'alpha.xml'}",
             ],
             180,
+            2,
         ),
         (
             ["tests/test_beta.py"],
@@ -394,6 +399,7 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
                 f"--junitxml={tmp_path / 'results' / 'beta.xml'}",
             ],
             180,
+            2,
         ),
     ]
 
@@ -418,6 +424,26 @@ def test_run_worker_rejects_non_positive_process_deadline(tmp_path):
         )
 
 
+def test_run_worker_rejects_non_positive_max_attempts(tmp_path):
+    from scripts.run_ci_pytest_worker import run_worker
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_alpha.py").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="max_attempts"):
+        run_worker(
+            ["alpha"],
+            [{
+                "label": "alpha",
+                "paths": ["tests/test_alpha.py"],
+                "max_attempts": 0,
+            }],
+            cwd=tmp_path,
+            junit_dir=tmp_path / "results",
+        )
+
+
 def test_shard_timeout_seconds_scales_and_caps_historical_duration():
     from scripts.run_ci_pytest_worker import shard_timeout_seconds
 
@@ -435,17 +461,19 @@ def test_shard_timeout_seconds_scales_and_caps_historical_duration():
 
 
 def test_backend_shard_job_timeout_covers_slowest_retry_and_runner_overhead():
-    from scripts.run_ci_pytest_shard import DEFAULT_MAX_ATTEMPTS
-    from scripts.run_ci_pytest_worker import shard_timeout_seconds
+    from scripts.run_ci_pytest_worker import shard_max_attempts, shard_timeout_seconds
 
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     job_timeout_minutes = workflow["jobs"]["backend-test-shards"]["timeout-minutes"]
     catalog = json.loads(SHARD_CATALOG.read_text(encoding="utf-8"))["shards"]
-    slowest_attempt_seconds = max(shard_timeout_seconds(shard) for shard in catalog)
+    largest_execution_seconds = max(
+        shard_timeout_seconds(shard) * shard_max_attempts(shard)
+        for shard in catalog
+    )
 
-    # A process-level timeout is explicitly retried once. Leave five minutes
+    # Respect each shard's configured attempt count, then leave five minutes
     # for checkout, dependency installation, adjacent shards, and artifact cleanup.
-    required_seconds = slowest_attempt_seconds * DEFAULT_MAX_ATTEMPTS + 5 * 60
+    required_seconds = largest_execution_seconds + 5 * 60
     assert job_timeout_minutes * 60 >= required_seconds
 
 
@@ -458,8 +486,9 @@ def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_p
     synthesis_path = "tests/test_agent_composed_synthesis_projection.py"
     calls = []
 
-    def execute(paths, args, *, timeout_seconds):
-        assert timeout_seconds == 1800
+    def execute(paths, args, *, timeout_seconds, max_attempts):
+        assert timeout_seconds == 2700
+        assert max_attempts == 1
         assert "--timeout=120" in args
         calls.append(paths)
         return 0
