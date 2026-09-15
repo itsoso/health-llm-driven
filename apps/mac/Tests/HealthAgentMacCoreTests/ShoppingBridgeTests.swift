@@ -1,4 +1,5 @@
 import XCTest
+import Network
 @testable import HealthAgentMacCore
 
 @MainActor private final class BridgeCredentials: ShoppingCredentialSource {
@@ -7,6 +8,32 @@ import XCTest
 }
 
 @MainActor final class ShoppingBridgeTests: XCTestCase {
+    func testTransportEOFWithoutWebSocketMetadataIsDisconnected() {
+        for complete in [false, true] {
+            for data in [nil, Data()] as [Data?] {
+                XCTAssertEqual(ShoppingBridgeTransport.incomingFrameError(
+                    data: data, opcode: nil, complete: complete, transportFailed: false), .disconnected)
+            }
+        }
+    }
+
+    func testInvalidWebSocketFramesAreNotMisclassifiedAsDisconnect() {
+        XCTAssertEqual(ShoppingBridgeTransport.incomingFrameError(
+            data: Data("payload".utf8), opcode: nil, complete: true, transportFailed: false), .invalidFrame)
+        XCTAssertEqual(ShoppingBridgeTransport.incomingFrameError(
+            data: nil, opcode: .text, complete: true, transportFailed: false), .invalidFrame)
+        XCTAssertEqual(ShoppingBridgeTransport.incomingFrameError(
+            data: Data(), opcode: .binary, complete: true, transportFailed: false), .invalidFrame)
+        XCTAssertEqual(ShoppingBridgeTransport.incomingFrameError(
+            data: Data("{".utf8), opcode: .text, complete: false, transportFailed: false), .invalidFrame)
+        XCTAssertNil(ShoppingBridgeTransport.incomingFrameError(
+            data: Data("{}".utf8), opcode: .text, complete: true, transportFailed: false))
+        XCTAssertNil(ShoppingBridgeTransport.incomingFrameError(
+            data: nil, opcode: .ping, complete: true, transportFailed: false))
+        XCTAssertEqual(ShoppingBridgeTransport.incomingFrameError(
+            data: nil, opcode: .close, complete: true, transportFailed: false), .disconnected)
+    }
+
     private func connect(_ pairing: ShoppingBridgePairing, token: String? = nil, origin: String? = nil) async throws -> URLSessionWebSocketTask {
         var request = URLRequest(url: URL(string: "ws://127.0.0.1:\(pairing.port)/shopping-bridge")!)
         request.timeoutInterval = 5

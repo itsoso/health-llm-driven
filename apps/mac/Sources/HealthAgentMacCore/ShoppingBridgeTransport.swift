@@ -163,15 +163,29 @@ public enum ShoppingBridgeError: Error, LocalizedError, Equatable {
             let opcode = (context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata)?.opcode
             Task { @MainActor in
                 guard let self, self.epoch == stamp, self.peer === connection else { return }
-                if error != nil || opcode == .close { self.fail(.disconnected); return }
-                if opcode == .ping || opcode == .pong { self.receive(connection, epoch: stamp); return }
-                guard complete, opcode == .text, let data, data.count <= Self.maxFrame else {
-                    self.fail(.invalidFrame); return
+                if let failure = Self.incomingFrameError(data: data, opcode: opcode, complete: complete,
+                                                         transportFailed: error != nil) {
+                    self.fail(failure); return
                 }
+                if opcode == .ping || opcode == .pong { self.receive(connection, epoch: stamp); return }
+                guard let data else { self.fail(.invalidFrame); return }
                 self.handle(data)
                 if self.epoch == stamp { self.receive(connection, epoch: stamp) }
             }
         }
+    }
+
+    /// Classifies Network.framework callbacks before parsing application data.
+    static func incomingFrameError(data: Data?, opcode: NWProtocolWebSocket.Opcode?, complete: Bool,
+                                   transportFailed: Bool) -> ShoppingBridgeError? {
+        if transportFailed || opcode == .close { return .disconnected }
+        // Depending on OS callback ordering, a peer shutdown can arrive as an
+        // empty transport EOF before the WebSocket close/error callback. There
+        // is no application frame to validate; never report it as malformed data.
+        if opcode == nil, data?.isEmpty != false { return .disconnected }
+        if opcode == .ping || opcode == .pong { return nil }
+        guard complete, opcode == .text, let data, data.count <= maxFrame else { return .invalidFrame }
+        return nil
     }
 
     private func handle(_ data: Data) {
