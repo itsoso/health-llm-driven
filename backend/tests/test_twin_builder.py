@@ -1050,6 +1050,26 @@ class TestGeneticVariantClassification:
         assert "行动级 ACT" in text
         assert "阴性不代表无风险" in text  # proxy 护栏未丢
 
+    def test_formatter_carbamazepine_hla_tag_shows_guardrail(self):
+        # 安全回归: rs1061235 (HLA-A*31:01, 卡马西平 SCAR) 与 rs1265181 同为 tier0
+        # 致死 HLA tag SNP, 提级到 act+pharmgkb_1a 后 formatter 同样须保留 proxy 护栏。
+        # 修复前只有别嘌醇等位基因带护栏, 卡马西平等位基因裸奔。
+        from app.twin.builder import _classify_genetic_variants
+
+        twin = self._fresh_twin()
+        twin.genetic.has_profile = True
+        twin.genetic.total_variants = 1
+        twin.genetic.drug_sensitivity = [
+            {"gene_name": "HLA-A*31:01", "genotype": "+", "rsid": "rs1061235"},
+        ]
+        _classify_genetic_variants(twin.genetic)
+        v = twin.genetic.drug_sensitivity[0]
+        assert v["actionability"] == "act"
+        assert v["evidence_grade"] == "pharmgkb_1a"
+        text = twin_to_prompt_blob(twin)
+        assert "行动级 ACT" in text
+        assert "阴性不代表无风险" in text  # proxy 护栏未丢
+
     def test_formatter_brca_act_gets_founder_variant_footnote(self):
         # 建议 1: BRCA (act + clinvar_path_confirm) 即使非 proxy rsid, 也强制追加
         # "消费级芯片仅覆盖部分创始变异, 阴性不代表无风险" 语义 (doc §3)。
