@@ -73,6 +73,56 @@ def shard_timeout_seconds(shard: dict[str, Any]) -> int:
     return timeout_seconds
 
 
+def shard_processes(
+    shard: dict[str, Any],
+    *,
+    cwd: Path,
+) -> list[tuple[str, list[str], list[str]]]:
+    """Resolve one catalog shard into complete, disjoint pytest processes."""
+
+    label = str(shard["label"])
+    declared_paths = expand_path_inputs(
+        shard["paths"],
+        cwd=cwd,
+        exclude_paths=shard.get("exclude_paths", []),
+    )
+    configured_groups = shard.get("process_groups")
+    if configured_groups is None:
+        return [(label, declared_paths, [])]
+    if not isinstance(configured_groups, list) or not configured_groups:
+        raise ValueError(f"{label} process_groups must be a non-empty list")
+
+    processes: list[tuple[str, list[str], list[str]]] = []
+    grouped_paths: list[str] = []
+    group_labels: set[str] = set()
+    for group in configured_groups:
+        if not isinstance(group, dict):
+            raise ValueError(f"{label} process_groups must contain objects")
+        group_label = str(group.get("label") or "").strip()
+        if not group_label or group_label in group_labels:
+            raise ValueError(f"{label} process_groups require unique labels")
+        group_labels.add(group_label)
+        paths = expand_path_inputs(
+            group.get("paths", []),
+            cwd=cwd,
+            exclude_paths=group.get("exclude_paths", []),
+        )
+        grouped_paths.extend(paths)
+        processes.append(
+            (
+                f"{label}-{group_label}",
+                paths,
+                list(group.get("extra_args", [])),
+            )
+        )
+
+    if len(grouped_paths) != len(set(grouped_paths)) or set(grouped_paths) != set(
+        declared_paths
+    ):
+        raise ValueError(f"{label} process_groups must partition declared paths")
+    return processes
+
+
 def run_worker(
     labels: Sequence[str],
     catalog: Sequence[dict[str, Any]],
@@ -89,40 +139,40 @@ def run_worker(
     junit_dir.mkdir(parents=True, exist_ok=True)
     for label in labels:
         shard = by_label[label]
-        paths = expand_path_inputs(
-            shard["paths"],
-            cwd=cwd,
-            exclude_paths=shard.get("exclude_paths", []),
-        )
-        pytest_args = [*BASE_PYTEST_ARGS, *shard.get("extra_args", [])]
-        pytest_args = instrument_pytest_args(
-            pytest_args,
-            junit_path=str(junit_dir / f"{label}.xml"),
-        )
         try:
             timeout_seconds = shard_timeout_seconds(shard)
         except ValueError as exc:
             raise ValueError(f"{label} {exc}") from exc
-        print(
-            "[ci-worker] "
-            + json.dumps(
-                {
-                    "shard": label,
-                    "paths": len(paths),
-                    "deadline_seconds": timeout_seconds,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
-            flush=True,
-        )
-        return_code = shard_runner(
-            paths,
-            pytest_args,
-            timeout_seconds=timeout_seconds,
-        )
-        if return_code != 0:
-            return return_code
+        for process_label, paths, process_args in shard_processes(shard, cwd=cwd):
+            pytest_args = [
+                *BASE_PYTEST_ARGS,
+                *shard.get("extra_args", []),
+                *process_args,
+            ]
+            pytest_args = instrument_pytest_args(
+                pytest_args,
+                junit_path=str(junit_dir / f"{process_label}.xml"),
+            )
+            print(
+                "[ci-worker] "
+                + json.dumps(
+                    {
+                        "shard": process_label,
+                        "paths": len(paths),
+                        "deadline_seconds": timeout_seconds,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                flush=True,
+            )
+            return_code = shard_runner(
+                paths,
+                pytest_args,
+                timeout_seconds=timeout_seconds,
+            )
+            if return_code != 0:
+                return return_code
     return 0
 
 

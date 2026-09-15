@@ -455,10 +455,10 @@ def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_p
 
     catalog = load_catalog(SHARD_CATALOG)
     expected_paths = expand_path_inputs(["tests/test_agent_[a-d]*.py"], cwd=ROOT / "backend")
+    synthesis_path = "tests/test_agent_composed_synthesis_projection.py"
     calls = []
 
     def execute(paths, args, *, timeout_seconds):
-        assert paths == expected_paths
         assert timeout_seconds == 1200
         assert "--timeout=120" in args
         calls.append(paths)
@@ -468,4 +468,8 @@ def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_p
         ["agent-a-d"], catalog, cwd=ROOT / "backend",
         junit_dir=tmp_path / "results", shard_runner=execute,
     ) == 0
-    assert len(calls) == 1
+    assert calls == [
+        [synthesis_path],
+        [path for path in expected_paths if path != synthesis_path],
+    ]
+    assert sorted(path for call in calls for path in call) == expected_paths
