@@ -2,6 +2,7 @@
 import React from 'react';
 import { Alert, FlatList, Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { revaColors, revaSemantic } from '../../../constants/revaTheme';
 
 const mockOpenHistory = jest.fn();
 const mockOpenHistoryPage = jest.fn();
@@ -588,12 +589,12 @@ describe('ChatScreen', () => {
     expect(mockSendMessage).not.toHaveBeenCalledWith('记录喝水 1200 毫升', null);
   });
 
-  it('does not expose retry while an accepted turn is only awaiting server recovery', () => {
+  it.each(['running', 'interrupted'])('renders %s transport recovery neutrally and clears it on completion', phase => {
     mockMessages = [{
       id: 'u-recovering', role: 'user', content: '记录喝水 1200 毫升', sourceTurnId: 'turn-recovering',
     }];
     mockActiveTurn = {
-      phase: 'interrupted',
+      phase,
       recoverable: true,
       label: '连接中断，正在从服务端恢复',
       errorCode: 'stream_transport_interrupted',
@@ -603,6 +604,21 @@ describe('ChatScreen', () => {
     const view = render(<ChatScreen />);
 
     expect(view.queryByLabelText('重试上一轮')).toBeNull();
+    expect(StyleSheet.flatten(view.getByText('连接中断，正在从服务端恢复').props.style).color)
+      .toBe(revaColors.green600);
+    mockActiveTurn = { phase: 'completed', recoverable: false, turnId: 'turn-recovering' };
+    view.rerender(<ChatScreen />);
+    expect(view.queryByText('连接中断，正在从服务端恢复')).toBeNull();
+  });
+
+  it('keeps an authoritative interrupted outcome visibly distinct from transport recovery', () => {
+    mockActiveTurn = {
+      phase: 'interrupted', recoverable: false, label: '本轮已取消，消息已保存。',
+      errorCode: 'run_cancelled', turnId: 'turn-cancelled',
+    };
+    const view = render(<ChatScreen />);
+    expect(StyleSheet.flatten(view.getByText('本轮已取消，消息已保存。').props.style).color)
+      .toBe(revaSemantic.risk.fg);
   });
 
   it('queues structured health continuation while another turn is streaming', () => {

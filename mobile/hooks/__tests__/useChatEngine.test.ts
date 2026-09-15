@@ -2410,12 +2410,12 @@ describe('useChatEngine', () => {
     expect(onAccepted).toHaveBeenCalledTimes(1);
     expect(onAccepted).toHaveBeenCalledWith(true);
     expect(result.current.activeTurn).toMatchObject({
-      phase: 'interrupted',
+      phase: 'running',
       recoverable: true,
     });
     expect(result.current.activeTurn.retryMode).toBeUndefined();
     expect(result.current.messages.find(message => message.role === 'assistant')).toMatchObject({
-      completionStatus: 'interrupted',
+      completionStatus: undefined,
       content: expect.stringContaining('已保留已接收内容'),
     });
   });
@@ -2455,7 +2455,7 @@ describe('useChatEngine', () => {
     });
 
     expect(result.current.activeTurn).toMatchObject({
-      phase: 'interrupted',
+      phase: 'running',
       recoverable: true,
     });
     expect(result.current.activeTurn.retryMode).toBeUndefined();
@@ -3404,6 +3404,146 @@ describe('useChatEngine', () => {
     expect(mockGetConversationMessages).toHaveBeenCalledWith(777, { limit: 80 });
   });
 
+  it('keeps accepted transport recovery neutral without claiming a terminal outcome', async () => {
+    mockStreamChat.mockImplementation(streamAcceptedThenEndsWithoutDone);
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await result.current.sendMessage('记录喝水 1200 毫升'); });
+
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'running', recoverable: true,
+      label: '小巴还在处理，正在同步完整回答。',
+    });
+    expect(result.current.activeTurn.retryMode).toBeUndefined();
+    expect(result.current.messages.find(message => message.role === 'assistant')?.completionStatus)
+      .toBeUndefined();
+    expect(mockEmitClientEvent.mock.calls.filter(call => call[0] === 'agent_turn_terminal')).toHaveLength(0);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['complete', 'waiting_for_user', 'partial', 'refused', 'blocked', 'failed', 'interrupted', 'reconciliation_required'])(
+    'reconciles a finalized %s answer after the initial nine second recovery window and stops polling',
+    async terminalStatus => {
+      jest.useFakeTimers();
+      mockStreamChat.mockImplementation(streamAcceptedThenEndsWithoutDone);
+      const { result } = renderHook(() => useChatEngine());
+      await act(async () => { await result.current.sendMessage('继续处理这条消息'); });
+      const turnId = result.current.activeTurn.turnId;
+      for (const delay of [1500, 2500, 5000]) {
+        await act(async () => { await jest.advanceTimersByTimeAsync(delay); });
+      }
+      mockGetConversationMessages.mockResolvedValue({
+        total_messages: 1,
+        messages: [{ id: 92, role: 'assistant', content: '服务端最终回答', meta: {
+          client_turn_id: turnId, client_turn_finalized: true,
+          completion_status: terminalStatus === 'interrupted' ? 'interrupted' : 'complete',
+          turn_outcome: { status: terminalStatus === 'interrupted' ? undefined : terminalStatus, retryable: false },
+        } }],
+      });
+      await act(async () => { await jest.advanceTimersByTimeAsync(11000); });
+      expect(result.current.activeTurn.phase).toBe(terminalStatus === 'complete' ? 'completed' : terminalStatus);
+      expect(result.current.activeTurn.label).toBeUndefined();
+      expect(result.current.messages.find(message => message.role === 'assistant')?.content)
+        .toBe('服务端最终回答');
+      const callsAtTerminal = mockGetConversationMessages.mock.calls.length;
+      await act(async () => { await jest.advanceTimersByTimeAsync(120000); });
+      expect(mockGetConversationMessages).toHaveBeenCalledTimes(callsAtTerminal);
+      expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('ends the bounded recovery window with an honest pending notice and no resubmission', async () => {
+    jest.useFakeTimers();
+    mockStreamChat.mockImplementation(streamAcceptedThenEndsWithoutDone);
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await result.current.sendMessage('记录喝水 1200 毫升'); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(65000); });
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'running', recoverable: true,
+      label: '完整回答尚未同步，消息已保存。稍后返回会话可继续同步。',
+    });
+    expect(result.current.activeTurn.retryMode).toBeUndefined();
+    const callsAtExhaustion = mockGetConversationMessages.mock.calls.length;
+    await act(async () => { await jest.advanceTimersByTimeAsync(120000); });
+    expect(mockGetConversationMessages).toHaveBeenCalledTimes(callsAtExhaustion);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires a finalized answer from the recovering source turn', async () => {
+    jest.useFakeTimers();
+    mockStreamChat.mockImplementation(streamAcceptedThenEndsWithoutDone);
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await result.current.sendMessage('继续本轮'); });
+    mockGetConversationMessages.mockResolvedValue({ total_messages: 2, messages: [
+      { id: 91, role: 'assistant', content: '别的轮次', meta: {
+        client_turn_id: 'other-turn', client_turn_finalized: true, completion_status: 'complete',
+      } },
+      { id: 92, role: 'assistant', content: '未完成片段', meta: {
+        client_turn_id: result.current.activeTurn.turnId, client_turn_finalized: false,
+      } },
+    ] });
+    await act(async () => { await jest.advanceTimersByTimeAsync(1500); });
+    expect(result.current.activeTurn.phase).toBe('running');
+    expect(result.current.messages.some(message => message.content === '别的轮次')).toBe(false);
+    expect(result.current.messages.some(message => message.content === '未完成片段')).toBe(false);
+  });
+
+  it('does not turn an unknown write into success or a resubmit action during recovery', async () => {
+    jest.useFakeTimers();
+    mockStreamChat.mockImplementation(async function* () {
+      yield { type: 'start', conversationId: 777 };
+      yield { type: 'tool', toolName: 'health_record', toolSuccess: false, writeAttempted: true,
+        writeCompleted: false, writeOutcome: 'uncertain' };
+    });
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await result.current.sendMessage('记录喝水 1200 毫升'); });
+    expect(result.current.activeTurn).toMatchObject({ phase: 'running', hadWrite: true, writeVerified: false });
+    expect(result.current.activeTurn.retryMode).toBeUndefined();
+    mockGetConversationMessages.mockResolvedValue({ total_messages: 1, messages: [{
+      id: 92, role: 'assistant', content: '缺少写入回执', meta: {
+        client_turn_id: result.current.activeTurn.turnId, client_turn_finalized: true,
+        completion_status: 'complete', turn_outcome: { status: 'complete', retryable: true },
+      },
+    }] });
+    await act(async () => { await jest.advanceTimersByTimeAsync(1500); });
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'failed', hadWrite: true, writeVerified: false, recoverable: false,
+      errorCode: 'write_receipt_missing_identity',
+    });
+    expect(result.current.activeTurn.retryMode).toBeUndefined();
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards an in-flight recovery response after a newer turn starts in the same conversation', async () => {
+    jest.useFakeTimers();
+    mockStreamChat.mockImplementationOnce(streamAcceptedThenEndsWithoutDone)
+      .mockImplementationOnce(streamStartThenWait);
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await result.current.sendMessage('第一条消息'); });
+    const oldTurnId = result.current.activeTurn.turnId;
+    let resolveOldHistory!: (value: any) => void;
+    mockGetConversationMessages.mockImplementationOnce(() => new Promise(resolve => { resolveOldHistory = resolve; }));
+    await act(async () => { await jest.advanceTimersByTimeAsync(1500); });
+    const inFlightHistoryCalls = mockGetConversationMessages.mock.calls.length;
+    await act(async () => { await jest.advanceTimersByTimeAsync(12000); });
+    expect(mockGetConversationMessages).toHaveBeenCalledTimes(inFlightHistoryCalls);
+    act(() => { void result.current.sendMessage('第二条消息'); });
+    await act(async () => { await Promise.resolve(); });
+    const newTurnId = result.current.activeTurn.turnId;
+    expect(newTurnId).not.toBe(oldTurnId);
+    await act(async () => {
+      resolveOldHistory({ total_messages: 1, messages: [{
+        id: 92, role: 'assistant', content: '旧快照', meta: {
+          client_turn_id: oldTurnId, client_turn_finalized: true, completion_status: 'complete',
+        },
+      }] });
+      await Promise.resolve();
+    });
+    expect(result.current.activeTurn.turnId).toBe(newTurnId);
+    expect(result.current.messages.some(message => message.content === '第二条消息')).toBe(true);
+    expect(result.current.messages.some(message => message.content === '旧快照')).toBe(false);
+    await act(async () => { finishStream?.(); await Promise.resolve(); });
+  });
+
   it('recovers an accepted background-aborted stream from server history on foreground', async () => {
     let appStateListener: ((state: string) => void) | undefined;
     jest.spyOn(AppState, 'addEventListener').mockImplementation(((_event: string, handler: (state: string) => void) => {
@@ -3475,7 +3615,7 @@ describe('useChatEngine', () => {
       const assistant = result.current.messages.find(message => message.role === 'assistant');
       expect(assistant?.content).not.toContain('请重新提问');
       expect(result.current.activeTurn).toMatchObject({
-        phase: 'interrupted',
+        phase: 'running',
         recoverable: true,
       });
       expect(result.current.activeTurn.retryMode).toBeUndefined();
@@ -3552,7 +3692,7 @@ describe('useChatEngine', () => {
       expect(result.current.messages.map(message => message.content).join('\n'))
         .not.toContain('网络请求失败');
       expect(result.current.activeTurn).toMatchObject({
-        phase: 'interrupted',
+        phase: 'running',
         recoverable: true,
       });
       expect(result.current.activeTurn.retryMode).toBeUndefined();

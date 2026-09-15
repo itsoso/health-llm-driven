@@ -974,9 +974,15 @@ export default function ChatScreen() {
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
   const activeTurnVisible = activeTurn.phase !== 'idle' && activeTurn.phase !== 'completed';
+  // Older app versions persisted transport loss as an interrupted turn. It
+  // remains pending recovery, without a retry action or a server failure.
+  const legacyTransportRecovery = activeTurn.phase === 'interrupted'
+    && activeTurn.errorCode === 'stream_transport_interrupted'
+    && activeTurn.recoverable
+    && !activeTurn.retryMode;
   const activeTurnHasErrorTone = (
     activeTurn.phase === 'failed'
-    || activeTurn.phase === 'interrupted'
+    || (activeTurn.phase === 'interrupted' && !legacyTransportRecovery)
     || activeTurn.phase === 'blocked'
     || activeTurn.phase === 'refused'
     || activeTurn.phase === 'reconciliation_required'

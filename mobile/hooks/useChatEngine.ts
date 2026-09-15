@@ -532,6 +532,10 @@ const QUEUED_TURN_PLACEHOLDER = '小巴处理中，已加入队列。';
 const SERVER_BUSY_TURN_PLACEHOLDER = '上一条仍在处理，本条已排队。';
 const SERVER_BUSY_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000] as const;
 const STREAM_RECOVERY_NOTICE = '小巴还在处理，正在同步完整回答。';
+const STREAM_RECOVERY_PENDING_NOTICE = '完整回答尚未同步，消息已保存。稍后返回会话可继续同步。';
+// Single-flight retries cover roughly one minute after transport loss. Focus
+// and foreground history reloads remain available once this window expires.
+const SERVER_RECOVERY_DELAYS_MS = [1500, 2500, 5000, 11000, 20000, 20000] as const;
 const STREAM_RECOVERY_SUFFIX = '\n\n[连接短暂中断，正在同步完整回答]';
 const STREAM_RECEIVED_CONTENT_SUFFIX = '\n\n[回复中断，已保留已接收内容]';
 // A persisted SSE request should be visible almost immediately. Keep this
@@ -1109,6 +1113,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
   const recoverConversationFromServer = useCallback(async (id: number, expectedTurnId?: string) => {
     const requestGeneration = conversationRequestGenerationRef.current;
+    const queueGeneration = turnQueueGenerationRef.current;
+    const turnId = expectedTurnId || activeTurnRef.current.turnId;
+    if (!turnId) return false;
     try {
       const {
         messages: msgs,
@@ -1119,9 +1126,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         id,
         { limit: HISTORY_PAGE_SIZE },
       );
-      if (requestGeneration !== conversationRequestGenerationRef.current) return false;
-      const turnId = expectedTurnId || activeTurnRef.current.turnId;
-      if (!turnId) return false;
+      if (
+        requestGeneration !== conversationRequestGenerationRef.current
+        || queueGeneration !== turnQueueGenerationRef.current
+        || activeTurnRef.current.turnId !== turnId
+        || (conversationIdRef.current != null && conversationIdRef.current !== id)
+      ) return false;
       const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
       const persistedUser = restored.find(message => (
         message.role === 'user' && message.sourceTurnId === turnId
@@ -1636,19 +1646,43 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         emitAgentTerminal('completed');
       }
     };
-    const scheduleServerRecovery = (conversationToRecover: number) => {
-      [1500, 4000, 9000].forEach((delayMs) => {
-        const timer = setTimeout(() => {
+    const scheduleServerRecovery = (conversationToRecover: number, receivedContentSuffix: string) => {
+      const recoveryStillApplies = () => (
+        turnQueueGeneration === turnQueueGenerationRef.current
+        && activeTurnRef.current.turnId === turnId
+        && conversationIdRef.current === conversationToRecover
+        && !isAgentTurnTerminal(activeTurnRef.current)
+      );
+      const scheduleAttempt = (attempt: number) => {
+        const timer = setTimeout(async () => {
           serverRecoveryTimersRef.current.delete(timer);
-          const current = activeTurnRef.current;
-          if (current.turnId !== turnId || current.phase === 'completed') return;
-          void recoverConversationFromServer(conversationToRecover, turnId).then((recovered) => {
-            if (recovered) emitRecoveredTerminal(recovered.terminalPhase);
+          if (!recoveryStillApplies()) return;
+          const recovered = await recoverConversationFromServer(conversationToRecover, turnId);
+          if (recovered) {
+            emitRecoveredTerminal(recovered.terminalPhase);
+            void clearPendingStream();
+            return;
+          }
+          if (!recoveryStillApplies()) return;
+          if (attempt + 1 < SERVER_RECOVERY_DELAYS_MS.length) {
+            scheduleAttempt(attempt + 1);
+            return;
+          }
+          dispatchAgentTurn({
+            type: 'recover', serverStatus: 'running', at: Date.now(),
+            conversationId: conversationToRecover, label: STREAM_RECOVERY_PENDING_NOTICE,
           });
-        }, delayMs);
+          setMessages(prev => prev.map(message => message.id === aId ? {
+            ...message,
+            content: message.content === STREAM_RECOVERY_NOTICE
+              ? STREAM_RECOVERY_PENDING_NOTICE
+              : message.content.replace(receivedContentSuffix, `\n\n[${STREAM_RECOVERY_PENDING_NOTICE}]`),
+          } : message));
+        }, SERVER_RECOVERY_DELAYS_MS[attempt]);
         serverRecoveryTimersRef.current.add(timer);
         (timer as any)?.unref?.();
-      });
+      };
+      scheduleAttempt(0);
     };
     const reconcileAcceptedTurnAfterTransportLoss = async (
       receivedContentSuffix = STREAM_RECOVERY_SUFFIX,
@@ -1758,39 +1792,24 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       }
 
       keepPendingStreamForRecovery = true;
-      scheduleServerRecovery(conversationToRecover);
-      if (acceptedBeforeReconciliation) {
-        dispatchAgentTurn({
-          type: 'interrupt',
-          at: Date.now(),
-          errorCode: 'stream_transport_interrupted',
-          label: STREAM_RECOVERY_NOTICE,
-          // Keep the accepted turn durable for history reconciliation, but do
-          // not grant a user resubmit action. retryMode was cleared at accept.
-          recoverable: true,
-        });
-        emitAgentTerminal('interrupted', 'stream_transport_interrupted');
-      } else {
-        // Losing the transport before the first SSE acknowledgement does not
-        // mean the durable Run stopped. Keep it running after authoritative
-        // client-turn reconciliation instead of showing "上一轮未完成".
-        dispatchAgentTurn({
-          type: 'recover',
-          at: Date.now(),
-          serverStatus: 'running',
-          conversationId: conversationToRecover,
-          label: STREAM_RECOVERY_NOTICE,
-        });
-      }
+      scheduleServerRecovery(conversationToRecover, receivedContentSuffix);
+      // Persistence is authoritative acceptance, even if the transport ended.
+      // Completion still requires the source turn's finalized server answer;
+      // recovery grants no resubmit action, including for uncertain writes.
+      dispatchAgentTurn({
+        type: 'recover',
+        at: Date.now(),
+        serverStatus: 'running',
+        conversationId: conversationToRecover,
+        label: STREAM_RECOVERY_NOTICE,
+      });
       setMessages(prev => prev.map(m => {
         if (m.id !== aId) return m;
         const currentContent = stripThinkingPlaceholder(m.content).trim();
         return {
           ...m,
           currentStatus: undefined,
-          completionStatus: acceptedBeforeReconciliation
-            ? 'interrupted'
-            : undefined,
+          completionStatus: undefined,
           content: currentContent
             ? `${currentContent}${receivedContentSuffix}`
             : STREAM_RECOVERY_NOTICE,

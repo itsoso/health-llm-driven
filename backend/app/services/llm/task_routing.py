@@ -302,6 +302,25 @@ def is_implicit_medication_dose_language(text: str) -> bool:
     return _looks_like_implicit_medication_dose(_normalized_text(text))
 
 
+def has_sensitive_health_language(message: Optional[str]) -> bool:
+    """Conservative admission guard for deterministic non-medical replies.
+
+    This is not a clinical clearance or a task classifier. Reuse the routing
+    vocabulary without recursively invoking the semantic intent classifier.
+    A match retains the ordinary safety-aware conversation path.
+    """
+    text = _normalized_text(message)
+    return bool(
+        contains_acute_symptom_language(text)
+        or _contains_named_drug(text)
+        or _contains_named_supplement(text)
+        or is_explicit_medication_safety_language(text)
+        or is_contextual_medication_safety_language(text)
+        or _looks_like_implicit_medication_dose(text)
+        or any(marker in text for marker in (*_HIGH_STAKES_MARKERS, *_ACUTE_QUERY_SAFETY_MARKERS))
+    )
+
+
 def classify_answer_task_tier(
     message: Optional[str],
     *,

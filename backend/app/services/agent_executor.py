@@ -28,6 +28,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.services.agent_context_statement import ContextStatement
 from app.services.tool_schema_registry import (
     ANALYSIS_TURN_TOOL_NAMES,
     DIET_TURN_TOOL_NAMES,
@@ -14721,8 +14722,10 @@ class AgentExecutor:
         client_turn_id: str | None,
         recovered_user_message: Any = None,
         health_fact_draft: dict[str, Any] | None = None,
+        context_statement: ContextStatement | None = None,
+        request_started_at: float | None = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Persist a one-turn clarification without loading health context or a model."""
+        """Persist a local clarification or context acknowledgement without a model."""
         from app.services.agent_conversation_service import AgentConversationService
 
         svc = AgentConversationService(self.db)
@@ -14746,7 +14749,11 @@ class AgentExecutor:
                 client_turn_id=client_turn_id,
                 meta={"client_turn_id": client_turn_id} if client_turn_id else None,
             )
-        if health_fact_draft:
+        if context_statement is not None:
+            text = context_statement.reply
+            reason_code = "context_statement_acknowledged"
+            route = "context_statement"
+        elif health_fact_draft:
             labels = []
             for fact in health_fact_draft.get("facts", []):
                 if fact.get("type") == "caffeine_intake":
@@ -14761,8 +14768,8 @@ class AgentExecutor:
             reason_code = "input_too_short"
             route = "clarification"
         outcome = {
-            "status": "waiting_for_user",
-            "category": "clarification_required",
+            "status": "complete" if context_statement is not None else "waiting_for_user",
+            "category": "answer" if context_statement is not None else "clarification_required",
             "reason_code": reason_code,
             "retryable": False,
             "dispatch_started": False,
@@ -14771,7 +14778,7 @@ class AgentExecutor:
             "refusal_detected": False,
             "capability_block_count": 0,
             "tool_failure_count": 0,
-            "confirmation_required": True,
+            "confirmation_required": context_statement is None,
         }
         meta = {
             "completion_status": "complete",
@@ -14809,8 +14816,8 @@ class AgentExecutor:
                     "route": route,
                     "model_call_count": 0,
                     "first_progress_ms": 0,
-                    "first_useful_ms": 0,
-                    "total_ms": 0,
+                    "first_useful_ms": max(0, int((time.time() - request_started_at) * 1000)) if request_started_at is not None else 0,
+                    "total_ms": max(0, int((time.time() - request_started_at) * 1000)) if request_started_at is not None else 0,
                 },
             },
         }
@@ -15180,6 +15187,38 @@ class AgentExecutor:
                         yield self._attach_runtime_identity(event)
                     return
             streamed_answer_parts: List[str] = []
+            # A bounded plain context statement has no answer-generation or
+            # health-write obligation. Reuse the durable local reply path only
+            # after retry/write recovery has had its normal precedence.
+            from app.services.agent_context_statement import (
+                context_reply_is_standalone,
+                parse_context_statement,
+            )
+
+            context_statement = (
+                parse_context_statement(effective_message)
+                if (retry_recovery is None and not effective_images and not file_base64
+                    and not extra_context and not read_only_tools
+                    and self._agent_kernel_snapshot.intent.primary == "chat"
+                    and "classifier:context_statement" in self._agent_kernel_snapshot.intent.evidence)
+                else None
+            )
+            if context_statement is not None and context_reply_is_standalone(
+                self.db, user_id=user_id,
+                conversation_id=(int(recovered_user_message.conversation_id)
+                    if recovered_user_message is not None else conversation_id),
+                source_message_id=(recovered_user_message.id if recovered_user_message is not None else None),
+            ):
+                async for event in self._run_input_clarification_stream(
+                    user_id=user_id, message=display_message,
+                    conversation_id=conversation_id, client_turn_id=client_turn_id,
+                    recovered_user_message=recovered_user_message,
+                    context_statement=context_statement, request_started_at=request_started_at,
+                ):
+                    if event.get("event") == "done":
+                        kernel_completion_status = "complete"
+                    yield self._attach_runtime_identity(event)
+                return
             async for event in self._run_stream_impl(
                 user_id=user_id,
                 message=effective_message,
