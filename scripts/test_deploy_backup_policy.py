@@ -1,4 +1,4 @@
-"""Exercise tiered backup selection without contacting production."""
+"""Exercise explicit backup opt-in without contacting production."""
 
 import os
 import subprocess
@@ -82,6 +82,7 @@ backup_database
             **os.environ,
             "CALLS": str(calls),
             "BACKUP_COMMAND": str(backup_command),
+            "DEPLOY_DATABASE_BACKUP": "1",
         },
         capture_output=True,
         text=True,
@@ -97,11 +98,58 @@ backup_database
         assert f"BACKUP_OFFSITE_MODE='{expected_mode}'" in backup_command.read_text()
 
 
-def test_deploy_has_no_flag_that_skips_local_backup_or_restore_drill():
+@pytest.mark.parametrize("setting", [None, "0"])
+@pytest.mark.parametrize("delegated", ["0", "1"])
+@pytest.mark.parametrize("stage_rc", [0, 7])
+def test_default_deploy_stages_tools_without_database_or_offsite_access(
+    tmp_path, setting, delegated, stage_rc
+):
     script = (ROOT / "deploy.sh").read_text(encoding="utf-8")
     body = script[script.index("backup_database() {") : script.index("# 记录当前 commit")]
+    calls = tmp_path / "calls"
+    harness = f"""
+print_step() {{ :; }}
+print_success() {{ :; }}
+print_warning() {{ :; }}
+print_error() {{ :; }}
+_REMOTE_RELEASE_LOCK_DELEGATED={delegated}
+stage_backup_preflight_scripts() {{ echo stage >> "$CALLS"; return {stage_rc}; }}
+ssh() {{ echo unexpected_remote_access >> "$CALLS"; return 98; }}
+git() {{ echo unexpected_git_access >> "$CALLS"; return 99; }}
+{body}
+backup_database
+rc=$?
+printf '%s:%s:%s' "$rc" "$_REMOTE_RELEASE_LOCK_DELEGATED" "${{_REMOTE_RELEASE_LOCK_ABANDONED:-0}}"
+exit "$rc"
+"""
+    env = {**os.environ, "CALLS": str(calls)}
+    env.pop("DEPLOY_DATABASE_BACKUP", None)
+    if setting is not None:
+        env["DEPLOY_DATABASE_BACKUP"] = setting
+    result = subprocess.run(
+        ["bash", "-c", harness], env=env, capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == (1 if stage_rc else 0)
+    assert calls.read_text().splitlines() == ["stage"]
+    assert result.stdout == ("1:1:1" if stage_rc else f"0:{delegated}:0")
 
-    assert "DEPLOY_DATABASE_BACKUP" not in body
-    assert "BACKUP_OFFSITE_MODE" in body
-    assert "BACKUP_OFFSITE_MAX_AGE_SECONDS=86400" in body
-    assert "merge-base --is-ancestor" in body
+
+@pytest.mark.parametrize("setting", ["yes", "2", "", "false"])
+def test_invalid_backup_setting_fails_before_staging(tmp_path, setting):
+    script = (ROOT / "deploy.sh").read_text(encoding="utf-8")
+    body = script[script.index("backup_database() {") : script.index("# 记录当前 commit")]
+    calls = tmp_path / "calls"
+    harness = f"""
+print_step() {{ :; }}
+print_error() {{ :; }}
+stage_backup_preflight_scripts() {{ echo stage >> "$CALLS"; return 7; }}
+{body}
+backup_database
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        env={**os.environ, "CALLS": str(calls), "DEPLOY_DATABASE_BACKUP": setting},
+        capture_output=True, text=True, timeout=5,
+    )
+    assert result.returncode == 1
+    assert not calls.exists()

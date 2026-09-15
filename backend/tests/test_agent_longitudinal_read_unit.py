@@ -15,6 +15,41 @@ TEXT = ('我的既往诊断是几个月前的事情。请基于诊断时间判�
         '结合我每天实际服用的补剂、睡眠、运动、情绪、工作和饮食，先调用工具查询已有记录，再给建议。')
 
 
+@pytest.mark.parametrize('clause', ['我的既往诊断是几个月前的事情', '查询我的饮食和睡眠', '再给建议'])
+def test_non_sync_clause_does_not_resolve_whole_request_ownership(monkeypatch, clause):
+    from app.services.agent_longitudinal_read import _consumed_sync_clause
+
+    def unexpected_owner_resolution(_active):
+        pytest.fail('A clause without any sync marker cannot consume a sync instruction')
+
+    monkeypatch.setattr('app.services.agent_kernel.read_task_scope.has_owned_sync_instruction',
+                        unexpected_owner_resolution)
+    assert _consumed_sync_clause(TEXT, clause) is False
+
+
+@pytest.mark.parametrize('active,clause,consumed', [
+    ('同步我的佳明数据', '同步我的佳明数据', True),
+    ('同步朋友的佳明数据', '同步朋友的佳明数据', False),
+    ('不要同步我的佳明数据', '不要同步我的佳明数据', False),
+    ('同步我的佳明数据并删除记录', '同步我的佳明数据并删除记录', False),
+    ('我的佳明同步完成了吗', '我的佳明同步完成了吗', True),
+])
+def test_sync_clause_retains_owner_and_residue_checks(monkeypatch, active, clause, consumed):
+    from app.services.agent_kernel import read_task_scope
+    from app.services.agent_longitudinal_read import _consumed_sync_clause
+
+    resolve_owner = read_task_scope.has_owned_sync_instruction
+    calls = []
+
+    def checked_owner(text):
+        calls.append(text)
+        return resolve_owner(text)
+
+    monkeypatch.setattr(read_task_scope, 'has_owned_sync_instruction', checked_owner)
+    assert _consumed_sync_clause(active, clause) is consumed
+    assert calls == [active]
+
+
 def snapshot(text=TEXT):
     env = AgentEnvelope(user_id=17, channel='typed', text=text)
     ctx = ExecutionContext(current_time=datetime.fromisoformat('2031-04-03T17:10:00+00:00'),

@@ -349,7 +349,10 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
 2. 把本次提交的 backup/rollback/schema-probe 工具和生产 systemd runtime
    drop-in 上传到 root-only stage，并逐文件校验 Git blob hash；候选 effective
    unit 还必须通过目标 systemd 版本的 `systemd-analyze verify`。
-3. 每次在 Git 工作树外创建数据库备份并完成临时库恢复演练。普通无迁移发布还必须
+3. 按用户明确要求，发布默认跳过数据库备份、恢复演练和站外归档。
+   只有显式设置 `DEPLOY_DATABASE_BACKUP=1` 才执行以下备份策略；`0` 为跳过，其他值阻断。
+   跳过备份仍须准备并校验发布工具、验证回滚 schema 和运行态事务，不跳过健康验收。
+   显式启用时，在 Git 工作树外创建数据库备份并完成临时库恢复演练。普通无迁移发布还必须
    证明存在 24 小时内、已完成远端哈希和 HMAC 校验的 age 加密站外归档；证明有效时
    本次不重复上传。证明缺失/过期/远端三件套不完整，或无法证明本次不含 managed
    migration 时，发布前同步补做加密站外归档。任一步失败即停止。夜间任务仍每天执行
