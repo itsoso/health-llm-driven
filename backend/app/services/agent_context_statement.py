@@ -17,6 +17,12 @@ class ContextStatement:
     place: str
 
     @property
+    def allows_local_reply(self) -> bool:
+        # An arbitrary hotel name is only an intent hint, never proof that its
+        # free-text slot contains no additional obligation or medical concern.
+        return self.kind in {"arrival", "business_trip"}
+
+    @property
     def reply(self) -> str:
         if self.kind == "arrival":
             return f"收到，你已到{self.place}。"
@@ -25,8 +31,9 @@ class ContextStatement:
         return f"收到，你这次的差旅住处是{self.place}。仅作为本次对话背景，不修改常住地址。"
 
 
-# Closed single-statement grammar, not fuzzy matching. Place content is bounded
-# plain text; discourse/actions cannot be absorbed into a place name.
+# City admission is exact against the existing static place catalog below.
+# Hotel names remain unverified candidates and always retain normal inference
+# and all safety checks; a suffix/character class does not establish semantics.
 _PLACE = r"[\u4e00-\u9fffA-Za-z·]{2,30}?"
 _LEAD = r"(?:我)?(?:今天|现在)?(?:已经|刚刚|刚|已)?"
 _PATTERNS = (
@@ -55,6 +62,11 @@ def parse_context_statement(message: str | None) -> ContextStatement | None:
         if match is None:
             continue
         place = match.group("place")
+        if kind in {"arrival", "business_trip"}:
+            from app.services.environment.weather_service import WeatherService
+
+            if place.removesuffix("市") not in WeatherService._CITY_LOCATION_IDS:
+                return None
         if any(marker in place for marker in _NON_PLACE_LANGUAGE):
             return None
         # Lazy import keeps the semantic classifier and model-routing module
@@ -77,7 +89,6 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
     if conversation_id is None:
         return True
     from app.models.agent_conversation import AgentConversation, AgentMessage
-    from app.services.llm.task_routing import has_sensitive_health_language
 
     owned = db.query(AgentConversation).filter(
         AgentConversation.id == conversation_id, AgentConversation.user_id == user_id,
@@ -89,15 +100,25 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
         query = query.filter(AgentMessage.id < source_message_id)
     recent = query.order_by(AgentMessage.id.desc()).limit(8).all()
     for item in recent:
-        # A previous model hallucination/refusal is not evidence that the user
-        # has a medical complaint. Only the user's own recent statements can
-        # retain a medical follow-up here; pending actions are checked below.
-        if item.role == "user" and has_sensitive_health_language(item.content):
-            return False
+        if item.role == "user":
+            # Positive admission, not absence of a symptom keyword. Unknown
+            # history may hold an unresolved clinical task even when the last
+            # assistant forgot to attach a pending-choice marker.
+            previous = parse_context_statement(item.content)
+            plain_record = re.fullmatch(
+                r"(?:记录)?(?:早餐|午餐|晚餐|早饭|午饭|晚饭)|"
+                r"(?:记录)?(?:我)?(?:今天)?(?:喝水|喝了水|喝了)(?:[1-9][0-9]{0,3})(?:ml|毫升)",
+                unicodedata.normalize("NFKC", item.content or "").strip().rstrip("。.!！"),
+                re.IGNORECASE,
+            )
+            if not ((previous is not None and previous.allows_local_reply) or plain_record):
+                return False
     latest_answer = next((item for item in recent if item.role == "assistant"), None)
     if latest_answer is not None:
         meta = latest_answer.meta or {}
         outcome = meta.get("turn_outcome") or {}
+        if re.search(r"[?？]|请补充|请提供|说一下|告诉我|你在哪|你现在在哪|是否|吗|呢", latest_answer.content or ""):
+            return False
         if (meta.get("pending_choice") or meta.get("health_fact_draft")
                 or outcome.get("confirmation_required")
                 or outcome.get("status") in {"waiting_for_user", "reconciliation_required"}):

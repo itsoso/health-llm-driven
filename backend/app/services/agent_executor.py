@@ -15203,7 +15203,7 @@ class AgentExecutor:
                     and "classifier:context_statement" in self._agent_kernel_snapshot.intent.evidence)
                 else None
             )
-            if context_statement is not None and context_reply_is_standalone(
+            if context_statement is not None and context_statement.allows_local_reply and context_reply_is_standalone(
                 self.db, user_id=user_id,
                 conversation_id=(int(recovered_user_message.conversation_id)
                     if recovered_user_message is not None else conversation_id),
@@ -20101,12 +20101,18 @@ class AgentExecutor:
                 "不得沿用历史消息中的旧日期或旧时间。"
             ),
             "",
+            "## 本轮任务边界",
+            "- 先识别本轮原话的全部意图，再决定是否需要取数、写入或建议；不是每一轮都需要健康分析。",
+            "- 普通抵达、出差、入住等情境告知，仅简短确认用户自述的地点/住处，作为本次对话背景；不自动修改常住地址或健康记录，不声称已永久记住。没有健康问题时不主动展开病史、药物、补剂、指标、医学引用或免责声明。",
+            "- 若原话同时包含症状、建议请求、写入/查询动作，或是在回答历史中未完成的追问，必须处理这些意图；不能仅因出现城市或酒店就忽略。地点名称候选不是临床安全结论。",
+            "- 以下主动分析、取证和建议规则只在用户当前任务或真实新发安全风险需要时适用；单纯旧病史和模型先前的猜测不构成本轮新风险。",
+            "",
             "## 工作方式",
             "1. 分析用户请求，决定需要调用哪些工具",
             "2. 调用工具获取或记录数据",
             "- 组合任务保留每个子目标；同步入队后可查询数据，但不能宣称该任务已完成。问佳明同步状态时用 health_query(dimension=garmin)，系统会关联本会话的真实同步回执。只询问同步状态不代表要重新同步。",
             "3. 基于返回的数据进行分析和推理",
-            "4. 给出有据可依的建议",
+            "4. 按本轮任务给出简短确认、查询结果或有据可依的建议",
             "5. 复合意图时在一次对话中同时处理（如'记一下吃了鱼油，看看对基因有什么影响' → 先记录后查询）",
             "",
             *_CLINICIAN_PROVENANCE_PROMPT_BLOCK,
@@ -20150,9 +20156,9 @@ class AgentExecutor:
             "",
             "## 行为准则",
             "- 数据驱动：引用具体数据，不要泛泛而谈",
-            "- 主动分析：不仅回答问题，还要发现潜在问题",
+            "- 用户请求健康分析时可发现相关潜在问题；普通情境告知不扩展为健康分析",
             "- 取数请求（列出/查询/显示/看一下…记录）：直接调 health_query 如实列出结果（含逐条时间/数值），你的职责本就涵盖记录、查询与分析——绝不要用「我只负责记录与查询」「无法提供分析/建议」这类自我设限开场白（医疗边界只按下方 R4，不用自我声明）。",
-            "- 中文回复：简洁实用，给出可执行的建议",
+            "- 中文回复：简洁实用，仅在本轮任务需要时给出可执行的建议",
             "- 严重异常（HRV持续偏低、SpO2<92%、血压异常）→ 建议就医",
             "- 涉及药物的建议：附加'请咨询医生'免责声明",
             "",

@@ -38,9 +38,11 @@ RequirementAdmission:
 
 ## 3. Contract and User Flow
 
-Current unquoted first-person/present arrival or lodging statement -> shared bounded semantic parser -> existing intent frame (`chat`, no write) -> deterministic acknowledgement persisted in the owned conversation -> ordinary request_persisted/token/done events. No model call, health context retrieval, tool dispatch, background extraction, or implicit profile update. The original message remains in ordinary history for subsequent explicit requests; no promise of perpetual memory is made.
+Current unquoted first-person/present arrival with an exact city from the existing static weather catalog -> shared bounded semantic parser -> existing intent frame (`chat`, no write) -> deterministic acknowledgement persisted in the owned conversation -> ordinary request_persisted/token/done events. This admitted city path makes no model call, health context retrieval, tool dispatch, background extraction, or implicit profile update. The original message remains in ordinary history for subsequent explicit requests; no promise of perpetual memory is made.
 
-One immutable parsed object supplies intent and acknowledgement. Unknown/compound grammar stays on the existing path. A known place shape is not proof of clinical safety: the shared medical-language guard checks the whole input; recent medical conversation or unresolved action continuations prevent the shortcut. Explicit writes and questions retain their existing authorization and task handlers. Attachments and structured entry context retain their full path.
+Free-text hotel names are only `context_statement_candidate` hints, not trusted entities. They always retain the normal model/tool/safety pipeline. The common prompt now limits proactive analysis to the actual current task: neutral lodging updates get a brief acknowledgement, while symptoms, explicit actions and unresolved follow-ups keep their obligations. The prompt change is not an exemption from final medical validation.
+
+One immutable parsed object supplies intent and deterministic eligibility. Unknown cities/compound grammar stay on the existing path. Recent user history uses positive admission (exact admitted cities or whole simple meal/water record phrases), not absence of symptom keywords; unrecognized history and assistant follow-up requests prevent the shortcut. The bounded history query examines the existing latest-eight-message window, not a claim that all historical clinical issues are resolved. Explicit writes and questions retain their existing authorization and task handlers. Attachments and structured entry context retain their full path.
 
 Backend owns parsing, persistence and terminal truth for all streaming clients. Mobile only projects status and reconciles accepted turns against the server. A lost connection is neither successful work nor a failed write; no resubmission is allowed without existing server retry authorization.
 
@@ -50,7 +52,7 @@ No API schema, database schema, native dependency or permission changes. Existin
 
 ## 5. Acceptance / Verification
 
-- Arrival/lodging phrases after a diet discussion: relevant acknowledgement, no medical disclaimer/citations, no model/health reads or writes, completed terminal.
+- Admitted city phrases after a simple meal record: relevant acknowledgement, no medical disclaimer/citations, no model/health reads or writes, completed terminal. Free-text lodging remains model-validated, with current-task scope enforced in the prompt.
 - Duplicate client_turn_id and owned history reload: same answer, no duplicate messages; foreign conversation remains denied.
 - Negation, quotation, future/hypothetical travel, additional symptoms/advice/write/read clauses, attachments, structured continuation and recent medical context do not enter the shortcut.
 - Explicit event recording, diet correction, sleep+Garmin reads and unsafe medical generation retain existing behavior.

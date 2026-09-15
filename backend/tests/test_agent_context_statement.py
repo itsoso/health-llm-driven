@@ -20,7 +20,7 @@ STATEMENTS = [
 def test_context_statement_has_one_shared_nonwriting_intent(message):
     intent = classify_agent_utterance(message)
     assert (intent.primary, intent.domain, intent.operation) == ("chat", "context", "none")
-    assert intent.reason == "context_statement"
+    assert intent.reason == ("context_statement_candidate" if "酒店" in message else "context_statement")
     assert not intent.is_write
 
 
@@ -34,6 +34,9 @@ def test_context_statement_has_one_shared_nonwriting_intent(message):
     "他说我已入住示例酒店", "翻译：落地成都", "“落地成都”", "落地成都？",
     "落地成都同步佳明", "今天住在示例酒店请停用鱼油", "落地成都删除记录",
     "我今天的差旅住处是成都示例酒店，昨晚没睡好", "落地成都\n胸痛",
+    "落地成都咯血", "落地成都低烧", "落地成都拉肚子", "落地成都失眠",
+    "落地成都浑身乏力", "落地成都记下行程", "到成都之前住上海酒店",
+    "落地未知示例城市", "我在成都咯血出差",
 ])
 def test_compound_clinical_quoted_and_write_inputs_are_not_acknowledgements(message):
     from app.services.agent_context_statement import parse_context_statement
@@ -58,7 +61,7 @@ async def test_real_stream_after_meal_keeps_context_and_completes_without_model(
     service.save_message(conv.id, "assistant", "午餐记录已保存。")
     executor = AgentExecutor(db)
     _no_heavy_work(executor, monkeypatch)
-    for index, message in enumerate(("落地成都", "成都示例天府酒店 是我今天差旅居住地。")):
+    for index, message in enumerate(("落地成都", "我在成都出差")):
         events = [e async for e in executor.run_stream(user_id=user.id, message=message,
             conversation_id=conv.id, channel=channel, client_turn_id=f"context-{channel}-{index}")]
         done = next(e["data"] for e in events if e.get("event") == "done")
@@ -74,7 +77,7 @@ async def test_real_stream_after_meal_keeps_context_and_completes_without_model(
         assert not any(word in streamed for word in ("医生", "药师", "信息来源", "执行方案", "已记录", "已保存"))
         assert not any(e.get("event") in ("tool_result", "tool_call") for e in events)
     history = service.build_messages(conv.id)
-    assert any(m["role"] == "user" and "示例天府酒店" in m["content"] for m in history)
+    assert any(m["role"] == "user" and "成都出差" in m["content"] for m in history)
 
 
 @pytest.mark.asyncio
@@ -100,13 +103,57 @@ async def test_context_replay_is_idempotent_and_user_scoped(db, auth_user_and_he
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("prior", ["胸痛，喘不上气", "我想核对鱼油剂量", "我昨晚腰痛，腿麻", "我想自杀"])
+@pytest.mark.parametrize("prior", [
+    "胸痛，喘不上气", "我想核对鱼油剂量", "我昨晚腰痛，腿麻", "我想自杀",
+    "咯血了", "腿麻走不了", "我有抑郁症", "我好像中风了", "我正在流血", "我拉肚子三天了",
+])
 async def test_recent_medical_context_must_not_be_short_circuited(db, auth_user_and_headers, monkeypatch, prior):
     user, _ = auth_user_and_headers
     svc = AgentConversationService(db)
     conv = svc.get_or_create_conversation(user.id, None, title="合成安全续问")
     svc.save_message(conv.id, "user", prior)
     svc.save_message(conv.id, "assistant", "你现在在哪里？")
+    executor = AgentExecutor(db)
+    calls = []
+    async def ordinary(**kwargs):
+        calls.append(kwargs["message"])
+        yield {"event": "done", "data": {"completion_status": "complete"}}
+    monkeypatch.setattr(executor, "_run_stream_impl", ordinary)
+    _ = [e async for e in executor.run_stream(user_id=user.id, message="落地成都", conversation_id=conv.id)]
+    assert calls == ["落地成都"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", [
+    "落地成都咯血", "落地成都低烧", "落地成都拉肚子", "落地成都失眠",
+    "落地成都浑身乏力", "落地成都记下行程", "到成都之前住上海酒店",
+])
+async def test_extra_semantics_reach_ordinary_stream(db, auth_user_and_headers, monkeypatch, message):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+    async def ordinary(**kwargs):
+        calls.append(kwargs["message"])
+        yield {"event": "done", "data": {"completion_status": "complete"}}
+    monkeypatch.setattr(executor, "_run_stream_impl", ordinary)
+    _ = [e async for e in executor.run_stream(user_id=user.id, message=message)]
+    assert calls == [message]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prior,answer", [
+    ("咯血了", "收到，先确认目前环境。"),
+    ("帮我安排一下", "你在哪里？"),
+    ("落地成都", "请补充你入住的酒店。"),
+    ("落地成都", "说一下你的位置"),
+    ("落地成都", "你在哪"),
+])
+async def test_unknown_history_or_open_question_retains_continuation(db, auth_user_and_headers, monkeypatch, prior, answer):
+    user, _ = auth_user_and_headers
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title="合成未完成续问")
+    svc.save_message(conv.id, "user", prior)
+    svc.save_message(conv.id, "assistant", answer)
     executor = AgentExecutor(db)
     calls = []
     async def ordinary(**kwargs):
@@ -141,9 +188,37 @@ async def test_previous_offtopic_medical_refusal_is_not_user_medical_context(db,
     executor = AgentExecutor(db)
     _no_heavy_work(executor, monkeypatch)
     events = [e async for e in executor.run_stream(user_id=user.id,
-        message="成都示例酒店是我今天差旅居住地。", conversation_id=conv.id)]
+        message="我在成都出差", conversation_id=conv.id)]
     done = next(e["data"] for e in events if e.get("event") == "done")
     assert done["route"] == "context_statement"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", [
+    "成都示例天府酒店是我今天差旅居住地。", "今天住在成都咯血酒店",
+    "我已入住示例酒店", "我今天的差旅住处是成都记下行程酒店",
+])
+async def test_unverified_hotel_name_cannot_bypass_normal_safety_pipeline(db, auth_user_and_headers, monkeypatch, message):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+    async def ordinary(**kwargs):
+        calls.append(kwargs["message"])
+        yield {"event": "done", "data": {"completion_status": "complete"}}
+    monkeypatch.setattr(executor, "_run_stream_impl", ordinary)
+    _ = [e async for e in executor.run_stream(user_id=user.id, message=message)]
+    assert calls == [message]
+
+
+def test_system_prompt_scopes_initiative_without_disabling_medical_rules(db):
+    prompt = AgentExecutor(db)._build_system_prompt(
+        user_id=0, conv_id=0, user_auth_token=None, lite=True,
+        intent_query="成都示例天府酒店是我今天差旅居住地。", static_rules_only=True,
+    )
+    assert "## 本轮任务边界" in prompt
+    assert "普通抵达、出差、入住" in prompt
+    assert "不能仅因出现城市或酒店就忽略" in prompt
+    assert "不做诊断" in prompt
 
 
 @pytest.mark.asyncio

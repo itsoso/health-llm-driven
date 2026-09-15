@@ -684,8 +684,11 @@ def classify_agent_utterance(
 
     from app.services.agent_context_statement import parse_context_statement
 
-    if parse_context_statement(raw) is not None:
-        return _intent(raw, normalized, "chat", "context", "none", 0.95, "context_statement")
+    context_statement = parse_context_statement(raw)
+    if context_statement is not None:
+        return _intent(raw, normalized, "chat", "context", "none",
+                      0.95 if context_statement.allows_local_reply else 0.55,
+                      "context_statement" if context_statement.allows_local_reply else "context_statement_candidate")
 
     return _intent(raw, normalized, "unknown", domain, "none", 0.35, "ambiguous", scope)
 
