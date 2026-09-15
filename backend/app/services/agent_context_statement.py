@@ -37,7 +37,8 @@ class ContextStatement:
 _PLACE = r"[\u4e00-\u9fffA-Za-z·]{2,30}?"
 _LEAD = r"(?:我)?(?:今天|现在)?(?:已经|刚刚|刚|已)?"
 _PATTERNS = (
-    ("arrival", re.compile(rf"{_LEAD}(?:落地|抵达|到达|到了?)(?P<place>{_PLACE})(?:了)?")),
+    ("arrival", re.compile(rf"{_LEAD}(?:落地|抵达|到达|到了)(?P<place>{_PLACE})(?:了)?")),
+    ("arrival", re.compile(rf"{_LEAD}到(?P<place>{_PLACE})了")),
     ("business_trip", re.compile(rf"(?:我)(?:今天|现在)?(?:在)(?P<place>{_PLACE})(?:出差|差旅)")),
     ("lodging", re.compile(rf"{_LEAD}(?:入住|住在)(?P<place>{_PLACE}(?:酒店|宾馆|旅馆|民宿))(?:了)?")),
     ("lodging", re.compile(rf"(?P<place>{_PLACE}(?:酒店|宾馆|旅馆|民宿))是我(?:今天|今晚|这次|本次)(?:的)?(?:差旅|出差)?(?:居住地|住处|住宿地)")),
@@ -101,6 +102,10 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
     recent = query.order_by(AgentMessage.id.desc()).limit(8).all()
     for item in recent:
         if item.role == "user":
+            if item.image_url or any((item.meta or {}).get(key) for key in (
+                "images", "attachments", "file_name", "file_base64", "extra_context",
+            )):
+                return False
             # Positive admission, not absence of a symptom keyword. Unknown
             # history may hold an unresolved clinical task even when the last
             # assistant forgot to attach a pending-choice marker.
@@ -117,10 +122,27 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
     if latest_answer is not None:
         meta = latest_answer.meta or {}
         outcome = meta.get("turn_outcome") or {}
-        if re.search(r"[?？]|请补充|请提供|说一下|告诉我|你在哪|你现在在哪|是否|吗|呢", latest_answer.content or ""):
-            return False
         if (meta.get("pending_choice") or meta.get("health_fact_draft")
                 or outcome.get("confirmation_required")
                 or outcome.get("status") in {"waiting_for_user", "reconciliation_required"}):
+            return False
+        # Unknown assistant prose may ask for a continuation without a question
+        # mark. Admit only complete, closed acknowledgements or our exact
+        # inert guard refusal, never absence of a question/symptom keyword.
+        from app.services.environment.weather_service import WeatherService
+        from app.services.guidance_validator import _ADVICE_HOLD
+
+        answer = (latest_answer.content or "").strip()
+        known_ack = any(answer == ContextStatement(kind, city + suffix).reply
+                        for city in WeatherService._CITY_LOCATION_IDS
+                        for suffix in ("", "市")
+                        for kind in ("arrival", "business_trip"))
+        plain_receipt = re.fullmatch(r"(?:早餐|午餐|晚餐)记录已保存。", answer)
+        guard_refusal = answer in {
+            _ADVICE_HOLD,
+            "信息来源：用户陈述、模型推断。\n" + _ADVICE_HOLD,
+            "信息来源：用户陈述、已检索证据（未逐句核验）、模型推断。\n" + _ADVICE_HOLD,
+        }
+        if not (known_ack or plain_receipt or guard_refusal):
             return False
     return True

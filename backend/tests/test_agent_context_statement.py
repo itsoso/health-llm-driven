@@ -37,6 +37,7 @@ def test_context_statement_has_one_shared_nonwriting_intent(message):
     "落地成都咯血", "落地成都低烧", "落地成都拉肚子", "落地成都失眠",
     "落地成都浑身乏力", "落地成都记下行程", "到成都之前住上海酒店",
     "落地未知示例城市", "我在成都咯血出差",
+    "到北京", "我到北京", "今天到北京",
 ])
 def test_compound_clinical_quoted_and_write_inputs_are_not_acknowledgements(message):
     from app.services.agent_context_statement import parse_context_statement
@@ -147,6 +148,10 @@ async def test_extra_semantics_reach_ordinary_stream(db, auth_user_and_headers, 
     ("落地成都", "请补充你入住的酒店。"),
     ("落地成都", "说一下你的位置"),
     ("落地成都", "你在哪"),
+    ("落地成都", "烦请告知当前所在城市。"),
+    ("落地成都", "麻烦报一下当前位置。"),
+    ("落地成都", "描述目前所处的位置"),
+    ("落地成都", "下一步需要结合当前环境判断。"),
 ])
 async def test_unknown_history_or_open_question_retains_continuation(db, auth_user_and_headers, monkeypatch, prior, answer):
     user, _ = auth_user_and_headers
@@ -162,6 +167,28 @@ async def test_unknown_history_or_open_question_retains_continuation(db, auth_us
     monkeypatch.setattr(executor, "_run_stream_impl", ordinary)
     _ = [e async for e in executor.run_stream(user_id=user.id, message="落地成都", conversation_id=conv.id)]
     assert calls == ["落地成都"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prior", ["落地成都", "记录午餐"])
+async def test_recent_attachment_keeps_nontext_obligations(db, auth_user_and_headers, monkeypatch, prior):
+    user, _ = auth_user_and_headers
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title="合成图像续问")
+    # Avoid opening/decoding any image: the attachment presence alone must
+    # retain the ordinary evidence-aware pipeline, regardless of its caption.
+    db.add(AgentMessage(conversation_id=conv.id, role="user", content=prior,
+                        image_url="synthetic-medical-image.jpg"))
+    db.commit()
+    svc.save_message(conv.id, "assistant", "图片中有需要处理的信息。", meta={})
+    executor = AgentExecutor(db)
+    calls = []
+    async def ordinary(**kwargs):
+        calls.append(kwargs["message"])
+        yield {"event": "done", "data": {"completion_status": "complete"}}
+    monkeypatch.setattr(executor, "_run_stream_impl", ordinary)
+    _ = [e async for e in executor.run_stream(user_id=user.id, message="我在成都出差", conversation_id=conv.id)]
+    assert calls == ["我在成都出差"]
 
 
 @pytest.mark.asyncio
@@ -184,7 +211,8 @@ async def test_previous_offtopic_medical_refusal_is_not_user_medical_context(db,
     svc = AgentConversationService(db)
     conv = svc.get_or_create_conversation(user.id, None, title="合成偏题恢复")
     svc.save_message(conv.id, "user", "落地成都")
-    svc.save_message(conv.id, "assistant", "部分建议缺少证据，暂不提供执行方案。可与医生或药师核对。")
+    from app.services.guidance_validator import _ADVICE_HOLD
+    svc.save_message(conv.id, "assistant", _ADVICE_HOLD)
     executor = AgentExecutor(db)
     _no_heavy_work(executor, monkeypatch)
     events = [e async for e in executor.run_stream(user_id=user.id,
@@ -218,6 +246,7 @@ def test_system_prompt_scopes_initiative_without_disabling_medical_rules(db):
     assert "## 本轮任务边界" in prompt
     assert "普通抵达、出差、入住" in prompt
     assert "不能仅因出现城市或酒店就忽略" in prompt
+    assert "不得用“已记录”或“已保存”代替“收到”" in prompt
     assert "不做诊断" in prompt
 
 

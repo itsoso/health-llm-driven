@@ -20345,6 +20345,18 @@ class AgentExecutor:
         except Exception:
             pass
 
+        # Scope is restated after generic health rules so a neutral disclosure
+        # does not become a claimed write. This is conditional response style,
+        # not a safety/authorization shortcut for free-text place candidates.
+        parts.append(
+            "\n## 回复前核对本轮任务\n"
+            "普通情境告知没有健康记录写入回执时，不得用“已记录”或“已保存”代替“收到”。"
+            "例如用户只说‘示例酒店是我今天差旅住处’，可答‘收到，你这次住在示例酒店。’；"
+            "用户只说‘抵达某城市’，可答‘收到，你已到某城市。’。"
+            "不要暗示常住地址已更新或信息已永久记忆。"
+            "以上例子仅适用于纯情境告知；若同时涉及症状、操作请求或未完成的追问，"
+            "仍须完整处理实际任务，并遵守全部安全与回执规则。"
+        )
         return "\n".join(parts)
 
     def _build_system_knowledge_prompt_context(self, user_id: int, message: str) -> str:
