@@ -461,13 +461,20 @@ def test_shard_timeout_seconds_scales_and_caps_historical_duration():
 
 
 def test_backend_shard_job_timeout_covers_slowest_retry_and_runner_overhead():
-    from scripts.run_ci_pytest_worker import shard_max_attempts, shard_timeout_seconds
+    from scripts.build_ci_pytest_matrix import load_catalog
+    from scripts.run_ci_pytest_worker import shard_processes
 
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     job_timeout_minutes = workflow["jobs"]["backend-test-shards"]["timeout-minutes"]
-    catalog = json.loads(SHARD_CATALOG.read_text(encoding="utf-8"))["shards"]
+    catalog = load_catalog(SHARD_CATALOG)
     largest_execution_seconds = max(
-        shard_timeout_seconds(shard) * shard_max_attempts(shard)
+        sum(
+            timeout_seconds * max_attempts
+            for _, _, _, timeout_seconds, max_attempts in shard_processes(
+                shard,
+                cwd=ROOT / "backend",
+            )
+        )
         for shard in catalog
     )
 
@@ -487,18 +494,21 @@ def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_p
     calls = []
 
     def execute(paths, args, *, timeout_seconds, max_attempts):
-        assert timeout_seconds == 2700
-        assert max_attempts == 1
         assert "--timeout=120" in args
-        calls.append(paths)
+        calls.append((paths, timeout_seconds, max_attempts))
         return 0
 
     assert run_worker(
         ["agent-a-d"], catalog, cwd=ROOT / "backend",
         junit_dir=tmp_path / "results", shard_runner=execute,
     ) == 0
-    assert calls == [
+    assert [paths for paths, _, _ in calls] == [
         [synthesis_path],
         [path for path in expected_paths if path != synthesis_path],
     ]
-    assert sorted(path for call in calls for path in call) == expected_paths
+    assert sorted(path for paths, _, _ in calls for path in paths) == expected_paths
+    for paths, timeout_seconds, max_attempts in calls:
+        if paths == [synthesis_path]:
+            assert (timeout_seconds, max_attempts) == (1500, 1)
+        else:
+            assert (timeout_seconds, max_attempts) == (3300, 1)

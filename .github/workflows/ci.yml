@@ -123,10 +123,10 @@ jobs:
     # Each catalog shard remains a fresh pytest process. Workers only share the
     # dependency install, then execute isolated processes in historical-time
     # balanced order. This preserves the SQLite isolation contract.
-    # The oversized composed-synthesis process has one deterministic 45-minute
-    # attempt; retry-enabled shards have shorter deadlines. Keep enough job
-    # budget for the largest catalog execution plus setup and cleanup.
-    timeout-minutes: 50
+    # The oversized shard runs two ordered processes to preserve the existing
+    # SQLite fixture contract. Keep enough job budget for both process deadlines
+    # plus setup and cleanup; the contract test derives this from the catalog.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.backend-test-plan.outputs.matrix) }}

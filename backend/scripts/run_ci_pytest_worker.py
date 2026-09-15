@@ -92,7 +92,7 @@ def shard_processes(
     shard: dict[str, Any],
     *,
     cwd: Path,
-) -> list[tuple[str, list[str], list[str]]]:
+) -> list[tuple[str, list[str], list[str], int, int]]:
     """Resolve one catalog shard into complete, disjoint pytest processes."""
 
     label = str(shard["label"])
@@ -103,11 +103,17 @@ def shard_processes(
     )
     configured_groups = shard.get("process_groups")
     if configured_groups is None:
-        return [(label, declared_paths, [])]
+        return [(
+            label,
+            declared_paths,
+            [],
+            shard_timeout_seconds(shard),
+            shard_max_attempts(shard),
+        )]
     if not isinstance(configured_groups, list) or not configured_groups:
         raise ValueError(f"{label} process_groups must be a non-empty list")
 
-    processes: list[tuple[str, list[str], list[str]]] = []
+    processes: list[tuple[str, list[str], list[str], int, int]] = []
     grouped_paths: list[str] = []
     group_labels: set[str] = set()
     for group in configured_groups:
@@ -123,11 +129,18 @@ def shard_processes(
             exclude_paths=group.get("exclude_paths", []),
         )
         grouped_paths.extend(paths)
+        process_policy = dict(shard)
+        if "timeout_seconds" in group:
+            process_policy["timeout_seconds"] = group["timeout_seconds"]
+        if "max_attempts" in group:
+            process_policy["max_attempts"] = group["max_attempts"]
         processes.append(
             (
                 f"{label}-{group_label}",
                 paths,
                 list(group.get("extra_args", [])),
+                shard_timeout_seconds(process_policy),
+                shard_max_attempts(process_policy),
             )
         )
 
@@ -155,11 +168,16 @@ def run_worker(
     for label in labels:
         shard = by_label[label]
         try:
-            timeout_seconds = shard_timeout_seconds(shard)
-            max_attempts = shard_max_attempts(shard)
+            processes = shard_processes(shard, cwd=cwd)
         except ValueError as exc:
             raise ValueError(f"{label} {exc}") from exc
-        for process_label, paths, process_args in shard_processes(shard, cwd=cwd):
+        for (
+            process_label,
+            paths,
+            process_args,
+            timeout_seconds,
+            max_attempts,
+        ) in processes:
             pytest_args = [
                 *BASE_PYTEST_ARGS,
                 *shard.get("extra_args", []),
