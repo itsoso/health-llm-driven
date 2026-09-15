@@ -1,6 +1,6 @@
 # Feature Spec: 日常情境告知与回复恢复
 
-> Status: implementing
+> Status: locally verified; not released
 > Owner: Reva backend / mobile
 > Updated: 2026-09-15
 > Related PRD: ../reva-product-governance-spec.md

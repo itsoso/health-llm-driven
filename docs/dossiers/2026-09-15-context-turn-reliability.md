@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | S5 |
+| 状态 | verified (local) |
+| 当前阶段 | S5 completed; release not started |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -18,6 +18,7 @@
 ## 范围与边界
 
 - 服务端统一、有限的日常情境契约，绑定当前原话；零模型、零健康工具的确定性确认复用现有持久化/幂等/终态路径。
+- 零模型仅适用于精确城市的新回合；自由酒店名称、未知历史和所有未完成源回合保留普通推理与安全处理链。
 - 明确写入、建议、急症、复合任务、引述、否定、图片和未识别输入不能被情境确认截走。
 - 不从模型文本中捞取“看似安全”的片段；医疗证据校验不关闭。
 - 移动端只修复有证据的恢复状态和展示问题，保留未知写入禁止重提的约束。
@@ -25,7 +26,7 @@
 
 ## 验证与交接
 
-G2：按 focused spec 固定边界；G3：待 RED/GREEN、PostgreSQL、邻近回归与 LLM gate；G4：待固定 diff 独立安全复审。G5/G6：未部署、未做生产验收。
+G2：按 focused spec 固定边界；G3：本地 RED/GREEN、PostgreSQL、邻近回归与 LLM gate 通过；G4：固定代码候选独立安全复审 GO。G5/G6：未启动发布、未部署、未做生产验收；后续发布仍须目标 revision 的 CI-mode 集成闸和真实 CI 状态，不以局部测试替代。
 
 ## 所有权
 
@@ -62,3 +63,17 @@ G2：按 focused spec 固定边界；G3：待 RED/GREEN、PostgreSQL、邻近回
 - `7b8c5a874` 的 92 条 PostgreSQL、1,078 条邻近回归、207 条 Mobile 测试、TypeScript 和 System Map 均通过。源码绑定 live gate 67 cases + 3 条情境 prompt 探针通过（13 次真实调用、28,145 tokens）；酒店回复为简短“收到”，无假称写入。
 - 第三轮独立复审仍发现未完成同 client_turn_id 恢复回合可用替换 caption 遗漏源附件，裁为 NO-GO。3 条真实 run_stream 恢复用例先 RED，再保守禁止所有未完成源回合进入新本地分流；完成回合的幂等 replay 保持原逻辑。
 - 删除已不需要的历史 source-message 排除参数，避免后续调用误排除源任务。最终候选重新验证与复审后才能完成本地交付。
+
+## 最终本地验收 — 2026-09-15
+
+代码候选：`e453ee672f012697ff4f09d5b46679b87ee05418`，范围 `3e2a8b224..e453ee672`。本节后续仅为文档收尾，不更改已验证运行时代码。
+
+- G3 PASS：1,173 项后端邻近回归（含 95 个新用例）；95 个新用例另在隔离 UTF-8 PostgreSQL 数据库通过。两者不相加宣称独立用例数量。
+- Mobile：四个 Jest suites 共 207 tests、TypeScript 通过；测试运行有 React act / Jest 异步清理警告，实际退出码 0。未宣称本轮做过模拟器、真机或生产回归。
+- 静态错误 lint、diff、System Map 中央闸通过。
+- 同一代码 SHA 的 live gate：invariants 12/12、health_agent_core 50/50（离线）；orchestrator 5/5（真实模型，平均 score 0.96）；另有 3/3 真实 Agent system-prompt 探针。总计 13 次真实模型调用、28,231 tokens，全部绑定合成用户，源码指纹前后相同。
+- 三条新增模型探针覆盖普通酒店告知、上一轮偏题医疗拒答后的酒店告知、未知城市告知。回复分别为简短“收到，你这次住在……”和“收到，你已抵达……”，无医疗扩展、无假称记录。探针是 prompt 级验证，不冒充完整 HTTP/SSE 或 UI 端到端验收。
+- 本机 `harness_llm_change_gate.py --base-ref 3e2a8b224 --head-ref e453ee672` 使用该 SHA 的真实完成证据通过；未写入 GitHub variables，未推送。
+- G4 GO：独立 reviewer context_safety_r4 审查固定完整 diff，并独立重跑 95 后端单测、169 Mobile tests、System Map 和 diff 检查。
+- 验证摘要留在本机 `/tmp/reva-context-live.Zg0hQq/gate-summary-r4.json`；只含合成测试及汇总，凭据未落盘。测试 PostgreSQL 已在验收收尾后停止，未接触生产数据库。
+- 保留旧工作目录及既有 Garmin Dossier 改动；本轮无 push、deploy、OTA、商店提交。所有发布与线上验收 Gate 后续仍需执行。
