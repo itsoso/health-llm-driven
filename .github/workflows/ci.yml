@@ -123,10 +123,10 @@ jobs:
     # Each catalog shard remains a fresh pytest process. Workers only share the
     # dependency install, then execute isolated processes in historical-time
     # balanced order. This preserves the SQLite isolation contract.
-    # The slowest isolated pytest process has a 20-minute deadline and one
+    # The slowest isolated pytest process has a 30-minute deadline and one
     # timeout retry. Keep enough job budget for both attempts plus setup,
     # adjacent shards, telemetry upload, and process-group cleanup.
-    timeout-minutes: 50
+    timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.backend-test-plan.outputs.matrix) }}

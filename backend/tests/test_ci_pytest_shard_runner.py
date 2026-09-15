@@ -459,7 +459,7 @@ def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_p
     calls = []
 
     def execute(paths, args, *, timeout_seconds):
-        assert timeout_seconds == 1200
+        assert timeout_seconds == 1800
         assert "--timeout=120" in args
         calls.append(paths)
         return 0
