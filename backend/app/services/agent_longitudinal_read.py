@@ -168,10 +168,12 @@ def _record_domains(text: str) -> set[str]:
 
 def _consumed_sync_clause(active: str, clause: str) -> bool:
     """Only a known sync act/status with no leftover constraint is ancillary."""
+    if not re.search(r"佳明|garmin|同步|刷新|拉取", clause, re.I):
+        return False
     from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
     command = has_owned_sync_instruction(active)
     status = bool(re.search(r"同步.*(?:吗|完成|状态)|(?:是否|有没有).*同步", clause))
-    if not re.search(r"佳明|garmin|同步|刷新|拉取", clause, re.I) or not (command or status):
+    if not (command or status):
         return False
     rest = re.sub(r"garmin|佳明|同步|刷新|拉取", "", clause, flags=re.I)
     rest = _strip_exam_request_scaffolding(rest)

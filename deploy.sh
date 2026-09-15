@@ -1061,14 +1061,19 @@ show_help() {
 HEALTH_CHECK_URL=""  # 在 deploy_backend/deploy_frontend 中设置
 DEPLOY_SCORE_THRESHOLD=35  # 部署后健康度最低分（满分60，skip-tests模式）
 
-# 备份数据库；每次恢复演练，站外上传按 24 小时凭证与迁移范围分层执行。
+# 准备发布工具；数据库备份、恢复演练与站外归档仅显式启用时执行。
 backup_database() {
     local delegation_owner=0
+    local backup_enabled="${DEPLOY_DATABASE_BACKUP-0}"
     local production_sha=""
     local migration_release=1
     local diff_status=0
     local offsite_mode="upload"
-    print_step "备份数据库..."
+    if [[ "$backup_enabled" != "0" && "$backup_enabled" != "1" ]]; then
+        print_error "DEPLOY_DATABASE_BACKUP 只接受 0/1"
+        return 1
+    fi
+    print_step "准备发布工具..."
     if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
         _REMOTE_RELEASE_LOCK_DELEGATED=1
         delegation_owner=1
@@ -1081,6 +1086,15 @@ backup_database() {
         print_error "远端 stage 结果不明确；发布锁与现场保留"
         return 1
     fi
+    # stage 同时承担回滚与运行态事务职责，跳过数据库备份仍须完整校验。
+    if [[ "$backup_enabled" = "0" ]]; then
+        if [ "$delegation_owner" -eq 1 ]; then
+            _REMOTE_RELEASE_LOCK_DELEGATED=0
+        fi
+        print_warning "已跳过数据库备份、恢复演练与站外归档（默认关闭）"
+        return 0
+    fi
+    print_step "备份数据库..."
     production_sha="$(ssh "$SERVER" "cd '$REMOTE_PATH' && git rev-parse HEAD" 2>/dev/null || true)"
     if [[ "$production_sha" =~ ^[0-9a-f]{40}$ ]] &&
        git cat-file -e "${production_sha}^{commit}" 2>/dev/null &&
@@ -3061,7 +3075,7 @@ deploy_backend() {
     # 摘要由后续上传阶段复用；文件若在预检后改变，则会自动重新校验。
     validate_deploy_env_preflight
 
-    # 1. 新建本地备份并恢复演练，按站外凭证/迁移策略归档 + 记录发布前回滚点
+    # 1. 准备发布工具（数据库备份默认关闭）+ 记录发布前回滚点
     backup_database
     determine_system_kb_activation_need
     inspect_runtime_state_transaction_before_deploy
