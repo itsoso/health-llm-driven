@@ -14,6 +14,7 @@ final class HealthAgentMacCoreTests: XCTestCase {
             "timeline",
             "calendar",
             "agent",
+            "shopping",
             "record",
             "data",
             "dataSources",
@@ -29,6 +30,10 @@ final class HealthAgentMacCoreTests: XCTestCase {
             "trace",
             "settings"
         ])
+    }
+
+    func testShoppingIsIndependentPrimaryDestination() {
+        XCTAssertEqual(SidebarDestination.sidebarSections.first?.items.map(\.rawValue), ["agent", "shopping", "record"])
     }
 
     func testInsightsSectionConsolidatesToHubPlusGenetics() {

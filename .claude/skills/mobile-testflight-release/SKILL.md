@@ -1,6 +1,6 @@
 ---
 name: mobile-testflight-release
-description: "发布 mobile/ Expo iOS App 到 TestFlight，并衔接 App Store 送审。用户要求发 TestFlight、发新包、iOS 发版或上架时使用；默认让构建、上传和 Apple 处理与后端部署并行，正式送审仍需汇合验收。"
+description: "发布 mobile/Expo iOS App 到 TestFlight 和 App Store，并在审核后完成销售地区、公开发布与商店回读。用户要求发 TestFlight、发新包、iOS 发版或上架时使用；仅在已明确的 iOS 上架任务中，将‘全部搞定’解释为完成公开商店验收。构建、上传和 Apple 处理可与后端部署并行，正式完成仍需汇合验收。"
 ---
 
 # Mobile TestFlight 发布
@@ -15,6 +15,7 @@ ledger 或完成状态。不要从带 WIP 的本机工作区直接运行 EAS bui
 |---|---|
 | 仅 JS/TS/UI，符合 OTA 边界，用户未要求新包且不在审核冻结期 | `scripts/mobile-ota.sh production "<message>"` |
 | 用户要求 TestFlight 新包、原生依赖/签名/权限变化或上架 | 本 Skill 的受审 build + submit |
+| 已明确的 iOS 上架任务中，用户要求“完整上架 / 全部搞定 / 一气完成” | 本 Skill 持续到目标地区公开商店回读通过，不在上传、送审或审核通过时提前结束 |
 | 用户只要可扫码安装的包，未指定 TestFlight | `scripts/mobile-local-qr.sh`，不要擅自 submit |
 | 仅服务端变化 | trusted-release 的 `target=backend`，不创建 iOS 构建 |
 
@@ -77,6 +78,12 @@ gh workflow run trusted-release.yml --ref main -f sha=<same-exact-main-sha> -f t
 `release-result` 成功只说明后端和上传成功，**不等于 Apple 处理完成、审核通过或上架**。
 正式送审激活 `ios-app-review-gate`，要求后端健康、ASC 可用、同包核心路径/审核账号验收、
 隐私和商店元数据检查均通过；未知项保持未完成，不能保证 Apple 一定批准。
+
+**审核通过不等于公开上架。** 正式 App Store 发布或审核后收尾时，读取
+[App Store 公共上架闭环](../../../docs/governance/app-store-publication.md)。在送审前就核对价格、合同、
+发布方式和 `App Availability`；若用户要求端到端完成，Apple 审核结束后继续按状态路由，
+并在所选地区完成 ASC 可用性和公开商店双重回读。Apple 仍在处理且用户已授权后续监控时使用安静的监控，
+不要把 `Ready for Distribution` 或 `Processing to Available` 写成“已上线”。
 
 自动清理只在整条 workflow 及 vendor 任务确认终结后执行：按 deploy 治理撤销本次短期身份，
 只移除本次临时 secrets/私钥，保留长期 Expo token 和不可变审计。SSH 撤权或超时不证明 EAS 已终止；

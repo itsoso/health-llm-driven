@@ -8,6 +8,7 @@ struct AppRootView: View {
     @State private var hasCheckedAuth = false
     @State private var isAuthenticated = false
     @State private var currentUser: AuthUser?
+    @State private var authGeneration = UUID()
     @State private var safetyMonitor: SafetyMonitor?
 
     init(services: AppServices) {
@@ -22,6 +23,7 @@ struct AppRootView: View {
                     .frame(minWidth: 520, minHeight: 360)
             } else if !isAuthenticated {
                 LoginView(authClient: services.authClient) {
+                    services.shoppingViewModel.bindOwner(nil)
                     isAuthenticated = true
                     Task { await services.todayViewModel.refresh() }
                     Task { await loadCurrentUser() }
@@ -80,12 +82,19 @@ struct AppRootView: View {
             // A request hit 401 and cleared the token; drop back to login so the
             // user isn't stranded in a logged-in shell where everything fails.
             isAuthenticated = false
+            authGeneration = UUID()
+            services.shoppingViewModel.bindOwner(nil)
             currentUser = nil
             navigation.selection = .agent
         }
         .onChange(of: navigation.refreshTick) { _, _ in
             // ⌘R: refresh the shared dashboard data backing most pages.
             Task { await services.todayViewModel.refresh() }
+        }
+        .onChange(of: navigation.selection) { _, selection in
+            if selection == .shopping, !services.shoppingViewModel.ownerIsBound {
+                Task { await loadCurrentUser() }
+            }
         }
         .sheet(isPresented: $navigation.isCommandPalettePresented) {
             CommandPaletteView(
@@ -96,7 +105,18 @@ struct AppRootView: View {
     }
 
     private func loadCurrentUser() async {
-        currentUser = try? await services.authClient.currentUser()
+        let generation = authGeneration
+        let ownerGeneration = services.shoppingViewModel.ownerGeneration
+        do {
+            let user = try await services.authClient.currentUser()
+            guard generation == authGeneration, isAuthenticated,
+                  services.shoppingViewModel.resolveOwner(String(user.id), generation: ownerGeneration) else { return }
+            currentUser = user
+        } catch {
+            guard generation == authGeneration else { return }
+            currentUser = nil
+            services.shoppingViewModel.resolveOwner(nil, generation: ownerGeneration)
+        }
     }
 
     private func startSafetyMonitor() {
@@ -172,6 +192,8 @@ struct AppRootView: View {
             CalendarView(client: services.calendarClient)
         case .agent:
             AgentChatView(viewModel: services.agentViewModel, navigation: navigation)
+        case .shopping:
+            ShoppingChatView(viewModel: services.shoppingViewModel, browser: services.shoppingBrowser)
         case .record:
             RecordHubView(
                 client: services.recordClient,
@@ -227,6 +249,8 @@ struct AppRootView: View {
         case .settings:
             SettingsView(authClient: services.authClient, tokenStore: services.tokenProvider) {
                 isAuthenticated = false
+                authGeneration = UUID()
+                services.shoppingViewModel.bindOwner(nil)
                 currentUser = nil
                 navigation.selection = .agent
             }

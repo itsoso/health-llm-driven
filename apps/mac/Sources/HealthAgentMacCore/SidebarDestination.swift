@@ -6,6 +6,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     case timeline
     case calendar
     case agent
+    case shopping
     case record
     case data
     case dataSources
@@ -29,7 +30,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     public static let sidebarSections: [SidebarSection] = [
         // 小巴(助手)= 默认第一入口。无标题的顶部主操作区,置于所有分组之上。
         SidebarSection(id: "primary", titleKey: "",
-                       items: [.agent, .record]),
+                       items: [.agent, .shopping, .record]),
         // 每日:今日(仪表盘)+ 日程(时间线·议程·日历 三合一标签页)。
         SidebarSection(id: "daily", titleKey: "Daily",
                        items: [.today, .schedule]),
@@ -67,6 +68,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         case .timeline: L10n.text("Today Timeline", language: language)
         case .calendar: L10n.text("Calendar", language: language)
         case .agent: L10n.text("Agent", language: language)
+        case .shopping: L10n.text("Shopping Assistant", language: language)
         case .record: L10n.text("Record", language: language)
         case .data: L10n.text("Data", language: language)
         case .dataSources: L10n.text("Data Sources", language: language)
@@ -93,6 +95,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         case .timeline: "calendar.day.timeline.left"
         case .calendar: "calendar.badge.clock"
         case .agent: "bubble.left.and.bubble.right"
+        case .shopping: "bag"
         case .record: "plus.circle"
         case .data: "chart.line.uptrend.xyaxis"
         case .dataSources: "applewatch"

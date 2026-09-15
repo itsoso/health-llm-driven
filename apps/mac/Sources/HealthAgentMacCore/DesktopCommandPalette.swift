@@ -42,6 +42,7 @@ public enum DesktopCommandPalette {
             navigateCommand(.review, language: language, keywords: ["review", "backtest", "prediction", "confidence", "复盘", "预测", "置信度", "下一步"]),
             navigateCommand(.calendar, language: language, keywords: ["calendar", "caldav", "ics", "sync", "日历", "同步", "订阅"]),
             navigateCommand(.agent, language: language, keywords: ["agent", "chat", "analysis", "assistant", "问", "助手", "分析"]),
+            navigateCommand(.shopping, language: language, keywords: ["shopping", "kuaishou", "购物", "快手", "商品"]),
             navigateCommand(.record, language: language, keywords: ["record", "food", "water", "supplement", "diet", "饮食", "饮水", "补剂", "记录"]),
             navigateCommand(.data, language: language, keywords: ["data", "labs", "records", "trend", "化验", "趋势", "健康数据"]),
             navigateCommand(.dataConnections, language: language, keywords: ["connection", "connector", "authorization", "consent", "scope", "数据连接", "授权", "同意", "同步状态"]),
@@ -176,6 +177,8 @@ public enum DesktopCommandPalette {
             L10n.text("Manage read-only calendar sources and sync upcoming events.", language: language)
         case .agent:
             L10n.text("Ask questions with files, selected context, and evidence.", language: language)
+        case .shopping:
+            L10n.text("Independent shopping chat with Kuaishou.", language: language)
         case .record:
             L10n.text("Record diet, water, supplements, vitals, and symptoms.", language: language)
         case .data:

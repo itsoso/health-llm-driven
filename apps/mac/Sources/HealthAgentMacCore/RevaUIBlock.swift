@@ -44,8 +44,19 @@ public enum RevaUIBlock: Equatable, Sendable {
                 var j = i + 1
                 var found = false
                 var jsonLines: [String] = []
+                var closingSuffix = ""
                 while j < lines.count {
                     if isFenceClose(lines[j]) {
+                        found = true
+                        break
+                    }
+                    // Some completed replies append provenance directly to ```.
+                    // Recover only after a complete JSON object, and keep all
+                    // suffix prose outside the payload for normal escaped rendering.
+                    if info == "reva-ui", let suffix = joinedFenceSuffix(
+                        lines[j], jsonLines: jsonLines
+                    ) {
+                        closingSuffix = suffix
                         found = true
                         break
                     }
@@ -57,6 +68,7 @@ public enum RevaUIBlock: Equatable, Sendable {
                     if info == "reva-ui" {
                         segments.append(.revaUI(jsonLines.joined(separator: "\n")))
                     }
+                    if !closingSuffix.isEmpty { markdownLines.append(closingSuffix) }
                     // menu_share: 闭合围栏找到即整段剥离(不产段),原始 JSON 不进 prose。
                     i = j + 1
                     continue
@@ -105,6 +117,17 @@ public enum RevaUIBlock: Equatable, Sendable {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard trimmed.hasPrefix("```") else { return false }
         return trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// A malformed closing fence followed by prose is safe to split only when
+    /// the preceding payload is already a complete object. Partial/invalid JSON
+    /// retains the existing handling; never manufacture or repair card data.
+    private static func joinedFenceSuffix(_ line: String, jsonLines: [String]) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("```"),
+              let object = try? JSONSerialization.jsonObject(with: Data(jsonLines.joined(separator: "\n").utf8)),
+              object is [String: Any] else { return nil }
+        return String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
     }
 
     /// 防御性收尾:剥离 prose 里**未被围栏包裹**的 menu_share 残片,再交给 markdown 渲染。

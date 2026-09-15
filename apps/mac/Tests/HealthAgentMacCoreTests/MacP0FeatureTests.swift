@@ -135,16 +135,19 @@ final class MacP0FeatureTests: XCTestCase {
             "claude-opus-4.7",
             "gemini-3.1-pro",
             "gpt-5.5",
-            "qwen3.8-max-preview",
+            "qwen3.8-max",
+            "qwen3.8-flash",
             "qwen3.7-plus",
             "qwen3.7-max",
             "deepseek-v4-pro",
+            "deepseek-v4-pro-0813",
             "deepseek-v4-flash",
             "kimi-k2.7-code",
             "glm-5.2",
             "minimax-m2.5",
         ]
         let hiddenLowerModelIDs = [
+            "qwen3.8-max-preview",
             "commercial/GPT-5.4",
             "commercial/GPT-5.1",
             "commercial/DeepSeek-R1",
@@ -174,6 +177,20 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertFalse(optionIDs.contains("wan2.7-image-pro"))
         XCTAssertEqual(options.first(where: { $0.id == "qwen3.7-plus" })?.provider, "阿里 TokenPlan")
         XCTAssertEqual(optionIDs.count, options.count)
+    }
+
+    @MainActor
+    func testRetiredQwenPreviewSelectionUsesStableModel() {
+        let model = AgentChatViewModel(streamService: ScriptedStreamService(scripts: []))
+        for oldID in ["qwen3.8-max-preview", "tokenplan/Qwen3.8-Max-Preview", "qwen-3.8-max-preview", "qwen3.8", "qwen-3.8"] {
+            model.selectModel(oldID)
+            XCTAssertEqual(model.selectedModelID, "qwen3.8-max")
+            XCTAssertTrue(AgentModelCatalog.defaultOptions.contains { $0.id == model.selectedModelID })
+        }
+        model.selectModel("deepseek-v4-pro-0813")
+        XCTAssertEqual(model.selectedModelID, "deepseek-v4-pro-0813")
+        model.selectModel(nil)
+        XCTAssertNil(model.selectedModelID)
     }
 
     func testCommandPaletteBuildsCoreDesktopCommands() {

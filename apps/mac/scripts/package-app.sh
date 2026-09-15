@@ -25,7 +25,10 @@ Options:
   --debug       Build the debug binary instead of release.
   --open        Open the app after packaging.
   --install     Copy the packaged app to /Applications/小巴.app.
-  --no-sign     Skip local ad-hoc codesign.
+  --no-sign     Build unsigned for inspection only (not for login/keychain use).
+
+Signing uses HEALTH_MAC_SIGN_IDENTITY, or the sole available Apple signing
+identity. Missing/ambiguous identities fail instead of using an ad-hoc signature.
 USAGE
 }
 
@@ -62,6 +65,28 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Keychain trusts the app's designated requirement. Ad-hoc signing pins that
+# requirement to the binary hash, so each rebuild requests credential access again.
+# Resolve a stable certificate before building; never silently change identity.
+if [[ "${SIGN_APP}" == "1" ]]; then
+  if [[ "${SIGN_IDENTITY}" == "-" ]]; then
+    echo "Ad-hoc signing cannot preserve Keychain access. Set HEALTH_MAC_SIGN_IDENTITY to a certificate." >&2
+    exit 1
+  fi
+  if [[ -z "${SIGN_IDENTITY}" ]]; then
+    IDENTITIES="$(security find-identity -v -p codesigning)"
+    APPLE_IDENTITIES=()
+    while IFS= read -r identity; do
+      [[ -z "${identity}" ]] || APPLE_IDENTITIES+=("${identity}")
+    done < <(printf '%s\n' "${IDENTITIES}" | sed -nE '/"(Apple Development:|Developer ID Application:|Mac Developer:)/s/^[[:space:]]*[0-9]+\) ([A-Fa-f0-9]{40}) .*/\1/p')
+    if [[ "${#APPLE_IDENTITIES[@]}" != "1" ]]; then
+      echo "Expected one Apple signing identity; found ${#APPLE_IDENTITIES[@]}. Set HEALTH_MAC_SIGN_IDENTITY explicitly." >&2
+      exit 1
+    fi
+    SIGN_IDENTITY="${APPLE_IDENTITIES[0]}"
+  fi
+fi
 
 cd "${PROJECT_DIR}"
 
@@ -137,14 +162,10 @@ PLIST
 
 printf 'APPL????' > "${CONTENTS_DIR}/PkgInfo"
 
-if [[ "${SIGN_APP}" == "1" ]] && command -v codesign >/dev/null 2>&1; then
-  if [[ -n "${SIGN_IDENTITY}" ]]; then
-    codesign --force --sign "${SIGN_IDENTITY}" --timestamp=none "${APP_BUNDLE}" >/dev/null
-    echo "Signed with ${SIGN_IDENTITY}"
-  else
-    codesign --force --sign - --timestamp=none "${APP_BUNDLE}" >/dev/null
-    echo "Signed ad-hoc"
-  fi
+if [[ "${SIGN_APP}" == "1" ]]; then
+  codesign --force --sign "${SIGN_IDENTITY}" --timestamp=none "${APP_BUNDLE}" >/dev/null
+  codesign --verify --deep --strict "${APP_BUNDLE}"
+  echo "Signed with ${SIGN_IDENTITY}"
 fi
 
 echo "Packaged ${APP_BUNDLE}"

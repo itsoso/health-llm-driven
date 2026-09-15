@@ -57,6 +57,53 @@ final class RevaUIMetricTableTests: XCTestCase {
 
     // MARK: - 未知 reva-ui type → 优雅忽略(旧端/新块都不炸)
 
+    func testClosingFenceJoinedToProvenanceRendersTableThroughDisplayPipeline() throws {
+        // Sanitized reproduction: the completed JSON is intact, but provenance
+        // was appended directly to the closing fence without a newline.
+        for separator in ["", " ", "\t"] {
+            let provenance = "信息来源：用户陈述、已检索证据（未逐句核验）、模型推断。"
+            let raw = "```reva-ui\n\(tableJSON)\n```\(separator)\(provenance)\n\n## 关键结论\n保留正文。"
+            let display = AgentStructuredCommandParser.displayText(for: raw)
+            let html = ChatTranscriptHTML.renderMessageBody(markdown: display)
+
+            XCTAssertEqual(try decodeRevaUIPayload(html), tableJSON)
+            XCTAssertTrue(html.contains(provenance))
+            XCTAssertTrue(html.contains("关键结论"))
+            XCTAssertTrue(html.contains("保留正文"))
+            XCTAssertFalse(html.contains("<code>"))
+            XCTAssertFalse(html.contains("metric_table"))
+        }
+    }
+
+    func testJoinedClosingFenceDoesNotDropFollowingTable() throws {
+        let raw = "```reva-ui\n\(tableJSON)\n```来源说明\n```reva-ui\n\(tableJSON)\n```"
+        let segments = RevaUIBlock.split(from: raw)
+        let payloads = segments.compactMap { segment -> String? in
+            if case .revaUI(let json) = segment { return json }
+            return nil
+        }
+        XCTAssertEqual(payloads, [tableJSON, tableJSON])
+        XCTAssertTrue(segments.contains(.markdown("来源说明")))
+    }
+
+    func testJoinedFenceWithIncompleteJSONIsNotRecoveredAsTable() {
+        let raw = "```reva-ui\n{\"type\":\"metric_table\",\"rows\":[\n```信息来源：测试。"
+        XCTAssertFalse(RevaUIBlock.split(from: raw).contains {
+            if case .revaUI = $0 { return true }
+            return false
+        })
+    }
+
+    func testJoinedFenceSuffixStillEscapesHTML() throws {
+        let raw = "```reva-ui\n\(tableJSON)\n```<script>alert(1)</script>来源说明"
+        let display = AgentStructuredCommandParser.displayText(for: raw)
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: display)
+        XCTAssertEqual(try decodeRevaUIPayload(html), tableJSON)
+        XCTAssertFalse(html.contains("<script>"))
+        XCTAssertTrue(html.contains("&lt;script&gt;"))
+        XCTAssertTrue(html.contains("来源说明"))
+    }
+
     func testUnknownRevaUITypeIsIgnoredGracefully() throws {
         let unknownJSON = """
         {"type":"totally_unknown_widget_v99","v":1,"payload":{"foo":"bar","n":3}}

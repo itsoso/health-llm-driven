@@ -27,6 +27,8 @@ struct AppServices {
     let apiClient: APIClient
     let todayViewModel: TodayViewModel
     let agentViewModel: AgentChatViewModel
+    let shoppingBrowser: ShoppingBrowserSession
+    let shoppingViewModel: ShoppingChatViewModel
     let recordClient: RecordClient
     let supplementProductClient: SupplementProductLibraryClient
     let desktopJobClient: DesktopJobClient
@@ -55,6 +57,9 @@ struct AppServices {
     @MainActor
     init() {
         AppPreferences.registerDefaults()
+        let shoppingBrowser = ShoppingBrowserSession()
+        self.shoppingBrowser = shoppingBrowser
+        self.shoppingViewModel = ShoppingChatViewModel(credentials: shoppingBrowser)
         let tokenProvider = KeychainTokenStore()
         self.tokenProvider = tokenProvider
         let baseURL = APIEndpoint.resolvedBaseURL()

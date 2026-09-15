@@ -350,7 +350,7 @@
       "id": "mobile-testflight-release",
       "lifecycle": "recommended",
       "owner": "reva-mobile-release",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "layer": "workflow",
       "kind": "terminal",
       "platforms": [
@@ -359,9 +359,9 @@
       "trigger_family": [
         "ios-native-release"
       ],
-      "last_reviewed": "2026-09-10",
+      "last_reviewed": "2026-09-14",
       "evidence": [
-        "Trusted workflow overlaps exact-build upload with backend deployment, preserves one-shot claims and final acceptance gates; scripts/test_release_parallel.py and scripts/test_trusted_release_workflow.py enforce the executable contract."
+        "Trusted workflow overlaps exact-build upload with backend deployment, preserves one-shot claims and final acceptance gates; post-approval guidance now gates availability, release and public storefront readback instead of stopping at review acceptance. scripts/test_release_parallel.py, scripts/test_trusted_release_workflow.py and backend/tests/test_project_skill_overlay_contracts.py enforce the contract."
       ],
       "sources": [
         ".claude/skills/mobile-testflight-release/SKILL.md"

@@ -1,5 +1,8 @@
 """Regression coverage for the Owner-approved latest model whitelist."""
 
+from pathlib import Path
+import re
+
 from app.services.llm import model_registry as reg
 
 
@@ -153,3 +156,15 @@ def test_only_top_tokenplan_chat_models_are_chat_selectable():
 def test_low_version_models_are_not_registered():
     registered = {m.id for m in reg.MODELS}
     assert registered.isdisjoint(LOW_VERSION_MODELS)
+
+
+def test_mac_picker_matches_backend_chat_catalog():
+    catalog = (
+        Path(__file__).resolve().parents[2]
+        / "apps/mac/Sources/HealthAgentMacCore/AgentModelCatalog.swift"
+    ).read_text()
+    mac_ids = re.findall(r'AgentModelOption\(id: "([^"]+)"', catalog)
+    chat_ids = {model.id for model in reg.list_models(only_available=False)}
+
+    assert set(mac_ids) == chat_ids
+    assert len(mac_ids) == len(set(mac_ids))
