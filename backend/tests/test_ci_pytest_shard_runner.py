@@ -9,10 +9,12 @@ import time
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARD_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def _shards_by_label() -> dict[str, dict]:
@@ -334,12 +336,16 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
     tests_dir.mkdir()
     (tests_dir / "test_alpha.py").write_text("", encoding="utf-8")
     (tests_dir / "test_beta.py").write_text("", encoding="utf-8")
-    calls: list[tuple[list[str], list[str], int]] = []
+    calls: list[tuple[list[str], list[str], int, int]] = []
 
     def fake_runner(
-        paths: list[str], args: list[str], *, timeout_seconds: int
+        paths: list[str],
+        args: list[str],
+        *,
+        timeout_seconds: int,
+        max_attempts: int,
     ) -> int:
-        calls.append((paths, args, timeout_seconds))
+        calls.append((paths, args, timeout_seconds, max_attempts))
         return 0
 
     catalog = [
@@ -376,6 +382,7 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
                 f"--junitxml={tmp_path / 'results' / 'alpha.xml'}",
             ],
             180,
+            2,
         ),
         (
             ["tests/test_beta.py"],
@@ -392,6 +399,7 @@ def test_run_worker_keeps_catalog_shards_in_fresh_pytest_processes(tmp_path):
                 f"--junitxml={tmp_path / 'results' / 'beta.xml'}",
             ],
             180,
+            2,
         ),
     ]
 
@@ -416,6 +424,26 @@ def test_run_worker_rejects_non_positive_process_deadline(tmp_path):
         )
 
 
+def test_run_worker_rejects_non_positive_max_attempts(tmp_path):
+    from scripts.run_ci_pytest_worker import run_worker
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_alpha.py").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="max_attempts"):
+        run_worker(
+            ["alpha"],
+            [{
+                "label": "alpha",
+                "paths": ["tests/test_alpha.py"],
+                "max_attempts": 0,
+            }],
+            cwd=tmp_path,
+            junit_dir=tmp_path / "results",
+        )
+
+
 def test_shard_timeout_seconds_scales_and_caps_historical_duration():
     from scripts.run_ci_pytest_worker import shard_timeout_seconds
 
@@ -432,23 +460,55 @@ def test_shard_timeout_seconds_scales_and_caps_historical_duration():
     }) == 1200
 
 
+def test_backend_shard_job_timeout_covers_slowest_retry_and_runner_overhead():
+    from scripts.build_ci_pytest_matrix import load_catalog
+    from scripts.run_ci_pytest_worker import shard_processes
+
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    job_timeout_minutes = workflow["jobs"]["backend-test-shards"]["timeout-minutes"]
+    catalog = load_catalog(SHARD_CATALOG)
+    largest_execution_seconds = max(
+        sum(
+            timeout_seconds * max_attempts
+            for _, _, _, timeout_seconds, max_attempts in shard_processes(
+                shard,
+                cwd=ROOT / "backend",
+            )
+        )
+        for shard in catalog
+    )
+
+    # Respect each shard's configured attempt count, then leave five minutes
+    # for checkout, dependency installation, adjacent shards, and artifact cleanup.
+    required_seconds = largest_execution_seconds + 5 * 60
+    assert job_timeout_minutes * 60 >= required_seconds
+
+
 def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_path):
     from scripts.build_ci_pytest_matrix import load_catalog
     from scripts.run_ci_pytest_worker import expand_path_inputs, run_worker
 
     catalog = load_catalog(SHARD_CATALOG)
     expected_paths = expand_path_inputs(["tests/test_agent_[a-d]*.py"], cwd=ROOT / "backend")
+    synthesis_path = "tests/test_agent_composed_synthesis_projection.py"
     calls = []
 
-    def execute(paths, args, *, timeout_seconds):
-        assert paths == expected_paths
-        assert timeout_seconds == 1200
+    def execute(paths, args, *, timeout_seconds, max_attempts):
         assert "--timeout=120" in args
-        calls.append(paths)
+        calls.append((paths, timeout_seconds, max_attempts))
         return 0
 
     assert run_worker(
         ["agent-a-d"], catalog, cwd=ROOT / "backend",
         junit_dir=tmp_path / "results", shard_runner=execute,
     ) == 0
-    assert len(calls) == 1
+    assert [paths for paths, _, _ in calls] == [
+        [synthesis_path],
+        [path for path in expected_paths if path != synthesis_path],
+    ]
+    assert sorted(path for paths, _, _ in calls for path in paths) == expected_paths
+    for paths, timeout_seconds, max_attempts in calls:
+        if paths == [synthesis_path]:
+            assert (timeout_seconds, max_attempts) == (1500, 1)
+        else:
+            assert (timeout_seconds, max_attempts) == (900, 1)

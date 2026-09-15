@@ -14,10 +14,18 @@ from typing import Any
 
 try:
     from scripts.build_ci_pytest_matrix import DEFAULT_CATALOG, load_catalog
-    from scripts.run_ci_pytest_shard import instrument_pytest_args, run_shard
+    from scripts.run_ci_pytest_shard import (
+        DEFAULT_MAX_ATTEMPTS,
+        instrument_pytest_args,
+        run_shard,
+    )
 except ModuleNotFoundError:  # Direct execution from backend/scripts.
     from build_ci_pytest_matrix import DEFAULT_CATALOG, load_catalog
-    from run_ci_pytest_shard import instrument_pytest_args, run_shard
+    from run_ci_pytest_shard import (
+        DEFAULT_MAX_ATTEMPTS,
+        instrument_pytest_args,
+        run_shard,
+    )
 
 
 MIN_SHARD_TIMEOUT_SECONDS = 180
@@ -73,6 +81,76 @@ def shard_timeout_seconds(shard: dict[str, Any]) -> int:
     return timeout_seconds
 
 
+def shard_max_attempts(shard: dict[str, Any]) -> int:
+    max_attempts = int(shard.get("max_attempts", DEFAULT_MAX_ATTEMPTS))
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
+    return max_attempts
+
+
+def shard_processes(
+    shard: dict[str, Any],
+    *,
+    cwd: Path,
+) -> list[tuple[str, list[str], list[str], int, int]]:
+    """Resolve one catalog shard into complete, disjoint pytest processes."""
+
+    label = str(shard["label"])
+    declared_paths = expand_path_inputs(
+        shard["paths"],
+        cwd=cwd,
+        exclude_paths=shard.get("exclude_paths", []),
+    )
+    configured_groups = shard.get("process_groups")
+    if configured_groups is None:
+        return [(
+            label,
+            declared_paths,
+            [],
+            shard_timeout_seconds(shard),
+            shard_max_attempts(shard),
+        )]
+    if not isinstance(configured_groups, list) or not configured_groups:
+        raise ValueError(f"{label} process_groups must be a non-empty list")
+
+    processes: list[tuple[str, list[str], list[str], int, int]] = []
+    grouped_paths: list[str] = []
+    group_labels: set[str] = set()
+    for group in configured_groups:
+        if not isinstance(group, dict):
+            raise ValueError(f"{label} process_groups must contain objects")
+        group_label = str(group.get("label") or "").strip()
+        if not group_label or group_label in group_labels:
+            raise ValueError(f"{label} process_groups require unique labels")
+        group_labels.add(group_label)
+        paths = expand_path_inputs(
+            group.get("paths", []),
+            cwd=cwd,
+            exclude_paths=group.get("exclude_paths", []),
+        )
+        grouped_paths.extend(paths)
+        process_policy = dict(shard)
+        if "timeout_seconds" in group:
+            process_policy["timeout_seconds"] = group["timeout_seconds"]
+        if "max_attempts" in group:
+            process_policy["max_attempts"] = group["max_attempts"]
+        processes.append(
+            (
+                f"{label}-{group_label}",
+                paths,
+                list(group.get("extra_args", [])),
+                shard_timeout_seconds(process_policy),
+                shard_max_attempts(process_policy),
+            )
+        )
+
+    if len(grouped_paths) != len(set(grouped_paths)) or set(grouped_paths) != set(
+        declared_paths
+    ):
+        raise ValueError(f"{label} process_groups must partition declared paths")
+    return processes
+
+
 def run_worker(
     labels: Sequence[str],
     catalog: Sequence[dict[str, Any]],
@@ -89,40 +167,48 @@ def run_worker(
     junit_dir.mkdir(parents=True, exist_ok=True)
     for label in labels:
         shard = by_label[label]
-        paths = expand_path_inputs(
-            shard["paths"],
-            cwd=cwd,
-            exclude_paths=shard.get("exclude_paths", []),
-        )
-        pytest_args = [*BASE_PYTEST_ARGS, *shard.get("extra_args", [])]
-        pytest_args = instrument_pytest_args(
-            pytest_args,
-            junit_path=str(junit_dir / f"{label}.xml"),
-        )
         try:
-            timeout_seconds = shard_timeout_seconds(shard)
+            processes = shard_processes(shard, cwd=cwd)
         except ValueError as exc:
             raise ValueError(f"{label} {exc}") from exc
-        print(
-            "[ci-worker] "
-            + json.dumps(
-                {
-                    "shard": label,
-                    "paths": len(paths),
-                    "deadline_seconds": timeout_seconds,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
-            flush=True,
-        )
-        return_code = shard_runner(
+        for (
+            process_label,
             paths,
-            pytest_args,
-            timeout_seconds=timeout_seconds,
-        )
-        if return_code != 0:
-            return return_code
+            process_args,
+            timeout_seconds,
+            max_attempts,
+        ) in processes:
+            pytest_args = [
+                *BASE_PYTEST_ARGS,
+                *shard.get("extra_args", []),
+                *process_args,
+            ]
+            pytest_args = instrument_pytest_args(
+                pytest_args,
+                junit_path=str(junit_dir / f"{process_label}.xml"),
+            )
+            print(
+                "[ci-worker] "
+                + json.dumps(
+                    {
+                        "shard": process_label,
+                        "paths": len(paths),
+                        "deadline_seconds": timeout_seconds,
+                        "max_attempts": max_attempts,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                flush=True,
+            )
+            return_code = shard_runner(
+                paths,
+                pytest_args,
+                timeout_seconds=timeout_seconds,
+                max_attempts=max_attempts,
+            )
+            if return_code != 0:
+                return return_code
     return 0
 
 

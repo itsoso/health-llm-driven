@@ -123,7 +123,10 @@ jobs:
     # Each catalog shard remains a fresh pytest process. Workers only share the
     # dependency install, then execute isolated processes in historical-time
     # balanced order. This preserves the SQLite isolation contract.
-    timeout-minutes: 25
+    # The oversized shard runs two ordered processes to preserve the existing
+    # SQLite fixture contract. Keep enough job budget for both process deadlines
+    # plus setup and cleanup; the contract test derives this from the catalog.
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.backend-test-plan.outputs.matrix) }}
@@ -289,6 +292,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
+        with:
+          # OTA release-contract tests compare HEAD with canonical main.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
