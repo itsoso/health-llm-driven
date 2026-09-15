@@ -2,8 +2,10 @@
 import contextvars
 import logging
 from sqlalchemy import create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -42,10 +44,17 @@ connect_args = {"check_same_thread": False} if is_sqlite else {}
 
 # SQLite不支持pool_size和max_overflow
 if is_sqlite:
+    sqlite_database = make_url(database_url).database
+    sqlite_pool_options = (
+        {"poolclass": StaticPool}
+        if sqlite_database in {None, "", ":memory:"}
+        else {}
+    )
     engine = create_engine(
         database_url,
         connect_args=connect_args,
-        echo=False
+        echo=False,
+        **sqlite_pool_options,
     )
     logger.info("使用 SQLite 数据库")
 else:

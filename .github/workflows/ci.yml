@@ -126,7 +126,7 @@ jobs:
     # The oversized shard runs two ordered processes to preserve the existing
     # SQLite fixture contract. Keep enough job budget for both process deadlines
     # plus setup and cleanup; the contract test derives this from the catalog.
-    timeout-minutes: 90
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.backend-test-plan.outputs.matrix) }}

@@ -511,4 +511,4 @@ def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_p
         if paths == [synthesis_path]:
             assert (timeout_seconds, max_attempts) == (1500, 1)
         else:
-            assert (timeout_seconds, max_attempts) == (3300, 1)
+            assert (timeout_seconds, max_attempts) == (900, 1)
