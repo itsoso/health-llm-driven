@@ -56,3 +56,9 @@ G2：按 focused spec 固定边界；G3：待 RED/GREEN、PostgreSQL、邻近回
 - 该候选原有 67-case live gate 通过，但追加的 3 条真实系统 prompt 探针全部失败：模型说“已记录”而无写入回执。保持失败结论，新增 prompt 约束及回归，不把“没有医疗建议”冒充完整通过。
 - 追加回复末端的任务核对：纯情境使用“收到”，不能用“已记录/已保存”替代；症状、显式操作与历史待办仍保留全部义务。
 - 当前 92 条新增单测已 GREEN；92 条 PostgreSQL、邻近回归与最终固定候选复审/live 重跑待完成。
+
+## 恢复源消息绑定
+
+- `7b8c5a874` 的 92 条 PostgreSQL、1,078 条邻近回归、207 条 Mobile 测试、TypeScript 和 System Map 均通过。源码绑定 live gate 67 cases + 3 条情境 prompt 探针通过（13 次真实调用、28,145 tokens）；酒店回复为简短“收到”，无假称写入。
+- 第三轮独立复审仍发现未完成同 client_turn_id 恢复回合可用替换 caption 遗漏源附件，裁为 NO-GO。3 条真实 run_stream 恢复用例先 RED，再保守禁止所有未完成源回合进入新本地分流；完成回合的幂等 replay 保持原逻辑。
+- 删除已不需要的历史 source-message 排除参数，避免后续调用误排除源任务。最终候选重新验证与复审后才能完成本地交付。

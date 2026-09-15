@@ -80,8 +80,7 @@ def parse_context_statement(message: str | None) -> ContextStatement | None:
     return None
 
 
-def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None,
-                                source_message_id: int | None = None) -> bool:
+def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None) -> bool:
     """Do not intercept an unresolved action or a recent medical follow-up.
 
     Only read the owned conversation. No health tables, model inference or
@@ -97,8 +96,6 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
     if owned is None:
         raise ValueError("对话不存在")
     query = db.query(AgentMessage).filter(AgentMessage.conversation_id == owned.id)
-    if source_message_id is not None:
-        query = query.filter(AgentMessage.id < source_message_id)
     recent = query.order_by(AgentMessage.id.desc()).limit(8).all()
     for item in recent:
         if item.role == "user":

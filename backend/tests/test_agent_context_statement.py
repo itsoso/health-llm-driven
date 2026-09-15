@@ -104,6 +104,32 @@ async def test_context_replay_is_idempotent_and_user_scoped(db, auth_user_and_he
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("original,attachment", [
+    ("落地成都\n[附图: 1张]", "synthetic-medical-image.jpg"),
+    ("落地成都咯血", None),
+    ("落地成都", None),
+])
+async def test_unfinished_source_turn_cannot_be_completed_from_replacement_caption(db, auth_user_and_headers, monkeypatch, original, attachment):
+    user, _ = auth_user_and_headers
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title="合成源回合恢复")
+    source, _ = svc.save_user_message_once(conv.id, user.id, original,
+        client_turn_id="synthetic-recovered-context")
+    source.image_url = attachment
+    db.commit()
+    executor = AgentExecutor(db)
+    calls = []
+    async def ordinary(**kwargs):
+        calls.append(kwargs["recovered_user_message"].id)
+        yield {"event": "done", "data": {"completion_status": "complete"}}
+    monkeypatch.setattr(executor, "_run_stream_impl", ordinary)
+    events = [e async for e in executor.run_stream(user_id=user.id, message="落地成都",
+        conversation_id=conv.id, client_turn_id="synthetic-recovered-context")]
+    assert calls == [source.id]
+    assert not any(e.get("data", {}).get("route") == "context_statement" for e in events)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("prior", [
     "胸痛，喘不上气", "我想核对鱼油剂量", "我昨晚腰痛，腿麻", "我想自杀",
     "咯血了", "腿麻走不了", "我有抑郁症", "我好像中风了", "我正在流血", "我拉肚子三天了",

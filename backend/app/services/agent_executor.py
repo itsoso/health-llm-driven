@@ -15197,7 +15197,8 @@ class AgentExecutor:
 
             context_statement = (
                 parse_context_statement(effective_message)
-                if (retry_recovery is None and not effective_images and not file_base64
+                if (recovered_user_message is None and retry_recovery is None
+                    and not effective_images and not file_base64
                     and not extra_context and not read_only_tools
                     and self._agent_kernel_snapshot.intent.primary == "chat"
                     and "classifier:context_statement" in self._agent_kernel_snapshot.intent.evidence)
@@ -15205,9 +15206,7 @@ class AgentExecutor:
             )
             if context_statement is not None and context_statement.allows_local_reply and context_reply_is_standalone(
                 self.db, user_id=user_id,
-                conversation_id=(int(recovered_user_message.conversation_id)
-                    if recovered_user_message is not None else conversation_id),
-                source_message_id=(recovered_user_message.id if recovered_user_message is not None else None),
+                conversation_id=conversation_id,
             ):
                 async for event in self._run_input_clarification_stream(
                     user_id=user_id, message=display_message,
