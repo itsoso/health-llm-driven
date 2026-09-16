@@ -12,7 +12,7 @@ test('real EAS archive copy includes security patches and excludes local/private
   const repoRoot = path.resolve(__dirname, '../..');
   const { makeShallowCopyAsync } = require(path.join(easRoot, 'build/vcs/local.js'));
   const temp = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'reva-eas-archive-test-'));
-  const patches = ['query-string+7.1.3.patch', 'image-size+1.2.1.patch'];
+  const patches = ['query-string+7.1.3.patch'];
   try {
     for (const mobileOnly of [false, true]) {
       const source = path.join(temp, mobileOnly ? 'mobile-source' : 'repo-source');
@@ -34,7 +34,7 @@ test('real EAS archive copy includes security patches and excludes local/private
         assert.deepEqual(await fsPromises.readFile(path.join(destination, prefix, 'patches', name)),
           await fsPromises.readFile(path.join(repoRoot, 'mobile/patches', name)));
       }
-      for (const name of ['patches/expo-modules-autolinking+55.0.24.patch', 'ios/local-build', 'assets/rokid/local.apk', 'node_modules/local/index.js']) {
+      for (const name of ['patches/expo-modules-autolinking+55.0.24.patch', 'patches/image-size+1.2.1.patch', 'ios/local-build', 'assets/rokid/local.apk', 'node_modules/local/index.js']) {
         await assert.rejects(fsPromises.access(path.join(destination, prefix, name)), { code: 'ENOENT' });
       }
       if (!mobileOnly) await assert.rejects(fsPromises.access(path.join(destination, '.env')), { code: 'ENOENT' });
