@@ -110,6 +110,9 @@
     "decode-uri-component": "0.5.0",
     "joi": "17.13.6",
     "markdown-it": "npm:@rexovolt/markdown-it@14.2.1",
+    "metro": "0.83.8",
+    "metro-config": "0.83.8",
+    "metro-transform-worker": "0.83.8",
     "qs": "6.16.0"
   },
   "private": true
