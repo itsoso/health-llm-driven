@@ -558,3 +558,88 @@ async def test_explicit_model_fast_direct_answer_resynthesized_on_explicit(
     resynth_calls = [c for c in provider_calls if c["model"] == "qwen3.7-max"]
     assert resynth_calls, provider_calls
     assert "fast_tool_round_direct_answer_resynthesized" in done["fallback_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_tool_free_synthesis_retries_hallucinated_tool_call(
+    db, auth_user_and_headers, monkeypatch
+):
+    """Final no-tool round that still emits a tool call must retry once, then publish."""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    provider_calls = []
+    strong_rounds = {"n": 0}
+
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
+
+    class FakeProvider:
+        def __init__(self, model_id):
+            self.model = model_id
+
+        async def chat_stream(self, **kwargs):
+            provider_calls.append({
+                "model": self.model,
+                "has_tools": bool(kwargs.get("tools")),
+            })
+            if self.model == "qwen3.6-flash":
+                yield {"type": "tool_calls", "tool_calls": [{
+                    "id": "r1", "type": "function",
+                    "function": {
+                        "name": "environment_check",
+                        "arguments": json.dumps({"location": "北京"}),
+                    },
+                }]}
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+                return
+            strong_rounds["n"] += 1
+            if strong_rounds["n"] == 1:
+                yield {"type": "tool_calls", "tool_calls": [{
+                    "id": "r2", "type": "function",
+                    "function": {
+                        "name": "environment_check",
+                        "arguments": json.dumps({"location": "北京"}),
+                    },
+                }]}
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+                return
+            yield {"type": "content", "text": "STRONG SYNTHESIS 补水"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+        async def chat(self, **kwargs):
+            provider_calls.append({
+                "model": self.model,
+                "has_tools": bool(kwargs.get("tools")),
+                "nonstream": True,
+            })
+            return {"content": "STRONG SYNTHESIS 补水", "finish_reason": "stop"}
+
+    async def fake_exec_tool(name, args, token):
+        assert name == "environment_check"
+        return "北京当前 19C 小雨，湿度 92%"
+
+    _wire(
+        executor,
+        monkeypatch,
+        lambda mid: FakeProvider(mid),
+        user_provider=FakeProvider("qwen3.7-max"),
+        tool_name="environment_check",
+    )
+    monkeypatch.setattr(executor, "_execute_tool", fake_exec_tool)
+    orig_should = executor._should_synthesize_with_requested_model_after_tools
+    monkeypatch.setattr(
+        executor,
+        "_should_synthesize_with_requested_model_after_tools",
+        lambda tool_executed_count: True if tool_executed_count else orig_should(tool_executed_count),
+    )
+
+    events = await _run(executor, "分析我的运动趋势", user.id)
+    rendered = "".join(
+        e["data"].get("content", "") for e in events if e.get("event") == "token"
+    )
+    done = events[-1]["data"]
+
+    assert "本轮模型未生成可发布的健康回答" not in rendered
+    assert "STRONG SYNTHESIS" in rendered
+    assert done["completion_status"] == "complete"
+    assert "no_tools_synthesis_tool_call_retried" in done["fallback_reasons"]

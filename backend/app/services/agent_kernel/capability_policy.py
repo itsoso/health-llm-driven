@@ -2969,9 +2969,13 @@ def decide_tool_capability(
             else None
         )
         proposed_semantic_dimension = _semantic_query_dimension(proposed_dimension)
+        illness_entities = tuple(
+            entity for entity in illness_query_entities
+            if _is_explicit_illness_query_entity(entity)
+        )
         if (
             _history_query_has_multiple_scopes(turn_text)
-            or len(illness_query_entities) > 1
+            or len(illness_entities) > 1
         ):
             return _decision(
                 "block",
@@ -3019,7 +3023,7 @@ def decide_tool_capability(
                 tool_name,
                 illness_query_args,
             )
-        elif known_illness_entities or proposed_dimension == "illness":
+        elif known_illness_entities or illness_entities:
             return _decision(
                 "block",
                 "illness_query_entity_requires_clarification",

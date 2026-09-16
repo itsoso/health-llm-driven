@@ -4352,6 +4352,40 @@ async def test_multi_entity_illness_query_never_falls_back_to_model_scope(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_travel_advice_question_does_not_authorize_health_query(policy_mode):
+    message = (
+        "高原旅行需要注意什么？川西之行需要准备什么样的购物清单？重新帮我准备一份。"
+        "以及给我列出清单。我现在在成都，趁着还能外卖，买一下。"
+    )
+    gateway = ToolGateway(_snapshot(message, policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query",
+            arguments={"dimension": "illness"},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason != "illness_query_entity_requires_clarification"
+    assert result.decision.reason in {
+        "health_query_semantics_unresolved",
+        "health_query_dimension_conflict",
+        "health_query_not_requested",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
 @pytest.mark.parametrize(
     ("message", "keyword"),
     (

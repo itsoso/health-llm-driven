@@ -17664,28 +17664,36 @@ class AgentExecutor:
                                     elif event.get("type") == "finish":
                                         finish_reason = event.get("finish_reason")
                             if (
-                                health_advice_buffered
-                                and proposed_calls
+                                proposed_calls
                                 and not health_protocol_recovery_attempted
+                                and (
+                                    health_advice_buffered
+                                    or not round_tools
+                                )
                             ):
                                 health_protocol_recovery_attempted = True
                                 self._record_model_fallback_reason(
                                     "health_synthesis_tool_call_retried"
+                                    if health_advice_buffered
+                                    else "no_tools_synthesis_tool_call_retried"
+                                )
+                                retry_prompt = (
+                                    "本轮健康证据已经封存，不能调用任何工具。"
+                                    "请不要输出工具调用，直接依据上文已核验的证据，"
+                                    "用中文给出完整、保守、可执行的健康管理回答。"
+                                    if health_advice_buffered else
+                                    "本轮已经完成工具调用，现在只生成面向用户的最终回答。"
+                                    "不要再调用任何工具，不要输出 tool_calls。"
+                                    "直接用中文给出完整、可执行的回答。"
                                 )
                                 retry_messages = [
                                     *messages,
-                                    {
-                                        "role": "user",
-                                        "content": (
-                                            "本轮健康证据已经封存，不能调用任何工具。"
-                                            "请不要输出工具调用，直接依据上文已核验的证据，"
-                                            "用中文给出完整、保守、可执行的健康管理回答。"
-                                        ),
-                                    },
+                                    {"role": "user", "content": retry_prompt},
                                 ]
                                 candidate = ""
                                 proposed_calls = []
                                 finish_reason = None
+                                round_tools = []
                                 async for event in self._call_llm_stream(
                                     retry_messages, []
                                 ):
@@ -26261,6 +26269,19 @@ class AgentExecutor:
     ) -> str:
         """执行环境数据查询"""
         ctype = args.get("check_type", "weather")
+        city = str(args.get("city") or "").strip() or None
+        if ctype == "forecast":
+            try:
+                days = int(args.get("days", 3))
+            except (TypeError, ValueError):
+                days = 3
+            days = min(max(days, 1), 7)
+        else:
+            days = 3
+        if getattr(settings, "reads_in_process", True):
+            payload = await self._read_environment_in_process(ctype, city=city, days=days)
+            if payload is not None:
+                return _truncate_for_display(json.dumps(payload, ensure_ascii=False, default=str))
         path_map = {
             "weather": "/environment/weather",
             "air_quality": "/environment/air-quality",
@@ -26273,18 +26294,83 @@ class AgentExecutor:
         }
         path = path_map.get(ctype, "/environment/weather")
         params: Dict[str, Any] = {}
-        city = str(args.get("city") or "").strip()
         if city:
             params["city"] = city
         if ctype == "forecast":
-            try:
-                days = int(args.get("days", 3))
-            except (TypeError, ValueError):
-                days = 3
-            params["days"] = min(max(days, 1), 7)
+            params["days"] = days
         if params:
             path = f"{path}?{urlencode(params)}"
         return await self._api_get(f"{base}{path}", headers)
+
+    async def _read_environment_in_process(
+        self,
+        check_type: str,
+        *,
+        city: Optional[str],
+        days: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Read weather without looping back through HTTP auth."""
+        from app.models.user_profile import UserProfile
+        from app.services.environment import air_quality_service, environment_advisor, weather_service
+        from app.services.location_resolver import resolve_effective_location
+
+        lat = None
+        lon = None
+        resolved_city = city
+        profile = None
+        if self._current_user_id is not None:
+            profile = (
+                self.db.query(UserProfile)
+                .filter(UserProfile.user_id == self._current_user_id)
+                .first()
+            )
+            if not resolved_city:
+                loc = resolve_effective_location(profile)
+                lat, lon, resolved_city = loc["lat"], loc["lon"], loc["city"]
+                if lat is not None and lon is not None:
+                    resolved_city = None
+        if check_type == "weather":
+            weather = await weather_service.get_current_weather(resolved_city, lat, lon)
+            return {
+                "weather": weather,
+                "exercise_advice": weather_service.get_exercise_advice(weather),
+            }
+        if check_type == "forecast":
+            return await weather_service.get_weather_forecast(resolved_city, lat, lon, days)
+        if check_type == "air_quality":
+            aqi = await weather_service.get_air_quality(resolved_city, lat, lon)
+            if not aqi.get("available"):
+                aqi = await air_quality_service.get_air_quality(resolved_city, lat, lon)
+            return aqi
+        if check_type in {"outdoor_suitability", "exercise_suitability", "morning_briefing"}:
+            user_conditions = (profile.chronic_conditions if profile else None) or []
+            if check_type == "morning_briefing":
+                return await environment_advisor.get_morning_briefing(
+                    city=resolved_city,
+                    lat=lat,
+                    lon=lon,
+                    user_conditions=user_conditions,
+                )
+            advice = await environment_advisor.get_comprehensive_advice(
+                city=resolved_city,
+                lat=lat,
+                lon=lon,
+                user_conditions=user_conditions,
+            )
+            if check_type == "exercise_suitability":
+                return {
+                    "score": advice["exercise"]["score"],
+                    "status": advice["exercise"]["status"],
+                    "outdoor_suitable": advice["exercise"]["outdoor_suitable"],
+                    "recommended_activities": advice["exercise"]["recommended_activities"],
+                    "weather_summary": advice["weather"].get("summary", ""),
+                    "aqi": advice["air_quality"].get("aqi"),
+                    "aqi_description": advice["air_quality"].get("description"),
+                    "advices": advice["advices"][:3],
+                    "warnings": advice["warnings"],
+                }
+            return advice
+        return None
 
     async def _exec_supplement_guide(
         self, base: str, headers: dict, args: dict
