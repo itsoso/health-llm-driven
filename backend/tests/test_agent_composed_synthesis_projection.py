@@ -223,7 +223,10 @@ async def test_projected_provider_tool_violation_cannot_dispatch(db, four_domain
     _, calls, dispatched, done, _ = await run_projection(
         db, four_domain_user, monkeypatch, panel=panel, rogue_tool=True,
     )
-    assert len(calls) == 2 and not calls[-1].get("tools")
+    # The panel path gets one sealed, tool-free protocol recovery attempt;
+    # the single-model path reaches the same fail-closed outcome directly.
+    assert len(calls) == (3 if panel else 2)
+    assert all(not call.get("tools") for call in calls[1:])
     assert all(request.tool_name in {"health_query", "health_query_batch"} for request in dispatched)
     assert not done["write_receipts"]
     assert done["turn_outcome"]["status"] != "complete"
