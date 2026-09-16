@@ -195,3 +195,52 @@ a specific database root cause.
 
 This correction has not been deployed or published by this update. Its release
 gates remain pending until an explicitly authorized release run.
+
+## 2026-09-10 Agent Sync Command Correction
+
+### Production Evidence
+
+A read-only investigation matched the reported 2026-09-10 conversation turn.
+The runtime run failed before tool execution with
+`write_tool_without_write_intent`; there was no tool operation and no Garmin
+worker event for the request. The assistant text shown under the preserved-run
+banner was therefore not evidence that a sync or a fresh query had completed.
+
+The account-side credential state was healthy: sync remained enabled, the
+credential was valid, MFA was not required, and no current sync error was
+recorded. The prior-day values cited by the preserved response came from an
+existing `garmin-app` row rather than a newly executed direct Garmin sync.
+
+Two deterministic defects caused the incident:
+
+- the capability policy sent receipt-exempt `garmin_sync` through generic
+  health-record authorization, even though the utterance classifier had
+  correctly identified an explicit sync mutation;
+- the executor discarded the classifier's resolved date scope and always
+  enqueued `days=1`, so a request for yesterday would only request the current
+  day even if it passed authorization.
+
+### Correction
+
+- Explicit classified sync intent now authorizes only the receipt-exempt Garmin
+  ingest action; Garmin read questions remain blocked from starting a job.
+- The executor converts a resolved target date to Garmin's inclusive lookback
+  window, capped at the existing 730-day API boundary. A request for yesterday
+  therefore enqueues a two-day window containing yesterday and today.
+- Existing precondition, MFA, asynchronous enqueue and fail-loud behavior is
+  unchanged.
+
+### Verification And Release State
+
+- Regression tests were written first and failed for both defects before the
+  implementation changed.
+- Capability policy, goal guard, Garmin action and tool gateway suites: PASS
+  (4,970 tests).
+- Garmin safety, health-record compatibility, async execution-class and
+  dogfood regression suites: PASS (46 tests).
+- The LLM change classifier correctly requires a live-model regression for the
+  final commit. That gate, independent safety review, commit, deployment and
+  authenticated production verification have not been run in this correction.
+
+This correction is local only. Production has not been modified and the
+reported sync request has not been replayed.

@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { Image, StyleSheet } from 'react-native';
 
 import ConversationShareImage from '../ConversationShareImage';
 import MarkdownText from '../../shared/MarkdownText';
@@ -38,6 +38,19 @@ describe('ConversationShareImage', () => {
     expect(view.UNSAFE_getByType(MarkdownText).props.palette).toBe(colors);
   });
 
+  it('uses 小巴健康 on every exported brand surface', () => {
+    const view = render(
+      <ConversationShareImage
+        messages={[{ id: 'assistant-1', role: 'assistant', content: '今晚早点休息。' }]}
+      />,
+    );
+
+    expect(view.getByText('小巴健康 · 对话摘录')).toBeTruthy();
+    expect(view.getByText('小巴健康')).toBeTruthy();
+    expect(view.getByText('小巴健康 · 你忠实的健康参谋')).toBeTruthy();
+    expect(view.queryByText('小巴')).toBeNull();
+  });
+
   it('gives long assistant answers the full editorial card width', () => {
     const view = render(
       <ConversationShareImage
@@ -53,5 +66,25 @@ describe('ConversationShareImage', () => {
       alignSelf: 'stretch',
       maxWidth: '100%',
     });
+  });
+
+  it('omits markdown images that would leave unloaded blank space in the export', () => {
+    const getSize = jest.spyOn(Image, 'getSize').mockImplementation((_uri, success) => {
+      success?.(100, 100);
+    });
+    const view = render(
+      <ConversationShareImage
+        messages={[{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '![睡眠趋势](https://example.test/sleep.png)\n\n## 昨晚睡眠总结\n\n整体不错。',
+        }]}
+      />,
+    );
+    getSize.mockRestore();
+
+    expect(view.UNSAFE_queryAllByType(Image)).toHaveLength(0);
+    expect(view.getByText('昨晚睡眠总结')).toBeTruthy();
+    expect(view.getByText('整体不错。')).toBeTruthy();
   });
 });

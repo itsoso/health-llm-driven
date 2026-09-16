@@ -38,6 +38,7 @@ import {
   buildDietSharePresentation,
   type DietShareRecord,
 } from './dietSharePresentation';
+import { APP_DISPLAY_NAME } from '../../constants/brand';
 
 export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
 const DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD = 70;
@@ -159,7 +160,7 @@ function buildDietShareHashtags(highlights: string[]): string {
     if (highlight === '含纤维') tags.push('#膳食纤维');
     if (highlight === '轻负担') tags.push('#轻食打卡');
   });
-  return [...tags, '#饮食打卡', '#健康生活', '#小巴记录'].join(' ');
+  return [...tags, '#饮食打卡', '#健康生活', `#${APP_DISPLAY_NAME}记录`].join(' ');
 }
 
 function normalizedAiConfidence(value: number | null | undefined): number | null {
@@ -265,7 +266,7 @@ export function compactDietShareFoodItems(foodItems: string, maxChars = 35): str
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const presentation = buildDietSharePresentation(record);
   const lines = [
-    '小巴饮食记录',
+    `${APP_DISPLAY_NAME}饮食记录`,
     `${dateLabel} · ${presentation.mealLabel}`,
     compactDietShareFoodItems(presentation.foodLine),
     '',
@@ -287,7 +288,7 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
     presentation.publicNote,
   ];
   if (!presentation.macroLines.includes(presentation.disclosure)) lines.push(presentation.disclosure);
-  lines.push('', '小巴 · 饮食记录');
+  lines.push('', `${APP_DISPLAY_NAME} · 饮食记录`);
   return lines.join('\n');
 }
 
@@ -459,11 +460,11 @@ export default function DietShareCard({
         <PosterText testID="diet-share-food-line" style={styles.posterFoodLine} numberOfLines={2}>{presentation.foodLine}</PosterText>
 
         <View testID="diet-share-nutrition-grid" style={styles.posterNutrition}>
-          {nutritionItems.length > 0 ? nutritionItems.map((item, index) => (
+          {nutritionItems.length > 0 ? nutritionItems.map(item => (
             <View
               key={item.key}
               testID={`diet-share-metric-${item.key}`}
-              style={[styles.posterMetric, index > 0 ? styles.posterMetricSeparated : null]}
+              style={styles.posterMetric}
             >
               <PosterText style={styles.posterMetricLabel}>{item.label}</PosterText>
               <View
@@ -524,7 +525,7 @@ export default function DietShareCard({
               <View style={styles.posterFooterMarkDot} />
               <View style={styles.posterFooterMarkLine} />
             </View>
-            <PosterText style={styles.posterBrandText}>小巴</PosterText>
+            <PosterText style={styles.posterBrandText}>{APP_DISPLAY_NAME}</PosterText>
           </View>
         </View>
       </View>
@@ -1174,12 +1175,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: '48%',
+    height: '49%',
     paddingHorizontal: 20,
-    paddingTop: 11,
-    paddingBottom: 10,
-    gap: 4,
+    paddingTop: 8,
+    paddingBottom: 8,
+    gap: 3,
     backgroundColor: C.surface2,
+    borderTopLeftRadius: revaRadii.xl,
+    borderTopRightRadius: revaRadii.xl,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
   },
   posterRuleRow: {
     flexDirection: 'row',
@@ -1214,23 +1219,22 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   posterNutrition: {
-    minHeight: 41,
-    paddingVertical: 7,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
+    minHeight: 43,
     flexDirection: 'row',
     alignItems: 'stretch',
+    gap: 5,
   },
   posterMetric: {
     flex: 1,
     minWidth: 0,
-    paddingHorizontal: 7,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     overflow: 'hidden',
-  },
-  posterMetricSeparated: {
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: C.line,
+    borderRadius: revaRadii.sm,
+    borderCurve: 'continuous',
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
   },
   posterMetricLabel: {
     fontSize: 8.5,
@@ -1280,9 +1284,7 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     justifyContent: 'center',
     paddingHorizontal: 9,
-    backgroundColor: 'rgba(255, 250, 240, 0.72)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(82, 117, 93, 0.3)',
+    backgroundColor: C.green50,
   },
   posterTagText: {
     fontSize: 9.5,
@@ -1290,10 +1292,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   posterPublicNote: {
-    borderLeftWidth: 2,
-    borderLeftColor: C.green600,
-    paddingLeft: 8,
-    paddingVertical: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: revaRadii.sm,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(232, 242, 236, 0.64)',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
   },
   posterPublicNoteLabel: {
     fontSize: 8.5,
@@ -1302,6 +1308,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   posterPublicNoteText: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 9.5,
     lineHeight: 13,
     color: C.ink2,
@@ -1328,18 +1336,19 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   posterBrandText: {
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 9.5,
+    lineHeight: 13,
     color: C.green700,
     fontWeight: '700',
   },
   posterFooterMark: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(82, 117, 93, 0.5)',
+    backgroundColor: C.green50,
     alignItems: 'center',
     justifyContent: 'center',
   },

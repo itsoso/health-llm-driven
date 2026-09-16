@@ -199,6 +199,31 @@ def test_read_turn_blocks_health_record_even_if_model_requests_it():
     assert decision.reason == "write_tool_without_write_intent"
 
 
+def test_explicit_garmin_sync_command_authorizes_the_receipt_exempt_action():
+    decision = decide_tool_capability(
+        _snapshot("对昨天的佳明的数据进行同步。"),
+        _request(
+            "health_record", {"record_type": "garmin_sync", "data": {}}
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_owned_garmin_sync"
+    assert decision.receipt_required is False
+
+
+def test_garmin_read_request_does_not_authorize_a_sync_side_effect():
+    decision = decide_tool_capability(
+        _snapshot("昨天的 Garmin 数据怎么样？"),
+        _request(
+            "health_record", {"record_type": "garmin_sync", "data": {}}
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "garmin_sync_scope_unresolved"
+
+
 @pytest.mark.parametrize(
     "message",
     (

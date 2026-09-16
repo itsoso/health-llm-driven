@@ -14,10 +14,347 @@
 |---|---|
 | slug | `diet-correction-recalculation-photo-dismiss` |
 | 创建日期 | 2026-08-20 |
-| 当前阶段 | Build 267 已发布；ec3195 模拟器回归通过，审核维护异常保留现场，G6 未完成 |
-| 状态 | build_267_published_review_maintenance_blocked |
+| 当前阶段 | 修复5ddd已部署，Build271为ASC有效候选；五张同源码模拟器图已替换上传，待确切候选验收/最终材料闸，尚未送审 |
+| 状态 | build271_published_live_verified_device_gate_pending |
 | 负责 | Codex + 用户 |
 | 反馈环 | Backend focused tests + Mobile Jest/TypeScript + production OTA after Gates |
+
+## 2026-09-10 · 分享图营养数值上半截被裁切
+
+- 17:24 模拟器截图：在专用模拟器上用 ASC 专用审核凭据正常登录，实际 UI 遍历并采集
+  七张 1320×2868 PNG，逐张目视核验；未写健康数据、未改 fixture，未修图或合成界面。
+  目标复盘 context strip 实际进入今日行动；个人中心滚动至账号与隐私避开账号标识。
+  `/import` 截图只证明通用导入页，不冒充 MedicalExamImportFlow 弹层安全区专测。
+  模拟器 Release 源码为5ddd，实际 CFBundleVersion=1，manifest 如实保留 build_id=1，
+  candidate_store_build_id=271；不能据此签发确切 TestFlight271 真机验收。
+  排除重复启动页与含负向测试/重复记录的饮食页，只选择聊天、今日行动、导入、隐私设置、
+  隐私政策五张商店展示图。截图导出/尺寸/隐私元数据检查 PASS；Apple 五张均 COMPLETE，
+  errors=[]。旧五张先备份到外部证据目录，再执行替换及排序，读回 replacement=PASS、
+  数量/顺序一致；ASC仍PREPARE_FOR_SUBMISSION，未提交App Review，不修改其他商店材料。
+  精确源码基础 release-pack PASS。无凭据 final-submit 探针 FAIL（其中凭据/声明未传入
+  只表示本次调用未配置，不能反推 ASC 缺失）；独立硬阻断仍为实际截图 build_id 不同、
+  最终材料 Draft、缺同包真机验收。devicectl 新鲜回读手机 unavailable。
+  原图、准备后截图、前后 ASC 清单、上传 ledger 与旧图备份仅留
+  `/tmp/xiaoba-review-final.23S9wV/`，未提交原图/账号/凭据到 Git。
+- 本轮release34455976947最终全绿：backend16:45:17成功，testflight16:46:52成功，
+  release-result16:46:58成功。完整流程11分41秒；后端9分29秒、iOS job7分47秒、
+  上传job3分14秒；上传16:43:38启动，与后端最后1分39秒重叠，没有等待后端终态。
+  EAS08720679-299b-4f06-b85d-1739c9dd6e3a FINISHED、submission9fe26a65-c818-4371-a98c-de472fb1bec4
+  成功；IPA SHA256 667ad9a85c110a3b2bf0a47c8a636d3845c51b1897a7565cea165c06d003fe16，
+  life.executor.health/1.3.3(271)/DTXcode2620/SDK26.2/商店profile元数据PASS。
+  ASC d1645d1e-36f3-4395-845b-76d5b28df8bf VALID未过期，已关联1.3.3候选并读回；
+  仍PREPARE_FOR_SUBMISSION，未提交App Review。
+  正常认证只读线上回归PASS：既有标记餐唯一、DB150克、历史卡片与修正action seed均最新，
+  没有重建/重保存餐食。旧后端投影缺字段的失败保留为前置证据；新后端实际回查通过。
+  新审核fixture操作de9d4839a6ae474890c2c2ed8054cd47 SUCCEEDED，随后精确源码live reviewer
+  gate PASS/0失败，Review Notes与候选一致；旧UNKNOWN未重放。
+  全任务及维护终结后canonical revoke成功；固定helper SHA256
+  effdfe8f1738bc221f5c4d5d5e505b93f7336a085826e854c70f6b2d65acc6e2独立安全GO，
+  原双锁及双快照摘要一致后仅移除本轮loopback私钥，后验REMOVED_EXACT_OLD_LOOPBACK_PRIVATE_KEY。
+  本轮GitHub短期SSH secret及匹配公钥的本机临时私钥已删除；长期Expo Token与known_hosts保留并读回。
+  线上最终health200。手机仍unavailable，271同包真机/新截图闸未完成；不借用270结果或声明审核通过。
+  证据位于外部 `/tmp/xiaoba-review-final.23S9wV/` 的release-timing、release-complete、
+  audit-build271、select-build271、saved-meal-delivery及live-review-check，未含凭据原文。
+- 16:33服务器GitHub HTTPS恢复，固定系统Git成功从canonical origin拉取5ddd并精确checkout；
+  干净状态、root源码与bootstrap/executor摘要一致，真实CI34453541113再次通过。
+  未修改hosts、代理或TLS；旧失败记录保留，不宣称做过网络配置修复。
+  canonical rotate576→5ddd返回INSTALLED，短期SSH密钥已更新；Expo长期Token时间戳不变。
+  validate34455878912 SUCCESS、服务器只读CHECKED后，仅dispatch一次release34455976947；
+  backend与ios-build均已启动，精确EAS08720679-299b-4f06-b85d-1739c9dd6e3a为1.3.3(271)，
+  source5ddd、IOS/STORE/production、IN_PROGRESS。当前未记上传或部署成功，未提交App Review。
+  手机CoreDevice仍unavailable；不把旧270真机证据移作271验收。
+- 最新固定 `5ddd9402d22c8124bc84b578662ea87c1f6e432c` 完整差异独立安全GO，已push main；
+  精确CI `34453541113` SUCCESS。干净源码PG57PASS/57.27秒、会话集成70PASS/11.46秒、
+  Mobile全量2846PASS/1既有skip、双端tsc及基础商店检查PASS；精确CI-mode发布集成
+  1147PASS/7skip/84subtests/462.76秒/exit0（Linux原生专测仍由云端承担）。
+  backend576成功终结与维护完成后，canonical revoke返回REVOKED；固定摘要独立GO的
+  无build锁cleanup helper按双快照只清理旧loopback私钥，后验成功，不改Expo长期Token。
+  canonical新SHA staging只完成Git初始化，两次fetch以128退出（TLS终止、连接超时），
+  没有bootstrap新权限或dispatch业务部署/EAS构建；只读GitHub API可达但web/Git入口超时。
+  线上 `/api/v1/health` 新鲜HTTP200。第三次有界fetch同样exit128（low-speed超时），
+  已停止重试；新包未创建、未上传、未送审，旧业务服务不变，未改hosts/TLS校验。
+  真机补测在启动前因destination不可用exit70，CoreDevice tunnel unavailable；并非功能PASS。
+  同源码模拟器Release副本已Build Succeeded（0 errors/6 warnings）并安装到专用QA模拟器；
+  冷启动截图目视为正常登录页，无白屏。尚未完成登录后页面验证，不计作新TestFlight同包验收。
+  外部证据 `/tmp/xiaoba-review-final.23S9wV/simulator-build.log`、`simulator-launch.png`；
+  生成原生工程保留在临时worktree，不进入main，未标注为App Store-ready截图。
+- 后续真机分享→主Agent返回测试PASS（37.338秒）。标记餐仅创建一次，独立API确认
+  record1038由100克保存为150克且无重复；原自动化保存关闭断言5秒超时失败保留。
+  只读重开测试真实FAIL：历史会话仍返回旧100克，未再次保存/覆盖。新增回归已复现并修复：
+  conversation delivery深拷贝中，按认证owner批量回读最新饮食记录，刷新卡面及编辑action seed，
+  不改原始聊天历史、不调模型，旧衍生建议清除，越权/删除记录不可编辑，DB异常显式失败。
+- 另外修复全屏报告导入缺少独立SafeAreaProvider，以及onboarding监测目标被误导向体检页。
+  d72初次独立安全NO-GO抓到goal参与临床复查去重；5ddd已排除goal作为去重锚点，
+  新增血糖目标与真实高优先级复查同时保留的红→绿回归，临床入口仍为medical-exams。
+  固定候选 `5ddd9402d22c8124bc84b578662ea87c1f6e432c` 未包含其他WIP；当前未push/部署。
+  本机PG57项PASS（43.07秒/exit0）、Mobile定向21项PASS、全量2846PASS/1既有skip，
+  双端tsc和System Map/secret scan PASS。完整Mobile证据绑定d72（5ddd无Mobile变更）。
+  正在干净精确候选上验证；新包及上述界面真机复验未完成，不能将Build270或App Review标绿。
+- 新fixture操作 `ad788681636b40b0af99cd5156de1719` 返回SUCCEEDED，随后确切候选live闸PASS。
+  Build270完整核心批次10项：9 PASS / 1 FAIL（原批次exit65保留）。唯一失败为系统通知遮挡
+  对话历史点击后切到微信，AX快照连接丢失；同一未改测试独立重跑PASS（22.092秒、exit0）。
+  因此10项各有新鲜通过证据，不把原批次改记全绿。医学引用截图已目视确认边界文案可见，
+  Safari真实加载nhc.gov.cn标准PDF，不仅校验了URL。证据 `build270-core-acceptance.xcresult`、
+  `build270-history-confirm.xcresult` 及 core-attachments。尚不覆盖语音发声/第三方分享等全部闸。
+  受认证API回查RELEASE230MEALA数量为0后，开始单次创建标记餐、连续修正与旧照片分享返回
+  专测；未重放未知写入，后续必须独立回查数据库结果。
+- 15:33 USB恢复：只读启动测试 PASS（3.665秒），Xcode设备窗口独立确认安装版本270。
+  随后系统设置定向测试 PASS（14.431秒），明确点击“自动锁定→永不”并返回父级读回确认，
+  哨兵 AUTHORIZED_AUTO_LOCK_NEVER_VERIFIED；未改密码/Face ID等其他设置。证据为外部
+  `usb-recovery-launch.xcresult` 和 `auto-lock-never-connected.xcresult`。
+  先前两次设置尝试均在启用自动化模式前超时，未执行UI动作；其失败证据保留。
+  新鲜线上候选审计仍 PASS。按完整核心验收前刷新fixture的规则，在上次SUCCEEDED后创建
+  新操作 `ad788681636b40b0af99cd5156de1719`，只执行canonical576 reset一次，当前未记完成。
+- 15:17 USB 再次直接启动 life.executor.health，CoreDevice 明确返回 SBMainWorkspace Locked，
+  exit 1；不是仅依据 lockState 推测。没有重启测试或写入新数据，需用户进入已解锁 App并保持亮屏。
+- 修复后确切 Build270/ASC/线上联合审计 exit 0：IPA 摘要与身份 PASS、ASC VALID且未过期、
+  候选仍关联270、Review Notes 与候选一致，live reviewer gate 从 FAIL 转为 PASS（无失败项）。
+  ASC 状态仍 PREPARE_FOR_SUBMISSION，正式 App Review 未提交；同包真机完整验收及新截图仍待完成。
+- 新审核维护 `844dfe243b524598a213b4e4e7afaf31` 原调用 exit 0 并返回精确 SUCCEEDED；
+  服务器 started/completed 回执均存在。后验生产 HEAD576、业务 lease 不存在、健康 HTTP 200、
+  backend/worker/beat active；未改密码，未重放旧 UNKNOWN。修复后 live reviewer gate 正在验证。
+  backend-only workflow 总耗时约10分12秒（backend job9分37秒），没有创建/上传新iOS制品。
+- 后续 `34447801659` 真实结论 SUCCESS；服务器受限 status 对576返回 backend=SUCCEEDED，
+  生产健康 HTTP 200、backend/worker/beat active，业务 lease 已释放。
+  经固定摘要独立 GO 的只读身份 probe 返回配置匹配、唯一正常非管理员、只读事务全部 true。
+  在用户明确授权下分配新操作 `844dfe243b524598a213b4e4e7afaf31`，仅调用 canonical576的
+  `trusted_review_reset.py` 一次。此刻仍执行中，不标为数据修复完成；旧 UNKNOWN 保留不重放。
+- 576 backend-only 唯一发布 run `34447801659` 已启动，preflight/build-permission PASS；
+  ios-build/testflight 按范围跳过，复用原 Build 270。生产 checkout 已到576，但发布尚在
+  执行，不能以 HEAD 相同代替 SUCCEEDED/稳定健康/无业务 lease 的证明。新审核修复尚未执行。
+  只读身份预检外部 helper 固定 SHA256
+  `0c8192ecf3f7cd6e81f16c1e5b72b5e37c53adc2095a91bf0ee8f26a80171d72`
+  经独立 safety reviewer GO，仅在后端成功后运行；只查配置审核账号身份字段、不读取健康行。
+  用户再次表示解锁后，devicectl 仍返回 passcodeRequired=true；导航批次四项均在启动前因
+  Locked 失败（exit 65），不是功能断言失败，也不计为通过。保留原 xcresult，不重复写数据。
+- 新干净 576 的 CI-mode release-invariants：1147 passed / 7 skipped / 84 subtests passed，
+  510.07 秒、exit 0；云端 validate `34447002866` SUCCESS，精确 main CI
+  `34444615906` SUCCESS，基础商店预检 PASS。服务器仅从 canonical GitHub 检出576，
+  bootstrap/executor SHA256 与固定本机源码匹配。
+  旧230完整发布/厂商终结、原锁、无业务lease核验后，canonical revoke 已撤两类旧授权；
+  独立 safety 审过的固定窄化清理脚本以双锁/公私钥匹配/双快照只删除旧 loopback 私钥，
+  fsync 和其余库存后验 PASS，不恢复旧钥。576正常 rotate 返回 INSTALLED；旧回执和
+  公钥保持归档、Expo长期Token不变。尚不代表后端部署或审核数据修复完成。
+- 用户随后明确授权“审核账号数据修复”。独立 safety reviewer 对以下路径条件 GO：
+  保留 Build 270 原 source SHA 230，以干净 main 576 backend-only 成功后，才执行新的
+  当前状态审核 fixture 修复；旧 UNKNOWN 与行政收尾保持不变、不重放旧操作。
+  固定 diff 核对 backend tree `119e0d82bf1b0b5ca1f6990ae5c6cf79c5148f8d`、mobile tree
+  `4dc61e8f315fe237bbde7ffd128f72c23adff10e` 在 230/576 相同；生产与 main 尚未对齐，
+  此时不能直接 reset。新干净 576 CI-mode 验证正在执行，未部署或写审核数据。
+- 手机解锁后海报定向测试 exit 0，34.351 秒，显式“海报已保存”断言通过；确切导出预览
+  与相册回执截图已留存并逐张查看。不过该旧记录因低/缺失置信度显示“营养待核对”，
+  没有数值行，因此只证明生成/保存，不证明数值裁切修复。后续导航批次在测试前再次
+  遇到锁屏，已终止（exit 143），未把未执行项报 PASS。证据在外部
+  `/tmp/xiaoba-release230.3mafsI/build270-poster-usb-resumed.xcresult` 及同名前缀附件目录。
+- USB 后续连接成功，devicectl 实际安装信息为 1.3.3 (270)，无需重复安装。
+  定向海报验收通过已登录审核账号的身份哈希检查，生成预览成功；首轮 exit 65，原因是
+  harness 把不可交互的状态提示要求为 hittable，并错误向上滚动。录屏还确认旧日期素材
+  为营养待核对，不适合证明数值裁切已修复。仅修正外部 harness 的状态断言与素材选择；
+  保存按钮仍要求可点击、显式保存回执及导出图目视验收，未弱化产品/最终提交闸。
+  第二轮在运行测试前遇到手机锁屏（Unlock to Continue），已停止等待；没有执行保存，
+  未改审核 fixture。首轮失败录屏与结果、第二轮日志位于外部 build270-poster-usb* 证据。
+  因此不声称 Build 270 海报真机验收 PASS；审核数据修复仍待专门授权。
+- 最新核验：trusted release `34441137527` 全部 SUCCESS，Build 270 已上传。
+  IPA SHA256 `a2e5c0cfaee175c0e1590e64e89d9a2af5eb490d4c3e45808a70b13658346796`，
+  直接读取确切安装包确认 life.executor.health / 1.3.3 / 270 / DTXcode 2620 / SDK 26.2。
+  ASC build `435ac009-2639-4e82-94c5-93de2dfe637f` 为 VALID、未过期；已将其关联到
+  1.3.3 待提交版本，读回仍 PREPARE_FOR_SUBMISSION，未提交 App Review。
+- 审核联系方式与独立 demo 凭据字段均已存在；ASC Notes 与候选源码的 What To Test
+  正文完全一致，3915 UTF-8 bytes。正常生产登录及身份/行动读取通过，但完整 live reviewer
+  gate FAIL：固定简报不是默认最新会话。没有重放历史 UNKNOWN reset、改排序或直接调 seeder。
+- CoreDevice 为 unavailable，xctrace 独立显示物理手机 Offline；未启动等待设备的 XCUITest，
+  未安装或验收 Build 270，旧 268/269 结果不可复用为同包 PASS。确切候选源码的基础 release-pack
+  和 iOS submission preflight 均 PASS；final-submit 所需真机证据、同包截图与 fixture 仍未完成。
+- ASC 浏览器继续只读验收：已逐页检查保存的七步年龄问卷；医疗/治疗信息 FREQUENT、
+  健康/保健主题 true，结果 16+，未覆盖更高分级。未修改答案，最后取消退出。
+  App 信息显示受监管医疗设备为 No；App 隐私显示已发布及产品页面预览，14 个数据类型、
+  各用途及身份关联与仓库 privacy-nutrition-label.draft.json 一致，无追踪用途显示。
+  这些为元数据取证，不替代审核账号、同包真机与截图闸；未点击更新审核或提交 App Review。
+- 刷新依赖证据：确切候选 Mobile full/production npm audit 均为五个 high 传递路径，
+  命令均 exit 1，不声称零漏洞。真实 CI `34443241424` 的后端哈希锁审计零已知漏洞，
+  mobile OSV 在原两项限时例外内通过、恶意图片回归 2/2；已核验相关输入与候选源码相同。
+  外部审计报告、构建关联回执与 CI 日志保留在 `/tmp/xiaoba-release230.3mafsI/`，不含凭据原文。
+
+- 后续独立 safety review GO，裁字修复仅两文件提交 `9ec4c696687f954e98d134f9ce5360518a60527a`
+  已 push main，精确 CI `34439256906` SUCCESS。未纳入已有品牌 WIP。
+  固定提交干净源码移动端全量 305 suites / 2839 passed / 1 skipped，TypeScript exit 0；
+  CI-mode release-invariants 1115 passed / 7 skipped / 84 subtests passed，exit 0。
+  用该固定提交重新做原生 captureRef 导出，默认与最大系统字体 PNG 均目视确认数值完整，
+  证据 `/tmp/xiaoba-poster-release.tAl6HN/clean-after-default.png` 与 `clean-after-largest.png`。
+  这些是模拟器原生组件导出证据，不替代新发行包真机证据。
+- 手机 TestFlight 与安装信息确认 1.3.3 (269)。独立 USB 份量修正 run PASS、exit 0，
+  正常认证 API 回读确认同一标记测试餐由 100 克改为 150 克且无重复记录；未修改其他餐食。
+  该测试另发现保存后入口永久显示“已展开”，取消同样无法重新打开。
+- 连续修正新增回归先 2 FAIL / 32 PASS。修复提交 `23062626caf33701d936fe1c0ba1500b94ad578b`
+  只让有效的 record_quality / adjust_record 本地展开动作随编辑器关闭恢复；保留远端
+  done/running/disabled 与其他写动作锁。重开同记录复用最新保存值与 revision，缺失 revision
+  不回退到旧动作载荷；取消只改变本地展示，不调用写 API。focused 166/166 PASS、TypeScript
+  exit 0；新增固定提交全量/集成验证及独立安全复审进行中。尚未 push 此提交或构建新包。
+- 后续连续修正独立 safety reviewer GO，独立 129 tests / 2 suites PASS；该提交已 push，
+  精确 CI `34439897645` SUCCESS，trusted validate `34440118045` SUCCESS。干净源码全量
+  305 suites / 2843 passed / 1 skipped、TypeScript、System Map、秘密扫描和基础商店预检 PASS。
+  服务器仅从 canonical GitHub 拉取固定源码并核对 bootstrap/executor 摘要；只读取证确认旧
+  652 发布已终结、无业务 lease、双身份已撤权，旧 loopback 私钥与公钥匹配。尚未删除它或
+  安装新身份，Expo 长期 Token 未变。新 SHA 的本机完整 CI-mode release-invariants 仍在运行。
+- 新 SHA CI-mode release-invariants 完成：1115 passed / 7 skipped / 84 subtests passed，
+  exit 0，424.42 秒。持有 launcher/build 锁复证旧发布成功终态、无 lease/发布进程、双身份
+  撤权及公私钥匹配后，仅删除旧 652 loopback 私钥并 fsync，后置安装库存校验 PASS；审计公钥
+  与原回执保留，私钥不恢复。
+- rotate 首次输入因 ssh-keygen 空注释尾随空格被参数校验拒绝；源码 validate_install 位于
+  所有 mutation 前，原输入本地复现拒绝。独立服务端只读确认旧 policy 不变、新 retirement
+  intent/workspace 均不存在。只规范公钥尾部空白后重新调用，返回 INSTALLED，旧 652 原样
+  归档，新 23062626c 单次身份有效期 7 小时。更新两个短期 SSH secrets，长期 Expo secret
+  更新时间仍为原值；新身份 read-only readiness 正在运行，不代表部署成功。
+- readiness 首次返回通用验证失败；未 dispatch target=release、未消费 build/deploy claim。
+  隔离只读诊断复用 canonical check_readiness，定位到固定 Git ls-remote 在 90.1 秒后
+  TimeoutExpired；独立服务端 curl GitHub 在 20 秒超时、收到 0 bytes。尚未到 loopback
+  probe，不以第一次检查失败推断认证异常。新短期身份保持原授权窗口，未重建/延长；
+  本机 cloud 私钥仅在 `/tmp/xiaoba-release230.3mafsI/cloud` 0600，凭据不入仓库。
+  等网络恢复后应先重做只读 readiness，通过才允许同 SHA 的一次性 release dispatch。
+- 后续只读诊断：服务器 github.com 静态映射与系统 DNS 均指向 20.205.243.166，连接持续
+  超时，而 GitHub API 可达。公共 DNS 返回另一地址 172.182.252.133；保持 hostname 的
+  正常 TLS 校验 HTTP 200、Git HTTPS ls-remote 精确 main PASS。独立安全 reviewer 对单域名
+  配置维护方案 GO。仅替换 `/etc/hosts` 唯一 github.com 记录，其他行字节不变，保留 owner/mode，
+  原子替换前检查 inode/内容无漂移并 fsync；原始字节与元数据备份至服务器
+  `/var/backups/reva-github-hosts-wijnaayr`。不改变其他 DNS/域名、TLS、远端 URL 或发布脚本。
+  首次额外 DNS 查询轮转至旧地址时，在任何备份/写入前中止；再次独立查询确认新地址并复证 TLS
+  后执行维护。此为临时运维映射，不能把单次连通性当成长期有效。
+- 未修改的 canonical readiness 随后返回 CHECKED，精确 23062626c，包含真实 Git main
+  与 loopback 检查；不消费部署/构建。已 dispatch 同一 SHA 的一次性 trusted release，
+  尚未有后端、构建、上传完成回执，不能声称新包已发布或正式 App Review 已提交。
+- trusted release run `34441137527` 已通过 preflight/build-permission，backend 与 ios-build
+  并行运行。EAS 独立查询确认新建 `23fa44ae-9b5b-4b7e-a597-050bdacbfa84`，1.3.3 (270)，
+  gitCommitHash 精确 23062626c，当前 NEW；不是 FINISHED 或已上传。外部 USB harness 新增
+  本次候选的一次性标记餐食测试，覆盖写入后两次展开、保存及取消；build-for-testing exit 0，
+  尚未在 Build 270 执行。不得把编译成功或 Build 269 测试当作本次二进制真机 PASS。
+
+- 用户截图显示营养数值上半截缺失。发布 SHA 652192b32 的 DietShareCard 仍将不同字号的
+  限定词/数值/单位嵌套在固定 lineHeight 的 Text 内；工作区已有未提交的独立文字框与
+  原生字体修正，不属于 Build 269。保留这些相关修正及其他未提交品牌/分享改动，未混合提交。
+- 在现有独立文字框修正上新增 PosterText：仅对固定尺寸导出画布关闭系统字体缩放，
+  分享页按钮等画布外界面不变。数值仍完整保留、宽度不足时只自适应字号，不改营养计算或写路径。
+- 新增字体倍率用例先 4 FAIL / 32 PASS；修后与相邻 presentation/MenuShareCard 共
+  3 suites / 77 tests PASS、TypeScript exit 0、System Map check exit 0、diff check PASS。
+  流程声明的通用 TDD/verification skill 文件本机不可用，按 AGENTS 的 RED/GREEN 与新鲜验证兜底。
+- 仓库外私有证据 `/tmp/xiaoba-poster-clipping.8jZPfn`：独立 iOS 26.5 模拟器复用本机
+  SDK 55 原生壳，嵌入专用 React Native fixture；禁用该 QA 副本 OTA，使用合成餐食与空白
+  图片层，未登录或调用健康 API。相同 captureRef 与导出尺寸得到 1080×1440 PNG。
+  发布版源码的 before-default.png 原生复现数值上半截被裁；after-default.png 数字/单位完整。
+  系统最大辅助字体实测 fontScale 3.571：before-largest.png 大面积溢出，after-largest.png
+  的数值、单位、正文与页脚完整。四张图逐张目视验证；不是 HTML/Jest 截图或 TestFlight 真机证据。
+- 已从仓库移除本次临时 fixture 源码（外部证据副本保留），关闭独立 QA 模拟器；未删除
+  既有模拟器/手机数据。当前仅本机修复，未 commit/push/OTA/创建新包，Build 269 不含该修复。
+  修复分享图裁字不等于同包正式审核全流程已通过。
+
+## 2026-09-10 · 审核账号切换完成，真机发现并修复原生随机数阻断
+
+- 发布终态：trusted release `34435392375` 五个 jobs 全部 SUCCESS；服务器固定 652
+  completed.json 为 SUCCEEDED、业务 lease 不存在，API/数据库/Redis/Celery healthy。
+  发布后两阶段健康度均 60/60，runtime-only serving contract 与 skills manifest 验证通过。
+- EAS `c3fe8220-5f0c-4d1d-944b-a9f514e754a5` 独立只读查询为 FINISHED / IOS / STORE，
+  1.3.3 (269)、gitCommitHash 精确 652192b32bae04d54f08b7aa6cb36107ffe70615。
+  submission `2a421d1e-d751-4b04-a35e-fcc629311211` 上传成功；ASC build
+  `cfbb5573-5f65-49f2-9f70-19941852a02c` 为 VALID、未过期。IPA 已下载到仓库外私有 QA
+  目录，SHA256 `7e34c7dc60e4e55e70258952ac2f4ed1fd549c4ad2a8761dd8bcf9c56d52d167`，
+  解包 Info.plist 为 1.3.3/269、life.executor.health、DTXcode 2620、iOS SDK 26.2。
+- 收尾：canonical revoke 返回 REVOKED；只删除本次两个 GitHub 短期 SSH secrets 和
+  本机新生成 cloud 私钥，保留审计公钥、安装包与日志。既有 Expo 长期 secret 保持原值与
+  更新时间；服务器已撤权 loopback 私钥仍留存 0600，后续轮换前须按规则验证并清理。
+- TestFlight USB 准备 run 因设备离线/锁定终止，exit 73、无有效 PASS。未安装或验收 269，
+  不以 Build 268 的引用/分享结果代替。ASC 版本仍 PREPARE_FOR_SUBMISSION、关联 268；
+  未关联 269 或提交 App Review。额外 betaGroups 只读查询返回 403，不宣称完成群组验证。
+  仍需设备恢复、同包全流程/截图与审核 fixture Gate；没有绕过 UNKNOWN reset 边界。
+- 用户手工切换账号后，USB 个人中心两处身份标签均与 ASC 审核账号哈希匹配；正常登录
+  API 与 `/auth/me` 再次 PASS，未把凭据交给 Xcode。设备仍为 1.3.3 (268)。
+- `Reviewer-Meal-Citation-268.xcresult` 中旧餐食对话 fixture 缺失，分享用例 FAIL；该 run
+  exit 65，未伪装全绿。BMI 用例第一次 PASS 的截图取证过早，随后强化为新建对话、等待
+  回答完成、滚动至来源可见，再点击官方链接。`CorrectionEntry-CitationVisible-268.xcresult`
+  两项 PASS、exit 0；人工查看截图确认 NHC/CDC 来源与医疗边界可见，Safari 为 NHC 标准原文。
+- 在审核账号通过手机发送一条独立标记的白米饭/鸡蛋测试餐；`Reviewer-Write-268A.xcresult`
+  PASS、exit 0。正常认证 API 回读只匹配一条记录、有有效热量，无重复标记。ID/标记仅留
+  仓库外私有 QA 证据，不作为 App Store 营销素材。
+- 点击“修正本餐”并将 100 克改为 150 克，`Reviewer-Correct-268A.xcresult` FAIL、exit 65。
+  录像明确显示“无法安全生成保存标识”，正常 API 回读仍为原份量。不是已保存、不是慢响应；
+  Build 268 不满足份量修正验收。未重放失败写入或修改审核 fixture reset。
+- 根因：RecordQualityCard 只尝试 Web Crypto；实际 Hermes 环境无可用实现。本机已有
+  expo-modules-core 的原生 `uuid.v4()` 经 iOS CoreModule 调用 Foundation UUID。
+  提交 `652192b32bae04d54f08b7aa6cb36107ffe70615` 增加该 fallback 与 UUIDv4 格式校验，
+  无新依赖、无弱随机替代；失败继续禁止写入，幂等键/版本/租户协议不变。
+  新增用例先 2 RED；修后 focused 167/167、TypeScript PASS。独立 safety reviewer GO，
+  并独立运行 32/32 PASS；System Map check PASS。完整干净源码回归进行中，不冒充已发布。
+- 后续固定 652192b32 干净源码移动端全量 305 suites PASS，2832 passed / 1 skipped，
+  独立 TypeScript exit 0。提交已推送 main，精确 CI `34434903813` SUCCESS，trusted
+  validate `34435167732` SUCCESS。服务器 canonical staging 的 bootstrap / executor SHA256
+  与本地受审字节一致，原生产仍为 2770、旧发布 SUCCEEDED、无业务 lease 或 loopback 私钥。
+  本机完整 release-invariants 尚在运行，尚未轮换授权、触发新构建或上传新包。
+- 随后 CI-mode release-invariants exit 0：1115 passed、7 skipped、84 subtests passed，
+  430.50 秒；跳过项不视为已验证。受审普通 rotate 成功，旧 2770 原样归档、新 652 授权
+  INSTALLED，单次身份 7 小时到期。只更新 cloud SSH / known-hosts secrets，Expo 长期
+  secret 的更新时间未变；新身份 read-only readiness 返回 CHECKED，非部署成功回执。
+- Trusted release `34435392375` 已 dispatch 同一 652 SHA，read-only preflight/readiness
+  成功后 backend 与 iOS build 并行，尚无完成回执。等待期间准备 TestFlight USB 操作，
+  CoreDevice 报设备 unavailable、xctrace 明确列入 Offline；该 XCUITest 未执行有效用例，
+  已中断本次等待，不计入 PASS。新包的真机回归须设备重新可用后进行。
+- 用审核账号既有带照片记录测试分享：首轮定位器因“今天”存在多个匹配而 FAIL，修正
+  测试定位器后 `PhotoShareReturn-268B.xcresult` PASS（31.700 秒）、exit 0。照片分享预览
+  点击“问小巴复盘今日饮食”后弹窗与饮食页退出、主 Agent 可交互，无需手动关闭。
+  该证据不替代外部平台分享、实际拍照持久化或饮食复盘答案完整性验证。
+- 审核账号已有计划/顶层行动，但固定简报并非最新且非精确两条 fixture；不绕过原 UNKNOWN
+  维护边界做全量重置。完整审核数据、同包语音/相机/写入修正删除、商店截图及 final-submit
+  仍未完成，正式 App Review 未提交。新包必须重新完成该次失败场景的真机回归。
+
+## 2026-09-10 · USB 已接通，Build 268 基础验收与账号身份闸
+
+- 用户明确要求 USB 直接操作。本次使用物理 iPhone XCUITest，未依赖受锁屏限制的 iPhone
+  镜像。设备安装信息与 TestFlight 可见页面均确认 `1.3.3 (268)`，不是旧包证据。
+  独立私有测试目录：`/tmp/xiaoba-usb-build268.I2b85F`；未改动 App 源码或重新构建发行包。
+- `ReadOnly-Build268.xcresult` 首轮 6 项：启动、两次冷启动登录保持、后台草稿保留、
+  隐私/删除入口、历史页关闭及下滑返回 5 项 PASS；附件项 FAIL，整个 run exit 65，
+  不能计为全绿。录像显示失败期间前台已变为系统相机及桌面，AX 报
+  `kAXErrorServerNotFound`；该证据不能单独证明 App 闪退。
+- `Attachment-Citation-Build268.xcresult` 单独复测附件项 PASS（40.557 秒），覆盖导入取消、
+  关闭按钮及下滑返回。原失败记录保留，没有替换或隐去。
+- `InputMode-Build268.xcresult` 文字/按住说话模式往返 PASS（18.089 秒），run exit 0。
+  未录音或发送，不能替代实际语音发送/取消/听写/音频中断验收。合计 7 个不同基础场景
+  有新鲜 PASS 证据，但并非一个完整全绿审核 suite。
+- 使用 ASC 当前 ReviewDetail 凭据走正常生产登录 API，并对 `/auth/me` 身份交叉比对：
+  PASS。仅输出状态与规范化账号 SHA-256，未把密码或 token 写入测试源码、环境、日志或结果包。
+- 物理手机在 BMI 发送前通过个人中心做身份守卫：两个账号标签均与 ASC 审核账号哈希不符。
+  私有截图确认是日常账号；BMI 测试在发送前 FAIL，未发送消息、未修改健康记录。
+  不能把 API 审核登录成功或日常账号 UI 基础测试当作审核账号端到端通过。
+- USB harness 明确禁止传入审核密码，避免 Xcode 记录输入内容；保持此安全边界。
+  未退出当前账号、未重放 UNKNOWN fixture reset。待安全切换审核账号后继续引用、饮食、
+  分享等验收；同包全流程、送审截图和 final-submit Gate 未完成，未提交正式审核。
+
+## 2026-09-10 · ASC 登录恢复，Build 268 已关联待审版本
+
+- 用户恢复浏览器登录后，切回小巴健康 `6763569720`，未改动原页面的其他 App。
+  TestFlight 显示 Build 268 已处理完成并加入既有内部测试群组；ASC API 独立返回
+  `processingState=VALID`、`expired=false`。
+- 复核 Apple 原拒审消息：2026-08-26 检查的 Build 256 因 AI 健康计算缺少易查找的来源引用
+  被按 1.4.1 拒绝。待审版本此前关联 Build 261；本次仅移除旧关联、选择 268 并保存，
+  未删除任何二进制，未点击更新审核或重新提交。API 回读版本 1.3.3：
+  `PREPARE_FOR_SUBMISSION`、`MANUAL`，build ID 为 `6f089e23-f12c-4b83-8d73-9c96fe5489c4`。
+- 原有本机私钥与 ASC 有效 App 管理密钥匹配；对本 App 和 Build 268 的只读认证成功。
+  仓库外 `/Users/thomas/.appstoreconnect/reva-release.env` 保存 Key ID、Issuer ID 和已有私钥路径，
+  权限 0600，不含 Apple 账户密码、私钥内容或 bearer token。没有新建密钥、扩大权限或修改
+  其他 App。显式 source 此配置后 `--require-asc-credentials` exit 0；后续优先复用该配置。
+- 干净 2770 candidate 的两项无秘密基础检查再次 exit 0；精确 CI `34425710962` SUCCESS。
+  ASC 医疗设备声明为 No。逐页查看既有年龄问卷：医疗信息 FREQUENT、健康主题 Yes，
+  计算分级 16+；未修改答案，最终 Save disabled 后退出。尚不将问卷查看等同于所有内容边界验收。
+- App Privacy 显示已经发布，产品预览及各数据类型的用途、身份关联与仓库声明一致，
+  未重新发布未变更的标签。API 只核验审核凭据和联系字段非空，未输出其值；非空不代表登录验收通过。
+- iPhone 镜像仍要求 Mac 触控 ID／登录密码解锁，已向用户请求本机解锁而非提供密码。
+  当前设备上此前读取的是 Build 267，未将其计入 268 验收；没有重新执行原 UNKNOWN fixture reset。
+  Build 268 真机、同包截图、审核账号全流程及 final-submit Gate 仍待完成，正式 App Review 未提交。
+
+## 2026-09-10 · 发布后送审条件复核
+
+- 发布 workflow `34427892175` attempt 2 已完成且 SUCCESS；公开健康接口返回 API、数据库、Redis、Celery 健康。
+- 对干净 2770 candidate 运行 release-pack 和 iOS submission 无秘密基础检查，均 exit 0；不代表 final-submit Gate 已通过。
+- ASC 当前仍显示登录页。本机 `--require-asc-credentials` exit 1：运行环境缺 Key ID、Issuer ID 和匹配私钥配置；标准目录存在私钥文件，但不能仅凭文件存在宣称 API 可用，未输出密钥内容。
+- 使用明确的 Xcode Developer 路径完成只读设备查询：iPhone 已连接，安装的小巴健康为 1.3.3 (267)，不是待审 Build 268。未切换手机页面、覆盖安装或运行审核数据重置。
+- 下一步仍须恢复 ASC 访问、确认 Build 268 处理完成并完成同包真机及截图验收；未提交正式 App Review，未把旧包或模拟器证据标成 Build 268 真机通过。
 
 ## 2026-09-10 · CI 修复获专项授权并推送
 
@@ -74,6 +411,50 @@
   不重放原 pause 审计；新增显式 32-hex 操作标识，绑定独立目录、公钥与证据，只有所有
   旧记录已完整 RESTORED 才允许新一轮；未知或未恢复记录不能靠换 ID 绕过。
   7 项新增回归先 RED，待固定修复复审与完整验证；后续 operator 使用 exec 直接入口。
+
+### 后续：2770 固定修复验证通过，原维护行政收尾执行中
+
+- `2770aec266e690752a7c7d7ceca6d5199edcbcc5` 独立 G4 GO，仅推送本任务四个文件，其他
+  未提交改动保留。干净源码完整集成 exit 0：1121 passed、1 skipped、84 subtests passed。
+- 精确 CI `34425710962` SUCCESS；Linux release invariants 1115 passed、7 skipped、
+  84 subtests passed，真实 OpenSSH 实测 1 passed。PostgreSQL 183 passed（836.93 秒）；
+  本机独立 PostgreSQL 同步验证 183 passed（143.31 秒），迁移检查通过。首次本机库名
+  不含 test 被安全闸拒绝，未修改闸；重新创建专用 test 库后通过，原日志保留。
+- trusted validate `34426824188` SUCCESS；服务器 canonical GitHub 下载及精确 CI 校验通过，
+  受限临时转发已关闭。本机测试 PostgreSQL 实例已停止，数据与日志保留。
+- 新单 key 操作 `853434438d706b2153e3fd6526161a1f`：首次只读取证因未完成 SSH 握手
+  提前拒绝，审计目录/drop-in 未创建。该进程自行结束后只读取证通过，实际暂停返回
+  PAUSED_RESTORE_REQUIRED；原维护只读取证通过，已开始匹配证据的直接 exec 行政收尾。
+  结果尚未确认，不能宣称恢复、发包或送审完成；收尾返回后必须另行恢复同一管理 key。
+
+- 2026-09-10 10:00 后续：直接收尾 exit 0，root-only 输出已核验并持久保存保护回执，
+  状态 CLOSED_UNKNOWN_REVIEW_MAINTENANCE，原 lease 已归档，原 UNKNOWN 不改为成功。
+  同一单 key 操作 restore 返回 RESTORED；临时 drop-in 已移除，四项服务仍 active。
+  用保护 stdin 回执轮换旧发布身份至 2770 成功（INSTALLED），新身份最长 8 小时，
+  长期 Expo Token 未变。正式发布及同包审核验收尚未完成。
+
+### 后续：Build 268 上传成功，临时权限已清理
+
+- trusted release `34427892175` attempt 2 全部 SUCCESS。后端及 iOS build 在 attempt 1
+  已成功；上传 job 在领取权限前因 GitHub metadata unavailable 失败。复核服务器
+  backend=SUCCEEDED、testflight=UNCLAIMED 后，仅重跑该 job，未重复部署或创建构建。
+- EAS build `13cd5905-1e58-4e3f-9372-1856833fea3d`：FINISHED / IOS / STORE，
+  1.3.3 (268)，源码完整 SHA 与 2770 一致。EAS submission
+  `7235ce3c-c50b-4bc2-abff-dcaadf7b1afc` 于 2026-09-10 10:18:42 返回成功上传 ASC，
+  当时 Apple 正在处理；未把上传成功当作 TestFlight 可用或正式审核通过。
+- 下载原始 IPA 并核验：小巴健康、life.executor.health、1.3.3 (268)、DTXcode=2620、
+  DTPlatformVersion=26.2、iPhone-only、NSAllowsArbitraryLoads=false。IPA SHA-256：
+  `1a12b54279f9efe027038b12a3d7b8f27f3904a1323a04c4b8ff458522d9ffa6`。
+- 发布后生产 HEAD 精确为 2770，四项服务 active，公开 health 的 API/DB/Redis/Celery
+  healthy。模拟器相同 mobile 源码（ec3195 至 2770 无 mobile diff）只读核心回归
+  6/6、0 failure、exit 0、122.615 秒；证据为本地 PostDeploy2770.xcresult。
+  该模拟器包不等同于商店签名 IPA，不能替代 Build 268 同包物理 iPhone 验收。
+- canonical revoke 返回 REVOKED；精确撤销当前双发布授权后，持锁核验原 inode、
+  私钥/公钥匹配及授权均已移除，再删除本次 loopback 私钥。本机本次 cloud 私钥及
+  release-production 的 REVA_RELEASE_SSH_KEY / REVA_RELEASE_KNOWN_HOSTS 已删除；
+  REVA_RELEASE_EXPO_TOKEN 保留且 updatedAt 仍为 2026-09-09T02:28:18Z。
+- ASC 仍在登录页；正式 App Review 未提交。G6 尚缺 Build 268 真机证据与最终 ASC 核验。
+  原审核维护 UNKNOWN 及全部行政收尾/退役审计保留，未重新执行 fixture reset。
 
 ## 2026-09-09 19:20 · 模拟器回归完成，发布维护继续阻断
 
@@ -696,3 +1077,65 @@
 - b4e 已在确认原 main 精确 CI 绿色后推送。CI `34372375422` 的 deployment/rollback 集成通过，但隔离 Linux OpenSSH 实测在初始 allowed-key 基线失败，发布继续 BLOCK，生产暂停/撤权/收尾均未执行。
 - 原因定位：OpenSSH 客户端启动时 closefrom(3)，使 `/proc/self/fd` 指向的继承描述符失效；官方 ssh.c 实现与首个 native 基线失败一致。新增调用契约反例先 RED，改为引用仍在等待的父 operator 的 sealed memfd，不传继承描述符，仍使用固定 host key、无私钥/agent、全量正反探针。CI 测试只保留合成临时公钥的有界客户端诊断，不扩大生产日志。
 - 主干非绿期间已停止外部写入，向用户请求仅推送受审探针修复、完整 CI 全绿后再恢复发布的窄化授权；不把问题提问已送达当作用户已批准。
+
+## 2026-09-10 · Build 271 模拟器风险接受与最终送审检查
+
+- 用户明确接受模拟器验收及逐项未覆盖风险；政策提交 `4778a2f6cb1a63b2d084eb1e3ac773818f1298c8` 已推送 main。冻结候选仍为 1.3.3 (271)、源码 `5ddd9402d22c8124bc84b578662ea87c1f6e432c`；政策改动不重建 App、不部署后端、不发 OTA。
+- 独立评审 GO；工具回归 79 passed。干净政策副本按 CI 工作流原始集成命令执行，修正本机 Python PATH 后 1147 passed、7 skipped、84 subtests passed（394.14 秒）；首次环境失败日志保留。
+- 模拟器 Release 实际 build 1、源码与冻结候选一致。正常 UI 完成登录、Today 打开返回、隐私页面，以及新增 BMI 问答、可见引用、点击后打开卫健委官方 PDF。外部证据明确记录 6 passed / 16 unverified，不将硬件或未执行场景标为通过。
+- ASC 五张截图已上传完成；最终截图、商店制品、隐私/年龄分级/医疗设备声明检查通过。最终 release-pack 唯一失败为审核演示会话要求恰好两条初始消息：本轮正常 BMI 补测追加了问答，账号仍可登录。没有伪造 gate 通过，没有直接数据库清理或改变会话排序。
+- 受控 fixture reset 要求有效的原发布 loopback 授权；该生命周期已正确撤权，本次只读确认私钥已不存在。未重新启用旧身份、未尝试绕过 reset 准入，也未执行新的数据重置。
+- 精确 main CI `34466931717` 为 FAILURE：`agent-s-v` 分片两次达到 233 秒 deadline，退出 124；其余产品/PG/发布检查通过。没有将超时冒充断言通过，主干非绿后停止外部发布写入。
+- G6/送审：BLOCKED，尚未点击重新提交。待解决 CI 超时及审核演示会话恢复/规则裁决；用户的模拟器风险接受不豁免这两个阻塞。外部验证证据保存在 `/tmp/xiaoba-review-final.23S9wV/`，干净集成日志在 `/tmp/xiaoba-simulator-gate.oPVI4x/integration-retry.log`。此段留在本地 Dossier，未夹带提交既有 WIP。
+
+### 后续修复与新鲜验收（同日，保留上述失败历史）
+
+- 用户授权仅修复 CI 及非破坏性审核会话检查。`09ef02dde` 保留原始安全简报，允许外部证据绑定完整、已实际复核的追加问答；证据绑定账号、API origin、冻结候选、全部消息及 metadata，八小时过期，分页/不完整/内容漂移均失败。独立安全 GO，80 项相关测试通过。
+- CI `34466931717` 的失败分片经本地完整复现通过后仅重跑一次，终态 SUCCESS。随后 `09ef02dde` 的 CI `34469114450` 在另一个纯协议测试分片超时，未跳过或放宽 deadline。
+- `6e26a34b0` 隔离两组纯协议测试对本机 Redis 的意外连接，并用 socket guard 检测被吞掉的连接异常；不改变生产 Redis、写入回执、认证或隐私测试。RED→GREEN、独立安全 GO；两分片 176 + 474 passed，Redis/consent 相关回归 32 passed、2 skipped（不冒充真实 Redis 集成证据）。精确 CI `34470874701` SUCCESS；干净 CI-mode 集成 1147 passed、7 skipped、84 subtests passed（417.25 秒），进程退出 0。
+- 最终检查发现审核账号新增一轮图片问答，原四消息证据正确失效。通过模拟器重新打开最新会话，复核完整六消息：原始简报、BMI 解释及来源、新餐食的待确认草稿；照片可打开，轻触后返回原会话。没有确认写入、删除数据或重置账号。外部截图 `build271-meal-reviewed-followup.png` 仅作私有验收，不上传为商店截图。
+- 图片 API 每次重签 URL，导致旧逐字节 snapshot 对相同图片误报。`12792449d` + `8ec2bf5f6` 仅规范指定图片字段中同 owner 的 canonical chat/diet 相对 URL 的签名和到期时间；路径、owner、正文、引用及其他 metadata 仍绑定。独立复审先 NO-GO（urlsplit 会删除控制字符），补负例 RED→GREEN 后固定 `8ec2bf5f6` 获 GO，干净回归 81 passed。此身份匹配不冒充签名验证，也不授权媒体访问。
+- 新外部六消息验收证据创建后，两次 live gate 均 PASS，ASC Review Notes 与受审正文一致。冻结 App 仍为 `5ddd9402` / Build 271，生产未变；最终政策 revision 为 `8ec2bf5f6`。等待该 revision 的 CI `34471708238` 与干净集成检查完成后才允许重新提交。
+
+### 最终送审结果
+
+- 精确 main `8ec2bf5f6f42cc1de232b476e7413543134e89ca` 的 CI `34471708238` 为 SUCCESS；干净同 revision 的 CI-mode 集成 1147 passed、7 skipped、84 subtests passed（404.28 秒），进程退出 0。日志 `/tmp/xiaoba-media-gate.7zUP3o/integration-final.log`。最终 live release-pack 与 ASC credential preflight 均 PASS。
+- 重新核对 IPA SHA256 `667ad9a85c110a3b2bf0a47c8a636d3845c51b1897a7565cea165c06d003fe16`、源码 `5ddd9402d22c8124bc84b578662ea87c1f6e432c`、EAS build `08720679-299b-4f06-b85d-1739c9dd6e3a`、ASC build `d1645d1e-36f3-4395-845b-76d5b28df8bf`，均指向 1.3.3 (271)，VALID、未过期、已选中。
+- 使用既有授权的 App Store Connect 公共 API，仅处理原审核单 `85f3224c-3688-4aae-9da1-c7e91f4facaa`：先将唯一拒绝项目标为已修复，再重新提交。没有取消审核单或重复创建记录，没有要求浏览器重新登录。
+- Apple 返回审核单及版本状态均为 **WAITING_FOR_REVIEW**。App `6763569720`、版本 `1.3.3`、Build `271` 已正式重新送审，非仅 TestFlight 上传或 READY_FOR_REVIEW。提交意图和回执保存在 `/tmp/xiaoba-review-final.23S9wV/app-review271-*-{intent,result}.json`；后续独立只读回执为 `app-review271-final-receipt.json`。
+- 此状态仅证明 Apple 已接收并等待审核，不是审核通过、公开上架或最终 G6 完成。已授权的模拟器风险边界仍为六项通过、十六项未验证；额外餐食草稿查看不冒充保存、分享或真机功能通过。冻结生产 OTA，保留账号数据及全部失败历史。此 Dossier 新增段仍与既有 WIP 共存，未夹带推送其他产品改动。
+
+### 2026-09-10 · 送审后补测发现的饮食明细截断修复（仅本地）
+
+- 来源：同源模拟器补测发现卡片计数与编辑文本不一致，详情见外部 `/tmp/xiaoba-postsubmit-qa.QesnBf/postsubmit-validation.md`。本次只修复该缺陷，不改审核账号、不撤回 Build 271、不部署 OTA。
+- 根因：`DietDraftCard` 的食材列表截为 8 项、数组编辑初始化截为 6 项；新增确认链路测试进一步发现 `registry.foodItemsValue` 在写入参数/修正 seed 转换时又截为 8 项。
+- 修复：三处保留完整有效食材；默认折叠仍显示 4 项，展开完整、总数准确。未改鉴权、人工确认、回执要求、营养计算或数据库行为。
+- RED：10 项数组/字符串回归先 4 failed、2 passed；修复 UI 后新增保存并确认回归仍有 1 failed，实际 action payload 只有 8 项。两次失败均保留，未以 UI 通过替代提交链路验证。
+- GREEN：修复参数转换后，完整 registry 测试 101 passed，退出 0；TypeScript `tsc --noEmit` 通过；针对三文件 ESLint 0 errors、9 个既有测试文件 import 警告；`git diff --check` 通过。日志 `/tmp/diet-items-{red,green,typecheck,lint}.log`（green 为最后一次完整通过）。
+- 新测试覆盖数组/字符串计数、折叠展开、完整编辑初始化、原样完成、仅改餐次、保存并确认完整 payload，以及未主动确认前不派发写入。此为组件/动作层自动化证据，不冒充线上 PostgreSQL 写入或修复后模拟器 Release 验证。
+- 状态：本地实现与相关回归完成；未 commit/push/发布，尚未做 safety-gate 固定提交独立复审及发布 CI-mode 集成闸。保留其他既有 WIP。账号删除闭环、线上记餐 E2E、流式后台恢复等先前未验证项不因此变绿。
+
+### 2026-09-11 · 饮食完整性 OTA 发布（进行中）
+
+- 用户明确授权修复并发 production OTA；只提交本任务文件，保留其他 WIP。`1da579d1b` 初次独立 safety-gate 为 NO-GO：实际 `chatCardActions.readFoodItems` 仍截数组 8 项、字符串 500 字，不能以 UI/action 测试代替最终 POST 参数证据。
+- `f791da13e1816b7ddb2228d0b17af397476ab5c3` 补专用不截断的食物描述规范化，其他通用文本限制不变；完整描述先通过既有 intake guard，再传 API。新增数组、长字符串、长数组元素三个 RED→GREEN 用例及超过旧边界的药品负例。
+- 新独立 reviewer 对 `8ec2bf5f6..f791da13e` 指定五文件裁定 GO，另跑服务测试 80/80 通过。主 agent 在干净最终源码运行相关测试 181 passed、TypeScript 通过；Lint 0 errors、10 个既有风格警告，密钥扫描通过。创建接口无 300 字限制，300 字仅属独立重算接口，本次未改服务端契约。
+- 推送前再次确认旧 main `8ec2bf5f6` 精确 CI `34471708238` 为 SUCCESS；仅推送两个修复提交到 main，新 CI `34553931110` 运行中。最终 source guard 精确 SHA 与 main 一致、运行树干净，Mobile tree digest `92a3b6f21c2f887a84da36ceb7f502df2bb912c4055b136ce6767f21464bb899`。
+- 发布准备与日志位于 `/tmp/xiaoba-diet-ota.qz7ico/`。不重装相同 lock 依赖、不夹带 WIP；最终源码 CI-mode 集成仍待完成，未上传 OTA。审核账号及 Build 271 审核单未修改。
+
+#### OTA 最终结果（同日，保留上述中间状态）
+
+- 最终提交 `f791da13e` 的远端 CI `34553931110` SUCCESS；干净同 SHA 的 CI-mode 发布集成 1147 passed、7 skipped、84 subtests passed，367.86 秒、退出 0。没有使用初版候选检查冒充最终版通过。
+- 从干净 final-source 执行 `scripts/mobile-ota.sh production`，只导出一次 Hermes bundle，无新资产上传、无重试；复用现有 Expo 登录态，未创建或销毁 Token。bundle sourcemap 中两处卡片实现、服务写入实现、聊天页和 ChatBubble 与固定 Git 内容逐字一致，未混入 canonical 工作区 WIP。
+- 2026-09-11 10:22:37 CST 发布成功。channel/environment `production`，runtime `1.3.3`，group `d6d861ce-8b7c-4b42-824b-91089fe6b0b7`，iOS update `01a08e46-23eb-7484-af57-ae84eff437a0`。
+- 命令退出 0 后另行 EAS update:view 与 channel:view 交叉验证：production 未暂停且指向此组，源码精确为 `f791da13e1816b7ddb2228d0b17af397476ab5c3`、dirty=false、iOS/runtime 正确。外部 `release-manifest.json`、`ota-audit.jsonl`、`ota-anchor` 记录发布事实；上一可回退组保留为 `53afedf5-1afe-4128-b013-5dd8f798daf8`。
+- 本次完成代码修复、受审提交、CI 与 OTA 分发验证；不声称已在物理手机安装验证，也不把此前账号删除/线上记餐 E2E/流式恢复未验证项改为通过。没有后台部署、撤回或重提 Apple 审核。Dossier 与原 WIP 共存，未夹带进两个代码提交。
+
+### 2026-09-11 · 中文食用比例与口语修正（仅本地修复）
+
+- 用户截图：“我吃了二分之一，其实是三人份，重新修改晚餐的热量和分量。”被返回 invalid_fraction。本地确认两个原因：缺少“二分之一”白名单；既有事实语法只接受餐次先出现，不支持比例先出现、整餐人数补充及句末餐次修正指令。
+- `agent_executor` 增加二分之一的统一解析及严格完整匹配的口语修正形状。显式吃了一半按整餐 0.5 处理，人数仅作背景，不再除以人数；保留原食品描述和绝对比例后缀。日期/餐次绑定、唯一目标、取消/否定/疑问/冲突比例/单食物比例拦截维持。
+- TDD：新增回归先 6 failed / 11 passed；旧测试将“晚餐只吃了二分之一，修改记录”列为不支持，现移入正例，取消和无事实表达仍留负例。第一次测试启动因默认 localhost PostgreSQL 未运行失败，显式隔离环境后执行；未访问线上。
+- 完整验证：隔离 Unix socket-only PostgreSQL 上 247 passed（中文口语新测试、latest meal、health_manage date normalize），包括真实认证 API lookup/PUT 与数据库回查、重试不再次减半、记录数量不变、其他账号不变。SSE 流测试以模型工具请求替身验证规范化为 update 后返回 write_receipts、completion_status=complete；不冒充线上模型验收。单元阶段误把普通命名餐次当成 latest-only 预执行流程，调整测试替身遵循实际调用顺序后通过，初次失败日志保留。
+- 另外图片份量回归 82 passed（33 deselected），`git diff --check` 通过。证据 `/tmp/xiaoba-fraction-fix.1vBJ7i/{red,unit,photo-fraction,postgres,postgres-final}.log`。测试用户、餐食均为合成数据；未修改用户截图中的真实记录。
+- 仅本地后端修复，尚未 commit/push/deploy；与 `agent_executor.py` 既有 Garmin WIP 分属不同 hunks，未覆盖或夹带。本问题不能靠 OTA 上线，后端发布仍需固定范围独立 safety-gate 与 CI/发布闸。此前已发布 OTA 及 Apple 审核单未变。

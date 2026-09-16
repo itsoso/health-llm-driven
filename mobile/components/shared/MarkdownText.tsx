@@ -10,7 +10,7 @@
  */
 
 import React, { useMemo } from 'react';
-import Markdown from 'react-native-markdown-display';
+import Markdown, { type RenderRules } from 'react-native-markdown-display';
 import { createMdStylesCompact, createMdStylesChat } from '../../constants/markdownStyles';
 import { useTheme, type ColorPalette } from '../../hooks/useTheme';
 import { preprocessMarkdownTables } from '../../utils/markdownTables';
@@ -20,9 +20,19 @@ interface Props {
   children: string;
   variant?: 'compact' | 'chat';
   palette?: ColorPalette;
+  omitImages?: boolean;
 }
 
-export default function MarkdownText({ children, variant = 'compact', palette }: Props) {
+const IMAGELESS_RULES: RenderRules = {
+  image: () => null,
+};
+
+export default function MarkdownText({
+  children,
+  variant = 'compact',
+  palette,
+  omitImages = false,
+}: Props) {
   const { c: themePalette } = useTheme();
   const c = palette ?? themePalette;
   const style = useMemo(
@@ -34,5 +44,13 @@ export default function MarkdownText({ children, variant = 'compact', palette }:
     [children],
   );
   if (!children) return null;
-  return <Markdown style={style} markdownit={safeMarkdownIt}>{processed}</Markdown>;
+  return (
+    <Markdown
+      style={style}
+      markdownit={safeMarkdownIt}
+      rules={omitImages ? IMAGELESS_RULES : undefined}
+    >
+      {processed}
+    </Markdown>
+  );
 }

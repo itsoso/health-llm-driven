@@ -969,6 +969,7 @@ async def test_health_turn_disables_pre_verifier_medication_and_recipe_bypasses(
 async def test_health_turn_discards_hallucinated_structured_tool_call(
     db,
     auth_user_and_headers,
+    isolated_agent_protocol_transport,
     monkeypatch,
 ):
     user, _headers = auth_user_and_headers
@@ -981,6 +982,13 @@ async def test_health_turn_discards_hallucinated_structured_tool_call(
         nonlocal model_calls
         model_calls += 1
         assert tools == []
+        if model_calls > 1:
+            yield {
+                "type": "content",
+                "text": "我会只依据本轮已经核验的健康证据回答。",
+            }
+            yield {"type": "finish", "finish_reason": "stop"}
+            return
         yield {
             "type": "tool_calls",
             "tool_calls": [
@@ -1018,7 +1026,7 @@ async def test_health_turn_discards_hallucinated_structured_tool_call(
     ]
 
     done = events[-1]["data"]
-    assert model_calls == 1
+    assert model_calls == 2
     assert not any(
         event.get("event") in {"tool_call", "tool_result"}
         for event in events
@@ -1026,7 +1034,74 @@ async def test_health_turn_discards_hallucinated_structured_tool_call(
     assert done["tools_used"] == []
     assert done["write_receipts"] == []
     assert "本轮模型未生成可发布的健康回答" not in _token_text(events)
+    assert "health_synthesis_tool_call_retried" in done["fallback_reasons"]
     assert done["health_evidence_manifest"]["verifier_verdict"] == "repair"
+
+
+@pytest.mark.asyncio
+async def test_health_turn_repeated_hallucinated_tool_call_stops_with_safe_fallback(
+    db,
+    auth_user_and_headers,
+    isolated_agent_protocol_transport,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    query = FULLY_SCREENED_QUERY
+    _install_runtime(monkeypatch, user_id=user.id, query=query)
+    executor = AgentExecutor(db)
+    model_calls = 0
+
+    async def fake_stream(_messages, tools):
+        nonlocal model_calls
+        model_calls += 1
+        assert tools == []
+        yield {
+            "type": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": f"hallucinated-health-write-{model_calls}",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(
+                            {
+                                "record_type": "symptom",
+                                "data": {"symptom": "腰痛"},
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                }
+            ],
+        }
+        yield {"type": "finish", "finish_reason": "tool_calls"}
+
+    async def fail_execute(*_args, **_kwargs):
+        raise AssertionError("sealed health synthesis must execute no tool")
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    monkeypatch.setattr(executor, "_execute_tool", fail_execute)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=query,
+            channel="typed",
+        )
+    ]
+
+    done = events[-1]["data"]
+    assert model_calls == 2
+    assert not any(
+        event.get("event") in {"tool_call", "tool_result"}
+        for event in events
+    )
+    assert done["tools_used"] == []
+    assert done["write_receipts"] == []
+    assert "本轮模型未生成可发布的健康回答" not in _token_text(events)
+    assert "health_synthesis_tool_call_retried" in done["fallback_reasons"]
+    assert "health_synthesis_tool_call_safe_fallback" in done["fallback_reasons"]
 
 
 @pytest.mark.asyncio

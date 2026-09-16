@@ -1,3 +1,5 @@
+import { APP_DISPLAY_NAME } from '../constants/brand';
+
 const WORKOUT_PLAN_HEADINGS = /(?:📋\s*今日锻炼计划|⚠️\s*注意事项|🏋️\s*推荐方案（[^）]+）|🎯\s*今日步数目标|📌\s*今日建议：)/gu;
 const GENERAL_ADVICE_LABELS = [
   '免疫"开窗期"',
@@ -156,7 +158,7 @@ function buildDietShareMessage(content: string, style: 'compact' | 'xiaohongshu'
   const protein = extractFirst(/蛋白(?:质)?\s*(\d+(?:\.\d+)?)\s*g/iu, flattened);
   const carbs = extractFirst(/碳水(?:化合物)?\s*(\d+(?:\.\d+)?)\s*g/iu, flattened);
   const fat = extractFirst(/脂肪\s*(\d+(?:\.\d+)?)\s*g/iu, flattened);
-  const nextMatch = flattened.match(/(下一步|下一餐建议|早餐建议|午餐建议|晚餐建议|加餐建议|建议)[:：]\s*(.+?)(?:\s*(?:#|— 小巴)|$)/iu);
+  const nextMatch = flattened.match(/(下一步|下一餐建议|早餐建议|午餐建议|晚餐建议|加餐建议|建议)[:：]\s*(.+?)(?:\s*(?:#|— 小巴(?:健康)?)|$)/iu);
   const nextPrefix = nextMatch?.[1] || '';
   const nextBody = stripInlineMarkdown(nextMatch?.[2] || '');
   const nextAction = nextBody && /^(早餐|午餐|晚餐|加餐)建议$/u.test(nextPrefix)
@@ -194,12 +196,12 @@ function buildDietShareMessage(content: string, style: 'compact' | 'xiaohongshu'
       '记录一餐，才更容易看见自己的饮食节奏。',
       '营养数据为估算值，实际会因食材、份量和烹饪方式变化。',
       '',
-      '#健康饮食 #饮食记录 #一日三餐 #健康管理 #小巴',
+      `#健康饮食 #饮食记录 #一日三餐 #健康管理 #${APP_DISPLAY_NAME}`,
     );
     return lines.join('\n');
   }
 
-  const lines = ['今天这餐被小巴认真记下来了', ''];
+  const lines = [`今天这餐被${APP_DISPLAY_NAME}认真记下来了`, ''];
   const mealLine = [meal, food].filter(Boolean).join(' · ');
   if (mealLine) lines.push(mealLine, '');
 
@@ -212,7 +214,7 @@ function buildDietShareMessage(content: string, style: 'compact' | 'xiaohongshu'
   if (metricLine) lines.push(metricLine, '');
 
   if (nextAction) lines.push(`下一步：${nextAction}`, '');
-  lines.push('#饮食记录 #健康管理 #小巴', '', '— 小巴');
+  lines.push(`#饮食记录 #健康管理 #${APP_DISPLAY_NAME}`, '', `— ${APP_DISPLAY_NAME}`);
   return lines.join('\n');
 }
 
@@ -243,7 +245,14 @@ function tableLineToCaption(line: string): string | null {
 }
 
 function toXiaohongshuPlainLines(content: string): string[] {
-  const normalized = normalizeFlattenedAgentContent(removeFencedBlocks(content));
+  const withoutFences = removeFencedBlocks(content).trim();
+  const sourceLines = withoutFences.split(/\n+/).filter(line => line.trim());
+  // Preserve deliberate paragraph boundaries so the public caption can enforce
+  // its visible five-line budget. Flattened model output still goes through the
+  // existing structuring path.
+  const normalized = sourceLines.length > 1
+    ? withoutFences
+    : normalizeFlattenedAgentContent(withoutFences);
   const lines = normalized
     .split(/\n+/)
     .map((rawLine) => {
@@ -256,7 +265,7 @@ function toXiaohongshuPlainLines(content: string): string[] {
     .filter(line => !/^[-:| ]+$/u.test(line))
     .filter(line => !/^---+$/u.test(line))
     .filter(line => !/^今日建议[:：]?$/u.test(line))
-    .filter(line => !/^小巴$/u.test(line))
+    .filter(line => !/^小巴(?:健康)?$/u.test(line))
     .filter(line => !/^仅作健康管理参考/u.test(line))
     .filter(line => !/^#/.test(line))
     .filter(line => !/^指标：数值/u.test(line));
@@ -287,7 +296,7 @@ export function buildAiShareMessage(content: string): string {
   if (dietShare) return dietShare;
 
   const text = normalizeFlattenedAgentContent(content);
-  return text ? `${text}\n\n— 小巴` : '';
+  return text ? `${text}\n\n— ${APP_DISPLAY_NAME}` : '';
 }
 
 export function buildXiaohongshuShareMessage(content: string): string {
@@ -298,11 +307,11 @@ export function buildXiaohongshuShareMessage(content: string): string {
   if (adviceLines.length === 0) return '';
 
   return [
-    '小巴给我的今日建议',
+    `${APP_DISPLAY_NAME}给我的今日建议`,
     '',
     ...adviceLines,
     '',
     '仅作健康管理参考，不替代医生诊疗。',
-    '#健康管理 #生活方式改善 #小巴',
+    `#健康管理 #生活方式改善 #${APP_DISPLAY_NAME}`,
   ].join('\n');
 }

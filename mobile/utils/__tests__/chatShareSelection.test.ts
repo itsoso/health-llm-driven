@@ -16,10 +16,10 @@ describe('buildSelectedChatShareMessage', () => {
       '【我】',
       '明天有事我会睡不好',
       '',
-      '【小巴】',
+      '【小巴健康】',
       '今晚把明天事项写成 3 条清单。',
       '',
-      '— 小巴对话节选',
+      '— 小巴健康对话节选',
     ].join('\n'));
   });
 
@@ -64,7 +64,7 @@ describe('buildSelectedChatShareMessage', () => {
       ],
       new Set(['h-50']),
     );
-    expect(text).toBe(['【我】', '早上好', '', '— 小巴对话节选'].join('\n'));
+    expect(text).toBe(['【我】', '早上好', '', '— 小巴健康对话节选'].join('\n'));
   });
 
   it('includes selected chat photos as markdown image references', () => {
@@ -86,7 +86,7 @@ describe('buildSelectedChatShareMessage', () => {
       '',
       '![对话图片 1](https://health.executor.life/api/v1/upload/files/chat/3/meal.jpg?signature=abc)',
       '',
-      '— 小巴对话节选',
+      '— 小巴健康对话节选',
     ].join('\n'));
   });
 

@@ -196,3 +196,25 @@ git diff --check
 | 2026-08-30 | Initial approved Quick Flow spec | 用户确认“用户依据优先、技术信息二级折叠”方向 |
 | 2026-08-31 | Add honest warning counts, neutral data-access wording and native accessibility grouping | TDD、独立复审与模拟器 AX 验收发现 |
 | 2026-08-31 | Correct scope to a truthful cross-end answer evidence contract | 用户反馈首层仍是通用流水线，且源码证明旧来源不等于本轮实际使用 |
+| 2026-09-10 | Extend WeChat/Xiaohongshu actions to long-image sharing and unify exported branding | 用户要求社交分享支持长图，且后续分享统一署名“小巴健康” |
+
+## 16. 2026-09-10 Social Long-image Extension
+
+RequirementAdmission:
+
+- 用户：在 Mobile 完整回答下点击微信或小红书分享的用户。
+- 问题：两个快捷入口目前只分享纯文本，无法直接获得适合社交平台阅读的完整长图；历史导出文本混用了“小巴”和“小巴健康”。
+- 复用：沿用 `ConversationShareImage`、现有离屏测量/截图链路与系统分享面板，不引入微信或小红书私有 SDK。
+- 对象与边界：只改变回答导出呈现；不改变 Health OS 对象、健康判断、数据读取、写入、认证或隐私边界。
+- SafetyClassification：low。长图仅包含用户主动选择分享的当前完整回复；系统分享目的地仍由用户确认。
+- 最小闭环：点击微信/小红书 → 渲染当前完整回复长图 → 等布局稳定后截图 → 打开带目标提示的系统分享；小红书文案复制到剪贴板供粘贴。
+
+验收标准：
+
+1. 完整 assistant 回复的微信与小红书按钮均触发长图，不再只打开纯文本分享。
+2. 截图必须等待离屏长图完成布局，且包含当前回复的全部可分享正文。
+3. 小红书路径同时复制精编文案；失败必须显示可见错误，不伪装成功。
+4. 所有分享标题、正文署名、话题标签、长图页眉/角色/页脚，以及服务端对话节选页与 Web 系统分享提示统一使用“小巴健康”；聊天内人格称呼可继续使用“小巴”。
+5. 中断、错误或流式回复仍不暴露社交分享按钮；多选长图与普通系统分享保持现有行为。
+
+发布仍为纯 JS/TS OTA 边界，但本切片只做到本地实现与验证；没有明确授权不发布。

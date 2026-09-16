@@ -156,6 +156,33 @@ describe('DietShareCard Xiaohongshu poster', () => {
     expect(view.getByText('营养由图片估算')).toBeTruthy();
   });
 
+  it('uses a rounded editorial panel instead of a clinical report table', () => {
+    const view = renderCard();
+    const copyStyle = StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style);
+    const nutritionStyle = StyleSheet.flatten(view.getByTestId('diet-share-nutrition-grid').props.style);
+    const metricStyle = StyleSheet.flatten(view.getByTestId('diet-share-metric-calories').props.style);
+    const noteStyle = StyleSheet.flatten(view.getByTestId('diet-share-public-note').props.style);
+
+    expect(copyStyle).toEqual(expect.objectContaining({
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      overflow: 'hidden',
+    }));
+    expect(nutritionStyle.borderTopWidth).toBeUndefined();
+    expect(nutritionStyle.borderBottomWidth).toBeUndefined();
+    expect(metricStyle).toEqual(expect.objectContaining({
+      backgroundColor: expect.any(String),
+      borderRadius: 10,
+    }));
+    expect(metricStyle.borderLeftWidth).toBeUndefined();
+    expect(noteStyle).toEqual(expect.objectContaining({
+      backgroundColor: expect.any(String),
+      borderRadius: 10,
+      flexDirection: 'row',
+    }));
+    expect(noteStyle.borderLeftWidth).toBeUndefined();
+  });
+
   it('keeps the public poster restrained and free of operational report language', () => {
     const { queryByText } = renderCard();
 
@@ -208,13 +235,13 @@ describe('DietShareCard Xiaohongshu poster', () => {
     expect(view.getByTestId('diet-share-public-note').findAllByType(Text)[1].props.numberOfLines).toBe(2);
     const copyStyle = StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style);
     expect(copyStyle).toEqual(expect.objectContaining({
-      height: '48%',
+      height: '49%',
       position: 'absolute',
       bottom: 0,
-      paddingTop: 11,
-      paddingBottom: 10,
+      paddingTop: 8,
+      paddingBottom: 8,
     }));
-    expect(183).toBeLessThanOrEqual(440 * 0.48 - copyStyle.paddingTop - copyStyle.paddingBottom);
+    expect(198).toBeLessThanOrEqual(440 * 0.49 - copyStyle.paddingTop - copyStyle.paddingBottom);
     const calorieValue = view.getByTestId('diet-share-metric-number-calories');
     expect(calorieValue.props).toEqual(expect.objectContaining({
       numberOfLines: 1,
@@ -675,13 +702,13 @@ describe('DietShareSheet image and text behavior', () => {
     await waitFor(() => expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
       buildDietShareCaption(record, '7月11日'),
     ));
-    expect(buildDietShareCaption(record, '7月11日')).toContain('#小巴记录');
+    expect(buildDietShareCaption(record, '7月11日')).toContain('#小巴健康记录');
 
     fireEvent.press(view.getByRole('button', { name: '复制朋友圈文案' }));
     await waitFor(() => expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
       buildDietShareMomentsCaption(record, '7月11日'),
     ));
-    expect(buildDietShareMomentsCaption(record, '7月11日')).not.toContain('#小巴记录');
+    expect(buildDietShareMomentsCaption(record, '7月11日')).not.toContain('#小巴健康记录');
   });
 
   it('compacts long food descriptions while keeping short captions unchanged', () => {

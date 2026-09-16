@@ -304,3 +304,20 @@ Expected: OTA 成功，记录 update id、runtime version、commit 和回滚点�
 **Step 7: G6 真机确认**
 
 用户在安装版本冷启动后验证：顶部、思考状态、长按菜单、普通回答和动态卡片；未确认前 Dossier 保持 `shipping`，不标 `shipped`。
+
+## Task 8: 微信/小红书完整回复长图与分享品牌统一
+
+**Files:**
+
+- Modify: `mobile/app/(tabs)/chat.tsx`
+- Modify: `mobile/components/chat/ChatBubble.tsx`
+- Modify: `mobile/components/chat/ConversationShareImage.tsx`
+- Modify: `mobile/utils/share.ts`
+- Modify: 分享文案构建器及对应 Jest tests
+
+**完成契约:**
+
+- 微信与小红书快捷入口把当前完整 assistant 回复交给既有离屏长图组件，等待布局稳定后截图并打开系统分享。
+- 小红书精编文案先复制到剪贴板，便于进入目标 App 后粘贴；截图或分享错误保持可见。
+- 所有导出分享面统一复用 `APP_DISPLAY_NAME`，输出“小巴健康”；不批量改写聊天内的“小巴”人格称呼。
+- 先验证 RED，再实现并运行相关 Jest、TypeScript、ESLint、design check 与 `git diff --check`；不在未授权时发布。

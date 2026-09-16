@@ -191,7 +191,7 @@ describe('DietScreen capture deeplink', () => {
     await act(async () => props.onShareText());
     expect(shareSpy).toHaveBeenCalledWith(expect.objectContaining({
       title: '分享饮食记录',
-      message: expect.stringContaining('小巴饮食记录\n2026.08.01 · 午餐'),
+      message: expect.stringContaining('小巴健康饮食记录\n2026.08.01 · 午餐'),
     }));
     expect(shareSpy).toHaveBeenCalledWith(expect.objectContaining({
       message: expect.stringContaining('约 520 kcal · 蛋白质约 24g'),

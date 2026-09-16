@@ -19,6 +19,7 @@ import { revaColors as C, revaRadii, revaFonts } from '../../../constants/revaTh
 import { SocialBrandIcon } from '../../common/SocialBrandIcon';
 import type { CardSpec } from './types';
 import { sharePlainCaption, sharePlainText } from '../../../utils/share';
+import { APP_DISPLAY_NAME } from '../../../constants/brand';
 
 // 菜单/饮食类目 accent (橙) + 卡底 tint = 装饰色, 保留字面量 (= legacy orange/tintOrange).
 const MENU_ACCENT = '#C97A2E';
@@ -68,13 +69,13 @@ export function buildShareText(d: MenuShareData): string {
     lines.push('', '买菜清单:');
     for (const s of d.shopping_list) lines.push(`· ${s}`);
   }
-  lines.push('', '— 小巴');
+  lines.push('', `— ${APP_DISPLAY_NAME}`);
   return lines.join('\n');
 }
 
 export function buildXiaohongshuShareText(d: MenuShareData): string {
   const lines: string[] = [
-    '小巴给我的一餐建议',
+    `${APP_DISPLAY_NAME}给我的一餐建议`,
     '',
     `这餐: ${d.title || '这一餐'}`,
   ];
@@ -109,7 +110,7 @@ export function buildXiaohongshuShareText(d: MenuShareData): string {
   lines.push(
     '',
     '仅作健康管理参考，不替代医生诊疗。',
-    '#小巴饮食建议 #健康饮食 #饮食记录',
+    `#${APP_DISPLAY_NAME}饮食建议 #健康饮食 #饮食记录`,
   );
   return lines.join('\n');
 }

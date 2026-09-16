@@ -127,7 +127,7 @@ const { sharePlainText } = require('../../../utils/share');
 const { sharePlainCaption } = require('../../../utils/share');
 const { router } = require('expo-router');
 
-function renderBubble(content: string) {
+function renderBubble(content: string, props: Record<string, unknown> = {}) {
   const qc = new QueryClient();
   const message: UIMessage = {
     id: 'assistant-structured',
@@ -137,7 +137,7 @@ function renderBubble(content: string) {
   };
   return render(
     <QueryClientProvider client={qc}>
-      <ChatBubble item={message} />
+      <ChatBubble item={message} {...props} />
     </QueryClientProvider>,
   );
 }
@@ -532,6 +532,34 @@ ${sectionTitle}
     expect(getByLabelText('语音播报')).toBeTruthy();
   });
 
+  it.each([
+    ['wechat', '微信分享这条回复'],
+    ['xiaohongshu', '小红书分享这条回复'],
+  ] as const)('routes the %s shortcut to a long image built from its reviewed share copy', async (target, label) => {
+    const onShareLongImage = jest.fn();
+    const { getByLabelText } = renderBubble(
+      '今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
+      { onShareLongImage },
+    );
+
+    fireEvent.press(getByLabelText(label));
+
+    await waitFor(() => {
+      expect(onShareLongImage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'assistant-structured',
+          role: 'assistant',
+          content: expect.stringContaining('今晚 23:00 前睡觉'),
+          imageUris: undefined,
+        }),
+        target,
+        expect.stringContaining('小巴健康'),
+      );
+      expect(sharePlainText).not.toHaveBeenCalled();
+      expect(sharePlainCaption).not.toHaveBeenCalled();
+    });
+  });
+
   it('does not expose social sharing for interrupted assistant replies', () => {
     const qc = new QueryClient();
     const message: UIMessage = {
@@ -588,7 +616,7 @@ ${sectionTitle}
     expect(queryByText('继续追问')).toBeNull();
   });
 
-  it('shares assistant replies under the 小巴 persona', async () => {
+  it('shares assistant replies under the 小巴健康 brand', async () => {
     sharePlainText.mockResolvedValueOnce(undefined);
 
     const { getByLabelText, getByTestId } = renderBubble('今天先补水 300ml, 晚饭后散步 15 分钟。');
@@ -599,7 +627,7 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        title: '小巴 · 建议',
+        title: '小巴健康 · 建议',
       }));
     });
   });
@@ -615,15 +643,15 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
-        title: '小巴 · 小红书文案',
+        title: '小巴健康 · 小红书文案',
         message: expect.not.stringContaining('http'),
       }));
       expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('小巴给我的今日建议'),
+        message: expect.stringContaining('小巴健康给我的今日建议'),
       }));
       expect(sharePlainText).not.toHaveBeenCalled();
       expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('#健康管理 #生活方式改善 #小巴'),
+        message: expect.stringContaining('#健康管理 #生活方式改善 #小巴健康'),
       }));
     });
   });
@@ -643,10 +671,10 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('今天这餐被小巴认真记下来了'),
+        message: expect.stringContaining('今天这餐被小巴健康认真记下来了'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('#饮食记录 #健康管理 #小巴'),
+        message: expect.stringContaining('#饮食记录 #健康管理 #小巴健康'),
       }));
     });
   });
@@ -777,7 +805,7 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        title: '小巴 · 饮食记录',
+        title: '小巴健康 · 饮食记录',
         message: expect.stringContaining('餐食记录 · 午餐'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -790,7 +818,7 @@ ${sectionTitle}
         message: expect.not.stringMatching(/今天|今日|识别置信度/),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴'),
+        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴健康'),
       }));
     });
   });
@@ -947,7 +975,7 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        title: '小巴 · 饮食记录',
+        title: '小巴健康 · 饮食记录',
         message: expect.stringContaining('今日摄入 1040 kcal'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -963,7 +991,7 @@ ${sectionTitle}
         message: expect.stringContaining('今日策略'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴'),
+        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴健康'),
       }));
     });
   });
@@ -1016,6 +1044,29 @@ ${sectionTitle}
         }),
       );
     });
+  });
+
+  it('does not hide unreviewed health details in the Xiaohongshu long image', async () => {
+    const onShareLongImage = jest.fn();
+    const privateDetail = '我的诊断是高血压，正在服用氨氯地平 5mg。';
+    const content = [
+      '今晚 23:00 前睡觉。',
+      '晚饭后散步 20 分钟。',
+      '睡前避免咖啡因。',
+      '保持卧室安静。',
+      '明早起床后补水。',
+      privateDetail,
+    ].join('\n');
+    const { getByLabelText } = renderBubble(content, { onShareLongImage });
+
+    fireEvent.press(getByLabelText('小红书分享这条回复'));
+
+    await waitFor(() => expect(onShareLongImage).toHaveBeenCalledTimes(1));
+    const [sharedItem, target, caption] = onShareLongImage.mock.calls[0];
+    expect(target).toBe('xiaohongshu');
+    expect(sharedItem.content).toBe(caption);
+    expect(sharedItem.content).not.toContain(privateDetail);
+    expect(sharedItem.imageUris).toBeUndefined();
   });
 
   it('shows the backend reason when a diet card confirmation fails', async () => {

@@ -52,6 +52,13 @@ _SYNC_TARGET_TIME = re.compile(
     r"上周|本周|这周|下周|上个月|本月|去年|今年|\d{4}[-/年]|"
     r"[0-9一二两三四五六七八九十]+\s*(?:天|日|周|月|年)"
 )
+_EXPLICIT_TIMED_GARMIN_SYNC = re.compile(
+    r"(?:请你?|麻烦)?(?:帮我|给我)?(?:对|把)?"
+    r"(?:昨天|昨日|前天|今天|今日)(?:的)?(?:我的?)?"
+    r"(?:garmin|佳明)(?:的)?数据(?:进行)?(?:同步|刷新|拉取)(?:一下)?"
+    r"[。.!！]?",
+    re.IGNORECASE,
+)
 
 
 def _active(text: str) -> str | None:
@@ -181,6 +188,15 @@ def has_owned_sync_instruction(text: str) -> bool:
     """Consume the whole owned sync act; unknown clauses never grant a job."""
     sync_authority = active_health_sync_authority_text(text)
     active = _active(sync_authority) if sync_authority else None
+    if (
+        active is not None
+        and _EXPLICIT_TIMED_GARMIN_SYNC.fullmatch(
+            re.sub(r"\s+", "", active)
+        )
+        and not health_read_cancelled(active)
+        and not _NONSELF.search(active)
+    ):
+        return True
     if active is None or not _owned_active(active) or _MUTATION.search(active):
         return False
     active = re.sub(r"\s+", "", active)

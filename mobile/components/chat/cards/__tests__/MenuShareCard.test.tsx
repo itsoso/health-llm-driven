@@ -15,7 +15,7 @@ jest.mock('expo-haptics', () => ({
 }));
 
 describe('MenuShareCard', () => {
-  it('shares menu recommendations under the 小巴 persona', async () => {
+  it('shares menu recommendations under the 小巴健康 brand', async () => {
     const message = buildShareText(
       {
         title: '今晚晚餐',
@@ -26,7 +26,7 @@ describe('MenuShareCard', () => {
       },
     );
 
-    expect(message).toContain('— 小巴');
+    expect(message).toContain('— 小巴健康');
     expect(message).not.toContain('健康 Agent');
   });
 
@@ -54,7 +54,7 @@ describe('MenuShareCard', () => {
       expect(mockSharePlainText).toHaveBeenCalledTimes(1);
       expect(mockSharePlainText).toHaveBeenCalledWith(expect.objectContaining({
         title: '今晚晚餐',
-        message: expect.stringContaining('— 小巴'),
+        message: expect.stringContaining('— 小巴健康'),
       }));
       expect(mockSharePlainCaption).toHaveBeenCalledTimes(1);
       expect(mockSharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
@@ -83,14 +83,14 @@ describe('MenuShareCard', () => {
       shopping_list: ['希腊酸奶', '蓝莓', '无糖豆浆', '核桃仁'],
     });
 
-    expect(caption).toContain('小巴给我的一餐建议');
+    expect(caption).toContain('小巴健康给我的一餐建议');
     expect(caption).toContain('1. 希腊酸奶');
     expect(caption).toContain('6. 核桃仁');
     expect(caption).toContain('蛋白 29g');
     expect(caption).toContain('纤维 8g');
     expect(caption).toContain('买菜清单');
     expect(caption).toContain('无糖豆浆');
-    expect(caption).toContain('#小巴饮食建议');
+    expect(caption).toContain('#小巴健康饮食建议');
     expect(caption.length).toBeGreaterThan(220);
     expect(caption.length).toBeLessThanOrEqual(900);
   });

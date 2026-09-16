@@ -17,7 +17,7 @@ from app.services.chat_utils import refresh_chat_image_url_value
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/shared", tags=["shared-conversation"])
-_SELECTED_AGENT_SHARE_TITLE = "健康小巴 · 对话节选"
+_SELECTED_AGENT_SHARE_TITLE = "小巴健康 · 对话节选"
 
 
 class ShareRequest(BaseModel):

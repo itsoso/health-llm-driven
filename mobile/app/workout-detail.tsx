@@ -19,6 +19,7 @@ import { synthesize as cloudSynthesize } from '../services/cloudTts';
 import { getVoiceStyle, loadVoiceStyle } from '../services/voiceStyle';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { sharePlainText } from '../utils/share';
+import { APP_DISPLAY_NAME } from '../constants/brand';
 import { createWorkoutDetailAgentContext, pushChatWithContext } from '../utils/agentContext';
 import {
   revaColors as C,
@@ -320,7 +321,7 @@ export default function WorkoutDetailScreen() {
       const text = [
         summary,
         script ? `\n${script}` : '',
-        '\n— 小巴',
+        `\n— ${APP_DISPLAY_NAME}`,
       ].filter(Boolean).join('');
       await sharePlainText({ title: '运动记录', message: text });
     } catch (e: any) {

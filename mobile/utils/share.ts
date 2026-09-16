@@ -262,6 +262,20 @@ export async function shareLocalImage(uri: string) {
   });
 }
 
+interface ShareLongImageOptions {
+  target: SocialShareTarget;
+  caption?: string;
+}
+
+export async function shareLongImage(uri: string, options: ShareLongImageOptions) {
+  const caption = String(options.caption || '').trim();
+  if (caption) await Clipboard.setStringAsync(caption).catch(() => {});
+  return shareImage(uri, {
+    target: options.target,
+    mimeType: 'image/png',
+  });
+}
+
 interface ShareRemoteVideoOptions {
   target: VideoShareTarget;
   cacheKey?: string;

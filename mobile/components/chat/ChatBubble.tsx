@@ -42,6 +42,7 @@ import {
   shareImage,
   sharePlainCaption,
   sharePlainText,
+  type SocialShareTarget,
 } from '../../utils/share';
 import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
@@ -67,7 +68,8 @@ import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { buildAgentTransparency } from '../../utils/chatTransparency';
 import MedicalCitations from './MedicalCitations';
 import AnswerEvidencePanel from './AnswerEvidencePanel';
-import { ASSISTANT_REPLY_NAME } from '../../constants/brand';
+import { APP_DISPLAY_NAME, ASSISTANT_REPLY_NAME } from '../../constants/brand';
+import type { ShareImageMessage } from './ConversationShareImage';
 
 type WriteReceipt = NonNullable<ChatCardActionResult['receipt']>;
 
@@ -103,6 +105,11 @@ interface Props {
   onSendSuggestedPrompt?: (prompt: string, extraContext?: string) => void;
   onStopStreaming?: () => void;
   onContentPaint?: (messageId: string, kind: AgentContentPaintKind) => void;
+  onShareLongImage?: (
+    message: ShareImageMessage,
+    target: SocialShareTarget,
+    caption: string,
+  ) => void;
 }
 
 function ChatBubbleInner({
@@ -116,6 +123,7 @@ function ChatBubbleInner({
   onSendSuggestedPrompt,
   onStopStreaming,
   onContentPaint,
+  onShareLongImage,
 }: Props) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -1016,16 +1024,28 @@ function ChatBubbleInner({
       : buildAiShareMessage(assistantTextForActions);
     if (!message) return;
     Haptics.selectionAsync();
+    if (target !== 'more' && onShareLongImage) {
+      onShareLongImage({
+        id: item.id,
+        role: 'assistant',
+        // Keep the rendered image identical to the reviewed companion copy.
+        // In particular, Xiaohongshu's concise copy must not conceal a full
+        // private health reply (or attachment metadata) inside the image.
+        content: message,
+        imageUris: undefined,
+      }, target, message);
+      return;
+    }
     try {
       if (target === 'xiaohongshu') {
         await sharePlainCaption({
-          title: '小巴 · 小红书文案',
+          title: `${APP_DISPLAY_NAME} · 小红书文案`,
           message,
         });
         toast.show('小红书文案已复制', 'success');
         return;
       }
-      await sharePlainText({ title: '小巴 · 建议', message });
+      await sharePlainText({ title: `${APP_DISPLAY_NAME} · 建议`, message });
     } catch { /* 用户取消分享也会走这里, 不打扰 */ }
   };
 
@@ -1034,7 +1054,7 @@ function ChatBubbleInner({
     setShowShareActions(false);
     if (isUser) {
       try {
-        await sharePlainText({ title: '小巴 · 对话', message: item.content.trim() });
+        await sharePlainText({ title: `${APP_DISPLAY_NAME} · 对话`, message: item.content.trim() });
       } catch { /* 用户取消分享不打扰 */ }
       return;
     }
@@ -1507,10 +1527,10 @@ function buildDietDraftSharePayload(data: Record<string, unknown>): { title: str
     presentation.publicNote,
   ];
   if (!presentation.macroLines.includes(presentation.disclosure)) lines.push(presentation.disclosure);
-  lines.push('', '#小红书饮食日记 #朋友圈打卡 #小巴', '', '— 小巴');
+  lines.push('', `#小红书饮食日记 #朋友圈打卡 #${APP_DISPLAY_NAME}`, '', `— ${APP_DISPLAY_NAME}`);
 
   return {
-    title: '小巴 · 饮食记录',
+    title: `${APP_DISPLAY_NAME} · 饮食记录`,
     message: lines.join('\n'),
   };
 }
@@ -1529,7 +1549,7 @@ function buildDietQualitySharePayload(data: Record<string, unknown>): { title: s
   const remainingProtein = cardNumber(progress.remaining_protein_g);
   const nextAction = cardText(data.next_action);
 
-  const lines = ['今日饮食打卡', '今天这餐被小巴认真记下来了', ''];
+  const lines = ['今日饮食打卡', `今天这餐被${APP_DISPLAY_NAME}认真记下来了`, ''];
   if (title) lines.push(title);
   if (summary) lines.push(summary);
   if (caloriesTotal != null) {
@@ -1540,10 +1560,10 @@ function buildDietQualitySharePayload(data: Record<string, unknown>): { title: s
     lines.push(`蛋白进度 ${Math.round(proteinTotal)}/${Math.round(proteinTarget)}g${remaining}`);
   }
   if (nextAction) lines.push('', '今日策略', `下一步：${nextAction}`);
-  lines.push('', '#小红书饮食日记 #朋友圈打卡 #小巴', '', '— 小巴');
+  lines.push('', `#小红书饮食日记 #朋友圈打卡 #${APP_DISPLAY_NAME}`, '', `— ${APP_DISPLAY_NAME}`);
 
   return {
-    title: '小巴 · 饮食记录',
+    title: `${APP_DISPLAY_NAME} · 饮食记录`,
     message: lines.join('\n'),
   };
 }

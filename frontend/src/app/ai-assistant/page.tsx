@@ -839,7 +839,7 @@ function AIAssistantInner() {
       );
       const shareUrl = res.data.share_url;
       if (navigator.share) {
-        await navigator.share({ title: '健康小巴 · 对话节选', text: '我分享了一段健康小巴对话', url: shareUrl });
+        await navigator.share({ title: '小巴健康 · 对话节选', text: '我分享了一段小巴健康对话', url: shareUrl });
       } else {
         await navigator.clipboard?.writeText(shareUrl);
         window.alert('分享链接已复制');

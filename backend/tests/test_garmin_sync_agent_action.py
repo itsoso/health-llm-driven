@@ -7,6 +7,9 @@
 - 诚实:garmin_sync 不进写回执诚实闸(_write_tool_attempted False),否则真成功/
   MFA 失败都被误判"未取得可验证写入回执"。
 """
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
 import pytest
 
 import app.tasks.garmin_sync as garmin_task
@@ -114,6 +117,38 @@ async def test_happy_path_enqueues_and_acks(db, monkeypatch):
     args, kwargs = calls[0]
     assert args[0] == _UID
     assert kwargs.get("notify_on_failure") is True
+
+
+@pytest.mark.asyncio
+async def test_yesterday_sync_enqueues_a_two_day_window(db, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        garmin_task.sync_user_garmin_data,
+        "delay",
+        lambda *args, **kwargs: (
+            calls.append((args, kwargs))
+            or SimpleNamespace(
+                id="873a4765-48b5-49d5-a989-fcc234ba3e89"
+            )
+        ),
+    )
+    _add_cred(db)
+    executor = _executor(db)
+    executor._current_turn_user_message = "对昨天的佳明的数据进行同步。"
+    executor._agent_kernel_reference_now = lambda: datetime(
+        2026, 9, 10, 8, 42, tzinfo=timezone(timedelta(hours=8))
+    )
+
+    out = await executor._exec_health_record(
+        "http://example.test",
+        {},
+        {"record_type": "garmin_sync", "data": {}},
+    )
+
+    assert "后台" in out
+    assert len(calls) == 1
+    assert calls[0][1]["days"] == 2
+    assert calls[0][1]["notify_on_failure"] is True
 
 
 @pytest.mark.asyncio

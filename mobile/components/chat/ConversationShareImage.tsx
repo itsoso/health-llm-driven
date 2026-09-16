@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MarkdownText from '../shared/MarkdownText';
 import { revaColors as R } from '../../constants/revaTheme';
 import { colors as lightPalette } from '../../constants/theme';
+import { APP_DISPLAY_NAME } from '../../constants/brand';
 
 export type ShareImageMessage = {
   id: string;
@@ -54,7 +55,7 @@ const ConversationShareImage = forwardRef<View, Props>(({ messages, dateLabel, o
           </View>
           <Text style={styles.brandEyebrow}>REVA HEALTH NOTE</Text>
         </View>
-        <Text style={styles.brandName}>小巴 · 对话摘录</Text>
+        <Text style={styles.brandName}>{APP_DISPLAY_NAME} · 对话摘录</Text>
         <View style={styles.headerMeta}>
           <Text style={styles.brandDate}>
             {[dateLabel, `${messages.length} 条已选对话`].filter(Boolean).join('  ·  ')}
@@ -82,7 +83,7 @@ const ConversationShareImage = forwardRef<View, Props>(({ messages, dateLabel, o
                   </View>
                 )}
                 <Text style={[styles.speaker, isUser && styles.speakerUser]}>
-                  {isUser ? '你' : '小巴'}
+                  {isUser ? '你' : APP_DISPLAY_NAME}
                 </Text>
                 {!isUser && <Text style={styles.speakerRole}>健康参谋</Text>}
               </View>
@@ -93,7 +94,9 @@ const ConversationShareImage = forwardRef<View, Props>(({ messages, dateLabel, o
                 {isUser ? (
                   <Text style={styles.userText}>{m.content.trim()}</Text>
                 ) : (
-                  <MarkdownText variant="chat" palette={lightPalette}>{m.content.trim()}</MarkdownText>
+                  <MarkdownText variant="chat" palette={lightPalette} omitImages>
+                    {m.content.trim()}
+                  </MarkdownText>
                 )}
                 {imgCount > 0 && (
                   <Text style={[styles.imgNote, isUser && styles.imgNoteUser]}>
@@ -110,7 +113,7 @@ const ConversationShareImage = forwardRef<View, Props>(({ messages, dateLabel, o
       <View style={styles.footer}>
         <View style={styles.footerBrand}>
           <Ionicons name="pulse" size={12} color={R.green500} />
-          <Text style={styles.footerText}>小巴 · 你忠实的健康参谋</Text>
+          <Text style={styles.footerText}>{APP_DISPLAY_NAME} · 你忠实的健康参谋</Text>
         </View>
         <Text style={styles.footerNote}>内容仅作健康管理参考</Text>
       </View>

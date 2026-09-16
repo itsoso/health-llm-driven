@@ -16,7 +16,7 @@ from app.services.health_evidence.verifier import health_manifest_sha256
 
 _HEALTH_QUERY = "我腰疼，应该怎么处理？"
 _HEALTH_ANSWER = "保持适度活动，并留意需要紧急就医的警示征象。"
-_SELECTED_SHARE_TITLE = "健康小巴 · 对话节选"
+_SELECTED_SHARE_TITLE = "小巴健康 · 对话节选"
 _PRIVATE_CONVERSATION_TITLE = "我 HIV 阳性，而且出现了新的排尿困难"
 
 

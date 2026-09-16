@@ -10676,6 +10676,32 @@ def _has_explicit_record_write_intent(message: Optional[str]) -> bool:
     return intent.primary == "write" and intent.is_write
 
 
+def _garmin_sync_lookback_days(
+    message: Optional[str],
+    *,
+    reference_now: datetime,
+) -> int:
+    """Convert an explicit sync date into Garmin's inclusive lookback window."""
+    intent = classify_agent_utterance(message, reference_now=reference_now)
+    if not (
+        intent.primary == "mutate"
+        and intent.operation == "sync"
+        and intent.is_write
+    ):
+        return 1
+    raw_date = str(intent.scope.get("date") or "").strip()
+    if not raw_date:
+        return 1
+    try:
+        target_date = date.fromisoformat(raw_date)
+    except ValueError:
+        return 1
+    delta_days = (reference_now.date() - target_date).days
+    if delta_days < 0:
+        return 1
+    return min(delta_days + 1, 730)
+
+
 def _has_fast_record_write_intent(message: Optional[str]) -> bool:
     """Fast-record is only for clear writes; query nouns stay on the read path."""
     intent = classify_agent_utterance(message)
@@ -13930,9 +13956,34 @@ class AgentExecutor:
                         ]
                         finish_reason = resp.get("finish_reason")
                         if panel_synthesis_messages is not None and tool_calls:
-                            tool_calls = []
-                            content = "本轮模型未生成可发布的健康回答。"
-                            finish_reason = "error"
+                            self._record_model_fallback_reason(
+                                "panel_synthesis_tool_call_retried"
+                            )
+                            retry_messages = [
+                                *panel_synthesis_messages,
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        "本轮证据已经封存，不能调用任何工具。"
+                                        "请不要输出工具调用，直接依据上文已核验的证据，"
+                                        "用中文给出完整、保守、可执行的回答。"
+                                    ),
+                                },
+                            ]
+                            resp = await self._call_llm(retry_messages, [])
+                            content = resp.get("content") or ""
+                            tool_calls = [
+                                {**call, "type": call.get("type", "function")}
+                                for call in (resp.get("tool_calls") or [])
+                            ]
+                            finish_reason = resp.get("finish_reason")
+                            if tool_calls:
+                                self._record_model_fallback_reason(
+                                    "panel_synthesis_tool_call_blocked"
+                                )
+                                tool_calls = []
+                                content = "这次没有生成可靠回答，请稍后重试。"
+                                finish_reason = "error"
                         if finish_reason != ("tool_calls" if tool_calls else "stop"):
                             # Incomplete provider output cannot initiate writes
                             # or enter independent panel synthesis.
@@ -16581,6 +16632,8 @@ class AgentExecutor:
         # thinking 状态, 带 detail「整段生成, 需等待完整回答」, mac 会原样显示该 detail。
         # 流式模型 detail 恒为 None (不发此附加事件), mac 走正常滚动。fail-soft (解析异常=不发)。
         answer_model_non_streaming = self._resolved_answer_model_is_non_streaming()
+        # 封存健康证据后的 provider 协议恢复最多执行一次；异常工具调用永不进入 Pi。
+        health_protocol_recovery_attempted = False
 
         # Pi owns the model/tool loop. Reva's callback retains health-specific
         # receipts, safety checks and client projections; it never chooses the
@@ -17610,6 +17663,48 @@ class AgentExecutor:
                                         ]
                                     elif event.get("type") == "finish":
                                         finish_reason = event.get("finish_reason")
+                            if (
+                                health_advice_buffered
+                                and proposed_calls
+                                and not health_protocol_recovery_attempted
+                            ):
+                                health_protocol_recovery_attempted = True
+                                self._record_model_fallback_reason(
+                                    "health_synthesis_tool_call_retried"
+                                )
+                                retry_messages = [
+                                    *messages,
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            "本轮健康证据已经封存，不能调用任何工具。"
+                                            "请不要输出工具调用，直接依据上文已核验的证据，"
+                                            "用中文给出完整、保守、可执行的健康管理回答。"
+                                        ),
+                                    },
+                                ]
+                                candidate = ""
+                                proposed_calls = []
+                                finish_reason = None
+                                async for event in self._call_llm_stream(
+                                    retry_messages, []
+                                ):
+                                    if event.get("type") == "content":
+                                        candidate += event.get("text") or ""
+                                        if first_token_at is None and candidate:
+                                            first_token_at = time.time()
+                                    elif event.get("type") == "tool_calls":
+                                        proposed_calls = [
+                                            {
+                                                **call,
+                                                "type": call.get("type", "function"),
+                                            }
+                                            for call in (
+                                                event.get("tool_calls") or []
+                                            )
+                                        ]
+                                    elif event.get("type") == "finish":
+                                        finish_reason = event.get("finish_reason")
                             elapsed = max(0, int((time.time() - started) * 1000))
                             llm_rounds_ms.append(elapsed)
                             rounds.append({"llm_gen_ms": elapsed, "tool_exec_ms": 0, "tools": []})
@@ -17624,13 +17719,21 @@ class AgentExecutor:
                                 proposed_calls = planned_daily_calls(self._turn_daily_read_plan)
                                 candidate = ""
                                 finish_reason = "tool_calls"
-                            if (health_advice_buffered or not round_tools) and proposed_calls:
+                            if health_advice_buffered and proposed_calls:
                                 # Clinical evidence is sealed before synthesis.
                                 # Hallucinated tool calls never widen that seal.
                                 proposed_calls = []
+                                self._record_model_fallback_reason(
+                                    "health_synthesis_tool_call_safe_fallback"
+                                )
+                                candidate = (
+                                    health_evidence_turn.verifier_failure().text
+                                )
+                                finish_reason = "stop"
+                            elif not round_tools and proposed_calls:
+                                proposed_calls = []
                                 candidate = _write_rejection_with_receipt_context(
-                                    "本轮模型未生成可发布的回答。请勿重复提交已保存的记录。"
-                                    if write_receipts else "本轮模型未生成可发布的健康回答。",
+                                    "本轮模型未生成可发布的回答。请勿重复提交已保存的记录。",
                                     write_receipts,
                                 )
                                 finish_reason = "error"
@@ -25624,7 +25727,13 @@ class AgentExecutor:
                     "停留几秒,它会自动把最新数据上传上来;如果还没连接,先到「设置 → 设备」"
                     "连接 Apple 健康。传好之后我就能用这些数据帮你查看和分析了。"
                 )
-            self._turn_sync_reply = await self._trigger_garmin_sync()
+            sync_days = _garmin_sync_lookback_days(
+                getattr(self, "_current_turn_user_message", ""),
+                reference_now=self._agent_kernel_reference_now(),
+            )
+            self._turn_sync_reply = await self._trigger_garmin_sync(
+                days=sync_days
+            )
             return self._turn_sync_reply
 
         record_map = {
@@ -25710,7 +25819,7 @@ class AgentExecutor:
             recovery_guidance="请改用受支持的健康记录类型。",
         )
 
-    async def _trigger_garmin_sync(self) -> str:
+    async def _trigger_garmin_sync(self, *, days: int = 1) -> str:
         """触发 Garmin 数据同步 —— 异步 job 模型(不阻塞对话回合)。
 
         founder 2026-07-14 裁决:同步是幂等读拉、无用户可见突变,agent 可 auto 执行
@@ -25759,7 +25868,11 @@ class AgentExecutor:
         # ── 护栏②:不内联阻塞;交给 Celery worker,乐观 ack 立即返回 ──
         try:
             from app.tasks.garmin_sync import sync_user_garmin_data
-            job = sync_user_garmin_data.delay(user_id, days=1, notify_on_failure=True)
+            job = sync_user_garmin_data.delay(
+                user_id,
+                days=max(1, min(int(days), 730)),
+                notify_on_failure=True,
+            )
             from app.services.agent_garmin_sync_status import VerifiedGarminSyncJob
             self._turn_garmin_sync_job = VerifiedGarminSyncJob(user_id, job.id, self._agent_kernel_reference_now())
             self._turn_sync_queued = True

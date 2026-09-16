@@ -21,6 +21,7 @@ import {
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 import { sharePlainText } from '../utils/share';
+import { APP_DISPLAY_NAME } from '../constants/brand';
 
 const RELATIONSHIP_ZH: Record<string, string> = {
   self: '我',
@@ -53,14 +54,14 @@ export default function FamilyScreen() {
     mutationFn: createFamilyInvitation,
     onSuccess: async (resp) => {
       const minutes = Math.floor(resp.expires_in_seconds / 60);
-      const text = `加入我的家庭健康"${resp.group_name}"。打开小巴 → 设置 → 家庭健康 → 输入邀请码：${resp.code}（${minutes} 分钟内有效）`;
+      const text = `加入我的家庭健康"${resp.group_name}"。打开${APP_DISPLAY_NAME} → 设置 → 家庭健康 → 输入邀请码：${resp.code}（${minutes} 分钟内有效）`;
       try {
         await sharePlainText({ title: '家庭健康邀请', message: text });
       } catch {
         // 分享失败仍弹码让用户手动复制
         Alert.alert(
           `邀请码: ${resp.code}`,
-          `${minutes} 分钟内有效。让家人在小巴 → 设置 → 家庭健康 → 输入邀请码`,
+          `${minutes} 分钟内有效。让家人在${APP_DISPLAY_NAME} → 设置 → 家庭健康 → 输入邀请码`,
         );
       }
     },

@@ -11,7 +11,7 @@ describe('buildAiShareMessage', () => {
       '| 饮水 | 0ml/2000ml | ⚠️ 未达标 |',
     ].join('\n');
 
-    expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 小巴`);
+    expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 小巴健康`);
   });
 
   it('formats flattened workout plan tables before creating a share page', () => {
@@ -38,7 +38,7 @@ describe('buildAiShareMessage', () => {
       '',
       '目前才238步，建议今天至少补到5000步。',
       '',
-      '— 小巴',
+      '— 小巴健康',
     ].join('\n'));
   });
 
@@ -54,7 +54,7 @@ describe('buildAiShareMessage', () => {
       '请线下就医确认处方。',
     ].join('\n');
 
-    expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 小巴`);
+    expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 小巴健康`);
   });
 
   it('turns a completed diet record reply into a polished WeChat/XHS-ready share note', () => {
@@ -64,7 +64,7 @@ describe('buildAiShareMessage', () => {
     ].join('\n');
 
     expect(buildAiShareMessage(content)).toBe([
-      '今天这餐被小巴认真记下来了',
+      '今天这餐被小巴健康认真记下来了',
       '',
       '午餐 · 煎牛肉能量碗 + 姜黄鲜柠维C茶',
       '',
@@ -72,9 +72,9 @@ describe('buildAiShareMessage', () => {
       '',
       '下一步：晚餐优先补 40g 蛋白，少油少刺激。',
       '',
-      '#饮食记录 #健康管理 #小巴',
+      '#饮食记录 #健康管理 #小巴健康',
       '',
-      '— 小巴',
+      '— 小巴健康',
     ].join('\n'));
   });
 
@@ -102,7 +102,7 @@ describe('buildAiShareMessage', () => {
       '记录一餐，才更容易看见自己的饮食节奏。',
       '营养数据为估算值，实际会因食材、份量和烹饪方式变化。',
       '',
-      '#健康饮食 #饮食记录 #一日三餐 #健康管理 #小巴',
+      '#健康饮食 #饮食记录 #一日三餐 #健康管理 #小巴健康',
     ].join('\n'));
   });
 
@@ -116,13 +116,13 @@ describe('buildAiShareMessage', () => {
     ].join('\n');
 
     expect(buildXiaohongshuShareMessage(content)).toBe([
-      '小巴给我的今日建议',
+      '小巴健康给我的今日建议',
       '',
       '建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
       '原因：最近 HRV 偏低，先把恢复放在第一位。',
       '',
       '仅作健康管理参考，不替代医生诊疗。',
-      '#健康管理 #生活方式改善 #小巴',
+      '#健康管理 #生活方式改善 #小巴健康',
     ].join('\n'));
   });
 
@@ -188,7 +188,7 @@ describe('buildAiShareMessage', () => {
       '',
       '跑后记得补 300ml 水。',
       '',
-      '— 小巴',
+      '— 小巴健康',
     ].join('\n'));
   });
 });

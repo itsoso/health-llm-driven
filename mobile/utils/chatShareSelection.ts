@@ -1,3 +1,5 @@
+import { APP_DISPLAY_NAME } from '../constants/brand';
+
 type ShareableChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -11,7 +13,7 @@ type ShareableChatMessage = {
 
 const ROLE_LABEL: Record<ShareableChatMessage['role'], string> = {
   user: '我',
-  assistant: '小巴',
+  assistant: APP_DISPLAY_NAME,
 };
 
 export function isShareableChatMessage(message: ShareableChatMessage): boolean {
@@ -51,7 +53,7 @@ export function buildSelectedChatShareMessage(
     });
 
   return parts.length > 0
-    ? `${parts.join('\n\n')}\n\n— 小巴对话节选`
+    ? `${parts.join('\n\n')}\n\n— ${APP_DISPLAY_NAME}对话节选`
     : '';
 }
 

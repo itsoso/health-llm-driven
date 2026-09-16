@@ -50,7 +50,13 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
-import { shareAgentSelection, shareImage, shareLocalImage } from '../../utils/share';
+import {
+  shareAgentSelection,
+  shareImage,
+  shareLocalImage,
+  shareLongImage,
+  type SocialShareTarget,
+} from '../../utils/share';
 import {
   durableSelectedAgentMessageIds,
   isShareableChatMessage,
@@ -69,6 +75,7 @@ import {
   shouldShowScrollToBottom,
   shouldScrollChatToEnd,
 } from '../../utils/chatScroll';
+import { APP_DISPLAY_NAME } from '../../constants/brand';
 
 type SuggestionCard = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -208,6 +215,10 @@ export default function ChatScreen() {
   const [imageExportMessages, setImageExportMessages] = useState<ShareImageMessage[] | null>(null);
   const shareImageRef = useRef<View>(null);
   const imageExportCaptureStartedRef = useRef(false);
+  const socialLongImageContextRef = useRef<{
+    target: SocialShareTarget;
+    caption: string;
+  } | null>(null);
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
   const [dismissedTodayFocusKey, setDismissedTodayFocusKey] = useState<string | null>(null);
 
@@ -857,7 +868,7 @@ export default function ChatScreen() {
     setSharing(true);
     try {
       await shareAgentSelection({
-        title: '小巴 · 对话节选',
+        title: `${APP_DISPLAY_NAME} · 对话节选`,
         conversationId,
         messageIds: durableMessageIds,
       });
@@ -892,7 +903,12 @@ export default function ChatScreen() {
         ...(Platform.OS === 'ios' ? { useRenderInContext: true } : {}),
       });
       failureStage = 'share';
-      await shareLocalImage(captureUri);
+      const socialContext = socialLongImageContextRef.current;
+      if (socialContext) {
+        await shareLongImage(captureUri, socialContext);
+      } else {
+        await shareLocalImage(captureUri);
+      }
       exitSelectionMode();
     } catch (error) {
       console.error('[chat] conversation long-image export failed', {
@@ -912,6 +928,7 @@ export default function ChatScreen() {
         }
       }
       setImageExportMessages(null);
+      socialLongImageContextRef.current = null;
       setSharing(false);
     }
   }, [exitSelectionMode]);
@@ -924,9 +941,22 @@ export default function ChatScreen() {
       .map((m) => ({ id: m.id, role: m.role, content: m.content, imageUris: m.imageUris }));
     if (selected.length === 0) return;
     imageExportCaptureStartedRef.current = false;
+    socialLongImageContextRef.current = null;
     setSharing(true);
     setImageExportMessages(selected);
   }, [messages, selectedMessageIds, sharing]);
+
+  const shareReplyLongImage = useCallback((
+    message: ShareImageMessage,
+    target: SocialShareTarget,
+    caption: string,
+  ) => {
+    if (sharing) return;
+    imageExportCaptureStartedRef.current = false;
+    socialLongImageContextRef.current = { target, caption };
+    setSharing(true);
+    setImageExportMessages([message]);
+  }, [sharing]);
 
   const renderMessage = useCallback(({ item }: { item: ChatMessageListItem }) => {
     if (item.type === 'divider') {
@@ -946,9 +976,10 @@ export default function ChatScreen() {
         onSendSuggestedPrompt={sendSuggestedPrompt}
         onStopStreaming={stopStreaming}
         onContentPaint={markAgentContentPainted}
+        onShareLongImage={shareReplyLongImage}
       />
     );
-  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, sendSuggestedPrompt, stopStreaming, markAgentContentPainted]);
+  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, sendSuggestedPrompt, stopStreaming, markAgentContentPainted, shareReplyLongImage]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();

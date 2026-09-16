@@ -21,6 +21,7 @@ const mockLoadMoreHistory = jest.fn();
 const mockSaveChatImageToLibrary = jest.fn();
 const mockShareImage = jest.fn();
 const mockShareLocalImage = jest.fn();
+const mockShareLongImage = jest.fn();
 const mockCaptureRef = jest.fn();
 const mockReleaseCapture = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
@@ -133,6 +134,7 @@ jest.mock('../../../services/chatImageSave', () => ({
 jest.mock('../../../utils/share', () => ({
   shareImage: (...args: any[]) => mockShareImage(...args),
   shareLocalImage: (...args: any[]) => mockShareLocalImage(...args),
+  shareLongImage: (...args: any[]) => mockShareLongImage(...args),
   sharePlainText: jest.fn(),
 }));
 
@@ -168,6 +170,7 @@ jest.mock('../../../components/chat/ChatBubble', () => {
     onEnterSelection,
     onViewImage,
     onSendSuggestedPrompt,
+    onShareLongImage,
   }: any) => (
     <>
       <Pressable
@@ -193,6 +196,26 @@ jest.mock('../../../components/chat/ChatBubble', () => {
             '{"health_evidence_continuation":{"version":"health-evidence-continuation.v1"}}',
           )}
         />
+      ) : null}
+      {!item.streaming && item.role === 'assistant' ? (
+        <>
+          <Pressable
+            accessibilityLabel={`mock-wechat-share-${item.id}`}
+            onPress={() => onShareLongImage?.(
+              { id: item.id, role: item.role, content: item.content, imageUris: item.imageUris },
+              'wechat',
+              '— 小巴健康',
+            )}
+          />
+          <Pressable
+            accessibilityLabel={`mock-xiaohongshu-share-${item.id}`}
+            onPress={() => onShareLongImage?.(
+              { id: item.id, role: item.role, content: item.content, imageUris: item.imageUris },
+              'xiaohongshu',
+              '小巴健康给我的今日建议',
+            )}
+          />
+        </>
       ) : null}
     </>
   );
@@ -234,6 +257,7 @@ describe('ChatScreen', () => {
     mockLoadLatestConversation.mockResolvedValue(undefined);
     mockSaveChatImageToLibrary.mockResolvedValue(undefined);
     mockShareImage.mockResolvedValue(undefined);
+    mockShareLongImage.mockResolvedValue(undefined);
     mockShareLocalImage.mockResolvedValue(undefined);
     mockCaptureRef.mockResolvedValue('/tmp/reva-conversation-long-image.png');
   });
@@ -340,6 +364,33 @@ describe('ChatScreen', () => {
       });
       expect(mockShareLocalImage).toHaveBeenCalledWith('/tmp/reva-conversation-long-image.png');
       expect(mockReleaseCapture).toHaveBeenCalledWith('/tmp/reva-conversation-long-image.png');
+    });
+  });
+
+  it.each([
+    ['wechat', 'mock-wechat-share-share-assistant', '— 小巴健康'],
+    ['xiaohongshu', 'mock-xiaohongshu-share-share-assistant', '小巴健康给我的今日建议'],
+  ] as const)('shares a complete reply as a %s long image', async (target, label, caption) => {
+    mockMessages = [{
+      id: 'share-assistant',
+      role: 'assistant',
+      content: Array.from({ length: 60 }, (_, index) => `${index + 1}. 完整建议`).join('\n'),
+      completionStatus: 'complete',
+    }];
+    const view = render(<ChatScreen />);
+
+    fireEvent.press(view.getByLabelText(label));
+    const shareImage = view.getByTestId('conversation-share-image');
+    fireEvent(shareImage, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 2200 } },
+    });
+
+    await waitFor(() => {
+      expect(mockShareLongImage).toHaveBeenCalledWith(
+        '/tmp/reva-conversation-long-image.png',
+        { target, caption },
+      );
+      expect(mockShareLocalImage).not.toHaveBeenCalled();
     });
   });
 
