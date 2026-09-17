@@ -12311,7 +12311,8 @@ class AgentExecutor:
             return set()
         if not any(marker in str(final_text) for marker in (
             "未取到", "没取到", "无法获取", "未能获取", "查询失败",
-            "暂不可用", "没有取到", "获取失败",
+            "暂不可用", "没有取到", "获取失败", "没查到", "未查到",
+            "无法查询", "未能查询", "查询不到",
         )):
             return set()
         return {
