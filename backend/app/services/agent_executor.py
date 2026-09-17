@@ -12288,9 +12288,8 @@ class AgentExecutor:
 
         Environment lookup is supporting context for a general travel answer,
         but it is the task itself when the user explicitly asks for weather or
-        air-quality data.  Only the former may recover, and only when the final
-        answer tells the user that the lookup was unavailable.  Personal reads,
-        writes, scoped reads, and undisclosed failures remain strict.
+        air-quality data.  Only the former may recover.  Personal reads,
+        writes, scoped reads, and requested public reads remain strict.
         """
         snapshot = self._agent_kernel_snapshot
         if (
@@ -12306,14 +12305,8 @@ class AgentExecutor:
         user_message = str(self._current_turn_user_message or "").lower()
         if any(marker in user_message for marker in (
             "天气", "气温", "温度", "预报", "下雨", "降雨", "空气质量",
-            "aqi", "紫外线", "风速", "湿度", "环境",
-        )):
-            return set()
-        if not any(marker in str(final_text) for marker in (
-            "未取到", "没取到", "无法获取", "未能获取", "查询失败",
-            "暂不可用", "没有取到", "获取失败", "没查到", "未查到",
-            "无法查询", "未能查询", "查询不到", "查不到", "取不到",
-            "拿不到",
+            "aqi", "紫外线", "风速", "湿度", "环境", "冷不冷", "热不热",
+            "带伞", "雨伞", "刮风", "风大", "雾霾", "污染",
         )):
             return set()
         return {
@@ -18800,6 +18793,10 @@ class AgentExecutor:
                 final_text=full_reply,
             )
         )
+        if recovered_tool_failures:
+            self._record_model_fallback_reason(
+                "optional_public_read_unavailable"
+            )
         action_outcomes = [
             {
                 "action_id": str(

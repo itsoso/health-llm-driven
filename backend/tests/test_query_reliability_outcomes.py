@@ -447,7 +447,7 @@ async def test_irrelevant_repairable_read_block_does_not_poison_completed_genera
 async def test_optional_public_read_failure_does_not_poison_completed_general_answer(
     db, auth_user_and_headers, monkeypatch,
 ):
-    """A disclosed optional weather failure must not fail the whole answer."""
+    """An incidental weather failure must not fail the requested general answer."""
     user, _ = auth_user_and_headers
     _, done, persisted, public, dispatched = await _run_scripted(
         db,
@@ -461,10 +461,7 @@ async def test_optional_public_read_failure_does_not_poison_completed_general_an
             "available": False,
             "error": "invalid_city_parameter",
         },
-        reply=(
-            "康定、稻城：天气接口返回参数错误，暂时拿不到目的地预报；"
-            "先准备保暖、防晒、补水和血氧监测用品。"
-        ),
+        reply="先准备保暖、防晒、补水和血氧监测用品。",
         turn_id="general-answer-after-optional-weather-failure",
     )
 
@@ -473,12 +470,17 @@ async def test_optional_public_read_failure_does_not_poison_completed_general_an
     assert done["completion_status"] == "complete"
     assert done["turn_outcome"]["status"] == "complete"
     assert persisted.meta["completion_status"] == "complete"
-    assert "暂时拿不到目的地预报" in public
+    assert "保暖、防晒、补水" in public
+    assert "optional_public_read_unavailable" in done["fallback_reasons"]
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("query", [
+    "查询康定未来三天天气预报。",
+    "康定冷不冷，要带伞吗？",
+])
 async def test_requested_public_read_failure_remains_failed(
-    db, auth_user_and_headers, monkeypatch,
+    db, auth_user_and_headers, monkeypatch, query,
 ):
     """An explicit weather request is incomplete when its weather read fails."""
     user, _ = auth_user_and_headers
@@ -486,7 +488,7 @@ async def test_requested_public_read_failure_remains_failed(
         db,
         user,
         monkeypatch,
-        query="查询康定未来三天天气预报。",
+        query=query,
         first_tool="environment_check",
         first_args={"check_type": "forecast", "city": "康定", "days": 3},
         dispatch=lambda _request: {
