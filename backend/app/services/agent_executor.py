@@ -17697,7 +17697,6 @@ class AgentExecutor:
                             if (
                                 proposed_calls
                                 and not health_protocol_recovery_attempted
-                                and _tool_calls_are_read_only(proposed_calls)
                                 and (
                                     health_advice_buffered
                                     or (
@@ -17705,6 +17704,7 @@ class AgentExecutor:
                                         and not self._force_no_tools_synthesis
                                         and self._read_repair_failures == 0
                                         and not write_receipts
+                                        and _tool_calls_are_read_only(proposed_calls)
                                         and not self._all_scoped_reads_verified()
                                     )
                                 )
