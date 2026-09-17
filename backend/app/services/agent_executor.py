@@ -12277,6 +12277,48 @@ class AgentExecutor:
                     reason
                 )
 
+    def _recovered_optional_public_read_failures_after_completed_answer(
+        self,
+        *,
+        completion_status: str,
+        final_text: str,
+    ) -> set[str]:
+        """Return disclosed optional public reads that cannot fail the task.
+
+        Environment lookup is supporting context for a general travel answer,
+        but it is the task itself when the user explicitly asks for weather or
+        air-quality data.  Only the former may recover, and only when the final
+        answer tells the user that the lookup was unavailable.  Personal reads,
+        writes, scoped reads, and undisclosed failures remain strict.
+        """
+        snapshot = self._agent_kernel_snapshot
+        if (
+            completion_status != "complete"
+            or not str(final_text or "").strip()
+            or snapshot is None
+            or snapshot.intent.is_write
+            or self._turn_daily_read_plan is not None
+            or self._composed_read_completion() is not None
+        ):
+            return set()
+
+        user_message = str(self._current_turn_user_message or "").lower()
+        if any(marker in user_message for marker in (
+            "天气", "气温", "温度", "预报", "下雨", "降雨", "空气质量",
+            "aqi", "紫外线", "风速", "湿度", "环境",
+        )):
+            return set()
+        if not any(marker in str(final_text) for marker in (
+            "未取到", "没取到", "无法获取", "未能获取", "查询失败",
+            "暂不可用", "没有取到", "获取失败",
+        )):
+            return set()
+        return {
+            tool_name
+            for tool_name in self._agent_kernel_tool_failure_tools
+            if tool_name == "environment_check"
+        }
+
     def _initial_composed_read_calls(self, round_index: int, tools: list[dict]) -> list[dict]:
         """Propose a skipped owned read through Pi; never dispatch outside its gateway."""
         snapshot = self._agent_kernel_snapshot
@@ -18618,6 +18660,12 @@ class AgentExecutor:
             if completion_status == "complete" and full_reply.strip()
             else set()
         )
+        recovered_tool_failures = (
+            self._recovered_optional_public_read_failures_after_completed_answer(
+                completion_status=completion_status,
+                final_text=full_reply,
+            )
+        )
         action_outcomes = [
             {
                 "action_id": str(
@@ -18655,7 +18703,11 @@ class AgentExecutor:
                 for reason in self._agent_kernel_capability_block_reasons
                 if reason not in recovered_capability_blocks
             ],
-            tool_failure_tools=self._agent_kernel_tool_failure_tools,
+            tool_failure_tools=[
+                tool_name
+                for tool_name in self._agent_kernel_tool_failure_tools
+                if tool_name not in recovered_tool_failures
+            ],
             pending_confirmation_tools=self._agent_kernel_pending_confirmation_tools,
             write_receipts=write_receipts,
             record_intent_no_tool=record_intent_no_tool,

@@ -444,6 +444,65 @@ async def test_irrelevant_repairable_read_block_does_not_poison_completed_genera
 
 
 @pytest.mark.asyncio
+async def test_optional_public_read_failure_does_not_poison_completed_general_answer(
+    db, auth_user_and_headers, monkeypatch,
+):
+    """A disclosed optional weather failure must not fail the whole answer."""
+    user, _ = auth_user_and_headers
+    _, done, persisted, public, dispatched = await _run_scripted(
+        db,
+        user,
+        monkeypatch,
+        query="给我一份川西高原旅行购物清单。",
+        first_tool="environment_check",
+        first_args={"check_type": "forecast", "city": "康定", "days": 3},
+        dispatch=lambda _request: {
+            "status": "failed",
+            "available": False,
+            "error": "invalid_city_parameter",
+        },
+        reply="康定天气暂未取到；先准备保暖、防晒、补水和血氧监测用品。",
+        turn_id="general-answer-after-optional-weather-failure",
+    )
+
+    assert len(dispatched) == 1
+    assert done["generation_status"] == "complete"
+    assert done["completion_status"] == "complete"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert persisted.meta["completion_status"] == "complete"
+    assert "天气暂未取到" in public
+
+
+@pytest.mark.asyncio
+async def test_requested_public_read_failure_remains_failed(
+    db, auth_user_and_headers, monkeypatch,
+):
+    """An explicit weather request is incomplete when its weather read fails."""
+    user, _ = auth_user_and_headers
+    _, done, persisted, _, dispatched = await _run_scripted(
+        db,
+        user,
+        monkeypatch,
+        query="查询康定未来三天天气预报。",
+        first_tool="environment_check",
+        first_args={"check_type": "forecast", "city": "康定", "days": 3},
+        dispatch=lambda _request: {
+            "status": "failed",
+            "available": False,
+            "error": "invalid_city_parameter",
+        },
+        reply="康定天气暂未取到，请稍后重试。",
+        turn_id="requested-weather-failure",
+    )
+
+    assert len(dispatched) == 1
+    assert done["generation_status"] == "complete"
+    assert done["completion_status"] == "error"
+    assert done["turn_outcome"]["status"] == "failed"
+    assert persisted.meta["turn_outcome"]["reason_code"] == "environment_check"
+
+
+@pytest.mark.asyncio
 async def test_summary_uses_verified_facts_and_only_model_advice_section(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     def dispatch(request):
