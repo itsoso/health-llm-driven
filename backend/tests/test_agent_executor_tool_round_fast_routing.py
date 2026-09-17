@@ -427,6 +427,63 @@ async def test_fast_tool_round_direct_answer_discarded_and_resynthesized(
     assert "fast_tool_round_direct_answer_resynthesized" in done["fallback_reasons"]
 
 
+@pytest.mark.asyncio
+async def test_protocol_leak_after_fast_direct_answer_is_resynthesized_once(
+    db, auth_user_and_headers, monkeypatch
+):
+    """The strong-model handoff may itself emit protocol prose.
+
+    Retry it once as user-facing prose instead of turning an otherwise valid
+    read request into the generic ``invalid_answer`` terminal.
+    """
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    provider_calls = []
+    strong_rounds = {"n": 0}
+
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
+
+    class FakeProvider:
+        def __init__(self, model_id):
+            self.model = model_id
+
+        async def chat_stream(self, **kwargs):
+            provider_calls.append({"model": self.model, "has_tools": bool(kwargs.get("tools"))})
+            if self.model == "qwen3.6-flash":
+                yield {"type": "content", "text": "FAST MEDICAL PROSE (must not reach user)"}
+                yield {"type": "finish", "finish_reason": "stop"}
+                return
+            strong_rounds["n"] += 1
+            if strong_rounds["n"] == 1:
+                yield {"type": "content", "text": "Tool calls:\n- health_query"}
+            else:
+                yield {"type": "content", "text": "SAFE USER-FACING ANSWER"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+        async def chat(self, **kwargs):
+            raise AssertionError("streaming path expected")
+
+    _wire(
+        executor,
+        monkeypatch,
+        lambda mid: FakeProvider(mid),
+        user_provider=FakeProvider("qwen3.7-max"),
+        tool_name="knowledge_search",
+    )
+
+    events = await _run(executor, "分析我的睡眠趋势", user.id)
+    rendered = "".join(
+        e["data"].get("content", "") for e in events if e.get("event") == "token"
+    )
+    done = events[-1]["data"]
+
+    assert rendered == "SAFE USER-FACING ANSWER"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert "answer_protocol_leak_resynthesized" in done["fallback_reasons"]
+    assert strong_rounds["n"] == 2
+
+
 # ──────────────────────────────────────────────────────────────
 # A1: 显式 per-message 选模型时, 工具轮仍降 fast; 答案轮留在显式模型
 # (生产: mac/mobile 每条消息带 model_id → 190/231 回合此前完全无路由)

@@ -16847,6 +16847,11 @@ class AgentExecutor:
         answer_model_non_streaming = self._resolved_answer_model_is_non_streaming()
         # 封存健康证据后的 provider 协议恢复最多执行一次；异常工具调用永不进入 Pi。
         health_protocol_recovery_attempted = False
+        # A strong-model synthesis can occasionally print protocol-shaped prose
+        # even though it returned no executable tool call. Keep the strict
+        # output gate, but give the same sealed context one bounded chance to
+        # produce ordinary user-facing prose before failing the turn.
+        answer_protocol_recovery_attempted = False
 
         # Pi owns the model/tool loop. Reva's callback retains health-specific
         # receipts, safety checks and client projections; it never chooses the
@@ -17909,6 +17914,51 @@ class AgentExecutor:
                                 retry_messages = [
                                     *messages,
                                     {"role": "user", "content": retry_prompt},
+                                ]
+                                candidate = ""
+                                proposed_calls = []
+                                finish_reason = None
+                                round_tools = []
+                                async for event in self._call_llm_stream(
+                                    retry_messages, []
+                                ):
+                                    if event.get("type") == "content":
+                                        candidate += event.get("text") or ""
+                                        if first_token_at is None and candidate:
+                                            first_token_at = time.time()
+                                    elif event.get("type") == "tool_calls":
+                                        proposed_calls = [
+                                            {
+                                                **call,
+                                                "type": call.get("type", "function"),
+                                            }
+                                            for call in (
+                                                event.get("tool_calls") or []
+                                            )
+                                        ]
+                                    elif event.get("type") == "finish":
+                                        finish_reason = event.get("finish_reason")
+                            if (
+                                not proposed_calls
+                                and candidate.strip()
+                                and not answer_protocol_recovery_attempted
+                                and "protocol_leak"
+                                in enforce_agent_output_quality(candidate).flags
+                            ):
+                                answer_protocol_recovery_attempted = True
+                                self._record_model_fallback_reason(
+                                    "answer_protocol_leak_resynthesized"
+                                )
+                                retry_messages = [
+                                    *messages,
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            "上一版回答包含内部协议格式，不能展示给用户。"
+                                            "请重新生成完整回答，只输出自然、面向用户的中文正文；"
+                                            "不要输出协议标签、函数名、工具调用清单或内部字段。"
+                                        ),
+                                    },
                                 ]
                                 candidate = ""
                                 proposed_calls = []
