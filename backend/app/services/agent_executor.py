@@ -15573,6 +15573,14 @@ class AgentExecutor:
             """Record a content-free first occurrence without touching control flow."""
             if name not in perf_milestones or perf_milestones[name] is not None:
                 return
+            if (
+                name == "first_useful_ms"
+                and perf_milestones["first_card_ms"] is not None
+            ):
+                # A card is useful content itself. Reuse its exact observation
+                # instead of sampling the clock again a millisecond later.
+                perf_milestones[name] = perf_milestones["first_card_ms"]
+                return
             try:
                 perf_milestones[name] = max(
                     0,
@@ -17668,7 +17676,12 @@ class AgentExecutor:
                                 and not health_protocol_recovery_attempted
                                 and (
                                     health_advice_buffered
-                                    or not round_tools
+                                    or (
+                                        not round_tools
+                                        and not self._force_no_tools_synthesis
+                                        and self._read_repair_failures == 0
+                                        and not self._all_scoped_reads_verified()
+                                    )
                                 )
                             ):
                                 health_protocol_recovery_attempted = True
