@@ -1,10 +1,17 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
-import { Image, StyleSheet } from 'react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
-import ConversationShareImage from '../ConversationShareImage';
+import ConversationShareImage, { SHARE_IMAGE_LOAD_TIMEOUT_MS } from '../ConversationShareImage';
 import MarkdownText from '../../shared/MarkdownText';
 import { colors } from '../../../constants/theme';
+
+const makeImageLoadEvent = () => ({
+  nativeEvent: {
+    source: { url: 'https://example.test/image.png', width: 100, height: 100 },
+    cacheType: 'none',
+  },
+});
 
 describe('ConversationShareImage', () => {
   it('reports readiness only after receiving a positive complete layout', () => {
@@ -68,23 +75,115 @@ describe('ConversationShareImage', () => {
     });
   });
 
-  it('omits markdown images that would leave unloaded blank space in the export', () => {
-    const getSize = jest.spyOn(Image, 'getSize').mockImplementation((_uri, success) => {
-      success?.(100, 100);
-    });
+  it('embeds attached and markdown images as export tiles with auth headers', () => {
+    const view = render(
+      <ConversationShareImage
+        imageAuthToken="token-1"
+        messages={[
+          {
+            id: 'user-1',
+            role: 'user',
+            content: '午餐',
+            imageUris: ['https://health.executor.life/api/v1/upload/files/chat/1/meal.jpg'],
+          },
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '![睡眠趋势](https://example.test/sleep.png)\n\n整体不错。',
+          },
+        ]}
+      />,
+    );
+
+    expect(view.getByTestId('share-image-user-1-0').props.source).toEqual([{
+      uri: 'https://health.executor.life/api/v1/upload/files/chat/1/meal.jpg',
+      headers: { Authorization: 'Bearer token-1' },
+    }]);
+    expect(view.getByTestId('share-image-assistant-1-0').props.source).toEqual([{
+      uri: 'https://example.test/sleep.png',
+    }]);
+    expect(view.getByText('整体不错。')).toBeTruthy();
+  });
+
+  it('waits for every export image to load before reporting readiness', () => {
+    const onReady = jest.fn();
     const view = render(
       <ConversationShareImage
         messages={[{
-          id: 'assistant-1',
-          role: 'assistant',
-          content: '![睡眠趋势](https://example.test/sleep.png)\n\n## 昨晚睡眠总结\n\n整体不错。',
+          id: 'user-1',
+          role: 'user',
+          content: '午餐',
+          imageUris: ['https://example.test/a.png', 'https://example.test/b.png'],
         }]}
+        onReady={onReady}
       />,
     );
-    getSize.mockRestore();
 
-    expect(view.UNSAFE_queryAllByType(Image)).toHaveLength(0);
-    expect(view.getByText('昨晚睡眠总结')).toBeTruthy();
-    expect(view.getByText('整体不错。')).toBeTruthy();
+    fireEvent(view.getByTestId('conversation-share-image'), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 900 } },
+    });
+    expect(onReady).not.toHaveBeenCalled();
+
+    fireEvent(view.getByTestId('share-image-user-1-0'), 'load', makeImageLoadEvent());
+    expect(onReady).not.toHaveBeenCalled();
+
+    fireEvent(view.getByTestId('share-image-user-1-1'), 'load', makeImageLoadEvent());
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the export moving with a visible placeholder when an image fails', () => {
+    const onReady = jest.fn();
+    const view = render(
+      <ConversationShareImage
+        messages={[{
+          id: 'user-1',
+          role: 'user',
+          content: '午餐',
+          imageUris: ['https://example.test/a.png'],
+        }]}
+        onReady={onReady}
+      />,
+    );
+
+    fireEvent(view.getByTestId('conversation-share-image'), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 900 } },
+    });
+    fireEvent(view.getByTestId('share-image-user-1-0'), 'error', { nativeEvent: { error: 'boom' } });
+
+    expect(view.getByTestId('share-image-failed-user-1-0')).toBeTruthy();
+    expect(view.getByText('图片加载失败')).toBeTruthy();
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to visible placeholders when export images never settle', () => {
+    jest.useFakeTimers();
+    try {
+      const onReady = jest.fn();
+      const view = render(
+        <ConversationShareImage
+          messages={[{
+            id: 'user-1',
+            role: 'user',
+            content: '午餐',
+            imageUris: ['https://example.test/a.png'],
+          }]}
+          onReady={onReady}
+        />,
+      );
+
+      fireEvent(view.getByTestId('conversation-share-image'), 'layout', {
+        nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 900 } },
+      });
+      expect(onReady).not.toHaveBeenCalled();
+
+      act(() => {
+        jest.advanceTimersByTime(SHARE_IMAGE_LOAD_TIMEOUT_MS);
+      });
+
+      expect(view.getByTestId('share-image-failed-user-1-0')).toBeTruthy();
+      expect(onReady).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

@@ -285,7 +285,7 @@ describe('ChatScreen', () => {
     const view = render(<ChatScreen />);
 
     fireEvent.press(view.getByLabelText('open-image-photo-1'));
-    fireEvent(view.getByLabelText('预览图片，长按可保存或分享'), 'longPress');
+    fireEvent(view.getByLabelText('预览图片，点按返回对话，长按可保存或分享'), 'longPress');
 
     const actions = alertSpy.mock.calls.at(-1)?.[2] as any[];
     await act(async () => {
@@ -310,7 +310,7 @@ describe('ChatScreen', () => {
     const view = render(<ChatScreen />);
 
     fireEvent.press(view.getByLabelText('open-image-photo-2'));
-    fireEvent(view.getByLabelText('预览图片，长按可保存或分享'), 'longPress');
+    fireEvent(view.getByLabelText('预览图片，点按返回对话，长按可保存或分享'), 'longPress');
 
     const actions = alertSpy.mock.calls.at(-1)?.[2] as any[];
     await act(async () => {
@@ -326,6 +326,60 @@ describe('ChatScreen', () => {
         headers: { Authorization: 'Bearer review-token' },
       },
     );
+  });
+
+  it('returns to the conversation when the full-screen image preview is tapped', async () => {
+    mockMessages = [{
+      id: 'photo-3',
+      role: 'user',
+      content: '加餐照片',
+      imageUris: ['https://health.executor.life/api/v1/upload/files/chat/9/snack.jpg'],
+    }];
+    const view = render(<ChatScreen />);
+
+    fireEvent.press(view.getByLabelText('open-image-photo-3'));
+    const preview = view.getByLabelText('预览图片，点按返回对话，长按可保存或分享');
+    expect(preview).toBeTruthy();
+
+    fireEvent.press(preview);
+
+    expect(view.queryByLabelText('预览图片，点按返回对话，长按可保存或分享')).toBeNull();
+  });
+
+  it('embeds selected photos in the long image and captures only after they load', async () => {
+    mockMessages = [{
+      id: 'share-photo',
+      role: 'user',
+      content: '午餐照片',
+      imageUris: ['https://health.executor.life/api/v1/upload/files/chat/7/meal.jpg'],
+    }];
+    const view = render(<ChatScreen />);
+
+    fireEvent(view.getByLabelText('message-share-photo'), 'longPress');
+    fireEvent.press(view.getByLabelText('选中消息生成长图'));
+
+    const shareImage = view.getByTestId('conversation-share-image');
+    fireEvent(shareImage, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 900 } },
+    });
+    expect(mockCaptureRef).not.toHaveBeenCalled();
+
+    const tile = view.getByTestId('share-image-share-photo-0');
+    expect(tile.props.source).toEqual([{
+      uri: 'https://health.executor.life/api/v1/upload/files/chat/7/meal.jpg',
+      headers: { Authorization: 'Bearer review-token' },
+    }]);
+    fireEvent(tile, 'load', {
+      nativeEvent: {
+        source: { url: 'https://health.executor.life/api/v1/upload/files/chat/7/meal.jpg', width: 100, height: 100 },
+        cacheType: 'none',
+      },
+    });
+
+    await waitFor(() => {
+      expect(mockCaptureRef).toHaveBeenCalledTimes(1);
+      expect(mockShareLocalImage).toHaveBeenCalledWith('/tmp/reva-conversation-long-image.png');
+    });
   });
 
   it('waits for a complete long-image layout and captures it once with the iOS large-view renderer', async () => {

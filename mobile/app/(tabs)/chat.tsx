@@ -1252,6 +1252,7 @@ export default function ChatScreen() {
             <ConversationShareImage
               ref={shareImageRef}
               messages={imageExportMessages}
+              imageAuthToken={authToken}
               dateLabel={new Date().toLocaleDateString('zh-CN')}
               onReady={captureSelectedImage}
             />
@@ -1287,10 +1288,10 @@ export default function ChatScreen() {
         <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
           {viewingImage && (
             <Pressable
-              onPress={(event) => event.stopPropagation()}
+              onPress={() => setViewingImage(null)}
               onLongPress={handleViewingImageLongPress}
               accessibilityRole="imagebutton"
-              accessibilityLabel="预览图片，长按可保存或分享"
+              accessibilityLabel="预览图片，点按返回对话，长按可保存或分享"
             >
               <Image
                 source={buildChatImageSource(viewingImage, authToken)}
