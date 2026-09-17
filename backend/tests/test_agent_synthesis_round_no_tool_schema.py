@@ -84,10 +84,10 @@ async def test_pi_keeps_structured_tools_until_model_finishes(db, auth_user_and_
 
 
 @pytest.mark.asyncio
-async def test_pi_text_tool_list_fails_without_another_model_or_write(
+async def test_pi_text_tool_list_gets_one_no_tool_resynthesis_without_write(
     db, auth_user_and_headers, monkeypatch
 ):
-    """A text protocol list fails without reviving the former repair loop."""
+    """Protocol-shaped prose gets one no-tool rewrite, never another write."""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
@@ -109,11 +109,13 @@ async def test_pi_text_tool_list_fails_without_another_model_or_write(
                 yield {"type": "finish", "finish_reason": "tool_calls"}
                 return
             if n == 2:
-                # Plain text does not grant another model/tool attempt.
+                # Protocol-shaped prose is discarded before user release.
                 yield {"type": "content", "text": "Tool calls:\n- health_record"}
                 yield {"type": "finish", "finish_reason": "stop"}
                 return
-            raise AssertionError("text must not trigger another model request")
+            assert not kwargs.get("tools")
+            yield {"type": "content", "text": "今天的饮食记录已查询，下面给出分析。"}
+            yield {"type": "finish", "finish_reason": "stop"}
 
         async def chat(self, **kwargs):
             calls.append(bool(kwargs.get("tools")))
@@ -129,11 +131,15 @@ async def test_pi_text_tool_list_fails_without_another_model_or_write(
     events = await _run(executor, "帮我分析一下最近的饮食", user.id)
     rendered = "".join(e["data"].get("content", "") for e in events if e.get("event") == "token")
 
-    assert calls == [True, True]
+    assert calls == [True, True, False]
     assert executed == ["health_query"]
-    assert rendered.strip() and "没有完成" in rendered
+    assert rendered == "今天的饮食记录已查询，下面给出分析。"
     assert "Tool calls:" not in rendered and "health_record" not in rendered
-    assert events[-1]["data"]["completion_status"] == "error"
+    assert events[-1]["data"]["completion_status"] == "complete"
+    assert (
+        "answer_protocol_leak_resynthesized"
+        in events[-1]["data"]["fallback_reasons"]
+    )
     assert not events[-1]["data"].get("write_receipts")
 
 
