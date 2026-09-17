@@ -12238,6 +12238,45 @@ class AgentExecutor:
         completion = self._composed_read_completion()
         return completion is not None and completion.complete
 
+    def _recover_irrelevant_read_blocks_after_completed_answer(
+        self,
+        *,
+        completion_status: str,
+        final_text: str,
+    ) -> None:
+        """Demote rejected optional reads after a complete unscoped answer.
+
+        A general advice turn has no owned personal-read goal.  If the model
+        nevertheless proposes an out-of-scope personal read, the gateway must
+        reject it and feed that rejection back to the model.  A later complete
+        answer then satisfies the original task without that data, so the
+        repairable rejection is diagnostic rather than the turn outcome.
+
+        Scoped/daily reads and every write turn retain their existing strict
+        completion gates; this method never authorizes or dispatches a tool.
+        """
+        snapshot = self._agent_kernel_snapshot
+        if (
+            completion_status != "complete"
+            or not str(final_text or "").strip()
+            or snapshot is None
+            or snapshot.intent.is_write
+            or self._turn_daily_read_plan is not None
+            or self._composed_read_completion() is not None
+        ):
+            return
+        from app.services.agent_policy_retry import is_repairable_read_reason
+
+        for reason in self._agent_kernel_capability_block_reasons:
+            if (
+                is_repairable_read_reason(reason)
+                and reason
+                not in self._agent_kernel_recovered_capability_block_reasons
+            ):
+                self._agent_kernel_recovered_capability_block_reasons.append(
+                    reason
+                )
+
     def _initial_composed_read_calls(self, round_index: int, tools: list[dict]) -> list[dict]:
         """Propose a skipped owned read through Pi; never dispatch outside its gateway."""
         snapshot = self._agent_kernel_snapshot
@@ -18570,6 +18609,10 @@ class AgentExecutor:
             pass
 
         completion_status = _completion_status_from_finish_reason(final_finish_reason)
+        self._recover_irrelevant_read_blocks_after_completed_answer(
+            completion_status=completion_status,
+            final_text=full_reply,
+        )
         recovered_capability_blocks = (
             set(self._agent_kernel_recovered_capability_block_reasons)
             if completion_status == "complete" and full_reply.strip()

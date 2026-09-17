@@ -373,6 +373,77 @@ async def test_daily_facts_do_not_turn_provider_error_into_success(db, auth_user
 
 
 @pytest.mark.asyncio
+async def test_irrelevant_repairable_read_block_does_not_poison_completed_general_answer(
+    db, auth_user_and_headers, monkeypatch,
+):
+    """A rejected optional personal read is not the outcome of a general task.
+
+    The policy rejection must still reach the model and no personal-data call
+    may dispatch.  Once the model produces a complete answer for a turn with no
+    owned read scope, the historical repairable rejection is diagnostic only.
+    """
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    rounds = 0
+
+    async def provider(messages, tools):
+        nonlocal rounds
+        rounds += 1
+        if rounds == 1:
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": "irrelevant-personal-read",
+                    "type": "function",
+                    "function": {
+                        "name": "health_query",
+                        "arguments": json.dumps({"dimension": "sleep", "days": 1}),
+                    },
+                }],
+            }
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        assert any(
+            "health_query_semantics_unresolved" in str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "tool"
+        )
+        yield {
+            "type": "content",
+            "text": "高原出行先控制上升速度，并准备保暖、防晒和补水用品。",
+        }
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def forbidden_dispatch(*_args, **_kwargs):
+        raise AssertionError("The blocked personal read must not dispatch")
+
+    monkeypatch.setattr(
+        executor,
+        "_build_system_prompt",
+        lambda *a, **k: "Answer general travel questions.",
+    )
+    monkeypatch.setattr(executor, "_call_llm_stream", provider)
+    monkeypatch.setattr(executor, "_dispatch_tool_request", forbidden_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user.id,
+            "解释高原旅行的通用准备原则。",
+            client_turn_id="general-answer-after-irrelevant-read-block",
+        )
+    ]
+    done = events[-1]["data"]
+    persisted = db.get(AgentMessage, done["message_id"])
+
+    assert done["generation_status"] == "complete"
+    assert done["completion_status"] == "complete"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert persisted.meta["completion_status"] == "complete"
+    assert "高原出行" in persisted.content
+
+
+@pytest.mark.asyncio
 async def test_summary_uses_verified_facts_and_only_model_advice_section(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     def dispatch(request):
