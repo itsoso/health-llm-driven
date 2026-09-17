@@ -358,9 +358,9 @@ async def test_stream_total_deadline_falls_back_after_reasoning_only_stall(monke
 
 
 @pytest.mark.asyncio
-async def test_stream_total_deadline_does_not_fallback_after_partial_content(monkeypatch):
-    """已发用户可见正文后超时只能收尾，不能换模型重发造成重复。"""
-    fallback_calls = {"n": 0}
+async def test_stream_total_deadline_continues_partial_synthesis_without_repeating(monkeypatch):
+    """无工具答案已出正文后超时，用质量模型只补尾部并正常收尾。"""
+    recovery_calls = []
 
     class PartialThenStalledProvider:
         model = "qwen3.7-max"
@@ -371,18 +371,27 @@ async def test_stream_total_deadline_does_not_fallback_after_partial_content(mon
                 await asyncio.sleep(0.002)
                 yield {"type": "reasoning", "text": "仍在思考"}
 
+    class ContinuationProvider:
+        model = "qwen3.7-plus"
+
+        async def chat_stream(self, **kwargs):
+            recovery_calls.append(kwargs)
+            yield {"type": "content", "text": "部分内容完成。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
     ex = _executor()
     ex._request_model_id = "qwen3.7-max"
+    primary = PartialThenStalledProvider()
+    monkeypatch.setattr(ex, "_resolve_chat_provider", lambda tools: (primary, tools))
+
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda tier, only_available=True: "qwen3.7-plus" if tier == "balanced" else None,
+    )
     monkeypatch.setattr(
         "app.services.llm.factory.create_provider_for_model_id",
-        lambda mid: PartialThenStalledProvider(),
+        lambda model_id: ContinuationProvider(),
     )
-
-    def stable_fallback(*_args, **_kwargs):
-        fallback_calls["n"] += 1
-        raise AssertionError("partial content must not trigger provider fallback")
-
-    monkeypatch.setattr(ex, "_stable_fallback_provider", stable_fallback)
     import app.services.agent_executor as agent_executor_module
     monkeypatch.setattr(
         agent_executor_module,
@@ -403,8 +412,48 @@ async def test_stream_total_deadline_does_not_fallback_after_partial_content(mon
         for event in events
         if event.get("type") == "content"
     )
-    assert visible_content == "部分"
-    assert fallback_calls["n"] == 0
+    assert visible_content == "部分内容完成。"
+    assert len(recovery_calls) == 1
+    continuation_messages = recovery_calls[0]["messages"]
+    assert continuation_messages[-2] == {"role": "assistant", "content": "部分"}
+    assert "只输出缺失的后续内容" in continuation_messages[-1]["content"]
+    assert recovery_calls[0]["thinking_budget"] == 512
+    assert events[-1] == {"type": "finish", "finish_reason": "stop"}
+    assert "partial_synthesis_timeout_continuation" in ex._model_fallback_reasons
+
+
+@pytest.mark.asyncio
+async def test_stream_partial_timeout_does_not_continue_tool_round(monkeypatch):
+    """工具轮即使出现异常正文也不能跨模型续写或扩大工具权限。"""
+    class PartialThenStalledProvider:
+        model = "qwen3.7-max"
+
+        async def chat_stream(self, **kwargs):
+            yield {"type": "content", "text": "部分"}
+            while True:
+                await asyncio.sleep(0.002)
+                yield {"type": "reasoning", "text": "仍在思考"}
+
+    ex = _executor()
+    provider = PartialThenStalledProvider()
+    monkeypatch.setattr(ex, "_resolve_chat_provider", lambda tools: (provider, tools))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda _model_id: pytest.fail("tool round must not trigger continuation"),
+    )
+    import app.services.agent_executor as agent_executor_module
+    monkeypatch.setattr(agent_executor_module, "_LLM_STREAM_ATTEMPT_TIMEOUT_S", 0.02)
+    monkeypatch.setattr(agent_executor_module.settings, "agent_base_url", None, raising=False)
+    monkeypatch.setattr(agent_executor_module.settings, "agent_api_key", None, raising=False)
+
+    events = await asyncio.wait_for(
+        _drain(ex._call_llm_stream(
+            [{"role": "user", "content": "hi"}],
+            [{"type": "function", "function": {"name": "health_query"}}],
+        )),
+        timeout=0.2,
+    )
+
     assert events[-1] == {"type": "finish", "finish_reason": "error"}
 
 

@@ -510,6 +510,13 @@ _TOOL_TIMEOUT_OVERRIDES: Dict[str, float] = {
 # 主 provider 超时后可用剩余 runtime 预算回退一次，fallback 自己也受同样边界保护。
 _LLM_STREAM_ATTEMPT_TIMEOUT_S = 120.0
 _COMPOSED_SYNTHESIS_RETRY_TIMEOUT_S = 60.0
+# A reasoning model can spend almost the whole primary deadline before emitting
+# its first answer token.  If a tool-free final answer is then cut mid-sentence,
+# finish only the missing suffix with a verified non-fast model.  The recovery is
+# buffered and cannot call tools, so it neither repeats writes nor publishes a
+# second partial answer.
+_PARTIAL_SYNTHESIS_CONTINUATION_TIMEOUT_S = 45.0
+_PARTIAL_SYNTHESIS_CONTINUATION_MAX_TOKENS = 3000
 
 # 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
 # 旧值 4000 会把 Opus 4.7 的长回复硬截断(用户需手动点"继续")。
@@ -21238,6 +21245,7 @@ class AgentExecutor:
         buffer_composed = retry_composed and not pass_tools and self._requires_quality_floor()
         buffered_events = []
         emitted_content = False
+        emitted_content_parts: List[str] = []
         try:
             async for evt in self._iterate_provider_stream_with_deadline(
                 provider,
@@ -21245,6 +21253,7 @@ class AgentExecutor:
             ):
                 if isinstance(evt, dict) and evt.get("type") == "content" and evt.get("text"):
                     emitted_content = True
+                    emitted_content_parts.append(str(evt["text"]))
                 if buffer_composed:
                     buffered_events.append(evt)
                 else:
@@ -21259,8 +21268,21 @@ class AgentExecutor:
                     emitted_content,
                 )
             if emitted_content and not buffer_composed:
-                # 已经向用户发出部分内容 → 不能再切 provider 重发 (会重复)。
-                # 优雅收尾: 记日志 + 发一个带 error finish_reason 的事件让上层感知。
+                # Only a timed-out, tool-free final answer may be continued. The
+                # already-visible prefix is passed back as assistant output and
+                # the recovery is buffered, so no repeated full answer or second
+                # partial draft can escape. Tool rounds remain fail-closed.
+                if isinstance(e, TimeoutError) and not pass_tools:
+                    continuation = await self._continue_partial_synthesis(
+                        round_messages,
+                        "".join(emitted_content_parts),
+                    )
+                    if continuation is not None:
+                        for event in continuation:
+                            yield event
+                        return
+                # Other mid-stream failures cannot safely switch provider after
+                # visible content; end explicitly as an incomplete generation.
                 logger.warning(
                     "[agent_executor] 流式中途报错 (已发部分内容),优雅收尾: %s", e
                 )
@@ -21383,6 +21405,117 @@ class AgentExecutor:
                             self._record_model_fallback_reason("composed_synthesis_boundary_retry_incomplete")
             for event in buffered_events:
                 yield event
+
+    async def _continue_partial_synthesis(
+        self,
+        round_messages: List[Dict[str, Any]],
+        visible_prefix: str,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Finish a timed-out final answer without replaying its visible prefix.
+
+        Recovery is deliberately narrower than normal failover: no tools, no
+        writes, one verified non-fast balanced model, one bounded attempt, and
+        no output until a complete ``stop`` result exists.  Returning ``None``
+        preserves the caller's existing explicit error finish.
+        """
+        if not visible_prefix.strip():
+            return None
+        try:
+            from app.services.llm.factory import create_provider_for_model_id
+            from app.services.llm.model_registry import get_model
+            from app.services.llm.task_routing import pick_model_id_by_tier
+
+            model_id = pick_model_id_by_tier("balanced", only_available=True)
+            self._assert_recovery_quality_model(model_id)
+            entry = get_model(str(model_id)) if model_id else None
+            if entry is None or entry.speed_tier == "fast":
+                return None
+            provider = create_provider_for_model_id(str(model_id))
+            continuation_messages = [dict(message) for message in round_messages]
+            continuation_messages.extend(
+                [
+                    {"role": "assistant", "content": visible_prefix},
+                    {
+                        "role": "user",
+                        "content": (
+                            "上一条回复因服务时限在中途被截断。请从最后一个字符后继续，"
+                            "只输出缺失的后续内容，不要重复、改写或否定已经输出的内容。"
+                            "补全未结束的句子、清单或表格并自然收尾；保持原有证据与医疗安全边界。"
+                            "不要调用任何工具。"
+                        ),
+                    },
+                ]
+            )
+            kwargs: Dict[str, Any] = {
+                "messages": continuation_messages,
+                "model": None,
+                "temperature": 0.2,
+                "return_metadata": True,
+                "max_tokens": _PARTIAL_SYNTHESIS_CONTINUATION_MAX_TOKENS,
+            }
+            if getattr(entry, "supports_thinking_budget", False):
+                budget = int(
+                    getattr(settings, "balanced_synthesis_thinking_budget", 0) or 0
+                )
+                if budget > 0:
+                    kwargs["thinking_budget"] = budget
+
+            self._record_model_fallback_reason(
+                "partial_synthesis_timeout_continuation"
+            )
+            buffered: List[Dict[str, Any]] = []
+            async with asyncio.timeout(_PARTIAL_SYNTHESIS_CONTINUATION_TIMEOUT_S):
+                async for event in provider.chat_stream(**kwargs):
+                    buffered.append(event)
+            finishes = [
+                event.get("finish_reason")
+                for event in buffered
+                if event.get("type") == "finish"
+            ]
+            content = [
+                event
+                for event in buffered
+                if event.get("type") == "content" and event.get("text")
+            ]
+            if (
+                finishes == ["stop"]
+                and content
+                and not any(event.get("type") == "tool_calls" for event in buffered)
+            ):
+                suffix = "".join(str(event["text"]) for event in content)
+                # Continuation models occasionally echo the last phrase despite
+                # the instruction. Remove the longest exact prefix/suffix
+                # overlap before appending it to the already-visible answer.
+                for overlap in range(min(len(visible_prefix), len(suffix)), 0, -1):
+                    if visible_prefix.endswith(suffix[:overlap]):
+                        suffix = suffix[overlap:]
+                        break
+                if not suffix.strip():
+                    logger.warning(
+                        "[agent_executor] partial synthesis continuation repeated prefix model=%s",
+                        model_id,
+                    )
+                    return None
+                logger.info(
+                    "[agent_executor] partial synthesis continued model=%s chars=%d",
+                    model_id,
+                    len(suffix),
+                )
+                return [
+                    {"type": "content", "text": suffix},
+                    {"type": "finish", "finish_reason": "stop"},
+                ]
+            logger.warning(
+                "[agent_executor] partial synthesis continuation incomplete model=%s finishes=%s",
+                model_id,
+                finishes,
+            )
+        except Exception as exc:  # noqa: BLE001 - bounded recovery must fail closed
+            logger.warning(
+                "[agent_executor] partial synthesis continuation failed error_type=%s",
+                type(exc).__name__,
+            )
+        return None
 
     def _maybe_force_record_tool_choice(
         self, stream_kwargs: Dict[str, Any], original_messages: List[Dict[str, Any]]
