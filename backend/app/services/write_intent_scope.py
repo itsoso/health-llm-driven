@@ -887,7 +887,7 @@ def normalize_write_scope_text(value: str) -> str:
 
 def _is_clock_colon(value: str, position: int) -> bool:
     hour_match = re.search(r"(?<!\d)(?P<hour>\d{1,2})$", value[:position])
-    minute_match = re.match(r"(?P<minute>\d{2})(?!\d)", value[position + 1 :])
+    minute_match = re.match(r"(?P<minute>\d{1,2})(?!\d)", value[position + 1 :])
     if hour_match is None or minute_match is None:
         return False
     return (

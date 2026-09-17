@@ -712,11 +712,13 @@ _EXCRETION_TARGET_ALIASES = {
 }
 _CLOCK_RE = re.compile(
     r"(?<!\d)(?P<hour>[01]?\d|2[0-3])[:：点]"
-    r"(?P<minute>[0-5]\d|半|一刻|三刻)?(?:钟)?"
+    r"(?P<minute>[0-5]?\d|半|一刻|三刻)?(?:分|钟)?"
+    r"(?![\d零〇一二两三四五六七八九十半刻分])"
 )
 _CHINESE_CLOCK_RE = re.compile(
     r"(?P<hour>[零〇一二两三四五六七八九十]{1,3})点"
     r"(?P<minute>半|一刻|三刻|[零〇一二两三四五六七八九十]{1,3}分)?(?:钟)?"
+    r"(?![\d零〇一二两三四五六七八九十半刻分])"
 )
 _REMINDER_INTERVAL_RE = re.compile(
     r"(?:每隔|每|间隔)\s*(?P<value>\d+(?:\.\d+)?)\s*"
@@ -4710,9 +4712,22 @@ def _deterministic_target_values(
             key=lambda match: match.start(),
         ))
         if clocks:
-            values["times"] = tuple(
-                _normalize_clock_value(match.group(0)) for match in clocks
+            normalized_clocks = tuple(
+                _normalize_clock_value(
+                    (
+                        daypart.group(0)
+                        if (daypart := re.search(
+                            r"(?:凌晨|清晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间|"
+                            r"夜里|夜间|夜晚|半夜|午夜|深夜|夜半|昨晚|今晚|昨夜|今夜)\s*$",
+                            clause[:match.start()],
+                        ))
+                        else ""
+                    ) + match.group(0)
+                )
+                for match in clocks
             )
+            if normalized_clocks and all(normalized_clocks):
+                values["times"] = normalized_clocks
         if interval_match := _REMINDER_INTERVAL_RE.search(clause):
             interval = float(interval_match.group("value"))
             if interval_match.group("unit").lower() in {"小时", "h"}:
@@ -6429,7 +6444,13 @@ def _clock_components(value: Any) -> tuple[int, int] | None:
         "凌晨",
     )
     afternoon_markers = ("下午", "傍晚")
-    if any(marker in daypart_prefix for marker in night_markers) and hour == 12:
+    early_night_markers = ("凌晨", "半夜", "午夜", "深夜", "夜半")
+    if any(marker in daypart_prefix for marker in early_night_markers):
+        if hour == 12:
+            hour = 0
+        elif hour > 5:
+            return None
+    elif any(marker in daypart_prefix for marker in night_markers) and hour == 12:
         hour = 0
     elif 1 <= hour <= 5 and "中午" in daypart_prefix:
         hour += 12

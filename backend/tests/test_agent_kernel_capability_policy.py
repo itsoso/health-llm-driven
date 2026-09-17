@@ -2854,6 +2854,42 @@ def test_reminder_binding_accepts_chinese_clock_without_weakening_target_match()
     assert wrong_title.action == "block"
 
 
+@pytest.mark.parametrize(
+    ("message", "clock"),
+    (
+        ("明天早上8点5分提醒我起床。", "08:05"),
+        ("明天早上8:5提醒我起床。", "08:05"),
+        ("明天晚上八点提醒我起床。", "20:00"),
+    ),
+)
+def test_reminder_binding_preserves_minutes_and_daypart(message, clock):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request("health_record", {
+            "record_type": "reminder",
+            "data": {
+                "title": "起床",
+                "remind_at": f"2026-07-18T{clock}:00+08:00",
+            },
+        }),
+    )
+    assert decision.action == "allow", decision.reason
+
+
+def test_reminder_binding_rejects_contradictory_early_morning_hour():
+    decision = decide_tool_capability(
+        _snapshot("明天凌晨八点提醒我起床。"),
+        _request("health_record", {
+            "record_type": "reminder",
+            "data": {
+                "title": "起床",
+                "remind_at": "2026-07-18T20:00:00+08:00",
+            },
+        }),
+    )
+    assert decision.action == "block"
+
+
 def test_recurring_reminder_binds_explicit_start_date():
     snapshot = _snapshot("从明天开始每天9点提醒我吃药")
 

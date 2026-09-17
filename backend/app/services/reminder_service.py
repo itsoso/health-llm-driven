@@ -55,8 +55,11 @@ class ReminderService:
         )
 
         logger.info(
-            f"提醒已触发: user={reminder.user_id}, title='{reminder.title}', "
-            f"priority={priority}, push_result={result.get('success')}"
+            "提醒已触发: user=%s reminder_id=%s priority=%s push_result=%s",
+            reminder.user_id,
+            reminder.id,
+            priority,
+            result.get("success"),
         )
 
         # 更新状态
@@ -121,8 +124,12 @@ class ReminderService:
             try:
                 await self.fire_reminder(reminder)
                 fired += 1
-            except Exception as e:
-                logger.error(f"触发提醒失败 (id={reminder.id}): {e}")
+            except Exception as exc:
+                logger.error(
+                    "触发提醒失败: reminder_id=%s error_type=%s",
+                    reminder.id,
+                    type(exc).__name__,
+                )
                 reminder.status = "fired"  # 避免反复重试
                 reminder.fired_at = get_china_now()
                 self.db.commit()

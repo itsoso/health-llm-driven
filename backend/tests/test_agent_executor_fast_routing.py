@@ -78,12 +78,25 @@ def test_explicit_chinese_clock_reminder_has_narrow_server_owned_recovery():
         reference_now=now,
         write_receipts=[{"verified": True}],
     ) is None
+    for message, expected_clock in (
+        ("明天早上8点5分提醒我起床。", "08:05:00"),
+        ("明天早上8:5提醒我起床。", "08:05:00"),
+        ("明天晚上八点提醒我起床。", "20:00:00"),
+    ):
+        recovered = _build_deterministic_one_time_reminder_tool_call(
+            message, reference_now=now, write_receipts=[],
+        )
+        assert recovered is not None
+        assert json.loads(recovered["function"]["arguments"])["data"]["remind_at"] == (
+            f"2026-09-19T{expected_clock}+08:00"
+        )
     for unsafe in (
         "妈妈说：明天早晨八点半提醒我起床。",
         "明天早晨八点半别提醒我起床。",
         "明天早晨八点半提醒我起床，也提醒我吃药。",
         "明天早晨八点半提醒我起床吗？",
         "每天早晨八点半提醒我起床。",
+        "明天凌晨八点提醒我起床。",
     ):
         assert _build_deterministic_one_time_reminder_tool_call(
             unsafe, reference_now=now, write_receipts=[],
@@ -91,8 +104,17 @@ def test_explicit_chinese_clock_reminder_has_narrow_server_owned_recovery():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_clock"),
+    (
+        ("明天早晨八点半提醒我起床。", "08:30:00"),
+        ("明天早上8点5分提醒我起床。", "08:05:00"),
+        ("明天早上8:5提醒我起床。", "08:05:00"),
+        ("明天晚上八点提醒我起床。", "20:00:00"),
+    ),
+)
 async def test_no_tool_reminder_answer_recovers_through_normal_write_path(
-    db, auth_user_and_headers, monkeypatch,
+    db, auth_user_and_headers, monkeypatch, message, expected_clock,
 ):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -127,13 +149,13 @@ async def test_no_tool_reminder_answer_recovers_through_normal_write_path(
         }, ensure_ascii=False)
 
     monkeypatch.setattr(executor, "_api_post", fake_post)
-    events = await _run(executor, "明天早晨八点半提醒我起床。", user_id=user.id)
+    events = await _run(executor, message, user_id=user.id)
     done = events[-1]["data"]
 
     assert len(posted) == 1
     assert posted[0][0].endswith("/reminders/me")
     assert posted[0][1]["title"] == "起床"
-    assert posted[0][1]["remind_at"].endswith("T08:30:00+08:00")
+    assert posted[0][1]["remind_at"].endswith(f"T{expected_clock}+08:00")
     assert done["record_intent_no_tool"] is False
     assert done["tools_used"] == ["health_record"]
     assert len(done["write_receipts"]) == 1

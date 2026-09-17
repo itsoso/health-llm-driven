@@ -270,6 +270,12 @@ def test_clause_split_normalizes_text_and_preserves_scope_boundaries() -> None:
     )
 
 
+def test_clock_colon_with_single_digit_minute_stays_in_authorized_clause() -> None:
+    assert split_write_clauses("明天早上8:5提醒我起床。") == (
+        "明天早上8:5提醒我起床",
+    )
+
+
 @pytest.mark.parametrize(
     "text",
     (
