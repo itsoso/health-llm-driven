@@ -462,7 +462,7 @@ async def test_optional_public_read_failure_does_not_poison_completed_general_an
             "error": "invalid_city_parameter",
         },
         reply=(
-            "康定天气没查到：天气接口返回参数错误；"
+            "康定、稻城：天气接口返回参数错误，暂时拿不到目的地预报；"
             "先准备保暖、防晒、补水和血氧监测用品。"
         ),
         turn_id="general-answer-after-optional-weather-failure",
@@ -473,7 +473,7 @@ async def test_optional_public_read_failure_does_not_poison_completed_general_an
     assert done["completion_status"] == "complete"
     assert done["turn_outcome"]["status"] == "complete"
     assert persisted.meta["completion_status"] == "complete"
-    assert "天气没查到" in public
+    assert "暂时拿不到目的地预报" in public
 
 
 @pytest.mark.asyncio
