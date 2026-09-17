@@ -10,6 +10,8 @@ turns almost always call a tool (health_record/health_query/health_manage), and 
 fast model that can't tool-call would silently break them.
 """
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -23,6 +25,7 @@ from app.services.agent_executor import (
     _is_fast_eligible_turn,
     _looks_like_medical_report_image_context,
     _record_intent_needs_detail_message,
+    _build_deterministic_one_time_reminder_tool_call,
 )
 from app.services.llm import model_registry as reg
 
@@ -51,6 +54,90 @@ def test_record_intent_needs_detail_message_is_honest_and_actionable():
     empty = _record_intent_needs_detail_message("")
     assert "还没记下来" in empty
     assert "没有成功写入数据库" not in empty
+
+
+def test_explicit_chinese_clock_reminder_has_narrow_server_owned_recovery():
+    now = datetime(2026, 9, 18, 0, 13, tzinfo=ZoneInfo("Asia/Shanghai"))
+    call = _build_deterministic_one_time_reminder_tool_call(
+        "明天早晨八点半提醒我起床。",
+        reference_now=now,
+        write_receipts=[],
+    )
+    assert call is not None
+    assert call["function"]["name"] == "health_record"
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "reminder",
+        "data": {
+            "title": "起床",
+            "message": "起床",
+            "remind_at": "2026-09-19T08:30:00+08:00",
+        },
+    }
+    assert _build_deterministic_one_time_reminder_tool_call(
+        "明天早晨八点半提醒我起床。",
+        reference_now=now,
+        write_receipts=[{"verified": True}],
+    ) is None
+    for unsafe in (
+        "妈妈说：明天早晨八点半提醒我起床。",
+        "明天早晨八点半别提醒我起床。",
+        "明天早晨八点半提醒我起床，也提醒我吃药。",
+        "明天早晨八点半提醒我起床吗？",
+        "每天早晨八点半提醒我起床。",
+    ):
+        assert _build_deterministic_one_time_reminder_tool_call(
+            unsafe, reference_now=now, write_receipts=[],
+        ) is None
+
+
+@pytest.mark.asyncio
+async def test_no_tool_reminder_answer_recovers_through_normal_write_path(
+    db, auth_user_and_headers, monkeypatch,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    real_health_tools = ae.get_health_tools()
+    _wire_common(executor, monkeypatch, lambda model_id: _FakeProvider(model_id))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **kwargs: _FakeProvider("qwen3.7-plus"),
+    )
+    monkeypatch.setattr(
+        ae,
+        "get_health_tools",
+        lambda subset=None: [
+            tool for tool in real_health_tools
+            if (tool.get("function") or {}).get("name") == "health_record"
+        ],
+    )
+    posted = []
+
+    async def fake_post(url, headers, data):
+        posted.append((url, dict(data)))
+        return json.dumps({
+            "id": 314159,
+            "title": data["title"],
+            "remind_at": data["remind_at"],
+            "status": "pending",
+            "delivery_status": {
+                "agent_claim": "created_not_device_delivered",
+                "iphone_notification": {"status": "will_attempt_when_due"},
+                "watch": {"route": "watch_summary_due_item", "delivery_confirmed": False},
+            },
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_api_post", fake_post)
+    events = await _run(executor, "明天早晨八点半提醒我起床。", user_id=user.id)
+    done = events[-1]["data"]
+
+    assert len(posted) == 1
+    assert posted[0][0].endswith("/reminders/me")
+    assert posted[0][1]["title"] == "起床"
+    assert posted[0][1]["remind_at"].endswith("T08:30:00+08:00")
+    assert done["record_intent_no_tool"] is False
+    assert done["tools_used"] == ["health_record"]
+    assert len(done["write_receipts"]) == 1
+    assert done["write_receipts"][0]["verified"] is True
 
 
 def test_all_taken_resolves_only_from_immediate_owner_scoped_supplement_context(

@@ -2793,6 +2793,67 @@ def test_reminder_binding_supports_scheduled_date_and_post_marker_title(message,
     assert decision.action == "allow"
 
 
+def test_reminder_binding_accepts_chinese_clock_without_weakening_target_match():
+    snapshot = _snapshot("明天早晨八点半提醒我起床。")
+    matching = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "起床",
+                    "remind_at": "2026-07-18T08:30:00+08:00",
+                },
+            },
+        ),
+    )
+    wrong_time = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "起床",
+                    "remind_at": "2026-07-18T09:30:00+08:00",
+                },
+            },
+        ),
+    )
+    wrong_date = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "起床",
+                    "remind_at": "2026-07-19T08:30:00+08:00",
+                },
+            },
+        ),
+    )
+    wrong_title = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {
+                "record_type": "reminder",
+                "data": {
+                    "title": "吃药",
+                    "remind_at": "2026-07-18T08:30:00+08:00",
+                },
+            },
+        ),
+    )
+
+    assert matching.action == "allow", matching.reason
+    assert wrong_time.action == "block"
+    assert wrong_date.action == "block"
+    assert wrong_title.action == "block"
+
+
 def test_recurring_reminder_binds_explicit_start_date():
     snapshot = _snapshot("从明天开始每天9点提醒我吃药")
 

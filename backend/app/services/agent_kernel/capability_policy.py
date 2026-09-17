@@ -4705,7 +4705,10 @@ def _deterministic_target_values(
         title = _reminder_target_title(clause)
         if title:
             values["titles"] = (title,)
-        clocks = tuple(_CLOCK_RE.finditer(clause))
+        clocks = tuple(sorted(
+            (*_CLOCK_RE.finditer(clause), *_CHINESE_CLOCK_RE.finditer(clause)),
+            key=lambda match: match.start(),
+        ))
         if clocks:
             values["times"] = tuple(
                 _normalize_clock_value(match.group(0)) for match in clocks
@@ -4815,13 +4818,17 @@ def _target_text_before_marker(clause: str, marker: str) -> str:
         "",
         value,
     )
+    has_clock = bool(_CLOCK_RE.search(value) or _CHINESE_CLOCK_RE.search(value))
     value = _CLOCK_RE.sub("", value)
+    value = _CHINESE_CLOCK_RE.sub("", value)
     value = re.sub(
         r"^(?:从)?(?:今天|今日|明天|明日|后天)(?:开始|起)?",
         "",
         value,
     )
     value = re.sub(r"^(?:从)?(?:到|至)?(?:每天|每日)?", "", value)
+    if has_clock:
+        value = re.sub(r"^(?:凌晨|清晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间|夜里|夜间)", "", value)
     return value.strip("是为：:，,。.!！；;的 ")
 
 

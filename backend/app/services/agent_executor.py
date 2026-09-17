@@ -142,6 +142,7 @@ from app.services.agent_kernel.types import (
     TurnSnapshot,
 )
 from app.services.agent_kernel.capability_policy import (
+    _unique_clock_value,
     bind_server_authorized_health_record_fields,
     bind_server_authorized_manage_lookup,
     canonical_health_manage_record_id,
@@ -8755,6 +8756,71 @@ def _build_deterministic_simple_record_tool_call(
     }
 
 
+_ONE_TIME_REMINDER_RE = re.compile(
+    r"^(?:请|麻烦)?(?:帮我)?\s*(?:明天|明日)\s*"
+    r"(?:凌晨|清晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间|夜里|夜间)?\s*"
+    r"(?P<clock>[零〇一二两三四五六七八九十\d]{1,3}(?:点|:|：)"
+    r"(?:[零〇一二两三四五六七八九十\d]{1,2}分?|半|一刻|三刻)?钟?)\s*"
+    r"提醒我(?P<title>[\u4e00-\u9fffA-Za-z0-9]{1,24})[。！! ]*$"
+)
+
+
+def _build_deterministic_one_time_reminder_tool_call(
+    message: str,
+    *,
+    reference_now: datetime,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+    runtime_write_blocked: bool = False,
+    read_only_turn: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Recover one exact tomorrow reminder when a tool-capable model only replies.
+
+    The full-message grammar intentionally excludes quoted, compound, recurring,
+    ambiguous, or negated instructions. Dispatch still passes through the same
+    capability policy, validation, durable write plan, and receipt checks.
+    """
+    if write_receipts or has_attachment or runtime_write_blocked or read_only_turn:
+        return None
+    intent = classify_agent_utterance(message, reference_now=reference_now)
+    if not (
+        intent.primary == "write"
+        and intent.domain == "reminder"
+        and intent.operation == "create"
+        and intent.is_write
+    ):
+        return None
+    match = _ONE_TIME_REMINDER_RE.fullmatch(str(message or "").strip())
+    if match is None:
+        return None
+    clock = _unique_clock_value(message)
+    if not clock:
+        return None
+    hour, minute = (int(part) for part in clock.split(":"))
+    tz = reference_now.tzinfo or BEIJING_TZ
+    now = reference_now.astimezone(tz) if reference_now.tzinfo else reference_now.replace(tzinfo=tz)
+    target = (now + timedelta(days=1)).replace(
+        hour=hour, minute=minute, second=0, microsecond=0,
+    )
+    title = match.group("title")
+    arguments = {
+        "record_type": "reminder",
+        "data": {
+            "title": title,
+            "message": title,
+            "remind_at": target.isoformat(timespec="seconds"),
+        },
+    }
+    return {
+        "id": f"deterministic-reminder-{_sha12(repr(arguments))}",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps(arguments, ensure_ascii=False),
+        },
+    }
+
+
 def _build_preplanned_simple_diet_tool_call(
     goal: Optional[GoalSpec],
     *,
@@ -16755,6 +16821,7 @@ class AgentExecutor:
         deterministic_diet_correction_fallback_attempted = False
         deterministic_supplement_fallback_attempted = False
         deterministic_simple_record_fallback_attempted = False
+        deterministic_reminder_fallback_attempted = False
         simple_diet_nutrition_estimation_attempted = False
         simple_diet_nutrition_rejection_rounds: set[int] = set()
         simple_diet_nutrition_estimate_ms: Optional[int] = None
@@ -17856,6 +17923,29 @@ class AgentExecutor:
                             if not proposed_calls and finish_reason == "stop" and not health_advice_buffered:
                                 proposed_calls = self._initial_composed_read_calls(round_idx, round_tools)
                                 if proposed_calls:
+                                    candidate = ""
+                                    finish_reason = "tool_calls"
+                            if (
+                                not proposed_calls
+                                and finish_reason == "stop"
+                                and round_idx == 0
+                                and not deterministic_reminder_fallback_attempted
+                                and any(
+                                    (tool.get("function") or {}).get("name") == "health_record"
+                                    for tool in round_tools
+                                )
+                            ):
+                                reminder_call = _build_deterministic_one_time_reminder_tool_call(
+                                    message,
+                                    reference_now=self._agent_kernel_reference_now(),
+                                    write_receipts=write_receipts,
+                                    has_attachment=bool(images or file_base64),
+                                    runtime_write_blocked=bool(self._runtime_write_block_reason),
+                                    read_only_turn=self._read_only_turn,
+                                )
+                                if reminder_call is not None:
+                                    deterministic_reminder_fallback_attempted = True
+                                    proposed_calls = [reminder_call]
                                     candidate = ""
                                     finish_reason = "tool_calls"
                             if (
