@@ -8758,7 +8758,7 @@ def _build_deterministic_simple_record_tool_call(
 
 _ONE_TIME_REMINDER_RE = re.compile(
     r"^(?:请|麻烦)?(?:帮我)?\s*(?:明天|明日)\s*"
-    r"(?:凌晨|清晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间|夜里|夜间)?\s*"
+    r"(?P<daypart>凌晨|清晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间|夜里|夜间)?\s*"
     r"(?P<clock>[零〇一二两三四五六七八九十\d]{1,3}(?:点|:|：)"
     r"(?:[零〇一二两三四五六七八九十\d]{1,2}分?|半|一刻|三刻)?钟?)\s*"
     r"提醒我(?P<title>[\u4e00-\u9fffA-Za-z0-9]{1,24})[。！! ]*$"
@@ -8797,6 +8797,27 @@ def _build_deterministic_one_time_reminder_tool_call(
     if not clock:
         return None
     hour, minute = (int(part) for part in clock.split(":"))
+    # The fallback owns the date as well as the clock. Reject daypart/clock
+    # combinations whose date is ambiguous or contradictory (e.g. "明天晚上
+    # 十二点" means the following midnight, not the start of tomorrow).
+    daypart_hour_bounds = {
+        "凌晨": (0, 5),
+        "清晨": (4, 9),
+        "早上": (5, 11),
+        "早晨": (5, 11),
+        "上午": (0, 11),
+        "中午": (11, 13),
+        "下午": (12, 17),
+        "傍晚": (16, 19),
+        "晚上": (18, 23),
+        "晚间": (18, 23),
+    }
+    daypart = match.group("daypart")
+    if daypart and (
+        daypart not in daypart_hour_bounds
+        or not daypart_hour_bounds[daypart][0] <= hour <= daypart_hour_bounds[daypart][1]
+    ):
+        return None
     tz = reference_now.tzinfo or BEIJING_TZ
     now = reference_now.astimezone(tz) if reference_now.tzinfo else reference_now.replace(tzinfo=tz)
     target = (now + timedelta(days=1)).replace(

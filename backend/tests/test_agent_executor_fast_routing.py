@@ -97,6 +97,11 @@ def test_explicit_chinese_clock_reminder_has_narrow_server_owned_recovery():
         "明天早晨八点半提醒我起床吗？",
         "每天早晨八点半提醒我起床。",
         "明天凌晨八点提醒我起床。",
+        "明天晚上十二点提醒我起床。",
+        "明天晚上12点提醒我起床。",
+        "明天早上十二点提醒我起床。",
+        "明天早上12点提醒我起床。",
+        "明天夜里一点提醒我起床。",
     ):
         assert _build_deterministic_one_time_reminder_tool_call(
             unsafe, reference_now=now, write_receipts=[],
@@ -160,6 +165,44 @@ async def test_no_tool_reminder_answer_recovers_through_normal_write_path(
     assert done["tools_used"] == ["health_record"]
     assert len(done["write_receipts"]) == 1
     assert done["write_receipts"][0]["verified"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "明天晚上十二点提醒我起床。",
+        "明天早上十二点提醒我起床。",
+        "明天夜里一点提醒我起床。",
+    ),
+)
+async def test_ambiguous_tomorrow_clock_does_not_enter_write_path(
+    db, auth_user_and_headers, monkeypatch, message,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    real_health_tools = ae.get_health_tools()
+    _wire_common(executor, monkeypatch, lambda model_id: _FakeProvider(model_id))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **kwargs: _FakeProvider("qwen3.7-plus"),
+    )
+    monkeypatch.setattr(
+        ae, "get_health_tools",
+        lambda subset=None: [
+            tool for tool in real_health_tools
+            if (tool.get("function") or {}).get("name") == "health_record"
+        ],
+    )
+
+    async def unexpected_post(url, headers, data):
+        pytest.fail("ambiguous clock must not create a reminder")
+
+    monkeypatch.setattr(executor, "_api_post", unexpected_post)
+    events = await _run(executor, message, user_id=user.id)
+    done = events[-1]["data"]
+    assert done["tools_used"] == []
+    assert done["write_receipts"] == []
 
 
 def test_all_taken_resolves_only_from_immediate_owner_scoped_supplement_context(
