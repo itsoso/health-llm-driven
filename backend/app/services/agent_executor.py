@@ -81,6 +81,7 @@ from app.services.agent_processing_summary import build_processing_summary
 from app.services.guidance_validator import (
     build_confirmable_health_fact_draft,
     enforce_medical_evidence_boundaries,
+    requires_medical_evidence_boundary,
 )
 from app.services.agent_turn_retry import (
     RetryableTurnRecovery,
@@ -12319,6 +12320,104 @@ class AgentExecutor:
             if tool_name == "environment_check"
         }
 
+    async def _repair_incidental_medical_boundary(
+        self,
+        *,
+        user_message: str,
+        draft: str,
+        violations: Sequence[str],
+    ) -> tuple[Optional[str], Optional[int]]:
+        """Give a general answer one tool-free safety rewrite.
+
+        The medical boundary remains authoritative.  This retry is available
+        only when a non-medical, non-write task was otherwise answered and the
+        sole issue is model-invented dose advice.  Explicit medical questions,
+        scoped reads, writes, and any second unsafe draft still fail closed.
+        """
+        snapshot = self._agent_kernel_snapshot
+        reason_codes = {
+            str(reason).split(":", 1)[0]
+            for reason in violations
+            if str(reason).strip()
+        }
+        if (
+            not str(draft or "").strip()
+            or reason_codes != {"unverified_dose_action"}
+            or requires_medical_evidence_boundary(user_message)
+            or snapshot is None
+            or snapshot.intent.is_write
+            or self._turn_daily_read_plan is not None
+            or self._composed_read_completion() is not None
+        ):
+            return None, None
+
+        correction_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Rewrite an untrusted model draft for the original general task. "
+                    "Do not call tools. Preserve the useful non-medical answer and any "
+                    "explicit data-source limitation, but remove every medication or "
+                    "supplement dose, frequency, schedule, duration, prescription, or "
+                    "instruction. Medicines may only be referred to a doctor or pharmacist "
+                    "without a concrete regimen. Do not add facts, claims, or completed "
+                    "actions. Return only the corrected user-facing answer."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "original_request": user_message,
+                        "untrusted_model_draft": draft,
+                        "boundary_reasons": sorted(reason_codes),
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ]
+        events: list[dict[str, Any]] = []
+        started_at = time.monotonic()
+        try:
+            async for event in self._call_llm_stream(correction_messages, []):
+                events.append(event)
+        except Exception as exc:  # noqa: BLE001 - the original boundary remains fail-closed
+            self._record_model_fallback_reason(
+                "incidental_medical_boundary_repair_failed"
+            )
+            logger.warning(
+                "[agent_executor] incidental medical boundary repair failed "
+                "error_type=%s",
+                type(exc).__name__,
+            )
+            return None, int((time.monotonic() - started_at) * 1000)
+
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        finishes = [
+            event.get("finish_reason")
+            for event in events
+            if event.get("type") == "finish"
+        ]
+        if (
+            finishes != ["stop"]
+            or any(event.get("type") == "tool_calls" for event in events)
+        ):
+            self._record_model_fallback_reason(
+                "incidental_medical_boundary_repair_incomplete"
+            )
+            return None, elapsed_ms
+        candidate = "".join(
+            str(event.get("text") or "")
+            for event in events
+            if event.get("type") == "content"
+        ).strip()
+        if not candidate:
+            self._record_model_fallback_reason(
+                "incidental_medical_boundary_repair_incomplete"
+            )
+            return None, elapsed_ms
+        return candidate, elapsed_ms
+
     def _initial_composed_read_calls(self, round_index: int, tools: list[dict]) -> list[dict]:
         """Propose a skipped owned read through Pi; never dispatch outside its gateway."""
         snapshot = self._agent_kernel_snapshot
@@ -18336,6 +18435,39 @@ class AgentExecutor:
             trusted_write_summary=_trusted_receipt_summary(write_receipts),
             trusted_fact_summary=self._trusted_read_summary(),
         )
+        if (
+            medical_boundary.flagged
+            and not composed_boundary.flagged
+            and final_finish_reason == "stop"
+        ):
+            repaired_text, repair_elapsed_ms = (
+                await self._repair_incidental_medical_boundary(
+                    user_message=message,
+                    draft=composed_boundary.text,
+                    violations=medical_boundary.violations,
+                )
+            )
+            if repair_elapsed_ms is not None:
+                llm_rounds_ms.append(repair_elapsed_ms)
+            if repaired_text is not None:
+                repaired_boundary = enforce_medical_evidence_boundaries(
+                    repaired_text,
+                    model_generated=True,
+                    evidence_sources=sources_used,
+                    has_clinician_instruction=False,
+                    verified_write_receipt=False,
+                    trusted_write_summary="",
+                    trusted_fact_summary="",
+                )
+                if not repaired_boundary.flagged:
+                    medical_boundary = repaired_boundary
+                    self._record_model_fallback_reason(
+                        "incidental_medical_boundary_repaired"
+                    )
+                else:
+                    self._record_model_fallback_reason(
+                        "incidental_medical_boundary_repair_rejected"
+                    )
         if composed_boundary.flagged:
             medical_boundary.flagged = True
             medical_boundary.violations = list(dict.fromkeys(

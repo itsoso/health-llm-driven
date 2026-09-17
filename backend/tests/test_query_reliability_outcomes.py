@@ -503,6 +503,100 @@ async def test_requested_public_read_failure_remains_failed(
 
 
 @pytest.mark.asyncio
+async def test_incidental_dose_advice_is_repaired_without_losing_general_answer(
+    db, auth_user_and_headers, monkeypatch,
+):
+    """A general task gets one safe rewrite when the draft invents a dose."""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def provider(messages, tools):
+        calls.append((messages, tools))
+        if len(calls) == 1:
+            yield {
+                "type": "content",
+                "text": (
+                    "川西旅行要准备保暖、防晒和补水用品。"
+                    "建议每天服用某药5mg。"
+                ),
+            }
+        else:
+            assert tools == []
+            assert "untrusted_model_draft" in str(messages)
+            yield {
+                "type": "content",
+                "text": "川西旅行要准备保暖、防晒和补水用品；用药请向医生确认。",
+            }
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(
+        executor,
+        "_build_system_prompt",
+        lambda *a, **k: "Answer general travel questions.",
+    )
+    monkeypatch.setattr(executor, "_call_llm_stream", provider)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user.id,
+            "给我一份川西高原旅行购物清单。",
+            client_turn_id="general-answer-after-incidental-dose-draft",
+        )
+    ]
+    done = events[-1]["data"]
+    persisted = db.get(AgentMessage, done["message_id"])
+
+    assert len(calls) == 2
+    assert done["generation_status"] == "complete"
+    assert done["completion_status"] == "complete"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert "5mg" not in persisted.content
+    assert "保暖、防晒和补水" in persisted.content
+    assert "incidental_medical_boundary_repaired" in done["fallback_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_explicit_dose_question_does_not_use_general_answer_repair(
+    db, auth_user_and_headers, monkeypatch,
+):
+    """The rewrite path cannot weaken an explicit medication boundary."""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = 0
+
+    async def provider(_messages, _tools):
+        nonlocal calls
+        calls += 1
+        yield {"type": "content", "text": "建议每天服用某药5mg。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(
+        executor,
+        "_build_system_prompt",
+        lambda *a, **k: "Answer medication questions safely.",
+    )
+    monkeypatch.setattr(executor, "_call_llm_stream", provider)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user.id,
+            "某药每天服用5mg可以吗？",
+            client_turn_id="explicit-dose-question-remains-blocked",
+        )
+    ]
+    done = events[-1]["data"]
+
+    assert calls == 1
+    assert done["completion_status"] == "error"
+    assert done["turn_outcome"]["status"] == "blocked"
+    assert done["turn_outcome"]["reason_code"] == "medical_evidence_required"
+    assert "incidental_medical_boundary_repaired" not in done["fallback_reasons"]
+
+
+@pytest.mark.asyncio
 async def test_summary_uses_verified_facts_and_only_model_advice_section(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
     def dispatch(request):
