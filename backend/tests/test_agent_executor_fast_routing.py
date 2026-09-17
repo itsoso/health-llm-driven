@@ -102,6 +102,8 @@ def test_explicit_chinese_clock_reminder_has_narrow_server_owned_recovery():
         "明天早上十二点提醒我起床。",
         "明天早上12点提醒我起床。",
         "明天夜里一点提醒我起床。",
+        "明天八点提醒我起床。",
+        "明天十二点提醒我起床。",
     ):
         assert _build_deterministic_one_time_reminder_tool_call(
             unsafe, reference_now=now, write_receipts=[],
@@ -174,6 +176,8 @@ async def test_no_tool_reminder_answer_recovers_through_normal_write_path(
         "明天晚上十二点提醒我起床。",
         "明天早上十二点提醒我起床。",
         "明天夜里一点提醒我起床。",
+        "明天八点提醒我起床。",
+        "明天十二点提醒我起床。",
     ),
 )
 async def test_ambiguous_tomorrow_clock_does_not_enter_write_path(

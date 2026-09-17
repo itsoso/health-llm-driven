@@ -8758,7 +8758,7 @@ def _build_deterministic_simple_record_tool_call(
 
 _ONE_TIME_REMINDER_RE = re.compile(
     r"^(?:请|麻烦)?(?:帮我)?\s*(?:明天|明日)\s*"
-    r"(?P<daypart>凌晨|清晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间|夜里|夜间)?\s*"
+    r"(?P<daypart>凌晨|清晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间|夜里|夜间)\s*"
     r"(?P<clock>[零〇一二两三四五六七八九十\d]{1,3}(?:点|:|：)"
     r"(?:[零〇一二两三四五六七八九十\d]{1,2}分?|半|一刻|三刻)?钟?)\s*"
     r"提醒我(?P<title>[\u4e00-\u9fffA-Za-z0-9]{1,24})[。！! ]*$"
@@ -8813,7 +8813,7 @@ def _build_deterministic_one_time_reminder_tool_call(
         "晚间": (18, 23),
     }
     daypart = match.group("daypart")
-    if daypart and (
+    if (
         daypart not in daypart_hour_bounds
         or not daypart_hour_bounds[daypart][0] <= hour <= daypart_hour_bounds[daypart][1]
     ):
