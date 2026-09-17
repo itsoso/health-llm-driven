@@ -9,11 +9,13 @@ and an explicit expensive gate.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import re
 import sys
 from pathlib import Path
 from typing import Any, Callable, Iterable
+from uuid import uuid4
 
 import yaml
 
@@ -95,6 +97,78 @@ _INLINE_CREDENTIAL = re.compile(
     r"secret|credentials?)\s*[:=]\s*[\"']?[a-z0-9._~+/=-]{8,}",
     re.IGNORECASE,
 )
+
+
+def _is_ephemeral_live_eval_database(app_env: str, database_url: str) -> bool:
+    """Allow synthetic consent only in an explicitly disposable test database."""
+    from sqlalchemy.engine import make_url
+
+    url = make_url(database_url)
+    return (
+        app_env.strip().lower() == "test"
+        and url.get_backend_name() == "sqlite"
+        and url.database in {None, "", ":memory:"}
+    )
+
+
+@contextmanager
+def _live_llm_eval_consent_scope(enabled: bool):
+    """Create a real, audited consent subject for live synthetic evaluations.
+
+    Provider egress keeps using the production consent guard. The harness may
+    only create its subject in an explicit in-memory test database, so this is
+    not an environment or production bypass.
+    """
+    if not enabled:
+        yield
+        return
+
+    from app.config import settings
+
+    if not _is_ephemeral_live_eval_database(
+        settings.app_env,
+        settings.effective_database_url,
+    ):
+        raise RuntimeError(
+            "live LLM evaluation requires APP_ENV=test and "
+            "DATABASE_URL=sqlite:///:memory: for synthetic consent"
+        )
+
+    from app.database import Base, SessionLocal, engine
+    from app.models.agent_audit_log import AgentAuditLog
+    from app.models.user import User
+    from app.models.user_profile import UserProfile
+    from app.services.ai_consent import (
+        POLICY_VERSION,
+        ai_user_scope,
+        update_ai_consent,
+    )
+
+    Base.metadata.create_all(
+        bind=engine,
+        tables=[
+            User.__table__,
+            UserProfile.__table__,
+            AgentAuditLog.__table__,
+        ],
+    )
+    suffix = uuid4().hex
+    with SessionLocal() as db:
+        subject = User(
+            username=f"live_eval_{suffix}",
+            email=f"live_eval_{suffix}@example.invalid",
+            name="Synthetic live evaluation subject",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(subject)
+        db.commit()
+        db.refresh(subject)
+        subject_id = int(subject.id)
+        update_ai_consent(db, subject_id, True, POLICY_VERSION)
+
+    with ai_user_scope(subject_id):
+        yield
 
 
 def run_agent_trajectory_contract_gate() -> dict[str, Any]:
@@ -484,11 +558,23 @@ def run_gate(
 
     reports: list[Any] = []
     errors: list[dict[str, str]] = []
-    for suite in suites:
-        try:
-            reports.append(run_suite_fn(suite, baseline=_baseline_for(suite, override=baseline, no_baseline=no_baseline)))
-        except Exception as exc:  # noqa: BLE001 - gate should report all suite failures, not hide them
-            errors.append({"suite": suite, "error": f"{type(exc).__name__}: {exc}"})
+    live_llm_requested = any(suite in LIVE_LLM_SUITES for suite in suites)
+    with _live_llm_eval_consent_scope(live_llm_requested):
+        for suite in suites:
+            try:
+                reports.append(run_suite_fn(
+                    suite,
+                    baseline=_baseline_for(
+                        suite,
+                        override=baseline,
+                        no_baseline=no_baseline,
+                    ),
+                ))
+            except Exception as exc:  # noqa: BLE001 - gate reports all failures
+                errors.append({
+                    "suite": suite,
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
 
     failed_suites = [
         report.suite for report in reports

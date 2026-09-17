@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
@@ -55,6 +56,47 @@ def test_llm_regression_gate_defaults_to_offline_synthesis_suites(capsys):
     assert payload["trajectory_contract"]["total_cases"] >= 5
     assert payload["trajectory_goldens"]["status"] == "passed"
     assert payload["trajectory_goldens"]["total_cases"] >= 9
+
+
+def test_live_llm_gate_enters_synthetic_consent_scope(monkeypatch):
+    module = _load_gate_module()
+    entered: list[bool] = []
+
+    @contextmanager
+    def fake_scope(enabled: bool):
+        entered.append(enabled)
+        yield
+
+    monkeypatch.setattr(module, "_live_llm_eval_consent_scope", fake_scope)
+
+    payload = module.run_gate(
+        ("orchestrator",),
+        run_suite_fn=lambda suite, baseline=None: _FakeReport(suite),
+    )
+
+    assert payload["status"] == "passed"
+    assert entered == [True]
+
+
+def test_live_llm_synthetic_consent_requires_disposable_test_database():
+    module = _load_gate_module()
+
+    assert module._is_ephemeral_live_eval_database(
+        "test",
+        "sqlite:///:memory:",
+    )
+    assert not module._is_ephemeral_live_eval_database(
+        "production",
+        "sqlite:///:memory:",
+    )
+    assert not module._is_ephemeral_live_eval_database(
+        "test",
+        "sqlite:////tmp/reva-live-eval.db",
+    )
+    assert not module._is_ephemeral_live_eval_database(
+        "test",
+        "postgresql://localhost/reva_test",
+    )
 
 
 def test_agent_trajectory_contract_is_part_of_the_offline_gate():
