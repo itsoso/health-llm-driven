@@ -104,7 +104,6 @@ def test_explicit_split_day_uses_exact_calendar_binder_not_longitudinal_default(
     ('只查今日，查询我的运动记录并分析', 'workout'),
     ('只看今天，查询我的补剂记录并分析', 'supplements'),
     ('只看今晚，查询我的睡眠并分析', 'sleep'),
-    ('只看前晚，查询我的睡眠并分析', 'sleep'),
 ])
 def test_unsupported_explicit_day_never_gets_a_seven_day_read(text, dimension):
     assert resolve_owned_read_scope(snapshot(text)) is None
@@ -206,6 +205,92 @@ def test_projection_v4_sleep_night_keeps_wake_date(time_scope):
     assert scope and scope.query('sleep')['start_date'] == '2026-09-13'
     assert scope.query('sleep')['end_date'] == '2026-09-13'
     assert decide(dict(scope.query('sleep')), text=text).action == 'allow'
+
+
+@pytest.mark.parametrize('time_scope', ['前一晚', '前晚', '前夜'])
+def test_previous_night_comparison_is_owned_and_uses_wake_date(time_scope):
+    text = f'对比下{time_scope}的睡眠数据'
+    expected = {
+        'dimension': 'sleep',
+        'start_date': '2026-09-12',
+        'end_date': '2026-09-12',
+        'timezone': 'Asia/Shanghai',
+    }
+    decision = decide({'dimension': 'sleep'}, text=text)
+    assert decision.action == 'allow', decision.reason
+    assert decision.normalized_args == expected
+
+    batch = decide(
+        {'queries': [{'dimension': 'sleep'}]},
+        text=text,
+        tool='health_query_batch',
+    )
+    assert batch.action == 'allow', batch.reason
+    assert batch.normalized_args == {'queries': [expected]}
+
+    manage = decide(
+        {'record_type': 'sleep', 'operation': 'list'},
+        text=text,
+        tool='health_manage',
+    )
+    assert manage.action == 'allow', manage.reason
+    assert manage.normalized_tool_name == 'health_query'
+    assert manage.normalized_args == expected
+
+
+@pytest.mark.parametrize('tool,args', [
+    ('health_query', {'dimension': 'sleep'}),
+    ('health_query_batch', {'queries': [{'dimension': 'sleep'}]}),
+    ('health_manage', {'record_type': 'sleep', 'operation': 'list'}),
+])
+def test_comparison_wording_does_not_broaden_third_party_sleep_reads(tool, args):
+    decision = decide(args, text='对比下张三的睡眠数据', tool=tool)
+    assert decision.action == 'block'
+    assert decision.reason == 'health_query_subject_not_current_user'
+
+
+@pytest.mark.parametrize('text', [
+    '对比下前一晚的饮食数据',
+    '对比下周的睡眠数据',
+])
+def test_comparison_wording_never_drops_an_unsupported_time_qualifier(text):
+    dimension = 'diet' if '饮食' in text else 'sleep'
+    assert decide({'dimension': dimension}, text=text).action == 'block'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool,args,dispatched_tool', [
+    ('health_query', {'dimension': 'sleep'}, 'health_query'),
+    ('health_query_batch', {'queries': [{'dimension': 'sleep'}]}, 'health_query_batch'),
+    ('health_manage', {'record_type': 'sleep', 'operation': 'list'}, 'health_query'),
+])
+async def test_previous_night_comparison_crosses_the_dispatch_boundary(
+    tool, args, dispatched_tool
+):
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return '{"records":[]}'
+
+    result = await ToolGateway(snapshot('对比下前一晚的睡眠数据')).execute(
+        ToolExecutionRequest(tool, args), dispatch
+    )
+
+    assert result.decision.action == 'allow'
+    assert len(calls) == 1
+    assert calls[0].tool_name == dispatched_tool
+    expected = {
+        'dimension': 'sleep',
+        'start_date': '2026-09-12',
+        'end_date': '2026-09-12',
+        'timezone': 'Asia/Shanghai',
+    }
+    assert calls[0].arguments == (
+        {'queries': [expected]} if dispatched_tool == 'health_query_batch' else expected
+    )
 
 
 def test_projection_v4_exact_dinner_plan_keeps_meal_filter():

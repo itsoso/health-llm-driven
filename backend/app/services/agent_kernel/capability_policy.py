@@ -3231,6 +3231,36 @@ def decide_tool_capability(
                     return _decision("block", "health_query_dimension_conflict", tool_name, args)
                 return _decision("allow", "health_query_projected_to_calendar_window",
                                  "health_query", daily_plan.queries()[0])
+            if (
+                guarding_user_read
+                and owned_scope is not None
+                and len(owned_scope.queries) == 1
+                and "days" not in owned_scope.queries[0]
+                and owned_scope.queries[0]["dimension"] == "sleep"
+            ):
+                # Keep exact calendar reads exact even when the model chooses
+                # the generic list adapter for comparison wording.
+                if illness_read_has_unowned_subject(_query_scope_text(turn_text)):
+                    return _decision(
+                        "block",
+                        "health_query_subject_not_current_user",
+                        tool_name,
+                        args,
+                    )
+                bound_query = dict(owned_scope.queries[0])
+                if (
+                    canonical_health_manage_record_type(args.get("record_type"))
+                    != bound_query["dimension"]
+                ):
+                    return _decision(
+                        "block", "health_query_dimension_conflict", tool_name, args
+                    )
+                return _decision(
+                    "allow",
+                    "health_query_projected_to_calendar_window",
+                    "health_query",
+                    bound_query,
+                )
             medical_exam_args = _project_medical_exam_query_to_turn(turn_text)
             if (
                 guarding_user_read

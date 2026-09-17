@@ -20,7 +20,9 @@ MAX_CALENDAR_ROWS = 256
 MAX_CALENDAR_RESULT_CHARS = 24000
 SUPPORTED_CALENDAR_DIMENSIONS = frozenset({"diet", "sleep"})
 _DATE_RE = re.compile(r"(?<!\d)(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})(?:日|号)?(?!\d)")
-_RELATIVE_RE = re.compile(r"前天|昨天|昨日|今天|今日|昨晚|昨夜")
+_RELATIVE_RE = re.compile(
+    r"前一晚|前一夜|前晚|前夜|前天|昨天|昨日|今天|今日|昨晚|昨夜"
+)
 _WEEKDAY_RE = re.compile(r"(本周|这周|上周)([一二三四五六日天])")
 
 
@@ -87,6 +89,7 @@ def resolve_calendar_query_window(
         return window.as_dict() if end <= local.date() else None
     if len(absolute) + len(relative) + len(weekdays) != 1:
         return None
+    previous_night_words = {"前一晚", "前一夜", "前晚", "前夜"}
     if weekdays:
         hit = weekdays[0]
         week, weekday = hit.groups()
@@ -105,11 +108,17 @@ def resolve_calendar_query_window(
     else:
         hit = relative[0]
         word = hit.group()
-        offsets = {"前天": -2, "昨天": -1, "昨日": -1, "今天": 0, "今日": 0,
-                   "昨晚": -1, "昨夜": -1}
+        if word in previous_night_words and dimension != "sleep":
+            return None
+        offsets = {
+            "前一晚": -2, "前一夜": -2, "前晚": -2, "前夜": -2,
+            "前天": -2, "昨天": -1, "昨日": -1, "今天": 0, "今日": 0,
+            "昨晚": -1, "昨夜": -1,
+        }
         target = local.date() + timedelta(days=offsets[word])
     if dimension == "sleep" and (
-        hit.group() in {"昨晚", "昨夜"} or re.match(r"(?:的)?(?:晚上|夜晚|晚间|夜间|晚|夜)", text[hit.end():])
+        hit.group() in previous_night_words | {"昨晚", "昨夜"}
+        or re.match(r"(?:的)?(?:晚上|夜晚|晚间|夜间|晚|夜)", text[hit.end():])
     ):
         target += timedelta(days=1)
     if target > local.date():
