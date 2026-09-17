@@ -4235,6 +4235,29 @@ def _tool_call_is_read_only(tool_name: str, parsed_args: Dict[str, Any]) -> bool
         return False
 
 
+def _tool_calls_are_read_only(tool_calls: Sequence[Mapping[str, Any]]) -> bool:
+    """Fail closed unless every proposed call is a well-formed read."""
+    if not tool_calls:
+        return False
+    for call in tool_calls:
+        function = call.get("function") or {}
+        tool_name = function.get("name")
+        raw_args = function.get("arguments")
+        try:
+            parsed_args = (
+                json.loads(raw_args)
+                if isinstance(raw_args, str)
+                else dict(raw_args or {})
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return False
+        if not isinstance(tool_name, str) or not _tool_call_is_read_only(
+            tool_name, parsed_args
+        ):
+            return False
+    return True
+
+
 def _is_seen_readonly_call(
     tc: Dict[str, Any],
     seen_read_fps: Dict[str, Any],
@@ -17674,12 +17697,14 @@ class AgentExecutor:
                             if (
                                 proposed_calls
                                 and not health_protocol_recovery_attempted
+                                and _tool_calls_are_read_only(proposed_calls)
                                 and (
                                     health_advice_buffered
                                     or (
                                         not round_tools
                                         and not self._force_no_tools_synthesis
                                         and self._read_repair_failures == 0
+                                        and not write_receipts
                                         and not self._all_scoped_reads_verified()
                                     )
                                 )
