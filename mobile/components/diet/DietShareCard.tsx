@@ -96,6 +96,10 @@ export function dietShareCaptureDimensions(
   return { width: 1080 / pointScale, height: 1440 / pointScale };
 }
 
+export function dietShareCanvasDimensions(): { width: number; height: number } {
+  return { width: 360, height: 480 };
+}
+
 function hasMetric(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -109,21 +113,11 @@ function isManuallyConfirmedNutritionSource(source?: string | null): boolean {
 }
 
 export function buildDietShareHeadline(record: DietRecord): string {
-  if (isLowConfidenceDietShare(record)) return '待核对的一餐';
-  if (typeof record.protein === 'number' && record.protein >= 35) return '蛋白质拉满的一餐';
-  if (typeof record.fiber === 'number' && record.fiber >= 6) return '膳食纤维在线的一餐';
-  if (typeof record.calories === 'number' && record.calories <= 450) return '轻负担的一餐';
-  return '这一餐，有据可查';
+  return buildDietSharePresentation(record).headline;
 }
 
 export function buildDietShareHighlights(record: DietRecord): string[] {
-  if (isLowConfidenceDietShare(record)) return ['待核对'];
-  const tags: string[] = [];
-  if (typeof record.protein === 'number' && record.protein >= 30) tags.push('高蛋白');
-  if (typeof record.fat === 'number' && record.fat <= 12) tags.push('低脂');
-  if (typeof record.fiber === 'number' && record.fiber >= 5) tags.push('含纤维');
-  if (typeof record.calories === 'number' && record.calories <= 450) tags.push('轻负担');
-  return tags.slice(0, 3);
+  return buildDietSharePresentation(record).tags;
 }
 
 export function buildDietShareBalance(record: DietRecord): { score: number | null; label: string } {
@@ -155,12 +149,12 @@ export function buildDietShareBalance(record: DietRecord): { score: number | nul
 function buildDietShareHashtags(highlights: string[]): string {
   const tags: string[] = [];
   highlights.forEach((highlight) => {
-    if (highlight === '高蛋白') tags.push('#高蛋白饮食');
-    if (highlight === '低脂') tags.push('#低脂餐');
-    if (highlight === '含纤维') tags.push('#膳食纤维');
-    if (highlight === '轻负担') tags.push('#轻食打卡');
+    if (highlight === '早餐记录') tags.push('#早餐打卡');
+    if (highlight === '午餐记录') tags.push('#午餐打卡');
+    if (highlight === '晚餐记录') tags.push('#晚餐记录');
+    if (highlight === '加餐记录') tags.push('#加餐记录');
   });
-  return [...tags, '#饮食打卡', '#健康生活', `#${APP_DISPLAY_NAME}记录`].join(' ');
+  return [...tags, '#我的饮食日记', '#认真吃饭', `#${APP_DISPLAY_NAME}记录`].join(' ');
 }
 
 function normalizedAiConfidence(value: number | null | undefined): number | null {
@@ -266,7 +260,7 @@ export function compactDietShareFoodItems(foodItems: string, maxChars = 35): str
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const presentation = buildDietSharePresentation(record);
   const lines = [
-    `${APP_DISPLAY_NAME}饮食记录`,
+    presentation.headline,
     `${dateLabel} · ${presentation.mealLabel}`,
     compactDietShareFoodItems(presentation.foodLine),
     '',
@@ -424,7 +418,6 @@ export default function DietShareCard({
   const macroLines = presentation.macroLines.slice(0, 2);
   const nutritionItems = presentation.nutritionItems.slice(0, 4);
   const nutritionStatus = nutritionItems.length === 0 ? macroLines[0] : null;
-  const showDisclosure = !macroLines.includes(presentation.disclosure);
 
   return (
     <View testID="diet-share-poster" style={styles.card}>
@@ -434,7 +427,7 @@ export default function DietShareCard({
             testID="diet-share-image"
             source={imageSource}
             style={styles.posterPhoto}
-            contentFit="contain"
+            contentFit="cover"
             cachePolicy="memory-disk"
             priority="high"
             onDisplay={onImageReady}
@@ -460,11 +453,11 @@ export default function DietShareCard({
         <PosterText testID="diet-share-food-line" style={styles.posterFoodLine} numberOfLines={2}>{presentation.foodLine}</PosterText>
 
         <View testID="diet-share-nutrition-grid" style={styles.posterNutrition}>
-          {nutritionItems.length > 0 ? nutritionItems.map(item => (
+          {nutritionItems.length > 0 ? nutritionItems.map((item, index) => (
             <View
               key={item.key}
               testID={`diet-share-metric-${item.key}`}
-              style={styles.posterMetric}
+              style={[styles.posterMetric, index > 0 && styles.posterMetricDivider]}
             >
               <PosterText style={styles.posterMetricLabel}>{item.label}</PosterText>
               <View
@@ -511,15 +504,10 @@ export default function DietShareCard({
           </View>
         ) : null}
 
-        <View testID="diet-share-public-note" style={styles.posterPublicNote}>
-          <PosterText style={styles.posterPublicNoteLabel}>记录说明</PosterText>
-          <PosterText style={styles.posterPublicNoteText} numberOfLines={2}>{presentation.publicNote}</PosterText>
-        </View>
-
         <View style={styles.posterFooter}>
-          {showDisclosure ? (
-            <PosterText style={styles.posterDisclosure}>{presentation.disclosure}</PosterText>
-          ) : null}
+          <PosterText testID="diet-share-public-note" style={styles.posterPublicNoteText} numberOfLines={2}>
+            {presentation.publicNote}
+          </PosterText>
           <View style={styles.posterBrand}>
             <View style={styles.posterFooterMark}>
               <View style={styles.posterFooterMarkDot} />
@@ -1112,7 +1100,7 @@ export function DietShareSheet({
 const styles = StyleSheet.create({
   card: {
     width: '100%',
-    aspectRatio: 3 / 4,
+    height: '100%',
     backgroundColor: C.paper2,
     overflow: 'hidden',
   },
@@ -1136,7 +1124,7 @@ const styles = StyleSheet.create({
   },
   posterPhotoShade: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(44, 31, 18, 0.06)',
+    backgroundColor: 'rgba(45, 28, 15, 0.03)',
   },
   posterPhotoMeta: {
     position: 'absolute',
@@ -1153,9 +1141,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 13,
     borderCurve: 'continuous',
-    backgroundColor: 'rgba(250, 243, 231, 0.92)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(99, 70, 40, 0.28)',
+    backgroundColor: 'rgba(255, 250, 243, 0.94)',
   },
   posterMealBadgeText: {
     fontSize: 11,
@@ -1175,14 +1161,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: '49%',
+    height: '43%',
     paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 8,
-    gap: 3,
+    paddingTop: 11,
+    paddingBottom: 9,
+    gap: 4,
     backgroundColor: C.surface2,
-    borderTopLeftRadius: revaRadii.xl,
-    borderTopRightRadius: revaRadii.xl,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderCurve: 'continuous',
     overflow: 'hidden',
   },
@@ -1197,49 +1183,54 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
     borderCurve: 'continuous',
-    backgroundColor: revaSemantic.caution.fg,
+    backgroundColor: revaSemantic.risk.fg,
   },
   posterRuleShort: {
     width: 7,
     height: 3,
     borderRadius: 2,
     borderCurve: 'continuous',
-    backgroundColor: C.green600,
+    backgroundColor: C.ink1,
   },
   posterHeadline: {
-    fontSize: 19.5,
+    fontSize: 19,
     lineHeight: 24,
     color: C.ink1,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: -0.25,
   },
   posterFoodLine: {
-    fontSize: 11.5,
-    lineHeight: 17,
+    fontSize: 11,
+    lineHeight: 15.5,
     color: C.ink2,
     fontWeight: '500',
   },
   posterNutrition: {
-    minHeight: 43,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 5,
+    overflow: 'hidden',
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    backgroundColor: revaSemantic.caution.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.caution.line,
   },
   posterMetric: {
     flex: 1,
     minWidth: 0,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 7,
     overflow: 'hidden',
-    borderRadius: revaRadii.sm,
-    borderCurve: 'continuous',
-    backgroundColor: C.paper2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
+  },
+  posterMetricDivider: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: C.lineStrong,
   },
   posterMetricLabel: {
-    fontSize: 8.5,
+    fontSize: 8,
     lineHeight: 11,
-    color: C.ink3,
+    color: C.ink2,
     fontWeight: '600',
   },
   posterMetricValueRow: {
@@ -1250,9 +1241,9 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   posterMetricValue: {
-    fontSize: 15.5,
+    fontSize: 15,
     color: C.ink1,
-    fontWeight: '500',
+    fontWeight: '600',
     fontVariant: ['tabular-nums'],
     flexShrink: 1,
     minWidth: 0,
@@ -1284,37 +1275,21 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     justifyContent: 'center',
     paddingHorizontal: 9,
-    backgroundColor: C.green50,
+    backgroundColor: revaSemantic.risk.bg,
   },
   posterTagText: {
     fontSize: 9.5,
-    color: C.green700,
-    fontWeight: '700',
-  },
-  posterPublicNote: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: revaRadii.sm,
-    borderCurve: 'continuous',
-    backgroundColor: 'rgba(232, 242, 236, 0.64)',
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  posterPublicNoteLabel: {
-    fontSize: 8.5,
-    lineHeight: 11,
-    color: C.green700,
+    color: revaSemantic.risk.fg,
     fontWeight: '700',
   },
   posterPublicNoteText: {
     flex: 1,
     minWidth: 0,
-    fontSize: 9.5,
-    lineHeight: 13,
-    color: C.ink2,
+    fontSize: 8.5,
+    lineHeight: 11.5,
+    color: C.ink3,
     fontWeight: '500',
-    marginTop: 1,
+    paddingRight: 8,
   },
   posterFooter: {
     marginTop: 'auto',
@@ -1323,12 +1298,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 9,
-  },
-  posterDisclosure: {
-    fontSize: 8.5,
-    lineHeight: 12,
-    color: C.ink3,
-    fontWeight: '500',
   },
   posterBrand: {
     flexDirection: 'row',

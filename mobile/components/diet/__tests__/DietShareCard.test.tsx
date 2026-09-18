@@ -123,7 +123,7 @@ describe('DietShareCard Xiaohongshu poster', () => {
     jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
   });
 
-  it('renders the edited meal photo as the dominant layer with a structured nutrition grid', () => {
+  it('renders a lifestyle poster without report-style nutrition claims', () => {
     const view = renderCard();
     const photoFrameStyle = StyleSheet.flatten(view.getByTestId('diet-share-photo-frame').props.style);
 
@@ -134,11 +134,11 @@ describe('DietShareCard Xiaohongshu poster', () => {
     expect(mediaStyle.height).toBe('100%');
     expect(view.getByTestId('diet-share-image').props).toEqual(expect.objectContaining({
       source: imageSource,
-      contentFit: 'contain',
+      contentFit: 'cover',
     }));
     expect(view.getByText('7月11日')).toBeTruthy();
     expect(view.getByText('午餐')).toBeTruthy();
-    expect(view.getByText('午餐，能量很足')).toBeTruthy();
+    expect(view.getByText('午餐打卡｜这一餐吃了什么')).toBeTruthy();
     expect(view.getByText(record.food_items)).toBeTruthy();
     expect(view.getByTestId('diet-share-nutrition-grid')).toBeTruthy();
     expect(view.getByTestId('diet-share-metric-calories')).toBeTruthy();
@@ -148,12 +148,13 @@ describe('DietShareCard Xiaohongshu poster', () => {
     ['热量', '蛋白质', '碳水', '脂肪', '约', '900', '36', '103', '42', 'kcal', 'g']
       .forEach(text => expect(view.getAllByText(text).length).toBeGreaterThan(0));
     expect(view.queryByText('约 900 kcal · 蛋白质 36g')).toBeNull();
-    expect(view.getByText('高蛋白')).toBeTruthy();
-    expect(view.getByText('含纤维')).toBeTruthy();
+    expect(view.getByText('午餐记录')).toBeTruthy();
+    expect(view.getByText('图片估算')).toBeTruthy();
+    expect(view.queryByText('高蛋白')).toBeNull();
+    expect(view.queryByText('含纤维')).toBeNull();
     expect(view.queryByText('下一餐补一份绿叶菜')).toBeNull();
-    expect(view.getByText('记录说明')).toBeTruthy();
-    expect(view.getByText('食物与份量来自本次记录，营养数值为估算。')).toBeTruthy();
-    expect(view.getByText('营养由图片估算')).toBeTruthy();
+    expect(view.queryByText('记录说明')).toBeNull();
+    expect(view.getByText('图片估算仅用于日常记录，实际以食材与份量为准。')).toBeTruthy();
   });
 
   it('uses a rounded editorial panel instead of a clinical report table', () => {
@@ -164,23 +165,29 @@ describe('DietShareCard Xiaohongshu poster', () => {
     const noteStyle = StyleSheet.flatten(view.getByTestId('diet-share-public-note').props.style);
 
     expect(copyStyle).toEqual(expect.objectContaining({
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
       overflow: 'hidden',
     }));
-    expect(nutritionStyle.borderTopWidth).toBeUndefined();
-    expect(nutritionStyle.borderBottomWidth).toBeUndefined();
-    expect(metricStyle).toEqual(expect.objectContaining({
+    expect(nutritionStyle).toEqual(expect.objectContaining({
       backgroundColor: expect.any(String),
-      borderRadius: 10,
+      borderRadius: 14,
     }));
+    expect(metricStyle.backgroundColor).toBeUndefined();
+    expect(metricStyle.borderRadius).toBeUndefined();
     expect(metricStyle.borderLeftWidth).toBeUndefined();
-    expect(noteStyle).toEqual(expect.objectContaining({
-      backgroundColor: expect.any(String),
-      borderRadius: 10,
-      flexDirection: 'row',
-    }));
-    expect(noteStyle.borderLeftWidth).toBeUndefined();
+    expect(noteStyle.backgroundColor).toBeUndefined();
+    expect(noteStyle.borderRadius).toBeUndefined();
+    expect(noteStyle.color).toBeTruthy();
+  });
+
+  it('fills the fixed 3:4 capture surface instead of exporting a transparent bottom band', () => {
+    const view = renderCard();
+    const cardStyle = StyleSheet.flatten(view.getByTestId('diet-share-poster').props.style);
+
+    expect(cardStyle.width).toBe('100%');
+    expect(cardStyle.height).toBe('100%');
+    expect(cardStyle.aspectRatio).toBeUndefined();
   });
 
   it('keeps the public poster restrained and free of operational report language', () => {
@@ -211,7 +218,7 @@ describe('DietShareCard Xiaohongshu poster', () => {
     };
     const view = renderCard({ record: manyHighlights });
 
-    expect(view.getAllByTestId(/^diet-share-tag-/)).toHaveLength(3);
+    expect(view.getAllByTestId(/^diet-share-tag-/)).toHaveLength(2);
     expect(view.getByTestId('diet-share-public-note')).toBeTruthy();
     expect(view.queryByText(manyHighlights.health_tips)).toBeNull();
   });
@@ -230,18 +237,18 @@ describe('DietShareCard Xiaohongshu poster', () => {
 
     expect(view.getByTestId('diet-share-headline').props.numberOfLines).toBe(1);
     expect(view.getByTestId('diet-share-food-line').props.numberOfLines).toBe(2);
-    expect(view.getAllByTestId(/^diet-share-tag-/)).toHaveLength(3);
+    expect(view.getAllByTestId(/^diet-share-tag-/)).toHaveLength(2);
     expect(view.queryByTestId('diet-share-next-action')).toBeNull();
-    expect(view.getByTestId('diet-share-public-note').findAllByType(Text)[1].props.numberOfLines).toBe(2);
+    expect(view.getByTestId('diet-share-public-note').props.numberOfLines).toBe(2);
     const copyStyle = StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style);
     expect(copyStyle).toEqual(expect.objectContaining({
-      height: '49%',
+      height: '43%',
       position: 'absolute',
       bottom: 0,
-      paddingTop: 8,
-      paddingBottom: 8,
+      paddingTop: 11,
+      paddingBottom: 9,
     }));
-    expect(198).toBeLessThanOrEqual(440 * 0.49 - copyStyle.paddingTop - copyStyle.paddingBottom);
+    expect(165).toBeLessThanOrEqual(440 * 0.43 - copyStyle.paddingTop - copyStyle.paddingBottom);
     const calorieValue = view.getByTestId('diet-share-metric-number-calories');
     expect(calorieValue.props).toEqual(expect.objectContaining({
       numberOfLines: 1,
@@ -284,7 +291,7 @@ describe('DietShareCard Xiaohongshu poster', () => {
         expect(text.props.allowFontScaling).toBe(false);
       });
       expect(view.getByTestId('diet-share-metric-number-calories').props.children).toBe('1470');
-      expect(view.getByTestId('diet-share-metric-number-protein').props.children).toBe('123.45');
+      expect(view.getByTestId('diet-share-metric-number-protein').props.children).toBe('123');
     } finally {
       fontScale.mockRestore();
     }
@@ -322,7 +329,7 @@ describe('DietShareCard Xiaohongshu poster', () => {
     expect(view.getByTestId('diet-share-metric-calories')).toBeTruthy();
     expect(view.getByText('约')).toBeTruthy();
     expect(view.getByText('520')).toBeTruthy();
-    expect(view.getByText('营养为部分估算')).toBeTruthy();
+    expect(view.getByText('仅展示可识别部分，实际以食材与份量为准。')).toBeTruthy();
     expect(view.queryByTestId('diet-share-metric-protein')).toBeNull();
     expect(view.queryByText(/--/)).toBeNull();
   });
@@ -633,10 +640,10 @@ describe('DietShareSheet image and text behavior', () => {
     const view = renderSheet({ record: confirmed });
 
     expect(view.getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
-    expect(view.getByText('营养数据已由用户确认')).toBeTruthy();
+    expect(view.getByText('这份营养记录已由你确认。')).toBeTruthy();
     const caption = buildDietShareCaption(confirmed, '7月11日');
     expect(caption).toContain('900 kcal · 蛋白质36g');
-    expect(caption).toContain('营养数据已由用户确认');
+    expect(caption).toContain('营养已确认');
     expect(caption).not.toContain('约');
 
     fireEvent.press(view.getByRole('button', { name: '复制小红书文案' }));

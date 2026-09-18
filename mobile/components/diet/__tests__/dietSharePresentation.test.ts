@@ -63,6 +63,28 @@ const verifiedReceipt = {
 };
 
 describe('buildDietSharePresentation', () => {
+  it('uses neutral lifestyle copy and removes false precision from photo estimates', () => {
+    const view = buildDietSharePresentation(photoRecord({
+      food_items: '番茄鸡蛋面 约1碗 + 西兰花 约1小碟 + 牛奶 约1杯',
+      calories: 970,
+      protein: 46.2,
+      carbs: 140.4,
+      fat: 30.7,
+    }));
+
+    expect(view.headline).toBe('早餐打卡｜这一餐吃了什么');
+    expect(view.foodLine).toBe('番茄鸡蛋面 约1碗 · 西兰花 约1小碟 · 牛奶 约1杯');
+    expect(view.tags).toEqual(['早餐记录', '图片估算']);
+    expect(view.nutritionItems).toEqual([
+      { key: 'calories', label: '热量', value: '970', unit: 'kcal', qualifier: '约' },
+      { key: 'protein', label: '蛋白质', value: '46', unit: 'g', qualifier: '约' },
+      { key: 'carbs', label: '碳水', value: '140', unit: 'g', qualifier: '约' },
+      { key: 'fat', label: '脂肪', value: '31', unit: 'g', qualifier: '约' },
+    ]);
+    expect(view.publicNote).toBe('图片估算仅用于日常记录，实际以食材与份量为准。');
+    expect(JSON.stringify(view)).not.toMatch(/能量很足|高蛋白|含纤维|健康/i);
+  });
+
   it('builds approximate nutrition copy without confidence percentages', () => {
     const view = buildDietSharePresentation(photoRecord({
       calories: 900,
@@ -83,7 +105,7 @@ describe('buildDietSharePresentation', () => {
       { key: 'fat', label: '脂肪', value: '42', unit: 'g', qualifier: '约' },
     ]);
     expect(JSON.stringify(view)).not.toContain('88%');
-    expect(view.publicNote).toBe('食物与份量来自本次记录，营养数值为估算。');
+    expect(view.publicNote).toBe('图片估算仅用于日常记录，实际以食材与份量为准。');
   });
 
   it('hides exact nutrition for a low-confidence photo record', () => {
@@ -134,7 +156,7 @@ describe('buildDietSharePresentation', () => {
     expect(view.macroLines).toContain('900 kcal · 蛋白质36g');
     expect(view.macroLines.join(' ')).not.toContain('约');
     expect(view.nutritionItems[0]).toEqual(expect.objectContaining({ value: '900', qualifier: null }));
-    expect(view.disclosure).toBe('营养数据已由用户确认');
+    expect(view.disclosure).toBe('营养已确认');
   });
 
   it('marks incomplete photo nutrition as a partial estimate', () => {
@@ -143,8 +165,8 @@ describe('buildDietSharePresentation', () => {
     expect(view.nutritionItems).toEqual([
       { key: 'calories', label: '热量', value: '900', unit: 'kcal', qualifier: '约' },
     ]);
-    expect(view.disclosure).toBe('营养为部分估算');
-    expect(view.publicNote).toContain('部分营养估算');
+    expect(view.disclosure).toBe('部分图片估算 · 仅供记录');
+    expect(view.publicNote).toContain('仅展示可识别部分');
   });
 });
 

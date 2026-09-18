@@ -115,20 +115,32 @@ function isLowConfidence(record: DietShareRecord): boolean {
   return confidence == null || confidence < LOW_CONFIDENCE_THRESHOLD;
 }
 
-function metric(value: number | null): string | null {
+function metric(value: number | null, approximate = false): string | null {
   return typeof value === 'number' && Number.isFinite(value)
-    ? formatDisplayNumber(value)
+    ? formatDisplayNumber(approximate ? Math.round(value) : value)
     : null;
+}
+
+function usesEstimatedNutrition(record: DietShareRecord): boolean {
+  return !(record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source));
+}
+
+function formatFoodLine(value: string): string {
+  return value
+    .replace(/\s*\+\s*/g, ' · ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function buildMacroLines(record: DietShareRecord): string[] {
   if (isLowConfidence(record)) return ['营养待核对'];
 
-  const qualifier = record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source) ? '' : '约 ';
-  const calories = metric(record.calories);
-  const protein = metric(record.protein);
-  const carbs = metric(record.carbs);
-  const fat = metric(record.fat);
+  const approximate = usesEstimatedNutrition(record);
+  const qualifier = approximate ? '约 ' : '';
+  const calories = metric(record.calories, approximate);
+  const protein = metric(record.protein, approximate);
+  const carbs = metric(record.carbs, approximate);
+  const fat = metric(record.fat, approximate);
   const firstLine = [
     calories != null ? `${qualifier}${calories} kcal` : null,
     protein != null ? `蛋白质${qualifier}${protein}g` : null,
@@ -144,63 +156,56 @@ function buildMacroLines(record: DietShareRecord): string[] {
 function buildNutritionItems(record: DietShareRecord): DietShareNutritionItem[] {
   if (isLowConfidence(record)) return [];
 
-  const qualifier = record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source) ? null : '约';
+  const approximate = usesEstimatedNutrition(record);
+  const qualifier = approximate ? '约' : null;
   const candidates: (DietShareNutritionItem | null)[] = [
-    metric(record.calories) != null
-      ? { key: 'calories', label: '热量', value: metric(record.calories)!, unit: 'kcal', qualifier }
+    metric(record.calories, approximate) != null
+      ? { key: 'calories', label: '热量', value: metric(record.calories, approximate)!, unit: 'kcal', qualifier }
       : null,
-    metric(record.protein) != null
-      ? { key: 'protein', label: '蛋白质', value: metric(record.protein)!, unit: 'g', qualifier }
+    metric(record.protein, approximate) != null
+      ? { key: 'protein', label: '蛋白质', value: metric(record.protein, approximate)!, unit: 'g', qualifier }
       : null,
-    metric(record.carbs) != null
-      ? { key: 'carbs', label: '碳水', value: metric(record.carbs)!, unit: 'g', qualifier }
+    metric(record.carbs, approximate) != null
+      ? { key: 'carbs', label: '碳水', value: metric(record.carbs, approximate)!, unit: 'g', qualifier }
       : null,
-    metric(record.fat) != null
-      ? { key: 'fat', label: '脂肪', value: metric(record.fat)!, unit: 'g', qualifier }
+    metric(record.fat, approximate) != null
+      ? { key: 'fat', label: '脂肪', value: metric(record.fat, approximate)!, unit: 'g', qualifier }
       : null,
   ];
   return candidates.filter((item): item is DietShareNutritionItem => item != null);
 }
 
-function buildTags(record: DietShareRecord): string[] {
+function buildTags(record: DietShareRecord, mealLabel: string): string[] {
   if (isLowConfidence(record)) return ['待核对'];
-  const tags: string[] = [];
-  if (typeof record.protein === 'number' && record.protein >= 30) tags.push('高蛋白');
-  if (typeof record.fat === 'number' && record.fat <= 12) tags.push('低脂');
-  if (typeof record.fiber === 'number' && record.fiber >= 5) tags.push('含纤维');
-  if (typeof record.calories === 'number' && record.calories <= 450) tags.push('轻负担');
-  return tags.slice(0, 3);
+  return [
+    `${mealLabel}记录`,
+    usesEstimatedNutrition(record) ? '图片估算' : '营养已确认',
+  ];
 }
 
 function buildHeadline(record: DietShareRecord, mealLabel: string): string {
   if (isLowConfidence(record)) return '待核对的一餐';
-  if (typeof record.calories === 'number' && record.calories >= 700) {
-    return `${mealLabel}，能量很足`;
-  }
-  if (typeof record.protein === 'number' && record.protein >= 30) {
-    return `${mealLabel}，蛋白质很在线`;
-  }
-  return `${mealLabel}，认真吃好`;
+  return `${mealLabel}打卡｜这一餐吃了什么`;
 }
 
 function buildDisclosure(record: DietShareRecord): string {
   if (isLowConfidence(record)) return '营养待核对';
-  if (record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source)) return '营养数据已由用户确认';
+  if (record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source)) return '营养已确认';
   if (record.source?.includes('photo') || record.source?.includes('image')) {
-    return buildNutritionItems(record).length < 4 ? '营养为部分估算' : '营养由图片估算';
+    return buildNutritionItems(record).length < 4 ? '部分图片估算 · 仅供记录' : '图片估算 · 仅供记录';
   }
-  return '营养数据为估算值';
+  return '营养估算 · 仅供记录';
 }
 
 function buildPublicNote(record: DietShareRecord): string {
-  if (isLowConfidence(record)) return '食物与份量来自本次记录，营养数值待核对。';
+  if (isLowConfidence(record)) return '先核对食物与份量，再生成营养记录。';
   if (record.source && MANUALLY_CONFIRMED_SOURCES.has(record.source)) {
-    return '食物、份量与营养数据已由用户确认。';
+    return '这份营养记录已由你确认。';
   }
   if (buildNutritionItems(record).length < 4) {
-    return '已展示可用的部分营养估算，食物与份量请以记录为准。';
+    return '仅展示可识别部分，实际以食材与份量为准。';
   }
-  return '食物与份量来自本次记录，营养数值为估算。';
+  return '图片估算仅用于日常记录，实际以食材与份量为准。';
 }
 
 function normalizedDietRecordDate(value: unknown): string | undefined {
@@ -231,10 +236,10 @@ export function buildDietSharePresentation(record: DietShareRecord): DietSharePr
   return {
     mealLabel,
     headline: buildHeadline(record, mealLabel),
-    foodLine: record.food_items.trim(),
+    foodLine: formatFoodLine(record.food_items),
     macroLines: buildMacroLines(record),
     nutritionItems: buildNutritionItems(record),
-    tags: buildTags(record),
+    tags: buildTags(record, mealLabel),
     publicNote: buildPublicNote(record),
     disclosure: buildDisclosure(record),
   };

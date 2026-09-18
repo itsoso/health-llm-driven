@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Modal, Platform, Share } from 'react-native';
+import { Alert, Modal, Platform, Share, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockMaterializedCleanup = jest.fn().mockResolvedValue(undefined);
@@ -48,6 +48,7 @@ jest.mock('../DietShareCard', () => {
       }),
     ),
     buildDietShareCaption: jest.fn(() => '小红书餐食正文'),
+    dietShareCanvasDimensions: jest.fn(() => ({ width: 360, height: 480 })),
     dietShareCaptureDimensions: jest.fn(() => ({ width: 1080, height: 1440 })),
   };
 });
@@ -396,6 +397,14 @@ describe('DietShareComposer', () => {
     await waitFor(() => expect(view.getByText('分享图生成失败')).toBeTruthy());
     expect(view.queryByTestId('mock-diet-share-poster')).toBeNull();
     expect(mockCaptureRef).not.toHaveBeenCalled();
+  });
+
+  it('lays out the poster on the same 3:4 canvas that captureRef exports', async () => {
+    const view = renderComposer();
+    await completeEditing(view);
+
+    expect(StyleSheet.flatten(view.getByTestId('diet-share-capture-surface').props.style))
+      .toEqual(expect.objectContaining({ width: 360, height: 480 }));
   });
 
   it('retries only poster rendering after capture fails', async () => {

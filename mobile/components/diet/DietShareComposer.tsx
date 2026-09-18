@@ -26,7 +26,10 @@ import {
   revaShadows,
 } from '../../constants/revaTheme';
 import { materializeImageForLocalUse } from '../../utils/share';
-import DietShareCard, { dietShareCaptureDimensions } from './DietShareCard';
+import DietShareCard, {
+  dietShareCanvasDimensions,
+  dietShareCaptureDimensions,
+} from './DietShareCard';
 import {
   DietShareImageEditor,
   type DietShareImageEditorResult,
@@ -590,7 +593,12 @@ export function DietShareComposer({
 
           {phase === 'rendering' && editedResult ? (
             <View style={styles.renderingWrap}>
-              <View ref={posterRef} collapsable={false} style={styles.posterSurface}>
+              <View
+                ref={posterRef}
+                testID="diet-share-capture-surface"
+                collapsable={false}
+                style={[styles.posterSurface, dietShareCanvasDimensions()]}
+              >
                 <DietShareCard
                   record={record}
                   dateLabel={dateLabel}
@@ -781,7 +789,10 @@ const styles = StyleSheet.create({
   failureTitle: { fontSize: 19, color: C.ink1, fontWeight: '800', fontFamily: revaFonts.cjk },
   failureDetail: { color: C.ink2, lineHeight: 21, textAlign: 'center', fontFamily: revaFonts.cjk },
   renderingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  posterSurface: { width: '92%', maxWidth: 360, aspectRatio: 3 / 4 },
+  posterSurface: {
+    overflow: 'hidden',
+    backgroundColor: C.surface2,
+  },
   renderingStatus: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
