@@ -329,7 +329,7 @@
       "id": "mobile-ota",
       "lifecycle": "standard",
       "owner": "reva-mobile-release",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "layer": "workflow",
       "kind": "terminal",
       "platforms": [
@@ -338,9 +338,9 @@
       "trigger_family": [
         "mobile-ota-release"
       ],
-      "last_reviewed": "2026-08-20",
+      "last_reviewed": "2026-09-18",
       "evidence": [
-        "OTA eligibility, source guard, runtime and post-publish checks are encoded in release scripts."
+        "OTA eligibility, standing continuous-delivery authorization, exact-SHA CI, source guard, runtime and post-publish checks are encoded in the Skill and release scripts."
       ],
       "sources": [
         ".claude/skills/mobile-ota/SKILL.md"

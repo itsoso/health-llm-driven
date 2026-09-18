@@ -7,6 +7,14 @@ description: "推 mobile JS 改动到生产 (OTA, eas update)。当用户说「�
 
 `.ts/.tsx/.js`/样式/文案/API 调用/hooks/RN 组件 的改动,走 OTA(秒级生效,不用重 build/发版)。
 
+## 默认连续交付授权
+
+用户已为 Reva 设置工作区默认授权:当一次修改任务已经完成且通过相应验证后,提交本任务文件到 `main`、push,等待该精确 SHA 的远端 CI 通过,再发布 production OTA。不要在实现完成后为 commit、push 或 production OTA 分别重复询问确认。
+
+该默认适用于要求修改、修复或实现并且实际改变了 `mobile/` 或 `packages/shared/` 运行时代码的任务。仅分析、评审、明确要求只做本地修改或明确禁止提交/发布时不适用;用户当次指令优先。没有 Mobile 运行树变化时可以提交和 push 已授权的仓库改动,但不要发布内容相同的空 OTA。
+
+默认授权不降低发布闸:只暂存本任务文件,从最新 `origin/main` 的干净、可追溯 revision 工作,禁止 force-push;精确 SHA CI 不绿、远端 main 已分叉、发布锁冲突、改动来源不明或发布回读失败时停止。原生依赖、插件、权限、SDK 或 runtime 变化不能冒充 OTA,应转 `mobile-testflight-release`,且 TestFlight/App Store 动作仍需当次明确授权。
+
 ## 先判断:能 OTA 吗?
 
 ✅ 能 OTA:纯 JS/TS、RN 组件、navigation、React Query、状态、样式、文案、API 调用。
@@ -24,10 +32,11 @@ cd "$(git rev-parse --show-toplevel)"
 ## 快速路径
 
 1. 先确认改动确实包含 `mobile/` 或 `packages/shared/` 运行树；没有 Mobile 运行树变化就不要发 OTA。
-2. 优先从当前 canonical main 工作区发布；脚本会按 Mobile/shared 相关树判断 dirty 和 origin/main 等价性，无关的未跟踪文件不值得为此重新 clone。
-3. 若必须使用 clean release checkout，先比较两边 `mobile/package-lock.json`。锁文件完全一致且原工作区 `mobile/node_modules` 可用时，可复用该依赖目录；只有缺失或 lock 不一致时才执行 `npm ci`。禁止无条件重装 1300+ 包。
-4. 后端与 Mobile 同时改动时，后端部署期间可以准备 clean checkout、校验 lock 和依赖，但必须等后端健康门通过后才能发布 OTA。
-5. OTA 脚本已经复用一次 Hermes export，并对网络/资产处理失败做有界重试；不要在外层再套无界重试或重复 bundle。
+2. 在 push 后等待 `main` 上该精确 SHA 的 CI 全绿；不能用旧 SHA、局部测试或待运行的 required checks 代替。
+3. 优先从当前 canonical main 工作区发布；脚本会按 Mobile/shared 相关树判断 dirty 和 origin/main 等价性，无关的未跟踪文件不值得为此重新 clone。
+4. 若必须使用 clean release checkout，先比较两边 `mobile/package-lock.json`。锁文件完全一致且原工作区 `mobile/node_modules` 可用时，可复用该依赖目录；只有缺失或 lock 不一致时才执行 `npm ci`。禁止无条件重装 1300+ 包。
+5. 后端与 Mobile 同时改动时，后端部署期间可以准备 clean checkout、校验 lock 和依赖，但必须等后端健康门通过后才能发布 OTA。
+6. OTA 脚本已经复用一次 Hermes export，并对网络/资产处理失败做有界重试；不要在外层再套无界重试或重复 bundle。
 
 ## 关键坑
 
