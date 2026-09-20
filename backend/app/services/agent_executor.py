@@ -18002,9 +18002,18 @@ class AgentExecutor:
                                 and not write_receipts
                                 and (
                                     health_advice_buffered
-                                    # Read-only no-tool synthesis can recover
-                                    # once without granting tool authority.
-                                    or not round_tools
+                                    # Recover only a post-tool read synthesis.
+                                    # An initial advice turn with no exposed
+                                    # tools, or the isolated diet evidence
+                                    # projection, must fail closed directly.
+                                    or (
+                                        not round_tools
+                                        and not diet_synthesis_round
+                                        and (
+                                            tool_executed_count > 0
+                                            or self._read_repair_failures > 0
+                                        )
+                                    )
                                 )
                             ):
                                 health_protocol_recovery_attempted = True
