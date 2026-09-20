@@ -659,6 +659,34 @@ describe('DietScreen capture deeplink', () => {
     expect(dietService.recalculateDietRecordNutrition).not.toHaveBeenCalled();
   });
 
+  it('keeps a completed estimate when only the meal type changes during an in-flight write', async () => {
+    const dietService = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    mockMeals.push({
+      id: 44, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '牛肉面约一碗', calories: null, protein: null, carbs: null, fat: null,
+      alcohol_units: null, updated_at: '2026-09-20T12:00:00Z', image_url: null,
+    });
+    mockCancelEstimate.mockResolvedValueOnce({
+      ...mockMeals[0], calories: 620, protein: 25, carbs: 70, fat: 20,
+      updated_at: '2026-09-20T12:01:00Z',
+    });
+    dietService.updateDietRecord.mockResolvedValueOnce({ id: 44 });
+
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getByLabelText('编辑'));
+    await act(async () => {
+      await mockMealForm.mock.lastCall?.[0].onSubmit({
+        record_date: todayStr(), meal_type: 'lunch', food_items: '牛肉面约一碗',
+        calories: null, protein: null, carbs: null, fat: null,
+      });
+    });
+
+    expect(dietService.updateDietRecord).toHaveBeenCalledWith(44, {
+      meal_type: 'lunch', expected_updated_at: '2026-09-20T12:01:00Z',
+    });
+  });
+
   it('rejects medication-looking diet draft deeplinks before opening the meal form', async () => {
     mockRouteParams.draft = 'diet';
     mockRouteParams.meal_type = 'lunch';

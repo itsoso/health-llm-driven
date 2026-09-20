@@ -2030,6 +2030,37 @@ class TestDietAPI:
         assert update_response.json()["meal_time"] == "18:30:00"
         assert update_response.json()["notes"] == "更新后的备注"
 
+    def test_update_diet_record_rejects_stale_expected_revision(
+        self, client, auth_headers, sample_diet_data
+    ):
+        created = client.post(
+            "/api/v1/diet/records", json=sample_diet_data, headers=auth_headers
+        )
+        assert created.status_code == 200
+        record_id = created.json()["id"]
+        original_revision = created.json()["updated_at"]
+
+        fresh = client.put(
+            f"/api/v1/diet/records/{record_id}",
+            json={"calories": 620, "expected_updated_at": original_revision},
+            headers=auth_headers,
+        )
+        assert fresh.status_code == 200
+        assert fresh.json()["calories"] == 620
+
+        stale = client.put(
+            f"/api/v1/diet/records/{record_id}",
+            json={"calories": 80, "expected_updated_at": original_revision},
+            headers=auth_headers,
+        )
+        assert stale.status_code == 409
+        after = client.get(
+            f"/api/v1/diet/records/me/date/{sample_diet_data['record_date']}",
+            headers=auth_headers,
+        )
+        assert after.status_code == 200
+        assert next(meal for meal in after.json()["meals"] if meal["id"] == record_id)["calories"] == 620
+
     @pytest.mark.parametrize(
         "value",
         ("Infinity", "-Infinity", "NaN", "1e309", "-1e309"),

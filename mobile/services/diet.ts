@@ -83,6 +83,8 @@ export interface DietRecordCreate {
 }
 
 export interface DietRecordUpdate {
+  /** Optimistic concurrency guard for an existing record. */
+  expected_updated_at?: string | null;
   meal_type?: MealType;
   food_items?: string;
   food_id?: string | null;

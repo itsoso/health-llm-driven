@@ -2798,7 +2798,13 @@ def decide_tool_capability(
                         next(iter(dimensions)) for dimensions in expressed
                     ) != scoped_dimensions:
                         return _decision("block", "health_query_dimension_conflict", tool_name, args)
-                if len(proposals) != len(scope.queries):
+                if any(not isinstance(proposal, dict) for proposal in proposals):
+                    return _decision("block", "health_query_semantics_unresolved", tool_name, args)
+                proposed_dimensions = sorted(
+                    str(normalize_health_query_args(proposal).get("dimension") or "").lower()
+                    for proposal in proposals
+                )
+                if proposed_dimensions != scoped_dimensions:
                     return _decision("block", "health_query_dimension_conflict", tool_name, args)
             bound = []
             for proposal in proposals:

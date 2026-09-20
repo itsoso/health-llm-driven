@@ -53,6 +53,9 @@ class DietRecordUpdate(BaseModel):
     """更新饮食记录"""
     model_config = ConfigDict(allow_inf_nan=False)
 
+    # Optional for older clients; clients with a known revision must supply it
+    # to avoid overwriting a newer estimate or correction from another device.
+    expected_updated_at: Optional[datetime] = None
     meal_type: Optional[MealType] = None
     meal_time: Optional[time] = None
     food_items: Optional[str] = None

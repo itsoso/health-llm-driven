@@ -1635,6 +1635,12 @@ def update_diet_record(
         raise HTTPException(status_code=403, detail="无权更新他人的饮食记录")
 
     update_dict = update_data.model_dump(exclude_unset=True, mode="json")
+    expected_updated_at = update_data.expected_updated_at
+    if "expected_updated_at" in update_data.model_fields_set and not (
+        _diet_recalculation_expected_revision_matches(record, expected_updated_at)
+    ):
+        raise HTTPException(status_code=409, detail="饮食记录已更新，请刷新后重试")
+    update_dict.pop("expected_updated_at", None)
     preserve_explicit_nutrients = verify_internal_diet_portion_signature(
         internal_portion_signature,
         current_user.id,

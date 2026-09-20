@@ -5051,6 +5051,34 @@ async def test_complete_owned_calendar_batch_remains_available(policy_mode):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_owned_calendar_batch_rejects_duplicate_dimension_substitution(policy_mode):
+    gateway = ToolGateway(_snapshot("分析本周饮食和睡眠", policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "unexpected"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments={"queries": [
+                {"dimension": "sleep", "days": 7},
+                {"dimension": "sleep", "days": 7},
+            ]},
+            source="structured",
+        ),
+        dispatch,
+    )
+
+    assert calls == []
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_query_dimension_conflict"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("message", "plan"),
     (

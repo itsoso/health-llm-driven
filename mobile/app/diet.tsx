@@ -395,20 +395,23 @@ export function buildEditedDietPatch(
   const nutritionChanged = editableNutrientFields.some(
     key => (revision[key] ?? null) !== (original[key] ?? null),
   );
-  const patch: DietRecordUpdate = {
-    meal_type: revision.meal_type,
-    food_items: revision.food_items,
-    calories: revision.calories ?? null,
-    protein: revision.protein ?? null,
-    carbs: revision.carbs ?? null,
-    fat: revision.fat ?? null,
-    alcohol_units: revision.alcohol_units ?? null,
-  };
+  const patch: DietRecordUpdate = {};
+  if (original.meal_type !== revision.meal_type) patch.meal_type = revision.meal_type;
+  if (foodChanged) patch.food_items = revision.food_items;
+  if ((original.alcohol_units ?? null) !== (revision.alcohol_units ?? null)) {
+    patch.alcohol_units = revision.alcohol_units ?? null;
+  }
   if (foodChanged) {
     patch.food_id = null;
     patch.fiber = null;
     for (const key of editableNutrientFields) {
       patch[key] = revision[key] === original[key] ? null : (revision[key] ?? null);
+    }
+  } else {
+    for (const key of editableNutrientFields) {
+      if ((revision[key] ?? null) !== (original[key] ?? null)) {
+        patch[key] = revision[key] ?? null;
+      }
     }
   }
   if (foodChanged || nutritionChanged) {
@@ -642,7 +645,10 @@ export default function DietScreen() {
             expected_updated_at: joinedWrite?.updated_at ?? editingRecord.updated_at ?? null,
           }, idempotencyKey);
         } else {
-          await updateDietRecord(editingRecord.id, buildEditedDietPatch(editingRecord, record));
+          await updateDietRecord(editingRecord.id, {
+            ...buildEditedDietPatch(editingRecord, record),
+            expected_updated_at: joinedWrite?.updated_at ?? editingRecord.updated_at ?? null,
+          });
         }
         sourceMapRef.current.delete(editingRecord.id);
         reconciledRef.current.delete(editingRecord.id);
