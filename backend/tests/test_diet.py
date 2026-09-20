@@ -2061,6 +2061,43 @@ class TestDietAPI:
         assert after.status_code == 200
         assert next(meal for meal in after.json()["meals"] if meal["id"] == record_id)["calories"] == 620
 
+    def test_background_estimate_cannot_overwrite_other_device_food_correction(
+        self, client, auth_headers, sample_diet_data
+    ):
+        created = client.post(
+            "/api/v1/diet/records",
+            json={**sample_diet_data, "food_items": "一碗汤", "calories": None},
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        record_id = created.json()["id"]
+        old_revision = created.json()["updated_at"]
+
+        corrected = client.put(
+            f"/api/v1/diet/records/{record_id}",
+            json={"food_items": "牛肉面约一碗", "expected_updated_at": old_revision},
+            headers=auth_headers,
+        )
+        assert corrected.status_code == 200
+
+        stale_estimate = client.put(
+            f"/api/v1/diet/records/{record_id}",
+            json={
+                "food_items": "一碗汤", "calories": 80,
+                "expected_updated_at": old_revision,
+            },
+            headers=auth_headers,
+        )
+        assert stale_estimate.status_code == 409
+        after = client.get(
+            f"/api/v1/diet/records/me/date/{sample_diet_data['record_date']}",
+            headers=auth_headers,
+        )
+        assert after.status_code == 200
+        record = next(meal for meal in after.json()["meals"] if meal["id"] == record_id)
+        assert record["food_items"] == "牛肉面约一碗"
+        assert record["calories"] is None
+
     @pytest.mark.parametrize(
         "value",
         ("Infinity", "-Infinity", "NaN", "1e309", "-1e309"),

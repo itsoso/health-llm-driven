@@ -95,7 +95,9 @@ export function useDietEstimate() {
     });
   }, []);
 
-  const estimate = useCallback(async (recordId: number, source: EstimateSource) => {
+  const estimate = useCallback(async (
+    recordId: number, source: EstimateSource, expectedUpdatedAt: string | null,
+  ) => {
     const generation = (generationRef.current.get(recordId) ?? 0) + 1;
     generationRef.current.set(recordId, generation);
     const isCurrent = () => generationRef.current.get(recordId) === generation;
@@ -113,12 +115,21 @@ export function useDietEstimate() {
         fat: patch.fat,
       };
       if (patch.food_items) update.food_items = patch.food_items;
-      write = updateDietRecord(recordId, update);
+      write = updateDietRecord(recordId, {
+        ...update, expected_updated_at: expectedUpdatedAt,
+      });
       inFlightWriteRef.current.set(recordId, write);
       await write;
       qc.invalidateQueries({ queryKey: ['diet'] });
-    } catch {
-      if (isCurrent()) mutate(setFailedIds, recordId, true);
+    } catch (error) {
+      if (isCurrent()) {
+        if ((error as { response?: { status?: number } })?.response?.status === 409) {
+          qc.invalidateQueries({ queryKey: ['diet'] });
+          mutate(setFailedIds, recordId, true);
+        } else {
+          mutate(setFailedIds, recordId, true);
+        }
+      }
     } finally {
       if (write && inFlightWriteRef.current.get(recordId) === write) {
         inFlightWriteRef.current.delete(recordId);

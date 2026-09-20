@@ -614,7 +614,7 @@ export default function DietScreen() {
     if (created?.id && source && source.kind !== 'photo' && needsNutritionBackfill(record)) {
       sourceMapRef.current.set(created.id, { source, foodItems: created.food_items });
       toast.show('已保存 · 营养后台估算中', 'success');
-      estimate(created.id, source);
+      estimate(created.id, source, created.updated_at ?? null);
     } else {
       toast.show('已保存饮食', 'success');
     }
@@ -624,7 +624,7 @@ export default function DietScreen() {
   const retryEstimate = useCallback((record: DietRecord) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const source = estimateSourceForRecord(record.food_items, sourceMapRef.current.get(record.id));
-    estimate(record.id, source);
+    estimate(record.id, source, record.updated_at ?? null);
   }, [estimate]);
 
   const handleSave = useCallback(async (record: DietRecordCreate) => {
@@ -1190,7 +1190,7 @@ export default function DietScreen() {
       if (pendingIds.has(r.id) || failedIds.has(r.id) || reconciledRef.current.has(r.id)) continue;
       reconciledRef.current.add(r.id);
       const source = estimateSourceForRecord(r.food_items, sourceMapRef.current.get(r.id));
-      estimate(r.id, source);
+      estimate(r.id, source, r.updated_at ?? null);
     }
   }, [daily?.meals, date, estimate, pendingIds, failedIds]);
 

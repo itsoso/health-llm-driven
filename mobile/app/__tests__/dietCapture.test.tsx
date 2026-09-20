@@ -420,7 +420,7 @@ describe('DietScreen capture deeplink', () => {
         record_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       }));
     });
-    expect(mockEstimate).toHaveBeenCalledWith(88, { kind: 'text', description: '鸡胸肉 200g + 糙米饭一碗' });
+    expect(mockEstimate).toHaveBeenCalledWith(88, { kind: 'text', description: '鸡胸肉 200g + 糙米饭一碗' }, null);
     promptSpy.mockRestore();
   });
 
@@ -448,7 +448,7 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('保存中')).toBeTruthy();
     resolveSave({ id: 88 });
     await waitFor(() => {
-      expect(mockEstimate).toHaveBeenCalledWith(88, { kind: 'text', description: '鸡胸肉 200g + 糙米饭一碗' });
+      expect(mockEstimate).toHaveBeenCalledWith(88, { kind: 'text', description: '鸡胸肉 200g + 糙米饭一碗' }, null);
     });
     promptSpy.mockRestore();
   });

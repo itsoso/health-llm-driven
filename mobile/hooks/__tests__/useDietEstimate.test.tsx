@@ -32,7 +32,7 @@ describe('useDietEstimate', () => {
     const { result } = renderHook(() => useDietEstimate());
 
     let pending!: Promise<void>;
-    act(() => { pending = result.current.estimate(42, { kind: 'text', description: '一碗汤' }); });
+    act(() => { pending = result.current.estimate(42, { kind: 'text', description: '一碗汤' }, '2026-09-20T12:00:00Z'); });
     act(() => { result.current.cancelEstimate(42); });
     await act(async () => {
       resolveEstimate({ success: true, total_calories: 100, total_protein: 3 });
@@ -52,9 +52,9 @@ describe('useDietEstimate', () => {
     const { result } = renderHook(() => useDietEstimate());
 
     let oldPending!: Promise<void>;
-    act(() => { oldPending = result.current.estimate(42, { kind: 'text', description: '一碗汤' }); });
+    act(() => { oldPending = result.current.estimate(42, { kind: 'text', description: '一碗汤' }, '2026-09-20T12:00:00Z'); });
     await act(async () => {
-      await result.current.estimate(42, { kind: 'text', description: '牛肉面约一碗' });
+      await result.current.estimate(42, { kind: 'text', description: '牛肉面约一碗' }, '2026-09-20T12:01:00Z');
     });
     await act(async () => {
       resolveOld({ success: true, total_calories: 100 });
@@ -62,7 +62,9 @@ describe('useDietEstimate', () => {
     });
 
     expect(mockUpdateDietRecord).toHaveBeenCalledTimes(1);
-    expect(mockUpdateDietRecord).toHaveBeenCalledWith(42, expect.objectContaining({ calories: 620 }));
+    expect(mockUpdateDietRecord).toHaveBeenCalledWith(42, expect.objectContaining({
+      calories: 620, expected_updated_at: '2026-09-20T12:01:00Z',
+    }));
     expect(result.current.failedIds.has(42)).toBe(false);
   });
 
@@ -73,7 +75,7 @@ describe('useDietEstimate', () => {
     const { result } = renderHook(() => useDietEstimate());
 
     let pending!: Promise<void>;
-    act(() => { pending = result.current.estimate(42, { kind: 'text', description: '一碗汤' }); });
+    act(() => { pending = result.current.estimate(42, { kind: 'text', description: '一碗汤' }, '2026-09-20T12:00:00Z'); });
     await act(async () => { await Promise.resolve(); });
     expect(mockUpdateDietRecord).toHaveBeenCalledTimes(1);
 
@@ -88,5 +90,23 @@ describe('useDietEstimate', () => {
       await pending;
     });
     await expect(joined).resolves.toEqual({ id: 42, updated_at: '2026-09-20T14:00:00Z' });
+  });
+
+  it('refreshes the corrected record when another device wins the revision race', async () => {
+    mockEstimateNutrition.mockResolvedValueOnce({ success: true, total_calories: 100 });
+    mockUpdateDietRecord.mockRejectedValueOnce({ response: { status: 409 } });
+    const { result } = renderHook(() => useDietEstimate());
+
+    await act(async () => {
+      await result.current.estimate(
+        42, { kind: 'text', description: '一碗汤' }, '2026-09-20T12:00:00Z',
+      );
+    });
+
+    expect(mockUpdateDietRecord).toHaveBeenCalledWith(42, expect.objectContaining({
+      calories: 100, expected_updated_at: '2026-09-20T12:00:00Z',
+    }));
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['diet'] });
+    expect(result.current.failedIds.has(42)).toBe(true);
   });
 });
