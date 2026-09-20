@@ -36,6 +36,8 @@ def test_context_statement_has_one_shared_nonwriting_intent(message):
     "我今天的差旅住处是成都示例酒店，昨晚没睡好", "落地成都\n胸痛",
     "落地成都咯血", "落地成都低烧", "落地成都拉肚子", "落地成都失眠",
     "落地成都浑身乏力", "落地成都记下行程", "到成都之前住上海酒店",
+    "需要，我住在示例酒店", "我住在示例酒店，查一下天气",
+    "我住在示例酒店，16:30提醒我出门", "我住在示例酒店，突然胸痛",
     "落地未知示例城市", "我在成都咯血出差",
     "到北京", "我到北京", "今天到北京",
 ])
@@ -154,6 +156,8 @@ async def test_recent_medical_context_must_not_be_short_circuited(db, auth_user_
 @pytest.mark.parametrize("message", [
     "落地成都咯血", "落地成都低烧", "落地成都拉肚子", "落地成都失眠",
     "落地成都浑身乏力", "落地成都记下行程", "到成都之前住上海酒店",
+    "需要，我住在示例酒店", "我住在示例酒店，查一下天气",
+    "我住在示例酒店，16:30提醒我出门", "我住在示例酒店，突然胸痛",
 ])
 async def test_extra_semantics_reach_ordinary_stream(db, auth_user_and_headers, monkeypatch, message):
     user, _ = auth_user_and_headers
@@ -274,6 +278,20 @@ def test_system_prompt_scopes_initiative_without_disabling_medical_rules(db):
     assert "不能仅因出现城市或酒店就忽略" in prompt
     assert "不得用“已记录”或“已保存”代替“收到”" in prompt
     assert "不做诊断" in prompt
+
+
+def test_system_prompt_does_not_expand_ambiguous_travel_followup(db):
+    prompt = AgentExecutor(db)._build_system_prompt(
+        user_id=0, conv_id=0, user_auth_token=None, lite=True,
+        intent_query="需要，我住在示例清河酒店", static_rules_only=True,
+    )
+    assert "多项可选动作" in prompt
+    assert "不得把含糊同意解释为全部授权" in prompt
+    assert "不主动查询天气或空气质量" in prompt
+    assert "不复述内部写入接口或失败细节" in prompt
+    assert "真实新发安全风险" in prompt
+    assert "仅在上述含糊同意场景" in prompt
+    assert "用户明确选中某项时继续该项" in prompt
 
 
 @pytest.mark.asyncio
