@@ -182,12 +182,13 @@ jest.mock('../../../components/chat/ChatBubble', () => {
         <Text>{item.content}</Text>
         <Text>{selectionMode ? (selected ? 'selected' : 'unselected') : 'normal'}</Text>
       </Pressable>
-      {item.imageUris?.[0] ? (
+      {item.imageUris?.map((uri: string, index: number) => (
         <Pressable
-          accessibilityLabel={`open-image-${item.id}`}
-          onPress={() => onViewImage?.(item.imageUris[0])}
+          key={`${uri}-${index}`}
+          accessibilityLabel={`open-image-${item.id}${index > 0 ? `-${index + 1}` : ''}`}
+          onPress={() => onViewImage?.(uri, item.imageUris)}
         />
-      ) : null}
+      ))}
       {item.cardType === 'health_evidence' ? (
         <Pressable
           accessibilityLabel={`submit-health-continuation-${item.id}`}
@@ -344,6 +345,49 @@ describe('ChatScreen', () => {
     fireEvent.press(preview);
 
     expect(view.queryByLabelText('预览图片，点按返回对话，长按可保存或分享')).toBeNull();
+  });
+
+  it('opens the tapped photo in its message gallery and pages left or right', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockMessages = [{
+      id: 'photo-multiple',
+      role: 'user',
+      content: '三张餐食照片',
+      imageUris: [
+        'https://health.executor.life/api/v1/upload/files/chat/9/first.jpg',
+        'https://health.executor.life/api/v1/upload/files/chat/9/second.jpg',
+        'https://health.executor.life/api/v1/upload/files/chat/9/third.jpg',
+      ],
+    }];
+    const view = render(<ChatScreen />);
+
+    fireEvent.press(view.getByLabelText('open-image-photo-multiple-2'));
+    expect(view.getByTestId('chat-image-viewer-index')).toHaveTextContent('2 / 3');
+    const pages = view.getByTestId('chat-image-viewer-pages');
+    const pageWidth = pages.props.contentOffset.x;
+    expect(pageWidth).toBeGreaterThan(0);
+    expect(pages.props.pagingEnabled).toBe(true);
+    expect(pages.props.horizontal).toBe(true);
+
+    fireEvent(pages, 'momentumScrollEnd', {
+      nativeEvent: { contentOffset: { x: pageWidth * 2, y: 0 } },
+    });
+    expect(view.getByTestId('chat-image-viewer-index')).toHaveTextContent('3 / 3');
+    fireEvent(view.getByTestId('chat-image-viewer-page-3'), 'longPress');
+    const actions = alertSpy.mock.calls.at(-1)?.[2] as any[];
+    await act(async () => {
+      actions.find(action => action.text === '分享图片').onPress();
+      await Promise.resolve();
+    });
+    expect(mockShareImage).toHaveBeenCalledWith(
+      'https://health.executor.life/api/v1/upload/files/chat/9/third.jpg',
+      expect.objectContaining({ headers: { Authorization: 'Bearer review-token' } }),
+    );
+    fireEvent(pages, 'momentumScrollEnd', {
+      nativeEvent: { contentOffset: { x: 0, y: 0 } },
+    });
+    expect(view.getByTestId('chat-image-viewer-index')).toHaveTextContent('1 / 3');
+    alertSpy.mockRestore();
   });
 
   it('embeds selected photos in the long image and captures only after they load', async () => {

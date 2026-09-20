@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
   Platform, TextStyle, AppState, type AppStateStatus,
-  ActivityIndicator, Alert, Keyboard, Modal, Pressable, useWindowDimensions,
+  ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
@@ -83,6 +83,8 @@ type SuggestionCard = {
   key: string;       // generator identity for CTR analytics ("default" for static fallback)
   priority: number;
 };
+
+type ViewingImage = { uris: string[]; index: number };
 
 const SUGGESTIONS: SuggestionCard[] = [
   { icon: 'pulse-outline', text: '今天的健康状况如何？', key: 'default', priority: 0 },
@@ -191,7 +193,13 @@ export default function ChatScreen() {
   );
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [viewingImage, setViewingImage] = useState<ViewingImage | null>(null);
+  const openViewingImage = useCallback((uri: string, messageImageUris: readonly string[]) => {
+    const uris = messageImageUris.filter(imageUri => Boolean(buildChatImageSource(imageUri, authToken)));
+    const index = uris.indexOf(uri);
+    if (index < 0) return;
+    setViewingImage({ uris, index });
+  }, [authToken]);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -258,14 +266,13 @@ export default function ChatScreen() {
     }
   }, [authToken]);
 
-  const handleViewingImageLongPress = useCallback(() => {
-    if (!viewingImage) return;
+  const handleViewingImageLongPress = useCallback((uri: string) => {
     Alert.alert('图片', undefined, [
-      { text: '保存到相册', onPress: () => { void saveViewingImage(viewingImage); } },
-      { text: '分享图片', onPress: () => { void shareViewingImage(viewingImage); } },
+      { text: '保存到相册', onPress: () => { void saveViewingImage(uri); } },
+      { text: '分享图片', onPress: () => { void shareViewingImage(uri); } },
       { text: '取消', style: 'cancel' },
     ]);
-  }, [saveViewingImage, shareViewingImage, viewingImage]);
+  }, [saveViewingImage, shareViewingImage]);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -967,7 +974,7 @@ export default function ChatScreen() {
     return (
       <ChatBubble
         item={message}
-        onViewImage={setViewingImage}
+        onViewImage={openViewingImage}
         imageAuthToken={authToken}
         selectionMode={selectionMode && shareable}
         selected={selectedMessageIds.has(message.id)}
@@ -979,9 +986,16 @@ export default function ChatScreen() {
         onShareLongImage={shareReplyLongImage}
       />
     );
-  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, sendSuggestedPrompt, stopStreaming, markAgentContentPainted, shareReplyLongImage]);
+  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, sendSuggestedPrompt, stopStreaming, markAgentContentPainted, shareReplyLongImage, openViewingImage]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const updateViewingImageIndex = useCallback((offsetX: number) => {
+    setViewingImage(current => {
+      if (!current || windowWidth <= 0) return current;
+      const index = Math.max(0, Math.min(current.uris.length - 1, Math.round(offsetX / windowWidth)));
+      return index === current.index ? current : { ...current, index };
+    });
+  }, [windowWidth]);
   const insets = useSafeAreaInsets();
   // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时直接为键盘留位;
   // 收起时 = 动态底部安全区(home indicator 由这里补) + 呼吸空间,
@@ -1287,18 +1301,41 @@ export default function ChatScreen() {
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
           {viewingImage && (
-            <Pressable
-              onPress={() => setViewingImage(null)}
-              onLongPress={handleViewingImageLongPress}
-              accessibilityRole="imagebutton"
-              accessibilityLabel="预览图片，点按返回对话，长按可保存或分享"
+            <ScrollView
+              testID="chat-image-viewer-pages"
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              style={{ width: windowWidth, height: windowHeight * 0.7, flexGrow: 0 }}
+              contentOffset={{ x: viewingImage.index * windowWidth, y: 0 }}
+              onScrollEndDrag={event => updateViewingImageIndex(event.nativeEvent.contentOffset.x)}
+              onMomentumScrollEnd={event => updateViewingImageIndex(event.nativeEvent.contentOffset.x)}
             >
-              <Image
-                source={buildChatImageSource(viewingImage, authToken)}
-                style={{ width: windowWidth - 32, height: windowHeight * 0.7 }}
-                contentFit="contain"
-              />
-            </Pressable>
+              {viewingImage.uris.map((uri, index) => (
+                <Pressable
+                  key={`${uri}-${index}`}
+                  testID={`chat-image-viewer-page-${index + 1}`}
+                  style={[styles.imageViewerPage, { width: windowWidth }]}
+                  onPress={() => setViewingImage(null)}
+                  onLongPress={() => handleViewingImageLongPress(uri)}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel={viewingImage.uris.length === 1
+                    ? '预览图片，点按返回对话，长按可保存或分享'
+                    : `预览图片 ${index + 1}/${viewingImage.uris.length}，左右滑动切换，点按返回对话，长按可保存或分享`}
+                >
+                  <Image
+                    source={buildChatImageSource(uri, authToken)}
+                    style={{ width: windowWidth - 32, height: windowHeight * 0.7 }}
+                    contentFit="contain"
+                  />
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+          {viewingImage && viewingImage.uris.length > 1 && (
+            <Text testID="chat-image-viewer-index" style={styles.imageViewerIndex}>
+              {viewingImage.index + 1} / {viewingImage.uris.length}
+            </Text>
           )}
           <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
             <Ionicons name="close-circle" size={32} color="#fff" />
@@ -1482,6 +1519,11 @@ const styles = StyleSheet.create({
   imageViewerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center', alignItems: 'center',
+  },
+  imageViewerPage: { justifyContent: 'center', alignItems: 'center' },
+  imageViewerIndex: {
+    position: 'absolute', bottom: 48, alignSelf: 'center',
+    color: '#fff', fontFamily: revaFonts.sans, fontSize: 14,
   },
   imageViewerClose: { position: 'absolute', top: 60, right: 20 },
   menuOverlay: {

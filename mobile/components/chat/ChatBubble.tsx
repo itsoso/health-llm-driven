@@ -95,7 +95,7 @@ const STREAM_RENDERABLE_CARD_TYPES = new Set([
 
 interface Props {
   item: UIMessage;
-  onViewImage?: (uri: string) => void;
+  onViewImage?: (uri: string, messageImageUris: readonly string[]) => void;
   imageAuthToken?: string | null;
   selectionMode?: boolean;
   selected?: boolean;
@@ -926,7 +926,7 @@ function ChatBubbleInner({
           return (
             <TouchableOpacity
               key={`${uri}-${i}`}
-              onPress={() => onViewImage?.(uri)}
+              onPress={() => onViewImage?.(uri, images)}
               onLongPress={() => handleImageLongPress(uri)}
               activeOpacity={0.85}
               accessibilityRole="imagebutton"
@@ -1247,7 +1247,7 @@ function ChatBubbleInner({
                   steps={thinkingSteps}
                   streaming={item.streaming}
                   statusLabel={processingStatusLabel}
-                  onStop={onStopStreaming}
+                  onStop={item.recoveryPending ? undefined : onStopStreaming}
                 />
               </View>
             ) : null}

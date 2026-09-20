@@ -3641,6 +3641,93 @@ describe('useChatEngine', () => {
     });
   });
 
+  it('keeps the current thinking bubble when foreground history only has the user turn', async () => {
+    let appStateListener: ((state: string) => void) | undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation(((_event: string, handler: (state: string) => void) => {
+      appStateListener = handler;
+      return { remove: jest.fn() } as any;
+    }) as any);
+    mockStreamChat.mockImplementation(streamStartThenWait);
+    mockGetConversationMessages.mockImplementation(async () => ({
+      total_messages: 1,
+      messages: [{
+        id: 1, role: 'user', content: '请帮我分析行程',
+        meta: { client_turn_id: mockStreamChat.mock.calls[0]?.[6] },
+      }],
+    }));
+    const { result } = renderHook(() => useChatEngine());
+    act(() => { void result.current.sendMessage('请帮我分析行程'); });
+    await waitFor(() => expect(result.current.conversationId).toBe(777));
+    const thinking = result.current.messages.find(message => message.role === 'assistant');
+    expect(thinking?.streaming).toBe(true);
+    const originalNow = Date.now;
+    jest.spyOn(Date, 'now').mockImplementation(() => originalNow() + 31_000);
+
+    await act(async () => {
+      appStateListener?.('background');
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+
+    expect(mockGetConversationMessages).toHaveBeenCalledWith(777, { limit: 80 });
+    expect(result.current.messages.find(message => message.role === 'assistant')).toMatchObject({
+      id: thinking?.id,
+      content: thinking?.content,
+      streaming: true,
+      thinkingSteps: thinking?.thinkingSteps,
+    });
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    await act(async () => { finishStream?.(); await Promise.resolve(); });
+  });
+
+  it('restores a pending thinking bubble after the chat engine remounts', async () => {
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '777';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1,
+      phase: 'running',
+      turnId: 'turn-remounted',
+      conversationId: 777,
+      startedAt: Date.now() - 1000,
+      updatedAt: Date.now() - 500,
+      label: '正在整理行程',
+      recoverable: true,
+      hadWrite: false,
+    });
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 1,
+      messages: [{
+        id: 1, role: 'user', content: '请帮我分析行程',
+        meta: { client_turn_id: 'turn-remounted' },
+      }],
+    });
+    const { result } = renderHook(() => useChatEngine());
+    await waitFor(() => expect(result.current.activeTurn.turnId).toBe('turn-remounted'));
+    await act(async () => { await result.current.loadLatestConversation(); });
+
+    expect(result.current.messages.find(message => message.role === 'assistant')).toMatchObject({
+      sourceTurnId: 'turn-remounted',
+      recoveryPending: true,
+      streaming: true,
+      thinkingSteps: ['正在整理行程'],
+    });
+    expect(mockStreamChat).not.toHaveBeenCalled();
+
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 2,
+      messages: [
+        { id: 1, role: 'user', content: '请帮我分析行程', meta: { client_turn_id: 'turn-remounted' } },
+        { id: 2, role: 'assistant', content: '这是完整回答。', meta: {
+          client_turn_id: 'turn-remounted', client_turn_finalized: true, completion_status: 'complete',
+        } },
+      ],
+    });
+    await act(async () => { await result.current.loadLatestConversation(); });
+    expect(result.current.messages.filter(message => message.role === 'assistant')).toEqual([
+      expect.objectContaining({ content: '这是完整回答。' }),
+    ]);
+    expect(result.current.activeTurn.phase).toBe('completed');
+  });
+
   it('does not surface status 200 as a network failure after an accepted stream is backgrounded', async () => {
     let appStateListener: ((state: string) => void) | undefined;
     jest.spyOn(AppState, 'addEventListener').mockImplementation(((_event: string, handler: (state: string) => void) => {

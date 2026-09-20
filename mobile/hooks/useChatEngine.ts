@@ -54,6 +54,7 @@ const IMAGE_HOST = normalizeImageHost(BASE_URL);
 export interface UIMessage extends ChatMessage {
   id: string;
   streaming?: boolean;
+  recoveryPending?: boolean;
   thinkingSteps?: string[];
   // P0-1 渐进渲染 (刀⑤): 首 token 前的"细状态行"标签 (中文人话), 由 status SSE 事件驱动。
   // 例: "正在理解…" → "查看步数数据…" → "正在整理回答…"。首 token 到达即清空,
@@ -715,6 +716,39 @@ function parseStoredAgentTurn(raw: string | null): AgentTurnState | null {
   }
 }
 
+function preservePendingTurnDisplay(
+  restored: UIMessage[],
+  current: UIMessage[],
+  serverMessages: any[],
+  turn: AgentTurnState,
+  conversationId: number,
+  hasLiveStream: boolean,
+): UIMessage[] {
+  const turnId = turn.turnId;
+  if (!turnId || !turn.recoverable || isAgentTurnTerminal(turn)
+      || (turn.conversationId && turn.conversationId !== conversationId)
+      || assistantMessageForTurn(serverMessages, turnId)) return restored;
+  const localAssistant = findReusableTurnMessage(current, 'assistant', turnId);
+  if (!localAssistant && !restored.some(message => message.role === 'user' && message.sourceTurnId === turnId)) {
+    return restored;
+  }
+  const pendingAssistant: UIMessage = localAssistant
+    ? { ...localAssistant, streaming: true, recoveryPending: !hasLiveStream }
+    : {
+        id: `pending-${turnId}`,
+        role: 'assistant',
+        content: THINKING_PLACEHOLDER,
+        sourceTurnId: turnId,
+        streaming: true,
+        recoveryPending: true,
+        thinkingSteps: [turn.label?.trim() || '正在同步完整回答'],
+      };
+  return [
+    ...restored.filter(message => !(message.role === 'assistant' && message.sourceTurnId === turnId)),
+    pendingAssistant,
+  ];
+}
+
 function stripThinkingPlaceholder(content: string): string {
   return content.replace(THINKING_PLACEHOLDER, '');
 }
@@ -1103,8 +1137,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       setHasMoreHistory(has_more ?? total_messages > msgs.length);
       if (msgs.length === 0) return;
       const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
-      setMessages(restored);
-      setIsStreaming(false);  // 清掉 streaming 残留态
+      const turn = activeTurnRef.current;
+      setMessages(current => preservePendingTurnDisplay(restored, current, msgs, turn, conversationId, streamingRef.current));
+      if (!streamingRef.current) setIsStreaming(false);
       reconcileActiveTurnFromServer(conversationId, msgs);
     } catch {
       // 网络失败不影响现有 UI
@@ -1194,7 +1229,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     setConversationId(id);
     void rememberConversationId(id);
     const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, idPrefix);
-    setMessages(restored);
+    const turn = activeTurnRef.current;
+    setMessages(current => preservePendingTurnDisplay(restored, current, msgs, turn, id, streamingRef.current));
     reconcileActiveTurnFromServer(id, msgs);
     return true;
   }, [reconcileActiveTurnFromServer]);

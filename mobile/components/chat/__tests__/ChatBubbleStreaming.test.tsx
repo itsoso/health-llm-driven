@@ -97,7 +97,7 @@ const { createRecordFromAssistantReply } = require('../../../services/chatResult
 
 function renderBubble(
   message: UIMessage,
-  props: { onContentPaint?: jest.Mock } = {},
+  props: { onContentPaint?: jest.Mock; onViewImage?: jest.Mock } = {},
 ) {
   const qc = new QueryClient();
   return render(
@@ -887,6 +887,17 @@ describe('ChatBubble streaming degraded render', () => {
     });
 
     alertSpy.mockRestore();
+  });
+
+  it('passes the tapped photo and ordered message photos to the viewer', () => {
+    const onViewImage = jest.fn();
+    const imageUris = ['file:///tmp/first.jpg', 'file:///tmp/second.jpg'];
+    const { getByLabelText } = renderBubble({
+      id: 'user-gallery', role: 'user', content: '', imageUris, streaming: false,
+    }, { onViewImage });
+
+    fireEvent.press(getByLabelText('打开图片 2'));
+    expect(onViewImage).toHaveBeenCalledWith(imageUris[1], imageUris);
   });
 
   it('downloads and shares a protected chat image from the long-press menu', async () => {
