@@ -90,6 +90,25 @@ async def test_model_cannot_expand_week_or_change_owner(mode, query):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["enforce", "shadow"])
+@pytest.mark.parametrize("tool", ["health_query", "health_query_batch"])
+@pytest.mark.parametrize("meal", ["早餐", "午餐", "晚餐", "早饭", "午饭", "晚饭", "夜宵", "宵夜", "加餐"])
+@pytest.mark.parametrize("week", ["本周", "这周", "上周"])
+async def test_weekly_meal_filter_never_becomes_all_meals(mode, tool, meal, week):
+    turn = snapshot(f"分析{week}的{meal}", mode=mode)
+    dispatched = []
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{}'
+    args = {"dimension": "diet"}
+    if tool == "health_query_batch":
+        args = {"queries": [args]}
+    result = await ToolGateway(turn).execute(ToolExecutionRequest(tool, args), dispatch)
+    assert result.decision.action == "block"
+    assert not dispatched
+
+
+@pytest.mark.asyncio
 async def test_weekly_gateway_to_executor_reads_only_owned_week_rows(db):
     from app.models.user import User
     from app.models.daily_health import DietRecord, GarminData

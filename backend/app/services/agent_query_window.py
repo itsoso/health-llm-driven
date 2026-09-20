@@ -25,6 +25,7 @@ _RELATIVE_RE = re.compile(
 )
 _WEEKDAY_RE = re.compile(r"(本周|这周|上周)([一二三四五六日天])")
 _WEEK_RE = re.compile(r"(?:本周|这周|上周)(?![一二三四五六日天])")
+_MEAL_SCOPE_RE = re.compile(r"早餐|早饭|午餐|午饭|晚餐|晚饭|夜宵|宵夜|加餐|点心")
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,11 @@ def resolve_calendar_query_window(
         return None
     if weeks:
         if len(weeks) != 1 or absolute or relative or weekdays or re.search(r"晚|夜", text):
+            return None
+        # This adapter returns all meals in its calendar window. A meal-specific
+        # week cannot silently widen into every meal; the daily meal binder is
+        # separate, and week + meal filtering is not implemented here.
+        if _MEAL_SCOPE_RE.search(text):
             return None
         monday = local.date() - timedelta(days=local.weekday())
         if weeks[0].group() == "上周":
