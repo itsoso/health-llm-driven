@@ -112,6 +112,21 @@ def test_batch_with_one_unrequested_domain_is_rejected_before_dispatch():
     assert decision.action == "block"
 
 
+def test_broad_read_batch_allows_subset_but_rejects_duplicate_substitution():
+    request = ANALYSIS_REQUESTS[1]
+    subset = _decide(request, "health_query_batch", {"queries": [
+        {"dimension": "sleep", "days": 7},
+    ]})
+    assert subset.action == "allow", subset.reason
+
+    duplicate = _decide(request, "health_query_batch", {"queries": [
+        {"dimension": "sleep", "days": 7},
+        {"dimension": "sleep", "days": 7},
+    ]})
+    assert duplicate.action == "block"
+    assert duplicate.reason == "health_query_dimension_conflict"
+
+
 @pytest.mark.parametrize("dimension", ["sleep", "diet", "workout", "supplements"])
 def test_model_cannot_enlarge_the_default_current_window(dimension):
     decision = _decide(ANALYSIS_REQUESTS[1], "health_query", {"dimension": dimension, "days": 3650})

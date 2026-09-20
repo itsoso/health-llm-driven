@@ -2790,21 +2790,38 @@ def decide_tool_capability(
             if not isinstance(proposals, list) or not 1 <= len(proposals) <= 6:
                 return _decision("block", "health_query_semantics_unresolved", tool_name, args)
             if tool_name == "health_query_batch":
-                scoped_dimensions = sorted(query["dimension"] for query in scope.queries)
-                entities = _illness_query_entities(snapshot.envelope.text)
-                if len(entities) > 1:
-                    expressed = [_query_entity_known_dimensions(entity) for entity in entities]
-                    if any(len(dimensions) != 1 for dimensions in expressed) or sorted(
-                        next(iter(dimensions)) for dimensions in expressed
-                    ) != scoped_dimensions:
-                        return _decision("block", "health_query_dimension_conflict", tool_name, args)
                 if any(not isinstance(proposal, dict) for proposal in proposals):
                     return _decision("block", "health_query_semantics_unresolved", tool_name, args)
+                if any(
+                    key in proposal
+                    for proposal in proposals
+                    for key in ("user_id", "owner_id", "tenant_id")
+                ):
+                    return _decision("block", "health_query_subject_not_current_user", tool_name, args)
+                scoped_dimensions = sorted(query["dimension"] for query in scope.queries)
+                entities = _illness_query_entities(snapshot.envelope.text)
+                explicit_dimensions = None
+                if len(entities) > 1:
+                    expressed = [_query_entity_known_dimensions(entity) for entity in entities]
+                    if all(len(dimensions) == 1 for dimensions in expressed):
+                        explicit_dimensions = sorted(
+                            next(iter(dimensions)) for dimensions in expressed
+                        )
+                if explicit_dimensions is not None and explicit_dimensions != scoped_dimensions:
+                    return _decision("block", "health_query_dimension_conflict", tool_name, args)
                 proposed_dimensions = sorted(
                     str(normalize_health_query_args(proposal).get("dimension") or "").lower()
                     for proposal in proposals
                 )
-                if proposed_dimensions != scoped_dimensions:
+                if (
+                    len(proposals) > len(scope.queries)
+                    or (
+                        len(set(scoped_dimensions)) == len(scoped_dimensions)
+                        and len(set(proposed_dimensions)) != len(proposed_dimensions)
+                    )
+                    or (len(proposals) == len(scope.queries) and proposed_dimensions != scoped_dimensions)
+                    or (explicit_dimensions is not None and proposed_dimensions != scoped_dimensions)
+                ):
                     return _decision("block", "health_query_dimension_conflict", tool_name, args)
             bound = []
             for proposal in proposals:

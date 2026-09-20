@@ -334,9 +334,9 @@ async def test_provider_ignoring_exhausted_tool_list_still_cannot_dispatch(
 ):
     trace = batch_trace(db, monkeypatch, [BAD, BAD, GOOD])
     done, _ = await consume(db, trace, four_domain_user)
-    # The existing no-tools contract rejects the proposal in this response;
-    # no further synthesis request is needed to prevent its dispatch.
-    assert len(trace.calls) == 3
+    # A single sealed synthesis retry is allowed, but neither proposal can
+    # dispatch after the read-repair tool budget is exhausted.
+    assert len(trace.calls) == 4
     assert all(not tools for _, tools in trace.calls[2:])
     assert not trace.dispatches
     assert trace.executor._read_repair_failures == 2
