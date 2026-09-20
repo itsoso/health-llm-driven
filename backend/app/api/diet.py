@@ -2105,7 +2105,9 @@ async def estimate_nutrition_from_text(
         )
 
     try:
-        result = food_recognition_service.estimate_nutrition_from_text(food_description)
+        result = sanitize_food_recognition_result(
+            food_recognition_service.estimate_nutrition_from_text(food_description)
+        )
 
         if not result.get("success"):
             return FoodRecognitionResponse(
@@ -2125,5 +2127,5 @@ async def estimate_nutrition_from_text(
         )
 
     except Exception as e:
-        logger.error(f"营养估算失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("营养估算失败 error_type=%s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="营养估算失败，请稍后重试")

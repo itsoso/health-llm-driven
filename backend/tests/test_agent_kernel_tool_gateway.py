@@ -5017,12 +5017,37 @@ async def test_batch_query_requires_complete_representable_entity_cardinality(
     assert calls == []
     assert result.decision is not None
     assert result.decision.action == "block"
-    expected_reason = (
-        "health_query_calendar_window_unsupported"
-        if "这周" in message
-        else "health_query_dimension_conflict"
+    # "这周" is now a supported calendar window; the missing entities, not
+    # the date, are what must keep this partial batch from dispatching.
+    assert result.decision.reason == "health_query_dimension_conflict"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy_mode", ("enforce", "shadow"))
+async def test_complete_owned_calendar_batch_remains_available(policy_mode):
+    gateway = ToolGateway(_snapshot("分析本周饮食和睡眠", policy_mode=policy_mode))
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request.arguments)
+        return "[]"
+
+    result = await gateway.execute(
+        ToolExecutionRequest(
+            tool_name="health_query_batch",
+            arguments={"queries": [
+                {"dimension": "diet", "days": 7},
+                {"dimension": "sleep", "days": 7},
+            ]},
+            source="structured",
+        ),
+        dispatch,
     )
-    assert result.decision.reason == expected_reason
+
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+    assert len(calls) == 1
+    assert [query["dimension"] for query in calls[0]["queries"]] == ["diet", "sleep"]
 
 
 @pytest.mark.asyncio

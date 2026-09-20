@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 const mockRouteParams: Record<string, string> = { capture: 'photo' };
 const mockMealForm = jest.fn();
 const mockEstimate = jest.fn();
+const mockCancelEstimate = jest.fn();
 const mockRouterPush = jest.fn();
 const mockRouterBack = jest.fn();
 const mockPushChatWithContext = jest.fn();
@@ -40,7 +41,9 @@ jest.mock('expo-image-picker', () => ({
 jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
   const React = require('react');
   const { View } = require('react-native');
-  const MockSwipeable = ({ children }: any) => <View>{children}</View>;
+  const MockSwipeable = ({ children, renderRightActions }: any) => (
+    <View>{children}{renderRightActions?.()}</View>
+  );
   MockSwipeable.displayName = 'MockSwipeable';
   return MockSwipeable;
 });
@@ -54,8 +57,10 @@ jest.mock('../../hooks/useDiet', () => ({
 }));
 
 jest.mock('../../hooks/useDietEstimate', () => ({
+  estimateSourceForRecord: jest.requireActual('../../hooks/useDietEstimate').estimateSourceForRecord,
   useDietEstimate: () => ({
     estimate: mockEstimate,
+    cancelEstimate: mockCancelEstimate,
     pendingIds: new Set(),
     failedIds: new Set(),
   }),
@@ -64,6 +69,7 @@ jest.mock('../../hooks/useDietEstimate', () => ({
 jest.mock('../../services/diet', () => ({
   createDietRecord: jest.fn(),
   updateDietRecord: jest.fn(),
+  recalculateDietRecordNutrition: jest.fn(),
   deleteDietRecord: jest.fn(),
   estimateNutrition: jest.fn(),
   recognizeFood: jest.fn(),
@@ -139,7 +145,26 @@ jest.mock('../../utils/agentContext', () => ({
   returnToChatWithContext: (...args: any[]) => mockReturnToChatWithContext(...args),
 }));
 
-import DietScreen from '../diet';
+import DietScreen, { isFoodOnlyDietCorrection } from '../diet';
+
+describe('food-only diet correction routing', () => {
+  const original: any = {
+    food_items: '一碗汤', meal_type: 'dinner',
+    calories: 80, protein: 3, carbs: 9, fat: 2, alcohol_units: null,
+  };
+
+  it('uses atomic recalculation only when the food changed without manual nutrition or alcohol edits', () => {
+    expect(isFoodOnlyDietCorrection(original, {
+      ...original, food_items: '牛肉面约一碗',
+    })).toBe(true);
+    expect(isFoodOnlyDietCorrection(original, {
+      ...original, food_items: '牛肉面约一碗', calories: 620,
+    })).toBe(false);
+    expect(isFoodOnlyDietCorrection({ ...original, alcohol_units: 1 }, {
+      ...original, food_items: '牛肉面约一碗', alcohol_units: 1,
+    })).toBe(false);
+  });
+});
 
 describe('DietScreen capture deeplink', () => {
   it('exposes an accessible back action that returns to the previous screen', async () => {
@@ -572,6 +597,66 @@ describe('DietScreen capture deeplink', () => {
     const dietService = require('../../services/diet');
     expect(dietService.createDietRecord).not.toHaveBeenCalled();
     expect(ImagePicker.requestCameraPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  it('atomically recalculates a food-only edit and does not send stale nutrients in a PUT', async () => {
+    const dietService = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    mockMeals.push({
+      id: 42, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '一碗汤', calories: 80, protein: 3, carbs: 9, fat: 2,
+      alcohol_units: null, updated_at: '2026-09-20T12:00:00Z', image_url: null,
+    });
+    dietService.recalculateDietRecordNutrition.mockResolvedValueOnce({
+      ...mockMeals[0], food_items: '牛肉面约一碗', calories: 620,
+    });
+
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getByLabelText('编辑'));
+    await waitFor(() => expect(mockMealForm).toHaveBeenCalled());
+    await act(async () => {
+      await mockMealForm.mock.lastCall?.[0].onSubmit({
+        record_date: todayStr(), meal_type: 'dinner', food_items: '牛肉面约一碗',
+        calories: 80, protein: 3, carbs: 9, fat: 2,
+      });
+    });
+
+    expect(mockCancelEstimate).toHaveBeenCalledWith(42);
+    expect(dietService.recalculateDietRecordNutrition).toHaveBeenCalledWith(
+      42,
+      {
+        food_items: '牛肉面约一碗',
+        meal_type: 'dinner',
+        expected_updated_at: '2026-09-20T12:00:00Z',
+      },
+      expect.stringMatching(/^diet-recalc:42:/),
+    );
+    expect(dietService.updateDietRecord).not.toHaveBeenCalled();
+  });
+
+  it('preserves explicitly revised nutrition instead of replacing it with a model estimate', async () => {
+    const dietService = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    mockMeals.push({
+      id: 43, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '一碗汤', calories: 80, protein: 3, carbs: 9, fat: 2,
+      alcohol_units: null, updated_at: '2026-09-20T12:00:00Z', image_url: null,
+    });
+    dietService.updateDietRecord.mockResolvedValueOnce({ id: 43 });
+
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getByLabelText('编辑'));
+    await act(async () => {
+      await mockMealForm.mock.lastCall?.[0].onSubmit({
+        record_date: todayStr(), meal_type: 'dinner', food_items: '牛肉面约一碗',
+        calories: 620, protein: 3, carbs: 9, fat: 2,
+      });
+    });
+
+    expect(dietService.updateDietRecord).toHaveBeenCalledWith(43, expect.objectContaining({
+      food_items: '牛肉面约一碗', calories: 620,
+    }));
+    expect(dietService.recalculateDietRecordNutrition).not.toHaveBeenCalled();
   });
 
   it('rejects medication-looking diet draft deeplinks before opening the meal form', async () => {

@@ -60,6 +60,42 @@ def sample_diet_data():
 class TestDietAPI:
     """饮食记录API测试类"""
 
+    @pytest.mark.parametrize("model_total", [551.5, 999])
+    def test_text_estimate_accepts_fractional_calories_and_uses_food_totals(
+        self, client, auth_headers, monkeypatch, model_total
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        monkeypatch.setattr(food_recognition_service, "is_available", lambda: True)
+        monkeypatch.setattr(
+            food_recognition_service,
+            "estimate_nutrition_from_text",
+            lambda _description: {
+                "success": True,
+                "foods": [{
+                    "name": "牛肉面",
+                    "quantity": "约1碗",
+                    "calories": 551.5,
+                    "protein": 24.5,
+                    "carbs": 70.5,
+                    "fat": 18.5,
+                }],
+                "total_calories": model_total,
+                "total_protein": 999,
+            },
+        )
+
+        response = client.post(
+            "/api/v1/diet/estimate-nutrition",
+            params={"food_description": "牛肉面约1碗"},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        assert response.json()["total_calories"] == 552
+        assert response.json()["total_protein"] == 24.5
+
     def test_create_diet_record(self, client, auth_headers, sample_diet_data):
         """测试创建饮食记录"""
         response = client.post(

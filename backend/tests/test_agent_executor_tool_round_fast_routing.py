@@ -617,15 +617,21 @@ async def test_explicit_model_fast_direct_answer_resynthesized_on_explicit(
     assert "fast_tool_round_direct_answer_resynthesized" in done["fallback_reasons"]
 
 
+@pytest.mark.parametrize("scoped_reads_verified", [False, True])
+@pytest.mark.parametrize("retry_returns_text", [False, True])
 @pytest.mark.asyncio
 async def test_tool_free_synthesis_retries_hallucinated_tool_call(
-    db, auth_user_and_headers, monkeypatch
+    db, auth_user_and_headers, monkeypatch, scoped_reads_verified, retry_returns_text
 ):
-    """Final no-tool round that still emits a tool call must retry once, then publish."""
+    """A no-tool round retries once; repeated hallucinations stay blocked."""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
+    monkeypatch.setattr(
+        executor, "_all_scoped_reads_verified", lambda: scoped_reads_verified
+    )
     provider_calls = []
     strong_rounds = {"n": 0}
+    executed_tools = {"n": 0}
 
     monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
     monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
@@ -660,6 +666,16 @@ async def test_tool_free_synthesis_retries_hallucinated_tool_call(
                 }]}
                 yield {"type": "finish", "finish_reason": "tool_calls"}
                 return
+            if not retry_returns_text:
+                yield {"type": "tool_calls", "tool_calls": [{
+                    "id": "r3", "type": "function",
+                    "function": {
+                        "name": "environment_check",
+                        "arguments": json.dumps({"location": "北京"}),
+                    },
+                }]}
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+                return
             yield {"type": "content", "text": "STRONG SYNTHESIS 补水"}
             yield {"type": "finish", "finish_reason": "stop"}
 
@@ -673,6 +689,7 @@ async def test_tool_free_synthesis_retries_hallucinated_tool_call(
 
     async def fake_exec_tool(name, args, token):
         assert name == "environment_check"
+        executed_tools["n"] += 1
         return "北京当前 19C 小雨，湿度 92%"
 
     _wire(
@@ -696,7 +713,12 @@ async def test_tool_free_synthesis_retries_hallucinated_tool_call(
     )
     done = events[-1]["data"]
 
-    assert "本轮模型未生成可发布的健康回答" not in rendered
-    assert "STRONG SYNTHESIS" in rendered
-    assert done["completion_status"] == "complete"
+    assert executed_tools["n"] == 1
+    assert strong_rounds["n"] == 2
+    if retry_returns_text:
+        assert "STRONG SYNTHESIS" in rendered
+        assert done["completion_status"] == "complete"
+    else:
+        assert "本轮模型未生成可发布的回答" in rendered
+        assert done["completion_status"] != "complete"
     assert "no_tools_synthesis_tool_call_retried" in done["fallback_reasons"]

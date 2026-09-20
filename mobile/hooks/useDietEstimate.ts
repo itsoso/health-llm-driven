@@ -1,10 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   estimateNutrition,
   recognizeFood,
   parseVoiceFood,
   updateDietRecord,
+  type DietRecord,
   type DietRecordCreate,
 } from '../services/diet';
 
@@ -23,6 +24,20 @@ export type EstimateSource =
   | { kind: 'text'; description: string }
   | { kind: 'photo'; imageBase64?: string; imageUri?: string }
   | { kind: 'voice'; rawText: string };
+
+export interface EstimateSourceCache {
+  source: EstimateSource;
+  foodItems: string;
+}
+
+/** A capture source is only valid for the exact food description it produced. */
+export function estimateSourceForRecord(foodItems: string, cached?: EstimateSourceCache): EstimateSource {
+  const normalize = (value: string) => value.trim().replace(/\s+/g, ' ');
+  if (cached && cached.source.kind !== 'text' && normalize(cached.foodItems) === normalize(foodItems)) {
+    return cached.source;
+  }
+  return { kind: 'text', description: foodItems };
+}
 
 function hasValue(p: NutritionPatch): boolean {
   return [p.calories, p.protein, p.carbs, p.fat].some(v => typeof v === 'number' && Number.isFinite(v));
@@ -67,6 +82,8 @@ async function runEstimate(source: EstimateSource): Promise<NutritionPatch> {
  */
 export function useDietEstimate() {
   const qc = useQueryClient();
+  const generationRef = useRef<Map<number, number>>(new Map());
+  const inFlightWriteRef = useRef<Map<number, Promise<DietRecord>>>(new Map());
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [failedIds, setFailedIds] = useState<Set<number>>(new Set());
 
@@ -79,10 +96,15 @@ export function useDietEstimate() {
   }, []);
 
   const estimate = useCallback(async (recordId: number, source: EstimateSource) => {
+    const generation = (generationRef.current.get(recordId) ?? 0) + 1;
+    generationRef.current.set(recordId, generation);
+    const isCurrent = () => generationRef.current.get(recordId) === generation;
     mutate(setPendingIds, recordId, true);
     mutate(setFailedIds, recordId, false);
+    let write: Promise<DietRecord> | undefined;
     try {
       const patch = await runEstimate(source);
+      if (!isCurrent()) return;
       if (!hasValue(patch)) throw new Error('estimate returned no nutrition');
       const update: Partial<DietRecordCreate> = {
         calories: patch.calories,
@@ -91,14 +113,29 @@ export function useDietEstimate() {
         fat: patch.fat,
       };
       if (patch.food_items) update.food_items = patch.food_items;
-      await updateDietRecord(recordId, update);
+      write = updateDietRecord(recordId, update);
+      inFlightWriteRef.current.set(recordId, write);
+      await write;
       qc.invalidateQueries({ queryKey: ['diet'] });
     } catch {
-      mutate(setFailedIds, recordId, true);
+      if (isCurrent()) mutate(setFailedIds, recordId, true);
     } finally {
-      mutate(setPendingIds, recordId, false);
+      if (write && inFlightWriteRef.current.get(recordId) === write) {
+        inFlightWriteRef.current.delete(recordId);
+      }
+      if (isCurrent()) mutate(setPendingIds, recordId, false);
     }
   }, [mutate, qc]);
 
-  return { estimate, pendingIds, failedIds };
+  const cancelEstimate = useCallback((recordId: number) => {
+    generationRef.current.set(recordId, (generationRef.current.get(recordId) ?? 0) + 1);
+    mutate(setPendingIds, recordId, false);
+    mutate(setFailedIds, recordId, false);
+    // A request already on the wire cannot be canceled locally. Join it before
+    // issuing a corrected write so its returned revision can guard the CAS.
+    return inFlightWriteRef.current.get(recordId)?.catch(() => null)
+      ?? Promise.resolve(null);
+  }, [mutate]);
+
+  return { estimate, cancelEstimate, pendingIds, failedIds };
 }

@@ -8,8 +8,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useDailyDiet } from '../hooks/useDiet';
-import { useDietEstimate, type EstimateSource } from '../hooks/useDietEstimate';
-import { createDietRecord, updateDietRecord, deleteDietRecord, dietRecordImageUrls, discardDietPhotoDraft, getDietPhotoDraftStatus, getFrequentFoods, recognizeFood, type DietRecord, type DietRecordCreate, type DietRecordUpdate, type FoodItem, type FrequentFood } from '../services/diet';
+import { estimateSourceForRecord, useDietEstimate, type EstimateSource, type EstimateSourceCache } from '../hooks/useDietEstimate';
+import { createDietRecord, updateDietRecord, recalculateDietRecordNutrition, deleteDietRecord, dietRecordImageUrls, discardDietPhotoDraft, getDietPhotoDraftStatus, getFrequentFoods, recognizeFood, type DietRecord, type DietRecordCreate, type DietRecordUpdate, type FoodItem, type FrequentFood } from '../services/diet';
 import { computeDietTotals, isPendingNutrition } from '../utils/dietTotals';
 import * as ImagePicker from 'expo-image-picker';
 import type { ImagePickerAsset } from 'expo-image-picker';
@@ -421,6 +421,14 @@ export function buildEditedDietPatch(
   return patch;
 }
 
+export function isFoodOnlyDietCorrection(original: DietRecord, revision: DietRecordCreate): boolean {
+  const normalize = (value: string) => value.trim().replace(/\s+/g, ' ');
+  if (normalize(original.food_items) === normalize(revision.food_items)) return false;
+  if (original.alcohol_units != null || revision.alcohol_units != null) return false;
+  return (['calories', 'protein', 'carbs', 'fat'] as const)
+    .every(key => (revision[key] ?? null) === (original[key] ?? null));
+}
+
 function isUnavailablePhotoDraftError(error: unknown): boolean {
   const status = (error as { response?: { status?: number } })?.response?.status;
   return status === 404 || status === 409 || status === 410;
@@ -446,9 +454,9 @@ export default function DietScreen() {
   const toast = useToast();
   const [date, setDate] = useState(() => readRouteDate(params.date) ?? todayStr());
   const { data: daily, refetch, isRefetching } = useDailyDiet(date);
-  const { estimate, pendingIds, failedIds } = useDietEstimate();
-  // 记住每条记录的估算来源, 让「点重试」用同一来源 (photo/voice/text) 重跑.
-  const sourceMapRef = useRef<Map<number, EstimateSource>>(new Map());
+  const { estimate, cancelEstimate, pendingIds, failedIds } = useDietEstimate();
+  // 仅当已保存的食物描述未改变时复用原始估算来源，避免修正餐食后重试旧照片/语音。
+  const sourceMapRef = useRef<Map<number, EstimateSourceCache>>(new Map());
   const reconciledRef = useRef<Set<number>>(new Set());
   const frequentQuery = useQuery({
     queryKey: ['diet', 'frequent'],
@@ -601,7 +609,7 @@ export default function DietScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     qc.invalidateQueries({ queryKey: ['diet'] });
     if (created?.id && source && source.kind !== 'photo' && needsNutritionBackfill(record)) {
-      sourceMapRef.current.set(created.id, source);
+      sourceMapRef.current.set(created.id, { source, foodItems: created.food_items });
       toast.show('已保存 · 营养后台估算中', 'success');
       estimate(created.id, source);
     } else {
@@ -612,8 +620,7 @@ export default function DietScreen() {
 
   const retryEstimate = useCallback((record: DietRecord) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const source = sourceMapRef.current.get(record.id)
-      ?? { kind: 'text', description: record.food_items } as EstimateSource;
+    const source = estimateSourceForRecord(record.food_items, sourceMapRef.current.get(record.id));
     estimate(record.id, source);
   }, [estimate]);
 
@@ -625,7 +632,20 @@ export default function DietScreen() {
     const confirmationStartedAt = Date.now();
     try {
       if (editingRecord) {
-        await updateDietRecord(editingRecord.id, buildEditedDietPatch(editingRecord, record));
+        // Invalidate any older local estimate before a corrected description is persisted.
+        const joinedWrite = await cancelEstimate(editingRecord.id);
+        if (isFoodOnlyDietCorrection(editingRecord, record)) {
+          const idempotencyKey = `diet-recalc:${editingRecord.id}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+          await recalculateDietRecordNutrition(editingRecord.id, {
+            food_items: record.food_items,
+            meal_type: record.meal_type,
+            expected_updated_at: joinedWrite?.updated_at ?? editingRecord.updated_at ?? null,
+          }, idempotencyKey);
+        } else {
+          await updateDietRecord(editingRecord.id, buildEditedDietPatch(editingRecord, record));
+        }
+        sourceMapRef.current.delete(editingRecord.id);
+        reconciledRef.current.delete(editingRecord.id);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         qc.invalidateQueries({ queryKey: ['diet'] });
       } else {
@@ -690,7 +710,7 @@ export default function DietScreen() {
       }
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
-  }, [authUserId, draftEstimateSource, editingRecord, formDefaults, qc, returnToChatAfterConfirm, saveNewDietRecord, toast]);
+  }, [authUserId, cancelEstimate, draftEstimateSource, editingRecord, formDefaults, qc, returnToChatAfterConfirm, saveNewDietRecord, toast]);
 
   const handleConfirmQuickDraft = useCallback(async () => {
     if (!quickDraft) return;
@@ -1163,8 +1183,7 @@ export default function DietScreen() {
       if (!isPendingNutrition(r)) { reconciledRef.current.delete(r.id); continue; }
       if (pendingIds.has(r.id) || failedIds.has(r.id) || reconciledRef.current.has(r.id)) continue;
       reconciledRef.current.add(r.id);
-      const source = sourceMapRef.current.get(r.id)
-        ?? { kind: 'text', description: r.food_items } as EstimateSource;
+      const source = estimateSourceForRecord(r.food_items, sourceMapRef.current.get(r.id));
       estimate(r.id, source);
     }
   }, [daily?.meals, date, estimate, pendingIds, failedIds]);

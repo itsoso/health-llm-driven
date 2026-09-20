@@ -2789,6 +2789,17 @@ def decide_tool_capability(
                          else plan.get("queries"))
             if not isinstance(proposals, list) or not 1 <= len(proposals) <= 6:
                 return _decision("block", "health_query_semantics_unresolved", tool_name, args)
+            if tool_name == "health_query_batch":
+                scoped_dimensions = sorted(query["dimension"] for query in scope.queries)
+                entities = _illness_query_entities(snapshot.envelope.text)
+                if len(entities) > 1:
+                    expressed = [_query_entity_known_dimensions(entity) for entity in entities]
+                    if any(len(dimensions) != 1 for dimensions in expressed) or sorted(
+                        next(iter(dimensions)) for dimensions in expressed
+                    ) != scoped_dimensions:
+                        return _decision("block", "health_query_dimension_conflict", tool_name, args)
+                if len(proposals) != len(scope.queries):
+                    return _decision("block", "health_query_dimension_conflict", tool_name, args)
             bound = []
             for proposal in proposals:
                 if not isinstance(proposal, dict):

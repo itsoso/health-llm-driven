@@ -17997,14 +17997,9 @@ class AgentExecutor:
                                 and not health_protocol_recovery_attempted
                                 and (
                                     health_advice_buffered
-                                    or (
-                                        not round_tools
-                                        and not self._force_no_tools_synthesis
-                                        and self._read_repair_failures == 0
-                                        and not write_receipts
-                                        and _tool_calls_are_read_only(proposed_calls)
-                                        and not self._all_scoped_reads_verified()
-                                    )
+                                    # No-tool synthesis may follow verified reads or writes;
+                                    # neither state makes a hallucinated call publishable.
+                                    or not round_tools
                                 )
                             ):
                                 health_protocol_recovery_attempted = True
