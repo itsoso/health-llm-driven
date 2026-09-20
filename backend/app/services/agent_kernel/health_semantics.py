@@ -544,7 +544,7 @@ HEALTH_RECORD_DOMAIN_ENTITY_RE = re.compile(
 )
 
 BODY_OR_TIME_OWNER_RE = re.compile(
-    r"(?:今天|昨天|前天|近期|最近|过去.+|近.+|本周|上周|本月|"
+    r"(?:今天|昨天|前天|近期|最近|过去.+|近.+|本周|这周|上周|本月|"
     r"头|头部|颅脑|脑部|胸部|腹部|腰椎|颈椎|肩|左肩|右肩|"
     r"膝|左膝|右膝|膝盖|髋|手|脚|皮肤|口腔|鼻|眼|心脏)$"
 )
@@ -555,7 +555,7 @@ HEALTH_READ_SCOPE_OWNER_RE = re.compile(
     r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}(?:日|号)?(?:晚上|晚|夜)?|"
     r"(?:本周|这周|上周)[一二三四五六日天](?:晚上|晚|夜)?|"
     r"近期|最近(?:[0-9一二两三四五六七八九十半]+)?"
-    r"(?:个)?(?:小时|天|周|月|年)?|过去.+|近.+|本周|上周|本月|"
+    r"(?:个)?(?:小时|天|周|月|年)?|过去.+|近.+|本周|这周|上周|本月|"
     r"今早|晨起|早上|上午|中午|午后|下午|晚上|夜间|运动后|锻炼后|导入|"
     r"服药后|早餐后|午餐后|晚餐后|餐后|睡前|起床后|醒来后|实际服用)"
     r"(?:测|测量|上传|导入|生成)?$|(?:刚测|刚刚测|刚测量|刚刚测量)$"
@@ -2457,7 +2457,7 @@ def _is_health_target_expression(value: str) -> bool:
         r"20[0-9]{2}[-/][0-9]{1,2}(?:[-/][0-9]{1,2})?|"
         r"近期|近来|目前|刚刚|最近|最新|当前|实时|平均|累计|历史|"
         r"本次|此次|这次|上次|今日|今天|昨日|昨天|前天|"
-        r"本周|上周|本月|上月|今年|去年"
+        r"本周|这周|上周|本月|上月|今年|去年"
         r")(?:的)?",
         re.IGNORECASE,
     )
@@ -2611,6 +2611,16 @@ def health_read_has_nonself_subject(text: str) -> bool:
     )
     if has_explicit_nonself_health_owner(subject_scope):
         return True
+
+    # Analysis is a speech act, not the record owner ("分析本周的饮食").
+    # Normalize only the leading request scaffold for this ownership check;
+    # do not discard any owner, date, filter or independent clause, and do not
+    # grant read authority here. Intent/cancellation checks remain separate.
+    analysis_scope = _strip_exam_request_scaffolding(subject_scope)
+    if re.match(r"^(?:分析|复盘|总结)(?:一下)?", analysis_scope):
+        subject_scope = re.sub(
+            r"^(?:分析|复盘|总结)(?:一下)?", "查询", analysis_scope, count=1
+        )
 
     def normalize_safe_deictic_report(match: re.Match[str]) -> str:
         owner = match.group("owner").strip().removesuffix("的")

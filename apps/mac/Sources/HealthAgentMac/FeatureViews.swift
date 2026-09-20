@@ -5,6 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct AgentChatView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Bindable var viewModel: AgentChatViewModel
     var navigation: AppNavigationState?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
@@ -34,7 +35,7 @@ struct AgentChatView: View {
         min(max(composerTextHeight, Self.composerMinHeight), Self.composerMaxHeight)
     }
 
-    private let modelOptions = AgentModelCatalog.defaultOptions
+    private var modelOptions: [AgentModelOption] { viewModel.modelOptions }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -112,7 +113,14 @@ struct AgentChatView: View {
             // Pull the durable conversation list from the backend so Mac shows the
             // same history as web/mobile. Failure falls back to the local cache
             // (viewModel sets historyNotice) — never silently empty.
+            async let models: Void = viewModel.refreshModelCatalog()
             await viewModel.refreshConversationHistory()
+            await models
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await viewModel.refreshModelCatalog() }
+            }
         }
         .onChange(of: historySearch) { _, _ in
             refreshHistoryForSearch()
@@ -210,8 +218,19 @@ struct AgentChatView: View {
             // Surface the model the backend actually used on the last run (auto /
             // default mode resolve server-side, so this is the honest answer).
             if let raw = viewModel.lastModel, !raw.isEmpty {
-                Text("\(appText("Currently using", appLanguageRaw)): \(resolvedModelTitle(raw))")
+                Text("\(appText("Last answer model", appLanguageRaw)): \(resolvedModelTitle(raw))")
             }
+            if let notice = viewModel.modelCatalogNotice {
+                Text(appText(notice, appLanguageRaw))
+            }
+            if modelStrategy == "manual", let id = viewModel.selectedModelID,
+               viewModel.hasLoadedModelCatalog, !modelOptions.contains(where: { $0.id == id }) {
+                Text("\(appText("Selected model unavailable; choose another", appLanguageRaw)): \(id)")
+            }
+            Button(appText(viewModel.isRefreshingModelCatalog ? "Refreshing models…" : "Refresh models", appLanguageRaw)) {
+                Task { await viewModel.refreshModelCatalog() }
+            }
+            .disabled(viewModel.isRefreshingModelCatalog)
             Section(appText("Mode", appLanguageRaw)) {
                 Button {
                     modelStrategy = "auto"
@@ -258,10 +277,8 @@ struct AgentChatView: View {
     }
 
     private var modelMenuLabel: String {
-        if modelStrategy == "manual",
-           let id = viewModel.selectedModelID,
-           let option = modelOptions.first(where: { $0.id == id }) {
-            return option.title
+        if modelStrategy == "manual", let id = viewModel.selectedModelID {
+            return resolvedModelTitle(id)
         }
         // Auto / default mode: show the actual model used last run when known,
         // prefixed with the mode so it's clear it was auto-resolved.
@@ -275,7 +292,7 @@ struct AgentChatView: View {
     /// Map a raw model id from the stream (e.g. "commercial/GPT-5.5") to a
     /// friendly catalog title, falling back to the last path component.
     private func resolvedModelTitle(_ raw: String) -> String {
-        if let option = modelOptions.first(where: { $0.id == raw || $0.title == raw }) {
+        if let option = modelOptions.first(where: { $0.id == AgentModelCatalog.canonicalID(for: raw) || $0.title == raw }) {
             return option.title
         }
         if let slash = raw.lastIndex(of: "/") {
@@ -550,9 +567,8 @@ struct AgentChatView: View {
     }
 
     private var selectedModelDescription: String {
-        if let selectedModelID = viewModel.selectedModelID,
-           let option = modelOptions.first(where: { $0.id == selectedModelID }) {
-            return "\(appText("Manual", appLanguageRaw)) · \(option.title)"
+        if modelStrategy == "manual", let selectedModelID = viewModel.selectedModelID {
+            return "\(appText("Manual", appLanguageRaw)) · \(resolvedModelTitle(selectedModelID))"
         }
         if modelStrategy == "default3" {
             return appText("Use the default 3-model panel.", appLanguageRaw)

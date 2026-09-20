@@ -83,7 +83,8 @@ struct AppServices {
             labUploadService: labUploadClient,
             aigcMediaClient: AIGCMediaJobClient(apiClient: apiClient),
             dietDraftClient: recordClient,
-            medicationBatchClient: MedicationBatchWriteIntentClient(apiClient: apiClient)
+            medicationBatchClient: MedicationBatchWriteIntentClient(apiClient: apiClient),
+            modelCatalogClient: AgentModelCatalogClient(apiClient: apiClient)
         )
         self.supplementProductClient = SupplementProductLibraryClient(apiClient: apiClient)
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)

@@ -31,7 +31,8 @@ def test_calendar_day_is_user_local_and_last_night_is_wake_date():
     assert diet == {'start_date': '2031-04-02', 'end_date': '2031-04-02', 'timezone': 'Asia/Shanghai'}
     assert sleep['start_date'] == sleep['end_date'] == '2031-04-03'
     assert resolve_calendar_query_window('2031-04-01晚上的睡眠', now, 'sleep')['start_date'] == '2031-04-02'
-    assert resolve_calendar_query_window('上周的饮食', now, 'diet') is None
+    assert resolve_calendar_query_window('上周的饮食', now, 'diet') == {
+        'start_date': '2031-03-24', 'end_date': '2031-03-30', 'timezone': 'Asia/Shanghai'}
     assert resolve_calendar_query_window('昨天和今天的饮食', now, 'diet') is None
 
 

@@ -28,6 +28,7 @@ from app.services.agent_query_window import (
     _DATE_RE,
     _RELATIVE_RE,
     _WEEKDAY_RE,
+    _WEEK_RE,
     parse_query_window,
     read_calendar_health_query,
     MAX_CALENDAR_ROWS,
@@ -329,7 +330,7 @@ def _consume_read_scope(snapshot, scope: str, domains: set[str]) -> bool:
         return 1 <= days <= 31
     if residue in {"", "近期", "最近"}:
         return bool(domains)
-    calendar_remainder = _WEEKDAY_RE.sub("", _RELATIVE_RE.sub("", _DATE_RE.sub("", residue)))
+    calendar_remainder = _WEEK_RE.sub("", _WEEKDAY_RE.sub("", _RELATIVE_RE.sub("", _DATE_RE.sub("", residue))))
     night = bool(re.search(r"昨晚|昨夜", residue))
     if calendar_remainder not in {"", "到", "至", "~", "～"}:
         # Only the existing sleep calendar adapter represents this qualifier:

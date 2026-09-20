@@ -874,6 +874,31 @@ public final class AgentChatViewModel {
         true
     }
 
+    public private(set) var modelOptions = AgentModelCatalog.defaultOptions
+    public private(set) var isRefreshingModelCatalog = false
+    public private(set) var hasLoadedModelCatalog = false
+    public private(set) var modelCatalogNotice: String? = "Model list not refreshed"
+    @ObservationIgnored
+    private let modelCatalogClient: AgentModelCatalogLoading?
+
+    public func refreshModelCatalog() async {
+        guard let modelCatalogClient, !isRefreshingModelCatalog else { return }
+        isRefreshingModelCatalog = true
+        defer { isRefreshingModelCatalog = false }
+        do {
+            let options = try await modelCatalogClient.loadModels()
+            try Task.checkCancellation()
+            modelOptions = options
+            hasLoadedModelCatalog = true
+            modelCatalogNotice = nil
+        } catch is CancellationError {
+            // Keep the previous catalog; a later activation retries.
+        } catch {
+            // Do not expose transport payloads or pretend the cached list is fresh.
+            modelCatalogNotice = "Could not refresh models; showing previous list"
+        }
+    }
+
     public var currentConversationID: UUID? {
         currentConversationSnapshotID
     }
@@ -887,7 +912,8 @@ public final class AgentChatViewModel {
         labUploadService: LabUploadServicing? = nil,
         aigcMediaClient: AIGCMediaJobLoading? = nil,
         dietDraftClient: DietDraftConfirming? = nil,
-        medicationBatchClient: MedicationBatchWriteIntentActing? = nil
+        medicationBatchClient: MedicationBatchWriteIntentActing? = nil,
+        modelCatalogClient: AgentModelCatalogLoading? = nil
     ) {
         self.selectedModelID = selectedModelID
         self.streamService = streamService
@@ -898,6 +924,7 @@ public final class AgentChatViewModel {
         self.aigcMediaClient = aigcMediaClient
         self.dietDraftClient = dietDraftClient
         self.medicationBatchClient = medicationBatchClient
+        self.modelCatalogClient = modelCatalogClient
         self.savedContextBundles = contextBundleStore?.loadContextBundles() ?? []
         // Seed from the local cache so the list isn't empty before the first
         // backend fetch returns; `refreshConversationHistory()` replaces it.

@@ -24,6 +24,7 @@ _RELATIVE_RE = re.compile(
     r"前一晚|前一夜|前晚|前夜|前天|昨天|昨日|今天|今日|昨晚|昨夜"
 )
 _WEEKDAY_RE = re.compile(r"(本周|这周|上周)([一二三四五六日天])")
+_WEEK_RE = re.compile(r"(?:本周|这周|上周)(?![一二三四五六日天])")
 
 
 @dataclass(frozen=True)
@@ -67,11 +68,19 @@ def resolve_calendar_query_window(
     absolute = list(_DATE_RE.finditer(text))
     relative = list(_RELATIVE_RE.finditer(text))
     weekdays = list(_WEEKDAY_RE.finditer(text))
+    weeks = list(_WEEK_RE.finditer(text))
     remainder = _WEEKDAY_RE.sub("", _RELATIVE_RE.sub("", _DATE_RE.sub("", text)))
     if re.search(r"明天|后天|\d{1,2}月|\d{1,2}[-/]\d{1,2}|(?:周|星期)[一二三四五六日天]", remainder):
         return None
     if re.search(r"下周|上个月|本月|去年|今年|至今|以来|之前|以前|之后|以后|截至|截止|最近|过去|开始|前后", text):
         return None
+    if weeks:
+        if len(weeks) != 1 or absolute or relative or weekdays or re.search(r"晚|夜", text):
+            return None
+        monday = local.date() - timedelta(days=local.weekday())
+        if weeks[0].group() == "上周":
+            return QueryWindow(monday - timedelta(days=7), monday - timedelta(days=1), timezone_name).as_dict()
+        return QueryWindow(monday, local.date(), timezone_name).as_dict()
     # Only an explicit inclusive interval is accepted; comparisons are separate
     # tasks and must not read intervening days without authorization.
     if len(absolute) == 2 and not relative and not weekdays:
