@@ -17995,10 +17995,15 @@ class AgentExecutor:
                             if (
                                 proposed_calls
                                 and not health_protocol_recovery_attempted
+                                # A verified write already has a server receipt. A
+                                # hallucinated follow-up tool call must retain
+                                # that receipt-backed failure path, not let a
+                                # new model sentence replace its status.
+                                and not write_receipts
                                 and (
                                     health_advice_buffered
-                                    # No-tool synthesis may follow verified reads or writes;
-                                    # neither state makes a hallucinated call publishable.
+                                    # Read-only no-tool synthesis can recover
+                                    # once without granting tool authority.
                                     or not round_tools
                                 )
                             ):
