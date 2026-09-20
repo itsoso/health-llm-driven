@@ -23477,6 +23477,8 @@ export interface components {
          * @description 更新饮食记录
          */
         DietRecordUpdate: {
+            /** Expected Updated At */
+            expected_updated_at?: string | null;
             meal_type?: components["schemas"]["MealType"] | null;
             /** Meal Time */
             meal_time?: string | null;
