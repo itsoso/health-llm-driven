@@ -131,6 +131,13 @@ def test_explicit_supplement_entity_lexicon_keeps_exact_food_and_herb_names():
     assert {"garlic", "姜黄素", "益生菌"} <= terms
 
 
+def test_melatonin_is_an_exact_private_supplement_name():
+    assert {"melatonin", "褪黑素"} <= supplement_name_entity_terms()
+    assert {"melatonin", "褪黑素"} <= sensitive_name_free_text_terms()
+    assert contains_supplement_name("吃了一粒褪黑素")
+    assert not contains_supplement_name("melatoninlike")
+
+
 # 迁移前 kb_reconciliation_merge 手抄的处方 term 全集(2026-07 迁到 drug_lexicon 前)。
 # 钉死「覆盖只 TIGHTEN 不 loosen」—— 新派生集必须是旧集的**严格超集**,否则是覆盖回归。
 _LEGACY_PRESCRIPTIVE_TERMS = frozenset({

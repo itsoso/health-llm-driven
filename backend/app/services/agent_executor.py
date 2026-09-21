@@ -5460,6 +5460,9 @@ def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, 
         names.extend(
             _normalized_current_turn_entity_text(candidate)
             for candidate in _named_item_targets(raw_message, "supplement")
+            if not _supplement_entity_is_generic(candidate)
+            and not _supplement_entity_has_directive_residual(candidate)
+            and _supplement_entity_is_canonical_name(candidate)
         )
     for match in _EXPLICIT_SUPPLEMENT_NAME_RE.finditer(raw_message):
         candidate = match.group("name").strip(" ：:，,;；。.!！?？")
