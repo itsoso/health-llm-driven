@@ -6701,6 +6701,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supplements/records/intake-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Supplement Intake Batch
+         * @description Atomically persist one explicit multi-supplement intake.
+         *
+         *     Definition dosage is the user's usual regimen. ``actual_dosage`` belongs to
+         *     this dated intake and may differ without mutating that regimen. Every target
+         *     is resolved before the first write, then definitions and records commit in a
+         *     single transaction so a bad sibling cannot leave a partial batch.
+         */
+        post: operations["record_supplement_intake_batch_api_v1_supplements_records_intake_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supplements/records/user/{user_id}/date/{record_date}": {
         parameters: {
             query?: never;
@@ -31114,6 +31139,25 @@ export interface components {
             /** Product Id */
             product_id?: number | null;
         };
+        /** SupplementIntakeBatchCreate */
+        SupplementIntakeBatchCreate: {
+            /**
+             * Record Date
+             * Format: date
+             */
+            record_date: string;
+            /** Taken Time */
+            taken_time?: string | null;
+            /** Items */
+            items: components["schemas"]["SupplementIntakeBatchItem"][];
+        };
+        /** SupplementIntakeBatchItem */
+        SupplementIntakeBatchItem: {
+            /** Supplement Name */
+            supplement_name: string;
+            /** Dosage */
+            dosage: string;
+        };
         /**
          * SupplementIntakeCreate
          * @description 创建补剂记录
@@ -31352,6 +31396,8 @@ export interface components {
             taken: boolean;
             /** Taken Time */
             taken_time?: string | null;
+            /** Actual Dosage */
+            actual_dosage?: string | null;
             /** Notes */
             notes?: string | null;
             /** Supplement Id */
@@ -31373,6 +31419,8 @@ export interface components {
             taken: boolean;
             /** Taken Time */
             taken_time?: string | null;
+            /** Actual Dosage */
+            actual_dosage?: string | null;
             /** Notes */
             notes?: string | null;
             /** Id */
@@ -31390,6 +31438,8 @@ export interface components {
             taken?: boolean | null;
             /** Taken Time */
             taken_time?: string | null;
+            /** Actual Dosage */
+            actual_dosage?: string | null;
             /** Notes */
             notes?: string | null;
         };
@@ -44751,6 +44801,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SupplementBatchCheckin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_supplement_intake_batch_api_v1_supplements_records_intake_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplementIntakeBatchCreate"];
             };
         };
         responses: {

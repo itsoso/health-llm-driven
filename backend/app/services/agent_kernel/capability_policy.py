@@ -6221,6 +6221,7 @@ def _target_values_mismatch(
                 expected_value = (
                     expected_dosages.get(normalized_requested_name)
                     if field == "dosage" and expected_dosages
+                    and requested_value not in (None, "", [])
                     else expected.get(field)
                 )
                 if expected_value not in (None, "", []):
@@ -6617,7 +6618,11 @@ def _project_authorized_dispatch_payload(
             projected["supplement_name"] = canonical_name
         for field in ("dosage", "timing", "category", "description"):
             expected_value = expected.get(field)
-            if field == "dosage" and canonical_name:
+            if (
+                field == "dosage"
+                and canonical_name
+                and data.get("dosage") not in (None, "", [])
+            ):
                 expected_value = (expected.get("dosages") or {}).get(
                     canonical_name,
                     expected_value,
