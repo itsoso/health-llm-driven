@@ -760,6 +760,20 @@ export default function DietScreen() {
       setQuickDraft(null);
       activeDraftRef.current = false;
     } catch (error) {
+      const response = (error as {
+        response?: { status?: number; data?: { detail?: { code?: string } } };
+      })?.response;
+      if (
+        editingRecord
+        && response?.status === 422
+        && response.data?.detail?.code === 'diet_portion_description_ambiguous'
+      ) {
+        Alert.alert(
+          '请分开填写食物和份额',
+          '食物描述只填写整桌菜和菜量，把我吃了多少放到「我吃的份额」中。',
+        );
+        return;
+      }
       if (isPhotoCorrection) {
         void emitClientEvent('diet_photo_confirmation_terminal', {
           phase: 'failed',

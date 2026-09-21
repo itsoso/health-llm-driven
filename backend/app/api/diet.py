@@ -55,6 +55,7 @@ from app.services.diet_media_storage import StoredDietPhoto, store_diet_image
 from app.services.internal_diet_correction import (
     INTERNAL_DIET_PORTION_SIGNATURE_HEADER,
     diet_portion_baseline_matches,
+    saved_diet_portion_signature,
     verify_internal_diet_portion_signature,
 )
 # D1(garmin-sync 治理 Wave 3):图片 URL 签名抽到 utils 做单一真源,供 api 的
@@ -1242,6 +1243,31 @@ _DIET_SAVED_PORTION_WORDS = {
     "三分之一": "1/3", "三分之二": "2/3", "四分之一": "1/4", "四分之三": "3/4",
     "五分之一": "1/5", "五分之二": "2/5", "五分之三": "3/5", "五分之四": "4/5",
 }
+_DIET_DESCRIPTION_SHARE_TOKEN = (
+    r"(?:\d+(?:\.\d+)?\s*(?:[/／]\s*\d+|[%％]|percent)|"
+    r"[一二两三四五六七八九十百\d]+分之[一二两三四五六七八九十百\d]+|"
+    r"[一二两三四五六七八九十\d]+成|半份|一半|\bhalf\b|\bquarter\b|"
+    r"\b(?:one|two|three|four)\s+(?:half|third|quarter|fifth)s?\b)"
+)
+_DIET_PORTION_DESCRIPTION_INSTRUCTION_RE = re.compile(
+    r"(?:我|本人).{0,6}(?:吃|食用|摄入|份额|分到|一份)|"
+    r"(?:只|仅|实际).{0,3}(?:吃|食用|摄入)|"
+    rf"(?:吃(?:了|掉)?|食用(?:了)?|摄入(?:了)?).{{0,8}}{_DIET_DESCRIPTION_SHARE_TOKEN}|"
+    rf"\b(?:ate|eat|eaten|consumed?|had|share|portion|record|log|count|scale)(?:\b|(?=\d)).{{0,20}}{_DIET_DESCRIPTION_SHARE_TOKEN}|"
+    rf"{_DIET_DESCRIPTION_SHARE_TOKEN}\s*(?:of\s+(?:the\s+)?(?:meal|table)|consumed|eaten)|"
+    r"(?:剩下|剩余|剩了|剩菜|剩饭)|"
+    r"(?:按|占|分摊|均分|平分).{0,12}(?:\d\s*[/／%％]|分之|一半|半份|成)|"
+    r"[一二两三四五六七八九十\d]+人(?:分|吃).{0,8}(?:我|本人)",
+    re.IGNORECASE,
+)
+
+
+def _assert_unambiguous_diet_portion_description(description: str) -> None:
+    if _DIET_PORTION_DESCRIPTION_INSTRUCTION_RE.search(description):
+        raise HTTPException(status_code=422, detail={
+            "code": "diet_portion_description_ambiguous",
+            "message": "请在食物描述中只填写整桌菜和菜量，把我吃了多少放到食用份额中。",
+        })
 
 
 def _diet_recalculation_base_description(description: str) -> tuple[str, float]:
@@ -1273,9 +1299,9 @@ def _diet_recalculation_portion_result(
     )
     if previous_food != food_items:
         return None
-    totals = {}
-    for field, (result_key, maximum) in _DIET_RECALCULATION_TOTAL_FIELDS.items():
-        value = getattr(record, field)
+    nutrition = {field: getattr(record, field) for field in _DIET_RECALCULATION_TOTAL_FIELDS}
+    for field, (_result_key, maximum) in _DIET_RECALCULATION_TOTAL_FIELDS.items():
+        value = nutrition[field]
         if value is not None and (
             not isinstance(value, (int, float))
             or isinstance(value, bool)
@@ -1283,6 +1309,27 @@ def _diet_recalculation_portion_result(
             or not 0 <= value <= maximum
         ):
             return None
+    if previous_fraction != 1:
+        try:
+            raw = json.loads(record.ai_raw_result or "null")
+        except (TypeError, ValueError):
+            return None
+        auth = raw.get("portion_auth") if isinstance(raw, dict) else None
+        if not isinstance(auth, dict) or auth.get("version") != 1:
+            return None
+        signature = auth.get("signature")
+        if not isinstance(signature, str) or re.fullmatch(r"[0-9a-f]{64}", signature) is None:
+            return None
+        expected = saved_diet_portion_signature(
+            user_id=record.user_id, record_id=record.id,
+            base_food_items=previous_food, fraction=previous_fraction,
+            nutrition=nutrition,
+        )
+        if not expected or not hmac.compare_digest(signature, expected):
+            return None
+    totals = {}
+    for field, (result_key, _maximum) in _DIET_RECALCULATION_TOTAL_FIELDS.items():
+        value = nutrition[field]
         totals[result_key] = None if value is None else value / previous_fraction * fraction
     if totals["total_calories"] is None or not any(
         totals[f"total_{key}"] is not None for key in ("protein", "carbs", "fat")
@@ -1484,12 +1531,15 @@ def recalculate_diet_record_nutrition(
         base_food_items, text_fraction = _diet_recalculation_base_description(food_items)
         fraction = request.consumed_fraction if request.consumed_fraction is not None else text_fraction
         has_portion = request.consumed_fraction is not None or text_fraction != 1
+        if has_portion:
+            _assert_unambiguous_diet_portion_description(base_food_items)
         food_items = base_food_items
         if fraction != 1:
             ratio = Fraction(fraction).limit_denominator(1000000000)
             if not ratio or not math.isclose(float(ratio), fraction, rel_tol=1e-12, abs_tol=0):
                 raise HTTPException(status_code=422, detail="食用份额精度过高，请选择可表示的比例")
             food_items += f"（按实际食用{ratio.numerator}/{ratio.denominator}计）"
+            fraction = float(ratio)
         _assert_diet_food_items_allowed(food_items)
         operation_digest = _diet_recalculation_operation_digest(
             user_id=current_user.id,
@@ -1662,6 +1712,14 @@ def recalculate_diet_record_nutrition(
             "result_food_items": food_items,
             "result_meal_type": result_meal_type,
         }
+        if has_portion:
+            signature = saved_diet_portion_signature(
+                user_id=current_user.id, record_id=record_id,
+                base_food_items=base_food_items, fraction=fraction, nutrition=totals,
+            )
+            if not signature:
+                raise HTTPException(status_code=503, detail="食用份额暂时无法保存，请稍后重试")
+            stored_result["portion_auth"] = {"version": 1, "signature": signature}
 
         locked_record.meal_type = result_meal_type
         locked_record.food_name = str(foods[0].get("name") or "")[:80] or None

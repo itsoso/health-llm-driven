@@ -36,7 +36,10 @@ Health Harness delegate，同一父流程。任务 T1 后端、T2 Mobile、T3 �
 - Mobile 首轮全回归 308 suites / 2960 passed / 1 skipped；补充锁定与精度修正后全量复跑中。TypeScript 检查通过。
 - API 类型已同步 Mobile/Web；System Map、dossier consistency、skill governance、secret scan 通过。
 - Live LLM gate 使用生产同 provider/model 配置，仅合成 ephemeral SQLite/test consent：invariants 12/12、core 50/50、orchestrator 5/5（avg .96）、trajectory 12/12、golden 9/9 通过。初次缺本机配置失败未视为通过；随后仅加载模型配置重跑成功。测试环境 usage 表缺失有旁路警告，不影响业务 gate，但不作为用量审计完整性证据。
-- CI-mode 增量集成闸运行中；G4 独立安全审查待固定提交。不宣称发布。
+- CI-mode 增量集成闸首轮 844 passed / 3 PostgreSQL-only skipped；最终 Mobile 308 suites / 2964 passed / 1 skipped。
+- G4 首次固定提交 `ffd88da8b` **NO-GO**：自然语言份额与结构化份额可能双重缩放；仅凭可写文字后缀不能反推整桌基准。保持未 push/deploy。
+- 整改：模型/快速路径前拒绝混写份额，前端保留输入并给出可操作提示；增加 owner/record/base/fraction/五营养 HMAC，旧/伪造/跨记录/跨用户/改营养的基准重新估算整桌。新增失败测试后定向 242 passed / 1 PG-only skipped；PG、CI-mode、Mobile 全量与独立复审继续运行。
+- 模拟器：当前源码真实 RN 组件在单独合成 fixture App 中验证选择 1/5→1/3、文字输入后重算按钮与五营养只读，未发现截断。截图 `/tmp/reva-diet-portion-ui.png`；不把合成组件验收声称为生产 App 全路径或真机验收。
 
 ## S6 / G5 / G6
 

@@ -752,6 +752,48 @@ describe('DietScreen capture deeplink', () => {
     alertSpy.mockRestore();
   });
 
+  it('explains how to separate food and portion when the backend rejects an ambiguous description', async () => {
+    const dietService = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    dietService.recalculateDietRecordNutrition.mockRejectedValueOnce({
+      response: {
+        status: 422,
+        data: {
+          detail: {
+            code: 'diet_portion_description_ambiguous',
+            message: 'ambiguous portion',
+          },
+        },
+      },
+    });
+    mockMeals.push({
+      id: 49, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '整桌菜', calories: 1000, protein: 50, carbs: 100, fat: 40,
+      alcohol_units: null, updated_at: '2026-09-20T12:00:00Z', image_url: null,
+    });
+
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getAllByLabelText('编辑')[0]);
+    fireEvent.press(view.getByRole('button', { name: '我吃了 1/5' }));
+    await act(async () => {
+      await mockMealForm.mock.lastCall?.[0].onSubmit({
+        record_date: todayStr(), meal_type: 'dinner',
+        food_items: '整桌菜，我只吃了1/5',
+        calories: 1000, protein: 50, carbs: 100, fat: 40,
+      });
+    });
+
+    expect(alertSpy).toHaveBeenLastCalledWith(
+      '请分开填写食物和份额',
+      '食物描述只填写整桌菜和菜量，把我吃了多少放到「我吃的份额」中。',
+    );
+    expect(mockMealForm.mock.lastCall?.[0].saving).toBe(false);
+    expect(view.getByDisplayValue('1/5')).toBeTruthy();
+    expect(view.getByLabelText('自定义食用份额')).not.toBeDisabled();
+    alertSpy.mockRestore();
+  });
+
   it('preserves explicit nutrition edits when the food and portion did not change', async () => {
     const dietService = require('../../services/diet');
     const { todayStr } = jest.requireActual('../../utils/dietDate');

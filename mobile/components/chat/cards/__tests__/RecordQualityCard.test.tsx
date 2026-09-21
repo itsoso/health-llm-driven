@@ -147,6 +147,19 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect(mockRecalculate).toHaveBeenCalledTimes(1);
   });
 
+  it('explains conflicting description/share input and retains both for correction', async () => {
+    mockRecalculate.mockRejectedValueOnce({ response: { status: 422, data: {
+      detail: { code: 'diet_portion_description_ambiguous' },
+    } } });
+    const { getByLabelText, getByText } = render(<RecordQualityCardView {...(baseAdjustCard() as any)} />);
+    fireEvent.changeText(getByLabelText('食物描述'), '整桌菜，我只吃了1/5');
+    fireEvent.press(getByLabelText('我吃了 1/5'));
+    await act(async () => fireEvent.press(getByLabelText('保存修正')));
+    expect(getByText('食物描述只填写整桌菜和菜量，把我吃了多少放到「我吃的份额」中。')).toBeTruthy();
+    expect(getByLabelText('食物描述').props.value).toBe('整桌菜，我只吃了1/5');
+    expect(getByLabelText('保存修正').props.accessibilityState.disabled).toBe(false);
+  });
+
   it('keeps each nutrition reading intact and lets crowded metric tiles wrap', () => {
     const { getByText, getByTestId } = render(<RecordQualityCardView {...(baseAdjustCard({
       expanded_sections: [],

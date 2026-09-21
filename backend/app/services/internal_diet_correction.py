@@ -112,3 +112,35 @@ def diet_portion_baseline_matches(
     return bool(parsed and hmac.compare_digest(
         parsed.group(1), diet_portion_baseline_fingerprint(baseline_record),
     ))
+
+
+def saved_diet_portion_signature(
+    *,
+    user_id: int,
+    record_id: int,
+    base_food_items: str,
+    fraction: float,
+    nutrition: Mapping[str, Any],
+) -> str:
+    """Authenticate the interpretation of saved scalars as a personal share.
+
+    Raw recognition JSON and food descriptions are writable by older clients;
+    neither is independently evidence that a share was applied to nutrition.
+    Domain-separated HMAC binds every scalar used to recover a whole meal.
+    """
+    secret = str(settings.secret_key or "")
+    if not secret:
+        return ""
+    payload = {
+        "owner": user_id,
+        "record": record_id,
+        "base_food_items": base_food_items,
+        "fraction": float(fraction),
+        "nutrition": _normalized_values({
+            field: nutrition.get(field)
+            for field in ("calories", "protein", "carbs", "fat", "fiber")
+        }),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), b"saved-diet-portion:v1\0" + encoded, hashlib.sha256).hexdigest()

@@ -606,7 +606,7 @@ export function DietRecordAdjustEditor({
   const [saving, setSaving] = React.useState(false);
   const savingLock = React.useRef(false);
   const [error, setError] = React.useState<
-    'save' | 'recalculate' | 'conflict' | 'secure_random' | null
+    'save' | 'recalculate' | 'conflict' | 'secure_random' | 'portion_description' | null
   >(null);
   const [collapsed, setCollapsed] = React.useState(false);
   const initialFood = normalizeFoodText(initialPortion.food);
@@ -718,9 +718,13 @@ export function DietRecordAdjustEditor({
         cause instanceof Error
         && cause.message === DIET_RECALCULATION_SECURE_RANDOM_UNAVAILABLE
       );
+      const detail = (cause as { response?: { data?: { detail?: { code?: string } } } })
+        ?.response?.data?.detail;
       setError(
         secureRandomFailure
           ? 'secure_random'
+          : responseStatus(cause) === 422 && detail?.code === 'diet_portion_description_ambiguous'
+          ? 'portion_description'
           : responseStatus(cause) === 409
           ? 'conflict'
           : needsRecalculation ? 'recalculate' : 'save',
@@ -801,6 +805,8 @@ export function DietRecordAdjustEditor({
             ? '记录已在其他位置更新，请取消并重新打开后再修改'
             : error === 'secure_random'
               ? '无法安全生成保存标识，请取消并重新打开后再试'
+            : error === 'portion_description'
+              ? '食物描述只填写整桌菜和菜量，把我吃了多少放到「我吃的份额」中。'
             : error === 'recalculate' ? '营养重新计算失败，请重试' : '保存失败，请重试'}
         </Text>
       ) : null}
