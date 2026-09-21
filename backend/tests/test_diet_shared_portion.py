@@ -114,6 +114,11 @@ def test_ambiguous_shared_photo_portion_remains_nonwriting(message):
     "吃了1/5", "这餐吃了1/5", "整桌食用了20%", "摄入三成",
     "all table dishes, I ate 1/5", "table dishes consumed20%", "I had one fifth",
     "food, I consumed half", "20% of the meal",
+    "聚餐整桌菜，分给我1/5", "聚餐整桌菜，每人1/5", "聚餐整桌菜，个人份量20%",
+    "聚餐整桌菜，我分了五分之一", "牛肉1/5的份量", "全桌1／5", "全桌五分之一",
+    "全桌20％", "全桌¼", "全桌half", "全桌三成",
+    "全桌½", "全桌¾", "全桌⅓", "全桌⅕", "全桌20 percent", "全桌twenty percent",
+    "全桌20%克", "全桌百分之二十克",
 ])
 @pytest.mark.parametrize("same_description", [False, True])
 def test_structured_fraction_rejects_embedded_consumption_instructions(client, db, meal, monkeypatch, description, same_description):
@@ -143,10 +148,11 @@ def test_embedded_fraction_is_rejected_even_with_matching_saved_description(clie
     assert meal[0].calories == 200
 
 
-def test_structured_fraction_allows_item_quantities_without_consumption_instruction(client, meal, monkeypatch):
+@pytest.mark.parametrize("description", ["米饭半碗+青菜一盘", "牛肉1/2碗+青菜一盘", "牛肉１／２碗+青菜一盘", "rice half cup and vegetables one plate", "半熟鸡蛋两枚", "半干面一碗", "五成熟牛排一块", "鸡蛋1/2枚+香蕉1/2根+鱼1/2条"])
+def test_structured_fraction_allows_item_quantities_without_consumption_instruction(client, meal, monkeypatch, description):
     estimate = Mock(return_value={"success": True, "foods": [{"name": "米饭青菜", "calories": 500, "protein": 30}]})
     monkeypatch.setattr(food_recognition_service, "estimate_nutrition_from_text", estimate)
-    response = command(client, meal, 0.2, "plain-item-quantities", food_items="米饭半碗+青菜一盘")
+    response = command(client, meal, 0.2, "plain-item-quantities", food_items=description)
     assert response.status_code == 200
     assert response.json()["calories"] == 100
 

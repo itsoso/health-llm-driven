@@ -9,6 +9,7 @@ import fcntl
 import re
 import threading
 import uuid
+import unicodedata
 from time import perf_counter
 from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -1250,6 +1251,7 @@ _DIET_DESCRIPTION_SHARE_TOKEN = (
     r"\b(?:one|two|three|four)\s+(?:half|third|quarter|fifth)s?\b)"
 )
 _DIET_PORTION_DESCRIPTION_INSTRUCTION_RE = re.compile(
+    r"个人|每人|分给我|我分了|均分|平分|分摊|\bper\s+person\b|\bmy\s+(?:share|portion)\b|"
     r"(?:我|本人).{0,6}(?:吃|食用|摄入|份额|分到|一份)|"
     r"(?:只|仅|实际).{0,3}(?:吃|食用|摄入)|"
     rf"(?:吃(?:了|掉)?|食用(?:了)?|摄入(?:了)?).{{0,8}}{_DIET_DESCRIPTION_SHARE_TOKEN}|"
@@ -1260,10 +1262,33 @@ _DIET_PORTION_DESCRIPTION_INSTRUCTION_RE = re.compile(
     r"[一二两三四五六七八九十\d]+人(?:分|吃).{0,8}(?:我|本人)",
     re.IGNORECASE,
 )
+_DIET_DESCRIPTION_RATIO_TOKEN_RE = re.compile(
+    r"\d+(?:\.\d+)?\s*/\s*\d+(?:\.\d+)?|"
+    r"(?:\d+(?:\.\d+)?|\.\d+)\s*(?:%|percent|pct)|"
+    r"(?<![a-z])(?:one|two|three|four|five|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\s+percent(?![a-z])|"
+    r"[零〇一二两三四五六七八九十百\d]+分之[零〇一二两三四五六七八九十百\d]+|"
+    r"[一二两三四五六七八九十\d]+成(?!熟)|一半|半份|半(?!熟|干)|"
+    r"(?<![a-z])(?:half|quarter|(?:one|two|three|four)\s+(?:half|third|quarter|fifth)s?)(?![a-z])",
+    re.IGNORECASE,
+)
+_DIET_DESCRIPTION_QUANTITY_UNIT_RE = re.compile(
+    r"\s*(?:千克|公斤|毫克|克|毫升|升|碗|盘|杯|个(?!人)|只|块|片|勺|斤|两|枚|根|条|"
+    r"(?:kg|mg|g|ml|l|grams?|kilograms?|milliliters?|liters?|cups?|bowls?|plates?|pieces?|slices?|tablespoons?|teaspoons?)\b)",
+    re.IGNORECASE,
+)
 
 
 def _assert_unambiguous_diet_portion_description(description: str) -> None:
-    if _DIET_PORTION_DESCRIPTION_INSTRUCTION_RE.search(description):
+    # This structured field describes dishes and physical quantities only.
+    # Ratios without an immediately following quantity unit belong exclusively
+    # in consumed_fraction, irrespective of surrounding verbs or language.
+    normalized = unicodedata.normalize("NFKC", description).replace("⁄", "/")
+    ambiguous_ratio = any(
+        re.search(r"%|percent|pct|成|百分之", match.group(), re.IGNORECASE)
+        or not _DIET_DESCRIPTION_QUANTITY_UNIT_RE.match(normalized[match.end():])
+        for match in _DIET_DESCRIPTION_RATIO_TOKEN_RE.finditer(normalized)
+    )
+    if ambiguous_ratio or _DIET_PORTION_DESCRIPTION_INSTRUCTION_RE.search(normalized):
         raise HTTPException(status_code=422, detail={
             "code": "diet_portion_description_ambiguous",
             "message": "请在食物描述中只填写整桌菜和菜量，把我吃了多少放到食用份额中。",

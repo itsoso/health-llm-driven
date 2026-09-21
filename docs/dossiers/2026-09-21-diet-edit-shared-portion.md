@@ -40,6 +40,8 @@ Health Harness delegate，同一父流程。任务 T1 后端、T2 Mobile、T3 �
 - G4 首次固定提交 `ffd88da8b` **NO-GO**：自然语言份额与结构化份额可能双重缩放；仅凭可写文字后缀不能反推整桌基准。保持未 push/deploy。
 - 整改：模型/快速路径前拒绝混写份额，前端保留输入并给出可操作提示；增加 owner/record/base/fraction/五营养 HMAC，旧/伪造/跨记录/跨用户/改营养的基准重新估算整桌。新增失败测试后定向 242 passed / 1 PG-only skipped；PG、CI-mode、Mobile 全量与独立复审继续运行。
 - 模拟器：当前源码真实 RN 组件在单独合成 fixture App 中验证选择 1/5→1/3、文字输入后重算按钮与五营养只读，未发现截断。截图 `/tmp/reva-diet-portion-ui.png`；不把合成组件验收声称为生产 App 全路径或真机验收。
+- G4 第二次固定提交 `1c4790b88` **NO-GO**：文字 guard 漏掉“分给我 1/5 / 每人 1/5 / 个人份量 20% / 我分了五分之一”。仍未 push/deploy。
+- 第二轮整改：按比例 token 而非仅动词识别混写，覆盖 Unicode 分数、百分比和中文分数；仅明确物理菜量（如 1/2 碗）及烹饪描述（半熟）放行。只读营养展示最多两位小数，不改变写入精度。新增回归 RED 后通过；最新聚餐单元 114 passed，PostgreSQL 聚餐/CAS 127 passed / 0 skipped；Mobile 全量 308 suites / 2967 passed / 1 skipped，TypeScript 通过。固定新提交后再次独立评审。
 
 ## S6 / G5 / G6
 

@@ -8,6 +8,7 @@ import {
   revaFonts,
 } from '../../constants/revaTheme';
 import type { DietRecord, DietRecordCreate } from '../../services/diet';
+import { formatDisplayNumber } from '../../utils/displayNumber';
 
 interface Props {
   date: string;
@@ -127,12 +128,16 @@ export default function MealForm({ date, onSubmit, onCancel, initialRecord, init
 }
 
 function NutrientInput({ label, unit, value, onChange, disabled = false }: { label: string; unit: string; value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const numericValue = value === '' ? null : Number(value);
+  const displayValue = disabled && numericValue !== null && Number.isFinite(numericValue)
+    ? formatDisplayNumber(numericValue)
+    : value;
   return (
     <View style={styles.nutriCell}>
       <Text style={styles.nutriLabel}>{label}</Text>
       <TextInput style={styles.nutriInput} keyboardType="decimal-pad"
         placeholder="0" placeholderTextColor={C.ink4}
-        value={value} onChangeText={onChange} editable={!disabled} />
+        value={displayValue} onChangeText={onChange} editable={!disabled} />
       <Text style={styles.nutriUnit}>{unit}</Text>
     </View>
   );

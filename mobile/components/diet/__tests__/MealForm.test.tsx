@@ -53,4 +53,26 @@ describe('MealForm recalculation mode', () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(onCancel).not.toHaveBeenCalled();
   });
+
+  it('rounds a readonly nutrient for display without changing submitted precision', () => {
+    const onSubmit = jest.fn();
+    const view = render(
+      <MealForm
+        date="2026-09-21"
+        initialRecord={{
+          id: 43, user_id: 1, record_date: '2026-09-21', meal_type: 'dinner',
+          food_items: '整桌菜', calories: 146.66666666, protein: null, carbs: null, fat: null,
+          fiber: null, alcohol_units: null, image_url: null, notes: null, health_tips: null,
+        }}
+        nutritionReadOnly
+        onSubmit={onSubmit}
+        onCancel={jest.fn()}
+      />,
+    );
+
+    expect(view.getByDisplayValue('146.67')).toBeDisabled();
+    expect(view.queryByDisplayValue('146.66666666')).toBeNull();
+    fireEvent.press(view.getByText('重新估算并保存'));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ calories: 146.66666666 }));
+  });
 });
