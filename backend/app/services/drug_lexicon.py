@@ -122,6 +122,7 @@ SUPPLEMENT_CLASS_ALIASES: Dict[str, List[str]] = {
 # 只供实体识别、摄入路由和隐私文案识别，不改变现有 DSI 规则映射。
 COMMON_SUPPLEMENT_ALIASES: Dict[str, List[str]] = {
     "rhodiola": ["rhodiola", "红景天", "红景天提取物"],
+    "melatonin": ["melatonin", "褪黑素"],
 }
 
 # ─────────── 常见药(无专属 safety 规则;仅 gate 消费,把 gate 拓成常见药名探测器)───────────
