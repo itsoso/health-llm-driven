@@ -2389,7 +2389,7 @@ describe('renderCard 安全降级', () => {
     fireEvent.press(getByLabelText('继续修正本餐'));
 
     expect(getByTestId('diet-adjust-inline-editor')).toBeTruthy();
-    expect(getByText('保存修正')).toBeTruthy();
+    expect(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/)).toBeTruthy();
     expect((getByLabelText('膳食纤维').props as any).value).toBe('6');
   });
 
@@ -2511,7 +2511,7 @@ describe('renderCard 安全降级', () => {
 
     fireEvent.changeText(screen.getByLabelText('食物描述'), '番茄炒蛋面 2 碗');
     await act(async () => {
-      fireEvent.press(screen.getByText('保存修正'));
+      fireEvent.press(screen.getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(onDraftChange).toHaveBeenCalledTimes(1));

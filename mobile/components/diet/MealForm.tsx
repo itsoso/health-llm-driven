@@ -22,6 +22,10 @@ interface Props {
   initialCarbs?: number;
   initialFat?: number;
   assistiveHint?: string;
+  nutritionReadOnly?: boolean;
+  nutritionReadOnlyHint?: string;
+  onDescriptionChange?: (value: string) => void;
+  saving?: boolean;
 }
 
 const MEAL_TYPES = [
@@ -31,7 +35,7 @@ const MEAL_TYPES = [
   { key: 'snack' as const, label: '加餐' },
 ];
 
-export default function MealForm({ date, onSubmit, onCancel, initialRecord, initialMealType, initialDescription, initialCalories, initialProtein, initialCarbs, initialFat, assistiveHint }: Props) {
+export default function MealForm({ date, onSubmit, onCancel, initialRecord, initialMealType, initialDescription, initialCalories, initialProtein, initialCarbs, initialFat, assistiveHint, nutritionReadOnly = false, nutritionReadOnlyHint, onDescriptionChange, saving = false }: Props) {
   const isEdit = !!initialRecord;
   const [mealType, setMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>(
     (initialRecord?.meal_type as any) || initialMealType || 'lunch'
@@ -52,6 +56,7 @@ export default function MealForm({ date, onSubmit, onCancel, initialRecord, init
   const [alcohol, setAlcohol] = useState(initialRecord?.alcohol_units?.toString() ?? '');
 
   const handleSubmit = () => {
+    if (saving) return;
     if (!desc.trim()) { Alert.alert('请输入食物描述'); return; }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSubmit({
@@ -72,7 +77,7 @@ export default function MealForm({ date, onSubmit, onCancel, initialRecord, init
         {MEAL_TYPES.map(t => (
           <TouchableOpacity key={t.key}
             style={[styles.typeChip, mealType === t.key && styles.typeChipActive]}
-            onPress={() => setMealType(t.key)} activeOpacity={0.7}>
+            onPress={() => setMealType(t.key)} disabled={saving} activeOpacity={0.7}>
             <Text style={[styles.typeText, mealType === t.key && styles.typeTextActive]}>{t.label}</Text>
           </TouchableOpacity>
         ))}
@@ -83,23 +88,26 @@ export default function MealForm({ date, onSubmit, onCancel, initialRecord, init
         </View>
       ) : null}
       <TextInput style={styles.input} placeholder="食物描述（如：鸡胸肉200g、米饭一碗）" placeholderTextColor={C.ink3}
-        value={desc} onChangeText={setDesc} multiline />
+        value={desc} onChangeText={(value) => { setDesc(value); onDescriptionChange?.(value); }} editable={!saving} multiline />
+      {nutritionReadOnly && nutritionReadOnlyHint ? (
+        <Text style={styles.nutritionReadOnlyHint}>{nutritionReadOnlyHint}</Text>
+      ) : null}
       <View style={styles.nutriRow}>
-        <NutrientInput label="热量" unit="kcal" value={cal} onChange={setCal} />
-        <NutrientInput label="蛋白质" unit="g" value={protein} onChange={setProtein} />
-        <NutrientInput label="碳水" unit="g" value={carbs} onChange={setCarbs} />
-        <NutrientInput label="脂肪" unit="g" value={fat} onChange={setFat} />
+        <NutrientInput label="热量" unit="kcal" value={cal} onChange={setCal} disabled={nutritionReadOnly || saving} />
+        <NutrientInput label="蛋白质" unit="g" value={protein} onChange={setProtein} disabled={nutritionReadOnly || saving} />
+        <NutrientInput label="碳水" unit="g" value={carbs} onChange={setCarbs} disabled={nutritionReadOnly || saving} />
+        <NutrientInput label="脂肪" unit="g" value={fat} onChange={setFat} disabled={nutritionReadOnly || saving} />
       </View>
       <View style={styles.alcoholRow}>
         <Text style={styles.alcoholLabel}>🍺 饮酒</Text>
         <TextInput style={styles.alcoholInput} keyboardType="decimal-pad"
           placeholder="0" placeholderTextColor={C.ink4}
-          value={alcohol} onChangeText={setAlcohol} />
+          value={alcohol} onChangeText={setAlcohol} editable={!saving} />
         <Text style={styles.alcoholUnit}>标准杯</Text>
         <View style={styles.alcoholPresets}>
           {['1', '2', '3'].map(v => (
             <TouchableOpacity key={v} style={styles.alcoholChip}
-              onPress={() => { Haptics.selectionAsync(); setAlcohol(v); }} activeOpacity={0.6}>
+              onPress={() => { Haptics.selectionAsync(); setAlcohol(v); }} disabled={saving} activeOpacity={0.6}>
               <Text style={styles.alcoholChipText}>{v}</Text>
             </TouchableOpacity>
           ))}
@@ -107,24 +115,24 @@ export default function MealForm({ date, onSubmit, onCancel, initialRecord, init
       </View>
       <Text style={styles.alcoholHint}>1 杯 ≈ 330ml 啤酒 ≈ 150ml 红酒 ≈ 45ml 白酒</Text>
       <View style={styles.btnRow}>
-        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} disabled={saving} activeOpacity={0.7}>
           <Text style={styles.cancelText}>取消</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSubmit} activeOpacity={0.7}>
-          <Text style={styles.saveText}>{isEdit ? '更新' : '保存'}</Text>
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSubmit} disabled={saving} activeOpacity={0.7}>
+          <Text style={styles.saveText}>{saving ? '保存中…' : isEdit ? (nutritionReadOnly ? '重新估算并保存' : '更新') : '保存'}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-function NutrientInput({ label, unit, value, onChange }: { label: string; unit: string; value: string; onChange: (v: string) => void }) {
+function NutrientInput({ label, unit, value, onChange, disabled = false }: { label: string; unit: string; value: string; onChange: (v: string) => void; disabled?: boolean }) {
   return (
     <View style={styles.nutriCell}>
       <Text style={styles.nutriLabel}>{label}</Text>
       <TextInput style={styles.nutriInput} keyboardType="decimal-pad"
         placeholder="0" placeholderTextColor={C.ink4}
-        value={value} onChangeText={onChange} />
+        value={value} onChangeText={onChange} editable={!disabled} />
       <Text style={styles.nutriUnit}>{unit}</Text>
     </View>
   );
@@ -156,6 +164,13 @@ const styles = StyleSheet.create({
     backgroundColor: C.paper2, borderRadius: revaRadii.md,
     paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, fontFamily: revaFonts.sans,
     color: C.ink1, marginBottom: revaSpacing.s3, minHeight: 44,
+  },
+  nutritionReadOnlyHint: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: C.green700,
+    marginBottom: revaSpacing.s2,
   },
   nutriRow: { flexDirection: 'row', gap: 8, marginBottom: revaSpacing.s3 },
   nutriCell: { flex: 1, alignItems: 'center' },

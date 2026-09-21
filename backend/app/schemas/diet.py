@@ -84,6 +84,9 @@ class DietRecordNutritionRecalculateRequest(BaseModel):
 
     food_items: str = Field(min_length=1, max_length=300)
     meal_type: Optional[MealType] = None
+    # Absolute share of the described whole meal, never a multiplier of the
+    # already-consumed amount. None preserves legacy text-only corrections.
+    consumed_fraction: Optional[float] = Field(default=None, gt=0, le=1, strict=True)
     # Required-but-nullable: a newly created DietRecord legitimately has a
     # known-null updated_at until its first update. Missing means the caller has
     # no authorizing revision and must refresh instead of issuing a blind write.

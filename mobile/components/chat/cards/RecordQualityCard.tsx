@@ -2,6 +2,8 @@ import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { uuid } from 'expo-modules-core';
+import { DietPortionPicker } from '../../diet/DietPortionPicker';
+import { parseDietPortion, splitDietPortion } from '../../../utils/dietPortion';
 import { CardShell } from './CardShell';
 import type { CardRenderOptions, CardSpec } from './types';
 import {
@@ -122,12 +124,12 @@ function editNumber(value: unknown): string {
   return parsed == null ? '' : String(Math.round(parsed * 10) / 10);
 }
 
-/** 非负数字文本 → 保留一位小数; 空/负/非数字 → undefined (不写该字段) */
+/** Preserve input precision on writes; display rounding must not alter saved facts. */
 function sanitizeNumberText(value: string): number | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 10) / 10 : undefined;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function normalizeFoodText(value: string): string {
@@ -593,53 +595,64 @@ export function DietRecordAdjustEditor({
   onCancel?: () => void;
 }) {
   const [mealType, setMealType] = React.useState<MealType>(() => mealTypeValue(seed.meal_type));
-  const [food, setFood] = React.useState(() => text(seed.food_items) || '');
+  const initialPortion = React.useRef(splitDietPortion(text(seed.food_items) || '')).current;
+  const [food, setFood] = React.useState(initialPortion.food);
+  const [portion, setPortion] = React.useState(initialPortion.text);
   const [calories, setCalories] = React.useState(() => editNumber(seed.calories));
   const [protein, setProtein] = React.useState(() => editNumber(seed.protein));
   const [carbs, setCarbs] = React.useState(() => editNumber(seed.carbs));
   const [fat, setFat] = React.useState(() => editNumber(seed.fat));
   const [fiber, setFiber] = React.useState(() => editNumber(seed.fiber));
   const [saving, setSaving] = React.useState(false);
+  const savingLock = React.useRef(false);
   const [error, setError] = React.useState<
     'save' | 'recalculate' | 'conflict' | 'secure_random' | null
   >(null);
   const [collapsed, setCollapsed] = React.useState(false);
-  const initialFood = React.useRef(normalizeFoodText(text(seed.food_items) || '')).current;
+  const initialFood = normalizeFoodText(initialPortion.food);
   const seedHasRevision = Object.prototype.hasOwnProperty.call(seed, 'updated_at');
   const expectedUpdatedAt = seed.updated_at === null ? null : text(seed.updated_at);
   const revisionKnown = seedHasRevision && expectedUpdatedAt !== undefined;
   const recalculationOperation = React.useRef<{ signature: string; key: string } | null>(null);
   const foodChanged = normalizeFoodText(food) !== initialFood;
-  const revisionMissing = foodChanged && !revisionKnown;
+  const fraction = parseDietPortion(portion);
+  const portionChanged = fraction !== initialPortion.fraction;
+  const needsRecalculation = foodChanged || portionChanged;
+  const revisionMissing = needsRecalculation && !revisionKnown;
   const revisionConflict = error === 'conflict';
   const secureRandomUnavailable = error === 'secure_random';
-  const saveBlocked = saving || revisionMissing || revisionConflict || secureRandomUnavailable;
+  const saveBlocked = saving || revisionMissing || revisionConflict || secureRandomUnavailable
+    || fraction === null || !food.trim();
 
   const buildPatch = React.useCallback((): DietRecordUpdate => {
     // food_items + meal_type 始终随保存写回; 数字仅在有效值时带上(空/负 → 不覆盖后端值)
-    const patch: DietRecordUpdate = { meal_type: mealType, food_items: food.trim() };
+    // Preserve the saved share suffix when only manual nutrition/meal type changes.
+    const patch: DietRecordUpdate = { meal_type: mealType, food_items: text(seed.food_items) || food.trim() };
+    if (revisionKnown) patch.expected_updated_at = expectedUpdatedAt;
     const cal = sanitizeNumberText(calories);
     const pro = sanitizeNumberText(protein);
     const car = sanitizeNumberText(carbs);
     const fatValue = sanitizeNumberText(fat);
     const fiberValue = sanitizeNumberText(fiber);
-    if (cal != null) patch.calories = cal;
-    if (pro != null) patch.protein = pro;
-    if (car != null) patch.carbs = car;
-    if (fatValue != null) patch.fat = fatValue;
-    if (fiberValue != null) patch.fiber = fiberValue;
+    if (cal != null && calories !== editNumber(seed.calories)) patch.calories = cal;
+    if (pro != null && protein !== editNumber(seed.protein)) patch.protein = pro;
+    if (car != null && carbs !== editNumber(seed.carbs)) patch.carbs = car;
+    if (fatValue != null && fat !== editNumber(seed.fat)) patch.fat = fatValue;
+    if (fiberValue != null && fiber !== editNumber(seed.fiber)) patch.fiber = fiberValue;
     return patch;
-  }, [mealType, food, calories, protein, carbs, fat, fiber]);
+  }, [mealType, food, calories, protein, carbs, fat, fiber, seed, revisionKnown, expectedUpdatedAt]);
 
   const handleSave = React.useCallback(async () => {
-    if (saveBlocked) return; // action-lock: 防双击 / 防缺失或旧 revision 重试
+    if (saveBlocked || savingLock.current) return;
+    savingLock.current = true; // React state alone does not lock a same-frame double tap.
     setSaving(true);
     setError(null);
     const patch = buildPatch();
     try {
       let updated;
-      if (foodChanged) {
+      if (needsRecalculation) {
         if (!revisionKnown || expectedUpdatedAt === undefined) {
+          savingLock.current = false;
           setSaving(false);
           return;
         }
@@ -649,6 +662,7 @@ export function DietRecordAdjustEditor({
           expectedUpdatedAt,
           mealType,
           normalizedFood,
+          fraction,
         ]);
         if (recalculationOperation.current?.signature !== signature) {
           recalculationOperation.current = {
@@ -660,6 +674,7 @@ export function DietRecordAdjustEditor({
           meal_type: mealType,
           food_items: normalizedFood,
           expected_updated_at: expectedUpdatedAt,
+          ...(portionChanged || initialPortion.fraction !== 1 ? { consumed_fraction: fraction! } : {}),
         }, recalculationOperation.current.key);
       } else {
         updated = await updateDietRecord(recordId, patch);
@@ -698,6 +713,7 @@ export function DietRecordAdjustEditor({
       setCollapsed(true);
       onSaved({ cardFace: { summary, metrics }, adjustRecord });
     } catch (cause) {
+      savingLock.current = false;
       const secureRandomFailure = (
         cause instanceof Error
         && cause.message === DIET_RECALCULATION_SECURE_RANDOM_UNAVAILABLE
@@ -705,9 +721,9 @@ export function DietRecordAdjustEditor({
       setError(
         secureRandomFailure
           ? 'secure_random'
-          : foodChanged && responseStatus(cause) === 409
+          : responseStatus(cause) === 409
           ? 'conflict'
-          : foodChanged ? 'recalculate' : 'save',
+          : needsRecalculation ? 'recalculate' : 'save',
       );
       setSaving(false); // 失败保留输入, 允许重试
     }
@@ -715,7 +731,10 @@ export function DietRecordAdjustEditor({
     saveBlocked,
     buildPatch,
     food,
-    foodChanged,
+    needsRecalculation,
+    portionChanged,
+    fraction,
+    initialPortion.fraction,
     recordId,
     mealType,
     revisionKnown,
@@ -759,12 +778,20 @@ export function DietRecordAdjustEditor({
         multiline
         style={styles.foodInput}
       />
+      <DietPortionPicker value={portion} onChange={setPortion} disabled={saving} />
+      {needsRecalculation ? (
+        <Text accessibilityLiveRegion="polite" style={styles.adjustHint}>
+          {foodChanged
+            ? '食物已修改，保存时重新估算热量和营养；下方为修改前数值。'
+            : '份额已修改，保存时同步调整热量和营养；下方为修改前数值。'}
+        </Text>
+      ) : null}
       <View style={styles.macroGrid}>
-        <AdjustNumberInput label="热量" unit="kcal" value={calories} onChangeText={setCalories} editable={!saving} />
-        <AdjustNumberInput label="蛋白" unit="g" value={protein} onChangeText={setProtein} editable={!saving} />
-        <AdjustNumberInput label="碳水" unit="g" value={carbs} onChangeText={setCarbs} editable={!saving} />
-        <AdjustNumberInput label="脂肪" unit="g" value={fat} onChangeText={setFat} editable={!saving} />
-        <AdjustNumberInput label="膳食纤维" unit="g" value={fiber} onChangeText={setFiber} editable={!saving} />
+        <AdjustNumberInput label="热量" unit="kcal" value={calories} onChangeText={setCalories} editable={!saving && !needsRecalculation} />
+        <AdjustNumberInput label="蛋白" unit="g" value={protein} onChangeText={setProtein} editable={!saving && !needsRecalculation} />
+        <AdjustNumberInput label="碳水" unit="g" value={carbs} onChangeText={setCarbs} editable={!saving && !needsRecalculation} />
+        <AdjustNumberInput label="脂肪" unit="g" value={fat} onChangeText={setFat} editable={!saving && !needsRecalculation} />
+        <AdjustNumberInput label="膳食纤维" unit="g" value={fiber} onChangeText={setFiber} editable={!saving && !needsRecalculation} />
       </View>
       {revisionMissing || error ? (
         <Text maxFontSizeMultiplier={1.15} style={styles.adjustError}>
@@ -799,14 +826,14 @@ export function DietRecordAdjustEditor({
           style={({ pressed }) => [
             styles.saveButton,
             saving && styles.saveButtonBusy,
-            (revisionMissing || revisionConflict || secureRandomUnavailable) && styles.buttonDisabled,
+            saveBlocked && styles.buttonDisabled,
             pressed && !saveBlocked && { opacity: 0.86 },
           ]}
         >
           {saving ? <ActivityIndicator size="small" color="#fff" /> : (
             <Ionicons name="checkmark-circle" size={14} color="#fff" />
           )}
-          <Text style={styles.saveButtonText}>{saving ? '保存中' : '保存修正'}</Text>
+          <Text style={styles.saveButtonText}>{saving ? (needsRecalculation ? '更新营养中' : '保存中') : foodChanged ? '重新估算并保存' : portionChanged ? '保存份额' : '保存修正'}</Text>
         </Pressable>
       </View>
     </View>

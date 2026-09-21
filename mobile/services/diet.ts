@@ -106,6 +106,8 @@ export interface DietRecordNutritionRecalculateRequest {
   food_items: string;
   meal_type?: MealType;
   expected_updated_at: string | null;
+  /** Absolute personal share of the whole described meal (0 < value <= 1). */
+  consumed_fraction?: number;
 }
 
 export interface DailyDietSummary {

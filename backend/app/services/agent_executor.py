@@ -6139,7 +6139,7 @@ _GENERATED_DIET_PORTION_SUFFIX_RE = re.compile(
     r"（按实际食用(?P<label>[^（）]{1,24})计）\s*$"
 )
 _CONTEXTUAL_MEAL_WHOLE_PORTION_RE = re.compile(
-    r"(?:这|整|本)(?:一)?(?:餐|顿|份|盘)|(?:这|整)些|只吃",
+    r"(?:这|整|本)(?:一)?(?:餐|顿|份|盘|桌菜?)|(?:这|整)些|只吃",
     re.I,
 )
 _DIET_FACTUAL_PORTION_PLACEHOLDER = "__portion__"
@@ -6196,7 +6196,7 @@ _DIET_FACTUAL_CONSUMPTION_FIRST_CORRECTION_RE = re.compile(
     re.I,
 )
 _DIET_FACTUAL_PHOTO_SUBJECT_PATTERN = (
-    r"(?:(?:这|整|本)(?:一)?(?:餐|顿|份|盘)|(?:这|整)些)"
+    r"(?:(?:这|整|本)(?:一)?(?:餐|顿|份|盘|桌菜?)|(?:这|整)些)"
 )
 _DIET_FACTUAL_PHOTO_SUFFIX_PATTERN = (
     r"(?:\s*[,，]\s*|\s*)"
@@ -6206,13 +6206,13 @@ _DIET_FACTUAL_PHOTO_SUFFIX_PATTERN = (
 _DIET_FACTUAL_PHOTO_SHAPE_RE = re.compile(
     r"^(?:(?:(?:请|麻烦)\s*)?(?:帮我\s*)?记录\s*)?"
     rf"{_DIET_FACTUAL_PHOTO_SUBJECT_PATTERN}\s*[,，]?\s*"
-    r"(?:实际(?:上)?\s*)?(?:只)?(?:吃了|吃掉了)\s*"
+    r"(?:我\s*)?(?:实际(?:上)?\s*)?(?:只)?(?:吃了|吃掉了)\s*"
     rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
     rf"(?:{_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN})?\s*[。！!]*$",
     re.I,
 )
 _DIET_FACTUAL_BARE_PHOTO_SHAPE_RE = re.compile(
-    r"^(?:实际(?:上)?\s*)?只吃了\s*"
+    r"^(?:聚餐\s*[,，]\s*)?(?:我\s*)?(?:实际(?:上)?\s*)?只吃了\s*"
     rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
     rf"(?:{_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN})?\s*[。！!]*$",
     re.I,

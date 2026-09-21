@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
+import { uuid } from 'expo-modules-core';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useDailyDiet } from '../hooks/useDiet';
 import { estimateSourceForRecord, useDietEstimate, type EstimateSource, type EstimateSourceCache } from '../hooks/useDietEstimate';
@@ -14,6 +15,7 @@ import { computeDietTotals, isPendingNutrition } from '../utils/dietTotals';
 import * as ImagePicker from 'expo-image-picker';
 import type { ImagePickerAsset } from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
+import { DietPortionPicker } from '../components/diet/DietPortionPicker';
 import DietFAB from '../components/diet/DietFAB';
 import FrequentFoodsRow from '../components/diet/FrequentFoodsRow';
 import { buildDietShareCaption } from '../components/diet/DietShareCard';
@@ -35,6 +37,7 @@ import { assertDietFoodItemsAllowed } from '../utils/dietIntakeGuard';
 import { buildChatImageSource } from '../utils/chatImageSource';
 import { BASE_URL } from '../services/api';
 import { emitClientEvent } from '../services/clientEvents';
+import { parseDietPortion, splitDietPortion } from '../utils/dietPortion';
 import {
   clearDietPhotoDraft,
   loadDietPhotoDraft,
@@ -424,17 +427,43 @@ export function buildEditedDietPatch(
   return patch;
 }
 
-export function isFoodOnlyDietCorrection(original: DietRecord, revision: DietRecordCreate): boolean {
+export function isAtomicDietRecalculation(
+  original: DietRecord,
+  revision: DietRecordCreate,
+  portionValue: string,
+): boolean {
   const normalize = (value: string) => value.trim().replace(/\s+/g, ' ');
-  if (normalize(original.food_items) === normalize(revision.food_items)) return false;
-  if (original.alcohol_units != null || revision.alcohol_units != null) return false;
-  return (['calories', 'protein', 'carbs', 'fat'] as const)
-    .every(key => (revision[key] ?? null) === (original[key] ?? null));
+  const previous = splitDietPortion(original.food_items);
+  const nextFraction = parseDietPortion(portionValue);
+  if (nextFraction == null) return false;
+  const foodChanged = normalize(previous.food) !== normalize(revision.food_items);
+  const portionChanged = Math.abs(previous.fraction - nextFraction) > 1e-9;
+  if (!foodChanged && !portionChanged) return false;
+  const hasPositiveAlcohol = (value: number | null | undefined) => (
+    typeof value === 'number' && Number.isFinite(value) && value > 0
+  );
+  if (hasPositiveAlcohol(original.alcohol_units) || hasPositiveAlcohol(revision.alcohol_units)) return false;
+  return true;
 }
 
 function isUnavailablePhotoDraftError(error: unknown): boolean {
   const status = (error as { response?: { status?: number } })?.response?.status;
   return status === 404 || status === 409 || status === 410;
+}
+
+function createStandaloneDietRecalculationKey(): string {
+  const cryptoApi = (globalThis as unknown as { crypto?: { randomUUID?: () => string } }).crypto;
+  try {
+    const webKey = cryptoApi?.randomUUID?.().trim();
+    if (webKey) return webKey;
+  } catch {
+    // Fall through to the existing native UUID bridge.
+  }
+  const nativeKey = uuid.v4();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(nativeKey)) {
+    return nativeKey.toLowerCase();
+  }
+  throw new Error('diet_recalculation_secure_random_unavailable');
 }
 
 function absoluteApiAssetUrl(url: string | null | undefined): string | null {
@@ -469,6 +498,11 @@ export default function DietScreen() {
   const [showForm, setShowForm] = useState(false);
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
+  const [editFoodItems, setEditFoodItems] = useState('');
+  const [editPortionValue, setEditPortionValue] = useState('1');
+  const [editSaving, setEditSaving] = useState(false);
+  const editSavingRef = useRef(false);
+  const editOperationRef = useRef<{ signature: string; key: string } | null>(null);
   const [draftEstimateSource, setDraftEstimateSource] = useState<EstimateSource | null>(null);
   const [quickDraft, setQuickDraft] = useState<DietQuickDraft | null>(null);
   const [photoCaptureStage, setPhotoCaptureStage] = useState<PhotoCaptureStage>('idle');
@@ -628,6 +662,7 @@ export default function DietScreen() {
   }, [estimate]);
 
   const handleSave = useCallback(async (record: DietRecordCreate) => {
+    if (editingRecord && editSavingRef.current) return;
     const isPhotoCorrection = !editingRecord && (
       draftEstimateSource?.kind === 'photo' || Boolean(formDefaults.photo_draft_token)
     );
@@ -635,23 +670,59 @@ export default function DietScreen() {
     const confirmationStartedAt = Date.now();
     try {
       if (editingRecord) {
+        const consumedFraction = parseDietPortion(editPortionValue);
+        if (consumedFraction == null) {
+          Alert.alert('份额格式不正确', '请输入大于 0、不超过 100% 的份额，例如 1/5。');
+          return;
+        }
+        const previousPortion = splitDietPortion(editingRecord.food_items);
+        const normalize = (value: string) => value.trim().replace(/\s+/g, ' ');
+        const foodOrPortionChanged = (
+          normalize(previousPortion.food) !== normalize(record.food_items)
+          || Math.abs(previousPortion.fraction - consumedFraction) > 1e-9
+        );
+        const hasPositiveAlcohol = (value: number | null | undefined) => (
+          typeof value === 'number' && Number.isFinite(value) && value > 0
+        );
+        if (foodOrPortionChanged && (hasPositiveAlcohol(editingRecord.alcohol_units) || hasPositiveAlcohol(record.alcohol_units))) {
+          Alert.alert('含酒饮食需手动修正', '请保持原食物和份额，只修改标准杯或营养数值。');
+          return;
+        }
+        editSavingRef.current = true;
+        setEditSaving(true);
         // Invalidate any older local estimate before a corrected description is persisted.
         const joinedWrite = await cancelEstimate(editingRecord.id);
-        if (isFoodOnlyDietCorrection(editingRecord, record)) {
-          const idempotencyKey = `diet-recalc:${editingRecord.id}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+        if (isAtomicDietRecalculation(editingRecord, record, editPortionValue)) {
+          const expectedUpdatedAt = joinedWrite?.updated_at ?? editingRecord.updated_at ?? null;
+          const signature = JSON.stringify([
+            editingRecord.id, record.food_items, record.meal_type, consumedFraction, expectedUpdatedAt,
+          ]);
+          if (editOperationRef.current?.signature !== signature) {
+            editOperationRef.current = {
+              signature,
+              key: createStandaloneDietRecalculationKey(),
+            };
+          }
           await recalculateDietRecordNutrition(editingRecord.id, {
             food_items: record.food_items,
             meal_type: record.meal_type,
-            expected_updated_at: joinedWrite?.updated_at ?? editingRecord.updated_at ?? null,
-          }, idempotencyKey);
+            expected_updated_at: expectedUpdatedAt,
+            consumed_fraction: consumedFraction,
+          }, editOperationRef.current.key);
         } else {
+          // MealForm displays the suffix-free description. Preserve the stored
+          // canonical suffix when this is a manual nutrient/meal-type edit.
+          const manualRevision = foodOrPortionChanged
+            ? record
+            : { ...record, food_items: editingRecord.food_items };
           await updateDietRecord(editingRecord.id, {
-            ...buildEditedDietPatch(editingRecord, record),
+            ...buildEditedDietPatch(editingRecord, manualRevision),
             expected_updated_at: joinedWrite?.updated_at ?? editingRecord.updated_at ?? null,
           });
         }
         sourceMapRef.current.delete(editingRecord.id);
         reconciledRef.current.delete(editingRecord.id);
+        editOperationRef.current = null;
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         qc.invalidateQueries({ queryKey: ['diet'] });
       } else {
@@ -715,8 +786,13 @@ export default function DietScreen() {
         });
       }
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
+    } finally {
+      if (editingRecord) {
+        editSavingRef.current = false;
+        setEditSaving(false);
+      }
     }
-  }, [authUserId, cancelEstimate, draftEstimateSource, editingRecord, formDefaults, qc, returnToChatAfterConfirm, saveNewDietRecord, toast]);
+  }, [authUserId, cancelEstimate, draftEstimateSource, editPortionValue, editingRecord, formDefaults, qc, returnToChatAfterConfirm, saveNewDietRecord, toast]);
 
   const handleConfirmQuickDraft = useCallback(async () => {
     if (!quickDraft) return;
@@ -831,6 +907,7 @@ export default function DietScreen() {
   }, [authUserId, quickDraft, toast]);
 
   const handleCancelForm = useCallback(async () => {
+    if (editSavingRef.current) return;
     const photoDraftToken = formDefaults.photo_draft_token;
     const [serverResult, localResult] = await Promise.allSettled([
       photoDraftToken ? discardDietPhotoDraft(photoDraftToken) : Promise.resolve(),
@@ -894,6 +971,10 @@ export default function DietScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     activeDraftRef.current = true;
     setEditingRecord(r);
+    editOperationRef.current = null;
+    const portion = splitDietPortion(r.food_items);
+    setEditFoodItems(portion.food);
+    setEditPortionValue(portion.text);
     setFormDefaults({});
     setQuickDraft(null);
     setDraftEstimateSource(null);
@@ -1339,10 +1420,35 @@ export default function DietScreen() {
 
         {/* Meal form */}
         {showForm && (
+          <>
+          {editingRecord ? (
+            <DietPortionPicker
+              value={editPortionValue}
+              onChange={setEditPortionValue}
+              disabled={editSaving}
+            />
+          ) : null}
           <MealForm date={date}
-            initialRecord={editingRecord || undefined}
+            initialRecord={editingRecord ? { ...editingRecord, food_items: editFoodItems } : undefined}
             initialMealType={formDefaults.meal_type}
             assistiveHint={quickDraftNeedsReview(formDefaults) ? PORTION_REVIEW_ASSISTIVE_HINT : undefined}
+            nutritionReadOnly={Boolean(editingRecord && isAtomicDietRecalculation(
+              editingRecord,
+              {
+                record_date: editingRecord.record_date,
+                meal_type: editingRecord.meal_type,
+                food_items: editFoodItems,
+                calories: editingRecord.calories ?? undefined,
+                protein: editingRecord.protein ?? undefined,
+                carbs: editingRecord.carbs ?? undefined,
+                fat: editingRecord.fat ?? undefined,
+                alcohol_units: editingRecord.alcohol_units ?? undefined,
+              },
+              editPortionValue,
+            ))}
+            nutritionReadOnlyHint="旧营养仅供参考，保存后按新描述和份额重新估算"
+            onDescriptionChange={setEditFoodItems}
+            saving={editSaving}
             onSubmit={handleSave}
             onCancel={handleCancelForm}
             initialDescription={formDefaults.food_items}
@@ -1350,6 +1456,7 @@ export default function DietScreen() {
             initialProtein={formDefaults.protein}
             initialCarbs={formDefaults.carbs}
             initialFat={formDefaults.fat} />
+          </>
         )}
 
         {/* Meal records — 左滑暴露 编辑 + 删除 */}

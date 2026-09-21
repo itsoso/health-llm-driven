@@ -78,6 +78,75 @@ describe('RecordQualityCard inline diet adjuster', () => {
     }
   });
 
+  it('labels edited descriptions as awaiting recalculation and locks stale nutrition inputs', () => {
+    const { getByLabelText, getByText } = render(<RecordQualityCardView {...(baseAdjustCard() as any)} />);
+    fireEvent.changeText(getByLabelText('食物描述'), '牛肉面一碗');
+    expect(getByText('食物已修改，保存时重新估算热量和营养；下方为修改前数值。')).toBeTruthy();
+    expect(getByLabelText('热量').props.editable).toBe(false);
+    expect(getByText('重新估算并保存')).toBeTruthy();
+  });
+
+  it('saves a personal one-fifth share through the atomic calculation command, not manual PUT', async () => {
+    mockRecalculate.mockResolvedValue({ id: 123, meal_type: 'snack', food_items: '整桌菜（按实际食用1/5计）', calories: 200 } as any);
+    const onCardDataChange = jest.fn();
+    const { getByLabelText } = render(<RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={onCardDataChange} />);
+    fireEvent.press(getByLabelText('我吃了 1/5'));
+    await act(async () => fireEvent.press(getByLabelText('保存修正')));
+    expect(mockRecalculate).toHaveBeenCalledWith(123, {
+      food_items: '100克葡萄 五十克饼干', meal_type: 'snack',
+      expected_updated_at: '2026-08-20T12:00:00Z', consumed_fraction: 0.2,
+    }, expect.any(String));
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(onCardDataChange).toHaveBeenCalledWith(expect.objectContaining({ calories: 200 }));
+  });
+
+  it('restores the saved whole-meal share and retains it when the description is corrected', async () => {
+    mockRecalculate.mockResolvedValue({ id: 123, calories: 120, food_items: '牛肉面两碗（按实际食用1/5计）' } as any);
+    const card = baseAdjustCard();
+    card.adjust_record.food_items = '汤两碗（按实际食用1/5计）';
+    const { getByLabelText } = render(<RecordQualityCardView {...(card as any)} />);
+    expect(getByLabelText('食物描述').props.value).toBe('汤两碗');
+    expect(getByLabelText('我吃了 1/5').props.accessibilityState.selected).toBe(true);
+    fireEvent.changeText(getByLabelText('食物描述'), '牛肉面两碗');
+    await act(async () => fireEvent.press(getByLabelText('保存修正')));
+    expect(mockRecalculate).toHaveBeenCalledWith(123, expect.objectContaining({
+      food_items: '牛肉面两碗', consumed_fraction: 0.2,
+    }), expect.any(String));
+  });
+
+  it('blocks invalid custom shares and does not save on selection alone', async () => {
+    const { getByLabelText } = render(<RecordQualityCardView {...(baseAdjustCard() as any)} />);
+    fireEvent.changeText(getByLabelText('自定义食用份额'), '1/0');
+    await act(async () => fireEvent.press(getByLabelText('保存修正')));
+    expect(mockRecalculate).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(getByLabelText('保存修正').props.accessibilityState.disabled).toBe(true);
+  });
+
+  it('does not round and rewrite unchanged nutrition on a meal-type-only save', async () => {
+    mockUpdate.mockResolvedValue({ id: 123, meal_type: 'dinner', food_items: '餐食', protein: 3.333333 } as any);
+    const card = baseAdjustCard();
+    card.adjust_record.protein = 3.333333;
+    const { getByLabelText } = render(<RecordQualityCardView {...(card as any)} />);
+    fireEvent.press(getByLabelText('餐次 晚餐'));
+    await act(async () => fireEvent.press(getByLabelText('保存修正')));
+    expect(mockUpdate).toHaveBeenCalledWith(123, {
+      meal_type: 'dinner', food_items: card.adjust_record.food_items,
+      expected_updated_at: card.adjust_record.updated_at,
+    });
+  });
+
+  it('locks a recalculation synchronously against a same-frame double tap', async () => {
+    mockRecalculate.mockImplementation(() => new Promise(() => {}));
+    const { getByLabelText } = render(<RecordQualityCardView {...(baseAdjustCard() as any)} />);
+    fireEvent.press(getByLabelText('我吃了 1/5'));
+    act(() => {
+      fireEvent.press(getByLabelText('保存修正'));
+      fireEvent.press(getByLabelText('保存修正'));
+    });
+    expect(mockRecalculate).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps each nutrition reading intact and lets crowded metric tiles wrap', () => {
     const { getByText, getByTestId } = render(<RecordQualityCardView {...(baseAdjustCard({
       expanded_sections: [],
@@ -233,7 +302,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect((getByLabelText('热量').props as any).value).toBe('230');
     expect((getByLabelText('蛋白').props as any).value).toBe('3');
     expect((getByLabelText('膳食纤维').props as any).value).toBe('2');
-    expect(getByText('保存修正')).toBeTruthy();
+    expect(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/)).toBeTruthy();
     expect(getByText('加餐')).toBeTruthy();
 
     const stopPropagation = jest.fn();
@@ -296,7 +365,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
     fireEvent.changeText(getByLabelText('食物描述'), '两碗虾滑鸡蛋汤');
 
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(1));
@@ -315,8 +384,6 @@ describe('RecordQualityCard inline diet adjuster', () => {
       food_items: '100克葡萄 五十克饼干',
       calories: 245,
       protein: 6,
-      carbs: 52,
-      fat: 4,
       fiber: 5,
     } as any);
 
@@ -330,17 +397,16 @@ describe('RecordQualityCard inline diet adjuster', () => {
     fireEvent.changeText(getByLabelText('膳食纤维'), '5');
 
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate).toHaveBeenCalledWith(123, {
+      expected_updated_at: '2026-08-20T12:00:00Z',
       meal_type: 'dinner',
       food_items: '100克葡萄 五十克饼干',
       calories: 245,
       protein: 6,
-      carbs: 52,
-      fat: 4,
       fiber: 5,
     });
     expect(mockRecalculate).not.toHaveBeenCalled();
@@ -366,7 +432,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
 
     fireEvent.changeText(getByLabelText('食物描述'), '两碗水果酸奶');
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(onCardDataChange).toHaveBeenCalledTimes(1));
@@ -431,7 +497,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
 
     fireEvent.changeText(getByLabelText('食物描述'), '两碗虾滑鸡蛋汤');
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(onCardDataChange).toHaveBeenCalledTimes(1));
@@ -462,7 +528,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
     );
 
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(onCardDataChange).toHaveBeenCalledTimes(1));
@@ -502,14 +568,14 @@ describe('RecordQualityCard inline diet adjuster', () => {
 
     fireEvent.changeText(getByLabelText('热量'), '250');
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(getByText('保存失败，请重试')).toBeTruthy());
     // fail-loud: 不吞错, 不刷新卡面, 保留用户输入, 编辑器仍在
     expect(onCardDataChange).not.toHaveBeenCalled();
     expect((getByLabelText('热量').props as any).value).toBe('250');
-    expect(getByText('保存修正')).toBeTruthy();
+    expect(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/)).toBeTruthy();
   });
 
   it('does not fall back to PUT or collapse when nutrition recalculation fails', async () => {
@@ -522,7 +588,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
 
     fireEvent.changeText(getByLabelText('食物描述'), '两碗葡萄和饼干');
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(getByText('营养重新计算失败，请重试')).toBeTruthy());
@@ -534,7 +600,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect(typeof firstOperationKey).toBe('string');
 
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(2));
     expect(mockRecalculate.mock.calls[1][2]).toBe(firstOperationKey);
@@ -549,21 +615,21 @@ describe('RecordQualityCard inline diet adjuster', () => {
 
     fireEvent.changeText(getByLabelText('食物描述'), '两碗葡萄和饼干');
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(1));
     const firstOperationKey = mockRecalculate.mock.calls[0][2];
 
     fireEvent.changeText(getByLabelText('食物描述'), '两碗葡萄和苹果');
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(2));
     const secondOperationKey = mockRecalculate.mock.calls[1][2];
 
     fireEvent.press(getByLabelText('餐次 午餐'));
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(3));
     const thirdOperationKey = mockRecalculate.mock.calls[2][2];
@@ -582,7 +648,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
 
     fireEvent.changeText(getByLabelText('食物描述'), '两  碗葡萄  和饼干');
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(1));
@@ -625,10 +691,10 @@ describe('RecordQualityCard inline diet adjuster', () => {
       <RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={jest.fn()} />,
     );
     fireEvent.changeText(getByLabelText('食物描述'), '白米饭150克、鸡蛋1个');
-    await act(async () => { fireEvent.press(getByText('保存修正')); });
+    await act(async () => { fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/)); });
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(1));
     expect(mockRecalculate.mock.calls[0][2]).toBe(nativeKey);
-    await act(async () => { fireEvent.press(getByText('保存修正')); });
+    await act(async () => { fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/)); });
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(2));
     expect(mockRecalculate.mock.calls[1][2]).toBe(nativeKey);
     expect(uuid.v4).toHaveBeenCalledTimes(1);
@@ -647,7 +713,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
       <RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={jest.fn()} />,
     );
     fireEvent.changeText(getByLabelText('食物描述'), '白米饭150克、鸡蛋1个');
-    await act(async () => { fireEvent.press(getByText('保存修正')); });
+    await act(async () => { fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/)); });
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(1));
     expect(mockRecalculate.mock.calls[0][2]).toBe(nativeKey);
   });
@@ -660,7 +726,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
         <RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={jest.fn()} />,
       );
       fireEvent.changeText(getByLabelText('食物描述'), '白米饭150克、鸡蛋1个');
-      await act(async () => { fireEvent.press(getByText('保存修正')); });
+      await act(async () => { fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/)); });
       expect(getByText('无法安全生成保存标识，请取消并重新打开后再试')).toBeTruthy();
       expect(mockRecalculate).not.toHaveBeenCalled();
       expect(mockUpdate).not.toHaveBeenCalled();
@@ -686,7 +752,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
 
     fireEvent.changeText(getByLabelText('食物描述'), '两碗葡萄和饼干');
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(getByText('无法安全生成保存标识，请取消并重新打开后再试')).toBeTruthy());
@@ -716,7 +782,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
 
     fireEvent.changeText(getByLabelText('食物描述'), '两碗葡萄和饼干');
     await act(async () => {
-      fireEvent.press(getByText('保存修正'));
+      fireEvent.press(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(getByText('记录已在其他位置更新，请取消并重新打开后再修改')).toBeTruthy());
@@ -908,7 +974,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
     fireEvent.press(screen.getByText('调整记录'));
     fireEvent.changeText(screen.getByLabelText('食物描述'), '两碗葡萄和饼干');
     await act(async () => {
-      fireEvent.press(screen.getByText('保存修正'));
+      fireEvent.press(screen.getByText(/^(?:重新估算并保存|保存份额|保存修正)$/));
     });
 
     await waitFor(() => expect(mockRecalculate).toHaveBeenCalledTimes(1));

@@ -23405,6 +23405,8 @@ export interface components {
             /** Food Items */
             food_items: string;
             meal_type?: components["schemas"]["MealType"] | null;
+            /** Consumed Fraction */
+            consumed_fraction?: number | null;
             /** Expected Updated At */
             expected_updated_at: string | null;
         };

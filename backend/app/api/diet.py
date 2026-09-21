@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
 from typing import List, Optional
 from datetime import date, timedelta, datetime, time, timezone
+from fractions import Fraction
 
 from app.database import get_db
 from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord as DietRecordModel
@@ -1212,6 +1213,7 @@ def _diet_recalculation_request_digest(
     food_items: str,
     meal_type: Optional[MealType],
     expected_updated_at: Optional[datetime],
+    consumed_fraction: Optional[float] = None,
 ) -> str:
     payload = {
         "expected_updated_at": _diet_recalculation_revision_value(
@@ -1223,6 +1225,8 @@ def _diet_recalculation_request_digest(
         "user_id": user_id,
         "version": "diet-recalculation-request-v1",
     }
+    if consumed_fraction is not None:
+        payload["consumed_fraction"] = consumed_fraction
     canonical = json.dumps(
         payload,
         ensure_ascii=False,
@@ -1230,6 +1234,74 @@ def _diet_recalculation_request_digest(
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
+
+
+_DIET_SAVED_PORTION_RE = re.compile(r"（按实际食用(?P<label>[^（）]{1,24})计）\s*$")
+_DIET_SAVED_PORTION_WORDS = {
+    "一半": "1/2", "半份": "1/2", "二分之一": "1/2",
+    "三分之一": "1/3", "三分之二": "2/3", "四分之一": "1/4", "四分之三": "3/4",
+    "五分之一": "1/5", "五分之二": "2/5", "五分之三": "3/5", "五分之四": "4/5",
+}
+
+
+def _diet_recalculation_base_description(description: str) -> tuple[str, float]:
+    match = _DIET_SAVED_PORTION_RE.search(description)
+    if match is None:
+        return description.strip(), 1.0
+    token = match.group("label").strip()
+    token = _DIET_SAVED_PORTION_WORDS.get(token, token)
+    try:
+        fraction = float(Fraction(token.replace(" ", "")))
+    except (ValueError, ZeroDivisionError):
+        raise HTTPException(status_code=422, detail="食用份额无效，请重新选择")
+    if not math.isfinite(fraction) or not 0 < fraction <= 1:
+        raise HTTPException(status_code=422, detail="食用份额无效，请重新选择")
+    base = description[:match.start()].strip()
+    if not base or _DIET_SAVED_PORTION_RE.search(base):
+        raise HTTPException(status_code=422, detail="请填写完整餐食描述并单独选择食用份额")
+    return base, fraction
+
+
+def _diet_recalculation_portion_result(
+    record: DietRecordModel,
+    food_items: str,
+    fraction: float,
+) -> Optional[dict]:
+    """Reuse only owned authoritative scalar facts, not client-writable raw JSON."""
+    previous_food, previous_fraction = _diet_recalculation_base_description(
+        record.food_items or ""
+    )
+    if previous_food != food_items:
+        return None
+    totals = {}
+    for field, (result_key, maximum) in _DIET_RECALCULATION_TOTAL_FIELDS.items():
+        value = getattr(record, field)
+        if value is not None and (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+            or not 0 <= value <= maximum
+        ):
+            return None
+        totals[result_key] = None if value is None else value / previous_fraction * fraction
+    if totals["total_calories"] is None or not any(
+        totals[f"total_{key}"] is not None for key in ("protein", "carbs", "fat")
+    ):
+        return None
+    return {
+        "success": True,
+        "foods": [{
+            "name": food_items[:80],
+            "source": "user_corrected",
+            "nutrition_basis": "saved_meal_scaled",
+            "portion_basis": "user_stated",
+            **{
+                field: totals[result_key]
+                for field, (result_key, _) in _DIET_RECALCULATION_TOTAL_FIELDS.items()
+            },
+        }],
+        **totals,
+    }
 
 
 def _diet_recalculation_stored_payload(
@@ -1409,6 +1481,15 @@ def recalculate_diet_record_nutrition(
 
     try:
         food_items = request.food_items.strip()
+        base_food_items, text_fraction = _diet_recalculation_base_description(food_items)
+        fraction = request.consumed_fraction if request.consumed_fraction is not None else text_fraction
+        has_portion = request.consumed_fraction is not None or text_fraction != 1
+        food_items = base_food_items
+        if fraction != 1:
+            ratio = Fraction(fraction).limit_denominator(1000000000)
+            if not ratio or not math.isclose(float(ratio), fraction, rel_tol=1e-12, abs_tol=0):
+                raise HTTPException(status_code=422, detail="食用份额精度过高，请选择可表示的比例")
+            food_items += f"（按实际食用{ratio.numerator}/{ratio.denominator}计）"
         _assert_diet_food_items_allowed(food_items)
         operation_digest = _diet_recalculation_operation_digest(
             user_id=current_user.id,
@@ -1421,6 +1502,7 @@ def recalculate_diet_record_nutrition(
             food_items=food_items,
             meal_type=request.meal_type,
             expected_updated_at=request.expected_updated_at,
+            consumed_fraction=request.consumed_fraction,
         )
         replay = _diet_recalculation_replay_response(
             record,
@@ -1453,8 +1535,12 @@ def recalculate_diet_record_nutrition(
 
         # This is intentionally outside SELECT ... FOR UPDATE. The estimator
         # can take seconds; the bounded snapshot below protects the later write.
-        raw_result = food_recognition_service.estimate_nutrition_from_text(
-            food_items
+        reused_result = (
+            _diet_recalculation_portion_result(record, base_food_items, fraction)
+            if has_portion else None
+        )
+        raw_result = reused_result if reused_result is not None else (
+            food_recognition_service.estimate_nutrition_from_text(base_food_items)
         )
         result = sanitize_food_recognition_result(raw_result)
         if not result.get("success"):
@@ -1483,7 +1569,8 @@ def recalculate_diet_record_nutrition(
                 "label_basis_grams",
             ):
                 food.pop(field, None)
-        calibrate_recognized_foods(db, foods)
+        if reused_result is None:
+            calibrate_recognized_foods(db, foods)
         for food in foods:
             if food.get("source") == "ai_estimate":
                 food["nutrition_basis"] = "text_estimate"
@@ -1493,6 +1580,19 @@ def recalculate_diet_record_nutrition(
                 status_code=422,
                 detail="未获得可用的营养估算，请修改描述后重试",
             )
+        if reused_result is not None:
+            # Sanitization is lossy (one-decimal estimates). The owned saved
+            # scalars have already been validated; retain full precision when
+            # changing the absolute share repeatedly.
+            result = reused_result
+        elif fraction != 1:
+            for food in result.get("foods") or []:
+                for field in (*_DIET_RECALCULATION_TOTAL_FIELDS, "quantity_grams"):
+                    if food.get(field) is not None:
+                        food[field] *= fraction
+            for result_key, _maximum in _DIET_RECALCULATION_TOTAL_FIELDS.values():
+                if result.get(result_key) is not None:
+                    result[result_key] *= fraction
         foods = result.get("foods") or []
         # Free-form model advice is outside this correction command's reviewed
         # write contract. Only recalculated nutrition facts are persisted.
@@ -1553,7 +1653,10 @@ def recalculate_diet_record_nutrition(
         stored_result["provenance"] = {
             "method": "text_estimate_user_corrected",
             "estimated": True,
-            "pipeline": "sanitize_calibrate_sanitize",
+            "pipeline": (
+                "owned_saved_nutrition_absolute_portion"
+                if reused_result is not None else "sanitize_calibrate_sanitize"
+            ),
             "operation_digest": operation_digest,
             "request_digest": request_digest,
             "result_food_items": food_items,

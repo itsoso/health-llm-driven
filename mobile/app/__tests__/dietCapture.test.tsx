@@ -145,24 +145,28 @@ jest.mock('../../utils/agentContext', () => ({
   returnToChatWithContext: (...args: any[]) => mockReturnToChatWithContext(...args),
 }));
 
-import DietScreen, { isFoodOnlyDietCorrection } from '../diet';
+import DietScreen, { isAtomicDietRecalculation } from '../diet';
 
-describe('food-only diet correction routing', () => {
+describe('atomic diet correction routing', () => {
   const original: any = {
     food_items: '一碗汤', meal_type: 'dinner',
     calories: 80, protein: 3, carbs: 9, fat: 2, alcohol_units: null,
   };
 
-  it('uses atomic recalculation only when the food changed without manual nutrition or alcohol edits', () => {
-    expect(isFoodOnlyDietCorrection(original, {
+  it('uses atomic recalculation for food or portion changes, but never for alcohol', () => {
+    expect(isAtomicDietRecalculation(original, {
       ...original, food_items: '牛肉面约一碗',
-    })).toBe(true);
-    expect(isFoodOnlyDietCorrection(original, {
+    }, '1')).toBe(true);
+    expect(isAtomicDietRecalculation(original, {
       ...original, food_items: '牛肉面约一碗', calories: 620,
-    })).toBe(false);
-    expect(isFoodOnlyDietCorrection({ ...original, alcohol_units: 1 }, {
+    }, '1')).toBe(true);
+    expect(isAtomicDietRecalculation(original, original, '1/5')).toBe(true);
+    expect(isAtomicDietRecalculation({ ...original, alcohol_units: 0 }, {
+      ...original, food_items: '牛肉面约一碗', alcohol_units: 0,
+    }, '1/5')).toBe(true);
+    expect(isAtomicDietRecalculation({ ...original, alcohol_units: 1 }, {
       ...original, food_items: '牛肉面约一碗', alcohol_units: 1,
-    })).toBe(false);
+    }, '1/5')).toBe(false);
   });
 });
 
@@ -628,13 +632,127 @@ describe('DietScreen capture deeplink', () => {
         food_items: '牛肉面约一碗',
         meal_type: 'dinner',
         expected_updated_at: '2026-09-20T12:00:00Z',
+        consumed_fraction: 1,
       },
-      expect.stringMatching(/^diet-recalc:42:/),
+      expect.any(String),
     );
     expect(dietService.updateDietRecord).not.toHaveBeenCalled();
   });
 
-  it('preserves explicitly revised nutrition instead of replacing it with a model estimate', async () => {
+  it('reopens a shared meal without the canonical suffix and recalculates an absolute 1/5 share', async () => {
+    const dietService = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    mockMeals.push({
+      id: 45, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '聚餐整桌菜（按实际食用1/3计）', calories: 330, protein: 15, carbs: 30, fat: 16,
+      alcohol_units: null, updated_at: '2026-09-20T12:00:00Z', image_url: null,
+    });
+    dietService.recalculateDietRecordNutrition.mockResolvedValueOnce({ id: 45 });
+
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getAllByLabelText('编辑')[0]);
+    await waitFor(() => expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+      initialRecord: expect.objectContaining({ food_items: '聚餐整桌菜' }),
+    })));
+    fireEvent.press(view.getByRole('button', { name: '我吃了 1/5' }));
+    await waitFor(() => expect(mockMealForm).toHaveBeenLastCalledWith(expect.objectContaining({
+      nutritionReadOnly: true,
+    })));
+    await act(async () => {
+      await mockMealForm.mock.lastCall?.[0].onSubmit({
+        record_date: todayStr(), meal_type: 'dinner', food_items: '聚餐整桌菜',
+        calories: 330, protein: 15, carbs: 30, fat: 16,
+      });
+    });
+
+    expect(dietService.recalculateDietRecordNutrition).toHaveBeenCalledWith(
+      45,
+      {
+        food_items: '聚餐整桌菜', meal_type: 'dinner',
+        expected_updated_at: '2026-09-20T12:00:00Z', consumed_fraction: 0.2,
+      },
+      expect.any(String),
+    );
+    expect(dietService.updateDietRecord).not.toHaveBeenCalled();
+  });
+
+  it('keeps an invalid shared portion in the editor without issuing a write', async () => {
+    const dietService = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockMeals.push({
+      id: 46, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '聚餐整桌菜', calories: 1000, protein: 50, carbs: 100, fat: 40,
+      alcohol_units: null, updated_at: '2026-09-20T12:00:00Z', image_url: null,
+    });
+
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getAllByLabelText('编辑')[0]);
+    fireEvent.changeText(view.getByLabelText('自定义食用份额'), '120%');
+    await act(async () => {
+      await mockMealForm.mock.lastCall?.[0].onSubmit({
+        record_date: todayStr(), meal_type: 'dinner', food_items: '聚餐整桌菜',
+        calories: 1000, protein: 50, carbs: 100, fat: 40,
+      });
+    });
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      '份额格式不正确', '请输入大于 0、不超过 100% 的份额，例如 1/5。',
+    );
+    expect(dietService.recalculateDietRecordNutrition).not.toHaveBeenCalled();
+    expect(dietService.updateDietRecord).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('locks a standalone recalculation, blocks double submit, and reuses its key after failure', async () => {
+    const dietService = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    let rejectFirst!: (reason?: unknown) => void;
+    const firstRequest = new Promise((_resolve, reject) => { rejectFirst = reject; });
+    dietService.recalculateDietRecordNutrition
+      .mockReturnValueOnce(firstRequest)
+      .mockResolvedValueOnce({ id: 48 });
+    mockMeals.push({
+      id: 48, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '聚餐整桌菜', calories: 1000, protein: 50, carbs: 100, fat: 40,
+      alcohol_units: 0, updated_at: '2026-09-20T12:00:00Z', image_url: null,
+    });
+
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getAllByLabelText('编辑')[0]);
+    fireEvent.press(view.getByRole('button', { name: '我吃了 1/5' }));
+    const record = {
+      record_date: todayStr(), meal_type: 'dinner', food_items: '聚餐整桌菜',
+      calories: 1000, protein: 50, carbs: 100, fat: 40, alcohol_units: 0,
+    };
+    let firstSave!: Promise<void>;
+    act(() => {
+      firstSave = mockMealForm.mock.lastCall?.[0].onSubmit(record);
+      void mockMealForm.mock.lastCall?.[0].onSubmit(record);
+    });
+    await waitFor(() => {
+      expect(dietService.recalculateDietRecordNutrition).toHaveBeenCalledTimes(1);
+      expect(mockMealForm.mock.lastCall?.[0].saving).toBe(true);
+      expect(view.getByLabelText('自定义食用份额')).toBeDisabled();
+    });
+    const firstKey = dietService.recalculateDietRecordNutrition.mock.calls[0][2];
+    await act(async () => {
+      rejectFirst(new Error('network'));
+      await firstSave;
+    });
+    expect(mockMealForm.mock.lastCall?.[0].saving).toBe(false);
+    expect(view.getByDisplayValue('1/5')).toBeTruthy();
+
+    await act(async () => {
+      await mockMealForm.mock.lastCall?.[0].onSubmit(record);
+    });
+    expect(dietService.recalculateDietRecordNutrition).toHaveBeenCalledTimes(2);
+    expect(dietService.recalculateDietRecordNutrition.mock.calls[1][2]).toBe(firstKey);
+    alertSpy.mockRestore();
+  });
+
+  it('preserves explicit nutrition edits when the food and portion did not change', async () => {
     const dietService = require('../../services/diet');
     const { todayStr } = jest.requireActual('../../utils/dietDate');
     mockMeals.push({
@@ -648,14 +766,43 @@ describe('DietScreen capture deeplink', () => {
     fireEvent.press(view.getByLabelText('编辑'));
     await act(async () => {
       await mockMealForm.mock.lastCall?.[0].onSubmit({
-        record_date: todayStr(), meal_type: 'dinner', food_items: '牛肉面约一碗',
+        record_date: todayStr(), meal_type: 'dinner', food_items: '一碗汤',
         calories: 620, protein: 3, carbs: 9, fat: 2,
       });
     });
 
     expect(dietService.updateDietRecord).toHaveBeenCalledWith(43, expect.objectContaining({
-      food_items: '牛肉面约一碗', calories: 620,
+      calories: 620,
     }));
+    expect(dietService.updateDietRecord.mock.calls[0][1]).not.toHaveProperty('food_items');
+    expect(dietService.recalculateDietRecordNutrition).not.toHaveBeenCalled();
+  });
+
+  it('does not drop an existing portion suffix during a manual nutrition-only edit', async () => {
+    const dietService = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    mockMeals.push({
+      id: 47, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '聚餐整桌菜（按实际食用1/5计）', calories: 200, protein: 10, carbs: 20, fat: 8,
+      alcohol_units: null, updated_at: '2026-09-20T12:00:00Z', image_url: null,
+    });
+    dietService.updateDietRecord.mockResolvedValueOnce({ id: 47 });
+
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getAllByLabelText('编辑')[0]);
+    await act(async () => {
+      await mockMealForm.mock.lastCall?.[0].onSubmit({
+        record_date: todayStr(), meal_type: 'dinner', food_items: '聚餐整桌菜',
+        calories: 210, protein: 10, carbs: 20, fat: 8,
+      });
+    });
+
+    expect(dietService.updateDietRecord).toHaveBeenCalledWith(47, {
+      calories: 210,
+      source: 'user_corrected', ai_recognized: 0, ai_confidence: null,
+      ai_raw_result: null, health_tips: null,
+      expected_updated_at: '2026-09-20T12:00:00Z',
+    });
     expect(dietService.recalculateDietRecordNutrition).not.toHaveBeenCalled();
   });
 
