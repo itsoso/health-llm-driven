@@ -658,6 +658,149 @@ async def test_record_turn_routes_to_fast_model(db, auth_user_and_headers, monke
 
 
 @pytest.mark.asyncio
+async def test_web_stream_executes_space_delimited_supplement_batch(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executed = []
+    real_health_tools = ae.get_health_tools()
+
+    _stub_registry_fast(monkeypatch)
+    _wire_common(executor, monkeypatch, lambda model_id: _FakeProvider(model_id))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **kwargs: _FakeProvider("qwen3.7-plus"),
+    )
+    monkeypatch.setattr(
+        ae,
+        "get_health_tools",
+        lambda subset=None: [
+            tool
+            for tool in real_health_tools
+            if (tool.get("function") or {}).get("name") == "health_record"
+        ],
+    )
+
+    async def fake_dispatch_tool_request(request, user_token):  # noqa: ARG001
+        executed.append((request.tool_name, request.arguments))
+        items = request.arguments["data"]["items"]
+        return json.dumps({
+            "success": True,
+            "resource_type": "supplement_log",
+            "resource_id": "901",
+            "record_id": 901,
+            "record_ids": [901, 902, 903],
+            "items": items,
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        executor,
+        "_dispatch_tool_request",
+        fake_dispatch_tool_request,
+    )
+    events = await _run(
+        executor,
+        "打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        user_id=user.id,
+    )
+    done = events[-1]["data"]
+
+    assert executed == [("health_record", {
+        "record_type": "supplement",
+        "data": {"items": [
+            {"supplement_name": "Mitoq", "dosage": "2粒"},
+            {"supplement_name": "叶酸", "dosage": "1粒"},
+            {"supplement_name": "NAC", "dosage": "1粒"},
+        ]},
+    })]
+    assert done["record_intent_no_tool"] is False
+    assert done["tools_used"] == ["health_record"]
+    assert len(done["write_receipts"]) == 1
+    assert all(receipt["verified"] is True for receipt in done["write_receipts"])
+
+
+@pytest.mark.asyncio
+async def test_web_stream_replaces_partial_model_supplement_batch(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    class PartialProvider(_FakeProvider):
+        async def chat_stream(self, **kwargs):  # noqa: ARG002
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": "partial-supplement-call",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "supplement",
+                            "data": {
+                                "supplement_name": "Mitoq",
+                                "dosage": "2粒",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executed = []
+    real_health_tools = ae.get_health_tools()
+
+    _stub_registry_fast(monkeypatch)
+    _wire_common(executor, monkeypatch, lambda model_id: PartialProvider(model_id))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **kwargs: PartialProvider("qwen3.7-plus"),
+    )
+    monkeypatch.setattr(
+        ae,
+        "get_health_tools",
+        lambda subset=None: [
+            tool
+            for tool in real_health_tools
+            if (tool.get("function") or {}).get("name") == "health_record"
+        ],
+    )
+
+    async def fake_dispatch_tool_request(request, user_token):  # noqa: ARG001
+        executed.append(request.arguments["data"])
+        return json.dumps({
+            "success": True,
+            "resource_type": "supplement_log",
+            "resource_id": "951",
+            "record_id": 951,
+            "record_ids": [951, 952, 953],
+            "items": request.arguments["data"]["items"],
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        executor,
+        "_dispatch_tool_request",
+        fake_dispatch_tool_request,
+    )
+    events = await _run(
+        executor,
+        "记录补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        user_id=user.id,
+    )
+
+    assert executed == [{"items": [
+        {"supplement_name": "Mitoq", "dosage": "2粒"},
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]}]
+    assert len(events[-1]["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_simple_query_turn_routes_to_fast_model(db, auth_user_and_headers, monkeypatch):
     """(b) A simple query turn → fast model."""
     user, _ = auth_user_and_headers

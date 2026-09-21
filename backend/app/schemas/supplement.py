@@ -1,5 +1,5 @@
 """补剂管理 Schemas"""
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, List, Any, Dict
 from datetime import date, time, datetime
 from decimal import Decimal
@@ -117,6 +117,7 @@ class SupplementRecordBase(BaseModel):
     record_date: date
     taken: bool = False
     taken_time: Optional[time] = None
+    actual_dosage: Optional[str] = Field(default=None, max_length=40)
     notes: Optional[str] = None
 
 
@@ -128,6 +129,7 @@ class SupplementRecordCreate(SupplementRecordBase):
 class SupplementRecordUpdate(BaseModel):
     taken: Optional[bool] = None
     taken_time: Optional[time] = None
+    actual_dosage: Optional[str] = Field(default=None, max_length=40)
     notes: Optional[str] = None
 
 
@@ -145,6 +147,25 @@ class SupplementBatchCheckin(BaseModel):
     user_id: Optional[int] = None  # 可选，如果不提供则使用当前登录用户
     record_date: date
     checkins: List[dict]  # [{"supplement_id": 1, "taken": true}, ...]
+
+
+class SupplementIntakeBatchItem(BaseModel):
+    supplement_name: str = Field(min_length=1, max_length=80)
+    dosage: str = Field(min_length=1, max_length=40)
+
+    @field_validator("supplement_name", "dosage")
+    @classmethod
+    def strip_nonempty(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value must not be blank")
+        return stripped
+
+
+class SupplementIntakeBatchCreate(BaseModel):
+    record_date: date
+    taken_time: Optional[time] = None
+    items: List[SupplementIntakeBatchItem] = Field(min_length=2, max_length=64)
 
 
 # 带记录的补剂响应

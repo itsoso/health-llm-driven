@@ -8,10 +8,12 @@ from app.services.agent_executor import (
     _build_preplanned_simple_water_tool_call,
     _enrich_simple_diet_goal_tool_calls,
     _estimate_simple_diet_nutrition,
+    _merge_deterministic_supplement_batch,
     _normalize_goal_guarded_tool_calls,
     _should_replace_with_deterministic_supplement_calls,
     _simple_diet_nutrition_estimator_model_name,
     _simple_diet_nutrition_is_complete,
+    _supplement_name_is_grounded_in_current_turn,
     _write_operation_fingerprint,
 )
 from app.services.agent_kernel.types import GoalSpec
@@ -32,6 +34,15 @@ def _tool_call(
             "arguments": json.dumps(arguments, ensure_ascii=False),
         },
     }
+
+
+def _supplement_plan_items(calls: list[dict]) -> list[dict]:
+    """Return item payloads from either a single or atomic batch plan."""
+    if len(calls) == 1:
+        data = json.loads(calls[0]["function"]["arguments"]).get("data", {})
+        if isinstance(data.get("items"), list):
+            return data["items"]
+    return [json.loads(call["function"]["arguments"])["data"] for call in calls]
 
 
 @pytest.mark.parametrize("unit", ("滴", "颗", "喷", "粒", "未知单位"))
@@ -561,11 +572,16 @@ def test_explicit_multiple_supplements_build_deterministic_calls():
         write_receipts=[],
     )
 
-    assert [
-        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
-        for call in calls
-    ] == ["甘氨酸镁", "褪黑素"]
+    assert [item["supplement_name"] for item in _supplement_plan_items(calls)] == [
+        "甘氨酸镁",
+        "褪黑素",
+    ]
     assert all(call["function"]["name"] == "health_record" for call in calls)
+    assert len(calls) == 2
+    assert all(
+        "items" not in json.loads(call["function"]["arguments"])["data"]
+        for call in calls
+    )
 
 
 @pytest.mark.parametrize(
@@ -678,10 +694,11 @@ def test_supplement_label_colon_builds_clean_deterministic_calls():
         write_receipts=[],
     )
 
-    assert [
-        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
-        for call in calls
-    ] == ["营养素甲", "营养素乙", "营养素丙"]
+    assert [item["supplement_name"] for item in _supplement_plan_items(calls)] == [
+        "营养素甲",
+        "营养素乙",
+        "营养素丙",
+    ]
 
 
 def test_supplement_label_colon_accepts_compact_vitamin_and_acronym_names():
@@ -690,10 +707,252 @@ def test_supplement_label_colon_accepts_compact_vitamin_and_acronym_names():
         write_receipts=[],
     )
 
-    assert [
-        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
-        for call in calls
-    ] == ["复合维B", "PQQ", "MNAC"]
+    assert [item["supplement_name"] for item in _supplement_plan_items(calls)] == [
+        "复合维B",
+        "PQQ",
+        "MNAC",
+    ]
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "请打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "帮我打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "麻烦打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "请帮我打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "麻烦你打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "可以帮我打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "我想打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "今天打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "我要打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "给我打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "好，打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "嗯，打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "另外请打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+    ),
+)
+def test_supplement_label_colon_maps_space_delimited_doses_to_each_item(message):
+    calls = _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    )
+
+    assert _supplement_plan_items(calls) == [
+        {"supplement_name": "Mitoq", "dosage": "2粒"},
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
+    assert all(
+        _supplement_name_is_grounded_in_current_turn(name, message)
+        for name in ("Mitoq", "叶酸", "NAC")
+    )
+    assert not _supplement_name_is_grounded_in_current_turn(
+        "Mitoq 叶酸 NAC",
+        message,
+    )
+
+
+def test_supplement_label_colon_maps_name_first_doses_to_each_item():
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "打卡补剂：Mitoq 2粒，叶酸1粒，NAC1粒",
+        write_receipts=[],
+    )
+
+    assert _supplement_plan_items(calls) == [
+        {"supplement_name": "Mitoq", "dosage": "2粒"},
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
+
+
+@pytest.mark.parametrize("separator", ["，", "、", ","])
+def test_supplement_label_maps_name_first_batches_with_common_separators(separator):
+    calls = _build_deterministic_supplement_record_tool_calls(
+        f"打卡补剂：Mitoq 2粒{separator}叶酸1粒{separator}NAC1粒",
+        write_receipts=[],
+    )
+
+    assert _supplement_plan_items(calls) == [
+        {"supplement_name": "Mitoq", "dosage": "2粒"},
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
+
+
+def test_supplement_label_maps_chinese_number_dose_prefix_batch():
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "打卡补剂：两粒鱼油 一粒NAC",
+        write_receipts=[],
+    )
+
+    assert _supplement_plan_items(calls) == [
+        {"supplement_name": "鱼油", "dosage": "2粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
+
+
+def test_supplement_label_maps_compound_chinese_number_dose_prefix_batch():
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "打卡补剂：十二粒鱼油 二十一粒NAC",
+        write_receipts=[],
+    )
+
+    assert _supplement_plan_items(calls) == [
+        {"supplement_name": "鱼油", "dosage": "12粒"},
+        {"supplement_name": "NAC", "dosage": "21粒"},
+    ]
+
+
+def test_supplement_batch_rejects_colliding_normalized_names_atomically():
+    assert _build_deterministic_supplement_record_tool_calls(
+        "打卡补剂：1粒A-B 2粒AB",
+        write_receipts=[],
+    ) == []
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录补剂：2粒Mitoq 1粒叶酸 明天1粒NAC",
+        "打卡补剂：2粒Mitoq 不要1粒叶酸 1粒NAC",
+        "记录补剂：2粒Mitoq 1粒叶酸 1粒NAC吗？",
+        "打卡补剂：1粒维生素D 2粒维生素C 晚上",
+        "打卡补剂：1粒Mitoq 2粒NAC 睡前",
+        "打卡补剂：0粒Mitoq 1粒NAC",
+        "打卡补剂：0粒Mitoq，1粒NAC",
+        "打卡补剂：半半粒Mitoq 1粒NAC",
+        "打卡补剂：半半粒Mitoq，1粒NAC",
+        "打卡补剂：2粒Mitoq 1粒",
+        "打卡补剂：2粒Mitoq，1粒",
+        "打卡补剂：两粒Mitoq 一粒",
+        "打卡补剂：，0粒Mitoq，1粒NAC",
+        "打卡补剂：：0粒Mitoq，1粒NAC",
+        "记录补剂：Mitoq 2粒。记录补剂：2粒NAC，1粒",
+        "打卡补剂：2粒Mitoq 1粒叶酸，鱼油",
+        "打卡补剂：2粒Mitoq 1粒叶酸、鱼油",
+        "打卡补剂：2粒Mitoq 1粒叶酸和鱼油",
+        "打卡补剂：2粒Mitoq 1粒叶酸以及鱼油",
+        "打卡补剂：「2粒Mitoq 1粒NAC」",
+        "明天打卡补剂：2粒Mitoq 1粒NAC",
+        "明天，打卡补剂：2粒Mitoq 1粒NAC",
+        "不要。打卡补剂：2粒Mitoq 1粒NAC",
+        "计划；打卡补剂：2粒Mitoq 1粒NAC",
+        "记录补剂的示例是：打卡补剂：2粒Mitoq 1粒NAC",
+        "记录体重的示例是：打卡补剂：2粒Mitoq 1粒NAC",
+        "记录补剂格式：打卡补剂：2粒Mitoq 1粒NAC",
+        "记录体重的演示：打卡补剂：2粒Mitoq 1粒NAC",
+        "记录体重的文案：打卡补剂：2粒Mitoq 1粒NAC",
+        "记录体重的示范：打卡补剂：2粒Mitoq 1粒NAC",
+        "记录饮水的示范：打卡补剂：2粒Mitoq 1粒NAC",
+        "记录睡眠范例：打卡补剂：2粒Mitoq 1粒NAC",
+        "记录饮食DEMO：打卡补剂：2粒Mitoq 1粒NAC",
+        "记录睡眠fixture：打卡补剂：2粒Mitoq 1粒NAC",
+        "帮我写一句：打卡补剂：2粒Mitoq 1粒NAC",
+        "医生建议打卡补剂：2粒Mitoq 1粒NAC",
+    ),
+)
+def test_space_delimited_supplement_batch_rejects_noncurrent_items_atomically(message):
+    assert _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    ) == []
+
+
+def test_completing_supplement_batch_preserves_unrelated_tool_calls():
+    supplement_calls = _build_deterministic_supplement_record_tool_calls(
+        "记录体重70kg，然后打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        write_receipts=[],
+    )
+    weight_call = _tool_call(
+        "weight-call",
+        {"record_type": "weight", "data": {"weight": 70}},
+    )
+    partial_supplement_call = _tool_call(
+        "partial-supplement-call",
+        {
+            "record_type": "supplement",
+            "data": {"supplement_name": "Mitoq", "dosage": "2粒"},
+        },
+    )
+
+    merged = _merge_deterministic_supplement_batch(
+        [weight_call, partial_supplement_call],
+        supplement_calls,
+    )
+
+    assert merged[0] == weight_call
+    assert _supplement_plan_items(merged[1:]) == [
+        {"supplement_name": "Mitoq", "dosage": "2粒"},
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_name"),
+    (
+        ("打卡补剂：1粒和胃整肠丸 1粒NAC", "和胃整肠丸"),
+        ("打卡补剂：1粒和润益生菌 1粒NAC", "和润益生菌"),
+        ("打卡补剂：1粒及善鱼油 1粒NAC", "及善鱼油"),
+    ),
+)
+def test_dose_prefix_batch_preserves_conjunction_like_name_prefixes(
+    message,
+    expected_name,
+):
+    calls = _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    )
+
+    assert _supplement_plan_items(calls)[0] == {
+        "supplement_name": expected_name,
+        "dosage": "1粒",
+    }
+
+
+@pytest.mark.parametrize("label", ("记录补剂", "打卡补剂"))
+def test_dose_prefix_batch_unwraps_explicitly_quoted_names(label):
+    calls = _build_deterministic_supplement_record_tool_calls(
+        f"{label}：2粒「长效复合维生素品牌」 1粒NAC",
+        write_receipts=[],
+    )
+
+    assert _supplement_plan_items(calls) == [
+        {"supplement_name": "长效复合维生素品牌", "dosage": "2粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "quoted_name",
+    ("钙镁锌和维生素D片", "Calcium, Magnesium", "和胃整肠丸"),
+)
+def test_dose_prefix_batch_keeps_separators_inside_quoted_name(quoted_name):
+    calls = _build_deterministic_supplement_record_tool_calls(
+        f"打卡补剂：1粒「{quoted_name}」 1粒NAC",
+        write_receipts=[],
+    )
+
+    assert _supplement_plan_items(calls) == [
+        {"supplement_name": quoted_name, "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
+
+
+def test_dose_prefix_batch_preserves_decimal_dosage():
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "打卡补剂：1.5ml红参液 1粒NAC",
+        write_receipts=[],
+    )
+
+    assert _supplement_plan_items(calls) == [
+        {"supplement_name": "红参液", "dosage": "1.5ml"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
 
 
 def test_supplement_label_colon_rejects_mixed_authority_batch_atomically():
@@ -744,10 +1003,7 @@ def test_supplement_label_colon_does_not_build_noncurrent_actions(
         write_receipts=[],
     )
 
-    assert [
-        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
-        for call in calls
-    ] == expected_names
+    assert [item["supplement_name"] for item in _supplement_plan_items(calls)] == expected_names
 
 
 @pytest.mark.parametrize(
@@ -764,10 +1020,7 @@ def test_supplement_label_colon_deterministic_calls_stay_clause_local(message):
         write_receipts=[],
     )
 
-    assert [
-        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
-        for call in calls
-    ] == ["鱼油"]
+    assert [item["supplement_name"] for item in _supplement_plan_items(calls)] == ["鱼油"]
 
 
 def test_contextual_all_supplements_builds_only_owner_authorized_calls():
@@ -777,10 +1030,15 @@ def test_contextual_all_supplements_builds_only_owner_authorized_calls():
         write_receipts=[],
     )
 
-    assert [
-        json.loads(call["function"]["arguments"])["data"]["supplement_name"]
+    assert [item["supplement_name"] for item in _supplement_plan_items(calls)] == [
+        "NOW Melatonin 3mg",
+        "甘氨酸镁",
+    ]
+    assert len(calls) == 2
+    assert all(
+        "items" not in json.loads(call["function"]["arguments"])["data"]
         for call in calls
-    ] == ["NOW Melatonin 3mg", "甘氨酸镁"]
+    )
     assert _build_deterministic_supplement_record_tool_calls(
         "全部已服用",
         contextual_supplement_names=(),

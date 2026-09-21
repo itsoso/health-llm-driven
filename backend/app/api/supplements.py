@@ -1,5 +1,6 @@
 """补剂管理 API"""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional, Dict, Any
@@ -17,6 +18,7 @@ from app.schemas.supplement import (
     SupplementRecordUpdate,
     SupplementRecordResponse,
     SupplementBatchCheckin,
+    SupplementIntakeBatchCreate,
     SupplementWithRecord,
     FrequentSupplement,
 )
@@ -37,6 +39,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _normalized_supplement_name(value: str) -> str:
+    """Match the agent gateway's punctuation-insensitive supplement identity."""
+    import re
+
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", value.casefold())
 
 
 def _invalidate_twin(user_id: int) -> None:
@@ -252,6 +261,134 @@ def batch_checkin(
     db.commit()
     _invalidate_twin(user_id)
     return {"message": "批量打卡成功", "results": results}
+
+
+@router.post("/records/intake-batch")
+def record_supplement_intake_batch(
+    batch: SupplementIntakeBatchCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Atomically persist one explicit multi-supplement intake.
+
+    Definition dosage is the user's usual regimen. ``actual_dosage`` belongs to
+    this dated intake and may differ without mutating that regimen. Every target
+    is resolved before the first write, then definitions and records commit in a
+    single transaction so a bad sibling cannot leave a partial batch.
+    """
+    user_id = current_user.id
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        # Serialize this user's supplement batch resolution. This closes the
+        # read-before-create race without claiming support for a client
+        # idempotency key that is not persisted server-side.
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:namespace, :user_id)"),
+            {"namespace": 1398100048, "user_id": user_id},
+        )
+    normalized_items: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for item in batch.items:
+        normalized = _normalized_supplement_name(item.supplement_name)
+        if not normalized or normalized in seen:
+            raise HTTPException(status_code=400, detail="补剂名称重复或无效")
+        seen.add(normalized)
+        normalized_items.append((normalized, item.supplement_name, item.dosage))
+
+    active_definitions = db.query(SupplementDefinition).filter(
+        SupplementDefinition.user_id == user_id,
+        SupplementDefinition.is_active.is_(True),
+    ).all()
+    by_normalized: dict[str, list[SupplementDefinition]] = {}
+    for definition in active_definitions:
+        key = _normalized_supplement_name(definition.name)
+        by_normalized.setdefault(key, []).append(definition)
+
+    resolved: list[tuple[SupplementDefinition, str, str]] = []
+    for normalized, name, dosage in normalized_items:
+        exact = by_normalized.get(normalized, [])
+        if len(exact) > 1:
+            raise HTTPException(status_code=409, detail=f"补剂「{name}」存在重复定义")
+        if exact:
+            resolved.append((exact[0], name, dosage))
+            continue
+        containing = [
+            definition
+            for key, definitions in by_normalized.items()
+            if key and (normalized in key or key in normalized)
+            for definition in definitions
+        ]
+        if containing:
+            raise HTTPException(status_code=409, detail=f"补剂「{name}」与已有定义相似")
+        definition = SupplementDefinition(
+            user_id=user_id,
+            name=name,
+            dosage=dosage,
+            is_active=True,
+        )
+        resolved.append((definition, name, dosage))
+
+    try:
+        for definition, _name, _dosage in resolved:
+            if definition.id is None:
+                db.add(definition)
+        db.flush()
+
+        records: list[SupplementRecord] = []
+        for definition, _name, dosage in resolved:
+            record = db.query(SupplementRecord).filter(
+                SupplementRecord.user_id == user_id,
+                SupplementRecord.supplement_id == definition.id,
+                SupplementRecord.record_date == batch.record_date,
+            ).first()
+            if record is None:
+                record = SupplementRecord(
+                    supplement_id=definition.id,
+                    user_id=user_id,
+                    record_date=batch.record_date,
+                )
+                db.add(record)
+            record.taken = True
+            record.taken_time = batch.taken_time
+            record.actual_dosage = dosage
+            records.append(record)
+        db.flush()
+        record_ids = [record.id for record in records]
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="补剂批量打卡发生并发冲突，请安全重试",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+    _invalidate_twin(user_id)
+    operation_id = f"supplement-batch:{batch.record_date}:{'-'.join(map(str, record_ids))}"
+    return {
+        "status": "recorded",
+        "success": True,
+        "resource_type": "supplement_log",
+        "resource_id": record_ids[0],
+        "record_id": record_ids[0],
+        "record_ids": record_ids,
+        "operation_id": operation_id,
+        "user_id": user_id,
+        "items": [
+            {
+                "supplement_name": name,
+                "dosage": dosage,
+                "supplement_definition_id": definition.id,
+                "record_id": record.id,
+            }
+            for (definition, name, dosage), record in zip(resolved, records)
+        ],
+        "message": "已原子记录 " + "、".join(
+            f"{name} {dosage}" for _definition, name, dosage in resolved
+        ),
+    }
 
 
 @router.get("/records/user/{user_id}/date/{record_date}", response_model=List[SupplementWithRecord])

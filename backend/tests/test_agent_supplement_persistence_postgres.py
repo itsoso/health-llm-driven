@@ -4,15 +4,26 @@ Only model output is scripted; intent policy, tool dispatch, API authorization,
 supplement creation/tap, receipt verification, and readback stay real.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 import json
+from threading import Barrier
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
+from sqlalchemy.orm import sessionmaker
 
+from app.api import nfc
+from app.api.supplements import record_supplement_intake_batch
 from app.models.daily_health import DietRecord
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.user import User
-from app.services.agent_executor import AgentExecutor, _write_receipt_from_tool_result
+from app.schemas.supplement import SupplementIntakeBatchCreate
+from app.services.agent_executor import (
+    AgentExecutor,
+    _build_deterministic_supplement_record_tool_calls,
+    _write_receipt_from_tool_result,
+)
 
 pytestmark = pytest.mark.usefixtures("consenting_agent_user")
 NAME = "营养素乙"
@@ -31,6 +42,7 @@ def supplement_transport(db, client, auth_user_and_headers, monkeypatch):
         assert request_headers["Authorization"] == headers["Authorization"]
         assert path in {"/api/v1/supplements/me/definitions",
                         "/api/v1/supplements/definitions", "/api/v1/nfc/tap",
+                        "/api/v1/supplements/records/intake-batch",
                         "/api/v1/diet/records"}
         requests.append((method, path))
         response = client.request(method, path, headers=request_headers, json=data)
@@ -117,6 +129,128 @@ async def test_explicit_supplement_stream_writes_owned_log_with_verified_receipt
     assert any(event.get("event") == "done" for event in replay)
     assert len(requests) == request_count
     assert db.query(SupplementRecord).filter_by(user_id=owner.id).count() == 1
+
+
+async def test_explicit_supplement_batch_is_one_atomic_postgres_write(
+    db, supplement_transport,
+):
+    executor, owner, headers, requests = supplement_transport
+    message = "打卡补剂：2粒Mitoq 1粒叶酸 十二粒NAC"
+    executor._current_user_id = owner.id
+    executor._current_turn_user_message = message
+    args = {
+        "record_type": "supplement",
+        "data": {"items": [
+            {"supplement_name": "Mitoq", "dosage": "2粒"},
+            {"supplement_name": "叶酸", "dosage": "1粒"},
+            {"supplement_name": "NAC", "dosage": "12粒"},
+        ]},
+    }
+
+    result = await executor._execute_tool(
+        "health_record",
+        args,
+        headers["Authorization"].removeprefix("Bearer "),
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "recorded"
+    assert [(item["supplement_name"], item["dosage"]) for item in payload["items"]] == [
+        ("Mitoq", "2粒"),
+        ("叶酸", "1粒"),
+        ("NAC", "12粒"),
+    ]
+    assert requests == [("POST", "/api/v1/supplements/records/intake-batch")]
+    definitions = db.query(SupplementDefinition).filter_by(user_id=owner.id).order_by(
+        SupplementDefinition.id
+    ).all()
+    records = db.query(SupplementRecord).filter_by(user_id=owner.id).order_by(
+        SupplementRecord.id
+    ).all()
+    assert [definition.name for definition in definitions] == ["Mitoq", "叶酸", "NAC"]
+    assert [record.actual_dosage for record in records] == ["2粒", "1粒", "12粒"]
+    assert payload["record_ids"] == [record.id for record in records]
+
+
+@pytest.mark.parametrize(
+    ("message", "contextual_names"),
+    (
+        ("记录下来，吃了一粒甘氨酸镁和一粒褪黑素。", ()),
+        ("全部已服用", ("鱼油", "NAC")),
+    ),
+)
+async def test_legacy_multi_supplement_flows_keep_real_postgres_writes(
+    db,
+    supplement_transport,
+    message,
+    contextual_names,
+):
+    executor, owner, headers, requests = supplement_transport
+    executor._current_user_id = owner.id
+    executor._current_turn_user_message = message
+    executor._turn_contextual_supplement_names = contextual_names
+    nfc._last_tap.clear()
+    calls = _build_deterministic_supplement_record_tool_calls(
+        message,
+        contextual_supplement_names=contextual_names,
+        write_receipts=[],
+    )
+
+    assert len(calls) == 2
+    for call in calls:
+        args = json.loads(call["function"]["arguments"])
+        result = await executor._execute_tool(
+            "health_record",
+            args,
+            headers["Authorization"].removeprefix("Bearer "),
+        )
+        assert _write_receipt_from_tool_result("health_record", args, result)
+
+    assert db.query(SupplementDefinition).filter_by(user_id=owner.id).count() == 2
+    assert db.query(SupplementRecord).filter_by(user_id=owner.id).count() == 2
+    assert sum(path.endswith("/tap") for _method, path in requests) == 2
+
+
+def test_concurrent_same_user_batch_retries_share_postgres_rows(
+    db,
+    auth_user_and_headers,
+):
+    if db.get_bind().dialect.name != "postgresql":
+        pytest.skip("requires TEST_DATABASE_URL PostgreSQL")
+    owner, _headers = auth_user_and_headers
+    owner_id = owner.id
+    db.commit()
+    sessions = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+    barrier = Barrier(2)
+    batch = SupplementIntakeBatchCreate(
+        record_date="2026-09-21",
+        items=[
+            {"supplement_name": "Mitoq", "dosage": "2粒"},
+            {"supplement_name": "叶酸", "dosage": "1粒"},
+            {"supplement_name": "NAC", "dosage": "1粒"},
+        ],
+    )
+
+    def write_batch():
+        worker_db = sessions()
+        try:
+            barrier.wait(timeout=5)
+            result = record_supplement_intake_batch(
+                batch,
+                current_user=SimpleNamespace(id=owner_id),
+                db=worker_db,
+            )
+            return result["record_ids"]
+        finally:
+            worker_db.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        record_ids = list(pool.map(lambda _index: write_batch(), range(2)))
+
+    db.expire_all()
+    assert record_ids[0] == record_ids[1]
+    assert db.query(SupplementDefinition).filter_by(user_id=owner_id).count() == 3
+    assert db.query(SupplementRecord).filter_by(user_id=owner_id).count() == 3
 
 
 @pytest.mark.parametrize("message,args", [

@@ -489,7 +489,7 @@ _SUPPLEMENT_NAME_EVIDENCE_RE = re.compile(
     r"|辅酶[A-Za-z0-9]{1,8}"
     r"|益生菌[\u4e00-\u9fffA-Za-z0-9]{0,8})"
     r"|.+(?:素|镁|锌|钙|铁|硒|油|液|粉|丸|片|胶囊|酸|肽|酶|菌)"
-    r"|(?:PQQ|NAC|NMN|Q10)",
+    r"|(?:MitoQ|PQQ|NAC|NMN|Q10)",
     re.IGNORECASE,
 )
 _SUPPLEMENT_ACRONYM_NAME_RE = re.compile(r"[A-Z][A-Z0-9-]{1,7}")
@@ -622,10 +622,14 @@ _SUPPLEMENT_NONCURRENT_TIME_RE = re.compile(
     r"过\s*(?:\d+|[一二两三四五六七八九十半]+)\s*"
     r"(?:分钟|小时|天|周|个月|月|年))"
 )
-_SUPPLEMENT_LABEL_SEGMENT_BOUNDARY_RE = re.compile(r"[;；。.!！?？\r\n]+")
-_SUPPLEMENT_LABEL_ACTION_RE = re.compile(r"记录补剂\s*(?P<colon>[:：])?")
+_SUPPLEMENT_LABEL_SEGMENT_BOUNDARY_RE = re.compile(
+    r"(?:[;；。!！?？\r\n]+|(?<!\d)\.(?!\d))"
+)
+_SUPPLEMENT_LABEL_ACTION_RE = re.compile(
+    r"(?:记录|打卡)补剂\s*(?P<colon>[:：])?"
+)
 _SUPPLEMENT_LABELED_QUESTION_RE = re.compile(
-    r"记录补剂\s*[:：][^?？\r\n]*[?？]"
+    r"(?:记录|打卡)补剂\s*[:：][^?？\r\n]*[?？]"
 )
 _MEDICATION_NAME_SUFFIX_RE = re.compile(
     r"(?:霉素|必利|瑞酮|二甲双胍|沙坦|普利|洛尔|他汀|唑仑|西泮)$"
@@ -2678,13 +2682,32 @@ def decide_tool_capability(
             and args.get("record_type") == "supplement"
         ):
             data = args.get("data") if isinstance(args.get("data"), dict) else {}
-            requested_name = _effective_argument_value(
-                args,
-                data,
-                data_keys=("supplement_name", "name"),
-                arg_keys=("supplement_name", "name"),
-            )
-            if supplement_dosage_requires_clarification(
+            requested_items = data.get("items")
+            if isinstance(requested_items, list):
+                if any(
+                    not isinstance(item, dict)
+                    or supplement_dosage_requires_clarification(
+                        snapshot.envelope.text,
+                        str(item.get("supplement_name") or ""),
+                    )
+                    for item in requested_items
+                ):
+                    return _decision(
+                        "block",
+                        "supplement_dosage_requires_clarification",
+                        tool_name,
+                        args,
+                        receipt_required=True,
+                    )
+                requested_name = ""
+            else:
+                requested_name = _effective_argument_value(
+                    args,
+                    data,
+                    data_keys=("supplement_name", "name"),
+                    arg_keys=("supplement_name", "name"),
+                )
+            if requested_name and supplement_dosage_requires_clarification(
                 snapshot.envelope.text,
                 str(requested_name or ""),
             ):
@@ -4142,21 +4165,91 @@ def _health_record_target_status(
                 else "mismatch"
             )
     if requested_type == "supplement" and re.search(
-        r"记录补剂\s*[:：]",
+        r"(?:记录|打卡)补剂\s*[:：]",
         str(snapshot.envelope.text or ""),
     ):
         data = args.get("data") if isinstance(args.get("data"), dict) else {}
+        requested_items = data.get("items")
+        dose_prefix_details = _explicit_labeled_supplement_dose_prefix_details(
+            snapshot.envelope.text
+        )
+        if isinstance(requested_items, list):
+            if len(requested_items) < 2 or len(requested_items) != len(dose_prefix_details):
+                return "mismatch"
+            canonical_items: list[dict[str, str]] = []
+            for requested_item, (canonical_name, canonical_dosage) in zip(
+                requested_items,
+                dose_prefix_details,
+            ):
+                if not isinstance(requested_item, dict):
+                    return "mismatch"
+                if _normalize_entity_name(requested_item.get("supplement_name")) != (
+                    _normalize_entity_name(canonical_name)
+                ):
+                    return "mismatch"
+                if normalize_supplement_dosage(requested_item.get("dosage")) != (
+                    normalize_supplement_dosage(canonical_dosage)
+                ):
+                    return "mismatch"
+                canonical_items.append({
+                    "supplement_name": canonical_name,
+                    "dosage": canonical_dosage,
+                })
+            args.clear()
+            args.update({
+                "record_type": "supplement",
+                "data": {"items": canonical_items},
+            })
+            return "match"
         requested_name = _effective_argument_value(
             args,
             data,
             data_keys=("supplement_name", "name"),
             arg_keys=("supplement_name", "name"),
         )
+        requested_normalized = _normalize_entity_name(requested_name)
+        if dose_prefix_details:
+            gateway_names = tuple(
+                re.sub(
+                    r"[^0-9a-z\u4e00-\u9fff]+",
+                    "",
+                    str(name or "").casefold(),
+                )
+                for name, _dosage in dose_prefix_details
+            )
+            if len(set(gateway_names)) != len(gateway_names):
+                return "mismatch"
+            exact_details = tuple(
+                (name, dosage)
+                for name, dosage in dose_prefix_details
+                if _normalize_entity_name(name) == requested_normalized
+            )
+            if len(exact_details) != 1:
+                return "mismatch"
+            canonical_name, dosage = exact_details[0]
+            default_date = snapshot.context.current_time.date().isoformat()
+            expected_values = {
+                "names": (canonical_name,),
+                "dosage": dosage,
+                "target_date": default_date,
+                "default_date": default_date,
+            }
+            return (
+                "mismatch"
+                if _target_values_mismatch(
+                    requested_type,
+                    expected_values,
+                    args,
+                )
+                else "match"
+            )
+        if _has_unseparated_supplement_dose_batch(snapshot.envelope.text):
+            return "mismatch"
         labeled_names = {
             _normalize_entity_name(name)
             for name in _explicit_labeled_supplement_targets(snapshot.envelope.text)
         }
-        if _normalize_entity_name(requested_name) not in labeled_names:
+        if requested_normalized not in labeled_names:
             return "mismatch"
     clauses = authorized_health_record_clauses(snapshot.envelope.text)
     if not clauses:
@@ -4611,6 +4704,27 @@ def _deterministic_target_values(
         if names:
             values["names"] = names
         has_non_authorizing_item = _supplement_clause_has_non_authorizing_item(clause)
+        per_item_dosage_sets: dict[str, set[str]] = {}
+        if not has_non_authorizing_item:
+            for item in re.split(r"[、，,]|(?:以及|和|与)", clause):
+                item_names = _named_item_targets(item, record_type)
+                item_doses = {
+                    _canonical_medication_dosage(match)
+                    for match in _SUPPLEMENT_DOSE_RE.finditer(item)
+                }
+                if len(item_names) == 1 and len(item_doses) == 1:
+                    per_item_dosage_sets.setdefault(item_names[0], set()).update(
+                        item_doses
+                    )
+        if (
+            names
+            and len(per_item_dosage_sets) == len(names)
+            and all(len(dosages) == 1 for dosages in per_item_dosage_sets.values())
+        ):
+            values["dosages"] = {
+                name: next(iter(dosages))
+                for name, dosages in per_item_dosage_sets.items()
+            }
         dosage_matches = tuple(_SUPPLEMENT_DOSE_RE.finditer(clause))
         canonical_dosages = {
             _canonical_medication_dosage(match) for match in dosage_matches
@@ -5206,6 +5320,346 @@ def _supplement_item_is_current_metadata(raw_item: str) -> bool:
     )
 
 
+def _supplement_label_prefix_is_authorizing(prefix: str) -> bool:
+    """Accept only harmless lead-ins or a separately authorized write clause."""
+    from app.services.utterance_intent_classifier import classify_agent_utterance
+    from app.services.write_intent_scope import (
+        _strip_direct_request_prefix,
+        authorized_health_record_clauses,
+    )
+
+    raw_normalized = unicodedata.normalize("NFKC", str(prefix or "")).strip()
+    if raw_normalized.endswith((":", "：")):
+        # A label immediately before the supplement command is descriptive
+        # or incomplete (for example ``记录睡眠示例：``), not a completed
+        # preceding health write that may lend authority to the next clause.
+        return False
+    normalized = raw_normalized
+    normalized = normalized.strip(" ，,。.!！?？；;：:")
+    if not normalized:
+        return True
+    request_prefix = re.sub(
+        r"^(?:(?:今天|今日|现在|刚才|刚刚)\s*)?",
+        "",
+        normalized,
+    )
+    if request_prefix in {"我", "我要"}:
+        return True
+    if re.fullmatch(
+        r"(?:好(?:的)?|嗯|另外|还有|对了|刚才忘了|漏了一个|补充一下|"
+        r"同时|也|继续)(?:请)?",
+        request_prefix,
+    ):
+        return True
+    if not _strip_direct_request_prefix(request_prefix).strip():
+        return True
+    if re.search(
+        r"(?:写一句|作为(?:一个)?示例|作为例子|示例|例句|范例|演示|"
+        r"文案|格式|复制|引用|转述|复述|说一句|展示|念一下|朗读|"
+        r"DEMO|fixture)",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return False
+    intent = classify_agent_utterance(normalized)
+    authority_clauses = authorized_health_record_clauses(normalized)
+    if not (intent.is_write and authority_clauses):
+        return False
+    concrete_authority_clauses: list[str] = []
+    for clause in authority_clauses:
+        clause_intent = classify_agent_utterance(clause)
+        clause_values = _deterministic_target_values(clause, clause_intent.domain)
+        if clause_intent.is_write and _authorization_target_complete(
+            clause_intent.domain,
+            clause_values,
+        ):
+            concrete_authority_clauses.append(clause)
+            continue
+        if re.search(
+            r"(?:记录|打卡)?(?:我的)?体重(?:的)?(?:数值|数据|值)?"
+            r"\s*(?:是|为|[:：])?\s*\d+(?:\.\d+)?\s*"
+            r"(?:kg|公斤|千克|斤)$",
+            str(clause or "").strip(),
+            re.IGNORECASE,
+        ):
+            concrete_authority_clauses.append(clause)
+    if not concrete_authority_clauses:
+        return False
+    # Remove the clauses that independently carry write authority, then allow
+    # only discourse connectors/direct-request helpers in the residue. This
+    # prevents a valid first write from lending authority across arbitrary
+    # metalinguistic text (translate, print, quote, describe, and so on).
+    residual = "".join(normalized.split())
+    for clause in concrete_authority_clauses:
+        compact_clause = "".join(str(clause or "").split())
+        if compact_clause:
+            residual = residual.replace(compact_clause, "", 1)
+    residual = residual.strip(" ，,。.!！?？；;：:")
+    for _ in range(8):
+        before = residual
+        residual = re.sub(
+            r"^(?:然后|再|并且|并|且|同时|接着|随后|顺便|另外|以及)",
+            "",
+            residual,
+        ).strip(" ，,。.!！?？；;：:")
+        residual = _strip_direct_request_prefix(residual).strip(
+            " ，,。.!！?？；;：:"
+        )
+        if residual == before:
+            break
+    if residual:
+        return False
+    deterministic_values = _deterministic_target_values(normalized, intent.domain)
+    if _authorization_target_complete(intent.domain, deterministic_values):
+        return True
+    # A compound request may retain a preceding metric write only when this
+    # narrow path can prove its concrete value. Generic classified writes such
+    # as ``记录睡眠 sample`` must never lend authority to supplement writes.
+    return bool(
+        re.search(
+            r"(?:记录|打卡)?(?:我的)?体重(?:的)?(?:数值|数据|值)?"
+            r"\s*(?:是|为|[:：])?\s*\d+(?:\.\d+)?\s*"
+            r"(?:kg|公斤|千克|斤)"
+            r"(?:\s*[，,]?\s*(?:然后|再|并且))?$",
+            normalized,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _explicit_labeled_supplement_dose_prefix_details(
+    message: str,
+) -> tuple[tuple[str, str], ...]:
+    """Parse an explicit labeled dose batch without guessing boundaries."""
+    from app.services.write_intent_scope import authorized_health_record_clauses
+
+    normalized = unicodedata.normalize("NFKC", str(message or ""))
+    if _SUPPLEMENT_LABELED_QUESTION_RE.search(normalized):
+        return ()
+    segments = _SUPPLEMENT_LABEL_SEGMENT_BOUNDARY_RE.split(normalized)
+    action_segment_indexes = tuple(
+        index
+        for index, segment in enumerate(segments)
+        if _SUPPLEMENT_LABEL_ACTION_RE.search(segment) is not None
+    )
+    if not action_segment_indexes:
+        return ()
+    if any(
+        segment.strip() and not _supplement_label_prefix_is_authorizing(segment)
+        for segment in segments[: action_segment_indexes[0]]
+    ):
+        return ()
+    if any(
+        segment.strip() and _SUPPLEMENT_LABEL_ACTION_RE.search(segment) is None
+        for segment in segments[1:]
+    ):
+        return ()
+
+    details: list[tuple[str, str]] = []
+    seen: dict[str, str] = {}
+    for segment in segments:
+        action_matches = tuple(_SUPPLEMENT_LABEL_ACTION_RE.finditer(segment))
+        if not action_matches:
+            continue
+        if not _supplement_label_prefix_is_authorizing(
+            segment[: action_matches[0].start()]
+        ):
+            return ()
+        for index, action_match in enumerate(action_matches):
+            if action_match.group("colon") is None:
+                return ()
+            end = (
+                action_matches[index + 1].start()
+                if index + 1 < len(action_matches)
+                else len(segment)
+            )
+            local_segment = segment[action_match.start() : end]
+            if (
+                not authorized_health_record_clauses(local_segment)
+                and not _supplement_label_prefix_is_authorizing(
+                    segment[: action_match.start()]
+                )
+            ):
+                return ()
+            candidate = segment[action_match.end() : end]
+            dosage_matches = tuple(_SUPPLEMENT_DOSE_RE.finditer(candidate))
+            if len(dosage_matches) < 2:
+                return ()
+            leading_name = candidate[: dosage_matches[0].start()].strip(
+                " ：:，,、"
+            )
+            if leading_name:
+                # Also support an explicit, separator-delimited ``name dose``
+                # batch. Requiring every item to end in exactly one dosage
+                # keeps the boundary deterministic and prevents an undosed
+                # sibling from being folded into the preceding name.
+                if not re.search(r"[、，,]", candidate):
+                    return ()
+                raw_items = tuple(
+                    item.strip()
+                    for item in re.split(r"[、，,]", candidate)
+                    if item.strip()
+                )
+                if len(raw_items) < 2:
+                    return ()
+                for raw_item in raw_items:
+                    item_doses = tuple(_SUPPLEMENT_DOSE_RE.finditer(raw_item))
+                    if len(item_doses) != 1:
+                        return ()
+                    dose_match = item_doses[0]
+                    if raw_item[dose_match.end() :].strip():
+                        return ()
+                    name = raw_item[: dose_match.start()].strip(
+                        "的了，,。.!！；;：: "
+                    )
+                    if (
+                        not name
+                        or _supplement_item_is_non_authorizing(
+                            raw_item,
+                            strict_current_action=True,
+                        )
+                        or _SUPPLEMENT_TIMING_RE.search(name)
+                        or not _supplement_item_has_name_evidence(name)
+                    ):
+                        return ()
+                    normalized_name = _normalize_entity_name(name)
+                    dosage = _canonical_medication_dosage(dose_match)
+                    raw_dosage_value = unicodedata.normalize(
+                        "NFKC", dose_match.group("value")
+                    )
+                    if (
+                        not re.fullmatch(r"\d+(?:\.\d+)?", raw_dosage_value)
+                        and _parse_small_chinese_number(raw_dosage_value) is None
+                        and raw_dosage_value != "半"
+                    ):
+                        return ()
+                    try:
+                        if Decimal(raw_dosage_value) <= 0:
+                            return ()
+                    except InvalidOperation:
+                        pass
+                    previous_dosage = seen.get(normalized_name)
+                    if previous_dosage is not None and previous_dosage != dosage:
+                        return ()
+                    if previous_dosage is None:
+                        seen[normalized_name] = dosage
+                        details.append((name, dosage))
+                continue
+            for dose_index, dose_match in enumerate(dosage_matches):
+                next_start = (
+                    dosage_matches[dose_index + 1].start()
+                    if dose_index + 1 < len(dosage_matches)
+                    else len(candidate)
+                )
+                raw_name = candidate[dose_match.end() : next_start]
+                raw_item = candidate[dose_match.start() : next_start]
+                if _supplement_item_is_non_authorizing(
+                    raw_item,
+                    strict_current_action=True,
+                ) or _SUPPLEMENT_TIMING_RE.search(raw_name):
+                    # This compact grammar binds only dosage + name.  Timing
+                    # residue is ambiguous (it may describe this or the next
+                    # item), so fail the whole batch closed instead of
+                    # persisting e.g. ``NAC 睡前`` as a new supplement name.
+                    return ()
+                name = re.sub(
+                    r"^(?:[、，,]\s*)+",
+                    "",
+                    raw_name,
+                )
+                name = re.sub(
+                    r"(?:\s*[、，,]|\s*(?:以及|和|与|及))+$",
+                    "",
+                    name,
+                ).strip("的了，,。.!！；;：: ")
+                quoted_match = _SUPPLEMENT_QUOTED_NAME_RE.fullmatch(name)
+                if quoted_match is not None:
+                    if not _supplement_item_has_name_evidence(name):
+                        return ()
+                    name = next(
+                        value
+                        for value in quoted_match.groups()
+                        if value is not None
+                    ).strip()
+                elif re.search(r"[、，,]|(?<=.)(?:以及|和|与|及)", name):
+                    # An unquoted separator means an undosed sibling may have
+                    # been folded into the preceding supplement name. Quoted
+                    # custom names remain an explicit disambiguation escape.
+                    return ()
+                elif not _supplement_item_has_name_evidence(name):
+                    return ()
+                if not name:
+                    return ()
+                normalized_name = _normalize_entity_name(name)
+                dosage = _canonical_medication_dosage(dose_match)
+                raw_dosage_value = unicodedata.normalize(
+                    "NFKC", dose_match.group("value")
+                )
+                if (
+                    not re.fullmatch(r"\d+(?:\.\d+)?", raw_dosage_value)
+                    and _parse_small_chinese_number(raw_dosage_value) is None
+                    and raw_dosage_value != "半"
+                ):
+                    return ()
+                try:
+                    if Decimal(raw_dosage_value) <= 0:
+                        return ()
+                except InvalidOperation:
+                    # Chinese-number doses are validated by the established
+                    # dosage grammar; only numeric zero needs this extra gate.
+                    pass
+                previous_dosage = seen.get(normalized_name)
+                if previous_dosage is not None and previous_dosage != dosage:
+                    return ()
+                if previous_dosage is None:
+                    seen[normalized_name] = dosage
+                    details.append((name, dosage))
+    return tuple(details)
+
+
+def _has_unseparated_supplement_dose_batch(message: str) -> bool:
+    """Detect any dose-prefix batch so parser failure cannot fall back partly."""
+    normalized = unicodedata.normalize("NFKC", str(message or ""))
+    for segment in _SUPPLEMENT_LABEL_SEGMENT_BOUNDARY_RE.split(normalized):
+        action_matches = tuple(_SUPPLEMENT_LABEL_ACTION_RE.finditer(segment))
+        for index, action_match in enumerate(action_matches):
+            if action_match.group("colon") is None:
+                continue
+            end = (
+                action_matches[index + 1].start()
+                if index + 1 < len(action_matches)
+                else len(segment)
+            )
+            candidate = segment[action_match.end() : end]
+            dosage_matches = tuple(_SUPPLEMENT_DOSE_RE.finditer(candidate))
+            if len(dosage_matches) < 2:
+                continue
+            leading = re.match(r"[\s、，,：:「『“\"【（(]*", candidate)
+            has_numeric_dose = any(
+                re.search(r"\d", match.group("value")) is not None
+                for match in dosage_matches
+            )
+            has_trailing_dose_without_name = not candidate[
+                dosage_matches[-1].end() :
+            ].strip(" ：:，,、")
+            is_dose_first = bool(
+                leading and dosage_matches[0].start() == leading.end()
+            )
+            is_separator_delimited_name_first = bool(
+                dosage_matches[0].start() > (leading.end() if leading else 0)
+                and re.search(r"[、，,]", candidate)
+            )
+            if (
+                (has_trailing_dose_without_name and is_dose_first)
+                or (
+                    has_numeric_dose
+                    and (is_dose_first or is_separator_delimited_name_first)
+                )
+            ):
+                return True
+    return False
+
+
 def _explicit_labeled_supplement_targets(message: str) -> tuple[str, ...]:
     """Return names from individually authorized ``记录补剂:`` segments."""
     from app.services.write_intent_scope import authorized_health_record_clauses
@@ -5215,6 +5669,18 @@ def _explicit_labeled_supplement_targets(message: str) -> tuple[str, ...]:
         return ()
     names: list[str] = []
     segments = _SUPPLEMENT_LABEL_SEGMENT_BOUNDARY_RE.split(normalized)
+    action_segment_indexes = tuple(
+        index
+        for index, segment in enumerate(segments)
+        if _SUPPLEMENT_LABEL_ACTION_RE.search(segment) is not None
+    )
+    if not action_segment_indexes:
+        return ()
+    if any(
+        segment.strip() and not _supplement_label_prefix_is_authorizing(segment)
+        for segment in segments[: action_segment_indexes[0]]
+    ):
+        return ()
     if any(
         segment.strip() and _SUPPLEMENT_LABEL_ACTION_RE.search(segment) is None
         for segment in segments[1:]
@@ -5224,6 +5690,10 @@ def _explicit_labeled_supplement_targets(message: str) -> tuple[str, ...]:
         action_matches = tuple(_SUPPLEMENT_LABEL_ACTION_RE.finditer(segment))
         if not action_matches or not authorized_health_record_clauses(segment):
             continue
+        if not _supplement_label_prefix_is_authorizing(
+            segment[: action_matches[0].start()]
+        ):
+            return ()
         for index, action_match in enumerate(action_matches):
             if action_match.group("colon") is None:
                 continue
@@ -5319,7 +5789,13 @@ def _medication_item_details(clause: str) -> dict[str, dict[str, str]]:
 
 def _canonical_medication_dosage(match: re.Match[str]) -> str:
     value = match.group("value")
-    value = _CHINESE_DOSE_NUMBERS.get(value, value)
+    if value == "半":
+        value = "0.5"
+    elif not re.fullmatch(r"\d+(?:\.\d+)?", value):
+        parsed = _parse_small_chinese_number(value)
+        value = str(parsed) if parsed is not None else value
+    else:
+        value = _CHINESE_DOSE_NUMBERS.get(value, value)
     unit = match.group("unit").lower()
     unit_aliases = {
         "毫克": "mg",
@@ -5731,6 +6207,10 @@ def _target_values_mismatch(
             elif normalized_requested_strength:
                 return True
         else:
+            expected_dosages = {
+                _normalize_entity_name(name): normalize_supplement_dosage(dosage)
+                for name, dosage in (expected.get("dosages") or {}).items()
+            }
             for field in ("dosage", "timing", "category", "description"):
                 requested_value = _effective_argument_value(
                     args,
@@ -5738,7 +6218,11 @@ def _target_values_mismatch(
                     data_keys=(field,),
                     arg_keys=(field,),
                 )
-                expected_value = expected.get(field)
+                expected_value = (
+                    expected_dosages.get(normalized_requested_name)
+                    if field == "dosage" and expected_dosages
+                    else expected.get(field)
+                )
                 if expected_value not in (None, "", []):
                     if field == "dosage":
                         matches = _normalize_medication_dosage(
@@ -6104,6 +6588,14 @@ def _project_authorized_dispatch_payload(
         return
 
     if record_type == "supplement":
+        requested_items = data.get("items")
+        if isinstance(requested_items, list):
+            args.clear()
+            args.update({
+                "record_type": record_type,
+                "data": {"items": requested_items},
+            })
+            return
         names = tuple(expected.get("names") or ())
         projected: dict[str, Any] = {}
         requested_name = _effective_argument_value(
@@ -6124,8 +6616,14 @@ def _project_authorized_dispatch_payload(
         if canonical_name:
             projected["supplement_name"] = canonical_name
         for field in ("dosage", "timing", "category", "description"):
-            if expected.get(field) not in (None, "", []):
-                projected[field] = expected[field]
+            expected_value = expected.get(field)
+            if field == "dosage" and canonical_name:
+                expected_value = (expected.get("dosages") or {}).get(
+                    canonical_name,
+                    expected_value,
+                )
+            if expected_value not in (None, "", []):
+                projected[field] = expected_value
         args.clear()
         args.update({"record_type": record_type, "data": projected})
         return
@@ -6385,8 +6883,14 @@ def normalize_supplement_dosage(value: Any) -> str:
         amount = Decimal(value_text).normalize()
     except InvalidOperation:
         return re.sub(r"\s+", "", text)
-    canonical = _canonical_medication_dosage(match)
-    unit = canonical.removeprefix(_CHINESE_DOSE_NUMBERS.get(match.group("value"), match.group("value")))
+    unit = match.group("unit").lower()
+    unit = {
+        "毫克": "mg",
+        "克": "g",
+        "毫升": "ml",
+        "μg": "mcg",
+        "ug": "mcg",
+    }.get(unit, unit)
     return f"{amount}{unit}"
 
 

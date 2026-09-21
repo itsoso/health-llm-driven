@@ -69,6 +69,142 @@ def test_explicit_named_supplement_keeps_existing_authority():
     assert decision.action == "allow"
 
 
+@pytest.mark.parametrize("name, dosage", [
+    ("Mitoq", "2粒"),
+    ("叶酸", "1粒"),
+    ("NAC", "1粒"),
+])
+def test_dose_prefix_batch_authorizes_each_exact_supplement(name, dosage):
+    decision = _decision(
+        "打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "supplement",
+        supplement_name=name,
+        dosage=dosage,
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": "supplement",
+        "data": {"supplement_name": name, "dosage": dosage},
+    }
+
+
+@pytest.mark.parametrize("name, dosage", [
+    ("Mitoq", "2粒"),
+    ("叶酸", "1粒"),
+    ("NAC", "1粒"),
+])
+def test_name_first_batch_authorizes_each_exact_supplement(name, dosage):
+    decision = _decision(
+        "打卡补剂：Mitoq 2粒，叶酸1粒，NAC1粒",
+        "supplement",
+        supplement_name=name,
+        dosage=dosage,
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize(("name", "dosage"), [("A-B", "1粒"), ("AB", "2粒")])
+def test_colliding_gateway_names_are_not_independently_authorized(name, dosage):
+    decision = _decision(
+        "打卡补剂：1粒A-B 2粒AB",
+        "supplement",
+        supplement_name=name,
+        dosage=dosage,
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize("prefix", [
+    "记录饮水300ml，然后",
+    "记录午餐吃了米饭，然后",
+])
+def test_concrete_non_weight_write_can_precede_supplement_batch(prefix):
+    decision = _decision(
+        f"{prefix}打卡补剂：2粒Mitoq 1粒NAC",
+        "supplement",
+        supplement_name="Mitoq",
+        dosage="2粒",
+    )
+
+    assert decision.action == "allow"
+
+
+@pytest.mark.parametrize("prefix", [
+    "记录饮水300ml，然后帮我写一句",
+    "记录午餐吃了米饭，然后把下面这句作为示例",
+])
+def test_preceding_write_does_not_authorize_metalinguistic_supplement_batch(prefix):
+    decision = _decision(
+        f"{prefix}打卡补剂：2粒Mitoq 1粒NAC",
+        "supplement",
+        supplement_name="Mitoq",
+        dosage="2粒",
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize("name, dosage", [
+    ("Mitoq", "1粒"),
+    ("虚构鱼油", "1粒"),
+])
+def test_dose_prefix_batch_rejects_unowned_name_or_dosage(name, dosage):
+    decision = _decision(
+        "记录补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        "supplement",
+        supplement_name=name,
+        dosage=dosage,
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "health_record_target_mismatch"
+
+
+@pytest.mark.parametrize("message", [
+    "明天打卡补剂：2粒Mitoq 1粒NAC",
+    "明天，打卡补剂：2粒Mitoq 1粒NAC",
+    "不要。打卡补剂：2粒Mitoq 1粒NAC",
+    "计划；打卡补剂：2粒Mitoq 1粒NAC",
+    "记录补剂的示例是：打卡补剂：2粒Mitoq 1粒NAC",
+    "记录体重的示例是：打卡补剂：2粒Mitoq 1粒NAC",
+    "记录补剂格式：打卡补剂：2粒Mitoq 1粒NAC",
+    "记录体重的演示：打卡补剂：2粒Mitoq 1粒NAC",
+    "记录体重的文案：打卡补剂：2粒Mitoq 1粒NAC",
+    "记录体重的示范：打卡补剂：2粒Mitoq 1粒NAC",
+    "记录饮水的示范：打卡补剂：2粒Mitoq 1粒NAC",
+    "记录睡眠范例：打卡补剂：2粒Mitoq 1粒NAC",
+    "记录饮食DEMO：打卡补剂：2粒Mitoq 1粒NAC",
+    "记录睡眠fixture：打卡补剂：2粒Mitoq 1粒NAC",
+    "帮我写一句：打卡补剂：2粒Mitoq 1粒NAC",
+    "医生建议打卡补剂：2粒Mitoq 1粒NAC",
+    "给妈妈打卡补剂：2粒Mitoq 1粒NAC",
+    "打卡补剂：0粒Mitoq 1粒NAC",
+    "打卡补剂：0粒Mitoq，1粒NAC",
+    "打卡补剂：半半粒Mitoq，1粒NAC",
+    "打卡补剂：2粒Mitoq，1粒",
+    "打卡补剂：两粒Mitoq 一粒",
+    "打卡补剂：，0粒Mitoq，1粒NAC",
+    "打卡补剂：：0粒Mitoq，1粒NAC",
+    "记录补剂：Mitoq 2粒。记录补剂：2粒NAC，1粒",
+    "打卡补剂：2粒Mitoq 1粒叶酸，鱼油",
+    "打卡补剂：2粒Mitoq 1粒叶酸、鱼油",
+    "打卡补剂：2粒Mitoq 1粒叶酸和鱼油",
+    "打卡补剂：2粒Mitoq 1粒叶酸以及鱼油",
+])
+def test_dose_prefix_batch_rejects_unowned_or_non_consumed_actions(message):
+    decision = _decision(
+        message,
+        "supplement",
+        supplement_name="Mitoq",
+        dosage="2粒",
+    )
+
+    assert decision.action == "block"
+
+
 @pytest.mark.parametrize("message, data", [
     ("记录补剂：营养素甲", {}),
     ("记录补剂：营养素甲两粒和营养素甲2粒", {"dosage": "2粒"}),

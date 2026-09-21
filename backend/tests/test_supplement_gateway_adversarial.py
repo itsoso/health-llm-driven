@@ -71,6 +71,57 @@ async def _execute(
     return calls, result, receipt
 
 
+async def _execute_batch(db, *, response):
+    calls = []
+    items = [
+        {"supplement_name": "Mitoq", "dosage": "2粒"},
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
+
+    def respond(request):
+        calls.append((request.method, request.url.path))
+        return httpx.Response(200, json=response)
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录补剂：2粒Mitoq 1粒叶酸 1粒NAC"
+    args = {"record_type": "supplement", "data": {"items": items}}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        executor._http_client = client
+        result = await executor._execute_tool(
+            "health_record",
+            args,
+            "synthetic-token",
+        )
+    return calls, json.loads(result), _write_receipt_from_tool_result(
+        "health_record",
+        args,
+        result,
+    )
+
+
+async def test_unverified_atomic_batch_names_every_failed_item(db):
+    calls, result, receipt = await _execute_batch(
+        db,
+        response={"status": "recorded", "record_ids": [101, 102]},
+    )
+
+    assert calls == [("POST", "/api/v1/supplements/records/intake-batch")]
+    assert receipt is None
+    assert result["atomic"] is True
+    assert result["items"] == result["failed_items"]
+    assert result["failed_items"] == [
+        {"supplement_name": "Mitoq", "dosage": "2粒"},
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]
+    assert all(
+        item in result["message"]
+        for item in ("Mitoq 2粒", "叶酸 1粒", "NAC 1粒")
+    )
+
+
 @pytest.mark.parametrize(
     "message",
     (
@@ -392,6 +443,32 @@ async def test_explicit_quoted_long_name_plans_and_dispatches(db, message, name)
         name=name,
         dosage="1粒",
     )
+    assert any(path.endswith("/tap") for _, path, _ in calls)
+    assert receipt and receipt["verified"] is True
+
+
+@pytest.mark.parametrize(
+    ("name", "dosage"),
+    (("Mitoq", "2粒"), ("叶酸", "1粒"), ("NAC", "1粒")),
+)
+async def test_dose_prefix_batch_item_dispatches_through_real_gateway(
+    db,
+    name,
+    dosage,
+):
+    calls, _, receipt = await _execute(
+        db,
+        message="打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        name=name,
+        dosage=dosage,
+    )
+
+    definition_creates = [
+        body
+        for method, path, body in calls
+        if method == "POST" and path.endswith("/definitions")
+    ]
+    assert definition_creates == [{"name": name, "dosage": dosage}]
     assert any(path.endswith("/tap") for _, path, _ in calls)
     assert receipt and receipt["verified"] is True
 

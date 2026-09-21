@@ -7,6 +7,34 @@ from sqlalchemy import create_engine, event, inspect, text
 from app.services.managed_migrations import _split_sql_statements, apply_managed_migrations
 
 
+def test_supplement_actual_dosage_has_replay_safe_dialect_pair(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    postgres = migrations_dir / "20260921_140000_supplement_actual_dosage.postgresql.sql"
+    sqlite = migrations_dir / "20260921_140000_supplement_actual_dosage.sqlite.sql"
+    assert "ADD COLUMN IF NOT EXISTS actual_dosage VARCHAR(40)" in postgres.read_text(
+        encoding="utf-8"
+    )
+    assert "ADD COLUMN actual_dosage VARCHAR(40)" in sqlite.read_text(encoding="utf-8")
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    target = isolated / sqlite.name
+    target.write_text(sqlite.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE supplement_records (id INTEGER PRIMARY KEY, notes TEXT)"
+        ))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    assert [item.id for item in first.applied] == ["20260921_140000_supplement_actual_dosage"]
+    assert second.applied == []
+    columns = {column["name"] for column in inspect(engine).get_columns("supplement_records")}
+    assert "actual_dosage" in columns
+
+
 def test_illness_optional_severity_has_production_migration():
     migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
     migration = (

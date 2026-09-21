@@ -5292,6 +5292,53 @@ def _validated_supplement_definition_create_payload(
     return payload, definition_id
 
 
+def _validated_supplement_batch_payload(
+    raw: Any,
+    *,
+    expected_items: Sequence[Mapping[str, Any]],
+    expected_user_id: Any,
+) -> Optional[Dict[str, Any]]:
+    """Verify the atomic batch receipt against every authorized item."""
+    payload = _write_result_payload(raw)
+    if payload is None or payload.get("status") != "recorded":
+        return None
+    expected_owner_id = _positive_integer_resource_id(expected_user_id)
+    if _positive_integer_resource_id(payload.get("user_id")) != expected_owner_id:
+        return None
+    if payload.get("resource_type") != "supplement_log":
+        return None
+    record_ids = payload.get("record_ids")
+    items = payload.get("items")
+    if (
+        not isinstance(record_ids, list)
+        or not isinstance(items, list)
+        or len(record_ids) != len(expected_items)
+        or len(items) != len(expected_items)
+    ):
+        return None
+    normalized_record_ids = [_positive_integer_resource_id(value) for value in record_ids]
+    if any(value is None for value in normalized_record_ids) or len(set(normalized_record_ids)) != len(normalized_record_ids):
+        return None
+    if _positive_integer_resource_id(payload.get("record_id")) != normalized_record_ids[0]:
+        return None
+    for expected, item, record_id in zip(expected_items, items, normalized_record_ids):
+        if not isinstance(item, Mapping):
+            return None
+        if _normalized_supplement_reference(item.get("supplement_name")) != (
+            _normalized_supplement_reference(expected.get("supplement_name"))
+        ):
+            return None
+        if normalize_supplement_dosage(item.get("dosage")) != (
+            normalize_supplement_dosage(expected.get("dosage"))
+        ):
+            return None
+        if _positive_integer_resource_id(item.get("record_id")) != record_id:
+            return None
+        if _positive_integer_resource_id(item.get("supplement_definition_id")) is None:
+            return None
+    return payload
+
+
 def _supplement_existing_tap_failure(name: str, *, known_failure: bool) -> str:
     message = (
         f"「{name}」今日打卡没有完成，请稍后重试。"
@@ -5359,11 +5406,20 @@ def _explicitly_quoted_supplement_entity(raw: str) -> Optional[str]:
 
 def _explicit_labeled_supplement_names(raw_message: str) -> tuple[str, ...]:
     from app.services.agent_kernel.capability_policy import (
+        _explicit_labeled_supplement_dose_prefix_details,
         _explicit_labeled_supplement_targets,
     )
 
     names: list[str] = []
-    for candidate in _explicit_labeled_supplement_targets(raw_message):
+    dose_prefix_details = _explicit_labeled_supplement_dose_prefix_details(
+        raw_message
+    )
+    candidates = (
+        tuple(name for name, _dosage in dose_prefix_details)
+        if dose_prefix_details
+        else _explicit_labeled_supplement_targets(raw_message)
+    )
+    for candidate in candidates:
         normalized_candidate = _normalized_current_turn_entity_text(candidate)
         explicitly_quoted = any(
             _normalized_current_turn_entity_text(
@@ -5392,6 +5448,19 @@ def _explicit_labeled_supplement_names(raw_message: str) -> tuple[str, ...]:
 def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, ...]:
     raw_message = unicodedata.normalize("NFKC", str(user_message or ""))
     names = list(_explicit_labeled_supplement_names(raw_message))
+    intent = classify_agent_utterance(raw_message)
+    if (
+        intent.primary == "write"
+        and intent.domain == "supplement"
+        and intent.operation == "create"
+        and intent.is_write
+    ):
+        from app.services.agent_kernel.capability_policy import _named_item_targets
+
+        names.extend(
+            _normalized_current_turn_entity_text(candidate)
+            for candidate in _named_item_targets(raw_message, "supplement")
+        )
     for match in _EXPLICIT_SUPPLEMENT_NAME_RE.finditer(raw_message):
         candidate = match.group("name").strip(" ：:，,;；。.!！?？")
         quoted_candidate = _explicitly_quoted_supplement_entity(candidate)
@@ -8958,29 +9027,60 @@ def _build_deterministic_supplement_record_tool_calls(
     if write_receipts or has_attachment:
         return []
 
+    item_metadata: dict[str, dict[str, Any]] = {}
+    atomic_batch_authorized = False
+    normalized_message = unicodedata.normalize("NFKC", str(message or ""))
     if (
         contextual_supplement_names
         and _is_supplement_all_completion(message)
     ):
         raw_names = tuple(contextual_supplement_names)
     else:
+        from app.services.agent_kernel.capability_policy import (
+            _deterministic_target_values,
+            _explicit_labeled_supplement_dose_prefix_details,
+            _explicit_labeled_supplement_targets,
+            _has_unseparated_supplement_dose_batch,
+            _named_item_targets,
+        )
+
+        dose_batch_details = (
+            _explicit_labeled_supplement_dose_prefix_details(normalized_message)
+            if re.search(r"(?:记录|打卡)补剂\s*:", normalized_message)
+            else ()
+        )
         intent = classify_agent_utterance(message)
-        if not (
+        if not dose_batch_details and not (
             intent.primary == "write"
             and intent.domain == "supplement"
             and intent.operation == "create"
             and intent.is_write
         ):
             return []
-        from app.services.agent_kernel.capability_policy import (
-            _deterministic_target_values,
-            _explicit_labeled_supplement_targets,
-            _named_item_targets,
-        )
-
-        normalized_message = unicodedata.normalize("NFKC", str(message or ""))
-        if re.search(r"记录补剂\s*:", normalized_message):
-            raw_names = _explicit_labeled_supplement_targets(normalized_message)
+        if re.search(r"(?:记录|打卡)补剂\s*:", normalized_message):
+            if dose_batch_details:
+                atomic_batch_authorized = True
+                normalized_batch_names = tuple(
+                    _normalized_supplement_reference(name)
+                    for name, _dosage in dose_batch_details
+                )
+                if len(set(normalized_batch_names)) != len(normalized_batch_names):
+                    # Distinct spellings that collapse to one gateway identity
+                    # cannot safely retain separate per-item dosages.
+                    return []
+                raw_names = tuple(name for name, _dosage in dose_batch_details)
+                item_metadata = {
+                    _normalized_supplement_reference(name): {"dosage": dosage}
+                    for name, dosage in dose_batch_details
+                }
+            elif _has_unseparated_supplement_dose_batch(normalized_message):
+                # A malformed multi-dose batch must not fall back to the
+                # single-name grammar and produce a partial health write.
+                raw_names = ()
+            else:
+                raw_names = _explicit_labeled_supplement_targets(
+                    normalized_message
+                )
         else:
             raw_names = _named_item_targets(normalized_message, "supplement")
 
@@ -8996,14 +9096,21 @@ def _build_deterministic_supplement_record_tool_calls(
     if not names or len(names) > 64:
         return []
 
+    if not contextual_supplement_names:
+        expected = _deterministic_target_values(normalized_message, "supplement")
+        for name, dosage in (expected.get("dosages") or {}).items():
+            item_metadata.setdefault(
+                _normalized_supplement_reference(name),
+                {},
+            )["dosage"] = dosage
+
     shared_metadata: dict[str, Any] = {}
     if len(names) == 1 and not contextual_supplement_names:
-        expected = _deterministic_target_values(normalized_message, "supplement")
         for field in ("dosage", "timing"):
             if expected.get(field) not in (None, "", []):
                 shared_metadata[field] = expected[field]
 
-    return [
+    calls = [
         {
             "id": f"deterministic-supplement-{_sha12(name)}",
             "type": "function",
@@ -9015,6 +9122,10 @@ def _build_deterministic_supplement_record_tool_calls(
                         "data": {
                             "supplement_name": name,
                             **shared_metadata,
+                            **item_metadata.get(
+                                _normalized_supplement_reference(name),
+                                {},
+                            ),
                         },
                     },
                     ensure_ascii=False,
@@ -9023,6 +9134,31 @@ def _build_deterministic_supplement_record_tool_calls(
         }
         for name in names
     ]
+    items = [
+        _parse_tool_arguments_for_telemetry(call["function"]["arguments"])["data"]
+        for call in calls
+    ]
+    if (
+        not atomic_batch_authorized
+        or len(items) < 2
+        or any(not item.get("dosage") for item in items)
+    ):
+        # The atomic endpoint requires an explicit dose for every item. Keep
+        # established name-only/contextual multi-intake flows on their original
+        # one-write-per-supplement path instead of constructing a batch that the
+        # execution gate must reject.
+        return calls
+    return [{
+        "id": f"deterministic-supplement-batch-{_sha12(repr(items))}",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps(
+                {"record_type": "supplement", "data": {"items": items}},
+                ensure_ascii=False,
+            ),
+        },
+    }]
 
 
 def _should_replace_with_deterministic_supplement_calls(
@@ -9066,6 +9202,75 @@ def _should_replace_with_deterministic_supplement_calls(
             model_data.get("dosage")
         ) != normalize_supplement_dosage(expected_dosage)
     return False
+
+
+def _is_complete_deterministic_supplement_batch(
+    calls: Sequence[Dict[str, Any]],
+) -> bool:
+    """Recognize only a multi-item batch with an explicit dose for every item."""
+    if len(calls) != 1:
+        return False
+    function = calls[0].get("function") or {}
+    args = _parse_tool_arguments_for_telemetry(function.get("arguments"))
+    data = args.get("data")
+    items = data.get("items") if isinstance(data, dict) else None
+    if (
+        function.get("name") != "health_record"
+        or args.get("record_type") != "supplement"
+        or not isinstance(items, list)
+        or len(items) < 2
+    ):
+        return False
+    for item in items:
+        if not isinstance(item, dict) or not item.get("supplement_name") or not item.get("dosage"):
+            return False
+    return True
+
+
+def _merge_deterministic_supplement_batch(
+    proposed_calls: Sequence[Dict[str, Any]],
+    supplement_calls: Sequence[Dict[str, Any]],
+) -> list[Dict[str, Any]]:
+    """Replace only supplement writes while preserving unrelated user actions."""
+    merged: list[Dict[str, Any]] = []
+    inserted = False
+    for call in proposed_calls:
+        function = call.get("function") or {}
+        args = _parse_tool_arguments_for_telemetry(function.get("arguments"))
+        is_supplement_write = (
+            function.get("name") == "health_record"
+            and args.get("record_type") == "supplement"
+        )
+        if is_supplement_write:
+            if not inserted:
+                merged.extend(supplement_calls)
+                inserted = True
+            continue
+        merged.append(call)
+    if not inserted:
+        merged.extend(supplement_calls)
+    return merged
+
+
+def _drop_replayed_supplement_writes(
+    proposed_calls: Sequence[Dict[str, Any]],
+    *,
+    deterministic_batch_executed: bool,
+    write_receipts: Sequence[Mapping[str, Any]],
+) -> list[Dict[str, Any]]:
+    """Do not let a later model round replay a verified server-owned batch."""
+    if not deterministic_batch_executed or not any(
+        receipt.get("verified") is True for receipt in write_receipts
+    ):
+        return list(proposed_calls)
+    retained: list[Dict[str, Any]] = []
+    for call in proposed_calls:
+        function = call.get("function") or {}
+        args = _parse_tool_arguments_for_telemetry(function.get("arguments"))
+        if function.get("name") == "health_record" and args.get("record_type") == "supplement":
+            continue
+        retained.append(call)
+    return retained
 
 
 def _simple_record_goal_arguments(
@@ -14314,8 +14519,18 @@ class AgentExecutor:
                                 )
                             ):
                                 deterministic_supplement_fallback_attempted = True
-                                tool_calls = deterministic_supplement_calls
+                                tool_calls = _merge_deterministic_supplement_batch(
+                                    tool_calls,
+                                    deterministic_supplement_calls,
+                                )
                                 content = ""
+                        tool_calls = _drop_replayed_supplement_writes(
+                            tool_calls,
+                            deterministic_batch_executed=(
+                                deterministic_supplement_fallback_attempted
+                            ),
+                            write_receipts=write_receipts,
+                        )
                         if (
                             not tool_calls
                             and not deterministic_simple_record_fallback_attempted
@@ -17970,6 +18185,37 @@ class AgentExecutor:
                                     candidate = ""
                                     finish_reason = "tool_calls"
                             if (
+                                not proposed_calls
+                                and finish_reason == "stop"
+                                and round_idx == 0
+                                and not deterministic_supplement_fallback_attempted
+                                and any(
+                                    (tool.get("function") or {}).get("name")
+                                    == "health_record"
+                                    for tool in round_tools
+                                )
+                            ):
+                                supplement_calls = (
+                                    _build_deterministic_supplement_record_tool_calls(
+                                        message,
+                                        contextual_supplement_names=(
+                                            self._turn_contextual_supplement_names
+                                        ),
+                                        write_receipts=write_receipts,
+                                        has_attachment=bool(images or file_base64),
+                                    )
+                                )
+                                if _is_complete_deterministic_supplement_batch(
+                                    supplement_calls
+                                ):
+                                    deterministic_supplement_fallback_attempted = True
+                                    proposed_calls = _merge_deterministic_supplement_batch(
+                                        proposed_calls,
+                                        supplement_calls,
+                                    )
+                                    candidate = ""
+                                    finish_reason = "tool_calls"
+                            if (
                                 self._tool_round_fast_routed and not proposed_calls and candidate.strip()
                                 and not (round_idx == 0 and self._turn_daily_read_plan is not None and round_tools)
                             ):
@@ -18136,13 +18382,28 @@ class AgentExecutor:
                                 )
                                 finish_reason = "error"
                             if proposed_calls:
+                                proposed_calls = _drop_replayed_supplement_writes(
+                                    proposed_calls,
+                                    deterministic_batch_executed=(
+                                        deterministic_supplement_fallback_attempted
+                                    ),
+                                    write_receipts=write_receipts,
+                                )
                                 supplement_calls = _build_deterministic_supplement_record_tool_calls(
                                     message,
                                     contextual_supplement_names=self._turn_contextual_supplement_names,
                                     write_receipts=write_receipts,
                                     has_attachment=bool(images or file_base64),
                                 )
-                                if _should_replace_with_deterministic_supplement_calls(
+                                if _is_complete_deterministic_supplement_batch(
+                                    supplement_calls
+                                ):
+                                    deterministic_supplement_fallback_attempted = True
+                                    proposed_calls = _merge_deterministic_supplement_batch(
+                                        proposed_calls,
+                                        supplement_calls,
+                                    )
+                                elif _should_replace_with_deterministic_supplement_calls(
                                     proposed_calls, supplement_calls,
                                 ):
                                     # Bind a proposed write to the user's exact
@@ -25968,6 +26229,91 @@ class AgentExecutor:
 
         # supplement: 按名称匹配补剂打卡
         if rtype == "supplement":
+            batch_items = data.get("items")
+            if isinstance(batch_items, list):
+                current_message = getattr(self, "_current_turn_user_message", "")
+                if getattr(self, "_current_turn_has_attachment", False):
+                    return local_write_rejection(
+                        "supplement_image_confirmation_required",
+                        message="图片识别出的补剂尚未写入。",
+                        recovery_guidance="请在不带图片的新消息中明确列出补剂和本次剂量。",
+                    )
+                if not _is_complete_deterministic_supplement_batch([{
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps(args, ensure_ascii=False),
+                    }
+                }]):
+                    return local_write_rejection(
+                        "supplement_batch_invalid",
+                        message="补剂批量记录缺少完整名称或本次剂量，本次未写入。",
+                        recovery_guidance="请为每项补剂分别写明名称和本次剂量。",
+                    )
+                planned = _build_deterministic_supplement_record_tool_calls(
+                    current_message,
+                    write_receipts=[],
+                )
+                if not _is_complete_deterministic_supplement_batch(planned):
+                    return local_write_rejection(
+                        "supplement_batch_not_user_grounded",
+                        message="当前消息没有授权这组完整补剂记录，本次未写入。",
+                        recovery_guidance="请重新明确列出每项补剂和本次剂量。",
+                    )
+                planned_args = _parse_tool_arguments_for_telemetry(
+                    planned[0]["function"]["arguments"]
+                )
+                if planned_args.get("data", {}).get("items") != batch_items:
+                    return local_write_rejection(
+                        "supplement_batch_target_mismatch",
+                        message="补剂批量记录与当前消息不一致，本次未写入。",
+                        recovery_guidance="请重新提交明确的补剂名称和剂量。",
+                    )
+                payload = {
+                    "record_date": today,
+                    "taken_time": self._agent_kernel_reference_now().strftime("%H:%M:%S"),
+                    "items": batch_items,
+                }
+                result, err = await self._api_post_json(
+                    f"{base}/supplements/records/intake-batch",
+                    headers,
+                    payload,
+                )
+                validated = _validated_supplement_batch_payload(
+                    result,
+                    expected_items=batch_items,
+                    expected_user_id=self._current_user_id,
+                )
+                if err or validated is None:
+                    logger.warning(
+                        "[health_record] atomic supplement batch not verified "
+                        "user=%s item_count=%s",
+                        self._current_user_id,
+                        len(batch_items),
+                    )
+                    failed_items = [
+                        {
+                            "supplement_name": item["supplement_name"],
+                            "dosage": item["dosage"],
+                        }
+                        for item in batch_items
+                    ]
+                    item_summary = "、".join(
+                        f'{item["supplement_name"]} {item["dosage"]}'
+                        for item in failed_items
+                    )
+                    return json.dumps({
+                        "status": "unverified",
+                        "verified": False,
+                        "atomic": True,
+                        "items": failed_items,
+                        "failed_items": failed_items,
+                        "message": (
+                            f"{item_summary} 没有取得完整的原子写入回执；"
+                            "整组均不能确认已记录。"
+                            "请先查询今天的补剂记录，确认缺失后再重试。"
+                        ),
+                    }, ensure_ascii=False)
+                return json.dumps(validated, ensure_ascii=False)
             name = data.get("supplement_name", data.get("name", ""))
             if name:
                 current_message = getattr(

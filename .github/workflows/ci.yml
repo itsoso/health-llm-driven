@@ -470,6 +470,7 @@ jobs:
           tests/test_agent_runtime_concurrency.py
           tests/test_agent_runtime_tool_operations.py
           tests/test_agent_runtime_reconciliation.py
+          tests/test_agent_supplement_persistence_postgres.py
           tests/test_latest_meal_correction.py
           tests/test_diet_spoken_fraction_correction.py
           tests/test_pi_kernel_executor.py

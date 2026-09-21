@@ -1,7 +1,9 @@
 """补剂管理API测试"""
 import pytest
 from datetime import date, timedelta
-from app.models.supplement import SupplementRecord
+from sqlalchemy import event
+
+from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.user import User
 
 
@@ -306,6 +308,150 @@ class TestSupplementRecordAPI:
         assert response.status_code == 200
         data = response.json()
         assert len(data["results"]) == 3
+
+    def test_atomic_intake_batch_records_actual_dosage_and_is_idempotent(
+        self, client, db, auth_headers, test_user
+    ):
+        payload = {
+            "record_date": str(date.today()),
+            "taken_time": "08:30:00",
+            "items": [
+                {"supplement_name": "Mitoq", "dosage": "2粒"},
+                {"supplement_name": "叶酸", "dosage": "1粒"},
+                {"supplement_name": "NAC", "dosage": "十二粒"},
+            ],
+        }
+
+        first = client.post(
+            "/api/v1/supplements/records/intake-batch",
+            json=payload,
+            headers=auth_headers,
+        )
+        second = client.post(
+            "/api/v1/supplements/records/intake-batch",
+            json=payload,
+            headers=auth_headers,
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["record_ids"] == second.json()["record_ids"]
+        assert first.json()["operation_id"] == second.json()["operation_id"]
+        assert first.json()["operation_id"].startswith("supplement-batch:")
+        assert [(item["supplement_name"], item["dosage"]) for item in first.json()["items"]] == [
+            ("Mitoq", "2粒"),
+            ("叶酸", "1粒"),
+            ("NAC", "十二粒"),
+        ]
+        records = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == test_user.id,
+            SupplementRecord.record_date == date.today(),
+        ).order_by(SupplementRecord.id).all()
+        assert [record.actual_dosage for record in records] == ["2粒", "1粒", "十二粒"]
+        assert len(records) == 3
+
+    def test_atomic_intake_batch_keeps_regimen_dosage_separate_from_actual(
+        self, client, db, auth_headers, test_user
+    ):
+        definitions = [
+            SupplementDefinition(user_id=test_user.id, name="Mitoq", dosage=None, is_active=True),
+            SupplementDefinition(user_id=test_user.id, name="叶酸", dosage="1粒", is_active=True),
+            SupplementDefinition(user_id=test_user.id, name="NAC", dosage="2粒", is_active=True),
+        ]
+        db.add_all(definitions)
+        db.commit()
+
+        response = client.post(
+            "/api/v1/supplements/records/intake-batch",
+            json={
+                "record_date": str(date.today()),
+                "items": [
+                    {"supplement_name": "Mitoq", "dosage": "2粒"},
+                    {"supplement_name": "叶酸", "dosage": "1粒"},
+                    {"supplement_name": "NAC", "dosage": "1粒"},
+                ],
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        db.expire_all()
+        assert [definition.dosage for definition in definitions] == [None, "1粒", "2粒"]
+        records = db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == test_user.id
+        ).order_by(SupplementRecord.id).all()
+        assert [record.actual_dosage for record in records] == ["2粒", "1粒", "1粒"]
+
+    @pytest.mark.parametrize("failing_item", (1, 2, 3))
+    def test_atomic_intake_batch_rolls_back_every_item_on_mid_write_failure(
+        self, client, db, auth_headers, test_user, failing_item
+    ):
+        inserted = 0
+
+        def fail_on_target(_mapper, _connection, _target):
+            nonlocal inserted
+            inserted += 1
+            if inserted == failing_item:
+                raise RuntimeError("injected supplement record failure")
+
+        event.listen(SupplementRecord, "before_insert", fail_on_target)
+        try:
+            response = client.post(
+                "/api/v1/supplements/records/intake-batch",
+                json={
+                    "record_date": str(date.today()),
+                    "items": [
+                        {"supplement_name": "Mitoq", "dosage": "2粒"},
+                        {"supplement_name": "叶酸", "dosage": "1粒"},
+                        {"supplement_name": "NAC", "dosage": "1粒"},
+                    ],
+                },
+                headers=auth_headers,
+            )
+        finally:
+            event.remove(SupplementRecord, "before_insert", fail_on_target)
+
+        assert response.status_code == 500
+        assert db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == test_user.id
+        ).count() == 0
+        assert db.query(SupplementDefinition).filter(
+            SupplementDefinition.user_id == test_user.id
+        ).count() == 0
+
+    def test_atomic_intake_batch_is_tenant_scoped(self, client, db, auth_headers, test_user):
+        other = User(
+            username="suppforeign",
+            email="suppforeign@example.com",
+            hashed_password="hashed_password",
+            name="外部用户",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(other)
+        db.flush()
+        db.add(SupplementDefinition(user_id=other.id, name="Mitoq", dosage="9粒", is_active=True))
+        db.commit()
+
+        response = client.post(
+            "/api/v1/supplements/records/intake-batch",
+            json={
+                "record_date": str(date.today()),
+                "items": [
+                    {"supplement_name": "Mitoq", "dosage": "2粒"},
+                    {"supplement_name": "NAC", "dosage": "1粒"},
+                ],
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert db.query(SupplementDefinition).filter(
+            SupplementDefinition.user_id == test_user.id
+        ).count() == 2
+        assert db.query(SupplementRecord).filter(
+            SupplementRecord.user_id == other.id
+        ).count() == 0
 
     def test_get_supplements_with_status(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试获取补剂及打卡状态"""

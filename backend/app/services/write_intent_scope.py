@@ -480,7 +480,7 @@ _QUOTE_PAIRS = (
 )
 _DIRECT_QUOTED_SUPPLEMENT_RECORD_RE = re.compile(
     r"^(?:(?:请(?:你)?|帮我|替我|为我|给我|麻烦)\s*)?"
-    r"记录补剂(?:\s*[:：])?"
+    r"(?:记录|打卡)补剂(?:\s*[:：])?"
 )
 _PARENTHETICAL_PAIRS = (("（", "）"), ("(", ")"))
 _UPDATE_CORRECTION_MARKER_PATTERN = (

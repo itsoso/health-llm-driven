@@ -109,6 +109,7 @@ class SupplementRecord(Base):
     record_date = Column(Date, nullable=False, index=True)
     taken = Column(Boolean, default=False)  # 是否已服用
     taken_time = Column(Time)  # 实际服用时间
+    actual_dosage = Column(String(40))  # 本次实际服用量；不覆盖定义上的日常剂量
     notes = Column(Text)  # 备注
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
