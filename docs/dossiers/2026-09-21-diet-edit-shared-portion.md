@@ -3,8 +3,8 @@
 | 字段 | 值 |
 | --- | --- |
 | 创建日期 | 2026-09-21 |
-| 当前阶段 | S5 |
-| 状态 | building |
+| 当前阶段 | S7 上线验证 |
+| 状态 | deployed-awaiting-user-validation |
 | 分支 | main |
 | Run Ledger | `docs/_generated/harness-runs/e9532f2b53f3.jsonl` |
 
@@ -45,4 +45,10 @@ Health Harness delegate，同一父流程。任务 T1 后端、T2 Mobile、T3 �
 
 ## S6 / G5 / G6
 
-待部署与 production OTA；目标 revision CI 绿后进行。模拟器默认验收；真实相机与用户线上路径尚未验证。
+- G4 最终 **GO**：独立 reviewer 固定 `9aea54fcbdf7519049ba0f4758a20f961b43c61c` 对比 `09a30dc7f`；独立 114 聚餐 + 38 旧重算用例通过，原四例均先于模型和写入返回 422。HMAC、owner、CAS、幂等与旧客户端兼容通过。
+- 最终本地 CI-mode：d-diet 376 passed / 3 PG-only skipped；未变更 executor-food 115、executor-i-z 446 已通过。实际 PG 聚餐/CAS 127 passed / 0 skipped。Live LLM 同 revision 再跑通过：12/12 invariants、50/50 core、5/5 orchestrator（avg .94）、12/12 trajectory、9/9 goldens。Mobile 全量 2967 passed / 1 skipped。
+- G5 **PASS**：目标 revision 真实 [CI 35566392131](https://github.com/itsoso/health-llm-driven/actions/runs/35566392131) success，干净 main 与 origin/main 相同；仅在全部 Gate 通过后部署。
+- Backend：`deploy.sh -b` exit 0，生产 SHA `9aea54fcbdf7519049ba0f4758a20f961b43c61c`；runtime transaction COMMITTED、schema probe 202 tables、无新增迁移、健康度 60/60；backend/socket/worker/beat 均 active。按现行默认策略跳过 DB 备份/恢复/归档，env 回滚副本已封存。公开 `https://health.executor.life/api/health` 返回 healthy（API/DB/Redis/Celery 正常），未认证 recalculate 返回 401。
+- Mobile：production iOS OTA runtime 1.3.3；group `0b70c3d4-3e8b-422f-b7f5-4fab854907aa`，update `01a0c29d-79d6-7aaf-bb79-bdcb38c1a93e`，发布脚本回读与 manifest 绑定同一 source SHA。无原生改动、无 TestFlight/App Store 提交。前端仅同步生成类型，无 Web 运行时代码变更，不需要独立 Web 部署。
+- G6：服务与发布回读通过；模拟器组件合成验收已通过。真实相机、用户真实饮食编辑/份额线上端到端路径尚未验证；未改写用户既有饮食记录，不将发布成功声称为该验收完成。
+- 回退参考：前一 backend `e7837de2ff9415b9a3ede168ef352b1da06b6fc8`；前一 OTA group `cda3a5b1-c95d-4f08-831d-ca0545f068ee`。所有回退仍须当前 runtime/schema 发布闸，不能直接绕过事务切换。

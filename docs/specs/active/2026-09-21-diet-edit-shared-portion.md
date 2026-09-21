@@ -1,6 +1,6 @@
 # 饮食修正与聚餐个人份额
 
-Status: implementing · Owner: Codex · Updated: 2026-09-21
+Status: deployed-awaiting-user-validation · Owner: Codex · Updated: 2026-09-21
 
 ## 决策与准入
 
