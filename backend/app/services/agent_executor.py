@@ -5905,13 +5905,20 @@ def _medical_report_analysis_requested(text: str, *, persisted: bool) -> bool:
     )
 
 
-def _record_intent_needs_detail_message(record_text: str) -> str:
+def _record_intent_needs_detail_message(
+    record_text: str, *, reason_codes: Sequence[str] = (),
+) -> str:
     """No verified record: acknowledge incompletion without inventing a cause.
 
     Missing tool output does not prove missing user details or a database error.
     Nor does it prove a confirmation control exists on the client.
     """
     text = (record_text or "").strip()
+    if "health_record_target_mismatch" in reason_codes:
+        return (
+            f"「{text}」还没记下来：待写入的名称或剂量没能与这条请求准确对应。"
+            "请补全每项的名称、数量和单位后重新发送；本轮没有执行记录。"
+        )
     # 例子跨多领域(饮食/饮水/体测/档案属性/血压), 不再只给饮食/运动 —— 否则记鞋码却被要求
     # 补早餐(founder 2026-07-17 实测)。档案属性/个人事实(鞋码/衣码/喜好)现在走 remember,
     # 一般不会落到这里; 落到这里的多是真·笼统输入。
@@ -15284,6 +15291,7 @@ class AgentExecutor:
         recovered_user_message: Any = None,
         health_fact_draft: dict[str, Any] | None = None,
         context_statement: ContextStatement | None = None,
+        supplement_missing_units: tuple[str, ...] = (),
         request_started_at: float | None = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Persist a local clarification or context acknowledgement without a model."""
@@ -15314,6 +15322,14 @@ class AgentExecutor:
             text = context_statement.reply
             reason_code = "context_statement_acknowledged"
             route = "context_statement"
+        elif supplement_missing_units:
+            text = (
+                "以下补剂的数量缺少单位：" + "、".join(supplement_missing_units)
+                + "。请说明是粒、片或其他单位，并补全每项的单位后重发整条记录。"
+                "本轮尚未记录。"
+            )
+            reason_code = "supplement_unit_required"
+            route = "supplement_unit_clarification"
         elif health_fact_draft:
             labels = []
             for fact in health_fact_draft.get("facts", []):
@@ -15748,6 +15764,31 @@ class AgentExecutor:
                         yield self._attach_runtime_identity(event)
                     return
             streamed_answer_parts: List[str] = []
+            # After durable write recovery, but before any model call. Missing
+            # units require user input, not repeated guesses by the tool model.
+            from app.services.agent_kernel.capability_policy import (
+                supplement_missing_unit_names,
+            )
+
+            missing_supplement_units = (
+                supplement_missing_unit_names(effective_message)
+                if not effective_images and not file_base64 and not read_only_tools
+                else ()
+            )
+            if missing_supplement_units:
+                async for event in self._run_input_clarification_stream(
+                    user_id=user_id,
+                    message=display_message,
+                    conversation_id=conversation_id,
+                    client_turn_id=client_turn_id,
+                    recovered_user_message=recovered_user_message,
+                    supplement_missing_units=missing_supplement_units,
+                    request_started_at=request_started_at,
+                ):
+                    if event.get("event") == "done":
+                        kernel_completion_status = "complete"
+                    yield self._attach_runtime_identity(event)
+                return
             # A bounded plain context statement has no answer-generation or
             # health-write obligation. Reuse the durable local reply path only
             # after retry/write recovery has had its normal precedence.
@@ -18757,7 +18798,10 @@ class AgentExecutor:
             ))
         )
         if record_intent_no_tool:
-            fail_closed_reply = _record_intent_needs_detail_message(message)
+            fail_closed_reply = _record_intent_needs_detail_message(
+                message,
+                reason_codes=self._agent_kernel_capability_block_reasons,
+            )
             if full_reply.strip() != fail_closed_reply:
                 full_reply = fail_closed_reply
             logger.warning(

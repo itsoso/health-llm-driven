@@ -658,10 +658,27 @@ async def test_record_turn_routes_to_fast_model(db, auth_user_and_headers, monke
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("message,items", [
+    ("打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC", [
+        {"supplement_name": "Mitoq", "dosage": "2粒"},
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ]),
+    ("记录补剂：1粒复合VB 1粒Mitoq", [
+        {"supplement_name": "复合VB", "dosage": "1粒"},
+        {"supplement_name": "Mitoq", "dosage": "1粒"},
+    ]),
+    ("记录补剂：1片复合维生素B 1粒Mitoq", [
+        {"supplement_name": "复合维生素B", "dosage": "1片"},
+        {"supplement_name": "Mitoq", "dosage": "1粒"},
+    ]),
+])
 async def test_web_stream_executes_space_delimited_supplement_batch(
     db,
     auth_user_and_headers,
     monkeypatch,
+    message,
+    items,
 ):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -692,7 +709,7 @@ async def test_web_stream_executes_space_delimited_supplement_batch(
             "resource_type": "supplement_log",
             "resource_id": "901",
             "record_id": 901,
-            "record_ids": [901, 902, 903],
+            "record_ids": list(range(901, 901 + len(items))),
             "items": items,
         }, ensure_ascii=False)
 
@@ -703,18 +720,14 @@ async def test_web_stream_executes_space_delimited_supplement_batch(
     )
     events = await _run(
         executor,
-        "打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC",
+        message,
         user_id=user.id,
     )
     done = events[-1]["data"]
 
     assert executed == [("health_record", {
         "record_type": "supplement",
-        "data": {"items": [
-            {"supplement_name": "Mitoq", "dosage": "2粒"},
-            {"supplement_name": "叶酸", "dosage": "1粒"},
-            {"supplement_name": "NAC", "dosage": "1粒"},
-        ]},
+        "data": {"items": items},
     })]
     assert done["record_intent_no_tool"] is False
     assert done["tools_used"] == ["health_record"]

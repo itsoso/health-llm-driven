@@ -172,6 +172,56 @@ async def test_explicit_supplement_batch_is_one_atomic_postgres_write(
     assert payload["record_ids"] == [record.id for record in records]
 
 
+async def test_missing_units_then_complete_resend_writes_exact_batch(
+    db, client, supplement_transport, monkeypatch,
+):
+    executor, owner, headers, requests = supplement_transport
+    model_calls = []
+
+    async def model_stream(messages, tools):
+        model_calls.append(True)
+        yield {"type": "content", "text": "请查看执行结果。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def model_response(messages, tools):
+        model_calls.append(True)
+        return {"content": "请查看执行结果。", "tool_calls": [], "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", model_stream)
+    monkeypatch.setattr(executor, "_call_llm", model_response)
+    token = headers["Authorization"].removeprefix("Bearer ")
+    first = [event async for event in executor.run_stream(
+        user_id=owner.id, message="记录补剂：1 复合VB 1 Mitoq",
+        user_auth_token=token, client_turn_id="supplement-unit-question",
+    )]
+    first_done = next(event["data"] for event in first if event.get("event") == "done")
+    assert first_done["turn_outcome"]["status"] == "waiting_for_user"
+    assert requests == [] and model_calls == []
+    assert db.query(SupplementRecord).filter_by(user_id=owner.id).count() == 0
+    conversation_id = first_done["conversation_id"]
+    message = "记录补剂：1片复合VB 1粒Mitoq"
+    second = [event async for event in executor.run_stream(
+        user_id=owner.id, message=message, conversation_id=conversation_id,
+        user_auth_token=token, client_turn_id="supplement-unit-complete",
+    )]
+    done = next(event["data"] for event in second if event.get("event") == "done")
+    assert done["turn_outcome"]["category"] == "success"
+    assert len(done["write_receipts"]) == 1 and done["write_receipts"][0]["verified"]
+    assert requests == [("POST", "/api/v1/supplements/records/intake-batch")]
+    rows = client.get("/api/v1/supplements/me/records", headers=headers).json()
+    definitions = {row.id: row.name for row in db.query(SupplementDefinition).filter_by(user_id=owner.id)}
+    assert {(definitions[row["supplement_id"]], row["actual_dosage"]) for row in rows} == {
+        ("复合VB", "1片"), ("Mitoq", "1粒"),
+    }
+    replay = [event async for event in executor.run_stream(
+        user_id=owner.id, message=message, conversation_id=conversation_id,
+        user_auth_token=token, client_turn_id="supplement-unit-complete",
+    )]
+    assert any(event.get("event") == "done" for event in replay)
+    assert len(requests) == 1
+    assert db.query(SupplementRecord).filter_by(user_id=owner.id).count() == 2
+
+
 @pytest.mark.parametrize(
     ("message", "contextual_names"),
     (

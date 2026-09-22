@@ -9,6 +9,22 @@
 | 负责 | Codex |
 | 反馈环 | Backend deploy + Mobile OTA + true-path verification |
 
+## Correction Block 4 · 2026-09-22 缺单位澄清与复合维生素名称
+
+- 范围：既有补剂记录缺陷修复，Backend only；不改 schema、客户端合同或医疗自治。
+- 根因：剂量前缀要求单位，复合维生素名称语法过窄；目标不匹配被误展示成可原样重试。
+- 行为：独立、当前用户的数量前缀补剂记录若缺单位，在模型与写工具前直接澄清，
+  持久化 `waiting_for_user / supplement_unit_required`，不推定粒、片或既往常用剂量。
+  用户需补全整条指令；不承诺通过“都是一粒”等短答自动续写。
+- 名称：识别复合维生素的中文全名及中英混写，保持用户原名称，不把简称擅自映射
+  到另一既有商品。单位完整时仍走原 atomic batch、owner-scoped gate 与 verified receipt。
+- 安全：Kernel 同样拒绝缺单位请求的模型猜测写入；未来、否定、代记、转述、疑问、
+  不明名称均不进入该窄澄清路径。不降低既有写权限检查。
+- 文案：已知目标不匹配明确说明名称/剂量未对齐，不提示盲目重试；运行态保留原因码。
+- 验证：failure-first 已复现；定向回归与 PostgreSQL 两轮认证 API/readback/replay 验收，
+  CI-mode shard、真实 Qwen、独立安全评审和精确 SHA CI/发布状态在本轮发布证据中记录。
+- 发布前状态：候选验证中；本节不是生产完成声明。历史 Mobile OTA 状态不由本切片改变。
+
 ## Correction Block 3 · 2026-09-08 单项草本补剂摄入误路由
 
 - 状态: S5 本地修复完成；本切片 G3 本地闸与 G4 独立安全复核通过；尚未获得本轮

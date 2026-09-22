@@ -485,7 +485,7 @@ _SUPPLEMENT_TARGET_TERMS = (
 _SUPPLEMENT_NAME_EVIDENCE_RE = re.compile(
     r"(?:营养素[\u4e00-\u9fffA-Za-z0-9]{1,4}"
     r"|维生素[A-Za-z0-9]{1,6}"
-    r"|复合维[A-Za-z0-9]{1,6}"
+    r"|复合(?:维生素|维|V)[A-Za-z0-9]{1,6}"
     r"|辅酶[A-Za-z0-9]{1,8}"
     r"|益生菌[\u4e00-\u9fffA-Za-z0-9]{0,8})"
     r"|.+(?:素|镁|锌|钙|铁|硒|油|液|粉|丸|片|胶囊|酸|肽|酶|菌)"
@@ -2647,6 +2647,11 @@ def decide_tool_capability(
         # Allowed adapters still pass through the detailed checks below.
         return _decision("block", "owned_read_tool_out_of_scope", tool_name, args)
     if tool_name == "health_record" and request.source != "procedure_recipe_replay":
+        if supplement_missing_unit_names(snapshot.envelope.text):
+            return _decision(
+                "block", "supplement_unit_required", tool_name, args,
+                receipt_required=True,
+            )
         target_status = _health_record_target_status(snapshot, args)
         if target_status == "mismatch":
             return _decision(
@@ -5109,6 +5114,42 @@ def _named_item_targets(clause: str, record_type: str) -> tuple[str, ...]:
         known = tuple(term for term in _SUPPLEMENT_TARGET_TERMS if term in clause)
         return tuple(dict.fromkeys(known))
     return ()
+
+
+def supplement_missing_unit_names(message: str) -> tuple[str, ...]:
+    """Identify incomplete count-prefixed intakes, never supply write authority.
+
+    Only a standalone current-user record command is eligible. A bare count
+    is not a dosage: do not infer capsules from a name or an earlier routine.
+    All siblings must be recognizable before asking this specific question.
+    """
+    normalized = unicodedata.normalize("NFKC", str(message or ""))
+    labeled = re.fullmatch(
+        r"\s*(?:请)?(?:帮我)?(?:记录|打卡)补剂\s*:\s*(.+?)\s*[。.!！]?\s*",
+        normalized,
+    )
+    if labeled is None:
+        return ()
+    number = r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十半]+)"
+    items = re.split(rf"[\s、，,]+(?={number})", labeled.group(1))
+    missing: list[str] = []
+    for item in items:
+        dose = _SUPPLEMENT_DOSE_RE.match(item)
+        count = re.match(rf"(?P<value>{number})\s*", item)
+        if count is None:
+            return ()
+        value = count.group("value")
+        if re.fullmatch(r"\d+(?:\.\d+)?", value):
+            if Decimal(value) <= 0:
+                return ()
+        elif value != "半" and _parse_small_chinese_number(value) is None:
+            return ()
+        name = item[(dose or count).end():].strip()
+        if not _supplement_item_has_name_evidence(name):
+            return ()
+        if dose is None:
+            missing.append(name)
+    return tuple(dict.fromkeys(missing))
 
 
 def supplement_dosage_requires_clarification(message: str, name: str) -> bool:

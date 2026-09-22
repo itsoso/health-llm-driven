@@ -128,6 +128,8 @@ _KNOWN_ERROR_CODES = frozenset(
         "ambiguous_intent_requires_clarification",
         "input_too_short",
         "clarification_required",
+        "supplement_unit_required",
+        "health_record_target_mismatch",
         "delete_requires_explicit_whole_record_intent",
         "manage_operation_mismatch",
         "manage_write_without_mutate_intent",
