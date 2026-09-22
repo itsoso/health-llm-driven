@@ -178,6 +178,11 @@ RequirementAdmission:
   预览/原生截图/系统交接；未验证真实 GPS、HTTPS 照片原生下载与有图成品、
   Android 设备、相册保存、微信/小红书接收端。API 图片鉴权与组件加载/失败
   测试不能冒充这些真实环境通过；统一发布前另行补齐或按治理记录风险接受。
+- 最终固定修正 `a96de8b6e` 相对 `626487c94` 独立增量 G4 **GO**，
+  reviewer 重跑27项通过，并目检最终 PNG；原安全裁决持续有效。
+  最终 System Map、diff、两端 API 类型一致性、Dossier 与秘密扫描通过。
+- 已停止本次独立 preview 进程、Metro、本机合成 API 和 PostgreSQL；
+  `pg_ctl status` 确认 no server running，测试库/合成截图只保留在本机 /tmp。
 
 ## G5 / G6 · 发布与验证
 
