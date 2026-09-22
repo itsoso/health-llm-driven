@@ -755,6 +755,30 @@ def test_supplement_label_colon_maps_space_delimited_doses_to_each_item(message)
     )
 
 
+@pytest.mark.parametrize("name", ["Mitoq 心脏版", "MitoQ心脏版", "营养素甲 标准版", "鱼油 标准版"])
+def test_supplement_batch_preserves_qualified_product_name(name):
+    message = f"记录补剂：1 粒复合VB 1 粒 {name}"
+    calls = _build_deterministic_supplement_record_tool_calls(message, write_receipts=[])
+    assert _supplement_plan_items(calls) == [
+        {"supplement_name": "复合VB", "dosage": "1粒"},
+        {"supplement_name": name, "dosage": "1粒"},
+    ]
+    assert _supplement_name_is_grounded_in_current_turn(name, message)
+    assert not _supplement_name_is_grounded_in_current_turn("Mitoq", message)
+    assert not _supplement_name_is_grounded_in_current_turn("Mitoq 标准版", message)
+
+
+@pytest.mark.parametrize("name", [
+    "Mitoq 明天心脏版", "Mitoq 不吃心脏版", "Mitoq NAC 心脏版",
+    "Mitoq 叶酸", "Mitoq heart tomorrow", "Mitoq 计划版",
+    "Mitoq 睡前 心脏版", "Mitoq 未服用版", "Mitoq 心脏版 不要",
+])
+def test_supplement_qualified_name_cannot_hide_modifiers_or_undosed_siblings(name):
+    assert _build_deterministic_supplement_record_tool_calls(
+        f"记录补剂：1 粒复合VB 1 粒 {name}", write_receipts=[],
+    ) == []
+
+
 def test_supplement_label_colon_maps_name_first_doses_to_each_item():
     calls = _build_deterministic_supplement_record_tool_calls(
         "打卡补剂：Mitoq 2粒，叶酸1粒，NAC1粒",

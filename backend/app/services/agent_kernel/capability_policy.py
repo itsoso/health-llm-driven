@@ -494,6 +494,9 @@ _SUPPLEMENT_NAME_EVIDENCE_RE = re.compile(
 )
 _SUPPLEMENT_ACRONYM_NAME_RE = re.compile(r"[A-Z][A-Z0-9-]{1,7}")
 _SUPPLEMENT_MAX_UNQUOTED_NAME_LENGTH = 6
+_SUPPLEMENT_PRODUCT_VARIANT_RE = re.compile(
+    r"(?P<base>\S+?)\s*(?:心脏|标准)版"
+)
 _SUPPLEMENT_QUOTED_NAME_RE = re.compile(
     r'(?:「([^」]+)」|“([^”]+)”|"([^"]+)"|【([^】]+)】)'
 )
@@ -5318,9 +5321,21 @@ def _supplement_item_has_name_evidence(raw_item: str) -> bool:
     if not is_quoted and (
         _SUPPLEMENT_NAME_GRAMMAR_MARKER_RE.search(candidate)
         or _SUPPLEMENT_NAME_ENGLISH_GRAMMAR_RE.search(candidate)
-        or bool(re.search(r"\s", candidate))
     ):
         return False
+    if not is_quoted:
+        variant = _SUPPLEMENT_PRODUCT_VARIANT_RE.fullmatch(candidate)
+        if variant is not None:
+            # A product qualifier is part of its identity, not ingestion
+            # grammar or another undosed item. Validate the base with the
+            # same strict evidence rules, while callers keep the FULL name.
+            base = variant.group("base")
+            return (
+                not base.endswith("版")
+                and _supplement_item_has_name_evidence(base)
+            )
+        if re.search(r"\s", candidate):
+            return False
     is_acronym = _SUPPLEMENT_ACRONYM_NAME_RE.fullmatch(candidate) is not None
     normalized_candidate = _normalize_entity_name(candidate)
     if len(normalized_candidate) < 2:
