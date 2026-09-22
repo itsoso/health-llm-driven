@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
 import { Stack, router, useFocusEffect } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../hooks/useAuth';
 import { revaColors as C } from '../constants/revaTheme';
 import { JourneyKind, JourneyPlace, JourneySource, JourneyExportSelection, journeyAPI, journeyToday, journeySessionRevision, assertJourneySession, shiftJourneyMonth, exportSelection, JOURNEY_LABELS } from '../services/journey';
@@ -125,8 +125,13 @@ function JourneyContent({ token }: { token: string }) {
   };
   const closeEditor = () => setEditor(null);
   const count = Object.keys(selected).length;
-  return <SafeAreaView style={s.screen} edges={['bottom']}>
-    <Stack.Screen options={{ title: '这一路', headerStyle: { backgroundColor: C.paper }, headerTintColor: C.ink1 }} />
+  return <SafeAreaView testID="journey-safe-area" style={s.screen} edges={['top', 'bottom']}>
+    <Stack.Screen options={{ title: '这一路', headerShown: false }} />
+    <View style={[s.between, { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.line }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel="返回上一页" hitSlop={8} style={s.secondary} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/chat')}><Text style={s.link}>← 返回</Text></Pressable>
+      <Text style={s.heading}>这一路</Text>
+      <Text style={s.note}>月度足迹</Text>
+    </View>
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <View style={s.between}>
         <Pressable onPress={() => switchMonth(-1)} accessibilityLabel="上个月" style={s.secondary}><Text style={s.link}>←</Text></Pressable>
@@ -172,9 +177,10 @@ function JourneyContent({ token }: { token: string }) {
       {places.length < total && <Pressable disabled={busy} style={s.secondary} onPress={() => load(true)}><Text style={s.link}>加载更多片段（剩余 {total - places.length}）</Text></Pressable>}
       <Pressable disabled={!count} style={[s.button, !count && s.disabled]} onPress={() => { try { valid(); setExportItems(exportSelection(places, selected)); } catch { setError('无法创建预览，请重新登录或减少选择。'); } }}><Text style={s.buttonText}>预览我的长图 · 已选 {count} / 30</Text></Pressable>
     </ScrollView>
-    <Modal visible={!!editor} animationType="slide" onRequestClose={closeEditor}>
-      <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">{editor && <JourneyEditor key={`${editor.kind}:${editor.source_id}:${editor.place?.version || 0}`} source={editor} timezone={timezone} revision={revision} onClose={closeEditor} onSaved={() => { setEditor(null); setSelected({}); void load(); if (adding) void loadSources(); }} onReload={() => { setEditor(null); setSelected({}); void load(); if (adding) void loadSources(); }} />}</ScrollView></SafeAreaView>
+    <Modal visible={!!editor} animationType="slide" presentationStyle="fullScreen" onRequestClose={closeEditor}>
+      {/* Native modals own a separate window: measure its insets, not the navigator's. */}
+      <SafeAreaProvider><SafeAreaView testID="journey-editor-safe-area" style={s.screen} edges={['top', 'bottom']}><ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">{editor && <JourneyEditor key={`${editor.kind}:${editor.source_id}:${editor.place?.version || 0}`} source={editor} timezone={timezone} revision={revision} onClose={closeEditor} onSaved={() => { setEditor(null); setSelected({}); void load(); if (adding) void loadSources(); }} onReload={() => { setEditor(null); setSelected({}); void load(); if (adding) void loadSources(); }} />}</ScrollView></SafeAreaView></SafeAreaProvider>
     </Modal>
-    <Modal visible={!!exportItems} animationType="slide" onRequestClose={() => setExportItems(null)}><SafeAreaView style={s.screen}><ScrollView contentContainerStyle={[s.content, { paddingHorizontal: 0 }]}>{exportItems && <JourneyExportPanel selection={exportItems} token={token} revision={revision} onClose={() => setExportItems(null)} />}</ScrollView></SafeAreaView></Modal>
+    <Modal visible={!!exportItems} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setExportItems(null)}><SafeAreaProvider><SafeAreaView testID="journey-export-safe-area" style={s.screen} edges={['top', 'bottom']}><ScrollView contentContainerStyle={[s.content, { paddingHorizontal: 0 }]}>{exportItems && <JourneyExportPanel selection={exportItems} token={token} revision={revision} onClose={() => setExportItems(null)} />}</ScrollView></SafeAreaView></SafeAreaProvider></Modal>
   </SafeAreaView>;
 }

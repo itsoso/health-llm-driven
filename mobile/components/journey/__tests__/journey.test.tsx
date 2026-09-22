@@ -1,10 +1,13 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform, PixelRatio } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 const mockAuth = { user: { id: 1 }, token: 'token-a' };
 jest.mock('../../../hooks/useAuth', () => ({ useAuth: () => mockAuth }));
-jest.mock('expo-router', () => ({ Stack: { Screen: () => null }, router: { navigate: jest.fn() }, useFocusEffect: jest.fn() }));
-jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: require('react-native').View }));
+jest.mock('expo-router', () => ({ Stack: { Screen: () => null }, router: { navigate: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) }, useFocusEffect: jest.fn() }));
+jest.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: require('react-native').View,
+  SafeAreaProvider: (props: any) => require('react').createElement(require('react-native').View, props, props.children),
+}));
 jest.mock('../JourneyConstellation', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../../services/api', () => ({ __esModule: true, default: {}, BASE_URL: 'https://health.executor.life/api' }));
 jest.mock('expo-location', () => ({ requestForegroundPermissionsAsync: jest.fn(), Accuracy: { Balanced: 3 } }));
@@ -19,6 +22,10 @@ import { journeyAPI, journeySessionRevision } from '../../../services/journey';
 import { setAIConsentIdentity } from '../../../services/aiConsentState';
 import { captureRef, releaseCapture } from 'react-native-view-shot';
 import { materializeImageForLocalUse, shareImage } from '../../../utils/share';
+import { router } from 'expo-router';
+import { Modal } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { journeyCaptureGeometry } from '../captureOptions';
 const place = { id: 1, source_id: 11, kind: 'diet' as const, version: 1, city: '成都', local_date: '2026-09-22', timezone: 'Asia/Shanghai', location_source: 'manual' as const, title: '私密饮食文字', images: [{ key: 'photo1', url: 'https://health.executor.life/api/v1/upload/files/diet/1/a.jpg' }], image_status: 'ready' as const };
 const source = { ...place, suggested_date: '2026-09-22', date_basis: 'record' as const, place: null };
 const page = (items: any[], total = items.length) => ({ items, total, offset: 0, limit: 30 });
@@ -31,6 +38,43 @@ beforeEach(() => {
 });
 
 describe('monthly journey page', () => {
+  it('measures editor safe areas inside its own full-screen modal window', async () => {
+    const view = render(<JourneyScreen />);
+    await waitFor(() => expect(view.getByText('私密饮食文字')).toBeTruthy());
+    fireEvent.press(view.getByText('编辑城市与日期'));
+    const modal = view.UNSAFE_getAllByType(Modal).find(node => node.props.visible)!;
+    expect(modal.props.presentationStyle).toBe('fullScreen');
+    const provider = modal.findByType(SafeAreaProvider);
+    expect(provider.findByProps({ testID: 'journey-editor-safe-area' }).props.edges).toEqual(['top', 'bottom']);
+  });
+  it('measures export safe areas inside its own full-screen modal window', async () => {
+    const view = render(<JourneyScreen />);
+    await waitFor(() => expect(view.getByText('私密饮食文字')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('选择片段 2026-09-22 成都'));
+    fireEvent.press(view.getByText('预览我的长图 · 已选 1 / 30'));
+    await waitFor(() => expect(view.getByText('长图预览')).toBeTruthy());
+    const modal = view.UNSAFE_getAllByType(Modal).find(node => node.props.visible)!;
+    expect(modal.props.presentationStyle).toBe('fullScreen');
+    const provider = modal.findByType(SafeAreaProvider);
+    expect(provider.findByProps({ testID: 'journey-export-safe-area' }).props.edges).toEqual(['top', 'bottom']);
+  });
+  it('keeps its explicit header and month controls inside top and bottom safe areas', async () => {
+    const view = render(<JourneyScreen />);
+    await waitFor(() => expect(view.getByText('私密饮食文字')).toBeTruthy());
+    expect(view.getByTestId('journey-safe-area').props.edges).toEqual(['top', 'bottom']);
+    expect(view.getByText('这一路')).toBeTruthy();
+    expect(view.getByLabelText('上个月')).toBeTruthy();
+    expect(view.getByLabelText('下个月')).toBeTruthy();
+    fireEvent.press(view.getByLabelText('返回上一页'));
+    expect(router.back).toHaveBeenCalledTimes(1);
+  });
+  it('returns to chat if opened without a navigation back stack', async () => {
+    (router.canGoBack as jest.Mock).mockReturnValueOnce(false);
+    const view = render(<JourneyScreen />);
+    await waitFor(() => expect(view.getByText('私密饮食文字')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('返回上一页'));
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)/chat');
+  });
   it('defaults every record and photo to unselected, and provides all source tabs', async () => {
     const view = render(<JourneyScreen />);
     await waitFor(() => expect(view.getByText('私密饮食文字')).toBeTruthy());
@@ -90,7 +134,17 @@ describe('journey edit safety', () => {
 });
 
 describe('version bound share preview', () => {
-  it('captures fixed width with natural height and never renders private source fields', async () => {
+  it('shows exactly one export action group before the long preview content', async () => {
+    const view = render(<JourneyExportPanel selection={[{ place_id: 1, version: 1, image_keys: [] }]} token="token-a" revision={journeySessionRevision()} onClose={jest.fn()} />);
+    await waitFor(() => expect(view.getByText('成都')).toBeTruthy());
+    const textNodes = view.UNSAFE_getAllByType(require('react-native').Text);
+    const shareIndex = textNodes.findIndex(node => node.props.children === '系统分享');
+    const cityIndex = textNodes.findIndex(node => node.props.children === '成都');
+    expect(shareIndex).toBeGreaterThanOrEqual(0);
+    expect(shareIndex).toBeLessThan(cityIndex);
+    for (const label of ['保存相册', '系统分享', '微信', '小红书']) expect(view.getAllByText(label)).toHaveLength(1);
+  });
+  it('captures explicit dimensions at the same scale as measured layout, without stretching or private source fields', async () => {
     (journeyAPI.preview as jest.Mock).mockResolvedValue({ ...publicPreview, items: [{ ...publicPreview.items[0], title: '不可分享的私密原文', calories: 500 }] });
     const view = render(<JourneyExportPanel selection={[{ place_id: 1, version: 1, image_keys: [] }]} token="token-a" revision={journeySessionRevision()} onClose={jest.fn()} />);
     await waitFor(() => expect(view.getByText('成都')).toBeTruthy());
@@ -100,8 +154,21 @@ describe('version bound share preview', () => {
     fireEvent.press(view.getByText('系统分享'));
     await waitFor(() => expect(shareImage).toHaveBeenCalled());
     expect(journeyAPI.preview).toHaveBeenCalledTimes(2);
-    expect((captureRef as jest.Mock).mock.calls[0][1]).toEqual({ format: 'png', quality: 1, result: 'tmpfile', width: 720 });
+    expect((captureRef as jest.Mock).mock.calls[0][1]).toEqual(journeyCaptureGeometry(500, Platform.OS, PixelRatio.get()).options);
     expect(releaseCapture).toHaveBeenCalledWith('file:///capture.png');
+  });
+  it('rounds scaled output height once and guards that exact output dimension', async () => {
+    const view = render(<JourneyExportPanel selection={[{ place_id: 1, version: 1, image_keys: [] }]} token="token-a" revision={journeySessionRevision()} onClose={jest.fn()} />);
+    await waitFor(() => expect(view.getByText('成都')).toBeTruthy());
+    const layout = view.UNSAFE_getAllByType(require('react-native').View).find(node => node.props.onLayout);
+    fireEvent(layout!, 'layout', { nativeEvent: { layout: { height: 8000.3 } } });
+    fireEvent.press(view.getByText('系统分享'));
+    expect(captureRef).not.toHaveBeenCalled();
+    expect(view.getByText('长图超出尺寸限制，请关闭并减少选择。')).toBeTruthy();
+    fireEvent(layout!, 'layout', { nativeEvent: { layout: { height: 500.3 } } });
+    fireEvent.press(view.getByText('系统分享'));
+    await waitFor(() => expect(captureRef).toHaveBeenCalledTimes(1));
+    expect((captureRef as jest.Mock).mock.calls[0][1]).toEqual(journeyCaptureGeometry(500.3, Platform.OS, PixelRatio.get()).options);
   });
   it('never captures before all selected images load and blocks image errors', async () => {
     const cleanup = jest.fn().mockResolvedValue(undefined);

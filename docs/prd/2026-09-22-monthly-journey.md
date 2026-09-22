@@ -1,6 +1,6 @@
 # 小巴健康 · 这一路 PRD
 
-> Status: draft; Updated: 2026-09-22
+> Status: approved (G2 GO, implementation verification in progress); Updated: 2026-09-22
 
 引用全局 `docs/prd/reva-personal-health-os-prd.md` R9 Review、R10 Mobile
 与 `docs/specs/reva-product-governance-spec.md` 的低负担、自主、证据诚实原则。

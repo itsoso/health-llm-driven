@@ -1,6 +1,6 @@
 # 这一路实施计划
 
-> Status: draft; Updated: 2026-09-22
+> Status: implementing / local verification; Updated: 2026-09-22
 > PRD: docs/prd/2026-09-22-monthly-journey.md
 > Contract: docs/specs/active/2026-09-22-monthly-journey.md
 

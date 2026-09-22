@@ -4,7 +4,7 @@
 |---|---|
 | slug | `monthly-journey` |
 | 创建日期 | 2026-09-22 |
-| 当前阶段 | S5 · 实现 |
+| 当前阶段 | G4 · 本地候选复核，等待统一发布 |
 | 状态 | building |
 | 负责 | Codex / 用户 |
 | 反馈环 | 本地 iOS Simulator；发布暂缓 |
@@ -154,6 +154,30 @@ RequirementAdmission:
 - iOS 1.3.4 preview 原生模拟器包编译成功；权限用途已核对实际 Info.plist。
   模拟器视觉验收仍在进行，未以组件 mock 冒充真实端到端通过。
 - 按 safety-gate 固定本地候选后独立 G4；未推送或部署。
+- 固定候选 `626487c94` 独立 `/root/journey_safety_review` **GO**：重跑
+  Mobile 54、SQLite 51 passed/10 PG-only skipped，核对 PG61 证据。
+  不是上线裁决；真实 GPS/第三方接收/旧账号完整删除流程不由本轮证明。
+- 主代理 iPhone 17 Pro Simulator 使用独立 preview bundle + 本机 PostgreSQL
+  合成账号，真实登录、月度读取、三片段白名单长图预览及饮食源手动城市
+  保存通过；没有连接生产个人记录。未签名包最初缺 Keychain entitlement，
+  已重新用 simulator ad-hoc signing 构建成功，真实登录和重启恢复通过。
+- 视觉验收捕获主页面顶部安全区缺失（月份进入状态栏），补显式顶部
+  safe area 和返回栏，先2 RED后 Mobile56 GREEN。编辑/导出 Modal 各自增加
+  SafeAreaProvider，先2 RED后58 GREEN；真实编辑页复验标题不再遮挡，历史
+  日期禁用“当前位置”，取消返回正常。
+- 实际 PNG 揭示 view-shot iOS 单宽度会忽略缩放、按屏幕倍率输出；基于
+  当前 iOS/Android native 源码增加两尺寸等比换算与真实像素高度上限。
+  iOS 除 PixelRatio，Android 原生取像素；2x/3x/非法密度/边界先 RED 后 GREEN。
+  导出按钮移到说明后，避免长图必须滚到底；最终相关 **69 passed**，
+  `/tmp/reva-journey-exportactions-green.log`，Mobile tsc exit 0。
+- 最终原生模拟器导出：`/tmp/reva-journey-ui.ZidkUU/journey-export-720-final.png`，
+  sips 及目检 **720×1524**、无文字拉伸/额外顶部空白，城市/日期/类型齐全，
+  不含私有记录标题；系统分享面板收到 PNG（113 KB）。已取消，未发往第三方。
+  关闭系统分享后 app tmpfile 消失，保留的合成证据副本在本机 /tmp。
+- 已验证边界：真实本机 API + PG + 独立 preview 登录/恢复/读取/手动确认/
+  预览/原生截图/系统交接；未验证真实 GPS、HTTPS 照片原生下载与有图成品、
+  Android 设备、相册保存、微信/小红书接收端。API 图片鉴权与组件加载/失败
+  测试不能冒充这些真实环境通过；统一发布前另行补齐或按治理记录风险接受。
 
 ## G5 / G6 · 发布与验证
 

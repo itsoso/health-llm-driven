@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Image, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, Image, ActivityIndicator, Alert, Platform, PixelRatio } from 'react-native';
 import { captureRef, releaseCapture } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
 import { APP_DISPLAY_NAME } from '../../constants/brand';
@@ -8,6 +8,7 @@ import { materializeImageForLocalUse, shareLongImage, shareImage } from '../../u
 import { assertJourneySession, JourneyExport, JourneyExportSelection, journeyAPI, journeyImageSource, JOURNEY_LABELS, JOURNEY_MAX_HEIGHT, JOURNEY_WIDTH } from '../../services/journey';
 import JourneyConstellation from './JourneyConstellation';
 import { journeyStyles as s } from './styles';
+import { journeyCaptureGeometry } from './captureOptions';
 
 const signature = (data: JourneyExport) => JSON.stringify({ month: data.month, items: data.items.map(item => ({ city: item.city, local_date: item.local_date, kind: item.kind, images: item.images.map(image => image.key) })) });
 
@@ -20,6 +21,8 @@ export default function JourneyExportPanel({ selection, token, revision, onClose
   const [error, setError] = useState('');
   const [ready, setReady] = useState(false);
   const [height, setHeight] = useState(0);
+  const outputWidth = JOURNEY_WIDTH * 2;
+  const outputHeight = Math.round(height * (outputWidth / JOURNEY_WIDTH));
   const generation = useRef(0);
   const lock = useRef(false);
   const cleanup = useRef<Array<() => Promise<void>>>([]);
@@ -81,12 +84,13 @@ export default function JourneyExportPanel({ selection, token, revision, onClose
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const finish = async (destination: 'save' | 'more' | 'wechat' | 'xiaohongshu') => {
-    if (lock.current || !preview || !ready || !height) return;
+    if (lock.current || !preview || !ready || !outputHeight) return;
     const ticket = generation.current;
     lock.current = true; setBusy(true); setError('');
     try {
       active(ticket);
-      if (height * 2 > JOURNEY_MAX_HEIGHT) throw new Error('长图过长，请减少片段或照片');
+      const geometry = journeyCaptureGeometry(height, Platform.OS, PixelRatio.get());
+      if (!geometry.withinBounds) throw new Error('长图过长，请减少片段或照片');
       if (destination === 'save') {
         const permission = await MediaLibrary.requestPermissionsAsync(true);
         active(ticket);
@@ -96,7 +100,7 @@ export default function JourneyExportPanel({ selection, token, revision, onClose
       const current = await journeyAPI.preview(selection, revision);
       active(ticket);
       if (signature(current) !== expectedSignature.current) throw new Error('内容已变化，请关闭预览并重新选择');
-      const uri = await captureRef(target, { format: 'png', quality: 1, result: 'tmpfile', width: JOURNEY_WIDTH * 2 });
+      const uri = await captureRef(target, geometry.options);
       try { active(ticket); } catch (failure) { releaseCapture(uri); throw failure; }
       captureUri.current = uri;
       if (destination === 'save') {
@@ -128,6 +132,8 @@ export default function JourneyExportPanel({ selection, token, revision, onClose
   return <View style={s.card}>
     <View style={s.between}><Text style={s.heading}>长图预览</Text><Pressable onPress={onClose} accessibilityLabel="关闭长图预览"><Text style={s.link}>关闭</Text></Pressable></View>
     <Text style={s.note}>只包含已选城市、日期、片段类型及照片。请检查城市输入和照片中的住址、人脸、票据等隐私。分享无法撤回。</Text>
+    {preview && outputHeight > JOURNEY_MAX_HEIGHT && <Text style={s.error}>长图超出尺寸限制，请关闭并减少选择。</Text>}
+    <View style={s.row}>{(['save', 'more', 'wechat', 'xiaohongshu'] as const).map(destination => <Pressable key={destination} disabled={busy || !ready || !preview || !outputHeight || outputHeight > JOURNEY_MAX_HEIGHT} style={[s.secondary, (busy || !ready || !preview || !outputHeight) && s.disabled]} onPress={() => finish(destination)}><Text style={s.link}>{{ save: '保存相册', more: '系统分享', wechat: '微信', xiaohongshu: '小红书' }[destination]}</Text></Pressable>)}</View>
     {busy && <ActivityIndicator accessibilityLabel="准备长图" />}
     {!!error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
     {!preview && !busy && <Pressable style={s.secondary} onPress={prepare}><Text style={s.link}>重新校验并预览</Text></Pressable>}
@@ -140,7 +146,5 @@ export default function JourneyExportPanel({ selection, token, revision, onClose
       </View>)}
       <Text style={[s.note, { textAlign: 'center' }]}>{APP_DISPLAY_NAME} · 这一路{ '\n' }我的生活片段，不是实际行驶路线</Text>
     </View></ScrollView>}
-    {preview && height * 2 > JOURNEY_MAX_HEIGHT && <Text style={s.error}>长图超出尺寸限制，请关闭并减少选择。</Text>}
-    <View style={s.row}>{(['save', 'more', 'wechat', 'xiaohongshu'] as const).map(destination => <Pressable key={destination} disabled={busy || !ready || !preview || !height || height * 2 > JOURNEY_MAX_HEIGHT} style={[s.secondary, (busy || !ready || !preview || !height) && s.disabled]} onPress={() => finish(destination)}><Text style={s.link}>{{ save: '保存相册', more: '系统分享', wechat: '微信', xiaohongshu: '小红书' }[destination]}</Text></Pressable>)}</View>
   </View>;
 }
