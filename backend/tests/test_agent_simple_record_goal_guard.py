@@ -772,10 +772,22 @@ def test_supplement_batch_preserves_qualified_product_name(name):
     "Mitoq 明天心脏版", "Mitoq 不吃心脏版", "Mitoq NAC 心脏版",
     "Mitoq 叶酸", "Mitoq heart tomorrow", "Mitoq 计划版",
     "Mitoq 睡前 心脏版", "Mitoq 未服用版", "Mitoq 心脏版 不要",
+    "Mitoq 睡\u200b前心脏版", "Mitoq\u200b心脏版",
+    "(Mitoq心脏版)标准版", "「Mitoq心脏版」标准版", "NAC/叶酸 心脏版",
+    "Mitoq心脏版标准版", "Mitoq\n心脏版",
 ])
 def test_supplement_qualified_name_cannot_hide_modifiers_or_undosed_siblings(name):
     assert _build_deterministic_supplement_record_tool_calls(
         f"记录补剂：1 粒复合VB 1 粒 {name}", write_receipts=[],
+    ) == []
+
+
+def test_nested_product_variants_fail_closed_without_recursion():
+    name = "Mitoq"
+    for _ in range(1100):
+        name = f"({name})心脏版"
+    assert _build_deterministic_supplement_record_tool_calls(
+        f"记录补剂：1粒复合VB 1粒{name}", write_receipts=[],
     ) == []
 
 

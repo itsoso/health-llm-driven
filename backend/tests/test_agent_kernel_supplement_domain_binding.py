@@ -92,6 +92,18 @@ def test_qualified_product_name_does_not_expand_current_user_authority(prefix):
     assert decision.action == "block"
 
 
+@pytest.mark.parametrize("name", [
+    "Mitoq 睡\u200b前心脏版", "Mitoq\u200b心脏版",
+    "(Mitoq心脏版)标准版", "「Mitoq心脏版」标准版", "NAC/叶酸 心脏版",
+])
+def test_qualified_product_malformed_identity_cannot_reach_batch_gateway(name):
+    decision = _decision(f"记录补剂：1粒复合VB 1粒{name}", "supplement", items=[
+        {"supplement_name": "复合VB", "dosage": "1粒"},
+        {"supplement_name": name, "dosage": "1粒"},
+    ])
+    assert decision.action == "block"
+
+
 @pytest.mark.parametrize("name, dosage", [
     ("Mitoq", "2粒"),
     ("叶酸", "1粒"),
