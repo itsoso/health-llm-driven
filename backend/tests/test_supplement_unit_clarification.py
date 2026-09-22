@@ -19,6 +19,8 @@ pytestmark = pytest.mark.usefixtures("consenting_agent_user")
     ("记录补剂：1片复合VB 1 Mitoq", ("Mitoq",)),
     ("记录补剂：1 维生素B12 1 Mitoq", ("维生素B12", "Mitoq")),
     ("记录补剂：1 Mitoq", ("Mitoq",)),
+    ("记录补剂：1片复合VB 1 GABA", ("GABA",)),
+    ("记录补剂：1 GABA 1 NMN", ("GABA", "NMN")),
 ])
 def test_missing_units_are_identified_without_authorizing_writes(message, missing):
     assert policy.supplement_missing_unit_names(message) == missing
@@ -37,8 +39,11 @@ def test_missing_unit_detector_is_only_a_narrow_current_intake_question(message)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("message", [
+    "记录补剂：1 复合VB 1 Mitoq", "记录补剂：1片复合VB 1 GABA",
+])
 async def test_stream_clarifies_missing_units_without_model_or_health_write(
-    db, auth_user_and_headers, monkeypatch,
+    db, auth_user_and_headers, monkeypatch, message,
 ):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -49,7 +54,7 @@ async def test_stream_clarifies_missing_units_without_model_or_health_write(
 
     monkeypatch.setattr(executor, "_run_stream_impl", forbidden)
     events = [event async for event in executor.run_stream(
-        user_id=user.id, message="记录补剂：1 复合VB 1 Mitoq",
+        user_id=user.id, message=message,
         client_turn_id="test-supplement-missing-unit",
     )]
     done = events[-1]["data"]
@@ -58,7 +63,7 @@ async def test_stream_clarifies_missing_units_without_model_or_health_write(
     assert done["turn_outcome"]["verified_receipt_count"] == 0
     assert done["model_call_count"] == 0
     reply = db.get(AgentMessage, done["message_id"])
-    assert "单位" in reply.content and "复合VB" in reply.content
+    assert "单位" in reply.content
     assert "尚未记录" in reply.content and "重试" not in reply.content
     assert reply.meta["turn_outcome"] == done["turn_outcome"]
 
@@ -91,3 +96,29 @@ def test_runtime_preserves_actionable_supplement_reason_codes():
     from app.services.agent_runtime import AgentRuntimeCoordinator
     for code in ("supplement_unit_required", "health_record_target_mismatch"):
         assert AgentRuntimeCoordinator._safe_error_code(code) == code
+
+
+@pytest.mark.parametrize("message", [
+    "记录补剂：1片复合VB 1 GABA", "记录补剂：1片复合VB 1gGABA",
+    "记录补剂：1片复合VB 1mgNAC", "记录补剂：1片复合VB 1MLAB",
+])
+def test_latin_name_prefix_cannot_become_a_mass_or_volume_unit(message):
+    envelope = AgentEnvelope(user_id=1, channel="chat", text=message)
+    context = ExecutionContext.for_test(user_id=1, channel="chat")
+    snapshot = TurnSnapshot(envelope=envelope, context=context,
+                            intent=build_intent_frame(envelope, context))
+    # A model or deterministic parser must not manufacture ABA from GABA.
+    decision = policy.decide_tool_capability(snapshot, ToolExecutionRequest(
+        tool_name="health_record", arguments={"record_type":"supplement", "data": {"items": [
+            {"supplement_name":"复合VB", "dosage":"1片"},
+            {"supplement_name":"ABA", "dosage":"1g"},
+        ]}},
+    ))
+    assert decision.action == "block"
+    assert policy._explicit_labeled_supplement_dose_prefix_details(message) == ()
+
+
+def test_explicit_separated_latin_unit_is_preserved():
+    assert policy._explicit_labeled_supplement_dose_prefix_details(
+        "记录补剂：1片复合VB 1g GABA",
+    ) == (("复合VB", "1片"), ("GABA", "1g"))

@@ -222,6 +222,25 @@ async def test_missing_units_then_complete_resend_writes_exact_batch(
     assert db.query(SupplementRecord).filter_by(user_id=owner.id).count() == 2
 
 
+async def test_latin_supplement_name_is_not_split_into_a_unit_or_partially_written(
+    db, supplement_transport,
+):
+    executor, owner, headers, requests = supplement_transport
+    message = "记录补剂：1片复合VB 1 GABA"
+    executor._current_user_id = owner.id
+    executor._current_turn_user_message = message
+    result = await executor._execute_tool("health_record", {
+        "record_type":"supplement", "data":{"items":[
+            {"supplement_name":"复合VB", "dosage":"1片"},
+            {"supplement_name":"ABA", "dosage":"1g"},
+        ]},
+    }, headers["Authorization"].removeprefix("Bearer "))
+    assert not _write_receipt_from_tool_result("health_record", {}, result)
+    assert requests == []
+    assert db.query(SupplementDefinition).filter_by(user_id=owner.id).count() == 0
+    assert db.query(SupplementRecord).filter_by(user_id=owner.id).count() == 0
+
+
 @pytest.mark.parametrize(
     ("message", "contextual_names"),
     (

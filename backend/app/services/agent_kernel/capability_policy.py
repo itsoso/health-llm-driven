@@ -555,7 +555,10 @@ _MEDICATION_STRENGTH_RE = re.compile(
 _SUPPLEMENT_DOSE_RE = re.compile(
     r"(?:(?:剂量|用量|每次|服用|吃)(?:是|为)?)?"
     r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十半]+)\s*"
-    r"(?P<unit>片|粒|丸|袋|支|颗|滴|喷|ml|毫升|mg|毫克|g|克)",
+    # Latin units cannot consume a prefix of an English supplement name:
+    # ``1 GABA`` is an incomplete count, never ``1g ABA``. English names
+    # following mass/volume units need an explicit boundary (``1g GABA``).
+    r"(?P<unit>片|粒|丸|袋|支|颗|滴|喷|(?:ml|mg|g)(?![A-Za-z])|毫升|毫克|克)",
     re.IGNORECASE,
 )
 _SUPPLEMENT_TIMING_RE = re.compile(
