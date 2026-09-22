@@ -1,6 +1,6 @@
 # Dossier: 后台 AI 调用身份隔离修复
 
-- 当前阶段：G4 NO-GO 后整改与复审；未 push、未部署。
+- 当前阶段：本切片 G3/G4 通过，等待其余待修项统一发布；未 push、未部署。
 - 用户需求：在“分析线上日志和用户 prompts”后要求“继续”。
 - 基线：`d31ab9cef`，开工时 main 干净，远端已快进同步，已检查开放 PR。
 - Run ledger：`docs/_generated/harness-runs/f641b4b5bfad.jsonl`（本地，不提交）。
@@ -72,8 +72,15 @@
   在线程桥使用 copy_context 传递上下文，不修改 consent 守卫或伪造会话。
   新增同步/运行中 loop 两分支的上下文传递与异常不泄漏测试。
 - 整改 G3：全增量 CI-mode 合跑 122 passed / 2 PostgreSQL-only skipped，
-  `/tmp/reva-background-ai-integration-v2.log`；PG/live 正在重跑。
-- G4 第二轮：待新固定提交的独立 reviewer，不复用第一轮裁决。
+  `/tmp/reva-background-ai-integration-v2.log`；PostgreSQL 93 passed / 0 skipped，
+  `/tmp/reva-background-ai-postgres-v2.log`；live 再跑 5/5，离线 62/62，
+  轨迹 21/21，`/tmp/reva-background-ai-live-v2.log`；全部真实 exit 0。
+  独占临时 PG 实例已停止，保留其合成测试目录便于审计；无生产数据。
+- G4 第二轮：独立 reviewer `/root/background_ai_safety_rereview` 审查
+  `2abbae299` 相对 `d31ab9cef` 的累计固定 diff，裁决 **GO**。
+  原 cookie 守卫阻断已闭合；reviewer 独立复跑上下文/桥接 13 passed、
+  实际入口 cookie 组合 4 passed，额外 CancelledError 探针通过。
+  该裁决不代表其他入口全部修复或生产上线成功。
 - G5/G6：未部署，未验证。
 
 ## 下一切片（未完成，不纳入本提交的修复声明）
