@@ -15290,7 +15290,6 @@ class AgentExecutor:
             message.strip(),
         ):
             return ()
-        from datetime import UTC, datetime
         from app.models.agent_conversation import AgentConversation, AgentMessage
         from app.services.agent_kernel.capability_policy import supplement_missing_unit_names
 
@@ -15308,23 +15307,11 @@ class AgentExecutor:
                 or (meta.get("turn_outcome") or {}).get("reason_code") != "supplement_unit_required"
                 or source.image_url):
             return ()
-        created = answer.created_at
-        if created is None:
-            return ()
-        if self.db.get_bind().dialect.name == "postgresql":
-            from sqlalchemy import text
-
-            # This legacy column is timestamp WITHOUT time zone. PostgreSQL
-            # stores aware defaults in the session's wall time, not always UTC.
-            # Interpret it in that same session, without changing stored data.
-            age = self.db.execute(text(
-                "SELECT EXTRACT(EPOCH FROM (clock_timestamp() - "
-                "CAST(created_at AS TIMESTAMP WITH TIME ZONE))) "
-                "FROM agent_messages WHERE id = :message_id"
-            ), {"message_id": answer.id}).scalar_one()
-        else:
-            age = (datetime.now(UTC) - created.replace(tzinfo=UTC)).total_seconds()
-        if not 0 <= age <= 1800:
+        # Legacy DB timestamps lose the UTC offset (and DST fold). Only the
+        # server-generated absolute instant can establish this context window.
+        created = meta.get("supplement_unit_clarified_at_epoch")
+        now = time.time()
+        if type(created) not in (int, float) or not now - 1800 <= created <= now:
             return ()
         return supplement_missing_unit_names(source.content)
 
@@ -15422,6 +15409,8 @@ class AgentExecutor:
             **({"health_fact_draft": health_fact_draft} if health_fact_draft else {}),
             **({"client_turn_id": client_turn_id} if client_turn_id else {}),
         }
+        if supplement_missing_units:
+            meta["supplement_unit_clarified_at_epoch"] = time.time()
         ai_msg = svc.save_message(
             conv.id,
             "assistant",

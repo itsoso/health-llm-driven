@@ -133,10 +133,10 @@ async def test_unit_followup_context_is_scoped_recent_and_adjacent(db, auth_user
     assert resolve(uid=other.id) == ()
     assert resolve(message="一粒，胸痛怎么办") == ()
     answer = db.get(AgentMessage, done["message_id"])
-    answer.created_at = datetime.now(UTC) - timedelta(minutes=31)
+    answer.meta = {**answer.meta, "supplement_unit_clarified_at_epoch": (datetime.now(UTC) - timedelta(minutes=31)).timestamp()}
     db.commit()
     assert resolve() == ()
-    answer.created_at = datetime.now(UTC)
+    answer.meta = {**answer.meta, "supplement_unit_clarified_at_epoch": datetime.now(UTC).timestamp()}
     db.add(AgentMessage(conversation_id=conv_id, role="user", content="今天聊别的"))
     db.commit()
     assert resolve() == ()
@@ -148,6 +148,7 @@ async def test_unit_followup_context_is_scoped_recent_and_adjacent(db, auth_user
 async def test_postgres_unit_followup_uses_database_timestamp_semantics(
     db, auth_user_and_headers, zone, age_seconds, expected,
 ):
+    from datetime import UTC, datetime
     from sqlalchemy import text
     from app.models.agent_conversation import AgentConversation
 
@@ -162,6 +163,7 @@ async def test_postgres_unit_followup_uses_database_timestamp_semantics(
     answer = AgentMessage(conversation_id=conversation.id, role="assistant", content="请补充单位", meta={
         "route": "supplement_unit_clarification",
         "turn_outcome": {"reason_code": "supplement_unit_required"},
+        "supplement_unit_clarified_at_epoch": datetime.now(UTC).timestamp() - age_seconds,
     })
     db.add(answer)
     db.flush()
@@ -173,6 +175,49 @@ async def test_postgres_unit_followup_uses_database_timestamp_semantics(
         user_id=user.id, conversation_id=conversation.id, message="一粒",
     )
     assert bool(result) is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("checked_utc,expected", [("2026-11-01T05:20:00+00:00", True), ("2026-11-01T06:20:00+00:00", False)])
+async def test_postgres_unit_followup_dst_fold_preserves_absolute_age(db, auth_user_and_headers, monkeypatch, checked_utc, expected):
+    from datetime import datetime
+    from sqlalchemy import text
+    from app.models.agent_conversation import AgentConversation
+
+    if db.get_bind().dialect.name != "postgresql":
+        pytest.skip("requires isolated TEST_DATABASE_URL PostgreSQL")
+    db.execute(text("SELECT set_config('TimeZone', 'America/New_York', false)"))
+    user, _ = auth_user_and_headers
+    conv = AgentConversation(user_id=user.id, title="Synthetic DST boundary")
+    db.add(conv)
+    db.flush()
+    db.add(AgentMessage(conversation_id=conv.id, role="user", content="记录补剂：1 营养素甲 1 营养素乙"))
+    created = datetime.fromisoformat("2026-11-01T05:10:00+00:00")
+    answer = AgentMessage(conversation_id=conv.id, role="assistant", content="请补充单位", created_at=created, meta={
+        "route": "supplement_unit_clarification", "turn_outcome": {"reason_code": "supplement_unit_required"},
+        "supplement_unit_clarified_at_epoch": created.timestamp(),
+    })
+    db.add(answer)
+    db.commit()
+    db.expire_all()
+    assert db.get(AgentMessage, answer.id).created_at.hour == 1
+    monkeypatch.setattr("app.services.agent_executor.time.time", lambda: datetime.fromisoformat(checked_utc).timestamp())
+    result = AgentExecutor(db)._supplement_unit_followup_names(user_id=user.id, conversation_id=conv.id, message="一粒")
+    assert bool(result) is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("marker", [None, True, "2026-09-22T14:00:00", float("nan"), float("inf"), 10**400])
+async def test_unit_followup_rejects_legacy_or_invalid_instant(db, auth_user_and_headers, marker):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    events = [event async for event in executor.run_stream(user_id=user.id, message="记录补剂：1 营养素甲 1 营养素乙")]
+    done = events[-1]["data"]
+    answer = db.get(AgentMessage, done["message_id"])
+    # Keep malformed values in memory: NaN/Infinity are not legal PG JSON.
+    answer.meta = {**answer.meta, "supplement_unit_clarified_at_epoch": marker}
+    with db.no_autoflush:
+        assert executor._supplement_unit_followup_names(user_id=user.id, conversation_id=done["conversation_id"], message="一粒") == ()
 
 
 @pytest.mark.parametrize("name", ["复合VB", "Mitoq", "1Mitoq"])
