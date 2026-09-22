@@ -149,6 +149,32 @@ def test_postgres_web_stream_receipt_matches_owned_rows(client, db, relay, caplo
     _assert_owned_write(db, relay, response, caplog)
 
 
+@pytest.mark.parametrize("zone", ["UTC", "Asia/Shanghai", "America/New_York"])
+def test_postgres_web_unit_reply_clarifies_without_model_or_write(client, db, relay, monkeypatch, zone):
+    from sqlalchemy import text
+    if db.get_bind().dialect.name != "postgresql":
+        pytest.skip("requires isolated TEST_DATABASE_URL PostgreSQL")
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    db.execute(text("SELECT set_config('TimeZone', :zone, false)"), {"zone": zone})
+    db.commit()
+    headers = _headers(relay, sentinel=True)
+    first = _post(client, "stream", headers, message="记录补剂：1 营养素甲 1 营养素乙")
+    assert first.status_code == 200
+    first_done = next(json.loads(line[6:])["data"] for line in first.text.splitlines()
+                      if line.startswith("data: ") and json.loads(line[6:]).get("event") == "done")
+    response = client.post("/api/v1/agent/stream", headers=headers, json={
+        "message": "一粒", "conversation_id": first_done["conversation_id"],
+        "client_turn_id": f"relay-{uuid4().hex}",
+    })
+    assert response.status_code == 200
+    done = next(json.loads(line[6:])["data"] for line in response.text.splitlines()
+                if line.startswith("data: ") and json.loads(line[6:]).get("event") == "done")
+    assert done["turn_outcome"]["reason_code"] == "supplement_unit_scope_required"
+    assert done["model_call_count"] == 0
+    assert relay.calls == [] and relay.prompts == []
+    assert db.query(SupplementRecord).filter_by(user_id=relay.owner.id).count() == 0
+
+
 @pytest.mark.parametrize("route", ["stream", "send"])
 @pytest.mark.parametrize("rejection,status,reason", [
     ("named-definition", 409, "supplement_name_ambiguous"),

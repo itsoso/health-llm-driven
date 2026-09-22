@@ -142,6 +142,39 @@ async def test_unit_followup_context_is_scoped_recent_and_adjacent(db, auth_user
     assert resolve() == ()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("zone", ["UTC", "Asia/Shanghai", "America/New_York"])
+@pytest.mark.parametrize("age_seconds,expected", [(60, True), (1801, False), (-60, False)])
+async def test_postgres_unit_followup_uses_database_timestamp_semantics(
+    db, auth_user_and_headers, zone, age_seconds, expected,
+):
+    from sqlalchemy import text
+    from app.models.agent_conversation import AgentConversation
+
+    if db.get_bind().dialect.name != "postgresql":
+        pytest.skip("requires isolated TEST_DATABASE_URL PostgreSQL")
+    db.execute(text("SELECT set_config('TimeZone', :zone, false)"), {"zone": zone})
+    user, _ = auth_user_and_headers
+    conversation = AgentConversation(user_id=user.id, title="Synthetic unit clarification")
+    db.add(conversation)
+    db.flush()
+    db.add(AgentMessage(conversation_id=conversation.id, role="user", content="记录补剂：1 营养素甲 1 营养素乙"))
+    answer = AgentMessage(conversation_id=conversation.id, role="assistant", content="请补充单位", meta={
+        "route": "supplement_unit_clarification",
+        "turn_outcome": {"reason_code": "supplement_unit_required"},
+    })
+    db.add(answer)
+    db.flush()
+    db.execute(text("UPDATE agent_messages SET created_at = clock_timestamp() - (:age * interval '1 second') WHERE id=:id"),
+               {"age": age_seconds, "id": answer.id})
+    db.commit()
+    db.expire_all()
+    result = AgentExecutor(db)._supplement_unit_followup_names(
+        user_id=user.id, conversation_id=conversation.id, message="一粒",
+    )
+    assert bool(result) is expected
+
+
 @pytest.mark.parametrize("name", ["复合VB", "Mitoq", "1Mitoq"])
 def test_missing_unit_cannot_be_invented_by_a_tool_call(name):
     envelope = AgentEnvelope(user_id=1, channel="chat", text="记录补剂：1 复合VB 1 Mitoq")

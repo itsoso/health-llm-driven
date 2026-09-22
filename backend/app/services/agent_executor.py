@@ -15311,7 +15311,19 @@ class AgentExecutor:
         created = answer.created_at
         if created is None:
             return ()
-        age = (datetime.now(UTC) - created.replace(tzinfo=UTC)).total_seconds()
+        if self.db.get_bind().dialect.name == "postgresql":
+            from sqlalchemy import text
+
+            # This legacy column is timestamp WITHOUT time zone. PostgreSQL
+            # stores aware defaults in the session's wall time, not always UTC.
+            # Interpret it in that same session, without changing stored data.
+            age = self.db.execute(text(
+                "SELECT EXTRACT(EPOCH FROM (clock_timestamp() - "
+                "CAST(created_at AS TIMESTAMP WITH TIME ZONE))) "
+                "FROM agent_messages WHERE id = :message_id"
+            ), {"message_id": answer.id}).scalar_one()
+        else:
+            age = (datetime.now(UTC) - created.replace(tzinfo=UTC)).total_seconds()
         if not 0 <= age <= 1800:
             return ()
         return supplement_missing_unit_names(source.content)
