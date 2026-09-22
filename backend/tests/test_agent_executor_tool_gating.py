@@ -64,8 +64,9 @@ def _executor():
 
 
 @pytest.mark.parametrize("model_id", ["glm-5.1", "glm-5.3", "deepseek-v4.1-flash"])
-def test_gate_redirects_unreliable_request_model_when_tools(monkeypatch, model_id):
-    """request_model = glm-5.1 (不可靠) + 传 tools → 换可靠模型。"""
+@pytest.mark.parametrize("fast_record", [False, True])
+def test_gate_redirects_unreliable_request_model_when_tools(monkeypatch, model_id, fast_record):
+    """Unverified models borrow a reliable tool caller, including compact record turns."""
     sentinel_unreliable = MagicMock(name="glm_provider")
     sentinel_reliable = MagicMock(name="claude_provider")
 
@@ -79,6 +80,7 @@ def test_gate_redirects_unreliable_request_model_when_tools(monkeypatch, model_i
     requested_id = model_id
     ex = _executor()
     ex._request_model_id = model_id
+    ex._prefer_fast_record_model = fast_record
 
     provider, pass_tools = ex._resolve_chat_provider([{"type": "function"}])
     assert provider is sentinel_reliable
@@ -135,7 +137,8 @@ async def test_complex_aigc_turn_does_not_force_draft_on_reliable_fallback_model
 
 
 @pytest.mark.parametrize("model_id", ["glm-5.1", "glm-5.3", "deepseek-v4.1-flash"])
-def test_gate_skips_when_no_tools(monkeypatch, model_id):
+@pytest.mark.parametrize("fast_record", [False, True])
+def test_gate_skips_when_no_tools(monkeypatch, model_id, fast_record):
     """不传 tools → 即便选中不可靠模型也不门控 (纯文本回合)。"""
     sentinel_unreliable = MagicMock(name="glm_provider")
     import app.services.llm.factory as factory
@@ -154,6 +157,7 @@ def test_gate_skips_when_no_tools(monkeypatch, model_id):
 
     ex = _executor()
     ex._request_model_id = model_id
+    ex._prefer_fast_record_model = fast_record
 
     provider, pass_tools = ex._resolve_chat_provider(None)
     assert provider is sentinel_unreliable
@@ -177,6 +181,55 @@ def test_gate_keeps_unreliable_when_no_reliable_fallback(monkeypatch):
     provider, pass_tools = ex._resolve_chat_provider([{"type": "function"}])
     assert provider is sentinel_unreliable  # 没崩, 不换
     assert pass_tools
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_id", ["glm-5.3", "deepseek-v4.1-flash"])
+async def test_simple_record_stream_gates_new_models_before_first_tool_round(
+    db, auth_user_and_headers, monkeypatch, model_id,
+):
+    """Exercise the real run_stream fast-record classifier, without executing a write."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    class ProbeProvider:
+        def __init__(self, selected):
+            self.model = selected
+
+        async def chat_stream(self, **kwargs):
+            calls.append((self.model, kwargs.get("tools")))
+            yield {"type": "content", "text": "测试未执行记录。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", False)
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id", ProbeProvider,
+    )
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **_k: "qwen3.7-max")
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+
+    stream = executor.run_stream(
+        user_id=user.id,
+        message="记录喝水200毫升",
+        user_auth_token="test-token",
+        extra_context=json.dumps({"client": "web", "model_id": model_id}),
+    )
+    try:
+        async for _event in stream:
+            if calls:
+                break
+    finally:
+        await stream.aclose()
+
+    assert executor._prefer_fast_record_model is True
+    assert calls, "The real simple-record path must reach a provider"
+    actual_model, tools = calls[0]
+    assert actual_model == "qwen3.7-max"
+    assert "health_record" in {tool["function"]["name"] for tool in tools}
+    assert executor._request_model_id == model_id
 
 
 def test_fast_record_uses_default_provider_instead_of_hidden_glm(monkeypatch):

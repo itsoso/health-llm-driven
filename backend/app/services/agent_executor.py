@@ -21457,9 +21457,9 @@ class AgentExecutor:
         # ──── 工具调用能力门控 (从源头减少弱模型吐坏工具调用; #147/#161 兜底解析仍在) ────
         # 仅当本回合确实要传 tools 且已确定的 effective_model 不可靠时, 才换一个可靠模型。
         # 拿不准 (effective_model_id=None / 未注册) → 保守不动, 依赖兜底解析。
-        # fast-record 只压缩 prompt / 自动确认, 不再偷偷切模型。为避免用户显式选择的
-        # 模型又被工具门控改掉, 该路径继续依赖 #147/#161 的兜底解析。
-        if pass_tools and not self._prefer_fast_record_model:
+        # fast-record 只压缩 prompt / 应用既有确认策略，不能豁免工具可靠性检查。
+        # 仅工具轮可借用可靠模型；无工具回答仍使用用户所选模型。
+        if pass_tools:
             gated = self._gate_tool_provider(effective_model_id)
             if gated is not None:
                 provider, effective_model_id = gated
