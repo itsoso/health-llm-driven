@@ -2,7 +2,7 @@
   "expo": {
     "name": "小巴健康",
     "slug": "health-pilot",
-    "version": "1.3.3",
+    "version": "1.3.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": ["mobile", "health"],
@@ -25,12 +25,12 @@
           "UIInterfaceOrientationPortrait"
         ],
         "NSFaceIDUsageDescription": "使用 Face ID 保护您的健康数据",
-        "NSPhotoLibraryUsageDescription": "用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析",
-        "NSPhotoLibraryAddUsageDescription": "用于你主动保存健康报告、截图或导出图片到照片图库",
-        "NSCameraUsageDescription": "拍摄食物或健康数据进行分析",
+        "NSPhotoLibraryUsageDescription": "用于你主动选择健康相关图片或生活照片，生成记录草稿、健康分析或足迹回顾",
+        "NSPhotoLibraryAddUsageDescription": "用于你主动保存健康报告、截图或足迹分享图到照片图库",
+        "NSCameraUsageDescription": "用于你主动拍摄食物、健康数据或生活照片，进行分析或记录足迹",
         "NSMicrophoneUsageDescription": "用于语音输入、健康记录听写和小巴对话",
         "NSSpeechRecognitionUsageDescription": "识别你的语音,和小巴连续对话",
-        "NSLocationWhenInUseUsageDescription": "用你当前位置查天气、空气质量,给出更贴合的建议",
+        "NSLocationWhenInUseUsageDescription": "用于查询天气、空气质量；你主动选择时单次读取位置，确认城市后保存为记录足迹，不持续追踪",
         "NSHealthShareUsageDescription": "用于读取 Apple Watch / RingConn / Oura 等设备写入的健康数据,生成个性化健康分析",
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -56,6 +56,14 @@
           }
         ],
         "NSPrivacyCollectedDataTypes": [
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCoarseLocation",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
           {
             "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeHealth",
             "NSPrivacyCollectedDataTypeLinked": true,
@@ -215,7 +223,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "用你当前位置查天气、空气质量,给出更贴合的建议",
+          "locationWhenInUsePermission": "用于查询天气、空气质量；你主动选择时单次读取位置，确认城市后保存为记录足迹，不持续追踪",
           "locationAlwaysPermission": false,
           "locationAlwaysAndWhenInUsePermission": false,
           "isIosBackgroundLocationEnabled": false

@@ -1706,6 +1706,17 @@ describe('ChatScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/diet');
   });
 
+  it('opens the monthly journey from the more sheet', async () => {
+    const { getByLabelText, getByText } = render(<ChatScreen />);
+    await act(async () => {
+      fireEvent.press(getByLabelText('更多会诊操作'));
+    });
+    await act(async () => {
+      fireEvent.press(getByText('这一路 · 月度足迹'));
+    });
+    expect(mockPush).toHaveBeenCalledWith('/journey');
+  });
+
   it('starts a new conversation when opened from an Agent context entry', async () => {
     mockRouteParams = {
       prompt: '请基于我近 7 天睡眠数据分析今晚最该调整的 3 件事。',

@@ -29,8 +29,8 @@ const APP_OPEN_PATH_PREFIX = '/open/shared';
 const REGISTRATION_INVITE_PATH = '/open/invite';
 const ROKID_QUERY_SCHEMES = ['rokidai'];
 const PHOTO_LIBRARY_USAGE_DESCRIPTION =
-  '用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析';
-const PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION = '用于你主动保存健康报告、截图或导出图片到照片图库';
+  '用于你主动选择健康相关图片或生活照片，生成记录草稿、健康分析或足迹回顾';
+const PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION = '用于你主动保存健康报告、截图或足迹分享图到照片图库';
 const SHARED_LINK_INTENT_FILTER: AndroidIntentFilter = {
   action: 'VIEW',
   autoVerify: true,

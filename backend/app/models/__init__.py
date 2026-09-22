@@ -126,6 +126,7 @@ from app.models.conversation_memory import ConversationMemory
 from app.models.shared_conversation import SharedConversation
 # 补剂审计
 from app.models.supplement_audit import SupplementAudit, SupplementAuditItem
+from app.models.journey_place import JourneyPlace
 # 健康咨询
 from app.models.health_consultation import HealthConsultation, ConsultationItem
 # Agent-Native v3 — Episode 闭环 (Run Recovery Coach 第一刀)

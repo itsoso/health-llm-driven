@@ -262,6 +262,27 @@ describe('shareLongImage', () => {
 
     expect(Sharing.shareAsync).toHaveBeenCalledTimes(1);
   });
+
+  it('rechecks a caller session guard after async availability before native handoff', async () => {
+    let resolveAvailable!: (value: boolean) => void;
+    (Sharing.isAvailableAsync as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { resolveAvailable = resolve; }));
+    let active = true;
+    const pending = shareLongImage('file:///private-journey.png', {
+      target: 'wechat',
+      beforeShare: () => { if (!active) throw new Error('session_changed'); },
+    } as any);
+    active = false; resolveAvailable(true);
+    await expect(pending).rejects.toThrow('session_changed');
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+
+  it('checks before copying a private companion caption', async () => {
+    await expect(shareLongImage('file:///private-journey.png', {
+      target: 'wechat', caption: 'private', beforeShare: () => { throw new Error('session_changed'); },
+    } as any)).rejects.toThrow('session_changed');
+    expect(Clipboard.setStringAsync).not.toHaveBeenCalled();
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
 });
 
 describe('shareImage', () => {

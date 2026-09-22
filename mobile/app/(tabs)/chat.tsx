@@ -1376,6 +1376,14 @@ export default function ChatScreen() {
               }}
             />
             <ToolMenuRow
+              icon="navigate-outline"
+              label="这一路 · 月度足迹"
+              onPress={() => {
+                setToolMenuVisible(false);
+                router.push('/journey');
+              }}
+            />
+            <ToolMenuRow
               icon="person-circle-outline"
               label="我 · 个人中心与设置"
               onPress={() => {

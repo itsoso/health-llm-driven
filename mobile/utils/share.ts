@@ -120,6 +120,8 @@ export type VideoShareTarget = SocialShareTarget;
 export type ImageShareTarget = SocialShareTarget | 'more';
 
 interface ShareImageOptions {
+  /** Synchronous lifecycle/session guard, rechecked immediately before native handoff. */
+  beforeShare?: () => void;
   target?: ImageShareTarget;
   cacheKey?: string;
   headers?: Record<string, string>;
@@ -241,6 +243,7 @@ export async function shareImage(uri: string, options: ShareImageOptions = {}) {
   }
 
   try {
+    options.beforeShare?.();
     return await Sharing.shareAsync(localUri, {
       dialogTitle: options.dialogTitle || imageDialogTitle(options.target),
       mimeType: format.mimeType,
@@ -265,14 +268,17 @@ export async function shareLocalImage(uri: string) {
 interface ShareLongImageOptions {
   target: SocialShareTarget;
   caption?: string;
+  beforeShare?: () => void;
 }
 
 export async function shareLongImage(uri: string, options: ShareLongImageOptions) {
+  options.beforeShare?.();
   const caption = String(options.caption || '').trim();
   if (caption) await Clipboard.setStringAsync(caption).catch(() => {});
   return shareImage(uri, {
     target: options.target,
     mimeType: 'image/png',
+    beforeShare: options.beforeShare,
   });
 }
 

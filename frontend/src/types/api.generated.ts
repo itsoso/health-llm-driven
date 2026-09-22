@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/v1/journey/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sources */
+        get: operations["sources_api_v1_journey_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/journey/places/{kind}/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put */
+        put: operations["put_api_v1_journey_places__kind___source_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/journey/month": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Month */
+        get: operations["month_api_v1_journey_month_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/journey/places/{place_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete */
+        delete: operations["delete_api_v1_journey_places__place_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/journey/export-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export */
+        post: operations["export_api_v1_journey_export_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/ai-consent": {
         parameters: {
             query?: never;
@@ -26793,6 +26878,195 @@ export interface components {
             /** Group Name */
             group_name: string;
         };
+        /** JourneyExportItem */
+        JourneyExportItem: {
+            /** City */
+            city: string;
+            /**
+             * Local Date
+             * Format: date
+             */
+            local_date: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "diet" | "life_event" | "chat_photo";
+            /** Images */
+            images: components["schemas"]["JourneyImage"][];
+        };
+        /** JourneyExportRequest */
+        JourneyExportRequest: {
+            /** Items */
+            items: components["schemas"]["JourneyExportSelection"][];
+        };
+        /** JourneyExportResponse */
+        JourneyExportResponse: {
+            /** Month */
+            month: string;
+            /** Items */
+            items: components["schemas"]["JourneyExportItem"][];
+        };
+        /** JourneyExportSelection */
+        JourneyExportSelection: {
+            /** Place Id */
+            place_id: number;
+            /** Version */
+            version: number;
+            /** Image Keys */
+            image_keys: string[];
+        };
+        /** JourneyImage */
+        JourneyImage: {
+            /** Key */
+            key: string;
+            /** Url */
+            url: string;
+        };
+        /** JourneyMonthResponse */
+        JourneyMonthResponse: {
+            /** Month */
+            month: string;
+            /** Items */
+            items: components["schemas"]["JourneyPlaceResponse"][];
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Limit */
+            limit: number;
+        };
+        /** JourneyPlaceBase */
+        JourneyPlaceBase: {
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "diet" | "life_event" | "chat_photo";
+            /** Source Id */
+            source_id: number;
+            /** City */
+            city: string;
+            /**
+             * Local Date
+             * Format: date
+             */
+            local_date: string;
+            /** Timezone */
+            timezone: string;
+            /**
+             * Location Source
+             * @enum {string}
+             */
+            location_source: "manual" | "device";
+            /** Version */
+            version: number;
+        };
+        /** JourneyPlaceResponse */
+        JourneyPlaceResponse: {
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "diet" | "life_event" | "chat_photo";
+            /** Source Id */
+            source_id: number;
+            /** City */
+            city: string;
+            /**
+             * Local Date
+             * Format: date
+             */
+            local_date: string;
+            /** Timezone */
+            timezone: string;
+            /**
+             * Location Source
+             * @enum {string}
+             */
+            location_source: "manual" | "device";
+            /** Version */
+            version: number;
+            /** Title */
+            title: string;
+            /** Images */
+            images: components["schemas"]["JourneyImage"][];
+            /**
+             * Image Status
+             * @enum {string}
+             */
+            image_status: "ready" | "unavailable" | "none";
+        };
+        /** JourneySource */
+        JourneySource: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "diet" | "life_event" | "chat_photo";
+            /** Source Id */
+            source_id: number;
+            /** Title */
+            title: string;
+            /**
+             * Suggested Date
+             * Format: date
+             */
+            suggested_date: string;
+            /**
+             * Date Basis
+             * @enum {string}
+             */
+            date_basis: "record" | "message";
+            /** Images */
+            images: components["schemas"]["JourneyImage"][];
+            /**
+             * Image Status
+             * @enum {string}
+             */
+            image_status: "ready" | "unavailable" | "none";
+            place: components["schemas"]["JourneyPlaceBase"] | null;
+        };
+        /** JourneySourcesResponse */
+        JourneySourcesResponse: {
+            /** Items */
+            items: components["schemas"]["JourneySource"][];
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Limit */
+            limit: number;
+        };
+        /** JourneyWrite */
+        JourneyWrite: {
+            /** City */
+            city: string;
+            /**
+             * Local Date
+             * Format: date
+             */
+            local_date: string;
+            /** Timezone */
+            timezone: string;
+            /**
+             * Location Source
+             * @enum {string}
+             */
+            location_source: "manual" | "device";
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Confirmed
+             * @constant
+             * @enum {boolean}
+             */
+            confirmed: true;
+        };
         JsonValue: unknown;
         /** JudgmentFeedbackRequest */
         JudgmentFeedbackRequest: {
@@ -33872,6 +34146,174 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    sources_api_v1_journey_sources_get: {
+        parameters: {
+            query: {
+                kind: "diet" | "life_event" | "chat_photo";
+                month: string;
+                timezone?: string;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneySourcesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_api_v1_journey_places__kind___source_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "diet" | "life_event" | "chat_photo";
+                source_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JourneyWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneyPlaceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    month_api_v1_journey_month_get: {
+        parameters: {
+            query: {
+                month: string;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneyMonthResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_api_v1_journey_places__place_id__delete: {
+        parameters: {
+            query: {
+                expected_version: number;
+            };
+            header?: never;
+            path: {
+                place_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_api_v1_journey_export_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JourneyExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneyExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_ai_consent_api_v1_auth_ai_consent_get: {
         parameters: {
             query?: never;

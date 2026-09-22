@@ -65,10 +65,10 @@ function configuredPluginNames(config: any): string[] {
 }
 
 describe('app.config app links', () => {
-  it('pins the 1.3.3 production release identity and narrow capability surface', () => {
+  it('separates the journey native candidate from the prior 1.3.3 OTA runtime', () => {
     const config = configForVariant('production');
 
-    expect(config.version).toBe('1.3.3');
+    expect(config.version).toBe('1.3.4');
     expect(config.runtimeVersion).toEqual({ policy: 'appVersion' });
     expect(config.extra?.release).toEqual({
       variant: 'production',
@@ -175,6 +175,18 @@ describe('app.config app links', () => {
       locationAlwaysAndWhenInUsePermission: false,
       isIosBackgroundLocationEnabled: false,
     }));
+    expect(locationPlugin?.[1].locationWhenInUsePermission).toContain('足迹');
+    expect(locationPlugin?.[1].locationWhenInUsePermission).toContain('单次');
+    expect(config.ios?.infoPlist?.NSLocationWhenInUseUsageDescription)
+      .toBe(locationPlugin?.[1].locationWhenInUsePermission);
+    expect(config.android?.permissions ?? []).not.toContain('ACCESS_BACKGROUND_LOCATION');
+  });
+
+  it('discloses actively chosen scenery photos and saved journey exports', () => {
+    const config = configForVariant('production');
+    expect(config.ios?.infoPlist?.NSPhotoLibraryUsageDescription).toContain('生活照片');
+    expect(config.ios?.infoPlist?.NSCameraUsageDescription).toContain('生活照片');
+    expect(config.ios?.infoPlist?.NSPhotoLibraryAddUsageDescription).toContain('足迹');
   });
 
   it('does not declare background audio for the App Store production binary', () => {
@@ -277,6 +289,12 @@ describe('app.config app links', () => {
     ]));
     expect(collected.every((entry: any) => entry.NSPrivacyCollectedDataTypeTracking === false)).toBe(true);
     expect(collected).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeCoarseLocation',
+        NSPrivacyCollectedDataTypeLinked: true,
+        NSPrivacyCollectedDataTypeTracking: false,
+        NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
+      }),
       expect.objectContaining({
         NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeAudioData',
         NSPrivacyCollectedDataTypeLinked: true,
