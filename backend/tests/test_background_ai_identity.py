@@ -65,7 +65,7 @@ def test_background_scope_rejects_invalid_identity(user_id):
 
 
 @pytest.mark.parametrize("entry", ["life", "insight", "insight_running_loop"])
-@pytest.mark.parametrize("permission", ["accepted", "missing", "revoked", "stale", "inactive", "unapproved", "unknown_host"])
+@pytest.mark.parametrize("permission", ["accepted", "missing", "revoked", "stale", "inactive", "unapproved", "unknown_host", "cookie_subject_missing"])
 def test_real_background_entry_checks_its_owner_consent(db, monkeypatch, entry, permission):
     if entry == "life":
         user = _mk_user(db)
@@ -111,18 +111,22 @@ def test_real_background_entry_checks_its_owner_consent(db, monkeypatch, entry, 
     async def invoke_with_loop():
         return invoke()
 
-    with stale_context() as bindings:
-        if entry == "life" and permission != "accepted":
-            with pytest.raises(HTTPException):
+    cookie_token = ai_consent._cookie_subject_missing.set(permission == "cookie_subject_missing")
+    try:
+        with stale_context() as bindings:
+            if entry == "life" and permission != "accepted":
+                with pytest.raises(HTTPException):
+                    invoke()
+            elif entry == "insight_running_loop":
+                asyncio.run(invoke_with_loop())
+            else:
                 invoke()
-        elif entry == "insight_running_loop":
-            asyncio.run(invoke_with_loop())
-        else:
-            invoke()
-        assert checked == [uid], "guard must be reached with the correct context"
-        assert sent == ([uid] if permission == "accepted" else [])
-        for var, value in bindings:
-            assert var.get() == value
+            assert checked == [uid], "guard must be reached with the correct context"
+            assert sent == ([uid] if permission == "accepted" else [])
+            for var, value in bindings:
+                assert var.get() == value
+    finally:
+        ai_consent._cookie_subject_missing.reset(cookie_token)
 
 
 def test_life_event_foreign_message_never_reaches_provider(db, monkeypatch):

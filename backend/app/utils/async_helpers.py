@@ -1,5 +1,6 @@
 """异步辅助工具 — 在同步上下文（如 Celery 任务）中安全运行协程"""
 import asyncio
+from contextvars import copy_context
 from typing import TypeVar, Coroutine, Any
 
 T = TypeVar("T")
@@ -21,8 +22,12 @@ def run_async(coro: Coroutine[Any, Any, T]) -> T:
     if loop is not None and loop.is_running():
         # 已有运行中的事件循环（不常见，但防御性处理）
         import concurrent.futures
+        context = copy_context()
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(asyncio.run, coro)
+            # Preserve request security context (including cookie subject
+            # guards), just as the no-running-loop branch does. A copied
+            # Context also prevents child mutations leaking back to the caller.
+            future = pool.submit(context.run, asyncio.run, coro)
             return future.result()
     else:
         # 无事件循环 — Celery worker 的正常情况

@@ -1,6 +1,6 @@
 # Dossier: 后台 AI 调用身份隔离修复
 
-- 当前阶段：验证；未发布，G4/G5/G6 待验证。
+- 当前阶段：G4 NO-GO 后整改与复审；未 push、未部署。
 - 用户需求：在“分析线上日志和用户 prompts”后要求“继续”。
 - 基线：`d31ab9cef`，开工时 main 干净，远端已快进同步，已检查开放 PR。
 - Run ledger：`docs/_generated/harness-runs/f641b4b5bfad.jsonl`（本地，不提交）。
@@ -58,6 +58,31 @@
 - System Map、mobile-nav、doc-drift、git diff --check 通过；密钥扫描通过。
 - LLM change gate 命中调用层；首次 live 运行因本地未配置模型凭据失败，
   不视为通过。仅将已有本地配置的 TokenPlan 凭据读入评测进程内存，
-  使用合成用户和内存测试库重跑中，不加载该文件的数据库或生产配置。
-- G4：待固定提交的独立复审。
+  使用合成用户和内存测试库重跑，不加载该文件的数据库或生产配置。
+- 配置后 live 重跑 exit 0：invariants 12/12，health_agent_core 50/50，
+  orchestrator 5/5（平均评分 0.96）；轨迹契约 12/12、goldens 9/9。
+  `/tmp/reva-background-ai-live-configured.log`。内存评测库未创建 usage 表，
+  有旁路统计/测试环境 quota 警告；不以此证明生产计费写入或额度库可用。
+  生产额度语义由既有 budget 测试覆盖，真实环境仍需发布后验证。
+- G4 第一轮：`/root/background_ai_safety` 对固定提交 `92af066de` 裁定
+  **NO-GO**。run_async 的 running-loop 线程分支不复制 ContextVar，导致
+  `_cookie_subject_missing=True` 丢失，恢复 owner 后可能跳过 409 会话守卫。
+- 整改 RED：真实 insight 入口 + running loop + cookie subject missing
+  复现 1 failed / 2 passed，`/tmp/reva-background-ai-cookie-red.log`。
+  在线程桥使用 copy_context 传递上下文，不修改 consent 守卫或伪造会话。
+  新增同步/运行中 loop 两分支的上下文传递与异常不泄漏测试。
+- 整改 G3：全增量 CI-mode 合跑 122 passed / 2 PostgreSQL-only skipped，
+  `/tmp/reva-background-ai-integration-v2.log`；PG/live 正在重跑。
+- G4 第二轮：待新固定提交的独立 reviewer，不复用第一轮裁决。
 - G5/G6：未部署，未验证。
+
+## 下一切片（未完成，不纳入本提交的修复声明）
+
+- `MultiModelAnalyzeClient.analyze` 未接收 user_id，daily insights 与跑后分析
+  调用链需要显式传递，并检查错误结果不能被渲染/推送为分析成功。
+- `snp_prewarm` 每日 02:30 调 `get_snp_detail`，其模型调用未设置 caller/user；
+  与此前 unknown 样本的定时特征吻合，但尚无 trace 证据证明全部样本同源。
+  后续需同时核实基因归属、缓存隔离和失败计数，不能只修身份后宣称全部恢复。
+- 补剂确认卡：待用户选择；维持“未确认不写、缺单位不猜、历史失败不重放”。
+- 遵循用户“全部解决之后再部署和发布”，本切片仅本地保存；未设置远端
+  live gate 放行变量，发布前仍需精确 main revision CI 与整体上线验证。
