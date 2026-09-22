@@ -149,6 +149,8 @@ class TestExtractionProvider:
 @pytest.mark.parametrize("model_id,wire_model", [
     ("qwen3.8-max-preview", "qwen3.8-max"),
     ("qwen3.8-max", "qwen3.8-max"),
+    ("deepseek-v4.1-flash", "deepseek-v4.1-flash"),
+    ("glm-5.3", "glm-5.3"),
 ])
 def test_registered_preview_uses_stable_wire_model(monkeypatch, model_id, wire_model):
     from app.services.llm.factory import create_provider_for_model_id

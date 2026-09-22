@@ -26,10 +26,12 @@ public enum AgentModelCatalog {
         AgentModelOption(id: "qwen3.8-flash", title: "Qwen3.8 Flash", provider: "阿里 TokenPlan", tier: "Flash"),
         AgentModelOption(id: "qwen3.7-plus", title: "Qwen3.7 Plus", provider: "阿里 TokenPlan", tier: "Vision"),
         AgentModelOption(id: "qwen3.7-max", title: "Qwen3.7 Max", provider: "阿里 TokenPlan", tier: "Reasoning"),
+        AgentModelOption(id: "deepseek-v4.1-flash", title: "DeepSeek V4.1 Flash", provider: "阿里 TokenPlan", tier: "Vision"),
         AgentModelOption(id: "deepseek-v4-pro", title: "DeepSeek V4 Pro", provider: "阿里 TokenPlan", tier: "Reasoning"),
         AgentModelOption(id: "deepseek-v4-pro-0813", title: "DeepSeek V4 Pro 0813", provider: "阿里 TokenPlan", tier: "Reasoning"),
         AgentModelOption(id: "deepseek-v4-flash", title: "DeepSeek V4 Flash", provider: "阿里 TokenPlan", tier: "Flash"),
         AgentModelOption(id: "kimi-k2.7-code", title: "Kimi K2.7 Code", provider: "阿里 TokenPlan", tier: "Vision"),
+        AgentModelOption(id: "glm-5.3", title: "GLM-5.3", provider: "阿里 TokenPlan", tier: "Balanced"),
         AgentModelOption(id: "glm-5.2", title: "GLM-5.2", provider: "阿里 TokenPlan", tier: "Balanced"),
         AgentModelOption(id: "minimax-m2.5", title: "MiniMax M2.5", provider: "阿里 TokenPlan", tier: "Reasoning"),
     ]

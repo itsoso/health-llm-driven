@@ -63,20 +63,22 @@ def _executor():
     return ex
 
 
-def test_gate_redirects_unreliable_request_model_when_tools(monkeypatch):
+@pytest.mark.parametrize("model_id", ["glm-5.1", "glm-5.3", "deepseek-v4.1-flash"])
+def test_gate_redirects_unreliable_request_model_when_tools(monkeypatch, model_id):
     """request_model = glm-5.1 (不可靠) + 传 tools → 换可靠模型。"""
     sentinel_unreliable = MagicMock(name="glm_provider")
     sentinel_reliable = MagicMock(name="claude_provider")
 
     def fake_create(model_id):
-        return sentinel_unreliable if model_id == "glm-5.1" else sentinel_reliable
+        return sentinel_unreliable if model_id == requested_id else sentinel_reliable
 
     import app.services.llm.factory as factory
     monkeypatch.setattr(factory, "create_provider_for_model_id", fake_create)
     monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.7-max")
 
+    requested_id = model_id
     ex = _executor()
-    ex._request_model_id = "glm-5.1"
+    ex._request_model_id = model_id
 
     provider, pass_tools = ex._resolve_chat_provider([{"type": "function"}])
     assert provider is sentinel_reliable
@@ -132,7 +134,8 @@ async def test_complex_aigc_turn_does_not_force_draft_on_reliable_fallback_model
     assert "enable_thinking" not in captured
 
 
-def test_gate_skips_when_no_tools(monkeypatch):
+@pytest.mark.parametrize("model_id", ["glm-5.1", "glm-5.3", "deepseek-v4.1-flash"])
+def test_gate_skips_when_no_tools(monkeypatch, model_id):
     """不传 tools → 即便选中不可靠模型也不门控 (纯文本回合)。"""
     sentinel_unreliable = MagicMock(name="glm_provider")
     import app.services.llm.factory as factory
@@ -150,7 +153,7 @@ def test_gate_skips_when_no_tools(monkeypatch):
     monkeypatch.setattr(reg, "pick_reliable_tool_model_id", spy)
 
     ex = _executor()
-    ex._request_model_id = "glm-5.1"
+    ex._request_model_id = model_id
 
     provider, pass_tools = ex._resolve_chat_provider(None)
     assert provider is sentinel_unreliable

@@ -7,6 +7,8 @@ from app.services.llm import model_registry as reg
 
 
 EXPECTED_MODELS = {
+    "deepseek-v4.1-flash": ("text_generation", "reasoning", "vision_understanding"),
+    "glm-5.3": ("text_generation", "reasoning"),
     "qwen3.8-max": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.8-flash": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.8-max-preview": ("text_generation", "reasoning", "vision_understanding"),
@@ -56,6 +58,8 @@ NON_TEXT_MODELS = {
 }
 
 TOP_CHAT_MODELS = {
+    "deepseek-v4.1-flash",
+    "glm-5.3",
     "qwen3.8-max",
     "qwen3.8-flash",
     "qwen3.7-plus",
@@ -168,3 +172,28 @@ def test_mac_picker_matches_backend_chat_catalog():
 
     assert set(mac_ids) == chat_ids
     assert len(mac_ids) == len(set(mac_ids))
+
+
+def test_web_and_mobile_picker_allowlists_match_backend_chat_catalog():
+    root = Path(__file__).resolve().parents[2]
+    expected = {model.id for model in reg.list_models(only_available=False)}
+    for path in (
+        "frontend/src/components/assistant/modelCatalog.ts",
+        "mobile/services/llmModelCatalog.ts",
+    ):
+        source = (root / path).read_text()
+        array = source.split("ADVANCED_CHAT_MODEL_IDS = [", 1)[1].split("] as const", 1)[0]
+        ids = re.findall(r"'([^']+)'", array)
+        assert set(ids) == expected, path
+        assert len(ids) == len(set(ids)), path
+
+
+def test_new_tokenplan_models_do_not_gain_unverified_tool_authority():
+    for model_id in ("deepseek-v4.1-flash", "glm-5.3"):
+        model = reg.get_model(model_id)
+        assert model is not None
+        assert model.chat_selectable
+        assert model.reliable_tool_calling is False
+        assert model.supports_forced_tool_choice is False
+        assert model.supports_thinking_budget is False
+        assert model.supports_explicit_cache is False

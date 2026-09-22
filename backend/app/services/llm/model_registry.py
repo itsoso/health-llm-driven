@@ -292,6 +292,19 @@ MODELS: List[ModelEntry] = [
         chat_selectable=False,
         reliable_tool_calling=False,
     ),
+    # 2026-09-22: authenticated TokenPlan catalog + synthetic chat verified.
+    # Text availability does not establish safe tool-calling authority.
+    ModelEntry(
+        id="deepseek-v4.1-flash",
+        label="DeepSeek V4.1 Flash",
+        provider="tokenplan",
+        model="deepseek-v4.1-flash",
+        speed_tier="fast",
+        note="文本生成 / 推理 / 视觉理解; 工具调用未验证",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning", "vision_understanding"),
+        reliable_tool_calling=False,
+    ),
     ModelEntry(
         id="deepseek-v4-pro",
         label="DeepSeek V4 Pro",
@@ -375,6 +388,17 @@ MODELS: List[ModelEntry] = [
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning", "vision_understanding"),
         chat_selectable=False,
+    ),
+    ModelEntry(
+        id="glm-5.3",
+        label="GLM-5.3 · 智谱AI",
+        provider="tokenplan",
+        model="glm-5.3",
+        speed_tier="balanced",
+        note="文本生成 / 推理; 工具调用未验证",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning"),
+        reliable_tool_calling=False,
     ),
     ModelEntry(
         id="glm-5.2",

@@ -1,0 +1,93 @@
+[
+  {
+    "source_date": "2026-09-22",
+    "source_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models",
+    "capability_source": "https://help.aliyun.com/zh/model-studio/token-plan-team-overview",
+    "subscription_status": "authenticated API HTTP 200; plan tier not queried",
+    "brand": "DeepSeek",
+    "model": "deepseek-v4.1-flash",
+    "label": "DeepSeek V4.1 Flash",
+    "capabilities": [
+      "文本生成",
+      "推理模型",
+      "视觉理解"
+    ],
+    "reliable_tool_calling": false,
+    "availability_note": "Listed by authenticated API; synthetic chat HTTP 200 with matching response model.",
+    "include": true
+  },
+  {
+    "source_date": "2026-09-22",
+    "source_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models",
+    "capability_source": "https://help.aliyun.com/zh/model-studio/token-plan-team-overview",
+    "subscription_status": "authenticated API HTTP 200; plan tier not queried",
+    "brand": "智谱",
+    "model": "glm-5.3",
+    "label": "GLM-5.3 · 智谱AI",
+    "capabilities": [
+      "文本生成",
+      "推理模型"
+    ],
+    "reliable_tool_calling": false,
+    "availability_note": "Listed by authenticated API; synthetic chat HTTP 200 with matching response model.",
+    "include": true
+  },
+  {
+    "source_date": "2026-09-22",
+    "source_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models",
+    "capability_source": "https://help.aliyun.com/zh/model-studio/token-plan-team-overview",
+    "subscription_status": "authenticated API HTTP 200; plan tier not queried",
+    "brand": "千问",
+    "model": "qwen3.8-max",
+    "capabilities": [
+      "文本生成",
+      "推理模型",
+      "视觉理解"
+    ],
+    "availability_note": "Listed by authenticated API; already registered. Restore Web visibility.",
+    "include": false
+  },
+  {
+    "source_date": "2026-09-22",
+    "source_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models",
+    "capability_source": "https://help.aliyun.com/zh/model-studio/token-plan-team-overview",
+    "subscription_status": "authenticated API HTTP 200; plan tier not queried",
+    "brand": "千问",
+    "model": "qwen3.8-flash",
+    "capabilities": [
+      "文本生成",
+      "推理模型",
+      "视觉理解"
+    ],
+    "availability_note": "Listed by authenticated API; synthetic chat HTTP 200. Restore Web visibility.",
+    "include": false
+  },
+  {
+    "source_date": "2026-09-22",
+    "source_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models",
+    "capability_source": "https://help.aliyun.com/zh/model-studio/token-plan-team-overview",
+    "subscription_status": "authenticated API HTTP 200; plan tier not queried",
+    "brand": "DeepSeek",
+    "model": "deepseek-v4-pro-0813",
+    "capabilities": [
+      "文本生成",
+      "推理模型"
+    ],
+    "availability_note": "Absent from models API but listed in official docs; direct synthetic chat HTTP 200 with matching response model. Already registered.",
+    "include": false
+  },
+  {
+    "source_date": "2026-09-22",
+    "source_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models",
+    "capability_source": "https://help.aliyun.com/zh/model-studio/token-plan-team-overview",
+    "subscription_status": "authenticated API HTTP 200; plan tier not queried",
+    "brand": "千问",
+    "model": "auto",
+    "capabilities": [
+      "文本生成",
+      "推理模型"
+    ],
+    "availability_note": "Listed by authenticated API; dynamic underlying model and tool compatibility unverified. Not enabled in chat selection.",
+    "include": false
+  }
+]

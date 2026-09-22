@@ -15,10 +15,12 @@ export const ADVANCED_CHAT_MODEL_IDS = [
   'qwen3.8-flash',
   'qwen3.7-plus',
   'qwen3.7-max',
+  'deepseek-v4.1-flash',
   'deepseek-v4-pro',
   'deepseek-v4-pro-0813',
   'deepseek-v4-flash',
   'kimi-k2.7-code',
+  'glm-5.3',
   'glm-5.2',
   'minimax-m2.5',
 ] as const;
