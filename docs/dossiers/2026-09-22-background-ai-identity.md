@@ -134,6 +134,14 @@
 - Live：`/tmp/reva-bg-cont-live.log`，离线 62/62、真实模型 5/5、
   轨迹 21/21，exit 0；同前轮内存 usage 表警告边界，不冒充生产计费证明。
 - System Map / doc-drift / diff check / secrets scan 均通过。
-- G4：本轮固定提交独立复审待执行；不以第一切片 GO 代替。
+- G4：独立 `/root/background_remaining_safety` 对固定提交 `d17112ffc`
+  相对 `02cb75d77` 的 14 文件裁定 **GO**；身份/额度/consent/缓存/通知与
+  失败诚实性未发现范围内阻断。不是生产上线验证。
+- 之后仅补四个 authenticated 普通/Siri HTTP 成功失败契约测试；业务源码
+  保持受审版本不变，`/tmp/reva-multi-api-verification.log` 30 passed。
+  最终 CI-mode 全增量重跑 `/tmp/reva-bg-cont-integration-final.log`：
+  **394 passed / 2 PostgreSQL-only skipped**，exit 0。
+- 临时 PostgreSQL fast-stop 首次等待超时；随后检查 pg_ctl 无运行实例、
+  端口无响应、日志记录正常 shutdown，确认已停止（不是强制杀进程）。
 - 对外 API 路由与 schema、Mobile/Web 类型、DB schema 均无变化；新增结果
   计数字段仅用于 Celery 内部返回。后端、OTA 均尚未发布。

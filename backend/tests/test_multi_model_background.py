@@ -238,3 +238,28 @@ def test_auto_workout_foreign_owner_never_reaches_analysis(db, monkeypatch):
     monkeypatch.setattr(task, "SessionLocal", lambda: session_scope(db))
     monkeypatch.setattr(MultiModelAnalyzeClient, "analyze", forbidden)
     assert task.auto_analyze_workout.run(second.id, row.id) == {"status": "skipped", "reason": "not_found"}
+
+
+@pytest.mark.parametrize("endpoint", ["post-run-analyze", "post-run-analyze-siri"])
+@pytest.mark.parametrize("completed", [False, True])
+def test_authenticated_post_run_api_keeps_success_and_failure_contract(db, client, monkeypatch, endpoint, completed):
+    from tests.conftest import create_authenticated_user
+    from app.services.llm.usage_tracker import get_caller_user_id
+    user, token = create_authenticated_user(db)
+    row = workout(db, user.id)
+    monkeypatch.setattr(ai_consent, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    ai_consent.update_ai_consent(db, user.id, True, ai_consent.POLICY_VERSION)
+    monkeypatch.setattr(PostRunAnalyzeService, "_sync_garmin", AsyncMock(return_value={"status": "no_new_data"}))
+    owners = []
+    async def analyze(prompt):
+        ai_consent.require_ai_consent(destination="https://dashscope.aliyuncs.com/api/v1")
+        owners.append(get_caller_user_id())
+        return {"status": "completed" if completed else "error",
+                "aggregation": "synthetic summary" if completed else "synthetic-private-error", "model_results": []}
+    monkeypatch.setattr("app.services.llm.get_llm_provider", lambda: SimpleNamespace(multi_model_analyze=analyze))
+    response = client.post(f"/api/v1/workout/{endpoint}", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json()["success"] is completed
+    assert owners == [user.id]
+    assert "synthetic-private-error" not in response.text
+    assert db.query(WorkoutAnalysisResult).filter_by(workout_id=row.id).count() == int(completed)
