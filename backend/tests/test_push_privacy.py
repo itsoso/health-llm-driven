@@ -716,8 +716,8 @@ def test_daily_insight_backstop(db, aggregation, expect_generic):
         def __init__(self):
             pass
 
-        async def analyze(self, _prompt):
-            return {"aggregation": aggregation}
+        async def analyze(self, _prompt, *, user_id):
+            return {"status": "completed", "aggregation": aggregation}
 
     @contextmanager
     def _ctx():

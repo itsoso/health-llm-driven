@@ -347,8 +347,12 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
     try:
         with SessionLocal() as db:
             # 检查是否已有分析结果
+            from sqlalchemy import func
             existing = db.query(WorkoutAnalysisResult).filter(
-                WorkoutAnalysisResult.workout_id == workout_id
+                WorkoutAnalysisResult.workout_id == workout_id,
+                WorkoutAnalysisResult.user_id == user_id,
+                WorkoutAnalysisResult.status == "completed",
+                func.length(func.trim(WorkoutAnalysisResult.aggregation)) > 0,
             ).first()
             if existing:
                 logger.info(f"[自动分析] 跳过已分析的运动 {workout_id}")
@@ -370,8 +374,12 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
 
             # 单次 event loop 完成分析 + 推送通知
             async def _analyze_and_notify():
-                result = await service.analyzer.analyze(prompt)
-                service._save_analysis_result(user_id, workout_id, prompt, result)
+                from app.services.multi_model_analyze import is_completed_analysis
+                result = await service.analyzer.analyze(prompt, user_id=user_id)
+                if not is_completed_analysis(result):
+                    return {"status": "error", "reason": "analysis_incomplete"}
+                if not service._save_analysis_result(user_id, workout_id, prompt, result):
+                    return {"status": "error", "reason": "analysis_not_saved"}
 
                 # 构造推送: 标题用运动类型 + 一行概况, 正文取 aggregation 的第一段 (跳过 markdown 标题行).
                 # 运动名走 WorkoutAnalysisService 的中文映射, 保持 push 和 app 内展示一致.
@@ -386,14 +394,19 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
                 summary = " · ".join(summary_bits)
                 title = f"跑后教练: {activity}" + (f" ({summary})" if summary else "")
 
-                body = _coach_oneliner(result.get("aggregation") or "")
+                from app.services.notification.push_privacy import llm_push_backstop
+                _, safe_content, redacted = llm_push_backstop(
+                    None, result["aggregation"],
+                    generic_content="你的运动分析已生成，点击查看详情。",
+                )
+                body = safe_content if redacted else _coach_oneliner(result["aggregation"])
                 if not body:
                     body = "你的运动数据已分析完成，点击查看详情"
 
                 try:
                     from app.services.notification.push_service import PushService
                     push_svc = PushService(db)
-                    await push_svc.send_notification(
+                    delivery = await push_svc.send_notification(
                         user_id=user_id,
                         notification_type="workout_analysis",
                         title=title,
@@ -409,11 +422,19 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
                         # 7 天窗口内同一 workout_id 不重推
                         dedup_window_hours=168,
                     )
+                    notification_status = (
+                        "sent" if isinstance(delivery, dict) and delivery.get("success") else "failed"
+                    )
                 except Exception as push_err:
-                    logger.warning(f"[自动分析] 推送通知失败: {push_err}")
-                return result
+                    logger.warning("[自动分析] 推送通知失败 error_type=%s", type(push_err).__name__)
+                    notification_status = "failed"
+                return {**result, "notification_status": notification_status}
 
             analysis = asyncio.run(_analyze_and_notify())
+            if analysis.get("status") != "completed":
+                logger.warning("[自动分析] 分析未完成，未发送成功通知")
+                return {"status": "error", "workout_id": workout_id,
+                        "reason": analysis.get("reason", "analysis_incomplete")}
 
             # Agent-Native v3 — 跑步类 workout 自动建 Episode + ActionGraph.
             # 失败不影响主流程 (post-run analysis 已成功), 只记 warning.
@@ -426,7 +447,8 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
                 )
 
             logger.info(f"[自动分析] 完成: user={user_id} workout={workout_id} status={analysis.get('status')}")
-            return {"status": "success", "workout_id": workout_id}
+            return {"status": "success", "workout_id": workout_id,
+                    "notification_status": analysis["notification_status"]}
 
     except Exception as e:
         logger.error(f"[自动分析] 失败: user={user_id} workout={workout_id} error={e}")

@@ -134,7 +134,7 @@ class TestLLMProviderBase:
         p = ErrorProvider()
         result = await p.multi_model_analyze("测试")
         assert result["status"] == "error"
-        assert "模型不可用" in result["aggregation"]
+        assert result["aggregation"] == "分析暂未完成，请稍后重试。"
 
     def test_repr(self):
         """__repr__ 输出"""

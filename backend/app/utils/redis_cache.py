@@ -27,9 +27,9 @@ def get_redis_client() -> Optional[redis.Redis]:
             )
             # 测试连接
             _redis_client.ping()
-            logger.info(f"✅ Redis 连接成功: {settings.redis_url}")
+            logger.info("Redis connected")
         except Exception as e:
-            logger.warning(f"⚠️  Redis 连接失败: {e}，将不使用缓存")
+            logger.warning("Redis connection unavailable error_type=%s", type(e).__name__)
             _redis_client = None
 
     return _redis_client
@@ -58,7 +58,7 @@ class RedisCache:
                 return json.loads(value)
             return None
         except Exception as e:
-            logger.error(f"Redis GET 失败 (key={key}): {e}")
+            logger.error("Redis GET failed error_type=%s", type(e).__name__)
             return None
 
     @staticmethod
@@ -79,11 +79,13 @@ class RedisCache:
 
         try:
             serialized = json.dumps(value, ensure_ascii=False)
-            client.setex(key, ttl, serialized)
-            logger.debug(f"Redis SET 成功 (key={key}, ttl={ttl}s)")
+            if not client.setex(key, ttl, serialized):
+                logger.warning("Redis SET not acknowledged")
+                return False
+            logger.debug("Redis SET succeeded ttl_seconds=%s", ttl)
             return True
         except Exception as e:
-            logger.error(f"Redis SET 失败 (key={key}): {e}")
+            logger.error("Redis SET failed error_type=%s", type(e).__name__)
             return False
 
     @staticmethod
@@ -102,10 +104,10 @@ class RedisCache:
 
         try:
             client.delete(key)
-            logger.debug(f"Redis DELETE 成功 (key={key})")
+            logger.debug("Redis DELETE succeeded")
             return True
         except Exception as e:
-            logger.error(f"Redis DELETE 失败 (key={key}): {e}")
+            logger.error("Redis DELETE failed error_type=%s", type(e).__name__)
             return False
 
     @staticmethod
@@ -125,7 +127,7 @@ class RedisCache:
         try:
             return bool(client.exists(key))
         except Exception as e:
-            logger.error(f"Redis EXISTS 失败 (key={key}): {e}")
+            logger.error("Redis EXISTS failed error_type=%s", type(e).__name__)
             return False
 
     @staticmethod
@@ -154,7 +156,7 @@ class RedisCache:
                     break
             return count
         except Exception as e:
-            logger.error(f"Redis CLEAR_PATTERN 失败 (pattern={pattern}): {e}")
+            logger.error("Redis CLEAR_PATTERN failed error_type=%s", type(e).__name__)
             return 0
 
 

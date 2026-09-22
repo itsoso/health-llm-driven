@@ -155,11 +155,11 @@ class LLMProvider(ABC):
                 "aggregation": result,
             }
         except Exception as e:
-            logger.error(f"[{self.provider_name}] multi_model_analyze 回退失败: {e}")
+            logger.error("multi_model_analyze failed error_type=%s", type(e).__name__)
             return {
                 "status": "error",
                 "model_results": [],
-                "aggregation": f"分析失败: {e}",
+                "aggregation": "分析暂未完成，请稍后重试。",
             }
 
     @property

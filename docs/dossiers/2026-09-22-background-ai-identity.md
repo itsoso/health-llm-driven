@@ -93,3 +93,47 @@
 - 补剂确认卡：待用户选择；维持“未确认不写、缺单位不猜、历史失败不重放”。
 - 遵循用户“全部解决之后再部署和发布”，本切片仅本地保存；未设置远端
   live gate 放行变量，发布前仍需精确 main revision CI 与整体上线验证。
+
+## 继续执行：多模型复盘与 SNP 预热
+
+- 用户再次要求“继续”，基线 `02cb75d77`；工作树干净，本地领先远端三项
+  已审提交，fetch 后无新远端提交，开放 PR 未覆盖这两个修复入口。
+- Router：implementation + safety；Health Harness 接手续作，复用本 Dossier
+  与原 ledger，不建立平行状态。外部 TDD/验证技能未安装，遵循仓库 RED/GREEN。
+- T2 主代理：多模型客户端必须显式接收 owner；失败/空输出不得变成成功
+  推送或跑后成功响应；保留现有 API failure shape 与推送隐私 backstop。
+- T3 `genetic_prewarm_fix`：详情模型调用绑定 owner，检查缓存归属、失败无
+  缓存、预热计数与上限；不修改临床提示词/建议语义或数据库结构。
+- 两路径都先加失败测试，随后 CI-mode / PostgreSQL / 必要 live / 独立
+  固定提交安全复审。补剂确认卡仍是独立产品切片；本次不自动补录历史数据。
+
+### T2/T3 实现与新鲜验证
+
+- 多模型客户端及每日复盘、手动/自动跑后分析均显式传 owner，复用已审
+  background_ai_scope；只有 completed 且非空文本能进入保存/成功展示/推送。
+  保存失败不报告成功；自动跑后仅跳过已完成且非空的同用户历史分析，
+  不因历史失败行阻止当前调用，也不扫描或自动重放历史失败。
+- 每日复盘成功/失败/跳过与通知投递结果分开统计；修复真实运动分支引用
+  不存在 activity_type 的问题，使用已有 workout_type。
+- 自动跑后锁屏文案在截断前经过既有 llm_push_backstop，正文仍在已保存
+  的应用内分析中；新增敏感词与良性文案正反例。模型异常正文不返给用户。
+- SNP 只读取同用户 profile/variant；无命中不发送不相关健康上下文；协程内
+  绑定 owner/caller，保留会话与 consent 守卫。失败尝试受 TOP_N 限制，
+  failed / failed_users 可见，不再把 actions=None 当作预热成功。
+- 新内部 require_cached 参数仅供预热使用；普通详情 API shape 不变。
+  成功预热必须命中有效缓存或 SET 获明确肯定回执；普通读取仍可使用新结果。
+  维持原 user+rsid+genotype key/24h TTL 与删除索引，未改临床 prompt。
+- 补 Redis 工具日志隐私：连接 URL、key、pattern、异常正文均不再输出，
+  避免 SNP genotype/密码进日志；SET 不再把否定回执当成功。
+- RED：多模型 17 failed；投递状态 2 failed；SNP 初轮 8 failed/15 passed、
+  缓存补充 10 failed/31 passed；Redis 日志与确认 7 failed。
+- G3：`/tmp/reva-bg-cont-integration.log`，CI-mode 全增量合跑
+  **390 passed / 2 PostgreSQL-only skipped**，exit 0。
+- PostgreSQL：独占合成测试库，`/tmp/reva-bg-cont-postgres.log`，
+  **109 passed / 0 skipped**，exit 0。无生产数据读写。
+- Live：`/tmp/reva-bg-cont-live.log`，离线 62/62、真实模型 5/5、
+  轨迹 21/21，exit 0；同前轮内存 usage 表警告边界，不冒充生产计费证明。
+- System Map / doc-drift / diff check / secrets scan 均通过。
+- G4：本轮固定提交独立复审待执行；不以第一切片 GO 代替。
+- 对外 API 路由与 schema、Mobile/Web 类型、DB schema 均无变化；新增结果
+  计数字段仅用于 Celery 内部返回。后端、OTA 均尚未发布。

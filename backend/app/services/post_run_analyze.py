@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.daily_health import WorkoutRecord, GarminData, WorkoutAnalysisResult
 from app.models.user_profile import UserProfile
-from app.services.multi_model_analyze import MultiModelAnalyzeClient
+from app.services.multi_model_analyze import MultiModelAnalyzeClient, is_completed_analysis
 from app.utils.timezone import get_china_now, get_china_today
 
 logger = logging.getLogger(__name__)
@@ -57,10 +57,13 @@ class PostRunAnalyzeService:
         prompt = self._build_prompt(user_id, workout, workout_data)
 
         # Step 5: Call unified multi-model analysis
-        analysis = await self.analyzer.analyze(prompt)
+        analysis = await self.analyzer.analyze(prompt, user_id=user_id)
+        if not is_completed_analysis(analysis):
+            return {"success": False, "message": "分析暂未完成，请稍后重试。"}
 
         # Step 6: Save analysis result to DB
-        self._save_analysis_result(user_id, workout.id, prompt, analysis)
+        if not self._save_analysis_result(user_id, workout.id, prompt, analysis):
+            return {"success": False, "message": "分析结果未能保存，请稍后重试。"}
 
         # Step 7: Format response
         if format == "brief":
@@ -340,9 +343,11 @@ class PostRunAnalyzeService:
             self.db.add(record)
             self.db.commit()
             logger.info(f"[跑后分析] 分析结果已保存: workout_id={workout_id}, status={record.status}")
+            return True
         except Exception as e:
-            logger.error(f"[跑后分析] 保存分析结果失败: {e}")
+            logger.error("[跑后分析] 保存分析结果失败 error_type=%s", type(e).__name__)
             self.db.rollback()
+            return False
 
     def _format_full(self, workout_data: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
         """格式化完整报告"""

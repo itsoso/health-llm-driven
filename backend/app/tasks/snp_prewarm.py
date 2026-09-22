@@ -46,7 +46,7 @@ def _impl(force_user_ids: list = None):
         users = force_user_ids or _active_user_ids(db, cutoff)
         if not users:
             logger.info("[snp_prewarm] 0 个活跃用户, 跳过")
-            return {"users": 0, "snps": 0}
+            return {"users": 0, "snps": 0, "attempted": 0, "failed": 0, "failed_users": 0}
 
         from app.api.genetic_data import KNOWN_SNPS
         from app.services.genetic_report import get_snp_detail, _resolve_active_profile
@@ -57,6 +57,9 @@ def _impl(force_user_ids: list = None):
             gene_to_rsid.setdefault(snp["gene"], rsid)
 
         total_snps = 0
+        attempted = 0
+        failed = 0
+        failed_users = 0
         for uid in users:
             try:
                 profile = _resolve_active_profile(db, uid)
@@ -64,7 +67,8 @@ def _impl(force_user_ids: list = None):
                     continue
                 variants = (
                     db.query(GeneticVariant)
-                    .filter(GeneticVariant.profile_id == profile.id)
+                    .filter(GeneticVariant.profile_id == profile.id,
+                            GeneticVariant.user_id == uid)
                     .all()
                 )
                 if not variants:
@@ -80,17 +84,26 @@ def _impl(force_user_ids: list = None):
                     rsid = gene_to_rsid.get(v.gene_name)
                     if not rsid:
                         continue
+                    # Failed or static-only results consume the same bounded
+                    # attempt budget as a successful provider response.
+                    seen += 1
+                    attempted += 1
                     try:
                         # get_snp_detail 内部已写 Redis 24h cache
-                        get_snp_detail(db, uid, rsid)
-                        seen += 1
-                        total_snps += 1
-                    except Exception as e:  # noqa: BLE001
-                        logger.warning(f"[snp_prewarm] user={uid} rsid={rsid} 失败: {e}")
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"[snp_prewarm] user={uid} 整体失败: {e}")
+                        detail = get_snp_detail(db, uid, rsid, require_cached=True)
+                        if detail and isinstance(detail.get("actions"), dict) and detail["actions"]:
+                            total_snps += 1
+                        else:
+                            failed += 1
+                    except Exception as exc:  # noqa: BLE001
+                        failed += 1
+                        logger.warning("[snp_prewarm] detail_failed error_type=%s", type(exc).__name__)
+            except Exception as exc:  # noqa: BLE001
+                failed_users += 1
+                logger.warning("[snp_prewarm] user_scan_failed error_type=%s", type(exc).__name__)
 
         logger.info(f"[snp_prewarm] 完成 — 用户 {len(users)} 个, SNP 预热 {total_snps} 次")
-        return {"users": len(users), "snps": total_snps}
+        return {"users": len(users), "snps": total_snps, "attempted": attempted,
+                "failed": failed, "failed_users": failed_users}
     finally:
         db.close()

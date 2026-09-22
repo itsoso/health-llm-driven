@@ -692,11 +692,15 @@ def _build_snp_detail_prompt(
 如果是药物相关基因, 具体可做的事是"整理药名/剂量/不良反应并找医生或药师确认", 不是自行改药。"""
 
 
-def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, Any]]:
+def get_snp_detail(
+    db: Session, user_id: int, rsid: str, *, require_cached: bool = False,
+) -> Optional[Dict[str, Any]]:
     """单 SNP 详情. 静态信息 + 用户命中 + LLM 个性化建议 (cached 24h).
 
     返回 None 表示 rsid 不在 KNOWN_SNPS 字典中. 即使 LLM 失败, 也返回
-    静态信息 + 命中, 让 mobile 能 fallback 渲染."""
+    静态信息 + 命中, 让 mobile 能 fallback 渲染。
+    内部预热调用 require_cached=True，只有缓存就绪才允许报告成功。
+    普通详情仍可返回未缓存的新建议，不改变公开响应结构。"""
     known = _get_known_snps()
     snp_static = known.get(rsid)
     if not snp_static:
@@ -722,6 +726,7 @@ def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, A
             db.query(GeneticVariant)
             .filter(
                 GeneticVariant.profile_id == profile.id,
+                GeneticVariant.user_id == user_id,
             )
             .all()
         )
@@ -779,16 +784,30 @@ def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, A
         })
     siblings = siblings[:8]
 
+    detail = {
+        **static_block,
+        "user": user_item,
+        "actions": None,
+        "related_cards": related_cards,
+        "siblings": siblings,
+    }
+    # Without an owned hit, static information is sufficient. Do not send
+    # unrelated health context (or reuse an old no-hit cache) to a provider.
+    if not user_item["hit"]:
+        return detail
+
     # LLM 个性化建议 (cached)
     cache_key = _snp_cache_key(user_id, rsid, user_item.get("genotype"))
     actions: Optional[Dict[str, Any]] = None
+    cache_ready = False
     try:
         from app.utils.redis_cache import RedisCache
         cached = RedisCache.get(cache_key)
-        if isinstance(cached, dict) and cached.get("actions"):
+        if isinstance(cached, dict) and isinstance(cached.get("actions"), dict) and cached["actions"]:
             actions = cached["actions"]
-    except Exception:
-        pass
+            cache_ready = True
+    except Exception as exc:
+        logger.warning("[snp_detail] cache_read_failed error_type=%s", type(exc).__name__)
 
     if actions is None:
         # 抓用户差异化上下文
@@ -805,52 +824,53 @@ def get_snp_detail(db: Session, user_id: int, rsid: str) -> Optional[Dict[str, A
                 if s.get("name")
             ][:8]
             user_context["active_conditions"] = list(twin.chronic.active_conditions or [])
-        except Exception as e:
-            logger.debug(f"[snp_detail] twin context 获取失败: {e}")
+        except Exception as exc:
+            logger.warning("[snp_detail] context_unavailable error_type=%s", type(exc).__name__)
 
         prompt = _build_snp_detail_prompt(snp_static, user_item, user_context)
         try:
             from app.services.llm import get_llm_provider
-            provider = get_llm_provider()
-            import asyncio
+            from app.services.llm.usage_tracker import background_ai_scope
+            from app.utils.async_helpers import run_async
             import json as _json
 
             async def _call():
-                result = await provider.chat(
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3,
-                    max_tokens=700,
-                )
+                with background_ai_scope("genetic.snp_detail", user_id=user_id):
+                    provider = get_llm_provider()
+                    result = await provider.chat(
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3,
+                        max_tokens=700,
+                    )
                 return result if isinstance(result, str) else (result or {}).get("content", "")
 
-            try:
-                raw = asyncio.run(_call())
-            except RuntimeError:
-                import nest_asyncio
-                nest_asyncio.apply()
-                raw = asyncio.get_event_loop().run_until_complete(_call())
+            raw = run_async(_call())
 
             if raw:
                 # 提 JSON (LLM 偶尔加 ```json 包裹)
                 t = raw.strip()
                 if t.startswith("```"):
                     t = t.strip("`").lstrip("json").strip()
-                actions = _json.loads(t)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[snp_detail] LLM 失败 user={user_id} rsid={rsid}: {e}")
+                parsed = _json.loads(t)
+                if not isinstance(parsed, dict) or not parsed:
+                    raise ValueError("SNP actions must be a nonempty object")
+                actions = parsed
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[snp_detail] llm_failed error_type=%s", type(exc).__name__)
             actions = None
 
         if actions:
             try:
                 from app.utils.redis_cache import RedisCache
-                RedisCache.set(cache_key, {"actions": actions}, ttl=_SNP_DETAIL_TTL_SECONDS)
-            except Exception:
-                pass
+                cache_ready = RedisCache.set(
+                    cache_key, {"actions": actions}, ttl=_SNP_DETAIL_TTL_SECONDS,
+                ) is True
+                if not cache_ready:
+                    logger.warning("[snp_detail] cache_write_failed error_type=CacheUnavailable")
+            except Exception as exc:
+                logger.warning("[snp_detail] cache_write_failed error_type=%s", type(exc).__name__)
 
-    return {
-        **static_block,
-        "user": user_item,
-        "actions": actions,
-        "related_cards": related_cards,
-        "siblings": siblings,
-    }
+    if require_cached and actions and not cache_ready:
+        raise RuntimeError("SNP detail cache unavailable")
+    detail["actions"] = actions
+    return detail

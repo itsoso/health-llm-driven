@@ -575,16 +575,28 @@ def generate_daily_insights_for_all():
 
     logger.info(f"[健康复盘] 发现 {len(user_ids)} 个用户有今日数据")
     analyzed_count = 0
+    failed_count = 0
+    skipped_count = 0
+    notification_failed_count = 0
 
     for user_id in user_ids:
         try:
-            _generate_daily_insight_for_user(user_id, today)
-            analyzed_count += 1
+            outcome = _generate_daily_insight_for_user(user_id, today)
+            if outcome.get("status") == "completed":
+                analyzed_count += 1
+                notification_failed_count += int(outcome.get("notification_status") == "failed")
+            elif outcome.get("status") == "skipped":
+                skipped_count += 1
+            else:
+                failed_count += 1
         except Exception as e:
-            logger.error(f"[健康复盘] 用户 {user_id} 失败: {e}")
+            failed_count += 1
+            logger.error("[健康复盘] 分析失败 error_type=%s", type(e).__name__)
 
     logger.info(f"[健康复盘] 完成，分析 {analyzed_count}/{len(user_ids)} 用户")
-    return {"analyzed_count": analyzed_count, "total_users": len(user_ids)}
+    return {"analyzed_count": analyzed_count, "total_users": len(user_ids),
+            "failed_count": failed_count, "skipped_count": skipped_count,
+            "notification_failed_count": notification_failed_count}
 
 
 def _generate_daily_insight_for_user(user_id: int, today: date):
@@ -645,7 +657,7 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
             for w in workouts:
                 dur = f"{w.duration_seconds // 60}分钟" if w.duration_seconds else ""
                 dist = f"{w.distance_meters / 1000:.1f}km" if w.distance_meters else ""
-                w_lines.append(f"- {w.activity_type}: {dist} {dur} 消耗{w.calories or 0}kcal")
+                w_lines.append(f"- {w.workout_type}: {dist} {dur} 消耗{w.calories or 0}kcal")
             parts.append("\n".join(w_lines))
 
         # 基因数据
@@ -672,13 +684,17 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
 
         if len(parts) <= 1:
             logger.info(f"[健康复盘] 用户 {user_id} 无足够数据，跳过")
-            return
+            return {"status": "skipped", "reason": "insufficient_data"}
 
         prompt = "\n\n".join(parts)
 
         # 调用统一多模型分析
         client = MultiModelAnalyzeClient()
-        analysis = run_async(client.analyze(prompt))
+        analysis = run_async(client.analyze(prompt, user_id=user_id))
+        from app.services.multi_model_analyze import is_completed_analysis
+        if not is_completed_analysis(analysis):
+            logger.warning("[健康复盘] 未生成完整分析，跳过成功推送")
+            return {"status": "error", "reason": "analysis_incomplete"}
 
         # 推送通知(§5.6 backstop:LLM 复盘文案点名药/补剂 → 锁屏泛化,原文进 data)
         aggregation = analysis.get("aggregation") or ""
@@ -691,7 +707,7 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
             data["full_content"] = aggregation[:200]
         push_service = PushService(db)
         try:
-            run_async(push_service.send_notification(
+            delivery = run_async(push_service.send_notification(
                 user_id=user_id,
                 notification_type="daily_insights",
                 title="📊 今日健康复盘",
@@ -699,7 +715,10 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
                 data=data,
             ))
         except Exception as e:
-            logger.warning(f"[健康复盘] 推送失败 user={user_id}: {e}")
+            logger.warning("[健康复盘] 推送失败 error_type=%s", type(e).__name__)
+            return {"status": "completed", "notification_status": "failed"}
+        return {"status": "completed", "notification_status":
+                "sent" if isinstance(delivery, dict) and delivery.get("success") else "failed"}
 
 
 @celery_app.task
