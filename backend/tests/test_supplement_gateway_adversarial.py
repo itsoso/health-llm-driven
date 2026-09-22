@@ -71,7 +71,7 @@ async def _execute(
     return calls, result, receipt
 
 
-async def _execute_batch(db, *, response):
+async def _execute_batch(db, *, response, status_code=200):
     calls = []
     items = [
         {"supplement_name": "Mitoq", "dosage": "2粒"},
@@ -81,7 +81,7 @@ async def _execute_batch(db, *, response):
 
     def respond(request):
         calls.append((request.method, request.url.path))
-        return httpx.Response(200, json=response)
+        return httpx.Response(status_code, json=response)
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
@@ -120,6 +120,43 @@ async def test_unverified_atomic_batch_names_every_failed_item(db):
         item in result["message"]
         for item in ("Mitoq 2粒", "叶酸 1粒", "NAC 1粒")
     )
+
+
+@pytest.mark.parametrize("status_code", [401, 403])
+async def test_batch_auth_rejection_is_not_an_uncertain_write(db, status_code):
+    from app.services.agent_write_outcome import classify_write_execution
+    calls, result, receipt = await _execute_batch(
+        db, response={"detail": "authentication rejected"}, status_code=status_code,
+    )
+    outcome = classify_write_execution(result, receipt=receipt)
+    assert len(calls) == 1
+    assert receipt is None
+    assert outcome.status == "rejected"
+    assert outcome.dispatch_started is False
+    assert outcome.error_code == "supplement_auth_rejected"
+
+
+async def test_batch_explicit_name_conflict_preserves_actionable_rejection(db):
+    from app.services.agent_write_outcome import classify_write_execution
+    _, result, receipt = await _execute_batch(db, status_code=409, response={
+        "detail": {"error_code": "supplement_name_ambiguous", "dispatch_started": False,
+                   "candidates": ["合成营养素甲"]},
+    })
+    assert classify_write_execution(result, receipt=receipt).status == "rejected"
+    assert "合成营养素甲" in result["recovery_guidance"]
+    assert receipt is None
+
+
+@pytest.mark.parametrize("status_code,response", [
+    (500, {"detail": "server error"}),
+    (409, {"detail": "unknown conflict"}),
+    (409, {"detail": {"error_code":"supplement_name_ambiguous", "dispatch_started":True}}),
+    (200, {"status": "recorded"}),
+])
+async def test_unknown_batch_errors_and_missing_receipts_stay_uncertain(db, status_code, response):
+    from app.services.agent_write_outcome import classify_write_execution
+    _, result, receipt = await _execute_batch(db, response=response, status_code=status_code)
+    assert classify_write_execution(result, receipt=receipt).status == "uncertain"
 
 
 @pytest.mark.parametrize(

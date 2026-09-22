@@ -15281,6 +15281,41 @@ class AgentExecutor:
                 )
         return decorated
 
+    def _supplement_unit_followup_names(
+        self, *, user_id: int, conversation_id: int | None, message: str,
+    ) -> tuple[str, ...]:
+        """Read context only to ask a better question, never to authorize a write."""
+        if conversation_id is None or not re.fullmatch(
+            r"(?:都是|各|每项)?\s*(?:[1-9][0-9]?|[一二两三四五六七八九十]+)\s*(?:粒|片|颗|滴|包|袋)\s*[。！!]?",
+            message.strip(),
+        ):
+            return ()
+        from datetime import UTC, datetime
+        from app.models.agent_conversation import AgentConversation, AgentMessage
+        from app.services.agent_kernel.capability_policy import supplement_missing_unit_names
+
+        recent = self.db.query(AgentMessage).join(
+            AgentConversation, AgentMessage.conversation_id == AgentConversation.id,
+        ).filter(
+            AgentConversation.id == conversation_id, AgentConversation.user_id == user_id,
+        ).order_by(AgentMessage.id.desc()).limit(2).all()
+        if len(recent) != 2:
+            return ()
+        answer, source = recent
+        meta = answer.meta or {}
+        if (answer.role != "assistant" or source.role != "user"
+                or meta.get("route") != "supplement_unit_clarification"
+                or (meta.get("turn_outcome") or {}).get("reason_code") != "supplement_unit_required"
+                or source.image_url):
+            return ()
+        created = answer.created_at
+        if created is None:
+            return ()
+        age = (datetime.now(UTC) - created.replace(tzinfo=UTC)).total_seconds()
+        if not 0 <= age <= 1800:
+            return ()
+        return supplement_missing_unit_names(source.content)
+
     async def _run_input_clarification_stream(
         self,
         *,
@@ -15292,6 +15327,7 @@ class AgentExecutor:
         health_fact_draft: dict[str, Any] | None = None,
         context_statement: ContextStatement | None = None,
         supplement_missing_units: tuple[str, ...] = (),
+        supplement_unit_followup: bool = False,
         request_started_at: float | None = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Persist a local clarification or context acknowledgement without a model."""
@@ -15323,12 +15359,20 @@ class AgentExecutor:
             reason_code = "context_statement_acknowledged"
             route = "context_statement"
         elif supplement_missing_units:
-            text = (
-                "以下补剂的数量缺少单位：" + "、".join(supplement_missing_units)
-                + "。请说明是粒、片或其他单位，并补全每项的单位后重发整条记录。"
-                "本轮尚未记录。"
-            )
-            reason_code = "supplement_unit_required"
+            if supplement_unit_followup:
+                text = (
+                    "你是在补充上一条补剂记录的单位。为避免把同一剂量套到不同产品，"
+                    "请将" + "、".join(supplement_missing_units)
+                    + "各自的数量和单位写进完整记录，例如“记录补剂：产品名称 1粒，另一产品名称 1片”。"
+                    "本轮尚未记录，也没有重复提交上一条请求。"
+                )
+            else:
+                text = (
+                    "以下补剂的数量缺少单位：" + "、".join(supplement_missing_units)
+                    + "。请说明是粒、片或其他单位，并补全每项的单位后重发整条记录。"
+                    "本轮尚未记录。"
+                )
+            reason_code = "supplement_unit_scope_required" if supplement_unit_followup else "supplement_unit_required"
             route = "supplement_unit_clarification"
         elif health_fact_draft:
             labels = []
@@ -15775,6 +15819,24 @@ class AgentExecutor:
                 if not effective_images and not file_base64 and not read_only_tools
                 else ()
             )
+            unit_followup_names = (
+                self._supplement_unit_followup_names(
+                    user_id=user_id, conversation_id=conversation_id, message=effective_message,
+                )
+                if not missing_supplement_units and recovered_user_message is None
+                and retry_recovery is None and not effective_images and not file_base64
+                and not extra_context and not read_only_tools else ()
+            )
+            if unit_followup_names:
+                async for event in self._run_input_clarification_stream(
+                    user_id=user_id, message=display_message, conversation_id=conversation_id,
+                    client_turn_id=client_turn_id, supplement_missing_units=unit_followup_names,
+                    supplement_unit_followup=True, request_started_at=request_started_at,
+                ):
+                    if event.get("event") == "done":
+                        kernel_completion_status = "complete"
+                    yield self._attach_runtime_identity(event)
+                return
             if missing_supplement_units:
                 async for event in self._run_input_clarification_stream(
                     user_id=user_id,
@@ -17132,6 +17194,7 @@ class AgentExecutor:
         read_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         unverified_write_operations: Dict[str, str] = {}
         failed_write_operations: Dict[str, str] = {}
+        known_supplement_rejection: Optional[str] = None
         pending_recoverable_write_rejections: dict[
             str, tuple[str, str]
         ] = {}
@@ -17209,6 +17272,7 @@ class AgentExecutor:
             nonlocal last_recoverable_write_rejection, last_recoverable_write_rejection_code
             nonlocal orchestrator_perf, orchestrator_tool_ms, passthrough_orch_calls, passthrough_orch_text
             nonlocal runtime_control_terminal, streamed_answer_evidence_digest, streamed_cards, tool_executed_count
+            nonlocal known_supplement_rejection
             pending_pi_writes.pop(tc["id"], None)
             _round_tool_names = []
             _tool_started = time.time()
@@ -17675,6 +17739,17 @@ class AgentExecutor:
                     receipt,
                 )
                 tool_event_data.update(write_outcome_fields)
+                if (
+                    write_outcome_fields.get("write_outcome") == "rejected"
+                    and write_outcome_fields.get("dispatch_started") is False
+                    and write_outcome_fields.get("error_code") in {
+                        "supplement_auth_rejected", "supplement_name_ambiguous",
+                        "supplement_definition_ambiguous",
+                    }
+                ):
+                    known_supplement_rejection = _pre_dispatch_validation_user_message(
+                        result_for_record_card,
+                    )
                 if (
                     write_attempted
                     and write_outcome_fields.get("error_code")
@@ -18605,8 +18680,14 @@ class AgentExecutor:
                                 pi_terminal_text = _runtime_control_unavailable_message(write_receipts)
                                 final_finish_reason = "error"
                             elif failed_write_operations:
-                                pi_terminal_text = _failed_write_message(
-                                    write_receipts, also_unverified=bool(unverified_write_operations),
+                                pi_terminal_text = (
+                                    _write_rejection_with_receipt_context(
+                                        known_supplement_rejection, write_receipts,
+                                    )
+                                    if known_supplement_rejection and not unverified_write_operations
+                                    else _failed_write_message(
+                                        write_receipts, also_unverified=bool(unverified_write_operations),
+                                    )
                                 )
                                 final_finish_reason = "error"
                             elif unverified_write_operations:
@@ -18780,6 +18861,7 @@ class AgentExecutor:
             and not self._agent_kernel_pending_confirmation_tools
             and not last_recoverable_write_rejection
             and not runtime_control_terminal
+            and not known_supplement_rejection
             and not deterministic_diet_correction_terminal
             and not any(
                 reason == "supplement_dosage_requires_clarification"
@@ -26324,7 +26406,38 @@ class AgentExecutor:
                     f"{base}/supplements/records/intake-batch",
                     headers,
                     payload,
+                    include_error_payload=True,
                 )
+                # This first-party endpoint authenticates before entering its
+                # write handler. A definite auth rejection is not a lost receipt.
+                if err in {"API 返回 401", "API 返回 403"}:
+                    return local_write_rejection(
+                        "supplement_auth_rejected",
+                        message="补剂记录请求未通过身份或权限校验，本次未写入。",
+                        recovery_guidance="请重新登录并确认当前账号的操作权限后再提交。",
+                    )
+                detail = result.get("detail") if isinstance(result, dict) else None
+                if (
+                    err == "API 返回 409"
+                    and isinstance(detail, dict)
+                    and detail.get("dispatch_started") is False
+                    and detail.get("error_code") in {
+                        "supplement_name_ambiguous", "supplement_definition_ambiguous",
+                    }
+                ):
+                    candidates = detail.get("candidates")
+                    candidate_names = (
+                        [name[:120] for name in candidates[:3] if isinstance(name, str)]
+                        if isinstance(candidates, list) else []
+                    )
+                    guidance = "请在补剂列表核对具体产品，再使用完整名称和本次剂量提交整组记录。"
+                    if candidate_names:
+                        guidance = "已有相似名称：" + "、".join(candidate_names) + "。" + guidance
+                    return local_write_rejection(
+                        detail["error_code"],
+                        message="补剂名称与已有定义存在歧义，整组尚未写入。",
+                        recovery_guidance=guidance,
+                    )
                 validated = _validated_supplement_batch_payload(
                     result,
                     expected_items=batch_items,
@@ -28404,10 +28517,13 @@ class AgentExecutor:
             return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
         return resp.text
 
-    async def _api_post_json(self, url: str, headers: dict, data: dict):
+    async def _api_post_json(
+        self, url: str, headers: dict, data: dict, *, include_error_payload: bool = False,
+    ):
         """HTTP POST, 返回解析后的 JSON (dict/list)。给机器解析(如取新建资源的 id)。
 
         返回 (data, None) 成功; (None, err_str) 失败 —— 同 _api_get_json 约定。
+        显式启用 include_error_payload 时保留结构化拒绝证据，err 仍非空。
         """
         client = self._http_client or httpx.AsyncClient(timeout=90.0)
         try:
@@ -28415,6 +28531,12 @@ class AgentExecutor:
         except Exception as e:
             return None, f"网络错误: {e}"
         if resp.status_code not in (200, 201):
+            if include_error_payload:
+                try:
+                    error_payload = resp.json()
+                except ValueError:
+                    return None, f"API 返回 {resp.status_code}"
+                return error_payload, f"API 返回 {resp.status_code}"
             return None, f"API 返回 {resp.status_code}"
         try:
             return resp.json(), None

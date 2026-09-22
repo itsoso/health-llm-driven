@@ -184,6 +184,8 @@ async def get_current_user(
     1. JWT Bearer Token (Authorization: Bearer <jwt>)
     2. X-API-Key 头 (用户 API Key，供 Agent Skills / 外部系统使用)
     """
+    # Only a successfully bound identity may relay its original credential.
+    request.state._authenticated_relay_credential = None
     bearer_token = token
     if bearer_token == WEB_SESSION_AUTH_SENTINEL:
         bearer_token = None
@@ -227,6 +229,9 @@ async def get_current_user(
                     request.state.auth_scopes = frozenset()
                     request.state.original_user_id = origin_id
                     request.state.is_proxy_mode = True
+                    request.state._authenticated_relay_credential = (
+                        target_user.id, request.state.auth_type, jwt_token,
+                    )
                     logger.debug(
                         "[Auth] 家庭代管认证成功: origin_id=%s target_id=%s",
                         origin_id,
@@ -243,6 +248,9 @@ async def get_current_user(
                     request.state.api_key_id = None
                     request.state.auth_scopes = frozenset()
                     request.state.is_proxy_mode = False
+                    request.state._authenticated_relay_credential = (
+                        user.id, request.state.auth_type, jwt_token,
+                    )
                     logger.debug(f"[Auth] JWT认证成功: 用户 {user.id} ({user.username})")
                     return user
                 logger.warning(f"[Auth] 用户ID {user_id} 不存在")
@@ -271,6 +279,9 @@ async def get_current_user(
                 request.state.api_key_id = api_key.id
                 request.state.auth_scopes = scopes
                 request.state.is_proxy_mode = False
+                request.state._authenticated_relay_credential = (
+                    user.id, request.state.auth_type, x_api_key,
+                )
                 logger.debug(f"[Auth] API Key认证成功: 用户 {user.id} ({user.username})")
                 return user
         logger.warning("[Auth] API Key认证失败")
@@ -278,6 +289,30 @@ async def get_current_user(
     if not jwt_token and not x_api_key:
         logger.warning("[Auth] 请求没有携带token或API Key")
     return None
+
+
+def get_authenticated_relay_token(request: Request, current_user: User) -> str:
+    """Relay the exact credential selected by successful request authentication.
+
+    Call only after get_current_user_required (and the endpoint's consent gate).
+    Never reselect a cookie from headers or mint a JWT: family proxy claims and
+    API-key scopes must survive internal Bearer reauthentication unchanged.
+    This request-local value is for internal HTTP only, not prompts or output.
+    """
+    bound = getattr(request.state, "_authenticated_relay_credential", None)
+    if (
+        bound is None
+        or bound[0] != current_user.id
+        or bound[1] != getattr(request.state, "auth_type", None)
+        or not bound[2]
+        or bound[2] == WEB_SESSION_AUTH_SENTINEL
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未登录或登录已过期",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return bound[2]
 
 
 async def get_current_user_required(

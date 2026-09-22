@@ -77,6 +77,71 @@ def test_target_mismatch_does_not_recommend_blind_retry():
     assert "重试" not in reply and "还没记下来" in reply
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reply", ["一粒", "都是一粒", "1片"])
+async def test_unit_followup_asks_scope_without_model_or_write(
+    db, auth_user_and_headers, monkeypatch, reply,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("Unit-only continuation must not guess historical writes")
+        yield
+
+    monkeypatch.setattr(executor, "_run_stream_impl", forbidden)
+    first = [event async for event in executor.run_stream(
+        user_id=user.id, message="记录补剂：1 复合VB 1 Mitoq",
+        client_turn_id="test-source-unit-followup",
+    )]
+    conv_id = first[-1]["data"]["conversation_id"]
+    events = [event async for event in executor.run_stream(
+        user_id=user.id, conversation_id=conv_id, message=reply,
+        client_turn_id="test-reply-unit-followup",
+    )]
+    done = events[-1]["data"]
+    assert done["turn_outcome"]["reason_code"] == "supplement_unit_scope_required"
+    assert done["model_call_count"] == 0
+    text = db.get(AgentMessage, done["message_id"]).content
+    assert "复合VB" in text and "Mitoq" in text
+    assert "完整" in text and "尚未记录" in text
+    assert "未成功" not in text
+    assert done["turn_outcome"]["dispatch_started"] is False
+
+
+@pytest.mark.asyncio
+async def test_unit_followup_context_is_scoped_recent_and_adjacent(db, auth_user_and_headers):
+    from datetime import UTC, datetime, timedelta
+    from app.models.user import User
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    events = [event async for event in executor.run_stream(
+        user_id=user.id, message="记录补剂：1 复合VB 1 Mitoq",
+        client_turn_id="test-scoped-source-unit",
+    )]
+    done = events[-1]["data"]
+    conv_id = done["conversation_id"]
+    def resolve(uid=user.id, message="一粒"):
+        return executor._supplement_unit_followup_names(
+            user_id=uid, conversation_id=conv_id, message=message,
+        )
+    assert resolve() == ("复合VB", "Mitoq")
+    other = User(username="unit-other", name="合成其他用户", hashed_password="synthetic")
+    db.add(other)
+    db.commit()
+    assert resolve(uid=other.id) == ()
+    assert resolve(message="一粒，胸痛怎么办") == ()
+    answer = db.get(AgentMessage, done["message_id"])
+    answer.created_at = datetime.now(UTC) - timedelta(minutes=31)
+    db.commit()
+    assert resolve() == ()
+    answer.created_at = datetime.now(UTC)
+    db.add(AgentMessage(conversation_id=conv_id, role="user", content="今天聊别的"))
+    db.commit()
+    assert resolve() == ()
+
+
 @pytest.mark.parametrize("name", ["复合VB", "Mitoq", "1Mitoq"])
 def test_missing_unit_cannot_be_invented_by_a_tool_call(name):
     envelope = AgentEnvelope(user_id=1, channel="chat", text="记录补剂：1 复合VB 1 Mitoq")
@@ -94,7 +159,9 @@ def test_missing_unit_cannot_be_invented_by_a_tool_call(name):
 
 def test_runtime_preserves_actionable_supplement_reason_codes():
     from app.services.agent_runtime import AgentRuntimeCoordinator
-    for code in ("supplement_unit_required", "health_record_target_mismatch"):
+    for code in ("supplement_unit_required", "supplement_unit_scope_required",
+                 "supplement_auth_rejected", "supplement_name_ambiguous",
+                 "supplement_definition_ambiguous", "health_record_target_mismatch"):
         assert AgentRuntimeCoordinator._safe_error_code(code) == code
 
 

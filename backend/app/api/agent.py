@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
-from app.api.deps import get_current_user_required
+from app.api.deps import get_authenticated_relay_token, get_current_user_required
 from app.services.ai_consent import require_ai_consent
 from app.services.llm.error_messages import safe_llm_error_message
 from app.services.secure_upload import (
@@ -1603,8 +1603,7 @@ async def agent_stream(
 
     from app.services.agent_executor import AgentExecutor
 
-    auth_header = request.headers.get("authorization", "")
-    user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+    user_token = get_authenticated_relay_token(request, current_user)
     user_id = current_user.id
     msg_text = req.message.strip()
     conv_id = req.conversation_id
@@ -2198,8 +2197,7 @@ async def agent_send(
         images=all_images,
     )
 
-    auth_header = request.headers.get("authorization", "")
-    user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+    user_token = get_authenticated_relay_token(request, current_user)
 
     # GenUI 能力协商 (与 /stream 同一解析口径): 客户端声明的 caps 透传给 executor,
     # metric_table 卡片只在声明 genui-table-v1 时发 (无 cap → 逐字节现状)。

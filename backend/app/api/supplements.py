@@ -308,7 +308,12 @@ def record_supplement_intake_batch(
     for normalized, name, dosage in normalized_items:
         exact = by_normalized.get(normalized, [])
         if len(exact) > 1:
-            raise HTTPException(status_code=409, detail=f"补剂「{name}」存在重复定义")
+            raise HTTPException(status_code=409, detail={
+                "error_code": "supplement_definition_ambiguous",
+                "dispatch_started": False,
+                "message": "补剂存在重复定义，整组尚未写入",
+                "candidates": [definition.name for definition in exact[:3]],
+            })
         if exact:
             resolved.append((exact[0], name, dosage))
             continue
@@ -319,7 +324,12 @@ def record_supplement_intake_batch(
             for definition in definitions
         ]
         if containing:
-            raise HTTPException(status_code=409, detail=f"补剂「{name}」与已有定义相似")
+            raise HTTPException(status_code=409, detail={
+                "error_code": "supplement_name_ambiguous",
+                "dispatch_started": False,
+                "message": "补剂与已有定义相似，整组尚未写入",
+                "candidates": [definition.name for definition in containing[:3]],
+            })
         definition = SupplementDefinition(
             user_id=user_id,
             name=name,

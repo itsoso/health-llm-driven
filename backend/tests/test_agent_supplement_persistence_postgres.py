@@ -52,7 +52,7 @@ def supplement_transport(db, client, auth_user_and_headers, monkeypatch):
     async def get_json(url, request_headers):
         return request("GET", url, request_headers).json(), None
 
-    async def post_json(url, request_headers, data):
+    async def post_json(url, request_headers, data, *, include_error_payload=False):
         return request("POST", url, request_headers, data).json(), None
 
     async def post(url, request_headers, data):

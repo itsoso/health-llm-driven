@@ -453,6 +453,35 @@ class TestSupplementRecordAPI:
             SupplementRecord.user_id == other.id
         ).count() == 0
 
+    @pytest.mark.parametrize("duplicate", [False, True])
+    def test_batch_name_conflict_is_prewrite_and_owner_scoped(
+        self, client, db, auth_headers, test_user, duplicate,
+    ):
+        name = "合成营养素甲" if duplicate else "合成营养素甲增强版"
+        db.add(SupplementDefinition(user_id=test_user.id, name=name, dosage="1粒", is_active=True))
+        if duplicate:
+            db.add(SupplementDefinition(user_id=test_user.id, name=name, dosage="2粒", is_active=True))
+        other = User(username="conflict-other", name="合成其他用户", hashed_password="synthetic", is_active=True)
+        db.add(other)
+        db.flush()
+        db.add(SupplementDefinition(user_id=other.id, name="合成营养素甲他人私有", is_active=True))
+        db.commit()
+        before = db.query(SupplementDefinition).count()
+        response = client.post("/api/v1/supplements/records/intake-batch", headers=auth_headers,
+            json={"record_date": str(date.today()), "items": [
+                {"supplement_name": "新合成营养素乙", "dosage": "1粒"},
+                {"supplement_name": "合成营养素甲", "dosage": "1粒"},
+            ]})
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["dispatch_started"] is False
+        assert detail["error_code"] == (
+            "supplement_definition_ambiguous" if duplicate else "supplement_name_ambiguous"
+        )
+        assert set(detail["candidates"]) == {name}
+        assert db.query(SupplementDefinition).count() == before
+        assert db.query(SupplementRecord).count() == 0
+
     def test_get_supplements_with_status(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试获取补剂及打卡状态"""
         # 创建补剂
