@@ -16,6 +16,7 @@ import json
 import re
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -394,6 +395,33 @@ def get_caller_user_id() -> Optional[int]:
 
 
 _CALLER_USER_UNSET = object()
+
+
+@contextmanager
+def background_ai_scope(caller: str, *, user_id: int):
+    """Isolate a job's owner and accounting; this never grants AI permission.
+
+    Enter inside the executing coroutine when a sync bridge may use a new
+    thread. The caller must first resolve/validate ownership of the job input.
+    Transport guards still check fresh consent and the actual destination.
+    """
+    from app.services.ai_consent import ai_user_scope
+
+    if type(user_id) is not int or user_id <= 0:
+        raise ValueError("background AI requires a positive integer owner")
+    bindings = (
+        (_caller_ctx, caller), (_user_id_ctx, user_id),
+        (_user_is_admin_ctx, None), (_run_id_ctx, None),
+        (_usage_capture_ctx, None), (_api_usage_ctx, None),
+        (_recovery_depth_ctx, 0),
+    )
+    tokens = [(var, var.set(value)) for var, value in bindings]
+    try:
+        with ai_user_scope(user_id):
+            yield
+    finally:
+        for var, token in reversed(tokens):
+            var.reset(token)
 
 
 def set_caller(

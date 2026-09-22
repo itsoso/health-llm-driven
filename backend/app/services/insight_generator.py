@@ -486,20 +486,25 @@ def _gen_llm_pattern_mining(db: Session, user_id: int) -> Optional[InsightCandid
 
     try:
         from app.services.llm import get_llm_provider
-        from app.services.llm.usage_tracker import set_caller
+        from app.services.llm.usage_tracker import background_ai_scope
         from app.utils.async_helpers import run_async
-        set_caller("insight.llm_pattern_mining")
-        provider = get_llm_provider()
-        result_text = run_async(provider.chat(
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user_prompt}],
-            temperature=0.3,
-            max_tokens=700,
-        ))
+
+        async def query_pattern():
+            # Bind inside the coroutine: run_async may execute in a new thread.
+            with background_ai_scope("insight.llm_pattern_mining", user_id=user_id):
+                provider = get_llm_provider()
+                return await provider.chat(
+                    messages=[{"role": "system", "content": system},
+                              {"role": "user", "content": user_prompt}],
+                    temperature=0.3,
+                    max_tokens=700,
+                )
+
+        result_text = run_async(query_pattern())
         if isinstance(result_text, dict):
             result_text = (result_text.get("content") or "").strip()
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"[insight.llm] LLM 调用失败 user={user_id}: {e}")
+        logger.warning("[insight.llm] LLM 调用失败 error_type=%s", type(e).__name__)
         return None
 
     if not result_text:

@@ -107,13 +107,13 @@ _EXTRACT_PROMPT = """你从一段**用户自己发的消息**里抽取"生活事
 """
 
 
-async def _llm_extract_events(text: str) -> List[Dict[str, Any]]:
+async def _llm_extract_events(text: str, *, user_id: int) -> List[Dict[str, Any]]:
     """调 fast 档模型抽 title/category/time_text。fail-loud: 异常 re-raise (闸 ④)。"""
     from app.services.llm.factory import (
         create_provider_for_model_id,
         get_llm_provider,
     )
-    from app.services.llm.usage_tracker import set_caller
+    from app.services.llm.usage_tracker import background_ai_scope
 
     try:
         from app.services.llm.model_registry import pick_fast_tool_model_id
@@ -125,15 +125,15 @@ async def _llm_extract_events(text: str) -> List[Dict[str, Any]]:
     except Exception:
         provider = get_llm_provider()
 
-    set_caller("life_event.extractor")
-    raw = await provider.chat(
-        messages=[
-            {"role": "system", "content": "你是生活事件抽取器, 严格按要求输出 JSON。"},
-            {"role": "user", "content": _EXTRACT_PROMPT % text[:1500]},
-        ],
-        temperature=0.1,
-        max_tokens=500,
-    )
+    with background_ai_scope("life_event.extractor", user_id=user_id):
+        raw = await provider.chat(
+            messages=[
+                {"role": "system", "content": "你是生活事件抽取器, 严格按要求输出 JSON。"},
+                {"role": "user", "content": _EXTRACT_PROMPT % text[:1500]},
+            ],
+            temperature=0.1,
+            max_tokens=500,
+        )
     if isinstance(raw, dict):
         raw = raw.get("content", "") or ""
     return _parse_events_json(raw)
@@ -237,11 +237,11 @@ def extract_life_events_from_message(
         try:
             import asyncio
 
-            llm_events = asyncio.run(_llm_extract_events(text))
-        except Exception:
+            llm_events = asyncio.run(_llm_extract_events(text, user_id=user_id))
+        except Exception as exc:
             logger.error(
-                "[life_event] LLM 抽取失败 user=%s message=%s",
-                user_id, source_message_id, exc_info=True,
+                "[life_event] LLM 抽取失败 error_type=%s",
+                type(exc).__name__,
             )
             raise
 
