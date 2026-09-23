@@ -43,8 +43,12 @@ operator 入口，不扩展 cloud SSH RPC，不领取 native/上传权限，不�
 backend `SUCCEEDED`。失败保留现场、旧制品和 lease，不自动恢复或重试。
 
 构建仅复制经 Git blob 核验的 canonical 前端，使用无特权、受限 CPU/内存
-的 systemd sandbox；生产目录、健康配置、发布凭据和 home 不可读，npm 的
-全局/用户配置禁用，依赖生命周期脚本禁用。仅允许固定的公开 API/site
+的 systemd sandbox；生产目录、健康配置、发布凭据和 home 不可读。
+数据隔离必须覆盖 `/opt`（含共享文件）、`/var/lib`（含健康运行数据及数据库）、
+缓存/日志/备份和可选数据挂载根。只把 canonical 输入显式绑定进私有 `/tmp`；
+不存在的可选根可跳过，存在时必须隐藏。Linux CI 使用原样 deny list，验证
+普通用户可读的合成数据在沙箱内不可读，同时构建输入及私有缓存仍可用。
+npm 全局/用户配置禁用，依赖生命周期脚本禁用。仅允许固定的公开 API/site
 端点配置，按数据解析不执行 shell，原配置文件与元数据不变。只停经核验的
 前端 PM2 进程，保留旧 `.next` 和 `node_modules` 后成对切换，再启动前端。
 原生依赖安装脚本被禁用不能替代实际 build 和页面验收。

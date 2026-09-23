@@ -41,9 +41,12 @@ def test_build_is_unprivileged_and_cannot_read_production_or_release_credentials
     joined = " ".join(command)
     for required in ["DynamicUser=yes", "ProtectSystem=strict", "ProtectHome=yes",
                      "ProtectProc=invisible", "NoNewPrivileges=yes", "KillMode=control-group",
-                     "WorkingDirectory=/tmp/reva-frontend", "BindPaths=",
-                     "InaccessiblePaths=/opt/health-app /etc/reva-release /etc/health-app /var/lib/reva-release"]:
+                     "WorkingDirectory=/tmp/reva-frontend", "BindPaths="]:
         assert required in joined
+    denied = next(arg.split("=", 2)[2].split() for arg in command if arg.startswith("--property=InaccessiblePaths="))
+    for required in ("/opt", "/var/lib", "/var/cache", "/var/log", "/var/backups",
+                     "/srv", "/data", "/mnt", "/media", "/etc/reva-release", "/etc/health-app"):
+        assert "-" + required in denied
     assert "npm ci --ignore-scripts" in joined
     assert "npm run build" in joined
     assert "--collect" not in command  # keep unit evidence until separately verified
@@ -193,10 +196,6 @@ def test_native_frontend_sandbox_private_mounts_and_dynamic_uid(monkeypatch):
     operation = uuid.uuid4().hex
     stage = root / operation
     stage.mkdir(mode=0o700)
-    blocked = root / "blocked"
-    blocked.mkdir(mode=0o755)
-    (blocked / "canary").write_text("synthetic test data only")
-    (blocked / "canary").chmod(0o644)
     monkeypatch.setattr(m, "BUILDS", root)
     for name in ("frontend", "home", "cache"):
         (stage / name).mkdir(mode=0o777)
@@ -204,9 +203,25 @@ def test_native_frontend_sandbox_private_mounts_and_dynamic_uid(monkeypatch):
     (stage / "frontend/input").write_text("public source")
     (stage / "frontend/input").chmod(0o644)
     command = m.build_command(operation, stage)
-    command = [f"--property=InaccessiblePaths={blocked}" if arg.startswith("--property=InaccessiblePaths=") else arg for arg in command]
+    # Exercise the actual production deny list, never replace it with a test-only path.
+    denied = next(arg.split("=", 2)[2].split() for arg in command if arg.startswith("--property=InaccessiblePaths="))
+    created_roots, canaries = [], []
+    for entry in denied:
+        directory = Path(entry.removeprefix("-"))
+        assert directory.is_absolute() and not directory.is_symlink()
+        if not directory.exists():
+            directory.mkdir(mode=0o755)
+            created_roots.append(directory)
+        canary = Path(tempfile.mkdtemp(prefix="reva-synthetic-health-", dir=directory))
+        canary.chmod(0o755)
+        (canary / "record").write_text("synthetic test data only")
+        (canary / "record").chmod(0o644)
+        canaries.append(canary)
+    # Real deployments keep world-readable uploads below these external roots.
+    assert "-/opt" in denied and "-/var/lib" in denied
+    negative_checks = "".join(f"test ! -r {path}/record\n" for path in canaries)
     command[-1] = (f"test -r /tmp/reva-frontend/input\ntest ! -r {stage}/frontend/input\n"
-                   f"test ! -r {blocked}/canary\ntest -z \"${{REVA_SYNTHETIC_SECRET:-}}\"\n"
+                   + negative_checks + "test -z \"${REVA_SYNTHETIC_SECRET:-}\"\n"
                    "test \"$HOME\" = /tmp/reva-home\nid -u > uid\ntouch /tmp/reva-home/proof /tmp/reva-cache/proof")
     completed = False
     try:
@@ -218,6 +233,11 @@ def test_native_frontend_sandbox_private_mounts_and_dynamic_uid(monkeypatch):
         assert (stage / "home/proof").is_file() and (stage / "cache/proof").is_file()
         completed = True
     finally:
-        # Keep failed/unknown unit and files as runner-local evidence. No production paths touched.
+        # Isolated CI only. Never remove existing root contents; keep unknown units/evidence.
         if completed:
+            for canary in canaries:
+                (canary / "record").unlink()
+                canary.rmdir()
+            for directory in reversed(created_roots):
+                directory.rmdir()
             shutil.rmtree(root)

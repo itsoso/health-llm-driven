@@ -318,3 +318,8 @@ RequirementAdmission:
   CI-mode 集成279 passed / 1 skipped。跳过项为仅可在 Linux systemd root
   runner 执行的真实隔离测试，已加入 CI，不能将本机跳过算通过。
   尚待固定提交 G4 与新 revision 的完整 CI，尚未执行线上前端重建。
+- 独立 G4 对 `341584b4f` 判定 BLOCK：只读文件系统不等于数据不可读，
+  原 deny list 未覆盖共享健康目录；Linux 测试替换原 deny list 也不足以取证。
+  已先补 RED 用例再扩展数据根隔离，涵盖 `/opt`、`/var/lib`、缓存/日志/备份
+  和可选数据挂载；Linux 合成文件测试保留生产完整规则，不读取真实健康内容。
+  修复后聚焦263项通过，Linux项仍待精确 CI；再次独立复审和 CI 前禁止发布。

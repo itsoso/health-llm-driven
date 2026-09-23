@@ -27,6 +27,11 @@ LEASE = Path("/var/lock/health-app-release")
 ENV = {"PATH": "/usr/bin:/bin", "HOME": "/root", "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1",
        "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
 SERVICES = ("health-backend", "celery-worker", "celery-beat")
+# Build tools live in /usr, while only explicitly bound inputs may be read from
+# application/data roots. ProtectSystem is write protection, not confidentiality.
+# A '-' tolerates an absent root; it does not expose one that exists.
+PRIVATE_ROOTS = ("/opt", "/var/lib", "/var/cache", "/var/log", "/var/backups",
+                 "/srv", "/data", "/mnt", "/media", "/etc/reva-release", "/etc/health-app")
 PUBLIC_ENV = {
     "BACKEND_URL": {"http://127.0.0.1:8000", "http://localhost:8000"},
     "NEXT_PUBLIC_API_BASE_URL": {"/api", "https://health.executor.life/api"},
@@ -84,7 +89,7 @@ def build_command(operation, stage):
         "RestrictNamespaces=yes", "CapabilityBoundingSet=", "KillMode=control-group",
         "CPUQuota=100%", "MemoryHigh=2G", "MemoryMax=3G", "TasksMax=256", "Nice=10",
         "TimeoutStartSec=1800", "TimeoutStopSec=30", "RuntimeMaxSec=1800",
-        "InaccessiblePaths=/opt/health-app /etc/reva-release /etc/health-app /var/lib/reva-release",
+        "InaccessiblePaths=" + " ".join("-" + path for path in PRIVATE_ROOTS),
         "ReadWritePaths=/tmp/reva-frontend /tmp/reva-home /tmp/reva-cache",
         f"BindPaths={stage}/frontend:/tmp/reva-frontend {stage}/home:/tmp/reva-home {stage}/cache:/tmp/reva-cache",
         "WorkingDirectory=/tmp/reva-frontend",
