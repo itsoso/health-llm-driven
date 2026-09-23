@@ -74,7 +74,7 @@ set -a
 [ -f "${ENV_FILE}" ] && source "${ENV_FILE}"
 set +a
 
-eval "$(
+PROFILE_EXPORTS="$(
   node - "${MOBILE_DIR}/eas.json" "${PROFILE}" <<'NODE'
 const fs = require('fs');
 const [easPath, profileName] = process.argv.slice(2);
@@ -101,11 +101,16 @@ function mergeProfile(name, seen = new Set()) {
 }
 
 const profile = mergeProfile(profileName);
+if (typeof profile.channel !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(profile.channel)) {
+  throw new Error('Local QR build requires an explicit valid update channel');
+}
 for (const [key, value] of Object.entries(profile.env || {})) {
   process.stdout.write(`export ${key}=${JSON.stringify(String(value))}\n`);
 }
+process.stdout.write(`export REVA_LOCAL_UPDATES_CHANNEL=${JSON.stringify(profile.channel)}\n`);
 NODE
 )"
+eval "${PROFILE_EXPORTS}"
 
 export SENTRY_DISABLE_AUTO_UPLOAD="${SENTRY_DISABLE_AUTO_UPLOAD:-true}"
 export PATH="/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin:${PATH}"

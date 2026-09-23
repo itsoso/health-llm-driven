@@ -265,3 +265,23 @@ RequirementAdmission:
   known-hosts、旧发布审计和所有消费记录。未清锁、未重置审核账号。
 - 此次仅后端 G5/G6 完成，不代表全部客户端发布：原生1.3.4扫码安装包、
   前端隐私页面发布与早餐业务修复仍未完成，未进行 OTA/TestFlight/商店上传。
+
+### 2026-09-23 原生扫码包发布续办
+
+- 用户要求继续发布；范围保持原生1.3.4扫码安装与隐私页，不擅自提交
+  TestFlight 或 App Store。独立 `/root/native_qr_release_safety` 允许从
+  canonical 干净 staging 进行 production profile 的私有本地构建；
+  公网发布仍须 IPA 签名、权限、runtime/channel、摘要与公开文件白名单验收。
+- 查明 local QR 脚本原来只读取 profile.env，漏掉 profile.channel，导致
+  本地新包缺少生产 OTA 通道。修复为读取含继承的显式 channel，通过
+  `REVA_LOCAL_UPDATES_CHANNEL` 写入 Expo requestHeaders，并在 app config
+  拒绝与 variant/Rokid 能力不匹配的通道；不改变 EAS 自身的通道注入。
+  profile 解析失败先阻断，不再由 eval 吞掉失败状态。
+- RED：Mobile 通道测试6项失败，脚本通道测试1项失败，均命中原问题。
+  GREEN：Mobile 足迹/分享/原生配置96项、脚本7项、Mobile TypeScript、
+  System Map、秘密扫描通过；CI-mode 集成与发布契约已通过，精确远端
+  revision CI 与固定增量安全复审仍须在公开发布前完成。
+- 发布操作约束：不用原工作区的 `ios` 做 clean prebuild；不上传 archive、
+  构建日志或环境文件；另用唯一 publish ID 装配已验证 IPA 和安装页面。
+  development fallback 或 get-task-allow=true 一律阻断公开发布。
+  真实设备安装、GPS、第三方接收仍未验证，不以既有模拟器证据冒充。

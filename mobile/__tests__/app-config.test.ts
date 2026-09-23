@@ -6,6 +6,7 @@ function configForVariant(variant?: string, env: Record<string, string | undefin
   const previous = process.env.APP_VARIANT;
   const optionalEnvKeys = [
     'REVA_IOS_BUILD_NUMBER',
+    'REVA_LOCAL_UPDATES_CHANNEL',
     'ROKID_IOS_SDK_ENABLED',
     'ROKID_IOS_CALLBACK_SCHEME',
     'INCLUDE_WATCH_APP',
@@ -99,6 +100,26 @@ describe('app.config app links', () => {
     const config = configForVariant('production', { REVA_IOS_BUILD_NUMBER: '237' });
 
     expect(config.ios?.buildNumber).toBe('237');
+  });
+
+  it('embeds the selected local release channel without changing the update project or runtime', () => {
+    const config = configForVariant('production', { REVA_LOCAL_UPDATES_CHANNEL: 'production' });
+    expect(config.updates?.requestHeaders?.['expo-channel-name']).toBe('production');
+    expect(config.updates?.url).toBe(appJson.expo.updates.url);
+    expect(config.runtimeVersion).toEqual({ policy: 'appVersion' });
+  });
+
+  it('leaves EAS channel injection unchanged when no local channel is requested', () => {
+    expect(configForVariant('production').updates?.requestHeaders?.['expo-channel-name']).toBeUndefined();
+  });
+
+  it.each(['preview', 'development', 'production\npreview', ''])('rejects a mismatched local production channel: %s', (channel) => {
+    expect(() => configForVariant('production', { REVA_LOCAL_UPDATES_CHANNEL: channel })).toThrow(/channel/i);
+  });
+
+  it('preserves explicit preview and Rokid release channels', () => {
+    expect(configForVariant('preview', { REVA_LOCAL_UPDATES_CHANNEL: 'preview' }).updates.requestHeaders['expo-channel-name']).toBe('preview');
+    expect(configForVariant('production', { REVA_LOCAL_UPDATES_CHANNEL: 'rokid-production', ROKID_IOS_SDK_ENABLED: '1' }).updates.requestHeaders['expo-channel-name']).toBe('rokid-production');
   });
 
   it('adds the health share universal link domain to iOS builds', () => {

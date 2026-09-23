@@ -21,6 +21,7 @@ const INCLUDE_ROKID = process.env.ROKID_IOS_SDK_ENABLED === '1';
 const INCLUDE_WATCH = process.env.INCLUDE_WATCH_APP === '1';
 const INCLUDE_SIRI = process.env.INCLUDE_SIRI_INTENTS === '1';
 const IOS_BUILD_NUMBER = process.env.REVA_IOS_BUILD_NUMBER?.trim();
+const LOCAL_UPDATES_CHANNEL = process.env.REVA_LOCAL_UPDATES_CHANNEL;
 
 const BUNDLE_ID_BASE = 'life.executor.health';
 const APP_LINK_DOMAIN = 'health.executor.life';
@@ -118,6 +119,16 @@ function removeKeys<T extends Record<string, any>>(value: T, keys: string[]): T 
 }
 
 export default ({ config }: ConfigContext): ExpoConfig => {
+  // EAS injects its channel itself; only the local QR build needs this input.
+  const expectedLocalChannel = IS_DEV
+    ? 'development'
+    : `${INCLUDE_ROKID ? 'rokid-' : ''}${IS_PREVIEW ? 'preview' : 'production'}`;
+  if (LOCAL_UPDATES_CHANNEL !== undefined && (
+    !['production', 'preview', 'development'].includes(VARIANT)
+    || LOCAL_UPDATES_CHANNEL !== expectedLocalChannel
+  )) {
+    throw new Error('Local updates channel does not match the native app variant/capabilities');
+  }
   const basePlugins = withoutOptionalNativePlugins(config.plugins);
   const baseInfoPlist = removeKeys((config.ios?.infoPlist ?? {}) as Record<string, any>, [
     'UISupportedInterfaceOrientations~ipad',
@@ -162,6 +173,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
   return {
   ...config,
+  ...(LOCAL_UPDATES_CHANNEL !== undefined ? {
+    updates: {
+      ...config.updates,
+      requestHeaders: {
+        ...config.updates?.requestHeaders,
+        'expo-channel-name': LOCAL_UPDATES_CHANNEL,
+      },
+    },
+  } : {}),
   name: config.name ?? '小巴健康',
   slug: config.slug ?? 'health-pilot',
   plugins,
