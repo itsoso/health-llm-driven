@@ -98,7 +98,9 @@ def build_command(operation, stage):
     command.extend(f"--property={value}" for value in properties)
     command.extend(["/usr/bin/env", "-i", "PATH=/usr/bin:/bin", "HOME=/tmp/reva-home",
                     "npm_config_cache=/tmp/reva-cache", "CI=1", "NEXT_TELEMETRY_DISABLED=1",
-                    "npm_config_userconfig=/dev/null", "npm_config_globalconfig=/dev/null",
+                    # npm rejects loading one filename as both user and global
+                    # config. This second path is absent in each fresh private HOME.
+                    "npm_config_userconfig=/dev/null", "npm_config_globalconfig=/tmp/reva-home/empty-global.npmrc",
                     "NODE_OPTIONS=--max-old-space-size=2048",
                     "/bin/bash", "--noprofile", "--norc", "-euc",
                     "npm ci --ignore-scripts --no-audit --no-fund\nnpm run build"])
@@ -419,12 +421,176 @@ def execute(plan, source, helper, bootstrap, server):
         raise RebuildError("frontend rebuild stopped; lease and evidence retained; no retry") from None
 
 
+def evidence_digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def retired_lease(operation):
+    checked_hex(operation, 32)
+    return Path("/run/lock") / ("health-app-release.frontend-retired-" + operation)
+
+
+def failed_build_unit(operation):
+    checked_hex(operation, 32)
+    name = f"reva-frontend-build-{operation}.service"
+    values = dict(line.split("=", 1) for line in run([
+        "/usr/bin/systemctl", "show", name,
+        "--property=ActiveState,SubState,MainPID,ControlPID,Result,ExecMainCode,ExecMainStatus,ControlGroup",
+    ]).splitlines())
+    expected = {"ActiveState": "failed", "SubState": "failed", "MainPID": "0", "ControlPID": "0",
+                "Result": "exit-code", "ExecMainCode": "1", "ExecMainStatus": "1", "ControlGroup": ""}
+    # A missing/collected unit is unknown, not proof of termination.
+    if values != expected:
+        raise RebuildError("build unit is not the known terminated pre-install failure")
+    group = Path("/sys/fs/cgroup/system.slice") / name
+    if os.path.lexists(group) and (not group.is_dir() or group.is_symlink()
+                                 or any(p.read_text().strip() for p in group.rglob("cgroup.procs"))):
+        raise RebuildError("frontend build descendants remain")
+    return values
+
+
+def lease_evidence(path, operation, helper, bootstrap, server):
+    if path not in (LEASE, retired_lease(operation)):
+        raise RebuildError("unexpected lease archive path")
+    if path == LEASE:
+        helper._secure_lease_path(server, path, directory=True)
+    else:
+        server.secure_path(Path("/run"), directory=True)
+        parent = path.parent.lstat()
+        if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or parent.st_gid != 0
+                or stat.S_IMODE(parent.st_mode) != 0o1777):
+            raise RebuildError("lease archive shared parent differs")
+    info = path.lstat()
+    server.validate_metadata(info, directory=True)
+    names = {"token", "label", "stage", "started_at"}
+    if info.st_gid != 0 or stat.S_IMODE(info.st_mode) != 0o700 or {p.name for p in path.iterdir()} != names:
+        raise RebuildError("lease inventory differs")
+    raw, files = {}, {}
+    for name in names:
+        server.validate_metadata((path / name).lstat(), private=True)
+        files[name], raw[name] = data_fingerprint(path / name)
+        if files[name]["gid"] != 0:
+            raise RebuildError("lease group differs")
+    if (raw["label"] != b"frontend-rebuild\n"
+            or raw["stage"] != (str(STATE / "frontend-rebuilds" / operation) + "\n").encode()
+            or re.fullmatch(rb"[0-9a-f]{64}\n", raw["token"]) is None
+            or re.fullmatch(rb"[0-9]{1,12}\n", raw["started_at"]) is None):
+        raise RebuildError("lease is not bound to the failed frontend operation")
+    if path == LEASE:
+        helper._lease_identity(str(path), raw["token"].decode().strip(), bootstrap, server)
+    return {"directory": {"dev": info.st_dev, "ino": info.st_ino, "mode": info.st_mode,
+                          "uid": info.st_uid, "gid": info.st_gid}, "files": files}
+
+
+def inspect_failed(publisher, production, operation, source, helper, bootstrap, server, gate, lock_fd, *, archived=False):
+    gate.verify_release(publisher, publisher)
+    audit = STATE / "frontend-rebuilds" / operation
+    server.assert_frontend_rebuild_history(STATE, pending_operation=operation)
+    failure = server.frontend_preinstall_failure(audit)
+    before = bootstrap._read_json(audit / "before.json")
+    if before["production_sha"] != production:
+        raise RebuildError("failed operation production binding differs")
+    old_source = bootstrap.canonical_source(before["publisher_sha"])
+    old_entry = old_source / "scripts/trusted_frontend_rebuild.py"
+    secure_entry(old_entry)
+    code_hash = hashlib.sha256(old_entry.read_bytes()).hexdigest()
+    if code_hash != server.FRONTEND_PREINSTALL_CODE_SHA256:
+        raise RebuildError("unknown historical frontend publisher control flow")
+    gate._latest(gate._get_json, before["publisher_sha"])
+    gate._latest(gate._get_json, production)
+    validate_binding(before["publisher_sha"], production, before["frontend_tree"],
+                     git(old_source, "rev-parse", "HEAD:frontend"),
+                     bootstrap._read_json(STATE / production / "completed.json"),
+                     live_sha=git(PRODUCTION, "rev-parse", "HEAD"))
+    assert_unchanged(before, source, helper, bootstrap, server)
+    rows = [row for row in json.loads(run(["/usr/bin/pm2", "jlist"])) if row.get("name") == "health-frontend"]
+    if len(rows) != 1 or type(rows[0].get("pid")) is not int or rows[0]["pid"] <= 0:
+        raise RebuildError("frontend runtime identity is unknown")
+    runtime = {"pid": rows[0]["pid"], **{k: rows[0]["pm2_env"][k] for k in ("restart_time", "pm_uptime")}}
+    helper._assert_lock(server, STATE / "launcher.lock", lock_fd)
+    lock = data_fingerprint(STATE / "launcher.lock")[0]
+    unit = failed_build_unit(operation)
+    bootstrap._recovery_process_proof()
+    stage = BUILDS / operation
+    server.secure_path(BUILDS, directory=True)
+    info = stage.lstat()
+    server.validate_metadata(info, directory=True)
+    if stat.S_IMODE(info.st_mode) != 0o700:
+        raise RebuildError("failed build private boundary differs")
+    return {"kind": "frontend-preinstall-closure", "state": "CLOSING", "publisher_sha": publisher,
+            "production_sha": production, "operation_id": operation, "old_publisher_sha": before["publisher_sha"],
+            "old_code_sha256": code_hash, "failure": failure,
+            "lease": lease_evidence(retired_lease(operation) if archived else LEASE, operation, helper, bootstrap, server),
+            "snapshot": before["snapshot"], "frontend_runtime": runtime, "build_digest": artifact_digest(stage),
+            "launcher": lock, "unit": unit}
+
+
+def retire_failure(plan, inspect_again, server):
+    operation = plan["operation_id"]
+    root = STATE / "frontend-rebuild-closures"
+    closure = root / operation
+    volatile = retired_lease(operation)
+    if os.path.lexists(closure) or os.path.lexists(volatile):
+        raise RebuildError("retirement already attempted; retry forbidden")
+    if LEASE.stat().st_dev != volatile.parent.stat().st_dev:
+        raise RebuildError("lease retirement must preserve same-filesystem inode")
+    root.mkdir(mode=0o700, exist_ok=True)
+    server.secure_path(root, directory=True)
+    server._sync_directory(root.parent)
+    closure.mkdir(mode=0o700)
+    server._sync_directory(root)
+    issued = secrets.token_hex(32)
+    intent = {**plan, "evidence_sha256": evidence_digest(plan),
+              "receipt_sha256": hashlib.sha256(issued.encode()).hexdigest()}
+    write_json(server, closure / "intent.json", intent)
+    if inspect_again() != plan:
+        raise RebuildError("frontend failure evidence changed after intent")
+    archive = closure / "lease"
+    archive.mkdir(mode=0o700)
+    server._sync_directory(closure)
+    for name in ("token", "label", "stage", "started_at"):
+        server._write_private(archive / name, data_fingerprint(LEASE / name)[1])
+    if inspect_again() != plan:
+        raise RebuildError("frontend failure evidence changed before lease retirement")
+    for name in ("token", "label", "stage", "started_at"):
+        if data_fingerprint(archive / name)[1] != data_fingerprint(LEASE / name)[1]:
+            raise RebuildError("durable lease copy differs")
+    run(["/usr/bin/mv", "--no-clobber", "-T", "--", str(LEASE), str(volatile)])
+    server._sync_directory(volatile.parent)
+    if os.path.lexists(LEASE) or inspect_again(archived=True) != plan:
+        raise RebuildError("lease retirement or production postcondition differs")
+    complete = {"state": "CLOSED_PREINSTALL_FRONTEND_FAILURE", "operation_id": operation,
+                "intent_sha256": evidence_digest(intent)}
+    write_json(server, closure / "completed.json", complete)
+    server._sync_directory(closure)
+    # No credential/key/service mutation. Only after durable terminal success is
+    # this capability issued; lost responses are not replayed or reconstructed.
+    return {**complete, "receipt": issued}
+
+
+def acknowledge_retirement(publisher, production, operation, server, gate, receipt_value):
+    gate.verify_release(publisher, publisher)
+    audit = STATE / "frontend-rebuilds" / operation
+    intent = server.frontend_closure_proof(audit, STATE, acknowledgment=False)
+    if (intent["publisher_sha"] != publisher or intent["production_sha"] != production
+            or re.fullmatch(r"[0-9a-f]{64}", receipt_value) is None
+            or not secrets.compare_digest(hashlib.sha256(receipt_value.encode()).hexdigest(), intent["receipt_sha256"])):
+        raise RebuildError("durably issued frontend retirement receipt required")
+    write_json(server, STATE / "frontend-rebuild-closures" / operation / "acknowledged.json",
+               {"operation_id": operation, "receipt": receipt_value})
+    server.assert_frontend_rebuild_history(STATE)
+    return {"state": "FRONTEND_RETIREMENT_ACKNOWLEDGED", "operation_id": operation}
+
+
 def main():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--publisher-sha", required=True)
     parser.add_argument("--production-sha", required=True)
     parser.add_argument("--operation-id", required=True)
     parser.add_argument("--evidence-sha256")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--retire-failed", action="store_true")
+    mode.add_argument("--acknowledge-retirement", action="store_true")
     args = parser.parse_args()
     try:
         if (not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode
@@ -442,6 +608,30 @@ def main():
         with lock.open("r+b") as stream:
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             helper._assert_lock(server, lock, stream.fileno())
+            if args.acknowledge_retirement:
+                if args.evidence_sha256 is not None:
+                    raise RebuildError("acknowledgment accepts only a protected stdin receipt")
+                issued = sys.stdin.buffer.read(66).decode().removesuffix("\n")
+                print(json.dumps(acknowledge_retirement(args.publisher_sha, args.production_sha,
+                                                       args.operation_id, server, gate, issued)))
+                return 0
+            if args.retire_failed:
+                closure = STATE / "frontend-rebuild-closures" / args.operation_id
+                if os.path.lexists(closure) or os.path.lexists(retired_lease(args.operation_id)):
+                    raise RebuildError("retirement already attempted; retry forbidden")
+                def inspect_again(archived=False):
+                    return inspect_failed(args.publisher_sha, args.production_sha, args.operation_id,
+                                          source, helper, bootstrap, server, gate, stream.fileno(), archived=archived)
+                plan = inspect_again()
+                digest = evidence_digest(plan)
+                if args.evidence_sha256 is None:
+                    print(json.dumps({"state": "FRONTEND_RETIREMENT_PREFLIGHT", "operation_id": args.operation_id,
+                                      "evidence_sha256": digest}))
+                    return 0
+                if args.evidence_sha256 != digest:
+                    raise RebuildError("frontend retirement evidence changed")
+                print(json.dumps(retire_failure(plan, inspect_again, server)))
+                return 0
             plan = inspect(args.publisher_sha, args.production_sha, args.operation_id, source, helper, bootstrap, server, gate)
             digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             if args.evidence_sha256 is None:

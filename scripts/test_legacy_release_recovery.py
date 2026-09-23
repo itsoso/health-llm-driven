@@ -281,7 +281,7 @@ def test_recovered_audit_cannot_mask_drift(monkeypatch, tmp_path, fault):
         b._workspace_evidence(SHA, recovery_receipt=result["receipt"])
 
 
-@pytest.mark.parametrize("indicator", ["cwd", "exe", "environ", "cmdline", "none", "unreadable", "empty_argv"])
+@pytest.mark.parametrize("indicator", ["cwd", "exe", "environ", "cmdline", "none", "unreadable", "empty_argv", "frontend", "frontend-operator"])
 def test_proc_proof_catches_reparented_helper(monkeypatch, tmp_path, indicator):
     from test_bootstrap_trusted_release import load_bootstrap
     b = load_bootstrap()
@@ -304,6 +304,11 @@ def test_proc_proof_catches_reparented_helper(monkeypatch, tmp_path, indicator):
         (p / indicator).write_bytes(b"HOME=/var/lib/reva-release/old/home\0")
     elif indicator == "unreadable":
         (p / "environ").unlink()
+    elif indicator == "frontend":
+        (p / "cwd").unlink()
+        (p / "cwd").symlink_to("/tmp/reva-frontend")
+    elif indicator == "frontend-operator":
+        (p / "cmdline").write_bytes(b"python3\0trusted_frontend_rebuild.py\0")
     elif indicator == "empty_argv":
         (p / "cmdline").write_bytes(b"")
         (p / "cwd").unlink()

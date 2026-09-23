@@ -58,6 +58,27 @@ PID 与 restart count、健康环境文件及授权文件摘要未变。只有�
 lease 释放均完成才记独立 `FRONTEND_SUCCEEDED`；不改 DB/schema，不重启
 后端，不声称全端发布已完成。
 
+此 operator 的 `--retire-failed` 仅在用户明确授权后关闭已知 npm 配置启动
+失败：完整历史 publisher 实现摘要、精确三行错误、四文件失败审计共同证明
+未进入安装。安装意图、未知文件、不同日志/实现、构建非终态或残留进程均
+BLOCK；不可仅凭 install-started 缺失推断安全。持原 launcher flock/inode，
+核验生产 revision/后端成功回执/精确 CI、原 before 的后端与配置快照，以及
+当前前端稳定身份。旧 before 未记录前端 PID，不声称证明历史前端 PID 未变。
+默认只读，核对摘要后提供 `--evidence-sha256` 才执行；新代码同样必须当前
+main、精确绿色 CI、独立 G4，且只从 canonical root staging 运行。
+
+独立 `frontend-rebuild-closures/<原 operation-id>` 先 fsync intent，仅将原
+lease 四文件完整复制到持久 root-only 审计，再同文件系统 no-clobber 移至
+`/run/lock/health-app-release.frontend-retired-<原 operation-id>`，保留 inode。
+原失败审计和构建现场完全不改，不重启服务、不改健康数据、不撤销/新增身份。
+全部后验与终态 fsync 成功才返回随机回执；回执只经受保护 stdin 传给独立
+`--acknowledge-retirement`，不得写入命令行、日志或用户消息。该只确认入口
+验证完整关闭证明和回执后写私密 acknowledgment，普通发布/轮换历史闸此后
+才放行。失败或回执丢失不补发、不重跑、不换 ID；原状态永久保持
+FRONTEND_NEEDS_OPERATOR。后续历史核验依赖持久原证据、归档和有效回执，
+不绑定未来生产 SHA/PID，也不依赖重启后可能消失的 `/run` 归档。新部署和
+新重建仍独立通过既有全部闸，不把此收尾计为发布成功。
+
 #### 受审隔离发布入口
 
 手动触发 `.github/workflows/trusted-release.yml`，先以 `target=validate` 验证当前 main

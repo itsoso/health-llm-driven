@@ -323,3 +323,14 @@ RequirementAdmission:
   已先补 RED 用例再扩展数据根隔离，涵盖 `/opt`、`/var/lib`、缓存/日志/备份
   和可选数据挂载；Linux 合成文件测试保留生产完整规则，不读取真实健康内容。
   修复后聚焦263项通过，Linux项仍待精确 CI；再次独立复审和 CI 前禁止发布。
+- `7e6313f85` 已独立增量 G4 GO，精确 CI `35839735072` 全绿，真实 Linux
+  namespace/dynamic UID 测试1项通过。本地 CI-mode 集成266项通过、1项Linux跳过。
+  root canonical staging 摘要与受审代码一致，同树只读预检通过。
+- G5 **BLOCK**：操作 `ada1af2bf76245ecae376eadad3f6c63` 在 npm 启动时失败，
+  npm10 拒绝 userconfig 与 globalconfig 同时为 `/dev/null`（double-loading config）。
+  尚未写 install-started、未停止或切换前端；原前端 PID3812370，后端三服务
+  active/running 且 NRestarts=0，生产 revision 保持 `a1e39bbfa`。
+  原失败审计和 business lease 完整保留，未清锁、未换 ID 重试、未发布原生包。
+  Linux 沙箱测试只验证隔离与读写，不覆盖真实 npm 配置启动；后续须补该回归，
+  修正配置文件去重，并经受控失败关闭、独立复审及新精确 CI 后才能重新发布。
+  当前暂停请求失败关闭/重试的明确授权，不将此前 CI 成功当成生产发布成功。

@@ -808,7 +808,8 @@ def _recovery_process_proof():
         raise BootstrapError("process inventory unavailable")
     needles = (b"reva-release", b"deploy.sh", b"health-app-backup-preflight", b"trusted_review_reset.py", b"seed_demo_account.py",
                b"/var/lock/health-app-release", b"/run/lock/health-app-release",
-               b"rollback_release", b"runtime_state_release_transaction")
+               b"rollback_release", b"runtime_state_release_transaction",
+               b"reva-frontend", b"trusted_frontend_rebuild.py")
     for process in entries:
         if not process.name.isdigit() or int(process.name) == os.getpid():
             continue

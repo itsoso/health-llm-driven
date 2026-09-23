@@ -214,9 +214,105 @@ def run_once(policy, workspace, prepare, deploy):
         os.close(fd)
 
 
-def assert_frontend_rebuild_history(state=None):
+FRONTEND_NPM_CONFIG_FAILURE = (b'Exit prior to config file resolving\ncause\n'
+                               b'double-loading config "/dev/null" as "global", previously loaded as "user"\n')
+# Complete reviewed pre-install control flow, not an operation/release SHA allowlist.
+FRONTEND_PREINSTALL_CODE_SHA256 = "67583cf9135359022d1bc513374d0eb26aed0305d7b9a8731f17473ed3c87182"
+
+
+def frontend_preinstall_failure(operation):
+    expected = {"intent.json", "before.json", "build.log", "failed.json"}
+    secure_path(operation, directory=True)
+    if {p.name for p in operation.iterdir()} != expected:
+        raise LaunchError("not a bounded pre-install frontend failure")
+    raw = {name: _read_private(operation / name) for name in expected}
+    intent = _json(raw["intent.json"])
+    keys = {"kind", "publisher_sha", "production_sha", "operation_id", "frontend_tree", "state", "artifact_digest"}
+    if (not isinstance(intent, dict) or set(intent) != keys or intent["kind"] != "frontend-rebuild"
+            or intent["operation_id"] != operation.name or intent["state"] != "FRONTEND_STARTED"
+            or intent["artifact_digest"] is not None
+            or any(not isinstance(intent[key], str) or re.fullmatch(r"[0-9a-f]{40}", intent[key]) is None
+                   for key in ("publisher_sha", "production_sha", "frontend_tree"))
+            or _json(raw["failed.json"]) != {**intent, "state": "FRONTEND_NEEDS_OPERATOR"}
+            or raw["build.log"] != FRONTEND_NPM_CONFIG_FAILURE):
+        raise LaunchError("unknown frontend failure phase")
+    before = _json(raw["before.json"])
+    if not isinstance(before, dict) or any(before.get(key) != intent[key] for key in (
+            "publisher_sha", "production_sha", "operation_id", "frontend_tree")):
+        raise LaunchError("failed frontend binding differs")
+    return {name: hashlib.sha256(data).hexdigest() for name, data in raw.items()}
+
+
+def frontend_closure_proof(operation, state, *, acknowledgment=True):
+    """Historical proof deliberately does not depend on future live SHA/PIDs."""
+    failure = frontend_preinstall_failure(operation)
+    closure = Path(state) / "frontend-rebuild-closures" / operation.name
+    secure_path(closure, directory=True)
+    expected = {"intent.json", "completed.json", "lease"}
+    if acknowledgment:
+        expected.add("acknowledged.json")
+    if stat.S_IMODE(closure.stat().st_mode) != 0o700 or {p.name for p in closure.iterdir()} != expected:
+        raise LaunchError("frontend retirement incomplete")
+    intent = _json(_read_private(closure / "intent.json"))
+    keys = {"kind", "state", "publisher_sha", "production_sha", "operation_id", "old_publisher_sha",
+            "old_code_sha256", "failure", "lease", "snapshot", "frontend_runtime", "build_digest",
+            "launcher", "unit", "evidence_sha256", "receipt_sha256"}
+    old = _json(_read_private(operation / "intent.json"))
+    if (not isinstance(intent, dict) or set(intent) != keys
+            or intent["kind"] != "frontend-preinstall-closure" or intent["state"] != "CLOSING"
+            or intent["operation_id"] != operation.name or intent["failure"] != failure
+            or intent["old_publisher_sha"] != old["publisher_sha"]
+            or intent["production_sha"] != old["production_sha"]
+            or intent["old_code_sha256"] != FRONTEND_PREINSTALL_CODE_SHA256
+            or any(not isinstance(intent[key], str) or re.fullmatch(r"[0-9a-f]{64}", intent[key]) is None
+                   for key in ("evidence_sha256", "receipt_sha256"))
+            or not isinstance(intent["publisher_sha"], str)
+            or re.fullmatch(r"[0-9a-f]{40}", intent["publisher_sha"]) is None):
+        raise LaunchError("frontend retirement binding differs")
+    evidence = {k: v for k, v in intent.items() if k not in ("evidence_sha256", "receipt_sha256")}
+    digest = lambda value: hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if digest(evidence) != intent["evidence_sha256"]:
+        raise LaunchError("frontend closure evidence differs")
+    archive = closure / "lease"
+    secure_path(archive, directory=True)
+    names = {"token", "label", "stage", "started_at"}
+    if stat.S_IMODE(archive.stat().st_mode) != 0o700 or {p.name for p in archive.iterdir()} != names:
+        raise LaunchError("invalid durable lease archive")
+    if not isinstance(intent["lease"], dict) or set(intent["lease"]) != {"directory", "files"} or set(intent["lease"]["files"]) != names:
+        raise LaunchError("invalid lease evidence")
+    for name in names:
+        if hashlib.sha256(_read_private(archive / name)).hexdigest() != intent["lease"]["files"][name]["sha256"]:
+            raise LaunchError("archived lease changed")
+    if (_read_private(archive / "label") != b"frontend-rebuild\n"
+            or _read_private(archive / "stage") != (str(operation) + "\n").encode()
+            or re.fullmatch(rb"[0-9a-f]{64}\n", _read_private(archive / "token")) is None
+            or re.fullmatch(rb"[0-9]{1,12}\n", _read_private(archive / "started_at")) is None):
+        raise LaunchError("archived lease binding differs")
+    completed = {"state": "CLOSED_PREINSTALL_FRONTEND_FAILURE", "operation_id": operation.name,
+                 "intent_sha256": digest(intent)}
+    if _json(_read_private(closure / "completed.json")) != completed:
+        raise LaunchError("frontend retirement terminal differs")
+    if acknowledgment:
+        ack = _json(_read_private(closure / "acknowledged.json"))
+        if (not isinstance(ack, dict) or set(ack) != {"operation_id", "receipt"}
+                or ack["operation_id"] != operation.name or not isinstance(ack["receipt"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", ack["receipt"]) is None
+                or hashlib.sha256(ack["receipt"].encode()).hexdigest() != intent["receipt_sha256"]):
+            raise LaunchError("durably issued frontend closure receipt required")
+    return intent
+
+
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None):
     """Independent frontend evidence must never count as backend success."""
     root = Path(state or STATE) / "frontend-rebuilds"
+    closures = root.parent / "frontend-rebuild-closures"
+    if os.path.lexists(closures):
+        secure_path(closures, directory=True)
+        if stat.S_IMODE(closures.stat().st_mode) != 0o700:
+            raise LaunchError("frontend closure root must remain private")
+        for closure in closures.iterdir():
+            if re.fullmatch(r"[0-9a-f]{32}", closure.name) is None or not (root / closure.name).is_dir():
+                raise LaunchError("orphan frontend closure")
     if not os.path.lexists(root):
         return
     secure_path(root, directory=True)
@@ -228,7 +324,17 @@ def assert_frontend_rebuild_history(state=None):
         secure_path(operation, directory=True)
         if stat.S_IMODE(operation.lstat().st_mode) != 0o700:
             raise LaunchError("frontend operation must remain private")
-        if re.fullmatch(r"[0-9a-f]{32}", operation.name) is None or {p.name for p in operation.iterdir()} != expected_files:
+        if re.fullmatch(r"[0-9a-f]{32}", operation.name) is None:
+            raise LaunchError("invalid frontend operation")
+        if operation.name == pending_operation:
+            # Only the root operator uses this to inspect the one failure being
+            # retired. RPC/normal launch/rotation callers never pass an exception.
+            frontend_preinstall_failure(operation)
+            continue
+        if os.path.lexists(operation / "failed.json"):
+            frontend_closure_proof(operation, root.parent)
+            continue
+        if os.path.lexists(closures / operation.name) or {p.name for p in operation.iterdir()} != expected_files:
             raise LaunchError("unfinished or unknown frontend rebuild; operator review required")
         for name in ("previous-next", "previous-node-modules"):
             secure_path(operation / name, directory=True)
