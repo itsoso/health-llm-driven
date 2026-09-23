@@ -230,3 +230,38 @@ RequirementAdmission:
   CI-mode 分片 runner、async context、发布与隐私契约合跑 **107 passed**
   （`/tmp/reva-shard-contract-green.log`），未删除覆盖或放宽判定。
   生产部署继续等待修正后精确 SHA 的真实 CI；尚未轮换授权或触发部署。
+- 固定候选 `a1e39bbfab675ac7f52227b33d4673f7bc3ccf87` 独立
+  `/root/release_assertion_review` 增量 **GO**，独立 CI-mode 107 passed。
+  GitHub CI `35818623647` 全绿；Trusted release `35819557569`
+  `target=validate` 成功，仅证明源码/CI 预检，不是部署回执。
+- G5 阻断：服务器 canonical staging 的三次有界 HTTPS fetch 均以128退出
+  （连接空响应/低速超时），独立只读 HTTPS 探测连接超时。保留
+  `/var/lib/reva-release/bootstrap/a1e39bbfab675ac7f52227b33d4673f7bc3ccf87/source`
+  的未完成 Git 现场；没有运行其中脚本，没有发布消费记录。
+  未生成新私钥、未轮换授权、未设置 GitHub 发布 secret、未 dispatch backend。
+  应先恢复服务器到 canonical GitHub 的连接，再核验 main/CI/干净源码并继续；
+  不上传本机脚本、不使用镜像替代受审来源，不删除锁或旧发布证据。
+- 早餐只读复现进一步确认：`记录早餐，喝了一碗小米粥。` 被拆成两个授权
+  子句，合成完整营养参数仍遭 `health_record_authorization_target_unresolved`；
+  去掉逗号或改成“吃了”则允许。截图时间窗内日志也显示营养补全后首轮
+  被该授权拒绝，后轮才出现营养缺失；日志未独立按 trace 绑定，不能把时间
+  相关性当成完整追踪证据。待发布后修复分句/后续错误呈现，未修改饮食行为。
+- 用户要求继续部署后，服务器到 canonical GitHub/API 的 TLS 连通性恢复，
+  在原 staging 成功 fetch 精确候选并核对三个发布脚本 SHA-256；未改 DNS、
+  hosts、代理或 TLS 校验。独立服务器 CI gate 再次确认 run `35818623647`；
+  本机 CI-mode 相关107项复跑通过（`/tmp/reva-resume-release-ci.log`）。
+- 已按用户授权正常 rotate 旧 `42ba9fcc7` 至 `a1e39bbfa`，保留旧审计和锁，
+  未使用事故恢复或历史消费重试。Trusted release **`35822757961` 成功**，
+  仅 `target=backend`，服务端终态 `SUCCEEDED`，实际生产精确 SHA 为
+  `a1e39bbfab675ac7f52227b33d4673f7bc3ccf87`。
+- 后端验收：足迹 managed migration 已执行；三次健康度 **60/60**，三次
+  runtime-only KB contract 通过，Skills manifest 同步通过；backend/worker/beat
+  跨稳定窗口 PID 不变、NRestarts=0，业务 lease 已释放。真实公网
+  `https://health.executor.life/api/v1/health` 返回200，足迹 `/api/v1/journey/month`
+  未登录返回401。最初按旧 Skill 地址探测 `health-api.executor.life` 失败，
+  后以 Mobile `services/api.ts` 的实际域名验证；不将旧地址失败误报为线上故障。
+- 发布完成后精确撤销本次双发布授权、删除服务器 loopback 私钥和本机临时
+  私钥，移除本次 GitHub `REVA_RELEASE_SSH_KEY`；保留既有 Expo token、
+  known-hosts、旧发布审计和所有消费记录。未清锁、未重置审核账号。
+- 此次仅后端 G5/G6 完成，不代表全部客户端发布：原生1.3.4扫码安装包、
+  前端隐私页面发布与早餐业务修复仍未完成，未进行 OTA/TestFlight/商店上传。
