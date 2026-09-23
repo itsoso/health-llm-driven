@@ -38,7 +38,7 @@ from app.services.agent_query_window import (
 
 _DOMAINS = {
     "diet": r"饮食|餐食|吃了什么",
-    "sleep": r"睡眠|睡得|睡觉",
+    "sleep": r"睡眠血氧|睡眠|睡得|睡觉",
     "workout": r"运动|锻炼|训练",
     "supplements": r"补剂|营养补充剂",
 }
@@ -76,7 +76,7 @@ _ANALYSIS_GOAL = (
     r"(?:(?:并且|然后|并|再|也|来|这样才能)(?:请)?)?"
     r"(?:(?:依据|基于)(?:真实|已有|这些|上述|以上)(?:数据|记录))?"
     r"(?:(?:分析|复盘|总结)(?:一下)?(?:(?:我(?:的)?)?(?:当前|现在)?(?:的)?(?:状况|情况|状态))?|"
-    r"(?:给|给到|给出|提供)(?:我)?(?:一些|一点|些|点|精准的)?(?:建议|意见))"
+    r"(?:给|给到|给出|提供)(?:我)?(?:一些|一点|些|点|精准的|你的)?(?:建议|意见))"
 )
 _ANALYSIS_GOAL_RE = re.compile(_ANALYSIS_GOAL)
 _METHOD_CLAUSE_RE = re.compile(
@@ -672,7 +672,7 @@ def read_longitudinal_health_query(
     if isinstance(user_id, bool) or not isinstance(user_id, int) or user_id <= 0:
         raise ValueError("longitudinal_query_owner_required")
     window = parse_query_window(window.as_dict())
-    if dimension in {"diet", "sleep"}:
+    if dimension in {"diet", "sleep", "spo2"}:
         return read_calendar_health_query(db, user_id, dimension, window)
     if dimension not in {"workout", "supplements"}:
         raise ValueError("longitudinal_query_dimension_unsupported")

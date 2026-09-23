@@ -21,7 +21,7 @@ from app.services.agent_write_outcome import result_declares_explicit_failure
 from app.services.genui.table_builder import load_tool_result_json
 from app.utils.number_format import format_display_number
 
-_LABELS = {"diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂"}
+_LABELS = {"diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂", "spo2": "血氧"}
 _ACTUAL_SOURCES = {
     "workout": ("owned_actual_workout_records", {"workout_record", "exercise_record"}),
     "supplements": (
@@ -44,6 +44,7 @@ class ComposedReadCompletion:
 # These fields mirror the bounded calendar and actual-intake adapters. Extra
 # record metadata never enters the answer model; source identity stays data.
 _EVIDENCE_FIELDS = {
+    "spo2": ("record_date", "daily_metrics", "daily_sources", "sample_summaries"),
     "diet": ("id", "record_date", "meal_type", "meal_time", "food_name", "food_items",
              "quantity", "unit", "calories", "protein", "carbs", "fat", "fiber"),
     "sleep": ("record_date", "sleep_score", "total_sleep_duration", "deep_sleep_duration",
@@ -61,6 +62,7 @@ _NUMERIC_FIELDS = frozenset({
     "avg_heart_rate", "dosage",
 })
 _FIELD_UNITS = {
+    "spo2": {"daily_metrics": "percent", "sample_summaries": "percent; data_points=count"},
     "diet": {"calories": "kcal", "protein": "g", "carbs": "g", "fat": "g", "fiber": "g",
              "quantity": "per_record_unit"},
     "sleep": {**{field: "minutes" for field in _EVIDENCE_FIELDS["sleep"] if field.endswith("_duration")},
@@ -72,13 +74,28 @@ _FIELD_UNITS = {
 
 
 def _evidence_value(field, value):
+    if field == 'daily_metrics':
+        if isinstance(value, dict) and set(value) == {'spo2_avg', 'spo2_min', 'spo2_max'} and all(
+            v is None or (type(v) in {int, float} and _summary_decimal(v) is not None) for v in value.values()
+        ):
+            return dict(value)
+        return None
+    if field == 'sample_summaries':
+        if isinstance(value, list) and all(
+            isinstance(row, dict) and set(row) == {'source', 'data_points', 'min_spo2', 'max_spo2', 'avg_spo2'}
+            and isinstance(row['source'], str) and type(row['data_points']) is int and row['data_points'] > 0
+            and all(type(row[k]) in {int, float} and _summary_decimal(row[k]) is not None
+                    for k in ('min_spo2', 'max_spo2', 'avg_spo2')) for row in value
+        ):
+            return [dict(row) for row in value]
+        return None
     if field in _NUMERIC_FIELDS:
         return value if type(value) in {int, float, str} and _summary_decimal(value) is not None else None
     if field == "id":
         return value if type(value) is int and value > 0 else None
     if field == "taken":
         return value if value is True else None
-    if field == "sources":
+    if field in {"sources", "daily_sources"}:
         if isinstance(value, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items()):
             return dict(value)
         return None
@@ -128,6 +145,7 @@ def _verified_evidence(bounds, verified, limitations):
 # Only clinically relevant returned fields become deterministic disclosures.
 # Names, arbitrary payload keys, and model requests never supply this vocabulary.
 _GAP_LABELS = {
+    "spo2": {},  # Source-specific sparse observations are disclosed in _facts.
     "diet": {"calories": "热量", "protein": "蛋白质", "carbs": "碳水化合物",
              "fat": "脂肪", "fiber": "膳食纤维"},
     "sleep": {"total_sleep_duration": "睡眠时长", "sleep_score": "睡眠评分",
@@ -595,6 +613,7 @@ def _completed_scope_invitation(text: str) -> bool:
 
 _RECORD_PROVENANCE = re.compile(r"模板(?:化)?|占位|固定来源")
 _RECORD_DIMENSIONS = {
+    "spo2": re.compile(r"血氧|SpO2", re.I),
     "diet": re.compile(r"饮食|早餐|午餐|晚餐|摄入"),
     "sleep": re.compile(r"睡眠|睡觉"),
     "workout": _EXERCISE_TOPIC,
@@ -769,6 +788,7 @@ def _facts(dimension: str, payload: dict) -> str:
     label, rows = _LABELS[dimension], payload["records"]
     if not rows:
         absence = {
+            "spo2": "，不能判断血氧正常或异常；已排除不用于血氧判断的来源。",
             "diet": "，不代表没有进食。",
             "sleep": "，不能据此判断睡眠情况。",
             "workout": "，不能据此断定没有运动。",
@@ -793,6 +813,9 @@ def _facts(dimension: str, payload: dict) -> str:
                 f"已知热量小计{total}千卡；另{format_display_number(len(rows) - len(known))}"
                 "条缺少有效热量读数，无法给出完整合计。"
             )
+    elif dimension == "spo2":
+        text = (f"血氧：目标日期内有{count}天的合格来源观测，不代表连续整夜监测。"
+                "未验证采样的睡眠区间，不能推算ODI或据此确诊睡眠呼吸暂停。")
     elif dimension == "supplements":
         text = f"补剂：实际服用记录{count}条；定义、计划与当前启停状态不代表实际摄入。"
     elif dimension == "workout":
@@ -859,6 +882,8 @@ def read_scope_synthesis_instructions(scope) -> str:
         "数值相同不能证明是模板、占位或未称量；缺少记录不能推出没有做，更不能据此要求补吃一餐。"
         "餐次名称和当前时刻不证明该餐未发生，也不证明误录或预录。"
         "指标缺失只能说明未覆盖，不能推出恢复差、营养不足或据此制定训练禁令。"
+        "血氧观测须保留数据源与日期覆盖限制；未验证采样的睡眠区间、连续性和阶段对应时，"
+        "不能把日汇总当整夜监测，不能推算ODI、睡眠阶段关联或诊断睡眠呼吸暂停。"
         "部分样本不能支持恢复良好、中等偏好、作息稳定、睡眠足够、训练安全、没有过度训练或没有异常信号等个体判断；"
         "即使返回了全部请求字段，记录也不是临床评估或完整生活覆盖。只描述已记录样本的分布与重复。"
         "不与档案中的默认目标作差距比较，不给健康或恢复状态分级。"

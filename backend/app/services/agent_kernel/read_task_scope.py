@@ -7,6 +7,7 @@ model chooses subqueries inside this scope; tool adapters use the same binder.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 import re
 from zoneinfo import ZoneInfo
 
@@ -265,8 +266,9 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     )
     if longitudinal_read_restrictions_unresolved(snapshot):
         return None
+    compound_oxygen = '睡眠血氧' in snapshot.envelope.text
     longitudinal = resolve_longitudinal_read_queries(snapshot)
-    if longitudinal is not None:
+    if longitudinal is not None and not compound_oxygen:
         return OwnedReadScope(longitudinal, longitudinal_read_limitations(snapshot))
     text = _active(snapshot.envelope.text)
     if text is None or not _owned_active(text) or _MUTATION.search(text) or not _READ.search(text):
@@ -290,6 +292,8 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     if text is None:
         return None
     dimensions = tuple(d for d, pattern in _DOMAINS.items() if pattern.search(text))
+    if '睡眠血氧' in text:
+        dimensions += ('spo2',)
     # Extend only a single explicit absolute day to actual-event adapters.
     # Relative/overnight/interval semantics remain with their existing binders.
     event_domains = _record_domains(text) & {"workout", "supplements"}
@@ -303,12 +307,31 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         dimensions = ("diet", "sleep")
     if not dimensions:
         return None
+    # A fully consumed explicit recent window also authorizes implicit-self
+    # analysis ("分析最近一周..."). Do not invent the old seven-day default or
+    # combine a rolling window with another calendar restriction.
+    from app.services.agent_longitudinal_read import _RECENT, _number, _AMBIGUOUS_DATE
+    recent = list(_RECENT.finditer(text))
+    recent_window = None
+    if recent:
+        if len(recent) != 1 or _AMBIGUOUS_DATE.search(_RECENT.sub('', text)):
+            return None
+        days = _number(recent[0][1]) * (7 if recent[0][2] == '周' else 1)
+        owner = snapshot.context.user_id
+        if (not 1 <= days <= 31 or type(owner) is not int or owner <= 0
+                or snapshot.envelope.user_id != owner):
+            return None
+        now = snapshot.context.current_time
+        zone = ZoneInfo(snapshot.context.timezone)
+        end = (now.replace(tzinfo=zone) if now.tzinfo is None else now.astimezone(zone)).date()
+        recent_window = {'days': days, 'start_date': (end - timedelta(days=days - 1)).isoformat(),
+                         'end_date': end.isoformat(), 'timezone': snapshot.context.timezone}
     queries = []
     for dimension in dimensions:
-        window = resolve_calendar_query_window(
+        window = recent_window or resolve_calendar_query_window(
             text,
             snapshot.context.current_time,
-            "diet" if dimension in {"workout", "supplements"} else dimension,
+            "diet" if dimension in {"workout", "supplements"} else 'sleep' if dimension == 'spo2' else dimension,
             timezone_name=snapshot.context.timezone,
         )
         if window is None:

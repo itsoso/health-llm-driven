@@ -153,6 +153,9 @@ def read_calendar_health_query(
         raise ValueError("calendar_query_owner_required")
     # A dataclass constructed by a caller must not bypass bound validation.
     window = parse_query_window(window.as_dict())
+    if dimension == 'spo2':
+        from app.services.agent_sleep_oxygen_read import read_sleep_oxygen_window
+        return read_sleep_oxygen_window(db, user_id, window)
     if dimension not in SUPPORTED_CALENDAR_DIMENSIONS:
         raise ValueError("calendar_query_dimension_unsupported")
     from app.models.daily_health import DietRecord, GarminData
