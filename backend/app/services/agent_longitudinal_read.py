@@ -164,6 +164,8 @@ def _record_domains(text: str) -> set[str]:
         if resolve_illness_entity(entity).status == "exact":
             continue
         domains.update(key for key, pattern in _DOMAINS.items() if re.search(pattern, clause))
+        if '睡眠血氧' in clause:
+            domains.add('spo2')
     return domains
 
 
@@ -403,7 +405,7 @@ def _restricted_read_text(snapshot, active: str) -> str | None:
         if marker:
             body = clause[marker.end():].strip()
             scope = re.sub(r"(?:并|再|然后)(?:分析|复盘|总结)(?:一下)?$", "", body)
-            domains = {key for key, pattern in _DOMAINS.items() if re.search(pattern, scope)}
+            domains = _record_domains(scope)
             if domains:
                 domain_limits.append(domains)
             if not _consume_read_scope(snapshot, scope, domains or requested_domains):

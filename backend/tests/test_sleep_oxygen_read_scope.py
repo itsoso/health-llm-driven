@@ -55,6 +55,15 @@ def test_model_cannot_widen_compound_read(extra):
     assert decide({'dimension': 'spo2', **extra}).action == 'block'
 
 
+@pytest.mark.parametrize('tool,args', [
+    ('health_query', {'dimension':'spo2'}),
+    ('health_query_batch', {'queries':[{'dimension':'sleep'},{'dimension':'spo2'}]}),
+    ('health_query_batch', {'plan':{'queries':[{'dimension':'sleep'},{'dimension':'spo2'}]}}),
+])
+def test_sleep_only_restriction_cannot_expand_compound_oxygen(tool,args):
+    assert decide(args,'分析最近一周的睡眠血氧情况，只看睡眠',tool).action == 'block'
+
+
 def test_batch_binds_both_domains_and_does_not_grant_other_tools():
     result = decide({'queries': [{'dimension': 'sleep'}, {'dimension': 'spo2'}]}, tool='health_query_batch')
     assert result.action == 'allow', result.reason
@@ -159,3 +168,19 @@ def test_oxygen_database_failure_is_not_empty_success():
     with pytest.raises(RuntimeError, match='synthetic DB failure'):
         read_calendar_health_query(BrokenDatabase(), 41, 'spo2', parse_query_window({
             'start_date':'2031-03-29','end_date':'2031-04-04'}))
+
+
+@pytest.mark.parametrize('answer,blocked', [
+    ('本周整夜血氧持续监测显示ODI为12次/小时，符合中度睡眠呼吸暂停。', True),
+    ('本周血氧正常，已排除睡眠呼吸暂停。', True),
+    ('无法确认整夜监测。但血氧正常。', True),
+    ('并非不能断言血氧正常。', True),
+    ('不能据此判断血氧正常。', False),
+    ('无法确诊睡眠呼吸暂停。', False),
+    ('不能据此排除睡眠呼吸暂停。', False),
+    ('这些是按记录日期分组的观测，不代表连续监测。', False),
+    ('若持续出现打鼾或憋醒，可咨询医生是否需要进一步检查。', False),
+])
+def test_oxygen_claim_gate_keeps_uncertainty_and_checks_each_assertion(answer,blocked):
+    from app.services.agent_composed_read_completion import _unsupported_oxygen_claim
+    assert _unsupported_oxygen_claim(answer) is blocked

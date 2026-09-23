@@ -136,6 +136,31 @@ async def test_sleep_oxygen_week_reaches_verified_web_answer(db, four_domain_use
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('has_oxygen', [False, True])
+@pytest.mark.parametrize('unsafe', [
+    '本周整夜血氧持续监测显示ODI为12次/小时，符合中度睡眠呼吸暂停。',
+    '本周血氧正常，已排除睡眠呼吸暂停。',
+])
+async def test_sleep_oxygen_stream_and_persistence_reject_unverified_diagnosis(
+    db, four_domain_user, clock, monkeypatch, has_oxygen, unsafe,
+):
+    from datetime import time
+    from app.models.daily_health import SpO2Sample
+    import tests.test_agent_composed_synthesis_projection as module
+    monkeypatch.setattr(module,'QUERIES',[{'dimension':'sleep','days':7},{'dimension':'spo2','days':7}])
+    monkeypatch.setattr(module,'BAD',[])
+    if has_oxygen:
+        db.add(SpO2Sample(user_id=four_domain_user.id,record_date=clock[0].date(),
+                         sample_time=time(13),source='ringconn',spo2_value=97))
+        db.commit()
+    _, _, _, done, saved = await run_projection(db,four_domain_user,monkeypatch,
+        query='分析最近一周的睡眠血氧情况，给出你的建议',answer=unsafe)
+    assert unsafe not in saved.content
+    assert 'unsupported_oxygen_inference' in str(saved.meta)
+    assert not done['write_receipts']
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("panel", [False, True])
 @pytest.mark.parametrize("layout", ["batch", "individual", "mixed"])
 async def test_verified_four_domain_provider_projection(db, four_domain_user, monkeypatch, panel, layout):

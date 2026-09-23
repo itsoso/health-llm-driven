@@ -24,7 +24,16 @@ Baseline: `7e6313f85c06028d64f626a3c3e9e10286d47b89`.
   daily rows nor sample counts prove a sleep interval or continuous monitoring;
   do not derive ODI or diagnose apnea. Existing sleep and safety rules remain.
 - Carry oxygen fields and limitations through the verified completion projection
-  into the Web stream and persisted response, with no health-data writes.
+into the Web stream and persisted response, with no health-data writes.
+
+## Independent review follow-up
+
+The first fixed-commit review returned NO-GO: a sleep-only restriction could
+retain oxygen authority, and provider prose could claim whole-night monitoring
+or an apnea conclusion. The follow-up uses expanded domains in restriction
+checks and enforces oxygen-specific evidence boundaries before streamed and
+persisted answers, with positive uncertainty and negative assertion regressions.
+The first candidate is not approved for release; a new fixed-commit review is required.
 
 ## Evidence and release gates
 
