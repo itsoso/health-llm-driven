@@ -12765,7 +12765,9 @@ class AgentExecutor:
         from app.services.agent_composed_read_completion import read_scope_synthesis_instructions
 
         scope = resolve_owned_read_scope(snapshot)
-        if scope is None or len(scope.queries) < 2:
+        # Even one bounded oxygen read needs the verified evidence projection;
+        # daily summaries/sparse samples cannot authorize free-form diagnoses.
+        if scope is None or (len(scope.queries) < 2 and scope.query("spo2") is None):
             return None
         static_rules = self._build_system_prompt(
             user_id, conv_id, user_auth_token, intent_query=message, static_rules_only=True,

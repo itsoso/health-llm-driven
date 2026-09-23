@@ -57,6 +57,13 @@ now enter the same restriction grammar; unrecognized `只` / `仅` restrictions
 fail closed before scaffolding. Individual, flat/nested batch, and streamed
 execution regressions require no oxygen dispatch for the narrower request.
 
+Integration review found that upstream also authorizes a standalone oxygen
+read. The generic single-dimension shortcut skipped controlled synthesis and
+could publish unsupported ODI/continuous-monitoring claims. A single `spo2`
+scope now also receives verified provider inputs and deterministic answer
+projection. Regression coverage includes individual/batch dispatch, single/
+multi-model responses, no-data/available data, stream and persistence.
+
 ## Evidence and release gates
 
 Original scope regressions failed before the repair; the missing date-bound

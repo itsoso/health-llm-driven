@@ -496,7 +496,7 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
     )
 
     evidence = completion.verified_evidence if completion is not None and completion.complete else None
-    if not evidence or len(evidence["queries"]) < 2:
+    if not evidence:
         return GuidanceValidationResult(text=text)
     if any(q['query']['dimension'] == 'spo2' for q in evidence['queries']):
         # This adapter attests observations, not aligned sleep intervals or
@@ -508,6 +508,8 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
         return GuidanceValidationResult(text=completion.trusted_fact_summary + '\n\n'
             '解读范围：仅可比较相同来源、相同口径的观测，不能据此判断整夜低氧、睡眠阶段关联，'
             '或确诊及排除睡眠呼吸暂停。若有持续不适，请就医评估。')
+    if len(evidence["queries"]) < 2:
+        return GuidanceValidationResult(text=text)
     # Formatting normalization is confined to the matching view. Accepted text
     # is returned byte-for-byte, including its uncertainty and record qualifiers.
     normalized = re.sub(r"[*_`]", "", _medical_assertion_matching_text(text))

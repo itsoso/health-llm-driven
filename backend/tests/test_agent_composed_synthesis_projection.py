@@ -168,6 +168,36 @@ async def test_sleep_oxygen_stream_and_persistence_reject_unverified_diagnosis(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('has_oxygen', [False, True])
+@pytest.mark.parametrize('panel', [False, True])
+@pytest.mark.parametrize('layout', ['batch', 'individual'])
+async def test_single_oxygen_read_projects_verified_stream_and_persistence(
+    db, four_domain_user, clock, monkeypatch, has_oxygen, panel, layout,
+):
+    from datetime import time
+    from app.models.daily_health import SpO2Sample
+    import tests.test_agent_composed_synthesis_projection as module
+    monkeypatch.setattr(module, 'QUERIES', [{'dimension': 'spo2', 'days': 7}])
+    monkeypatch.setattr(module, 'BAD', [])
+    if has_oxygen:
+        db.add(SpO2Sample(user_id=four_domain_user.id, record_date=clock[0].date(),
+                         sample_time=time(13), source='ringconn', spo2_value=97))
+        db.commit()
+    unsafe = '本周每晚均完成连续血氧监测，ODI指数为12次/小时。'
+    _, calls, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, layout=layout, panel=panel, answer=unsafe,
+        query='分析最近一周的血氧情况，给出你的建议',
+    )
+    assert unsafe not in saved.content
+    assert '血氧' in saved.content and '解读范围' in saved.content
+    assert done['turn_outcome']['status'] == 'complete'
+    assert not done['write_receipts']
+    evidence = json.loads(calls[-1]['messages'][1]['content'])['read_evidence']
+    assert len(evidence['queries']) == 1
+    assert evidence['queries'][0]['availability'] == ('partial' if has_oxygen else 'no_data')
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('restriction', ['仅分析睡眠','只分析睡眠'])
 async def test_sleep_only_restriction_never_dispatches_oxygen(db,four_domain_user,monkeypatch,restriction):
     import tests.test_agent_composed_synthesis_projection as module
