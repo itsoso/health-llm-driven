@@ -187,3 +187,21 @@ RequirementAdmission:
 ## G5 / G6 · 发布与验证
 
 - 未发布。遵循用户“全部解决之后再部署和发布”，本功能不单独绕过发布条件。
+- 2026-09-23 用户明确要求部署，并确认合并远端更新。以非改写历史的 merge
+  `ac3eae1918012fdb3616951c0aa4361be01e03fb` 合入远端 `deb057795`；无冲突，
+  本地足迹/后台 AI 源码保留，远端两个补剂版本名修复完整保留。
+- 合并候选独立 `/root/merge_release_safety` G4 **GO**；独立 CI-mode
+  342 passed / 5 PostgreSQL-only skipped。此裁决不是生产发布证明。
+- 合并后主代理 CI-mode 505 passed / 17 skipped（`/tmp/reva-merge-release-ci.log`）；
+  独占合成 PostgreSQL 215 passed / 0 skipped（`/tmp/reva-merge-postgres.log`），
+  含足迹迁移/约束/并发、后台身份与补剂实际 Web 写入边界。
+- Mobile 足迹/分享69、聊天62、原生配置18项通过；Mobile/Web tsc、API 类型
+  一致性、System Map、141份 Dossier 一致性、秘密扫描及 diff 检查通过。
+- 真实模型评测最初因本机默认配置文件不存在而失败；只从既有 `.env-online`
+  向评测进程内存加载模型配置后，合成内存库重跑通过：离线62/62、真实模型5/5、
+  轨迹21/21（`/tmp/reva-merge-live-configured.log`）。usage表缺失的测试旁路警告
+  不代表生产计费验证；未加载生产数据库配置或输出凭据。
+- 只读核对生产仍为 `deb057795`，backend/worker/beat 均 active，未发现业务
+  release lease。服务器短期发布授权已过期且绑定旧 SHA，按部署治理暂停部署，
+  已向用户请求单独授权轮换；未改权限、未触发生产发布或原生上传。
+- 精确最终候选的远端 CI、发布预检及 G5/G6 仍待完成，不能用以上本地证据替代。
