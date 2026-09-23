@@ -10,6 +10,7 @@ from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot
 
 REQUEST = '分析最近一周的睡眠血氧情况，给出你的建议'
+IMPROVEMENT_REQUEST = REQUEST + '，我有哪些需要提升的点？'
 
 
 def snapshot(text=REQUEST, owner=41):
@@ -23,7 +24,7 @@ def decide(args, text=REQUEST, tool='health_query'):
     return decide_tool_capability(snapshot(text), ToolExecutionRequest(tool, args))
 
 
-@pytest.mark.parametrize('text', [REQUEST, '分析我最近一周的睡眠血氧情况，给出你的建议',
+@pytest.mark.parametrize('text', [REQUEST, IMPROVEMENT_REQUEST, '分析我最近一周的睡眠血氧情况，给出你的建议',
                                  '分析最近七天的睡眠血氧情况', '查询我近7天的睡眠血氧并分析'])
 @pytest.mark.parametrize('dimension', ['sleep', 'spo2'])
 def test_compound_request_binds_every_metric_to_same_frozen_week(text, dimension):
@@ -82,6 +83,40 @@ def test_advice_author_is_not_data_owner_but_does_not_expand_sleep_only_scope():
     assert decide({'dimension': 'spo2'}, '分析最近一周的睡眠情况，给出你的建议').action == 'block'
 
 
+@pytest.mark.parametrize('goal', [
+    '我有哪些需要提升的点', '我有哪些需要改进的地方',
+    '有哪些方面需要改善', '我还有哪些方面需要改进',
+])
+def test_improvement_goal_preserves_batch_scope_without_granting_other_reads(goal):
+    text = REQUEST + '，' + goal + '？'
+    result = decide({'queries': [{'dimension': 'sleep'}, {'dimension': 'spo2'}]},
+                    text, 'health_query_batch')
+    assert result.action == 'allow', result.reason
+    assert all(q['start_date'] == '2031-03-29' and q['end_date'] == '2031-04-04'
+               for q in result.normalized_args['queries'])
+    assert decide({'dimension': 'genetic'}, text).action == 'block'
+    assert decide({'dimension': 'spo2', 'days': 30}, text).action == 'block'
+    assert decide({'dimension': 'spo2', 'user_id': 42}, text).action == 'block'
+    assert decide({'record_type': 'sleep', 'data': {}}, text, 'health_record').action == 'block'
+    sleep_only = '分析最近一周的睡眠情况，' + goal
+    assert decide({'dimension': 'sleep'}, sleep_only).action == 'allow'
+    assert decide({'dimension': 'spo2'}, sleep_only).action == 'block'
+
+
+@pytest.mark.parametrize('suffix', [
+    '，只看检查之后', '但只看检查之后', '，只看今早', '，只看睡眠',
+    '，仅需分析睡眠', '，不要读取血氧', '，日期范围是全部历史',
+    '，读取我朋友的数据', '，删除这些记录',
+])
+def test_improvement_goal_cannot_hide_restrictions_or_other_authority(suffix):
+    text = REQUEST + '，我有哪些需要提升的点' + suffix
+    assert decide({'dimension': 'spo2'}, text).action == 'block'
+
+
+def test_improvement_question_alone_does_not_authorize_health_reads():
+    assert decide({'dimension': 'spo2'}, '我有哪些需要提升的点？').action == 'block'
+
+
 @pytest.fixture
 def owners(db):
     from app.models.user import User
@@ -91,8 +126,9 @@ def owners(db):
     return users[0].id, users[1].id
 
 
+@pytest.mark.parametrize('text', [REQUEST, IMPROVEMENT_REQUEST])
 @pytest.mark.asyncio
-async def test_executor_reads_whole_frozen_window_with_source_and_owner_boundaries(db, owners):
+async def test_executor_reads_whole_frozen_window_with_source_and_owner_boundaries(db, owners, text):
     from app.models.daily_health import GarminData, SpO2Sample
     from app.services.agent_executor import AgentExecutor
     owner, other = owners
@@ -107,7 +143,7 @@ async def test_executor_reads_whole_frozen_window_with_source_and_owner_boundari
         GarminData(user_id=other,record_date=date(2031,4,4),data_source='ringconn',spo2_min=61),
     ])
     db.flush()
-    turn = snapshot(owner=owner)
+    turn = snapshot(text, owner=owner)
     policy = decide_tool_capability(turn, ToolExecutionRequest('health_query', {'dimension': 'spo2', 'days': 7}))
     assert policy.action == 'allow', policy.reason
     executor = AgentExecutor(db)

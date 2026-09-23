@@ -64,6 +64,19 @@ scope now also receives verified provider inputs and deterministic answer
 projection. Regression coverage includes individual/batch dispatch, single/
 multi-model responses, no-data/available data, stream and persistence.
 
+## Improvement-question regression
+
+The complete follow-up request “分析最近一周的睡眠血氧情况，给出你的建议，我有哪些需要提升的点？”
+was rejected as `longitudinal_read_scope_unresolved`: the final domain-free
+answer goal was misclassified as a read filter. The shared analysis-goal grammar
+now consumes complete improvement questions (points/areas to improve), without
+granting read authority by itself. Attached unknown filters still fail closed;
+owner, date, dimension, cancellation and mutation checks remain on the original
+turn. Tests cover the exact full request through individual/batch authorization,
+owned date-window execution, streamed answer and persisted completion, with
+both available oxygen and no-data results. Publication and production acceptance
+must be verified separately for this follow-up revision.
+
 ## Evidence and release gates
 
 Original scope regressions failed before the repair; the missing date-bound

@@ -77,7 +77,11 @@ _ANALYSIS_GOAL = (
     r"(?:(?:并且|然后|并|再|也|来|这样才能)(?:请)?)?"
     r"(?:(?:依据|基于)(?:真实|已有|这些|上述|以上)(?:数据|记录))?"
     r"(?:(?:分析|复盘|总结)(?:一下)?(?:(?:我(?:的)?)?(?:当前|现在)?(?:的)?(?:状况|情况|状态))?|"
-    r"(?:给|给到|给出|提供)(?:我)?(?:一些|一点|些|点|精准的|你的)?(?:建议|意见))"
+    r"(?:给|给到|给出|提供)(?:我)?(?:一些|一点|些|点|精准的|你的)?(?:建议|意见)|"
+    # Domain-free improvement questions are answer goals, not read filters.
+    # Consume their entire grammar: an attached owner/date/filter must survive.
+    r"(?:我|本人|自己)?(?:还)?有哪些(?:需要|可以)(?:提升|改进|改善|改进提升)的(?:点|地方|方面)|"
+    r"(?:我|本人|自己)?(?:还)?有哪些方面(?:需要|可以)(?:提升|改进|改善|改进提升))"
 )
 _ANALYSIS_GOAL_RE = re.compile(_ANALYSIS_GOAL)
 _METHOD_CLAUSE_RE = re.compile(

@@ -112,7 +112,11 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('has_oxygen', [False, True])
-async def test_sleep_oxygen_week_reaches_verified_web_answer(db, four_domain_user, clock, monkeypatch, has_oxygen):
+@pytest.mark.parametrize('query', [
+    '分析最近一周的睡眠血氧情况，给出你的建议',
+    '分析最近一周的睡眠血氧情况，给出你的建议，我有哪些需要提升的点？',
+])
+async def test_sleep_oxygen_week_reaches_verified_web_answer(db, four_domain_user, clock, monkeypatch, has_oxygen, query):
     from datetime import time
     from app.models.daily_health import SpO2Sample
     import tests.test_agent_composed_synthesis_projection as module
@@ -123,7 +127,7 @@ async def test_sleep_oxygen_week_reaches_verified_web_answer(db, four_domain_use
                          sample_time=time(1), source='ringconn', spo2_value=97))
         db.commit()
     _, calls, dispatched, done, saved = await run_projection(
-        db, four_domain_user, monkeypatch, query='分析最近一周的睡眠血氧情况，给出你的建议')
+        db, four_domain_user, monkeypatch, query=query)
     assert done['turn_outcome']['status'] == 'complete'
     assert not done['write_receipts']
     assert any(request.tool_name == 'health_query_batch' for request in dispatched)
