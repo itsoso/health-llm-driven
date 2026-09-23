@@ -224,3 +224,9 @@ RequirementAdmission:
   与用户提示的拒绝原因一致，但尚未按 trace 绑定截图请求或证明上游根因。
   不导出原始饮食/聊天内容，不补录、不重放历史请求。后续应修估算输出/恢复链，
   保留不写空营养、不伪报成功的保护。
+- 用户确认推送 CI 修复和轮换本次短期发布授权，`1e221b74e` 已推送。
+  CI run `35818069994` 的 balanced-06 揭示另一处分片清单断言仍是旧值；
+  本地先复现 1 failed / 20 passed，再同步 async 分片的精确断言。
+  CI-mode 分片 runner、async context、发布与隐私契约合跑 **107 passed**
+  （`/tmp/reva-shard-contract-green.log`），未删除覆盖或放宽判定。
+  生产部署继续等待修正后精确 SHA 的真实 CI；尚未轮换授权或触发部署。

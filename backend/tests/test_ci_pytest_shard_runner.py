@@ -43,7 +43,7 @@ def test_non_agent_a_tests_run_in_bounded_ci_processes():
     assert by_label["a-early-rest"]["paths"] == (
         "tests/test_a_to_i_smoke.py tests/test_account*.py "
         "tests/test_activation*.py tests/test_adherence*.py "
-        "tests/test_admin*.py tests/test_advice*.py"
+        "tests/test_admin*.py tests/test_advice*.py tests/test_async*.py"
     )
     assert by_label["a-late"]["paths"] == "tests"
     assert by_label["b"]["paths"] == "tests/test_b*.py"
