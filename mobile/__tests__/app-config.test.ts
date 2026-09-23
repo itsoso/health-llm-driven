@@ -7,6 +7,8 @@ function configForVariant(variant?: string, env: Record<string, string | undefin
   const optionalEnvKeys = [
     'REVA_IOS_BUILD_NUMBER',
     'REVA_LOCAL_UPDATES_CHANNEL',
+    'REVA_ANDROID_INTERNAL',
+    'EAS_BUILD_PLATFORM',
     'ROKID_IOS_SDK_ENABLED',
     'ROKID_IOS_CALLBACK_SCHEME',
     'INCLUDE_WATCH_APP',
@@ -66,6 +68,52 @@ function configuredPluginNames(config: any): string[] {
 }
 
 describe('app.config app links', () => {
+  describe('Android internal candidate', () => {
+    const eas = require('../eas.json');
+    const internalEnv = { REVA_ANDROID_INTERNAL: '1', EAS_BUILD_PLATFORM: 'android' };
+
+    it('has a standalone APK profile separate from store release profiles', () => {
+      expect(eas.build['android-internal']).toEqual(expect.objectContaining({
+        extends: 'preview',
+        developmentClient: false,
+        environment: 'preview',
+        android: expect.objectContaining({ buildType: 'apk' }),
+        env: expect.objectContaining({ APP_VARIANT: 'preview', REVA_ANDROID_INTERNAL: '1' }),
+      }));
+      expect(eas.submit['android-internal']).toBeUndefined();
+    });
+
+    it('isolates package and launcher name and keeps the verified embedded bundle', () => {
+      const config = configForVariant('preview', internalEnv);
+      expect(config.android.package).toBe('life.executor.health.preview');
+      expect(config.name).toBe('小巴健康 Preview');
+      expect(config.updates.enabled).toBe(false);
+      expect(config.extra.release.capabilities.backgroundLocation).toBe(false);
+    });
+
+    it.each(['production', 'development', 'typo'])('rejects non-preview identity: %s', (variant) => {
+      expect(() => configForVariant(variant, internalEnv)).toThrow(/internal/i);
+    });
+
+    it('does not allow this profile to build iOS', () => {
+      expect(() => configForVariant('preview', { ...internalEnv, EAS_BUILD_PLATFORM: 'ios' }))
+        .toThrow(/internal/i);
+    });
+
+    it.each(['ROKID_IOS_SDK_ENABLED', 'INCLUDE_WATCH_APP', 'INCLUDE_SIRI_INTENTS'])(
+      'rejects unverified native capability %s', (key) => {
+        expect(() => configForVariant('preview', { ...internalEnv, [key]: '1' })).toThrow(/internal/i);
+      },
+    );
+
+    it('does not disable updates or rename existing production builds', () => {
+      const config = configForVariant('production');
+      expect(config.name).toBe('小巴健康');
+      expect(config.android.package).toBe('life.executor.health');
+      expect(config.updates).toEqual(appJson.expo.updates);
+    });
+  });
+
   it('separates the journey native candidate from the prior 1.3.3 OTA runtime', () => {
     const config = configForVariant('production');
 

@@ -17,6 +17,7 @@ type AndroidIntentFilter = NonNullable<NonNullable<ExpoConfig['android']>['inten
 const VARIANT = process.env.APP_VARIANT ?? 'production';
 const IS_DEV = VARIANT === 'development';
 const IS_PREVIEW = VARIANT === 'preview';
+const IS_ANDROID_INTERNAL = process.env.REVA_ANDROID_INTERNAL === '1';
 const INCLUDE_ROKID = process.env.ROKID_IOS_SDK_ENABLED === '1';
 const INCLUDE_WATCH = process.env.INCLUDE_WATCH_APP === '1';
 const INCLUDE_SIRI = process.env.INCLUDE_SIRI_INTENTS === '1';
@@ -119,6 +120,14 @@ function removeKeys<T extends Record<string, any>>(value: T, keys: string[]): T 
 }
 
 export default ({ config }: ConfigContext): ExpoConfig => {
+  // Internal APKs are fixed, separately identified candidates, never store/iOS builds.
+  if (IS_ANDROID_INTERNAL && (
+    !IS_PREVIEW
+    || (process.env.EAS_BUILD_PLATFORM !== undefined && process.env.EAS_BUILD_PLATFORM !== 'android')
+    || INCLUDE_ROKID || INCLUDE_WATCH || INCLUDE_SIRI
+  )) {
+    throw new Error('Android internal builds require preview identity and no optional native capabilities');
+  }
   // EAS injects its channel itself; only the local QR build needs this input.
   const expectedLocalChannel = IS_DEV
     ? 'development'
@@ -182,7 +191,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
     },
   } : {}),
-  name: config.name ?? '小巴健康',
+  ...(IS_ANDROID_INTERNAL ? {
+    updates: { ...config.updates, enabled: false },
+  } : {}),
+  name: IS_ANDROID_INTERNAL ? displayName : config.name ?? '小巴健康',
   slug: config.slug ?? 'health-pilot',
   plugins,
   ios: {
@@ -243,7 +255,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       variant: VARIANT,
       capabilities: {
         advancedSettings: IS_DEV || IS_PREVIEW,
-        backgroundLocation: IS_DEV || IS_PREVIEW,
+        backgroundLocation: !IS_ANDROID_INTERNAL && (IS_DEV || IS_PREVIEW),
         rokid: INCLUDE_ROKID,
         siri: INCLUDE_SIRI,
         watch: INCLUDE_WATCH,
