@@ -22144,7 +22144,6 @@ class AgentExecutor:
                     "unsupported_nutrition_inference", "unsupported_current_health_inference",
                     "unsupported_exercise_program", "unsupported_supplement_adherence",
                     "unsupported_existing_regimen",
-                    "unsupported_oxygen_inference",
                 }
                 # The final medical gate also rejects dose instructions that
                 # the record-only synthesis rules do not classify. Give that

@@ -137,12 +137,18 @@ async def test_sleep_oxygen_week_reaches_verified_web_answer(db, four_domain_use
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('has_oxygen', [False, True])
+@pytest.mark.parametrize('panel', [False, True])
 @pytest.mark.parametrize('unsafe', [
     '本周整夜血氧持续监测显示ODI为12次/小时，符合中度睡眠呼吸暂停。',
     '本周血氧正常，已排除睡眠呼吸暂停。',
+    '本周血氧处于正常范围，睡眠呼吸暂停已被排除。',
+    '本周每晚均完成连续血氧监测，ODI指数为12次/小时。',
+    '本周低氧事件主要集中在REM阶段，深睡期血氧比浅睡期更低。',
+    '无法确认数据完整性且血氧正常。',
+    'ARBITRARY_PROVIDER_CLAIM_NOT_VERIFIED',
 ])
 async def test_sleep_oxygen_stream_and_persistence_reject_unverified_diagnosis(
-    db, four_domain_user, clock, monkeypatch, has_oxygen, unsafe,
+    db, four_domain_user, clock, monkeypatch, has_oxygen, unsafe, panel,
 ):
     from datetime import time
     from app.models.daily_health import SpO2Sample
@@ -154,9 +160,10 @@ async def test_sleep_oxygen_stream_and_persistence_reject_unverified_diagnosis(
                          sample_time=time(13),source='ringconn',spo2_value=97))
         db.commit()
     _, _, _, done, saved = await run_projection(db,four_domain_user,monkeypatch,
-        query='分析最近一周的睡眠血氧情况，给出你的建议',answer=unsafe)
+        query='分析最近一周的睡眠血氧情况，给出你的建议',answer=unsafe,panel=panel)
     assert unsafe not in saved.content
-    assert 'unsupported_oxygen_inference' in str(saved.meta)
+    assert '血氧' in saved.content
+    assert done['turn_outcome']['status'] == 'complete'
     assert not done['write_receipts']
 
 

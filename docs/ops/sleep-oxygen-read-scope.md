@@ -30,10 +30,17 @@ into the Web stream and persisted response, with no health-data writes.
 
 The first fixed-commit review returned NO-GO: a sleep-only restriction could
 retain oxygen authority, and provider prose could claim whole-night monitoring
-or an apnea conclusion. The follow-up uses expanded domains in restriction
-checks and enforces oxygen-specific evidence boundaries before streamed and
-persisted answers, with positive uncertainty and negative assertion regressions.
-The first candidate is not approved for release; a new fixed-commit review is required.
+or an apnea conclusion. The follow-up uses expanded domains in restriction checks.
+A second review found that phrase-based answer checks still missed equivalent
+clinical claims and incorrectly exempted unrelated uncertainty. Oxygen bundles
+now publish only the verified deterministic fact summary plus fixed conservative
+guidance; free-form provider prose is not published, regardless of its wording.
+The read still completes with source/date coverage and partial/no-data limitations.
+This intentionally limits oxygen interpretation until a separately governed
+aligned-night/clinical-evidence adapter exists; no such capability is claimed.
+Regression tests cover stream/persistence, available/no-data, arbitrary provider
+text, and single-/multi-model surfaces. Earlier candidates are not approved for
+release; a new fixed-commit review is required.
 
 ## Evidence and release gates
 

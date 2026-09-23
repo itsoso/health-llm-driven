@@ -490,33 +490,6 @@ def _unverified_regimen_continuation(clause: str) -> bool:
     return False
 
 
-_OXYGEN_CLAIM = re.compile(
-    r"(?:整夜|全夜)(?:的)?(?:血氧)?(?:持续|连续|完整|全程)?(?:监测|覆盖)|"
-    r"(?:ODI|氧减(?:饱和度)?指数)\s*(?:为|是|约|达到|[:：=])?\s*\d+(?:\.\d+)?|"
-    r"(?:血氧|SpO2)(?:水平|状况|情况)?(?:是|为|总体|整体|基本|持续|均|都|很|偏|看起来)*"
-    r"(?:正常|异常|稳定|良好|安全|没有问题|偏低)|"
-    r"(?:符合|确诊|患有|存在|提示|排除|没有|不存在|无)"
-    r"(?:了|为|是|可能|轻度|中度|重度|阻塞性|的)*(?:睡眠呼吸暂停|呼吸暂停|OSAHS|OSA)|"
-    r"(?:睡眠呼吸暂停|呼吸暂停|OSAHS|OSA)(?:风险)?(?:为|是|属|属于|已|已经|的)*"
-    r"(?:正常|异常|轻度|中度|重度|高|低|不存在|排除|可能性小)", re.I,
-)
-_OXYGEN_INABILITY = re.compile(r"(?:不能|无法|难以|不应|不要)(?:据此|由此|直接)?$")
-
-
-def _unsupported_oxygen_claim(text):
-    # Check every assertion separately: a preceding disclaimer must not excuse
-    # a later diagnosis. Only local, non-negated uncertainty can qualify it.
-    for part in re.split(r"[，,。；;!?！？\n]|但是|但|不过|然而|而是|却", text):
-        part = re.sub(r"\s+", "", part)
-        for match in _OXYGEN_CLAIM.finditer(part):
-            prefix = part[:match.start()]
-            unknown = _HEALTH_CONCLUSION_UNKNOWN.search(prefix) or _OXYGEN_INABILITY.search(prefix)
-            if unknown and not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:unknown.start()]):
-                continue
-            return True
-    return False
-
-
 def enforce_composed_synthesis_boundaries(text: str, completion):
     from app.services.guidance_validator import (
         GuidanceValidationResult, _medical_assertion_matching_text,
@@ -525,14 +498,21 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
     evidence = completion.verified_evidence if completion is not None and completion.complete else None
     if not evidence or len(evidence["queries"]) < 2:
         return GuidanceValidationResult(text=text)
+    if any(q['query']['dimension'] == 'spo2' for q in evidence['queries']):
+        # This adapter attests observations, not aligned sleep intervals or
+        # clinical conclusions. Do not try to enumerate every paraphrase of an
+        # unsupported diagnosis: no free-form provider prose crosses this
+        # boundary. Both stream and persisted response use this projection.
+        # This is a successful bounded read, not a blocked query or an attested
+        # medical assessment. Only server-verified facts and fixed advice remain.
+        return GuidanceValidationResult(text=completion.trusted_fact_summary + '\n\n'
+            '解读范围：仅可比较相同来源、相同口径的观测，不能据此判断整夜低氧、睡眠阶段关联，'
+            '或确诊及排除睡眠呼吸暂停。若有持续不适，请就医评估。')
     # Formatting normalization is confined to the matching view. Accepted text
     # is returned byte-for-byte, including its uncertainty and record qualifiers.
     normalized = re.sub(r"[*_`]", "", _medical_assertion_matching_text(text))
     clauses = _NUTRITION_CLAUSE_BREAK.split(normalized)
     reasons = []
-    if (any(q['query']['dimension'] == 'spo2' for q in evidence['queries'])
-            and _unsupported_oxygen_claim(normalized)):
-        reasons.append('unsupported_oxygen_inference')
     if (any(q["query"]["dimension"] == "diet" for q in evidence["queries"])
             and any(_nutrition_assertion_in_clause(c) for c in clauses)):
         reasons.append("unsupported_nutrition_inference")
@@ -557,7 +537,6 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
     if not reasons:
         return GuidanceValidationResult(text=text)
     notices = {
-        "unsupported_oxygen_inference": "本轮仅有带来源和日期限制的血氧观测。无法判断血氧正常与否；不能推算ODI；不能据此确诊睡眠呼吸暂停，也不能据此排除睡眠呼吸暂停。",
         "unsupported_existing_regimen": "本轮记录未核实当前适用的医嘱，不能据此建议继续原有或既定方案。",
         "unsupported_nutrition_inference": "本轮记录不能支持营养不足的个体判断，相关推断未通过证据校验。",
         "unsupported_current_health_inference": "本轮记录不能证明当前恢复质量、训练安全或没有健康异常。",

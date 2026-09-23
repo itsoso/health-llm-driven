@@ -170,17 +170,18 @@ def test_oxygen_database_failure_is_not_empty_success():
             'start_date':'2031-03-29','end_date':'2031-04-04'}))
 
 
-@pytest.mark.parametrize('answer,blocked', [
-    ('本周整夜血氧持续监测显示ODI为12次/小时，符合中度睡眠呼吸暂停。', True),
-    ('本周血氧正常，已排除睡眠呼吸暂停。', True),
-    ('无法确认整夜监测。但血氧正常。', True),
-    ('并非不能断言血氧正常。', True),
-    ('不能据此判断血氧正常。', False),
-    ('无法确诊睡眠呼吸暂停。', False),
-    ('不能据此排除睡眠呼吸暂停。', False),
-    ('这些是按记录日期分组的观测，不代表连续监测。', False),
-    ('若持续出现打鼾或憋醒，可咨询医生是否需要进一步检查。', False),
-])
-def test_oxygen_claim_gate_keeps_uncertainty_and_checks_each_assertion(answer,blocked):
-    from app.services.agent_composed_read_completion import _unsupported_oxygen_claim
-    assert _unsupported_oxygen_claim(answer) is blocked
+@pytest.mark.parametrize('answer', ['UNVERIFIED_FACT', '血氧正常', '无法确认数据完整性且血氧正常',
+                                  'A completely novel unsupported assertion'])
+def test_oxygen_answer_is_a_deterministic_projection_not_a_phrase_blacklist(answer):
+    from app.services.agent_composed_read_completion import (
+        enforce_composed_synthesis_boundaries, evaluate_composed_read_completion,
+    )
+    from tests.test_agent_composed_read_completion import scope, execution
+    completion = evaluate_composed_read_completion(scope('sleep','spo2'), [
+        execution('sleep',rows=[]),execution('spo2',rows=[]),
+    ])
+    result = enforce_composed_synthesis_boundaries(answer, completion)
+    assert result.text.startswith(completion.trusted_fact_summary)
+    assert result.text == enforce_composed_synthesis_boundaries('UNTRUSTED_PROSE', completion).text
+    assert not result.flagged
+    assert enforce_composed_synthesis_boundaries(result.text, completion).text == result.text
