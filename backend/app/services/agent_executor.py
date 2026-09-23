@@ -16589,6 +16589,21 @@ class AgentExecutor:
 
         self._bind_read_task_reference(user_id, conv.id)
 
+        if health_evidence_turn is None and not read_only_tools and not images and not file_base64:
+            from app.services.diet_photo_correction import build_correction_proposal
+
+            proposal = build_correction_proposal(
+                self.db, user_id, conv.id, user_msg.id, message,
+                self._agent_kernel_reference_now(), self._ensure_agent_kernel_turn().context.timezone,
+            )
+            if proposal is not None:
+                async for evt in self._run_diet_photo_correction_proposal(
+                    proposal, svc=svc, conv=conv, user_id=user_id,
+                    client_turn_id=client_turn_id, start_time=start_time,
+                ):
+                    yield evt
+                return
+
         # Multi-medication intake is a server-owned two-turn transaction:
         # source-bound proposal now, strict immediate confirmation next turn.
         # It runs after the durable user ACK but before recipes, prompts, or any
@@ -20514,6 +20529,43 @@ class AgentExecutor:
             "tool_failures": [],
         }
 
+    async def _run_diet_photo_correction_proposal(
+        self, proposal, *, svc, conv, user_id, client_turn_id, start_time,
+    ):
+        """Persist a confirmation-only editor before showing it; no record writes."""
+        cards = proposal["cards"]
+        outcome = {
+            **classify_agent_turn_outcome(
+                completion_status="complete", final_text=proposal["reply"],
+                pending_confirmation_tools=[proposal["reason"]] if cards else [],
+                capability_block_reasons=[] if cards else [proposal["reason"]],
+            ),
+            "status": proposal["status"], "reason_code": proposal["reason"],
+            "category": "confirmation_required" if cards else "clarification_required",
+            "retryable": False,
+        }
+        meta = {
+            "mode": "diet_photo_correction_proposal", "llm_rounds": 0, "llm_ms": 0,
+            "elapsed_ms": int((time.time() - start_time) * 1000),
+            "cards": cards_for_persistence(cards), "write_receipts": [], "tools_used": [],
+            "sources_used": ["本人照片识别快照", "本人指定餐次记录"] if cards else [],
+            "client_turn_finalized": True, "record_intent_no_tool": False,
+            "turn_outcome": outcome, **agent_completion_metadata("complete", outcome),
+            "kernel_trace": self._agent_kernel_trace_summary(status="complete"),
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        conv.updated_at = datetime.now(UTC)
+        assistant = svc.save_message(
+            conv.id, "assistant", proposal["reply"], meta=meta,
+            client_turn_id=client_turn_id, client_turn_user_id=user_id,
+        )
+        yield {"event": "token", "data": {"content": proposal["reply"]}}
+        for card in cards:
+            yield {"event": "card", "data": {"anchor": "diet_photo_correction", "descriptor": card}}
+        yield {"event": "done", "data": {
+            **meta, "conversation_id": conv.id, "message_id": assistant.id,
+        }}
+
     async def _run_medication_batch_result(
         self,
         result: Dict[str, Any],
@@ -23449,6 +23501,17 @@ class AgentExecutor:
             record_data["food_items"] = (
                 f"{record_data['food_items']}"
                 f"（按实际食用{consumed_fraction_label}计）"
+            )
+        # A later correction must refer to structured vision, not model prose.
+        # This snapshot is a proposed description only, never a write grant.
+        if (result.get("success") and recognized_foods
+                and not result.get("multi_photo_incomplete") and not result.get("multi_photo_conflict")):
+            from app.services.diet_photo_correction import save_recognition
+
+            save_recognition(
+                self.db, self._current_user_id,
+                self._current_turn_media_source_message_id or self._current_turn_source_message_id,
+                record_data["food_items"], self._agent_kernel_reference_now(),
             )
         if result.get("contextual_capture_write_blocked_reason"):
             if result["contextual_capture_write_blocked_reason"] == "cancelled":

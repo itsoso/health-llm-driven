@@ -432,6 +432,10 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
               adjust_record: applied.adjustRecord,
               expanded_sections: remainingSections,
               adjust_saved: true,
+              ...(text(adjustRecord.proposed_food_items) ? {
+                title: '饮食已更新',
+                boundary: '营养为估算，请按实际食用情况核对。',
+              } : {}),
             });
           }}
         />
@@ -596,8 +600,10 @@ export function DietRecordAdjustEditor({
 }) {
   const [mealType, setMealType] = React.useState<MealType>(() => mealTypeValue(seed.meal_type));
   const initialPortion = React.useRef(splitDietPortion(text(seed.food_items) || '')).current;
-  const [food, setFood] = React.useState(initialPortion.food);
-  const [portion, setPortion] = React.useState(initialPortion.text);
+  const proposedFood = text(seed.proposed_food_items);
+  const proposedPortion = React.useRef(proposedFood ? splitDietPortion(proposedFood) : initialPortion).current;
+  const [food, setFood] = React.useState(proposedPortion.food);
+  const [portion, setPortion] = React.useState(proposedPortion.text);
   const [calories, setCalories] = React.useState(() => editNumber(seed.calories));
   const [protein, setProtein] = React.useState(() => editNumber(seed.protein));
   const [carbs, setCarbs] = React.useState(() => editNumber(seed.carbs));
@@ -617,7 +623,7 @@ export function DietRecordAdjustEditor({
   const foodChanged = normalizeFoodText(food) !== initialFood;
   const fraction = parseDietPortion(portion);
   const portionChanged = fraction !== initialPortion.fraction;
-  const needsRecalculation = foodChanged || portionChanged;
+  const needsRecalculation = Boolean(proposedFood) || foodChanged || portionChanged;
   const revisionMissing = needsRecalculation && !revisionKnown;
   const revisionConflict = error === 'conflict';
   const secureRandomUnavailable = error === 'secure_random';

@@ -86,6 +86,23 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect(getByText('重新估算并保存')).toBeTruthy();
   });
 
+  it('prefills a photo proposal but only recalculates after explicit save using the original revision', async () => {
+    const card = baseAdjustCard();
+    card.adjust_record = { ...card.adjust_record, proposed_food_items: '牛肉面一碗（按实际食用1/5计）' } as any;
+    mockRecalculate.mockResolvedValue({ id: 123, meal_type: 'snack', food_items: '牛肉面一碗（按实际食用1/5计）', calories: 120 } as any);
+    const { getByLabelText, getByText } = render(<RecordQualityCardView {...(card as any)} />);
+    expect(getByLabelText('食物描述').props.value).toBe('牛肉面一碗');
+    expect(getByLabelText('我吃了 1/5').props.accessibilityState.selected).toBe(true);
+    expect(mockRecalculate).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    fireEvent.press(getByText('重新估算并保存'));
+    await waitFor(() => expect(mockRecalculate).toHaveBeenCalledWith(123, {
+      meal_type: 'snack', food_items: '牛肉面一碗', consumed_fraction: 0.2,
+      expected_updated_at: '2026-08-20T12:00:00Z',
+    }, expect.any(String)));
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
   it('saves a personal one-fifth share through the atomic calculation command, not manual PUT', async () => {
     mockRecalculate.mockResolvedValue({ id: 123, meal_type: 'snack', food_items: '整桌菜（按实际食用1/5计）', calories: 200 } as any);
     const onCardDataChange = jest.fn();
