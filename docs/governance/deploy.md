@@ -23,6 +23,37 @@
 
 ### 8.2 线上配置管理
 
+#### 已部署同树前端的受控重建
+
+用户明确授权后，可从当前 main、真实精确 CI 绿色、独立 G4 GO 的 canonical
+root staging 执行 `deploy.sh --rebuild-deployed-frontend --publisher-sha <sha>
+--production-sha <deployed-sha> --operation-id <32hex>`。这是只重建前端的窄
+operator 入口，不扩展 cloud SSH RPC，不领取 native/上传权限，不改变原后端
+授权或成功/退休审计。必须通过固定系统 Python `-I -S -B`，不上传本机脚本。
+默认只读取证；核对摘要后传入相同 `--evidence-sha256` 才允许执行。
+
+发布器须为当前 canonical main 且精确 CI 绿色；实际生产 revision 要有原
+后端成功回执与自己的精确绿色 CI。双方完整 frontend tree 必须相同，生产
+干净 revision 证明不得放宽；不同 tree 的新前端功能不适用此入口。普通
+`-f` 的 exact-SHA 规则不变，不以重建名义 checkout 或 push 线上代码。
+
+持有原 launcher.lock inode，并占用既有 business lease；独立
+`frontend-rebuilds/<operation-id>` 先 fsync intent，再开始副作用。所有旧
+未完成/未知操作阻止换 ID 或后续普通部署、授权轮换；不得用其完成记录替代
+backend `SUCCEEDED`。失败保留现场、旧制品和 lease，不自动恢复或重试。
+
+构建仅复制经 Git blob 核验的 canonical 前端，使用无特权、受限 CPU/内存
+的 systemd sandbox；生产目录、健康配置、发布凭据和 home 不可读，npm 的
+全局/用户配置禁用，依赖生命周期脚本禁用。仅允许固定的公开 API/site
+端点配置，按数据解析不执行 shell，原配置文件与元数据不变。只停经核验的
+前端 PM2 进程，保留旧 `.next` 和 `node_modules` 后成对切换，再启动前端。
+原生依赖安装脚本被禁用不能替代实际 build 和页面验收。
+
+成功必须回读内部及真实公网隐私页，并证明生产 Git SHA、后端/worker/beat
+PID 与 restart count、健康环境文件及授权文件摘要未变。只有这些验证与
+lease 释放均完成才记独立 `FRONTEND_SUCCEEDED`；不改 DB/schema，不重启
+后端，不声称全端发布已完成。
+
 #### 受审隔离发布入口
 
 手动触发 `.github/workflows/trusted-release.yml`，先以 `target=validate` 验证当前 main

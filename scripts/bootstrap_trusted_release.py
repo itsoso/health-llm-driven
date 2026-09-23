@@ -523,7 +523,19 @@ def _assert_known_activity(history, old_sha=None):
             raise BootstrapError("existing release activity requires operator review")
 
 
+def assert_frontend_rebuild_history():
+    if not os.path.lexists(STATE / "frontend-rebuilds"):
+        return
+    path = Path(__file__).with_name("trusted_release_server.py")
+    secure(path)
+    spec = importlib.util.spec_from_file_location("frontend_history_server", path)
+    server = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+    server.assert_frontend_rebuild_history(STATE)
+
+
 def _assert_idle():
+    assert_frontend_rebuild_history()
     if os.path.lexists(BUSINESS_LEASE):
         raise BootstrapError("business release lease exists; retirement forbidden")
     result = _run(["/usr/bin/ps", "-e", "-ww", "-o", "pid=", "-o", "args="], capture=True)

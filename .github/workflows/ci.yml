@@ -342,6 +342,7 @@ jobs:
           scripts/test_trusted_release_workflow.py
           scripts/test_trusted_release_receipt.py
           scripts/test_trusted_release_server.py
+          scripts/test_trusted_frontend_rebuild.py
           scripts/test_bootstrap_trusted_release.py
           scripts/test_trusted_review_reset.py
           scripts/test_review_maintenance_retirement.py
@@ -363,6 +364,13 @@ jobs:
           sudo mkdir -p /run/sshd
           native_dir="$(sudo mktemp -d /root/reva-sshd-test.XXXXXX)"
           sudo --preserve-env=REVA_TEST_NATIVE_SSH "$(command -v python)" -m pytest --basetemp="$native_dir/pytest" --noconftest --no-cov -q scripts/test_admin_key_pause.py -k native_openssh
+
+      - name: Verify frontend builder uses a private mount namespace and dynamic UID
+        env:
+          REVA_TEST_FRONTEND_SANDBOX: "1"
+        run: |
+          native_dir="$(sudo mktemp -d /root/reva-frontend-test.XXXXXX)"
+          sudo --preserve-env=REVA_TEST_FRONTEND_SANDBOX "$(command -v python)" -m pytest --basetemp="$native_dir/pytest" --noconftest --no-cov -q scripts/test_trusted_frontend_rebuild.py -k native_frontend_sandbox
 
   agent-runtime-postgres:
     name: agent-runtime-postgres

@@ -285,3 +285,36 @@ RequirementAdmission:
   构建日志或环境文件；另用唯一 publish ID 装配已验证 IPA 和安装页面。
   development fallback 或 get-task-allow=true 一律阻断公开发布。
   真实设备安装、GPS、第三方接收仍未验证，不以既有模拟器证据冒充。
+- 通道修复已提交并推送 `1f668490e`，精确 CI `35835266841` 全绿，
+  独立增量 G4 GO。canonical staging 构建1.3.4（272），Xcode archive
+  成功；ad-hoc 导出报 No Accounts / 无匹配 profile，脚本转 development
+  导出。回读确认 get-task-allow=true、APNs=development，因此 **不发布**。
+  私有包 SHA-256 `9e90a8845f6289b7186edd631452374a256cc471c8116584c0bcee61d301eb8f`；
+  runtime1.3.4、production更新通道和单次定位用途正确，无后台定位。
+  已请用户配置 Xcode 账号或既有 API Key 的 Issuer ID；不索取聊天内私钥。
+
+### 受控前端重建扩展（已获用户授权，未发布）
+
+- 准入分类：infrastructure / privacy maintenance，不新增产品对象或健康行为。
+  用户在明确获知发布能力缺口后回复“允许”；只允许重建已部署 revision
+  的前端，保持线上 Git SHA、后端进程、数据库和配置不变。
+- 已定位阻断：`deploy.sh -f` 同时要求候选等于当前 main 和实际生产 SHA；
+  当前两者不同，虽 frontend tree 相同仍必须阻断。现有 trusted workflow
+  不含前端阶段；不得用 TestFlight release 或手工 SSH npm 绕过。
+- 最小切片：独立受控 frontend rebuild 操作，通过 `deploy.sh` 固定入口，
+  绑定当前受审发布器与实际生产 revision；校验 canonical、精确 CI、同一
+  frontend tree 和生产成功证据，复用发布互斥与不可变单次操作审计。
+  不将前端完成记成 backend `SUCCEEDED`，不改写旧授权/消费/退休记录。
+- 验证计划：版本/tree 漂移拒绝；失败与未知状态保留且拒绝重跑；没有
+  backend/native/DB/env 副作用；独立 G4 与精确主干 CI 后执行，实际公开
+  privacy 页面出现“可选足迹与分享”，并回读后端 PID、环境摘要和生产
+  revision 未变。当前 G3–G6 尚未完成。
+- 实现候选：固定 `deploy.sh --rebuild-deployed-frontend` 早期入口，默认
+  只读取证；独立原子 intent、原 launcher inode、business lease、双 revision
+  与同树证明。DynamicUser + private bind mounts 隔离构建输入，固定公开
+  endpoint 数据校验；只切换 `.next` / `node_modules`，旧制品保留。
+- 本地证据：初始6项 RED，执行顺序/失败保留/审计阻断等补充测试通过；
+  发布器/恢复/部署回归433项及84子测试通过，最新聚焦276 passed / 1 skipped；
+  CI-mode 集成279 passed / 1 skipped。跳过项为仅可在 Linux systemd root
+  runner 执行的真实隔离测试，已加入 CI，不能将本机跳过算通过。
+  尚待固定提交 G4 与新 revision 的完整 CI，尚未执行线上前端重建。

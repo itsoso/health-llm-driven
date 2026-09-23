@@ -180,6 +180,7 @@ def run_once(policy, workspace, prepare, deploy):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
+        assert_frontend_rebuild_history()
         if read_status(policy["sha"], workspace)["state"] != "READY":
             raise LaunchError("authorization already consumed; manual review required")
         _assert_deployment_window(policy)
@@ -213,6 +214,49 @@ def run_once(policy, workspace, prepare, deploy):
         os.close(fd)
 
 
+def assert_frontend_rebuild_history(state=None):
+    """Independent frontend evidence must never count as backend success."""
+    root = Path(state or STATE) / "frontend-rebuilds"
+    if not os.path.lexists(root):
+        return
+    secure_path(root, directory=True)
+    if stat.S_IMODE(root.lstat().st_mode) != 0o700:
+        raise LaunchError("frontend audit root must remain private")
+    expected_files = {"intent.json", "before.json", "build.log", "install-started.json",
+                      "verified.json", "completed.json", "previous-next", "previous-node-modules"}
+    for operation in root.iterdir():
+        secure_path(operation, directory=True)
+        if stat.S_IMODE(operation.lstat().st_mode) != 0o700:
+            raise LaunchError("frontend operation must remain private")
+        if re.fullmatch(r"[0-9a-f]{32}", operation.name) is None or {p.name for p in operation.iterdir()} != expected_files:
+            raise LaunchError("unfinished or unknown frontend rebuild; operator review required")
+        for name in ("previous-next", "previous-node-modules"):
+            secure_path(operation / name, directory=True)
+        secure_path(operation / "build.log", private=True)
+        intent = _json(_read_private(operation / "intent.json"))
+        keys = {"kind", "publisher_sha", "production_sha", "operation_id", "frontend_tree", "state", "artifact_digest"}
+        if (not isinstance(intent, dict) or set(intent) != keys or intent["kind"] != "frontend-rebuild"
+                or intent["operation_id"] != operation.name or intent["state"] != "FRONTEND_STARTED"
+                or intent["artifact_digest"] is not None
+                or any(not isinstance(intent[key], str) or re.fullmatch(r"[0-9a-f]{40}", intent[key]) is None
+                       for key in ("publisher_sha", "production_sha", "frontend_tree"))):
+            raise LaunchError("invalid frontend rebuild binding")
+        complete = _json(_read_private(operation / "completed.json"))
+        if (not isinstance(complete, dict) or set(complete) != keys
+                or not isinstance(complete["artifact_digest"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", complete["artifact_digest"]) is None):
+            raise LaunchError("invalid frontend completion proof")
+        for name, status in (("install-started.json", "FRONTEND_INSTALLING"),
+                             ("verified.json", "FRONTEND_VERIFIED"), ("completed.json", "FRONTEND_SUCCEEDED")):
+            expected = {**intent, "state": status, "artifact_digest": complete["artifact_digest"]}
+            if _json(_read_private(operation / name)) != expected:
+                raise LaunchError("frontend completion differs from its intent")
+        before = _json(_read_private(operation / "before.json"))
+        if not isinstance(before, dict) or any(before.get(key) != intent[key] for key in (
+                "publisher_sha", "production_sha", "operation_id", "frontend_tree")):
+            raise LaunchError("frontend preflight binding differs")
+
+
 def _native_started(sha, workspace):
     marker = Path(workspace) / "native-started.json"
     if not marker.exists():
@@ -233,6 +277,7 @@ def release_status(sha, workspace):
 
 def check_readiness(policy):
     """Read-only target probes before consuming any build/deployment claim."""
+    assert_frontend_rebuild_history()
     _assert_deployment_window(policy)
     validate_loopback(policy)
     secure_path(Path(PYTHON))
@@ -306,6 +351,7 @@ def claim_testflight(policy, workspace):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
+        assert_frontend_rebuild_history()
         _assert_deployment_window(policy)
         if read_status(policy["sha"], workspace)["state"] in {"NEEDS_OPERATOR", "PREPARATION_FAILED"}:
             raise LaunchError("failed backend requires operator review before upload")

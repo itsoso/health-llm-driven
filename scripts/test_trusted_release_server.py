@@ -97,6 +97,21 @@ def test_success_runs_once_and_status_is_minimal(monkeypatch, tmp_path):
     assert calls == ["prepare", "deploy"]
 
 
+def test_unfinished_frontend_blocks_backend_before_consumption(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "STATE", tmp_path)
+    (tmp_path / "frontend-rebuilds" / ("c" * 32)).mkdir(parents=True)
+    (tmp_path / "frontend-rebuilds").chmod(0o700)
+    (tmp_path / "frontend-rebuilds" / ("c" * 32)).chmod(0o700)
+    workspace = tmp_path / SHA
+    workspace.mkdir()
+    calls = []
+    with pytest.raises(server.LaunchError, match="frontend"):
+        server.run_once(policy(), workspace, lambda: calls.append("prepare"), lambda: calls.append("deploy"))
+    assert calls == []
+    assert not (workspace / "started.json").exists()
+
+
 def test_failed_deploy_consumes_authorization_without_cleanup_or_retry(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
     evidence = tmp_path / "deploy-lease-evidence"
