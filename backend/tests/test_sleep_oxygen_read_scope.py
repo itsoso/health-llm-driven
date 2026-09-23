@@ -60,8 +60,10 @@ def test_model_cannot_widen_compound_read(extra):
     ('health_query_batch', {'queries':[{'dimension':'sleep'},{'dimension':'spo2'}]}),
     ('health_query_batch', {'plan':{'queries':[{'dimension':'sleep'},{'dimension':'spo2'}]}}),
 ])
-def test_sleep_only_restriction_cannot_expand_compound_oxygen(tool,args):
-    assert decide(args,'分析最近一周的睡眠血氧情况，只看睡眠',tool).action == 'block'
+@pytest.mark.parametrize('restriction', ['只看睡眠', '仅分析睡眠', '只分析睡眠',
+                                        '仅需分析睡眠', '只对睡眠分析'])
+def test_sleep_only_restriction_cannot_expand_compound_oxygen(tool,args,restriction):
+    assert decide(args,REQUEST+'，'+restriction,tool).action == 'block'
 
 
 def test_batch_binds_both_domains_and_does_not_grant_other_tools():

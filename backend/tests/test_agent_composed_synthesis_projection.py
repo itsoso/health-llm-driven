@@ -168,6 +168,20 @@ async def test_sleep_oxygen_stream_and_persistence_reject_unverified_diagnosis(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('restriction', ['仅分析睡眠','只分析睡眠'])
+async def test_sleep_only_restriction_never_dispatches_oxygen(db,four_domain_user,monkeypatch,restriction):
+    import tests.test_agent_composed_synthesis_projection as module
+    monkeypatch.setattr(module,'QUERIES',[{'dimension':'sleep','days':7},{'dimension':'spo2','days':7}])
+    monkeypatch.setattr(module,'BAD',[])
+    _, _, dispatched, done, saved = await run_projection(db,four_domain_user,monkeypatch,
+        query='分析最近一周的睡眠血氧情况，给出你的建议，'+restriction)
+    assert not dispatched
+    assert done['turn_outcome']['status'] != 'complete'
+    assert '血氧：目标日期内' not in saved.content
+    assert not done['write_receipts']
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("panel", [False, True])
 @pytest.mark.parametrize("layout", ["batch", "individual", "mixed"])
 async def test_verified_four_domain_provider_projection(db, four_domain_user, monkeypatch, panel, layout):

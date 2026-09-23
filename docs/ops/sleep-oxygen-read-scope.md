@@ -42,6 +42,12 @@ Regression tests cover stream/persistence, available/no-data, arbitrary provider
 text, and single-/multi-model surfaces. Earlier candidates are not approved for
 release; a new fixed-commit review is required.
 
+A third review confirmed deterministic projection but found equivalent
+sleep-only wording (`仅分析` / `只分析`) lost during scaffolding. These operators
+now enter the same restriction grammar; unrecognized `只` / `仅` restrictions
+fail closed before scaffolding. Individual, flat/nested batch, and streamed
+execution regressions require no oxygen dispatch for the narrower request.
+
 ## Evidence and release gates
 
 Original scope regressions failed before the repair; the missing date-bound
