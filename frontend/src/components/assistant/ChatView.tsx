@@ -307,26 +307,14 @@ const MessageRow = memo(function MessageRow({
 }: MessageRowProps) {
   const sentAtFull = formatMessageFullTime(msg.created_at);
   const accessibilityPrefix = msg.role === 'user' ? '你发送于' : '小巴回复于';
-  // 动态卡片消息 - 独立分支, 气泡外直接贴卡片
-  if (msg.card_type && msg.card_data) {
-    const cardEl = renderCard(
+  // done/history can attach cards to an existing narrative. Cards supplement the
+  // answer; never replace its markdown, evidence boundary or completion status.
+  const cardEl = msg.role === 'assistant' && msg.card_type && msg.card_data
+    ? renderCard(
       { type: msg.card_type, data: msg.card_data, actions: msg.card_actions as ChatCardActionDescriptor[] | undefined },
       { onAction: (action) => onCardAction?.(msg.id, action) },
-    );
-    if (cardEl) {
-      return (
-        <div
-          className="group relative flex gap-3.5 justify-start"
-          title={sentAtFull || undefined}
-          aria-label={sentAtFull ? `${accessibilityPrefix} ${sentAtFull}` : undefined}
-        >
-          <AssistantAvatar className="mt-1" />
-          <div className="min-w-0 flex-1">{cardEl}</div>
-          <MessageTimePill value={msg.created_at} side="assistant" />
-        </div>
-      );
-    }
-  }
+    )
+    : null;
   return (
     <div
       className={`group relative flex gap-3.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-[#F3E4DC]/60 ring-1 ring-[#C96442]/25' : ''}`}
@@ -372,6 +360,7 @@ const MessageRow = memo(function MessageRow({
             <div className="text-[15px] leading-7">
               <AssistantBody content={msg.content} streaming={!done} />
             </div>
+            {cardEl && <div className={msg.content ? 'mt-3' : undefined}>{cardEl}</div>}
             {done && <AssistantTransparencyPanel msg={msg} />}
           </div>
         ) : (

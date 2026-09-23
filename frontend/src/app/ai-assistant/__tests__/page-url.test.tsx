@@ -54,6 +54,33 @@ vi.mock('@/services/chatMedicalExamImportSkill', () => ({
 
 import AIAssistantPage from '../page';
 
+const sleepAnswer = `合成睡眠列表：
+
+| 日期 | 时长 |
+| --- | --- |
+| 测试日 | 8 小时 |
+
+血氧：合成案例无可用数据。
+
+建议：保持规律作息。`;
+const sleepAnswerMeta = {
+  completion_status: 'complete', elapsed_ms: 1000,
+  cards: [
+    { type: 'system_knowledge_evidence', data: {} },
+    { type: 'runtime_agenda', data: {} },
+    { type: 'sleep', data: { duration_h: 8, score: 80 } },
+  ],
+};
+
+function expectSleepAnswerRetained() {
+  expect(screen.getByRole('table')).toHaveTextContent('测试日');
+  expect(screen.getByText('血氧：合成案例无可用数据。')).toBeVisible();
+  expect(screen.getByText('建议：保持规律作息。')).toBeVisible();
+  expect(screen.getByText('睡眠分析')).toBeVisible();
+  expect(screen.getByTitle('复制')).toBeInTheDocument();
+  expect(screen.getByTitle('查看本轮执行透视')).toBeInTheDocument();
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   requireAiConsent.mockResolvedValue({ 'X-Reva-AI-Subject': '101' });
@@ -89,6 +116,37 @@ it('keeps the chat draft intact when AI consent is declined', async () => {
   await waitFor(() => expect(requireAiConsent).toHaveBeenCalled());
   expect(input).toHaveValue('synthetic unsent draft');
   expect(streamMessage).not.toHaveBeenCalled();
+});
+
+it('retains the streamed sleep table and oxygen narrative after done adds cards', async () => {
+  searchParamsGet.mockReturnValue(null);
+  let finish!: () => void;
+  const readyForDone = new Promise<void>(resolve => { finish = resolve; });
+  streamMessage.mockImplementationOnce(async function* () {
+    yield { event: 'start', data: { conversation_id: 88 } };
+    yield { event: 'token', data: { content: sleepAnswer } };
+    await readyForDone;
+    yield { event: 'done', data: { ...sleepAnswerMeta, conversation_id: 88, message_id: 702 } };
+  });
+  render(<AIAssistantPage />);
+  fireEvent.change(screen.getByPlaceholderText(/发消息/), { target: { value: '合成睡眠血氧分析请求' } });
+  fireEvent.click(screen.getByTitle('发送'));
+  expect(await screen.findByRole('table')).toHaveTextContent('测试日');
+  expect(screen.queryByText('睡眠分析')).not.toBeInTheDocument();
+  await act(async () => finish());
+  await screen.findByText('睡眠分析');
+  expectSleepAnswerRetained();
+});
+
+it('restores the complete sleep and oxygen answer alongside cards from history', async () => {
+  searchParamsGet.mockReturnValue('42');
+  getConversation.mockResolvedValue({ data: { messages: [{
+    id: 702, role: 'assistant', content: sleepAnswer,
+    created_at: '2026-09-23T15:40:00Z', meta: sleepAnswerMeta,
+  }] } });
+  render(<AIAssistantPage />);
+  await screen.findByText('睡眠分析');
+  expectSleepAnswerRetained();
 });
 
 it('does not send a pending draft after leaving the chat during consent', async () => {

@@ -79,6 +79,24 @@ must be verified separately for this follow-up revision.
 
 ## Evidence and release gates
 
+### Web card/narrative disappearance
+
+The reported 2026-09-23 23:40 (Asia/Shanghai) turn succeeded on the server:
+sanitized read-only inspection found two verified query goals and a persisted
+1,032-character response. The final supported sleep card triggered a Web-only
+early return that hid the response, its inline table and completion panel.
+Unknown metadata card types were correctly filtered; multi-card grouping was
+not the cause. No health payload or identity is included in this evidence.
+
+`ChatView` now renders cards as supplements to the same message's markdown and
+completion status. The registry/action allowlists are unchanged. Test-first
+regressions reproduce the disappearing table and history narrative, then verify
+stream-to-done and history restoration through the real page and renderers.
+Card-only, unknown-card, multi-card and copy behavior remain covered. This is a
+Web rendering repair; no read scope, clinical interpretation, database or native
+client behavior changes. Browser acceptance and exact-revision deployment remain
+separate gates; existing persisted answers need no backfill or re-execution.
+
 Original scope regressions failed before the repair; the missing date-bound
 reader and completion support were each separately reproduced before changes.
 Targeted policy/calendar tests passed. Synthetic PostgreSQL tests verify range,
