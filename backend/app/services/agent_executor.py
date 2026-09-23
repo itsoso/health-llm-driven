@@ -19434,7 +19434,8 @@ class AgentExecutor:
         tool_models = list(self._tool_model_names)
         fallback_reasons = list(self._model_fallback_reasons)
         evidence_cards = []
-        if completion_status == "complete" and health_evidence_turn is None:
+        if (completion_status == "complete" and turn_outcome.get("status") == "complete"
+                and health_evidence_turn is None):
             try:
                 evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
                 if evidence_card:

@@ -2798,7 +2798,7 @@ def decide_tool_capability(
         guarding_longitudinal_domain = isinstance(read_proposals, list) and any(
             isinstance(proposal, dict)
             and normalize_health_query_args(proposal).get("dimension")
-            in {"diet", "sleep", "workout", "supplements"}
+            in {"diet", "sleep", "spo2", "workout", "supplements"}
             for proposal in read_proposals
         )
         if guarding_longitudinal_domain and longitudinal_read_restrictions_unresolved(snapshot):
@@ -3273,7 +3273,7 @@ def decide_tool_capability(
                 )
             if (guarding_user_read
                     and canonical_health_manage_record_type(args.get("record_type"))
-                    in {"diet", "sleep", "workout", "supplements"}
+                    in {"diet", "sleep", "spo2", "workout", "supplements"}
                     and longitudinal_read_restrictions_unresolved(snapshot)):
                 reason = ("health_query_subject_not_current_user"
                           if illness_read_has_unowned_subject(_query_scope_text(turn_text))

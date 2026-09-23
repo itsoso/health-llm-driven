@@ -961,13 +961,19 @@ def _colon_extends_write_target(left: str) -> bool:
     return left.endswith(signal)
 
 
+def strip_negation_lexical_containers(text: str) -> str:
+    """Remove whole lexical compounds, never a standalone cancellation word."""
+    for container in _NEGATION_LEXICAL_CONTAINERS:
+        text = text.replace(container, "")
+    return text
+
+
 def _clean_negation_clause(raw_clause: str) -> str:
     clause = raw_clause
     for exception in WRITE_NEGATION_EXCEPTIONS:
         clause = clause.replace(exception, "")
     clause = _POSITIVE_REMINDER_RE.sub("", clause)
-    for container in _NEGATION_LEXICAL_CONTAINERS:
-        clause = clause.replace(container, "")
+    clause = strip_negation_lexical_containers(clause)
     for modal in _ORDERED_NON_NEGATING_MODALS:
         clause = clause.replace(modal, "")
     return clause

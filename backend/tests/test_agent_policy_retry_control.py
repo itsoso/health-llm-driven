@@ -54,6 +54,10 @@ async def test_stream_stops_after_an_immutable_owner_block(db, auth_user_and_hea
     executor._current_user_id = user.id
     monkeypatch.setattr(executor, '_build_system_prompt', lambda *_a, **_k: '健康记录助手。')
     monkeypatch.setattr(executor, '_build_system_knowledge_prompt_context', lambda *_a, **_k: '')
+    monkeypatch.setattr(executor, '_build_system_knowledge_evidence_card', lambda *_a, **_k: {
+        'type': 'system_knowledge_evidence',
+        'data': {'entity': {'title': '合成知识参考'}, 'claims': [{'doc_id': 'synthetic-claim'}]},
+    })
     calls = []
     async def stream(messages, tools):
         calls.append(1)
@@ -72,3 +76,9 @@ async def test_stream_stops_after_an_immutable_owner_block(db, auth_user_and_hea
     assert '本人' in text
     done = next(e['data'] for e in reversed(events) if e.get('event') == 'done')
     assert done['turn_outcome']['status'] == 'blocked'
+    assert not any(card.get('type') == 'system_knowledge_evidence' for card in done['cards'])
+    assert not any(e.get('event') == 'card' and e['data'].get('anchor') == 'system_knowledge_evidence'
+                   for e in events)
+    from app.models.agent_conversation import AgentMessage
+    saved = db.get(AgentMessage, done['message_id'])
+    assert not any(card.get('type') == 'system_knowledge_evidence' for card in saved.meta['cards'])

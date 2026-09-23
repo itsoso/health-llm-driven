@@ -53,6 +53,7 @@ from app.services.write_intent_scope import (
     is_reported_write_reference,
     is_write_capability_question,
     is_write_result_check,
+    strip_negation_lexical_containers,
 )
 
 BJ = timezone(timedelta(hours=8))
@@ -1089,6 +1090,7 @@ def _all_phrase_positions(text: str, phrase: str) -> list[int]:
 def _has_negated_mutation(text: str, operation: Optional[str]) -> bool:
     if not operation or _has_any(text, MUTATION_NEGATION_EXCEPTIONS):
         return False
+    text = strip_negation_lexical_containers(text)
     action_positions = [
         position
         for phrase in MUTATE_ACTIONS[operation]

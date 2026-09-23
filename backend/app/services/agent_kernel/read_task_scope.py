@@ -40,6 +40,7 @@ _MUTATION = re.compile(
 )
 _DOMAINS = {
     "sleep": re.compile(r"睡眠|睡得|睡的|睡觉"),
+    "spo2": re.compile(r"血氧|spo2", re.I),
     "diet": re.compile(r"饮食|餐食|早餐|午餐|晚餐|吃了(?:什么|啥)|吃过(?:什么|啥)"),
 }
 _RETROSPECTIVE = re.compile(r"(?:分析|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
