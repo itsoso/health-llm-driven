@@ -111,6 +111,77 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('has_oxygen', [False, True])
+async def test_sleep_oxygen_week_reaches_verified_web_answer(db, four_domain_user, clock, monkeypatch, has_oxygen):
+    from datetime import time
+    from app.models.daily_health import SpO2Sample
+    import tests.test_agent_composed_synthesis_projection as module
+    monkeypatch.setattr(module, 'QUERIES', [{'dimension':'sleep', 'days':7}, {'dimension':'spo2', 'days':7}])
+    monkeypatch.setattr(module, 'BAD', [])
+    if has_oxygen:
+        db.add(SpO2Sample(user_id=four_domain_user.id, record_date=clock[0].date(),
+                         sample_time=time(1), source='ringconn', spo2_value=97))
+        db.commit()
+    _, calls, dispatched, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch, query='分析最近一周的睡眠血氧情况，给出你的建议')
+    assert done['turn_outcome']['status'] == 'complete'
+    assert not done['write_receipts']
+    assert any(request.tool_name == 'health_query_batch' for request in dispatched)
+    evidence = json.loads(calls[-1]['messages'][1]['content'])['read_evidence']
+    oxygen = next(q for q in evidence['queries'] if q['query']['dimension']=='spo2')
+    assert oxygen['availability'] == ('partial' if has_oxygen else 'no_data')
+    assert 'sleep_interval_not_verified' in oxygen['limitations']
+    assert '血氧' in saved.content
+    assert '范围限制尚不能完整解析' not in saved.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('has_oxygen', [False, True])
+@pytest.mark.parametrize('panel', [False, True])
+@pytest.mark.parametrize('unsafe', [
+    '本周整夜血氧持续监测显示ODI为12次/小时，符合中度睡眠呼吸暂停。',
+    '本周血氧正常，已排除睡眠呼吸暂停。',
+    '本周血氧处于正常范围，睡眠呼吸暂停已被排除。',
+    '本周每晚均完成连续血氧监测，ODI指数为12次/小时。',
+    '本周低氧事件主要集中在REM阶段，深睡期血氧比浅睡期更低。',
+    '无法确认数据完整性且血氧正常。',
+    'ARBITRARY_PROVIDER_CLAIM_NOT_VERIFIED',
+])
+async def test_sleep_oxygen_stream_and_persistence_reject_unverified_diagnosis(
+    db, four_domain_user, clock, monkeypatch, has_oxygen, unsafe, panel,
+):
+    from datetime import time
+    from app.models.daily_health import SpO2Sample
+    import tests.test_agent_composed_synthesis_projection as module
+    monkeypatch.setattr(module,'QUERIES',[{'dimension':'sleep','days':7},{'dimension':'spo2','days':7}])
+    monkeypatch.setattr(module,'BAD',[])
+    if has_oxygen:
+        db.add(SpO2Sample(user_id=four_domain_user.id,record_date=clock[0].date(),
+                         sample_time=time(13),source='ringconn',spo2_value=97))
+        db.commit()
+    _, _, _, done, saved = await run_projection(db,four_domain_user,monkeypatch,
+        query='分析最近一周的睡眠血氧情况，给出你的建议',answer=unsafe,panel=panel)
+    assert unsafe not in saved.content
+    assert '血氧' in saved.content
+    assert done['turn_outcome']['status'] == 'complete'
+    assert not done['write_receipts']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('restriction', ['仅分析睡眠','只分析睡眠'])
+async def test_sleep_only_restriction_never_dispatches_oxygen(db,four_domain_user,monkeypatch,restriction):
+    import tests.test_agent_composed_synthesis_projection as module
+    monkeypatch.setattr(module,'QUERIES',[{'dimension':'sleep','days':7},{'dimension':'spo2','days':7}])
+    monkeypatch.setattr(module,'BAD',[])
+    _, _, dispatched, done, saved = await run_projection(db,four_domain_user,monkeypatch,
+        query='分析最近一周的睡眠血氧情况，给出你的建议，'+restriction)
+    assert not dispatched
+    assert done['turn_outcome']['status'] != 'complete'
+    assert '血氧：目标日期内' not in saved.content
+    assert not done['write_receipts']
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("panel", [False, True])
 @pytest.mark.parametrize("layout", ["batch", "individual", "mixed"])
 async def test_verified_four_domain_provider_projection(db, four_domain_user, monkeypatch, panel, layout):

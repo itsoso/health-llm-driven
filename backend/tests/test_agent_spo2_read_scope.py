@@ -133,12 +133,12 @@ def test_spo2_projection_preserves_owner_window_source_and_precision(db, owners)
     assert result["window"] == window().as_dict()
     assert result["availability"] == "partial"
     assert result["date_attribution"] == "record_date"
-    assert result["source_scope"] == "owned_daily_spo2_summaries"
+    assert result["source_scope"] == "owned_daily_spo2_summaries_and_samples"
     assert len(result["records"]) == 2
     first, last = result["records"]
     assert first["record_date"] == "2031-03-29" and last["record_date"] == "2031-04-04"
-    assert first["spo2_avg"] == 96.12345
-    assert first["sources"] == {key: "ringconn" for key in ("spo2_avg", "spo2_min", "spo2_max")}
+    assert first["daily_metrics"]["spo2_avg"] == 96.12345
+    assert first["daily_sources"] == {key: "ringconn" for key in ("spo2_avg", "spo2_min", "spo2_max")}
     assert "daily_summary_not_sleep_episode" in result["limitations"]
     assert "sample_coverage_unknown" in result["limitations"]
     assert not {"odi", "severity", "apnea_risk", "pattern_flags"} & result.keys()
@@ -171,8 +171,8 @@ def test_partial_metrics_keep_nulls_and_each_metric_source(db, owners):
     db.flush()
     result = read_longitudinal_health_query(db, owner, "spo2", window())
     row = result["records"][0]
-    assert row["spo2_avg"] == 96 and row["spo2_min"] == 94 and row["spo2_max"] is None
-    assert row["sources"] == {"spo2_avg": "apple-watch", "spo2_min": "ringconn"}
+    assert row["daily_metrics"] == {"spo2_avg": 96, "spo2_min": 94, "spo2_max": None}
+    assert row["daily_sources"] == {"spo2_avg": "apple-watch", "spo2_min": "ringconn"}
     assert result["availability"] == "partial"
 
 
@@ -233,5 +233,5 @@ async def test_executor_dispatch_uses_frozen_daily_facts_not_latest_night(db, ow
         assert item["window"] == window().as_dict()
         assert [row["record_date"] for row in item["records"]] == ["2031-04-01"]
     spo2 = next(item for item in results if item["dimension"] == "spo2")
-    assert spo2["records"][0]["spo2_avg"] == 97
-    assert spo2["source_scope"] == "owned_daily_spo2_summaries"
+    assert spo2["records"][0]["daily_metrics"]["spo2_avg"] == 97
+    assert spo2["source_scope"] == "owned_daily_spo2_summaries_and_samples"

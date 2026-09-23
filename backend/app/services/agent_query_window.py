@@ -153,6 +153,9 @@ def read_calendar_health_query(
         raise ValueError("calendar_query_owner_required")
     # A dataclass constructed by a caller must not bypass bound validation.
     window = parse_query_window(window.as_dict())
+    if dimension == 'spo2':
+        from app.services.agent_sleep_oxygen_read import read_sleep_oxygen_window
+        return read_sleep_oxygen_window(db, user_id, window)
     if dimension not in SUPPORTED_CALENDAR_DIMENSIONS:
         raise ValueError("calendar_query_dimension_unsupported")
     from app.models.daily_health import DietRecord, GarminData
@@ -177,24 +180,13 @@ def read_calendar_health_query(
         return _bounded_result(result)
 
     from app.services.multi_source_merger import merge_rows
-    keys = ("spo2_avg", "spo2_min", "spo2_max") if dimension == "spo2" else (
-            "sleep_score", "total_sleep_duration", "deep_sleep_duration",
+    keys = ("sleep_score", "total_sleep_duration", "deep_sleep_duration",
             "rem_sleep_duration", "light_sleep_duration", "awake_duration",
             "sleep_start_time", "sleep_end_time")
-    result["date_attribution"] = "record_date" if dimension == "spo2" else "wake_date"
+    result["date_attribution"] = "wake_date"
     result["sync_status"] = "unknown"
     result["limitations"] = ["sync_status_unknown", "daily_rows_not_full_episode_timestamps",
                              "missing_metric_is_unknown_not_abnormal"]
-    if dimension == "spo2":
-        # These are stored daily summaries, not raw sleep samples. Reuse the
-        # source policy through merge_rows; excluded sources never become
-        # blood-oxygen evidence and missing values never imply normality.
-        result["source_scope"] = "owned_daily_spo2_summaries"
-        result["limitations"].extend([
-            "daily_summary_not_sleep_episode", "sample_coverage_unknown",
-            "daily_summary_does_not_establish_odi_or_diagnosis",
-            "excluded_sources_not_used",
-        ])
     by_day: dict[date, list[Any]] = {}
     for row in rows:
         by_day.setdefault(row.record_date, []).append(row)

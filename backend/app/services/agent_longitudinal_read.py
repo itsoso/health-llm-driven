@@ -38,7 +38,7 @@ from app.services.agent_query_window import (
 
 _DOMAINS = {
     "diet": r"饮食|餐食|吃了什么",
-    "sleep": r"睡眠|睡得|睡觉",
+    "sleep": r"睡眠血氧|睡眠|睡得|睡觉",
     "spo2": r"血氧|[Ss][Pp][Oo]2",
     "workout": r"运动|锻炼|训练",
     "supplements": r"补剂|营养补充剂",
@@ -63,7 +63,7 @@ _TOOL_READ = re.compile(
 # These clauses restrict a read; an unrecognized remainder must not disappear
 # into the default recent window or a separate calendar clause.
 _RESTRICTION_PREFIX = re.compile(
-    r"(?:(?:只|仅)(?:查询|查看|读取|调取|查|看)|仅限|限定(?:范围)?(?:为|在)?|只限)(?:于)?\s*"
+    r"(?:(?:只|仅)(?:查询|查看|读取|调取|分析|复盘|总结|查|看)|仅限|限定(?:范围)?(?:为|在)?|只限)(?:于)?\s*"
 )
 
 
@@ -165,6 +165,8 @@ def _record_domains(text: str) -> set[str]:
         if resolve_illness_entity(entity).status == "exact":
             continue
         domains.update(key for key, pattern in _DOMAINS.items() if re.search(pattern, clause))
+        if '睡眠血氧' in clause:
+            domains.add('spo2')
     return domains
 
 
@@ -401,10 +403,14 @@ def _restricted_read_text(snapshot, active: str) -> str | None:
     domain_limits = []
     for clause, is_scope in clauses:
         marker = _RESTRICTION_PREFIX.search(clause)
+        if marker is None and re.search(r"只|仅", clause):
+            # Unknown restrictive grammar must survive command scaffolding.
+            # It is not permission to keep an earlier broader domain/window.
+            return None
         if marker:
             body = clause[marker.end():].strip()
             scope = re.sub(r"(?:并|再|然后)(?:分析|复盘|总结)(?:一下)?$", "", body)
-            domains = {key for key, pattern in _DOMAINS.items() if re.search(pattern, scope)}
+            domains = _record_domains(scope)
             if domains:
                 domain_limits.append(domains)
             if not _consume_read_scope(snapshot, scope, domains or requested_domains):
