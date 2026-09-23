@@ -1,5 +1,17 @@
 # Frontend publisher pre-install failure recovery
 
+| 字段 | 值 |
+| --- | --- |
+| 状态 | partial / release-blocked |
+| 当前阶段 | 本地实现和独立 G4 完成；主干 CI 文档闸待修复 |
+| Overlay | safety-gate |
+| 研发 Run Ledger | `docs/_generated/harness-runs/8391e1daf4f9.jsonl`（本地，不提交） |
+
+## G1 — 准入
+
+裁决: PASS。用户明确授权既有发布事故的受控收尾，不新增产品行为或健康数据写入。
+范围只包含已知安装前失败、发布器修复与既有发布流程，不扩大原生或凭据权限。
+
 - Date: 2026-09-23
 - Owner/controller: Health Harness, incident mode; safety-gate overlay.
 - Run: `docs/_generated/harness-runs/8391e1daf4f9.jsonl`.
@@ -51,3 +63,32 @@
 - PR #252 remains separate/unmerged. Server recovery uses canonical root staging;
   its safety verdict does not authorize a developer-workspace OTA publisher.
   OTA trusted environment and runtime compatibility must be separately proven.
+
+## G3 / G4 — Verified candidate
+
+裁决: GO。Runtime code is committed as
+`a30153b8657e7f835e45af35f237471495331cfa`.
+
+- Full release-invariants CI-mode command: **1235 passed, 8 skipped,
+  84 subtests passed**, exit 0, 394.99 seconds. Synthetic native SSH and Linux
+  namespace cases remain environment-specific; not claimed locally verified.
+  Log: `/tmp/reva-publisher-recovery-ci.log`.
+- Independent fixed-commit safety review: **GO**, no blocking findings;
+  reviewer reran 128 tests, 1 Linux-only skip and verified pinned old code digest.
+- Fresh real-model gate: invariants 12/12, health-agent 50/50, orchestrator 5/5
+  (mean 0.9), trajectory 12/12, goldens 9/9. Only existing three TokenPlan
+  connection values loaded into synthetic test process. In-memory usage-table
+  warnings are not production auditing evidence. No secrets printed.
+- Secret scan, System Map/doc drift, agent-skill governance and diff checks pass.
+
+## G5 / G6 — Release paused
+
+裁决: BLOCK。Main candidate CI `35867397512` failed docs-quality because this new
+dossier lacked parseable status/stage and G1 fields. Corrected those fields locally;
+all **143 dossiers** now pass the unchanged consistency checker. No CI tests or
+rules were removed/relaxed. Other remote jobs were still running when recorded.
+
+Repository rule forbids further external writes while main is red. The format fix
+is local only pending explicit direction to push the CI repair. Original failed
+frontend audit, lease, services, production SHA and credentials remain untouched.
+No controlled retirement, backend deployment, frontend rebuild or OTA has executed.

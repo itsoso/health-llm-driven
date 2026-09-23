@@ -86,6 +86,10 @@
   `/var/lock/health-app-release` 仍存在。未清锁、重启、部署或改生产健康数据；
   已向用户询问是否授权按审计流程恢复旧失败发布任务，等待答复。
 
+后续用户已明确回答“允许”。恢复发布器与受控收尾工具及当前 app 修复已推至
+主干 `a30153b86`，新恢复工具独立 G4 GO；发布仍未执行。续办与主干 CI 文档
+格式修复状态见 [恢复 Dossier](2026-09-23-frontend-publisher-recovery.md)。
+
 续作证据：`/tmp/reva-photo-correction-{combined,pg,coverage,final-live-gate}.log`、
 `/tmp/reva-photo-correction-mobile-ci-{main,input,chat,auth,gps}.log`、
 `/tmp/reva-photo-correction-ci-{food-policy,diet-read}.log`。
