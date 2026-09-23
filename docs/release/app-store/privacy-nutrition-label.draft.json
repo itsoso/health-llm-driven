@@ -194,21 +194,37 @@
     {
       "category": "Location",
       "apple_data_types": [
-        "Precise Location"
+        "Precise Location",
+        "Coarse Location"
       ],
       "examples": [
-        "precise_location_selected_by_user_for_weather_air_quality_and_outdoor_activity_context"
+        "precise_location_selected_by_user_for_weather_air_quality_and_outdoor_activity_context",
+        "user_confirmed_city_attached_to_a_record_for_monthly_journey_recap"
       ],
       "purpose": [
         "app_functionality",
         "personalization"
       ],
       "linked_to_user": true,
-      "used_for_tracking": false
+      "used_for_tracking": false,
+      "apple_data_type_details": {
+        "Precise Location": {
+          "purpose": ["app_functionality", "personalization"],
+          "linked_to_user": true,
+          "used_for_tracking": false
+        },
+        "Coarse Location": {
+          "purpose": ["app_functionality"],
+          "linked_to_user": true,
+          "used_for_tracking": false
+        }
+      },
+      "collection_notes": "Journey locations are optional, explicitly confirmed city labels linked to the user's existing records. The user can enter a city manually or request a single foreground location lookup for today's record. Journey records do not store coordinates or collect background routes. Sharing requires a separate selection and preview."
     }
   ],
   "manual_review_required_before_submission": [
     "Confirm that the App Store Connect privacy answers exactly match this checked-in declaration before submission.",
+    "Confirm that Location includes Coarse Location linked to the user for App Functionality only, with no tracking; updating this draft does not update App Store Connect.",
     "Confirm that User Content includes Other User Content and Photos or Videos for App Functionality and Product Personalization, plus Audio Data linked to the user for App Functionality.",
     "Confirm that Usage Data includes Product Interaction linked to the user for Analytics and App Functionality.",
     "Re-run the privacy review whenever a new SDK, analytics provider, advertising feature, or data category is added."

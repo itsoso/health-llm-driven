@@ -77,6 +77,37 @@ def test_ios_app_store_submission_preflight_requires_all_published_privacy_types
     } <= REQUIRED_PRIVACY_DATA_TYPES
 
 
+def test_journey_coarse_location_declaration_is_linked_functionality_only():
+    from scripts.check_ios_app_store_submission import (
+        REQUIRED_PRIVACY_DATA_TYPES,
+        expected_privacy_manifest_entries,
+        validate_privacy_manifest_against_label,
+    )
+
+    root = Path(__file__).resolve().parents[2]
+    label = json.loads((root / "docs/release/app-store/privacy-nutrition-label.draft.json").read_text())
+    manifest = json.loads((root / "mobile/app.json").read_text())["expo"]["ios"]["privacyManifests"]
+    entries, errors = expected_privacy_manifest_entries(label)
+    key = "NSPrivacyCollectedDataTypeCoarseLocation"
+    assert not errors
+    assert key in REQUIRED_PRIVACY_DATA_TYPES
+    assert entries[key] == {
+        "NSPrivacyCollectedDataTypeLinked": True,
+        "NSPrivacyCollectedDataTypeTracking": False,
+        "NSPrivacyCollectedDataTypePurposes": {"NSPrivacyCollectedDataTypePurposeAppFunctionality"},
+    }
+    assert validate_privacy_manifest_against_label(manifest, label) == []
+    for field, value in (
+        ("NSPrivacyCollectedDataTypeLinked", False),
+        ("NSPrivacyCollectedDataTypeTracking", True),
+        ("NSPrivacyCollectedDataTypePurposes", ["NSPrivacyCollectedDataTypePurposeAnalytics"]),
+    ):
+        changed = deepcopy(manifest)
+        entry = next(item for item in changed["NSPrivacyCollectedDataTypes"] if item["NSPrivacyCollectedDataType"] == key)
+        entry[field] = value
+        assert validate_privacy_manifest_against_label(changed, label)
+
+
 def test_ios_privacy_manifest_alignment_fails_closed_for_semantic_mutations():
     from scripts.check_ios_app_store_submission import validate_privacy_manifest_against_label
 

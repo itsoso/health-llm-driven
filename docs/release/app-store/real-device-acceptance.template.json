@@ -1,6 +1,6 @@
 {
   "build_id": "REPLACE_WITH_APP_STORE_BUILD_NUMBER",
-  "app_version": "1.3.3",
+  "app_version": "1.3.4",
   "build_profile": "production",
   "eas_build_id": "REPLACE_WITH_EAS_BUILD_ID",
   "git_commit_hash": "REPLACE_WITH_GIT_COMMIT_HASH",

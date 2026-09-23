@@ -45,6 +45,7 @@ APPLE_PRIVACY_TYPE_TO_MANIFEST_TYPE = {
     "Photos or Videos": "NSPrivacyCollectedDataTypePhotosorVideos",
     "Audio Data": "NSPrivacyCollectedDataTypeAudioData",
     "Precise Location": "NSPrivacyCollectedDataTypePreciseLocation",
+    "Coarse Location": "NSPrivacyCollectedDataTypeCoarseLocation",
     "Product Interaction": "NSPrivacyCollectedDataTypeProductInteraction",
     "Crash Data": "NSPrivacyCollectedDataTypeCrashData",
     "Performance Data": "NSPrivacyCollectedDataTypePerformanceData",

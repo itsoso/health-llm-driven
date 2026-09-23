@@ -4,7 +4,7 @@
   "shards": [
     {"label":"a-action","paths":["tests/test_action*.py"],"estimated_seconds":13.755,"scheduling_seconds":31.947},
     {"label":"a-agenda","paths":["tests/test_agenda*.py"],"estimated_seconds":20.336,"scheduling_seconds":37.004},
-    {"label":"a-early-rest","paths":["tests/test_a_to_i_smoke.py","tests/test_account*.py","tests/test_activation*.py","tests/test_adherence*.py","tests/test_admin*.py","tests/test_advice*.py"],"estimated_seconds":45.535,"scheduling_seconds":61.48},
+    {"label":"a-early-rest","paths":["tests/test_a_to_i_smoke.py","tests/test_account*.py","tests/test_activation*.py","tests/test_adherence*.py","tests/test_admin*.py","tests/test_advice*.py","tests/test_async*.py"],"estimated_seconds":45.535,"scheduling_seconds":61.48},
     {"label":"a-late","paths":["tests"],"extra_args":["--ignore=tests/services","--ignore=tests/test_app_store_demo_account.py","--ignore-glob=tests/test_[b-z]*.py","--ignore-glob=tests/test_agent_*.py","--ignore-glob=tests/test_a[_a-h]*.py"],"estimated_seconds":65.938,"scheduling_seconds":64.362},
     {"label":"b","paths":["tests/test_b*.py"],"estimated_seconds":31.336,"scheduling_seconds":31.086},
     {"label":"app-store-demo-account","paths":["tests/test_app_store_demo_account.py"],"estimated_seconds":10.247,"scheduling_seconds":15.548},
