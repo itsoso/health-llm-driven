@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | partial / release-blocked |
-| 当前阶段 | G3 本地回归通过，live LLM Gate 阻断；G4 代码安全 GO |
+| 当前阶段 | 续作本地 G3 通过、G4 GO；完整远端 CI 未跑，发布恢复待授权 |
 | Overlay | safety-gate |
 | 研发 Run Ledger | `docs/_generated/harness-runs/a9130cdbd778.jsonl`（本地，不提交） |
 
@@ -34,7 +34,7 @@
   不回退 latest-night，不证明真实模型完成回答。
   SafetyGuardian 与中断回合专项 2 passed。
   离线 LLM Gate：invariants 12/12、health_agent_core 50/50、轨迹 12/12、goldens 9/9。
-  live LLM Gate BLOCK：本机未配置 TokenPlan key，尝试的 OpenAI 路径因
+  首次 live LLM Gate BLOCK：评测进程未加载已有 TokenPlan 配置，尝试的 OpenAI 路径因
   `ai_recipient_not_disclosed` 被安全闸拒绝（0/5）。没有绕过披露、同意或更改生产配置。
 - 最终组合回归：1814 passed（含 executor completion、读取适配器与 integration.py），
   不替代完整发布集成闸。System Map、mobile navigation、doc-drift、秘密扫描通过。
@@ -53,8 +53,39 @@
 
 ## 尚未完成
 
-“识别”的误否定已修复，但照片结果到既有午餐记录的自动覆盖链尚未实现。
-现有受控 update 前置查找不包含按日期/餐别绑定的可信照片来源，因此不能
-仅放开 diet 权限；本次负例确保模型传入任意 record_id/食物仍被拒绝。
-用户仍需通过已有饮食编辑页确认修改；不能宣称截图中的自动覆盖操作已修好。
-发布还需 live LLM、完整 CI-mode 集成、精确主干 CI 及独立 G4，旧发布恢复另行授权。
+首轮没有实现的照片引用，续作已收敛为下述手动确认流程；不是自动覆盖。
+旧照片没有签名快照时必须重新发送，不从旧模型回复中推断识别结果。
+最终发布仍需完整精确主干 CI、旧发布恢复授权及部署后验证。
+
+## 续作 — 照片识别到修正编辑器
+
+- 代码提交：`fb20d82b981c3dc58ef588ce2e8a5e2223d5d79f`。
+- 结构化识别描述经服务端签名，与本人/会话/图片消息/图片集合/时间绑定，
+  最长引用 24 小时。只引用紧邻、已完成的照片回合；今天指定餐别须有唯一记录。
+- 生成已有编辑器的待确认预填，不修改饮食、不产生保存回执。用户确认才调用
+  已有营养重算 API；原始版本、CAS、幂等、重复点击保护不变，照片不迁移。
+- `1/5` 等已有食用比例保留；另存成另一条饮食的照片停止替换，避免重复计入。
+- G3：新增服务组 19 passed，覆盖率 89.61%；相关组合 646 passed、1 skipped
+  （SQLite 不证明 PG 并发），独立临时 PostgreSQL 组 146 passed，已停止实例。
+- Mobile 新增预填测试 RED 1 failed/43 passed，GREEN 44 passed；正式 CI 拆分
+  Mobile 主组 2839 passed/1 skipped，输入框 75、聊天页 62、auth 33、GPS 7 passed。
+  Web 401 passed，两端类型检查通过；Web lint 0 errors、37 既有 warnings。
+- 通用 run-all-tests 混跑不是完整通过：Mobile 有状态测试混跑停滞后中断，
+  已按正式 CI 的主组+四个独立组重跑通过；Backend 全库单进程在 1074 passed
+  时中断，改用正式 CI 分片和有界进程，不能宣称全库通过。
+- 正式 runner 的受影响分片通过：agent-executor-food 115，agent-m-p 237，
+  agent-s-v 709（9 skipped），d-diet 406（3 skipped）；合计 1467 passed/12 skipped。
+  这四片不等于全部后端测试，最终目标 revision 的完整远端 CI 尚未执行。
+- 最终代码 live LLM 再跑通过：orchestrator 5/5、均分 0.94；离线四组全部通过。
+  只从本地既有 `.env-online` 读取三个 TokenPlan 连接项，使用合成数据及内存库，
+  未加载生产数据库/Redis 配置、未打印密钥、未更改披露或同意策略。
+  内存评测库缺少 usage 表的既有警告保留，不作为生产配额审计通过证据。
+- G4：独立只读静态复审上述固定提交，GO；不豁免发布 Gate。
+- System Map/doc-drift、秘密扫描和 `git diff --check` 通过；未新增依赖、API 或 schema。
+- 发布前只读核实：生产仍为 `a1e39bbfab675ac7f52227b33d4673f7bc3ccf87`，
+  `/var/lock/health-app-release` 仍存在。未清锁、重启、部署或改生产健康数据；
+  已向用户询问是否授权按审计流程恢复旧失败发布任务，等待答复。
+
+续作证据：`/tmp/reva-photo-correction-{combined,pg,coverage,final-live-gate}.log`、
+`/tmp/reva-photo-correction-mobile-ci-{main,input,chat,auth,gps}.log`、
+`/tmp/reva-photo-correction-ci-{food-policy,diet-read}.log`。
