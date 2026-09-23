@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | implementing |
-| 当前阶段 | G3 本地回归通过，live LLM Gate 阻断；待 G4 |
+| 状态 | partial / release-blocked |
+| 当前阶段 | G3 本地回归通过，live LLM Gate 阻断；G4 代码安全 GO |
 | Overlay | safety-gate |
 | 研发 Run Ledger | `docs/_generated/harness-runs/a9130cdbd778.jsonl`（本地，不提交） |
 
@@ -36,8 +36,20 @@
   离线 LLM Gate：invariants 12/12、health_agent_core 50/50、轨迹 12/12、goldens 9/9。
   live LLM Gate BLOCK：本机未配置 TokenPlan key，尝试的 OpenAI 路径因
   `ai_recipient_not_disclosed` 被安全闸拒绝（0/5）。没有绕过披露、同意或更改生产配置。
-- G4：待固定提交独立审查。
+- 最终组合回归：1814 passed（含 executor completion、读取适配器与 integration.py），
+  不替代完整发布集成闸。System Map、mobile navigation、doc-drift、秘密扫描通过。
+- G4：独立只读审查 `68500075faf6c8ec2313cf5705ab93ca0e67905f`，裁决代码安全 GO，
+  无阻断性发现；审查者另跑新两组测试 45 passed。不豁免缺失的发布验证。
 - G5/G6：未发布、未操作生产用户记录。
+
+## 可重放证据
+
+本机日志：`/tmp/reva-read-intent-combined.log`、`/tmp/reva-read-intent-pg.log`、
+`/tmp/reva-read-intent-pg-dispatch.log`、`/tmp/reva-read-intent-offline-gate.log`、
+`/tmp/reva-read-intent-llm-gate.log`、`/tmp/reva-read-intent-map.log`。
+临时合成 PostgreSQL 实例已正常停止，未删除数据目录；未使用生产数据库。
+工作流要求的外部 karpathy-guidelines/TDD/verification skills 在本会话不可用，
+已依仓库 RED/GREEN、PostgreSQL、固定提交独立评审规则执行，未调用禁用的 superpowers。
 
 ## 尚未完成
 
