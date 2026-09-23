@@ -92,3 +92,16 @@ Repository rule forbids further external writes while main is red. The format fi
 is local only pending explicit direction to push the CI repair. Original failed
 frontend audit, lease, services, production SHA and credentials remain untouched.
 No controlled retirement, backend deployment, frontend rebuild or OTA has executed.
+
+### Additional CI environment correction
+
+Remote release-invariants passed its ordinary suite but its real Linux npm probe
+failed with `npm: command not found`: setup-node resides below `/opt`, intentionally
+hidden by the unmodified production sandbox. The CI runner now copies its pinned
+Node 22.13.0 toolchain into a root-owned disposable `/usr/local/lib` location and
+exposes the production `/usr/bin/node` and `/usr/bin/npm` interface. This changes
+only the disposable test VM, not the production sandbox or production packages.
+Added CI-contract RED then GREEN; related suite **112 passed, 1 Linux-only skipped**
+(`/tmp/reva-publisher-ci-toolchain-tests.log`). Actual Linux re-verification still
+requires pushing the corrected commit and a new exact CI. `release-tests` is the
+failed dependent aggregate, not an independent production failure.

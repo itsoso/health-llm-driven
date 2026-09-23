@@ -80,6 +80,18 @@ def test_deploy_entry_precedes_env_and_never_reinterprets_normal_frontend_mode()
     assert 'if ! verify_deployed_revision; then' in script
 
 
+def test_linux_ci_installs_pinned_node_outside_private_data_roots():
+    import yaml
+    workflow = yaml.safe_load((Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text())
+    step = next(s for job in workflow["jobs"].values() for s in job.get("steps", [])
+                if s.get("name") == "Verify frontend builder uses a private mount namespace and dynamic UID")
+    script = step["run"]
+    assert '/usr/local/lib/reva-frontend-test-node' in script
+    assert 'v22.13.0' in script
+    assert '/usr/bin/node' in script and '/usr/bin/npm' in script
+    assert script.index('/usr/bin/npm') < script.index('-k native_frontend_sandbox')
+
+
 def test_success_receipt_is_frontend_specific_and_binds_both_revisions():
     m = load()
     value = m.receipt("a" * 40, "b" * 40, "c" * 32, "d" * 40, "FRONTEND_SUCCEEDED", "e" * 64)

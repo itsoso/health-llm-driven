@@ -369,6 +369,18 @@ jobs:
         env:
           REVA_TEST_FRONTEND_SANDBOX: "1"
         run: |
+          # setup-node lives in /opt, which the real production sandbox must hide.
+          # Give this disposable runner the same fixed /usr/bin tool interface;
+          # never weaken the data-root deny list or skip the real npm probe.
+          node_root="$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")"
+          test "$("$node_root/bin/node" --version)" = v22.13.0
+          test ! -e /usr/local/lib/reva-frontend-test-node
+          sudo cp -a "$node_root" /usr/local/lib/reva-frontend-test-node
+          sudo chown -hR root:root /usr/local/lib/reva-frontend-test-node
+          sudo ln -sfn /usr/local/lib/reva-frontend-test-node/bin/node /usr/bin/node
+          sudo ln -sfn /usr/local/lib/reva-frontend-test-node/lib/node_modules/npm/bin/npm-cli.js /usr/bin/npm
+          /usr/bin/node --version
+          /usr/bin/npm --version
           native_dir="$(sudo mktemp -d /root/reva-frontend-test.XXXXXX)"
           sudo --preserve-env=REVA_TEST_FRONTEND_SANDBOX "$(command -v python)" -m pytest --basetemp="$native_dir/pytest" --noconftest --no-cov -q scripts/test_trusted_frontend_rebuild.py -k native_frontend_sandbox
 
