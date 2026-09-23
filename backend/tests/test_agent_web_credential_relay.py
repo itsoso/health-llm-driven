@@ -99,7 +99,7 @@ def _post(client, route, headers, message=MESSAGE):
     })
 
 
-def _assert_owned_write(db, relay, response, caplog):
+def _assert_owned_write(db, relay, response, caplog, expected=None):
     assert response.status_code == 200
     # Fail on the actual internal HTTP boundary, not a mocked token receiver.
     assert relay.calls == [(BATCH_PATH, 200, True)]
@@ -107,9 +107,9 @@ def _assert_owned_write(db, relay, response, caplog):
     definitions = db.query(SupplementDefinition).filter_by(user_id=relay.owner.id).all()
     names = {row.id: row.name for row in definitions}
     records = db.query(SupplementRecord).filter_by(user_id=relay.owner.id).all()
-    assert {(names[row.supplement_id], row.actual_dosage) for row in records} == {
+    assert {(names[row.supplement_id], row.actual_dosage) for row in records} == (expected or {
         ("营养素甲", "1粒"), ("营养素乙", "2片"),
-    }
+    })
     assert db.query(SupplementRecord).filter_by(user_id=relay.other.id).count() == 0
     if response.headers.get("content-type", "").startswith("text/event-stream"):
         events = [json.loads(line.removeprefix("data: "))
@@ -147,6 +147,23 @@ def test_postgres_web_stream_receipt_matches_owned_rows(client, db, relay, caplo
         pytest.skip("requires isolated TEST_DATABASE_URL PostgreSQL")
     response = _post(client, "stream", _headers(relay, sentinel=sentinel))
     _assert_owned_write(db, relay, response, caplog)
+
+
+@pytest.mark.parametrize("route", ["stream", "send"])
+def test_web_qualified_supplement_batch_preserves_exact_products(client, db, relay, caplog, monkeypatch, route):
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    for owner in (relay.owner, relay.other):
+        for name in ("复合维生素B", "MitoQ 心脏版", "Mitoq"):
+            db.add(SupplementDefinition(user_id=owner.id, name=name, dosage="3粒", is_active=True))
+    db.commit()
+    response = _post(client, route, _headers(relay, sentinel=True),
+                     message="记录补剂：1 粒复合VB 1 粒 Mitoq 心脏版")
+    _assert_owned_write(db, relay, response, caplog,
+                        expected={("复合VB", "1粒"), ("MitoQ 心脏版", "1粒")})
+    assert db.query(SupplementDefinition).count() == 7
+    # Abbreviations do not authorize guessing a different existing product.
+    assert all(row.dosage == "3粒" for row in db.query(SupplementDefinition).all()
+               if row.name != "复合VB")
 
 
 @pytest.mark.parametrize("zone", ["UTC", "Asia/Shanghai", "America/New_York"])

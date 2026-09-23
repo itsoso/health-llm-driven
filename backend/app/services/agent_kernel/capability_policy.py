@@ -494,6 +494,9 @@ _SUPPLEMENT_NAME_EVIDENCE_RE = re.compile(
 )
 _SUPPLEMENT_ACRONYM_NAME_RE = re.compile(r"[A-Z][A-Z0-9-]{1,7}")
 _SUPPLEMENT_MAX_UNQUOTED_NAME_LENGTH = 6
+_SUPPLEMENT_PRODUCT_VARIANT_RE = re.compile(
+    r"(?P<base>[\u4e00-\u9fffA-Za-z0-9-]{2,6})[ \t]*(?:心脏|标准)版"
+)
 _SUPPLEMENT_QUOTED_NAME_RE = re.compile(
     r'(?:「([^」]+)」|“([^”]+)”|"([^"]+)"|【([^】]+)】)'
 )
@@ -5295,6 +5298,7 @@ def _supplement_has_unbound_modifier(message: str) -> bool:
 def _supplement_item_has_name_evidence(raw_item: str) -> bool:
     """Recognize a name from the original item without erasing modifiers."""
     candidate = unicodedata.normalize("NFKC", str(raw_item or ""))
+    original_candidate = candidate
     candidate = "".join(
         character
         for character in candidate
@@ -5318,9 +5322,24 @@ def _supplement_item_has_name_evidence(raw_item: str) -> bool:
     if not is_quoted and (
         _SUPPLEMENT_NAME_GRAMMAR_MARKER_RE.search(candidate)
         or _SUPPLEMENT_NAME_ENGLISH_GRAMMAR_RE.search(candidate)
-        or bool(re.search(r"\s", candidate))
     ):
         return False
+    if not is_quoted:
+        variant = _SUPPLEMENT_PRODUCT_VARIANT_RE.fullmatch(candidate)
+        if variant is not None:
+            # A product qualifier is part of its identity, not ingestion
+            # grammar or another undosed item. Validate the base with the
+            # same strict evidence rules below without reopening quote/dose
+            # parsing recursively. Callers keep the FULL product name.
+            if (
+                any(unicodedata.category(c) == "Cf" for c in original_candidate)
+                or _SUPPLEMENT_TIMING_RE.search(original_candidate)
+                or "版" in variant.group("base")
+            ):
+                return False
+            candidate = variant.group("base")
+        elif re.search(r"\s", candidate):
+            return False
     is_acronym = _SUPPLEMENT_ACRONYM_NAME_RE.fullmatch(candidate) is not None
     normalized_candidate = _normalize_entity_name(candidate)
     if len(normalized_candidate) < 2:

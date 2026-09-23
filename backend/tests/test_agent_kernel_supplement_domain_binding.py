@@ -69,6 +69,41 @@ def test_explicit_named_supplement_keeps_existing_authority():
     assert decision.action == "allow"
 
 
+@pytest.mark.parametrize("name,dosage,action", [
+    ("Mitoq 心脏版", "1粒", "allow"),
+    ("MitoQ心脏版", "1粒", "allow"),
+    ("复合VB", "1粒", "allow"),
+    ("Mitoq", "1粒", "block"),
+    ("Mitoq 标准版", "1粒", "block"),
+    ("Mitoq 心脏版", "2粒", "block"),
+    ("复合维生素B", "1粒", "block"),
+    ("NAC", "1粒", "block"),
+])
+def test_qualified_product_authority_does_not_drop_variant_or_change_dose(name, dosage, action):
+    decision = _decision("记录补剂：1 粒复合VB 1 粒 Mitoq 心脏版", "supplement",
+                         supplement_name=name, dosage=dosage)
+    assert decision.action == action
+
+
+@pytest.mark.parametrize("prefix", ["不要", "明天", "替我妈妈", "示例：", "翻译："])
+def test_qualified_product_name_does_not_expand_current_user_authority(prefix):
+    decision = _decision(f"{prefix}记录补剂：1 粒复合VB 1 粒 Mitoq 心脏版", "supplement",
+                         supplement_name="Mitoq 心脏版", dosage="1粒")
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize("name", [
+    "Mitoq 睡\u200b前心脏版", "Mitoq\u200b心脏版",
+    "(Mitoq心脏版)标准版", "「Mitoq心脏版」标准版", "NAC/叶酸 心脏版",
+])
+def test_qualified_product_malformed_identity_cannot_reach_batch_gateway(name):
+    decision = _decision(f"记录补剂：1粒复合VB 1粒{name}", "supplement", items=[
+        {"supplement_name": "复合VB", "dosage": "1粒"},
+        {"supplement_name": name, "dosage": "1粒"},
+    ])
+    assert decision.action == "block"
+
+
 @pytest.mark.parametrize("name, dosage", [
     ("Mitoq", "2粒"),
     ("叶酸", "1粒"),
