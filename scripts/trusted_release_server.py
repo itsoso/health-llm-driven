@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import signal
 import stat
 import subprocess
@@ -631,6 +632,33 @@ def validate_loopback(policy):
         raise LaunchError("loopback identity lacks exact local-only expiring authorization")
 
 
+def laya_private_key():
+    # Reuse the independent sidecar key after an old-backend rollback; the
+    # installer separately verifies its complete receipt and immutable identity.
+    path = Path("/etc/reva-laya/service.env")
+    if not path.exists() and not path.is_symlink():
+        return secrets.token_urlsafe(32)
+    secure_path(path)
+    info = path.stat()
+    if stat.S_IMODE(info.st_mode) != 0o640 or info.st_nlink != 1:
+        raise LaunchError("invalid existing Laya credential metadata")
+    match = re.fullmatch(r"LAYA_API_KEY=([A-Za-z0-9_-]{43,128})\n", path.read_text())
+    if not match:
+        raise LaunchError("invalid existing Laya credential format")
+    return match.group(1)
+
+
+def initial_laya_config(production):
+    # This release provisions the requested first Laya deployment. Explicit
+    # existing decision settings, including the emergency off, always win.
+    if any(re.match(r"\s*(?:export\s+)?DECISION_", line, re.I) for line in production.splitlines()):
+        return ""
+    return ("DECISION_PROVIDER=laya\nDECISION_MODE=on\nDECISION_ADMIN_CONTROL_ENABLED=true\n"
+            "DECISION_BASE_URL=http://127.0.0.1:8092/v1\nDECISION_MODEL=multilingual\n"
+            "DECISION_MIN_CONFIDENCE=0.8\nDECISION_TIMEOUT_SECONDS=2\n"
+            "DECISION_API_KEY=" + laya_private_key() + "\n")
+
+
 def deploy(policy, workspace):
     # Provisioning remains a separate privileged, reviewed installation step.
     _assert_deployment_window(policy)
@@ -648,7 +676,8 @@ def deploy(policy, workspace):
     production = read_production_env()
     lines = [line for line in production.splitlines() if not line.startswith(("DEPLOY_SERVER=", "DEPLOY_PATH="))]
     candidate = workspace / "deployment.env"
-    _write_private(candidate, ("\n".join(lines) + "\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n").encode())
+    _write_private(candidate, ("\n".join(lines) + "\n" + initial_laya_config(production)
+                              + "DEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n").encode())
     env = clean_environment(workspace)
     env.update(DEPLOY_SOURCE_SHA=policy["sha"], DEPLOY_ENV_FILE=str(candidate))
     source = workspace / "source"

@@ -3063,9 +3063,111 @@ REMOTE_KB_DIGEST_WRITE
 }
 
 # 部署后端
+laya_service_command() {
+    printf '/usr/bin/python3.12 -I -S -B %q %q --sha %q --lock %q --token %q --stage %q' \
+        "/var/lib/reva-laya-release/sources/$DEPLOY_EXPECTED_SHA/install.py" "$1" \
+        "$DEPLOY_EXPECTED_SHA" "$REMOTE_RELEASE_LOCK_DIR" "$REMOTE_RELEASE_LOCK_TOKEN" \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR"
+}
+
+prepare_laya_service() {
+    assert_remote_release_lock
+    # Export only reviewed blobs from the exact candidate bundle, before any
+    # writer stops. Keep the existing immutable backend stage inventory intact.
+    ssh "$SERVER" /usr/bin/python3.12 -I -S -B - \
+        "$REMOTE_DEPLOY_BUNDLE" "$DEPLOY_EXPECTED_SHA" \
+        "$REMOTE_RELEASE_LOCK_DIR" "$REMOTE_RELEASE_LOCK_TOKEN" \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR" "$ROLLBACK_CANDIDATE_COMMIT" <<'REMOTE_LAYA_SOURCE'
+import hashlib, json, os, re, stat, subprocess, sys, tempfile
+from pathlib import Path
+bundle, sha, lock, token, stage, old_sha = sys.argv[1:]
+if not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in (sha, old_sha)):
+    raise SystemExit('invalid candidate SHA')
+def private(path, mode):
+    info = Path(path).lstat()
+    if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != mode:
+        raise SystemExit('invalid Laya source metadata')
+    if stat.S_ISREG(info.st_mode) and info.st_nlink != 1:
+        raise SystemExit('invalid Laya source link count')
+private(lock, 0o700)
+private(stage, 0o700)
+for name, expected in [('token', token + '\n'), ('stage', stage + '\n')]:
+    path = Path(lock) / name
+    private(path, 0o600)
+    if path.read_text() != expected:
+        raise SystemExit('Laya source lease mismatch')
+private(bundle, 0o600)
+base = Path('/var/lib/reva-laya-release')
+base.mkdir(mode=0o700, exist_ok=True)
+private(base, 0o700)
+sources = base / 'sources'
+sources.mkdir(mode=0o700, exist_ok=True)
+private(sources, 0o700)
+source = sources / sha
+assets = ('install.py', 'serve.py', 'model-manifest.json', 'requirements.lock', 'reva-laya.service.in')
+if not source.exists():
+    source.mkdir(mode=0o700)
+    env = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1',
+           'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
+    with tempfile.TemporaryDirectory(dir=base, prefix='proof-') as proof:
+        git = ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
+               '-c', 'protocol.file.allow=always', '-c', 'protocol.ext.allow=never']
+        subprocess.run(git + ['init', '--bare', proof], env=env, check=True, stdout=subprocess.DEVNULL)
+        git += ['--git-dir=' + proof]
+        subprocess.run(git + ['fetch', '--no-tags', bundle, 'HEAD'], env=env, check=True, timeout=120,
+                       stdout=subprocess.DEVNULL)
+        head = subprocess.check_output(git + ['rev-parse', 'FETCH_HEAD'], env=env, text=True).strip()
+        if head != sha:
+            raise SystemExit('Laya bundle candidate mismatch')
+        hashes = {}
+        for name in assets:
+            data = subprocess.check_output(git + ['show', '--no-textconv', sha + ':infra/laya/' + name], env=env)
+            path = source / name
+            with path.open('xb') as out:
+                out.write(data)
+                os.fchmod(out.fileno(), 0o400)
+                out.flush()
+                os.fsync(out.fileno())
+            hashes[name] = hashlib.sha256(data).hexdigest()
+        old_probe = subprocess.run(git + ['grep', '-q', '-E',
+            'decision_provider|DECISION_PROVIDER|decide_route|/v1/systemone|127[.]0[.]0[.]1:8092',
+            old_sha, '--', 'backend/app'], env=env)
+        if old_probe.returncode not in (0, 1):
+            raise SystemExit('cannot prove old backend decision integration')
+        with (source / 'source.json').open('x') as out:
+            json.dump({'sha': sha, 'files': hashes, 'old_sha': old_sha,
+                       'old_has_decisions': old_probe.returncode == 0}, out, sort_keys=True)
+            os.fchmod(out.fileno(), 0o400)
+            out.flush()
+            os.fsync(out.fileno())
+        fd = os.open(source, os.O_RDONLY | os.O_DIRECTORY)
+        os.fsync(fd)
+        os.close(fd)
+private(source, 0o700)
+private(source / 'source.json', 0o400)
+proof = json.loads((source / 'source.json').read_text())
+if proof.get('sha') != sha or proof.get('old_sha') != old_sha or set(proof.get('files', {})) != set(assets):
+    raise SystemExit('Laya source proof mismatch')
+for name in assets:
+    private(source / name, 0o400)
+    if hashlib.sha256((source / name).read_bytes()).hexdigest() != proof['files'][name]:
+        raise SystemExit('Laya source hash mismatch')
+os.execve('/usr/bin/python3.12', ['/usr/bin/python3.12', '-I', '-S', '-B', str(source / 'install.py'),
+          'provision', '--sha', sha, '--lock', lock, '--token', token, '--stage', stage],
+          {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/nonexistent', 'LANG': 'C.UTF-8'})
+REMOTE_LAYA_SOURCE
+}
+
+verify_laya_service() {
+    assert_remote_release_lock
+    ssh "$SERVER" "$(laya_service_command verify)"
+}
+
 deploy_backend() {
     local runtime_state_preflight_complete=0
     local remote_dependency_sync
+    local activate_laya_service
+    activate_laya_service="$(laya_service_command activate)"
 
     print_step "部署后端..."
     assert_remote_release_lock_if_acquired
@@ -3084,7 +3186,8 @@ deploy_backend() {
     determine_system_kb_activation_need
     inspect_runtime_state_transaction_before_deploy
     if [[ "$RUNTIME_STATE_ALREADY_FINALIZED" = "1" ]]; then
-        if ! prove_health_evidence_runtime_process_flag false ||
+        if ! verify_laya_service ||
+            ! prove_health_evidence_runtime_process_flag false ||
             ! verify_deployment ||
             ! verify_deployed_revision ||
             ! verify_runtime_only_kb_contract "staged"; then
@@ -3123,6 +3226,11 @@ deploy_backend() {
         if ! sync_env; then
             return 1
         fi
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        if ! prepare_laya_service; then
+            print_error "Laya preparation failed; backend writers unchanged, release evidence retained"
+            return 1
+        fi
         # Arm preservation before the deactivation call: its exact-success
         # path clears delegation internally, so there must be no signal window
         # between live mutation and the caller restoring the preserve state.
@@ -3149,6 +3257,10 @@ deploy_backend() {
             print_error "runtime state 续接预检失败；现场与租约保留"
             return 1
         fi
+        if ! prepare_laya_service; then
+            print_error "Laya resume preparation failed; existing release evidence retained"
+            return 1
+        fi
     fi
     local remote_git_sync
     remote_git_sync="$(remote_git_sync_command)"
@@ -3173,6 +3285,7 @@ deploy_backend() {
         fi && \
         cd $REMOTE_PATH && \
         $remote_git_sync && \
+        $activate_laya_service && \
         if [ '$RUNTIME_STATE_RESUME_PHASE' != 'COMMITTED' ]; then \
             /usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \
                 install '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA' \
@@ -3216,7 +3329,8 @@ deploy_backend() {
         print_error "发布锁与现场保留，请先在服务器确认 transaction terminal state"
         exit 1
     fi
-    if ! prove_health_evidence_runtime_process_flag false ||
+    if ! verify_laya_service ||
+        ! prove_health_evidence_runtime_process_flag false ||
         ! verify_deployed_revision; then
         # ssh rc=0 proves the remote command is terminal, so rollback can now
         # safely own a fresh delegated transaction.
@@ -3338,7 +3452,8 @@ deploy_backend() {
     # restart loop to appear. Re-prove the exact candidate, health, staged KB
     # contract, and a full process-stability window immediately before the
     # durable rollback snapshot is destroyed.
-    if ! prove_health_evidence_runtime_process_flag false ||
+    if ! verify_laya_service ||
+        ! prove_health_evidence_runtime_process_flag false ||
         ! verify_deployment ||
         ! verify_deployed_revision ||
         ! verify_runtime_only_kb_contract "staged"; then

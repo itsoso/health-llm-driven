@@ -4,6 +4,7 @@ from app.api import (
     auth,
     journey,
     admin,
+    admin_decisions,
     admin_system_map,
     admin_registration_invitations,
     admin_observability,
@@ -189,6 +190,7 @@ api_router.include_router(
 api_router.include_router(admin_registration_invitations.router)
 api_router.include_router(admin_observability.router, prefix="/admin/observability", tags=["admin-observability"])
 api_router.include_router(admin_llm.router)
+api_router.include_router(admin_decisions.router)
 api_router.include_router(admin_open_loop.router, prefix="/admin/open-loop", tags=["admin-open-loop"])
 api_router.include_router(admin_wscla.router, prefix="/admin/wscla", tags=["admin-wscla"])
 api_router.include_router(admin_slo.router, prefix="/admin/slo", tags=["admin-slo"])

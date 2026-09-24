@@ -112,6 +112,18 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 `DEPLOY_SOURCE_SHA` 仅选择精确来源的 verify-only 模式，不是授权或绕过检查的开关。
 候选环境从当前生产 `root:health-app 0640` 配置派生，不改变其凭据和权限合同。
 
+2026-09-24 授权的 Laya 首次接入：仅当现行环境完全没有 `DECISION_*` 赋值时，
+受审 publisher 在既有 snapshot/seal 前追加固定 loopback Laya 配置及新生成的
+独立 bearer key；不修改已有业务凭据。数据库全站开关默认关闭，只有 active
+且 is_admin 的 user_id=3 可修改。有显式配置（包括 off、Jev）时原样保留。
+后端旧版本回滚后再次发布可以复用独立 sidecar 的受限凭据文件，安装器仍必须
+验证完整回执、版本及服务身份。Laya 使用独立不可变 CPU 环境；重依赖和模型
+从精确 candidate bundle 的受审源码准备，在停止 writer 前完成。首次 sidecar
+激活须证明精确旧源码没有决策集成，并在旧 backend 健康时完成推理和稳定性验证；
+checkout 后只复验、不重启 sidecar。后端回滚保留闲置 sidecar；不扩展现有
+backend/worker/beat state transaction，也不更改其 sealed-stage artifact 清单。
+未知部分安装、其他 unit、配置漂移或版本升级一律 BLOCK，禁止自动覆盖和删证据。
+
 `check` 在消费前只读验证真实 Git HTTP/1.1 主干可达性、loopback 认证、固定 Python 与
 授权窗口；其成功不是部署证明。随后 backend 与 ios-build 并行，构建不自动上传。
 `claim-build` 必须位于 ios-build job 内每次 vendor create 前，独立短锁不与正在运行的

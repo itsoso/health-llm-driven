@@ -1,0 +1,41 @@
+[Unit]
+Description=Reva local Laya decision service
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=reva-laya
+Group=reva-laya
+ExecStart=@GENERATION@/venv/bin/python -I @GENERATION@/serve.py
+WorkingDirectory=@GENERATION@
+EnvironmentFile=/etc/reva-laya/service.env
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=2 HF_HOME=/var/cache/reva-laya
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+CPUQuota=200%
+MemoryHigh=2500M
+MemoryMax=3G
+TasksMax=128
+LimitNOFILE=1024
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+CapabilityBoundingSet=
+IPAddressDeny=any
+IPAddressAllow=localhost
+CacheDirectory=reva-laya
+InaccessiblePaths=-/opt/health-app -/etc/health-app -/var/lib/health-app -/var/backups/health-app
+
+[Install]
+WantedBy=multi-user.target

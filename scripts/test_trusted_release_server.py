@@ -389,15 +389,29 @@ def test_deploy_uses_only_fixed_command_and_private_authoritative_env(monkeypatc
     monkeypatch.setattr(server.time, "time", lambda: 100)
     monkeypatch.setattr(server, "validate_loopback", lambda policy: None)
     monkeypatch.setattr(server, "read_production_env", lambda: "EXAMPLE_SETTING=fixture\nDEPLOY_SERVER=old\nDEPLOY_PATH=/old\n")
+    monkeypatch.setattr(server, "laya_private_key", lambda: "a" * 43)
     calls = []
     monkeypatch.setattr(server, "execute", lambda args, cwd, env, log: calls.append((args, env)))
     server.deploy(policy(), tmp_path)
     assert calls[-1][0] == ["/bin/bash", str(tmp_path / "source/deploy.sh"), "-b"]
     assert calls[-1][1]["DEPLOY_SOURCE_SHA"] == SHA
     candidate = (tmp_path / "deployment.env").read_text()
-    assert candidate == "EXAMPLE_SETTING=fixture\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n"
+    assert candidate == ("EXAMPLE_SETTING=fixture\n" + server.initial_laya_config("EXAMPLE_SETTING=fixture")
+                         + "DEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n")
     assert stat.S_IMODE((tmp_path / "deployment.env").stat().st_mode) == 0o600
     assert (tmp_path / "bin/ssh").read_text() == '#!/bin/sh\nexec /usr/bin/ssh -F /etc/reva-release/loopback.conf "$@"\n'
+
+
+def test_laya_initial_config_preserves_explicit_provider_or_kill_switch(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "laya_private_key", lambda: "b" * 43)
+    for value in ("DECISION_PROVIDER=jev\n", "DECISION_MODE=off\n", "export DECISION_MODE=off\n", "decision_provider=jev\n"):
+        assert server.initial_laya_config(value) == ""
+    candidate = server.initial_laya_config("DATABASE_URL=existing-private-value\n")
+    assert "existing-private-value" not in candidate
+    assert "DECISION_ADMIN_CONTROL_ENABLED=true\n" in candidate
+    assert "DECISION_PROVIDER=laya\n" in candidate
+    assert "DECISION_API_KEY=" + "b" * 43 in candidate
 
 
 def test_expired_policy_blocks_deploy_even_after_slow_preparation(monkeypatch, tmp_path):

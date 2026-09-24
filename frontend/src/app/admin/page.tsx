@@ -10,6 +10,7 @@ import GarminSyncTab from './components/GarminSyncTab';
 import InvitationTab from './components/InvitationTab';
 import ObservabilityTab from './components/ObservabilityTab';
 import AdminModals from './components/AdminModals';
+import DecisionControlPanel from './components/DecisionControlPanel';
 
 interface AdminUser {
   id: number;
@@ -372,6 +373,8 @@ export default function AdminPage() {
           <h1 className="text-3xl font-bold text-white mb-2">🛡️ 管理后台</h1>
           <p className="text-purple-200">管理用户、Garmin同步和邀请码</p>
         </div>
+
+        {user?.id === 3 && user.is_admin && <DecisionControlPanel />}
 
         {/* Tab Navigation */}
         <div className="flex gap-2 mb-6">

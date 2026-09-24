@@ -29,7 +29,9 @@ describe('AdminPage access gate', () => {
             new_users_today: 0,
             new_users_week: 0,
           }
-        : { users: [], total: 0, page: 1, page_size: 15 },
+        : path === '/admin/decisions'
+          ? { enabled: false, revision: 0, effective_mode: 'off', configured: true, provider: 'laya', updated_at: '2026-09-24T00:00:00Z' }
+          : { users: [], total: 0, page: 1, page_size: 15 },
     }));
   });
 
@@ -60,5 +62,13 @@ describe('AdminPage access gate', () => {
     fireEvent.click(screen.getByRole('button', { name: /系统地图/ }));
 
     expect(mocks.push).toHaveBeenCalledWith('/admin/system-map');
+    expect(screen.queryByRole('heading', { name: '意图决策服务' })).not.toBeInTheDocument();
+  });
+
+  it('shows decision control only to administrator three', () => {
+    mocks.useAuth.mockReturnValue({ user: { id: 3, is_admin: true }, isAuthenticated: true, isLoading: false });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><AdminPage /></QueryClientProvider>);
+    expect(screen.getByRole('heading', { name: '意图决策服务' })).toBeInTheDocument();
   });
 });

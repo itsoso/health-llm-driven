@@ -929,6 +929,57 @@ async def test_analysis_turn_keeps_quality_model(db, auth_user_and_headers, monk
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["jev", "laya", "systemone"])
+@pytest.mark.parametrize("mode", ["shadow", "on"])
+async def test_systemone_decision_reaches_real_agent_route(
+    db, auth_user_and_headers, monkeypatch, provider, mode,
+):
+    """Changing providers exercises the same agent route and consented adapter."""
+    import httpx
+    from app.services.decisions import SystemOneProvider
+    from app.services.decisions import routing
+    from app.services.decisions.config import configured_decision
+
+    user, _ = auth_user_and_headers
+    monkeypatch.setattr(ae.settings, "decision_mode", mode)
+    monkeypatch.setattr(ae.settings, "decision_provider", provider)
+    monkeypatch.setattr(ae.settings, "decision_base_url", "http://127.0.0.1:8092/v1")
+    monkeypatch.setattr(ae.settings, "decision_model", "test-decisions")
+    monkeypatch.setattr(ae.settings, "decision_api_key", "test-only")
+    monkeypatch.setattr(ae.settings, "staged_response_mode", "off")
+    calls = []
+
+    def handle(req):
+        body = json.loads(req.content)
+        calls.append(body)
+        answers = {}
+        for name, question in body["questions"].items():
+            choice = "high_stakes" if name == "answer_tier" else "health_query"
+            answers[name] = {"type": "choice", "choice": choice, "confidence": .99,
+                "probabilities": {k: int(k == choice) for k in question["criteria"]}}
+        return httpx.Response(200, json={"model": "test-decisions", "answers": answers,
+                                        "usage": {"input_tokens": 40, "output_tokens": 0}})
+
+    monkeypatch.setattr(routing, "provider_from_settings", lambda: SystemOneProvider(
+        configured_decision(), transport=httpx.MockTransport(handle)))
+    monkeypatch.setattr("app.services.llm.task_routing.pick_model_id_by_tier",
+                        lambda tier, **kw: "qwen3.7-max" if tier == "high_stakes" else "qwen3.7-plus")
+    executor = AgentExecutor(db)
+    _wire_common(executor, monkeypatch, lambda model_id: _FakeProvider(model_id))
+    monkeypatch.setattr("app.services.llm.factory.create_provider_for_user",
+                        lambda uid, db, **kw: _FakeProvider("qwen3.7-plus"))
+    events = await _run(executor, "昨晚睡得怎样，今天是否适合锻炼？", user_id=user.id)
+    done = events[-1]["data"]
+    assert len(calls) == 1
+    assert calls[0]["model"] == "test-decisions"
+    assert done["model"] == ("qwen3.7-max" if mode == "on" else "qwen3.7-plus")
+    assert done["decision_routing"]["provider"] == provider
+    assert done["decision_routing"]["input_tokens"] == 40
+    assert done["decision_routing"]["effective_tier"] == ("high_stakes" if mode == "on" else "balanced")
+    assert done["write_receipts"] == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("message", "expected_tier", "expected_model"),
     (

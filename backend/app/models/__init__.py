@@ -1,5 +1,6 @@
 """数据模型"""
 from app.models.user import User
+from app.models.decision_control import DecisionControl
 from app.models.phone_auth import PhoneAuthCode
 from app.models.registration_invitation import (
     PhoneRegistrationGrant,
