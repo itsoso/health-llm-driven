@@ -22,6 +22,49 @@ def test_terminal_is_separate_from_success_or_unchanged():
     assert m.LEASE_STATE == "ABSENT_CAUSE_UNKNOWN"
 
 
+def test_archived_release_stage_uses_original_fixed_path(tmp_path):
+    m = module()
+    original = {"uid": 0, "gid": 0, "mode": 0o600, "sha256": "bound", "inode": 1, "device": 2}
+    archived = {**original, "inode": 3, "device": 4}
+    old = {"snapshot": {"stage": {"stage": original}}}
+    b = SimpleNamespace(STATE=tmp_path, _read_json=lambda path: {
+        "archives": {"lease": {"stage": archived}}})
+    c = SimpleNamespace(_file=lambda _b, path: (
+        b"/tmp/health-app-backup-preflight-1010713-1790242230\n", archived))
+    assert m.archived_release_stage(b, c, old) == Path(
+        "/tmp/health-app-backup-preflight-1010713-1790242230")
+
+
+@pytest.mark.parametrize("raw", [b"/var/lib/reva-release/archive\n", b"/tmp/operator\n", b"\xff\n"])
+def test_archived_release_stage_rejects_non_production_paths(tmp_path, raw):
+    m = module()
+    original = {"uid": 0, "gid": 0, "mode": 0o600, "sha256": "bound", "inode": 1, "device": 2}
+    archived = {**original, "inode": 3, "device": 4}
+    old = {"snapshot": {"stage": {"stage": original}}}
+    b = SimpleNamespace(STATE=tmp_path, _read_json=lambda path: {
+        "archives": {"lease": {"stage": archived}}})
+    c = SimpleNamespace(_file=lambda _b, path: (raw, archived))
+    with pytest.raises(m.RetirementError, match="stage path invalid"):
+        m.archived_release_stage(b, c, old)
+
+
+@pytest.mark.parametrize("damage", ["archive_identity", "original_content"])
+def test_archived_release_stage_rejects_identity_drift(tmp_path, damage):
+    m = module()
+    original = {"uid": 0, "gid": 0, "mode": 0o600, "sha256": "bound", "inode": 1, "device": 2}
+    archived = {**original, "inode": 3, "device": 4}
+    actual = archived if damage == "original_content" else {**archived, "sha256": "changed"}
+    if damage == "original_content":
+        original = {**original, "sha256": "different-original"}
+    old = {"snapshot": {"stage": {"stage": original}}}
+    b = SimpleNamespace(STATE=tmp_path, _read_json=lambda path: {
+        "archives": {"lease": {"stage": archived}}})
+    c = SimpleNamespace(_file=lambda _b, path: (
+        b"/tmp/health-app-backup-preflight-1010713-1790242230\n", actual))
+    with pytest.raises(m.RetirementError, match="archived release stage"):
+        m.archived_release_stage(b, c, old)
+
+
 @pytest.mark.parametrize("session_at", [1, 2])
 def test_idle_ssh_session_blocks_before_mutation_or_after_revocation(monkeypatch, tmp_path, session_at):
     m = module()

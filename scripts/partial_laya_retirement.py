@@ -189,6 +189,28 @@ def baseline(b):
                         "closure": b._recovery_file_identity(archive / "intent.json")}
 
 
+def archived_release_stage(b, c, intent):
+    """Recover the original fixed stage path from the immutable lease archive."""
+    root = b.STATE / "unchanged-release-closures" / BASELINE
+    path = root / "lease" / "stage"
+    raw, actual = c._file(b, path)
+    completed = b._read_json(root / "completed.json")
+    expected = completed.get("archives", {}).get("lease", {}).get("stage")
+    if actual != expected:
+        raise RetirementError("archived release stage binding differs")
+    original = intent.get("snapshot", {}).get("stage", {}).get("stage")
+    if (not isinstance(original, dict)
+            or any(actual.get(key) != original.get(key) for key in ("uid", "gid", "mode", "sha256"))):
+        raise RetirementError("archived release stage differs from original")
+    try:
+        value = raw.decode("ascii")
+    except UnicodeDecodeError:
+        raise RetirementError("archived release stage path invalid") from None
+    if re.fullmatch(r"/tmp/health-app-backup-preflight-[1-9][0-9]*-[1-9][0-9]*\n", value) is None:
+        raise RetirementError("archived release stage path invalid")
+    return Path(value.rstrip("\n"))
+
+
 def archive_paths():
     return (BASE / "retired" / FAILED / GENERATION, LAYA / "retired" / FAILED / "install.json")
 
@@ -289,7 +311,7 @@ class Adapter:
         self.module.require_false(p._file(p.production / "backend/.env", 0o640)[0])
         # Fixed historical stage path is data only; it need not exist. No lease
         # method or candidate transaction is invoked from the orphan profile.
-        prior_stage = self.b.STATE / "unchanged-release-closures" / BASELINE / "stage"
+        prior_stage = archived_release_stage(self.b, self.c, old)
         tx = p.runtime.ReleaseTransaction(p.runtime.production_layout(prior_stage), p.systemd)
         p._absent(tx.layout.transaction_root, tx._preparing_root())
         if p._file(tx._terminal_marker_path())[1] != old["snapshot"]["terminal"]:
