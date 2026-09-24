@@ -25,7 +25,7 @@
     {"label":"d-dedao","paths":["tests/test_dedao*.py","tests/test_down_dedao*.py"],"estimated_seconds":22.392,"scheduling_seconds":28.547},
     {"label":"d-diet","paths":["tests/test_diet*.py"],"estimated_seconds":85.007,"scheduling_seconds":77.745},
     {"label":"d-data-device","paths":["tests/test_daily*.py","tests/test_data*.py","tests/test_day*.py","tests/test_desktop*.py","tests/test_device*.py"],"estimated_seconds":23.193,"scheduling_seconds":29.076},
-    {"label":"d-rest","paths":["tests/test_dependency*.py","tests/test_deploy*.py","tests/test_deprescribing*.py","tests/test_deterministic*.py","tests/test_doc*.py","tests/test_dogfood*.py","tests/test_dossier*.py","tests/test_drug*.py","tests/test_dynamic*.py"],"estimated_seconds":11.743,"scheduling_seconds":22.175},
+    {"label":"d-rest","paths":["tests/test_decision*.py","tests/test_dependency*.py","tests/test_deploy*.py","tests/test_deprescribing*.py","tests/test_deterministic*.py","tests/test_doc*.py","tests/test_dogfood*.py","tests/test_dossier*.py","tests/test_drug*.py","tests/test_dynamic*.py"],"estimated_seconds":11.743,"scheduling_seconds":22.175},
     {"label":"e","paths":["tests/test_e*.py"],"estimated_seconds":64.744,"scheduling_seconds":64.118},
     {"label":"f","paths":["tests/test_f*.py"],"estimated_seconds":17.885,"scheduling_seconds":29.195},
     {"label":"g","paths":["tests/test_g*.py"],"estimated_seconds":132.097,"scheduling_seconds":101.137},
