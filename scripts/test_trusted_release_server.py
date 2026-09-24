@@ -274,6 +274,51 @@ def test_source_executor_hash_mismatch_prevents_running_repo_gate(monkeypatch, t
     assert not any("-I" in args for args in calls)
 
 
+def test_prepared_source_bundle_contains_candidate_and_previous_history(monkeypatch, tmp_path):
+    """A real bundle must import into Laya's empty proof repository."""
+    server = setup_state(monkeypatch, tmp_path)
+    origin = tmp_path / "origin"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    env = server.clean_environment(workspace)
+    env.update(GIT_AUTHOR_NAME="Release test", GIT_AUTHOR_EMAIL="test@example.invalid",
+               GIT_COMMITTER_NAME="Release test", GIT_COMMITTER_EMAIL="test@example.invalid")
+
+    def git(*args, cwd=None):
+        return subprocess.run(["/usr/bin/git", *map(str, args)], cwd=cwd, env=env,
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    git("init", "-b", "main", origin)
+    (origin / "scripts").mkdir()
+    (origin / "scripts/trusted_release_server.py").write_bytes(b"audited")
+    (origin / "scripts/trusted_release_gate.py").write_text("pass")
+    git("add", "scripts", cwd=origin)
+    git("commit", "-m", "previous production", cwd=origin)
+    previous = git("rev-parse", "HEAD", cwd=origin)
+    (origin / "candidate.txt").write_text("candidate")
+    git("add", "candidate.txt", cwd=origin)
+    git("commit", "-m", "candidate", cwd=origin)
+    candidate = git("rev-parse", "HEAD", cwd=origin)
+
+    def execute(args, cwd, env, log):
+        # Only substitute the transport in this test; exercise the real clone,
+        # checkout, bundle creation and empty-repository import semantics.
+        args = [origin.as_uri() if arg == server.ORIGIN else
+                "protocol.file.allow=always" if arg == "protocol.file.allow=never" else arg
+                for arg in args]
+        subprocess.run(args, cwd=cwd, env=env, check=True, capture_output=True)
+
+    monkeypatch.setattr(server, "execute_preparation", execute)
+    server.prepare_source(policy(sha=candidate, executor_sha256=hashlib.sha256(b"audited").hexdigest()), workspace)
+    bundle = tmp_path / "candidate.bundle"
+    git("bundle", "create", bundle, "HEAD", cwd=workspace / "source")
+    proof = tmp_path / "proof.git"
+    git("init", "--bare", proof)
+    git("--git-dir=" + str(proof), "fetch", "--no-tags", bundle, "HEAD")
+    assert git("--git-dir=" + str(proof), "rev-parse", "FETCH_HEAD") == candidate
+    assert git("--git-dir=" + str(proof), "show", previous + ":scripts/trusted_release_server.py") == "audited"
+
+
 def test_uncertain_preparation_process_cannot_authorize_retirement(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
     def fail():
@@ -389,15 +434,29 @@ def test_deploy_uses_only_fixed_command_and_private_authoritative_env(monkeypatc
     monkeypatch.setattr(server.time, "time", lambda: 100)
     monkeypatch.setattr(server, "validate_loopback", lambda policy: None)
     monkeypatch.setattr(server, "read_production_env", lambda: "EXAMPLE_SETTING=fixture\nDEPLOY_SERVER=old\nDEPLOY_PATH=/old\n")
+    monkeypatch.setattr(server, "laya_private_key", lambda: "a" * 43)
     calls = []
     monkeypatch.setattr(server, "execute", lambda args, cwd, env, log: calls.append((args, env)))
     server.deploy(policy(), tmp_path)
     assert calls[-1][0] == ["/bin/bash", str(tmp_path / "source/deploy.sh"), "-b"]
     assert calls[-1][1]["DEPLOY_SOURCE_SHA"] == SHA
     candidate = (tmp_path / "deployment.env").read_text()
-    assert candidate == "EXAMPLE_SETTING=fixture\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n"
+    assert candidate == ("EXAMPLE_SETTING=fixture\n" + server.initial_laya_config("EXAMPLE_SETTING=fixture")
+                         + "DEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n")
     assert stat.S_IMODE((tmp_path / "deployment.env").stat().st_mode) == 0o600
     assert (tmp_path / "bin/ssh").read_text() == '#!/bin/sh\nexec /usr/bin/ssh -F /etc/reva-release/loopback.conf "$@"\n'
+
+
+def test_laya_initial_config_preserves_explicit_provider_or_kill_switch(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "laya_private_key", lambda: "b" * 43)
+    for value in ("DECISION_PROVIDER=jev\n", "DECISION_MODE=off\n", "export DECISION_MODE=off\n", "decision_provider=jev\n"):
+        assert server.initial_laya_config(value) == ""
+    candidate = server.initial_laya_config("DATABASE_URL=existing-private-value\n")
+    assert "existing-private-value" not in candidate
+    assert "DECISION_ADMIN_CONTROL_ENABLED=true\n" in candidate
+    assert "DECISION_PROVIDER=laya\n" in candidate
+    assert "DECISION_API_KEY=" + "b" * 43 in candidate
 
 
 def test_expired_policy_blocks_deploy_even_after_slow_preparation(monkeypatch, tmp_path):

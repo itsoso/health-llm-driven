@@ -11961,6 +11961,7 @@ class AgentExecutor:
         # this policy may be upgraded later; explicit choices stay owned by the
         # user except that high-stakes turns cannot use a fast answer model.
         self._staged_response_mode = "off"
+        self._decision_route = None
         self._staged_answer_task_tier: Optional[str] = None
         self._staged_answer_model_selected = False
         self._staged_answer_would_model_id: Optional[str] = None
@@ -13095,8 +13096,15 @@ class AgentExecutor:
         )
         if summary_floor and tier == "casual":
             tier = "balanced"
-        quality_required = tier == "high_stakes" or summary_floor
-        if self._staged_response_mode == "off" and not quality_required:
+        decision_applies = bool(
+            self._decision_route is not None
+            and self._decision_route.mode == "on"
+            and self._decision_route.status == "accepted"
+        )
+        quality_required = tier == "high_stakes" or summary_floor or (
+            decision_applies and tier != "casual"
+        )
+        if self._staged_response_mode == "off" and not quality_required and not decision_applies:
             return
         self._staged_answer_task_tier = tier
 
@@ -13161,7 +13169,7 @@ class AgentExecutor:
                 )
         self._staged_answer_would_model_id = selected
         if (
-            (self._staged_response_mode == "on" or quality_required)
+            (self._staged_response_mode == "on" or quality_required or decision_applies)
             and self._request_model_id is None
             and selected
         ):
@@ -13181,8 +13189,14 @@ class AgentExecutor:
 
     def _maybe_escalate_staged_answer_model(self) -> None:
         """Upgrade an auto-selected answer model after deep analysis is invoked."""
+        decision_route = getattr(self, "_decision_route", None)
+        decision_applied = bool(
+            decision_route is not None
+            and decision_route.mode == "on"
+            and decision_route.status == "accepted"
+        )
         if (
-            self._staged_response_mode != "on"
+            (self._staged_response_mode != "on" and not decision_applied)
             or not self._staged_answer_model_selected
             or not self._turn_invoked_deep_analysis
             or self._staged_answer_task_tier == "high_stakes"
@@ -16296,9 +16310,10 @@ class AgentExecutor:
         self._turn_synthesis_skip_thinking = _is_fast_eligible_turn(
             message or "", has_images=bool(images), has_file=bool(file_base64)
         )
+        self._decision_route = None
         staged_preclassified_tier: Optional[str] = None
         staged_preclassification_failed = False
-        if self._staged_response_mode != "off":
+        if self._staged_response_mode != "off" or settings.decision_mode != "off":
             try:
                 from app.services.llm.task_routing import classify_answer_task_tier
 
@@ -16313,6 +16328,18 @@ class AgentExecutor:
                     "[agent_executor] staged preclassification unavailable; "
                     "disable fast route and use quality floor: %s",
                     exc,
+                )
+        if settings.decision_mode != "off":
+            from app.services.decisions.routing import decide_route
+
+            self._decision_route = await decide_route(
+                message or "", user_id=user_id,
+                baseline_tier=staged_preclassified_tier or "high_stakes",
+            )
+            staged_preclassified_tier = self._decision_route.effective_tier
+            if self._decision_route.status in {"fallback", "abstained"}:
+                self._record_model_fallback_reason(
+                    f"decision_{self._decision_route.reason}"
                 )
         if (
             self._staged_response_mode == "on"
@@ -16755,6 +16782,10 @@ class AgentExecutor:
         # 字节稳定,turn 内容落在增长尾部,天然不破坏前缀匹配。块文本逐字保留。
         turn_context_parts: List[str] = []
         turn_context_parts.append(self._agent_kernel_time_context(client_time_context))
+        if self._decision_route is not None:
+            decision_hint = self._decision_route.prompt_hint()
+            if decision_hint:
+                turn_context_parts.append(decision_hint)
         clinician_turn_guidance = _clinician_turn_prompt_guidance(
             clinician_turn_decision
         )
@@ -19640,6 +19671,7 @@ class AgentExecutor:
                 "answer_model": answer_model,
                 "tool_models": tool_models,
                 "fallback_reasons": fallback_reasons,
+                **({"decision_routing": self._decision_route.metadata()} if self._decision_route is not None else {}),
                 **(
                     {
                         "staged_response_mode": self._staged_response_mode,
@@ -19737,6 +19769,7 @@ class AgentExecutor:
                 "answer_model": answer_model,
                 "tool_models": tool_models,
                 "fallback_reasons": fallback_reasons,
+                **({"decision_routing": self._decision_route.metadata()} if self._decision_route is not None else {}),
                 **(
                     {
                         "staged_response_mode": self._staged_response_mode,

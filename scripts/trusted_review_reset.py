@@ -26,6 +26,7 @@ from pathlib import Path
 STATE = Path("/var/lib/reva-release")
 PRODUCTION = Path("/opt/health-app")
 SYSTEM_PYTHON = Path("/usr/bin/python3.12")
+NODE_TOOLCHAIN = Path("/opt/node-toolchains/node-v22.19.0-linux-x64")
 MAX_RUNTIME_ENTRIES = 100000
 SYSTEM_SEARCH_PATHS = frozenset({
     "/usr/lib/python312.zip", "/usr/lib/python3.12", "/usr/lib/python3.12/lib-dynload",
@@ -256,6 +257,30 @@ def _validate_python_link(path, venv, server):
     server.secure_path(SYSTEM_PYTHON)
 
 
+def _validate_node_link(path, venv, server):
+    expected = NODE_TOOLCHAIN / "bin" / path.name
+    info = path.lstat()
+    if (path.parent != venv / "bin" or path.name not in {"node", "npm"}
+            or not stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+            or info.st_nlink != 1 or Path(os.readlink(path)) != expected):
+        raise ResetError("venv Node link differs from fixed toolchain")
+    server.secure_path(NODE_TOOLCHAIN, directory=True)
+    server.secure_path(NODE_TOOLCHAIN / "bin", directory=True)
+    if path.name == "node":
+        server.secure_path(expected)
+        return
+    npm_info = expected.lstat()
+    npm_target = Path("../lib/node_modules/npm/bin/npm-cli.js")
+    if (not stat.S_ISLNK(npm_info.st_mode) or npm_info.st_uid != 0 or npm_info.st_gid != 0
+            or npm_info.st_nlink != 1 or Path(os.readlink(expected)) != npm_target):
+        raise ResetError("fixed npm launcher differs")
+    cli = (expected.parent / npm_target).resolve()
+    if cli != NODE_TOOLCHAIN / "lib/node_modules/npm/bin/npm-cli.js":
+        raise ResetError("fixed npm launcher escapes toolchain")
+    server.secure_path(cli.parent, directory=True)
+    server.secure_path(cli)
+
+
 def _validate_venv(server):
     venv = PRODUCTION / "backend/venv"
     server.secure_path(venv, directory=True)
@@ -281,6 +306,8 @@ def _validate_venv(server):
         if stat.S_ISLNK(info.st_mode):
             if path.parent == venv / "bin" and path.name in {"python", "python3", "python3.12"}:
                 _validate_python_link(path, venv, server)
+            elif path.parent == venv / "bin" and path.name in {"node", "npm"}:
+                _validate_node_link(path, venv, server)
             elif (path == venv / "lib64" and os.readlink(path) == "lib"
                     and info.st_uid == 0 and info.st_gid == 0 and info.st_nlink == 1):
                 server.secure_path(venv / "lib", directory=True)

@@ -187,6 +187,8 @@ def _application_probes(production_sha, recovery_sha):
 
 
 def recover_services(proof, audit, recovery_sha, expected_hash=None):
+    if os.path.lexists(STATE / "unchanged-release-closures" / proof.failed_sha):
+        raise RecoveryError("unchanged release closure already attempted")
     if os.path.lexists(audit):
         raise RecoveryError("recovery already attempted; retry forbidden")
     before = proof.snapshot()
@@ -262,8 +264,11 @@ def main():
         parser.add_argument("--production-sha", required=True)
         parser.add_argument("--lease-token-stdin", required=True, action="store_true")
         parser.add_argument("--evidence-sha256")
-        parser.add_argument("--retire-restored", action="store_true",
+        retirement = parser.add_mutually_exclusive_group()
+        retirement.add_argument("--retire-restored", action="store_true",
                             help="Separately close an already restored failed release; never redeploy")
+        retirement.add_argument("--retire-unchanged", action="store_true",
+                                help="Close a failed Laya preparation with all old services unchanged")
         args = parser.parse_args()
         for sha in (args.sha, args.failed_sha, args.production_sha):
             if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
@@ -287,7 +292,8 @@ def main():
             bootstrap._assert_original_lock(lock, fd)
             bootstrap._recovery_process_proof()
             proof_module = _load(source / "scripts/contained_recovery_proof.py", "contained_proof")
-            underlying = proof_module.RecoveryProof(source, bootstrap, server, args.failed_sha, args.production_sha, token)
+            underlying = proof_module.RecoveryProof(source, bootstrap, server, args.failed_sha, args.production_sha, token,
+                                                   unchanged=args.retire_unchanged)
             class LockedProof:
                 failed_sha = args.failed_sha
                 production_sha = args.production_sha
@@ -312,11 +318,15 @@ def main():
                     return self.invoke("running_snapshot")
 
             proof = LockedProof()
-            if args.retire_restored:
+            if (not args.retire_unchanged
+                    and os.path.lexists(STATE / "unchanged-release-closures" / args.failed_sha)):
+                raise RecoveryError("unchanged release closure already attempted")
+            if args.retire_restored or args.retire_unchanged:
                 module_path = source / "scripts/contained_release_retirement.py"
                 bootstrap.secure(module_path)
                 closure = _load(module_path, "contained_closure")
-                adapter = closure.ClosureAdapter(underlying, bootstrap, sys.modules[__name__], args.sha, proof.check)
+                adapter = closure.ClosureAdapter(underlying, bootstrap, sys.modules[__name__], args.sha, proof.check,
+                                                 unchanged=args.retire_unchanged)
                 result = closure.close_transaction(adapter, args.evidence_sha256)
                 print(json.dumps(result, sort_keys=True))
                 return 0

@@ -112,6 +112,18 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 `DEPLOY_SOURCE_SHA` 仅选择精确来源的 verify-only 模式，不是授权或绕过检查的开关。
 候选环境从当前生产 `root:health-app 0640` 配置派生，不改变其凭据和权限合同。
 
+2026-09-24 授权的 Laya 首次接入：仅当现行环境完全没有 `DECISION_*` 赋值时，
+受审 publisher 在既有 snapshot/seal 前追加固定 loopback Laya 配置及新生成的
+独立 bearer key；不修改已有业务凭据。数据库全站开关默认关闭，只有 active
+且 is_admin 的 user_id=3 可修改。有显式配置（包括 off、Jev）时原样保留。
+后端旧版本回滚后再次发布可以复用独立 sidecar 的受限凭据文件，安装器仍必须
+验证完整回执、版本及服务身份。Laya 使用独立不可变 CPU 环境；重依赖和模型
+从精确 candidate bundle 的受审源码准备，在停止 writer 前完成。首次 sidecar
+激活须证明精确旧源码没有决策集成，并在旧 backend 健康时完成推理和稳定性验证；
+checkout 后只复验、不重启 sidecar。后端回滚保留闲置 sidecar；不扩展现有
+backend/worker/beat state transaction，也不更改其 sealed-stage artifact 清单。
+未知部分安装、其他 unit、配置漂移或版本升级一律 BLOCK，禁止自动覆盖和删证据。
+
 `check` 在消费前只读验证真实 Git HTTP/1.1 主干可达性、loopback 认证、固定 Python 与
 授权窗口；其成功不是部署证明。随后 backend 与 ios-build 并行，构建不自动上传。
 `claim-build` 必须位于 ios-build job 内每次 vendor create 前，独立短锁不与正在运行的
@@ -238,6 +250,24 @@ intent 仅存其摘要。普通 rotate 经 protected stdin 验证该回执、完
 供未来历史核验；不得把它放在 argv、日志或用户消息。新发布仍须全部原有闸。
 任意中断、未知结果或不完整收尾都保留现场并 BLOCK；不得重跑收尾、换 ID、补发回执
 或将可见 completed 文件当作成功授权。收尾失败不擅自停掉已恢复的健康服务。
+
+若后端发布在 checkout、停服和 Laya 安装前失败，服务从原 lease 创建前一直保持旧
+revision、零重启且健康，可由新受审、精确 CI 绿色的 canonical staging 使用互斥的
+`--retire-unchanged` 模式收尾。该模式不是恢复或部署：live env 必须逐字等于 sealed
+rollback，旧 runtime terminal 必须仍为旧 SHA 的 COMMITTED，preparing/reap/activation
+状态均不存在；四个 unit 的 activation 和全部 cgroup 进程启动身份必须早于原 lease，
+并跨稳定窗口保持不变。候选 env 仍须由 sealed manifest 绑定，但不得安装。
+
+Laya 只接受两种固定 root-only 未安装状态：`sources/<failed-sha>` 空目录，或仅含受审
+asset allowlist 与 `source.json` 的完整导出目录。完整导出必须绑定 failed/production SHA、
+精确 manifest，且每个文件逐字节等于 failed canonical source；任意多项、缺项或漂移都
+BLOCK。`sources/` 中更早的 sibling 只可保留已由完整 retirement history 复核的
+CLOSED_UNCHANGED_RELEASE 空目录，其 inode/owner/mode 必须等于原 closure snapshot；
+未知 SHA、未关闭 sibling 或新增文件一律 BLOCK。任何账号、组、unit、进程、配置、
+generation 或 install receipt 出现仍 BLOCK。入口保留原 NEEDS_OPERATOR、日志、stage
+和已验证源目录，以独立 `unchanged-release-closures/<failed-sha>` 记录真实状态，
+复用同 inode lease 归档和精确双身份撤权，终态只记 CLOSED_UNCHANGED_RELEASE。只有最终
+fsync 后才返回受保护回执供后续 rotate 验证；不得补造 RESTORED 回执或重跑失败 SHA。
 
 #### 审核账号维护入口
 

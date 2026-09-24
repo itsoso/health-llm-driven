@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 import asyncio
 import inspect
+import hashlib
 import json
 import logging
 from urllib.parse import urlsplit
@@ -76,6 +77,12 @@ def bind_ai_cookie_subject(*, missing: bool) -> None:
 
 def is_disclosed_destination(destination: str | None) -> bool:
     try:
+        from app.services.decisions.config import decision_disclosure
+        recipient = decision_disclosure()
+        if recipient is not None:
+            from app.services.decisions.config import configured_decision
+            if destination == configured_decision().endpoint:
+                return True
         parsed = urlsplit(destination or "")
         return (parsed.scheme in {"https", "wss"} and parsed.hostname in _ALLOWED_HOSTS
                 and not parsed.username and not parsed.password and parsed.port in {None, 443})
@@ -123,18 +130,31 @@ def _settings_dict(value) -> dict:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _disclosure() -> tuple[str, list[dict]]:
+    """Opaque policy revision binds grants to the actual remote recipient."""
+    from app.services.decisions.config import decision_disclosure
+    recipient = decision_disclosure()
+    if recipient is None:
+        return POLICY_VERSION, RECIPIENTS
+    fingerprint = hashlib.sha256(
+        json.dumps(recipient, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()[:16]
+    return f"{POLICY_VERSION}.decision-{fingerprint}", [*RECIPIENTS, recipient]
+
+
 def get_ai_consent(db: Session, user_id: int) -> dict:
     # Select the scalar column: an ORM identity-map copy could predate withdrawal.
     row = db.query(UserProfile.privacy_settings).filter(UserProfile.user_id == user_id).first()
     record = _settings_dict(row[0] if row else None).get(CONSENT_KEY, {})
     record = record if isinstance(record, dict) else {}
-    accepted = record.get("accepted") is True and record.get("policy_version") == POLICY_VERSION
+    policy_version, recipients = _disclosure()
+    accepted = record.get("accepted") is True and record.get("policy_version") == policy_version
     return {
         "subject_id": user_id,
-        "policy_version": POLICY_VERSION,
+        "policy_version": policy_version,
         "accepted": accepted,
         "accepted_at": record.get("accepted_at") if accepted else None,
-        "recipients": RECIPIENTS,
+        "recipients": recipients,
         "data_types": DATA_TYPES,
         "purpose": PURPOSE,
     }
@@ -156,7 +176,8 @@ def merge_public_privacy(current, submitted) -> dict:
 
 
 def update_ai_consent(db: Session, user_id: int, accepted: bool, policy_version: str) -> dict:
-    if accepted and policy_version != POLICY_VERSION:
+    current_version, recipients = _disclosure()
+    if accepted and policy_version != current_version:
         raise HTTPException(status_code=409, detail={"code": "ai_consent_policy_changed", "message": "AI 数据使用说明已更新，请重新阅读后确认"})
     lock_consent_owner(db, user_id)
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).populate_existing().first()
@@ -165,10 +186,10 @@ def update_ai_consent(db: Session, user_id: int, accepted: bool, policy_version:
         db.add(profile)
     now = datetime.now(UTC).isoformat()
     privacy = _settings_dict(profile.privacy_settings)
-    record = {"accepted": accepted, "policy_version": POLICY_VERSION, "accepted_at": now if accepted else None, "updated_at": now}
+    record = {"accepted": accepted, "policy_version": current_version, "accepted_at": now if accepted else None, "updated_at": now}
     privacy[CONSENT_KEY] = record
     profile.privacy_settings = privacy
-    db.add(AgentAuditLog(user_id=user_id, agent_type="ai_consent", action="grant" if accepted else "revoke", result_detail={**record, "recipients": RECIPIENTS, "data_types": DATA_TYPES}))
+    db.add(AgentAuditLog(user_id=user_id, agent_type="ai_consent", action="grant" if accepted else "revoke", result_detail={**record, "recipients": recipients, "data_types": DATA_TYPES}))
     db.commit()
     return get_ai_consent(db, user_id)
 

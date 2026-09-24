@@ -30,7 +30,7 @@ import MapView from 'react-native-maps';
 import { useWorkoutDetail } from '../../hooks/useWorkouts';
 import WorkoutDetailScreen from '../workout-detail';
 
-const unavailableMessage = '当前版本暂不支持地图展示，其他运动数据仍可查看。';
+const unavailableMessage = '当前设备暂不支持地图展示，其他运动数据仍可查看。';
 const originalPlatform = Platform.OS;
 const route = [{ lat: 30, lng: 104 }, { lat: 30.001, lng: 104.001 }];
 

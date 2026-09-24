@@ -72,6 +72,17 @@ def test_inspection_never_creates_audit_or_starts(monkeypatch, tmp_path):
     assert "probes" in p.events
 
 
+def test_service_recovery_rejects_any_unchanged_closure_attempt(monkeypatch, tmp_path):
+    m, p, audit = setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(m, "STATE", tmp_path)
+    record = tmp_path / "unchanged-release-closures" / p.failed_sha
+    record.mkdir(parents=True)
+    (record / "intent.json").write_text("partial")
+    with pytest.raises(m.RecoveryError):
+        m.recover_services(p, audit, "c" * 40)
+    assert p.events == []
+
+
 def test_inspection_probe_failure_does_not_consume_recovery(monkeypatch, tmp_path):
     m, p, audit = setup(monkeypatch, tmp_path)
     monkeypatch.setattr(m, "_application_probes", lambda *a: (_ for _ in ()).throw(RuntimeError("offline")))
@@ -195,6 +206,17 @@ def test_operator_does_not_echo_invalid_secret_bearing_arguments(monkeypatch, ca
     assert m.main() == 1
     captured = capsys.readouterr()
     assert marker not in captured.out + captured.err
+
+
+def test_unchanged_and_restored_retirement_modes_are_mutually_exclusive(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m.sys, "argv", [
+        "operator", "--sha", "a" * 40, "--failed-sha", "b" * 40,
+        "--production-sha", "c" * 40, "--lease-token-stdin",
+        "--retire-restored", "--retire-unchanged",
+    ])
+    monkeypatch.setattr(m, "_context", lambda *a, **k: pytest.fail("must reject before context"))
+    assert m.main() == 1
 
 
 def test_probe_child_does_not_consume_new_release_permissions():

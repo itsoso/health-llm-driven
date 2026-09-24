@@ -1901,6 +1901,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Decision Control */
+        get: operations["get_decision_control_api_v1_admin_decisions_get"];
+        /** Update Decision Control */
+        put: operations["update_decision_control_api_v1_admin_decisions_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/open-loop/stats": {
         parameters: {
             query?: never;
@@ -23202,6 +23220,37 @@ export interface components {
             /** Rationale */
             rationale: string;
         };
+        /** DecisionControlResponse */
+        DecisionControlResponse: {
+            /** Enabled */
+            enabled: boolean;
+            /** Revision */
+            revision: number;
+            /**
+             * Effective Mode
+             * @enum {string}
+             */
+            effective_mode: "off" | "shadow" | "on";
+            /** Configured */
+            configured: boolean;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "jev" | "laya" | "systemone";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** DecisionControlUpdate */
+        DecisionControlUpdate: {
+            /** Enabled */
+            enabled: boolean;
+            /** Revision */
+            revision: number;
+        };
         /** DedaoKbaseClaimAdjudicationRequest */
         DedaoKbaseClaimAdjudicationRequest: {
             /**
@@ -37173,6 +37222,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BenchmarkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_decision_control_api_v1_admin_decisions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionControlResponse"];
+                };
+            };
+        };
+    };
+    update_decision_control_api_v1_admin_decisions_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionControlUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionControlResponse"];
                 };
             };
             /** @description Validation Error */

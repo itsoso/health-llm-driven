@@ -1,6 +1,6 @@
 """应用配置"""
 from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field, SecretStr
 from typing import List, Literal, Optional
 
 
@@ -252,6 +252,17 @@ class Settings(BaseSettings):
     notification_gatekeeper_mode: str = "off"
     # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
     task_tiered_routing: bool = False
+    # Optional System One decisions. Shadow performs real, consented I/O.
+    decision_mode: Literal["off", "shadow", "on"] = "off"
+    decision_admin_control_enabled: bool = False
+    decision_provider: Literal["jev", "laya", "systemone"] = "jev"
+    decision_base_url: Optional[str] = None  # /v1 base or full /v1/systemone URL
+    decision_model: Optional[str] = None
+    decision_api_key: Optional[SecretStr] = None
+    decision_recipient_name: Optional[str] = None  # required for custom remote services
+    decision_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+    decision_min_confidence: float = Field(default=0.8, ge=0, le=1)
+    decision_max_input_bytes: int = Field(default=12000, ge=256, le=65536)
     # 两阶段回复 + 答案模型分层。off=现状；shadow=只记录拟路由；on=立即返回
     # 确定性承接语，并按 casual/balanced/high_stakes 选择答案模型。
     staged_response_mode: Literal["off", "shadow", "on"] = "off"

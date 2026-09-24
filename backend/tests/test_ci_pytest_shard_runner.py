@@ -139,7 +139,7 @@ def test_observed_slow_alphabetic_families_run_in_single_letter_shards():
         "tests/test_desktop*.py tests/test_device*.py"
     )
     assert by_label["d-rest"]["paths"] == (
-        "tests/test_dependency*.py tests/test_deploy*.py "
+        "tests/test_decision*.py tests/test_dependency*.py tests/test_deploy*.py "
         "tests/test_deprescribing*.py tests/test_deterministic*.py "
         "tests/test_doc*.py tests/test_dogfood*.py tests/test_dossier*.py "
         "tests/test_drug*.py tests/test_dynamic*.py"

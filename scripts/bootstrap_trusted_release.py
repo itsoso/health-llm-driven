@@ -270,7 +270,12 @@ def _inventory(directory, names):
 
 def _workspace_evidence(sha, *, recovery_receipt=None):
     workspace = STATE / sha
-    if os.path.lexists(STATE / "review-maintenance-closures" / sha):
+    review_closure = os.path.lexists(STATE / "review-maintenance-closures" / sha)
+    unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
+    contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
+    if sum((review_closure, unchanged_closure, contained_closure)) > 1:
+        raise BootstrapError("conflicting release closure evidence")
+    if review_closure:
         path = Path(__file__).absolute().with_name("review_maintenance_retirement.py")
         secure(path)
         if os.path.lexists(path.parent / "__pycache__"):
@@ -279,7 +284,7 @@ def _workspace_evidence(sha, *, recovery_receipt=None):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt)
-    if os.path.lexists(STATE / "contained-release-closures" / sha):
+    if unchanged_closure or contained_closure:
         path = Path(__file__).absolute().with_name("contained_release_retirement.py")
         secure(path)
         if os.path.lexists(path.parent / "__pycache__"):
@@ -287,6 +292,8 @@ def _workspace_evidence(sha, *, recovery_receipt=None):
         spec = importlib.util.spec_from_file_location("reviewed_closed_containment", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        if unchanged_closure:
+            return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt, unchanged=True)
         return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt)
     if os.path.lexists(STATE / "recoveries" / sha):
         return _recovered_preparation_evidence(sha, recovery_receipt=recovery_receipt)
@@ -578,7 +585,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
             raise BootstrapError("old retirement already attempted")
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
         workspace = _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE"}:
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]

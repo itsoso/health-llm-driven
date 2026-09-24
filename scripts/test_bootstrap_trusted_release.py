@@ -46,6 +46,14 @@ def test_valid_install_inputs_are_exact_not_normalized():
     bootstrap.validate_install(SHA, 100 + 28800, PUBLIC, now=100)
 
 
+def test_workspace_evidence_rejects_conflicting_closure_profiles(monkeypatch, tmp_path):
+    bootstrap, _calls = fixture(monkeypatch, tmp_path)
+    for name in ("unchanged-release-closures", "contained-release-closures"):
+        (bootstrap.STATE / name / SHA).mkdir(parents=True)
+    with pytest.raises(bootstrap.BootstrapError, match="conflicting"):
+        bootstrap._workspace_evidence(SHA)
+
+
 def test_key_lines_are_fixed_expiring_and_loopback_cannot_be_remote(monkeypatch):
     bootstrap = load_bootstrap()
     monkeypatch.setattr(bootstrap, "expiry_time", lambda _expiry: "19700101000320", raising=False)
