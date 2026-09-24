@@ -170,3 +170,33 @@ must not be published; the revised fixed diff requires a new independent review.
 - No push, production deployment, OTA, real-device ingestion verification or
   live-model acceptance was performed for this screenshot repair. Scoped GO is
   not approval to publish the combined, concurrently changing main branch.
+
+### September 24 deployment attempt
+
+- User requested deployment. Combined candidate `da95511d271a497ad7b1c018f4720274a4a53bfb`
+  includes independently reviewed Android preparation; no Android artifact was
+  published. Its generated map is synchronized. Source push completed after the
+  prior exact main CI was green and fresh live-model evaluation passed:
+  invariants 12/12, health-agent 50/50, orchestrator 5/5 (mean 0.96), trajectory
+  contracts 12/12 and goldens 9/9. Only synthetic test inputs used provider egress.
+- Fresh CI-mode integration: 18 passed. Mobile ran the same isolated grouping as
+  hosted CI: 3,042 passed, one skipped; TypeScript passed. The initial mixed
+  Mobile invocation was interrupted (130), not counted as passing. The duplicate
+  local serial backend run was interrupted after 1,643 passes, not counted as a
+  complete gate; hosted CI executes the full timing-balanced matrix.
+- Hosted CI `35938658617` failed in `backend-test-balanced-16`: two release-pack
+  tests reject a platform-specific word in the Android Maps fallback text.
+  Deployment and further external writes stopped. Narrow repair changes only
+  that text and its expectation; map capability protection and release checks
+  remain unchanged. RED: three UI failures; GREEN: six Maps tests, 64 release-pack
+  tests, TypeScript, structural checks and secret scan pass. Explicit permission
+  for the CI-repair push has been requested; no repair push is claimed here.
+- Read-only production check: still `05b6e4d396084103975c43e4a5fc4d044d8e66da`,
+  backend/worker/beat active, API/database/Redis/Celery healthy, no release lease.
+  No production restart, data mutation or deployment occurred. The temporary
+  local production configuration copy was removed; the server file is untouched.
+- OTA is separately blocked: EAS production updates and newest finished store
+  build 271 target runtime 1.3.3; current source uses 1.3.4 and changed native
+  privacy/permission declarations. The recorded 1.3.4 build 272 was not released
+  because it exported with development signing. No runtime override, new native
+  build, TestFlight submission or ineffective 1.3.4 OTA was performed.
