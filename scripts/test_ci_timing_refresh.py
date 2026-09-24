@@ -82,10 +82,10 @@ def test_refreshed_catalog_accepts_complete_samples(tmp_path):
 def test_real_catalog_retains_all_shards_and_process_policies():
     payload = json.loads(matrix.DEFAULT_CATALOG.read_text())
     shards = matrix.load_catalog()
-    assert payload["timing_source"]["sample_count"] == len(shards) == 56
-    assert payload["timing_source"]["run_id"] == 34141329002
+    assert payload["timing_source"]["sample_count"] == len(shards) == 60
+    assert payload["timing_source"]["run_id"] == 35977649858
     assignments = matrix.balance_shards(shards, worker_count=16)
     assigned = [label for worker in assignments for label in worker["shards"].split(",")]
     assert sorted(assigned) == sorted(shard["label"] for shard in shards)
-    assert max(worker["estimated_seconds"] for worker in assignments) == 202.953
+    assert max(worker["estimated_seconds"] for worker in assignments) == 300.573
     assert next(shard for shard in shards if shard["label"] == "a-agenda")["estimated_seconds"] == 20.336
