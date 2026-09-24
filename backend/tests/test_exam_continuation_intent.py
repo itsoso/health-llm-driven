@@ -46,6 +46,16 @@ def test_clinician_basis_actions_stay_blocked(text):
     assert classify_clinician_turn(text).kind == "ambiguous_clinician_action"
 
 
+@pytest.mark.parametrize("action", [
+    "修\u200b改用药剂量", "删\u200b除用药记录", "保★存体检记录",
+    "把复查安排在明天上午八点", "帮我复查安排",
+])
+@pytest.mark.parametrize("position", ["before", "after"])
+def test_preparation_envelope_rejects_normalized_and_nominal_looking_actions(action, position):
+    text = action + "。" + EXAM_PROMPT if position == "before" else EXAM_PROMPT + action
+    assert classify_clinician_turn(text).kind == "ambiguous_clinician_action"
+
+
 def test_reported_clinician_context_still_denies_tools():
     from app.services.agent_executor import _clinician_turn_allows_tool
 

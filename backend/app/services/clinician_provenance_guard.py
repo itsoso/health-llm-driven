@@ -1468,18 +1468,25 @@ def _is_clinician_question_preparation(raw: str, provider: _Span) -> bool:
         return False
     if any(negation in prefix for negation in CLAUSE_ACTION_NEGATIONS):
         return False
-    for root in _DENY_ONLY_ACTION_ROOTS:
-        if root in READ_ACTIONS:
-            continue
-        start = raw.find(root)
-        while start >= 0:
-            if not (
-                root == "安排"
-                and raw[max(0, start - 2):start] == "复查"
-                and _second_action_kind(raw, _Span(0, len(raw))) is None
-            ):
-                return False
-            start = raw.find(root, start + len(root))
+    for clause in _canonical_clauses(raw):
+        # Scan every clause, not only the one containing the clinician. This
+        # deny-only normalization cannot grant authority to obfuscated text.
+        for root in _DENY_ONLY_ACTION_ROOTS:
+            if root in READ_ACTIONS:
+                continue
+            for start in _canonical_term_occurrences(clause, root):
+                raw_start = clause.raw_positions[start]
+                nominal_prefix = raw[clause.raw_positions[0]:max(0, raw_start - 2)]
+                if not (
+                    root == "安排"
+                    and raw_start < provider.start
+                    and provider.start in clause.raw_positions
+                    and raw[max(0, raw_start - 2):raw_start + 2] == "复查安排"
+                    and any(verb in nominal_prefix for verb in preparation)
+                    and nominal_prefix.endswith((*preparation, "、", "，", ",", "和", "与"))
+                    and _second_action_kind(raw, _Span(0, len(raw))) is None
+                ):
+                    return False
     return True
 
 
