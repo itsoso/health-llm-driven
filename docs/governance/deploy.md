@@ -258,9 +258,14 @@ rollback，旧 runtime terminal 必须仍为旧 SHA 的 COMMITTED，preparing/re
 状态均不存在；四个 unit 的 activation 和全部 cgroup 进程启动身份必须早于原 lease，
 并跨稳定窗口保持不变。候选 env 仍须由 sealed manifest 绑定，但不得安装。
 
-Laya 只接受固定 root-only `sources/<failed-sha>` 空目录这一未开始状态；任何账号、组、
-unit、进程、配置、generation、receipt 或源文件出现都 BLOCK。入口保留原 NEEDS_OPERATOR、
-日志、stage 和空源目录，以独立 `unchanged-release-closures/<failed-sha>` 记录真实状态，
+Laya 只接受两种固定 root-only 未安装状态：`sources/<failed-sha>` 空目录，或仅含受审
+asset allowlist 与 `source.json` 的完整导出目录。完整导出必须绑定 failed/production SHA、
+精确 manifest，且每个文件逐字节等于 failed canonical source；任意多项、缺项或漂移都
+BLOCK。`sources/` 中更早的 sibling 只可保留已由完整 retirement history 复核的
+CLOSED_UNCHANGED_RELEASE 空目录，其 inode/owner/mode 必须等于原 closure snapshot；
+未知 SHA、未关闭 sibling 或新增文件一律 BLOCK。任何账号、组、unit、进程、配置、
+generation 或 install receipt 出现仍 BLOCK。入口保留原 NEEDS_OPERATOR、日志、stage
+和已验证源目录，以独立 `unchanged-release-closures/<failed-sha>` 记录真实状态，
 复用同 inode lease 归档和精确双身份撤权，终态只记 CLOSED_UNCHANGED_RELEASE。只有最终
 fsync 后才返回受保护回执供后续 rotate 验证；不得补造 RESTORED 回执或重跑失败 SHA。
 

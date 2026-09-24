@@ -26,6 +26,9 @@ BASE = Path("/opt/reva-laya")
 STATE = Path("/var/lib/reva-laya-release")
 UNIT = Path("/etc/systemd/system/reva-laya.service")
 ENV = Path("/etc/reva-laya/service.env")
+BUSINESS_LEASE = Path("/var/lock/health-app-release")
+LEASE_ALIAS = Path("/var/lock")
+LEASE_SHARED = Path("/run/lock")
 ASSETS = ("install.py", "serve.py", "model-manifest.json", "requirements.lock", "reva-laya.service.in", "encoder-config.json.b64", "rl-agent-config.json.b64", "tokenizer-config.json.b64", "model-NOTICE.txt")
 EMBEDDED_MODELS = {
     "multilingual/encoder/config.json": "encoder-config.json.b64",
@@ -45,19 +48,39 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def secure(path, *, mode=None):
+def secure(path, *, mode=None, shared_parent=None):
     """Root-controlled input, with no symlink or writable ancestor."""
     path = Path(path)
     for item in (path, *path.parents):
         info = item.lstat()
         protected_tmp_parent = item != path and item == Path('/tmp') and info.st_mode & stat.S_ISVTX
-        if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or (info.st_mode & 0o022 and not protected_tmp_parent):
+        protected_shared_parent = item != path and item == shared_parent
+        if protected_shared_parent and (not stat.S_ISDIR(info.st_mode) or info.st_gid != 0
+                                        or stat.S_IMODE(info.st_mode) != 0o1777):
+            raise InstallError("unsafe_path_metadata")
+        if (stat.S_ISLNK(info.st_mode) or info.st_uid != 0
+                or (info.st_mode & 0o022 and not protected_tmp_parent and not protected_shared_parent)):
             raise InstallError("unsafe_path_metadata")
     info = path.stat()
     if mode is not None and stat.S_IMODE(info.st_mode) != mode:
         raise InstallError("unexpected_path_mode")
     if path.is_file() and info.st_nlink != 1:
         raise InstallError("unexpected_hardlink")
+
+
+def resolve_business_lease(path):
+    """Resolve only Ubuntu's fixed root-owned /var/lock alias."""
+    if Path(path) != BUSINESS_LEASE:
+        raise InstallError("unexpected_release_lease")
+    info = LEASE_ALIAS.lstat()
+    if (not stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+            or info.st_nlink != 1 or os.readlink(LEASE_ALIAS) != "/run/lock"):
+        raise InstallError("unsafe_path_metadata")
+    shared = LEASE_SHARED.lstat()
+    if (not stat.S_ISDIR(shared.st_mode) or shared.st_uid != 0 or shared.st_gid != 0
+            or stat.S_IMODE(shared.st_mode) != 0o1777):
+        raise InstallError("unsafe_path_metadata")
+    return LEASE_SHARED / BUSINESS_LEASE.name
 
 
 def write_atomic(path, data, mode=0o600, gid=0):
@@ -115,11 +138,11 @@ def parse_config(text):
 def context(args):
     if sys.platform != "linux" or os.geteuid() != 0 or not re.fullmatch(r"[0-9a-f]{40}", args.sha):
         raise InstallError("unsupported_execution_context")
-    lock, stage = Path(args.lock), Path(args.stage)
-    secure(lock, mode=0o700)
+    lock, stage = resolve_business_lease(args.lock), Path(args.stage)
+    secure(lock, mode=0o700, shared_parent=LEASE_SHARED)
     secure(stage, mode=0o700)
     for name, expected in (("token", args.token + "\n"), ("stage", str(stage) + "\n")):
-        secure(lock / name, mode=0o600)
+        secure(lock / name, mode=0o600, shared_parent=LEASE_SHARED)
         if not hmac.compare_digest((lock / name).read_text(), expected):
             raise InstallError("release_lease_mismatch")
     secure(stage / "staged.sha256", mode=0o400)

@@ -81,6 +81,73 @@ def test_unchanged_retirement_requires_bounded_preinstallation_inventory(tmp_pat
         instance._laya_unstarted()
 
 
+def test_unchanged_retirement_accepts_only_exact_prepared_laya_source(tmp_path, monkeypatch):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.failed_sha, instance.production_sha = "a" * 40, "b" * 40
+    root = tmp_path / "laya"
+    candidate = root / "sources" / instance.failed_sha
+    candidate.mkdir(parents=True)
+    canonical = tmp_path / "canonical"
+    source = canonical / "infra/laya"
+    source.mkdir(parents=True)
+    hashes = {}
+    for name in proof.LAYA_ASSETS:
+        data = ("canonical:" + name).encode()
+        (source / name).write_bytes(data)
+        (candidate / name).write_bytes(data)
+        hashes[name] = hashlib.sha256(data).hexdigest()
+    (candidate / "source.json").write_text(json.dumps({
+        "sha": instance.failed_sha, "old_sha": instance.production_sha,
+        "old_has_decisions": False, "files": hashes,
+    }))
+    instance.bootstrap = SimpleNamespace(canonical_source=lambda _: canonical)
+    instance._directory = lambda p: {"ino": p.stat().st_ino}
+    instance._file = lambda p, *a: (p.read_bytes(), {"sha256": hashlib.sha256(p.read_bytes()).hexdigest()})
+    instance._absent = lambda *paths: None
+    monkeypatch.setattr(proof, "LAYA_STATE", root)
+    monkeypatch.setattr(proof.pwd, "getpwnam", lambda _: (_ for _ in ()).throw(KeyError()))
+    monkeypatch.setattr(proof.grp, "getgrnam", lambda _: (_ for _ in ()).throw(KeyError()))
+    monkeypatch.setattr(proof.subprocess, "check_output", lambda *a, **k: b"not-found\n")
+    result = instance._laya_unstarted()
+    assert set(result["prepared_source"]) == {*proof.LAYA_ASSETS, "source.json"}
+    (candidate / "install.py").write_text("changed")
+    with pytest.raises(proof.ProofError, match="differs from failed revision"):
+        instance._laya_unstarted()
+
+
+def test_unchanged_retirement_preserves_only_historically_closed_empty_source(tmp_path, monkeypatch):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.failed_sha, instance.production_sha = "a" * 40, "b" * 40
+    old_sha = "c" * 40
+    root = tmp_path / "laya"
+    current = root / "sources" / instance.failed_sha
+    old = root / "sources" / old_sha
+    current.mkdir(parents=True)
+    old.mkdir()
+    instance._directory = lambda p: {"ino": p.stat().st_ino}
+    instance._absent = lambda *paths: None
+    old_identity = instance._directory(old)
+    history = {old_sha: {"workspace": {"state": "CLOSED_UNCHANGED_RELEASE"}}}
+    intent = {"snapshot": {"unstarted_laya": {str(old): old_identity}}}
+    instance.bootstrap = SimpleNamespace(
+        STATE=tmp_path / "release-state",
+        _retired_history=lambda: history,
+        _read_json=lambda _: intent,
+    )
+    monkeypatch.setattr(proof, "LAYA_STATE", root)
+    monkeypatch.setattr(proof.pwd, "getpwnam", lambda _: (_ for _ in ()).throw(KeyError()))
+    monkeypatch.setattr(proof.grp, "getgrnam", lambda _: (_ for _ in ()).throw(KeyError()))
+    monkeypatch.setattr(proof.subprocess, "check_output", lambda *a, **k: b"not-found\n")
+    assert instance._laya_unstarted()[str(old)] == old_identity
+    (old / "unexpected").write_text("changed")
+    with pytest.raises(proof.ProofError, match="unclosed Laya preparation source"):
+        instance._laya_unstarted()
+    (old / "unexpected").unlink()
+    history.clear()
+    with pytest.raises(proof.ProofError, match="unclosed Laya preparation source"):
+        instance._laya_unstarted()
+
+
 def test_unchanged_retirement_rejects_laya_process(tmp_path, monkeypatch):
     instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
     instance.failed_sha = "a" * 40

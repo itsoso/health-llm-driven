@@ -1,6 +1,9 @@
 """Fail-closed deployment boundaries; no subprocess touches the test host."""
 import importlib.util
+import os
 from pathlib import Path
+import stat
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +20,48 @@ def config(**changes):
                   DECISION_MODEL="multilingual", DECISION_API_KEY="a" * 48)
     values.update(changes)
     return "\n".join(f"{key}={value}" for key, value in values.items())
+
+
+def metadata(kind, mode, *, uid=0, gid=0, nlink=1):
+    return SimpleNamespace(st_mode=kind | mode, st_uid=uid, st_gid=gid, st_nlink=nlink)
+
+
+def test_fixed_ubuntu_lock_alias_resolves_to_root_sticky_runtime(monkeypatch):
+    values = {
+        installer.LEASE_ALIAS: metadata(stat.S_IFLNK, 0o777),
+        installer.LEASE_SHARED: metadata(stat.S_IFDIR, 0o1777),
+    }
+    monkeypatch.setattr(Path, "lstat", lambda self: values[self])
+    monkeypatch.setattr(os, "readlink", lambda path: "/run/lock")
+    assert installer.resolve_business_lease(installer.BUSINESS_LEASE) == Path("/run/lock/health-app-release")
+
+
+@pytest.mark.parametrize("damage", ["alias_owner", "alias_target", "shared_mode", "other_path"])
+def test_lock_alias_drift_is_rejected(monkeypatch, damage):
+    values = {
+        installer.LEASE_ALIAS: metadata(stat.S_IFLNK, 0o777, uid=1 if damage == "alias_owner" else 0),
+        installer.LEASE_SHARED: metadata(stat.S_IFDIR, 0o755 if damage == "shared_mode" else 0o1777),
+    }
+    monkeypatch.setattr(Path, "lstat", lambda self: values[self])
+    monkeypatch.setattr(os, "readlink", lambda path: "/tmp" if damage == "alias_target" else "/run/lock")
+    path = Path("/tmp/other") if damage == "other_path" else installer.BUSINESS_LEASE
+    with pytest.raises(installer.InstallError):
+        installer.resolve_business_lease(path)
+
+
+def test_only_fixed_runtime_lock_may_cross_root_sticky_parent(monkeypatch):
+    target = Path("/run/lock/health-app-release")
+    values = {
+        target: metadata(stat.S_IFDIR, 0o700),
+        Path("/run/lock"): metadata(stat.S_IFDIR, 0o1777),
+        Path("/run"): metadata(stat.S_IFDIR, 0o755),
+        Path("/"): metadata(stat.S_IFDIR, 0o755),
+    }
+    monkeypatch.setattr(Path, "lstat", lambda self: values[self])
+    monkeypatch.setattr(Path, "stat", lambda self: values[self])
+    installer.secure(target, mode=0o700, shared_parent=Path("/run/lock"))
+    with pytest.raises(installer.InstallError):
+        installer.secure(target, mode=0o700)
 
 
 @pytest.mark.parametrize("change", [

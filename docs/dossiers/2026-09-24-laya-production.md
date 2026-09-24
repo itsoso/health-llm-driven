@@ -154,3 +154,25 @@ its resolved file and parent must pass the existing secure-path checks. Every
 other virtualenv link remains rejected. Fresh focused release verification:
 361 passed and 84 subtests passed. Production is still unchanged while this
 candidate awaits fixed-commit review and exact CI.
+
+Candidate ba861b623 passed CI 35969047053 and the previous failed release was
+closed as CLOSED_UNCHANGED_RELEASE before its temporary identity was rotated.
+Trusted backend run 35973304779 then stopped before writer shutdown, checkout,
+live-env mutation or Laya account/service installation. The exported immutable
+Laya source reached `/var/lib/reva-laya-release/sources/<sha>`, but the installer
+rejected Ubuntu's root-owned `/var/lock -> /run/lock` system alias as
+`unsafe_path_metadata`. Production remained at 05b6e4d3; backend,
+celery-worker and celery-beat retained their existing active PIDs and zero
+restarts.
+
+The repair accepts only the exact business lease through a root:root,
+single-link `/var/lock` alias whose target is exactly `/run/lock`, and requires
+the resolved shared directory to remain root:root mode 01777. Generic secure
+paths receive no new symlink allowance. Unchanged-release closure proof now
+also accepts the later pre-installation boundary only when the extracted Laya
+inventory is exact, `source.json` binds failed and production SHAs, every asset
+hash matches its manifest, and every byte matches the failed canonical source;
+empty-source compatibility remains. Fresh verification: 38 Laya installer
+tests, 242 release/bootstrap tests, and a combined 132 recovery/Laya tests all
+passed. A new fixed commit, independent G4 review and exact CI are required
+before closing ba861b623 or authorizing another production attempt.

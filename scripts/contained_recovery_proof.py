@@ -23,6 +23,9 @@ class ProofError(RuntimeError):
 
 UNITS = ("health-backend.socket", "health-backend.service", "celery-worker.service", "celery-beat.service")
 LAYA_STATE = Path("/var/lib/reva-laya-release")
+LAYA_ASSETS = ("install.py", "serve.py", "model-manifest.json", "requirements.lock",
+               "reva-laya.service.in", "encoder-config.json.b64", "rl-agent-config.json.b64",
+               "tokenizer-config.json.b64", "model-NOTICE.txt")
 ACTIVATION = b"[Service]\nEnvironmentFile=-/var/lib/reva-health-evidence-runtime/enabled.env\n"
 ARTIFACTS = {name: "backend/scripts/" + name for name in (
     "backup_db.sh", "verify_backup_restore.sh", "archive_backup_offsite.sh", "verify_recent_offsite_backup.sh", "rollback_release.sh",
@@ -287,13 +290,59 @@ class RecoveryProof:
                                             env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"}, timeout=15)
         if len(processes) > 1_000_000 or re.search(rb"/(?:opt/reva-laya|var/lib/reva-laya-release)/", processes):
             raise ProofError("Laya process remains")
-        expected = {LAYA_STATE: {"sources"}, LAYA_STATE / "sources": {self.failed_sha},
-                    LAYA_STATE / "sources" / self.failed_sha: set()}
+        sources = LAYA_STATE / "sources"
+        candidate = sources / self.failed_sha
+        expected = {LAYA_STATE: {"sources"}}
         result = {}
         for path, names in expected.items():
             result[str(path)] = self._directory(path)
             if {entry.name for entry in path.iterdir()} != names:
-                raise ProofError("Laya preparation progressed beyond empty source")
+                raise ProofError("Laya preparation inventory differs")
+        result[str(sources)] = self._directory(sources)
+        source_names = {entry.name for entry in sources.iterdir()}
+        if self.failed_sha not in source_names:
+            raise ProofError("current Laya preparation source is missing")
+        retired = source_names - {self.failed_sha}
+        if retired:
+            history = self.bootstrap._retired_history()
+            for old_sha in retired:
+                if re.fullmatch(r"[0-9a-f]{40}", old_sha) is None:
+                    raise ProofError("unknown Laya preparation source")
+                item = history.get(old_sha)
+                path = sources / old_sha
+                if (not isinstance(item, dict)
+                        or item.get("workspace", {}).get("state") != "CLOSED_UNCHANGED_RELEASE"
+                        or any(path.iterdir())):
+                    raise ProofError("unclosed Laya preparation source remains")
+                closure = self.bootstrap._read_json(
+                    self.bootstrap.STATE / "unchanged-release-closures" / old_sha / "intent.json")
+                historical = closure.get("snapshot", {}).get("unstarted_laya", {}).get(str(path))
+                identity = self._directory(path)
+                if historical != identity:
+                    raise ProofError("retired Laya preparation source changed")
+                result[str(path)] = identity
+        result[str(candidate)] = self._directory(candidate)
+        names = {entry.name for entry in candidate.iterdir()}
+        if not names:
+            return result
+        if names != {*LAYA_ASSETS, "source.json"}:
+            raise ProofError("Laya preparation inventory differs")
+        source = self.bootstrap.canonical_source(self.failed_sha) / "infra/laya"
+        raw, source_identity = self._file(candidate / "source.json", 0o400)
+        manifest = object_json(raw)
+        if (set(manifest) != {"sha", "files", "old_sha", "old_has_decisions"}
+                or manifest["sha"] != self.failed_sha or manifest["old_sha"] != self.production_sha
+                or type(manifest["old_has_decisions"]) is not bool
+                or not isinstance(manifest["files"], dict) or set(manifest["files"]) != set(LAYA_ASSETS)):
+            raise ProofError("Laya preparation source binding differs")
+        prepared = {"source.json": source_identity}
+        for name in LAYA_ASSETS:
+            staged, identity = self._file(candidate / name, 0o400)
+            canonical, _ = self._file(source / name)
+            if staged != canonical or manifest["files"].get(name) != hashlib.sha256(canonical).hexdigest():
+                raise ProofError("Laya preparation source differs from failed revision")
+            prepared[name] = identity
+        result["prepared_source"] = prepared
         return result
 
     def _services_predate_release(self):
