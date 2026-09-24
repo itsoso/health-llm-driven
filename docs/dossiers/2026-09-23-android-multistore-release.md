@@ -227,6 +227,45 @@ System Map 不索引 `mobile/eas.json`；已回到配置、源码及邻近测试
 
 ## 恢复点
 
-用户已同意内测 APK 优先。待 SDK 安装/许可确认后补齐兼容 JDK、SDK，再对干净候选
-完成原生构建、独立内测签名和 Android 验收。正式发行仍待主体/渠道/正式签名路径落实。
+### 2026-09-24 SDK 许可授权后的续跑证据
+
+- 用户回复“同意”，明确授权安装官方 Android SDK 并接受所需许可。已安装并验证
+  JDK 17、Android 命令行工具 15859902、Build Tools 36.0.0、CMake 3.22.1；
+  官方命令行工具 ZIP 的 SHA-256 与官方公布值一致。Gradle 9.0.0 下载首次中断，
+  使用断点续传恢复后验证官方 SHA-256，通过版本检查；没有跳过完整性检查。
+- API 36、NDK 27.1.12297006 及 Android 模拟器/系统镜像仍在下载，安装未全部完成。
+  NDK 原 SDK Manager 下载已明确中止，改用官方 URL 的可恢复下载，待完整校验后安装。
+  本轮不注册账号、不读取/更换正式签名、不调用商店上传、不部署后端或 OTA。
+- 内测配置固定提交 `3e18eb5c035188ff2f4e09780deada57a68445f6` 经独立审查 GO，
+  仅限配置与无发布凭据的本地准备；不代表签名、分发或商店 G4 通过。
+- Android 未配置地图 key 时不挂载原生地图，保留其他运动数据并显示不可用提示。
+  先观察 15 项失败，再通过 51 项定向测试及类型检查；固定提交
+  `d52151052d1f03d3925593aefb67f48a7484c682` 的地图变更经独立审查 GO。
+  capability 只证明配置存在，不证明 key 有效、GMS 或中国网络可达。
+- 同仓库有另一任务提交后端/聊天变更。工作区混合测试曾失败并中止（退出 130），
+  不作为候选证明。新快照由精确 `d52151052d1f03d3925593aefb67f48a7484c682`
+  导出 tracked Mobile 与 Watch 构建辅助文件，包含该提交祖先中已提交的聊天变更；
+  不继续追踪后续 HEAD，不把本任务独立审查范围扩展到另一任务的变更。
+- 新快照 `/tmp/reva-android-candidate.QcECJ4` 的 Android prebuild 通过。
+  按 CI 拆分执行 Jest：主组 308 suites / 2863 passed / 1 skipped；独立组
+  ChatInputBar 75、chat 64、useAuth 33、GPS onboarding 7 项均通过，共 3042 passed；
+  `tsc --noEmit` exit 0。这不是最终 APK 安装证明或精确远端全栈 CI。
+- 首次原生依赖下载/编译仍在旧准备快照中进行，日志在
+  `/tmp/reva-android-internal.hnZIVP/gradle-build.log`；仅作工具链勘察和缓存预热，
+  不能把其制品作为新候选。后续必须对新固定快照重新构建。
+- 新候选源 manifest 确认 Preview 包名、版本 1.3.4 / versionCode 1、OTA disabled；
+  最终 merged manifest / APK 尚未检验。默认生成工程仍使用 debug keystore，
+  尚未生成独立内测签名；没有 APK、安装/启动/升级、ABI/页大小通过证据。
+- 该 Preview 默认仍连接生产 API，且保留共享 deep link；包名隔离不代表数据隔离。
+  后续验收只用合成/专用测试账号，不修改真实健康记录。Android 推送、Health Connect、
+  iOS 专属 PCM/Watch 仍不宣称可用。生成 manifest 的媒体/悬浮窗/备份等权限需在
+  最终合并结果中审计，不能凭配置测试判定权限最小化已完成。
+- 新增测试后的代码派生地图存在计数漂移，已运行生成器同步，不手写计数。
+  `validate.py` 初次因 PATH 缺 Python 3.12 失败，补正确解释器路径后检测出地图漂移；
+  生成后 system-map、Dossier consistency、Skill governance 均通过。
+  模拟器原单连接下载已明确终止（退出 130），保留部分 ZIP 后从官方地址断点续传；
+  ARM64 API 35 AOSP 系统镜像也按官方摘要下载，未安装完成、未创建 AVD。
+
+用户已同意内测 APK 优先及 SDK 许可。继续完成官方组件下载和原生构建，再补独立
+内测签名与 Android 验收。正式发行仍待主体/渠道/正式签名路径落实。
 不能复用前端事故 run 或将其成功封存算作 Android 发布进展。
