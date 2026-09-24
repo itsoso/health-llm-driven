@@ -6,15 +6,15 @@ does not classify general user actions.  Unknown structures fail closed.
 """
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
-import unicodedata
 
 from app.services.utterance_intent_lexicon import (
     CLAUSE_ACTION_NEGATIONS,
     CLINICIAN_BASIS_TERMS,
-    CLINICIAN_CONTEXT_WRITE_ACTIONS,
     CLINICIAN_CONSULTATION_TERMS,
+    CLINICIAN_CONTEXT_WRITE_ACTIONS,
     CLINICIAN_FEEDBACK_OBJECT_NOUNS,
     CLINICIAN_FEEDBACK_WRITE_ROOTS,
     CLINICIAN_PROVIDER_TERMS,
@@ -2044,7 +2044,9 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
     """
     # Lazy import avoids the kernel -> utterance classifier -> clinician guard
     # module initialization cycle. Every caller gets the same authority scope.
-    from app.services.agent_kernel.health_semantics import active_health_instruction_text
+    from app.services.agent_kernel.health_semantics import (
+        active_health_instruction_text,
+    )
 
     raw = active_health_instruction_text(raw)
 

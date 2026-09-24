@@ -1,11 +1,10 @@
 """UI-authored read-only follow-up text; no patient data or write authority."""
 import json
 from datetime import datetime, timezone
-import pytest
 
+import pytest
 from app.services.clinician_provenance_guard import classify_clinician_turn
 from app.services.utterance_intent_classifier import classify_agent_utterance
-
 
 EXAM_PROMPT = (
     "请基于这次体检异常解读，帮我按优先级梳理风险、行动、复查安排和需要向医生确认的问题。"
