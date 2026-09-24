@@ -22,6 +22,45 @@ def test_terminal_is_separate_from_success_or_unchanged():
     assert m.LEASE_STATE == "ABSENT_CAUSE_UNKNOWN"
 
 
+@pytest.mark.parametrize("session_at", [1, 2])
+def test_idle_ssh_session_blocks_before_mutation_or_after_revocation(monkeypatch, tmp_path, session_at):
+    m = module()
+    spec = importlib.util.spec_from_file_location(
+        "partial_session_guard", Path(__file__).with_name("review_maintenance_retirement.py"))
+    sessions = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sessions)
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    (proc / "41").mkdir()
+    (proc / "41/stat").write_bytes(b"41 (operator) S 1")
+    monkeypatch.setattr(sessions.os, "getpid", lambda: 41)
+    calls = []
+    def guard():
+        calls.append("sessions")
+        if len(calls) == session_at:
+            (proc / "42").mkdir()
+            (proc / "42/cmdline").write_bytes(b"sshd: root@notty\0")
+        sessions.assert_no_other_ssh_sessions(proc)
+    a = m.Adapter.__new__(m.Adapter)
+    a.b = SimpleNamespace(_assert_idle=lambda: None, _recovery_process_proof=lambda: None)
+    a.check = lambda: None
+    a.sessions = SimpleNamespace(assert_no_other_ssh_sessions=guard)
+    def downstream_proof():
+        raise NotImplementedError("past session gate")
+    monkeypatch.setattr(m, "no_laya_process", downstream_proof)
+    if session_at == 2:
+        with pytest.raises(NotImplementedError, match="past session gate"):
+            a.absent_activity()
+        # verify_closed begins with the same live activity check after revoke.
+        a.live = a.absent_activity
+    with pytest.raises(sessions.ClosureError, match="other SSH session"):
+        if session_at == 2:
+            a.verify_closed({})
+        else:
+            a.absent_activity()
+    assert len(calls) == session_at
+
+
 def test_static_manifest_does_not_execute_python(tmp_path, monkeypatch):
     m = module()
     monkeypatch.setattr(m, "OWNER", os.getuid())

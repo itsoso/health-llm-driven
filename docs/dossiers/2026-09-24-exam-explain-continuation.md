@@ -205,3 +205,10 @@ HealthKit=true、get-task-allow=false，有效至 2027-04-24，覆盖一个既�
 依赖；原 lock/hash、binary-only 与 TLS 全保留。先 RED 后完整 installer 49 passed。
 完整服务器 dry-run 和 CI 原样 release-invariants 集成闸仍在运行；不把索引/吞吐或
 单元测试通过当作可发布、已安装或上线证明。原生产版本保持不变。
+
+固定 b20e8fb52 独立 G4：QR 范围 GO（独立 61 passed），依赖全新 canonical checkout、
+锁定依赖、精确 CI、已验证签名和 --no-latest；不代表任意本机工作树可信或已安装。
+partial Laya 范围 NO-GO：旧已认证空闲 SSH 连接不会因删除密钥自动终止。新增负例
+先 2 failed，再复用现有非祖先 SSH 会话拒绝检查，在准入和撤权后 live 复证执行；
+不杀无关会话。组合 321 passed、6 Linux-only skipped；Linux 闸须由精确 CI 验证。
+后续固定提交复审及最终集成闸尚未完成，禁止沿用初稿为恢复 GO。

@@ -225,6 +225,7 @@ class Adapter:
         self.record = b.STATE / "partial-laya-closures" / FAILED
         self.c = load(b, source, "contained_release_retirement.py")
         self.r = load(b, source, "recover_contained_services.py")
+        self.sessions = load(b, source, "review_maintenance_retirement.py")
         module = load(b, source, "contained_recovery_proof.py")
         # Use only read-only methods that do not need lease authority. No fake
         # token and no synthetic original lease are constructed.
@@ -240,10 +241,16 @@ class Adapter:
         p.systemd = p.runtime.SubprocessSystemd()
         self.p, self.module = p, module
 
-    def absent_activity(self):
+    def quiescent(self):
         self.check()
         self.b._assert_idle()
         self.b._recovery_process_proof()
+        self.sessions.assert_no_other_ssh_sessions()
+        self.b._recovery_process_proof()
+        self.check()
+
+    def absent_activity(self):
+        self.quiescent()
         no_laya_process()
         for root in ("recoveries", "contained-service-recoveries", "contained-release-closures",
                      "unchanged-release-closures", "review-maintenance-closures", "lost-closure-receipt-acknowledgments"):
