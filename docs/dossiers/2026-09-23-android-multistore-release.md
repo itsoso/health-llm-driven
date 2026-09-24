@@ -269,3 +269,18 @@ System Map 不索引 `mobile/eas.json`；已回到配置、源码及邻近测试
 用户已同意内测 APK 优先及 SDK 许可。继续完成官方组件下载和原生构建，再补独立
 内测签名与 Android 验收。正式发行仍待主体/渠道/正式签名路径落实。
 不能复用前端事故 run 或将其成功封存算作 Android 发布进展。
+
+续跑更新（2026-09-24）：API 36 SDK Manager 安装 exit 0；NDK 官方 ZIP 完整下载，
+SHA-1 `c70c9791b0d258858678f6df31c4319140e2926e` 匹配官方 metadata，解压安装至
+SDK `ndk/27.1.12297006`，`clang --version` exit 0。原中断安装目录仅移动保留，
+没有覆盖/删除既有完整 NDK。旧快照预热构建已明确中止 exit 130，确认其 daemon 退出，
+现对 `d52151052d1f03d3925593aefb67f48a7484c682` 快照重新执行 arm64 release 构建，
+日志 `/tmp/reva-android-candidate.QcECJ4/gradle-build.log`；完成状态待回读。
+模拟器与 AOSP 镜像为优先保障构建下载已暂停，保留 ZIP 与 `.aria2` 续传数据；
+此前 aria2 退出 7 表示未完成，不记成功。APK、独立签名与安装验收仍未完成。
+
+当前恢复入口：固定候选 Gradle 构建仍在运行，React Native / Expo 多个插件编译通过，
+`expo-updates-gradle-plugin` 阶段仍获取原生依赖，未出现终态；先回读上述日志和该进程，
+不可重复并发构建。SDK/NDK 已完成后，模拟器 ZIP 已从原续传文件恢复下载，日志
+`/tmp/reva-android-internal.hnZIVP/emulator-download-resume.log`；AOSP 镜像仍暂停。
+无需再次请求 SDK 许可，不把后台进程存在算作构建成功，也不自动进行签名/分发。
