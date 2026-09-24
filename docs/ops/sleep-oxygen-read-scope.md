@@ -117,7 +117,9 @@ the self-owned device monitoring narrative was rejected as a foreign owner.
   normalization, execution, completion and owned continuation. The wake date is
   frozen in the turn timezone. It is not an all-day or latest-night query.
 - Only epoch-stamped samples within one coherent recorded sleep-clock interval
-  are summarized, separately by source. The current adapter supports the
+  corroborated by absolute sleep interval bounds for the same owner/source/date
+  are summarized, separately by source. Bare clocks alone are not evidence of
+  their timezone. The current adapter supports the
   ingestion clock timezone (Asia/Shanghai). Missing/conflicting clock sources,
   unsupported timezone, equal clocks or an interval over 20 hours produce an
   explicit unavailable interval, not unfiltered daily metrics. Clock-derived
@@ -137,3 +139,12 @@ Test-first evidence: scope/status RED 4 failures; UI RED 2 failures; continuatio
 RED 1 failure; unsupported provider claims RED 2 failures. Mobile chat suite
 64 passed and TypeScript passed. Final PostgreSQL, independent safety review and
 release evidence must be recorded separately; this note does not claim release.
+
+The first independent review of `65e685937` was NO-GO: Apple imports can retain
+source-local clocks after dropping their UTC offset. Request timezone alone did
+not attest those clocks. Four additional RED regressions cover missing absolute
+intervals, foreign timezone, foreign owner and foreign source. Night selection
+now also requires matching absolute `SleepLevelInterval` bounds; no matching
+provenance means unavailable, even when daily oxygen values exist. This does not
+establish stage-level correlation or continuous sleep. The rejected candidate
+must not be published; the revised fixed diff requires a new independent review.

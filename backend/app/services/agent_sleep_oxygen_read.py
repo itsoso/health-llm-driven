@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 
-from app.models.daily_health import GarminData, SpO2Sample
+from app.models.daily_health import GarminData, SpO2Sample, SleepLevelInterval
 from app.services.device_source_priority import excluded_sources
 from app.services.multi_source_merger import merge_rows
 from app.services.agent_query_window import MAX_CALENDAR_ROWS, _bounded_result
@@ -14,10 +14,10 @@ from app.services.agent_query_window import MAX_CALENDAR_ROWS, _bounded_result
 def _night_samples(db, user_id, window, daily):
     """Bound epoch samples to one coherent daily sleep-clock source.
 
-    Daily clock times are not absolute episode evidence. Use only the storage
-    timezone supported by current ingestion; disclose this limitation and never
-    infer ODI/continuous coverage. Missing/conflicting clocks fail closed, not
-    an unfiltered all-day oxygen fallback.
+    Bare clock times lose timezone on some import paths. Require independent
+    absolute interval bounds from the same owner/source/date to match before
+    using the candidate window. Neither bounds nor sample counts prove asleep
+    state/continuous coverage. Missing/conflicting provenance fails closed.
     """
     merged = merge_rows(daily, ('sleep_start_time', 'sleep_end_time'))
     start, end = (merged['values'].get(key) for key in ('sleep_start_time', 'sleep_end_time'))
@@ -31,6 +31,19 @@ def _night_samples(db, user_id, window, daily):
     start_at = datetime.combine(start_day, start, zone)
     if not timedelta(0) < end_at - start_at <= timedelta(hours=20):
         return [], ['sleep_interval_unavailable']
+    start_ms, end_ms = int(start_at.timestamp() * 1000), int(end_at.timestamp() * 1000)
+    intervals = (db.query(SleepLevelInterval).filter(
+        SleepLevelInterval.user_id == user_id,
+        SleepLevelInterval.record_date == window.end_date,
+        SleepLevelInterval.source == sources['sleep_start_time'],
+    ).order_by(SleepLevelInterval.start_epoch_ms).limit(MAX_CALENDAR_ROWS + 1).all())
+    if len(intervals) > MAX_CALENDAR_ROWS:
+        raise ValueError('calendar_query_result_limit_exceeded')
+    if (not intervals or any(row.start_epoch_ms <= 0 or row.end_epoch_ms <= row.start_epoch_ms
+                             for row in intervals)
+            or min(row.start_epoch_ms for row in intervals) != start_ms
+            or max(row.end_epoch_ms for row in intervals) != end_ms):
+        return [], ['sleep_interval_unavailable', 'sleep_clock_timezone_not_attested']
     samples = (db.query(
         SpO2Sample.source, func.count(SpO2Sample.id).label('data_points'),
         func.min(SpO2Sample.spo2_value).label('min_spo2'),
@@ -40,8 +53,8 @@ def _night_samples(db, user_id, window, daily):
         SpO2Sample.user_id == user_id,
         SpO2Sample.record_date >= window.start_date - timedelta(days=1),
         SpO2Sample.record_date <= window.end_date,
-        SpO2Sample.epoch_ms >= int(start_at.timestamp() * 1000),
-        SpO2Sample.epoch_ms <= int(end_at.timestamp() * 1000),
+        SpO2Sample.epoch_ms >= start_ms,
+        SpO2Sample.epoch_ms <= end_ms,
         SpO2Sample.source.notin_(excluded_sources('spo2_min')),
     ).group_by(SpO2Sample.source).order_by(SpO2Sample.source)
       .limit(MAX_CALENDAR_ROWS + 1).all())
@@ -53,7 +66,7 @@ def _night_samples(db, user_id, window, daily):
     rows = [{'record_date': window.end_date.isoformat(),
              'daily_metrics': dict.fromkeys(('spo2_avg', 'spo2_min', 'spo2_max')),
              'daily_sources': {}, 'sample_summaries': summaries}] if summaries else []
-    return rows, ['sleep_interval_inferred_from_daily_clocks', 'samples_without_epoch_excluded']
+    return rows, ['sleep_clock_bounds_matched_absolute_intervals', 'samples_without_epoch_excluded']
 
 
 def read_sleep_oxygen_window(db, user_id, window):

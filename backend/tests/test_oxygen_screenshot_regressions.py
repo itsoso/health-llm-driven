@@ -99,10 +99,11 @@ def test_night_scope_requires_consistent_owner():
     assert resolve_owned_read_scope(replace(turn, context=replace(turn.context, user_id=42))) is None
 
 
-@pytest.mark.parametrize('mode', ['missing', 'conflicting_sources', 'equal_clocks', 'excess_duration', 'timezone'])
+@pytest.mark.parametrize('mode', ['missing', 'conflicting_sources', 'equal_clocks', 'excess_duration',
+                                  'timezone', 'no_absolute_interval', 'foreign_zone', 'foreign_owner', 'foreign_source'])
 def test_night_without_coherent_sleep_interval_never_falls_back_to_day(db, mode):
     from app.models.user import User
-    from app.models.daily_health import GarminData, SpO2Sample
+    from app.models.daily_health import GarminData, SpO2Sample, SleepLevelInterval
     from app.services.agent_query_window import parse_query_window, read_calendar_health_query
     user = User(name='Synthetic', username='night-gap', email='night-gap@example.test', hashed_password='fixture')
     db.add(user); db.flush()
@@ -118,6 +119,14 @@ def test_night_without_coherent_sleep_interval_never_falls_back_to_day(db, mode)
         db.add(GarminData(user_id=user.id, record_date=date(2031,4,4), data_source='garmin', sleep_end_time=end))
     db.add(SpO2Sample(user_id=user.id, record_date=date(2031,4,4), sample_time=time(1),
         epoch_ms=int(datetime.fromisoformat('2031-04-04T01:00:00+08:00').timestamp()*1000), source='ringconn', spo2_value=98))
+    if mode in {'foreign_zone', 'foreign_owner', 'foreign_source'}:
+        other = User(name='Synthetic', username='night-gap-other', email='night-gap-other@example.test', hashed_password='fixture')
+        db.add(other); db.flush()
+        offset = '+00:00' if mode == 'foreign_zone' else '+08:00'
+        db.add(SleepLevelInterval(user_id=other.id if mode == 'foreign_owner' else user.id,
+            record_date=date(2031,4,4), source='apple-watch' if mode == 'foreign_source' else 'ringconn', activity_level='light',
+            start_epoch_ms=int(datetime.fromisoformat('2031-04-03T23:00:00'+offset).timestamp()*1000),
+            end_epoch_ms=int(datetime.fromisoformat('2031-04-04T07:00:00'+offset).timestamp()*1000)))
     db.flush()
     window = parse_query_window({'start_date':'2031-04-04', 'end_date':'2031-04-04',
         'timezone': 'UTC' if mode == 'timezone' else 'Asia/Shanghai', 'period':'sleep_night'})
@@ -130,7 +139,7 @@ def test_night_without_coherent_sleep_interval_never_falls_back_to_day(db, mode)
 @pytest.mark.parametrize('has_sleep', [True, False])
 async def test_night_reader_filters_real_epochs_not_daily_summary_or_latest_night(db, has_sleep, monkeypatch):
     from app.models.user import User
-    from app.models.daily_health import GarminData, SpO2Sample
+    from app.models.daily_health import GarminData, SpO2Sample, SleepLevelInterval
     from app.services.agent_executor import AgentExecutor
     from app.services.agent_kernel.capability_policy import decide_tool_capability
     from app.services.agent_kernel.types import ToolExecutionRequest
@@ -141,6 +150,9 @@ async def test_night_reader_filters_real_epochs_not_daily_summary_or_latest_nigh
         db.add(GarminData(user_id=owner.id, record_date=date(2031,4,4), data_source='ringconn',
             sleep_start_time=time(23), sleep_end_time=time(7), total_sleep_duration=480,
             spo2_avg=50, spo2_min=40))
+        db.add(SleepLevelInterval(user_id=owner.id, record_date=date(2031,4,4), source='ringconn', activity_level='light',
+            start_epoch_ms=int(datetime.fromisoformat('2031-04-03T23:00:00+08:00').timestamp()*1000),
+            end_epoch_ms=int(datetime.fromisoformat('2031-04-04T07:00:00+08:00').timestamp()*1000)))
     for uid, moment, source, value in [
         (owner.id, '2031-04-03T23:30:00+08:00', 'apple-watch', 96),
         (owner.id, '2031-04-04T06:30:00+08:00', 'apple-watch', 98),
