@@ -37,7 +37,11 @@ def test_unchanged_retirement_rejects_restarted_or_new_services(tmp_path, start,
     raw = datetime.fromtimestamp(1200, UTC).strftime("%Y-%m-%dT%H:%M:%SZ\n").encode()
     instance.lease = tmp_path
     instance._file = lambda *a: (raw, {})
-    instance.running_snapshot = lambda: {unit: {"ActiveEnterTimestampMonotonic": str(start * 1000000), "NRestarts": restarts} for unit in proof.UNITS}
+    instance.running_snapshot = lambda: {
+        unit: {"ActiveEnterTimestampMonotonic": str(start * 1000000),
+               "NRestarts": "" if unit.endswith(".socket") else restarts}
+        for unit in proof.UNITS
+    }
     with pytest.raises(proof.ProofError):
         instance._services_predate_release()
 
@@ -51,7 +55,8 @@ def test_unchanged_retirement_accepts_old_zero_restart_units_and_processes(tmp_p
     instance._file = lambda *a: (raw, {})
     monkeypatch.setattr(proof.os, "sysconf", lambda _: 100)
     instance.running_snapshot = lambda: {
-        unit: {"ActiveEnterTimestampMonotonic": "100000000", "NRestarts": "0",
+        unit: {"ActiveEnterTimestampMonotonic": "100000000",
+               "NRestarts": "" if unit.endswith(".socket") else "0",
                "processes": {} if unit.endswith(".socket") else {"200": "10000"}}
         for unit in proof.UNITS
     }

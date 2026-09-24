@@ -303,8 +303,8 @@ class RecoveryProof:
         if len(boot) != 1:
             raise ProofError("boot time unavailable")
         # A wide margin rejects clock ambiguity around the release boundary.
-        for fields in self.running_snapshot().values():
-            if (fields["NRestarts"] != "0"
+        for unit, fields in self.running_snapshot().items():
+            if ((unit.endswith(".service") and fields["NRestarts"] != "0")
                     or int(boot[0]) + int(fields["ActiveEnterTimestampMonotonic"]) / 1_000_000 >= started - 60):
                 raise ProofError("services do not predate failed release")
             for ticks in fields.get("processes", {}).values():
