@@ -50,6 +50,12 @@ LEGACY_CLONE_EXECUTORS = {
 PHASE_CLONE_TIMEOUT_EXECUTORS = {
     "cae7d46a45778db0bacd9c86f8f31b15b289d1f030ad3a50d8d947d330af313f",
 }
+# Audited phase-aware executor that completed the initial no-checkout clone but
+# stopped before checkout because the transport process group outlived its
+# former immediate inspection boundary.
+PHASE_CLONE_COMPLETED_EXECUTORS = {
+    "bdfd21ed1bd67c38ed04916257758ab76970cb3be38f1cacc7f675eb807c2bd4",
+}
 PROC = Path("/proc")
 
 
@@ -787,7 +793,9 @@ def _legacy_clone_evidence(sha):
 def _recoverable_clone_evidence(sha):
     source = canonical_source(sha)
     digest = hashlib.sha256((source / "scripts/trusted_release_server.py").read_bytes()).hexdigest()
-    if digest not in PHASE_CLONE_TIMEOUT_EXECUTORS:
+    phase_timeout = digest in PHASE_CLONE_TIMEOUT_EXECUTORS
+    phase_completed = digest in PHASE_CLONE_COMPLETED_EXECUTORS
+    if not phase_timeout and not phase_completed:
         return _legacy_clone_evidence(sha)
     workspace = STATE / sha
     secure(workspace)
@@ -816,20 +824,25 @@ def _recoverable_clone_evidence(sha):
     log = workspace / "preparation.log"
     secure(log, private=True)
     clone = f"Cloning into '{workspace}/source'...\n"
-    failure = (f"fatal: unable to access '{ORIGIN}/': "
-               "Operation too slow. Less than 1024 bytes/sec transferred the last 30 seconds\n")
-    expected_log = ((clone + failure) * 2 + clone).encode()
+    if phase_timeout:
+        failure = (f"fatal: unable to access '{ORIGIN}/': "
+                   "Operation too slow. Less than 1024 bytes/sec transferred the last 30 seconds\n")
+        expected_log = ((clone + failure) * 2 + clone).encode()
+        profile = "phase-clone-timeout"
+    else:
+        expected_log = clone.encode()
+        profile = "phase-clone-completed-uncertain"
     if log.stat().st_size != len(expected_log) or log.read_bytes() != expected_log:
-        raise BootstrapError("phase clone timeout transcript unproven")
+        raise BootstrapError("phase clone transcript unproven")
     # Never run Git/imports in this partial tree. Hash every retained object,
     # including .git, with the original ownership/link/size/race checks.
-    return {"profile": "phase-clone-timeout", "executor_sha256": digest,
+    return {"profile": profile, "executor_sha256": digest,
             "manifest": _preparation_manifest(workspace)}
 
 
 def _recovery_build_identity(sha, workspace):
     path = STATE / sha / "build.lock"
-    if workspace.get("profile") == "phase-clone-timeout":
+    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain"}:
         if os.path.lexists(path):
             raise BootstrapError("absent historical build lock appeared")
         return None
@@ -837,7 +850,7 @@ def _recovery_build_identity(sha, workspace):
 
 
 def _assert_recovery_build_lock(sha, fd, workspace):
-    if workspace.get("profile") == "phase-clone-timeout":
+    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain"}:
         if fd is not None or _recovery_build_identity(sha, workspace) is not None:
             raise BootstrapError("phase clone build lock must remain absent")
     elif fd is None:

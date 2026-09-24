@@ -27,6 +27,7 @@ PYTHON = "/usr/bin/python3.12"
 DEPLOY_TIMEOUT_SECONDS = 3600
 RECOVERY_MARGIN_SECONDS = 3600
 PREPARATION_TIMEOUT_SECONDS = 90
+PREPARATION_GROUP_EXIT_GRACE_SECONDS = 2
 
 
 class LaunchError(Exception):
@@ -508,9 +509,26 @@ def execute_preparation(args, cwd, env, log):
         os.chmod(log, 0o600)
         process = subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                                    stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+        group_exited = False
         try:
             code = process.wait(timeout=PREPARATION_TIMEOUT_SECONDS)
-        except BaseException:  # noqa: BLE001 -- Cancel the owned group even on interpreter interruption.
+            deadline = time.monotonic() + PREPARATION_GROUP_EXIT_GRACE_SECONDS
+            while True:
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    group_exited = True
+                    break
+                except OSError:
+                    raise PreparationUncertain("preparation group inspection failed") from None
+                # A successful fixed Git command can outlive its leader briefly
+                # while the transport helper closes. The command is not complete
+                # until the entire owned process group exits. Failed commands
+                # receive no grace.
+                if code or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.05)
+        except BaseException:  # noqa: BLE001 -- Cancel the owned group even during grace inspection.
             try:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
@@ -520,14 +538,10 @@ def execute_preparation(args, cwd, env, log):
                 process.wait(timeout=5)
             finally:
                 raise PreparationUncertain("preparation interrupted; operator review required") from None
-        try:
-            os.killpg(process.pid, 0)
-        except ProcessLookupError:
+        if group_exited:
             if code:
                 raise subprocess.CalledProcessError(code, args) from None
             return
-        except OSError:
-            raise PreparationUncertain("preparation group inspection failed") from None
         try:
             os.killpg(process.pid, signal.SIGKILL)
         finally:

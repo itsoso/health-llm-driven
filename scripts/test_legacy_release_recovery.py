@@ -362,6 +362,53 @@ def phase_timeout_fixture(monkeypatch, tmp_path, _base=recovery_fixture):
     return b, w, calls
 
 
+def phase_completed_fixture(monkeypatch, tmp_path, _base=recovery_fixture):
+    b, w, calls = _base(monkeypatch, tmp_path)
+    digest = hashlib.sha256(b.INSTALLED.read_bytes()).hexdigest()
+    monkeypatch.setattr(b, "LEGACY_CLONE_EXECUTORS", set())
+    monkeypatch.setattr(b, "PHASE_CLONE_TIMEOUT_EXECUTORS", set(), raising=False)
+    monkeypatch.setattr(b, "PHASE_CLONE_COMPLETED_EXECUTORS", {digest}, raising=False)
+    (w / "build.lock").unlink()
+    b._write(w / "preparation-started.json", json.dumps({
+        "sha": SHA, "state": "PREPARING", "executor_sha256": digest,
+    }).encode())
+    (w / "preparation.log").write_text(f"Cloning into '{w}/source'...\n")
+    (w / "source").mkdir(mode=0o700)
+    (w / "source/.git").mkdir(mode=0o700)
+    b._write(w / "source/.git/HEAD", b"ref: refs/heads/main\n")
+    return b, w, calls
+
+
+def test_completed_clone_uncertain_recovery_is_exact_and_keeps_build_lock_absent(monkeypatch, tmp_path):
+    b, w, calls = phase_completed_fixture(monkeypatch, tmp_path)
+    original = b._preparation_manifest(w)
+    plan = inspect(b)
+    result = recover(b, plan["evidence_sha256"])
+    assert result["state"] == "RECOVERED_PREPARATION_FAILURE"
+    assert b._preparation_manifest(w) == original
+    assert not (w / "build.lock").exists()
+    intent = b._read_json(b.STATE / "recoveries" / SHA / "intent.json")
+    assert intent["workspace"]["profile"] == "phase-clone-completed-uncertain"
+    assert intent["locks"]["build"] is None
+    assert not any("deploy.sh" in str(arg) for arg in calls)
+
+
+@pytest.mark.parametrize("fault", ["log", "checkout", "build_lock", "prepared"])
+def test_completed_clone_uncertain_rejects_changed_or_started_scene(monkeypatch, tmp_path, fault):
+    b, w, _ = phase_completed_fixture(monkeypatch, tmp_path)
+    if fault == "log":
+        (w / "preparation.log").write_text("unexpected\n")
+    elif fault == "checkout":
+        b._write(w / "source/deploy.sh", b"unsafe")
+    elif fault == "build_lock":
+        b._write(w / "build.lock", b"")
+    else:
+        b._write(w / "prepared.json", b"{}")
+    with pytest.raises((b.BootstrapError, FileNotFoundError)):
+        inspect(b)
+    assert not (b.STATE / "recoveries").exists()
+
+
 def test_phase_timeout_recovery_preserves_scene_and_absent_build_lock(monkeypatch, tmp_path):
     b, w, calls = phase_timeout_fixture(monkeypatch, tmp_path)
     original = b._preparation_manifest(w)

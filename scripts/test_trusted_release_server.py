@@ -385,6 +385,7 @@ def test_surviving_preparation_child_is_stopped_and_classified_uncertain(tmp_pat
     import sys
     import time
     server = load_server()
+    server.PREPARATION_GROUP_EXIT_GRACE_SECONDS = 0.05
     output = tmp_path / "unexpected-child-output"
     child = f"import time; time.sleep(0.4); open({str(output)!r}, 'w').write('late')"
     parent = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {child!r}])"
@@ -392,6 +393,53 @@ def test_surviving_preparation_child_is_stopped_and_classified_uncertain(tmp_pat
         server.execute_preparation([sys.executable, "-c", parent], tmp_path,
                                    dict(os.environ), tmp_path / "preparation.log")
     time.sleep(0.6)
+    assert not output.exists()
+
+
+def test_successful_preparation_waits_for_owned_transport_group(monkeypatch, tmp_path):
+    server = load_server()
+    server.PREPARATION_GROUP_EXIT_GRACE_SECONDS = 1
+    class Process:
+        pid = 12345
+        def wait(self, timeout):
+            assert timeout == server.PREPARATION_TIMEOUT_SECONDS
+            return 0
+    monkeypatch.setattr(server.subprocess, "Popen", lambda *args, **kwargs: Process())
+    inspections = 0
+    def killpg(pid, signal):
+        nonlocal inspections
+        assert pid == Process.pid
+        assert signal == 0
+        inspections += 1
+        if inspections == 2:
+            raise ProcessLookupError
+    monkeypatch.setattr(server.os, "killpg", killpg)
+    server.execute_preparation(["fixed-git"], tmp_path, {}, tmp_path / "preparation.log")
+    assert inspections == 2
+
+
+def test_interrupted_transport_grace_kills_owned_process_group(monkeypatch, tmp_path):
+    import sys
+    import time
+    server = load_server()
+    real_sleep = time.sleep
+    server.PREPARATION_GROUP_EXIT_GRACE_SECONDS = 1
+    interrupted = False
+    class Clock:
+        monotonic = staticmethod(time.monotonic)
+        def sleep(self, _seconds):
+            nonlocal interrupted
+            interrupted = True
+            raise KeyboardInterrupt
+    monkeypatch.setattr(server, "time", Clock())
+    output = tmp_path / "interrupted-child-output"
+    child = f"import time; time.sleep(0.4); open({str(output)!r}, 'w').write('late')"
+    parent = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {child!r}])"
+    with pytest.raises(server.PreparationUncertain):
+        server.execute_preparation([sys.executable, "-c", parent], tmp_path,
+                                   dict(os.environ), tmp_path / "preparation.log")
+    assert interrupted
+    real_sleep(0.6)
     assert not output.exists()
 
 
