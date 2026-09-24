@@ -66,33 +66,60 @@ export default function ExamExplainScreen() {
     staleTime: 10 * 60 * 1000,
   });
 
+  // Keep navigation outside the scrolling content and present in every query state.
+  // Native headers can be hidden by the parent modal stack.
+  const renderPage = (children: React.ReactNode) => (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]}>
+        <View style={[styles.header, { borderBottomColor: c.separator }]}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="返回上一页"
+            style={styles.headerButton}
+            onPress={() => router.canGoBack() ? router.back() : router.dismissTo('/(tabs)/chat')}
+          >
+            <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: c.labelPrimary }]}>AI 体检解读</Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="返回主屏幕"
+            style={styles.headerButton}
+            onPress={() => router.dismissTo('/(tabs)/chat')}
+          >
+            <Ionicons name="home-outline" size={22} color={c.brand} />
+          </TouchableOpacity>
+        </View>
+        {children}
+      </SafeAreaView>
+    </>
+  );
+
   if (isLoading) {
-    return (
-      <SafeAreaView style={[styles.center, { backgroundColor: c.bgPrimary }]}>
+    return renderPage(
+      <View style={styles.center}>
         <ActivityIndicator color={c.brand} />
         <Text style={{ color: c.labelTertiary, marginTop: 8, fontSize: 12 }}>解读中…</Text>
-      </SafeAreaView>
+      </View>
     );
   }
   if (error || !data) {
-    return (
-      <SafeAreaView style={[styles.center, { backgroundColor: c.bgPrimary }]}>
+    return renderPage(
+      <View style={styles.center}>
         <Ionicons name="warning-outline" size={32} color={c.amber} />
         <Text style={{ color: c.labelPrimary, fontSize: 16, marginTop: 8 }}>加载失败</Text>
         <Text style={{ color: c.labelTertiary, fontSize: 12, marginTop: 4 }}>
           {String(error ?? '体检不存在')}
         </Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
   const expl = data.explanation;
   const needDoctor = !!(expl?.see_doctor_specialty);
 
-  return (
-    <>
-      <Stack.Screen options={{ title: 'AI 体检解读', headerBackTitle: '返回', headerShown: true }} />
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['bottom']}>
+  return renderPage(
         <ScrollView contentContainerStyle={styles.scroll}>
           {/* Hero */}
           <View style={[styles.hero, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -136,6 +163,7 @@ export default function ExamExplainScreen() {
           )}
 
           <AgentFeedbackLink
+            navigationMode="return"
             label="跟小巴讨论这些异常项"
             accessibilityLabel="跟小巴讨论这些异常项"
             prompt="请基于这次体检异常解读，帮我按优先级梳理风险、行动、复查安排和需要向医生确认的问题。不要替代诊断或用药建议。"
@@ -243,8 +271,6 @@ export default function ExamExplainScreen() {
             </View>
           )}
         </ScrollView>
-      </SafeAreaView>
-    </>
   );
 }
 
@@ -280,6 +306,9 @@ function ActionCard({ action, c, s }: { action: ExplainAction; c: any; s: Semant
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth },
+  headerButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
   scroll: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl * 2 },
   hero: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radii.lg, padding: spacing.md, gap: 8 },

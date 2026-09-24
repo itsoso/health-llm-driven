@@ -1448,6 +1448,41 @@ def _turn_contains_deny_only_action(raw: str) -> bool:
     return any(root in raw for root in _DENY_ONLY_ACTION_ROOTS)
 
 
+def _is_clinician_question_preparation(raw: str, provider: _Span) -> bool:
+    """Preparing questions for a clinician is not reporting their instructions.
+
+    Keep this read-only envelope local: a nominal recheck arrangement is not
+    an instruction to schedule one. Independent actions anywhere in the turn
+    still close the envelope, including actions preceding the question list.
+    """
+    prefix = raw[:provider.start]
+    if not prefix.endswith(("向", "跟", "与", "和")):
+        return False
+    if not raw[provider.end:].startswith((
+        "确认的问题", "沟通的问题", "讨论的问题",
+        "确认哪些问题", "沟通哪些问题", "讨论哪些问题",
+    )):
+        return False
+    preparation = ("梳理", "整理", "列出", "准备")
+    if not any(verb in prefix for verb in preparation):
+        return False
+    if any(negation in prefix for negation in CLAUSE_ACTION_NEGATIONS):
+        return False
+    for root in _DENY_ONLY_ACTION_ROOTS:
+        if root in READ_ACTIONS:
+            continue
+        start = raw.find(root)
+        while start >= 0:
+            if not (
+                root == "安排"
+                and raw[max(0, start - 2):start] == "复查"
+                and _second_action_kind(raw, _Span(0, len(raw))) is None
+            ):
+                return False
+            start = raw.find(root, start + len(root))
+    return True
+
+
 def _provider_is_care_seeking_object(
     raw: str,
     provider: _Span,
@@ -2286,6 +2321,13 @@ def classify_clinician_turn(raw: str) -> ClinicianTurnDecision:
             content=report.content,
         )
 
+    if _is_clinician_question_preparation(raw, first_provider):
+        return _decision(
+            raw,
+            kind="clinician_advice",
+            reason_code="clinician_consultation",
+            provider=first_provider,
+        )
     if any(term in raw for term in CLINICIAN_CONSULTATION_TERMS):
         content = _trim(raw, first_provider.end, len(raw))
         return _decision(

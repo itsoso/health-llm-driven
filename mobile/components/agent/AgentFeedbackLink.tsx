@@ -11,6 +11,7 @@ import {
 } from '@/constants/revaTheme';
 import {
   pushChatWithContext,
+  returnToChatWithContext,
   type AgentContextPayload,
   type ChatContextRouteInput,
 } from '@/utils/agentContext';
@@ -19,6 +20,8 @@ interface Props extends ChatContextRouteInput {
   label: string;
   accessibilityLabel?: string;
   style?: ViewStyle | ViewStyle[];
+  /** Modal workflows should unwind to the main chat instead of pushing another copy. */
+  navigationMode?: 'push' | 'return';
 }
 
 export default function AgentFeedbackLink({
@@ -29,12 +32,13 @@ export default function AgentFeedbackLink({
   newChat,
   accessibilityLabel,
   style,
+  navigationMode = 'push',
 }: Props) {
   const router = useRouter();
 
   return (
     <Pressable
-      onPress={() => pushChatWithContext(router, {
+      onPress={() => (navigationMode === 'return' ? returnToChatWithContext : pushChatWithContext)(router, {
         prompt,
         context: context as AgentContextPayload | string,
         badge,
