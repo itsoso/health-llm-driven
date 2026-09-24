@@ -209,6 +209,9 @@ class ClosureAdapter:
         else:
             b.secure(self.record.parent.parent)
         b._recovery_process_proof()
+        if (not self.unchanged
+                and os.path.lexists(b.STATE / "unchanged-release-closures" / p.failed_sha)):
+            raise ClosureError("unchanged release closure already attempted")
         snapshot = p.snapshot()
         if self.unchanged:
             if (os.path.lexists(b.STATE / "contained-service-recoveries" / p.failed_sha)

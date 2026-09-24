@@ -274,6 +274,17 @@ def test_unstarted_release_cannot_hide_existing_restoration(tmp_path, monkeypatc
     assert not a.record.exists()
 
 
+def test_restored_closure_rejects_any_unchanged_closure_attempt(tmp_path, monkeypatch):
+    m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch)
+    record = b.STATE / "unchanged-release-closures" / a.proof.failed_sha
+    record.mkdir(parents=True)
+    (record / "intent.json").write_text("partial")
+    with pytest.raises(m.ClosureError):
+        m.close_transaction(a)
+    assert a.proof.lease.exists()
+    assert not a.record.exists()
+
+
 def test_backend_only_closure_preserves_proven_absence_of_native_build_lock(tmp_path, monkeypatch):
     m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch, build_lock=False)
     lock = b.STATE / a.proof.failed_sha / "build.lock"

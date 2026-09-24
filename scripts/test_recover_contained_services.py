@@ -72,6 +72,17 @@ def test_inspection_never_creates_audit_or_starts(monkeypatch, tmp_path):
     assert "probes" in p.events
 
 
+def test_service_recovery_rejects_any_unchanged_closure_attempt(monkeypatch, tmp_path):
+    m, p, audit = setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(m, "STATE", tmp_path)
+    record = tmp_path / "unchanged-release-closures" / p.failed_sha
+    record.mkdir(parents=True)
+    (record / "intent.json").write_text("partial")
+    with pytest.raises(m.RecoveryError):
+        m.recover_services(p, audit, "c" * 40)
+    assert p.events == []
+
+
 def test_inspection_probe_failure_does_not_consume_recovery(monkeypatch, tmp_path):
     m, p, audit = setup(monkeypatch, tmp_path)
     monkeypatch.setattr(m, "_application_probes", lambda *a: (_ for _ in ()).throw(RuntimeError("offline")))

@@ -270,7 +270,12 @@ def _inventory(directory, names):
 
 def _workspace_evidence(sha, *, recovery_receipt=None):
     workspace = STATE / sha
-    if os.path.lexists(STATE / "review-maintenance-closures" / sha):
+    review_closure = os.path.lexists(STATE / "review-maintenance-closures" / sha)
+    unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
+    contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
+    if sum((review_closure, unchanged_closure, contained_closure)) > 1:
+        raise BootstrapError("conflicting release closure evidence")
+    if review_closure:
         path = Path(__file__).absolute().with_name("review_maintenance_retirement.py")
         secure(path)
         if os.path.lexists(path.parent / "__pycache__"):
@@ -279,8 +284,7 @@ def _workspace_evidence(sha, *, recovery_receipt=None):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt)
-    unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
-    if unchanged_closure or os.path.lexists(STATE / "contained-release-closures" / sha):
+    if unchanged_closure or contained_closure:
         path = Path(__file__).absolute().with_name("contained_release_retirement.py")
         secure(path)
         if os.path.lexists(path.parent / "__pycache__"):

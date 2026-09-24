@@ -187,6 +187,8 @@ def _application_probes(production_sha, recovery_sha):
 
 
 def recover_services(proof, audit, recovery_sha, expected_hash=None):
+    if os.path.lexists(STATE / "unchanged-release-closures" / proof.failed_sha):
+        raise RecoveryError("unchanged release closure already attempted")
     if os.path.lexists(audit):
         raise RecoveryError("recovery already attempted; retry forbidden")
     before = proof.snapshot()
@@ -316,6 +318,9 @@ def main():
                     return self.invoke("running_snapshot")
 
             proof = LockedProof()
+            if (not args.retire_unchanged
+                    and os.path.lexists(STATE / "unchanged-release-closures" / args.failed_sha)):
+                raise RecoveryError("unchanged release closure already attempted")
             if args.retire_restored or args.retire_unchanged:
                 module_path = source / "scripts/contained_release_retirement.py"
                 bootstrap.secure(module_path)
