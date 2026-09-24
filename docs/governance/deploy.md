@@ -269,6 +269,32 @@ generation 或 install receipt 出现仍 BLOCK。入口保留原 NEEDS_OPERATOR�
 复用同 inode lease 归档和精确双身份撤权，终态只记 CLOSED_UNCHANGED_RELEASE。只有最终
 fsync 后才返回受保护回执供后续 rotate 验证；不得补造 RESTORED 回执或重跑失败 SHA。
 
+#### 固定 Laya PREPARING 事故的缺失租约行政收尾
+
+`scripts/partial_laya_retirement.py` 是独立的窄化入口，仅处理脚本内固定的 a6b6
+失败版本、ba861 已退休历史基线、05b6 旧生产及对应 generation。它不扩宽
+`--retire-unchanged`，不重新执行 installer、venv、pip 或其中任何代码。原 business
+lease 缺失原因必须记为 `ABSENT_CAUSE_UNKNOWN`，不能重建、补写或当作正常释放。
+只有用户明确接受此事故并授权处理，才可提供 `--accept-unknown-lease-loss`；默认仅
+只读检查，执行须再次提交完全一致的 `--evidence-sha256`。
+
+新入口只能来自全新受审、精确 CI 绿色的 canonical root staging；持有原 launcher
+和已存在的原 build 锁。它独立复核 ba861 完整退休/closure 链，以该历史保存的
+live env 字节身份、旧 COMMITTED terminal、有效 units 和全部稳定 PID/starttime 为
+未变证明，不接受新生成的当前环境摘要作为基线。任何服务重启、租约出现、未知
+writer/事务、Laya 账号/unit/listener/进程或证明缺失均 BLOCK。其安装来源只接受
+a6b6 canonical assets、精确 PREPARING receipt 和固定 generation；venv 作为有界、
+root-owned 的不可信静态字节记录，固定解释器链接仅记链接目标、不遍历不执行。
+
+一次性 intent fsync 后，同文件系统、no-clobber 移动原 generation 和原 install.json
+到各自固定 retired 私有目录，保留 inode 和全部原字节，再精确撤销旧双身份及旧
+loopback 私钥。不修改原 NEEDS_OPERATOR、日志、业务数据或服务，不签发新身份。
+终态只记 `CLOSED_PARTIAL_LAYA_ORPHANED_LEASE`；最终复证和 fsync 完成后才交付
+随机回执。操作 stdout 必须定向到 root-only 私有文件，回执仅经 protected stdin
+交给后续 rotate，禁止打印、日志泄露、argv 传递、补发、重跑或换操作 ID。
+普通轮换和未来历史核验必须复核该专门终态、原失败记录、静态归档、旧基线链、
+原锁与精确撤权；历史证明不依赖将来的 live SHA/PIDs。任意中断均保留现场并 BLOCK。
+
 若且仅若 `CLOSED_UNCHANGED_RELEASE` 的原始明文回执在成功交付后遗失，可走独立的
 `acknowledge-lost-closure-receipt` 管理确认；这不是补发或重建原回执，也不修改原 closure。
 入口必须来自新的受审、精确主干 CI 绿色 canonical SHA，并持有原 launcher 锁和已有的

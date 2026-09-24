@@ -24,6 +24,9 @@ RELEASE_TESTS = (
     "scripts/test_trusted_review_reset.py",
     "scripts/test_review_maintenance_retirement.py",
     "scripts/test_lost_closure_receipt_acknowledgment.py",
+    "scripts/test_partial_laya_retirement.py",
+    "scripts/test_mobile_local_qr_script.py",
+    "scripts/test_mobile_local_qr_safety.py",
     "scripts/test_admin_key_pause.py",
     "scripts/test_legacy_release_recovery.py",
 )

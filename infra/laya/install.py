@@ -11,13 +11,13 @@ import hashlib
 import hmac
 import json
 import os
-from pathlib import Path
 import pwd
 import re
 import stat
 import subprocess
 import sys
 import time
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -111,6 +111,43 @@ def command(args, *, timeout=120):
     return subprocess.run([str(x) for x in args], env=CLEAN_ENV, stdin=subprocess.DEVNULL,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           check=True, timeout=timeout, text=True).stdout.strip()
+
+
+def install_step(stage, args, *, timeout=120):
+    """Expose an actionable closed error code, never child output or arguments."""
+    if stage not in {"venv", "dependencies", "unit_verify"}:
+        raise InstallError("unknown_install_step")
+    print(f"LAYA_STEP:{stage}", flush=True)
+    try:
+        return command(args, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise InstallError(f"{stage}_failed_timeout") from None
+    except subprocess.CalledProcessError as exc:
+        chunks = (exc.stdout or "", exc.stderr or "")
+        diagnostic = "\n".join(item.decode(errors="replace") if isinstance(item, bytes) else item
+                               for item in chunks)
+        categories = (
+            ("THESE PACKAGES DO NOT MATCH THE HASHES", "hash_mismatch"),
+            ("No matching distribution found", "distribution_unavailable"),
+            ("ResolutionImpossible", "dependency_conflict"),
+            ("ReadTimeout", "network_timeout"),
+            ("ConnectTimeout", "network_timeout"),
+            ("CERTIFICATE_VERIFY_FAILED", "tls_verification"),
+            ("No space left on device", "disk_full"),
+        )
+        category = next((value for marker, value in categories if marker in diagnostic), "subprocess")
+        raise InstallError(f"{stage}_failed_{category}") from None
+
+
+def install_dependencies(generation):
+    # The mirror changes transport only: original lock hashes, binary-only
+    # wheels and CPU torch remain mandatory. Restrict the CPU host to torch so
+    # ordinary dependencies cannot select its slower duplicate wheels.
+    install_step("dependencies", [generation / "venv/bin/python", "-I", "-m", "pip", "--isolated", "install",
+                 "--require-hashes", "--only-binary=:all:", "--no-cache-dir",
+                 "--index-url", "https://pypi.tuna.tsinghua.edu.cn/simple",
+                 "--find-links", "https://download.pytorch.org/whl/cpu/torch/",
+                 "-r", generation / "requirements.lock"], timeout=1200)
 
 
 def parse_config(text):
@@ -340,16 +377,12 @@ def prepare(source, config, args):
         write_atomic(generation / name, (source / name).read_bytes(), 0o644)
     python = Path("/usr/bin/python3.12")
     secure(python.resolve())
-    command([python, "-I", "-m", "venv", generation / "venv"])
+    install_step("venv", [python, "-I", "-m", "venv", generation / "venv"])
     # Binary wheels only; the complete CPU dependency closure is hash pinned.
-    command([generation / "venv/bin/python", "-I", "-m", "pip", "--isolated", "install",
-             "--require-hashes", "--only-binary=:all:", "--no-cache-dir",
-             "--index-url", "https://pypi.org/simple",
-             "--extra-index-url", "https://download.pytorch.org/whl/cpu",
-             "-r", generation / "requirements.lock"], timeout=1200)
+    install_dependencies(generation)
     install_model_files(source, generation)
     write_atomic(generation / "reva-laya.service", unit, 0o644)
-    command(["/usr/bin/systemd-analyze", "verify", generation / "reva-laya.service"])
+    install_step("unit_verify", ["/usr/bin/systemd-analyze", "verify", generation / "reva-laya.service"])
     verify_generation(source, generation)
     save_receipt({**receipt, "state": "PREPARED"})
     print("LAYA_PREPARED")

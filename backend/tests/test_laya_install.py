@@ -1,8 +1,9 @@
 """Fail-closed deployment boundaries; no subprocess touches the test host."""
 import importlib.util
 import os
-from pathlib import Path
 import stat
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +21,61 @@ def config(**changes):
                   DECISION_MODEL="multilingual", DECISION_API_KEY="a" * 48)
     values.update(changes)
     return "\n".join(f"{key}={value}" for key, value in values.items())
+
+
+@pytest.mark.parametrize("stderr,expected", [
+    ("ERROR: THESE PACKAGES DO NOT MATCH THE HASHES", "hash_mismatch"),
+    ("ERROR: No matching distribution found", "distribution_unavailable"),
+    ("ResolutionImpossible: conflicting dependencies", "dependency_conflict"),
+    ("ReadTimeoutError: private-host", "network_timeout"),
+    ("CERTIFICATE_VERIFY_FAILED", "tls_verification"),
+    ("No space left on device", "disk_full"),
+    ("private arbitrary failure", "subprocess"),
+])
+def test_install_step_reports_closed_error_category_without_raw_output(monkeypatch, stderr, expected):
+    def failed(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, ["private-command"],
+                                            output="sensitive-value", stderr=stderr)
+    monkeypatch.setattr(installer, "command", failed)
+    with pytest.raises(installer.InstallError) as caught:
+        installer.install_step("dependencies", ["irrelevant"], timeout=1200)
+    assert str(caught.value) == f"dependencies_failed_{expected}"
+
+
+def test_install_step_timeout_is_not_success_and_preserves_no_output(monkeypatch):
+    def failed(*args, **kwargs):
+        raise subprocess.TimeoutExpired(["private-command"], 10, output=b"sensitive-value")
+    monkeypatch.setattr(installer, "command", failed)
+    with pytest.raises(installer.InstallError, match="^dependencies_failed_timeout$"):
+        installer.install_step("dependencies", ["irrelevant"])
+
+
+def test_install_step_rejects_unknown_stage_before_command(monkeypatch):
+    monkeypatch.setattr(installer, "command", lambda *a, **kw: pytest.fail("must not execute"))
+    with pytest.raises(installer.InstallError, match="^unknown_install_step$"):
+        installer.install_step("sensitive-value", ["irrelevant"])
+
+
+def test_install_step_preserves_success_and_timeout_argument(monkeypatch):
+    calls = []
+    monkeypatch.setattr(installer, "command", lambda args, **kw: calls.append((args, kw)) or "success")
+    assert installer.install_step("dependencies", ["synthetic"], timeout=321) == "success"
+    assert calls == [(["synthetic"], {"timeout": 321})]
+
+
+def test_dependency_mirror_keeps_original_hashes_and_cpu_binary_boundary(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(installer, "install_step", lambda *args, **kwargs: calls.append((args, kwargs)))
+    installer.install_dependencies(tmp_path)
+    (stage, args), kwargs = calls[0]
+    assert stage == "dependencies" and kwargs == {"timeout": 1200}
+    assert args[:5] == [tmp_path / "venv/bin/python", "-I", "-m", "pip", "--isolated"]
+    assert args[args.index("--index-url") + 1] == "https://pypi.tuna.tsinghua.edu.cn/simple"
+    assert "--extra-index-url" not in args
+    assert args[args.index("--find-links") + 1] == "https://download.pytorch.org/whl/cpu/torch/"
+    assert {"--require-hashes", "--only-binary=:all:", "--no-cache-dir"} <= set(map(str, args))
+    assert args[-2:] == ["-r", tmp_path / "requirements.lock"]
+    assert not {"--trusted-host", "--no-deps", "--ignore-installed"} & set(map(str, args))
 
 
 def metadata(kind, mode, *, uid=0, gid=0, nlink=1):

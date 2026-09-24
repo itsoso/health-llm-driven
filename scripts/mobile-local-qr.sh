@@ -9,27 +9,29 @@
 #   ./scripts/mobile-local-qr.sh --profile rokid-adhoc
 #   ./scripts/mobile-local-qr.sh --ipa /path/to/existing.ipa
 #   ./scripts/mobile-local-qr.sh --no-upload
+#   ./scripts/mobile-local-qr.sh --no-latest  # preserve an existing latest alias
 #
-# Env overrides:
-#   IOS_LOCAL_QR_PUBLIC_BASE_URL=https://health.executor.life/mobile-install/ios/<id>
-#   IOS_LOCAL_QR_REMOTE_DIR=/opt/health-app-shared/mobile-install/ios/<id>
-#   IOS_LOCAL_QR_TEAM_ID=QA2U724DAN
-#   IOS_LOCAL_QR_SCHEME=HealthPilot  # optional; auto-detected when unset
-#   IOS_LOCAL_QR_EXPORT_METHOD=ad-hoc
+# Requires an already-installed ad-hoc profile (IOS_LOCAL_QR_PROFILE_UUID).
+# Never creates credentials or falls back to development signing.
+# --ipa requires the original adjacent .receipt.json for this exact source SHA.
+# DEPLOY_SERVER defaults to the authenticated admin SSH alias health.
+# No .env files are read. Public destinations are intentionally fixed.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOBILE_DIR="${ROOT}/mobile"
-ENV_FILE="${ROOT}/.env"
+SAFETY="${ROOT}/scripts/mobile_local_qr_safety.py"
 
 PROFILE="rokid-adhoc"
 IPA_INPUT=""
 UPLOAD="${IOS_LOCAL_QR_UPLOAD:-1}"
+UPDATE_LATEST=1
 BUILD_ID="$(date +%Y%m%d-%H%M%S)-$(git -C "${ROOT}" rev-parse --short HEAD)"
-TEAM_ID="${IOS_LOCAL_QR_TEAM_ID:-QA2U724DAN}"
+TEAM_ID="QA2U724DAN"
 SCHEME="${IOS_LOCAL_QR_SCHEME:-}"
-EXPORT_METHOD="${IOS_LOCAL_QR_EXPORT_METHOD:-ad-hoc}"
+EXPORT_METHOD="ad-hoc"
+DEPLOY_SERVER="${DEPLOY_SERVER:-health}"
 
 usage() {
   sed -n '1,24p' "$0"
@@ -47,6 +49,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --no-upload)
       UPLOAD=0
+      shift
+      ;;
+    --no-latest)
+      UPDATE_LATEST=0
       shift
       ;;
     --build-id)
@@ -70,12 +76,16 @@ if [ ! -d "${MOBILE_DIR}" ]; then
   exit 1
 fi
 
-set -a
-[ -f "${ENV_FILE}" ] && source "${ENV_FILE}"
-set +a
+python3 -I "${SAFETY}" validate-config --build-id "${BUILD_ID}" --server "${DEPLOY_SERVER}"
+case "${UPLOAD}" in 0|1) ;; *) echo "IOS_LOCAL_QR_UPLOAD must be 0 or 1." >&2; exit 1 ;; esac
+SOURCE_SHA="$(git -C "${ROOT}" rev-parse HEAD)"
+if [ -n "$(git -C "${ROOT}" status --porcelain --untracked-files=no)" ]; then
+  echo "Local QR requires a clean, reviewed canonical checkout." >&2
+  exit 1
+fi
 
 PROFILE_EXPORTS="$(
-  node - "${MOBILE_DIR}/eas.json" "${PROFILE}" <<'NODE'
+  env -i "PATH=${PATH}" node - "${MOBILE_DIR}/eas.json" "${PROFILE}" <<'NODE'
 const fs = require('fs');
 const [easPath, profileName] = process.argv.slice(2);
 const eas = JSON.parse(fs.readFileSync(easPath, 'utf8'));
@@ -104,21 +114,36 @@ const profile = mergeProfile(profileName);
 if (typeof profile.channel !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(profile.channel)) {
   throw new Error('Local QR build requires an explicit valid update channel');
 }
-for (const [key, value] of Object.entries(profile.env || {})) {
-  process.stdout.write(`export ${key}=${JSON.stringify(String(value))}\n`);
+const allowed = new Set(['APP_VARIANT', 'SENTRY_DISABLE_AUTO_UPLOAD', 'ROKID_IOS_SDK_ENABLED',
+  'ROKID_IOS_CLIENT_FRAMEWORK_PATH', 'ROKID_IOS_CLIENT_HAS_CALLBACK_API',
+  'ROKID_IOS_CLIENT_VERSION', 'ROKID_IOS_SIMULATOR', 'ROKID_IOS_CALLBACK_SCHEME']);
+const values = Object.entries(profile.env || {});
+for (const [key, value] of values) {
+  if (!allowed.has(key) || typeof value !== 'string' || !/^[A-Za-z0-9_./-]+$/.test(value)) {
+    throw new Error('Unsupported local QR profile setting');
+  }
 }
-process.stdout.write(`export REVA_LOCAL_UPDATES_CHANNEL=${JSON.stringify(profile.channel)}\n`);
+for (const [key, value] of values) process.stdout.write(`${key}\t${value}\n`);
+process.stdout.write(`REVA_LOCAL_UPDATES_CHANNEL\t${profile.channel}\n`);
 NODE
 )"
-eval "${PROFILE_EXPORTS}"
-
-export SENTRY_DISABLE_AUTO_UPLOAD="${SENTRY_DISABLE_AUTO_UPLOAD:-true}"
+PROFILE_ENV=()
+while IFS=$'\t' read -r key value; do
+  PROFILE_ENV+=("${key}=${value}")
+  case "${key}" in
+    APP_VARIANT) APP_VARIANT="${value}" ;;
+    REVA_LOCAL_UPDATES_CHANNEL) REVA_LOCAL_UPDATES_CHANNEL="${value}" ;;
+  esac
+done <<< "${PROFILE_EXPORTS}"
+[ "${APP_VARIANT:-}" = "production" ] || { echo "Only production variants may use local QR distribution." >&2; exit 1; }
 export PATH="/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin:${PATH}"
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 
 OUTPUT_DIR="${ROOT}/artifacts/ios-local-install/${BUILD_ID}"
-mkdir -p "${OUTPUT_DIR}"
+mkdir -p "${ROOT}/artifacts/ios-local-install"
+mkdir -m 0700 "${OUTPUT_DIR}"
+PUBLIC_DIR="${OUTPUT_DIR}/public"
 
 IPA_NAME="HealthPilot-${BUILD_ID}.ipa"
 IPA_PATH="${OUTPUT_DIR}/${IPA_NAME}"
@@ -126,6 +151,11 @@ EXPORT_DIR="${OUTPUT_DIR}/export"
 ARCHIVE_PATH="${OUTPUT_DIR}/HealthPilot.xcarchive"
 EXPORT_OPTIONS="${OUTPUT_DIR}/ExportOptions.plist"
 BUILD_LOG="${OUTPUT_DIR}/xcodebuild.log"
+APP_VERSION="$(env -i "PATH=${PATH}" node -p 'require(process.argv[1]).expo.version' "${MOBILE_DIR}/app.json")"
+NATIVE_ENV=("PATH=${PATH}" "HOME=${HOME}" "TMPDIR=${TMPDIR:-/tmp}" "LANG=${LANG}" "LC_ALL=${LC_ALL}" "EXPO_NO_DOTENV=1" "SENTRY_DISABLE_AUTO_UPLOAD=true")
+[ -z "${DEVELOPER_DIR:-}" ] || NATIVE_ENV+=("DEVELOPER_DIR=${DEVELOPER_DIR}")
+[ -z "${REVA_IOS_BUILD_NUMBER:-}" ] || NATIVE_ENV+=("REVA_IOS_BUILD_NUMBER=${REVA_IOS_BUILD_NUMBER}")
+run_native() { env -i "${NATIVE_ENV[@]}" "${PROFILE_ENV[@]}" "$@"; }
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -145,9 +175,13 @@ write_export_options() {
   <key>method</key>
   <string>${method}</string>
   <key>signingStyle</key>
-  <string>automatic</string>
+  <string>manual</string>
   <key>teamID</key>
   <string>${TEAM_ID}</string>
+  <key>signingCertificate</key>
+  <string>iPhone Distribution</string>
+  <key>provisioningProfiles</key>
+  <dict><key>life.executor.health</key><string>${IOS_LOCAL_QR_PROFILE_UUID}</string></dict>
   <key>compileBitcode</key>
   <false/>
   <key>stripSwiftSymbols</key>
@@ -170,13 +204,21 @@ if [ -n "${IPA_INPUT}" ]; then
 else
   require_command xcodebuild
   require_command pod
+  if ! [[ "${IOS_LOCAL_QR_PROFILE_UUID:-}" =~ ^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$ ]]; then
+    echo "Set IOS_LOCAL_QR_PROFILE_UUID to an existing installed ad-hoc profile." >&2
+    exit 1
+  fi
+  if ! [[ "${REVA_IOS_BUILD_NUMBER:-}" =~ ^[0-9]+$ ]]; then
+    echo "Set the reviewed REVA_IOS_BUILD_NUMBER before creating a native package." >&2
+    exit 1
+  fi
 
   cd "${MOBILE_DIR}"
   echo "==> prebuild (${PROFILE})"
-  npx expo prebuild --platform ios --clean
+  run_native npx --no-install expo prebuild --platform ios --clean
 
   echo "==> pod install"
-  (cd ios && pod install --repo-update)
+  (cd ios && run_native pod install --repo-update)
 
   WORKSPACE="$(ls -d ios/*.xcworkspace 2>/dev/null | head -1)"
   if [ -z "${WORKSPACE}" ]; then
@@ -184,30 +226,8 @@ else
     exit 1
   fi
 
-  AUTH_KEY_PATH=""
-  AUTH_KEY_ID=""
-  AUTH_ISSUER_ID=""
-  KEY_ID="${APP_STORE_CONNECT_API_KEY:-${ASC_KEY_ID:-}}"
-  ISSUER_ID="${APP_STORE_CONNECT_ISSUER_ID:-${ASC_ISSUER_ID:-}}"
-  if [ -n "${KEY_ID}" ] && [ -n "${ISSUER_ID}" ]; then
-    P8="${ASC_PRIVATE_KEY_PATH:-${HOME}/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8}"
-    if [ -f "${P8}" ]; then
-      AUTH_KEY_PATH="${P8}"
-      AUTH_KEY_ID="${KEY_ID}"
-      AUTH_ISSUER_ID="${ISSUER_ID}"
-    fi
-  fi
-
   run_xcodebuild() {
-    if [ -n "${AUTH_KEY_PATH}" ]; then
-      xcodebuild \
-        -authenticationKeyPath "${AUTH_KEY_PATH}" \
-        -authenticationKeyID "${AUTH_KEY_ID}" \
-        -authenticationKeyIssuerID "${AUTH_ISSUER_ID}" \
-        "$@"
-    else
-      xcodebuild "$@"
-    fi
+    run_native xcodebuild "$@"
   }
 
   resolve_xcode_scheme() {
@@ -223,7 +243,7 @@ else
     local scheme_list="${OUTPUT_DIR}/xcodebuild-list.json"
     run_xcodebuild -list -json -workspace "${workspace}" > "${scheme_list}"
 
-    node - "${scheme_list}" "${workspace_name}" <<'NODE'
+    env -i "PATH=${PATH}" node - "${scheme_list}" "${workspace_name}" <<'NODE'
 const fs = require('fs');
 const [schemeListPath, workspaceName] = process.argv.slice(2);
 const list = JSON.parse(fs.readFileSync(schemeListPath, 'utf8'));
@@ -241,39 +261,25 @@ NODE
   write_export_options "${EXPORT_METHOD}" "${EXPORT_OPTIONS}"
 
   echo "==> archive (${SCHEME})"
+  # Archive may use existing local development signing; export below must use
+  # the explicit distribution profile. No -allowProvisioningUpdates is passed.
+  # A global profile specifier here would incorrectly apply it to CocoaPods.
   run_xcodebuild \
     -workspace "${WORKSPACE}" \
     -scheme "${SCHEME}" \
     -configuration Release \
     -destination 'generic/platform=iOS' \
     -archivePath "${ARCHIVE_PATH}" \
-    -allowProvisioningUpdates \
     CODE_SIGN_STYLE=Automatic \
     DEVELOPMENT_TEAM="${TEAM_ID}" \
     archive 2>&1 | tee "${BUILD_LOG}"
 
   echo "==> export ${EXPORT_METHOD} IPA"
-  if ! run_xcodebuild \
+  run_xcodebuild \
     -exportArchive \
     -archivePath "${ARCHIVE_PATH}" \
     -exportPath "${EXPORT_DIR}" \
-    -exportOptionsPlist "${EXPORT_OPTIONS}" \
-    -allowProvisioningUpdates 2>&1 | tee -a "${BUILD_LOG}"; then
-    if [ "${EXPORT_METHOD}" = "development" ]; then
-      exit 1
-    fi
-
-    echo "==> ${EXPORT_METHOD} export failed; retry development export" | tee -a "${BUILD_LOG}"
-    EXPORT_METHOD="development"
-    EXPORT_DIR="${OUTPUT_DIR}/export-development"
-    write_export_options "${EXPORT_METHOD}" "${EXPORT_OPTIONS}"
-    run_xcodebuild \
-      -exportArchive \
-      -archivePath "${ARCHIVE_PATH}" \
-      -exportPath "${EXPORT_DIR}" \
-      -exportOptionsPlist "${EXPORT_OPTIONS}" \
-      -allowProvisioningUpdates 2>&1 | tee -a "${BUILD_LOG}"
-  fi
+    -exportOptionsPlist "${EXPORT_OPTIONS}" 2>&1 | tee -a "${BUILD_LOG}"
 
   EXPORTED_IPA="$(find "${EXPORT_DIR}" -maxdepth 1 -name '*.ipa' -print | head -1)"
   if [ -z "${EXPORTED_IPA}" ]; then
@@ -283,136 +289,70 @@ NODE
   cp "${EXPORTED_IPA}" "${IPA_PATH}"
 fi
 
-TMP_UNZIP="$(mktemp -d)"
-trap 'rm -rf "${TMP_UNZIP}"' EXIT
-unzip -q "${IPA_PATH}" -d "${TMP_UNZIP}"
-APP_INFO="$(find "${TMP_UNZIP}/Payload" -mindepth 2 -maxdepth 2 -name Info.plist -print | head -1)"
-if [ -z "${APP_INFO}" ]; then
-  echo "Cannot find app Info.plist inside ${IPA_PATH}" >&2
+RECEIPT_ARGS=()
+if [ -n "${IPA_INPUT}" ]; then
+  RECEIPT_ARGS+=(--require-receipt "${IPA_INPUT}.receipt.json")
+fi
+if [ "$(git -C "${ROOT}" rev-parse HEAD)" != "${SOURCE_SHA}" ] || [ -n "$(git -C "${ROOT}" status --porcelain --untracked-files=no)" ]; then
+  echo "Source changed during packaging; no artifact may be published." >&2
   exit 1
 fi
-
-BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${APP_INFO}")"
-APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${APP_INFO}" 2>/dev/null || echo "1.0.0")"
-BUILD_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${APP_INFO}" 2>/dev/null || echo "${BUILD_ID}")"
-TITLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "${APP_INFO}" 2>/dev/null || echo "HealthPilot")"
-
-PUBLIC_ROOT_URL="${IOS_LOCAL_QR_PUBLIC_ROOT_URL:-https://health.executor.life/mobile-install/ios}"
-PUBLIC_ROOT_URL="${PUBLIC_ROOT_URL%/}"
-PUBLIC_BASE_URL="${IOS_LOCAL_QR_PUBLIC_BASE_URL:-${PUBLIC_ROOT_URL}/${BUILD_ID}}"
-PUBLIC_BASE_URL="${PUBLIC_BASE_URL%/}"
-LATEST_PUBLIC_BASE_URL="${IOS_LOCAL_QR_LATEST_PUBLIC_BASE_URL:-${PUBLIC_ROOT_URL}/latest}"
-LATEST_PUBLIC_BASE_URL="${LATEST_PUBLIC_BASE_URL%/}"
-IPA_URL="${PUBLIC_BASE_URL}/${IPA_NAME}"
+python3 -I "${SAFETY}" verify-ios-ipa --build-id "${BUILD_ID}" --ipa "${IPA_PATH}" \
+  --version "${APP_VERSION}" --channel "${REVA_LOCAL_UPDATES_CHANNEL}" \
+  --sha "${SOURCE_SHA}" --receipt "${IPA_PATH}.receipt.json" \
+  --public-dir "${PUBLIC_DIR}" "${RECEIPT_ARGS[@]}"
+require_command qrencode
+INSTALL_URL="$(<"${PUBLIC_DIR}/install-url.txt")"
+qrencode -o "${PUBLIC_DIR}/qr.png" -s 12 -m 2 "${INSTALL_URL}"
+PUBLIC_ROOT_URL="https://health.executor.life/mobile-install/ios"
+PUBLIC_BASE_URL="${PUBLIC_ROOT_URL}/${BUILD_ID}"
+LATEST_PUBLIC_BASE_URL="${PUBLIC_ROOT_URL}/latest"
+IPA_URL="${PUBLIC_BASE_URL}/app.ipa"
 MANIFEST_URL="${PUBLIC_BASE_URL}/manifest.plist"
-INSTALL_URL="itms-services://?action=download-manifest&url=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${MANIFEST_URL}")"
-
-python3 - "${OUTPUT_DIR}/manifest.plist" "${IPA_URL}" "${BUNDLE_ID}" "${BUILD_NUMBER}" "${TITLE}" <<'PY'
-import plistlib
-import sys
-
-manifest_path, ipa_url, bundle_id, build_number, title = sys.argv[1:]
-payload = {
-    "items": [
-        {
-            "assets": [
-                {
-                    "kind": "software-package",
-                    "url": ipa_url,
-                }
-            ],
-            "metadata": {
-                "bundle-identifier": bundle_id,
-                "bundle-version": build_number,
-                "kind": "software",
-                "title": title,
-            },
-        }
-    ]
-}
-with open(manifest_path, "wb") as handle:
-    plistlib.dump(payload, handle, sort_keys=False)
-PY
-
-if command -v qrencode >/dev/null 2>&1; then
-  qrencode -o "${OUTPUT_DIR}/qr.png" -s 12 -m 2 "${INSTALL_URL}"
-  qrencode -t ANSIUTF8 "${INSTALL_URL}" || true
-else
-  echo "qrencode not found; skipping qr.png" >&2
-fi
-
-python3 - "${OUTPUT_DIR}/install.html" "${INSTALL_URL}" "${IPA_URL}" "${MANIFEST_URL}" "${BUNDLE_ID}" "${APP_VERSION}" "${BUILD_NUMBER}" "${TITLE}" <<'PY'
-import html
-import sys
-
-path, install_url, ipa_url, manifest_url, bundle_id, version, build, title = sys.argv[1:]
-qr_img = "qr.png"
-with open(path, "w", encoding="utf-8") as handle:
-    handle.write(f"""<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html.escape(title)} local install</title>
-  <style>
-    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f7f8fa; color: #111827; }}
-    main {{ width: min(92vw, 520px); background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 28px; text-align: center; box-shadow: 0 14px 36px rgba(15,23,42,.08); }}
-    img {{ width: min(72vw, 320px); height: min(72vw, 320px); }}
-    a.button {{ display: inline-block; margin: 18px 0 10px; padding: 13px 20px; border-radius: 8px; background: #0f766e; color: white; text-decoration: none; font-weight: 700; }}
-    code, a {{ word-break: break-all; }}
-    p {{ color: #4b5563; line-height: 1.55; }}
-  </style>
-</head>
-<body>
-  <main>
-    <h1>{html.escape(title)}</h1>
-    <p>{html.escape(bundle_id)} · {html.escape(version)} ({html.escape(build)})</p>
-    <img src="{qr_img}" alt="Install QR code">
-    <p><a class="button" href="{html.escape(install_url)}">Install on iPhone</a></p>
-    <p>Open this page on iPhone, or scan the QR with Camera.</p>
-    <p><a href="{html.escape(manifest_url)}">{html.escape(manifest_url)}</a></p>
-    <p><code>{html.escape(ipa_url)}</code></p>
-  </main>
-</body>
-</html>
-""")
-PY
-
-cat > "${OUTPUT_DIR}/install-url.txt" <<EOF
-${INSTALL_URL}
-EOF
 
 if [ "${UPLOAD}" = "1" ]; then
-  if [ -z "${DEPLOY_SERVER:-}" ]; then
-    echo "DEPLOY_SERVER missing; cannot upload. Re-run with --no-upload for local artifacts only." >&2
-    exit 1
-  fi
-  REMOTE_ROOT_DIR="${IOS_LOCAL_QR_REMOTE_ROOT_DIR:-/opt/health-app-shared/mobile-install/ios}"
-  REMOTE_DIR="${IOS_LOCAL_QR_REMOTE_DIR:-${REMOTE_ROOT_DIR}/${BUILD_ID}}"
-  REMOTE_LATEST_DIR="${IOS_LOCAL_QR_LATEST_REMOTE_DIR:-${REMOTE_ROOT_DIR}/latest}"
+  REMOTE_ROOT_DIR="/opt/health-app-shared/mobile-install/ios"
+  REMOTE_DIR="${REMOTE_ROOT_DIR}/${BUILD_ID}"
+  REMOTE_LATEST_DIR="${REMOTE_ROOT_DIR}/latest"
   echo "==> upload to ${DEPLOY_SERVER}:${REMOTE_DIR}"
-  ssh "${DEPLOY_SERVER}" "mkdir -p '${REMOTE_DIR}' '${REMOTE_LATEST_DIR}'"
-  rsync -az --delete "${OUTPUT_DIR}/" "${DEPLOY_SERVER}:${REMOTE_DIR}/"
-  echo "==> update latest alias ${DEPLOY_SERVER}:${REMOTE_LATEST_DIR}"
-  rsync -az --delete "${OUTPUT_DIR}/" "${DEPLOY_SERVER}:${REMOTE_LATEST_DIR}/"
+  # A unique immutable destination makes an ambiguous upload non-repeatable.
+  # Do not overwrite a legacy real directory at latest; migrate it separately.
+  LATEST_PREFLIGHT=""
+  if [ "${UPDATE_LATEST}" = "1" ]; then
+    LATEST_PREFLIGHT="if test -e '${REMOTE_LATEST_DIR}' || test -L '${REMOTE_LATEST_DIR}'; then test -L '${REMOTE_LATEST_DIR}'; fi;"
+  fi
+  ssh -o BatchMode=yes "${DEPLOY_SERVER}" "set -eu; test -d '${REMOTE_ROOT_DIR}'; test ! -L '${REMOTE_ROOT_DIR}'; test ! -e '${REMOTE_DIR}'; test ! -L '${REMOTE_DIR}'; ${LATEST_PREFLIGHT} mkdir -m 0755 '${REMOTE_DIR}'"
+  rsync -az --chmod=D755,F644 -e 'ssh -o BatchMode=yes' "${PUBLIC_DIR}/" "${DEPLOY_SERVER}:${REMOTE_DIR}/"
+  (cd "${PUBLIC_DIR}" && shasum -a 256 app.ipa manifest.plist install.html install-url.txt qr.png) | \
+    ssh -o BatchMode=yes "${DEPLOY_SERVER}" "cd '${REMOTE_DIR}' && sha256sum -c -"
+  # Public readback precedes changing the stable alias.
+  EXPECTED_SHA="$(shasum -a 256 "${PUBLIC_DIR}/app.ipa" | awk '{print $1}')"
+  ACTUAL_SHA="$(curl --proto '=https' --tlsv1.2 -fsS "${IPA_URL}" | shasum -a 256 | awk '{print $1}')"
+  [ "${EXPECTED_SHA}" = "${ACTUAL_SHA}" ] || { echo "Public IPA digest mismatch." >&2; exit 1; }
+  if [ "${UPDATE_LATEST}" = "1" ]; then
+    ssh -o BatchMode=yes "${DEPLOY_SERVER}" "set -eu; ln -s '${BUILD_ID}' '${REMOTE_ROOT_DIR}/.latest-${BUILD_ID}'; mv -Tf '${REMOTE_ROOT_DIR}/.latest-${BUILD_ID}' '${REMOTE_LATEST_DIR}'"
+  fi
 fi
 
 echo
 echo "Build id:        ${BUILD_ID}"
-echo "Bundle id:       ${BUNDLE_ID}"
-echo "Version:         ${APP_VERSION} (${BUILD_NUMBER})"
+echo "Version:         ${APP_VERSION}"
 echo "IPA:             ${IPA_PATH}"
-echo "Manifest:        ${OUTPUT_DIR}/manifest.plist"
-[ -f "${OUTPUT_DIR}/qr.png" ] && echo "QR PNG:          ${OUTPUT_DIR}/qr.png"
+echo "Manifest:        ${PUBLIC_DIR}/manifest.plist"
+echo "QR PNG:          ${PUBLIC_DIR}/qr.png"
 echo "Install page:    ${PUBLIC_BASE_URL}/install.html"
-echo "Latest install page: ${LATEST_PUBLIC_BASE_URL}/install.html"
+[ "${UPDATE_LATEST}" = "0" ] || echo "Latest install page: ${LATEST_PUBLIC_BASE_URL}/install.html"
 echo "Install URL:     ${INSTALL_URL}"
 
 if [ "${UPLOAD}" = "1" ]; then
   echo "==> verify public install page"
   curl -fsSI "${PUBLIC_BASE_URL}/install.html" >/dev/null
-  curl -fsSI "${LATEST_PUBLIC_BASE_URL}/install.html" >/dev/null
+  if [ "${UPDATE_LATEST}" = "1" ]; then
+    curl -fsSI "${LATEST_PUBLIC_BASE_URL}/install.html" >/dev/null
+  fi
   curl -fsSI "${MANIFEST_URL}" >/dev/null
   curl -fsSI "${IPA_URL}" >/dev/null
   echo "Public artifacts are reachable."
+else
+  echo "Private local verification only; nothing was uploaded."
 fi
