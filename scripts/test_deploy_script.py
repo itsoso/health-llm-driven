@@ -1311,6 +1311,7 @@ REMOTE_RELEASE_STATE_DIR={(tmp_path / 'release-state')!s}
 REMOTE_RELEASE_LOCK_TOKEN=lease-token
 REMOTE_BACKUP_PREFLIGHT_DIR={stage_dir!s}
 REMOTE_RUNTIME_STATE_RUNNER={runtime_helper!s}
+prepare_laya_service() {{ :; }}
 validate_runtime_only_kb_staging() {{ :; }}
 assert_remote_release_lock_if_acquired() {{ :; }}
 assert_remote_release_lock() {{ :; }}

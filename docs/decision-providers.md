@@ -93,6 +93,14 @@ configuration; API keys and destination URLs are never editable in the browser.
 
 The production deployment uses `infra/laya/requirements.lock`, a Linux x86_64
 Python 3.12 CPU-only dependency lock, and `model-manifest.json` with exact hashes.
+The three small upstream JSON configurations are included as Base64 assets that
+preserve their exact original bytes, with Apache 2.0 license and provenance.
+The two large model/tokenizer files use the
+fixed `hf-mirror.com` mirror because the production host cannot reach the original
+Hugging Face endpoint. Only HTTPS redirects to the verified upstream
+`cas-bridge.xethub.hf.co` CDN are permitted; proxy environment settings and
+alternative-source fallback are disabled. Original upstream byte sizes and full
+SHA256 hashes remain mandatory during installation and every reuse.
 The reviewed `deploy.sh -b` exports only named assets from the exact candidate
 Git bundle under the existing release lease, prepares them before stopping the
 backend, then starts and verifies the separate service while the old backend is

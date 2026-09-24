@@ -101,3 +101,24 @@ invalid_response. Fresh scoped verification: 75 passed, three SQLite skips,
 93.80% coverage. Independent focused re-review passed nine malformed-response
 and timeout tests; final fixed-commit disposition was GO at 4df26708b.
 No authorization, route floor or write authority is changed by the fix.
+
+Release continuation: baseline repair CI 35952272265 passed. Combined candidate
+d2af07fe75aad60cd8c0fed21e1ef0b6ab8ace71 had G4 GO and a fresh live LLM gate
+(12/12 invariants, 50/50 core, 5/5 orchestrator, 12/12 trajectory, 9/9 goldens).
+Its CI 35952595731 identified an existing lost-lease test harness that did not
+isolate the newly added Laya preparation. The harness now stubs that unrelated
+preparation while retaining its real pip/lease-loss/migration/restart assertions.
+
+Read-only production preflight: user 3 is active and is_admin. Hugging Face
+origin timed out, while PyPI/Torch CPU and the mirror's large artifacts were
+reachable. The three unchanged upstream JSON files (2934 bytes total) are now
+named canonical assets, with Apache 2.0 license and provenance. Large files use
+the fixed mirror and verified HTTPS CDN, preserving original full hash/size
+checks; arbitrary redirects, proxy environment and fallback are rejected.
+New installer tests first failed, then all 31 passed after implementation.
+Production-host full GET preflight matched both original hashes and sizes:
+643835514-byte weights in 57.98 seconds, 34363188-byte tokenizer in 6.13 seconds.
+Small configs use strictly decoded Base64 assets to preserve upstream missing
+final newlines without exempting or disabling repository whitespace hooks.
+Renewed fixed-commit review is pending.
+Production application, model installation and authorization remain unchanged.

@@ -51,12 +51,73 @@ def test_only_completed_identical_install_can_be_reused():
 
 def test_download_hash_failure_never_publishes_model(tmp_path, monkeypatch):
     import io
-    monkeypatch.setattr(installer, "urlopen", lambda *a, **kw: io.BytesIO(b"wrong"))
+    monkeypatch.setattr(installer, "open_model_url", lambda *a, **kw: io.BytesIO(b"wrong"))
     target = tmp_path / "model.safetensors"
     with pytest.raises(installer.InstallError):
         installer.download_model("https://huggingface.co/test", target,
                                  {"sha256": "a" * 64, "bytes": 5})
     assert not target.exists()
+
+
+@pytest.mark.parametrize("damage", ["missing", "corrupt", "invalid_encoding"])
+def test_embedded_model_config_failure_never_uses_network(tmp_path, monkeypatch, damage):
+    import base64
+    import shutil
+    source = tmp_path / "source"
+    shutil.copytree(ROOT / "infra/laya", source)
+    broken = source / "encoder-config.json.b64"
+    if damage == "missing":
+        broken.unlink()
+    elif damage == "corrupt":
+        broken.write_bytes(base64.b64encode(b"corrupt") + b"\n")
+    else:
+        broken.write_bytes(b"corrupt")
+    monkeypatch.setattr(installer, "download_model", lambda *a: pytest.fail("Broken embedded config must block before network"))
+    with pytest.raises((installer.InstallError, FileNotFoundError)):
+        installer.install_model_files(source, tmp_path / "generation")
+
+
+def test_model_downloads_use_only_fixed_mirror_and_keep_original_hashes(tmp_path, monkeypatch):
+    import json
+    source = ROOT / "infra/laya"
+    manifest = json.loads((source / "model-manifest.json").read_text())
+    calls = []
+    monkeypatch.setattr(installer.os, "fchown", lambda *args: None)
+    monkeypatch.setattr(installer, "download_model", lambda url, target, metadata: calls.append((url, target, metadata)))
+    generation = tmp_path / "generation"
+    installer.install_model_files(source, generation)
+    assert len(calls) == 2
+    for url, target, metadata in calls:
+        name = str(target.relative_to(generation / "models"))
+        assert url == f"https://hf-mirror.com/{manifest['repository']}/resolve/{manifest['revision']}/{name}"
+        assert metadata == manifest["files"][name]
+    for name in ("multilingual/encoder/config.json", "multilingual/rl_agent_config.json", "multilingual/tokenizer/tokenizer_config.json"):
+        data = (generation / "models" / name).read_bytes()
+        assert installer.sha(data) == manifest["files"][name]["sha256"]
+
+
+@pytest.mark.parametrize("url", ["http://cas-bridge.xethub.hf.co/file", "https://localhost/file", "https://cas-bridge.xethub.hf.co.evil.test/file", "https://user:pass@cas-bridge.xethub.hf.co/file", "https://cas-bridge.xethub.hf.co:8080/file"])
+def test_model_redirect_outside_verified_https_hosts_is_rejected(url):
+    from urllib.request import Request
+    with pytest.raises(installer.InstallError, match="model_redirect_rejected"):
+        installer.ModelRedirectHandler().redirect_request(Request("https://hf-mirror.com/file"), None, 302, "Found", {}, url)
+
+
+def test_verified_cdn_redirect_preserves_get_and_no_authorization():
+    from urllib.request import Request
+    request = installer.ModelRedirectHandler().redirect_request(
+        Request("https://hf-mirror.com/file"), None, 302, "Found", {}, "https://cas-bridge.xethub.hf.co/file?public-signature=synthetic",
+    )
+    assert request.get_method() == "GET"
+    assert request.get_header("Authorization") is None
+
+
+def test_deploy_exports_exact_model_asset_allowlist():
+    import ast
+    script = (ROOT / "deploy.sh").read_text()
+    line = next(line for line in script.splitlines() if line.startswith("assets = ("))
+    assert ast.literal_eval(line.removeprefix("assets = ")) == installer.ASSETS
+    assert {"encoder-config.json.b64", "rl-agent-config.json.b64", "tokenizer-config.json.b64", "model-NOTICE.txt"} <= set(installer.ASSETS)
 
 
 def test_existing_partial_install_refuses_before_any_command(tmp_path, monkeypatch):
@@ -100,7 +161,8 @@ def test_account_cannot_share_credentials_with_other_users(monkeypatch, bad):
 def test_missing_venv_cannot_pass_generation_verification(tmp_path, monkeypatch):
     import json
     source, generation = tmp_path / "source", tmp_path / "generation"
-    source.mkdir(); generation.mkdir()
+    source.mkdir()
+    generation.mkdir()
     for name in installer.ASSETS:
         data = json.dumps({"files": {}}) if name == "model-manifest.json" else "fixture"
         (source / name).write_text(data)
@@ -114,7 +176,8 @@ def test_missing_venv_cannot_pass_generation_verification(tmp_path, monkeypatch)
 
 def test_dependency_version_drift_blocks_reuse(tmp_path, monkeypatch):
     source, generation = tmp_path / "source", tmp_path / "generation"
-    source.mkdir(); generation.mkdir()
+    source.mkdir()
+    generation.mkdir()
     (source / "requirements.lock").write_text("laya==0.3.11\n")
     (generation / "model-manifest.json").write_text('{"files":{}}')
     venv = generation / "venv"

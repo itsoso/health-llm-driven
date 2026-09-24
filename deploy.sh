@@ -3104,7 +3104,7 @@ sources = base / 'sources'
 sources.mkdir(mode=0o700, exist_ok=True)
 private(sources, 0o700)
 source = sources / sha
-assets = ('install.py', 'serve.py', 'model-manifest.json', 'requirements.lock', 'reva-laya.service.in')
+assets = ('install.py', 'serve.py', 'model-manifest.json', 'requirements.lock', 'reva-laya.service.in', 'encoder-config.json.b64', 'rl-agent-config.json.b64', 'tokenizer-config.json.b64', 'model-NOTICE.txt')
 if not source.exists():
     source.mkdir(mode=0o700)
     env = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1',

@@ -5,6 +5,7 @@ Unknown partial installs and upgrades stop for operator review; never overwrite.
 No health configuration or API key is passed to dependency-install subprocesses.
 """
 import argparse
+import base64
 import grp
 import hashlib
 import hmac
@@ -18,13 +19,20 @@ import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, Request, build_opener, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 BASE = Path("/opt/reva-laya")
 STATE = Path("/var/lib/reva-laya-release")
 UNIT = Path("/etc/systemd/system/reva-laya.service")
 ENV = Path("/etc/reva-laya/service.env")
-ASSETS = ("install.py", "serve.py", "model-manifest.json", "requirements.lock", "reva-laya.service.in")
+ASSETS = ("install.py", "serve.py", "model-manifest.json", "requirements.lock", "reva-laya.service.in", "encoder-config.json.b64", "rl-agent-config.json.b64", "tokenizer-config.json.b64", "model-NOTICE.txt")
+EMBEDDED_MODELS = {
+    "multilingual/encoder/config.json": "encoder-config.json.b64",
+    "multilingual/rl_agent_config.json": "rl-agent-config.json.b64",
+    "multilingual/tokenizer/tokenizer_config.json": "tokenizer-config.json.b64",
+}
+DOWNLOADED_MODELS = {"multilingual/model.safetensors", "multilingual/tokenizer/tokenizer.json"}
 CLEAN_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "HOME": "/nonexistent", "LANG": "C.UTF-8",
              "PIP_CONFIG_FILE": "/dev/null", "PIP_DISABLE_PIP_VERSION_CHECK": "1"}
 
@@ -167,11 +175,26 @@ def assert_unit_absent():
         raise InstallError("unmanaged_laya_systemd_unit")
 
 
+class ModelRedirectHandler(HTTPRedirectHandler):
+    """Only the observed mirror and upstream HTTPS CDN may receive model GETs."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urlsplit(newurl)
+        if (parsed.scheme != "https" or parsed.hostname not in {"hf-mirror.com", "cas-bridge.xethub.hf.co"}
+                or parsed.port not in {None, 443} or parsed.username is not None or parsed.password is not None):
+            raise InstallError("model_redirect_rejected")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def open_model_url(url, *, timeout):
+    return build_opener(ProxyHandler({}), ModelRedirectHandler()).open(url, timeout=timeout)
+
+
 def download_model(url, target, metadata):
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
     partial = target.with_name(target.name + ".part")
     digest, count = hashlib.sha256(), 0
-    with urlopen(url, timeout=60) as response, partial.open("xb") as output:
+    with open_model_url(url, timeout=60) as response, partial.open("xb") as output:
         while chunk := response.read(1024 * 1024):
             count += len(chunk)
             if count > metadata["bytes"]:
@@ -184,6 +207,33 @@ def download_model(url, target, metadata):
         raise InstallError("model_hash_mismatch")
     partial.chmod(0o644)
     os.replace(partial, target)
+
+
+def install_model_files(source, generation):
+    manifest = json.loads((source / "model-manifest.json").read_text())
+    if (manifest["repository"] != "convaiinnovations/laya"
+            or not re.fullmatch(r"[0-9a-f]{40}", manifest["revision"])
+            or set(manifest["files"]) != set(EMBEDDED_MODELS) | DOWNLOADED_MODELS):
+        raise InstallError("invalid_model_origin")
+    embedded = {}
+    for name, asset in EMBEDDED_MODELS.items():
+        try:
+            data = base64.b64decode((source / asset).read_bytes().strip(), validate=True)
+        except ValueError:
+            raise InstallError("embedded_model_invalid_encoding") from None
+        metadata = manifest["files"][name]
+        if len(data) != metadata["bytes"] or sha(data) != metadata["sha256"]:
+            raise InstallError("embedded_model_hash_mismatch")
+        embedded[name] = data
+    # Validate every embedded file before any model write or network request.
+    for name, data in embedded.items():
+        target = generation / "models" / name
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+        write_atomic(target, data, 0o644)
+    print("LAYA_MODEL_SOURCE hf-mirror.com; original upstream SHA256 manifest required")
+    for name in sorted(DOWNLOADED_MODELS):
+        url = f"https://hf-mirror.com/{manifest['repository']}/resolve/{manifest['revision']}/{name}"
+        download_model(url, generation / "models" / name, manifest["files"][name])
 
 
 def verify_generation(source, generation):
@@ -274,14 +324,7 @@ def prepare(source, config, args):
              "--index-url", "https://pypi.org/simple",
              "--extra-index-url", "https://download.pytorch.org/whl/cpu",
              "-r", generation / "requirements.lock"], timeout=1200)
-    manifest = json.loads((source / "model-manifest.json").read_text())
-    if manifest["repository"] != "convaiinnovations/laya" or not re.fullmatch(r"[0-9a-f]{40}", manifest["revision"]):
-        raise InstallError("invalid_model_origin")
-    for name, metadata in manifest["files"].items():
-        if not re.fullmatch(r"multilingual/(?:encoder/|tokenizer/)?[A-Za-z0-9_.-]+", name):
-            raise InstallError("invalid_model_path")
-        url = f"https://huggingface.co/{manifest['repository']}/resolve/{manifest['revision']}/{name}"
-        download_model(url, generation / "models" / name, metadata)
+    install_model_files(source, generation)
     write_atomic(generation / "reva-laya.service", unit, 0o644)
     command(["/usr/bin/systemd-analyze", "verify", generation / "reva-laya.service"])
     verify_generation(source, generation)
