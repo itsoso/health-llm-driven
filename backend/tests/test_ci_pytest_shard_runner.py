@@ -84,7 +84,10 @@ def test_agent_a_h_tests_run_in_bounded_ci_processes():
     by_label = _shards_by_label()
 
     assert "agent-a-h" not in by_label
-    assert by_label["agent-a-d"]["paths"] == "tests/test_agent_[a-d]*.py"
+    assert by_label["agent-a-d-rest"]["paths"] == "tests/test_agent_[a-d]*.py"
+    assert by_label["agent-a-d-rest"]["exclude_paths"] == [
+        "tests/test_agent_composed_synthesis_projection.py"
+    ]
     assert by_label["agent-e-core"]["paths"] == (
         "tests/test_agent_eval.py tests/test_agent_event_stream.py "
         "tests/test_agent_evidence_card_memo.py tests/test_agent_explicit_cache_flag.py"
@@ -484,13 +487,38 @@ def test_backend_shard_job_timeout_covers_slowest_retry_and_runner_overhead():
     assert job_timeout_minutes * 60 >= required_seconds
 
 
-def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_path):
+def test_composed_read_shards_partition_every_test_function_once(tmp_path):
+    import ast
+
     from scripts.build_ci_pytest_matrix import load_catalog
-    from scripts.run_ci_pytest_worker import expand_path_inputs, run_worker
+    from scripts.run_ci_pytest_worker import run_worker
 
     catalog = load_catalog(SHARD_CATALOG)
-    expected_paths = expand_path_inputs(["tests/test_agent_[a-d]*.py"], cwd=ROOT / "backend")
-    synthesis_path = "tests/test_agent_composed_synthesis_projection.py"
+    labels = [f"agent-composed-synthesis-{index:02d}" for index in range(1, 5)]
+    by_label = {shard["label"]: shard for shard in catalog}
+    source = ROOT / "backend/tests/test_agent_composed_synthesis_projection.py"
+    expected = {
+        node.name
+        for node in ast.parse(source.read_text(encoding="utf-8")).body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    }
+    declared = [
+        path.split("::", 1)[1]
+        for label in labels
+        for path in by_label[label]["paths"]
+    ]
+
+    assert set(declared) == expected
+    assert len(declared) == len(set(declared))
+    assert all(
+        path.startswith("tests/test_agent_composed_synthesis_projection.py::test_")
+        for label in labels
+        for path in by_label[label]["paths"]
+    )
+    measured = [by_label[label]["scheduling_seconds"] for label in labels]
+    assert max(measured) / min(measured) < 1.01
+
     calls = []
 
     def execute(paths, args, *, timeout_seconds, max_attempts):
@@ -498,17 +526,10 @@ def test_composed_read_shard_explicit_budget_keeps_full_execution_contract(tmp_p
         calls.append((paths, timeout_seconds, max_attempts))
         return 0
 
-    assert run_worker(
-        ["agent-a-d"], catalog, cwd=ROOT / "backend",
-        junit_dir=tmp_path / "results", shard_runner=execute,
-    ) == 0
-    assert [paths for paths, _, _ in calls] == [
-        [synthesis_path],
-        [path for path in expected_paths if path != synthesis_path],
-    ]
-    assert sorted(path for paths, _, _ in calls for path in paths) == expected_paths
-    for paths, timeout_seconds, max_attempts in calls:
-        if paths == [synthesis_path]:
-            assert (timeout_seconds, max_attempts) == (1500, 1)
-        else:
-            assert (timeout_seconds, max_attempts) == (900, 1)
+    for label in labels:
+        assert run_worker(
+            [label], catalog, cwd=ROOT / "backend",
+            junit_dir=tmp_path / "results", shard_runner=execute,
+        ) == 0
+    assert len(calls) == 4
+    assert all((timeout, attempts) == (600, 1) for _, timeout, attempts in calls)
