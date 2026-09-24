@@ -10,7 +10,7 @@ from app.services.agent_kernel.types import ActionableReference
 from app.services.agent_query_window import parse_query_window
 
 _VERSION = "owned-read-task.v2"
-_DIMENSIONS = frozenset({"diet", "sleep", "workout", "supplements"})
+_DIMENSIONS = frozenset({"diet", "sleep", "workout", "supplements", "spo2"})
 _LIMITATIONS = frozenset(
     {
         "scope_diet_sleep_only",
@@ -81,6 +81,8 @@ def _validated_task(raw, now: datetime) -> dict | None:
             keys = {"dimension", "start_date", "end_date", "timezone"}
             if "days" in query and raw["version"] == _VERSION:
                 keys.add("days")
+            if query.get('period') == 'sleep_night' and query.get('dimension') == 'spo2' and raw['version'] == _VERSION:
+                keys.add('period')
             if set(query) != keys:
                 return None
             dimension = query["dimension"]

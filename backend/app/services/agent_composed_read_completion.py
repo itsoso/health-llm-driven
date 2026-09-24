@@ -751,9 +751,7 @@ def _terminal(payload: dict) -> bool:
 def _validate(bound: dict, payload) -> str | None:
     if not isinstance(payload, dict) or not _terminal(payload):
         return "query_result_unavailable"
-    if payload.get("dimension") != bound["dimension"] or payload.get("window") != {
-        k: bound[k] for k in ("start_date", "end_date", "timezone")
-    }:
+    if payload.get("dimension") != bound["dimension"] or payload.get("window") != parse_query_window(bound).as_dict():
         return "query_result_scope_conflict"
     if (
         payload.get("truncated")
@@ -806,6 +804,8 @@ def _facts(dimension: str, payload: dict) -> str:
             "workout": "，不能据此断定没有运动。",
             "supplements": "，不能据此断定没有服用补剂。",
         }
+        if dimension == 'spo2' and 'sleep_interval_unavailable' in payload.get('limitations', []):
+            return '血氧：已查询目标日期，但缺少可定位的睡眠时段；未用全天汇总替代所选夜间血氧，暂不能判断。'
         return f"{label}：目标日期没有可用记录" + absence[dimension]
     count = format_display_number(len(rows))
     if dimension == "diet":
@@ -828,6 +828,8 @@ def _facts(dimension: str, payload: dict) -> str:
     elif dimension == "spo2":
         text = (f"血氧：目标日期内有{count}天的合格来源观测，不代表连续整夜监测。"
                 "未验证采样的睡眠区间，不能推算ODI；不能据此确诊睡眠呼吸暂停。")
+        if payload.get('window', {}).get('period') == 'sleep_night':
+            text += '已按当日记录的入睡至醒来时段筛选有时间戳的采样，排除全天汇总及无法定位的采样。'
     elif dimension == "supplements":
         text = f"补剂：实际服用记录{count}条；定义、计划与当前启停状态不代表实际摄入。"
     elif dimension == "workout":

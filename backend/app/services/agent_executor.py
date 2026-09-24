@@ -12865,19 +12865,26 @@ class AgentExecutor:
         return {}
 
     def _trusted_sync_summary(self) -> str:
-        from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
+        from app.services.agent_kernel.read_task_scope import resolve_sync_status_query, is_owned_oxygen_sync_diagnostic
         if resolve_sync_status_query(self._ensure_agent_kernel_turn()) is None:
             return ""
         if self._turn_sync_attempted and not self._turn_sync_queued:
             return '本轮同步没有取得已提交确认；之前的成功任务不能证明本次同步成功。'
         status = self._turn_sync_status_result
+        diagnostic_note = ''
+        if is_owned_oxygen_sync_diagnostic(self._ensure_agent_kernel_turn()):
+            from app.services.device_source_priority import excluded_sources
+            diagnostic_note = (' 这个问题只涉及同步排查，没有发起新的同步。开启全天监控并不证明数据已上传。')
+            if 'garmin' in excluded_sources('spo2_min'):
+                diagnostic_note += ('当前血氧分析规则不采用佳明来源；分析中缺少血氧不等于上传失败。'
+                                    '尚未核实这些采样是否入库，不能据此断言接口故障。')
         if isinstance(status, dict) and status.get('job_success_verified') is True:
-            return "本会话对应的佳明同步任务已返回成功；下方记录的日期单独核对，不能据此保证活动数据完整。"
+            return "本会话对应的佳明同步任务已返回成功；下方记录的日期单独核对，不能据此保证活动数据完整。" + diagnostic_note
         if isinstance(status, dict) and status.get('status') == 'failed':
-            return "本会话对应的佳明同步任务失败；已有记录不能证明这次同步成功。"
+            return "本会话对应的佳明同步任务失败；已有记录不能证明这次同步成功。" + diagnostic_note
         if self._turn_sync_queued or isinstance(status, dict) and status.get('submission_status') == 'accepted':
-            return "佳明同步任务已提交，尚未核实完成；已有记录可能早于这次同步。稍后可继续查询。"
-        return "目前没有核实本会话的佳明同步已完成；已有睡眠记录不能作为本次同步成功的证明。"
+            return "佳明同步任务已提交，尚未核实完成；已有记录可能早于这次同步。稍后可继续查询。" + diagnostic_note
+        return "目前没有核实本会话的佳明同步已完成；已有记录不能作为本次同步成功的证明。" + diagnostic_note
 
     def _sync_goal_outcomes(self) -> list[dict]:
         if self._turn_sync_attempted and not self._turn_sync_queued:
@@ -15040,7 +15047,9 @@ class AgentExecutor:
             full_reply = panel_completion.trusted_fact_summary + "\n\n" + full_reply
         panel_sync_summary = self._trusted_sync_summary()
         if panel_sync_summary:
-            full_reply = panel_sync_summary + '\n\n' + full_reply
+            from app.services.agent_kernel.read_task_scope import is_owned_oxygen_sync_diagnostic
+            full_reply = (panel_sync_summary if is_owned_oxygen_sync_diagnostic(self._ensure_agent_kernel_turn())
+                          else panel_sync_summary + '\n\n' + full_reply)
         if (
             panel_read_scope is not None and panel_read_scope.limitations
             and panel_synthesis_messages is None
@@ -18940,7 +18949,9 @@ class AgentExecutor:
                 full_reply = "本轮没有生成有效回答，请稍后重试。"
             full_reply = composed_completion.trusted_fact_summary + "\n\n" + full_reply
         if sync_summary:
-            full_reply = sync_summary + "\n\n" + full_reply
+            from app.services.agent_kernel.read_task_scope import is_owned_oxygen_sync_diagnostic
+            full_reply = (sync_summary if is_owned_oxygen_sync_diagnostic(self._ensure_agent_kernel_turn())
+                          else sync_summary + "\n\n" + full_reply)
         if (
             read_scope is not None and read_scope.limitations
             and not composed_synthesis_used

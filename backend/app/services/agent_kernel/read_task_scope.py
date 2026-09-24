@@ -251,6 +251,9 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     manufacture scope. The longitudinal resolver separately attests bounded
     recent windows and discloses default duration and unsupported coverage.
     """
+    owner = snapshot.context.user_id
+    if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
+        return None
     continuation = resolve_read_task_continuation(snapshot)
     if continuation is not None:
         if not continuation["queries"]:
@@ -318,7 +321,43 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     return OwnedReadScope(tuple(queries), ("scope_diet_sleep_only",) if broad else ())
 
 
+def is_owned_oxygen_sync_diagnostic(snapshot) -> bool:
+    """Complete read-only sync question, not a command or a history window.
+
+    Device configuration is background, not another person's name or a date
+    constraint. Every clause must have a known role; unknown owners, filters,
+    quotations and commands cannot disappear in this projection.
+    """
+    owner = snapshot.context.user_id
+    if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
+        return False
+    text = normalize_health_authorization_text(snapshot.envelope.text)
+    clauses = [c.strip() for c in re.split(r"[，,。；;！？!?\n]", text) if c.strip()]
+    patterns = {
+        'self_data': r'(?:我|本人)(?:的)?(?:系统|应用|app)(?:里|中)(?:有|能看到)(?:血氧|SpO2)(?:数据|记录)',
+        'question': r'(?:是不是|是否|有没有)(?:没有|没)?同步(?:成功|完成|上来)?',
+        'transport': r'(?:或者|或)?(?:有)?接口(?:有)?问题|数据(?:没有|没)传上来',
+        'device': r'(?:之前)?(?:我|本人)(?:已经|已)?(?:设置|开启|打开)了?(?:我的?)?(?:佳明|Garmin)(?:的)?(?:全天|全天候)(?:的)?(?:血氧|SpO2)(?:的)?监控',
+    }
+    roles = set()
+    for clause in clauses:
+        role = next((role for role, pattern in patterns.items()
+                     if re.fullmatch(pattern, clause, re.I)), None)
+        if role is None:
+            return False
+        roles.add(role)
+    return {'self_data', 'question', 'device'} <= roles
+
+
 def resolve_sync_status_query(snapshot) -> dict[str, str] | None:
+    if is_owned_oxygen_sync_diagnostic(snapshot):
+        now = snapshot.context.current_time
+        zone = ZoneInfo(snapshot.context.timezone)
+        today = (now.replace(tzinfo=zone) if now.tzinfo is None else now.astimezone(zone)).date().isoformat()
+        # This is a receipt lookup only. No implicit health-data date range or
+        # write/sync command is authorized by an observation of missing data.
+        return {'dimension': 'garmin', 'start_date': today, 'end_date': today,
+                'timezone': snapshot.context.timezone}
     continuation = resolve_read_task_continuation(snapshot)
     if continuation is not None:
         if not continuation["sync_status"]:

@@ -1,5 +1,7 @@
 """Bounded oxygen observations; no latest-night substitution or apnea diagnosis."""
 from collections import defaultdict
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 
@@ -7,6 +9,51 @@ from app.models.daily_health import GarminData, SpO2Sample
 from app.services.device_source_priority import excluded_sources
 from app.services.multi_source_merger import merge_rows
 from app.services.agent_query_window import MAX_CALENDAR_ROWS, _bounded_result
+
+
+def _night_samples(db, user_id, window, daily):
+    """Bound epoch samples to one coherent daily sleep-clock source.
+
+    Daily clock times are not absolute episode evidence. Use only the storage
+    timezone supported by current ingestion; disclose this limitation and never
+    infer ODI/continuous coverage. Missing/conflicting clocks fail closed, not
+    an unfiltered all-day oxygen fallback.
+    """
+    merged = merge_rows(daily, ('sleep_start_time', 'sleep_end_time'))
+    start, end = (merged['values'].get(key) for key in ('sleep_start_time', 'sleep_end_time'))
+    sources = merged['sources']
+    if (window.timezone != 'Asia/Shanghai' or start is None or end is None or start == end
+            or sources.get('sleep_start_time') != sources.get('sleep_end_time')):
+        return [], ['sleep_interval_unavailable']
+    zone = ZoneInfo(window.timezone)
+    end_at = datetime.combine(window.end_date, end, zone)
+    start_day = window.start_date - timedelta(days=1) if start > end else window.start_date
+    start_at = datetime.combine(start_day, start, zone)
+    if not timedelta(0) < end_at - start_at <= timedelta(hours=20):
+        return [], ['sleep_interval_unavailable']
+    samples = (db.query(
+        SpO2Sample.source, func.count(SpO2Sample.id).label('data_points'),
+        func.min(SpO2Sample.spo2_value).label('min_spo2'),
+        func.max(SpO2Sample.spo2_value).label('max_spo2'),
+        func.avg(SpO2Sample.spo2_value).label('avg_spo2'),
+    ).filter(
+        SpO2Sample.user_id == user_id,
+        SpO2Sample.record_date >= window.start_date - timedelta(days=1),
+        SpO2Sample.record_date <= window.end_date,
+        SpO2Sample.epoch_ms >= int(start_at.timestamp() * 1000),
+        SpO2Sample.epoch_ms <= int(end_at.timestamp() * 1000),
+        SpO2Sample.source.notin_(excluded_sources('spo2_min')),
+    ).group_by(SpO2Sample.source).order_by(SpO2Sample.source)
+      .limit(MAX_CALENDAR_ROWS + 1).all())
+    if len(samples) > MAX_CALENDAR_ROWS:
+        raise ValueError('calendar_query_result_limit_exceeded')
+    summaries = [{'source': row.source, 'data_points': row.data_points,
+                  'min_spo2': row.min_spo2, 'max_spo2': row.max_spo2,
+                  'avg_spo2': float(row.avg_spo2)} for row in samples]
+    rows = [{'record_date': window.end_date.isoformat(),
+             'daily_metrics': dict.fromkeys(('spo2_avg', 'spo2_min', 'spo2_max')),
+             'daily_sources': {}, 'sample_summaries': summaries}] if summaries else []
+    return rows, ['sleep_interval_inferred_from_daily_clocks', 'samples_without_epoch_excluded']
 
 
 def read_sleep_oxygen_window(db, user_id, window):
@@ -20,6 +67,11 @@ def read_sleep_oxygen_window(db, user_id, window):
         GarminData.user_id == user_id, GarminData.record_date >= window.start_date,
         GarminData.record_date <= window.end_date,
     ).order_by(GarminData.record_date, GarminData.id).limit(MAX_CALENDAR_ROWS + 1).all())
+    if len(daily) > MAX_CALENDAR_ROWS:
+        raise ValueError('calendar_query_result_limit_exceeded')
+    if window.period == 'sleep_night':
+        records, limitations = _night_samples(db, user_id, window, daily)
+        return _oxygen_result(window, records, limitations)
     samples = (db.query(
         SpO2Sample.record_date, SpO2Sample.source,
         func.count(SpO2Sample.id).label('data_points'),
@@ -49,9 +101,13 @@ def read_sleep_oxygen_window(db, user_id, window):
             continue
         records.append({'record_date': day.isoformat(), 'daily_metrics': merged['values'],
                         'daily_sources': merged['sources'], 'sample_summaries': samples_by_day[day]})
+    return _oxygen_result(window, records)
+
+
+def _oxygen_result(window, records, limitations=()):
     return _bounded_result({
         'dimension': 'spo2', 'window': window.as_dict(), 'records': records,
-        'date_attribution': 'record_date',
+        'date_attribution': 'wake_date' if window.period == 'sleep_night' else 'record_date',
         'source_scope': 'owned_daily_spo2_summaries_and_samples',
         'sync_status': 'unknown',
         'availability': 'partial' if records else 'no_data',
@@ -61,7 +117,7 @@ def read_sleep_oxygen_window(db, user_id, window):
         'limitations': ['sleep_interval_not_verified', 'missing_metric_is_unknown_not_abnormal',
                         'not_diagnostic_no_apnea_inference', 'sample_sources_not_combined',
                         'daily_summary_not_sleep_episode', 'sample_coverage_unknown',
-                        'sync_status_unknown'],
+                        'sync_status_unknown', *limitations],
         'interpretation_note': '按记录日期提供血氧观测及数据来源，未验证每个采样均在睡眠期。'
             '不可将缺失当正常、采样数量当连续监测时长，或据此推算ODI/确诊睡眠呼吸暂停。'
             '已排除不用于血氧判断的设备来源；没有合格数据时应明确说明无法判断。',

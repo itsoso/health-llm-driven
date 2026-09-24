@@ -760,6 +760,17 @@ describe('ChatScreen', () => {
     expect(view.queryByText('连接中断，正在从服务端恢复')).toBeNull();
   });
 
+  it.each(['blocked', 'refused'])('distinguishes %s from an interrupted connection', phase => {
+    mockActiveTurn = { phase, recoverable: false, turnId: 'turn-query' };
+    const view = render(<ChatScreen />);
+    expect(view.queryByText('上一轮未完成，内容已保留')).toBeNull();
+    expect(view.getByText('本次请求未执行，请查看回复中的说明')).toBeTruthy();
+    expect(view.queryByLabelText('重试上一轮')).toBeNull();
+    mockActiveTurn = { phase: 'running', recoverable: true, turnId: 'turn-next' };
+    view.rerender(<ChatScreen />);
+    expect(view.queryByText('本次请求未执行，请查看回复中的说明')).toBeNull();
+  });
+
   it('keeps an authoritative interrupted outcome visibly distinct from transport recovery', () => {
     mockActiveTurn = {
       phase: 'interrupted', recoverable: false, label: '本轮已取消，消息已保存。',

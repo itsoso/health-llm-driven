@@ -33,10 +33,12 @@ class QueryWindow:
     start_date: date
     end_date: date
     timezone: str = DEFAULT_TIMEZONE
+    period: str | None = None
 
     def as_dict(self) -> dict[str, str]:
         return {"start_date": self.start_date.isoformat(),
-                "end_date": self.end_date.isoformat(), "timezone": self.timezone}
+                "end_date": self.end_date.isoformat(), "timezone": self.timezone,
+                **({"period": self.period} if self.period is not None else {})}
 
 
 def parse_query_window(args: Mapping[str, Any]) -> QueryWindow:
@@ -50,7 +52,10 @@ def parse_query_window(args: Mapping[str, Any]) -> QueryWindow:
         raise ValueError("calendar_query_window_invalid") from exc
     if not 0 <= (end - start).days < MAX_CALENDAR_DAYS:
         raise ValueError("calendar_query_window_out_of_bounds")
-    return QueryWindow(start, end, zone)
+    period = args.get('period')
+    if period is not None and (period != 'sleep_night' or start != end):
+        raise ValueError('calendar_query_period_invalid')
+    return QueryWindow(start, end, zone, period)
 
 
 def resolve_calendar_query_window(
@@ -123,7 +128,7 @@ def resolve_calendar_query_window(
     else:
         hit = relative[0]
         word = hit.group()
-        if word in previous_night_words and dimension != "sleep":
+        if word in previous_night_words and dimension not in {"sleep", "spo2"}:
             return None
         offsets = {
             "前一晚": -2, "前一夜": -2, "前晚": -2, "前夜": -2,
@@ -131,14 +136,16 @@ def resolve_calendar_query_window(
             "昨晚": -1, "昨夜": -1,
         }
         target = local.date() + timedelta(days=offsets[word])
-    if dimension == "sleep" and (
+    night = (
         hit.group() in previous_night_words | {"昨晚", "昨夜"}
         or re.match(r"(?:的)?(?:晚上|夜晚|晚间|夜间|晚|夜)", text[hit.end():])
-    ):
+    )
+    if dimension in {"sleep", "spo2"} and night:
         target += timedelta(days=1)
     if target > local.date():
         return None
-    return QueryWindow(target, target, timezone_name).as_dict()
+    return QueryWindow(target, target, timezone_name,
+                       'sleep_night' if dimension == 'spo2' and night else None).as_dict()
 
 
 def read_calendar_health_query(
@@ -156,6 +163,8 @@ def read_calendar_health_query(
     if dimension == 'spo2':
         from app.services.agent_sleep_oxygen_read import read_sleep_oxygen_window
         return read_sleep_oxygen_window(db, user_id, window)
+    if window.period is not None:
+        raise ValueError('calendar_query_period_unsupported')
     if dimension not in SUPPORTED_CALENDAR_DIMENSIONS:
         raise ValueError("calendar_query_dimension_unsupported")
     from app.models.daily_health import DietRecord, GarminData

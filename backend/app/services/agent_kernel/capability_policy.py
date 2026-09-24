@@ -2776,6 +2776,13 @@ def decide_tool_capability(
             receipt_required=True,
         )
 
+    if tool_name == "health_query":
+        from app.services.agent_kernel.read_task_scope import is_owned_oxygen_sync_diagnostic, resolve_sync_status_query
+        if is_owned_oxygen_sync_diagnostic(snapshot) and normalize_health_query_args(args).get('dimension') in {'spo2', 'garmin'}:
+            if set(args) != {'dimension'}:
+                return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
+            return _decision('allow', 'owned_garmin_sync_status', tool_name, resolve_sync_status_query(snapshot))
+
     if tool_name == "health_query" and normalize_health_query_args(args).get("dimension") == "garmin":
         from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
         status_query = resolve_sync_status_query(snapshot)
@@ -2867,8 +2874,8 @@ def decide_tool_capability(
                 if ("days" in query and "days" in proposal
                         and (type(proposal["days"]) is not int or proposal["days"] != query["days"])):
                     return _decision("block", "health_query_calendar_window_conflict", tool_name, args)
-                if any(key in proposal and proposal[key] != query[key]
-                       for key in ("start_date", "end_date", "timezone")):
+                if any(key in proposal and proposal[key] != query.get(key)
+                       for key in ("start_date", "end_date", "timezone", "period")):
                     return _decision("block", "health_query_calendar_window_conflict", tool_name, args)
                 if any(key in proposal for key in ("user_id", "owner_id", "tenant_id")):
                     return _decision("block", "health_query_subject_not_current_user", tool_name, args)
@@ -2881,6 +2888,8 @@ def decide_tool_capability(
             # Unsupported requested history is not permission to substitute
             # the legacy rolling default; new user scope is required.
             return _decision("block", "longitudinal_read_scope_unresolved", tool_name, args)
+        if isinstance(read_proposals, list) and any(isinstance(p, dict) and 'period' in p for p in read_proposals):
+            return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
 
     if tool_name == "health_query":
         turn_text = snapshot.envelope.text

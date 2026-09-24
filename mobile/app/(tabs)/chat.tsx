@@ -1045,7 +1045,9 @@ export default function ChatScreen() {
   const turnStatus = activeTurnVisible
     ? {
         label: activeTurn.label || (
-          activeTurnHasErrorTone
+          activeTurn.phase === 'blocked' || activeTurn.phase === 'refused'
+            ? '本次请求未执行，请查看回复中的说明'
+          : activeTurnHasErrorTone
             ? '上一轮未完成，内容已保留'
             : activeTurn.phase === 'partial'
               ? '部分完成，请查看未完成的事项'

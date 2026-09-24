@@ -338,17 +338,18 @@ def _consume_read_scope(snapshot, scope: str, domains: set[str]) -> bool:
     if residue in {"", "近期", "最近"}:
         return bool(domains)
     calendar_remainder = _WEEK_RE.sub("", _WEEKDAY_RE.sub("", _RELATIVE_RE.sub("", _DATE_RE.sub("", residue))))
-    night = bool(re.search(r"昨晚|昨夜", residue))
+    night = bool(re.search(r"昨晚|昨夜|前一晚|前一夜|前晚|前夜", residue))
+    sleep_domains = bool(domains) and domains <= {"sleep", "spo2"}
     if calendar_remainder not in {"", "到", "至", "~", "～"}:
         # Only the existing sleep calendar adapter represents this qualifier:
         # sleep belongs to its wake date. Diet night reads need a meal binder.
-        if domains != {"sleep"} or not re.fullmatch(r"(?:晚上|夜晚|晚间|夜间|晚|夜)", calendar_remainder):
+        if not sleep_domains or not re.fullmatch(r"(?:晚上|夜晚|晚间|夜间|晚|夜)", calendar_remainder):
             return False
-    if night and domains != {"sleep"}:
+    if night and not sleep_domains:
         return False
     return resolve_calendar_query_window(
         residue, snapshot.context.current_time,
-        "sleep" if domains == {"sleep"} else "diet",
+        "sleep" if sleep_domains else "diet",
         timezone_name=snapshot.context.timezone,
     ) is not None
 
@@ -698,6 +699,8 @@ def read_longitudinal_health_query(
     window = parse_query_window(window.as_dict())
     if dimension in {"diet", "sleep", "spo2"}:
         return read_calendar_health_query(db, user_id, dimension, window)
+    if window.period is not None:
+        raise ValueError('calendar_query_period_unsupported')
     if dimension not in {"workout", "supplements"}:
         raise ValueError("longitudinal_query_dimension_unsupported")
     from app.models.daily_health import WorkoutRecord, ExerciseRecord, SupplementIntake

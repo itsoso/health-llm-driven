@@ -89,6 +89,7 @@ HEALTH_QUERY_CANONICAL_KEYS = (
     "start_date",
     "end_date",
     "timezone",
+    "period",  # Server-bound night restriction; never an all-day fallback.
 )
 ILLNESS_MAX_QUERY_DAYS = 36500
 

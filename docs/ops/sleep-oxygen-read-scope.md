@@ -106,3 +106,34 @@ tests cover both available oxygen and no qualifying oxygen.
 Release still requires the current fixed-commit independent safety review,
 CI-mode regressions, exact-revision hosted CI, canonical deployment, and live
 read-path acceptance. Local evidence does not claim deployment completion.
+
+## September 24 screenshot follow-up
+
+The full week/improvement request now passes the existing binder. Two remaining
+failures reproduced separately: `昨晚血氧` hit a sleep-only night restriction;
+the self-owned device monitoring narrative was rejected as a foreign owner.
+
+- Night oxygen carries a server-bound `period=sleep_night` through policy,
+  normalization, execution, completion and owned continuation. The wake date is
+  frozen in the turn timezone. It is not an all-day or latest-night query.
+- Only epoch-stamped samples within one coherent recorded sleep-clock interval
+  are summarized, separately by source. The current adapter supports the
+  ingestion clock timezone (Asia/Shanghai). Missing/conflicting clock sources,
+  unsupported timezone, equal clocks or an interval over 20 hours produce an
+  explicit unavailable interval, not unfiltered daily metrics. Clock-derived
+  intervals do not attest actual sleep, continuous coverage or sleep stages.
+- The complete self-owned monitoring/sync question authorizes only the existing
+  owned job-status reader, not a sync job or implicit health-history read. Extra
+  owners, dates, commands and unsupported clauses remain blocked. Its answer is
+  projected from verified status; arbitrary provider diagnosis/repair claims
+  are excluded from both streaming and persisted responses.
+- Existing Garmin oxygen exclusion is unchanged and now explained: unavailable
+  analysis is not proof of upload failure. Sample ingestion and device hardware
+  were not verified by this repair. No production data were inspected or changed.
+- Mobile blocked/refused states no longer use the generic interrupted-turn
+  fallback. Real transport failures, write reconciliation and retry gates remain.
+
+Test-first evidence: scope/status RED 4 failures; UI RED 2 failures; continuation
+RED 1 failure; unsupported provider claims RED 2 failures. Mobile chat suite
+64 passed and TypeScript passed. Final PostgreSQL, independent safety review and
+release evidence must be recorded separately; this note does not claim release.
