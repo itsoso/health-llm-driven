@@ -269,6 +269,19 @@ generation 或 install receipt 出现仍 BLOCK。入口保留原 NEEDS_OPERATOR�
 复用同 inode lease 归档和精确双身份撤权，终态只记 CLOSED_UNCHANGED_RELEASE。只有最终
 fsync 后才返回受保护回执供后续 rotate 验证；不得补造 RESTORED 回执或重跑失败 SHA。
 
+若且仅若 `CLOSED_UNCHANGED_RELEASE` 的原始明文回执在成功交付后遗失，可走独立的
+`acknowledge-lost-closure-receipt` 管理确认；这不是补发或重建原回执，也不修改原 closure。
+入口必须来自新的受审、精确主干 CI 绿色 canonical SHA，并持有原 launcher 锁和已有的
+build 锁（后端-only 已证明不存在时继续复证缺失）。第一阶段只返回绑定完整 closure、
+持久 lease/stage 归档、已撤销双身份、已删除 loopback 私钥、无业务 lease、无发布进程、
+稳定生产 revision 和当前 authorized_keys 身份的 `evidence_sha256`。第二阶段必须同时传入
+相同摘要与 `--accept-lost-closure-receipt`，在独立
+`lost-closure-receipt-acknowledgments/<failed-sha>` 中先 fsync intent、复证全部状态，才写
+终态并产生新的随机一次性确认回执。任何原 closure 不完整或漂移、生产 revision 变化、
+身份仍授权、活动 lease/进程、历史已退休、重复/部分确认均 BLOCK。新回执只经受保护文件
+和 stdin 交给普通 rotate；不得进入 argv、日志、代码库或用户消息。rotate 将该路径记录为
+独立 `ACKNOWLEDGED_LOST_CLOSURE_RECEIPT` 状态，仍须新 SHA、新身份和全部既有发布闸。
+
 #### 审核账号维护入口
 
 只有用户明确授权的审核 fixture 恢复，才可由管理员从同样的受审 canonical staging

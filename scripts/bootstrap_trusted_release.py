@@ -268,13 +268,26 @@ def _inventory(directory, names):
     return result
 
 
-def _workspace_evidence(sha, *, recovery_receipt=None):
+def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     workspace = STATE / sha
     review_closure = os.path.lexists(STATE / "review-maintenance-closures" / sha)
     unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
     contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
+    lost_receipt_ack = os.path.lexists(STATE / "lost-closure-receipt-acknowledgments" / sha)
     if sum((review_closure, unchanged_closure, contained_closure)) > 1:
         raise BootstrapError("conflicting release closure evidence")
+    if lost_receipt_ack:
+        if not unchanged_closure:
+            raise BootstrapError("lost receipt acknowledgment lacks unchanged closure")
+        path = Path(__file__).absolute().with_name("lost_closure_receipt_acknowledgment.py")
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached acknowledgment proof forbidden")
+        spec = importlib.util.spec_from_file_location("reviewed_lost_receipt_acknowledgment", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.acknowledged_evidence(
+            sys.modules[__name__], sha, recovery_receipt, historical=historical)
     if review_closure:
         path = Path(__file__).absolute().with_name("review_maintenance_retirement.py")
         secure(path)
@@ -486,7 +499,7 @@ def _retired_history():
                     or {p.name for p in entry.iterdir()} != {"config", "executor"}):
                 raise BootstrapError("unexpected legacy retirement inventory")
             evidence = {"installation": _installation_evidence(entry.name, entry / "config", entry / "executor"),
-                        "workspace": _workspace_evidence(entry.name)}
+                        "workspace": _workspace_evidence(entry.name, historical=True)}
             digest = hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             if (evidence["workspace"] != {"state": "NEVER_STARTED", "inventory": None}
                     or digest != LEGACY_RETIREMENTS[entry.name]):
@@ -504,7 +517,7 @@ def _retired_history():
                 or _read_json(entry / "completed.json") != {"new_sha": intent["new_sha"], "state": "RETIRED", "old_sha": entry.name}):
             raise BootstrapError("incomplete or invalid retirement audit")
         if (_installation_evidence(entry.name, *_archives(entry.name)) != intent["installation"]
-                or _workspace_evidence(entry.name, recovery_receipt=intent.get("recovery_receipt")) != intent["workspace"]):
+                or _workspace_evidence(entry.name, recovery_receipt=intent.get("recovery_receipt"), historical=True) != intent["workspace"]):
             raise BootstrapError("retired installation or consumption evidence changed")
         history[entry.name] = intent
     return history
@@ -577,15 +590,26 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         build_fd = _acquire_existing_build_lock(old_sha)
+        build_path = STATE / old_sha / "build.lock"
+        def check_locks():
+            _assert_original_lock(STATE / "launcher.lock", fd)
+            if build_fd is None:
+                if os.path.lexists(build_path):
+                    raise BootstrapError("historical build lock appeared")
+            else:
+                _assert_original_lock(build_path, build_fd)
+        check_locks()
         history = _retired_history()
         _assert_fresh_sha(sha, history)
         _assert_known_activity(history, old_sha)
         archive_config, archive_library = _archives(old_sha)
         if old_sha in history or any(os.path.lexists(path) for path in (archive_config, archive_library)):
             raise BootstrapError("old retirement already attempted")
+        check_locks()
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
         workspace = _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE"}:
+        check_locks()
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]
@@ -606,7 +630,9 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
         intent = {"old_sha": old_sha, "new_sha": sha, "installation": installation, "workspace": workspace}
         if recovery_receipt is not None:
             intent["recovery_receipt"] = recovery_receipt
+        check_locks()
         _write(record / "intent.json", json.dumps(intent, sort_keys=True).encode())
+        check_locks()
         _assert_idle()
         for current, archive in ((CONFIG, archive_config), (INSTALLED.parent, archive_library)):
             os.rename(current, archive)
@@ -614,6 +640,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
         if (_installation_evidence(old_sha, archive_config, archive_library) != installation
                 or _workspace_evidence(old_sha, recovery_receipt=recovery_receipt) != workspace):
             raise BootstrapError("retirement evidence changed during rotation")
+        check_locks()
         # This certifies retirement, not installation success. Reserve the new
         # SHA permanently, and finish audit writes before publishing any key.
         _write(record / "completed.json", json.dumps({"old_sha": old_sha, "new_sha": sha,
@@ -1060,6 +1087,52 @@ def _recovered_preparation_evidence(sha, *, recovery_receipt=None):
             "workspace": intent["workspace"]}
 
 
+def acknowledge_lost_closure_receipt(old_sha, sha, *, evidence_sha256=None, accepted=False):
+    """Bind a new one-time receipt to an intact completed unchanged closure."""
+    if (not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None
+            or not isinstance(sha, str) or re.fullmatch(r"[0-9a-f]{40}", sha) is None
+            or old_sha == sha):
+        raise BootstrapError("distinct exact closure and acknowledgment SHAs required")
+    source, _server = reviewed_source(sha)
+    _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"),
+          "--sha", sha, "--workflow-sha", sha])
+    secure(STATE)
+    secure(STATE / "launcher.lock", private=True)
+    fd = os.open(STATE / "launcher.lock", os.O_RDWR | os.O_NOFOLLOW)
+    build_fd = None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        build_fd = _acquire_existing_build_lock(old_sha)
+        build_path = STATE / old_sha / "build.lock"
+        def check_locks():
+            _assert_original_lock(STATE / "launcher.lock", fd)
+            if build_fd is None:
+                if os.path.lexists(build_path):
+                    raise BootstrapError("historical build lock appeared")
+            else:
+                _assert_original_lock(build_path, build_fd)
+        check_locks()
+        history = _retired_history()
+        _assert_fresh_sha(sha, history)
+        _assert_known_activity(history, old_sha)
+        if old_sha in history or any(os.path.lexists(path) for path in _archives(old_sha)):
+            raise BootstrapError("closed release is already retired")
+        _assert_idle()
+        path = source / "scripts/lost_closure_receipt_acknowledgment.py"
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached acknowledgment operator forbidden")
+        spec = importlib.util.spec_from_file_location("reviewed_lost_receipt_operator", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.acknowledge(sys.modules[__name__], old_sha, sha, check_locks,
+                                  evidence_sha256=evidence_sha256, accepted=accepted)
+    finally:
+        if build_fd is not None:
+            os.close(build_fd)
+        os.close(fd)
+
+
 def main():
     try:
         if not sys.flags.isolated or os.geteuid() != 0:
@@ -1085,10 +1158,19 @@ def main():
         recovery.add_argument("--sha", required=True)
         recovery.add_argument("--production-sha", required=True)
         recovery.add_argument("--evidence-sha256")
+        acknowledgment = commands.add_parser("acknowledge-lost-closure-receipt", allow_abbrev=False)
+        acknowledgment.add_argument("--retire-sha", required=True)
+        acknowledgment.add_argument("--sha", required=True)
+        acknowledgment.add_argument("--evidence-sha256")
+        acknowledgment.add_argument("--accept-lost-closure-receipt", action="store_true")
         args = parser.parse_args()
         if args.action == "recover-preparation":
             result = recover_preparation(args.retire_sha, args.sha, args.production_sha,
                                          evidence_sha256=args.evidence_sha256)
+        elif args.action == "acknowledge-lost-closure-receipt":
+            result = acknowledge_lost_closure_receipt(
+                args.retire_sha, args.sha, evidence_sha256=args.evidence_sha256,
+                accepted=args.accept_lost_closure_receipt)
         elif args.action == "rotate":
             receipt = None
             if args.recovery_receipt_stdin:

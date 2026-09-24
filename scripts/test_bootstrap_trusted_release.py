@@ -54,6 +54,33 @@ def test_workspace_evidence_rejects_conflicting_closure_profiles(monkeypatch, tm
         bootstrap._workspace_evidence(SHA)
 
 
+def test_workspace_evidence_uses_distinct_lost_receipt_acknowledgment(monkeypatch, tmp_path):
+    bootstrap, _calls = fixture(monkeypatch, tmp_path)
+    old = "a" * 40
+    closure = bootstrap.STATE / "unchanged-release-closures" / old
+    closure.mkdir(parents=True)
+    acknowledgment = bootstrap.STATE / "lost-closure-receipt-acknowledgments" / old
+    acknowledgment.mkdir(parents=True)
+    source = tmp_path / "canonical"
+    source.mkdir()
+    for name in ("contained_release_retirement.py", "lost_closure_receipt_acknowledgment.py"):
+        (source / name).write_text("# fixture\n")
+    bootstrap.__file__ = str(source / "bootstrap_trusted_release.py")
+    monkeypatch.setattr(bootstrap, "secure", lambda *args, **kwargs: None)
+    imported = SimpleNamespace(
+        acknowledged_evidence=lambda b, sha, receipt, **kwargs: {
+            "state": "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT",
+            "sha": sha,
+            "receipt": receipt,
+        })
+    monkeypatch.setattr(bootstrap.importlib.util, "module_from_spec", lambda spec: imported)
+    monkeypatch.setattr(bootstrap.importlib.util, "spec_from_file_location", lambda *args: SimpleNamespace(
+        loader=SimpleNamespace(exec_module=lambda module: None)))
+    monkeypatch.setattr(bootstrap, "sys", SimpleNamespace(modules={bootstrap.__name__: bootstrap}, dont_write_bytecode=False))
+    evidence = bootstrap._workspace_evidence(old, recovery_receipt="c" * 64)
+    assert evidence["state"] == "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT"
+
+
 def test_key_lines_are_fixed_expiring_and_loopback_cannot_be_remote(monkeypatch):
     bootstrap = load_bootstrap()
     monkeypatch.setattr(bootstrap, "expiry_time", lambda _expiry: "19700101000320", raising=False)

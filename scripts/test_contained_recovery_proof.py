@@ -115,7 +115,12 @@ def test_unchanged_retirement_accepts_only_exact_prepared_laya_source(tmp_path, 
         instance._laya_unstarted()
 
 
-def test_unchanged_retirement_preserves_only_historically_closed_empty_source(tmp_path, monkeypatch):
+@pytest.mark.parametrize("workspace_state", [
+    "CLOSED_UNCHANGED_RELEASE",
+    "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT",
+])
+def test_unchanged_retirement_preserves_only_historically_closed_empty_source(
+        tmp_path, monkeypatch, workspace_state):
     instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
     instance.failed_sha, instance.production_sha = "a" * 40, "b" * 40
     old_sha = "c" * 40
@@ -127,12 +132,15 @@ def test_unchanged_retirement_preserves_only_historically_closed_empty_source(tm
     instance._directory = lambda p: {"ino": p.stat().st_ino}
     instance._absent = lambda *paths: None
     old_identity = instance._directory(old)
-    history = {old_sha: {"workspace": {"state": "CLOSED_UNCHANGED_RELEASE"}}}
-    intent = {"snapshot": {"unstarted_laya": {str(old): old_identity}}}
+    history = {old_sha: {"workspace": {"state": workspace_state}}}
+    intent = {"snapshot": {"workspace": {"inventory": []},
+                           "unstarted_laya": {str(old): old_identity}}}
+    acknowledgment = {"old_sha": old_sha, "closure": {
+        "state": "CLOSED_UNCHANGED_RELEASE", "workspace": intent["snapshot"]["workspace"]}}
     instance.bootstrap = SimpleNamespace(
         STATE=tmp_path / "release-state",
         _retired_history=lambda: history,
-        _read_json=lambda _: intent,
+        _read_json=lambda path: acknowledgment if "lost-closure-receipt-acknowledgments" in str(path) else intent,
     )
     monkeypatch.setattr(proof, "LAYA_STATE", root)
     monkeypatch.setattr(proof.pwd, "getpwnam", lambda _: (_ for _ in ()).throw(KeyError()))

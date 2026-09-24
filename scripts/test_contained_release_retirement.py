@@ -259,7 +259,9 @@ def test_unstarted_release_closes_without_service_restoration_or_release_success
     assert b.AUTHORIZED.read_bytes() == b"unrelated\n"
     assert not audit.exists()
     assert not a.proof.lease.exists()
-    assert m.closed_evidence(b, a.proof.failed_sha, result["receipt"], unchanged=True)["state"] == "CLOSED_UNCHANGED_RELEASE"
+    closed = m.closed_evidence(b, a.proof.failed_sha, result["receipt"], unchanged=True)
+    assert closed["state"] == "CLOSED_UNCHANGED_RELEASE"
+    assert set(closed) == {"state", "closure", "workspace"}
     with pytest.raises((m.ClosureError, FileNotFoundError)):
         m.closed_evidence(b, a.proof.failed_sha, result["receipt"])
 

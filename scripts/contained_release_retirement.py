@@ -360,8 +360,8 @@ class ClosureAdapter:
         return {"installation": installation, "archives": _archives(b, self.record, evidence["snapshot"])}
 
 
-def closed_evidence(bootstrap, sha, receipt, *, unchanged=False):
-    """Rotation/history proof. Never uses live service state as historical truth."""
+def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False):
+    """Validate the complete immutable closure while deliberately omitting its secret."""
     state = "CLOSED_UNCHANGED_RELEASE" if unchanged else "CLOSED_RESTORED_RELEASE"
     root = bootstrap.STATE / ("unchanged-release-closures" if unchanged else "contained-release-closures") / sha
     _private_directory(bootstrap, root)
@@ -381,7 +381,6 @@ def closed_evidence(bootstrap, sha, receipt, *, unchanged=False):
             or completed["old_sha"] != sha or completed["state"] != state
             or completed["intent_sha256"] != _digest(intent)):
         raise ClosureError("closure audit binding invalid")
-    verify_receipt(intent, receipt)
     bootstrap.canonical_source(intent["closing_sha"])
     if unchanged:
         if (intent["restoration"] is not None or not intent["snapshot"].get("unstarted_laya")
@@ -405,4 +404,14 @@ def closed_evidence(bootstrap, sha, receipt, *, unchanged=False):
     if completed["installation"] != expected or bootstrap._installation_evidence(sha, config, library) != expected:
         raise ClosureError("closed installation or authorization changed")
     return {"state": state, "closure": _digest(completed),
-            "workspace": intent["snapshot"]["workspace"]}
+            "workspace": intent["snapshot"]["workspace"],
+            "production_sha": intent["production_sha"]}
+
+
+def closed_evidence(bootstrap, sha, receipt, *, unchanged=False):
+    """Rotation/history proof. Never uses live service state as historical truth."""
+    evidence = closure_evidence_without_receipt(bootstrap, sha, unchanged=unchanged)
+    root = bootstrap.STATE / ("unchanged-release-closures" if unchanged else "contained-release-closures") / sha
+    intent = bootstrap._read_json(root / "intent.json")
+    verify_receipt(intent, receipt)
+    return {key: evidence[key] for key in ("state", "closure", "workspace")}

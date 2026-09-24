@@ -310,12 +310,21 @@ class RecoveryProof:
                     raise ProofError("unknown Laya preparation source")
                 item = history.get(old_sha)
                 path = sources / old_sha
+                workspace_state = item.get("workspace", {}).get("state") if isinstance(item, dict) else None
                 if (not isinstance(item, dict)
-                        or item.get("workspace", {}).get("state") != "CLOSED_UNCHANGED_RELEASE"
+                        or workspace_state not in {"CLOSED_UNCHANGED_RELEASE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT"}
                         or any(path.iterdir())):
                     raise ProofError("unclosed Laya preparation source remains")
                 closure = self.bootstrap._read_json(
                     self.bootstrap.STATE / "unchanged-release-closures" / old_sha / "intent.json")
+                if workspace_state == "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT":
+                    acknowledgment = self.bootstrap._read_json(
+                        self.bootstrap.STATE / "lost-closure-receipt-acknowledgments" / old_sha / "intent.json")
+                    if (acknowledgment.get("old_sha") != old_sha
+                            or acknowledgment.get("closure", {}).get("state") != "CLOSED_UNCHANGED_RELEASE"
+                            or acknowledgment.get("closure", {}).get("workspace")
+                            != closure.get("snapshot", {}).get("workspace")):
+                        raise ProofError("lost receipt acknowledgment does not bind unchanged closure")
                 historical = closure.get("snapshot", {}).get("unstarted_laya", {}).get(str(path))
                 identity = self._directory(path)
                 if historical != identity:
