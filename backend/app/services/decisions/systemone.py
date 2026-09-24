@@ -214,7 +214,11 @@ class SystemOneProvider:
                             chunks.extend(chunk)
                             if len(chunks) > 262144:
                                 raise DecisionError("response_too_large")
-                        return _result(json.loads(chunks), request)
+                        try:
+                            decoded = json.loads(chunks)
+                        except RecursionError:
+                            raise DecisionError("invalid_response") from None
+                        return _result(decoded, request)
         except (TimeoutError, httpx.TimeoutException):
             raise DecisionError("timeout") from None
         except httpx.RequestError:

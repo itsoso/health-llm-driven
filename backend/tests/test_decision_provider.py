@@ -259,6 +259,20 @@ async def test_timeout_is_safe_and_no_retry(decision_config):
 
 
 @pytest.mark.asyncio
+async def test_deeply_nested_json_response_falls_back_without_breaking_route(decision_config, monkeypatch):
+    from app.services.decisions import routing
+    malformed = b"[" * 10000 + b"0" + b"]" * 10000
+    provider = SystemOneProvider(configured_decision(), transport=httpx.MockTransport(
+        lambda req: httpx.Response(200, content=malformed)
+    ))
+    monkeypatch.setattr(routing, "provider_from_settings", lambda: provider)
+    result = await routing.decide_route("synthetic", user_id=1, baseline_tier="balanced")
+    assert result.status == "fallback"
+    assert result.reason == "invalid_response"
+    assert result.effective_tier == "balanced" and result.prompt_hint() == ""
+
+
+@pytest.mark.asyncio
 async def test_remote_grant_and_revocation_checked_each_send(
     decision_config, db, monkeypatch
 ):

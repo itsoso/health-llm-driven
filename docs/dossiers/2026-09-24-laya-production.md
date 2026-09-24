@@ -82,7 +82,16 @@ Focused coverage measured from that run: 88.12% across decisions, admin API and
 consent (423/480 statements). The initial coverage command inherited global
 --cov=app and exited nonzero for unrelated unexercised application modules;
 explicit focused coverage report passed the 80% threshold. A clean scoped
-coverage command is being run to remove that invocation ambiguity.
+coverage command then passed: 74 tests, three SQLite skips, 93.75% coverage.
 Installer review regressions: 21 passed. Linux startup/auth/inference are verified
 by the governed provision phase before stopping the old backend; they have not
 been executed in production in this session.
+
+Fixed-commit G4 review of c350c15e18e941d1bc571b839fc047b152c47342 found
+one additional issue: deeply nested response JSON could raise RecursionError
+instead of entering the explicit fallback. A real mock-transport reproduction
+failed before the fix. The decoder now normalizes that specific failure to
+invalid_response. Fresh scoped verification: 75 passed, three SQLite skips,
+93.80% coverage. Independent focused re-review passed nine malformed-response
+and timeout tests; final fixed-commit disposition is pending.
+No authorization, route floor or write authority is changed by the fix.
