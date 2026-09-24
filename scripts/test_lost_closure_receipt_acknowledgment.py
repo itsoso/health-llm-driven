@@ -26,7 +26,7 @@ def load():
 def fixture(tmp_path, monkeypatch):
     module = load()
     state = tmp_path / "state"
-    state.mkdir(mode=0o700)
+    state.mkdir(mode=0o755)
     closure = state / "unchanged-release-closures" / OLD
     closure.mkdir(parents=True)
     bootstrap = SimpleNamespace(
@@ -63,6 +63,7 @@ def fixture(tmp_path, monkeypatch):
         if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700:
             raise module.AcknowledgmentError("private root-owned acknowledgment directory required")
     monkeypatch.setattr(module, "_private_directory", private_directory)
+    monkeypatch.setattr(module, "_secure_root_directory", lambda _bootstrap, path: None)
     return module, bootstrap
 
 
@@ -205,6 +206,15 @@ def test_real_directory_guard_calls_bootstrap_security_and_rejects_world_writabl
     bootstrap = SimpleNamespace(secure=lambda value: calls.append(value))
     with pytest.raises(module.AcknowledgmentError, match="private root-owned"):
         module._private_directory(bootstrap, path)
+    assert calls == [path]
+
+
+def test_acknowledgment_parent_accepts_secure_root_owned_0755_state(monkeypatch):
+    module = load()
+    info = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0, st_gid=0)
+    path = SimpleNamespace(lstat=lambda: info)
+    calls = []
+    module._secure_root_directory(SimpleNamespace(secure=lambda value: calls.append(value)), path)
     assert calls == [path]
 
 

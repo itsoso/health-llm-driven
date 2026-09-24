@@ -69,6 +69,13 @@ def _private_directory(bootstrap, path):
         raise AcknowledgmentError("private root-owned acknowledgment directory required")
 
 
+def _secure_root_directory(bootstrap, path):
+    bootstrap.secure(path)
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_gid != 0:
+        raise AcknowledgmentError("root-owned acknowledgment parent required")
+
+
 def _inspect(bootstrap, old_sha, acknowledging_sha, check_locks):
     check_locks()
     if (not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None
@@ -108,7 +115,7 @@ def acknowledge(bootstrap, old_sha, acknowledging_sha, check_locks, *, evidence_
     if os.path.lexists(record.parent):
         _private_directory(bootstrap, record.parent)
     else:
-        _private_directory(bootstrap, record.parent.parent)
+        _secure_root_directory(bootstrap, record.parent.parent)
     evidence = _inspect(bootstrap, old_sha, acknowledging_sha, check_locks)
     digest = _digest(evidence)
     if evidence_sha256 is None:
