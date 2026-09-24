@@ -77,3 +77,25 @@ DEVELOPER_DIR 确认可用，未改全局配置。已安装应用不是本轮候
 ## G5 / G6
 
 未部署，未宣称线上或模拟器验收完成。
+
+### 经授权的合并与发布续接
+
+用户明确授权合并分叉代码、协调旧发布受控收尾，随后部署后端和 production OTA。
+固定合并提交 `900ecdb20640edd4f47b3981226b98973be367de` 保留本地体检修复与远端
+`3250d770f73146091ab4b86c05dba033e645ff27`；地图提示及其测试统一为远端已测试文案。
+其他任务未提交的 frontend-publisher-recovery 档案保持原样，不纳入此次提交。
+
+- 合并后 Backend 1917 passed；Mobile 35 passed；TypeScript、结构地图、秘密扫描通过。
+- 体检增量独立 G4 GO：五个代码/测试文件与原受审候选同字节；独立 Backend 1738、
+  Mobile 29、decision routing 10 均通过。另以合成 Laya provider 和真实 run_stream
+  验证 decision_mode=on 的上下文、质量下限、无写回执/用药卡，1 passed。
+- 恢复代码独立 G4 GO：固定 `3250d770f` 相对 `ba861b623` 的六文件在合并候选
+  同字节；133 项恢复/安装器和 203 项 bootstrap/server 测试通过。此 GO 不等于
+  生产证据匹配、发布或 PostgreSQL 业务验证通过。
+- 生产只读检查仍为 `05b6e4d396084103975c43e4a5fc4d044d8e66da`，backend/worker/beat
+  active、restart count 0。旧发布 lease 保留；未启动新的生产操作。
+- 当前全量发布不变量测试与远端基线 CI 尚在运行；合并候选精确 CI 尚未触发。
+  `run-all-tests.sh --ci` 不受该脚本支持（exit 2），不算验证；已改用 CI workflow
+  中原样的 release-invariants 集成命令。没有关闭测试或放宽闸。
+- OTA 本地历史锚点为 runtime 1.3.3，当前配置为 1.3.4；必须核对已分发原生候选，
+  不以覆盖 runtime 或 OTA 推送替代原生权限/版本更新。
