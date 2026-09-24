@@ -148,3 +148,25 @@ now also requires matching absolute `SleepLevelInterval` bounds; no matching
 provenance means unavailable, even when daily oxygen values exist. This does not
 establish stage-level correlation or continuous sleep. The rejected candidate
 must not be published; the revised fixed diff requires a new independent review.
+
+### Final scoped verification
+
+- Fixed implementation commits: `65e685937` plus `48c4efec1`; unrelated Android
+  commits are excluded from this repair/review. Independent second safety review
+  returned GO for the cumulative scoped diff, with its own 71 passing SQLite tests.
+- Final revised oxygen suites: 143 passed on SQLite and 143 passed on isolated
+  PostgreSQL 17; reader coverage 92.86%. PostgreSQL was stopped after validation.
+  Broader verification before the provenance-only follow-up: 525 PostgreSQL
+  tests, 3,254 policy/semantic tests and 1,331 projection/related tests passed.
+  All reported runs exited zero. UI suite 64 passed; mobile TypeScript passed.
+- Reproduction and verification logs are local `/tmp/reva-oxygen-*` artifacts.
+  Secret scan and diff checks passed; no dependencies, public API or schema
+  migration changed. Only synthetic users/data were used.
+- System Map/navigation/doc drift passed on the isolated `65e685937` archive.
+  Current full HEAD separately inherits an Android test under the app route
+  directory (`d52151052`); the generator counts it as another route and reports
+  drift. That unrelated change was neither reverted nor incorporated into this
+  scoped safety approval. Full-revision release gates remain outstanding.
+- No push, production deployment, OTA, real-device ingestion verification or
+  live-model acceptance was performed for this screenshot repair. Scoped GO is
+  not approval to publish the combined, concurrently changing main branch.
