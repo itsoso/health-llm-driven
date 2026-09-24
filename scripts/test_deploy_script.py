@@ -1312,6 +1312,7 @@ REMOTE_RELEASE_LOCK_TOKEN=lease-token
 REMOTE_BACKUP_PREFLIGHT_DIR={stage_dir!s}
 REMOTE_RUNTIME_STATE_RUNNER={runtime_helper!s}
 prepare_laya_service() {{ :; }}
+laya_service_command() {{ printf ':'; }}
 validate_runtime_only_kb_staging() {{ :; }}
 assert_remote_release_lock_if_acquired() {{ :; }}
 assert_remote_release_lock() {{ :; }}
@@ -1385,7 +1386,7 @@ def test_unknown_guard_transaction_failure_never_starts_concurrent_rollback():
     deploy_body = script[deploy_start:]
     failure_start = deploy_body.index("if [ $CODE_EXIT -ne 0 ]; then")
     failure_end = deploy_body.index(
-        "if ! prove_health_evidence_runtime_process_flag false",
+        "if ! verify_laya_service ||",
         failure_start,
     )
     failure_body = deploy_body[failure_start:failure_end]
