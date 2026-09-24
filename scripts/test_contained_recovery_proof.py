@@ -1,5 +1,6 @@
 """Read-only containment proof regressions; never contact production."""
 import importlib.util
+from datetime import UTC, datetime
 import hashlib
 import json
 import os
@@ -12,6 +13,83 @@ import pytest
 SPEC = importlib.util.spec_from_file_location("contained_proof", Path(__file__).with_name("contained_recovery_proof.py"))
 proof = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(proof)
+
+
+@pytest.mark.parametrize("unchanged", [False, True])
+def test_retirement_environment_never_accepts_changed_live_bytes(unchanged):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.unchanged = unchanged
+    sealed = {"backend.env.rollback": b"old", "backend.env.candidate": b"new"}
+    with pytest.raises(proof.ProofError):
+        instance._validate_unchanged_environment(b"new", sealed)
+    if unchanged:
+        instance._validate_unchanged_environment(b"old", sealed)
+    else:
+        with pytest.raises(proof.ProofError):
+            instance._validate_unchanged_environment(b"old", sealed)
+
+
+@pytest.mark.parametrize("start,restarts", [(200, "0"), (50, "1")])
+def test_unchanged_retirement_rejects_restarted_or_new_services(tmp_path, start, restarts):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.proc = tmp_path
+    (tmp_path / "stat").write_text("btime 1000\n")
+    raw = datetime.fromtimestamp(1200, UTC).strftime("%Y-%m-%dT%H:%M:%SZ\n").encode()
+    instance.lease = tmp_path
+    instance._file = lambda *a: (raw, {})
+    instance.running_snapshot = lambda: {unit: {"ActiveEnterTimestampMonotonic": str(start * 1000000), "NRestarts": restarts} for unit in proof.UNITS}
+    with pytest.raises(proof.ProofError):
+        instance._services_predate_release()
+
+
+def test_unchanged_retirement_accepts_old_zero_restart_units_and_processes(tmp_path, monkeypatch):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.proc = tmp_path
+    (tmp_path / "stat").write_text("btime 1000\n")
+    raw = datetime.fromtimestamp(1300, UTC).strftime("%Y-%m-%dT%H:%M:%SZ\n").encode()
+    instance.lease = tmp_path
+    instance._file = lambda *a: (raw, {})
+    monkeypatch.setattr(proof.os, "sysconf", lambda _: 100)
+    instance.running_snapshot = lambda: {
+        unit: {"ActiveEnterTimestampMonotonic": "100000000", "NRestarts": "0",
+               "processes": {} if unit.endswith(".socket") else {"200": "10000"}}
+        for unit in proof.UNITS
+    }
+    instance._services_predate_release()
+
+
+def test_unchanged_retirement_requires_bounded_preinstallation_inventory(tmp_path, monkeypatch):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.failed_sha = "a" * 40
+    root = tmp_path / "laya"
+    (root / "sources" / instance.failed_sha).mkdir(parents=True)
+    instance._directory = lambda p: {"ino": p.stat().st_ino}
+    instance._absent = lambda *paths: None
+    monkeypatch.setattr(proof, "LAYA_STATE", root)
+    monkeypatch.setattr(proof.pwd, "getpwnam", lambda _: (_ for _ in ()).throw(KeyError()))
+    monkeypatch.setattr(proof.grp, "getgrnam", lambda _: (_ for _ in ()).throw(KeyError()))
+    monkeypatch.setattr(proof.subprocess, "check_output", lambda *a, **k: b"not-found\n")
+    expected = instance._laya_unstarted()
+    assert expected == instance._laya_unstarted()
+    (root / "sources" / instance.failed_sha / "install.py").write_text("partial")
+    with pytest.raises(proof.ProofError):
+        instance._laya_unstarted()
+
+
+def test_unchanged_retirement_rejects_laya_process(tmp_path, monkeypatch):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.failed_sha = "a" * 40
+    root = tmp_path / "laya"
+    (root / "sources" / instance.failed_sha).mkdir(parents=True)
+    instance._directory = lambda p: {"ino": p.stat().st_ino}
+    instance._absent = lambda *paths: None
+    monkeypatch.setattr(proof, "LAYA_STATE", root)
+    monkeypatch.setattr(proof.pwd, "getpwnam", lambda _: (_ for _ in ()).throw(KeyError()))
+    monkeypatch.setattr(proof.grp, "getgrnam", lambda _: (_ for _ in ()).throw(KeyError()))
+    outputs = iter((b"not-found\n", b"python /opt/reva-laya/current/serve.py\n"))
+    monkeypatch.setattr(proof.subprocess, "check_output", lambda *a, **k: next(outputs))
+    with pytest.raises(proof.ProofError):
+        instance._laya_unstarted()
 
 
 @pytest.mark.parametrize("kind", ["stage", "lease"])

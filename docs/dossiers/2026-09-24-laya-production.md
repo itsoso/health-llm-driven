@@ -122,3 +122,24 @@ Small configs use strictly decoded Base64 assets to preserve upstream missing
 final newlines without exempting or disabling repository whitespace hooks.
 Renewed fixed-commit review is pending.
 Production application, model installation and authorization remain unchanged.
+
+Exact candidate 3b0ec47d4bf12a80424a1fe655c7629f505b0d1b passed CI run
+35955764718 and trusted validation run 35956929435. The governed backend run
+35962192431 then failed before checkout, writer stop, live env mutation or Laya
+installation: its canonical source was a depth-one clone, so the exported HEAD
+bundle omitted parent ce8cd0d58 and could not prove the previous production
+revision in the empty Laya proof repository. Production remained at 05b6e4d3;
+backend/worker/beat retained their existing PIDs with zero restarts, live env
+retained its original digest, and Laya retained only the exact empty candidate
+source directory. The original NEEDS_OPERATOR evidence and release lease remain.
+
+The repair removes only `--depth=1` from the fixed canonical clone and adds a
+real two-commit bundle/import regression. Because existing recovery modes cannot
+truthfully represent a running unchanged old release, a separate fail-closed
+`--retire-unchanged` profile records CLOSED_UNCHANGED_RELEASE after proving the
+old revision/env/runtime terminal, pre-lease zero-restart units and cgroup
+processes, health/schema/KB, and strict Laya non-installation. It preserves the
+failed workspace, log, stage and empty source while archiving the original lease
+inode and revoking only the exact temporary identities. Focused release tests:
+293 passed. Independent scope review: GO; final fixed-commit review and exact CI
+are still required before this recovery profile or another deployment executes.

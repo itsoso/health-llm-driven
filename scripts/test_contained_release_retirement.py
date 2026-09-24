@@ -239,6 +239,41 @@ def test_real_archival_revokes_only_managed_keys_preserves_failure_and_allows_hi
         m.closed_evidence(b, a.proof.failed_sha, result["receipt"])
 
 
+def test_unstarted_release_closes_without_service_restoration_or_release_success(tmp_path, monkeypatch):
+    m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch, build_lock=False)
+    for path in audit.iterdir():
+        path.unlink()
+    audit.rmdir()
+    a.unchanged = True
+    a.record = b.STATE / "unchanged-release-closures" / a.proof.failed_sha
+    a.proof.snapshot()["unstarted_laya"] = {"empty_source": True}
+    a.proof._laya_unstarted = lambda: {"empty_source": True}
+    a.proof.production = tmp_path / "production"
+    a.proof.production.mkdir()
+    (a.proof.production / "backend").mkdir()
+    live = a.proof.production / "backend/.env"
+    live.write_bytes(b"original env")
+    a.proof.snapshot()["stage"]["live_env"] = a.proof._file(live)[1]
+    result = m.close_transaction(a, m.close_transaction(a)["evidence_sha256"])
+    assert result["state"] == "CLOSED_UNCHANGED_RELEASE"
+    assert b.AUTHORIZED.read_bytes() == b"unrelated\n"
+    assert not audit.exists()
+    assert not a.proof.lease.exists()
+    assert m.closed_evidence(b, a.proof.failed_sha, result["receipt"], unchanged=True)["state"] == "CLOSED_UNCHANGED_RELEASE"
+    with pytest.raises((m.ClosureError, FileNotFoundError)):
+        m.closed_evidence(b, a.proof.failed_sha, result["receipt"])
+
+
+def test_unstarted_release_cannot_hide_existing_restoration(tmp_path, monkeypatch):
+    m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch)
+    a.unchanged = True
+    a.record = b.STATE / "unchanged-release-closures" / a.proof.failed_sha
+    with pytest.raises(m.ClosureError):
+        m.close_transaction(a)
+    assert a.proof.lease.exists()
+    assert not a.record.exists()
+
+
 def test_backend_only_closure_preserves_proven_absence_of_native_build_lock(tmp_path, monkeypatch):
     m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch, build_lock=False)
     lock = b.STATE / a.proof.failed_sha / "build.lock"

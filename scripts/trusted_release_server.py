@@ -549,7 +549,10 @@ def prepare_source(policy, workspace):
     for attempt in range(3):
         _assert_deployment_window(policy)
         try:
-            execute_preparation(git + ["clone", "--no-checkout", "--no-local", "--depth=1", "--branch=main", "--single-branch", ORIGIN, str(source)], workspace, env, log)
+            # deploy.sh exports HEAD as a bundle for an empty Laya proof repo.
+            # Shallow bundles omit parent objects and cannot prove the previous
+            # production revision. Keep main's complete reachable history.
+            execute_preparation(git + ["clone", "--no-checkout", "--no-local", "--branch=main", "--single-branch", ORIGIN, str(source)], workspace, env, log)
             break
         except subprocess.CalledProcessError as error:
             if error.returncode != 128 or attempt == 2:

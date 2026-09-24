@@ -3,16 +3,18 @@
 No CLI, service mutation, cleanup or deployment authorization lives here.
 The caller holds original launcher/build locks and owns durable recovery intent.
 """
-import hashlib
 import grp
+import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
+import pwd
 import re
 import stat
 import subprocess
 import sys
+from datetime import UTC, datetime
+from pathlib import Path
 
 
 class ProofError(RuntimeError):
@@ -20,6 +22,7 @@ class ProofError(RuntimeError):
 
 
 UNITS = ("health-backend.socket", "health-backend.service", "celery-worker.service", "celery-beat.service")
+LAYA_STATE = Path("/var/lib/reva-laya-release")
 ACTIVATION = b"[Service]\nEnvironmentFile=-/var/lib/reva-health-evidence-runtime/enabled.env\n"
 ARTIFACTS = {name: "backend/scripts/" + name for name in (
     "backup_db.sh", "verify_backup_restore.sh", "archive_backup_offsite.sh", "verify_recent_offsite_backup.sh", "rollback_release.sh",
@@ -73,13 +76,14 @@ def normalized_base(raw, overridden):
 
 
 class RecoveryProof:
-    def __init__(self, source, bootstrap, server, failed_sha, production_sha, lease_token):
+    def __init__(self, source, bootstrap, server, failed_sha, production_sha, lease_token, *, unchanged=False):
         if any(re.fullmatch(r"[0-9a-f]{40}", value) is None for value in (failed_sha, production_sha)) or failed_sha == production_sha:
             raise ProofError("distinct exact revisions required")
         if not isinstance(lease_token, str) or re.fullmatch(r"[A-Za-z0-9._:-]{1,256}", lease_token) is None:
             raise ProofError("exact original lease token required")
         self.source, self.bootstrap, self.server = Path(source), bootstrap, server
         self.failed_sha, self.production_sha, self.token = failed_sha, production_sha, lease_token
+        self.unchanged = unchanged
         self.lease = bootstrap.BUSINESS_LEASE
         self.production = Path("/opt/health-app")
         self.systemd_root = Path("/etc/systemd/system")
@@ -249,10 +253,63 @@ class RecoveryProof:
         live, result["live_env"] = self._file(self.production / "backend/.env", 0o640)
         if result["live_env"]["gid"] != grp.getgrnam("health-app").gr_gid:
             raise ProofError("live environment group differs")
-        if any(live != raw for raw in snapshots.values()):
-            raise ProofError("live environment is not unchanged")
+        self._validate_unchanged_environment(live, snapshots)
         require_false(live)
         return result
+
+    def _validate_unchanged_environment(self, live, snapshots):
+        # A pre-installation closure never installed the sealed candidate. The
+        # existing stopped-service restoration still requires both to match.
+        expected = ([snapshots["backend.env.rollback"]] if getattr(self, "unchanged", False)
+                    else snapshots.values())
+        if any(live != raw for raw in expected):
+            raise ProofError("live environment is not unchanged")
+
+    def _laya_unstarted(self):
+        self._absent(Path("/opt/reva-laya"), Path("/etc/reva-laya"),
+                     Path("/etc/systemd/system/reva-laya.service"),
+                     Path("/etc/systemd/system/reva-laya.service.d"),
+                     Path("/etc/systemd/system/multi-user.target.wants/reva-laya.service"),
+                     Path("/run/systemd/system/reva-laya.service"),
+                     Path("/usr/lib/systemd/system/reva-laya.service"))
+        for lookup in (pwd.getpwnam, grp.getgrnam):
+            try:
+                lookup("reva-laya")
+            except KeyError:
+                continue
+            raise ProofError("Laya account already exists")
+        loaded = subprocess.check_output(
+            ["/usr/bin/systemctl", "show", "reva-laya.service", "-p", "LoadState", "--value"],
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"}, timeout=15)
+        if loaded != b"not-found\n":
+            raise ProofError("Laya unit already loaded")
+        processes = subprocess.check_output(["/usr/bin/ps", "-e", "-ww", "-o", "args="],
+                                            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"}, timeout=15)
+        if len(processes) > 1_000_000 or re.search(rb"/(?:opt/reva-laya|var/lib/reva-laya-release)/", processes):
+            raise ProofError("Laya process remains")
+        expected = {LAYA_STATE: {"sources"}, LAYA_STATE / "sources": {self.failed_sha},
+                    LAYA_STATE / "sources" / self.failed_sha: set()}
+        result = {}
+        for path, names in expected.items():
+            result[str(path)] = self._directory(path)
+            if {entry.name for entry in path.iterdir()} != names:
+                raise ProofError("Laya preparation progressed beyond empty source")
+        return result
+
+    def _services_predate_release(self):
+        raw, _ = self._file(self.lease / "started_at", 0o600)
+        started = datetime.strptime(raw.decode(), "%Y-%m-%dT%H:%M:%SZ\n").replace(tzinfo=UTC).timestamp()
+        boot = re.findall(r"^btime ([0-9]+)$", (self.proc / "stat").read_text(), re.MULTILINE)
+        if len(boot) != 1:
+            raise ProofError("boot time unavailable")
+        # A wide margin rejects clock ambiguity around the release boundary.
+        for fields in self.running_snapshot().values():
+            if (fields["NRestarts"] != "0"
+                    or int(boot[0]) + int(fields["ActiveEnterTimestampMonotonic"]) / 1_000_000 >= started - 60):
+                raise ProofError("services do not predate failed release")
+            for ticks in fields.get("processes", {}).values():
+                if int(boot[0]) + int(ticks) / os.sysconf("SC_CLK_TCK") >= started - 60:
+                    raise ProofError("service child does not predate failed release")
 
     def _units(self, old_source, transaction):
         result = {}
@@ -315,6 +372,9 @@ class RecoveryProof:
             self._absent(Path("/run/systemd/system") / (unit + ".d") / "90-reva-health-evidence-activation.conf")
         _, result["terminal"] = self._file(transaction._terminal_marker_path())
         result["units"] = self._units(old_source, transaction)
+        if getattr(self, "unchanged", False):
+            result["unstarted_laya"] = self._laya_unstarted()
+            self._services_predate_release()
         return result
 
     def _pids(self, unit):

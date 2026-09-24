@@ -274,6 +274,51 @@ def test_source_executor_hash_mismatch_prevents_running_repo_gate(monkeypatch, t
     assert not any("-I" in args for args in calls)
 
 
+def test_prepared_source_bundle_contains_candidate_and_previous_history(monkeypatch, tmp_path):
+    """A real bundle must import into Laya's empty proof repository."""
+    server = setup_state(monkeypatch, tmp_path)
+    origin = tmp_path / "origin"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    env = server.clean_environment(workspace)
+    env.update(GIT_AUTHOR_NAME="Release test", GIT_AUTHOR_EMAIL="test@example.invalid",
+               GIT_COMMITTER_NAME="Release test", GIT_COMMITTER_EMAIL="test@example.invalid")
+
+    def git(*args, cwd=None):
+        return subprocess.run(["/usr/bin/git", *map(str, args)], cwd=cwd, env=env,
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    git("init", "-b", "main", origin)
+    (origin / "scripts").mkdir()
+    (origin / "scripts/trusted_release_server.py").write_bytes(b"audited")
+    (origin / "scripts/trusted_release_gate.py").write_text("pass")
+    git("add", "scripts", cwd=origin)
+    git("commit", "-m", "previous production", cwd=origin)
+    previous = git("rev-parse", "HEAD", cwd=origin)
+    (origin / "candidate.txt").write_text("candidate")
+    git("add", "candidate.txt", cwd=origin)
+    git("commit", "-m", "candidate", cwd=origin)
+    candidate = git("rev-parse", "HEAD", cwd=origin)
+
+    def execute(args, cwd, env, log):
+        # Only substitute the transport in this test; exercise the real clone,
+        # checkout, bundle creation and empty-repository import semantics.
+        args = [origin.as_uri() if arg == server.ORIGIN else
+                "protocol.file.allow=always" if arg == "protocol.file.allow=never" else arg
+                for arg in args]
+        subprocess.run(args, cwd=cwd, env=env, check=True, capture_output=True)
+
+    monkeypatch.setattr(server, "execute_preparation", execute)
+    server.prepare_source(policy(sha=candidate, executor_sha256=hashlib.sha256(b"audited").hexdigest()), workspace)
+    bundle = tmp_path / "candidate.bundle"
+    git("bundle", "create", bundle, "HEAD", cwd=workspace / "source")
+    proof = tmp_path / "proof.git"
+    git("init", "--bare", proof)
+    git("--git-dir=" + str(proof), "fetch", "--no-tags", bundle, "HEAD")
+    assert git("--git-dir=" + str(proof), "rev-parse", "FETCH_HEAD") == candidate
+    assert git("--git-dir=" + str(proof), "show", previous + ":scripts/trusted_release_server.py") == "audited"
+
+
 def test_uncertain_preparation_process_cannot_authorize_retirement(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
     def fail():

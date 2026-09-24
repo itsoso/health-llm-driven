@@ -7,11 +7,11 @@ The root-managed host and canonical source are explicit trust prerequisites.
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import secrets
 import stat
 import subprocess
+from pathlib import Path
 
 ACTIVE_LEASE = Path("/var/lock/health-app-release")
 VOLATILE_ROOT = Path("/run/lock")
@@ -62,13 +62,15 @@ def verify_receipt(intent, receipt):
 
 
 def close_transaction(adapter, evidence_sha256=None):
+    unchanged = getattr(adapter, "unchanged", False)
+    state = "CLOSED_UNCHANGED_RELEASE" if unchanged else "CLOSED_RESTORED_RELEASE"
     record = adapter.record
     if os.path.lexists(record):
         raise ClosureError("closure already attempted; retry forbidden")
     evidence = adapter.inspect()
     digest = _digest(evidence)
     if evidence_sha256 is None:
-        return {"state": "INSPECTED_RESTORED_RELEASE", "evidence_sha256": digest}
+        return {"state": "INSPECTED_UNCHANGED_RELEASE" if unchanged else "INSPECTED_RESTORED_RELEASE", "evidence_sha256": digest}
     if evidence_sha256 != digest:
         raise ClosureError("closure inspection changed")
     if not record.parent.exists():
@@ -85,11 +87,11 @@ def close_transaction(adapter, evidence_sha256=None):
     adapter.archive_and_revoke(evidence)
     closed = adapter.verify_closed(evidence)
     _write(record / "completed.json", {
-        "old_sha": evidence["old_sha"], "state": "CLOSED_RESTORED_RELEASE",
+        "old_sha": evidence["old_sha"], "state": state,
         "intent_sha256": _digest(intent), **closed,
     })
     # No plaintext preimage is persisted or returned before every final fsync.
-    return {"sha": evidence["old_sha"], "state": "CLOSED_RESTORED_RELEASE", "receipt": receipt}
+    return {"sha": evidence["old_sha"], "state": state, "receipt": receipt}
 
 
 def _file(bootstrap, path):
@@ -192,10 +194,11 @@ def _restoration(bootstrap, sha):
 
 
 class ClosureAdapter:
-    def __init__(self, proof, bootstrap, recovery, closing_sha, check_locks):
+    def __init__(self, proof, bootstrap, recovery, closing_sha, check_locks, *, unchanged=False):
         self.proof, self.b, self.r = proof, bootstrap, recovery
         self.sha, self.check = closing_sha, check_locks
-        self.record = bootstrap.STATE / "contained-release-closures" / proof.failed_sha
+        self.unchanged = unchanged
+        self.record = bootstrap.STATE / ("unchanged-release-closures" if unchanged else "contained-release-closures") / proof.failed_sha
         self.volatile = VOLATILE_ROOT / ("health-app-release.retired-" + proof.failed_sha)
 
     def inspect(self):
@@ -206,11 +209,19 @@ class ClosureAdapter:
         else:
             b.secure(self.record.parent.parent)
         b._recovery_process_proof()
-        restored, completed, audit = _restoration(b, p.failed_sha)
         snapshot = p.snapshot()
-        if (restored["production_sha"] != p.production_sha or restored["snapshot"] != snapshot
-                or self.sha in {restored["recovery_sha"], p.failed_sha, p.production_sha}):
-            raise ClosureError("restored original state changed")
+        if self.unchanged:
+            if (os.path.lexists(b.STATE / "contained-service-recoveries" / p.failed_sha)
+                    or os.path.lexists(b.STATE / "contained-release-closures" / p.failed_sha)
+                    or not snapshot.get("unstarted_laya")
+                    or self.sha in {p.failed_sha, p.production_sha}):
+                raise ClosureError("release is not an unchanged pre-installation failure")
+            audit = None
+        else:
+            restored, completed, audit = _restoration(b, p.failed_sha)
+            if (restored["production_sha"] != p.production_sha or restored["snapshot"] != snapshot
+                    or self.sha in {restored["recovery_sha"], p.failed_sha, p.production_sha}):
+                raise ClosureError("restored original state changed")
         if os.path.lexists(self.volatile):
             raise ClosureError("original lease archive already exists")
         if p.lease != ACTIVE_LEASE:
@@ -236,7 +247,7 @@ class ClosureAdapter:
         self.r._application_probes(p.production_sha, self.sha)
         self.r._http_probes()
         stable = self.r._wait_ready(p)
-        if stable != completed["stable_services"] or p.snapshot() != snapshot:
+        if (not self.unchanged and stable != completed["stable_services"]) or p.snapshot() != snapshot:
             raise ClosureError("restored services or original evidence changed")
         b._recovery_process_proof()
         self.check()
@@ -323,9 +334,13 @@ class ClosureAdapter:
         b._assert_idle()
         b._recovery_process_proof()
         _workspace_unchanged(b, p.failed_sha, evidence["snapshot"]["workspace"])
-        _, _, restoration = _restoration(b, p.failed_sha)
+        restoration = None if self.unchanged else _restoration(b, p.failed_sha)[2]
         if restoration != evidence["restoration"] or _locks(b, p.failed_sha, evidence["snapshot"]) != evidence["locks"]:
             raise ClosureError("original restoration or lock evidence changed")
+        if (self.unchanged
+                and (p._laya_unstarted() != evidence["snapshot"]["unstarted_laya"]
+                     or p._file(p.production / "backend/.env")[1] != evidence["snapshot"]["stage"]["live_env"])):
+            raise ClosureError("pre-installation state changed during closure")
         self.r._application_probes(p.production_sha, self.sha)
         self.r._http_probes()
         class Services:
@@ -342,9 +357,10 @@ class ClosureAdapter:
         return {"installation": installation, "archives": _archives(b, self.record, evidence["snapshot"])}
 
 
-def closed_evidence(bootstrap, sha, receipt):
+def closed_evidence(bootstrap, sha, receipt, *, unchanged=False):
     """Rotation/history proof. Never uses live service state as historical truth."""
-    root = bootstrap.STATE / "contained-release-closures" / sha
+    state = "CLOSED_UNCHANGED_RELEASE" if unchanged else "CLOSED_RESTORED_RELEASE"
+    root = bootstrap.STATE / ("unchanged-release-closures" if unchanged else "contained-release-closures") / sha
     _private_directory(bootstrap, root)
     if {p.name for p in root.iterdir()} != {"intent.json", "completed.json", "lease", "stage"}:
         raise ClosureError("closure audit incomplete")
@@ -359,15 +375,21 @@ def closed_evidence(bootstrap, sha, receipt):
             or len({intent[k] for k in ("old_sha", "closing_sha", "production_sha")}) != 3
             or intent["evidence_sha256"] != _digest({k: v for k, v in intent.items() if k not in {"evidence_sha256", "receipt_sha256"}})
             or not isinstance(completed, dict) or set(completed) != {"old_sha", "state", "intent_sha256", "installation", "archives"}
-            or completed["old_sha"] != sha or completed["state"] != "CLOSED_RESTORED_RELEASE"
+            or completed["old_sha"] != sha or completed["state"] != state
             or completed["intent_sha256"] != _digest(intent)):
         raise ClosureError("closure audit binding invalid")
     verify_receipt(intent, receipt)
     bootstrap.canonical_source(intent["closing_sha"])
-    restored, _, restoration = _restoration(bootstrap, sha)
-    if (restoration != intent["restoration"] or restored["snapshot"] != intent["snapshot"]
-            or restored["production_sha"] != intent["production_sha"]):
-        raise ClosureError("restoration evidence changed after closure")
+    if unchanged:
+        if (intent["restoration"] is not None or not intent["snapshot"].get("unstarted_laya")
+                or os.path.lexists(bootstrap.STATE / "contained-service-recoveries" / sha)
+                or os.path.lexists(bootstrap.STATE / "contained-release-closures" / sha)):
+            raise ClosureError("unchanged closure conflicts with restoration evidence")
+    else:
+        restored, _, restoration = _restoration(bootstrap, sha)
+        if (restoration != intent["restoration"] or restored["snapshot"] != intent["snapshot"]
+                or restored["production_sha"] != intent["production_sha"]):
+            raise ClosureError("restoration evidence changed after closure")
     _workspace_unchanged(bootstrap, sha, intent["snapshot"]["workspace"])
     if completed["archives"] != _archives(bootstrap, root, intent["snapshot"]):
         raise ClosureError("durable lease or stage archive changed")
@@ -379,5 +401,5 @@ def closed_evidence(bootstrap, sha, receipt):
     expected = {"config": {k: v for k, v in intent["config"].items() if k != "loopback.key"}, "library": intent["library"]}
     if completed["installation"] != expected or bootstrap._installation_evidence(sha, config, library) != expected:
         raise ClosureError("closed installation or authorization changed")
-    return {"state": "CLOSED_RESTORED_RELEASE", "closure": _digest(completed),
+    return {"state": state, "closure": _digest(completed),
             "workspace": intent["snapshot"]["workspace"]}

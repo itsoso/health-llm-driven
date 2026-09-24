@@ -197,6 +197,17 @@ def test_operator_does_not_echo_invalid_secret_bearing_arguments(monkeypatch, ca
     assert marker not in captured.out + captured.err
 
 
+def test_unchanged_and_restored_retirement_modes_are_mutually_exclusive(monkeypatch):
+    m = load()
+    monkeypatch.setattr(m.sys, "argv", [
+        "operator", "--sha", "a" * 40, "--failed-sha", "b" * 40,
+        "--production-sha", "c" * 40, "--lease-token-stdin",
+        "--retire-restored", "--retire-unchanged",
+    ])
+    monkeypatch.setattr(m, "_context", lambda *a, **k: pytest.fail("must reject before context"))
+    assert m.main() == 1
+
+
 def test_probe_child_does_not_consume_new_release_permissions():
     m = load()
     import inspect

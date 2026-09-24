@@ -251,6 +251,19 @@ intent 仅存其摘要。普通 rotate 经 protected stdin 验证该回执、完
 任意中断、未知结果或不完整收尾都保留现场并 BLOCK；不得重跑收尾、换 ID、补发回执
 或将可见 completed 文件当作成功授权。收尾失败不擅自停掉已恢复的健康服务。
 
+若后端发布在 checkout、停服和 Laya 安装前失败，服务从原 lease 创建前一直保持旧
+revision、零重启且健康，可由新受审、精确 CI 绿色的 canonical staging 使用互斥的
+`--retire-unchanged` 模式收尾。该模式不是恢复或部署：live env 必须逐字等于 sealed
+rollback，旧 runtime terminal 必须仍为旧 SHA 的 COMMITTED，preparing/reap/activation
+状态均不存在；四个 unit 的 activation 和全部 cgroup 进程启动身份必须早于原 lease，
+并跨稳定窗口保持不变。候选 env 仍须由 sealed manifest 绑定，但不得安装。
+
+Laya 只接受固定 root-only `sources/<failed-sha>` 空目录这一未开始状态；任何账号、组、
+unit、进程、配置、generation、receipt 或源文件出现都 BLOCK。入口保留原 NEEDS_OPERATOR、
+日志、stage 和空源目录，以独立 `unchanged-release-closures/<failed-sha>` 记录真实状态，
+复用同 inode lease 归档和精确双身份撤权，终态只记 CLOSED_UNCHANGED_RELEASE。只有最终
+fsync 后才返回受保护回执供后续 rotate 验证；不得补造 RESTORED 回执或重跑失败 SHA。
+
 #### 审核账号维护入口
 
 只有用户明确授权的审核 fixture 恢复，才可由管理员从同样的受审 canonical staging
