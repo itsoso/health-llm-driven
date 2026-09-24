@@ -46,7 +46,10 @@ Rollback: disable control, then original route; retain additive control table/au
 Full code rollback uses the governed release path. Deployment is not complete
 until actual production control and routing have been verified.
 
-G3 in progress. G4 pending fixed-commit review. G5 blocked by baseline main CI.
+G3 passed. G4 GO for code safety at 4df26708b1e599bc1809016f2bc241958a4a1e41.
+The user explicitly authorized continuing publication on 2026-09-24; the narrow
+baseline repair 018cd3caab9ad124c83bd5c5cf32adafd62cf357 was pushed to main.
+G5 waits for that exact CI, then the combined candidate's exact CI and deployment.
 G6 not started; no production mutation has been performed.
 
 Fresh evidence:
@@ -57,7 +60,8 @@ Fresh evidence:
 - Both API clients regenerated successfully from the locked backend environment.
 - Baseline CI repair prepared separately at 018cd3caa: one platform-neutral map
   fallback line; original two failing tests and pre-commit passed. Independent
-  review GO. Awaiting explicit narrow publication exception under AGENTS §7.
+  review GO. The user subsequently authorized publication; CI run 35951912426
+  is validating the repair before the Laya candidate may be pushed.
 
 Review fixes: reject future revision before CAS; allow disable during provider
 misconfiguration; emergency off skips sidecar health/provisioning; reject existing
@@ -93,5 +97,5 @@ instead of entering the explicit fallback. A real mock-transport reproduction
 failed before the fix. The decoder now normalizes that specific failure to
 invalid_response. Fresh scoped verification: 75 passed, three SQLite skips,
 93.80% coverage. Independent focused re-review passed nine malformed-response
-and timeout tests; final fixed-commit disposition is pending.
+and timeout tests; final fixed-commit disposition was GO at 4df26708b.
 No authorization, route floor or write authority is changed by the fix.

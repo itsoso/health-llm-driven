@@ -104,7 +104,7 @@ function RouteMap({
   if (Platform.OS === 'android' && !getReleaseCapabilities().androidGoogleMapsConfigured) {
     return (
       <HealthCard title="运动轨迹" icon="map-outline" iconColor={C.blue500} iconBg={C.blue50}>
-        <Text style={T.placeholder}>当前 Android 版本暂不支持地图展示，其他运动数据仍可查看。</Text>
+        <Text style={T.placeholder}>当前设备暂不支持地图展示，其他运动数据仍可查看。</Text>
       </HealthCard>
     );
   }
