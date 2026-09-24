@@ -362,7 +362,7 @@ def phase_timeout_fixture(monkeypatch, tmp_path, _base=recovery_fixture):
     return b, w, calls
 
 
-def phase_completed_fixture(monkeypatch, tmp_path, _base=recovery_fixture):
+def phase_interrupted_fixture(monkeypatch, tmp_path, _base=recovery_fixture):
     b, w, calls = _base(monkeypatch, tmp_path)
     digest = hashlib.sha256(b.INSTALLED.read_bytes()).hexdigest()
     monkeypatch.setattr(b, "LEGACY_CLONE_EXECUTORS", set())
@@ -379,8 +379,8 @@ def phase_completed_fixture(monkeypatch, tmp_path, _base=recovery_fixture):
     return b, w, calls
 
 
-def test_completed_clone_uncertain_recovery_is_exact_and_keeps_build_lock_absent(monkeypatch, tmp_path):
-    b, w, calls = phase_completed_fixture(monkeypatch, tmp_path)
+def test_interrupted_clone_timeout_recovery_is_exact_and_keeps_build_lock_absent(monkeypatch, tmp_path):
+    b, w, calls = phase_interrupted_fixture(monkeypatch, tmp_path)
     original = b._preparation_manifest(w)
     plan = inspect(b)
     result = recover(b, plan["evidence_sha256"])
@@ -394,8 +394,8 @@ def test_completed_clone_uncertain_recovery_is_exact_and_keeps_build_lock_absent
 
 
 @pytest.mark.parametrize("fault", ["log", "checkout", "build_lock", "prepared"])
-def test_completed_clone_uncertain_rejects_changed_or_started_scene(monkeypatch, tmp_path, fault):
-    b, w, _ = phase_completed_fixture(monkeypatch, tmp_path)
+def test_interrupted_clone_timeout_rejects_changed_or_started_scene(monkeypatch, tmp_path, fault):
+    b, w, _ = phase_interrupted_fixture(monkeypatch, tmp_path)
     if fault == "log":
         (w / "preparation.log").write_text("unexpected\n")
     elif fault == "checkout":

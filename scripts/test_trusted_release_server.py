@@ -85,6 +85,49 @@ def setup_state(monkeypatch, tmp_path):
     return server
 
 
+def make_production_repo(server, tmp_path):
+    production = tmp_path / "production"
+    subprocess.run(["/usr/bin/git", "init", "-b", "main", production], check=True,
+                   stdout=subprocess.DEVNULL)
+    (production / "baseline").write_text("production")
+    subprocess.run(["/usr/bin/git", "-C", production, "add", "baseline"], check=True)
+    subprocess.run(["/usr/bin/git", "-C", production, "-c", "user.name=Release test",
+                    "-c", "user.email=test@example.invalid", "commit", "-m", "production"],
+                   check=True, stdout=subprocess.DEVNULL)
+    server.PRODUCTION = production
+    return production
+
+
+def test_object_cache_rejects_recursive_alternates_and_writable_objects(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    objects = tmp_path / "objects"
+    (objects / "info").mkdir(parents=True)
+    (objects / "pack").mkdir()
+    nested = objects / "info/alternates"
+    nested.write_text("/untrusted/objects\n")
+    with pytest.raises(server.LaunchError, match="must not chain"):
+        server.validate_object_cache(objects)
+    nested.unlink()
+    pack = objects / "pack/object.pack"
+    pack.write_bytes(b"pack")
+    pack.chmod(0o666)
+    with pytest.raises(server.LaunchError, match="unsafe ownership"):
+        server.validate_object_cache(objects)
+    pack.unlink()
+    pack.symlink_to(tmp_path / "caller-controlled")
+    with pytest.raises(server.LaunchError, match="unsafe ownership"):
+        server.validate_object_cache(objects)
+
+
+def test_object_cache_accepts_root_controlled_tree(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    objects = tmp_path / "objects"
+    (objects / "info").mkdir(parents=True)
+    (objects / "pack").mkdir()
+    (objects / "pack/object.pack").write_bytes(b"pack")
+    server.validate_object_cache(objects)
+
+
 def test_success_runs_once_and_status_is_minimal(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
     calls = []
@@ -236,23 +279,37 @@ def test_real_git_inherits_only_fixed_http_transport_settings(monkeypatch, tmp_p
 
 def test_source_preparation_uses_fixed_public_origin_and_exact_sha(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
+    production = make_production_repo(server, tmp_path)
     calls = []
+    run = server.subprocess.run
+    def fixed_run(args, **kwargs):
+        if (("-C" in args and str(tmp_path / "source") in args)
+                or ("rev-parse" in args and any(str(arg).startswith("--git-dir=") for arg in args))):
+            return SimpleNamespace(stdout=SHA + "\n", returncode=0)
+        return run(args, **kwargs)
+    monkeypatch.setattr(server.subprocess, "run", fixed_run)
     def execute(args, cwd, env, log):
         calls.append(args)
         if "clone" in args:
             source = tmp_path / "source"
             (source / "scripts").mkdir(parents=True)
+            (source / ".git/objects/info").mkdir(parents=True)
+            (source / ".git/objects/info/alternates").write_text(str(production / ".git/objects") + "\n")
             (source / "scripts/trusted_release_server.py").write_bytes(b"audited")
             (source / "scripts/trusted_release_gate.py").write_text("pass")
+        elif "init" in args and "--bare" in args:
+            (Path(args[-1]) / "objects/info").mkdir(parents=True)
         return ""
     monkeypatch.setattr(server, "execute_preparation", execute)
     server.prepare_source(policy(executor_sha256=hashlib.sha256(b"audited").hexdigest()), tmp_path)
     clone = next(args for args in calls if "clone" in args)
-    git_config = dict(clone[index + 1].split("=", 1) for index, arg in enumerate(clone) if arg == "-c")
+    fetch = next(args for args in calls if "fetch" in args)
+    git_config = dict(fetch[index + 1].split("=", 1) for index, arg in enumerate(fetch) if arg == "-c")
     assert git_config.get("http.version") == "HTTP/1.1"
     assert git_config.get("http.lowSpeedLimit") == "1024"
     assert git_config.get("http.lowSpeedTime") == "30"
     assert git_config.get("http.followRedirects") == "false"
+    assert "--shared" in clone and str(production) in clone
     assert any("https://github.com/itsoso/health-llm-driven.git" in args for args in calls)
     assert any(args[-3:] == ["-B", "main", SHA] for args in calls)
     assert all(args[0] == "/usr/bin/git" for args in calls)
@@ -260,13 +317,24 @@ def test_source_preparation_uses_fixed_public_origin_and_exact_sha(monkeypatch, 
 
 def test_source_executor_hash_mismatch_prevents_running_repo_gate(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
+    production = make_production_repo(server, tmp_path)
     calls = []
+    run = server.subprocess.run
+    monkeypatch.setattr(server.subprocess, "run", lambda args, **kwargs:
+        SimpleNamespace(stdout=SHA + "\n", returncode=0)
+        if (("-C" in args and str(tmp_path / "source") in args)
+            or ("rev-parse" in args and any(str(arg).startswith("--git-dir=") for arg in args)))
+        else run(args, **kwargs))
     def execute(args, cwd, env, log):
         calls.append(args)
         if "clone" in args:
             source = tmp_path / "source/scripts"
             source.mkdir(parents=True)
+            (tmp_path / "source/.git/objects/info").mkdir(parents=True)
+            (tmp_path / "source/.git/objects/info/alternates").write_text(str(production / ".git/objects") + "\n")
             (source / "trusted_release_server.py").write_bytes(b"wrong")
+        elif "init" in args and "--bare" in args:
+            (Path(args[-1]) / "objects/info").mkdir(parents=True)
         return ""
     monkeypatch.setattr(server, "execute_preparation", execute)
     with pytest.raises(server.LaunchError):
@@ -295,10 +363,13 @@ def test_prepared_source_bundle_contains_candidate_and_previous_history(monkeypa
     git("add", "scripts", cwd=origin)
     git("commit", "-m", "previous production", cwd=origin)
     previous = git("rev-parse", "HEAD", cwd=origin)
+    production = tmp_path / "production"
+    git("clone", origin, production)
     (origin / "candidate.txt").write_text("candidate")
     git("add", "candidate.txt", cwd=origin)
     git("commit", "-m", "candidate", cwd=origin)
     candidate = git("rev-parse", "HEAD", cwd=origin)
+    monkeypatch.setattr(server, "PRODUCTION", production)
 
     def execute(args, cwd, env, log):
         # Only substitute the transport in this test; exercise the real clone,
@@ -311,12 +382,61 @@ def test_prepared_source_bundle_contains_candidate_and_previous_history(monkeypa
     monkeypatch.setattr(server, "execute_preparation", execute)
     server.prepare_source(policy(sha=candidate, executor_sha256=hashlib.sha256(b"audited").hexdigest()), workspace)
     bundle = tmp_path / "candidate.bundle"
-    git("bundle", "create", bundle, "HEAD", cwd=workspace / "source")
+    git("bundle", "create", bundle, "HEAD", "^" + previous, cwd=workspace / "source")
     proof = tmp_path / "proof.git"
     git("init", "--bare", proof)
+    (proof / "objects/info/alternates").write_text(str(production / ".git/objects") + "\n")
     git("--git-dir=" + str(proof), "fetch", "--no-tags", bundle, "HEAD")
     assert git("--git-dir=" + str(proof), "rev-parse", "FETCH_HEAD") == candidate
     assert git("--git-dir=" + str(proof), "show", previous + ":scripts/trusted_release_server.py") == "audited"
+
+
+def test_preparation_rejects_shallow_merge_bundle_with_missing_side_history(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    origin = tmp_path / "origin"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    env = server.clean_environment(workspace)
+    env.update(GIT_AUTHOR_NAME="Release test", GIT_AUTHOR_EMAIL="test@example.invalid",
+               GIT_COMMITTER_NAME="Release test", GIT_COMMITTER_EMAIL="test@example.invalid")
+
+    def git(*args, cwd=None):
+        return subprocess.run(["/usr/bin/git", *map(str, args)], cwd=cwd, env=env,
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    git("init", "-b", "main", origin)
+    (origin / "scripts").mkdir()
+    (origin / "scripts/trusted_release_server.py").write_bytes(b"audited")
+    (origin / "scripts/trusted_release_gate.py").write_text("pass")
+    git("add", "scripts", cwd=origin)
+    git("commit", "-m", "production", cwd=origin)
+    production = tmp_path / "production"
+    git("clone", origin, production)
+    git("checkout", "-b", "side", cwd=origin)
+    for index in range(70):
+        (origin / "side.txt").write_text(str(index))
+        git("add", "side.txt", cwd=origin)
+        git("commit", "-m", f"side {index}", cwd=origin)
+    git("checkout", "main", cwd=origin)
+    (origin / "main.txt").write_text("main")
+    git("add", "main.txt", cwd=origin)
+    git("commit", "-m", "main", cwd=origin)
+    git("merge", "--no-ff", "side", "-m", "merge deep side history", cwd=origin)
+    candidate = git("rev-parse", "HEAD", cwd=origin)
+    monkeypatch.setattr(server, "PRODUCTION", production)
+
+    def execute(args, cwd, env, log):
+        args = [origin.as_uri() if arg == server.ORIGIN else
+                "protocol.file.allow=always" if arg == "protocol.file.allow=never" else arg
+                for arg in args]
+        subprocess.run(args, cwd=cwd, env=env, check=True, capture_output=True)
+
+    monkeypatch.setattr(server, "execute_preparation", execute)
+    with pytest.raises(subprocess.CalledProcessError):
+        server.prepare_source(policy(sha=candidate,
+            executor_sha256=hashlib.sha256(b"audited").hexdigest()), workspace)
+    assert not (workspace / "prepared.json").exists()
+    assert not list(workspace.glob("bundle-proof-*"))
 
 
 def test_uncertain_preparation_process_cannot_authorize_retirement(monkeypatch, tmp_path):
@@ -330,6 +450,7 @@ def test_uncertain_preparation_process_cannot_authorize_retirement(monkeypatch, 
 
 def test_preparation_clone_retries_are_bounded_and_keep_failed_checkout(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
+    make_production_repo(server, tmp_path)
     calls = []
     def fail(args, cwd, env, log):
         calls.append(args)
@@ -357,6 +478,7 @@ def test_preparation_command_timeout_is_uncertain(monkeypatch, tmp_path):
 
 def test_clone_retry_must_not_replace_existing_attempt_evidence(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
+    make_production_repo(server, tmp_path)
     archive = tmp_path / "clone-attempts/1"
     archive.mkdir(parents=True)
     inode = archive.stat().st_ino

@@ -330,7 +330,9 @@ upload_deploy_bundle() {
     local delegation_owner=0
     assert_remote_release_lock_if_acquired
     bundle=$(mktemp)
-    if ! git bundle create "$bundle" HEAD >/dev/null; then
+    if ! [[ "$ROLLBACK_CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]] ||
+       [ "$(git rev-parse refs/reva-production 2>/dev/null || true)" != "$ROLLBACK_CANDIDATE_COMMIT" ] ||
+       ! git bundle create "$bundle" HEAD "^$ROLLBACK_CANDIDATE_COMMIT" >/dev/null; then
         rm -f "$bundle"
         return 1
     fi
@@ -3113,6 +3115,36 @@ if not source.exists():
         git = ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
                '-c', 'protocol.file.allow=always', '-c', 'protocol.ext.allow=never']
         subprocess.run(git + ['init', '--bare', proof], env=env, check=True, stdout=subprocess.DEVNULL)
+        production = Path('/opt/health-app')
+        objects = production / '.git/objects'
+        for path in (production, production / '.git', objects):
+            info = path.lstat()
+            if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                    or info.st_uid != 0 or info.st_mode & 0o022):
+                raise SystemExit('invalid production object prerequisite')
+        for name in ('alternates', 'http-alternates'):
+            if os.path.lexists(objects / 'info' / name):
+                raise SystemExit('production object prerequisite chains alternates')
+        for root, directories, files in os.walk(objects, followlinks=False):
+            entries = [(Path(root), True)]
+            entries += [(Path(root) / name, True) for name in directories]
+            entries += [(Path(root) / name, False) for name in files]
+            for path, directory in entries:
+                info = path.lstat()
+                valid_type = stat.S_ISDIR if directory else stat.S_ISREG
+                if (not valid_type(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                        or info.st_uid != 0 or info.st_mode & 0o022):
+                    raise SystemExit('untrusted production Git object')
+        live = subprocess.check_output(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
+            '-C', str(production), 'rev-parse', 'HEAD'], env=env, text=True).strip()
+        if live != old_sha:
+            raise SystemExit('production object prerequisite revision mismatch')
+        alternates = Path(proof) / 'objects/info/alternates'
+        with alternates.open('x') as out:
+            out.write(str(production / '.git/objects') + '\n')
+            os.fchmod(out.fileno(), 0o600)
+            out.flush()
+            os.fsync(out.fileno())
         git += ['--git-dir=' + proof]
         subprocess.run(git + ['fetch', '--no-tags', bundle, 'HEAD'], env=env, check=True, timeout=120,
                        stdout=subprocess.DEVNULL)

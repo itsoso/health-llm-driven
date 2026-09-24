@@ -172,10 +172,12 @@ Git、hook 或 Python。任何 prepared、业务/native/build 意图或其他库
 legacy 类型仍要求原 build 锁。所有进程、真实生产 revision、授权精确撤销、单次 intent、
 终态 fsync 后才交付随机回执的规则不变。原 NEEDS_OPERATOR 永久保留；这只收尾旧权限，
 不重跑旧 SHA、不启动业务、不修复用户数据，也不证明下一轮下载已经恢复。
-同一两阶段 operator 也覆盖已审计 executor 的“首次 no-checkout clone 已完整返回、但
-传输子进程组未在原即时检查点消失”现场。仅接受单行 clone transcript、空 HOME、仅含
+同一两阶段 operator 也覆盖已审计 executor 的“首次 no-checkout clone 在 90 秒边界被
+中断、尚未产生 Git 终态错误文本”现场。仅接受单行 clone transcript、空 HOME、仅含
 `.git` 的 source、无 build.lock/checkout/业务或部署 intent，并绑定完整保留树 manifest；
-新 executor 会在成功命令返回后等待整个受控进程组在两秒内退出，超时仍写 NEEDS_OPERATOR。
+新 executor 使用 root-owned 旧生产对象库做只读协商缓存，从固定 GitHub origin 仅获取
+main 的浅历史窗口，并用精确旧生产 revision 生成增量 bundle；同时在成功命令返回后等待
+整个受控进程组在两秒内退出，超时仍写 NEEDS_OPERATOR。
 上传 job 只依赖 ios-build 成功，默认与 backend 部署并行；`claim-testflight` 使用
 独立于 launcher 的短 build.lock，锁内核验时间窗、同 SHA 的 build claim 与未撤销的
 loopback 授权，再持久化一次性上传权限。后端 READY/STARTED 不要求等待，已知

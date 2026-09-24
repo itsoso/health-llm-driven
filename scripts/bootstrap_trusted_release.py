@@ -50,9 +50,8 @@ LEGACY_CLONE_EXECUTORS = {
 PHASE_CLONE_TIMEOUT_EXECUTORS = {
     "cae7d46a45778db0bacd9c86f8f31b15b289d1f030ad3a50d8d947d330af313f",
 }
-# Audited phase-aware executor that completed the initial no-checkout clone but
-# stopped before checkout because the transport process group outlived its
-# former immediate inspection boundary.
+# Audited phase-aware executor whose initial no-checkout clone was interrupted
+# at the 90-second preparation boundary before Git emitted a terminal error.
 PHASE_CLONE_COMPLETED_EXECUTORS = {
     "bdfd21ed1bd67c38ed04916257758ab76970cb3be38f1cacc7f675eb807c2bd4",
 }
@@ -63,7 +62,7 @@ class BootstrapError(Exception):
     """Sanitized operator-facing error."""
 
 
-def secure(path, *, private=False):
+def secure(path, *, private=False, allow_hardlinks=False):
     path = Path(path)
     for item in [*reversed(path.parents), path]:
         info = item.lstat()
@@ -71,10 +70,26 @@ def secure(path, *, private=False):
             raise BootstrapError("unsafe root-owned installation path")
         if item != path and not stat.S_ISDIR(info.st_mode):
             raise BootstrapError("unsafe parent directory")
-        if item == path and (not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)) or (stat.S_ISREG(info.st_mode) and info.st_nlink != 1)):
+        if item == path and (not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)) or (stat.S_ISREG(info.st_mode) and not allow_hardlinks and info.st_nlink != 1)):
             raise BootstrapError("unsafe installation object")
     if private and (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600):
         raise BootstrapError("private configuration must be a regular 0600 file")
+
+
+def validate_object_cache(objects):
+    """Reject recursive alternates and every non-root-controlled Git object."""
+    objects = Path(objects)
+    secure(objects)
+    for name in ("alternates", "http-alternates"):
+        if os.path.lexists(objects / "info" / name):
+            raise BootstrapError("production object cache must not chain alternates")
+    for root, directories, files in os.walk(objects, followlinks=False):
+        root = Path(root)
+        secure(root)
+        for name in directories:
+            secure(root / name)
+        for name in files:
+            secure(root / name, allow_hardlinks=True)
 
 
 def validate_install(sha, expiry, public, *, now):
@@ -138,6 +153,13 @@ def canonical_source(sha):
         secure(path)
     if (source / ".git/commondir").exists():
         raise BootstrapError("shared or caller-controlled git directories forbidden")
+    alternate = source / ".git/objects/info/alternates"
+    if os.path.lexists(alternate):
+        secure(alternate)
+        production_objects = Path("/opt/health-app/.git/objects")
+        validate_object_cache(production_objects)
+        if alternate.read_text() != str(production_objects) + "\n":
+            raise BootstrapError("unexpected Git object alternate")
     config = configparser.ConfigParser(interpolation=None)
     config.read(source / ".git/config")
     allowed = {"core": {"repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase", "precomposeunicode"}, 'remote "origin"': {"url", "fetch"}, 'branch "main"': {"remote", "merge"}}
@@ -831,6 +853,8 @@ def _recoverable_clone_evidence(sha):
         profile = "phase-clone-timeout"
     else:
         expected_log = clone.encode()
+        # Preserve the existing durable evidence spelling for compatibility;
+        # the corrected analysis is that this clone was interrupted at timeout.
         profile = "phase-clone-completed-uncertain"
     if log.stat().st_size != len(expected_log) or log.read_bytes() != expected_log:
         raise BootstrapError("phase clone transcript unproven")

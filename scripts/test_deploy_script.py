@@ -1089,6 +1089,17 @@ def test_backend_runs_bundle_and_runtime_preflight_before_live_mutation():
     )
 
 
+def test_release_bundle_is_incremental_and_laya_binds_production_prerequisite():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    assert 'git rev-parse refs/reva-production' in script
+    assert 'git bundle create "$bundle" HEAD "^$ROLLBACK_CANDIDATE_COMMIT"' in script
+    assert "production = Path('/opt/health-app')" in script
+    assert "if live != old_sha:" in script
+    assert "Path(proof) / 'objects/info/alternates'" in script
+    assert "production object prerequisite chains alternates" in script
+    assert "untrusted production Git object" in script
+
+
 def test_adopted_release_lock_is_preserved_before_transaction_inspection(
     tmp_path: Path,
 ):

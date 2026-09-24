@@ -16,12 +16,14 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 CONFIG = Path("/etc/reva-release")
 POLICY = CONFIG / "authorized-release.json"
 STATE = Path("/var/lib/reva-release")
+PRODUCTION = Path("/opt/health-app")
 ORIGIN = "https://github.com/itsoso/health-llm-driven.git"
 PYTHON = "/usr/bin/python3.12"
 DEPLOY_TIMEOUT_SECONDS = 3600
@@ -74,12 +76,12 @@ def _assert_deployment_window(policy):
         raise LaunchError("authorization lifetime is insufficient for deployment and recovery")
 
 
-def validate_metadata(metadata, *, private=False, directory=False):
+def validate_metadata(metadata, *, private=False, directory=False, single_link=True):
     valid_type = stat.S_ISDIR if directory else stat.S_ISREG
     if (
         metadata.st_uid != 0 or not valid_type(metadata.st_mode)
         or metadata.st_mode & 0o022
-        or (not directory and metadata.st_nlink != 1)
+        or (not directory and single_link and metadata.st_nlink != 1)
         or (private and stat.S_IMODE(metadata.st_mode) != 0o600)
     ):
         raise LaunchError("unsafe ownership, type, permissions, or link count")
@@ -92,6 +94,24 @@ def secure_path(path, *, private=False, directory=False):
     for parent in reversed(path.parents):
         validate_metadata(parent.lstat(), directory=True)
     validate_metadata(path.lstat(), private=private, directory=directory)
+
+
+def validate_object_cache(objects):
+    """Prove Git cannot escape the fixed root-controlled object store."""
+    objects = Path(objects)
+    secure_path(objects, directory=True)
+    for name in ("alternates", "http-alternates"):
+        if os.path.lexists(objects / "info" / name):
+            raise LaunchError("production object cache must not chain alternates")
+    for root, directories, files in os.walk(objects, followlinks=False):
+        root = Path(root)
+        validate_metadata(root.lstat(), directory=True)
+        for name in directories:
+            validate_metadata((root / name).lstat(), directory=True)
+        for name in files:
+            # Root-owned, non-writable hard-linked Git objects are immutable to
+            # unprivileged callers just like single-linked objects.
+            validate_metadata((root / name).lstat(), single_link=False)
 
 
 def _read_private(path):
@@ -560,13 +580,31 @@ def prepare_source(policy, workspace):
         "-c", "http.followRedirects=false", "-c", "http.version=HTTP/1.1",
         "-c", "http.lowSpeedLimit=1024", "-c", "http.lowSpeedTime=30",
     ]
+    for path in (PRODUCTION, PRODUCTION / ".git"):
+        secure_path(path, directory=True)
+    validate_object_cache(PRODUCTION / ".git/objects")
+    baseline = subprocess.run(
+        ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(PRODUCTION), "rev-parse", "HEAD"],
+        env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, check=True, timeout=10,
+    ).stdout.strip()
+    if re.fullmatch(r"[0-9a-f]{40}", baseline) is None or baseline == policy["sha"]:
+        raise LaunchError("production object-cache revision is invalid")
     for attempt in range(3):
         _assert_deployment_window(policy)
         try:
-            # deploy.sh exports HEAD as a bundle for an empty Laya proof repo.
-            # Shallow bundles omit parent objects and cannot prove the previous
-            # production revision. Keep main's complete reachable history.
-            execute_preparation(git + ["clone", "--no-checkout", "--no-local", "--branch=main", "--single-branch", ORIGIN, str(source)], workspace, env, log)
+            # Seed refs from the root-owned production repository, then fetch a
+            # bounded main window from the fixed GitHub origin. The source keeps
+            # an explicit read-only alternate and exports only the candidate
+            # range above the verified production revision.
+            local_git = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null",
+                         "-c", "protocol.file.allow=always"]
+            execute_preparation(local_git + ["clone", "--shared", "--no-checkout",
+                                str(PRODUCTION), str(source)], workspace, env, log)
+            execute_preparation(git + ["-C", str(source), "remote", "set-url", "origin", ORIGIN],
+                                workspace, env, log)
+            execute_preparation(git + ["-C", str(source), "fetch", "--depth=64", "--no-tags",
+                                "origin", "main"], workspace, env, log)
             break
         except subprocess.CalledProcessError as error:
             if error.returncode != 128 or attempt == 2:
@@ -584,7 +622,65 @@ def prepare_source(policy, workspace):
                 _sync_directory(archive)
                 _sync_directory(workspace)
             time.sleep(2 ** attempt)
+    fetched = subprocess.run(
+        ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source),
+         "rev-parse", "FETCH_HEAD"],
+        env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, check=True, timeout=10,
+    ).stdout.strip()
+    if fetched != policy["sha"]:
+        raise LaunchError("GitHub main differs from authorized release")
+    ancestry = subprocess.run(
+        ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source),
+         "merge-base", "--is-ancestor", baseline, policy["sha"]],
+        env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        check=False, timeout=10,
+    )
+    if ancestry.returncode != 0:
+        raise LaunchError("bounded history does not include production revision")
     execute_preparation(git + ["-C", str(source), "checkout", "-B", "main", policy["sha"]], workspace, env, log)
+    execute_preparation(git + ["-C", str(source), "update-ref", "refs/reva-production", baseline],
+                        workspace, env, log)
+    alternate = source / ".git/objects/info/alternates"
+    secure_path(alternate)
+    if alternate.read_text() != str(PRODUCTION / ".git/objects") + "\n":
+        raise LaunchError("production object-cache binding is invalid")
+    checked_out = subprocess.run(
+        ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source), "rev-parse", "HEAD"],
+        env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, check=True, timeout=10,
+    ).stdout.strip()
+    if checked_out != policy["sha"]:
+        raise LaunchError("prepared source differs from authorized release")
+    # Prove the exact incremental artifact is closed over only the verified
+    # production object store. An ancestry check alone misses shallow merge
+    # boundaries whose side-parent history falls outside the fetched window.
+    with tempfile.TemporaryDirectory(dir=workspace, prefix="bundle-proof-") as proof_root:
+        proof_root = Path(proof_root)
+        bundle = proof_root / "candidate.bundle"
+        proof = proof_root / "receiver.git"
+        proof_git = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null",
+                     "-c", "protocol.file.allow=always", "-c", "protocol.ext.allow=never"]
+        execute_preparation(proof_git + ["-C", str(source), "bundle", "create", str(bundle),
+                            "HEAD", "^" + baseline], workspace, env, log)
+        execute_preparation(proof_git + ["init", "--bare", str(proof)], workspace, env, log)
+        proof_alternate = proof / "objects/info/alternates"
+        with proof_alternate.open("x") as stream:
+            stream.write(str(PRODUCTION / ".git/objects") + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        execute_preparation(proof_git + ["--git-dir=" + str(proof), "fetch", "--no-tags",
+                            str(bundle), "HEAD"], workspace, env, log)
+        execute_preparation(proof_git + ["--git-dir=" + str(proof), "fsck", "--connectivity-only",
+                            policy["sha"]], workspace, env, log)
+        imported = subprocess.run(
+            ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "--git-dir=" + str(proof),
+             "rev-parse", "FETCH_HEAD"],
+            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, check=True, timeout=10,
+        ).stdout.strip()
+        if imported != policy["sha"]:
+            raise LaunchError("incremental bundle proof differs from authorized release")
     executor = source / "scripts/trusted_release_server.py"
     secure_path(executor)
     if hashlib.sha256(executor.read_bytes()).hexdigest() != policy["executor_sha256"]:
