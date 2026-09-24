@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 当前阶段 | S5 修复与回归 |
+| 当前阶段 | G3/G4 本地验证完成，未部署 |
 | 状态 | building |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
@@ -57,6 +57,22 @@ DEVELOPER_DIR 确认可用，未改全局配置。已安装应用不是本轮候
 验证；跨换行的修改动作未被逐分句扫描捕获。新增反例 RED 7 failed/12 passed。
 再修复采用仅拒绝用途的跨分句字母数字规范化检查，并要求“复查安排”后立即为
 列表连接词/分隔符；原始同分句位置和写工具权限检查不变。新完整回归与复审待回读。
+
+### 最终本地验证与审查
+
+- 代码候选 `9bec52f4401685afc0d3200bd61df98475ff8ce8` 相对 `1bdd64af1`，
+  指定六文件独立 G4 GO。审查者额外验证 650 个既有动作词前缀/后缀/混淆变体
+  均维持拒绝或零工具上下文，4 个正常问题准备请求可继续解读，12 个模型提议写操作
+  全部拒绝；独立 Backend 47 passed、Mobile 7 passed。
+- 最终后端组合 1738 passed（`/tmp/reva-exam-review2-green.log`）；护栏覆盖率
+  97%，635 passed（`/tmp/reva-exam-reviewed-coverage.log`）；Mobile 三组 29 passed，
+  TypeScript exit 0。Ruff、结构/地图、秘密扫描与 diff 检查通过。
+- 离线 LLM Gate invariants 12/12、health_agent_core 50/50、轨迹 12/12、goldens
+  9/9；路径闸 live_required=false，没有伪造 live confirmation 或调用生产模型。
+- 原始内置提示词及其安全声明未删除；只修复导航和确定性意图误判。
+  “最近一周”截图原话在既有范围回归中通过，不证明线上目标 revision 已更新。
+- 本次没有 push、后端部署、OTA、原生上传或生产用户数据操作；不复用其他线程
+  发布权限。完整精确 CI、真实模拟器候选导航与发布后回答质量验收仍属后续 Gate。
 
 ## G5 / G6
 
