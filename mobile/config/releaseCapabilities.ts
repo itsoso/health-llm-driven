@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 export type ReleaseCapabilities = {
   variant: 'production' | 'preview' | 'development';
   advancedSettings: boolean;
+  androidGoogleMapsConfigured: boolean;
   backgroundLocation: boolean;
   rokid: boolean;
   siri: boolean;
@@ -18,6 +19,7 @@ export function resolveReleaseCapabilities(extra: any): ReleaseCapabilities {
   return {
     variant,
     advancedSettings: capabilities.advancedSettings === true,
+    androidGoogleMapsConfigured: capabilities.androidGoogleMapsConfigured === true,
     backgroundLocation: capabilities.backgroundLocation === true,
     rokid: capabilities.rokid === true,
     siri: capabilities.siri === true,

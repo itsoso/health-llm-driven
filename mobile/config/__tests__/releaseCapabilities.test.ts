@@ -5,6 +5,7 @@ describe('release capabilities', () => {
     expect(resolveReleaseCapabilities(undefined)).toEqual({
       variant: 'production',
       advancedSettings: false,
+      androidGoogleMapsConfigured: false,
       rokid: false,
       siri: false,
       watch: false,
@@ -18,6 +19,7 @@ describe('release capabilities', () => {
         variant: 'preview',
         capabilities: {
           advancedSettings: true,
+          androidGoogleMapsConfigured: true,
           rokid: true,
           siri: true,
           watch: false,
@@ -27,10 +29,16 @@ describe('release capabilities', () => {
     })).toEqual({
       variant: 'preview',
       advancedSettings: true,
+      androidGoogleMapsConfigured: true,
       rokid: true,
       siri: true,
       watch: false,
       backgroundLocation: true,
     });
+  });
+
+  it.each([undefined, false, 'true', 1])('requires an explicit boolean Maps capability: %s', (value) => {
+    expect(resolveReleaseCapabilities({ release: { capabilities: { androidGoogleMapsConfigured: value } } }))
+      .toEqual(expect.objectContaining({ androidGoogleMapsConfigured: false }));
   });
 });

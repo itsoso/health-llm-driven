@@ -20,6 +20,7 @@ import { getVoiceStyle, loadVoiceStyle } from '../services/voiceStyle';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { sharePlainText } from '../utils/share';
 import { APP_DISPLAY_NAME } from '../constants/brand';
+import { getReleaseCapabilities } from '../config/releaseCapabilities';
 import { createWorkoutDetailAgentContext, pushChatWithContext } from '../utils/agentContext';
 import {
   revaColors as C,
@@ -99,6 +100,14 @@ function RouteMap({
   }, [points, paceTimeline]);
 
   if (points.length < 2) return null;
+
+  if (Platform.OS === 'android' && !getReleaseCapabilities().androidGoogleMapsConfigured) {
+    return (
+      <HealthCard title="运动轨迹" icon="map-outline" iconColor={C.blue500} iconBg={C.blue50}>
+        <Text style={T.placeholder}>当前 Android 版本暂不支持地图展示，其他运动数据仍可查看。</Text>
+      </HealthCard>
+    );
+  }
 
   const lats = points.map(p => p.lat);
   const lngs = points.map(p => p.lng);

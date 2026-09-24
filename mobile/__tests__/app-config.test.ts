@@ -2,7 +2,7 @@ const { buildWatchInjectionEnv } = require('../plugins/withWatchApp');
 const appJson = require('../app.json');
 const { APP_DISPLAY_NAME } = require('../constants/brand');
 
-function configForVariant(variant?: string, env: Record<string, string | undefined> = {}) {
+function configForVariant(variant?: string, env: Record<string, string | undefined> = {}, configOverrides: Record<string, unknown> = {}) {
   const previous = process.env.APP_VARIANT;
   const optionalEnvKeys = [
     'REVA_IOS_BUILD_NUMBER',
@@ -38,7 +38,7 @@ function configForVariant(variant?: string, env: Record<string, string | undefin
     jest.resetModules();
     const buildConfig = require('../app.config').default;
     return buildConfig({
-      config: JSON.parse(JSON.stringify(appJson.expo)),
+      config: { ...JSON.parse(JSON.stringify(appJson.expo)), ...configOverrides },
     } as any);
   } finally {
     if (previous == null) {
@@ -68,6 +68,20 @@ function configuredPluginNames(config: any): string[] {
 }
 
 describe('app.config app links', () => {
+  describe('Android native Maps capability', () => {
+    it.each([undefined, '', '   '])('fails closed for an absent or blank native key: %s', (apiKey) => {
+      const config = configForVariant('preview', {}, { android: { config: { googleMaps: { apiKey } } } });
+      expect(config.extra.release.capabilities.androidGoogleMapsConfigured).toBe(false);
+    });
+
+    it('derives the public boolean from native configuration without copying the key into extra', () => {
+      const apiKey = 'test-only-maps-key';
+      const config = configForVariant('preview', {}, { android: { config: { googleMaps: { apiKey } } } });
+      expect(config.android.config.googleMaps.apiKey).toBe(apiKey);
+      expect(config.extra.release.capabilities.androidGoogleMapsConfigured).toBe(true);
+      expect(JSON.stringify(config.extra)).not.toContain(apiKey);
+    });
+  });
   describe('Android internal candidate', () => {
     const eas = require('../eas.json');
     const internalEnv = { REVA_ANDROID_INTERNAL: '1', EAS_BUILD_PLATFORM: 'android' };
@@ -89,6 +103,7 @@ describe('app.config app links', () => {
       expect(config.name).toBe('小巴健康 Preview');
       expect(config.updates.enabled).toBe(false);
       expect(config.extra.release.capabilities.backgroundLocation).toBe(false);
+      expect(config.extra.release.capabilities.androidGoogleMapsConfigured).toBe(false);
     });
 
     it.each(['production', 'development', 'typo'])('rejects non-preview identity: %s', (variant) => {
@@ -123,6 +138,7 @@ describe('app.config app links', () => {
       variant: 'production',
       capabilities: {
         advancedSettings: false,
+        androidGoogleMapsConfigured: false,
         backgroundLocation: false,
         rokid: false,
         siri: false,

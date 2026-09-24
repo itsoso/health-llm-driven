@@ -255,6 +255,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       variant: VARIANT,
       capabilities: {
         advancedSettings: IS_DEV || IS_PREVIEW,
+        // android.config is filtered from Expo's public manifest. Export only
+        // the native configuration's presence, never the Maps key itself.
+        androidGoogleMapsConfigured: typeof config.android?.config?.googleMaps?.apiKey === 'string'
+          && config.android.config.googleMaps.apiKey.trim().length > 0,
         backgroundLocation: !IS_ANDROID_INTERNAL && (IS_DEV || IS_PREVIEW),
         rokid: INCLUDE_ROKID,
         siri: INCLUDE_SIRI,
