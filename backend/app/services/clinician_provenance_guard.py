@@ -1468,6 +1468,19 @@ def _is_clinician_question_preparation(raw: str, provider: _Span) -> bool:
         return False
     if any(negation in prefix for negation in CLAUSE_ACTION_NEGATIONS):
         return False
+    # Deny-only compact view also sees actions split across line breaks. Never
+    # use this cross-clause view as evidence for the nominal exception below.
+    compact = _letters_numbers_only(raw)
+    if any(
+        root in compact
+        for root in _DENY_ONLY_ACTION_ROOTS
+        if root not in READ_ACTIONS and root != "安排"
+    ):
+        return False
+    # Every normalized occurrence must have a literal candidate span. Hidden
+    # characters/newlines inside 安排 cannot manufacture a nominal allowance.
+    if compact.count("安排") != raw.count("安排"):
+        return False
     for clause in _canonical_clauses(raw):
         # Scan every clause, not only the one containing the clinician. This
         # deny-only normalization cannot grant authority to obfuscated text.
@@ -1482,6 +1495,7 @@ def _is_clinician_question_preparation(raw: str, provider: _Span) -> bool:
                     and raw_start < provider.start
                     and provider.start in clause.raw_positions
                     and raw[max(0, raw_start - 2):raw_start + 2] == "复查安排"
+                    and raw[raw_start + 2:].startswith(("和", "与", "以及", "、", "，", ","))
                     and any(verb in nominal_prefix for verb in preparation)
                     and nominal_prefix.endswith((*preparation, "、", "，", ",", "和", "与"))
                     and _second_action_kind(raw, _Span(0, len(raw))) is None

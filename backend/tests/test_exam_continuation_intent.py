@@ -48,11 +48,21 @@ def test_clinician_basis_actions_stay_blocked(text):
 
 @pytest.mark.parametrize("action", [
     "修\u200b改用药剂量", "删\u200b除用药记录", "保★存体检记录",
+    "修\n改用药剂量", "安\n排明天复查", "保\n存体检记录",
     "把复查安排在明天上午八点", "帮我复查安排",
 ])
 @pytest.mark.parametrize("position", ["before", "after"])
 def test_preparation_envelope_rejects_normalized_and_nominal_looking_actions(action, position):
     text = action + "。" + EXAM_PROMPT if position == "before" else EXAM_PROMPT + action
+    assert classify_clinician_turn(text).kind == "ambiguous_clinician_action"
+
+
+@pytest.mark.parametrize("text", [
+    "请梳理复查安排在明天上午八点和需要向医生确认的问题",
+    "帮我准备材料，复查安排在明天上午八点，帮我整理向医生确认的问题",
+    "帮我整理复查安排到明天和向医生确认的问题",
+])
+def test_scheduling_predicate_is_not_a_nominal_question_list(text):
     assert classify_clinician_turn(text).kind == "ambiguous_clinician_action"
 
 
