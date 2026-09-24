@@ -793,6 +793,35 @@ stat() {
     def test_clean_production_with_normal_python_symlink_passes_without_execution(self):
         self.assertIsNone(self.invoke())
 
+    def test_fixed_root_managed_node_links_are_metadata_only(self):
+        toolchain = self.root / "node-toolchains/node-v22.19.0-linux-x64"
+        npm_cli = toolchain / "lib/node_modules/npm/bin/npm-cli.js"
+        npm_cli.parent.mkdir(parents=True)
+        (toolchain / "bin").mkdir(parents=True)
+        put(toolchain / "bin/node", b"fixed node binary", 0o755)
+        put(npm_cli, b"fixed npm launcher", 0o755)
+        (toolchain / "bin/npm").symlink_to("../lib/node_modules/npm/bin/npm-cli.js")
+        (self.venv / "bin/node").symlink_to(toolchain / "bin/node")
+        (self.venv / "bin/npm").symlink_to(toolchain / "bin/npm")
+        self.patch(self.reset, "NODE_TOOLCHAIN", toolchain)
+        self.assertIsNone(self.invoke())
+        (self.venv / "bin/node").unlink()
+        (self.venv / "bin/node").symlink_to(self.root / "other-node")
+        with self.assertRaises(self.reset.ResetError):
+            self.invoke()
+
+    def test_fixed_npm_link_cannot_be_redirected_inside_toolchain(self):
+        toolchain = self.root / "node-toolchains/node-v22.19.0-linux-x64"
+        (toolchain / "bin").mkdir(parents=True)
+        alternate = toolchain / "lib/node_modules/npm/bin/alternate.js"
+        alternate.parent.mkdir(parents=True)
+        put(alternate, b"alternate", 0o755)
+        (toolchain / "bin/npm").symlink_to("../lib/node_modules/npm/bin/alternate.js")
+        (self.venv / "bin/npm").symlink_to(toolchain / "bin/npm")
+        self.patch(self.reset, "NODE_TOOLCHAIN", toolchain)
+        with self.assertRaises(self.reset.ResetError):
+            self.invoke()
+
     def test_private_media_is_not_an_application_import_source(self):
         media = self.repo / "backend/ignored/private_media"
         media.mkdir(parents=True)

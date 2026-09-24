@@ -143,3 +143,14 @@ failed workspace, log, stage and empty source while archiving the original lease
 inode and revoking only the exact temporary identities. Focused release tests:
 293 passed. Independent scope review: GO; final fixed-commit review and exact CI
 are still required before this recovery profile or another deployment executes.
+
+The unchanged-release inspection then reached the production virtualenv and
+correctly stopped on two root-managed Node launcher links that predated this
+release: `venv/bin/node` and `venv/bin/npm` point into the fixed
+`/opt/node-toolchains/node-v22.19.0-linux-x64` installation. The verifier now
+accepts only those two exact root-owned, single-link targets without executing
+them; npm's second link must remain the exact relative `npm-cli.js` target and
+its resolved file and parent must pass the existing secure-path checks. Every
+other virtualenv link remains rejected. Fresh focused release verification:
+361 passed and 84 subtests passed. Production is still unchanged while this
+candidate awaits fixed-commit review and exact CI.
