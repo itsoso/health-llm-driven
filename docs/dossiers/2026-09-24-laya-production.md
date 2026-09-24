@@ -60,8 +60,10 @@ Fresh evidence:
 - Both API clients regenerated successfully from the locked backend environment.
 - Baseline CI repair prepared separately at 018cd3caa: one platform-neutral map
   fallback line; original two failing tests and pre-commit passed. Independent
-  review GO. The user subsequently authorized publication; CI run 35951912426
-  is validating the repair before the Laya candidate may be pushed.
+  review GO. The user subsequently authorized publication. CI run 35951912426
+  found three mobile assertions still matching the old copy; the single test
+  constant was aligned in 01d756b79c38a52775ccab45dd0a18213f3167b9, and all six
+  workout-detail cases passed locally. Exact CI must pass before Laya is pushed.
 
 Review fixes: reject future revision before CAS; allow disable during provider
 misconfiguration; emergency off skips sidecar health/provisioning; reject existing
