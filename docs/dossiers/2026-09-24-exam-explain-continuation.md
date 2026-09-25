@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 当前阶段 | G5 后端已部署；用户改为优先 TestFlight；续发代码已过独立复审、完整闸待完成 |
-| 状态 | testflight-only-verification |
+| 当前阶段 | G5 TestFlight 1.3.4 (272) 已上传且内部测试可用；正式审核与同包交互验收未执行 |
+| 状态 | testflight-internal-available |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Run | `docs/_generated/harness-runs/5b5be9f937ce.jsonl`（本地） |
@@ -320,3 +320,60 @@ CI-mode 重跑在 1371 passed、8 skipped、84 subtests passed 后命中旧 EAS 
 同步该测试为新分支的精确 RPC 和既有单次 claim 要求；只在兼容性清单新增该固定测试
 文件，不允许任意 scripts/tests 变化。相关组合 193 passed，ruff/diff 通过；完整闸与
 该窄增量的固定提交独立复审再次执行，未忽略失败或先行发布。
+
+固定 `cad1fd1d33621532e587b265e79f737dfb06d1fe` 窄增量独立 G4 GO：193 passed，
+allowlist 集合差仅新增该测试文件，1 正例与 10 个运行树/邻接/穿越负例通过。
+本地完整 CI-mode 1426 passed、8 skipped、84 subtests passed，exit 0（399.12 秒）；
+精确远端 CI `36110369216` 全部 28 jobs success，validate `36111303974` success。
+结构地图、治理、秘密与 diff 检查通过。源码已推送，但未纳入其他任务的 dirty Dossier。
+
+服务器 canonical staging 由固定 GitHub 来源检出同 SHA，关键脚本摘要与受审版本一致。
+第一次 rotate 在 mutation 前因旧安装仍含 loopback.key 被拒绝：旧 retirement 和新
+workspace 均不存在，原授权/安装保留。只读取证确认完整历史与旧 SUCCEEDED workspace
+有效；诊断 wrapper 首次未注册 sys.modules 造成的 KeyError 仅属于诊断导入环境，补全
+模块注册后的相同只读历史核验通过，不是生产审计损坏。
+
+按既有治理先用旧 canonical bootstrap revoke（REVOKED），复证无活动发布/业务 lease、
+旧后端终结且双公钥不在授权列表，再仅移除旧 loopback 私钥并 fsync，保留审计/消费证据。
+随后正常 rotate 成功返回 INSTALLED，新身份绑定 cad1fd1d3、有效期 6 小时；不是延长旧身份。
+专用私钥通过 stdin 更新 GitHub environment secret，长期 Expo token 原样复用。
+单次 TestFlight-only workflow `36111598240` 已触发，未把触发或授权成功写成已上传。
+
+该 workflow attempt 1 在 claim-build 检查约 95 秒后以服务器验证失败结束；EAS create
+步骤明确 skipped，testflight skipped。原错误只保留通用安全错误，不能确定声称具体
+网络根因。服务器 candidate workspace 为空，无 binding/build/native marker、无业务
+lease 或残留发布进程；EAS 最近记录仍是旧 1.3.3，不存在本轮构建。只读 readiness
+复验 1 秒 PASS。确认未进入 vendor create、无未知副作用后，仅 rerun 同一 workflow
+失败 jobs，保留 attempt 1，不清任何消费标记、不再 dispatch；每次构建仍必须重新领取
+原有一次性 claim。若已有 claim 则阻断，不能用该次重跑绕过。
+
+attempt 2 已通过 claim，首次实际 EAS build 为
+`bfdd2bc9-db49-4ccd-bfbc-679287be4855`，版本 1.3.4 (272)，源码精确 cad1fd1d3，
+只读回读 IN_PROGRESS。此 build number 来自生产 EAS 自动递增，不混同此前本地
+Ad Hoc 归档 (273)。构建/上传尚未终结，保留同一 ID，不重新 create。
+
+### TestFlight 交付终态
+
+- 发布候选仍为 `cad1fd1d33621532e587b265e79f737dfb06d1fe`。
+  workflow `36111598240` attempt 2 为 success，preflight/build-permission/ios-build/
+  testflight/release-result 均 success，backend 明确 skipped；attempt 1 保留失败。
+- EAS build `bfdd2bc9-db49-4ccd-bfbc-679287be4855` FINISHED，IOS/STORE/production，
+  1.3.4 (272)，runtime 1.3.4，源码精确匹配。云端创建至完成约 6 分 58 秒。
+- submission `8c5680dc-6719-455e-9c3e-6fd3bbbfeb7b` FINISHED，绑定同一 build；
+  创建至完成约 2 分 22 秒。没有再次 create、latest submit 或重复上传。
+- App Store Connect 独立只读回读：1.3.4 (272) processingState=VALID，
+  internalState=IN_BETA_TESTING，externalState=READY_FOR_BETA_SUBMISSION，expired=false。
+  已有内部测试员可更新；不是外部 Beta 审核完成，也不是正式 App Store 上架。
+  现有 EAS credentials service 可用于只读 ASC 状态，不要求用户新登录。
+- 精确 IPA 下载到 `/tmp/reva-testflight-ipa.42MGKr/HealthPilot-1.3.4-272.ipa`，
+  SHA-256 `83514b3c600777a07dd2aa69cc34faa58f82232fcaa4b0282e99f11485721b6f`。
+  CFBundleIdentifier=life.executor.health，version/build=1.3.4/272；独立
+  codesign --verify --deep --strict exit 0，production APNs、HealthKit=true、
+  beta-reports-active=true、get-task-allow=false、Team QA2U724DAN。
+  此为同包静态核验，不代替安装或交互测试；本轮未做真机或同包模拟器 UI 验收。
+- workflow 与 vendor 均终结后，canonical bootstrap revoke 返回 REVOKED；核对无活动
+  发布与双公钥已撤销，再仅删除本轮 loopback 私钥、GitHub 专用 SSH secret 和本机专用
+  cloud 私钥。长期 Expo token、known-hosts、完整 native binding/claim 审计全部保留。
+  未把 native-only workspace 补写为 backend SUCCEEDED；未来退休仍需独立受审终态收尾。
+- 最后公网健康检查 healthy，API running、数据库/Redis/Celery connected。
+  不重复部署后端、不上传 QR、不发 OTA、不修改生产健康数据、不提交正式 App Review。
