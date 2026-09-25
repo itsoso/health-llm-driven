@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 当前阶段 | G5 后端已部署；iOS 归档成功、签名导出待本机确认；OTA 未发布 |
-| 状态 | awaiting-local-signing-and-review-status |
+| 当前阶段 | G5 后端已部署；用户改为优先 TestFlight；续发代码已过独立复审、完整闸待完成 |
+| 状态 | testflight-only-verification |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Run | `docs/_generated/harness-runs/5b5be9f937ce.jsonl`（本地） |
@@ -302,3 +302,21 @@ launcher flock，可在 proof 与 claim 之间并发部署。独立 85 passed �
 首轮完整 CI-mode 本地闸 886 passed/3 subtest failed：uv 隔离覆盖层的 sys.executable
 对应 site-packages 缺少 pydantic_settings，触发既有隔离 seeder 真实配置测试失败。
 未改测试、未豁免；改用独立普通 venv 安装锁定完整生产与开发依赖后重跑。
+
+固定 `abd303977aa3ce57aed4ee32831e03106edf8cee` 相对 `bdf5fe616` 的第二轮独立
+G4 GO：195 项回归通过，额外 3 个 claim 边界与 token inode 替换探针通过。
+原业务 lease 与 vendor lock 的持有、身份复证及未知现场保留满足本轮窄范围要求。
+初始 bootstrap 身份仍保留原通用发布 RPC；只有首次 native binding 后旧入口才拒绝，
+安全结论以可信 root、固定 GitHub workflow 与一次性 claim 为前提，不声称初始身份
+已在服务端限制成 TestFlight-only。此 GO 不替代完整集成、精确 CI 或实际上传。
+
+TestFlight 发布阶段 Router 为 release/mobile-testflight + safety，复用本 Dossier。
+实际生产仍为 `bdf5fe616`，backend/worker/beat/Laya active，业务 lease 不存在。
+不重复后端部署、不续期旧身份、不发布 QR 或 OTA、不提交正式 App Review。
+
+独立普通 venv 已使既有 seeder 配置反例通过（1 passed、3 subtests passed）。完整
+CI-mode 重跑在 1371 passed、8 skipped、84 subtests passed 后命中旧 EAS workflow
+契约断言：未包含新 build-permission 汇合依赖，并仍匹配写死的 claim-build 命令。
+同步该测试为新分支的精确 RPC 和既有单次 claim 要求；只在兼容性清单新增该固定测试
+文件，不允许任意 scripts/tests 变化。相关组合 193 passed，ruff/diff 通过；完整闸与
+该窄增量的固定提交独立复审再次执行，未忽略失败或先行发布。

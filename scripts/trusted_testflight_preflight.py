@@ -25,6 +25,7 @@ PUBLISHER_FILES = frozenset({
     ".github/workflows/trusted-release.yml", ".github/workflows/ci.yml",
     "scripts/trusted_release_server.py", "scripts/trusted_testflight_preflight.py",
     "scripts/test_testflight_only.py", "scripts/test_trusted_release_workflow.py",
+    "scripts/test_trusted_eas_build.py",
     "docs/governance/deploy.md",
 })
 

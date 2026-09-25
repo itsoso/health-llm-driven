@@ -63,12 +63,17 @@ def test_workflow_upload_overlaps_backend_and_delivery_joins_both_branches():
     assert jobs["backend"]["needs"] == "build-permission"
     assert jobs["ios-build"]["needs"] == "build-permission"
     assert jobs["testflight"]["needs"] == "ios-build"
-    assert set(jobs["release-result"]["needs"]) == {"backend", "testflight"}
+    assert set(jobs["release-result"]["needs"]) == {"build-permission", "backend", "testflight"}
     build_steps = str(jobs["ios-build"]["steps"])
     assert "--auto-submit" not in build_steps
     assert "submit -p ios" not in build_steps
     # Rerunning just this job must claim again, not reuse an upstream grant.
-    assert 'claim-build $TARGET_SHA' in build_steps
+    assert "claim-testflight-build" in build_steps
+    assert "claim-build" in build_steps
+    assert '"$RELEASE_RPC $TARGET_SHA"' in build_steps
+    build_claim = next(step for step in jobs["ios-build"]["steps"]
+                       if step["name"] == "Claim one build in this job before every vendor create attempt")
+    assert build_claim["env"]["RELEASE_RPC"] == "${{ inputs.target == 'testflight' && 'claim-testflight-build' || 'claim-build' }}"
     submit_steps = str(jobs["testflight"]["steps"])
     assert "submit -p ios --id" in submit_steps
     assert "build:view" in submit_steps
