@@ -516,7 +516,7 @@ def claim_testflight(policy, workspace, *, native_proof=None):
         os.close(fd)
 
 
-def testflight_backend_proof(policy):
+def testflight_backend_proof(policy, *, lease):
     """Run only the exact canonical, root-controlled read-only helper."""
     source = STATE / "bootstrap" / policy["sha"] / "source"
     script = source / "scripts/trusted_testflight_preflight.py"
@@ -533,7 +533,7 @@ def testflight_backend_proof(policy):
     if script.read_bytes() != expected:
         raise LaunchError("native proof helper differs from reviewed source")
     result = subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"]],
-                            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            env=env, input=json.dumps(lease).encode(), stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, check=True, timeout=600)
     proof = _json(result.stdout)
     if (not isinstance(proof, dict) or set(proof) != {"sha", "production_sha", "state"}
@@ -544,6 +544,78 @@ def testflight_backend_proof(policy):
     return proof
 
 
+def _testflight_lease_parent():
+    # Match the existing Ubuntu business-lease protocol, including only its
+    # fixed root-owned sticky parent exception. Never relax code/key paths.
+    if BUSINESS_LEASE == Path("/var/lock/health-app-release"):
+        for parent in (Path("/"), Path("/var"), Path("/run")):
+            validate_metadata(parent.lstat(), directory=True)
+        alias = Path("/var/lock")
+        info = alias.lstat()
+        if (not stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+                or info.st_nlink != 1 or os.readlink(alias) != "/run/lock"):
+            raise LaunchError("fixed business lease alias differs")
+        shared = Path("/run/lock").lstat()
+        if (not stat.S_ISDIR(shared.st_mode) or shared.st_uid != 0 or shared.st_gid != 0
+                or stat.S_IMODE(shared.st_mode) != 0o1777):
+            raise LaunchError("fixed business lease parent differs")
+    else:
+        # Internal unit-test path injection only; production constant is fixed.
+        secure_path(BUSINESS_LEASE.parent, directory=True)
+
+
+def _assert_testflight_lease(lease, workspace):
+    _testflight_lease_parent()
+    if (not isinstance(lease, dict) or set(lease) != {"token", "started_at", "identity"}
+            or not isinstance(lease["token"], str) or re.fullmatch(r"[0-9a-f]{64}", lease["token"]) is None
+            or not isinstance(lease["started_at"], str) or re.fullmatch(r"[0-9]{1,12}", lease["started_at"]) is None):
+        raise LaunchError("invalid native lease identity")
+    info = BUSINESS_LEASE.lstat()
+    validate_metadata(info, directory=True)
+    if stat.S_IMODE(info.st_mode) != 0o700:
+        raise LaunchError("native business lease must remain private")
+    expected = {"token": lease["token"], "label": "testflight-check",
+                "stage": str(workspace), "started_at": lease["started_at"]}
+    if {p.name for p in BUSINESS_LEASE.iterdir()} != set(expected):
+        raise LaunchError("native business lease inventory changed")
+    identity = [info.st_dev, info.st_ino]
+    for name, value in expected.items():
+        fd = os.open(BUSINESS_LEASE / name, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as stream:
+            metadata = os.fstat(stream.fileno())
+            validate_metadata(metadata, private=True)
+            if stream.read(4097) != (value + "\n").encode():
+                raise LaunchError("native business lease ownership changed")
+            if name == "token":
+                identity.extend((metadata.st_dev, metadata.st_ino))
+    if lease["identity"] != identity:
+        raise LaunchError("native business lease inode changed")
+
+
+def _acquire_testflight_lease(workspace):
+    _testflight_lease_parent()
+    try:
+        BUSINESS_LEASE.mkdir(mode=0o700)
+    except FileExistsError:
+        raise LaunchError("business release in progress") from None
+    # An interrupted/partial initialization is left closed for operator review.
+    lease = {"token": secrets.token_hex(32), "started_at": str(int(time.time()))}
+    for name, value in {"token": lease["token"], "label": "testflight-check",
+                        "stage": str(workspace), "started_at": lease["started_at"]}.items():
+        _write_private(BUSINESS_LEASE / name, (value + "\n").encode())
+    lease["identity"] = [value for path in (BUSINESS_LEASE, BUSINESS_LEASE / "token")
+                         for value in (path.lstat().st_dev, path.lstat().st_ino)]
+    _assert_testflight_lease(lease, workspace)
+    return lease
+
+
+def _release_testflight_lease(lease, workspace):
+    _assert_testflight_lease(lease, workspace)
+    for name in ("token", "label", "stage", "started_at"):
+        (BUSINESS_LEASE / name).unlink()
+    BUSINESS_LEASE.rmdir()
+
+
 def testflight_only(policy, workspace, action):
     """Guard native-only claims without consuming or forging backend success."""
     if action not in {"check", "build", "upload"}:
@@ -551,6 +623,7 @@ def testflight_only(policy, workspace, action):
     workspace = Path(workspace)
     lock = STATE / "launcher.lock"
     fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    lease = None
     try:
         secure_path(lock, private=True)
         try:
@@ -563,7 +636,9 @@ def testflight_only(policy, workspace, action):
         if read_status(policy["sha"], workspace)["state"] != "READY":
             raise LaunchError("native-only candidate already has backend state")
         check_readiness(policy)
-        proof = testflight_backend_proof(policy)
+        lease = _acquire_testflight_lease(workspace)
+        proof = testflight_backend_proof(policy, lease=lease)
+        _assert_testflight_lease(lease, workspace)
         binding = workspace / "testflight-base.json"
         if os.path.lexists(binding):
             if _json(_read_private(binding)) != proof:
@@ -579,7 +654,11 @@ def testflight_only(policy, workspace, action):
             raise LaunchError("native-only build binding required")
         return claim_testflight(policy, workspace, native_proof=proof)
     finally:
-        os.close(fd)
+        try:
+            if lease is not None:
+                _release_testflight_lease(lease, workspace)
+        finally:
+            os.close(fd)
 
 
 def clean_environment(workspace):

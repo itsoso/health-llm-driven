@@ -84,7 +84,7 @@ def load_module(source, sha, name, filename):
     return module
 
 
-def prove(sha):
+def prove(sha, lease):
     source = STATE / "bootstrap" / sha / "source"
     if Path(__file__).absolute() != source / "scripts/trusted_testflight_preflight.py":
         raise PreflightError("fixed canonical staging required")
@@ -103,8 +103,7 @@ def prove(sha):
     gate._latest(gate._get_json, live)
     helper._assert_previous_resets(bootstrap, server)
     server.assert_frontend_rebuild_history()
-    if os.path.lexists(Path("/var/lock/health-app-release")):
-        raise PreflightError("business release in progress")
+    server._assert_testflight_lease(lease, STATE / sha)
     # Compare object inventories, not diffs: no rename heuristics, external diff
     # drivers or caller-selected revision/path. All runtime entries must match.
     def inventory(repo, revision):
@@ -137,6 +136,7 @@ def prove(sha):
         validate_health(json.loads(raw))
     if git(PRODUCTION, "rev-parse", "HEAD").decode().strip() != live:
         raise PreflightError("production revision changed")
+    server._assert_testflight_lease(lease, STATE / sha)
     return {"sha": sha, "production_sha": live, "state": "COMPATIBLE"}
 
 
@@ -148,7 +148,11 @@ def main():
         if (not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode
                 or os.geteuid() != 0 or re.fullmatch(r"[0-9a-f]{40}", args.sha) is None):
             raise PreflightError("isolated privileged proof required")
-        result = prove(args.sha)
+        raw = sys.stdin.buffer.read(4097)
+        if len(raw) > 4096:
+            raise PreflightError("invalid lease proof input")
+        lease = json.loads(raw)
+        result = prove(args.sha, lease)
     except Exception:  # noqa: BLE001 -- Never expose health payloads or helper errors.
         print("TestFlight backend compatibility proof failed", file=sys.stderr)
         return 1

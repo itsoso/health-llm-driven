@@ -292,3 +292,13 @@ canonical 只读证明比较完整 Git 对象清单，只放行指定发布脚�
 把 native binding 的创建/旧入口检查放进共享 vendor lock，避免旧 RPC 在检查后并发
 穿过新绑定。尚在验证、未固定提交评审、未 push 或建立新生产授权。
 现有同版本 QR 归档保留；没有扫码上传、OTA 或 TestFlight vendor mutation。
+
+固定 `962203e05` 的独立 G4 NO-GO：业务 lease 仅探测不存在，普通 deploy.sh 不持有
+launcher flock，可在 proof 与 claim 之间并发部署。独立 85 passed 不抵消该阻断。
+新增真实 mkdir 互斥及未知 lease 保留反例 RED 4 failed；修复为同一业务 lease 协议，
+持有完整 lease 覆盖 proof/claim，使用 token+inode/四文件精确验证和私有 stdin，
+未知或初始化中断现场不清理。相关组合 GREEN 195 passed、ruff/diff 通过，待新提交复审。
+
+首轮完整 CI-mode 本地闸 886 passed/3 subtest failed：uv 隔离覆盖层的 sys.executable
+对应 site-packages 缺少 pydantic_settings，触发既有隔离 seeder 真实配置测试失败。
+未改测试、未豁免；改用独立普通 venv 安装锁定完整生产与开发依赖后重跑。

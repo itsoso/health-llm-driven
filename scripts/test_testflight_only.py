@@ -18,7 +18,7 @@ def native_state(monkeypatch, tmp_path):
     workspace.mkdir()
     monkeypatch.setattr(server, "check_readiness", lambda _: None)
     monkeypatch.setattr(server, "validate_loopback", lambda _: None)
-    monkeypatch.setattr(server, "testflight_backend_proof", lambda _: {
+    monkeypatch.setattr(server, "testflight_backend_proof", lambda _, **kwargs: {
         "sha": SHA, "production_sha": PRODUCTION_SHA, "state": "COMPATIBLE",
     })
     return server, workspace
@@ -55,7 +55,7 @@ def test_native_upload_rechecks_backend_under_lock_before_consumption(monkeypatc
     server, workspace = native_state(monkeypatch, tmp_path)
     server.testflight_only(policy(), workspace, "build")
     if cause == "backend_changed":
-        monkeypatch.setattr(server, "testflight_backend_proof", lambda _: {
+        monkeypatch.setattr(server, "testflight_backend_proof", lambda _, **kwargs: {
             "sha": SHA, "production_sha": "d" * 40, "state": "COMPATIBLE",
         })
     elif cause == "lease":
@@ -63,7 +63,7 @@ def test_native_upload_rechecks_backend_under_lock_before_consumption(monkeypatc
     elif cause == "expired":
         monkeypatch.setattr(server.time, "time", lambda: 7400)
     else:
-        def fail(_):
+        def fail(_, **kwargs):
             raise server.LaunchError("health unavailable")
         monkeypatch.setattr(server, "testflight_backend_proof", fail)
     with pytest.raises(server.LaunchError):
@@ -103,6 +103,34 @@ def test_native_check_rejects_concurrent_backend_lock(monkeypatch, tmp_path):
         fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with pytest.raises(server.LaunchError):
             server.testflight_only(policy(), workspace, "check")
+
+
+@pytest.mark.parametrize("action", ["check", "build", "upload"])
+def test_native_claim_holds_actual_business_lease_during_proof(monkeypatch, tmp_path, action):
+    server, workspace = native_state(monkeypatch, tmp_path)
+    if action == "upload":
+        server.testflight_only(policy(), workspace, "build")
+    def proof(_, **kwargs):
+        # This mkdir is the real synchronization used by deploy.sh, not flock.
+        with pytest.raises(FileExistsError):
+            server.BUSINESS_LEASE.mkdir(mode=0o700)
+        assert (server.BUSINESS_LEASE / "label").read_text() == "testflight-check\n"
+        return {"sha": SHA, "production_sha": PRODUCTION_SHA, "state": "COMPATIBLE"}
+    monkeypatch.setattr(server, "testflight_backend_proof", proof)
+    assert server.testflight_only(policy(), workspace, action)["state"] in {"CLAIMED", "CHECKED"}
+    assert not server.BUSINESS_LEASE.exists()
+
+
+def test_unknown_business_lease_tampering_is_preserved_and_no_claim_issued(monkeypatch, tmp_path):
+    server, workspace = native_state(monkeypatch, tmp_path)
+    def proof(_, **kwargs):
+        (server.BUSINESS_LEASE / "unexpected").write_text("foreign")
+        return {"sha": SHA, "production_sha": PRODUCTION_SHA, "state": "COMPATIBLE"}
+    monkeypatch.setattr(server, "testflight_backend_proof", proof)
+    with pytest.raises(server.LaunchError):
+        server.testflight_only(policy(), workspace, "build")
+    assert (server.BUSINESS_LEASE / "unexpected").read_text() == "foreign"
+    assert not (workspace / "build-started.json").exists()
 
 
 @pytest.mark.parametrize("action", ["check-testflight", "claim-testflight-build", "claim-testflight-upload"])
