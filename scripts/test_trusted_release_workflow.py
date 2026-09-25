@@ -66,7 +66,7 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
     assert set(triggers) == {"workflow_dispatch"}
     target = triggers["workflow_dispatch"]["inputs"]["target"]
     assert target["default"] == "validate"
-    assert set(target["options"]) == {"validate", "backend", "release"}
+    assert set(target["options"]) == {"validate", "backend", "release", "testflight"}
     assert WORKFLOW["permissions"] == {"contents": "read", "actions": "read"}
     assert WORKFLOW["concurrency"]["cancel-in-progress"] is False
     for name, job in WORKFLOW["jobs"].items():
@@ -74,7 +74,12 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
         assert 1 <= job["timeout-minutes"] <= 90
         if name not in {"preflight", "release-result"}:
             assert job["environment"] == "release-production"
-            expected = "inputs.target == 'release' || inputs.target == 'backend'" if name in {"build-permission", "backend"} else "inputs.target == 'release'"
+            expected = {
+                "build-permission": "inputs.target == 'release' || inputs.target == 'backend' || inputs.target == 'testflight'",
+                "backend": "inputs.target == 'release' || inputs.target == 'backend'",
+                "ios-build": "inputs.target == 'release' || inputs.target == 'testflight'",
+                "testflight": "inputs.target == 'release' || inputs.target == 'testflight'",
+            }[name]
             assert job["if"] == expected
     assert WORKFLOW["jobs"]["build-permission"]["needs"] == "preflight"
     assert WORKFLOW["jobs"]["backend"]["needs"] == "build-permission"
@@ -88,15 +93,16 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
 ])
 def test_delivery_join_requires_both_jobs_even_when_upload_finishes_first(backend, testflight):
     job = WORKFLOW["jobs"]["release-result"]
-    assert set(job["needs"]) == {"backend", "testflight"}
-    assert job["if"] == "always() && inputs.target == 'release'"
+    assert set(job["needs"]) == {"build-permission", "backend", "testflight"}
+    assert job["if"] == "always() && (inputs.target == 'release' || inputs.target == 'testflight')"
     assert "secrets." not in str(job)
     step = job["steps"][0]
-    assert step["env"] == {"BACKEND_RESULT": "${{ needs.backend.result }}",
+    assert step["env"] == {"RELEASE_TARGET": "${{ inputs.target }}", "PREFLIGHT_RESULT": "${{ needs.build-permission.result }}",
+                           "BACKEND_RESULT": "${{ needs.backend.result }}",
                            "TESTFLIGHT_RESULT": "${{ needs.testflight.result }}"}
     result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-eu", "-c", step["run"]],
-                            env={"PATH": "/nonexistent", "BACKEND_RESULT": backend,
-                                 "TESTFLIGHT_RESULT": testflight}, capture_output=True, text=True)
+                            env={"PATH": "/nonexistent", "RELEASE_TARGET": "release", "PREFLIGHT_RESULT": "success", "BACKEND_RESULT": backend,
+                                 "TESTFLIGHT_RESULT": testflight}, capture_output=True, text=True, check=False)
     assert (result.returncode == 0) == (backend == testflight == "success")
 
 
@@ -107,7 +113,21 @@ def test_backend_only_has_no_vendor_credentials_or_build_claims():
         assert "claim-build" not in body
         assert "claim-testflight" not in body
     for name in ("ios-build", "testflight"):
-        assert WORKFLOW["jobs"][name]["if"] == "inputs.target == 'release'"
+        assert WORKFLOW["jobs"][name]["if"] == "inputs.target == 'release' || inputs.target == 'testflight'"
+
+
+@pytest.mark.parametrize("preflight,backend,upload", [
+    ("success", "skipped", "success"), ("failure", "skipped", "success"),
+    ("success", "success", "success"), ("success", "skipped", "failure"),
+    ("success", "skipped", "cancelled"), ("success", "skipped", "skipped"),
+])
+def test_native_only_join_requires_proof_and_upload_but_forbids_backend_run(preflight, backend, upload):
+    step = WORKFLOW["jobs"]["release-result"]["steps"][0]
+    result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-eu", "-c", step["run"]],
+                            env={"PATH": "/nonexistent", "RELEASE_TARGET": "testflight",
+                                 "PREFLIGHT_RESULT": preflight, "BACKEND_RESULT": backend,
+                                 "TESTFLIGHT_RESULT": upload}, capture_output=True, text=True, check=False)
+    assert (result.returncode == 0) == (preflight == upload == "success" and backend == "skipped")
 
 
 def test_actions_are_immutable_and_preflight_has_no_production_secret():
@@ -145,7 +165,7 @@ def test_missing_expo_credential_fails_before_ci_or_vendor_call():
 @pytest.mark.parametrize("token", ["", " ", "\n", "fake-token\n"])
 def test_bad_expo_credential_fails_before_build_permission_is_consumed(token):
     claim = next(step for step in WORKFLOW["jobs"]["ios-build"]["steps"]
-                 if '"claim-build $TARGET_SHA"' in step.get("run", ""))
+                 if 'claim-build' in str(step.get("env", {})))
     prefix = claim["run"].split("/usr/bin/sudo", 1)[0]
     result = subprocess.run(
         ["/bin/bash", "--noprofile", "--norc", "-eu", "-c", prefix + "\necho CLAIM_REACHED\n"],
@@ -158,10 +178,10 @@ def test_bad_expo_credential_fails_before_build_permission_is_consumed(token):
 
 def test_expo_authentication_probe_precedes_once_build_claim():
     claim = next(step for step in WORKFLOW["jobs"]["ios-build"]["steps"]
-                 if '"claim-build $TARGET_SHA"' in step.get("run", ""))
+                 if 'claim-build' in str(step.get("env", {})))
     assert claim["env"]["EXPO_TOKEN"] == "${{ secrets.REVA_RELEASE_EXPO_TOKEN }}"
     body = claim["run"]
-    assert body.index("trusted_release_gate.py") < body.index("whoami") < body.index('"claim-build $TARGET_SHA"')
+    assert body.index("trusted_release_gate.py") < body.index("whoami") < body.index('"$RELEASE_RPC $TARGET_SHA"')
     assert "Expo authentication preflight failed; build permission not consumed" in body
 
 

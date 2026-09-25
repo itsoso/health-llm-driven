@@ -24,6 +24,7 @@ CONFIG = Path("/etc/reva-release")
 POLICY = CONFIG / "authorized-release.json"
 STATE = Path("/var/lib/reva-release")
 PRODUCTION = Path("/opt/health-app")
+BUSINESS_LEASE = Path("/var/lock/health-app-release")
 ORIGIN = "https://github.com/itsoso/health-llm-driven.git"
 PYTHON = "/usr/bin/python3.12"
 DEPLOY_TIMEOUT_SECONDS = 3600
@@ -41,7 +42,7 @@ class PreparationUncertain(LaunchError):
 
 
 def parse_command(command):
-    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight) ([0-9a-f]{40})", command)
+    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload) ([0-9a-f]{40})", command)
     if match is None:
         raise LaunchError("only fixed release commands with an exact SHA are allowed")
     return match.group(1), match.group(2)
@@ -203,6 +204,8 @@ def run_once(policy, workspace, prepare, deploy):
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
         assert_frontend_rebuild_history()
+        if os.path.lexists(workspace / "testflight-base.json"):
+            raise LaunchError("native-only continuation cannot deploy backend")
         if read_status(policy["sha"], workspace)["state"] != "READY":
             raise LaunchError("authorization already consumed; manual review required")
         _assert_deployment_window(policy)
@@ -428,7 +431,18 @@ def check_readiness(policy):
     _assert_deployment_window(policy)
 
 
-def claim_build(policy, workspace):
+def _native_binding(workspace, proof, *, create=False):
+    binding = workspace / "testflight-base.json"
+    if os.path.lexists(binding):
+        if proof is None or _json(_read_private(binding)) != proof:
+            raise LaunchError("native-only binding requires matching guarded native RPC")
+    elif proof is not None:
+        if not create or any(os.path.lexists(workspace / name) for name in ("build-started.json", "native-started.json")):
+            raise LaunchError("native-only binding missing or legacy claim exists")
+        _write_private(binding, json.dumps(proof, sort_keys=True).encode())
+
+
+def claim_build(policy, workspace, *, native_proof=None):
     """Reserve build only; upload retains its own one-shot claim.
 
     A separate short lock permits claiming while deployment owns launcher.lock.
@@ -445,6 +459,8 @@ def claim_build(policy, workspace):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
+        if native_proof is None:
+            _native_binding(workspace, None)
         if read_status(policy["sha"], workspace)["state"] in {"NEEDS_OPERATOR", "PREPARATION_FAILED"}:
             raise LaunchError("failed backend requires operator review before build")
         marker = workspace / "build-started.json"
@@ -452,6 +468,7 @@ def claim_build(policy, workspace):
             raise LaunchError("build authorization already consumed; operator review required")
         check_readiness(policy)
         _assert_deployment_window(policy)
+        _native_binding(workspace, native_proof, create=True)
         _write_private(marker, json.dumps({"sha": policy["sha"], "state": "STARTED"}).encode())
         _sync_directory(workspace.parent)
         return {"sha": policy["sha"], "state": "CLAIMED"}
@@ -459,7 +476,7 @@ def claim_build(policy, workspace):
         os.close(fd)
 
 
-def claim_testflight(policy, workspace):
+def claim_testflight(policy, workspace, *, native_proof=None):
     """Consume upload permission independently of a running backend deployment.
 
     A lost response is still a consumed claim. Only an operator may investigate
@@ -479,6 +496,7 @@ def claim_testflight(policy, workspace):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
+        _native_binding(workspace, native_proof)
         assert_frontend_rebuild_history()
         _assert_deployment_window(policy)
         if read_status(policy["sha"], workspace)["state"] in {"NEEDS_OPERATOR", "PREPARATION_FAILED"}:
@@ -494,6 +512,72 @@ def claim_testflight(policy, workspace):
         _write_private(workspace / "native-started.json", json.dumps({"sha": policy["sha"], "state": "STARTED"}).encode())
         _sync_directory(workspace.parent)
         return {"sha": policy["sha"], "state": "CLAIMED"}
+    finally:
+        os.close(fd)
+
+
+def testflight_backend_proof(policy):
+    """Run only the exact canonical, root-controlled read-only helper."""
+    source = STATE / "bootstrap" / policy["sha"] / "source"
+    script = source / "scripts/trusted_testflight_preflight.py"
+    secure_path(script)
+    secure_path(source / ".git/config")
+    env = clean_environment(STATE)
+    env.update(PATH="/usr/bin:/bin", HOME="/nonexistent", GIT_NO_REPLACE_OBJECTS="1",
+               GIT_CONFIG_SYSTEM="/dev/null")
+    expected = subprocess.run([
+        "/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+        "-C", str(source), "show", policy["sha"] + ":scripts/trusted_testflight_preflight.py",
+    ], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        check=True, timeout=30).stdout
+    if script.read_bytes() != expected:
+        raise LaunchError("native proof helper differs from reviewed source")
+    result = subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"]],
+                            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, check=True, timeout=600)
+    proof = _json(result.stdout)
+    if (not isinstance(proof, dict) or set(proof) != {"sha", "production_sha", "state"}
+            or proof["sha"] != policy["sha"] or proof["state"] != "COMPATIBLE"
+            or not isinstance(proof["production_sha"], str)
+            or re.fullmatch(r"[0-9a-f]{40}", proof["production_sha"]) is None):
+        raise LaunchError("invalid native backend proof")
+    return proof
+
+
+def testflight_only(policy, workspace, action):
+    """Guard native-only claims without consuming or forging backend success."""
+    if action not in {"check", "build", "upload"}:
+        raise LaunchError("unknown native action")
+    workspace = Path(workspace)
+    lock = STATE / "launcher.lock"
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        secure_path(lock, private=True)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise LaunchError("another release invocation is active") from None
+        _assert_deployment_window(policy)
+        if os.path.lexists(BUSINESS_LEASE):
+            raise LaunchError("business release in progress")
+        if read_status(policy["sha"], workspace)["state"] != "READY":
+            raise LaunchError("native-only candidate already has backend state")
+        check_readiness(policy)
+        proof = testflight_backend_proof(policy)
+        binding = workspace / "testflight-base.json"
+        if os.path.lexists(binding):
+            if _json(_read_private(binding)) != proof:
+                raise LaunchError("native-only production binding changed")
+        elif any(os.path.lexists(workspace / name) for name in ("build-started.json", "native-started.json")):
+            raise LaunchError("existing legacy native claim cannot be rebound")
+        _assert_deployment_window(policy)
+        if action == "check":
+            return {"sha": policy["sha"], "state": "CHECKED"}
+        if action == "build":
+            return claim_build(policy, workspace, native_proof=proof)
+        if not os.path.lexists(binding):
+            raise LaunchError("native-only build binding required")
+        return claim_testflight(policy, workspace, native_proof=proof)
     finally:
         os.close(fd)
 
@@ -764,7 +848,7 @@ def laya_private_key():
 def initial_laya_config(production):
     # This release provisions the requested first Laya deployment. Explicit
     # existing decision settings, including the emergency off, always win.
-    if any(re.match(r"\s*(?:export\s+)?DECISION_", line, re.I) for line in production.splitlines()):
+    if any(re.match(r"\s*(?:export\s+)?DECISION_", line, re.IGNORECASE) for line in production.splitlines()):
         return ""
     return ("DECISION_PROVIDER=laya\nDECISION_MODE=on\nDECISION_ADMIN_CONTROL_ENABLED=true\n"
             "DECISION_BASE_URL=http://127.0.0.1:8092/v1\nDECISION_MODEL=multilingual\n"
@@ -820,6 +904,12 @@ def main():
         workspace = STATE / policy["sha"]
         if command == "status":
             result = release_status(policy["sha"], workspace)
+        elif command in {"check-testflight", "claim-testflight-build", "claim-testflight-upload"}:
+            if command != "check-testflight":
+                workspace.mkdir(mode=0o700, exist_ok=True)
+            action = {"check-testflight": "check", "claim-testflight-build": "build",
+                      "claim-testflight-upload": "upload"}[command]
+            result = testflight_only(policy, workspace, action)
         elif command == "check":
             check_readiness(policy)
             result = {"sha": policy["sha"], "state": "CHECKED"}

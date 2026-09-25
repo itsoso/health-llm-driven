@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 当前阶段 | G3/G4 本地验证完成，未部署 |
-| 状态 | building |
+| 当前阶段 | G5 后端已部署；iOS 归档成功、签名导出待本机确认；OTA 未发布 |
+| 状态 | awaiting-local-signing-and-review-status |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Run | `docs/_generated/harness-runs/5b5be9f937ce.jsonl`（本地） |
@@ -220,3 +220,75 @@ partial Laya 范围 NO-GO：旧已认证空闲 SSH 连接不会因删除密钥�
 取得精确 CI；不等同生产处置授权。未知 lease 丢失的专项接受仍待用户确认，实际
 两阶段收尾、后端部署、签名新包和 OTA 均未执行。两个指定 QR 文件树与 b20e8fb52
 受审版本相同；QR GO 不包含任意旧包、任意工作区或用户真机已覆盖的声明。
+
+### 2026-09-25 发布续接核验
+
+用户在专项风险问题后要求继续解决、部署和发布。重新取证发现其他发布流程已完成
+旧 partial 归档和后端推进；本轮没有重跑旧收尾或部署。main 无分叉快进至
+`bdf5fe616a4461c568f16fe5941a707c4cc287ea`，精确 CI `36024692445` success；
+trusted backend `36027537970` success，服务器 completed.json 为该 SHA 的 SUCCEEDED。
+生产 HEAD 相同，backend / celery-worker / celery-beat / Laya active、零重启；
+公网 `/api/health` 为 healthy，四项服务 connected/running，未认证 `/api/v1/auth/me`
+返回 401。此前误查 health-celery-* 名称返回 inactive，不属于实际服务故障；
+根 `/health` 公网不映射，改查客户端使用域名下的真实 `/api/health` 验证成功。
+
+上轮最终本地集成 1372 passed、8 skipped、84 subtests passed，服务器完整依赖
+dry-run 43 distributions（含精确 CPU torch）原 hash 校验成功、670 秒，未安装。
+本轮 Mobile/shared 与 QR 四文件对既有 G4 完全同字节，新鲜 QR 测试 48 passed。
+干净 canonical 发布 checkout 已快进同一 SHA；锁定 npm ci（禁生命周期）完成，
+再显式执行既有两项受审 postinstall。复用 EAS 唯一 active AD_HOC profile，与本机
+有效签名 identity 匹配，验证 production APNs/HealthKit/get-task-allow=false 后安装；
+没有读取 P12、创建证书或新 profile。profile 覆盖一台设备，不证明是用户当前手机。
+
+已启动 1.3.4 (273) 本地候选，固定 build id `20260925-exam-bdf5fe616`，
+`--profile production --no-latest --no-upload`。尚无新包完成、安装、上传或 OTA 结论。
+本地 ASC 只读凭据未配置，浏览器亦未登录，未取得审核后台状态；没有登录、改商店
+元数据或提交审核。EAS 最新 store build 仍为 1.3.3 (271)，不把它当 1.3.4 基础。
+
+### 本轮原生归档与签名阻断
+
+固定 `bdf5fe616` 的新鲜 canonical checkout 已完成锁定依赖安装、既有补丁应用、
+Expo prebuild 与 CocoaPods 安装，tracked tree 仍干净；Xcode 报告
+`ARCHIVE SUCCEEDED`。候选为 1.3.4 (273)，build id
+`20260925-exam-bdf5fe616`，仍使用 `--no-upload --no-latest`。
+
+Ad Hoc export 尚未完成：`xcodebuild` 子进程 `codesign` 等待，同时出现
+macOS `SecurityAgent`；原生 UI 工具明确禁止访问这个系统安全应用。
+未绕过系统保护、未修改钥匙串访问控制、未读取或请求用户在聊天提供密码。
+请用户在 Mac 本机查看并确认签名授权；保留同一归档和运行中的导出，不新建候选。
+原始过程日志 `/tmp/reva-native134-build-current.log`，exec session `25552`；
+归档位于 `/tmp/reva-exam-native134.mccqZ3/source/artifacts/ios-local-install/20260925-exam-bdf5fe616/HealthPilot.xcarchive`。
+
+公网目标独立目录 `20260925-exam-bdf5fe616-public` 只读预检尚不存在；
+没有上传 IPA、没有改 latest、没有 production OTA 或 TestFlight/App Store 操作。
+待导出成功须沿用原 receipt 校验最终 IPA，再发布与公网摘要回读；
+OTA 另待确认 1.3.4 不处于 App Review 冻结期。已向用户询问审核状态，尚无答复。
+既有 profile 仅含一台登记设备，未证明是用户当前手机；实际安装和同包 UI 验收未完成。
+
+### 用户改为优先 TestFlight
+
+用户明确要求“发 testlight 先”，本轮目标改为 TestFlight build/submit，暂停 QR 上传和 OTA，
+不推断为正式 App Review 或公开商店发布授权。Router release/mobile-testflight + safety
+通过（本机 Python 3.12 使用 `.venv/bin/python3`；overlay canonical trigger 为 `safety`）。
+main 仍为 bdf5fe616，精确 CI 36024692445 success；两份已知 dirty dossier 保留。
+
+只读检查当前短期服务器授权已过期，bdf5fe616 的 backend 为 SUCCEEDED，build/native
+claim 均未消费。现有 trusted-release 仅支持 validate/backend/release；release 会重跑
+已消费的一次性 backend run，并在汇合依赖 backend 成功，不存在 TestFlight-only 入口。
+未重放 release、未清消费标记、未扩大或续写过期授权、未直接本机 EAS build/submit 绕过
+受审入口。需要独立受审的 TestFlight 续发路径及新的短期授权生命周期；原 24000-token
+父审查预算已用尽，不擅自重建 ledger 或启动额外 reviewer。待用户确认这项发布基础设施
+扩展后继续；已有归档不是 STORE/TestFlight 构建来源证明。
+
+### TestFlight-only 扩展已获授权，进入实现
+
+用户明确同意将独立入口、安全复审与新授权纳入本次。保留同一父 Dossier/trace，不
+改写旧审查预算、消费记录或失败现场；该人工决策允许完成此新增范围及独立安全复审。
+实现最小边界为仅续发已经部署的完整运行树：新增固定 TestFlight-only target/RPC，
+canonical 只读证明比较完整 Git 对象清单，只放行指定发布脚本、测试、CI 和审计文档
+差异。任何 Mobile/backend/shared 变化均需先正常部署，不能由该续发入口绕过。
+
+25 项新测试 RED；首轮组合 183 passed。再加两个真实锁内重验反例 RED 2 failed，
+把 native binding 的创建/旧入口检查放进共享 vendor lock，避免旧 RPC 在检查后并发
+穿过新绑定。尚在验证、未固定提交评审、未 push 或建立新生产授权。
+现有同版本 QR 归档保留；没有扫码上传、OTA 或 TestFlight vendor mutation。

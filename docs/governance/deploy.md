@@ -88,6 +88,22 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 仅后端变更使用同一入口的 `target=backend`，仍先经过 preflight 与服务器 readiness，
 再执行相同 backend job；不读取 Expo 凭据、不领取构建/上传权限、不运行 iOS jobs。
 
+用户明确授权后，已成功部署运行树的 iOS 续发使用 `target=testflight`，不运行 backend
+job、不补写或复用新的后端成功回执。仍先 validate、当前 main 精确 CI 和独立安全复审，
+由 canonical bootstrap 轮换为新 SHA、新短期身份；不得给旧 SHA 续期或清除消费记录。
+`check-testflight`、`claim-testflight-build`、`claim-testflight-upload` 均在原 launcher
+锁内验证：实际生产 clean revision、对应 SUCCEEDED 和精确历史 CI、无业务 lease 或
+未处理维护、服务及健康检查通过。候选除明确列出的发布器/测试/审计文档外，完整 Git
+对象清单必须与已部署树相同；Mobile、后端、共享包或未知路径变化均不能借此续发。
+
+首次构建 claim 在共享 build 锁内持久化私有 `testflight-base.json` 绑定生产 SHA，
+上传前重验相同生产状态。旧 RPC 在锁内拒绝此绑定，run 也拒绝再部署；共享的一次性
+build/native 标记仍防止跨入口重放。锁冲突、授权过期、未知结果或生产漂移即停止。
+原始后端成功审计不改，native-only workspace 绝不标成 backend SUCCEEDED。
+该 workspace 出现 vendor intent 后仍需人工核对精确 EAS/ASC 终态并走独立受审的
+后续收尾；当前 bootstrap 会拒绝未知 native-only 库存，不得删除绑定以强行轮换。
+上传完成不等于 Apple processing、测试可用或正式 App Review 完成。
+
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
 核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的
