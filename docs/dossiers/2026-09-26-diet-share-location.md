@@ -1,5 +1,11 @@
 # 饮食分享地点编辑
 
+| 字段 | 值 |
+|---|---|
+| 状态 | shipping |
+| 当前阶段 | S6 · production OTA 发布前校验 |
+| 负责 | Codex / 用户 |
+
 - 用户原话：分享页面没有地址 没有地理位置的编写选项
 - Controller: health-harness-orchestrator; overlay: safety-gate
 - Run: ed567c33eebd
@@ -7,13 +13,15 @@
 - Spec: [饮食分享可选地点](../specs/active/2026-09-26-diet-share-location.md)
 - 基线：main e114a377e。已有未提交 `2026-09-23-frontend-publisher-recovery.md` 非本任务，保留。
 
-## 现状与准入
+## G1 · 现状与准入
+
+裁决：PASS。用户要求补齐已有饮食分享的地点编辑；范围与隐私契约见下方和关联 spec。
 
 DietShareComposer 缺少地点状态/入口，DietShareCard/presentation 无导出字段。Journey 的城市记录为独立模块，本次不扩展其持久化契约。G1/G2：按用户要求补现有分享界面；仅主动手填和确认、默认不分享，不推断 GPS/住址，不新增服务端权限。
 
 ## 工作序列
 
-先加入 RED 测试，最小实现地点编辑和图文一致性；验证取消/清除/重生成失败/会话重置；相关 Jest、TS、lint；固定本地提交供独立安全审查。此次不 push、不部署、不发布。
+实现阶段先加入 RED 测试，最小实现地点编辑和图文一致性；验证取消/清除/重生成失败/会话重置；相关 Jest、TS、lint；固定本地提交供独立安全审查。实现轮未发布；用户随后明确要求“发布 ota”，现进入 iOS production OTA 流程。
 
 ## 证据
 
@@ -29,4 +37,6 @@ DietShareComposer 缺少地点状态/入口，DietShareCard/presentation 无导�
 - 整改候选 `93840c666`：同一组 12 suites / 274 tests PASS；tsc、ESLint、secret scan、diff、System Map 检查再次 PASS。覆盖率专项 28 tests PASS：Composer 行覆盖 92.05%，位置归一/图文函数行和分支覆盖 100%。
 - G4 复审：新独立 reviewer `share_location_safety_recheck` 对完整 `e114a377e..93840c666` 裁决 GO，无阻断；独立 Composer/Card/location 3 suites / 68 tests PASS。确认旧回调（含 URI 复用）被拒绝、取消/清除/身份失效及图文一致符合约束。GO 仅为代码安全结论，不代表视觉/发布门禁通过。
 - 无 API/DB/原生权限/依赖变化，不涉及 PostgreSQL 验证。
-- G5/G6：未请求发布，未执行。
+- 发布前新鲜验证：CI=1 `scripts/run-all-tests.sh --mobile`，314 suites / 3057 passed / 1 skipped，tsc PASS；CI=1、SQLite、Asia/Shanghai 的 OTA/release-lock 集成 30 tests PASS。
+- 结构闸首次发现本档案缺少机器可读状态表和 G1 裁决标题，已补齐事实结构；没有放宽校验器或补造验收。
+- G5/G6：待精确主干 CI、OTA 发布回读；模拟器视觉验收仍未完成，不以旧包代替新候选。
