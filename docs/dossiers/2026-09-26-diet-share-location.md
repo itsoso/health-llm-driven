@@ -24,5 +24,7 @@ DietShareComposer 缺少地点状态/入口，DietShareCard/presentation 无导�
 - `npx tsc --noEmit` PASS；全部改动 TS/TSX 的 ESLint PASS；`git diff --check`、`system-map-check.sh` PASS。
 - 手填地点、确认/取消/清除、图文一致、截图失败重试、换餐/身份失效、两个父入口和控制字符/长度限制均有测试。
 - 模拟器可用（显式设置 DEVELOPER_DIR），但安装的是既有内嵌 JS bundle；没有运行本次源码的模拟器界面或拍摄本次 UI 截图，不能把旧包当成验收通过。视觉/键盘原生验收仍待发布候选验证。
-- G4：待固定本地代码提交后独立审查。无 API/DB/原生权限/依赖变化，不涉及 PostgreSQL 验证。
+- G4 首轮：固定提交 `80bdae6d7`，独立 `share_location_safety` 裁决 NO-GO：旧预览排队的导出回调缺少 phase/资源校验，可在确认新地点后调用旧闭包。其独立 5 suites / 174 tests 通过，原测试未覆盖该窗口。
+- 整改：增加内容 revision、preview phase 和当前截图 URI 校验；保留旧回调的回归测试先证明旧文字可被导出（RED），再覆盖生成中以及生成完成后的旧回调拒绝，连同复用截图 URI 的情况。待新固定提交复审。
+- 无 API/DB/原生权限/依赖变化，不涉及 PostgreSQL 验证。
 - G5/G6：未请求发布，未执行。

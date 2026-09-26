@@ -239,6 +239,43 @@ function attemptSwipeBack(
 }
 
 describe('DietShareComposer', () => {
+  it('rejects queued export callbacks from the old preview after confirming a new location', async () => {
+    const onShareText = jest.fn();
+    const view = renderComposer({ onShareText });
+    await reachPreview(view);
+    const callback = (label: string) => {
+      let node = view.getByLabelText(label);
+      while (typeof node.props.onPress !== 'function' && node.parent) node = node.parent;
+      expect(typeof node.props.onPress).toBe('function');
+      return node.props.onPress;
+    };
+    const oldSave = callback('保存海报到相册');
+    const oldShare = callback('分享饮食海报');
+    const oldText = callback('分享饮食文字');
+    fireEvent.press(view.getByLabelText('编辑分享地点'));
+    fireEvent.changeText(view.getByLabelText('分享地点'), '新的地点');
+    fireEvent.press(view.getByLabelText('确认分享地点'));
+    await act(async () => { oldText(); });
+    await act(async () => { oldSave(); });
+    await act(async () => { oldShare(); });
+    expect(onShareText).not.toHaveBeenCalled();
+    expect(mockRequestPermissionsAsync).not.toHaveBeenCalled();
+    expect(Share.share).not.toHaveBeenCalled();
+    expect(mockShareAsync).not.toHaveBeenCalled();
+    fireEvent.press(view.getByTestId('mock-poster-photo-load'));
+    await waitFor(() => expect(view.getByTestId('diet-share-captured-preview')).toBeTruthy());
+    // Even if capture reuses its URI, queued callbacks must not use old text.
+    await act(async () => { oldText(); });
+    await act(async () => { oldSave(); });
+    await act(async () => { oldShare(); });
+    expect(onShareText).not.toHaveBeenCalled();
+    expect(mockRequestPermissionsAsync).not.toHaveBeenCalled();
+    expect(Share.share).not.toHaveBeenCalled();
+    expect(mockShareAsync).not.toHaveBeenCalled();
+    fireEvent.press(view.getByLabelText('分享饮食文字'));
+    await waitFor(() => expect(onShareText).toHaveBeenCalledWith('新的地点'));
+  });
+
   it('drops a location draft when the meal changes or authentication is invalidated', async () => {
     const view = renderComposer();
     await reachPreview(view);

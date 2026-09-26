@@ -171,6 +171,8 @@ export function DietShareComposer({
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
   const [reviewDismissed, setReviewDismissed] = useState(false);
   const pendingReviewRef = useRef(false);
+  const contentRevisionRef = useRef(0);
+  const contentRevision = contentRevisionRef.current;
   const locationEditingRef = useRef(false);
   const [locationEditing, setLocationEditing] = useState(false);
   const [locationDraft, setLocationDraft] = useState('');
@@ -204,11 +206,13 @@ export function DietShareComposer({
 
   const beginAction = useCallback((action: BusyAction): number | null => {
     if (!mountedRef.current || closeInFlightRef.current || busyActionRef.current || locationEditingRef.current) return null;
+    if (contentRevision !== contentRevisionRef.current) return null;
+    if (phaseRef.current !== 'preview' && phaseRef.current !== 'failed') return null;
     const generation = sessionGenerationRef.current;
     busyActionRef.current = { action, generation };
     setBusyAction(action);
     return generation;
-  }, []);
+  }, [contentRevision]);
 
   const finishAction = useCallback((action: BusyAction, generation: number) => {
     if (
@@ -239,6 +243,7 @@ export function DietShareComposer({
     }
     const generation = sessionGenerationRef.current + 1;
     sessionGenerationRef.current = generation;
+    contentRevisionRef.current += 1;
     locationEditingRef.current = false;
     setLocationEditing(false);
     setLocationDraft('');
@@ -342,6 +347,7 @@ export function DietShareComposer({
     const next = normalizeDietShareLocation(locationDraft);
     setLocationDraft('');
     if (!apply || next === locationLabel) return;
+    contentRevisionRef.current += 1;
     setLocationLabel(next);
     // Only invalidate the screenshot: retain the edited photo and its redactions.
     captureAttemptSequenceRef.current += 1;
@@ -489,7 +495,7 @@ export function DietShareComposer({
   }, [beginAction, finishAction, locationLabel, onShareText, record]);
 
   const savePoster = useCallback(async () => {
-    if (!capturedUri) return;
+    if (!capturedUri || phaseRef.current !== 'preview' || capturedUri !== resourcesRef.current.capturedUri) return;
     const generation = beginAction('save');
     if (generation == null) return;
     const startedAt = Date.now();
@@ -525,7 +531,7 @@ export function DietShareComposer({
   }, [beginAction, capturedUri, finishAction, onShareFeedback, onShareTerminal]);
 
   const sharePoster = useCallback(async () => {
-    if (!capturedUri) return;
+    if (!capturedUri || phaseRef.current !== 'preview' || capturedUri !== resourcesRef.current.capturedUri) return;
     const generation = beginAction('share');
     if (generation == null) return;
     const startedAt = Date.now();
