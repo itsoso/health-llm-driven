@@ -39,6 +39,7 @@ import {
   type DietShareRecord,
 } from './dietSharePresentation';
 import { APP_DISPLAY_NAME } from '../../constants/brand';
+import { dietShareLocationLine, withDietShareLocation } from './dietShareLocation';
 
 export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
 const DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD = 70;
@@ -257,7 +258,7 @@ export function compactDietShareFoodItems(foodItems: string, maxChars = 35): str
   return `${compacted.replace(/[、,，\s]+$/, '')}…`;
 }
 
-export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
+export function buildDietShareCaption(record: DietRecord, dateLabel: string, locationLabel?: string): string {
   const presentation = buildDietSharePresentation(record);
   const lines = [
     presentation.headline,
@@ -269,7 +270,7 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
   ];
   if (!presentation.macroLines.includes(presentation.disclosure)) lines.push(presentation.disclosure);
   lines.push('', buildDietShareHashtags(presentation.tags));
-  return lines.join('\n');
+  return withDietShareLocation(lines.join('\n'), locationLabel);
 }
 
 export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: string): string {
@@ -394,6 +395,7 @@ export type DietShareCardProps = {
   dateLabel: string;
   imageSource: ImageSourcePropType;
   redactions?: DietShareRedaction[];
+  locationLabel?: string;
   onImageReady?: () => void;
   onImageError?: () => void;
 };
@@ -410,6 +412,7 @@ export default function DietShareCard({
   dateLabel,
   imageSource,
   redactions = [],
+  locationLabel,
   onImageReady,
   onImageError,
 }: DietShareCardProps) {
@@ -418,6 +421,7 @@ export default function DietShareCard({
   const macroLines = presentation.macroLines.slice(0, 2);
   const nutritionItems = presentation.nutritionItems.slice(0, 4);
   const nutritionStatus = nutritionItems.length === 0 ? macroLines[0] : null;
+  const locationLine = dietShareLocationLine(locationLabel);
 
   return (
     <View testID="diet-share-poster" style={styles.card}>
@@ -444,6 +448,13 @@ export default function DietShareCard({
         </View>
       </View>
 
+      {locationLine ? (
+        <View style={styles.posterLocation}>
+          <PosterText testID="diet-share-location" style={styles.posterLocationText} numberOfLines={2}>
+            {locationLine}
+          </PosterText>
+        </View>
+      ) : null}
       <View testID="diet-share-poster-copy" style={styles.posterCopy}>
         <View style={styles.posterRuleRow}>
           <View style={styles.posterRuleLong} />
@@ -1172,6 +1183,17 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     overflow: 'hidden',
   },
+  posterLocation: {
+    position: 'absolute',
+    bottom: '45%',
+    left: 20,
+    right: 20,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255, 250, 243, 0.94)',
+  },
+  posterLocationText: { color: C.ink1, fontSize: 11, lineHeight: 15, fontWeight: '600' },
   posterRuleRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -801,6 +801,11 @@ ${sectionTitle}
       },
     }));
 
+    await act(async () => mockDietShareComposer.mock.lastCall?.[0].onShareText('杭州 · 示例餐厅'));
+    expect(sharePlainText).toHaveBeenLastCalledWith(expect.objectContaining({
+      message: expect.stringContaining('地点：杭州 · 示例餐厅'),
+    }));
+
     fireEvent.press(getByLabelText('分享饮食文字'));
 
     await waitFor(() => {

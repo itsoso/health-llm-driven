@@ -51,6 +51,7 @@ import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/mar
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { normalizeAssistantContent } from '../../utils/assistantContentNormalizer';
 import { DietShareComposer } from '../diet/DietShareComposer';
+import { withDietShareLocation } from '../diet/dietShareLocation';
 import {
   buildChatDietShareInput,
   buildDietShareDateLabel,
@@ -850,7 +851,13 @@ function ChatBubbleInner({
               dateLabel={buildDietShareDateLabel(chatDietShareInput.record.record_date)}
               photoSource={chatDietPhotoSource}
               onClose={() => setDietShareComposerOpen(false)}
-              onShareText={handleCardShare}
+              onShareText={async (locationLabel) => {
+                if (!cardSharePayload) throw new Error('diet_share_text_unavailable');
+                await sharePlainText({
+                  ...cardSharePayload,
+                  message: withDietShareLocation(cardSharePayload.message, locationLabel),
+                });
+              }}
               onShareFeedback={(feedback) => {
                 toast.show(feedback.title, feedback.tone === 'success' ? 'success' : 'error');
               }}

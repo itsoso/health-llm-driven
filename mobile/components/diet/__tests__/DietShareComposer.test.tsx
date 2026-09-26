@@ -14,6 +14,7 @@ const mockShareAsync = jest.fn().mockResolvedValue(undefined);
 const mockSaveToLibraryAsync = jest.fn().mockResolvedValue(undefined);
 const mockRequestPermissionsAsync = jest.fn().mockResolvedValue({ status: 'granted', granted: true });
 let currentEditorProps: any;
+let currentPosterProps: any;
 
 jest.mock('../../../utils/share', () => ({
   materializeImageForLocalUse: (...args: unknown[]) => mockMaterializeImageForLocalUse(...args),
@@ -35,7 +36,7 @@ jest.mock('../DietShareCard', () => {
   const { Pressable, View }: any = jest.requireActual('react-native');
   return {
     __esModule: true,
-    default: (props: any) => ReactModule.createElement(
+    default: (props: any) => { currentPosterProps = props; return ReactModule.createElement(
       View,
       { testID: 'mock-diet-share-poster' },
       ReactModule.createElement(Pressable, {
@@ -46,7 +47,7 @@ jest.mock('../DietShareCard', () => {
         testID: 'mock-poster-photo-error',
         onPress: props.onImageError,
       }),
-    ),
+    ); },
     buildDietShareCaption: jest.fn(() => '小红书餐食正文'),
     dietShareCanvasDimensions: jest.fn(() => ({ width: 360, height: 480 })),
     dietShareCaptureDimensions: jest.fn(() => ({ width: 1080, height: 1440 })),
@@ -82,6 +83,8 @@ jest.mock('expo-media-library', () => ({
 import { DietShareComposer } from '../DietShareComposer';
 // eslint-disable-next-line import/first
 import type { DietRecord } from '../../../services/diet';
+// eslint-disable-next-line import/first
+import { invalidateAIConsent } from '../../../services/aiConsentState';
 
 const record: DietRecord = {
   id: 88,
@@ -236,6 +239,89 @@ function attemptSwipeBack(
 }
 
 describe('DietShareComposer', () => {
+  it('drops a location draft when the meal changes or authentication is invalidated', async () => {
+    const view = renderComposer();
+    await reachPreview(view);
+    fireEvent.press(view.getByLabelText('编辑分享地点'));
+    fireEvent.changeText(view.getByLabelText('分享地点'), '只属于上一餐');
+    view.rerender(<DietShareComposer visible record={{ ...record, id: 89 }} dateLabel="8月1日 · 午餐" photoSource={photoSource} onClose={view.onClose} />);
+    await reachPreview(view);
+    expect(currentPosterProps.locationLabel).toBe('');
+    fireEvent.press(view.getByLabelText('编辑分享地点'));
+    expect(view.getByLabelText('分享地点').props.value).toBe('');
+    fireEvent.changeText(view.getByLabelText('分享地点'), '当前会话草稿');
+    act(() => invalidateAIConsent());
+    await waitFor(() => expect(view.onClose).toHaveBeenCalledTimes(1));
+    expect(view.queryByLabelText('分享地点')).toBeNull();
+    expect(view.UNSAFE_getByType(Modal).props.visible).toBe(false);
+  });
+
+  it('does not offer the old image when rendering a changed location fails', async () => {
+    const view = renderComposer();
+    await reachPreview(view);
+    fireEvent.press(view.getByLabelText('编辑分享地点'));
+    fireEvent.changeText(view.getByLabelText('分享地点'), '新的公开地点');
+    fireEvent.press(view.getByLabelText('确认分享地点'));
+    mockCaptureRef.mockRejectedValueOnce(new Error('capture_failed'));
+    fireEvent.press(view.getByTestId('mock-poster-photo-load'));
+    await waitFor(() => expect(view.getByText('分享图生成失败')).toBeTruthy());
+    expect(view.queryByLabelText('分享饮食海报')).toBeNull();
+    expect(view.queryByTestId('diet-share-captured-preview')).toBeNull();
+    fireEvent.press(view.getByLabelText('分享饮食文字'));
+    await waitFor(() => expect(Share.share).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('地点：新的公开地点') })));
+    fireEvent.press(view.getByLabelText('重新生成分享图'));
+    expect(currentPosterProps.locationLabel).toBe('新的公开地点');
+  });
+
+  it('requires explicit location confirmation and rebuilds before exporting matching text', async () => {
+    const onShareText = jest.fn();
+    const view = renderComposer({ onShareText });
+    await reachPreview(view);
+    expect(currentPosterProps.locationLabel).toBe('');
+    fireEvent.press(view.getByLabelText('编辑分享地点'));
+    fireEvent.changeText(view.getByLabelText('分享地点'), '  杭州  · 示例餐厅  ');
+    expect(view.queryByLabelText('分享饮食海报')).toBeNull();
+    expect(view.queryByLabelText('分享饮食文字')).toBeNull();
+    fireEvent.press(view.getByLabelText('确认分享地点'));
+    expect(mockReleaseCapture).toHaveBeenCalledWith('file:///cache/meal-poster.png');
+    expect(currentPosterProps.locationLabel).toBe('杭州 · 示例餐厅');
+    expect(currentPosterProps.redactions).toHaveLength(1);
+    fireEvent.press(view.getByTestId('mock-poster-photo-load'));
+    await waitFor(() => expect(view.getByTestId('diet-share-captured-preview')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('分享饮食文字'));
+    await waitFor(() => expect(onShareText).toHaveBeenCalledWith('杭州 · 示例餐厅'));
+    expect(mockCaptureRef).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels unconfirmed drafts and explicitly removes location from both exports', async () => {
+    const view = renderComposer();
+    await reachPreview(view);
+    fireEvent.press(view.getByLabelText('编辑分享地点'));
+    fireEvent.changeText(view.getByLabelText('分享地点'), '不应分享的草稿');
+    fireEvent.press(view.getByLabelText('取消地点编辑'));
+    expect(mockCaptureRef).toHaveBeenCalledTimes(1);
+    fireEvent.press(view.getByLabelText('分享饮食文字'));
+    await waitFor(() => expect(Share.share).toHaveBeenCalled());
+    expect(JSON.stringify((Share.share as jest.Mock).mock.calls)).not.toContain('不应分享');
+    await waitFor(() => expect(view.getByLabelText('编辑分享地点').props.accessibilityState.disabled).toBe(false));
+    fireEvent.press(view.getByLabelText('编辑分享地点'));
+    expect(view.getByLabelText('分享地点').props.value).toBe('');
+    fireEvent.changeText(view.getByLabelText('分享地点'), '示例餐厅');
+    fireEvent.press(view.getByLabelText('确认分享地点'));
+    fireEvent.press(view.getByTestId('mock-poster-photo-load'));
+    await waitFor(() => expect(view.getByTestId('diet-share-captured-preview')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('编辑分享地点'));
+    fireEvent.press(view.getByLabelText('清除分享地点'));
+    fireEvent.press(view.getByLabelText('确认分享地点'));
+    expect(currentPosterProps.locationLabel).toBe('');
+    fireEvent.press(view.getByTestId('mock-poster-photo-load'));
+    await waitFor(() => expect(view.getByTestId('diet-share-captured-preview')).toBeTruthy());
+    (Share.share as jest.Mock).mockClear();
+    fireEvent.press(view.getByLabelText('分享饮食文字'));
+    await waitFor(() => expect(Share.share).toHaveBeenCalled());
+    expect(JSON.stringify((Share.share as jest.Mock).mock.calls)).not.toContain('地点：');
+  });
+
   it('waits for native iOS dismissal before opening the Agent and ignores repeat taps', async () => {
     Platform.OS = 'ios';
     const onAskReva = jest.fn();
@@ -333,7 +419,7 @@ describe('DietShareComposer', () => {
     expect(view.getByText('分享这餐')).toBeTruthy();
     expect(view.getByText('确认画面无误后再发布')).toBeTruthy();
     expect(view.getByText('分享图已生成')).toBeTruthy();
-    expect(view.getByText('公开分享前，再确认图片中没有人脸、地址或二维码')).toBeTruthy();
+    expect(view.getByText('公开分享前，确认没有人脸、私人地址或二维码；仅展示你愿意公开的地点')).toBeTruthy();
     expect(view.getByRole('button', { name: '分享饮食文字' })).toBeTruthy();
     expect(view.getByText('仅分享文字')).toBeTruthy();
   });

@@ -1590,10 +1590,10 @@ export default function DietScreen() {
             setShareRecord(null);
             setShareImageUriOverride(null);
           }}
-          onShareText={async () => {
+          onShareText={async (locationLabel) => {
             await Share.share({
               title: '分享饮食记录',
-              message: buildDietShareCaption(shareRecord, buildDietShareDateLabel(shareRecord.record_date)),
+              message: buildDietShareCaption(shareRecord, buildDietShareDateLabel(shareRecord.record_date), locationLabel),
             });
           }}
           onAskReva={() => handleAskRevaFromShare(shareRecord)}

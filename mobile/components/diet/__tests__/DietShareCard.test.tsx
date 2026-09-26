@@ -115,6 +115,14 @@ function renderSheet(overrides: Partial<React.ComponentProps<typeof DietShareShe
 }
 
 describe('DietShareCard Xiaohongshu poster', () => {
+  it('exports only the explicitly supplied location in the poster and caption', () => {
+    const view = renderCard({ locationLabel: '杭州 · 示例餐厅' });
+    expect(view.getByTestId('diet-share-location').props.children).toBe('地点：杭州 · 示例餐厅');
+    expect(buildDietShareCaption(record, '7月11日', '杭州 · 示例餐厅')).toContain('地点：杭州 · 示例餐厅');
+    expect(buildDietShareCaption({ ...record, notes: '私密地址' }, '7月11日')).not.toContain('地点：');
+    view.rerender(<DietShareCard record={record} dateLabel="7月11日" imageSource={imageSource} />);
+    expect(view.queryByTestId('diet-share-location')).toBeNull();
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     mockCaptureRef.mockResolvedValue('file:///meal-share.png');

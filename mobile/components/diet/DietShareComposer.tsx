@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -10,6 +11,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -39,6 +41,12 @@ import {
   type DietShareRecord,
 } from './dietSharePresentation';
 import { SwipeBackSurface } from './SwipeBackSurface';
+import { subscribeAIConsentInvalidation } from '../../services/aiConsentState';
+import {
+  DIET_SHARE_LOCATION_MAX_LENGTH,
+  normalizeDietShareLocation,
+  withDietShareLocation,
+} from './dietShareLocation';
 
 export type ComposerPhase =
   | 'loading_photo'
@@ -72,7 +80,7 @@ export type DietShareComposerProps = {
   dateLabel: string;
   photoSource: DietSharePhotoSource;
   onClose: () => void;
-  onShareText?: () => void | Promise<void>;
+  onShareText?: (locationLabel: string) => void | Promise<void>;
   onAskReva?: () => void;
   onShareFeedback?: (feedback: ShareFeedback) => void;
   onShareTerminal?: (meta: ShareTerminal) => void;
@@ -163,6 +171,10 @@ export function DietShareComposer({
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
   const [reviewDismissed, setReviewDismissed] = useState(false);
   const pendingReviewRef = useRef(false);
+  const locationEditingRef = useRef(false);
+  const [locationEditing, setLocationEditing] = useState(false);
+  const [locationDraft, setLocationDraft] = useState('');
+  const [locationLabel, setLocationLabel] = useState('');
   const headersFingerprint = headerFingerprint(photoSource.headers);
   latestPhotoSourceRef.current = photoSource;
 
@@ -191,7 +203,7 @@ export function DietShareComposer({
   }, []);
 
   const beginAction = useCallback((action: BusyAction): number | null => {
-    if (!mountedRef.current || closeInFlightRef.current || busyActionRef.current) return null;
+    if (!mountedRef.current || closeInFlightRef.current || busyActionRef.current || locationEditingRef.current) return null;
     const generation = sessionGenerationRef.current;
     busyActionRef.current = { action, generation };
     setBusyAction(action);
@@ -227,6 +239,10 @@ export function DietShareComposer({
     }
     const generation = sessionGenerationRef.current + 1;
     sessionGenerationRef.current = generation;
+    locationEditingRef.current = false;
+    setLocationEditing(false);
+    setLocationDraft('');
+    setLocationLabel('');
 
     if (!visible || closeInFlightRef.current) {
       if (!visible) closeInFlightRef.current = true;
@@ -298,9 +314,44 @@ export function DietShareComposer({
     if (closeInFlightRef.current) return;
     closeInFlightRef.current = true;
     sessionGenerationRef.current += 1;
+    setReviewDismissed(true);
+    locationEditingRef.current = false;
+    setLocationEditing(false);
+    setLocationDraft('');
+    setLocationLabel('');
     await cleanupResources();
     onClose();
   }, [cleanupResources, onClose]);
+
+  useEffect(() => subscribeAIConsentInvalidation(() => {
+    void closeComposer();
+  }), [closeComposer]);
+
+  const editLocation = useCallback(() => {
+    if (busyActionRef.current || closeInFlightRef.current || phaseRef.current !== 'preview') return;
+    locationEditingRef.current = true;
+    setLocationDraft(locationLabel);
+    setLocationEditing(true);
+  }, [locationLabel]);
+
+  const finishLocationEditing = useCallback((apply: boolean) => {
+    if (!locationEditingRef.current || closeInFlightRef.current || busyActionRef.current) return;
+    Keyboard.dismiss();
+    locationEditingRef.current = false;
+    setLocationEditing(false);
+    const next = normalizeDietShareLocation(locationDraft);
+    setLocationDraft('');
+    if (!apply || next === locationLabel) return;
+    setLocationLabel(next);
+    // Only invalidate the screenshot: retain the edited photo and its redactions.
+    captureAttemptSequenceRef.current += 1;
+    captureInFlightRef.current = null;
+    const oldUri = resourcesRef.current.capturedUri;
+    delete resourcesRef.current.capturedUri;
+    if (oldUri) releaseCaptureSafely(oldUri);
+    setCapturedUri(null);
+    transition('rendering');
+  }, [locationDraft, locationLabel, transition]);
 
   const finishReviewDismissal = useCallback(() => {
     if (!pendingReviewRef.current || !mountedRef.current) return;
@@ -421,11 +472,11 @@ export function DietShareComposer({
     const generation = beginAction('text');
     if (generation == null) return;
     try {
-      if (onShareText) await onShareText();
+      if (onShareText) await onShareText(locationLabel);
       else {
         await Share.share({
           title: '分享饮食记录',
-          message: shareTextForRecord(record),
+          message: withDietShareLocation(shareTextForRecord(record), locationLabel),
         });
       }
     } catch {
@@ -435,7 +486,7 @@ export function DietShareComposer({
     } finally {
       finishAction('text', generation);
     }
-  }, [beginAction, finishAction, onShareText, record]);
+  }, [beginAction, finishAction, locationLabel, onShareText, record]);
 
   const savePoster = useCallback(async () => {
     if (!capturedUri) return;
@@ -604,6 +655,7 @@ export function DietShareComposer({
                   dateLabel={dateLabel}
                   imageSource={{ uri: editedResult.editedUri }}
                   redactions={editedResult.redactions}
+                  locationLabel={locationLabel}
                   onImageReady={captureAfterDisplay}
                   onImageError={failRendering}
                 />
@@ -615,7 +667,38 @@ export function DietShareComposer({
             </View>
           ) : null}
 
-          {phase === 'preview' && capturedUri ? (
+          {phase === 'preview' && locationEditing ? (
+            <ScrollView contentContainerStyle={styles.previewContent} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+              <Text style={styles.title}>分享地点（可选）</Text>
+              <Text style={styles.locationHelp}>填写城市、餐厅或公共地点名称，不建议填写住址、房号。确认后会公开展示在图片和文字中。</Text>
+              <TextInput
+                accessibilityLabel="分享地点"
+                placeholder="例如：杭州 · 湖边餐厅"
+                placeholderTextColor={C.ink3}
+                value={locationDraft}
+                onChangeText={setLocationDraft}
+                maxLength={DIET_SHARE_LOCATION_MAX_LENGTH}
+                style={styles.locationInput}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={() => finishLocationEditing(true)}
+              />
+              <Text style={styles.locationHelp}>仅用于本次分享，不修改饮食记录或足迹。留空即不展示地点。</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="清除分享地点" onPress={() => setLocationDraft('')} style={styles.textActionButton}>
+                <Text style={styles.textAction}>清除地点</Text>
+              </Pressable>
+              <View style={styles.actionRow}>
+                <Pressable accessibilityRole="button" accessibilityLabel="取消地点编辑" onPress={() => finishLocationEditing(false)} style={styles.secondaryAction}>
+                  <Text style={styles.secondaryActionText}>取消</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="确认分享地点" onPress={() => finishLocationEditing(true)} style={styles.primaryAction}>
+                  <Text style={styles.primaryActionText}>确认展示</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          ) : null}
+
+          {phase === 'preview' && capturedUri && !locationEditing ? (
             <ScrollView
               style={styles.previewScroll}
               contentContainerStyle={styles.previewContent}
@@ -625,6 +708,21 @@ export function DietShareComposer({
                 <Ionicons name="checkmark-circle" size={17} color={C.green600} />
                 <Text style={styles.readyBadgeText}>分享图已生成</Text>
               </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="编辑分享地点"
+                accessibilityState={{ disabled: busyAction !== null }}
+                disabled={busyAction !== null}
+                onPress={editLocation}
+                style={styles.locationEntry}
+              >
+                <Ionicons name="location-outline" size={20} color={C.green600} />
+                <View style={styles.locationEntryCopy}>
+                  <Text style={styles.textAction}>{locationLabel || '添加地点（可选）'}</Text>
+                  <Text style={styles.locationHelp}>{locationLabel ? '点此修改或移除 · 仅本次分享' : '手填城市、餐厅或地点 · 默认不展示'}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={C.ink3} />
+              </Pressable>
               <View style={styles.previewFrame}>
                 <Image
                   testID="diet-share-captured-preview"
@@ -636,7 +734,7 @@ export function DietShareComposer({
               <View style={styles.privacyNotice}>
                 <Ionicons name="shield-checkmark-outline" size={16} color={C.green600} />
                 <Text style={styles.privacyNoticeText}>
-                  公开分享前，再确认图片中没有人脸、地址或二维码
+                  公开分享前，确认没有人脸、私人地址或二维码；仅展示你愿意公开的地点
                 </Text>
               </View>
               <View style={styles.actionRow}>
@@ -742,6 +840,10 @@ export function DietShareComposer({
 }
 
 const styles = StyleSheet.create({
+  locationEntry: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 16, backgroundColor: C.surface2 },
+  locationEntryCopy: { flex: 1, gap: 4 },
+  locationHelp: { color: C.ink3, fontSize: 13, lineHeight: 20 },
+  locationInput: { borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 14, fontSize: 16, color: C.ink1, backgroundColor: C.surface2 },
   root: { flex: 1, backgroundColor: C.paper },
   header: {
     minHeight: 64,

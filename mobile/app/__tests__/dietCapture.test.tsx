@@ -228,6 +228,10 @@ describe('DietScreen capture deeplink', () => {
     expect(shareSpy).toHaveBeenCalledWith(expect.objectContaining({
       message: expect.not.stringMatching(/下一餐补蔬菜|今天|今日|识别置信度/),
     }));
+    await act(async () => props.onShareText('杭州 · 示例餐厅'));
+    expect(shareSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      message: expect.stringContaining('地点：杭州 · 示例餐厅'),
+    }));
     shareSpy.mockRestore();
     await act(async () => props.onAskReva());
     expect(view.queryByTestId('mock-diet-share-composer')).toBeNull();
