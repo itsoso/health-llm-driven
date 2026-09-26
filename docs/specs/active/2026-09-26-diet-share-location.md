@@ -1,6 +1,6 @@
 # 饮食分享：可选地点
 
-> Status: implementation
+> Status: implemented; locally tested and safety-reviewed; visual acceptance and release pending
 > Updated: 2026-09-26
 > Related: 2026-09-22-monthly-journey.md
 
