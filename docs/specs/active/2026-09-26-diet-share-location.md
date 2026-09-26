@@ -1,6 +1,6 @@
 # 饮食分享：可选地点
 
-> Status: implemented; locally tested and safety-reviewed; visual acceptance and release pending
+> Status: production OTA published for iOS runtime 1.3.4; visual acceptance pending
 > Updated: 2026-09-26
 > Related: 2026-09-22-monthly-journey.md
 
@@ -53,4 +53,4 @@ Mobile 分享预览 → 添加地点 → 手填城市/餐厅/公共地点 → �
 
 ## Rollout / Rollback / Non-Goals
 
-仅 JS/TS/UI，无原生或迁移变化。用户本轮未要求发布，不运行 OTA/商店发布。未来按发布门禁发版，回滚该客户端提交即可；无持久数据需回退。永久保存地点和 GPS 后续另定，不阻塞手填入口。
+仅 JS/TS/UI，无原生或迁移变化。实现轮未发布；用户随后明确要求 OTA，已按发布门禁发布 iOS production/runtime 1.3.4，详见关联 Dossier 的 group/回读证据。无持久数据需回退；该 runtime 首次 OTA 不可复用旧 1.3.3 group 回滚，需走正式 rollback-to-embedded 流程。永久保存地点和 GPS 后续另定，不阻塞手填入口。

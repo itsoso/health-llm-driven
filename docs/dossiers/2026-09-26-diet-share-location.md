@@ -3,13 +3,13 @@
 | 字段 | 值 |
 |---|---|
 | 状态 | shipping |
-| 当前阶段 | S6 · production OTA 发布前校验 |
+| 当前阶段 | S7 · OTA 已发布并回读；客户端视觉验收待完成 |
 | 负责 | Codex / 用户 |
 
 - 用户原话：分享页面没有地址 没有地理位置的编写选项
 - Controller: health-harness-orchestrator; overlay: safety-gate
 - Run: ed567c33eebd
-- 状态：代码修复、本地 G3 和 G4 完成；模拟器视觉验收及发布未执行
+- 状态：production OTA 已发布，服务端更新接口已验证；模拟器视觉验收尚未完成
 - Spec: [饮食分享可选地点](../specs/active/2026-09-26-diet-share-location.md)
 - 基线：main e114a377e。已有未提交 `2026-09-23-frontend-publisher-recovery.md` 非本任务，保留。
 
@@ -39,4 +39,23 @@ DietShareComposer 缺少地点状态/入口，DietShareCard/presentation 无导�
 - 无 API/DB/原生权限/依赖变化，不涉及 PostgreSQL 验证。
 - 发布前新鲜验证：CI=1 `scripts/run-all-tests.sh --mobile`，314 suites / 3057 passed / 1 skipped，tsc PASS；CI=1、SQLite、Asia/Shanghai 的 OTA/release-lock 集成 30 tests PASS。
 - 结构闸首次发现本档案缺少机器可读状态表和 G1 裁决标题，已补齐事实结构；没有放宽校验器或补造验收。
-- G5/G6：待精确主干 CI、OTA 发布回读；模拟器视觉验收仍未完成，不以旧包代替新候选。
+- 精确主干 `c0eb135eb87c4b90c00117b8c53e0875c1d05078` 的 [CI 36230354846](https://github.com/itsoso/health-llm-driven/actions/runs/36230354846) completed/success；与 G4 候选的 Mobile/shared tree 一致。
+- 干净发布目录 `/tmp/reva-diet-location-ota.L8Aw0g/source`：复用同 lock 依赖；再次 CI-mode Mobile 314 suites / 3057 passed / 1 skipped + tsc PASS，OTA/release-lock 集成 30 PASS，秘密扫描 PASS。原工作区非本任务文档未带入。
+
+## G5 · OTA 发布与回读
+
+裁决：PASS。2026-09-26 16:42（Asia/Shanghai）使用 `scripts/mobile-ota.sh production`，Hermes 一次打包、一次上传成功，无 fallback。
+
+- Platform/channel/runtime：iOS / production / **1.3.4**。
+- [EAS group](https://expo.dev/accounts/itsoso/projects/health-pilot/updates/008cd999-2007-4c17-8398-4d5dfa91c287)：`008cd999-2007-4c17-8398-4d5dfa91c287`。
+- iOS update：`01a0dce1-3585-7a20-a905-746e9f4504a1`。
+- 发布 SHA：`c0eb135eb87c4b90c00117b8c53e0875c1d05078`；tree digest：`f45e8996074ba50baadc133b2dc3e1463e55e29b33f4a4d7d776134a8b6f3528`。
+- sourcemap 的 Composer/Card/地点归一/饮食页/ChatBubble 五个运行源与干净候选逐字一致。
+- `eas update:view` 回读 group、update、runtime、commit 全部一致；production 更新接口按 iOS + runtime 1.3.4 + multipart/mixed 请求返回同一 update ID、runtime 和 launch asset。
+- 初次接口读取使用不兼容的 JSON Accept 得到 406；改用协议要求的 multipart/mixed 后成功，不重复发布。
+- 发布 manifest/audit 保留在发布目录；主工作区 ignored manifest 和 `.last-ota-commit` 已同步同一成功事实。旧 production group `0b70c3d4-3e8b-422f-b7f5-4fab854907aa` 属于 **1.3.3**，不得当作 1.3.4 回滚目标；本 runtime 无上一 OTA，必要时走正式 rollback-to-embedded 流程，不在此次执行。
+- 原生兼容基线：TestFlight 1.3.4 (272)，EAS build `bfdd2bc9-db49-4ccd-bfbc-679287be4855` FINISHED；与其源 `cad1fd1d3` 相比无 app config、native module、依赖或插件改动。
+
+## G6 · 客户端验收边界
+
+服务端已提供更新，不代表每台设备已安装。当前模拟器为 runtime 1.3.3，不能接收该 1.3.4 更新；不操作或等待用户手机，不把旧模拟器包当成新 UI 验收。用户须先使用 1.3.4 安装包，重开 App 并按更新提示应用。模拟器视觉/键盘及第三方 App 分享实际交接仍未验证；本次未发布新原生包、Android 或后端。
