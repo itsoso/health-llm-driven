@@ -12746,12 +12746,20 @@ class AgentExecutor:
             return None, elapsed_ms
         return candidate, elapsed_ms
 
+    def _exercise_plan_goal_outcomes(self) -> list[dict]:
+        from app.services.agent_kernel.exercise_plan_scope import (
+            resolve_exercise_plan_scope, exercise_plan_evidence_outcomes,
+        )
+        snapshot = self._agent_kernel_snapshot
+        scope = resolve_exercise_plan_scope(snapshot.envelope.text) if snapshot is not None else None
+        return exercise_plan_evidence_outcomes(scope, self._turn_composed_read_executions) if scope else []
+
     def _initial_composed_read_calls(self, round_index: int, tools: list[dict]) -> list[dict]:
         """Propose a skipped owned read through Pi; never dispatch outside its gateway."""
         snapshot = self._agent_kernel_snapshot
         if (
-            round_index != 0 or snapshot is None or snapshot.intent.is_write
-            or self._turn_daily_read_plan is not None or self._turn_composed_read_executions
+            snapshot is None or snapshot.intent.is_write
+            or self._turn_daily_read_plan is not None
             or self._force_no_tools_synthesis or self._read_repair_failures
             or self._turn_sync_attempted
             or classify_clinician_turn(self._current_turn_user_message).kind != "none"
@@ -12765,13 +12773,24 @@ class AgentExecutor:
         if has_owned_sync_instruction(snapshot.envelope.text):
             return []
         scope = resolve_owned_read_scope(snapshot)
-        if scope is None or len(scope.queries) < 2:
+        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+        exercise_plan = resolve_exercise_plan_scope(snapshot.envelope.text)
+        if exercise_plan is not None:
+            # Fill omitted evidence after an optional search or partial read;
+            # failed adapters are disclosed, not retried indefinitely.
+            queries = [goal['query'] for goal in self._exercise_plan_goal_outcomes()
+                       if goal['reason_code'] == 'query_not_executed']
+        else:
+            if round_index != 0 or self._turn_composed_read_executions:
+                return []
+            queries = list(scope.queries) if scope is not None and len(scope.queries) >= 2 else []
+        if not queries:
             return []
         return [{
-            "id": "server-owned-composed-read", "type": "function",
+            "id": f"server-owned-composed-read-{round_index}", "type": "function",
             "function": {
                 "name": "health_query_batch",
-                "arguments": json.dumps({"queries": list(scope.queries)}, ensure_ascii=False),
+                "arguments": json.dumps({"queries": queries}, ensure_ascii=False),
             },
         }]
 
@@ -14119,6 +14138,8 @@ class AgentExecutor:
         )
 
         tools = scope_tools_for_analyzed_material(get_health_tools(), message)
+        from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
+        tools = scope_tools_for_exercise_plan(tools, message)
         tools = scope_tools_for_owned_read(tools, panel_read_scope)
         tools = scope_tools_for_goal(
             tools,
@@ -15123,12 +15144,15 @@ class AgentExecutor:
         )
         panel_quality_flags.update(output_quality.flags)
         full_reply = output_quality.text
+        plan_goals = self._exercise_plan_goal_outcomes()
+        if any(goal['status'] != 'verified' for goal in plan_goals):
+            full_reply = "制定计划所需的体检或病史依据尚未查询完成，暂不能据此提供个性化恢复方案。请稍后重试。"
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
             capability_block_reasons=[reason for reason in self._agent_kernel_capability_block_reasons
                                       if reason not in self._agent_kernel_recovered_capability_block_reasons],
-            goal_outcomes=(list(panel_completion.goals) if panel_completion else []) + self._sync_goal_outcomes(),
+            goal_outcomes=(list(panel_completion.goals) if panel_completion else []) + self._sync_goal_outcomes() + plan_goals,
             tool_failure_tools=self._agent_kernel_tool_failure_tools,
             pending_confirmation_tools=self._agent_kernel_pending_confirmation_tools,
             write_receipts=write_receipts,
@@ -17169,6 +17193,8 @@ class AgentExecutor:
         )
 
         tools = scope_tools_for_analyzed_material(tools, message)
+        from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
+        tools = scope_tools_for_exercise_plan(tools, message)
         tools = scope_tools_for_goal(
             tools,
             self._agent_kernel_snapshot.goal
@@ -18998,6 +19024,9 @@ class AgentExecutor:
                 full_reply = _garmin_sync_queued_message()
         daily_summary_advice_goal = None
         composed_completion = self._composed_read_completion()
+        plan_goals = self._exercise_plan_goal_outcomes()
+        if any(goal['status'] != 'verified' for goal in plan_goals):
+            full_reply = "制定计划所需的体检或病史依据尚未查询完成，暂不能据此提供个性化恢复方案。请稍后重试。"
         sync_summary = self._trusted_sync_summary()
         if composed_completion is not None and not composed_completion.complete:
             full_reply = composed_completion.trusted_fact_summary
@@ -19478,6 +19507,7 @@ class AgentExecutor:
             goal_outcomes=daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results)
             + ([daily_summary_advice_goal] if daily_summary_advice_goal else [])
             + (list(composed_completion.goals) if composed_completion else [])
+            + plan_goals
             + self._sync_goal_outcomes(),
             capability_block_reasons=[
                 reason
@@ -21089,6 +21119,16 @@ class AgentExecutor:
             "工具调用后由后续模型生成面向用户的解释与安全建议。",
         ))
 
+    @staticmethod
+    def _exercise_plan_prompt_parts(snapshot) -> list[str]:
+        from app.services.agent_kernel.exercise_plan_scope import (
+            resolve_exercise_plan_scope, exercise_plan_prompt,
+        )
+        if snapshot is None:
+            return []
+        scope = resolve_exercise_plan_scope(snapshot.envelope.text)
+        return [exercise_plan_prompt(scope)] if scope is not None else []
+
     def _build_system_prompt(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str],
         lite: bool = False, intent_query: Optional[str] = None,
@@ -21173,6 +21213,8 @@ class AgentExecutor:
             ),
             "",
             "## 本轮任务边界",
+            # Share one parsed task contract with tool exposure and dispatch.
+            *self._exercise_plan_prompt_parts(prompt_snapshot),
             "- 先识别本轮原话的全部意图，再决定是否需要取数、写入或建议；不是每一轮都需要健康分析。",
             "- 普通抵达、出差、入住等情境告知，仅简短确认用户自述的地点/住处，作为本次对话背景；不自动修改常住地址或健康记录，不声称已永久记住。没有健康问题时不主动展开病史、药物、补剂、指标、医学引用或免责声明。",
             "- 若原话同时包含症状、建议请求、写入/查询动作，或是在回答历史中未完成的追问，必须处理这些意图；不能仅因出现城市或酒店就忽略。地点名称候选不是临床安全结论。",
@@ -25562,6 +25604,24 @@ class AgentExecutor:
         (复用既有取数, 产出数值序列), 其余维度复用 _exec_health_query 的紧凑原文。
         """
         from app.services import health_query_batch as hqb
+
+        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+        plan_scope = resolve_exercise_plan_scope(self._current_turn_user_message)
+        if plan_scope is not None:
+            # The generic batch adapter defaults to seven days. A plan's
+            # declared history must retain the same semantics as a single read.
+            decision = decide_tool_capability(
+                self._ensure_agent_kernel_turn(), ToolExecutionRequest("health_query_batch", args),
+            )
+            if decision.action != "allow":
+                return "Error: 计划依据查询超出本轮明确范围。"
+            results = []
+            for query in decision.normalized_args['queries']:
+                raw = await self._exec_health_query(base, headers, query)
+                if raw.startswith("Error:") or result_declares_explicit_failure(raw):
+                    return raw
+                results.append({"dimension": query['dimension'], "data": raw})
+            return json.dumps({"status": "success", "results": results}, ensure_ascii=False)
 
         queries = args.get("queries")
         if isinstance(queries, list) and any(

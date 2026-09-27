@@ -2449,7 +2449,9 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     from app.services.agent_kernel.read_task_scope import read_task_scope_contract_payload
     from app.services.agent_read_task_continuation import read_task_continuation_contract_payload
     from app.services.agent_longitudinal_read import longitudinal_read_contract_payload
+    from app.services.agent_kernel.exercise_plan_scope import exercise_plan_scope_contract_payload
     return {
+        "exercise_plan_scope": exercise_plan_scope_contract_payload(),
         "read_task_scope": read_task_scope_contract_payload(),
         "read_task_continuation": read_task_continuation_contract_payload(),
         "longitudinal_read": longitudinal_read_contract_payload(),
@@ -2646,6 +2648,38 @@ def decide_tool_capability(
         OWNED_MULTI_READ_TOOL_NAMES, resolve_owned_read_scope,
     )
     owned_scope = resolve_owned_read_scope(snapshot)
+    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+    exercise_plan = resolve_exercise_plan_scope(snapshot.envelope.text)
+    if exercise_plan is not None:
+        # The authenticated principal never comes from language or model args.
+        if (type(snapshot.context.user_id) is not int or snapshot.context.user_id <= 0
+                or type(snapshot.envelope.user_id) is not int
+                or snapshot.envelope.user_id != snapshot.context.user_id):
+            return _decision("block", "health_query_subject_not_current_user", tool_name, args)
+        if tool_name in {"health_query", "health_query_batch"}:
+            plan = args.get("plan", args)
+            proposals = ([args] if tool_name == "health_query" else
+                         plan.get("queries") if isinstance(plan, dict) else None)
+            containers = [args] + ([plan] if isinstance(plan, dict) else [])
+            if isinstance(proposals, list):
+                containers += [p for p in proposals if isinstance(p, dict)]
+            if any(key in container for container in containers
+                   for key in ("user_id", "owner_id", "tenant_id")):
+                return _decision("block", "health_query_subject_not_current_user", tool_name, args)
+            if (not isinstance(proposals, list) or not 1 <= len(proposals) <= 2
+                    or any(not isinstance(p, dict) or set(p) != {"dimension"} for p in proposals)
+                    or (tool_name == "health_query_batch" and (
+                        set(args) not in ({"queries"}, {"plan"}) or set(plan) != {"queries"}))):
+                return _decision("block", "health_query_semantics_unresolved", tool_name, args)
+            dimensions = [p['dimension'] for p in proposals]
+            if (any(not isinstance(d, str) or d not in exercise_plan.evidence_dimensions for d in dimensions)
+                    or len(set(dimensions)) != len(dimensions)):
+                return _decision("block", "health_query_dimension_conflict", tool_name, args)
+            bound = [{"dimension": d} for d in dimensions]
+            return _decision("allow", "exercise_plan_explicit_evidence", tool_name,
+                             bound[0] if tool_name == "health_query" else {"queries": bound})
+        if tool_name != "knowledge_search":
+            return _decision("block", "owned_read_tool_out_of_scope", tool_name, args)
     if (owned_scope is not None and len(owned_scope.queries) > 1
             and tool_name not in OWNED_MULTI_READ_TOOL_NAMES):
         # General analysis can read outside the frozen window and persist

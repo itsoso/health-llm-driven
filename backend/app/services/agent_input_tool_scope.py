@@ -58,3 +58,15 @@ def scope_tools_for_analyzed_material(
     if classify_agent_utterance(message).reason != "analyzed_material":
         return tools
     return [tool for tool in tools if (tool.get("function") or {}).get("name") == "knowledge_search"]
+
+
+def scope_tools_for_exercise_plan(tools: list[dict[str, Any]], message: str) -> list[dict[str, Any]]:
+    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+
+    scope = resolve_exercise_plan_scope(message)
+    if scope is None:
+        return tools
+    allowed = {"knowledge_search"}
+    if scope.evidence_dimensions:
+        allowed.update({"health_query", "health_query_batch"})
+    return [tool for tool in tools if (tool.get("function") or {}).get("name") in allowed]

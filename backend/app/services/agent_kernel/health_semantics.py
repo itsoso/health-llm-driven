@@ -2606,6 +2606,12 @@ def _health_read_segment_has_target(text: str) -> bool:
 
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
+    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+
+    if resolve_exercise_plan_scope(text) is not None:
+        # Full role consumption proves only that there is no foreign subject.
+        # Evidence read authority is checked independently at the gateway.
+        return False
     subject_scope = clinical_interpretation_query_scope(
         active_health_read_authority_text(text)
     )
