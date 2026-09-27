@@ -6290,6 +6290,18 @@ _DIET_FACTUAL_PHOTO_SHAPE_RE = re.compile(
     rf"(?:{_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN})?\s*[。！!]*$",
     re.I,
 )
+# A named meal is also a whole-photo subject, but only for an explicit current
+# capture command. Keep this out of the generic correction grammar: it must not
+# turn a new photo into an update of a previously recorded meal.
+_DIET_FACTUAL_NAMED_PHOTO_SHAPE_RE = re.compile(
+    r"^(?:今天\s*)?(?:(?:请|麻烦)\s*)?(?:帮我\s*)?"
+    r"(?:记录(?:一下)?|记下|保存)\s*(?:今天\s*)?"
+    r"(?:早餐|午餐|晚餐|加餐)\s*[,，]?\s*"
+    r"(?:我\s*)?(?:实际(?:上)?\s*)?(?:只)?(?:吃了|吃掉了)\s*"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:{_DIET_FACTUAL_PHOTO_SUFFIX_PATTERN})?\s*[。！!]*$",
+    re.I,
+)
 _DIET_FACTUAL_BARE_PHOTO_SHAPE_RE = re.compile(
     r"^(?:聚餐\s*[,，]\s*)?(?:我\s*)?(?:实际(?:上)?\s*)?只吃了\s*"
     rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
@@ -6367,6 +6379,7 @@ def _meal_fraction_utterance_has_factual_shape(
     fraction_span: tuple[int, int],
     *,
     allow_latest: bool = False,
+    allow_named_photo: bool = False,
 ) -> bool:
     """Accept only narrow, fully consumed factual portion utterances."""
     start, end = fraction_span
@@ -6377,6 +6390,8 @@ def _meal_fraction_utterance_has_factual_shape(
     )
     if allow_latest:
         return bool(_DIET_FACTUAL_LATEST_CORRECTION_SHAPE_RE.fullmatch(marked))
+    if allow_named_photo and _DIET_FACTUAL_NAMED_PHOTO_SHAPE_RE.fullmatch(marked):
+        return True
     return any(pattern.fullmatch(marked) for pattern in (
         _DIET_FACTUAL_CORRECTION_SHAPE_RE,
         _DIET_FACTUAL_CONSUMPTION_FIRST_CORRECTION_RE,
@@ -6390,6 +6405,7 @@ def _meal_fraction_utterance_is_unsafe(
     *,
     fraction_must_start_at_or_after: Optional[int] = None,
     allow_latest: bool = False,
+    allow_named_photo: bool = False,
 ) -> bool:
     """Fail closed unless the whole utterance has one exact factual ratio."""
     normalized = _normalize_meal_fraction_symbols(
@@ -6440,6 +6456,7 @@ def _meal_fraction_utterance_is_unsafe(
             normalized,
             supported_matches[0].span(),
             allow_latest=allow_latest,
+            allow_named_photo=allow_named_photo,
         )
     ):
         return True
@@ -6524,14 +6541,14 @@ def _contextual_meal_consumed_fraction(
     This is intentionally narrower than generic diet correction parsing.  A
     sentence such as ``吃了三分之一的蛋糕`` describes one food and must not
     scale every item in the image.  We only accept an explicit whole-meal
-    reference (``这餐``/``这份``) or the unambiguous ``只吃`` form.
+    reference (``这餐``/``这份``), a closed named-meal capture command, or the
+    unambiguous ``只吃`` form. Named capture is not a generic correction grant.
     """
     normalized = _normalize_meal_fraction_symbols(
         " ".join((text or "").strip().split())
     )
     if (
         not normalized
-        or not _CONTEXTUAL_MEAL_WHOLE_PORTION_RE.search(normalized)
         or _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(normalized)
         or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(normalized)
     ):
@@ -6539,7 +6556,20 @@ def _contextual_meal_consumed_fraction(
     match = _CONTEXTUAL_MEAL_PORTION_RE.search(normalized)
     if match is None:
         return None
-    if _meal_fraction_utterance_is_unsafe(normalized):
+    start, end = match.span("fraction")
+    named_capture = _DIET_FACTUAL_NAMED_PHOTO_SHAPE_RE.fullmatch(
+        normalized[:start] + _DIET_FACTUAL_PORTION_PLACEHOLDER + normalized[end:]
+    )
+    if named_capture:
+        # This opt-in must agree with the turn's create authority. Some richer
+        # captions are classified as corrections; do not silently auto-create
+        # them (or fall back to the current-clock meal) just because they parse.
+        intent = classify_agent_utterance(normalized)
+        if not (intent.is_write and intent.domain == "diet" and intent.operation == "create"):
+            return None
+    if not named_capture and not _CONTEXTUAL_MEAL_WHOLE_PORTION_RE.search(normalized):
+        return None
+    if _meal_fraction_utterance_is_unsafe(normalized, allow_named_photo=True):
         return None
     # ``三分之一的蛋糕`` is an item-level portion, not a whole-meal ratio.
     if normalized[match.end():].lstrip().startswith("的"):
@@ -23201,8 +23231,14 @@ class AgentExecutor:
             food for food in foods if isinstance(food, dict)
             and (food.get("source") == "order_estimate" or food.get("portion_basis") == "order_quantity")
         ]
+        explicit_photo_intake = is_explicit_order_intake(intent) or (
+            intent.is_write
+            and intent.domain == "diet"
+            and intent.operation == "create"
+            and _contextual_meal_consumed_fraction(user_message) is not None
+        )
         if order_foods and (
-            not is_explicit_order_intake(intent)
+            not explicit_photo_intake
             or any(not str(food.get("quantity") or "").strip() for food in order_foods)
         ):
             # Purchased portions are not proof of intake. Missing quantities or
@@ -23217,7 +23253,7 @@ class AgentExecutor:
             timezone_name=timezone_name,
             idempotency_clear=True,
         ))
-        if order_foods and is_explicit_order_intake(intent):
+        if explicit_photo_intake:
             requested_meal = intent.scope.get("meal_type")
             if requested_meal in {"breakfast", "lunch", "dinner", "snack"}:
                 decision = replace(decision, meal_type=requested_meal)

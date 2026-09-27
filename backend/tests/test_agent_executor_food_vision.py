@@ -426,6 +426,19 @@ async def test_structured_food_vision_scales_label_locally_from_user_amount(
     ("message", "expected"),
     [
         ("记录这餐，吃了三分之一", (1 / 3, "三分之一")),
+        ("记录晚餐 吃了一半", (0.5, "一半")),
+        ("记录午餐，我吃了1/5", (0.2, "1/5")),
+        ("请帮我记录今天晚餐，吃了1/2", (0.5, "1/2")),
+        ("今天记录早餐，实际吃了三分之一", None),
+        ("保存加餐，只吃了半份", None),
+        ("记录晚餐，吃了一半的面条", None),
+        ("记录晚餐，朋友吃了一半", None),
+        ("记录晚餐，吃了一半，还没吃完", None),
+        ("记录昨天晚餐，吃了一半", None),
+        ("记录明天晚餐，打算吃一半", None),
+        ("记录晚餐，吃了一半，取消记录", None),
+        ("记录晚餐，吃了一半还是1/3", None),
+        ("记录晚餐，吃了一半吗", None),
         ("这份只吃了1/3", (1 / 3, "1/3")),
         ("这餐应该只吃三分之一吗？", None),
         ("这餐吃了1/2还是1/3", None),
@@ -521,6 +534,16 @@ def test_contextual_meal_fraction_only_scales_an_explicit_whole_meal(
         "这餐别把它记录下来",
         "这餐吃了1÷2，别帮我记录",
         "这餐0点5，不要给我记录",
+        "记录晚餐，吃了一半的面条",
+        "记录晚餐，朋友吃了一半",
+        "记录晚餐，吃了一半，还没吃完",
+        "记录昨天晚餐，吃了一半",
+        "记录明天晚餐，打算吃一半",
+        "记录晚餐，吃了一半，取消记录",
+        "记录晚餐，吃了一半还是1/3",
+        "记录晚餐，吃了一半吗",
+        "今天记录早餐，实际吃了三分之一",
+        "保存加餐，只吃了半份",
     ],
 )
 def test_unsafe_photo_fraction_language_never_auto_captures(
@@ -869,6 +892,96 @@ async def test_agent_applies_consumed_fraction_before_contextual_photo_write(
     assert context is not None
     assert "份量已在首次写入中按三分之一修正" in context
     assert "不要再次调用 health_record 或 health_manage 写入" in context
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["order_estimate", "photo_estimate"])
+@pytest.mark.parametrize("message,meal,fraction,saved", [
+    ("记录晚餐 吃了一半", "dinner", 0.5, True),
+    ("记录午餐，我吃了1/5", "lunch", 0.2, True),
+    ("请帮我记录今天晚餐，吃了1/2", "dinner", 0.5, True),
+    ("今天记录早餐，实际吃了三分之一", "breakfast", 1 / 3, False),
+    ("保存加餐，只吃了半份", "snack", 0.5, False),
+])
+async def test_named_meal_photo_fraction_saves_once_with_requested_meal(
+    db, tmp_path, monkeypatch, source, message, meal, fraction, saved,
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognized = {"success": True, "foods": [{
+        "name": "鱼堡", "quantity": "2个", "confidence": 0.95,
+        "source": source, "nutrition_basis": source,
+        "calories": 700, "protein": 30, "carbs": 80, "fat": 30, "fiber": 4,
+    }]}
+    monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64",
+                        AsyncMock(return_value=recognized))
+    for _ in range(2):
+        await executor._analyze_food_images_with_structured_vision(
+            message, [{"base64": VALID_PNG_BASE64, "type": "png"}],
+        )
+    if not saved:
+        assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
+        assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).count() == 0
+        assert db.query(DietPhotoAsset).filter(DietPhotoAsset.user_id == user.id).count() == 0
+        assert executor._turn_contextual_diet_write_blocked_reason == "ambiguous_fraction"
+        assert not executor._turn_contextual_diet_receipts
+        return
+    record = db.query(DietRecord).filter(DietRecord.user_id == user.id).one()
+    assert record.meal_type == meal  # fixture local time is lunch, not dinner
+    for field, total in {"calories": 700, "protein": 30, "carbs": 80, "fat": 30, "fiber": 4}.items():
+        assert getattr(record, field) == pytest.approx(total * fraction)
+    assert "按实际食用" in record.food_items
+    assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).count() == 0
+    assert db.query(DietPhotoAsset).filter(DietPhotoAsset.diet_record_id == record.id).count() == 1
+    assert len(executor._turn_contextual_diet_receipts) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("confidence,quantity,saved", [
+    (0.95, "2个", True), (0.70, "2个", False), (0.95, None, False),
+])
+async def test_half_order_stream_returns_receipt_or_actionable_confirmation(
+    db, tmp_path, monkeypatch, confidence, quantity, saved,
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognized = {"success": True, "foods": [{
+        "name": "鱼堡", "quantity": quantity, "confidence": confidence,
+        "source": "order_estimate", "nutrition_basis": "order_estimate",
+        "calories": 700, "protein": 30, "carbs": 80, "fat": 30, "fiber": 4,
+    }]}
+    monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64",
+                        AsyncMock(return_value=recognized))
+    llm = AsyncMock(return_value={"content": "已按实际吃的一半记录晚餐。", "finish_reason": "stop"})
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(executor, "_call_llm", llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(llm))
+    events = [event async for event in executor.run_stream(
+        user_id=user.id, message="记录晚餐 吃了一半", user_auth_token="test-token",
+        images=[{"base64": VALID_PNG_BASE64, "type": "png"}],
+        client_turn_id="half-order-stream",
+    )]
+    done = next(event["data"] for event in events if event.get("event") == "done")
+    text = "".join(event["data"].get("content", "") for event in events if event.get("event") == "token")
+    assert "还没记下来" not in text
+    assert done["completion_status"] == "complete"
+    assert len(done.get("write_receipts", [])) == int(saved)
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == int(saved)
+    cards = [card for card in done.get("cards", []) if card.get("type") == "diet_draft"]
+    assert len(cards) == 1
+    if saved:
+        record = db.query(DietRecord).filter(DietRecord.user_id == user.id).one()
+        assert record.meal_type == "dinner"
+        assert record.calories == 350
+        assert cards[0]["data"]["recorded"] is True
+    else:
+        llm.assert_not_awaited()
+        assert done["turn_outcome"]["category"] == "confirmation_required"
+        assert cards[0]["data"]["media_stage"] == "pending_confirmation"
+        assert cards[0]["actions"][0]["action"] == "diet_record.create"
 
 
 @pytest.mark.asyncio
