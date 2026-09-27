@@ -73,3 +73,11 @@ PG 使用同一 food-vision 文件，选择 `named_meal_photo_fraction or half_o
 - 补充旧 COMMITTED terminal + 新 publisher SHA + 相同封存 stage/env 的接管测试，证明 env 不上传、stage 文件与 manifest 字节/inode 不变；与错误 token/label/active SHA 等负例共 8 passed。
 - 独立只读取证：原 14 个 staged 代码制品与候选源一致，live env 等于 sealed rollback/candidate；没有本次 journal/preparing，失败候选 Laya source 不存在。现有 deploy.sh 接管模式适用；trusted-launcher 专用 `--retire-unchanged` 不适用于本地直接发布，不伪造其回执。
 - 新候选须先固定提交独立 G4、精确 main CI；之后私下读取原 token，以 `REVA_RELEASE_LOCK_ADOPT=1` 从干净候选执行唯一部署入口。发现现场漂移或 active journal 则停止，不清锁、不覆盖原 stage。
+
+### 停止超时事故续接
+
+权限修复 `1d310cdedf3ef58915bf6d4d5229e05a9d8cbe2a` 独立 G4 GO（28 项独立测试），干净候选 CI-mode 329 passed，精确 CI 36313310750 success。按原 token/stage 接管，bundle 与 Laya 准备成功。随后去激活停止 backend 超过 systemd 45 秒时限，systemd SIGKILL 后留下 `ActiveState=failed/Result=timeout`；原脚本仅接受 inactive，报 `DEACTIVATION_CONTAINMENT_FAILED`。
+
+只读取证：production 仍 bdf5fe616、env 仍等于原 rollback/candidate、只有旧 COMMITTED terminal、没有新 journal；backend MainPID/ControlPID 均 0，ControlGroup 空且对应 cgroup 不存在，socket/worker/beat inactive，公网 health 502。已向用户明确报告暂时不可用。原 lease/stage 保留，不手工启动服务、改标签或执行无 journal 的整体 rollback。
+
+最小续修仅在去激活锁内对已停止的确切服务执行 `reset-failed`：限定 failed/failed + timeout + MainPID/ControlPID=0 + ControlGroup 空 + cgroup 路径及链接均不存在，任一读取失败、残留进程、其他失败类型均 BLOCK；随后重新证明 inactive。仅继续原 `deploy:backend` 接管入口，不冒用 trusted-launcher 专用恢复链。新鲜 RED 为真实 stop-helper 场景 2 failed / 8 passed；修复后的定向测试还覆盖探针输出看似正确但退出失败的拒绝行为。

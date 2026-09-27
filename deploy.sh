@@ -2243,13 +2243,48 @@ verify_services_inactive() {
     done
 }
 
+normalize_stopped_timeout_unit() {
+    local unit="$1"
+    local active_state
+    local probe
+    local value
+    active_state="$(systemctl show "$unit" --property=ActiveState --value)" || return 1
+    [ "$active_state" != "inactive" ] || return 0
+    # A completed systemd stop timeout leaves a sticky failed state. Clear only
+    # that known state, after proving no main/control process or cgroup remains.
+    # Startup failures and unknown/partially stopped services remain blocking.
+    case "$unit" in
+        health-backend.service|celery-worker.service|celery-beat.service) ;;
+        *) return 1 ;;
+    esac
+    [ "$active_state" = "failed" ] || return 1
+    for probe in SubState:failed Result:timeout MainPID:0 ControlPID:0; do
+        value="$(systemctl show "$unit" --property="${probe%%:*}" --value)" || return 1
+        [ "$value" = "${probe#*:}" ] || return 1
+    done
+    local control_group
+    control_group="$(systemctl show "$unit" --property=ControlGroup --value)" || return 1
+    [ -z "$control_group" ] || return 1
+    [ ! -e "$cgroup_root/system.slice/$unit" ] &&
+        [ ! -L "$cgroup_root/system.slice/$unit" ] || return 1
+    assert_release_lease || return 1
+    systemctl reset-failed "$unit" || return 1
+    assert_release_lease || return 1
+    active_state="$(systemctl show "$unit" --property=ActiveState --value)" || return 1
+    [ "$active_state" = "inactive" ] || return 1
+    echo "DEACTIVATION_STOP_TIMEOUT_CLEARED unit=$unit"
+}
+
 stop_and_prove_services_inactive() {
     local unit
     # Socket first: no health probe may reactivate the backend while the
     # authorization and live environment are being changed.
     for unit in "${all_units[@]}"; do
         assert_release_lease
-        systemctl stop "$unit"
+        if ! systemctl stop "$unit"; then
+            [ "$(systemctl show "$unit" --property=ActiveState --value)" = "failed" ] || return 1
+        fi
+        normalize_stopped_timeout_unit "$unit" || return 1
     done
     verify_services_inactive
 }

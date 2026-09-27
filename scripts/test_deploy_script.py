@@ -4627,6 +4627,61 @@ run_health_evidence_deactivation_transaction
     }
 
 
+@pytest.mark.parametrize("scenario", [
+    "timeout", "stop-error", "main-pid", "control-pid", "cgroup-path",
+    "cgroup-exists", "wrong-result", "reset-error", "lease-loss", "reset-active",
+    "probe-error",
+])
+def test_deactivation_only_clears_proven_empty_stop_timeout(tmp_path, scenario):
+    script = DEPLOY_SCRIPT.read_text()
+    start = script.index("verify_services_inactive() {")
+    end = script.index("verify_runtime_authorization_absent() {", start)
+    helper = script[start:end]
+    events = tmp_path / "events"
+    group = tmp_path / "system.slice/health-backend.service"
+    if scenario == "cgroup-exists":
+        group.mkdir(parents=True)
+    harness = f"""
+set -eu
+cgroup_root={tmp_path}
+scenario={scenario}
+state=failed
+all_units=(health-backend.service)
+assert_release_lease() {{ test "$scenario" != lease-loss; }}
+systemctl() {{
+    if [ "$1" = stop ]; then test "$scenario" != stop-error; return; fi
+    if [ "$1" = reset-failed ]; then
+        printf 'reset\\n' >> {events}
+        test "$scenario" != reset-error || return 1
+        state=inactive
+        if [ "$scenario" = reset-active ]; then state=active; fi
+        return
+    fi
+    test "$1" = show
+    case "$3" in
+        --property=ActiveState) printf '%s\\n' "$state" ;;
+        --property=SubState) printf 'failed\\n' ;;
+        --property=Result) if [ "$scenario" = wrong-result ]; then echo exit-code; else echo timeout; fi ;;
+        --property=MainPID) if [ "$scenario" = main-pid ]; then echo 101; else echo 0; fi
+            test "$scenario" != probe-error ;;
+        --property=ControlPID) if [ "$scenario" = control-pid ]; then echo 102; else echo 0; fi ;;
+        --property=ControlGroup) if [ "$scenario" = cgroup-path ]; then echo /system.slice/health-backend.service; else echo ''; fi ;;
+        *) return 95 ;;
+    esac
+}}
+{helper}
+stop_and_prove_services_inactive
+"""
+    result = subprocess.run(["bash", "-c", harness], text=True, capture_output=True)
+    if scenario in {"timeout", "stop-error"}:
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        assert events.read_text() == "reset\n"
+    else:
+        assert result.returncode != 0
+        if scenario not in {"reset-error", "reset-active"}:
+            assert not events.exists()
+
+
 def test_deactivation_transaction_atomically_installs_then_proves_false(
     tmp_path: Path,
 ):
