@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | locally-verified-awaiting-release-gates |
+| 状态 | release-blocked-before-live-mutation |
 | Controller | health-harness-orchestrator · incident |
 | Overlay | safety-gate |
 
@@ -52,3 +52,24 @@ PG 使用同一 food-vision 文件，选择 `named_meal_photo_fraction or half_o
 ## 2026-09-27 发布续接
 
 用户明确要求“部署和发布ota”。按 backend-deploy + safety-gate 固定本修复候选；仅提交本 dossier、executor 与对应测试。高德 GPS/权限文案及其他工作树改动保留不发布。先完成固定提交正式 G4、同生产模型的合成 live gate、CI-mode 集成与精确 main CI，再部署。OTA 单独核对 runtime 与实际客户端变更，不用 OTA 冒充原生定位用途更新。
+
+### 发布执行证据与阻断
+
+- 候选 `ff3e6d331e7fbcb8b8a532b29749228a84928b07` 已提交并推送 main；精确 [CI 36311452253](https://github.com/itsoso/health-llm-driven/actions/runs/36311452253) conclusion=success，28 jobs 完成、无失败。
+- 固定提交独立 G4 GO；独立测试 185 passed / 1 PostgreSQL-only skipped。干净发布目录 CI-mode agent-executor-food / d-diet 分片分别 151 passed 与 406 passed / 3 PostgreSQL-only skipped。
+- 同生产模型配置仅内存加载，合成 in-memory 数据库 live gate 5/5、均分 0.92；invariants 12/12、core 50/50、trajectory 12/12、golden 9/9。未写生产用户数据。
+- 客户端 mobile/shared runtime tree 与已发布 OTA 来源 `c0eb135eb87c4b90c00117b8c53e0875c1d05078` 相同；遵循 mobile-ota 禁止空更新规则，不发布内容相同的 OTA。
+- 首次 deploy.sh 在 bundle 上传前发现独立发布目录缺少 `refs/reva-production`，当次 lease 自动释放、线上未变；核验真实生产 SHA 后补齐仅本地 Git 引用，再运行完整入口。
+- 第二次在 Laya preparation 失败：`invalid Laya source metadata`。只读取证确认本次 `/tmp/health-app-deploy-44912-1790504178.bundle` 为 root:root、0644、单链接；受审准备脚本要求 0600。lock、stage、Laya base/sources 元数据符合要求。未现场 chmod、删锁或再次重跑。
+- 保留 lease `/run/lock/health-app-release`，stage `/tmp/health-app-backup-preflight-44912-1790504178`；live env 未改变，未 checkout/停服。生产仍为 `bdf5fe616a4461c568f16fe5941a707c4cc287ea`，Git clean，backend/socket/worker/beat 均 active，公开 health 的 API/database/redis/celery 均 healthy/connected。
+- 数据库备份按治理默认关闭；回滚 schema probe 通过。配置备份与候选封存已完成，不等于业务部署成功。
+- G5 BLOCK：需修复 bundle 权限准备并经受控失败现场处置/发布流程后继续；当前修复尚未上线。本节为本地交接证据，未再次推送或变更发布候选。
+
+### 发布权限修复续接
+
+用户明确“继续”，授权修复发布脚本并受控处理原失败现场。实际根因是 `git bundle create` 替换 mktemp inode、使用调用者 umask，因此源文件在常见 022 下成为 0644。仅该创建步骤使用子 shell `umask 077`，不改调用者设置、不放宽远端 0600 检查、不修改旧 bundle。
+
+- 新增真实 Git bundle + transport stub 回归：022/000 两种调用者 umask，修复前均失败；修复后验证源文件 regular/单链接/0600、bundle prerequisite/HEAD 正确、调用者 umask 不变。
+- 补充旧 COMMITTED terminal + 新 publisher SHA + 相同封存 stage/env 的接管测试，证明 env 不上传、stage 文件与 manifest 字节/inode 不变；与错误 token/label/active SHA 等负例共 8 passed。
+- 独立只读取证：原 14 个 staged 代码制品与候选源一致，live env 等于 sealed rollback/candidate；没有本次 journal/preparing，失败候选 Laya source 不存在。现有 deploy.sh 接管模式适用；trusted-launcher 专用 `--retire-unchanged` 不适用于本地直接发布，不伪造其回执。
+- 新候选须先固定提交独立 G4、精确 main CI；之后私下读取原 token，以 `REVA_RELEASE_LOCK_ADOPT=1` 从干净候选执行唯一部署入口。发现现场漂移或 active journal 则停止，不清锁、不覆盖原 stage。

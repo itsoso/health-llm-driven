@@ -330,9 +330,11 @@ upload_deploy_bundle() {
     local delegation_owner=0
     assert_remote_release_lock_if_acquired
     bundle=$(mktemp)
+    # Git replaces mktemp's inode; create under a private umask so SCP receives
+    # a 0600 bundle without changing the caller's umask or relaxing remote gates.
     if ! [[ "$ROLLBACK_CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]] ||
        [ "$(git rev-parse refs/reva-production 2>/dev/null || true)" != "$ROLLBACK_CANDIDATE_COMMIT" ] ||
-       ! git bundle create "$bundle" HEAD "^$ROLLBACK_CANDIDATE_COMMIT" >/dev/null; then
+       ! (umask 077; git bundle create "$bundle" HEAD "^$ROLLBACK_CANDIDATE_COMMIT" >/dev/null); then
         rm -f "$bundle"
         return 1
     fi

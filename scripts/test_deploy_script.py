@@ -1100,6 +1100,46 @@ def test_release_bundle_is_incremental_and_laya_binds_production_prerequisite():
     assert "untrusted production Git object" in script
 
 
+@pytest.mark.parametrize("caller_umask", ["022", "000"])
+def test_uploaded_bundle_is_private_even_with_permissive_caller_umask(
+    tmp_path: Path, caller_umask: str,
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "core.hooksPath=/dev/null"]
+    subprocess.run([*git, "init"], check=True, capture_output=True)
+    identity = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run([*git, *identity, "commit", "--allow-empty", "-m", "base"],
+                   check=True, capture_output=True)
+    baseline = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+    subprocess.run([*git, "update-ref", "refs/reva-production", baseline], check=True)
+    subprocess.run([*git, *identity, "commit", "--allow-empty", "-m", "candidate"],
+                   check=True, capture_output=True)
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text("DEPLOY_SERVER=fake-server\nDEPLOY_PATH=/tmp/fake-app\n")
+    # Actual Git bundle creation (which replaces mktemp's 0600 inode), with only
+    # the network transport stubbed. Assert the bytes and mode offered to SCP.
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+cd {repo!s}
+ROLLBACK_CANDIDATE_COMMIT={baseline}
+umask {caller_umask}
+before=$(umask)
+scp() {{
+    {sys.executable} -c 'import os,stat,sys; p=sys.argv[1]; s=os.lstat(p); assert stat.S_ISREG(s.st_mode); assert stat.S_IMODE(s.st_mode)==0o600; assert s.st_nlink==1' "$1" || return 1
+    git bundle verify "$1" || return 1
+    test "$(git bundle list-heads "$1" HEAD | cut -d' ' -f1)" = "$(git rev-parse HEAD)"
+}}
+upload_deploy_bundle
+test "$(umask)" = "$before"
+test "$_REMOTE_RELEASE_LOCK_DELEGATED" = 0
+test "$_REMOTE_RELEASE_LOCK_ABANDONED" = 0
+"""
+    result = subprocess.run(["bash", "-c", harness], text=True, capture_output=True,
+                            env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)})
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
 def test_adopted_release_lock_is_preserved_before_transaction_inspection(
     tmp_path: Path,
 ):
@@ -3599,6 +3639,13 @@ def _run_adopted_release_stage_harness(
         release_sha=release_sha,
         candidate_env=candidate_env,
     )
+    if scenario == "terminal-before-new-candidate":
+        # Publisher-only repair: staged runtime tools remain byte-identical.
+        subprocess.run(["git", "commit", "--allow-empty", "-qm", "publisher repair"],
+                       cwd=source_repo, check=True)
+        release_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=source_repo, text=True,
+        ).strip()
     if scenario == "unsealed-allowed-name":
         unsealed = stage / "candidate.env"
         unsealed.write_bytes(candidate_env)
@@ -3646,6 +3693,7 @@ case "$target" in
   "$FAKE_ADOPTED_STAGE") printf 'root:root:700\n' ;;
   "$FAKE_ADOPTED_STAGE/staged.sha256"|\
 "$FAKE_ADOPTED_STAGE/backend.env.candidate"|\
+"$FAKE_ADOPTED_STAGE/backend.env.rollback"|\
 staged.sha256|backend.env.candidate)
     printf 'root:root:400\n'
     ;;
@@ -3688,6 +3736,11 @@ scp() {{
 }}
 run_runtime_state_transaction() {{
     test "$1" = status
+    if [ "$ADOPTION_SCENARIO" = terminal-before-new-candidate ]; then
+        printf '%s\\n' \
+          "RUNTIME_STATE_TRANSACTION_OK command=status result=phase=COMMITTED old_sha={'3' * 40} candidate_sha=$STATUS_OLD_SHA gate_armed=false gate_released=true release_target=candidate next_action=none state_source=terminal"
+        return
+    fi
     printf '%s\\n' \
       "RUNTIME_STATE_TRANSACTION_OK command=status result=phase=PREPARED old_sha=$STATUS_OLD_SHA candidate_sha=$STATUS_CANDIDATE_SHA gate_armed=true gate_released=false release_target=none next_action=install state_source=journal"
 }}
@@ -3718,6 +3771,11 @@ else
     inspect_rc=$?
     printf 'inspect-failed:%s\\n' "$inspect_rc" >> "$ADOPTION_EVENT_LOG"
     exit 83
+fi
+if [ "$ADOPTION_SCENARIO" = terminal-before-new-candidate ]; then
+    test "$RUNTIME_STATE_RESUME_PHASE" = NONE
+    upload_backend_env_file "$REMOTE_PATH/backend/.env"
+    seal_release_env_snapshots
 fi
 printf 'stage=%s adopted=%s phase=%s candidate=%s\\n' \
     "$REMOTE_BACKUP_PREFLIGHT_DIR" \
@@ -3750,6 +3808,7 @@ printf 'complete\\n' >> "$ADOPTION_EVENT_LOG"
                 "EXPECTED_RELEASE_SHA": release_sha,
                 "STATUS_OLD_SHA": old_sha,
                 "STATUS_CANDIDATE_SHA": status_candidate_sha,
+                "ADOPTION_SCENARIO": scenario,
             },
         )
         stage_after = _immutable_stage_snapshot(stage)
@@ -3799,6 +3858,18 @@ def test_existing_remote_release_is_adopted_without_mutating_immutable_stage(
         f"stage={outcome['stage']} adopted=1 phase=PREPARED"
         in outcome["proof"]
     )
+    assert outcome["stage_after"] == outcome["stage_before"]
+    assert outcome["scp_calls"] == []
+    assert all(outcome["stage"] not in call for call in outcome["mkdir_calls"])
+
+
+def test_pre_mutation_adoption_reuses_sealed_stage_for_new_publisher_candidate(tmp_path):
+    outcome = _run_adopted_release_stage_harness(
+        tmp_path, scenario="terminal-before-new-candidate",
+    )
+    result = outcome["result"]
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "adopted=1 phase=NONE" in outcome["proof"]
     assert outcome["stage_after"] == outcome["stage_before"]
     assert outcome["scp_calls"] == []
     assert all(outcome["stage"] not in call for call in outcome["mkdir_calls"])
