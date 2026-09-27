@@ -1,9 +1,14 @@
 # Exercise plan authority / evidence boundary repair
 
-Status: release preparation; not deployed.
-Last reviewed: 2026-09-27.
+| 字段 | 值 |
+| --- | --- |
+| 状态 | building |
+| 当前阶段 | S5 verification / release preparation |
+| Last reviewed | 2026-09-27 |
 
-## Request and admission
+## G1 Request and admission
+
+裁决: PASS
 
 - Bugfix / engineering maintenance: authenticated self exercise-plan requests
   were rejected as reads of another person's records.
@@ -90,3 +95,17 @@ unrelated uncommitted AMap router/service are not included. Verify exact-commit
 safety review, CI-mode tests, live synthetic model gate and actual main CI
 before running the governed backend deployment. Reuse the clean release
 checkout; retain all other working-tree changes.
+
+### Candidate verification
+
+- Fixed runtime commit: `6abb655d82f678769618b40d1800bd6e4f3bc3c7`.
+- Independent fixed-commit safety review: GO; all eight files reviewed.
+- Clean-checkout CI-mode shard runner: 3,881 passed, exit 0. PostgreSQL
+  rerun: 51 passed, including 14 real Pi/reader/persistence trajectories;
+  temporary database was stopped after verification.
+- Live synthetic synthesis gate passed: invariants 12/12, health-agent core
+  50/50, orchestrator 5/5 (average 0.94), trajectory contracts 12/12 and
+  goldens 9/9. This is not a live-model exercise-plan end-to-end claim.
+- CI run `36327206956` detected missing structured dossier status and G1
+  admission fields. Production was not changed; this documentation follow-up
+  supplies those fields and must pass a new exact-revision CI before deployment.
