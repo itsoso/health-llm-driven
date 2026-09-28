@@ -41,6 +41,10 @@ _SUMMARY_RE = re.compile(
     r"(?:请)?(?:给我|帮我)?(?:总结|汇总)(?:一下)?(?:我(?:的)?)?"
     r"(?:今天|今日)(?:的)?(?:健康情况|健康状况|身体状况|身体状态|情况)?)"
 )
+_COLLOQUIAL_SUMMARY_RE = re.compile(
+    r"(?:(?:我(?:的)?)(?:今天|今日)|(?:今天|今日)(?:的)?我(?:的)?)"
+    r"(?:整体)?过[得的](?:怎么样|怎样|如何)"
+)
 _ADVICE_SUFFIX_RE = re.compile(
     r"[，,。.!！?？；;]*(?:(?:并且|然后|并|再|也)(?:请)?)?"
     r"(?:(?:请)?(?:给我|给出|提供)(?:一些|一点|些|点)?(?:建议|意见)|"
@@ -104,6 +108,10 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
         if sync_status:
             return None
         return core, DAILY_SUMMARY_DIMENSIONS, suffix is not None, True, None, False
+    if _COLLOQUIAL_SUMMARY_RE.fullmatch(core):
+        if sync_status:
+            return None
+        return core, DAILY_SUMMARY_DIMENSIONS, True, True, None, False
     return None
 
 

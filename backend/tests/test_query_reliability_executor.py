@@ -18,6 +18,7 @@ def _isolate_twin_cache(isolated_agent_protocol_transport):
     ('今日我吃了啥', 'health_manage', {'record_type': 'diet', 'operation': 'list'}, ('diet',)),
     ('今天晚上我吃了什么？给我一些建议。', 'health_query', {'dimension': 'diet'}, ('diet',)),
     ('给我今天总结 给我建议', 'health_analysis', {'analysis_type': 'orchestrator'}, ('diet', 'sleep')),
+    ('今天我过得怎么样?', 'health_analysis', {'analysis_type': 'orchestrator'}, ('diet', 'sleep')),
 ])
 async def test_daily_read_runs_through_pi_with_verified_scope(db, auth_user_and_headers, monkeypatch, query, tool, args, expected, panel):
     user, _ = auth_user_and_headers
@@ -52,7 +53,7 @@ async def test_daily_read_runs_through_pi_with_verified_scope(db, auth_user_and_
         assert dispatched[0].arguments['meal_type'] == 'dinner'
     assert done['turn_outcome']['status'] == 'complete'
     assert {g['goal_id'] for g in done['turn_outcome']['goals'] if g['kind'] == 'query'} == set(expected)
-    if '总结' in query:
+    if len(expected) > 1:
         assert any(g['goal_id'] == 'summary_advice' and g['status'] == 'verified'
                    for g in done['turn_outcome']['goals'])
 

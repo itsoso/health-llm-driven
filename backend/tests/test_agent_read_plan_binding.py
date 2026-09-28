@@ -57,6 +57,7 @@ def test_compound_daily_read_is_bound_across_query_and_manage(message):
 
 @pytest.mark.parametrize("message", [
     "给我今天总结 给我建议", "总结一下我今天的健康情况", "今日健康总结",
+    "今天我过得怎么样?", "我今天过得怎样？", "今日我过得如何",
 ])
 @pytest.mark.parametrize("dimension", ["diet", "sleep"])
 def test_daily_summary_is_explicit_bounded_read(message, dimension):
@@ -74,6 +75,8 @@ def test_daily_summary_is_explicit_bounded_read(message, dimension):
     "不要查询今天我吃了啥", "昨天和今天我吃了啥", "明天我吃了什么",
     "分析以下例句：今天我吃了啥", "给我妈妈今天总结 给我建议",
     "假如给我今天总结", "不要给我今天总结", "明天健康总结",
+    "妈妈今天过得怎么样", "明天我会过得怎么样", "假如今天我过得怎么样",
+    "今天我过得怎么样，然后删除今天饮食",
     "给我今天总结，然后删除今天饮食", "今天我吃了啥？查询妈妈的睡眠",
 ])
 def test_daily_plan_never_grants_another_subject_date_or_operation(message):
@@ -83,6 +86,17 @@ def test_daily_plan_never_grants_another_subject_date_or_operation(message):
 def test_daily_summary_cannot_authorize_unbounded_or_sensitive_dimension():
     result = decide("给我今天总结 给我建议", "health_query", {"dimension": "genetic"})
     assert result.action == "block"
+
+
+def test_colloquial_summary_model_owner_keys_cannot_change_authenticated_scope():
+    result = decide("今天我过得怎么样?", "health_query", {
+        "dimension": "diet", "user_id": 999, "owner_id": 999, "tenant_id": 999,
+    })
+    assert result.action == "allow", result.reason
+    assert result.normalized_args == {
+        "dimension": "diet", "start_date": "2026-07-17",
+        "end_date": "2026-07-17", "timezone": "Asia/Shanghai",
+    }
 
 
 def test_model_cannot_change_explicit_date_for_shared_plan():
@@ -133,6 +147,8 @@ async def test_meal_read_dispatches_only_requested_meal(tool):
     ("今天我吃了啥。分析以下建议：昨天可以早点吃饭", "diet"),
     ("给我今天总结 给我建议", "diet"),
     ("给我今天总结 给我建议", "sleep"),
+    ("今天我过得怎么样?", "diet"),
+    ("今天我过得怎么样?", "sleep"),
 ])
 async def test_daily_plan_reaches_owned_exact_date_postgres_rows(
     db, auth_user_and_headers, message, dimension,
