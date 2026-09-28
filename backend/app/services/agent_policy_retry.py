@@ -1,5 +1,22 @@
 """Turn-local retry policy for decisions that need new user facts or authority."""
 from typing import Any, Iterable
+import re
+
+
+def is_general_advice_only_request(text: str) -> bool:
+    """Prove a whole request is general knowledge, not a failed personal scope.
+
+    This only permits outcome recovery after an optional read was rejected;
+    it never grants tool authority. Unknown residue remains non-recoverable.
+    Do not use quote/material stripping here: quoted requests are not acts.
+    """
+    normalized = re.sub(r"\s+", "", str(text or "")).strip("。.!！?？")
+    return re.fullmatch(
+        r"(?:请你?|麻烦你?)?(?:解释|介绍|讲解|说明)(?:一下)?"
+        r"(?:高原旅行|高原出行|旅行|睡眠|饮食|运动)(?:的)?"
+        r"(?:通用|一般性)(?:准备)?(?:原则|注意事项|建议)",
+        normalized,
+    ) is not None
 
 # Closed authority failures cannot become a parameter-repair loop. A new user
 # instruction may authorize a new turn; changing model arguments cannot.

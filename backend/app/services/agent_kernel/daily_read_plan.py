@@ -1,6 +1,6 @@
 """Server-owned daily read scope, shared by tool selection and authorization.
 
-Only current-user retrospective questions and today's summary have defaults.
+Only current-user retrospective questions and explicit-day summaries have defaults.
 The plan never authorizes writes, arbitrary people or model-provided dates.
 Advice is a separate goal; a trailing advice request cannot erase a read goal.
 """
@@ -35,14 +35,15 @@ _QUESTION_RE = re.compile(
     r"吃(?:得|的)(?:怎么样|怎样|如何)|"
     r"(?P<recall>(?:都)?吃(?:了|过)(?:些)?(?:什么|啥|哪些)(?:东西|食物)?))"
 )
+_SUMMARY_DAY = r"今天|今日|昨天|昨日|前天"
 _SUMMARY_RE = re.compile(
-    r"(?:(?:请)?(?:给我|帮我)?(?:做|做个|做一份)?(?:今天|今日)(?:的)?"
+    rf"(?:(?:请)?(?:给我|帮我)?(?:做|做个|做一份)?(?:{_SUMMARY_DAY})(?:的)?"
     r"(?:健康|身体状况|身体状态)?(?:总结|汇总)|"
     r"(?:请)?(?:给我|帮我)?(?:总结|汇总)(?:一下)?(?:我(?:的)?)?"
-    r"(?:今天|今日)(?:的)?(?:健康情况|健康状况|身体状况|身体状态|情况)?)"
+    rf"(?:{_SUMMARY_DAY})(?:的)?(?:健康情况|健康状况|身体状况|身体状态|情况)?)"
 )
 _COLLOQUIAL_SUMMARY_RE = re.compile(
-    r"(?:(?:我(?:的)?)(?:今天|今日)|(?:今天|今日)(?:的)?我(?:的)?)"
+    rf"(?:(?:我(?:的)?)(?:{_SUMMARY_DAY})|(?:{_SUMMARY_DAY})(?:的)?我(?:的)?)"
     r"(?:整体)?过[得的](?:怎么样|怎样|如何)"
 )
 _ADVICE_SUFFIX_RE = re.compile(

@@ -12601,6 +12601,11 @@ class AgentExecutor:
             return
         from app.services.agent_policy_retry import is_repairable_read_reason
 
+        # Failure to bind a personal read is not proof that the user only
+        # wanted general advice. Recovery needs a positive whole-request proof.
+        if not self._has_explicit_unscoped_answer_goal():
+            return
+
         for reason in self._agent_kernel_capability_block_reasons:
             if (
                 is_repairable_read_reason(reason)
@@ -12610,6 +12615,40 @@ class AgentExecutor:
                 self._agent_kernel_recovered_capability_block_reasons.append(
                     reason
                 )
+
+    def _has_explicit_unscoped_answer_goal(self) -> bool:
+        from app.services.agent_policy_retry import is_general_advice_only_request
+        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+
+        snapshot = self._agent_kernel_snapshot
+        if snapshot is None or snapshot.intent.is_write:
+            return False
+        text = snapshot.envelope.text
+        plan = resolve_exercise_plan_scope(text)
+        return (is_general_advice_only_request(text)
+                or (plan is not None and not plan.evidence_dimensions))
+
+    def _unresolved_read_failure_notice(self) -> str | None:
+        """Do not publish personal conclusions after unresolved required reads.
+
+        Existing daily/composed/plan contracts retain their evidence-specific
+        summaries, and writes retain their receipts. This supplies no authority.
+        """
+        from app.services.agent_policy_retry import is_repairable_read_reason
+        snapshot = self._agent_kernel_snapshot
+        if (snapshot is None or snapshot.intent.is_write
+                or self._turn_daily_read_plan is not None
+                or self._composed_read_completion() is not None
+                or self._exercise_plan_goal_outcomes()
+                or self._has_explicit_unscoped_answer_goal()):
+            return None
+        if not any(is_repairable_read_reason(reason)
+                   and reason not in self._agent_kernel_recovered_capability_block_reasons
+                   for reason in self._agent_kernel_capability_block_reasons):
+            return None
+        return ("本轮数据查询未完成，不能用其他日期的汇总或历史背景代替本次查询结果。"
+                "请明确要查看的数据类别和日期，例如“查询昨天的饮食和睡眠”；"
+                "如果只需要通用建议，也可以直接说明。")
 
     def _recovered_optional_public_read_failures_after_completed_answer(
         self,
@@ -15122,6 +15161,7 @@ class AgentExecutor:
         ):
             # Incomplete trusted summaries already carry the canonical notices.
             full_reply = '\n\n'.join((*read_scope_notices(panel_read_scope), full_reply))
+        full_reply = self._unresolved_read_failure_notice() or full_reply
         full_reply = _guard_panel_narrative(full_reply)
         if protocol_failure_text:
             full_reply = protocol_failure_text
@@ -19082,6 +19122,7 @@ class AgentExecutor:
                 full_reply = facts
         if self._turn_daily_read_plan is not None and self._turn_daily_read_plan.sync_status_requested:
             full_reply = self._trusted_read_summary()
+        full_reply = self._unresolved_read_failure_notice() or full_reply
         from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
 
         composed_boundary = enforce_composed_synthesis_boundaries(

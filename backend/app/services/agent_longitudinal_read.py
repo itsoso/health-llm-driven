@@ -94,6 +94,33 @@ _SUBDAY_SCOPE = re.compile(r"(?:今|昨|前|明|后)(?:早|晨|午)|上午|下�
 _RETROSPECTIVE_SCOPE = re.compile(r"(?:分析|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
 
 
+_HTML_READ_FRAME = re.compile(
+    r"(?:使用|用)\s*HTML\s*方式\s*输出\s*"
+    r"(?P<object>[\u4e00-\u9fffA-Za-z0-9 \t/-]+?)"
+    r"\s*以及你的分析[。.!！]?", re.I,
+)
+
+
+def _project_read_presentation(source: str) -> str | None:
+    """Consume one complete display wrapper on the ORIGINAL user source.
+
+    Only plain, bounded retrospective objects are eligible. In particular,
+    projecting after material removal could erase a quoted/code owner because
+    ``输出`` is not a read verb in the shared material-adjacency checker.
+    The intact object still passes the existing owner and full-residue binders;
+    this helper grants neither a data domain nor a default date window.
+    """
+    match = _HTML_READ_FRAME.fullmatch(str(source or "").strip())
+    if match is None:
+        return None
+    scope = match["object"]
+    if (len(tuple(_RECENT.finditer(scope))) != 1
+            or _AMBIGUOUS_DATE.search(_RECENT.sub("", scope))
+            or _NEGATIVE.search(scope) or _MUTATION.search(scope)):
+        return None
+    return "分析" + scope
+
+
 def _diagnosis_background_clause(clause: str) -> bool:
     """A historical diagnosis assertion is context; a date alone is not."""
     past = r"[一二两三四五六七八九十几\d]+个?多?月前"
@@ -526,7 +553,8 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     # fail the stricter read-authority boundary instead of becoming empty syntax.
     if not active_health_read_authority_text(source_text):
         return None
-    active = active_health_instruction_text(source_text)
+    active = (_project_read_presentation(source_text)
+              or active_health_instruction_text(source_text))
     active = project_active_quote_roles(active)
     if active is None:
         return None
@@ -557,6 +585,8 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
         or _MUTATION.search(active)
     ):
         return None
+    # Match the full source, never the quote/material-stripped ``active`` text.
+    active = _project_read_presentation(snapshot.envelope.text) or active
     # A direct analysis of an explicitly bounded recent record window also
     # requests a read (e.g. 分析最近一周的睡眠血氧). Keep the historical
     # explicit-owner/tool requirements for other longitudinal speech acts.
