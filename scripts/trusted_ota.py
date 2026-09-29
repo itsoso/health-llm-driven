@@ -45,7 +45,7 @@ def validate_runtime_changes(paths):
     # asset directories requires a reviewed native baseline update.
     prefixes = ('mobile/app/', 'mobile/components/', 'mobile/hooks/', 'mobile/services/',
                 'mobile/types/', 'mobile/constants/', 'mobile/stores/', 'mobile/utils/',
-                'mobile/contexts/', 'mobile/lib/', 'mobile/__tests__/', 'packages/shared/src/')
+                'mobile/contexts/', 'mobile/lib/', 'mobile/applib/', 'mobile/__tests__/', 'packages/shared/src/')
     for path in paths:
         if path.startswith(prefixes) and Path(path).suffix in ('.ts', '.tsx', '.js', '.jsx', '.json'):
             continue

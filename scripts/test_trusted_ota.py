@@ -15,7 +15,7 @@ def module():
 
 def test_native_changes_require_new_build():
     m = module()
-    m.validate_runtime_changes(['mobile/app/login.tsx', 'mobile/hooks/useAuth.tsx'])
+    m.validate_runtime_changes(['mobile/app/login.tsx', 'mobile/hooks/useAuth.tsx', 'mobile/applib/queryClient.ts', 'mobile/applib/__tests__/queryClient.test.ts'])
     for path in ['mobile/app.config.ts', 'mobile/package-lock.json', 'mobile/ios/App.mm', 'mobile/plugins/native.js', 'mobile/modules/bridge.ts']:
         with pytest.raises(ValueError):
             m.validate_runtime_changes([path])
