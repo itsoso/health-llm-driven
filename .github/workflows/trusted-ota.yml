@@ -1,0 +1,276 @@
+name: Trusted OTA
+'on':
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact green current main SHA; backend must already be deployed
+        required: true
+        type: string
+      target:
+        description: Validate first; publish consumes exactly one OTA claim
+        required: true
+        default: validate
+        type: choice
+        options:
+        - validate
+        - publish
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: reva-production-release
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+jobs:
+  ota:
+    if: github.repository == 'itsoso/health-llm-driven' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: release-production
+    steps:
+    - name: Materialize exact canonical source and verify current main CI before credentials
+      env:
+        TARGET_SHA: ${{ inputs.sha }}
+      run: |
+        test "$GITHUB_REF" = refs/heads/main
+        test "$GITHUB_REPOSITORY" = itsoso/health-llm-driven
+        [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+        test "$TARGET_SHA" = "$GITHUB_SHA"
+        /usr/bin/sudo /usr/bin/install -d -m 0755 /opt/reva-release
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_NO_REPLACE_OBJECTS=1 /bin/bash --noprofile --norc -eu -c '
+          /usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source
+          cd /opt/reva-release/source
+          /usr/bin/git remote add origin https://github.com/itsoso/health-llm-driven.git
+          /usr/bin/git -c core.hooksPath=/dev/null fetch --depth=256 origin "$1"
+          test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
+          /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
+          test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
+          /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
+        ' reva-bootstrap "$TARGET_SHA"
+    - name: Fixed Node toolchain
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+      with:
+        node-version: 22.13.0
+        package-manager-cache: false
+    - name: Harden fixed Node toolchain ownership before dependencies and credentials
+      run: |
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B - <<'PY'
+        import os
+        from pathlib import Path
+        import stat
+
+        def inspect_toolchain(root):
+            root = Path(root)
+            if root.is_symlink() or root.resolve(strict=True) != root:
+                raise ValueError('fixed toolchain root required')
+            pending, result = [root], []
+            while pending:
+                path = pending.pop()
+                info = path.lstat()
+                if len(result) >= 100000:
+                    raise ValueError('toolchain inventory exceeds bound')
+                if stat.S_ISLNK(info.st_mode):
+                    if not path.resolve(strict=True).is_relative_to(root):
+                        raise ValueError('toolchain link escapes fixed root')
+                elif stat.S_ISDIR(info.st_mode):
+                    pending.extend(path.iterdir())
+                elif not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    raise ValueError('unsupported toolchain object')
+                result.append((path, info))
+            return result
+
+        root = Path('/opt/hostedtoolcache/node/22.13.0/x64')
+        # Pinned setup-node is the only producer; seal before dependencies or credentials.
+        nodes = inspect_toolchain(root)
+        for path in (Path('/'), Path('/opt')):
+            info = path.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                raise ValueError('untrusted toolchain ancestor')
+        parents = [Path('/opt/hostedtoolcache'), Path('/opt/hostedtoolcache/node'),
+                   Path('/opt/hostedtoolcache/node/22.13.0')]
+        for path in parents:
+            info = path.lstat()
+            if not stat.S_ISDIR(info.st_mode):
+                raise ValueError('toolchain ancestor must not be linked')
+            os.chown(path, 0, 0, follow_symlinks=False)
+            os.chmod(path, stat.S_IMODE(info.st_mode) & ~0o022)
+        for path, before in nodes:
+            info = path.lstat()
+            if (info.st_dev, info.st_ino, info.st_mode) != (before.st_dev, before.st_ino, before.st_mode):
+                raise ValueError('toolchain changed during ownership sealing')
+            os.chown(path, 0, 0, follow_symlinks=False)
+            if not stat.S_ISLNK(info.st_mode):
+                os.chmod(path, stat.S_IMODE(info.st_mode) & 0o777 & ~0o022)
+        for path, _ in nodes:
+            info = path.lstat()
+            if info.st_uid != 0 or info.st_gid != 0 or (not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022):
+                raise ValueError('toolchain ownership sealing failed')
+        PY
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /opt/hostedtoolcache/node/22.13.0/x64/bin/node --version | /usr/bin/grep -Fx v22.13.0
+    - name: Install locked CLI and app dependencies without lifecycle scripts or shared cache
+      run: |
+        /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/hostedtoolcache/node/22.13.0/x64/lib/node_modules/npm/bin/npm-cli.js \
+          ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund --cache /opt/reva-release/npm-cache
+        /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/hostedtoolcache/node/22.13.0/x64/lib/node_modules/npm/bin/npm-cli.js \
+          ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund --cache /opt/reva-release/npm-cache
+        /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
+        /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /opt/hostedtoolcache/node/22.13.0/x64/bin/node --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
+    - name: Publish one bound iOS artifact and verify server receipt
+      if: inputs.target == 'publish'
+      env:
+        TARGET_SHA: ${{ inputs.sha }}
+        EXPO_TOKEN: ${{ secrets.REVA_RELEASE_EXPO_TOKEN }}
+        RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
+        RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
+      run: |
+        test -n "$EXPO_TOKEN"
+        test -n "$RELEASE_KEY"
+        test -n "$RELEASE_HOST_KEYS"
+        [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
+        umask 077
+        private_dir="$(mktemp -d)"
+        trap 'rm -f -- "$private_dir/key" "$private_dir/known_hosts"; rmdir -- "$private_dir"' EXIT
+        printf '%s\n' "$RELEASE_KEY" > "$private_dir/key"
+        printf '%s\n' "$RELEASE_HOST_KEYS" > "$private_dir/known_hosts"
+        /usr/bin/sudo /usr/bin/install -m 0600 "$private_dir/key" /opt/reva-release/key
+        /usr/bin/sudo /usr/bin/install -m 0600 "$private_dir/known_hosts" /opt/reva-release/known_hosts
+        unset RELEASE_KEY RELEASE_HOST_KEYS
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root EXPO_TOKEN="$EXPO_TOKEN" /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_ota_publish.py --sha "$TARGET_SHA"
+        /usr/bin/sudo /usr/bin/cat /opt/reva-release/ota-receipt.json >> "$GITHUB_STEP_SUMMARY"
+    - name: Stage validated OTA audit even when publication is incomplete
+      id: ota-audit
+      if: always() && inputs.target == 'publish'
+      env:
+        TARGET_SHA: ${{ inputs.sha }}
+      run: |
+        [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+        test "$TARGET_SHA" = "$GITHUB_SHA"
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B - "$TARGET_SHA" <<'PY'
+        import json
+        import os
+        from pathlib import Path
+        import re
+        import stat
+        import sys
+
+        def unique(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError('duplicate audit field')
+                result[key] = value
+            return result
+
+        def uuid(value):
+            return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', value) is not None
+
+        def validate_records(records, sha):
+            names = {'ota-claim.json', 'ota-preflight.json', 'ota-vendor-receipt.json', 'ota-receipt.json'}
+            if not isinstance(sha, str) or re.fullmatch(r'[0-9a-f]{40}', sha) is None or not set(records) <= names:
+                raise ValueError('unknown audit identity')
+            bindings = {'project': '911ea84f-bc7e-4a12-90cf-33966b6f7398', 'runtime': '1.3.4', 'channel': 'production', 'platform': 'ios'}
+            for name, value in records.items():
+                if not isinstance(value, dict) or value.get('sha') != sha:
+                    raise ValueError('audit SHA differs')
+                if name == 'ota-claim.json':
+                    if set(value) != {'sha', 'project', 'runtime', 'channel', 'platform', 'branch_id', 'branch_name', 'artifact'}:
+                        raise ValueError('unexpected claim fields')
+                    if any(value[key] != expected for key, expected in bindings.items()) or value['branch_name'] != 'production' or not uuid(value['branch_id']):
+                        raise ValueError('claim binding differs')
+                    artifact = value['artifact']
+                    if not isinstance(artifact, dict) or set(artifact) != {'launch', 'assets'} or not isinstance(artifact['assets'], list) or len(artifact['assets']) > 5000:
+                        raise ValueError('invalid artifact proof')
+                    if any(not isinstance(h, str) or re.fullmatch(r'[A-Za-z0-9_-]{43}', h) is None for h in [artifact['launch'], *artifact['assets']]):
+                        raise ValueError('invalid artifact hash')
+                    if artifact['assets'] != sorted(set(artifact['assets'])):
+                        raise ValueError('noncanonical artifact inventory')
+                elif name == 'ota-preflight.json':
+                    if set(value) != {'sha', 'native_fingerprint', 'mapping'} or not isinstance(value['native_fingerprint'], str) or re.fullmatch(r'(?:[a-f0-9]{40}|[a-f0-9]{64})', value['native_fingerprint']) is None:
+                        raise ValueError('invalid preflight proof')
+                    mapping = value['mapping']
+                    if not isinstance(mapping, dict) or set(mapping) != {'channel_id', 'branch_id', 'branch_name'} or mapping['branch_name'] != 'production' or not uuid(mapping['channel_id']) or not uuid(mapping['branch_id']):
+                        raise ValueError('invalid production mapping')
+                else:
+                    expected = {'sha', 'group_id', 'update_id'}
+                    if name == 'ota-receipt.json':
+                        expected |= {'state', 'runtime', 'project', 'channel', 'platform', 'branch_id'}
+                        if value.get('state') != 'SUCCEEDED' or not uuid(value.get('branch_id')) or any(value.get(key) != wanted for key, wanted in bindings.items()):
+                            raise ValueError('invalid verified receipt')
+                    if set(value) != expected or not uuid(value['group_id']) or not uuid(value['update_id']):
+                        raise ValueError('invalid vendor receipt')
+            branches = [records[name]['branch_id'] for name in ('ota-claim.json', 'ota-receipt.json') if name in records]
+            if 'ota-preflight.json' in records:
+                branches.append(records['ota-preflight.json']['mapping']['branch_id'])
+            if len(set(branches)) > 1:
+                raise ValueError('audit branch identity changed')
+            if 'ota-vendor-receipt.json' in records and 'ota-receipt.json' in records:
+                if any(records['ota-vendor-receipt.json'][key] != records['ota-receipt.json'][key] for key in ('sha', 'group_id', 'update_id')):
+                    raise ValueError('vendor receipt identity changed')
+            return records
+
+        root = Path('/opt/reva-release')
+        if not root.exists():
+            raise SystemExit(0)
+        for path in [*reversed(root.parents), root]:
+            info = path.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                raise ValueError('unsafe audit parent')
+        records = {}
+        # No glob, directory upload or raw vendor output. Only bounded known JSON.
+        for name in ('ota-claim.json', 'ota-preflight.json', 'ota-vendor-receipt.json', 'ota-receipt.json'):
+            path = root / name
+            if not os.path.lexists(path):
+                continue
+            before = path.lstat()
+            if not stat.S_ISREG(before.st_mode) or before.st_uid != 0 or before.st_nlink != 1 or stat.S_IMODE(before.st_mode) != 0o600:
+                raise ValueError('unsafe audit file')
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, 'rb') as stream:
+                opened = os.fstat(stream.fileno())
+                if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                    raise ValueError('audit file replaced')
+                raw = stream.read(1_000_001)
+            after = path.lstat()
+            if len(raw) > 1_000_000 or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) != (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns):
+                raise ValueError('audit file changed or exceeds bound')
+            records[name] = json.loads(raw, object_pairs_hook=unique)
+        validate_records(records, sys.argv[1])
+        if not records:
+            raise SystemExit(0)
+        # Validate every input before creating a sanitized copy readable by upload-artifact.
+        out = root / 'audit'
+        out.mkdir(mode=0o755)
+        os.chmod(out, 0o755)
+        for name, value in records.items():
+            fd = os.open(out / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+            with os.fdopen(fd, 'wb') as stream:
+                os.fchmod(stream.fileno(), 0o644)
+                stream.write(json.dumps(value, sort_keys=True).encode())
+                stream.flush()
+                os.fsync(stream.fileno())
+        fd = os.open(out, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        PY
+    - name: Preserve OTA audit for same-receipt recovery
+      if: always() && inputs.target == 'publish' && steps.ota-audit.outcome == 'success'
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: trusted-ota-${{ inputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |
+          /opt/reva-release/audit/ota-claim.json
+          /opt/reva-release/audit/ota-preflight.json
+          /opt/reva-release/audit/ota-vendor-receipt.json
+          /opt/reva-release/audit/ota-receipt.json
+        if-no-files-found: ignore
+        retention-days: 30
+        include-hidden-files: false

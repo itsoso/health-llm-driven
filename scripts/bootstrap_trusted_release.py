@@ -241,6 +241,7 @@ def _installation_inputs(sha, expiry, public):
 
 
 def _install_locked(sha, expiry, public, source, server, *, retired_keys=()):
+    assert_ota_history()
     original, host = _installation_inputs(sha, expiry, public)
     CONFIG.mkdir(mode=0o700)
     _sync_parent(CONFIG)
@@ -298,13 +299,25 @@ def _inventory(directory, names):
 
 def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     workspace = STATE / sha
+    native_closure = os.path.lexists(STATE / "native-only-closures" / sha)
     partial_laya = os.path.lexists(STATE / "partial-laya-closures" / sha)
     review_closure = os.path.lexists(STATE / "review-maintenance-closures" / sha)
     unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
     contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
     lost_receipt_ack = os.path.lexists(STATE / "lost-closure-receipt-acknowledgments" / sha)
-    if sum((review_closure, unchanged_closure, contained_closure, partial_laya)) > 1:
+    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure)) > 1:
         raise BootstrapError("conflicting release closure evidence")
+    if native_closure:
+        if lost_receipt_ack or os.path.lexists(STATE / "recoveries" / sha):
+            raise BootstrapError("conflicting native closure evidence")
+        path = Path(__file__).absolute().with_name("native_release_retirement.py")
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached native closure proof forbidden")
+        spec = importlib.util.spec_from_file_location("reviewed_native_closure", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt, historical=historical)
     if partial_laya:
         if lost_receipt_ack or os.path.lexists(STATE / "recoveries" / sha):
             raise BootstrapError("conflicting partial Laya recovery evidence")
@@ -594,8 +607,20 @@ def assert_frontend_rebuild_history():
     server.assert_frontend_rebuild_history(STATE)
 
 
+def assert_ota_history():
+    if not os.path.lexists(STATE / "ota"):
+        return
+    path = Path(__file__).with_name("trusted_release_server.py")
+    secure(path)
+    spec = importlib.util.spec_from_file_location("ota_history_server", path)
+    server = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+    server.assert_ota_history()
+
+
 def _assert_idle():
     assert_frontend_rebuild_history()
+    assert_ota_history()
     if os.path.lexists(BUSINESS_LEASE):
         raise BootstrapError("business release lease exists; retirement forbidden")
     result = _run(["/usr/bin/ps", "-e", "-ww", "-o", "pid=", "-o", "args="], capture=True)
@@ -649,7 +674,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
         workspace = _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
         check_locks()
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE"}:
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]

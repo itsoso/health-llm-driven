@@ -106,8 +106,55 @@ lease 不存在；普通 deploy.sh 不持有 launcher flock，必须由同一 mk
 build/native 标记仍防止跨入口重放。锁冲突、授权过期、未知结果或生产漂移即停止。
 原始后端成功审计不改，native-only workspace 绝不标成 backend SUCCEEDED。
 该 workspace 出现 vendor intent 后仍需人工核对精确 EAS/ASC 终态并走独立受审的
-后续收尾；当前 bootstrap 会拒绝未知 native-only 库存，不得删除绑定以强行轮换。
+后续收尾；仅下述固定历史收尾可解除对应阻断，未知 native-only 库存仍拒绝，不得删除绑定以强行轮换。
 上传完成不等于 Apple processing、测试可用或正式 App Review 完成。
+
+#### 固定历史 native-only 收尾
+
+`native_release_retirement.py` 只处理源码固定的 `cad1fd1d33621532e587b265e79f737dfb06d1fe`、
+GitHub run 36111598240 attempt 2 及指定 build/submission。受审 canonical root staging
+以系统 Python `-I -S -B` 执行，先 inspect，再传相同 `--evidence-sha256` 执行；GitHub
+只读凭据只经 stdin JSON 输入。旧 workflow、job、完整日志摘要、原始库存/锁 inode、
+撤权和无残留进程均须匹配。实时生产 SHA 与旧 native binding 的历史 SHA 分开证明，
+两者不得混写。旧尝试未到 vendor write 也必须有精确步骤证据。
+
+独立 `native-only-closures/<old-sha>` 先持久化 intent，再保存
+`CLOSED_NATIVE_ONLY_VENDOR_UPLOAD` 和随机私密回执；原 workspace、消费记录、锁
+和授权不改。仅证明上传完成，不证明 Apple processing、TestFlight 可用或商店审核。
+轮换通过既有 `--recovery-receipt-stdin` 消费回执，禁止把回执放 argv/日志。执行中断、
+摘要变化或丢失回执均阻断，不自动重跑、不伪造 backend SUCCEEDED。历史校验仍保留
+当时生产证明，但不要求未来生产永远停留在该 revision。
+
+#### 受审 OTA 发布与未知结果恢复
+
+`.github/workflows/trusted-ota.yml` 为生产 iOS OTA 唯一执行入口；本机
+`mobile-ota.sh` 与 `mobile-ota-rollback.sh` 固定退出 78，不读取凭据或执行仓库 helper。
+先 `target=validate`，再 `target=publish`，绑定同一当前 main 精确绿色 SHA。新的托管
+VM 从固定 GitHub canonical source 安装锁定工具链，凭据仅在只读源码/CI 闸后暴露。
+信任前提与 backend 相同，不声称防御 GitHub/runner root/供应商控制面失陷。
+
+仅允许相对固定原生 build 的已知 JS/TS/图片变动。实际 production channel、完整
+runtime 原生 build cohort 的 fingerprint、远端 production 环境变量都须匹配；
+未知路径、缺失 fingerprint、超过有界分页、分流 channel、未受审环境输入即阻断。
+只导出一次 iOS 制品，SHA256 绑定实际 bundle 和全部 asset 字节，不凭 CLI 成功判断上线。
+
+服务器在 launcher 与原 build 双锁内验证同 SHA 后端 SUCCEEDED、真实生产健康和 CI，
+持久化单次 `ota/<sha>` intent 后领取既有 business lease。只有成功 `claim-ota` 才允许
+一次 vendor update。发布前后重验 channel/环境/制品，finish 通过固定 Expo endpoint
+的 [protocol 1 multipart manifest](https://docs.expo.dev/technical-specs/expo-updates-1/)
+独立核对 update ID、runtime、project、bundle 和 asset hashes。请求禁用可变代理/CA/重定向。
+
+完成前把 lease 原四文件复制并 fsync 到持久审计，再在 `/var/lock` 同文件系统内将原
+lease 改名为带 SHA 的退休目录，核对原 inode；不跨文件系统 rename。终态绑定 intent
+和 verified receipt 摘要。历史完成证明依赖持久副本，不依赖重启后可能消失的 `/run`。
+所有未完成 OTA 阻断后续发布和授权轮换，不能改 SHA 绕过。
+
+失败后不得再次执行 vendor update。仅 canonical `trusted_ota_server.py --action recover`
+可在原双锁内接受相同 SHA/group/update receipt，完成未完成的 manifest 验证和锁收尾；
+不需要延长过期授权，不会发布或更改原 claim。已验证后网络不可用仍可完成同一收尾。
+receipt 不同、租约身份改变、未知部分 claim 或在终态持久化前丢失原 tmpfs 归档均 BLOCK，
+保留原现场人工取证。已完成回执重放不释放后来者的 lease。旧版本回滚同样需要新的
+受审发布操作，不能借旧本机 rollback 脚本越过上述边界。
 
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
