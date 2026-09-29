@@ -466,12 +466,8 @@ _CLINICIAN_ASSESSMENT_QUESTION = re.compile(
     r"(?P<question>" + _ASSESSMENT_MEDICINE + r"(?:是否|能否)(?:需要|可以)?" + _ASSESSMENT_DECISION
     + r"|(?:是否|能否)(?:需要|可以)?" + _ASSESSMENT_DECISION + _ASSESSMENT_MEDICINE
     + r"|(?:是否|能否)(?:需要|可以)?停药)"
-    # Finite medicine-class parenthesis only; never swallow free clinical text.
-    r"(?:\((?:尤其是)?(?:处方类)?(?:胃药|处方药|药物)\))?"
-    r"(?P<referral>(?:[，,]\s*(?:应|需|需要|请|须)?由(?:医生|药师)(?:或(?:医生|药师))?"
-    r"(?:结合(?:当前)?(?:症状|检查)(?:(?:和|及)(?:症状|检查))?)?(?:判断|评估|确认)"
-    r"|(?:[，,]\s*)?(?:建议|请|需要)(?:先)?(?:跟|与|向)(?:开药的)?(?:医生|药师)"
-    r"(?:核对|确认|咨询)))"
+    r"(?P<referral>[，,]\s*(?:应|需|需要|请|须)?由(?:医生|药师)(?:或(?:医生|药师))?"
+    r"(?:结合(?:当前)?(?:症状|检查)(?:(?:和|及)(?:症状|检查))?)?(?:判断|评估|确认))"
     r"(?=\s*(?:[，,。；;!?！？\n]|$))"
 )
 

@@ -46,10 +46,9 @@ def test_acknowledgement_does_not_need_medical_evidence_but_stop_advice_does():
 
 
 @pytest.mark.parametrize("text", [
-    "是否停药建议先跟开药的医生确认，不要自行停。",
-    "是否停药（尤其是处方类胃药）建议先跟开药的医生确认，不要自行停。",
-    "能否停药，请先与医生核对。",
-    "是否可以停药需要向药师咨询。",
+    "是否停药，请由医生确认，不要自行停。",
+    "能否停药，请由医生判断。",
+    "是否可以停药，需由药师评估。",
 ])
 def test_explicit_clinician_referral_is_not_discontinuation_advice(text):
     result = enforce_medical_evidence_boundaries(text)
@@ -60,6 +59,7 @@ def test_explicit_clinician_referral_is_not_discontinuation_advice(text):
 @pytest.mark.parametrize("tail", [
     "，但你现在可以停药。", "，明天服用两片。", "，药物服用时间改为睡前。",
     "，疗程缩短到三天。", "，停药即可。", "，你应该每天吃两片药。",
+    "，确认前先断药。", "，今晚先停一晚。",
 ])
 def test_referral_cannot_hide_appended_regimen_action(tail):
     result = enforce_medical_evidence_boundaries("是否停药建议先跟开药的医生确认" + tail)

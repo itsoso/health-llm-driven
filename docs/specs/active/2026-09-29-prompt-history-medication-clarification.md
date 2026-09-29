@@ -35,12 +35,12 @@ not permission to change a record. Rules apply to full/lite/panel prompts and
 compact empty-answer retries; no keyword-only shortcut. Preserve the old compact
 health-context budget in addition to the shared intent rule.
 
-Synthetic real-provider reproduction also exposed an existing false positive:
-an explicit question deferring discontinuation to a clinician was classified as
-an asserted dose action. Extend only the existing finite clinician-assessment
-question grammar (followed by a clinician-referral predicate). Exempt only its
-question span; appended dose, timing, course or discontinuation actions remain
-checked. Parentheses admit only finite medicine-class nouns, not arbitrary text.
+Synthetic real-provider reproduction also exposed an existing false positive
+for a question deferring discontinuation to a clinician. A candidate grammar
+exception was rejected by independent review because appended discontinuation
+synonyms could evade the existing tripwires. It is withdrawn: the medical
+validator stays byte-identical to the production baseline. This slice changes
+prompt behavior only; broader medical-language precision remains future work.
 
 ## Acceptance and rollout
 
