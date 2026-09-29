@@ -119,7 +119,15 @@ def _project_read_presentation(source: str) -> str | None:
     The intact object still passes the existing owner and full-residue binders;
     this helper grants neither a data domain nor a default date window.
     """
-    source = str(source or "").strip()
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+
+    original = str(source or "")
+    source = original.strip()
+    # Match only source already wholly active under the shared role boundary.
+    # Run it before stripping: leading spaces/tabs can denote Markdown code.
+    # A presentation rewrite must never restore text removed as material.
+    if active_health_read_authority_text(original) != source:
+        return None
     suffix = _HTML_PRESENTATION_SUFFIX.fullmatch(source)
     if suffix is not None:
         return suffix["request"].strip() or None

@@ -135,6 +135,34 @@ def test_unsupported_html_wrapper_is_not_normalized_after_material_erasure():
     assert longitudinal_read_projection_text(snapshot(text)) is None
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["enforce", "shadow"])
+@pytest.mark.parametrize("tool,args", [
+    ("health_query", {"dimension": "sleep"}),
+    ("health_query_batch", {"queries": [{"dimension": "sleep"}]}),
+])
+@pytest.mark.parametrize("prefix", ["    ", "\t", " \t", "\n    ", "\r\n\t"])
+@pytest.mark.parametrize("body", [
+    "分析最近一周的睡眠数据",
+    "分析最近一周的睡眠数据，用HTML形式表达",
+    "分析最近一周的睡眠数据\n用HTML形式表达",
+    "分析最近一周的睡眠数据\n    用HTML形式表达",
+    HISTORICAL,
+])
+async def test_html_projection_never_reactivates_indented_material(prefix, body, mode, tool, args):
+    state = snapshot(prefix + body, mode)
+    assert resolve_owned_read_scope(state) is None
+    dispatched = []
+
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{"records": []}'
+
+    result = await ToolGateway(state).execute(ToolExecutionRequest(tool, args), dispatch)
+    assert not dispatched
+    assert result.decision.action == "block"
+
+
 @pytest.mark.parametrize("text", HTML_SUFFIX_REQUESTS)
 def test_html_suffix_preserves_exact_owned_window_and_original_input(text):
     state = snapshot(text)

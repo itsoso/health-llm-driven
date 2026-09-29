@@ -62,6 +62,9 @@ async def test_html_request_executes_owned_read_and_persists_original_format(
 @pytest.mark.parametrize("query", [
     "分析最近一周妈妈的睡眠数据，用HTML形式表达",
     "分析最近一周的睡眠数据，只看上午，用HTML形式表达",
+    "    分析最近一周的睡眠数据，用HTML形式表达",
+    "\t分析最近一周的睡眠数据，用HTML形式表达",
+    "    使用HTML方式输出最近一周的睡眠情况以及你的分析。",
 ])
 async def test_html_request_cannot_dispatch_unowned_or_unresolved_scope(
     db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, query,

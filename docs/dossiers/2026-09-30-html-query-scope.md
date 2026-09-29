@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G3 passed; G4 pending |
+| 当前阶段 | G4 correction; final G3 rerun and review pending |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -47,7 +47,19 @@ text remains in the envelope, provider input and conversation persistence.
 
 ## G4 / G5 / G6
 
-Independent review pending on a fixed local commit. This repair is not deployed.
+Independent review on `9d19350dec81edbc730528139b872578118f1143`: NO-GO.
+The projector stripped indentation before interpreting original material roles,
+allowing a code-only request plus HTML suffix to dispatch. Added 100 matrix cases
+covering four spaces, tabs, mixed whitespace and multiline code, both legacy
+wrappers and new suffixes, query/batch and enforce/shadow. RED: 80 failures /
+20 passes (`/tmp/reva-html-material-red.log`). The corrected projector requires
+the shared read-authority parser, run on the untouched source, to preserve the
+whole source before any presentation projection. It cannot reconstruct removed
+material. Fresh focused SQLite: 700 passed / 12 PostgreSQL-only skips.
+Three additional real Pi cases cover indentation; final PostgreSQL and CI-mode
+integration reruns and independent re-review remain pending.
+
+This repair is not deployed.
 Another publisher was actively staging main on the production host; no SSH,
 main push, release credential rotation or production mutation belongs to this
 incident run. Existing login/security release and host-hardening work remain
