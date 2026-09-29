@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G4 correction; final G3 rerun and review pending |
+| 当前阶段 | G4 passed; awaiting coordinated release |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -56,8 +56,15 @@ wrappers and new suffixes, query/batch and enforce/shadow. RED: 80 failures /
 the shared read-authority parser, run on the untouched source, to preserve the
 whole source before any presentation projection. It cannot reconstruct removed
 material. Fresh focused SQLite: 700 passed / 12 PostgreSQL-only skips.
-Three additional real Pi cases cover indentation; final PostgreSQL and CI-mode
-integration reruns and independent re-review remain pending.
+Three additional real Pi cases cover indentation. Final PostgreSQL: 715 passed,
+zero skips, exit 0 (`/tmp/reva-html-postgres-v2.log`); CI-mode integration:
+25 passed, exit 0 (`/tmp/reva-html-ci-integration-v2.log`). LLM change gate and
+commit checks passed on the corrected source.
+
+Independent G4 GO binds `046361e730534c345f3e568ee8d0be83f2573dce`: reviewer
+independently ran 313 passing tests, 195 differential request pairs with zero
+new or expanded scope, and 60 real gateway counterexamples with zero dispatch.
+No production code changed after that review; this evidence update is docs only.
 
 This repair is not deployed.
 Another publisher was actively staging main on the production host; no SSH,
