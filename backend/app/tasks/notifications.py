@@ -2167,3 +2167,12 @@ def weekly_advisor_run():
     """已迁移到 app.tasks.notifications_wscla. Wrapper 保留 task name 不变."""
     from app.tasks.notifications_wscla import weekly_advisor_run_impl
     return weekly_advisor_run_impl()
+
+
+@celery_app.task(name="app.tasks.notifications.send_registration_admin_notifications")
+def send_registration_admin_notifications():
+    """Drain committed registration events without delaying account creation."""
+    from app.services.registration_notification import deliver_registration_notifications
+
+    with SessionLocal() as db:
+        return run_async(deliver_registration_notifications(db))

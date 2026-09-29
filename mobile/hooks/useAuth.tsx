@@ -44,7 +44,7 @@ interface AuthState {
   verifyPhoneCode: (
     phone: string,
     code: string,
-  ) => Promise<'authenticated' | 'invitation_required' | 'superseded'>;
+  ) => Promise<'authenticated' | 'registered' | 'invitation_required' | 'superseded'>;
   completeInvitedRegistration: (credential: InvitationCredential) => Promise<void>;
   logout: () => Promise<void>;
   retrySession: () => Promise<void>;
@@ -350,7 +350,7 @@ export function AuthProvider({
         if (!operation.isCurrent()) return 'superseded';
         setPendingRegistration(pending);
       }
-      return result.outcome;
+      return result.outcome === 'authenticated' && result.is_new_user ? 'registered' : result.outcome;
     } catch (error) {
       if (!operation.isCurrent() || isAuthOperationSuperseded(error)) return 'superseded';
       throw error;

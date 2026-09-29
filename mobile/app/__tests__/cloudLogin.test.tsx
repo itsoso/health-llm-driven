@@ -34,7 +34,7 @@ describe('cloud account onboarding', () => {
   it('offers account authentication without a local-mode entry', () => {
     const screen = render(<LoginScreen />);
 
-    expect(screen.getByText('账号密码登录')).toBeTruthy();
+    expect(screen.getByText('密码登录')).toBeTruthy();
     expect(screen.queryByText('无需注册，立即本地使用')).toBeNull();
   });
 });

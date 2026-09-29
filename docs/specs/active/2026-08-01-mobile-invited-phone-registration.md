@@ -2,14 +2,47 @@
 
 > Status: approved_definition
 > Owner: Codex
-> Updated: 2026-08-01
+> Updated: 2026-09-29
 > Related design: `docs/plans/2026-08-01-mobile-invited-phone-registration-design.md`
 > Related code: `backend/app/api/auth.py`, `backend/app/api/invitation.py`, `mobile/app/login.tsx`
+
+> 2026-09-29：默认准入已由 [自主注册与 Telegram 通知](2026-09-29-self-registration-telegram.md) 取代。
+> 本文邀请流程仅在 `AUTH_PHONE_SELF_REGISTRATION_ENABLED=false` 时作为回退策略；历史验收记录不代表新行为。
 
 ## 1. Decision
 
 已注册手机号继续无邀请码登录；陌生手机号只有在管理员预先创建了绑定该手机号的单次邀请，
 并同时通过短信验证码后才允许创建账号。
+
+### 2026-09-29 双入口增量
+
+用户确认：支持手机号获取验证码登录，或者手机号/邮箱加密码登录。
+这属于现有认证基础设施的 Mobile 入口完善，沿用本 Spec 的准入与安全边界；
+Backend 仍是身份和账号状态真源，不新增 API、数据库字段或注册旁路。
+
+- Mobile 默认显示“验证码登录”，并在同一位置提供“密码登录”选项。
+- 大陆 11 位手机号规范化为 `+86`；国际手机号须含国家区号。
+- 密码入口提示“手机号 / 邮箱”，沿用 `/auth/login/json`；旧用户名登录保持兼容。
+- OTP 已发送时仍可切换方式；切换清除错误和已输入验证码，保留发码倒计时；
+  退出密码页时清除密码并恢复隐藏状态，第一次进入则保留安全存储恢复的记住密码。
+- 请求进行中禁用切换；邀请验证阶段继续完成既有绑定手机号的注册流程。
+- 没有密码的账号先通过短信登录，再使用现有账号安全入口设置密码。
+- 范围为 Mobile 主登录页；Web 和 Mac 既有密码登录不扩展短信界面。
+
+验收：Mobile 测试覆盖两个入口、发码规范化、错误清理、切换与倒计时；Backend
+回归验证手机号/邮箱密码与短信登录指向同一用户，以及错误密码、未设密码、禁用、
+未审核账号不能获得 token。本次不改变生产准入配置，不提交或发布。
+
+本地验证（基线 `1d7981692`，2026-09-29）：
+
+- Mobile 登录页面、云登录壳、auth service、useAuth：140 项测试通过。
+- Backend `test_auth_login_policy.py`、`test_phone_auth.py`、
+  `test_phone_auth_delivery_privacy.py`：40 项测试通过（SQLite 测试库；无数据库行为变更）。
+- `cd mobile && npx tsc --noEmit`、变更文件 ESLint、`./scripts/system-map-check.sh`、
+  `git diff --check` 通过。
+- 独立只读认证/隐私复核：GO；未发现本次新增安全阻断项。
+- 测试短信使用合成验证码/模拟供应商；没有验证生产短信投递或设备端体验，没有发布。
+
 
 ## 2. Problem
 
@@ -183,6 +216,7 @@ Then the backend returns 403 and writes no invitation mutation
 
 | Date | Change | Reason |
 |---|---|---|
+| 2026-09-29 | 明确短信验证码与手机号/邮箱密码双登录入口 | 用户确认两种方式并存；复用认证服务与邀请注册边界 |
 | 2026-09-15 | Replace copied custom-scheme invites with a validated HTTPS App Link | 让 Web 管理页可复制、短信可点击，并保持 Mobile 精确 host/path/fragment 校验与首跳日志隔离 |
 | 2026-09-14 | Invitation delivery defaults to manual forwarding without invitation SMS | 用户明确选择管理员创建后手工转发一次性邀请码，避免依赖尚未审核的邀请短信签名/模板 |
 | 2026-09-14 | Check existing-user or active-invitation eligibility before OTP delivery | 避免未获准手机号收到验证码，并在手机号页直接给出可行动提示 |

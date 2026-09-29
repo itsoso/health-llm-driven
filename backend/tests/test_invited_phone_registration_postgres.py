@@ -20,13 +20,19 @@ from app.models.registration_invitation import (
     RegistrationAuthAttemptAudit,
     RegistrationInvitation,
 )
-from app.models.phone_auth import PhoneAuthCode
+from app.models.phone_auth import PhoneAuthCode, RegistrationAdminNotification
 from app.models.user import GarminCredential, User
 from app.services.registration_invitation import (
     create_phone_registration_grant,
     create_registration_invitation,
 )
 from app.services.phone_auth import _hash_code, consume_phone_code
+
+
+@pytest.fixture(autouse=True)
+def _invitation_mode(monkeypatch):
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", False)
 
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -56,6 +62,7 @@ def test_postgres_two_sessions_create_at_most_one_user_and_consume_once(monkeypa
         )
         for table in (
             User.__table__,
+            RegistrationAdminNotification.__table__,
             GarminCredential.__table__,
             AgentAuditLog.__table__,
             RegistrationInvitation.__table__,
@@ -171,6 +178,7 @@ def test_postgres_concurrent_correct_otp_verify_has_exactly_one_grant(monkeypatc
         )
         for table in (
             User.__table__,
+            RegistrationAdminNotification.__table__,
             GarminCredential.__table__,
             PhoneAuthCode.__table__,
             PhoneRegistrationGrant.__table__,

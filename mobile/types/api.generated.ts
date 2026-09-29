@@ -166,7 +166,7 @@ export interface paths {
         put?: never;
         /**
          * 手机号验证码登录或注册
-         * @description Legacy OTP login; enforcement blocks unknown-phone auto-registration.
+         * @description Legacy OTP endpoint; verified self-registration follows the server policy.
          */
         post: operations["login_by_phone_code_api_v1_auth_phone_login_post"];
         delete?: never;
@@ -185,8 +185,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * 验证手机号并区分登录或邀请注册
-         * @description Consume an OTP exactly once without creating an unknown-phone user.
+         * 验证手机号并登录或注册
+         * @description Consume OTP and atomically self-register, or return an invitation ticket.
          */
         post: operations["verify_phone_code_api_v1_auth_phone_verify_post"];
         delete?: never;

@@ -1,7 +1,7 @@
 /* eslint-disable import/first */
 import React from 'react';
 import { AppState, Text } from 'react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react-native';
 
 let unauthorizedHandler: (() => void) | null = null;
 let mockHadPersistedSession = false;
@@ -456,6 +456,21 @@ describe('useAuth update resilience', () => {
 
     await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('pending'));
     expect(screen.getByTestId('state')).toHaveTextContent('guest');
+  });
+
+  it('reports registered only for a newly created verified account', async () => {
+    (getToken as jest.Mock).mockResolvedValue(null);
+    (verifyPhoneCode as jest.Mock).mockResolvedValue({
+      outcome: 'authenticated', access_token: 'tok_registered', token_type: 'bearer',
+      is_new_user: true, user: { id: 9, username: 'phone_9' },
+    });
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    let outcome: string | undefined;
+    await act(async () => { outcome = await result.current.verifyPhoneCode('13800138000', '123456'); });
+    expect(outcome).toBe('registered');
+    expect(result.current.user?.id).toBe(9);
+    expect(result.current.pendingRegistration).toBeNull();
   });
 
   it('authenticates only after the verify service returns a durably persisted token', async () => {

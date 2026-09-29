@@ -15,6 +15,7 @@ def _enable_dev_codes(monkeypatch):
 
 
 def _enable_invitation_enforcement(monkeypatch):
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", False)
     _enable_dev_codes(monkeypatch)
     monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)
     monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", True)

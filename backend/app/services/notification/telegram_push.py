@@ -16,6 +16,7 @@ Agent Native 告警通道：当 iOS APNs 不可用时（App 未构建），
 """
 
 import logging
+import re
 from typing import Optional
 
 import httpx
@@ -23,6 +24,20 @@ import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class _TelegramURLRedactor(logging.Filter):
+    """httpx INFO logs include the bot token in Telegram's required URL path."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        rendered = record.getMessage()
+        if re.search(r"/bot[^/\s]+/", rendered):
+            record.msg = re.sub(r"/bot[^/\s]+/", "/bot[REDACTED]/", rendered)
+            record.args = ()
+        return True
+
+
+logging.getLogger("httpx").addFilter(_TelegramURLRedactor())
 
 
 class TelegramPushService:
@@ -82,20 +97,19 @@ class TelegramPushService:
         try:
             async with httpx.AsyncClient(**self._client_kwargs()) as client:
                 resp = await client.post(url, json=payload)
-                if resp.status_code == 200:
-                    logger.info(
-                        f"[telegram] 消息已发送 chat_id={target} "
-                        f"via={'proxy' if self.proxy_url else 'direct'} "
-                        f"base={self.api_base}"
-                    )
+                try:
+                    body = resp.json()
+                except ValueError:
+                    logger.warning("[telegram] invalid response status=%s", resp.status_code)
+                    return {"success": False, "reason": "invalid_response"}
+                if resp.status_code == 200 and isinstance(body, dict) and body.get("ok") is True:
+                    logger.info("[telegram] message accepted")
                     return {"success": True}
-                else:
-                    body = resp.text[:200]
-                    logger.warning(f"[telegram] 发送失败: {resp.status_code} {body}")
-                    return {"success": False, "status": resp.status_code, "body": body}
-        except Exception as e:
-            logger.warning(f"[telegram] 发送异常: {e}")
-            return {"success": False, "error": str(e)}
+                logger.warning("[telegram] request rejected status=%s", resp.status_code)
+                return {"success": False, "reason": "telegram_rejected", "status": resp.status_code}
+        except (httpx.HTTPError, OSError):
+            logger.warning("[telegram] transport failure")
+            return {"success": False, "reason": "transport_error"}
 
     async def send_health_alert(
         self,
