@@ -5,7 +5,7 @@ Before=health-backend.service celery-worker.service celery-beat.service health-f
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 -I -B /opt/health-app/scripts/harden_public_host.py --network
+ExecStart=/usr/bin/python3 -I -S -B /opt/health-app/scripts/harden_public_host.py --network
 RemainAfterExit=yes
 
 [Install]
