@@ -611,7 +611,11 @@ def test_deploy_uses_only_fixed_command_and_private_authoritative_env(monkeypatc
     assert calls[-1][0] == ["/bin/bash", str(tmp_path / "source/deploy.sh"), "-b"]
     assert calls[-1][1]["DEPLOY_SOURCE_SHA"] == SHA
     candidate = (tmp_path / "deployment.env").read_text()
-    assert candidate == ("EXAMPLE_SETTING=fixture\n" + server.initial_laya_config("EXAMPLE_SETTING=fixture")
+    assert candidate == ("EXAMPLE_SETTING=fixture\n"
+                         "AUTH_PHONE_SELF_REGISTRATION_ENABLED=false\n"
+                         "REGISTRATION_INVITATION_ENFORCEMENT_ENABLED=true\n"
+                         "REGISTRATION_INVITATION_ROLLOUT_ENABLED=true\n"
+                         + server.initial_laya_config("EXAMPLE_SETTING=fixture")
                          + "DEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n")
     assert stat.S_IMODE((tmp_path / "deployment.env").stat().st_mode) == 0o600
     assert (tmp_path / "bin/ssh").read_text() == '#!/bin/sh\nexec /usr/bin/ssh -F /etc/reva-release/loopback.conf "$@"\n'
