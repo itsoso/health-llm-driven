@@ -44,7 +44,7 @@ _HEALTH_ADVICE = r"(?:请)?(?:给|给出|提供)(?:我)?(?:一些|一点|些|点
 _BEDTIME = r"(?:我)?(?:现在|今晚|今天晚上)(?:是不是|是否)?(?:可以|能|该|应该)(?:去)?睡觉(?:了)?(?:吗)?"
 _BEDTIME_RE = re.compile(
     rf"(?:{_HEALTH_ADVICE}[，,。])?{_BEDTIME}[？?。]?|"
-    rf"我准备睡觉了[，,]{_HEALTH_ADVICE}[。？?]?|{_HEALTH_ADVICE}[。？?]?"
+    rf"我准备睡觉了[，,]{_HEALTH_ADVICE}[。？?]?"
 )
 _ACTION_EXPLANATION_RE = re.compile(
     r"请解释今天这条行动：[“\"](?P<title>[^“”\"\r\n]{1,120})[”\"]。"
@@ -91,45 +91,52 @@ def current_input_advice_instructions(text: str) -> str:
     return CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS if is_current_input_advice(text) else ""
 
 
-_PRIVATE_SUBJECT = r"(?:你|您|个人|病史|病历|档案|睡眠记录|健康记录|设备数据)"
-_UNVERIFIED_PRIVATE_CLAIM_RE = re.compile(
-    rf"(?:查(?:询|阅|看)?(?:了|过|到)|读取(?:了|过|到)|调取(?:了|过|到)|看过|核实了|已(?:核实|查询|读取|查阅|查看)).{{0,12}}{_PRIVATE_SUBJECT}|"
-    r"(?:你的|您的|个人)(?:睡眠|健康|检查|用药|设备|病史|病历|档案).{0,16}(?:显示|表明|证实)|"
-    r"(?:根据|结合|基于)(?:你的|您的|个人)(?:睡眠记录|健康记录|病史|病历|档案|设备数据)|"
-    r"(?:你|您)(?:昨晚|昨天|最近|近期|本周).{0,14}(?:睡了|只睡|睡眠|心率|血压|血氧).{0,8}\d|"
-    r"(?:医生|医嘱).{0,28}(?:安排|要求|确认|建议).{0,12}(?:你|您|今天|复查|检查)|"
-    r"(?:你|您).{0,18}(?:复查|检查).{0,12}(?:是|由)医生|"
-    r"(?:你|您)(?:现在|目前|今天)?(?:已经|完全|肯定|绝对)(?:安全|没问题|可以放心)|"
-    r"I (?:have )?(?:checked|reviewed|read) your|your (?:sleep|medical) (?:records|history) (?:shows?|confirms?)|"
-    r"your doctor (?:has )?(?:scheduled|ordered)", re.I,
+# Server-owned prose, not a model-output keyword denylist. No title, history,
+# context or model text is interpolated into these answers. Sources are public
+# editorial provenance, not evidence of an individual's state or appointment.
+_SLEEP_ADVICE = (
+    "如果你已经困了、接近平时就寝时间，可以开始准备休息；这不是对你当前身体状况的安全判断。"
+    "先放下屏幕，让卧室安静、昏暗，做些轻松的睡前活动；没有睡意时不必强迫入睡。\n\n"
+    "本轮未查询个人记录，因此不能判断你是否缺觉，也不能仅凭这句话确认现在入睡是否适合你。"
+    "如果有明显或突然加重的不适，先寻求医疗帮助，不要把睡觉当作处理不适的方法。"
+    "你现在是困了，还是有不舒服、担心睡不着？\n\n"
+    "通用参考：[NHS 睡眠习惯建议](https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/how-to-fall-asleep-faster-and-sleep-better/)"
 )
-_ANSWER_LIMITATION_RE = re.compile(r"(?:无法|不能|未能|尚未|没有|并未|未)(?:直接|实际|主动|明确)?$")
-_CURRENT_INPUT_BASIS_RE = re.compile(r"(?:未查询个人记录|(?:仅|只)(?:根据|基于|依据).{0,12}(?:当前|输入|描述|提供|标题))")
+_FOLLOW_UP_ADVICE = (
+    "这条行动是在提示复查，但标题本身不能证明今天就是医生确定的检查日期。\n\n"
+    "为什么做：复查通常用于和医生重新评估病情及后续安排；为什么安排在今天，需要核对原来的医嘱或预约通知，不能仅从标题推断。\n\n"
+    "怎么准备：先确认具体检查项目、预约时间和准备要求；整理之前的报告、近期症状变化和想问的问题，带给接诊医生。"
+    "是否需要空腹，以及药物相关注意事项，应向检查机构、医生或药师核对。\n\n"
+    "什么情况下不适合直接照做：检查项目或准备要求不清楚，或身体出现新的、明显加重的不适时，先联系医疗人员确认，"
+    "不要自行决定停药、改方案或推迟必要的就医。具体禁忌取决于检查项目和个人情况。\n\n"
+    "本轮未查询个人记录，也没有执行或更改这条行动。你可以提供具体检查名称或原医嘱，我再帮你解释文字含义。\n\n"
+    "通用参考：[NHS 就诊提问清单](https://www.nhs.uk/nhs-services/gps/what-to-ask-your-doctor/)"
+)
 CURRENT_INPUT_UNVERIFIED_ANSWER_NOTICE = (
     "本轮未查询个人记录，无法核实生成内容中的个人数据或医嘱依据，已停止提供这部分结论。"
     "请补充你想解释的具体信息；一般建议不需要先查询历史记录。"
 )
 
 
-def current_input_answer_supported(text: str) -> bool:
-    """Require stated provenance and reject ungrounded personal assertions.
+def local_advice_response(message: str) -> tuple[str, str] | None:
+    """Return a proven goal kind and its reviewed exact answer, without reads.
 
-    A disclaimer cannot launder a later affirmative claim. Negative epistemic
-    clauses remain usable, but only the local prefix of each match is checked.
-    This is conservative output validation, never an evidence attestation.
+    Existing symptom-recovery remains on its existing model/medical pipeline.
+    A bare general-health request is not silently changed into sleep advice.
     """
-    candidate = str(text or "")
-    if not _CURRENT_INPUT_BASIS_RE.search(candidate):
-        return False
-    for match in _UNVERIFIED_PRIVATE_CLAIM_RE.finditer(candidate):
-        prefix = candidate[max(0, match.start() - 12):match.start()]
-        if re.search(r"并非|不是|不代表|不能说", prefix) or not _ANSWER_LIMITATION_RE.search(prefix):
-            return False
-    return True
+    if is_current_input_recovery_advice(message) or not is_current_input_advice(message):
+        return None
+    candidate = message.replace(" ", "").replace("\u3000", "")
+    if _ACTION_EXPLANATION_RE.fullmatch(candidate):
+        return "follow_up_explanation", _FOLLOW_UP_ADVICE
+    if "睡" in candidate:
+        return "bedtime_advice", _SLEEP_ADVICE
+    return None
 
 
 def guard_current_input_answer(message: str, answer: str) -> tuple[str, bool]:
-    if is_current_input_advice(message) and not current_input_answer_supported(answer):
+    expected = local_advice_response(message)
+    if expected is not None and answer != expected[1]:
         return CURRENT_INPUT_UNVERIFIED_ANSWER_NOTICE, False
     return answer, True
 

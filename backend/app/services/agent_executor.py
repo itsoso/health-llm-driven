@@ -12610,8 +12610,8 @@ class AgentExecutor:
         if not self._has_explicit_unscoped_answer_goal():
             return
 
-        from app.services.agent_kernel.current_input_advice_scope import current_input_answer_supported
-        if self._has_current_input_recovery_advice_goal() and not current_input_answer_supported(final_text):
+        from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+        if not guard_current_input_answer(self._current_turn_user_message, final_text)[1]:
             return
 
         for reason in self._agent_kernel_capability_block_reasons:
@@ -15606,6 +15606,60 @@ class AgentExecutor:
             },
         }
 
+    async def _run_local_advice_stream(
+        self, *, user_id: int, message: str, conversation_id: int | None,
+        client_turn_id: str | None, recovered_user_message: Any,
+        request_started_at: float,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Persist the canonical answer; never accept caller/model supplied prose."""
+        from app.services.agent_kernel.current_input_advice_scope import local_advice_response
+        from app.services.agent_conversation_service import AgentConversationService
+
+        response = local_advice_response(message)
+        if response is None:
+            raise ValueError("Local advice requires a complete proven goal")
+        kind, text = response
+        svc = AgentConversationService(self.db)
+        conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
+        if recovered_user_message is not None:
+            if (recovered_user_message.conversation_id != conv.id
+                    or recovered_user_message.content != message
+                    or recovered_user_message.image_url):
+                raise ValueError("Local advice recovery must match its original source")
+            user_msg = recovered_user_message
+        else:
+            user_msg, _ = svc.save_user_message_once(
+                conv.id, user_id, message, client_turn_id=client_turn_id,
+                meta={"client_turn_id": client_turn_id} if client_turn_id else None,
+            )
+        outcome = {
+            "status": "complete", "category": "answer", "reason_code": kind,
+            "retryable": False, "dispatch_started": False,
+            "verified_receipt_count": 0, "actions": [], "refusal_detected": False,
+            "capability_block_count": 0, "tool_failure_count": 0,
+            "confirmation_required": False,
+        }
+        meta = {
+            **agent_completion_metadata("complete", outcome), "turn_outcome": outcome,
+            "route": "current_input_local_advice", "advice_kind": kind,
+            "answer_provenance": "reviewed_general_guidance_v1",
+            "model_call_count": 0, "client_turn_finalized": True,
+            "write_receipts": [],
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        ai_msg = svc.save_message(conv.id, "assistant", text, meta=meta,
+            client_turn_id=client_turn_id, client_turn_user_id=user_id)
+        yield {"event": "request_persisted", "data": {
+            "conversation_id": conv.id, "user_message_id": user_msg.id,
+            "client_turn_id": client_turn_id,
+        }}
+        yield {"event": "token", "data": {"content": text}}
+        yield {"event": "done", "data": {
+            "conversation_id": conv.id, "message_id": ai_msg.id, **meta,
+            "perf": {"route": meta["route"], "model_call_count": 0,
+                "total_ms": max(0, int((time.time() - request_started_at) * 1000))},
+        }}
+
     async def run_stream(
         self,
         user_id: int,
@@ -15970,6 +16024,31 @@ class AgentExecutor:
                     ):
                         yield self._attach_runtime_identity(event)
                     return
+            # Durable replay and uncertain-write recovery take precedence. Both
+            # ordinary and panel requests then use exactly the same no-model
+            # answer, without loading private context or interpreting opaque
+            # client extra_context as evidence. Attachments stay on their path.
+            from app.services.agent_kernel.current_input_advice_scope import local_advice_response
+            if (
+                retry_recovery is None and not effective_images and not file_base64
+                and local_advice_response(effective_message) is not None
+                and (recovered_user_message is None or (
+                    recovered_user_message.content == effective_message
+                    and not recovered_user_message.image_url
+                ))
+            ):
+                async for event in self._run_local_advice_stream(
+                    user_id=user_id, message=effective_message,
+                    conversation_id=(recovered_user_message.conversation_id
+                        if recovered_user_message is not None else conversation_id),
+                    client_turn_id=client_turn_id,
+                    recovered_user_message=recovered_user_message,
+                    request_started_at=request_started_at,
+                ):
+                    if event.get("event") == "done":
+                        kernel_completion_status = "complete"
+                    yield self._attach_runtime_identity(event)
+                return
             streamed_answer_parts: List[str] = []
             # After durable write recovery, before ordinary/panel/model routing.
             # A missing source or unbound correction is a user-input obligation,

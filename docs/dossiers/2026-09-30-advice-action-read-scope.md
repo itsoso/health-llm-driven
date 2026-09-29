@@ -58,6 +58,26 @@ guard is unsafe: a bare bedtime question can reach a generic list-read fallback.
 
 ## G4 / G5 / G6
 
-Independent review of fixed code `94c979c33` pending. No backend, OTA or desktop publication claimed. Existing HTML G4 does
-not substitute for review of this new backend behavior. Exact target CI and
-post-release verification are required before completion.
+Independent review: `94c979c33` NO-GO (invented private evidence could complete);
+`a58b990b` NO-GO (claim denylist bypassed by semantic paraphrases). Tests on that
+rejected candidate passed 6,064 cases and the live gate, but are not G4 proof.
+
+Correction: new bedtime/general-sleep and exact Agenda-wrapper goals now use
+canonical server-owned guidance before provider/panel calls, after durable
+write recovery. Existing symptom-recovery stays unchanged. Lower model routes
+fail closed on any noncanonical answer for these goals. Provenance is public
+guidance plus current input, not personal records or a verified appointment.
+Editorial sources: NHS sleep hygiene and appointment-question checklist, linked
+inline in the canonical answers. No user health content is interpolated.
+
+New entrypoint RED: 7 failures / 8 passes in `/tmp/reva-local-advice-red.log`,
+demonstrating unwanted provider/panel dispatch and missing ACK recovery path.
+The first GREEN attempt exposed a test-only event-shape assumption (progress
+frames do not have `event`); corrected to use the existing `.get` convention.
+Fresh verification and fixed-commit independent review pending.
+
+No backend, OTA or desktop publication claimed. Existing HTML G4 does not
+substitute for review of backend behavior. Exact main CI and post-release
+verification are required. Another MacBook's frontend finalization receipt for
+operation `72988375dd2a4785ddbd351523197536` was absent on last read-only check;
+do not take over its finalization or change current main underneath it.

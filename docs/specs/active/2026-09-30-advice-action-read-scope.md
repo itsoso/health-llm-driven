@@ -44,15 +44,22 @@ RequirementAdmission:
 - Match the complete original request. Quotes, negation, added read/write
   clauses, unknown annotations, other subjects, and acute symptom clauses do
   not gain this proof. Existing authorization remains authoritative for them.
-- Only public knowledge search may be exposed. Forced private reads fail before
-  dispatch in enforce and shadow modes, retain audit reasons, and do not make
-  a subsequently complete safe answer fail. Writes remain blocked.
+- New bounded bedtime/general-sleep and Agenda-wrapper goals receive reviewed,
+  server-owned canonical guidance before provider/panel dispatch. No model or
+  tool call is needed. Recovery of an ACKed request binds the original text and
+  rejects attachment/replacement-caption shortcuts; uncertain-write recovery
+  takes precedence. Existing symptom-recovery remains on its existing path.
+- Defense in depth: only public knowledge search may be exposed if a lower
+  model entrypoint is used directly. Private reads fail before dispatch in
+  enforce and shadow modes. For the new goals, only exact goal-bound canonical
+  output may complete; disclaimers/keyword denylists do not prove grounding.
 - Do not preload Twin, past action cards, opener side effects or opaque entry
   context. An action title is supplied material, not verified scheduling evidence.
 - Explain general purpose/preparation/limitations, explicitly stating why its
   exact due date or individual suitability cannot be confirmed from the title.
 - No prescribing, diagnosis, dose/timing/course changes, or safety clearance.
-  Keep existing medical output validation; an unsafe rewrite cannot complete.
+  Keep existing medical output validation on model paths; an unsafe rewrite
+  cannot complete. Canonical prose is not interpolated from titles or context.
 - No API/schema/database changes. Conversation outcome and persisted content
   must agree with the streamed answer. Truncation remains failure.
 
@@ -70,3 +77,4 @@ separate gates. Roll back through governed release receipts only.
 | Date | Change | Reason |
 | --- | --- | --- |
 | 2026-09-30 | Initial bounded bugfix contract | Optional private reads should not replace ordinary advice with query errors |
+| 2026-09-30 | Canonical pre-model guidance for new goals | Two G4 rounds rejected free prose promoted through a claim denylist |

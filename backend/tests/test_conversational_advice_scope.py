@@ -55,7 +55,9 @@ def test_whole_request_proof_does_not_erase_other_intents(message):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('message', [BEDTIME, ACTION])
-async def test_advice_completes_after_forced_optional_read(db, auth_user_and_headers, monkeypatch, message):
+async def test_bypassed_local_route_cannot_promote_free_model_prose(db, auth_user_and_headers, monkeypatch, message):
+    from app.services.agent_executor import AgentExecutor
+    monkeypatch.setattr(AgentExecutor, 'run_stream', AgentExecutor._run_stream_impl)
     monkeypatch.setattr('app.services.agent_input_tool_scope.scope_tools_for_current_input_advice',
                         lambda tools, text: [{'type': 'function', 'function': {
                             'name': 'health_query', 'description': 'Synthetic forced read',
@@ -67,9 +69,10 @@ async def test_advice_completes_after_forced_optional_read(db, auth_user_and_hea
         first_args={'dimension': 'sleep'}, dispatch=lambda request: {}, reply=reply,
         turn_id='conversation-advice', required_context_text='本轮只依据用户当前输入')
     assert not dispatched
-    assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
+    assert done['completion_status'] != 'complete'
+    assert done['turn_outcome']['status'] != 'complete'
     assert persisted.content == public
-    assert reply in public
+    assert reply not in public
     assert 'current_input_advice_read_not_needed' in executor._agent_kernel_capability_block_reasons
     assert not done['write_receipts']
 
@@ -109,6 +112,8 @@ async def test_advice_gateway_never_dispatches_private_read(message, mode):
 @pytest.mark.asyncio
 @pytest.mark.parametrize('message', [BEDTIME, ACTION])
 async def test_incomplete_answer_is_not_recovered(db, auth_user_and_headers, monkeypatch, message):
+    from app.services.agent_executor import AgentExecutor
+    monkeypatch.setattr(AgentExecutor, 'run_stream', AgentExecutor._run_stream_impl)
     user, _ = auth_user_and_headers
     _, done, _, _, calls = await _run_scripted(db, user, monkeypatch,
         query=message, first_tool='health_query', first_args={'dimension': 'sleep'},
@@ -141,19 +146,13 @@ async def test_panel_uses_same_answer_only_boundary(db, auth_user_and_headers, m
     user, _ = auth_user_and_headers
     events = [e async for e in executor._run_multi_model_stream(user.id, message, None, None, '{"multi_model":true}')]
     done = events[-1]['data']
-    if fabricate:
-        assert done['completion_status'] != 'complete'
-        assert done['turn_outcome']['status'] != 'complete'
-    else:
-        assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
+    assert done['completion_status'] != 'complete'
+    assert done['turn_outcome']['status'] != 'complete'
     assert not calls
     persisted = db.get(AgentMessage, done['message_id'])
     assert persisted.meta['turn_outcome'] == done['turn_outcome']
-    if fabricate:
-        assert reply not in persisted.content
-        assert '无法核实' in persisted.content
-    else:
-        assert reply in persisted.content
+    assert reply not in persisted.content
+    assert '无法核实' in persisted.content
 
 
 @pytest.mark.parametrize('message,reply', [
@@ -164,6 +163,8 @@ async def test_panel_uses_same_answer_only_boundary(db, auth_user_and_headers, m
 ])
 @pytest.mark.asyncio
 async def test_invented_private_evidence_cannot_be_streamed_or_complete(db, auth_user_and_headers, monkeypatch, message, reply):
+    from app.services.agent_executor import AgentExecutor
+    monkeypatch.setattr(AgentExecutor, 'run_stream', AgentExecutor._run_stream_impl)
     user, _ = auth_user_and_headers
     _, done, persisted, public, calls = await _run_scripted(db, user, monkeypatch,
         query=message, first_tool='health_query', first_args={'dimension': 'sleep'},
@@ -180,7 +181,26 @@ async def test_invented_private_evidence_cannot_be_streamed_or_complete(db, auth
     '本轮未查询个人记录。I have checked your sleep records.',
     '本轮未查询个人记录。我并非没有查过你的记录。',
     '本轮未查询个人记录。医生根据你的病史安排今天复查。',
+    '本轮未查询个人记录。从你的睡眠记录来看，你昨晚只睡四小时，所以现在应当睡觉。',
+    '本轮未查询个人记录。你的医生让你今天去复查。',
+    '本轮未查询个人记录。医生说你今天要复查。',
+    '本轮未查询个人记录。查到了昨晚睡眠只有4小时，所以现在可以睡。',
+    '本轮未查询个人记录。睡眠记录表明昨晚只睡4小时。',
+    '本轮未查询个人记录。经核验，你昨晚睡够了，可以放心睡。',
+    '本轮未查询个人记录。I checked the sleep data; you only got four hours.',
 ])
 def test_disclaimer_never_launders_unsupported_claims(reply):
-    from app.services.agent_kernel.current_input_advice_scope import current_input_answer_supported
-    assert not current_input_answer_supported(reply)
+    from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+    for message in (BEDTIME, ACTION):
+        assert not guard_current_input_answer(message, reply)[1]
+
+
+def test_only_exact_goal_bound_canonical_answer_is_supported():
+    from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer, local_advice_response
+    bedtime = local_advice_response(BEDTIME)[1]
+    action = local_advice_response(ACTION)[1]
+    assert guard_current_input_answer(BEDTIME, bedtime) == (bedtime, True)
+    assert guard_current_input_answer(ACTION, action) == (action, True)
+    assert not guard_current_input_answer(BEDTIME, action)[1]
+    assert not guard_current_input_answer(ACTION, bedtime)[1]
+    assert not guard_current_input_answer(BEDTIME, bedtime + '你肯定安全。')[1]
