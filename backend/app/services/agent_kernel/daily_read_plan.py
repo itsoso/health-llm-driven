@@ -94,6 +94,7 @@ class DailyReadPlan:
 def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str | None, bool] | None:
     if health_read_cancelled(text):
         return None
+    original = re.sub(r"\s+", "", normalize_health_authorization_text(text))
     normalized = re.sub(r"\s+", "", normalize_health_authorization_text(
         active_health_read_clause(text)))
     sync_status = _SYNC_STATUS_SUFFIX_RE.search(normalized)
@@ -112,11 +113,14 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
         asks_advice = suffix is not None or (dimension == "diet" and not question.group("recall"))
         return core, (dimension,), asks_advice, False, meal, sync_status is not None
     if _SUMMARY_RE.fullmatch(core):
-        if sync_status:
+        # A summary owns multiple required reads. Do not create that plan by
+        # discarding user edits such as parenthesized exclusions or extra scope.
+        # The gateway also checks the original request independently.
+        if sync_status or normalized != original:
             return None
         return core, DAILY_SUMMARY_DIMENSIONS, suffix is not None, True, None, False
     if _COLLOQUIAL_SUMMARY_RE.fullmatch(core):
-        if sync_status:
+        if sync_status or normalized != original:
             return None
         return core, DAILY_SUMMARY_DIMENSIONS, True, True, None, False
     return None

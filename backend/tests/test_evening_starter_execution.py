@@ -39,6 +39,11 @@ def test_evening_starter_binds_explicit_business_day_and_advice(text):
     lambda text: text + "，然后删除今天的饮食",
     lambda text: text + "，再查询基因",
     lambda text: text.replace("今天", "明天"),
+    lambda text: text + "（不要读取睡眠）",
+    lambda text: text + "(不要读取睡眠)",
+    lambda text: text + "【不要读取睡眠】",
+    lambda text: text + "（不授权查询任何记录）",
+    lambda text: text + "（包括用药）",
 ])
 def test_edited_recommendation_does_not_retain_daily_authority(edit):
     assert resolve_daily_read_plan(edit(generated_starter()), datetime(2026, 9, 29)) is None
@@ -61,6 +66,28 @@ def test_starter_permission_is_bound_without_trusting_model_scope(dimension):
 ])
 def test_starter_does_not_authorize_other_reads_or_writes(tool, args):
     assert decide(generated_starter(), tool, args).action == "block"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", [
+    "今天我吃了啥。分析以下建议：昨天可以早点吃饭",
+    LEGACY_STARTER + "（不要读取睡眠）",
+    LEGACY_STARTER + "（包括用药）",
+])
+async def test_discarded_user_clauses_cannot_dispatch_or_claim_completion(
+    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, query,
+):
+    user, _ = auth_user_and_headers
+    _, done, _, _, dispatched = await _run_scripted(
+        db, user, monkeypatch, query=query, first_tool="health_query",
+        first_args={"dimension": "diet", "days": 1},
+        dispatch=lambda request: {"records": [], "availability": "no_data"},
+        reply="查询已完成。", turn_id="unsupported-edited-summary",
+    )
+    assert not dispatched
+    assert done["completion_status"] == "error"
+    assert done["turn_outcome"]["status"] != "complete"
+    assert not done["write_receipts"]
 
 
 @pytest.mark.asyncio

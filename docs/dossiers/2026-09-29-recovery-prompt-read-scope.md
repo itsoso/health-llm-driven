@@ -152,3 +152,14 @@ Production remains 623407d6d. The registration release task owns an outstanding
 native-only retirement/readiness BLOCK on the trusted release infrastructure;
 this incident must not bypass it with another deployment entry point. No live
 acceptance or deployment of the evening correction is claimed here.
+
+Independent review found a planner/gateway mismatch for parenthesized user
+edits: the planner discarded exclusions/extra scope, while the original-text
+gateway correctly denied every call. Five new RED cases reproduced the planner
+issue. Summary plans now require the complete normalized original request;
+gateway and completion guards stay unchanged. A real PostgreSQL run also found
+an old positive test for a read followed by analyzed material already denied by
+the existing original-text guard. Replace that positive with a plain read and
+preserve the rejected compound request in real-Pi zero-dispatch/incomplete tests;
+do not relax policy to make the old expectation pass. The actual new and legacy
+evening texts are also added to owner/date PostgreSQL adapter tests.
