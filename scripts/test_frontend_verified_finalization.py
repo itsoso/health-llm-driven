@@ -177,8 +177,23 @@ class Server:
 
 
 def fixture_original(m, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    # Synthetic archive files belong to the unprivileged test user. Substitute
+    # only root ownership at this protocol seam; real inode/link/mode/hash data
+    # and all actual os.link operations remain untouched. Ownership rejection
+    # is separately exercised against the unpatched production validator.
+    archive_validator = m.archive_file_metadata
+    monkeypatch.setattr(
+        m,
+        "archive_file_metadata",
+        lambda info: archive_validator(
+            SimpleNamespace(**{**m.metadata(info), "st_uid": 0, "st_gid": 0})
+        ),
+    )
     state = tmp_path / "state"
     state.mkdir()
+    monkeypatch.setattr(m, "STATE", state)
     root = state / "frontend-rebuilds"
     root.mkdir(mode=0o700)
     audit = root / OPERATION
@@ -601,3 +616,239 @@ def test_parent_fsync_failure_retains_intent_and_original_failure(
     assert (audit / "failed.json").read_bytes() == original
     with pytest.raises(m.FinalizationError):
         m.finalize(p, lambda: p, server, evidence_sha256=m.digest(p), state=state)
+
+
+def test_protected_archive_accepts_group_writable_data_and_internal_hardlinks(
+    tmp_path, monkeypatch
+):
+    import os
+
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    root = audit / "previous-node-modules"
+    first = root / "file"
+    first.chmod(0o664)
+    second = root / "esbuild-alias"
+    os.link(first, second)
+    proof = m.tree_evidence(server, root)
+    assert proof["entries"] == 3
+    assert first.stat().st_ino == second.stat().st_ino
+    assert first.stat().st_nlink == 2 and first.stat().st_mode & 0o777 == 0o664
+
+
+@pytest.mark.parametrize("target", ["external", "other_backup"])
+def test_archive_hardlinks_must_all_be_inside_one_backup_tree(
+    tmp_path, monkeypatch, target
+):
+    import os
+
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    root = audit / "previous-node-modules"
+    alias = (
+        (tmp_path / "external-alias")
+        if target == "external"
+        else audit / "previous-next/alias"
+    )
+    os.link(root / "file", alias)
+    with pytest.raises(m.FinalizationError):
+        m.tree_evidence(server, root)
+
+
+@pytest.mark.parametrize("mutation", ["audit_mode", "parent_mode", "path_name"])
+def test_archive_exception_requires_exact_private_original_boundary(
+    tmp_path, monkeypatch, mutation
+):
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    root = audit / "previous-next"
+    if mutation == "audit_mode":
+        audit.chmod(0o755)
+    elif mutation == "parent_mode":
+        audit.parent.chmod(0o755)
+    else:
+        renamed = audit / "other-backup"
+        root.rename(renamed)
+        root = renamed
+    with pytest.raises(m.FinalizationError):
+        m.tree_evidence(server, root)
+
+
+@pytest.mark.parametrize("mode", [0o666, 0o4644, 0o2644])
+def test_inert_archive_does_not_accept_world_write_or_privileged_file_modes(
+    tmp_path, monkeypatch, mode
+):
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    root = audit / "previous-next"
+    (root / "file").chmod(mode)
+    with pytest.raises(m.FinalizationError):
+        m.tree_evidence(server, root)
+
+
+@pytest.mark.parametrize(
+    "mutation", ["add_external_link", "replace_alias", "boundary_mode"]
+)
+def test_archive_rechecks_all_aliases_and_private_boundary_after_read(
+    tmp_path, monkeypatch, mutation
+):
+    import os
+
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    root = audit / "previous-node-modules"
+    first = root / "file"
+    second = root / "alias"
+    os.link(first, second)
+    (root / "z-trigger").write_bytes(b"late-trigger")
+    original_hash = m.hashlib.sha256
+
+    class Hash:
+        def __init__(self, *args, **kwargs):
+            self.inner = original_hash(*args, **kwargs)
+
+        def update(self, data):
+            self.inner.update(data)
+            if data == b"late-trigger":
+                if mutation == "add_external_link":
+                    os.link(first, tmp_path / "late-alias")
+                elif mutation == "replace_alias":
+                    second.unlink()
+                    second.write_text("original backup")
+                else:
+                    audit.chmod(0o755)
+
+        def hexdigest(self):
+            return self.inner.hexdigest()
+
+    monkeypatch.setattr(m.hashlib, "sha256", Hash)
+    with pytest.raises(m.FinalizationError):
+        m.tree_evidence(server, root)
+
+
+def test_archived_group_write_mode_remains_part_of_historical_proof(
+    tmp_path, monkeypatch
+):
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    file = audit / "previous-next/file"
+    file.chmod(0o664)
+    p = plan(m, state, m.original_evidence(server, OPERATION, state=state))
+    m.finalize(p, lambda: p, server, evidence_sha256=m.digest(p), state=state)
+    file.chmod(0o644)
+    with pytest.raises(m.FinalizationError):
+        m.history_evidence(server, OPERATION, state=state)
+
+
+@pytest.mark.parametrize("mutation", ["group_write", "hardlink"])
+def test_live_artifact_rules_still_reject_archive_only_exceptions(
+    tmp_path, monkeypatch, mutation
+):
+    import os
+    import stat
+
+    m = load()
+    root = tmp_path / "live"
+    root.mkdir()
+    file = root / "file"
+    file.write_text("live")
+    if mutation == "group_write":
+        file.chmod(0o664)
+    else:
+        os.link(file, root / "alias")
+    server = Server()
+
+    def strict(info, *, directory=False, **kwargs):
+        if info.st_mode & 0o022 or (
+            not directory and (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1)
+        ):
+            raise m.FinalizationError("strict live metadata")
+
+    server.validate_metadata = strict
+    with pytest.raises(m.FinalizationError):
+        m.secure_live_artifact(server, root)
+
+
+@pytest.mark.parametrize("uid,gid", [(1, 0), (0, 1)])
+def test_archive_regular_files_still_require_root_ownership(uid, gid):
+    import stat
+    from types import SimpleNamespace
+
+    m = load()
+    with pytest.raises(m.FinalizationError):
+        m.archive_file_metadata(
+            SimpleNamespace(
+                st_uid=uid, st_gid=gid, st_mode=stat.S_IFREG | 0o664, st_nlink=1
+            )
+        )
+
+
+def test_archive_directory_permissions_are_not_relaxed(tmp_path, monkeypatch):
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    root = audit / "previous-next"
+    child = root / "directory"
+    child.mkdir()
+    child.chmod(0o775)
+
+    def strict(info, **kwargs):
+        if info.st_mode & 0o022:
+            raise m.FinalizationError("strict directory mode")
+
+    server.validate_metadata = strict
+    with pytest.raises(m.FinalizationError):
+        m.tree_evidence(server, root)
+
+
+@pytest.mark.parametrize("mutation", ["group_write", "hardlink"])
+def test_original_private_receipts_do_not_get_archive_exceptions(
+    tmp_path, monkeypatch, mutation
+):
+    import os
+
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    path = audit / "verified.json"
+    if mutation == "group_write":
+        path.chmod(0o664)
+    else:
+        os.link(path, tmp_path / "outside-receipt")
+    with pytest.raises(m.FinalizationError):
+        m.file_evidence(server, path)
+
+
+def test_archive_rejects_lookalike_path_outside_canonical_state(tmp_path, monkeypatch):
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    other = tmp_path / "lookalike" / "frontend-rebuilds" / OPERATION
+    other.parent.mkdir(parents=True, mode=0o700)
+    audit.rename(other)
+    with pytest.raises(m.FinalizationError, match="fixed original archive path"):
+        m.tree_evidence(server, other / "previous-next")
+
+
+@pytest.mark.parametrize("spelling", ["relative", "dotdot", "symlink_ancestor"])
+def test_archive_rejects_noncanonical_path_ancestry(tmp_path, monkeypatch, spelling):
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    root = audit / "previous-next"
+    if spelling == "relative":
+        monkeypatch.chdir(tmp_path)
+        root = root.relative_to(tmp_path)
+    elif spelling == "dotdot":
+        root = audit / ".." / OPERATION / "previous-next"
+    else:
+        archive_parent = audit.parent
+        saved = state / "saved-original-archive"
+        archive_parent.rename(saved)
+        archive_parent.symlink_to(saved, target_is_directory=True)
+
+        def strict_path(path, **kwargs):
+            # Production secure_path rejects symlinks in every ancestor. Keep
+            # this protocol explicit without faking the real symlink fixture.
+            if any(part.is_symlink() for part in [path, *path.parents]):
+                raise m.FinalizationError("symlink ancestor")
+
+        server.secure_path = strict_path
+    with pytest.raises(m.FinalizationError):
+        m.tree_evidence(server, root)

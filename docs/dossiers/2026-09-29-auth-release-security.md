@@ -95,3 +95,24 @@ workflow/OTA integration tests passed. Independent incident G4 is GO for
 `1e38082cf8c3b9fd985bb405f7c5ce1d913c214a`, including the host synchronization
 calls. Exact candidate CI and actual finalization remain required; this verdict
 does not certify hardening, OTA or open registration.
+
+Exact CI 36594594034 passed for `b10c5a154dd6a27db0999daf750c87f8230525ec`,
+including the native Linux builder and network boundary checks. Its canonical
+read-only finalization preflight stopped before intent: the preserved old build
+contains root:root group-writable regular files and two npm esbuild paths sharing
+one inode. The old audit directories remain root-owned 0700; no finalization
+record or production mutation occurred. Independent probes still verified strict
+live artifact metadata and the original digest, unchanged backend/configuration,
+internal/public privacy pages and no residual release process.
+
+The follow-up is limited to inert archive evidence. It preserves original modes,
+inodes and bytes, independently pins the private audit boundary, and accounts for
+every hardlink inside one backup tree. External/cross-tree aliases, boundary
+drift and live-artifact exceptions remain rejected. Fresh tests, fixed-commit
+independent review and exact CI are required before another canonical preflight.
+
+Archive follow-up validation: 390 combined tests passed (two Linux-native tests
+deferred to exact CI); the final archive suite passed 71 tests including three
+additional relative/parent/symlink-ancestor cases. Ruff, diff and System Map/doc
+checks passed. Independent review found no required correction in the final
+delta; exact commit binding and CI remain required before production execution.
