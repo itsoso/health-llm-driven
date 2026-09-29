@@ -299,6 +299,12 @@ _COURSE_DURATION_ACTION = re.compile(
     + r"(?:改为|改成|调整为|调整到|设为|定为|变更为|延长到|延长至|延长为|缩短到|缩短至|缩短为)"
     + _COURSE_GAP + _COURSE_DURATION + r"|(?:延长|缩短)" + _COURSE_GAP + _COURSE_OBJECT
     + _COURSE_GAP + r"(?:到|至|为)" + _COURSE_GAP + _COURSE_DURATION
+    # An explicit advisory verb plus medicine administration and a duration
+    # is a regimen even without a named drug. Historical duration facts alone
+    # do not match; ordinary negation is checked by _has_asserted_match.
+    + r"|(?:建议|请|需要|应当|必须)" + _COURSE_GAP
+    + r"(?:继续|连续)?" + _COURSE_GAP + r"(?:服药|用药|吃药)"
+    + _COURSE_GAP + _COURSE_DURATION
 )
 _FUTURE_DOSE_CHANGE = (
     r"(?:增加|减少|提高|降低|恢复|调整|补充|补|加|减|增|降|改|换|服用|服|吃|用)"

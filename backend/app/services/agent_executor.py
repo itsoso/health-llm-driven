@@ -12711,9 +12711,10 @@ class AgentExecutor:
         """Give a general answer one tool-free safety rewrite.
 
         The medical boundary remains authoritative.  This retry is available
-        only when a non-medical, non-write task was otherwise answered and the
-        sole issue is model-invented dose advice.  Explicit medical questions,
-        scoped reads, writes, and any second unsafe draft still fail closed.
+        only when a non-medical task or proven current-input recovery request
+        was otherwise answered and the sole issue is model-invented dose advice.
+        Explicit regimen questions, scoped reads, writes, and any second unsafe
+        draft still fail closed under the unchanged final medical boundary.
         """
         snapshot = self._agent_kernel_snapshot
         reason_codes = {
@@ -12724,7 +12725,8 @@ class AgentExecutor:
         if (
             not str(draft or "").strip()
             or reason_codes != {"unverified_dose_action"}
-            or requires_medical_evidence_boundary(user_message)
+            or (requires_medical_evidence_boundary(user_message)
+                and not self._has_current_input_recovery_advice_goal())
             or snapshot is None
             or snapshot.intent.is_write
             or self._turn_daily_read_plan is not None
@@ -12743,6 +12745,13 @@ class AgentExecutor:
                     "instruction. Medicines may only be referred to a doctor or pharmacist "
                     "without a concrete regimen. Do not add facts, claims, or completed "
                     "actions. Return only the corrected user-facing answer."
+                    + (
+                        " 本轮只回答当前描述对应的休息和恢复。保留就医警示、信息不足说明，"
+                        "明确本轮未查询个人记录。不要把草稿当作已核实的诊断或个人事实。"
+                        "删除所有用药和补剂的执行建议，包括按时用药、继续原方案、"
+                        "服药时点或疗程；药物只说明需要向医生或药师核对。"
+                        if self._has_current_input_recovery_advice_goal() else ""
+                    )
                 ),
             },
             {

@@ -704,3 +704,21 @@ def test_greedy_regimen_match_cannot_hide_before_record_format(instruction):
     result = enforce_medical_evidence_boundaries(text)
     assert result.flagged
     assert "unverified_dose_action" in result.violations
+
+
+@pytest.mark.parametrize('text', [
+    '建议服药两周。', '建议连续服药14天。', '需要用药一个月。',
+    '请继续吃药三天。', '建议**服药**两周。', '建议服药\n两周。',
+])
+def test_explicit_advised_medication_duration_is_not_general_recovery(text):
+    result = enforce_medical_evidence_boundaries(text)
+    assert result.flagged
+    assert 'unverified_dose_action' in result.violations
+
+
+@pytest.mark.parametrize('text', [
+    '此前服药两周。', '已连续服药14天。', '不要自行服药两周。',
+    '不建议服药两周。', '建议休息两天。', '用药疗程需向医生核对。',
+])
+def test_duration_facts_negation_and_nonmedication_advice_remain_visible(text):
+    assert not enforce_medical_evidence_boundaries(text).flagged

@@ -90,3 +90,30 @@ capitalized Status key and lacked a machine-readable G1 verdict. This
 document-only correction aligns the evidence with the existing dossier
 contract; it changes no runtime code. Exact-revision remote CI and production
 user-flow validation remain pending, and deployment has not started.
+
+## Production acceptance follow-up
+
+Candidate 1d7981692 passed exact CI 36566681131 and the normal backend
+transaction, including health 60/60 and runtime KB contract. The deployed Web
+accepted a starter click, focused its draft and permitted editing. The original
+personal-read denial disappeared, but the live answer still failed acceptance:
+complete generation with knowledge-only tools reached unverified_dose_action.
+The existing incidental-medical rewrite excluded all medical-topic requests,
+including the proven non-drug recovery starter. No production health payload
+or raw generated draft is retained here.
+
+Six real-Pi regression variants failed before the correction. The existing
+single tool-free rewrite now also accepts the closed current-input recovery
+scope, only for an otherwise complete draft whose sole violation is an
+unverified regimen. The final medical guard remains authoritative; a second unsafe draft,
+truncation or attempted tool remains blocked. Explicit medication requests,
+compound reads and unproven input remain excluded. The recovery prompt now
+expressly excludes drug/supplement instructions including continuing an existing
+regimen. Fresh tests, fixed-candidate review, CI and production acceptance are
+required before this follow-up can be considered delivered.
+
+A repair-negative test also exposed explicit unnamed medication-duration advice
+not recognized by the existing guard. Five focused RED cases reproduced this.
+The course tripwire now also rejects an advisory verb followed by medicine
+administration and a duration; historical facts, negation and non-drug rest
+recommendations have paired regression coverage. This tightens the final guard.

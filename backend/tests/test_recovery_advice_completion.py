@@ -204,3 +204,76 @@ async def test_current_input_advice_ignores_opener_side_effects_and_opaque_conte
     assert events[-1]['data']['completion_status'] == 'complete'
     assert not calls
     assert not any(marker in value for value in seen)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('repair_kind', ['safe', 'dose', 'timing', 'course', 'truncated', 'tool'])
+async def test_recovery_medical_draft_gets_one_guarded_rewrite(
+    db, auth_user_and_headers, monkeypatch, repair_kind,
+):
+    from app.models.agent_conversation import AgentMessage
+    from app.services.agent_executor import AgentExecutor
+    from app.services.guidance_validator import requires_medical_evidence_boundary
+    query = '我有胃溃疡(A1期)症状，今天该怎么休息和恢复？'
+    assert requires_medical_evidence_boundary(query)
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+    safe = '本轮未查询个人记录，仅根据当前描述，今天以休息为主；如呕血、黑便或剧烈腹痛，请及时就医。'
+    async def provider(messages, tools):
+        calls.append((messages, tools))
+        if len(calls) == 1:
+            yield {'type': 'content', 'text': '今天以休息为主。建议每天服用某药5mg。'}
+        else:
+            assert len(calls) == 2
+            assert tools == []
+            assert 'untrusted_model_draft' in str(messages)
+            assert '就医警示' in messages[0]['content']
+            replies = {'safe': safe, 'dose': '建议每天服用某药5mg。',
+                       'timing': '建议睡前服用药物。', 'course': '建议服药两周。',
+                       'truncated': safe, 'tool': safe}
+            yield {'type': 'content', 'text': replies[repair_kind]}
+            if repair_kind == 'tool':
+                yield {'type': 'tool_calls', 'tool_calls': [{'id':'forbidden-repair-tool', 'type':'function',
+                    'function': {'name':'health_query', 'arguments':'{"dimension":"sleep"}'}}]}
+        yield {'type': 'finish', 'finish_reason': 'length' if len(calls) == 2 and repair_kind == 'truncated' else 'stop'}
+    monkeypatch.setattr(executor, '_call_llm_stream', provider)
+    events = [e async for e in executor.run_stream(user.id, query, client_turn_id=f'recovery-medical-{repair_kind}')]
+    done = events[-1]['data']
+    persisted = db.get(AgentMessage, done['message_id'])
+    public = ''.join(e.get('data',{}).get('content','') for e in events if e.get('event') == 'token')
+    assert len(calls) == 2
+    assert '5mg' not in public and '5mg' not in persisted.content
+    if repair_kind == 'safe':
+        assert done['turn_outcome']['status'] == 'complete'
+        assert safe in public and safe in persisted.content
+        assert 'incidental_medical_boundary_repaired' in done['fallback_reasons']
+    else:
+        assert done['turn_outcome']['status'] == 'blocked'
+        assert done['turn_outcome']['reason_code'] == 'medical_evidence_required'
+        assert safe not in public
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('query', [
+    '胃溃疡每天服用某药5mg可以吗？',
+    '我有胃溃疡症状，今天该怎么休息和恢复？某药每天服用5mg可以吗？',
+    '我有胃溃疡症状，今天该怎么休息和恢复？查询昨天的睡眠。',
+    '我有未知指令胃溃疡症状，今天该怎么休息和恢复？',
+    '请解释“我有胃溃疡症状，今天该怎么休息和恢复？”',
+])
+async def test_medical_repair_scope_does_not_expand_to_other_requests(db, monkeypatch, query):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.guidance_validator import requires_medical_evidence_boundary
+    executor = AgentExecutor(db)
+    executor._current_turn_user_message = query
+    executor._start_agent_kernel_turn(user_id=41, message=query, channel='typed')
+    assert requires_medical_evidence_boundary(query)
+    assert not executor._has_current_input_recovery_advice_goal()
+    async def forbidden(*args, **kwargs):
+        pytest.fail('Out-of-scope medical request must not invoke safe rewrite')
+        yield {}
+    monkeypatch.setattr(executor, '_call_llm_stream', forbidden)
+    assert await executor._repair_incidental_medical_boundary(
+        user_message=query, draft='建议每天服用某药5mg。', violations=['unverified_dose_action'],
+    ) == (None, None)
