@@ -448,14 +448,7 @@ export default function DietShareCard({
         </View>
       </View>
 
-      {locationLine ? (
-        <View style={styles.posterLocation}>
-          <PosterText testID="diet-share-location" style={styles.posterLocationText} numberOfLines={2}>
-            {locationLine}
-          </PosterText>
-        </View>
-      ) : null}
-      <View testID="diet-share-poster-copy" style={styles.posterCopy}>
+      <View testID="diet-share-poster-copy" style={[styles.posterCopy, locationLine && styles.posterCopyWithLocation]}>
         <View style={styles.posterRuleRow}>
           <View style={styles.posterRuleLong} />
           <View style={styles.posterRuleShort} />
@@ -512,6 +505,15 @@ export default function DietShareCard({
                 <PosterText style={styles.posterTagText}>{tag}</PosterText>
               </View>
             ))}
+          </View>
+        ) : null}
+
+        {locationLine ? (
+          <View testID="diet-share-location-badge" style={styles.posterLocation}>
+            <Ionicons name="location-outline" size={12} color={C.green700} />
+            <PosterText testID="diet-share-location" style={styles.posterLocationText} numberOfLines={2} ellipsizeMode="tail">
+              {locationLine}
+            </PosterText>
           </View>
         ) : null}
 
@@ -1183,17 +1185,24 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     overflow: 'hidden',
   },
-  posterLocation: {
-    position: 'absolute',
-    bottom: '45%',
-    left: 20,
-    right: 20,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(255, 250, 243, 0.94)',
+  posterCopyWithLocation: {
+    // Grow with wrapped food/location text rather than clipping the footer in
+    // the fixed export canvas. Posters without a location keep their layout.
+    height: undefined,
+    minHeight: '43%',
   },
-  posterLocationText: { color: C.ink1, fontSize: 11, lineHeight: 15, fontWeight: '600' },
+  posterLocation: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: C.green50,
+  },
+  posterLocationText: { flexShrink: 1, minWidth: 0, color: C.green700, fontSize: 10.5, lineHeight: 15, fontWeight: '600' },
   posterRuleRow: {
     flexDirection: 'row',
     alignItems: 'center',

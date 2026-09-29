@@ -78,6 +78,10 @@ from app.services.agent_output_quality import (
     needs_input_clarification,
 )
 from app.services.agent_processing_summary import build_processing_summary
+from app.services.agent_meal_input_clarification import (
+    MealInputClarification,
+    resolve_meal_input_clarification,
+)
 from app.services.guidance_validator import (
     build_confirmable_health_fact_draft,
     enforce_medical_evidence_boundaries,
@@ -15446,6 +15450,7 @@ class AgentExecutor:
         context_statement: ContextStatement | None = None,
         supplement_missing_units: tuple[str, ...] = (),
         supplement_unit_followup: bool = False,
+        meal_input_clarification: MealInputClarification | None = None,
         request_started_at: float | None = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Persist a local clarification or context acknowledgement without a model."""
@@ -15476,6 +15481,10 @@ class AgentExecutor:
             text = context_statement.reply
             reason_code = "context_statement_acknowledged"
             route = "context_statement"
+        elif meal_input_clarification is not None:
+            text = meal_input_clarification.reply
+            reason_code = meal_input_clarification.reason_code
+            route = "meal_input_clarification"
         elif supplement_missing_units:
             if supplement_unit_followup:
                 text = (
@@ -15928,6 +15937,25 @@ class AgentExecutor:
                         yield self._attach_runtime_identity(event)
                     return
             streamed_answer_parts: List[str] = []
+            # After durable write recovery, before ordinary/panel/model routing.
+            # A missing source or unbound correction is a user-input obligation,
+            # not permission to create a guessed meal or edit the latest row.
+            meal_input = resolve_meal_input_clarification(
+                effective_message,
+                has_attachment=bool(effective_images or file_base64),
+            )
+            if meal_input is not None:
+                async for event in self._run_input_clarification_stream(
+                    user_id=user_id, message=display_message,
+                    conversation_id=conversation_id, client_turn_id=client_turn_id,
+                    recovered_user_message=recovered_user_message,
+                    meal_input_clarification=meal_input,
+                    request_started_at=request_started_at,
+                ):
+                    if event.get("event") == "done":
+                        kernel_completion_status = "complete"
+                    yield self._attach_runtime_identity(event)
+                return
             # After durable write recovery, but before any model call. Missing
             # units require user input, not repeated guesses by the tool model.
             from app.services.agent_kernel.capability_policy import (

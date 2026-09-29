@@ -115,6 +115,29 @@ function renderSheet(overrides: Partial<React.ComponentProps<typeof DietShareShe
 }
 
 describe('DietShareCard Xiaohongshu poster', () => {
+  it.each(['EFC', '杭州 · 很长的公共餐厅名称与所在商场楼层说明用于验证地点自动换行'])('keeps location %s inside the content panel without a full-width photo overlay', locationLabel => {
+    const view = renderCard({ locationLabel });
+    const panel = view.getByTestId('diet-share-poster-copy');
+    expect(within(panel).getByTestId('diet-share-location')).toBeTruthy();
+    const badge = StyleSheet.flatten(view.getByTestId('diet-share-location-badge').props.style);
+    expect(badge.position).not.toBe('absolute');
+    expect(badge.right).toBeUndefined();
+    expect(badge.alignSelf).toBe('flex-start');
+    expect(badge.maxWidth).toBe('100%');
+    const panelStyle = StyleSheet.flatten(panel.props.style);
+    expect(panelStyle.height).toBeUndefined();
+    expect(panelStyle.minHeight).toBe('43%');
+    expect(view.getByTestId('diet-share-location').props.numberOfLines).toBe(2);
+    expect(within(panel).getByTestId('diet-share-public-note')).toBeTruthy();
+    expect(within(panel).getByTestId('diet-share-nutrition-grid')).toBeTruthy();
+  });
+
+  it('leaves no location badge or extra panel height for blank labels', () => {
+    const view = renderCard({ locationLabel: '  \n  ' });
+    expect(view.queryByTestId('diet-share-location-badge')).toBeNull();
+    expect(StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style).height).toBe('43%');
+  });
+
   it('exports only the explicitly supplied location in the poster and caption', () => {
     const view = renderCard({ locationLabel: '杭州 · 示例餐厅' });
     expect(view.getByTestId('diet-share-location').props.children).toBe('地点：杭州 · 示例餐厅');
