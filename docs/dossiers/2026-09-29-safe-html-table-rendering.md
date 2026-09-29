@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | S5 verification / G4 |
+| 当前阶段 | S5 verified / G4 GO; release pending alignment |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -30,6 +30,18 @@
 - G5/G6: not started; no deployment claimed.
 
 Second G4 on `a6c305eead02cef7524a063bc3820f7aeb6a7f6b`: **NO-GO**. Prefix removal still consumed the whitespace that distinguishes indented code from a raw table. Added the composed prefix + indented-table counterexamples first (RED), then changed cleanup to remove only protocol bytes and keep the remainder's exact whitespace. Added Mobile emoji-prefixed protocol-boundary recognition to prevent a closing fence from consuming the next table; these blocks remain inert. New focused regression and final full rerun/re-review recorded below when complete. No Mac production code changes after its 532-test correction run.
+
+## Final G3 / G4
+
+裁决: GO
+
+Code candidate: `46837f7376e08d1b9f7f7518d373cbcd713fd757`.
+
+- Final Mobile `CI=1 npm test -- --runInBand`: **318 suites, 3,123 passed, one existing skipped**, exit 0 (`/tmp/reva-html-mobile-final3.log`). Focused cross-path regression 137 passed; typecheck/focused ESLint passed.
+- Independent read-only G4: **GO**, 118 focused tests independently passed; all composed prefix/indent and sibling protocol counterexamples closed. No new script/native bridge/network/prose-action path found. Mac production blobs unchanged from the 532-test / zero-failure / one existing skip verification above.
+- Final Mobile native fixture was re-bundled from this exact code candidate and reinstalled only as `life.executor.health.htmlaudit`; CUA confirmed emoji-prefixed menu source stays inert, the following table previews, and the displayed prose-card count is zero. Source fixture removed afterward; `bundle-final.log` retained with local artifacts. This does not replace production-package release acceptance.
+- No database/API/model prompt/dependency changes. Local secret scan, diff checks, System Map and skill governance passed. No unknown worktree changes staged.
+- Code-safety GO is not a release verdict. Candidate has not been pushed or deployed; exact remote CI and release integration remain unfulfilled, and main reconciliation is still blocked as described below.
 
 ## Verification gaps
 
