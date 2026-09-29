@@ -119,12 +119,15 @@ async def test_incomplete_answer_is_not_recovered(db, auth_user_and_headers, mon
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('message', [BEDTIME, ACTION])
-async def test_panel_uses_same_answer_only_boundary(db, auth_user_and_headers, monkeypatch, message):
+@pytest.mark.parametrize('fabricate', [False, True])
+async def test_panel_uses_same_answer_only_boundary(db, auth_user_and_headers, monkeypatch, message, fabricate):
     from app.models.agent_conversation import AgentMessage
     from app.services.agent_executor import AgentExecutor
     calls = []
     monkeypatch.setattr('app.twin.builder.build_twin', lambda *a, **k: calls.append('twin'))
     reply = '本轮未查询个人记录，仅基于当前输入提供通用解释；无法确认个人安排。'
+    if fabricate:
+        reply = '本轮未查询个人记录。你的睡眠记录显示你需要补觉。'
     async def lead(messages, tools):
         assert {t['function']['name'] for t in tools} <= {'knowledge_search'}
         assert any('不要假设用户描述了病症' in str(m.get('content', '')) for m in messages)
@@ -138,8 +141,46 @@ async def test_panel_uses_same_answer_only_boundary(db, auth_user_and_headers, m
     user, _ = auth_user_and_headers
     events = [e async for e in executor._run_multi_model_stream(user.id, message, None, None, '{"multi_model":true}')]
     done = events[-1]['data']
-    assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
+    if fabricate:
+        assert done['completion_status'] != 'complete'
+        assert done['turn_outcome']['status'] != 'complete'
+    else:
+        assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
     assert not calls
     persisted = db.get(AgentMessage, done['message_id'])
     assert persisted.meta['turn_outcome'] == done['turn_outcome']
-    assert reply in persisted.content
+    if fabricate:
+        assert reply not in persisted.content
+        assert '无法核实' in persisted.content
+    else:
+        assert reply in persisted.content
+
+
+@pytest.mark.parametrize('message,reply', [
+    (BEDTIME, '我查过你的睡眠记录：你昨晚只睡了4小时，所以现在可以睡。'),
+    (BEDTIME, '本轮未查询个人记录。你的睡眠记录显示你需要补觉。'),
+    (ACTION, '你今天的复查是医生根据你的个人病史安排的，现在应当去做。'),
+    (ACTION, '本轮未查询个人记录。医生已经安排你今天复查。'),
+])
+@pytest.mark.asyncio
+async def test_invented_private_evidence_cannot_be_streamed_or_complete(db, auth_user_and_headers, monkeypatch, message, reply):
+    user, _ = auth_user_and_headers
+    _, done, persisted, public, calls = await _run_scripted(db, user, monkeypatch,
+        query=message, first_tool='health_query', first_args={'dimension': 'sleep'},
+        dispatch=lambda request: {}, reply=reply, turn_id='advice-invented-facts')
+    assert not calls
+    assert done['turn_outcome']['status'] != 'complete'
+    assert persisted.content == public
+    assert reply not in public
+    assert '无法核实' in public or '未核验' in public or '已核验' in public
+
+
+@pytest.mark.parametrize('reply', [
+    '本轮未查询个人记录。查看了你的病史，所以今晚安全。',
+    '本轮未查询个人记录。I have checked your sleep records.',
+    '本轮未查询个人记录。我并非没有查过你的记录。',
+    '本轮未查询个人记录。医生根据你的病史安排今天复查。',
+])
+def test_disclaimer_never_launders_unsupported_claims(reply):
+    from app.services.agent_kernel.current_input_advice_scope import current_input_answer_supported
+    assert not current_input_answer_supported(reply)

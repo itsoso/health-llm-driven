@@ -82,13 +82,56 @@ def is_current_input_advice(text: str) -> bool:
         return bool(title and _is_bounded_condition(title["condition"]))
     from app.services.agent_policy_retry import is_general_advice_only_request
 
-    return is_general_advice_only_request(text)
+    return "睡眠" in text and is_general_advice_only_request(text)
 
 
 def current_input_advice_instructions(text: str) -> str:
     if is_current_input_recovery_advice(text):
         return CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
     return CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS if is_current_input_advice(text) else ""
+
+
+_PRIVATE_SUBJECT = r"(?:你|您|个人|病史|病历|档案|睡眠记录|健康记录|设备数据)"
+_UNVERIFIED_PRIVATE_CLAIM_RE = re.compile(
+    rf"(?:查(?:询|阅|看)?(?:了|过|到)|读取(?:了|过|到)|调取(?:了|过|到)|看过|核实了|已(?:核实|查询|读取|查阅|查看)).{{0,12}}{_PRIVATE_SUBJECT}|"
+    r"(?:你的|您的|个人)(?:睡眠|健康|检查|用药|设备|病史|病历|档案).{0,16}(?:显示|表明|证实)|"
+    r"(?:根据|结合|基于)(?:你的|您的|个人)(?:睡眠记录|健康记录|病史|病历|档案|设备数据)|"
+    r"(?:你|您)(?:昨晚|昨天|最近|近期|本周).{0,14}(?:睡了|只睡|睡眠|心率|血压|血氧).{0,8}\d|"
+    r"(?:医生|医嘱).{0,28}(?:安排|要求|确认|建议).{0,12}(?:你|您|今天|复查|检查)|"
+    r"(?:你|您).{0,18}(?:复查|检查).{0,12}(?:是|由)医生|"
+    r"(?:你|您)(?:现在|目前|今天)?(?:已经|完全|肯定|绝对)(?:安全|没问题|可以放心)|"
+    r"I (?:have )?(?:checked|reviewed|read) your|your (?:sleep|medical) (?:records|history) (?:shows?|confirms?)|"
+    r"your doctor (?:has )?(?:scheduled|ordered)", re.I,
+)
+_ANSWER_LIMITATION_RE = re.compile(r"(?:无法|不能|未能|尚未|没有|并未|未)(?:直接|实际|主动|明确)?$")
+_CURRENT_INPUT_BASIS_RE = re.compile(r"(?:未查询个人记录|(?:仅|只)(?:根据|基于|依据).{0,12}(?:当前|输入|描述|提供|标题))")
+CURRENT_INPUT_UNVERIFIED_ANSWER_NOTICE = (
+    "本轮未查询个人记录，无法核实生成内容中的个人数据或医嘱依据，已停止提供这部分结论。"
+    "请补充你想解释的具体信息；一般建议不需要先查询历史记录。"
+)
+
+
+def current_input_answer_supported(text: str) -> bool:
+    """Require stated provenance and reject ungrounded personal assertions.
+
+    A disclaimer cannot launder a later affirmative claim. Negative epistemic
+    clauses remain usable, but only the local prefix of each match is checked.
+    This is conservative output validation, never an evidence attestation.
+    """
+    candidate = str(text or "")
+    if not _CURRENT_INPUT_BASIS_RE.search(candidate):
+        return False
+    for match in _UNVERIFIED_PRIVATE_CLAIM_RE.finditer(candidate):
+        prefix = candidate[max(0, match.start() - 12):match.start()]
+        if re.search(r"并非|不是|不代表|不能说", prefix) or not _ANSWER_LIMITATION_RE.search(prefix):
+            return False
+    return True
+
+
+def guard_current_input_answer(message: str, answer: str) -> tuple[str, bool]:
+    if is_current_input_advice(message) and not current_input_answer_supported(answer):
+        return CURRENT_INPUT_UNVERIFIED_ANSWER_NOTICE, False
+    return answer, True
 
 
 def _is_bounded_condition(value: str) -> bool:

@@ -12610,6 +12610,10 @@ class AgentExecutor:
         if not self._has_explicit_unscoped_answer_goal():
             return
 
+        from app.services.agent_kernel.current_input_advice_scope import current_input_answer_supported
+        if self._has_current_input_recovery_advice_goal() and not current_input_answer_supported(final_text):
+            return
+
         for reason in self._agent_kernel_capability_block_reasons:
             if (
                 (is_repairable_read_reason(reason)
@@ -15213,6 +15217,11 @@ class AgentExecutor:
         )
         panel_quality_flags.update(output_quality.flags)
         full_reply = output_quality.text
+        from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+        full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
+        if not advice_answer_supported:
+            completion_status = "error"
+            self._record_model_fallback_reason("unverified_current_input_answer")
         plan_goals = self._exercise_plan_goal_outcomes()
         if any(goal['status'] != 'verified' for goal in plan_goals):
             full_reply = "制定计划所需的体检或病史依据尚未查询完成，暂不能据此提供个性化恢复方案。请稍后重试。"
@@ -19435,6 +19444,11 @@ class AgentExecutor:
         )
         full_reply = output_quality.text
         if response_output_buffered:
+            from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+            full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
+            if not advice_answer_supported:
+                final_finish_reason = "error"
+                self._record_model_fallback_reason("unverified_current_input_answer")
             release_text = full_reply
             if early_genui_fences and "protocol_leak" not in output_quality.flags:
                 prefix = "\n\n".join(early_genui_fences)
