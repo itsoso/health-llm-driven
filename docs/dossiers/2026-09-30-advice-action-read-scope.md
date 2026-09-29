@@ -37,11 +37,27 @@ guard is unsafe: a bare bedtime question can reach a generic list-read fallback.
 - Initial focused GREEN: 136 passed / two PostgreSQL-only skips; two new tests
   required adjustment to preserve the existing medical source-prefix behavior
   while asserting streamed/persisted equality (not a runtime fix).
-- Final focused, broad, live model and integration evidence pending.
+- Final focused: 150 passed / two PostgreSQL-only skips, exit 0.
+- Broad capability/gateway/recovery/required-history regression: 6,007 passed,
+  14 conditional skips, exit 0 (`/tmp/reva-conversation-advice-broad.log`).
+- CI-mode user-workflow/coherence/tool-recovery integration plus new ordinary
+  and panel tests: 53 passed, exit 0 (`/tmp/reva-conversation-ci-integration.log`).
+- Live LLM gate: 5/5 orchestrator cases passed (average 0.9), plus invariants
+  12/12, health-agent core 50/50, trajectories 12/12 and goldens 9/9. Evidence
+  `/tmp/reva-conversation-live-gate2.log`. Initial attempt failed because the
+  assumed backend `.env` was absent; retry used only existing TokenPlan settings
+  from the workspace online env. Test database/consent remained synthetic and
+  isolated; no production data or configuration was changed.
+- Combined Mobile candidate: 320 suites / 3,128 passed / one existing skip;
+  typecheck exit 0. Dossier, skill governance, secret and diff checks passed.
+- Upstream advanced by three release-only commits to `b10c5a154`; exact CI
+  36594594034 succeeded. Merged without conflict in local `9397629dd`; backend,
+  Mobile and Mac production blobs unchanged from reviewed candidate. The only
+  added test verifies the panel path. Original workspace remains untouched.
 - System Map check passed before changes; no architecture nodes added.
 
 ## G4 / G5 / G6
 
-Pending. No backend, OTA or desktop publication claimed. Existing HTML G4 does
+Independent review of fixed code `94c979c33` pending. No backend, OTA or desktop publication claimed. Existing HTML G4 does
 not substitute for review of this new backend behavior. Exact target CI and
 post-release verification are required before completion.
