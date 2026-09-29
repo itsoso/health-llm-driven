@@ -169,6 +169,18 @@ def test_final_frontend_receipt_requires_live_digest_and_unique_attempt(tmp_path
                              assert_frontend_rebuild_history=lambda *args: checked.append(True))
     assert m.verify_frontend_artifacts(sha, tmp_path, bootstrap, server)['artifact_digest'] == digest
     assert checked
+    old = operation.parent / ('9' * 32)
+    old.mkdir()
+    (old / 'failed.json').write_text('{}')
+    # Only the mocked whole-history gate accepts this synthetic old closure.
+    assert m.verify_frontend_artifacts(sha, tmp_path, bootstrap, server)['artifact_digest'] == digest
+    def reject_unknown_history(*args):
+        raise RuntimeError('unfinished historical attempt')
+    original_history = server.assert_frontend_rebuild_history
+    server.assert_frontend_rebuild_history = reject_unknown_history
+    with pytest.raises(RuntimeError, match='unfinished historical'):
+        m.verify_frontend_artifacts(sha, tmp_path, bootstrap, server)
+    server.assert_frontend_rebuild_history = original_history
     monkeypatch.setattr(frontend, 'artifact_digest', lambda *args: 'e' * 64)
     with pytest.raises(RuntimeError, match='artifacts differ'):
         m.verify_frontend_artifacts(sha, tmp_path, bootstrap, server)

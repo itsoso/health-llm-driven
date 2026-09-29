@@ -86,6 +86,10 @@ def verify_frontend_artifacts(sha, source, bootstrap, server):
     matches = []
     for operation in root.iterdir():
         server.secure_path(operation, directory=True)
+        # The history gate already validates the durable closure of a failed
+        # preinstall attempt; such attempts intentionally have no completion.
+        if os.path.lexists(operation / "failed.json"):
+            continue
         value = bootstrap._read_json(operation / "completed.json")
         if value.get("publisher_sha") == sha and value.get("production_sha") == sha:
             matches.append((operation, value))
