@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| status | implementing |
-| current_stage | S5 independent safety review |
+| status | shipping |
+| current_stage | S6 exact-revision CI and combined release readiness |
 | Primary controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Source baseline | fc9328b1b824427c6fcf2c18607461410077530c |
@@ -40,12 +40,25 @@ CI remain required.
 
 ## G4 and publication state
 
-裁决: PENDING
+裁决: GO (release mechanism only)
 
 Independent review required separate historical/current production evidence for
 the native closure, both launcher/build locks for OTA, same-filesystem lease
 retirement, and the actual Expo multipart response. Corrections are implemented;
-full final review is pending. No security bypass, legacy-marker deletion, old-key
+independent G4 GO binds implementation commit
+`4458077c5dc16c56fe0a7528fed2152ec1565162` on main `40d874f4d`. No security bypass, legacy-marker deletion, old-key
 renewal or backend success fabrication is permitted. Production migration,
 backend deployment, new OTA and end-to-end registration notification remain
 unverified until their real receipts exist.
+
+
+## Coordinated production admission
+
+The separately authorized registration/ECS security task has confirmed missing
+shared authentication rate-limit wiring and is repairing public-application
+host boundaries. This release-mechanism GO does not certify those boundaries.
+Do not deploy the open-registration configuration before that task's reviewed
+hardening reaches the combined release revision. Keep the existing invitation
+admission until both security conditions and actual production validation pass.
+Source/CI publication of these release repairs may proceed independently; no
+old-key renewal, local publisher fallback or concurrent production switch.
