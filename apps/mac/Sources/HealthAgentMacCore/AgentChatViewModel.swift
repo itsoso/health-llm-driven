@@ -234,7 +234,10 @@ public struct AgentProposedAction: Codable, Equatable, Identifiable, Sendable {
 
 public enum AgentStructuredCommandParser {
     public static func proposedActions(in content: String, messageID: UUID) -> [AgentProposedAction] {
-        structuredCommands(in: content).enumerated().map { index, command in
+        // A display-only HTML candidate cannot issue a legacy prose action,
+        // even when unsupported markup falls back to its original source.
+        guard !SafeHTMLTable.containsHTMLCandidate(content) else { return [] }
+        return structuredCommands(in: content).enumerated().map { index, command in
             AgentProposedAction(
                 id: "\(messageID.uuidString):\(index)",
                 messageID: messageID,
@@ -259,6 +262,39 @@ public enum AgentStructuredCommandParser {
     public static func displayText(for content: String) -> String {
         let key = content as NSString
         if let hit = displayTextCache.object(forKey: key) { return hit.value }
+        // Table/code source must remain opaque BEFORE legacy JSON/claim/fence
+        // cleanup. Cleaning first can erase a closing fence or indentation and
+        // promote unsupported source into a preview, or corrupt a cell's data.
+        let segments = SafeHTMLTable.segments(from: content)
+        let hasOpaque = segments.contains { segment in
+            if case .markdown = segment { return false }
+            return true
+        }
+        func cleanedPreservingBoundary(_ text: String) -> String {
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
+            let prefix = String(text.prefix { $0.isWhitespace })
+            let suffix = String(text.reversed().prefix { $0.isWhitespace }.reversed())
+            return prefix + legacyDisplayText(for: text) + suffix
+        }
+        let pieces = segments.map { segment -> String in
+            switch segment {
+            case .source(let source), .table(_, let source):
+                return source
+            case .code(let source):
+                return SafeHTMLTable.isLegacyJSONCode(source) ? cleanedPreservingBoundary(source) : source
+            case .markdown(let text):
+                if text.range(of: "<table\\b", options: [.regularExpression, .caseInsensitive]) != nil {
+                    return text
+                }
+                return hasOpaque ? cleanedPreservingBoundary(text) : legacyDisplayText(for: text)
+            }
+        }
+        let out = pieces.joined()
+        displayTextCache.setObject(StringBox(out), forKey: key)
+        return out
+    }
+
+    private static func legacyDisplayText(for content: String) -> String {
         var result = content
         for range in structuredCommands(in: content).map(\.range).reversed() {
             result.removeSubrange(range)
@@ -302,7 +338,6 @@ public enum AgentStructuredCommandParser {
         } else {
             out = cleanDisplayLines(RevaUIBlock.stripInlineMenuShareRemnants(result))
         }
-        displayTextCache.setObject(StringBox(out), forKey: key)
         return out
     }
 

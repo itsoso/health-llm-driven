@@ -34,6 +34,18 @@ jest.mock('../../chat/cards', () => ({
 import { RevaAgentView } from '../RevaAgentView';
 
 describe('RevaAgentView', () => {
+  it('previews final assistant HTML tables but keeps user and streaming messages literal', () => {
+    const content = '```html\n<table><tr><td>睡眠 7 小时</td></tr></table>\n```';
+    mockMessages = [
+      { id: 'html-final', role: 'assistant', content },
+      { id: 'html-stream', role: 'assistant', content, streaming: true },
+      { id: 'html-user', role: 'user', content },
+    ];
+    const view = render(<RevaAgentView />);
+    expect(view.getAllByTestId('safe-html-table')).toHaveLength(1);
+    expect(view.getByText('睡眠 7 小时')).toBeTruthy();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsStreaming = false;

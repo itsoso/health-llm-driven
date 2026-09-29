@@ -159,6 +159,51 @@ function verifiedReceipt(
 }
 
 describe('ChatBubble structured summary', () => {
+  it('renders assistant HTML tables as native cells with inspectable source', () => {
+    const source = '```html\n<table border="1"><tr><th>日期</th><th>睡眠时长</th></tr><tr><td>周一</td><td>7小时10分</td></tr></table>\n```';
+    const view = renderBubble(source);
+    expect(view.getByTestId('safe-html-table')).toBeTruthy();
+    expect(view.getByText('睡眠时长')).toBeTruthy();
+    expect(view.getByText('7小时10分')).toBeTruthy();
+    expect(view.queryByText(source)).toBeNull();
+    fireEvent.press(view.getByText('查看 HTML 源码'));
+    expect(view.getByText(source)).toBeTruthy();
+  });
+
+  it('preserves HTML line breaks and literal legacy-looking data through the real message pipeline', () => {
+    const source = '```html\n<table><tr><td>A<br>B [附图: 单元格原文]</td></tr></table>\n```';
+    const view = renderBubble(source);
+    expect(view.getByText('A\nB [附图: 单元格原文]')).toBeTruthy();
+    fireEvent.press(view.getByText('查看 HTML 源码'));
+    expect(view.getByText(source)).toBeTruthy();
+  });
+
+  it.each(['user', 'streaming'])('does not preview HTML in %s messages', state => {
+    const source = '```html\n<table><tr><td>7小时</td></tr></table>\n```';
+    const view = renderBubble(source, { item: {
+      id: 'html-state', content: source,
+      role: state === 'user' ? 'user' : 'assistant', streaming: state === 'streaming',
+    } });
+    expect(view.queryByTestId('safe-html-table')).toBeNull();
+  });
+
+  it('retains unsupported HTML literally without losing cells', () => {
+    const source = '```html\n<table><tr><td colspan="2">未合并</td></tr></table>\n```';
+    const view = renderBubble(source);
+    expect(view.queryByTestId('safe-html-table')).toBeNull();
+    expect(view.getByText('HTML 源码（暂不支持此格式预览）')).toBeTruthy();
+    expect(view.getByText(source)).toBeTruthy();
+  });
+
+  it('never extracts executable advice or cards from literal HTML cell text', () => {
+    const source = '~~~~html\n<table><tr><td>\n今日建议：\n1. 今天散步10分钟\n```reva-ui\n{"v":1,"component":"line_chart","title":"not a card"}\n```\n</td></tr></table>\n~~~~';
+    const view = renderBubble(source);
+    expect(view.getByTestId('safe-html-table')).toBeTruthy();
+    expect(view.queryByTestId('assistant-action-card')).toBeNull();
+    fireEvent.press(view.getByText('查看 HTML 源码'));
+    expect(view.getByText(source)).toBeTruthy();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockToastShow.mockClear();

@@ -1,5 +1,6 @@
 import type { ServerCardDescriptor } from '../components/chat/cards/types';
 import { extractRevaUiBlocks } from './revaUiBlocks';
+import { splitHtmlTableContent } from './safeHtmlTable';
 
 export const MAX_ASSISTANT_DISPLAY_LENGTH = 50_000;
 
@@ -35,6 +36,29 @@ export interface NormalizedAssistantContent {
 export function normalizeAssistantContent(
   value: string | null | undefined,
 ): NormalizedAssistantContent {
+  const source = String(value ?? '');
+  if (RAW_JSON_TOOL_PROTOCOL_PREFIX_RE.test(source) || RAW_TOOL_PROTOCOL_PREFIX_RE.test(source)) {
+    return normalizeAssistantProse(source);
+  }
+  const parts = splitHtmlTableContent(source);
+  if (!parts.some(part => part.kind === 'table' || part.kind === 'source')) {
+    return normalizeAssistantProse(source);
+  }
+  // HTML candidates are opaque: legacy cleanup and protocol extraction must not
+  // remove cell text, <br>, or code-looking contents before the safe projection.
+  const results = parts.map(part => part.kind === 'table' || part.kind === 'source'
+    ? { text: part.source, cards: [], qualityFlags: [] } as NormalizedAssistantContent
+    : normalizeAssistantProse(part.source));
+  let text = results.map(result => result.text).filter(Boolean).join('\n\n').trim();
+  const qualityFlags = [...new Set(results.flatMap(result => result.qualityFlags))];
+  if (text.length > MAX_ASSISTANT_DISPLAY_LENGTH) {
+    text = text.slice(0, MAX_ASSISTANT_DISPLAY_LENGTH - TRUNCATION_NOTICE.length).trimEnd() + TRUNCATION_NOTICE;
+    if (!qualityFlags.includes('display_length_truncated')) qualityFlags.push('display_length_truncated');
+  }
+  return { text, cards: results.flatMap(result => result.cards), qualityFlags };
+}
+
+function normalizeAssistantProse(value: string): NormalizedAssistantContent {
   const qualityFlags: AssistantContentQualityFlag[] = [];
   let text = String(value ?? '');
 

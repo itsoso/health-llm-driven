@@ -94,6 +94,27 @@ public enum ChatTranscriptHTML {
     /// `<div class="reva-ui-chart" data-reva-ui="<base64 原始 JSON>">` 占位符承载,真正的
     /// 解析 + SVG 折线绘制由 WebView 的 JS shell 完成(离线、零外链)。围栏外 markdown 正常渲染。
     public static func renderMessageBody(markdown: String) -> String {
+        SafeHTMLTable.segments(from: markdown).map { segment in
+            switch segment {
+            case .markdown(let text):
+                return renderMessageBodyWithoutHTMLTables(markdown: text)
+            case .source(let source), .code(let source):
+                return "<pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">\(escape(source))</pre>"
+            case .table(let table, let source):
+                let caption = table.caption.map { "<caption>\(escape($0))</caption>" } ?? ""
+                let rows = table.rows.map { row in
+                    "<tr>" + row.map { cell in
+                        let tag = cell.header ? "th" : "td"
+                        return "<\(tag)>\(escape(cell.text))</\(tag)>"
+                    }.joined() + "</tr>"
+                }.joined()
+                return "<div style=\"overflow-x:auto;white-space:pre-wrap\"><table>\(caption)\(rows)</table>"
+                    + "<details><summary>查看 HTML 源码</summary><pre>\(escape(source))</pre></details></div>"
+            }
+        }.joined()
+    }
+
+    private static func renderMessageBodyWithoutHTMLTables(markdown: String) -> String {
         let src = markdown.isEmpty ? "" : markdown
         let segments = RevaUIBlock.split(from: src)
         // 至少有一个 reva-ui 块 → 分段渲染:普通段各自走 blocks,reva-ui 段换占位 div。
