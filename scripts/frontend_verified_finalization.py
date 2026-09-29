@@ -105,13 +105,38 @@ def file_evidence(server, path, *, private=True, bound=16_000_000):
     return {**metadata(before), "sha256": hashlib.sha256(raw).hexdigest()}, raw
 
 
-def tree_evidence(server, root):
-    """Bind immutable backups by bytes AND inode metadata; never follow links."""
+def archive_file_metadata(info):
+    """Read-only data under the private audit; never executable/live input."""
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_uid != 0
+        or info.st_gid != 0
+        or info.st_mode & (stat.S_IWOTH | stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX)
+        or info.st_nlink < 1
+    ):
+        raise FinalizationError("unsafe inert archived file metadata")
+
+
+def tree_evidence(server, root, *, state=None):
+    """Bind private inert backups; account for every hardlink within ONE tree."""
+    root = Path(root)
+    state = Path(state or STATE)
+    if (
+        root.name not in {"previous-next", "previous-node-modules"}
+        or root.parent.parent != state / "frontend-rebuilds"
+    ):
+        raise FinalizationError("fixed original archive path required")
+    checked(root.parent.name, 32)
+    outer_identity = private_directory(server, root.parent.parent)
+    audit_identity = private_directory(server, root.parent)
     server.secure_path(root, directory=True)
     pending = [root]
     hasher = hashlib.sha256()
     count = 0
     size = 0
+    observed = []
+    directories = set()
+    hardlinks = {}
     while pending:
         path = pending.pop()
         before = path.lstat()
@@ -123,6 +148,7 @@ def tree_evidence(server, root):
             target = os.readlink(path)
             if (
                 before.st_uid != 0
+                or before.st_nlink != 1
                 or os.path.isabs(target)
                 or not path.resolve(strict=True).is_relative_to(
                     root.resolve(strict=True)
@@ -132,11 +158,17 @@ def tree_evidence(server, root):
             content = {"link": target}
         elif stat.S_ISDIR(before.st_mode):
             server.validate_metadata(before, directory=True)
+            inode = (before.st_dev, before.st_ino)
+            if inode in directories:
+                raise FinalizationError("aliased archived directory")
+            directories.add(inode)
             names = sorted(path.iterdir(), reverse=True)
             pending.extend(names)
             content = {"children": sorted(p.name for p in names)}
         elif stat.S_ISREG(before.st_mode):
-            server.validate_metadata(before)
+            # The original root-owned 0700 audit prevents all non-root access.
+            # Preserve group-write bits as evidence, never chmod or execute it.
+            archive_file_metadata(before)
             if before.st_size > 2_000_000_000:
                 raise FinalizationError("backup file exceeds bound")
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -150,10 +182,18 @@ def tree_evidence(server, root):
                     if size > 8_000_000_000:
                         raise FinalizationError("backup bytes exceed bound")
             content = {"sha256": file_hash.hexdigest()}
+            inode = (before.st_dev, before.st_ino)
+            group = hardlinks.setdefault(
+                inode, {"identity": identity, "sha256": content["sha256"], "paths": []}
+            )
+            if group["identity"] != identity or group["sha256"] != content["sha256"]:
+                raise FinalizationError("archived hardlink bytes or metadata differ")
+            group["paths"].append(path)
         else:
             raise FinalizationError("unsupported backup object")
         if metadata(path.lstat()) != identity:
             raise FinalizationError("backup changed during inspection")
+        observed.append((path, identity))
         hasher.update(
             json.dumps(
                 [path.relative_to(root).as_posix(), identity, content],
@@ -162,6 +202,21 @@ def tree_evidence(server, root):
             ).encode()
             + b"\n"
         )
+    for group in hardlinks.values():
+        if len(group["paths"]) != group["identity"]["st_nlink"]:
+            raise FinalizationError(
+                "archived hardlink has an unaccounted external alias"
+            )
+    # Recheck even the paths visited early: later reads must not hide a newly
+    # created external link, replaced alias, ownership/mode change or new entry.
+    for path, identity in observed:
+        if metadata(path.lstat()) != identity:
+            raise FinalizationError("archived path changed after traversal")
+    if (
+        private_directory(server, root.parent.parent) != outer_identity
+        or private_directory(server, root.parent) != audit_identity
+    ):
+        raise FinalizationError("private archive boundary changed")
     return {
         "sha256": hasher.hexdigest(),
         "entries": count,
@@ -274,7 +329,7 @@ def original_evidence(server, operation, *, state=None):
             "original frontend publisher implementation is not audited"
         )
     backups = {
-        name: tree_evidence(server, audit / name)
+        name: tree_evidence(server, audit / name, state=state)
         for name in ("previous-next", "previous-node-modules")
     }
     if metadata(audit.lstat()) != identity:
