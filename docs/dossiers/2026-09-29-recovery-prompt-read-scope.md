@@ -59,3 +59,12 @@ After first corrections, affected single/panel/actionable/citation tests:
 89 passed. Original fixed-candidate focused CI-mode integration:181 passed,
 2 PostgreSQL-only skipped. New final combined run and fixed-revision G4 review
 must pass before external publication.
+
+Second review additionally found opener metadata could supply a conflicting
+quick reply and execute ActionCard side effects before the gateway. A new real
+Pi test failed before remediation. This exact advice scope now skips opener
+side effects and opaque entry-context injection, while normal opener replies,
+model selection and display-format handling keep their existing paths.
+Candidate 5a95263a8 passed 266 focused/neighbor CI-mode tests (2 PostgreSQL-only
+skips), and its bound live LLM gate passed 5/5 (mean 0.94); the final narrow
+correction requires a fresh fixed-commit review and live confirmation.

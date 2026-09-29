@@ -182,3 +182,25 @@ async def test_panel_current_input_advice_excludes_prior_cards_and_twin(db, auth
     assert not twin_calls
     assert not any(marker in m for m in seen)
     assert db.get(AgentMessage, done['message_id']).meta['turn_outcome'] == done['turn_outcome']
+
+
+@pytest.mark.asyncio
+async def test_current_input_advice_ignores_opener_side_effects_and_opaque_context(db, auth_user_and_headers, monkeypatch):
+    import json
+    from app.services.agent_executor import AgentExecutor
+    calls, seen = [], []
+    marker = 'SYNTHETIC_UNRELATED_ENTRY_CONTEXT'
+    monkeypatch.setattr('app.services.opener_quick_reply.apply_opener_quick_reply_context',
+                        lambda *a, **k: calls.append(True) or marker)
+    async def provider(self, messages, tools):
+        seen.extend(str(m.get('content', '')) for m in messages)
+        yield {'type': 'content', 'text': REPLY}
+        yield {'type': 'finish', 'finish_reason': 'stop'}
+    monkeypatch.setattr(AgentExecutor, '_call_llm_stream', provider)
+    user, _ = auth_user_and_headers
+    events = [e async for e in AgentExecutor(db).run_stream(user.id, QUERY,
+        extra_context=json.dumps({'entry': 'conversation_opener_quick_reply', 'source': 'action_card_due',
+                                  'action_card_id': 99, 'user_reply': '做到了', 'context': marker}))]
+    assert events[-1]['data']['completion_status'] == 'complete'
+    assert not calls
+    assert not any(marker in value for value in seen)

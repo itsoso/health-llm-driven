@@ -16871,12 +16871,13 @@ class AgentExecutor:
         try:
             from app.services.opener_quick_reply import apply_opener_quick_reply_context
 
-            opener_quick_reply_note = apply_opener_quick_reply_context(
-                self.db,
-                user_id=user_id,
-                message=message,
-                extra_context=extra_context,
-            )
+            if not self._has_current_input_recovery_advice_goal():
+                opener_quick_reply_note = apply_opener_quick_reply_context(
+                    self.db,
+                    user_id=user_id,
+                    message=message,
+                    extra_context=extra_context,
+                )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[agent_executor] opener quick reply context failed: {e}")
         pre_stages["opener_ms"] = _pre_stage(_t_stage)
@@ -17004,6 +17005,7 @@ class AgentExecutor:
             and extra_context.strip()
             and health_evidence_turn is None
             and not health_continuation_attempted
+            and not self._has_current_input_recovery_advice_goal()
         ):
             turn_context_parts.append(
                 "## 入口上下文 (用户正在看的具体方案)\n"
