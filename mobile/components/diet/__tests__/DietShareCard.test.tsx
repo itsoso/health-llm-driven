@@ -126,16 +126,18 @@ describe('DietShareCard Xiaohongshu poster', () => {
     expect(badge.maxWidth).toBe('100%');
     const panelStyle = StyleSheet.flatten(panel.props.style);
     expect(panelStyle.height).toBeUndefined();
-    expect(panelStyle.minHeight).toBe('43%');
+    expect(panelStyle.minHeight).toBe('34%');
     expect(view.getByTestId('diet-share-location').props.numberOfLines).toBe(2);
     expect(within(panel).getByTestId('diet-share-public-note')).toBeTruthy();
     expect(within(panel).getByTestId('diet-share-nutrition-grid')).toBeTruthy();
   });
 
-  it('leaves no location badge or extra panel height for blank labels', () => {
+  it('leaves no location badge or reserved location row for blank labels', () => {
     const view = renderCard({ locationLabel: '  \n  ' });
     expect(view.queryByTestId('diet-share-location-badge')).toBeNull();
-    expect(StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style).height).toBe('43%');
+    const style = StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style);
+    expect(style.height).toBeUndefined();
+    expect(style.minHeight).toBe('34%');
   });
 
   it('exports only the explicitly supplied location in the poster and caption', () => {
@@ -169,7 +171,8 @@ describe('DietShareCard Xiaohongshu poster', () => {
     }));
     expect(view.getByText('7月11日')).toBeTruthy();
     expect(view.getByText('午餐')).toBeTruthy();
-    expect(view.getByText('午餐打卡｜这一餐吃了什么')).toBeTruthy();
+    expect(view.queryByTestId('diet-share-headline')).toBeNull();
+    expect(view.getAllByText('午餐')).toHaveLength(1);
     expect(view.getByText(record.food_items)).toBeTruthy();
     expect(view.getByTestId('diet-share-nutrition-grid')).toBeTruthy();
     expect(view.getByTestId('diet-share-metric-calories')).toBeTruthy();
@@ -179,8 +182,8 @@ describe('DietShareCard Xiaohongshu poster', () => {
     ['热量', '蛋白质', '碳水', '脂肪', '约', '900', '36', '103', '42', 'kcal', 'g']
       .forEach(text => expect(view.getAllByText(text).length).toBeGreaterThan(0));
     expect(view.queryByText('约 900 kcal · 蛋白质 36g')).toBeNull();
-    expect(view.getByText('午餐记录')).toBeTruthy();
-    expect(view.getByText('图片估算')).toBeTruthy();
+    expect(view.queryByText('午餐记录')).toBeNull();
+    expect(view.queryByText('图片估算')).toBeNull();
     expect(view.queryByText('高蛋白')).toBeNull();
     expect(view.queryByText('含纤维')).toBeNull();
     expect(view.queryByText('下一餐补一份绿叶菜')).toBeNull();
@@ -238,7 +241,7 @@ describe('DietShareCard Xiaohongshu poster', () => {
     ].forEach(text => expect(queryByText(text)).toBeNull());
   });
 
-  it('limits poster tags to three without exporting private advice', () => {
+  it('omits generic tags without exporting private advice or removing uncertainty', () => {
     const manyHighlights = {
       ...record,
       calories: 420,
@@ -249,7 +252,7 @@ describe('DietShareCard Xiaohongshu poster', () => {
     };
     const view = renderCard({ record: manyHighlights });
 
-    expect(view.getAllByTestId(/^diet-share-tag-/)).toHaveLength(2);
+    expect(view.queryAllByTestId(/^diet-share-tag-/)).toHaveLength(0);
     expect(view.getByTestId('diet-share-public-note')).toBeTruthy();
     expect(view.queryByText(manyHighlights.health_tips)).toBeNull();
   });
@@ -266,26 +269,48 @@ describe('DietShareCard Xiaohongshu poster', () => {
       },
     });
 
-    expect(view.getByTestId('diet-share-headline').props.numberOfLines).toBe(1);
-    expect(view.getByTestId('diet-share-food-line').props.numberOfLines).toBe(2);
-    expect(view.getAllByTestId(/^diet-share-tag-/)).toHaveLength(2);
+    expect(view.queryByTestId('diet-share-headline')).toBeNull();
+    expect(view.getByTestId('diet-share-food-line').props.numberOfLines).toBe(3);
+    expect(StyleSheet.flatten(view.getByTestId('diet-share-food-line').props.style)).toEqual(expect.objectContaining({
+      fontSize: 17,
+      lineHeight: 23,
+      fontWeight: '700',
+    }));
+    expect(view.queryAllByTestId(/^diet-share-tag-/)).toHaveLength(0);
     expect(view.queryByTestId('diet-share-next-action')).toBeNull();
     expect(view.getByTestId('diet-share-public-note').props.numberOfLines).toBe(2);
     const copyStyle = StyleSheet.flatten(view.getByTestId('diet-share-poster-copy').props.style);
     expect(copyStyle).toEqual(expect.objectContaining({
-      height: '43%',
+      minHeight: '34%',
       position: 'absolute',
       bottom: 0,
-      paddingTop: 11,
-      paddingBottom: 9,
+      paddingTop: 18,
+      paddingBottom: 12,
     }));
-    expect(165).toBeLessThanOrEqual(440 * 0.43 - copyStyle.paddingTop - copyStyle.paddingBottom);
+    expect(copyStyle.height).toBeUndefined();
     const calorieValue = view.getByTestId('diet-share-metric-number-calories');
     expect(calorieValue.props).toEqual(expect.objectContaining({
       numberOfLines: 1,
       adjustsFontSizeToFit: true,
       minimumFontScale: 0.72,
     }));
+  });
+
+  it.each(['breakfast', 'lunch', 'dinner', 'snack'] as const)('shows %s once without generic poster labels', mealType => {
+    const view = renderCard({ record: { ...record, meal_type: mealType } });
+    const labels = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
+    expect(view.getAllByText(labels[mealType])).toHaveLength(1);
+    expect(view.queryByText(`${labels[mealType]}记录`)).toBeNull();
+    expect(view.queryByText('图片估算')).toBeNull();
+    expect(view.getAllByTestId(/^diet-share-metric-qualifier-/)).toHaveLength(4);
+    expect(view.getByTestId('diet-share-public-note').props.children).toBe('图片估算仅用于日常记录，实际以食材与份量为准。');
+  });
+
+  it('retains a visible low-confidence status after removing redundant chips', () => {
+    const view = renderCard({ record: { ...record, ai_confidence: 0.42 } });
+    expect(view.getByText('营养待核对')).toBeTruthy();
+    expect(view.queryAllByTestId(/^diet-share-metric-number-/)).toHaveLength(0);
+    expect(view.getByTestId('diet-share-public-note').props.children).toBe('先核对食物与份量，再生成营养记录。');
   });
 
   it('keeps mixed-size nutrition text in separate line boxes for iOS poster capture', () => {

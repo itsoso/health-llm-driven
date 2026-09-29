@@ -417,7 +417,6 @@ export default function DietShareCard({
   onImageError,
 }: DietShareCardProps) {
   const presentation = buildDietSharePresentation(record);
-  const tags = presentation.tags.slice(0, 3);
   const macroLines = presentation.macroLines.slice(0, 2);
   const nutritionItems = presentation.nutritionItems.slice(0, 4);
   const nutritionStatus = nutritionItems.length === 0 ? macroLines[0] : null;
@@ -448,13 +447,8 @@ export default function DietShareCard({
         </View>
       </View>
 
-      <View testID="diet-share-poster-copy" style={[styles.posterCopy, locationLine && styles.posterCopyWithLocation]}>
-        <View style={styles.posterRuleRow}>
-          <View style={styles.posterRuleLong} />
-          <View style={styles.posterRuleShort} />
-        </View>
-        <PosterText testID="diet-share-headline" style={styles.posterHeadline} numberOfLines={1}>{presentation.headline}</PosterText>
-        <PosterText testID="diet-share-food-line" style={styles.posterFoodLine} numberOfLines={2}>{presentation.foodLine}</PosterText>
+      <View testID="diet-share-poster-copy" style={styles.posterCopy}>
+        <PosterText testID="diet-share-food-line" style={styles.posterFoodLine} numberOfLines={3} ellipsizeMode="tail">{presentation.foodLine}</PosterText>
 
         <View testID="diet-share-nutrition-grid" style={styles.posterNutrition}>
           {nutritionItems.length > 0 ? nutritionItems.map((item, index) => (
@@ -497,16 +491,6 @@ export default function DietShareCard({
             <PosterText style={styles.posterNutritionStatus}>{nutritionStatus}</PosterText>
           )}
         </View>
-
-        {tags.length > 0 ? (
-          <View style={styles.posterTagRow}>
-            {tags.map((tag, index) => (
-              <View key={`${tag}:${index}`} testID={`diet-share-tag-${index}`} style={styles.posterTag}>
-                <PosterText style={styles.posterTagText}>{tag}</PosterText>
-              </View>
-            ))}
-          </View>
-        ) : null}
 
         {locationLine ? (
           <View testID="diet-share-location-badge" style={styles.posterLocation}>
@@ -1174,22 +1158,18 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: '43%',
+    // Keep the photo dominant without reserving space for absent labels. Long
+    // food/location text can grow the panel inside the fixed export canvas.
+    minHeight: '34%',
     paddingHorizontal: 20,
-    paddingTop: 11,
-    paddingBottom: 9,
-    gap: 4,
+    paddingTop: 18,
+    paddingBottom: 12,
+    gap: 10,
     backgroundColor: C.surface2,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderCurve: 'continuous',
     overflow: 'hidden',
-  },
-  posterCopyWithLocation: {
-    // Grow with wrapped food/location text rather than clipping the footer in
-    // the fixed export canvas. Posters without a location keep their layout.
-    height: undefined,
-    minHeight: '43%',
   },
   posterLocation: {
     alignSelf: 'flex-start',
@@ -1203,38 +1183,11 @@ const styles = StyleSheet.create({
     backgroundColor: C.green50,
   },
   posterLocationText: { flexShrink: 1, minWidth: 0, color: C.green700, fontSize: 10.5, lineHeight: 15, fontWeight: '600' },
-  posterRuleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    height: 3,
-  },
-  posterRuleLong: {
-    width: 34,
-    height: 3,
-    borderRadius: 2,
-    borderCurve: 'continuous',
-    backgroundColor: revaSemantic.risk.fg,
-  },
-  posterRuleShort: {
-    width: 7,
-    height: 3,
-    borderRadius: 2,
-    borderCurve: 'continuous',
-    backgroundColor: C.ink1,
-  },
-  posterHeadline: {
-    fontSize: 19,
-    lineHeight: 24,
-    color: C.ink1,
-    fontWeight: '800',
-    letterSpacing: -0.25,
-  },
   posterFoodLine: {
-    fontSize: 11,
-    lineHeight: 15.5,
-    color: C.ink2,
-    fontWeight: '500',
+    fontSize: 17,
+    lineHeight: 23,
+    color: C.ink1,
+    fontWeight: '700',
   },
   posterNutrition: {
     minHeight: 48,
@@ -1243,9 +1196,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 14,
     borderCurve: 'continuous',
-    backgroundColor: revaSemantic.caution.bg,
+    backgroundColor: C.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: revaSemantic.caution.line,
+    borderColor: C.line,
   },
   posterMetric: {
     flex: 1,
@@ -1256,7 +1209,7 @@ const styles = StyleSheet.create({
   },
   posterMetricDivider: {
     borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: C.lineStrong,
+    borderLeftColor: C.line,
   },
   posterMetricLabel: {
     fontSize: 8,
@@ -1293,24 +1246,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 26,
     color: revaSemantic.caution.fg,
-    fontWeight: '700',
-  },
-  posterTagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  posterTag: {
-    minHeight: 21,
-    borderRadius: 11,
-    borderCurve: 'continuous',
-    justifyContent: 'center',
-    paddingHorizontal: 9,
-    backgroundColor: revaSemantic.risk.bg,
-  },
-  posterTagText: {
-    fontSize: 9.5,
-    color: revaSemantic.risk.fg,
     fontWeight: '700',
   },
   posterPublicNoteText: {
