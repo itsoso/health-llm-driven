@@ -117,3 +117,38 @@ not recognized by the existing guard. Five focused RED cases reproduced this.
 The course tripwire now also rejects an advisory verb followed by medicine
 administration and a duration; historical facts, negation and non-drug rest
 recommendations have paired regression coverage. This tightens the final guard.
+
+## Evening daily-summary recommendation follow-up
+
+裁决: implementation verified; release pending
+
+The recovery path was accepted on production revision 623407d6d. A subsequent
+evening summary recommendation exposed a different producer/consumer mismatch:
+the generated health-data wording and bedtime-advice suffix were outside the
+closed daily-read grammar. Calendar resolution itself was correct. Four model
+tool proposals were blocked before dispatch; no query or write was completed.
+
+Reuse the existing server-owned DailyReadPlan for both recommendation copy and
+execution. The daily-plan module now owns the canonical recommendation subject
+and advice clause, and the starter imports that copy. Its visible scope names
+diet and sleep, the two supported exact-day planes. The old recommendation
+remains accepted for existing drafts. Submission always recompiles current text;
+edited text receives no inherited plan, client assertion or extra authority.
+Keep exact-date binding, owner isolation, required-read verification, partial
+failure reporting and the final medical guard unchanged. No API, schema or
+database adapter changes are introduced by this follow-up.
+
+Regression tests call the actual recommendation generator, then the shared
+planner and capability policy, and execute through real Pi and the production
+gateway to persisted answer metadata. They distinguish available data, no data
+and partial query failure; reject third-party, quoted, cancelled, future and
+compound requests; and reject extra personal dimensions, writes and model date
+overrides. Correct RED: 11 failed, 9 passed. Initial focused GREEN: 146 passed,
+8 PostgreSQL-only skips. Full CI-mode integration, fixed-commit safety review
+and exact-main CI are required before release.
+
+Release baseline fc9328b1b includes the separately reviewed registration change.
+Production remains 623407d6d. The registration release task owns an outstanding
+native-only retirement/readiness BLOCK on the trusted release infrastructure;
+this incident must not bypass it with another deployment entry point. No live
+acceptance or deployment of the evening correction is claimed here.

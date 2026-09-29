@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.services.agent_kernel.daily_read_plan import DAILY_SUMMARY_STARTER
 
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -936,7 +937,7 @@ def _suggest_evening(signals: StarterSignals) -> Optional[SuggestionCandidate]:
         return None
     if not _has_any_user_signal(signals):
         return None
-    return SuggestionCandidate(50, "总结一下我今天的健康数据，并给睡前几个小建议")
+    return SuggestionCandidate(50, DAILY_SUMMARY_STARTER)
 
 
 def _suggest_late_night(signals: StarterSignals) -> Optional[SuggestionCandidate]:
