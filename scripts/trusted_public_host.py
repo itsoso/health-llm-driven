@@ -118,6 +118,7 @@ def execute(sha):
     with lock.open('r+b') as stream:
         fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         helper._assert_lock(server, lock, stream.fileno())
+        server.assert_ota_history()
         helper._revision_proof(sha, source, bootstrap)
         require_backend_receipt(sha, bootstrap._read_json(STATE / sha / 'completed.json'))
         verify_runtime(guard, check_network=False)

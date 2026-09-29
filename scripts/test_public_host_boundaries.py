@@ -188,3 +188,26 @@ def test_final_frontend_receipt_requires_live_digest_and_unique_attempt(tmp_path
     (operation.parent / ('f' * 32)).mkdir()
     with pytest.raises(RuntimeError, match='exactly one'):
         m.verify_frontend_artifacts(sha, tmp_path, bootstrap, server)
+
+
+def test_unfinished_ota_without_business_lease_blocks_host_mutations(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    m = load('trusted_public_host')
+    monkeypatch.setattr(m, 'STATE', tmp_path)
+    monkeypatch.setattr(m, 'LEASE', tmp_path / 'absent-business-lease')
+    (tmp_path / 'launcher.lock').write_bytes(b'')
+    calls = []
+    helper = SimpleNamespace(_assert_lock=lambda *args: None,
+                             _revision_proof=lambda *args: calls.append('revision'))
+    def reject_pending_ota():
+        raise RuntimeError('unfinished OTA intent')
+    server = SimpleNamespace(secure_path=lambda *args, **kwargs: None,
+                             assert_ota_history=reject_pending_ota)
+    gate = SimpleNamespace(verify_release=lambda *args: None)
+    monkeypatch.setattr(m, 'load_reviewed', lambda sha: (tmp_path, helper, None, server, gate, None))
+    with pytest.raises(RuntimeError, match='unfinished OTA'):
+        m.execute('a' * 40)
+    assert calls == []
+    assert not m.LEASE.exists()
+    assert not (tmp_path / ('a' * 40)).exists()
