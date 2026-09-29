@@ -73,8 +73,8 @@ def scope_tools_for_exercise_plan(tools: list[dict[str, Any]], message: str) -> 
 
 
 def scope_tools_for_current_input_advice(tools: list[dict[str, Any]], message: str) -> list[dict[str, Any]]:
-    from app.services.agent_kernel.current_input_advice_scope import is_current_input_recovery_advice
+    from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
 
-    if not is_current_input_recovery_advice(message):
+    if not is_current_input_advice(message):
         return tools
     return [tool for tool in tools if (tool.get("function") or {}).get("name") == "knowledge_search"]

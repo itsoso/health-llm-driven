@@ -2649,8 +2649,8 @@ def decide_tool_capability(
     from app.services.agent_kernel.read_task_scope import (
         OWNED_MULTI_READ_TOOL_NAMES, resolve_owned_read_scope,
     )
-    from app.services.agent_kernel.current_input_advice_scope import is_current_input_recovery_advice
-    if is_current_input_recovery_advice(snapshot.envelope.text) and tool_name != "knowledge_search":
+    from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
+    if is_current_input_advice(snapshot.envelope.text) and tool_name != "knowledge_search":
         # A whole current-input advice goal needs no personal records. This is
         # a restrictive boundary, including broad specialists and shadow mode.
         optional_read = (tool_name in READ_ONLY_TOOLS | SPECIALIST_READ_ONLY_TOOLS

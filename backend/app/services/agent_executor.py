@@ -12623,11 +12623,11 @@ class AgentExecutor:
                 )
 
     def _has_current_input_recovery_advice_goal(self) -> bool:
-        from app.services.agent_kernel.current_input_advice_scope import is_current_input_recovery_advice
+        from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
 
         snapshot = self._agent_kernel_snapshot
         return bool(snapshot is not None and not snapshot.intent.is_write
-                    and is_current_input_recovery_advice(snapshot.envelope.text))
+                    and is_current_input_advice(snapshot.envelope.text))
 
     def _has_explicit_unscoped_answer_goal(self) -> bool:
         from app.services.agent_policy_retry import is_general_advice_only_request
@@ -12746,7 +12746,7 @@ class AgentExecutor:
                     "without a concrete regimen. Do not add facts, claims, or completed "
                     "actions. Return only the corrected user-facing answer."
                     + (
-                        " 本轮只回答当前描述对应的休息和恢复。保留就医警示、信息不足说明，"
+                        " 本轮只回答当前输入所请求的通用建议或解释。保留就医警示、信息不足说明，"
                         "明确本轮未查询个人记录。不要把草稿当作已核实的诊断或个人事实。"
                         "删除所有用药和补剂的执行建议，包括按时用药、继续原方案、"
                         "服药时点或疗程；药物只说明需要向医生或药师核对。"
@@ -14187,8 +14187,8 @@ class AgentExecutor:
             medical_citation_prompt,
         ]
         if self._has_current_input_recovery_advice_goal():
-            from app.services.agent_kernel.current_input_advice_scope import CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
-            multi_model_context.append(CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS)
+            from app.services.agent_kernel.current_input_advice_scope import current_input_advice_instructions
+            multi_model_context.append(current_input_advice_instructions(message))
         multi_model_context_text = "\n\n".join(
             part for part in multi_model_context if part
         )
@@ -17310,8 +17310,8 @@ class AgentExecutor:
         from app.services.agent_input_tool_scope import scope_tools_for_owned_read
         tools = scope_tools_for_owned_read(tools, read_scope)
         if self._has_current_input_recovery_advice_goal():
-            from app.services.agent_kernel.current_input_advice_scope import CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
-            messages[0]["content"] += "\n" + CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
+            from app.services.agent_kernel.current_input_advice_scope import current_input_advice_instructions
+            messages[0]["content"] += "\n" + current_input_advice_instructions(message)
         if read_scope is not None:
             messages[0]["content"] += (
                 "\n本轮服务端确定的只读范围（逐项完成，参数可修正但不得扩展）："

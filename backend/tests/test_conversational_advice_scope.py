@@ -1,0 +1,117 @@
+"""Synthetic everyday questions must not become required personal reads."""
+import pytest
+
+from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
+from tests.test_agent_read_plan_binding import decide
+from tests.test_query_reliability_outcomes import _run_scripted
+
+
+BEDTIME = '给我一些健康的建议，现在是不是可以睡觉了？'
+ACTION = '请解释今天这条行动：“复查:鼻炎(活动期)”。告诉我为什么现在做、怎么做，以及什么情况下不适合做。'
+
+
+@pytest.fixture(autouse=True)
+def _isolate_transport(isolated_agent_protocol_transport):
+    """Synthetic provider and database; no real user records or network."""
+
+
+@pytest.mark.parametrize('message', [BEDTIME, '现在可以睡觉了吗？', ACTION,
+    '解释睡眠的一般性建议',
+    ACTION.replace('鼻炎(活动期)', '胃炎(Hp阴性,胃体前壁)'),
+])
+def test_whole_advice_hides_personal_tools(message):
+    tools = [{'function': {'name': name}} for name in ['health_query', 'health_manage', 'knowledge_search']]
+    assert [t['function']['name'] for t in scope_tools_for_current_input_advice(tools, message)] == ['knowledge_search']
+
+
+@pytest.mark.parametrize('message', [BEDTIME, ACTION])
+@pytest.mark.parametrize('tool,args', [
+    ('health_query', {'dimension': 'sleep'}),
+    ('health_manage', {'record_type': 'illness', 'operation': 'list'}),
+    ('analyze_recovery', {}),
+])
+def test_advice_rejects_optional_personal_reads_with_nonterminal_reason(message, tool, args):
+    result = decide(message, tool, args)
+    assert result.action == 'block'
+    assert result.reason == 'current_input_advice_read_not_needed'
+
+
+@pytest.mark.parametrize('message', [
+    BEDTIME + '查询昨天的睡眠',
+    '查询最近一周的睡眠，给我健康建议，现在可以睡觉了吗？',
+    '妈妈现在可以睡觉了吗？', '现在吃安眠药就可以睡觉了吗？',
+    '不要回答现在可以睡觉了吗？', '“现在可以睡觉了吗？”',
+    ACTION + '并删除记录',
+    ACTION.replace('鼻炎(活动期)', '鼻炎(查询妈妈的记录)'),
+    ACTION.replace('鼻炎(活动期)', '鼻炎(增加药物剂量)'),
+    '假如' + ACTION,
+    '我胸痛，现在可以睡觉了吗？',
+    '我呕血了，现在可以睡觉了吗？',
+])
+def test_whole_request_proof_does_not_erase_other_intents(message):
+    tools = [{'function': {'name': 'health_query'}}]
+    assert scope_tools_for_current_input_advice(tools, message) == tools
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('message', [BEDTIME, ACTION])
+async def test_advice_completes_after_forced_optional_read(db, auth_user_and_headers, monkeypatch, message):
+    monkeypatch.setattr('app.services.agent_input_tool_scope.scope_tools_for_current_input_advice',
+                        lambda tools, text: [{'type': 'function', 'function': {
+                            'name': 'health_query', 'description': 'Synthetic forced read',
+                            'parameters': {'type': 'object', 'additionalProperties': True}}}])
+    reply = '本轮未查询个人记录，仅解释你提供的内容；无法确认个人检查安排或当前身体状态，请补充必要信息。'
+    user, _ = auth_user_and_headers
+    executor, done, persisted, public, dispatched = await _run_scripted(
+        db, user, monkeypatch, query=message, first_tool='health_query',
+        first_args={'dimension': 'sleep'}, dispatch=lambda request: {}, reply=reply,
+        turn_id='conversation-advice', required_context_text='本轮只依据用户当前输入')
+    assert not dispatched
+    assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
+    assert persisted.content == public
+    assert reply in public
+    assert 'current_input_advice_read_not_needed' in executor._agent_kernel_capability_block_reasons
+    assert not done['write_receipts']
+
+
+@pytest.mark.parametrize('message', [BEDTIME, ACTION])
+def test_advice_has_no_private_preload_or_write_authority(db, monkeypatch, message):
+    from app.services.agent_executor import AgentExecutor
+    calls = []
+    monkeypatch.setattr('app.services.health_context_lite_service.build_lite_health_context',
+                        lambda *a, **k: calls.append('lite') or 'PRIVATE')
+    monkeypatch.setattr('app.twin.builder.build_twin', lambda *a, **k: calls.append('twin'))
+    executor = AgentExecutor(db)
+    executor._start_agent_kernel_turn(user_id=41, message=message, channel='typed')
+    executor._build_system_prompt(41, 1, None, intent_query=message)
+    assert not calls
+    assert decide(message, 'health_record', {'record_type': 'weight', 'data': {'weight': 70}}).action == 'block'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('message', [BEDTIME, ACTION])
+@pytest.mark.parametrize('mode', ['enforce', 'shadow'])
+async def test_advice_gateway_never_dispatches_private_read(message, mode):
+    from dataclasses import replace
+    from tests.test_agent_read_plan_binding import snapshot
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    from app.services.agent_kernel.types import ToolExecutionRequest
+    calls = []
+    async def dispatch(request):
+        calls.append(request)
+        return '{}'
+    result = await ToolGateway(replace(snapshot(message), policy_mode=mode)).execute(
+        ToolExecutionRequest(tool_name='analyze_recovery', arguments={}), dispatch)
+    assert result.decision.action == 'block'
+    assert not calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('message', [BEDTIME, ACTION])
+async def test_incomplete_answer_is_not_recovered(db, auth_user_and_headers, monkeypatch, message):
+    user, _ = auth_user_and_headers
+    _, done, _, _, calls = await _run_scripted(db, user, monkeypatch,
+        query=message, first_tool='health_query', first_args={'dimension': 'sleep'},
+        dispatch=lambda request: {}, reply='尚未完成', turn_id='advice-length', answer_finish_reason='length')
+    assert not calls
+    assert done['completion_status'] != 'complete'
