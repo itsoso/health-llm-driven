@@ -91,3 +91,94 @@ def test_current_input_advice_does_not_preload_personal_health_context(db, monke
     prompt = executor._build_system_prompt(41, 1, None, intent_query=QUERY)
     assert not calls
     assert 'UNRELATED PERSONAL HISTORY' not in prompt
+
+
+@pytest.mark.asyncio
+async def test_prior_actionable_context_not_in_current_input_reply(db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_kernel.types import ActionableReference
+    user, _ = auth_user_and_headers
+    marker = 'SYNTHETIC_PRIOR_MEAL_NOT_CURRENT_INPUT'
+    monkeypatch.setattr('app.services.agent_conversation_service.AgentConversationService.build_actionable_references',
+                        lambda *a, **k: (ActionableReference(kind='diet_daily_summary', source_message_id=99,
+                            data={'record_date':'2026-01-01','meals':[{'meal_type':'breakfast','food_items':marker}]}),))
+    seen = []
+    async def provider(self, messages, tools):
+        seen.extend(str(m.get('content','')) for m in messages)
+        yield {'type':'content','text':'仅根据当前描述建议休息，不曾查询个人记录。'}
+        yield {'type':'finish','finish_reason':'stop'}
+    monkeypatch.setattr(AgentExecutor, '_call_llm_stream', provider)
+    ex = AgentExecutor(db)
+    events = [e async for e in ex.run_stream(user.id, '我有鼻炎症状，今天该怎么休息和恢复？', client_turn_id='review-old-context')]
+    assert events[-1]['data']['completion_status'] == 'complete'
+    assert not any(marker in m for m in seen), 'Previous personal meal data leaked into current-input-only provider messages'
+
+def test_current_input_message_kb_miss_must_not_consult_twin(db, monkeypatch):
+    from app.services.agent_executor import AgentExecutor
+    calls=[]
+    monkeypatch.setattr('app.services.system_knowledge_service.build_evidence_card_for_message', lambda *a, **k: None)
+    monkeypatch.setattr('app.twin.builder.build_twin', lambda *a, **k: calls.append('private_twin') or {})
+    monkeypatch.setattr('app.services.system_knowledge_service.system_kb_twin_payload_from_health_twin', lambda *a, **k: {})
+    monkeypatch.setattr('app.services.system_knowledge_service.build_evidence_card_for_twin', lambda *a, **k: {'type':'system_evidence','data':{'entity':{'title':'PRIOR_PRIVATE_ENTITY'},'claims':[{'title':'PRIOR_PERSONAL_CLAIM'}]}})
+    ex=AgentExecutor(db)
+    ex._start_agent_kernel_turn(user_id=41,message='我有鼻炎症状，今天该怎么休息和恢复？',channel='typed')
+    prompt=ex._build_system_knowledge_prompt_context(41,'我有鼻炎症状，今天该怎么休息和恢复？')
+    assert not calls, 'Current-input advice unexpectedly consults private Twin'
+    assert 'PRIOR_PRIVATE_ENTITY' not in prompt
+
+
+@pytest.mark.asyncio
+async def test_current_input_reply_never_builds_twin_for_kb_or_citation(db, auth_user_and_headers, monkeypatch):
+    calls = []
+    def build_twin(*args, **kwargs):
+        calls.append(True)
+        return None
+    monkeypatch.setattr('app.twin.builder.build_twin', build_twin)
+    monkeypatch.setattr('app.services.system_knowledge_service.build_evidence_card_for_message', lambda *a, **k: None)
+    user, _ = auth_user_and_headers
+    await _run_scripted(db, user, monkeypatch, query=QUERY, first_tool='health_query',
+        first_args={'dimension': 'sleep'}, dispatch=lambda request: {}, reply=REPLY, turn_id='no-background-twin')
+    assert not calls, 'Advice cannot preload Twin via KB fallback or citation telemetry'
+
+
+@pytest.mark.asyncio
+async def test_current_input_advice_cannot_trigger_client_database_snapshot(db, auth_user_and_headers, monkeypatch):
+    calls = []
+    monkeypatch.setattr('app.services.agent_executor._extract_database_verification_instruction', lambda _: 'READ PRIOR DIET')
+    monkeypatch.setattr('app.services.agent_executor._build_database_verification_snapshot', lambda *a, **k: calls.append(True) or 'OLD DIET')
+    user, _ = auth_user_and_headers
+    await _run_scripted(db, user, monkeypatch, query=QUERY, first_tool='health_query',
+        first_args={'dimension': 'sleep'}, dispatch=lambda request: {}, reply=REPLY, turn_id='no-client-snapshot')
+    assert not calls
+
+
+@pytest.mark.asyncio
+async def test_panel_current_input_advice_excludes_prior_cards_and_twin(db, auth_user_and_headers, monkeypatch):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_kernel.types import ActionableReference
+    from app.models.agent_conversation import AgentMessage
+    user, _ = auth_user_and_headers
+    marker = 'SYNTHETIC_OLD_MEAL'
+    monkeypatch.setattr('app.services.agent_conversation_service.AgentConversationService.build_actionable_references',
+        lambda *a, **k: (ActionableReference(kind='diet_daily_summary', source_message_id=99,
+            data={'meals':[{'meal_type':'breakfast','food_items':marker}]}),))
+    twin_calls = []
+    monkeypatch.setattr('app.twin.builder.build_twin', lambda *a, **k: twin_calls.append(True))
+    seen = []
+    async def lead(messages, tools):
+        seen.extend(str(m.get('content','')) for m in messages)
+        assert {t['function']['name'] for t in tools} <= {'knowledge_search'}
+        return {'content': REPLY, 'finish_reason': 'stop'}
+    class Provider:
+        async def chat(self, **kwargs):
+            seen.extend(str(m.get('content','')) for m in kwargs['messages'])
+            return {'content': REPLY, 'finish_reason': 'stop'}
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, '_call_llm', lead)
+    monkeypatch.setattr('app.services.llm.factory.create_provider_for_model_id', lambda *_: Provider())
+    events = [e async for e in executor._run_multi_model_stream(user.id, QUERY, None, None, '{"multi_model":true}')]
+    done = events[-1]['data']
+    assert done['completion_status'] == 'complete'
+    assert not twin_calls
+    assert not any(marker in m for m in seen)
+    assert db.get(AgentMessage, done['message_id']).meta['turn_outcome'] == done['turn_outcome']

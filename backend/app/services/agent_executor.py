@@ -14168,7 +14168,8 @@ class AgentExecutor:
             turn_time_context,
             format_actionable_context_prompt(
                 self._agent_kernel_snapshot.actionable_references
-                if self._agent_kernel_snapshot is not None else ()
+                if self._agent_kernel_snapshot is not None
+                and not self._has_current_input_recovery_advice_goal() else ()
             ),
             format_goal_contract_prompt(
                 self._agent_kernel_snapshot.goal
@@ -15245,11 +15246,8 @@ class AgentExecutor:
         conv.updated_at = datetime.now(UTC)
         elapsed_ms = int((time.time() - start_time) * 1000)
         # P1 数字锚定核验(shadow, additive; fail-soft 见 helper)。
-        citation_anchor = _citation_anchor_shadow_meta(
-            self.db,
-            user_id,
-            full_reply,
-        )
+        citation_anchor = (None if self._has_current_input_recovery_advice_goal()
+                           else _citation_anchor_shadow_meta(self.db, user_id, full_reply))
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
         try:
             ai_msg.meta = {
@@ -16938,6 +16936,7 @@ class AgentExecutor:
         actionable_context = format_actionable_context_prompt(
             (self._agent_kernel_snapshot.actionable_references or ())
             if self._agent_kernel_snapshot is not None
+            and not self._has_current_input_recovery_advice_goal()
             else ()
         )
         if actionable_context:
@@ -16983,7 +16982,10 @@ class AgentExecutor:
                     f"{desktop_response_instruction}\n"
                     "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
                 )
-        database_verification_instruction = _extract_database_verification_instruction(extra_context)
+        database_verification_instruction = (
+            None if self._has_current_input_recovery_advice_goal()
+            else _extract_database_verification_instruction(extra_context)
+        )
         if database_verification_instruction:
             turn_context_parts.append(database_verification_instruction)
             try:
@@ -19756,7 +19758,7 @@ class AgentExecutor:
         # 摘要进 meta + done, 客户端不读不炸。内部全 fail-soft, 绝不打死回合。
         citation_anchor = (
             None
-            if health_evidence_turn is not None
+            if health_evidence_turn is not None or self._has_current_input_recovery_advice_goal()
             else _citation_anchor_shadow_meta(self.db, user_id, full_reply)
         )
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
@@ -21637,7 +21639,7 @@ class AgentExecutor:
         if evidence_card:
             return evidence_card
 
-        if not _allow_twin_evidence_fallback(message):
+        if self._has_current_input_recovery_advice_goal() or not _allow_twin_evidence_fallback(message):
             return None
 
         try:

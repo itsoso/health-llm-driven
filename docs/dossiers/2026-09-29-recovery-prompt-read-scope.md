@@ -43,3 +43,19 @@ from old conversation messages. No schema, migration, dependency or API change.
 - System Map regenerated; map, navigation and doc-drift checks passed.
 - G4 independent fixed-commit review, exact-main CI, clean backend deployment
   and post-deployment user-flow validation remain required before completion.
+
+
+## G4 correction
+
+Independent review of d4b5c7729 returned NO-GO: actionable old meal cards and
+Twin-based KB/citation fallbacks still loaded personal context. Two independent
+synthetic reproductions failed. Both single and panel now suppress old card
+projection and citation Twin reads; message-based KB remains available while
+private Twin fallback is disabled for this proven scope. An additional client
+verification-snapshot regression failed before its narrow guard was added.
+No clinical safety admission or static safety rules were bypassed.
+
+After first corrections, affected single/panel/actionable/citation tests:
+89 passed. Original fixed-candidate focused CI-mode integration:181 passed,
+2 PostgreSQL-only skipped. New final combined run and fixed-revision G4 review
+must pass before external publication.
