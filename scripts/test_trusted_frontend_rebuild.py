@@ -432,7 +432,8 @@ def execution(tmp_path, monkeypatch):
         with path.open("xb") as stream:
             stream.write(data)
         path.chmod(0o600)
-    server = SimpleNamespace(_write_private=write, _sync_directory=lambda p: None, secure_path=lambda *a, **kw: None)
+    server = SimpleNamespace(_write_private=write, _sync_directory=lambda p: None,
+                             _sync_business_lease_parent=lambda: None, secure_path=lambda *a, **kw: None)
     helper = SimpleNamespace(_lease_identity=lambda *a: ((1, 2), (1, 3)))
     plan = {"publisher_sha": "a" * 40, "production_sha": "b" * 40,
             "operation_id": "c" * 32, "frontend_tree": "d" * 40, "public_build_env": {}}
@@ -454,6 +455,32 @@ def test_execution_preserves_old_artifacts_and_only_stops_frontend(execution):
         m.execute(plan, Path("/unused"), helper, None, server)
 
 
+def test_execution_completes_after_real_symlink_lease_parent_sync(execution, tmp_path, monkeypatch):
+    m, plan, helper, server, _ = execution
+    parent = tmp_path / "run-lock"
+    parent.mkdir()
+    alias = tmp_path / "var-lock"
+    alias.symlink_to(parent, target_is_directory=True)
+    monkeypatch.setattr(m, "LEASE", alias / "health-app-release")
+
+    def sync(path):
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+    server._sync_directory = sync
+    server._sync_business_lease_parent = lambda: sync(parent)
+    result = m.execute(plan, Path("/unused"), helper, None, server)
+    audit = m.STATE / "frontend-rebuilds" / plan["operation_id"]
+    assert result["state"] == "FRONTEND_SUCCEEDED"
+    assert (audit / "verified.json").exists() and (audit / "completed.json").exists()
+    assert not (audit / "failed.json").exists()
+    assert not m.LEASE.exists()
+    assert alias.is_symlink()
+
+
 @pytest.mark.parametrize("failure", ["assert_unchanged", "assert_frontend_stopped", "verify_pages"])
 def test_failed_or_unverified_execution_retains_lease_and_never_claims_success(execution, monkeypatch, failure):
     m, plan, helper, server, events = execution
@@ -470,6 +497,19 @@ def test_failed_or_unverified_execution_retains_lease_and_never_claims_success(e
         assert "stop" not in events
     if failure == "assert_frontend_stopped":
         assert (m.PRODUCTION / "frontend/.next/payload").read_text() == "old"
+
+
+@pytest.mark.skipif(os.environ.get("REVA_TEST_FRONTEND_SANDBOX") != "1", reason="requires isolated Linux systemd runner")
+def test_native_frontend_sandbox_syncs_fixed_ubuntu_lock_parent():
+    assert os.geteuid() == 0
+    path = Path(__file__).with_name("trusted_release_server.py")
+    spec = importlib.util.spec_from_file_location("native_lock_sync_server", path)
+    server = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+    assert Path("/var/lock").is_symlink()
+    with pytest.raises(OSError):
+        server._sync_directory(Path("/var/lock"))
+    server._sync_business_lease_parent()
 
 
 @pytest.mark.skipif(os.environ.get("REVA_TEST_FRONTEND_SANDBOX") != "1", reason="requires isolated Linux systemd runner")

@@ -8,6 +8,7 @@ import datetime
 import fcntl
 import grp
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -19,6 +20,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 CONFIG = Path("/etc/reva-release")
 POLICY = CONFIG / "authorized-release.json"
@@ -328,10 +330,57 @@ def frontend_closure_proof(operation, state, *, acknowledgment=True):
     return intent
 
 
-def assert_frontend_rebuild_history(state=None, *, pending_operation=None):
+def _load_frontend_finalizer():
+    """Load only the helper committed alongside this canonical executor."""
+    entry = Path(__file__).absolute()
+    if entry == Path("/usr/local/lib/reva-release/trusted_release_server.py"):
+        policy = validate_policy(_json(_read_private(POLICY)), now=0)
+        secure_path(entry)
+        if hashlib.sha256(entry.read_bytes()).hexdigest() != policy["executor_sha256"]:
+            raise LaunchError("installed executor binding differs")
+        sha = policy["sha"]
+        source = STATE / "bootstrap" / sha / "source"
+    else:
+        source = entry.parent.parent
+        sha = source.parent.name
+        if (re.fullmatch(r"[0-9a-f]{40}", sha) is None
+                or source != STATE / "bootstrap" / sha / "source"
+                or entry != source / "scripts/trusted_release_server.py"):
+            raise LaunchError("canonical frontend history helper source required")
+    script = source / "scripts/frontend_verified_finalization.py"
+    secure_path(script)
+    if os.path.lexists(script.parent / "__pycache__"):
+        raise LaunchError("cached frontend history helper forbidden")
+    env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
+    expected = subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source),
+                               "show", sha + ":scripts/frontend_verified_finalization.py"],
+                              env=env, stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=30).stdout
+    if script.read_bytes() != expected:
+        raise LaunchError("frontend history helper differs from canonical source")
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location("canonical_frontend_finalizer", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None):
     """Independent frontend evidence must never count as backend success."""
     root = Path(state or STATE) / "frontend-rebuilds"
     closures = root.parent / "frontend-rebuild-closures"
+    finalizations = root.parent / "frontend-finalizations"
+    if pending_finalization_operation is not None and (
+            pending_operation is not None or re.fullmatch(r"[0-9a-f]{32}", pending_finalization_operation) is None):
+        raise LaunchError("invalid selected frontend finalization")
+    if os.path.lexists(finalizations):
+        secure_path(finalizations, directory=True)
+        if stat.S_IMODE(finalizations.stat().st_mode) != 0o700:
+            raise LaunchError("frontend finalization root must remain private")
+        for finalized in finalizations.iterdir():
+            if (re.fullmatch(r"[0-9a-f]{32}", finalized.name) is None
+                    or not (root / finalized.name).is_dir()):
+                raise LaunchError("orphan frontend finalization")
     if os.path.lexists(closures):
         secure_path(closures, directory=True)
         if stat.S_IMODE(closures.stat().st_mode) != 0o700:
@@ -340,18 +389,38 @@ def assert_frontend_rebuild_history(state=None, *, pending_operation=None):
             if re.fullmatch(r"[0-9a-f]{32}", closure.name) is None or not (root / closure.name).is_dir():
                 raise LaunchError("orphan frontend closure")
     if not os.path.lexists(root):
+        if pending_finalization_operation is not None:
+            raise LaunchError("selected frontend finalization is missing")
         return
     secure_path(root, directory=True)
     if stat.S_IMODE(root.lstat().st_mode) != 0o700:
         raise LaunchError("frontend audit root must remain private")
     expected_files = {"intent.json", "before.json", "build.log", "install-started.json",
                       "verified.json", "completed.json", "previous-next", "previous-node-modules"}
+    selected_found = False
     for operation in root.iterdir():
         secure_path(operation, directory=True)
         if stat.S_IMODE(operation.lstat().st_mode) != 0o700:
             raise LaunchError("frontend operation must remain private")
         if re.fullmatch(r"[0-9a-f]{32}", operation.name) is None:
             raise LaunchError("invalid frontend operation")
+        if operation.name == pending_finalization_operation:
+            if os.path.lexists(closures / operation.name):
+                raise LaunchError("conflicting frontend finalization")
+            selected = finalizations / operation.name
+            if os.path.lexists(selected):
+                secure_path(selected, directory=True)
+                if stat.S_IMODE(selected.stat().st_mode) != 0o700 or {p.name for p in selected.iterdir()} != {"intent.json"}:
+                    raise LaunchError("unknown selected frontend finalization state")
+                _read_private(selected / "intent.json")
+            _load_frontend_finalizer().original_evidence(SimpleNamespace(**globals()), operation.name, state=root.parent)
+            selected_found = True
+            continue
+        if os.path.lexists(finalizations / operation.name):
+            if os.path.lexists(closures / operation.name):
+                raise LaunchError("conflicting frontend closures")
+            _load_frontend_finalizer().history_evidence(SimpleNamespace(**globals()), operation.name, state=root.parent)
+            continue
         if operation.name == pending_operation:
             # Only the root operator uses this to inspect the one failure being
             # retired. RPC/normal launch/rotation callers never pass an exception.
@@ -387,6 +456,8 @@ def assert_frontend_rebuild_history(state=None, *, pending_operation=None):
         if not isinstance(before, dict) or any(before.get(key) != intent[key] for key in (
                 "publisher_sha", "production_sha", "operation_id", "frontend_tree")):
             raise LaunchError("frontend preflight binding differs")
+    if pending_finalization_operation is not None and not selected_found:
+        raise LaunchError("selected frontend finalization is missing")
 
 
 def _native_started(sha, workspace):
@@ -565,6 +636,26 @@ def _testflight_lease_parent():
     else:
         # Internal unit-test path injection only; production constant is fixed.
         secure_path(BUSINESS_LEASE.parent, directory=True)
+
+
+def _sync_business_lease_parent():
+    """Sync the validated fixed lock parent without following arbitrary links."""
+    _testflight_lease_parent()
+    parent = (Path("/run/lock") if BUSINESS_LEASE == Path("/var/lock/health-app-release")
+              else BUSINESS_LEASE.parent)
+    before = parent.lstat()
+    def identity(info):
+        return info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid
+    fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        if identity(os.fstat(fd)) != identity(before):
+            raise LaunchError("business lease parent changed before synchronization")
+        os.fsync(fd)
+        _testflight_lease_parent()
+        if identity(parent.lstat()) != identity(before) or identity(os.fstat(fd)) != identity(before):
+            raise LaunchError("business lease parent changed during synchronization")
+    finally:
+        os.close(fd)
 
 
 def _assert_testflight_lease(lease, workspace):

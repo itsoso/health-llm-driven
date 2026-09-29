@@ -65,6 +65,29 @@ PID 与 restart count、健康环境文件及授权文件摘要未变。只有�
 lease 释放均完成才记独立 `FRONTEND_SUCCEEDED`；不改 DB/schema，不重启
 后端，不声称全端发布已完成。
 
+锁父目录同步使用 `_sync_business_lease_parent()`：先验证固定 root-owned
+`/var/lock → /run/lock` 与目标 1777 元数据，再以 `O_NOFOLLOW` 打开真实目录，
+前后核对同一 inode 并 fsync。通用目录同步仍拒绝符号链接；不接受任意解析目标。
+
+此 operator 的 `--finalize-verified` 仅收尾受审旧实现中已切换、已验证后发生的
+锁父目录同步失败。先从新 current-main、精确绿色 CI、独立 G4 GO 的 canonical
+staging 读取证据，再提交同一 `--evidence-sha256` 执行；`--production-sha` 保持
+实际已成功部署的旧 revision，`--operation-id` 保持原操作。它不构建、不切换
+制品、不重启服务、不改后端成功记录，也不恢复已删除的 lease。
+
+必须证明原 `verified`/`failed`/安装记录、受审原实现与保留旧制品一致，实际
+前端完整摘要仍匹配原验证值，内部及公网页面通过，后端进程、配置、生产 SHA
+保持原快照。已回收的 systemd unit 只能结合该实现中 `verified` 写入必然晚于
+成功 wait 和空 cgroup 的证据、当前精确终态及无残留进程共同验证；缺失 unit
+自身不是成功证据。持原 launcher 锁及存在时的原 build 锁；不存在的 build 锁
+不得创建，执行期间须持续证明不存在。其他未完成操作一律阻断。
+
+原失败与验证记录保持原样，独立 `frontend-finalizations/<operation-id>`
+持久化 intent 与带恢复来源的终态。部分 intent、证据变化或未知库存阻断后续
+发布，不能重跑或换 ID。后续历史检查只验证持久证据，不把以后新的生产版本
+与旧现场快照比较。完成该收尾不代表主机加固或 OTA 成功；后续发布继续使用
+完整的同 revision 合同，不借此放宽 publisher/production 绑定。
+
 此 operator 的 `--retire-failed` 仅在用户明确授权后关闭已知 npm 配置启动
 失败：完整历史 publisher 实现摘要、精确三行错误、四文件失败审计共同证明
 未进入安装。安装意图、未知文件、不同日志/实现、构建非终态或残留进程均

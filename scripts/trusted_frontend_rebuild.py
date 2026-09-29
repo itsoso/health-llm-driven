@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import re
 import secrets
 import stat
@@ -410,7 +411,7 @@ def execute(plan, source, helper, bootstrap, server):
         for name in ("token", "label", "stage", "started_at"):
             (LEASE / name).unlink()
         LEASE.rmdir()
-        server._sync_directory(LEASE.parent)
+        server._sync_business_lease_parent()
         complete = receipt(publisher, production, operation, tree, "FRONTEND_SUCCEEDED", digest)
         write_json(server, audit / "completed.json", complete)
         return complete
@@ -582,6 +583,45 @@ def acknowledge_retirement(publisher, production, operation, server, gate, recei
     return {"state": "FRONTEND_RETIREMENT_ACKNOWLEDGED", "operation_id": operation}
 
 
+def finalize_verified(args, source, helper, bootstrap, server, gate, launcher_fd):
+    """A separate audited completion; never retry build, switch, or service actions."""
+    module = server._load_frontend_finalizer()
+    build_path = STATE / args.production_sha / "build.lock"
+    build_fd = bootstrap._acquire_existing_build_lock(args.production_sha)
+
+    def check_locks():
+        helper._assert_lock(server, STATE / "launcher.lock", launcher_fd)
+        if build_fd is None:
+            if os.path.lexists(build_path):
+                raise RebuildError("historical build lock appeared during finalization")
+        else:
+            helper._assert_lock(server, build_path, build_fd)
+
+    def inspect_again():
+        return module.inspect_finalization(
+            args.publisher_sha, args.production_sha, args.operation_id,
+            source, helper, bootstrap, server, gate, SimpleNamespace(**globals()),
+            check_locks=check_locks,
+            assert_other_history=lambda: server.assert_frontend_rebuild_history(
+                STATE, pending_finalization_operation=args.operation_id),
+        )
+
+    try:
+        plan = inspect_again()
+        digest = module.digest(plan)
+        if args.evidence_sha256 is None:
+            return {"state": "FRONTEND_FINALIZATION_PREFLIGHT", "publisher_sha": args.publisher_sha,
+                    "production_sha": args.production_sha, "operation_id": args.operation_id,
+                    "evidence_sha256": digest}
+        if args.evidence_sha256 != digest:
+            raise RebuildError("frontend finalization evidence changed")
+        check_locks()
+        return module.finalize(plan, inspect_again, server, evidence_sha256=digest)
+    finally:
+        if build_fd is not None:
+            os.close(build_fd)
+
+
 def main():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--publisher-sha", required=True)
@@ -591,6 +631,7 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--retire-failed", action="store_true")
     mode.add_argument("--acknowledge-retirement", action="store_true")
+    mode.add_argument("--finalize-verified", action="store_true")
     args = parser.parse_args()
     try:
         if (not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode
@@ -608,6 +649,9 @@ def main():
         with lock.open("r+b") as stream:
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             helper._assert_lock(server, lock, stream.fileno())
+            if args.finalize_verified:
+                print(json.dumps(finalize_verified(args, source, helper, bootstrap, server, gate, stream.fileno())))
+                return 0
             if args.acknowledge_retirement:
                 if args.evidence_sha256 is not None:
                     raise RebuildError("acknowledgment accepts only a protected stdin receipt")
