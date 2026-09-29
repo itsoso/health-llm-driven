@@ -90,5 +90,8 @@ CI are required before that operator executes; hardening and OTA remain pending.
 Incident G3: the real-symlink regression reproduced the original failure before
 the fix. The combined finalization, lock-parent, frontend, host, bootstrap,
 server and native-closure suite passed 369 tests (two Linux-native tests deferred
-to exact CI). Ruff and System Map/doc drift checks passed. Incident G4 is pending
-fixed-commit independent review; these local results authorize no production repair.
+to exact CI). Ruff and System Map/doc drift checks passed. An additional 104
+workflow/OTA integration tests passed. Independent incident G4 is GO for
+`1e38082cf8c3b9fd985bb405f7c5ce1d913c214a`, including the host synchronization
+calls. Exact candidate CI and actual finalization remain required; this verdict
+does not certify hardening, OTA or open registration.
