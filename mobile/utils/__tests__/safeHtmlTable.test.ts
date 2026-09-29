@@ -56,6 +56,16 @@ describe('HTML table segmentation', () => {
     const normalized = normalizeAssistantContent(code);
     expect(normalized.text).toBe(code);
     expect(splitHtmlTableContent(normalized.text).some(part => part.kind === 'table')).toBe(false);
+    for (const prefix of ['<function=read_data></function>', '<tool_call><function=read_data></function></tool_call>', '<function=a></function>\n<function=b></function>']) {
+      const result = normalizeAssistantContent(`${prefix}\n${code}`);
+      expect(result.text).toContain(`\n${code}`);
+      expect(splitHtmlTableContent(result.text).some(part => part.kind === 'table')).toBe(false);
+    }
+  });
+  it('keeps emoji-prefixed sibling protocol fences inert without swallowing the next table', () => {
+    const source = '📋 ```menu_share\n{"title":"示例"}\n```\n' + table;
+    expect(splitHtmlTableContent(source).filter(part => part.kind === 'table')).toHaveLength(1);
+    expect(normalizeAssistantContent(source).cards).toEqual([]);
   });
   it('keeps separate prose action fences inert in HTML-bearing messages', () => {
     const actionSource = '```reva-ui\n{"v":1,"component":"diet_draft","actions":[{"id":"save","action":"diet_record.create","label":"保存"}]}\n```';
