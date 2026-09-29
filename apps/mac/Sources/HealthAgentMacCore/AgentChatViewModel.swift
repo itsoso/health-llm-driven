@@ -283,7 +283,7 @@ public enum AgentStructuredCommandParser {
             case .code(let source):
                 return SafeHTMLTable.isLegacyJSONCode(source) ? cleanedPreservingBoundary(source) : source
             case .markdown(let text):
-                if text.range(of: "<table\\b", options: [.regularExpression, .caseInsensitive]) != nil {
+                if SafeHTMLTable.containsHTMLCandidate(content) {
                     return text
                 }
                 return hasOpaque ? cleanedPreservingBoundary(text) : legacyDisplayText(for: text)

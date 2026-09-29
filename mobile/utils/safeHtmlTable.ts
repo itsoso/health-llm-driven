@@ -18,6 +18,12 @@ const NAMED_ENTITIES: Record<string, string> = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0',
 };
 
+/** Broader than preview eligibility: cleanup must not promote indented/code HTML. */
+export function containsHtmlTableCandidate(source: string): boolean {
+  return /<table\b/i.test(source)
+    || /^ {0,3}(?:`{3,}|~{3,})[ \t]*(?:html|htm)[ \t]*\r?$/im.test(source);
+}
+
 function decodeText(text: string): string {
   return text.replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos|nbsp);/gi, (original, entity: string) => {
     if (!entity.startsWith('#')) return NAMED_ENTITIES[entity] ?? original;

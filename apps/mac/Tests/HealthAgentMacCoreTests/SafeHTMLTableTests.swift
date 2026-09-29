@@ -17,6 +17,46 @@ final class SafeHTMLTableTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testHTMLBearingMessageKeepsSeparateBodyProtocolFencesLiteral() {
+        let protocolBlocks = [
+            "```reva-ui\n{\"type\":\"diet_draft\",\"v\":1,\"actions\":[{\"type\":\"route.open\",\"route\":\"/diet\"}]}\n```",
+            "```menu_share\n{\"title\":\"合成菜单\",\"items\":[\"示例\"]}\n```",
+            "🍽 ```menu_share\n{\"title\":\"合成菜单\",\"items\":[\"示例\"]}\n```",
+        ]
+        for block in protocolBlocks {
+            for source in [simple + "\n\n" + block, block + "\n\n" + simple] {
+                let message = AgentChatMessage(role: .assistant, content: source)
+                let model = AgentChatViewModel()
+                model.messages = [message]
+                let html = model.renderedTranscript()[0].bodyHTML
+                XCTAssertTrue(html.contains("<table>"))
+                XCTAssertFalse(html.contains("reva-ui-chart"))
+                XCTAssertFalse(html.contains("data-reva-ui="))
+                XCTAssertTrue(html.contains("合成菜单") || html.contains("&quot;type&quot;:&quot;diet_draft&quot;"))
+                XCTAssertEqual(model.displayContent(for: message), source)
+                XCTAssertEqual(model.copyableText(messageID: message.id.uuidString), source)
+                XCTAssertTrue(AgentStructuredCommandParser.proposedActions(in: source, messageID: message.id).isEmpty)
+            }
+        }
+    }
+
+    @MainActor
+    func testHTMLBodyDoesNotDisableIndependentServerIssuedCard() {
+        let action = AgentDynamicCardActionDescriptor(
+            id: "synthetic-server-card", label: "确认记录", action: "diet_record.create", endpoint: "/diet/records",
+            payload: .object(["record": .object(["photo_draft_token": .string("synthetic-token")])]),
+            style: "primary", requiresManualConfirm: true, capabilityID: "diet_draft.v1",
+            requiredReceipt: true, autonomyTier: "manual_confirm"
+        )
+        let model = AgentChatViewModel()
+        model.messages = [.init(role: .assistant, content: simple, cardType: "diet_draft",
+                                cardData: .object(["food_items": .string("合成餐")]), cardActions: [action])]
+        let html = model.renderedTranscript()[0].bodyHTML
+        XCTAssertTrue(html.contains("<table>"))
+        XCTAssertTrue(html.contains("xiaoba-diet-confirm://synthetic-server-card"))
+    }
+
     func testCompletedHTMLTableShowsControlledPreviewAndOriginalSource() {
         let source = "```html\n<table><tr><th>A</th><th>B</th></tr><tr><td></td><td>x | y</td></tr></table>\n```"
         let html = ChatTranscriptHTML.renderMessageBody(markdown: source)

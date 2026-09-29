@@ -1,6 +1,6 @@
 import type { ServerCardDescriptor } from '../components/chat/cards/types';
 import { extractRevaUiBlocks } from './revaUiBlocks';
-import { splitHtmlTableContent } from './safeHtmlTable';
+import { containsHtmlTableCandidate, splitHtmlTableContent } from './safeHtmlTable';
 
 export const MAX_ASSISTANT_DISPLAY_LENGTH = 50_000;
 
@@ -37,28 +37,44 @@ export function normalizeAssistantContent(
   value: string | null | undefined,
 ): NormalizedAssistantContent {
   const source = String(value ?? '');
-  if (RAW_JSON_TOOL_PROTOCOL_PREFIX_RE.test(source) || RAW_TOOL_PROTOCOL_PREFIX_RE.test(source)) {
+  if (RAW_JSON_TOOL_PROTOCOL_PREFIX_RE.test(source)) {
+    return normalizeAssistantProse(source);
+  }
+  if (RAW_TOOL_PROTOCOL_PREFIX_RE.test(source)) {
+    const result = normalizeAssistantContent(stripToolFunctionPrefix(source));
+    return { ...result, qualityFlags: [...new Set<AssistantContentQualityFlag>([...result.qualityFlags, 'raw_tool_protocol_removed'])] };
+  }
+  if (!containsHtmlTableCandidate(source)) {
     return normalizeAssistantProse(source);
   }
   const parts = splitHtmlTableContent(source);
-  if (!parts.some(part => part.kind === 'table' || part.kind === 'source')) {
-    return normalizeAssistantProse(source);
-  }
-  // HTML candidates are opaque: legacy cleanup and protocol extraction must not
-  // remove cell text, <br>, or code-looking contents before the safe projection.
-  const results = parts.map(part => part.kind === 'table' || part.kind === 'source'
+  // HTML-bearing replies are display-only, including separate protocol fences.
+  // Preserve them as source rather than promoting them into actionable cards.
+  // Independently structured server card fields are handled outside this parser.
+  const results = parts.map(part => part.kind !== 'markdown' || /<table\b/i.test(part.source)
     ? { text: part.source, cards: [], qualityFlags: [] } as NormalizedAssistantContent
-    : normalizeAssistantProse(part.source));
-  let text = results.map(result => result.text).filter(Boolean).join('\n\n').trim();
+    : normalizeAssistantProse(part.source, false));
+  let text = results.map(result => result.text).filter(Boolean).join('\n\n');
   const qualityFlags = [...new Set(results.flatMap(result => result.qualityFlags))];
   if (text.length > MAX_ASSISTANT_DISPLAY_LENGTH) {
     text = text.slice(0, MAX_ASSISTANT_DISPLAY_LENGTH - TRUNCATION_NOTICE.length).trimEnd() + TRUNCATION_NOTICE;
     if (!qualityFlags.includes('display_length_truncated')) qualityFlags.push('display_length_truncated');
   }
-  return { text, cards: results.flatMap(result => result.cards), qualityFlags };
+  return { text, cards: [], qualityFlags };
 }
 
-function normalizeAssistantProse(value: string): NormalizedAssistantContent {
+function stripToolFunctionPrefix(source: string): string {
+  let text = source;
+  while (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
+    const remaining = text.replace(RAW_TOOL_PROTOCOL_BLOCK_RE, '').trim();
+    // A provider may stop inside an opening function tag. Never expose it.
+    if (remaining === text) return RAW_TOOL_PROTOCOL_FALLBACK;
+    text = remaining;
+  }
+  return text || RAW_TOOL_PROTOCOL_FALLBACK;
+}
+
+function normalizeAssistantProse(value: string, extractProtocolCards = true): NormalizedAssistantContent {
   const qualityFlags: AssistantContentQualityFlag[] = [];
   let text = String(value ?? '');
 
@@ -73,18 +89,7 @@ function normalizeAssistantProse(value: string): NormalizedAssistantContent {
     text = RAW_TOOL_PROTOCOL_FALLBACK;
     qualityFlags.push('raw_tool_protocol_removed');
   } else if (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
-    while (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
-      const remaining = text.replace(RAW_TOOL_PROTOCOL_BLOCK_RE, '').trim();
-      if (remaining === text) {
-        // The provider stopped inside the opening tag (for example
-        // `<function=health_record`).  Prefix detection is already conclusive;
-        // retaining an unparseable suffix would expose protocol to the user.
-        text = '';
-        break;
-      }
-      text = remaining;
-    }
-    text ||= RAW_TOOL_PROTOCOL_FALLBACK;
+    text = stripToolFunctionPrefix(text);
     qualityFlags.push('raw_tool_protocol_removed');
   }
 
@@ -96,7 +101,7 @@ function normalizeAssistantProse(value: string): NormalizedAssistantContent {
   text = placeholderResult.text;
   if (placeholderResult.removed) qualityFlags.push('placeholder_flood_removed');
 
-  const extracted = extractRevaUiBlocks(text);
+  const extracted = extractProtocolCards ? extractRevaUiBlocks(text) : { text, cards: [], malformedBlockCount: 0 };
   text = extracted.text;
   if (extracted.malformedBlockCount > 0) {
     qualityFlags.push('malformed_protocol_block');
@@ -105,7 +110,7 @@ function normalizeAssistantProse(value: string): NormalizedAssistantContent {
   // During streaming the closing fence may not have arrived yet. Hide the
   // protocol tail instead of briefly rendering raw JSON on the user surface.
   const unfinishedProtocolAt = text.search(/(?:^|\n)```reva-ui\s*(?:\n|$)/);
-  if (unfinishedProtocolAt >= 0) {
+  if (extractProtocolCards && unfinishedProtocolAt >= 0) {
     text = text.slice(0, unfinishedProtocolAt).trim();
     if (!qualityFlags.includes('malformed_protocol_block')) {
       qualityFlags.push('malformed_protocol_block');
