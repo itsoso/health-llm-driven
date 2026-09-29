@@ -106,5 +106,20 @@ Fresh final-code verification:
 No backend, OTA or desktop publication claimed. Existing HTML G4 does not
 substitute for review of backend behavior. Exact main CI and post-release
 verification are required. Another MacBook's frontend finalization receipt for
-operation `72988375dd2a4785ddbd351523197536` was absent on last read-only check;
-do not take over its finalization or change current main underneath it.
+operation `72988375dd2a4785ddbd351523197536` was initially absent; the release
+was held rather than changing current main underneath it.
+
+## Publication continuation
+
+User requested publication and continued resolving the release hold. Exact
+finalizer `1ee419a27` received independent G4 GO and 71 fresh tests passed.
+A canonical read-only preflight returned blocked; no `--evidence-sha256` execution
+was issued by this task. Concurrently, the other operator wrote an intent at
+00:39 and completed it at 00:41 (Asia/Shanghai). Read-only canonical history
+verification subsequently passed for both frontend and OTA; the exact operation
+now has `FRONTEND_SUCCEEDED`. No receipt was fabricated or old operation retried.
+
+Fresh release CI-mode integration through the project shard runner: 88 passed,
+exit 0 (`/tmp/reva-advice-publish-ci.log`). Local working tree remains isolated
+from the original dirty checkout. Main publication and exact-candidate CI are
+the next gate; production is still `d55e189cdf74e5cb61a645e761ab6d4018efd077`.
