@@ -1,6 +1,6 @@
 # Feature Spec: Safe HTML table display
 
-> Status: implementing
+> Status: locally verified; release pending main alignment
 > Updated: 2026-09-29
 > Related code: Mobile ChatBubble / Mac ChatTranscriptHTML
 
