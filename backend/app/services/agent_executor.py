@@ -15942,7 +15942,7 @@ class AgentExecutor:
             # not permission to create a guessed meal or edit the latest row.
             meal_input = resolve_meal_input_clarification(
                 effective_message,
-                has_attachment=bool(effective_images or file_base64),
+                has_image=bool(effective_images),
             )
             if meal_input is not None:
                 async for event in self._run_input_clarification_stream(

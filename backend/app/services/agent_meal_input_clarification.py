@@ -2,7 +2,7 @@
 
 Only complete original utterances are considered. No quote/provenance erasure,
 history lookup, model-selected target, or current-clock meal inference belongs
-here. Existing attached-media and explicitly targeted correction paths remain
+here. Existing attached-image and explicitly targeted correction paths remain
 responsible for their own authorization and verified receipts.
 """
 from dataclasses import dataclass
@@ -31,9 +31,10 @@ class MealInputClarification:
 
 
 def resolve_meal_input_clarification(
-    text: str, *, has_attachment: bool,
+    text: str, *, has_image: bool,
 ) -> MealInputClarification | None:
-    if has_attachment:
+    # A document upload is not visual evidence or a bound meal target.
+    if has_image:
         return None
     # Whitespace is presentation only; every semantic character must match.
     source = re.sub(r"[ \t]+", "", str(text or "")).strip()

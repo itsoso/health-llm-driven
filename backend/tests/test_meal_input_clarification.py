@@ -1,5 +1,6 @@
 """Missing meal evidence/targets cannot become a successful or guessed write."""
 import json
+import base64
 from datetime import date
 
 import pytest
@@ -14,15 +15,34 @@ def _isolated_transport(isolated_agent_protocol_transport):
     """Keep real entrypoint/transport while refusing any external connection."""
 
 
+def _validated_file_attachment(query, file_name):
+    if file_name is None:
+        return None
+    from app.api.agent import AgentRequest, _validate_agent_attachments
+    if file_name.endswith(".pdf"):
+        import fitz
+        with fitz.open() as document:
+            document.new_page()
+            data = document.tobytes()
+    else:
+        data = "Synthetic non-image meal attachment".encode()
+    request = AgentRequest(message=query, file_name=file_name,
+                           file_base64=base64.b64encode(data).decode())
+    images, encoded, validated_name = _validate_agent_attachments(request)
+    assert images == [] and validated_name == file_name and encoded
+    return encoded
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("file_name", [None, "meal.pdf", "meal.txt", "meal.md", "meal.csv"])
 @pytest.mark.parametrize("query,reason", [
     ("根据图片记录晚餐", "meal_image_required"),
     ("记录图片里的晚餐", "meal_image_required"),
     ("其实只吃了一半", "meal_correction_target_required"),
     ("不是午餐，是晚餐", "meal_correction_target_required"),
 ])
-async def test_missing_meal_input_waits_without_dispatch(db, auth_user_and_headers, monkeypatch, panel, query, reason):
+async def test_missing_meal_input_waits_without_dispatch(db, auth_user_and_headers, monkeypatch, panel, file_name, query, reason):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     provider_calls = []
@@ -48,6 +68,7 @@ async def test_missing_meal_input_waits_without_dispatch(db, auth_user_and_heade
     monkeypatch.setattr("app.services.llm.factory.create_provider_for_model_id", lambda *a, **k: PanelProvider())
     events = [event async for event in executor.run_stream(
         user.id, query, extra_context=json.dumps({"multi_model": panel}),
+        file_base64=_validated_file_attachment(query, file_name), file_name=file_name,
         client_turn_id=f"missing-meal-{panel}-{reason}-{query}",
     )]
     done = events[-1]["data"]
@@ -68,9 +89,11 @@ async def test_missing_meal_input_waits_without_dispatch(db, auth_user_and_heade
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("query", ["其实只吃了一半", "不是午餐，是晚餐"])
+@pytest.mark.parametrize("panel", [False, True])
+@pytest.mark.parametrize("file_name", [None, "meal.pdf", "meal.txt", "meal.md", "meal.csv"])
+@pytest.mark.parametrize("query", ["根据图片记录晚餐", "其实只吃了一半", "不是午餐，是晚餐"])
 async def test_unbound_followup_does_not_select_existing_meal_and_replay_stays_waiting(
-    db, auth_user_and_headers, monkeypatch, query,
+    db, auth_user_and_headers, monkeypatch, query, panel, file_name,
 ):
     user, _ = auth_user_and_headers
     existing = DietRecord(user_id=user.id, record_date=date(2026, 9, 28),
@@ -89,6 +112,8 @@ async def test_unbound_followup_does_not_select_existing_meal_and_replay_stays_w
     for _ in range(2):
         events = [event async for event in executor.run_stream(
             user.id, query, client_turn_id="unbound-followup-replay",
+            extra_context=json.dumps({"multi_model": panel}),
+            file_base64=_validated_file_attachment(query, file_name), file_name=file_name,
         )]
         done = events[-1]["data"]
         assert done["turn_outcome"]["status"] == "waiting_for_user"
@@ -107,16 +132,16 @@ async def test_unbound_followup_does_not_select_existing_meal_and_replay_stays_w
 ])
 def test_complete_known_frames_only_request_missing_input(query, reason):
     from app.services.agent_meal_input_clarification import resolve_meal_input_clarification
-    result = resolve_meal_input_clarification(query, has_attachment=False)
+    result = resolve_meal_input_clarification(query, has_image=False)
     assert result is not None and result.reason_code == reason
 
 
 @pytest.mark.parametrize("query", [
     "根据图片记录晚餐", "记录图片里的晚餐", "其实只吃了一半", "不是午餐，是晚餐",
 ])
-def test_current_attachment_keeps_existing_media_path(query):
+def test_current_image_keeps_existing_media_path(query):
     from app.services.agent_meal_input_clarification import resolve_meal_input_clarification
-    assert resolve_meal_input_clarification(query, has_attachment=True) is None
+    assert resolve_meal_input_clarification(query, has_image=True) is None
 
 
 @pytest.mark.parametrize("query", [
@@ -131,4 +156,4 @@ def test_current_attachment_keeps_existing_media_path(query):
 ])
 def test_clarification_frame_never_erases_other_authority_or_known_targets(query):
     from app.services.agent_meal_input_clarification import resolve_meal_input_clarification
-    assert resolve_meal_input_clarification(query, has_attachment=False) is None
+    assert resolve_meal_input_clarification(query, has_image=False) is None

@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G3 verification |
+| 当前阶段 | G2 safety remediation |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -78,6 +78,42 @@ not used; repository RED/GREEN and fresh verification rules apply.
 
 ## Remaining gates
 
-Clean-candidate integration, independent PostgreSQL verification, fixed-commit
-safety GO, real-provider gate and exact-main CI precede publication. Backend
-deployment and JS-only OTA must separately pass their release/verification gates.
+Candidate: `478fbae04e701db1854b96c614ba286d2d3bfb76` (implementation plus
+clean-tree generated System Map; unrelated GPS artifacts remain uncommitted).
+
+- Clean-source CI-mode: 2,642 passed / 3 existing PostgreSQL-only skipped,
+  exit 0. Independent PostgreSQL 17.11: 89 passed / zero skipped, exit 0;
+  new clarification cases, owner/date targeting, replay, existing record
+  preservation and receipt persistence included. Temporary socket-only cluster
+  stopped normally; frozen source hashes agree with the candidate.
+- Clean-source Mobile: 170 diet tests and 28 turn-state tests passed. TypeScript,
+  blocking Ruff, secret scan, dossier and System Map checks passed.
+- Real-provider regression: PASS; invariants 12/12, health core 50/50,
+  orchestrator 5/5 (average 0.96), trajectory contract 12/12 and goldens 9/9.
+  Synthetic consent/in-memory test DB only. Existing missing usage-log-table
+  warnings mean this does not claim budget/usage-persistence coverage.
+- Production baseline d7c290ac4 verified, services active and lease absent.
+  Prior production OTA c0eb135e / group 008cd999-2007-4c17-8398-4d5dfa91c287
+  uses runtime 1.3.4; native configuration and dependencies unchanged.
+- Evidence: `/tmp/reva-location-clean-ci.log`,
+  `/tmp/reva-location-clean-mobile.log`, `/tmp/reva-location-live.log`,
+  `/tmp/reva-pg-meal-clarification.rvYGzF/tests.log`.
+
+Fixed-commit safety GO and exact-main CI still precede publication. Backend
+deployment and JS-only OTA must separately pass release/verification gates.
+This section is a local post-candidate audit supplement, not part of runtime code.
+
+## G4 — First review
+
+NO-GO on 478fbae04: `file_base64` carries non-image files but was included in
+`has_attachment`, allowing a TXT/PDF attachment to bypass deterministic
+missing-image/untargeted-correction clarification. No push or deployment occurred.
+Return to RED/GREEN with actual image presence distinguished from generic files,
+ordinary/panel entrypoint tests and existing-record preservation checks.
+
+Remediation RED: 56 failed / 43 passed, exit 1. Tests validate real in-memory
+PDF/TXT/MD/CSV uploads through the API validator before invoking both executor
+modes. Minimal fix renames the predicate to `has_image` and uses only
+`effective_images`, never `file_base64`. Focused GREEN: 99 passed, exit 0.
+Evidence: `/tmp/reva-meal-nonimage-red.log`, `/tmp/reva-meal-nonimage-green.log`.
+Fresh integration, PostgreSQL and fixed-commit re-review remain required.
