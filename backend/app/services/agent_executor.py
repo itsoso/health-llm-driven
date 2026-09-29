@@ -12612,13 +12612,22 @@ class AgentExecutor:
 
         for reason in self._agent_kernel_capability_block_reasons:
             if (
-                is_repairable_read_reason(reason)
+                (is_repairable_read_reason(reason)
+                 or (reason == "current_input_advice_read_not_needed"
+                     and self._has_current_input_recovery_advice_goal()))
                 and reason
                 not in self._agent_kernel_recovered_capability_block_reasons
             ):
                 self._agent_kernel_recovered_capability_block_reasons.append(
                     reason
                 )
+
+    def _has_current_input_recovery_advice_goal(self) -> bool:
+        from app.services.agent_kernel.current_input_advice_scope import is_current_input_recovery_advice
+
+        snapshot = self._agent_kernel_snapshot
+        return bool(snapshot is not None and not snapshot.intent.is_write
+                    and is_current_input_recovery_advice(snapshot.envelope.text))
 
     def _has_explicit_unscoped_answer_goal(self) -> bool:
         from app.services.agent_policy_retry import is_general_advice_only_request
@@ -12630,6 +12639,7 @@ class AgentExecutor:
         text = snapshot.envelope.text
         plan = resolve_exercise_plan_scope(text)
         return (is_general_advice_only_request(text)
+                or self._has_current_input_recovery_advice_goal()
                 or (plan is not None and not plan.evidence_dimensions))
 
     def _unresolved_read_failure_notice(self) -> str | None:
@@ -14166,6 +14176,9 @@ class AgentExecutor:
             ),
             medical_citation_prompt,
         ]
+        if self._has_current_input_recovery_advice_goal():
+            from app.services.agent_kernel.current_input_advice_scope import CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
+            multi_model_context.append(CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS)
         multi_model_context_text = "\n\n".join(
             part for part in multi_model_context if part
         )
@@ -14183,6 +14196,8 @@ class AgentExecutor:
         tools = scope_tools_for_analyzed_material(get_health_tools(), message)
         from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
         tools = scope_tools_for_exercise_plan(tools, message)
+        from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
+        tools = scope_tools_for_current_input_advice(tools, message)
         tools = scope_tools_for_owned_read(tools, panel_read_scope)
         tools = scope_tools_for_goal(
             tools,
@@ -15191,6 +15206,9 @@ class AgentExecutor:
         plan_goals = self._exercise_plan_goal_outcomes()
         if any(goal['status'] != 'verified' for goal in plan_goals):
             full_reply = "制定计划所需的体检或病史依据尚未查询完成，暂不能据此提供个性化恢复方案。请稍后重试。"
+        self._recover_irrelevant_read_blocks_after_completed_answer(
+            completion_status=completion_status, final_text=full_reply,
+        )
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
@@ -17062,7 +17080,7 @@ class AgentExecutor:
         )
         messages = (
             [{"role": "user", "content": user_content}]
-            if preplanned_water_turn_call is not None
+            if preplanned_water_turn_call is not None or self._has_current_input_recovery_advice_goal()
             else svc.build_messages(conv.id, limit=history_limit)
         )
         if recovered_user_message is not None and (
@@ -17263,6 +17281,8 @@ class AgentExecutor:
         tools = scope_tools_for_analyzed_material(tools, message)
         from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
         tools = scope_tools_for_exercise_plan(tools, message)
+        from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
+        tools = scope_tools_for_current_input_advice(tools, message)
         tools = scope_tools_for_goal(
             tools,
             self._agent_kernel_snapshot.goal
@@ -17276,6 +17296,9 @@ class AgentExecutor:
         read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
         from app.services.agent_input_tool_scope import scope_tools_for_owned_read
         tools = scope_tools_for_owned_read(tools, read_scope)
+        if self._has_current_input_recovery_advice_goal():
+            from app.services.agent_kernel.current_input_advice_scope import CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
+            messages[0]["content"] += "\n" + CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
         if read_scope is not None:
             messages[0]["content"] += (
                 "\n本轮服务端确定的只读范围（逐项完成，参数可修正但不得扩展）："
@@ -21223,6 +21246,8 @@ class AgentExecutor:
         )
 
         prompt_snapshot = getattr(self, '_agent_kernel_snapshot', None)
+        # Keep static safety rules without preloading unrelated personal data.
+        static_rules_only = static_rules_only or self._has_current_input_recovery_advice_goal()
         if prompt_snapshot is not None and "classifier:conversation_feedback" in prompt_snapshot.intent.evidence:
             return (
                 "你是 Reva 健康助手小巴。用户正在反馈对话质量。结合历史原话和实际工具结果，"

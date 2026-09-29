@@ -2450,7 +2450,9 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     from app.services.agent_read_task_continuation import read_task_continuation_contract_payload
     from app.services.agent_longitudinal_read import longitudinal_read_contract_payload
     from app.services.agent_kernel.exercise_plan_scope import exercise_plan_scope_contract_payload
+    from app.services.agent_kernel.current_input_advice_scope import current_input_advice_scope_contract_payload
     return {
+        "current_input_advice_scope": current_input_advice_scope_contract_payload(),
         "exercise_plan_scope": exercise_plan_scope_contract_payload(),
         "read_task_scope": read_task_scope_contract_payload(),
         "read_task_continuation": read_task_continuation_contract_payload(),
@@ -2647,6 +2649,14 @@ def decide_tool_capability(
     from app.services.agent_kernel.read_task_scope import (
         OWNED_MULTI_READ_TOOL_NAMES, resolve_owned_read_scope,
     )
+    from app.services.agent_kernel.current_input_advice_scope import is_current_input_recovery_advice
+    if is_current_input_recovery_advice(snapshot.envelope.text) and tool_name != "knowledge_search":
+        # A whole current-input advice goal needs no personal records. This is
+        # a restrictive boundary, including broad specialists and shadow mode.
+        optional_read = (tool_name in READ_ONLY_TOOLS | SPECIALIST_READ_ONLY_TOOLS
+                         or (tool_name == "health_manage" and args.get("operation") == "list"))
+        return _decision("block", "current_input_advice_read_not_needed" if optional_read
+                         else "current_input_advice_tool_not_allowed", tool_name, args)
     owned_scope = resolve_owned_read_scope(snapshot)
     from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
     exercise_plan = resolve_exercise_plan_scope(snapshot.envelope.text)

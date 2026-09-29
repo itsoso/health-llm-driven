@@ -25,6 +25,8 @@ _HARD_BLOCK_REASONS = frozenset(
         "illness_query_entity_requires_clarification",
         "health_query_dimension_conflict",
         "owned_read_tool_out_of_scope",
+        "current_input_advice_read_not_needed",
+        "current_input_advice_tool_not_allowed",
         "health_query_semantics_unresolved",
         "health_query_cancelled_by_user",
         "health_query_calendar_window_unsupported",
@@ -169,6 +171,10 @@ def blocked_tool_result(decision: CapabilityDecision) -> str:
             "立即停止此请求，不要更换工具、参数或入口绕过权限或用户取消。"
             "当前回合没有取得该操作授权；只说明未执行的原因。"
         )
+    elif decision.reason == "current_input_advice_read_not_needed":
+        from app.services.agent_kernel.current_input_advice_scope import CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
+        message = "本次额外读取未执行；当前恢复建议不需要读取个人记录。"
+        recovery_guidance = CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
     elif retryable:
         message = "[PARAMETERS_REJECTED] 本次读取未执行，可按用户已授权的范围修正参数。"
     elif category == "read_parameters":
