@@ -211,3 +211,59 @@ def test_unfinished_ota_without_business_lease_blocks_host_mutations(tmp_path, m
     assert calls == []
     assert not m.LEASE.exists()
     assert not (tmp_path / ('a' * 40)).exists()
+
+
+def test_host_transaction_syncs_real_lease_parent_without_relaxing_nofollow(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    import pytest
+
+    m = load('trusted_public_host')
+    strict_server = load('trusted_release_server')
+    state = tmp_path / 'state'
+    sha = 'a' * 40
+    (state / sha).mkdir(parents=True)
+    (state / 'launcher.lock').write_bytes(b'')
+    real_parent = tmp_path / 'run-lock'
+    real_parent.mkdir()
+    alias = tmp_path / 'var-lock'
+    alias.symlink_to(real_parent, target_is_directory=True)
+    lease = alias / 'health-app-release'
+    monkeypatch.setattr(m, 'STATE', state)
+    monkeypatch.setattr(m, 'LEASE', lease)
+    # Exercise the actual OS behavior that stopped the production transaction.
+    with pytest.raises(OSError):
+        strict_server._sync_directory(alias)
+
+    events = []
+
+    def sync_business_parent():
+        assert alias.is_symlink() and alias.resolve(strict=True) == real_parent
+        strict_server._sync_directory(real_parent)
+        events.append(('sync', lease.exists()))
+
+    helper = SimpleNamespace(
+        _assert_lock=lambda *args: None,
+        _revision_proof=lambda *args: None,
+        _lease_identity=lambda *args: 'synthetic-lease-identity',
+    )
+    server = SimpleNamespace(
+        secure_path=lambda *args, **kwargs: None,
+        assert_ota_history=lambda: None,
+        _write_private=strict_server._write_private,
+        _sync_directory=strict_server._sync_directory,
+        _sync_business_lease_parent=sync_business_parent,
+    )
+    bootstrap = SimpleNamespace(_read_json=lambda path: {'sha': sha, 'state': 'SUCCEEDED'})
+    gate = SimpleNamespace(verify_release=lambda *args: None)
+    guard = SimpleNamespace(apply=lambda value: events.append(('apply', value)))
+    monkeypatch.setattr(m, 'load_reviewed', lambda value: (tmp_path, helper, bootstrap, server, gate, guard))
+    monkeypatch.setattr(m, 'verify_runtime', lambda *args, **kwargs: None)
+    monkeypatch.setattr(m, 'verify_frontend_artifacts', lambda *args: {'synthetic': 'proof'})
+
+    assert m.execute(sha) == {'sha': sha, 'state': 'LOCAL_VERIFIED', 'external_readback_required': True}
+    assert events == [('sync', True), ('apply', sha), ('sync', False)]
+    assert not lease.exists()
+    audit = state / sha / 'host-hardening'
+    assert json.loads((audit / 'completed.json').read_text())['state'] == 'LOCAL_VERIFIED'
+    assert not (audit / 'failed.json').exists()

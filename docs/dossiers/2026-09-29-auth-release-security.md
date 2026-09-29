@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | status | shipping |
-| current_stage | S6 exact-revision CI and combined release readiness |
+| current_stage | S5 verified Web finalization incident repair |
 | Primary controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Source baseline | fc9328b1b824427c6fcf2c18607461410077530c |
@@ -62,3 +62,36 @@ hardening reaches the combined release revision. Keep the existing invitation
 admission until both security conditions and actual production validation pass.
 Source/CI publication of these release repairs may proceed independently; no
 old-key renewal, local publisher fallback or concurrent production switch.
+
+## Combined production evidence and Web finalization incident
+
+The combined invitation-only revision `d55e189cdf74e5cb61a645e761ab6d4018efd077`
+passed exact CI run 36585730004 and the independent security review. Trusted
+backend run 36587979701 attempt 3 and the server receipt both completed
+successfully. Production HEAD matches that revision; backend, worker and beat
+were active with zero restarts and internal/public health returned 200.
+Registration readback was self-registration false, invitation enforcement true,
+and invitation rollout true. Earlier workflow attempts stopped before deployment.
+
+The Web operation `72988375dd2a4785ddbd351523197536` built successfully, switched
+artifacts and wrote its verified receipt. It then removed its business lease and
+failed while fsync opened the `/var/lock` symlink with `O_NOFOLLOW`. Internal and
+public privacy pages still returned 200, but no completed receipt was written.
+The original failed/verified records and previous artifacts are preserved.
+
+The incident repair keeps generic no-follow protection, synchronizes only the
+strictly validated fixed lock parent, and fixes the same two hardening calls.
+A separate canonical finalization operator rechecks the original reviewed
+profile, exact live artifact, pages, backend/config and original lock identities;
+it writes independent recovery provenance without forging original completion
+or backend success. Its partial states remain blocking. New fixed-commit G4 and
+CI are required before that operator executes; hardening and OTA remain pending.
+
+Incident G3: the real-symlink regression reproduced the original failure before
+the fix. The combined finalization, lock-parent, frontend, host, bootstrap,
+server and native-closure suite passed 369 tests (two Linux-native tests deferred
+to exact CI). Ruff and System Map/doc drift checks passed. An additional 104
+workflow/OTA integration tests passed. Independent incident G4 is GO for
+`1e38082cf8c3b9fd985bb405f7c5ce1d913c214a`, including the host synchronization
+calls. Exact candidate CI and actual finalization remain required; this verdict
+does not certify hardening, OTA or open registration.
