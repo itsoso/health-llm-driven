@@ -304,6 +304,14 @@ def _expected_candidate(unit: str) -> bytes:
             "/var/cache/health-app/skills-hub "
             "/var/lib/health-app/runtime "
             "/var/lib/health-app/dedao-kbase\n"
+            '\n'
+            '# Public application processes must not reach staking material or cloud metadata.\n'
+            'InaccessiblePaths=-/mnt -/opt/eth-ops\n'
+            'IPAddressDeny=100.64.0.0/10 169.254.0.0/16\n'
+            'CapabilityBoundingSet=\n'
+            'MemoryMax=2G\n'
+            'CPUQuota=200%\n'
+            'TasksMax=512\n'
         ).encode()
     if unit == "celery-worker.service":
         return (
@@ -311,6 +319,14 @@ def _expected_candidate(unit: str) -> bytes:
             "ReadWritePaths=\n"
             "ReadWritePaths=/var/lib/health-app/uploads "
             "/var/lib/health-app/dedao-kbase\n"
+            '\n'
+            '# Public application processes must not reach staking material or cloud metadata.\n'
+            'InaccessiblePaths=-/mnt -/opt/eth-ops\n'
+            'IPAddressDeny=100.64.0.0/10 169.254.0.0/16\n'
+            'CapabilityBoundingSet=\n'
+            'MemoryMax=3G\n'
+            'CPUQuota=150%\n'
+            'TasksMax=512\n'
         ).encode()
     if unit == "celery-beat.service":
         return (
@@ -324,6 +340,14 @@ def _expected_candidate(unit: str) -> bytes:
             "-A app.celery_app:celery_app beat --loglevel=info "
             "--schedule=/var/lib/health-app/celery-beat/"
             "celerybeat-schedule\n"
+            '\n'
+            '# Public application processes must not reach staking material or cloud metadata.\n'
+            'InaccessiblePaths=-/mnt -/opt/eth-ops\n'
+            'IPAddressDeny=100.64.0.0/10 169.254.0.0/16\n'
+            'CapabilityBoundingSet=\n'
+            'MemoryMax=512M\n'
+            'CPUQuota=50%\n'
+            'TasksMax=512\n'
         ).encode()
     raise TransactionError(f"unknown unit: {unit}")
 
