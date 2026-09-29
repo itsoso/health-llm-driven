@@ -2,8 +2,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.rate_limit import limiter
 from sqlalchemy import func
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Dict, Any
@@ -925,7 +924,6 @@ async def refresh_workout_gps_batch(
         raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
 
 
-limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/me/sync-garmin")
 @limiter.limit("5/minute")  # Garmin 运动同步每分钟最多5次

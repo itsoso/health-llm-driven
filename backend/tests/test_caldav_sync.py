@@ -45,6 +45,33 @@ def test_ssrf_guard_rejects_http_and_private():
             svc._assert_safe_caldav_url(bad)
 
 
+@pytest.mark.parametrize("address", ["100.100.100.200", "100.64.0.1", "100.127.255.254", "::ffff:100.100.100.200"])
+def test_ssrf_guard_rejects_shared_address_space(monkeypatch, address):
+    # Aliyun metadata uses shared address space, which is neither private nor
+    # globally routable in Python's ipaddress classification.
+    monkeypatch.setattr(svc.socket, "getaddrinfo", lambda *a, **kw: [
+        (svc.socket.AF_INET6 if ":" in address else svc.socket.AF_INET,
+         svc.socket.SOCK_STREAM, svc.socket.IPPROTO_TCP, "", (address, 443))
+    ])
+    with pytest.raises(ValueError, match="地址不可"):
+        svc._assert_safe_ics_url("https://calendar.example.test/feed.ics")
+
+
+def test_ssrf_guard_rejects_empty_dns_answers(monkeypatch):
+    monkeypatch.setattr(svc.socket, "getaddrinfo", lambda *a, **kw: [])
+    with pytest.raises(ValueError, match="无法解析"):
+        svc._assert_safe_caldav_url("https://calendar.example.test/dav")
+
+
+@pytest.mark.parametrize("address", ["8.8.8.8", "2606:4700:4700::1111"])
+def test_ssrf_guard_preserves_public_addresses(monkeypatch, address):
+    monkeypatch.setattr(svc.socket, "getaddrinfo", lambda *a, **kw: [
+        (svc.socket.AF_INET6 if ":" in address else svc.socket.AF_INET,
+         svc.socket.SOCK_STREAM, svc.socket.IPPROTO_TCP, "", (address, 443))
+    ])
+    svc._assert_safe_caldav_url("https://calendar.example.test/dav")
+
+
 def test_put_credentials_rejects_non_https(client, db, auth_headers):
     user, headers = auth_headers
     r = client.put("/api/v1/calendar/credentials", headers=headers,

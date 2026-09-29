@@ -139,6 +139,7 @@ printf 'install\n' >> "$FAKE_INSTALL_LOG"
         fake_bin / "python",
         """#!/usr/bin/env bash
 set -euo pipefail
+if [[ "$1" == "scripts/prune_unlocked_requirements.py" ]]; then exit 0; fi
 if [[ "$1" == "-m" ]]; then
   test "$2" = "pip"
   if [[ "$3" == "uninstall" ]]; then
@@ -244,6 +245,7 @@ printf 'install\n' >> "$FAKE_INSTALL_LOG"
         fake_bin / "python",
         """#!/usr/bin/env bash
 set -euo pipefail
+if [[ "$1" == "scripts/prune_unlocked_requirements.py" ]]; then exit 0; fi
 if [[ "$1" == "-m" ]]; then
   test "$2" = "pip"
   if [[ "$3" == "uninstall" ]]; then
@@ -2240,6 +2242,7 @@ def test_frontend_build_refuses_revision_mismatch_before_npm_or_pm2(
 source {DEPLOY_SCRIPT!s}
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 assert_remote_release_lock_if_acquired() {{ :; }}
+frontend_runtime_kind() {{ echo legacy; }}
 verify_deployed_revision() {{ return 1; }}
 ssh() {{ printf 'ssh:%s\\n' "$*" >> "$FRONTEND_EVENT_LOG"; }}
 if deploy_frontend; then exit 91; fi
@@ -2283,6 +2286,7 @@ def test_frontend_build_same_sha_does_not_mutate_runtime_or_backend_services(
 source {DEPLOY_SCRIPT!s}
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 assert_remote_release_lock_if_acquired() {{ :; }}
+frontend_runtime_kind() {{ echo legacy; }}
 verify_deployed_revision() {{
     printf 'revision\\n' >> "$FRONTEND_EVENT_LOG"
 }}

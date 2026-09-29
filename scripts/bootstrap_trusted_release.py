@@ -373,7 +373,7 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
         return _preparation_failure_evidence(sha, workspace, names)
     allowed = {"started.json", "completed.json", "build-started.json", "native-started.json",
                "build.lock", "source", "home", "bin", "deployment.env", "preparation.log", "deployment.log",
-               "preparation-started.json", "prepared.json", "deployment-started.json", "clone-attempts", "review-resets"}
+               "preparation-started.json", "prepared.json", "deployment-started.json", "clone-attempts", "review-resets", "host-hardening"}
     if not names <= allowed or not {"started.json", "completed.json"} <= names:
         raise BootstrapError("backend termination unproven; retirement forbidden")
     phases = {"preparation-started.json", "prepared.json", "deployment-started.json"}
@@ -382,7 +382,7 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     receipts = {}
     for name in sorted(names):
         path = workspace / name
-        secure(path, private=name not in {"source", "home", "bin", "clone-attempts", "review-resets"})
+        secure(path, private=name not in {"source", "home", "bin", "clone-attempts", "review-resets", "host-hardening"})
         if name.endswith(".json"):
             states = {"completed.json": "SUCCEEDED", "preparation-started.json": "PREPARING",
                       "prepared.json": "PREPARED", "deployment-started.json": "DEPLOYING"}
@@ -394,7 +394,29 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
             receipts[name] = hashlib.sha256(path.read_bytes()).hexdigest()
     if "review-resets" in names:
         receipts["review-resets"] = _review_reset_evidence(sha)
+    if "host-hardening" in names:
+        receipts["host-hardening"] = _host_hardening_evidence(sha)
     return {"state": "SUCCEEDED", "inventory": sorted(names), "receipts": receipts}
+
+
+def _host_hardening_evidence(sha):
+    root = STATE / sha / "host-hardening"
+    inventory = _inventory(root, {"started.json", "verified.json", "completed.json", "frontend.json"})
+    expected = {
+        "started.json": {"sha": sha, "state": "STARTED"},
+        "verified.json": {"sha": sha, "state": "LOCAL_VERIFIED"},
+        "completed.json": {"sha": sha, "state": "LOCAL_VERIFIED", "external_readback_required": True},
+    }
+    for name, value in expected.items():
+        if _read_json(root / name) != value:
+            raise BootstrapError("host hardening termination unproven")
+    frontend = _read_json(root / "frontend.json")
+    if (set(frontend) != {"operation_id", "frontend_tree", "artifact_digest"}
+            or re.fullmatch(r"[a-f0-9]{32}", str(frontend["operation_id"])) is None
+            or re.fullmatch(r"[a-f0-9]{40}", str(frontend["frontend_tree"])) is None
+            or re.fullmatch(r"[a-f0-9]{64}", str(frontend["artifact_digest"])) is None):
+        raise BootstrapError("host frontend binding malformed")
+    return inventory
 
 
 def _review_reset_evidence(sha):

@@ -6,8 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, Dict
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.rate_limit import limiter
 
 from app.database import get_db
 from app.models.user import User
@@ -20,7 +19,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # 配置限流器
-limiter = Limiter(key_func=get_remote_address)
 
 # JWT 配置
 ALGORITHM = "HS256"

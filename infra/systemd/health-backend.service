@@ -33,5 +33,13 @@ SystemCallArchitectures=native
 UMask=0077
 ReadWritePaths=/var/lib/health-app/uploads /var/cache/health-app/skills-hub /var/lib/health-app/runtime /var/lib/health-app/dedao-kbase
 
+# Public application processes must not reach staking material or cloud metadata.
+InaccessiblePaths=-/mnt -/opt/eth-ops
+IPAddressDeny=100.64.0.0/10 169.254.0.0/16
+CapabilityBoundingSet=
+MemoryMax=2G
+CPUQuota=200%
+TasksMax=512
+
 [Install]
 WantedBy=multi-user.target

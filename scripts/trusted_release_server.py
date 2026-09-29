@@ -1007,6 +1007,19 @@ def initial_laya_config(production):
             "DECISION_API_KEY=" + laya_private_key() + "\n")
 
 
+def invitation_only_config(production):
+    """This containment release must not enable public self-registration."""
+    keys = {"AUTH_PHONE_SELF_REGISTRATION_ENABLED": "false",
+            "REGISTRATION_INVITATION_ENFORCEMENT_ENABLED": "true",
+            "REGISTRATION_INVITATION_ROLLOUT_ENABLED": "true"}
+    lines = []
+    for line in production.splitlines():
+        if any(re.match(r"\s*(?:export\s+)?" + key + r"\s*=", line, re.IGNORECASE) for key in keys):
+            continue
+        lines.append(line)
+    return "\n".join(lines) + "\n" + "".join(f"{key}={value}\n" for key, value in keys.items())
+
+
 def deploy(policy, workspace):
     # Provisioning remains a separate privileged, reviewed installation step.
     _assert_deployment_window(policy)
@@ -1021,7 +1034,7 @@ def deploy(policy, workspace):
         wrapper = bindir / command
         _write_private(wrapper, f'#!/bin/sh\nexec {target}{args} "$@"\n'.encode())
         wrapper.chmod(0o700)
-    production = read_production_env()
+    production = invitation_only_config(read_production_env())
     lines = [line for line in production.splitlines() if not line.startswith(("DEPLOY_SERVER=", "DEPLOY_PATH="))]
     candidate = workspace / "deployment.env"
     _write_private(candidate, ("\n".join(lines) + "\n" + initial_laya_config(production)

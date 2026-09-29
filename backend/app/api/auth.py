@@ -10,8 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import Field, ValidationError
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.rate_limit import limiter
 from app.database import get_db
 from app.models.user import User, GarminCredential
 from app.models.agent_audit_log import AgentAuditLog
@@ -83,7 +82,6 @@ async def write_ai_consent(body: AIConsentUpdate, request: Request, current_user
     return update_ai_consent(db, current_user.id, body.accepted, body.policy_version)
 
 # 配置限流器
-limiter = Limiter(key_func=get_remote_address)
 
 _URL_SAFE_CREDENTIAL_RE = re.compile(r"[A-Za-z0-9_-]{22,128}\Z")
 _MANUAL_CODE_RE = re.compile(r"[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}\Z")

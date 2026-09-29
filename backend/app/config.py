@@ -521,8 +521,11 @@ class Settings(BaseSettings):
     auth_phone_code_ttl_minutes: int = 5
     auth_phone_code_resend_seconds: int = 60
     auth_phone_code_max_attempts: int = 5
+    auth_sms_phone_daily_limit: int = Field(default=5, gt=0)
+    auth_sms_ip_hourly_limit: int = Field(default=20, gt=0)
+    auth_sms_global_daily_limit: int = Field(default=500, gt=0)
     auth_phone_registration_auto_approve: bool = True
-    auth_phone_self_registration_enabled: bool = True  # OTP 验证后自主注册；关闭可回退邀请模式
+    auth_phone_self_registration_enabled: bool = False  # OTP 验证后自主注册；关闭可回退邀请模式
     # 邀请制手机号注册。凭据摘要使用独立 key，避免与 JWT/OTP 的密钥域复用。
     # development/test 可从 SECRET_KEY 做带域派生；production enforcement 必须显式配置。
     registration_invitation_digest_key: Optional[str] = None
@@ -631,6 +634,8 @@ class Settings(BaseSettings):
         if (self.app_env or "").strip().lower() == "production":
             if self.debug:
                 raise ValueError("DEBUG must be false in production")
+            if self.auth_phone_code_dev_echo:
+                raise ValueError("AUTH_PHONE_CODE_DEV_ECHO must be false in production")
             if self.llm_auto_recovery_enabled and not (self.llm_recovery_model_id or "").strip():
                 raise ValueError(
                     "LLM_RECOVERY_MODEL_ID must be explicitly configured when "

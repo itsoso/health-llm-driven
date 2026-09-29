@@ -62,3 +62,6 @@ icalendar==7.1.3
 # 依赖例外:jieba 0.42.1 是最后一个 release(2020),违反本仓库"6 个月内有更新"的新依赖规则;
 # 但它是事实标准的成熟中文分词器,已在 founder 批准的 KB 升级计划里作为明确例外。exact pin。
 jieba==0.42.1
+
+# Installer is part of the audited production environment.
+pip==26.2

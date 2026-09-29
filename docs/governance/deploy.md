@@ -23,6 +23,13 @@
 
 ### 8.2 线上配置管理
 
+注册隔离修复的独立 operator 入口为 canonical `deploy.sh --security-hardening
+--sha <final-sha>`，只在该版本 backend 与前端制品均已成功发布后执行。
+入口、配置备份、互斥与实际隔离验收约束见
+[注册隔离修复发布](../security/2026-09-29-registration-hardening-release.md)。
+它不授予自主注册权限，不替代后端或 Web 成功回执，不扩展云端 SSH RPC。
+
+
 #### 已部署同树前端的受控重建
 
 用户明确授权后，可从当前 main、真实精确 CI 绿色、独立 G4 GO 的 canonical

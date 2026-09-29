@@ -30,5 +30,13 @@ SystemCallArchitectures=native
 UMask=0077
 ReadWritePaths=/var/lib/health-app/celery-beat
 
+# Public application processes must not reach staking material or cloud metadata.
+InaccessiblePaths=-/mnt -/opt/eth-ops
+IPAddressDeny=100.64.0.0/10 169.254.0.0/16
+CapabilityBoundingSet=
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=512
+
 [Install]
 WantedBy=multi-user.target

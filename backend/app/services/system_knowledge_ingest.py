@@ -1855,10 +1855,10 @@ def _read_pdf_text(path: Path) -> str:
         except Exception:  # noqa: BLE001
             pass
     try:
-        from pypdf import PdfReader
+        import pymupdf
 
-        reader = PdfReader(str(path))
-        return "\n".join((page.extract_text() or "") for page in reader.pages[:2])
+        with pymupdf.open(str(path)) as reader:
+            return "\n".join(reader[index].get_text() for index in range(min(2, len(reader))))
     except Exception:  # noqa: BLE001
         return ""
 

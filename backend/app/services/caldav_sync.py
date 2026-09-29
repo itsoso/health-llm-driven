@@ -36,9 +36,14 @@ def _assert_safe_url(url: str, *, label: str = "日历") -> None:
         infos = socket.getaddrinfo(host, p.port or 443, proto=socket.IPPROTO_TCP)
     except socket.gaierror:
         raise ValueError(f"{label}主机无法解析")
+    if not infos:
+        raise ValueError(f"{label}主机无法解析")
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
-        if (ip.is_private or ip.is_loopback or ip.is_link_local
+        # Shared address space (including Aliyun metadata) is neither private
+        # nor global. Normalize mapped IPv4 before applying the same policy.
+        ip = getattr(ip, "ipv4_mapped", None) or ip
+        if (not ip.is_global or ip.is_loopback or ip.is_link_local
                 or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
             raise ValueError(f"{label}地址不可指向内网/环回/保留地址")
 

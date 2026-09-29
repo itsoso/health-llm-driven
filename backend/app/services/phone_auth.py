@@ -127,8 +127,8 @@ def _hash_ip(ip: Optional[str]) -> Optional[str]:
 
 def _can_dev_echo() -> bool:
     return bool(
-        settings.auth_phone_code_dev_echo
-        or (settings.debug and settings.app_env.lower() != "production")
+        (settings.app_env or "").strip().lower() != "production"
+        and (settings.auth_phone_code_dev_echo or settings.debug)
     )
 
 
@@ -303,7 +303,21 @@ def _send_aliyun_pnvs_sms(phone: str, code: str) -> None:
         )
 
 
-def _deliver_code(phone: str, code: str) -> Optional[str]:
+def _reserve_production_sms(phone: str, request_ip: Optional[str]) -> None:
+    if (settings.app_env or "").strip().lower() != "production":
+        return
+    from app.services.sms_abuse_budget import (
+        reserve_sms_delivery, SmsQuotaExceeded, SmsQuotaUnavailable,
+    )
+    try:
+        reserve_sms_delivery(phone, request_ip)
+    except SmsQuotaExceeded as exc:
+        raise PhoneCodeCooldown(str(exc)) from None
+    except SmsQuotaUnavailable as exc:
+        raise PhoneCodeDeliveryFailed(str(exc)) from None
+
+
+def _deliver_code(phone: str, code: str, request_ip: Optional[str] = None) -> Optional[str]:
     """Deliver code or return dev echo.
 
     Production sends through a configured SMS provider; development may echo or
@@ -315,14 +329,17 @@ def _deliver_code(phone: str, code: str) -> Optional[str]:
         return code
 
     if _aliyun_sms_configured():
+        _reserve_production_sms(phone, request_ip)
         _send_aliyun_sms(phone, code)
         return None
 
     if _aliyun_pnvs_configured():
+        _reserve_production_sms(phone, request_ip)
         _send_aliyun_pnvs_sms(phone, code)
         return None
 
-    if settings.auth_phone_code_log_delivery and settings.app_env.lower() != "production":
+    if (settings.auth_phone_code_log_delivery
+            and (settings.app_env or "").strip().lower() != "production"):
         logger.warning("[phone-auth] log-only code for %s: %s", mask_phone(phone), code)
         return None
 
@@ -365,7 +382,7 @@ def issue_phone_code(
     try:
         db.add(record)
         db.flush()
-        dev_code = _deliver_code(phone, code)
+        dev_code = _deliver_code(phone, code, request_ip)
         db.commit()
     except Exception:
         db.rollback()
