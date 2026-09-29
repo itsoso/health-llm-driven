@@ -136,7 +136,7 @@ def execute(sha):
         token = secrets.token_hex(32)
         for name, value in {'token': token, 'label': 'host-hardening', 'stage': str(audit), 'started_at': str(int(time.time()))}.items():
             server._write_private(LEASE / name, (value + '\n').encode())
-        server._sync_directory(LEASE.parent)
+        server._sync_business_lease_parent()
         identity = helper._lease_identity(str(LEASE), token, bootstrap, server)
         try:
             guard.apply(sha)
@@ -149,7 +149,7 @@ def execute(sha):
             for name in ('token', 'label', 'stage', 'started_at'):
                 (LEASE / name).unlink()
             LEASE.rmdir()
-            server._sync_directory(LEASE.parent)
+            server._sync_business_lease_parent()
             result = {'sha': sha, 'state': 'LOCAL_VERIFIED', 'external_readback_required': True}
             server._write_private(audit / 'completed.json', json.dumps(result).encode())
             return result
