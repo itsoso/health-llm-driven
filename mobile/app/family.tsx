@@ -1,37 +1,22 @@
-/**
- * 家庭健康仪表盘 (G 产品改进 MVP).
- *
- * 现状: 后端 family API 全齐 (groups/members/dashboard/switch/...) 但 mobile 完全未暴露.
- * MVP: 建一个只读的家庭页 — 看到所有家庭成员的关键指标 + 告警计数.
- *      后续迭代: 邀请流 / 切换视角 / 跨成员告警路由.
- *
- * 入口: settings → 家庭健康
- */
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, RefreshControl, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import * as Haptics from 'expo-haptics';
 import {
   fetchFamilyDashboard, createFamilyInvitation, acceptFamilyInvitation,
-  createFamilyGroup, type FamilyMember,
+  createFamilyGroup, updateFamilyRelationship, leaveFamily, FAMILY_RELATIONSHIPS, type FamilyMember, type FamilyMembership,
 } from '../services/family';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 import { sharePlainText } from '../utils/share';
 import { APP_DISPLAY_NAME } from '../constants/brand';
+import { useAuth } from '../hooks/useAuth';
+import FamilyHealthRecords from '../components/family/FamilyHealthRecords';
+import FamilyRelationshipForm from '../components/family/FamilyRelationshipForm';
 
-const RELATIONSHIP_ZH: Record<string, string> = {
-  self: '我',
-  father: '爸爸',
-  mother: '妈妈',
-  spouse: '配偶',
-  child: '孩子',
-  sibling: '兄弟姐妹',
-  other: '其他',
-};
+const RELATIONSHIP_ZH = FAMILY_RELATIONSHIPS;
 
 export default function FamilyScreen() {
   const router = useRouter();
@@ -39,11 +24,20 @@ export default function FamilyScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
+  const [relationshipMember, setRelationshipMember] = useState<FamilyMember | null>(null);
+  const [acceptVisible, setAcceptVisible] = useState(false);
+  const [createVisible, setCreateVisible] = useState(false);
+  const [groupName, setGroupName] = useState('我家');
+  const [creating, setCreating] = useState(false);
 
-  const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['familyDashboard'],
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: ['familyDashboard', user?.id],
     queryFn: fetchFamilyDashboard,
-    staleTime: 60_000,
+    staleTime: 0,
+    gcTime: 0,
+    meta: { persist: false },
   });
 
   const members = data?.members || [];
@@ -67,68 +61,43 @@ export default function FamilyScreen() {
     },
     onError: (e: any) => {
       const msg = e?.response?.data?.detail || e?.message || '请稍后再试';
-      // 没建组先建一个 (常见场景: 用户第一次用)
-      if (String(msg).includes('请先创建家庭组')) {
-        Alert.prompt?.(
-          '给你的家庭起个名',
-          '比如"我家"或者"妈妈的家"',
-          async (name) => {
-            if (!name) return;
-            try {
-              await createFamilyGroup(name);
-              await qc.invalidateQueries({ queryKey: ['familyDashboard'] });
-              inviteMut.mutate();  // 建完再创建邀请
-            } catch {
-              Alert.alert('创建失败');
-            }
-          },
-        );
-      } else {
-        Alert.alert('生成邀请码失败', String(msg));
-      }
+      Alert.alert('生成邀请码失败', String(msg));
     },
   });
 
-  // 输入码加入 (家人侧): RN Alert.prompt 收码 + 关系
-  const handleAcceptInvite = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (!Alert.prompt) {
-      Alert.alert('请升级 iOS 版本', 'Alert.prompt 仅 iOS 支持. 后续我们做表单 modal.');
-      return;
-    }
-    Alert.prompt(
-      '输入邀请码',
-      '6 位字符的邀请码（家人发给你的）',
-      async (code) => {
-        if (!code) return;
-        const cleanCode = code.trim().toUpperCase();
-        // 第二步: 选关系
-        Alert.alert(
-          '你和对方的关系是？',
-          undefined,
-          [
-            { text: '爸爸', onPress: () => doAccept(cleanCode, 'father') },
-            { text: '妈妈', onPress: () => doAccept(cleanCode, 'mother') },
-            { text: '配偶', onPress: () => doAccept(cleanCode, 'spouse') },
-            { text: '其他', onPress: () => doAccept(cleanCode, 'other') },
-            { text: '取消', style: 'cancel' },
-          ],
-        );
-      },
-      'plain-text',
-    );
+  const refreshFamily = async () => {
+    qc.removeQueries({ queryKey: ['familyMemberHealth'] });
+    await qc.invalidateQueries({ queryKey: ['familyDashboard'] });
   };
 
-  const doAccept = async (code: string, relType: string) => {
+  const handleCreate = async () => {
+    if (!groupName.trim()) return;
+    setCreating(true);
     try {
-      const resp = await acceptFamilyInvitation(code, relType);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('已加入', resp.message);
-      qc.invalidateQueries({ queryKey: ['familyDashboard'] });
-    } catch (e: any) {
-      const msg = e?.response?.data?.detail || e?.message || '请稍后再试';
-      Alert.alert('加入失败', String(msg));
+      await createFamilyGroup(groupName.trim());
+      setCreateVisible(false);
+      await refreshFamily();
+      inviteMut.mutate();
+    } catch {
+      Alert.alert('创建失败', '请稍后重试');
+    } finally {
+      setCreating(false);
     }
+  };
+
+  const handleLeave = (membership: FamilyMembership) => {
+    Alert.alert(`退出${membership.group_name}并停止共享？`, '退出后，家庭创建者将无法继续查看你的共享健康记录。你的原始记录仍保留在自己的账号中。', [
+      { text: '取消', style: 'cancel' },
+      { text: '退出并停止共享', style: 'destructive', onPress: async () => {
+        try {
+          await leaveFamily(membership.member_id);
+          setSelectedMember(null);
+          await refreshFamily();
+        } catch {
+          Alert.alert('退出失败', '共享尚未撤销，请稍后重试');
+        }
+      } },
+    ]);
   };
 
   return (
@@ -149,8 +118,8 @@ export default function FamilyScreen() {
         <View style={styles.actionRow}>
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: c.brandLight }]}
-            onPress={() => inviteMut.mutate()}
-            disabled={inviteMut.isPending}
+            onPress={() => hasGroup ? inviteMut.mutate() : setCreateVisible(true)}
+            disabled={inviteMut.isPending || (hasGroup && !data?.is_owner)}
             activeOpacity={0.7}
           >
             {inviteMut.isPending ? (
@@ -165,7 +134,7 @@ export default function FamilyScreen() {
 
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: c.fill }]}
-            onPress={handleAcceptInvite}
+            onPress={() => setAcceptVisible(true)}
             activeOpacity={0.7}
           >
             <Ionicons name="enter-outline" size={18} color={c.labelPrimary} />
@@ -179,6 +148,11 @@ export default function FamilyScreen() {
 
         {isLoading ? (
           <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
+        ) : isError ? (
+          <View style={styles.empty}>
+            <Text style={txt.emptyTitle}>家庭信息加载失败</Text>
+            <TouchableOpacity accessibilityRole="button" onPress={() => { void refetch(); }}><Text style={txt.emptyHint}>重试</Text></TouchableOpacity>
+          </View>
         ) : members.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="people-outline" size={48} color={c.labelTertiary} />
@@ -194,16 +168,64 @@ export default function FamilyScreen() {
         ) : (
           <View style={styles.list}>
             {members.map((m) => (
-              <MemberCard key={m.user_id} member={m} c={c} />
+              <View key={m.user_id} style={{ gap: spacing.xs }}>
+                <MemberCard member={m} c={c} onPress={() => setSelectedMember(m)} />
+                {data?.is_owner && m.user_id !== user?.id && (
+                  <TouchableOpacity accessibilityRole="button" onPress={() => setRelationshipMember(m)} style={styles.actionBtn}>
+                    <Text style={{ color: c.brand }}>设置关系与昵称</Text>
+                  </TouchableOpacity>
+                )}
+
+              </View>
             ))}
           </View>
         )}
+        {!isError && !!data?.memberships?.length && (
+          <View style={[styles.list, { marginTop: spacing.lg }]}>
+            <Text style={txt.title}>我的家庭关联</Text>
+            {data.memberships.map(membership => <View key={membership.member_id} style={styles.card}>
+              <Text style={txt.memberName}>{membership.group_name}</Text>
+              {membership.is_owner ? <Text style={txt.relTag}>你是家庭创建者</Text> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={`退出${membership.group_name}并停止共享`} onPress={() => handleLeave(membership)} style={styles.actionBtn}>
+                <Text style={{ color: c.red }}>退出家庭并停止共享</Text>
+              </TouchableOpacity>}
+            </View>)}
+          </View>
+        )}
       </ScrollView>
+      <FamilyRelationshipForm visible={acceptVisible} c={c} mode="accept" onClose={() => setAcceptVisible(false)} onSubmit={async (relationship, nickname, code) => {
+        await acceptFamilyInvitation(code!, relationship, nickname);
+        setAcceptVisible(false);
+        await refreshFamily();
+      }} />
+      <FamilyRelationshipForm visible={!!relationshipMember} c={c} mode="edit" member={relationshipMember} onClose={() => setRelationshipMember(null)} onSubmit={async (relationship, nickname) => {
+        await updateFamilyRelationship(relationshipMember!.id, relationship, nickname);
+        setRelationshipMember(null);
+        await refreshFamily();
+      }} />
+      <Modal visible={!!selectedMember && !!user} animationType="slide" onRequestClose={() => setSelectedMember(null)}>
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.header}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="关闭健康记录" onPress={() => setSelectedMember(null)} style={styles.backBtn}><Ionicons name="chevron-back" size={26} color={c.labelPrimary} /></TouchableOpacity>
+            <Text style={txt.title}>家人健康记录</Text>
+          </View>
+          {selectedMember && user && <FamilyHealthRecords key={`${user.id}-${selectedMember.user_id}`} viewerId={user.id} userId={selectedMember.user_id} c={c} />}
+        </SafeAreaView>
+      </Modal>
+      <Modal visible={createVisible} animationType="slide" onRequestClose={() => { if (!creating) setCreateVisible(false); }}>
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.scroll}>
+            <Text style={txt.title}>给你的家庭起个名</Text>
+            <TextInput accessibilityLabel="家庭名称" maxLength={100} value={groupName} onChangeText={setGroupName} style={{ color: c.labelPrimary, backgroundColor: c.fill, padding: spacing.md, marginVertical: spacing.md }} />
+            <TouchableOpacity disabled={creating || !groupName.trim()} onPress={() => { void handleCreate(); }} style={styles.actionBtn}><Text style={{ color: c.brand }}>{creating ? '正在创建…' : '创建并邀请'}</Text></TouchableOpacity>
+            <TouchableOpacity disabled={creating} onPress={() => setCreateVisible(false)} style={styles.actionBtn}><Text style={{ color: c.labelSecondary }}>取消</Text></TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-function MemberCard({ member, c }: { member: FamilyMember; c: ColorPalette }) {
+function MemberCard({ member, c, onPress }: { member: FamilyMember; c: ColorPalette; onPress: () => void }) {
   const styles = createStyles(c);
   const txt = createTxt(c);
 
@@ -214,10 +236,11 @@ function MemberCard({ member, c }: { member: FamilyMember; c: ColorPalette }) {
   const sleepColor = sleep == null ? c.labelTertiary : sleep >= 80 ? c.green : sleep >= 60 ? c.amber : c.red;
 
   const rhr = member.resting_hr;
-  const rhrColor = rhr == null ? c.labelTertiary : rhr <= 60 ? c.green : rhr <= 70 ? c.amber : c.red;
+  // Family members include children; do not apply adult heart-rate cutoffs.
+  const rhrColor = rhr == null ? c.labelTertiary : c.labelPrimary;
 
   return (
-    <View style={styles.card}>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`查看${displayName}的健康记录`} disabled={!member.can_view} onPress={onPress} style={styles.card}>
       <View style={styles.cardHeader}>
         <View style={styles.avatar}>
           <Text style={txt.avatarText}>{displayName.slice(0, 1)}</Text>
@@ -234,7 +257,7 @@ function MemberCard({ member, c }: { member: FamilyMember; c: ColorPalette }) {
         )}
       </View>
 
-      <View style={styles.metricsGrid}>
+      {member.can_view ? <View style={styles.metricsGrid}>
         <Metric c={c} label="睡眠" value={sleep != null ? `${sleep}` : '-'} unit="分" color={sleepColor} icon="moon-outline" />
         <Metric c={c} label="静息心率" value={rhr != null ? `${rhr}` : '-'} unit="bpm" color={rhrColor} icon="heart-outline" />
         <Metric c={c} label="今日步数" value={member.today_steps != null ? `${(member.today_steps / 1000).toFixed(1)}k` : '-'} unit="" color={c.labelPrimary} icon="walk-outline" />
@@ -242,8 +265,9 @@ function MemberCard({ member, c }: { member: FamilyMember; c: ColorPalette }) {
         {member.latest_weight != null && (
           <Metric c={c} label="最近体重" value={`${member.latest_weight.toFixed(1)}`} unit="kg" color={c.labelPrimary} icon="scale-outline" />
         )}
-      </View>
-    </View>
+      </View> : <Text style={txt.relTag}>尚未向你共享健康记录</Text>}
+      {member.can_view && <Text style={{ color: c.brand }}>查看检查报告与病程 ›</Text>}
+    </TouchableOpacity>
   );
 }
 

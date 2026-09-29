@@ -18953,6 +18953,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/family/members/{member_id}/relationship": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 修改家庭称呼 */
+        patch: operations["update_member_relationship_api_v1_family_members__member_id__relationship_patch"];
+        trace?: never;
+    };
+    "/api/v1/family/members/{user_id}/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 只读查看家人报告和病程 */
+        get: operations["get_member_health_api_v1_family_members__user_id__health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/family-health/medical-reports/upload": {
         parameters: {
             query?: never;
@@ -24622,9 +24656,9 @@ export interface components {
             name: string;
             /**
              * Relationship Type
-             * @description 关系: self/father/mother/spouse/child/sibling/other
+             * @enum {string}
              */
-            relationship_type: string;
+            relationship_type: "father" | "mother" | "spouse" | "child" | "daughter" | "son" | "sibling" | "other";
             /**
              * Nickname
              * @description 家庭内昵称（如爸爸）
@@ -24645,6 +24679,16 @@ export interface components {
              * @description 已有用户ID（关联已注册用户）
              */
             existing_user_id?: number | null;
+        };
+        /** FamilyRelationshipUpdate */
+        FamilyRelationshipUpdate: {
+            /**
+             * Relationship Type
+             * @enum {string}
+             */
+            relationship_type: "father" | "mother" | "spouse" | "child" | "daughter" | "son" | "sibling" | "other";
+            /** Nickname */
+            nickname?: string | null;
         };
         /** FamilySwitchRequest */
         FamilySwitchRequest: {
@@ -26912,9 +26956,9 @@ export interface components {
             code: string;
             /**
              * Relationship Type
-             * @description self/father/mother/spouse/child/sibling/other
+             * @enum {string}
              */
-            relationship_type: string;
+            relationship_type: "father" | "mother" | "spouse" | "child" | "daughter" | "son" | "sibling" | "other";
             /** Nickname */
             nickname?: string | null;
         };
@@ -64960,6 +65004,74 @@ export interface operations {
                 "application/json": components["schemas"]["InviteAcceptRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_member_relationship_api_v1_family_members__member_id__relationship_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                member_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FamilyRelationshipUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_member_health_api_v1_family_members__user_id__health_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

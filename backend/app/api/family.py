@@ -1,9 +1,9 @@
 """家庭健康管理 API"""
 import logging
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.models.user import User
 from app.models.family import FamilyGroup, FamilyMember
 from app.api.deps import get_current_user_required
 from app.services.auth import auth_service
+from app.services.family_access import require_family_access, visible_family_members
 from app.services.web_session import (
     WEB_SESSION_AUTH_SENTINEL,
     set_web_session_cookie,
@@ -19,7 +20,17 @@ from app.services.web_session import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/family", tags=["family"])
+def require_direct_family_session(
+    request: Request, current_user: User = Depends(get_current_user_required),
+):
+    route_name = request.url.path.rstrip("/").split("/")[-1]
+    if getattr(request.state, "is_proxy_mode", False) and route_name not in {"switch-back", "proxy-status"}:
+        raise HTTPException(status_code=403, detail="请先切回本人账号再管理家庭关系")
+
+
+router = APIRouter(prefix="/family", tags=["family"], dependencies=[Depends(require_direct_family_session)])
+
+FamilyRelationship = Literal["father", "mother", "spouse", "child", "daughter", "son", "sibling", "other"]
 
 
 # ── Schemas ───────────────────────────────────────────────
@@ -30,7 +41,7 @@ class FamilyGroupCreate(BaseModel):
 
 class FamilyMemberAdd(BaseModel):
     name: str = Field(..., max_length=100, description="成员姓名")
-    relationship_type: str = Field(..., description="关系: self/father/mother/spouse/child/sibling/other")
+    relationship_type: FamilyRelationship
     nickname: Optional[str] = Field(None, max_length=50, description="家庭内昵称（如爸爸）")
     gender: Optional[str] = Field(None, description="性别: 男/女")
     birth_date: Optional[date] = Field(None, description="出生日期")
@@ -125,6 +136,8 @@ async def add_family_member(
         target_user = db.query(User).filter(User.id == req.existing_user_id).first()
         if not target_user:
             raise HTTPException(status_code=404, detail="用户不存在")
+        if not target_user.is_managed or target_user.managed_by != current_user.id:
+            raise HTTPException(status_code=403, detail="已注册家人需登录自己的账号接受家庭邀请")
         # 检查是否已在组内
         exists = db.query(FamilyMember).filter(
             FamilyMember.family_group_id == group.id,
@@ -147,7 +160,7 @@ async def add_family_member(
         db.add(shadow_user)
         db.flush()
         user_id = shadow_user.id
-        logger.info(f"创建 shadow user: id={user_id}, name={req.name}, managed_by={current_user.id}")
+        logger.info("family_managed_created actor_id=%s subject_id=%s", current_user.id, user_id)
 
     member = FamilyMember(
         family_group_id=group.id,
@@ -185,7 +198,7 @@ async def get_family_members(
     if not group:
         return {"members": []}
 
-    members = db.query(FamilyMember).filter(FamilyMember.family_group_id == group.id).all()
+    members = visible_family_members(db, group, current_user.id)
     result = []
     for m in members:
         user = db.query(User).filter(User.id == m.user_id).first()
@@ -203,7 +216,7 @@ async def get_family_members(
             "can_edit": m.can_edit,
         })
 
-    return {"group_name": group.name, "members": result}
+    return {"group_name": group.name, "is_owner": group.owner_id == current_user.id, "members": result}
 
 
 @router.delete("/members/{member_id}", summary="移除家庭成员")
@@ -218,14 +231,16 @@ async def remove_family_member(
         raise HTTPException(status_code=404, detail="成员不存在")
 
     group = db.query(FamilyGroup).filter(FamilyGroup.id == member.family_group_id).first()
-    if not group or group.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="只有家庭组创建者可以移除成员")
+    if not group or (group.owner_id != current_user.id and member.user_id != current_user.id):
+        raise HTTPException(status_code=403, detail="只有创建者或成员本人可以解除关联")
 
-    if member.user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="不能移除自己")
+    if member.user_id == group.owner_id:
+        raise HTTPException(status_code=400, detail="家庭创建者不能退出自己的家庭组")
 
+    subject_id = member.user_id
     db.delete(member)
     db.commit()
+    logger.info("family_member_removed actor_id=%s subject_id=%s", current_user.id, subject_id)
     return {"message": "已移除成员"}
 
 
@@ -247,31 +262,7 @@ async def switch_to_member(
     if target_user_id == current_user.id:
         raise HTTPException(status_code=400, detail="不需要切换到自己")
 
-    # 验证权限：目标用户必须在同一家庭组，且当前用户是 owner 或有编辑权限
-    my_groups = db.query(FamilyMember.family_group_id).filter(
-        FamilyMember.user_id == current_user.id
-    ).scalar_subquery()
-
-    target_member = db.query(FamilyMember).filter(
-        FamilyMember.user_id == target_user_id,
-        FamilyMember.family_group_id.in_(my_groups),
-    ).first()
-
-    if not target_member:
-        raise HTTPException(status_code=403, detail="该用户不在你的家庭组中")
-
-    # 验证编辑权限
-    my_member = db.query(FamilyMember).filter(
-        FamilyMember.family_group_id == target_member.family_group_id,
-        FamilyMember.user_id == current_user.id,
-    ).first()
-
-    if not my_member or (my_member.role != "owner" and not target_member.can_edit):
-        raise HTTPException(status_code=403, detail="你没有权限操作该成员的数据")
-
-    target_user = db.query(User).filter(User.id == target_user_id).first()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="目标用户不存在")
+    target_member, target_user = require_family_access(db, current_user.id, target_user_id, edit=True)
 
     # 生成带 acting_as 的 JWT Token（有效期 4 小时）
     from app.services.auth import SECRET_KEY, ALGORITHM
@@ -346,15 +337,22 @@ async def family_dashboard(
     db: Session = Depends(get_db),
 ):
     """家庭成员健康概览"""
+    memberships = [
+        {"member_id": member.id, "group_id": group.id, "group_name": group.name,
+         "is_owner": group.owner_id == current_user.id}
+        for member, group in db.query(FamilyMember, FamilyGroup).join(
+            FamilyGroup, FamilyGroup.id == FamilyMember.family_group_id,
+        ).filter(FamilyMember.user_id == current_user.id).order_by(FamilyMember.id).all()
+    ]
     group = db.query(FamilyGroup).filter(FamilyGroup.owner_id == current_user.id).first()
     if not group:
         membership = db.query(FamilyMember).filter(FamilyMember.user_id == current_user.id).first()
         if membership:
             group = db.query(FamilyGroup).filter(FamilyGroup.id == membership.family_group_id).first()
     if not group:
-        return {"group_name": None, "members": []}
+        return {"group_name": None, "is_owner": False, "members": [], "memberships": memberships}
 
-    members = db.query(FamilyMember).filter(FamilyMember.family_group_id == group.id).all()
+    members = visible_family_members(db, group, current_user.id)
     today = date.today()
 
     result = []
@@ -364,7 +362,10 @@ async def family_dashboard(
             continue
 
         member_data = {
+            "id": m.id,
             "user_id": m.user_id,
+            "can_view": True,
+            "can_edit": m.can_edit if group.owner_id == current_user.id else False,
             "name": user.name,
             "nickname": m.nickname,
             "relationship_type": m.relationship_type,
@@ -372,56 +373,42 @@ async def family_dashboard(
         }
 
         # 最新体重
-        try:
-            from app.models.weight import WeightRecord
-            latest_weight = db.query(WeightRecord).filter(
-                WeightRecord.user_id == m.user_id
-            ).order_by(WeightRecord.record_date.desc()).first()
-            member_data["latest_weight"] = latest_weight.weight if latest_weight else None
-        except Exception:
-            member_data["latest_weight"] = None
+        from app.models.weight import WeightRecord
+        latest_weight = db.query(WeightRecord).filter(
+            WeightRecord.user_id == m.user_id
+        ).order_by(WeightRecord.record_date.desc()).first()
+        member_data["latest_weight"] = latest_weight.weight if latest_weight else None
 
         # 今日步数（从 Garmin）
-        try:
-            from app.models.daily_health import GarminData
-            garmin = db.query(GarminData).filter(
-                GarminData.user_id == m.user_id,
-                GarminData.record_date == today,
-            ).first()
-            member_data["today_steps"] = garmin.steps if garmin else None
-            member_data["sleep_score"] = garmin.sleep_score if garmin else None
-            member_data["resting_hr"] = garmin.resting_heart_rate if garmin else None
-        except Exception:
-            member_data["today_steps"] = None
-            member_data["sleep_score"] = None
-            member_data["resting_hr"] = None
+        from app.models.daily_health import GarminData
+        garmin = db.query(GarminData).filter(
+            GarminData.user_id == m.user_id,
+            GarminData.record_date == today,
+        ).first()
+        member_data["today_steps"] = garmin.steps if garmin else None
+        member_data["sleep_score"] = garmin.sleep_score if garmin else None
+        member_data["resting_hr"] = garmin.resting_heart_rate if garmin else None
 
         # 今日饮水
-        try:
-            from app.models.daily_health import WaterIntake
-            water = db.query(WaterIntake).filter(
-                WaterIntake.user_id == m.user_id,
-                WaterIntake.record_date == today,
-            ).all()
-            member_data["today_water_ml"] = sum(w.amount_ml or 0 for w in water)
-        except Exception:
-            member_data["today_water_ml"] = 0
+        from app.models.daily_health import WaterIntake
+        water = db.query(WaterIntake).filter(
+            WaterIntake.user_id == m.user_id,
+            WaterIntake.record_date == today,
+        ).all()
+        member_data["today_water_ml"] = sum(w.amount_ml or 0 for w in water)
 
         # 未读健康预警
-        try:
-            from app.models.anomaly_alert import AnomalyAlert
-            alert_count = db.query(AnomalyAlert).filter(
-                AnomalyAlert.user_id == m.user_id,
-                AnomalyAlert.acknowledged == False,
-                AnomalyAlert.detection_date >= today - timedelta(days=7),
-            ).count()
-            member_data["unread_alerts"] = alert_count
-        except Exception:
-            member_data["unread_alerts"] = 0
+        from app.models.anomaly_alert import AnomalyAlert
+        alert_count = db.query(AnomalyAlert).filter(
+            AnomalyAlert.user_id == m.user_id,
+            AnomalyAlert.acknowledged == False,
+            AnomalyAlert.detection_date >= today - timedelta(days=7),
+        ).count()
+        member_data["unread_alerts"] = alert_count
 
         result.append(member_data)
 
-    return {"group_name": group.name, "members": result}
+    return {"group_name": group.name, "is_owner": group.owner_id == current_user.id, "members": result, "memberships": memberships}
 
 
 # ============================================================================
@@ -466,8 +453,8 @@ class InviteCodeResponse(BaseModel):
 
 class InviteAcceptRequest(BaseModel):
     code: str = Field(..., min_length=4, max_length=12)
-    relationship_type: str = Field(..., description="self/father/mother/spouse/child/sibling/other")
-    nickname: Optional[str] = None
+    relationship_type: FamilyRelationship
+    nickname: Optional[str] = Field(None, max_length=50)
 
 
 @router.post("/invitation/create", summary="创建家庭邀请码", response_model=InviteCodeResponse)
@@ -506,7 +493,7 @@ async def create_invitation(
         "group_id": group.id,
         "expires_at": now + _INVITE_TTL_SECONDS,
     }
-    logger.info(f"[family.invitation] user={current_user.id} group={group.id} 创建邀请码 {code}")
+    logger.info("family_invitation_created actor_id=%s group_id=%s", current_user.id, group.id)
     return InviteCodeResponse(
         code=code,
         expires_in_seconds=_INVITE_TTL_SECONDS,
@@ -539,13 +526,24 @@ async def accept_invitation(
         FamilyMember.user_id == current_user.id,
     ).first()
     if existing:
+        if group.owner_id != current_user.id:
+            if current_user.is_managed:
+                raise HTTPException(status_code=403, detail="代管档案不能自行授权家庭关联")
+            existing.can_view = True
+            existing.can_edit = False
+            existing.relationship_type = req.relationship_type
+            existing.nickname = req.nickname or current_user.name
+            db.commit()
+            logger.info("family_invitation_reaccepted actor_id=%s group_id=%s", current_user.id, group.id)
         _INVITE_CACHE.pop(code, None)
         return {
-            "message": "你已经是该家庭的成员了",
+            "message": "已确认家庭关联与只读分享",
             "group_name": group.name,
             "member_id": existing.id,
         }
 
+    if current_user.is_managed:
+        raise HTTPException(status_code=403, detail="代管档案不能自行授权家庭关联")
     # 加入
     member = FamilyMember(
         family_group_id=group.id,
@@ -563,13 +561,44 @@ async def accept_invitation(
     # 一码一用: 销毁
     _INVITE_CACHE.pop(code, None)
 
-    logger.info(
-        f"[family.invitation] user={current_user.id} 加入 group={group.id} "
-        f"as {req.relationship_type} via code={code}"
-    )
+    logger.info("family_invitation_accepted actor_id=%s group_id=%s", current_user.id, group.id)
     return {
         "message": f"已加入家庭 '{group.name}'",
         "group_name": group.name,
         "member_id": member.id,
         "relationship_type": req.relationship_type,
     }
+
+
+class FamilyRelationshipUpdate(BaseModel):
+    relationship_type: FamilyRelationship
+    nickname: Optional[str] = Field(None, max_length=50)
+
+
+@router.patch("/members/{member_id}/relationship", summary="修改家庭称呼")
+def update_member_relationship(
+    member_id: int, data: FamilyRelationshipUpdate,
+    current_user: User = Depends(get_current_user_required), db: Session = Depends(get_db),
+):
+    member = db.query(FamilyMember).join(FamilyGroup).filter(
+        FamilyMember.id == member_id, FamilyGroup.owner_id == current_user.id,
+    ).first()
+    if not member or member.user_id == current_user.id:
+        raise HTTPException(status_code=403, detail="只有创建者可以修改家人称呼")
+    member.relationship_type = data.relationship_type
+    if "nickname" in data.model_fields_set:
+        member.nickname = data.nickname
+    db.commit()
+    logger.info("family_relationship_updated actor_id=%s subject_id=%s", current_user.id, member.user_id)
+    return {"id": member.id, "user_id": member.user_id, "relationship_type": member.relationship_type,
+            "nickname": member.nickname}
+
+
+@router.get("/members/{user_id}/health", summary="只读查看家人报告和病程")
+def get_member_health(
+    user_id: int, response: Response, limit: int = Query(20, ge=1, le=50),
+    current_user: User = Depends(get_current_user_required), db: Session = Depends(get_db),
+):
+    from app.services.family_records import read_family_records
+    response.headers["Cache-Control"] = "no-store, private"
+    return read_family_records(db, current_user.id, user_id, limit)

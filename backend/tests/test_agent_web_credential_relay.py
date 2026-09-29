@@ -340,6 +340,8 @@ def test_cookie_proxy_claims_survive_internal_reauthentication(
         FamilyMember(family_group_id=group.id, user_id=target.id,
                      relationship_type="other", role="member", can_edit=True),
     ])
+    target.is_managed = True
+    target.managed_by = origin.id
     db.commit()
     token = auth_service.create_access_token({
         "sub": str(target.id), "acting_as": target.id, "original_user": origin.id,

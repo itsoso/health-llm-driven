@@ -46,7 +46,7 @@ export const persistOptions = {
   maxAge: 24 * 60 * 60 * 1000,
   buster: APP_VERSION,
   dehydrateOptions: {
-    shouldDehydrateQuery: (q: { state: { status: string } }) =>
-      q.state.status === 'success',
+    shouldDehydrateQuery: (q: { state: { status: string }; meta?: Record<string, unknown> }) =>
+      q.state.status === 'success' && q.meta?.persist !== false,
   },
 } as const;
