@@ -2,13 +2,18 @@
 
 | Field | Value |
 | --- | --- |
-| Status | implementation verified; release gates pending |
+| status | shipping |
+| current_stage | S6 release validation |
 | Primary controller | health-harness-orchestrator (incident) |
 | Overlay | safety-gate |
 | Source baseline | 26917b8458ca5639b8b99b11755dd56714d1cd04 |
 | Local run | docs/_generated/harness-runs/b3d938f9cd6c.jsonl |
 
-## Scope and evidence
+## G1/G2 Scope and evidence
+
+裁决: PASS
+
+Repair the existing recovery starter and retain the personal-read boundary.
 
 An owner-scoped production investigation confirmed a recovery-advice starter
 was classified as advice/symptom/analyze. The model proposed an unrequested
@@ -68,3 +73,20 @@ model selection and display-format handling keep their existing paths.
 Candidate 5a95263a8 passed 266 focused/neighbor CI-mode tests (2 PostgreSQL-only
 skips), and its bound live LLM gate passed 5/5 (mean 0.94); the final narrow
 correction requires a fresh fixed-commit review and live confirmation.
+
+
+## G3 verification and G4 fixed-source review
+
+裁决: GO
+
+The final runtime candidate 94163333c passed independent G4 review after the
+opener correction. Its final focused CI-mode integration run passed 107 tests
+with 2 PostgreSQL-only skips; its live LLM gates passed invariants 12/12, core
+50/50, orchestrator 5/5 (mean 0.92), trajectory 12/12 and goldens 9/9. There is
+no schema or database-semantics change.
+
+The first remote CI run 36565969363 found this dossier used an unsupported
+capitalized Status key and lacked a machine-readable G1 verdict. This
+document-only correction aligns the evidence with the existing dossier
+contract; it changes no runtime code. Exact-revision remote CI and production
+user-flow validation remain pending, and deployment has not started.
