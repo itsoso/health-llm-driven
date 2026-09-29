@@ -453,6 +453,39 @@ describe('ai-assistant URL state', () => {
     expect(screen.getByText('记一下体重')).toBeInTheDocument();
   });
 
+  it.each(['fallback', 'suggestion', 'opener', 'quick reply'])(
+    'fills and focuses an editable draft from a %s without sending it',
+    async (source) => {
+      searchParamsGet.mockReturnValue(null);
+      const text = source === 'fallback' ? '分析我最近的代谢健康' : `合成推荐问题 ${source}`;
+      apiGet.mockImplementation(async (path: string) => ({
+        data: path === '/agent/conversation-starters' ? {
+          suggestions: source === 'suggestion' ? [text] : [],
+          opener: source === 'opener' || source === 'quick reply' ? {
+            text: source === 'opener' ? text : '合成开场问题',
+            source: 'case_thread',
+            quick_replies: source === 'quick reply' ? [{ text }] : [],
+          } : null,
+        } : {},
+      }));
+      render(<AIAssistantPage />);
+      fireEvent.click(await screen.findByRole('button', { name: source === 'opener' ? `持续话题 ${text}` : text }));
+
+      const input = screen.getByPlaceholderText(/发消息/);
+      expect(input).toHaveValue(text);
+      expect(input).toHaveFocus();
+      expect(requireAiConsent).not.toHaveBeenCalled();
+      expect(streamMessage).not.toHaveBeenCalled();
+
+      const edited = `${text}，补充一个条件`;
+      fireEvent.change(input, { target: { value: edited } });
+      expect(input).toHaveValue(edited);
+      fireEvent.click(screen.getByTitle('发送'));
+      await waitFor(() => expect(streamMessage).toHaveBeenCalled());
+      expect(streamMessage.mock.calls[0][0]).toBe(edited);
+    },
+  );
+
   it('imports a medical exam file from the composer and renders a result card', async () => {
     searchParamsGet.mockReturnValue(null);
     executeMedicalExamImportSkillForFile.mockResolvedValueOnce({
