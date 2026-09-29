@@ -115,3 +115,31 @@ async def test_incomplete_answer_is_not_recovered(db, auth_user_and_headers, mon
         dispatch=lambda request: {}, reply='尚未完成', turn_id='advice-length', answer_finish_reason='length')
     assert not calls
     assert done['completion_status'] != 'complete'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('message', [BEDTIME, ACTION])
+async def test_panel_uses_same_answer_only_boundary(db, auth_user_and_headers, monkeypatch, message):
+    from app.models.agent_conversation import AgentMessage
+    from app.services.agent_executor import AgentExecutor
+    calls = []
+    monkeypatch.setattr('app.twin.builder.build_twin', lambda *a, **k: calls.append('twin'))
+    reply = '本轮未查询个人记录，仅基于当前输入提供通用解释；无法确认个人安排。'
+    async def lead(messages, tools):
+        assert {t['function']['name'] for t in tools} <= {'knowledge_search'}
+        assert any('不要假设用户描述了病症' in str(m.get('content', '')) for m in messages)
+        return {'content': reply, 'finish_reason': 'stop'}
+    class Provider:
+        async def chat(self, **kwargs):
+            return {'content': reply, 'finish_reason': 'stop'}
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, '_call_llm', lead)
+    monkeypatch.setattr('app.services.llm.factory.create_provider_for_model_id', lambda *_: Provider())
+    user, _ = auth_user_and_headers
+    events = [e async for e in executor._run_multi_model_stream(user.id, message, None, None, '{"multi_model":true}')]
+    done = events[-1]['data']
+    assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
+    assert not calls
+    persisted = db.get(AgentMessage, done['message_id'])
+    assert persisted.meta['turn_outcome'] == done['turn_outcome']
+    assert reply in persisted.content
