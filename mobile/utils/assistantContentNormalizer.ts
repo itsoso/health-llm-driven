@@ -9,7 +9,7 @@ const RAW_TOOL_PROTOCOL_FALLBACK = '这条回复未能正常完成，请重新�
 const PLACEHOLDER_FLOOD_THRESHOLD = 6;
 const PLACEHOLDER_LINE_RE = /^(?:([.。·…,:;!?！？—_~*#-])\1{0,7})$/u;
 const RAW_TOOL_PROTOCOL_PREFIX_RE = /^\s*(?:<tool_call\s*>\s*)?<function\s*=/i;
-const RAW_TOOL_PROTOCOL_BLOCK_RE = /^\s*(?:<tool_call\s*>\s*)?<function\s*=\s*["']?[A-Za-z_]\w*["']?\s*>[\s\S]*?(?:<\/function\s*>\s*(?:<\/tool_call\s*>)?|$)\s*/i;
+const RAW_TOOL_PROTOCOL_BLOCK_RE = /^\s*(?:<tool_call\s*>\s*)?<function\s*=\s*["']?[A-Za-z_]\w*["']?\s*>[\s\S]*?(?:<\/function\s*>(?:\s*<\/tool_call\s*>)?|$)/i;
 const RAW_JSON_TOOL_PROTOCOL_PREFIX_RE = /^\s*<tool_call\s*>\s*\{/i;
 
 export type AssistantContentQualityFlag =
@@ -66,12 +66,14 @@ export function normalizeAssistantContent(
 function stripToolFunctionPrefix(source: string): string {
   let text = source;
   while (RAW_TOOL_PROTOCOL_PREFIX_RE.test(text)) {
-    const remaining = text.replace(RAW_TOOL_PROTOCOL_BLOCK_RE, '').trim();
+    // Only remove protocol bytes. Whitespace after its closing tag can be a
+    // Markdown code boundary; stripping it would promote code into a preview.
+    const remaining = text.replace(RAW_TOOL_PROTOCOL_BLOCK_RE, '');
     // A provider may stop inside an opening function tag. Never expose it.
     if (remaining === text) return RAW_TOOL_PROTOCOL_FALLBACK;
     text = remaining;
   }
-  return text || RAW_TOOL_PROTOCOL_FALLBACK;
+  return text.trim() ? text : RAW_TOOL_PROTOCOL_FALLBACK;
 }
 
 function normalizeAssistantProse(value: string, extractProtocolCards = true): NormalizedAssistantContent {

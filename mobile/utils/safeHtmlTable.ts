@@ -126,6 +126,7 @@ export function parseSafeHtmlTable(source: string): SafeHtmlTable | null {
 
 /** Preserve bytes and code-fence boundaries; only standalone tables are candidates. */
 export function splitHtmlTableContent(source: string): HtmlTablePart[] {
+  const hasHtml = containsHtmlTableCandidate(source);
   const lines = source.match(/[^\n]*\n|[^\n]+$/g) ?? [];
   const parts: HtmlTablePart[] = [];
   const append = (kind: 'markdown' | 'code' | 'source', value: string) => {
@@ -135,7 +136,11 @@ export function splitHtmlTableContent(source: string): HtmlTablePart[] {
   };
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index].replace(/\r?\n$/, '');
-    const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    // Legacy Mac protocol producers may prefix a fence with emoji/symbols.
+    // Recognize its boundary as opaque code, never as an executable card.
+    const legacy = hasHtml ? /^([^\p{L}\p{N}]*)```(reva-ui|menu_share)[ \t]*$/u.exec(line) : null;
+    const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line)
+      ?? (legacy ? [legacy[0], '```', legacy[2]] : null);
     if (fence) {
       const closing = new RegExp(`^ {0,3}${fence[1][0]}{${fence[1].length},}\\s*$`);
       let end = index + 1;
