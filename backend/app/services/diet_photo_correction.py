@@ -3,7 +3,7 @@
 The existing editor and revision-checked recalculation command own confirmation.
 Neither model prose nor model-selected record IDs are accepted here.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.models.agent_conversation import AgentConversation, AgentMessage
-from app.models.daily_health import DietPhotoAsset, DietRecord
+from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord
 from app.services.post_record_quality import build_diet_adjust_action
 from app.utils.number_format import format_card_numbers
 
@@ -24,6 +24,124 @@ _REQUEST = re.compile(
     r"(?P<meal>早餐|午餐|晚餐|加餐)(?:记录)?[。！!]?"
 )
 _MEALS = {"早餐": "breakfast", "午餐": "lunch", "晚餐": "dinner", "加餐": "snack"}
+
+# Whole original utterances only: these frames remove a meal component, never
+# authorize deleting a record or a generic history read.
+_ITEM_REQUESTS = (
+    re.compile(r"(?P<food>[\u4e00-\u9fffA-Za-z]{1,24})(?:没吃|没有吃)[，, ]*"
+               r"(?:请)?(?:去掉|移除)(?:记录|这餐记录)(?:中|里)(?:的)?这(?:一)?部分[。.!！]?"),
+    re.compile(r"(?:请)?把(?:刚才)?这(?:一)?餐(?:里|中)(?:的)?"
+               r"(?P<food>[\u4e00-\u9fffA-Za-z]{1,24})(?:去掉|移除)[。.!！]?"),
+)
+_UNSAFE_ITEM = re.compile(r"不要|别|不想|假如|如果|朋友|别人|他说|她说|取消|算了|还是|或者|以及")
+_PORTION_SUFFIX = re.compile(
+    r"(?:约|大约)?(?:[0-9]+(?:\.[0-9]+)?|[一二三四五六七八九十两半]+)"
+    r"(?:个|根|碗|杯|份|片|块|颗|粒|克|毫升|g|kg|ml|mL)(?:半)?"
+)
+
+
+def _removal_item(text):
+    source = str(text or "").strip()
+    if _UNSAFE_ITEM.search(source):
+        return None
+    for pattern in _ITEM_REQUESTS:
+        match = pattern.fullmatch(source)
+        if match:
+            return match["food"]
+    return None
+
+
+def _item_clarification(reason, detail):
+    return {"status": "waiting_for_user", "reason": reason, "cards": [],
+            "reply": f"尚未修改饮食记录。{detail}"}
+
+
+def _item_removal_proposal(db, user_id, conversation_id, current_message_id, text, now):
+    food = _removal_item(text)
+    if food is None:
+        return None
+    missing = _item_clarification("meal_item_target_required",
+        "你要修改刚才哪一餐？请在那条饮食卡片中点击修正本餐，核对要保留的食物和份量。")
+    if type(user_id) is not int or user_id <= 0 or now.tzinfo is None:
+        return missing
+    current = _owned_message(db, user_id, conversation_id, current_message_id)
+    if current is None or current.content.strip() != str(text).strip():
+        return missing
+    recent = (db.query(AgentMessage)
+              .filter(AgentMessage.conversation_id == conversation_id,
+                      AgentMessage.id < current_message_id)
+              .order_by(AgentMessage.id.desc()).limit(12).all())
+    # Allow a retry after a failed item-removal turn, not arbitrary intervening
+    # conversation. Never skip a newer meal or let the model choose a target.
+    while len(recent) >= 2:
+        answer, source = recent[:2]
+        if (answer.role != "assistant" or source.role != "user"
+                or not isinstance(answer.meta, dict)
+                or answer.meta.get("client_turn_finalized") is not True):
+            return missing
+        outcome = answer.meta.get("turn_outcome") or {}
+        if (_removal_item(source.content) and isinstance(outcome, dict)
+                and outcome.get("status") in {"blocked", "failed", "error"}):
+            recent = recent[2:]
+            continue
+        break
+    if len(recent) < 2:
+        return missing
+    answer, source = recent[:2]
+    if not source.image_url:
+        return missing
+    cards = answer.meta.get("cards")
+    if not isinstance(cards, list) or len(cards) != 1 or not isinstance(cards[0], dict):
+        return missing
+    card = cards[0]
+    data = card.get("data")
+    if card.get("type") != "diet_draft" or not isinstance(data, dict):
+        return missing
+    token = data.get("photo_draft_token")
+    if not isinstance(token, str) or not 1 <= len(token) <= 64:
+        return missing
+    draft = (db.query(DietPhotoDraft).filter(
+        DietPhotoDraft.user_id == user_id, DietPhotoDraft.token == token,
+        DietPhotoDraft.source_message_id == source.id,
+        DietPhotoDraft.status == "consumed").first())
+    if draft is None or not draft.consumed_record_id or draft.created_at is None:
+        return missing
+    created_at = draft.created_at
+    if created_at.tzinfo is None:  # SQLite round-trips synthetic UTC timestamps.
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    if not timedelta(0) <= now - created_at <= timedelta(hours=24):
+        return missing
+    target = (db.query(DietRecord).filter(
+        DietRecord.id == draft.consumed_record_id, DietRecord.user_id == user_id).first())
+    if target is None:
+        return missing
+    parts = [p.strip() for p in re.split(r"[+＋·、，,;；\n]", target.food_items or "") if p.strip()]
+    matches = []
+    for index, part in enumerate(parts):
+        normalized = re.sub(r"\s+", "", part)
+        if normalized == food or (normalized.startswith(food)
+                and _PORTION_SUFFIX.fullmatch(normalized[len(food):])):
+            matches.append(index)
+    if len(matches) != 1 or len(parts) <= 1:
+        return _item_clarification("meal_item_ambiguous",
+            "无法唯一确认要去掉的食物及剩余内容；请在饮食编辑页核对，不会删除整餐。")
+    remaining = " + ".join(part for index, part in enumerate(parts) if index != matches[0])
+    fields = ("meal_type", "food_items", "calories", "protein", "carbs", "fat", "fiber")
+    action = build_diet_adjust_action(target.id, {key: getattr(target, key) for key in fields},
+                                      current_record=target)
+    seed = action["payload"]["patch"]["adjust_record"]
+    seed["proposed_food_items"] = remaining
+    meal_label = next((label for label, value in _MEALS.items() if value == target.meal_type), "这餐")
+    card = {"type": "record_quality", "data": format_card_numbers({
+        "domain": "diet", "title": f"{target.record_date} {meal_label}待修改",
+        "summary": f"准备去掉：{food}", "record_id": target.id,
+        "expanded_sections": ["adjust_record"], "adjust_record": seed,
+        "boundary": "尚未保存；确认后重新估算营养，只更新原记录，保留照片。",
+    }), "actions": [action]}
+    return {"status": "waiting_for_user", "reason": "meal_item_confirmation_required",
+            "cards": [card],
+            "reply": f"尚未修改。准备从这份{meal_label}中去掉{food}，保留：{remaining}。"
+                     "请核对下方食物和份量，点击保存后重新估算营养并更新原记录，不会删除整餐。"}
 
 
 def _signature(payload):
@@ -72,6 +190,9 @@ def _blocked(reason, detail):
 
 
 def build_correction_proposal(db, user_id, conversation_id, current_message_id, text, now, timezone_name):
+    item_proposal = _item_removal_proposal(db, user_id, conversation_id, current_message_id, text, now)
+    if item_proposal is not None:
+        return item_proposal
     match = _REQUEST.fullmatch(str(text or "").strip())
     if match is None:
         return None
