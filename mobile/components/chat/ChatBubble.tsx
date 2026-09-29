@@ -48,7 +48,7 @@ import { buildChatImageSource } from '../../utils/chatImageSource';
 import { saveChatImageToLibrary } from '../../services/chatImageSave';
 import { containsMarkdownTable } from '../../utils/markdownTables';
 import SafeTableMarkdown from '../shared/SafeTableMarkdown';
-import { splitHtmlTableContent } from '../../utils/safeHtmlTable';
+import { containsHtmlTableCandidate } from '../../utils/safeHtmlTable';
 import { normalizeAssistantContent } from '../../utils/assistantContentNormalizer';
 import { DietShareComposer } from '../diet/DietShareComposer';
 import { withDietShareLocation } from '../diet/dietShareLocation';
@@ -186,7 +186,7 @@ function ChatBubbleInner({
   );
   const assistantText = revaUiContent.text;
   const hasHtmlContent = useMemo(
-    () => splitHtmlTableContent(assistantText).some(part => part.kind === 'table' || part.kind === 'source'),
+    () => containsHtmlTableCandidate(assistantText),
     [assistantText],
   );
   const structuredSummary = useMemo(

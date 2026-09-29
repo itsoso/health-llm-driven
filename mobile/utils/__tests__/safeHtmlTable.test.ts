@@ -1,4 +1,5 @@
 import { parseSafeHtmlTable, splitHtmlTableContent } from '../safeHtmlTable';
+import { normalizeAssistantContent } from '../assistantContentNormalizer';
 
 const table = '<table border="1" style="width:100%"><thead><tr><th>日期</th><th>睡眠</th></tr></thead><tbody><tr><td>周一</td><td>7小时10分</td></tr></tbody></table>';
 
@@ -50,6 +51,22 @@ describe('safe HTML table projection (never an HTML interpreter)', () => {
 });
 
 describe('HTML table segmentation', () => {
+  it('does not promote indented HTML code into a preview during cleanup', () => {
+    const code = `    ${table}`;
+    const normalized = normalizeAssistantContent(code);
+    expect(normalized.text).toBe(code);
+    expect(splitHtmlTableContent(normalized.text).some(part => part.kind === 'table')).toBe(false);
+  });
+  it('keeps separate prose action fences inert in HTML-bearing messages', () => {
+    const actionSource = '```reva-ui\n{"v":1,"component":"diet_draft","actions":[{"id":"save","action":"diet_record.create","label":"保存"}]}\n```';
+    const result = normalizeAssistantContent(`${table}\n\n${actionSource}`);
+    expect(result.cards).toEqual([]);
+    expect(result.text).toContain(actionSource);
+    const prefixed = normalizeAssistantContent(`<function=read_data></function>\n${table}\n\n${actionSource}`);
+    expect(prefixed.cards).toEqual([]);
+    expect(prefixed.text).toContain(actionSource);
+    expect(prefixed.text).not.toContain('<function=');
+  });
   it('preserves mixed prose and supports fenced and raw tables', () => {
     const source = `前文\n\n\`\`\`HTML\n${table}\n\`\`\`\n后文\n${table}`;
     const parts = splitHtmlTableContent(source);

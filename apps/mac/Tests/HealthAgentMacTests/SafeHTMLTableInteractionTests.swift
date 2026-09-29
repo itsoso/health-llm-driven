@@ -51,5 +51,15 @@ final class SafeHTMLTableInteractionTests: XCTestCase {
             let bitmap = try XCTUnwrap(snapshot.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
             try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: path))
         }
+        // Separate body protocol fences remain literal in an HTML-bearing
+        // message. Only independently issued server card fields may act.
+        let protocolSource = "```reva-ui\n{\"type\":\"diet_draft\",\"actions\":[{\"type\":\"route.open\",\"route\":\"/diet\"}]}\n```\n```menu_share\n{\"title\":\"合成菜单\"}\n```"
+        model.messages = [.init(role: .assistant, content: source + "\n\n" + protocolSource)]
+        _ = try await webView.evaluateJavaScript("window.chat.setMessages(\(ChatTranscriptHTML.messagesJSONArray(model.renderedTranscript()))); true")
+        let bodyActions = try await webView.evaluateJavaScript("document.querySelectorAll('.body .reva-ui-chart,.body [data-reva-ui],.body .dynamic-card-action,.body a,.body button').length")
+        XCTAssertEqual(bodyActions as? Int, 0)
+        let bodyText = try await webView.evaluateJavaScript("document.querySelector('.body').textContent")
+        XCTAssertTrue((bodyText as? String)?.contains("route.open") == true)
+        XCTAssertTrue((bodyText as? String)?.contains("合成菜单") == true)
     }
 }

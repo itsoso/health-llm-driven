@@ -16,7 +16,7 @@ Engineering maintenance: show existing assistant HTML tables as readable tables 
 - Presentation attributes style/border/cellpadding/cellspacing/width/height/align/valign/class are discarded, not executed. No links, images, CSS, scripts, callbacks, native bridge actions, or network requests from table content.
 - Mobile uses native Text/View + horizontal ScrollView; Mac regenerates fixed table tags and escapes every cell. HTML parsing never inserts raw model markup into a WebView.
 - Successful previews offer a collapsed source disclosure. Unsupported/incomplete HTML remains literal source, including all content. Copy/storage remain original.
-- Message cleanup treats HTML as opaque before legacy artifact removal and GenUI extraction. HTML-bearing messages cannot generate legacy prose-derived action cards; separately structured server cards are unchanged.
+- Message cleanup treats HTML as opaque before legacy artifact removal and GenUI extraction. HTML-bearing messages cannot generate prose-derived action cards, including separate reva-ui/menu_share fences elsewhere in the message (these remain literal source). Only independently structured server message fields such as cardData/dynamicCard remain unchanged; a fence in message text is not such a field.
 - Backend, Web, Watch, API/schema/database, notifications and authentication unchanged. No new dependency or native module.
 
 ## Safety and AI boundary

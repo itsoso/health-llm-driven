@@ -94,10 +94,14 @@ public enum ChatTranscriptHTML {
     /// `<div class="reva-ui-chart" data-reva-ui="<base64 原始 JSON>">` 占位符承载,真正的
     /// 解析 + SVG 折线绘制由 WebView 的 JS shell 完成(离线、零外链)。围栏外 markdown 正常渲染。
     public static func renderMessageBody(markdown: String) -> String {
-        SafeHTMLTable.segments(from: markdown).map { segment in
+        let allowBodyProtocols = !SafeHTMLTable.containsHTMLCandidate(markdown)
+        return SafeHTMLTable.segments(from: markdown).map { segment in
             switch segment {
             case .markdown(let text):
-                return renderMessageBodyWithoutHTMLTables(markdown: text)
+                // HTML-bearing messages are display-only in their entirety,
+                // including legacy/emoji-prefixed body protocol fragments.
+                return allowBodyProtocols ? renderMessageBodyWithoutHTMLTables(markdown: text)
+                    : renderMarkdownBlocksHTML(text)
             case .source(let source), .code(let source):
                 return "<pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">\(escape(source))</pre>"
             case .table(let table, let source):

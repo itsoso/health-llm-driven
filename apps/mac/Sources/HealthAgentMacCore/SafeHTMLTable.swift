@@ -49,6 +49,7 @@ enum SafeHTMLTable {
     /// Fence scanning happens before Markdown parsing. Other-language fences are
     /// opaque, so an apparent raw table inside one cannot acquire preview status.
     static func segments(from source: String) -> [Segment] {
+        let allowBodyProtocols = !containsHTMLCandidate(source)
         let lines = source.components(separatedBy: "\n")
         var result: [Segment] = []
         var plain: [String] = []
@@ -61,7 +62,10 @@ enum SafeHTMLTable {
             plain = []
         }
         while i < lines.count {
-            if let fence = openingFence(lines[i]) {
+            let legacyProtocol = allowBodyProtocols ? nil : RevaUIBlock.fenceOpenInfo(lines[i])
+            let opaqueLegacyFence: Fence? = (legacyProtocol == "reva-ui" || legacyProtocol == "menu_share")
+                ? Fence(marker: "`", count: 3, language: legacyProtocol!) : nil
+            if let fence = openingFence(lines[i]) ?? opaqueLegacyFence {
                 var end = i + 1
                 while end < lines.count && !closesFence(lines[end], fence) { end += 1 }
                 let closed = end < lines.count
@@ -75,7 +79,7 @@ enum SafeHTMLTable {
                     } else {
                         result.append(.source(original))
                     }
-                } else if fence.language == "reva-ui" || fence.language == "menu_share" {
+                } else if allowBodyProtocols && (fence.language == "reva-ui" || fence.language == "menu_share") {
                     plain.append(original)
                 } else {
                     flush()

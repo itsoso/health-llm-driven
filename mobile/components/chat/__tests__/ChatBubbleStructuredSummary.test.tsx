@@ -204,6 +204,15 @@ describe('ChatBubble structured summary', () => {
     expect(view.getByText(source)).toBeTruthy();
   });
 
+  it('does not render separate prose action cards alongside an HTML preview', () => {
+    const table = '<table><tr><td>仅供查看</td></tr></table>';
+    const action = '```reva-ui\n{"v":1,"component":"diet_draft","actions":[{"id":"save","action":"diet_record.create","label":"保存"}]}\n```';
+    const view = renderBubble(`${table}\n\n${action}`);
+    expect(view.getByTestId('safe-html-table')).toBeTruthy();
+    expect(require('../cards').renderCard).not.toHaveBeenCalled();
+    expect(view.getByText(action)).toBeTruthy();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockToastShow.mockClear();
