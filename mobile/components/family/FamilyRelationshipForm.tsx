@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { FAMILY_RELATIONSHIPS, type FamilyMember } from '../../services/family';
 import type { ColorPalette } from '../../hooks/useTheme';
 import { radii, spacing } from '../../constants/theme';
@@ -56,7 +56,8 @@ export default function FamilyRelationshipForm({ visible, c, mode, member, onClo
     button: { padding: spacing.md, alignItems: 'center', borderRadius: radii.sm },
   });
   return <Modal visible={visible} animationType="slide" onRequestClose={() => { if (!pending) onClose(); }}>
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaProvider>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
         <Text style={styles.title}>{mode === 'accept' ? '加入家庭健康' : '设置关系与昵称'}</Text>
         {mode === 'accept' && <>
@@ -83,5 +84,6 @@ export default function FamilyRelationshipForm({ visible, c, mode, member, onClo
         <TouchableOpacity accessibilityRole="button" disabled={pending} onPress={onClose} style={styles.button}><Text style={styles.hint}>取消</Text></TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
+    </SafeAreaProvider>
   </Modal>;
 }

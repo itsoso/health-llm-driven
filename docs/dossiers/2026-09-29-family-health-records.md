@@ -30,7 +30,8 @@ Router: feature; primary product-pipeline; safety overlay; S5 harness implementa
 - G2: existing family models suffice, no schema migration; identity/consent checks required.
 - G3: implementation complete locally in Backend, Mobile and Web.
 - G4: focused verification and independent Backend/Mobile/Web safety review passed.
-  Full repository CI-mode integration gate has not been run.
+  Exact family revision ad12253a072a30022b6e25556222c0267efbe5b8 passed
+  full CI run 36579030329, including all backend shards and runtime PostgreSQL.
 - G5/G6: in progress. User explicitly authorized commit, push, merge, deployment,
   and authenticated family association on 2026-09-29.
 - Live relationship setup: pending authenticated owner/member flow. Existing API-key
@@ -76,38 +77,53 @@ provide tested isolation; this is not a claim of database row-level security.
   the recovery control is now visible during loading and errors. The new regression
   passed and independent review closed the finding with GO for the source changes.
 
-## Existing regression and release boundary
-A broader run including `test_agent_web_credential_relay.py` produced 24 failures
-and 47 passes. Its first failure, `test_web_cookie_reaches_internal_owned_batch`
-(cookie-only-stream), was reproduced on a separate untouched worktree at the same
-623407d6d baseline: current Pi agent execution does not match the old `_call_llm`
-mock and raises PiKernelError. This proves the representative failure predates this
-change; it does not independently establish the cause of every one of the 24 failures.
-Logs: `/tmp/reva-family-backend-tests.log`, `/tmp/reva-family-baseline-test.log`.
-The earlier broader gate was not green. Release verification installs the locked
-Pi Node runtime used by CI before repeating these tests; the old isolated test
-worktrees did not contain that dependency. Final cause awaits the rerun result.
+## Earlier environment failure and release boundary
+The earlier broader run failed in PiKernelError on both feature and baseline
+worktrees. Those worktrees lacked the locked Pi Node runtime; that reproduction
+was not evidence of a product regression. After installing the runtime (26 Node
+tests passed), the complete family/auth/Agent relay/integration PostgreSQL rerun
+passed: **95 tests**, 341.37 seconds, log `/tmp/reva-family-release-backend.log`.
+No backend workaround was needed.
 
-No iOS simulator acceptance, production request readback, deployment or OTA was
-performed. Real relationship setup must validate the parent's normal authenticated
-identity, create an invitation, accept in the existing child's authenticated account,
-then read back the relationship and original reports from the parent account. Never
-replace this with direct database grants, API-key bypass, a duplicate child profile,
-or copying health records. Private identity details are kept outside the repository.
+Local iOS simulator acceptance reached the family invitation form. It confirmed
+unchecked consent, disabled submission before consent, daughter/son choices and
+readonly/revocable sharing text. A real screenshot exposed modal content beneath
+the status bar. The follow-up gives each family native Modal its own safe-area
+provider; a red regression preceded the fix. A fresh bundle screenshot confirms
+the title and consent content now clear the status bar. Related Mobile tests now
+pass **20 tests / 5 suites**, along with full TypeScript and design checks.
+Log: `/tmp/reva-family-safe-area-final.log`.
+
+Production still serves the earlier backend contract. Consequently, invitation
+creation and shared report buttons in the local candidate fail closed until the
+backend is upgraded. This is not end-to-end acceptance of shared production data.
+No production grant, deployment or OTA was performed by this task. Actual linkage
+must use authenticated owner/member invitation acceptance and read back original
+reports; never direct database grants, duplicate profiles or copied records.
+Private identity details remain outside the repository.
 
 ## Continuation
 1. Authorization received. Release worktree rebased by applying the feature-only
    diff to origin/main 40d874f4dcefeead0a31b20975da762b3910e136, whose exact CI
    run 36575676539 passed. Generated both API client contracts.
-2. Meet full CI-mode and applicable release gates; resolve the existing Agent
-   regression as a separate scoped change rather than hiding the failed gate.
+2. Family exact-SHA CI is green. Preserve it in the coordinated security candidate
+   and require the final combined revision to pass its own applicable gates.
 3. Release Backend/Web and Mobile through their supported release paths, then
    verify the actual owner/member linkage and read-only reports in the app.
 
-## Release verification in progress
+## Coordinated release verification
 - Pi locked runtime install and its 26 Node tests passed.
 - Latest-base Mobile18 and Web9 focused tests plus both full TypeScript checks passed.
-- PostgreSQL family/auth/Agent relay/integration suite is running with the real Pi runtime.
+- PostgreSQL family/auth/Agent relay/integration: 95 passed with the real Pi runtime.
 - Production read-only inspection: clean source at 623407d6d; backend, Celery worker
   and beat active; local health reports API/database/Redis/Celery healthy.
 - No production mutation yet. Candidate release must pass its own exact-SHA CI.
+
+- Original family commit reached main through an existing HEAD-to-main push mapping;
+  it was a fast-forward, not a PR merge. Exact-SHA CI subsequently passed. Later
+  pushes must specify both source and destination refs explicitly.
+- Security release coordination owns the single production switch and trusted OTA.
+  This task will not bypass the historical native BLOCK, remove release markers,
+  or run the retired local OTA path. Actual family acceptance waits for the final
+  reviewed combined backend and mobile release.
+- Safe-area follow-up baseline: fad97c7d2942a35d2c2ef54524e10469d5fceaa9.

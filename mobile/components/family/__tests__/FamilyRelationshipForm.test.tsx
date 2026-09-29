@@ -1,4 +1,6 @@
 import React from 'react';
+import { Modal } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import FamilyRelationshipForm from '../FamilyRelationshipForm';
 import { colors } from '../../../constants/theme';
@@ -23,4 +25,11 @@ it('keeps errors visible without closing the form or pretending acceptance', asy
   fireEvent.press(screen.getByText('同意并加入'));
   expect(await screen.findByText('请求失败')).toBeTruthy();
   expect(close).not.toHaveBeenCalled();
+});
+
+it('measures safe area within the native modal so consent stays below the status bar', () => {
+  render(<FamilyRelationshipForm visible c={colors} mode="accept" onClose={jest.fn()} onSubmit={jest.fn()} />);
+  const modal = screen.UNSAFE_getByType(Modal);
+  const provider = modal.findByType(SafeAreaProvider);
+  expect(provider.findByType(SafeAreaView).props.edges).toEqual(['top', 'bottom']);
 });

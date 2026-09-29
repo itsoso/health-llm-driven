@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, RefreshControl, Alert, Modal, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -203,16 +203,19 @@ export default function FamilyScreen() {
         await refreshFamily();
       }} />
       <Modal visible={!!selectedMember && !!user} animationType="slide" onRequestClose={() => setSelectedMember(null)}>
-        <SafeAreaView style={styles.safe}>
+        <SafeAreaProvider>
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
           <View style={styles.header}>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="关闭健康记录" onPress={() => setSelectedMember(null)} style={styles.backBtn}><Ionicons name="chevron-back" size={26} color={c.labelPrimary} /></TouchableOpacity>
             <Text style={txt.title}>家人健康记录</Text>
           </View>
           {selectedMember && user && <FamilyHealthRecords key={`${user.id}-${selectedMember.user_id}`} viewerId={user.id} userId={selectedMember.user_id} c={c} />}
         </SafeAreaView>
+        </SafeAreaProvider>
       </Modal>
       <Modal visible={createVisible} animationType="slide" onRequestClose={() => { if (!creating) setCreateVisible(false); }}>
-        <SafeAreaView style={styles.safe}>
+        <SafeAreaProvider>
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
           <View style={styles.scroll}>
             <Text style={txt.title}>给你的家庭起个名</Text>
             <TextInput accessibilityLabel="家庭名称" maxLength={100} value={groupName} onChangeText={setGroupName} style={{ color: c.labelPrimary, backgroundColor: c.fill, padding: spacing.md, marginVertical: spacing.md }} />
@@ -220,6 +223,7 @@ export default function FamilyScreen() {
             <TouchableOpacity disabled={creating} onPress={() => setCreateVisible(false)} style={styles.actionBtn}><Text style={{ color: c.labelSecondary }}>取消</Text></TouchableOpacity>
           </View>
         </SafeAreaView>
+        </SafeAreaProvider>
       </Modal>
     </SafeAreaView>
   );

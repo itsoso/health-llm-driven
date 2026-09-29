@@ -1,7 +1,8 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, act } from '@testing-library/react-native';
-import { Alert } from 'react-native';
+import { Alert, Modal } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import FamilyScreen from '../family';
 import { fetchFamilyDashboard, fetchFamilyMemberHealth, leaveFamily } from '../../services/family';
 jest.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 7 } }) }));
@@ -19,6 +20,8 @@ it('opens the daughter card as read-only records and exposes owner relationship 
   fireEvent.press(await screen.findByLabelText('查看小禾的健康记录'));
   expect(await screen.findByText('测试成员（小禾）')).toBeTruthy();
   expect(fetchFamilyMemberHealth).toHaveBeenCalledWith(42);
+  const recordsModal = screen.UNSAFE_getAllByType(Modal).find(modal => modal.props.visible)!;
+  expect(recordsModal.findByType(SafeAreaProvider).findByType(SafeAreaView).props.edges).toEqual(['top', 'bottom']);
   fireEvent.press(screen.getByLabelText('关闭健康记录'));
   fireEvent.press(screen.getByText('设置关系与昵称'));
   expect(screen.getByText('这位家人是我的')).toBeTruthy();
@@ -50,4 +53,12 @@ it('lets an owner revoke sharing in a different household', async () => {
   await waitFor(() => expect(leaveFamily).toHaveBeenCalledWith(22));
   expect(screen.queryByLabelText('退出自己的家庭并停止共享')).toBeNull();
   alert.mockRestore();
+});
+
+it('measures the create-family modal independently of the screen safe area', async () => {
+  (fetchFamilyDashboard as jest.Mock).mockResolvedValue({ group_name: null, members: [] });
+  show();
+  fireEvent.press(await screen.findByText('创建并邀请'));
+  const createModal = screen.UNSAFE_getAllByType(Modal).find(modal => modal.props.visible)!;
+  expect(createModal.findByType(SafeAreaProvider).findByType(SafeAreaView).props.edges).toEqual(['top', 'bottom']);
 });
