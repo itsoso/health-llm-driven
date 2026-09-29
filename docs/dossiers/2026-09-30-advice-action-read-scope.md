@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G3 verification |
+| 当前阶段 | G4 passed; awaiting coordinated release |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -74,7 +74,34 @@ New entrypoint RED: 7 failures / 8 passes in `/tmp/reva-local-advice-red.log`,
 demonstrating unwanted provider/panel dispatch and missing ACK recovery path.
 The first GREEN attempt exposed a test-only event-shape assumption (progress
 frames do not have `event`); corrected to use the existing `.get` convention.
-Fresh verification and fixed-commit independent review pending.
+Fresh final-code verification:
+
+- Focused transport/scope/recovery: 206 passed, two PostgreSQL-only skips,
+  exit 0 (`/tmp/reva-local-advice-focused2.log`).
+- CI-mode integration plus canonical-route/claim tests: 88 passed, exit 0
+  (`/tmp/reva-local-advice-ci.log`).
+- Expanded capability/gateway/longitudinal/context/recovery: 6,480 passed,
+  14 conditional skips, exit 0 (`/tmp/reva-local-advice-broad.log`).
+- Live gate: invariants 12/12, core 50/50, orchestrator 5/5 average 0.98,
+  trajectory 12/12, goldens 9/9, exit 0 (`/tmp/reva-local-advice-live.log`).
+  Isolated in-memory test DB lacks usage-log tables, so quota/usage audit is
+  explicitly unverified by this run; production was not queried. New canonical
+  routes prove zero provider calls independently, not through that live eval.
+- System Map wrapper, dossier consistency, skill governance, secret scan and
+  diff checks passed. No new schema/endpoint/architecture node.
+- G4 GO: independent reviewer on fixed `50b42db154610d3b6a76374a3b5c2b2266b393be`,
+  independently 125 focused passes. Prior NO-GO examples cannot be promoted:
+  canonical output selection replaces semantic keyword validation.
+- Remote advanced to release-only `1ee419a27f15bda407dc124104cb44ab4cf6fd4b`,
+  exact CI run 36597403523 success; merged locally at `f58b8e65d`. Backend,
+  Mobile and Mac blobs remain identical to reviewed `50b42db15`.
+
+- Independent PostgreSQL 17.11 verification: 17 passed, zero skipped, exit 0
+  using the CI shard runner at fixed `f58b8e65d`; executor/test hashes unchanged
+  before/after. Proves owner isolation, canonical persistence/replay, failure
+  propagation and zero-model routing with real PostgreSQL. Evidence:
+  `/tmp/reva-pg-local-advice.8lGFL3/tests.log` and sibling hash/shutdown files.
+  Isolated server stopped cleanly; no production data accessed.
 
 No backend, OTA or desktop publication claimed. Existing HTML G4 does not
 substitute for review of backend behavior. Exact main CI and post-release
