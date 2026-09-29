@@ -161,6 +161,21 @@ logger = logging.getLogger(__name__)
 # Bound each SOAP field without truncating user-reported clinical meaning.
 _DOCTOR_FEEDBACK_FIELD_MAX_CHARS = 4000
 
+# Behavioral guidance only: never grants tool, clinical or persistence authority.
+# Keep this before optional context so compact retries cannot clip the boundary.
+_HEALTH_STATUS_INTENT_PROMPT = (
+    "## 健康近况与用药意图\n"
+    "先区分用户自述、咨询建议、请求修改。用户说好转/不需要药，且意图不明时，"
+    "只确认这是用户自述，再简短问是在告知近况，还是希望修改用药记录或提醒；"
+    "不要擅自检索无关病史、生成治疗方案或写入。好转不代表治愈，不等于可以停药。"
+    "例如：‘了解，你说现在感觉好些了。你是告诉我近况，还是想修改用药记录或提醒？’"
+    "仅需澄清意图时只用这两句结构，不追加疾病解释、治疗评价或用药建议，不声称记住/记下。"
+    "明确只告知近况时简短回应，不反复追问。明确咨询能否停药时回应问题、说明需核对处方/医嘱，"
+    "不代作停药决定；明确修改时走现有鉴权和确认流程，没有回执不声称完成。"
+    "急症或自伤风险优先处理，不能用近况澄清掩盖；保留相关历史和未完成的确认，"
+    "用户转述医嘱仍遵守临床来源护栏。历史猜测不是事实，‘只是更新近况’不是写入授权。"
+)
+
 _CLINICIAN_PROVENANCE_PROMPT_BLOCK = (
     "## 临床来源与写入边界（服务端护栏优先）",
     (
@@ -631,7 +646,7 @@ def _truncate_for_display(text: str) -> str:
     except Exception:  # noqa: BLE001 — 非 JSON / 解析失败 → 字符截断兜底
         pass
     return text[:3000] + "\n...(数据已截断)"
-COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
+COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760 + len(_HEALTH_STATUS_INTENT_PROMPT) + 1
 SAFETY_CARD_BOUNDARY = "这不是诊断；如出现急性不适或持续症状，请及时就医。"
 SAFETY_WARNING_MARKER = "\n\n⚠️ 安全提示:"
 
@@ -2734,6 +2749,7 @@ def _build_compact_empty_retry_messages(messages: List[Dict[str, Any]]) -> List[
         "你是用户的 AI 健康助理。请用中文直接回答本轮问题。",
         "必须基于已提供的健康上下文做判断；不要编造未给出的数据。",
         "输出应简洁、可执行；涉及诊断、治疗或用药时提醒咨询医生。",
+        _HEALTH_STATUS_INTENT_PROMPT,
     ]
     if sections:
         compact_system_parts.extend(["", "## 压缩上下文", "\n\n".join(sections)])
@@ -15052,8 +15068,10 @@ class AgentExecutor:
             # 2) 两路独立分析 (GPT-5.5 + Gemini, 并发, 不带工具)
             yield _progress("多模型·多方", "GPT-5.5、Gemini 3.1 Pro 正在各自分析…")
             persp_system = (
-                "你是资深健康分析师。基于给定的用户健康数据，独立、简洁地分析用户的问题"
-                "（300-600 字）。只用给定数据，不要编造；没有数据时给出审慎的一般性建议。"
+                "你是资深健康分析师。按用户本轮实际意图回应；明确要求分析时，"
+                "基于给定数据独立、简洁地分析（300-600 字），不要编造。"
+                "告知或澄清场景只需简短回应，不因缺少数据自动扩展健康建议。\n"
+                + _HEALTH_STATUS_INTENT_PROMPT
             )
             persp_user = (
                 f"{turn_time_context}\n\n用户问题：{message}\n\n已查到的用户健康数据：\n"
@@ -15098,7 +15116,11 @@ class AgentExecutor:
             yield _progress("多模型·综合", "综合三方观点…")
             analyses = [("Claude Opus 4.7", lead_text), ("GPT-5.5", gpt_text), ("Gemini 3.1 Pro", gemini_text)]
             synth_messages = [
-                {"role": "system", "content": "你是健康分析综合专家，把多个模型的分析整合成一份清晰、专业、可执行的中文报告。"},
+                {"role": "system", "content": (
+                    "你是健康分析综合专家，按用户本轮实际意图整合各模型观点；"
+                    "仅在用户要求分析时生成报告，模型观点不等于事实或操作回执。\n"
+                    + _HEALTH_STATUS_INTENT_PROMPT
+                )},
                 {"role": "user", "content": _build_multi_model_synthesis_prompt(message, analyses)},
             ]
             if panel_synthesis_messages is not None:
@@ -21296,6 +21318,8 @@ class AgentExecutor:
             "3. 基于返回的数据进行分析和推理",
             "4. 按本轮任务给出简短确认、查询结果或有据可依的建议",
             "5. 复合意图时在一次对话中同时处理（如'记一下吃了鱼油，看看对基因有什么影响' → 先记录后查询）",
+            "",
+            _HEALTH_STATUS_INTENT_PROMPT,
             "",
             *_CLINICIAN_PROVENANCE_PROMPT_BLOCK,
             "",
