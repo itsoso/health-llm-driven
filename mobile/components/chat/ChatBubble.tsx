@@ -11,7 +11,6 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { setAudioModeAsync } from 'expo-audio';
-import Markdown from 'react-native-markdown-display';
 import { getCardActionRuntimeGroupKey, getCardActionRuntimeKey, renderCard } from './cards';
 import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { ColorPalette } from '../../hooks/useTheme';
@@ -47,8 +46,9 @@ import {
 import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
 import { saveChatImageToLibrary } from '../../services/chatImageSave';
-import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
-import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
+import { containsMarkdownTable } from '../../utils/markdownTables';
+import SafeTableMarkdown from '../shared/SafeTableMarkdown';
+import { splitHtmlTableContent } from '../../utils/safeHtmlTable';
 import { normalizeAssistantContent } from '../../utils/assistantContentNormalizer';
 import { DietShareComposer } from '../diet/DietShareComposer';
 import { withDietShareLocation } from '../diet/dietShareLocation';
@@ -185,9 +185,13 @@ function ChatBubbleInner({
     [revaUiContent.cards],
   );
   const assistantText = revaUiContent.text;
+  const hasHtmlContent = useMemo(
+    () => splitHtmlTableContent(assistantText).some(part => part.kind === 'table' || part.kind === 'source'),
+    [assistantText],
+  );
   const structuredSummary = useMemo(
-    () => (!isUser && !item.streaming ? parseStructuredHealthSummary(assistantText) : null),
-    [assistantText, isUser, item.streaming],
+    () => (!isUser && !item.streaming && !hasHtmlContent ? parseStructuredHealthSummary(assistantText) : null),
+    [assistantText, hasHtmlContent, isUser, item.streaming],
   );
   const visibleMarkdown = useMemo(
     () => (structuredSummary ? stripStructuredHealthSummary(assistantText) : assistantText),
@@ -197,12 +201,13 @@ function ChatBubbleInner({
     () => (
       !isUser
       && !item.streaming
+      && !hasHtmlContent
       && item.completionStatus !== 'interrupted'
       && item.completionStatus !== 'error'
         ? parseAdvisorPresentation(visibleMarkdown)
         : null
     ),
-    [isUser, item.completionStatus, item.streaming, visibleMarkdown],
+    [hasHtmlContent, isUser, item.completionStatus, item.streaming, visibleMarkdown],
   );
   const thinkingSteps = useMemo(
     () => (!isUser && Array.isArray(item.thinkingSteps)
@@ -237,10 +242,6 @@ function ChatBubbleInner({
     && item.completionStatus !== 'interrupted'
     && item.completionStatus !== 'error';
   const messageExportActionsEnabled = isUser || assistantCompletionActionsEnabled;
-  const renderedMarkdown = useMemo(
-    () => preprocessMarkdownTables(visibleAssistantMarkdown),
-    [visibleAssistantMarkdown],
-  );
   const images = item.imageUris;
   const transparency = useMemo(
     () => buildAgentTransparency({
@@ -1271,7 +1272,7 @@ function ChatBubbleInner({
             ) : null}
             {visibleAssistantMarkdown ? (
               <View onLayout={() => reportContentPaint('text')}>
-                <SafeMarkdown content={renderedMarkdown} fallbackText={visibleAssistantMarkdown} />
+                <SafeMarkdown content={visibleAssistantMarkdown} fallbackText={visibleAssistantMarkdown} allowHtmlTables={!item.streaming} />
               </View>
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
@@ -1997,11 +1998,10 @@ class MarkdownRenderBoundary extends React.Component<
   }
 }
 
-function SafeMarkdown({ content, fallbackText }: { content: string; fallbackText: string }) {
-  const safeContent = prepareSafeMarkdown(content);
+function SafeMarkdown({ content, fallbackText, allowHtmlTables }: { content: string; fallbackText: string; allowHtmlTables: boolean }) {
   return (
     <MarkdownRenderBoundary resetKey={content} fallbackText={fallbackText}>
-      <Markdown style={MD_STYLES} markdownit={safeMarkdownIt}>{safeContent}</Markdown>
+      <SafeTableMarkdown content={content} style={MD_STYLES} allowHtmlTables={allowHtmlTables} />
     </MarkdownRenderBoundary>
   );
 }

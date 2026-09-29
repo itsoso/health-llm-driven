@@ -12,8 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import Markdown from 'react-native-markdown-display';
-import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
+import SafeTableMarkdown from '../shared/SafeTableMarkdown';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import { renderCard } from '../chat/cards';
 import { revaColors as C, revaRadii, revaShadows } from '../../constants/revaTheme';
@@ -58,7 +57,7 @@ function RevaBubble({ message }: { message: UIMessage }) {
         accessibilityLabel={`AI: ${normalized.text || (normalized.cards.length > 0 ? '图表卡片' : '')}`}
       >
         {normalized.text ? (
-          <Markdown style={mdStyles} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(normalized.text)}</Markdown>
+          <SafeTableMarkdown content={normalized.text} style={mdStyles} allowHtmlTables={!message.streaming} />
         ) : normalized.cards.length === 0 ? (
           <ActivityIndicator size="small" color={C.green500} />
         ) : null}
