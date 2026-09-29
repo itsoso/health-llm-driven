@@ -303,6 +303,27 @@ def _refresh_record_quality_edits(db: Session, metas: list, owner_id: int) -> No
                 changed = not isinstance(old_seed, dict) or any(
                     old_seed.get(field) != seed[field] for field in fields
                 )
+                if isinstance(old_seed, dict) and "proposed_food_items" in old_seed:
+                    proposed = old_seed["proposed_food_items"]
+                    if (changed or "updated_at" not in old_seed
+                            or old_seed["updated_at"] != seed["updated_at"]
+                            or old_seed.get("record_id") != record.id
+                            or not isinstance(proposed, str) or not proposed.strip()):
+                        card["data"] = {"domain": "diet", "title": "修改提案已失效",
+                            "summary": "原记录已变化或提案无法核验；尚未应用此修改，请重新发起修正。"}
+                        card["actions"] = []
+                        continue
+                    # Preserve pending intent only against the same owned
+                    # revision. Never silently rebase it onto newer food.
+                    seed["proposed_food_items"] = proposed
+                    data["adjust_record"] = seed
+                    for action in card.get("actions") or []:
+                        payload = action.get("payload") if isinstance(action, dict) else None
+                        if (isinstance(payload, dict) and action.get("action") == "ui.inline.expand"
+                                and payload.get("target") == "adjust_record"):
+                            payload["patch"] = {"expanded_sections": ["adjust_record"],
+                                                "adjust_record": deepcopy(seed)}
+                    continue
                 data.update(seed)
                 data["adjust_record"] = seed
                 meal = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}.get(record.meal_type, "饮食")

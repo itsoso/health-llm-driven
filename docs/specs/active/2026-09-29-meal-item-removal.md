@@ -18,7 +18,8 @@ never a whole-meal deletion or a new meal. Verification is immediate.
 
 Closed original-utterance item-removal requests enter a deterministic proposal
 before model tools. Resolve the most recent meal card in a bounded conversation
-window through its owner-scoped consumed photo draft and original user message.
+window through its owner-scoped consumed photo draft and original user message,
+or the unique attached food asset left by confirmed REST save after draft deletion.
 Card/model IDs alone never grant authority. Require a fresh source and current
 record owned by the authenticated user. Failed intervening turns may be skipped;
 a newer unrelated turn or unsupported meal target must not select an older meal.
@@ -30,6 +31,9 @@ The existing record_quality adjust_record card carries proposed_food_items and
 current revision. Existing Mobile UI, recalculate and compare-and-swap save remain
 authoritative. No schema/API change, new permissions, native code or generic
 read-policy relaxation. No live user records are modified by deployment.
+History delivery preserves a pending proposal only against the same owned record
+snapshot and revision; changed or unverifiable proposals become explicitly
+unavailable with no edit action. Command snapshots retain original precision.
 
 ## Safety / non-goals
 

@@ -43,3 +43,24 @@ save continues through the existing recalculation API; no automatic data patch.
 
 Run trace: `docs/_generated/harness-runs/e9fb0553133c.jsonl`.
 Clean integration, PostgreSQL, G4 independent review, CI and release still pending.
+
+## G4 feedback / correction
+
+Initial fixed candidate `5769819d18587b751bd38c3a20cb263041582e3e` was NO-GO:
+read-only production structural checks found the normal REST save had removed
+the draft while retaining the owner/source-bound attached photo asset. The
+independent reviewer also reproduced history delivery dropping the pending
+food proposal. Neither initial candidate was pushed nor deployed.
+
+Added authoritative unique attached-asset resolution when no owned draft exists;
+existing invalid/pending drafts still fail closed. Owner, source, lifecycle,
+classification, deletion, freshness, uniqueness and target-owner checks remain.
+Delivery now retains a proposal only for an unchanged owned revision/snapshot;
+otherwise it explicitly invalidates it and removes actions. Numeric command
+snapshots keep full precision. No data writes occur during projection.
+
+Second RED: 5 failed / 41 passed; first lifecycle GREEN: 237 passed. Added actual
+REST photo confirmation -> draft deletion -> source-bound proposal -> delivery
+coverage. Initial frozen clean CI-mode was 1,288 passed / one PG-only skip;
+initial independent PG was 92 passed, zero skips, isolated PG17.11 clean stop.
+These initial results do not substitute final-candidate verification/re-review.

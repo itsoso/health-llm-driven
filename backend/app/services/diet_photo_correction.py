@@ -101,18 +101,34 @@ def _item_removal_proposal(db, user_id, conversation_id, current_message_id, tex
     if not isinstance(token, str) or not 1 <= len(token) <= 64:
         return missing
     draft = (db.query(DietPhotoDraft).filter(
-        DietPhotoDraft.user_id == user_id, DietPhotoDraft.token == token,
-        DietPhotoDraft.source_message_id == source.id,
-        DietPhotoDraft.status == "consumed").first())
-    if draft is None or not draft.consumed_record_id or draft.created_at is None:
+        DietPhotoDraft.user_id == user_id, DietPhotoDraft.token == token).first())
+    if draft is not None:
+        if (draft.source_message_id != source.id or draft.status != "consumed"
+                or not draft.consumed_record_id):
+            return missing
+        target_id, created_at = draft.consumed_record_id, draft.created_at
+    else:
+        # Confirming a photo through REST deletes its short-lived draft. The
+        # surviving private asset is authoritative, not the stale card token.
+        assets = db.query(DietPhotoAsset).filter(
+            DietPhotoAsset.user_id == user_id,
+            DietPhotoAsset.origin_message_id == source.id).limit(2).all()
+        if len(assets) != 1:
+            return missing
+        asset = assets[0]
+        if (asset.lifecycle != "attached" or asset.deleted_at is not None
+                or asset.classification != "food" or asset.photo_draft_token is not None
+                or not asset.diet_record_id):
+            return missing
+        target_id, created_at = asset.diet_record_id, asset.created_at
+    if created_at is None:
         return missing
-    created_at = draft.created_at
     if created_at.tzinfo is None:  # SQLite round-trips synthetic UTC timestamps.
         created_at = created_at.replace(tzinfo=timezone.utc)
     if not timedelta(0) <= now - created_at <= timedelta(hours=24):
         return missing
     target = (db.query(DietRecord).filter(
-        DietRecord.id == draft.consumed_record_id, DietRecord.user_id == user_id).first())
+        DietRecord.id == target_id, DietRecord.user_id == user_id).first())
     if target is None:
         return missing
     parts = [p.strip() for p in re.split(r"[+＋·、，,;；\n]", target.food_items or "") if p.strip()]
@@ -138,6 +154,8 @@ def _item_removal_proposal(db, user_id, conversation_id, current_message_id, tex
         "expanded_sections": ["adjust_record"], "adjust_record": seed,
         "boundary": "尚未保存；确认后重新估算营养，只更新原记录，保留照片。",
     }), "actions": [action]}
+    # This is a revision/command snapshot, not a display-only metric.
+    card["data"]["adjust_record"] = dict(seed)
     return {"status": "waiting_for_user", "reason": "meal_item_confirmation_required",
             "cards": [card],
             "reply": f"尚未修改。准备从这份{meal_label}中去掉{food}，保留：{remaining}。"

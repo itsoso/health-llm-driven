@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.models.agent_conversation import AgentConversation, AgentMessage
-from app.models.daily_health import DietPhotoDraft, DietRecord
+from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord
 from app.services.diet_photo_correction import build_correction_proposal
 
 NOW = datetime(2031, 4, 4, 5, tzinfo=timezone.utc)
@@ -22,7 +22,7 @@ def item_context(db, auth_user_and_headers):
     target = DietRecord(user_id=user.id, record_date=NOW.date(), meal_type="breakfast",
                         food_items="包子 1个 + 玉米 约半根 + 鸡蛋 1个", calories=500)
     db.add(target); db.flush()
-    draft = DietPhotoDraft(token="synthetic-meal-draft", user_id=user.id,
+    draft = DietPhotoDraft(token="synthetic-meal-draft-00001", user_id=user.id,
         source_message_id=source.id, image_type="jpeg", recognition_result={},
         status="consumed", consumed_record_id=target.id, consumed_at=NOW,
         created_at=NOW, expires_at=NOW + timedelta(hours=1))
@@ -183,3 +183,107 @@ async def test_real_stream_removal_skips_model_and_persists_confirmation(db, ite
     assert saved.meta["cards"][0]["data"]["adjust_record"]["proposed_food_items"] == "包子 1个 + 鸡蛋 1个"
     db.refresh(target)
     assert target.calories == 500 and "玉米" in target.food_items
+
+
+def attached_source(db, ctx):
+    asset = DietPhotoAsset(id="synthetic-attached", user_id=ctx[0].id,
+        diet_record_id=ctx[5].id, origin_message_id=ctx[2].id,
+        storage_key=f"/api/v1/upload/files/diet/{ctx[0].id}/synthetic.jpg",
+        content_sha256="a" * 64, media_type="image/jpeg", origin="agent",
+        classification="food", intent_decision="confirm", lifecycle="attached",
+        created_at=NOW, attached_at=NOW)
+    db.delete(ctx[6]); db.add(asset); db.flush()
+    return asset
+
+
+def test_saved_photo_survives_draft_deletion(db, item_context):
+    attached_source(db, item_context)
+    result = propose(db, item_context)
+    assert result["cards"][0]["data"]["adjust_record"]["proposed_food_items"] == "包子 1个 + 鸡蛋 1个"
+    assert "玉米" in item_context[5].food_items
+
+
+def test_real_photo_confirmation_then_delivered_removal(client, db, item_context, auth_user_and_headers, monkeypatch):
+    from contextlib import contextmanager
+    from app.services.contextual_meal_photo_service import ContextualMealPhotoService
+    from app.services.dynamic_card_persistence import message_metas_for_delivery
+    user, _, source, _, _, _, draft = item_context
+    draft.status = "pending"; draft.consumed_record_id = None; draft.consumed_at = None
+    db.flush()
+    asset = DietPhotoAsset(id="synthetic-rest-save", user_id=user.id,
+        photo_draft_token=draft.token, origin_message_id=source.id,
+        storage_key=f"/api/v1/upload/files/diet/{user.id}/synthetic.jpg",
+        content_sha256="c" * 64, media_type="image/jpeg", origin="chat",
+        classification="food", intent_decision="confirm", lifecycle="pending", created_at=NOW)
+    db.add(asset); db.commit()
+    @contextmanager
+    def capture_lock(*_args):
+        yield
+    monkeypatch.setattr(ContextualMealPhotoService, "_capture_session_lock", capture_lock)
+    saved = client.post("/api/v1/diet/records", headers={**auth_user_and_headers[1],
+        "Idempotency-Key": "synthetic-photo-save-lifecycle"}, json={
+        "record_date": NOW.date().isoformat(), "meal_type": "breakfast",
+        "food_items": "包子 1个 + 玉米 约半根 + 鸡蛋 1个", "calories": 500,
+        "photo_draft_token": draft.token})
+    assert saved.status_code == 200, saved.text
+    assert db.query(DietPhotoDraft).count() == 0
+    proposal = propose(db, item_context)
+    delivered = message_metas_for_delivery(db, [{"cards": proposal["cards"]}], user.id)
+    seed = delivered[0]["cards"][0]["data"]["adjust_record"]
+    assert seed["record_id"] == saved.json()["id"]
+    assert seed["proposed_food_items"] == "包子 1个 + 鸡蛋 1个"
+
+
+@pytest.mark.parametrize("damage", ["source", "pending", "deleted", "non_food", "old", "future", "multiple", "foreign_owner", "foreign_record"])
+def test_attached_source_requires_unique_owned_live_binding(db, item_context, damage):
+    asset = attached_source(db, item_context)
+    if damage == "source": asset.origin_message_id = item_context[4].id
+    elif damage == "pending": asset.lifecycle = "pending"
+    elif damage == "deleted": asset.deleted_at = NOW
+    elif damage == "non_food": asset.classification = "non_food"
+    elif damage == "old": asset.created_at = NOW - timedelta(days=2)
+    elif damage == "future": asset.created_at = NOW + timedelta(minutes=1)
+    elif damage == "multiple":
+        db.add(DietPhotoAsset(id="synthetic-second", user_id=asset.user_id,
+            diet_record_id=asset.diet_record_id, origin_message_id=asset.origin_message_id,
+            ordinal=1, storage_key=asset.storage_key, content_sha256="b"*64,
+            media_type="image/jpeg", origin="agent", classification="food",
+            intent_decision="confirm", lifecycle="attached", created_at=NOW))
+    else:
+        from tests.conftest import create_authenticated_user
+        other, _ = create_authenticated_user(db)
+        if damage == "foreign_owner": asset.user_id = other.id
+        else: item_context[5].user_id = other.id
+    db.flush()
+    assert not propose(db, item_context)["cards"]
+
+
+@pytest.mark.parametrize("change", [None, "food_items", "revision", "missing_revision", "foreign_owner"])
+def test_proposal_delivery_preserves_or_explicitly_invalidates(db, item_context, change):
+    from copy import deepcopy
+    from app.services.dynamic_card_persistence import message_metas_for_delivery
+    record = item_context[5]
+    record.calories = 500.123456
+    db.flush()
+    proposal = propose(db, item_context)
+    raw = {"cards": proposal["cards"]}
+    if change == "missing_revision": raw["cards"][0]["data"]["adjust_record"].pop("updated_at")
+    original = deepcopy(raw)
+    if change == "food_items": record.food_items = "新的早餐"
+    elif change == "revision": record.updated_at = NOW + timedelta(minutes=1)
+    owner = item_context[0].id
+    if change == "foreign_owner":
+        from tests.conftest import create_authenticated_user
+        other, _ = create_authenticated_user(db); owner = other.id
+    db.flush()
+    delivered = message_metas_for_delivery(db, [raw], owner)[0]["cards"][0]
+    if change is None:
+        seed = delivered["data"]["adjust_record"]
+        assert seed["proposed_food_items"] == "包子 1个 + 鸡蛋 1个"
+        assert seed["calories"] == 500.123456
+        assert delivered["actions"][0]["payload"]["patch"]["adjust_record"] == seed
+        assert "待修改" in delivered["data"]["title"]
+    else:
+        assert "adjust_record" not in delivered["data"] and delivered["actions"] == []
+        assert "不可用" in delivered["data"]["title"] or "失效" in delivered["data"]["title"]
+    assert raw == original
