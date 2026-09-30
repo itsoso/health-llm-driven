@@ -29,25 +29,31 @@ def is_below_range(value, reference_range) -> Optional[bool]:
     return None  # 不可解析(如 "<X"、纯文字) → 交调用方保守兜底,不静默当正常
 
 
-# 分析物 → (子串关键词, 排除词, 整名精确匹配)。只匹配 item_name,全部小写。
-# 排除词防分析物混淆:尿镁≠血清镁;1,25-(OH)₂D / 维生素D结合蛋白 ≠ 25-OH-D(营养状态指标)。
-# "mg" 只做整名匹配,避免误中 IgM 等含 mg 子串的项。
+# 分析物 → (归一化关键词, 排除词, 独立 token 正则)。只匹配 item_name。
+# 排除词在原始小写名上先判(保留 "1,25" / "(oh)2" 等标点语义),防分析物混淆:
+#   尿镁≠血清镁;1,25-(OH)₂D / 维生素D结合蛋白 ≠ 25-OH-D(营养状态指标)。
+# 关键词在去掉空格与 -_()[].,，（）【】 后的名上匹配,覆盖 25-OHD / 25(OH)VD / VITAMIN_D 等写法。
+# "mg" 只认独立 token(前后非字母、后不接 "/"),避免误中 IgM 或单位 mg/dL。
 MAGNESIUM_ANALYTE = (
-    ["血清镁", "血镁", "镁离子", "镁", "magnesium"],
+    ["镁", "magnesium"],
     ["尿", "urine", "urinary"],
-    {"mg", "mg2+", "mg++", "mg²⁺"},
+    re.compile(r"(?<![a-z])mg(?![a-z/])"),
 )
 VITAMIN_D_25OH_ANALYTE = (
-    ["25-oh-d", "25-oh-vd", "25(oh)d", "25羟", "25-羟", "维生素d", "维生素 d",
-     "vitd", "vit d", "vitamin d", "25-hydroxy"],
+    ["25ohd", "25ohvd", "25羟", "25hydroxy", "vitd", "vitamind", "维生素d", "维d"],
     ["1,25", "1，25", "二羟", "dihydroxy", "(oh)2", "结合蛋白", "binding"],
-    set(),
+    None,
 )
+
+_NAME_NOISE = re.compile(r"[\s\-_()\[\].,，（）【】]")
 
 
 def matches_analyte(item_name, analyte) -> bool:
-    keywords, excludes, exact = analyte
-    name = (item_name or "").strip().lower()
-    if not name or any(ex in name for ex in excludes):
+    keywords, excludes, token_re = analyte
+    raw = (item_name or "").strip().lower()
+    if not raw or any(ex in raw for ex in excludes):
         return False
-    return name in exact or any(k in name for k in keywords)
+    norm = _NAME_NOISE.sub("", raw)
+    if any(k in norm for k in keywords):
+        return True
+    return bool(token_re and token_re.search(raw))

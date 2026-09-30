@@ -139,7 +139,10 @@ def test_vdr_gene_without_vd_lab_still_recommends():
 
 # ─────────── 别名 / 分析物混淆 (safety-gate 复审阻断项) ───────────
 
-@pytest.mark.parametrize("name", ["25-OH-VD", "VitD", "25(OH)D", "Vitamin D", "25-羟基维生素D"])
+@pytest.mark.parametrize("name", [
+    "25-OH-VD", "VitD", "25(OH)D", "Vitamin D", "25-羟基维生素D",
+    "25-OHD", "25OHD", "25-OH D", "维D", "VITAMIN_D", "25(OH)VD", "Vitamin D, 25-Hydroxy",
+])
 def test_high_vitamin_d_alias_overrides_vdr_gene(name):
     f = SupplementAdvisorSpecialist().run(
         _twin([{"item_name": name, "value": 160, "reference_range": "30-100"}], vdr=True), {}
@@ -148,7 +151,7 @@ def test_high_vitamin_d_alias_overrides_vdr_gene(name):
     assert "vdr_vitamin_k2" not in _rec_ids(f)
 
 
-@pytest.mark.parametrize("name", ["Mg", "mg", "Serum Magnesium"])
+@pytest.mark.parametrize("name", ["Mg", "mg", "Serum Magnesium", "Serum Mg", "MG-血清", "Mg-S", "镁(Mg)"])
 def test_high_magnesium_alias_overrides_sleep_complaint(name):
     f = SupplementAdvisorSpecialist().run(
         _twin(
@@ -160,7 +163,9 @@ def test_high_magnesium_alias_overrides_sleep_complaint(name):
     assert "magnesium_sleep" not in _rec_ids(f)
 
 
-@pytest.mark.parametrize("name", ["1,25-二羟维生素D3", "1,25-(OH)2D", "维生素D结合蛋白"])
+@pytest.mark.parametrize("name", [
+    "1,25-二羟维生素D3", "1,25-(OH)2D", "维生素D结合蛋白", "维D结合蛋白", "1α,25-二羟维生素D",
+])
 def test_low_non_25oh_vitamin_d_analyte_does_not_recommend(name):
     f = SupplementAdvisorSpecialist().run(
         _twin([{"item_name": name, "value": 10, "reference_range": "19.6-54.3"}]), {}
@@ -183,6 +188,15 @@ def test_mg_substring_does_not_match_unrelated_item():
             [{"item_name": "IgM", "value": 5, "reference_range": "0.4-2.3"}],
             sleep_complaint=True,
         ),
+        {},
+    )
+    assert "magnesium_sleep" in _rec_ids(f)
+
+
+@pytest.mark.parametrize("name", ["血糖(mg/dL)", "IgM"])
+def test_mg_unit_or_substring_not_treated_as_magnesium(name):
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": name, "value": 500, "reference_range": "3.9-6.1"}], sleep_complaint=True),
         {},
     )
     assert "magnesium_sleep" in _rec_ids(f)
