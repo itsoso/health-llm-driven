@@ -23,3 +23,6 @@ b79 CI 36660647091 的在线审计阻断 PyJWT 2.13.0 及 Mobile 构建依赖的
 依据：[PyJWT 公告](https://github.com/jpadilla/pyjwt/security/advisories/GHSA-9v7f-9g4p-ffgj)、
 [brace-expansion 公告](https://github.com/advisories/GHSA-qhr7-859c-m2p7)、
 [joi 公告](https://github.com/advisories/GHSA-6h2x-m376-mqjq)。
+
+同类 parser 补丁同步覆盖隔离发布工具的锁文件，并更新既有精确版本契约。
+保留各消费者原主版本，下载地址和 SRI 绑定官方 npm registry。
