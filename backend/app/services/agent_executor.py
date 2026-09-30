@@ -42,6 +42,8 @@ from app.services.tool_schema_registry import (
 )
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
+from app.services.llm.acute_vitals import acute_vital_reading
+from app.services.agent_post_write_safety import missing_post_write_safety_text
 from app.services.health_query_dimensions import normalize_health_query_args
 from app.services.crisis_lexicon import contains_crisis_language, with_crisis_support
 from app.services.workday_microbreak_safety import contains_acute_symptom_language
@@ -11199,6 +11201,10 @@ def _is_fast_eligible_turn(
         return False
     if is_daily_summary_request(message):
         return False
+    # 急性生命体征数值地板: 「记一下血压185/115」是写意图, 下方写分支不走风险分类,
+    # 故在此确定性拦截 —— 急性读数整轮留质量模型 + 完整 prompt。
+    if acute_vital_reading(message):
+        return False
     intent = classify_agent_utterance(message)
     if intent.primary == "advice":
         return False
@@ -12012,6 +12018,8 @@ class AgentExecutor:
         self._decision_route = None
         self._staged_answer_task_tier: Optional[str] = None
         self._staged_answer_model_selected = False
+        # Post-write SafetyGuardian notices this turn; guaranteed into the final text.
+        self._turn_post_write_safety_notices: list[str] = []
         self._staged_answer_would_model_id: Optional[str] = None
         self._recovery_data_guard_decision: Optional[RecoveryDataGuardDecision] = None
         self._recovery_data_guard_model_escalated = False
@@ -16516,6 +16524,7 @@ class AgentExecutor:
         self._turn_evidence_card = _TURN_CARD_UNSET
         self._turn_evidence_card_key = None
         self._turn_twin_write_occurred = False
+        self._turn_post_write_safety_notices = []
         self._model_fallback_reasons = []
         self._tool_model_names = []
         self._dead_provider_model_ids = set()
@@ -17869,14 +17878,19 @@ class AgentExecutor:
                             if card
                         ]
                         result += f"\n\n⚠️ 安全提示: {alert_msgs}"
+                        self._turn_post_write_safety_notices.append(
+                            f"⚠️ 安全提示: {alert_msgs}"
+                        )
                 except Exception as e:
                     # 安全筛查是记录后的确定性护栏 —— 它抛错绝不能静默"已记录"放行
                     # (否则刚记的血压危象/卒中症状零告警)。fail-loud:ERROR + 兜底提醒。
                     logger.error("Safety check after write failed: %s", e, exc_info=True)
-                    result += (
-                        "\n\n⚠️ 安全提示: 记录已保存,但自动安全筛查暂未完成。"
+                    _safety_unavailable = (
+                        "⚠️ 安全提示: 记录已保存,但自动安全筛查暂未完成。"
                         "如你此刻有明显不适、或刚记录的数值明显异常,请及时就医。"
                     )
+                    result += f"\n\n{_safety_unavailable}"
+                    self._turn_post_write_safety_notices.append(_safety_unavailable)
             if write_fingerprint and not replayed_write:
                 write_results_by_fingerprint[write_fingerprint] = (
                     result,
@@ -19569,6 +19583,16 @@ class AgentExecutor:
                 first_token_at = time.time()
             for i in range(0, len(release_text), 24):
                 yield {"event": "token", "data": {"content": release_text[i:i + 24]}}
+        # 加层不减层: 写后 SafetyGuardian 提示只挂在工具结果上; 质量模型合成时可能改写/漏掉。
+        # 模型未复述的提示在此确定性补进正文(卡片之外, 老客户端只看文本)。
+        safety_chunk = missing_post_write_safety_text(
+            full_reply, self._turn_post_write_safety_notices,
+        )
+        if safety_chunk:
+            if full_reply.strip():
+                safety_chunk = f"\n\n{safety_chunk}"
+            full_reply += safety_chunk
+            yield {"event": "token", "data": {"content": safety_chunk}}
         ai_msg = svc.save_message(
             conv.id,
             "assistant",
