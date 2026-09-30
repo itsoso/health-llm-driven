@@ -467,7 +467,7 @@ class PushService:
                                 故行为零变化; 若将来有调用方真需要长抑制的 critical,
                                 得在这里给它开显式豁免, 别默默依赖 min()。
             log_delivery: 是否新写 NotificationLog. flush delayed push 时为 False,
-                          由原 delayed row 承接 sent/failed 状态, 避免重复展示。
+                          由原 delayed row 承接 sent/failed/再延迟 状态, 避免重复展示。
 
         Returns:
             发送结果 {"success": bool, "channels": {...}}
@@ -598,15 +598,18 @@ class PushService:
                     "reason": "dropped_for_quiet_hours",
                 }
             scheduled_at = self.next_quiet_hours_end(user_id)
-            self._log_notification_delayed(
-                user_id=user_id,
-                notification_type=notification_type,
-                title=title,
-                content=content,
-                data=data,
-                severity=severity,
-                scheduled_at=scheduled_at,
-            )
+            # log_delivery=False (flush 回放) 由原 delayed row 顺延 scheduled_at, 不新写第二条:
+            # 否则原 row 被标 failed, 新 row 到点时的 24h dedup 命中它 → 推送静默丢失。
+            if log_delivery:
+                self._log_notification_delayed(
+                    user_id=user_id,
+                    notification_type=notification_type,
+                    title=title,
+                    content=content,
+                    data=data,
+                    severity=severity,
+                    scheduled_at=scheduled_at,
+                )
             logger.info(
                 f"[push] 用户 {user_id} 静默时段命中, severity={severity}, "
                 f"延迟到 {scheduled_at.isoformat()} 再推"
@@ -970,9 +973,11 @@ class PushService:
     async def flush_delayed_pushes(self, batch_limit: int = 100) -> Dict[str, int]:
         """
         Celery 任务调用: 取所有 status='delayed' 且 scheduled_at <= now 的 log,
-        重新走 send_notification (但 respect_quiet_hours=False, 避免再次延迟).
+        重新走 send_notification (respect_quiet_hours=False). critical 不再延迟;
+        非 critical 若仍在用户静默窗内 (如自定义 09:00-12:00) 会被再延迟 →
+        原 row 保持 delayed 并顺延 scheduled_at, 不新写 row, 到点恰好发一次。
 
-        返回: {"flushed": N, "succeeded": K, "failed": M}
+        返回: {"flushed": N, "succeeded": K, "failed": M, "deduped": D, "redelayed": R}
         """
         now = get_china_now()
         if _is_before_morning_floor(now):
@@ -1015,6 +1020,7 @@ class PushService:
         succeeded = 0
         failed = 0
         deduped = 0
+        redelayed = 0
         for log in delayed_logs:
             flushed += 1
             # 缺失时传 None 交给 _resolve_severity: health_alert 旧行不能被当 "info" 静默丢掉。
@@ -1049,7 +1055,7 @@ class PushService:
                     title=log.title,
                     content=log.content,
                     data=log.data,
-                    respect_quiet_hours=False,  # flush 时不再二次延迟
+                    respect_quiet_hours=False,  # critical 不再二次延迟; 非 critical 仍守用户静默窗
                     severity=severity,
                     dedup_window_hours=0,  # flush 跳过 dedup, 因为这些是已经决定要发的
                     log_delivery=False,
@@ -1059,6 +1065,16 @@ class PushService:
                     log.status = NotificationStatus.SENT.value
                     log.sent_at = now
                     succeeded += 1
+                elif result.get("reason") == "delayed_for_quiet_hours":
+                    # 顺延期间 row 仍是 delayed + 未来 scheduled_at → 照常参与发送时去重 (防堆积)。
+                    log.status = NotificationStatus.DELAYED.value
+                    log.scheduled_at = datetime.fromisoformat(result["scheduled_at"])
+                    redelayed += 1
+                    logger.info(
+                        "[flush_delayed_pushes] log_id=%s 回放仍在静默窗, 顺延到 %s",
+                        log.id,
+                        result["scheduled_at"],
+                    )
                 else:
                     log.status = NotificationStatus.FAILED.value
                     log.error_message = result.get("reason", "flush 失败")
@@ -1080,9 +1096,15 @@ class PushService:
         if flushed > 0:
             logger.info(
                 f"[flush_delayed_pushes] flushed={flushed} ok={succeeded} "
-                f"fail={failed} deduped={deduped}"
+                f"fail={failed} deduped={deduped} redelayed={redelayed}"
             )
-        return {"flushed": flushed, "succeeded": succeeded, "failed": failed, "deduped": deduped}
+        return {
+            "flushed": flushed,
+            "succeeded": succeeded,
+            "failed": failed,
+            "deduped": deduped,
+            "redelayed": redelayed,
+        }
 
     def get_notification_logs(
         self,
