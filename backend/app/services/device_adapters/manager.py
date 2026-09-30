@@ -168,8 +168,12 @@ class DeviceManager:
             }
 
         try:
-            # 创建适配器
-            adapter = cls.create_adapter_from_credential(credential)
+            # 创建适配器（Withings 刷新 token 后需立即落库，走共享保存路径）
+            if device_type == "withings":
+                from .withings_token_store import build_withings_adapter
+                adapter = build_withings_adapter(db, credential)
+            else:
+                adapter = cls.create_adapter_from_credential(credential)
 
             # 同步数据
             synced = 0
@@ -186,6 +190,18 @@ class DeviceManager:
                 except Exception as e:
                     logger.warning(f"同步 {target_date} 失败: {e}")
                     failed += 1
+
+            # 每天都失败 ≠ 成功：不刷新同步时间，也不标记有效（凭证本身不作废，下次可重试）
+            if synced == 0 and failed > 0:
+                message = f"同步失败：{failed} 天全部失败"
+                credential.last_error = message
+                db.commit()
+                return {
+                    "success": False,
+                    "synced_days": 0,
+                    "failed_days": failed,
+                    "message": message,
+                }
 
             # 更新同步时间
             credential.update_sync_time()

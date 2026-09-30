@@ -21,6 +21,8 @@ from app.services.device_adapters.withings import (
     WithingsHealthAdapter,
     APPLI_WEIGHT, APPLI_PRESSURE, APPLI_SLEEP,
 )
+# token 刷新后立即落库（重试失败也不丢 Withings 轮换出的新 refresh token）
+from app.services.device_adapters.withings_token_store import build_withings_adapter
 from app.services.health_event_service import HealthEventService
 from app.config import settings
 
@@ -211,12 +213,7 @@ async def withings_webhook(request: Request, db: Session = Depends(get_db)):
             return {"status": "ignored", "reason": "user not found"}
 
         # 创建适配器拉取实际数据
-        adapter = WithingsHealthAdapter(
-            client_id=settings.withings_client_id,
-            client_secret=settings.withings_client_secret,
-            access_token=target_credential.get_access_token(),
-            refresh_token=target_credential.get_refresh_token(),
-        )
+        adapter = build_withings_adapter(db, target_credential)
 
         # 根据 appli 类型处理
         event_service = HealthEventService(db)
@@ -243,20 +240,12 @@ async def withings_webhook(request: Request, db: Session = Depends(get_db)):
         if appli in (APPLI_WEIGHT, APPLI_PRESSURE, APPLI_SLEEP):
             _invalidate_twin(target_credential.user_id)
 
-        # 刷新 token 后保存回去（_api_request 可能刷新了 token）
-        if adapter.access_token != target_credential.get_access_token():
-            target_credential.set_oauth_tokens(
-                access_token=adapter.access_token,
-                refresh_token=adapter._refresh_token,
-                expires_at=datetime.now() + timedelta(hours=3),
-            )
-            db.commit()
-
         return {"status": "ok"}
 
     except Exception as e:
-        logger.error(f"Withings webhook error: {e}", exc_info=True)
-        return {"status": "error", "message": str(e)}
+        # 只记/回异常类名：调用方未鉴权，且 SQL 异常文本会带参数（含加密 token 密文）
+        logger.error("Withings webhook error: %s", type(e).__name__)
+        return {"status": "error", "message": type(e).__name__}
 
 
 # ========== 手动操作 ==========
@@ -277,12 +266,7 @@ async def sync_withings_data(
     if not credential:
         raise HTTPException(status_code=404, detail="未绑定 Withings 设备")
 
-    adapter = WithingsHealthAdapter(
-        client_id=settings.withings_client_id,
-        client_secret=settings.withings_client_secret,
-        access_token=credential.get_access_token(),
-        refresh_token=credential.get_refresh_token(),
-    )
+    adapter = build_withings_adapter(db, credential)
 
     event_service = HealthEventService(db)
     import time
@@ -312,14 +296,6 @@ async def sync_withings_data(
                 )
                 events_created += 1
 
-        # 保存可能刷新的 token
-        if adapter.access_token != credential.get_access_token():
-            credential.set_oauth_tokens(
-                access_token=adapter.access_token,
-                refresh_token=adapter._refresh_token,
-                expires_at=datetime.now() + timedelta(hours=3),
-            )
-
         credential.update_sync_time()
         db.commit()
 
@@ -334,8 +310,8 @@ async def sync_withings_data(
             "message": f"同步完成，创建 {events_created} 个事件",
         }
     except Exception as e:
-        logger.error(f"Withings sync error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"同步失败: {e}")
+        logger.error("Withings sync error: user_id=%s error=%s", current_user.id, type(e).__name__)
+        raise HTTPException(status_code=500, detail=f"同步失败: {type(e).__name__}")
 
 
 @router.post("/webhooks/subscribe", summary="手动订阅 Webhook")
@@ -353,23 +329,9 @@ async def subscribe_webhooks(
     if not credential:
         raise HTTPException(status_code=404, detail="未绑定 Withings 设备")
 
-    adapter = WithingsHealthAdapter(
-        client_id=settings.withings_client_id,
-        client_secret=settings.withings_client_secret,
-        access_token=credential.get_access_token(),
-        refresh_token=credential.get_refresh_token(),
-    )
+    adapter = build_withings_adapter(db, credential)
 
     results = await adapter.subscribe_all_webhooks(WEBHOOK_BASE)
-
-    # 保存可能刷新的 token
-    if adapter.access_token != credential.get_access_token():
-        credential.set_oauth_tokens(
-            access_token=adapter.access_token,
-            refresh_token=adapter._refresh_token,
-            expires_at=datetime.now() + timedelta(hours=3),
-        )
-        db.commit()
 
     return {"results": results}
 
@@ -389,12 +351,7 @@ async def list_webhooks(
     if not credential:
         raise HTTPException(status_code=404, detail="未绑定 Withings 设备")
 
-    adapter = WithingsHealthAdapter(
-        client_id=settings.withings_client_id,
-        client_secret=settings.withings_client_secret,
-        access_token=credential.get_access_token(),
-        refresh_token=credential.get_refresh_token(),
-    )
+    adapter = build_withings_adapter(db, credential)
 
     result = await adapter.list_webhooks()
     return result
