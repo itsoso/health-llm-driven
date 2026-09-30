@@ -43,6 +43,8 @@ from app.services.tool_schema_registry import (
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
+from app.services.crisis_lexicon import contains_crisis_language, with_crisis_support
+from app.services.workday_microbreak_safety import contains_acute_symptom_language
 from app.services.drug_lexicon import (
     contains_medication_reference,
     supplement_name_entity_terms,
@@ -5909,6 +5911,9 @@ def _medical_report_analysis_requested(text: str, *, persisted: bool) -> bool:
     )
 
 
+_CRISIS_RECORD_NOT_SAVED_MESSAGE = "这次的记录还没有保存。"
+
+
 def _record_intent_needs_detail_message(
     record_text: str, *, reason_codes: Sequence[str] = (),
 ) -> str:
@@ -8996,8 +9001,13 @@ def _build_preplanned_simple_water_tool_call(
     has_attachment: bool = False,
     runtime_write_blocked: bool = False,
     read_only_turn: bool = False,
+    safety_language: bool = False,
 ) -> Optional[Dict[str, Any]]:
-    """Skip model tool selection for one fully typed water record."""
+    """Plan one fully typed water record without prompt or history.
+
+    That turn runs with an empty system prompt, so crisis or acute-symptom
+    language must keep the ordinary path whose prompt carries the red lines.
+    """
     if (
         goal is None
         or goal.kind != "simple_health_record"
@@ -9007,6 +9017,7 @@ def _build_preplanned_simple_water_tool_call(
         or has_attachment
         or runtime_write_blocked
         or read_only_turn
+        or safety_language
     ):
         return None
     return _build_deterministic_simple_record_tool_call(
@@ -11182,6 +11193,9 @@ def _is_fast_eligible_turn(
     宁可慢而对, 不要快而错。
     """
     if has_images or has_file:
+        return False
+    # 轻生/自伤意念与急症表达永不走快路由; 写入意图也一样 (「记录心情: 不想活了」)。
+    if contains_crisis_language(message) or contains_acute_symptom_language(message):
         return False
     if is_daily_summary_request(message):
         return False
@@ -16417,6 +16431,8 @@ class AgentExecutor:
                 )
             )
             and not _has_fast_record_write_intent(message or "")
+            # 面板有自己的发布点与回显式记录兜底: 危机回合走普通路径拿热线兜底。
+            and not contains_crisis_language(message or "")
         ):
             async for evt in self._run_multi_model_stream(
                 user_id,
@@ -16952,6 +16968,10 @@ class AgentExecutor:
                 has_attachment=bool(images or file_base64),
                 runtime_write_blocked=bool(self._runtime_write_block_reason),
                 read_only_turn=bool(read_only_tools),
+                safety_language=(
+                    contains_crisis_language(message)
+                    or contains_acute_symptom_language(message)
+                ),
             )
             if (
                 not health_advice_buffered
@@ -19186,9 +19206,14 @@ class AgentExecutor:
             ))
         )
         if record_intent_no_tool:
-            fail_closed_reply = _record_intent_needs_detail_message(
-                message,
-                reason_codes=self._agent_kernel_capability_block_reasons,
+            # 危机回合不回显原话 (「…不想活了」还没记下来); 热线由发布前兜底补齐。
+            fail_closed_reply = (
+                _CRISIS_RECORD_NOT_SAVED_MESSAGE
+                if contains_crisis_language(message)
+                else _record_intent_needs_detail_message(
+                    message,
+                    reason_codes=self._agent_kernel_capability_block_reasons,
+                )
             )
             if full_reply.strip() != fail_closed_reply:
                 full_reply = fail_closed_reply
@@ -19528,6 +19553,13 @@ class AgentExecutor:
             if not advice_answer_supported:
                 final_finish_reason = "error"
                 self._record_model_fallback_reason("unverified_current_input_answer")
+            # 所有改写之后、唯一发布点之前: 危机回合一定带经核对的急救电话与热线,
+            # 不依赖模型是否遵守 TRIAGE 红线, 也不被记录兜底等改写抹掉。
+            full_reply = with_crisis_support(
+                message,
+                full_reply,
+                emitted_prefix="\n\n".join(early_genui_fences),
+            )
             release_text = full_reply
             if early_genui_fences and "protocol_leak" not in output_quality.flags:
                 prefix = "\n\n".join(early_genui_fences)
@@ -25514,6 +25546,12 @@ class AgentExecutor:
         query = (args.get("query") or "").strip()
         if not query:
             return "Error: realtime_search 需要 query 参数"
+        if contains_crisis_language(query):
+            # 危机表述不出进程、不进检索日志; 回到关心 + 热线, 不靠网页内容。
+            return (
+                "Error: 该检索涉及个人安全与心理危机，已跳过联网检索。"
+                "请直接关心并确认用户此刻是否安全，提供心理援助热线与急救电话，勿编造检索依据。"
+            )
 
         from app.services.iqs_search import (
             RealtimeSearchUnavailable,

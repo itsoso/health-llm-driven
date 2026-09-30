@@ -11,6 +11,8 @@ Mental Health Companion —— L3 心理陪伴 specialist。
 Tier 5 隐私约束：
   - 只读 twin.mental 聚合字段（mood_7d_avg 等数值）
   - 不读 twin 外部的原始日记文本
+  - 本轮用户原话（context["query"]）只在 specialist 内做轻生/自伤关键词识别，
+    不写入 finding、日志或引用
   - 输出的 finding 只含数值 + 非敏感建议，data_citation 不包含原文
 """
 
