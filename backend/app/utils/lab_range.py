@@ -37,16 +37,17 @@ def is_below_range(value, reference_range) -> Optional[bool]:
 # 以免 β2-MG(微球蛋白)、MG 抗体、Mg-ATP、单位 mg 等被当成镁。
 MAGNESIUM_ANALYTE = (
     ["镁", "magnesium"],
-    ["尿", "urine", "urinary", "微球蛋白", "microglobulin", "抗体", "achr", "atp"],
+    ["尿", "urine", "urinary", "肌酐", "creatinine", "脑脊液", "csf",
+     "微球蛋白", "microglobulin", "抗体", "achr", "atp"],
     re.compile(
         r"(血清|血浆|血|serum|plasma|s|p|rbc|红细胞|总|total|ionized|离子)?"
-        r"mg(2\+|\+\+|²⁺|\+2)?(离子|血清|serum|s|p)?"
+        r"mg(2\+|\+\+|²⁺|\+2)?(离子|血清|serum|s|rbc|红细胞)?"
     ),
 )
 VITAMIN_D_25OH_ANALYTE = (
     ["25ohd", "25ohvd", "25羟", "25hydroxy", "vitd", "vitamind", "维生素d", "维d",
      "骨化二醇", "calcidiol"],
-    ["1,25", "1，25", "1-25", "1 25", "二羟", "dihydroxy", "(oh)2", "结合蛋白", "binding"],
+    ["1,25", "1，25", "1-25", "1 25", "1.25", "1α", "1a,25", "24,25", "二羟", "dihydroxy", "(oh)2", "结合蛋白", "binding"],
     None,
 )
 

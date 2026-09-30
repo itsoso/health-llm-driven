@@ -153,7 +153,7 @@ def test_high_vitamin_d_alias_overrides_vdr_gene(name):
 
 @pytest.mark.parametrize("name", [
     "Mg", "mg", "Serum Magnesium", "Serum Mg", "MG-血清", "Mg-S", "镁(Mg)", "Mg2+", "S-Mg",
-    "MG", "Mg²⁺", "RBC Mg", "Mg 离子",
+    "MG", "Mg²⁺", "RBC Mg", "Mg 离子", "Mg (RBC)", "P-Mg",
 ])
 def test_high_magnesium_alias_overrides_sleep_complaint(name):
     f = SupplementAdvisorSpecialist().run(
@@ -167,7 +167,7 @@ def test_high_magnesium_alias_overrides_sleep_complaint(name):
 
 
 @pytest.mark.parametrize("name", [
-    "1,25-二羟维生素D3", "1,25-(OH)2D", "维生素D结合蛋白", "维D结合蛋白", "1α,25-二羟维生素D", "1-25 OH D",
+    "1,25-二羟维生素D3", "1,25-(OH)2D", "维生素D结合蛋白", "维D结合蛋白", "1α,25-二羟维生素D", "1-25 OH D", "1α,25(OH)₂D3", "1.25(OH)₂D", "1α,25(OH)2D3",
 ])
 def test_low_non_25oh_vitamin_d_analyte_does_not_recommend(name):
     f = SupplementAdvisorSpecialist().run(
@@ -209,6 +209,7 @@ _NON_MG_ANALYTES = [
     "β2-MG", "β2微球蛋白(β2-MG)", "B2-MG", "α1-MG", "MG抗体", "重症肌无力抗体(MG)", "AChR-Ab (MG)", "Mg-ATP",
     "β2 MG", "β2 -MG", "β2\u2010MG", "β2–MG", "β₂-MG", "MG(β2)", "α1 MG", "B2 MG", "b-2 mg",
     "MG-Ab", "抗MG", "MG IgG", "Mg-24h", "CK-MB mg",
+    "MGP", "镁/肌酐", "Magnesium/Creatinine", "脑脊液镁", "CSF Mg",
 ]
 
 
