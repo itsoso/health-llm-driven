@@ -365,21 +365,70 @@ class ClosureAdapter:
 
 
 def unchanged_laya_profile(snapshot):
-    unstarted, installed = snapshot.get("unstarted_laya"), snapshot.get("installed_laya")
-    if bool(unstarted) == bool(installed):
+    profiles = set(snapshot) & {"unstarted_laya", "installed_laya"}
+    if len(profiles) != 1:
         raise ClosureError("exactly one unchanged Laya profile required")
-    if installed:
-        required = {"profile", "started_at", "assets", "origin_sha", "expected", "receipt",
-                    "files", "services", "exported_source", "production_success"}
-        if (not isinstance(installed, dict) or set(installed) != required
-                or installed["profile"] != "installed-reuse-v1"
-                or not isinstance(installed["started_at"], str)
-                or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\n", installed["started_at"]) is None
-                or re.fullmatch(r"[0-9a-f]{40}", installed.get("origin_sha", "")) is None
-                or any(not isinstance(installed[key], dict) or not installed[key]
-                       for key in required - {"profile", "started_at", "origin_sha"})):
-            raise ClosureError("unknown or incomplete installed Laya profile")
-    return "installed_laya" if installed else "unstarted_laya"
+    profile = next(iter(profiles))
+    evidence = snapshot[profile]
+    if not isinstance(evidence, dict) or not evidence:
+        raise ClosureError("unchanged Laya evidence missing")
+    if profile == "unstarted_laya":
+        return profile
+    required = {"profile", "started_at", "assets", "origin_sha", "expected", "receipt",
+                "files", "services", "exported_source", "production_success"}
+    def digest(value):
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+    def identity(value, mode, gid=None):
+        return (isinstance(value, dict) and set(value) == {"dev", "ino", "uid", "gid", "mode", "sha256"}
+                and all(type(value[k]) is int and value[k] >= 0 for k in ("dev", "ino", "uid", "gid", "mode"))
+                and value["ino"] > 0 and value["uid"] == 0 and value["mode"] == mode
+                and (gid is None or value["gid"] == gid) and digest(value["sha256"]))
+    assets = {"install.py", "serve.py", "model-manifest.json", "requirements.lock", "reva-laya.service.in",
+              "encoder-config.json.b64", "rl-agent-config.json.b64", "tokenizer-config.json.b64", "model-NOTICE.txt"}
+    if (set(evidence) != required or evidence["profile"] != "installed-reuse-v1"
+            or not isinstance(evidence["started_at"], str)
+            or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\n", evidence["started_at"]) is None
+            or not isinstance(evidence["origin_sha"], str) or re.fullmatch(r"[0-9a-f]{40}", evidence["origin_sha"]) is None
+            or not isinstance(evidence["assets"], dict) or set(evidence["assets"]) != assets
+            or not all(digest(value) for value in evidence["assets"].values())
+            or not isinstance(evidence["expected"], dict)
+            or set(evidence["expected"]) != {"generation", "unit_sha256", "env_sha256"}
+            or not all(digest(value) for value in evidence["expected"].values())
+            or not identity(evidence["receipt"], 0o600, 0)
+            or not identity(evidence["production_success"], 0o600, 0)):
+        raise ClosureError("invalid installed Laya profile binding")
+    files = evidence["files"]
+    receipt = "/var/lib/reva-laya-release/install.json"
+    unit, env = "/etc/systemd/system/reva-laya.service", "/etc/reva-laya/service.env"
+    if (not isinstance(files, dict) or set(files) != {receipt, unit, env}
+            or files[receipt] != evidence["receipt"] or not identity(files[unit], 0o644, 0)
+            or not identity(files[env], 0o640) or files[env]["gid"] == 0
+            or files[unit]["sha256"] != evidence["expected"]["unit_sha256"]
+            or files[env]["sha256"] != evidence["expected"]["env_sha256"]):
+        raise ClosureError("invalid installed Laya file binding")
+    exported = evidence["exported_source"]
+    if (not isinstance(exported, dict) or set(exported) != assets | {"source.json"}
+            or any(not identity(value, 0o400, 0) for value in exported.values())
+            or any(exported[name]["sha256"] != evidence["assets"][name] for name in assets)):
+        raise ClosureError("invalid installed Laya source binding")
+    service = evidence["services"]
+    fixed = {"ActiveState": "active", "SubState": "running", "NRestarts": "0", "FragmentPath": unit,
+             "DropInPaths": "", "User": "reva-laya", "Group": "reva-laya", "UnitFileState": "enabled",
+             "ControlGroup": "/system.slice/reva-laya.service"}
+    generation = "/opt/reva-laya/generations/" + evidence["expected"]["generation"]
+    executable = generation + "/venv/bin/python"
+    if (not isinstance(service, dict)
+            or set(service) != set(fixed) | {"MainPID", "ActiveEnterTimestampMonotonic", "boot_id", "ExecStart", "processes"}
+            or any(service.get(k) != v for k, v in fixed.items())
+            or any(not isinstance(service[k], str) or re.fullmatch(r"[1-9][0-9]*", service[k]) is None
+                   for k in ("MainPID", "ActiveEnterTimestampMonotonic"))
+            or not isinstance(service["boot_id"], str) or re.fullmatch(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}", service["boot_id"]) is None
+            or service["ExecStart"] != f"path={executable}\nargv[]={executable} -I {generation}/serve.py\nignore_errors=no"
+            or not isinstance(service["processes"], dict) or set(service["processes"]) != {service["MainPID"]}
+            or not isinstance(service["processes"][service["MainPID"]], str)
+            or re.fullmatch(r"[1-9][0-9]*", service["processes"][service["MainPID"]]) is None):
+        raise ClosureError("invalid installed Laya service binding")
+    return profile
 
 
 def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False):
