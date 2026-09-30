@@ -60,3 +60,20 @@ PM2 及后端/ETH 进程身份早于原尝试且稳定。只忽略防火墙快�
 无效 Bearer 的 /auth/me 必须返回 401，重定向不作为成功。ETH 进程身份逐项不变，
 原主机加固 audit/backup/lease 保留。独立完成凭据才允许后续主机恢复使用这三个
 新业务 PID；质押仍要求原进程。失败保留 intent 且禁止重跑，不伪造历史成功。
+
+## 监控入口的独立验收修复
+
+原主机加固已返回本地成功，但外部验收发现 9090 仍可访问：UFW 命令退出成功
+没有证明实际 INPUT 的规则顺序。旧回执保留，不能当成外部封禁成功。
+
+新 canonical `--repair-monitor-ingress --sha <051> --publisher-sha <新 main>`
+默认只读取证，绑定完整 CI/G4、56eec9 主机恢复历史、服务身份和双栈完整规则。
+指定同一 `--evidence-sha256` 后才创建独立 intent 与新 business lease。
+固定变更仅涉及 `/etc/ufw/before.rules`、`before6.rules` 中相应 before-input
+链的第一条非 loopback TCP 9090/9100 DROP，以及两个对应实时插入规则。
+该位置早于 ESTABLISHED，保持 loopback 本机监控可用；不重载 UFW、不重启服务。
+
+原配置完整字节和权限、双栈规则保存在私有 intent；变更后必须证明精确两条
+新增规则、其他规则投影不变、持久化字节等于固定插入、原历史和全部服务进程不变。
+失败保留 intent 与 lease，不重放、不覆盖旧成功。完成后独立回执与租约归档，
+未来 bootstrap 必须验证此完整历史。外部新连接验收仍为最后一道闸。

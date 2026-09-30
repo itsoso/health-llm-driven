@@ -4,6 +4,155 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_monitor_ingress_persistent_rule_precedes_established_and_preserves_bytes():
+    import pytest
+    m = load('monitor_ingress_repair')
+    for chain in ('ufw-before-input', 'ufw6-before-input'):
+        raw = f'*filter\n:{chain} - [0:0]\n-A {chain} -i lo -j ACCEPT\n-A {chain} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\nCOMMIT\n'
+        updated = m.config_after(raw, chain)
+        assert updated.replace(m.rule_line(chain)+'\n', '', 1) == raw
+        assert updated.index(m.rule_line(chain)) < updated.index(f'-A {chain} -i lo')
+        assert '! -i lo' in updated and '--dports 9090,9100' in updated
+        with pytest.raises(RuntimeError):
+            m.config_after(updated, chain)
+        with pytest.raises(RuntimeError):
+            m.config_after(raw.replace('*filter', '*nat'), chain)
+        for invalid in (f'-A {chain} -j ACCEPT\n'+raw,raw+f'-A {chain} -j ACCEPT\n',raw.replace('\n','\r\n')):
+            with pytest.raises(RuntimeError):m.config_after(invalid,chain)
+
+
+def test_monitor_ingress_firewall_delta_rejects_noop_wrong_order_and_other_changes():
+    import pytest
+    m = load('monitor_ingress_repair')
+    chain = 'ufw-before-input'
+    before = ['*filter', ':'+chain+' - [COUNTERS]', '-A '+chain+' -i lo -j ACCEPT', 'COMMIT']
+    expected = m.policy_after(before, chain)
+    assert expected[2] == m.rule_line(chain)
+    assert m.verify_delta(before, expected, chain) is None
+    for after in (before, [*before[:-1],m.rule_line(chain),'COMMIT'], expected+['unknown']):
+        with pytest.raises(RuntimeError):m.verify_delta(before, after, chain)
+
+
+def test_monitor_ingress_input_path_rejects_earlier_accept_or_logging_jump():
+    import pytest
+    m = load('monitor_ingress_repair')
+    good=['-P INPUT DROP','-A INPUT -j ufw-before-logging-input','-A INPUT -j ufw-before-input']
+    m.verify_reachability(good,['-N ufw-before-logging-input'],'ufw-before-input')
+    for rows,logging in ((['-A INPUT -j ACCEPT',*good],['-N ufw-before-logging-input']),
+                         (good,['-N ufw-before-logging-input','-A ufw-before-logging-input -j ACCEPT'])):
+        with pytest.raises(RuntimeError):m.verify_reachability(rows,logging,'ufw-before-input')
+
+
+def monitor_intent(m):
+    import hashlib
+    value={'production_sha':m.PRODUCTION,'publisher_sha':'a'*40,
+           'host_history':{'kind':'recovered-host-hardening','intent_sha256':'b'*64,'completion_sha256':'c'*64},
+           'services':{},'families':{}}
+    for name in m.SERVICES:
+        value['services'][name]={'properties':{'MainPID':'42','ActiveState':'active','NRestarts':'0','NeedDaemonReload':'no'},
+            'process':{'pid':42,'starttime':'123','uid':['997' if name.startswith(('health','celery')) else '0']*4,
+                       'cgroup':'/test.service','argv_sha256':'d'*64}}
+    for binary,chain,_ in m.FAMILIES:
+        raw=f'*filter\n:{chain} - [0:0]\n-A {chain} -i lo -j ACCEPT\nCOMMIT\n'
+        value['families'][binary]={'policy':['*filter',':INPUT DROP [COUNTERS]',f':{chain} - [COUNTERS]',f'-A {chain} -i lo -j ACCEPT','COMMIT'],
+            'config':{'text':raw,'mode':0o644,'uid':0,'gid':0,'sha256':hashlib.sha256(raw.encode()).hexdigest()}}
+    return value
+
+
+def test_monitor_ingress_history_requires_inner_evidence(tmp_path,monkeypatch):
+    import copy
+    import pytest
+    m=load('monitor_ingress_repair');value=monitor_intent(m);m.validate_intent(value)
+    for mutate in (lambda v:v.update(services={}),
+                   lambda v:v['services']['eth1']['process'].update(uid=['997']*4),
+                   lambda v:v['services']['health-backend']['process'].update(uid=['0']*4),
+                   lambda v:v['families']['/usr/sbin/iptables']['config'].update(sha256='e'*64),
+                   lambda v:v['families']['/usr/sbin/iptables']['config'].update(mode=0o666)):
+        bad=copy.deepcopy(value);mutate(bad)
+        with pytest.raises(RuntimeError):m.validate_intent(bad)
+
+
+def test_monitor_ingress_digest_and_partial_failure_keep_intent_and_lease(tmp_path,monkeypatch):
+    import hashlib
+    import json
+    from types import SimpleNamespace
+    import pytest
+    m=load('monitor_ingress_repair');lease=tmp_path/'business';monkeypatch.setattr(m,'LEASE',lease)
+    before=monitor_intent(m);events=[]
+    def write(path,raw):path.write_bytes(raw)
+    server=SimpleNamespace(secure_path=lambda *a,**k:None,_sync_directory=lambda *a:None,_write_private=write,
+                           _testflight_lease_parent=lambda:None,_sync_business_lease_parent=lambda:None)
+    digest=lambda v:hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    def apply(value):
+        assert (a.record/'intent.json').is_file() and (lease/'token').is_file()
+        events.append('ipv4-applied');raise RuntimeError('synthetic IPv6 mutation failure')
+    a=SimpleNamespace(record=tmp_path/'records'/'fixed',publisher='a'*40,server=server,r=SimpleNamespace(digest=digest),
+                      check=lambda:events.append('lock-checked'),inspect=lambda:before,apply=apply,verify=lambda _:None)
+    monkeypatch.setattr(m,'lease_snapshot',lambda *_:{'.':{'dev':1,'ino':2}})
+    assert m.transaction(a)['state']=='MONITOR_INGRESS_PREFLIGHT'
+    assert not a.record.exists() and not lease.exists()
+    with pytest.raises(RuntimeError,match='preflight evidence'):m.transaction(a,'f'*64)
+    assert not a.record.exists() and not lease.exists()
+    with pytest.raises(RuntimeError,match='IPv6'):m.transaction(a,digest(before))
+    assert (a.record/'intent.json').is_file() and lease.exists()
+    assert not (a.record/'completed.json').exists()
+    with pytest.raises(RuntimeError,match='no retry'):m.transaction(a,digest(before))
+    assert events.count('ipv4-applied')==1 and events.count('lock-checked')>=4
+
+
+def test_monitor_ingress_apply_rejects_exit_zero_without_rule(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    m=load('monitor_ingress_repair');before=monitor_intent(m)
+    monkeypatch.setattr(m,'config_snapshot',lambda path,b:before['families'][next(x[0] for x in m.FAMILIES if x[2]==path)]['config'])
+    g=SimpleNamespace(atomic_write=lambda *a:None,run=lambda *a:before['families']['/usr/sbin/iptables']['policy'])
+    a=SimpleNamespace(g=g,b=None,r=SimpleNamespace(firewall_policy=lambda x:x),check=lambda:None)
+    with pytest.raises(RuntimeError,match='firewall delta'):m.Adapter.apply(a,before)
+
+
+def test_monitor_ingress_success_consumes_immutable_history(tmp_path,monkeypatch):
+    import hashlib
+    import json
+    import stat
+    from types import SimpleNamespace
+    import pytest
+    m=load('monitor_ingress_repair');before=monitor_intent(m);events=[]
+    monkeypatch.setattr(m,'STATE',tmp_path/'state');monkeypatch.setattr(m,'LEASE',tmp_path/'active')
+    monkeypatch.setattr(m,'RETIRED_PARENT',tmp_path);monkeypatch.setattr(m.time,'sleep',lambda _:None)
+    monkeypatch.setattr(m,'source_scope',lambda *a:None)
+    def write(path,raw):path.write_bytes(raw);path.chmod(0o600)
+    def inventory(path,names):
+        assert set(p.name for p in path.iterdir())==set(names)
+        assert stat.S_IMODE(path.stat().st_mode)==0o700
+        assert all(stat.S_IMODE(p.stat().st_mode)==0o600 for p in path.iterdir())
+    server=SimpleNamespace(secure_path=lambda *a,**k:None,_sync_directory=lambda *a:None,_write_private=write,
+                           _testflight_lease_parent=lambda:None,_sync_business_lease_parent=lambda:None)
+    digest=lambda v:hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    def lease_snapshot(*args):
+        return {'.' if p==m.LEASE else p.name:{'dev':p.stat().st_dev,'ino':p.stat().st_ino,'uid':0,'gid':0,
+            'mode':0o700 if p==m.LEASE else 0o600,'sha256':None if p==m.LEASE else hashlib.sha256(p.read_bytes()).hexdigest()}
+            for p in [m.LEASE,*m.LEASE.iterdir()]}
+    monkeypatch.setattr(m,'lease_snapshot',lease_snapshot)
+    real_run=m.subprocess.run
+    def move(args,**kwargs):
+        assert args[:4]==['/usr/bin/mv','--no-clobber','-T','--']
+        Path(args[4]).rename(args[5])
+    monkeypatch.setattr(m.subprocess,'run',move)
+    a=SimpleNamespace(record=m.STATE/'monitor-ingress-repairs'/m.PRODUCTION,publisher='a'*40,server=server,r=SimpleNamespace(digest=digest),
+        check=lambda:events.append('check'),inspect=lambda:before,apply=lambda _:events.append('apply'),verify=lambda _:events.append('verify'))
+    a.record.parent.parent.mkdir()
+    done=m.transaction(a,digest(before))
+    assert done['state']=='MONITOR_INGRESS_LOCAL_VERIFIED' and events.count('apply')==1 and events.count('verify')==2
+    assert not m.LEASE.exists()
+    b=SimpleNamespace(secure=lambda *a,**k:None,_inventory=inventory,_read_json=lambda p:json.loads(p.read_text()),canonical_source=lambda _:tmp_path)
+    proof=m.history_evidence(b,before['host_history'])
+    assert proof['intent_sha256']==digest(before) and proof['completion_sha256']==digest(done)
+    identity=json.loads((a.record/'lease.json').read_text());identity['token']['mode']=0o644
+    done['lease_sha256']=digest(identity)
+    write(a.record/'lease.json',json.dumps(identity).encode());write(a.record/'completed.json',json.dumps(done).encode())
+    with pytest.raises(RuntimeError,match='lease inner evidence'):m.history_evidence(b,before['host_history'])
+
+
 def test_application_units_hide_staking_data_and_bound_resources():
     for name in ("health-backend", "celery-worker", "celery-beat"):
         for path in (ROOT / "infra/systemd" / f"{name}.service",
@@ -806,7 +955,7 @@ def test_bootstrap_host_permission_history_chain(tmp_path,monkeypatch):
     write(repair_record/'intent.json',json.dumps(repair_intent).encode())
     write(repair_record/'completed.json',json.dumps(repair_done).encode())
     evidence['permission_repair']={'intent_sha256':m.digest(repair_intent),'completion_sha256':m.digest(repair_done)}
-    for name in ('public_host_recovery','runtime_permission_repair'):
+    for name in ('public_host_recovery','runtime_permission_repair','monitor_ingress_repair'):
         shutil.copyfile(ROOT/'scripts'/f'{name}.py',source/'scripts'/f'{name}.py')
     bootstrap=load('bootstrap_trusted_release')
     monkeypatch.setitem(sys.modules,bootstrap.__name__,bootstrap)
@@ -827,12 +976,38 @@ def test_bootstrap_host_permission_history_chain(tmp_path,monkeypatch):
                 for key in ('STATE','BACKUPS','LEASE','VOLATILE','write_set','source_scope'):
                     setattr(module,key,getattr(m,key))
             spec.loader.exec_module=execute
+        if name=='monitor_ingress_history':
+            real_exec=spec.loader.exec_module
+            def execute_monitor(module):
+                real_exec(module);module.STATE=m.STATE;module.source_scope=lambda *a:None
+            spec.loader.exec_module=execute_monitor
         return spec
     monkeypatch.setattr(importlib.util,'spec_from_file_location',fixture_spec)
     m.validate_intent(evidence,backup_intent,frontend,values,g)
     assert m.recover(adapter,m.digest(evidence))['state']=='RECOVERED_LOCAL_VERIFIED'
     assert bootstrap._host_hardening_evidence(m.FAILED_SHA)['kind']=='recovered-host-hardening'
     assert sys.modules['host_recovery_history'].__name__=='host_recovery_history'
+
+    monitor=load('monitor_ingress_repair');monitor_before=monitor_intent(monitor)
+    monitor_before['host_history']=bootstrap._host_hardening_evidence(m.FAILED_SHA)
+    monitor_record=m.STATE/'monitor-ingress-repairs'/m.FAILED_SHA
+    monitor_record.mkdir(parents=True,mode=0o700);(monitor_record/'lease').mkdir(mode=0o700)
+    monitor_values={'token':'e'*64,'label':'monitor-ingress','stage':str(monitor_record),'started_at':'123'}
+    monitor_lease={'.':{'dev':1,'ino':1,'uid':0,'gid':0,'mode':0o700,'sha256':None}}
+    for i,(name,value) in enumerate(monitor_values.items(),2):
+        raw=(value+'\n').encode();write(monitor_record/'lease'/name,raw)
+        monitor_lease[name]={'dev':1,'ino':i,'uid':0,'gid':0,'mode':0o600,'sha256':hashlib.sha256(raw).hexdigest()}
+    monitor_done={'state':'MONITOR_INGRESS_LOCAL_VERIFIED','production_sha':m.FAILED_SHA,'publisher_sha':'a'*40,
+        'intent_sha256':m.digest(monitor_before),'lease_sha256':m.digest(monitor_lease),'external_readback_required':True}
+    for name,value in (('intent.json',monitor_before),('lease.json',monitor_lease),('completed.json',monitor_done)):
+        write(monitor_record/name,json.dumps(value).encode())
+    assert bootstrap._host_hardening_evidence(m.FAILED_SHA)['monitor_ingress']['kind']=='monitor-ingress-repair'
+    original_services=monitor_before['services'];monitor_before['services']={}
+    monitor_done['intent_sha256']=m.digest(monitor_before)
+    write(monitor_record/'intent.json',json.dumps(monitor_before).encode());write(monitor_record/'completed.json',json.dumps(monitor_done).encode())
+    with pytest.raises(RuntimeError,match='inner evidence'):bootstrap._host_hardening_evidence(m.FAILED_SHA)
+    monitor_before['services']=original_services;monitor_done['intent_sha256']=m.digest(monitor_before)
+    write(monitor_record/'intent.json',json.dumps(monitor_before).encode());write(monitor_record/'completed.json',json.dumps(monitor_done).encode())
 
     # Even self-consistent outer digests cannot authorize unknown package code.
     repair_done['after_package'][str(repair.SITE/'jwt/__init__.py')]['sha256']='0'*64

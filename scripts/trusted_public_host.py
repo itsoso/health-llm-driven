@@ -165,6 +165,7 @@ def main():
     parser.add_argument('--sha', required=True)
     parser.add_argument('--resume-preflight', action='store_true')
     parser.add_argument('--repair-runtime-permissions', action='store_true')
+    parser.add_argument('--repair-monitor-ingress', action='store_true')
     parser.add_argument('--publisher-sha')
     parser.add_argument('--lease-token-stdin', action='store_true')
     parser.add_argument('--evidence-sha256')
@@ -178,9 +179,18 @@ def main():
         os.environ.clear()
         os.environ.update(PATH='/usr/bin:/bin', HOME='/root', LC_ALL='C', GIT_CONFIG_NOSYSTEM='1',
                           GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_SYSTEM='/dev/null', GIT_NO_REPLACE_OBJECTS='1')
-        if args.resume_preflight and args.repair_runtime_permissions:
+        if sum((args.resume_preflight,args.repair_runtime_permissions,args.repair_monitor_ingress))>1:
             raise RuntimeError('one fixed operator mode required')
-        if args.resume_preflight or args.repair_runtime_permissions:
+        if args.repair_monitor_ingress:
+            if (args.lease_token_stdin or re.fullmatch(r'[a-f0-9]{40}',args.publisher_sha or '') is None
+                    or (args.evidence_sha256 is not None and re.fullmatch(r'[a-f0-9]{64}',args.evidence_sha256) is None)):
+                raise RuntimeError('exact monitor repair arguments required')
+            source,helper,bootstrap,server,gate,guard=load_reviewed(args.publisher_sha)
+            recovery=module(source/'scripts/public_host_recovery.py','host_monitor_history')
+            repair=module(source/'scripts/monitor_ingress_repair.py','monitor_ingress_repair')
+            result=repair.execute(source,sys.modules[__name__],helper,bootstrap,server,gate,guard,recovery,
+                                  args.publisher_sha,args.sha,args.evidence_sha256)
+        elif args.resume_preflight or args.repair_runtime_permissions:
             if (not args.lease_token_stdin or re.fullmatch(r'[a-f0-9]{40}', args.publisher_sha or '') is None
                     or (args.evidence_sha256 is not None and re.fullmatch(r'[a-f0-9]{64}', args.evidence_sha256) is None)):
                 raise RuntimeError('exact recovery arguments required')
