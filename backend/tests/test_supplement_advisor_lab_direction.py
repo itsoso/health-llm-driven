@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from app.agents.supplement_advisor import SupplementAdvisorSpecialist
 from app.twin.schema import (
     AcuteHealthState,
@@ -133,3 +135,54 @@ def test_unparsable_vitamin_d_direction_is_conservative():
 def test_vdr_gene_without_vd_lab_still_recommends():
     f = SupplementAdvisorSpecialist().run(_twin([], vdr=True), {})
     assert "vdr_vitamin_d" in _rec_ids(f)
+
+
+# ─────────── 别名 / 分析物混淆 (safety-gate 复审阻断项) ───────────
+
+@pytest.mark.parametrize("name", ["25-OH-VD", "VitD", "25(OH)D", "Vitamin D", "25-羟基维生素D"])
+def test_high_vitamin_d_alias_overrides_vdr_gene(name):
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": name, "value": 160, "reference_range": "30-100"}], vdr=True), {}
+    )
+    assert "vdr_vitamin_d" not in _rec_ids(f)
+    assert "vdr_vitamin_k2" not in _rec_ids(f)
+
+
+@pytest.mark.parametrize("name", ["Mg", "mg", "Serum Magnesium"])
+def test_high_magnesium_alias_overrides_sleep_complaint(name):
+    f = SupplementAdvisorSpecialist().run(
+        _twin(
+            [{"item_name": name, "value": 1.5, "reference_range": "0.75-1.02"}],
+            sleep_complaint=True,
+        ),
+        {},
+    )
+    assert "magnesium_sleep" not in _rec_ids(f)
+
+
+@pytest.mark.parametrize("name", ["1,25-二羟维生素D3", "1,25-(OH)2D", "维生素D结合蛋白"])
+def test_low_non_25oh_vitamin_d_analyte_does_not_recommend(name):
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": name, "value": 10, "reference_range": "19.6-54.3"}]), {}
+    )
+    assert "vdr_vitamin_d" not in _rec_ids(f)
+
+
+@pytest.mark.parametrize("name", ["24小时尿镁", "Urine Magnesium"])
+def test_low_urine_magnesium_does_not_recommend(name):
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": name, "value": 1.0, "reference_range": "2.1-8.2"}]), {}
+    )
+    assert "magnesium_sleep" not in _rec_ids(f)
+
+
+def test_mg_substring_does_not_match_unrelated_item():
+    """整词匹配 "mg": 名称里含 mg 子串的无关项不应压制主诉触发."""
+    f = SupplementAdvisorSpecialist().run(
+        _twin(
+            [{"item_name": "IgM", "value": 5, "reference_range": "0.4-2.3"}],
+            sleep_complaint=True,
+        ),
+        {},
+    )
+    assert "magnesium_sleep" in _rec_ids(f)

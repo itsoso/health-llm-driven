@@ -28,7 +28,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.orchestrator.schema import Intent, ProposedCard, SpecialistFinding
 from app.twin.schema import HealthTwin
-from app.utils.lab_range import is_below_range
+from app.utils.lab_range import (
+    MAGNESIUM_ANALYTE,
+    VITAMIN_D_25OH_ANALYTE,
+    is_below_range,
+    matches_analyte,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -400,15 +405,14 @@ def _is_hfe_homozygous(twin: HealthTwin) -> bool:
     return "C282Y/C282Y" in geno or geno in ("TT", "YY")
 
 
-def _lab_low_or_unsafe(twin: HealthTwin, keywords: List[str]) -> Tuple[bool, bool, bool]:
-    """flagged_abnormal 中匹配关键字的项按方向拆分 → (确证偏低, 标记异常但不低, 方向不可解析).
+def _lab_low_or_unsafe(twin: HealthTwin, analyte) -> Tuple[bool, bool, bool]:
+    """flagged_abnormal 中匹配分析物的项按方向拆分 → (确证偏低, 标记异常但不低, 方向不可解析).
 
     flagged_abnormal 只说明"异常";补剂推荐需"偏低"语义, 必须经参考范围判向。
     """
     low = not_low = unclear = False
     for a in twin.labs.flagged_abnormal or []:
-        name = (a.get("item_name") or "").lower()
-        if not any(k.lower() in name for k in keywords):
+        if not matches_analyte(a.get("item_name"), analyte):
             continue
         below = is_below_range(a.get("value"), a.get("reference_range"))
         if below is True:
@@ -423,7 +427,7 @@ def _lab_low_or_unsafe(twin: HealthTwin, keywords: List[str]) -> Tuple[bool, boo
 def _lab_needs_review_msg(label: str, not_low: bool) -> str:
     if not_low:
         return (
-            f"近期化验把{label}标记为异常且不低于参考下限(可能偏高), "
+            f"近期化验把{label}标记为异常且不低于参考下限, "
             f"本次不给出{label}补剂参考, 请带报告与医生核读。"
         )
     return (
@@ -535,7 +539,7 @@ class SupplementAdvisorSpecialist:
             #    改由低镁化验或主观睡眠/焦虑主诉触发, 镁的副交感效应是群体主效应。
             #    化验须确证偏低; 标记异常但不低(如高镁血症)或方向不可解析 → 保守不推荐,
             #    且压过症状触发, 转为"请医生核读"提示。
-            low_mg, mg_not_low, mg_unclear = _lab_low_or_unsafe(twin, ["镁", "magnesium"])
+            low_mg, mg_not_low, mg_unclear = _lab_low_or_unsafe(twin, MAGNESIUM_ANALYTE)
             if mg_not_low or mg_unclear:
                 warnings.append(_lab_needs_review_msg("镁", mg_not_low))
             elif low_mg or _has_sleep_or_anxiety_complaint(twin):
@@ -548,9 +552,7 @@ class SupplementAdvisorSpecialist:
 
             # 6. VDR + 25-OH-D 偏低
             hit_vdr, _ = _has_snp(twin, "VDR")
-            low_vd, vd_not_low, vd_unclear = _lab_low_or_unsafe(
-                twin, ["25-OH-D", "25羟", "维生素 D", "维生素D"]
-            )
+            low_vd, vd_not_low, vd_unclear = _lab_low_or_unsafe(twin, VITAMIN_D_25OH_ANALYTE)
             if vd_not_low or vd_unclear:
                 warnings.append(_lab_needs_review_msg("维生素 D", vd_not_low))
             elif hit_vdr or low_vd:
