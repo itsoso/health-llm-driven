@@ -14,7 +14,11 @@ from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.api.deps import get_current_user_required
 from app.schemas.blood_pressure import BloodPressureSafetyGuidance
-from app.services.intake_intent_classifier import classify_intake_intent
+from app.services.intake_intent_classifier import (
+    NON_INTAKE_REASONS,
+    classify_intake_intent,
+    non_intake_reason,
+)
 from app.utils.blood_pressure_classify import blood_pressure_display
 
 logger = logging.getLogger(__name__)
@@ -191,6 +195,9 @@ def _parse_quick_record(text: str):
         return "water", {"amount": amount}
 
     intake = classify_intake_intent(text)
+    if intake.reason in NON_INTAKE_REASONS:
+        # 漏服/否定/计划/提问不是一次摄入;下方旧正则兜底也不得把它复活成记录。
+        return None, None
     if intake.kind == "supplement":
         name = intake.text.strip()
         if name:
@@ -203,12 +210,17 @@ def _parse_quick_record(text: str):
         food = intake.text.strip()
         if food:
             return "diet", {"meal_type": meal_type, "meal_cn": meal_cn, "food": food}
+    # 分类器可能先判 health_metric(「午餐没吃，血糖5.6」);旧正则兜底前再单独看言语行为。
+    if non_intake_reason(text):
+        return None, None
 
     # legacy fallback: supplement must be checked before generic "吃了 xxx",
     # otherwise "吃了 维生素D" is incorrectly treated as diet.
     supp_match = re.match(r"(?:吃了?|服用|补剂)\s*(维生素|鱼油|钙片|叶酸|益生菌|辅酶|NAC|锌|镁|铁|B族|维C|维D|omega|Omega)(.*)$", text, re.IGNORECASE)
     if supp_match:
         supp_name = supp_match.group(1) + (supp_match.group(2) or "").strip()
+        if non_intake_reason(supp_name, named=True):
+            return None, None
         return "supplement", {"name": supp_name}
 
     # --- 饮食（指定餐次）---

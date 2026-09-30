@@ -1,4 +1,6 @@
 """快捷记录 API 测试"""
+import pytest
+
 from app.api.quick_record import _parse_quick_record, _estimate_nutrition
 
 
@@ -73,6 +75,38 @@ class TestParseQuickRecord:
             t, d = _parse_quick_record(text)
             assert t is None
             assert d is None
+
+    @pytest.mark.parametrize("text", [
+        "没吃维生素D",
+        "还没吃维生素D",
+        "维生素D还没吃",
+        "忘了吃鱼油",
+        "今天不吃镁",
+        "别忘了吃维生素D",
+        "准备吃鱼油",
+        "吃了维生素D吗",
+        # 分类器判非摄入后, 旧正则兜底(补剂前缀 / 餐次前缀 / 「吃了 X」)不得复活
+        "吃了 维生素D吗",
+        "午餐没吃",
+        "晚饭吃了牛肉面吗",
+        "吃了 牛肉面吗",
+        # 分类器先判 health_metric 时,旧正则兜底同样不得复活(safety review v1)
+        "午餐没吃，血糖5.6",
+        "午餐没吃，体重70kg",
+        "吃了 维生素D吗，血糖5.6",
+        "服用 鱼油没吃 心率60",
+    ])
+    def test_not_taken_text_is_never_parsed_as_a_record(self, text):
+        assert _parse_quick_record(text) == (None, None)
+
+    @pytest.mark.parametrize(("text", "record_type", "field", "value"), [
+        ("服用镁", "supplement", "name", "镁"),
+        ("晚饭吃了牛肉面, 吃完有点反酸", "diet", "meal_type", "dinner"),
+    ])
+    def test_affirmative_intake_still_parses(self, text, record_type, field, value):
+        t, d = _parse_quick_record(text)
+        assert t == record_type
+        assert d[field] == value
 
     def test_unrecognized(self):
         t, d = _parse_quick_record("今天天气不错")
@@ -190,3 +224,19 @@ class TestQuickRecordAPI:
         headers = {"Authorization": f"Bearer {token}"}
         resp = client.post("/api/v1/quick-record", json={"text": "随便说点什么"}, headers=headers)
         assert resp.status_code == 400
+
+    @pytest.mark.parametrize("text", ["没吃维生素D", "维生素D还没吃", "吃了维生素D吗", "午餐没吃"])
+    def test_not_taken_text_writes_nothing(self, client, db, text):
+        """漏服/提问不得打卡:既不建补剂定义,也不写 taken=true,也不落饮食记录。"""
+        from app.models.daily_health import DietRecord
+        from app.models.supplement import SupplementDefinition, SupplementRecord
+        from tests.conftest import create_authenticated_user
+        user, token = create_authenticated_user(db)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post("/api/v1/quick-record", json={"text": text}, headers=headers)
+
+        assert resp.status_code == 400
+        assert db.query(SupplementDefinition).filter_by(user_id=user.id).count() == 0
+        assert db.query(SupplementRecord).filter_by(user_id=user.id).count() == 0
+        assert db.query(DietRecord).filter_by(user_id=user.id).count() == 0

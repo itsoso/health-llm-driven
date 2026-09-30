@@ -139,3 +139,129 @@ async def test_telegram_timeout_returns_safe_retry_reason(monkeypatch, caplog):
     assert result == {'success': False, 'reason': 'transport_error'}
     assert 'private-token-and-payload' not in caplog.text
     assert 'synthetic-timeout-secret' not in caplog.text
+
+
+# ─────────────── 健康告警格式:severity emoji + 旧 Markdown 转义 ───────────────
+
+def _parse_legacy_markdown(text: str) -> str:
+    """Telegram 旧 Markdown(parse_mode="Markdown")解析模型,对齐 TDLib parse_markdown:
+    实体外 `\\` 只转义 _ * ` [;_ * ` 开实体并找同字符闭合,[ 找 ];实体内一律字面。
+    返回可见文本;实体未闭合 → ValueError(= Telegram 400,整条告警被拒收)。"""
+    out, i = [], 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and text[i + 1:i + 2] in ("_", "*", "`", "["):
+            out.append(text[i + 1])
+            i += 2
+        elif ch in "_*`[":
+            end = text.find("]" if ch == "[" else ch, i + 1)
+            if end == -1:
+                raise ValueError(f"Can't find end of the entity starting at offset {i}")
+            out.append(text[i + 1:end])
+            i = end + 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def _capture_send_message(monkeypatch):
+    sent = []
+
+    async def fake(self, text, chat_id=None, parse_mode="Markdown"):
+        sent.append({"text": text, "parse_mode": parse_mode})
+        return {"success": True}
+
+    monkeypatch.setattr(TelegramPushService, "send_message", fake)
+    return sent
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("severity,emoji", [
+    ("critical", "🔴"), ("high", "🟠"), ("HIGH", "🟠"), ("medium", "🟡"),
+    ("warning", "🟡"), ("low", "🔵"), ("info", "🔵"), ("bogus", "⚪"),
+])
+async def test_health_alert_severity_emoji_covers_push_vocabulary(monkeypatch, severity, emoji):
+    sent = _capture_send_message(monkeypatch)
+    await TelegramPushService().send_health_alert("标题", "正文", severity=severity)
+    assert sent[0]["text"].startswith(f"{emoji} ")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("title", [
+    "健康预警：spo2_avg",     # 下划线在粗体实体内是字面量
+    "⚠️ 2*2 [x] `y`",         # 粗体内的 * 会提前闭合实体 → 400
+    "Eval Golden Set",
+])
+async def test_health_alert_title_survives_legacy_markdown(monkeypatch, title):
+    sent = _capture_send_message(monkeypatch)
+    await TelegramPushService().send_health_alert(title, "正文", severity="warning")
+    assert sent[0]["parse_mode"] == "Markdown"
+    assert _parse_legacy_markdown(sent[0]["text"]) == f"🟡 {title}\n\n正文"
+
+
+@pytest.mark.asyncio
+async def test_health_alert_message_keeps_markdown_for_formatted_callers(monkeypatch):
+    """eval_runner 传入带 *粗体* / `code` 的 Markdown 正文,格式须保留(转义只在纯文本出口做)。"""
+    sent = _capture_send_message(monkeypatch)
+    body = "*Eval Weekly*\n✅ `safety`: 3/3"
+    await TelegramPushService().send_health_alert("Eval Golden Set", body, severity="warning")
+    assert sent[0]["text"].endswith(body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content", [
+    "静息心率异常偏高：当前 72 bpm，7天均值 61.4 bpm，偏高 17.2%",
+    "rule_id=anomaly.spo2_low 触发",     # 落单 `_`:旧实现 400 拒收整条
+    "a*b `c [d] e_f \\_g",               # 四个特殊字符 + 文本里原有的反斜杠
+])
+async def test_push_telegram_fallback_plain_text_shows_verbatim(db, monkeypatch, content):
+    from app.services.notification.push_service import PushService
+
+    sent = _capture_send_message(monkeypatch)
+    result = await PushService(db)._send_telegram(
+        1, "health_alert", "⚠️ 标题_x", content, {"severity": "warning"}, "info"
+    )
+    assert result == {"success": True}
+    assert _parse_legacy_markdown(sent[0]["text"]) == f"🟡 ⚠️ 标题_x\n\n{content}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("data,severity,emoji", [
+    ({}, "high", "🟠"),                       # Safety Guardian:data 无 severity,只有推送档位
+    ({"severity": "critical"}, "info", "🔴"),  # 生产者显式标注优先(delayed 回放同理)
+])
+async def test_push_telegram_fallback_severity_source(db, monkeypatch, data, severity, emoji):
+    from app.services.notification.push_service import PushService
+
+    sent = _capture_send_message(monkeypatch)
+    await PushService(db)._send_telegram(1, "health_alert", "标题", "正文", data, severity)
+    assert sent[0]["text"].startswith(f"{emoji} ")
+
+
+@pytest.mark.asyncio
+async def test_safety_guardian_high_push_renders_high_on_telegram(db, monkeypatch):
+    """真实 send_notification 调用形态(notifications.py Safety Guardian):原先 HIGH 被渲染成 🔵 info。"""
+    from datetime import datetime
+
+    from app.models.notification import UserNotificationSetting
+    from app.models.user import User
+    from app.services.notification.push_service import PushService
+
+    user = User(username="tg_fallback", email="tg_fallback@test.local", name="tg", hashed_password="x")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    db.add(UserNotificationSetting(user_id=user.id, enabled=True, health_alert_enabled=True))
+    db.commit()
+    sent = _capture_send_message(monkeypatch)
+    with patch("app.services.notification.push_service.get_china_now",
+               return_value=datetime(2026, 3, 1, 14, 0)):
+        result = await PushService(db).send_notification(
+            user_id=user.id, notification_type="health_alert",
+            title="⚠️ 血压 185/125 达到急症阈值", content="收缩压 185 mmHg,建议立即就医。",
+            data={"screen": "alerts", "rule_id": "vitals.bp_critical"},
+            severity="high", channels=["telegram"],
+        )
+    assert result["success"] is True
+    assert sent[0]["text"].startswith("🟠 ")

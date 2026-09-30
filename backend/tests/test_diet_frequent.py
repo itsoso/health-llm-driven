@@ -136,7 +136,17 @@ def test_symptom_history_is_not_recommended_or_deleted(client, auth, db, descrip
     assert [item["food_items"] for item in _get(client, headers, limit=1)] == ["燕麦粥"]
     assert db.query(DietRecord).filter_by(user_id=user.id, food_items=description).count() == 3
 
-@pytest.mark.parametrize("description", ["山药片", "猪肚汤", "酸奶", "苦瓜炒蛋", "维C柠檬茶", "鸡胸肉 200g", "无糖咖啡"])
+@pytest.mark.parametrize("description", ["没吃", "牛肉面吗", "准备吃火锅", "下次不喝奶茶了", "早上没吃鸡蛋"])
+def test_non_intake_history_is_not_recommended_or_deleted(client, auth, db, description):
+    """旧快捷记录兜底曾把「午餐没吃」「晚饭吃了牛肉面吗」存成食物;一键复用不得重放。"""
+    user, headers = auth
+    for day in range(3):
+        _seed(db, user.id, description, "lunch", day, calories=150)
+    _seed(db, user.id, "燕麦粥", "breakfast", 0, calories=180)
+    assert [item["food_items"] for item in _get(client, headers, limit=1)] == ["燕麦粥"]
+    assert db.query(DietRecord).filter_by(user_id=user.id, food_items=description).count() == 3
+
+@pytest.mark.parametrize("description", ["山药片", "猪肚汤", "酸奶", "苦瓜炒蛋", "维C柠檬茶", "鸡胸肉 200g", "无糖咖啡", "没放盐的鸡胸肉", "不加糖的豆浆"])
 def test_normal_food_names_remain_reusable(client, auth, db, description):
     user, headers = auth
     _seed(db, user.id, description, "lunch", 0)

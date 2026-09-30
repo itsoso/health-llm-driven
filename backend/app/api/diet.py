@@ -48,7 +48,7 @@ from app.services.ai.food_recognition import (
 )
 from app.services.food_nutrition_lookup import calibrate_recognized_foods
 from app.services.intake_intent_classifier import (
-    classify_intake_intent,
+    classify_intake_subject,
     looks_like_food_ui_text,
     is_reusable_food_description,
 )
@@ -130,7 +130,7 @@ def _assert_diet_food_items_allowed(food_items: str) -> None:
             status_code=400,
             detail="界面文案或按钮文字不能作为饮食记录写入，请填写真实食物名称和份量。",
         )
-    intent = classify_intake_intent(food_items)
+    intent = classify_intake_subject(food_items)
     if intent.kind == "diet_management":
         raise HTTPException(
             status_code=400,

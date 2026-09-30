@@ -741,3 +741,65 @@ def test_daily_insight_backstop(db, aggregation, expect_generic):
     else:
         assert kwargs["content"] == aggregation
         assert "full_content" not in kwargs["data"]
+
+
+# ─────────────────── 出口:异常检测预警(AnomalyDetectionService.send_alerts) ───────────────────
+
+def _mk_anomaly_push_user(db) -> int:
+    from app.models.notification import UserNotificationSetting
+    from app.models.user import User
+
+    user = User(username="anomaly_push", email="anomaly_push@test.local",
+                name="anomaly_push", hashed_password="x")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    # threshold=info:本组只验隐私出口,与推送档位映射(H1-B)解耦
+    db.add(UserNotificationSetting(
+        user_id=user.id, enabled=True, health_alert_enabled=True,
+        alert_severity_threshold="info", ios_push_enabled=True,
+        ios_device_token="fake-token", wechat_enabled=False,
+    ))
+    db.commit()
+    return user.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message,expect_generic", [
+    ("血氧饱和度偏低：92.5%（阈值 95%），请注意", False),
+    (f"血氧饱和度偏低：92.5%，与{DRUG}无关", True),
+])
+async def test_anomaly_push_exit_goes_through_lock_screen_choke_point(db, message, expect_generic):
+    """真走 PushService.send_notification,只在 APNs 出口截获:良性预警逐字节透传,
+    点名药物的文案被中央 choke point 泛化(原文仍在 App 内预警页)。"""
+    from datetime import date
+
+    from app.models.anomaly_alert import AnomalyAlert
+    from app.services.anomaly_detection_service import AnomalyDetectionService
+    from app.services.notification.push_service import PushService
+
+    user_id = _mk_anomaly_push_user(db)
+    alert = AnomalyAlert(
+        user_id=user_id, alert_type="spo2_low", severity="warning", metric_name="spo2_avg",
+        current_value=92.5, detection_date=date(2026, 3, 1), message=message,
+    )
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+
+    ios = AsyncMock(return_value={"success": True})
+    with patch("app.services.notification.push_service.get_china_now",
+               return_value=datetime(2026, 3, 1, 14, 0)), \
+            patch.object(PushService, "_send_ios", new=ios):
+        await AnomalyDetectionService(db).send_alerts(user_id, [alert])
+
+    assert ios.call_count == 1
+    title, content, data = ios.call_args.args[3:]
+    if expect_generic:
+        assert DRUG not in title and DRUG not in content
+        assert (title, content) == ("健康管家提醒", "有一条为你准备的健康建议,点开查看。")
+        assert data["lock_screen_redacted"] is True
+    else:
+        assert (title, content) == ("健康预警：血氧饱和度", message)
+        assert "lock_screen_redacted" not in data
+    assert data["screen"] == "alerts"
