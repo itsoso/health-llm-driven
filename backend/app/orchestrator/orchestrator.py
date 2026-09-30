@@ -28,6 +28,7 @@ from app.orchestrator.schema import (
     SpecialistFinding,
 )
 from app.orchestrator.specialists import all_specialists, get_specialist
+from app.services.crisis_lexicon import contains_crisis_language
 from app.services.episode.validator import validate_text, TextValidationResult
 from app.services.llm.error_messages import safe_llm_error_message
 from app.twin.builder import build_twin
@@ -112,6 +113,9 @@ def _maybe_build_genui_chart(
     铁律: block 的数值全部来自 build_line_chart 的 DB 查询, 本路径不调用任何 LLM。
     """
     if GENUI_CAP not in (req.client_caps or []):
+        return None
+    # 图表短路不跑 specialist:危机表达必须走全流程,拿到 MentalHealthCompanion 的热线。
+    if contains_crisis_language(req.query):
         return None
 
     from app.services.genui import (
@@ -260,6 +264,13 @@ def _select_specialists(
             s = get_specialist(name)
             if s:
                 selected.append(s)
+        # 危机表达必须经过 MentalHealthCompanion 的热线提示,调用方指定专家名单也不例外。
+        if contains_crisis_language(intent.raw_query) and not any(
+            s.name == "mental_health_companion" for s in selected
+        ):
+            mental = get_specialist("mental_health_companion")
+            if mental:
+                selected.append(mental)
         return selected
 
     if _is_trivial_query(intent):
@@ -1272,7 +1283,7 @@ def _finding_is_safety_or_data_gap(finding: SpecialistFinding) -> bool:
             continue
         item_type = str(item.get("type") or "").lower()
         severity = str(item.get("severity_label") or item.get("severity") or "").lower()
-        if item_type == "data_gap":
+        if item_type in {"data_gap", "crisis_warning"}:
             return True
         if severity in {"red", "critical", "emergency", "high", "severe"}:
             return True
@@ -1941,9 +1952,10 @@ async def run_orchestrator(
     conflict_arb_block = await _resolve_cross_review_block(findings, twin, db, user_id)
     perf["cross_review_ms"] = int((time.monotonic() - t_cross_review) * 1000)
 
-    # IQS 实时检索 grounding — 非 lite / 非 siri 才取 (flag 关或失败则空, 不阻断)
+    # IQS 实时检索 grounding — 非 lite / 非 siri 才取 (flag 关或失败则空, 不阻断)。
+    # 危机原话不外发检索: 不出进程、不进检索日志、不注入未经审核的网页内容。
     realtime_evidence_block = ""
-    if not lite_mode and req.source != "siri":
+    if not lite_mode and req.source != "siri" and not contains_crisis_language(req.query):
         from app.services.iqs_search import fetch_realtime_evidence
         t_iqs = time.monotonic()
         realtime_evidence_block = await fetch_realtime_evidence(req.query)
@@ -2470,9 +2482,14 @@ async def stream_orchestrator(
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[orchestrator.stream] specialist_findings audit bypass 失败: {e}")
 
-                # IQS 实时检索 grounding (与 run_orchestrator 对齐, flag 关/失败则空, 不阻断流)
+                # IQS 实时检索 grounding (与 run_orchestrator 对齐, flag 关/失败则空, 不阻断流;
+                # 危机原话不外发检索)
                 realtime_evidence_block = ""
-                if not lite_mode and req.source != "siri":
+                if (
+                    not lite_mode
+                    and req.source != "siri"
+                    and not contains_crisis_language(req.query)
+                ):
                     from app.services.iqs_search import fetch_realtime_evidence
                     t_iqs = time.monotonic()
                     realtime_evidence_block = await fetch_realtime_evidence(req.query)

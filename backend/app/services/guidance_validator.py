@@ -652,6 +652,13 @@ def build_confirmable_health_fact_draft(text: str) -> dict | None:
     raw = unicodedata.normalize("NFKC", text or "").strip()
     if any(marker in raw for marker in ("?", "？", "怎么", "为什么", "为何", "影响", "分析")):
         return None
+    # The draft reply is local and model-free, so it would also skip the crisis
+    # hotline guarantee and the acute red lines. Such turns keep the normal path.
+    from app.services.crisis_lexicon import contains_crisis_language
+    from app.services.workday_microbreak_safety import contains_acute_symptom_language
+
+    if contains_crisis_language(raw) or contains_acute_symptom_language(raw):
+        return None
     # Explicit mutations must continue through the normal tool path so
     # validation, authorization, independent outcomes and durable receipts stay
     # authoritative.  This shortcut is only for uncommanded facts that need a

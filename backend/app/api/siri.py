@@ -26,6 +26,7 @@ from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.config import settings
+from app.services.crisis_lexicon import with_crisis_support
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/siri", tags=["Siri快捷指令"])
@@ -416,14 +417,17 @@ async def siri_say(
             current_user.id,
             len(message),
         )
-        if full_reply:
-            return SiriResponse(text=strip_markdown(full_reply))
-        return SiriResponse(text="收到了，正在处理中。请稍后在 App 中查看结果。")
+        # 危机回合走质量模型更慢、更易超时: 超时兜底同样必须带急救电话与热线。
+        return SiriResponse(text=strip_markdown(with_crisis_support(
+            message, full_reply or "收到了，正在处理中。请稍后在 App 中查看结果。",
+        )))
     except Exception as e:
         logger.error(f"Siri 请求处理失败 user={current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="处理失败，请稍后重试")
 
-    clean_text = strip_markdown(full_reply or "收到了，请稍后查看记录。")
+    clean_text = strip_markdown(
+        with_crisis_support(message, full_reply or "收到了，请稍后查看记录。")
+    )
 
     return SiriResponse(
         text=clean_text,

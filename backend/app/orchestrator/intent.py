@@ -8,6 +8,7 @@ import re
 from typing import List
 
 from app.orchestrator.schema import Intent
+from app.services.crisis_lexicon import contains_crisis_language
 
 
 # 类别 → 关键字（中英）
@@ -75,6 +76,13 @@ def classify_intent(query: str) -> Intent:
                     categories.append(cat)
                 matched_keywords.append(kw)
                 break
+
+    # 轻生/自伤意念(「不想活了」「我想死」)多不含上面任何字面词且常 ≤6 字,
+    # 不显式归入 mental 就会被 trivial 短路跳过 MentalHealthCompanion 的危机热线。
+    # keywords 经 SSE intent 事件回传客户端:只记中性标签,不回显原话。
+    if "mental" not in categories and contains_crisis_language(q):
+        categories.append("mental")
+        matched_keywords.append("crisis_language")
 
     # 如果没匹配到任何类别，默认 general（让所有 specialist 自行决定）
     if not categories:

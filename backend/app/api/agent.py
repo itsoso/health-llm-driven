@@ -575,6 +575,11 @@ def _maybe_genui_chart_events(
     """
     if GENUI_CAP not in (caps or []):
         return None
+    # 图表短路不经 AgentExecutor: 危机表达必须走普通路径, 拿到热线与急救指引。
+    from app.services.crisis_lexicon import contains_crisis_language
+
+    if contains_crisis_language(message):
+        return None
 
     from app.services.genui import (
         build_empty_state,
