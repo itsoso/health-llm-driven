@@ -1,6 +1,15 @@
+import re
+from pathlib import Path
+
 import pytest
 
-from app.services.intake_intent_classifier import classify_intake_intent
+from app.services.intake_intent_classifier import (
+    _REUSE_EXCLUSION_RES,
+    NON_INTAKE_REASONS,
+    classify_intake_intent,
+    classify_intake_subject,
+    is_reusable_food_description,
+)
 
 
 @pytest.mark.parametrize(("query", "kind"), [
@@ -205,3 +214,163 @@ def test_real_records_with_notes_survive_reflection_guard(query, kind):
     """否定/吐槽守卫不得误伤带注释的真实记录。"""
     result = classify_intake_intent(query)
     assert result.kind == kind, f"{query!r} 应为 {kind},实为 {result.kind}"
+
+
+# ──── 非摄入言语行为守卫(2026-09-30 supplement-taken-contract follow-up) ────
+# 漏服/否定/计划/提醒/提问都不是「一次已发生的摄入」: 补剂虚高依从进 Twin 在服集
+# 与 DSI/DDI 推理, 药物/饮食同理 —— 必须 fail-closed 为 unknown, 绝不落写草稿。
+_NOT_TAKEN_CASES = [
+    # 补剂 · 过去否定 / 漏服
+    "没吃维生素D",
+    "还没吃维生素D",
+    "维生素D还没吃",
+    "没有吃鱼油",
+    "未服用维生素D",
+    "维生素D没补",
+    "忘了吃鱼油",
+    "鱼油忘了",
+    "漏服了一次鱼油",
+    "维生素D还没有",
+    "fish oil还没有",
+    "fish oil有什么用",
+    # 补剂 · 当下否定 / 停用
+    "今天不吃镁",
+    "我停了鱼油",
+    "暂停吃辅酶Q10",
+    # 补剂 · 提醒 / 计划
+    "别忘了吃维生素D",
+    "记得吃鱼油",
+    "提醒我吃维生素D",
+    "准备吃鱼油",
+    "打算吃辅酶Q10",
+    "该吃维生素D了",
+    "待会吃鱼油",
+    "明天吃维生素D",
+    # 补剂 · 提问
+    "吃了维生素D吗",
+    "今天吃鱼油了吗",
+    "鱼油吃了没",
+    "吃没吃鱼油",
+    "有没有吃维生素D",
+    "要不要吃鱼油",
+    "鱼油怎么吃",
+    "维生素D吗",
+    # 药物
+    "没吃奥美拉唑",
+    "忘了吃药",
+    "今天不吃二甲双胍",
+    "漏服了一次二甲双胍",
+    "准备吃布洛芬",
+    "记得吃替普瑞酮",
+    "吃了奥美拉唑吗",
+    # 饮食
+    "早上没吃鸡蛋",
+    "中午没吃米饭",
+    "午餐没吃",
+    "今天不吃晚饭",
+    "准备吃牛肉面",
+    "待会吃牛肉面",
+    "想吃火锅",
+    "晚饭吃了牛肉面吗",
+    # 饮水
+    "今天还没喝水",
+]
+
+
+@pytest.mark.parametrize("query", _NOT_TAKEN_CASES)
+def test_not_taken_statements_never_classify_as_record(query):
+    result = classify_intake_intent(query)
+    assert result.kind == "unknown", f"{query!r} 不是一次已发生的摄入,实为 {result.kind}({result.text!r})"
+    assert result.reason in NON_INTAKE_REASONS
+
+
+@pytest.mark.parametrize(("query", "reason"), [
+    ("没吃维生素D", "intake_reflection"),
+    ("忘了吃鱼油", "intake_reflection"),
+    ("准备吃鱼油", "intake_reflection"),
+    ("别忘了吃维生素D", "intake_reflection"),
+    ("吃了维生素D吗", "intake_question"),
+    ("鱼油吃了没", "intake_question"),
+    ("维生素D吗", "intake_question"),
+])
+def test_not_taken_statements_report_their_speech_act(query, reason):
+    assert classify_intake_intent(query).reason == reason
+
+
+@pytest.mark.parametrize(("query", "kind"), [
+    # 用户点名必须保留的肯定式
+    ("吃了维生素D", "supplement"),
+    ("吃了 维生素D", "supplement"),
+    ("补剂鱼油", "supplement"),
+    ("服用镁", "supplement"),
+    ("晚饭吃了牛肉面, 吃完有点反酸", "diet"),
+    # 相邻肯定式: 标记字只在紧贴摄入动词时才否决
+    ("刚吃了鱼油", "supplement"),
+    ("今天吃了维生素D3", "supplement"),
+    ("补了维生素D", "supplement"),
+    ("睡前吃了镁", "supplement"),
+    ("吃了鱼油，差点忘了", "supplement"),
+    ("记录 维生素D", "supplement"),
+    ("早上吃了替普瑞酮胶囊", "medication"),
+    ("记录刚吃了奥美拉唑20mg", "medication"),
+    ("吃了别嘌醇", "medication"),
+    ("吃了吗啡缓释片", "medication"),
+    ("午餐吃了牛肉面", "diet"),
+    ("今晚吃了牛肉面", "diet"),
+    ("主要吃了鸡胸肉", "diet"),
+    ("晚饭吃了不辣的牛肉面", "diet"),
+    ("午餐吃了没放盐的鸡胸肉", "diet"),
+    ("喝了300ml水", "water"),
+    # 先记录后查询的复合句:疑问在后续分句,摄入本身成立
+    ("记一下吃了鱼油，看看对基因有什么影响", "supplement"),
+    ("记录午餐吃了牛肉面，再告诉我热量是多少", "diet"),
+])
+def test_affirmative_intakes_survive_not_taken_guard(query, kind):
+    result = classify_intake_intent(query)
+    assert result.kind == kind, f"{query!r} 应为 {kind},实为 {result.kind}({result.reason})"
+
+
+@pytest.mark.parametrize("query", [
+    "空腹血糖5.6，早上没吃东西",
+    "血压130/85，今天还没吃降压药",
+])
+def test_not_taken_guard_does_not_preempt_health_metrics(query):
+    """空腹测量常注明「没吃」;指标本身仍要记录,守卫只拦摄入草稿。"""
+    assert classify_intake_intent(query).kind == "health_metric"
+
+
+@pytest.mark.parametrize(("query", "subject"), [
+    ("没吃维生素D", "supplement"),
+    ("准备吃鱼油", "supplement"),
+    ("下次不吃鱼油了", "supplement"),
+    ("吃了奥美拉唑吗", "medication"),
+    ("早上没吃鸡蛋", "diet"),
+    ("吃了维生素D", "supplement"),
+    ("删除这一餐", "diet_management"),
+])
+def test_subject_classification_ignores_speech_act(query, subject):
+    """阻断型调用方(饮食写入/工具校验/视觉清洗)按主题判定: 否定/提问的补剂仍是补剂。"""
+    assert classify_intake_subject(query).kind == subject
+
+
+# 与 mobile/utils/dietIntakeGuard.ts::isReusableDietFoodDescription 同一组正反例。
+@pytest.mark.parametrize("description", [
+    "没吃", "牛肉面吗", "准备吃火锅", "下次不喝奶茶了", "早上没吃鸡蛋", "午餐吃了啥", "胃疼",
+])
+def test_non_intake_history_is_not_reusable(description):
+    assert not is_reusable_food_description(description)
+
+
+@pytest.mark.parametrize("description", [
+    "山药片", "猪肚汤", "酸奶", "无糖咖啡", "鸡胸肉 200g", "没放盐的鸡胸肉", "不加糖的豆浆",
+])
+def test_real_foods_remain_reusable(description):
+    assert is_reusable_food_description(description)
+
+
+def test_reuse_exclusions_mirror_mobile_guard():
+    """mobile 过期缓存守卫必须编译与后端逐条一致的源串,否则旧响应会重放非摄入文本。"""
+    guard = (Path(__file__).resolve().parents[2] / "mobile/utils/dietIntakeGuard.ts").read_text(encoding="utf-8")
+    block = guard.split("const REUSE_EXCLUSION_SOURCES = [", 1)[1].split("\n];", 1)[0]
+
+    assert re.findall(r"String\.raw`([^`]*)`", block) == [p.pattern for p in _REUSE_EXCLUSION_RES]

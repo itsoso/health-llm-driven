@@ -341,6 +341,11 @@ class TestDietMedicationGuard:
         ["刚服用了", "雷贝拉唑肠溶片 10mg"],
         "鱼油",
         "维生素D3",
+        # 否定/计划/提问不改变主题: 仍是药物/补剂, 不能落成饮食记录
+        "没吃维生素D",
+        "准备吃鱼油",
+        "下次不吃鱼油了",
+        "吃了奥美拉唑吗",
     ])
     def test_medication_terms_never_become_diet_food_items(self, food_items):
         v = validate_tool_call("health_record", {

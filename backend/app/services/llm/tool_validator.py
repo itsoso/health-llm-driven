@@ -45,7 +45,7 @@ from app.services.health_query_dimensions import (
     ILLNESS_MAX_QUERY_DAYS,
     normalize_health_query_args,
 )
-from app.services.intake_intent_classifier import classify_intake_intent
+from app.services.intake_intent_classifier import classify_intake_subject
 
 # 北京时区 (UTC+8) — 用户活动以中国本地日期为准
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -82,12 +82,12 @@ def _flatten_text(value: Any) -> str:
 
 def _looks_like_diet_management_intent(value: Any) -> bool:
     """LLM 有时把“删除/误删这餐”当成 diet.food_items, 写库前硬拦截."""
-    return classify_intake_intent(_flatten_text(value)).kind == "diet_management"
+    return classify_intake_subject(_flatten_text(value)).kind == "diet_management"
 
 
 def _looks_like_non_diet_intake(value: Any) -> bool:
     """药物/补剂摄入不能落成 DietRecord, 写库前硬拦截."""
-    return classify_intake_intent(_flatten_text(value)).kind in {"medication", "supplement"}
+    return classify_intake_subject(_flatten_text(value)).kind in {"medication", "supplement"}
 
 
 def _looks_like_food_ui_text(value: Any) -> bool:

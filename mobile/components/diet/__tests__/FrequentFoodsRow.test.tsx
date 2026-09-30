@@ -31,7 +31,13 @@ describe('FrequentFoodsRow', () => {
       expect(queryByTestId('frequent-foods-row')).toBeNull();
     },
   );
-  it.each(['山药片', '猪肚汤', '酸奶', '苦瓜炒蛋', '维C柠檬茶', '鸡胸肉 200g', '无糖咖啡'])(
+  it.each(['没吃', '牛肉面吗', '准备吃火锅', '下次不喝奶茶了', '早上没吃鸡蛋'])(
+    'does not offer a stale non-intake record for reuse: %s', (description) => {
+      const { queryByTestId } = render(<FrequentFoodsRow foods={[food({ food_items: description })]} onPick={jest.fn()} />);
+      expect(queryByTestId('frequent-foods-row')).toBeNull();
+    },
+  );
+  it.each(['山药片', '猪肚汤', '酸奶', '苦瓜炒蛋', '维C柠檬茶', '鸡胸肉 200g', '无糖咖啡', '没放盐的鸡胸肉', '不加糖的豆浆'])(
     'keeps real foods reusable: %s', (description) => {
       const onPick = jest.fn();
       const value = food({ food_items: description });

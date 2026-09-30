@@ -541,6 +541,15 @@ def test_unknown_medication_like_name_does_not_enter_medication_write_domain():
     assert intent.domain != "medication"
 
 
+@pytest.mark.parametrize("message", ("没吃辅酶Q10", "准备吃辅酶Q10", "辅酶Q10吃了吗"))
+def test_non_intake_supplement_statement_keeps_supplement_domain(message):
+    """漏服/计划/提问不是摄入写,但话题仍是补剂 —— 不能因泛化动词「吃」落到饮食域。"""
+    intent = classify_agent_utterance(message)
+
+    assert intent.domain == "supplement"
+    assert intent.is_write is False
+
+
 def test_clear_symptom_statement_is_write_intent():
     intent = classify_agent_utterance("还是有腰疼的症状。")
 

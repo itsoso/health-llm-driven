@@ -196,6 +196,20 @@ def test_sanitize_food_recognition_rejects_non_food_intake_but_keeps_meal_items(
     assert result["meal_description"] == "牛肉面 1碗"
 
 
+def test_sanitize_food_recognition_rejects_negated_or_questioned_non_food_intake():
+    result = sanitize_food_recognition_result({
+        "success": True,
+        "foods": [
+            {"name": "牛肉面", "quantity": "1碗", "calories": 620},
+            {"name": "没吃维生素D", "quantity": "1粒", "calories": 0},
+            {"name": "奥美拉唑吃了吗", "quantity": "1片", "calories": 0},
+        ],
+    })
+
+    assert result["success"] is True
+    assert [food["name"] for food in result["foods"]] == ["牛肉面"]
+
+
 def test_sanitize_food_recognition_keeps_food_with_supplement_like_name():
     result = sanitize_food_recognition_result({
         "success": True,
