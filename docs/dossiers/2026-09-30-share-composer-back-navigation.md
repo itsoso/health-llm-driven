@@ -4,7 +4,7 @@
 | --- | --- |
 | 状态 | building |
 | 当前阶段 | Local verification passed; publication blocked by existing release incident |
-| Controller | quick_fix (no controller) |
+| Controller | incident / health-harness-orchestrator, safety-gate overlay |
 
 ## G1 / G2
 
@@ -52,3 +52,32 @@ No production publication claimed. Existing backend release `36648070016` stoppe
 at Laya verification with NEEDS_OPERATOR and a retained lease; OTA has an independent
 toolchain-ancestor hardening failure. Do not replay that release or bypass its gates
 to publish this UI change. Exact-candidate CI and governed OTA remain required.
+
+## Publication continuation (2026-09-30)
+
+Run ledger: `docs/_generated/harness-runs/e919e4c952bb.jsonl` (local only).
+UI repair is committed as `235c44b27185d2f83689bec3b692fd37b97b3eaf`.
+Its exact remote CI `36659917477` failed at the production dependency audit,
+not at type checking. No deployment or OTA has been performed for this repair.
+
+- Remediation updates only same-major brace-expansion and joi overrides and lock
+  entries. OSV production audit passes across 1087 entries with no exceptions.
+  Dependencies were installed afresh in this isolated checkout, without modifying
+  the original workspace's dependency tree. TypeScript and the 12-suite / 297-test
+  share, chat-entry and diet-capture regression pass with the updated lock.
+- OTA validation `36601390802` rejected a writable `/opt` ancestor. The upstream
+  [hosted runner initializer](https://github.com/actions/runner-images/blob/main/images/ubuntu/scripts/build/configure-system.sh)
+  sets `/opt` writable. Bootstrap now seals this one directory by a no-follow file
+  descriptor before materializing canonical source, and verifies identity,
+  ownership and mode. Later strict toolchain checks remain unchanged. No recursive
+  permissions change, alternate toolchain, credential exposure or release bypass.
+  RED: 4 failed / 20 passed; fixed workflow, publisher and CI-contract tests:
+  87 passed (`/tmp/reva-ota-opt-green-final.log`).
+- Independent read-only recovery review: BLOCK for existing recovery operators.
+  Installed, running Laya with retained e13 NEEDS_OPERATOR lease does not satisfy
+  unstarted-Laya retirement, partial-install retirement or stopped-service recovery.
+  A new narrow reviewed recovery contract needs explicit incident authorization;
+  current services, lease, evidence and keys were not modified in this continuation.
+- Publication remains blocked: current main is red, new publisher change still
+  needs independent G4 and exact remote CI, and backend incident closure is pending.
+  Do not push or dispatch while the existing main-red boundary is unresolved.

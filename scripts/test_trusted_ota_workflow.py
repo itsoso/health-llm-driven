@@ -113,6 +113,88 @@ def test_node_hardening_and_commands_use_only_fixed_pinned_toolchain():
     assert "--cache /opt/reva-release/npm-cache" in install["run"]
 
 
+def test_hosted_opt_is_sealed_before_canonical_checkout():
+    first = workflow()["jobs"]["ota"]["steps"][0]["run"]
+    assert first.index("seal_bootstrap_directory(Path('/opt'))") < first.index(
+        "/usr/bin/install -d"
+    )
+    # Later checks must still reject a writable ancestor, not waive it.
+    assert "Path('/'), Path('/opt')" in named("Harden fixed Node")["run"]
+
+
+def test_bootstrap_seals_writable_hosted_directory_by_descriptor(tmp_path, monkeypatch):
+    import os
+    import types
+
+    ns = embedded_functions(workflow()["jobs"]["ota"]["steps"][0])
+    directory = tmp_path / "opt"
+    directory.mkdir(mode=0o777)
+    directory.chmod(0o777)
+    real_fstat = os.fstat
+    ownership = []
+
+    def root_stat(fd):
+        value = real_fstat(fd)
+        return types.SimpleNamespace(
+            st_uid=0, st_gid=0, st_dev=value.st_dev, st_ino=value.st_ino,
+            st_mode=value.st_mode,
+        )
+
+    monkeypatch.setattr(os, "fchown", lambda fd, uid, gid: ownership.append((uid, gid)))
+    monkeypatch.setattr(os, "fstat", root_stat)
+    ns["seal_bootstrap_directory"](directory)
+    assert ownership == [(0, 0)]
+    assert directory.stat().st_mode & 0o777 == 0o755
+
+
+@pytest.mark.parametrize("kind", ["symlink", "file"])
+def test_bootstrap_rejects_non_directory_without_mutation(tmp_path, monkeypatch, kind):
+    import os
+
+    ns = embedded_functions(workflow()["jobs"]["ota"]["steps"][0])
+    target = tmp_path / "target"
+    target.mkdir()
+    path = tmp_path / "opt"
+    if kind == "symlink":
+        path.symlink_to(target, target_is_directory=True)
+    else:
+        path.write_text("not a directory")
+    monkeypatch.setattr(os, "fchown", lambda *args: pytest.fail("must not mutate"))
+    with pytest.raises((OSError, ValueError)):
+        ns["seal_bootstrap_directory"](path)
+
+
+@pytest.mark.parametrize("failure", ["replacement", "ownership", "mode"])
+def test_bootstrap_fails_closed_if_sealing_not_proven(tmp_path, monkeypatch, failure):
+    import os
+    import types
+
+    ns = embedded_functions(workflow()["jobs"]["ota"]["steps"][0])
+    path = tmp_path / "opt"
+    path.mkdir()
+    real_fstat = os.fstat
+    calls = []
+
+    def observed_stat(fd):
+        value = real_fstat(fd)
+        calls.append(fd)
+        after = len(calls) > 1
+        return types.SimpleNamespace(
+            st_uid=123 if after and failure == "ownership" else 0, st_gid=0,
+            st_dev=value.st_dev,
+            st_ino=value.st_ino + (1 if after and failure == "replacement" else 0),
+            st_mode=value.st_mode | (0o022 if after and failure == "mode" else 0),
+        )
+
+    monkeypatch.setattr(os, "fchown", lambda *args: None)
+    monkeypatch.setattr(os, "fstat", observed_stat)
+    with pytest.raises(ValueError, match="sealing failed"):
+        ns["seal_bootstrap_directory"](path)
+    # The descriptor is closed on failure, too.
+    with pytest.raises(OSError):
+        real_fstat(calls[0])
+
+
 def test_node_hardening_rejects_external_symlink_before_chown(tmp_path):
     ns = embedded_functions(named("Harden fixed Node"))
     tool = tmp_path / "tool"

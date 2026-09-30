@@ -38,6 +38,34 @@ jobs:
         test "$GITHUB_REPOSITORY" = itsoso/health-llm-driven
         [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
         test "$TARGET_SHA" = "$GITHUB_SHA"
+        # Fresh hosted images make /opt writable. Seal it before canonical checkout;
+        # this is bootstrap normalization, never an exemption from publisher checks.
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B - <<'PY'
+        import os
+        from pathlib import Path
+        import stat
+
+        def seal_bootstrap_directory(path):
+            fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                before = os.fstat(fd)
+                os.fchown(fd, 0, 0)
+                os.fchmod(fd, stat.S_IMODE(before.st_mode) & 0o777 & ~0o022)
+                after = os.fstat(fd)
+                visible = path.lstat()
+                if ((after.st_dev, after.st_ino) != (visible.st_dev, visible.st_ino)
+                        or not stat.S_ISDIR(visible.st_mode)
+                        or after.st_uid != 0 or after.st_gid != 0
+                        or after.st_mode & 0o022):
+                    raise ValueError('bootstrap directory sealing failed')
+            finally:
+                os.close(fd)
+
+        root = Path('/').lstat()
+        if not stat.S_ISDIR(root.st_mode) or root.st_uid != 0 or root.st_mode & 0o022:
+            raise ValueError('untrusted filesystem root')
+        seal_bootstrap_directory(Path('/opt'))
+        PY
         /usr/bin/sudo /usr/bin/install -d -m 0755 /opt/reva-release
         /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_NO_REPLACE_OBJECTS=1 /bin/bash --noprofile --norc -eu -c '
           /usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source
