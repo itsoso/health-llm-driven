@@ -329,8 +329,8 @@ class TestDedup:
 class TestCriticalDedupNarrowedWindow:
     """#4 under-alarm 修复 (2026-07-17): 持续危急值不能被 24h 去重静默丢弃.
 
-    真实场景: Garmin 每 2h 同步 (09/11/13/.../23 点) → regenerate_briefing_for_user
-    → evaluate_and_push_safety 重新检出 BP 220/130 → send_notification(severity="critical",
+    真实场景: Garmin 每 2h 同步 (09/11/13/.../23 点) → garmin_sync 直接派发
+    evaluate_and_push_safety 重新检出 BP 220/130 → send_notification(severity="critical",
     rule_id="vitals.bp_crisis", 默认 dedup_window_hours=24).
 
     修复前: 09:01 推一条, 11:01~次日 09:00 的每次重新检出全部命中 24h 去重被静默跳过

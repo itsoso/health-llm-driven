@@ -721,6 +721,39 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
                 "sent" if isinstance(delivery, dict) and delivery.get("success") else "failed"}
 
 
+# send_notification 返回这些 reason 属于按设计的延后/去重, 不算"没送到"。
+_SAFETY_PUSH_DEFERRED_REASONS = frozenset({"delayed_for_quiet_hours", "dedup"})
+
+
+def _log_safety_push_outcomes(tag: str, user_id: int, outcomes: list) -> None:
+    """按 send_notification 的真实返回值记 Safety 告警推送结果, 绝不无条件记"已推送"。
+
+    outcomes 每项是 send_notification 的返回 dict, 或推送时抛出的异常。
+    渠道全部失败/抛异常 → ERROR; 无一送达且非延后/去重(阈值过滤、无渠道…)→ WARNING。
+    只记计数与 reason, 不记告警文案(健康载荷)。
+    """
+    sent = 0
+    failed = 0
+    held: dict = {}
+    for outcome in outcomes:
+        if isinstance(outcome, dict) and outcome.get("success"):
+            sent += 1
+        elif isinstance(outcome, dict) and outcome.get("reason"):
+            held[outcome["reason"]] = held.get(outcome["reason"], 0) + 1
+        else:
+            failed += 1
+    msg = (
+        f"{tag} 用户 {user_id} 告警推送结果: 送达 {sent}/{len(outcomes)}, "
+        f"未送达 {held or '{}'}, 失败 {failed}"
+    )
+    if failed:
+        logger.error(msg)
+    elif sent == 0 and not set(held) <= _SAFETY_PUSH_DEFERRED_REASONS:
+        logger.warning(msg)
+    else:
+        logger.info(msg)
+
+
 @celery_app.task
 def daily_anomaly_check():
     """
@@ -793,14 +826,15 @@ def daily_anomaly_check():
                             pass
 
                         # Push CRITICAL/HIGH alerts to user
-                        try:
-                            push_service = PushService(db2)
-                            for alert in report.alerts:
-                                if alert.severity.value >= 3:  # HIGH=3, CRITICAL=4
+                        push_service = PushService(db2)
+                        outcomes = []
+                        for alert in report.alerts:
+                            if alert.severity.value >= 3:  # HIGH=3, CRITICAL=4
+                                try:
                                     # §5 推送隐私:ddi/dsi/pgx/labs/problem_red_lines
                                     # 的 title/message 带药名/化验项/诊断 → 锁屏泛化
                                     push_title, push_content = safety_alert_push_text(alert)
-                                    run_async(push_service.send_notification(
+                                    outcomes.append(run_async(push_service.send_notification(
                                         user_id=user_id,
                                         notification_type="health_alert",
                                         title=push_title,
@@ -811,10 +845,14 @@ def daily_anomaly_check():
                                             "rule_id": alert.rule_id,
                                         },
                                         severity=alert.severity.label,
-                                    ))
-                            logger.info(f"[Safety Guardian] 用户 {user_id} 已推送告警")
-                        except Exception as e:
-                            logger.warning(f"[Safety Guardian] 用户 {user_id} 推送失败: {e}")
+                                    )))
+                                except Exception as e:
+                                    outcomes.append(e)
+                                    logger.error(
+                                        f"[Safety Guardian] 用户 {user_id} 推送 {alert.category} 类告警异常: "
+                                        f"{type(e).__name__}"
+                                    )
+                        _log_safety_push_outcomes("[Safety Guardian]", user_id, outcomes)
                 except Exception as e:
                     logger.error(f"[Safety Guardian] 用户 {user_id} 评估失败: {e}")
     except Exception as e:
@@ -1165,9 +1203,7 @@ def regenerate_briefing_for_user(user_id: int):
         _generate_daily_briefing_for_user(user_id, today)
     except Exception as e:
         logger.error(f"[简报重生成] 用户 {user_id} 失败: {e}")
-
-    # 同步后实时安全评估
-    evaluate_and_push_safety.delay(user_id)
+    # 同步后安全评估由 garmin_sync 直接派发 evaluate_and_push_safety, 不在此链式触发。
 
 
 @celery_app.task(time_limit=60, name="app.tasks.notifications.evaluate_and_push_safety")
@@ -1209,6 +1245,7 @@ def evaluate_and_push_safety(user_id: int):
 
             # 推送告警
             push_service = PushService(db)
+            outcomes = []
             for alert in report.alerts:
                 if alert.severity.value >= 3:
                     try:
@@ -1238,7 +1275,7 @@ def evaluate_and_push_safety(user_id: int):
                         # §5 推送隐私:敏感类别锁屏泛化(deep_link 里的预填 prompt 属
                         # data payload,不上锁屏,保留原文)
                         push_title, push_content = safety_alert_push_text(alert)
-                        run_async(push_service.send_notification(
+                        outcomes.append(run_async(push_service.send_notification(
                             user_id=user_id,
                             notification_type="health_alert",
                             title=push_title,
@@ -1249,9 +1286,13 @@ def evaluate_and_push_safety(user_id: int):
                                 "rule_id": alert.rule_id,
                             },
                             severity=alert.severity.label,
-                        ))
+                        )))
                     except Exception as e:
-                        logger.warning(f"[实时安全评估] 推送失败 user={user_id}: {e}")
+                        outcomes.append(e)
+                        logger.error(
+                            f"[实时安全评估] 用户 {user_id} 推送 {alert.category} 类告警异常: {type(e).__name__}"
+                        )
+            _log_safety_push_outcomes("[实时安全评估]", user_id, outcomes)
 
     except Exception as e:
         logger.error(f"[实时安全评估] 用户 {user_id} 评估失败: {e}")
