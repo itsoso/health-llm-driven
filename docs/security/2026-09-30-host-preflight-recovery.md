@@ -51,6 +51,10 @@ PM2 及后端/ETH 进程身份早于原尝试且稳定。只忽略防火墙快�
 保持 0700/0600。以清空补充组后的真实 health-app 身份验证来源、版本、合成 JWT
 正常签验、错误签名与过期拒绝，不读取生产密钥。
 
+正常发布与回滚的运行身份检查读取 RECORD 中运行必需的成员；仅豁免当前解释器
+标准命名、无 hash/size、且同一 RECORD 有对应可读源码的生成缓存。缺失/不可读
+源码、独立 pyc、未知缓存名和路径越界仍失败；真实 JWT 签验仍必须通过。
+
 只重启 health-backend、celery-worker、celery-beat，等待覆盖服务停止/启动时间，
 核验新进程 UID/cgroup/命令身份连续、稳定运行及 health 中 DB/Redis/Celery 连接。
 无效 Bearer 的 /auth/me 必须返回 401，重定向不作为成功。ETH 进程身份逐项不变，

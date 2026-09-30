@@ -8,13 +8,14 @@ import csv
 import io
 import importlib
 import importlib.metadata
+import importlib.util
 import os
 import pwd
 import secrets
 import stat
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 EXACT_REQUIREMENT = re.compile(
@@ -111,7 +112,7 @@ def _runtime_identity_error(runtime_user: str) -> str | None:
 
 
 def _read_distribution_record(name: str, version: str) -> tuple[set[Path], str | None]:
-    """Open installed wheel members as data under this interpreter's prefix.
+    """Open runtime-required wheel members under this interpreter's prefix.
 
     Real opens, rather than mode-bit guesses or root's os.access, prove that the
     service identity can traverse parents and read code. RECORD paths may use
@@ -132,16 +133,42 @@ def _read_distribution_record(name: str, version: str) -> tuple[set[Path], str |
         rows = list(csv.reader(io.StringIO(raw_record), strict=True))
         if not rows or any(len(row) != 3 or not row[0] for row in rows):
             return paths, f"{name}: malformed installed RECORD"
+        # pip records optional generated caches without a hash or size. They
+        # may be absent or root-private after the constrained incident repair.
+        # Exempt only this interpreter's standard cache names for a source
+        # member that remains subject to the real read below.
+        generated_caches: set[str] = set()
+        for entry, _hash, _size in rows:
+            relative = PurePosixPath(entry)
+            if (
+                relative.is_absolute()
+                or ".." in relative.parts
+                or "__pycache__" in relative.parts
+                or relative.suffix != ".py"
+                or str(relative) != entry
+            ):
+                continue
+            for optimization in ("", "1", "2"):
+                generated_caches.add(
+                    importlib.util.cache_from_source(entry, optimization=optimization)
+                )
         prefix = Path(sys.prefix).resolve(strict=True)
         for entry, _hash, _size in rows:
-            path = Path(distribution.locate_file(entry)).resolve(strict=True)
-            if not path.is_relative_to(prefix):
-                return paths, f"{name}: RECORD member escapes interpreter prefix"
-            # Open only regular package data; never a device, FIFO, or socket.
-            before = path.stat()
-            if not stat.S_ISREG(before.st_mode):
-                return paths, f"{name}: RECORD member is not a regular file"
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            optional_cache = entry in generated_caches and not _hash and not _size
+            try:
+                path = Path(distribution.locate_file(entry)).resolve(strict=True)
+                if not path.is_relative_to(prefix):
+                    return paths, f"{name}: RECORD member escapes interpreter prefix"
+                # -B disables cache writes, not reads. Accessible caches retain
+                # every normal boundary check; only missing/private ones skip.
+                before = path.stat()
+                if not stat.S_ISREG(before.st_mode):
+                    return paths, f"{name}: RECORD member is not a regular file"
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            except (FileNotFoundError, PermissionError):
+                if optional_cache:
+                    continue
+                raise
             with os.fdopen(fd, "rb") as stream:
                 opened = os.fstat(stream.fileno())
                 if (opened.st_dev, opened.st_ino, opened.st_mode) != (
