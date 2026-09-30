@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -18,21 +18,11 @@ from sqlalchemy.orm import Session
 from app.biomarkers.normalize import normalize_observation
 from app.models.biomarker_observation import BiomarkerObservation
 from app.models.user import User
+from app.services.biomarker_service import SYNC_SOURCE, as_date, backfill_user, fill_observation
 
 logger = logging.getLogger(__name__)
 
-
-def _as_date(v: Any) -> Optional[date]:
-    if isinstance(v, datetime):
-        return v.date()
-    if isinstance(v, date):
-        return v
-    if isinstance(v, str):
-        try:
-            return date.fromisoformat(v[:10])
-        except ValueError:
-            return None
-    return None
+__all__ = ["SYNC_SOURCE", "sync_indicators_to_biomarkers"]
 
 
 def _user_sex_age(db: Session, user_id: int) -> tuple[Optional[str], Optional[int]]:
@@ -51,83 +41,86 @@ def _user_sex_age(db: Session, user_id: int) -> tuple[Optional[str], Optional[in
     return sex, age
 
 
-SYNC_SOURCE = "indicator_sync"
-
-
 def sync_indicators_to_biomarkers(db: Session, user_id: int) -> dict[str, int]:
-    """把 user 的 medical_indicators 归一并 upsert 到 biomarker_observations。
+    """把 user 的体检与 medical_indicators 对账进 biomarker_observations。幂等、自愈。
 
-    跨源去重:同 (user_id, code) 的所有已有行按**日历日**比对(observed_at 可能是
-    date/datetime/字符串,SQL 范围查询会因格式差异漏匹配 —— 必须 Python 侧归一比对)。
-    命中已有行:
-      - 其 source != "indicator_sync"(来自 exam 等更结构化来源)→ **跳过不写**
-        (exam 优先,绝不覆盖/不重复;避免同日同指标双源重复行)。
-      - 其 source == "indicator_sync"(本源)→ 更新。
-    未命中 → 插入。
+    1. 先把 user 的每张 exam 归一化落库 (exam 路径, 按 source_exam_item_id 幂等) —— 体检入库
+       API 曾漏接 ingest_exam, 这里兜底。
+    2. 全部指标 (含挂 exam 的) 归一后派生 indicator_sync 行, 以 (code, 日历日, 值) 为一次测量:
+       同一次测量已有 exam 等更结构化来源的行 → 不写并删掉本源行 (exam 优先); 同日不同值是另一次测量,
+       保留。写入期被改名的标签 (尿肌酐 →「肌酐」mg/g、MCH →「血红蛋白」pg) 由归一化的单位闸门拒收。
+    3. 对账而非追加: 每次测量至多一行本源行; 本源旧行若已不对应任何指标 (旧映射写错的 CREA/LDL 行、
+       指标被改值或删除) → 删除。旧实现逐条查「第一个同日候选」, autoflush=False 下同批新增行不可见
+       → 同日多行, 且后写覆盖先写。observed_at 可能是 date/datetime/字符串 —— 日历日在 Python 侧比对。
 
-    幂等。返回 {scanned, recognized, written, skipped}。
+    返回 {scanned, recognized, written, skipped, deleted, exam_observations}。
     """
+    exam_observations = backfill_user(db, user_id)
+
     sex, age = _user_sex_age(db, user_id)
     rows = db.execute(text(
         "SELECT name, value, unit, record_date FROM medical_indicators "
-        "WHERE user_id = :uid AND value IS NOT NULL"
+        "WHERE user_id = :uid AND value IS NOT NULL ORDER BY id"
     ), {"uid": user_id}).fetchall()
 
     scanned = len(rows)
     recognized = 0
-    written = 0
-    skipped = 0
+    desired: dict[tuple, object] = {}  # (code, 日, 值) → 归一结果
     for name, value, unit, rec_date in rows:
-        d = _as_date(rec_date)
+        d = as_date(rec_date)
         if d is None:
             continue
         norm = normalize_observation(name, value, unit, sex=sex, age=age)
-        if norm is None:  # 不在 definitions 里的指标 → 跳过(不臆造)
+        if norm is None:  # 不在 definitions 里 / 单位量纲不符 / 数值不合理 → 跳过(不臆造)
             continue
         recognized += 1
-        observed_at = datetime(d.year, d.month, d.day)
+        desired[(norm.code, d, norm.normalized_value)] = norm
 
-        # 取同 user+code 的所有行(单 user+code 行数极小),Python 侧按日历日匹配
-        candidates = (
-            db.query(BiomarkerObservation)
-            .filter(
-                BiomarkerObservation.user_id == user_id,
-                BiomarkerObservation.code == norm.code,
-            )
-            .all()
-        )
-        existing = next(
-            (c for c in candidates if _as_date(c.observed_at) == d),
-            None,
-        )
+    existing = (
+        db.query(BiomarkerObservation)
+        .filter(BiomarkerObservation.user_id == user_id)
+        .order_by(BiomarkerObservation.id)
+        .all()
+    )
+    structured = {
+        (o.code, as_date(o.observed_at), o.normalized_value) for o in existing if o.source != SYNC_SOURCE
+    }
+    own: dict[tuple, list[BiomarkerObservation]] = {}
+    for o in existing:
+        if o.source == SYNC_SOURCE:
+            own.setdefault((o.code, as_date(o.observed_at), o.normalized_value), []).append(o)
 
-        # 已有行来自更结构化来源(exam 等)→ 跳过,exam 优先,绝不覆盖/不重复
-        if existing is not None and existing.source != SYNC_SOURCE:
+    written = skipped = deleted = 0
+    for key, norm in desired.items():
+        if key in structured:  # 同一次测量已由 exam 等更结构化来源落库,绝不重复
             skipped += 1
             continue
-
-        target = existing or BiomarkerObservation(user_id=user_id)
-        target.code = norm.code
-        target.domain = norm.domain
-        target.value = norm.value
-        target.unit = norm.unit
-        target.normalized_value = norm.normalized_value
-        target.normalized_unit = norm.normalized_unit
-        target.ref_low = norm.ref_low
-        target.ref_high = norm.ref_high
-        target.flag = norm.flag
-        target.abnormal = norm.abnormal
-        target.is_risk = norm.is_risk
-        target.confidence = norm.confidence
-        target.observed_at = observed_at
-        target.source = SYNC_SOURCE
-        if existing is None:
+        mine = own.pop(key, [])
+        target = mine[0] if mine else BiomarkerObservation(user_id=user_id)
+        for extra in mine[1:]:
+            db.delete(extra)
+            deleted += 1
+        day = key[1]
+        fill_observation(target, norm, datetime(day.year, day.month, day.day), SYNC_SOURCE)
+        if not mine:
             db.add(target)
         written += 1
 
+    for stale in own.values():  # 与 exam 重复 / 指标已不存在或改值 / 旧映射写错
+        for o in stale:
+            db.delete(o)
+            deleted += 1
+
     db.commit()
     logger.info(
-        f"[biomarker_sync] user={user_id} scanned={scanned} recognized={recognized} "
-        f"written={written} skipped={skipped}"
+        f"[biomarker_sync] user={user_id} exam_observations={exam_observations} scanned={scanned} "
+        f"recognized={recognized} written={written} skipped={skipped} deleted={deleted}"
     )
-    return {"scanned": scanned, "recognized": recognized, "written": written, "skipped": skipped}
+    return {
+        "scanned": scanned,
+        "recognized": recognized,
+        "written": written,
+        "skipped": skipped,
+        "deleted": deleted,
+        "exam_observations": exam_observations,
+    }

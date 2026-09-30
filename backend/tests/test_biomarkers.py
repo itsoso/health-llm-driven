@@ -2,6 +2,8 @@
 import datetime
 import uuid
 
+import pytest
+
 from app.biomarkers import normalize_observation, resolve_code, get_definition
 
 
@@ -139,6 +141,8 @@ def test_unparseable_value_returns_none():
 
 
 def test_unknown_unit_lowers_confidence():
+    # 未识别的单位写法只是不确定, 不是「不是该指标」的证据: 按 canonical 读, 标 low。
+    # (已识别但量纲不符的单位 —— 肌酐 ml/min、血红蛋白 pg —— 才拒收, 见 test_biomarker_alias_boundaries)
     o = normalize_observation("ALT", 30, "weird-unit")
     assert o is not None
     assert o.confidence == "low"
@@ -292,3 +296,243 @@ def test_fetch_latest_labs_hba1c_returns_none_when_only_total(db):
     db.commit()
     labs = fetch_latest_labs(db, u.id)
     assert "hba1c" not in labs
+
+
+# ── 2026-09-30 事故回归 (合成数值): exam 路径的陈旧行 / 跨 exam 重复 / 跨源重复 ──────────
+
+def _obs(db, user_id):
+    from app.models.biomarker_observation import BiomarkerObservation
+    db.expire_all()
+    return sorted(
+        (r.code, r.normalized_value, r.source)
+        for r in db.query(BiomarkerObservation).filter(BiomarkerObservation.user_id == user_id)
+    )
+
+
+def _sync_row(db, user_id, code, value, day=datetime.date(2026, 5, 1)):
+    from app.models.biomarker_observation import BiomarkerObservation
+    db.add(BiomarkerObservation(
+        user_id=user_id, code=code, domain="x", value=value, unit="U/L", normalized_value=value,
+        normalized_unit="U/L", flag="normal", observed_at=datetime.datetime(day.year, day.month, day.day),
+        source="indicator_sync",
+    ))
+    db.commit()
+
+
+def test_ingest_exam_removes_row_whose_item_no_longer_maps(db):
+    """旧映射把「极低密度脂蛋白-C」落成 lipid_ldl; 重新 ingest 必须删掉这条陈旧行, 而不是跳过不管。"""
+    from app.models.biomarker_observation import BiomarkerObservation
+    from app.services.biomarker_service import ingest_exam
+
+    u = _mk_user(db)
+    exam = _mk_exam(db, u.id, items=[
+        ("低密度脂蛋白-C", 3.1, "mmol/L"),
+        ("极低密度脂蛋白-C", 0.7, "mmol/L"),
+    ])
+    vldl_item = next(i for i in exam.items if i.item_name == "极低密度脂蛋白-C")
+    db.add(BiomarkerObservation(
+        user_id=u.id, code="lipid_ldl", domain="lipid", value=0.7, unit="mmol/L",
+        normalized_value=0.7, normalized_unit="mmol/L", flag="normal",
+        observed_at=datetime.datetime(2026, 5, 1), source_exam_item_id=vldl_item.id, source="manual",
+    ))
+    db.commit()
+
+    ingest_exam(db, exam)
+
+    assert _obs(db, u.id) == [("lipid_ldl", 3.1, "manual")]
+
+
+def test_ingest_exam_falls_back_to_item_code_for_unrecognised_name(db):
+    """名字不在别名表 (英文全称) 但带 item_code 提示 → 按提示归一, 不能整张体检零行。"""
+    from app.models.medical_exam import MedicalExamItem
+    from app.services.biomarker_service import ingest_exam
+
+    u = _mk_user(db)
+    exam = _mk_exam(db, u.id)
+    db.add(MedicalExamItem(exam_id=exam.id, item_name="Alanine aminotransferase", item_code="ALT",
+                           value=118, unit="U/L", source="manual"))
+    db.add(MedicalExamItem(exam_id=exam.id, item_name="尿肌酐", item_code="CREA",  # 提示与名字冲突 → 不采信
+                           value=9.4, unit="mmol/L", source="manual"))
+    db.commit()
+    db.refresh(exam)
+
+    ingest_exam(db, exam)
+
+    assert _obs(db, u.id) == [("ALT", 118, "manual")]
+
+
+def test_ingest_exam_skips_identical_value_already_observed_same_day(db):
+    """同一份报告被导入成两张 exam (手工 + PDF 各一次) → 同日同值只留一行。"""
+    from app.services.biomarker_service import ingest_exam
+
+    u = _mk_user(db)
+    first = _mk_exam(db, u.id, items=[("谷氨酰转肽酶", 72, "U/L")])
+    second = _mk_exam(db, u.id, items=[("谷氨酰转肽酶", 72, "U/L")])
+    ingest_exam(db, first)
+    ingest_exam(db, second)
+    ingest_exam(db, second)
+
+    assert _obs(db, u.id) == [("GGT", 72, "manual")]
+
+
+def test_ingest_exam_supersedes_only_identical_sync_row(db):
+    """exam 优先只针对同一次测量 (同 code、同日、同值); 同日不同值是另一次测量, 必须保留。"""
+    from app.services.biomarker_service import ingest_exam
+
+    u = _mk_user(db)
+    _sync_row(db, u.id, "GGT", 72)
+    _sync_row(db, u.id, "GGT", 91)
+    exam = _mk_exam(db, u.id, items=[("谷氨酰转肽酶", 72, "U/L")])
+
+    ingest_exam(db, exam)
+
+    assert _obs(db, u.id) == [("GGT", 72, "manual"), ("GGT", 91, "indicator_sync")]
+
+
+def test_same_day_reingest_restores_measurement_after_correction(db):
+    """两张同日 exam 同值只留一行; 其中一张被校正后, 另一张那次测量要重新落库。"""
+    from app.services.biomarker_service import ingest_exam, ingest_exam_safely
+
+    u = _mk_user(db)
+    first = _mk_exam(db, u.id, items=[("谷氨酰转肽酶", 72, "U/L")])
+    second = _mk_exam(db, u.id, items=[("谷氨酰转肽酶", 72, "U/L")])
+    ingest_exam(db, first)
+    ingest_exam(db, second)
+    first.items[0].value = 66
+    db.commit()
+
+    assert ingest_exam_safely(db, first, same_day=True) is True
+
+    assert _obs(db, u.id) == [("GGT", 66, "manual"), ("GGT", 72, "manual")]
+
+
+def test_backfill_converges_existing_duplicates_from_reimported_exam(db):
+    """同一份报告录了两张 exam, 旧 backfill 给两张都落了行 → 同日同值两行。对账后只剩一行。"""
+    from app.models.biomarker_observation import BiomarkerObservation
+    from app.services.biomarker_service import backfill_user
+
+    u = _mk_user(db)
+    first = _mk_exam(db, u.id, items=[("谷丙转氨酶", 31, "U/L"), ("总胆固醇", 4.6, "mmol/L")])
+    second = _mk_exam(db, u.id, items=[("谷丙转氨酶", 31, "U/L"), ("总胆固醇", 4.9, "mmol/L")])
+    common = dict(user_id=u.id, domain="liver", value=31, unit="U/L", normalized_value=31, normalized_unit="U/L",
+                  flag="normal", observed_at=datetime.datetime(2026, 5, 1), source="manual")
+    for exam in (first, second):
+        db.add(BiomarkerObservation(code="ALT", source_exam_item_id=exam.items[0].id, **common))
+    db.commit()
+
+    backfill_user(db, u.id)
+    backfill_user(db, u.id)
+
+    assert [(c, v) for c, v, _ in _obs(db, u.id)] == [("ALT", 31), ("lipid_tc", 4.6), ("lipid_tc", 4.9)]
+
+
+# ── Twin 取数: 同日 VLDL / 被改名的尿肌酐 / MCH、MCHC 不得顶替真值; 未识别单位不回退到旧值 ──
+
+def _mk_indicator(db, user_id, name, value, unit, d):
+    from app.models.family_health import MedicalIndicator
+    db.add(MedicalIndicator(user_id=user_id, name=name, value=value, unit=unit, record_date=d))
+    db.commit()
+
+
+def test_fetch_latest_labs_ldl_ignores_same_day_vldl(db):
+    from app.twin._collectors import fetch_latest_labs
+
+    u = _mk_user(db)
+    d = datetime.date(2026, 2, 9)
+    # VLDL 后插 → 同日并列时「id 最新」先碰到它
+    _mk_indicator(db, u.id, "低密度脂蛋白-C", 3.1, "mmol/L", d)
+    _mk_indicator(db, u.id, "极低密度脂蛋白-C", 0.7, "mmol/L", d)
+
+    assert fetch_latest_labs(db, u.id).get("ldl") == 3.1
+
+
+def test_fetch_latest_labs_creatinine_ignores_relabelled_urine_row(db):
+    """尿肌酐被写入期归一化器改名为「肌酐」(unit mg/g), 日期更新 → 旧逻辑取它当血肌酐。"""
+    from app.twin._collectors import fetch_latest_labs
+
+    u = _mk_user(db)
+    # 同一张体检里血肌酐与被改名的尿肌酐并列 (实际形态): 同一天内找真值
+    _mk_indicator(db, u.id, "肌酐", 83, "μmol/L", datetime.date(2025, 11, 20))
+    _mk_indicator(db, u.id, "肌酐", 2.4, "mg/g", datetime.date(2025, 11, 20))
+    _mk_indicator(db, u.id, "肾小球滤过率(EPI-cr)", 96, "ml/min", datetime.date(2025, 11, 20))
+
+    labs = fetch_latest_labs(db, u.id)
+    assert labs.get("creatinine") == 83
+    assert labs.get("egfr") == 96
+
+
+def test_fetch_latest_labs_hemoglobin_rejects_relabelled_mch_and_mchc(db):
+    """同一张血常规里「血红蛋白」三行 —— g/L 真值、pg (MCH)、g/L≈330 (MCHC) —— 后两者都被改名过。"""
+    from app.twin._collectors import fetch_latest_labs
+
+    u = _mk_user(db)
+    _mk_indicator(db, u.id, "血红蛋白", 146, "g/L", datetime.date(2026, 2, 9))
+    _mk_indicator(db, u.id, "血红蛋白", 29.8, "pg", datetime.date(2026, 2, 9))
+    _mk_indicator(db, u.id, "血红蛋白", 338, "g/L", datetime.date(2026, 2, 9))
+
+    assert fetch_latest_labs(db, u.id).get("hemoglobin") == 146
+
+
+def test_fetch_latest_labs_never_skips_newest_for_an_unrecognised_unit(db):
+    """最新行单位写成「-」只是不确定: 必须用它, 不能退回更旧的正常值 (陈旧值冒充现值)。"""
+    from app.twin._collectors import fetch_latest_labs
+
+    u = _mk_user(db)
+    _mk_indicator(db, u.id, "LDL-C", 3.0, "mmol/L", datetime.date(2025, 6, 1))
+    _mk_indicator(db, u.id, "LDL-C", 5.3, "-", datetime.date(2026, 2, 9))
+    _mk_indicator(db, u.id, "eGFRcr", 27, "mL/min/1.73m2", datetime.date(2026, 2, 9))
+    _mk_indicator(db, u.id, "尿酸", 455, "-", datetime.date(2026, 2, 9))
+    _mk_indicator(db, u.id, "糖化血红蛋白", 53, "mmol/mol(IFCC)", datetime.date(2026, 2, 9))
+
+    labs = fetch_latest_labs(db, u.id)
+    assert labs.get("ldl") == 5.3
+    assert labs.get("egfr") == 27
+    assert labs.get("uric_acid") == 455
+    assert labs.get("hba1c") == pytest.approx(7.0, abs=0.01)
+
+
+def test_fetch_latest_labs_never_falls_back_to_an_older_value(db):
+    """最新一天的值读不出 (单位量纲不符) 时是「缺失」, 不能拿更旧的正常值冒充现值。"""
+    from app.twin._collectors import fetch_latest_labs
+
+    u = _mk_user(db)
+    _mk_indicator(db, u.id, "eGFR", 50, "mL/min/1.73m2", datetime.date(2026, 1, 5))
+    _mk_indicator(db, u.id, "eGFR", 25, "μmol/L", datetime.date(2026, 6, 5))
+    _mk_indicator(db, u.id, "糖化血红蛋白", 5.4, "%", datetime.date(2026, 1, 5))
+    _mk_indicator(db, u.id, "糖化血红蛋白", 7.4, "mmol/L", datetime.date(2026, 6, 5))
+    _mk_indicator(db, u.id, "肌酐", 70, "μmol/L", datetime.date(2026, 1, 5))
+    _mk_indicator(db, u.id, "肌酐", 1.6, None, datetime.date(2026, 6, 5))  # 缺单位的 mg/dL: 能读出
+
+    labs = fetch_latest_labs(db, u.id)
+    assert "egfr" not in labs
+    assert "hba1c" not in labs
+    assert labs.get("creatinine") == pytest.approx(141.44)
+
+
+def test_fetch_latest_labs_fasting_glucose_ignores_timed_and_urine_glucose(db):
+    from app.models.family_health import MedicalIndicator
+    from app.twin._collectors import fetch_latest_labs
+
+    u = _mk_user(db)
+    _mk_indicator(db, u.id, "空腹血糖", 5.0, "mmol/L", datetime.date(2026, 1, 5))
+    _mk_indicator(db, u.id, "GLU-1h", 10.5, "mmol/L", datetime.date(2026, 6, 5))
+    db.add(MedicalIndicator(user_id=u.id, name="葡萄糖(60min)", item_code="GLU", value=10.5, unit="mmol/L",
+                            record_date=datetime.date(2026, 6, 6)))
+    db.add(MedicalIndicator(user_id=u.id, name="葡萄糖(尿)", name_en="GLU", value=14.0, unit="mmol/L",
+                            record_date=datetime.date(2026, 6, 7)))
+    db.commit()
+
+    assert fetch_latest_labs(db, u.id).get("blood_glucose") == 5.0
+
+
+def test_latest_reading_keeps_undated_rows_in_newest_group():
+    """无日期行 (合成 twin / 旧缓存) 并入最新组取最差值, 绝不因缺日期被丢 (与 lab_pick.pick_worst 一致)。"""
+    from app.biomarkers.normalize import latest_reading
+
+    rows = [
+        ("2026-05-11", "低密度脂蛋白-C", 2.4, "mmol/L", "dated"),
+        ("", "LDL-C", 5.1, "mmol/L", "undated"),
+        ("2025-01-02", "低密度脂蛋白-C", 6.0, "mmol/L", "older"),
+    ]
+    assert latest_reading(rows, "lipid_ldl", pick=max) == ("undated", 5.1)
+    assert latest_reading([rows[1]], "lipid_ldl", pick=max) == ("undated", 5.1)

@@ -181,7 +181,9 @@ def fetch_bp_composite(db: Session, user_id: int, end_date: date) -> Optional[fl
 
 def fetch_fasting_glucose(db: Session, user_id: int, end_date: date) -> Optional[float]:
     """空腹血糖 — 从 medical_exam_items 拉, 找最近的 fasting_glucose 项."""
-    return _fetch_lab_item(db, user_id, end_date, ["fasting%glucose", "空腹血糖"])
+    return _fetch_lab_item(
+        db, user_id, end_date, ["fasting%glucose", "空腹血糖"], canonical_code="glucose_fasting",
+    )
 
 
 def _fetch_lab_item(
@@ -189,46 +191,39 @@ def _fetch_lab_item(
     days_window: int = 30,
     canonical_code: Optional[str] = None,
 ) -> Optional[float]:
-    """通用化验项取数. days_window 默认 30 天 (微营养窗口宽).
+    """通用化验项取数: days_window 天内最新的体检项 (默认 30 天, 微营养窗口宽)。
 
-    canonical_code 非空时: 仅接受 item_name 经 biomarker resolve_code 解析为该 code 的行,
-    防子串误判 (如「糖化血红蛋白A1」总糖化被「糖化血红蛋白」吞进标准 A1c 序列)。
+    只取能按 biomarker registry 校验的指标 (canonical_code): ILIKE 只是预筛, 每行经 reading_for_code
+    复核 —— 「低密度脂蛋白」会捞到同日的「极低密度脂蛋白-C」,「糖化血红蛋白」会捞到总糖化 A1。值为
+    canonical 单位。canonical_code 为 None 的微营养项 (Hcy/维生素D/B12/铁蛋白) 返回 None: 关键字会取到
+    25-OH-D2 分量、1,25-(OH)₂D3、HoloTC、转铁蛋白等别的项目, 进 N-of-1 卡片当基线/目标 —— 宁可「未测」。
+    2026-09-30 前这里导入不存在的 MedicalExamRecord, ImportError 被吞 → 所有化验 metric 恒为 None。
     """
-    try:
-        from app.models.medical_exam import MedicalExamItem, MedicalExamRecord
-    except ImportError:
+    if canonical_code is None:
         return None
-    resolve_code = None
-    if canonical_code is not None:
-        try:
-            from app.biomarkers.definitions import resolve_code as _rc
-            resolve_code = _rc
-        except ImportError:
-            resolve_code = None
+    from app.biomarkers.normalize import latest_reading
+    from app.models.medical_exam import MedicalExam, MedicalExamItem
+
     start = end_date - timedelta(days=days_window)
+    cands = []
     for pat in name_patterns:
-        q = (
+        items = (
             db.query(MedicalExamItem)
-            .join(MedicalExamRecord, MedicalExamRecord.id == MedicalExamItem.exam_record_id)
+            .join(MedicalExam, MedicalExam.id == MedicalExamItem.exam_id)
             .filter(
-                MedicalExamRecord.user_id == user_id,
-                MedicalExamRecord.exam_date >= start,
-                MedicalExamRecord.exam_date <= end_date,
+                MedicalExam.user_id == user_id,
+                MedicalExam.exam_date >= start,
+                MedicalExam.exam_date <= end_date,
                 MedicalExamItem.item_name.ilike(f"%{pat}%"),
+                MedicalExamItem.value.isnot(None),
             )
-            .order_by(desc(MedicalExamRecord.exam_date))
+            .order_by(desc(MedicalExam.exam_date), desc(MedicalExamItem.id))
+            .limit(20)
+            .all()
         )
-        items = q.limit(20).all() if resolve_code is not None else [q.first()]
-        for item in items:
-            if item is None or item.value is None:
-                continue
-            if resolve_code is not None and resolve_code(item.item_name or "") != canonical_code:
-                continue
-            try:
-                return float(item.value)
-            except (ValueError, TypeError):
-                continue
-    return None
+        cands += [(item.exam.exam_date, item.item_name, item.value, item.unit, item.id) for item in items]
+    # 只取最新一天; 那天读不出 → None, 不退回更旧的值
+    return latest_reading(list({c[4]: c for c in cands}.values()), canonical_code, name_patterns)[1]
 
 
 # ── 饮食 / 饮水 / 补剂依从 (2026-05-12 P1.2 加, 闭环 weekly_advisor 这类卡) ──
@@ -334,7 +329,7 @@ def fetch_ferritin(db, user_id, end_date):
 
 
 def fetch_ldl(db, user_id, end_date):
-    return _fetch_lab_item(db, user_id, end_date, ["LDL", "低密度脂蛋白"])
+    return _fetch_lab_item(db, user_id, end_date, ["LDL", "低密度脂蛋白"], canonical_code="lipid_ldl")
 
 
 def fetch_hba1c(db, user_id, end_date):

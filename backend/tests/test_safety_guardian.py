@@ -7,6 +7,8 @@ Safety Guardian 单元测试。
 from datetime import date, datetime
 from typing import List
 
+import pytest
+
 from app.agents.safety_guardian import evaluate_safety
 from app.agents.safety_guardian.engine import registry
 from app.agents.safety_guardian.schema import Alert, Severity
@@ -519,6 +521,191 @@ class TestLabsRules:
         assert "labs.hba1c_diabetes" not in ids
         assert "labs.uncategorized_abnormal" in ids
 
+
+    # ── 2026-09-30 事故 (合成数值): 子串匹配让 VLDL/尿肌酐/尿酸结晶顶替真指标; 名字/单位没认出≠没有值 ──
+
+    def test_ldl_rule_ignores_vldl_listed_before_real_ldl(self):
+        """旧 _find_item 取第一个含「低密度脂蛋白」的异常项 → VLDL 顶掉真 LDL → 漏报。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "极低密度脂蛋白-C", "value": 0.9, "unit": "mmol/L", "reference_range": "0.21-0.78"},
+                {"item_name": "低密度脂蛋白-C", "value": 4.6, "unit": "mmol/L", "reference_range": "0-3.4"},
+            ]
+        )
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.ldl_high")
+        assert alert.severity == Severity.MEDIUM
+        assert alert.data_citation["ldl"] == 4.6
+
+    def test_ldl_rule_falls_back_to_twin_ldl_when_only_vldl_flagged(self):
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            ldl=4.3,
+            flagged_abnormal=[
+                {"item_name": "极低密度脂蛋白-C", "value": 0.9, "unit": "mmol/L", "reference_range": "0.21-0.78"},
+            ],
+        )
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.ldl_high")
+        assert alert.severity == Severity.MEDIUM
+        assert alert.data_citation["ldl"] == 4.3
+
+    def test_ldl_rule_evaluates_highest_same_day_value(self):
+        """同日两条 LDL (3.3 在前、5.3 在后): 先列出的低值不能藏住高值。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "LDL-C", "value": 3.3, "unit": "mmol/L", "exam_date": "2026-02-09"},
+                {"item_name": "LDL-C", "value": 5.3, "unit": "mmol/L", "exam_date": "2026-02-09"},
+            ]
+        )
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.ldl_high")
+        assert alert.severity == Severity.HIGH
+        assert alert.data_citation["ldl"] == 5.3
+
+    def test_ldl_rule_converts_mg_dl_and_cites_display_precision(self):
+        """190 mg/dL ≈ 4.91 mmol/L: 阈值按 mmol/L; 展示引用最多两位小数 (AGENTS §9)。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[{"item_name": "LDL-C", "value": 190, "unit": "mg/dL", "reference_range": "<130"}]
+        )
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.ldl_high")
+        assert alert.severity == Severity.HIGH
+        assert alert.data_citation["ldl"] == 4.91
+
+    @pytest.mark.parametrize("name,value,unit,rule_id,severity", [
+        ("eGFRcr", 25, "mL/min/1.73m²", "labs.egfr_decline", "HIGH"),
+        ("eGFRcys", 40, "mL/min/1.73m²", "labs.egfr_decline", "MEDIUM"),
+        ("eGFR2021", 25, "mL/min/1.73m²", "labs.egfr_decline", "HIGH"),
+        ("eGFR", 25, "-", "labs.egfr_decline", "HIGH"),
+        ("eGFR", 0.4, "ml/s/1.73m2", "labs.egfr_decline", "HIGH"),
+        ("低密度脂蛋白胆固醇", 5.3, "-", "labs.ldl_high", "HIGH"),
+        ("LDL-C", 5.3, "mmoI/L", "labs.ldl_high", "HIGH"),
+        ("低密度脂蛋白胆固醇", 5.3, "毫摩尔/升", "labs.ldl_high", "HIGH"),
+        ("LDL-C mmol/L", 5.3, None, "labs.ldl_high", "HIGH"),
+        ("Uric", 600, "μmol/L", "labs.uric_acid_high", "MEDIUM"),     # 别名表没收录, 旧关键字兜底
+        ("UricAcid", 600, "μmol/L", "labs.uric_acid_high", "MEDIUM"),
+        ("SUA", 600, "μmol/L", "labs.uric_acid_high", "MEDIUM"),
+        ("尿酸", 600, "-", "labs.uric_acid_high", "MEDIUM"),
+        ("糖化血红蛋白", 7.2, "%(NGSP)", "labs.hba1c_diabetes", "HIGH"),
+    ])
+    def test_unrecognised_spelling_still_alerts(self, name, value, unit, rule_id, severity):
+        """名字/单位写法没认出来只是不确定: 旧关键字能识别的必须照旧告警 (覆盖只收紧, 不漏报)。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(flagged_abnormal=[{"item_name": name, "value": value, "unit": unit}])
+        alerts = {(a.rule_id, a.severity.name) for a in evaluate_safety(twin).alerts}
+        assert (rule_id, severity) in alerts
+
+    def test_unitless_urine_albumin_creatinine_ratio_is_not_uric_acid(self):
+        """UACR 含「UA」: 缺单位时旧子串会把它读成尿酸, 再经 mg/dL 启发式 ×59.48 变成假高尿酸。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(flagged_abnormal=[{"item_name": "UACR", "value": 12, "unit": None}])
+        assert "labs.uric_acid_high" not in _rule_ids(evaluate_safety(twin).alerts)
+
+    def test_newest_unreadable_value_is_escalated_not_replaced_by_older(self):
+        """最新一次单位量纲不符: 不能拿更旧的正常值评估, 也不能降成 LOW 杂项 —— MEDIUM「需核对」。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            ldl=3.0,
+            flagged_abnormal=[
+                {"item_name": "LDL-C", "value": 5.2, "unit": "mg/L", "exam_date": "2026-06-05"},
+                {"item_name": "LDL-C", "value": 3.0, "unit": "mmol/L", "exam_date": "2026-01-05"},
+                {"item_name": "eGFR", "value": 25, "unit": "μmol/L", "exam_date": "2026-06-05"},
+                {"item_name": "eGFR", "value": 50, "unit": "mL/min/1.73m2", "exam_date": "2026-01-05"},
+            ],
+        )
+        alerts = {a.rule_id: a for a in evaluate_safety(twin).alerts}
+        assert "labs.egfr_decline" not in alerts  # 不拿旧的 50 当现值
+        review = alerts["labs.uncategorized_abnormal"]
+        assert review.severity == Severity.MEDIUM
+        assert set(review.data_citation["needs_review_items"]) == {"LDL-C", "eGFR"}
+
+    @pytest.mark.parametrize("abns,top", [
+        ([{"item_name": "糖化血红蛋白", "value": 7.4, "unit": "mmol/L", "exam_date": "2026-09-10"},
+          {"item_name": "糖化血红蛋白", "value": 5.4, "unit": "%", "exam_date": "2026-03-01"}], {}),
+        ([{"item_name": "糖化血红蛋白", "value": 53, "unit": "%"}], {}),
+        ([{"item_name": "糖化血红蛋白", "value": 160, "unit": None}], {}),
+        ([{"item_name": "HbA1c", "value": 8.1, "unit": "g/L"}], {"hba1c": 7.5}),
+        ([{"item_name": "尿酸", "value": 480, "unit": "ng/mL"}], {}),
+    ])
+    def test_unreadable_hba1c_or_uric_acid_is_never_silently_covered(self, abns, top):
+        """读不出的糖化/尿酸不能被兜底当「已覆盖」静默丢弃 —— 必须 MEDIUM「需核对」且要求就医核对。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(flagged_abnormal=abns, **top)
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.uncategorized_abnormal")
+        assert alert.severity == Severity.MEDIUM
+        assert alert.data_citation["needs_review_items"]
+        assert alert.requires_medical_attention is True
+
+    def test_readable_value_below_threshold_is_not_labelled_needs_review(self):
+        twin = _empty_twin()
+        twin.labs = LabsContext(flagged_abnormal=[{"item_name": "尿酸", "value": 300, "unit": "μmol/L"}])
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.uncategorized_abnormal")
+        assert alert.severity == Severity.LOW
+        assert alert.data_citation["needs_review_items"] == []
+
+    def test_unitless_ifcc_hba1c_alerts(self):
+        twin = _empty_twin()
+        twin.labs = LabsContext(flagged_abnormal=[{"item_name": "HbA1c", "value": 53, "unit": None}])
+        assert "labs.hba1c_diabetes" in _rule_ids(evaluate_safety(twin).alerts)
+
+    def test_hba1c_rule_evaluates_highest_same_day_value(self):
+        twin = _empty_twin()
+        twin.labs = LabsContext(flagged_abnormal=[
+            {"item_name": "HbA1c", "value": 39, "unit": "mmol/mol", "exam_date": "2026-02-09"},
+            {"item_name": "HbA1c", "value": 7.2, "unit": "%", "exam_date": "2026-02-09"},
+        ])
+        assert "labs.hba1c_diabetes" in _rule_ids(evaluate_safety(twin).alerts)
+
+    def test_egfr_message_uses_display_precision(self):
+        twin = _empty_twin()
+        twin.labs = LabsContext(flagged_abnormal=[{"item_name": "eGFR", "value": 0.7512, "unit": "ml/s"}])
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.egfr_decline")
+        assert "45.07 " in alert.message
+
+    def test_hba1c_rule_reads_ifcc_as_ngsp_percent(self):
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[{"item_name": "糖化血红蛋白", "value": 53, "unit": "mmol/mol"}]
+        )
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.hba1c_diabetes")
+        assert 6.9 < alert.data_citation["hba1c"] < 7.1
+
+    def test_flagged_vldl_and_urine_creatinine_surface_as_uncategorized(self):
+        """VLDL / 尿肌酐 没有专门规则; 旧 covered 关键字「低密度」「肌酐」把它们当已覆盖静默丢弃 (加层不减层)。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "极低密度脂蛋白-C", "value": 0.9, "unit": "mmol/L", "reference_range": "0.21-0.78"},
+                {"item_name": "尿肌酐", "value": 23.0, "unit": "mmol/L", "reference_range": "5-20"},
+            ]
+        )
+        alerts = evaluate_safety(twin).alerts
+        alert = next(a for a in alerts if a.rule_id == "labs.uncategorized_abnormal")
+        assert set(alert.data_citation["uncategorized_items"]) == {"极低密度脂蛋白-C", "尿肌酐"}
+
+    def test_uric_acid_rule_ignores_urine_crystal_listed_first(self):
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "尿酸结晶", "value": 5, "unit": "/μl", "reference_range": "0-3"},
+                {"item_name": "尿酸", "value": 480, "unit": "μmol/L", "reference_range": "208-428"},
+            ]
+        )
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.uric_acid_high")
+        assert alert.severity == Severity.MEDIUM
+        assert alert.data_citation["uric_acid_umol_l"] == 480
+
+    def test_kidney_rule_does_not_cite_urine_creatinine(self):
+        twin = _empty_twin()
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "尿肌酐", "value": 23.0, "unit": "mmol/L", "reference_range": "5-20"},
+                {"item_name": "肾小球滤过率(EPI-cr)", "value": 52, "unit": "ml/min", "reference_range": ">90"},
+            ]
+        )
+        alert = next(a for a in evaluate_safety(twin).alerts if a.rule_id == "labs.egfr_decline")
+        assert alert.data_citation["egfr"] == 52
+        assert alert.data_citation["creatinine"] is None
 
 # ─────────────────────── DDI rules ────────────────────────
 

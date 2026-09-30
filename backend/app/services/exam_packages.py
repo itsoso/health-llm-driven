@@ -5,6 +5,8 @@
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.biomarkers.definitions import REGISTRY, _norm_text, _occurs, name_conflicts_with_code, resolve_code
+
 # ========== 体检套餐定义 ==========
 EXAM_PACKAGES: Dict[str, Dict[str, Any]] = {
     # 生化全套
@@ -135,6 +137,7 @@ ITEM_NAME_MAPPING: Dict[str, str] = {
     "血肌酐": "CREA",
     "BUN": "BUN",
     "尿素氮": "BUN",
+    "尿素": "BUN",
     "UA": "UA",
     "尿酸": "UA",
 
@@ -281,6 +284,11 @@ ITEM_NAME_MAPPING: Dict[str, str] = {
     "B淋巴细胞": "immune_bcell",
 }
 
+_NORMALIZED_MAPPING: List[Tuple[str, str]] = [(_norm_text(k), c) for k, c in ITEM_NAME_MAPPING.items()]
+# 本归一化器历来会产出的 registry code (肝肾/尿酸/糖化/血红蛋白)。映射表认不出时退回 resolve_code,
+# 但只接受这些 code —— 不往 item_code 里引入 egfr/lipid_* 等新码 (单项校正按 exam+item_code 关联)。
+_LEGACY_REGISTRY_CODES = frozenset(c for c in ITEM_NAME_MAPPING.values() if c in REGISTRY)
+
 # ========== 检测项目标准名称 ==========
 ITEM_LABELS: Dict[str, str] = {
     # 肝肾功能
@@ -380,16 +388,28 @@ def normalize_item_name(name: str) -> tuple[str, str]:
         label = ITEM_LABELS.get(code, clean_name)
         return code, label
 
-    # 尝试模糊匹配（包含关系）—— 取最长匹配 key, 避免短别名抢走更具体的项
-    # (例: 「糖化血红蛋白A1」必须命中 A1 总糖化, 而非更短子串「糖化血红蛋白」标准 A1c)。
-    best_key: str = ""
+    # 包含匹配 —— 只接受「映射键 ⊆ 名字」且 ASCII 端点有边界 (biomarker _occurs), 取最长 key,
+    # 避免短别名抢走更具体的项 (「糖化血红蛋白A1」命中 A1 总糖化, 而非更短的「糖化血红蛋白」)。
+    # 2026-09-30 事故: 旧的反向匹配 (名字 ⊆ key) 把「球蛋白」归 TgAb、「淋巴细胞」归 B 淋巴细胞;
+    # 无排除的子串把「尿肌酐」归肌酐、「平均红细胞血红蛋白量」归血红蛋白 —— PDF 解析随即把项目名
+    # 改成这些错误标签入库。registry 分析物还须与 biomarker resolve_code 的裁决不冲突。
+    key = _norm_text(clean_name)
+    best_len = 0
     best_code: str = ""
-    for key, code in ITEM_NAME_MAPPING.items():
-        if (key in clean_name or clean_name in key) and len(key) > len(best_key):
-            best_key, best_code = key, code
+    for map_key, code in _NORMALIZED_MAPPING:
+        if len(map_key) <= best_len or not _occurs(map_key, key):
+            continue
+        if code in REGISTRY and name_conflicts_with_code(clean_name, code):
+            continue
+        best_len, best_code = len(map_key), code
     if best_code:
         label = ITEM_LABELS.get(best_code, clean_name)
         return best_code, label
+
+    # 映射表没收录的写法 (SCr、CRE、GPT…): 由 biomarker 解析器裁决, 只认历来会产出的 code
+    bio_code = resolve_code(clean_name)
+    if bio_code in _LEGACY_REGISTRY_CODES:
+        return bio_code, ITEM_LABELS.get(bio_code, clean_name)
 
     # 无法匹配，返回原始名称
     return "", clean_name
@@ -475,7 +495,12 @@ def create_indicator_from_item(
     item_code_hint = str(item_dict.get("item_code") or "").strip()
     if item_code_hint:
         code = ITEM_NAME_MAPPING.get(item_code_hint, item_code_hint)
-        standard_name = ITEM_LABELS.get(code, raw_name)
+        if raw_name and name_conflicts_with_code(raw_name, code):
+            # OCR/LLM 给的 code 与报告原名指向不同分析物 (如「尿肌酐」标 CREA): 以原名为准,
+            # 既不把名字改成错误标签, 也不打错码 —— 否则 Twin/Safety 会把它当血肌酐读。
+            code, standard_name = normalize_item_name(raw_name)
+        else:
+            standard_name = ITEM_LABELS.get(code, raw_name)
     else:
         code, standard_name = normalize_item_name(raw_name)
 
