@@ -8,10 +8,8 @@ token expires. The webhook handler is the unattended path, so there nobody sees 
 """
 import asyncio
 import logging
-from datetime import date, timedelta
-from types import SimpleNamespace
+from datetime import date
 
-import aiohttp
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -21,94 +19,11 @@ from app.models.device_credential import DeviceCredential
 from app.services.device_adapters import withings as withings_adapter
 from app.services.device_adapters.withings import WithingsHealthAdapter
 from main import app
+from tests.withings_fake import FakeWithings as _FakeWithings
+from tests.withings_fake import route_adapter_http_to as _route_adapter_http_to
 
 LIST_URL = "/api/v1/devices/withings/webhooks/list"
 WITHINGS_USERID = "9001"
-
-
-class _FakeWithings:
-    """In-process Withings API: rejects the stored access token and rotates both tokens on refresh.
-
-    fail_after_refresh: None (retries succeed), "status" (retries get a non-zero status) or
-    "network" (retries raise a connection error).
-    """
-
-    def __init__(self, refresh_token, fail_after_refresh=None):
-        self.access_token = None
-        self.refresh_token = refresh_token
-        self.fail_after_refresh = fail_after_refresh
-        self.requests = []
-
-    def handle(self, url, data, headers):
-        self.requests.append((url, data.get("action"), data.get("grant_type")))
-        if url == withings_adapter.WITHINGS_TOKEN_URL:
-            if data.get("refresh_token") != self.refresh_token:
-                return {"status": 503, "error": "invalid refresh_token"}
-            self.access_token, self.refresh_token = "rotated-access", "rotated-refresh"
-            return {"status": 0, "body": {
-                "access_token": self.access_token, "refresh_token": self.refresh_token, "expires_in": 10800,
-            }}
-        if self.access_token is None or headers.get("Authorization") != f"Bearer {self.access_token}":
-            return {"status": 401, "error": "invalid_token"}
-        if self.fail_after_refresh == "network":
-            raise aiohttp.ClientConnectionError("connection reset")
-        if self.fail_after_refresh == "status":
-            return {"status": 2554, "error": "unavailable"}
-        action = data.get("action")
-        if action == "getmeas":
-            return {"status": 0, "body": {"measuregrps": [
-                {"date": 1700000000, "category": 1, "measures": [{"type": 11, "value": 62, "unit": 0}]},
-            ]}}
-        if action == "getsummary":
-            # The query spans two days, so Withings returns the night that ends on each of them.
-            woke = date.fromisoformat(data["startdateymd"])
-            return {"status": 0, "body": {"series": [
-                {"date": woke.isoformat(), "data": {
-                    "total_sleep_time": 25200, "deepsleepduration": 5400, "remsleepduration": 6000,
-                    "lightsleepduration": 13800, "wakeupduration": 1200, "wakeupcount": 3, "sleep_score": 81,
-                    "hr_average": 52, "rr_average": 14,
-                }},
-                {"date": (woke + timedelta(days=1)).isoformat(), "data": {
-                    "total_sleep_time": 18000, "wakeupduration": 3600, "sleep_score": 60,
-                }},
-            ]}}
-        return {"status": 0, "body": {"profiles": [{"appli": 1, "callbackurl": "https://example.test/webhook"}]}}
-
-
-def _route_adapter_http_to(monkeypatch, withings):
-    """Replace the adapter's aiohttp session so no request leaves the process."""
-
-    class _Response:
-        def __init__(self, payload):
-            self._payload = payload
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc_info):
-            return False
-
-        async def json(self):
-            await asyncio.sleep(0)  # yield like real I/O so concurrent requests interleave
-            return self._payload
-
-    class _Session:
-        def __init__(self, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc_info):
-            return False
-
-        def post(self, url, data=None, headers=None):
-            return _Response(withings.handle(url, data or {}, headers or {}))
-
-    monkeypatch.setattr(
-        withings_adapter, "aiohttp",
-        SimpleNamespace(ClientSession=_Session, ClientTimeout=aiohttp.ClientTimeout),
-    )
 
 
 def _add_credential(db, user):
