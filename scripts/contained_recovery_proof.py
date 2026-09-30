@@ -78,6 +78,65 @@ def normalized_base(raw, overridden):
     return b"".join(result)
 
 
+
+def security_unit_contract(unit):
+    resources = {
+        "health-backend.service": ("2G", "200%", "2147483648", "2s"),
+        "celery-worker.service": ("3G", "150%", "3221225472", "1.500000s"),
+        "celery-beat.service": ("512M", "50%", "536870912", "500ms"),
+    }
+    if unit not in resources:
+        raise ProofError("unknown security unit")
+    memory, quota, effective_memory, effective_quota = resources[unit]
+    common = {"InaccessiblePaths": "-/mnt -/opt/eth-ops",
+              "IPAddressDeny": "100.64.0.0/10 169.254.0.0/16",
+              "CapabilityBoundingSet": "", "TasksMax": "512"}
+    return {"directives": {**common, "MemoryMax": memory, "CPUQuota": quota},
+            "effective": {**common, "MemoryMax": effective_memory,
+                          "CPUQuotaPerSecUSec": effective_quota, "IPAddressAllow": ""}}
+
+
+def _security_assignments(raw, keys):
+    # Lists are additive in systemd. Repeated directives, including resets,
+    # must remain visible rather than being reduced to a last-value mapping.
+    normalized_base(raw, set())
+    section, result = None, {key: [] for key in keys}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith((b"#", b";")):
+            continue
+        if line.startswith(b"["):
+            section = line
+        elif section == b"[Service]" and b"=" in line:
+            key, value = line.split(b"=", 1)
+            name = key.decode("ascii")
+            if name in result:
+                result[name].append(value.decode("ascii"))
+    return result
+
+
+def validate_unit_base(base, canonical, overridden, unit, dropin, *, allow_legacy):
+    if normalized_base(base, overridden) == normalized_base(canonical, overridden):
+        return False
+    if not allow_legacy or unit not in UNITS[1:]:
+        raise ProofError("base unit differs outside overridden fields")
+    values = security_unit_contract(unit)["directives"]
+    exact = {key: [value] for key, value in values.items()}
+    if (_security_assignments(base, values) != {key: [] for key in values}
+            or _security_assignments(canonical, values) != exact
+            or _security_assignments(dropin, values) != exact
+            or normalized_base(base, overridden) != normalized_base(canonical, overridden | set(values))):
+        raise ProofError("legacy base security composition differs")
+    return True
+
+
+def validate_security_effective(unit, properties):
+    expected = security_unit_contract(unit)["effective"]
+    if properties != expected:
+        raise ProofError("effective security composition differs")
+    return dict(properties)
+
+
 def validate_installed_laya_binding(receipt, old, candidate, fields, *, started, boot, ticks_per_second):
     """Only the same installed generation and processes predating the lease."""
     if (receipt.get("state") != "INSTALLED" or old != candidate
@@ -489,8 +548,11 @@ class RecoveryProof:
                 overrides.add("ExecStart")
             if unit == "celery-beat.service":
                 overrides |= {"StateDirectory", "StateDirectoryMode"}
-            if normalized_base(base, overrides) != normalized_base(old, overrides):
-                raise ProofError("base unit differs outside overridden fields")
+            legacy_security = validate_unit_base(
+                base, old, overrides, unit,
+                self.runtime._expected_candidate(unit) if unit.endswith(".service") else b"",
+                allow_legacy=self.installed_laya,
+            )
             if self.systemd.show(unit, "NeedDaemonReload") != "no" or self.systemd.is_enabled(unit) != "enabled":
                 raise ProofError("unit reload or enablement differs")
             if self.systemd.show(unit, "FragmentPath") != str(self.systemd_root / unit):
@@ -506,6 +568,10 @@ class RecoveryProof:
                     paths.append(str(path))
             if self.systemd.show(unit, "DropInPaths").split() != paths:
                 raise ProofError("effective drop-in inventory differs")
+            if legacy_security:
+                values = {key: self.systemd.show(unit, key)
+                          for key in security_unit_contract(unit)["effective"]}
+                entry["legacy_security_effective"] = validate_security_effective(unit, values)
             result[unit] = entry
         effective = transaction._old_effective()
         worker = "celery-worker.service"

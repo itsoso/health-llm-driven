@@ -533,3 +533,86 @@ def test_installed_profile_rejects_drift_before_or_during_readonly_proof(tmp_pat
     elif damage == "env_drift": installer.verify_install = lambda *a: installer.ENV.write_text("changed")
     with pytest.raises(proof.ProofError):
         instance._laya_installed()
+
+
+@pytest.mark.parametrize('unit', proof.UNITS[1:])
+def test_legacy_base_requires_exact_security_dropin_and_effective_properties(unit):
+    expected = proof.security_unit_contract(unit)
+    directives = b''.join(key.encode() + b'=' + value.encode() + b'\n' for key, value in expected['directives'].items())
+    legacy = b'[Service]\nUser=health-app\nRestart=always\n'
+    canonical = legacy + directives
+    dropin = b'[Service]\n' + directives
+    assert proof.validate_unit_base(legacy, canonical, set(), unit, dropin, allow_legacy=True)
+    assert not proof.validate_unit_base(canonical, canonical, set(), unit, dropin, allow_legacy=True)
+    assert proof.validate_security_effective(unit, expected['effective']) == expected['effective']
+    with pytest.raises(proof.ProofError):
+        proof.validate_unit_base(legacy, canonical, set(), unit, dropin, allow_legacy=False)
+    for key in expected['directives']:
+        for suffix in (key.encode() + b'=\n', key.encode() + b'=unexpected\n'):
+            with pytest.raises(proof.ProofError):
+                proof.validate_unit_base(legacy + suffix, canonical, set(), unit, dropin, allow_legacy=True)
+        with pytest.raises(proof.ProofError):
+            proof.validate_unit_base(legacy, canonical, set(), unit, dropin.replace(key.encode()+b'=', b'Unknown='), allow_legacy=True)
+    for key in expected['effective']:
+        with pytest.raises(proof.ProofError):
+            proof.validate_security_effective(unit, {**expected['effective'], key: 'unexpected'})
+    with pytest.raises(proof.ProofError):
+        proof.validate_unit_base(legacy.replace(b'health-app', b'root'), canonical, set(), unit, dropin, allow_legacy=True)
+    with pytest.raises(proof.ProofError):
+        proof.validate_unit_base(legacy+b'IPAddressAllow=any\n', canonical, set(), unit, dropin, allow_legacy=True)
+
+
+def test_legacy_base_rejects_duplicate_security_canonical_and_dropin_assignments():
+    unit = 'health-backend.service'
+    expected = proof.security_unit_contract(unit)
+    directives = b''.join(key.encode()+b'='+value.encode()+b'\n' for key,value in expected['directives'].items())
+    legacy = b'[Service]\nUser=health-app\n'
+    for canonical, dropin in ((legacy+directives+b'MemoryMax=2G\n',b'[Service]\n'+directives),
+                              (legacy+directives,b'[Service]\n'+directives+b'IPAddressDeny=\n')):
+        with pytest.raises(proof.ProofError):
+            proof.validate_unit_base(legacy,canonical,set(),unit,dropin,allow_legacy=True)
+
+
+def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path):
+    source = Path(__file__).resolve().parents[1]
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.systemd_root = tmp_path
+    instance.installed_laya = True
+    candidates = {unit: (source / 'infra/systemd/dropins' / unit.replace('.service', '-runtime-state.conf')).read_bytes()
+                  for unit in proof.UNITS[1:]}
+    instance.runtime = SimpleNamespace(_expected_candidate=candidates.__getitem__,
+        ReleaseTransaction=SimpleNamespace(_stable_exec_start=lambda value: value))
+    instance._file = lambda path, *args: (path.read_bytes(), {'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+    properties = {}
+    for unit in proof.UNITS:
+        original = (source / 'infra/systemd' / unit).read_bytes()
+        if unit.endswith('.service'):
+            keys = {key.encode() for key in proof.security_unit_contract(unit)['directives']}
+            original = b''.join(line for line in original.splitlines(keepends=True)
+                                if line.split(b'=', 1)[0] not in keys)
+            directory = tmp_path / (unit + '.d')
+            directory.mkdir()
+            (directory / '80-reva-health-evidence-runtime.conf').write_bytes(proof.ACTIVATION)
+            (directory / '90-runtime-state.conf').write_bytes(candidates[unit])
+            paths = [str(directory / name) for name in ('80-reva-health-evidence-runtime.conf', '90-runtime-state.conf')]
+            values = proof.security_unit_contract(unit)['effective']
+        else:
+            paths, values = [], {}
+        (tmp_path / unit).write_bytes(original)
+        properties[unit] = {**values, 'NeedDaemonReload': 'no', 'FragmentPath': str(tmp_path / unit), 'DropInPaths': ' '.join(paths)}
+    instance.systemd = SimpleNamespace(show=lambda unit, key: properties[unit][key], is_enabled=lambda unit: 'enabled')
+    worker = (source / 'infra/systemd/celery-worker.service').read_text()
+    command = next(line.removeprefix('ExecStart=') for line in worker.splitlines() if line.startswith('ExecStart='))
+    effective = {'celery-worker.service': {'ExecStart': f'path={command.split()[0]}\nargv[]={command}\nignore_errors=no'}}
+    transaction = SimpleNamespace(_old_effective=lambda: effective, _stable_exec_start=lambda value: value,
+                                  _validate_candidate_effective=lambda value: None, _stable_effective_snapshot=lambda value: value)
+    result = instance._units(source, transaction)
+    assert all('legacy_security_effective' in result[unit] for unit in proof.UNITS[1:])
+    dropin = tmp_path / 'health-backend.service.d/90-runtime-state.conf'
+    dropin.write_bytes(dropin.read_bytes() + b'CapabilityBoundingSet=CAP_SYS_ADMIN\n')
+    with pytest.raises(proof.ProofError, match='drop-in bytes differ'):
+        instance._units(source, transaction)
+    dropin.write_bytes(candidates['health-backend.service'])
+    properties['health-backend.service']['MemoryMax'] = 'infinity'
+    with pytest.raises(proof.ProofError, match='effective security composition differs'):
+        instance._units(source, transaction)
