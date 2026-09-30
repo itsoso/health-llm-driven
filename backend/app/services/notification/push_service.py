@@ -1,5 +1,6 @@
 """推送服务主类 - 统一管理各渠道推送"""
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Literal
 from sqlalchemy import func
@@ -62,6 +63,40 @@ CRITICAL_DEDUP_WINDOW_HOURS = 3
 
 def _severity_rank(s: Optional[str]) -> int:
     return _SEVERITY_ORDER.get((s or "info").lower(), 0)
+
+
+# health_alert 缺/错 severity 时的 fail-open 档位 (2026-09-30)。
+# 背景: 缺省 "info" < 默认阈值 "warning" → garmin_sync 内联 Safety Guardian 推送与
+# anomaly send_alerts 2026-05-01~09-30 全部被静默丢弃。取 "warning" 而非 fail-closed /
+# "critical": 默认阈值用户一定收到; 非 critical 故仍守静默时段、09:00 地板与 24h 去重,
+# 不因未知档位把人半夜吵醒。仅"只收 critical"用户会过滤掉 (尊重其显式偏好)。
+# 真正防线是 tests/test_health_alert_severity_guard.py 的静态扫描; 这里是运行时兜底 + ERROR。
+_HEALTH_ALERT_FALLBACK_SEVERITY = "warning"
+_SEVERITY_TOKEN_RE = re.compile(r"[A-Za-z_ -]{1,16}")
+
+
+def _resolve_severity(
+    notification_type: str, severity: Any, *, user_id: int, rule_id: Optional[str]
+) -> str:
+    """Normalize the caller's severity; a missing/unknown health_alert tier is loud, never silent."""
+    if isinstance(severity, str) and severity.strip().lower() in _SEVERITY_ORDER:
+        return severity.strip().lower()
+    # 只记像档位词的原值, 否则只记类型+长度: 误传文案/alert 对象会把健康载荷带进日志。
+    if isinstance(severity, str) and _SEVERITY_TOKEN_RE.fullmatch(severity):
+        raw = severity
+    else:
+        raw = f"{type(severity).__name__}(len={len(severity)})" if isinstance(severity, str) else type(severity).__name__
+    if notification_type == NotificationType.HEALTH_ALERT.value:
+        logger.error(
+            "[push] health_alert severity 缺失/非法 (%r), fail-open 按 %s 投递: user=%s rule_id=%s",
+            raw, _HEALTH_ALERT_FALLBACK_SEVERITY, user_id, rule_id,
+        )
+        return _HEALTH_ALERT_FALLBACK_SEVERITY
+    if severity is not None:
+        logger.warning(
+            "[push] 未知 severity=%r, 按 info 处理: user=%s type=%s", raw, user_id, notification_type
+        )
+    return "info"
 
 
 def resolve_quiet_hours_policy(
@@ -396,7 +431,7 @@ class PushService:
         data: Optional[Dict[str, Any]] = None,
         channels: Optional[List[str]] = None,
         respect_quiet_hours: bool = True,
-        severity: str = "info",
+        severity: Optional[str] = None,
         dedup_window_hours: int = 24,
         quiet_hours_policy: Optional[QuietHoursPolicy] = None,
         log_delivery: bool = True,
@@ -416,6 +451,8 @@ class PushService:
             severity: 严重程度 ("info"|"low"|"warning"|"medium"|"high"|"critical")；
                       "critical" 穿透免打扰时段立即推送 (resolve_quiet_hours_policy, 2026-05-30).
                       < 用户 alert_severity_threshold 的 health_alert 也会被过滤 (H1-B).
+                      health_alert 必须显式传 (静态守卫强制); 缺失/非法 → ERROR 日志 +
+                      按 _HEALTH_ALERT_FALLBACK_SEVERITY 投递。其他类型缺省按 "info"。
             dedup_window_hours: 去重窗口（小时）。
                                 有 rule_id 时按 (user_id, notification_type, rule_id) 去重;
                                 否则按 (user_id, notification_type, title) 去重.
@@ -436,6 +473,7 @@ class PushService:
             发送结果 {"success": bool, "channels": {...}}
         """
         rule_id = (data or {}).get("rule_id") if data else None
+        severity = _resolve_severity(notification_type, severity, user_id=user_id, rule_id=rule_id)
         # critical 可穿透普通静默 (见 resolve_quiet_hours_policy docstring);
         # 09:00 前的晨间睡眠地板优先级更高。
         effective_quiet_policy: QuietHoursPolicy = resolve_quiet_hours_policy(
@@ -905,9 +943,11 @@ class PushService:
         sent_at 留空, 等真正 fire 时由 _log_notification_multi 盖.
         action_card.push_sent_at 也等真正 fire 时盖, 这里不 stamp.
         """
-        # data 里塞一份 severity, flush 时回放需要
+        # data 里塞一份 severity, flush 时回放需要。必须覆盖而非 setdefault:
+        # 调用方 data 里自带的 severity 标签可能与实际门控档位不同 (如 "info"),
+        # 回放时会被阈值静默丢掉 —— 回放档位必须等于当初放行的档位。
         data_with_meta = dict(data or {})
-        data_with_meta.setdefault("severity", severity)
+        data_with_meta["severity"] = severity
 
         log = NotificationLog(
             user_id=user_id,
@@ -972,7 +1012,8 @@ class PushService:
         deduped = 0
         for log in delayed_logs:
             flushed += 1
-            severity = (log.data or {}).get("severity", "info")
+            # 缺失时传 None 交给 _resolve_severity: health_alert 旧行不能被当 "info" 静默丢掉。
+            severity = (log.data or {}).get("severity")
             try:
                 existing = self._find_dedup_log(
                     user_id=log.user_id,

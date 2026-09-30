@@ -1,12 +1,17 @@
 """健康异常检测服务测试"""
+import logging
 import pytest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.models.anomaly_alert import AnomalyAlert
 from app.models.daily_health import GarminData
+from app.models.notification import NotificationLog, NotificationStatus, UserNotificationSetting
 from app.models.user import User
 from app.services.anomaly_detection_service import AnomalyDetectionService, THRESHOLDS
+from app.services.notification import push_service as push_module
+from app.services.notification.push_service import PushService
 
 
 @pytest.fixture
@@ -367,3 +372,68 @@ class TestSendAlerts:
             assert calls[0][1]["respect_quiet_hours"] is False
             # warning: respect_quiet_hours=True
             assert calls[1][1]["respect_quiet_hours"] is True
+
+
+class TestSendAlertsRealPushGating:
+    """send_alerts through the real PushService gates (TestSendAlerts mocks PushService
+    away — which is how the missing severity= shipped from 2026-05-01 to 2026-09-30)."""
+
+    DAYTIME = datetime(2026, 9, 30, 14, 0)
+    NIGHT = datetime(2026, 9, 30, 23, 30)
+
+    def _arrange(self, db, user_id, monkeypatch, now) -> AsyncMock:
+        db.add(UserNotificationSetting(
+            user_id=user_id, enabled=True, ios_push_enabled=True,
+            ios_device_token="fake-token", wechat_enabled=False,
+        ))
+        db.commit()
+        monkeypatch.setattr(push_module, "get_china_now", lambda: now)
+        monkeypatch.setattr(PushService, "telegram", property(lambda self: SimpleNamespace(configured=False)))
+        ios = AsyncMock(return_value={"success": True})
+        monkeypatch.setattr(PushService, "_send_ios", ios)
+        return ios
+
+    def _alert(self, db, user_id, today, **fields) -> AnomalyAlert:
+        alert = AnomalyAlert(user_id=user_id, detection_date=today, **fields)
+        db.add(alert)
+        db.commit()
+        db.refresh(alert)
+        return alert
+
+    @pytest.mark.asyncio
+    async def test_warning_alert_reaches_default_threshold_user(
+        self, db, test_user, service, today, monkeypatch, caplog,
+    ):
+        ios = self._arrange(db, test_user.id, monkeypatch, self.DAYTIME)
+        alert = self._alert(
+            db, test_user.id, today, alert_type="rhr_spike", severity="warning",
+            metric_name="resting_heart_rate", current_value=80.0, message="心率偏高",
+        )
+
+        with caplog.at_level(logging.ERROR, logger=push_module.__name__):
+            await service.send_alerts(test_user.id, [alert])
+
+        assert ios.await_count == 1
+        assert alert.notification_sent is True
+        # explicit tier, not PushService's fail-open fallback
+        assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+    @pytest.mark.asyncio
+    async def test_critical_anomaly_is_pushed_as_high_and_waits_out_quiet_hours(
+        self, db, test_user, service, today, monkeypatch,
+    ):
+        """Anomaly "critical" (SpO2 daily avg <95%) is not the push emergency tier."""
+        ios = self._arrange(db, test_user.id, monkeypatch, self.NIGHT)
+        alert = self._alert(
+            db, test_user.id, today, alert_type="spo2_low", severity="critical",
+            metric_name="spo2_avg", current_value=93.0, message="血氧偏低",
+        )
+
+        await service.send_alerts(test_user.id, [alert])
+
+        assert ios.await_count == 0
+        (row,) = db.query(NotificationLog).filter(
+            NotificationLog.user_id == test_user.id,
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        ).all()
+        assert row.data["severity"] == "high"

@@ -10,6 +10,7 @@ import grp
 import re
 import stat
 import subprocess
+import sys
 import tarfile
 import time
 
@@ -23,6 +24,17 @@ ALLOWED_CHANGES = {
     'scripts/public_host_recovery.py', 'scripts/bootstrap_trusted_release.py',
     'scripts/test_public_host_boundaries.py', 'docs/governance/deploy.md',
     'docs/security/2026-09-30-host-preflight-recovery.md',
+    'scripts/runtime_permission_repair.py',
+    'deploy.sh', 'backend/scripts/verify_locked_requirements.py',
+    'backend/scripts/rollback_release.sh', 'scripts/test_deploy_script.py',
+    'scripts/test_verify_locked_requirements.py', 'scripts/test_release_rollback.py',
+}
+
+# Independently reviewed concurrent merge: only these exact non-host blobs.
+REVIEWED_AUXILIARY = {
+    '.github/workflows/trusted-ota.yml': b'100644 blob a19c0b2cb7689a6b9ada9afb5430cd5c10cd00a2',
+    'scripts/test_trusted_ota_workflow.py': b'100644 blob 43311f7a0da49be911f3deda1678b4883904259e',
+    'docs/dossiers/2026-09-30-share-composer-back-navigation.md': b'100644 blob 4eb1639b9990b66edd946b96d5c39161d572be9d',
 }
 BACKUP_NAMES = {'intent.json', 'config-before.tar.gz', 'config-manifest.json',
                 'iptables-before.txt', 'ip6tables-before.txt'}
@@ -66,7 +78,8 @@ def source_scope(source, old, guard):
         return dict(row.split(b'\t', 1)[::-1] for row in raw.split(b'\0') if row)
     before, after = tree(old), tree(source)
     changed = {p.decode() for p in before.keys() | after.keys() if before.get(p) != after.get(p)}
-    if not changed or not changed <= ALLOWED_CHANGES:
+    if not changed or any(path not in ALLOWED_CHANGES and (path not in REVIEWED_AUXILIARY or after.get(path.encode()) != REVIEWED_AUXILIARY[path])
+                          for path in changed):
         raise RecoveryError('recovery source changes exceed fixed scope')
     # The persistent network unit executes the production helper. Its entire
     # rule implementation must remain identical to the independently reviewed executor.
@@ -245,7 +258,16 @@ class Adapter:
         live_services = services(g)
         boot = int(re.findall(r'^btime ([0-9]+)$', Path('/proc/stat').read_text(), re.M)[0])
         started = int((LEASE / 'started_at').read_text())
-        if any(boot + int(x['starttime']) / os.sysconf('SC_CLK_TCK') >= started for x in [legacy, *(v['process'] for v in live_services.values())]):
+        permission_binding = None
+        age_services = live_services
+        if os.path.lexists(STATE/'runtime-permission-repairs'/FAILED_SHA):
+            repair = self.host.module(self.source/'scripts/runtime_permission_repair.py','permission_history')
+            repair_intent, repair_done = repair.inspect_history(self, sys.modules[__name__])
+            if live_services != repair_done['after_services']:
+                raise RecoveryError('services differ from completed permission repair')
+            age_services = repair_intent['before']['services']
+            permission_binding = {'intent_sha256':digest(repair_intent),'completion_sha256':digest(repair_done)}
+        if any(boot + int(x['starttime']) / os.sysconf('SC_CLK_TCK') >= started for x in [legacy, *(v['process'] for v in age_services.values())]):
             raise RecoveryError('process does not predate host attempt')
         self.host.verify_runtime(g, check_network=False)
         self.check()
@@ -253,7 +275,7 @@ class Adapter:
             raise RecoveryError('original evidence changed during inspection')
         evidence = {'production_sha': FAILED_SHA, 'publisher_sha': self.publisher, 'preserved': preserved,
                 'lease': lease, 'frontend': frontend, 'legacy': legacy, 'services': live_services,
-                'cache': cache_snapshot, 'firewall': firewall, 'key_modes': intent['key_modes']}
+                'cache': cache_snapshot, 'firewall': firewall, 'key_modes': intent['key_modes'], 'permission_repair':permission_binding}
         validate_intent(evidence, intent, frontend,
                         {name:(LEASE/name).read_bytes() for name in ('token','label','stage','started_at')},g)
         return evidence
@@ -313,7 +335,7 @@ def recover(adapter, evidence_sha256=None):
     return result
 
 
-def execute(source, host, helper, b, server, gate, guard, publisher, production, token, evidence_sha256=None):
+def execute(source, host, helper, b, server, gate, guard, publisher, production, token, evidence_sha256=None, *, repair_permissions=False):
     if production != FAILED_SHA or publisher == production:
         raise RecoveryError('fixed host incident and distinct publisher required')
     gate.verify_release(publisher,publisher)
@@ -329,7 +351,11 @@ def execute(source, host, helper, b, server, gate, guard, publisher, production,
                 b._assert_original_lock(lock,stream.fileno())
                 if build is not None:b._assert_original_lock(STATE/FAILED_SHA/'build.lock',build)
             server.assert_ota_history()
-            return recover(Adapter(source,old,publisher,host,helper,b,server,guard,token,check),evidence_sha256)
+            adapter=Adapter(source,old,publisher,host,helper,b,server,guard,token,check)
+            if repair_permissions:
+                repair=host.module(source/'scripts/runtime_permission_repair.py','runtime_permission_repair')
+                return repair.execute(adapter,sys.modules[__name__],evidence_sha256)
+            return recover(adapter,evidence_sha256)
         finally:
             if build is not None:os.close(build)
 
@@ -349,6 +375,8 @@ def validate_intent(intent, backup_intent, frontend, lease_values, guard):
         return type(value) is int and value >= minimum
     def sha(value, size=64):
         return isinstance(value, str) and re.fullmatch('[a-f0-9]{'+str(size)+'}', value) is not None
+    binding=intent.get('permission_repair')
+    require(binding is None or isinstance(binding,dict) and set(binding)=={'intent_sha256','completion_sha256'} and all(sha(x) for x in binding.values()))
     def process(value):
         require(isinstance(value, dict) and set(value) == {'pid','starttime','uid','cgroup','argv_sha256'})
         require(integer(value['pid'],2) and isinstance(value['starttime'],str) and value['starttime'].isdigit()
@@ -409,7 +437,7 @@ def history_evidence(b, sha):
     if {p.name for p in record.iterdir()} != {'intent.json','completed.json','apply','lease'}:
         raise RecoveryError('host recovery not complete')
     intent=b._read_json(record/'intent.json');completed=b._read_json(record/'completed.json')
-    if (set(intent) != {'production_sha','publisher_sha','preserved','lease','frontend','legacy','services','cache','firewall','key_modes'}
+    if (set(intent) != {'production_sha','publisher_sha','preserved','lease','frontend','legacy','services','cache','firewall','key_modes','permission_repair'}
             or re.fullmatch(r'[a-f0-9]{40}', str(intent.get('publisher_sha'))) is None
             or intent['publisher_sha'] == sha):
         raise RecoveryError('host recovery intent schema differs')
@@ -442,4 +470,20 @@ def history_evidence(b, sha):
     for name in ('token','label','stage','started_at'):
         if any(copied[name][field] != intent['lease'][name][field] for field in ('uid','gid','mode','sha256')):
             raise RecoveryError('host original lease archive differs')
+    permission_root=STATE/'runtime-permission-repairs'/sha
+    binding=intent['permission_repair']
+    if binding is not None:
+        repair_path=source/'scripts/runtime_permission_repair.py'
+        b.secure(repair_path)
+        spec=importlib.util.spec_from_file_location('permission_historical_proof',repair_path)
+        repair=importlib.util.module_from_spec(spec);spec.loader.exec_module(repair)
+        from types import SimpleNamespace
+        adapter=SimpleNamespace(b=b,old=b.canonical_source(sha),guard=guard,backup=BACKUPS/sha,
+            audit=STATE/sha/'host-hardening',preserved=lambda:preserved,lease=lambda:intent['lease'])
+        old,new=repair.inspect_history(adapter,sys.modules[__name__],live=False,
+            lease_values={name:(record/'lease'/name).read_bytes() for name in ('token','label','stage','started_at')})
+        if binding!={'intent_sha256':digest(old),'completion_sha256':digest(new)} or intent['services']!=new['after_services']:
+            raise RecoveryError('permission repair history binding differs')
+    elif os.path.lexists(permission_root):
+        raise RecoveryError('unbound permission repair history')
     return {'kind':'recovered-host-hardening','intent_sha256':digest(intent),'completion_sha256':digest(completed)}

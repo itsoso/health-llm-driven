@@ -39,6 +39,89 @@ else:
     )
 
 
+def _write_runtime_user_probe_shim(path: Path) -> None:
+    _write_executable(path, """#!/bin/sh
+set -eu
+test "$1" = -u
+test "$2" = health-app
+test "$3" = --
+shift 3
+test "$1" = /usr/bin/env
+test "$2" = -i
+test "$3" = PATH=/usr/bin:/bin
+case "$4" in /*/venv/bin/python) ;; *) exit 94;; esac
+shift 4
+test "$1" = -I
+test "$2" = -B
+test "$3" = scripts/verify_locked_requirements.py
+test "$4" = --runtime-user
+test "$5" = health-app
+test "$6" = requirements.lock
+if [ -n "${FAKE_RUNTIME_LOG:-}" ]; then printf 'probe\\n' >> "$FAKE_RUNTIME_LOG"; fi
+test "${FAKE_RUNTIME_FAIL:-0}" = 0
+""")
+
+
+@pytest.mark.parametrize("runtime_readable", [True, False])
+def test_dependency_sync_proves_service_readability_and_limits_install_umask(tmp_path, runtime_readable):
+    (tmp_path / "pi-runtime").mkdir()
+    (tmp_path / "pi-runtime/install.sh").write_text("exit 0\n")
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text("DEPLOY_SERVER=fake\nDEPLOY_PATH=/tmp/fake-health-app\nHEALTH_EVIDENCE_RUNTIME_ENABLED=false\n")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    state = tmp_path / "state"
+    state.mkdir(mode=0o700)
+    marker = state / "requirements-lock.sha256"
+    marker.write_text("d" * 64 + "\n")
+    marker.chmod(0o600)
+    _write_root_owned_stat_shim(fake_bin / "stat")
+    _write_runtime_user_probe_shim(fake_bin / "runuser")
+    _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
+    _write_executable(fake_bin / "mv", '#!/bin/sh\nshift 2\nexec /bin/mv -f "$1" "$2"\n')
+    _write_executable(fake_bin / "python", "#!/bin/sh\nexit 0\n")
+    _write_executable(fake_bin / "pip", """#!/bin/sh
+set -eu
+case "$(umask)" in 022|0022) ;; *) exit 95;; esac
+printf 'install\\n' >> "$FAKE_INSTALL_LOG"
+touch "$FAKE_NEW_PACKAGE"
+""")
+    harness = fr"""
+source {DEPLOY_SCRIPT}
+REMOTE_RELEASE_STATE_DIR={state}
+REQUIREMENTS_LOCK_SHA={'d' * 64}
+dependency_command="$(remote_dependency_sync_command)"
+dependency_command="${{dependency_command//\/usr\/sbin\/runuser/$FAKE_BIN/runuser}}"
+# Force installation once to prove the pip mask and private marker.
+rm '{marker}'
+umask 077
+set +e
+PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"
+first=$?
+test "$(umask)" = 0077 || exit 96
+if [ "$FAKE_RUNTIME_FAIL" = 1 ]; then
+    test "$first" != 0 || exit 97
+    test ! -e '{marker}' || exit 98
+else
+    test "$first" = 0 || exit 99
+    PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command" || exit 100
+    # A matching marker cannot survive a subsequent unreadable runtime.
+    if FAKE_RUNTIME_FAIL=1 PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"; then exit 101; fi
+    test ! -e '{marker}' || exit 102
+fi
+"""
+    result = subprocess.run(["bash", "-c", harness], cwd=tmp_path, capture_output=True, text=True,
+                            env={**os.environ, "DEPLOY_ENV_FILE": str(env_file), "FAKE_BIN": str(fake_bin),
+                                 "FAKE_RUNTIME_FAIL": "0" if runtime_readable else "1",
+                                 "FAKE_RUNTIME_LOG": str(tmp_path / "probes"),
+                                 "FAKE_INSTALL_LOG": str(tmp_path / "installs"),
+                                 "FAKE_NEW_PACKAGE": str(tmp_path / "new-package")})
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert (tmp_path / "new-package").stat().st_mode & 0o777 == 0o644
+    assert (state.stat().st_mode & 0o777) == 0o700
+    assert len((tmp_path / "probes").read_text().splitlines()) == (4 if runtime_readable else 1)
+
+
 def test_backend_deploy_checks_health_before_skills_manifest():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     health_check = script.index("if ! verify_deployment; then")
@@ -118,6 +201,7 @@ def test_dependency_marker_never_skips_an_unverified_or_symlinked_environment(
     state_dir = tmp_path / "release-state"
     digest = "a" * 64
     _write_root_owned_stat_shim(fake_bin / "stat")
+    _write_runtime_user_probe_shim(fake_bin / "runuser")
     _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
     _write_executable(
         fake_bin / "mv",
@@ -167,6 +251,7 @@ source {DEPLOY_SCRIPT!s}
 REMOTE_RELEASE_STATE_DIR={state_dir!s}
 REQUIREMENTS_LOCK_SHA={digest}
 dependency_command="$(remote_dependency_sync_command)"
+dependency_command="${{dependency_command//\\/usr\\/sbin\\/runuser/$FAKE_BIN/runuser}}"
 PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"
 test "$(cat '{state_dir!s}/requirements-lock.sha256')" = '{digest}'
 test "$(awk 'END {{ print NR + 0 }}' "$FAKE_INSTALL_LOG")" = 1
@@ -224,6 +309,7 @@ def test_matching_dependency_marker_repairs_each_stale_chroma_package_and_keeps_
     marker.chmod(0o600)
     dependency_state.write_text(residual_package + "\n", encoding="utf-8")
     _write_root_owned_stat_shim(fake_bin / "stat")
+    _write_runtime_user_probe_shim(fake_bin / "runuser")
     _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
     _write_executable(
         fake_bin / "mv",
@@ -269,6 +355,7 @@ source {DEPLOY_SCRIPT!s}
 REMOTE_RELEASE_STATE_DIR={state_dir!s}
 REQUIREMENTS_LOCK_SHA={digest}
 dependency_command="$(remote_dependency_sync_command)"
+dependency_command="${{dependency_command//\\/usr\\/sbin\\/runuser/$FAKE_BIN/runuser}}"
 if FAKE_UNINSTALL_FAIL=1 PATH="$FAKE_BIN:$PATH" bash -c "$dependency_command"; then
   exit 91
 fi
@@ -315,6 +402,7 @@ def test_system_kb_marker_executes_missing_match_and_symlink_paths(tmp_path: Pat
     digest = "b" * 64
     legacy_digest = "c" * 64
     _write_root_owned_stat_shim(fake_bin / "stat")
+    _write_runtime_user_probe_shim(fake_bin / "runuser")
     _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
     _write_executable(
         fake_bin / "mv",
@@ -1343,6 +1431,7 @@ fi
 """,
     )
     _write_root_owned_stat_shim(fake_bin / "stat")
+    _write_runtime_user_probe_shim(fake_bin / "runuser")
     _write_executable(fake_bin / "sync", "#!/bin/sh\nexit 0\n")
     _write_executable(
         fake_bin / "mv",
