@@ -653,7 +653,7 @@ class PushService:
                     )
                 elif channel == "telegram":
                     result = await self._send_telegram(
-                        user_id, notification_type, title, content, data
+                        user_id, notification_type, title, content, data, severity
                     )
                 else:
                     result = {"success": False, "error": f"不支持的渠道: {channel}"}
@@ -820,14 +820,18 @@ class PushService:
         notification_type: str,
         title: str,
         content: str,
-        data: Optional[Dict[str, Any]]
+        data: Optional[Dict[str, Any]],
+        severity: str = "info",
     ) -> Dict[str, Any]:
         """发送 Telegram 推送（Agent Native 告警通道）"""
-        severity = (data or {}).get("severity", "info")
+        from .telegram_push import escape_markdown
+
+        # data 显式标注优先(anomaly / delayed 回放); 缺省回落推送档位 —— 否则只传
+        # severity 参数的 Safety Guardian HIGH/CRITICAL 会被渲染成 info
         return await self.telegram.send_health_alert(
             title=title,
-            message=content,
-            severity=severity,
+            message=escape_markdown(content),  # 推送正文是纯文本
+            severity=(data or {}).get("severity") or severity,
         )
 
     def _get_wechat_template(

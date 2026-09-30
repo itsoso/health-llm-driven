@@ -39,6 +39,26 @@ class _TelegramURLRedactor(logging.Filter):
 
 logging.getLogger("httpx").addFilter(_TelegramURLRedactor())
 
+# 覆盖 push_service 的 severity 词表(info/low/warning/medium/high/critical)
+_SEVERITY_EMOJI = {
+    "critical": "🔴",
+    "high": "🟠",
+    "warning": "🟡",
+    "medium": "🟡",
+    "low": "🔵",
+    "info": "🔵",
+}
+
+_LEGACY_MARKDOWN_SPECIAL = re.compile(r"([_*`\[])")
+
+
+def escape_markdown(text: str) -> str:
+    """纯文本 → 旧 Markdown 实体外可原样显示的文本(_ * ` [ 前加反斜杠)。
+
+    正文里落单的 `_`(如 rule key)/ `*` / `` ` `` / `[` 会让 Telegram 400 拒收整条消息。
+    """
+    return _LEGACY_MARKDOWN_SPECIAL.sub(r"\\\1", text or "")
+
 
 class TelegramPushService:
     """Telegram Bot 推送"""
@@ -118,13 +138,14 @@ class TelegramPushService:
         severity: str = "warning",
         chat_id: Optional[str] = None,
     ) -> dict:
-        """发送格式化的健康告警"""
-        severity_emoji = {
-            "critical": "🔴",
-            "warning": "🟡",
-            "info": "🔵",
-        }
-        emoji = severity_emoji.get(severity, "⚪")
+        """发送格式化的健康告警。
 
-        text = f"{emoji} *{title}*\n\n{message}"
+        title 是纯文本;message 按旧 Markdown 原样发送(eval_runner 依赖其格式),
+        纯文本调用方须先 escape_markdown。
+        """
+        emoji = _SEVERITY_EMOJI.get(str(severity or "").lower(), "⚪")
+        # 粗体实体内不允许转义,只有 `*` 会提前闭合实体 → 闭合、转义、重开(Telegram 文档写法)
+        bold_title = title.replace("*", "*\\**")
+
+        text = f"{emoji} *{bold_title}*\n\n{message}"
         return await self.send_message(text, chat_id=chat_id)
