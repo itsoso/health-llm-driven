@@ -30,7 +30,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 cryptography==50.0.0
 email-validator==2.0.0
-PyJWT==2.13.0
+PyJWT==2.14.0
 # 请求频率限制
 slowapi==0.1.9
 # PDF解析

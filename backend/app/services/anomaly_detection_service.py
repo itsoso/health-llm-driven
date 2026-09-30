@@ -31,6 +31,12 @@ THRESHOLDS = {
     "multi_metric_min_hits": 2, # 多指标恶化：3项中命中≥2项
 }
 
+# AnomalyAlert.severity → push_service severity。本模块的 "critical"(血氧日均 <95%、
+# 睡眠评分 <50)不是急症档: push 层 "critical" 专指致命交互/急性阈值, 会穿透静默时段
+# (be3b17ace); Safety Guardian 对 SpO2 88–92% 也只判 MEDIUM。故降为 "high":
+# 仍过默认 warning 阈值, 但尊重静默时段。info 在 send_alerts 里先行抑制, 不进映射。
+PUSH_SEVERITY = {"warning": "warning", "critical": "high"}
+
 
 class AnomalyDetectionService:
     """健康指标异常检测服务"""
@@ -510,7 +516,8 @@ class AnomalyDetectionService:
                 # 疲劳时不创建新 ActionCard (已有同 metric 的 active card 在跑)
                 continue
 
-            # critical 级别绕过静默时段
+            # critical 不走 delay 策略; 但推送档位是 "high"(见 PUSH_SEVERITY),
+            # 静默时段内 push_service 仍会延迟 —— 只有 push 层 critical 可穿透。
             respect_quiet = severity != "critical"
 
             # L9 (Karpathy partial autonomy): 用户的告警反应档位
@@ -541,6 +548,9 @@ class AnomalyDetectionService:
                 deep_link = f"/trace/anomaly_{alert.id}"
 
             try:
+                # 必须显式传: 缺省 "info" 会被 H1-B 阈值(默认 warning)静默丢弃。
+                # 未映射的取值 KeyError → 走下方 except 记失败, 不静默降级。
+                push_severity = PUSH_SEVERITY[severity]
                 result = await push_service.send_notification(
                     user_id=user_id,
                     notification_type=NotificationType.HEALTH_ALERT.value,
@@ -548,12 +558,14 @@ class AnomalyDetectionService:
                     content=alert.message,
                     data={
                         "alert_id": alert.id,
-                        "severity": alert.severity,
+                        # flush_delayed_pushes 按 data["severity"] 回放延迟推送, 须与推送档位一致
+                        "severity": push_severity,
                         "type": alert.alert_type,
                         "deep_link": deep_link,
                         "rule_id": f"anomaly.{alert.alert_type}",  # H1-B opt-out 用
                     },
                     respect_quiet_hours=respect_quiet,
+                    severity=push_severity,
                 )
                 if result.get("success"):
                     alert.notification_sent = True

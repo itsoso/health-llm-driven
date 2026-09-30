@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useReducer,
   useRef,
@@ -79,11 +80,14 @@ export type DietShareImageEditorResult = DietShareImageEdit & {
 
 export type DietShareImageEditorProps = {
   visible: boolean;
+  presentation?: 'modal' | 'embedded';
   sourceUri: string;
   initialEdit?: DietShareImageEdit;
   onComplete: (result: DietShareImageEditorResult) => void;
   onCancel: () => void;
 };
+
+export type DietShareImageEditorHandle = { requestCancel: () => void };
 
 let ImageManipulator: typeof import('expo-image-manipulator') | null = null;
 try {
@@ -377,13 +381,14 @@ function ToolbarButton({
   );
 }
 
-export function DietShareImageEditor({
+export const DietShareImageEditor = React.forwardRef<DietShareImageEditorHandle, DietShareImageEditorProps>(function DietShareImageEditor({
   visible,
+  presentation = 'modal',
   sourceUri,
   initialEdit,
   onComplete,
   onCancel,
-}: DietShareImageEditorProps) {
+}, ref) {
   const safeAreaInsets = useSafeAreaInsets();
   const editorTopInset = resolveDietShareEditorTopInset(safeAreaInsets.top);
   const startingEdit = normalizeEditorEdit(initialEdit ?? initialDietShareImageEdit());
@@ -676,6 +681,8 @@ export function DietShareImageEditor({
     );
   }, [hasChanges, onCancel, phase]);
 
+  useImperativeHandle(ref, () => ({ requestCancel }), [requestCancel]);
+
   const retry = useCallback(() => {
     setFailureKind(null);
     if (failureKind === 'load') {
@@ -761,14 +768,8 @@ export function DietShareImageEditor({
       ? '请更新应用，或取消后改为分享正文。'
       : '请重试，或取消后重新选择照片。';
 
-  return (
-    <Modal
-      testID="diet-share-image-editor-modal"
-      visible={visible}
-      animationType="slide"
-      presentationStyle="fullScreen"
-      onRequestClose={requestCancel}
-    >
+  const content = (
+    <>
       <StatusBar style="light" backgroundColor={C.focusBg} />
       <SwipeBackSurface
         testID="diet-share-image-editor-swipe-back"
@@ -985,9 +986,22 @@ export function DietShareImageEditor({
           </View>
         </SafeAreaView>
       </SwipeBackSurface>
+    </>
+  );
+
+  if (presentation === 'embedded') return visible ? content : null;
+  return (
+    <Modal
+      testID="diet-share-image-editor-modal"
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={requestCancel}
+    >
+      {content}
     </Modal>
   );
-}
+});
 
 const styles = StyleSheet.create({
   root: {

@@ -401,6 +401,25 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
 
 def _host_hardening_evidence(sha):
     root = STATE / sha / "host-hardening"
+    if os.path.lexists(root / "failed.json"):
+        path = Path(__file__).with_name("public_host_recovery.py")
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached host recovery evidence forbidden")
+        spec = importlib.util.spec_from_file_location("host_recovery_history", path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        result=module.history_evidence(sys.modules[__name__], sha)
+        if os.path.lexists(STATE / 'monitor-ingress-repairs'):
+            monitor_path=Path(__file__).with_name('monitor_ingress_repair.py')
+            secure(monitor_path)
+            monitor_spec=importlib.util.spec_from_file_location('monitor_ingress_history',monitor_path)
+            monitor=importlib.util.module_from_spec(monitor_spec)
+            sys.modules[monitor_spec.name]=monitor
+            monitor_spec.loader.exec_module(monitor)
+            result={**result,'monitor_ingress':monitor.history_evidence(sys.modules[__name__],result)}
+        return result
     inventory = _inventory(root, {"started.json", "verified.json", "completed.json", "frontend.json"})
     expected = {
         "started.json": {"sha": sha, "state": "STARTED"},

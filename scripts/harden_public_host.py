@@ -26,6 +26,7 @@ APPLICATION_PORTS = {"health-app": (5432, 6379, 8000, 8092, 8719, 443),
 
 
 def run(*args):
+    args = ({"useradd": "/usr/sbin/useradd", "ufw": "/usr/sbin/ufw"}.get(args[0], args[0]), *args[1:])
     result = subprocess.run(args, text=True, capture_output=True, timeout=60)
     if result.returncode:
         # Never print process output: PM2 and systemd may include environment data.
@@ -188,6 +189,24 @@ def backup_configuration(receipt, paths):
     atomic_write(receipt / "config-manifest.json", json.dumps(manifest), 0o600)
 
 
+
+def preflight_commands():
+    for path in ("/usr/sbin/useradd", "/usr/sbin/ufw", "/usr/sbin/iptables",
+                 "/usr/sbin/ip6tables", "/usr/sbin/iptables-save", "/usr/sbin/ip6tables-save",
+                 "/usr/bin/node", "/usr/bin/npm", "/usr/bin/pm2", "/usr/bin/git",
+                 "/usr/bin/systemctl", "/usr/bin/systemd-analyze"):
+        original = Path(path)
+        resolved = original.resolve(strict=True)
+        for item in (original, *reversed(resolved.parents), resolved):
+            info = item.lstat()
+            if info.st_uid != 0 or (not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022):
+                raise RuntimeError("unsafe required command")
+        if not resolved.is_file() or not os.access(resolved, os.X_OK):
+            raise RuntimeError("required command is not executable")
+    if "Status: active" not in run("/usr/sbin/ufw", "status"):
+        raise RuntimeError("UFW is not active")
+
+
 def apply(sha):
     if not re.fullmatch(r"[a-f0-9]{40}", sha or ""):
         raise ValueError("exact revision required")
@@ -228,6 +247,11 @@ def apply(sha):
     ])
     for family in ("iptables", "ip6tables"):
         atomic_write(receipt / f"{family}-before.txt", run(f"/usr/sbin/{family}-save"), 0o600)
+    _apply_prepared(sha, receipt, legacy_pid, keys)
+
+
+def _apply_prepared(sha, receipt, legacy_pid, keys):
+    """Only normal apply or the independently proven recovery may enter here."""
     try:
         user = pwd.getpwnam("health-web")
         if user.pw_uid == 0 or user.pw_shell not in ("/usr/sbin/nologin", "/sbin/nologin"):

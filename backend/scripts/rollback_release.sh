@@ -524,7 +524,12 @@ assert_release_lock
 select_release_env_for_runtime_result "$runtime_state_result"
 assert_release_lock
 
-backend/venv/bin/pip install --require-hashes -r backend/requirements.lock -q
+(
+    # Keep service-readable wheel modes without changing the private release
+    # runner's inherited umask or staged secret permissions.
+    umask 022
+    backend/venv/bin/pip install --require-hashes -r backend/requirements.lock -q
+)
 # Services remain stopped while the old lock is installed. Remove the legacy
 # Chroma runtime before validation so rollback restores every safe target
 # dependency without re-exposing packages that have no patched release.
@@ -532,6 +537,12 @@ backend/venv/bin/python -m pip uninstall --yes chromadb chroma-hnswlib
 backend/venv/bin/python "$LOCKED_REQUIREMENTS_VERIFIER" \
     --sanitize-forbidden-packages backend/requirements.lock
 backend/venv/bin/python -m pip check
+# Root opens the already hash-verified candidate verifier. health-app receives
+# only its stdin bytes and needs no access to the private staged directory.
+/usr/sbin/runuser -u health-app -- /usr/bin/env -i PATH=/usr/bin:/bin \
+    "$REPO_PATH/backend/venv/bin/python" -I -B - \
+    --runtime-user health-app --sanitize-forbidden-packages \
+    backend/requirements.lock < "$LOCKED_REQUIREMENTS_VERIFIER"
 
 requirements_digest="$(sha256sum backend/requirements.lock | awk '{print $1}')"
 requirements_marker="$REMOTE_RELEASE_STATE_DIR/requirements-lock.sha256"

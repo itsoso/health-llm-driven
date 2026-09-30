@@ -239,15 +239,22 @@ def test_real_archival_revokes_only_managed_keys_preserves_failure_and_allows_hi
         m.closed_evidence(b, a.proof.failed_sha, result["receipt"])
 
 
-def test_unstarted_release_closes_without_service_restoration_or_release_success(tmp_path, monkeypatch):
+@pytest.mark.parametrize("installed", [False, True])
+def test_unstarted_release_closes_without_service_restoration_or_release_success(tmp_path, monkeypatch, installed):
     m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch, build_lock=False)
     for path in audit.iterdir():
         path.unlink()
     audit.rmdir()
     a.unchanged = True
     a.record = b.STATE / "unchanged-release-closures" / a.proof.failed_sha
-    a.proof.snapshot()["unstarted_laya"] = {"empty_source": True}
-    a.proof._laya_unstarted = lambda: {"empty_source": True}
+    if installed:
+        installed_evidence = installed_profile_fixture()
+        a.proof.snapshot()["installed_laya"] = installed_evidence
+        a.proof._laya_installed = lambda **kw: installed_evidence.copy()
+        a.proof._laya_unstarted = lambda: pytest.fail("must not use unstarted profile")
+    else:
+        a.proof.snapshot()["unstarted_laya"] = {"empty_source": True}
+        a.proof._laya_unstarted = lambda: {"empty_source": True}
     a.proof.production = tmp_path / "production"
     a.proof.production.mkdir()
     (a.proof.production / "backend").mkdir()
@@ -413,3 +420,62 @@ def test_partial_closure_blocks_bootstrap_instead_of_using_old_failure_marker(tm
     b.__file__ = str(source / "bootstrap_trusted_release.py")
     with pytest.raises(Exception, match="private closure directory|closure audit incomplete"):
         b._workspace_evidence(old, recovery_receipt="c" * 64)
+
+
+@pytest.mark.parametrize("snapshot", [{}, {"installed_laya": {"profile": "unknown"}},
+    {"installed_laya": {"profile": "installed-reuse-v1"}, "unstarted_laya": {"some": "evidence"}}])
+def test_unchanged_profile_rejects_unknown_missing_or_mixed_evidence(snapshot):
+    module = load()
+    with pytest.raises(module.ClosureError):
+        module.unchanged_laya_profile(snapshot)
+
+
+def installed_profile_fixture():
+    def identity(mode, digest="a" * 64, gid=0):
+        return {"dev": 1, "ino": 2, "uid": 0, "gid": gid, "mode": mode, "sha256": digest}
+    assets = {name: "b" * 64 for name in ("install.py", "serve.py", "model-manifest.json", "requirements.lock",
+        "reva-laya.service.in", "encoder-config.json.b64", "rl-agent-config.json.b64", "tokenizer-config.json.b64", "model-NOTICE.txt")}
+    generation = "/opt/reva-laya/generations/" + "c" * 64
+    executable = generation + "/venv/bin/python"
+    return {"profile": "installed-reuse-v1", "started_at": "2026-09-30T00:00:00Z\n", "origin_sha": "e" * 40,
+        "assets": assets, "expected": {"generation": "c" * 64, "unit_sha256": "d" * 64, "env_sha256": "e" * 64},
+        "receipt": identity(0o600), "production_success": identity(0o600),
+        "files": {"/var/lib/reva-laya-release/install.json": identity(0o600),
+                  "/etc/systemd/system/reva-laya.service": identity(0o644, "d" * 64),
+                  "/etc/reva-laya/service.env": identity(0o640, "e" * 64, 997)},
+        "exported_source": {name: identity(0o400, "b" * 64) for name in (*assets, "source.json")},
+        "services": {"ActiveState": "active", "SubState": "running", "NRestarts": "0",
+            "FragmentPath": "/etc/systemd/system/reva-laya.service", "DropInPaths": "", "User": "reva-laya", "Group": "reva-laya",
+            "UnitFileState": "enabled", "ControlGroup": "/system.slice/reva-laya.service", "MainPID": "12",
+            "ActiveEnterTimestampMonotonic": "1000000", "boot_id": "00000000-1111-2222-3333-444444444444",
+            "ExecStart": f"path={executable}\nargv[]={executable} -I {generation}/serve.py\nignore_errors=no", "processes": {"12": "100"}}}
+
+
+@pytest.mark.parametrize("empty", [None, {}, False])
+def test_installed_history_rejects_empty_mixed_profile(empty):
+    module = load()
+    with pytest.raises(module.ClosureError):
+        module.unchanged_laya_profile({"installed_laya": installed_profile_fixture(), "unstarted_laya": empty})
+
+
+@pytest.mark.parametrize("field", ["assets", "expected", "receipt", "files", "services", "exported_source", "production_success"])
+def test_installed_history_rejects_placeholder_proof(field):
+    module, evidence = load(), installed_profile_fixture()
+    evidence[field] = {"bound": True}
+    with pytest.raises(module.ClosureError):
+        module.unchanged_laya_profile({"installed_laya": evidence})
+
+
+@pytest.mark.parametrize("damage", ["asset_hash", "unit_hash", "env_hash", "receipt_identity", "pid", "exec", "dropin", "file_mode"])
+def test_installed_history_rejects_inconsistent_bindings(damage):
+    module, evidence = load(), installed_profile_fixture()
+    if damage == "asset_hash": evidence["exported_source"]["install.py"]["sha256"] = "f" * 64
+    elif damage == "unit_hash": evidence["expected"]["unit_sha256"] = "f" * 64
+    elif damage == "env_hash": evidence["expected"]["env_sha256"] = "f" * 64
+    elif damage == "receipt_identity": evidence["receipt"]["ino"] = 9
+    elif damage == "pid": evidence["services"]["MainPID"] = "13"
+    elif damage == "exec": evidence["services"]["ExecStart"] = "/bin/other"
+    elif damage == "dropin": evidence["services"]["DropInPaths"] = "/tmp/other.conf"
+    elif damage == "file_mode": evidence["files"]["/etc/reva-laya/service.env"]["mode"] = 0o644
+    with pytest.raises(module.ClosureError):
+        module.unchanged_laya_profile({"installed_laya": evidence})

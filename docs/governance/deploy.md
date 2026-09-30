@@ -29,6 +29,11 @@
 [注册隔离修复发布](../security/2026-09-29-registration-hardening-release.md)。
 它不授予自主注册权限，不替代后端或 Web 成功回执，不扩展云端 SSH RPC。
 
+固定版本在账户创建前中断时，仅可按
+[主机加固前置失败恢复](../security/2026-09-30-host-preflight-recovery.md) 使用
+新受审发布器的 `--resume-preflight`。原失败/备份/租约不删除、不重建；
+独立恢复成功及外部回读不能替代原后端/Web 发布凭据。
+
 
 #### 已部署同树前端的受控重建
 
@@ -379,6 +384,18 @@ generation 或 install receipt 出现仍 BLOCK。入口保留原 NEEDS_OPERATOR�
 和已验证源目录，以独立 `unchanged-release-closures/<failed-sha>` 记录真实状态，
 复用同 inode lease 归档和精确双身份撤权，终态只记 CLOSED_UNCHANGED_RELEASE。只有最终
 fsync 后才返回受保护回执供后续 rotate 验证；不得补造 RESTORED 回执或重跑失败 SHA。
+
+已安装 Laya 的只读复用校验失败使用独立的 `--retire-installed-laya`，不改变上述
+未安装分支。该模式还要求旧生产、失败候选与收尾源码的全部 Laya 资产相同，
+原 INSTALLED 收据绑定可验证的历史 canonical 安装来源，且早于旧生产成功回执和
+失败租约；sealed 前后 Laya 配置相同，失败候选导出目录完整匹配。验证实际
+unit/覆盖路径/ExecStart/账号、代际模型与锁定依赖、boot ID、cgroup、PID/starttime
+和零重启，并证明进程早于租约。鉴权拒绝与真实合成推理须跨稳定窗口通过。
+
+此模式只调用只读安装验证，禁止 prepare/activate、安装、重启或变更业务配置。
+快照使用独立 `installed-reuse-v1` profile；归档撤权前后复核全部身份和原 env，
+未知、混合、缺字段 profile 拒绝。沿用原同 inode 租约归档与受保护回执协议，
+不修改失败终态、不续跑原 SHA。历史验收保存原证明，不要求以后版本维持该 PID。
 
 #### 固定 Laya PREPARING 事故的缺失租约行政收尾
 
