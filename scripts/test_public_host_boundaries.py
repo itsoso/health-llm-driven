@@ -545,3 +545,32 @@ def test_host_recovery_completed_transaction_passes_actual_history_reader(tmp_pa
     completed=b._read_json(adapter.record/'completed.json');completed['intent_sha256']=m.digest(evidence)
     write(adapter.record/'completed.json',json.dumps(completed).encode())
     with pytest.raises(m.RecoveryError,match='inner evidence'):m.history_evidence(b,m.FAILED_SHA)
+
+
+def test_host_recovery_auxiliary_scope_requires_exact_reviewed_blob(tmp_path,monkeypatch):
+    import subprocess
+    import pytest
+    m=load('public_host_recovery');old=tmp_path/'old';new=tmp_path/'new'
+    content='APPLICATION_PORTS = {}\ndef firewall_rules(): pass\ndef canonical_rule(): pass\ndef network_guard(): pass\n'
+    for root in (old,new):
+        (root/'scripts').mkdir(parents=True);(root/'scripts/harden_public_host.py').write_text(content)
+        subprocess.run(['git','init',str(root)],check=True,capture_output=True)
+        subprocess.run(['git','-C',str(root),'add','scripts/harden_public_host.py'],check=True)
+        subprocess.run(['git','-C',str(root),'-c','user.name=Fixture','-c','user.email=f@example.invalid','-c','core.hooksPath=/dev/null','commit','-m','fixture'],check=True,capture_output=True)
+    def commit():
+        subprocess.run(['git','-C',str(new),'add','auxiliary'],check=True)
+        subprocess.run(['git','-C',str(new),'-c','user.name=Fixture','-c','user.email=f@example.invalid','-c','core.hooksPath=/dev/null','commit','-m','auxiliary'],check=True,capture_output=True)
+    (new/'auxiliary').write_text('reviewed');commit()
+    pin=subprocess.check_output(['git','-C',str(new),'ls-tree','HEAD','--','auxiliary']).split(b'\t')[0]
+    monkeypatch.setattr(m,'REVIEWED_AUXILIARY',{'auxiliary':pin})
+    assert m.source_scope(new,old,None)==['auxiliary']
+    (new/'auxiliary').write_text('changed');commit()
+    with pytest.raises(m.RecoveryError,match='fixed scope'):m.source_scope(new,old,None)
+    (new/'auxiliary').write_text('reviewed');(new/'auxiliary').chmod(0o755);commit()
+    with pytest.raises(m.RecoveryError,match='fixed scope'):m.source_scope(new,old,None)
+
+    (new/'auxiliary').chmod(0o644);commit()
+    (old/'unknown').write_text('must not silently disappear')
+    subprocess.run(['git','-C',str(old),'add','unknown'],check=True)
+    subprocess.run(['git','-C',str(old),'-c','user.name=Fixture','-c','user.email=f@example.invalid','-c','core.hooksPath=/dev/null','commit','-m','unknown'],check=True,capture_output=True)
+    with pytest.raises(m.RecoveryError,match='fixed scope'):m.source_scope(new,old,None)

@@ -24,6 +24,13 @@ ALLOWED_CHANGES = {
     'scripts/test_public_host_boundaries.py', 'docs/governance/deploy.md',
     'docs/security/2026-09-30-host-preflight-recovery.md',
 }
+
+# Independently reviewed concurrent merge: only these exact non-host blobs.
+REVIEWED_AUXILIARY = {
+    '.github/workflows/trusted-ota.yml': b'100644 blob a19c0b2cb7689a6b9ada9afb5430cd5c10cd00a2',
+    'scripts/test_trusted_ota_workflow.py': b'100644 blob 43311f7a0da49be911f3deda1678b4883904259e',
+    'docs/dossiers/2026-09-30-share-composer-back-navigation.md': b'100644 blob 4eb1639b9990b66edd946b96d5c39161d572be9d',
+}
 BACKUP_NAMES = {'intent.json', 'config-before.tar.gz', 'config-manifest.json',
                 'iptables-before.txt', 'ip6tables-before.txt'}
 AUDIT_NAMES = {'started.json', 'failed.json', 'frontend.json'}
@@ -66,7 +73,8 @@ def source_scope(source, old, guard):
         return dict(row.split(b'\t', 1)[::-1] for row in raw.split(b'\0') if row)
     before, after = tree(old), tree(source)
     changed = {p.decode() for p in before.keys() | after.keys() if before.get(p) != after.get(p)}
-    if not changed or not changed <= ALLOWED_CHANGES:
+    if not changed or any(path not in ALLOWED_CHANGES and (path not in REVIEWED_AUXILIARY or after.get(path.encode()) != REVIEWED_AUXILIARY[path])
+                          for path in changed):
         raise RecoveryError('recovery source changes exceed fixed scope')
     # The persistent network unit executes the production helper. Its entire
     # rule implementation must remain identical to the independently reviewed executor.

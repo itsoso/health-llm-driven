@@ -7,7 +7,9 @@
 修复固定使用 `/usr/sbin/useradd` 和 `/usr/sbin/ufw`，普通加固在创建审计/租约前
 检查命令及 UFW。恢复仅支持上述固定生产版本，新发布器必须为独立 G4 GO、当前
 main、精确 CI 绿色的 canonical root staging。完整 Git tree 差异仅可涉及恢复器、
-对应测试和本文档；持久网络策略函数和端口常量必须相同，不 checkout 生产应用。
+对应测试和本文档。并发合入的 OTA bootstrap、对应测试及 share dossier 仅允许
+`4ee35ac33f5554153575f7605cb62ddfa504311d` 中已独立审查的精确 mode/type/blob，
+不是路径级豁免；任何字节/模式变动或未知文件删除均拒绝。持久网络策略函数和端口常量必须相同，不 checkout 生产应用。
 
 入口为该新 staging 的 `deploy.sh --security-hardening --sha <生产版本>
 --resume-preflight --publisher-sha <新发布器> --lease-token-stdin`。原租约 token
