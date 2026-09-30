@@ -119,6 +119,7 @@ def execute(sha):
         fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         helper._assert_lock(server, lock, stream.fileno())
         server.assert_ota_history()
+        guard.preflight_commands()
         helper._revision_proof(sha, source, bootstrap)
         require_backend_receipt(sha, bootstrap._read_json(STATE / sha / 'completed.json'))
         verify_runtime(guard, check_network=False)
@@ -161,6 +162,10 @@ def execute(sha):
 def main():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--sha', required=True)
+    parser.add_argument('--resume-preflight', action='store_true')
+    parser.add_argument('--publisher-sha')
+    parser.add_argument('--lease-token-stdin', action='store_true')
+    parser.add_argument('--evidence-sha256')
     args = parser.parse_args()
     try:
         if (not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode
@@ -171,7 +176,22 @@ def main():
         os.environ.clear()
         os.environ.update(PATH='/usr/bin:/bin', HOME='/root', LC_ALL='C', GIT_CONFIG_NOSYSTEM='1',
                           GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_SYSTEM='/dev/null', GIT_NO_REPLACE_OBJECTS='1')
-        print(json.dumps(execute(args.sha)))
+        if args.resume_preflight:
+            if (not args.lease_token_stdin or re.fullmatch(r'[a-f0-9]{40}', args.publisher_sha or '') is None
+                    or (args.evidence_sha256 is not None and re.fullmatch(r'[a-f0-9]{64}', args.evidence_sha256) is None)):
+                raise RuntimeError('exact recovery arguments required')
+            raw = sys.stdin.buffer.read(258)
+            if re.fullmatch(rb'[A-Za-z0-9._:-]{1,256}\n', raw) is None:
+                raise RuntimeError('original protected host lease required')
+            source, helper, bootstrap, server, gate, guard = load_reviewed(args.publisher_sha)
+            recovery = module(source / 'scripts/public_host_recovery.py', 'host_preflight_recovery')
+            result = recovery.execute(source, sys.modules[__name__], helper, bootstrap, server, gate, guard,
+                                      args.publisher_sha, args.sha, raw[:-1].decode(), args.evidence_sha256)
+        else:
+            if args.publisher_sha is not None or args.lease_token_stdin or args.evidence_sha256 is not None:
+                raise RuntimeError('recovery arguments require explicit recovery mode')
+            result = execute(args.sha)
+        print(json.dumps(result))
         return 0
     except Exception:
         print('host hardening blocked or incomplete; inspect private evidence, no blind retry', file=sys.stderr)

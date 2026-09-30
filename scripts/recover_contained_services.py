@@ -269,7 +269,10 @@ def main():
                             help="Separately close an already restored failed release; never redeploy")
         retirement.add_argument("--retire-unchanged", action="store_true",
                                 help="Close a failed Laya preparation with all old services unchanged")
+        retirement.add_argument("--retire-installed-laya", action="store_true",
+                                help="Close unchanged release after existing Laya reuse verification failed")
         args = parser.parse_args()
+        retire_unchanged = args.retire_unchanged or args.retire_installed_laya
         for sha in (args.sha, args.failed_sha, args.production_sha):
             if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
                 raise RecoveryError("exact SHA required")
@@ -293,7 +296,7 @@ def main():
             bootstrap._recovery_process_proof()
             proof_module = _load(source / "scripts/contained_recovery_proof.py", "contained_proof")
             underlying = proof_module.RecoveryProof(source, bootstrap, server, args.failed_sha, args.production_sha, token,
-                                                   unchanged=args.retire_unchanged)
+                                                   unchanged=retire_unchanged, installed_laya=args.retire_installed_laya)
             class LockedProof:
                 failed_sha = args.failed_sha
                 production_sha = args.production_sha
@@ -318,15 +321,15 @@ def main():
                     return self.invoke("running_snapshot")
 
             proof = LockedProof()
-            if (not args.retire_unchanged
+            if (not retire_unchanged
                     and os.path.lexists(STATE / "unchanged-release-closures" / args.failed_sha)):
                 raise RecoveryError("unchanged release closure already attempted")
-            if args.retire_restored or args.retire_unchanged:
+            if args.retire_restored or retire_unchanged:
                 module_path = source / "scripts/contained_release_retirement.py"
                 bootstrap.secure(module_path)
                 closure = _load(module_path, "contained_closure")
                 adapter = closure.ClosureAdapter(underlying, bootstrap, sys.modules[__name__], args.sha, proof.check,
-                                                 unchanged=args.retire_unchanged)
+                                                 unchanged=retire_unchanged)
                 result = closure.close_transaction(adapter, args.evidence_sha256)
                 print(json.dumps(result, sort_keys=True))
                 return 0

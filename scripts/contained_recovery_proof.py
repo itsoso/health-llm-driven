@@ -78,8 +78,78 @@ def normalized_base(raw, overridden):
     return b"".join(result)
 
 
+
+def security_unit_contract(unit):
+    resources = {
+        "health-backend.service": ("2G", "200%", "2147483648", "2s"),
+        "celery-worker.service": ("3G", "150%", "3221225472", "1.500000s"),
+        "celery-beat.service": ("512M", "50%", "536870912", "500ms"),
+    }
+    if unit not in resources:
+        raise ProofError("unknown security unit")
+    memory, quota, effective_memory, effective_quota = resources[unit]
+    common = {"InaccessiblePaths": "-/mnt -/opt/eth-ops",
+              "IPAddressDeny": "100.64.0.0/10 169.254.0.0/16",
+              "CapabilityBoundingSet": "", "TasksMax": "512"}
+    return {"directives": {**common, "MemoryMax": memory, "CPUQuota": quota},
+            "effective": {**common, "MemoryMax": effective_memory,
+                          "CPUQuotaPerSecUSec": effective_quota, "IPAddressAllow": ""}}
+
+
+def _security_assignments(raw, keys):
+    # Lists are additive in systemd. Repeated directives, including resets,
+    # must remain visible rather than being reduced to a last-value mapping.
+    normalized_base(raw, set())
+    section, result = None, {key: [] for key in keys}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith((b"#", b";")):
+            continue
+        if line.startswith(b"["):
+            section = line
+        elif section == b"[Service]" and b"=" in line:
+            key, value = line.split(b"=", 1)
+            name = key.decode("ascii")
+            if name in result:
+                result[name].append(value.decode("ascii"))
+    return result
+
+
+def validate_unit_base(base, canonical, overridden, unit, dropin, *, allow_legacy):
+    if normalized_base(base, overridden) == normalized_base(canonical, overridden):
+        return False
+    if not allow_legacy or unit not in UNITS[1:]:
+        raise ProofError("base unit differs outside overridden fields")
+    values = security_unit_contract(unit)["directives"]
+    exact = {key: [value] for key, value in values.items()}
+    if (_security_assignments(base, values) != {key: [] for key in values}
+            or _security_assignments(canonical, values) != exact
+            or _security_assignments(dropin, values) != exact
+            or normalized_base(base, overridden) != normalized_base(canonical, overridden | set(values))):
+        raise ProofError("legacy base security composition differs")
+    return True
+
+
+def validate_security_effective(unit, properties):
+    expected = security_unit_contract(unit)["effective"]
+    if properties != expected:
+        raise ProofError("effective security composition differs")
+    return dict(properties)
+
+
+def validate_installed_laya_binding(receipt, old, candidate, fields, *, started, boot, ticks_per_second):
+    """Only the same installed generation and processes predating the lease."""
+    if (receipt.get("state") != "INSTALLED" or old != candidate
+            or any(receipt.get(key) != value for key, value in old.items())
+            or fields.get("NRestarts") != "0" or not fields.get("processes")
+            or boot + int(fields["ActiveEnterTimestampMonotonic"]) / 1_000_000 >= started - 60
+            or any(boot + int(ticks) / ticks_per_second >= started - 60
+                   for ticks in fields["processes"].values())):
+        raise ProofError("installed Laya did not remain on the previous generation")
+
+
 class RecoveryProof:
-    def __init__(self, source, bootstrap, server, failed_sha, production_sha, lease_token, *, unchanged=False):
+    def __init__(self, source, bootstrap, server, failed_sha, production_sha, lease_token, *, unchanged=False, installed_laya=False):
         if any(re.fullmatch(r"[0-9a-f]{40}", value) is None for value in (failed_sha, production_sha)) or failed_sha == production_sha:
             raise ProofError("distinct exact revisions required")
         if not isinstance(lease_token, str) or re.fullmatch(r"[A-Za-z0-9._:-]{1,256}", lease_token) is None:
@@ -87,6 +157,9 @@ class RecoveryProof:
         self.source, self.bootstrap, self.server = Path(source), bootstrap, server
         self.failed_sha, self.production_sha, self.token = failed_sha, production_sha, lease_token
         self.unchanged = unchanged
+        self.installed_laya = installed_laya
+        if installed_laya and not unchanged:
+            raise ProofError("installed Laya requires unchanged closure")
         self.lease = bootstrap.BUSINESS_LEASE
         self.production = Path("/opt/health-app")
         self.systemd_root = Path("/etc/systemd/system")
@@ -354,6 +427,102 @@ class RecoveryProof:
         result["prepared_source"] = prepared
         return result
 
+    def _laya_installed(self, started_at=None):
+        """Read-only reuse proof. Never call prepare/activate or execute the venv."""
+        old_source = self.bootstrap.canonical_source(self.production_sha) / "infra/laya"
+        failed_source = self.bootstrap.canonical_source(self.failed_sha) / "infra/laya"
+        assets = {}
+        for name in LAYA_ASSETS:
+            old, _ = self._file(old_source / name)
+            failed, _ = self._file(failed_source / name)
+            reviewed, _ = self._file(self.source / "infra/laya" / name)
+            if old != failed or old != reviewed:
+                raise ProofError("installed Laya implementation or assets changed")
+            assets[name] = hashlib.sha256(old).hexdigest()
+        installer = self._module("infra/laya/install.py", "installed_laya_closure")
+        rollback, _ = self._file(self.stage / "backend.env.rollback", 0o400)
+        candidate, _ = self._file(self.stage / "backend.env.candidate", 0o400)
+        exported = LAYA_STATE / "sources" / self.failed_sha
+        self._directory(exported)
+        if {item.name for item in exported.iterdir()} != {*LAYA_ASSETS, "source.json"}:
+            raise ProofError("installed Laya exported source inventory differs")
+        source_record = object_json(self._file(exported / "source.json", 0o400)[0])
+        if source_record != {"sha": self.failed_sha, "old_sha": self.production_sha,
+                             "old_has_decisions": True, "files": assets}:
+            raise ProofError("installed Laya exported source binding differs")
+        exported_files = {}
+        for name in (*LAYA_ASSETS, "source.json"):
+            raw, exported_files[name] = self._file(exported / name, 0o400)
+            if name in assets and hashlib.sha256(raw).hexdigest() != assets[name]:
+                raise ProofError("installed Laya exported source differs")
+        old_config, new_config = (installer.parse_config(raw.decode()) for raw in (rollback, candidate))
+        if old_config is None or new_config is None or old_config != new_config:
+            raise ProofError("installed Laya configuration changed")
+        generation, _, _, old_expected = installer.expected_install(old_source, old_config)
+        new_expected = installer.expected_install(failed_source, new_config)[3]
+        raw, receipt_identity = self._file(LAYA_STATE / "install.json", 0o600)
+        receipt = object_json(raw)
+        if (set(receipt) != {"generation", "unit_sha256", "env_sha256", "state", "candidate_sha", "lease"}
+                or re.fullmatch(r"[0-9a-f]{40}", receipt.get("candidate_sha", "")) is None
+                or receipt["candidate_sha"] == self.failed_sha
+                or re.fullmatch(r"[0-9a-f]{64}", receipt.get("lease", "")) is None):
+            raise ProofError("installed Laya receipt provenance invalid")
+        origin = self.bootstrap.canonical_source(receipt["candidate_sha"]) / "infra/laya"
+        if installer.expected_install(origin, old_config)[3] != old_expected:
+            raise ProofError("installed Laya original source differs")
+        if started_at is None:
+            started_at = self._file(self.lease / "started_at", 0o600)[0].decode()
+        started = datetime.strptime(started_at, "%Y-%m-%dT%H:%M:%SZ\n").replace(tzinfo=UTC).timestamp()
+        boot = re.findall(r"^btime ([0-9]+)$", (self.proc / "stat").read_text(), re.MULTILINE)
+        success = self.bootstrap.STATE / self.production_sha / "completed.json"
+        success_raw, success_identity = self._file(success, 0o600)
+        if object_json(success_raw) != {"sha": self.production_sha, "state": "SUCCEEDED"}:
+            raise ProofError("previous successful release is not proven")
+        if (len(boot) != 1 or success.stat().st_mtime >= started - 60
+                or (LAYA_STATE / "install.json").stat().st_mtime >= success.stat().st_mtime):
+            raise ProofError("installed Laya receipt does not predate release")
+        # A complete existing receipt selects the audited read-only reuse branch.
+        installer.reusable(receipt, old_expected)
+        unit = "reva-laya.service"
+        if self.systemd.show(unit, "NeedDaemonReload") != "no":
+            raise ProofError("installed Laya unit reload pending")
+        self._absent(LAYA_STATE / "install.json.pending", installer.UNIT.with_name(installer.UNIT.name + ".pending"),
+                     installer.ENV.with_name(installer.ENV.name + ".pending"))
+        identities = {}
+        for path in (LAYA_STATE / "install.json", installer.UNIT, installer.ENV):
+            _, identities[str(path)] = self._file(path)
+        def process_snapshot():
+            fields = installer.service_identity(generation)
+            fields["ActiveEnterTimestampMonotonic"] = self.systemd.show(unit, "ActiveEnterTimestampMonotonic")
+            fields["boot_id"] = (self.proc / "sys/kernel/random/boot_id").read_text().strip()
+            fields["ControlGroup"] = self.systemd.show(unit, "ControlGroup")
+            effective = self.runtime.ReleaseTransaction._stable_exec_start(
+                None, self.systemd.show(unit, "ExecStart"))
+            executable = str(generation / "venv/bin/python")
+            if effective != f"path={executable}\nargv[]={executable} -I {generation / 'serve.py'}\nignore_errors=no":
+                raise ProofError("installed Laya effective command differs")
+            fields["ExecStart"] = effective
+            pids = self._pids(unit)
+            if pids != [fields["MainPID"]]:
+                raise ProofError("unexpected installed Laya service children")
+            fields["processes"] = {pid: (self.proc / pid / "stat").read_bytes().rsplit(b")", 1)[-1].split()[19].decode() for pid in pids}
+            validate_installed_laya_binding(receipt, old_expected, new_expected, fields,
+                                           started=started, boot=int(boot[0]), ticks_per_second=os.sysconf("SC_CLK_TCK"))
+            return fields
+        before = process_snapshot()
+        # Verifies root-owned immutable source/models/lock, effective service identity,
+        # unauthorized denial and actual synthetic inference across RestartSec.
+        installer.verify_install(old_source, old_config)
+        if process_snapshot() != before:
+            raise ProofError("installed Laya process changed during proof")
+        for path, identity in identities.items():
+            if self._file(Path(path))[1] != identity:
+                raise ProofError("installed Laya evidence changed during proof")
+        return {"profile": "installed-reuse-v1", "started_at": started_at, "assets": assets,
+                "origin_sha": receipt["candidate_sha"], "expected": old_expected,
+                "receipt": receipt_identity, "files": identities, "services": before,
+                "exported_source": exported_files, "production_success": success_identity}
+
     def _services_predate_release(self):
         raw, _ = self._file(self.lease / "started_at", 0o600)
         started = datetime.strptime(raw.decode(), "%Y-%m-%dT%H:%M:%SZ\n").replace(tzinfo=UTC).timestamp()
@@ -379,8 +548,11 @@ class RecoveryProof:
                 overrides.add("ExecStart")
             if unit == "celery-beat.service":
                 overrides |= {"StateDirectory", "StateDirectoryMode"}
-            if normalized_base(base, overrides) != normalized_base(old, overrides):
-                raise ProofError("base unit differs outside overridden fields")
+            legacy_security = validate_unit_base(
+                base, old, overrides, unit,
+                self.runtime._expected_candidate(unit) if unit.endswith(".service") else b"",
+                allow_legacy=self.installed_laya,
+            )
             if self.systemd.show(unit, "NeedDaemonReload") != "no" or self.systemd.is_enabled(unit) != "enabled":
                 raise ProofError("unit reload or enablement differs")
             if self.systemd.show(unit, "FragmentPath") != str(self.systemd_root / unit):
@@ -396,6 +568,10 @@ class RecoveryProof:
                     paths.append(str(path))
             if self.systemd.show(unit, "DropInPaths").split() != paths:
                 raise ProofError("effective drop-in inventory differs")
+            if legacy_security:
+                values = {key: self.systemd.show(unit, key)
+                          for key in security_unit_contract(unit)["effective"]}
+                entry["legacy_security_effective"] = validate_security_effective(unit, values)
             result[unit] = entry
         effective = transaction._old_effective()
         worker = "celery-worker.service"
@@ -431,7 +607,10 @@ class RecoveryProof:
         _, result["terminal"] = self._file(transaction._terminal_marker_path())
         result["units"] = self._units(old_source, transaction)
         if getattr(self, "unchanged", False):
-            result["unstarted_laya"] = self._laya_unstarted()
+            if self.installed_laya:
+                result["installed_laya"] = self._laya_installed()
+            else:
+                result["unstarted_laya"] = self._laya_unstarted()
             self._services_predate_release()
         return result
 

@@ -102,3 +102,12 @@ No push, merge, production recovery, credential mutation or workflow dispatch
 was performed in this continuation. Await coordination with the other MacBook
 and authorization for the main-red CI repair before external writes; review the
 new recovery operator and its exact evidence before any incident action.
+
+### Authorized integration
+
+The user explicitly authorized merging this remediation. The integration retains
+concurrent main `b5641a0aad72f4c52c4f37c3164b5be4c06c100b` without conflict.
+That main already contains byte-identical mobile dependency fixes; the incremental
+executable diff is only the previously reviewed OTA bootstrap and its regression
+tests. Production incident recovery and OTA dispatch remain out of this merge-only
+continuation. Hosted CI must be checked on the resulting exact main revision.
