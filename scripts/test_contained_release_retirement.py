@@ -239,15 +239,23 @@ def test_real_archival_revokes_only_managed_keys_preserves_failure_and_allows_hi
         m.closed_evidence(b, a.proof.failed_sha, result["receipt"])
 
 
-def test_unstarted_release_closes_without_service_restoration_or_release_success(tmp_path, monkeypatch):
+@pytest.mark.parametrize("installed", [False, True])
+def test_unstarted_release_closes_without_service_restoration_or_release_success(tmp_path, monkeypatch, installed):
     m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch, build_lock=False)
     for path in audit.iterdir():
         path.unlink()
     audit.rmdir()
     a.unchanged = True
     a.record = b.STATE / "unchanged-release-closures" / a.proof.failed_sha
-    a.proof.snapshot()["unstarted_laya"] = {"empty_source": True}
-    a.proof._laya_unstarted = lambda: {"empty_source": True}
+    if installed:
+        installed_evidence = {"profile": "installed-reuse-v1", "started_at": "2026-09-30T00:00:00Z\n", "origin_sha": "e" * 40,
+            **{key: {"bound": True} for key in ("assets", "expected", "receipt", "files", "services", "exported_source", "production_success")}}
+        a.proof.snapshot()["installed_laya"] = installed_evidence
+        a.proof._laya_installed = lambda **kw: installed_evidence.copy()
+        a.proof._laya_unstarted = lambda: pytest.fail("must not use unstarted profile")
+    else:
+        a.proof.snapshot()["unstarted_laya"] = {"empty_source": True}
+        a.proof._laya_unstarted = lambda: {"empty_source": True}
     a.proof.production = tmp_path / "production"
     a.proof.production.mkdir()
     (a.proof.production / "backend").mkdir()
@@ -413,3 +421,11 @@ def test_partial_closure_blocks_bootstrap_instead_of_using_old_failure_marker(tm
     b.__file__ = str(source / "bootstrap_trusted_release.py")
     with pytest.raises(Exception, match="private closure directory|closure audit incomplete"):
         b._workspace_evidence(old, recovery_receipt="c" * 64)
+
+
+@pytest.mark.parametrize("snapshot", [{}, {"installed_laya": {"profile": "unknown"}},
+    {"installed_laya": {"profile": "installed-reuse-v1"}, "unstarted_laya": {"some": "evidence"}}])
+def test_unchanged_profile_rejects_unknown_missing_or_mixed_evidence(snapshot):
+    module = load()
+    with pytest.raises(module.ClosureError):
+        module.unchanged_laya_profile(snapshot)

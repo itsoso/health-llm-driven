@@ -216,7 +216,7 @@ class ClosureAdapter:
         if self.unchanged:
             if (os.path.lexists(b.STATE / "contained-service-recoveries" / p.failed_sha)
                     or os.path.lexists(b.STATE / "contained-release-closures" / p.failed_sha)
-                    or not snapshot.get("unstarted_laya")
+                    or not unchanged_laya_profile(snapshot)
                     or self.sha in {p.failed_sha, p.production_sha}):
                 raise ClosureError("release is not an unchanged pre-installation failure")
             audit = None
@@ -340,10 +340,14 @@ class ClosureAdapter:
         restoration = None if self.unchanged else _restoration(b, p.failed_sha)[2]
         if restoration != evidence["restoration"] or _locks(b, p.failed_sha, evidence["snapshot"]) != evidence["locks"]:
             raise ClosureError("original restoration or lock evidence changed")
-        if (self.unchanged
-                and (p._laya_unstarted() != evidence["snapshot"]["unstarted_laya"]
-                     or p._file(p.production / "backend/.env")[1] != evidence["snapshot"]["stage"]["live_env"])):
-            raise ClosureError("pre-installation state changed during closure")
+        if self.unchanged:
+            profile = unchanged_laya_profile(evidence["snapshot"])
+            expected = evidence["snapshot"][profile]
+            current = (p._laya_installed(started_at=expected["started_at"])
+                       if profile == "installed_laya" else p._laya_unstarted())
+            if (current != expected
+                    or p._file(p.production / "backend/.env")[1] != evidence["snapshot"]["stage"]["live_env"]):
+                raise ClosureError("unchanged Laya state changed during closure")
         self.r._application_probes(p.production_sha, self.sha)
         self.r._http_probes()
         class Services:
@@ -358,6 +362,24 @@ class ClosureAdapter:
         self._verify_original_lease_archive(evidence)
         self.check()
         return {"installation": installation, "archives": _archives(b, self.record, evidence["snapshot"])}
+
+
+def unchanged_laya_profile(snapshot):
+    unstarted, installed = snapshot.get("unstarted_laya"), snapshot.get("installed_laya")
+    if bool(unstarted) == bool(installed):
+        raise ClosureError("exactly one unchanged Laya profile required")
+    if installed:
+        required = {"profile", "started_at", "assets", "origin_sha", "expected", "receipt",
+                    "files", "services", "exported_source", "production_success"}
+        if (not isinstance(installed, dict) or set(installed) != required
+                or installed["profile"] != "installed-reuse-v1"
+                or not isinstance(installed["started_at"], str)
+                or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\n", installed["started_at"]) is None
+                or re.fullmatch(r"[0-9a-f]{40}", installed.get("origin_sha", "")) is None
+                or any(not isinstance(installed[key], dict) or not installed[key]
+                       for key in required - {"profile", "started_at", "origin_sha"})):
+            raise ClosureError("unknown or incomplete installed Laya profile")
+    return "installed_laya" if installed else "unstarted_laya"
 
 
 def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False):
@@ -383,7 +405,7 @@ def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False):
         raise ClosureError("closure audit binding invalid")
     bootstrap.canonical_source(intent["closing_sha"])
     if unchanged:
-        if (intent["restoration"] is not None or not intent["snapshot"].get("unstarted_laya")
+        if (intent["restoration"] is not None or not unchanged_laya_profile(intent["snapshot"])
                 or os.path.lexists(bootstrap.STATE / "contained-service-recoveries" / sha)
                 or os.path.lexists(bootstrap.STATE / "contained-release-closures" / sha)):
             raise ClosureError("unchanged closure conflicts with restoration evidence")

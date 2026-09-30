@@ -405,3 +405,131 @@ def test_stage_rejects_original_binding_drift(stage, fault):
         manifest.chmod(0o400)
     with pytest.raises(proof.ProofError):
         instance._stage(source)
+
+
+@pytest.mark.parametrize("damage", ["receipt", "asset", "config", "recent", "restart"])
+def test_installed_laya_closure_rejects_changed_or_new_runtime(damage):
+    old = {"generation": "a" * 64, "unit_sha256": "b" * 64, "env_sha256": "c" * 64}
+    receipt = {**old, "state": "INSTALLED"}
+    candidate = dict(old)
+    fields = {"NRestarts": "0", "ActiveEnterTimestampMonotonic": "1000000", "processes": {"12": "100"}}
+    if damage == "receipt": receipt["state"] = "PREPARED"
+    if damage == "asset": candidate["generation"] = "d" * 64
+    if damage == "config": candidate["env_sha256"] = "d" * 64
+    if damage == "recent": fields["ActiveEnterTimestampMonotonic"] = "200000000"
+    if damage == "restart": fields["NRestarts"] = "1"
+    with pytest.raises(proof.ProofError):
+        proof.validate_installed_laya_binding(receipt, old, candidate, fields,
+                                              started=1200, boot=1000, ticks_per_second=100)
+
+
+def test_installed_laya_closure_accepts_only_same_installed_generation_predating_lease():
+    expected = {"generation": "a" * 64, "unit_sha256": "b" * 64, "env_sha256": "c" * 64}
+    fields = {"NRestarts": "0", "ActiveEnterTimestampMonotonic": "1000000", "processes": {"12": "100"}}
+    proof.validate_installed_laya_binding({**expected, "state": "INSTALLED"}, expected, expected,
+                                          fields, started=1200, boot=1000, ticks_per_second=100)
+    fields["processes"]["13"] = "20000"
+    with pytest.raises(proof.ProofError):
+        proof.validate_installed_laya_binding({**expected, "state": "INSTALLED"}, expected, expected,
+                                              fields, started=1200, boot=1000, ticks_per_second=100)
+
+
+def installed_runtime_fixture(tmp_path, monkeypatch):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.production_sha, instance.failed_sha, origin_sha = (x * 40 for x in "abc")
+    root, state = tmp_path / "sources", tmp_path / "state"
+    laya = tmp_path / "laya"
+    laya.mkdir()
+    instance.source = root / ("d" * 40)
+    hashes = {}
+    for sha in (instance.production_sha, instance.failed_sha, origin_sha, "d" * 40):
+        src = root / sha / "infra/laya"
+        src.mkdir(parents=True)
+        for name in proof.LAYA_ASSETS:
+            data = ("reviewed " + name).encode()
+            (src / name).write_bytes(data)
+            hashes[name] = hashlib.sha256(data).hexdigest()
+    exported = laya / "sources" / instance.failed_sha
+    exported.mkdir(parents=True)
+    for name in proof.LAYA_ASSETS:
+        (exported / name).write_bytes((root / instance.failed_sha / "infra/laya" / name).read_bytes())
+    (exported / "source.json").write_text(json.dumps({"sha": instance.failed_sha,
+        "old_sha": instance.production_sha, "old_has_decisions": True, "files": hashes}))
+    expected = {"generation": "1" * 64, "unit_sha256": "2" * 64, "env_sha256": "3" * 64}
+    receipt = {**expected, "state": "INSTALLED", "candidate_sha": origin_sha, "lease": "4" * 64}
+    (laya / "install.json").write_text(json.dumps(receipt))
+    os.utime(laya / "install.json", (1000, 1000))
+    success = state / instance.production_sha / "completed.json"
+    success.parent.mkdir(parents=True)
+    success.write_text(json.dumps({"sha": instance.production_sha, "state": "SUCCEEDED"}))
+    os.utime(success, (1100, 1100))
+    instance.lease, instance.stage, instance.proc = (tmp_path / n for n in ("lease", "stage", "proc"))
+    for p in (instance.lease, instance.stage, instance.proc): p.mkdir()
+    (instance.lease / "started_at").write_text("1970-01-01T00:33:20Z\n")
+    (instance.proc / "stat").write_text("btime 100\n")
+    process = instance.proc / "12"
+    process.mkdir()
+    (process / "stat").write_text("12 (synthetic) " + " ".join(["0"] * 19 + ["100"]))
+    boot = instance.proc / "sys/kernel/random"
+    boot.mkdir(parents=True)
+    (boot / "boot_id").write_text("old-boot")
+    for name in ("backend.env.rollback", "backend.env.candidate"):
+        (instance.stage / name).write_text("same-config")
+    unit, env = tmp_path / "unit", tmp_path / "env"
+    unit.write_text("reviewed unit"); env.write_text("synthetic key")
+    instance._file = lambda p, *args: (p.read_bytes(), {"sha256": hashlib.sha256(p.read_bytes()).hexdigest()})
+    instance._directory = lambda p: {"directory": str(p)}
+    instance._absent = lambda *paths: None
+    instance.bootstrap = SimpleNamespace(STATE=state, canonical_source=lambda sha: root / sha)
+    generation = tmp_path / "generation"
+    calls = []
+    service = {"MainPID": "12", "NRestarts": "0", "DropInPaths": ""}
+    def service_identity(_):
+        if service["DropInPaths"]:
+            raise proof.ProofError("unexpected drop-in")
+        return service.copy()
+    installer = SimpleNamespace(UNIT=unit, ENV=env,
+        parse_config=lambda raw: {"config": raw}, expected_install=lambda *a: (generation, b"unit", b"env", expected),
+        reusable=lambda r, e: None, service_identity=service_identity,
+        verify_install=lambda *a: calls.append("verify"),
+        prepare=lambda *a: pytest.fail("no installation"), activate=lambda *a: pytest.fail("no activation"))
+    instance._module = lambda *a: installer
+    instance._pids = lambda _: ["12"]
+    instance.systemd = SimpleNamespace(show=lambda unit, field: {
+        "NeedDaemonReload": "no", "ActiveEnterTimestampMonotonic": "1000000", "ControlGroup": "/system.slice/reva-laya.service",
+        "ExecStart": f"path={generation / 'venv/bin/python'}\nargv[]={generation / 'venv/bin/python'} -I {generation / 'serve.py'}\nignore_errors=no"}[field])
+    instance.runtime = SimpleNamespace(ReleaseTransaction=SimpleNamespace(_stable_exec_start=lambda _, value: value))
+    monkeypatch.setattr(proof, "LAYA_STATE", laya)
+    return instance, installer, service, calls, laya
+
+
+def test_installed_profile_proves_real_source_receipt_and_stable_runtime_without_mutation(tmp_path, monkeypatch):
+    instance, installer, service, calls, laya = installed_runtime_fixture(tmp_path, monkeypatch)
+    before = {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    result = instance._laya_installed()
+    assert result["profile"] == "installed-reuse-v1"
+    assert calls == ["verify"]
+    assert before == {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    # Post-closure verification uses the captured release time after the original lease is archived.
+    (instance.lease / "started_at").rename(instance.lease / "archived")
+    assert instance._laya_installed(started_at=result["started_at"]) == result
+
+
+@pytest.mark.parametrize("damage", ["asset", "candidate_env", "receipt", "export", "origin",
+                                     "success", "unit_override", "pid_drift", "boot_drift", "env_drift"])
+def test_installed_profile_rejects_drift_before_or_during_readonly_proof(tmp_path, monkeypatch, damage):
+    instance, installer, service, calls, laya = installed_runtime_fixture(tmp_path, monkeypatch)
+    if damage == "asset": (instance.source / "infra/laya/serve.py").write_text("changed")
+    elif damage == "candidate_env": (instance.stage / "backend.env.candidate").write_text("changed")
+    elif damage == "receipt":
+        p = laya / "install.json"; data = json.loads(p.read_text()); data["state"] = "PREPARING"; p.write_text(json.dumps(data))
+    elif damage == "export": (laya / "sources" / instance.failed_sha / "unknown").write_text("extra")
+    elif damage == "origin":
+        installer.expected_install = lambda source, config: (tmp_path / "generation", b"unit", b"env", {"generation": source.parts[-3]})
+    elif damage == "success": (instance.bootstrap.STATE / instance.production_sha / "completed.json").write_text('{}')
+    elif damage == "unit_override": service["DropInPaths"] = "/tmp/override"
+    elif damage == "pid_drift": installer.verify_install = lambda *a: service.update(MainPID="13")
+    elif damage == "boot_drift": installer.verify_install = lambda *a: (instance.proc / "sys/kernel/random/boot_id").write_text("new-boot")
+    elif damage == "env_drift": installer.verify_install = lambda *a: installer.ENV.write_text("changed")
+    with pytest.raises(proof.ProofError):
+        instance._laya_installed()
