@@ -158,6 +158,20 @@ def _estimate_nutrition(food_text: str) -> tuple[int, float, float, float] | Non
     return None
 
 
+# 补剂自由文本落 taken=true 会进 Twin 在服集 / DSI;否定/漏服/别日/计划/提问(没吃/忘了/昨天/
+# 准备/让我吃/吗)一律 400 不写。这是只收紧的过滤,不是完整意图识别(如「睡前吃X」「我妈吃了X」
+# 仍会通过),完整修复归共享 intake 分类器。先去空白,防「不 吃」绕过。
+_SUPPLEMENT_NOT_TAKEN_RE = re.compile(
+    r"没|沒|未|忘|漏(?:吃|服)|拒[绝絕]|不\S{0,2}(?:吃|服|喝)|[别別](?:忘|吃|服|喝)"
+    r"|昨|前天|上[周週]|准备|準備|打算|待[会會]|等[会會下]|一[会會]|稍[后後]|明天|[记記]得|提醒"
+    r"|要|[该該]|让我|讓我|建[议議]|吗|嗎|么|麼|[?？]"
+)
+
+
+def _is_not_taken_supplement_text(text: str) -> bool:
+    return bool(_SUPPLEMENT_NOT_TAKEN_RE.search(re.sub(r"\s+", "", text)))
+
+
 def _parse_quick_record(text: str):
     """
     解析自然语言快速记录，返回 (type, data) 元组。
@@ -201,6 +215,8 @@ def _parse_quick_record(text: str):
     if intake.kind == "supplement":
         name = intake.text.strip()
         if name:
+            if _is_not_taken_supplement_text(text):
+                return None, None
             return "supplement", {"name": name}
     if intake.kind in {"medication", "diet_management"}:
         return None, None
@@ -218,6 +234,8 @@ def _parse_quick_record(text: str):
     # otherwise "吃了 维生素D" is incorrectly treated as diet.
     supp_match = re.match(r"(?:吃了?|服用|补剂)\s*(维生素|鱼油|钙片|叶酸|益生菌|辅酶|NAC|锌|镁|铁|B族|维C|维D|omega|Omega)(.*)$", text, re.IGNORECASE)
     if supp_match:
+        if _is_not_taken_supplement_text(text):
+            return None, None
         supp_name = supp_match.group(1) + (supp_match.group(2) or "").strip()
         if non_intake_reason(supp_name, named=True):
             return None, None
@@ -390,8 +408,14 @@ def quick_record(
                     taken=True,
                 )
                 db.add(record)
+            elif existing.taken:
+                record = existing  # 幂等:今天已打过卡
             else:
-                record = existing
+                # 当天已被取消勾选:自由文本不能把它翻回已服(误解析会虚高依从),也不假报已打卡。
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"今天的「{supp.name}」已被标记为未服,本次未改动;如确已服用,请在补剂页勾选。",
+                )
             db.commit()
             db.refresh(record)
             _invalidate_twin(current_user.id)
@@ -401,6 +425,9 @@ def quick_record(
                 record_id=record.id,
             )
 
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"快速记录失败: {e}")

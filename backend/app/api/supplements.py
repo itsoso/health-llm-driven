@@ -83,6 +83,13 @@ def _get_owned_supplement_record(db: Session, user_id: int, record_id: int) -> S
     return record
 
 
+def _apply_record_upsert(existing: SupplementRecord, record: SupplementRecordCreate) -> None:
+    """同日 upsert 只写调用方显式给出的字段,不把未发送的服用时刻/备注/剂量抹成 None。"""
+    fields = record.model_dump(exclude_unset=True, exclude={"supplement_id", "user_id", "record_date"})
+    for key, value in fields.items():
+        setattr(existing, key, value)
+
+
 # ========== 补剂定义 ==========
 
 @router.post("/definitions", response_model=SupplementDefinitionResponse)
@@ -183,9 +190,7 @@ def create_supplement_record(
     ).first()
 
     if existing:
-        existing.taken = record.taken
-        existing.taken_time = record.taken_time
-        existing.notes = record.notes
+        _apply_record_upsert(existing, record)
         db.commit()
         db.refresh(existing)
         _invalidate_twin(user_id)
@@ -208,9 +213,7 @@ def create_supplement_record(
         ).first()
         if existing is None:  # 撞唯一约束却查不到 → 反常, fail loud
             raise
-        existing.taken = record.taken
-        existing.taken_time = record.taken_time
-        existing.notes = record.notes
+        _apply_record_upsert(existing, record)
         db.commit()
         db.refresh(existing)
         _invalidate_twin(user_id)
@@ -230,14 +233,17 @@ def batch_checkin(
     # 使用当前登录用户的 ID，忽略请求中的 user_id
     user_id = current_user.id
 
+    # 先整批校验再写(字段/类型由 schema 保证):任一项非法都不能留下半批已提交的依从事实。
+    seen: set[int] = set()
+    for checkin in batch.checkins:
+        if checkin.supplement_id in seen:
+            raise HTTPException(status_code=400, detail="同一补剂在本批出现多次")
+        seen.add(checkin.supplement_id)
+        _get_owned_supplement(db, user_id, checkin.supplement_id)
+
     results = []
     for checkin in batch.checkins:
-        supplement_id = checkin.get("supplement_id")
-        taken = checkin.get("taken", False)
-        if isinstance(supplement_id, bool) or not isinstance(supplement_id, int):
-            raise HTTPException(status_code=400, detail="supplement_id 无效")
-        _get_owned_supplement(db, user_id, supplement_id)
-
+        supplement_id, taken = checkin.supplement_id, checkin.taken
         existing = db.query(SupplementRecord).filter(
             SupplementRecord.user_id == user_id,
             SupplementRecord.supplement_id == supplement_id,
@@ -246,7 +252,6 @@ def batch_checkin(
 
         if existing:
             existing.taken = taken
-            db.commit()
             results.append({"supplement_id": supplement_id, "action": "updated"})
         else:
             record = SupplementRecord(

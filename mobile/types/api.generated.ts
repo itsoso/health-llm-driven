@@ -31424,7 +31424,14 @@ export interface components {
              */
             record_date: string;
             /** Checkins */
-            checkins: Record<string, never>[];
+            checkins: components["schemas"]["SupplementCheckinItem"][];
+        };
+        /** SupplementCheckinItem */
+        SupplementCheckinItem: {
+            /** Supplement Id */
+            supplement_id: number;
+            /** Taken */
+            taken: boolean;
         };
         /** SupplementDefinitionCreate */
         SupplementDefinitionCreate: {
@@ -31756,10 +31763,7 @@ export interface components {
              * Format: date
              */
             record_date: string;
-            /**
-             * Taken
-             * @default false
-             */
+            /** Taken */
             taken: boolean;
             /** Taken Time */
             taken_time?: string | null;
@@ -31770,7 +31774,7 @@ export interface components {
             /** Supplement Id */
             supplement_id: number;
             /** User Id */
-            user_id: number;
+            user_id?: number | null;
         };
         /** SupplementRecordResponse */
         SupplementRecordResponse: {
