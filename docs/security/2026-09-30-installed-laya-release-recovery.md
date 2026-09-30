@@ -14,3 +14,12 @@ Laya 原安装已存在，因此原未安装收尾模式不适用，不能删锁
 新发布仍必须完整执行原探针，不放宽超时、不跳过 Laya 验证。
 
 本文件编写时收尾和后续发布尚未执行。验证和独立 G4 证据随后更新。
+
+## 当日依赖审计刷新
+
+b79 CI 36660647091 的在线审计阻断 PyJWT 2.13.0 及 Mobile 构建依赖的已知漏洞。
+最小升级为 PyJWT 2.14.0（重新生成 hash lock）、brace-expansion 的同主版本
+1.1.21 / 2.1.7 / 5.0.12 与 joi 17.13.8。未添加审计忽略项，未改变原生模块版本。
+依据：[PyJWT 公告](https://github.com/jpadilla/pyjwt/security/advisories/GHSA-9v7f-9g4p-ffgj)、
+[brace-expansion 公告](https://github.com/advisories/GHSA-qhr7-859c-m2p7)、
+[joi 公告](https://github.com/advisories/GHSA-6h2x-m376-mqjq)。
