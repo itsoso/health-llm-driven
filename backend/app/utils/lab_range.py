@@ -33,14 +33,16 @@ def is_below_range(value, reference_range) -> Optional[bool]:
 # 排除词在原始小写名上先判(保留 "1,25" / "(oh)2" 等标点语义),防分析物混淆:
 #   尿镁≠血清镁;1,25-(OH)₂D / 维生素D结合蛋白 ≠ 25-OH-D(营养状态指标)。
 # 关键词在去掉空格与 -_()[].,，（）【】 后的名上匹配,覆盖 25-OHD / 25(OH)VD / VITAMIN_D 等写法。
-# "mg" 只认独立 token(前后非字母、后不接 "/"),避免误中 IgM 或单位 mg/dL。
+# "mg" 只认独立 token(前非字母数字、后非字母且不接 "/"、不在 "<数字>-" 之后),避免误中 IgM、
+# 单位 mg/dL 与 β2-MG/α1-MG(微球蛋白);另排除 MG 抗体(重症肌无力)与 Mg-ATP。
 MAGNESIUM_ANALYTE = (
     ["镁", "magnesium"],
-    ["尿", "urine", "urinary"],
-    re.compile(r"(?<![a-z])mg(?![a-z/])"),
+    ["尿", "urine", "urinary", "微球蛋白", "microglobulin", "抗体", "achr", "atp"],
+    re.compile(r"(?<![a-z0-9])(?<![0-9]-)mg(?![a-z/])"),
 )
 VITAMIN_D_25OH_ANALYTE = (
-    ["25ohd", "25ohvd", "25羟", "25hydroxy", "vitd", "vitamind", "维生素d", "维d"],
+    ["25ohd", "25ohvd", "25羟", "25hydroxy", "vitd", "vitamind", "维生素d", "维d",
+     "骨化二醇", "calcidiol"],
     ["1,25", "1，25", "二羟", "dihydroxy", "(oh)2", "结合蛋白", "binding"],
     None,
 )

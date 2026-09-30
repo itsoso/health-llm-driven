@@ -151,7 +151,7 @@ def test_high_vitamin_d_alias_overrides_vdr_gene(name):
     assert "vdr_vitamin_k2" not in _rec_ids(f)
 
 
-@pytest.mark.parametrize("name", ["Mg", "mg", "Serum Magnesium", "Serum Mg", "MG-血清", "Mg-S", "镁(Mg)"])
+@pytest.mark.parametrize("name", ["Mg", "mg", "Serum Magnesium", "Serum Mg", "MG-血清", "Mg-S", "镁(Mg)", "Mg2+", "S-Mg"])
 def test_high_magnesium_alias_overrides_sleep_complaint(name):
     f = SupplementAdvisorSpecialist().run(
         _twin(
@@ -200,3 +200,40 @@ def test_mg_unit_or_substring_not_treated_as_magnesium(name):
         {},
     )
     assert "magnesium_sleep" in _rec_ids(f)
+
+
+_NON_MG_ANALYTES = [
+    "β2-MG", "β2微球蛋白(β2-MG)", "B2-MG", "α1-MG", "MG抗体", "重症肌无力抗体(MG)", "AChR-Ab (MG)", "Mg-ATP",
+]
+
+
+@pytest.mark.parametrize("name", _NON_MG_ANALYTES)
+def test_low_non_magnesium_mg_named_analyte_does_not_recommend(name):
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": name, "value": 0.8, "reference_range": "1.0-3.0"}]), {}
+    )
+    assert "magnesium_sleep" not in _rec_ids(f)
+
+
+@pytest.mark.parametrize("name", _NON_MG_ANALYTES)
+def test_high_non_magnesium_mg_named_analyte_does_not_suppress(name):
+    f = SupplementAdvisorSpecialist().run(
+        _twin(
+            [
+                {"item_name": name, "value": 5.0, "reference_range": "1.0-3.0"},
+                {"item_name": "镁", "value": 0.6, "reference_range": "0.75-1.02"},
+            ],
+            sleep_complaint=True,
+        ),
+        {},
+    )
+    assert "magnesium_sleep" in _rec_ids(f)
+    assert not any("镁" in w for w in _warnings(f))
+
+
+@pytest.mark.parametrize("name", ["骨化二醇", "Calcidiol"])
+def test_high_calcidiol_overrides_vdr_gene(name):
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": name, "value": 180, "reference_range": "30-100"}], vdr=True), {}
+    )
+    assert "vdr_vitamin_d" not in _rec_ids(f)
