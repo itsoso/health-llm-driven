@@ -9,9 +9,11 @@ import { bindIOSToken } from '../services/notifications';
 import { emitClientEvent } from '../services/clientEvents';
 import { resolveNotificationRoute } from '../services/notificationRoutes';
 import { queryClient } from '../applib/queryClient';
+import { invalidateRecordMutation } from '../applib/queryKeys';
 import { completeAgendaItem } from '../services/agenda';
 import { logMedication } from '../services/medications';
 import { recordBehaviorLoopAction, recordOpenLoopFeedback } from '../services/notificationLoopActions';
+import { recordSupplementReminderAction } from '../services/supplementReminderActions';
 import {
   enqueuePendingMedicationAction,
   listPendingMedicationActions,
@@ -293,7 +295,9 @@ async function processNotificationResponse(
     if (data?.reminder_type === 'medication') {
       return handleMedicationReminderAction(actionId, data);
     }
-    await handleQuickAction(actionId, data);
+    if (await recordSupplementReminderAction(actionId, data, notification.date)) {
+      await invalidateRecordMutation(queryClient);
+    }
     return true;
   }
   if (actionId === 'DONE' || actionId === 'SNOOZE_7D' || actionId === 'NOT_INTERESTED') {
@@ -495,21 +499,6 @@ export async function handleAgendaAction(
       status,
       error: err instanceof Error ? err.message : String(err),
     });
-  }
-}
-
-async function handleQuickAction(action: string, data?: Record<string, any>) {
-  if (!data) return;
-  try {
-    const { default: api } = await import('../services/api');
-    if (data.reminder_type === 'supplement' && data.supplement_id) {
-      await api.post('/supplements/me/checkin', {
-        supplement_id: data.supplement_id,
-        action: action === 'TAKEN' ? 'take' : 'skip',
-      });
-    }
-  } catch {
-    // Background action failed silently — user can check in the app later
   }
 }
 

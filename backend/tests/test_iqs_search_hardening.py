@@ -145,3 +145,43 @@ async def test_fetch_scrubs_pii_before_egress(monkeypatch):
     await iqs.fetch_realtime_evidence("脂肪肝 13800138000")
     assert "13800138000" not in seen["query"]
     assert "脂肪肝" in seen["query"]
+
+
+# ── 日志隐私: query 文本不得进日志 (AGENTS.md §3/§5) ─────────
+
+_SENSITIVE_QUERY = "二甲双胍 糖化血红蛋白 8.9 肾功能"
+
+
+async def test_fetch_timeout_log_omits_query_text(monkeypatch, caplog):
+    monkeypatch.setattr(iqs, "_enabled", lambda: True)
+
+    async def _slow(query, max_results, time_range):
+        import asyncio
+        await asyncio.sleep(1)
+        return []
+
+    monkeypatch.setattr(iqs, "_raw_search", _slow)
+    with caplog.at_level("DEBUG", logger=iqs.__name__):
+        out = await iqs.fetch_realtime_evidence(_SENSITIVE_QUERY, timeout_s=0.01)
+
+    assert out == ""
+    assert "reason=timeout" in caplog.text
+    assert f"query_len={len(_SENSITIVE_QUERY)}" in caplog.text
+    for token in ("二甲双胍", "糖化血红蛋白", "肾功能", _SENSITIVE_QUERY[:40]):
+        assert token not in caplog.text
+
+
+async def test_fetch_hit_log_omits_query_text(monkeypatch, caplog):
+    monkeypatch.setattr(iqs, "_enabled", lambda: True)
+
+    async def _hit(query, max_results, time_range):
+        return [{"title": "T", "summary": "S", "link": "L"}]
+
+    monkeypatch.setattr(iqs, "_raw_search", _hit)
+    with caplog.at_level("DEBUG", logger=iqs.__name__):
+        out = await iqs.fetch_realtime_evidence(_SENSITIVE_QUERY)
+
+    assert out  # 命中后返回证据块
+    assert "hits=1" in caplog.text
+    for token in ("二甲双胍", "糖化血红蛋白", "肾功能", _SENSITIVE_QUERY[:40]):
+        assert token not in caplog.text
