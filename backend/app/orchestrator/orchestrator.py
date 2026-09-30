@@ -28,7 +28,12 @@ from app.orchestrator.schema import (
     SpecialistFinding,
 )
 from app.orchestrator.specialists import all_specialists, get_specialist
-from app.services.crisis_lexicon import contains_crisis_language
+from app.services.crisis_lexicon import (
+    contains_crisis_language,
+    crisis_support_block,
+    has_crisis_support,
+    with_crisis_support,
+)
 from app.services.episode.validator import validate_text, TextValidationResult
 from app.services.llm.error_messages import safe_llm_error_message
 from app.twin.builder import build_twin
@@ -222,6 +227,24 @@ def _tier_for_intent(intent) -> str:
 # G-W9: 客户端断开后 bg task 继续跑完 audit / memory / journal.
 # set 持 task 引用防 GC; done_callback 自动清理.
 _BACKGROUND_STREAM_TASKS: set = set()
+
+
+# Siri 意图扩展只念 synthesis 前 300 字(mobile/plugins/withIntentsExtension.js)。
+_SIRI_DIALOG_CHARS = 300
+
+
+def _crisis_stream_lead(query: str) -> str:
+    """危机回合流式首个 chunk:热线先于模型文本送达(TTS 先念,LLM 中途失败也不丢)。"""
+    return crisis_support_block() + "\n\n" if contains_crisis_language(query) else ""
+
+
+def _sse_text_chunk(text: str) -> str:
+    """多行文本按 SSE 规范逐行 data: 编码;客户端 parseFullSSE 以 \n 拼回。
+
+    裸写 \n 时后续行不以 data: 开头会被丢弃 —— 热线号码正好在后续行。
+    """
+    data = "".join(f"data: {line}\n" for line in text.split("\n"))
+    return f"event: chunk\n{data}\n"
 
 
 def _safety_wrap(text: str, *, source: str = "orchestrator") -> TextValidationResult:
@@ -2016,6 +2039,8 @@ async def run_orchestrator(
     # 任一段落越界 → 整篇同样被句级遮蔽 + disclaimer。
     safety = _safety_wrap(synthesis, source="orchestrator.run")
     synthesis = safety.safe_text
+    # 热线只在 MentalHealthCompanion 的结构化 finding 里;模型没念出来时服务端兜底。
+    synthesis = with_crisis_support(req.query, synthesis)
 
     # 'shadow': mega 已服务用户(上方)。并行分段丢后台 bg task 跑, 落 audit 供离线 pairwise
     # judge; fresh SessionLocal, 失败/超时 fail-soft 绝不影响本回合。
@@ -2173,6 +2198,14 @@ async def _run_orchestrator_fast(
     # v3 cross-cutting safety: Siri 路径同样过 validator
     safety = _safety_wrap(synthesis, source="orchestrator.siri_fast")
     synthesis = safety.safe_text
+    # Siri 快路径不跑 specialist、prompt 也无 TRIAGE:危机热线由服务端前置,且必须落在
+    # Siri 实际播报的前 300 字内(模型把号码写在长文末尾会被截掉)。
+    if contains_crisis_language(req.query) and not has_crisis_support(
+        synthesis[:_SIRI_DIALOG_CHARS]
+    ):
+        synthesis = "\n\n".join(
+            part for part in (crisis_support_block(), synthesis.strip("\n")) if part.strip()
+        )
 
     # 审计 (旁路, 失败不阻塞返回)
     try:
@@ -2226,6 +2259,10 @@ async def _stream_orchestrator_fast(
         return f"event: {event}\ndata: {payload}\n\n"
 
     chunk_queue: asyncio.Queue = asyncio.Queue()
+    # 危机热线在任何 twin / specialist / LLM 工作之前入队:之后任一步抛错也已送达。
+    crisis_lead = _crisis_stream_lead(req.query)
+    if crisis_lead:
+        chunk_queue.put_nowait(_sse_text_chunk(crisis_lead))
 
     async def _background_task():
         from app.database import SessionLocal as _SessionLocal
@@ -2243,7 +2280,7 @@ async def _stream_orchestrator_fast(
                 bg_db, user_id, user_prompt, findings=[], lite_mode=True,
             )
 
-            full = ""
+            full = crisis_lead
             try:
                 async for chunk in _stream_llm(system_prompt, user_prompt, lite_mode=True):
                     full += chunk
@@ -2262,7 +2299,9 @@ async def _stream_orchestrator_fast(
                 "safety_action": safety.action,
             }))
             if safety.action == "replace":
-                await chunk_queue.put(_sse("safety_override", {"safe_text": safety.safe_text}))
+                await chunk_queue.put(_sse("safety_override", {
+                    "safe_text": with_crisis_support(req.query, safety.safe_text),
+                }))
             elif safety.action == "append_disclaimer":
                 await chunk_queue.put(_sse("safety_disclaimer", {"disclaimer": safety.disclaimer}))
 
@@ -2365,6 +2404,10 @@ async def stream_orchestrator(
     t_start = time.monotonic()
 
     chunk_queue: asyncio.Queue = asyncio.Queue()
+    # 危机热线在任何 twin / specialist / LLM 工作之前入队:之后任一步抛错也已送达。
+    crisis_lead = _crisis_stream_lead(req.query)
+    if crisis_lead:
+        chunk_queue.put_nowait(_sse_text_chunk(crisis_lead))
 
     async def _background_task():
         from app.database import SessionLocal as _SessionLocal
@@ -2507,7 +2550,7 @@ async def stream_orchestrator(
                     bg_db, user_id, user_prompt, findings=findings, lite_mode=lite_mode,
                 )
 
-                full = ""
+                full = crisis_lead
                 t_llm = time.monotonic()
                 llm_ttft_ms: Optional[int] = None
                 try:
@@ -2583,7 +2626,9 @@ async def stream_orchestrator(
                     "perf": perf,
                 }))
                 if safety.action == "replace":
-                    await chunk_queue.put(_sse("safety_override", {"safe_text": safety.safe_text}))
+                    await chunk_queue.put(_sse("safety_override", {
+                        "safe_text": with_crisis_support(req.query, safety.safe_text),
+                    }))
                 elif safety.action == "append_disclaimer":
                     await chunk_queue.put(_sse("safety_disclaimer", {"disclaimer": safety.disclaimer}))
             except Exception as e:  # noqa: BLE001

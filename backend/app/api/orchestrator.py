@@ -55,11 +55,14 @@ def _chat_error_envelope(query: str, message: str) -> dict:
     synthesis 恒空 → Siri 端 (读 synthesis 非空才播报) 自然降级为「暂无分析结论」;
     web 端渲染空结果;显式消费方判 error 非空 = 失败。
     """
+    from app.services.crisis_lexicon import with_crisis_support
+
     return {
         "query": query,
         "intent": {"raw_query": query, "categories": [], "keywords": []},
         "findings": [],
-        "synthesis": "",
+        # 危机回合失败也要带急救电话与热线(确定性文本,不依赖 LLM);其余恒空。
+        "synthesis": with_crisis_support(query, ""),
         "used_specialists": [],
         "twin_build_ms": 0,
         "total_ms": 0,
@@ -75,7 +78,7 @@ def _orch_cache_key(user_id: int, query: str, specialists: list | None, caps: li
     # caps 进 key: genui-v1 客户端与旧端对同一 query 得到不同响应 (block vs 现状), 不能串味。
     payload = f"{user_id}:{query}:{sorted(specialists or [])}:{sorted(caps)}"
     digest = hashlib.sha1(payload.encode(), usedforsecurity=False).hexdigest()[:16]
-    return f"orch:v1:{digest}"
+    return f"orch:v2:{digest}"
 
 
 def _get_orch_cache(key: str):
@@ -165,9 +168,21 @@ async def chat(
     if finished:
         try:
             return agg_task.result()
-        except HTTPException:
-            raise
         except Exception as e:  # noqa: BLE001
+            from app.services.crisis_lexicon import contains_crisis_language
+
+            if contains_crisis_language(req.query):
+                # Siri 对 >=400 只播「服务不可用」:危机回合改 200 + error 字段,
+                # synthesis 带热线,客户端照常播报。
+                logger.error(
+                    "[orchestrator.chat] crisis turn failed error_type=%s",
+                    type(e).__name__,
+                )
+                detail = getattr(e, "detail", None)
+                message = detail if isinstance(detail, str) else safe_llm_error_message(str(e))
+                return _chat_error_envelope(req.query, message)
+            if isinstance(e, HTTPException):
+                raise
             logger.exception("[orchestrator.chat] failed: %s", e)
             raise HTTPException(status_code=500, detail=safe_llm_error_message(str(e))) from e
 

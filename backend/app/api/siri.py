@@ -26,7 +26,7 @@ from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.config import settings
-from app.services.crisis_lexicon import with_crisis_support
+from app.services.crisis_lexicon import contains_crisis_language, with_crisis_support
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/siri", tags=["Siri快捷指令"])
@@ -423,6 +423,11 @@ async def siri_say(
         )))
     except Exception as e:
         logger.error(f"Siri 请求处理失败 user={current_user.id}: {e}")
+        if contains_crisis_language(message):
+            # 500 在 Siri 端只剩「处理失败」:危机回合改回 200 + 确定性热线。
+            return SiriResponse(text=strip_markdown(with_crisis_support(
+                message, "处理失败，请稍后重试。",
+            )))
         raise HTTPException(status_code=500, detail="处理失败，请稍后重试")
 
     clean_text = strip_markdown(
