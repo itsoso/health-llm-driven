@@ -91,7 +91,7 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/weight/records" \
-  -d '{"record_date":"$(date +%Y-%m-%d)","weight":72.5}'
+  -d '{"record_date":"'"$(date +%Y-%m-%d)"'","weight":72.5}'
 ```
 
 解析规则："体重72公斤" → 72.0，"72.5kg" → 72.5
@@ -105,7 +105,7 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/blood-pressure/records" \
-  -d '{"record_date":"$(date +%Y-%m-%d)","systolic":120,"diastolic":80,"pulse":72}'
+  -d '{"record_date":"'"$(date +%Y-%m-%d)"'","systolic":120,"diastolic":80,"pulse":72}'
 ```
 
 解析规则："血压120/80" → systolic=120, diastolic=80，pulse 未提供可省略
@@ -148,7 +148,7 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/daily-health/exercise" \
-  -d '{"record_date":"$(date +%Y-%m-%d)","exercise_type":"俯卧撑","sets":2,"reps":15,"intensity":"high"}'
+  -d '{"record_date":"'"$(date +%Y-%m-%d)"'","exercise_type":"俯卧撑","sets":2,"reps":15,"intensity":"high"}'
 ```
 
 - duration 类（平板支撑等）用 `duration_seconds` 替代 `reps`
@@ -164,7 +164,7 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/diet/records" \
-  -d '{"record_date":"$(date +%Y-%m-%d)","meal_type":"lunch","food_items":"鸡胸肉沙拉","calories":400,"protein":35,"carbs":20,"fat":12}'
+  -d '{"record_date":"'"$(date +%Y-%m-%d)"'","meal_type":"lunch","food_items":"鸡胸肉沙拉","calories":400,"protein":35,"carbs":20,"fat":12}'
 ```
 
 - **必填：** record_date, meal_type, food_items
@@ -178,7 +178,7 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/diet/recognize-and-save" \
-  -d '{"image_base64":"<BASE64>","image_type":"jpeg","record_date":"$(date +%Y-%m-%d)","meal_type":"lunch"}'
+  -d '{"image_base64":"<BASE64>","image_type":"jpeg","record_date":"'"$(date +%Y-%m-%d)"'","meal_type":"lunch"}'
 ```
 
 ### 修改饮食记录
@@ -213,10 +213,10 @@ curl -s -X DELETE -H "Authorization: Bearer $HEALTH_API_TOKEN" \
 
 ```bash
 curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" \
-  "$HEALTH_API_URL/supplements/me/records?record_date=$(date +%Y-%m-%d)"
+  "$HEALTH_API_URL/supplements/me/date/$(date +%Y-%m-%d)"
 ```
 
-响应里每条记录包含 `supplement_id`、`name`、`taken`（今日是否已打卡）。
+响应是启用中补剂的数组，每项 `{"supplement":{…},"record":{…}|null}`：`supplement.id` 就是 `supplement_id`，用 `supplement.name` 匹配用户说的补剂；`record` 是 URL 中那天的打卡，`null` 表示那天还没记录，否则看 `record.taken` 是否已服。补录别的日期时把 URL 里的日期换成那天。
 
 ### 第二步：打卡
 
@@ -224,14 +224,21 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" \
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/supplements/records" \
-  -d '{"supplement_id":1,"record_date":"$(date +%Y-%m-%d)","taken":true}'
+  -d '{"supplement_id":1,"record_date":"'"$(date +%Y-%m-%d)"'","taken":true}'
 ```
+
+契约（后端严格校验）：
+- `taken` 必填，只能是 JSON 布尔（漏传或写成 `"true"`、`1` → 422）：用户明确说本人已经吃了传 `true`；明确说漏服/没吃、或要取消打卡传 `false`；还没吃、准备吃、问句、替别人说的不打卡，说不清先问，不要猜。
+- 同一补剂同一天是覆盖写：第一步看到那天已有 `record`、而这次会改变 `record.taken`（尤其 `true`→`false`）就属于修改，按核心原则 4 先向用户确认再提交；传 `false` 后回复「已记为未服 / 已取消打卡：{补剂名}」，不要用 ✓ 模板。
+- 只收 `supplement_id`、`record_date`、`taken` 和可选的 `taken_time`（`HH:MM:SS`）、`actual_dosage`（≤40 字符）、`notes`；`user_id` 不用传（传了也被忽略，只按当前登录用户记录）；其他字段（如旧的 `taken_count`）→ 422。
+- 补录昨天/某天的服用：`record_date` 写实际服用那天的 `YYYY-MM-DD`，不要写今天。
+- 批量接口每项只能是 `{"supplement_id": 整数, "taken": 布尔}`，多带键 → 422，同一 `supplement_id` 重复 → 400；要带时间/剂量/备注就逐个用单个接口。
 
 多个（优先用批量）：
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/supplements/records/batch" \
-  -d '{"record_date":"$(date +%Y-%m-%d)","checkins":[{"supplement_id":1,"taken":true},{"supplement_id":2,"taken":true}]}'
+  -d '{"record_date":"'"$(date +%Y-%m-%d)"'","checkins":[{"supplement_id":1,"taken":true},{"supplement_id":2,"taken":true}]}'
 ```
 
 ### 补剂不在清单里?→ 用户用引号圈定新名称后再建档打卡
