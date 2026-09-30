@@ -29,6 +29,11 @@
 [注册隔离修复发布](../security/2026-09-29-registration-hardening-release.md)。
 它不授予自主注册权限，不替代后端或 Web 成功回执，不扩展云端 SSH RPC。
 
+固定版本在账户创建前中断时，仅可按
+[主机加固前置失败恢复](../security/2026-09-30-host-preflight-recovery.md) 使用
+新受审发布器的 `--resume-preflight`。原失败/备份/租约不删除、不重建；
+独立恢复成功及外部回读不能替代原后端/Web 发布凭据。
+
 
 #### 已部署同树前端的受控重建
 
