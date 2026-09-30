@@ -79,6 +79,89 @@ except OSError:
     print('NATIVE_IPV4_IPV6_REPLY_DENY_ORDER_PASS')
 
 
+def exercise_monitor(guard):
+    import re
+    import threading
+    import monitor_ingress_repair as monitor
+
+    if os.readlink('/proc/self/ns/net') == os.readlink('/proc/1/ns/net'):
+        raise RuntimeError('refusing to change host network')
+    peer='reva-monitor-test-'+str(os.getpid())
+    ip='/usr/sbin/ip'
+    guard.run(ip,'netns','add',peer)
+    try:
+        guard.run(ip,'link','add','monitor-in','type','veth','peer','name','monitor-out')
+        guard.run(ip,'link','set','monitor-out','netns',peer)
+        guard.run(ip,'link','set','monitor-in','up')
+        guard.run(ip,'netns','exec',peer,ip,'link','set','monitor-out','up')
+        for family,left,right in (('-4','198.18.0.1/30','198.18.0.2/30'),('-6','fd00:5245::1/64','fd00:5245::2/64')):
+            guard.run(ip,family,'addr','add',left,'dev','monitor-in',*(['nodad'] if family=='-6' else []))
+            guard.run(ip,'netns','exec',peer,ip,family,'addr','add',right,'dev','monitor-out',*(['nodad'] if family=='-6' else []))
+        def serve(listener):
+            def echo(connection):
+                with connection:
+                    while data:=connection.recv(16):connection.sendall(data)
+            while True:
+                connection,_=listener.accept()
+                threading.Thread(target=echo,args=(connection,),daemon=True).start()
+        for family in (socket.AF_INET,socket.AF_INET6):
+            for port in (9090,9100):
+                listener=socket.socket(family)
+                listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+                if family==socket.AF_INET6:listener.setsockopt(socket.IPPROTO_IPV6,socket.IPV6_V6ONLY,1)
+                listener.bind(('::' if family==socket.AF_INET6 else '0.0.0.0',port));listener.listen()
+                threading.Thread(target=serve,args=(listener,),daemon=True).start()
+        for binary,chain,_ in monitor.FAMILIES:
+            guard.run(binary,'-N',chain)
+            guard.run(binary,'-A','INPUT','-j',chain)
+            guard.run(binary,'-A',chain,'-i','lo','-j','ACCEPT')
+            guard.run(binary,'-A',chain,'-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','ACCEPT')
+        client='''import socket,sys
+s=socket.socket(socket.AF_INET6 if ':' in sys.argv[1] else socket.AF_INET);s.settimeout(1)
+try:
+ s.connect((sys.argv[1],int(sys.argv[2])));s.sendall(b'ping');assert s.recv(4)==b'ping'
+except OSError:sys.exit(0 if sys.argv[3]=='new-blocked' else 3)
+if sys.argv[3]=='new-blocked':sys.exit(4)
+print('CONNECTED',flush=True);sys.stdin.readline()
+try:s.sendall(b'ping');s.recv(4)
+except OSError:sys.exit(0)
+sys.exit(5)
+'''
+        clients=[]
+        for address in ('198.18.0.1','fd00:5245::1'):
+            for port in (9090,9100):
+                p=subprocess.Popen([ip,'netns','exec',peer,sys.executable,'-I','-c',client,address,str(port),'existing'],
+                                   stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                assert p.stdout.readline().strip()=='CONNECTED'
+                clients.append(p)
+        # Load precisely the persistent transform in the isolated kernel. This
+        # proves reload semantics, serialization and preserved OUTPUT rules.
+        for binary,chain,_ in monitor.FAMILIES:
+            before=guard.run(binary+'-save','-t','filter')
+            wanted=monitor.config_after(before,chain)
+            clean=lambda raw:[re.sub(r'^(:\S+ \S+) \[\d+:\d+\]$',r'\1 [COUNTERS]',line) for line in raw.splitlines() if not line.startswith('#')]
+            subprocess.run([binary+'-restore','--test','--noflush','--wait','5'],input=wanted,text=True,check=True,capture_output=True)
+            assert clean(guard.run(binary+'-save','-t','filter'))==clean(before)
+            subprocess.run([binary+'-restore','--wait','5'],input=wanted,text=True,check=True,capture_output=True)
+            actual=guard.run(binary+'-save','-t','filter')
+            monitor.verify_delta(clean(before),clean(actual),chain)
+        for p in clients:
+            p.communicate('\n',timeout=4)
+            assert p.returncode==0
+        for address in ('198.18.0.1','fd00:5245::1'):
+            for port in (9090,9100):
+                p=subprocess.run([ip,'netns','exec',peer,sys.executable,'-I','-c',client,address,str(port),'new-blocked'],capture_output=True,timeout=4)
+                assert p.returncode==0
+        for address in ('127.0.0.1','::1'):
+            for port in (9090,9100):
+                with socket.create_connection((address,port),timeout=1) as s:
+                    s.sendall(b'ping');assert s.recv(4)==b'ping'
+        print('NATIVE_MONITOR_IPV4_IPV6_NEW_EXISTING_DENY_LOOPBACK_RELOAD_PASS')
+    finally:
+        guard.run(ip,'netns','delete',peer)
+
+
 if __name__ == '__main__':
     import harden_public_host
     exercise(harden_public_host)
+    exercise_monitor(harden_public_host)

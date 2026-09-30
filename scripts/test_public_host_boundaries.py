@@ -4,6 +4,155 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_monitor_ingress_persistent_rule_precedes_established_and_preserves_bytes():
+    import pytest
+    m = load('monitor_ingress_repair')
+    for chain in ('ufw-before-input', 'ufw6-before-input'):
+        raw = f'*filter\n:{chain} - [0:0]\n-A {chain} -i lo -j ACCEPT\n-A {chain} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\nCOMMIT\n'
+        updated = m.config_after(raw, chain)
+        assert updated.replace(m.rule_line(chain)+'\n', '', 1) == raw
+        assert updated.index(m.rule_line(chain)) < updated.index(f'-A {chain} -i lo')
+        assert '! -i lo' in updated and '--dports 9090,9100' in updated
+        with pytest.raises(RuntimeError):
+            m.config_after(updated, chain)
+        with pytest.raises(RuntimeError):
+            m.config_after(raw.replace('*filter', '*nat'), chain)
+        for invalid in (f'-A {chain} -j ACCEPT\n'+raw,raw+f'-A {chain} -j ACCEPT\n',raw.replace('\n','\r\n')):
+            with pytest.raises(RuntimeError):m.config_after(invalid,chain)
+
+
+def test_monitor_ingress_firewall_delta_rejects_noop_wrong_order_and_other_changes():
+    import pytest
+    m = load('monitor_ingress_repair')
+    chain = 'ufw-before-input'
+    before = ['*filter', ':'+chain+' - [COUNTERS]', '-A '+chain+' -i lo -j ACCEPT', 'COMMIT']
+    expected = m.policy_after(before, chain)
+    assert expected[2] == m.rule_line(chain)
+    assert m.verify_delta(before, expected, chain) is None
+    for after in (before, [*before[:-1],m.rule_line(chain),'COMMIT'], expected+['unknown']):
+        with pytest.raises(RuntimeError):m.verify_delta(before, after, chain)
+
+
+def test_monitor_ingress_input_path_rejects_earlier_accept_or_logging_jump():
+    import pytest
+    m = load('monitor_ingress_repair')
+    good=['-P INPUT DROP','-A INPUT -j ufw-before-logging-input','-A INPUT -j ufw-before-input']
+    m.verify_reachability(good,['-N ufw-before-logging-input'],'ufw-before-input')
+    for rows,logging in ((['-A INPUT -j ACCEPT',*good],['-N ufw-before-logging-input']),
+                         (good,['-N ufw-before-logging-input','-A ufw-before-logging-input -j ACCEPT'])):
+        with pytest.raises(RuntimeError):m.verify_reachability(rows,logging,'ufw-before-input')
+
+
+def monitor_intent(m):
+    import hashlib
+    value={'production_sha':m.PRODUCTION,'publisher_sha':'a'*40,
+           'host_history':{'kind':'recovered-host-hardening','intent_sha256':'b'*64,'completion_sha256':'c'*64},
+           'services':{},'families':{}}
+    for name in m.SERVICES:
+        value['services'][name]={'properties':{'MainPID':'42','ActiveState':'active','NRestarts':'0','NeedDaemonReload':'no'},
+            'process':{'pid':42,'starttime':'123','uid':['997' if name.startswith(('health','celery')) else '0']*4,
+                       'cgroup':'/test.service','argv_sha256':'d'*64}}
+    for binary,chain,_ in m.FAMILIES:
+        raw=f'*filter\n:{chain} - [0:0]\n-A {chain} -i lo -j ACCEPT\nCOMMIT\n'
+        value['families'][binary]={'policy':['*filter',':INPUT DROP [COUNTERS]',f':{chain} - [COUNTERS]',f'-A {chain} -i lo -j ACCEPT','COMMIT'],
+            'config':{'text':raw,'mode':0o644,'uid':0,'gid':0,'sha256':hashlib.sha256(raw.encode()).hexdigest()}}
+    return value
+
+
+def test_monitor_ingress_history_requires_inner_evidence(tmp_path,monkeypatch):
+    import copy
+    import pytest
+    m=load('monitor_ingress_repair');value=monitor_intent(m);m.validate_intent(value)
+    for mutate in (lambda v:v.update(services={}),
+                   lambda v:v['services']['eth1']['process'].update(uid=['997']*4),
+                   lambda v:v['services']['health-backend']['process'].update(uid=['0']*4),
+                   lambda v:v['families']['/usr/sbin/iptables']['config'].update(sha256='e'*64),
+                   lambda v:v['families']['/usr/sbin/iptables']['config'].update(mode=0o666)):
+        bad=copy.deepcopy(value);mutate(bad)
+        with pytest.raises(RuntimeError):m.validate_intent(bad)
+
+
+def test_monitor_ingress_digest_and_partial_failure_keep_intent_and_lease(tmp_path,monkeypatch):
+    import hashlib
+    import json
+    from types import SimpleNamespace
+    import pytest
+    m=load('monitor_ingress_repair');lease=tmp_path/'business';monkeypatch.setattr(m,'LEASE',lease)
+    before=monitor_intent(m);events=[]
+    def write(path,raw):path.write_bytes(raw)
+    server=SimpleNamespace(secure_path=lambda *a,**k:None,_sync_directory=lambda *a:None,_write_private=write,
+                           _testflight_lease_parent=lambda:None,_sync_business_lease_parent=lambda:None)
+    digest=lambda v:hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    def apply(value):
+        assert (a.record/'intent.json').is_file() and (lease/'token').is_file()
+        events.append('ipv4-applied');raise RuntimeError('synthetic IPv6 mutation failure')
+    a=SimpleNamespace(record=tmp_path/'records'/'fixed',publisher='a'*40,server=server,r=SimpleNamespace(digest=digest),
+                      check=lambda:events.append('lock-checked'),inspect=lambda:before,apply=apply,verify=lambda _:None)
+    monkeypatch.setattr(m,'lease_snapshot',lambda *_:{'.':{'dev':1,'ino':2}})
+    assert m.transaction(a)['state']=='MONITOR_INGRESS_PREFLIGHT'
+    assert not a.record.exists() and not lease.exists()
+    with pytest.raises(RuntimeError,match='preflight evidence'):m.transaction(a,'f'*64)
+    assert not a.record.exists() and not lease.exists()
+    with pytest.raises(RuntimeError,match='IPv6'):m.transaction(a,digest(before))
+    assert (a.record/'intent.json').is_file() and lease.exists()
+    assert not (a.record/'completed.json').exists()
+    with pytest.raises(RuntimeError,match='no retry'):m.transaction(a,digest(before))
+    assert events.count('ipv4-applied')==1 and events.count('lock-checked')>=4
+
+
+def test_monitor_ingress_apply_rejects_exit_zero_without_rule(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    m=load('monitor_ingress_repair');before=monitor_intent(m)
+    monkeypatch.setattr(m,'config_snapshot',lambda path,b:before['families'][next(x[0] for x in m.FAMILIES if x[2]==path)]['config'])
+    g=SimpleNamespace(atomic_write=lambda *a:None,run=lambda *a:before['families']['/usr/sbin/iptables']['policy'])
+    a=SimpleNamespace(g=g,b=None,r=SimpleNamespace(firewall_policy=lambda x:x),check=lambda:None)
+    with pytest.raises(RuntimeError,match='firewall delta'):m.Adapter.apply(a,before)
+
+
+def test_monitor_ingress_success_consumes_immutable_history(tmp_path,monkeypatch):
+    import hashlib
+    import json
+    import stat
+    from types import SimpleNamespace
+    import pytest
+    m=load('monitor_ingress_repair');before=monitor_intent(m);events=[]
+    monkeypatch.setattr(m,'STATE',tmp_path/'state');monkeypatch.setattr(m,'LEASE',tmp_path/'active')
+    monkeypatch.setattr(m,'RETIRED_PARENT',tmp_path);monkeypatch.setattr(m.time,'sleep',lambda _:None)
+    monkeypatch.setattr(m,'source_scope',lambda *a:None)
+    def write(path,raw):path.write_bytes(raw);path.chmod(0o600)
+    def inventory(path,names):
+        assert set(p.name for p in path.iterdir())==set(names)
+        assert stat.S_IMODE(path.stat().st_mode)==0o700
+        assert all(stat.S_IMODE(p.stat().st_mode)==0o600 for p in path.iterdir())
+    server=SimpleNamespace(secure_path=lambda *a,**k:None,_sync_directory=lambda *a:None,_write_private=write,
+                           _testflight_lease_parent=lambda:None,_sync_business_lease_parent=lambda:None)
+    digest=lambda v:hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    def lease_snapshot(*args):
+        return {'.' if p==m.LEASE else p.name:{'dev':p.stat().st_dev,'ino':p.stat().st_ino,'uid':0,'gid':0,
+            'mode':0o700 if p==m.LEASE else 0o600,'sha256':None if p==m.LEASE else hashlib.sha256(p.read_bytes()).hexdigest()}
+            for p in [m.LEASE,*m.LEASE.iterdir()]}
+    monkeypatch.setattr(m,'lease_snapshot',lease_snapshot)
+    real_run=m.subprocess.run
+    def move(args,**kwargs):
+        assert args[:4]==['/usr/bin/mv','--no-clobber','-T','--']
+        Path(args[4]).rename(args[5])
+    monkeypatch.setattr(m.subprocess,'run',move)
+    a=SimpleNamespace(record=m.STATE/'monitor-ingress-repairs'/m.PRODUCTION,publisher='a'*40,server=server,r=SimpleNamespace(digest=digest),
+        check=lambda:events.append('check'),inspect=lambda:before,apply=lambda _:events.append('apply'),verify=lambda _:events.append('verify'))
+    a.record.parent.parent.mkdir()
+    done=m.transaction(a,digest(before))
+    assert done['state']=='MONITOR_INGRESS_LOCAL_VERIFIED' and events.count('apply')==1 and events.count('verify')==2
+    assert not m.LEASE.exists()
+    b=SimpleNamespace(secure=lambda *a,**k:None,_inventory=inventory,_read_json=lambda p:json.loads(p.read_text()),canonical_source=lambda _:tmp_path)
+    proof=m.history_evidence(b,before['host_history'])
+    assert proof['intent_sha256']==digest(before) and proof['completion_sha256']==digest(done)
+    identity=json.loads((a.record/'lease.json').read_text());identity['token']['mode']=0o644
+    done['lease_sha256']=digest(identity)
+    write(a.record/'lease.json',json.dumps(identity).encode());write(a.record/'completed.json',json.dumps(done).encode())
+    with pytest.raises(RuntimeError,match='lease inner evidence'):m.history_evidence(b,before['host_history'])
+
+
 def test_application_units_hide_staking_data_and_bound_resources():
     for name in ("health-backend", "celery-worker", "celery-beat"):
         for path in (ROOT / "infra/systemd" / f"{name}.service",
@@ -404,7 +553,7 @@ def host_recovery_evidence_fixture(tmp_path,monkeypatch):
     lease['.']={'dev':1,'ino':9,'uid':0,'gid':0,'mode':0o700,'sha256':None}
     keys=[{'path':str(g.STAKING/'fixture-keystore.json'),'mode':0o644}]
     backup_intent={'sha':m.FAILED_SHA,'legacy_pid':123,'key_modes':keys}
-    evidence={'frontend':frontend,'legacy':proc,'services':{},'key_modes':keys,'lease':lease,
+    evidence={'permission_repair':None,'frontend':frontend,'legacy':proc,'services':{},'key_modes':keys,'lease':lease,
               'firewall':{family:m.firewall_policy(raw) for family in ('iptables','ip6tables')},
               'cache':{str(g.ROOT/'frontend/.next/cache'):[1,2,0o40755,0,0]}}
     for name in m.SERVICES:
@@ -545,3 +694,327 @@ def test_host_recovery_completed_transaction_passes_actual_history_reader(tmp_pa
     completed=b._read_json(adapter.record/'completed.json');completed['intent_sha256']=m.digest(evidence)
     write(adapter.record/'completed.json',json.dumps(completed).encode())
     with pytest.raises(m.RecoveryError,match='inner evidence'):m.history_evidence(b,m.FAILED_SHA)
+
+
+def test_host_recovery_auxiliary_scope_requires_exact_reviewed_blob(tmp_path,monkeypatch):
+    import subprocess
+    import pytest
+    m=load('public_host_recovery');old=tmp_path/'old';new=tmp_path/'new'
+    content='APPLICATION_PORTS = {}\ndef firewall_rules(): pass\ndef canonical_rule(): pass\ndef network_guard(): pass\n'
+    for root in (old,new):
+        (root/'scripts').mkdir(parents=True);(root/'scripts/harden_public_host.py').write_text(content)
+        subprocess.run(['git','init',str(root)],check=True,capture_output=True)
+        subprocess.run(['git','-C',str(root),'add','scripts/harden_public_host.py'],check=True)
+        subprocess.run(['git','-C',str(root),'-c','user.name=Fixture','-c','user.email=f@example.invalid','-c','core.hooksPath=/dev/null','commit','-m','fixture'],check=True,capture_output=True)
+    def commit():
+        subprocess.run(['git','-C',str(new),'add','auxiliary'],check=True)
+        subprocess.run(['git','-C',str(new),'-c','user.name=Fixture','-c','user.email=f@example.invalid','-c','core.hooksPath=/dev/null','commit','-m','auxiliary'],check=True,capture_output=True)
+    (new/'auxiliary').write_text('reviewed');commit()
+    pin=subprocess.check_output(['git','-C',str(new),'ls-tree','HEAD','--','auxiliary']).split(b'\t')[0]
+    monkeypatch.setattr(m,'REVIEWED_AUXILIARY',{'auxiliary':pin})
+    assert m.source_scope(new,old,None)==['auxiliary']
+    (new/'auxiliary').write_text('changed');commit()
+    with pytest.raises(m.RecoveryError,match='fixed scope'):m.source_scope(new,old,None)
+    (new/'auxiliary').write_text('reviewed');(new/'auxiliary').chmod(0o755);commit()
+    with pytest.raises(m.RecoveryError,match='fixed scope'):m.source_scope(new,old,None)
+
+    (new/'auxiliary').chmod(0o644);commit()
+    (old/'unknown').write_text('must not silently disappear')
+    subprocess.run(['git','-C',str(old),'add','unknown'],check=True)
+    subprocess.run(['git','-C',str(old),'-c','user.name=Fixture','-c','user.email=f@example.invalid','-c','core.hooksPath=/dev/null','commit','-m','unknown'],check=True,capture_output=True)
+    with pytest.raises(m.RecoveryError,match='fixed scope'):m.source_scope(new,old,None)
+
+
+def permission_package_fixture(tmp_path,monkeypatch):
+    import hashlib,base64,csv,io,stat
+    from types import SimpleNamespace
+    m=load('runtime_permission_repair');site=tmp_path/'site';site.mkdir(parents=True)
+    monkeypatch.setattr(m,'SITE',site)
+    contents={'jwt/__init__.py':b'fixture source','jwt/api_jwt.py':b'fixture decode','jwt/py.typed':b''}
+    monkeypatch.setattr(m,'SOURCE_HASHES',{p:hashlib.sha256(raw).hexdigest() for p,raw in contents.items()})
+    metadata='pyjwt-2.14.0.dist-info'
+    for name in ('INSTALLER','REQUESTED','WHEEL','licenses/AUTHORS.rst','licenses/LICENSE','top_level.txt'):contents[metadata+'/'+name]=b'fixture metadata'
+    contents[metadata+'/METADATA']=b'Name: PyJWT\nVersion: 2.14.0\n'
+    for name in ('__init__','api_jwt'):contents['jwt/__pycache__/'+name+'.cpython-312.pyc']=b'private generated cache'
+    rows=[]
+    for name,raw in contents.items():
+        p=site/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw);p.chmod(0o600)
+        cache='__pycache__' in name
+        rows.append([name,'' if cache else 'sha256='+base64.urlsafe_b64encode(hashlib.sha256(raw).digest()).decode().rstrip('='),'' if cache else str(len(raw))])
+    rows.append([metadata+'/RECORD','',''])
+    stream=io.StringIO();csv.writer(stream).writerows(rows);record=site/metadata/'RECORD';record.write_text(stream.getvalue());record.chmod(0o600)
+    for p in site.rglob('*'):
+        if p.is_dir():p.chmod(0o700)
+    original=Path.lstat
+    def rootstat(path,*args,**kwargs):
+        v=original(path,*args,**kwargs);mode=v.st_mode
+        if path in [*site.parents,site]:mode=stat.S_IFDIR|0o755
+        return SimpleNamespace(st_uid=0,st_gid=0,st_mode=mode,st_nlink=v.st_nlink,st_dev=v.st_dev,st_ino=v.st_ino)
+    monkeypatch.setattr(Path,'lstat',rootstat)
+    return m,site,record
+
+
+def test_permission_repair_fixed_package_and_private_cache(tmp_path,monkeypatch):
+    import copy,pytest
+    m,site,record=permission_package_fixture(tmp_path,monkeypatch)
+    before=m.package_snapshot()
+    after={p:{**v,'mode':v['target_mode']} for p,v in before.items()}
+    m.unchanged_package(before,after)
+    assert all(v['target_mode']==(0o700 if v['directory'] else 0o600) for p,v in after.items() if '__pycache__' in p)
+    changed=copy.deepcopy(after);changed[str(site/'jwt/__init__.py')]['sha256']='0'*64
+    with pytest.raises(RuntimeError):m.unchanged_package(before,changed)
+    (site/'jwt/__init__.py').write_bytes(b'tampered')
+    with pytest.raises(RuntimeError):m.package_snapshot()
+
+
+def test_permission_repair_rejects_missing_record_link_unknown_and_cache_exposure(tmp_path,monkeypatch):
+    import pytest
+    m,site,record=permission_package_fixture(tmp_path,monkeypatch)
+    item=site/'pyjwt-2.14.0.dist-info/WHEEL';raw=item.read_bytes();item.unlink()
+    with pytest.raises(OSError):m.package_snapshot()
+    item.write_bytes(raw);item.chmod(0o600)
+    extra=site/'jwt/unknown.py';extra.write_text('unknown')
+    with pytest.raises(RuntimeError):m.package_snapshot()
+    extra.unlink()
+    cache=site/'jwt/__pycache__';cache.chmod(0o755)
+    with pytest.raises(RuntimeError):m.package_snapshot()
+    cache.chmod(0o700)
+    original=item.read_bytes();item.unlink();item.symlink_to(site/'jwt/__init__.py')
+    with pytest.raises(RuntimeError):m.package_snapshot()
+
+
+def test_permission_repair_never_mutates_without_digest_and_intent(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    m,site,record=permission_package_fixture(tmp_path,monkeypatch)
+    r=load('public_host_recovery');monkeypatch.setattr(r,'STATE',tmp_path/'state')
+    evidence={'stable':'before'}
+    a=SimpleNamespace(publisher='b'*40,inspect=lambda:evidence)
+    proof=m.execute(a,r)
+    assert proof['state']=='RUNTIME_PERMISSION_PREFLIGHT'
+    assert not (r.STATE/m.NAME/r.FAILED_SHA).exists()
+    with pytest.raises(RuntimeError,match='evidence changed'):m.execute(a,r,'0'*64)
+    target=r.STATE/m.NAME/r.FAILED_SHA;target.mkdir(parents=True)
+    with pytest.raises(RuntimeError,match='already attempted'):m.execute(a,r,proof['evidence_sha256'])
+
+
+def test_permission_repair_transaction_and_history_preserve_staking(tmp_path,monkeypatch):
+    import copy,json,os
+    from types import SimpleNamespace
+    m,site,record=permission_package_fixture(tmp_path/'package',monkeypatch)
+    r,g,before,backup_intent,frontend,values=host_recovery_evidence_fixture(tmp_path/'host',monkeypatch)
+    monkeypatch.setattr(r,'STATE',tmp_path/'state');monkeypatch.setattr(r,'LEASE',tmp_path/'lease');r.LEASE.mkdir()
+    audit=r.STATE/r.FAILED_SHA/'host-hardening';audit.mkdir(parents=True)
+    values['stage']=(str(audit)+'\n').encode()
+    import hashlib
+    for name,raw in values.items():
+        (r.LEASE/name).write_bytes(raw);before['lease'][name]['sha256']=hashlib.sha256(raw).hexdigest()
+    backup=r.BACKUPS/r.FAILED_SHA
+    (backup/'intent.json').write_text(json.dumps(backup_intent));(audit/'frontend.json').write_text(json.dumps(frontend))
+    before.update(production_sha=r.FAILED_SHA,publisher_sha='b'*40,preserved={'unchanged':True})
+    services=copy.deepcopy(before['services']);events=[]
+    def inventory(path,names):assert {p.name for p in path.iterdir()}==names;return {}
+    b=SimpleNamespace(_inventory=inventory,_read_json=lambda p:json.loads(p.read_text()),canonical_source=lambda sha:tmp_path)
+    def write(path,raw):path.write_bytes(raw);events.append(path.name)
+    def run(*args):
+        assert args[:2]==('/usr/bin/systemctl','restart') and args[2] in r.SERVICES[:3]
+        assert (r.STATE/m.NAME/r.FAILED_SHA/'intent.json').exists()
+        events.append(args[2]);value=services[args[2]];value['process']['pid']+=100;value['process']['starttime']=str(int(value['process']['starttime'])+100);value['properties']['MainPID']=str(value['process']['pid'])
+    a=SimpleNamespace(publisher='b'*40,inspect=lambda:before,b=b,old=tmp_path,guard=g,backup=backup,audit=audit,
+      check=lambda:None,lease=lambda:before['lease'],preserved=lambda:before['preserved'],
+      helper=SimpleNamespace(_revision_proof=lambda *a:None),server=SimpleNamespace(secure_path=lambda *a,**kw:None,_sync_directory=lambda *a:None,_write_private=write))
+    g.run=run
+    monkeypatch.setattr(m,'restart_service',lambda name:run('/usr/bin/systemctl','restart',name))
+    monkeypatch.setattr(r,'services',lambda *a:copy.deepcopy(services));monkeypatch.setattr(r,'source_scope',lambda *a:None)
+    monkeypatch.setattr(m,'runtime_probe',lambda:events.append('runtime-probe'));monkeypatch.setattr(m,'http_probe',lambda:events.append('http-probe'));monkeypatch.setattr(m.time,'sleep',lambda *a:None)
+    original_fstat=os.fstat
+    def rootfstat(fd):
+        v=original_fstat(fd)
+        return SimpleNamespace(st_dev=v.st_dev,st_ino=v.st_ino,st_mode=v.st_mode,st_uid=0,st_gid=0)
+    monkeypatch.setattr(m.os,'fstat',rootfstat);monkeypatch.setattr(m.os,'fsync',lambda *a:None)
+    proof=m.execute(a,r)
+    assert m.execute(a,r,proof['evidence_sha256'])['state']=='RUNTIME_PERMISSIONS_REPAIRED'
+    intent,done=m.inspect_history(a,r)
+    assert done['after_services']==services
+    assert all(done['after_services'][name]==before['services'][name] for name in r.SERVICES[3:])
+    assert events[0]=='intent.json' and events[-1]=='completed.json'
+    assert events.index('runtime-probe')<events.index('health-backend')
+
+
+def test_permission_repair_rejects_directory_symlink_before_leaf_read(tmp_path,monkeypatch):
+    import pytest
+    m,site,record=permission_package_fixture(tmp_path,monkeypatch)
+    original=site/'jwt';target=site/'saved';original.rename(target);original.symlink_to(target,target_is_directory=True)
+    read=Path.read_bytes
+    def guarded(path):
+        if path.is_relative_to(original):pytest.fail('must reject parent before reading package content')
+        return read(path)
+    monkeypatch.setattr(Path,'read_bytes',guarded)
+    with pytest.raises(RuntimeError,match='ancestry'):m.package_snapshot()
+
+
+def test_permission_repair_restart_targets_timeout_and_continuity(monkeypatch):
+    import copy
+    import pytest
+    from types import SimpleNamespace
+    m=load('runtime_permission_repair');r=load('public_host_recovery');calls=[]
+    monkeypatch.setattr(m.subprocess,'run',lambda args,**kw:calls.append((args,kw)))
+    m.restart_service('celery-worker')
+    assert calls[0][0]==['/usr/bin/systemctl','restart','celery-worker'] and calls[0][1]['timeout']==180
+    with pytest.raises(RuntimeError):m.restart_service('eth1')
+    process={'pid':1,'starttime':'1','uid':['997']*4,'cgroup':'stable','argv_sha256':'a'*64}
+    before={name:{'process':copy.deepcopy(process)} for name in r.SERVICES};after=copy.deepcopy(before)
+    for name in r.SERVICES[:3]:after[name]['process'].update(pid=2,starttime='2')
+    m.validate_restarted_services(before,after,r)
+    for field,new in (('uid',['0']*4),('cgroup','wrong'),('argv_sha256','b'*64),('pid',1),('starttime','1')):
+        changed=copy.deepcopy(after);changed['health-backend']['process'][field]=new
+        with pytest.raises(RuntimeError):m.validate_restarted_services(before,changed,r)
+    changed=copy.deepcopy(after);changed['eth1']['process']['pid']=2
+    with pytest.raises(RuntimeError):m.validate_restarted_services(before,changed,r)
+
+
+def test_bootstrap_host_permission_history_chain(tmp_path,monkeypatch):
+    import sys
+    monkeypatch.setattr(sys,'dont_write_bytecode',True)
+    import hashlib
+    import json
+    import shutil
+    from types import SimpleNamespace
+    import pytest
+    m,g,evidence,backup_intent,frontend,values=host_recovery_evidence_fixture(tmp_path,monkeypatch)
+    monkeypatch.setattr(m,'STATE',tmp_path/'state')
+    monkeypatch.setattr(m,'LEASE',tmp_path/'active')
+    monkeypatch.setattr(m,'VOLATILE',tmp_path)
+    audit=m.STATE/m.FAILED_SHA/'host-hardening';audit.mkdir(parents=True)
+    values['stage']=(str(audit)+'\n').encode()
+    m.LEASE.mkdir()
+    def write(path,raw):path.write_bytes(raw);path.chmod(0o600)
+    for name,raw in values.items():
+        write(m.LEASE/name,raw)
+        evidence['lease'][name]['sha256']=hashlib.sha256(raw).hexdigest()
+    evidence['lease']['.']['ino']=m.LEASE.stat().st_ino
+    evidence['production_sha']=m.FAILED_SHA;evidence['publisher_sha']='b'*40
+    backup=m.BACKUPS/m.FAILED_SHA
+    write(backup/'intent.json',json.dumps(backup_intent).encode())
+    # Empty initial write set still uses the real archive and manifest validator.
+    paths=[tmp_path/'absent-config'];monkeypatch.setattr(m,'write_set',lambda:paths)
+    hostguard=load('harden_public_host');hostguard.backup_configuration(backup,paths)
+    for name,state in (('started.json','STARTED'),('failed.json','NEEDS_OPERATOR')):
+        write(audit/name,json.dumps({'sha':m.FAILED_SHA,'state':state}).encode())
+    write(audit/'frontend.json',json.dumps(frontend).encode())
+    def inventory(path,names):
+        assert {p.name for p in path.iterdir()}==names
+        result={}
+        for p in [path,*(path/name for name in names)]:
+            st=p.stat();isdir=p==path
+            result['.' if isdir else p.name]={'uid':0,'gid':0,'mode':0o700 if isdir else 0o600,
+                'inode':st.st_ino,'device':st.st_dev,'sha256':None if isdir else hashlib.sha256(p.read_bytes()).hexdigest()}
+        return result
+    preserved=lambda:{'audit':inventory(audit,m.AUDIT_NAMES),'backup':inventory(backup,m.BACKUP_NAMES)}
+    evidence['preserved']=preserved()
+    source=tmp_path/'canonical';(source/'scripts').mkdir(parents=True)
+    shutil.copyfile(ROOT/'scripts/harden_public_host.py',source/'scripts/harden_public_host.py')
+    b=SimpleNamespace(secure=lambda *a,**kw:None,_inventory=inventory,_read_json=lambda p:json.loads(p.read_text()),canonical_source=lambda sha:source)
+    server=SimpleNamespace(secure_path=lambda *a,**kw:None,_sync_directory=lambda *a:None,_write_private=write,_sync_business_lease_parent=lambda:None)
+    def apply(sha,path,*args):
+        write(path/'phase.json',b'{"phase":"frontend_cutover"}')
+        write(path/'completed.json',json.dumps({'sha':sha,'status':'APPLIED'}).encode())
+    adapter=SimpleNamespace(record=m.STATE/'host-hardening-recoveries'/m.FAILED_SHA,publisher='b'*40,
+      inspect=lambda:evidence,server=server,guard=SimpleNamespace(_apply_prepared=apply,
+      run=lambda *a:'User=health-web\nMainPID=321\nActiveState=active'),host=SimpleNamespace(verify_runtime=lambda *a:None),
+      helper=SimpleNamespace(_revision_proof=lambda *a:None),old=source,b=b,preserved=preserved,lease=lambda:evidence['lease'],check=lambda:None)
+    monkeypatch.setattr(m,'services',lambda *a:evidence['services'])
+    monkeypatch.setattr(m.pwd,'getpwnam',lambda name:SimpleNamespace(pw_uid=998))
+    monkeypatch.setattr(m,'process_identity',lambda pid:{'uid':['998']*4})
+    monkeypatch.setattr(m.subprocess,'run',lambda args,**kw:Path(args[4]).rename(args[5]))
+    monkeypatch.setattr(m,'source_scope',lambda *a:None)
+    import copy
+    repair=load('runtime_permission_repair')
+    metadata='pyjwt-2.14.0.dist-info'
+    dirs={'jwt','jwt/__pycache__',metadata,metadata+'/licenses'}
+    files=set(repair.SOURCE_HASHES)
+    files.update('jwt/__pycache__/'+Path(p).stem+'.cpython-312.pyc' for p in repair.SOURCE_HASHES if p.endswith('.py'))
+    files.update(metadata+'/'+p for p in ('INSTALLER','METADATA','RECORD','REQUESTED','WHEEL','licenses/AUTHORS.rst','licenses/LICENSE','top_level.txt'))
+    package={}
+    for i,name in enumerate(sorted(dirs|files),1):
+        directory=name in dirs;cache='__pycache__' in Path(name).parts
+        package[str(repair.SITE/name)]={'uid':0,'gid':0,'dev':1,'ino':i,'directory':directory,
+            'mode':0o700 if directory else 0o600,
+            'target_mode':(0o700 if directory else 0o600) if cache else (0o755 if directory else 0o644),
+            'sha256':None if directory else repair.SOURCE_HASHES.get(name,'e'*64)}
+    repair.validate_package_snapshot(package)
+    before=copy.deepcopy(evidence)
+    for name in m.SERVICES[:3]:
+        service=evidence['services'][name];service['process']['pid']+=100
+        service['process']['starttime']='200';service['properties']['MainPID']=str(service['process']['pid'])
+    repair_intent={'production_sha':m.FAILED_SHA,'publisher_sha':adapter.publisher,'before':before,'package':package}
+    repair_done={'state':'RUNTIME_PERMISSIONS_REPAIRED','production_sha':m.FAILED_SHA,'publisher_sha':adapter.publisher,
+        'intent_sha256':m.digest(repair_intent),'after_services':copy.deepcopy(evidence['services']),
+        'after_package':{p:{**v,'mode':v['target_mode']} for p,v in package.items()}}
+    repair_record=m.STATE/repair.NAME/m.FAILED_SHA;repair_record.mkdir(parents=True)
+    write(repair_record/'intent.json',json.dumps(repair_intent).encode())
+    write(repair_record/'completed.json',json.dumps(repair_done).encode())
+    evidence['permission_repair']={'intent_sha256':m.digest(repair_intent),'completion_sha256':m.digest(repair_done)}
+    for name in ('public_host_recovery','runtime_permission_repair','monitor_ingress_repair'):
+        shutil.copyfile(ROOT/'scripts'/f'{name}.py',source/'scripts'/f'{name}.py')
+    bootstrap=load('bootstrap_trusted_release')
+    monkeypatch.setitem(sys.modules,bootstrap.__name__,bootstrap)
+    monkeypatch.setattr(bootstrap,'STATE',m.STATE)
+    monkeypatch.setattr(bootstrap,'__file__',str(source/'scripts/bootstrap_trusted_release.py'))
+    for name in ('secure','_inventory','_read_json','canonical_source'):
+        monkeypatch.setattr(bootstrap,name,getattr(b,name))
+    # Preserve actual loader execution and sys.modules registration. Only map
+    # fixed host paths and canonical-source validation to this local fixture.
+    import importlib.util
+    real_spec=importlib.util.spec_from_file_location
+    def fixture_spec(name,path,*args,**kwargs):
+        spec=real_spec(name,path,*args,**kwargs)
+        if name=='host_recovery_history':
+            real_exec=spec.loader.exec_module
+            def execute(module):
+                real_exec(module)
+                for key in ('STATE','BACKUPS','LEASE','VOLATILE','write_set','source_scope'):
+                    setattr(module,key,getattr(m,key))
+            spec.loader.exec_module=execute
+        if name=='monitor_ingress_history':
+            real_exec=spec.loader.exec_module
+            def execute_monitor(module):
+                real_exec(module);module.STATE=m.STATE;module.source_scope=lambda *a:None
+            spec.loader.exec_module=execute_monitor
+        return spec
+    monkeypatch.setattr(importlib.util,'spec_from_file_location',fixture_spec)
+    m.validate_intent(evidence,backup_intent,frontend,values,g)
+    assert m.recover(adapter,m.digest(evidence))['state']=='RECOVERED_LOCAL_VERIFIED'
+    assert bootstrap._host_hardening_evidence(m.FAILED_SHA)['kind']=='recovered-host-hardening'
+    assert sys.modules['host_recovery_history'].__name__=='host_recovery_history'
+
+    monitor=load('monitor_ingress_repair');monitor_before=monitor_intent(monitor)
+    monitor_before['host_history']=bootstrap._host_hardening_evidence(m.FAILED_SHA)
+    monitor_record=m.STATE/'monitor-ingress-repairs'/m.FAILED_SHA
+    monitor_record.mkdir(parents=True,mode=0o700);(monitor_record/'lease').mkdir(mode=0o700)
+    monitor_values={'token':'e'*64,'label':'monitor-ingress','stage':str(monitor_record),'started_at':'123'}
+    monitor_lease={'.':{'dev':1,'ino':1,'uid':0,'gid':0,'mode':0o700,'sha256':None}}
+    for i,(name,value) in enumerate(monitor_values.items(),2):
+        raw=(value+'\n').encode();write(monitor_record/'lease'/name,raw)
+        monitor_lease[name]={'dev':1,'ino':i,'uid':0,'gid':0,'mode':0o600,'sha256':hashlib.sha256(raw).hexdigest()}
+    monitor_done={'state':'MONITOR_INGRESS_LOCAL_VERIFIED','production_sha':m.FAILED_SHA,'publisher_sha':'a'*40,
+        'intent_sha256':m.digest(monitor_before),'lease_sha256':m.digest(monitor_lease),'external_readback_required':True}
+    for name,value in (('intent.json',monitor_before),('lease.json',monitor_lease),('completed.json',monitor_done)):
+        write(monitor_record/name,json.dumps(value).encode())
+    assert bootstrap._host_hardening_evidence(m.FAILED_SHA)['monitor_ingress']['kind']=='monitor-ingress-repair'
+    original_services=monitor_before['services'];monitor_before['services']={}
+    monitor_done['intent_sha256']=m.digest(monitor_before)
+    write(monitor_record/'intent.json',json.dumps(monitor_before).encode());write(monitor_record/'completed.json',json.dumps(monitor_done).encode())
+    with pytest.raises(RuntimeError,match='inner evidence'):bootstrap._host_hardening_evidence(m.FAILED_SHA)
+    monitor_before['services']=original_services;monitor_done['intent_sha256']=m.digest(monitor_before)
+    write(monitor_record/'intent.json',json.dumps(monitor_before).encode());write(monitor_record/'completed.json',json.dumps(monitor_done).encode())
+
+    # Even self-consistent outer digests cannot authorize unknown package code.
+    repair_done['after_package'][str(repair.SITE/'jwt/__init__.py')]['sha256']='0'*64
+    write(repair_record/'completed.json',json.dumps(repair_done).encode())
+    evidence['permission_repair']['completion_sha256']=m.digest(repair_done)
+    write(adapter.record/'intent.json',json.dumps(evidence).encode())
+    completed=b._read_json(adapter.record/'completed.json');completed['intent_sha256']=m.digest(evidence)
+    write(adapter.record/'completed.json',json.dumps(completed).encode())
+    with pytest.raises(RuntimeError,match='historical source digest'):
+        bootstrap._host_hardening_evidence(m.FAILED_SHA)

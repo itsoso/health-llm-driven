@@ -155,6 +155,20 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
                 except Exception:  # noqa: BLE001 — never fail the sync task
                     pass
 
+            # 同步后实时安全评估: 这是 post-sync 唯一的 Safety 推送出口, 故直接派发 ——
+            # 数据落库后立即派发: 不挂在简报任务(time_limit=120, 硬杀会跳过末尾派发)之后,
+            # 也先于异常检测 / Agent Loop(LLM, 可能吃满 300s 硬限)与同步状态落库(失败会 raise)。
+            # evaluate_and_push_safety 用 use_cache=False 重建 Twin。
+            # 派发失败 = 用户收不到 HIGH/CRITICAL 告警 → ERROR。
+            try:
+                from app.tasks.notifications import evaluate_and_push_safety
+                evaluate_and_push_safety.delay(user_id)
+            except Exception as e:
+                logger.error(
+                    "用户 %s 派发 evaluate_and_push_safety 失败, 本次同步的安全告警不会推送: %s",
+                    user_id, type(e).__name__,
+                )
+
             # 检测新同步的运动并触发自动分析
             try:
                 twelve_hours_ago = datetime.now(UTC) - timedelta(hours=12)
@@ -205,33 +219,11 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
             except Exception as e:
                 logger.warning(f"Post-sync Twin/Safety 构建失败: {e}")
 
-            # Safety Guardian 推送 critical 告警（仅在 anomaly 无告警时）
-            if not alerts and safety_report:
-                try:
-                    critical_alerts = [a for a in safety_report.alerts if int(a.severity) >= 3]
-                    if critical_alerts:
-                        from app.services.notification.push_privacy import safety_alert_push_text
-                        from app.services.notification.push_service import PushService
-                        push_svc = PushService(db)
-                        for sa in critical_alerts[:3]:
-                            async def _push_safety(alert=sa):
-                                # §5 推送隐私:敏感类别(ddi/dsi/pgx/labs/…)锁屏泛化
-                                push_title, push_content = safety_alert_push_text(alert)
-                                await push_svc.send_notification(
-                                    user_id=user_id,
-                                    notification_type="health_alert",
-                                    title=push_title,
-                                    content=push_content,
-                                    # 用户反馈 (2026-05-07): 凌晨 1 点推 3 条同样 SpO2 告警 — 两个 bug:
-                                    # 1) 缺 data={"rule_id":...} 导致 push_service rule-id 去重失效, 同 rule 反复推
-                                    # 2) respect_quiet_hours=False 直接穿透免打扰, SpO2 异常并非急救场景, 可等天亮
-                                    data={"rule_id": alert.rule_id},
-                                    respect_quiet_hours=True,
-                                )
-                            asyncio.run(_push_safety())
-                        logger.info(f"用户 {user_id} Safety Guardian 发现 {len(critical_alerts)} 条 critical 告警，已推送")
-                except Exception as e:
-                    logger.warning(f"Safety Guardian 推送失败: {e}")
+            # Safety Guardian HIGH+ 推送不在这里做: 由上方直接派发的
+            # notifications.evaluate_and_push_safety 负责 —— 它带显式 severity 与按规则的深链
+            # (SpO2 分析页 / pgx·ddi·dsi 预填对话)。这里曾有一条内联推送, 2026-05-01~09-30
+            # 缺 severity= 被阈值全丢且照记"已推送"; 修好它反而会按 rule_id 去重抢先,
+            # 让用户丢掉更具体的深链 (2026-09-30 safety-gate 评审), 故删除。
 
             # Agent Planning Loop（自主推理，决定是否主动干预）
             if twin:
