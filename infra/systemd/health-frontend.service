@@ -1,0 +1,38 @@
+[Unit]
+Description=Health Next.js frontend (unprivileged)
+Requires=health-network-guard.service
+After=network-online.target health-network-guard.service
+
+[Service]
+Type=simple
+User=health-web
+Group=health-web
+WorkingDirectory=/opt/health-app/frontend
+Environment=NODE_ENV=production
+Environment=BACKEND_URL=http://127.0.0.1:8000
+ExecStart=/usr/bin/node /opt/health-app/frontend/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 30001
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+CapabilityBoundingSet=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+InaccessiblePaths=-/mnt -/opt/eth-ops /opt/health-app/backend -/var/lib/health-app -/var/backups/health-app
+ReadWritePaths=/opt/health-app/frontend/.next/cache
+IPAddressDeny=100.64.0.0/10 169.254.0.0/16
+MemoryMax=1536M
+CPUQuota=150%
+TasksMax=256
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

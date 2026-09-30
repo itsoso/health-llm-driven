@@ -1,0 +1,30 @@
+import React from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, expect, it, vi } from 'vitest';
+const api = vi.hoisted(() => ({ getDashboard: vi.fn(), createInvitation: vi.fn(), acceptInvitation: vi.fn(), createGroup: vi.fn(), removeMember: vi.fn() }));
+vi.mock('@/services/api/family', () => ({ familyApi: api }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('@/components/ProtectedRoute', () => ({ default: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
+import InvitePage from './page';
+beforeEach(() => { vi.clearAllMocks(); api.getDashboard.mockResolvedValue({ data: { group_name: '测试家庭', is_owner: true, memberships: [] } }); });
+it('requires explicit readonly consent before accepting daughter invitation', async () => {
+  api.acceptInvitation.mockResolvedValue({ data: { group_name: '测试家庭' } });
+  render(<InvitePage />);
+  fireEvent.change(await screen.findByLabelText('邀请码'), { target: { value: 'abc123' } });
+  fireEvent.change(screen.getByLabelText('我是家庭创建者的'), { target: { value: 'daughter' } });
+  fireEvent.change(screen.getByLabelText('家庭昵称'), { target: { value: '小禾' } });
+  fireEvent.click(screen.getByRole('button', { name: '同意并加入' }));
+  expect(api.acceptInvitation).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.click(screen.getByRole('button', { name: '同意并加入' }));
+  await waitFor(() => expect(api.acceptInvitation).toHaveBeenCalledWith({ code: 'ABC123', relationship_type: 'daughter', nickname: '小禾' }));
+  expect(await screen.findByText(/已加入测试家庭/)).toBeInTheDocument();
+});
+it('creates a usable invitation and reports failures visibly', async () => {
+  api.createInvitation.mockRejectedValueOnce(new Error('网络不可用')).mockResolvedValueOnce({ data: { code: 'ABC123', group_name: '测试家庭', expires_in_seconds: 1800 } });
+  render(<InvitePage />);
+  fireEvent.click(await screen.findByRole('button', { name: '生成邀请码' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('网络不可用');
+  fireEvent.click(screen.getByRole('button', { name: '生成邀请码' }));
+  expect(await screen.findByText('ABC123')).toBeInTheDocument();
+});

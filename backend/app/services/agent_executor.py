@@ -42,7 +42,11 @@ from app.services.tool_schema_registry import (
 )
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
+from app.services.llm.acute_vitals import acute_vital_reading
+from app.services.agent_post_write_safety import missing_post_write_safety_text
 from app.services.health_query_dimensions import normalize_health_query_args
+from app.services.crisis_lexicon import contains_crisis_language, with_crisis_support
+from app.services.workday_microbreak_safety import contains_acute_symptom_language
 from app.services.drug_lexicon import (
     contains_medication_reference,
     supplement_name_entity_terms,
@@ -5925,6 +5929,9 @@ def _medical_report_analysis_requested(text: str, *, persisted: bool) -> bool:
     )
 
 
+_CRISIS_RECORD_NOT_SAVED_MESSAGE = "这次的记录还没有保存。"
+
+
 def _record_intent_needs_detail_message(
     record_text: str, *, reason_codes: Sequence[str] = (),
 ) -> str:
@@ -9012,8 +9019,13 @@ def _build_preplanned_simple_water_tool_call(
     has_attachment: bool = False,
     runtime_write_blocked: bool = False,
     read_only_turn: bool = False,
+    safety_language: bool = False,
 ) -> Optional[Dict[str, Any]]:
-    """Skip model tool selection for one fully typed water record."""
+    """Plan one fully typed water record without prompt or history.
+
+    That turn runs with an empty system prompt, so crisis or acute-symptom
+    language must keep the ordinary path whose prompt carries the red lines.
+    """
     if (
         goal is None
         or goal.kind != "simple_health_record"
@@ -9023,6 +9035,7 @@ def _build_preplanned_simple_water_tool_call(
         or has_attachment
         or runtime_write_blocked
         or read_only_turn
+        or safety_language
     ):
         return None
     return _build_deterministic_simple_record_tool_call(
@@ -11199,7 +11212,14 @@ def _is_fast_eligible_turn(
     """
     if has_images or has_file:
         return False
+    # 轻生/自伤意念与急症表达永不走快路由; 写入意图也一样 (「记录心情: 不想活了」)。
+    if contains_crisis_language(message) or contains_acute_symptom_language(message):
+        return False
     if is_daily_summary_request(message):
+        return False
+    # 急性生命体征数值地板: 「记一下血压185/115」是写意图, 下方写分支不走风险分类,
+    # 故在此确定性拦截 —— 急性读数整轮留质量模型 + 完整 prompt。
+    if acute_vital_reading(message):
         return False
     intent = classify_agent_utterance(message)
     if intent.primary == "advice":
@@ -12014,6 +12034,8 @@ class AgentExecutor:
         self._decision_route = None
         self._staged_answer_task_tier: Optional[str] = None
         self._staged_answer_model_selected = False
+        # Post-write SafetyGuardian notices this turn; guaranteed into the final text.
+        self._turn_post_write_safety_notices: list[str] = []
         self._staged_answer_would_model_id: Optional[str] = None
         self._recovery_data_guard_decision: Optional[RecoveryDataGuardDecision] = None
         self._recovery_data_guard_model_escalated = False
@@ -12626,15 +12648,28 @@ class AgentExecutor:
         if not self._has_explicit_unscoped_answer_goal():
             return
 
+        from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+        if not guard_current_input_answer(self._current_turn_user_message, final_text)[1]:
+            return
+
         for reason in self._agent_kernel_capability_block_reasons:
             if (
-                is_repairable_read_reason(reason)
+                (is_repairable_read_reason(reason)
+                 or (reason == "current_input_advice_read_not_needed"
+                     and self._has_current_input_recovery_advice_goal()))
                 and reason
                 not in self._agent_kernel_recovered_capability_block_reasons
             ):
                 self._agent_kernel_recovered_capability_block_reasons.append(
                     reason
                 )
+
+    def _has_current_input_recovery_advice_goal(self) -> bool:
+        from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
+
+        snapshot = self._agent_kernel_snapshot
+        return bool(snapshot is not None and not snapshot.intent.is_write
+                    and is_current_input_advice(snapshot.envelope.text))
 
     def _has_explicit_unscoped_answer_goal(self) -> bool:
         from app.services.agent_policy_retry import is_general_advice_only_request
@@ -12646,6 +12681,7 @@ class AgentExecutor:
         text = snapshot.envelope.text
         plan = resolve_exercise_plan_scope(text)
         return (is_general_advice_only_request(text)
+                or self._has_current_input_recovery_advice_goal()
                 or (plan is not None and not plan.evidence_dimensions))
 
     def _unresolved_read_failure_notice(self) -> str | None:
@@ -12717,9 +12753,10 @@ class AgentExecutor:
         """Give a general answer one tool-free safety rewrite.
 
         The medical boundary remains authoritative.  This retry is available
-        only when a non-medical, non-write task was otherwise answered and the
-        sole issue is model-invented dose advice.  Explicit medical questions,
-        scoped reads, writes, and any second unsafe draft still fail closed.
+        only when a non-medical task or proven current-input recovery request
+        was otherwise answered and the sole issue is model-invented dose advice.
+        Explicit regimen questions, scoped reads, writes, and any second unsafe
+        draft still fail closed under the unchanged final medical boundary.
         """
         snapshot = self._agent_kernel_snapshot
         reason_codes = {
@@ -12730,7 +12767,8 @@ class AgentExecutor:
         if (
             not str(draft or "").strip()
             or reason_codes != {"unverified_dose_action"}
-            or requires_medical_evidence_boundary(user_message)
+            or (requires_medical_evidence_boundary(user_message)
+                and not self._has_current_input_recovery_advice_goal())
             or snapshot is None
             or snapshot.intent.is_write
             or self._turn_daily_read_plan is not None
@@ -12749,6 +12787,13 @@ class AgentExecutor:
                     "instruction. Medicines may only be referred to a doctor or pharmacist "
                     "without a concrete regimen. Do not add facts, claims, or completed "
                     "actions. Return only the corrected user-facing answer."
+                    + (
+                        " 本轮只回答当前输入所请求的通用建议或解释。保留就医警示、信息不足说明，"
+                        "明确本轮未查询个人记录。不要把草稿当作已核实的诊断或个人事实。"
+                        "删除所有用药和补剂的执行建议，包括按时用药、继续原方案、"
+                        "服药时点或疗程；药物只说明需要向医生或药师核对。"
+                        if self._has_current_input_recovery_advice_goal() else ""
+                    )
                 ),
             },
             {
@@ -14174,7 +14219,8 @@ class AgentExecutor:
             turn_time_context,
             format_actionable_context_prompt(
                 self._agent_kernel_snapshot.actionable_references
-                if self._agent_kernel_snapshot is not None else ()
+                if self._agent_kernel_snapshot is not None
+                and not self._has_current_input_recovery_advice_goal() else ()
             ),
             format_goal_contract_prompt(
                 self._agent_kernel_snapshot.goal
@@ -14182,6 +14228,9 @@ class AgentExecutor:
             ),
             medical_citation_prompt,
         ]
+        if self._has_current_input_recovery_advice_goal():
+            from app.services.agent_kernel.current_input_advice_scope import current_input_advice_instructions
+            multi_model_context.append(current_input_advice_instructions(message))
         multi_model_context_text = "\n\n".join(
             part for part in multi_model_context if part
         )
@@ -14199,6 +14248,8 @@ class AgentExecutor:
         tools = scope_tools_for_analyzed_material(get_health_tools(), message)
         from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
         tools = scope_tools_for_exercise_plan(tools, message)
+        from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
+        tools = scope_tools_for_current_input_advice(tools, message)
         tools = scope_tools_for_owned_read(tools, panel_read_scope)
         tools = scope_tools_for_goal(
             tools,
@@ -15210,9 +15261,17 @@ class AgentExecutor:
         )
         panel_quality_flags.update(output_quality.flags)
         full_reply = output_quality.text
+        from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+        full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
+        if not advice_answer_supported:
+            completion_status = "error"
+            self._record_model_fallback_reason("unverified_current_input_answer")
         plan_goals = self._exercise_plan_goal_outcomes()
         if any(goal['status'] != 'verified' for goal in plan_goals):
             full_reply = "制定计划所需的体检或病史依据尚未查询完成，暂不能据此提供个性化恢复方案。请稍后重试。"
+        self._recover_irrelevant_read_blocks_after_completed_answer(
+            completion_status=completion_status, final_text=full_reply,
+        )
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
@@ -15249,11 +15308,8 @@ class AgentExecutor:
         conv.updated_at = datetime.now(UTC)
         elapsed_ms = int((time.time() - start_time) * 1000)
         # P1 数字锚定核验(shadow, additive; fail-soft 见 helper)。
-        citation_anchor = _citation_anchor_shadow_meta(
-            self.db,
-            user_id,
-            full_reply,
-        )
+        citation_anchor = (None if self._has_current_input_recovery_advice_goal()
+                           else _citation_anchor_shadow_meta(self.db, user_id, full_reply))
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
         try:
             ai_msg.meta = {
@@ -15593,6 +15649,60 @@ class AgentExecutor:
                 },
             },
         }
+
+    async def _run_local_advice_stream(
+        self, *, user_id: int, message: str, conversation_id: int | None,
+        client_turn_id: str | None, recovered_user_message: Any,
+        request_started_at: float,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Persist the canonical answer; never accept caller/model supplied prose."""
+        from app.services.agent_kernel.current_input_advice_scope import local_advice_response
+        from app.services.agent_conversation_service import AgentConversationService
+
+        response = local_advice_response(message)
+        if response is None:
+            raise ValueError("Local advice requires a complete proven goal")
+        kind, text = response
+        svc = AgentConversationService(self.db)
+        conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
+        if recovered_user_message is not None:
+            if (recovered_user_message.conversation_id != conv.id
+                    or recovered_user_message.content != message
+                    or recovered_user_message.image_url):
+                raise ValueError("Local advice recovery must match its original source")
+            user_msg = recovered_user_message
+        else:
+            user_msg, _ = svc.save_user_message_once(
+                conv.id, user_id, message, client_turn_id=client_turn_id,
+                meta={"client_turn_id": client_turn_id} if client_turn_id else None,
+            )
+        outcome = {
+            "status": "complete", "category": "answer", "reason_code": kind,
+            "retryable": False, "dispatch_started": False,
+            "verified_receipt_count": 0, "actions": [], "refusal_detected": False,
+            "capability_block_count": 0, "tool_failure_count": 0,
+            "confirmation_required": False,
+        }
+        meta = {
+            **agent_completion_metadata("complete", outcome), "turn_outcome": outcome,
+            "route": "current_input_local_advice", "advice_kind": kind,
+            "answer_provenance": "reviewed_general_guidance_v1",
+            "model_call_count": 0, "client_turn_finalized": True,
+            "write_receipts": [],
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        ai_msg = svc.save_message(conv.id, "assistant", text, meta=meta,
+            client_turn_id=client_turn_id, client_turn_user_id=user_id)
+        yield {"event": "request_persisted", "data": {
+            "conversation_id": conv.id, "user_message_id": user_msg.id,
+            "client_turn_id": client_turn_id,
+        }}
+        yield {"event": "token", "data": {"content": text}}
+        yield {"event": "done", "data": {
+            "conversation_id": conv.id, "message_id": ai_msg.id, **meta,
+            "perf": {"route": meta["route"], "model_call_count": 0,
+                "total_ms": max(0, int((time.time() - request_started_at) * 1000))},
+        }}
 
     async def run_stream(
         self,
@@ -15958,6 +16068,31 @@ class AgentExecutor:
                     ):
                         yield self._attach_runtime_identity(event)
                     return
+            # Durable replay and uncertain-write recovery take precedence. Both
+            # ordinary and panel requests then use exactly the same no-model
+            # answer, without loading private context or interpreting opaque
+            # client extra_context as evidence. Attachments stay on their path.
+            from app.services.agent_kernel.current_input_advice_scope import local_advice_response
+            if (
+                retry_recovery is None and not effective_images and not file_base64
+                and local_advice_response(effective_message) is not None
+                and (recovered_user_message is None or (
+                    recovered_user_message.content == effective_message
+                    and not recovered_user_message.image_url
+                ))
+            ):
+                async for event in self._run_local_advice_stream(
+                    user_id=user_id, message=effective_message,
+                    conversation_id=(recovered_user_message.conversation_id
+                        if recovered_user_message is not None else conversation_id),
+                    client_turn_id=client_turn_id,
+                    recovered_user_message=recovered_user_message,
+                    request_started_at=request_started_at,
+                ):
+                    if event.get("event") == "done":
+                        kernel_completion_status = "complete"
+                    yield self._attach_runtime_identity(event)
+                return
             streamed_answer_parts: List[str] = []
             # After durable write recovery, before ordinary/panel/model routing.
             # A missing source or unbound correction is a user-input obligation,
@@ -16326,6 +16461,8 @@ class AgentExecutor:
                 )
             )
             and not _has_fast_record_write_intent(message or "")
+            # 面板有自己的发布点与回显式记录兜底: 危机回合走普通路径拿热线兜底。
+            and not contains_crisis_language(message or "")
         ):
             async for evt in self._run_multi_model_stream(
                 user_id,
@@ -16409,6 +16546,7 @@ class AgentExecutor:
         self._turn_evidence_card = _TURN_CARD_UNSET
         self._turn_evidence_card_key = None
         self._turn_twin_write_occurred = False
+        self._turn_post_write_safety_notices = []
         self._model_fallback_reasons = []
         self._tool_model_names = []
         self._dead_provider_model_ids = set()
@@ -16861,6 +16999,10 @@ class AgentExecutor:
                 has_attachment=bool(images or file_base64),
                 runtime_write_blocked=bool(self._runtime_write_block_reason),
                 read_only_turn=bool(read_only_tools),
+                safety_language=(
+                    contains_crisis_language(message)
+                    or contains_acute_symptom_language(message)
+                ),
             )
             if (
                 not health_advice_buffered
@@ -16877,12 +17019,13 @@ class AgentExecutor:
         try:
             from app.services.opener_quick_reply import apply_opener_quick_reply_context
 
-            opener_quick_reply_note = apply_opener_quick_reply_context(
-                self.db,
-                user_id=user_id,
-                message=message,
-                extra_context=extra_context,
-            )
+            if not self._has_current_input_recovery_advice_goal():
+                opener_quick_reply_note = apply_opener_quick_reply_context(
+                    self.db,
+                    user_id=user_id,
+                    message=message,
+                    extra_context=extra_context,
+                )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[agent_executor] opener quick reply context failed: {e}")
         pre_stages["opener_ms"] = _pre_stage(_t_stage)
@@ -16942,6 +17085,7 @@ class AgentExecutor:
         actionable_context = format_actionable_context_prompt(
             (self._agent_kernel_snapshot.actionable_references or ())
             if self._agent_kernel_snapshot is not None
+            and not self._has_current_input_recovery_advice_goal()
             else ()
         )
         if actionable_context:
@@ -16987,7 +17131,10 @@ class AgentExecutor:
                     f"{desktop_response_instruction}\n"
                     "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
                 )
-        database_verification_instruction = _extract_database_verification_instruction(extra_context)
+        database_verification_instruction = (
+            None if self._has_current_input_recovery_advice_goal()
+            else _extract_database_verification_instruction(extra_context)
+        )
         if database_verification_instruction:
             turn_context_parts.append(database_verification_instruction)
             try:
@@ -17006,6 +17153,7 @@ class AgentExecutor:
             and extra_context.strip()
             and health_evidence_turn is None
             and not health_continuation_attempted
+            and not self._has_current_input_recovery_advice_goal()
         ):
             turn_context_parts.append(
                 "## 入口上下文 (用户正在看的具体方案)\n"
@@ -17084,7 +17232,7 @@ class AgentExecutor:
         )
         messages = (
             [{"role": "user", "content": user_content}]
-            if preplanned_water_turn_call is not None
+            if preplanned_water_turn_call is not None or self._has_current_input_recovery_advice_goal()
             else svc.build_messages(conv.id, limit=history_limit)
         )
         if recovered_user_message is not None and (
@@ -17285,6 +17433,8 @@ class AgentExecutor:
         tools = scope_tools_for_analyzed_material(tools, message)
         from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
         tools = scope_tools_for_exercise_plan(tools, message)
+        from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
+        tools = scope_tools_for_current_input_advice(tools, message)
         tools = scope_tools_for_goal(
             tools,
             self._agent_kernel_snapshot.goal
@@ -17298,6 +17448,9 @@ class AgentExecutor:
         read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
         from app.services.agent_input_tool_scope import scope_tools_for_owned_read
         tools = scope_tools_for_owned_read(tools, read_scope)
+        if self._has_current_input_recovery_advice_goal():
+            from app.services.agent_kernel.current_input_advice_scope import current_input_advice_instructions
+            messages[0]["content"] += "\n" + current_input_advice_instructions(message)
         if read_scope is not None:
             messages[0]["content"] += (
                 "\n本轮服务端确定的只读范围（逐项完成，参数可修正但不得扩展）："
@@ -17747,14 +17900,19 @@ class AgentExecutor:
                             if card
                         ]
                         result += f"\n\n⚠️ 安全提示: {alert_msgs}"
+                        self._turn_post_write_safety_notices.append(
+                            f"⚠️ 安全提示: {alert_msgs}"
+                        )
                 except Exception as e:
                     # 安全筛查是记录后的确定性护栏 —— 它抛错绝不能静默"已记录"放行
                     # (否则刚记的血压危象/卒中症状零告警)。fail-loud:ERROR + 兜底提醒。
                     logger.error("Safety check after write failed: %s", e, exc_info=True)
-                    result += (
-                        "\n\n⚠️ 安全提示: 记录已保存,但自动安全筛查暂未完成。"
+                    _safety_unavailable = (
+                        "⚠️ 安全提示: 记录已保存,但自动安全筛查暂未完成。"
                         "如你此刻有明显不适、或刚记录的数值明显异常,请及时就医。"
                     )
+                    result += f"\n\n{_safety_unavailable}"
+                    self._turn_post_write_safety_notices.append(_safety_unavailable)
             if write_fingerprint and not replayed_write:
                 write_results_by_fingerprint[write_fingerprint] = (
                     result,
@@ -19084,9 +19242,14 @@ class AgentExecutor:
             ))
         )
         if record_intent_no_tool:
-            fail_closed_reply = _record_intent_needs_detail_message(
-                message,
-                reason_codes=self._agent_kernel_capability_block_reasons,
+            # 危机回合不回显原话 (「…不想活了」还没记下来); 热线由发布前兜底补齐。
+            fail_closed_reply = (
+                _CRISIS_RECORD_NOT_SAVED_MESSAGE
+                if contains_crisis_language(message)
+                else _record_intent_needs_detail_message(
+                    message,
+                    reason_codes=self._agent_kernel_capability_block_reasons,
+                )
             )
             if full_reply.strip() != fail_closed_reply:
                 full_reply = fail_closed_reply
@@ -19421,6 +19584,18 @@ class AgentExecutor:
         )
         full_reply = output_quality.text
         if response_output_buffered:
+            from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+            full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
+            if not advice_answer_supported:
+                final_finish_reason = "error"
+                self._record_model_fallback_reason("unverified_current_input_answer")
+            # 所有改写之后、唯一发布点之前: 危机回合一定带经核对的急救电话与热线,
+            # 不依赖模型是否遵守 TRIAGE 红线, 也不被记录兜底等改写抹掉。
+            full_reply = with_crisis_support(
+                message,
+                full_reply,
+                emitted_prefix="\n\n".join(early_genui_fences),
+            )
             release_text = full_reply
             if early_genui_fences and "protocol_leak" not in output_quality.flags:
                 prefix = "\n\n".join(early_genui_fences)
@@ -19430,6 +19605,16 @@ class AgentExecutor:
                 first_token_at = time.time()
             for i in range(0, len(release_text), 24):
                 yield {"event": "token", "data": {"content": release_text[i:i + 24]}}
+        # 加层不减层: 写后 SafetyGuardian 提示只挂在工具结果上; 质量模型合成时可能改写/漏掉。
+        # 模型未复述的提示在此确定性补进正文(卡片之外, 老客户端只看文本)。
+        safety_chunk = missing_post_write_safety_text(
+            full_reply, self._turn_post_write_safety_notices,
+        )
+        if safety_chunk:
+            if full_reply.strip():
+                safety_chunk = f"\n\n{safety_chunk}"
+            full_reply += safety_chunk
+            yield {"event": "token", "data": {"content": safety_chunk}}
         ai_msg = svc.save_message(
             conv.id,
             "assistant",
@@ -19755,7 +19940,7 @@ class AgentExecutor:
         # 摘要进 meta + done, 客户端不读不炸。内部全 fail-soft, 绝不打死回合。
         citation_anchor = (
             None
-            if health_evidence_turn is not None
+            if health_evidence_turn is not None or self._has_current_input_recovery_advice_goal()
             else _citation_anchor_shadow_meta(self.db, user_id, full_reply)
         )
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
@@ -21245,6 +21430,8 @@ class AgentExecutor:
         )
 
         prompt_snapshot = getattr(self, '_agent_kernel_snapshot', None)
+        # Keep static safety rules without preloading unrelated personal data.
+        static_rules_only = static_rules_only or self._has_current_input_recovery_advice_goal()
         if prompt_snapshot is not None and "classifier:conversation_feedback" in prompt_snapshot.intent.evidence:
             return (
                 "你是 Reva 健康助手小巴。用户正在反馈对话质量。结合历史原话和实际工具结果，"
@@ -21636,7 +21823,7 @@ class AgentExecutor:
         if evidence_card:
             return evidence_card
 
-        if not _allow_twin_evidence_fallback(message):
+        if self._has_current_input_recovery_advice_goal() or not _allow_twin_evidence_fallback(message):
             return None
 
         try:
@@ -25407,6 +25594,12 @@ class AgentExecutor:
         query = (args.get("query") or "").strip()
         if not query:
             return "Error: realtime_search 需要 query 参数"
+        if contains_crisis_language(query):
+            # 危机表述不出进程、不进检索日志; 回到关心 + 热线, 不靠网页内容。
+            return (
+                "Error: 该检索涉及个人安全与心理危机，已跳过联网检索。"
+                "请直接关心并确认用户此刻是否安全，提供心理援助热线与急救电话，勿编造检索依据。"
+            )
 
         from app.services.iqs_search import (
             RealtimeSearchUnavailable,

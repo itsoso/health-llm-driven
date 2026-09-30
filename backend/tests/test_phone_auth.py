@@ -3,10 +3,27 @@ import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from app.config import settings
 from app.models.phone_auth import PhoneAuthCode
 from app.models.user import User
 from app.services.registration_invitation import create_registration_invitation
+
+
+@pytest.mark.parametrize("environment", ["production", "PRODUCTION", " Production "])
+def test_production_never_echoes_or_logs_otp(monkeypatch, caplog, environment):
+    from app.services import phone_auth
+
+    monkeypatch.setattr(settings, "app_env", environment)
+    monkeypatch.setattr(settings, "debug", True)
+    monkeypatch.setattr(settings, "auth_phone_code_dev_echo", True)
+    monkeypatch.setattr(settings, "auth_phone_code_log_delivery", True)
+    monkeypatch.setattr(phone_auth, "_aliyun_sms_configured", lambda: False)
+    monkeypatch.setattr(phone_auth, "_aliyun_pnvs_configured", lambda: False)
+    with pytest.raises(phone_auth.PhoneCodeDeliveryNotConfigured):
+        phone_auth._deliver_code("+8613800138999", "928461")
+    assert "928461" not in caplog.text
 
 
 def _enable_dev_codes(monkeypatch):
@@ -15,6 +32,7 @@ def _enable_dev_codes(monkeypatch):
 
 
 def _enable_invitation_enforcement(monkeypatch):
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", False)
     _enable_dev_codes(monkeypatch)
     monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)
     monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", True)
@@ -259,6 +277,9 @@ def test_phone_code_send_fails_loud_when_delivery_is_not_configured(client, monk
 
 
 def test_phone_code_sends_via_aliyun_sms_when_configured(client, monkeypatch):
+    from app.services import phone_auth
+    # Provider contract test; atomic admission has separate real-Redis tests.
+    monkeypatch.setattr(phone_auth, "_reserve_production_sms", Mock())
     monkeypatch.setattr(settings, "auth_phone_code_dev_echo", False, raising=False)
     monkeypatch.setattr(settings, "auth_phone_code_resend_seconds", 0, raising=False)
     monkeypatch.setattr(settings, "debug", False, raising=False)
@@ -313,6 +334,8 @@ def test_phone_code_sends_via_aliyun_sms_when_configured(client, monkeypatch):
 
 
 def _configure_pnvs(monkeypatch):
+    from app.services import phone_auth
+    monkeypatch.setattr(phone_auth, "_reserve_production_sms", Mock())
     monkeypatch.setattr(settings, "auth_phone_code_dev_echo", False, raising=False)
     monkeypatch.setattr(settings, "auth_phone_code_resend_seconds", 0, raising=False)
     monkeypatch.setattr(settings, "debug", False, raising=False)

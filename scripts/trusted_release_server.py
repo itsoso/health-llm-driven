@@ -8,6 +8,7 @@ import datetime
 import fcntl
 import grp
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -19,6 +20,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 CONFIG = Path("/etc/reva-release")
 POLICY = CONFIG / "authorized-release.json"
@@ -42,7 +44,7 @@ class PreparationUncertain(LaunchError):
 
 
 def parse_command(command):
-    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload) ([0-9a-f]{40})", command)
+    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload|claim-ota|finish-ota) ([0-9a-f]{40})", command)
     if match is None:
         raise LaunchError("only fixed release commands with an exact SHA are allowed")
     return match.group(1), match.group(2)
@@ -204,6 +206,7 @@ def run_once(policy, workspace, prepare, deploy):
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
         assert_frontend_rebuild_history()
+        assert_ota_history()
         if os.path.lexists(workspace / "testflight-base.json"):
             raise LaunchError("native-only continuation cannot deploy backend")
         if read_status(policy["sha"], workspace)["state"] != "READY":
@@ -327,10 +330,57 @@ def frontend_closure_proof(operation, state, *, acknowledgment=True):
     return intent
 
 
-def assert_frontend_rebuild_history(state=None, *, pending_operation=None):
+def _load_frontend_finalizer():
+    """Load only the helper committed alongside this canonical executor."""
+    entry = Path(__file__).absolute()
+    if entry == Path("/usr/local/lib/reva-release/trusted_release_server.py"):
+        policy = validate_policy(_json(_read_private(POLICY)), now=0)
+        secure_path(entry)
+        if hashlib.sha256(entry.read_bytes()).hexdigest() != policy["executor_sha256"]:
+            raise LaunchError("installed executor binding differs")
+        sha = policy["sha"]
+        source = STATE / "bootstrap" / sha / "source"
+    else:
+        source = entry.parent.parent
+        sha = source.parent.name
+        if (re.fullmatch(r"[0-9a-f]{40}", sha) is None
+                or source != STATE / "bootstrap" / sha / "source"
+                or entry != source / "scripts/trusted_release_server.py"):
+            raise LaunchError("canonical frontend history helper source required")
+    script = source / "scripts/frontend_verified_finalization.py"
+    secure_path(script)
+    if os.path.lexists(script.parent / "__pycache__"):
+        raise LaunchError("cached frontend history helper forbidden")
+    env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
+    expected = subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source),
+                               "show", sha + ":scripts/frontend_verified_finalization.py"],
+                              env=env, stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=30).stdout
+    if script.read_bytes() != expected:
+        raise LaunchError("frontend history helper differs from canonical source")
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location("canonical_frontend_finalizer", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None):
     """Independent frontend evidence must never count as backend success."""
     root = Path(state or STATE) / "frontend-rebuilds"
     closures = root.parent / "frontend-rebuild-closures"
+    finalizations = root.parent / "frontend-finalizations"
+    if pending_finalization_operation is not None and (
+            pending_operation is not None or re.fullmatch(r"[0-9a-f]{32}", pending_finalization_operation) is None):
+        raise LaunchError("invalid selected frontend finalization")
+    if os.path.lexists(finalizations):
+        secure_path(finalizations, directory=True)
+        if stat.S_IMODE(finalizations.stat().st_mode) != 0o700:
+            raise LaunchError("frontend finalization root must remain private")
+        for finalized in finalizations.iterdir():
+            if (re.fullmatch(r"[0-9a-f]{32}", finalized.name) is None
+                    or not (root / finalized.name).is_dir()):
+                raise LaunchError("orphan frontend finalization")
     if os.path.lexists(closures):
         secure_path(closures, directory=True)
         if stat.S_IMODE(closures.stat().st_mode) != 0o700:
@@ -339,18 +389,38 @@ def assert_frontend_rebuild_history(state=None, *, pending_operation=None):
             if re.fullmatch(r"[0-9a-f]{32}", closure.name) is None or not (root / closure.name).is_dir():
                 raise LaunchError("orphan frontend closure")
     if not os.path.lexists(root):
+        if pending_finalization_operation is not None:
+            raise LaunchError("selected frontend finalization is missing")
         return
     secure_path(root, directory=True)
     if stat.S_IMODE(root.lstat().st_mode) != 0o700:
         raise LaunchError("frontend audit root must remain private")
     expected_files = {"intent.json", "before.json", "build.log", "install-started.json",
                       "verified.json", "completed.json", "previous-next", "previous-node-modules"}
+    selected_found = False
     for operation in root.iterdir():
         secure_path(operation, directory=True)
         if stat.S_IMODE(operation.lstat().st_mode) != 0o700:
             raise LaunchError("frontend operation must remain private")
         if re.fullmatch(r"[0-9a-f]{32}", operation.name) is None:
             raise LaunchError("invalid frontend operation")
+        if operation.name == pending_finalization_operation:
+            if os.path.lexists(closures / operation.name):
+                raise LaunchError("conflicting frontend finalization")
+            selected = finalizations / operation.name
+            if os.path.lexists(selected):
+                secure_path(selected, directory=True)
+                if stat.S_IMODE(selected.stat().st_mode) != 0o700 or {p.name for p in selected.iterdir()} != {"intent.json"}:
+                    raise LaunchError("unknown selected frontend finalization state")
+                _read_private(selected / "intent.json")
+            _load_frontend_finalizer().original_evidence(SimpleNamespace(**globals()), operation.name, state=root.parent)
+            selected_found = True
+            continue
+        if os.path.lexists(finalizations / operation.name):
+            if os.path.lexists(closures / operation.name):
+                raise LaunchError("conflicting frontend closures")
+            _load_frontend_finalizer().history_evidence(SimpleNamespace(**globals()), operation.name, state=root.parent)
+            continue
         if operation.name == pending_operation:
             # Only the root operator uses this to inspect the one failure being
             # retired. RPC/normal launch/rotation callers never pass an exception.
@@ -386,6 +456,8 @@ def assert_frontend_rebuild_history(state=None, *, pending_operation=None):
         if not isinstance(before, dict) or any(before.get(key) != intent[key] for key in (
                 "publisher_sha", "production_sha", "operation_id", "frontend_tree")):
             raise LaunchError("frontend preflight binding differs")
+    if pending_finalization_operation is not None and not selected_found:
+        raise LaunchError("selected frontend finalization is missing")
 
 
 def _native_started(sha, workspace):
@@ -409,6 +481,7 @@ def release_status(sha, workspace):
 def check_readiness(policy):
     """Read-only target probes before consuming any build/deployment claim."""
     assert_frontend_rebuild_history()
+    assert_ota_history()
     _assert_deployment_window(policy)
     validate_loopback(policy)
     secure_path(Path(PYTHON))
@@ -498,6 +571,7 @@ def claim_testflight(policy, workspace, *, native_proof=None):
             raise LaunchError("another release invocation is active") from None
         _native_binding(workspace, native_proof)
         assert_frontend_rebuild_history()
+        assert_ota_history()
         _assert_deployment_window(policy)
         if read_status(policy["sha"], workspace)["state"] in {"NEEDS_OPERATOR", "PREPARATION_FAILED"}:
             raise LaunchError("failed backend requires operator review before upload")
@@ -562,6 +636,26 @@ def _testflight_lease_parent():
     else:
         # Internal unit-test path injection only; production constant is fixed.
         secure_path(BUSINESS_LEASE.parent, directory=True)
+
+
+def _sync_business_lease_parent():
+    """Sync the validated fixed lock parent without following arbitrary links."""
+    _testflight_lease_parent()
+    parent = (Path("/run/lock") if BUSINESS_LEASE == Path("/var/lock/health-app-release")
+              else BUSINESS_LEASE.parent)
+    before = parent.lstat()
+    def identity(info):
+        return info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid
+    fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        if identity(os.fstat(fd)) != identity(before):
+            raise LaunchError("business lease parent changed before synchronization")
+        os.fsync(fd)
+        _testflight_lease_parent()
+        if identity(parent.lstat()) != identity(before) or identity(os.fstat(fd)) != identity(before):
+            raise LaunchError("business lease parent changed during synchronization")
+    finally:
+        os.close(fd)
 
 
 def _assert_testflight_lease(lease, workspace):
@@ -659,6 +753,75 @@ def testflight_only(policy, workspace, action):
                 _release_testflight_lease(lease, workspace)
         finally:
             os.close(fd)
+
+
+def validate_ota_archive(operation):
+    """Prove an atomically archived lease belongs to this exact OTA claim."""
+    operation = Path(operation)
+    archive = operation / "released-lease"
+    secure_path(archive, directory=True)
+    lease = _json(_read_private(operation / "lease.json"))
+    expected = {"token": lease["token"], "label": "testflight-check",
+                "stage": str(STATE / operation.name), "started_at": lease["started_at"]}
+    if {p.name for p in archive.iterdir()} != set(expected) or stat.S_IMODE(archive.stat().st_mode) != 0o700:
+        raise LaunchError("invalid archived OTA lease")
+    for name, value in expected.items():
+        path = archive / name
+        if _read_private(path) != (value + "\n").encode():
+            raise LaunchError("archived OTA lease changed")
+    if (not isinstance(lease.get("identity"), list) or len(lease["identity"]) != 4
+            or any(type(v) is not int or v < 0 for v in lease["identity"])):
+        raise LaunchError("invalid original OTA lease identity")
+
+
+def assert_ota_history():
+    """Every started OTA must finish before any later publisher or rotation."""
+    root = STATE / "ota"
+    if not os.path.lexists(root):
+        return
+    secure_path(root, directory=True)
+    for operation in root.iterdir():
+        secure_path(operation, directory=True)
+        if (re.fullmatch(r"[0-9a-f]{40}", operation.name) is None
+                or stat.S_IMODE(operation.stat().st_mode) != 0o700
+                or {p.name for p in operation.iterdir()} != {"intent.json", "lease.json", "claimed.json", "verified.json", "completed.json", "released-lease"}):
+            raise LaunchError("unfinished OTA requires operator recovery")
+        sha = operation.name
+        intent = _json(_read_private(operation / "intent.json"))
+        receipt = _json(_read_private(operation / "verified.json"))
+        if (intent.get("sha") != sha or intent.get("channel") != "production" or intent.get("platform") != "ios"
+                or not isinstance(receipt, dict) or set(receipt) != {"sha", "group_id", "update_id"}
+                or receipt["sha"] != sha
+                or any(not isinstance(receipt[k], str) or re.fullmatch(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}", receipt[k]) is None for k in ("group_id", "update_id"))
+                or _json(_read_private(operation / "claimed.json")) != {"sha": sha, "state": "CLAIMED"}
+                or _json(_read_private(operation / "completed.json")) != {"sha": sha, "state": "SUCCEEDED",
+                    "intent_sha256": hashlib.sha256(_read_private(operation / "intent.json")).hexdigest(),
+                    "receipt_sha256": hashlib.sha256(_read_private(operation / "verified.json")).hexdigest()}):
+            raise LaunchError("invalid OTA history")
+        validate_ota_archive(operation)
+
+
+def ota_rpc(policy, action):
+    source = STATE / "bootstrap" / policy["sha"] / "source"
+    script = source / "scripts/trusted_ota_server.py"
+    secure_path(script)
+    env = clean_environment(STATE)
+    env.update(PATH="/usr/bin:/bin", HOME="/nonexistent", GIT_NO_REPLACE_OBJECTS="1", GIT_CONFIG_SYSTEM="/dev/null")
+    expected = subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source), "show",
+                               policy["sha"] + ":scripts/trusted_ota_server.py"], env=env,
+                              stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=30).stdout
+    if script.read_bytes() != expected:
+        raise LaunchError("OTA helper differs from canonical source")
+    raw = sys.stdin.buffer.read(1000001)
+    if len(raw) > 1000000:
+        raise LaunchError("oversized OTA input")
+    result = subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"], "--action", action],
+                            env=env, input=raw, capture_output=True, check=True, timeout=600)
+    expected_state = "CLAIMED" if action == "claim" else "SUCCEEDED"
+    value = _json(result.stdout)
+    if value != {"sha": policy["sha"], "state": expected_state}:
+        raise LaunchError("invalid OTA helper receipt")
+    return value
 
 
 def clean_environment(workspace):
@@ -935,6 +1098,19 @@ def initial_laya_config(production):
             "DECISION_API_KEY=" + laya_private_key() + "\n")
 
 
+def invitation_only_config(production):
+    """This containment release must not enable public self-registration."""
+    keys = {"AUTH_PHONE_SELF_REGISTRATION_ENABLED": "false",
+            "REGISTRATION_INVITATION_ENFORCEMENT_ENABLED": "true",
+            "REGISTRATION_INVITATION_ROLLOUT_ENABLED": "true"}
+    lines = []
+    for line in production.splitlines():
+        if any(re.match(r"\s*(?:export\s+)?" + key + r"\s*=", line, re.IGNORECASE) for key in keys):
+            continue
+        lines.append(line)
+    return "\n".join(lines) + "\n" + "".join(f"{key}={value}\n" for key, value in keys.items())
+
+
 def deploy(policy, workspace):
     # Provisioning remains a separate privileged, reviewed installation step.
     _assert_deployment_window(policy)
@@ -949,7 +1125,7 @@ def deploy(policy, workspace):
         wrapper = bindir / command
         _write_private(wrapper, f'#!/bin/sh\nexec {target}{args} "$@"\n'.encode())
         wrapper.chmod(0o700)
-    production = read_production_env()
+    production = invitation_only_config(read_production_env())
     lines = [line for line in production.splitlines() if not line.startswith(("DEPLOY_SERVER=", "DEPLOY_PATH="))]
     candidate = workspace / "deployment.env"
     _write_private(candidate, ("\n".join(lines) + "\n" + initial_laya_config(production)
@@ -989,6 +1165,8 @@ def main():
             action = {"check-testflight": "check", "claim-testflight-build": "build",
                       "claim-testflight-upload": "upload"}[command]
             result = testflight_only(policy, workspace, action)
+        elif command in {"claim-ota", "finish-ota"}:
+            result = ota_rpc(policy, "claim" if command == "claim-ota" else "finish")
         elif command == "check":
             check_readiness(policy)
             result = {"sha": policy["sha"], "state": "CHECKED"}

@@ -797,3 +797,31 @@ def test_retirement_inventory_checks_real_root_metadata(monkeypatch, bad):
     monkeypatch.setattr(Path, "lstat", metadata)
     with pytest.raises(bootstrap.BootstrapError):
         bootstrap._inventory(target, set())
+
+
+def test_native_closure_cannot_conflict_with_other_closure(monkeypatch,tmp_path):
+    bootstrap,_calls=fixture(monkeypatch,tmp_path)
+    for name in ('native-only-closures','partial-laya-closures'):
+        (bootstrap.STATE/name/SHA).mkdir(parents=True)
+    with pytest.raises(bootstrap.BootstrapError,match='conflicting'):
+        bootstrap._workspace_evidence(SHA)
+
+
+def test_native_closure_dispatches_distinct_terminal_with_historical_flag(monkeypatch,tmp_path):
+    bootstrap,_calls=fixture(monkeypatch,tmp_path)
+    (bootstrap.STATE/'native-only-closures'/SHA).mkdir(parents=True)
+    source=tmp_path/'canonical';source.mkdir()
+    (source/'native_release_retirement.py').write_text('# fixture\n')
+    bootstrap.__file__=str(source/'bootstrap_trusted_release.py')
+    monkeypatch.setattr(bootstrap,'secure',lambda *a,**k:None)
+    received=[]
+    def closed(b,sha,receipt,*,historical):
+        received.append((sha,receipt,historical))
+        return {'state':'CLOSED_NATIVE_ONLY_VENDOR_UPLOAD'}
+    imported=SimpleNamespace(closed_evidence=closed)
+    monkeypatch.setattr(bootstrap.importlib.util,'module_from_spec',lambda spec:imported)
+    monkeypatch.setattr(bootstrap.importlib.util,'spec_from_file_location',lambda *a:SimpleNamespace(
+        loader=SimpleNamespace(exec_module=lambda module:None)))
+    monkeypatch.setattr(bootstrap,'sys',SimpleNamespace(modules={bootstrap.__name__:bootstrap}))
+    assert bootstrap._workspace_evidence(SHA,recovery_receipt='c'*64,historical=True)=={'state':'CLOSED_NATIVE_ONLY_VENDOR_UPLOAD'}
+    assert received==[(SHA,'c'*64,True)]

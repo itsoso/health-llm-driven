@@ -241,6 +241,7 @@ def _installation_inputs(sha, expiry, public):
 
 
 def _install_locked(sha, expiry, public, source, server, *, retired_keys=()):
+    assert_ota_history()
     original, host = _installation_inputs(sha, expiry, public)
     CONFIG.mkdir(mode=0o700)
     _sync_parent(CONFIG)
@@ -298,13 +299,25 @@ def _inventory(directory, names):
 
 def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     workspace = STATE / sha
+    native_closure = os.path.lexists(STATE / "native-only-closures" / sha)
     partial_laya = os.path.lexists(STATE / "partial-laya-closures" / sha)
     review_closure = os.path.lexists(STATE / "review-maintenance-closures" / sha)
     unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
     contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
     lost_receipt_ack = os.path.lexists(STATE / "lost-closure-receipt-acknowledgments" / sha)
-    if sum((review_closure, unchanged_closure, contained_closure, partial_laya)) > 1:
+    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure)) > 1:
         raise BootstrapError("conflicting release closure evidence")
+    if native_closure:
+        if lost_receipt_ack or os.path.lexists(STATE / "recoveries" / sha):
+            raise BootstrapError("conflicting native closure evidence")
+        path = Path(__file__).absolute().with_name("native_release_retirement.py")
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached native closure proof forbidden")
+        spec = importlib.util.spec_from_file_location("reviewed_native_closure", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt, historical=historical)
     if partial_laya:
         if lost_receipt_ack or os.path.lexists(STATE / "recoveries" / sha):
             raise BootstrapError("conflicting partial Laya recovery evidence")
@@ -360,7 +373,7 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
         return _preparation_failure_evidence(sha, workspace, names)
     allowed = {"started.json", "completed.json", "build-started.json", "native-started.json",
                "build.lock", "source", "home", "bin", "deployment.env", "preparation.log", "deployment.log",
-               "preparation-started.json", "prepared.json", "deployment-started.json", "clone-attempts", "review-resets"}
+               "preparation-started.json", "prepared.json", "deployment-started.json", "clone-attempts", "review-resets", "host-hardening"}
     if not names <= allowed or not {"started.json", "completed.json"} <= names:
         raise BootstrapError("backend termination unproven; retirement forbidden")
     phases = {"preparation-started.json", "prepared.json", "deployment-started.json"}
@@ -369,7 +382,7 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     receipts = {}
     for name in sorted(names):
         path = workspace / name
-        secure(path, private=name not in {"source", "home", "bin", "clone-attempts", "review-resets"})
+        secure(path, private=name not in {"source", "home", "bin", "clone-attempts", "review-resets", "host-hardening"})
         if name.endswith(".json"):
             states = {"completed.json": "SUCCEEDED", "preparation-started.json": "PREPARING",
                       "prepared.json": "PREPARED", "deployment-started.json": "DEPLOYING"}
@@ -381,7 +394,48 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
             receipts[name] = hashlib.sha256(path.read_bytes()).hexdigest()
     if "review-resets" in names:
         receipts["review-resets"] = _review_reset_evidence(sha)
+    if "host-hardening" in names:
+        receipts["host-hardening"] = _host_hardening_evidence(sha)
     return {"state": "SUCCEEDED", "inventory": sorted(names), "receipts": receipts}
+
+
+def _host_hardening_evidence(sha):
+    root = STATE / sha / "host-hardening"
+    if os.path.lexists(root / "failed.json"):
+        path = Path(__file__).with_name("public_host_recovery.py")
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached host recovery evidence forbidden")
+        spec = importlib.util.spec_from_file_location("host_recovery_history", path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        result=module.history_evidence(sys.modules[__name__], sha)
+        if os.path.lexists(STATE / 'monitor-ingress-repairs'):
+            monitor_path=Path(__file__).with_name('monitor_ingress_repair.py')
+            secure(monitor_path)
+            monitor_spec=importlib.util.spec_from_file_location('monitor_ingress_history',monitor_path)
+            monitor=importlib.util.module_from_spec(monitor_spec)
+            sys.modules[monitor_spec.name]=monitor
+            monitor_spec.loader.exec_module(monitor)
+            result={**result,'monitor_ingress':monitor.history_evidence(sys.modules[__name__],result)}
+        return result
+    inventory = _inventory(root, {"started.json", "verified.json", "completed.json", "frontend.json"})
+    expected = {
+        "started.json": {"sha": sha, "state": "STARTED"},
+        "verified.json": {"sha": sha, "state": "LOCAL_VERIFIED"},
+        "completed.json": {"sha": sha, "state": "LOCAL_VERIFIED", "external_readback_required": True},
+    }
+    for name, value in expected.items():
+        if _read_json(root / name) != value:
+            raise BootstrapError("host hardening termination unproven")
+    frontend = _read_json(root / "frontend.json")
+    if (set(frontend) != {"operation_id", "frontend_tree", "artifact_digest"}
+            or re.fullmatch(r"[a-f0-9]{32}", str(frontend["operation_id"])) is None
+            or re.fullmatch(r"[a-f0-9]{40}", str(frontend["frontend_tree"])) is None
+            or re.fullmatch(r"[a-f0-9]{64}", str(frontend["artifact_digest"])) is None):
+        raise BootstrapError("host frontend binding malformed")
+    return inventory
 
 
 def _review_reset_evidence(sha):
@@ -594,8 +648,20 @@ def assert_frontend_rebuild_history():
     server.assert_frontend_rebuild_history(STATE)
 
 
+def assert_ota_history():
+    if not os.path.lexists(STATE / "ota"):
+        return
+    path = Path(__file__).with_name("trusted_release_server.py")
+    secure(path)
+    spec = importlib.util.spec_from_file_location("ota_history_server", path)
+    server = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+    server.assert_ota_history()
+
+
 def _assert_idle():
     assert_frontend_rebuild_history()
+    assert_ota_history()
     if os.path.lexists(BUSINESS_LEASE):
         raise BootstrapError("business release lease exists; retirement forbidden")
     result = _run(["/usr/bin/ps", "-e", "-ww", "-o", "pid=", "-o", "args="], capture=True)
@@ -649,7 +715,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
         workspace = _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
         check_locks()
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE"}:
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]

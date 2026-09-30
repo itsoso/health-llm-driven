@@ -9,8 +9,11 @@ import { bindIOSToken } from '../services/notifications';
 import { emitClientEvent } from '../services/clientEvents';
 import { resolveNotificationRoute } from '../services/notificationRoutes';
 import { queryClient } from '../applib/queryClient';
+import { invalidateRecordMutation } from '../applib/queryKeys';
 import { completeAgendaItem } from '../services/agenda';
 import { logMedication } from '../services/medications';
+import { recordBehaviorLoopAction, recordOpenLoopFeedback } from '../services/notificationLoopActions';
+import { recordSupplementReminderAction } from '../services/supplementReminderActions';
 import {
   enqueuePendingMedicationAction,
   listPendingMedicationActions,
@@ -292,15 +295,17 @@ async function processNotificationResponse(
     if (data?.reminder_type === 'medication') {
       return handleMedicationReminderAction(actionId, data);
     }
-    await handleQuickAction(actionId, data);
+    if (await recordSupplementReminderAction(actionId, data, notification.date)) {
+      await invalidateRecordMutation(queryClient);
+    }
     return true;
   }
   if (actionId === 'DONE' || actionId === 'SNOOZE_7D' || actionId === 'NOT_INTERESTED') {
-    await handleOpenLoopAction(actionId, data);
+    await recordOpenLoopFeedback(actionId, data);
     return true;
   }
   if (actionId === 'LOOP_DONE' || actionId === 'LOOP_LATER' || actionId === 'LOOP_SKIP') {
-    await handleBehaviorLoopAction(actionId, data);
+    await recordBehaviorLoopAction(actionId, data);
     return true;
   }
   if (actionId === 'VIEW_PROGRESS') {
@@ -497,21 +502,6 @@ export async function handleAgendaAction(
   }
 }
 
-async function handleQuickAction(action: string, data?: Record<string, any>) {
-  if (!data) return;
-  try {
-    const { default: api } = await import('../services/api');
-    if (data.reminder_type === 'supplement' && data.supplement_id) {
-      await api.post('/supplements/me/checkin', {
-        supplement_id: data.supplement_id,
-        action: action === 'TAKEN' ? 'take' : 'skip',
-      });
-    }
-  } catch {
-    // Background action failed silently — user can check in the app later
-  }
-}
-
 function normalizeMedicationReminderTime(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const match = raw.trim().match(/^(\d{1,2}):(\d{2})$/);
@@ -629,56 +619,5 @@ export async function handleMedicationReminderAction(
     });
     await showMedicationFailureNotification(data);
     return false;
-  }
-}
-
-// Open-Loop Manager 的 3 个 action → POST /open-loop/{history_id}/feedback
-// history_id 由后端预写 OpenLoopHistory 时生成, 塞进 APNs data.
-async function handleOpenLoopAction(
-  actionId: 'DONE' | 'SNOOZE_7D' | 'NOT_INTERESTED',
-  data?: Record<string, any>,
-) {
-  if (!data?.history_id) return;
-  const historyId = Number(data.history_id);
-  if (!historyId || isNaN(historyId)) return;
-
-  const actionMap: Record<string, string> = {
-    DONE: 'done',
-    SNOOZE_7D: 'snooze_7d',
-    NOT_INTERESTED: 'not_interested',
-  };
-  const action = actionMap[actionId];
-  if (!action) return;
-
-  try {
-    const { default: api } = await import('../services/api');
-    await api.post(`/open-loop/${historyId}/feedback`, { action });
-  } catch {
-    // Background feedback failed silently — server-side dedup still applies
-  }
-}
-
-// 行为闭环「今天最重要一件事」的 3 个 action.
-// 完成 → completed event; 跳过 → skipped event; 稍后 → 不记录(行动保持待办, 下次再提醒)。
-// 走现成 POST /daily-plan/actions/{action_key}/events (同 HomeCommandCard 的完成路径)。
-async function handleBehaviorLoopAction(
-  actionId: 'LOOP_DONE' | 'LOOP_LATER' | 'LOOP_SKIP',
-  data?: Record<string, any>,
-) {
-  const actionKey = data?.action_key as string | undefined;
-  if (!actionKey) return;
-
-  const { behaviorLoopActionToEventType } = await import('../services/behaviorLoopReminders');
-  const eventType = behaviorLoopActionToEventType(actionId);
-  if (!eventType) return; // 稍后: 不打卡, 不改状态
-
-  try {
-    const { recordDailyPlanActionEvent } = await import('../services/dailyPlan');
-    await recordDailyPlanActionEvent(actionKey, {
-      event_type: eventType,
-      payload: { source: 'wrist_notification' },
-    });
-  } catch {
-    // Background action failed silently — user can complete in the app later
   }
 }

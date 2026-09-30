@@ -101,8 +101,6 @@ def _resolve_family_proxy_user(
     A proxy JWT is only a short-lived credential, not a durable authorization
     grant. Account status and family membership can change while it is valid.
     """
-    from app.models.family import FamilyMember
-
     try:
         subject_id = int(subject)
         target_user_id = int(acting_as)
@@ -134,30 +132,8 @@ def _resolve_family_proxy_user(
             detail="家庭代管授权已失效",
         )
 
-    origin_groups = db.query(FamilyMember.family_group_id).filter(
-        FamilyMember.user_id == origin_id,
-    ).scalar_subquery()
-    target_member = db.query(FamilyMember).filter(
-        FamilyMember.user_id == target_user_id,
-        FamilyMember.family_group_id.in_(origin_groups),
-    ).first()
-    if not target_member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="家庭代管授权已失效",
-        )
-
-    origin_member = db.query(FamilyMember).filter(
-        FamilyMember.family_group_id == target_member.family_group_id,
-        FamilyMember.user_id == origin_id,
-    ).first()
-    if not origin_member or (
-        origin_member.role != "owner" and not target_member.can_edit
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="家庭代管授权已失效",
-        )
+    from app.services.family_access import require_family_access
+    require_family_access(db, origin_id, target_user_id, edit=True)
 
     return target_user, origin_id
 

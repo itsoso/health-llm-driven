@@ -85,13 +85,16 @@ def _alert(category: str, rule_id: str, severity=Severity.HIGH) -> Alert:
 
 # ─────────────────── helper: safety_alert_push_text ───────────────────
 
-@pytest.mark.parametrize("category,rule_id", [
+SENSITIVE_RULES = [
     ("ddi", "ddi.warfarin_nsaid"),
     ("dsi", "dsi.fish_oil_anticoagulant"),
     ("pgx", "pgx.cyp2c19_clopidogrel"),
     ("labs", "labs.liver_enzyme_pattern"),
     ("problem_red_lines", "problem_red_lines.health_problem_red_line"),
-])
+]
+
+
+@pytest.mark.parametrize("category,rule_id", SENSITIVE_RULES)
 def test_sensitive_categories_genericized(category, rule_id):
     title, content = safety_alert_push_text(_alert(category, rule_id))
     assert DRUG not in title and DRUG not in content
@@ -121,6 +124,281 @@ def test_is_sensitive_alert_by_rule_id_prefix_only():
     assert not is_sensitive_alert(rule_id="vitals.bp_critical")
     assert not is_sensitive_alert(rule_id=None)
     assert not is_sensitive_alert()
+
+
+# ─────────────── 中央 backstop 不得抹掉安全告警紧急度(2026-09-30) ───────────────
+#
+# safety_alert_push_text 已把 DDI CRITICAL 泛化成「⚠️ [紧急] 用药安全提醒」,但
+# PushService 里的 lock_screen_privacy_backstop 按 rule_id 前缀判 medication 后又换成
+# 例行的「用药提醒」:危及生命的相互作用在锁屏上读起来像日常吃药提醒(漏报方向)。
+# 修复后:已是类别级泛化形态的文案原样保留;必须替换时,high/critical health_alert
+# 用带紧急度的安全告警泛化文案。两个方向都不许露药名/化验项/诊断。
+
+SAFETY_GENERIC_CONTENT = "检测到需要你关注的安全事项,打开 App 查看详情与建议。"
+ROUTINE_MED_TEXT = ("用药提醒", "有一项用药事项需要你处理，打开 App 查看详情。")
+
+
+def _glp1_hypoglycemia_alert() -> Alert:
+    """真实 cgm 规则产出:cgm 不是敏感类别,但 message 点名 GLP-1 药(HIGH)。"""
+    from app.agents.safety_guardian.rules.cgm import cgm_glp1_hypoglycemia_risk
+    from app.twin.schema import CgmContext, HealthTwin, MedicationState, TwinMeta
+
+    twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.now(timezone.utc)))
+    twin.cgm = CgmContext(has_cgm=True, time_below_24h_pct=9, readings_count_24h=96)
+    twin.medication = MedicationState(active_meds=[{"name": "司美格鲁肽"}], has_any=True)
+    alert = cgm_glp1_hypoglycemia_risk(twin)
+    assert alert is not None and alert.severity == Severity.HIGH
+    return alert
+
+
+@pytest.mark.parametrize("severity", list(Severity))
+@pytest.mark.parametrize("category,rule_id", SENSITIVE_RULES)
+def test_backstop_keeps_safety_alert_generic_form(category, rule_id, severity):
+    """生产者已泛化的类别级文案(含紧急度标记)原样保留。不传 severity:
+    garmin_sync 内联推送就不传,保留不能依赖它。"""
+    push_title, push_content = safety_alert_push_text(_alert(category, rule_id, severity))
+
+    title, content, redacted = lock_screen_privacy_backstop(
+        notification_type="health_alert",
+        title=push_title,
+        content=push_content,
+        data={"rule_id": rule_id},
+    )
+
+    assert (title, content) == (push_title, push_content)
+    assert f"[{severity.label_zh}]" in title
+    assert DRUG not in title + content
+    assert redacted is True
+
+
+def test_known_safe_lock_screen_texts_are_name_free():
+    """保留名单是隐私例外:每条都必须过真实药名/补剂名词集扫描。"""
+    from app.services.notification.push_privacy import (
+        _KNOWN_SAFE_LOCK_SCREEN_TEXTS,
+        contains_sensitive_name,
+    )
+
+    assert _KNOWN_SAFE_LOCK_SCREEN_TEXTS
+    for title, content in _KNOWN_SAFE_LOCK_SCREEN_TEXTS:
+        assert not contains_sensitive_name(title), title
+        assert not contains_sensitive_name(content), content
+        assert "基因" not in title + content  # pgx 不得暴露做过基因检测
+
+
+def test_backstop_safe_title_does_not_whitelist_leaky_content():
+    """只认完整的 (title, content) 泛化形态:title 像泛化、content 点名 → 仍替换。"""
+    title, content, redacted = lock_screen_privacy_backstop(
+        notification_type="health_alert",
+        title="⚠️ [紧急] 用药安全提醒",
+        content=f"检测到 {DRUG} 与布洛芬同期使用，出血风险升高。",
+        data={"rule_id": "ddi.warfarin_nsaid"},
+        severity="critical",
+    )
+
+    assert redacted is True
+    assert (title, content) == ("⚠️ [紧急] 用药安全提醒", SAFETY_GENERIC_CONTENT)
+
+
+@pytest.mark.parametrize("title_in,content_in,data,severity,expected_title", [
+    # 生产者没泛化(忘调 helper 的出口):按 rule_id 类别 + 紧急度
+    (f"{DRUG} 与 NSAID 合用出血风险", f"检测到 {DRUG} 与布洛芬同期使用",
+     {"rule_id": "ddi.warfarin_nsaid"}, "critical", "⚠️ [紧急] 用药安全提醒"),
+    ("谷丙转氨酶显著升高", "谷丙转氨酶 180 U/L,请复查",
+     {"rule_id": "labs.liver_enzyme_pattern", "lab_name": "谷丙转氨酶"}, "high",
+     "⚠️ [警告] 化验指标提醒"),
+    # severity 只在 data 里(anomaly 生产者 / delayed flush 回放的形状)
+    (f"{DRUG} 与 NSAID 合用出血风险", f"检测到 {DRUG} 与布洛芬同期使用",
+     {"rule_id": "ddi.warfarin_nsaid", "severity": "critical"}, "info",
+     "⚠️ [紧急] 用药安全提醒"),
+])
+def test_backstop_replacement_keeps_urgency_for_high_critical_health_alert(
+    title_in, content_in, data, severity, expected_title
+):
+    title, content, redacted = lock_screen_privacy_backstop(
+        notification_type="health_alert",
+        title=title_in,
+        content=content_in,
+        data=data,
+        severity=severity,
+    )
+
+    assert redacted is True
+    assert (title, content) == (expected_title, SAFETY_GENERIC_CONTENT)
+    for leak in (DRUG, "布洛芬", "谷丙转氨酶"):
+        assert leak not in title + content
+
+    # 静默时段 delayed 行存的是已净化文案,flush 时会再过一遍 backstop:必须幂等
+    replay_data = {**data, "lock_screen_redacted": True}
+    replay_data.setdefault("severity", severity)
+    assert lock_screen_privacy_backstop(
+        notification_type="health_alert",
+        title=title,
+        content=content,
+        data=replay_data,
+        severity=replay_data["severity"],
+    ) == (title, content, True)
+
+
+def test_backstop_cgm_alert_naming_drug_keeps_urgency():
+    """cgm 非敏感类别、正文点名药:以前降级成「健康管家提醒 / 健康建议」口吻,
+    HIGH 低血糖风险读起来像日常建议。现在泛化但保留 [警告]。"""
+    alert = _glp1_hypoglycemia_alert()
+    push_title, push_content = safety_alert_push_text(alert)
+    assert "司美格鲁肽" in push_content  # 前置:生产者对 cgm 类原文透传
+
+    title, content, redacted = lock_screen_privacy_backstop(
+        notification_type="health_alert",
+        title=push_title,
+        content=push_content,
+        data={"screen": "alerts", "deep_link": "/(tabs)/alerts", "rule_id": alert.rule_id},
+        severity=alert.severity.label,
+    )
+
+    assert redacted is True
+    assert (title, content) == ("⚠️ [警告] 健康安全提醒", SAFETY_GENERIC_CONTENT)
+    assert "司美格鲁肽" not in title + content
+
+
+@pytest.mark.parametrize("notification_type,severity", [
+    ("health_alert", None),
+    ("health_alert", "info"),
+    ("health_alert", "warning"),
+    ("health_alert", "medium"),
+    ("reminder", "high"),       # 紧急度泛化只给 health_alert,用药提醒仍是例行口吻
+    ("reminder", "critical"),
+])
+def test_backstop_routine_text_unchanged_when_not_urgent_alert(notification_type, severity):
+    title, content, redacted = lock_screen_privacy_backstop(
+        notification_type=notification_type,
+        title="替普瑞酮 50mg",
+        content="晚餐后服用替普瑞酮胶囊",
+        data={"category": "MEDICATION_REMINDER", "medication_name": "替普瑞酮"},
+        severity=severity,
+    )
+
+    assert redacted is True
+    assert (title, content) == ROUTINE_MED_TEXT
+
+
+def test_backstop_urgent_acute_alert_without_names_passes_through():
+    """紧急度逻辑只在必须替换时生效:不点名的急性告警逐字透传(数值是时效安全信息)。"""
+    title, content, redacted = lock_screen_privacy_backstop(
+        notification_type="health_alert",
+        title="⚠️ 血压 185/125 达到急症阈值",
+        content="收缩压 185 mmHg,建议立即就医。",
+        data={"rule_id": "vitals.bp_critical"},
+        severity="critical",
+    )
+
+    assert (title, content, redacted) == (
+        "⚠️ 血压 185/125 达到急症阈值", "收缩压 185 mmHg,建议立即就医。", False
+    )
+
+
+def test_backstop_scan_failure_fails_closed_but_keeps_urgency():
+    """扫描炸了:点名文案 fail-closed 泛化且不丢紧急度;已泛化形态无需扫描照常保留。"""
+    import app.services.notification.push_privacy as pp
+
+    with patch.object(pp, "_payload_privacy_kind", side_effect=RuntimeError("boom")):
+        leaky = pp.lock_screen_privacy_backstop(
+            notification_type="health_alert",
+            title=f"{DRUG} 与 NSAID 合用出血风险",
+            content=f"检测到 {DRUG} 与布洛芬同期使用",
+            data={"rule_id": "ddi.warfarin_nsaid"},
+            severity="critical",
+        )
+        safe_form = pp.lock_screen_privacy_backstop(
+            notification_type="health_alert",
+            title="⚠️ [紧急] 用药安全提醒",
+            content=SAFETY_GENERIC_CONTENT,
+            data={"rule_id": "ddi.warfarin_nsaid"},
+        )
+
+    assert leaky == ("⚠️ [紧急] 健康安全提醒", SAFETY_GENERIC_CONTENT, True)
+    assert safe_form == ("⚠️ [紧急] 用药安全提醒", SAFETY_GENERIC_CONTENT, True)
+
+
+# 走真 PushService.send_notification(共享 choke point),断言 APNs 实收的锁屏文案
+
+async def _deliver_via_push_service(db, *, threshold="warning", **send_kwargs):
+    from unittest.mock import MagicMock
+
+    from app.models.notification import UserNotificationSetting
+    from app.services.notification.push_service import PushService
+
+    db.add(UserNotificationSetting(
+        user_id=1, enabled=True, ios_push_enabled=True, ios_device_token="a" * 64,
+        health_alert_enabled=True, alert_severity_threshold=threshold,
+    ))
+    db.commit()
+    captured: dict = {}
+
+    async def fake_send_push(**kwargs):
+        captured.update(kwargs)
+        return {"success": True}
+
+    ios = MagicMock(is_configured=True, send_push=fake_send_push)
+    with patch("app.services.notification.ios_push.IOSPushService", return_value=ios), \
+            patch.object(PushService, "is_quiet_hours", return_value=False):
+        result = await PushService(db).send_notification(
+            user_id=1, notification_type="health_alert", **send_kwargs
+        )
+    assert result.get("success"), result
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_push_service_ddi_critical_keeps_urgency_on_lock_screen(db):
+    """复现 2026-09-30:定时/实时 Safety Guardian 出口(传 severity)的 DDI CRITICAL。"""
+    alert = _alert("ddi", "ddi.warfarin_nsaid", severity=Severity.CRITICAL)
+    push_title, push_content = safety_alert_push_text(alert)
+
+    apns = await _deliver_via_push_service(
+        db,
+        title=push_title,
+        content=push_content,
+        data={"screen": "alerts", "deep_link": "/(tabs)/alerts", "rule_id": alert.rule_id},
+        severity=alert.severity.label,
+    )
+
+    assert (apns["title"], apns["body"]) == ("⚠️ [紧急] 用药安全提醒", SAFETY_GENERIC_CONTENT)
+    assert apns["data"]["lock_screen_redacted"] is True
+
+
+@pytest.mark.asyncio
+async def test_push_service_garmin_inline_shape_keeps_urgency(db):
+    """garmin_sync 内联出口不传 severity(默认 info):保留只能靠文案本身。
+    info 阈值只为让它送达以观察文案 —— 默认 warning 阈值下该出口会被过滤。"""
+    alert = _alert("ddi", "ddi.warfarin_nsaid", severity=Severity.CRITICAL)
+    push_title, push_content = safety_alert_push_text(alert)
+
+    apns = await _deliver_via_push_service(
+        db,
+        threshold="info",
+        title=push_title,
+        content=push_content,
+        data={"rule_id": alert.rule_id},
+        respect_quiet_hours=True,
+    )
+
+    assert (apns["title"], apns["body"]) == ("⚠️ [紧急] 用药安全提醒", SAFETY_GENERIC_CONTENT)
+
+
+@pytest.mark.asyncio
+async def test_push_service_cgm_alert_naming_drug_keeps_urgency(db):
+    alert = _glp1_hypoglycemia_alert()
+    push_title, push_content = safety_alert_push_text(alert)
+
+    apns = await _deliver_via_push_service(
+        db,
+        title=push_title,
+        content=push_content,
+        data={"screen": "alerts", "deep_link": "/(tabs)/alerts", "rule_id": alert.rule_id},
+        severity=alert.severity.label,
+    )
+
+    assert (apns["title"], apns["body"]) == ("⚠️ [警告] 健康安全提醒", SAFETY_GENERIC_CONTENT)
+    assert "司美格鲁肽" not in apns["title"] + apns["body"]
 
 
 # ─────────────────── 用药定时提醒(scan_medication_reminders) ───────────────────
@@ -339,6 +617,37 @@ def test_escalation_genericizes_drug_sourced_card(db, patch_wscla_session):
     assert sensitive, f"敏感卡未泛化: {list(by_title)}"
     assert passthrough, f"vitals 卡被过度泛化: {list(by_title)}"
     assert DRUG not in by_title[sensitive[0]]["content"]
+
+
+def test_escalation_generic_text_survives_central_backstop(db, patch_wscla_session):
+    """升级再推的敏感卡泛化文案过中央 backstop 不能被换成例行的「用药提醒」。"""
+    from app.models.user import User
+    from app.services.notification.push_service import PushService
+    from app.tasks.notifications_wscla import escalate_critical_unresolved_impl
+
+    user = User(username="esc_bs", email="esc_bs@example.com",
+                hashed_password="x", name="esc_bs", is_active=True, is_approved=True)
+    db.add(user)
+    db.commit()
+    _mk_card(db, user.id, "ddi.warfarin_nsaid",
+             f"{DRUG} × NSAID 出血风险", f"{DRUG} 与布洛芬同用……")
+
+    fake_send = AsyncMock(return_value={"success": True})
+    with patch.object(PushService, "send_notification", new=fake_send):
+        escalate_critical_unresolved_impl()
+
+    kw = fake_send.call_args.kwargs
+    title, content, redacted = lock_screen_privacy_backstop(
+        notification_type=kw["notification_type"],
+        title=kw["title"],
+        content=kw["content"],
+        data=kw["data"],
+    )
+
+    assert (title, content) == (kw["title"], kw["content"])
+    assert "紧急" in title
+    assert DRUG not in title + content
+    assert redacted is True
 
 
 # ═══════════════ LLM 文案出口的确定性 backstop(llm_push_backstop) ═══════════════
@@ -741,3 +1050,65 @@ def test_daily_insight_backstop(db, aggregation, expect_generic):
     else:
         assert kwargs["content"] == aggregation
         assert "full_content" not in kwargs["data"]
+
+
+# ─────────────────── 出口:异常检测预警(AnomalyDetectionService.send_alerts) ───────────────────
+
+def _mk_anomaly_push_user(db) -> int:
+    from app.models.notification import UserNotificationSetting
+    from app.models.user import User
+
+    user = User(username="anomaly_push", email="anomaly_push@test.local",
+                name="anomaly_push", hashed_password="x")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    # threshold=info:本组只验隐私出口,与推送档位映射(H1-B)解耦
+    db.add(UserNotificationSetting(
+        user_id=user.id, enabled=True, health_alert_enabled=True,
+        alert_severity_threshold="info", ios_push_enabled=True,
+        ios_device_token="fake-token", wechat_enabled=False,
+    ))
+    db.commit()
+    return user.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message,expect_generic", [
+    ("血氧饱和度偏低：92.5%（阈值 95%），请注意", False),
+    (f"血氧饱和度偏低：92.5%，与{DRUG}无关", True),
+])
+async def test_anomaly_push_exit_goes_through_lock_screen_choke_point(db, message, expect_generic):
+    """真走 PushService.send_notification,只在 APNs 出口截获:良性预警逐字节透传,
+    点名药物的文案被中央 choke point 泛化(原文仍在 App 内预警页)。"""
+    from datetime import date
+
+    from app.models.anomaly_alert import AnomalyAlert
+    from app.services.anomaly_detection_service import AnomalyDetectionService
+    from app.services.notification.push_service import PushService
+
+    user_id = _mk_anomaly_push_user(db)
+    alert = AnomalyAlert(
+        user_id=user_id, alert_type="spo2_low", severity="warning", metric_name="spo2_avg",
+        current_value=92.5, detection_date=date(2026, 3, 1), message=message,
+    )
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+
+    ios = AsyncMock(return_value={"success": True})
+    with patch("app.services.notification.push_service.get_china_now",
+               return_value=datetime(2026, 3, 1, 14, 0)), \
+            patch.object(PushService, "_send_ios", new=ios):
+        await AnomalyDetectionService(db).send_alerts(user_id, [alert])
+
+    assert ios.call_count == 1
+    title, content, data = ios.call_args.args[3:]
+    if expect_generic:
+        assert DRUG not in title and DRUG not in content
+        assert (title, content) == ("健康管家提醒", "有一条为你准备的健康建议,点开查看。")
+        assert data["lock_screen_redacted"] is True
+    else:
+        assert (title, content) == ("健康预警：血氧饱和度", message)
+        assert "lock_screen_redacted" not in data
+    assert data["screen"] == "alerts"

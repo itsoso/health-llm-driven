@@ -84,6 +84,10 @@ celery_app.conf.update(
 
 # 定时任务配置 (Beat Schedule)
 celery_app.conf.beat_schedule = {
+    "registration-admin-notifications": {
+        "task": "app.tasks.notifications.send_registration_admin_notifications",
+        "schedule": 60.0,
+    },
     # 每日 6:00 生成今日计划
     "generate-daily-plan": {
         "task": "app.tasks.health_analysis.generate_daily_plan_for_all",

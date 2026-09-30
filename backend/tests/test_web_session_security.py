@@ -283,11 +283,13 @@ def test_family_proxy_token_is_rejected_after_edit_permission_is_revoked(client,
             can_edit=True,
         ),
     ])
+    target.is_managed = True
+    target.managed_by = owner.id
     db.commit()
     proxy_token = auth_service.create_access_token({
         "sub": str(target.id),
         "acting_as": target.id,
-        "original_user": delegate.id,
+        "original_user": owner.id,
     })
     headers = {"Authorization": f"Bearer {proxy_token}"}
     assert client.get("/api/v1/auth/me", headers=headers).status_code == 200

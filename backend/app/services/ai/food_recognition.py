@@ -8,7 +8,7 @@ import math
 import re
 from typing import Dict, Any, List, Optional
 from app.services.intake_intent_classifier import (
-    classify_intake_intent,
+    classify_intake_subject,
     looks_like_food_ui_text,
 )
 from app.services.llm import get_vision_provider
@@ -129,7 +129,7 @@ def _clean_text(value: Any, maximum_length: int) -> str:
 
 
 def _looks_like_non_food_intake(name: str) -> bool:
-    intent = classify_intake_intent(name)
+    intent = classify_intake_subject(name)
     if intent.kind == "supplement" and _FOOD_CONTEXT_SUFFIX_RE.search(name):
         return False
     return intent.kind in _NON_FOOD_INTENT_KINDS

@@ -321,6 +321,9 @@ jobs:
           pip install --require-hashes -r requirements.lock
           pip install -r requirements-dev.txt
 
+      - name: Verify real application network boundary in isolated namespace
+        run: sudo unshare --net /usr/bin/python3 scripts/test_public_host_network_native.py
+
       - name: Run deployment and rollback invariants
         run: >-
           python -m pytest -q --no-cov --tb=short --maxfail=1
@@ -337,11 +340,21 @@ jobs:
           scripts/test_release_ci_contract.py
           scripts/test_release_input_digest.py
           scripts/test_verify_locked_requirements.py
+          scripts/test_prune_unlocked_requirements.py
+          scripts/test_public_host_boundaries.py
           scripts/test_trusted_release_gate.py
           scripts/test_trusted_deploy_source.py
           scripts/test_trusted_release_workflow.py
           scripts/test_trusted_release_receipt.py
           scripts/test_trusted_release_server.py
+          scripts/test_native_release_retirement.py
+          scripts/test_business_lease_sync.py
+          scripts/test_frontend_verified_finalization.py
+          scripts/test_frontend_finalization_integration.py
+          scripts/test_trusted_ota.py
+          scripts/test_trusted_ota_server.py
+          scripts/test_trusted_ota_workflow.py
+          scripts/test_trusted_ota_publish.py
           scripts/test_testflight_only.py
           scripts/test_trusted_frontend_rebuild.py
           scripts/test_bootstrap_trusted_release.py
@@ -497,6 +510,7 @@ jobs:
           tests/test_agent_runtime_tool_operations.py
           tests/test_agent_runtime_reconciliation.py
           tests/test_agent_supplement_persistence_postgres.py
+          tests/test_supplement_taken_count_drop_migration.py
           tests/test_latest_meal_correction.py
           tests/test_diet_spoken_fraction_correction.py
           tests/test_pi_kernel_executor.py

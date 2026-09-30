@@ -20,6 +20,7 @@ from app.services.registration_invitation import (
 
 @pytest.fixture(autouse=True)
 def _invitation_settings(monkeypatch):
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", False)
     monkeypatch.setattr(settings, "auth_phone_code_dev_echo", True)
     monkeypatch.setattr(settings, "auth_phone_code_resend_seconds", 0)
     monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.anomaly_alert import AnomalyAlert
 from app.models.daily_health import GarminData
+from app.utils.number_format import format_display_number
 from app.utils.timezone import get_china_today
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,12 @@ THRESHOLDS = {
     "hrv_trend_step": 5,        # 每天比前一天低≥5 ms
     "multi_metric_min_hits": 2, # 多指标恶化：3项中命中≥2项
 }
+
+# AnomalyAlert.severity → push_service severity。本模块的 "critical"(血氧日均 <95%、
+# 睡眠评分 <50)不是急症档: push 层 "critical" 专指致命交互/急性阈值, 会穿透静默时段
+# (be3b17ace); Safety Guardian 对 SpO2 88–92% 也只判 MEDIUM。故降为 "high":
+# 仍过默认 warning 阈值, 但尊重静默时段。info 在 send_alerts 里先行抑制, 不进映射。
+PUSH_SEVERITY = {"warning": "warning", "critical": "high"}
 
 
 class AnomalyDetectionService:
@@ -120,17 +127,22 @@ class AnomalyDetectionService:
             return None
 
         if deviation_pct > threshold_pct:
+            baseline = round(avg_rhr, 1)
+            deviation = round(deviation_pct, 1)
             return AnomalyAlert(
                 user_id=user_id,
                 alert_type="rhr_spike",
                 severity="warning",
                 metric_name="resting_heart_rate",
                 current_value=current_rhr,
-                baseline_value=round(avg_rhr, 1),
+                baseline_value=baseline,
                 threshold_value=round(avg_rhr * (1 + threshold_pct / 100), 1),
-                deviation_pct=round(deviation_pct, 1),
+                deviation_pct=deviation,
                 detection_date=check_date,
-                message=f"静息心率异常偏高：当前 {current_rhr} bpm，7天均值 {avg_rhr:.0f} bpm，偏高 {deviation_pct:.0f}%",
+                message=(
+                    f"静息心率异常偏高：当前 {format_display_number(current_rhr)} bpm，"
+                    f"7天均值 {format_display_number(baseline)} bpm，偏高 {format_display_number(deviation)}%"
+                ),
             )
         return None
 
@@ -150,7 +162,7 @@ class AnomalyDetectionService:
                 current_value=today.hrv,
                 baseline_value=today.hrv_7day_avg,
                 detection_date=check_date,
-                message=f"HRV 状态偏低：当前 {today.hrv or '未知'} ms，状态为 low",
+                message=f"HRV 状态偏低：当前 {format_display_number(today.hrv) if today.hrv else '未知'} ms，状态为 low",
             )
 
         # 方式2：HRV数值低于7天均值20%
@@ -170,17 +182,22 @@ class AnomalyDetectionService:
         threshold_pct = THRESHOLDS["hrv_drop_pct"]
 
         if deviation_pct > threshold_pct:
+            baseline = round(avg_hrv, 1)
+            deviation = round(deviation_pct, 1)
             return AnomalyAlert(
                 user_id=user_id,
                 alert_type="hrv_drop",
                 severity="warning",
                 metric_name="hrv",
                 current_value=today.hrv,
-                baseline_value=round(avg_hrv, 1),
+                baseline_value=baseline,
                 threshold_value=round(avg_hrv * (1 - threshold_pct / 100), 1),
-                deviation_pct=round(deviation_pct, 1),
+                deviation_pct=deviation,
                 detection_date=check_date,
-                message=f"HRV 异常偏低：当前 {today.hrv:.0f} ms，7天均值 {avg_hrv:.0f} ms，偏低 {deviation_pct:.0f}%",
+                message=(
+                    f"HRV 异常偏低：当前 {format_display_number(today.hrv)} ms，"
+                    f"7天均值 {format_display_number(baseline)} ms，偏低 {format_display_number(deviation)}%"
+                ),
             )
         return None
 
@@ -204,7 +221,7 @@ class AnomalyDetectionService:
                 current_value=today.sleep_score,
                 threshold_value=critical_threshold,
                 detection_date=check_date,
-                message=f"睡眠评分极低：{today.sleep_score} 分（阈值 {critical_threshold}），请关注睡眠质量",
+                message=f"睡眠评分极低：{format_display_number(today.sleep_score)} 分（阈值 {critical_threshold}），请关注睡眠质量",
             )
 
         # Warning: 连续N天低于60
@@ -217,17 +234,17 @@ class AnomalyDetectionService:
         recent_scores = all_scores[:warning_days]
 
         if len(recent_scores) >= warning_days and all(s < warning_threshold for s in recent_scores):
-            avg = sum(recent_scores) / len(recent_scores)
+            avg = round(sum(recent_scores) / len(recent_scores), 1)
             return AnomalyAlert(
                 user_id=user_id,
                 alert_type="sleep_low",
                 severity="warning",
                 metric_name="sleep_score",
                 current_value=today.sleep_score,
-                baseline_value=round(avg, 1),
+                baseline_value=avg,
                 threshold_value=warning_threshold,
                 detection_date=check_date,
-                message=f"连续 {warning_days} 天睡眠评分低于 {warning_threshold}，最近均值 {avg:.0f} 分",
+                message=f"连续 {warning_days} 天睡眠评分低于 {warning_threshold}，最近均值 {format_display_number(avg)} 分",
             )
         return None
 
@@ -261,7 +278,7 @@ class AnomalyDetectionService:
                 current_value=today.stress_level,
                 threshold_value=high_threshold,
                 detection_date=check_date,
-                message=f"连续 {high_stress_days} 天压力偏高（>{high_threshold}），当前 {today.stress_level}，建议放松",
+                message=f"连续 {high_stress_days} 天压力偏高（>{high_threshold}），当前 {format_display_number(today.stress_level)}，建议放松",
             )
         return None
 
@@ -291,7 +308,7 @@ class AnomalyDetectionService:
                 current_value=today.spo2_avg,
                 threshold_value=critical_threshold,
                 detection_date=check_date,
-                message=f"血氧饱和度偏低：{today.spo2_avg:.1f}%（阈值 {critical_threshold}%），请注意",
+                message=f"血氧饱和度偏低：{format_display_number(today.spo2_avg)}%（阈值 {critical_threshold}%），请注意",
             )
         return None
 
@@ -312,7 +329,7 @@ class AnomalyDetectionService:
                 current_value=today.body_battery_most_charged,
                 threshold_value=low_threshold,
                 detection_date=check_date,
-                message=f"身体电量偏低：最高充电仅 {today.body_battery_most_charged}（阈值 {low_threshold}），注意休息",
+                message=f"身体电量偏低：最高充电仅 {format_display_number(today.body_battery_most_charged)}（阈值 {low_threshold}），注意休息",
             )
         return None
 
@@ -358,7 +375,10 @@ class AnomalyDetectionService:
                 baseline_value=first_val,
                 deviation_pct=round((last_val - first_val) / first_val * 100, 1) if first_val else None,
                 detection_date=check_date,
-                message=f"静息心率连续 {required_days} 天上升：{first_val}→{last_val} bpm，可能提示过度训练或身体不适",
+                message=(
+                    f"静息心率连续 {required_days} 天上升：{format_display_number(first_val)}→"
+                    f"{format_display_number(last_val)} bpm，可能提示过度训练或身体不适"
+                ),
             )
         return None
 
@@ -392,7 +412,10 @@ class AnomalyDetectionService:
                 baseline_value=first_val,
                 deviation_pct=round((first_val - last_val) / first_val * 100, 1) if first_val else None,
                 detection_date=check_date,
-                message=f"HRV 连续 {required_days} 天下降：{first_val}→{last_val} ms，自主神经调节能力可能在减弱",
+                message=(
+                    f"HRV 连续 {required_days} 天下降：{format_display_number(first_val)}→"
+                    f"{format_display_number(last_val)} ms，自主神经调节能力可能在减弱"
+                ),
             )
         return None
 
@@ -428,7 +451,10 @@ class AnomalyDetectionService:
             change = (base_sleep - recent_sleep) / base_sleep * 100
             if change > 10:
                 hits.append('sleep')
-                details.append(f"睡眠评分下降{change:.0f}%({base_sleep:.0f}→{recent_sleep:.0f})")
+                details.append(
+                    f"睡眠评分下降{format_display_number(change)}%"
+                    f"({format_display_number(base_sleep)}→{format_display_number(recent_sleep)})"
+                )
 
         # Stress level
         base_stress = _avg(baseline, 'stress_level')
@@ -437,7 +463,10 @@ class AnomalyDetectionService:
             change = (recent_stress - base_stress) / base_stress * 100
             if change > 15:
                 hits.append('stress')
-                details.append(f"压力上升{change:.0f}%({base_stress:.0f}→{recent_stress:.0f})")
+                details.append(
+                    f"压力上升{format_display_number(change)}%"
+                    f"({format_display_number(base_stress)}→{format_display_number(recent_stress)})"
+                )
 
         # HRV
         base_hrv = _avg(baseline, 'hrv')
@@ -446,7 +475,10 @@ class AnomalyDetectionService:
             change = (base_hrv - recent_hrv) / base_hrv * 100
             if change > 15:
                 hits.append('hrv')
-                details.append(f"HRV下降{change:.0f}%({base_hrv:.0f}→{recent_hrv:.0f})")
+                details.append(
+                    f"HRV下降{format_display_number(change)}%"
+                    f"({format_display_number(base_hrv)}→{format_display_number(recent_hrv)})"
+                )
 
         min_hits = THRESHOLDS["multi_metric_min_hits"]
         if len(hits) >= min_hits:
@@ -510,7 +542,8 @@ class AnomalyDetectionService:
                 # 疲劳时不创建新 ActionCard (已有同 metric 的 active card 在跑)
                 continue
 
-            # critical 级别绕过静默时段
+            # critical 不走 delay 策略; 但推送档位是 "high"(见 PUSH_SEVERITY),
+            # 静默时段内 push_service 仍会延迟 —— 只有 push 层 critical 可穿透。
             respect_quiet = severity != "critical"
 
             # L9 (Karpathy partial autonomy): 用户的告警反应档位
@@ -541,19 +574,27 @@ class AnomalyDetectionService:
                 deep_link = f"/trace/anomaly_{alert.id}"
 
             try:
+                # 必须显式传: 缺省 "info" 会被 H1-B 阈值(默认 warning)静默丢弃。
+                # 未映射的取值 KeyError → 走下方 except 记失败, 不静默降级。
+                push_severity = PUSH_SEVERITY[severity]
                 result = await push_service.send_notification(
                     user_id=user_id,
                     notification_type=NotificationType.HEALTH_ALERT.value,
-                    title=f"健康预警：{alert.metric_name}",
+                    title=self._push_title(alert.metric_name),
                     content=alert.message,
                     data={
                         "alert_id": alert.id,
-                        "severity": alert.severity,
+                        # flush_delayed_pushes 按 data["severity"] 回放延迟推送, 须与推送档位一致
+                        "severity": push_severity,
                         "type": alert.alert_type,
                         "deep_link": deep_link,
                         "rule_id": f"anomaly.{alert.alert_type}",  # H1-B opt-out 用
+                        # mobile SILENT_SCREENS 把缺省 screen 当 home → 前台无横幅/声音;
+                        # 点击路由仍以 deep_link 为准(同 Safety Guardian 推送)
+                        "screen": "alerts",
                     },
                     respect_quiet_hours=respect_quiet,
+                    severity=push_severity,
                 )
                 if result.get("success"):
                     alert.notification_sent = True
@@ -577,6 +618,22 @@ class AnomalyDetectionService:
         # 以下不能 grade 的 metric 不自动产 card
         # "stress_level": None, "body_battery": None,
     }
+
+    # metric_name → 锁屏标题的中文标签; multi_metric 的 metric_name 是短 key 逗号拼接
+    _METRIC_LABELS = {
+        "resting_heart_rate": "静息心率", "hrv": "HRV",
+        "sleep_score": "睡眠评分", "sleep": "睡眠评分",
+        "stress_level": "压力", "stress": "压力",
+        "spo2_avg": "血氧饱和度", "body_battery": "身体电量",
+    }
+
+    @classmethod
+    def _push_title(cls, metric_name: Optional[str]) -> str:
+        """内部 metric key 绝不上锁屏;任一 key 未登记 → 泛化标题,不回显 key。"""
+        labels = [cls._METRIC_LABELS.get(k.strip()) for k in (metric_name or "").split(",")]
+        if None in labels:
+            return "健康预警"
+        return f"健康预警：{'、'.join(labels)}"
 
     def _create_action_card_from_alert(self, user_id: int, alert: AnomalyAlert) -> Optional[int]:
         """AnomalyAlert → ActionCard. 返回 card id 或 None.

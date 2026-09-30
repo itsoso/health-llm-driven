@@ -24,6 +24,12 @@ from app.services.agent_query_window import resolve_calendar_query_window
 # These are the currently date-exact data planes. A summary must disclose this
 # scope rather than imply unqueried medication, genetics or activity are known.
 DAILY_SUMMARY_DIMENSIONS = ("diet", "sleep")
+# Recommendation copy and the accepted read frame share this contract. Keep the
+# visible scope honest; sending/editing a chip still recompiles the user's text
+# and never supplies a trusted plan or extra permission from the client.
+_SUMMARY_SUBJECT = "饮食和睡眠记录"
+_BEDTIME_ADVICE = "给睡前几个小建议"
+DAILY_SUMMARY_STARTER = f"总结一下我今天的{_SUMMARY_SUBJECT}，并{_BEDTIME_ADVICE}"
 _DAY = (r"昨晚|昨夜|昨天|昨日|前天|今天|今日|"
         r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}(?:日|号)?|"
         r"(?:本周|这周|上周)[一二三四五六日天]")
@@ -40,7 +46,7 @@ _SUMMARY_RE = re.compile(
     rf"(?:(?:请)?(?:给我|帮我)?(?:做|做个|做一份)?(?:{_SUMMARY_DAY})(?:的)?"
     r"(?:健康|身体状况|身体状态)?(?:总结|汇总)|"
     r"(?:请)?(?:给我|帮我)?(?:总结|汇总)(?:一下)?(?:我(?:的)?)?"
-    rf"(?:{_SUMMARY_DAY})(?:的)?(?:健康情况|健康状况|身体状况|身体状态|情况)?)"
+    rf"(?:{_SUMMARY_DAY})(?:的)?(?:{re.escape(_SUMMARY_SUBJECT)}|健康数据|健康情况|健康状况|身体状况|身体状态|情况)?)"
 )
 _COLLOQUIAL_SUMMARY_RE = re.compile(
     rf"(?:(?:我(?:的)?)(?:{_SUMMARY_DAY})|(?:{_SUMMARY_DAY})(?:的)?我(?:的)?)"
@@ -48,7 +54,7 @@ _COLLOQUIAL_SUMMARY_RE = re.compile(
 )
 _ADVICE_SUFFIX_RE = re.compile(
     r"[，,。.!！?？；;]*(?:(?:并且|然后|并|再|也)(?:请)?)?"
-    r"(?:(?:请)?(?:给我|给出|提供)(?:一些|一点|些|点)?(?:建议|意见)|"
+    rf"(?:(?:请)?(?:{re.escape(_BEDTIME_ADVICE)}|(?:给我|给出|提供)(?:一些|一点|些|点)?(?:睡前)?(?:建议|意见))|"
     r"(?:今天)?(?:是否|能否)适合(?:锻炼|运动))"
     r"[，,。.!！?？；;]*$"
 )
@@ -88,6 +94,7 @@ class DailyReadPlan:
 def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str | None, bool] | None:
     if health_read_cancelled(text):
         return None
+    original = re.sub(r"\s+", "", normalize_health_authorization_text(text))
     normalized = re.sub(r"\s+", "", normalize_health_authorization_text(
         active_health_read_clause(text)))
     sync_status = _SYNC_STATUS_SUFFIX_RE.search(normalized)
@@ -106,11 +113,14 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
         asks_advice = suffix is not None or (dimension == "diet" and not question.group("recall"))
         return core, (dimension,), asks_advice, False, meal, sync_status is not None
     if _SUMMARY_RE.fullmatch(core):
-        if sync_status:
+        # A summary owns multiple required reads. Do not create that plan by
+        # discarding user edits such as parenthesized exclusions or extra scope.
+        # The gateway also checks the original request independently.
+        if sync_status or normalized != original:
             return None
         return core, DAILY_SUMMARY_DIMENSIONS, suffix is not None, True, None, False
     if _COLLOQUIAL_SUMMARY_RE.fullmatch(core):
-        if sync_status:
+        if sync_status or normalized != original:
             return None
         return core, DAILY_SUMMARY_DIMENSIONS, True, True, None, False
     return None

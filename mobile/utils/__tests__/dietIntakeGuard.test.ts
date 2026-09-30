@@ -1,9 +1,28 @@
 import {
   assertDietFoodItemsAllowed,
+  isReusableDietFoodDescription,
   looksLikeDietManagementIntent,
   looksLikeHealthMetricIntent,
   looksLikeNonDietIntake,
 } from '../dietIntakeGuard';
+
+// Same cases as backend tests/test_intake_intent_classifier.py
+// (test_non_intake_history_is_not_reusable / test_real_foods_remain_reusable).
+describe('isReusableDietFoodDescription', () => {
+  it.each(['没吃', '牛肉面吗', '准备吃火锅', '下次不喝奶茶了', '早上没吃鸡蛋', '午餐吃了啥', '胃疼'])(
+    'does not replay a non-intake or symptom narrative as food: %s',
+    (description) => {
+      expect(isReusableDietFoodDescription(description)).toBe(false);
+    },
+  );
+
+  it.each(['山药片', '猪肚汤', '酸奶', '无糖咖啡', '鸡胸肉 200g', '没放盐的鸡胸肉', '不加糖的豆浆'])(
+    'keeps real food reusable: %s',
+    (description) => {
+      expect(isReusableDietFoodDescription(description)).toBe(true);
+    },
+  );
+});
 
 describe('dietIntakeGuard', () => {
   it.each([

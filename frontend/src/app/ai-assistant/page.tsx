@@ -170,6 +170,7 @@ function AIAssistantInner() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [input, setInput] = useState('');
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [consentError, setConsentError] = useState<string | null>(null);
   const checkingConsentRef = useRef(false);
   const [streaming, setStreaming] = useState(false);
@@ -652,8 +653,9 @@ function AIAssistantInner() {
     );
   };
 
-  const submitSuggestion = (text: string) => {
-    sendMessage(text);
+  const fillSuggestion = (text: string) => {
+    setInput(text);
+    composerRef.current?.focus();
   };
 
   const patchMedicationBatchMessage = (
@@ -980,7 +982,7 @@ function AIAssistantInner() {
                   <div className="mt-7 w-full">
                     <button
                       type="button"
-                      onClick={() => submitSuggestion(opener.text)}
+                      onClick={() => fillSuggestion(opener.text)}
                       className="group w-full rounded-2xl border border-[#CDE6D8] bg-[#E8F2EC] px-5 py-4 text-left transition-colors hover:border-[#1F8A5B] hover:bg-[#CDE6D8]"
                     >
                       <div className="mb-1.5 flex items-center gap-2">
@@ -997,7 +999,7 @@ function AIAssistantInner() {
                           <button
                             key={`${reply.action ?? 'text'}:${reply.text}`}
                             type="button"
-                            onClick={() => submitSuggestion(reply.text)}
+                            onClick={() => fillSuggestion(reply.text)}
                             className="rounded-full border border-[#CDE6D8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#115738] transition-colors hover:border-[#1F8A5B] hover:bg-[#E8F2EC]"
                           >
                             {reply.text}
@@ -1011,7 +1013,7 @@ function AIAssistantInner() {
                   {starterSuggestions.map(item => (
                     <button
                       key={item}
-                      onClick={() => submitSuggestion(item)}
+                      onClick={() => fillSuggestion(item)}
                       className="rounded-2xl border border-[#E7E5DE] bg-[#FFFFFF] px-4 py-3 text-left text-sm text-[#5C6660] transition-colors hover:border-[#1F8A5B] hover:bg-[#E8F2EC] hover:text-[#16201B]"
                     >
                       {item}
@@ -1088,6 +1090,7 @@ function AIAssistantInner() {
                 )}
               </button>
               <textarea
+                ref={composerRef}
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onPaste={e => {

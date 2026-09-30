@@ -34,6 +34,7 @@ import DietShareCard, {
 } from './DietShareCard';
 import {
   DietShareImageEditor,
+  type DietShareImageEditorHandle,
   type DietShareImageEditorResult,
 } from './DietShareImageEditor';
 import {
@@ -152,6 +153,7 @@ export function DietShareComposer({
   onShareTerminal,
 }: DietShareComposerProps) {
   const posterRef = useRef<View>(null);
+  const editorRef = useRef<DietShareImageEditorHandle>(null);
   const sessionGenerationRef = useRef(0);
   const phaseRef = useRef<ComposerPhase>('loading_photo');
   const captureInFlightRef = useRef<number | null>(null);
@@ -171,6 +173,8 @@ export function DietShareComposer({
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
   const [reviewDismissed, setReviewDismissed] = useState(false);
   const pendingReviewRef = useRef(false);
+  const pendingCloseRef = useRef(false);
+  const modalDismissedRef = useRef(false);
   const contentRevisionRef = useRef(0);
   const contentRevision = contentRevisionRef.current;
   const locationEditingRef = useRef(false);
@@ -240,6 +244,8 @@ export function DietShareComposer({
       closeInFlightRef.current = false;
       setReviewDismissed(false);
       pendingReviewRef.current = false;
+      pendingCloseRef.current = false;
+      modalDismissedRef.current = false;
     }
     const generation = sessionGenerationRef.current + 1;
     sessionGenerationRef.current = generation;
@@ -315,6 +321,12 @@ export function DietShareComposer({
     visible,
   ]);
 
+  const finishCloseDismissal = useCallback(() => {
+    if (!mountedRef.current || !pendingCloseRef.current || !modalDismissedRef.current) return;
+    pendingCloseRef.current = false;
+    onClose();
+  }, [onClose]);
+
   const closeComposer = useCallback(async () => {
     if (closeInFlightRef.current) return;
     closeInFlightRef.current = true;
@@ -325,8 +337,11 @@ export function DietShareComposer({
     setLocationDraft('');
     setLocationLabel('');
     await cleanupResources();
-    onClose();
-  }, [cleanupResources, onClose]);
+    // The parent conditionally unmounts us. Keep the native presenter alive
+    // until iOS has finished dismissing it, regardless of cleanup timing.
+    pendingCloseRef.current = true;
+    finishCloseDismissal();
+  }, [cleanupResources, finishCloseDismissal]);
 
   useEffect(() => subscribeAIConsentInvalidation(() => {
     void closeComposer();
@@ -377,10 +392,17 @@ export function DietShareComposer({
     setReviewDismissed(true);
   }, [cleanupResources, onAskReva]);
 
+  const finishModalDismissal = useCallback(() => {
+    if (!closeInFlightRef.current) return;
+    modalDismissedRef.current = true;
+    finishCloseDismissal();
+    finishReviewDismissal();
+  }, [finishCloseDismissal, finishReviewDismissal]);
+
   useEffect(() => {
     // RN's onDismiss is iOS-only. Other platforms navigate after the hide commit.
-    if (reviewDismissed && Platform.OS !== 'ios') finishReviewDismissal();
-  }, [finishReviewDismissal, reviewDismissed]);
+    if (reviewDismissed && Platform.OS !== 'ios') finishModalDismissal();
+  }, [finishModalDismissal, reviewDismissed]);
 
   const failRendering = useCallback(() => {
     if (!mountedRef.current || closeInFlightRef.current || phaseRef.current !== 'rendering') return;
@@ -605,9 +627,22 @@ export function DietShareComposer({
 
   return (
     <Modal visible={!reviewDismissed} animationType="slide"
-      onDismiss={finishReviewDismissal}
-      onRequestClose={() => { void closeComposer(); }}>
+      onDismiss={finishModalDismissal}
+      onRequestClose={() => {
+        if (phaseRef.current === 'editing') editorRef.current?.requestCancel();
+        else void closeComposer();
+      }}>
       <StatusBar style="dark" backgroundColor={C.paper} />
+      {phase === 'editing' && localPhotoUri ? (
+        <DietShareImageEditor
+          ref={editorRef}
+          visible
+          presentation="embedded"
+          sourceUri={localPhotoUri}
+          onComplete={completeEditing}
+          onCancel={() => { void closeComposer(); }}
+        />
+      ) : (
       <SwipeBackSurface
         testID="diet-share-composer-swipe-back"
         enabled={busyAction === null}
@@ -637,15 +672,6 @@ export function DietShareComposer({
               <ActivityIndicator color={C.green500} />
               <Text style={styles.statusText}>正在安全加载照片…</Text>
             </View>
-          ) : null}
-
-          {phase === 'editing' && localPhotoUri ? (
-            <DietShareImageEditor
-              visible
-              sourceUri={localPhotoUri}
-              onComplete={completeEditing}
-              onCancel={() => { void closeComposer(); }}
-            />
           ) : null}
 
           {phase === 'rendering' && editedResult ? (
@@ -841,6 +867,7 @@ export function DietShareComposer({
           ) : null}
         </SafeAreaView>
       </SwipeBackSurface>
+      )}
     </Modal>
   );
 }

@@ -14,6 +14,7 @@
 
 from datetime import datetime, timedelta
 from unittest.mock import patch, AsyncMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -664,3 +665,104 @@ async def test_flush_does_not_re_delay_after_morning_floor(db):
     assert result["succeeded"] >= 1
     db.refresh(log)
     assert log.status == NotificationStatus.SENT.value
+
+
+_CLOCK = "app.services.notification.push_service.get_china_now"
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def _shanghai(hour: int, minute: int) -> datetime:
+    return datetime(2026, 5, 12, hour, minute, tzinfo=_SHANGHAI)
+
+
+def _log_states(db, user_id: int) -> list[tuple]:
+    rows = (
+        db.query(NotificationLog)
+        .filter(NotificationLog.user_id == user_id)
+        .order_by(NotificationLog.id)
+        .all()
+    )
+    return [
+        (r.status, r.error_message, r.scheduled_at.strftime("%H:%M") if r.scheduled_at else None)
+        for r in rows
+    ]
+
+
+def _resting_hr_alert(user_id: int) -> dict:
+    return dict(
+        user_id=user_id,
+        notification_type="health_alert",
+        title="⚠️ 静息心率偏高",
+        content="最近静息心率高于你的基线，注意休息。",
+        severity="high",
+        data={"rule_id": "vitals.resting_hr_high"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_flush_redelayed_replay_delivers_exactly_once(db):
+    """回放再次撞上用户静默窗 → 原 delayed row 顺延, 最终恰好送达一次.
+
+    07:30 high 告警被晨间地板延迟到 09:00; 用户自定义静默 09:00-12:00,
+    09:05 flush 回放时非 critical 不穿透 → 再延迟到 12:00; 12:05 flush 送达。
+    修复前: 09:05 回放新写第二条 delayed row 并把原 row 标 failed
+    ('delayed_for_quiet_hours'), 12:05 新 row 的 24h dedup 命中这条 failed
+    原 row → 标 failed 'dedup', 零送达 (推送静默丢失)。
+    """
+    user = _make_user(db, username="flush_redelay_once")
+    _set_quiet_hours(db, user.id, start="09:00", end="12:00")
+    svc = PushService(db)
+    send_ios = AsyncMock(return_value={"success": True})
+    send_telegram = AsyncMock(return_value={"success": True})
+
+    with patch.object(PushService, "_send_ios", new=send_ios), \
+         patch.object(PushService, "_send_telegram", new=send_telegram):
+        with patch(_CLOCK, return_value=_shanghai(7, 30)):
+            queued = await svc.send_notification(**_resting_hr_alert(user.id))
+        with patch(_CLOCK, return_value=_shanghai(9, 5)):
+            morning = await svc.flush_delayed_pushes()
+        after_morning = _log_states(db, user.id)
+        sent_before_noon = send_ios.await_count
+        with patch(_CLOCK, return_value=_shanghai(12, 5)):
+            noon = await svc.flush_delayed_pushes()
+
+    # 用户可见契约: 同一条推送始终只有一行, 最终 sent, 恰好送达一次
+    assert _log_states(db, user.id) == [(NotificationStatus.SENT.value, None, "12:00")]
+    assert send_ios.await_count == 1
+    assert send_telegram.await_count == (1 if svc.telegram.configured else 0)
+    # 07:30 → 晨间地板延迟到 09:00
+    assert queued["reason"] == "delayed_for_quiet_hours"
+    # 09:05 回放撞上 09:00-12:00 → 原 row 顺延到 12:00; 不发送、不判失败、不新写 row
+    assert after_morning == [(NotificationStatus.DELAYED.value, None, "12:00")]
+    assert sent_before_noon == 0
+    assert (morning["succeeded"], morning["failed"], morning["deduped"], morning["redelayed"]) == (0, 0, 0, 1)
+    assert (noon["succeeded"], noon["failed"], noon["deduped"], noon["redelayed"]) == (1, 0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_retrigger_while_redelayed_is_deduped_and_delivers_once(db):
+    """顺延中的 delayed row 仍参与发送时去重 (夜间堆积不变量的白天版).
+
+    真实来源: Garmin 每 2h 同步 (…/11/13 点 :01) 重新评估安全规则, 同一 rule_id
+    会在 09:00-12:00 静默窗内再次触发 → 必须被顺延中的原 row dedup 掉,
+    12:05 只送达一次。
+    """
+    user = _make_user(db, username="flush_redelay_retrigger")
+    _set_quiet_hours(db, user.id, start="09:00", end="12:00")
+    svc = PushService(db)
+    send_ios = AsyncMock(return_value={"success": True})
+
+    with patch.object(PushService, "_send_ios", new=send_ios), \
+         patch.object(PushService, "_send_telegram", new=AsyncMock(return_value={"success": True})):
+        with patch(_CLOCK, return_value=_shanghai(7, 30)):
+            await svc.send_notification(**_resting_hr_alert(user.id))
+        with patch(_CLOCK, return_value=_shanghai(9, 5)):
+            await svc.flush_delayed_pushes()
+        with patch(_CLOCK, return_value=_shanghai(11, 1)):
+            retrigger = await svc.send_notification(**_resting_hr_alert(user.id))
+        with patch(_CLOCK, return_value=_shanghai(12, 5)):
+            await svc.flush_delayed_pushes()
+
+    assert _log_states(db, user.id) == [(NotificationStatus.SENT.value, None, "12:00")]
+    assert send_ios.await_count == 1
+    assert retrigger["reason"] == "dedup"

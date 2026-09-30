@@ -149,30 +149,60 @@ def _is_pure_question_item(item: str) -> bool:
     return bool(_PURE_QUESTION_TOKEN_RE.match(stripped))
 
 
+# 非摄入言语行为(提问 / 否定·漏服·计划·提醒)的 reason。命中即 kind=unknown,
+# 任何调用方都不得再用别的解析兜底把它写成记录(quick_record 旧正则即一例)。
+NON_INTAKE_REASONS = frozenset({"intake_question", "intake_reflection"})
+
+
 def classify_intake_intent(query: Any) -> IntakeIntent:
-    raw = _flatten_text(query)
+    """Classify text as an intake *record*; non-intake speech acts are unknown."""
+    return _classify(_flatten_text(query), speech_act_guards=True)
+
+
+def classify_intake_subject(query: Any) -> IntakeIntent:
+    """Classify what the text is about, even when it is not an intake record.
+
+    Blocking callers (diet write validators, vision sanitizing, domain routing)
+    use this: "没吃维生素D" is not an intake, but it is still a supplement and
+    must never become a diet record.
+    """
+    return _classify(_flatten_text(query), speech_act_guards=False)
+
+
+def _classify(raw: str, *, speech_act_guards: bool) -> IntakeIntent:
     normalized = _normalize(raw)
     if not normalized:
         return IntakeIntent("unknown", 0.0, "empty")
 
-    # 顶层提问守卫:在 diet/medication/supplement/water 分支之前。
-    # 提问(如「午餐我吃了啥？」)绝不落记录草稿。管理类(删除/恢复)不受此门——
-    # 那些是显式命令而非提问,且不产出 intake 写草稿。
-    if not _has_any(normalized, DIET_MANAGEMENT_MARKERS) and _is_intake_question(normalized):
-        return IntakeIntent("unknown", 0.3, "intake_question", raw)
+    is_management = _has_any(normalized, DIET_MANAGEMENT_MARKERS)
+    if speech_act_guards and not is_management:
+        # 顶层提问守卫:在 diet/medication/supplement/water 分支之前。
+        # 提问(如「午餐我吃了啥？」)绝不落记录草稿。管理类(删除/恢复)不受此门——
+        # 那些是显式命令而非提问,且不产出 intake 写草稿。
+        if _is_intake_question(normalized):
+            return IntakeIntent("unknown", 0.3, "intake_question", raw)
 
-    # 否定/吐槽守卫(2026-07-14 founder 截图: "下次不吃那个牛肋骨面了…我吃完
-    # 晚上就睡不着觉了" 被误判成 diet 草稿, 整句塞进 food_items)。反思("下次不
-    # 吃X了")/决心("再也不喝")/以食物为病因的症状吐槽("吃完就睡不着/拉肚子")
-    # 都不是记一餐/一次摄入 —— 与提问守卫同层, 绝不落 intake 写草稿。
-    if not _has_any(normalized, DIET_MANAGEMENT_MARKERS) and _is_intake_negation_or_complaint(normalized):
-        return IntakeIntent("unknown", 0.3, "intake_reflection", raw)
+        # 否定/吐槽守卫(2026-07-14 founder 截图: "下次不吃那个牛肋骨面了…我吃完
+        # 晚上就睡不着觉了" 被误判成 diet 草稿, 整句塞进 food_items)。反思("下次不
+        # 吃X了")/决心("再也不喝")/以食物为病因的症状吐槽("吃完就睡不着/拉肚子")
+        # 都不是记一餐/一次摄入 —— 与提问守卫同层, 绝不落 intake 写草稿。
+        if _is_intake_negation_or_complaint(normalized):
+            return IntakeIntent("unknown", 0.3, "intake_reflection", raw)
 
-    if _has_any(normalized, DIET_MANAGEMENT_MARKERS):
+    if is_management:
         return IntakeIntent("diet_management", 0.95, "diet_management", raw)
 
     if _looks_like_health_metric(normalized):
         return IntakeIntent("health_metric", 0.88, "health_metric", raw)
+
+    # 漏服/否定/计划/提醒/句末提问(2026-09-30 supplement-taken-contract follow-up):
+    # 「没吃维生素D」「今天不吃镁」「准备吃鱼油」「吃了维生素D吗」曾落成摄入草稿,
+    # 虚高补剂依从进 Twin 在服集与 DSI/DDI 推理。放在指标之后:空腹测量常注明
+    # 「没吃早饭」,指标本身仍要记录。
+    if speech_act_guards:
+        not_taken = _not_taken_reason(normalized)
+        if not_taken:
+            return IntakeIntent("unknown", 0.3, not_taken, raw)
 
     water_amount = _extract_water_amount(normalized)
     if _looks_like_water(normalized):
@@ -183,8 +213,10 @@ def classify_intake_intent(query: Any) -> IntakeIntent:
 
     if _looks_like_medication(raw, normalized):
         item = _extract_item_text(raw)
-        if _is_pure_question_item(item):
-            return IntakeIntent("unknown", 0.3, "intake_question", raw)
+        if speech_act_guards:
+            rejected = "intake_question" if _is_pure_question_item(item) else _non_intake_item_reason(item, named=True)
+            if rejected:
+                return IntakeIntent("unknown", 0.3, rejected, raw)
         slots = _extract_medication_slots(item)
         return IntakeIntent(
             "medication",
@@ -196,14 +228,20 @@ def classify_intake_intent(query: Any) -> IntakeIntent:
 
     if _looks_like_supplement(raw, normalized):
         item = _extract_item_text(raw)
-        if _is_pure_question_item(item):
-            return IntakeIntent("unknown", 0.3, "intake_question", raw)
+        if speech_act_guards:
+            rejected = "intake_question" if _is_pure_question_item(item) else _non_intake_item_reason(item, named=True)
+            if rejected:
+                return IntakeIntent("unknown", 0.3, rejected, raw)
         return IntakeIntent("supplement", 0.82, "supplement_marker", item)
 
     if _looks_like_diet(raw, normalized):
         item = _extract_food_text(raw) or _extract_item_text(raw)
-        if not item or _is_vague_item(item) or _is_pure_question_item(item):
+        if not item or _is_vague_item(item) or (speech_act_guards and _is_pure_question_item(item)):
             return IntakeIntent("unknown", 0.35, "ambiguous", raw)
+        if speech_act_guards:
+            rejected = _non_intake_item_reason(item, named=False)
+            if rejected:
+                return IntakeIntent("unknown", 0.3, rejected, raw)
         return IntakeIntent(
             "diet",
             0.82,
@@ -226,15 +264,17 @@ def looks_like_food_ui_text(value: Any) -> bool:
 
 
 def is_reusable_food_description(value: str) -> bool:
-    """Exclude symptom narratives from one-tap reuse, not from stored history.
+    """Exclude symptom and non-intake narratives from one-tap reuse, not from history.
 
     A meal plus a symptom may be a valid historical observation, but must not
-    repeat that symptom as today's food. Unknown food names remain eligible;
-    this is deliberately not a food vocabulary allowlist or a write validator.
+    repeat that symptom as today's food. Legacy parsers also stored non-intake
+    text ("没吃", "牛肉面吗"); replaying it would create a false intake. Unknown
+    food names remain eligible; this is deliberately not a food vocabulary
+    allowlist or a write validator.
     Keep the mobile stale-cache guard and its positive/negative cases aligned.
     """
     normalized = _normalize(value)
-    return bool(normalized) and not _FOOD_REUSE_SYMPTOM_RE.search(normalized)
+    return bool(normalized) and not any(p.search(normalized) for p in _REUSE_EXCLUSION_RES)
 
 
 _FOOD_REUSE_SYMPTOM_RE = re.compile(
@@ -353,6 +393,116 @@ def _is_intake_negation_or_complaint(normalized: str) -> bool:
         if not _INTAKE_LOG_VERB_RE.search(normalized):
             return True
     return False
+
+
+# ──── 非摄入言语行为守卫(2026-09-30 supplement-taken-contract follow-up) ────
+# PRECISE:标记必须紧贴摄入动词(或在句末),「吃了维生素D」「服用镁」「补剂鱼油」
+# 「午餐吃了没放盐的鸡胸肉」「吃了别嘌醇」照常记录。
+# mobile/utils/dietIntakeGuard.ts::isReusableDietFoodDescription 镜像这些正则。
+_NOT_TAKEN_VERB = r"(?:吃|喝|服|补|補|用药|用藥)"
+# 漏服 / 过去否定 / 当下否定 / 停用
+_INTAKE_NOT_TAKEN_RE = re.compile(
+    # 没吃 / 还没吃 / 没有服用 / 未服 / 没按时吃 / 维生素D还没吃
+    r"(?:没|沒|未)有?(?:按时|按時|及时|及時|准时|準時|来得及|來得及|能|法|再|怎么|怎麼)?" + _NOT_TAKEN_VERB
+    # 漏服 / 漏吃 / 漏了吃
+    + r"|漏(?:了|掉了?)?" + _NOT_TAKEN_VERB
+    # 忘了吃 / 忘记服 / 忘吃 / 忘了带
+    + r"|忘(?:了|记了?|記了?|掉了?)?(?:吃|喝|服|补|補|用药|用藥|带|帶)"
+    # 句末「鱼油忘了」;「差点忘了」是没忘
+    + r"|(?<!差点)(?<!差點)(?<!险些)(?<!險些)(?<!差一点)(?<!差一點)忘(?:了|记了?|記了?|掉了?)[。.!！~～…]*$"
+    # 今天不吃镁 / 不再服 / 不想喝 / 不用补
+    + r"|不(?:应该|應該|应|應|想|该|該|能|要|会|會|再|用|必|需要|需|打算|准备|準備|敢)?(?:吃|喝|碰|服|补|補)"
+    # 停用 / 暂停
+    + r"|停(?:掉|用|服|药|藥|吃|喝|补|補)|暂停|暫停"
+)
+# 提醒 / 计划 / 将来时间(未带 了/过/完/的 完成体)
+_INTAKE_NOT_YET_RE = re.compile(
+    # 别忘了吃 / 别再吃(排除 特别/分别/个别… 里的「别」)
+    r"(?<![特分个個区區差性类類级級识識辨告鉴鑑])[别別](?:再|忘)"
+    # 记得吃 / 提醒我吃(「我记得吃了」是回忆,放行)
+    r"|[记記]得(?:要|再|按时|按時)?(?:吃|喝|服|补|補)(?![了过過完])"
+    r"|提醒我?(?:要|按时|按時|记得|記得)?(?:吃|喝|服|补|補)"
+    # 准备吃 / 打算服 / 想喝 / 该吃了 / 得吃药 / 要吃(排除 主要/记得/觉得/难得…)
+    r"|(?:准备|準備|打算|计划|計劃|想|[将將]|[该該]|(?<![记記觉覺晓曉懂舍捨值难難])得|(?<!主)要)"
+    r"(?:再|去|先|开始|開始|按时|按時)?(?:吃|喝|服|补|補)"
+    # 待会吃 / 明天吃 / 今晚喝;「今晚吃了」「马上吃完」是已发生
+    r"|(?:待会|待會|等会|等會|等下|等一下|一会|一會|过会|過會|稍后|稍後|晚点|晚點|回头|回頭"
+    r"|马上|馬上|立刻|今晚|明天|明早|明晚|后天|後天)儿?(?:再|就|要|会|會|去|得)?"
+    r"(?:吃|喝|服|补|補)(?![了过過完的])"
+)
+# 句末是非问:「吃了维生素D吗」「今天吃鱼油了吗」「晚饭吃了牛肉面吗」
+_INTAKE_TRAILING_QUESTION_RE = re.compile(
+    _INTAKE_VERB + r".{0,24}(?:吗|嗎|么|麼|呢)[?？!！。.~～…]*$"
+)
+# 正反问 / 是否问 / 方式问:「吃没吃」「有没有吃」「要不要吃」「鱼油吃了没」「鱼油怎么吃」
+_INTAKE_ALT_QUESTION_RE = re.compile(
+    r"(吃|喝|服|补|補|用)(?:没|沒|不)\1"
+    r"|(?:有没有|有沒有|是不是|是否|要不要|该不该|該不該|能不能|可不可以|用不用|需不需要)"
+    r"(?:已经|已經|按时|按時|再)?(?:吃|喝|服|补|補|用)"
+    r"|(?:吃|喝|服|补|補|用)(?:了|过|過).{0,20}(?:没有?|沒有?)[?？!！。.~～…]*$"
+    r"|(?:怎么|怎麼|怎样|怎樣|如何|为什么|為什麼|为啥|為啥|咋|何时|何時|什么时候|什麼時候)"
+    r"(?:才能|能|要|该|該)?(?:吃|喝|服|补|補|用)"
+)
+# item 级第二层:无摄入动词的提问/否定会整句落进 item(「维生素D吗」「我停了鱼油」)。
+_ITEM_QUESTION_RE = re.compile(r"[?？]|(?:吗|嗎|么|麼|呢)$")
+# 疑问词只看具名 item 的首个分句:「记一下吃了鱼油，看看对基因有什么影响」是先记录后查询。
+_ITEM_QUESTION_WORD_RE = re.compile(r"什么|什麼|啥|多少|哪|怎么|怎麼|如何|为什么|為什麼")
+# 补剂/药名里不会出现这些字(已核对 drug_lexicon 全部别名);食物描述里会(「没放盐」),故只用于具名 item。
+_NAME_NOT_TAKEN_RE = re.compile(r"没|沒|未|漏|停")
+_CLAUSE_BREAK_RE = re.compile(r"(?<=[^\x00-\x7f])\s+|\s+(?=[^\x00-\x7f])")
+
+
+def _not_taken_reason(normalized: str) -> str | None:
+    if _INTAKE_TRAILING_QUESTION_RE.search(normalized) or _INTAKE_ALT_QUESTION_RE.search(normalized):
+        return "intake_question"
+    if _INTAKE_NOT_TAKEN_RE.search(normalized) or _INTAKE_NOT_YET_RE.search(normalized):
+        return "intake_reflection"
+    return None
+
+
+def non_intake_reason(text: str, *, named: bool = False) -> str | None:
+    """Speech-act verdict alone, without domain or health_metric precedence.
+
+    For parsers that fall back to their own regexes after the classifier
+    ("午餐没吃，血糖5.6" classifies as health_metric, yet is no meal record).
+    """
+    normalized = _normalize(text)
+    if _is_intake_question(normalized):
+        return "intake_question"
+    if _is_intake_negation_or_complaint(normalized):
+        return "intake_reflection"
+    return _not_taken_reason(normalized) or _non_intake_item_reason(text, named=named)
+
+
+def _non_intake_item_reason(item: str, *, named: bool) -> str | None:
+    if _ITEM_QUESTION_RE.search(_normalize(item)):
+        return "intake_question"
+    if not named:
+        return None
+    if _NAME_NOT_TAKEN_RE.search(_normalize(item)):
+        return "intake_reflection"
+    # 分句边界(标点或 item 抽取换成的空格);只在贴着中文的空格处切,不切开 "fish oil"。
+    first_clause = _CLAUSE_BREAK_RE.split(re.sub(r"[，,;；。]", " ", item).strip(), maxsplit=1)[0]
+    if _ITEM_QUESTION_RE.search(_normalize(first_clause)) or _ITEM_QUESTION_WORD_RE.search(_normalize(first_clause)):
+        return "intake_question"
+    return None
+
+
+# 一键复用排除集:症状吐槽 + 全部非摄入言语行为。mobile 过期缓存守卫编译同一组
+# 源串(test_reuse_exclusions_mirror_mobile_guard 逐条比对)。
+_REUSE_EXCLUSION_RES = (
+    _FOOD_REUSE_SYMPTOM_RE,
+    _INTAKE_QUESTION_WORD_RE,
+    _INTAKE_QUESTION_MARK_RE,
+    _INTAKE_YESNO_PARTICLE_RE,
+    _INTAKE_NEGATION_RE,
+    _INTAKE_TRAILING_QUESTION_RE,
+    _INTAKE_ALT_QUESTION_RE,
+    _INTAKE_NOT_TAKEN_RE,
+    _INTAKE_NOT_YET_RE,
+    _ITEM_QUESTION_RE,
+    _ITEM_QUESTION_WORD_RE,
+)
 
 
 def _looks_like_diet(raw: str, normalized: str) -> bool:

@@ -64,7 +64,8 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
     if not group:
         return {"admin_summary": "未找到家庭组", "member_reports": []}
 
-    members = db.query(FamilyMember).filter(FamilyMember.family_group_id == group.id).all()
+    from app.services.family_access import visible_family_members
+    members = visible_family_members(db, group, owner_user_id)
     today = date.today()
 
     member_reports = []

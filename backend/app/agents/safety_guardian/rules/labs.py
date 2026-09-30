@@ -9,32 +9,22 @@ Twin.labs.flagged_abnormal 已经是收集到的异常项列表。这一层做�
 from typing import Any, Dict, List, Optional
 
 from app.agents.safety_guardian.engine import register
+from app.agents.safety_guardian.lab_pick import as_float as _as_float
+from app.agents.safety_guardian.lab_pick import find_all, is_standard_hba1c, pick_worst
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.twin.schema import HealthTwin
 
 
 # ─────────────────────── 通用工具 ─────────────────────────
+# 取值一律走 lab_pick.pick_worst(顺序无关、最新检查日、取最差值);首个匹配会被影子项遮蔽。
 
 
 def _find_item(
     abnormals: List[Dict[str, Any]], name_keywords: List[str]
 ) -> Optional[Dict[str, Any]]:
-    """在异常项列表里按中文/英文关键字查找匹配项。"""
-    for item in abnormals:
-        name = (item.get("item_name") or "").lower()
-        for kw in name_keywords:
-            if kw.lower() in name:
-                return item
-    return None
-
-
-def _as_float(v: Any) -> Optional[float]:
-    if v is None:
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
+    """首个关键字匹配项 —— 仅用于不触发告警的引用字段。"""
+    matches = find_all(abnormals, name_keywords)
+    return matches[0] if matches else None
 
 
 def _uric_acid_umol(raw: float) -> float:
@@ -47,33 +37,8 @@ def _uric_acid_umol(raw: float) -> float:
 
 
 def _find_standard_hba1c(abnormals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """只匹配标准糖化 (NGSP A1c, code=glucose_hba1c), 排除总糖化 HbA1。
-
-    历史误判: 子串匹配 ``"糖化血红蛋白" in name`` 会把「糖化血红蛋白A1」(总糖化 HbA1,
-    参考 6.3–9.0%, 与标准 A1c 是不同指标) 也吞进来 —— 它的正常值 7.0% 落进 ≥6.5%
-    的糖尿病阈值, 产生假 CRITICAL 告警。这里改用 biomarker 归一化层的 ``resolve_code``,
-    它把「糖化血红蛋白A1c」→ glucose_hba1c、「糖化血红蛋白A1」→ glucose_hba1_total
-    精确分流 (见 app/biomarkers/definitions.py)。
-
-    安全兜底 (不让本规则单点依赖 resolve_code, 避免漏报真糖尿病):
-      - resolve_code 明确判成 glucose_hba1_total → 是总糖化, 直接跳过。
-      - resolve_code 没认成糖化 (例如英文 "Hemoglobin A1c" 被最长子串规则判成 hemoglobin)
-        时, 用关键字「a1c / hba1c」补救识别标准 A1c —— 这两个标记里都含 "c", 天然排除了
-        总糖化的「A1」「HbA1」形态。
-    """
-    from app.biomarkers.definitions import resolve_code
-
-    for item in abnormals:
-        name = item.get("item_name") or ""
-        code = resolve_code(name)
-        if code == "glucose_hba1c":
-            return item
-        if code == "glucose_hba1_total":
-            continue  # 总糖化 HbA1, 明确排除
-        low = name.lower()
-        if "a1c" in low or "hba1c" in low:
-            return item
-    return None
+    """标准糖化 A1c(排除总糖化 HbA1, 见 lab_pick.is_standard_hba1c), 取最新检查日最高值。"""
+    return pick_worst([it for it in abnormals if is_standard_hba1c(it.get("item_name") or "")])
 
 
 # ─────────────────────── 肝酶三联 ─────────────────────────
@@ -94,9 +59,9 @@ def liver_enzyme_pattern(twin: HealthTwin) -> Optional[Alert]:
     if not abns:
         return None
 
-    alt = _find_item(abns, ["谷丙转氨酶", "ALT", "丙氨酸氨基转移酶"])
-    ast = _find_item(abns, ["谷草转氨酶", "AST", "天冬氨酸氨基转移酶"])
-    ggt = _find_item(abns, ["谷氨酰转肽酶", "GGT", "γ-谷氨酰转移酶", "γ-GT"])
+    alt = pick_worst(find_all(abns, ["谷丙转氨酶", "ALT", "丙氨酸氨基转移酶"]))
+    ast = pick_worst(find_all(abns, ["谷草转氨酶", "AST", "天冬氨酸氨基转移酶"]))
+    ggt = pick_worst(find_all(abns, ["谷氨酰转肽酶", "GGT", "γ-谷氨酰转移酶", "γ-GT"]))
 
     # 至少两项升高才触发
     hits = [x for x in (alt, ast, ggt) if x is not None]
@@ -165,7 +130,7 @@ def liver_enzyme_pattern(twin: HealthTwin) -> Optional[Alert]:
 def ldl_high(twin: HealthTwin) -> Optional[Alert]:
     """LDL 偏高 —— 从 flagged_abnormal 或 labs 顶层字段中取。"""
     abns = twin.labs.flagged_abnormal or []
-    ldl_item = _find_item(abns, ["LDL", "低密度脂蛋白"])
+    ldl_item = pick_worst(find_all(abns, ["LDL", "低密度脂蛋白"]))
     ldl_val = _as_float(ldl_item.get("value")) if ldl_item else twin.labs.ldl
 
     if ldl_val is None:
@@ -245,12 +210,22 @@ def hba1c_diabetes_range(twin: HealthTwin) -> Optional[Alert]:
 
 @register
 def kidney_function_decline(twin: HealthTwin) -> Optional[Alert]:
-    """eGFR 或肌酐提示肾功能下降。"""
+    """eGFR 或肌酐提示肾功能下降。
+
+    取值: 最新检查日 flagged eGFR 的最低值, 与 canonical twin.labs.egfr(最新一次 eGFR,
+    不论是否标异常)取更低者 —— flagged 缺失/非数值/被截断, 或实验室没标异常时仍能告警。
+    """
     abns = twin.labs.flagged_abnormal or []
-    egfr_item = _find_item(abns, ["eGFR", "肾小球滤过率"])
+    egfr_item = pick_worst(find_all(abns, ["eGFR", "肾小球滤过率"]), severity=lambda v: -v)
     creat_item = _find_item(abns, ["肌酐", "Cr", "Creatinine"])
 
-    egfr = _as_float(egfr_item.get("value")) if egfr_item else None
+    candidates = [
+        v for v in (
+            _as_float(egfr_item.get("value")) if egfr_item else None,
+            _as_float(twin.labs.egfr),
+        ) if v is not None
+    ]
+    egfr = min(candidates) if candidates else None
     creat = _as_float(creat_item.get("value")) if creat_item else None
 
     if egfr is not None and egfr < 60:
@@ -296,8 +271,8 @@ def wbc_pattern_lymphocytosis(twin: HealthTwin) -> Optional[Alert]:
     常见于病毒感染后恢复期、慢性炎症或血液系统问题。
     """
     abns = twin.labs.flagged_abnormal or []
-    lymph = _find_item(abns, ["淋巴细胞比例", "淋巴细胞百分"])
-    neut = _find_item(abns, ["中性粒细胞比例", "中性粒细胞百分"])
+    lymph = pick_worst(find_all(abns, ["淋巴细胞比例", "淋巴细胞百分"]))
+    neut = pick_worst(find_all(abns, ["中性粒细胞比例", "中性粒细胞百分"]), severity=lambda v: -v)
     if not lymph or not neut:
         return None
 
@@ -414,7 +389,7 @@ def uric_acid_high(twin: HealthTwin) -> Optional[Alert]:
     R4:行动为生活方式 + 「降尿酸治疗由医生决定」,不出药名/剂量、不下痛风诊断。
     """
     abns = twin.labs.flagged_abnormal or []
-    ua_item = _find_item(abns, ["尿酸", "uric"])
+    ua_item = pick_worst(find_all(abns, ["尿酸", "uric"]), severity=_uric_acid_umol)
     ua_raw = _as_float(ua_item.get("value")) if ua_item else _as_float(twin.labs.uric_acid)
     if ua_raw is None or ua_raw <= 0:
         return None

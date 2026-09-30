@@ -7,8 +7,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.rate_limit import limiter
 
 from app.database import get_db
 from app.models.user import User
@@ -26,7 +25,6 @@ from app.services.ai_consent import ai_user_scope, require_ai_consent
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["speech"])
 
-limiter = Limiter(key_func=get_remote_address)
 
 
 def _bearer_token(authorization: str | None) -> str | None:

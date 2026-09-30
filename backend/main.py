@@ -8,8 +8,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.middleware import SlowAPIMiddleware
+from app.rate_limit import limiter
 from slowapi.errors import RateLimitExceeded
 from app.database import engine, Base
 from app.api.main import api_router
@@ -65,11 +66,6 @@ if not _IS_PRODUCTION and os.getenv("SKIP_DB_INIT") != "1":
     Base.metadata.create_all(bind=engine)
 
 # 配置请求频率限制器（使用 Redis 存储，支持多实例部署）
-limiter = Limiter(
-    key_func=get_remote_address,
-    storage_uri=settings.redis_url,
-    default_limits=["200/minute"],
-)
 
 app = FastAPI(
     title="健康管理系统 API",
@@ -131,6 +127,7 @@ app = FastAPI(
 
 # 将限流器添加到应用状态，供路由使用
 app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # 启动后台同步调度器（每天08:01北京时间同步一次，避免频繁登录导致账户锁定）
@@ -445,6 +442,7 @@ def _get_celery_status_cached() -> str:
 
 @app.get("/health", tags=["系统"])
 @app.get("/api/v1/health", tags=["系统"])
+@limiter.exempt
 def health_check():
     """健康检查 - 用于监控和负载均衡"""
     from app.utils.redis_cache import get_redis_client

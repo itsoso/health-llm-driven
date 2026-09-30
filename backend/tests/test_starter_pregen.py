@@ -547,12 +547,14 @@ def test_withings_sync_write_drops_pregen_via_belt(
 ):
     """Withings passive weight/BP sync — the one passive-device class C1 missed.
 
-    The endpoint needs OAuth-token'd credentials + live Withings HTTP, so we stub the
-    adapter (a fake client) and drive the real /sync endpoint. The belt is guarded on
-    events_created > 0, so a non-empty parse must reach invalidate_twin.
+    The endpoint needs OAuth-token'd credentials + Withings HTTP, so we drive the real
+    /sync endpoint and adapter against an in-process fake Withings API (no network).
+    The stored access token is expired, so the sync also goes through token refresh.
+    The belt is guarded on events_created > 0, so a non-empty parse must reach
+    invalidate_twin.
     """
-    from app.api import withings as withings_api
     from app.models.device_credential import DeviceCredential
+    from tests.withings_fake import FakeWithings, route_adapter_http_to
 
     user, headers = auth_user_and_headers
     cred = DeviceCredential(
@@ -562,20 +564,13 @@ def test_withings_sync_write_drops_pregen_via_belt(
     db.add(cred)
     db.commit()
 
-    class _FakeWithingsAdapter:
-        def __init__(self, **kwargs):
-            # Match the credential token so the endpoint's token-refresh branch skips.
-            self.access_token = kwargs.get("access_token")
-            self._refresh_token = kwargs.get("refresh_token")
-
-        async def get_measures_by_timestamp(self, start, end):
-            return {"measuregrps": []}  # opaque; parse (below) yields the records
-
-        @staticmethod
-        def parse_webhook_measures(measures):
-            return [{"weight": 71.5}, {"systolic": 120, "diastolic": 80}]
-
-    monkeypatch.setattr(withings_api, "WithingsHealthAdapter", _FakeWithingsAdapter)
+    withings = FakeWithings(refresh_token="rt-test", measure_groups=[
+        {"date": 1700000000, "category": 1, "measures": [{"type": 1, "value": 715, "unit": -1}]},
+        {"date": 1700000600, "category": 1, "measures": [
+            {"type": 10, "value": 120, "unit": 0}, {"type": 9, "value": 80, "unit": 0},
+        ]},
+    ])
+    route_adapter_http_to(monkeypatch, withings)
 
     _store_fresh(db, user.id, "分析我最近的代谢健康")
     calls = _wire_belt_spy(monkeypatch)
@@ -583,6 +578,7 @@ def test_withings_sync_write_drops_pregen_via_belt(
     resp = client.post("/api/v1/devices/withings/sync?days=7", headers=headers)
     assert resp.status_code == 200, resp.text
     assert resp.json()["events_created"] == 2
+    assert withings.refresh_count == 1
     assert user.id in calls, "withings sync write did not reach invalidate_twin"
     assert starter_pregen.read_pregen(user.id, "分析我最近的代谢健康") is None
 

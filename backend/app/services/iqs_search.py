@@ -160,7 +160,10 @@ async def fetch_realtime_evidence(
             _raw_search(query, max_results, time_range), timeout=timeout_s
         )
     except asyncio.TimeoutError:
-        logger.warning(f"[iqs] 检索超时 {timeout_s}s, 降级无证据: {query[:40]}")
+        # AGENTS.md §3/§5: query 可能含健康内容, 日志只记非内容字段。
+        logger.warning(
+            f"[iqs] 检索超时 {timeout_s}s, 降级无证据: reason=timeout query_len={len(query)}"
+        )
         if raise_on_unavailable:
             raise RealtimeSearchUnavailable("timeout") from None
         return ""
@@ -171,5 +174,5 @@ async def fetch_realtime_evidence(
         return ""
     if not items:
         return ""
-    logger.info(f"[iqs] grounding 命中 {len(items)} 条: {query[:40]}")
+    logger.info(f"[iqs] grounding 命中 hits={len(items)} query_len={len(query)}")
     return _format_block(query, items)

@@ -1,5 +1,6 @@
 """推送服务主类 - 统一管理各渠道推送"""
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Literal
 from sqlalchemy import func
@@ -62,6 +63,40 @@ CRITICAL_DEDUP_WINDOW_HOURS = 3
 
 def _severity_rank(s: Optional[str]) -> int:
     return _SEVERITY_ORDER.get((s or "info").lower(), 0)
+
+
+# health_alert 缺/错 severity 时的 fail-open 档位 (2026-09-30)。
+# 背景: 缺省 "info" < 默认阈值 "warning" → garmin_sync 内联 Safety Guardian 推送与
+# anomaly send_alerts 2026-05-01~09-30 全部被静默丢弃。取 "warning" 而非 fail-closed /
+# "critical": 默认阈值用户一定收到; 非 critical 故仍守静默时段、09:00 地板与 24h 去重,
+# 不因未知档位把人半夜吵醒。仅"只收 critical"用户会过滤掉 (尊重其显式偏好)。
+# 真正防线是 tests/test_health_alert_severity_guard.py 的静态扫描; 这里是运行时兜底 + ERROR。
+_HEALTH_ALERT_FALLBACK_SEVERITY = "warning"
+_SEVERITY_TOKEN_RE = re.compile(r"[A-Za-z_ -]{1,16}")
+
+
+def _resolve_severity(
+    notification_type: str, severity: Any, *, user_id: int, rule_id: Optional[str]
+) -> str:
+    """Normalize the caller's severity; a missing/unknown health_alert tier is loud, never silent."""
+    if isinstance(severity, str) and severity.strip().lower() in _SEVERITY_ORDER:
+        return severity.strip().lower()
+    # 只记像档位词的原值, 否则只记类型+长度: 误传文案/alert 对象会把健康载荷带进日志。
+    if isinstance(severity, str) and _SEVERITY_TOKEN_RE.fullmatch(severity):
+        raw = severity
+    else:
+        raw = f"{type(severity).__name__}(len={len(severity)})" if isinstance(severity, str) else type(severity).__name__
+    if notification_type == NotificationType.HEALTH_ALERT.value:
+        logger.error(
+            "[push] health_alert severity 缺失/非法 (%r), fail-open 按 %s 投递: user=%s rule_id=%s",
+            raw, _HEALTH_ALERT_FALLBACK_SEVERITY, user_id, rule_id,
+        )
+        return _HEALTH_ALERT_FALLBACK_SEVERITY
+    if severity is not None:
+        logger.warning(
+            "[push] 未知 severity=%r, 按 info 处理: user=%s type=%s", raw, user_id, notification_type
+        )
+    return "info"
 
 
 def resolve_quiet_hours_policy(
@@ -396,7 +431,7 @@ class PushService:
         data: Optional[Dict[str, Any]] = None,
         channels: Optional[List[str]] = None,
         respect_quiet_hours: bool = True,
-        severity: str = "info",
+        severity: Optional[str] = None,
         dedup_window_hours: int = 24,
         quiet_hours_policy: Optional[QuietHoursPolicy] = None,
         log_delivery: bool = True,
@@ -416,6 +451,8 @@ class PushService:
             severity: 严重程度 ("info"|"low"|"warning"|"medium"|"high"|"critical")；
                       "critical" 穿透免打扰时段立即推送 (resolve_quiet_hours_policy, 2026-05-30).
                       < 用户 alert_severity_threshold 的 health_alert 也会被过滤 (H1-B).
+                      health_alert 必须显式传 (静态守卫强制); 缺失/非法 → ERROR 日志 +
+                      按 _HEALTH_ALERT_FALLBACK_SEVERITY 投递。其他类型缺省按 "info"。
             dedup_window_hours: 去重窗口（小时）。
                                 有 rule_id 时按 (user_id, notification_type, rule_id) 去重;
                                 否则按 (user_id, notification_type, title) 去重.
@@ -430,12 +467,13 @@ class PushService:
                                 故行为零变化; 若将来有调用方真需要长抑制的 critical,
                                 得在这里给它开显式豁免, 别默默依赖 min()。
             log_delivery: 是否新写 NotificationLog. flush delayed push 时为 False,
-                          由原 delayed row 承接 sent/failed 状态, 避免重复展示。
+                          由原 delayed row 承接 sent/failed/再延迟 状态, 避免重复展示。
 
         Returns:
             发送结果 {"success": bool, "channels": {...}}
         """
         rule_id = (data or {}).get("rule_id") if data else None
+        severity = _resolve_severity(notification_type, severity, user_id=user_id, rule_id=rule_id)
         # critical 可穿透普通静默 (见 resolve_quiet_hours_policy docstring);
         # 09:00 前的晨间睡眠地板优先级更高。
         effective_quiet_policy: QuietHoursPolicy = resolve_quiet_hours_policy(
@@ -511,6 +549,7 @@ class PushService:
             title=title,
             content=content,
             data=data,
+            severity=severity,
         )
         if privacy_redacted:
             data = dict(data or {})
@@ -559,15 +598,18 @@ class PushService:
                     "reason": "dropped_for_quiet_hours",
                 }
             scheduled_at = self.next_quiet_hours_end(user_id)
-            self._log_notification_delayed(
-                user_id=user_id,
-                notification_type=notification_type,
-                title=title,
-                content=content,
-                data=data,
-                severity=severity,
-                scheduled_at=scheduled_at,
-            )
+            # log_delivery=False (flush 回放) 由原 delayed row 顺延 scheduled_at, 不新写第二条:
+            # 否则原 row 被标 failed, 新 row 到点时的 24h dedup 命中它 → 推送静默丢失。
+            if log_delivery:
+                self._log_notification_delayed(
+                    user_id=user_id,
+                    notification_type=notification_type,
+                    title=title,
+                    content=content,
+                    data=data,
+                    severity=severity,
+                    scheduled_at=scheduled_at,
+                )
             logger.info(
                 f"[push] 用户 {user_id} 静默时段命中, severity={severity}, "
                 f"延迟到 {scheduled_at.isoformat()} 再推"
@@ -615,7 +657,7 @@ class PushService:
                     )
                 elif channel == "telegram":
                     result = await self._send_telegram(
-                        user_id, notification_type, title, content, data
+                        user_id, notification_type, title, content, data, severity
                     )
                 else:
                     result = {"success": False, "error": f"不支持的渠道: {channel}"}
@@ -782,14 +824,18 @@ class PushService:
         notification_type: str,
         title: str,
         content: str,
-        data: Optional[Dict[str, Any]]
+        data: Optional[Dict[str, Any]],
+        severity: str = "info",
     ) -> Dict[str, Any]:
         """发送 Telegram 推送（Agent Native 告警通道）"""
-        severity = (data or {}).get("severity", "info")
+        from .telegram_push import escape_markdown
+
+        # data 显式标注优先(anomaly / delayed 回放); 缺省回落推送档位 —— 否则只传
+        # severity 参数的 Safety Guardian HIGH/CRITICAL 会被渲染成 info
         return await self.telegram.send_health_alert(
             title=title,
-            message=content,
-            severity=severity,
+            message=escape_markdown(content),  # 推送正文是纯文本
+            severity=(data or {}).get("severity") or severity,
         )
 
     def _get_wechat_template(
@@ -905,9 +951,11 @@ class PushService:
         sent_at 留空, 等真正 fire 时由 _log_notification_multi 盖.
         action_card.push_sent_at 也等真正 fire 时盖, 这里不 stamp.
         """
-        # data 里塞一份 severity, flush 时回放需要
+        # data 里塞一份 severity, flush 时回放需要。必须覆盖而非 setdefault:
+        # 调用方 data 里自带的 severity 标签可能与实际门控档位不同 (如 "info"),
+        # 回放时会被阈值静默丢掉 —— 回放档位必须等于当初放行的档位。
         data_with_meta = dict(data or {})
-        data_with_meta.setdefault("severity", severity)
+        data_with_meta["severity"] = severity
 
         log = NotificationLog(
             user_id=user_id,
@@ -925,9 +973,11 @@ class PushService:
     async def flush_delayed_pushes(self, batch_limit: int = 100) -> Dict[str, int]:
         """
         Celery 任务调用: 取所有 status='delayed' 且 scheduled_at <= now 的 log,
-        重新走 send_notification (但 respect_quiet_hours=False, 避免再次延迟).
+        重新走 send_notification (respect_quiet_hours=False). critical 不再延迟;
+        非 critical 若仍在用户静默窗内 (如自定义 09:00-12:00) 会被再延迟 →
+        原 row 保持 delayed 并顺延 scheduled_at, 不新写 row, 到点恰好发一次。
 
-        返回: {"flushed": N, "succeeded": K, "failed": M}
+        返回: {"flushed": N, "succeeded": K, "failed": M, "deduped": D, "redelayed": R}
         """
         now = get_china_now()
         if _is_before_morning_floor(now):
@@ -970,9 +1020,11 @@ class PushService:
         succeeded = 0
         failed = 0
         deduped = 0
+        redelayed = 0
         for log in delayed_logs:
             flushed += 1
-            severity = (log.data or {}).get("severity", "info")
+            # 缺失时传 None 交给 _resolve_severity: health_alert 旧行不能被当 "info" 静默丢掉。
+            severity = (log.data or {}).get("severity")
             try:
                 existing = self._find_dedup_log(
                     user_id=log.user_id,
@@ -1003,7 +1055,7 @@ class PushService:
                     title=log.title,
                     content=log.content,
                     data=log.data,
-                    respect_quiet_hours=False,  # flush 时不再二次延迟
+                    respect_quiet_hours=False,  # critical 不再二次延迟; 非 critical 仍守用户静默窗
                     severity=severity,
                     dedup_window_hours=0,  # flush 跳过 dedup, 因为这些是已经决定要发的
                     log_delivery=False,
@@ -1013,6 +1065,16 @@ class PushService:
                     log.status = NotificationStatus.SENT.value
                     log.sent_at = now
                     succeeded += 1
+                elif result.get("reason") == "delayed_for_quiet_hours":
+                    # 顺延期间 row 仍是 delayed + 未来 scheduled_at → 照常参与发送时去重 (防堆积)。
+                    log.status = NotificationStatus.DELAYED.value
+                    log.scheduled_at = datetime.fromisoformat(result["scheduled_at"])
+                    redelayed += 1
+                    logger.info(
+                        "[flush_delayed_pushes] log_id=%s 回放仍在静默窗, 顺延到 %s",
+                        log.id,
+                        result["scheduled_at"],
+                    )
                 else:
                     log.status = NotificationStatus.FAILED.value
                     log.error_message = result.get("reason", "flush 失败")
@@ -1034,9 +1096,15 @@ class PushService:
         if flushed > 0:
             logger.info(
                 f"[flush_delayed_pushes] flushed={flushed} ok={succeeded} "
-                f"fail={failed} deduped={deduped}"
+                f"fail={failed} deduped={deduped} redelayed={redelayed}"
             )
-        return {"flushed": flushed, "succeeded": succeeded, "failed": failed, "deduped": deduped}
+        return {
+            "flushed": flushed,
+            "succeeded": succeeded,
+            "failed": failed,
+            "deduped": deduped,
+            "redelayed": redelayed,
+        }
 
     def get_notification_logs(
         self,

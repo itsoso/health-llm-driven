@@ -23,6 +23,18 @@
 
 ### 8.2 线上配置管理
 
+注册隔离修复的独立 operator 入口为 canonical `deploy.sh --security-hardening
+--sha <final-sha>`，只在该版本 backend 与前端制品均已成功发布后执行。
+入口、配置备份、互斥与实际隔离验收约束见
+[注册隔离修复发布](../security/2026-09-29-registration-hardening-release.md)。
+它不授予自主注册权限，不替代后端或 Web 成功回执，不扩展云端 SSH RPC。
+
+固定版本在账户创建前中断时，仅可按
+[主机加固前置失败恢复](../security/2026-09-30-host-preflight-recovery.md) 使用
+新受审发布器的 `--resume-preflight`。原失败/备份/租约不删除、不重建；
+独立恢复成功及外部回读不能替代原后端/Web 发布凭据。
+
+
 #### 已部署同树前端的受控重建
 
 用户明确授权后，可从当前 main、真实精确 CI 绿色、独立 G4 GO 的 canonical
@@ -57,6 +69,36 @@ npm 全局/用户配置禁用，依赖生命周期脚本禁用。仅允许固定
 PID 与 restart count、健康环境文件及授权文件摘要未变。只有这些验证与
 lease 释放均完成才记独立 `FRONTEND_SUCCEEDED`；不改 DB/schema，不重启
 后端，不声称全端发布已完成。
+
+锁父目录同步使用 `_sync_business_lease_parent()`：先验证固定 root-owned
+`/var/lock → /run/lock` 与目标 1777 元数据，再以 `O_NOFOLLOW` 打开真实目录，
+前后核对同一 inode 并 fsync。通用目录同步仍拒绝符号链接；不接受任意解析目标。
+
+此 operator 的 `--finalize-verified` 仅收尾受审旧实现中已切换、已验证后发生的
+锁父目录同步失败。先从新 current-main、精确绿色 CI、独立 G4 GO 的 canonical
+staging 读取证据，再提交同一 `--evidence-sha256` 执行；`--production-sha` 保持
+实际已成功部署的旧 revision，`--operation-id` 保持原操作。它不构建、不切换
+制品、不重启服务、不改后端成功记录，也不恢复已删除的 lease。
+
+必须证明原 `verified`/`failed`/安装记录、受审原实现与保留旧制品一致，实际
+前端完整摘要仍匹配原验证值，内部及公网页面通过，后端进程、配置、生产 SHA
+保持原快照。已回收的 systemd unit 只能结合该实现中 `verified` 写入必然晚于
+成功 wait 和空 cgroup 的证据、当前精确终态及无残留进程共同验证；缺失 unit
+自身不是成功证据。持原 launcher 锁及存在时的原 build 锁；不存在的 build 锁
+不得创建，执行期间须持续证明不存在。其他未完成操作一律阻断。
+
+原失败与验证记录保持原样，独立 `frontend-finalizations/<operation-id>`
+持久化 intent 与带恢复来源的终态。部分 intent、证据变化或未知库存阻断后续
+发布，不能重跑或换 ID。后续历史检查只验证持久证据，不把以后新的生产版本
+与旧现场快照比较。完成该收尾不代表主机加固或 OTA 成功；后续发布继续使用
+完整的同 revision 合同，不借此放宽 publisher/production 绑定。
+
+仅作为证据读取的旧 `previous-*` 归档可能保留历史组写普通文件及 npm 内部
+硬链接。归档验证须自行核对固定路径、实际 root-owned 0700 审计祖先及前后
+身份；目录仍执行严格检查。普通文件必须 root:root，拒绝世界可写、特殊权限
+和特殊文件。硬链接的全部别名必须位于同一归档树内，数量等于 inode 的
+`st_nlink`，身份与内容一致，并在遍历后复核。原权限和 inode 参与证据摘要，
+不得通过 chmod、复制或删除掩盖原现场。此例外不适用于在线制品、代码或回执。
 
 此 operator 的 `--retire-failed` 仅在用户明确授权后关闭已知 npm 配置启动
 失败：完整历史 publisher 实现摘要、精确三行错误、四文件失败审计共同证明
@@ -106,8 +148,55 @@ lease 不存在；普通 deploy.sh 不持有 launcher flock，必须由同一 mk
 build/native 标记仍防止跨入口重放。锁冲突、授权过期、未知结果或生产漂移即停止。
 原始后端成功审计不改，native-only workspace 绝不标成 backend SUCCEEDED。
 该 workspace 出现 vendor intent 后仍需人工核对精确 EAS/ASC 终态并走独立受审的
-后续收尾；当前 bootstrap 会拒绝未知 native-only 库存，不得删除绑定以强行轮换。
+后续收尾；仅下述固定历史收尾可解除对应阻断，未知 native-only 库存仍拒绝，不得删除绑定以强行轮换。
 上传完成不等于 Apple processing、测试可用或正式 App Review 完成。
+
+#### 固定历史 native-only 收尾
+
+`native_release_retirement.py` 只处理源码固定的 `cad1fd1d33621532e587b265e79f737dfb06d1fe`、
+GitHub run 36111598240 attempt 2 及指定 build/submission。受审 canonical root staging
+以系统 Python `-I -S -B` 执行，先 inspect，再传相同 `--evidence-sha256` 执行；GitHub
+只读凭据只经 stdin JSON 输入。旧 workflow、job、完整日志摘要、原始库存/锁 inode、
+撤权和无残留进程均须匹配。实时生产 SHA 与旧 native binding 的历史 SHA 分开证明，
+两者不得混写。旧尝试未到 vendor write 也必须有精确步骤证据。
+
+独立 `native-only-closures/<old-sha>` 先持久化 intent，再保存
+`CLOSED_NATIVE_ONLY_VENDOR_UPLOAD` 和随机私密回执；原 workspace、消费记录、锁
+和授权不改。仅证明上传完成，不证明 Apple processing、TestFlight 可用或商店审核。
+轮换通过既有 `--recovery-receipt-stdin` 消费回执，禁止把回执放 argv/日志。执行中断、
+摘要变化或丢失回执均阻断，不自动重跑、不伪造 backend SUCCEEDED。历史校验仍保留
+当时生产证明，但不要求未来生产永远停留在该 revision。
+
+#### 受审 OTA 发布与未知结果恢复
+
+`.github/workflows/trusted-ota.yml` 为生产 iOS OTA 唯一执行入口；本机
+`mobile-ota.sh` 与 `mobile-ota-rollback.sh` 固定退出 78，不读取凭据或执行仓库 helper。
+先 `target=validate`，再 `target=publish`，绑定同一当前 main 精确绿色 SHA。新的托管
+VM 从固定 GitHub canonical source 安装锁定工具链，凭据仅在只读源码/CI 闸后暴露。
+信任前提与 backend 相同，不声称防御 GitHub/runner root/供应商控制面失陷。
+
+仅允许相对固定原生 build 的已知 JS/TS/图片变动。实际 production channel、完整
+runtime 原生 build cohort 的 fingerprint、远端 production 环境变量都须匹配；
+未知路径、缺失 fingerprint、超过有界分页、分流 channel、未受审环境输入即阻断。
+只导出一次 iOS 制品，SHA256 绑定实际 bundle 和全部 asset 字节，不凭 CLI 成功判断上线。
+
+服务器在 launcher 与原 build 双锁内验证同 SHA 后端 SUCCEEDED、真实生产健康和 CI，
+持久化单次 `ota/<sha>` intent 后领取既有 business lease。只有成功 `claim-ota` 才允许
+一次 vendor update。发布前后重验 channel/环境/制品，finish 通过固定 Expo endpoint
+的 [protocol 1 multipart manifest](https://docs.expo.dev/technical-specs/expo-updates-1/)
+独立核对 update ID、runtime、project、bundle 和 asset hashes。请求禁用可变代理/CA/重定向。
+
+完成前把 lease 原四文件复制并 fsync 到持久审计，再在 `/var/lock` 同文件系统内将原
+lease 改名为带 SHA 的退休目录，核对原 inode；不跨文件系统 rename。终态绑定 intent
+和 verified receipt 摘要。历史完成证明依赖持久副本，不依赖重启后可能消失的 `/run`。
+所有未完成 OTA 阻断后续发布和授权轮换，不能改 SHA 绕过。
+
+失败后不得再次执行 vendor update。仅 canonical `trusted_ota_server.py --action recover`
+可在原双锁内接受相同 SHA/group/update receipt，完成未完成的 manifest 验证和锁收尾；
+不需要延长过期授权，不会发布或更改原 claim。已验证后网络不可用仍可完成同一收尾。
+receipt 不同、租约身份改变、未知部分 claim 或在终态持久化前丢失原 tmpfs 归档均 BLOCK，
+保留原现场人工取证。已完成回执重放不释放后来者的 lease。旧版本回滚同样需要新的
+受审发布操作，不能借旧本机 rollback 脚本越过上述边界。
 
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
@@ -295,6 +384,18 @@ generation 或 install receipt 出现仍 BLOCK。入口保留原 NEEDS_OPERATOR�
 和已验证源目录，以独立 `unchanged-release-closures/<failed-sha>` 记录真实状态，
 复用同 inode lease 归档和精确双身份撤权，终态只记 CLOSED_UNCHANGED_RELEASE。只有最终
 fsync 后才返回受保护回执供后续 rotate 验证；不得补造 RESTORED 回执或重跑失败 SHA。
+
+已安装 Laya 的只读复用校验失败使用独立的 `--retire-installed-laya`，不改变上述
+未安装分支。该模式还要求旧生产、失败候选与收尾源码的全部 Laya 资产相同，
+原 INSTALLED 收据绑定可验证的历史 canonical 安装来源，且早于旧生产成功回执和
+失败租约；sealed 前后 Laya 配置相同，失败候选导出目录完整匹配。验证实际
+unit/覆盖路径/ExecStart/账号、代际模型与锁定依赖、boot ID、cgroup、PID/starttime
+和零重启，并证明进程早于租约。鉴权拒绝与真实合成推理须跨稳定窗口通过。
+
+此模式只调用只读安装验证，禁止 prepare/activate、安装、重启或变更业务配置。
+快照使用独立 `installed-reuse-v1` profile；归档撤权前后复核全部身份和原 env，
+未知、混合、缺字段 profile 拒绝。沿用原同 inode 租约归档与受保护回执协议，
+不修改失败终态、不续跑原 SHA。历史验收保存原证明，不要求以后版本维持该 PID。
 
 #### 固定 Laya PREPARING 事故的缺失租约行政收尾
 

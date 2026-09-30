@@ -135,9 +135,7 @@ def test_mutating_release_entrypoints_use_the_shared_lock():
 
     assert "scripts/release_lock.sh" in deploy
     assert 'acquire_release_lock "deploy:${DEPLOY_MODE}"' in deploy
-    assert "scripts/release_lock.sh" in ota
-    assert 'acquire_release_lock "ota:${CHANNEL}"' in ota
-    assert "scripts/release_lock.sh" in rollback
-    assert 'acquire_release_lock "ota-rollback:${CHANNEL}"' in rollback
+    assert "exit 78" in ota and "trusted-ota.yml" in ota
+    assert "exit 78" in rollback and "trusted-ota.yml" in rollback
     assert "scripts/release_lock.sh" in testflight
     assert 'acquire_release_lock "testflight:${MODE}"' in testflight

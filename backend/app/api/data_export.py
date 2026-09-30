@@ -8,8 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.rate_limit import limiter
 from fastapi import Request
 
 from app.database import get_db
@@ -23,7 +22,6 @@ from app.models.agent_audit_log import AgentAuditLog
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/export", tags=["export"])
-limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/health-data", summary="导出健康数据")

@@ -16,7 +16,7 @@ from app.services.clinician_provenance_guard import (
     ClinicianTurnDecision,
     classify_clinician_turn,
 )
-from app.services.intake_intent_classifier import classify_intake_intent
+from app.services.intake_intent_classifier import classify_intake_subject
 
 from app.services.utterance_intent_lexicon import (
     CLINICIAN_FEEDBACK_OBJECT_NOUNS,
@@ -1135,7 +1135,9 @@ def _infer_domain(text: str) -> str:
     compact_text = "".join(text.split())
     if "记录补剂:" in compact_text or "记录补剂：" in compact_text:
         return "supplement"
-    intake_kind = classify_intake_intent(text).kind
+    # Domain follows the subject, not the speech act: "没吃辅酶Q10" is not an
+    # intake write, but it is still about a supplement (DIET_TERMS has "吃").
+    intake_kind = classify_intake_subject(text).kind
     if intake_kind == "supplement":
         return "supplement"
     if intake_kind == "medication":

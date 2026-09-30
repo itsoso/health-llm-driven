@@ -1,5 +1,5 @@
 """补剂管理 Schemas"""
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, field_validator
 from typing import Optional, List, Any, Dict
 from datetime import date, time, datetime
 from decimal import Decimal
@@ -122,8 +122,13 @@ class SupplementRecordBase(BaseModel):
 
 
 class SupplementRecordCreate(SupplementRecordBase):
+    # 依从事实必须显式:缺省 taken 曾把备注写明已服的补记静默落成未服(2026-09 事故);
+    # 未知字段(如未映射的遗留列名 taken_count)直接 422,不再被静默丢弃。
+    model_config = ConfigDict(extra="forbid")
+
+    taken: StrictBool  # "yes"/1 等宽松值不再被转换成「已服」
     supplement_id: int
-    user_id: int
+    user_id: Optional[int] = None  # 兼容旧客户端;服务端始终使用当前登录用户
 
 
 class SupplementRecordUpdate(BaseModel):
@@ -142,11 +147,20 @@ class SupplementRecordResponse(SupplementRecordBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# 批量打卡请求
+# 批量打卡请求:每项都必须显式布尔 taken(同单条打卡契约),未知字段 422 而非静默丢弃。
+class SupplementCheckinItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    supplement_id: StrictInt
+    taken: StrictBool  # true=已服, false=未服/取消打卡
+
+
 class SupplementBatchCheckin(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     user_id: Optional[int] = None  # 可选，如果不提供则使用当前登录用户
     record_date: date
-    checkins: List[dict]  # [{"supplement_id": 1, "taken": true}, ...]
+    checkins: List[SupplementCheckinItem]
 
 
 class SupplementIntakeBatchItem(BaseModel):

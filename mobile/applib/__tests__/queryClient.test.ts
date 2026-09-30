@@ -31,6 +31,10 @@ describe('lib/queryClient', () => {
     expect(shouldDehydrateQuery({ state: { status: 'pending' } } as never)).toBe(false);
   });
 
+  it('does not persist shared family records marked ephemeral', () => {
+    expect(persistOptions.dehydrateOptions.shouldDehydrateQuery({ state: { status: 'success' }, meta: { persist: false } } as never)).toBe(false);
+  });
+
   it('caps cache age at 24h so stale health data eventually expires', () => {
     expect(persistOptions.maxAge).toBe(24 * 60 * 60 * 1000);
   });

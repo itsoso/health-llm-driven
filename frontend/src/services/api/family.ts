@@ -11,6 +11,14 @@ export const familyApi = {
   getMembers: () => api.get('/family/members'),
   removeMember: (id: number) => api.delete(`/family/members/${id}`),
 
+  // Existing-account sharing uses the current HttpOnly session.
+  createInvitation: () => api.post<FamilyInvitation>('/family/invitation/create'),
+  acceptInvitation: (data: { code: string; relationship_type: string; nickname?: string }) =>
+    api.post('/family/invitation/accept', data),
+  getMemberHealth: (userId: number, signal?: AbortSignal) => api.get<FamilyMemberHealth>(`/family/members/${userId}/health`, {
+    signal, headers: { 'Cache-Control': 'no-store' },
+  }),
+
   // 视角切换
   switchToMember: (userId: number) => api.post('/family/switch', { user_id: userId }),
   switchBack: () => api.post('/family/switch-back'),
@@ -56,3 +64,20 @@ export const familyApi = {
   sendBotMessage: (msgType: string, content: string, wechatOpenid?: string) =>
     api.post('/family-health/wechat-bot/message', { msg_type: msgType, content, wechat_openid: wechatOpenid }),
 };
+
+
+export interface FamilyInvitation { code: string; group_name: string; expires_in_seconds: number }
+export interface FamilyMembership { member_id: number; group_id: number; group_name: string; is_owner: boolean }
+export interface FamilyMemberHealth {
+  member: { user_id: number; name: string | null; nickname: string | null; relationship_type: string };
+  reports: {
+    id: number; exam_date: string; exam_type?: string | null; hospital_name?: string | null; notes?: string | null;
+    overall_assessment?: string | null; conclusions?: unknown[] | null;
+    items: { id: number; item_name: string; display_value: string; unit?: string | null; reference_range?: string | null; is_abnormal?: string | null; notes?: string | null }[];
+  }[];
+  episodes: {
+    id: number; name: string; start_date: string; end_date?: string | null; status: string; notes?: string | null;
+    updates: { id: number; update_date: string; status?: string | null; notes?: string | null }[];
+  }[];
+  limit: number;
+}

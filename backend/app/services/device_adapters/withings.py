@@ -60,12 +60,16 @@ class WithingsHealthAdapter(DeviceAdapter):
         client_secret: str = None,
         access_token: str = None,
         refresh_token: str = None,
+        token_store=None,
         **kwargs,
     ):
         self.client_id = client_id or os.getenv("WITHINGS_CLIENT_ID", "")
         self.client_secret = client_secret or os.getenv("WITHINGS_CLIENT_SECRET", "")
         self.access_token = access_token
         self._refresh_token = refresh_token
+        self.token_expires_in: Optional[int] = None
+        # WithingsTokenStore: saves a refreshed pair right away (see withings_token_store.py)
+        self.token_store = token_store
 
     # ========== DeviceAdapter 接口实现 ==========
 
@@ -102,30 +106,17 @@ class WithingsHealthAdapter(DeviceAdapter):
             return {"success": False, "message": str(e)}
 
     async def fetch_daily_data(self, target_date: date) -> Optional[NormalizedHealthData]:
-        """拉取指定日期的所有健康数据"""
-        start_ts = int(datetime.combine(target_date, datetime.min.time()).timestamp())
-        end_ts = int(datetime.combine(target_date + timedelta(days=1), datetime.min.time()).timestamp())
+        """拉取指定日期的睡眠数据（写入每日表）。
 
-        raw = {}
-        normalized = NormalizedHealthData(record_date=target_date)
-
-        # 1. 体重/体脂/体成分
-        try:
-            measures = await self._get_measures(start_ts, end_ts)
-            raw["measures"] = measures
-            self._parse_measures_to_normalized(measures, normalized)
-        except Exception as e:
-            logger.warning(f"Withings fetch measures failed for {target_date}: {e}")
-
-        # 2. 睡眠数据
-        try:
-            sleep = await self._get_sleep(target_date)
-            raw["sleep"] = sleep
-            self._parse_sleep_to_normalized(sleep, normalized)
-        except Exception as e:
-            logger.warning(f"Withings fetch sleep failed for {target_date}: {e}")
-
-        normalized.raw_data = raw
+        体重/血压走 Webhook 与 /devices/withings/sync 写健康事件，不进每日表：
+        血压计测量时的脉搏不是静息心率，写进 resting_heart_rate 会误触发静息心率告警。
+        拉取失败直接抛出，由 DeviceManager 计为失败天。
+        """
+        sleep = await self._get_sleep(target_date)
+        normalized = NormalizedHealthData(record_date=target_date, source="withings")
+        if not self._parse_sleep_to_normalized(sleep, normalized, target_date):
+            return None
+        normalized.raw_data = {"sleep": sleep}
         return normalized
 
     # ========== OAuth 流程 ==========
@@ -198,9 +189,13 @@ class WithingsHealthAdapter(DeviceAdapter):
                         return False
 
                     body = result.get("body", {})
+                    if not body.get("access_token"):
+                        logger.error("Withings token refresh failed: response has no access_token")
+                        return False
                     self.access_token = body.get("access_token")
                     if body.get("refresh_token"):
                         self._refresh_token = body.get("refresh_token")
+                    self.token_expires_in = body.get("expires_in")
                     logger.info("Withings token refreshed successfully")
                     return True
         except Exception as e:
@@ -321,34 +316,35 @@ class WithingsHealthAdapter(DeviceAdapter):
             results.append(record)
         return results
 
-    def _parse_measures_to_normalized(self, measure_groups: List[Dict], norm: NormalizedHealthData):
-        """解析测量数据到 NormalizedHealthData"""
-        parsed = self.parse_webhook_measures(measure_groups)
-        for record in parsed:
-            if "heart_rate" in record and norm.resting_heart_rate is None:
-                norm.resting_heart_rate = record["heart_rate"]
+    def _parse_sleep_to_normalized(
+        self, sleep_data: Dict, norm: NormalizedHealthData, target_date: date,
+    ) -> bool:
+        """把 target_date 那晚的睡眠写入 NormalizedHealthData；没有那一晚返回 False。
 
-    def _parse_sleep_to_normalized(self, sleep_data: Dict, norm: NormalizedHealthData):
-        """解析睡眠数据到 NormalizedHealthData"""
-        series = sleep_data.get("series", [])
-        if not series:
-            return
+        查询区间跨两天，可能返回两晚；只认 date（醒来日）等于 target_date 的那条，
+        否则会把相邻一晚记到这一天。
+        """
+        night = next(
+            (s for s in sleep_data.get("series", []) if s.get("date") == target_date.isoformat()),
+            None,
+        )
+        if night is None:
+            return False
+        data = night.get("data", {})
 
-        # 取最新的一条睡眠记录
-        latest = series[-1]
-        data = latest.get("data", {})
+        def minutes(field: str) -> Optional[int]:
+            # 缺字段 = 未知，绝不写成 0 分钟（0 睡眠会被当成真实读数）
+            seconds = data.get(field)
+            return None if seconds is None else int(seconds) // 60
 
-        norm.total_sleep_minutes = data.get("total_sleep_duration", 0) // 60
-        norm.deep_sleep_minutes = data.get("deepsleepduration", 0) // 60
-        norm.rem_sleep_minutes = data.get("remsleepduration", 0) // 60
-        norm.light_sleep_minutes = data.get("lightsleepduration", 0) // 60
-        norm.awake_minutes = data.get("wakeupcount", 0)  # 近似
+        norm.total_sleep_minutes = minutes("total_sleep_time")
+        norm.deep_sleep_minutes = minutes("deepsleepduration")
+        norm.rem_sleep_minutes = minutes("remsleepduration")
+        norm.light_sleep_minutes = minutes("lightsleepduration")
+        norm.awake_minutes = minutes("wakeupduration")
         norm.sleep_score = data.get("sleep_score")
-
-        if data.get("hr_average"):
-            norm.avg_heart_rate = data["hr_average"]
-        if data.get("rr_average"):
-            norm.respiration_rate_avg = data["rr_average"]
+        # 睡眠期平均心率/呼吸率不写：每日表只有全天平均心率与清醒呼吸率列，语义不同
+        return True
 
     # ========== 内部方法 ==========
 
@@ -365,7 +361,11 @@ class WithingsHealthAdapter(DeviceAdapter):
                 # status=401 表示 token 过期
                 if result.get("status") == 401 and retry:
                     logger.info("Withings token expired, refreshing...")
-                    if await self.refresh_token():
+                    refreshed = (
+                        await self.token_store.refresh(self) if self.token_store
+                        else await self.refresh_token()
+                    )
+                    if refreshed:
                         return await self._api_request(url, data, retry=False)
                     raise Exception("Withings token refresh failed")
 

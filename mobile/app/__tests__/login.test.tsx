@@ -58,6 +58,7 @@ jest.mock('../../hooks/useTheme', () => ({
 }));
 
 import LoginScreen from '../login';
+import { loadCredentials } from '../../services/auth';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -104,16 +105,87 @@ describe('LoginScreen invitation-gated phone auth', () => {
     jest.useRealTimers();
   });
 
-  it('uses invitation-only copy and defaults the phone field to +86', () => {
+  it('explains self-registration and defaults the phone field to +86', () => {
     const view = render(<LoginScreen />);
 
     expect(view.getByText('登录小巴')).toBeTruthy();
-    expect(view.getByText('首次使用需获得管理员邀请')).toBeTruthy();
+    expect(view.getByText('新用户验证手机号后即可注册')).toBeTruthy();
     expect(view.queryByText('登录 / 注册')).toBeNull();
     expect(view.getByLabelText('手机号输入框').props.value).toBe('+86 ');
     expect(view.getByLabelText('获取验证码').props.accessibilityState.disabled).toBe(true);
     fireEvent.changeText(view.getByLabelText('手机号输入框'), '+86 138 0013 8000');
     expect(view.getByLabelText('获取验证码').props.accessibilityState.disabled).toBe(false);
+  });
+
+  it('shows both login methods and their selected state from the first screen', () => {
+    const view = render(<LoginScreen />);
+    expect(view.getByRole('tab', { name: '验证码登录' }).props.accessibilityState.selected).toBe(true);
+    expect(view.getByRole('tab', { name: '密码登录' }).props.accessibilityState.selected).toBe(false);
+    fireEvent.press(view.getByRole('tab', { name: '密码登录' }));
+    expect(view.getByRole('tab', { name: '密码登录' }).props.accessibilityState.selected).toBe(true);
+    expect(view.getByPlaceholderText('手机号 / 邮箱')).toBeTruthy();
+  });
+
+  it.each(['13800138000', '138 0013 8000', '+86 138 0013 8000'])(
+    'accepts %s for SMS login and sends its canonical phone', async (phone) => {
+      const view = render(<LoginScreen />);
+      beginOtp(view, phone);
+      await waitFor(() => expect(mockRequestPhoneCode).toHaveBeenCalledWith('+8613800138000', 'login'));
+    },
+  );
+
+  it.each(['1380013800', '23800138000', 'alice@example.test', '+0123456789'])(
+    'does not request a code for invalid phone %s', (phone) => {
+      const view = render(<LoginScreen />);
+      fireEvent.changeText(view.getByLabelText('手机号输入框'), phone);
+      expect(view.getByLabelText('获取验证码').props.accessibilityState.disabled).toBe(true);
+      fireEvent.press(view.getByText('获取验证码'));
+      expect(mockRequestPhoneCode).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['13800138000', 'alice@example.test'])(
+    'signs in with %s and a password without requesting an OTP', async (identifier) => {
+      const view = render(<LoginScreen />);
+      fireEvent.press(view.getByText('密码登录'));
+      fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), ` ${identifier} `);
+      fireEvent.changeText(view.getByLabelText('密码输入框'), 'fixture-password');
+      fireEvent.press(view.getByText('登录'));
+      await waitFor(() => expect(mockLogin).toHaveBeenCalledWith(identifier, 'fixture-password'));
+      expect(mockRequestPhoneCode).not.toHaveBeenCalled();
+      expect(mockVerifyPhoneCode).not.toHaveBeenCalled();
+    },
+  );
+
+  it('retains restored credentials on the first password login selection', async () => {
+    jest.mocked(loadCredentials).mockResolvedValueOnce({
+      username: 'remembered@example.test', password: 'remembered-password',
+    });
+    const view = render(<LoginScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByText('密码登录'));
+    expect(view.getByLabelText('手机号或邮箱输入框').props.value).toBe('remembered@example.test');
+    expect(view.getByLabelText('密码输入框').props.value).toBe('remembered-password');
+  });
+
+  it('can switch from a sent OTP to password login and back without resending', async () => {
+    const view = render(<LoginScreen />);
+    beginOtp(view);
+    await waitFor(() => expect(view.getByLabelText('验证码输入框')).toBeTruthy());
+    fireEvent.changeText(view.getByLabelText('验证码输入框'), '123456');
+    mockVerifyPhoneCode.mockRejectedValueOnce(new Error('expired'));
+    fireEvent.press(view.getByText('验证并登录'));
+    await view.findByText('验证码无效或已过期，请重新获取。');
+
+    fireEvent.press(view.getByText('密码登录'));
+    expect(view.queryByText('验证码无效或已过期，请重新获取。')).toBeNull();
+    fireEvent.changeText(view.getByLabelText('密码输入框'), 'fixture-password');
+    fireEvent.press(view.getByText('验证码登录'));
+    expect(view.getByLabelText('验证码输入框').props.value).toBe('');
+    expect(view.getByLabelText('重新发送验证码').props.accessibilityState.disabled).toBe(true);
+    expect(mockRequestPhoneCode).toHaveBeenCalledTimes(1);
+    fireEvent.press(view.getByText('密码登录'));
+    expect(view.getByLabelText('密码输入框').props.value).toBe('');
   });
 
   it('acknowledges a deep-link invitation on the phone step without displaying its token or phone', () => {
@@ -136,6 +208,22 @@ describe('LoginScreen invitation-gated phone auth', () => {
     await waitFor(() => expect(mockVerifyPhoneCode).toHaveBeenCalledWith('+8613800138000', '123456'));
     expect(mockCompleteInvitedRegistration).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalledWith('/reva-onboarding');
+  });
+
+  it('welcomes a self-registered user and offers health profile setup without an invite', async () => {
+    mockVerifyPhoneCode.mockResolvedValueOnce('registered');
+    const completed = jest.fn();
+    const start = jest.fn();
+    const view = render(<LoginScreen onInvitedRegistrationComplete={completed} onStartHealthProfile={start} />);
+    beginOtp(view, '13800138000');
+    await waitFor(() => expect(view.getByLabelText('验证码输入框')).toBeTruthy());
+    fireEvent.changeText(view.getByLabelText('验证码输入框'), '123456');
+    fireEvent.press(view.getByText('验证并登录'));
+    await waitFor(() => expect(view.getByText('注册成功，欢迎加入小巴')).toBeTruthy());
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(mockCompleteInvitedRegistration).not.toHaveBeenCalled();
+    fireEvent.press(view.getByText('开始设置我的健康档案'));
+    expect(start).toHaveBeenCalledTimes(1);
   });
 
   it('shows the invitation-list message instead of claiming a fresh OTP expired', async () => {
@@ -216,7 +304,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
     fireEvent.press(view.getByText('完成注册'));
 
     await waitFor(() => expect(mockCompleteInvitedRegistration).toHaveBeenCalledWith({ manualCode: 'ABCD2E7K' }));
-    expect(view.getByText('邀请验证成功，欢迎加入小巴')).toBeTruthy();
+    expect(view.getByText('注册成功，欢迎加入小巴')).toBeTruthy();
     fireEvent.press(view.getByText('开始设置我的健康档案'));
     expect(mockReplace).toHaveBeenCalledWith('/reva-onboarding');
   });
@@ -230,7 +318,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
       />,
     );
 
-    expect(view.getByText('邀请验证成功，欢迎加入小巴')).toBeTruthy();
+    expect(view.getByText('注册成功，欢迎加入小巴')).toBeTruthy();
     fireEvent.press(view.getByText('开始设置我的健康档案'));
     expect(startOnboarding).toHaveBeenCalledTimes(1);
   });
@@ -357,7 +445,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
     fireEvent.press(view.getByText('获取验证码'));
 
     expect(view.getByLabelText('我有邀请码').props.accessibilityState.disabled).toBe(true);
-    expect(view.getByLabelText('账号密码登录').props.accessibilityState.disabled).toBe(true);
+    expect(view.getByLabelText('密码登录').props.accessibilityState.disabled).toBe(true);
     await act(async () => request.resolve({
       phone: '+8613800138000',
       expires_in_seconds: 300,
@@ -386,12 +474,12 @@ describe('LoginScreen invitation-gated phone auth', () => {
     const login = deferred<void>();
     mockLogin.mockReturnValueOnce(login.promise);
     const view = render(<LoginScreen />);
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
     fireEvent.press(view.getByText('登录'));
 
-    expect(view.getByLabelText('手机号登录').props.accessibilityState.disabled).toBe(true);
+    expect(view.getByLabelText('验证码登录').props.accessibilityState.disabled).toBe(true);
     await act(async () => login.resolve());
   });
 
@@ -406,11 +494,11 @@ describe('LoginScreen invitation-gated phone auth', () => {
     expect(view.queryByLabelText('验证码输入框')).toBeNull();
   });
 
-  it('keeps account password login as a secondary fallback', async () => {
+  it('preserves legacy username password login through the password tab', async () => {
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
     fireEvent.press(view.getByText('登录'));
 
@@ -433,8 +521,8 @@ describe('LoginScreen invitation-gated phone auth', () => {
     ));
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'wrong-password');
     fireEvent.press(view.getByText('登录'));
 
@@ -445,8 +533,8 @@ describe('LoginScreen invitation-gated phone auth', () => {
     mockLogin.mockRejectedValueOnce(new Error('登录状态无法安全保存，请解锁设备后重试'));
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
     fireEvent.press(view.getByText('登录'));
 
@@ -464,8 +552,8 @@ describe('LoginScreen invitation-gated phone auth', () => {
     ));
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
     fireEvent.press(view.getByText('登录'));
 
@@ -483,8 +571,8 @@ describe('LoginScreen invitation-gated phone auth', () => {
     });
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
     fireEvent.press(view.getByText('登录'));
 
@@ -501,8 +589,8 @@ describe('LoginScreen invitation-gated phone auth', () => {
     });
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
     fireEvent.press(view.getByText('登录'));
 
@@ -516,8 +604,8 @@ describe('LoginScreen invitation-gated phone auth', () => {
     mockLogin.mockRejectedValueOnce(new CanceledError('canceled', undefined, {}));
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
     fireEvent.press(view.getByText('登录'));
 
@@ -530,8 +618,8 @@ describe('LoginScreen invitation-gated phone auth', () => {
     mockLogin.mockRejectedValueOnce(new Error('sensitive local detail'));
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'hunter2');
     fireEvent.press(view.getByText('登录'));
 
@@ -556,8 +644,8 @@ describe('LoginScreen invitation-gated phone auth', () => {
     ));
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('账号密码登录'));
-    fireEvent.changeText(view.getByLabelText('用户名输入框'), 'alice');
+    fireEvent.press(view.getByText('密码登录'));
+    fireEvent.changeText(view.getByLabelText('手机号或邮箱输入框'), 'alice');
     fireEvent.changeText(view.getByLabelText('密码输入框'), 'wrong-password');
     fireEvent.press(view.getByText('登录'));
 

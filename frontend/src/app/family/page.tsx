@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { familyApi } from '@/services/api/family';
+import { familyApi, type FamilyMembership } from '@/services/api/family';
+import FamilyMemberRecords from '@/components/family/FamilyMemberRecords';
 
 // ── Types ────────────────────────────────────────────────
 interface FamilyMember {
@@ -21,6 +22,8 @@ interface FamilyMember {
 }
 
 interface DashboardMember {
+  can_view: boolean;
+  can_edit: boolean;
   user_id: number;
   name: string;
   nickname: string;
@@ -50,12 +53,12 @@ interface DailyCheckReport {
 // ── Constants ────────────────────────────────────────────
 const RELATIONSHIP_LABELS: Record<string, string> = {
   self: '本人', father: '爸爸', mother: '妈妈',
-  spouse: '配偶', child: '子女', sibling: '兄弟姐妹', other: '其他',
+  spouse: '配偶', child: '子女', daughter: '女儿', son: '儿子', sibling: '兄弟姐妹', other: '其他',
 };
 
 const RELATIONSHIP_ICONS: Record<string, string> = {
   self: '👤', father: '👨', mother: '👩',
-  spouse: '💑', child: '👧', sibling: '👫', other: '👥',
+  spouse: '💑', child: '👧', daughter: '👧', son: '👦', sibling: '👫', other: '👥',
 };
 
 // ── Tabs ─────────────────────────────────────────────────
@@ -74,6 +77,11 @@ function FamilyContent() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [hasGroup, setHasGroup] = useState<boolean | null>(null);
   const [groupName, setGroupName] = useState('');
+  const [isOwner, setIsOwner] = useState(false);
+  const [memberships, setMemberships] = useState<FamilyMembership[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [leaveError, setLeaveError] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
 
   // 成员
@@ -88,41 +96,47 @@ function FamilyContent() {
   // 代管模式
   const [proxyMode, setProxyMode] = useState(false);
   const [proxyName, setProxyName] = useState('');
+  const [proxyStatusError, setProxyStatusError] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
 
-  // ── Init ──────────────────────────────────────────────
-  useEffect(() => {
-    loadData();
-    familyApi.getProxyStatus().then((response) => {
+  // Proxy recovery must not depend on direct-family dashboard permission.
+  const loadProxyStatus = useCallback(async () => {
+    setProxyStatusError(false);
+    try {
+      const response = await familyApi.getProxyStatus();
       setProxyMode(Boolean(response.data.is_proxy_mode));
       setProxyName(response.data.acting_as_name || '家庭成员');
-    }).catch(() => {});
+    } catch { setProxyStatusError(true); }
   }, []);
+  useEffect(() => { void loadData(); }, []);
+  useEffect(() => { void loadProxyStatus(); }, [loadProxyStatus]);
 
   const loadData = async () => {
-    setLoading(true);
+    setLoading(true); setLoadError('');
     try {
-      const groupRes = await familyApi.getGroups();
-      const groups = groupRes.data.groups || [];
-      if (groups.length > 0) {
-        setHasGroup(true);
-        setGroupName(groups[0].name);
-        const [dashRes, memberRes] = await Promise.all([
-          familyApi.getDashboard(),
-          familyApi.getMembers(),
-        ]);
-        setDashboard(dashRes.data.members || []);
-        setMembers(memberRes.data.members || []);
-      } else {
-        setHasGroup(false);
-      }
+      const response = await familyApi.getDashboard();
+      const state = response.data;
+      setHasGroup(Boolean(state.group_name));
+      setGroupName(state.group_name || '');
+      setIsOwner(Boolean(state.is_owner));
+      setMemberships(state.memberships || []);
+      setDashboard(state.members || []);
+      setMembers(state.group_name ? (await familyApi.getMembers()).data.members || [] : []);
     } catch {
-      setHasGroup(false);
-    } finally {
-      setLoading(false);
-    }
+      setLoadError('家庭信息加载失败，请重试');
+      setDashboard([]); setMembers([]); setMemberships([]); setSelectedUserId(null);
+    } finally { setLoading(false); }
+  };
+  const leaveMembership = async (membership: FamilyMembership) => {
+    if (!confirm(`退出${membership.group_name}并停止共享健康记录？原始记录会保留在你的账号中。`)) return;
+    setLeaveError('');
+    try {
+      await familyApi.removeMember(membership.member_id);
+      setSelectedUserId(null);
+      await loadData();
+    } catch { setLeaveError('退出失败，共享尚未撤销，请重试'); }
   };
 
   // ── 创建家庭组 ─────────────────────────────────────────
@@ -203,17 +217,20 @@ function FamilyContent() {
   };
 
   // ── Render ────────────────────────────────────────────
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>;
-  }
-
   // 代管模式 banner
   const proxyBanner = proxyMode ? (
     <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between">
       <span className="text-amber-800 text-sm">👥 当前代管: <strong>{proxyName}</strong>（所有操作以 TA 的身份执行）</span>
       <button onClick={switchBack} className="text-amber-700 text-sm underline">切回自己</button>
     </div>
-  ) : null;
+  ) : proxyStatusError ? <div role="alert" className="p-4 bg-amber-50">
+    代管状态读取失败。<button onClick={() => void loadProxyStatus()} className="text-blue-700 underline">重试代管状态</button>
+  </div> : null;
+
+  if (loading) {
+    return <div className="min-h-screen">{proxyBanner}<div className="flex items-center justify-center p-8"><div role="status" aria-label="正在读取家庭信息" className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div></div>;
+  }
+  if (loadError) return <main className="p-6">{proxyBanner}<p role="alert">{loadError}</p><button onClick={() => void loadData()}>重试</button></main>;
 
   // 没有家庭组 → 创建
   if (hasGroup === false) {
@@ -222,6 +239,7 @@ function FamilyContent() {
         {proxyBanner}
         <div className="max-w-md mx-auto mt-20 bg-white rounded-2xl shadow-lg p-8 text-center">
           <div className="text-5xl mb-4">👨‍👩‍👧‍👦</div>
+          <button onClick={() => router.push('/family/invite')} className="text-blue-700 mb-4">已有邀请码？加入家人的家庭</button>
           <h2 className="text-xl font-bold mb-2">创建家庭组</h2>
           <p className="text-gray-500 text-sm mb-6">为家人建立健康档案，统一管理体检、用药、复查</p>
           <input
@@ -279,16 +297,25 @@ function FamilyContent() {
       </div>
 
       <div className="p-4">
-        {activeTab === 'dashboard' && <DashboardTab dashboard={dashboard} onSwitch={switchToMember} proxyMode={proxyMode} />}
-        {activeTab === 'members' && <MembersTab members={members} showAddForm={showAddForm} setShowAddForm={setShowAddForm} addForm={addForm} setAddForm={setAddForm} onAdd={addMember} onReload={loadData} />}
+        {activeTab === 'dashboard' && <DashboardTab dashboard={dashboard} onSwitch={switchToMember} onView={setSelectedUserId} proxyMode={proxyMode} />}
+        {activeTab === 'members' && <MembersTab isOwner={isOwner} members={members} showAddForm={showAddForm} setShowAddForm={setShowAddForm} addForm={addForm} setAddForm={setAddForm} onAdd={addMember} onReload={loadData} />}
         {activeTab === 'daily-check' && <DailyCheckTab report={dailyCheck} onRun={runDailyCheck} onSend={sendDailyBrief} sending={sending} />}
+        {!!memberships.length && <section className="mt-6 space-y-3">
+          <h2 className="font-semibold">我的家庭关联</h2>
+          {leaveError && <p role="alert" className="text-red-700">{leaveError}</p>}
+          {memberships.map(membership => <div key={membership.member_id} className="bg-white border rounded-xl p-4 space-y-2">
+            <p>{membership.group_name}</p>
+            {membership.is_owner ? <p className="text-sm text-gray-500">你是家庭创建者</p> : <button aria-label={`退出${membership.group_name}并停止共享`} className="text-red-700 text-sm" onClick={() => void leaveMembership(membership)}>退出家庭并停止共享</button>}
+          </div>)}
+        </section>}
       </div>
+      {selectedUserId !== null && <FamilyMemberRecords key={selectedUserId} userId={selectedUserId} onClose={() => setSelectedUserId(null)} />}
     </div>
   );
 }
 
 // ── Dashboard Tab ────────────────────────────────────────
-function DashboardTab({ dashboard, onSwitch, proxyMode }: { dashboard: DashboardMember[]; onSwitch: (id: number, name: string) => void; proxyMode: boolean }) {
+function DashboardTab({ dashboard, onSwitch, onView, proxyMode }: { dashboard: DashboardMember[]; onSwitch: (id: number, name: string) => void; onView: (id: number) => void; proxyMode: boolean }) {
   return (
     <div className="space-y-3">
       {dashboard.map(m => (
@@ -301,7 +328,7 @@ function DashboardTab({ dashboard, onSwitch, proxyMode }: { dashboard: Dashboard
                 <span className="text-xs text-gray-400">{RELATIONSHIP_LABELS[m.relationship_type]}</span>
               </div>
             </div>
-            {m.is_managed && !proxyMode && (
+            {m.is_managed && m.can_edit && !proxyMode && (
               <button
                 onClick={() => onSwitch(m.user_id, m.nickname || m.name)}
                 className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full"
@@ -311,7 +338,7 @@ function DashboardTab({ dashboard, onSwitch, proxyMode }: { dashboard: Dashboard
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+          {m.can_view ? <div className="grid grid-cols-3 gap-2 text-center text-xs">
             <div className="bg-gray-50 rounded-lg p-2">
               <div className="text-gray-400">步数</div>
               <div className="font-bold text-base">{m.today_steps?.toLocaleString() ?? '--'}</div>
@@ -336,7 +363,8 @@ function DashboardTab({ dashboard, onSwitch, proxyMode }: { dashboard: Dashboard
               <div className="text-gray-400">预警</div>
               <div className={`font-bold text-base ${m.unread_alerts > 0 ? 'text-red-600' : ''}`}>{m.unread_alerts}</div>
             </div>
-          </div>
+          </div> : <p className="text-sm text-gray-500">尚未向你共享健康记录</p>}
+          {m.can_view && <button aria-label={`查看${m.nickname || m.name}的检查报告与病程`} className="mt-3 text-blue-700 text-sm" onClick={() => onView(m.user_id)}>查看检查报告与病程</button>}
         </div>
       ))}
       {dashboard.length === 0 && (
@@ -347,7 +375,7 @@ function DashboardTab({ dashboard, onSwitch, proxyMode }: { dashboard: Dashboard
 }
 
 // ── Members Tab ──────────────────────────────────────────
-function MembersTab({ members, showAddForm, setShowAddForm, addForm, setAddForm, onAdd, onReload }: any) {
+function MembersTab({ isOwner, members, showAddForm, setShowAddForm, addForm, setAddForm, onAdd, onReload }: any) {
   const removeMember = async (id: number, name: string) => {
     if (!confirm(`确定移除 ${name}？`)) return;
     try {
@@ -374,13 +402,13 @@ function MembersTab({ members, showAddForm, setShowAddForm, addForm, setAddForm,
               </div>
             </div>
           </div>
-          {m.role !== 'owner' && (
+          {isOwner && m.role !== 'owner' && (
             <button onClick={() => removeMember(m.id, m.name)} className="text-xs text-red-400 hover:text-red-600">移除</button>
           )}
         </div>
       ))}
 
-      {!showAddForm ? (
+      {isOwner && (!showAddForm ? (
         <button onClick={() => setShowAddForm(true)} className="w-full bg-white rounded-xl p-4 shadow-sm border border-dashed border-gray-300 text-gray-400 hover:text-blue-500 hover:border-blue-300 transition">
           + 添加家庭成员
         </button>
@@ -405,7 +433,7 @@ function MembersTab({ members, showAddForm, setShowAddForm, addForm, setAddForm,
             <button onClick={onAdd} className="flex-1 bg-blue-500 text-white rounded-lg py-2 text-sm">添加</button>
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }

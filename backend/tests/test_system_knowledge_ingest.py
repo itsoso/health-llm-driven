@@ -627,3 +627,19 @@ def test_ingest_course_cli_supports_dry_run_write_and_review_promotion(tmp_path)
     manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["ingest"]["review_status"] == "reviewed"
     assert (output / "review_manifest.json").exists()
+
+
+def test_pdf_text_fallback_uses_locked_parser_and_bounds_pages(tmp_path, monkeypatch):
+    import pymupdf
+    from app.services import system_knowledge_ingest as service
+    monkeypatch.setattr(service.shutil, 'which', lambda command: None)
+    pdf = tmp_path / 'fixture.pdf'
+    with pymupdf.open() as document:
+        for text in ('first safe fixture', 'second safe fixture', 'third excluded fixture'):
+            page = document.new_page()
+            page.insert_text((72, 72), text)
+        document.save(str(pdf))
+    text = service._read_pdf_text(pdf)
+    assert 'first safe fixture' in text
+    assert 'second safe fixture' in text
+    assert 'third excluded fixture' not in text

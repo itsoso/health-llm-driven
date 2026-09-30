@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.services.ai_consent import ai_user_scope, require_ai_consent
+from app.services.crisis_lexicon import with_crisis_support
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/telegram", tags=["telegram"])
@@ -50,12 +51,25 @@ async def _reply_to_telegram(chat_id: str, text: str, reply_to_message_id: Optio
         svc = TelegramPushService()
         if not svc.configured and not chat_id:
             return
-        await svc.send_message(text=text, chat_id=str(chat_id))
+        result = await svc.send_message(text=text, chat_id=str(chat_id))
+        # 回复是模型文本,未配对的 _ / * 会让 legacy Markdown 解析被拒、整条(含危机热线)
+        # 静默丢失:被拒时按纯文本重发同一内容。
+        if isinstance(result, dict) and result.get("reason") == "telegram_rejected":
+            result = await svc.send_message(
+                text=text, chat_id=str(chat_id), parse_mode=None,
+            )
+        if not (isinstance(result, dict) and result.get("success")):
+            logger.warning(
+                "[telegram-webhook] reply not delivered reason=%s",
+                result.get("reason") if isinstance(result, dict) else "unknown",
+            )
     except Exception as e:  # noqa: BLE001
         logger.warning("[telegram-webhook] reply failed error_type=%s", type(e).__name__)
 
 
-async def _reply_ai_permission_error(chat_id: str, exc: HTTPException) -> dict:
+async def _reply_ai_permission_error(
+    chat_id: str, exc: HTTPException, text: str = "",
+) -> dict:
     detail = exc.detail if isinstance(exc.detail, dict) else {}
     code = detail.get("code")
     messages = {
@@ -65,7 +79,11 @@ async def _reply_ai_permission_error(chat_id: str, exc: HTTPException) -> dict:
     }
     if code not in messages:
         code = "handler_error"
-    await _reply_to_telegram(chat_id, messages.get(code, "暂时无法处理，请稍后重试。"))
+    # 热线是确定性文本、不经 AI:授权缺失 / 不可用时危机原话也必须拿到。
+    await _reply_to_telegram(
+        chat_id,
+        with_crisis_support(text, messages.get(code, "暂时无法处理，请稍后重试。")),
+    )
     return {"ok": False, "reason": code}
 
 
@@ -177,10 +195,12 @@ async def telegram_webhook(
                 source_conversation_id=chat_id,
             )
     except HTTPException as exc:
-        return await _reply_ai_permission_error(chat_id, exc)
+        return await _reply_ai_permission_error(chat_id, exc, text)
     except Exception as e:
         logger.error("[telegram-webhook] handler failed error_type=%s", type(e).__name__)
-        await _reply_to_telegram(chat_id, "暂时无法处理，请稍后重试。")
+        await _reply_to_telegram(
+            chat_id, with_crisis_support(text, "暂时无法处理，请稍后重试。"),
+        )
         return {"ok": False, "reason": "handler_error"}
 
     await _reply_to_telegram(chat_id, reply)

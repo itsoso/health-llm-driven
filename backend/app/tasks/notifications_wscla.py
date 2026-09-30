@@ -20,7 +20,10 @@ from app.models.action_card import ActionCard
 from app.models.daily_health import GarminData
 from app.models.notification import NotificationLog, NotificationStatus
 from app.models.user import User
-from app.services.notification.push_privacy import is_sensitive_alert
+from app.services.notification.push_privacy import (
+    SENSITIVE_ESCALATION_PUSH_TEXT,
+    is_sensitive_alert,
+)
 from app.services.notification.push_service import CRITICAL_DEDUP_WINDOW_HOURS, PushService
 from app.services.weekly_advisor import generate_weekly_advice
 from app.utils.async_helpers import run_async
@@ -239,8 +242,7 @@ def escalate_critical_unresolved_impl():
                 # title/content 带药名/化验项/诊断 → 锁屏泛化;其余急性类
                 # (vitals/cgm/symptoms)原文透传(时效安全信息)。
                 if is_sensitive_alert(rule_id=card.source_id):
-                    esc_title = "⚠️ 仍有一条紧急健康告警未处理"
-                    esc_content = "24 小时前的重要告警还没确认,点开查看详情并处理。"
+                    esc_title, esc_content = SENSITIVE_ESCALATION_PUSH_TEXT
                 else:
                     esc_title = f"⚠️ 仍未处理: {card.title}"
                     esc_content = card.content

@@ -6,8 +6,8 @@ Mental Health Companion —— 基于 Twin.mental 的支持性建议。
   - physiological_link: 心理和生理的关联（HRV/睡眠/压力）
   - support_action: 非药物支持动作（呼吸/走路/光照/社交）
 
-如果检测到可能的心理危机模式（mood_7d < 3 + energy 同时下降），
-单独输出 crisis_warning，建议联系真人专业帮助或危机热线。
+如果检测到可能的心理危机模式（mood_7d < 3 + energy 同时下降，或本轮原话含
+轻生/自伤意念表达），单独输出 crisis_warning，建议联系真人专业帮助或危机热线。
 """
 
 from __future__ import annotations
@@ -17,6 +17,12 @@ import time
 from typing import Any, Dict, List, Optional
 
 from app.orchestrator.schema import Intent, SpecialistFinding
+from app.services.crisis_lexicon import (
+    CRISIS_HOTLINES,
+    CRISIS_SUPPORT_LEAD,
+    contains_crisis_language,
+    crisis_hotline_summary,
+)
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
@@ -112,6 +118,8 @@ class MentalHealthCompanionSpecialist:
         q = (intent.raw_query or "").lower()
         if any(k in q for k in self.TRIGGER_KEYWORDS):
             return True
+        if contains_crisis_language(q):
+            return True
         # 兜底：心理数据存在时参与 dashboard 场景
         if "general" in intent.categories and twin.mental.mood_7d_avg is not None:
             return True
@@ -119,6 +127,11 @@ class MentalHealthCompanionSpecialist:
 
     def run(self, twin: HealthTwin, context: Dict[str, Any]) -> SpecialistFinding:
         t0 = time.monotonic()
+        # 在 try 之外判定:后续任何步骤失败都不能吞掉危机提示。
+        # 原话只在此做关键词识别(Tier 5),finding 只给中性信号标签,不回显原文。
+        crisis_language = contains_crisis_language(
+            context.get("query") if isinstance(context, dict) else None
+        )
         try:
             m = twin.mental
             p = twin.physiological
@@ -147,23 +160,28 @@ class MentalHealthCompanionSpecialist:
                 if stress is not None:
                     summary_parts.append(f"压力 {stress:.1f}/10")
 
-            # 2. 危机信号检测
+            # 2. 危机信号检测:签到数值 + 本轮原话里的轻生/自伤表达。
             crisis = _detect_crisis(mood, energy, sleep_q)
-            if crisis:
+            if crisis_language:
+                crisis.append(_CRISIS_LANGUAGE_SIGNAL)
+                findings.append(_crisis_language_warning(crisis))
+            elif crisis:
                 findings.append({
                     "type": "crisis_warning",
                     "severity": "high",
+                    # 与 SafetyGuardian 的 HIGH 中文标签一致(分段合成按它排严重度)。
+                    "severity_label": "警告",
                     "signals": crisis,
+                    "title": "近 7 天情绪与精力持续偏低：关注安全，必要时联系专业支持",
                     "message": (
                         "系统识别到你最近情绪和精力都明显偏低。这不是需要你独自扛的。"
                         "如果感到难以承受，请联系可信赖的朋友、家人，或拨打心理援助热线："
                     ),
-                    "hotlines": [
-                        {"name": "北京心理危机研究与干预中心", "number": "010-82951332"},
-                        {"name": "全国心理援助热线", "number": "400-161-9995"},
-                        {"name": "希望24热线", "number": "400-161-9995"},
-                    ],
-                    "action": "今天不需要任何人勉强自己，只需要做一件能让自己感到稍微好一点的小事。",
+                    "hotlines": [dict(h) for h in CRISIS_HOTLINES],
+                    "action": (
+                        "今天不需要任何人勉强自己，只需要做一件能让自己感到稍微好一点的小事；"
+                        f"如果感到难以承受，可以拨打心理援助热线：{crisis_hotline_summary()}。"
+                    ),
                 })
 
             # 3. 生理-心理关联
@@ -194,7 +212,9 @@ class MentalHealthCompanionSpecialist:
             findings.extend(gene_insights)
 
             summary = " · ".join(summary_parts) if summary_parts else "心理数据暂缺"
-            if crisis:
+            if crisis_language:
+                summary = f"{_CRISIS_LANGUAGE_SUMMARY} · {summary}"
+            elif crisis:
                 summary = "⚠️ 识别到情绪低落信号 · " + summary
 
             return SpecialistFinding(
@@ -207,6 +227,7 @@ class MentalHealthCompanionSpecialist:
                     "energy_7d": energy,
                     "stress_7d": stress,
                     "has_crisis_signal": bool(crisis),
+                    "has_crisis_language": crisis_language,
                 },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
             )
@@ -215,9 +236,21 @@ class MentalHealthCompanionSpecialist:
             return SpecialistFinding(
                 specialist_name=self.name,
                 category=self.category,
-                summary=f"心理评估失败: {e}",
-                findings=[],
-                raw={"error": str(e)},
+                summary=(
+                    f"{_CRISIS_LANGUAGE_SUMMARY} · 心理评估失败: {e}"
+                    if crisis_language
+                    else f"心理评估失败: {e}"
+                ),
+                findings=(
+                    [_crisis_language_warning([_CRISIS_LANGUAGE_SIGNAL])]
+                    if crisis_language
+                    else []
+                ),
+                raw={
+                    "error": str(e),
+                    "has_crisis_signal": crisis_language,
+                    "has_crisis_language": crisis_language,
+                },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
             )
 
@@ -239,6 +272,33 @@ def _detect_crisis(
     if mood is not None and sleep_q is not None and mood < 4 and sleep_q < 5:
         signals.append("情绪偏低伴睡眠质量差")
     return signals
+
+
+_CRISIS_LANGUAGE_SIGNAL = "对话中出现轻生/自伤相关表达"
+# summary 会进临床日志 SOAP 与医生报告:用中性、可能性措辞。
+_CRISIS_LANGUAGE_SUMMARY = "⚠️ 对话中可能出现轻生相关表达，需先确认安全并提供心理援助热线"
+
+
+def _crisis_language_warning(signals: List[str]) -> Dict[str, Any]:
+    """原话含轻生/自伤表达时的危机提示。
+
+    orchestrator 合成 prompt 只渲染 severity_label / title / action,所以热线与急救
+    指引必须写进 action;message + hotlines 供客户端危机卡片展示。Web「专家裁决」
+    折叠区也直接展示 title:措辞须同时适合模型与用户阅读,且对误报(夸张说法)温和。
+    """
+    return {
+        "type": "crisis_warning",
+        "severity": "high",
+        "severity_label": "紧急",
+        "signals": signals,
+        "title": "对话中可能出现轻生相关表达：先温和确认安全并给出热线，再简要回应原问题",
+        "message": CRISIS_SUPPORT_LEAD,
+        "hotlines": [dict(h) for h in CRISIS_HOTLINES],
+        "action": (
+            "先确认此刻是否安全；如有伤害自己的打算或已处于危险中，立即拨打 120 或 110；"
+            f"心理援助热线：{crisis_hotline_summary()}；并联系一位信任的人陪在身边。"
+        ),
+    }
 
 
 def _build_support_actions(

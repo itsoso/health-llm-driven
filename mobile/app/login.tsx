@@ -65,6 +65,7 @@ const PHONE_VERIFICATION_ERROR_MESSAGES: Record<string, string> = {
 
 function normalizeInternationalPhone(value: string): string | null {
   const normalized = value.replace(/[\s()-]/g, '');
+  if (/^1[3-9]\d{9}$/.test(normalized)) return `+86${normalized}`;
   return PHONE_PATTERN.test(normalized) ? normalized : null;
 }
 
@@ -207,6 +208,10 @@ export default function LoginScreen({
       const outcome = await verifyPhoneCode(sentPhone, code.trim());
       if (outcome === 'invitation_required') {
         setInviteVerified(true);
+      } else if (outcome === 'registered') {
+        onInvitationLinkCleared?.();
+        setRegistrationComplete(true);
+        onInvitedRegistrationComplete?.();
       } else if (outcome === 'authenticated') {
         onInvitationLinkCleared?.();
       }
@@ -262,7 +267,7 @@ export default function LoginScreen({
 
   const handleAccountLogin = async () => {
     if (!username.trim() || !password) {
-      Alert.alert('提示', '请输入用户名和密码');
+      Alert.alert('提示', '请输入手机号或邮箱和密码');
       return;
     }
     setLoading(true);
@@ -275,6 +280,15 @@ export default function LoginScreen({
     } finally {
       setLoading(false);
     }
+  };
+
+  const changeLoginMode = (nextMode: LoginMode) => {
+    if (loading || nextMode === mode) return;
+    setMode(nextMode);
+    setInlineError('');
+    setCode('');
+    if (nextMode === 'phone') setPassword('');
+    setShowPassword(false);
   };
 
   const changePhone = () => {
@@ -307,7 +321,7 @@ export default function LoginScreen({
       <SafeAreaView style={styles.safe}>
         <View style={styles.successContainer}>
           <Ionicons name="checkmark-circle" size={72} color={c.brand} />
-          <Text style={styles.successTitle}>邀请验证成功，欢迎加入小巴</Text>
+          <Text style={styles.successTitle}>注册成功，欢迎加入小巴</Text>
           {renderPrimaryButton(
             '开始设置我的健康档案',
             () => {
@@ -344,18 +358,40 @@ export default function LoginScreen({
             <Text style={styles.subtitle}>
               {showInvite
                 ? '小巴目前采用邀请制，请输入管理员发送的邀请码。'
-                : '首次使用需获得管理员邀请'}
+                : '新用户验证手机号后即可注册'}
             </Text>
           </View>
 
           <View style={styles.form}>
+            {!showInvite && (
+              <View style={styles.loginMethods}>
+                {([
+                  ['phone', '验证码登录'],
+                  ['account', '密码登录'],
+                ] as const).map(([method, label]) => (
+                  <Pressable
+                    key={method}
+                    accessibilityRole="tab"
+                    accessibilityLabel={label}
+                    accessibilityState={{ selected: mode === method, disabled: loading }}
+                    disabled={loading}
+                    onPress={() => changeLoginMode(method)}
+                    style={[styles.loginMethod, mode === method && styles.loginMethodSelected]}
+                  >
+                    <Text style={mode === method ? styles.loginMethodSelectedText : styles.loginMethodText}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
             {mode === 'account' ? (
               <>
                 <View style={styles.inputWrap}>
                   <Ionicons name="person-outline" size={20} color={c.labelTertiary} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="用户名 / 邮箱 / 手机号"
+                    placeholder="手机号 / 邮箱"
                     placeholderTextColor={c.labelTertiary}
                     textContentType="username"
                     autoComplete="username"
@@ -363,7 +399,7 @@ export default function LoginScreen({
                     autoCorrect={false}
                     value={username}
                     onChangeText={setUsername}
-                    accessibilityLabel="用户名输入框"
+                    accessibilityLabel="手机号或邮箱输入框"
                     editable={!loading}
                   />
                 </View>
@@ -373,6 +409,10 @@ export default function LoginScreen({
                     style={styles.input}
                     placeholder="密码"
                     placeholderTextColor={c.labelTertiary}
+                    textContentType="password"
+                    autoComplete="current-password"
+                    autoCapitalize="none"
+                    autoCorrect={false}
                     secureTextEntry={!showPassword}
                     value={password}
                     onChangeText={setPassword}
@@ -416,16 +456,6 @@ export default function LoginScreen({
                   </Text>
                 ) : null}
                 {renderPrimaryButton('登录', handleAccountLogin, loading)}
-                <Pressable
-                  disabled={loading}
-                  onPress={() => setMode('phone')}
-                  style={styles.secondaryButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="手机号登录"
-                  accessibilityState={{ disabled: loading }}
-                >
-                  <Text style={styles.secondaryText}>手机号登录</Text>
-                </Pressable>
               </>
             ) : showInvite ? (
               <>
@@ -546,7 +576,7 @@ export default function LoginScreen({
                     editable={!loading}
                   />
                 </View>
-                <Text style={styles.helperText}>请保留国家区号；中国大陆手机号默认使用 +86。</Text>
+                <Text style={styles.helperText}>中国大陆手机号可直接输入 11 位号码；其他地区请填写国家区号。</Text>
                 {invitationLinkToken ? (
                   <View style={styles.invitationReadyRow}>
                     <Ionicons name="ticket-outline" size={18} color={c.brand} />
@@ -572,16 +602,6 @@ export default function LoginScreen({
                   accessibilityState={{ disabled: loading }}
                 >
                   <Text style={styles.secondaryText}>我有邀请码</Text>
-                </Pressable>
-                <Pressable
-                  disabled={loading}
-                  onPress={() => setMode('account')}
-                  style={styles.secondaryButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="账号密码登录"
-                  accessibilityState={{ disabled: loading }}
-                >
-                  <Text style={styles.secondaryText}>账号密码登录</Text>
                 </Pressable>
               </>
             )}
@@ -609,6 +629,11 @@ const createStyles = (c: ColorPalette, s: SemanticPalette) => StyleSheet.create(
   title: { fontSize: 28, fontWeight: '700', color: c.labelPrimary, letterSpacing: -0.5 },
   subtitle: { fontSize: 15, lineHeight: 22, color: c.labelSecondary, marginTop: 6, textAlign: 'center' },
   form: { gap: 14 },
+  loginMethods: { flexDirection: 'row', backgroundColor: c.fill, borderRadius: 12, padding: 4 },
+  loginMethod: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
+  loginMethodSelected: { backgroundColor: c.bgCard },
+  loginMethodText: { fontSize: 15, color: c.labelSecondary },
+  loginMethodSelectedText: { fontSize: 15, fontWeight: '600', color: c.brand },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',

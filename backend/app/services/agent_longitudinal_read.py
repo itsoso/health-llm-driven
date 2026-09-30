@@ -99,18 +99,39 @@ _HTML_READ_FRAME = re.compile(
     r"(?P<object>[\u4e00-\u9fffA-Za-z0-9 \t/-]+?)"
     r"\s*以及你的分析[。.!！]?", re.I,
 )
+_HTML_PRESENTATION_SUFFIX = re.compile(
+    r"(?P<request>[\s\S]+?)[，,。.;；!?！？\n]\s*"
+    r"(?:请\s*)?(?:(?:使用|用|以)\s*)?HTML\s*(?:的\s*)?"
+    r"(?:形式|方式|格式)\s*(?:来\s*)?(?:表达|输出|展示|呈现)\s*[。.!！]?",
+    re.I,
+)
 
 
 def _project_read_presentation(source: str) -> str | None:
-    """Consume one complete display wrapper on the ORIGINAL user source.
+    """Consume a complete display wrapper/suffix on the ORIGINAL user source.
 
-    Only plain, bounded retrospective objects are eligible. In particular,
-    projecting after material removal could erase a quoted/code owner because
+    A standalone suffix returns the intact request, still subject to every
+    owner/date/residue check. It never strips format-like substrings or grants
+    a read on its own. The original envelope remains model-visible.
+    Only plain, bounded retrospective objects qualify for the legacy wrapper.
+    Projecting after material removal could erase a quoted/code owner because
     ``输出`` is not a read verb in the shared material-adjacency checker.
     The intact object still passes the existing owner and full-residue binders;
     this helper grants neither a data domain nor a default date window.
     """
-    match = _HTML_READ_FRAME.fullmatch(str(source or "").strip())
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+
+    original = str(source or "")
+    source = original.strip()
+    # Match only source already wholly active under the shared role boundary.
+    # Run it before stripping: leading spaces/tabs can denote Markdown code.
+    # A presentation rewrite must never restore text removed as material.
+    if active_health_read_authority_text(original) != source:
+        return None
+    suffix = _HTML_PRESENTATION_SUFFIX.fullmatch(source)
+    if suffix is not None:
+        return suffix["request"].strip() or None
+    match = _HTML_READ_FRAME.fullmatch(source)
     if match is None:
         return None
     scope = match["object"]

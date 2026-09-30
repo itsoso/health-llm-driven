@@ -269,7 +269,7 @@ class TestSupplementRecordAPI:
         ).count() == 0
 
     def test_batch_checkin_rejects_bool_supplement_id(self, client, auth_headers):
-        """bool 是 Python int 子类,但不能被当作 supplement_id。"""
+        """bool 是 Python int 子类,但不能被当作 supplement_id(批量项 schema 用 StrictInt → 422)。"""
         response = client.post(
             "/api/v1/supplements/records/batch",
             json={
@@ -278,7 +278,8 @@ class TestSupplementRecordAPI:
             },
             headers=auth_headers,
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"][-1] == "supplement_id"
 
     def test_batch_checkin(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试批量打卡"""

@@ -1,3 +1,4 @@
+import pytest
 import json
 import os
 import subprocess
@@ -33,15 +34,15 @@ def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibilit
     overrides = package_json["overrides"]
 
     assert "brace-expansion" not in overrides
-    assert overrides["brace-expansion@<2.0.0"] == "1.1.18"
-    assert overrides["brace-expansion@>=2.0.0 <3.0.0"] == "2.1.4"
-    assert overrides["brace-expansion@>=5.0.0"] == "5.0.9"
+    assert overrides["brace-expansion@<2.0.0"] == "1.1.21"
+    assert overrides["brace-expansion@>=2.0.0 <3.0.0"] == "2.1.7"
+    assert overrides["brace-expansion@>=5.0.0"] == "5.0.12"
     assert overrides["js-yaml@>=3.0.0 <4.0.0"] == "3.15.2"
     assert overrides["js-yaml@>=4.0.0 <5.0.0"] == "4.3.2"
     assert overrides["@xmldom/xmldom"] == "0.8.15"
     assert overrides["xmldom"] == "npm:@xmldom/xmldom@0.8.15"
     assert overrides["decode-uri-component"] == "0.5.0"
-    assert overrides["joi"] == "17.13.6"
+    assert overrides["joi"] == "17.13.8"
     assert overrides["nanoid"] == "3.3.18"
     assert overrides["postcss"] == "8.5.26"
     assert overrides["qs"] == "6.16.0"
@@ -62,8 +63,11 @@ def test_frontend_dependency_overrides_close_nanoid_and_postcss_advisories() -> 
 def test_release_tool_dependency_overrides_close_known_advisories() -> None:
     package_json = json.loads((ROOT / "scripts" / "release-tools" / "package.json").read_text())
 
+    assert package_json["overrides"]["brace-expansion@<2.0.0"] == "1.1.21"
+    assert package_json["overrides"]["brace-expansion@>=2.0.0 <3.0.0"] == "2.1.7"
+    assert package_json["overrides"]["brace-expansion@>=5.0.0"] == "5.0.12"
     assert package_json["overrides"]["diff"] == "8.0.3"
-    assert package_json["overrides"]["joi@17"] == "17.13.6"
+    assert package_json["overrides"]["joi@17"] == "17.13.8"
     assert package_json["overrides"]["ts-deepmerge"] == "8.0.0"
     assert package_json["overrides"]["uuid"] == "11.1.1"
 
@@ -71,7 +75,7 @@ def test_release_tool_dependency_overrides_close_known_advisories() -> None:
 def test_committed_npm_lockfiles_only_use_the_public_registry() -> None:
     allowed_hosts = {"registry.npmjs.org", "registry.npmmirror.com"}
 
-    for app_dir in ("frontend", "mobile"):
+    for app_dir in ("frontend", "mobile", "scripts/release-tools"):
         lockfile = json.loads((ROOT / app_dir / "package-lock.json").read_text())
 
         for package in lockfile["packages"].values():
@@ -79,14 +83,6 @@ def test_committed_npm_lockfiles_only_use_the_public_registry() -> None:
                 source = urlparse(resolved)
                 assert source.scheme == "https"
                 assert source.hostname in allowed_hosts
-
-
-def test_ota_default_eas_cli_uses_an_exact_version() -> None:
-    script = (ROOT / "scripts" / "mobile-ota.sh").read_text(encoding="utf-8")
-
-    assert 'EAS_CLI_PACKAGE="eas-cli@22.0.0"' in script
-    assert 'npx --yes "${EAS_CLI_PACKAGE}" update' in script
-    assert "npx eas-cli update" not in script
 
 
 def run_fast_test(*args: str, changed_files: str = "") -> subprocess.CompletedProcess[str]:
@@ -310,114 +306,6 @@ def run_ota(
     return result, counter, anchor, manifest
 
 
-def test_ota_retries_one_transient_failure_and_verifies_ids(tmp_path: Path) -> None:
-    result, counter, anchor, manifest = run_ota(tmp_path, "transient")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert counter.read_text().strip() == "2"
-    assert (tmp_path / "expo-attempts").read_text().strip() == "1"
-    eas_attempts = (tmp_path / "eas-args").read_text().splitlines()
-    assert len(eas_attempts) == 2
-    assert eas_attempts[0] == eas_attempts[1]
-    assert "--input-dir" in eas_attempts[0]
-    assert "--skip-bundler" in eas_attempts[0]
-    assert "11111111-1111-4111-8111-111111111111" in result.stdout
-    assert "22222222-2222-4222-8222-222222222222" in result.stdout
-    assert anchor.exists()
-    payload = json.loads(manifest.read_text())
-    assert payload["status"] == "published"
-    assert payload["active_update_id"] == "22222222-2222-4222-8222-222222222222"
-    assert payload["previous_known_good_update_id"] is None
-
-
-def test_ota_falls_back_to_no_bytecode_after_repeated_asset_timeout(
-    tmp_path: Path,
-) -> None:
-    result, counter, anchor, manifest = run_ota(tmp_path, "asset-timeout")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert counter.read_text().strip() == "2"
-    assert (tmp_path / "expo-attempts").read_text().strip() == "2"
-    expo_attempts = (tmp_path / "expo-args").read_text().splitlines()
-    assert "--no-bytecode" not in expo_attempts[0]
-    assert "--no-bytecode" in expo_attempts[1]
-    assert "--skip-bundler" in result.stdout
-    assert anchor.exists()
-    assert json.loads(manifest.read_text())["status"] == "published"
-
-
-def test_ota_can_force_no_bytecode_without_repeating_hermes_attempts(
-    tmp_path: Path,
-) -> None:
-    result, counter, anchor, manifest = run_ota(
-        tmp_path,
-        "asset-timeout",
-        force_no_bytecode=True,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert counter.read_text().strip() == "1"
-    assert (tmp_path / "expo-attempts").read_text().strip() == "1"
-    assert "--no-bytecode" in (tmp_path / "expo-args").read_text()
-    assert anchor.exists()
-    assert json.loads(manifest.read_text())["status"] == "published"
-
-
-def test_ota_does_not_retry_authentication_failures(tmp_path: Path) -> None:
-    result, counter, anchor, manifest = run_ota(tmp_path, "auth")
-
-    assert result.returncode != 0
-    assert counter.read_text().strip() == "1"
-    assert not anchor.exists()
-    assert not manifest.exists()
-    audit_events = [
-        json.loads(line)
-        for line in (tmp_path / "ota-audit.jsonl").read_text().splitlines()
-    ]
-    assert audit_events[-1]["result"] == "failed"
-    assert audit_events[-1]["failure_class"] == "non_retryable"
-    assert set(audit_events[-1]) <= {
-        "schema_version",
-        "recorded_at",
-        "platform",
-        "channel",
-        "environment",
-        "runtime_version",
-        "source_commit_sha",
-        "main_commit_sha",
-        "mobile_tree_digest",
-        "artifact_variant",
-        "attempt",
-        "result",
-        "failure_class",
-        "duration_seconds",
-        "group_id",
-        "update_id",
-    }
-
-
-def test_ota_rejects_success_without_published_update_ids(tmp_path: Path) -> None:
-    result, counter, anchor, manifest = run_ota(tmp_path, "missing-ids")
-
-    assert result.returncode != 0
-    assert counter.read_text().strip() == "1"
-    assert "published identifier verification failed" in (result.stdout + result.stderr).lower()
-    assert not anchor.exists()
-    assert not manifest.exists()
-
-
-def test_ota_manifest_keeps_previous_known_good_update(tmp_path: Path) -> None:
-    first, _, _, manifest = run_ota(tmp_path, "success")
-    assert first.returncode == 0, first.stdout + first.stderr
-
-    second, _, _, _ = run_ota(tmp_path, "success")
-    assert second.returncode == 0, second.stdout + second.stderr
-
-    payload = json.loads(manifest.read_text())
-    assert payload["previous_known_good_group_id"] == "11111111-1111-4111-8111-111111111111"
-    assert payload["previous_known_good_update_id"] == "22222222-2222-4222-8222-222222222222"
-
-
 def _commit(repo: Path, message: str) -> str:
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", message], cwd=repo, check=True)
@@ -505,91 +393,24 @@ def test_ota_source_guard_rejects_mobile_divergence_and_dirty_paths(
     assert "uncommitted" in dirty.stderr.lower()
 
 
-def test_ota_manifest_records_source_main_and_relevant_tree(tmp_path: Path) -> None:
-    result, _, _, manifest = run_ota(tmp_path, "success")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    payload = json.loads(manifest.read_text())
-    assert len(payload["source_commit_sha"]) == 40
-    assert len(payload["main_commit_sha"]) == 40
-    assert len(payload["mobile_tree_digest"]) == 64
-    assert payload["commit_sha"] in {
-        payload["source_commit_sha"],
-        payload["main_commit_sha"],
-    }
+@pytest.mark.parametrize("mode", ["success", "transient", "asset-timeout", "auth", "missing-ids"])
+def test_local_ota_never_uses_environment_injected_vendor_runners(tmp_path, mode):
+    result, counter, anchor, manifest = run_ota(tmp_path, mode)
+    assert result.returncode == 78
+    assert "trusted-ota.yml" in result.stderr
+    assert not counter.exists()
+    assert not anchor.exists()
+    assert not manifest.exists()
+    assert not (tmp_path / "expo-attempts").exists()
 
 
-def test_ota_rollback_defaults_to_dry_run(tmp_path: Path) -> None:
-    manifest = tmp_path / "release-manifest.json"
-    manifest.write_text(json.dumps({
-        "status": "published",
-        "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        "previous_known_good_group_id": "11111111-1111-4111-8111-111111111111",
-        "previous_known_good_update_id": "22222222-2222-4222-8222-222222222222",
-    }))
-    runner = tmp_path / "rollback-runner"
-    called = tmp_path / "called"
-    runner.write_text(f"#!/usr/bin/env bash\nprintf '%s' \"$*\" > '{called}'\n")
+def test_local_rollback_cannot_republish_even_with_confirm(tmp_path):
+    marker = tmp_path / "vendor-called"
+    runner = tmp_path / "vendor"
+    runner.write_text(f"#!/bin/sh\ntouch '{marker}'\n")
     runner.chmod(0o755)
-    env = os.environ.copy()
-    env.update({"OTA_MANIFEST_FILE": str(manifest), "OTA_EAS_RUNNER": str(runner)})
-
-    result = subprocess.run(
-        [str(ROOT / "scripts" / "mobile-ota-rollback.sh"), "production"],
-        cwd=ROOT, env=env, text=True, capture_output=True, check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "dry-run" in result.stdout
-    assert not called.exists()
-
-
-def test_ota_rollback_explains_when_manifest_has_no_known_good_target(tmp_path: Path) -> None:
-    manifest = tmp_path / "release-manifest.json"
-    manifest.write_text(json.dumps({
-        "status": "published",
-        "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-    }))
-
-    env = os.environ.copy()
-    env["OTA_MANIFEST_FILE"] = str(manifest)
-    result = subprocess.run(
-        [str(ROOT / "scripts" / "mobile-ota-rollback.sh"), "production"],
-        cwd=ROOT, env=env, text=True, capture_output=True, check=False,
-    )
-
-    assert result.returncode != 0
-    assert "没有 previous_known_good" in result.stderr
-
-
-def test_ota_rollback_confirm_republishes_and_records_state(tmp_path: Path) -> None:
-    manifest = tmp_path / "release-manifest.json"
-    manifest.write_text(json.dumps({
-        "status": "published",
-        "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        "previous_known_good_group_id": "11111111-1111-4111-8111-111111111111",
-        "previous_known_good_update_id": "22222222-2222-4222-8222-222222222222",
-    }))
-    runner = tmp_path / "rollback-runner"
-    called = tmp_path / "called"
-    runner.write_text(f"#!/usr/bin/env bash\nprintf '%s' \"$*\" > '{called}'\n")
-    runner.chmod(0o755)
-    env = os.environ.copy()
-    env.update({"OTA_MANIFEST_FILE": str(manifest), "OTA_EAS_RUNNER": str(runner)})
-
-    result = subprocess.run(
-        [str(ROOT / "scripts" / "mobile-ota-rollback.sh"), "production", "--confirm"],
-        cwd=ROOT, env=env, text=True, capture_output=True, check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    command = called.read_text()
-    assert "update:republish" in command
-    assert "--group 11111111-1111-4111-8111-111111111111" in command
-    assert "--destination-channel production" in command
-    payload = json.loads(manifest.read_text())
-    assert payload["status"] == "rolled_back"
-    assert payload["active_update_id"] == "22222222-2222-4222-8222-222222222222"
+    result = subprocess.run([str(ROOT / "scripts/mobile-ota-rollback.sh"), "production", "--confirm"],
+                            env={"PATH": "/usr/bin:/bin", "OTA_EAS_RUNNER": str(runner)}, capture_output=True, text=True)
+    assert result.returncode == 78
+    assert "trusted-ota.yml" in result.stderr
+    assert not marker.exists()

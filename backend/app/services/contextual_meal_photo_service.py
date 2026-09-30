@@ -25,7 +25,7 @@ from app.services.diet_media_storage import (
     copy_owned_chat_image_to_diet,
     remove_diet_image_file,
 )
-from app.services.intake_intent_classifier import classify_intake_intent, looks_like_food_ui_text
+from app.services.intake_intent_classifier import classify_intake_subject, looks_like_food_ui_text
 
 
 PHOTO_DRAFT_TTL = timedelta(hours=24)
@@ -896,7 +896,7 @@ class ContextualMealPhotoService:
             )
         if not food_items or looks_like_food_ui_text(food_items):
             raise ContextualMealPhotoServiceError("contextual_meal_photo_food_items_invalid")
-        if classify_intake_intent(food_items).kind in {"diet_management", "medication", "supplement"}:
+        if classify_intake_subject(food_items).kind in {"diet_management", "medication", "supplement"}:
             raise ContextualMealPhotoServiceError("contextual_meal_photo_food_items_invalid")
 
         confidence = round(sum(confidences) / len(confidences), 3) if confidences else 0.0

@@ -3,6 +3,7 @@ import pytest
 from dataclasses import replace
 
 from app.services.agent_kernel.capability_policy import decide_tool_capability
+from app.services.agent_kernel.daily_read_plan import DAILY_SUMMARY_STARTER
 from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.types import (
     AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot,
@@ -144,11 +145,15 @@ async def test_meal_read_dispatches_only_requested_meal(tool):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("message,dimension", [
     ("昨晚睡得怎样，今天是否适合锻炼", "sleep"),
-    ("今天我吃了啥。分析以下建议：昨天可以早点吃饭", "diet"),
+    ("今天我吃了啥", "diet"),
     ("给我今天总结 给我建议", "diet"),
     ("给我今天总结 给我建议", "sleep"),
     ("今天我过得怎么样?", "diet"),
     ("今天我过得怎么样?", "sleep"),
+    (DAILY_SUMMARY_STARTER, "diet"),
+    (DAILY_SUMMARY_STARTER, "sleep"),
+    ("总结一下我今天的健康数据，并给睡前几个小建议", "diet"),
+    ("总结一下我今天的健康数据，并给睡前几个小建议", "sleep"),
 ])
 async def test_daily_plan_reaches_owned_exact_date_postgres_rows(
     db, auth_user_and_headers, message, dimension,

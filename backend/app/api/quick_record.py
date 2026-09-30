@@ -1,6 +1,7 @@
 """快速记录 API — 自然语言解析，一句话记录健康数据"""
 import re
 import logging
+import unicodedata
 from datetime import date, datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,9 +13,11 @@ from app.models.user import User
 from app.models.daily_health import DietRecord, WaterIntake
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
+from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.api.deps import get_current_user_required
+from app.api.supplements import _normalized_supplement_name
 from app.schemas.blood_pressure import BloodPressureSafetyGuidance
-from app.services.intake_intent_classifier import classify_intake_intent
+from app.services.intake_intent_classifier import NON_INTAKE_REASONS, classify_intake_intent, non_intake_reason
 from app.utils.blood_pressure_classify import blood_pressure_display
 
 logger = logging.getLogger(__name__)
@@ -154,6 +157,59 @@ def _estimate_nutrition(food_text: str) -> tuple[int, float, float, float] | Non
     return None
 
 
+# 补剂自由文本落 taken=true 会进 Twin 在服集 / DSI;否定/漏服/别日/计划/提问(没吃/忘了/昨天/
+# 准备/让我吃/吗)一律 400 不写。这是只收紧的过滤,不是完整意图识别(如「睡前吃X」「我妈吃了X」
+# 仍会通过),完整修复归共享 intake 分类器。先去空白,防「不 吃」绕过。
+_SUPPLEMENT_NOT_TAKEN_RE = re.compile(
+    r"没|沒|未|忘|漏(?:吃|服)|拒[绝絕]|不\S{0,2}(?:吃|服|喝)|[别別](?:忘|吃|服|喝)"
+    r"|昨|前天|上[周週]|准备|準備|打算|待[会會]|等[会會下]|一[会會]|稍[后後]|明天|[记記]得|提醒"
+    r"|要|[该該]|让我|讓我|建[议議]|吗|嗎|么|麼|[?？]"
+)
+
+
+def _is_not_taken_supplement_text(text: str) -> bool:
+    return bool(_SUPPLEMENT_NOT_TAKEN_RE.search(re.sub(r"\s+", "", unicodedata.normalize("NFKC", text))))
+
+
+# 快速记录只写「今天」(血压/饮水时刻取 now):点名别的日子时一律 400 不写(不猜日期、不编时刻),补记去
+# 各记录页选日期。只收紧:认不出的写法仍按今天记。「晚上周黑鸭/以后天天/目前天天/3号套餐」不算别日。
+_CN_NUM = r"[\d几幾两兩一二三四五六七八九十]"
+_OTHER_DAY_RE = re.compile(r"昨|(?<![目提以之])前[天晚]|明[天早晚]|(?<![饭飯餐午以之今])[后後]天|(?<![早晚马馬])上(?:个?(?:周|週|星期|礼拜|禮拜)|次)"
+    rf"|{_CN_NUM}+\s*[天日]\s*[以之]?前|前\s*{_CN_NUM}+\s*天"
+    r"|\d{1,2}\s*月\s*\d{1,2}|(?<!\d)\d{1,2}\s*[号號](?![套餐店楼樓])|\d{4}\s*[-/年]\s*\d{1,2}(?!\d)"
+    r"|(?<![a-z])(?:yesterday|tomorrow|last\s*(?:night|week))(?![a-z])|days?\s*ago", re.IGNORECASE)
+_OTHER_DAY_DETAIL = "快速记录只记今天，这句话提到了别的日子（如昨天、前天、上周或具体日期），本次未记录；补记请到对应记录页选择日期。"
+
+# 剂量/时间不是补剂名(Mac 表单发「补剂<名称> <剂量与时间>」,见 apps/mac FeatureViews.submitStructured),
+# 留在名字里会对不上已有定义、自动建出重复定义。数字剂量不紧贴字母数字(辅酶Q10),中文数字剂量须空格(三七片)。
+_DOSE_UNIT = (r"\s*(?:粒|片|颗|顆|丸|滴|勺|袋|包|支|毫克|微克|克|毫升|国际单位|单位|單位|mcg|mg|μg|ug|iu|ml|g"
+              r"|capsules?|caps?|tablets?|tabs?|softgels?|drops?|scoops?)(?![a-z])")
+_NUM_DOSE = r"(?<![a-z\d.])\d+(?:\.\d+)?(?:\s*[-~～到至]\s*\d+(?:\.\d+)?)?" + _DOSE_UNIT
+_CN_DOSE = r"[一二两兩三四五六七八九十半]" + _DOSE_UNIT
+_SUPPLEMENT_TIMING = (r"[早午晚]?[餐饭飯][前后後中]|随餐|隨餐|睡前|空腹|早上|早晨|上午|中午|下午|晚上"
+                      r"|(?:每|一)?[天日晚周週]?[一二两兩三四\d]*次|每[天日晚周週]")
+_SUPPLEMENT_LEADING_DOSE_RE = re.compile(rf"^(?:{_NUM_DOSE}|{_CN_DOSE})\s*", re.IGNORECASE)
+_SUPPLEMENT_DOSE_TAIL_RE = re.compile(
+    rf"(?<=\S)(?:\s*{_NUM_DOSE}|\s+{_CN_DOSE}|\s+(?:{_SUPPLEMENT_TIMING})).*$", re.IGNORECASE | re.DOTALL)
+# 表单尾巴只允许剂量/时间 token;剩别的(药名等)整句拒绝,绝不截断后静默丢弃。
+_SUPPLEMENT_TAIL_TOKEN_RE = re.compile(rf"{_NUM_DOSE}|(?<!\S){_CN_DOSE}|{_SUPPLEMENT_TIMING}|[\s,，、;；/+]", re.I)
+
+
+def _supplement_name(value: str) -> str:
+    name = _SUPPLEMENT_LEADING_DOSE_RE.sub("", re.sub(r"^补剂\s*[:：]?\s*", "", value.strip()))
+    return _SUPPLEMENT_DOSE_TAIL_RE.sub("", name).strip()
+
+
+def _checked_supplement_name(text: str) -> Optional[str]:
+    """干净补剂名(NFKC 只在此用,不碰血压/体重/饮水);截掉的部分含剂量/时间以外内容则 None(拒绝)。"""
+    body = re.sub(r"^补剂\s*[:：]?\s*", "", unicodedata.normalize("NFKC", text))
+    name = _supplement_name(body)
+    if not name or name not in body:
+        return None
+    tail = body.replace(name, "", 1)
+    return None if _SUPPLEMENT_TAIL_TOKEN_RE.sub("", tail) else name
+
+
 def _parse_quick_record(text: str):
     """
     解析自然语言快速记录，返回 (type, data) 元组。
@@ -190,11 +246,20 @@ def _parse_quick_record(text: str):
         amount = int(water_match.group(1))
         return "water", {"amount": amount}
 
+    # 分类/否定过滤都看完整原文(同改动前,用药守卫不被绕过);Mac 表单只另取干净名称。
+    form = text.startswith("补剂")
+    form_name = _checked_supplement_name(text) if form else None
+    if form and form_name is None:
+        return None, None
     intake = classify_intake_intent(text)
-    if intake.kind == "supplement":
-        name = intake.text.strip()
-        if name:
-            return "supplement", {"name": name}
+    if intake.reason in NON_INTAKE_REASONS:
+        # 漏服/否定/计划/提问不是一次摄入;下方旧正则兜底也不得把它复活成记录。
+        return None, None
+    if intake.kind == "supplement" and intake.text.strip():
+        name = form_name or _checked_supplement_name(intake.text)
+        if not name or _is_not_taken_supplement_text(text):
+            return None, None
+        return "supplement", {"name": name}
     if intake.kind in {"medication", "diet_management"}:
         return None, None
     if intake.kind == "diet":
@@ -203,12 +268,18 @@ def _parse_quick_record(text: str):
         food = intake.text.strip()
         if food:
             return "diet", {"meal_type": meal_type, "meal_cn": meal_cn, "food": food}
+    # 分类器可能先判 health_metric(「午餐没吃，血糖5.6」);旧正则兜底前再单独看言语行为。
+    if non_intake_reason(text):
+        return None, None
 
     # legacy fallback: supplement must be checked before generic "吃了 xxx",
     # otherwise "吃了 维生素D" is incorrectly treated as diet.
     supp_match = re.match(r"(?:吃了?|服用|补剂)\s*(维生素|鱼油|钙片|叶酸|益生菌|辅酶|NAC|锌|镁|铁|B族|维C|维D|omega|Omega)(.*)$", text, re.IGNORECASE)
     if supp_match:
-        supp_name = supp_match.group(1) + (supp_match.group(2) or "").strip()
+        raw_name = supp_match.group(1) + (supp_match.group(2) or "")
+        supp_name = form_name or _checked_supplement_name(raw_name)
+        if not supp_name or _is_not_taken_supplement_text(text) or non_intake_reason(raw_name.strip(), named=True):
+            return None, None
         return "supplement", {"name": supp_name}
 
     # --- 饮食（指定餐次）---
@@ -240,6 +311,27 @@ def _parse_quick_record(text: str):
     return None, None
 
 
+def _resolve_supplement_definition(db: Session, user_id: int, name: str) -> Optional[SupplementDefinition]:
+    """镜像 /records/intake-batch:只看 active 定义(Twin 只统计它们);唯一精确同名才落卡,重复或仅相似(可能是
+    复方)一律 409 列出、不猜;None = 需新建。Python 侧比较,不把用户文本拼进 LIKE(% / _ 是通配符)。"""
+    normalized = _normalized_supplement_name(name)
+    if not normalized:
+        raise HTTPException(status_code=400, detail="补剂名称无效，本次未记录。")
+    definitions = db.query(SupplementDefinition).filter(
+        SupplementDefinition.user_id == user_id,
+        SupplementDefinition.is_active.is_(True),
+    ).order_by(SupplementDefinition.id).all()
+    keys = [(d, _normalized_supplement_name(d.name)) for d in definitions]
+    exact = [d for d, key in keys if key == normalized]
+    candidates = exact or [d for d, key in keys if key and (normalized in key or key in normalized)]
+    if len(candidates) > 1 or (candidates and not exact):
+        listed = "、".join(f"「{d.name}」" for d in candidates[:3]) + ("等" if len(candidates) > 3 else "")
+        raise HTTPException(status_code=409, detail=(
+            f"「{name}」在补剂列表里有重复定义：{listed}，本次未记录；请先在补剂页停用多余的一项。" if exact
+            else f"「{name}」与已有补剂相似：{listed}，本次未记录；请写明完整名称。"))
+    return candidates[0] if candidates else None
+
+
 @router.post("/quick-record", response_model=QuickRecordResponse)
 def quick_record(
     req: QuickRecordRequest,
@@ -247,6 +339,9 @@ def quick_record(
     db: Session = Depends(get_db),
 ):
     """自然语言快速记录健康数据"""
+    user_id = current_user.id
+    if _OTHER_DAY_RE.search(unicodedata.normalize("NFKC", req.text)):
+        raise HTTPException(status_code=400, detail=_OTHER_DAY_DETAIL)
     record_type, data = _parse_quick_record(req.text)
 
     if record_type is None:
@@ -349,12 +444,9 @@ def quick_record(
 
         elif record_type == "supplement":
             # 查找或创建补剂定义，然后打卡
-            from app.models.supplement import SupplementDefinition, SupplementRecord
-            supp = db.query(SupplementDefinition).filter(
-                SupplementDefinition.user_id == current_user.id,
-                SupplementDefinition.name.ilike(f"%{data['name']}%"),
-            ).first()
-            if not supp:
+            supp = _resolve_supplement_definition(db, current_user.id, data["name"])
+            created = supp is None
+            if created:
                 # 自动创建补剂定义
                 supp = SupplementDefinition(
                     user_id=current_user.id,
@@ -378,18 +470,31 @@ def quick_record(
                     taken=True,
                 )
                 db.add(record)
+            elif existing.taken:
+                record = existing  # 幂等:今天已打过卡
             else:
-                record = existing
+                # 当天已被取消勾选:自由文本不能把它翻回已服(误解析会虚高依从),也不假报已打卡。
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"今天的「{supp.name}」已被标记为未服,本次未改动;如确已服用,请在补剂页勾选。",
+                )
+            message = f"已新建补剂「{supp.name}」并打卡" if created else f"已打卡补剂：{supp.name}"  # 点名实际落到的定义
             db.commit()
             db.refresh(record)
             _invalidate_twin(current_user.id)
             return _quick_record_response(
                 record_type="supplement",
-                message=f"已打卡补剂：{data['name']}",
+                message=message,
                 record_id=record.id,
             )
 
-    except Exception as e:
+    except HTTPException:
         db.rollback()
-        logger.error(f"快速记录失败: {e}")
-        raise HTTPException(status_code=500, detail=f"记录失败: {str(e)}")
+        raise
+    except Exception as exc:
+        db.rollback()
+        # 异常原文可能带 SQL/参数/健康值:不回显给客户端;ERROR 只记类型,堆栈只进 DEBUG(AGENTS.md §5)。
+        logger.error("[quick_record] write failed record_type=%s user=%s error=%s",
+                     record_type, user_id, type(exc).__name__)
+        logger.debug("[quick_record] write failure detail", exc_info=True)
+        raise HTTPException(status_code=500, detail="记录失败，请稍后重试。") from None

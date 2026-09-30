@@ -15,6 +15,7 @@ from app.services.registration_invitation import create_phone_registration_grant
 
 @pytest.fixture(autouse=True)
 def _rollout_settings(monkeypatch):
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", False)
     monkeypatch.setattr(settings, "auth_phone_code_dev_echo", True)
     monkeypatch.setattr(settings, "auth_phone_code_resend_seconds", 0)
     monkeypatch.setattr(settings, "auth_phone_registration_auto_approve", True)

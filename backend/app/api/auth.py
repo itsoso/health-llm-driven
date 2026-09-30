@@ -10,8 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import Field, ValidationError
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.rate_limit import limiter
 from app.database import get_db
 from app.models.user import User, GarminCredential
 from app.models.agent_audit_log import AgentAuditLog
@@ -38,6 +37,7 @@ from app.services.phone_auth import (
     mask_phone,
     normalize_phone,
 )
+from app.services.registration_notification import enqueue_registration_notification
 from app.services.registration_invitation import (
     create_phone_registration_grant,
     find_invitation_by_code,
@@ -82,7 +82,6 @@ async def write_ai_consent(body: AIConsentUpdate, request: Request, current_user
     return update_ai_consent(db, current_user.id, body.accepted, body.policy_version)
 
 # 配置限流器
-limiter = Limiter(key_func=get_remote_address)
 
 _URL_SAFE_CREDENTIAL_RE = re.compile(r"[A-Za-z0-9_-]{22,128}\Z")
 _MANUAL_CODE_RE = re.compile(r"[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}\Z")
@@ -325,6 +324,20 @@ def _unique_phone_username(db: Session, phone: str) -> str:
     return username
 
 
+def _create_verified_phone_user(db: Session, phone: str, now: datetime) -> User:
+    from app.config import settings
+
+    user = User(
+        username=_unique_phone_username(db, phone), email=None, hashed_password=None,
+        name="小巴用户", phone=phone, phone_verified_at=now,
+        is_active=True, is_approved=bool(settings.auth_phone_registration_auto_approve),
+        onboarding_completed=False,
+    )
+    db.add(user)
+    enqueue_registration_notification(db, user)
+    return user
+
+
 def _ensure_active_approved(user: User) -> None:
     if not user.is_active:
         raise HTTPException(
@@ -444,18 +457,14 @@ async def send_phone_code(
         phone = normalize_phone(payload.phone)
         from app.config import settings
 
-        if settings.registration_invitation_enforcement_enabled:
-            existing_user = auth_service.get_user_by_phone(db, phone)
-            if existing_user is not None:
-                phone_is_admitted = bool(
-                    existing_user.is_active and existing_user.is_approved
-                )
-            else:
-                phone_is_admitted = bool(
-                    settings.registration_invitation_rollout_enabled
-                    and find_usable_invitation_by_phone(db, phone) is not None
-                )
-            if not phone_is_admitted:
+        existing_user = auth_service.get_user_by_phone(db, phone)
+        if existing_user is not None:
+            if not (existing_user.is_active and existing_user.is_approved):
+                raise _auth_error(403, "REGISTRATION_INVITATION_REQUIRED", "该手机号尚未开通，请联系管理员")
+        elif (settings.registration_invitation_enforcement_enabled
+              and not settings.auth_phone_self_registration_enabled):
+            if not (settings.registration_invitation_rollout_enabled
+                    and find_usable_invitation_by_phone(db, phone) is not None):
                 raise _auth_error(
                     status.HTTP_403_FORBIDDEN,
                     "REGISTRATION_INVITATION_REQUIRED",
@@ -503,10 +512,10 @@ async def login_by_phone_code(
     payload: Any = Body(...),
     db: Session = Depends(get_db),
 ):
-    """Legacy OTP login; enforcement blocks unknown-phone auto-registration."""
+    """Legacy OTP endpoint; verified self-registration follows the server policy."""
     parsed = _safe_body(PhoneCodeLogin, payload)
     try:
-        phone = consume_phone_code(db, parsed.phone, parsed.code, purpose="login")
+        phone = consume_phone_code(db, parsed.phone, parsed.code, purpose="login", commit=False)
     except (InvalidPhoneNumber, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -516,36 +525,28 @@ async def login_by_phone_code(
     if user is None:
         from app.config import settings
 
-        if settings.registration_invitation_enforcement_enabled:
+        if (settings.registration_invitation_enforcement_enabled
+                and not settings.auth_phone_self_registration_enabled):
             raise _auth_error(
                 status.HTTP_403_FORBIDDEN,
                 "REGISTRATION_INVITATION_REQUIRED",
                 "该手机号需要管理员邀请后才能注册",
             )
 
-        user = User(
-            username=_unique_phone_username(db, phone),
-            email=None,
-            hashed_password=None,
-            name="小巴用户",
-            phone=phone,
-            phone_verified_at=now,
-            is_active=True,
-            is_approved=bool(settings.auth_phone_registration_auto_approve),
-            onboarding_completed=False,
-        )
-        db.add(user)
         try:
+            user = _create_verified_phone_user(db, phone, now)
             db.commit()
             db.refresh(user)
-        except IntegrityError as exc:
+        except IntegrityError:
             db.rollback()
-            user = auth_service.get_user_by_phone(db, phone)
-            if user is None:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="手机号已被其他账号使用，请联系客服处理",
-                ) from exc
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="手机号注册状态冲突，请重新获取验证码",
+            ) from None
+        except Exception:
+            db.rollback()
+            logger.error("phone registration persistence failed")
+            raise _auth_error(500, "PHONE_REGISTRATION_FAILED", "注册暂时无法完成，请稍后重试") from None
         is_new_user = True
         logger.info("手机号新用户注册: user_id=%s phone=%s", user.id, mask_phone(phone))
     else:
@@ -575,7 +576,7 @@ async def login_by_phone_code(
         PhoneVerificationAuthenticated | PhoneVerificationInvitationRequired,
         Field(discriminator="outcome"),
     ],
-    summary="验证手机号并区分登录或邀请注册",
+    summary="验证手机号并登录或注册",
     openapi_extra={
         "requestBody": {
             "required": True,
@@ -590,7 +591,7 @@ async def verify_phone_code(
     payload: Any = Body(...),
     db: Session = Depends(get_db),
 ):
-    """Consume an OTP exactly once without creating an unknown-phone user."""
+    """Consume OTP and atomically self-register, or return an invitation ticket."""
 
     parsed = _safe_body(PhoneCodeLogin, payload)
     try:
@@ -625,6 +626,17 @@ async def verify_phone_code(
 
         from app.config import settings
 
+        if settings.auth_phone_self_registration_enabled:
+            user = _create_verified_phone_user(db, phone, now)
+            db.commit()
+            db.refresh(user)
+            _ensure_active_approved(user)
+            token = _issue_token_response(user, db)
+            return _deliver_token(request, response, PhoneVerificationAuthenticated(
+                access_token=token.access_token, token_type=token.token_type,
+                user=token.user, is_new_user=True,
+            ))
+
         if not settings.registration_invitation_rollout_enabled:
             # A valid OTP remains one-time while rollback closes only new
             # registrations. Existing users above continue to authenticate.
@@ -647,14 +659,18 @@ async def verify_phone_code(
     except (InvalidPhoneNumber, ValueError) as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except IntegrityError as exc:
+    except IntegrityError:
         db.rollback()
         logger.warning("phone verification persistence conflict")
         raise _auth_error(
             status.HTTP_409_CONFLICT,
             "PHONE_VERIFICATION_CONFLICT",
             "手机号验证状态冲突，请重新获取验证码",
-        ) from exc
+        ) from None
+    except Exception:
+        db.rollback()
+        logger.error("phone verification persistence failed")
+        raise _auth_error(500, "PHONE_REGISTRATION_FAILED", "注册暂时无法完成，请稍后重试") from None
 
 
 @router.post(
@@ -863,6 +879,7 @@ async def invited_phone_registration(
         )
         db.add(user)
         db.flush()
+        enqueue_registration_notification(db, user)
         grant.consumed_at = now
         grant.consumed_by = user.id
         grant.idempotency_key_digest = idempotency_digest

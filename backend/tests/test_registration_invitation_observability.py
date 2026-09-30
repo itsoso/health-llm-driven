@@ -22,6 +22,7 @@ def test_registration_observability_contains_only_bounded_counts_and_enums(
     )
     monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)
     monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", True)
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", False)
     sent = create_registration_invitation(db, "13800138211").invitation
     failed = create_registration_invitation(db, "13800138212").invitation
     sent.status = "sent"
@@ -97,6 +98,7 @@ def test_registration_observability_contains_only_bounded_counts_and_enums(
 def test_dashboard_exposes_only_the_safe_registration_aggregate(db, monkeypatch):
     monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", False)
     monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", True)
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", False)
 
     report = collect_dashboard(db, days=1, user_id=None)
 
@@ -110,6 +112,16 @@ def test_dashboard_exposes_only_the_safe_registration_aggregate(db, monkeypatch)
         "registration_attempts_by_outcome": {},
         "registration_rejections_by_error": {},
     }
+
+
+def test_registration_observability_reports_self_registration_precedence(db, monkeypatch):
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", True)
+    monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", True)
+    monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", False)
+
+    stats = registration_invitation_stats(db, datetime.now(UTC) - timedelta(days=1))
+
+    assert stats["mode"] == "self_registration"
 
 
 def test_user_filtered_dashboard_omits_global_registration_aggregate(db):

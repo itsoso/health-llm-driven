@@ -41,6 +41,21 @@ def test_production_rejects_debug():
         settings.validate_required_security()
 
 
+@pytest.mark.parametrize("environment", ["production", "PRODUCTION", " Production "])
+def test_production_rejects_phone_code_echo(environment):
+    configured = Settings(
+        _env_file=None,
+        secret_key="A" * 32,
+        app_env=environment,
+        debug=False,
+        auth_phone_code_dev_echo=True,
+        garmin_encryption_key="B" * 44,
+        device_encryption_key="C" * 44,
+    )
+    with pytest.raises(ValueError, match="AUTH_PHONE_CODE_DEV_ECHO"):
+        configured.validate_required_security()
+
+
 def test_production_security_checks_are_case_insensitive():
     settings = Settings(
         _env_file=None,
@@ -215,3 +230,18 @@ def test_backup_and_migration_scripts_do_not_embed_database_credentials():
     for path in files:
         content = path.read_text(encoding="utf-8")
         assert not any(value in content for value in forbidden), path
+
+
+def test_security_release_candidate_enforces_real_settings_contract():
+    import importlib.util
+    from pathlib import Path
+    from app.config import Settings
+    path = Path(__file__).resolve().parents[2] / "scripts/trusted_release_server.py"
+    spec = importlib.util.spec_from_file_location("security_publisher_contract", path)
+    server = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+    candidate = server.invitation_only_config("REGISTRATION_INVITATION_ROLLOUT_ENABLED=false\nAUTH_PHONE_SELF_REGISTRATION_ENABLED=true\n")
+    values = dict(line.split("=", 1) for line in candidate.splitlines() if line)
+    config = Settings(_env_file=None, **{key.lower(): value for key, value in values.items()})
+    assert config.auth_phone_self_registration_enabled is False
+    assert config.registration_invitation_mode == "enforced"

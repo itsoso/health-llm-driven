@@ -32,6 +32,7 @@ from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext
 from app.services.agent_write_outcome import classify_write_execution
 from app.services.agent_runtime_identity import runtime_hmac_digest
+from app.services.crisis_lexicon import contains_crisis_language, with_crisis_support
 
 logger = logging.getLogger(__name__)
 
@@ -381,8 +382,29 @@ async def handle_inbound_text(
 ) -> str:
     """
     根据 text 自动分流, 返回给用户的 Telegram 回执.
+
+    危机表达不进 directive / record 写库分支(原话不落成约束或记录回执),改走完整
+    Agent;回执无论走哪条分支、Agent 是否失败,都由服务端补齐急救电话与热线。
     """
-    intent = classify_intent(text)
+    reply = await _route_inbound_text(
+        db,
+        user_id,
+        text,
+        source_message_id=source_message_id,
+        source_conversation_id=source_conversation_id,
+    )
+    return with_crisis_support(text, reply)
+
+
+async def _route_inbound_text(
+    db,
+    user_id: int,
+    text: str,
+    *,
+    source_message_id: Optional[str],
+    source_conversation_id: str,
+) -> str:
+    intent = "query" if contains_crisis_language(text) else classify_intent(text)
     user_ref = runtime_hmac_digest("telegram-log-user", str(user_id))[:10]
     logger.info(
         "[telegram-inbound] user_ref=%s intent=%s text_length=%s",

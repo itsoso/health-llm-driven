@@ -428,6 +428,9 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
         return {}
 
 
+ABNORMAL_WINDOW_MAX_ROWS = 200  # 病态上限;触顶 warning,不静默
+
+
 def fetch_medical_exam_abnormal(
     db: Session,
     user_id: int,
@@ -435,22 +438,38 @@ def fetch_medical_exam_abnormal(
     *,
     raise_on_error: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """最近体检中的异常指标 — 从统一的 medical_indicators 表读取。"""
+    """最近体检中的异常指标 — 从统一的 medical_indicators 表读取。
+
+    Safety 输入须完整且确定:最新 `limit` 条异常触及的每个 record_date **整日全取**
+    (⊇ 旧版 LIMIT 在同日并列行上的任意截断 → 加层不减层),按 (record_date, id) 倒序。
+    """
     try:
         from app.models.family_health import MedicalIndicator
 
-        indicators = (
-            db.query(MedicalIndicator)
-            .filter(
-                MedicalIndicator.user_id == user_id,
-                MedicalIndicator.is_abnormal == True,
-            )
+        base = db.query(MedicalIndicator).filter(
+            MedicalIndicator.user_id == user_id,
+            MedicalIndicator.is_abnormal == True,
+        )
+        newest = (
+            base.with_entities(MedicalIndicator.record_date)
             .order_by(desc(MedicalIndicator.record_date))
             .limit(limit)
             .all()
         )
-        if not indicators:
+        if not newest:
             return [], {}
+        indicators = (
+            base.filter(MedicalIndicator.record_date >= newest[-1][0])
+            .order_by(desc(MedicalIndicator.record_date), desc(MedicalIndicator.id))
+            .limit(ABNORMAL_WINDOW_MAX_ROWS + 1)
+            .all()
+        )
+        if len(indicators) > ABNORMAL_WINDOW_MAX_ROWS:
+            logger.warning(
+                "[twin.collectors] abnormal window truncated user_id=%s cap=%d",
+                user_id, ABNORMAL_WINDOW_MAX_ROWS,
+            )
+            indicators = indicators[:ABNORMAL_WINDOW_MAX_ROWS]
 
         latest_meta = {
             "exam_date": indicators[0].record_date,
@@ -477,10 +496,7 @@ def fetch_medical_exam_abnormal(
         logger.warning(f"[twin.collectors] medical_indicators 失败: {e}")
         if raise_on_error:
             raise
-        try:
-            db.rollback()
-        except Exception:
-            pass
+        _safe_rollback(db)
         return [], {}
 
 

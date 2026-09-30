@@ -13,10 +13,12 @@ import re
 import unicodedata
 from typing import Optional
 
+from app.services.crisis_lexicon import contains_crisis_language
 from app.services.drug_lexicon import (
     drug_name_free_text_terms,
     supplement_name_free_text_terms,
 )
+from app.services.llm.acute_vitals import acute_vital_reading
 from app.services.llm.model_registry import list_models
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.services.workday_microbreak_safety import contains_acute_symptom_language
@@ -312,6 +314,7 @@ def has_sensitive_health_language(message: Optional[str]) -> bool:
     text = _normalized_text(message)
     return bool(
         contains_acute_symptom_language(text)
+        or contains_crisis_language(text)
         or _contains_named_drug(text)
         or _contains_named_supplement(text)
         or is_explicit_medication_safety_language(text)
@@ -336,8 +339,14 @@ def classify_answer_task_tier(
     # Run deterministic safety floors before the broader intent classifier.
     # Besides being fail-closed, this avoids paying its medication parser setup
     # cost for named-drug and acute-symptom turns that are unconditionally high.
+    # Crisis (passive suicidal ideation) language must also precede the
+    # low-risk meal-record exception below: "午餐吃了米饭，不想活了".
     acute_symptom = contains_acute_symptom_language(text)
-    if acute_symptom or _contains_named_drug(text):
+    if acute_symptom or contains_crisis_language(text) or _contains_named_drug(text):
+        return "high_stakes"
+    # Numeric floor: a stated acute vital ("记一下血压185/115") reads like a casual
+    # record but must get the quality model and full prompt.
+    if acute_vital_reading(message):
         return "high_stakes"
     if is_explicit_medication_safety_language(text):
         return "high_stakes"

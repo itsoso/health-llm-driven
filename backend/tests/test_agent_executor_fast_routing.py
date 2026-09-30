@@ -18,6 +18,7 @@ import pytest
 pytestmark = pytest.mark.usefixtures("consenting_agent_user")
 
 from app.services import agent_executor as ae
+from app.models.agent_conversation import AgentMessage
 from app.models.supplement import SupplementDefinition
 from app.services.agent_executor import (
     AgentExecutor,
@@ -2158,3 +2159,181 @@ async def test_run_stream_no_thinking_detail_for_streaming(db, auth_user_and_hea
     ]
     assert thinking_details  # at least one thinking status was emitted
     assert all(d is None for d in thinking_details)
+
+
+# ──── acute vital readings: numeric safety floor + post-write alert delivery ────
+
+
+def _fake_bp_turn(executor, monkeypatch, *, write_tool: bool):
+    """Fake the model seam: optionally one BP health_record call, then plain text."""
+    llm_calls = []
+
+    async def fake_call_llm(messages, tools):
+        llm_calls.append(len(messages))
+        if not write_tool or len(llm_calls) > 1:
+            return {"content": "已记录血压。", "finish_reason": "stop"}
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "call_record_bp",
+                "type": "function",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "blood_pressure",
+                        "data": {"systolic": 185, "diastolic": 115},
+                        "confirmed": True,
+                    }),
+                },
+            }],
+        }
+
+    async def fake_call_llm_stream(messages, tools):
+        response = await fake_call_llm(messages, tools)
+        if response.get("content"):
+            yield {"type": "content", "text": response["content"]}
+        if response.get("tool_calls"):
+            yield {"type": "tool_calls", "tool_calls": response["tool_calls"]}
+        yield {"type": "finish", "finish_reason": response["finish_reason"]}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_record"
+        return json.dumps(
+            {"id": 301, "message": "已记录血压 185/115 mmHg"}, ensure_ascii=False,
+        )
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    return llm_calls
+
+
+def _pin_routing(monkeypatch):
+    _stub_registry_fast(monkeypatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.staged_response_mode", "off"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.task_routing.pick_model_id_by_tier",
+        lambda tier, only_available=True: "qwen3.7-max",
+    )
+
+
+@pytest.mark.asyncio
+async def test_acute_bp_record_revokes_fast_routes_with_staged_off(
+    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport,
+):
+    """"记一下血压185/115" gets the high-stakes quality route in the default mode.
+
+    Without the numeric floor it was classified casual → whole-turn fast model +
+    compact (lite) prompt. The floor must hold with staged_response_mode=off.
+    """
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _pin_routing(monkeypatch)
+    _fake_bp_turn(executor, monkeypatch, write_tool=False)
+
+    events = await _run(executor, "记一下血压185/115", user_id=user.id)
+    done = next(e for e in events if e.get("event") == "done")["data"]
+
+    assert executor._request_model_id == "qwen3.7-max"
+    assert executor._fast_route_simple_turn is False
+    assert executor._prefer_fast_record_model is False
+    assert executor._turn_synthesis_skip_thinking is False
+    assert executor._staged_answer_task_tier == "high_stakes"
+    assert "staged_high_stakes_revoked_compact_record_context" in done["fallback_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_normal_bp_record_keeps_fast_route_with_staged_off(
+    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport,
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _pin_routing(monkeypatch)
+    _fake_bp_turn(executor, monkeypatch, write_tool=False)
+
+    await _run(executor, "记一下血压120/80", user_id=user.id)
+
+    assert executor._request_model_id == _FAST_ID
+    assert executor._fast_route_simple_turn is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("floor_enabled", [True, False], ids=["quality_route", "fast_route"])
+async def test_severe_bp_write_streams_safety_alert_card(
+    db, auth_user_and_headers, monkeypatch, floor_enabled,
+    isolated_agent_protocol_transport,
+):
+    """The post-write SafetyGuardian card reaches the user on either route.
+
+    ``fast_route`` disables the numeric floor to reproduce the pre-floor path
+    (whole-turn fast model + compact record prompt): the deterministic post-write
+    check is model-independent, so the bp_severe_reading card must still stream,
+    persist in done.cards, and appear in the text for old clients.
+    """
+    from datetime import timezone
+    from app.twin.schema import HealthTwin, LabsContext, TwinMeta
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    _pin_routing(monkeypatch)
+    if not floor_enabled:
+        monkeypatch.setattr(
+            "app.services.llm.task_routing.acute_vital_reading", lambda _t: None
+        )
+        monkeypatch.setattr(
+            "app.services.agent_executor.acute_vital_reading", lambda _t: None
+        )
+    monkeypatch.setattr(
+        "app.twin.builder.build_twin",
+        lambda _db, user_id, **_k: HealthTwin(
+            meta=TwinMeta(user_id=user_id, generated_at=datetime.now(timezone.utc)),
+            labs=LabsContext(blood_pressure_systolic=185, blood_pressure_diastolic=115),
+        ),
+    )
+
+    _fake_bp_turn(executor, monkeypatch, write_tool=True)
+
+    events = await _run(executor, "记一下血压185/115", user_id=user.id)
+
+    assert executor._fast_route_simple_turn is (not floor_enabled)
+    safety_events = [
+        e for e in events
+        if e.get("event") == "card" and e["data"].get("anchor") == "safety_alert"
+    ]
+    assert len(safety_events) == 1
+    card = safety_events[0]["data"]["descriptor"]
+    assert card["type"] == "safety"
+    assert card["data"]["rule_id"] == "vitals.bp_severe_reading"
+    assert card["data"]["severity"] == "high"
+    assert card["data"]["requires_medical_attention"] is True
+
+    done = next(e for e in events if e.get("event") == "done")["data"]
+    assert card in done["cards"]
+    rendered = "".join(
+        e["data"].get("content", "") for e in events if e.get("event") == "token"
+    )
+    assert rendered.count("血压严重升高") == 1
+    saved = db.query(AgentMessage).filter_by(id=done["message_id"]).one()
+    assert saved.content.count("血压严重升高") == 1
+
+
+def test_missing_post_write_safety_text_only_restores_dropped_titles():
+    from app.services.agent_post_write_safety import missing_post_write_safety_text as helper
+
+    notice = "⚠️ 安全提示: 血压严重升高; 血氧严重偏低"
+    # Model repeated every title (any punctuation) → nothing appended.
+    assert helper("已记录。⚠️ 安全提示：血压严重升高，血氧严重偏低", [notice]) == ""
+    # Model dropped one title → the full deterministic notice comes back.
+    assert helper("已记录。注意血压严重升高", [notice]) == notice
+    assert helper("已记录血压。", [notice, notice]) == notice
+    assert helper("已记录血压。", []) == ""
+    unavailable = (
+        "⚠️ 安全提示: 记录已保存,但自动安全筛查暂未完成。"
+        "如你此刻有明显不适、或刚记录的数值明显异常,请及时就医。"
+    )
+    assert helper("已记录血压。", [unavailable]) == unavailable

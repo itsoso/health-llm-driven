@@ -1,6 +1,9 @@
 import api from './api';
 
 export interface FamilyMember {
+  id: number;
+  can_view: boolean;
+  can_edit: boolean;
   user_id: number;
   name: string | null;
   nickname: string | null;
@@ -14,7 +17,16 @@ export interface FamilyMember {
   unread_alerts: number;
 }
 
+export interface FamilyMembership {
+  member_id: number;
+  group_id: number;
+  group_name: string;
+  is_owner: boolean;
+}
+
 export interface FamilyDashboard {
+  memberships: FamilyMembership[];
+  is_owner: boolean;
   group_name: string | null;
   members: FamilyMember[];
 }
@@ -45,7 +57,7 @@ export interface InviteAcceptResp {
   relationship_type?: string;
 }
 
-/** 家人端: 输入码加入. relationship: father/mother/spouse/child/sibling/other */
+/** 家人端: 输入码加入. relationship: father/mother/spouse/daughter/son/child/sibling/other */
 export async function acceptFamilyInvitation(
   code: string,
   relationshipType: string,
@@ -63,4 +75,53 @@ export async function acceptFamilyInvitation(
 export async function createFamilyGroup(name: string): Promise<{ id: number; name: string }> {
   const resp = await api.post<{ id: number; name: string }>('/family/groups', { name });
   return resp.data;
+}
+
+export const FAMILY_RELATIONSHIPS: Record<string, string> = {
+  self: '我', father: '爸爸', mother: '妈妈', spouse: '配偶',
+  daughter: '女儿', son: '儿子', child: '孩子', sibling: '兄弟姐妹', other: '其他',
+};
+
+export interface FamilyIllnessUpdate {
+  id: number;
+  update_date: string;
+  status: string | null;
+  severity: number | null;
+  notes: string | null;
+}
+
+export interface FamilyIllnessEpisode {
+  id: number;
+  name: string;
+  start_date: string;
+  end_date: string | null;
+  status: string;
+  severity: number | null;
+  notes: string | null;
+  updates: FamilyIllnessUpdate[];
+}
+
+export interface FamilyMemberHealth {
+  member: Pick<FamilyMember, 'user_id' | 'name' | 'nickname' | 'relationship_type'>;
+  reports: (Omit<import('./medicalExams').MedicalExam, 'items'> & {
+    items: (import('./medicalExams').MedicalExamItem & { display_value: string })[];
+  })[];
+  episodes: FamilyIllnessEpisode[];
+  limit: number;
+}
+
+/** Uses the viewer's existing session; the server validates read sharing. */
+export async function fetchFamilyMemberHealth(userId: number): Promise<FamilyMemberHealth> {
+  return (await api.get<FamilyMemberHealth>(`/family/members/${userId}/health`)).data;
+}
+
+export async function updateFamilyRelationship(memberId: number, relationshipType: string, nickname?: string) {
+  return (await api.patch(`/family/members/${memberId}/relationship`, {
+    relationship_type: relationshipType, nickname,
+  })).data;
+}
+
+/** A member can withdraw sharing by leaving their group. */
+export async function leaveFamily(memberId: number): Promise<void> {
+  await api.delete(`/family/members/${memberId}`);
 }

@@ -22,6 +22,10 @@ if [[ "${1:-}" = "--rebuild-deployed-frontend" ]]; then
     shift
     exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_frontend_rebuild.py" "$@"
 fi
+if [[ "${1:-}" = "--security-hardening" ]]; then
+    shift
+    exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_public_host.py" "$@"
+fi
 ENV_FILE="${DEPLOY_ENV_FILE:-$SCRIPT_DIR/.env}"
 source "$SCRIPT_DIR/scripts/release_lock.sh"
 
@@ -1928,26 +1932,47 @@ sync_env() {
 
 # 去激活事务已经完成 backend/Celery 的最后一次重启和逐 PID flag=false
 # 证明；通用 env/restart 模式此后只能重启前端，不能再让后端越过证明点。
+frontend_runtime_kind() {
+    # A protected unit/receipt is a one-way migration marker. Unknown state or
+    # transport failure cannot select the legacy root PM2 path.
+    ssh "$SERVER" /bin/bash -s <<'FRONTEND_KIND'
+set -euo pipefail
+if test -e /etc/systemd/system/health-network-guard.service ||
+   test -d /var/backups/health-app/host-security; then
+    test "$(stat -c '%U:%a' /etc/systemd/system/health-frontend.service)" = root:644
+    test "$(systemctl show health-frontend -p User --value)" = health-web
+    systemctl is-enabled --quiet health-frontend
+    systemctl is-active --quiet health-network-guard
+    echo hardened
+else
+    pm2 jlist | /usr/bin/python3 -c '
+import json,sys
+items=[x for x in json.load(sys.stdin) if x.get("name")=="health-frontend"]
+assert len(items)==1
+p=items[0]["pm2_env"]
+assert p.get("pm_cwd")=="/opt/health-app/frontend" and p.get("pm_exec_path")=="/usr/bin/npm"
+assert p.get("status")=="online"
+print("legacy")'
+fi
+FRONTEND_KIND
+}
+
 restart_frontend_service() {
     print_step "重启前端服务..."
     assert_remote_release_lock_if_acquired
-
+    local runtime_kind
+    runtime_kind=$(frontend_runtime_kind) || { print_error "无法确认前端运行身份，禁止降级"; return 1; }
     _REMOTE_RELEASE_LOCK_DELEGATED=1
-    if ! ssh $SERVER "
-        echo '重启前端服务 (PM2)...' && \
-        pm2 restart health-frontend
-    "; then
+    case "$runtime_kind" in
+        hardened) ssh "$SERVER" "systemctl restart health-frontend && systemctl is-active --quiet health-frontend" ;;
+        legacy) ssh "$SERVER" "pm2 restart health-frontend && pm2 describe health-frontend >/dev/null" ;;
+        *) return 1 ;;
+    esac || {
         _REMOTE_RELEASE_LOCK_ABANDONED=1
         print_error "前端重启结果不明确；发布锁与现场保留"
         return 1
-    fi
-    if ! ssh "$SERVER" "pm2 describe health-frontend >/dev/null"; then
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        print_error "无法证明前端服务终态；发布锁与现场保留"
-        return 1
-    fi
+    }
     _REMOTE_RELEASE_LOCK_DELEGATED=0
-
     print_success "前端服务已重启"
 }
 
@@ -2021,6 +2046,12 @@ push_code() {
 deploy_frontend() {
     print_step "部署前端..."
     assert_remote_release_lock_if_acquired
+    local runtime_kind
+    runtime_kind=$(frontend_runtime_kind) || { print_error "无法确认前端运行身份，禁止 root 构建"; return 1; }
+    if [[ "$runtime_kind" != legacy ]]; then
+        print_error "已加固前端禁止 root 构建/PM2 回退；请使用受审隔离前端重建流程"
+        return 1
+    fi
 
     # frontend 与 backend 共用仓库。纯前端路径绝不能 checkout 整仓，否则会
     # 在未迁移/未验证 backend 的情况下改变下一次进程启动所加载的代码。
@@ -2906,6 +2937,13 @@ remote_dependency_sync_command() {
         return 70
     fi
     cat <<REMOTE_DEPENDENCY_SYNC
+verify_backend_runtime_dependencies() {
+    # Root metadata checks cannot prove that the backend can import new wheels.
+    # Use the fixed service identity, clean environment and no production secret.
+    /usr/sbin/runuser -u health-app -- /usr/bin/env -i PATH=/usr/bin:/bin \
+        "\$(pwd -P)/venv/bin/python" -I -B scripts/verify_locked_requirements.py \
+        --runtime-user health-app requirements.lock
+}
 sync_backend_dependencies() {
     # Pi is a required backend runtime; the Python lock cache cannot prove it.
     bash pi-runtime/install.sh || return 1
@@ -2937,7 +2975,9 @@ sync_backend_dependencies() {
     if [ "\${marker_exists}" = '1' ] &&
        [ "\$(cat "\${requirements_marker}")" = "\${requirements_expected}" ] &&
        python scripts/verify_locked_requirements.py requirements.lock &&
-       python -m pip check; then
+       python scripts/prune_unlocked_requirements.py --check requirements.lock &&
+       python -m pip check &&
+       verify_backend_runtime_dependencies; then
         echo 'dependency lock unchanged; verified install reused'
         return 0
     fi
@@ -2949,13 +2989,17 @@ sync_backend_dependencies() {
         sync -f "\${release_state_dir}" || return 1
     fi
     echo '安装锁定依赖...'
-    pip install --require-hashes -r requirements.lock -q || return 1
+    # Only installed public dependency files need service-readable modes.
+    # Keep release markers/configuration under the parent private umask.
+    (umask 022; pip install --require-hashes -r requirements.lock -q) || return 1
     # pip install does not remove packages deleted from the lock. ChromaDB has
     # no patched release for CVE-2026-45830/45831/45833, so remove any stale
     # legacy install before verifying or writing the lock marker.
     python -m pip uninstall --yes chromadb chroma-hnswlib || return 1
+    python scripts/prune_unlocked_requirements.py requirements.lock || return 1
     python scripts/verify_locked_requirements.py requirements.lock || return 1
     python -m pip check || return 1
+    verify_backend_runtime_dependencies || return 1
     requirements_marker_tmp="\$(mktemp "\${release_state_dir}/.requirements-lock.XXXXXX")" || return 1
     printf '%s\n' "\${requirements_expected}" > "\${requirements_marker_tmp}" || return 1
     chmod 600 "\${requirements_marker_tmp}" || return 1
@@ -4631,6 +4675,7 @@ confirm_ota_drift() {
     esac
 }
 
+
 main() {
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
@@ -4657,6 +4702,7 @@ main() {
                 DEPLOY_MODE="backend"
                 shift
                 ;;
+
             -e|--env)
                 DEPLOY_MODE="env"
                 shift
@@ -4738,6 +4784,7 @@ main() {
             push_code
             deploy_backend
             ;;
+
         "env")
             if ! require_health_evidence_flag_value false; then
                 print_error "通用 -e 只允许保持健康证据运行时为 false；启用请使用 --activate-health-evidence"

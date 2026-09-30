@@ -16,6 +16,7 @@ Agent Native 告警通道：当 iOS APNs 不可用时（App 未构建），
 """
 
 import logging
+import re
 from typing import Optional
 
 import httpx
@@ -23,6 +24,40 @@ import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class _TelegramURLRedactor(logging.Filter):
+    """httpx INFO logs include the bot token in Telegram's required URL path."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        rendered = record.getMessage()
+        if re.search(r"/bot[^/\s]+/", rendered):
+            record.msg = re.sub(r"/bot[^/\s]+/", "/bot[REDACTED]/", rendered)
+            record.args = ()
+        return True
+
+
+logging.getLogger("httpx").addFilter(_TelegramURLRedactor())
+
+# 覆盖 push_service 的 severity 词表(info/low/warning/medium/high/critical)
+_SEVERITY_EMOJI = {
+    "critical": "🔴",
+    "high": "🟠",
+    "warning": "🟡",
+    "medium": "🟡",
+    "low": "🔵",
+    "info": "🔵",
+}
+
+_LEGACY_MARKDOWN_SPECIAL = re.compile(r"([_*`\[])")
+
+
+def escape_markdown(text: str) -> str:
+    """纯文本 → 旧 Markdown 实体外可原样显示的文本(_ * ` [ 前加反斜杠)。
+
+    正文里落单的 `_`(如 rule key)/ `*` / `` ` `` / `[` 会让 Telegram 400 拒收整条消息。
+    """
+    return _LEGACY_MARKDOWN_SPECIAL.sub(r"\\\1", text or "")
 
 
 class TelegramPushService:
@@ -82,20 +117,19 @@ class TelegramPushService:
         try:
             async with httpx.AsyncClient(**self._client_kwargs()) as client:
                 resp = await client.post(url, json=payload)
-                if resp.status_code == 200:
-                    logger.info(
-                        f"[telegram] 消息已发送 chat_id={target} "
-                        f"via={'proxy' if self.proxy_url else 'direct'} "
-                        f"base={self.api_base}"
-                    )
+                try:
+                    body = resp.json()
+                except ValueError:
+                    logger.warning("[telegram] invalid response status=%s", resp.status_code)
+                    return {"success": False, "reason": "invalid_response"}
+                if resp.status_code == 200 and isinstance(body, dict) and body.get("ok") is True:
+                    logger.info("[telegram] message accepted")
                     return {"success": True}
-                else:
-                    body = resp.text[:200]
-                    logger.warning(f"[telegram] 发送失败: {resp.status_code} {body}")
-                    return {"success": False, "status": resp.status_code, "body": body}
-        except Exception as e:
-            logger.warning(f"[telegram] 发送异常: {e}")
-            return {"success": False, "error": str(e)}
+                logger.warning("[telegram] request rejected status=%s", resp.status_code)
+                return {"success": False, "reason": "telegram_rejected", "status": resp.status_code}
+        except (httpx.HTTPError, OSError):
+            logger.warning("[telegram] transport failure")
+            return {"success": False, "reason": "transport_error"}
 
     async def send_health_alert(
         self,
@@ -104,13 +138,14 @@ class TelegramPushService:
         severity: str = "warning",
         chat_id: Optional[str] = None,
     ) -> dict:
-        """发送格式化的健康告警"""
-        severity_emoji = {
-            "critical": "🔴",
-            "warning": "🟡",
-            "info": "🔵",
-        }
-        emoji = severity_emoji.get(severity, "⚪")
+        """发送格式化的健康告警。
 
-        text = f"{emoji} *{title}*\n\n{message}"
+        title 是纯文本;message 按旧 Markdown 原样发送(eval_runner 依赖其格式),
+        纯文本调用方须先 escape_markdown。
+        """
+        emoji = _SEVERITY_EMOJI.get(str(severity or "").lower(), "⚪")
+        # 粗体实体内不允许转义,只有 `*` 会提前闭合实体 → 闭合、转义、重开(Telegram 文档写法)
+        bold_title = title.replace("*", "*\\**")
+
+        text = f"{emoji} *{bold_title}*\n\n{message}"
         return await self.send_message(text, chat_id=chat_id)
