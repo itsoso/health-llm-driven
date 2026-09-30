@@ -229,7 +229,7 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
 
 契约（后端严格校验）：
 - `taken` 必填，只能是 JSON 布尔（漏传或写成 `"true"`、`1` → 422）：用户明确说本人已经吃了传 `true`；明确说漏服/没吃、或要取消打卡传 `false`；还没吃、准备吃、问句、替别人说的不打卡，说不清先问，不要猜。
-- 同一补剂同一天是覆盖写：第一步看到那天已有 `record`、而这次会改变 `record.taken`（尤其 `true`→`false`）就属于修改，按核心原则 4 先向用户确认再提交；传 `false` 后回复「已记为未服 / 已取消打卡：{补剂名}」，不要用 ✓ 模板。
+- 同一补剂同一天是覆盖写：第一步看到那天已有 `record`、而这次会改变 `record.taken`（尤其 `true`→`false`）就属于修改，按核心原则 4 先向用户确认再提交（批量接口同样适用：任一项会改变那天已有的 `record.taken` 就先确认）；传 `false` 后回复「已记为未服 / 已取消打卡：{补剂名}」，不要用 ✓ 模板。
 - 只收 `supplement_id`、`record_date`、`taken` 和可选的 `taken_time`（`HH:MM:SS`）、`actual_dosage`（≤40 字符）、`notes`；`user_id` 不用传（传了也被忽略，只按当前登录用户记录）；其他字段（如旧的 `taken_count`）→ 422。
 - 补录昨天/某天的服用：`record_date` 写实际服用那天的 `YYYY-MM-DD`，不要写今天。
 - 批量接口每项只能是 `{"supplement_id": 整数, "taken": 布尔}`，多带键 → 422，同一 `supplement_id` 重复 → 400；要带时间/剂量/备注就逐个用单个接口。
