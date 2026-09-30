@@ -1,0 +1,135 @@
+"""SupplementAdvisor 化验方向门控单测.
+
+flagged_abnormal 只说明"异常",不说明方向。镁 / 维生素 D 推荐必须以
+value < 参考下限(确证偏低)为前提:
+- 确证偏低 → 推荐
+- 标记异常但不低(如高镁血症 / 维生素 D 过量) → 不推荐, 且压过症状/基因触发
+- 方向不可解析(缺参考范围 / "<X" / 纯文字) → 保守不推荐, 给 needs-review 提示
+"""
+from __future__ import annotations
+
+from datetime import datetime
+
+from app.agents.supplement_advisor import SupplementAdvisorSpecialist
+from app.twin.schema import (
+    AcuteHealthState,
+    GeneticContext,
+    HealthTwin,
+    LabsContext,
+    TwinMeta,
+)
+from app.utils.lab_range import is_below_range
+
+
+def _twin(labs: list, *, sleep_complaint: bool = False, vdr: bool = False) -> HealthTwin:
+    t = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.utcnow()))
+    t.labs = LabsContext(flagged_abnormal=labs)
+    if sleep_complaint:
+        t.acute = AcuteHealthState(recent_symptoms=["失眠"])
+    if vdr:
+        t.genetic = GeneticContext(
+            has_profile=True,
+            total_variants=1,
+            nutrition_variants=[{"gene_name": "VDR", "genotype": "TT", "result_label": "reduced"}],
+        )
+    return t
+
+
+def _rec_ids(f) -> set:
+    return {x.get("id") for x in f.findings if x.get("type") == "supplement_rec"}
+
+
+def _warnings(f) -> list:
+    return [x["message"] for x in f.findings if x.get("type") == "warning"]
+
+
+# ─────────── shared parser ───────────
+
+def test_is_below_range_directions():
+    assert is_below_range(0.6, "0.75-1.02") is True
+    assert is_below_range(1.5, "0.75-1.02") is False
+    assert is_below_range(10, "≥30") is True
+    assert is_below_range(10, "<30") is None
+    assert is_below_range(0.6, None) is None
+    assert is_below_range("abc", "0.75-1.02") is None
+
+
+# ─────────── 镁 ───────────
+
+def test_low_magnesium_with_range_recommends():
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": "血清镁", "value": 0.6, "reference_range": "0.75-1.02"}]), {}
+    )
+    assert "magnesium_sleep" in _rec_ids(f)
+
+
+def test_high_magnesium_does_not_recommend():
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": "血清镁", "value": 1.5, "reference_range": "0.75-1.02"}]), {}
+    )
+    assert "magnesium_sleep" not in _rec_ids(f)
+
+
+def test_high_magnesium_overrides_sleep_complaint():
+    """高镁血症 + 失眠主诉 → 仍不推镁(确证偏高压过症状触发)."""
+    f = SupplementAdvisorSpecialist().run(
+        _twin(
+            [{"item_name": "Magnesium", "value": 1.5, "reference_range": "0.75-1.02"}],
+            sleep_complaint=True,
+        ),
+        {},
+    )
+    assert "magnesium_sleep" not in _rec_ids(f)
+    assert any("镁" in w and "医生" in w for w in _warnings(f))
+
+
+def test_unparsable_magnesium_direction_is_conservative():
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": "血清镁", "value": 0.6}], sleep_complaint=True), {}
+    )
+    assert "magnesium_sleep" not in _rec_ids(f)
+    assert any("镁" in w and "核读" in w for w in _warnings(f))
+
+
+def test_sleep_complaint_without_mg_lab_still_recommends():
+    f = SupplementAdvisorSpecialist().run(_twin([], sleep_complaint=True), {})
+    assert "magnesium_sleep" in _rec_ids(f)
+
+
+# ─────────── 维生素 D ───────────
+
+def test_low_vitamin_d_with_range_recommends():
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": "25-OH-D", "value": 12, "reference_range": "30-100"}]), {}
+    )
+    assert "vdr_vitamin_d" in _rec_ids(f)
+
+
+def test_high_vitamin_d_does_not_recommend():
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": "维生素D", "value": 160, "reference_range": "30-100"}]), {}
+    )
+    assert "vdr_vitamin_d" not in _rec_ids(f)
+    assert "vdr_vitamin_k2" not in _rec_ids(f)
+
+
+def test_high_vitamin_d_overrides_vdr_gene():
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": "25羟维生素D", "value": 160, "reference_range": "30-100"}], vdr=True),
+        {},
+    )
+    assert "vdr_vitamin_d" not in _rec_ids(f)
+    assert any("维生素 D" in w and "医生" in w for w in _warnings(f))
+
+
+def test_unparsable_vitamin_d_direction_is_conservative():
+    f = SupplementAdvisorSpecialist().run(
+        _twin([{"item_name": "25-OH-D", "value": 12, "reference_range": "见报告"}]), {}
+    )
+    assert "vdr_vitamin_d" not in _rec_ids(f)
+    assert any("维生素 D" in w and "核读" in w for w in _warnings(f))
+
+
+def test_vdr_gene_without_vd_lab_still_recommends():
+    f = SupplementAdvisorSpecialist().run(_twin([], vdr=True), {})
+    assert "vdr_vitamin_d" in _rec_ids(f)
