@@ -29,33 +29,36 @@ def is_below_range(value, reference_range) -> Optional[bool]:
     return None  # 不可解析(如 "<X"、纯文字) → 交调用方保守兜底,不静默当正常
 
 
-# 分析物 → (归一化关键词, 排除词, 独立 token 正则)。只匹配 item_name。
+# 分析物 → (归一化关键词, 排除词, 整名白名单正则)。只匹配 item_name。
 # 排除词在原始小写名上先判(保留 "1,25" / "(oh)2" 等标点语义),防分析物混淆:
 #   尿镁≠血清镁;1,25-(OH)₂D / 维生素D结合蛋白 ≠ 25-OH-D(营养状态指标)。
-# 关键词在去掉空格与 -_()[].,，（）【】 后的名上匹配,覆盖 25-OHD / 25(OH)VD / VITAMIN_D 等写法。
-# "mg" 只认独立 token(前非字母数字、后非字母且不接 "/"、不在 "<数字>-" 之后),避免误中 IgM、
-# 单位 mg/dL 与 β2-MG/α1-MG(微球蛋白);另排除 MG 抗体(重症肌无力)与 Mg-ATP。
+# 关键词在归一化名(去空格、各类连字符、括号、标点)上做子串匹配,覆盖 25-OHD / 25(OH)VD / VITAMIN_D 等。
+# 裸 "mg" 太短,只接受归一化后**整名**就是镁的写法(Mg / S-Mg / Serum Mg / Mg²⁺ / RBC Mg ...),
+# 以免 β2-MG(微球蛋白)、MG 抗体、Mg-ATP、单位 mg 等被当成镁。
 MAGNESIUM_ANALYTE = (
     ["镁", "magnesium"],
     ["尿", "urine", "urinary", "微球蛋白", "microglobulin", "抗体", "achr", "atp"],
-    re.compile(r"(?<![a-z0-9])(?<![0-9]-)mg(?![a-z/])"),
+    re.compile(
+        r"(血清|血浆|血|serum|plasma|s|p|rbc|红细胞|总|total|ionized|离子)?"
+        r"mg(2\+|\+\+|²⁺|\+2)?(离子|血清|serum|s|p)?"
+    ),
 )
 VITAMIN_D_25OH_ANALYTE = (
     ["25ohd", "25ohvd", "25羟", "25hydroxy", "vitd", "vitamind", "维生素d", "维d",
      "骨化二醇", "calcidiol"],
-    ["1,25", "1，25", "二羟", "dihydroxy", "(oh)2", "结合蛋白", "binding"],
+    ["1,25", "1，25", "1-25", "1 25", "二羟", "dihydroxy", "(oh)2", "结合蛋白", "binding"],
     None,
 )
 
-_NAME_NOISE = re.compile(r"[\s\-_()\[\].,，（）【】]")
+_NAME_NOISE = re.compile(r"[\s\-_()\[\].,，（）【】‐‑‒–—－]")
 
 
 def matches_analyte(item_name, analyte) -> bool:
-    keywords, excludes, token_re = analyte
+    keywords, excludes, whole_name_re = analyte
     raw = (item_name or "").strip().lower()
     if not raw or any(ex in raw for ex in excludes):
         return False
     norm = _NAME_NOISE.sub("", raw)
     if any(k in norm for k in keywords):
         return True
-    return bool(token_re and token_re.search(raw))
+    return bool(whole_name_re and whole_name_re.fullmatch(norm))
