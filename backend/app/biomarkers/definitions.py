@@ -82,8 +82,9 @@ class BiomarkerDefinition:
 _UNIT_PLACEHOLDERS = frozenset({"-", "--", "—", "–", "/", "无", "none", "null", "n/a", "na"})
 _UNIT_SYNONYMS = {
     "umol/l": "μmol/l", "毫摩尔/升": "mmol/l", "微摩尔/升": "μmol/l", "克/升": "g/l",
-    "毫克/分升": "mg/dl", "单位/升": "u/l", "ukat/l": "μkat/l",
+    "毫克/分升": "mg/dl", "单位/升": "u/l", "ukat/l": "μkat/l", "秒": "s", "sec": "s",
 }
+_SUPERSCRIPT_DIGITS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
 # 已识别的化验单位 (任何量纲)。已识别却换算不到某指标 canonical 的单位 = 肯定不是该指标;
 # 不在表里的写法 (mmoI/L 这类 OCR 变体) 只是未识别。
 _KNOWN_UNITS = frozenset({
@@ -100,9 +101,13 @@ _FLOW_PREFIXES = ("ml/min", "ml/分", "ml/s")
 
 def _norm_unit(u: Optional[str]) -> str:
     """单位归一: NFKC(µ→μ、²→2、㎡→m2) + 小写 + 去空白; 去注释括号 (%(NGSP)、mmol/mol(IFCC)、U/L(37℃));
-    占位符 → ""; 中文写法 → 标准写法。"""
-    s = unicodedata.normalize("NFKC", u or "").strip().lower()
+    占位符 → ""; 中文写法 → 标准写法; 计数单位 ×10⁹/L、x10^9/L、10*9/L → 10^9/L。"""
+    # 上标指数先改成 ^n (NFKC 会把 10⁹ 压成 109); 只动 10 后面的, m² 仍归一成 m2
+    s = re.sub(r"10([⁰¹²³⁴⁵⁶⁷⁸⁹]+)", lambda m: "10^" + m.group(1).translate(_SUPERSCRIPT_DIGITS), u or "")
+    s = unicodedata.normalize("NFKC", s).strip().lower()
     s = re.sub(r"\s+", "", s).replace("·", "/")
+    s = re.sub(r"^[×x*](?=10)", "", s)
+    s = re.sub(r"^10\*(\d+)", r"10^\1", s)
     if s.startswith("ml/("):  # ml/(min·1.73m²): 括号是结构, 不是注释
         s = s.replace("(", "").replace(")", "")
     else:
@@ -198,6 +203,34 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
                   "尿血红蛋白", "(尿)", "尿液", "游离", "分布宽度", "a2"),
         plausible=(20.0, 250.0),  # MCHC 常见 316–354 g/L
         small_unit=(25.0, 10.0),
+    ),
+    BiomarkerDefinition(
+        # 中性粒细胞绝对值(10^9/L)。体检里同名「中性粒细胞」也常是百分比 —— 靠单位 % (异量纲) 与
+        # 合理区间 (缺单位的 55 不是绝对值) 挡掉。参考范围 WS/T 405 成人 1.8–6.3。
+        code="NEUT", display="中性粒细胞绝对值", domain="hematology", canonical_unit="10^9/L",
+        aliases=("中性粒细胞", "中性粒细胞绝对值", "中性粒细胞计数", "中性粒细胞数", "中性粒细胞总数",
+                 "NEUT", "NEUT#", "NEU#", "NE#", "ANC", "neutrophil count", "absolute neutrophil count",
+                 "neutrophils"),
+        ref_ranges=(RefRange(low=1.8, high=6.3),),
+        unit_conversions={"10e9/l": 1.0, "10^3/μl": 1.0, "10^3/ul": 1.0, "k/μl": 1.0, "k/ul": 1.0,
+                          "/μl": 0.001, "/ul": 0.001, "个/μl": 0.001},
+        higher_is_risk=False,  # 高低均可异常; 偏低 (粒缺) 为风险
+        # 百分比 / 嗜酸嗜碱 / ANCA / NAP / NGAL / 杆状分叶分类 / 体液 都不是外周血中性粒细胞绝对值
+        excludes=("%", "百分", "比例", "比率", "嗜酸", "嗜碱", "胞浆", "抗体", "anca", "碱性磷酸酶", "明胶酶",
+                  "ngal", "弹性蛋白酶", "杆状", "分叶", "脑脊液", "胸水", "腹水", "积液", "关节液", "尿液", "(尿)",
+                  "吞噬", "趋化", "功能", "cd64"),
+        plausible=(0.0, 30.0),
+    ),
+    # 凝血
+    BiomarkerDefinition(
+        # 凝血酶原时间(秒)。参考范围各实验室差异大 (10.0–13.5 / 12.0–14.0), 取通用 10–14; 延长为风险。
+        code="PT", display="凝血酶原时间", domain="coagulation", canonical_unit="s",
+        aliases=("凝血酶原时间", "血浆凝血酶原时间", "PT", "PT时间", "prothrombin time"),
+        ref_ranges=(RefRange(low=10.0, high=14.0),),
+        higher_is_risk=True,
+        # INR / 活动度(PTA%) / 比值 / 对照值 / 异常凝血酶原(PIVKA-II) 都不是患者 PT 秒数
+        excludes=("inr", "国际标准化", "活动度", "活动", "activity", "%", "对照", "control", "异常", "pivka"),
+        plausible=(5.0, 150.0),
     ),
     # 肝功能
     BiomarkerDefinition(
