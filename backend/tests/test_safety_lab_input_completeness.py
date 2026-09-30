@@ -142,6 +142,21 @@ class TestLatestExamEndToEnd:
         assert alerts["labs.egfr_decline"].severity == Severity.MEDIUM
         assert alerts["labs.liver_enzyme_pattern"].severity == Severity.CRITICAL
 
+    def test_medication_precheck_partial_twin_gets_complete_exam(self, db):
+        """用药预检路径(fill_medication_safety_partitions, raise_on_error)同样拿到完整最新检查。"""
+        from app.twin.builder import fill_medication_safety_partitions
+
+        user = _user(db)
+        _fillers(db, user.id, "A", 12)
+        _add(db, user.id, "估算肾小球滤过率", 45.0)
+        _fillers(db, user.id, "B", 12)
+        db.commit()
+
+        twin = HealthTwin(meta=TwinMeta(user_id=user.id, generated_at=datetime.utcnow()))
+        fill_medication_safety_partitions(db, user.id, twin, raise_on_error=True)
+        assert len(twin.labs.flagged_abnormal) == 25
+        assert "labs.egfr_decline" in _alerts(twin)
+
     def test_unflagged_low_egfr_alerts_via_canonical_value(self, db):
         """化验单没标异常的 eGFR 45(实验室不标/OCR 丢标) → twin.labs.egfr 兜底告警。"""
         from app.twin import build_twin
@@ -220,6 +235,23 @@ class TestSupersetMonotonic:
             for fam, sev in _severity_by_family(subset).items():
                 assert fam in full_sev, f"{fam} fires on a 10-item subset but not on the full exam"
                 assert full_sev[fam] >= sev, f"{fam} downgraded {sev} → {full_sev[fam]}"
+
+    def test_multi_date_window_with_ties_on_cutoff_date(self):
+        """最新日 3 条 + 截断日(上次检查)同日并列: 旧 LIMIT 10 = 3 条 + 截断日任意 7 条。"""
+        prev = [dict(it, exam_date=OLDER, _id=it["_id"]) for it in _realistic_latest_exam()]
+        latest = [
+            {"item_name": "甘油三酯", "value": 3.1, "exam_date": LATEST, "_id": 101},
+            {"item_name": "低密度脂蛋白胆固醇", "value": 3.6, "exam_date": LATEST, "_id": 102},
+            {"item_name": "癌胚抗原", "value": 5.5, "exam_date": LATEST, "_id": 103},
+        ]
+        full = sorted(latest, key=lambda it: -it["_id"]) + prev
+        full_sev = _severity_by_family(full)
+        assert full_sev["labs.ldl_high"] == Severity.LOW  # 最新日 LDL 3.6, 不被上次 5.2 升级
+        rng = random.Random(11)
+        for _ in range(400):
+            old = full[:3] + sorted(rng.sample(prev, 7), key=lambda it: -it["_id"])
+            for fam, sev in _severity_by_family(old).items():
+                assert fam in full_sev and full_sev[fam] >= sev, (fam, sev, full_sev.get(fam))
 
     def test_complete_exam_picks_real_analytes_not_ratios(self):
         alerts = _alerts(_twin(_realistic_latest_exam()))
