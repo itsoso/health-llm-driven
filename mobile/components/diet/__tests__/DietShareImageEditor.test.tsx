@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, StyleSheet } from 'react-native';
+import { Alert, Modal, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { revaColors as C } from '../../../constants/revaTheme';
@@ -250,6 +250,25 @@ function attemptSwipeBack(
 }
 
 describe('DietShareImageEditor', () => {
+  it('renders inside its owner without a second native modal in embedded mode', () => {
+    const view = renderEditor({ presentation: 'embedded' });
+    expect(view.UNSAFE_queryAllByType(Modal)).toHaveLength(0);
+    expect(view.getByTestId('diet-share-editor-root')).toBeTruthy();
+  });
+
+  it('preserves discard confirmation through the embedded system-back handle', () => {
+    const ref = React.createRef<import('../DietShareImageEditor').DietShareImageEditorHandle>();
+    const onCancel = jest.fn();
+    const view = renderEditor({ ref, presentation: 'embedded', onCancel });
+    loadPhoto(view);
+    fireEvent.press(view.getByLabelText('顺时针旋转照片'));
+    act(() => ref.current?.requestCancel());
+    expect(onCancel).not.toHaveBeenCalled();
+    const buttons = (Alert.alert as jest.Mock).mock.calls.at(-1)[2];
+    act(() => buttons.find((button: { text: string }) => button.text === '丢弃编辑').onPress());
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockGestureHandlers.pan = {};

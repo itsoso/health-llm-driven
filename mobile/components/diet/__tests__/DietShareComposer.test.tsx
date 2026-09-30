@@ -24,10 +24,11 @@ jest.mock('../DietShareImageEditor', () => {
   const ReactModule: any = jest.requireActual('react');
   const { View }: any = jest.requireActual('react-native');
   return {
-    DietShareImageEditor: (props: unknown) => {
+    DietShareImageEditor: ReactModule.forwardRef((props: any, ref: any) => {
       currentEditorProps = props;
+      ReactModule.useImperativeHandle(ref, () => ({ requestCancel: props.onCancel }));
       return ReactModule.createElement(View, { testID: 'mock-diet-share-editor' });
-    },
+    }),
   };
 });
 
@@ -239,6 +240,57 @@ function attemptSwipeBack(
 }
 
 describe('DietShareComposer', () => {
+  it('uses an embedded editor instead of presenting a second native modal', async () => {
+    const view = renderComposer();
+    await waitFor(() => expect(currentEditorProps).toBeDefined());
+    expect(currentEditorProps.presentation).toBe('embedded');
+    expect(view.queryByLabelText('关闭饮食分享编辑器')).toBeNull();
+  });
+
+  it.each(['editor', 'preview', 'system'] as const)(
+    'keeps the iOS presenter mounted until native dismissal when returning from %s',
+    async (entry) => {
+      Platform.OS = 'ios';
+      const view = renderComposer();
+      if (entry === 'preview') await reachPreview(view);
+      else await waitFor(() => expect(currentEditorProps).toBeDefined());
+      const modal = view.UNSAFE_getByType(Modal);
+      await act(async () => {
+        if (entry === 'editor') currentEditorProps.onCancel();
+        else if (entry === 'system') modal.props.onRequestClose();
+        else fireEvent.press(view.getByLabelText('关闭饮食分享编辑器'));
+      });
+      expect(modal.props.visible).toBe(false);
+      expect(view.onClose).not.toHaveBeenCalled();
+      act(() => modal.props.onDismiss());
+      act(() => modal.props.onDismiss());
+      expect(view.onClose).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('handles native dismissal arriving before file cleanup finishes', async () => {
+    Platform.OS = 'ios';
+    const pending = deferred<void>();
+    mockMaterializedCleanup.mockReturnValueOnce(pending.promise);
+    const view = renderComposer();
+    await waitFor(() => expect(currentEditorProps).toBeDefined());
+    const modal = view.UNSAFE_getByType(Modal);
+    act(() => currentEditorProps.onCancel());
+    act(() => modal.props.onDismiss());
+    expect(view.onClose).not.toHaveBeenCalled();
+    await act(async () => { pending.resolve(); await pending.promise; });
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns from the editor on Android without waiting for onDismiss', async () => {
+    Platform.OS = 'android';
+    const view = renderComposer();
+    await waitFor(() => expect(currentEditorProps).toBeDefined());
+    act(() => view.UNSAFE_getByType(Modal).props.onRequestClose());
+    await waitFor(() => expect(view.onClose).toHaveBeenCalledTimes(1));
+    expect(view.UNSAFE_getByType(Modal).props.visible).toBe(false);
+  });
+
   it('rejects queued export callbacks from the old preview after confirming a new location', async () => {
     const onShareText = jest.fn();
     const view = renderComposer({ onShareText });
@@ -288,6 +340,7 @@ describe('DietShareComposer', () => {
     expect(view.getByLabelText('分享地点').props.value).toBe('');
     fireEvent.changeText(view.getByLabelText('分享地点'), '当前会话草稿');
     act(() => invalidateAIConsent());
+    act(() => view.UNSAFE_getByType(Modal).props.onDismiss());
     await waitFor(() => expect(view.onClose).toHaveBeenCalledTimes(1));
     expect(view.queryByLabelText('分享地点')).toBeNull();
     expect(view.UNSAFE_getByType(Modal).props.visible).toBe(false);
@@ -472,6 +525,7 @@ describe('DietShareComposer', () => {
     expect(view.onClose).not.toHaveBeenCalled();
 
     expect(attemptSwipeBack(view)).toBe(true);
+    act(() => view.UNSAFE_getByType(Modal).props.onDismiss());
     await waitFor(() => expect(view.onClose).toHaveBeenCalledTimes(1));
     expect(mockReleaseCapture).toHaveBeenCalledWith('file:///cache/meal-poster.png');
     expect(mockEditedCleanup).toHaveBeenCalledTimes(1);
@@ -606,6 +660,7 @@ describe('DietShareComposer', () => {
 
     fireEvent.press(view.getByRole('button', { name: '分享饮食海报' }));
     fireEvent.press(view.getByRole('button', { name: '关闭饮食分享编辑器' }));
+    act(() => view.UNSAFE_getByType(Modal).props.onDismiss());
     await waitFor(() => expect(view.onClose).toHaveBeenCalledTimes(1));
     await act(async () => {
       pendingShare.resolve(undefined);
@@ -625,6 +680,7 @@ describe('DietShareComposer', () => {
 
     fireEvent.press(view.getByRole('button', { name: '关闭饮食分享编辑器' }));
     fireEvent.press(shareButton);
+    act(() => view.UNSAFE_getByType(Modal).props.onDismiss());
 
     expect(Share.share).not.toHaveBeenCalled();
     expect(mockShareAsync).not.toHaveBeenCalled();
@@ -642,7 +698,8 @@ describe('DietShareComposer', () => {
     const view = renderComposer();
     await waitFor(() => expect(view.getByTestId('mock-diet-share-editor')).toBeTruthy());
 
-    fireEvent.press(view.getByRole('button', { name: '关闭饮食分享编辑器' }));
+    act(() => currentEditorProps.onCancel());
+    act(() => view.UNSAFE_getByType(Modal).props.onDismiss());
     act(() => currentEditorProps.onComplete({
       editedUri: 'file:///cache/late-edited-meal.jpg',
       crop: { x: 0, y: 0, width: 1, height: 1 },
@@ -666,7 +723,8 @@ describe('DietShareComposer', () => {
     const view = renderComposer();
     await waitFor(() => expect(view.getByTestId('mock-diet-share-editor')).toBeTruthy());
 
-    fireEvent.press(view.getByRole('button', { name: '关闭饮食分享编辑器' }));
+    act(() => currentEditorProps.onCancel());
+    act(() => view.UNSAFE_getByType(Modal).props.onDismiss());
     view.rerender(
       <DietShareComposer
         visible
@@ -727,6 +785,7 @@ describe('DietShareComposer', () => {
     await reachPreview(view);
 
     fireEvent.press(view.getByRole('button', { name: '关闭饮食分享编辑器' }));
+    act(() => view.UNSAFE_getByType(Modal).props.onDismiss());
     await waitFor(() => expect(view.onClose).toHaveBeenCalledTimes(1));
     view.unmount();
 
