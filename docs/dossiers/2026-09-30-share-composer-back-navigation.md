@@ -81,3 +81,24 @@ not at type checking. No deployment or OTA has been performed for this repair.
 - Publication remains blocked: current main is red, new publisher change still
   needs independent G4 and exact remote CI, and backend incident closure is pending.
   Do not push or dispatch while the existing main-red boundary is unresolved.
+
+### Continuation checkpoint
+
+Local remediation commit: `f07d4743921767fee344c8a58fba009ead2e29fb`.
+Independent safety reviewer returned GO for that exact five-file diff and
+independently reran the 87 workflow/publisher/CI-contract tests. This is not
+approval of incident recovery or a claim of publication. Full fresh-dependency
+Mobile CI-mode Jest regression passed: 320 suites, 3136 tests passed, one skipped
+(`/tmp/reva-share-release-mobile-full.log`). System Map, dossier consistency,
+secret scan and diff checks passed as well.
+
+A subsequent fetch found concurrently advanced remote main
+`b79ae86b0a8fbfd6066266f5252f78ea1a7b8214`, containing a new installed-Laya
+recovery operator and the original UI fix. Its CI `36660647091` was in progress
+when inspected; its recovery note explicitly leaves G4 and execution pending.
+No overlap with this remediation's executable files was found. The earlier
+"no recovery operator" conclusion applies to 235c44b, not the new main.
+No push, merge, production recovery, credential mutation or workflow dispatch
+was performed in this continuation. Await coordination with the other MacBook
+and authorization for the main-red CI repair before external writes; review the
+new recovery operator and its exact evidence before any incident action.
