@@ -1,0 +1,5 @@
+-- SQLite compatibility mirror of the PostgreSQL drop of supplement_records.taken_count.
+-- Intentionally executes nothing. The column only ever existed in the production
+-- PostgreSQL table. SQLite schemas here are created from the ORM, which never mapped it,
+-- and SQLite has no DROP COLUMN IF EXISTS, so a bare DROP would fail on every SQLite
+-- database. The runner still records this id as applied.
