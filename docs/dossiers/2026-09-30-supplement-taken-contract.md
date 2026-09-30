@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | G4 GO (v3); uncommitted — commit/push/deploy/backfill not yet authorized |
-| 当前阶段 | awaiting owner authorization (commit → CI → deploy → backfill) |
+| 状态 | merged to main (`e1a44b8b0`); deploy + backfill not yet authorized |
+| 当前阶段 | G5 — main CI, then owner-authorized backend deploy and backfill |
 | Controller | health-harness-orchestrator (incident) |
 | Overlay | safety-gate |
 | Run ledger | `docs/_generated/harness-runs/ca71a07382d4.jsonl` (local, not committed) |
@@ -131,6 +131,18 @@ produced false reds on unmodified `main`, so it is not used as evidence.
   1092, 1093, 1102–1106); this dossier's production-derived date/timing
   generalized (done, doc-only; code unchanged since review). Remaining nits
   are listed under follow-ups.
+
+## G5 — Merge
+
+- Owner authorized commit + merge to main (not deploy/backfill). The reviewed
+  v3 content landed on main as `e1a44b8b0` (re-applied from the session branch
+  by a parallel follow-up session); all 11 files are byte-identical to the
+  reviewed state. `13e998bee` (quick-record hardening follow-up) sits on top.
+- Local verification at `13e998bee` with the lock-synced CI venv: doc drift
+  passes; contract, repair, quick-record, supplements, intake classifier,
+  adherence idempotency and Twin segmentation suites pass (387 tests).
+- Main CI for `13e998bee` was queued at merge time; deploy only after it is
+  green (AGENTS.md §4/§7).
 
 ## Backfill runbook (requires explicit owner approval of the 16 ids)
 
