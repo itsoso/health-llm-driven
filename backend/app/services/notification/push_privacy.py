@@ -35,7 +35,15 @@ SENSITIVE_ALERT_CATEGORY_LABELS = {
 # 只有 rule_id 可用的上下文(如 ActionCard.source_id)按前缀判类别。
 _SENSITIVE_RULE_PREFIXES = tuple(f"{c}." for c in SENSITIVE_ALERT_CATEGORY_LABELS)
 
+_FALLBACK_ALERT_LABEL = "健康安全"
 _GENERIC_ALERT_CONTENT = "检测到需要你关注的安全事项,打开 App 查看详情与建议。"
+
+# 升级再推(notifications_wscla)敏感来源卡片的锁屏文案。放在这里是为了和告警
+# 泛化文案一起构成中央 backstop 认得的已泛化形态(_KNOWN_SAFE_LOCK_SCREEN_TEXTS)。
+SENSITIVE_ESCALATION_PUSH_TEXT = (
+    "⚠️ 仍有一条紧急健康告警未处理",
+    "24 小时前的重要告警还没确认,点开查看详情并处理。",
+)
 
 
 def is_sensitive_alert(
@@ -56,7 +64,11 @@ def _category_label(category: Optional[str], rule_id: Optional[str]) -> str:
     for cat, label in SENSITIVE_ALERT_CATEGORY_LABELS.items():
         if rid.startswith(f"{cat}."):
             return label
-    return "健康安全"
+    return _FALLBACK_ALERT_LABEL
+
+
+def _safety_alert_title(severity_zh: str, label: str) -> str:
+    return f"⚠️ [{severity_zh}] {label}提醒"
 
 
 def safety_alert_push_text(alert) -> Tuple[str, str]:
@@ -73,7 +85,7 @@ def safety_alert_push_text(alert) -> Tuple[str, str]:
 
     label = _category_label(category, rule_id)
     severity_zh = getattr(getattr(alert, "severity", None), "label_zh", "注意")
-    return f"⚠️ [{severity_zh}] {label}提醒", _GENERIC_ALERT_CONTENT
+    return _safety_alert_title(severity_zh, label), _GENERIC_ALERT_CONTENT
 
 
 # ─────────────────── LLM 自由文本出口的确定性 backstop ───────────────────
@@ -121,6 +133,24 @@ _CENTRAL_GENERIC_TEXT = {
     "diagnosis": ("健康事项提醒", "有一项健康事项需要你关注，打开 App 查看详情。"),
     "generic": (GENERIC_LLM_PUSH_TITLE, GENERIC_LLM_PUSH_CONTENT),
 }
+
+# 锁屏紧急度标记:Severity.label → label_zh 的本地镜像(漂移会让
+# test_backstop_keeps_safety_alert_generic_form 变红)。不在模块级 import Severity:
+# safety_guardian 包会连带加载整个规则引擎,而本模块在每条推送的投递路径上。
+_SEVERITY_ZH = {"info": "提示", "low": "关注", "medium": "注意", "high": "警告", "critical": "紧急"}
+_URGENT_ALERT_LEVELS = ("critical", "high")  # 高 → 低
+
+# 生产者已泛化好的类别级锁屏文案,全由本模块常量拼成,按构造不含药名/化验项/
+# 诊断名。中央 backstop 原样保留它们:换成例行泛化文案会丢掉 [紧急]/[警告],
+# 让 DDI CRITICAL 在锁屏上读起来像日常吃药提醒。
+_KNOWN_SAFE_LOCK_SCREEN_TEXTS = frozenset(
+    {
+        (_safety_alert_title(severity_zh, label), _GENERIC_ALERT_CONTENT)
+        for severity_zh in _SEVERITY_ZH.values()
+        for label in {*SENSITIVE_ALERT_CATEGORY_LABELS.values(), _FALLBACK_ALERT_LABEL}
+    }
+    | {SENSITIVE_ESCALATION_PUSH_TEXT}
+)
 
 # 不点名具体药也能反推诊断的**治疗类别词**(对抗复审 2026-07-12 补):
 # 「记得吃抗抑郁药」不含药名,但向锁屏泄露 Tier-5 心理健康域;化疗/HIV 同理。
@@ -184,12 +214,45 @@ def _payload_privacy_kind(data: Optional[Mapping[str, Any]]) -> Optional[str]:
     return None
 
 
+def _urgent_alert_level(
+    notification_type: Any,
+    severity: Optional[str],
+    data: Optional[Mapping[str, Any]],
+) -> Optional[str]:
+    """health_alert 声明的最高紧急度(critical/high),否则 None。
+
+    severity 入参与 data["severity"](anomaly 生产者 / delayed flush 回放)取更紧急者。
+    只影响锁屏措辞;是否送达仍由 PushService 按 severity 入参过阈值/静默时段决定。
+    """
+    if getattr(notification_type, "value", notification_type) != "health_alert":
+        return None
+    declared = {
+        str(severity or "").lower(),
+        str((data or {}).get("severity") or "").lower(),
+    }
+    return next((level for level in _URGENT_ALERT_LEVELS if level in declared), None)
+
+
+def _replacement_text(
+    kind: str,
+    notification_type: Any,
+    severity: Optional[str],
+    data: Optional[Mapping[str, Any]],
+) -> Tuple[str, str]:
+    level = _urgent_alert_level(notification_type, severity, data)
+    if level is None:
+        return _CENTRAL_GENERIC_TEXT[kind]
+    label = _category_label(None, (data or {}).get("rule_id"))
+    return _safety_alert_title(_SEVERITY_ZH[level], label), _GENERIC_ALERT_CONTENT
+
+
 def lock_screen_privacy_backstop(
     *,
     notification_type: str,
     title: Optional[str],
     content: Optional[str],
     data: Optional[Mapping[str, Any]],
+    severity: Optional[str] = None,
 ) -> Tuple[str, str, bool]:
     """Final lock-screen privacy guard used by the shared push choke point.
 
@@ -198,9 +261,16 @@ def lock_screen_privacy_backstop(
     merely because it forgot to call its local privacy helper. Acute vital and
     symptom alerts remain unchanged unless their free text names a sensitive
     drug/supplement.
+
+    Redaction must not downgrade urgency. Producer text that is already a known
+    category-generic form (e.g. "⚠️ [紧急] 用药安全提醒") is kept verbatim, and a
+    high/critical health_alert that has to be replaced gets an urgent safety
+    generic instead of routine wording such as "用药提醒".
     """
     visible_title = str(title or "")
     visible_content = str(content or "")
+    if (visible_title, visible_content) in _KNOWN_SAFE_LOCK_SCREEN_TEXTS:
+        return visible_title, visible_content, True
     try:
         kind = _payload_privacy_kind(data)
         if kind is None and (
@@ -208,13 +278,13 @@ def lock_screen_privacy_backstop(
             or contains_sensitive_name(visible_content)
         ):
             kind = "generic"
+        if kind is None:
+            return visible_title, visible_content, False
+        safe_title, safe_content = _replacement_text(kind, notification_type, severity, data)
     except Exception:
         logger.warning("[push_privacy] central privacy scan failed; using generic text", exc_info=True)
-        kind = "generic"
-
-    if kind is None:
-        return visible_title, visible_content, False
-    safe_title, safe_content = _CENTRAL_GENERIC_TEXT[kind]
+        # data 不可信:只凭 severity 入参保住紧急度
+        safe_title, safe_content = _replacement_text("generic", notification_type, severity, None)
     return safe_title, safe_content, True
 
 

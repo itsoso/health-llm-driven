@@ -549,6 +549,7 @@ class PushService:
             title=title,
             content=content,
             data=data,
+            severity=severity,
         )
         if privacy_redacted:
             data = dict(data or {})
