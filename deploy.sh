@@ -2937,6 +2937,13 @@ remote_dependency_sync_command() {
         return 70
     fi
     cat <<REMOTE_DEPENDENCY_SYNC
+verify_backend_runtime_dependencies() {
+    # Root metadata checks cannot prove that the backend can import new wheels.
+    # Use the fixed service identity, clean environment and no production secret.
+    /usr/sbin/runuser -u health-app -- /usr/bin/env -i PATH=/usr/bin:/bin \
+        "\$(pwd -P)/venv/bin/python" -I -B scripts/verify_locked_requirements.py \
+        --runtime-user health-app requirements.lock
+}
 sync_backend_dependencies() {
     # Pi is a required backend runtime; the Python lock cache cannot prove it.
     bash pi-runtime/install.sh || return 1
@@ -2969,7 +2976,8 @@ sync_backend_dependencies() {
        [ "\$(cat "\${requirements_marker}")" = "\${requirements_expected}" ] &&
        python scripts/verify_locked_requirements.py requirements.lock &&
        python scripts/prune_unlocked_requirements.py --check requirements.lock &&
-       python -m pip check; then
+       python -m pip check &&
+       verify_backend_runtime_dependencies; then
         echo 'dependency lock unchanged; verified install reused'
         return 0
     fi
@@ -2981,7 +2989,9 @@ sync_backend_dependencies() {
         sync -f "\${release_state_dir}" || return 1
     fi
     echo '安装锁定依赖...'
-    pip install --require-hashes -r requirements.lock -q || return 1
+    # Only installed public dependency files need service-readable modes.
+    # Keep release markers/configuration under the parent private umask.
+    (umask 022; pip install --require-hashes -r requirements.lock -q) || return 1
     # pip install does not remove packages deleted from the lock. ChromaDB has
     # no patched release for CVE-2026-45830/45831/45833, so remove any stale
     # legacy install before verifying or writing the lock marker.
@@ -2989,6 +2999,7 @@ sync_backend_dependencies() {
     python scripts/prune_unlocked_requirements.py requirements.lock || return 1
     python scripts/verify_locked_requirements.py requirements.lock || return 1
     python -m pip check || return 1
+    verify_backend_runtime_dependencies || return 1
     requirements_marker_tmp="\$(mktemp "\${release_state_dir}/.requirements-lock.XXXXXX")" || return 1
     printf '%s\n' "\${requirements_expected}" > "\${requirements_marker_tmp}" || return 1
     chmod 600 "\${requirements_marker_tmp}" || return 1
