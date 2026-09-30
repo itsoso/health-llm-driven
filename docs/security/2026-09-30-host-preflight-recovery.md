@@ -34,3 +34,25 @@ PM2 及后端/ETH 进程身份早于原尝试且稳定。只忽略防火墙快�
 
 这不开放自主注册，不构成共享内核上的质押资产绝对安全证明。开放公众注册前仍须
 完成应用与质押独立主机隔离，以及注册风险策略的独立验收。
+
+## 登录事故优先恢复
+
+生产 PyJWT 2.14.0 的目录/文件受安装 umask 077 影响，实际 health-app 用户只能
+导入空 namespace，带 Bearer 的认证触发 AttributeError 返回 500。包版本和 RECORD
+字节正确并不能证明运行账户可用。独立 `--repair-runtime-permissions` 与主机恢复
+互斥，仍通过同一 canonical 新 main、独立 G4、完整 CI、原锁及 digest 校验。
+
+源码范围同时纳入本事故的 deploy/rollback 安装权限修复、锁定依赖运行身份验证及
+对应回归文件，均须同一固定提交审查；不允许应用业务代码或网络策略变化。
+
+该入口仅允许固定 051 上的 PyJWT 2.14.0：校验 wheel 源码 SHA256、完整原 RECORD、
+确切目录/文件库存、root 元数据及 inode。先保存权限前镜像 intent，再只将已验证
+源码和包元数据设为只读可访问；root 归属和全部文件字节不变，生成的字节码缓存
+保持 0700/0600。以清空补充组后的真实 health-app 身份验证来源、版本、合成 JWT
+正常签验、错误签名与过期拒绝，不读取生产密钥。
+
+只重启 health-backend、celery-worker、celery-beat，等待覆盖服务停止/启动时间，
+核验新进程 UID/cgroup/命令身份连续、稳定运行及 health 中 DB/Redis/Celery 连接。
+无效 Bearer 的 /auth/me 必须返回 401，重定向不作为成功。ETH 进程身份逐项不变，
+原主机加固 audit/backup/lease 保留。独立完成凭据才允许后续主机恢复使用这三个
+新业务 PID；质押仍要求原进程。失败保留 intent 且禁止重跑，不伪造历史成功。

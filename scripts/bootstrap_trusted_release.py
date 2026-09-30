@@ -408,6 +408,7 @@ def _host_hardening_evidence(sha):
             raise BootstrapError("cached host recovery evidence forbidden")
         spec = importlib.util.spec_from_file_location("host_recovery_history", path)
         module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
         spec.loader.exec_module(module)
         return module.history_evidence(sys.modules[__name__], sha)
     inventory = _inventory(root, {"started.json", "verified.json", "completed.json", "frontend.json"})

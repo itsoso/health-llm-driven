@@ -404,7 +404,7 @@ def host_recovery_evidence_fixture(tmp_path,monkeypatch):
     lease['.']={'dev':1,'ino':9,'uid':0,'gid':0,'mode':0o700,'sha256':None}
     keys=[{'path':str(g.STAKING/'fixture-keystore.json'),'mode':0o644}]
     backup_intent={'sha':m.FAILED_SHA,'legacy_pid':123,'key_modes':keys}
-    evidence={'frontend':frontend,'legacy':proc,'services':{},'key_modes':keys,'lease':lease,
+    evidence={'permission_repair':None,'frontend':frontend,'legacy':proc,'services':{},'key_modes':keys,'lease':lease,
               'firewall':{family:m.firewall_policy(raw) for family in ('iptables','ip6tables')},
               'cache':{str(g.ROOT/'frontend/.next/cache'):[1,2,0o40755,0,0]}}
     for name in m.SERVICES:
@@ -574,3 +574,272 @@ def test_host_recovery_auxiliary_scope_requires_exact_reviewed_blob(tmp_path,mon
     subprocess.run(['git','-C',str(old),'add','unknown'],check=True)
     subprocess.run(['git','-C',str(old),'-c','user.name=Fixture','-c','user.email=f@example.invalid','-c','core.hooksPath=/dev/null','commit','-m','unknown'],check=True,capture_output=True)
     with pytest.raises(m.RecoveryError,match='fixed scope'):m.source_scope(new,old,None)
+
+
+def permission_package_fixture(tmp_path,monkeypatch):
+    import hashlib,base64,csv,io,stat
+    from types import SimpleNamespace
+    m=load('runtime_permission_repair');site=tmp_path/'site';site.mkdir(parents=True)
+    monkeypatch.setattr(m,'SITE',site)
+    contents={'jwt/__init__.py':b'fixture source','jwt/api_jwt.py':b'fixture decode','jwt/py.typed':b''}
+    monkeypatch.setattr(m,'SOURCE_HASHES',{p:hashlib.sha256(raw).hexdigest() for p,raw in contents.items()})
+    metadata='pyjwt-2.14.0.dist-info'
+    for name in ('INSTALLER','REQUESTED','WHEEL','licenses/AUTHORS.rst','licenses/LICENSE','top_level.txt'):contents[metadata+'/'+name]=b'fixture metadata'
+    contents[metadata+'/METADATA']=b'Name: PyJWT\nVersion: 2.14.0\n'
+    for name in ('__init__','api_jwt'):contents['jwt/__pycache__/'+name+'.cpython-312.pyc']=b'private generated cache'
+    rows=[]
+    for name,raw in contents.items():
+        p=site/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw);p.chmod(0o600)
+        cache='__pycache__' in name
+        rows.append([name,'' if cache else 'sha256='+base64.urlsafe_b64encode(hashlib.sha256(raw).digest()).decode().rstrip('='),'' if cache else str(len(raw))])
+    rows.append([metadata+'/RECORD','',''])
+    stream=io.StringIO();csv.writer(stream).writerows(rows);record=site/metadata/'RECORD';record.write_text(stream.getvalue());record.chmod(0o600)
+    for p in site.rglob('*'):
+        if p.is_dir():p.chmod(0o700)
+    original=Path.lstat
+    def rootstat(path,*args,**kwargs):
+        v=original(path,*args,**kwargs);mode=v.st_mode
+        if path in [*site.parents,site]:mode=stat.S_IFDIR|0o755
+        return SimpleNamespace(st_uid=0,st_gid=0,st_mode=mode,st_nlink=v.st_nlink,st_dev=v.st_dev,st_ino=v.st_ino)
+    monkeypatch.setattr(Path,'lstat',rootstat)
+    return m,site,record
+
+
+def test_permission_repair_fixed_package_and_private_cache(tmp_path,monkeypatch):
+    import copy,pytest
+    m,site,record=permission_package_fixture(tmp_path,monkeypatch)
+    before=m.package_snapshot()
+    after={p:{**v,'mode':v['target_mode']} for p,v in before.items()}
+    m.unchanged_package(before,after)
+    assert all(v['target_mode']==(0o700 if v['directory'] else 0o600) for p,v in after.items() if '__pycache__' in p)
+    changed=copy.deepcopy(after);changed[str(site/'jwt/__init__.py')]['sha256']='0'*64
+    with pytest.raises(RuntimeError):m.unchanged_package(before,changed)
+    (site/'jwt/__init__.py').write_bytes(b'tampered')
+    with pytest.raises(RuntimeError):m.package_snapshot()
+
+
+def test_permission_repair_rejects_missing_record_link_unknown_and_cache_exposure(tmp_path,monkeypatch):
+    import pytest
+    m,site,record=permission_package_fixture(tmp_path,monkeypatch)
+    item=site/'pyjwt-2.14.0.dist-info/WHEEL';raw=item.read_bytes();item.unlink()
+    with pytest.raises(OSError):m.package_snapshot()
+    item.write_bytes(raw);item.chmod(0o600)
+    extra=site/'jwt/unknown.py';extra.write_text('unknown')
+    with pytest.raises(RuntimeError):m.package_snapshot()
+    extra.unlink()
+    cache=site/'jwt/__pycache__';cache.chmod(0o755)
+    with pytest.raises(RuntimeError):m.package_snapshot()
+    cache.chmod(0o700)
+    original=item.read_bytes();item.unlink();item.symlink_to(site/'jwt/__init__.py')
+    with pytest.raises(RuntimeError):m.package_snapshot()
+
+
+def test_permission_repair_never_mutates_without_digest_and_intent(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    m,site,record=permission_package_fixture(tmp_path,monkeypatch)
+    r=load('public_host_recovery');monkeypatch.setattr(r,'STATE',tmp_path/'state')
+    evidence={'stable':'before'}
+    a=SimpleNamespace(publisher='b'*40,inspect=lambda:evidence)
+    proof=m.execute(a,r)
+    assert proof['state']=='RUNTIME_PERMISSION_PREFLIGHT'
+    assert not (r.STATE/m.NAME/r.FAILED_SHA).exists()
+    with pytest.raises(RuntimeError,match='evidence changed'):m.execute(a,r,'0'*64)
+    target=r.STATE/m.NAME/r.FAILED_SHA;target.mkdir(parents=True)
+    with pytest.raises(RuntimeError,match='already attempted'):m.execute(a,r,proof['evidence_sha256'])
+
+
+def test_permission_repair_transaction_and_history_preserve_staking(tmp_path,monkeypatch):
+    import copy,json,os
+    from types import SimpleNamespace
+    m,site,record=permission_package_fixture(tmp_path/'package',monkeypatch)
+    r,g,before,backup_intent,frontend,values=host_recovery_evidence_fixture(tmp_path/'host',monkeypatch)
+    monkeypatch.setattr(r,'STATE',tmp_path/'state');monkeypatch.setattr(r,'LEASE',tmp_path/'lease');r.LEASE.mkdir()
+    audit=r.STATE/r.FAILED_SHA/'host-hardening';audit.mkdir(parents=True)
+    values['stage']=(str(audit)+'\n').encode()
+    import hashlib
+    for name,raw in values.items():
+        (r.LEASE/name).write_bytes(raw);before['lease'][name]['sha256']=hashlib.sha256(raw).hexdigest()
+    backup=r.BACKUPS/r.FAILED_SHA
+    (backup/'intent.json').write_text(json.dumps(backup_intent));(audit/'frontend.json').write_text(json.dumps(frontend))
+    before.update(production_sha=r.FAILED_SHA,publisher_sha='b'*40,preserved={'unchanged':True})
+    services=copy.deepcopy(before['services']);events=[]
+    def inventory(path,names):assert {p.name for p in path.iterdir()}==names;return {}
+    b=SimpleNamespace(_inventory=inventory,_read_json=lambda p:json.loads(p.read_text()),canonical_source=lambda sha:tmp_path)
+    def write(path,raw):path.write_bytes(raw);events.append(path.name)
+    def run(*args):
+        assert args[:2]==('/usr/bin/systemctl','restart') and args[2] in r.SERVICES[:3]
+        assert (r.STATE/m.NAME/r.FAILED_SHA/'intent.json').exists()
+        events.append(args[2]);value=services[args[2]];value['process']['pid']+=100;value['process']['starttime']=str(int(value['process']['starttime'])+100);value['properties']['MainPID']=str(value['process']['pid'])
+    a=SimpleNamespace(publisher='b'*40,inspect=lambda:before,b=b,old=tmp_path,guard=g,backup=backup,audit=audit,
+      check=lambda:None,lease=lambda:before['lease'],preserved=lambda:before['preserved'],
+      helper=SimpleNamespace(_revision_proof=lambda *a:None),server=SimpleNamespace(secure_path=lambda *a,**kw:None,_sync_directory=lambda *a:None,_write_private=write))
+    g.run=run
+    monkeypatch.setattr(m,'restart_service',lambda name:run('/usr/bin/systemctl','restart',name))
+    monkeypatch.setattr(r,'services',lambda *a:copy.deepcopy(services));monkeypatch.setattr(r,'source_scope',lambda *a:None)
+    monkeypatch.setattr(m,'runtime_probe',lambda:events.append('runtime-probe'));monkeypatch.setattr(m,'http_probe',lambda:events.append('http-probe'));monkeypatch.setattr(m.time,'sleep',lambda *a:None)
+    original_fstat=os.fstat
+    def rootfstat(fd):
+        v=original_fstat(fd)
+        return SimpleNamespace(st_dev=v.st_dev,st_ino=v.st_ino,st_mode=v.st_mode,st_uid=0,st_gid=0)
+    monkeypatch.setattr(m.os,'fstat',rootfstat);monkeypatch.setattr(m.os,'fsync',lambda *a:None)
+    proof=m.execute(a,r)
+    assert m.execute(a,r,proof['evidence_sha256'])['state']=='RUNTIME_PERMISSIONS_REPAIRED'
+    intent,done=m.inspect_history(a,r)
+    assert done['after_services']==services
+    assert all(done['after_services'][name]==before['services'][name] for name in r.SERVICES[3:])
+    assert events[0]=='intent.json' and events[-1]=='completed.json'
+    assert events.index('runtime-probe')<events.index('health-backend')
+
+
+def test_permission_repair_rejects_directory_symlink_before_leaf_read(tmp_path,monkeypatch):
+    import pytest
+    m,site,record=permission_package_fixture(tmp_path,monkeypatch)
+    original=site/'jwt';target=site/'saved';original.rename(target);original.symlink_to(target,target_is_directory=True)
+    read=Path.read_bytes
+    def guarded(path):
+        if path.is_relative_to(original):pytest.fail('must reject parent before reading package content')
+        return read(path)
+    monkeypatch.setattr(Path,'read_bytes',guarded)
+    with pytest.raises(RuntimeError,match='ancestry'):m.package_snapshot()
+
+
+def test_permission_repair_restart_targets_timeout_and_continuity(monkeypatch):
+    import copy
+    import pytest
+    from types import SimpleNamespace
+    m=load('runtime_permission_repair');r=load('public_host_recovery');calls=[]
+    monkeypatch.setattr(m.subprocess,'run',lambda args,**kw:calls.append((args,kw)))
+    m.restart_service('celery-worker')
+    assert calls[0][0]==['/usr/bin/systemctl','restart','celery-worker'] and calls[0][1]['timeout']==180
+    with pytest.raises(RuntimeError):m.restart_service('eth1')
+    process={'pid':1,'starttime':'1','uid':['997']*4,'cgroup':'stable','argv_sha256':'a'*64}
+    before={name:{'process':copy.deepcopy(process)} for name in r.SERVICES};after=copy.deepcopy(before)
+    for name in r.SERVICES[:3]:after[name]['process'].update(pid=2,starttime='2')
+    m.validate_restarted_services(before,after,r)
+    for field,new in (('uid',['0']*4),('cgroup','wrong'),('argv_sha256','b'*64),('pid',1),('starttime','1')):
+        changed=copy.deepcopy(after);changed['health-backend']['process'][field]=new
+        with pytest.raises(RuntimeError):m.validate_restarted_services(before,changed,r)
+    changed=copy.deepcopy(after);changed['eth1']['process']['pid']=2
+    with pytest.raises(RuntimeError):m.validate_restarted_services(before,changed,r)
+
+
+def test_bootstrap_host_permission_history_chain(tmp_path,monkeypatch):
+    import sys
+    monkeypatch.setattr(sys,'dont_write_bytecode',True)
+    import hashlib
+    import json
+    import shutil
+    from types import SimpleNamespace
+    import pytest
+    m,g,evidence,backup_intent,frontend,values=host_recovery_evidence_fixture(tmp_path,monkeypatch)
+    monkeypatch.setattr(m,'STATE',tmp_path/'state')
+    monkeypatch.setattr(m,'LEASE',tmp_path/'active')
+    monkeypatch.setattr(m,'VOLATILE',tmp_path)
+    audit=m.STATE/m.FAILED_SHA/'host-hardening';audit.mkdir(parents=True)
+    values['stage']=(str(audit)+'\n').encode()
+    m.LEASE.mkdir()
+    def write(path,raw):path.write_bytes(raw);path.chmod(0o600)
+    for name,raw in values.items():
+        write(m.LEASE/name,raw)
+        evidence['lease'][name]['sha256']=hashlib.sha256(raw).hexdigest()
+    evidence['lease']['.']['ino']=m.LEASE.stat().st_ino
+    evidence['production_sha']=m.FAILED_SHA;evidence['publisher_sha']='b'*40
+    backup=m.BACKUPS/m.FAILED_SHA
+    write(backup/'intent.json',json.dumps(backup_intent).encode())
+    # Empty initial write set still uses the real archive and manifest validator.
+    paths=[tmp_path/'absent-config'];monkeypatch.setattr(m,'write_set',lambda:paths)
+    hostguard=load('harden_public_host');hostguard.backup_configuration(backup,paths)
+    for name,state in (('started.json','STARTED'),('failed.json','NEEDS_OPERATOR')):
+        write(audit/name,json.dumps({'sha':m.FAILED_SHA,'state':state}).encode())
+    write(audit/'frontend.json',json.dumps(frontend).encode())
+    def inventory(path,names):
+        assert {p.name for p in path.iterdir()}==names
+        result={}
+        for p in [path,*(path/name for name in names)]:
+            st=p.stat();isdir=p==path
+            result['.' if isdir else p.name]={'uid':0,'gid':0,'mode':0o700 if isdir else 0o600,
+                'inode':st.st_ino,'device':st.st_dev,'sha256':None if isdir else hashlib.sha256(p.read_bytes()).hexdigest()}
+        return result
+    preserved=lambda:{'audit':inventory(audit,m.AUDIT_NAMES),'backup':inventory(backup,m.BACKUP_NAMES)}
+    evidence['preserved']=preserved()
+    source=tmp_path/'canonical';(source/'scripts').mkdir(parents=True)
+    shutil.copyfile(ROOT/'scripts/harden_public_host.py',source/'scripts/harden_public_host.py')
+    b=SimpleNamespace(secure=lambda *a,**kw:None,_inventory=inventory,_read_json=lambda p:json.loads(p.read_text()),canonical_source=lambda sha:source)
+    server=SimpleNamespace(secure_path=lambda *a,**kw:None,_sync_directory=lambda *a:None,_write_private=write,_sync_business_lease_parent=lambda:None)
+    def apply(sha,path,*args):
+        write(path/'phase.json',b'{"phase":"frontend_cutover"}')
+        write(path/'completed.json',json.dumps({'sha':sha,'status':'APPLIED'}).encode())
+    adapter=SimpleNamespace(record=m.STATE/'host-hardening-recoveries'/m.FAILED_SHA,publisher='b'*40,
+      inspect=lambda:evidence,server=server,guard=SimpleNamespace(_apply_prepared=apply,
+      run=lambda *a:'User=health-web\nMainPID=321\nActiveState=active'),host=SimpleNamespace(verify_runtime=lambda *a:None),
+      helper=SimpleNamespace(_revision_proof=lambda *a:None),old=source,b=b,preserved=preserved,lease=lambda:evidence['lease'],check=lambda:None)
+    monkeypatch.setattr(m,'services',lambda *a:evidence['services'])
+    monkeypatch.setattr(m.pwd,'getpwnam',lambda name:SimpleNamespace(pw_uid=998))
+    monkeypatch.setattr(m,'process_identity',lambda pid:{'uid':['998']*4})
+    monkeypatch.setattr(m.subprocess,'run',lambda args,**kw:Path(args[4]).rename(args[5]))
+    monkeypatch.setattr(m,'source_scope',lambda *a:None)
+    import copy
+    repair=load('runtime_permission_repair')
+    metadata='pyjwt-2.14.0.dist-info'
+    dirs={'jwt','jwt/__pycache__',metadata,metadata+'/licenses'}
+    files=set(repair.SOURCE_HASHES)
+    files.update('jwt/__pycache__/'+Path(p).stem+'.cpython-312.pyc' for p in repair.SOURCE_HASHES if p.endswith('.py'))
+    files.update(metadata+'/'+p for p in ('INSTALLER','METADATA','RECORD','REQUESTED','WHEEL','licenses/AUTHORS.rst','licenses/LICENSE','top_level.txt'))
+    package={}
+    for i,name in enumerate(sorted(dirs|files),1):
+        directory=name in dirs;cache='__pycache__' in Path(name).parts
+        package[str(repair.SITE/name)]={'uid':0,'gid':0,'dev':1,'ino':i,'directory':directory,
+            'mode':0o700 if directory else 0o600,
+            'target_mode':(0o700 if directory else 0o600) if cache else (0o755 if directory else 0o644),
+            'sha256':None if directory else repair.SOURCE_HASHES.get(name,'e'*64)}
+    repair.validate_package_snapshot(package)
+    before=copy.deepcopy(evidence)
+    for name in m.SERVICES[:3]:
+        service=evidence['services'][name];service['process']['pid']+=100
+        service['process']['starttime']='200';service['properties']['MainPID']=str(service['process']['pid'])
+    repair_intent={'production_sha':m.FAILED_SHA,'publisher_sha':adapter.publisher,'before':before,'package':package}
+    repair_done={'state':'RUNTIME_PERMISSIONS_REPAIRED','production_sha':m.FAILED_SHA,'publisher_sha':adapter.publisher,
+        'intent_sha256':m.digest(repair_intent),'after_services':copy.deepcopy(evidence['services']),
+        'after_package':{p:{**v,'mode':v['target_mode']} for p,v in package.items()}}
+    repair_record=m.STATE/repair.NAME/m.FAILED_SHA;repair_record.mkdir(parents=True)
+    write(repair_record/'intent.json',json.dumps(repair_intent).encode())
+    write(repair_record/'completed.json',json.dumps(repair_done).encode())
+    evidence['permission_repair']={'intent_sha256':m.digest(repair_intent),'completion_sha256':m.digest(repair_done)}
+    for name in ('public_host_recovery','runtime_permission_repair'):
+        shutil.copyfile(ROOT/'scripts'/f'{name}.py',source/'scripts'/f'{name}.py')
+    bootstrap=load('bootstrap_trusted_release')
+    monkeypatch.setitem(sys.modules,bootstrap.__name__,bootstrap)
+    monkeypatch.setattr(bootstrap,'STATE',m.STATE)
+    monkeypatch.setattr(bootstrap,'__file__',str(source/'scripts/bootstrap_trusted_release.py'))
+    for name in ('secure','_inventory','_read_json','canonical_source'):
+        monkeypatch.setattr(bootstrap,name,getattr(b,name))
+    # Preserve actual loader execution and sys.modules registration. Only map
+    # fixed host paths and canonical-source validation to this local fixture.
+    import importlib.util
+    real_spec=importlib.util.spec_from_file_location
+    def fixture_spec(name,path,*args,**kwargs):
+        spec=real_spec(name,path,*args,**kwargs)
+        if name=='host_recovery_history':
+            real_exec=spec.loader.exec_module
+            def execute(module):
+                real_exec(module)
+                for key in ('STATE','BACKUPS','LEASE','VOLATILE','write_set','source_scope'):
+                    setattr(module,key,getattr(m,key))
+            spec.loader.exec_module=execute
+        return spec
+    monkeypatch.setattr(importlib.util,'spec_from_file_location',fixture_spec)
+    m.validate_intent(evidence,backup_intent,frontend,values,g)
+    assert m.recover(adapter,m.digest(evidence))['state']=='RECOVERED_LOCAL_VERIFIED'
+    assert bootstrap._host_hardening_evidence(m.FAILED_SHA)['kind']=='recovered-host-hardening'
+    assert sys.modules['host_recovery_history'].__name__=='host_recovery_history'
+
+    # Even self-consistent outer digests cannot authorize unknown package code.
+    repair_done['after_package'][str(repair.SITE/'jwt/__init__.py')]['sha256']='0'*64
+    write(repair_record/'completed.json',json.dumps(repair_done).encode())
+    evidence['permission_repair']['completion_sha256']=m.digest(repair_done)
+    write(adapter.record/'intent.json',json.dumps(evidence).encode())
+    completed=b._read_json(adapter.record/'completed.json');completed['intent_sha256']=m.digest(evidence)
+    write(adapter.record/'completed.json',json.dumps(completed).encode())
+    with pytest.raises(RuntimeError,match='historical source digest'):
+        bootstrap._host_hardening_evidence(m.FAILED_SHA)
