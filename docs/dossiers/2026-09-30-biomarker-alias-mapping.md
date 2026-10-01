@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | G4 GO (round 5); awaiting user approval for commit/deploy/cleanup |
+| 状态 | shipped |
+| 当前阶段 | G6 PASS: deployed 2026-10-01 (main 644b6a2de), production reconcile applied for user 3 and verified |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -171,3 +171,31 @@ user approval.
   passed, 3 PostgreSQL-only skipped.
 - Not done (non-blocking): OCR unit spellings like `x10 9/L` / `10~9/L` are
   unrecognised, so such bare-name rows are dropped rather than read.
+
+## G5 / G6 production evidence (2026-10-01)
+
+裁决: PASS.
+
+- Merged to main: #261 (dependency CVEs), #259 (this fix), #262, #264 (PT/NEUT),
+  #266 (analyte-guard cases folded into the canonical layer). Deployed with
+  `./deploy.sh -b` from a clean release clone at main 644b6a2de (17:59 CST):
+  health score 60/60, skills 22 = 22, runtime-state transaction finalized,
+  managed migration `20261001_150000_remote_health_oauth` applied, remote-health
+  routes absent from OpenAPI (default-off), PyJWT 2.15.0 / urllib3 2.8.0 /
+  pydantic 2.12.5 live, no backend/celery error logs after restart. Three
+  earlier launches were stopped by deploy.sh guards before any production
+  change (local `.env` missing 13 prod keys; missing `refs/reva-production` in
+  the fresh clone; origin/main moved). Frontend not redeployed (user decision;
+  the Next.js advisory concerns `next/og`, which the frontend does not use).
+  iOS OTA left to a separate session (no new production update group yet).
+- `scripts/reconcile_biomarkers.py --user 3`: dry run 158 → 110 rows, 89
+  deletes (75 superseded, 13 mapping invalid, 1 remapped to egfr, 0 DROPPED),
+  41 inserts (the 5 beyond the pre-merge simulation are the new PT/NEUT
+  rows). Applied with user approval; `--all` dry run showed inserts only for
+  users 1 (5) and 23 (2), which the user chose not to apply.
+- Read-only verification after apply: 0 LDL rows sourced from VLDL-C items,
+  0 creatinine rows with ml/min or mg/g units, 16 observations for exam 50,
+  latest observation 2026-08-24, PT 2 / NEUT 3 / eGFR 5 present, 0 duplicate
+  (code, day, value) measurements, 110 rows.
+- Not done by user decision: renaming the 23 PDF-rewritten source item names;
+  the supplement `taken` repair (dry run OK, 16 rows); users 1/23 reconcile.
