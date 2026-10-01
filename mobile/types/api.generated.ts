@@ -19747,9 +19747,13 @@ export interface components {
             /** Review Expires At */
             review_expires_at?: string | null;
             /** Spec */
-            spec?: Record<string, never> | null;
+            spec?: {
+                [key: string]: unknown;
+            } | null;
             /** Job */
-            job?: Record<string, never> | null;
+            job?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * AIInsightListResponse
@@ -19780,7 +19784,9 @@ export interface components {
             /** User Id */
             user_id: number;
             /** Health Snapshot */
-            health_snapshot?: Record<string, never> | null;
+            health_snapshot?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Generated At
              * Format: date-time
@@ -20239,7 +20245,9 @@ export interface components {
              */
             track: string;
             /** Value */
-            value?: Record<string, never> | null;
+            value?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Status
              * @default done
@@ -20592,7 +20600,9 @@ export interface components {
              */
             privacy_class: string;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** AudioInputEventResponse */
         AudioInputEventResponse: {
@@ -20627,9 +20637,13 @@ export interface components {
              */
             created_at: string;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
             /** Safety Result */
-            safety_result?: Record<string, never> | null;
+            safety_result?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * AvatarResponse
@@ -21046,7 +21060,6 @@ export interface components {
             /**
              * Severity
              * @constant
-             * @enum {string}
              */
             severity: "high";
             /** Title */
@@ -21137,7 +21150,9 @@ export interface components {
             /** File */
             file: string;
             /** Exam Info */
-            exam_info?: Record<string, never>;
+            exam_info?: {
+                [key: string]: unknown;
+            };
         };
         /** Body_import_medical_exam_from_image_api_v1_medical_exams_import_image_post */
         Body_import_medical_exam_from_image_api_v1_medical_exams_import_image_post: {
@@ -21287,7 +21302,6 @@ export interface components {
             /**
              * Mode
              * @constant
-             * @enum {string}
              */
             mode: "manual";
             /** Fields */
@@ -21300,7 +21314,9 @@ export interface components {
             /** Reason */
             reason?: string | null;
             /** Adjusted Payload */
-            adjusted_payload?: Record<string, never> | null;
+            adjusted_payload?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** CgmBatchIn */
         CgmBatchIn: {
@@ -21360,7 +21376,9 @@ export interface components {
             month: number;
             /** Days */
             days: {
-                [key: string]: Record<string, never>;
+                [key: string]: {
+                    [key: string]: unknown;
+                };
             };
             /** Total Days */
             total_days: number;
@@ -21706,13 +21724,17 @@ export interface components {
              * @default {}
              */
             by_category: {
-                [key: string]: Record<string, never>;
+                [key: string]: {
+                    [key: string]: unknown;
+                };
             };
             /**
              * Daily Trend
              * @default []
              */
-            daily_trend: Record<string, never>[];
+            daily_trend: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * CheckinTemplateCreate
@@ -22030,7 +22052,6 @@ export interface components {
              * Feedback
              * @default disagree
              * @constant
-             * @enum {string}
              */
             feedback: "disagree";
             /** Reason */
@@ -22130,7 +22151,6 @@ export interface components {
             /**
              * Source Type
              * @constant
-             * @enum {string}
              */
             source_type: "diet_record";
             /** Source Id */
@@ -22149,7 +22169,9 @@ export interface components {
             /** Source Type */
             source_type: string;
             /** Snapshot */
-            snapshot: Record<string, never>;
+            snapshot: {
+                [key: string]: unknown;
+            };
             /** Caption */
             caption: string | null;
             /** Status */
@@ -22221,8 +22243,9 @@ export interface components {
             idempotent: boolean;
             source_write?: components["schemas"]["SourceWriteRef"] | null;
         };
-        /** CompleteRef */
-        CompleteRef: Record<string, never>;
+        CompleteRef: {
+            [key: string]: unknown;
+        };
         /** ConfirmIn */
         ConfirmIn: {
             /** Plan Id */
@@ -22283,7 +22306,9 @@ export interface components {
              * Meta
              * @default {}
              */
-            meta: Record<string, never>;
+            meta: {
+                [key: string]: unknown;
+            };
             /** Due Date */
             due_date?: string | null;
         };
@@ -22309,7 +22334,9 @@ export interface components {
              * Meta
              * @default {}
              */
-            meta: Record<string, never>;
+            meta: {
+                [key: string]: unknown;
+            };
             /** Due Date */
             due_date?: string | null;
             /** Id */
@@ -22355,7 +22382,9 @@ export interface components {
             /** Actual Value */
             actual_value?: string | null;
             /** Meta Patch */
-            meta_patch?: Record<string, never> | null;
+            meta_patch?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * ConsultationListItem
@@ -22453,7 +22482,9 @@ export interface components {
             /** Confidence */
             confidence: string;
             /** Evidence */
-            evidence: Record<string, never>;
+            evidence: {
+                [key: string]: unknown;
+            };
         };
         /**
          * CourseUploadInput
@@ -22496,7 +22527,9 @@ export interface components {
              * Course Metadata
              * @description 额外元数据
              */
-            course_metadata?: Record<string, never> | null;
+            course_metadata?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * CreateDietFromImageRequest
@@ -22570,7 +22603,9 @@ export interface components {
             /** Skip Reason */
             skip_reason?: string | null;
             /** Delivered Context */
-            delivered_context?: Record<string, never> | null;
+            delivered_context?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * DailyDietSummary
@@ -22676,7 +22711,9 @@ export interface components {
              * Workouts
              * @default []
              */
-            workouts: Record<string, never>[];
+            workouts: {
+                [key: string]: unknown;
+            }[];
             /**
              * Total Workout Minutes
              * @default 0
@@ -22691,7 +22728,9 @@ export interface components {
              * Naps
              * @default []
              */
-            naps: Record<string, never>[];
+            naps: {
+                [key: string]: unknown;
+            }[];
             /**
              * Steps
              * @default 0
@@ -22706,7 +22745,9 @@ export interface components {
              * Meals
              * @default []
              */
-            meals: Record<string, never>[];
+            meals: {
+                [key: string]: unknown;
+            }[];
             /**
              * Total Calories
              * @default 0
@@ -22736,7 +22777,9 @@ export interface components {
              * Water Records
              * @default []
              */
-            water_records: Record<string, never>[];
+            water_records: {
+                [key: string]: unknown;
+            }[];
             /**
              * Nasal Wash Done
              * @default false
@@ -22751,7 +22794,9 @@ export interface components {
              * Checkins
              * @default []
              */
-            checkins: Record<string, never>[];
+            checkins: {
+                [key: string]: unknown;
+            }[];
             /**
              * Checkin Completed
              * @default 0
@@ -22766,7 +22811,9 @@ export interface components {
              * Supplements
              * @default []
              */
-            supplements: Record<string, never>[];
+            supplements: {
+                [key: string]: unknown;
+            }[];
             /** Body Battery High */
             body_battery_high?: number | null;
             /** Body Battery Low */
@@ -22813,7 +22860,9 @@ export interface components {
              */
             event_type: "suggested" | "accepted" | "adjusted" | "completed" | "skipped" | "verified";
             /** Payload */
-            payload?: Record<string, never>;
+            payload?: {
+                [key: string]: unknown;
+            };
             /**
              * Plan Date
              * @description 默认今天
@@ -22843,7 +22892,9 @@ export interface components {
             /** Action State */
             action_state: string;
             /** Payload */
-            payload: Record<string, never>;
+            payload: {
+                [key: string]: unknown;
+            };
         };
         /** DailyPlanActionFeedbackRequest */
         DailyPlanActionFeedbackRequest: {
@@ -23213,7 +23264,9 @@ export interface components {
             /** Source Ref */
             source_ref?: string | null;
             /** Metadata */
-            metadata?: Record<string, never>;
+            metadata?: {
+                [key: string]: unknown;
+            };
         };
         /** DataSourceQualityUpsert */
         DataSourceQualityUpsert: {
@@ -23240,7 +23293,9 @@ export interface components {
             /** Reason */
             reason?: string | null;
             /** Metadata */
-            metadata?: Record<string, never>;
+            metadata?: {
+                [key: string]: unknown;
+            };
         };
         /** DayOut */
         DayOut: {
@@ -23428,7 +23483,9 @@ export interface components {
             /** Source Hash */
             source_hash?: string | null;
             /** Request Payload */
-            request_payload?: Record<string, never>;
+            request_payload?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * DetectedLocation
@@ -23462,7 +23519,9 @@ export interface components {
             /** Last Error */
             last_error: string | null;
             /** Config */
-            config: Record<string, never>;
+            config: {
+                [key: string]: unknown;
+            };
             /** Created At */
             created_at: string | null;
         };
@@ -23506,7 +23565,9 @@ export interface components {
              * Payload
              * @description 结构化标量;严禁原始媒体
              */
-            payload?: Record<string, never> | null;
+            payload?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * DeviceObservationResponse
@@ -23527,7 +23588,9 @@ export interface components {
             /** Status */
             status: string;
             /** Payload */
-            payload?: Record<string, never> | null;
+            payload?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Occurred At
              * Format: date-time
@@ -23910,7 +23973,9 @@ export interface components {
              * Metadata
              * @description 额外元数据
              */
-            metadata?: Record<string, never> | null;
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * EffectiveTimezone
@@ -23957,7 +24022,9 @@ export interface components {
             /** Aliases */
             aliases?: string[];
             /** Attributes */
-            attributes?: Record<string, never>;
+            attributes?: {
+                [key: string]: unknown;
+            };
             /**
              * Confidence
              * @default 0.7
@@ -23996,7 +24063,9 @@ export interface components {
              * Raw Summary
              * @description 原始报告字段(可选)
              */
-            raw_summary?: Record<string, never>;
+            raw_summary?: {
+                [key: string]: unknown;
+            };
         };
         /** EpisodeActionOut */
         EpisodeActionOut: {
@@ -24059,9 +24128,13 @@ export interface components {
             /** Source Id */
             source_id?: number | null;
             /** Context Snapshot */
-            context_snapshot?: Record<string, never> | null;
+            context_snapshot?: {
+                [key: string]: unknown;
+            } | null;
             /** Baseline Snapshot */
-            baseline_snapshot?: Record<string, never> | null;
+            baseline_snapshot?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Actions
              * @default []
@@ -24108,7 +24181,9 @@ export interface components {
             /** Completion Rate */
             completion_rate?: number | null;
             /** Metrics Delta */
-            metrics_delta?: Record<string, never> | null;
+            metrics_delta?: {
+                [key: string]: unknown;
+            } | null;
             /** Summary */
             summary?: string | null;
         };
@@ -24119,7 +24194,9 @@ export interface components {
             /** Event Key */
             event_key?: string | null;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** EventOut */
         EventOut: {
@@ -24174,7 +24251,9 @@ export interface components {
              */
             event_type: string;
             /** Config */
-            config?: Record<string, never> | null;
+            config?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Auto Confirm Threshold
              * @default 0.8
@@ -24199,7 +24278,9 @@ export interface components {
             /** Event Type */
             event_type: string;
             /** Config */
-            config?: Record<string, never> | null;
+            config?: {
+                [key: string]: unknown;
+            } | null;
             /** Auto Confirm Threshold */
             auto_confirm_threshold: number;
             /** Is Active */
@@ -24219,7 +24300,9 @@ export interface components {
             /** Event Type */
             event_type?: string | null;
             /** Config */
-            config?: Record<string, never> | null;
+            config?: {
+                [key: string]: unknown;
+            } | null;
             /** Auto Confirm Threshold */
             auto_confirm_threshold?: number | null;
             /** Is Active */
@@ -24539,7 +24622,9 @@ export interface components {
             /** Rule Id */
             rule_id: string;
             /** Data Citation */
-            data_citation?: Record<string, never> | null;
+            data_citation?: {
+                [key: string]: unknown;
+            } | null;
             /** Message */
             message?: string | null;
         };
@@ -24586,7 +24671,9 @@ export interface components {
             /** Extracted Count */
             extracted_count: number;
             /** Facts */
-            facts: Record<string, never>[];
+            facts: {
+                [key: string]: unknown;
+            }[];
         };
         /** FHIRBundleImportRequest */
         FHIRBundleImportRequest: {
@@ -24597,7 +24684,9 @@ export interface components {
             /** Source Ref */
             source_ref?: string | null;
             /** Bundle */
-            bundle: Record<string, never>;
+            bundle: {
+                [key: string]: unknown;
+            };
         };
         /** FactCreate */
         FactCreate: {
@@ -24708,7 +24797,9 @@ export interface components {
             /** Action Id */
             action_id?: number | null;
             /** Payload */
-            payload?: Record<string, never> | null;
+            payload?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Source
              * @default mobile
@@ -24742,7 +24833,9 @@ export interface components {
             /** Kind */
             kind: string;
             /** Payload */
-            payload?: Record<string, never> | null;
+            payload?: {
+                [key: string]: unknown;
+            } | null;
             /** Source */
             source: string;
             /**
@@ -25160,7 +25253,9 @@ export interface components {
             /** Training Readiness Level */
             training_readiness_level?: string | null;
             /** Training Readiness Factors */
-            training_readiness_factors?: Record<string, never> | null;
+            training_readiness_factors?: {
+                [key: string]: unknown;
+            } | null;
             /** Training Status */
             training_status?: string | null;
             /** Training Status Feedback */
@@ -25174,7 +25269,9 @@ export interface components {
             /** Hill Score */
             hill_score?: number | null;
             /** Race Predictions */
-            race_predictions?: Record<string, never> | null;
+            race_predictions?: {
+                [key: string]: unknown;
+            } | null;
             /** Hydration Ml */
             hydration_ml?: number | null;
             /** Vo2Max Fitness Age */
@@ -25283,7 +25380,9 @@ export interface components {
             /** Training Readiness Level */
             training_readiness_level?: string | null;
             /** Training Readiness Factors */
-            training_readiness_factors?: Record<string, never> | null;
+            training_readiness_factors?: {
+                [key: string]: unknown;
+            } | null;
             /** Training Status */
             training_status?: string | null;
             /** Training Status Feedback */
@@ -25297,7 +25396,9 @@ export interface components {
             /** Hill Score */
             hill_score?: number | null;
             /** Race Predictions */
-            race_predictions?: Record<string, never> | null;
+            race_predictions?: {
+                [key: string]: unknown;
+            } | null;
             /** Hydration Ml */
             hydration_ml?: number | null;
             /** Vo2Max Fitness Age */
@@ -25484,7 +25585,9 @@ export interface components {
              * Rules
              * @description 基因-药物规则
              */
-            rules: Record<string, never>;
+            rules: {
+                [key: string]: unknown;
+            };
         };
         /**
          * GeneKnowledgeInput
@@ -25522,24 +25625,34 @@ export interface components {
              * Entities
              * @description entity_type → id → entity
              */
-            entities?: Record<string, never>;
+            entities?: {
+                [key: string]: unknown;
+            };
             /**
              * Claims
              * @description atomic claims with drug_rules
              */
-            claims?: Record<string, never>[];
+            claims?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Gene Rules
              * @description gene → phenotype → rules
              */
-            gene_rules?: Record<string, never>;
+            gene_rules?: {
+                [key: string]: unknown;
+            };
             /**
              * Snp Registry
              * @description rsid → metadata
              */
-            snp_registry?: Record<string, never>;
+            snp_registry?: {
+                [key: string]: unknown;
+            };
             /** Stats */
-            stats?: Record<string, never> | null;
+            stats?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** GenerateGoalRequest */
         GenerateGoalRequest: {
@@ -25678,7 +25791,9 @@ export interface components {
              */
             priority: string;
             /** Action */
-            action?: Record<string, never> | null;
+            action?: {
+                [key: string]: unknown;
+            } | null;
             /** Target Type */
             target_type?: string | null;
             /** Target Id */
@@ -25686,7 +25801,9 @@ export interface components {
             /** Expires At */
             expires_at?: string | null;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** GlanceCardResponse */
         GlanceCardResponse: {
@@ -25705,7 +25822,9 @@ export interface components {
             /** Status */
             status: string;
             /** Action */
-            action: Record<string, never> | null;
+            action: {
+                [key: string]: unknown;
+            } | null;
             /** Target Type */
             target_type: string | null;
             /** Target Id */
@@ -25718,7 +25837,9 @@ export interface components {
              */
             created_at: string;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * GoalCreate
@@ -25899,19 +26020,27 @@ export interface components {
             /** Ba Duan Jin Duration */
             ba_duan_jin_duration?: number | null;
             /** Other Exercises */
-            other_exercises?: Record<string, never> | null;
+            other_exercises?: {
+                [key: string]: unknown;
+            } | null;
             /** Sneeze Count */
             sneeze_count?: number | null;
             /** Sneeze Times */
-            sneeze_times?: Record<string, never>[] | null;
+            sneeze_times?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Nasal Wash Count */
             nasal_wash_count?: number | null;
             /** Nasal Wash Times */
-            nasal_wash_times?: Record<string, never>[] | null;
+            nasal_wash_times?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Daily Score */
             daily_score?: number | null;
             /** Goals Completed */
-            goals_completed?: Record<string, never> | null;
+            goals_completed?: {
+                [key: string]: unknown;
+            } | null;
             /** Notes */
             notes?: string | null;
             /** Personalized Advice */
@@ -25944,19 +26073,27 @@ export interface components {
             /** Ba Duan Jin Duration */
             ba_duan_jin_duration: number | null;
             /** Other Exercises */
-            other_exercises: Record<string, never> | null;
+            other_exercises: {
+                [key: string]: unknown;
+            } | null;
             /** Sneeze Count */
             sneeze_count?: number | null;
             /** Sneeze Times */
-            sneeze_times?: Record<string, never>[] | null;
+            sneeze_times?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Nasal Wash Count */
             nasal_wash_count?: number | null;
             /** Nasal Wash Times */
-            nasal_wash_times?: Record<string, never>[] | null;
+            nasal_wash_times?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Daily Score */
             daily_score: number | null;
             /** Goals Completed */
-            goals_completed: Record<string, never> | null;
+            goals_completed: {
+                [key: string]: unknown;
+            } | null;
             /** Notes */
             notes: string | null;
             /** Personalized Advice */
@@ -25984,7 +26121,9 @@ export interface components {
              * Input Snapshot
              * @default {}
              */
-            input_snapshot: Record<string, never>;
+            input_snapshot: {
+                [key: string]: unknown;
+            };
             /** Rationale Markdown */
             rationale_markdown: string;
             /** Summary */
@@ -26031,7 +26170,9 @@ export interface components {
              * Input Snapshot
              * @default {}
              */
-            input_snapshot: Record<string, never>;
+            input_snapshot: {
+                [key: string]: unknown;
+            };
             /** Rationale Markdown */
             rationale_markdown: string;
             /** Summary */
@@ -26076,7 +26217,9 @@ export interface components {
          */
         HealthEventConfirm: {
             /** Confirmed Data */
-            confirmed_data?: Record<string, never> | null;
+            confirmed_data?: {
+                [key: string]: unknown;
+            } | null;
             /** @default confirmed */
             status: components["schemas"]["EventStatusEnum"];
         };
@@ -26098,7 +26241,9 @@ export interface components {
             /** Source Device Id */
             source_device_id?: string | null;
             /** Raw Data */
-            raw_data?: Record<string, never> | null;
+            raw_data?: {
+                [key: string]: unknown;
+            } | null;
             /** Event Time */
             event_time?: string | null;
         };
@@ -26118,9 +26263,13 @@ export interface components {
             /** Source Device Id */
             source_device_id?: string | null;
             /** Raw Data */
-            raw_data?: Record<string, never> | null;
+            raw_data?: {
+                [key: string]: unknown;
+            } | null;
             /** Ai Inference */
-            ai_inference?: Record<string, never> | null;
+            ai_inference?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Confidence
              * @default 0
@@ -26128,7 +26277,9 @@ export interface components {
             confidence: number;
             status: components["schemas"]["EventStatusEnum"];
             /** Confirmed Data */
-            confirmed_data?: Record<string, never> | null;
+            confirmed_data?: {
+                [key: string]: unknown;
+            } | null;
             /** Target Record Type */
             target_record_type?: string | null;
             /** Target Record Id */
@@ -26387,7 +26538,9 @@ export interface components {
             /** Body Fat Percentage */
             body_fat_percentage?: number | null;
             /** Raw Data */
-            raw_data?: Record<string, never> | null;
+            raw_data?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** HealthKitImportError */
         HealthKitImportError: {
@@ -26428,7 +26581,9 @@ export interface components {
              */
             spo2_sample_imported_count: number;
             /** Source Breakdown */
-            source_breakdown: Record<string, never>;
+            source_breakdown: {
+                [key: string]: unknown;
+            };
             /** Errors */
             errors: components["schemas"]["HealthKitImportError"][];
         };
@@ -26489,19 +26644,33 @@ export interface components {
             /** Title */
             title: string;
             /** Exercise Summary */
-            exercise_summary?: Record<string, never>;
+            exercise_summary?: {
+                [key: string]: unknown;
+            };
             /** Diet Summary */
-            diet_summary?: Record<string, never>;
+            diet_summary?: {
+                [key: string]: unknown;
+            };
             /** Sleep Summary */
-            sleep_summary?: Record<string, never>;
+            sleep_summary?: {
+                [key: string]: unknown;
+            };
             /** Weight Summary */
-            weight_summary?: Record<string, never>;
+            weight_summary?: {
+                [key: string]: unknown;
+            };
             /** Mood Summary */
-            mood_summary?: Record<string, never>;
+            mood_summary?: {
+                [key: string]: unknown;
+            };
             /** Checkin Summary */
-            checkin_summary?: Record<string, never>;
+            checkin_summary?: {
+                [key: string]: unknown;
+            };
             /** Vital Signs Summary */
-            vital_signs_summary?: Record<string, never>;
+            vital_signs_summary?: {
+                [key: string]: unknown;
+            };
             /** Ai Analysis */
             ai_analysis?: string | null;
             /** Ai Recommendations */
@@ -26509,7 +26678,9 @@ export interface components {
             /** Health Score */
             health_score?: number | null;
             /** Comparison */
-            comparison?: Record<string, never>;
+            comparison?: {
+                [key: string]: unknown;
+            };
             /**
              * Created At
              * Format: date-time
@@ -26540,13 +26711,17 @@ export interface components {
              */
             priority: string;
             /** Payload */
-            payload?: Record<string, never> | null;
+            payload?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** HearingHealthTaskEnvelope */
         HearingHealthTaskEnvelope: {
             task: components["schemas"]["HearingHealthTaskResponse"];
             /** Write Intent */
-            write_intent: Record<string, never> | null;
+            write_intent: {
+                [key: string]: unknown;
+            } | null;
         };
         /** HearingHealthTaskResponse */
         HearingHealthTaskResponse: {
@@ -26567,7 +26742,9 @@ export interface components {
             /** Write Intent Id */
             write_intent_id: number | null;
             /** Payload */
-            payload: Record<string, never> | null;
+            payload: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time
@@ -26631,7 +26808,9 @@ export interface components {
              * Hrv Data
              * @description 每日HRV数据
              */
-            hrv_data?: Record<string, never>[];
+            hrv_data?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Avg Heart Rate
              * @description 平均心率
@@ -27156,7 +27335,6 @@ export interface components {
             /**
              * Confirmed
              * @constant
-             * @enum {boolean}
              */
             confirmed: true;
         };
@@ -27342,7 +27520,9 @@ export interface components {
             /** Message */
             message: string;
             /** Metric Snapshot */
-            metric_snapshot?: Record<string, never> | null;
+            metric_snapshot?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** LiveRunGpsSample */
         LiveRunGpsSample: {
@@ -27399,12 +27579,16 @@ export interface components {
              * Events
              * @default []
              */
-            events: Record<string, never>[];
+            events: {
+                [key: string]: unknown;
+            }[];
             /**
              * Gps Samples
              * @default []
              */
-            gps_samples: Record<string, never>[];
+            gps_samples: {
+                [key: string]: unknown;
+            }[];
             /** Narrative */
             narrative?: string | null;
             /** Narrative Status */
@@ -27537,9 +27721,13 @@ export interface components {
             /** Captured At */
             captured_at?: string | null;
             /** Recognition Result */
-            recognition_result?: Record<string, never> | null;
+            recognition_result?: {
+                [key: string]: unknown;
+            } | null;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** MealFrameResponse */
         MealFrameResponse: {
@@ -27577,7 +27765,9 @@ export interface components {
         MealSessionFinishResponse: {
             session: components["schemas"]["MealSessionResponse"];
             /** Summary */
-            summary: Record<string, never>;
+            summary: {
+                [key: string]: unknown;
+            };
         };
         /** MealSessionResponse */
         MealSessionResponse: {
@@ -27611,7 +27801,9 @@ export interface components {
             /** Target Id */
             target_id: number | null;
             /** Summary */
-            summary?: Record<string, never> | null;
+            summary?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time
@@ -27636,7 +27828,9 @@ export interface components {
              */
             device_type: string;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** MealTemplate */
         MealTemplate: {
@@ -28021,7 +28215,9 @@ export interface components {
          */
         MergeCandidatesResponse: {
             /** Candidates */
-            candidates: Record<string, never>[];
+            candidates: {
+                [key: string]: unknown;
+            }[];
             /** Message */
             message: string;
         };
@@ -28130,7 +28326,9 @@ export interface components {
              * @description day -> {mood_score, mood_tags, has_journal}
              */
             days?: {
-                [key: string]: Record<string, never>;
+                [key: string]: {
+                    [key: string]: unknown;
+                };
             };
             /**
              * Total Days
@@ -28489,7 +28687,9 @@ export interface components {
                 [key: string]: number;
             };
             /** Sleep Stages */
-            sleep_stages: Record<string, never>[];
+            sleep_stages: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * NotificationSettingsUpdate
@@ -28764,7 +28964,9 @@ export interface components {
             /** Total */
             total: number;
             /** By Type */
-            by_type: Record<string, never>;
+            by_type: {
+                [key: string]: unknown;
+            };
             /** Events */
             events: components["schemas"]["HealthEventResponse"][];
         };
@@ -28800,9 +29002,13 @@ export interface components {
              */
             end_time: string;
             /** Details */
-            details?: Record<string, never> | null;
+            details?: {
+                [key: string]: unknown;
+            } | null;
             /** Metadata */
-            metadata?: Record<string, never> | null;
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Success
              * @default 1
@@ -29111,11 +29317,15 @@ export interface components {
             /** Unit */
             unit?: string | null;
             /** Expected Signal */
-            expected_signal: Record<string, never>;
+            expected_signal: {
+                [key: string]: unknown;
+            };
             /** Confidence */
             confidence: string;
             /** Uncertainty */
-            uncertainty: Record<string, never>;
+            uncertainty: {
+                [key: string]: unknown;
+            };
             /** Evidence Tier */
             evidence_tier: string;
             /** Source Model */
@@ -29360,15 +29570,21 @@ export interface components {
              */
             status: string;
             /** Diagnosis */
-            diagnosis?: Record<string, never> | null;
+            diagnosis?: {
+                [key: string]: unknown;
+            } | null;
             /** Risk Stratification */
             risk_stratification?: string | null;
             /** Red Lines */
-            red_lines?: Record<string, never>[] | null;
+            red_lines?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Responsible */
             responsible?: string | null;
             /** Follow Up */
-            follow_up?: Record<string, never> | null;
+            follow_up?: {
+                [key: string]: unknown;
+            } | null;
             /** Escalation Path */
             escalation_path?: string | null;
             /** Evidence Tier */
@@ -29454,9 +29670,13 @@ export interface components {
             /** Secondary Metrics */
             secondary_metrics?: string[] | null;
             /** Baseline */
-            baseline?: Record<string, never> | null;
+            baseline?: {
+                [key: string]: unknown;
+            } | null;
             /** Target */
-            target?: Record<string, never> | null;
+            target?: {
+                [key: string]: unknown;
+            } | null;
             /** Target End On */
             target_end_on?: string | null;
             /** Notes */
@@ -29490,7 +29710,9 @@ export interface components {
             /** Description */
             description?: string | null;
             /** Payload */
-            payload?: Record<string, never> | null;
+            payload?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** ProposeReorderBody */
         ProposeReorderBody: {
@@ -29521,7 +29743,9 @@ export interface components {
              */
             track: string;
             /** Value */
-            value?: Record<string, never> | null;
+            value?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** ProtocolCreate */
         ProtocolCreate: {
@@ -29532,7 +29756,9 @@ export interface components {
             /** Mechanism */
             mechanism?: string | null;
             /** Implied Quantity */
-            implied_quantity?: Record<string, never> | null;
+            implied_quantity?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Cadence
              * @default daily
@@ -29636,13 +29862,21 @@ export interface components {
             /** User Id */
             user_id: number;
             /** Context Data */
-            context_data?: Record<string, never> | null;
+            context_data?: {
+                [key: string]: unknown;
+            } | null;
             /** Location */
-            location?: Record<string, never> | null;
+            location?: {
+                [key: string]: unknown;
+            } | null;
             /** Weather Data */
-            weather_data?: Record<string, never> | null;
+            weather_data?: {
+                [key: string]: unknown;
+            } | null;
             /** Air Quality Data */
-            air_quality_data?: Record<string, never> | null;
+            air_quality_data?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Generated At
              * Format: date-time
@@ -29685,7 +29919,9 @@ export interface components {
             /** Tool */
             tool: string;
             /** Args Template */
-            args_template: Record<string, never>;
+            args_template: {
+                [key: string]: unknown;
+            };
         };
         /** RecognitionResponse */
         RecognitionResponse: {
@@ -29737,7 +29973,9 @@ export interface components {
             /** Template Id */
             template_id?: string | null;
             /** Phases */
-            phases?: Record<string, never>[] | null;
+            phases?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Name */
             name?: string | null;
             /** Start On */
@@ -30182,7 +30420,9 @@ export interface components {
             /** Summary */
             summary: string;
             /** Diagnostics */
-            diagnostics: Record<string, never>;
+            diagnostics: {
+                [key: string]: unknown;
+            };
             /**
              * Severity
              * @default warn
@@ -30212,9 +30452,13 @@ export interface components {
             /** Last Error Code */
             last_error_code?: string | null;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
             /** Entity Refs */
-            entity_refs?: Record<string, never> | null;
+            entity_refs?: {
+                [key: string]: unknown;
+            } | null;
             /** Write Intent Id */
             write_intent_id?: number | null;
         };
@@ -30234,7 +30478,9 @@ export interface components {
             /** Message */
             message?: string | null;
             /** Payload */
-            payload?: Record<string, never> | null;
+            payload?: {
+                [key: string]: unknown;
+            } | null;
             /** Occurred At */
             occurred_at?: string | null;
         };
@@ -30257,9 +30503,13 @@ export interface components {
             /** Last Error Code */
             last_error_code: string | null;
             /** Meta */
-            meta: Record<string, never> | null;
+            meta: {
+                [key: string]: unknown;
+            } | null;
             /** Entity Refs */
-            entity_refs: Record<string, never> | null;
+            entity_refs: {
+                [key: string]: unknown;
+            } | null;
             /** Write Intent Id */
             write_intent_id: number | null;
             /**
@@ -30298,7 +30548,9 @@ export interface components {
             /** Message */
             message: string | null;
             /** Payload */
-            payload: Record<string, never> | null;
+            payload: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Occurred At
              * Format: date-time
@@ -30327,7 +30579,9 @@ export interface components {
             /** Quality Score */
             quality_score?: number | null;
             /** Payload */
-            payload?: Record<string, never> | null;
+            payload?: {
+                [key: string]: unknown;
+            } | null;
             /** Occurred At */
             occurred_at?: string | null;
         };
@@ -30359,7 +30613,9 @@ export interface components {
             /** Quality Score */
             quality_score: number | null;
             /** Payload */
-            payload: Record<string, never> | null;
+            payload: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Occurred At
              * Format: date-time
@@ -30384,7 +30640,9 @@ export interface components {
              */
             source_device: string;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** RokidPushupSessionCreateResponse */
         RokidPushupSessionCreateResponse: {
@@ -30452,7 +30710,9 @@ export interface components {
              */
             created_at: string;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * RokidPushupSessionReviewResponse
@@ -30468,7 +30728,9 @@ export interface components {
             /** Teaching Links */
             teaching_links: components["schemas"]["RokidPushupTeachingLink"][];
             /** Guidance Alerts */
-            guidance_alerts: Record<string, never>[];
+            guidance_alerts: {
+                [key: string]: unknown;
+            }[];
             /** Guidance Sanitized */
             guidance_sanitized: boolean;
             /** Guidance Violations */
@@ -30515,7 +30777,9 @@ export interface components {
              */
             privacy_class: string;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** RokidVoiceCommandResponse */
         RokidVoiceCommandResponse: {
@@ -30539,7 +30803,9 @@ export interface components {
             /** Safety Level */
             safety_level: string;
             /** Parameters */
-            parameters?: Record<string, never>;
+            parameters?: {
+                [key: string]: unknown;
+            };
             /** Recommended Next Action */
             recommended_next_action?: {
                 [key: string]: string;
@@ -30572,7 +30838,9 @@ export interface components {
             /** Reason */
             reason?: string | null;
             /** Metadata */
-            metadata?: Record<string, never>;
+            metadata?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * SearchQuery
@@ -31079,7 +31347,9 @@ export interface components {
             /** Nights */
             nights?: components["schemas"]["NightCorrelation"][];
             /** Summary */
-            summary?: Record<string, never> | null;
+            summary?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** SpO2TrendResponse */
         SpO2TrendResponse: {
@@ -31193,7 +31463,9 @@ export interface components {
              * Input Snapshot
              * @default {}
              */
-            input_snapshot: Record<string, never>;
+            input_snapshot: {
+                [key: string]: unknown;
+            };
             /** Next Review At */
             next_review_at?: string | null;
             /**
@@ -31236,7 +31508,9 @@ export interface components {
              * Input Snapshot
              * @default {}
              */
-            input_snapshot: Record<string, never>;
+            input_snapshot: {
+                [key: string]: unknown;
+            };
             /** Next Review At */
             next_review_at?: string | null;
             /**
@@ -31572,7 +31846,9 @@ export interface components {
             /** Container Count */
             container_count?: number | null;
             /** Ingredients */
-            ingredients?: Record<string, never>[] | null;
+            ingredients?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Price Cny */
             price_cny?: number | string | null;
             /** Price Per Serving */
@@ -31600,7 +31876,9 @@ export interface components {
             /** Precautions */
             precautions?: string | null;
             /** Gene Relevance */
-            gene_relevance?: Record<string, never>[] | null;
+            gene_relevance?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Health Tags */
             health_tags?: string[] | null;
             /** Rating */
@@ -31637,7 +31915,9 @@ export interface components {
             /** Container Count */
             container_count?: number | null;
             /** Ingredients */
-            ingredients?: Record<string, never>[] | null;
+            ingredients?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Price Cny */
             price_cny?: string | null;
             /** Price Per Serving */
@@ -31665,7 +31945,9 @@ export interface components {
             /** Precautions */
             precautions?: string | null;
             /** Gene Relevance */
-            gene_relevance?: Record<string, never>[] | null;
+            gene_relevance?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Health Tags */
             health_tags?: string[] | null;
             /** Rating */
@@ -31703,7 +31985,9 @@ export interface components {
             /** Container Count */
             container_count?: number | null;
             /** Ingredients */
-            ingredients?: Record<string, never>[] | null;
+            ingredients?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Price Cny */
             price_cny?: number | string | null;
             /** Price Per Serving */
@@ -31723,7 +32007,9 @@ export interface components {
             /** Precautions */
             precautions?: string | null;
             /** Gene Relevance */
-            gene_relevance?: Record<string, never>[] | null;
+            gene_relevance?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Health Tags */
             health_tags?: string[] | null;
             /** Rating */
@@ -32110,11 +32396,12 @@ export interface components {
              * Surface
              * @default mobile.today
              * @constant
-             * @enum {string}
              */
             surface: "mobile.today";
             /** Client Context */
-            client_context?: Record<string, never>;
+            client_context?: {
+                [key: string]: unknown;
+            };
         };
         /** TodayPast */
         TodayPast: {
@@ -32199,7 +32486,9 @@ export interface components {
             /** Training Readiness Level */
             training_readiness_level?: string | null;
             /** Training Readiness Factors */
-            training_readiness_factors?: Record<string, never> | null;
+            training_readiness_factors?: {
+                [key: string]: unknown;
+            } | null;
             /** Training Status */
             training_status?: string | null;
             /** Training Status Feedback */
@@ -32271,17 +32560,29 @@ export interface components {
         /** TwinLookupRequest */
         TwinLookupRequest: {
             /** Genetics */
-            genetics?: Record<string, never>;
+            genetics?: {
+                [key: string]: unknown;
+            };
             /** Labs */
-            labs?: Record<string, never>;
+            labs?: {
+                [key: string]: unknown;
+            };
             /** Wearable */
-            wearable?: Record<string, never>;
+            wearable?: {
+                [key: string]: unknown;
+            };
             /** Medications */
-            medications?: Record<string, never>[];
+            medications?: {
+                [key: string]: unknown;
+            }[];
             /** Supplements */
-            supplements?: Record<string, never>[];
+            supplements?: {
+                [key: string]: unknown;
+            }[];
             /** Goals */
-            goals?: Record<string, never>;
+            goals?: {
+                [key: string]: unknown;
+            };
         };
         /** UpdateCycleRequest */
         UpdateCycleRequest: {
@@ -32408,7 +32709,9 @@ export interface components {
             /** Status */
             status: string;
             /** Health Questionnaire */
-            health_questionnaire: Record<string, never> | null;
+            health_questionnaire: {
+                [key: string]: unknown;
+            } | null;
             /** Review Note */
             review_note: string | null;
             /**
@@ -32559,12 +32862,16 @@ export interface components {
              * Surgeries
              * @description 手术历史
              */
-            surgeries?: Record<string, never>[];
+            surgeries?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Current Medications
              * @description 正在服用的药物
              */
-            current_medications?: Record<string, never>[];
+            current_medications?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Exercise Frequency
              * @description 运动频率
@@ -32599,7 +32906,9 @@ export interface components {
              * Sleep Environment
              * @description 睡眠环境
              */
-            sleep_environment?: Record<string, never>;
+            sleep_environment?: {
+                [key: string]: unknown;
+            };
             /**
              * Work Type
              * @description 工作类型
@@ -32755,9 +33064,13 @@ export interface components {
             /** Family History */
             family_history?: string[] | null;
             /** Surgeries */
-            surgeries?: Record<string, never>[] | null;
+            surgeries?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Current Medications */
-            current_medications?: Record<string, never>[] | null;
+            current_medications?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Exercise Frequency */
             exercise_frequency?: string | null;
             /** Diet Preference */
@@ -32771,7 +33084,9 @@ export interface components {
             /** Usual Wake Time */
             usual_wake_time?: string | null;
             /** Sleep Environment */
-            sleep_environment?: Record<string, never> | null;
+            sleep_environment?: {
+                [key: string]: unknown;
+            } | null;
             /** Work Type */
             work_type?: string | null;
             /** Work Hours Per Day */
@@ -32927,7 +33242,9 @@ export interface components {
              * Health Implications
              * @description 健康影响 JSON
              */
-            health_implications?: Record<string, never> | null;
+            health_implications?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** VariantUpdateRequest */
         VariantUpdateRequest: {
@@ -32954,7 +33271,9 @@ export interface components {
             /** Description */
             description?: string | null;
             /** Health Implications */
-            health_implications?: Record<string, never> | null;
+            health_implications?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** VisionRecordRequest */
         VisionRecordRequest: {
@@ -33015,7 +33334,9 @@ export interface components {
             /** Ocr Text */
             ocr_text?: string | null;
             /** Recognition Result */
-            recognition_result?: Record<string, never> | null;
+            recognition_result?: {
+                [key: string]: unknown;
+            } | null;
             /** Confidence */
             confidence?: number | null;
             /** Captured At */
@@ -33026,7 +33347,9 @@ export interface components {
              */
             privacy_class: string;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** VisualInputEventResponse */
         VisualInputEventResponse: {
@@ -33045,7 +33368,9 @@ export interface components {
             /** Ocr Text */
             ocr_text: string | null;
             /** Recognition Result */
-            recognition_result: Record<string, never> | null;
+            recognition_result: {
+                [key: string]: unknown;
+            } | null;
             /** Confidence */
             confidence: number | null;
             /** Status */
@@ -33069,9 +33394,13 @@ export interface components {
              */
             created_at: string;
             /** Meta */
-            meta?: Record<string, never> | null;
+            meta?: {
+                [key: string]: unknown;
+            } | null;
             /** Safety Result */
-            safety_result?: Record<string, never> | null;
+            safety_result?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * VoiceFoodDraftItem
@@ -33348,7 +33677,9 @@ export interface components {
             /** Openid */
             openid: string;
             /** Template Ids */
-            template_ids?: Record<string, never> | null;
+            template_ids?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** WeChatMessageRequest */
         WeChatMessageRequest: {
@@ -33979,7 +34310,9 @@ export interface components {
             /** Avg Distance Km */
             avg_distance_km: number;
             /** Workouts By Type */
-            workouts_by_type: Record<string, never>;
+            workouts_by_type: {
+                [key: string]: unknown;
+            };
             /** Recent Trend */
             recent_trend: string;
         };
@@ -37421,7 +37754,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -37453,7 +37788,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -37485,7 +37822,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -37514,7 +37853,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -37616,7 +37957,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -37636,7 +37979,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -38785,7 +39130,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -39761,7 +40108,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -41131,7 +41480,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -41164,7 +41515,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -41197,7 +41550,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -41230,7 +41585,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -45822,7 +46179,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -45842,7 +46201,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -45864,7 +46225,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -45897,7 +46260,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -49352,7 +49717,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -49389,7 +49756,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -49955,7 +50324,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -49986,7 +50357,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never> | null;
+                    "application/json": {
+                        [key: string]: unknown;
+                    } | null;
                 };
             };
             /** @description Validation Error */
@@ -50018,7 +50391,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>[];
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
             /** @description Validation Error */
@@ -50051,7 +50426,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -52355,7 +52732,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -52386,7 +52765,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -52417,7 +52798,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -52448,7 +52831,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -53387,7 +53772,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -53788,7 +54175,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>[];
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
         };
@@ -54391,7 +54780,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -55826,7 +56217,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -55857,7 +56250,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -55888,7 +56283,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -56577,7 +56974,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -56597,7 +56996,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -56617,7 +57018,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -56637,7 +57040,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -56657,7 +57062,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -56679,7 +57086,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -57636,7 +58045,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -57665,7 +58076,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -59160,7 +59573,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -59903,7 +60318,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -60653,7 +61070,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -60677,7 +61096,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -60709,7 +61130,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>[];
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
             /** @description Validation Error */
@@ -60740,7 +61163,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -60771,7 +61196,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -60802,7 +61229,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -65910,7 +66339,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -65944,7 +66375,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>[];
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
             /** @description Validation Error */
@@ -65978,7 +66411,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -66031,7 +66466,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -66064,7 +66501,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
