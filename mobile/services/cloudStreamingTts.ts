@@ -73,6 +73,11 @@ const defaultDependencies: StreamingTtsDependencies = {
   stopPcmPlayback,
 };
 
+type PlayerSlot = { available: Promise<void>; owner: symbol | null };
+// Dependencies may be copied per session; the native start function identifies
+// the shared singleton player, not the dependencies object's identity.
+const playerSlots = new WeakMap<StreamingTtsDependencies['startPcmPlayback'], PlayerSlot>();
+
 export function createCloudStreamingTtsSession(
   options: StreamingTtsOptions,
   dependencies: StreamingTtsDependencies = defaultDependencies,
@@ -81,6 +86,14 @@ export function createCloudStreamingTtsSession(
   let cancelled = false;
   let started = false;
   let completed = false;
+  let finishing = false;
+  let playerStartPromise: Promise<void> | null = null;
+  let playerStopPromise: Promise<void> | null = null;
+  let terminalError: Error | null = null;
+  const playerOwner = Symbol('streaming-tts');
+  let playerSlot: PlayerSlot | null = null;
+  let releasePlayer: (() => void) | null = null;
+  let rejectPlayerRelease: ((error: unknown) => void) | null = null;
   let startPromise: Promise<boolean> | null = null;
   let finishPromise: Promise<void> | null = null;
   let cancelPromise: Promise<void> | null = null;
@@ -104,13 +117,37 @@ export function createCloudStreamingTtsSession(
     socket = null;
   };
 
+  // Cancellation must finish native startup/cleanup before another session
+  // acquires the shared player. Late callbacks may not stop its new owner.
+  const stopPlayer = (): Promise<void> => {
+    if (!playerStopPromise) {
+      const stopOwnedPlayer = async () => {
+        if (playerSlot?.owner !== playerOwner) {
+          releasePlayer?.();
+          return;
+        }
+        try {
+          await dependencies.stopPcmPlayback();
+          playerSlot.owner = null;
+          releasePlayer?.();
+        } catch (error) {
+          rejectPlayerRelease?.(error);
+          throw error;
+        }
+      };
+      playerStopPromise = (playerStartPromise || Promise.resolve()).then(stopOwnedPlayer, stopOwnedPlayer);
+    }
+    return playerStopPromise;
+  };
+
   const fail = (message: string) => {
     if (cancelled || completed) return;
+    const error = new Error(message || '流式语音服务暂时不可用');
+    terminalError = error;
     cancelled = true;
     clearTimers();
     closeSocket();
-    void dependencies.stopPcmPlayback().catch(() => undefined);
-    const error = new Error(message || '流式语音服务暂时不可用');
+    void stopPlayer().catch(() => { terminalError = new Error('无法停止流式语音播放'); });
     if (!started && rejectStart) rejectStart(error);
     if (finishPromise && rejectFinish) rejectFinish(error);
   };
@@ -125,17 +162,30 @@ export function createCloudStreamingTtsSession(
       return;
     }
     if (message.type === 'ready') {
-      if (started) return;
+      if (started || playerStartPromise) return;
       if (message.encoding && message.encoding !== 'pcm_s16le') {
         fail('流式语音格式不受支持');
         return;
       }
       try {
-        await dependencies.startPcmPlayback(message.sample_rate || 24000);
-        if (cancelled) {
-          await dependencies.stopPcmPlayback();
-          return;
-        }
+        playerSlot = playerSlots.get(dependencies.startPcmPlayback) || { available: Promise.resolve(), owner: null };
+        playerSlots.set(dependencies.startPcmPlayback, playerSlot);
+        const predecessor = playerSlot.available;
+        const released = new Promise<void>((resolve, reject) => {
+          releasePlayer = resolve;
+          rejectPlayerRelease = reject;
+        });
+        // A cleanup failure poisons the slot: a later session must not start
+        // over a player whose ownership could not safely be relinquished.
+        playerSlot.available = predecessor.then(() => released);
+        void playerSlot.available.catch(() => { terminalError = new Error('语音播放器清理失败'); });
+        playerStartPromise = predecessor.then(async () => {
+          if (cancelled) return;
+          playerSlot!.owner = playerOwner;
+          await dependencies.startPcmPlayback(message.sample_rate || 24000);
+        });
+        await playerStartPromise;
+        if (cancelled) return;
         started = true;
         if (startTimer) clearTimeout(startTimer);
         resolveStart?.(true);
@@ -145,16 +195,34 @@ export function createCloudStreamingTtsSession(
       return;
     }
     if (message.type === 'audio' && message.audio) {
-      playerChain = playerChain.then(() => dependencies.enqueuePcmPlayback(message.audio!));
+      if (!playerStartPromise || finishing) {
+        fail('流式语音返回了无效音频顺序');
+        return;
+      }
+      playerChain = playerChain.then(async () => {
+        await playerStartPromise;
+        if (cancelled || completed || playerSlot?.owner !== playerOwner) return;
+        return dependencies.enqueuePcmPlayback(message.audio!);
+      });
       playerChain.catch(error => fail(error?.message || '流式语音播放失败'));
       return;
     }
     if (message.type === 'done') {
+      if (finishing) return;
+      if (!playerStartPromise) {
+        fail('流式语音返回了无效结束顺序');
+        return;
+      }
+      finishing = true;
       try {
+        await playerStartPromise;
         await playerChain;
+        if (cancelled || completed || playerSlot?.owner !== playerOwner) return;
         await dependencies.finishPcmPlayback();
         if (cancelled) return;
         completed = true;
+        playerSlot.owner = null;
+        releasePlayer?.();
         clearTimers();
         closeSocket();
         resolveFinish?.();
@@ -180,7 +248,7 @@ export function createCloudStreamingTtsSession(
         socket.onmessage = event => { void handleMessage(event.data); };
         socket.onerror = () => fail('无法连接流式语音服务');
         socket.onclose = () => {
-          if (!cancelled && !completed && (!started || finishPromise)) {
+          if (!cancelled && !completed && !finishing) {
             fail('流式语音连接已断开');
           }
         };
@@ -197,6 +265,7 @@ export function createCloudStreamingTtsSession(
       const clean = text.trim();
       if (!clean) return;
       const didStart = await this.start();
+      if (terminalError) throw terminalError;
       if (!didStart || cancelled || !socket || socket.readyState > 1) {
         throw new Error('流式语音会话不可用');
       }
@@ -207,6 +276,7 @@ export function createCloudStreamingTtsSession(
       if (finishPromise) return finishPromise;
       finishPromise = (async () => {
         const didStart = await this.start();
+        if (terminalError) throw terminalError;
         if (!didStart || cancelled || !socket) return;
         return new Promise<void>((resolve, reject) => {
           resolveFinish = resolve;
@@ -236,7 +306,7 @@ export function createCloudStreamingTtsSession(
           if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'cancel' }));
         } finally {
           closeSocket();
-          await dependencies.stopPcmPlayback();
+          await stopPlayer();
         }
       })();
       return cancelPromise;

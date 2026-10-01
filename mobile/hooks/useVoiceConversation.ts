@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { ensureAIConsent } from '../services/aiConsent';
 import { aiConsentRevision, subscribeAIConsentInvalidation } from '../services/aiConsentState';
 import * as Speech from 'expo-speech';
@@ -169,6 +170,7 @@ function formatRecordLabel(recordType: string, d: Record<string, any>): string {
 
 
 export function useVoiceConversation() {
+  const appActiveRef = useRef(!AppState.currentState || AppState.currentState === 'active');
   const [state, setState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
@@ -618,10 +620,11 @@ export function useVoiceConversation() {
   }, [setPlaybackMode, submit]);
 
   const startListening = useCallback(async () => {
+    if (!appActiveRef.current) return;
     const startSeq = ++listeningStartSeqRef.current;
     if (!await ensureAIConsent() || !mountedRef.current || startSeq !== listeningStartSeqRef.current) return;
     const consentRevision = aiConsentRevision();
-    const isCurrentStart = () => mountedRef.current && startSeq === listeningStartSeqRef.current
+    const isCurrentStart = () => mountedRef.current && appActiveRef.current && startSeq === listeningStartSeqRef.current
       && consentRevision === aiConsentRevision();
     try {
       // 顺序很重要: 先清队列，再取消 TTS / Agent，最后才打开麦克风。
@@ -640,6 +643,17 @@ export function useVoiceConversation() {
       latestPartialRef.current = '';
       let session!: RealtimeAsrSession;
       session = createCloudRealtimeAsrSession({
+        onError: (failure) => {
+          if (!mountedRef.current || realtimeAsrRef.current !== session) return;
+          listeningStartSeqRef.current += 1;
+          realtimeAsrRef.current = null;
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+          }
+          setError(failure.message);
+          setState('error');
+        },
         onTranscript: (text) => {
           if (!mountedRef.current || realtimeAsrRef.current !== session) return;
           const normalized = text.trim();
@@ -710,6 +724,14 @@ export function useVoiceConversation() {
   useEffect(() => subscribeAIConsentInvalidation(reset), [reset]);
 
   useEffect(() => {
+    const subscription = AppState.addEventListener('change', next => {
+      appActiveRef.current = next === 'active';
+      if (!appActiveRef.current) reset();
+    });
+    return () => subscription.remove();
+  }, [reset]);
+
+  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -745,15 +767,20 @@ export function useVoiceConversation() {
    */
   const speakDirect = useCallback(
     async (text: string, opts?: { thenListen?: boolean }) => {
-      if (!text || !text.trim()) return;
+      if (!text || !text.trim() || !appActiveRef.current) return;
+      const directSeq = listeningStartSeqRef.current;
+      const isCurrentDirect = () => mountedRef.current && appActiveRef.current
+        && directSeq === listeningStartSeqRef.current;
       await refreshVoiceStyle();
-      if (!mountedRef.current) return;
+      if (!isCurrentDirect()) return;
       // 清当前播放队列, 防止冲撞
       ttsQueueRef.current = [];
       pendingTextRef.current = '';
       forceIosTtsRef.current = false;
       ttsErrorRef.current = null;
       await stopCurrentSpeech();
+
+      if (!isCurrentDirect()) return;
 
       setState('speaking');
       setTurns((prev) => [...prev, { role: 'assistant', text, at: Date.now() }]);
@@ -763,7 +790,7 @@ export function useVoiceConversation() {
       flushTail();
 
       await finishTTS();
-      if (!mountedRef.current) return;
+      if (!isCurrentDirect()) return;
 
       if (opts?.thenListen) {
         setState('idle');

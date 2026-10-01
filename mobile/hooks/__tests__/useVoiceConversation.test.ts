@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { AppState, type AppStateStatus } from 'react-native';
 import { setAudioModeAsync } from 'expo-audio';
 import { createCloudRealtimeAsrSession } from '../../services/cloudRealtimeAsr';
 import { createCloudStreamingTtsSession } from '../../services/cloudStreamingTts';
@@ -18,7 +19,7 @@ const mockTtsStart = jest.fn<Promise<boolean>, []>();
 const mockTtsAppend = jest.fn<Promise<void>, [string]>();
 const mockTtsFinish = jest.fn<Promise<void>, []>();
 const mockTtsCancel = jest.fn<Promise<void>, []>();
-let realtimeOptions: { onTranscript: (text: string, result?: any) => void } | null = null;
+let realtimeOptions: { onTranscript: (text: string, result?: any) => void; onError?: (error: Error) => void } | null = null;
 
 jest.mock('expo-speech', () => ({
   speak: (...args: any[]) => mockSpeechSpeak(...args),
@@ -91,9 +92,75 @@ const finalAsrResult = (text: string) => ({
 });
 
 describe('useVoiceConversation', () => {
+  it('cancels capture on background and does not resume or submit a partial on foreground', async () => {
+    let onState: ((state: AppStateStatus) => void) | undefined;
+    const listener = jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, callback) => {
+      onState = callback;
+      return { remove: jest.fn() };
+    });
+    const { result, unmount } = renderHook(() => useVoiceConversation());
+    try {
+      await act(async () => { await result.current.startListening(); });
+      act(() => { realtimeOptions?.onTranscript('未提交的片段'); });
+      await act(async () => { onState?.('background'); });
+      expect(mockAsrCancel).toHaveBeenCalledTimes(1);
+      expect(result.current.state).toBe('idle');
+      await act(async () => { await result.current.startListening(); });
+      expect(mockAsrStart).toHaveBeenCalledTimes(1);
+      await act(async () => { onState?.('active'); });
+      expect(mockAsrStart).toHaveBeenCalledTimes(1);
+      expect(mockStreamChat).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      listener.mockRestore();
+    }
+  });
+
+  it('does not begin deferred direct speech after background invalidates its generation', async () => {
+    let onState: ((state: AppStateStatus) => void) | undefined;
+    const listener = jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, callback) => {
+      onState = callback;
+      return { remove: jest.fn() };
+    });
+    const { result, unmount } = renderHook(() => useVoiceConversation());
+    let releaseStyle!: (style: any) => void;
+    mockLoadVoiceStyle.mockImplementationOnce(() => new Promise(resolve => { releaseStyle = resolve; }));
+    try {
+      let speaking!: Promise<void>;
+      act(() => { speaking = result.current.speakDirect('不应在后台播放。', { thenListen: true }); });
+      await act(async () => { onState?.('background'); });
+      await act(async () => { releaseStyle('cloud_cloned_private_female'); await speaking; });
+      expect(mockTtsStart).not.toHaveBeenCalled();
+      expect(mockAsrStart).not.toHaveBeenCalled();
+      expect(result.current.state).toBe('idle');
+    } finally {
+      unmount();
+      listener.mockRestore();
+    }
+  });
+
+  it('surfaces a runtime ASR disconnect and never submits the buffered partial', async () => {
+    jest.useFakeTimers();
+    const { result, unmount } = renderHook(() => useVoiceConversation());
+    await act(async () => { await result.current.startListening(); });
+    act(() => { realtimeOptions?.onTranscript('未完成的输入'); });
+    await act(async () => {
+      realtimeOptions?.onError?.(new Error('云端实时语音连接已断开'));
+      await Promise.resolve();
+    });
+    expect(result.current.state).toBe('error');
+    expect(result.current.error).toBe('云端实时语音连接已断开');
+    await act(async () => { jest.advanceTimersByTime(2000); });
+    expect(mockAsrStop).not.toHaveBeenCalled();
+    expect(mockStreamChat).not.toHaveBeenCalled();
+    unmount();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
+    AppState.currentState = 'active';
+    jest.spyOn(AppState, 'addEventListener').mockReturnValue({ remove: jest.fn() });
     realtimeOptions = null;
     (setAudioModeAsync as jest.Mock).mockResolvedValue(undefined);
     (ensureAIConsent as jest.Mock).mockResolvedValue(true);
@@ -110,6 +177,8 @@ describe('useVoiceConversation', () => {
       yield { type: 'done', conversationId: 42, runId: 'run-default' } as any;
     });
   });
+
+  afterEach(() => { jest.restoreAllMocks(); });
 
   it('starts cloud realtime ASR and renders partial transcript without submitting it', async () => {
     const { result, unmount } = renderHook(() => useVoiceConversation());

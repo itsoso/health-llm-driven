@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | G4 passed; G5 PR opened |
-| 当前阶段 | G5 auto-merge CI gate |
+| 状态 | G4 reopened: client lifecycle fixes in progress |
+| 当前阶段 | S5 client release remediation; publication blocked pending re-review |
 | Controller | product-pipeline |
 | Delegate | health-harness-orchestrator |
 | Overlay | safety-gate |
@@ -160,3 +160,43 @@
 - 基于 `c4e27dad2` 的 PR CI 已全部通过，但合并时 `main` 又前进到
   `d3b204f28`，分支保护拒绝旧基线合并；候选已再次重放到最新主干。为避免下一次
   CI 期间同类竞态，更新后的 PR 启用受保护 auto-merge，仍不绕过任何必需检查。
+
+### Client release continuation — 2026-10-01
+
+- 用户已明确授权“发布客户端”及“解决问题然后发布”。PR #263 已合入；后端
+  发布修复 PR #267 后，生产已运行 `e8fa94a9f2b23c3523fb48364167ee38dfa4ea5d`。
+  本次只发布 iOS Ad Hoc 扫码包，不提交 TestFlight 或 App Store，不覆盖本地 WIP。
+- 客户端初始候选 `c6f1eb999fd12708a26daa06695c40006c0064aa` 的远端 CI
+  `36835476487` 全部通过；其 Mobile 相对已部署 revision 仅有生成类型差异，
+  无新的运行时代码/依赖/原生契约变化。干净 `npm ci`、Mobile 324 suites /
+  3,190 passed / 1 existing skip、TypeScript、System Map 通过。
+- 现有已授权审核测试账号的真实 provider 探针：TTS 完整 PCM 返回，观察到首包
+  0.83 秒；合成测试语音经 ASR 往返识别成功；TTS 首包后取消并重连成功。
+  真实 Agent 收到 run identity 后取消返回 200，终态 `cancelled`、
+  `response_persisted=false`，取消后未观察到 token/tool 事件。探针未写健康记录，
+  未新增或修改账号授权。证据位于本机 `/tmp/reva-voice-client.7SMZYt/`。
+- 独立 reviewer 对该候选裁决 **NO-GO**：ASR 成功启动后意外 onclose 未释放
+  麦克风；TTS 已排队的 enqueue/done continuation 在取消后仍可触及共享播放器。
+  同时发现 pending native startup 的取消需要等待清理后才能移交播放器。
+  原生 build 273 在本地 archive 阶段主动中断（exit 75），未生成发布回执、未上传，
+  不作为可发布候选。新源码须独立红/绿回归、固定提交及复审后才能重新构建。
+- 当前同 Dossier 修复 trace：`docs/_generated/harness-runs/3afea3d1caa5.jsonl`
+  （本机、不提交）。真实 provider 探针不替代候选 App 的背景切换/授权撤回/慢网
+  验收；未验证硬件项保持明确列出，不把模拟器或 mocked tests 当作真机通过。
+- 后续真实授权撤回探针仅针对上述审核测试账号：临时撤回既有授权后，活动 TTS /
+  ASR 在下一次输入均以 4403 关闭，新连接返回 403；finally 已恢复同一 policy
+  version 的原有授权并回读确认。没有更改其他账号、没有生成新的授权范围。
+  本机 `consent-probe.log` 保留全部无载荷检查结果。
+- 修复期额外 RED/GREEN：AppState 背景转换必须取消采集且不提交 partial；
+  正在加载声音设置的 direct speech 在切后台后不得恢复播放或自动开麦。
+  两条新测试先失败，补齐 generation 和前台状态门后 Voice hook 16 项全部通过。
+- 本地 CI 环境的后端语音/Agent runtime API/流恢复/用户集成测试 67 passed；
+  SQLite 仅用于快速契约/生命周期验证。真实 PostgreSQL 语义以该主干远端 CI 的
+  `agent-runtime-postgres` 成功结果为证，不把本地 SQLite 当作生产数据库证据。
+- 生命周期修复已落地，等待固定提交的独立复审：ASR 记录 terminal error 并通知
+  两个消费 Hook，所有异常断线/提前结束均清理 native capture；采集所有权等待
+  前序 startup/cleanup，启动中 stop 等价取消，清理失败阻止新所有者。TTS 同样
+  通过共享 player ownership 隔离前后会话，取消后不执行排队 enqueue/finish，
+  保留 provider/断线错误并拒绝后续 finish，不再将失败报告为成功。
+  ASR 首轮 6 个新失败和 startup-stop 独立失败均转绿；TTS 两轮 2/4 个失败均
+  转绿。最终定向 ASR/Hook 44 项、TTS 10 项，以及 TypeScript/ESLint 均通过。

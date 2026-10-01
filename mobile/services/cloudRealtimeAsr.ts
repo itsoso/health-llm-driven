@@ -46,6 +46,7 @@ export interface RealtimeAsrDependencies {
 interface RealtimeAsrOptions {
   onTranscript: (text: string, result?: TranscribeAudioResult) => void;
   onLevel?: (level: number) => void;
+  onError?: (error: Error) => void;
 }
 
 export interface RealtimeAsrSession {
@@ -53,6 +54,10 @@ export interface RealtimeAsrSession {
   stop: () => Promise<TranscribeAudioResult>;
   cancel: () => Promise<void>;
 }
+
+// The native microphone is process-wide. Keep a newer session behind its
+// predecessor's cleanup, including a native start that has not resolved yet.
+const captureOwners = new WeakMap<RealtimeAsrDependencies['startPcmCapture'], Promise<void>>();
 
 function confidence(value: unknown): TranscribeAudioResult['confidence'] {
   return value === 'high' || value === 'medium' || value === 'low' ? value : undefined;
@@ -107,6 +112,11 @@ export function createCloudRealtimeAsrSession(
   let startTimer: ReturnType<typeof setTimeout> | null = null;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
   let captureStarting = false;
+  let captureStarted = false;
+  let captureStartPromise: Promise<void> | null = null;
+  let captureCleanupPromise: Promise<void> | null = null;
+  let releaseCaptureOwner: (() => void) | null = null;
+  let terminalError: Error | null = null;
   let startPromise: Promise<boolean> | null = null;
   let stopPromise: Promise<TranscribeAudioResult> | null = null;
   let cancelPromise: Promise<void> | null = null;
@@ -119,20 +129,38 @@ export function createCloudRealtimeAsrSession(
   };
 
   const closeSocket = () => {
-    if (socket && socket.readyState < 2) socket.close();
+    const closingSocket = socket;
     socket = null;
+    if (closingSocket && closingSocket.readyState < 2) closingSocket.close();
+  };
+
+  const cleanupCapture = (mode: 'stop' | 'cancel'): Promise<void> => {
+    if (captureCleanupPromise) return captureCleanupPromise;
+    if (!captureStarted) return Promise.resolve();
+    captureCleanupPromise = (async () => {
+      // A startup rejection is reported by handleMessage; still release any
+      // partially acquired native resources before releasing ownership.
+      if (captureStartPromise) await captureStartPromise.catch(() => undefined);
+      // A failed cleanup must not release the singleton microphone to a new
+      // owner. The caller sees the failure; a retry cannot silently record.
+      await dependencies[mode === 'stop' ? 'stopPcmCapture' : 'cancelPcmCapture'](captureSubscription);
+      captureSubscription = null;
+      captureStarted = false;
+      releaseCaptureOwner?.();
+      releaseCaptureOwner = null;
+    })();
+    return captureCleanupPromise;
   };
 
   const fail = (message: string) => {
+    if (cancelled || finishSettled) return;
+    const wasRecording = startSettled && !stopPromise;
+    const error = new Error(message || '云端实时语音识别失败');
+    terminalError = error;
     cancelled = true;
     clearTimers();
-    const subscription = captureSubscription;
-    captureSubscription = null;
-    if (subscription) {
-      void dependencies.cancelPcmCapture(subscription).catch(() => undefined);
-    }
+    const cleanup = cleanupCapture('cancel');
     closeSocket();
-    const error = new Error(message || '云端实时语音识别失败');
     if (!startSettled && rejectStart) {
       startSettled = true;
       rejectStart(error);
@@ -141,10 +169,16 @@ export function createCloudRealtimeAsrSession(
       finishSettled = true;
       rejectFinish(error);
     }
+    void cleanup.then(() => {
+      if (wasRecording) options.onError?.(error);
+    }, () => {
+      terminalError = new Error('麦克风采集未能安全停止，请关闭语音后重试');
+      if (wasRecording) options.onError?.(terminalError);
+    });
   };
 
   const handleMessage = async (raw: string) => {
-    if (cancelled) return;
+    if (cancelled || finishSettled) return;
     let message: RealtimeAsrMessage;
     try {
       message = JSON.parse(raw) as RealtimeAsrMessage;
@@ -156,19 +190,29 @@ export function createCloudRealtimeAsrSession(
       if (startSettled || captureStarting) return;
       captureStarting = true;
       try {
-        const subscription = (await dependencies.startPcmCapture(
+        while (captureOwners.has(dependencies.startPcmCapture)) {
+          await captureOwners.get(dependencies.startPcmCapture);
+          if (cancelled) return;
+        }
+        const ownership = new Promise<void>(resolve => { releaseCaptureOwner = resolve; });
+        captureOwners.set(dependencies.startPcmCapture, ownership);
+        void ownership.then(() => {
+          if (captureOwners.get(dependencies.startPcmCapture) === ownership) {
+            captureOwners.delete(dependencies.startPcmCapture);
+          }
+        });
+        captureStarted = true;
+        captureStartPromise = dependencies.startPcmCapture(
           (audioBase64) => {
             if (!cancelled && socket?.readyState === 1) {
               socket.send(JSON.stringify({ type: 'audio', audio: audioBase64 }));
             }
           },
-          options.onLevel,
-        )) || null;
-        if (cancelled) {
-          await dependencies.cancelPcmCapture(subscription);
-          return;
-        }
-        captureSubscription = subscription;
+          level => { if (!cancelled) options.onLevel?.(level); },
+        ).then(subscription => { captureSubscription = subscription || null; });
+        await captureStartPromise;
+        captureStartPromise = null;
+        if (cancelled) return;
         startSettled = true;
         if (startTimer) clearTimeout(startTimer);
         resolveStart?.(true);
@@ -193,6 +237,10 @@ export function createCloudRealtimeAsrSession(
     }
     if (message.type === 'done') {
       if (finishSettled) return;
+      if (!resolveFinish) {
+        fail('云端实时语音连接提前结束');
+        return;
+      }
       finishSettled = true;
       if (finishTimer) clearTimeout(finishTimer);
       resolveFinish?.(finalResult || asResult({}, Math.max(0, Date.now() - startedAt)));
@@ -200,6 +248,29 @@ export function createCloudRealtimeAsrSession(
       return;
     }
     if (message.type === 'error') fail(message.message || '云端实时语音识别失败');
+  };
+
+  const cancel = (): Promise<void> => {
+    if (cancelPromise) return cancelPromise;
+    cancelPromise = (async () => {
+      cancelled = true;
+      clearTimers();
+      if (!startSettled && resolveStart) {
+        startSettled = true;
+        resolveStart(false);
+      }
+      if (!finishSettled && resolveFinish) {
+        finishSettled = true;
+        resolveFinish(asResult({}, Math.max(0, Date.now() - startedAt)));
+      }
+      try {
+        if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'cancel' }));
+      } finally {
+        closeSocket();
+        await cleanupCapture('cancel');
+      }
+    })();
+    return cancelPromise;
   };
 
   return {
@@ -216,7 +287,7 @@ export function createCloudRealtimeAsrSession(
         socket.onmessage = event => { void handleMessage(event.data); };
         socket.onerror = () => fail('无法连接云端实时语音服务');
         socket.onclose = () => {
-          if (!cancelled && (!startSettled || (resolveFinish && !finishSettled))) {
+          if (!cancelled && !finishSettled) {
             fail('云端实时语音连接已断开');
           }
         };
@@ -232,9 +303,19 @@ export function createCloudRealtimeAsrSession(
     stop(): Promise<TranscribeAudioResult> {
       if (stopPromise) return stopPromise;
       stopPromise = (async () => {
-        if (!socket || !startSettled) return asResult({}, 0);
-        await dependencies.stopPcmCapture(captureSubscription);
-        captureSubscription = null;
+        if (terminalError) throw terminalError;
+        if (!socket || !startSettled) {
+          await cancel();
+          return asResult({}, 0);
+        }
+        try {
+          await cleanupCapture('stop');
+        } catch {
+          fail('麦克风采集未能安全停止，请关闭语音后重试');
+          throw terminalError || new Error('麦克风采集未能安全停止，请关闭语音后重试');
+        }
+        if (terminalError) throw terminalError;
+        if (cancelled) return asResult({}, 0);
         return new Promise<TranscribeAudioResult>((resolve, reject) => {
           resolveFinish = resolve;
           rejectFinish = reject;
@@ -249,25 +330,6 @@ export function createCloudRealtimeAsrSession(
       return stopPromise;
     },
 
-    cancel(): Promise<void> {
-      if (cancelPromise) return cancelPromise;
-      cancelPromise = (async () => {
-        cancelled = true;
-        clearTimers();
-        if (!startSettled && resolveStart) {
-          startSettled = true;
-          resolveStart(false);
-        }
-        if (!finishSettled && resolveFinish) {
-          finishSettled = true;
-          resolveFinish(asResult({}, Math.max(0, Date.now() - startedAt)));
-        }
-        await dependencies.cancelPcmCapture(captureSubscription);
-        captureSubscription = null;
-        if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'cancel' }));
-        closeSocket();
-      })();
-      return cancelPromise;
-    },
+    cancel,
   };
 }
