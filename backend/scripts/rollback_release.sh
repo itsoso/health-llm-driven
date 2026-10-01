@@ -524,12 +524,33 @@ assert_release_lock
 select_release_env_for_runtime_result "$runtime_state_result"
 assert_release_lock
 
-(
-    # Keep service-readable wheel modes without changing the private release
-    # runner's inherited umask or staged secret permissions.
-    umask 022
-    backend/venv/bin/pip install --require-hashes -r backend/requirements.lock -q
-)
+# urllib3-future's binary wheel installs a startup hook that replaces the
+# separately locked urllib3 tree.  Rebuild a legacy wheel install once using
+# the upstream no-override source mode; normal rollback installs keep selecting
+# the hash-locked source archive without reinstalling the complete environment.
+if compgen -G 'backend/venv/lib/python*/site-packages/urllib3_future.pth' \
+        >/dev/null; then
+    (
+        # Keep service-readable dependency modes without changing the private
+        # release runner's inherited umask or staged secret permissions.
+        umask 022
+        URLLIB3_NO_OVERRIDE=1 backend/venv/bin/pip install \
+            --require-hashes -r backend/requirements.lock \
+            --no-binary urllib3-future --force-reinstall -q
+    )
+else
+    (
+        umask 022
+        URLLIB3_NO_OVERRIDE=1 backend/venv/bin/pip install \
+            --require-hashes -r backend/requirements.lock \
+            --no-binary urllib3-future -q
+    )
+fi
+if compgen -G 'backend/venv/lib/python*/site-packages/urllib3_future.pth' \
+        >/dev/null; then
+    echo "urllib3-future namespace override remains installed" >&2
+    exit 1
+fi
 # Services remain stopped while the old lock is installed. Remove the legacy
 # Chroma runtime before validation so rollback restores every safe target
 # dependency without re-exposing packages that have no patched release.

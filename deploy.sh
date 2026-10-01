@@ -2989,9 +2989,28 @@ sync_backend_dependencies() {
         sync -f "\${release_state_dir}" || return 1
     fi
     echo '安装锁定依赖...'
-    # Only installed public dependency files need service-readable modes.
-    # Keep release markers/configuration under the parent private umask.
-    (umask 022; pip install --require-hashes -r requirements.lock -q) || return 1
+    # urllib3-future's wheel installs a .pth startup hook that replaces the
+    # separately locked urllib3 tree on every Python startup.  Its upstream
+    # source build supports the reviewed no-override mode, which preserves
+    # both distributions and lets the service-identity RECORD proof inspect
+    # the complete environment.  Repair an existing wheel install once; later
+    # lock changes continue to select the hashed source archive without a full
+    # reinstall.
+    if compgen -G 'venv/lib/python*/site-packages/urllib3_future.pth' \
+            >/dev/null; then
+        (umask 022; URLLIB3_NO_OVERRIDE=1 \
+            pip install --require-hashes -r requirements.lock \
+                --no-binary urllib3-future --force-reinstall -q) || return 1
+    else
+        (umask 022; URLLIB3_NO_OVERRIDE=1 \
+            pip install --require-hashes -r requirements.lock \
+                --no-binary urllib3-future -q) || return 1
+    fi
+    if compgen -G 'venv/lib/python*/site-packages/urllib3_future.pth' \
+            >/dev/null; then
+        echo 'urllib3-future namespace override remains installed' >&2
+        return 1
+    fi
     # pip install does not remove packages deleted from the lock. ChromaDB has
     # no patched release for CVE-2026-45830/45831/45833, so remove any stale
     # legacy install before verifying or writing the lock marker.
