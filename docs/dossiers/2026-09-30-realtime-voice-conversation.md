@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | 状态 | G4 passed; G5 PR opened |
-| 当前阶段 | G5 merge CI gate |
+| 当前阶段 | G5 auto-merge CI gate |
 | Controller | product-pipeline |
 | Delegate | health-harness-orchestrator |
 | Overlay | safety-gate |
@@ -157,3 +157,6 @@
 - 当前断点：PR #263 的最新主干基线 CI 必须全部通过；合入后还必须等待精确
   `main` revision 的 CI 绿色才能部署。该原生 iOS 变化不符合 OTA 边界，后续
   只能走新的原生构建；真实凭据端到端场景仍未完成。
+- 基于 `c4e27dad2` 的 PR CI 已全部通过，但合并时 `main` 又前进到
+  `d3b204f28`，分支保护拒绝旧基线合并；候选已再次重放到最新主干。为避免下一次
+  CI 期间同类竞态，更新后的 PR 启用受保护 auto-merge，仍不绕过任何必需检查。
