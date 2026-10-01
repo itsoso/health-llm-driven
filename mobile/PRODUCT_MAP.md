@@ -63,6 +63,7 @@ mobile/services/
   trajectory.ts               ⭐ Personal Health Trajectory Snapshot
   briefing.ts                 ⭐ 所有 voice-chat intent 拉稿函数集中在这
   cloudTts.ts                 私享女声 cosyvoice 调用
+  cloudStreamingTts.ts        voice-chat authenticated WebSocket 流式 TTS
   voiceStyle.ts               voice id 映射 + STORAGE_KEY 迁移
   notifications.ts            settings types (新加 toggle 在这加字段)
   workouts.ts                 含 getWorkoutVoiceCoach (听一下)
@@ -310,6 +311,19 @@ cosyvoice.synthesize → DashScope SDK         [backend/app/services/tts/cosyvoi
 mp3 bytes → mobile expo-audio createAudioPlayer 播
 ```
 
+voice-chat 输入链路：`useVoiceConversation` 复用 authenticated
+`/chat/transcribe/realtime` 云端实时 ASR；partial 仅用于界面显示，final 才以
+稳定 `client_turn_id` 提交 `/agent/stream`。用户插话时先终止本地流并调用
+`/agent/runs/{run_id}/cancel`，再开启下一次麦克风会话；健康写入继续经过既有
+确认与 receipt 闭环。
+
+voice-chat 输出链路：Agent token 在逗号、分号、句号等自然短语边界进入同一
+`/tts/stream` WebSocket；后端把文本增量送入 CosyVoice，回传 24 kHz mono
+PCM，`modules/reva-pcm-player` 用 `AVAudioPlayerNode` 直接在内存排队播放。
+插话、reset、授权失效和 unmount 都会停 PCM 并取消 TTS session。该模块是
+原生能力，必须发新 iOS build，不能走 OTA；当前仍是先停播再开麦的半双工，
+没有 AEC / full-duplex。
+
 **聊天气泡朗读**: `components/chat/ChatBubble.tsx` 右下角 `语音播报` 走 `services/speakWithUserVoice.ts`, 按用户在语音风格页选择的 provider 播放。cloud provider 会先用 `utils/ttsText.ts` 把长回复切成 <=480 字分段, 再串行调用云端 CosyVoice, 避免后端 500 字限制触发 422 后退回 iOS 系统音色。点击前会把 audio session 切回 `.playback`, 启动失败会恢复按钮状态, 且有时长兜底防止系统回调丢失后一直卡在“停止播报”。
 
 **voiceStyle.ts**: STORAGE_KEY = `tts_voice_style_v3`, 默认 `cloud_cloned_private_female` (新用户) / 老用户从 v2 自动迁移.
@@ -400,5 +414,5 @@ build 必须发: native iOS 改动 (Siri Intent / AVAudioSession 原生层 / exp
 
 - expo-audio 不支持 proximity / .defaultToSpeaker → 贴耳听筒还做不到
 - LLM 偶尔把 weight 放在顶层 args (已加 L8 兜底 + L7 schema 提示)
-- voice-chat onSpeechEnd iOS 慢 2-3s → 已用 silenceTimer 1.2s 解决
-- TTS estMs 必须比真实播放长, 否则段落重叠 (已 fix: text.length * 280 + 8s)
+- voice-chat 以 1.2s partial 静默触发云端 final commit；不直接提交 partial
+- 聊天气泡的 MP3 TTS estMs 必须比真实播放长；voice-chat 已改为 native PCM drain 事件
