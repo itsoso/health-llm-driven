@@ -295,6 +295,25 @@ def fetch_ecg_latest(db: Session, user_id: int) -> Optional[Dict[str, Any]]:
 # ─────────────────────────── medical exam abnormal ────────────────────
 
 
+def _latest_day_candidates(base_q, code: str, patterns, page_size: int = 200) -> list:
+    """按 (record_date, id) 倒序分页, 收集到该指标最新匹配日的全部行为止 (无日期行并入, 见 latest_reading)。"""
+    from app.biomarkers.normalize import matches_row
+
+    cands, newest, offset = [], None, 0
+    while True:
+        page = base_q.offset(offset).limit(page_size).all()
+        for v, n, u, d, name_en, item_code in page:
+            if newest is not None and d is not None and d != newest:
+                return cands
+            row = (d, n, v, u, None, (name_en, item_code))
+            cands.append(row)
+            if newest is None and d is not None and matches_row(n, code, patterns, row[5]):
+                newest = d
+        if len(page) < page_size:
+            return cands
+        offset += page_size
+
+
 def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
     """从 MedicalIndicator 抓最新一次的常用化验项数值.
 
@@ -348,6 +367,14 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             "creatinine": "CREA", "egfr": "egfr", "uric_acid": "UA",
         }
 
+        # 只扩 SQL 预筛 (捞出别名表才认识的写法), 绝不当身份关键字: 「Anti-Glomerular Basement Membrane
+        # Ab」「丙氨酸」(血浆氨基酸)「Low density lipoprotein receptor」都含这些词 —— 身份只由 registry 判。
+        PREFILTER_EXTRA = {
+            "ldl": ["low density", "low-density"], "hdl": ["high density", "high-density"],
+            "hba1c": ["A1C"], "alt": ["丙氨酸"], "ast": ["天冬氨酸", "天门冬氨酸"],
+            "ggt": ["谷氨酰基", "谷氨酰转移酶"], "egfr": ["GFR", "Glomerular", "CKD-EPI"], "uric_acid": ["urate"],
+        }
+
         from sqlalchemy import or_
         from app.biomarkers.normalize import latest_reading, normalize_observation
 
@@ -357,11 +384,11 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
                 MedicalIndicator.name.ilike(f"%{p}%") |
                 MedicalIndicator.name_en.ilike(f"%{p}%") |
                 MedicalIndicator.item_code.ilike(f"%{p}%")
-                for p in patterns
+                for p in (*patterns, *PREFILTER_EXTRA.get(key, ()))
             ])
             base_q = (
                 db.query(MedicalIndicator.value, MedicalIndicator.name, MedicalIndicator.unit,
-                         MedicalIndicator.record_date)
+                         MedicalIndicator.record_date, MedicalIndicator.name_en, MedicalIndicator.item_code)
                 .filter(
                     MedicalIndicator.user_id == user_id,
                     MedicalIndicator.value.isnot(None),
@@ -373,8 +400,9 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             # 参考 6.3–9.0%) 不是标准 A1c、VLDL-C 不是 LDL。逐条向旧回退直到 canonical 命中。
             code = KEY_CODES.get(key)
             if code is not None:
-                # 只取该指标最新一天; 那天读不出 → 缺失, 绝不退回更旧的值冒充现值
-                cands = [(d, n, v, u, None) for v, n, u, d in base_q.limit(50).all()]
+                # 只取该指标最新一天; 那天读不出 → 缺失, 绝不退回更旧的值冒充现值。
+                # 分页扫过 SQL 宽前缀的假命中 (几十条 UA-* 尿常规不能把真血尿酸挤出窗口), 读到最新匹配日为止。
+                cands = _latest_day_candidates(base_q, code, patterns)
                 _, reading = latest_reading(cands, code, patterns)
                 row = (reading,) if reading is not None else None
             else:
