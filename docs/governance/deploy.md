@@ -21,6 +21,19 @@
 ./deploy.sh -l        # 查看服务日志
 ```
 
+#### 生产服务器的 GitHub 网络路径
+
+生产服务器已配置 `reva-github-relay.service`，通过 `base.executor.life` 转发
+`github.com:443`。服务器上的标准 GitHub HTTPS URL 自动使用该线路，无需修改
+`deploy.sh`、仓库 origin 或 GitHub Actions 的代理环境变量。新 Agent 在服务器
+拉取 canonical source、轮换发布授权或触发发布前，先完成
+[GitHub 代理运维手册](../ops/github-relay.md)的只读检查。
+
+本机和 GitHub Actions runner 不使用服务器的 loopback 映射。网络检查成功不替代
+精确 main/CI、版本授权、旧操作终态和发布锁检查；发布失败仍按原回执恢复，不能
+因为修好了网络就重放已消费的 `run`。代理故障按手册恢复，不关闭证书校验、不换
+第三方源码镜像，也不靠延长超时掩盖断线。
+
 ### 8.2 线上配置管理
 
 注册隔离修复的独立 operator 入口为 canonical `deploy.sh --security-hardening

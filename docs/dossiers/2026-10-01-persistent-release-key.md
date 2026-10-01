@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | blocked |
-| 当前阶段 | release recovery; G5 blocked pending credential repair |
+| 状态 | shipped |
+| 当前阶段 | S7; release credential and GitHub transport verified |
 
 ## G1 — maintenance admission
 
@@ -56,9 +56,9 @@ separately authorized reviewed release, the operator must migrate through canoni
 bootstrap rotation; unchanged cloud key means no GitHub Secret replacement needed.
 Local macOS verification does not substitute for Linux native gates or exact-SHA CI.
 
-## G5 — production migration attempt
+## Historical production migration attempt
 
-裁决: BLOCK
+当时结果: BLOCK. Resolved by the subsequent credential and transport recovery below.
 
 - Committed and pushed `cec484a25044fca46203894ed15c2792c42f366e` to GitHub main.
 - Exact CI passed: https://github.com/itsoso/health-llm-driven/actions/runs/36847512724.
@@ -80,8 +80,8 @@ Local macOS verification does not substitute for Linux native gates or exact-SHA
   incomplete candidate staging directory before retrying. Reverify current main,
   exact CI and live operation state before any credential mutation.
 
-This final operational receipt is local and uncommitted; it does not change the
-CI-bound release revision or claim production migration success.
+At the time of that attempt, this operational receipt was local and uncommitted;
+it did not change the CI-bound release revision or claim migration success.
 
 ## Subsequent live verification — 2026-10-01
 
@@ -118,3 +118,125 @@ CI-bound release revision or claim production migration success.
 - GitHub secret entry remains a user handoff. Full recovery requires a successful
   check through the dedicated key and the GitHub workflow; generation alone is
   not evidence of server authorization or deployment.
+
+## Replacement installation evidence
+
+- Candidate `30ac1c67be7b2df79363ac7509f70f8a56ce4834` is on main; exact CI
+  36857310949 passed, as did local release preflight. Independent reviewer approved
+  the source-identical candidate and conditional canonical rotation.
+- Server fetched the canonical GitHub repository at that SHA. Full retirement
+  history, clean source, fresh candidate, known activity and idle checks passed;
+  b997 workspace was NEVER_STARTED.
+- The first rotate attempt stopped before intent creation because a previous
+  read-only executor import by this agent had produced a Python cache. Old cloud
+  and loopback authorizations were already revoked and loopback private key removed.
+- Read-only diagnosis isolated the failure to the exact library inventory. The
+  sole root-owned, regular, single-link Python 3.10 cache matched current canonical
+  source by header and compiled code. Its SHA256 was
+  `55f379728c25f3b272542a6c1c6400d9a27a57f46012980622e8f8af66f8acaa`.
+- Independent reviewer approved preserving the attributable cache outside the
+  installation. It was moved to the candidate bootstrap `readonly-inspection-cache`
+  directory with parent fsync. No retirement intent or archive existed; all
+  pre-intent checks passed again. Subsequent Python inspections use `-I -B`.
+- Canonical rotate returned INSTALLED for 30ac1c67b, retiring b997. Readback shows
+  expires_at=0 and the replacement fingerprint. Strict dedicated-key SSH returned
+  `CHECKED` for this exact SHA, including GitHub and loopback readiness.
+- GitHub reports the user updated REVA_RELEASE_SSH_KEY at 2026-10-01T11:41:38Z.
+  Actual environment-secret verification in Trusted release 36857918284 failed
+  with `error in libcrypto` before server authentication. Backend was skipped;
+  no deployment claim was consumed. The same local replacement private key passed
+  strict SSH CHECKED, isolating this blocker to the GitHub secret's stored format.
+  Runtime trees are unchanged from production 644b6a2de.
+- Reopened the exact GitHub Secret edit form for user entry of the full private
+  file. No private bytes were read into conversation or entered by this agent.
+- This evidence was retained locally during credential handoff to avoid moving
+  main underneath the bound candidate. It is now included in the documentation closure.
+
+## GitHub credential confirmed; network remains blocked
+
+- User confirmed replacement Secret submission; GitHub metadata updated at
+  2026-10-01T11:56:05Z. Main and exact CI remain bound to 30ac1c67b.
+- Trusted release 36858579773 successfully authenticated to the forced-command
+  server with the Environment Secret. The previous libcrypto/publickey errors
+  are gone. Server readiness then failed before deployment; backend was skipped.
+- Read-only installed-executor checks (`-I -B`) passed frontend/OTA history,
+  deployment window, local-only loopback configuration and Python metadata.
+  The exact GitHub ls-remote failed with exit 128: transfer remained below
+  1024 bytes/sec for 30 seconds.
+- Certificate-verifying HTTP/1.1 probes to both DNS-returned GitHub addresses
+  also timed out. No DNS, TLS, source, timeout or authorization guard was changed.
+- Credential recovery and permanent authorization are verified. Backend delivery
+  remains blocked by server-to-GitHub networking; no release workspace or business
+  lease was present before this unconsumed readiness attempt.
+
+## GitHub transport recovery via base — 2026-10-01
+
+- User explicitly authorized repairing the GitHub timeout and using
+  base.executor.life as a proxy. Production TCP and TLS handshakes succeeded but
+  HTTP stalled; API/raw GitHub hosts worked. The identical Git info/refs request
+  completed with HTTP 200 in 0.29 s from base. This locates the failure in the
+  production-to-GitHub HTTP path; it does not prove which network device caused it.
+- Base resolves to 47.237.191.17. SSH port 22222 was verified using its existing
+  exact IP:port known-host entry. The old hostname-only entry differs and was not
+  replaced or used to disable validation.
+- Health now runs `reva-github-relay.service` as a dedicated unprivileged user,
+  forwarding only `[::1]:443` to base's `github.com:443`. Systemd grants only
+  CAP_NET_BIND_SERVICE, enforces read-only system/home protection and network
+  address allowlists, and supervises reconnect/startup. A dedicated identity stays
+  on health; no admin or release private key is copied to base.
+- Base's fixed root-owned `/etc/ssh/reva-github-relay/authorized_keys` contains
+  only the new key, restricted to source 39.98.206.178 and target github.com:443.
+  `/etc/ssh/sshd_config.d/90-reva-github-relay.conf` requires publickey auth,
+  allows only local TCP forwarding, disables remote/streamlocal/agent/X11/tunnel
+  forwarding, and sets MaxSessions=0 and ForceCommand=false. Both syntax and
+  effective `sshd -T -C` settings were verified before reload.
+- The previously retired same-name base account had expiry 1970-01-02. Its aging
+  state was preserved in root-only `account-aging.before.txt` alongside the new
+  relay configuration, then expiry removed. Historical retired key/config remain
+  inactive and untouched; password authentication and shell sessions stay denied.
+- HTTPS through the relay passed three times in 0.64–0.74 s with GitHub certificate
+  verification. Shell, remote forwarding, other host and other port actual probes
+  all failed as intended. No public proxy listener was added.
+- `/etc/hosts` changed only `github.com` from 20.205.243.166 to ::1. Exact original
+  bytes are backed up at `/var/backups/reva-github-relay-20261001/hosts.before`.
+  nscd was invalidated; AI_ADDRCONFIG resolves GitHub solely to ::1. Exact isolated
+  gate Git arguments passed three times in 1.05, 2.00 and 1.53 s. Stopping the
+  relay made Git fail closed; restarting it restored Git. Service enabled at boot.
+- Strict dedicated release-key `check 30ac1c67b...` returned CHECKED. Backend and
+  nginx PIDs remained unchanged, health HTTP 200, no business lease/workspace.
+- Independent reviewer: operational GO based on these producer receipts (no
+  independent remote rerun). Resuming the already authorized backend workflow.
+
+### Transport rollback
+
+Restore the exact hosts backup only after confirming the current hosts differs
+solely by the intended GitHub line; preserve any concurrent edits. Invalidate nscd,
+then stop/disable `reva-github-relay.service`. On base remove only the newly added
+authorization/config after checking their bytes, run sshd -t and reload ssh, and
+restore account expiry with `chage -E 1970-01-02 reva-github-relay`. Preserve the
+historical retired files and rollback evidence. This restores the prior direct
+network path, including its known timeout; it is not a repair of that upstream path.
+
+## G5/G6 — final production verification
+
+裁决: PASS
+
+- Trusted release 36861632116 completed SUCCESS: exact source/CI preflight,
+  actual GitHub Environment Secret readiness and backend deployment all passed.
+  iOS/TestFlight were intentionally not targeted.
+- Server receipt is SUCCEEDED for `30ac1c67be7b2df79363ac7509f70f8a56ce4834`;
+  production Git HEAD matches. Runtime transaction committed, health score 60/60
+  passed, and the business lease was removed.
+- Backend, Celery worker/beat and GitHub relay are active with NRestarts=0 after
+  deployment. Backend local /health returns HTTP 200; public HTTPS
+  health.executor.life/api/v1/auth/me returns expected unauthenticated HTTP 401
+  with certificate validation. A stale health-api.executor.life hostname from
+  skill guidance did not resolve and was not used as production proof.
+- DB backup/restore/offsite work was skipped by the repository's explicit user
+  preference (docs/governance/deploy.md, DEPLOY_DATABASE_BACKUP defaults to 0).
+  No new DB backup is claimed. Env backup, rollback schema compatibility, managed
+  migration checks, runtime transaction and health gates ran through deploy.sh.
+- This later documentation closure records the verified 30ac1c67b deployment;
+  it does not rebind its authorization or claim that the documentation commit was
+  deployed. Permanent key and proxy are installed; the underlying direct GitHub
+  network path remains unreliable and GitHub access depends on the relay.

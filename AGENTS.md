@@ -80,6 +80,7 @@
 - 修改、验证、commit、push、merge、deploy、release 是不同动作。只在用户授权和对应 Gate 满足时执行；分支分叉、主干非绿或工作树来源不明时停止外部写入并报告。
 - 提交消息使用 `<type>(<scope>): <subject>`；提交前检查秘密、依赖、安全、测试、权限、用户隔离、日志和文档。
 - 部署从干净、已验证的目标 revision 进行，完整规则见 `docs/governance/deploy.md`；部署成功不等于上线验证完成。
+- 生产服务器访问 GitHub HTTPS 使用已安装的 `reva-github-relay.service` 经 `base.executor.life` 转发；发布前按 `docs/ops/github-relay.md` 检查。保留 canonical GitHub URL 与 TLS 校验，不改镜像 URL、不靠全局 Git/代理变量绕过隔离发布器。
 
 ## 8. Mobile / 桌面发布
 
