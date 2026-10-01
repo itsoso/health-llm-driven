@@ -857,3 +857,33 @@ class TestReconcilePrefilterIsNotIdentity:
     @pytest.mark.parametrize("name", ["UA (uricase)", "Serum UA (Uricase)", "UA enzymatic"])
     def test_method_words_keep_serum_ua(self, name):
         assert _alerts(_twin([_item(name, 560.0)]))["labs.uric_acid_high"].severity == Severity.MEDIUM
+
+
+class TestReconcileRound2NonBlocking:
+    @pytest.mark.parametrize("name", ["UA H", "UA (H)", "UA-S", "P-UA", "UA L"])
+    def test_flag_and_specimen_letters_keep_serum_ua(self, name):
+        from app.biomarkers.definitions import resolve_code
+
+        assert resolve_code(name) == "UA"
+
+    def test_flagged_ua_latest_not_replaced_by_older(self, db):
+        from app.twin._collectors import fetch_latest_labs
+
+        user = _user(db)
+        _add(db, user.id, "尿酸", 300.0, day=OLD_DAY)
+        _add(db, user.id, "UA H", 560.0)
+        db.commit()
+        assert fetch_latest_labs(db, user.id)["uric_acid"] == 560.0
+
+    @pytest.mark.parametrize("name", ["UA-PH", "UA-SG", "UA-PRO", "UA Glucose"])
+    def test_urinalysis_still_rejected(self, name):
+        from app.biomarkers.definitions import resolve_code
+
+        assert resolve_code(name) is None
+
+    @pytest.mark.parametrize("alt_name,ast_name", [
+        ("ALT37°C", "AST37°C"), ("ALT 37℃", "AST 37℃"), ("ALT w/o P5P", "AST w/o P5P"),
+    ])
+    def test_method_annotated_liver_enzymes_still_critical(self, alt_name, ast_name):
+        a = _alerts(_twin([_item(alt_name, 300.0, "U/L"), _item(ast_name, 250.0, "U/L")]))
+        assert a["labs.liver_enzyme_pattern"].severity == Severity.CRITICAL

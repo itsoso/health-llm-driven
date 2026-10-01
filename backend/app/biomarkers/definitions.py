@@ -427,16 +427,23 @@ def _solo_rejects(code: str, key: str) -> bool:
     return letters not in _SOLO[code]
 
 
-# 样本/方法学词不改变指标身份: 「Serum UA」「UA (uricase)」「UA enzymatic」仍是血尿酸
-_SPECIMEN_WORD_RE = re.compile(r"(?<![a-z])(?:serum|plasma|blood|whole|uricase|enzymatic|method)(?![a-z])")
+# 样本/方法学词与单字母标记不改变指标身份: 「Serum UA」「UA (uricase)」「UA H」(偏高标记)「P-UA」(血浆)
+# 仍是血尿酸; 「UA-PH」「UA-SG」的 ph/sg 不是单字母, 照旧拒识。
+_SPECIMEN_WORD_RE = re.compile(
+    r"(?<![a-z])(?:serum|plasma|blood|whole|uricase|enzymatic|method|h|l|s|p)(?![a-z])")
 
 
 # 方法学注释 (「HbA1c (NGSP/IFCC)」): 括号里的「/」不是比值
 _METHOD_NOTE_RE = re.compile(r"\((?:ngsp|ifcc|dcct|jscc)(?:/(?:ngsp|ifcc|dcct|jscc))*\)")
 
 
+# 检测温度 (「ALT37°C」, NFKC 后 ℃ → °c) 与「w/o」(without, 不是比值的「/」)
+_TEMPERATURE_RE = re.compile(r"\d+(?:\.\d+)?\s*°\s*c")
+
+
 def _core(key: str) -> str:
-    """剥掉名字里的单位片段/方法学注释后的项目名 (剥空了就用原名)。"""
+    """剥掉名字里的单位片段/方法学注释/检测温度后的项目名 (剥空了就用原名)。"""
+    key = _TEMPERATURE_RE.sub(" ", key.replace("w/o", " without "))
     stripped = _UNIT_TOKEN_RE.sub(" ", _METHOD_NOTE_RE.sub(" ", key))
     return re.sub(r"\s+", " ", stripped).strip() or key
 
