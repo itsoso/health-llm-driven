@@ -29,7 +29,10 @@ vi.mock('@/contexts/ToastContext', () => ({
 
 // Mock react-query
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: null, isLoading: false, refetch: vi.fn(), isFetching: false }),
+  useQuery: ({ queryKey }) => ({
+    data: queryKey[0] === 'effective-timezone' ? { timezone: 'Asia/Taipei', source: 'manual' } : null,
+    isLoading: false, refetch: vi.fn(), isFetching: false,
+  }),
   useMutation: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));

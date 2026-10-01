@@ -129,3 +129,38 @@ def test_effective_timezone_endpoint_default(client, db):
     assert r.json()["timezone"] == "Asia/Shanghai"
     # 未认证拒绝
     assert client.get("/api/v1/profile/me/effective-timezone").status_code in (401, 403)
+
+
+def test_effective_timezone_read_does_not_create_profile(client, db):
+    user, token = create_authenticated_user(db)
+    assert db.query(UserProfile).filter(UserProfile.user_id == user.id).count() == 0
+    response = client.get(
+        "/api/v1/profile/me/effective-timezone",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "timezone": "Asia/Shanghai", "source": "default",
+        "detected_timezone": None, "manual_timezone": None,
+    }
+    assert db.query(UserProfile).filter(UserProfile.user_id == user.id).count() == 0
+
+
+def test_effective_timezone_read_preserves_existing_profile(client, db):
+    user, token = create_authenticated_user(db)
+    profile = UserProfile(
+        user_id=user.id, timezone="Europe/London",
+        manual_timezone="Asia/Taipei", detected_timezone="America/Los_Angeles",
+    )
+    db.add(profile)
+    db.commit()
+    response = client.get(
+        "/api/v1/profile/me/effective-timezone",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["timezone"] == "Asia/Taipei"
+    assert response.json()["source"] == "manual"
+    db.refresh(profile)
+    assert profile.timezone == "Europe/London"
+    assert profile.detected_timezone == "America/Los_Angeles"
