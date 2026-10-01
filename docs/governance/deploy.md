@@ -143,6 +143,17 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 仅后端变更使用同一入口的 `target=backend`，仍先经过 preflight 与服务器 readiness，
 再执行相同 backend job；不读取 Expo 凭据、不领取构建/上传权限、不运行 iOS jobs。
 
+固定候选的运行中检查允许有限文档漂移：触发时仍须 candidate SHA = workflow SHA =
+当时 main，绝不执行调用方任意指定的旧源码。其后 main 只能沿最多八个线性提交前进，
+每个提交的完整比较仅包含 `AGENTS.md`、`docs/governance/deploy.md`、
+`docs/ops/github-relay.md` 或扁平 `docs/dossiers/*.md`；不按 `.md` 后缀泛化放行。
+发布器、依赖、配置、运行时知识和其他路径一律阻断，代码修改后回退也不例外。
+合并/分叉、比较截断或未知结果阻断。候选及观察到的新 main 均须精确 CI 绿色，
+检查末尾重验 main 和 CI attempt；构建/上传来源始终是原固定候选。
+服务器的 Git main 观察值必须与同一 canonical gate 的 API 证明一致；先核对受审
+helper 字节再隔离执行，不接受本机上传 helper 或缓存证明。不改变已有 claim、
+授权、锁、终态及恢复边界，也不放宽其他发布器的独立检查。
+
 用户明确授权后，已成功部署运行树的 iOS 续发使用 `target=testflight`，不运行 backend
 job、不补写或复用新的后端成功回执。仍先 validate、当前 main 精确 CI 和独立安全复审，
 由 canonical bootstrap 切换至新 SHA，可沿用当前专用发布公钥；不得复用旧 SHA 或清除消费记录。

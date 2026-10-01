@@ -26,6 +26,8 @@ PUBLISHER_FILES = frozenset({
     "scripts/trusted_release_server.py", "scripts/trusted_testflight_preflight.py",
     "scripts/test_testflight_only.py", "scripts/test_trusted_release_workflow.py",
     "scripts/test_trusted_eas_build.py",
+    "scripts/trusted_release_gate.py", "scripts/test_trusted_release_gate.py",
+    "scripts/test_trusted_release_server.py",
     "docs/governance/deploy.md",
 })
 
@@ -34,9 +36,11 @@ class PreflightError(Exception):
     """Fixed sanitized failure, never raw command output or health data."""
 
 
-def validate_changed_paths(paths):
+def validate_changed_paths(paths, *, documentation_path=None):
     for path in paths:
         if path in PUBLISHER_FILES:
+            continue
+        if documentation_path is not None and documentation_path(path):
             continue
         if (path.startswith("docs/dossiers/") and path.endswith(".md")
                 and "/" not in path[len("docs/dossiers/"):] and ".." not in path):
@@ -117,7 +121,8 @@ def prove(sha, lease):
         return result
     target, deployed = inventory(source, sha), inventory(PRODUCTION, live)
     validate_changed_paths([path for path in target.keys() | deployed.keys()
-                            if target.get(path) != deployed.get(path)])
+                            if target.get(path) != deployed.get(path)],
+                           documentation_path=gate.is_release_documentation)
     for unit in ("health-backend", "celery-worker", "celery-beat", "reva-laya"):
         values = dict(line.split("=", 1) for line in run([
             "/usr/bin/systemctl", "show", unit,

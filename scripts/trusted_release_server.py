@@ -478,6 +478,31 @@ def release_status(sha, workspace):
     }
 
 
+def attest_documentation_main(policy, observed_main):
+    """Execute only the policy-bound canonical gate, before any vendor claim."""
+    source = STATE / "bootstrap" / policy["sha"] / "source"
+    script = source / "scripts/trusted_release_gate.py"
+    try:
+        secure_path(script)
+        secure_path(source / ".git/config")
+        env = clean_environment(STATE)
+        env.update(PATH="/usr/bin:/bin", HOME="/nonexistent", GIT_NO_REPLACE_OBJECTS="1",
+                   GIT_CONFIG_SYSTEM="/dev/null")
+        expected = subprocess.run([
+            "/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+            "-C", str(source), "show", policy["sha"] + ":scripts/trusted_release_gate.py",
+        ], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            check=True, timeout=30).stdout
+        if script.read_bytes() != expected:
+            raise LaunchError("documentation gate differs from reviewed source")
+        subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"],
+                        "--workflow-sha", policy["sha"], "--observed-main", observed_main],
+                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, check=True, timeout=300)
+    except (OSError, subprocess.SubprocessError):
+        raise LaunchError("canonical documentation attestation unavailable") from None
+
+
 def check_readiness(policy):
     """Read-only target probes before consuming any build/deployment claim."""
     assert_frontend_rebuild_history()
@@ -495,8 +520,11 @@ def check_readiness(policy):
     result = subprocess.run(git, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             text=True, check=True, timeout=90)
-    if result.stdout.strip() != f"{policy['sha']}\trefs/heads/main":
-        raise LaunchError("remote main differs from authorized release")
+    match = re.fullmatch(r"([0-9a-f]{40})\trefs/heads/main\n?", result.stdout)
+    if match is None:
+        raise LaunchError("invalid remote main observation")
+    if match[1] != policy["sha"]:
+        attest_documentation_main(policy, match[1])
     subprocess.run(["/usr/bin/ssh", "-F", str(CONFIG / "loopback.conf"),
                     "health", "/usr/bin/true"], env=env, stdin=subprocess.DEVNULL,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

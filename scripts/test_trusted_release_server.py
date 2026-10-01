@@ -25,6 +25,55 @@ def load_server():
     return module
 
 
+@pytest.mark.parametrize("accepted", [True, False])
+def test_readiness_drift_requires_canonical_gate_before_loopback(monkeypatch, tmp_path, accepted):
+    server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "validate_loopback", lambda _: None)
+    observed = "c" * 40
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(stdout=observed + "\trefs/heads/main\n")
+    monkeypatch.setattr(server.subprocess, "run", run)
+    def attest(authorized, head):
+        assert authorized == policy() and head == observed
+        assert len(calls) == 1
+        if not accepted:
+            raise server.LaunchError("documentation gate rejected")
+    monkeypatch.setattr(server, "attest_documentation_main", attest)
+    if accepted:
+        server.check_readiness(policy())
+        assert calls[-1][-2:] == ["health", "/usr/bin/true"]
+    else:
+        with pytest.raises(server.LaunchError):
+            server.check_readiness(policy())
+        assert len(calls) == 1
+
+
+def test_documentation_attestation_verifies_canonical_bytes_and_binds_observed_head(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "STATE", tmp_path)
+    script = tmp_path / "bootstrap" / SHA / "source/scripts/trusted_release_gate.py"
+    script.parent.mkdir(parents=True)
+    script.write_bytes(b"canonical gate")
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(stdout=b"canonical gate")
+    monkeypatch.setattr(server.subprocess, "run", run)
+    observed = "c" * 40
+    server.attest_documentation_main(policy(), observed)
+    assert calls[0][0][-2:] == ["show", SHA + ":scripts/trusted_release_gate.py"]
+    assert calls[1][0] == [server.PYTHON, "-I", "-S", "-B", str(script),
+                           "--sha", SHA, "--workflow-sha", SHA, "--observed-main", observed]
+    assert calls[1][1]["check"] is True
+    script.write_bytes(b"tampered")
+    calls.clear()
+    with pytest.raises(server.LaunchError):
+        server.attest_documentation_main(policy(), observed)
+    assert len(calls) == 1
+
+
 def policy(**changes):
     result = {"sha": SHA, "expires_at": 7300, "executor_sha256": HASH}
     result.update(changes)
