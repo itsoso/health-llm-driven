@@ -13,6 +13,8 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
+from app.biomarkers.definitions import name_conflicts_with_code
+
 logger = logging.getLogger(__name__)
 
 # ── 正则模式匹配（快速路径，不需要 LLM） ──────────────────
@@ -68,14 +70,14 @@ LAB_INDICATORS = [
         "name": "谷丙转氨酶",
         "category": "liver_function",
         "unit": "U/L",
-        "aliases": ["ALT", "谷丙转氨酶", "丙氨酸氨基转移酶", "丙氨酸转氨酶"],
+        "aliases": ["ALT", "GPT", "SGPT", "谷丙转氨酶", "丙氨酸氨基转移酶", "丙氨酸转氨酶"],
     },
     {
         "code": "AST",
         "name": "谷草转氨酶",
         "category": "liver_function",
         "unit": "U/L",
-        "aliases": ["AST", "谷草转氨酶", "天门冬氨酸氨基转移酶", "天冬氨酸氨基转移酶"],
+        "aliases": ["AST", "GOT", "SGOT", "谷草转氨酶", "天门冬氨酸氨基转移酶", "天冬氨酸氨基转移酶"],
     },
     {
         "code": "GGT",
@@ -144,6 +146,36 @@ LAB_INDICATORS = [
 
 _LAB_UNITS_RE = r"(?:U/L|IU/L|μmol/L|umol/L|µmol/L|mmol/L|mg/dL|g/L|%)"
 
+# 解析码 → biomarker registry code: 这些项的命中要按整段项目名复核 —— 只有「肯定是别的项目」才跳过
+# (「尿肌酐」「肾小球滤过率(EPI-cr)」「尿素氮/肌酐」含别名却不是该指标); 别名表没收录的写法照常解析。
+_REGISTRY_CODES = {"ALT": "ALT", "AST": "AST", "GGT": "GGT", "CREA": "CREA", "BUN": "BUN", "UA": "UA",
+                   "FBG": "glucose_fasting"}
+_NAME_STOPS = frozenset(",;:、。\n\t ↑↓")
+_MAX_NAME_PREFIX = 12  # 向左最多带上这么多字符 (够「肾小球滤过率(EPI-」, 不吞整句自由文本)
+
+
+def _alias_regex(alias: str) -> str:
+    """ASCII 端点加词边界: 「Cr」不命中「hs-CRP」、「CREA」不命中「CREATINE」。"""
+    pattern = re.escape(alias)
+    if alias[0].isascii() and alias[0].isalnum():
+        pattern = r"(?<![A-Za-z0-9])" + pattern
+    if alias[-1].isascii() and alias[-1].isalnum():
+        pattern += r"(?![A-Za-z0-9])"
+    return pattern
+
+
+def _item_name_span(text: str, alias_start: int, value_start: int) -> str:
+    """别名所在的完整项目名: 向左扩到分隔符/数字 (带上「尿」「肾小球滤过率(EPI-」前缀), 向右到数值前。"""
+    start = alias_start
+    while (
+        start > 0
+        and alias_start - start < _MAX_NAME_PREFIX
+        and text[start - 1] not in _NAME_STOPS
+        and not text[start - 1].isdigit()
+    ):
+        start -= 1
+    return text[start:value_start].strip(" :")
+
 
 def parse_lab_indicators_from_text(text: str) -> list[dict[str, Any]]:
     """Extract multi-indicator lab panels from pasted/chat OCR text.
@@ -168,7 +200,7 @@ def parse_lab_indicators_from_text(text: str) -> list[dict[str, Any]]:
     for indicator in LAB_INDICATORS:
         code = indicator["code"]
         aliases = sorted(indicator["aliases"], key=len, reverse=True)
-        alias_re = "|".join(re.escape(alias) for alias in aliases)
+        alias_re = "|".join(_alias_regex(alias) for alias in aliases)
         pattern = re.compile(
             rf"(?P<alias>{alias_re})[^\d\-+]{{0,32}}"
             rf"(?P<value>\d{{1,4}}(?:\.\d+)?)\s*"
@@ -176,7 +208,12 @@ def parse_lab_indicators_from_text(text: str) -> list[dict[str, Any]]:
             rf"\s*(?P<flag>[↑↓HhLl高低偏高偏低]*)",
             re.IGNORECASE,
         )
+        registry_code = _REGISTRY_CODES.get(code)
         for match in pattern.finditer(normalized):
+            if registry_code is not None:
+                span = _item_name_span(normalized, match.start("alias"), match.start("value"))
+                if name_conflicts_with_code(span, registry_code):
+                    continue
             try:
                 value = float(match.group("value"))
             except (TypeError, ValueError):
