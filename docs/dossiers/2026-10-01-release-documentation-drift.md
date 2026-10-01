@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | implementation; release not yet completed |
-| 当前阶段 | G3 regression and G4 independent review |
+| 状态 | repair delivered; TestFlight upload and Apple processing complete |
+| 当前阶段 | release evidence archived; voice UI acceptance remains separate |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -67,3 +67,34 @@ run or a continuation of S5: `docs/_generated/harness-runs/b7ed7b93c56e.jsonl`.
   evidence were verified. Current policy remains a811; production remains 30ac.
 - Main is non-green: external writes are paused pending explicit user permission
   for this narrow repair, followed by fresh exact-revision CI and release gates.
+
+## Completed TestFlight release — 2026-10-01
+
+The entries above describe historical checkpoints; the user subsequently authorized
+the narrow repair push and continued publication. No main freeze was required.
+
+- Final candidate `e19043ecb269e20f3bc0a546165e43d467f1fc8c` received independent
+  G4 GO. Exact CI `36872307842` and trusted validate `36872453915` succeeded;
+  fresh CI-mode integration passed 67 tests in 43.91 seconds.
+- Canonical bootstrap retired the never-started a811 authorization and installed
+  e190, retaining the existing dedicated cloud key, original lock inode and
+  historical receipts. Only the exact old loopback private key was destroyed.
+- Trusted TestFlight-only workflow `36877321184` completed successfully. Backend
+  was intentionally skipped: production remains the healthy, receipt-backed
+  `30ac1c67be7b2df79363ac7509f70f8a56ce4834`, with compatibility attested.
+- EAS STORE/IOS/production build `20d5e73a-a6b9-4c70-ad69-e63d31e058f2` binds
+  exact e190 and version `1.3.4 (273)`. Build ran from 14:37:58 to 14:44:47 UTC
+  (approximately 6 minutes 49 seconds), without duplicate builds.
+- Submission `fcfbb57d-4804-4a36-9c57-eab062bf321e` was scheduled at 14:47:02 UTC
+  and reported successful App Store Connect upload at 14:50:03 UTC.
+- App Store Connect subsequently showed build 273 as `Ready to Submit`, with
+  both existing internal groups `内部测试` and `Team (Expo)`, and 4 invites.
+  Apple processing is complete; no external beta or App Review was submitted.
+- Exact IPA SHA-256:
+  `01096258d356b66b55c3aaf4a590068fb8767cc06b90442f71e8272b1e06dcf1`.
+  Strict/deep codesign, bundle/version, production channel/runtime and production
+  push/application-identifier entitlements passed read-only validation.
+- Permanent dedicated authorization and immutable native claims remain intact;
+  this native-only workspace is not relabeled as backend SUCCEEDED or reset.
+- This completes the requested TestFlight delivery, not authenticated voice UI
+  acceptance, feature G5/G6, App Review approval or public App Store release.

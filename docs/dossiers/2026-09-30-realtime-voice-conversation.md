@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | G4 client lifecycle rereview passed; G5 pending |
-| 当前阶段 | G5 exact-main CI, native artifact and candidate UI acceptance |
+| 状态 | TestFlight 1.3.4 (273) delivered; G5 UI acceptance pending |
+| 当前阶段 | Candidate authenticated voice UI acceptance; no App Review submission |
 | Controller | product-pipeline |
 | Delegate | health-harness-orchestrator |
 | Overlay | safety-gate |
@@ -239,3 +239,22 @@
 - 只使用本次 workflow 返回的精确 EAS STORE production build ID 上传。
   构建、上传、Apple processing 和同包 UI 验收分别记录；尚未创建本次
   vendor 构建，不预先宣称 TestFlight 可用或 G5/G6 完成，不提交 App Review。
+
+### TestFlight delivery confirmed — 2026-10-01
+
+- 最终候选 `e19043ecb269e20f3bc0a546165e43d467f1fc8c`：独立 G4 GO、
+  精确 CI `36872307842`、validate `36872453915`、新鲜 CI-mode 集成 67 项通过。
+- 受控 TestFlight-only 发布 `36877321184` 全部必要 job 成功；不重复部署后端，
+  继续使用真实 SUCCEEDED 回执绑定且健康的生产 `30ac1c67be7b2df79363ac7509f70f8a56ce4834`。
+- 新 STORE / production 包 `1.3.4 (273)`，EAS build
+  `20d5e73a-a6b9-4c70-ad69-e63d31e058f2`；submission
+  `fcfbb57d-4804-4a36-9c57-eab062bf321e` 于 14:50:03 UTC 确认上传成功。
+- Apple 处理已完成，ASC 显示 273 `Ready to Submit`，已关联原有内部测试组
+  `内部测试`、`Team (Expo)`，4 个邀请；未新增外部测试组或提交 App Review。
+- 下载确切 IPA 的 SHA-256 为
+  `01096258d356b66b55c3aaf4a590068fb8767cc06b90442f71e8272b1e06dcf1`；
+  严格签名、bundle/version、production channel/runtime 与生产 entitlement 检查通过。
+  此 STORE 包不等同于此前源码和通道不同的 Ad Hoc 273。
+- 发布修复与授权审计见 `2026-10-01-release-documentation-drift.md`。
+  发布已交付；已登录候选的语音、插话、前后台及异常恢复 UI 尚未实际验收，
+  G5/G6 不标完成，不宣称 App Store 审核或正式上架。
