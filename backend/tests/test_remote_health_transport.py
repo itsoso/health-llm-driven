@@ -88,6 +88,7 @@ def test_real_pkce_consent_read_tools_and_write_refusal(connected):
     response = exchange(client,code)
     assert response.status_code == 200, response.text
     token = response.json()["access_token"]
+    assert client.get(PREFIX + "/mcp",headers={"Authorization":"Bearer " + token}).status_code == 405
     assert response.headers["cache-control"] == "no-store, no-store"
     init = rpc(client,token,"initialize", {"protocolVersion":"2025-11-25", "capabilities":{}, "clientInfo":{"name":"test","version":"1"}})
     assert init.status_code == 200, init.text

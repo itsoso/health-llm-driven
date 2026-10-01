@@ -220,6 +220,11 @@ def install_remote_health(app, config: RemoteHealthConfig, session_factory):
     app.router.routes.append(Route("/.well-known/oauth-authorization-server" + PREFIX, metadata))
     app.router.routes.append(Route("/.well-known/oauth-protected-resource" + PREFIX + "/mcp", resource_metadata))
     mcp_app = mcp.streamable_http_app()
+    # This finite, stateless query service has no server-initiated SSE stream.
+    # Streamable HTTP permits GET 405; do not retain unlimited open GET streams.
+    for route in mcp_app.routes:
+        if route.path == "/mcp":
+            route.methods = {"POST"}
     async def revoke(request):
         # SDK 1.30 requires an optional client_secret field even for public clients.
         # RFC 7009 public-client requests contain only client_id and token.
