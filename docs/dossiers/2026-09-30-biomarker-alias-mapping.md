@@ -153,3 +153,21 @@ production lab name changes mapping only where intended.
 The read-only export and the local simulation databases were destroyed after
 use. Production writes (commit, deploy, backfill / cleanup) require explicit
 user approval.
+
+## Follow-up: prothrombin time and neutrophil count (branch claude/biomarker-pt-neutrophil)
+
+- User decision (2026-09-30): add PT and neutrophils to the registry; leave
+  folate out (a mildly high folate is acceptable to the user).
+- NEUT (absolute count, 10^9/L, 1.8-6.3, low = risk) and PT (seconds,
+  generic 10-14 s, prolonged = risk). Lab PT ranges vary (10.0-13.5 and
+  12.0-14.0 seen), so a reading the lab flags as low can be normal here; a
+  short PT is not a risk direction.
+- Safety review round 1 NO-GO: an unitless bare-name neutrophil fraction
+  (0.58) read as a confident low count. Fixed: without a recognised count
+  unit, NEUT needs a count qualifier in the name and PT rejects values
+  above 60 (activity %); more excludes. Round 2 GO.
+- Production name corpus (373 names): exactly 3 mapping changes; all
+  production bare-name neutrophil rows carry a unit. Related suites: 699
+  passed, 3 PostgreSQL-only skipped.
+- Not done (non-blocking): OCR unit spellings like `x10 9/L` / `10~9/L` are
+  unrecognised, so such bare-name rows are dropped rather than read.
