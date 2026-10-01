@@ -154,6 +154,31 @@ def test_backend_dependency_cache_is_lock_addressed_and_fail_closed():
     assert "|| true" not in body
 
 
+def test_dependency_install_disables_urllib3_future_namespace_override():
+    deploy = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    sync_start = deploy.index("remote_dependency_sync_command() {")
+    sync_end = deploy.index("compute_release_input_digests() {", sync_start)
+    sync_body = deploy[sync_start:sync_end]
+    rollback = (
+        ROOT / "backend" / "scripts" / "rollback_release.sh"
+    ).read_text(encoding="utf-8")
+
+    for body in (sync_body, rollback):
+        assert "urllib3_future.pth" in body
+        assert "URLLIB3_NO_OVERRIDE=1" in body
+        assert "--no-binary urllib3-future" in body
+        assert "--force-reinstall" in body
+
+    override_check = sync_body.index("urllib3_future.pth")
+    assert override_check < sync_body.index(
+        "scripts/verify_locked_requirements.py requirements.lock",
+        override_check,
+    )
+    assert rollback.index("urllib3_future.pth") < rollback.index(
+        '"$LOCKED_REQUIREMENTS_VERIFIER"'
+    )
+
+
 def test_pi_install_is_required_even_when_python_dependency_cache_is_reused():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     start = script.index("remote_dependency_sync_command() {")
