@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.services import realtime_speech_transcription as realtime
+from app.services import realtime_tts
 from app.services import speech_transcription as speech
 from app.services.tts import cosyvoice
 
@@ -52,4 +53,19 @@ async def test_realtime_denial_precedes_provider_connection(monkeypatch):
     with pytest.raises(HTTPException):
         await realtime.proxy_realtime_asr(receive, send)
     connect.assert_not_called()
+    receive.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_realtime_tts_denial_precedes_provider_creation(monkeypatch):
+    provider = Mock(side_effect=RuntimeError("must not create provider"))
+    receive = AsyncMock(return_value={"type": "cancel"})
+    send = AsyncMock()
+    monkeypatch.setattr(realtime_tts, "_create_synthesizer", provider)
+    monkeypatch.setattr(realtime_tts, "require_ai_consent", deny, raising=False)
+
+    with pytest.raises(HTTPException):
+        await realtime_tts.proxy_realtime_tts(receive, send)
+
+    provider.assert_not_called()
     receive.assert_not_called()
