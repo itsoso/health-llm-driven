@@ -1,6 +1,6 @@
 # Feature Spec: Realtime Voice Conversation
 
-> Status: phase 2 locally implemented; safety review pending
+> Status: phase 2 locally implemented; G4 safety review passed; G5 not authorized
 > Owner: Codex
 > Updated: 2026-10-01
 > Related PRD: docs/prd/2026-09-30-realtime-voice-conversation.md
