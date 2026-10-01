@@ -63,8 +63,12 @@ def package(tmp_path):
             output = plistlib.dumps(profile)
         elif "--entitlements" in args:
             output = plistlib.dumps(ent)
-        elif "--extract-certificates" in args:
-            prefix = args[args.index("--extract-certificates") + 1]
+        elif any(arg.startswith("--extract-certificates") for arg in args):
+            # codesign's prefix is an optional argument and must be joined
+            # with '='; a separate token is parsed as another signing target.
+            option = next(arg for arg in args if arg.startswith("--extract-certificates"))
+            assert option.startswith("--extract-certificates="), args
+            prefix = option.split("=", 1)[1]
             Path(prefix + "0").write_bytes(b"test-certificate")
         return subprocess.CompletedProcess(args, 0, stdout=output, stderr=b"")
 
