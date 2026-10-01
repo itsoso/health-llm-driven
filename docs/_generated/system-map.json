@@ -4,12 +4,12 @@
     "api_routers": 168,
     "celery_tasks": 73,
     "mobile_routes": 130,
-    "model_files": 118,
+    "model_files": 119,
     "safety_rules_total": 65,
-    "service_files": 458,
+    "service_files": 460,
     "specialists": 13,
     "twin_partitions": 15,
-    "web_pages": 75
+    "web_pages": 76
   },
   "coverage": {
     "api_boundaries": {
@@ -2986,6 +2986,20 @@
     },
     {
       "coverage": "complete",
+      "id": "surface.web.connect.health",
+      "kind": "surface",
+      "name": "Web /connect/health",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/connect/health/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
       "id": "surface.web.daily-insights",
       "kind": "surface",
       "name": "Web /daily-insights",
@@ -4110,6 +4124,16 @@
         "type": "code"
       },
       "to": "surface.web.checkin",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
+        "path": "frontend/src/app/connect/health/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.connect.health",
       "type": "renders"
     },
     {

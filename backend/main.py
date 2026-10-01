@@ -396,6 +396,16 @@ app.add_middleware(SafeAccessLogMiddleware)
 # 注册路由
 app.include_router(api_router, prefix="/api/v1")
 
+if settings.remote_health_enabled:
+    import json
+    from app.api.remote_health import install_remote_health
+    from app.services.remote_health_oauth import RemoteHealthConfig
+    from app.database import SessionLocal
+    install_remote_health(app, RemoteHealthConfig(
+        origin=settings.remote_health_public_origin,
+        clients=json.loads(settings.remote_health_clients_json),
+    ), SessionLocal)
+
 
 @app.get("/", tags=["系统"])
 def root():

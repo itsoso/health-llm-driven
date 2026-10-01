@@ -70,6 +70,7 @@ from app.models.sent_event_reminder import SentEventReminder
 from app.models.review import DailyReview, PeriodReview, ReviewPeriod
 # 用户 API 密钥
 from app.models.user_api_key import UserApiKey
+from app.models.remote_health_oauth import RemoteHealthGrant, RemoteHealthCredential, RemoteHealthRateBucket
 # 聊天模型
 from app.models.chat import ChatConversation, ChatMessage
 # LLM 使用量 / 成本追踪

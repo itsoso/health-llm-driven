@@ -673,6 +673,10 @@ class Settings(BaseSettings):
                         "invitation registration is enabled in production"
                     )
 
+    remote_health_enabled: bool = False
+    remote_health_public_origin: str = "https://health.executor.life"
+    remote_health_clients_json: str = "[]"
+
     model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
 
