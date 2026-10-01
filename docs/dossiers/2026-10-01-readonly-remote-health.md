@@ -3,11 +3,11 @@
 | Field | Value |
 |---|---|
 | date | 2026-10-01 |
-| status | local_complete |
-| current_stage | G3 PASS; G4 PASS; production gates not started |
+| status | release_in_progress |
+| current_stage | G3 local PASS; G4 implementation PASS; CI forward repair pending |
 | owner_surface | Backend / Web consent |
 
-Owner: delegated local implementation. Scope approved: implement and test only. No push, PR, merge, deployment, real client registration or real user grants authorized.
+Owner: delegated implementation and release. The user subsequently authorized PR, CI, review and backend/web code release, with the feature disabled. Real client registration, persistent access enablement and real user grants remain outside authorization.
 
 Base: `01e8ddb6c` (includes independently owned PR265). Worktree: `health-remote-mcp`, branch `codex/health-readonly-remote-mcp`. Original dirty repository and other worktrees untouched.
 
@@ -37,7 +37,14 @@ Existing first-party cookie login and owner-scoped record models are reusable. O
 
 - G4 first independent review: NO-GO. Findings: public-client revoke compatibility, SDK input logging, HTTP replay revocation, credential storage cleanup and owner route bounds. Fixes and regression tests were added.
 - Fresh independent reviewer returned GO for local implementation safety at `c414c0ebf`, relative to `01e8ddb6c`, with no concrete exploitable auth, isolation, token-logging or boundedness blocker. Reviewer independently ran 54 tests successfully with one PostgreSQL-only skip and inspected installed SDK PKCE, callback and stateless-lifecycle behavior. Final lock/type regeneration received the implementer's dependency and type checks above; these generated changes were outside that review snapshot.
-- G5/G6: not started, outside current authorization. Default remains off.
+- A second independent release review returned GO at `f365a1c7a` against `e8fa94a9f`, including final dependencies and generated types; 169 tests passed with one PostgreSQL-only skip. Required CI and production verification remain separate gates.
+- G5/G6: pending required CI repair, review and verified default-off release.
+
+### Forward repair after push deviation
+
+The initial push unintentionally updated main to `f365a1c7a` before the requested PR. Its CI run [36835438871](https://github.com/itsoso/health-llm-driven/actions/runs/36835438871) failed because the three new remote-health suites were missing from the shard coverage catalog. The later PR266 main CI skipped release invariants, so its green result does not resolve this failure. No production release followed the deviation.
+
+The user explicitly accepted retaining main and authorized forward correction. The repair branch starts from `c6f1eb999`, preserving PR265, PR266 and PR267. It adds the suites to the existing `r-other` shard and the PostgreSQL semantic job, with a regression contract requiring their PostgreSQL execution. Both omissions were reproduced locally before repair. Pushes must use explicit full source and destination refs after a dry-run confirms only the intended feature branch; upstream defaults and shared Git configuration are not changed. Release requires the repaired invariants to actually execute and pass, independent review, exact main CI and normal deployment verification.
 
 Evidence logs: `/tmp/remote-health-locked-backend.log`, `/tmp/remote-health-locked-postgres.log`, `/tmp/remote-health-final-frontend.log`, `/tmp/remote-health-ui-lint.log`, `/tmp/remote-health-ui-types-locked.log`, `/tmp/remote-health-mobile-types-locked.log`, `/tmp/remote-health-api-types-final.log`, `/tmp/remote-health-dependency-audit.log`, `/tmp/remote-health-map-check.log`.
 

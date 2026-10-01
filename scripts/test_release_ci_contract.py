@@ -393,6 +393,8 @@ def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_s
         in run
     )
     assert "tests/test_invited_phone_registration_postgres.py" in run
+    for suite in ("oauth", "queries", "transport"):
+        assert f"tests/test_remote_health_{suite}.py" in shlex.split(run)
     assert (
         "tests/test_registration_invitation_service.py::"
         "test_postgres_concurrent_grant_consumption_has_exactly_one_winner"
