@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | G4 passed; G5 release candidate verified locally |
-| 当前阶段 | G5 integration decision pending |
+| 状态 | G4 passed; G5 PR opened |
+| 当前阶段 | G5 merge CI gate |
 | Controller | product-pipeline |
 | Delegate | health-harness-orchestrator |
 | Overlay | safety-gate |
@@ -103,8 +103,8 @@
 
 - 用户于 2026-10-01 指示“继续按规划往下执行”，已授权创建仅包含本功能的
   本地固定 commit 并进入独立 safety review；审查完成前不宣称 G4 通过。
-- 用户随后指示“继续”，已进入 G5 发布准备；该指示未裁决如何处理本地 `main`
-  中夹带的其他未发布提交，因此在集成路径明确前不 push、不部署、不发布原生包。
+- 用户随后明确授权提交、合并 `main` 和部署；采用隔离 voice-only PR，避免把原
+  工作区 `main` 中夹带的其他未发布提交带入发布。
 - G6 生产路径未验证，不得以本地测试替代。
 
 ### G4 initial safety review and remediation
@@ -134,7 +134,7 @@
 
 ### G5 release preparation
 
-- `origin/main` 当前为 `fb0165f7d`；原工作区 `main` 除本功能三个提交外还领先
+- 发布准备开始时 `origin/main` 为 `fb0165f7d`；原工作区 `main` 除本功能三个提交外还领先
   6 个其他功能提交和 1 个 merge commit，并带有与本功能无关的未提交修改，不能
   将其整体作为本功能发布候选直接推送。
 - 已从 `origin/main` 创建隔离 worktree，并仅 cherry-pick 本功能三个提交；得到
@@ -144,6 +144,16 @@
   1 existing skip；`npx tsc --noEmit`、System Map、`git diff --check`、密钥扫描
   和 Skill 治理均通过。候选套件数少于原工作区，是因为隔离候选未包含其他本地
   功能及其测试。
-- 当前断点：需要明确是否把 voice-only 候选推到独立分支并创建 PR；在目标
-  revision 合入 `main` 且对应 CI 精确绿色之前，后端部署 Gate 不通过。该原生
-  iOS 变化不符合 OTA 边界，后续只能走新的原生构建；真实凭据端到端场景仍未完成。
+- voice-only 候选已推送并创建 PR #263。首轮 CI 在实现测试前被新披露的依赖
+  安全公告阻断：Mobile `axios 1.18.1`，后端 `urllib3 2.7.0` 与
+  `PyJWT 2.14.0`。同期合入 `main` 的安全 PR #261 已将它们升级到经审查的
+  `axios 1.20.0`、`urllib3 2.8.0`、`PyJWT 2.15.0`；语音候选已改以该
+  `c4e27dad2` 主干为基线，不重复覆盖安全修复。
+- 依赖修复验证：Mobile OSV / npm audit 和后端 pip-audit 均通过，后端语音与
+  依赖契约 80 passed，干净 `npm ci` 后 TypeScript、解析器安全、实时 TTS 和
+  原生播放器契约均通过。首轮 Mobile 全量在补跑 postinstall 前仅两个解析器
+  用例失败，补跑后定向用例通过；第二次全量执行因 Jest 异步句柄未退出而人工
+  终止，最终以 PR 的干净 CI 运行作为合并裁决。
+- 当前断点：PR #263 的最新主干基线 CI 必须全部通过；合入后还必须等待精确
+  `main` revision 的 CI 绿色才能部署。该原生 iOS 变化不符合 OTA 边界，后续
+  只能走新的原生构建；真实凭据端到端场景仍未完成。
