@@ -8,6 +8,7 @@ jest.mock('../api', () => ({
 }));
 
 import {
+  cancelAgentRun,
   getAgentTurnStatus,
   getConversationMessages,
   getConversations,
@@ -268,5 +269,40 @@ describe('getAgentTurnStatus', () => {
     }) as any;
 
     await expect(getAgentTurnStatus('missing-turn')).resolves.toBeNull();
+  });
+});
+
+describe('cancelAgentRun', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.clearAllMocks();
+  });
+
+  it('posts an authenticated owner-scoped cancellation request', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ run_id: 'run voice/1', status: 'cancellation_requested' }),
+    });
+    global.fetch = fetchMock as any;
+
+    await expect(cancelAgentRun('run voice/1')).resolves.toEqual({
+      runId: 'run voice/1',
+      status: 'cancellation_requested',
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://example.test/api/v1/agent/runs/run%20voice%2F1/cancel',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
+      }),
+    );
+  });
+
+  it('fails loudly when server cancellation is rejected', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 503 }) as any;
+    await expect(cancelAgentRun('run-1')).rejects.toThrow('cancelAgentRun failed: 503');
   });
 });

@@ -1,40 +1,43 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ensureAIConsent } from '../services/aiConsent';
 import { aiConsentRevision, subscribeAIConsentInvalidation } from '../services/aiConsentState';
-import Voice, {
-  type SpeechResultsEvent,
-  type SpeechErrorEvent,
-} from '@react-native-voice/voice';
 import * as Speech from 'expo-speech';
-import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
-import { streamChat, getConversationMessages } from '../services/chat';
+import { setAudioModeAsync } from 'expo-audio';
+import {
+  cancelAgentRun,
+  getAgentTurnStatus,
+  getConversationMessages,
+  streamChat,
+} from '../services/chat';
+import {
+  createCloudRealtimeAsrSession,
+  type RealtimeAsrSession,
+} from '../services/cloudRealtimeAsr';
+import {
+  createCloudStreamingTtsSession,
+  type StreamingTtsSession,
+} from '../services/cloudStreamingTts';
 import {
   loadVoiceStyle, resolveIosSpeechOptions, getVoiceStyle, type VoiceStyle,
 } from '../services/voiceStyle';
-import { synthesize as cloudSynthesize, cleanupTmpTts } from '../services/cloudTts';
-import { estimateTtsFallbackMs, shouldFinishAudioPlayback } from '../utils/audioPlayback';
 import { splitTextForCloudTts } from '../utils/ttsText';
-import {
-  bindVoiceEventHandlers,
-  isVoiceEventHandlerOwner,
-  releaseVoiceEventHandlers,
-  type VoiceEventHandlers,
-  type VoiceEventLease,
-} from '../services/voiceEventRouter';
 
 /**
  * 语音连续对话状态机.
  *
  * idle → listening → thinking → speaking → idle
  *
+ * ASR 使用 authenticated cloud realtime session：partial 只展示，stop 后的
+ * authoritative final 才进入 Agent。每轮携带 client_turn_id，插话会同时
+ * abort 本地传输并请求取消 owner-scoped Agent Run。
+ *
  * TTS provider 双栈:
  *   - ios   : expo-speech AVSpeechSynthesizer (离线, 机械感)
- *   - cloud : 后端 /tts/synthesize 代理阿里云 CosyVoice (真人级, 需联网)
+ *   - cloud : 后端 /tts/stream 代理阿里云 CosyVoice, 原生内存 PCM 播放
  *
- * 云端失败 (网络 / 后端错误) 自动降级到 ios 档, 保证不哑巴.
- *
- * TTS 用"句尾符号"(。！？.!?\n) 切段, 收到一整句就入队播. 串行播放, 避免并发打架.
- * 打断: startListening 会 stop() + 清队列, 让用户随时插话.
+ * 云端会话在首个分片开始前失败时降级到 iOS；流中失败不重播已发送文本，
+ * 避免健康建议重复。TTS 按自然短语边界增量送入同一会话。
+ * 打断: startListening 会停止播放、清队列并取消服务端运行，让用户随时插话.
  */
 export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -44,13 +47,19 @@ export interface VoiceTurn {
   at: number;
 }
 
+let voiceTurnCounter = 0;
+function nextVoiceTurnId(): string {
+  return `voice-turn-${++voiceTurnCounter}-${Date.now()}`;
+}
+
 // 只用真标点切句; \n 不算句末 — 段落换行交给标点本身的自然停顿,
 // 否则 \n\n 会触发额外的 synth 来回 (网络 500ms+), 听起来"卡顿"
 // `.` 前后都是数字 (3.6 / 1.0.2) 不当句末 — 否则 "3.6 公里" 会被切成 "3" + "6 公里"
 // 后面的 stripMarkdownForTTS 拿不到完整 decimal 就没法念成"3 点 6"
-const SENTENCE_END = /[。！？!?]|(?<!\d)\.(?!\d)/;
+const SPEAKABLE_BOUNDARY = /[。！？!?，,；;：:]|(?<!\d)\.(?!\d)/;
 // 太短的句子 (< 3 字) 直接合并到下一个, 避免"是。" / "OK!" 这种微音轨抖动
 const MIN_SENTENCE_LEN = 3;
+const MAX_STREAM_FRAGMENT_LEN = 48;
 
 function stripMarkdownForTTS(s: string): string {
   return s
@@ -159,16 +168,8 @@ function formatRecordLabel(recordType: string, d: Record<string, any>): string {
 }
 
 
-interface ActivePlayer {
-  cancel: () => void;
-}
-
 export function useVoiceConversation() {
   const [state, setState] = useState<VoiceState>('idle');
-  // 给 Voice listener 用的 stateRef — 避免 useEffect 依赖 state
-  // (依赖 state 会让 Voice 监听器每次状态切换都重挂, 在 iOS 上覆盖前一份导致 partial events 丢失)
-  const stateRef = useRef<VoiceState>('idle');
-  useEffect(() => { stateRef.current = state; }, [state]);
   const [transcript, setTranscript] = useState('');
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -176,23 +177,25 @@ export function useVoiceConversation() {
   const latestPartialRef = useRef('');
   const conversationIdRef = useRef<number | undefined>(undefined);
 
-  // 静默自动提交 — onSpeechPartialResults 收到新文字就重置 timer,
-  // 持续 1.2s 没新内容 → 自动 stop + submit, 不用用户主动点停止.
+  // 静默自动提交 — realtime ASR partial 更新时重置 timer；超时后先向
+  // ASR 请求 authoritative final，再提交，绝不直接提交 partial。
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 防双发: silence timer 触发 submit 后置 true, onSpeechResults/End 看到就跳过.
-  // Voice.stop() 会触发 onSpeechResults 带 final 文本 + onSpeechEnd, 不防就发两遍.
-  const justSubmittedRef = useRef(false);
   const SILENCE_AUTO_SUBMIT_MS = 1200;
 
   const pendingTextRef = useRef('');
   const assistantTextRef = useRef('');
   const ttsQueueRef = useRef<string[]>([]);
   const isSpeakingRef = useRef(false);
-  // prefetch: 当前句在播时, 提前合成队列下一句的音频, 消除句间 network gap
-  const preSynthRef = useRef<{ text: string; promise: Promise<string> } | null>(null);
+  const streamingTtsRef = useRef<StreamingTtsSession | null>(null);
+  const ttsPumpPromiseRef = useRef<Promise<void> | null>(null);
+  const ttsGenerationRef = useRef(0);
+  const forceIosTtsRef = useRef(false);
+  const ttsErrorRef = useRef<Error | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const voiceEventLeaseRef = useRef<VoiceEventLease | null>(null);
-  const voiceHandlersRef = useRef<VoiceEventHandlers>({});
+  const realtimeAsrRef = useRef<RealtimeAsrSession | null>(null);
+  const finalizingAsrRef = useRef<RealtimeAsrSession | null>(null);
+  const finalizeListeningRef = useRef<Promise<void> | null>(null);
+  const activeAgentTurnRef = useRef<{ clientTurnId: string; runId?: string } | null>(null);
   const mountedRef = useRef(true);
   const listeningStartSeqRef = useRef(0);
   const resumeListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -209,9 +212,6 @@ export function useVoiceConversation() {
   // 当前 voice style (读 AsyncStorage, 每轮开播前刷新)
   const voiceStyleRef = useRef<VoiceStyle>('cloud_cloned_private_female');
   const iosOptsRef = useRef<Speech.SpeechOptions>({ language: 'zh-CN', rate: 1.0, pitch: 1.0 });
-
-  // 云端播放中的 player, stop 时用于打断
-  const activePlayerRef = useRef<ActivePlayer | null>(null);
 
   /**
    * iOS AVAudioSession 模式动态切换 (修复音量变小问题):
@@ -241,19 +241,6 @@ export function useVoiceConversation() {
     }
   }, []);
 
-  const setRecordingMode = useCallback(async () => {
-    try {
-      await setAudioModeAsync({
-        playsInSilentMode: true,
-        shouldPlayInBackground: false,
-        interruptionMode: 'duckOthers',
-        allowsRecording: true,  // → .playAndRecord category
-      });
-    } catch (e) {
-      if (__DEV__) console.warn('[voice] setRecordingMode failed:', e);
-    }
-  }, []);
-
   useEffect(() => {
     // 进入页面默认外放
     setPlaybackMode();
@@ -276,11 +263,16 @@ export function useVoiceConversation() {
     refreshVoiceStyle();
   }, [refreshVoiceStyle]);
 
-  const stopCurrentSpeech = useCallback(() => {
+  const stopCurrentSpeech = useCallback(async () => {
+    ttsGenerationRef.current += 1;
     try { Speech.stop(); } catch {}
-    activePlayerRef.current?.cancel();
-    activePlayerRef.current = null;
+    const session = streamingTtsRef.current;
+    streamingTtsRef.current = null;
+    await session?.cancel().catch(() => undefined);
+    ttsPumpPromiseRef.current = null;
     isSpeakingRef.current = false;
+    forceIosTtsRef.current = false;
+    ttsErrorRef.current = null;
   }, []);
 
   const speakViaIos = useCallback((text: string, onDone: () => void) => {
@@ -292,87 +284,68 @@ export function useVoiceConversation() {
     });
   }, []);
 
-  const speakViaCloud = useCallback(async (text: string, onDone: () => void) => {
-    const opt = getVoiceStyle(voiceStyleRef.current);
-    const voiceKey = opt.cloudVoiceKey ?? 'cloned_private_female';
-    try {
-      // 优先复用 prefetch 好的 audio (另一句在播时合成的)
-      let localUri: string;
-      const pre = preSynthRef.current;
-      if (pre && pre.text === text) {
-        preSynthRef.current = null;
-        localUri = await pre.promise;
-      } else {
-        const synth = await cloudSynthesize({ text, voiceKey });
-        localUri = synth.localUri;
-      }
-
-      // 立即为队列下一句预合成, 跟本句播放并行, 消除句间 network gap
-      const nextText = ttsQueueRef.current[0];
-      if (nextText && !preSynthRef.current) {
-        const p = cloudSynthesize({ text: nextText, voiceKey }).then(r => r.localUri).catch(() => '');
-        preSynthRef.current = { text: nextText, promise: p };
-      }
-      // 新 player 每句一个, 简化生命周期 (非高频场景, 代价可接受)
-      const player = createAudioPlayer({ uri: localUri });
-      let finished = false;
-      let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        if (fallbackTimer) {
-          clearTimeout(fallbackTimer);
-          fallbackTimer = null;
-        }
-        try { player.remove(); } catch {}
-        activePlayerRef.current = null;
-        isSpeakingRef.current = false;
-        onDone();
-      };
-      activePlayerRef.current = {
-        cancel: () => {
-          try { player.pause(); } catch {}
-          finish();
-        },
-      };
-      // 监听播放完成; expo-audio 的 status 回调通过 addListener
-      const sub = player.addListener('playbackStatusUpdate', (status: any) => {
-        if (shouldFinishAudioPlayback(status)) {
-          sub?.remove?.();
-          finish();
-        }
-      });
-      // 兜底: player 若永不触发 finish (比如 mp3 损坏), 硬超时后 finish.
-      // CosyVoice 实测约每字 200-250ms (中文), 取 280ms + 8s 安全余量,
-      // 必须比真实播放时长长, 否则兜底先触发 finish → 下一句重叠播.
-      // 80 字 → ~22s + 8s = 30s. 最大 60s.
-      const estMs = estimateTtsFallbackMs(text, (player as any).duration);
-      fallbackTimer = setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, estMs);
-      player.play();
-    } catch (e) {
-      // 云端失败 → 降级 iOS
-      if (__DEV__) console.warn('[TTS] cloud failed, fallback to iOS:', e);
-      // 首次失败时也刷新一次 iOS voice opts 保证有得用
-      if (!iosOptsRef.current.voice) {
-        iosOptsRef.current = { language: 'zh-CN', rate: 1.0, pitch: 1.0 };
-      }
-      speakViaIos(text, onDone);
-    }
-  }, [speakViaIos]);
-
-  const flushTTS = useCallback(() => {
+  const flushIosTTS = useCallback(() => {
     if (isSpeakingRef.current) return;
     const next = ttsQueueRef.current.shift();
     if (!next) return;
     isSpeakingRef.current = true;
+    const onDone = () => { isSpeakingRef.current = false; flushIosTTS(); };
+    speakViaIos(next, onDone);
+  }, [speakViaIos]);
+
+  const flushTTS = useCallback(() => {
     const provider = getVoiceStyle(voiceStyleRef.current).provider;
-    const onDone = () => { isSpeakingRef.current = false; flushTTS(); };
-    if (provider === 'cloud') {
-      void speakViaCloud(next, onDone);
-    } else {
-      speakViaIos(next, onDone);
+    if (provider !== 'cloud' || forceIosTtsRef.current) {
+      flushIosTTS();
+      return;
     }
-  }, [speakViaCloud, speakViaIos]);
+    if (ttsPumpPromiseRef.current || ttsQueueRef.current.length === 0) return;
+
+    const generation = ttsGenerationRef.current;
+    const task = (async () => {
+      let session = streamingTtsRef.current;
+      let sessionReady = Boolean(session);
+      try {
+        if (!session) {
+          const opt = getVoiceStyle(voiceStyleRef.current);
+          session = createCloudStreamingTtsSession({
+            voiceKey: opt.cloudVoiceKey ?? 'cloned_private_female',
+          });
+          streamingTtsRef.current = session;
+          isSpeakingRef.current = true;
+          const started = await session.start();
+          if (!started || generation !== ttsGenerationRef.current) return;
+          sessionReady = true;
+        }
+        while (generation === ttsGenerationRef.current && ttsQueueRef.current.length > 0) {
+          const next = ttsQueueRef.current[0];
+          await session.append(next);
+          if (generation !== ttsGenerationRef.current) return;
+          ttsQueueRef.current.shift();
+        }
+      } catch (error: any) {
+        if (generation !== ttsGenerationRef.current) return;
+        streamingTtsRef.current = null;
+        await session?.cancel().catch(() => undefined);
+        isSpeakingRef.current = false;
+        if (!sessionReady) {
+          // No text reached the provider, so local fallback cannot duplicate speech.
+          forceIosTtsRef.current = true;
+          if (!iosOptsRef.current.voice) {
+            iosOptsRef.current = { language: 'zh-CN', rate: 1.0, pitch: 1.0 };
+          }
+          flushIosTTS();
+        } else {
+          ttsQueueRef.current = [];
+          ttsErrorRef.current = new Error(error?.message || '流式语音播放失败');
+        }
+      }
+    })();
+    ttsPumpPromiseRef.current = task;
+    void task.finally(() => {
+      if (ttsPumpPromiseRef.current === task) ttsPumpPromiseRef.current = null;
+    });
+  }, [flushIosTTS]);
 
   const enqueueTtsText = useCallback((text: string) => {
     ttsQueueRef.current.push(...splitTextForCloudTts(text));
@@ -381,9 +354,9 @@ export function useVoiceConversation() {
   const enqueueSentences = useCallback((chunk: string) => {
     pendingTextRef.current += chunk;
     while (true) {
-      const m = pendingTextRef.current.match(SENTENCE_END);
-      if (!m || m.index === undefined) break;
-      const cut = m.index + 1;
+      const m = pendingTextRef.current.match(SPEAKABLE_BOUNDARY);
+      if ((!m || m.index === undefined) && pendingTextRef.current.length < MAX_STREAM_FRAGMENT_LEN) break;
+      const cut = m && m.index !== undefined ? m.index + 1 : MAX_STREAM_FRAGMENT_LEN;
       const sentence = pendingTextRef.current.slice(0, cut).trim();
       pendingTextRef.current = pendingTextRef.current.slice(cut);
       if (sentence) {
@@ -420,27 +393,70 @@ export function useVoiceConversation() {
     }
   }, []);
 
+  const finishTTS = useCallback(async () => {
+    flushTTS();
+    while (ttsPumpPromiseRef.current) {
+      await ttsPumpPromiseRef.current;
+    }
+    if (ttsErrorRef.current) {
+      const error = ttsErrorRef.current;
+      ttsErrorRef.current = null;
+      throw error;
+    }
+    if (forceIosTtsRef.current || getVoiceStyle(voiceStyleRef.current).provider !== 'cloud') {
+      await waitTTSDrain();
+      return;
+    }
+    const session = streamingTtsRef.current;
+    if (!session) return;
+    await session.finish();
+    if (streamingTtsRef.current === session) streamingTtsRef.current = null;
+    isSpeakingRef.current = false;
+  }, [flushTTS, waitTTSDrain]);
+
   const submit = useCallback(async (userText: string) => {
+    const clientTurnId = nextVoiceTurnId();
     setState('thinking');
     setTurns((prev) => [...prev, { role: 'user', text: userText, at: Date.now() }]);
-
-    await refreshVoiceStyle();
-
     pendingTextRef.current = '';
     assistantTextRef.current = '';
     ttsQueueRef.current = [];
+    forceIosTtsRef.current = false;
+    ttsErrorRef.current = null;
 
     const ac = new AbortController();
     abortRef.current = ac;
 
     let replyStarted = false;
+    let reachedTerminalEvent = false;
 
     try {
+      await refreshVoiceStyle();
+      if (ac.signal.aborted) throw new Error('aborted');
+      // Only expose a turn as server-active once the request is about to be
+      // dispatched. Preflight work (for example voice-style refresh) is
+      // cancelled locally and has no backend run to interrupt.
+      activeAgentTurnRef.current = { clientTurnId };
       let lastFailedTool = '';  // 同一 tool 连续失败只提示一次
       // channel='voice':语音转写可能失真(1.2s 静默即自动提交,用户未必复核),
       // 症状类记录在后端保留确认前置。
-      for await (const evt of streamChat(userText, conversationIdRef.current, undefined, ac.signal, undefined, 'voice')) {
-        if (evt.type === 'token' || evt.type === 'tool') {
+      for await (const evt of streamChat(
+        userText,
+        conversationIdRef.current,
+        undefined,
+        ac.signal,
+        undefined,
+        'voice',
+        clientTurnId,
+      )) {
+        if (evt.type === 'persisted') {
+          if (evt.conversationId && !conversationIdRef.current) {
+            conversationIdRef.current = evt.conversationId;
+          }
+          if (activeAgentTurnRef.current?.clientTurnId === clientTurnId && evt.runId) {
+            activeAgentTurnRef.current.runId = evt.runId;
+          }
+        } else if (evt.type === 'token' || evt.type === 'tool') {
           const chunk = evt.content || '';
           if (!chunk) continue;
 
@@ -488,6 +504,10 @@ export function useVoiceConversation() {
             enqueueSentences(chunk);
           }
         } else if (evt.type === 'done') {
+          reachedTerminalEvent = true;
+          if (activeAgentTurnRef.current?.clientTurnId === clientTurnId) {
+            activeAgentTurnRef.current = null;
+          }
           if (evt.conversationId && !conversationIdRef.current) {
             conversationIdRef.current = evt.conversationId;
           }
@@ -501,12 +521,11 @@ export function useVoiceConversation() {
         return;
       }
       flushTail();
-      await waitTTSDrain();
+      await finishTTS();
       if (mountedRef.current) setState('idle');
     } catch (e: any) {
       const msg = e?.message || '请求失败';
       if (msg === 'aborted') {
-        if (mountedRef.current) setState('idle');
         return;
       }
       if (!mountedRef.current) return;
@@ -514,114 +533,89 @@ export function useVoiceConversation() {
       setTurns((prev) => [...prev, { role: 'assistant', text: `[错误] ${msg}`, at: Date.now() }]);
       setState('error');
     } finally {
-      abortRef.current = null;
-    }
-  }, [refreshVoiceStyle, enqueueSentences, flushTail, waitTTSDrain]);
-
-  // submit 用 ref 暴露给 Voice listener, 让 useEffect 只挂一次, 避免每次 state 变化重挂导致 partial events 丢失
-  const submitRef = useRef(submit);
-  useEffect(() => { submitRef.current = submit; }, [submit]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    // 收到 partial 时重置 silence timer; 1.2s 内没新内容 → 自动 stop + submit.
-    // 这比 iOS 系统的 onSpeechEnd (2-3s 才触发) 快得多, 体验上"说完即送".
-    //
-    // 注意: 此 effect 永不重挂 (deps=[]). Voice listener 只在 mount 时挂一次,
-    // 在 unmount 时清理. submit/setPlaybackMode/stopCurrentSpeech 都通过 ref / closure
-    // 访问最新值, 否则 state 变化会让 effect 重挂, iOS 上 Voice 监听器互相覆盖
-    // 导致 partial events 直接丢失 → 用户看不到识别中文字.
-    const armSilenceTimer = () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = setTimeout(() => {
-        const text = (latestPartialRef.current || '').trim();
-        if (text) {
-          // 防双发: 标记已提交, 后续 Voice.stop() 触发的 onSpeechResults/End
-          // 看到 justSubmittedRef=true 就跳过, 不再 submit.
-          justSubmittedRef.current = true;
-          latestPartialRef.current = '';
-          releaseVoiceEventHandlers(voiceEventLeaseRef.current);
-          voiceEventLeaseRef.current = null;
-          Voice.stop().catch(() => {});
-          setPlaybackMode();
-          submitRef.current(text);
-        }
-      }, SILENCE_AUTO_SUBMIT_MS);
-    };
-
-    voiceHandlersRef.current = {
-      onSpeechPartialResults: (e: SpeechResultsEvent) => {
-        // silence timer 已触发 submit → 接下来的 partial 全部忽略, 直到下次 startListening 重置
-        if (justSubmittedRef.current) return;
-        const val = e.value?.[0] || '';
-        if (val && val !== latestPartialRef.current) {
-          latestPartialRef.current = val;
-          setTranscript(val);
-          armSilenceTimer();
-        }
-      },
-      onSpeechResults: (e: SpeechResultsEvent) => {
-        if (justSubmittedRef.current) return;
-        const val = e.value?.[0] || latestPartialRef.current;
-        latestPartialRef.current = val;
-        setTranscript(val);
-        armSilenceTimer();
-      },
-      onSpeechEnd: () => {
-        // silence timer 可能已经先触发提交了 → 跳过, 不重发
-        if (silenceTimerRef.current) {
-          clearTimeout(silenceTimerRef.current);
-          silenceTimerRef.current = null;
-        }
-        if (justSubmittedRef.current) {
-          // 自然说完: 切回 playback 让后续 LLM reply TTS 走外放. 不 submit.
-          releaseVoiceEventHandlers(voiceEventLeaseRef.current);
-          voiceEventLeaseRef.current = null;
-          setPlaybackMode();
-          return;
-        }
-        const text = (latestPartialRef.current || '').trim();
-        releaseVoiceEventHandlers(voiceEventLeaseRef.current);
-        voiceEventLeaseRef.current = null;
-        setPlaybackMode();
-        if (text) submitRef.current(text);
-        else if (stateRef.current !== 'thinking' && stateRef.current !== 'speaking') setState('idle');
-      },
-      onSpeechError: (e: SpeechErrorEvent) => {
-        if (silenceTimerRef.current) {
-          clearTimeout(silenceTimerRef.current);
-          silenceTimerRef.current = null;
-        }
-        const msg = e.error?.message || '语音识别失败';
-        releaseVoiceEventHandlers(voiceEventLeaseRef.current);
-        voiceEventLeaseRef.current = null;
-        setError(msg);
-        setState('error');
-        setPlaybackMode();
-      },
-    };
-    return () => {
-      mountedRef.current = false;
-      listeningStartSeqRef.current += 1;
-      if (resumeListeningTimerRef.current) {
-        clearTimeout(resumeListeningTimerRef.current);
-        resumeListeningTimerRef.current = null;
+      if (abortRef.current === ac) abortRef.current = null;
+      if (
+        reachedTerminalEvent
+        && activeAgentTurnRef.current?.clientTurnId === clientTurnId
+      ) {
+        activeAgentTurnRef.current = null;
       }
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      const ownsNativeSession = isVoiceEventHandlerOwner(voiceEventLeaseRef.current);
-      releaseVoiceEventHandlers(voiceEventLeaseRef.current);
-      voiceEventLeaseRef.current = null;
-      if (ownsNativeSession) Voice.destroy().catch(() => undefined);
-      // 清队列必须早于 cancel；cancel 会同步触发 onDone -> flushTTS。
-      ttsQueueRef.current = [];
-      pendingTextRef.current = '';
-      preSynthRef.current = null;
-      stopCurrentSpeech();
-      abortRef.current?.abort();
-      cleanupTmpTts().catch(() => {});
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }
+  }, [refreshVoiceStyle, enqueueSentences, flushTail, finishTTS]);
+
+  const cancelActiveAgentTurn = useCallback(async () => {
+    const active = activeAgentTurnRef.current;
+    abortRef.current?.abort();
+    if (!active) return;
+
+    let runId = active.runId;
+    if (!runId) {
+      let status = null;
+      for (let attempt = 0; attempt < 3 && !runId; attempt += 1) {
+        status = await getAgentTurnStatus(active.clientTurnId);
+        runId = status?.runId;
+        if (!runId && attempt < 2) {
+          await new Promise<void>(resolve => setTimeout(resolve, 80));
+        }
+      }
+      if (['succeeded', 'failed', 'cancelled', 'interrupted', 'reconciliation_required'].includes(
+        status?.status || '',
+      )) {
+        if (activeAgentTurnRef.current?.clientTurnId === active.clientTurnId) {
+          activeAgentTurnRef.current = null;
+        }
+        return;
+      }
+      if (!runId) {
+        throw new Error('上一轮对话未能安全停止，请稍后重试');
+      }
+    }
+    try {
+      await cancelAgentRun(runId);
+    } catch {
+      throw new Error('上一轮对话未能安全停止，请稍后重试');
+    }
+    if (activeAgentTurnRef.current?.clientTurnId === active.clientTurnId) {
+      activeAgentTurnRef.current = null;
+    }
   }, []);
+
+  const finalizeListening = useCallback(async () => {
+    if (finalizeListeningRef.current) return finalizeListeningRef.current;
+    const session = realtimeAsrRef.current;
+    if (!session) return;
+    realtimeAsrRef.current = null;
+    finalizingAsrRef.current = session;
+    const finalizeSeq = listeningStartSeqRef.current;
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    const task = (async () => {
+      try {
+        const result = await session.stop();
+        await setPlaybackMode();
+        if (!mountedRef.current || finalizeSeq !== listeningStartSeqRef.current) return;
+        const finalText = result.text.trim();
+        latestPartialRef.current = finalText;
+        setTranscript(finalText);
+        if (finalText) await submit(finalText);
+        else setState('idle');
+      } catch (e: any) {
+        await session.cancel().catch(() => undefined);
+        await setPlaybackMode();
+        if (!mountedRef.current) return;
+        setError(String(e?.message || '云端实时语音识别失败'));
+        setState('error');
+      } finally {
+        if (finalizingAsrRef.current === session) finalizingAsrRef.current = null;
+        finalizeListeningRef.current = null;
+      }
+    })();
+    finalizeListeningRef.current = task;
+    return task;
+  }, [setPlaybackMode, submit]);
 
   const startListening = useCallback(async () => {
     const startSeq = ++listeningStartSeqRef.current;
@@ -630,50 +624,59 @@ export function useVoiceConversation() {
     const isCurrentStart = () => mountedRef.current && startSeq === listeningStartSeqRef.current
       && consentRevision === aiConsentRevision();
     try {
-      // 顺序很重要: 先清队列 + preSynth, 再 stopCurrentSpeech.
-      // stopCurrentSpeech 会同步触发 finish → onDone → flushTTS, 若此时队列未清
-      // 就会继续播下一句, 打断失败.
+      // 顺序很重要: 先清队列，再取消 TTS / Agent，最后才打开麦克风。
       ttsQueueRef.current = [];
       pendingTextRef.current = '';
-      preSynthRef.current = null;
-      abortRef.current?.abort();
-      stopCurrentSpeech();
+      await stopCurrentSpeech();
+      if (realtimeAsrRef.current) {
+        const previousSession = realtimeAsrRef.current;
+        realtimeAsrRef.current = null;
+        await previousSession.cancel();
+      }
+      await cancelActiveAgentTurn();
+      if (!isCurrentStart()) return;
       setError(null);
       setTranscript('');
       latestPartialRef.current = '';
-      justSubmittedRef.current = false;  // 新一轮开始, 解锁 listener
-      // 先切到 .playAndRecord, 再启动 Voice — 顺序很重要, Voice.start 依赖 session 已经就绪
-      await setRecordingMode();
-      if (!isCurrentStart()) return;
-      releaseVoiceEventHandlers(voiceEventLeaseRef.current);
-      voiceEventLeaseRef.current = bindVoiceEventHandlers(voiceHandlersRef.current);
+      let session!: RealtimeAsrSession;
+      session = createCloudRealtimeAsrSession({
+        onTranscript: (text) => {
+          if (!mountedRef.current || realtimeAsrRef.current !== session) return;
+          const normalized = text.trim();
+          if (!normalized || normalized === latestPartialRef.current) return;
+          latestPartialRef.current = normalized;
+          setTranscript(normalized);
+          if (finalizeListeningRef.current) return;
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
+            silenceTimerRef.current = null;
+            void finalizeListening();
+          }, SILENCE_AUTO_SUBMIT_MS);
+        },
+      });
+      realtimeAsrRef.current = session;
       setState('listening');
-      await Voice.start('zh-CN');
-      if (!isCurrentStart()) {
-        await Voice.cancel();
-        await Voice.stop();
+      const started = await session.start();
+      if (!started || !isCurrentStart()) {
+        if (realtimeAsrRef.current === session) realtimeAsrRef.current = null;
+        await session.cancel();
+        if (isCurrentStart()) setState('idle');
       }
     } catch (e: any) {
       if (!isCurrentStart()) return;
-      releaseVoiceEventHandlers(voiceEventLeaseRef.current);
-      voiceEventLeaseRef.current = null;
+      const session = realtimeAsrRef.current;
+      realtimeAsrRef.current = null;
+      await session?.cancel().catch(() => undefined);
       setError(String(e?.message || e));
       setState('error');
-      // 失败也切回 playback, 免得下次 TTS 又走听筒
-      setPlaybackMode();
+      await setPlaybackMode();
     }
-  }, [stopCurrentSpeech, setRecordingMode, setPlaybackMode]);
+  }, [cancelActiveAgentTurn, finalizeListening, setPlaybackMode, stopCurrentSpeech]);
 
   const stopListening = useCallback(async () => {
     listeningStartSeqRef.current += 1;
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    try { await Voice.stop(); } catch {}
-    // 录音结束切回 .playback, 后续 TTS 走外放
-    await setPlaybackMode();
-  }, [setPlaybackMode]);
+    await finalizeListening();
+  }, [finalizeListening]);
 
   const reset = useCallback(() => {
     listeningStartSeqRef.current += 1;
@@ -681,7 +684,6 @@ export function useVoiceConversation() {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
-    justSubmittedRef.current = false;
     if (resumeListeningTimerRef.current) {
       clearTimeout(resumeListeningTimerRef.current);
       resumeListeningTimerRef.current = null;
@@ -690,21 +692,48 @@ export function useVoiceConversation() {
     ttsQueueRef.current = [];
     pendingTextRef.current = '';
     assistantTextRef.current = '';
-    preSynthRef.current = null;
-    stopCurrentSpeech();
+    void stopCurrentSpeech();
     recordedItemsRef.current = [];
-    abortRef.current?.abort();
-    releaseVoiceEventHandlers(voiceEventLeaseRef.current);
-    voiceEventLeaseRef.current = null;
-    Voice.stop().catch(() => {});
-    Voice.cancel?.().catch(() => {});
-    setPlaybackMode();
+    const session = realtimeAsrRef.current;
+    realtimeAsrRef.current = null;
+    void session?.cancel();
+    const finalizingSession = finalizingAsrRef.current;
+    finalizingAsrRef.current = null;
+    void finalizingSession?.cancel();
+    void cancelActiveAgentTurn().catch(() => undefined);
+    void setPlaybackMode();
     setState('idle');
     setTranscript('');
     setError(null);
-  }, [stopCurrentSpeech, setPlaybackMode]);
+  }, [cancelActiveAgentTurn, stopCurrentSpeech, setPlaybackMode]);
 
   useEffect(() => subscribeAIConsentInvalidation(reset), [reset]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      listeningStartSeqRef.current += 1;
+      if (resumeListeningTimerRef.current) {
+        clearTimeout(resumeListeningTimerRef.current);
+        resumeListeningTimerRef.current = null;
+      }
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      ttsQueueRef.current = [];
+      pendingTextRef.current = '';
+      void stopCurrentSpeech();
+      const session = realtimeAsrRef.current;
+      realtimeAsrRef.current = null;
+      void session?.cancel();
+      const finalizingSession = finalizingAsrRef.current;
+      finalizingAsrRef.current = null;
+      void finalizingSession?.cancel();
+      void cancelActiveAgentTurn().catch(() => undefined);
+    };
+  }, [cancelActiveAgentTurn, stopCurrentSpeech]);
 
   /**
    * 直接喂一段文本走 TTS 播 (不走 LLM, 用于晨间简报 / 系统播报场景).
@@ -722,8 +751,9 @@ export function useVoiceConversation() {
       // 清当前播放队列, 防止冲撞
       ttsQueueRef.current = [];
       pendingTextRef.current = '';
-      preSynthRef.current = null;
-      stopCurrentSpeech();
+      forceIosTtsRef.current = false;
+      ttsErrorRef.current = null;
+      await stopCurrentSpeech();
 
       setState('speaking');
       setTurns((prev) => [...prev, { role: 'assistant', text, at: Date.now() }]);
@@ -732,7 +762,7 @@ export function useVoiceConversation() {
       pendingTextRef.current = text;
       flushTail();
 
-      await waitTTSDrain();
+      await finishTTS();
       if (!mountedRef.current) return;
 
       if (opts?.thenListen) {
@@ -746,7 +776,7 @@ export function useVoiceConversation() {
         setState('idle');
       }
     },
-    [refreshVoiceStyle, stopCurrentSpeech, flushTail, startListening, waitTTSDrain],
+    [refreshVoiceStyle, stopCurrentSpeech, flushTail, finishTTS, startListening],
   );
 
   return {
