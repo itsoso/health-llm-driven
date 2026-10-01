@@ -65,6 +65,24 @@ def test_policy_binds_exact_revision_and_executor():
     assert server.validate_policy(policy(), now=100) == policy()
 
 
+def test_persistent_policy_does_not_expire_but_still_binds_revision(monkeypatch):
+    server = load_server()
+    persistent = policy(expires_at=0)
+    monkeypatch.setattr(server.time, "time", lambda: 2000000000)
+    assert server.validate_policy(persistent, now=2000000000) == persistent
+    server._assert_deployment_window(persistent)
+    assert server.authorize_command("check " + SHA, persistent) == "check"
+    with pytest.raises(server.LaunchError):
+        server.authorize_command("run " + "c" * 40, persistent)
+
+
+@pytest.mark.parametrize("expiry", [-1, None, 0.0, False])
+def test_only_integer_zero_means_persistent_authorization(expiry):
+    server = load_server()
+    with pytest.raises(server.LaunchError):
+        server.validate_policy(policy(expires_at=expiry), now=100)
+
+
 @pytest.mark.parametrize("uid,mode,nlink", [(501, 0o600, 1), (0, 0o660, 1), (0, 0o644, 1), (0, 0o600, 2)])
 def test_sensitive_file_requires_root_private_single_link(uid, mode, nlink):
     server = load_server()
@@ -579,24 +597,28 @@ def test_production_env_accepts_root_service_group_0640_without_chmod():
     server.validate_production_env_metadata(metadata, 100)
 
 
-def test_loopback_rejects_added_shell_directives_or_broader_authorization(monkeypatch):
+@pytest.mark.parametrize("expiry,authorization", [
+    (200, b'from="127.0.0.1",restrict,expiry-time="19700101000320" ssh-ed25519 AAAA'),
+    (0, b'from="127.0.0.1",restrict ssh-ed25519 AAAA'),
+])
+def test_loopback_rejects_added_shell_directives_or_broader_authorization(monkeypatch, expiry, authorization):
     server = load_server()
     monkeypatch.setattr(server, "secure_path", lambda *args, **kwargs: None)
     monkeypatch.setattr(server, "expiry_time", lambda _expiry: "19700101000320", raising=False)
     values = {
         "loopback.conf": server.loopback_config().encode(),
         "loopback.pub": b"ssh-ed25519 AAAA",
-        "authorized_keys": b'from="127.0.0.1",restrict,expiry-time="19700101000320" ssh-ed25519 AAAA',
+        "authorized_keys": authorization,
     }
     monkeypatch.setattr(server, "_read_private", lambda path: values[path.name])
-    server.validate_loopback(policy(expires_at=200))
+    server.validate_loopback(policy(expires_at=expiry))
     values["authorized_keys"] += b"\nssh-ed25519 AAAA"
     with pytest.raises(server.LaunchError):
-        server.validate_loopback(policy(expires_at=200))
+        server.validate_loopback(policy(expires_at=expiry))
     values["authorized_keys"] = values["authorized_keys"].splitlines()[0]
     values["loopback.conf"] += b"  LocalCommand id\n"
     with pytest.raises(server.LaunchError):
-        server.validate_loopback(policy(expires_at=200))
+        server.validate_loopback(policy(expires_at=expiry))
 
 
 def test_deploy_uses_only_fixed_command_and_private_authoritative_env(monkeypatch, tmp_path):

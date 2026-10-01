@@ -64,7 +64,7 @@ def validate_policy(data, *, now):
         or not isinstance(data["sha"], str)
         or re.fullmatch(r"[0-9a-f]{40}", data["sha"]) is None
         or type(data["expires_at"]) is not int
-        or data["expires_at"] <= now
+        or (data["expires_at"] != 0 and data["expires_at"] <= now)
         or not isinstance(data["executor_sha256"], str)
         or re.fullmatch(r"[0-9a-f]{64}", data["executor_sha256"]) is None
     ):
@@ -75,7 +75,7 @@ def validate_policy(data, *, now):
 def _assert_deployment_window(policy):
     now = time.time()
     validate_policy(policy, now=now)
-    if policy["expires_at"] - now < DEPLOY_TIMEOUT_SECONDS + RECOVERY_MARGIN_SECONDS:
+    if policy["expires_at"] != 0 and policy["expires_at"] - now < DEPLOY_TIMEOUT_SECONDS + RECOVERY_MARGIN_SECONDS:
         raise LaunchError("authorization lifetime is insufficient for deployment and recovery")
 
 
@@ -1063,12 +1063,12 @@ def validate_loopback(policy):
     public = _read_private(CONFIG / "loopback.pub").decode().strip()
     if re.fullmatch(r"ssh-ed25519 [A-Za-z0-9+/]+={0,2}", public) is None:
         raise LaunchError("invalid loopback public identity")
-    expiry = expiry_time(policy["expires_at"])
-    expected = f'from="127.0.0.1",restrict,expiry-time="{expiry}" {public}'
+    deadline = f',expiry-time="{expiry_time(policy["expires_at"])}"' if policy["expires_at"] != 0 else ""
+    expected = f'from="127.0.0.1",restrict{deadline} {public}'
     keys = _read_private(Path("/root/.ssh/authorized_keys")).decode().splitlines()
     matches = [line for line in keys if public.split()[1] in line]
     if matches != [expected]:
-        raise LaunchError("loopback identity lacks exact local-only expiring authorization")
+        raise LaunchError("loopback identity lacks exact local-only authorization")
 
 
 def laya_private_key():

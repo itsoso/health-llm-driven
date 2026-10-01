@@ -132,7 +132,7 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 
 用户明确授权后，已成功部署运行树的 iOS 续发使用 `target=testflight`，不运行 backend
 job、不补写或复用新的后端成功回执。仍先 validate、当前 main 精确 CI 和独立安全复审，
-由 canonical bootstrap 轮换为新 SHA、新短期身份；不得给旧 SHA 续期或清除消费记录。
+由 canonical bootstrap 切换至新 SHA，可沿用当前专用发布公钥；不得复用旧 SHA 或清除消费记录。
 `check-testflight`、`claim-testflight-build`、`claim-testflight-upload` 均在原 launcher
 锁内原子领取既有业务 lease，并持有它完成证明和 vendor claim：实际生产 clean revision、
 对应 SUCCEEDED 和精确历史 CI、无未处理维护、服务及健康检查通过。不能仅检查业务
@@ -202,14 +202,35 @@ receipt 不同、租约身份改变、未知部分 claim 或在终态持久化�
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
 核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的
 `scripts/bootstrap_trusted_release.py`。禁止上传本机脚本充当 bootstrap。
-安装器只接受八小时内到期的专用 ed25519 公钥，拒绝覆盖现有安装。
+安装器只接受专用 ed25519 公钥，拒绝覆盖现有安装。用户于 2026-10-01 明确取消
+八小时强制到期：`install` 和 `rotate` 的 `--expires-at` 默认 `0`，表示有效至主动
+撤销。服务器策略同样以整数 `expires_at=0` 表示无自动到期，SSH 授权不写入
+`expiry-time`。仍可显式指定未来 Unix 时间戳；原有正整数期限继续生效，不会因
+升级代码自动续期或复活。负数、布尔值、缺失策略字段等无效输入仍拒绝。
 
 后续授权使用同一 bootstrap 的显式 `rotate --retire-sha <old> --sha <new>`，仅从
 新 SHA 的上述受审 canonical staging 执行。必须先撤销旧 cloud/loopback 授权并删除
 旧 loopback 私钥，证明旧后端成功终止或从未启动、业务 lease 不存在、无发布进程。
 轮换持有原 launcher.lock，核验旧源码哈希、私有目录库存和消费记录，原样归档旧安装，
-再安装新的短期身份；旧 SHA、消费标记和锁 inode 不得删除或复用。任何未知现场或
+再安装绑定新 SHA 的授权。默认永久模式可沿用**当前** `cloud.pub`，从而无需在每次
+发布时更新 GitHub `REVA_RELEASE_SSH_KEY`；显式限时模式继续要求新身份。
+已被替换的历史 cloud key、任何历史 loopback key 都不得恢复使用。
+复用须在退休 intent 记录 `cloud_key_reused=true`；核查归档时只对完整连续复用链、
+当前 canonical 执行器及唯一精确 forced-command/restrict 授权证明通过的 cloud key
+允许仍然有效。待退休安装本身仍必须先撤权，历史 loopback 授权必须消失。
+旧 SHA、消费标记和锁 inode 不得删除或复用。任何未知现场或
 中途失败均保留 intent/安装证据并阻断，不支持通过再次执行重置授权或自动恢复。
+
+loopback 仍限 `127.0.0.1`，每个新版本生成新密钥并在退休前销毁旧私钥。永久模式的
+loopback 也不自动到期；不得对外导出。`revoke --sha <current-sha>` 撤销当前 cloud
+和 loopback 的精确 SSH 授权，普通 revoke 不自动删除 loopback 私钥，退休前仍须完成
+原有私钥销毁检查。密钥泄露时须主动撤销并更换；已经建立的 SSH 会话不因删除
+authorized_keys 自动结束，仍须按发布进程与会话检查处置，不能仅凭撤权宣称泄露已收尾。
+
+该调整只免去反复换密钥，不授予云端任意版本或 shell 权限。每次发布仍须由受审
+管理员入口完成新 SHA 授权、精确 CI、旧操作终态和锁检查；只更新 GitHub Secret
+不等于完成服务器授权。将旧限时安装迁移为永久模式同样走新受审 SHA 的 rotate，
+不得原地篡改旧策略/期限；沿用其 cloud 公钥时 GitHub Secret 保持原值即可。
 
 该生产站点已有一份旧格式 `retired/<sha>/{config,executor}` 归档。兼容读取只接受源码
 中固定 SHA 和受审 inventory 摘要，逐次校验 canonical executor、撤权、无私钥、从未
@@ -217,7 +238,7 @@ receipt 不同、租约身份改变、未知部分 claim 或在终态持久化�
 按目录形状接受任意 legacy 状态。其 SHA 与两类公钥继续参与全历史防复用。
 
 云端身份由服务器 forced-command 限定为绑定同一 SHA 的 `run`、`status`、
-`check`、`claim-build`、`claim-testflight`，不提供 shell/SFTP；服务器内部的短期 loopback 身份不离开服务器。
+`check`、`claim-build`、`claim-testflight`，不提供 shell/SFTP；服务器内部的 loopback 身份不离开服务器。
 后端业务部署仍由受审 fresh source 中的 **`deploy.sh -b`** 执行全部事务闸。
 `DEPLOY_SOURCE_SHA` 仅选择精确来源的 verify-only 模式，不是授权或绕过检查的开关。
 候选环境从当前生产 `root:health-app 0640` 配置派生，不改变其凭据和权限合同。

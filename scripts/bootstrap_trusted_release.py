@@ -1,4 +1,4 @@
-"""Install/revoke/rotate one expiring identity; not a remote deployment tool.
+"""Install/revoke/rotate a version-bound release identity; not a deployment tool.
 
 TRUST PREREQUISITE: an operator must freshly clone the fixed public GitHub repo
 at the reviewed SHA into /var/lib/reva-release/bootstrap/<sha>/source using
@@ -95,8 +95,8 @@ def validate_object_cache(objects):
 def validate_install(sha, expiry, public, *, now):
     if not isinstance(sha, str) or re.fullmatch(r"[0-9a-f]{40}", sha) is None:
         raise BootstrapError("exact reviewed SHA required")
-    if type(expiry) is not int or not now < expiry <= now + 28800:
-        raise BootstrapError("authorization must expire within eight hours")
+    if type(expiry) is not int or (expiry != 0 and expiry <= now):
+        raise BootstrapError("authorization expiry must be zero or a future timestamp")
     if not isinstance(public, str) or re.fullmatch(r"ssh-ed25519 [A-Za-z0-9+/]+={0,2}", public) is None:
         raise BootstrapError("a single uncommented ed25519 public key is required")
     encoded = public.split(" ")[1]
@@ -124,10 +124,10 @@ def expiry_time(expiry):
 
 
 def key_lines(expiry, cloud, loopback):
-    stamp = expiry_time(expiry)
+    deadline = f',expiry-time="{expiry_time(expiry)}"' if expiry != 0 else ""
     return (
-        f'command="/usr/bin/python3 -I /usr/local/lib/reva-release/trusted_release_server.py",restrict,expiry-time="{stamp}" {cloud}',
-        f'from="127.0.0.1",restrict,expiry-time="{stamp}" {loopback}',
+        f'command="/usr/bin/python3 -I /usr/local/lib/reva-release/trusted_release_server.py",restrict{deadline} {cloud}',
+        f'from="127.0.0.1",restrict{deadline} {loopback}',
     )
 
 
@@ -550,6 +550,46 @@ def _archives(sha):
             INSTALLED.parent.with_name(INSTALLED.parent.name + ".retired-" + sha))
 
 
+def _persistent_cloud_successor(sha, public):
+    """Prove uninterrupted, audited reuse up to the current restricted identity."""
+    policy = _read_json(CONFIG / "authorized-release.json")
+    if (not isinstance(policy, dict) or set(policy) != {"sha", "expires_at", "executor_sha256"}
+            or not isinstance(policy["sha"], str) or re.fullmatch(r"[0-9a-f]{40}", policy["sha"]) is None
+            or type(policy["expires_at"]) is not int or policy["expires_at"] != 0
+            or policy["sha"] == sha):
+        raise BootstrapError("reused cloud identity lacks persistent successor authorization")
+    secure(CONFIG / "cloud.pub", private=True)
+    secure(INSTALLED, private=True)
+    canonical = canonical_source(policy["sha"]) / "scripts/trusted_release_server.py"
+    digest = hashlib.sha256(canonical.read_bytes()).hexdigest()
+    if ((CONFIG / "cloud.pub").read_text().strip() != public
+            or policy["executor_sha256"] != digest
+            or hashlib.sha256(INSTALLED.read_bytes()).hexdigest() != digest):
+        raise BootstrapError("reused cloud identity differs from canonical successor")
+    seen = set()
+    while sha != policy["sha"]:
+        if sha in seen or len(seen) >= 10000:
+            raise BootstrapError("invalid cloud identity succession chain")
+        seen.add(sha)
+        record = STATE / "retired" / sha
+        _inventory(record, {"intent.json", "completed.json"})
+        intent = _read_json(record / "intent.json")
+        next_sha = intent.get("new_sha")
+        if (intent.get("old_sha") != sha or intent.get("cloud_key_reused") is not True
+                or not isinstance(next_sha, str) or re.fullmatch(r"[0-9a-f]{40}", next_sha) is None
+                or _read_json(record / "completed.json") != {"old_sha": sha, "new_sha": next_sha, "state": "RETIRED"}):
+            raise BootstrapError("cloud identity reuse lacks completed succession audit")
+        archived_public = _archives(sha)[0] / "cloud.pub"
+        secure(archived_public, private=True)
+        if archived_public.read_text().strip() != public:
+            raise BootstrapError("cloud identity changed within succession chain")
+        sha = next_sha
+    expected, _loopback = key_lines(0, public, public)
+    matches = [line for line in AUTHORIZED.read_text().splitlines() if public.split()[1] in line]
+    if matches != [expected]:
+        raise BootstrapError("reused cloud identity lacks exact restricted authorization")
+
+
 def _installation_evidence(sha, config, library):
     config_files = {"known_hosts", "loopback.conf", "authorized-release.json", "loopback.pub", "cloud.pub"}
     inventory = {"config": _inventory(config, config_files),
@@ -570,7 +610,9 @@ def _installation_evidence(sha, config, library):
         public = (config / name).read_text().strip()
         validate_install(sha, 1, public, now=0)
         if public.split()[1] in authorized:
-            raise BootstrapError("old identity is still authorized")
+            if config == CONFIG or name != "cloud.pub":
+                raise BootstrapError("old identity is still authorized")
+            _persistent_cloud_successor(sha, public)
     return inventory
 
 
@@ -602,9 +644,10 @@ def _retired_history():
             continue
         _inventory(entry, {"intent.json", "completed.json"})
         intent = _read_json(entry / "intent.json")
-        if (not isinstance(intent, dict) or set(intent) not in (
+        if (not isinstance(intent, dict) or set(intent) - {"cloud_key_reused"} not in (
                 {"old_sha", "new_sha", "installation", "workspace"},
                 {"old_sha", "new_sha", "installation", "workspace", "recovery_receipt"})
+                or ("cloud_key_reused" in intent and intent["cloud_key_reused"] is not True)
                 or intent["old_sha"] != entry.name or not isinstance(intent["new_sha"], str)
                 or re.fullmatch(r"[0-9a-f]{40}", intent["new_sha"]) is None
                 or intent["new_sha"] == entry.name
@@ -720,8 +763,11 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]
                         for name in ("cloud.pub", "loopback.pub")}
-        if public in retired_keys:
-            raise BootstrapError("rotation requires a new identity")
+        loopback_keys = {(config / "loopback.pub").read_text().strip()
+                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]}
+        reuse_cloud = expiry == 0 and public == (CONFIG / "cloud.pub").read_text().strip()
+        if public in loopback_keys or (public in retired_keys and not reuse_cloud):
+            raise BootstrapError("only the current cloud identity may be reused for persistent authorization")
         _installation_inputs(sha, expiry, public)
         _assert_idle()
         # Intent is durable before either rename. No cleanup, rollback, or
@@ -734,6 +780,8 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
         record.mkdir(mode=0o700)
         _sync_parent(record)
         intent = {"old_sha": old_sha, "new_sha": sha, "installation": installation, "workspace": workspace}
+        if reuse_cloud:
+            intent["cloud_key_reused"] = True
         if recovery_receipt is not None:
             intent["recovery_receipt"] = recovery_receipt
         check_locks()
@@ -1258,12 +1306,12 @@ def main():
         commands = parser.add_subparsers(dest="action", required=True)
         create = commands.add_parser("install", allow_abbrev=False)
         create.add_argument("--sha", required=True)
-        create.add_argument("--expires-at", required=True, type=int)
+        create.add_argument("--expires-at", default=0, type=int, help="Unix deadline; default 0 stays valid until revocation")
         create.add_argument("--cloud-public-key", required=True)
         rotation = commands.add_parser("rotate", allow_abbrev=False)
         rotation.add_argument("--retire-sha", required=True)
         rotation.add_argument("--sha", required=True)
-        rotation.add_argument("--expires-at", required=True, type=int)
+        rotation.add_argument("--expires-at", default=0, type=int, help="Unix deadline; default 0 permits reuse of the current cloud key")
         rotation.add_argument("--cloud-public-key", required=True)
         rotation.add_argument("--recovery-receipt-stdin", action="store_true")
         remove = commands.add_parser("revoke", allow_abbrev=False)
