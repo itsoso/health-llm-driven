@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { setAudioModeAsync } from 'expo-audio';
 import { createCloudRealtimeAsrSession } from '../../services/cloudRealtimeAsr';
 import { createCloudStreamingTtsSession } from '../../services/cloudStreamingTts';
-import { cancelAgentRun, streamChat } from '../../services/chat';
+import { cancelAgentRun, getAgentTurnStatus, streamChat } from '../../services/chat';
 import { splitTextForCloudTts } from '../../utils/ttsText';
 import { useVoiceConversation } from '../useVoiceConversation';
 import { ensureAIConsent } from '../../services/aiConsent';
@@ -80,6 +80,7 @@ const mockCreateStreamingTtsSession = createCloudStreamingTtsSession as jest.Moc
 >;
 const mockStreamChat = streamChat as jest.MockedFunction<typeof streamChat>;
 const mockCancelAgentRun = cancelAgentRun as jest.MockedFunction<typeof cancelAgentRun>;
+const mockGetAgentTurnStatus = getAgentTurnStatus as jest.MockedFunction<typeof getAgentTurnStatus>;
 const mockLoadVoiceStyle = loadVoiceStyle as jest.MockedFunction<typeof loadVoiceStyle>;
 
 const finalAsrResult = (text: string) => ({
@@ -104,6 +105,7 @@ describe('useVoiceConversation', () => {
     mockTtsAppend.mockResolvedValue(undefined);
     mockTtsFinish.mockResolvedValue(undefined);
     mockTtsCancel.mockResolvedValue(undefined);
+    mockGetAgentTurnStatus.mockResolvedValue(null);
     mockStreamChat.mockImplementation(async function* () {
       yield { type: 'done', conversationId: 42, runId: 'run-default' } as any;
     });
@@ -199,6 +201,40 @@ describe('useVoiceConversation', () => {
     await act(async () => { await persistedPromise; });
     await act(async () => { await result.current.startListening(); });
 
+    expect(mockCreateRealtimeSession).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toBe('error');
+    expect(result.current.error).toBe('上一轮对话未能安全停止，请稍后重试');
+    unmount();
+  });
+
+  it('fails closed when an active turn still has no cancellable run identity', async () => {
+    mockAsrStop.mockResolvedValue(finalAsrResult('仍在后台执行的问题'));
+    mockGetAgentTurnStatus.mockResolvedValue({
+      clientTurnId: 'voice-turn-pending',
+      status: 'running',
+      requestPersisted: true,
+      responsePersisted: false,
+      retryable: false,
+    });
+    let persisted!: () => void;
+    const persistedPromise = new Promise<void>(resolve => { persisted = resolve; });
+    mockStreamChat.mockImplementation(async function* (...args: any[]) {
+      const signal = args[3] as AbortSignal;
+      yield { type: 'persisted', clientTurnId: args[6] } as any;
+      persisted();
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      });
+    });
+    const { result, unmount } = renderHook(() => useVoiceConversation());
+
+    await act(async () => { await result.current.startListening(); });
+    act(() => { void result.current.stopListening(); });
+    await act(async () => { await persistedPromise; });
+    await act(async () => { await result.current.startListening(); });
+
+    expect(mockGetAgentTurnStatus).toHaveBeenCalledTimes(3);
+    expect(mockCancelAgentRun).not.toHaveBeenCalled();
     expect(mockCreateRealtimeSession).toHaveBeenCalledTimes(1);
     expect(result.current.state).toBe('error');
     expect(result.current.error).toBe('上一轮对话未能安全停止，请稍后重试');

@@ -46,6 +46,8 @@ logger = logging.getLogger(__name__)
 # set 持 task 引用防 GC; done_callback 自动清理.
 _BACKGROUND_AGENT_TASKS: set = set()
 _BACKGROUND_AGENT_TASKS_BY_RUN: dict[str, set[asyncio.Task]] = {}
+_BACKGROUND_AGENT_TASK_OWNERS: dict[str, int] = {}
+_BACKGROUND_AGENT_RUNS_BY_TURN: dict[tuple[int, str], str] = {}
 router = APIRouter()
 
 
@@ -1039,9 +1041,19 @@ def _release_agent_capacity_safely(
         )
 
 
-def _register_agent_runtime_task(run_id: str, task: asyncio.Task) -> None:
+def _register_agent_runtime_task(
+    run_id: str,
+    task: asyncio.Task,
+    *,
+    user_id: int,
+    client_turn_id: str | None,
+) -> None:
     tasks = _BACKGROUND_AGENT_TASKS_BY_RUN.setdefault(run_id, set())
     tasks.add(task)
+    _BACKGROUND_AGENT_TASK_OWNERS[run_id] = user_id
+    turn_key = (user_id, client_turn_id) if client_turn_id else None
+    if turn_key is not None:
+        _BACKGROUND_AGENT_RUNS_BY_TURN[turn_key] = run_id
 
     def _discard(done_task: asyncio.Task) -> None:
         registered = _BACKGROUND_AGENT_TASKS_BY_RUN.get(run_id)
@@ -1050,6 +1062,9 @@ def _register_agent_runtime_task(run_id: str, task: asyncio.Task) -> None:
         registered.discard(done_task)
         if not registered:
             _BACKGROUND_AGENT_TASKS_BY_RUN.pop(run_id, None)
+            _BACKGROUND_AGENT_TASK_OWNERS.pop(run_id, None)
+            if turn_key is not None and _BACKGROUND_AGENT_RUNS_BY_TURN.get(turn_key) == run_id:
+                _BACKGROUND_AGENT_RUNS_BY_TURN.pop(turn_key, None)
 
     task.add_done_callback(_discard)
 
@@ -1103,7 +1118,11 @@ async def cancel_agent_runtime_run(
     from app.services.agent_runtime_rollout import runtime_control_enabled
 
     if not runtime_control_enabled():
-        raise HTTPException(status_code=404, detail="Run 不存在")
+        if _BACKGROUND_AGENT_TASK_OWNERS.get(run_id) != current_user.id:
+            raise HTTPException(status_code=404, detail="Run 不存在")
+        if not _cancel_agent_runtime_task(run_id):
+            raise HTTPException(status_code=404, detail="Run 不存在")
+        return {"run_id": run_id, "status": "cancellation_requested"}
     try:
         result = AgentRuntimeCoordinator(db).request_cancel(
             current_user.id,
@@ -1135,6 +1154,9 @@ async def get_agent_turn_status(
     runtime = AgentRuntimeCoordinator(db)
     conversations = AgentConversationService(db)
     run = runtime.get_run_by_client_turn(current_user.id, client_turn_id)
+    local_run_id = _BACKGROUND_AGENT_RUNS_BY_TURN.get(
+        (current_user.id, client_turn_id),
+    )
     source = conversations.find_user_message_by_client_turn(
         current_user.id,
         client_turn_id,
@@ -1143,7 +1165,7 @@ async def get_agent_turn_status(
         current_user.id,
         client_turn_id,
     )
-    if run is None and source is None:
+    if run is None and source is None and local_run_id is None:
         raise HTTPException(
             status_code=404,
             detail="回合不存在",
@@ -1160,7 +1182,7 @@ async def get_agent_turn_status(
     # so row existence alone must never acknowledge a photo turn.
     request_persisted = bool(
         run is not None and run.source_message_id is not None
-    )
+    ) or bool(local_run_id is not None and source is not None)
     response_persisted = bool(
         assistant is not None
         and (assistant.meta or {}).get("client_turn_finalized") is True
@@ -1169,7 +1191,7 @@ async def get_agent_turn_status(
     )
     return {
         "client_turn_id": client_turn_id,
-        "run_id": run.run_id if run is not None else None,
+        "run_id": run.run_id if run is not None else local_run_id,
         "status": (
             run.status
             if run is not None
@@ -2112,7 +2134,12 @@ async def agent_stream(
 
         bg_task = asyncio.create_task(_bg())
         _BACKGROUND_AGENT_TASKS.add(bg_task)
-        _register_agent_runtime_task(runtime_context.run_id, bg_task)
+        _register_agent_runtime_task(
+            runtime_context.run_id,
+            bg_task,
+            user_id=user_id,
+            client_turn_id=client_turn_id,
+        )
         bg_task.add_done_callback(_BACKGROUND_AGENT_TASKS.discard)
 
         try:
@@ -2510,7 +2537,12 @@ async def agent_send(
         )
         raise
     agg_task = asyncio.create_task(_aggregate())
-    _register_agent_runtime_task(runtime_context.run_id, agg_task)
+    _register_agent_runtime_task(
+        runtime_context.run_id,
+        agg_task,
+        user_id=current_user.id,
+        client_turn_id=client_turn_id,
+    )
 
     # 快窗:绝大多数回合在这里完成,走历史非流式路径 + 原状态码语义。
     finished, _ = await asyncio.wait({agg_task}, timeout=AGENT_SEND_KEEPALIVE_SECONDS)

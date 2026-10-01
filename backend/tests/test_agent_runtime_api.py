@@ -884,6 +884,85 @@ def test_agent_runtime_cancel_endpoint_cancels_queued_run(
     ).status == "cancelled"
 
 
+def test_agent_runtime_mode_off_exposes_and_cancels_owner_scoped_local_run(
+    client, auth_user_and_headers, monkeypatch
+):
+    from app.api import agent as agent_api
+
+    user, headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "agent_runtime_mode", "off")
+
+    class FakeLoop:
+        @staticmethod
+        def call_soon_threadsafe(callback):
+            callback()
+
+    class FakeTask:
+        def __init__(self):
+            self.cancelled = False
+            self.callbacks = []
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancelled = True
+
+        def get_loop(self):
+            return FakeLoop()
+
+        def add_done_callback(self, callback):
+            self.callbacks.append(callback)
+
+    task = FakeTask()
+    other_user_task = FakeTask()
+    agent_api._register_agent_runtime_task(
+        "run-mode-off-owner",
+        task,
+        user_id=user.id,
+        client_turn_id="turn-mode-off-owner",
+    )
+    agent_api._register_agent_runtime_task(
+        "run-mode-off-other-user",
+        other_user_task,
+        user_id=user.id + 1,
+        client_turn_id="turn-mode-off-other-user",
+    )
+    try:
+        cross_owner_response = client.post(
+            "/api/v1/agent/runs/run-mode-off-other-user/cancel",
+            headers=headers,
+        )
+        status_response = client.get(
+            "/api/v1/agent/turns/turn-mode-off-owner/status",
+            headers=headers,
+        )
+        cancel_response = client.post(
+            "/api/v1/agent/runs/run-mode-off-owner/cancel",
+            headers=headers,
+        )
+
+        assert cross_owner_response.status_code == 404
+        assert other_user_task.cancelled is False
+        assert status_response.status_code == 200
+        assert status_response.json()["run_id"] == "run-mode-off-owner"
+        assert status_response.json()["status"] == "running"
+        assert cancel_response.status_code == 200
+        assert cancel_response.json() == {
+            "run_id": "run-mode-off-owner",
+            "status": "cancellation_requested",
+        }
+        assert task.cancelled is True
+    finally:
+        for callback in task.callbacks:
+            callback(task)
+        for callback in other_user_task.callbacks:
+            callback(other_user_task)
+    assert "run-mode-off-owner" not in agent_api._BACKGROUND_AGENT_TASK_OWNERS
+    assert (user.id, "turn-mode-off-owner") not in agent_api._BACKGROUND_AGENT_RUNS_BY_TURN
+    assert "run-mode-off-other-user" not in agent_api._BACKGROUND_AGENT_TASK_OWNERS
+
+
 def test_agent_runtime_existing_run_remains_operable_after_canary_pause(
     client, db, auth_user_and_headers, monkeypatch
 ):
@@ -1195,8 +1274,18 @@ async def test_agent_runtime_task_registry_cancels_and_cleans():
     task = asyncio.create_task(wait_forever())
     task_retried = asyncio.create_task(wait_forever())
     await started.wait()
-    _register_agent_runtime_task("run-registry-cancel", task)
-    _register_agent_runtime_task("run-registry-cancel", task_retried)
+    _register_agent_runtime_task(
+        "run-registry-cancel",
+        task,
+        user_id=101,
+        client_turn_id="turn-registry-cancel",
+    )
+    _register_agent_runtime_task(
+        "run-registry-cancel",
+        task_retried,
+        user_id=101,
+        client_turn_id="turn-registry-cancel",
+    )
 
     assert _cancel_agent_runtime_task("run-registry-cancel") is True
     with pytest.raises(asyncio.CancelledError):

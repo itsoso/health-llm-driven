@@ -105,3 +105,22 @@
   本地固定 commit 并进入独立 safety review；审查完成前不宣称 G4 通过。
 - G5 不在本次授权范围内：不 push、不部署、不发布 OTA 或原生包。
 - G6 生产路径未验证，不得以本地测试替代。
+
+### G4 initial safety review and remediation
+
+- 固定提交 `135249a5c` 的首次独立 safety review 裁决为 **NO-GO**：默认
+  Agent Runtime 关闭时缺少可取消 run identity；TTS 下游发送失败可能造成 relay
+  与有界队列互锁；PCM 缺少字节级会话上限和播放高低水位回压。
+- 已补齐 owner-scoped 本地 run/turn 注册、状态查询与取消；跨 owner 请求返回 404。
+  Mobile 在非终态且仍无 `run_id` 时 fail closed，不会打开竞争麦克风；仅在请求尚未
+  发出（voice-style preflight）时允许纯本地中断。
+- TTS bridge 现在限制单分片 256 KiB、总 PCM 180 秒、绝对会话时限和 provider
+  cleanup；下游断开会传播失败并取消 provider，stop/relay 同轮完成竞态有回归覆盖。
+- iOS PCM player 同步实施 256 KiB 单分片、180 秒会话上限，以及 8 秒/4 秒
+  high/low-water promise backpressure；stop 会拒绝所有等待中的 enqueue。
+- 修复后验证：后端相关 75 passed（含真实 WebSocket 未认证、已认证且已同意、
+  未同意握手路径）；Mobile 全量 326 suites / 3,215 passed / 1
+  existing skip；`npx tsc --noEmit` 与定向 ESLint 通过；`RevaPcmPlayer` arm64
+  iOS Simulator target `BUILD SUCCEEDED`。
+- 当前仍为 **G4 review in progress**；以上修复形成新的固定提交后，必须由独立
+  reviewer 重审并明确给出 GO，才能更新为 G4 PASS。

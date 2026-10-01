@@ -55,9 +55,9 @@ tap microphone
 | Surface | Contract |
 | --- | --- |
 | Mobile ASR | Reuse `/chat/transcribe/realtime`; partial text is display-only and final text is authoritative. |
-| Mobile Agent client | Send a stable `client_turn_id`; retain `run_id` from `request_persisted`/`done`; cancel through `/agent/runs/{run_id}/cancel`. |
-| Streaming TTS | `/tts/stream` accepts bounded incremental text and returns 24 kHz mono PCM chunks; both directions remain transient and consent-gated. |
-| Mobile playback | Native `AVAudioPlayerNode` queues PCM in memory, reports drain, and stops synchronously on barge-in/reset/unmount. |
+| Mobile Agent client | Send a stable `client_turn_id`; resolve the owner-scoped local `run_id` through persisted events or turn status even when managed runtime storage is off; fail closed unless that run is terminal or its cancellation request succeeds. |
+| Streaming TTS | `/tts/stream` accepts bounded incremental text and returns 24 kHz mono PCM chunks; it enforces 256 KiB per chunk, 180 seconds of PCM per session, a bounded event queue, an absolute session deadline, and provider cancellation on abnormal exit. Both directions remain transient and consent-gated. |
+| Mobile playback | Native `AVAudioPlayerNode` queues PCM in memory, reports drain, stops synchronously on barge-in/reset/unmount, and applies 8-second/4-second high/low-water backpressure plus the same chunk/session byte ceilings. |
 | Agent backend | Existing authentication, owner isolation, runtime cancellation, write gates, and terminal semantics remain authoritative. |
 | Audio privacy | Mic activation is explicit; PCM is transient, bounded, not logged, and cancelled on reset, consent invalidation, or unmount. |
 
@@ -80,6 +80,17 @@ Then queued and active audio stops immediately
 And the active streaming TTS session is cancelled
 And the local Agent stream is aborted
 And the server Agent Run receives a cancellation request before the next mic session opens
+
+Given an active Agent turn has not yet exposed a cancellable owner-scoped run identity
+When the user attempts to barge in
+Then the next microphone session remains closed
+And the UI reports that the previous turn could not be stopped safely
+
+Given the TTS provider overruns an audio bound or the downstream socket disconnects
+When PCM relay is active
+Then the bridge terminates within its bounded deadline
+And provider synthesis is cancelled
+And queued audio cannot grow without a byte or playback-watermark bound
 
 Given consent is invalidated, the screen unmounts, or reset is requested
 When a realtime ASR session is active
