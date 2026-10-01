@@ -204,3 +204,21 @@
   完成复审并给出 **G4 fixed-code GO**，独立重跑四个受影响套件 54 passed。
   最终 Mobile 全量 324 suites / 3,210 passed / 1 existing skip（exit 0）。
   该 GO 仅针对代码安全：精确合并主干 CI、原生制品及候选 UI 验收仍为 G5 条件。
+- 生命周期修复 PR #269 已合入精确 main
+  `fe3f34e4f82af9f1147293b8bde05dca75aba203`，CI `36840705330` SUCCESS。
+  独立兼容性复核确认该客户端仍兼容已部署后端 `e8fa94a9`，本轮未部署 main
+  上其他后端功能。完整 Mobile tree 与固定复审源码 `6bc52c309` 相同。
+- Release 模拟器 build 273 已编译、安装并启动；实际构建源码为 `6bc52c309`，
+  SDK0 / production 通道，不代表 Rokid 硬件或 Ad Hoc 通道验收。应用未登录，
+  已请求用户手动认证；可执行的语音 UI、插话、后台和异常恢复检查仍待完成。
+- 从干净、精确绿色 `fe3f34e4f` 构建的正式 `rokid-production` Ad Hoc
+  `1.3.4 (273)` Archive / export 成功，IPA SHA-256 为
+  `3421effe429daf336faaae8f206f0762af0d1176f26548fc149476a535db9ebc`。
+  包装脚本随后因系统 Bash 3.2 的空数组 nounset 展开失败，未创建发布回执、
+  未上传。只读排查又复现 `codesign` 可选证书前缀参数必须使用等号绑定。
+- 上述发布工具兼容修复不改变校验边界：空数组不传多余参数，非空回执路径保留
+  参数边界及 verifier 失败退出码；证书叶子仍必须匹配描述文件授权证书。
+  两项真实 RED 转 GREEN，脚本/安全回归 52 passed；修复后的只读 `verify_app`
+  对同一 IPA 严格校验通过，build 273、通道正确、已登记设备数 1。
+  原失败记录和原包源码身份保持不变，未伪造或跨 SHA 重绑定回执。
+  工具复审、正式包装回执及已登录候选 UI 仍独立裁决；G5/G6 不标完成。

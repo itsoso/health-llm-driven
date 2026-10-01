@@ -162,7 +162,7 @@ def verify_app(app, *, version, channel, runner=subprocess.run, now=None):
     with tempfile.TemporaryDirectory(prefix="reva-ipa-certificate-") as directory:
         prefix = str(Path(directory) / "certificate")
         runner(
-            ["/usr/bin/codesign", "-d", "--extract-certificates", prefix, str(app)],
+            ["/usr/bin/codesign", "-d", f"--extract-certificates={prefix}", str(app)],
             check=True,
             capture_output=True,
         )
