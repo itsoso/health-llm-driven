@@ -339,7 +339,7 @@ class TestFetchLatestLabsIdentity:
         user = _user(db)
         _add(db, user.id, "eGFRcr-cys", 38.0)
         _add(db, user.id, "LDLC", 5.5, unit="mmol/L")
-        _add(db, user.id, "血清", 450.0, item_code="UA")
+        _add(db, user.id, "UA", 450.0, item_code="UA")
         db.commit()
         out = fetch_latest_labs(db, user.id)
         assert out["egfr"] == 38.0
@@ -737,13 +737,15 @@ class TestRound6DerivedCodeCannotOverrideDisplayName:
         db.commit()
         assert fetch_latest_labs(db, user.id)["creatinine"] == 80.0
 
-    def test_cjk_only_display_name_still_admitted_by_code(self, db):
+    def test_bare_registry_code_alone_does_not_admit_ambiguous_name(self, db):
+        # 「血清」+ item_code UA: 裸 registry code 是旧版归一化从名字派生的, 不是独立证据 → 不补认
+        # (与 #259 前 main 一致, 不读 hint); 自由文本 OCR 提示见 TestReconcileLegacyCodeHintsAddNothing。
         from app.twin._collectors import fetch_latest_labs
 
         user = _user(db)
         _add(db, user.id, "血清", 450.0, item_code="UA")
         db.commit()
-        assert fetch_latest_labs(db, user.id)["uric_acid"] == 450.0
+        assert "uric_acid" not in fetch_latest_labs(db, user.id)
 
     def test_imported_real_serum_uric_acid(self, db):
         from app.twin._collectors import fetch_latest_labs
@@ -772,3 +774,86 @@ class TestRound6NonBlocking:
         _add(db, user.id, name, 1.1, unit="mmol/L")
         db.commit()
         assert fetch_latest_labs(db, user.id)["ldl"] == 4.2
+
+
+# ─────────────────────── reconcile review (on #259 canonical layer) ───────────────────────
+
+
+class TestReconcileSingleLiverEnzymeNeverVanishes:
+    """肝酶规则要 ≥2 项才触发: 单项升高不能被算「已覆盖」而零痕迹, 必须进兜底。"""
+
+    @pytest.mark.parametrize("name", ["丙氨酸氨基转移酶", "GPT", "天门冬氨酸转氨酶", "γ-谷氨酰基转移酶", "ALT", "AST", "GGT"])
+    def test_single_enzyme_surfaces(self, name):
+        a = _alerts(_twin([_item(name, 300.0, "U/L")]))
+        assert "labs.liver_enzyme_pattern" not in a
+        assert name in _uncategorized(a)
+
+    def test_ratio_plus_single_enzyme_both_surface(self):
+        a = _alerts(_twin([_item("AST/ALT", 2.5), _item("ALT", 80.0, "U/L")]))
+        assert {"AST/ALT", "ALT"} <= set(_uncategorized(a))
+
+    def test_enzymes_used_by_firing_rule_are_covered(self):
+        a = _alerts(_twin([_item("ALT", 250.0, "U/L"), _item("AST", 210.0, "U/L")]))
+        assert a["labs.liver_enzyme_pattern"].severity == Severity.CRITICAL
+        assert "ALT" not in _uncategorized(a) and "AST" not in _uncategorized(a)
+
+
+class TestReconcileLegacyCodeHintsAddNothing:
+    """存量行 name_en = item_code = 旧版 normalize_item_name(名字) 派生的 registry code: 不是独立信息,
+    不能把显示名认不出的别的项目 (UACR / Gastrin / Crystals) 补认成该指标。"""
+
+    @pytest.mark.parametrize("key,real_name,real,decoy,code,decoy_val", [
+        ("uric_acid", "尿酸", 480.0, "UACR", "UA", 18.0),
+        ("uric_acid", "尿酸", 480.0, "尿微量白蛋白(UALB)", "UA", 18.0),
+        ("ast", "谷草转氨酶", 30.0, "GASTRIN", "AST", 100.0),
+        ("ast", "谷草转氨酶", 30.0, "管型(CAST)", "AST", 3.0),
+        ("creatinine", "肌酐", 150.0, "Crystals", "CREA", 3.0),
+    ])
+    def test_registry_code_hint_does_not_admit_other_item(self, db, key, real_name, real, decoy, code, decoy_val):
+        from app.twin._collectors import fetch_latest_labs
+
+        user = _user(db)
+        _add(db, user.id, real_name, real, day=OLD_DAY)
+        _add(db, user.id, decoy, decoy_val, name_en=code, item_code=code)
+        db.commit()
+        assert fetch_latest_labs(db, user.id)[key] == real
+
+    def test_free_text_ocr_hint_still_admits(self, db):
+        from app.twin._collectors import fetch_latest_labs
+
+        user = _user(db)
+        _add(db, user.id, "Serum lipid panel item 3", 4.9, unit="mmol/L", name_en="LDL-C", item_code="LDL-C")
+        db.commit()
+        assert fetch_latest_labs(db, user.id)["ldl"] == 4.9
+
+
+class TestReconcilePrefilterIsNotIdentity:
+    """SQL 宽前缀只负责捞行, 不能当身份关键字。"""
+
+    @pytest.mark.parametrize("key,real_name,real,decoy,decoy_val,unit", [
+        ("egfr", "eGFR", 95.0, "Anti-Glomerular Basement Membrane Ab", 2.5, "RU/mL"),
+        ("alt", "谷丙转氨酶", 30.0, "丙氨酸", 350.0, "μmol/L"),
+        ("ast", "谷草转氨酶", 30.0, "天冬氨酸", 40.0, "μmol/L"),
+        ("ldl", "LDL-C", 4.6, "Low density lipoprotein receptor", 1.0, None),
+    ])
+    def test_prefilter_word_does_not_admit(self, db, key, real_name, real, decoy, decoy_val, unit):
+        from app.twin._collectors import fetch_latest_labs
+
+        user = _user(db)
+        _add(db, user.id, real_name, real, day=OLD_DAY)
+        _add(db, user.id, decoy, decoy_val, unit=unit)
+        db.commit()
+        assert fetch_latest_labs(db, user.id)[key] == real
+
+    def test_anti_gbm_never_kidney_alert(self):
+        assert "labs.egfr_decline" not in _alerts(_twin([_item("Anti-Glomerular Basement Membrane Ab", 2.5, "RU/mL")]))
+
+    @pytest.mark.parametrize("name", ["Urate crystals", "Uric acid crystals"])
+    def test_urate_crystals_not_uric_acid(self, name):
+        a = _alerts(_twin([_item(name, 12.0)]))
+        assert "labs.uric_acid_high" not in a
+        assert name in _uncategorized(a)
+
+    @pytest.mark.parametrize("name", ["UA (uricase)", "Serum UA (Uricase)", "UA enzymatic"])
+    def test_method_words_keep_serum_ua(self, name):
+        assert _alerts(_twin([_item(name, 560.0)]))["labs.uric_acid_high"].severity == Severity.MEDIUM

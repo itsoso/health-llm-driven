@@ -337,18 +337,18 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
         # 形如: 'creatinine' 关键字 → key='creatinine'
         # 用 ilike 模糊匹配, 一个 key 命中多个 candidate, 取最新
         KEY_PATTERNS = {
-            "ldl": ["LDL", "低密度脂蛋白", "low density", "low-density"],
-            "hdl": ["HDL", "高密度脂蛋白", "high density", "high-density"],
+            "ldl": ["LDL", "低密度脂蛋白"],
+            "hdl": ["HDL", "高密度脂蛋白"],
             "total_cholesterol": ["TC", "总胆固醇"],
             "triglycerides": ["TG", "甘油三酯"],
             "blood_glucose": ["FBG", "FPG", "空腹血糖"],
-            "hba1c": ["HBA1C", "HbA1c", "A1C", "糖化血红蛋白"],
-            "alt": ["ALT", "GPT", "谷丙转氨酶", "丙氨酸"],
-            "ast": ["AST", "GOT", "谷草转氨酶", "天冬氨酸", "天门冬氨酸"],
-            "ggt": ["GGT", "γ-谷氨酰", "谷氨酰转肽酶", "谷氨酰基", "谷氨酰转移酶"],
+            "hba1c": ["HBA1C", "HbA1c", "糖化血红蛋白"],
+            "alt": ["ALT", "GPT", "谷丙转氨酶"],
+            "ast": ["AST", "GOT", "谷草转氨酶"],
+            "ggt": ["GGT", "γ-谷氨酰", "谷氨酰转肽酶"],
             "creatinine": ["CRE", "SCr", "肌酐"],
-            "egfr": ["GFR", "肾小球滤过率", "Glomerular", "CKD-EPI"],
-            "uric_acid": ["UA", "uric", "urate", "尿酸"],
+            "egfr": ["eGFR", "肾小球滤过率"],
+            "uric_acid": ["UA", "uric", "尿酸"],
             # PhenoAge 输入项 (单位见 LabsContext 字段注释):
             "albumin": ["ALB", "白蛋白"],
             "crp": ["hs-CRP", "hsCRP", "CRP", "C反应蛋白", "C-反应蛋白"],
@@ -367,6 +367,14 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             "creatinine": "CREA", "egfr": "egfr", "uric_acid": "UA",
         }
 
+        # 只扩 SQL 预筛 (捞出别名表才认识的写法), 绝不当身份关键字: 「Anti-Glomerular Basement Membrane
+        # Ab」「丙氨酸」(血浆氨基酸)「Low density lipoprotein receptor」都含这些词 —— 身份只由 registry 判。
+        PREFILTER_EXTRA = {
+            "ldl": ["low density", "low-density"], "hdl": ["high density", "high-density"],
+            "hba1c": ["A1C"], "alt": ["丙氨酸"], "ast": ["天冬氨酸", "天门冬氨酸"],
+            "ggt": ["谷氨酰基", "谷氨酰转移酶"], "egfr": ["GFR", "Glomerular", "CKD-EPI"], "uric_acid": ["urate"],
+        }
+
         from sqlalchemy import or_
         from app.biomarkers.normalize import latest_reading, normalize_observation
 
@@ -376,7 +384,7 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
                 MedicalIndicator.name.ilike(f"%{p}%") |
                 MedicalIndicator.name_en.ilike(f"%{p}%") |
                 MedicalIndicator.item_code.ilike(f"%{p}%")
-                for p in patterns
+                for p in (*patterns, *PREFILTER_EXTRA.get(key, ()))
             ])
             base_q = (
                 db.query(MedicalIndicator.value, MedicalIndicator.name, MedicalIndicator.unit,

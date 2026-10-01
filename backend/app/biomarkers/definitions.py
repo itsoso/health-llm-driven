@@ -326,7 +326,7 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
                     RefRange(low=155, high=428)),
         unit_conversions={"mg/dl": 59.48, "mmol/l": 1000.0},
         higher_is_risk=True,
-        excludes=("结晶", "酸碱", "(尿)", "尿液", "尿尿酸", "urine", "24h", "24小时"),  # 尿酸结晶 / 尿酸碱度(pH)
+        excludes=("结晶", "酸碱", "(尿)", "尿液", "尿尿酸", "urine", "24h", "24小时", "crystal"),  # 尿酸结晶 / 尿酸碱度(pH)
         solo_aliases=("ua", "sua"),  # UA-PH / UA-SG / UA-PRO 是尿常规
         plausible=(0.0, 3000.0),  # 肿瘤溶解可 >1500 μmol/L
     ),
@@ -427,7 +427,8 @@ def _solo_rejects(code: str, key: str) -> bool:
     return letters not in _SOLO[code]
 
 
-_SPECIMEN_WORD_RE = re.compile(r"(?<![a-z])(?:serum|plasma|blood|whole)(?![a-z])")
+# 样本/方法学词不改变指标身份: 「Serum UA」「UA (uricase)」「UA enzymatic」仍是血尿酸
+_SPECIMEN_WORD_RE = re.compile(r"(?<![a-z])(?:serum|plasma|blood|whole|uricase|enzymatic|method)(?![a-z])")
 
 
 # 方法学注释 (「HbA1c (NGSP/IFCC)」): 括号里的「/」不是比值

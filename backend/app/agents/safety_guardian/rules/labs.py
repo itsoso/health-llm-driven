@@ -94,6 +94,17 @@ def _find_standard_hba1c(
 # ─────────────────────── 肝酶三联 ─────────────────────────
 
 
+def _liver_readings(abns: List[Dict[str, Any]]) -> Dict[str, Tuple[Dict[str, Any], float]]:
+    """ALT/AST/GGT 各自最新检查日的最差可读值 (canonical: Gastrin/Fasting/Blast 不是 AST, AST/ALT 比值
+    不是酶, μkat/L 换算成 U/L)。读不出的不算。"""
+    out = {}
+    for name, code, kws in (("ALT", "ALT", ALT_KEYWORDS), ("AST", "AST", AST_KEYWORDS), ("GGT", "GGT", GGT_KEYWORDS)):
+        item, v = _find_canonical(abns, code, kws)
+        if item is not None and v is not None:
+            out[name] = (item, v)
+    return out
+
+
 @register
 def liver_enzyme_pattern(twin: HealthTwin) -> Optional[Alert]:
     """
@@ -109,13 +120,7 @@ def liver_enzyme_pattern(twin: HealthTwin) -> Optional[Alert]:
     if not abns:
         return None
 
-    # canonical code (边界感知: Gastrin/Fasting/Blast 不是 AST; AST/ALT 比值不是酶; μkat/L 换算成 U/L)
-    readings = {
-        name: _find_canonical(abns, code, kws)
-        for name, code, kws in (("ALT", "ALT", ALT_KEYWORDS), ("AST", "AST", AST_KEYWORDS),
-                                ("GGT", "GGT", GGT_KEYWORDS))
-    }
-    readings = {k: (item, v) for k, (item, v) in readings.items() if item is not None and v is not None}
+    readings = _liver_readings(abns)
     alt, ast, ggt = (readings.get(k, (None, None))[0] for k in ("ALT", "AST", "GGT"))
 
     # 至少两项升高才触发
@@ -484,15 +489,19 @@ def uncategorized_abnormal_summary(twin: HealthTwin) -> Optional[Alert]:
     # 已被其他规则精确覆盖的关键字 (白细胞模式)
     covered = ["淋巴细胞比例", "中性粒细胞比例"]
     liver = (("ALT", ALT_KEYWORDS), ("AST", AST_KEYWORDS), ("GGT", GGT_KEYWORDS))
+    # 肝酶: 只有 liver_enzyme_pattern 真触发 (≥2 项) 时, 它实际取用的那几行才算已覆盖。单项升高、
+    # AST/ALT 比值、同一酶的其它行都不触发规则 → 必须落到本兜底, 绝不零痕迹 (旧静态子串「ALT」会吞掉)。
+    liver_used = [item for item, _ in _liver_readings(abns).values()]
+    if len(liver_used) < 2:
+        liver_used = []
 
     def _covered(item: Dict[str, Any]) -> bool:
         name = item.get("item_name") or ""
         if any(kw in name for kw in covered):
             return True
-        # 肝酶: 与 liver_enzyme_pattern 同一判定。旧静态子串「AST」「ALT」把 AST/ALT 比值也当已覆盖 → 静默丢。
-        value, unit = item.get("value"), item.get("unit")
-        if any(reading_for_code(name, value, unit, c, kw) is not None for c, kw in liver):
+        if any(item is used for used in liver_used):
             return True
+        value, unit = item.get("value"), item.get("unit")
         # LDL / eGFR: 与 ldl_high / kidney_function_decline 同一判定 (reading_for_code), 只藏规则评估过的项。
         # 旧关键字「低密度」「肌酐」把 VLDL-C、尿肌酐也当已覆盖 → 没有任何规则评估却被静默丢弃。
         # 血肌酐没有规则评估 (肾功能规则只看 eGFR), 不算已覆盖, 落到本兜底。

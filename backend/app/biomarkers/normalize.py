@@ -174,7 +174,19 @@ def matches_row(name: Optional[str], code: str, keywords: Iterable[str] = (), hi
         return True
     if resolve_code(name or "") is not None or name_conflicts_with_code(name, code):
         return False
-    return any(resolve_code(h) == code for h in hints if h)
+    return any(_hint_is_independent(name, h) and resolve_code(h) == code for h in hints if h)
+
+
+def _hint_is_independent(name: Optional[str], hint: str) -> bool:
+    """裸 registry code 的提示 (family_health 存量行 name_en = item_code = 旧版 normalize_item_name(名字))
+    不是独立信息: 旧版大小写不敏感子串 + 反向包含把 UACR/UALB 编成 UA、GASTRIN/CAST 编成 AST、Crystals 编成
+    CREA。只有现行 normalize_item_name 从显示名也给出同一 code 时才采信; 自由文本 OCR 提示 (LDL-C) 照用。"""
+    hint = hint.strip()
+    if hint not in REGISTRY:
+        return True
+    from app.services.exam_packages import normalize_item_name
+
+    return normalize_item_name(name or "")[0] == hint
 
 
 def value_for_code(value, unit: Optional[str], code: str) -> Optional[float]:
