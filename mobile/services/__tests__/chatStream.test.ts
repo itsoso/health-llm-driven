@@ -101,7 +101,7 @@ describe('streamChat', () => {
     });
 
     xhr.responseText =
-      'data: {"event":"request_persisted","data":{"conversation_id":42,"user_message_id":98,"client_turn_id":"turn-mobile-42"}}\n\n';
+      'data: {"event":"request_persisted","data":{"conversation_id":42,"user_message_id":98,"client_turn_id":"turn-mobile-42","run_id":"run-mobile-42"}}\n\n';
     xhr.onprogress?.();
 
     await expect(first).resolves.toEqual({
@@ -110,6 +110,7 @@ describe('streamChat', () => {
         conversationId: 42,
         userMessageId: 98,
         clientTurnId: 'turn-mobile-42',
+        runId: 'run-mobile-42',
       },
       done: false,
     });

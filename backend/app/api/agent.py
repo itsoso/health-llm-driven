@@ -1921,6 +1921,13 @@ async def agent_stream(
                     if event.get("event") == "request_persisted":
                         persisted_data = event.get("data")
                         if isinstance(persisted_data, dict):
+                            # Expose the owner-scoped runtime identity as soon as
+                            # the durable request exists. Voice barge-in can then
+                            # cancel the exact run without waiting for done.
+                            persisted_data.setdefault("run_id", runtime_context.run_id)
+                            persisted_data.setdefault(
+                                "attempt_id", runtime_context.attempt_id
+                            )
                             source_message_id = _bind_agent_runtime_request(
                                 bg_db,
                                 runtime_context,

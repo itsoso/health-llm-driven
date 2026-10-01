@@ -1,0 +1,109 @@
+# Feature Spec: Realtime Voice Conversation
+
+> Status: phase 2 locally implemented; safety review pending
+> Owner: Codex
+> Updated: 2026-10-01
+> Related PRD: docs/prd/2026-09-30-realtime-voice-conversation.md
+> Related code: mobile/hooks/useVoiceConversation.ts, mobile/services/cloudRealtimeAsr.ts, mobile/services/chat.ts
+
+## 1. Decision
+
+Upgrade the Mobile voice conversation page from Apple one-shot recognition to the existing authenticated cloud realtime ASR path, and stream Agent output into authenticated cloud TTS with in-memory PCM playback. A finalized transcript is submitted exactly once with a stable client turn ID. Starting a new utterance while the assistant is thinking or speaking stops playback, cancels the TTS session, aborts the local Agent stream, and requests cancellation of the matching server Agent Run before opening the next microphone session.
+
+## 2. Requirement Admission
+
+```yaml
+RequirementAdmission:
+  request: "执行类似 ChatGPT 的实时语音对话改造"
+  classification: product_change
+  first_user_fit: mobile user who prefers hands-free health conversation
+  core_loop_step: Mobile Capture -> Agent chat -> safe response or confirmed action
+  first_class_objects: [ExecutionEvent, WriteIntent]
+  target_surface: Mobile voice-chat
+  source_of_truth: mobile/hooks/useVoiceConversation.ts
+  safety_level: privacy_sensitive
+  prescription_or_causal_verdict: unchanged; existing Agent policy remains authoritative
+  autonomy_tier: manual_confirm
+  evidence_provenance: user-triggered microphone input and existing Agent evidence chain
+  claim_hedging: unchanged
+  verification_window: immediate interaction and focused automated tests
+  success_metric: realtime partial transcript, one final submission, first-chunk PCM playback, and server-backed interruption
+  added_user_burden: low
+  burden_justification: explicit microphone control remains visible; no extra confirmation for ordinary questions
+  non_goals: direct speech-to-speech model, full-duplex AEC, wake word, background listening, new medical-write authority
+  smallest_end_to_end_slice: existing realtime ASR + Agent stream identity/cancel + streaming TTS + in-memory PCM playback
+  stale_surface_to_remove_or_archive: Apple Speech recognition dependency from voice-chat hook
+  spec_required: yes
+```
+
+## 3. User Flow
+
+```text
+tap microphone
+  -> authenticated realtime ASR session starts
+  -> partial transcript appears while speaking
+  -> silence or explicit stop asks ASR for the authoritative final result
+  -> non-empty final transcript is submitted exactly once to the existing Agent stream
+  -> speakable phrases are appended to one authenticated streaming TTS session
+  -> returned PCM chunks play immediately without temporary audio files
+  -> tapping microphone during thinking/speaking stops PCM, cancels TTS, and cancels the matching Agent Run
+  -> after cancellation succeeds, the next realtime ASR session starts
+```
+
+## 4. Contracts
+
+| Surface | Contract |
+| --- | --- |
+| Mobile ASR | Reuse `/chat/transcribe/realtime`; partial text is display-only and final text is authoritative. |
+| Mobile Agent client | Send a stable `client_turn_id`; retain `run_id` from `request_persisted`/`done`; cancel through `/agent/runs/{run_id}/cancel`. |
+| Streaming TTS | `/tts/stream` accepts bounded incremental text and returns 24 kHz mono PCM chunks; both directions remain transient and consent-gated. |
+| Mobile playback | Native `AVAudioPlayerNode` queues PCM in memory, reports drain, and stops synchronously on barge-in/reset/unmount. |
+| Agent backend | Existing authentication, owner isolation, runtime cancellation, write gates, and terminal semantics remain authoritative. |
+| Audio privacy | Mic activation is explicit; PCM is transient, bounded, not logged, and cancelled on reset, consent invalidation, or unmount. |
+
+## 5. Acceptance Criteria
+
+```gherkin
+Given AI consent is valid
+When the user starts listening
+Then voice-chat starts the authenticated cloud realtime ASR session
+And partial text is visible without being submitted
+
+Given the ASR session has partial text
+When silence is detected or the user stops listening
+Then voice-chat waits for the final ASR result
+And submits the non-empty final transcript exactly once
+
+Given an Agent turn is running or TTS is speaking
+When the user starts a new utterance
+Then queued and active audio stops immediately
+And the active streaming TTS session is cancelled
+And the local Agent stream is aborted
+And the server Agent Run receives a cancellation request before the next mic session opens
+
+Given consent is invalidated, the screen unmounts, or reset is requested
+When a realtime ASR session is active
+Then capture is cancelled and cannot reopen after cleanup
+
+Given a voice turn requests a health write
+When existing Agent safety rules require confirmation
+Then voice input does not bypass the existing confirmation or receipt path
+```
+
+## 6. Non-Goals And Rollback
+
+- No full-duplex microphone/playback, acoustic echo cancellation, wake word, or background audio.
+- ASR does not fall back to Apple Speech or a second cloud provider. TTS may fall back to
+  local iOS speech only when the cloud session fails before any text reaches the provider;
+  mid-stream failures never replay already-sent health guidance.
+- No backend schema or health-data contract change.
+- Phase 2 requires a new signed iOS build because it adds a native PCM player; it is not OTA-compatible.
+- Rollback can disable the streaming TTS client and return to the existing authenticated MP3 endpoint; ASR and Agent endpoints remain compatible.
+
+## 7. Verification
+
+```bash
+cd mobile && npm test -- --runInBand --runTestsByPath hooks/__tests__/useVoiceConversation.test.ts services/__tests__/chatStream.test.ts services/__tests__/cloudRealtimeAsr.test.ts
+cd mobile && npx tsc --noEmit --pretty false
+git diff --check
+```

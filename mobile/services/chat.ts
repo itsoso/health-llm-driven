@@ -172,6 +172,7 @@ export interface StreamEvent {
   conversationId?: number;
   userMessageId?: number;
   clientTurnId?: string;
+  runId?: string;
   imageUrls?: string[];
   messageId?: number;
   requestPersisted?: boolean;
@@ -523,6 +524,7 @@ export async function* streamChat(
           conversationId: parsed.data?.conversation_id,
           userMessageId: parsed.data?.user_message_id,
           clientTurnId: parsed.data?.client_turn_id,
+          runId: typeof parsed.data?.run_id === 'string' ? parsed.data.run_id : undefined,
           imageUrls,
         };
       } else if (parsed.event === 'answer_evidence') {
@@ -685,6 +687,7 @@ export async function* streamChat(
           type: 'done',
           conversationId: parsed.data?.conversation_id,
           messageId: parsed.data?.message_id,
+          runId: typeof parsed.data?.run_id === 'string' ? parsed.data.run_id : undefined,
           requestPersisted: typeof parsed.data?.request_persisted === 'boolean'
             ? parsed.data.request_persisted
             : undefined,
@@ -967,6 +970,26 @@ export async function getAgentTurnStatus(
     ...(typeof data.error_code === 'string'
       ? { errorCode: data.error_code }
       : {}),
+  };
+}
+
+export async function cancelAgentRun(
+  runId: string,
+): Promise<{ runId: string; status: string }> {
+  await enforceAppEgressAllowed();
+  const token = await getToken();
+  const res = await fetch(
+    `${BASE_URL}/agent/runs/${encodeURIComponent(runId)}/cancel`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  if (!res.ok) throw new Error(`cancelAgentRun failed: ${res.status}`);
+  const data = await res.json();
+  return {
+    runId: String(data.run_id || runId),
+    status: String(data.status || 'unknown'),
   };
 }
 

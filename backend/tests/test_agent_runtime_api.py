@@ -681,6 +681,14 @@ def test_agent_stream_passes_canonical_identity_to_executor(
 
     async def fake_run_stream(self, **kwargs):
         captured.update(kwargs)
+        yield {
+            "event": "request_persisted",
+            "data": {
+                "conversation_id": 41,
+                "user_message_id": 42,
+                "client_turn_id": "runtime-stream-identity",
+            },
+        }
         yield {"event": "token", "data": {"content": "stream-ok"}}
         yield {
             "event": "done",
@@ -713,9 +721,14 @@ def test_agent_stream_passes_canonical_identity_to_executor(
         for line in response.text.splitlines()
         if line.startswith("data: ")
     ]
+    persisted = next(
+        event for event in events if event.get("event") == "request_persisted"
+    )
     done = next(event for event in events if event.get("event") == "done")
     assert captured["run_id"].startswith("run_")
     assert captured["attempt_id"].startswith("attempt_")
+    assert persisted["data"]["run_id"] == captured["run_id"]
+    assert persisted["data"]["attempt_id"] == captured["attempt_id"]
     assert done["data"]["run_id"] == captured["run_id"]
     assert done["data"]["attempt_id"] == captured["attempt_id"]
 
