@@ -45,3 +45,25 @@ run or a continuation of S5: `docs/_generated/harness-runs/b7ed7b93c56e.jsonl`.
   regression: 213 passed; expanded gate/server/workflow/bootstrap/EAS/continuation
   regression including intermediate-code-revert cases: 432 passed, exit 0.
 - G4 and actual TestFlight build/upload remain pending; this is not a release receipt.
+
+## Fixed source review and CI follow-up
+
+- Infrastructure commit `37df1f1f5b8d87a5b9cc5dde99139bdaee907001` received
+  independent G4 source GO; reviewer independently reran 201 tests, all passed.
+- Fresh CI-mode integration: 67 passed, 44.14 seconds (SQLite contract scope,
+  not PostgreSQL semantic evidence). Secret scan, System Map and dossier checks passed.
+- Supplemental local broad release suite: 1,829 passed, 9 environment skips,
+  84 subtests passed, 2 failures caused by missing Python 3.12 on PATH. Corrected
+  environment reran the complete affected scope module: 11 passed.
+- GitHub CI `36867737931` passed release-invariants but backend balanced-16
+  exposed the existing `AGENTS.md` byte budget violation introduced by relay
+  documentation: 10,358 bytes exceeds 10,240. Local targeted test reproduced RED.
+- The follow-up only condenses the relay sentence; all operational details remain
+  in `docs/ops/github-relay.md`, and canonical URL/TLS/isolation rules remain intact.
+- Targeted GREEN: byte-budget test passed after reduction to 10,229 bytes;
+  `git diff --check` and 167-dossier consistency also passed.
+- No new release authorization, build claim or vendor write has occurred. Server
+  canonical source is staged; 31 historical retirements and old NEVER_STARTED
+  evidence were verified. Current policy remains a811; production remains 30ac.
+- Main is non-green: external writes are paused pending explicit user permission
+  for this narrow repair, followed by fresh exact-revision CI and release gates.
