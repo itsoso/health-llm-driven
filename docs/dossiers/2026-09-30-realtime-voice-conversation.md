@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | G4 passed; awaiting G5 authorization |
-| 当前阶段 | G4 passed; G5 not authorized |
+| 状态 | G4 passed; G5 release candidate verified locally |
+| 当前阶段 | G5 integration decision pending |
 | Controller | product-pipeline |
 | Delegate | health-harness-orchestrator |
 | Overlay | safety-gate |
@@ -103,7 +103,8 @@
 
 - 用户于 2026-10-01 指示“继续按规划往下执行”，已授权创建仅包含本功能的
   本地固定 commit 并进入独立 safety review；审查完成前不宣称 G4 通过。
-- G5 不在本次授权范围内：不 push、不部署、不发布 OTA 或原生包。
+- 用户随后指示“继续”，已进入 G5 发布准备；该指示未裁决如何处理本地 `main`
+  中夹带的其他未发布提交，因此在集成路径明确前不 push、不部署、不发布原生包。
 - G6 生产路径未验证，不得以本地测试替代。
 
 ### G4 initial safety review and remediation
@@ -130,3 +131,19 @@
   仍需压测/监控；Simulator 构建不能替代真机 AudioSession、蓝牙/来电中断与性能。
 - G5 前仍需真实凭据/真实后端端到端验证首包、思考中/播放中插话、断网/慢客户端、
   授权撤回和后台切换，并确认取消后旧 Agent 不再工具写入或继续播报。
+
+### G5 release preparation
+
+- `origin/main` 当前为 `fb0165f7d`；原工作区 `main` 除本功能三个提交外还领先
+  6 个其他功能提交和 1 个 merge commit，并带有与本功能无关的未提交修改，不能
+  将其整体作为本功能发布候选直接推送。
+- 已从 `origin/main` 创建隔离 worktree，并仅 cherry-pick 本功能三个提交；得到
+  voice-only 候选 `5691092e9`（前序为 `40f888933`、`c9568dd97`），无冲突且
+  工作树干净，证明本功能不依赖前述其他本地提交。
+- 候选验证：后端相关测试 75 passed；Mobile 全量 324 suites / 3,190 passed /
+  1 existing skip；`npx tsc --noEmit`、System Map、`git diff --check`、密钥扫描
+  和 Skill 治理均通过。候选套件数少于原工作区，是因为隔离候选未包含其他本地
+  功能及其测试。
+- 当前断点：需要明确是否把 voice-only 候选推到独立分支并创建 PR；在目标
+  revision 合入 `main` 且对应 CI 精确绿色之前，后端部署 Gate 不通过。该原生
+  iOS 变化不符合 OTA 边界，后续只能走新的原生构建；真实凭据端到端场景仍未完成。
