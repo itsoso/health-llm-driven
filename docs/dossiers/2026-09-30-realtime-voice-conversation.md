@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | G3 passed; G4 review in progress |
+| 状态 | G4 passed; awaiting G5 authorization |
+| 当前阶段 | G4 passed; G5 not authorized |
 | Controller | product-pipeline |
 | Delegate | health-harness-orchestrator |
 | Overlay | safety-gate |
@@ -122,5 +122,11 @@
   未同意握手路径）；Mobile 全量 326 suites / 3,215 passed / 1
   existing skip；`npx tsc --noEmit` 与定向 ESLint 通过；`RevaPcmPlayer` arm64
   iOS Simulator target `BUILD SUCCEEDED`。
-- 当前仍为 **G4 review in progress**；以上修复形成新的固定提交后，必须由独立
-  reviewer 重审并明确给出 GO，才能更新为 G4 PASS。
+- 修复固定提交：`226e0f779`（基于 Phase 2 提交 `135249a5c`）。新的独立
+  reviewer 已对这两个精确提交完成只读复核并给出 **`G4 verdict: GO`**：三个原
+  blocker 均已解除，未发现新的 Critical/High 阻断问题。因此 G4 裁决为 PASS。
+- reviewer 记录的非阻断风险：mode-off registry 为进程内状态，多 worker 落到
+  不同进程时会安全 fail closed 但插话可能不可用；极端 provider callback burst
+  仍需压测/监控；Simulator 构建不能替代真机 AudioSession、蓝牙/来电中断与性能。
+- G5 前仍需真实凭据/真实后端端到端验证首包、思考中/播放中插话、断网/慢客户端、
+  授权撤回和后台切换，并确认取消后旧 Agent 不再工具写入或继续播报。
