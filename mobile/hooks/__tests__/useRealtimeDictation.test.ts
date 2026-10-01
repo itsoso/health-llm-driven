@@ -23,6 +23,7 @@ describe('useRealtimeDictation', () => {
   let callbacks: {
     onTranscript: (text: string, result?: any) => void;
     onLevel?: (level: number) => void;
+    onError?: (error: Error) => void;
   };
 
   beforeEach(() => {
@@ -58,6 +59,17 @@ describe('useRealtimeDictation', () => {
     expect(session.start).toHaveBeenCalledTimes(1);
     expect(result.current.isDictating).toBe(true);
     expect(callbacks.onLevel).toEqual(expect.any(Function));
+  });
+
+  it('ends active dictation and reports a runtime disconnect immediately', async () => {
+    const onError = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onError }));
+    await act(async () => { await result.current.startDictation(); });
+    act(() => { callbacks.onError?.(new Error('云端实时语音连接已断开')); });
+    expect(result.current.isDictating).toBe(false);
+    expect(result.current.audioLevel).toBe(0);
+    expect(result.current.error).toBe('云端实时语音连接已断开');
+    expect(onError).toHaveBeenCalledWith('云端实时语音连接已断开');
   });
 
   it('forwards cloud partial text and keeps the cloud final result on release', async () => {

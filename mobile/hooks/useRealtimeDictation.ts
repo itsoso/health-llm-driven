@@ -165,8 +165,26 @@ export function useRealtimeDictation({
     setError(null);
 
     const session = createCloudRealtimeAsrSession({
-      onTranscript: acceptCloudTranscript,
-      onLevel: setAudioLevel,
+      onTranscript: (text, result) => {
+        if (generation === startGenerationRef.current) acceptCloudTranscript(text, result);
+      },
+      onLevel: (level) => {
+        if (generation === startGenerationRef.current) setAudioLevel(level);
+      },
+      onError: (failure) => {
+        if (generation !== startGenerationRef.current || sessionRef.current !== session) return;
+        startGenerationRef.current += 1;
+        activeRef.current = false;
+        acceptingFinalResultsRef.current = false;
+        startingRef.current = false;
+        sessionRef.current = null;
+        setIsDictating(false);
+        setAudioLevel(0);
+        setError(failure.message);
+        emitAsrTerminal('failed', latestTextRef.current, 'cloud_asr_runtime_failed');
+        emitTerminal('failed', 'cloud_asr_runtime_failed');
+        onErrorRef.current?.(failure.message);
+      },
     });
     sessionRef.current = session;
 
