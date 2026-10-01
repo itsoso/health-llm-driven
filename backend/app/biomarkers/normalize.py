@@ -54,10 +54,16 @@ def _to_float(v) -> Optional[float]:
 
 def _normalize(
     defn: BiomarkerDefinition, fval: float, unit: Optional[str], sex: Optional[str], age: Optional[int],
+    name: Optional[str] = None,
 ) -> Optional[NormalizedObservation]:
     status = unit_status(defn, unit)
     if status == "incompatible":  # 已识别但量纲不符 (肌酐 ml/min、血红蛋白 pg): 肯定是别的项目
         return None
+    if not (status == "ok" and has_unit(unit)):  # 缺单位 / 未识别写法: 只在名字与量级都无歧义时采信
+        if defn.unitless_max is not None and fval > defn.unitless_max:
+            return None
+        if defn.count_qualifiers and not any(q in _norm_text(name) for q in defn.count_qualifiers):
+            return None
     if status == "ok" and has_unit(unit):
         norm_val, norm_unit = to_canonical_unit(defn, fval, unit)
     else:
@@ -134,7 +140,7 @@ def normalize_observation(
     fval = _to_float(value)
     if defn is None or fval is None:
         return None
-    return _normalize(defn, fval, unit, sex, age)
+    return _normalize(defn, fval, unit, sex, age, name_or_code)
 
 
 def matches_code(name: Optional[str], code: str, keywords: Iterable[str] = ()) -> bool:
@@ -195,6 +201,6 @@ def rejection_reason(name: Optional[str], value, unit: Optional[str]) -> Optiona
     defn = REGISTRY[code]
     if unit_status(defn, unit) == "incompatible":
         return f"unit {unit!r} does not fit {code}"
-    if _normalize(defn, fval, unit, None, None) is None:
-        return f"value implausible for {code}"
+    if _normalize(defn, fval, unit, None, None, name) is None:
+        return f"value implausible or ambiguous without unit for {code}"
     return None

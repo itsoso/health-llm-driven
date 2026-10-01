@@ -67,6 +67,10 @@ class BiomarkerDefinition:
     plausible: Optional[tuple[float, float]] = None
     # (阈值, 乘数): 缺单位/未识别单位且数值低于阈值时按小单位换算 (血红蛋白 14.5 是 g/dL 写法 → 145 g/L)
     small_unit: Optional[tuple[float, float]] = None
+    # 缺单位/未识别单位时, 名字必须含其一才采信 (裸「中性粒细胞」计数与百分比共用, 0.58 可能是比例)
+    count_qualifiers: tuple[str, ...] = ()
+    # 缺单位/未识别单位时数值上限 (缺单位的 PT 98 是活动度 %, 不是 98 秒)
+    unitless_max: Optional[float] = None
 
     def resolve_range(self, sex: Optional[str], age: Optional[int]) -> Optional[RefRange]:
         # 先找最具体(性别匹配)的, 再退化到通用.
@@ -212,14 +216,16 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
                  "NEUT", "NEUT#", "NEU#", "NE#", "ANC", "neutrophil count", "absolute neutrophil count",
                  "neutrophils"),
         ref_ranges=(RefRange(low=1.8, high=6.3),),
-        unit_conversions={"10e9/l": 1.0, "10^3/μl": 1.0, "10^3/ul": 1.0, "k/μl": 1.0, "k/ul": 1.0,
+        # G/L = giga/L (计数不可能是克/升, 只在本定义里这样解读)
+        unit_conversions={"10e9/l": 1.0, "10^3/μl": 1.0, "10^3/ul": 1.0, "k/μl": 1.0, "k/ul": 1.0, "g/l": 1.0,
                           "/μl": 0.001, "/ul": 0.001, "个/μl": 0.001},
         higher_is_risk=False,  # 高低均可异常; 偏低 (粒缺) 为风险
         # 百分比 / 嗜酸嗜碱 / ANCA / NAP / NGAL / 杆状分叶分类 / 体液 都不是外周血中性粒细胞绝对值
-        excludes=("%", "百分", "比例", "比率", "嗜酸", "嗜碱", "胞浆", "抗体", "anca", "碱性磷酸酶", "明胶酶",
-                  "ngal", "弹性蛋白酶", "杆状", "分叶", "脑脊液", "胸水", "腹水", "积液", "关节液", "尿液", "(尿)",
-                  "吞噬", "趋化", "功能", "cd64"),
+        excludes=("%", "百分", "比例", "比率", "率", "相对", "relative", "嗜酸", "嗜碱", "胞浆", "抗体", "anca",
+                  "碱性磷酸酶", "明胶酶", "ngal", "弹性蛋白酶", "杆状", "分叶", "脑脊液", "胸水", "腹水", "积液",
+                  "关节液", "穿刺", "骨髓", "痰", "尿", "吞噬", "趋化", "功能", "cd64", "-ri", "-gi"),
         plausible=(0.0, 30.0),
+        count_qualifiers=("绝对值", "计数", "总数", "数", "#", "count", "absolute", "anc"),
     ),
     # 凝血
     BiomarkerDefinition(
@@ -229,8 +235,10 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
         ref_ranges=(RefRange(low=10.0, high=14.0),),
         higher_is_risk=True,
         # INR / 活动度(PTA%) / 比值 / 对照值 / 异常凝血酶原(PIVKA-II) 都不是患者 PT 秒数
-        excludes=("inr", "国际标准化", "活动度", "活动", "activity", "%", "对照", "control", "异常", "pivka"),
+        excludes=("inr", "国际标准化", "活动度", "活动", "活性", "activity", "%", "对照", "control", "正常值",
+                  "参考", "异常", "pivka"),
         plausible=(5.0, 150.0),
+        unitless_max=60.0,
     ),
     # 肝功能
     BiomarkerDefinition(
