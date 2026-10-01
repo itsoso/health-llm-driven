@@ -222,3 +222,20 @@
   对同一 IPA 严格校验通过，build 273、通道正确、已登记设备数 1。
   原失败记录和原包源码身份保持不变，未伪造或跨 SHA 重绑定回执。
   工具复审、正式包装回执及已登录候选 UI 仍独立裁决；G5/G6 不标完成。
+
+### TestFlight native-only continuation — 2026-10-01
+
+- 用户明确要求发布 TestFlight，并在发布密钥修复后要求继续部署。
+- 已只读核验受控后端部署 `36861632116` 成功，生产源码及原始
+  `SUCCEEDED` 回执均绑定 `30ac1c67be7b2df79363ac7509f70f8a56ce4834`；
+  该流程的 iOS 构建和上传均未运行。此前私钥解析失败的运行保留，不重放。
+- 本次提交仅追加审计文档，为 `target=testflight` 提供独立候选；不修改
+  Mobile、后端或发布器代码，不重新部署后端、不重写其成功回执。
+- 后续须核验该候选精确 main CI、CI-mode 集成闸、独立安全复核及
+  canonical 授权轮换，再先 validate、后执行一次 TestFlight-only 发布。
+  续发闸必须证明生产代码、原始回执、服务健康和候选运行时代码一致。
+- 沿用已验证的专用 cloud key；授权切换只通过 canonical bootstrap，
+  保留历史 intent、消费标记和锁 inode，不清理或复用旧发布状态。
+- 只使用本次 workflow 返回的精确 EAS STORE production build ID 上传。
+  构建、上传、Apple processing 和同包 UI 验收分别记录；尚未创建本次
+  vendor 构建，不预先宣称 TestFlight 可用或 G5/G6 完成，不提交 App Review。
