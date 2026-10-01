@@ -295,6 +295,25 @@ def fetch_ecg_latest(db: Session, user_id: int) -> Optional[Dict[str, Any]]:
 # ─────────────────────────── medical exam abnormal ────────────────────
 
 
+def _latest_day_candidates(base_q, code: str, patterns, page_size: int = 200) -> list:
+    """按 (record_date, id) 倒序分页, 收集到该指标最新匹配日的全部行为止 (无日期行并入, 见 latest_reading)。"""
+    from app.biomarkers.normalize import matches_row
+
+    cands, newest, offset = [], None, 0
+    while True:
+        page = base_q.offset(offset).limit(page_size).all()
+        for v, n, u, d, name_en, item_code in page:
+            if newest is not None and d is not None and d != newest:
+                return cands
+            row = (d, n, v, u, None, (name_en, item_code))
+            cands.append(row)
+            if newest is None and d is not None and matches_row(n, code, patterns, row[5]):
+                newest = d
+        if len(page) < page_size:
+            return cands
+        offset += page_size
+
+
 def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
     """从 MedicalIndicator 抓最新一次的常用化验项数值.
 
@@ -318,18 +337,18 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
         # 形如: 'creatinine' 关键字 → key='creatinine'
         # 用 ilike 模糊匹配, 一个 key 命中多个 candidate, 取最新
         KEY_PATTERNS = {
-            "ldl": ["LDL", "低密度脂蛋白"],
-            "hdl": ["HDL", "高密度脂蛋白"],
+            "ldl": ["LDL", "低密度脂蛋白", "low density", "low-density"],
+            "hdl": ["HDL", "高密度脂蛋白", "high density", "high-density"],
             "total_cholesterol": ["TC", "总胆固醇"],
             "triglycerides": ["TG", "甘油三酯"],
             "blood_glucose": ["FBG", "FPG", "空腹血糖"],
-            "hba1c": ["HBA1C", "HbA1c", "糖化血红蛋白"],
-            "alt": ["ALT", "GPT", "谷丙转氨酶"],
-            "ast": ["AST", "GOT", "谷草转氨酶"],
-            "ggt": ["GGT", "γ-谷氨酰", "谷氨酰转肽酶"],
+            "hba1c": ["HBA1C", "HbA1c", "A1C", "糖化血红蛋白"],
+            "alt": ["ALT", "GPT", "谷丙转氨酶", "丙氨酸"],
+            "ast": ["AST", "GOT", "谷草转氨酶", "天冬氨酸", "天门冬氨酸"],
+            "ggt": ["GGT", "γ-谷氨酰", "谷氨酰转肽酶", "谷氨酰基", "谷氨酰转移酶"],
             "creatinine": ["CRE", "SCr", "肌酐"],
-            "egfr": ["eGFR", "肾小球滤过率"],
-            "uric_acid": ["UA", "uric", "尿酸"],
+            "egfr": ["GFR", "肾小球滤过率", "Glomerular", "CKD-EPI"],
+            "uric_acid": ["UA", "uric", "urate", "尿酸"],
             # PhenoAge 输入项 (单位见 LabsContext 字段注释):
             "albumin": ["ALB", "白蛋白"],
             "crp": ["hs-CRP", "hsCRP", "CRP", "C反应蛋白", "C-反应蛋白"],
@@ -361,7 +380,7 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             ])
             base_q = (
                 db.query(MedicalIndicator.value, MedicalIndicator.name, MedicalIndicator.unit,
-                         MedicalIndicator.record_date)
+                         MedicalIndicator.record_date, MedicalIndicator.name_en, MedicalIndicator.item_code)
                 .filter(
                     MedicalIndicator.user_id == user_id,
                     MedicalIndicator.value.isnot(None),
@@ -373,8 +392,9 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             # 参考 6.3–9.0%) 不是标准 A1c、VLDL-C 不是 LDL。逐条向旧回退直到 canonical 命中。
             code = KEY_CODES.get(key)
             if code is not None:
-                # 只取该指标最新一天; 那天读不出 → 缺失, 绝不退回更旧的值冒充现值
-                cands = [(d, n, v, u, None) for v, n, u, d in base_q.limit(50).all()]
+                # 只取该指标最新一天; 那天读不出 → 缺失, 绝不退回更旧的值冒充现值。
+                # 分页扫过 SQL 宽前缀的假命中 (几十条 UA-* 尿常规不能把真血尿酸挤出窗口), 读到最新匹配日为止。
+                cands = _latest_day_candidates(base_q, code, patterns)
                 _, reading = latest_reading(cands, code, patterns)
                 row = (reading,) if reading is not None else None
             else:

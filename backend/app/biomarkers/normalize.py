@@ -15,6 +15,7 @@ from app.biomarkers.definitions import (
     REGISTRY,
     BiomarkerDefinition,
     _norm_text,
+    _norm_unit,
     _occurs,
     get_definition,
     has_unit,
@@ -65,6 +66,11 @@ def _normalize(
         if defn.count_qualifiers and not any(q in _norm_text(name) for q in defn.count_qualifiers):
             return None
     if status == "ok" and has_unit(unit):
+        # 声明单位下原值离谱 (HbA1c 6.8 "mmol/mol"、LDL 5.2 "mg/dL"): 多是单位写错 —— 读不出 (需核对),
+        # 绝不按声明单位硬换算成一个「正常值」(假安心)
+        raw_range = defn.unit_plausible.get(_norm_unit(unit))
+        if raw_range is not None and not (raw_range[0] <= fval <= raw_range[1]):
+            return None
         norm_val, norm_unit = to_canonical_unit(defn, fval, unit)
     else:
         # 缺单位 / 未识别写法 (「-」、mmoI/L 等 OCR 变体): 不确定不等于不是 —— 按 canonical 读 (旧约定),
@@ -72,6 +78,8 @@ def _normalize(
         norm_val, norm_unit = fval, defn.canonical_unit
         if defn.small_unit is not None and fval < defn.small_unit[0]:
             norm_val = round(fval * defn.small_unit[1], 3)
+        elif (mag := next((m for m in defn.magnitude_units if m[0] < fval <= m[1]), None)) is not None:
+            norm_val = round(fval * mag[2], 2)  # LDL 200 无单位 = mg/dL
         elif defn.code == "glucose_hba1c" and 20 < fval < 130:  # 缺单位的 IFCC mmol/mol (53 ≈ 7.0%); ≥130 多是 g/L 血红蛋白串项
             norm_val = round(fval / 10.929 + 2.15, 2)
 
@@ -155,6 +163,20 @@ def matches_code(name: Optional[str], code: str, keywords: Iterable[str] = ()) -
     return any(_occurs(_norm_text(k), text) for k in keywords if k) and not name_conflicts_with_code(name, code)
 
 
+def matches_row(name: Optional[str], code: str, keywords: Iterable[str] = (), hints: Iterable[str] = ()) -> bool:
+    """matches_code + name_en/item_code 提示: 显示名认不出 (None) 且不与 code 冲突时, 提示解析命中 code 也算
+    (与写入期 biomarker_service._normalize_item 一致: 英文全称 + OCR 给的 LDL-C / eGFR)。
+
+    提示只能补认, 不能否决显示名: 存量行的 item_code 由旧版 normalize_item_name 从名字派生, 曾把
+    「肾小球滤过率(EPI-cr)」编成 CREA —— 让它否决会把真 eGFR 挡掉 (漏报)。显示名认出别的指标或与 code
+    冲突 (「UA-PH」+ 派生 code UA) 时, 提示也救不回来。"""
+    if matches_code(name, code, keywords):
+        return True
+    if resolve_code(name or "") is not None or name_conflicts_with_code(name, code):
+        return False
+    return any(resolve_code(h) == code for h in hints if h)
+
+
 def value_for_code(value, unit: Optional[str], code: str) -> Optional[float]:
     """按 code 的定义读值 (canonical 单位); 已识别的异量纲单位 / 不合理数值 → None。"""
     defn = REGISTRY.get(code)
@@ -173,13 +195,13 @@ def reading_for_code(
 
 
 def latest_reading(rows, code: str, keywords: Iterable[str] = (), *, pick=None):
-    """rows: [(日期键, 名字, 值, 单位, 原对象)], 返回 (对象, 值)。
+    """rows: [(日期键, 名字, 值, 单位, 原对象[, 提示])], 返回 (对象, 值)。提示 = (name_en, item_code), 见 matches_row。
 
     最新一次 = 名字属于该指标的行里日期最新的那天 (读不读得出都算); 无日期的行 (合成 twin / 旧缓存)
     保守并入最新组, 绝不因缺日期被丢。只在那一组里挑能读出的行 (pick 为 max/min 时挑风险最高的;
     否则取第一条); 一条都读不出 → (组内第一条, None), 绝不退回更旧的值冒充现值。没有该指标 → (None, None)。
     """
-    mine = [r for r in rows if matches_code(r[1], code, keywords)]
+    mine = [r for r in rows if matches_row(r[1], code, keywords, r[5] if len(r) > 5 else ())]
     if not mine:
         return None, None
     newest = max((r[0] for r in mine if r[0]), default=None)

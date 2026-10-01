@@ -71,6 +71,16 @@ class BiomarkerDefinition:
     count_qualifiers: tuple[str, ...] = ()
     # 缺单位/未识别单位时数值上限 (缺单位的 PT 98 是活动度 %, 不是 98 秒)
     unitless_max: Optional[float] = None
+    # 英文按整词匹配的排除词 (「19del」「EGFRvIII」命中, 「model」不命中「del」); 中文仍按子串
+    word_excludes: tuple[str, ...] = ()
+    # 只在名字(去单位后)的英文字母**恰好**是它时才算该指标: 「血清UA」「UA(酶法)」✓,
+    # 「UA-PH」「UA-SG」(尿常规) ✗。名字含该定义其它别名时不受限。
+    solo_aliases: tuple[str, ...] = ()
+    # 声明单位下原值的合理区间 (换算前): 超出 → 读不出 (需核对), 绝不按该单位硬换算成「正常值」
+    # (HbA1c 6.8 mmol/mol → 2.77%、LDL 5.2 mg/dL → 0.13 都会是假安心)
+    unit_plausible: dict = field(default_factory=dict)
+    # 缺单位/未识别单位时按量级推断: ((lo, hi, 乘数), ...) —— LDL 200 无单位 = mg/dL
+    magnitude_units: tuple[tuple[float, float, float], ...] = ()
 
     def resolve_range(self, sex: Optional[str], age: Optional[int]) -> Optional[RefRange]:
         # 先找最具体(性别匹配)的, 再退化到通用.
@@ -126,16 +136,23 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
     # 血脂
     BiomarkerDefinition(
         code="lipid_ldl", display="低密度脂蛋白胆固醇", domain="lipid", canonical_unit="mmol/L",
-        aliases=("低密度脂蛋白", "低密度脂蛋白胆固醇", "LDL", "LDL-C", "LDL-胆固醇", "LDLC"),
+        aliases=("低密度脂蛋白", "低密度脂蛋白胆固醇", "LDL", "LDL-C", "LDL-胆固醇", "LDLC", "LDLcalc",
+                 "LDL-calc", "cLDL", "DLDL", "LDLD", "LDL-D", "low density lipoprotein cholesterol",
+                 "low-density lipoprotein cholesterol", "ldl cholesterol"),
         ref_ranges=(RefRange(high=3.4),),
         unit_conversions={"mg/dl": 1 / 38.67, "g/l": 2.586},
         higher_is_risk=True,
         excludes=("极低密度", "vldl", "小而密", "sdldl", "sd-ldl", "sd ldl", "氧化", "oxldl", "ox-ldl",
-                  "颗粒", "ldl-p"),
+                  "颗粒", "ldl-p", "甘油三酯", "ldl-tg", "受体", "ldlr"),
+        plausible=(0.0, 30.0),  # 纯合子 FH 未治疗可达 ~26 mmol/L; PCSK9 下极低值保留
+        unit_plausible={"mg/dl": (10.0, 1200.0)},  # <10 "mg/dL" 与 mmol/L 写错单位无法区分 → 需核对
+        magnitude_units=((30.0, 1200.0, 1 / 38.67),),
     ),
     BiomarkerDefinition(
         code="lipid_hdl", display="高密度脂蛋白胆固醇", domain="lipid", canonical_unit="mmol/L",
-        aliases=("高密度脂蛋白", "高密度脂蛋白胆固醇", "HDL", "HDL-C", "HDLC"),
+        aliases=("高密度脂蛋白", "高密度脂蛋白胆固醇", "HDL", "HDL-C", "HDLC",
+                 "high density lipoprotein cholesterol", "high-density lipoprotein cholesterol",
+                 "hdl cholesterol"),
         ref_ranges=(RefRange(low=1.0, sex="male"), RefRange(low=1.3, sex="female"), RefRange(low=1.0)),
         unit_conversions={"mg/dl": 1 / 38.67, "g/l": 2.586},
         higher_is_risk=False,  # 偏低为风险
@@ -147,7 +164,8 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
         ref_ranges=(RefRange(high=1.7),),
         unit_conversions={"mg/dl": 1 / 88.57, "g/l": 1.129},
         higher_is_risk=True,
-        excludes=("甲状腺", "球蛋白", "tg-ab", "anti-tg", "抗tg"),  # 甲状腺球蛋白(Tg) / 抗体(TgAb)
+        # 甲状腺球蛋白(Tg) / 抗体(TgAb); LDL-TG(低密度脂蛋白甘油三酯)是脂蛋白亚组分, 不是总 TG
+        excludes=("甲状腺", "球蛋白", "tg-ab", "anti-tg", "抗tg", "低密度", "高密度", "ldl", "hdl"),
     ),
     BiomarkerDefinition(
         code="lipid_tc", display="总胆固醇", domain="lipid", canonical_unit="mmol/L",
@@ -157,7 +175,8 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
         unit_conversions={"mg/dl": 1 / 38.67, "g/l": 2.586},
         higher_is_risk=True,
         # 「胆固醇」是 HDL-C / LDL-C / VLDL-C / 非 HDL-C 的子串: 这些都不是总胆固醇
-        excludes=("高密度", "低密度", "hdl", "ldl", "游离", "胆固醇酯", "残余", "残粒"),
+        # 英文全称「Low Density Lipoprotein Cholesterol」含 cholesterol, 不是总胆固醇
+        excludes=("高密度", "低密度", "hdl", "ldl", "游离", "胆固醇酯", "残余", "残粒", "lipoprotein", "density"),
     ),
     # 血糖
     BiomarkerDefinition(
@@ -171,6 +190,7 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
         excludes=("尿糖", "尿葡萄糖", "(尿)", "尿glu", "u-glu", "ua-glu", "尿液", "urine", "csf", "脑脊液", "胸水",
                   "腹水", "餐后", "postprandial", "-pc", " pc", "服糖后", "负荷后", "半小时", "两小时", "随机",
                   "random", "ogtt", "糖耐", "tolerance", "脱氢酶", "dehydrogenase", "磷酸", "phosphate"),
+        word_excludes=("ua",),  # 「UA Glucose」是尿常规尿糖
     ),
     BiomarkerDefinition(
         # 标准糖化(NGSP A1c). bare「糖化血红蛋白」按惯例就是这个标准指标。
@@ -181,8 +201,9 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
         # IFCC mmol/mol → NGSP%: %≈mmol/mol/10.929+2.15; 在 to_canonical_unit 里特判
         unit_conversions={},
         higher_is_risk=True,
-        excludes=("白蛋白", "血清蛋白", "果糖胺"),  # 糖化白蛋白 / 糖化血清蛋白 不是 A1c
-        plausible=(0.0, 20.0),  # 血红蛋白 g/L(~160) 被名字滑进糖化序列时挡掉 (缺单位的 20–130 按 IFCC 换算)
+        excludes=("白蛋白", "血清蛋白", "果糖胺", "albumin"),  # 糖化白蛋白 / 糖化血清蛋白 不是 A1c
+        plausible=(0.0, 20.0),
+        unit_plausible={"mmol/mol": (15.0, 195.0)},  # 6.8 "mmol/mol" 是 % 写错单位 → 需核对, 不当 2.77%  # 血红蛋白 g/L(~160) 被名字滑进糖化序列时挡掉 (缺单位的 20–130 按 IFCC 换算)
     ),
     BiomarkerDefinition(
         # 总糖化血红蛋白(HbA1, 参考 6.3–9.0%), 与标准 A1c 是不同指标 —— 别名误判过它(锚点用户 user 3)。
@@ -244,22 +265,25 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
     BiomarkerDefinition(
         code="ALT", display="谷丙转氨酶", domain="liver", canonical_unit="U/L",
         aliases=("ALT", "谷丙转氨酶", "丙氨酸氨基转移酶", "丙氨酸转氨酶", "GPT", "SGPT", "ALAT"),
+        word_excludes=("gpt2",),  # GPT2 基因
         ref_ranges=(RefRange(high=50, sex="male"), RefRange(high=40, sex="female"), RefRange(high=50)),
         unit_conversions={"iu/l": 1.0, "μkat/l": 60.0},
         higher_is_risk=True,
     ),
     BiomarkerDefinition(
         code="AST", display="谷草转氨酶", domain="liver", canonical_unit="U/L",
-        aliases=("AST", "谷草转氨酶", "天门冬氨酸氨基转移酶", "天冬氨酸氨基转移酶", "GOT", "SGOT", "ASAT"),
+        aliases=("AST", "谷草转氨酶", "天门冬氨酸氨基转移酶", "天冬氨酸氨基转移酶", "天冬氨酸转氨酶",
+                 "天门冬氨酸转氨酶", "GOT", "SGOT", "ASAT"),
         ref_ranges=(RefRange(high=40),),
         unit_conversions={"iu/l": 1.0, "μkat/l": 60.0},
         higher_is_risk=True,
         excludes=("线粒体", "同工酶", "m-ast"),
+        word_excludes=("got2",),  # GOT2 基因
     ),
     BiomarkerDefinition(
         code="GGT", display="谷氨酰转肽酶", domain="liver", canonical_unit="U/L",
         aliases=("GGT", "γ-谷氨酰转肽酶", "谷氨酰转肽酶", "γ-GT", "γGT", "r-GT", "GGTP", "γ-谷氨酰转移酶",
-                 "谷氨酰转移酶"),
+                 "谷氨酰转移酶", "γ-谷氨酰基转移酶", "谷氨酰基转移酶", "谷氨酰基转肽酶"),
         ref_ranges=(RefRange(high=60, sex="male"), RefRange(high=45, sex="female"), RefRange(high=60)),
         unit_conversions={"iu/l": 1.0, "μkat/l": 60.0},
         higher_is_risk=True,
@@ -276,28 +300,35 @@ _DEFS: tuple[BiomarkerDefinition, ...] = (
         excludes=("尿肌酐", "肌酐尿", "(尿)", "尿液", "尿cr", "尿 cr", "urine", "u-cr", "acr", "cr-cl", "清除率", "clearance",
                   "ccr", "肾小球",
                   "滤过率", "gfr", "epi", "mdrd", "cys", "胱抑素", "crp", "c反应蛋白", "c-反应蛋白", "creatine",
-                  "激酶"),
+                  "激酶", "铬", "chromium"),
         plausible=(5.0, 1500.0),  # 尿肌酐 (mmol/L 量级 ×1000) 冒充血肌酐时挡掉
         small_unit=(20.0, 88.4),  # 缺单位的小数值是 mg/dL 写法 (1.6 → 141 μmol/L)
     ),
     BiomarkerDefinition(
         code="egfr", display="估算肾小球滤过率", domain="kidney", canonical_unit="mL/min/1.73m²",
         aliases=("eGFR", "eGFRcr", "eGFRcys", "eGFRcr-cys", "eGFR2021", "eGFR2009", "eGFR-EPI", "eGFR-MDRD",
-                 "估算肾小球滤过率", "肾小球滤过率", "GFR"),
+                 "eGFRcreat", "eGFREPI", "eGFR-CKD-EPI", "CKD-EPI", "估算肾小球滤过率", "肾小球滤过率", "GFR",
+                 "glomerular filtration rate", "estimated glomerular filtration rate", "estimated gfr"),
         ref_ranges=(RefRange(low=90),),
         # 单位写法五花八门 (ml/min、ml/min/1.73m²、ml/分…) 都是同一量纲; mL/s 需 ×60, 见 _unit_factor
         higher_is_risk=False,  # 偏低为风险
-        excludes=("基因", "突变", "mutation", "tki"),  # EGFR 基因检测不是 eGFR
+        excludes=("基因", "突变", "mutation", "tki", "外显子", "拷贝", "蛋白表达", "扩增"),  # EGFR 基因检测不是 eGFR
+        # 「表达式计算」是 eGFR, 故只排「蛋白表达」; del/ins/vIII 等变异写法按英文整词
+        word_excludes=("exon", "copy", "ihc", "fish", "amplification", "del", "ins", "t790m", "l858r",
+                       "viii", "egfrviii"),
+        plausible=(1.0, 200.0),
+        small_unit=(1.0, 60.0),  # 缺单位 <1 只可能是 mL/s (北欧写法): ×60
     ),
     BiomarkerDefinition(
         code="UA", display="尿酸", domain="metabolic", canonical_unit="µmol/L",
-        aliases=("尿酸", "血尿酸", "UA", "URIC", "UricAcid", "uric acid", "SUA"),
+        aliases=("尿酸", "血尿酸", "UA", "URIC", "UricAcid", "uric acid", "SUA", "urate", "serum urate"),
         ref_ranges=(RefRange(low=208, high=428, sex="male"), RefRange(low=155, high=357, sex="female"),
                     RefRange(low=155, high=428)),
         unit_conversions={"mg/dl": 59.48, "mmol/l": 1000.0},
         higher_is_risk=True,
         excludes=("结晶", "酸碱", "(尿)", "尿液", "尿尿酸", "urine", "24h", "24小时"),  # 尿酸结晶 / 尿酸碱度(pH)
-        plausible=(0.0, 1500.0),
+        solo_aliases=("ua", "sua"),  # UA-PH / UA-SG / UA-PRO 是尿常规
+        plausible=(0.0, 3000.0),  # 肿瘤溶解可 >1500 μmol/L
     ),
     BiomarkerDefinition(
         code="BUN", display="尿素氮", domain="kidney", canonical_unit="mmol/L",
@@ -326,6 +357,11 @@ for _d in _DEFS:
         _ALIAS_INDEX[_norm_text(_a)] = _d.code
 
 _EXCLUDES: dict[str, tuple[str, ...]] = {d.code: tuple(_norm_text(e) for e in d.excludes) for d in _DEFS}
+_WORD_EXCLUDES: dict[str, tuple[re.Pattern, ...]] = {
+    d.code: tuple(re.compile(rf"(?<![a-z]){re.escape(_norm_text(w))}(?![a-z])") for w in d.word_excludes)
+    for d in _DEFS
+}
+_SOLO: dict[str, frozenset] = {d.code: frozenset(d.solo_aliases) for d in _DEFS if d.solo_aliases}
 
 # 比值项: 「比值/比率/比例/…比(」「A与B比」; 「比色法」「比浊法」「比重」不是比值
 _CN_RATIO_RE = re.compile(r"比(?![色浊重])")
@@ -374,12 +410,34 @@ def _excluded(code: str, key: str) -> bool:
             continue
         if ex in key or (not ex.isascii() and ex in compact):
             return True
-    return False
+    if any(p.search(key) for p in _WORD_EXCLUDES[code]):
+        return True
+    return code in _SOLO and _solo_rejects(code, key)
+
+
+def _solo_rejects(code: str, key: str) -> bool:
+    """名字只靠 solo 别名 (UA) 命中时, 其英文字母必须恰好是该别名 (「UA-PH」「UA Glucose」是尿常规)。"""
+    core = _core(key)
+    if not any(_occurs(a, core) for a in _SOLO[code]):  # 没靠 solo 别名命中 (「血清」+ code 提示): 不管
+        return False
+    others = [a for a, c in _ALIAS_INDEX.items() if c == code and a not in _SOLO[code]]
+    if any(_occurs(a, core) for a in others):
+        return False
+    letters = re.sub(r"[^a-z]", "", _SPECIMEN_WORD_RE.sub(" ", core))  # 「Serum UA」「UA plasma」仍是血尿酸
+    return letters not in _SOLO[code]
+
+
+_SPECIMEN_WORD_RE = re.compile(r"(?<![a-z])(?:serum|plasma|blood|whole)(?![a-z])")
+
+
+# 方法学注释 (「HbA1c (NGSP/IFCC)」): 括号里的「/」不是比值
+_METHOD_NOTE_RE = re.compile(r"\((?:ngsp|ifcc|dcct|jscc)(?:/(?:ngsp|ifcc|dcct|jscc))*\)")
 
 
 def _core(key: str) -> str:
-    """剥掉名字里的单位片段后的项目名 (剥空了就用原名)。"""
-    return re.sub(r"\s+", " ", _UNIT_TOKEN_RE.sub(" ", key)).strip() or key
+    """剥掉名字里的单位片段/方法学注释后的项目名 (剥空了就用原名)。"""
+    stripped = _UNIT_TOKEN_RE.sub(" ", _METHOD_NOTE_RE.sub(" ", key))
+    return re.sub(r"\s+", " ", stripped).strip() or key
 
 
 def _is_ratio(core: str) -> bool:
