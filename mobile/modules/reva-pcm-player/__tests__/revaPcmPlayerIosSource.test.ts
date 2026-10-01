@@ -12,6 +12,11 @@ describe('Reva PCM player iOS module', () => {
     expect(source).toContain('sampleRate: 24000');
     expect(source).toContain('onPlaybackDrained');
     expect(source).toContain('AsyncFunction("stop")');
+    expect(source).toContain('maxChunkBytes');
+    expect(source).toContain('maxSessionBytes');
+    expect(source).toContain('highWaterBytes');
+    expect(source).toContain('lowWaterBytes');
+    expect(source).toContain('backpressureWaiters');
     expect(source).not.toContain('write(to:');
     expect(source).not.toContain('FileManager');
   });

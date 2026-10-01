@@ -426,7 +426,6 @@ export function useVoiceConversation() {
 
     const ac = new AbortController();
     abortRef.current = ac;
-    activeAgentTurnRef.current = { clientTurnId };
 
     let replyStarted = false;
     let reachedTerminalEvent = false;
@@ -434,6 +433,10 @@ export function useVoiceConversation() {
     try {
       await refreshVoiceStyle();
       if (ac.signal.aborted) throw new Error('aborted');
+      // Only expose a turn as server-active once the request is about to be
+      // dispatched. Preflight work (for example voice-style refresh) is
+      // cancelled locally and has no backend run to interrupt.
+      activeAgentTurnRef.current = { clientTurnId };
       let lastFailedTool = '';  // 同一 tool 连续失败只提示一次
       // channel='voice':语音转写可能失真(1.2s 静默即自动提交,用户未必复核),
       // 症状类记录在后端保留确认前置。
@@ -555,12 +558,6 @@ export function useVoiceConversation() {
           await new Promise<void>(resolve => setTimeout(resolve, 80));
         }
       }
-      if (!runId) {
-        if (activeAgentTurnRef.current?.clientTurnId === active.clientTurnId) {
-          activeAgentTurnRef.current = null;
-        }
-        return;
-      }
       if (['succeeded', 'failed', 'cancelled', 'interrupted', 'reconciliation_required'].includes(
         status?.status || '',
       )) {
@@ -568,6 +565,9 @@ export function useVoiceConversation() {
           activeAgentTurnRef.current = null;
         }
         return;
+      }
+      if (!runId) {
+        throw new Error('上一轮对话未能安全停止，请稍后重试');
       }
     }
     try {
