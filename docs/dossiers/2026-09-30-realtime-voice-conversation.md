@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | G4 reopened: client lifecycle fixes in progress |
-| 当前阶段 | S5 client release remediation; publication blocked pending re-review |
+| 状态 | G4 client lifecycle rereview passed; G5 pending |
+| 当前阶段 | G5 exact-main CI, native artifact and candidate UI acceptance |
 | Controller | product-pipeline |
 | Delegate | health-harness-orchestrator |
 | Overlay | safety-gate |
@@ -200,3 +200,7 @@
   保留 provider/断线错误并拒绝后续 finish，不再将失败报告为成功。
   ASR 首轮 6 个新失败和 startup-stop 独立失败均转绿；TTS 两轮 2/4 个失败均
   转绿。最终定向 ASR/Hook 44 项、TTS 10 项，以及 TypeScript/ESLint 均通过。
+- 独立 reviewer 已对固定代码提交 `6bc52c309aa7cf376b255332d58c09075bc6f41c`
+  完成复审并给出 **G4 fixed-code GO**，独立重跑四个受影响套件 54 passed。
+  最终 Mobile 全量 324 suites / 3,210 passed / 1 existing skip（exit 0）。
+  该 GO 仅针对代码安全：精确合并主干 CI、原生制品及候选 UI 验收仍为 G5 条件。
