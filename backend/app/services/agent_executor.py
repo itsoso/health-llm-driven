@@ -17008,6 +17008,7 @@ class AgentExecutor:
             water_result = resolve_water_backfill_turn(
                 self.db, user_id=user_id, source_message_id=user_msg.id,
                 reference_now=self._agent_kernel_reference_now(),
+                runtime_write_block_reason=self._runtime_write_block_reason,
             )
             if water_result is not None:
                 async for evt in self._run_water_backfill_result(
@@ -20531,6 +20532,7 @@ class AgentExecutor:
         outcome = classify_agent_turn_outcome(
             completion_status="error" if status == "error" else "complete",
             final_text=result["reply"], write_receipts=receipts,
+            runtime_control_unavailable=result.get("runtime_control_unavailable", False),
             pending_confirmation_tools=["water_backfill"] if pending else [],
         )
         if status == "clarification":
@@ -20547,7 +20549,7 @@ class AgentExecutor:
             **({"water_backfill_intent_id": result["intent_id"],
                 "water_backfill_plan": result["plan"],
                 "pending_write_intent_ids": [result["intent_id"]],
-                "pending_write_intent_kinds": ["water_backfill"]} if status == "pending" else {}),
+                "pending_write_intent_kinds": ["water_backfill"]} if result.get("intent_id") is not None else {}),
             **({"client_turn_id": client_turn_id} if client_turn_id else {}),
         }
         conv.updated_at = datetime.now(UTC)

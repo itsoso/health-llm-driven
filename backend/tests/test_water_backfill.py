@@ -341,3 +341,82 @@ def test_replay_describes_history_even_if_other_existing_records_changed(db, aut
     assert '原计划全天目标' in result['reply']
     assert '不代表当前总量' in result['reply']
     assert db.query(WaterIntake).count() == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('block_reason', ['circuit_paused', 'circuit_unavailable'])
+async def test_chat_runtime_write_block_preserves_plan_for_retry(db, auth_user_and_headers, monkeypatch, block_reason):
+    from app.services.agent_executor import AgentExecutor
+    from app.models.daily_health import WaterIntake
+    from app.models.write_intent import WriteIntent
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, '_agent_kernel_reference_now', lambda: NOW)
+    async def run(message, conversation_id=None, reason=block_reason):
+        events = [event async for event in executor.run_stream(
+            user_id=user.id, message=message, conversation_id=conversation_id,
+            user_auth_token='test-token', runtime_write_block_reason=reason,
+        )]
+        return next(event['data'] for event in events if event.get('event') == 'done')
+    proposed = await run('补记最近3天饮水，每天总量1800ml')
+    intent_id = proposed['water_backfill_intent_id']
+    blocked = await run('确认', proposed['conversation_id'])
+    assert db.query(WaterIntake).count() == 0
+    assert db.get(WriteIntent, intent_id).status == 'pending'
+    assert blocked['completion_status'] == 'error'
+    assert blocked['turn_outcome']['status'] == 'failed'
+    assert blocked['turn_outcome']['reason_code'] == 'runtime_control_unavailable'
+    assert blocked['write_receipts'] == []
+    assert blocked['water_backfill_intent_id'] == intent_id
+    retried = await run('确认', proposed['conversation_id'], reason=None)
+    assert retried['turn_outcome']['verified_receipt_count'] == 3
+    assert db.query(WaterIntake).count() == 3
+    assert db.query(WriteIntent).count() == 1
+
+
+@pytest.mark.parametrize('message', ['确认', '取消'])
+def test_runtime_block_does_not_claim_unrelated_generic_control(db, auth_user_and_headers, message):
+    from app.models.agent_conversation import AgentMessage
+    from app.services.water_backfill import resolve_water_backfill_turn
+    user, _ = auth_user_and_headers
+    conv, _ = _source(db, user)
+    source = AgentMessage(conversation_id=conv.id, role='user', content=message)
+    db.add(source)
+    db.commit()
+    assert resolve_water_backfill_turn(db, user_id=user.id, source_message_id=source.id,
+                                      reference_now=NOW, runtime_write_block_reason='circuit_paused') is None
+
+
+def test_runtime_block_allows_owned_water_cancellation(db, auth_user_and_headers):
+    from app.models.agent_conversation import AgentMessage
+    from app.models.daily_health import WaterIntake
+    from app.services.water_backfill import propose_water_backfill, resolve_water_backfill_turn
+    user, _ = auth_user_and_headers
+    conv, source = _source(db, user)
+    wi = propose_water_backfill(db, user_id=user.id, source_message_id=source.id, reference_now=NOW)
+    _present(db, wi, conv)
+    cancellation = AgentMessage(conversation_id=conv.id, role='user', content='取消')
+    db.add(cancellation)
+    db.commit()
+    result = resolve_water_backfill_turn(db, user_id=user.id, source_message_id=cancellation.id,
+                                        reference_now=NOW, runtime_write_block_reason='circuit_paused')
+    assert result['status'] == 'cancelled'
+    db.refresh(wi)
+    assert wi.status == 'dismissed'
+    assert db.query(WaterIntake).count() == 0
+
+
+@pytest.mark.parametrize('constant, replacement', [('MAX_DAYS', 7), ('PLAN_TTL_MINUTES', 15)])
+def test_water_contract_changes_with_scope_and_expiry(monkeypatch, constant, replacement):
+    from app.services import water_backfill
+    before = water_backfill.water_backfill_contract_payload()
+    assert before == water_backfill.water_backfill_contract_payload()
+    monkeypatch.setattr(water_backfill, constant, replacement)
+    assert water_backfill.water_backfill_contract_payload() != before
+
+
+def test_water_contract_changes_with_confirmation_behavior(monkeypatch):
+    from app.services import water_backfill
+    before = water_backfill.water_backfill_contract_payload()
+    monkeypatch.setattr(water_backfill, 'resolve_water_backfill_turn', lambda *args, **kwargs: None)
+    assert water_backfill.water_backfill_contract_payload()['behavior'] != before['behavior']

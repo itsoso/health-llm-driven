@@ -2493,6 +2493,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     from app.services.agent_kernel.read_task_scope import read_task_scope_contract_payload
     from app.services.agent_read_task_continuation import read_task_continuation_contract_payload
     from app.services.agent_diet_continuation import diet_continuation_contract_payload
+    from app.services.water_backfill import water_backfill_contract_payload
     from app.services.agent_longitudinal_read import longitudinal_read_contract_payload
     from app.services.agent_kernel.exercise_plan_scope import exercise_plan_scope_contract_payload
     from app.services.agent_kernel.current_input_advice_scope import current_input_advice_scope_contract_payload
@@ -2502,6 +2503,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
         "read_task_scope": read_task_scope_contract_payload(),
         "read_task_continuation": read_task_continuation_contract_payload(),
         "diet_continuation": diet_continuation_contract_payload(),
+        "water_backfill": water_backfill_contract_payload(),
         "longitudinal_read": longitudinal_read_contract_payload(),
         "contract_version": _CAPABILITY_POLICY_CONTRACT_VERSION,
         "whole_record_delete_evidence_version": (_WHOLE_RECORD_DELETE_EVIDENCE_VERSION),

@@ -1,10 +1,60 @@
 """Bind a short portion correction only to the immediately preceding owned receipt."""
 from datetime import datetime, timedelta
+import inspect
 import re
+from types import CodeType
 
 from app.services.agent_kernel.types import ActionableReference
 
 _BARE_PORTION = re.compile(r"(?:我)?(?:实际)?只吃了(?:其中的)?(?:[一二三四五六七八九十]+分之[一二三四五六七八九十]+|一半|半份|[0-9]+\s*/\s*[0-9]+)[。!！]*")
+_EXECUTOR_DIET_AUTHORIZATION_ROOTS = (
+    "_parse_explicit_diet_correction", "_diet_correction_update_data",
+    "_latest_diet_correction_candidate",
+)
+
+
+def _referenced_names(code):
+    names = set(code.co_names)
+    for value in code.co_consts:
+        if isinstance(value, CodeType):
+            names.update(_referenced_names(value))
+    return names
+
+
+def _executor_diet_contract_payload():
+    """Cover the parser's dependency closure without hashing all execution."""
+    from app.services import agent_executor
+    from app.services.agent_kernel.health_semantics import (
+        authorization_behavior_digest, authorization_grammar_digest,
+    )
+
+    namespace = vars(agent_executor)
+    pending = list(_EXECUTOR_DIET_AUTHORIZATION_ROOTS)
+    functions, constants = {}, {}
+    while pending:
+        name = pending.pop()
+        if name in functions:
+            continue
+        value = namespace[name]
+        functions[name] = value
+        code = getattr(value, "__code__", None)
+        if code is None:
+            continue
+        for dependency in _referenced_names(code):
+            candidate = namespace.get(dependency)
+            if inspect.isfunction(candidate):
+                if getattr(candidate, "__globals__", None) is namespace:
+                    pending.append(dependency)
+                elif candidate.__module__.startswith("app."):
+                    raise RuntimeError("diet authorization dependency needs an explicit contract")
+            elif dependency.lstrip("_").isupper():
+                constants[dependency] = candidate
+    # datetime.tzinfo is not a grammar primitive; retain its explicit offset.
+    constants["REFERENCE_TIMEZONE"] = str(agent_executor.BEIJING_TZ)
+    return {
+        "grammar": authorization_grammar_digest(constants),
+        "behavior": authorization_behavior_digest(functions, tuple(functions)),
+    }
 
 
 def diet_continuation_contract_payload():
@@ -14,6 +64,7 @@ def diet_continuation_contract_payload():
     )
     return {
         "version": "owned-diet-portion.v1",
+        "executor_dependencies": _executor_diet_contract_payload(),
         "grammar": authorization_grammar_digest(globals()),
         "behavior": authorization_behavior_digest(
             globals(), authorization_module_behavior_names(globals(), __name__),

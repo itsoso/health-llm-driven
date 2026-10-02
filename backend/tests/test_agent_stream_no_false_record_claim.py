@@ -1270,15 +1270,31 @@ async def test_ambiguous_partial_diet_correction_never_claims_an_update(
     assert "已按三分之一更新午餐" not in reply
     assert not _claims_unverified_write_success(reply)
     assert "没有" in reply
-    executor._api_get_json.assert_not_awaited()
-    assert events[-1]["data"]["generation_status"] == "complete"
+    # The exact portion permits a bounded lookup even if the model omits tools;
+    # multiple owned candidates still never permit choosing a write target.
+    from urllib.parse import parse_qs, urlsplit
+
+    executor._api_get_json.assert_awaited_once()
+    lookup_url, lookup_headers = executor._api_get_json.await_args.args
+    lookup = urlsplit(lookup_url)
+    expected_day = executor._agent_kernel_reference_now().date().isoformat()
+    assert lookup.path == "/api/v1/diet/records/me"
+    assert parse_qs(lookup.query) == {
+        "start_date": [expected_day], "end_date": [expected_day],
+        "meal_type": ["lunch"], "limit": ["20"],
+    }
+    assert lookup_headers == {"Authorization": "Bearer test-token"}
+    assert "记录 #830" in reply and "记录 #829" in reply
+    # This now reaches the existing deterministic correction terminal instead
+    # of merely detecting a model's unsupported success claim after generation.
+    assert events[-1]["data"]["generation_status"] == "error"
     assert events[-1]["data"]["completion_status"] == "error"
     assert events[-1]["data"]["turn_outcome"]["status"] == "failed"
-    assert events[-1]["data"]["turn_outcome"]["category"] == "action_not_executed"
-    assert events[-1]["data"]["turn_outcome"]["reason_code"] == "mutation_without_tool"
+    assert events[-1]["data"]["turn_outcome"]["category"] == "execution_error"
+    assert events[-1]["data"]["turn_outcome"]["reason_code"] == "completion_error"
     assert not events[-1]["data"].get("write_receipts")
     saved = db.get(AgentMessage, events[-1]["data"]["message_id"])
-    assert saved.meta["generation_status"] == "complete"
+    assert saved.meta["generation_status"] == "error"
     assert saved.meta["completion_status"] == "error"
     assert saved.meta["turn_outcome"] == events[-1]["data"]["turn_outcome"]
 

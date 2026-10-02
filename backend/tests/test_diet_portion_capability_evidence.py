@@ -76,3 +76,31 @@ def test_portion_receipt_grammar_changes_capability_contract(monkeypatch):
     original = capability_policy_contract_payload()
     monkeypatch.setattr(agent_diet_continuation, "_BARE_PORTION", re.compile(r"synthetic-changed-grammar"))
     assert capability_policy_contract_payload() != original
+
+
+@pytest.mark.parametrize("name", [
+    "_parse_explicit_diet_correction", "_diet_correction_update_data",
+    "_latest_diet_correction_candidate", "_parse_meal_fraction_token",
+    "_normalize_relative_date",
+])
+def test_executor_portion_behavior_changes_capability_contract(monkeypatch, name):
+    from app.services import agent_executor
+    from app.services.agent_kernel.capability_policy import capability_policy_contract_payload
+
+    original = capability_policy_contract_payload()
+    monkeypatch.setattr(agent_executor, name, lambda *args, **kwargs: None)
+    assert capability_policy_contract_payload() != original
+
+
+def test_executor_portion_grammar_decision_change_is_auditable(monkeypatch):
+    import re
+    from app.services import agent_executor
+    from app.services.agent_kernel.capability_policy import capability_policy_contract_payload
+
+    original = capability_policy_contract_payload()
+    state, patch = turn(), args()
+    request = ToolExecutionRequest("health_manage", patch)
+    assert decide_tool_capability(state, request).action == "allow"
+    monkeypatch.setattr(agent_executor, "_DIET_COMMAND_FIRST_CORRECTION_RE", re.compile("NEVER"))
+    assert decide_tool_capability(state, request).action == "block"
+    assert capability_policy_contract_payload() != original

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 KIND = "water_backfill"
 MAX_DAYS = 14
+PLAN_TTL_MINUTES = 30
 _PREFIX = re.compile(r"^(?:请)?(?:帮我|给我|替我)?(?:补充记录|补记|记录)(?:一下)?")
 _AMOUNT = re.compile(r"(?P<amount>\d+(?:\.\d+)?)\s*(?P<unit>毫升|ml|升|l)", re.I)
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -154,7 +155,7 @@ def propose_water_backfill(db: Session, *, user_id: int, source_message_id: int,
         items.append({**item, 'existing_ml': total, 'add_ml': item['total_ml'] - total,
                       'baseline': [{'id': row.id, 'amount_ml': row.amount_ml} for row in day_rows]})
     payload = {'version': 1, 'reference_now': reference_now.isoformat(),
-               'expires_at': (reference_now + timedelta(minutes=30)).isoformat(),
+               'expires_at': (reference_now + timedelta(minutes=PLAN_TTL_MINUTES)).isoformat(),
                'conversation_id': source.conversation_id, 'items': items, 'date_note': draft.date_note}
     wi = WriteIntent(user_id=user_id, kind=KIND, title='饮水补记确认', description='逐日核对全天总量，只补足缺失量。',
                      status='pending', source='chat', trust_tier='manual_confirm', target_type='agent_message',
@@ -169,7 +170,7 @@ def preview_text(wi: WriteIntent) -> str:
     lines = [wi.payload.get('date_note') or '请核对饮水补记日期和全天总量：']
     for item in wi.payload['items']:
         lines.append(f"{item['date']}：全天 {format_display_number(item['total_ml'])}ml，已有 {format_display_number(item['existing_ml'])}ml，待补 {format_display_number(item['add_ml'])}ml。")
-    lines.append(f"尚未写入。回复“确认饮水补记 {wi.id}”后一次完成；回复“取消”可放弃。确认有效期30分钟。")
+    lines.append(f"尚未写入。回复“确认饮水补记 {wi.id}”后一次完成；回复“取消”可放弃。确认有效期{PLAN_TTL_MINUTES}分钟。")
     return '\n'.join(lines)
 
 
@@ -182,7 +183,7 @@ def _validate_plan(db: Session, wi: WriteIntent, now: datetime) -> None:
         reference = datetime.fromisoformat(payload['reference_now'])
         expiry = datetime.fromisoformat(payload['expires_at'])
         draft = parse_water_backfill(source.content, reference_now=reference)
-        if (reference.tzinfo is None or expiry.tzinfo is None or expiry != reference + timedelta(minutes=30)
+        if (reference.tzinfo is None or expiry.tzinfo is None or expiry != reference + timedelta(minutes=PLAN_TTL_MINUTES)
             or now > expiry or now < reference - timedelta(minutes=1)):
             raise WaterBackfillConflict('expired_plan')
         items = payload['items']
@@ -287,7 +288,10 @@ def is_water_backfill_control(message: str) -> bool:
     return bool(re.fullmatch(r"(?:确认饮水补记\s*\d+|确认|取消|取消饮水补记)", str(message or '').strip()))
 
 
-def resolve_water_backfill_turn(db: Session, *, user_id: int, source_message_id: int, reference_now: datetime) -> dict[str, Any] | None:
+def resolve_water_backfill_turn(
+    db: Session, *, user_id: int, source_message_id: int,
+    reference_now: datetime, runtime_write_block_reason: str | None = None,
+) -> dict[str, Any] | None:
     source = _source(db, user_id, source_message_id)
     message = source.content.strip()
     previous = db.query(AgentMessage).filter(AgentMessage.conversation_id == source.conversation_id,
@@ -301,6 +305,16 @@ def resolve_water_backfill_turn(db: Session, *, user_id: int, source_message_id:
             WriteIntent.kind == KIND).first()
         if wi is None or (wi.payload or {}).get('conversation_id') != source.conversation_id:
             return {'status': 'clarification', 'reply': '当前对话没有这份饮水补记计划，请重新提供日期和每天总量。'}
+        # Resolve the owned water context before applying the chat Runtime
+        # admission boundary. Generic confirmations for other tasks must keep
+        # flowing to their own controller; explicit cancellation remains safe.
+        if runtime_write_block_reason and message not in {'取消', '取消饮水补记'}:
+            return {
+                'status': 'error', 'runtime_control_unavailable': True,
+                'reply': (f'饮水记录写入暂时暂停或不可用，本次未执行补记。'
+                          f'原计划已保留，恢复后可回复“确认饮水补记 {wi.id}”重试，或回复“取消”。'),
+                **({'intent_id': wi.id, 'plan': wi.payload} if wi.status == 'pending' else {}),
+            }
         try:
             if message in {'取消', '取消饮水补记'}:
                 from app.services.write_intent_service import dismiss
@@ -341,3 +355,20 @@ def resolve_water_backfill_turn(db: Session, *, user_id: int, source_message_id:
         return {'status': 'verified' if result['status'] == 'executed' else 'cancelled',
                 'reply': '这份饮水补记已处理，没有重复写入。', 'write_receipts': result.get('write_receipts', [])}
     return {'status': 'pending', 'reply': preview_text(wi), 'intent_id': wi.id, 'plan': wi.payload}
+
+
+def water_backfill_contract_payload() -> dict[str, Any]:
+    """Bind manual-plan grammar, expiry and execution behavior to Runtime contracts."""
+    from app.services.agent_kernel.health_semantics import (
+        authorization_behavior_digest,
+        authorization_grammar_digest,
+        authorization_module_behavior_names,
+    )
+
+    return {
+        "version": "water-backfill-v1",
+        "grammar": authorization_grammar_digest(globals()),
+        "behavior": authorization_behavior_digest(
+            globals(), authorization_module_behavior_names(globals(), __name__)
+        ),
+    }
