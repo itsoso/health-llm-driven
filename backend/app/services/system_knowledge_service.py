@@ -2307,8 +2307,12 @@ def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
                 out["G6PD_phenotype"] = status
         elif gene == "HFE":
             out["HFE"] = genotype or "present"
-            if genotype:
-                out["HFE_rs1800562"] = genotype
+            rsid = str(variant.get("rsid") or "").strip().lower()
+            # 其它 HFE 位点 (H63D/S65C) 不得覆盖 C282Y 事实; rs1800562 归一为 AA/GA/GG
+            if genotype and rsid in ("", "rs1800562"):
+                from app.services.genetic_registry import canonical_snp_genotype
+
+                out["HFE_rs1800562"] = (rsid and canonical_snp_genotype(rsid, genotype)) or genotype
         elif gene == "LCT":
             out["LCT"] = genotype or "present"
             if genotype:
