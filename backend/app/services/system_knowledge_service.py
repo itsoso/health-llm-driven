@@ -3559,7 +3559,11 @@ def _reindex_pgvector_documents(
 
     doc_ids = list(searchable_by_doc_id.keys())
     texts = [searchable_by_doc_id[doc_id][0] for doc_id in doc_ids]
-    embeddings = _embed_system_kb_texts(texts)
+    # Only system-authored KB documents are sent here; the query-embedding
+    # path (_rank_pgvector_documents) carries user text and stays consent-gated.
+    from app.services.ai_consent import ai_system_content_scope
+    with ai_system_content_scope("system_kb_reindex"):
+        embeddings = _embed_system_kb_texts(texts)
     if not embeddings:
         return 0
 
