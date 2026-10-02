@@ -358,3 +358,16 @@ def test_node_inventory_accepts_internal_npm_link_and_rejects_hardlinks(tmp_path
     os.link(target, root / "lib/hardlink.js")
     with pytest.raises(ValueError):
         ns["inspect_toolchain"](root)
+
+
+def test_ota_verifies_signature_backport_before_claim_and_credentials():
+    steps = workflow()["jobs"]["ota"]["steps"]
+    index = next(i for i, step in enumerate(steps) if "Install locked CLI" in step.get("name", ""))
+    body = steps[index]["run"]
+    for root in ("scripts/release-tools", "mobile"):
+        install = f"ci --prefix /opt/reva-release/source/{root} --ignore-scripts"
+        verify = f"/opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/{root} --apply"
+        assert body.index(install) < body.index(verify)
+    assert "secrets." not in str(steps[index])
+    first_secret = next(i for i, step in enumerate(steps) if "secrets." in str(step))
+    assert index < first_secret

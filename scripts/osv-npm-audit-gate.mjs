@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch";
@@ -52,14 +53,15 @@ export function buildProductionInventory(lockfile) {
     if (packageEntry.dev === true) {
       continue;
     }
-    const name = packageNameFromLockPath(lockPath);
+    const name = packageEntry.name || packageNameFromLockPath(lockPath);
     if (!name) {
       throw new Error(`Unable to resolve package name from lock path: ${lockPath}`);
     }
-    inventory.push({ name, version: String(packageEntry.version) });
+    inventory.push({ name, version: String(packageEntry.version), lockPath });
   }
   return inventory.sort((left, right) => (
     left.name.localeCompare(right.name) || left.version.localeCompare(right.version)
+    || left.lockPath.localeCompare(right.lockPath)
   ));
 }
 
@@ -118,6 +120,10 @@ function hasActiveException({ advisory, packageName, policy, now }) {
   ));
 }
 
+function findingLabel(finding) {
+  return `${finding.packageName}@${finding.version}${finding.lockPath ? ` [${finding.lockPath}]` : ""}`;
+}
+
 export function evaluateOsvFindings(findings, detailsById, policy = {}, now = new Date()) {
   const blocked = [];
   const allowed = [];
@@ -126,12 +132,12 @@ export function evaluateOsvFindings(findings, detailsById, policy = {}, now = ne
   for (const finding of findings) {
     const details = detailsById.get(finding.id);
     if (!details) {
-      blocked.push(`${finding.packageName}@${finding.version}: missing OSV details for ${finding.id}`);
+      blocked.push(`${findingLabel(finding)}: missing OSV details for ${finding.id}`);
       continue;
     }
     const severity = classifyOsvSeverity(details);
     if (!BLOCKING_SEVERITIES.has(severity)) {
-      ignored.push(`${finding.packageName}@${finding.version}: ${finding.id} (${severity})`);
+      ignored.push(`${findingLabel(finding)}: ${finding.id} (${severity})`);
       continue;
     }
     if (hasActiveException({
@@ -140,10 +146,10 @@ export function evaluateOsvFindings(findings, detailsById, policy = {}, now = ne
       policy,
       now,
     })) {
-      allowed.push(`${finding.packageName}@${finding.version}: ${finding.id} (${severity})`);
+      allowed.push(`${findingLabel(finding)}: ${finding.id} (${severity})`);
       continue;
     }
-    blocked.push(`${finding.packageName}@${finding.version}: ${finding.id} (${severity})`);
+    blocked.push(`${findingLabel(finding)}: ${finding.id} (${severity})`);
   }
 
   return {
@@ -151,6 +157,46 @@ export function evaluateOsvFindings(findings, detailsById, policy = {}, now = ne
     blocked: [...new Set(blocked)].sort(),
     ignored: [...new Set(ignored)].sort(),
   };
+}
+
+// This is a reviewed code path, never a policy-provided attestation or command.
+export async function evaluateInstalledOsvFindings({
+  findings, detailsById, projectRoot, policy = {}, now = new Date(),
+}) {
+  const remaining = [];
+  const verificationFailures = [];
+  const verified_backport = [];
+  for (const finding of findings) {
+    const details = detailsById.get(finding.id);
+    if (finding.id !== "GHSA-86w9-cpqp-85rv"
+        || finding.packageName !== "node-forge" || finding.version !== "1.4.0"
+        || !details || classifyOsvSeverity(details) !== "HIGH") {
+      remaining.push(finding);
+      continue;
+    }
+    try {
+      if (!finding.lockPath || !projectRoot) {
+        throw new Error("installed package path and project root are required");
+      }
+      const { verifyInstalledCopy } = await import("./node-forge-backport.cjs");
+      const evidence = verifyInstalledCopy({ projectRoot, lockPath: finding.lockPath });
+      if (evidence?.advisory !== finding.id || evidence.package !== finding.packageName
+          || evidence.version !== finding.version || evidence.lockPath !== finding.lockPath
+          || evidence.behaviorVerified !== true
+          || !/^[a-f0-9]{64}$/.test(evidence.sourceSha256 ?? "")) {
+        throw new Error("fixed verifier returned invalid evidence");
+      }
+      verified_backport.push({ ...finding, severity: "HIGH", ...evidence });
+    } catch (error) {
+      verificationFailures.push(
+        `${findingLabel(finding)}: ${finding.id} (HIGH); backport verification failed: ${error.message}`,
+      );
+    }
+  }
+  const result = evaluateOsvFindings(remaining, detailsById, policy, now);
+  result.blocked.push(...verificationFailures);
+  result.blocked.sort();
+  return { ...result, verified_backport, findings };
 }
 
 async function fetchJson(url, options) {
@@ -165,7 +211,7 @@ async function fetchJson(url, options) {
   return JSON.parse(text);
 }
 
-async function queryOsvBatch(inventory) {
+export async function queryOsvBatch(inventory) {
   const findings = [];
   for (const batch of chunked(inventory, BATCH_SIZE)) {
     const response = await fetchJson(OSV_BATCH_URL, {
@@ -178,7 +224,17 @@ async function queryOsvBatch(inventory) {
         })),
       }),
     });
-    for (const [index, result] of (response.results ?? []).entries()) {
+    if (!Array.isArray(response.results) || response.results.length !== batch.length) {
+      throw new Error("incomplete OSV batch response");
+    }
+    for (const [index, result] of response.results.entries()) {
+      if (!result || typeof result !== "object" || Array.isArray(result)
+          || (result.vulns !== undefined && !Array.isArray(result.vulns))) {
+        throw new Error("invalid OSV batch result");
+      }
+      if (result.next_page_token) {
+        throw new Error("incomplete OSV batch: pagination requires a complete audit before passing");
+      }
       const dependency = batch[index];
       for (const vulnerability of result?.vulns ?? []) {
         if (!vulnerability?.id) {
@@ -188,6 +244,7 @@ async function queryOsvBatch(inventory) {
           id: vulnerability.id,
           packageName: dependency.name,
           version: dependency.version,
+          lockPath: dependency.lockPath,
         });
       }
     }
@@ -199,10 +256,12 @@ async function fetchDetails(findings) {
   const details = new Map();
   const ids = [...new Set(findings.map((finding) => finding.id))].sort();
   for (const id of ids) {
-    details.set(id, await fetchJson(`${OSV_VULN_URL}${encodeURIComponent(id)}`, {
+    const detail = await fetchJson(`${OSV_VULN_URL}${encodeURIComponent(id)}`, {
       method: "GET",
       headers: { "accept": "application/json" },
-    }));
+    });
+    if (detail?.id !== id) throw new Error(`OSV details identity mismatch for ${id}`);
+    details.set(id, detail);
   }
   return details;
 }
@@ -215,7 +274,15 @@ async function main() {
   const inventory = buildProductionInventory(lockfile);
   const findings = await queryOsvBatch(inventory);
   const details = await fetchDetails(findings);
-  const result = evaluateOsvFindings(findings, details, policy);
+  const result = await evaluateInstalledOsvFindings({
+    findings, detailsById: details, policy, projectRoot: dirname(resolve(lockfilePath)),
+  });
+  if (result.verified_backport.length > 0) {
+    console.log("Verified backports (original advisories retained):");
+    for (const item of result.verified_backport) {
+      console.log(`- verified_backport: ${findingLabel(item)}: ${item.id} (${item.severity}); source sha256 ${item.sourceSha256}`);
+    }
+  }
 
   if (result.blocked.length > 0) {
     console.error("Blocking OSV advisories:");
@@ -226,6 +293,8 @@ async function main() {
   }
   if (result.allowed.length > 0) {
     console.log(`OSV audit passed with ${result.allowed.length} active exception(s).`);
+  } else if (result.verified_backport.length > 0) {
+    console.log(`OSV audit passed with ${result.verified_backport.length} verified_backport installation(s); original HIGH advisories remain in the report.`);
   } else {
     console.log(
       `OSV audit passed with no high, critical, or unknown-severity advisories `

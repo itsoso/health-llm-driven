@@ -175,6 +175,18 @@ build/native 标记仍防止跨入口重放。锁冲突、授权过期、未知�
 后续收尾；仅下述固定历史收尾可解除对应阻断，未知 native-only 库存仍拒绝，不得删除绑定以强行轮换。
 上传完成不等于 Apple processing、测试可用或正式 App Review 完成。
 
+#### 签名工具链的固定安全回补
+
+`node-forge@1.4.0` 的 `GHSA-86w9-cpqp-85rv` 尚无已发布修复版。项目回补固定绑定
+上游提交、原始与修复后源码、补丁及实际安装副本；不修改真实版本号，不添加漏洞豁免。
+`node scripts/node-forge-backport.cjs --root <安装根>` 默认只验证；`--apply` 只应用
+固定回补并执行真实验签正反验证。未知版本、字节漂移、缺失副本或符号链接越界均拒绝。
+Mobile 的既有 patch-package 路径负责普通安装；Trusted Release 与 OTA 禁用生命周期
+脚本，必须在任何凭据或 vendor 调用前，对 mobile 和 release-tools 安装分别显式
+apply/verify。不能用 CI 工作区的通过证明替代新 runner 的实际安装验证。
+OSV 审计继续显示原始发现，仅逐安装路径通过固定验证器的精确公告标为
+`verified_backport`；其他阻断和空 exceptions 保留。上游发布修复后须重新评审移除回补。
+
 #### 固定历史 native-only 收尾
 
 `native_release_retirement.py` 只接受源码固定的历史 profile。默认仍为

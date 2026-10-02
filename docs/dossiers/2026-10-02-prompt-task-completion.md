@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | application candidate pushed and CI green; native release closure blocks deployment |
-| 当前阶段 | G3 verified, application G4 GO, G5 blocked on governed native closure |
+| 状态 | application and release repairs verified; node-forge backport locally verified; external write authorization pending |
+| 当前阶段 | application G3/G4 verified; G5 blocked by dependency audit and native closure authorization |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -173,6 +173,55 @@ the currently active release identity is preserved pending explicit authorizatio
 No production closure, authorization rotation, backend deployment or production
 health-data write has been performed by this task. Local source/CI evidence is
 not production acceptance.
+
+## Follow-up full-CI security blocker
+
+Closure commit `b77374c002be473e5572314169427baf5cf80998` received exact G4 GO and
+was pushed after the application candidate was green. Its full CI `37027725041`
+failed the mobile production dependency audit on `node-forge@1.4.0`,
+`GHSA-86w9-cpqp-85rv` (HIGH). The original application CI success does not override
+this later failure. External writes and production release are paused while the
+fix is prepared locally.
+
+The npm registry still reports 1.4.0 as latest. The reviewed advisory reports no
+published fixed version; upstream PR 1152 is open at
+`ceba34402e329f0365134f23fe19898756527d65`. The dependency is used by Expo code
+signing and CLI paths, and by the separate EAS release-tools installation. No
+claim is made that a deployed client is proven exploitable or that the issue is
+unreachable. Sources: [advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv),
+[upstream fix](https://github.com/digitalbazaar/forge/pull/1152).
+
+The local repair must keep the real 1.4.0 identity and empty audit exceptions;
+backport the exact reviewed nested-DigestAlgorithm validation; bind original,
+patch and installed file digests; and execute malicious/valid signature cases
+against every installed copy. OSV findings remain visible as verified backports
+only when those fresh checks pass. Missing copies, mixed versions, symlink
+escapes, changed bytes, partial audit responses and unrelated advisories fail
+closed. Trusted build/upload/OTA `--ignore-scripts` installations must apply and
+verify both roots before credentials or vendor calls. This is a project backport,
+not an official upstream fixed release or a risk waiver. The fixed backport has passed implementation and independent review. Final
+local evidence: **35 security tests passed, 0 skipped**; **512 release integration
+tests passed in 41.34 seconds**; EAS consumer compatibility **3 passed**; mobile
+TypeScript check passed. Both real installation roots first rejected the original
+package, then accepted the fixed patch and idempotent reapplication. Live OSV
+queries on each root returned a single verified backport while retaining the
+original HIGH advisory and exact lock path. Unknown/other advisories are not
+suppressed. Package versions, lockfiles and `exceptions=[]` remain unchanged.
+
+Independent review reran 35 tests, checked both real installed copies, compared
+the entire patched RSA file to the fixed upstream commit, and verified fresh-runner
+credential ordering and EAS archive/postinstall coverage. The final patch-format
+normalization only removes unchanged hunk context to satisfy whitespace hooks;
+the resulting RSA bytes remain identical to upstream. Final commit binding and
+local check logs are retained in the local release evidence.
+
+No cloud CI success is claimed for this unpushed fix. Current remote main remains
+`b77374c002be473e5572314169427baf5cf80998`, with failed CI `37027725041` (mobile
+audit failed; the other 27 jobs succeeded). Under AGENTS section 7, external writes
+remain paused pending explicit authorization to publish the verified repair.
+After publication, require fresh exact-SHA full CI and trusted validate; only then
+can separately authorized native closure and release-identity rotation proceed.
+No native build/upload or OTA is included in the next backend-only release.
 
 ## Work log
 
