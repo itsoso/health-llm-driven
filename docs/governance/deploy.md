@@ -177,8 +177,17 @@ build/native 标记仍防止跨入口重放。锁冲突、授权过期、未知�
 
 #### 固定历史 native-only 收尾
 
-`native_release_retirement.py` 只处理源码固定的 `cad1fd1d33621532e587b265e79f737dfb06d1fe`、
-GitHub run 36111598240 attempt 2 及指定 build/submission。受审 canonical root staging
+`native_release_retirement.py` 只接受源码固定的历史 profile。默认仍为
+`cad1fd1d33621532e587b265e79f737dfb06d1fe`、GitHub run 36111598240 attempt 2
+及指定 build/submission；旧收尾证据格式和前次未进入 vendor 的验证不变。
+显式 `--native-sha e19043ecb269e20f3bc0a546165e43d467f1fc8c` 选择 TestFlight 273：
+run 36877321184 attempt 1、build `20d5e73a-a6b9-4c70-ad69-e63d31e058f2`、
+submission `fcfbb57d-4804-4a36-9c57-eab062bf321e`。该 profile 另绑定完整 jobs 摘要，
+拒绝虚构 prior attempt、新旧 profile 混用和任意调用方提供的 ID/摘要。未知 SHA 拒绝。
+
+当前活跃授权不满足收尾 inspect 前置条件：操作者必须先获得生产授权变更许可，
+按 canonical contract 撤销精确旧身份并销毁旧 loopback 私钥；不能为只读取证放宽
+这一检查。受审 canonical root staging
 以系统 Python `-I -S -B` 执行，先 inspect，再传相同 `--evidence-sha256` 执行；GitHub
 只读凭据只经 stdin JSON 输入。旧 workflow、job、完整日志摘要、原始库存/锁 inode、
 撤权和无残留进程均须匹配。实时生产 SHA 与旧 native binding 的历史 SHA 分开证明，

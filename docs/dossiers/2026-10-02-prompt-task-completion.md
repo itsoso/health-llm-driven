@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | local verified; production delivery blocked by GitHub authentication |
-| 当前阶段 | G3 verified, G4 GO, G5 blocked |
+| 状态 | application candidate pushed and CI green; native release closure blocks deployment |
+| 当前阶段 | G3 verified, application G4 GO, G5 blocked on governed native closure |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -107,14 +107,72 @@ performed. Existing production health records were not changed for testing.
 
 ## G5 release and G6 production validation
 
-Pending. Local tests and source changes are not deployment or acceptance evidence.
-Local `gh auth status` reports its configured GitHub token invalid, and the
-repository Actions variables API returns HTTP 401. Existing SSH authentication
-can read the target main ref, but it cannot publish the required API-side live-eval
-confirmation. The in-app GitHub browser is signed out. Exact-commit
-live-eval CI variable publication and authenticated workflow dispatch must succeed
-before delivery; no guard is bypassed. Native-only release inventory is separately
-governed and must pass current readiness before a backend deployment.
+Application candidate `18b654f03883faa339aca32f9ec663210855f07a` was pushed to
+GitHub main after exact-commit live-eval confirmation was published and read back.
+Base main `d4628eecd` had successful CI `36880139929`. The application candidate's
+CI `37024818933` completed successfully. Trusted Release validation
+`37025971817` also succeeded for that exact SHA. The validation target skips
+backend/native production jobs and is not a deployment receipt.
+
+The earlier HTTP 401 was caused by stale environment-token overrides. Removing
+`GH_TOKEN` and `GITHUB_TOKEN` for the CLI selects the existing valid system-keyring
+login. Authenticated identity, repository permissions and Actions variable access
+were verified; no new credentials or scopes were created.
+
+Fresh production read-only inspection still shows backend
+`30ac1c67be7b2df79363ac7509f70f8a56ce4834`, healthy API/database/Redis/Celery, an
+active enabled GitHub relay, and no business release lease. Current permanent
+release authorization remains bound to
+`e19043ecb269e20f3bc0a546165e43d467f1fc8c`. Its native-only workspace has exactly
+`build-started.json`, `native-started.json`, `testflight-base.json`, and
+`build.lock`; it has no backend success receipt. Trusted TestFlight run
+`36877321184`, attempt 1, was rechecked as successful.
+
+The existing native-closure operator accepts only a different fixed historical
+candidate. A narrow second profile for TestFlight 273 is implemented and independently
+reviewed; its production use still requires authorization. Its expected build is
+`20d5e73a-a6b9-4c70-ad69-e63d31e058f2`, submission
+`fcfbb57d-4804-4a36-9c57-eab062bf321e`; exact workflow, jobs, original log bytes,
+canonical publisher bytes and retained workspace must all match. Unknown
+profiles, incomplete evidence, active leases/processes and replay remain blocked.
+
+Proposed production sequence, requiring separate authorization for release
+credential/permission changes: verify the exact canonical source and vendor
+evidence; revoke only the current bound identities and remove the exact old
+loopback private key as required by the canonical retirement contract; then run
+the closure inspection and close the exact native-only operation with its matching
+evidence digest; pass its
+private receipt through protected stdin to the canonical SHA-bound rotation;
+then validate and run the backend-only trusted workflow. Preserve original claims,
+lock inodes and retirement history. Never relabel native-only work as backend
+success, repeat an upload, delete old claims, or print private receipts. New
+loopback identity generation is part of rotation; the current dedicated cloud
+public key may be retained only if the canonical policy permits it.
+
+Closure source verification: 67/67 focused tests passed, and the independent
+review reran those tests successfully. The final seven-file release integration
+passed **482 tests in 42.44 seconds** across native closure, bootstrap, server,
+GitHub gate, workflow, TestFlight-only and EAS build contracts. Real read-only
+`vendor_evidence()` verified the exact run/jobs/log and canonical hashes. The new
+profile pins its distinct GitHub log storage host; cross-profile hosts and token
+forwarding to storage are rejected. System Map drift, secret scan, dossier check
+and selected blocking Ruff checks passed. The LLM change classifier marked this
+release-only repair `live_llm_required=False`; application runtime is unchanged
+from the previously live-evaluated candidate.
+
+Independent reviewer accepted frozen helper SHA-256
+`530a38e78eda0a13baed840d12bb8b7077ee4ca2ad6e1b81accc6f372de4afc0`
+and test SHA-256
+`d84b98d96761336543708b4624f359f86538c0f1dff6572f7466daa356bf89fe`.
+Final commit binding is recorded in the local release evidence after commit.
+
+Formal closure inspection itself requires proof of prior revocation and absent
+loopback private key. Its live preconditions have not been satisfied or waived;
+the currently active release identity is preserved pending explicit authorization.
+
+No production closure, authorization rotation, backend deployment or production
+health-data write has been performed by this task. Local source/CI evidence is
+not production acceptance.
 
 ## Work log
 
