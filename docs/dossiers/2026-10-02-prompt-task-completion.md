@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | local verification; production delivery pending |
-| 当前阶段 | G3 verification, G4 pending |
+| 状态 | local verified; production delivery blocked by GitHub authentication |
+| 当前阶段 | G3 verified, G4 GO, G5 blocked |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -33,7 +33,17 @@ data and deidentified utterances.
 
 ## G4 safety
 
-Pending independent review of a fixed local commit. No safety gate is waived.
+Independent review initially rejected `ecc1d7540071f2c9f639760656d797678868545b`:
+the water path bypassed the Agent Runtime write circuit and the meal authorization
+fingerprint omitted transitive executor dependencies. Both were reproduced with
+failing tests and corrected in `f683d6f2ebfd7a54455674b441dd3baa14689a21`.
+
+Independent fixed-commit rereview: **GO** for `f683d6f2e`, 52 passed and 3
+PostgreSQL-only skips. Paused/unavailable water confirmation produces no health
+writes or receipts, preserves the pending plan, and can resume after recovery.
+The existing explicit manual WriteIntent API retains its own admission boundary.
+Meal dependency changes and water grammar/expiry/execution changes now alter
+the runtime authorization contract. No safety gate was waived.
 
 ## Implemented acceptance surface
 
@@ -68,12 +78,24 @@ reproduction 5 failures, memory provenance/expiry 2 failures, short-ack full flo
 
 Fresh targeted evidence: read suites 378 passed; capability-policy suite 2189
 passed; meal suite 231 passed with 2 PostgreSQL skips, separately PostgreSQL 11
-passed; water PostgreSQL 25 passed, adjacent suite 256 passed with 3 PostgreSQL
+passed; signed-portion/CAS PostgreSQL 13 passed including concurrent one-winner
+updates; water PostgreSQL final 33 passed, adjacent suite 256 passed with 3 PostgreSQL
 skips; memory/context PostgreSQL 23 passed. These overlapping counts are not a
-combined test total. Whole-batch integration result is recorded after completion.
+combined test total.
+
+First broad CI-mode integration: 5008 passed, 5 PostgreSQL skips, one obsolete
+assertion failed because a valid meal correction now performs an owned, date/meal
+bounded lookup before presenting ambiguous candidates. Updated that test to
+verify the exact lookup, candidates, zero writes, no receipt and failure state.
+
+Final CI-mode integration on `f683d6f2e`: **3907 passed, 5 skipped**, 208.47 seconds,
+33 files, `DATABASE_URL=sqlite:///:memory:`, `TZ=Asia/Shanghai`. The long synthesis
+projection matrix passed in the earlier broad run and was not repeated for the
+narrow circuit/fingerprint/test-assertion corrections. PostgreSQL-only tests are
+verified separately; a SQLite skip is never counted as a production DB pass.
 
 Live synthetic LLM gate passed: invariants 12/12, health_agent_core 50/50,
-orchestrator 5/5 (average rubric score 0.98), trajectory contract 12/12 and
+orchestrator 5/5 (final fixed-code run average rubric score 0.94), trajectory contract 12/12 and
 trajectory goldens 9/9. Run used a consented synthetic subject in in-memory
 SQLite and configured provider credentials. Optional usage-log/budget tables
 were absent in that harness database; warnings are retained in the local log,
@@ -86,7 +108,10 @@ performed. Existing production health records were not changed for testing.
 ## G5 release and G6 production validation
 
 Pending. Local tests and source changes are not deployment or acceptance evidence.
-Local `gh auth status` reports its configured GitHub token invalid. Exact-commit
+Local `gh auth status` reports its configured GitHub token invalid, and the
+repository Actions variables API returns HTTP 401. Existing SSH authentication
+can read the target main ref, but it cannot publish the required API-side live-eval
+confirmation. The in-app GitHub browser is signed out. Exact-commit
 live-eval CI variable publication and authenticated workflow dispatch must succeed
 before delivery; no guard is bypassed. Native-only release inventory is separately
 governed and must pass current readiness before a backend deployment.
