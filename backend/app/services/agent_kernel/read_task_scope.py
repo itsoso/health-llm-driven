@@ -27,10 +27,10 @@ OWNED_MULTI_READ_TOOL_NAMES = frozenset({
 })
 
 _READ = re.compile(
-    r"查询|查看|看一下|看看|获取|比较|对比|分析|复盘|总结|怎么样|怎样|如何|什么|啥"
+    r"查询|查看|看一下|看看|获取|比较|对比|分析|洞察|复盘|总结|怎么样|怎样|如何|什么|啥"
 )
 _NON_AUTHORIZING = re.compile(
-    r"假如|假设|假想|如果|举例|例句|我在想|不要|不用|无需|别|不(?:再|分析|复盘|总结|查询|查看|同步|刷新|拉取)|取消|停止"
+    r"假如|假设|假想|如果|举例|例句|我在想|不要|不用|无需|别|不(?:再|分析|洞察|复盘|总结|查询|查看|同步|刷新|拉取)|取消|停止"
 )
 _NONSELF = re.compile(
     r"别人|他人|其他人|朋友|同事|妈妈|爸爸|母亲|父亲|家人|妻子|丈夫|女儿|儿子|她的|他的|他们|她们"
@@ -43,7 +43,7 @@ _DOMAINS = {
     "spo2": re.compile(r"血氧|spo2", re.I),
     "diet": re.compile(r"饮食|餐食|早餐|午餐|晚餐|吃了(?:什么|啥)|吃过(?:什么|啥)"),
 }
-_RETROSPECTIVE = re.compile(r"(?:分析|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
+_RETROSPECTIVE = re.compile(r"(?:分析|洞察|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
 _OWNED_ANALYSIS_REFERENCE = re.compile(
     r"(?:并|再)?(?:基于|结合|根据)(?:这些记录|上述数据|以上记录)"
     r"(?:进行)?(?:分析|总结|评价|评估|复盘)(?:一下)?"
@@ -107,7 +107,7 @@ def _owned_active(text: str | None) -> bool:
                 return False
             continue
         subject_text = re.sub(
-            r"^(?:先|再|然后|接着)?(?:分析|复盘|总结)", "查询", clause.strip()
+            r"^(?:先|再|然后|接着)?(?:分析|洞察|复盘|总结)", "查询", clause.strip()
         )
         # Generic retrospective targets are not clinical entities, but their
         # owner must satisfy the same shared check as an explicit sleep read.
@@ -167,7 +167,7 @@ def _independent_sync_read_clause(clause: str) -> bool:
     core = _strip_exam_request_scaffolding(clause)
     if _daily_read_frame(core) is not None:
         return True
-    if not (_has_read_clause(clause) or re.match(r"(?:先|再)?(?:分析|复盘|总结)", clause)):
+    if not (_has_read_clause(clause) or re.match(r"(?:先|再)?(?:分析|洞察|复盘|总结)", clause)):
         return False
     if health_read_cancelled(clause):
         return True  # A cancelled independent read cannot reopen sync authority.

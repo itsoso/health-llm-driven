@@ -12,6 +12,7 @@ import re
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.conversation_memory import ConversationMemory
@@ -240,9 +241,11 @@ def get_relevant_memories(db: Session, user_id: int, limit: int = 5) -> str:
 
     P3-2: 只查 status='active', 排序按 decayed_score (relevance × time-decay) 降序.
     """
+    now = datetime.now(timezone.utc)
     memories = db.query(ConversationMemory).filter(
         ConversationMemory.user_id == user_id,
         ConversationMemory.status == "active",
+        or_(ConversationMemory.expires_at.is_(None), ConversationMemory.expires_at > now),
     ).order_by(
         ConversationMemory.relevance_score.desc(),
         ConversationMemory.created_at.desc(),
@@ -251,7 +254,6 @@ def get_relevant_memories(db: Session, user_id: int, limit: int = 5) -> str:
     if not memories:
         return ""
 
-    now = datetime.now(timezone.utc)
     scored = [
         (m, _decay_score(m.relevance_score or 1.0, m.created_at, now))
         for m in memories
@@ -260,7 +262,7 @@ def get_relevant_memories(db: Session, user_id: int, limit: int = 5) -> str:
     top = [m for m, _s in scored[:limit]]
 
     type_labels = {
-        "medical": "医嘱",
+        "medical": "用户自述健康情况，未经临床确认",
         "allergy": "过敏",
         "preference": "偏好",
         "instruction": "注意事项",
@@ -269,9 +271,20 @@ def get_relevant_memories(db: Session, user_id: int, limit: int = 5) -> str:
     items = []
     for m in top:
         label = type_labels.get(m.memory_type, "记忆")
+        if m.memory_type in {"medical", "allergy"}:
+            created = m.created_at
+            if created is not None:
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+                label += f"；记录时间 {created.astimezone(timezone.utc).isoformat()}"
+            else:
+                label += "；记录时间未知"
         items.append(f"[{label}] {m.content}")
 
-    return "用户历史记忆:\n" + "\n".join(items)
+    return (
+        "用户历史记忆（来自对话，可能已变化；不得据此认定当前诊断、临床康复或停药，"
+        "与本轮自述冲突时需保留时间和来源并核对）:\n" + "\n".join(items)
+    )
 
 
 def get_top_memory_for_opener(
@@ -279,12 +292,14 @@ def get_top_memory_for_opener(
 ) -> List[ConversationMemory]:
     """P3-3 用: 拉 top k 条 active 记忆 (allergy/medical/preference 优先), 给 chat opener 用."""
     priority_types = ["allergy", "medical", "preference"]
+    now = datetime.now(timezone.utc)
 
     primary = (
         db.query(ConversationMemory)
         .filter(
             ConversationMemory.user_id == user_id,
             ConversationMemory.status == "active",
+            or_(ConversationMemory.expires_at.is_(None), ConversationMemory.expires_at > now),
             ConversationMemory.memory_type.in_(priority_types),
         )
         .order_by(
@@ -303,6 +318,7 @@ def get_top_memory_for_opener(
         .filter(
             ConversationMemory.user_id == user_id,
             ConversationMemory.status == "active",
+            or_(ConversationMemory.expires_at.is_(None), ConversationMemory.expires_at > now),
             ~ConversationMemory.memory_type.in_(priority_types),
         )
         .order_by(

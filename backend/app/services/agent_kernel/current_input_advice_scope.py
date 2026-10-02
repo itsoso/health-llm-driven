@@ -67,9 +67,29 @@ CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS = """
 """.strip()
 
 
+_WEARABLE_PLACEMENT_QUESTION = re.compile(
+    r"(?:佳明(?:手表)?|Garmin(?:手表)?|智能手表|手表)"
+    r"(?:戴|佩戴)在(?:脚踝|脚腕|手腕)(?:上)?[，,]"
+    r"(?:睡眠(?:和|与|、)血氧|血氧(?:和|与|、)睡眠|睡眠|血氧)"
+    r"(?:的)?(?:读数|测量|监测)(?:会受影响吗|有影响吗|会不会受影响)[？?]?",
+    re.IGNORECASE,
+)
+_WEARABLE_PLACEMENT_INSTRUCTIONS = (
+    "本轮是佩戴位置对可穿戴设备测量原理的通用解释，不是个人数据查询。"
+    "仅解释传感器接触、佩戴位置和算法适用性的可能影响；"
+    "不能推断这位用户实际佩戴方式、某次读数是否准确或任何诊断。"
+    "未提供具体型号和官方支持信息时，不声称脚踝佩戴受到厂商支持；可查询通用知识。"
+    "说明本轮未读取个人记录，不要求为一般原理解释提供查询日期。"
+)
+
+
+def is_wearable_placement_question(text: str) -> bool:
+    return bool(isinstance(text, str) and _WEARABLE_PLACEMENT_QUESTION.fullmatch(text.strip()))
+
+
 def is_current_input_advice(text: str) -> bool:
     """Prove an entire current-input answer goal; unknown residue stays strict."""
-    if is_current_input_recovery_advice(text):
+    if is_current_input_recovery_advice(text) or is_wearable_placement_question(text):
         return True
     if not isinstance(text, str) or len(text) > 512 or any(ch in text for ch in "\r\n\t"):
         return False
@@ -86,6 +106,8 @@ def is_current_input_advice(text: str) -> bool:
 
 
 def current_input_advice_instructions(text: str) -> str:
+    if is_wearable_placement_question(text):
+        return _WEARABLE_PLACEMENT_INSTRUCTIONS
     if is_current_input_recovery_advice(text):
         return CURRENT_INPUT_RECOVERY_ADVICE_INSTRUCTIONS
     return CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS if is_current_input_advice(text) else ""
@@ -124,7 +146,8 @@ def local_advice_response(message: str) -> tuple[str, str] | None:
     Existing symptom-recovery remains on its existing model/medical pipeline.
     A bare general-health request is not silently changed into sleep advice.
     """
-    if is_current_input_recovery_advice(message) or not is_current_input_advice(message):
+    if (is_current_input_recovery_advice(message) or is_wearable_placement_question(message)
+            or not is_current_input_advice(message)):
         return None
     candidate = message.replace(" ", "").replace("\u3000", "")
     if _ACTION_EXPLANATION_RE.fullmatch(candidate):

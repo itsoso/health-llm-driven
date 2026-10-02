@@ -6112,7 +6112,7 @@ _DIET_NON_FOOD_FIELD_RE = re.compile(
 )
 _DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
     r"(?:没吃那么多|没有吃那么多|没全吃|没有全吃|没吃完|没有吃完|"
-    r"实际.{0,8}只吃|只吃了?|只有吃了?|我吃了)",
+    r"实际.{0,8}只吃|只吃了?|只有吃了?|我吃了|(?:刚才|刚刚)(?:早餐|午餐|晚餐|加餐)吃了)",
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
@@ -6260,7 +6260,7 @@ _DIET_FACTUAL_LATEST_CORRECTION_SHAPE_RE = re.compile(
     rf"(?:{_DIET_FACTUAL_WRITE_SUFFIX_PATTERN})?\s*[。！!]*$",
 )
 _DIET_FACTUAL_CORRECTION_SHAPE_RE = re.compile(
-    rf"^(?:{_DIET_FACTUAL_DATE_PATTERN}\s*)?(?:我\s*)?"
+    rf"^(?:(?:{_DIET_FACTUAL_DATE_PATTERN}|刚才|刚刚)\s*)?(?:我\s*)?"
     rf"(?:{_DIET_FACTUAL_SHORTFALL_PATTERN}\s*[,，]\s*)?"
     rf"{_DIET_FACTUAL_MEAL_PATTERN}\s*"
     rf"{_DIET_FACTUAL_CALORIE_DESCRIPTOR_PATTERN}\s*"
@@ -6285,6 +6285,17 @@ _DIET_FACTUAL_CONSUMPTION_FIRST_CORRECTION_RE = re.compile(
     r"\s*[。！!]*$",
     re.I,
 )
+_DIET_COMMAND_FIRST_CORRECTION_RE = re.compile(
+    r"^(?:(?:请|麻烦)\s*)?(?:帮我\s*)?(?:修改|更正|修正|更新|调整)"
+    rf"(?:(?:{_DIET_FACTUAL_DATE_PATTERN}|\d{{4}}-\d{{2}}-\d{{2}})(?:的)?)?"
+    rf"{_DIET_FACTUAL_MEAL_PATTERN}(?:的)?(?:记录)?(?:\s*#(?P<record_id>[1-9]\d{{0,9}}))?"
+    r"\s*[,，]\s*(?:我)?(?:实际)?(?:只)?吃了(?:其中的)?"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:[。；;]\s*(?:修改|更正|修正|更新|调整)"
+    rf"(?:(?:{_DIET_FACTUAL_DATE_PATTERN}|\d{{4}}-\d{{2}}-\d{{2}})(?:的)?)?"
+    rf"{_DIET_FACTUAL_MEAL_PATTERN}(?:的)?记录)?[。！!]*$",
+)
+
 _DIET_FACTUAL_PHOTO_SUBJECT_PATTERN = (
     r"(?:(?:这|整|本)(?:一)?(?:餐|顿|份|盘|桌菜?)|(?:这|整)些)"
 )
@@ -6406,6 +6417,7 @@ def _meal_fraction_utterance_has_factual_shape(
     return any(pattern.fullmatch(marked) for pattern in (
         _DIET_FACTUAL_CORRECTION_SHAPE_RE,
         _DIET_FACTUAL_CONSUMPTION_FIRST_CORRECTION_RE,
+        _DIET_COMMAND_FIRST_CORRECTION_RE,
         _DIET_FACTUAL_PHOTO_SHAPE_RE,
         _DIET_FACTUAL_BARE_PHOTO_SHAPE_RE,
     ))
@@ -6658,6 +6670,15 @@ def _parse_explicit_diet_correction(
     if not meal_type:
         return None
 
+    # Repeated commands may clarify the same target, never silently switch meals.
+    if len({_normalize_diet_meal_type(match.group(0))
+            for match in _DIET_CORRECTION_MEAL_RE.finditer(text)}) != 1:
+        return None
+    explicit_dates = {_normalize_relative_date(match.group(0), reference_now=reference_now)
+                      for match in _MESSAGE_DATE_RE.finditer(text)}
+    if len(explicit_dates) > 1:
+        return None
+
     date_match = _MESSAGE_DATE_RE.search(text)
     target_date = _normalize_relative_date(
         date_match.group(0) if date_match else "today",
@@ -6675,12 +6696,18 @@ def _parse_explicit_diet_correction(
     consumed_portion = _partial_meal_consumed_portion(text)
     if consumed_portion is not None:
         consumed_fraction, consumed_fraction_label = consumed_portion
-        return {
+        result = {
             "date": target_date,
             "meal_type": meal_type,
             "consumed_fraction": consumed_fraction,
             "consumed_fraction_label": consumed_fraction_label,
         }
+        token = _DIET_FRACTION_TOKEN_RE.search(text)
+        marked = text[:token.start()] + _DIET_FACTUAL_PORTION_PLACEHOLDER + text[token.end():]
+        command = _DIET_COMMAND_FIRST_CORRECTION_RE.fullmatch(marked)
+        if command and command.group("record_id"):
+            result["record_id"] = int(command.group("record_id"))
+        return result
 
     partial_signal = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
     if (
@@ -6720,6 +6747,22 @@ def _parse_explicit_diet_correction(
         "meal_type": meal_type,
         "food_items": replacement,
     }
+
+
+def _diet_correction_candidate_message(
+    correction: Mapping[str, Any], candidates: Sequence[Mapping[str, Any]],
+) -> str:
+    meal = _MEAL_TYPE_ZH.get(correction.get("meal_type"), "餐食")
+    lines = [_diet_correction_unresolved_message("ambiguous_target")]
+    for row in candidates[:5]:
+        record_id = row.get("id") or row.get("record_id")
+        label = " ".join(str(row.get("food_items") or "餐食内容未填写").split())[:80]
+        command = (f"修改{correction['date']}{meal}记录#{record_id}，"
+                   f"我只吃了{correction['consumed_fraction_label']}")
+        lines.append(f"记录 #{record_id}：{label}。回复「{command}」。")
+    if len(candidates) > 5:
+        lines.append("还有其他符合条件的记录，可在饮食记录列表中选择后修改。")
+    return "\n".join(lines)
 
 
 def _diet_correction_update_data(
@@ -11879,6 +11922,12 @@ def _medication_batch_control_action(text: str) -> Optional[str]:
     return None
 
 
+def _is_water_backfill_turn(text: str, reference_now: datetime) -> bool:
+    from app.services.water_backfill import is_water_backfill_control, parse_water_backfill
+
+    return is_water_backfill_control(text) or parse_water_backfill(text, reference_now=reference_now) is not None
+
+
 def _medication_batch_turn_bypasses_multi_model(text: str) -> bool:
     """Keep deterministic intake statements outside model panels.
 
@@ -12845,11 +12894,12 @@ class AgentExecutor:
     def _initial_composed_read_calls(self, round_index: int, tools: list[dict]) -> list[dict]:
         """Propose a skipped owned read through Pi; never dispatch outside its gateway."""
         snapshot = self._agent_kernel_snapshot
+        queued_sync = self._turn_sync_queued and self._turn_garmin_sync_job is not None
         if (
-            snapshot is None or snapshot.intent.is_write
+            snapshot is None or (snapshot.intent.is_write and not queued_sync)
             or self._turn_daily_read_plan is not None
             or self._force_no_tools_synthesis or self._read_repair_failures
-            or self._turn_sync_attempted
+            or (self._turn_sync_attempted and not queued_sync)
             or classify_clinician_turn(self._current_turn_user_message).kind != "none"
             or not any((tool.get("function") or {}).get("name") == "health_query_batch" for tool in tools)
         ):
@@ -12858,7 +12908,7 @@ class AgentExecutor:
             has_owned_sync_instruction, resolve_owned_read_scope,
         )
 
-        if has_owned_sync_instruction(snapshot.envelope.text):
+        if has_owned_sync_instruction(snapshot.envelope.text) and not queued_sync:
             return []
         scope = resolve_owned_read_scope(snapshot)
         from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
@@ -12868,6 +12918,14 @@ class AgentExecutor:
             # failed adapters are disclosed, not retried indefinitely.
             queries = [goal['query'] for goal in self._exercise_plan_goal_outcomes()
                        if goal['reason_code'] == 'query_not_executed']
+        elif queued_sync:
+            # Resume only the explicitly bound read goal once. Existing rows
+            # and the job result are separate evidence; this never requeues or
+            # waits for background completion, including pending/failed jobs.
+            if any(execution.tool_name in {"health_query", "health_query_batch"}
+                   for execution in self._turn_composed_read_executions):
+                return []
+            queries = list(scope.queries) if scope is not None else []
         else:
             if round_index != 0 or self._turn_composed_read_executions:
                 return []
@@ -13057,6 +13115,34 @@ class AgentExecutor:
                 *snapshot.actionable_references, reference,
             ))
             self._agent_kernel_event_bus.rebind_snapshot(self._agent_kernel_snapshot, reason='owned_read_task_continuation')
+        self._bind_diet_portion_reference(user_id, conversation_id)
+
+    def _bind_diet_portion_reference(self, user_id: int, conversation_id: int) -> None:
+        from app.services.agent_diet_continuation import (
+            is_bare_portion_correction, load_diet_portion_reference, resolve_diet_portion_correction,
+        )
+        snapshot = self._ensure_agent_kernel_turn()
+        if snapshot.envelope.media:
+            return
+        reference = load_diet_portion_reference(self.db, user_id, conversation_id, snapshot)
+        if reference is not None:
+            snapshot = replace(snapshot, actionable_references=(*snapshot.actionable_references, reference))
+        correction = resolve_diet_portion_correction(snapshot)
+        if correction is not None and correction.get("consumed_fraction") is not None:
+            intent = replace(snapshot.intent, primary="mutate", domain="diet", operation="update",
+                             is_write=True, scope={"date": correction["date"],
+                                                  "meal_type": correction.get("meal_type") or ""})
+        elif is_bare_portion_correction(snapshot.envelope.text):
+            # A fraction alone cannot create a new meal or select an unrelated draft.
+            intent = replace(snapshot.intent, primary="chat", domain="diet", operation="clarify",
+                             is_write=False, scope={})
+        else:
+            return
+        self._agent_kernel_snapshot = replace(snapshot, intent=intent, goal=compile_goal_spec(
+            envelope=snapshot.envelope, context=snapshot.context, intent=intent,
+            actionable_references=snapshot.actionable_references,
+        ))
+        self._agent_kernel_event_bus.rebind_snapshot(self._agent_kernel_snapshot, reason="owned_diet_portion_resolved")
 
     def _capture_owner_scoped_manage_list_reference(
         self,
@@ -13107,10 +13193,12 @@ class AgentExecutor:
             "systolic",
             "diastolic",
             "record_date",
+            "created_at",
             "meal_type",
             "food_items",
             "name",
             "status",
+            "calories", "protein", "carbs", "fat", "fiber", "alcohol_units",
         }
         records = tuple(
             {
@@ -15965,12 +16053,22 @@ class AgentExecutor:
                 run_id=run_id,
             )
 
+            from app.services.agent_read_task_continuation import load_read_task_reference
+
+            owned_read_followup = (
+                conversation_id is not None
+                and not effective_images and not file_base64
+                and load_read_task_reference(
+                    self.db, user_id, conversation_id, self._agent_kernel_snapshot,
+                ) is not None
+            )
             if (
                 retry_recovery is None
                 and not effective_images
                 and not file_base64
                 and not _extract_multi_model_flag(extra_context)
                 and needs_input_clarification(effective_message)
+                and not owned_read_followup
             ):
                 async for event in self._run_input_clarification_stream(
                     user_id=user_id,
@@ -16438,6 +16536,7 @@ class AgentExecutor:
                     )
                 )
             )
+            and not _is_water_backfill_turn(message, self._agent_kernel_reference_now())
             and not _has_fast_record_write_intent(message or "")
             # 面板有自己的发布点与回显式记录兜底: 危机回合走普通路径拿热线兜底。
             and not contains_crisis_language(message or "")
@@ -16897,6 +16996,22 @@ class AgentExecutor:
             if proposal is not None:
                 async for evt in self._run_diet_photo_correction_proposal(
                     proposal, svc=svc, conv=conv, user_id=user_id,
+                    client_turn_id=client_turn_id, start_time=start_time,
+                ):
+                    yield evt
+                return
+
+        if (health_evidence_turn is None and not read_only_tools
+                and not images and not file_base64):
+            from app.services.water_backfill import resolve_water_backfill_turn
+
+            water_result = resolve_water_backfill_turn(
+                self.db, user_id=user_id, source_message_id=user_msg.id,
+                reference_now=self._agent_kernel_reference_now(),
+            )
+            if water_result is not None:
+                async for evt in self._run_water_backfill_result(
+                    water_result, svc=svc, conv=conv, user_id=user_id,
                     client_turn_id=client_turn_id, start_time=start_time,
                 ):
                     yield evt
@@ -18618,6 +18733,20 @@ class AgentExecutor:
                             if not proposed_calls and finish_reason == "stop" and not health_advice_buffered:
                                 proposed_calls = self._initial_composed_read_calls(round_idx, round_tools)
                                 if proposed_calls:
+                                    candidate = ""
+                                    finish_reason = "tool_calls"
+                            if (not proposed_calls and finish_reason == "stop" and round_idx == 0
+                                    and not health_advice_buffered and not self._read_only_turn
+                                    and not images and not file_base64 and not write_receipts):
+                                from app.services.agent_diet_continuation import resolve_diet_portion_correction
+                                portion = resolve_diet_portion_correction(self._ensure_agent_kernel_turn())
+                                if portion is not None and portion.get("consumed_fraction") is not None:
+                                    lookup_args = {"record_type": "diet", "operation": "list", "limit": 20,
+                                                   "date": portion["date"], "meal_type": portion["meal_type"]}
+                                    if portion.get("target") == "latest":
+                                        lookup_args = {"record_type": "diet", "operation": "list", "limit": 2}
+                                    proposed_calls = [{"id": "diet-portion-lookup", "type": "function", "function": {
+                                        "name": "health_manage", "arguments": json.dumps(lookup_args)}}]
                                     candidate = ""
                                     finish_reason = "tool_calls"
                             if (
@@ -20391,6 +20520,45 @@ class AgentExecutor:
         ):
             return None
         return intent
+
+    async def _run_water_backfill_result(
+        self, result, *, svc, conv, user_id, client_turn_id, start_time,
+    ):
+        """Persist the precise text preview before a later turn can confirm it."""
+        status = result["status"]
+        receipts = result.get("write_receipts") or []
+        pending = status in {"pending", "clarification"}
+        outcome = classify_agent_turn_outcome(
+            completion_status="error" if status == "error" else "complete",
+            final_text=result["reply"], write_receipts=receipts,
+            pending_confirmation_tools=["water_backfill"] if pending else [],
+        )
+        if status == "clarification":
+            outcome.update(status="waiting_for_user", category="clarification_required",
+                           reason_code=result.get("reason", "water_backfill_missing_facts"))
+        meta = {
+            "mode": "water_backfill", "llm_rounds": 0, "llm_ms": 0,
+            "verified_no_change": result.get("verified_no_change", False),
+            "elapsed_ms": int((time.time() - start_time) * 1000),
+            "write_receipts": receipts, "tools_used": [], "cards": [],
+            "client_turn_finalized": True, "record_intent_no_tool": False,
+            "turn_outcome": outcome,
+            **agent_completion_metadata("error" if status == "error" else "complete", outcome),
+            **({"water_backfill_intent_id": result["intent_id"],
+                "water_backfill_plan": result["plan"],
+                "pending_write_intent_ids": [result["intent_id"]],
+                "pending_write_intent_kinds": ["water_backfill"]} if status == "pending" else {}),
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        conv.updated_at = datetime.now(UTC)
+        assistant = svc.save_message(
+            conv.id, "assistant", result["reply"], meta=meta,
+            client_turn_id=client_turn_id, client_turn_user_id=user_id,
+        )
+        yield {"event": "token", "data": {"content": result["reply"]}}
+        yield {"event": "done", "data": {
+            **meta, "conversation_id": conv.id, "message_id": assistant.id,
+        }}
 
     @staticmethod
     def _medication_batch_items_text(payload: Mapping[str, Any]) -> str:
@@ -24419,6 +24587,14 @@ class AgentExecutor:
             current_message,
             reference_now=self._agent_kernel_reference_now(),
         )
+        from app.services.agent_diet_continuation import is_bare_portion_correction, resolve_diet_portion_correction
+        if correction is None and self._agent_kernel_snapshot is not None:
+            correction = resolve_diet_portion_correction(self._agent_kernel_snapshot)
+        if correction is None and is_bare_portion_correction(current_message):
+            raise _SimpleRecordTerminal(
+                "尚未修改。没有可核实的上一餐保存回执；请先保存餐食草稿，或说明要修改的日期和餐次。",
+                satisfied=False,
+            )
         if not correction:
             if _unsafe_diet_correction_requested(current_message):
                 for tool_call in tool_calls:
@@ -24489,9 +24665,15 @@ class AgentExecutor:
                     headers,
                 )
                 lookup_done = True
+                if lookup_error is None:
+                    self._capture_owner_scoped_manage_list_reference(
+                        "health_manage", {"record_type": "diet", "operation": "list"},
+                        json.dumps(records, ensure_ascii=False),
+                    )
             return records, lookup_error
 
         normalized: List[Dict[str, Any]] = []
+        correction_emitted = False
         for tool_call in tool_calls:
             function = tool_call.get("function") or {}
             tool_name = function.get("name")
@@ -24519,6 +24701,9 @@ class AgentExecutor:
                 normalized.append(tool_call)
                 continue
 
+            if correction_emitted:
+                continue
+
             candidates, error = await _lookup_records()
             candidate_rows = [
                 row for row in (candidates if isinstance(candidates, list) else [])
@@ -24531,6 +24716,10 @@ class AgentExecutor:
                     reference_now=self._agent_kernel_reference_now(),
                 ) if not error else None
                 candidate_rows = [candidate] if candidate is not None else []
+            selected_id = correction.get("record_id")
+            if selected_id is not None:
+                candidate_rows = [row for row in candidate_rows
+                                  if (row.get("id") or row.get("record_id")) == selected_id]
             update_data = (
                 _diet_correction_update_data(correction, candidate_rows[0])
                 if not error and len(candidate_rows) == 1
@@ -24574,10 +24763,13 @@ class AgentExecutor:
                 )
                 self._turn_diet_correction_unresolved_reason = unresolved_reason
                 raise _SimpleRecordTerminal(
-                    _diet_correction_unresolved_message(unresolved_reason),
+                    _diet_correction_candidate_message(correction, candidate_rows)
+                    if unresolved_reason == "ambiguous_target" and correction.get("consumed_fraction")
+                    else _diet_correction_unresolved_message(unresolved_reason),
                     satisfied=False,
                 )
 
+            correction_emitted = True
             normalized.append({
                 **tool_call,
                 "function": {

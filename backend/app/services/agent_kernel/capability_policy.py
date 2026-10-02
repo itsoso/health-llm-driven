@@ -1044,6 +1044,48 @@ def _delete_evidence_matches_request(
     )
 
 
+def _authorized_diet_portion_update_args(
+    snapshot: TurnSnapshot, args: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Recompute an absolute portion from the turn and a fresh owned meal."""
+    from app.services.agent_diet_continuation import resolve_diet_portion_correction
+    from app.services.agent_executor import (
+        _diet_correction_update_data, _latest_diet_correction_candidate,
+    )
+
+    if (type(snapshot.context.user_id) is not int or snapshot.context.user_id <= 0
+            or type(snapshot.envelope.user_id) is not int
+            or snapshot.envelope.user_id != snapshot.context.user_id
+            or set(args) != {"record_type", "operation", "record_id", "data"}):
+        return None
+    correction = resolve_diet_portion_correction(snapshot)
+    if correction is None or "consumed_fraction" not in correction:
+        return None
+    requested_id = canonical_health_manage_record_id(args.get("record_id"))
+    owned_records = _owner_scoped_manage_list_records(snapshot, "diet")
+    if correction.get("target") == "latest":
+        candidate = _latest_diet_correction_candidate(
+            owned_records, target_date=correction["date"],
+            reference_now=snapshot.context.current_time,
+        )
+        records = [candidate] if candidate is not None else []
+    else:
+        records = [record for record in owned_records
+                   if record.get("record_date") == correction.get("date")
+                   and record.get("meal_type") == correction.get("meal_type")
+                   and ("record_id" not in correction
+                        or record.get("id") == correction["record_id"])]
+    if len(records) != 1 or requested_id != records[0].get("id"):
+        return None
+    expected = _diet_correction_update_data(correction, records[0])
+    data = args.get("data")
+    if (not isinstance(data, dict) or not expected or data != expected
+            or any(isinstance(value, bool) for value in data.values())):
+        return None
+    return {"record_type": "diet", "operation": "update",
+            "record_id": requested_id, "data": expected}
+
+
 def _authorized_health_manage_update_args(
     snapshot: TurnSnapshot,
     args: dict[str, Any],
@@ -1061,6 +1103,8 @@ def _authorized_health_manage_update_args(
         has_explicit_authorizing_update_request,
     )
 
+    if canonical_health_manage_record_type(args.get("record_type")) == "diet":
+        return _authorized_diet_portion_update_args(snapshot, args)
     turn_text = normalize_health_authorization_text(snapshot.envelope.text)
     if not has_explicit_authorizing_update_request(turn_text):
         return None
@@ -2448,6 +2492,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     """Return static, content-free metadata that governs tool authorization."""
     from app.services.agent_kernel.read_task_scope import read_task_scope_contract_payload
     from app.services.agent_read_task_continuation import read_task_continuation_contract_payload
+    from app.services.agent_diet_continuation import diet_continuation_contract_payload
     from app.services.agent_longitudinal_read import longitudinal_read_contract_payload
     from app.services.agent_kernel.exercise_plan_scope import exercise_plan_scope_contract_payload
     from app.services.agent_kernel.current_input_advice_scope import current_input_advice_scope_contract_payload
@@ -2456,6 +2501,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
         "exercise_plan_scope": exercise_plan_scope_contract_payload(),
         "read_task_scope": read_task_scope_contract_payload(),
         "read_task_continuation": read_task_continuation_contract_payload(),
+        "diet_continuation": diet_continuation_contract_payload(),
         "longitudinal_read": longitudinal_read_contract_payload(),
         "contract_version": _CAPABILITY_POLICY_CONTRACT_VERSION,
         "whole_record_delete_evidence_version": (_WHOLE_RECORD_DELETE_EVIDENCE_VERSION),
@@ -2658,7 +2704,12 @@ def decide_tool_capability(
         return _decision("block", "current_input_advice_read_not_needed" if optional_read
                          else "current_input_advice_tool_not_allowed", tool_name, args)
     owned_scope = resolve_owned_read_scope(snapshot)
-    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+    from app.services.agent_kernel.exercise_plan_scope import (
+        resolve_exercise_plan_scope, has_unresolved_exercise_plan_basis,
+    )
+    if (tool_name in {"health_query", "health_query_batch", "health_manage"}
+            and has_unresolved_exercise_plan_basis(snapshot.envelope.text)):
+        return _decision("block", "health_query_semantics_unresolved", tool_name, args)
     exercise_plan = resolve_exercise_plan_scope(snapshot.envelope.text)
     if exercise_plan is not None:
         # The authenticated principal never comes from language or model args.

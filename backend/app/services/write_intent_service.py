@@ -48,11 +48,9 @@ def list_pending(db: Session, user_id: int) -> List[Dict[str, Any]]:
         .filter(
             WriteIntent.user_id == user_id,
             WriteIntent.status == "pending",
-            # Medication batches require an itemized informed-consent preview
-            # in chat.  The generic Home WriteIntent card only renders title /
-            # description, so exposing this kind there would offer a blind
-            # confirm button without names, strengths, doses, or frozen time.
-            WriteIntent.kind != "medication_intake_batch",
+            # Batch plans require the exact itemized chat preview; the generic
+            # Home card only renders title/description and cannot present it.
+            WriteIntent.kind.notin_(["medication_intake_batch", "water_backfill"]),
         )
         .order_by(WriteIntent.created_at.desc())
         .all()
@@ -527,6 +525,12 @@ def confirm(
     )
     if wi is None:
         raise LookupError("write_intent not found")  # 端点 → 404(含 IDOR)
+    if wi.kind == "water_backfill":
+        if trust_tier not in (None, "manual_confirm"):
+            raise ValueError("water backfill requires manual confirmation")
+        from app.services.water_backfill import confirm_water_backfill
+
+        return confirm_water_backfill(db, user_id, intent_id)
     if wi.status != "pending":
         result = {
             "id": wi.id,
@@ -807,7 +811,7 @@ def dismiss(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
     if wi is None:
         raise LookupError("write_intent not found")
     if wi.status != "pending":
-        if wi.kind == "medication_intake_batch" and wi.status == "executed":
+        if wi.kind in {"medication_intake_batch", "water_backfill"} and wi.status == "executed":
             # Confirm won the race. Return the same verifiable terminal result
             # instead of forcing clients to guess from a bare status.
             return confirm(db, user_id, intent_id)
@@ -863,7 +867,7 @@ def dismiss(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
     )
     if current is None:
         raise LookupError("write_intent not found")
-    if current.kind == "medication_intake_batch" and current.status == "executed":
+    if current.kind in {"medication_intake_batch", "water_backfill"} and current.status == "executed":
         return confirm(db, user_id, intent_id)
     result = {"id": current.id, "status": current.status}
     if current.kind == "medication_intake_batch":

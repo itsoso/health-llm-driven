@@ -2623,9 +2623,9 @@ def health_read_has_nonself_subject(text: str) -> bool:
     # do not discard any owner, date, filter or independent clause, and do not
     # grant read authority here. Intent/cancellation checks remain separate.
     analysis_scope = _strip_exam_request_scaffolding(subject_scope)
-    if re.match(r"^(?:分析|复盘|总结)(?:一下)?", analysis_scope):
+    if re.match(r"^(?:分析|洞察|复盘|总结)(?:一下)?", analysis_scope):
         subject_scope = re.sub(
-            r"^(?:分析|复盘|总结)(?:一下)?", "查询", analysis_scope, count=1
+            r"^(?:分析|洞察|复盘|总结)(?:一下)?", "查询", analysis_scope, count=1
         )
 
     def normalize_safe_deictic_report(match: re.Match[str]) -> str:

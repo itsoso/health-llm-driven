@@ -20,13 +20,22 @@ _LIMITATIONS = frozenset(
     }
 )
 _FOLLOWUP = re.compile(
-    r"(?:好了吗|好了没|现在好了没|同步好了吗|同步完了吗|再查一下|再看看|继续分析|继续复盘|继续)[？?。!！\s]*"
+    r"(?:好|好的|好了吗|好了没|现在好了没|同步好了吗|同步完了吗|再查一下|再看看|继续分析|继续复盘|继续)[？?。!！\s]*"
+)
+_PRESENTATION_FOLLOWUP = re.compile(
+    r"(?:请)?(?:"
+    r"(?:使用|用)\s*HTML\s*(?:格式|方式)?输出|"
+    r"(?:把刚才的(?:分析|报告))?改成\s*HTML|"
+    r"(?:页面保留核心洞察[，,]\s*)?生成\s*HTML\s*页面"
+    r")[。!！\s]*",
+    re.IGNORECASE,
 )
 
 
 def is_read_task_followup(text: str) -> bool:
     # Quoted/conditional/cancelled/compound input must never inherit authority.
-    return bool(_FOLLOWUP.fullmatch(text.strip()))
+    normalized = text.strip()
+    return bool(_FOLLOWUP.fullmatch(normalized) or _PRESENTATION_FOLLOWUP.fullmatch(normalized))
 
 
 def _validated_task(raw, now: datetime) -> dict | None:
