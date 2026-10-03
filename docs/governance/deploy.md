@@ -243,6 +243,26 @@ submission `fcfbb57d-4804-4a36-9c57-eab062bf321e`。该 profile 另绑定完整 
 摘要变化或丢失回执均阻断，不自动重跑、不伪造 backend SUCCEEDED。历史校验仍保留
 当时生产证明，但不要求未来生产永远停留在该 revision。
 
+#### Native 收尾后已完成后端事务的固定续接
+
+仅旧 native `e19043ecb269e20f3bc0a546165e43d467f1fc8c` 已关闭、原私密
+receipt 完整且身份已撤销时，canonical bootstrap 的 `rotate` 可显式传入
+`--finalized-production-sha 5c3eb6ed2c0c7f18f2a36443aee4216f5fe21670`。
+它只接受源码固定的 `30ac1c67 → 5c3eb6ed2` 单跳 finalized runtime transaction，
+完整原始终态摘要、结构、受保护文件身份都必须一致；不接受任意版本或多跳推断。
+发布器必须是该生产提交的直接子提交，仍须当前 main、精确 CI 与独立 G4。
+
+此路径保留 native closure 的 receipt、原 workspace、锁、安装与撤权证明，
+另行在原双锁内核验当前生产 root-owned clean revision、原生产 ancestry、
+当前生产精确 CI、稳定服务及健康依赖。任何业务 lease、准备事务、reap 残留、
+未知进程或读取中漂移均阻断。证据在 intent 前以及归档前后重复验证。
+
+退休 intent 保存完整 finalized 终态与文件身份摘要；后续历史验证依赖该不可变
+副本，不要求未来生产继续保留同一终态文件。默认轮换与其他 closure 路径不变。
+此证明只允许恢复发布身份，不生成或冒充 backend `SUCCEEDED`；后续正式后端
+部署仍须独立执行备份、恢复演练、运行时闸并生成真实成功回执，再发布前端。
+部分 intent 或轮换失败仍禁止清理、自动恢复或重试。
+
 #### 受审 OTA 发布与未知结果恢复
 
 `.github/workflows/trusted-ota.yml` 为生产 iOS OTA 唯一执行入口；本机

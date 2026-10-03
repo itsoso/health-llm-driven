@@ -251,3 +251,25 @@ Production authorization and release state have not been mutated.
 
 - Workflow ledger: `docs/_generated/harness-runs/2b523da0635a.jsonl` (local ignored evidence).
 - 2026-10-02: began reproducing the production prompt failure paths.
+
+
+## 2026-10-03 redeploy recovery
+
+Fresh main and observed production are `5c3eb6ed2c0c7f18f2a36443aee4216f5fe21670`.
+Exact CI 37091538573 and Trusted validate 37097918074 passed. Independent review
+of this baseline: 355 release tests passed, two isolated-Linux skips; braces
+regressions 30 passed. The former unknown lease and stage are gone. The runtime
+transaction reports COMMITTED/finalized from 30ac1c67 to 5c3eb6ed2, but no trusted
+backend SUCCEEDED receipt exists for 5c. Production frontend braces verification
+fails (mitigation not applied); canonical internal/public /connect/health is 404.
+Backend health and /privacy return 200. This is not complete delivery.
+
+Add an explicit, fixed-profile native-retirement continuation for this exact
+finalized transaction. Preserve the completed native closure and its protected
+receipt; never manufacture backend success. Validate live revision/CI/services,
+original transaction bytes and metadata, idle/process/transaction boundaries,
+and capture immutable proof in retirement history. Default rotation is unchanged.
+Only a subsequent real trusted backend deployment may provide the receipt needed
+for isolated frontend publication. First new regression run: 17 expected failures
+before implementation; focused recovery/bootstrap/native suite now 244 passed.
+Full release suite and fixed-commit independent review remain pending.

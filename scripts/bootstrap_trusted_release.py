@@ -644,7 +644,7 @@ def _retired_history():
             continue
         _inventory(entry, {"intent.json", "completed.json"})
         intent = _read_json(entry / "intent.json")
-        if (not isinstance(intent, dict) or set(intent) - {"cloud_key_reused"} not in (
+        if (not isinstance(intent, dict) or set(intent) - {"cloud_key_reused", "finalized_native_advance"} not in (
                 {"old_sha", "new_sha", "installation", "workspace"},
                 {"old_sha", "new_sha", "installation", "workspace", "recovery_receipt"})
                 or ("cloud_key_reused" in intent and intent["cloud_key_reused"] is not True)
@@ -653,6 +653,11 @@ def _retired_history():
                 or intent["new_sha"] == entry.name
                 or _read_json(entry / "completed.json") != {"new_sha": intent["new_sha"], "state": "RETIRED", "old_sha": entry.name}):
             raise BootstrapError("incomplete or invalid retirement audit")
+        if "finalized_native_advance" in intent:
+            if ("recovery_receipt" not in intent
+                    or intent["workspace"].get("state") != "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"):
+                raise BootstrapError("finalized advance requires native closure receipt")
+            _finalized_advance_module().validate_saved(intent["finalized_native_advance"], entry.name)
         if (_installation_evidence(entry.name, *_archives(entry.name)) != intent["installation"]
                 or _workspace_evidence(entry.name, recovery_receipt=intent.get("recovery_receipt"), historical=True) != intent["workspace"]):
             raise BootstrapError("retired installation or consumption evidence changed")
@@ -725,7 +730,19 @@ def _assert_idle():
         raise BootstrapError("release process/lease termination is uncertain")
 
 
-def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
+def _finalized_advance_module():
+    path = Path(__file__).absolute().with_name("native_finalized_advance.py")
+    secure(path)
+    if os.path.lexists(path.parent / "__pycache__"):
+        raise BootstrapError("cached finalized advance proof forbidden")
+    spec = importlib.util.spec_from_file_location("reviewed_finalized_advance", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.dont_write_bytecode = True
+    spec.loader.exec_module(module)
+    return module
+
+
+def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
@@ -756,7 +773,23 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
             raise BootstrapError("old retirement already attempted")
         check_locks()
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
-        workspace = _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
+        advanced = finalized_production_sha is not None
+        if advanced and recovery_receipt is None:
+            raise BootstrapError("finalized advance requires the original native closure receipt")
+        def inspect_workspace():
+            if advanced:
+                return _workspace_evidence(old_sha, recovery_receipt=recovery_receipt, historical=True)
+            return _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
+        workspace = inspect_workspace()
+        advance = None
+        if advanced:
+            if workspace.get("state") != "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD":
+                raise BootstrapError("finalized advance is limited to a closed native workspace")
+            advance = _finalized_advance_module().inspect(sys.modules[__name__], source, old_sha, finalized_production_sha)
+        def check_advance():
+            if advanced and _finalized_advance_module().inspect(
+                    sys.modules[__name__], source, old_sha, finalized_production_sha) != advance:
+                raise BootstrapError("finalized production evidence changed during rotation")
         check_locks()
         if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
@@ -784,16 +817,20 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None):
             intent["cloud_key_reused"] = True
         if recovery_receipt is not None:
             intent["recovery_receipt"] = recovery_receipt
+        if advanced:
+            intent["finalized_native_advance"] = advance
         check_locks()
         _write(record / "intent.json", json.dumps(intent, sort_keys=True).encode())
         check_locks()
         _assert_idle()
+        check_advance()
         for current, archive in ((CONFIG, archive_config), (INSTALLED.parent, archive_library)):
             os.rename(current, archive)
             _sync_parent(archive)
         if (_installation_evidence(old_sha, archive_config, archive_library) != installation
-                or _workspace_evidence(old_sha, recovery_receipt=recovery_receipt) != workspace):
+                or inspect_workspace() != workspace):
             raise BootstrapError("retirement evidence changed during rotation")
+        check_advance()
         check_locks()
         # This certifies retirement, not installation success. Reserve the new
         # SHA permanently, and finish audit writes before publishing any key.
@@ -1314,6 +1351,7 @@ def main():
         rotation.add_argument("--expires-at", default=0, type=int, help="Unix deadline; default 0 permits reuse of the current cloud key")
         rotation.add_argument("--cloud-public-key", required=True)
         rotation.add_argument("--recovery-receipt-stdin", action="store_true")
+        rotation.add_argument("--finalized-production-sha", help="fixed reviewed native-closure production advance only")
         remove = commands.add_parser("revoke", allow_abbrev=False)
         remove.add_argument("--sha", required=True)
         recovery = commands.add_parser("recover-preparation", allow_abbrev=False)
@@ -1342,7 +1380,7 @@ def main():
                     raise BootstrapError("exact protected recovery receipt required")
                 receipt = raw.rstrip(b"\n").decode("ascii")
             result = rotate(args.retire_sha, args.sha, args.expires_at, args.cloud_public_key,
-                            recovery_receipt=receipt)
+                            recovery_receipt=receipt, finalized_production_sha=args.finalized_production_sha)
         elif args.action == "install":
             result = install(args.sha, args.expires_at, args.cloud_public_key)
         else:

@@ -938,3 +938,37 @@ def test_native_closure_dispatches_distinct_terminal_with_historical_flag(monkey
     monkeypatch.setattr(bootstrap,'sys',SimpleNamespace(modules={bootstrap.__name__:bootstrap}))
     assert bootstrap._workspace_evidence(SHA,recovery_receipt='c'*64,historical=True)=={'state':'CLOSED_NATIVE_ONLY_VENDOR_UPLOAD'}
     assert received==[(SHA,'c'*64,True)]
+
+
+@pytest.mark.parametrize('fault', [None, 'missing_receipt', 'not_native', 'inspection', 'drift'])
+def test_explicit_finalized_native_rotation_keeps_real_receipts_and_history(monkeypatch, tmp_path, fault):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    monkeypatch.setitem(bootstrap.sys.modules, bootstrap.__name__, bootstrap)
+    proofs = []
+    workspace = {'state': 'SUCCEEDED' if fault == 'not_native' else 'CLOSED_NATIVE_ONLY_VENDOR_UPLOAD'}
+    monkeypatch.setattr(bootstrap, '_workspace_evidence', lambda sha, **kw: (proofs.append(kw) or workspace))
+    count = []
+    def inspect(*args):
+        count.append(True)
+        if fault == 'inspection': raise bootstrap.BootstrapError('live proof rejected')
+        return {'proof': len(count) if fault == 'drift' else 1}
+    module = SimpleNamespace(inspect=inspect, validate_saved=lambda proof, sha: None)
+    monkeypatch.setattr(bootstrap, '_finalized_advance_module', lambda: module)
+    record = bootstrap.STATE / 'retired' / SHA
+    if fault:
+        with pytest.raises(bootstrap.BootstrapError):
+            bootstrap.rotate(SHA, NEW_SHA, 0, PUBLIC,
+                recovery_receipt=None if fault == 'missing_receipt' else 'c' * 64,
+                finalized_production_sha='d' * 40)
+        assert record.exists() == (fault == 'drift')
+        assert (bootstrap.CONFIG / 'authorized-release.json').exists()
+    else:
+        result = bootstrap.rotate(SHA, NEW_SHA, 0, PUBLIC,
+            recovery_receipt='c' * 64, finalized_production_sha='d' * 40)
+        assert result['state'] == 'INSTALLED'
+        intent = json.loads((record / 'intent.json').read_text())
+        assert intent['finalized_native_advance'] == {'proof': 1}
+        module.inspect = lambda *args: pytest.fail('history must not depend on future live state')
+        assert SHA in bootstrap._retired_history()
+        assert not (bootstrap.STATE / NEW_SHA / 'completed.json').exists()
+    assert all(p.get('historical') is True for p in proofs)
