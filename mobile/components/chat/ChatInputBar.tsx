@@ -149,6 +149,8 @@ interface Props {
     options?: ChatInputSendOptions,
   ) => boolean | Promise<boolean>;
   isStreaming: boolean;
+  /** Prevent navigation to another voice surface while capture or submission is active. */
+  onVoiceBusyChange?: (busy: boolean) => void;
   /** Prefills the composer when callers deep-link into chat with a prompt. */
   initialText?: string;
   /** Bumps when callers need to inject the same prompt text again. */
@@ -165,6 +167,7 @@ interface Props {
 export default function ChatInputBar({
   onSend,
   isStreaming,
+  onVoiceBusyChange,
   initialText,
   initialTextKey,
   onMedicalExamImportResult,
@@ -728,6 +731,14 @@ export default function ChatInputBar({
   }, [handleKeyboardSubmit]);
 
   const realtimeActive = composer.phase === 'live_dictating' || realtimeDictation.isDictating;
+  const voiceBusy = realtimeActive
+    || composer.phase === 'hold_starting'
+    || composer.phase === 'hold_recording'
+    || composer.phase === 'hold_transcribing'
+    || composer.phase === 'submitting';
+  React.useEffect(() => {
+    onVoiceBusyChange?.(voiceBusy);
+  }, [onVoiceBusyChange, voiceBusy]);
   const realtimeDictationDisabled = shouldShowDisabledMic(composer);
   const realtimeMicLabel = realtimeActive
     ? '停止实时语音转文字'

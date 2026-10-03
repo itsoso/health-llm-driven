@@ -1021,6 +1021,53 @@ describe('ChatInputBar', () => {
     });
   });
 
+  it('reports voice busy throughout dictation startup and clears it on failure', async () => {
+    let resolveStart!: (started: boolean) => void;
+    mockStartDictation.mockImplementationOnce(() => new Promise<boolean>(resolve => { resolveStart = resolve; }));
+    const onVoiceBusyChange = jest.fn();
+    const view = render(<ChatInputBar onSend={jest.fn()} isStreaming={false} onVoiceBusyChange={onVoiceBusyChange} />);
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(false);
+    enterKeyboardMode(view);
+    fireEvent.press(view.getByLabelText('实时语音转文字'));
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    await act(async () => { resolveStart(false); });
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('keeps voice busy while native dictation is active even without a composer transition', () => {
+    mockRealtimeDictationState = { isDictating: true, error: null };
+    const onVoiceBusyChange = jest.fn();
+    const view = render(<ChatInputBar onSend={jest.fn()} isStreaming={false} onVoiceBusyChange={onVoiceBusyChange} />);
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    view.unmount();
+    // Unmount starts asynchronous audio cleanup; do not advertise early release.
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('reports voice busy across hold startup, recording, recognition and submission', async () => {
+    let resolveStart!: (started: boolean) => void;
+    let resolveStop!: (text: string) => void;
+    let resolveSend!: (accepted: boolean) => void;
+    mockStartDictation.mockImplementationOnce(() => new Promise<boolean>(resolve => { resolveStart = resolve; }));
+    mockStopDictation.mockImplementationOnce(() => new Promise<string>(resolve => { resolveStop = resolve; }));
+    const onSend = jest.fn(() => new Promise<boolean>(resolve => { resolveSend = resolve; }));
+    const onVoiceBusyChange = jest.fn();
+    const view = render(<ChatInputBar onSend={onSend} isStreaming={false} onVoiceBusyChange={onVoiceBusyChange} />);
+    const hold = view.getByLabelText('按住说话');
+    fireEvent(hold, 'responderGrant', { nativeEvent: { pageX: 220, pageY: 300 } });
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    await act(async () => { resolveStart(true); });
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    fireEvent(hold, 'responderRelease');
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    expect(onSend).not.toHaveBeenCalled();
+    await act(async () => { resolveStop('你好'); });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    await act(async () => { resolveSend(true); });
+    expect(onVoiceBusyChange.mock.calls.map(([busy]) => busy)).toEqual([false, true, false]);
+  });
+
   it('waits for realtime audio release before switching to hold mode', async () => {
     let resolveStop!: (text: string) => void;
     mockStopDictation.mockImplementationOnce(() => new Promise<string>((resolve) => {

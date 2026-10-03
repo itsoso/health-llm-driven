@@ -228,6 +228,7 @@ export default function ChatScreen() {
     caption: string;
   } | null>(null);
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
+  const [composerVoiceBusy, setComposerVoiceBusy] = useState(false);
   const [dismissedTodayFocusKey, setDismissedTodayFocusKey] = useState<string | null>(null);
 
   const saveViewingImage = useCallback(async (uri: string) => {
@@ -1290,6 +1291,7 @@ export default function ChatScreen() {
         <ChatInputBar
           onSend={handleSend}
           isStreaming={isStreaming}
+          onVoiceBusyChange={setComposerVoiceBusy}
           initialText={initialInput}
           initialTextKey={initialInputKey}
           conversationId={conversationId}
@@ -1355,12 +1357,28 @@ export default function ChatScreen() {
             <View style={styles.toolSheetHeader}>
               <View>
                 <Text style={txt.toolSheetTitle}>更多操作</Text>
-                <Text style={txt.toolSheetSub}>记录、分享与个人中心</Text>
+                <Text style={txt.toolSheetSub}>语音对话、记录与分享</Text>
               </View>
               <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭更多操作">
                 <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
+            <ToolMenuRow
+              icon="call-outline"
+              label="实时语音对话"
+              onPress={() => {
+                if (isStreaming || composerVoiceBusy) {
+                  Alert.alert('暂时无法进入语音对话', isStreaming
+                    ? '请先等待当前回复完成，或手动停止回复。'
+                    : '请先结束当前录音或语音转写，并等待发送完成。');
+                  return;
+                }
+                setToolMenuVisible(false);
+                Keyboard.dismiss();
+                // Navigation alone must not start the microphone.
+                router.push('/voice-chat');
+              }}
+            />
             <ToolMenuRow
               icon="calendar-outline"
               label="今日计划"

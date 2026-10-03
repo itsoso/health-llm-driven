@@ -1717,6 +1717,39 @@ describe('ChatScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/diet');
   });
 
+  it('opens realtime voice from more without starting the microphone', () => {
+    const view = render(<ChatScreen />);
+    fireEvent.press(view.getByLabelText('更多会诊操作'));
+    fireEvent.press(view.getByRole('button', { name: '实时语音对话' }));
+    expect(mockPush).toHaveBeenCalledWith('/voice-chat');
+    expect(view.queryByText('更多操作')).toBeNull();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps active chat streaming on screen instead of opening realtime voice', () => {
+    mockIsStreaming = true;
+    const alert = jest.spyOn(Alert, 'alert');
+    const view = render(<ChatScreen />);
+    fireEvent.press(view.getByLabelText('更多会诊操作'));
+    fireEvent.press(view.getByRole('button', { name: '实时语音对话' }));
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith('暂时无法进入语音对话', '请先等待当前回复完成，或手动停止回复。');
+  });
+
+  it('waits for composer voice to finish before opening realtime voice', () => {
+    const alert = jest.spyOn(Alert, 'alert');
+    const view = render(<ChatScreen />);
+    const composer = view.UNSAFE_getAllByType('ChatInputBar' as any)[0];
+    act(() => composer.props.onVoiceBusyChange(true));
+    fireEvent.press(view.getByLabelText('更多会诊操作'));
+    fireEvent.press(view.getByRole('button', { name: '实时语音对话' }));
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith('暂时无法进入语音对话', '请先结束当前录音或语音转写，并等待发送完成。');
+    act(() => composer.props.onVoiceBusyChange(false));
+    fireEvent.press(view.getByRole('button', { name: '实时语音对话' }));
+    expect(mockPush).toHaveBeenCalledWith('/voice-chat');
+  });
+
   it('opens the monthly journey from the more sheet', async () => {
     const { getByLabelText, getByText } = render(<ChatScreen />);
     await act(async () => {
