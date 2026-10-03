@@ -68,6 +68,11 @@ def test_known_release_tools_only():
                       '.github/workflows/trusted-release.yml'])
 
 
+def test_release_ci_contract_is_an_explicit_reviewed_test_delta():
+    m = load('trusted_retained_testflight')
+    m.validate_paths(['scripts/test_release_ci_contract.py'])
+
+
 @pytest.fixture
 def state(tmp_path, monkeypatch):
     s, m, old = (load(name) for name in ('trusted_release_server', 'trusted_retained_testflight', 'built_unuploaded_proof'))
@@ -589,14 +594,37 @@ def test_fidelity_ci_uses_pinned_node_and_all_three_real_phases():
     import yaml
     ci = yaml.safe_load(Path('.github/workflows/ci.yml').read_text())
     release = yaml.safe_load(Path('.github/workflows/trusted-release.yml').read_text())
-    assert ci['jobs']['release-invariants']['runs-on'] == release['jobs']['retained-testflight']['runs-on']
-    steps = ci['jobs']['release-invariants']['steps']
+    assert ci['jobs']['retained-runner-startup']['runs-on'] == release['jobs']['retained-testflight']['runs-on']
+    steps = ci['jobs']['retained-runner-startup']['steps']
     phases = [step for step in steps if '--fidelity-phase' in step.get('run', '')]
     assert len(phases) == 3
     assert [phase['run'].split('--fidelity-phase ')[1].strip() for phase in phases] == ['materialize', 'tools', 'smoke']
     index = steps.index(phases[0])
     assert steps[index + 1]['uses'] == 'actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444'
     assert steps[index + 1]['with'] == {'node-version': '22.13.0', 'package-manager-cache': False}
+    assert not any('setup-node' in step.get('uses', '') or 'npm ' in step.get('run', '')
+                   for step in steps[:index + 1])
+    assert sum('setup-node' in step.get('uses', '') for step in steps) == 1
+    assert not any('--fidelity-phase' in step.get('run', '')
+                   for step in ci['jobs']['release-invariants']['steps'])
+    aggregate = ci['jobs']['release-tests']
+    assert 'retained-runner-startup' in aggregate['needs']
+    enforcement = aggregate['steps'][0]
+    assert enforcement['env']['RETAINED_STARTUP'] == '${{ needs.retained-runner-startup.result }}'
+    assert '"$RETAINED_STARTUP" != success' in enforcement['run']
+
+
+@pytest.mark.parametrize('repository', ['', 'another/repo', 'itsoso/health-llm-driven-fork'])
+def test_fidelity_rejects_observed_noncanonical_repository(monkeypatch, repository):
+    import subprocess
+    monkeypatch.setattr(sys, 'platform', 'linux')
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    monkeypatch.setenv('GITHUB_SHA', SHA)
+    monkeypatch.setenv('GITHUB_REF', 'refs/heads/codex/diagnostic')
+    monkeypatch.setenv('GITHUB_REPOSITORY', repository)
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: pytest.fail('noncanonical repository executed'))
+    with pytest.raises(ValueError, match='repository'):
+        run_fidelity_phase('materialize')
 
 
 def fidelity_command(phase):
@@ -634,12 +662,15 @@ def run_fidelity_phase(phase):
     import re
     if sys.platform != 'linux' or os.environ.get('GITHUB_ACTIONS') != 'true':
         raise ValueError('credential-free fidelity runs only on ephemeral Linux CI')
+    repository = os.environ.get('GITHUB_REPOSITORY', '')
+    if repository != 'itsoso/health-llm-driven':
+        raise ValueError('actual canonical CI repository required')
     sha, ref = os.environ.get('GITHUB_SHA', ''), os.environ.get('GITHUB_REF', '')
     if re.fullmatch(r'[0-9a-f]{40}', sha) is None or not ref.startswith(('refs/heads/', 'refs/pull/')):
         raise ValueError('actual CI revision and ref required')
     # No credentials or caller proxy/Git/CA settings reach the fresh startup.
     env = {'PATH': os.environ['PATH'], 'HOME': os.environ['HOME'],
-           'GITHUB_REPOSITORY': 'itsoso/health-llm-driven', 'GITHUB_SHA': sha,
+           'GITHUB_REPOSITORY': repository, 'GITHUB_SHA': sha,
            'GITHUB_REF': ref, 'TARGET_SHA': sha}
     print('Credential-free retained startup fidelity: ' + phase +
           '; CI-only main-entry and fresh-CI admission omitted, runtime checks unchanged.', flush=True)

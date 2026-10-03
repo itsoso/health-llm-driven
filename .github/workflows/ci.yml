@@ -286,7 +286,7 @@ jobs:
 
   release-invariants:
     name: release-invariants
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: classify-changes
     if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
     timeout-minutes: 25
@@ -332,21 +332,6 @@ jobs:
 
       - name: Verify real retained runner filesystem and canonical startup
         run: sudo "$(command -v python)" -B -m pytest -q --no-cov scripts/test_trusted_retained_testflight.py -k real_linux_runner_bootstrap_and_loader
-
-      - name: Materialize exact retained startup pipeline without release admission
-        run: python -B scripts/test_trusted_retained_testflight.py --fidelity-phase materialize
-
-      - name: Match retained publisher Node setup after root materialization
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
-        with:
-          node-version: 22.13.0
-          package-manager-cache: false
-
-      - name: Exercise actual retained dependency installation and patches
-        run: python -B scripts/test_trusted_retained_testflight.py --fidelity-phase tools
-
-      - name: Exercise actual isolated retained startup CLI without credentials
-        run: python -B scripts/test_trusted_retained_testflight.py --fidelity-phase smoke
 
       - name: Run deployment and rollback invariants
         run: >-
@@ -588,12 +573,47 @@ jobs:
             exit 1
           fi
 
+  retained-runner-startup:
+    runs-on: ubuntu-24.04
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install only the credential-free test adapter dependencies
+        run: python -m pip install --disable-pip-version-check pytest==9.1.1 PyYAML==6.0.3
+
+      - name: Materialize exact retained startup pipeline without release admission
+        run: python -B scripts/test_trusted_retained_testflight.py --fidelity-phase materialize
+
+      - name: First publisher Node setup on this fresh runner
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22.13.0
+          package-manager-cache: false
+
+      - name: Exercise actual retained dependency installation and patches
+        run: python -B scripts/test_trusted_retained_testflight.py --fidelity-phase tools
+
+      - name: Exercise actual isolated retained startup CLI without credentials
+        run: python -B scripts/test_trusted_retained_testflight.py --fidelity-phase smoke
+
   release-tests:
     runs-on: ubuntu-latest
     needs:
       - classify-changes
       - docs-quality
       - release-invariants
+      - retained-runner-startup
     if: ${{ always() }}
     steps:
       - name: Enforce release-only gates
@@ -601,9 +621,10 @@ jobs:
           RUN_RELEASE: ${{ needs.classify-changes.outputs.run_release }}
           DOCS_QUALITY: ${{ needs.docs-quality.result }}
           RELEASE_INVARIANTS: ${{ needs.release-invariants.result }}
+          RETAINED_STARTUP: ${{ needs.retained-runner-startup.result }}
         run: |
-          printf 'release gates: selected=%s docs=%s invariants=%s\n' \
-            "$RUN_RELEASE" "$DOCS_QUALITY" "$RELEASE_INVARIANTS"
+          printf 'release gates: selected=%s docs=%s invariants=%s retained-startup=%s\n' \
+            "$RUN_RELEASE" "$DOCS_QUALITY" "$RELEASE_INVARIANTS" "$RETAINED_STARTUP"
           if [[ "$DOCS_QUALITY" != success ]]; then
             exit 1
           fi
@@ -611,7 +632,7 @@ jobs:
             echo "release scope skipped by classifier"
             exit 0
           fi
-          if [[ "$RELEASE_INVARIANTS" != success ]]; then
+          if [[ "$RELEASE_INVARIANTS" != success || "$RETAINED_STARTUP" != success ]]; then
             exit 1
           fi
 

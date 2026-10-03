@@ -445,3 +445,15 @@ alternatives to AMap.
   Associated local tests: 402 passed / two Linux skips; after OS parity change,
   retained/workflow tests: 111 passed / two skips. These are diagnostic coverage,
   not evidence that the remaining hosted-startup failure is solved.
+- Independent review of the first diagnostic candidate returned NO-GO: placing
+  the pipeline in the existing invariant job initializes Node before materialize
+  and can make the repeated setup hit a cache, unlike the publisher. Corrected
+  design uses a separate Ubuntu 24.04 job with no earlier Node/npm setup, then
+  materialize → first pinned Node → actual tools → actual CLI; release-tests
+  requires its success. Existing invariant job retains its original OS label.
+  The adapter verifies the observed canonical repository instead of supplying a
+  constructed identifier. Associated tests passed 416 / two Linux skips before
+  the final exact-path regression. The CI runtime-version test recognizes only
+  the already-reviewed publisher's exact setup-node v5 pin; its test-only file
+  is explicitly added to the retained compatibility allowlist, with a RED/GREEN
+  regression. Unknown files and runtime changes remain forbidden.
