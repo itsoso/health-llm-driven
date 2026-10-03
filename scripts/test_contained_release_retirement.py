@@ -444,6 +444,23 @@ def test_built_history_rejects_unbound_or_mixed_profiles(damage):
         m.validate_built_snapshot(SimpleNamespace(secure=lambda p: None), snapshot, "a" * 40, unchanged=damage != "restored")
 
 
+@pytest.mark.parametrize("kind", ["directory", "dangling_symlink"])
+def test_built_history_cache_rejected_before_loader(tmp_path, monkeypatch, kind):
+    m = load()
+    monkeypatch.setattr(m, "__file__", str(tmp_path / "contained_release_retirement.py"))
+    (tmp_path / "built_unuploaded_proof.py").write_text("raise RuntimeError('must not execute')")
+    cache = tmp_path / "__pycache__"
+    if kind == "directory": cache.mkdir()
+    else: cache.symlink_to(tmp_path / "absent")
+    snapshot = {"installed_laya": {"profile": "installed-reuse-v1"}, "built_unuploaded": {},
+                "workspace": {"inventory": ["build.lock", "build-started.json"], "build-started.json": {}}}
+    calls = []
+    monkeypatch.setattr(m.importlib.util, "spec_from_file_location", lambda *args: calls.append(args))
+    with pytest.raises(m.ClosureError, match="cached"):
+        m.validate_built_snapshot(SimpleNamespace(secure=lambda path: None), snapshot, "a" * 40, unchanged=True)
+    assert calls == []
+
+
 def test_external_evidence_drift_after_intent_cannot_reach_revocation(tmp_path, monkeypatch):
     m, a = load(), Adapter(tmp_path)
     a.unchanged = True

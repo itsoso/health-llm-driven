@@ -386,6 +386,8 @@ def validate_built_snapshot(bootstrap, snapshot, failed_sha, *, unchanged):
         raise ClosureError("mixed artifact profile binding differs")
     path = Path(__file__).absolute().with_name("built_unuploaded_proof.py")
     bootstrap.secure(path)
+    if os.path.lexists(path.parent / "__pycache__"):
+        raise ClosureError("cached vendor history code forbidden")
     spec = importlib.util.spec_from_file_location("built_unuploaded_history", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

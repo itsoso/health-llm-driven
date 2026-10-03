@@ -223,3 +223,13 @@ alternatives to AMap.
   server staging and read-only inspect, matching-digest closure, new backend-only
   release, separately reviewed 274 pairing/upload, simulator acceptance. No
   production mutation, claim reset, new build or TestFlight upload in this round.
+- Full local CI deployment-invariant list completed: 2058 passed, 9 skipped,
+  84 subtests passed. Initial launch failed only because Python 3.12 was not on
+  PATH; rerun with the existing project interpreter passed. This does not
+  replace exact remote CI or Linux-only native boundary coverage.
+- Fixed `ed28a52eb` independent review: **NO-GO**, one P1. Both newly introduced
+  imports needed an explicit pre-import `__pycache__` rejection (`-B` prevents
+  writes, not cache reads). Reviewer independently ran 185 focused tests.
+  Added directory/dangling-symlink regressions: RED four failures, then guarded
+  both import boundaries before loader execution or protected stdin reads.
+  No push or production action occurred while review was blocked.

@@ -118,6 +118,14 @@ def _load(path, name):
     return module
 
 
+def _load_vendor_evidence(source, bootstrap):
+    path = source / "scripts/built_unuploaded_proof.py"
+    bootstrap.secure(path)
+    if os.path.lexists(path.parent / "__pycache__"):
+        raise RecoveryError("cached vendor evidence code forbidden")
+    return _load(path, "built_unuploaded_operator")
+
+
 def _context(sha, *, verify_ci=True):
     if (re.fullmatch(r"[0-9a-f]{40}", sha or "") is None
             or not sys.flags.isolated or not sys.flags.no_site
@@ -290,9 +298,7 @@ def main():
         source, bootstrap, server = _context(args.sha)
         vendor = None
         if mixed:
-            module_path = source / "scripts/built_unuploaded_proof.py"
-            bootstrap.secure(module_path)
-            artifact = _load(module_path, "built_unuploaded_operator")
+            artifact = _load_vendor_evidence(source, bootstrap)
             raw = sys.stdin.buffer.read(12289)
             if len(raw) > 12288:
                 raise RecoveryError("operator input bound exceeded")
