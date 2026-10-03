@@ -38,6 +38,21 @@ RequirementAdmission:
 
 ## 3. User Flow
 
+### Reachable entry repair — 2026-10-03
+
+Restore the existing feature through Chat → 更多操作 → 实时语音对话. Keep the
+first-level conversation-history action and the separate transcription microphone.
+Navigation opens `/voice-chat` without `autoStart`; the voice page's explicit
+microphone and existing AI-consent gate remain authoritative. Active chat streaming
+or composer capture/start/transcription/submission blocks entry with a visible
+explanation, so opening the modal cannot create competing microphone ownership.
+This is a reachability bugfix under the existing Capture/ExecutionEvent/WriteIntent
+admission, not new medical-write authority, background listening or full duplex.
+
+Acceptance: idle entry is reachable and closes its menu; active composer/Agent
+work cannot navigate; history and transcription remain available; native simulator
+verification and release gates are separate from mocked regression evidence.
+
 ```text
 tap microphone
   -> authenticated realtime ASR session starts

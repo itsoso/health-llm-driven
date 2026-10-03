@@ -258,3 +258,88 @@
 - 发布修复与授权审计见 `2026-10-01-release-documentation-drift.md`。
   发布已交付；已登录候选的语音、插话、前后台及异常恢复 UI 尚未实际验收，
   G5/G6 不标完成，不宣称 App Store 审核或正式上架。
+
+### Simulator test checkpoint — 2026-10-02 09:30 +08:00
+
+- User requested simulator testing only. No business-code edits, credential
+  extraction, backend deployment, new build/upload or App Review submission.
+- Target: iPhone 17 Pro, iOS 26.5, installed Release build 273. Simulator source
+  is actually `6bc52c309aa7cf376b255332d58c09075bc6f41c`, not e190. Git comparison
+  confirms its tracked Mobile tree equals the Store candidate's Mobile tree.
+  Installed executable and embedded main.jsbundle hashes match the previously
+  built simulator artifact. This is source-equivalence evidence, not proof of
+  Store/native configuration equality or the currently selected OTA bundle.
+- Existing authenticated session opened successfully; no fresh login or
+  SecureStore credential-write roundtrip was performed.
+- Native UI observation: chat composer realtime transcription starts and stops;
+  recognized text remains an unsent draft. During active listening, Home switches
+  the app to background; reopening shows listening disabled, without automatic
+  restart. Test-generated drafts were cleared, no chat message was sent.
+- Automated boundary simulation: 7 suites / 108 tests passed in 3.25 seconds:
+  useVoiceConversation, useVoiceRecording, cloudRealtimeAsr, cloudStreamingTts,
+  voiceSessionCoordinator, aiConsent and chatStream. Includes partial/final
+  de-duplication, interruption/cancellation failure, background cleanup, ASR
+  disconnect, consent revocation and streaming TTS lifecycle. These mock-boundary
+  checks are not native audio or live end-to-end proof. Log:
+  `/tmp/reva-voice-client.7SMZYt/simulator-voice-regression.log`.
+- Continuous-voice UI remains unverified: current chat header intentionally has
+  history instead of the old voice-conversation action (see chat.test.tsx).
+  The composer microphone is transcription, not the `/voice-chat` experience.
+  No continuous-voice entry was found in the tested chat/main menu surfaces.
+- Simulator deep-link limitation: installed native plist registers only
+  `exp+health-pilot`, not configured `health`; Safari rejects the latter. The
+  former is also registered by other installed QA apps and resolves to a different
+  app. That switch was canceled. No unrelated QA app was removed or modified.
+- Full spoken request/streaming playback/barge-in, live disconnect recovery,
+  fresh login persistence and real-device audio remain unverified. Do not mark
+  G5/G6 complete. No production health records were deliberately written.
+- System Map passed after correcting this shell's Python PATH. Original selector
+  was not indexed, so relevant source and tests were inspected directly.
+
+### Realtime voice publication follow-up — 2026-10-03
+
+- User explicitly requested publication of the realtime voice feature after the
+  partial simulator result. Scope: restore a reachable chat-menu entry, prevent
+  overlapping composer/voice sessions, verify and deliver through reviewed release.
+  Preserve the existing history action, consent and health-write authority.
+- Bounded follow-up run: `docs/_generated/harness-runs/686a2fa61fbd.jsonl`, linked
+  to this same feature. Prior feature/release records are not reset or relabeled.
+- Task checkout fast-forwarded to canonical `f966e97394005bc0b9f297b4132ef5ab61500e2a`,
+  preserving the previous local simulator notes and original user workspace WIP.
+- Current main CI `37080647733` is FAILED: Mobile, frontend and release consumers
+  reject `braces@3.0.3` advisory `GHSA-vfj7-8cjw-p6xm`; release aggregation fails
+  as a consequence. Existing node-forge backport is verified, not the blocker.
+  Registry latest is still 3.0.3. No audit bypass, new vendor task or external push.
+- User delegated dependency repair to a different Codex task. This task does not
+  modify dependency guards and has no exception to push while main is red.
+  That task subsequently pushed `474c446c7` and `c820d69b3`; exact CI
+  `37085081299` is still running at this checkpoint.
+- Current trusted OTA contract pins old native build 272 / cad1fd1d, not Store
+  273; its native-path/cohort rules must not be bypassed. Delivery route is still
+  pending this release assessment, not presumed OTA-compatible.
+
+### Voice entry verification checkpoint — 2026-10-03
+
+- Local commits `34c551431`, `73ca8d7cc`, `3a3a610c8` restore Chat → 更多操作 →
+  实时语音对话, without auto-start or removing history/transcription controls.
+- Independent safety review twice returned NO-GO: pending stop/cancel cleanup
+  released navigation early, then the actual dictation hook swallowed native
+  cancellation rejection. Both received failing regression tests before repair.
+  Hook cleanup is now explicitly pending/failed; failed cleanup remains sticky,
+  visibly warns the user, and prevents subsequent capture and voice navigation.
+- Final independent source review returned GO for cumulative `3a3a610c8`, with
+  173 focused tests independently passing. This is not a CI or native-audio waiver.
+- Fresh full Mobile Jest: 324 suites, 3220 passed, 1 skipped; TypeScript passed.
+  Project CI-mode runner: 66 backend realtime ASR/TTS/API/integration tests passed
+  using SQLite, not a substitute for PostgreSQL or complete remote CI gates.
+  System Map including regenerated navigation graph passed. Local logs are under
+  `/tmp/reva-voice-release.Jtlenr/`.
+- A Release simulator app built successfully from the committed `3a3a610c8`
+  Mobile source, passed strict signature verification, and was installed on
+  iPhone 17 / iOS 26.5 (`2D49F985-8B2F-4BE1-BAA8-CA5A672D9428`). Build label
+  273 is local simulator metadata, NOT a replacement or proof of Store build 273.
+  The app launched to its login page; authenticated voice UI acceptance awaits
+  user login. No credentials extracted or injected, and no health writes made.
+- Production read-only snapshot remains `30ac1c67be7b2df79363ac7509f70f8a56ce4834`;
+  GitHub relay enabled/active, listening only on IPv6 loopback, resolver verified.
+  No new production deployment, vendor build, upload, or App Review occurred.
