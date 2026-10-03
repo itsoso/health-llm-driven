@@ -607,7 +607,22 @@ export default function ChatInputBar({
     applyVoiceTranscript('realtime_mic', base ? `${base} ${clean}` : clean, asr);
   }, [applyVoiceTranscript]);
 
-  const realtimeDictation = useRealtimeDictation({
+  const [voiceCleanupPending, setVoiceCleanupPending] = useState(0);
+  const [voiceCleanupFailed, setVoiceCleanupFailed] = useState(false);
+  const trackVoiceCleanup = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
+    setVoiceCleanupPending(count => count + 1);
+    try {
+      return await operation();
+    } catch (error) {
+      // A rejected cleanup is not proof the microphone was released.
+      setVoiceCleanupFailed(true);
+      Alert.alert('语音停止失败', '暂时无法进入语音对话，请退出应用后重新打开。');
+      throw error;
+    } finally {
+      setVoiceCleanupPending(count => count - 1);
+    }
+  }, []);
+  const rawRealtimeDictation = useRealtimeDictation({
     onTranscript: handleRealtimeTranscript,
     onEnd: () => {
       if (activeVoiceSourceRef.current === 'dictation') {
@@ -616,6 +631,11 @@ export default function ChatInputBar({
     },
     onError: (message) => dispatchComposer({ type: 'fail', errorCode: message || 'dictation_failed' }),
   });
+  const realtimeDictation = {
+    ...rawRealtimeDictation,
+    stopDictation: () => trackVoiceCleanup(rawRealtimeDictation.stopDictation),
+    cancelDictation: () => trackVoiceCleanup(rawRealtimeDictation.cancelDictation),
+  };
 
   stopDictationRef.current = realtimeDictation.stopDictation;
   cancelDictationRef.current = realtimeDictation.cancelDictation;
@@ -732,6 +752,8 @@ export default function ChatInputBar({
 
   const realtimeActive = composer.phase === 'live_dictating' || realtimeDictation.isDictating;
   const voiceBusy = realtimeActive
+    || voiceCleanupPending > 0
+    || voiceCleanupFailed
     || composer.phase === 'hold_starting'
     || composer.phase === 'hold_recording'
     || composer.phase === 'hold_transcribing'

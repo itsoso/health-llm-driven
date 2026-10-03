@@ -1034,6 +1034,37 @@ describe('ChatInputBar', () => {
     expect(onVoiceBusyChange).toHaveBeenLastCalledWith(false);
   });
 
+  it('keeps navigation blocked when stopping dictation before startup completes', async () => {
+    let resolveStart!: (started: boolean) => void;
+    let resolveStop!: (text: string) => void;
+    mockStartDictation.mockImplementationOnce(() => new Promise<boolean>(resolve => { resolveStart = resolve; }));
+    mockStopDictation.mockImplementationOnce(() => new Promise<string>(resolve => { resolveStop = resolve; }));
+    const onVoiceBusyChange = jest.fn();
+    const view = render(<ChatInputBar onSend={jest.fn()} isStreaming={false} onVoiceBusyChange={onVoiceBusyChange} />);
+    enterKeyboardMode(view);
+    fireEvent.press(view.getByLabelText('实时语音转文字'));
+    fireEvent.press(view.getByLabelText('停止实时语音转文字'));
+    await act(async () => { resolveStart(false); });
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    await act(async () => { resolveStop(''); });
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('keeps navigation blocked and reports an error when text-edit cleanup fails', async () => {
+    let rejectStop!: (error: Error) => void;
+    mockStopDictation.mockImplementationOnce(() => new Promise<string>((_, reject) => { rejectStop = reject; }));
+    const alert = jest.spyOn(Alert, 'alert');
+    const onVoiceBusyChange = jest.fn();
+    const view = render(<ChatInputBar onSend={jest.fn()} isStreaming={false} onVoiceBusyChange={onVoiceBusyChange} />);
+    enterKeyboardMode(view);
+    await act(async () => { fireEvent.press(view.getByLabelText('实时语音转文字')); });
+    fireEvent.changeText(view.getByLabelText('消息输入框'), '手动输入');
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    await act(async () => { rejectStop(new Error('cleanup failed')); });
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    expect(alert).toHaveBeenCalledWith('语音停止失败', '暂时无法进入语音对话，请退出应用后重新打开。');
+  });
+
   it('keeps voice busy while native dictation is active even without a composer transition', () => {
     mockRealtimeDictationState = { isDictating: true, error: null };
     const onVoiceBusyChange = jest.fn();
