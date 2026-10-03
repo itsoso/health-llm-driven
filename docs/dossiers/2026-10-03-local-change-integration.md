@@ -308,3 +308,15 @@ alternatives to AMap.
   expanded; completion evidence is durable before its business lease can be free.
   Root has started the full CI deployment-invariant command list. No push,
   production closure, backend deployment or upload has occurred in this follow-up.
+- Independent review of `c994c3c7a`: **NO-GO**, one P1 durability gap. The new
+  retained audit root needed fsync of its persistent parent before any claim;
+  sharing a test parent with the volatile business lease had obscured this.
+  Independent review ran 608 tests / one truthful Linux-only skip and reproduced
+  the missing parent sync with distinct persistent/volatile directories.
+- Repair syncs STATE after validating the new/existing empty registry and before
+  operation intent, lease or CLAIMED. Three initial regressions RED then GREEN;
+  added separate-parent success/failure tests. Latest module 39 passed / one
+  Linux-only skip. Full local CI invariant command completed 2148 passed,
+  9 skipped, 84 subtests; it began before the last durability-test additions,
+  which are covered by the separate fresh focused run and must run in exact CI.
+  Await new fixed-commit review; no push or production action while NO-GO.

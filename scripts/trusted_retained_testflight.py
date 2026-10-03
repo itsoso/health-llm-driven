@@ -204,8 +204,13 @@ def claim(server, bootstrap, policy, value):
     original = prove_original(server, bootstrap)
     root.mkdir(mode=0o700, exist_ok=True)
     server.secure_path(root, directory=True)
-    if any(root.iterdir()):
+    if stat.S_IMODE(root.stat().st_mode) != 0o700 or any(root.iterdir()):
         raise ValueError('unknown retained artifact audit')
+    # Persist the name linking this global once-only registry into STATE before
+    # granting any permission. Fsyncing the child alone cannot make a newly
+    # created parent directory survive power loss. Also sync an existing empty
+    # registry: its prior creation may have been interrupted before persistence.
+    server._sync_directory(STATE)
     operation().mkdir(mode=0o700)
     server._sync_directory(root)
     # Consumption precedes lease initialization; partial state never grants retry.

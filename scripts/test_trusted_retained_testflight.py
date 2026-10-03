@@ -354,3 +354,74 @@ def test_linux_no_clobber_move_preserves_inode_and_existing_destination(tmp_path
     with pytest.raises(ValueError, match='no-clobber'):
         m.move_noreplace(source, target)
     assert source.stat().st_ino == source_inode and target.stat().st_ino == inode
+
+
+@pytest.mark.parametrize('existing_root', [False, True])
+def test_claim_persists_global_parent_before_lease_permission(state, monkeypatch, existing_root):
+    s, m, before = state
+    root = m.operation().parent
+    if existing_root:
+        root.mkdir(mode=0o700)
+    synced = []
+    original_sync, original_acquire = s._sync_directory, s._acquire_testflight_lease
+    def sync(path):
+        original_sync(path)
+        synced.append(Path(path))
+    def acquire(workspace):
+        assert m.STATE in synced
+        assert root in synced
+        assert synced.index(m.STATE) < synced.index(root)
+        return original_acquire(workspace)
+    monkeypatch.setattr(s, '_sync_directory', sync)
+    monkeypatch.setattr(s, '_acquire_testflight_lease', acquire)
+    assert m.claim(s, SimpleNamespace(), {'sha': SHA}, before)['state'] == 'CLAIMED'
+
+
+def test_global_parent_fsync_failure_never_grants_upload_or_lease(state, monkeypatch):
+    s, m, before = state
+    original = s._sync_directory
+    def fail(path):
+        if Path(path) == m.STATE:
+            raise OSError('global audit parent persistence failed')
+        original(path)
+    monkeypatch.setattr(s, '_sync_directory', fail)
+    with pytest.raises(OSError, match='parent persistence'):
+        m.claim(s, SimpleNamespace(), {'sha': SHA}, before)
+    assert not s.BUSINESS_LEASE.exists()
+    assert not (m.operation() / 'claimed.json').exists()
+
+
+@pytest.mark.parametrize('fail_parent_sync', [False, True])
+def test_persistent_registry_and_volatile_lease_have_independent_durability(state, monkeypatch, fail_parent_sync):
+    s, m, before = state
+    persistent, volatile = m.STATE / 'persistent-state', m.STATE / 'volatile-locks'
+    persistent.mkdir(mode=0o700)
+    volatile.mkdir(mode=0o700)
+    (persistent / SHA).mkdir()
+    (persistent / SHA / 'completed.json').write_text(json.dumps({'sha': SHA, 'state': 'SUCCEEDED'}))
+    monkeypatch.setattr(s, 'STATE', persistent)
+    monkeypatch.setattr(m, 'STATE', persistent)
+    monkeypatch.setattr(s, 'BUSINESS_LEASE', volatile / 'business-lease')
+    assert s.BUSINESS_LEASE.parent != m.STATE
+    original_sync, original_acquire = s._sync_directory, s._acquire_testflight_lease
+    events = []
+    def sync(path):
+        if Path(path) == persistent and fail_parent_sync:
+            raise OSError('persistent directory parent not durable')
+        original_sync(path)
+        events.append(('fsync', Path(path)))
+    def acquire(workspace):
+        assert ('fsync', persistent) in events
+        events.append(('lease', volatile))
+        return original_acquire(workspace)
+    monkeypatch.setattr(s, '_sync_directory', sync)
+    monkeypatch.setattr(s, '_acquire_testflight_lease', acquire)
+    if fail_parent_sync:
+        with pytest.raises(OSError, match='not durable'):
+            m.claim(s, SimpleNamespace(), {'sha': SHA}, before)
+        assert ('lease', volatile) not in events
+        assert not s.BUSINESS_LEASE.exists()
+        assert not (m.operation() / 'claimed.json').exists()
+    else:
+        assert m.claim(s, SimpleNamespace(), {'sha': SHA}, before)['state'] == 'CLAIMED'
+        assert events.index(('fsync', persistent)) < events.index(('lease', volatile))
