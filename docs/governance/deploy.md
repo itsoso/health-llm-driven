@@ -561,6 +561,40 @@ finished-build-unuploaded-v1 profile，不能丢弃或混用。旧终态、所�
 Laya 资产本身不得在收尾源码中改变。后续使用新绿色 SHA 的 backend-only 发布；
 旧 274 与新后端的组合及独立上传仍须专门受审，禁止重跑原 release 或原上传 job。
 
+#### 固定保留制品 274 的独立上传
+
+完成上述原 mixed-release 收尾和授权轮换后，允许使用新受审 publisher 的
+`target=retained-testflight`。该目标只运行精确 CI/source preflight 和保留制品
+上传，不运行 backend 或 ios-build，不创建新包、不提交 App Review。必须先以
+同一新 SHA 完成真实 backend-only 部署；完整 Git object inventory 与 514 比较，
+仅允许受审代码显式列出的发布工具、测试及审计文档差异，Mobile/backend/shared
+或任意其他路径不同即阻断。不能把 274 改称新 SHA 构建。
+
+`scripts/trusted_retained_testflight.py` 固定原 SHA/run/build/project/bundle/版本
+与 ASC app，不接受操作员选择任意制品。干净托管 runner 在暴露凭据前取得两版
+canonical source，并安装/校验锁定工具和安全回补；凭据只在 runner 内使用。
+实时预上传证明要求原 workflow 精确失败终态、上传步骤 skipped 和精确 FINISHED
+制品空 submissions。服务器在原 launcher/build 锁内独立证明原收尾与退休审计、
+原 build claim 未变且 native claim 不存在、当前真实后端成功与精确版本健康。
+
+全局 `retained-testflight/<固定 build-id>` 一次性 intent 在副作用前持久化，
+业务 lease 从 claim 保持到上传验证完成；旧 514 的记录、锁及制品身份不改。
+同一 build 换新 publisher 也不能重新领取权限。runner 仅调用一次固定 ID 的
+submit，CLI 成功后仍须独立读取厂商状态：唯一 submission、FINISHED、IOS、
+项目/ASC app/submittedBuild 全部精确一致，才允许 finish 重新核验生产并收尾。
+
+finish 先持久化已验证结果和 lease 副本，再 fsync `UPLOADED`，最后将原 lease
+同文件系统 no-clobber 归档并复证。释放锁之前已存在完整持久证明，避免中断后
+出现业务锁空闲但上传审计未完成的窗口；终态已写但尚未归档时，原业务锁继续
+阻断普通部署。只有最后的锁身份检查通过才向调用方返回完成。
+
+终态只记 `UPLOADED`，不代表 Apple processing、测试组可用或 App Review。
+未完成/未知 intent 阻断后续发布与授权轮换；禁止清标记、删锁、重跑 workflow
+或再次 submit。finish 已验证并持久化的同一结果可按受审 recover 入口完成原
+lease 归档与终态写入，不允许用新结果替换原回执。归档保存原 lease 字节和身份，
+已完成 finish 的重放不能释放后来者的 lease。原 mixed closure 的空 submissions
+只表示当时的历史事实，上传后不修改它，也不重新调用旧 live 未上传证明来伪造历史。
+
 #### 固定 Laya PREPARING 事故的缺失租约行政收尾
 
 `scripts/partial_laya_retirement.py` 是独立的窄化入口，仅处理脚本内固定的 a6b6

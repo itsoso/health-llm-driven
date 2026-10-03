@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | status | blocked |
-| current_stage | G3 · Authorized network guard proof and retained-build upload implementation |
+| current_stage | G4 · Fixed network proof GO; retained-build upload independent review pending |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Scope | Reconcile explicitly authorized local unique changes onto current main; verify and release |
@@ -292,3 +292,19 @@ alternatives to AMap.
 - Fresh server read-only vendor proof passed for 274 with empty submissions;
   isolated old-production schema/KB probes also passed. These diagnostics do
   not clear the failing network inventory proof or authorize upload by themselves.
+- Network proof committed locally as `e1dbf2f47c6185351648f9e8714a126fdc81289f`.
+  Root and implementer each passed 238 focused tests. Independent reviewer GO:
+  independently passed 238 tests plus injected canonical/file identity drift,
+  duplicate dependencies, pending daemon reload and invalid boot identity; all
+  negative cases refused. Scope is source-only, not production execution.
+- Retained upload implementation adds a fixed `retained-testflight` workflow
+  target and canonical claim/finish module. It preserves all original build
+  records, holds a real business lease, binds original closure and exact deployed
+  tree, and verifies the unique finished vendor submission. Module query schema
+  was validated read-only against Expo: exact 274 FINISHED, empty submissions.
+- Implementer targeted tests: 385 passed. Finalization fault tests cover durable
+  UPLOADED before lock release, no-clobber move, parent-fsync failure, exact
+  finish-only recovery and foreign-lease replay safety. Direct deploy.sh is not
+  expanded; completion evidence is durable before its business lease can be free.
+  Root has started the full CI deployment-invariant command list. No push,
+  production closure, backend deployment or upload has occurred in this follow-up.

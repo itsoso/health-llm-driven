@@ -45,7 +45,7 @@ class PreparationUncertain(LaunchError):
 
 
 def parse_command(command):
-    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload|claim-ota|finish-ota) ([0-9a-f]{40})", command)
+    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload|claim-ota|finish-ota|claim-retained-testflight|finish-retained-testflight) ([0-9a-f]{40})", command)
     if match is None:
         raise LaunchError("only fixed release commands with an exact SHA are allowed")
     return match.group(1), match.group(2)
@@ -732,6 +732,7 @@ def claim_build(policy, workspace, *, native_proof=None):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
+        assert_retained_history()
         if native_proof is None:
             _native_binding(workspace, None)
         if read_status(policy["sha"], workspace)["state"] in {"NEEDS_OPERATOR", "PREPARATION_FAILED"}:
@@ -924,6 +925,7 @@ def testflight_only(policy, workspace, action):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
+        assert_retained_history()
         _assert_deployment_window(policy)
         if os.path.lexists(BUSINESS_LEASE):
             raise LaunchError("business release in progress")
@@ -974,8 +976,71 @@ def validate_ota_archive(operation):
         raise LaunchError("invalid original OTA lease identity")
 
 
+def _retained_module(sha):
+    if not isinstance(sha, str) or re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+        raise LaunchError("invalid retained publisher identity")
+    source = STATE / "bootstrap" / sha / "source"
+    script = source / "scripts/trusted_retained_testflight.py"
+    secure_path(script)
+    if os.path.lexists(script.parent / "__pycache__"):
+        raise LaunchError("cached retained helper forbidden")
+    env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
+    expected = subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source),
+                               "show", sha + ":scripts/trusted_retained_testflight.py"],
+                              env=env, stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=30).stdout
+    if script.read_bytes() != expected:
+        raise LaunchError("retained helper differs from canonical source")
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location("reviewed_retained_testflight", script)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    module.initialize(source, sha)
+    return module
+
+
+def assert_retained_history():
+    root = STATE / "retained-testflight"
+    if not os.path.lexists(root):
+        return
+    secure_path(root, directory=True)
+    if stat.S_IMODE(root.stat().st_mode) != 0o700:
+        raise LaunchError("invalid retained audit root")
+    for operation in root.iterdir():
+        secure_path(operation, directory=True)
+        if operation.name != "63b61a31-058c-44e5-bb82-67727ca7d073":
+            raise LaunchError("unknown retained artifact audit")
+        intent = _json(_read_private(operation / "intent.json"))
+        module = _retained_module(intent["request"]["sha"])
+        module.validate_history(SimpleNamespace(**globals()), operation)
+
+
+def retained_rpc(policy, action):
+    module = _retained_module(policy["sha"])
+    raw = sys.stdin.buffer.read(1000001)
+    if len(raw) > 1000000:
+        raise LaunchError("oversized retained input")
+    result = subprocess.run([PYTHON, "-I", "-S", "-B", str(Path(module.__file__)),
+                             "--sha", policy["sha"], "--action", action],
+                            env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"},
+                            input=raw, capture_output=True, check=True, timeout=600)
+    value = _json(result.stdout)
+    if action == "claim":
+        if (not isinstance(value, dict) or set(value) != {"sha", "state", "claim_id"}
+                or value["sha"] != policy["sha"] or value["state"] != "CLAIMED"
+                or not isinstance(value["claim_id"], str) or re.fullmatch(r"[0-9a-f]{64}", value["claim_id"]) is None):
+            raise LaunchError("invalid retained claim receipt")
+    elif (not isinstance(value, dict) or set(value) != {"sha", "state", "build_id", "submission_id"}
+          or value["sha"] != policy["sha"] or value["state"] != "UPLOADED" or value["build_id"] != module.BUILD_ID
+          or not isinstance(value["submission_id"], str) or re.fullmatch(module.UUID, value["submission_id"]) is None):
+        raise LaunchError("invalid retained completion receipt")
+    return value
+
+
 def assert_ota_history():
     """Every started OTA must finish before any later publisher or rotation."""
+    assert_retained_history()
     root = STATE / "ota"
     if not os.path.lexists(root):
         return
@@ -1367,6 +1432,8 @@ def main():
             result = testflight_only(policy, workspace, action)
         elif command in {"claim-ota", "finish-ota"}:
             result = ota_rpc(policy, "claim" if command == "claim-ota" else "finish")
+        elif command in {"claim-retained-testflight", "finish-retained-testflight"}:
+            result = retained_rpc(policy, "claim" if command == "claim-retained-testflight" else "finish")
         elif command == "check":
             check_readiness(policy)
             result = {"sha": policy["sha"], "state": "CHECKED"}

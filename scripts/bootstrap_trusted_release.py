@@ -697,10 +697,12 @@ def assert_frontend_rebuild_history():
 
 
 def assert_ota_history():
-    if not os.path.lexists(STATE / "ota"):
+    if not any(os.path.lexists(STATE / name) for name in ("ota", "retained-testflight")):
         return
     path = Path(__file__).with_name("trusted_release_server.py")
     secure(path)
+    if os.path.lexists(path.parent / "__pycache__"):
+        raise BootstrapError("cached publication history code forbidden")
     spec = importlib.util.spec_from_file_location("ota_history_server", path)
     server = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(server)
