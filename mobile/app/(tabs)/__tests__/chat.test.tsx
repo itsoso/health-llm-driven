@@ -1717,6 +1717,50 @@ describe('ChatScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/diet');
   });
 
+  it('shows a labelled realtime voice shortcut without opening more', () => {
+    const view = render(<ChatScreen />);
+    const shortcut = view.getByRole('button', { name: '实时语音' });
+    expect(view.getByText('实时语音')).toBeTruthy();
+    expect(StyleSheet.flatten(shortcut.props.style).minHeight).toBeGreaterThanOrEqual(44);
+    expect(view.getByLabelText('对话历史')).toBeTruthy();
+    expect(view.queryByText('更多操作')).toBeNull();
+    fireEvent.press(shortcut);
+    expect(mockPush).toHaveBeenCalledWith('/voice-chat');
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('guards the visible voice shortcut during streaming', () => {
+    mockIsStreaming = true;
+    const alert = jest.spyOn(Alert, 'alert');
+    const view = render(<ChatScreen />);
+    fireEvent.press(view.getByRole('button', { name: '实时语音' }));
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith('暂时无法进入语音对话', '请先等待当前回复完成，或手动停止回复。');
+  });
+
+  it('guards the visible voice shortcut until composer cleanup finishes', () => {
+    const alert = jest.spyOn(Alert, 'alert');
+    const view = render(<ChatScreen />);
+    const composer = view.UNSAFE_getAllByType('ChatInputBar' as any)[0];
+    act(() => composer.props.onVoiceBusyChange(true));
+    fireEvent.press(view.getByRole('button', { name: '实时语音' }));
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith('暂时无法进入语音对话', '请先结束当前录音或语音转写，并等待发送完成。');
+    act(() => composer.props.onVoiceBusyChange(false));
+    fireEvent.press(view.getByRole('button', { name: '实时语音' }));
+    expect(mockPush).toHaveBeenCalledWith('/voice-chat');
+  });
+
+  it('hides the voice shortcut while selecting messages for sharing', async () => {
+    mockMessages = [{ id: 'u-1', role: 'user', content: '测试消息' }];
+    const view = render(<ChatScreen />);
+    await waitFor(() => expect(view.getByLabelText('message-u-1')).toBeTruthy());
+    fireEvent(view.getByLabelText('message-u-1'), 'longPress');
+    expect(view.queryByRole('button', { name: '实时语音' })).toBeNull();
+    fireEvent.press(view.getByLabelText('取消多选'));
+    expect(view.getByRole('button', { name: '实时语音' })).toBeTruthy();
+  });
+
   it('opens realtime voice from more without starting the microphone', () => {
     const view = render(<ChatScreen />);
     fireEvent.press(view.getByLabelText('更多会诊操作'));

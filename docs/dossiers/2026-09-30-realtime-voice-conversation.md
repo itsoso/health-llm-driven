@@ -343,3 +343,35 @@
 - Production read-only snapshot remains `30ac1c67be7b2df79363ac7509f70f8a56ce4834`;
   GitHub relay enabled/active, listening only on IPv6 loopback, resolver verified.
   No new production deployment, vendor build, upload, or App Review occurred.
+
+### Authenticated simulator continuation — 2026-10-03
+
+- User completed login directly in the simulator. Native UI confirmed the new
+  chat-menu voice entry opens the voice page idle, with no automatic recording.
+  Microphone permission was granted through the system prompt for this test.
+- Explicit start reached listening. After Home and reopening the app, the voice
+  page was idle rather than automatically restarting capture. Exit returned to
+  the original chat; its history action and composer remained available.
+- Two observed ASR turns contained only `。` yet triggered the clarification
+  response. This is an invalid-transcript acceptance finding, NOT proof of a
+  meaningful spoken conversation or silence correctness. No controlled spoken
+  sample or audible playback/barge-in verification has completed. G6 stays open.
+- This remains the installed local `3a3a610c8` simulator source, not a Store build.
+  Voice commits were rebased unchanged onto the separately owned dependency
+  repair; new main is `c89fee38744ca789d0ac1c6c43a3b202207bebb9` with CI
+  `37085749065` still in progress at this checkpoint. No production release or
+  authorization rotation was performed; the explicit rotation question is pending.
+
+### Visible voice entry refinement — 2026-10-03
+
+- User confirmed their simulator voice sample worked, then requested a more
+  discoverable entry. That user report is not independent playback instrumentation
+  and does not close the punctuation-only finding or release authorization gate.
+- Added a persistent green labelled 实时语音 shortcut above the composer, outside
+  the message list, with a pulse icon and minimum 44-point touch target. Flexible
+  width/text avoids a fixed-width header squeeze. Hide during multi-selection;
+  preserve header history/new chat and the separate transcription controls.
+- The shortcut and existing menu entry use the same guarded callback; navigation
+  remains explicit-start-only. Added regression cases for direct visibility,
+  streaming/composer-busy refusal, cleanup completion and selection-mode hiding.
+  RED: four new tests failed because the visible shortcut was absent.
