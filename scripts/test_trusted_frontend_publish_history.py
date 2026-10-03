@@ -74,7 +74,7 @@ def test_invalid_publication_blocks_all_existing_history_callers(evidence, mutat
         server.assert_frontend_rebuild_history(state)
 
 
-@pytest.mark.parametrize('violation', [None, 'owner', 'group', 'mode', 'outside', 'link', 'ownership-drift'])
+@pytest.mark.parametrize('violation', [None, 'owner', 'group', 'mode', 'outside', 'link', 'ownership-drift', 'ancestor'])
 @pytest.mark.parametrize('live', [False, True])
 def test_private_cache_metadata_is_preserved_and_narrowly_allowed(tmp_path, monkeypatch, violation, live):
     import os
@@ -94,6 +94,12 @@ def test_private_cache_metadata_is_preserved_and_narrowly_allowed(tmp_path, monk
         info = original(path)
         fields = list(info)
         fields[4:6] = [0, 0]
+        # The fixture stands for protected /opt ancestors, not Linux /tmp 1777.
+        # Keep artifact modes untouched so cache permission failures remain real.
+        if path in root.parents:
+            fields[0] = (fields[0] & ~0o7777) | 0o755
+            if violation == 'ancestor' and path == server.PRODUCTION:
+                fields[0] |= 0o002
         if path == cache or cache in path.parents:
             fields[4:6] = [995, 994]
             if violation == 'owner':
@@ -110,7 +116,7 @@ def test_private_cache_metadata_is_preserved_and_narrowly_allowed(tmp_path, monk
     monkeypatch.setattr(Path, 'lstat', metadata)
     if violation == 'link':
         (cache / 'link').symlink_to('entry')
-    if violation in ('owner', 'group', 'mode', 'outside', 'link'):
+    if violation in ('owner', 'group', 'mode', 'outside', 'link') or (violation == 'ancestor' and live):
         with pytest.raises(server.LaunchError):
             server._frontend_publication_backup_digest(root, live=live)
     else:

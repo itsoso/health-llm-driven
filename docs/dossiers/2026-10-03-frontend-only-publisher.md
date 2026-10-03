@@ -50,6 +50,23 @@ old digests before any rename and compares the retained backups. Synthetic
 invalid cache/link/hardlink/write-permission regressions prove zero service stops
 and zero artifact switches. A new fixed-candidate independent rereview is pending.
 
+Independent rereview of `8a2aa82c13e0b1ee81e592aae56b4af600c50a43` returned
+G4 GO, including the effective braces mitigation. After Mac reconnection the
+reviewer independently reran 56 targeted tests, all passing. Draft PR #275 is open.
+The retained sandboxed full run ended with 882 passed and a privileged-mode test
+failure: its synthetic setuid/setgid bits were stripped by the local sandbox.
+An unrestricted synthetic probe preserves those bits; the full suite is rerunning
+without changing the test or validator.
+
+PR Linux CI exposed a synthetic ancestor mismatch in the new live-metadata test:
+the test's temporary directory was world-writable `/tmp`, whereas the production
+path requires protected `/opt` ancestors. The fixture now models those ancestors;
+a malicious ancestor regression still exercises the unchanged real validator.
+Live readback also showed a stable historical frontend restart count of 1518.
+The operator now validates stable PID/start-time/counter across the fixed restart
+window, retaining the actual counter instead of requiring zero or resetting it.
+Updated fixed-candidate review and exact CI remain required.
+
 ## G5 / G6 release and acceptance
 
 Pending reviewed canonical staging, matching read-only evidence digest,

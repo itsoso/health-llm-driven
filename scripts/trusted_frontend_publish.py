@@ -89,13 +89,23 @@ def runtime(build):
         raise PublishError('frontend launcher is not a single direct node command')
     values['ExecStart'] = match.group(1).strip()
     validate_runtime(values)
-    if values['ActiveState'] != 'active' or values['SubState'] != 'running' or int(values['MainPID']) <= 0:
+    if values['ActiveState'] != 'active' or values['SubState'] != 'running' or re.fullmatch(r'[1-9][0-9]{0,19}', values.get('MainPID','')) is None:
         raise PublishError('frontend is not active')
-    if values['NRestarts'] != '0':
-        raise PublishError('frontend has restarted unexpectedly')
+    if (re.fullmatch(r'(?:0|[1-9][0-9]{0,19})', values.get('NRestarts','')) is None
+            or re.fullmatch(r'[1-9][0-9]{0,19}', values.get('ExecMainStartTimestampMonotonic','')) is None):
+        raise PublishError('frontend restart identity is invalid')
     if values['Environment'] != 'NODE_ENV=production BACKEND_URL=http://127.0.0.1:8000':
         raise PublishError('frontend runtime environment differs')
     return values
+
+
+def stable_runtime(build):
+    """A historical restart counter is valid only if the current process is stable."""
+    first=runtime(build)
+    time.sleep(6)  # exceed the bound fixed RestartSec=5s recovery window
+    if runtime(build)!=first:
+        raise PublishError('frontend process or restart counter changed')
+    return first
 
 
 def configuration(build):
@@ -138,7 +148,7 @@ def inspect(args, source, helper, bootstrap, server, gate, build):
     if any(os.path.lexists(path) for path in (LEASE, STATE/'frontend-publications'/args.operation_id, BUILDS/args.operation_id)):
         raise PublishError('existing operation or lease; retry forbidden')
     environment, fingerprints = configuration(build)
-    process = runtime(build)
+    process = stable_runtime(build)
     # Runtime package scripts must not execute candidate source or lifecycle hooks.
     package = json.loads((source/'frontend/package.json').read_text())
     if package['scripts']['build'] != 'node scripts/braces-depth-guard.cjs --root . --apply && next build':
@@ -161,7 +171,7 @@ def assert_unchanged(plan, source, helper, bootstrap, server, build, *, restarte
     current = runtime(build)
     expected = dict(plan['frontend_process'])
     if restarted:
-        for key in ('MainPID','ExecMainStartTimestampMonotonic'):
+        for key in ('MainPID','ExecMainStartTimestampMonotonic','NRestarts'):
             current.pop(key); expected.pop(key)
     if current != expected:
         raise PublishError('frontend runtime changed')
@@ -313,9 +323,7 @@ def execute(plan, source, helper, bootstrap, server, build, check_locks):
             if backups[backup]!=frozen[name]: raise PublishError('frozen old bundle changed during switch')
             server._sync_directory(PRODUCTION/'frontend'); server._sync_directory(audit)
         build.run(['/usr/bin/systemctl','start','health-frontend'])
-        first_runtime=runtime(build)
-        time.sleep(6)  # cover the fixed RestartSec=5 automatic restart window
-        if runtime(build)!=first_runtime: raise PublishError('frontend is unstable after start')
+        first_runtime=stable_runtime(build)
         verify_pages()
         if runtime(build)!=first_runtime: raise PublishError('frontend restarted during verification')
         stable(restarted=True)

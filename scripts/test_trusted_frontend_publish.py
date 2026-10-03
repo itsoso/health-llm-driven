@@ -206,3 +206,45 @@ def test_invalid_old_bundle_is_rejected_before_stop_or_rename(tmp_path,monkeypat
     assert not renames
     assert not any(e[0]=='/usr/bin/systemctl' for e in events)
     assert (root/'old').exists() and m.LEASE.exists()
+
+
+def runtime_build(m, counter='1518'):
+    from types import SimpleNamespace
+    values={**m.RUNTIME,'ActiveState':'active','SubState':'running','MainPID':'3784950','NRestarts':counter,
+            'ExecMainStartTimestampMonotonic':'26527954314920','Environment':'NODE_ENV=production BACKEND_URL=http://127.0.0.1:8000'}
+    values['ExecStart']='{ path=/usr/bin/node ; argv[]='+m.RUNTIME['ExecStart']+' ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }'
+    return SimpleNamespace(run=lambda a:'\n'.join(k+'='+v for k,v in values.items()))
+
+
+def test_stable_historical_restart_count_is_accepted(monkeypatch):
+    m=load(); sleeps=[]
+    monkeypatch.setattr(m.time,'sleep',sleeps.append)
+    result=m.stable_runtime(runtime_build(m))
+    assert result['NRestarts']=='1518' and sleeps==[6]
+
+
+@pytest.mark.parametrize('field,value',[('NRestarts','1519'),('MainPID','3784951'),('ExecMainStartTimestampMonotonic','26527954314921')])
+def test_preflight_rejects_restart_counter_or_process_identity_change(monkeypatch,field,value):
+    m=load()
+    first=m.runtime(runtime_build(m)); second={**first,field:value}
+    samples=iter([first,second])
+    monkeypatch.setattr(m,'runtime',lambda _:next(samples))
+    monkeypatch.setattr(m.time,'sleep',lambda _:None)
+    with pytest.raises(m.PublishError): m.stable_runtime(None)
+
+
+@pytest.mark.parametrize('counter',['-1','01','unknown','1.5','9'*21])
+def test_runtime_rejects_invalid_restart_counters(counter):
+    m=load()
+    with pytest.raises(m.PublishError): m.runtime(runtime_build(m,counter))
+
+
+def test_restart_increment_during_page_verification_is_not_success(tmp_path,monkeypatch):
+    m,plan,h,s,b,events=execution_fixture(tmp_path,monkeypatch)
+    baseline={'MainPID':'123','NRestarts':'1518','ExecMainStartTimestampMonotonic':'1234'}
+    samples=iter([baseline,baseline,{**baseline,'NRestarts':'1519'}])
+    monkeypatch.setattr(m,'runtime',lambda _:next(samples))
+    with pytest.raises(m.PublishError): m.execute(plan,tmp_path,h,None,s,b,lambda:None)
+    audit=m.STATE/'frontend-publications'/plan['operation_id']
+    assert m.LEASE.exists() and (audit/'failed.json').exists()
+    assert not (audit/'completed.json').exists()
