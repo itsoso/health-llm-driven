@@ -79,3 +79,39 @@ Local workflow ledger: `docs/_generated/harness-runs/6f1e9c5f9ee7.jsonl` (ignore
 not committed). Current GitHub Actions has no frontend target; publication uses
 the existing administrative channel and canonical server staging, without new
 credentials or RPC permissions.
+
+## Local incident repair: stopped Next.js exit status
+
+Local-only follow-up; no publishing or release authorization is implied by this
+section. Independent emergency service recovery approval remains separate.
+
+The fixed Next.js process may exit with status 143 after systemd sends SIGTERM.
+Systemd can then report `failed/failed` even after both MainPID and ControlPID are
+zero. The publisher required exactly `inactive/dead`, so it could reject the
+stopped process before the first artifact rename and leave availability down.
+
+Reproduce this exact contract in synthetic tests before implementation. Accept
+only the normal inactive/dead terminal or the precise stopped exit-143 terminal;
+live processes, control processes, other exit codes and unknown state remain
+blocked. Do not change unit configuration or its success-exit policy.
+
+A separately authorized, default-disabled option is prepared for failures
+after stop but before any artifact rename is attempted. It must bind the old
+immutable bundle before stop, reprove it and the unchanged unit/backend/config
+and lease boundaries, start only the original frontend once, and verify stable
+availability. It retains the original failure, audit, lease and staged artifacts;
+it never retries publication or manufactures a successful publication receipt.
+It cannot recover historical failures without the captured in-process proof.
+Failures after the first attempted rename remain outside this option.
+
+Activating this recovery option changes the existing failure-handling policy and
+requires explicit approval after independent review. Local implementation and
+synthetic tests do not grant that approval or alter production.
+
+Fresh local evidence: the exact stop-143 reproduction failed against the prior
+implementation; the pre-switch restoration reproduction also failed before its
+implementation. Publisher regressions now pass 58 tests, and publisher/history/
+CI-contract verification passes 97 tests. The restoration option is explicitly
+bound into the preflight evidence. Unknown terminal states, live processes,
+changed immutable artifacts or preservation proofs, and any attempted first
+rename remain blocked. Independent fixed-commit review is pending.
