@@ -507,14 +507,14 @@ def test_real_linux_runner_bootstrap_and_loader():
         git('add', 'scripts/built_unuploaded_proof.py', 'scripts/trusted_release_gate.py')
         git('commit', '-m', 'test canonical helpers')
         sha = git('rev-parse', 'HEAD').decode().strip()
-        with pytest.raises(ValueError, match='unsafe canonical'):
+        with pytest.raises(ValueError, match='CONTRACT_METADATA'):
             m.validate_runner_source(source, sha)
         harden(opt)
         assert opt.stat().st_mode & 0o777 == 0o755
         assert m.validate_runner_source(source, sha) is not None
         cache = source / 'scripts' / '__pycache__'
         cache.symlink_to(root / 'missing')
-        with pytest.raises(ValueError, match='cached'):
+        with pytest.raises(ValueError, match='CONTRACT_CANONICAL'):
             m.validate_runner_source(source, sha)
         cache.unlink()
         helper = source / 'scripts' / 'built_unuploaded_proof.py'
@@ -535,3 +535,120 @@ def test_real_linux_runner_bootstrap_and_loader():
         alias.symlink_to(opt, target_is_directory=True)
         with pytest.raises(ValueError):
             harden(alias)
+
+
+def test_startup_errors_are_static_without_exception_details(monkeypatch, capsys):
+    m = load('trusted_retained_testflight')
+    monkeypatch.setattr(m, 'load', lambda *a: (_ for _ in ()).throw(OSError('SECRET_SENTINEL /private/arbitrary')))
+    with pytest.raises(m.StartupError) as error:
+        m.validate_runner_source(Path('/opt/reva-release/source'), SHA)
+    assert error.value.code == 'CONTRACT_FILESYSTEM'
+    assert 'SECRET_SENTINEL' not in str(error.value)
+
+
+@pytest.mark.parametrize('reason', ['isolated', 'no_site', 'dont_write_bytecode', 'uid', 'sha', 'path', 'forged'])
+def test_actual_cli_startup_reports_only_allowlisted_phase(monkeypatch, capsys, reason):
+    m = load('trusted_retained_testflight')
+    flags = {'isolated': 1, 'no_site': 1, 'dont_write_bytecode': 1}
+    if reason in flags:
+        flags[reason] = 0
+    monkeypatch.setattr(m.sys, 'flags', SimpleNamespace(**flags))
+    monkeypatch.setattr(m.os, 'geteuid', lambda: 12345 if reason == 'uid' else 0)
+    monkeypatch.setattr(m.sys, 'argv', ['retained.py', '--check-runner', '--sha',
+                                      'SECRET_SENTINEL' if reason == 'sha' else SHA])
+    if reason == 'forged':
+        error = m.StartupError('ENTRY')
+        error.code = 'SECRET_SENTINEL /arbitrary-path'
+        monkeypatch.setattr(m, 'runner_source', lambda _: (_ for _ in ()).throw(error))
+    assert m.main() == 1
+    output = capsys.readouterr()
+    assert output.out == ''
+    assert 'SECRET_SENTINEL' not in output.err
+    expected = 'RUNNER_PATH' if reason == 'path' else 'ENTRY'
+    assert output.err == 'Retained runner startup blocked: ' + expected + '.\n'
+
+
+def test_fidelity_reuses_actual_steps_omitting_only_release_admission():
+    import yaml
+    w = yaml.safe_load(Path('.github/workflows/trusted-release.yml').read_text())
+    steps = w['jobs']['retained-testflight']['steps']
+    materialize = fidelity_command('materialize')
+    assert 'test "$GITHUB_REF" = refs/heads/main' not in materialize
+    assert 'trusted_release_gate.py --sha' not in materialize
+    assert 'test "$TARGET_SHA" = "$GITHUB_SHA"' in materialize
+    assert 'GITHUB_REPOSITORY' in materialize
+    assert "harden(Path('/opt'))" in materialize
+    assert fidelity_command('tools') == steps[2]['run']
+    assert fidelity_command('smoke') == steps[3]['run']
+    assert 'secrets.' not in ''.join(fidelity_command(p) for p in ('materialize', 'tools', 'smoke'))
+    with pytest.raises(ValueError):
+        fidelity_command('upload')
+
+
+def test_fidelity_ci_uses_pinned_node_and_all_three_real_phases():
+    import yaml
+    ci = yaml.safe_load(Path('.github/workflows/ci.yml').read_text())
+    release = yaml.safe_load(Path('.github/workflows/trusted-release.yml').read_text())
+    assert ci['jobs']['release-invariants']['runs-on'] == release['jobs']['retained-testflight']['runs-on']
+    steps = ci['jobs']['release-invariants']['steps']
+    phases = [step for step in steps if '--fidelity-phase' in step.get('run', '')]
+    assert len(phases) == 3
+    assert [phase['run'].split('--fidelity-phase ')[1].strip() for phase in phases] == ['materialize', 'tools', 'smoke']
+    index = steps.index(phases[0])
+    assert steps[index + 1]['uses'] == 'actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444'
+    assert steps[index + 1]['with'] == {'node-version': '22.13.0', 'package-manager-cache': False}
+
+
+def fidelity_command(phase):
+    """CI test adapter only; no production flags or alternate runtime checks.
+
+CI is allowed to validate a diagnostic branch before merge. Omit exactly the
+main-entry assertion and circular fresh-CI attestation in this TEST adapter;
+retain canonical URL, real branch SHA, clean source, root and loader checks.
+"""
+    import yaml
+    workflow = yaml.safe_load(Path('.github/workflows/trusted-release.yml').read_text())
+    steps = workflow['jobs']['retained-testflight']['steps']
+    names = {'materialize': 'Materialize exact publisher and fixed retained source before credentials',
+             'tools': 'Install and verify locked vendor tools without credentials',
+             'smoke': 'Verify canonical retained runner startup without credentials'}
+    if phase not in names:
+        raise ValueError('only credential-free startup phases are allowed')
+    selected = [step for step in steps if step.get('name') == names[phase]]
+    if len(selected) != 1 or 'secrets.' in str(selected[0]):
+        raise ValueError('ambiguous or credential-bearing startup phase')
+    body = selected[0]['run']
+    if phase == 'materialize':
+        omissions = ['test "$GITHUB_REF" = refs/heads/main',
+                     '/usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"']
+        for omitted in omissions:
+            lines = body.splitlines()
+            if sum(line.strip() == omitted for line in lines) != 1:
+                raise ValueError('production admission changed; update the test adapter explicitly')
+            body = '\n'.join(line for line in lines if line.strip() != omitted) + '\n'
+    return body
+
+
+def run_fidelity_phase(phase):
+    import subprocess
+    import re
+    if sys.platform != 'linux' or os.environ.get('GITHUB_ACTIONS') != 'true':
+        raise ValueError('credential-free fidelity runs only on ephemeral Linux CI')
+    sha, ref = os.environ.get('GITHUB_SHA', ''), os.environ.get('GITHUB_REF', '')
+    if re.fullmatch(r'[0-9a-f]{40}', sha) is None or not ref.startswith(('refs/heads/', 'refs/pull/')):
+        raise ValueError('actual CI revision and ref required')
+    # No credentials or caller proxy/Git/CA settings reach the fresh startup.
+    env = {'PATH': os.environ['PATH'], 'HOME': os.environ['HOME'],
+           'GITHUB_REPOSITORY': 'itsoso/health-llm-driven', 'GITHUB_SHA': sha,
+           'GITHUB_REF': ref, 'TARGET_SHA': sha}
+    print('Credential-free retained startup fidelity: ' + phase +
+          '; CI-only main-entry and fresh-CI admission omitted, runtime checks unchanged.', flush=True)
+    subprocess.run(['/bin/bash', '--noprofile', '--norc', '-euo', 'pipefail', '-c', fidelity_command(phase)],
+                   env=env, check=True, timeout=600)
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    parser.add_argument('--fidelity-phase', choices=('materialize', 'tools', 'smoke'), required=True)
+    run_fidelity_phase(parser.parse_args().fidelity_phase)

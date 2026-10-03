@@ -402,3 +402,46 @@ alternatives to AMap.
   ownership, mode, symlink, cache and byte-drift negatives. It does not modify the
   CI host's actual `/opt` or use vendor credentials. Fixed review and exact remote
   CI are pending; these local results do not prove the hosted run has passed.
+
+### 2026-10-03 · Runner repair merged; second credential-free startup failure
+
+- Fixed `3e830f9ddcf284428612a7b0fe60e34fd35247d2` received independent GO:
+  374 passed / two Linux-only skips. Root full CI-mode deployment/rollback
+  invariant suite passed: 2155 passed / 11 skipped / 84 subtests. Authorized
+  fast-forward main push followed these checks. Exact CI `37129273858` then
+  completed success, including the real root-owned Linux loader fixture and
+  the complete release-invariants job. Trusted validate `37129885612` passed.
+- Fresh canonical server staging attested the same SHA and CI. Normal retirement
+  revoked 12dd's precise cloud/loopback identities and destroyed only its old
+  internal private key after terminal/idle checks. Canonical rotation returned
+  `INSTALLED` for 3e830, retaining original audit records. One backend workflow
+  `37130246241` succeeded; production HEAD and immutable `SUCCEEDED` receipt
+  both match 3e830. Internal/public health is healthy; backend/socket/worker/beat
+  are active with zero restarts, protected auth and location routes return 401.
+- Retained-upload workflow `37130728257`, job `111225171685`, failed in the new
+  **credential-free** startup smoke. Root hardening, canonical materialization,
+  Node and locked dependency setup passed. The credential/claim/submit step was
+  skipped. Server has no retained operation and no business lease. No failed
+  workflow is replayed, and no claim or receipt is reset.
+  Independent fresh Expo read confirms exact build 274 remains `FINISHED` with
+  an empty submissions list after this failure.
+- The log still provides only the static blocked message about 52ms after
+  startup. This does not identify the remaining cause. The previous Linux test
+  exercises a two-helper fixture, not the entire hosted dependency/CLI pipeline;
+  passing it cannot establish full runner readiness. Do not present an inferred
+  mode/cache/source mismatch as observed VM evidence.
+- Return to G3: add bounded, static credential-free diagnostic stages and a
+  full-fidelity Linux startup check before another production cycle. Preserve
+  root ownership, non-writable ancestors, no-cache, exact-source and clean-tree
+  requirements. Run the diagnostic candidate on the task's isolated branch first;
+  the user's instruction remains to solve the issue before merging into main.
+  Backend delivery is confirmed; TestFlight upload and Apple availability are not.
+- Diagnostic candidate adds allowlisted static startup codes and a Linux CI
+  adapter that reuses the actual retained workflow's materialization, locked
+  tools/patches and CLI steps. Only the test adapter omits the main-ref admission
+  and circular requirement for already-green CI; real branch SHA and runtime
+  checks remain. Production workflow admission is unchanged. The CI OS label is
+  pinned to the same Ubuntu 24.04 as the publisher (parity test RED then GREEN).
+  Associated local tests: 402 passed / two Linux skips; after OS parity change,
+  retained/workflow tests: 111 passed / two skips. These are diagnostic coverage,
+  not evidence that the remaining hosted-startup failure is solved.

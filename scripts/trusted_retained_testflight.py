@@ -59,6 +59,20 @@ CONTRACT = None
 SOURCE = None
 
 
+class StartupError(ValueError):
+    """Only fixed phase/reason identifiers may cross the startup log boundary."""
+    CODES = frozenset({'ENTRY', 'RUNNER_PATH', 'SOURCE_REVISION', 'SOURCE_DIRTY',
+                       'SOURCE_REVISION_GIT', 'SOURCE_STATUS_GIT'} | {
+        phase + '_' + reason for phase in ('CONTRACT', 'GATE')
+        for reason in ('METADATA', 'CANONICAL', 'FILESYSTEM', 'GIT', 'IMPORT')})
+
+    def __init__(self, code):
+        if code not in self.CODES:
+            code = 'ENTRY'
+        self.code = code
+        super().__init__(code)
+
+
 def unique(pairs):
     result = {}
     for key, value in pairs:
@@ -432,18 +446,43 @@ def collect_build(expo_token):
 
 def validate_runner_source(source, sha):
     """Credential-free startup smoke: no vendor, gate HTTP, SSH, or claims."""
-    initialize(source, sha)
-    gate = load(source, sha, 'trusted_release_gate.py')
-    if (git(source, 'rev-parse', 'HEAD').decode().strip() != sha
-            or git(source, 'status', '--porcelain=v1', '--untracked-files=all')):
-        raise ValueError('runner source is not the clean exact revision')
+    global SOURCE, CONTRACT
+    SOURCE = source
+    def checked(phase, filename):
+        try:
+            return load(source, sha, filename)
+        except subprocess.CalledProcessError:
+            raise StartupError(phase + '_GIT') from None
+        except OSError:
+            raise StartupError(phase + '_FILESYSTEM') from None
+        except ValueError as error:
+            # Exact comparisons select static codes; never echo exception data.
+            reason = {'unsafe canonical helper': 'METADATA',
+                      'canonical helper differs or has cached code': 'CANONICAL'}.get(str(error), 'IMPORT')
+            raise StartupError(phase + '_' + reason) from None
+        except Exception:
+            raise StartupError(phase + '_IMPORT') from None
+    CONTRACT = checked('CONTRACT', 'built_unuploaded_proof.py')
+    gate = checked('GATE', 'trusted_release_gate.py')
+    try:
+        revision = git(source, 'rev-parse', 'HEAD').decode().strip()
+    except Exception:
+        raise StartupError('SOURCE_REVISION_GIT') from None
+    if revision != sha:
+        raise StartupError('SOURCE_REVISION')
+    try:
+        dirty = git(source, 'status', '--porcelain=v1', '--untracked-files=all')
+    except Exception:
+        raise StartupError('SOURCE_STATUS_GIT') from None
+    if dirty:
+        raise StartupError('SOURCE_DIRTY')
     return gate
 
 
 def runner_source(sha):
     source = Path('/opt/reva-release/source')
     if Path(__file__).absolute() != source / 'scripts/trusted_retained_testflight.py':
-        raise ValueError('fixed runner source required')
+        raise StartupError('RUNNER_PATH')
     return source, validate_runner_source(source, sha)
 
 
@@ -504,7 +543,7 @@ def main():
     try:
         if (not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode
                 or os.geteuid() != 0 or re.fullmatch(r'[0-9a-f]{40}', args.sha) is None or args.sha == OLD_SHA):
-            raise ValueError('isolated new canonical publisher required')
+            raise StartupError('ENTRY')
         os.umask(0o077)
         if args.check_runner:
             if args.runner or args.action is not None or any((args.key, args.known_hosts, args.node)):
@@ -538,6 +577,10 @@ def main():
                 result = finish(server, bootstrap, args.sha, value, recover=args.action == 'recover')
         print(json.dumps(result, sort_keys=True))
         return 0
+    except StartupError as error:
+        code = error.code if type(error.code) is str and error.code in StartupError.CODES else 'ENTRY'
+        print('Retained runner startup blocked: ' + code + '.', file=sys.stderr)
+        return 1
     except Exception:
         print('Retained TestFlight blocked; preserve evidence and never repeat vendor submission.', file=sys.stderr)
         return 1
