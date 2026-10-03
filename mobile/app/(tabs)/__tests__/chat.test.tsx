@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
 import { Alert, FlatList, Keyboard, StyleSheet } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { revaColors, revaSemantic } from '../../../constants/revaTheme';
 
 const mockOpenHistory = jest.fn();
@@ -552,6 +552,9 @@ describe('ChatScreen', () => {
 
     // 新建对话 → 再次递增(新窗口也唤起)
     await act(async () => {
+      fireEvent.press(getByLabelText('更多会诊操作'));
+    });
+    await act(async () => {
       fireEvent.press(getByLabelText('新建对话'));
     });
     expect(bar().props.autoFocusToken).toBeGreaterThan(initial);
@@ -896,8 +899,8 @@ describe('ChatScreen', () => {
     };
 
     expect(styleOf(getByTestId('chat-header-surface')).minHeight).toBeLessThanOrEqual(40);
-    expect(styleOf(getByLabelText('新建对话'))).toEqual(
-      expect.objectContaining({ width: 44, height: 44 }),
+    expect(styleOf(getByLabelText('实时语音'))).toEqual(
+      expect.objectContaining({ minHeight: 44 }),
     );
     expect(styleOf(getByLabelText('对话历史'))).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
@@ -905,7 +908,7 @@ describe('ChatScreen', () => {
     expect(styleOf(getByLabelText('更多会诊操作'))).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
-    expect(minHitSlop(getByLabelText('新建对话'))).toBeGreaterThanOrEqual(8);
+    expect(minHitSlop(getByLabelText('实时语音'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('对话历史'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('更多会诊操作'))).toBeGreaterThanOrEqual(8);
   });
@@ -998,8 +1001,8 @@ describe('ChatScreen', () => {
     const headerSurface = StyleSheet.flatten(getByTestId('chat-header-surface').props.style);
     expect(headerSurface.minHeight).toBeLessThanOrEqual(42);
     expect(headerSurface.paddingVertical).toBeLessThanOrEqual(2);
-    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style)).toEqual(
-      expect.objectContaining({ width: 44, height: 44 }),
+    expect(StyleSheet.flatten(getByLabelText('实时语音').props.style)).toEqual(
+      expect.objectContaining({ minHeight: 44 }),
     );
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
@@ -1009,7 +1012,7 @@ describe('ChatScreen', () => {
     );
   });
 
-  it('starts a new chat from a first-level header action', async () => {
+  it('starts a new chat from more and closes the menu', async () => {
     mockFetchConversationStarters
       .mockResolvedValueOnce({
         opener: null,
@@ -1026,6 +1029,9 @@ describe('ChatScreen', () => {
       expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
     });
 
+    await act(async () => {
+      fireEvent.press(getByLabelText('更多会诊操作'));
+    });
     await act(async () => {
       fireEvent.press(getByLabelText('新建对话'));
     });
@@ -1684,7 +1690,7 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('keeps new chat out of the low-frequency more sheet', async () => {
+  it('keeps new chat available in more while history stays first-level', async () => {
     mockFetchConversationStarters
       .mockResolvedValueOnce({
         opener: null,
@@ -1701,7 +1707,7 @@ describe('ChatScreen', () => {
       fireEvent.press(getByLabelText('更多会诊操作'));
     });
 
-    expect(queryByText('新建对话')).toBeNull();
+    expect(getByText('新建对话')).toBeTruthy();
     expect(queryByText('对话历史')).toBeNull();
     expect(getByText('更多操作')).toBeTruthy();
     expect(getByTestId('chat-tool-menu-overlay').props.accessible).toBe(false);
@@ -1717,10 +1723,13 @@ describe('ChatScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/diet');
   });
 
-  it('shows a labelled realtime voice shortcut without opening more', () => {
+  it('shows one labelled realtime voice shortcut in the header without a composer duplicate', () => {
     const view = render(<ChatScreen />);
-    const shortcut = view.getByRole('button', { name: '实时语音' });
-    expect(view.getByText('实时语音')).toBeTruthy();
+    const shortcut = within(view.getByTestId('chat-header-surface')).getByRole('button', { name: '实时语音' });
+    expect(view.getByText('语音')).toBeTruthy();
+    expect(view.getAllByRole('button', { name: '实时语音' })).toHaveLength(1);
+    expect(view.queryByTestId('chat-realtime-voice-shortcut')).toBeNull();
+    expect(view.queryByLabelText('新建对话')).toBeNull();
     expect(StyleSheet.flatten(shortcut.props.style).minHeight).toBeGreaterThanOrEqual(44);
     expect(view.getByLabelText('对话历史')).toBeTruthy();
     expect(view.queryByText('更多操作')).toBeNull();

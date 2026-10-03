@@ -40,11 +40,13 @@ RequirementAdmission:
 
 ### Reachable entry repair — 2026-10-03
 
-Expose the existing feature through a persistent green, labelled 实时语音 shortcut
-immediately above the chat composer, outside the scrolling message list. Retain
+Expose the existing feature through a green pulse-icon + 语音 capsule at the far
+right of the chat header. Remove the previous above-composer shortcut. Keep
+history and more as neutral header actions; move new chat into more instead of
+squeezing a fourth action into the header. Retain
 Chat → 更多操作 → 实时语音对话 as a secondary entry. Hide the shortcut during message
-multi-selection; do not crowd the header or cover message content with an overlay.
-Use a minimum 44-point touch target and flexible width/text for narrow screens.
+multi-selection; never cover message content with an overlay. Use a minimum
+44-point touch target and the existing compact-header font-scaling convention.
 Both entry points share the same microphone-ownership/navigation guard. Keep the
 first-level conversation-history action and the separate transcription microphone.
 Navigation opens `/voice-chat` without `autoStart`; the voice page's explicit

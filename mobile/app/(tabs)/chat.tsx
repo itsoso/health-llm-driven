@@ -1116,7 +1116,7 @@ export default function ChatScreen() {
           isStreaming={isStreaming}
           onBack={contextEntryActive ? handleExitContext : undefined}
           onSelectModel={handleSelectModel}
-          onNewChat={handleNewChat}
+          onOpenVoice={selectionMode ? undefined : openVoiceConversation}
           onOpenHistory={openHistory}
           onOpenToolMenu={() => setToolMenuVisible(true)}
         />
@@ -1301,23 +1301,6 @@ export default function ChatScreen() {
             showCapturePhoto={!startersOnboarding}
           />
         )}
-        {!selectionMode && (
-          <View style={styles.voiceShortcutRow}>
-            <TouchableOpacity
-              testID="chat-realtime-voice-shortcut"
-              accessibilityRole="button"
-              accessibilityLabel="实时语音"
-              accessibilityHint="打开语音对话页面，点击麦克风后开始，不是语音转文字"
-              activeOpacity={0.72}
-              onPress={openVoiceConversation}
-              style={styles.voiceShortcut}
-            >
-              <Ionicons name="pulse" size={20} color={C.greenOn} />
-              <Text style={styles.voiceShortcutLabel}>实时语音</Text>
-              <Ionicons name="chevron-forward" size={14} color={C.greenOn} />
-            </TouchableOpacity>
-          </View>
-        )}
         <ChatInputBar
           onSend={handleSend}
           isStreaming={isStreaming}
@@ -1393,6 +1376,11 @@ export default function ChatScreen() {
                 <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
+            <ToolMenuRow
+              icon="chatbubble-outline"
+              label="新建对话"
+              onPress={handleNewChat}
+            />
             <ToolMenuRow
               icon="call-outline"
               label="实时语音对话"
@@ -1515,29 +1503,6 @@ function ToolMenuRow({
 // Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
-  voiceShortcutRow: {
-    alignItems: 'flex-end',
-    marginHorizontal: revaSpacing.s4,
-    marginBottom: revaSpacing.s2,
-  },
-  voiceShortcut: {
-    minHeight: 44,
-    maxWidth: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: revaSpacing.s2,
-    paddingHorizontal: revaSpacing.s3,
-    paddingVertical: revaSpacing.s2,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green600,
-  },
-  voiceShortcutLabel: {
-    color: C.greenOn,
-    fontFamily: revaFonts.sans,
-    fontWeight: '600',
-    fontSize: 15,
-    flexShrink: 1,
-  },
   messageListShell: { flex: 1, minHeight: 0 },
   messageListViewport: { flex: 1, minHeight: 0 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },

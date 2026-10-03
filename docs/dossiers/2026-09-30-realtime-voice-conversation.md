@@ -390,3 +390,16 @@
   does not prove that in-flight playback cleanup issue resolved. Keep this separate
   from the entry-layout acceptance and do not declare voice G6 fully passed.
 - No push or production release performed for this visible-entry refinement.
+
+### Header voice entry refinement — 2026-10-03
+
+- User approved the top-right design instead of the above-composer shortcut.
+  Header now keeps neutral history/more and a separate green pulse-icon + 语音
+  capsule at the far right. New chat moves into more; the bottom shortcut is
+  removed, preserving composer space and the existing transcription controls.
+- Both voice entries still use the unchanged guarded navigation callback. The
+  header entry is hidden in multi-selection and never auto-starts the microphone.
+  No provider, permission, consent, cleanup, or health-write behavior changes.
+- RED: the updated header regression failed on missing pulse/voice action.
+  Updated screen contracts require exactly one visible header shortcut, no
+  bottom duplicate, guarded navigation and working new-chat menu behavior.
