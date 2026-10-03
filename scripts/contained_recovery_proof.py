@@ -149,7 +149,7 @@ def validate_installed_laya_binding(receipt, old, candidate, fields, *, started,
 
 
 class RecoveryProof:
-    def __init__(self, source, bootstrap, server, failed_sha, production_sha, lease_token, *, unchanged=False, installed_laya=False):
+    def __init__(self, source, bootstrap, server, failed_sha, production_sha, lease_token, *, unchanged=False, installed_laya=False, built_unuploaded=None):
         if any(re.fullmatch(r"[0-9a-f]{40}", value) is None for value in (failed_sha, production_sha)) or failed_sha == production_sha:
             raise ProofError("distinct exact revisions required")
         if not isinstance(lease_token, str) or re.fullmatch(r"[A-Za-z0-9._:-]{1,256}", lease_token) is None:
@@ -158,6 +158,9 @@ class RecoveryProof:
         self.failed_sha, self.production_sha, self.token = failed_sha, production_sha, lease_token
         self.unchanged = unchanged
         self.installed_laya = installed_laya
+        self.built_unuploaded = built_unuploaded
+        if built_unuploaded is not None and (not callable(built_unuploaded) or not installed_laya or not unchanged):
+            raise ProofError("built artifact requires installed unchanged closure")
         if installed_laya and not unchanged:
             raise ProofError("installed Laya requires unchanged closure")
         self.lease = bootstrap.BUSINESS_LEASE
@@ -267,6 +270,13 @@ class RecoveryProof:
         result = {"directory": self._directory(workspace)}
         allowed = {"started.json", "completed.json", "build.lock", "source", "home", "bin", "deployment.env",
                    "preparation.log", "deployment.log", "preparation-started.json", "prepared.json", "deployment-started.json", "clone-attempts"}
+        if getattr(self, "built_unuploaded", None) is not None:
+            allowed.add("build-started.json")
+            if not (workspace / "build.lock").is_file():
+                raise ProofError("original native build lock required")
+            raw, result["build-started.json"] = self._file(workspace / "build-started.json", 0o600)
+            if object_json(raw) != {"sha": self.failed_sha, "state": "STARTED"}:
+                raise ProofError("original native build claim differs")
         if not {p.name for p in workspace.iterdir()} <= allowed:
             raise ProofError("unknown or native/review workspace evidence")
         executor, _ = self._file(failed_source / "scripts/trusted_release_server.py")
@@ -612,6 +622,8 @@ class RecoveryProof:
             else:
                 result["unstarted_laya"] = self._laya_unstarted()
             self._services_predate_release()
+        if getattr(self, "built_unuploaded", None) is not None:
+            result["built_unuploaded"] = self.built_unuploaded()
         return result
 
     def _pids(self, unit):

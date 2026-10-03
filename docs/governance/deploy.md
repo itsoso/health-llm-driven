@@ -534,6 +534,25 @@ unit/覆盖路径/ExecStart/账号、代际模型与锁定依赖、boot ID、cgr
 未知、混合、缺字段 profile 拒绝。沿用原同 inode 租约归档与受保护回执协议，
 不修改失败终态、不续跑原 SHA。历史验收保存原证明，不要求以后版本维持该 PID。
 
+已构建但未领取上传权限的混合失败不得套用以上旧模式。针对 `514c8c28a` /
+run `37116403140` / build `274`，显式的
+`--retire-installed-laya-built-unuploaded --mixed-secrets-stdin` 变体在全部 installed
+Laya 原状态证明之外，使用 `scripts/built_unuploaded_proof.py` 读取 GitHub 与 Expo
+实时证据：固定 canonical 源码哈希、唯一 attempt、六个 job 均终结、构建成功、后端
+失败、上传 claim 失败且上传步骤 skipped，以及精确 EAS ID / 项目 / bundle / SHA /
+版本 / iOS STORE production / FINISHED / 非模拟器 / 空 submissions。厂商构建日志
+和规范化 job 证据均绑定已核验摘要；缺失、漂移、未知状态一律 BLOCK。
+
+该变体必须持有原 build.lock，原 build-started.json 必须精确匹配，任何 native-started
+或 testflight-base 状态拒绝。保护 stdin 仅接受 lease_token、github_token、expo_session
+三项 JSON，不接受 argv 凭据；凭据仅用于本次只读取证，禁止打印或持久化。GitHub
+签名日志重定向不转发凭据，TLS 使用系统信任库，不采用调用者代理或证书覆盖。
+外部证据在 inspect、持久化 intent 后、撤权前及最终复证时重读；历史校验理解严格的
+finished-build-unuploaded-v1 profile，不能丢弃或混用。旧终态、所有 claim、锁和 274
+制品保留。完成只表示 CLOSED_UNCHANGED_RELEASE；不授权上传，不伪造后端成功。
+Laya 资产本身不得在收尾源码中改变。后续使用新绿色 SHA 的 backend-only 发布；
+旧 274 与新后端的组合及独立上传仍须专门受审，禁止重跑原 release 或原上传 job。
+
 #### 固定 Laya PREPARING 事故的缺失租约行政收尾
 
 `scripts/partial_laya_retirement.py` 是独立的窄化入口，仅处理脚本内固定的 a6b6

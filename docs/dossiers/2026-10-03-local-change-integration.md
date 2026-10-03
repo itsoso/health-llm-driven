@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| status | building |
-| current_stage | S5 · integration and verification |
+| status | blocked |
+| current_stage | G4 · Authorized mixed-release closure repair; fixed-source review pending |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Scope | Reconcile explicitly authorized local unique changes onto current main; verify and release |
@@ -130,3 +130,96 @@ alternatives to AMap.
   reverse geocoding can supply city/street but is not exact restaurant evidence.
   Any provider switch must revise the explicit disclosure/consent recipient;
   do not silently send a failed AMap request to another provider.
+
+## 2026-10-03 · Authorized release attempt
+
+- Synced the existing task checkout to green `19691af34` without changing the
+  original dirty source checkout. Committed the availability delta as
+  `514c8c28a87ad5761a6f66b284c19a69dff33e8f` and pushed it fast-forward to main.
+- Fixed-delta independent safety review: **GO**, no source blocker. Reviewer
+  checked auth/no-store/default-off, no readiness GPS/provider request, strict
+  true/old API 404 failure handling and late lifecycle/identity replies; no
+  independent test rerun in this bounded review. Final 500-token delegation
+  allocation used; ledger budget exhausted, not reset.
+- Fresh root evidence: CI-mode backend 55 passed; full mobile 326 suites,
+  3286 passed / 1 skipped; mobile TypeScript, API types check, System Map,
+  dossier consistency, secret scan and diff check passed. Exact remote full CI
+  [37115395134](https://github.com/itsoso/health-llm-driven/actions/runs/37115395134)
+  and trusted validate
+  [37115918123](https://github.com/itsoso/health-llm-driven/actions/runs/37115918123)
+  passed.
+- Server canonical source acquisition first timed out before checkout. Confirmed
+  source absent and no Git children; then used the existing approved, verified
+  root-owned read-only production object cache to reduce GitHub transfer, with
+  the same timeout. Exact HEAD, clean source, bootstrap/executor hashes and
+  server-side CI gate matched. No local source was uploaded.
+- Canonical old `dbad4e66c` authorization revoked; only its exact loopback
+  private key was removed after revocation proof. Rotation returned `INSTALLED`
+  for `514c8c28a`, retaining all old immutable audit and reusing the current
+  cloud public identity under the established policy.
+- Dispatched **one** release:
+  [37116403140](https://github.com/itsoso/health-llm-driven/actions/runs/37116403140).
+  Server readiness passed; backend and native build ran in parallel.
+- Backend job `111184079533` failed during installed Laya prepare/reuse with
+  `LAYA_BLOCKED:TimeoutError`. Exact server terminal is `NEEDS_OPERATOR`.
+  Log explicitly reports backend writers unchanged; candidate/rollback env were
+  sealed but live env was not installed. Production remains `dbad4e66c`, and
+  fresh API/database/Redis/Celery health is healthy. Business lease, claims,
+  sealed stage and failed evidence remain untouched. Laya later reported
+  active/running, zero restarts and HTTP 200 health; this does not clear timeout
+  or authorize replay/retirement.
+- Exact EAS build `63b61a31-058c-44e5-bb82-67727ca7d073` is **FINISHED**, version
+  `1.3.4 (274)`, bound to `514c8c28a`. This is build completion, not TestFlight
+  upload/availability. Known backend failure must block the upload claim; retain
+  the artifact and original workflow, do not create another build or clear claims.
+- Final workflow is **failure**. TestFlight job `111185249225` failed at
+  `Claim one-time TestFlight upload permission before exposing vendor credentials`;
+  `Revalidate and upload the exact finished build` was **skipped**. Therefore
+  this attempt did not upload build 274. Release-result failed as required.
+- Supplementary local simulator build did not pass: regenerated native config
+  with no tracked changes, but existing Pods retain Rokid SDK compiler flags and
+  fail on `CxrClient`. No simulator acceptance is claimed; this is separate from
+  the successful vendor device build. Do not overwrite the signed-in simulator
+  with an old artifact and report candidate acceptance.
+- Next action requires reviewed failure handling: diagnose Laya probe timeout,
+  preserve and close this failed lifecycle under the applicable authorized
+  operator procedure (including native artifact/claim state), then use a new
+  reviewed revision/authorization for backend recovery. No automatic retry,
+  lock removal, service restart, TestFlight upload or App Review submission.
+
+## 2026-10-03 · Authorized incident follow-up
+
+- User approved bounded repair, independent review and safe failure closure, then
+  explicitly approved an additional maximum 16000-token independent-review
+  allocation. Same run retained: append-only budget extension from 32000 to
+  48000, original usage/history preserved. Trace tooling gains an audited
+  extension command; it does not fabricate approval or reset usage. RED two
+  missing-command failures, GREEN six CI-shard tests.
+- Fresh main fetch equals `514c8c28a`; unrelated original dirty checkout remains
+  untouched. Four real, synthetic Laya inference probes passed in 0.27–0.36 s;
+  health 200 and invalid bearer 401. Service PID unchanged and zero restarts;
+  backend API/PostgreSQL/Redis/Celery healthy on old `dbad4e66c`. Historical
+  timeout substage is not recorded and root cause remains unproven. Existing
+  swap usage is not proof of causation; do not increase timeouts or restart.
+- Existing unchanged closure explicitly rejects native build markers. Independent
+  design review: conditional GO for a dedicated finished-build-unuploaded profile,
+  deployment NO-GO until fixed implementation review. No simple allowlist bypass.
+- New bounded profile preserves original build claim/lock, requires upload claim
+  absent, verifies live GitHub/Expo exact identities and terminal outcomes, and
+  retains all installed-Laya/old-writer/env proofs and two-phase closure checks.
+  No Laya asset, business behavior, vendor-create or upload path changed.
+- Fresh read-only vendor proof succeeded: exact `1.3.4 (274)` FINISHED, correct
+  project/bundle/SHA, not simulator, submissions empty; all six GitHub jobs
+  terminal, attempt 1, upload step skipped. Normalized jobs digest
+  `c9321070532105cf367379484031d45d2eee6872b675efc242a55f1858b4c0df`, build log
+  digest `6ebf2b921b54225dfc62b6aec59014c92213a7a367981bbcfc2fca73b629ba3d`.
+  Existing CLI credentials used transiently in memory, never logged/persisted.
+- System Map selector does not index this operator; direct source/test analysis
+  used, and full System Map check passed with the existing Python 3.12 runtime.
+  Focused closure/proof regressions passed before adding remaining transport and
+  history cases. Full CI deployment-invariant list is being run locally. Neither
+  this local evidence nor design GO authorizes production execution.
+- Still pending: final fixed-commit safety review, exact remote CI, canonical
+  server staging and read-only inspect, matching-digest closure, new backend-only
+  release, separately reviewed 274 pairing/upload, simulator acceptance. No
+  production mutation, claim reset, new build or TestFlight upload in this round.

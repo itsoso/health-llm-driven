@@ -14,6 +14,21 @@ def load():
     return module
 
 
+@pytest.mark.parametrize("flags", [
+    ["--retire-installed-laya-built-unuploaded", "--lease-token-stdin"],
+    ["--retire-installed-laya", "--mixed-secrets-stdin"],
+    ["--retire-restored", "--mixed-secrets-stdin"],
+])
+def test_mixed_mode_requires_its_own_protected_input_before_context(monkeypatch, flags):
+    m = load()
+    calls = []
+    monkeypatch.setattr(m, "_context", lambda sha: calls.append(sha))
+    monkeypatch.setattr(m.sys, "argv", ["operator", "--sha", "a" * 40, "--failed-sha", "b" * 40,
+                                      "--production-sha", "c" * 40, *flags])
+    assert m.main() == 1
+    assert calls == []
+
+
 def test_absent_original_build_lock_is_verified_without_creating_one(tmp_path):
     from types import SimpleNamespace
     m = load()

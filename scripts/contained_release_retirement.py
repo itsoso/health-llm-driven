@@ -5,6 +5,7 @@ No CLI, deployment, service restart, new key, or vendor operation lives here.
 The root-managed host and canonical source are explicit trust prerequisites.
 """
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -213,6 +214,7 @@ class ClosureAdapter:
                 and os.path.lexists(b.STATE / "unchanged-release-closures" / p.failed_sha)):
             raise ClosureError("unchanged release closure already attempted")
         snapshot = p.snapshot()
+        validate_built_snapshot(b, snapshot, p.failed_sha, unchanged=self.unchanged)
         if self.unchanged:
             if (os.path.lexists(b.STATE / "contained-service-recoveries" / p.failed_sha)
                     or os.path.lexists(b.STATE / "contained-release-closures" / p.failed_sha)
@@ -337,6 +339,10 @@ class ClosureAdapter:
         b._assert_idle()
         b._recovery_process_proof()
         _workspace_unchanged(b, p.failed_sha, evidence["snapshot"]["workspace"])
+        validate_built_snapshot(b, evidence["snapshot"], p.failed_sha, unchanged=self.unchanged)
+        if "built_unuploaded" in evidence["snapshot"]:
+            if p.built_unuploaded() != evidence["snapshot"]["built_unuploaded"]:
+                raise ClosureError("vendor state changed during closure")
         restoration = None if self.unchanged else _restoration(b, p.failed_sha)[2]
         if restoration != evidence["restoration"] or _locks(b, p.failed_sha, evidence["snapshot"]) != evidence["locks"]:
             raise ClosureError("original restoration or lock evidence changed")
@@ -362,6 +368,28 @@ class ClosureAdapter:
         self._verify_original_lease_archive(evidence)
         self.check()
         return {"installation": installation, "archives": _archives(b, self.record, evidence["snapshot"])}
+
+
+def validate_built_snapshot(bootstrap, snapshot, failed_sha, *, unchanged):
+    """Old profiles still reject native markers; new history must be understood."""
+    workspace = snapshot.get("workspace", {})
+    inventory = set(workspace.get("inventory", []))
+    built = "built_unuploaded" in snapshot
+    if not built:
+        if "build-started.json" in inventory:
+            raise ClosureError("native claim missing artifact proof")
+        return
+    if (not unchanged or "installed_laya" not in snapshot or "unstarted_laya" in snapshot
+            or not {"build-started.json", "build.lock"} <= inventory
+            or inventory & {"native-started.json", "testflight-base.json"}
+            or "build-started.json" not in workspace):
+        raise ClosureError("mixed artifact profile binding differs")
+    path = Path(__file__).absolute().with_name("built_unuploaded_proof.py")
+    bootstrap.secure(path)
+    spec = importlib.util.spec_from_file_location("built_unuploaded_history", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.validate_history(snapshot["built_unuploaded"], failed_sha)
 
 
 def unchanged_laya_profile(snapshot):
@@ -453,6 +481,7 @@ def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False):
             or completed["intent_sha256"] != _digest(intent)):
         raise ClosureError("closure audit binding invalid")
     bootstrap.canonical_source(intent["closing_sha"])
+    validate_built_snapshot(bootstrap, intent["snapshot"], sha, unchanged=unchanged)
     if unchanged:
         if (intent["restoration"] is not None or not unchanged_laya_profile(intent["snapshot"])
                 or os.path.lexists(bootstrap.STATE / "contained-service-recoveries" / sha)

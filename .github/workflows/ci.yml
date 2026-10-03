@@ -373,6 +373,7 @@ jobs:
           scripts/test_admin_key_pause.py
           scripts/test_recover_contained_services.py
           scripts/test_contained_recovery_proof.py
+          scripts/test_built_unuploaded_proof.py
           scripts/test_contained_release_retirement.py
           scripts/test_lost_closure_receipt_acknowledgment.py
           scripts/test_partial_laya_retirement.py

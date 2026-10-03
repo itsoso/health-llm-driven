@@ -262,7 +262,9 @@ def main():
         parser.add_argument("--sha", required=True)
         parser.add_argument("--failed-sha", required=True)
         parser.add_argument("--production-sha", required=True)
-        parser.add_argument("--lease-token-stdin", required=True, action="store_true")
+        secrets_input = parser.add_mutually_exclusive_group(required=True)
+        secrets_input.add_argument("--lease-token-stdin", action="store_true")
+        secrets_input.add_argument("--mixed-secrets-stdin", action="store_true")
         parser.add_argument("--evidence-sha256")
         retirement = parser.add_mutually_exclusive_group()
         retirement.add_argument("--retire-restored", action="store_true",
@@ -271,8 +273,13 @@ def main():
                                 help="Close a failed Laya preparation with all old services unchanged")
         retirement.add_argument("--retire-installed-laya", action="store_true",
                                 help="Close unchanged release after existing Laya reuse verification failed")
+        retirement.add_argument("--retire-installed-laya-built-unuploaded", action="store_true",
+                                help="Close audited mixed failure with finished build and no upload claim")
         args = parser.parse_args()
-        retire_unchanged = args.retire_unchanged or args.retire_installed_laya
+        mixed = args.retire_installed_laya_built_unuploaded
+        if mixed != args.mixed_secrets_stdin:
+            raise RecoveryError("matching protected operator input required")
+        retire_unchanged = args.retire_unchanged or args.retire_installed_laya or mixed
         for sha in (args.sha, args.failed_sha, args.production_sha):
             if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
                 raise RecoveryError("exact SHA required")
@@ -281,10 +288,28 @@ def main():
         if args.evidence_sha256 is not None and re.fullmatch(r"[0-9a-f]{64}", args.evidence_sha256) is None:
             raise RecoveryError("exact inspection digest required")
         source, bootstrap, server = _context(args.sha)
-        raw = sys.stdin.buffer.read(257)
-        if re.fullmatch(rb"[A-Za-z0-9._:-]{1,255}\n", raw) is None:
-            raise RecoveryError("exact original lease token required")
-        token = raw[:-1].decode("ascii")
+        vendor = None
+        if mixed:
+            module_path = source / "scripts/built_unuploaded_proof.py"
+            bootstrap.secure(module_path)
+            artifact = _load(module_path, "built_unuploaded_operator")
+            raw = sys.stdin.buffer.read(12289)
+            if len(raw) > 12288:
+                raise RecoveryError("operator input bound exceeded")
+            credentials = json.loads(raw, object_pairs_hook=artifact.unique)
+            if (not isinstance(credentials, dict) or set(credentials) != {"lease_token", "github_token", "expo_session"}
+                    or any(not isinstance(v, str) or not v or len(v) > 4096
+                           or any(ord(c) < 33 or ord(c) > 126 for c in v) for v in credentials.values())
+                    or args.failed_sha != artifact.RUN["head_sha"]):
+                raise RecoveryError("invalid protected mixed operator input")
+            token = credentials["lease_token"]
+            failed_source = bootstrap.canonical_source(args.failed_sha)
+            vendor = lambda: artifact.collect(credentials["github_token"], credentials["expo_session"], failed_source)
+        else:
+            raw = sys.stdin.buffer.read(257)
+            if re.fullmatch(rb"[A-Za-z0-9._:-]{1,255}\n", raw) is None:
+                raise RecoveryError("exact original lease token required")
+            token = raw[:-1].decode("ascii")
         lock = STATE / "launcher.lock"
         bootstrap.secure(lock, private=True)
         fd = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)
@@ -292,11 +317,14 @@ def main():
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             build_fd = bootstrap._acquire_existing_build_lock(args.failed_sha)
+            if mixed and build_fd is None:
+                raise RecoveryError("original mixed release build lock required")
             bootstrap._assert_original_lock(lock, fd)
             bootstrap._recovery_process_proof()
             proof_module = _load(source / "scripts/contained_recovery_proof.py", "contained_proof")
             underlying = proof_module.RecoveryProof(source, bootstrap, server, args.failed_sha, args.production_sha, token,
-                                                   unchanged=retire_unchanged, installed_laya=args.retire_installed_laya)
+                                                   unchanged=retire_unchanged, installed_laya=args.retire_installed_laya or mixed,
+                                                   built_unuploaded=vendor)
             class LockedProof:
                 failed_sha = args.failed_sha
                 production_sha = args.production_sha

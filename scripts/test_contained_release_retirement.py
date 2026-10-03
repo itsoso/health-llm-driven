@@ -430,6 +430,35 @@ def test_unchanged_profile_rejects_unknown_missing_or_mixed_evidence(snapshot):
         module.unchanged_laya_profile(snapshot)
 
 
+@pytest.mark.parametrize("damage", ["missing_proof", "missing_claim", "missing_lock", "upload", "unstarted", "restored"])
+def test_built_history_rejects_unbound_or_mixed_profiles(damage):
+    m = load()
+    snapshot = {"installed_laya": {"profile": "installed-reuse-v1"}, "built_unuploaded": {},
+                "workspace": {"inventory": ["build.lock", "build-started.json"], "build-started.json": {}}}
+    if damage == "missing_proof": snapshot.pop("built_unuploaded")
+    elif damage == "missing_claim": snapshot["workspace"]["inventory"].remove("build-started.json")
+    elif damage == "missing_lock": snapshot["workspace"]["inventory"].remove("build.lock")
+    elif damage == "upload": snapshot["workspace"]["inventory"].append("native-started.json")
+    elif damage == "unstarted": snapshot["unstarted_laya"] = {}
+    with pytest.raises(m.ClosureError):
+        m.validate_built_snapshot(SimpleNamespace(secure=lambda p: None), snapshot, "a" * 40, unchanged=damage != "restored")
+
+
+def test_external_evidence_drift_after_intent_cannot_reach_revocation(tmp_path, monkeypatch):
+    m, a = load(), Adapter(tmp_path)
+    a.unchanged = True
+    a.evidence["snapshot"] = {"built_unuploaded": {"state": "FINISHED"}}
+    digest = m.close_transaction(a)["evidence_sha256"]
+    write = m._write
+    def changed(path, value):
+        write(path, value)
+        if path.name == "intent.json":
+            a.evidence["snapshot"] = {"built_unuploaded": {"state": "UNKNOWN"}}
+    monkeypatch.setattr(m, "_write", changed)
+    with pytest.raises(m.ClosureError): m.close_transaction(a, digest)
+    assert "mutation" not in a.events and (a.record / "intent.json").exists()
+
+
 def installed_profile_fixture():
     def identity(mode, digest="a" * 64, gid=0):
         return {"dev": 1, "ino": 2, "uid": 0, "gid": gid, "mode": mode, "sha256": digest}

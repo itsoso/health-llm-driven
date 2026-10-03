@@ -15,6 +15,45 @@ proof = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(proof)
 
 
+@pytest.mark.parametrize("damage", [None, "old_mode", "missing_lock", "wrong_claim", "upload_claim", "native_binding"])
+def test_built_unuploaded_workspace_keeps_old_modes_closed(tmp_path, damage):
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.failed_sha = "a" * 40
+    instance.built_unuploaded = None if damage == "old_mode" else lambda: {}
+    workspace = tmp_path / instance.failed_sha
+    workspace.mkdir()
+    source = tmp_path / "source"
+    (source / "scripts").mkdir(parents=True)
+    executor = b"canonical executor"
+    (source / "scripts/trusted_release_server.py").write_bytes(executor)
+    config = tmp_path / "config"
+    config.mkdir()
+    installed = tmp_path / "installed"
+    installed.write_bytes(executor)
+    digest = hashlib.sha256(executor).hexdigest()
+    (config / "authorized-release.json").write_text(json.dumps({"sha": instance.failed_sha, "expires_at": 0, "executor_sha256": digest}))
+    for name, state in (("started.json", "STARTED"), ("completed.json", "NEEDS_OPERATOR"),
+                        ("preparation-started.json", "PREPARING"), ("prepared.json", "PREPARED"),
+                        ("deployment-started.json", "DEPLOYING"), ("build-started.json", "STARTED")):
+        value = {"sha": instance.failed_sha, "state": state}
+        if state == "PREPARING": value["executor_sha256"] = digest
+        if damage == "wrong_claim" and name == "build-started.json": value["sha"] = "b" * 40
+        (workspace / name).write_text(json.dumps(value))
+    for name in ("build.lock", "preparation.log", "deployment.log"):
+        (workspace / name).write_bytes(b"")
+    if damage == "missing_lock": (workspace / "build.lock").unlink()
+    if damage == "upload_claim": (workspace / "native-started.json").write_text("{}")
+    if damage == "native_binding": (workspace / "testflight-base.json").write_text("{}")
+    instance.bootstrap = SimpleNamespace(STATE=tmp_path, CONFIG=config, INSTALLED=installed)
+    instance._directory = lambda path: {"ino": path.stat().st_ino}
+    instance._file = lambda path, *a: (path.read_bytes(), {"sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    if damage:
+        with pytest.raises(proof.ProofError): instance._workspace(source)
+    else:
+        snapshot = instance._workspace(source)
+        assert "build-started.json" in snapshot and "build.lock" in snapshot["inventory"]
+
+
 @pytest.mark.parametrize("unchanged", [False, True])
 def test_retirement_environment_never_accepts_changed_live_bytes(unchanged):
     instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
