@@ -298,3 +298,22 @@ address, preserving original file bytes and fingerprints; other endpoints remain
 rejected. Regression reproduced one failure with five passing negatives before
 the one-line correction. Frontend publication and actual mitigation verification
 remain pending. No new backend or native release is required for this correction.
+# Authorized frontend incident continuation, 2026-10-03
+
+User explicitly confirmed publication and takeover of failed operation
+`637078dd8c584686a59000de91d2dad2`. A fresh readback found the old frontend
+already restored: privacy 200, connection page 404, backend health 200, backend
+still `dbad4e66c29f31c0ae149fecefa6c0d4f3e45283`. No successful new frontend
+receipt existed. Original failure and lease remain intact.
+
+Latest canonical main `6fe7f37e3134443fc085aed7b647c43247f52611` includes the
+reviewed SIGTERM-143 stop fix from PR #276; exact CI `37106733928` succeeded.
+The overlapping local `8550aa835` fix is preserved on
+`codex/preserve-frontend-stop-855` rather than duplicated on main.
+
+A fixed-operation continuation reuses the original verified built candidate,
+preserves all original evidence and the original lease, and records a separate
+recovery chain. It cannot publish another frontend tree, retry an attempted
+recovery, retire another lease, alter backend/config, or bypass failed history.
+Fresh fixed-candidate independent review and exact CI remain required before
+execution. Availability of the restored old frontend is not new publication.

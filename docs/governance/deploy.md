@@ -82,6 +82,21 @@ OAuth grant 完成。失败、未知结果、部分回执或库存漂移阻止�
 当前 GitHub Actions Trusted workflow 没有 frontend 目标；本入口通过既有
 管理通道控制服务器执行与构建，不上传本机脚本，不扩大 cloud RPC。
 
+2026-10-03 的 `637078dd8c584686a59000de91d2dad2` 操作在停止旧前端后、
+制品首次 rename 前失败。用户明确授权接管后，仅该固定操作可在上述入口增加
+`--resume-stopped-publication`，从当前绿色 main 的 canonical staging 续发。
+它绑定原 f8dd publisher、dbad backend、完整 frontend tree、原发布器源码和
+原构建摘要；不重新构建、不换 operation ID、不轮换身份。原五项证据保持字节
+和 inode，原租约保留到成功。旧前端已恢复时，新预检独立绑定当前稳定进程与
+旧制品摘要，不改写原 before.json。
+
+续发先写独立 recovery intent，再核验双锁、原租约、后端/config、制品与
+停止状态（含固定 cgroup 无残留进程及重复状态读取），然后切换已有候选。
+内外网页面、制品摘要、备份和后端不变均验证后，先 fsync recovery completion，
+再写原 publication completion，最后释放原租约。原 failed.json 保留；历史
+验证仅对该固定操作接受完整交叉绑定的恢复链，其他失败仍阻断。任何恢复意图
+已存在、未知结果或部分切换都禁止自动重试，必须另行调查，不删除证据。
+
 #### 已部署同树前端的受控重建
 
 用户明确授权后，可从当前 main、真实精确 CI 绿色、独立 G4 GO 的 canonical

@@ -424,6 +424,8 @@ def main():
     for name in ('publisher-sha','production-sha','frontend-tree','operation-id'):
         parser.add_argument('--'+name,required=True)
     parser.add_argument('--evidence-sha256')
+    parser.add_argument('--resume-stopped-publication',action='store_true',
+                        help='explicit operator continuation of the fixed 637078 incident only')
     parser.add_argument('--restore-preswitch-availability',action='store_true',
                         help='requires separate policy authorization; bounded old-bundle start only')
     args=parser.parse_args()
@@ -447,13 +449,20 @@ def main():
                 else: helper._assert_lock(server,STATE/args.production_sha/'build.lock',build_fd)
             try:
                 check_locks()
-                plan=inspect(args,source,helper,bootstrap,server,gate,build)
+                recovery=None
+                if args.resume_stopped_publication:
+                    recovery=build.module_at(source/'scripts/frontend_stopped_recovery.py','stopped_recovery',build.secure_entry)
+                    plan=recovery.inspect(args,source,sys.modules[__name__],helper,bootstrap,server,gate,build)
+                else:
+                    plan=inspect(args,source,helper,bootstrap,server,gate,build)
                 digest=build.evidence_digest(plan)
                 if args.evidence_sha256 is None:
                     print(json.dumps(dict(state='FRONTEND_PUBLICATION_PREFLIGHT',publisher_sha=args.publisher_sha,production_sha=args.production_sha,frontend_tree=args.frontend_tree,operation_id=args.operation_id,evidence_sha256=digest)))
                 else:
                     if args.evidence_sha256!=digest: raise PublishError('preflight evidence changed')
-                    print(json.dumps(execute(plan,source,helper,bootstrap,server,build,check_locks),sort_keys=True))
+                    result=(recovery.execute(plan,source,sys.modules[__name__],helper,bootstrap,server,build,check_locks)
+                            if recovery else execute(plan,source,helper,bootstrap,server,build,check_locks))
+                    print(json.dumps(result,sort_keys=True))
             finally:
                 if build_fd is not None: os.close(build_fd)
         return 0

@@ -435,7 +435,54 @@ def _frontend_publication_file_digest(path):
     return digest.hexdigest()
 
 
-def assert_frontend_publication_history(state=None):
+def frontend_stopped_failure(operation):
+    """Bind the one authorized, still-intact stopped-before-rename incident."""
+    intent = dict(kind='frontend-publication', publisher_sha='f8dd4fe8cc962aed54a2db97dc981c82093b93ea',
+                  production_sha='dbad4e66c29f31c0ae149fecefa6c0d4f3e45283',
+                  operation_id='637078dd8c584686a59000de91d2dad2',
+                  frontend_tree='0e0a36d69a526e0ca5395f5c5082a77534dd739c',
+                  state='FRONTEND_STARTED', artifact_digest=None)
+    artifact='2d8d765d014a5015ae6eaf016e77d8bab46ff262a3954ae15a4044914a3dfa8e'
+    if (operation.name!=intent['operation_id']
+            or _json(_read_private(operation/'intent.json'))!=intent
+            or _json(_read_private(operation/'failed.json'))!={**intent,'state':'FRONTEND_NEEDS_OPERATOR'}
+            or _json(_read_private(operation/'install-started.json'))!={**intent,'state':'FRONTEND_INSTALLING','artifact_digest':artifact}):
+        raise LaunchError('fixed stopped frontend incident differs')
+    before=_json(_read_private(operation/'before.json'))
+    if not isinstance(before,dict) or any(before.get(k)!=intent[k] for k in ('publisher_sha','production_sha','operation_id','frontend_tree')):
+        raise LaunchError('original stopped frontend preflight differs')
+    return intent,artifact
+
+
+def validate_frontend_stopped_recovery(operation,complete):
+    _,artifact=frontend_stopped_failure(operation)
+    intent=_json(_read_private(operation/'recovery-intent.json'))
+    finished=_json(_read_private(operation/'recovery-completed.json'))
+    keys={'kind','state','operation_id','recovery_publisher_sha','original_proof',
+          'original_code_sha256','candidate_digest','old_bundle_digest','frontend_process','lease'}
+    if (not isinstance(intent,dict) or set(intent)!=keys or intent['kind']!='frontend-stopped-recovery'
+            or intent['state']!='RECOVERY_STARTED' or intent['operation_id']!=operation.name
+            or not isinstance(intent['recovery_publisher_sha'],str)
+            or re.fullmatch('[0-9a-f]{40}',intent['recovery_publisher_sha']) is None
+            or intent['original_code_sha256']!='d17d896f05340e20735cba86a92eaaf2eeb6b548fd0e56e084ed86e375d15c68'
+            or intent['candidate_digest']!=artifact or not isinstance(intent['old_bundle_digest'],str)
+            or re.fullmatch('[0-9a-f]{64}',intent['old_bundle_digest']) is None
+            or complete.get('artifact_digest')!=artifact
+            or finished!={**intent,'state':'RECOVERY_SUCCEEDED',
+                'intent_sha256':_frontend_publication_file_digest(operation/'recovery-intent.json'),
+                'backups_digest':complete.get('backups_digest')}
+            or complete.get('recovery_sha256')!=_frontend_publication_file_digest(operation/'recovery-completed.json')):
+        raise LaunchError('stopped frontend recovery completion differs')
+    proofs={}
+    for name in ('intent.json','before.json','build.log','install-started.json','failed.json'):
+        path=operation/name;secure_path(path,private=True);info=path.lstat()
+        proofs[name]=dict(dev=info.st_dev,ino=info.st_ino,mode=info.st_mode,uid=info.st_uid,
+                          gid=info.st_gid,sha256=_frontend_publication_file_digest(path))
+    if intent['original_proof']!=proofs:
+        raise LaunchError('original failed publication evidence changed')
+
+
+def assert_frontend_publication_history(state=None, *, pending_stopped_publication=None):
     """New-tree frontend receipts never authorize a backend release."""
     root = Path(state or STATE) / "frontend-publications"
     if not os.path.lexists(root):
@@ -448,9 +495,17 @@ def assert_frontend_publication_history(state=None):
     keys = {"kind", "publisher_sha", "production_sha", "operation_id", "frontend_tree", "state", "artifact_digest"}
     for operation in root.iterdir():
         secure_path(operation, directory=True)
+        inventory={p.name for p in operation.iterdir()}
+        if pending_stopped_publication is not None and operation.name==pending_stopped_publication:
+            if inventory!={'intent.json','before.json','build.log','install-started.json','failed.json'} or stat.S_IMODE(operation.lstat().st_mode)!=0o700:
+                raise LaunchError('stopped recovery already attempted or partial switch')
+            frontend_stopped_failure(operation)
+            continue
+        recovered='recovery-completed.json' in inventory
+        extras={'failed.json','recovery-intent.json','recovery-completed.json'} if recovered else set()
         if (stat.S_IMODE(operation.lstat().st_mode) != 0o700
                 or re.fullmatch(r"[0-9a-f]{32}", operation.name) is None
-                or {p.name for p in operation.iterdir()} != proof_names | backups | {"intent.json", "completed.json"}):
+                or inventory != proof_names | backups | {"intent.json", "completed.json"} | extras):
             raise LaunchError("unfinished or unknown frontend publication; operator review required")
         intent = _json(_read_private(operation / "intent.json"))
         if (not isinstance(intent, dict) or set(intent) != keys or intent["kind"] != "frontend-publication"
@@ -460,11 +515,13 @@ def assert_frontend_publication_history(state=None):
                        for k in ("publisher_sha", "production_sha", "frontend_tree"))):
             raise LaunchError("invalid frontend publication binding")
         complete = _json(_read_private(operation / "completed.json"))
-        if (not isinstance(complete, dict) or set(complete) != keys | {"proof_sha256", "backups_digest"}
+        if (not isinstance(complete, dict) or set(complete) != keys | {"proof_sha256", "backups_digest"} | ({'recovery_sha256'} if recovered else set())
                 or not isinstance(complete["artifact_digest"], str)
                 or re.fullmatch(r"[0-9a-f]{64}", complete["artifact_digest"]) is None
                 or {k: complete[k] for k in keys} != {**intent, "state": "FRONTEND_SUCCEEDED", "artifact_digest": complete["artifact_digest"]}):
             raise LaunchError("invalid frontend publication completion")
+        if recovered:
+            validate_frontend_stopped_recovery(operation,complete)
         for name, status in (("install-started.json", "FRONTEND_INSTALLING"), ("verified.json", "FRONTEND_VERIFIED")):
             if _json(_read_private(operation / name)) != {**intent, "state": status, "artifact_digest": complete["artifact_digest"]}:
                 raise LaunchError("frontend publication phase differs")
@@ -479,9 +536,9 @@ def assert_frontend_publication_history(state=None):
             raise LaunchError("frontend publication backup hashes differ")
 
 
-def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None):
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None):
     """Independent frontend evidence must never count as backend success."""
-    assert_frontend_publication_history(state)
+    assert_frontend_publication_history(state,pending_stopped_publication=pending_stopped_publication)
     root = Path(state or STATE) / "frontend-rebuilds"
     closures = root.parent / "frontend-rebuild-closures"
     finalizations = root.parent / "frontend-finalizations"
