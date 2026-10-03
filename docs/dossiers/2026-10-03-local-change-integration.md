@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | status | blocked |
-| current_stage | G4 · Fixed network proof GO; retained-build upload independent review pending |
+| current_stage | G5 · Fixed source GO; verifying CI repair before authorized main merge |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Scope | Reconcile explicitly authorized local unique changes onto current main; verify and release |
@@ -343,3 +343,15 @@ alternatives to AMap.
   verified repair onto red main; new exact full CI must pass before release.
   Original failed release, production services, lease and vendor artifact remain
   unchanged. AMap remains disabled; no App Review submission is authorized.
+
+- Follow-up fixed `2fda08c778088248b7cca38b2a928a38bc1a09bb`: independent
+  **GO**, 61 tests passed / one Linux-only skip. Reviewer additionally checked
+  both collision refusal paths and rejected an unexpected exit code; this is
+  assertion simulation, not Linux execution. Secret, dossier, whitespace and
+  complete runtime-tree compatibility checks passed. Final local full invariant
+  run is in progress; remote Linux/full CI remains required.
+- User then explicitly requested solving the problems before merging to main.
+  This authorizes the verified repair push after local verification; it does not
+  waive exact new CI or authorize replaying the old failed release. Preserve
+  prior failed CI and all production/vendor evidence. Deployment/upload remain
+  separate, not established by this main merge.
