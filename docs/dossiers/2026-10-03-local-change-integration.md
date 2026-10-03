@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | status | in_progress |
-| current_stage | G5 · Runner repair verified and merged; final main CI and release verification pending |
+| current_stage | G6 · Main/backend delivered and retained 274 uploaded; Apple processing/installability unverified |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Scope | Reconcile explicitly authorized local unique changes onto current main; verify and release |
@@ -531,3 +531,38 @@ alternatives to AMap.
   before any single retained-274 upload attempt. No failed run is replayed and
   no claim/receipt is reset. TestFlight upload and Apple availability remain
   unconfirmed until their respective fresh evidence exists.
+
+### 2026-10-04 · Verified main integration, backend deployment and retained upload
+
+- Repaired runtime/bootstrap code was merged as `9b34b9ea5a4a29902b5b5c627fde8319a57ddf85`.
+  Its complete main CI `37135555429` succeeded, attempt one. The audit-only
+  state correction `903ad9f6314ef672e816649857b9dbb612e5e3f3` then received
+  independent GO and exact main CI `37136312672` success. The latter used the
+  unchanged documentation scope classifier; complete runtime evidence remains
+  bound to byte-identical 9b34/5eaa, not misrepresented as another full test run.
+- Trusted validate `37136479325` succeeded. Server staging fetched canonical
+  903 and independently attested its exact main CI. Normal retirement revoked
+  3e830's identities and destroyed only its precise revoked loopback private
+  key; original records and archives remain. Canonical rotation installed 903.
+- Backend workflow `37136884458` completed success. Actual production HEAD and
+  immutable `SUCCEEDED` receipt both equal 903. Internal and public health
+  endpoints returned 200 / healthy with API running and DB/Redis/Celery connected;
+  auth/me and share-location availability returned 401 without authentication.
+  Backend/socket/worker/beat are active with zero restarts. The initial ad-hoc
+  health probe mistakenly expected a different Celery status label; corrected
+  against the source-defined `connected` value and reran the full check cleanly.
+- Independent fresh Expo evidence before upload confirmed exact `1.3.4 (274)`
+  build `63b61a31-058c-44e5-bb82-67727ca7d073` FINISHED with no submissions.
+  Retained workflow `37137550382` was dispatched once and completed success.
+  Its actual production runner passed the repaired credential-free startup.
+  Submission `34a525fd-81f7-44ae-bbd5-d0ffe16e7097` is FINISHED and passed the
+  strict exact-artifact submission contract on a separate fresh Expo read.
+- Server retained completion is `UPLOADED` for publisher 903 and that same build
+  and submission. Independently invoking the installed history validator passed;
+  its business lease is absent and production still equals 903. No failed run,
+  claim, receipt or vendor submission was replayed/reset. No new native build
+  or App Review submission was created.
+- This delivery record is documentation-only, not a new runtime candidate.
+  Apple processing/TestFlight installability remains **unverified**: the current
+  App Store Connect browser session requires sign-in. Do not equate Expo upload
+  completion with available tester installation, App Review or App Store release.
