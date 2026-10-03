@@ -513,3 +513,20 @@ alternatives to AMap.
   149 passed / six Linux skips. Native Linux controls now explicitly compare
   inherited default ACL plus umask-only failure against real bootstrap success,
   and verify the parent default ACL is unchanged. Await fresh CI and final GO.
+- Fixed `5eaa226b874e2bbdaa1dd5f820fc755cbf29c596` received independent source GO
+  with 422 passed / six platform skips. Local full CI-mode invariants completed
+  with 2190 passed / 15 skips / 84 subtests; System Map, dossier and secret scans
+  passed. New branch CI `37134798157` is **completed/success**, attempt one,
+  exact 5eaa. Fresh hosted startup job `111237071525` passes every real phase;
+  source is 0700 and helper is 0600 before/after tools. Native ACL controls in
+  job `111237071513` passed five tests; its full invariants passed 2191 tests /
+  14 skips / 84 subtests. All remaining CI gates completed successfully.
+- 2026-10-04 integration candidate is this audit-only successor of tested 5eaa;
+  application/runtime/bootstrap code is unchanged. Recheck remote main remains
+  3e830 and obtain final independent review before authorized fast-forward main
+  integration. Do not run branch CI on the final publisher SHA: the existing
+  exact-SHA gate rejects mixed branch/main histories. Final main must receive
+  its own green CI, then trusted validation and canonical backend deployment
+  before any single retained-274 upload attempt. No failed run is replayed and
+  no claim/receipt is reset. TestFlight upload and Apple availability remain
+  unconfirmed until their respective fresh evidence exists.
