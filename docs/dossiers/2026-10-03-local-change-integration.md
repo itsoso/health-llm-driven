@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| status | blocked |
-| current_stage | G3 · Main and backend delivered; retained-upload runner bootstrap repair |
+| status | in_progress |
+| current_stage | G5 · Runner repair verified and merged; final main CI and release verification pending |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Scope | Reconcile explicitly authorized local unique changes onto current main; verify and release |
@@ -18,7 +18,8 @@ submission is authorized by this continuation; mobile delivery is TestFlight.
 
 ## Run and baseline
 
-- Run: `docs/_generated/harness-runs/fba4d0426bc4.jsonl` (32000 allocated-token cap).
+- Run: `docs/_generated/harness-runs/fba4d0426bc4.jsonl` (initial 32000 allocation;
+  later user-authorized extensions and budget waiver are preserved in that ledger).
 - Initial canonical baseline: `dbad4e66c`; source local main: `9fb13ee63`.
 - Local inventory: 21 tracked modifications, 13 untracked files; three original
   voice commits and HTML rendering runtime are already represented upstream.
