@@ -343,3 +343,119 @@
 - Production read-only snapshot remains `30ac1c67be7b2df79363ac7509f70f8a56ce4834`;
   GitHub relay enabled/active, listening only on IPv6 loopback, resolver verified.
   No new production deployment, vendor build, upload, or App Review occurred.
+
+### Authenticated simulator continuation — 2026-10-03
+
+- User completed login directly in the simulator. Native UI confirmed the new
+  chat-menu voice entry opens the voice page idle, with no automatic recording.
+  Microphone permission was granted through the system prompt for this test.
+- Explicit start reached listening. After Home and reopening the app, the voice
+  page was idle rather than automatically restarting capture. Exit returned to
+  the original chat; its history action and composer remained available.
+- Two observed ASR turns contained only `。` yet triggered the clarification
+  response. This is an invalid-transcript acceptance finding, NOT proof of a
+  meaningful spoken conversation or silence correctness. No controlled spoken
+  sample or audible playback/barge-in verification has completed. G6 stays open.
+- This remains the installed local `3a3a610c8` simulator source, not a Store build.
+  Voice commits were rebased unchanged onto the separately owned dependency
+  repair; new main is `c89fee38744ca789d0ac1c6c43a3b202207bebb9` with CI
+  `37085749065` still in progress at this checkpoint. No production release or
+  authorization rotation was performed; the explicit rotation question is pending.
+
+### Visible voice entry refinement — 2026-10-03
+
+- User confirmed their simulator voice sample worked, then requested a more
+  discoverable entry. That user report is not independent playback instrumentation
+  and does not close the punctuation-only finding or release authorization gate.
+- Added a persistent green labelled 实时语音 shortcut above the composer, outside
+  the message list, with a pulse icon and minimum 44-point touch target. Flexible
+  width/text avoids a fixed-width header squeeze. Hide during multi-selection;
+  preserve header history/new chat and the separate transcription controls.
+- The shortcut and existing menu entry use the same guarded callback; navigation
+  remains explicit-start-only. Added regression cases for direct visibility,
+  streaming/composer-busy refusal, cleanup completion and selection-mode hiding.
+  RED: four new tests failed because the visible shortcut was absent.
+- GREEN: 177 focused tests, TypeScript, full Mobile regression (324 suites,
+  3224 passed / 1 skipped), secret scan, dossier consistency, System Map and
+  diff whitespace checks passed. Local implementation commit `4cd2c82db`.
+- Rebuilt and installed the Release simulator app from that Mobile source;
+  signature verification passed and login was preserved. Native UI confirmed
+  shortcut visibility, direct navigation to idle voice, exit back to chat, and
+  keyboard-open visibility/navigation without automatic recording. No controlled
+  narrow-device or large-font rendering pass is claimed. Evidence logs remain in
+  `/tmp/reva-voice-release.Jtlenr/visible-entry-*.log`.
+- Before replacing the prior simulator app, its old voice screen stayed in the
+  answering state and two close attempts did not visibly navigate. Replacement
+  then relaunched successfully. Cause is unverified; the new idle-page exit check
+  does not prove that in-flight playback cleanup issue resolved. Keep this separate
+  from the entry-layout acceptance and do not declare voice G6 fully passed.
+- No push or production release performed for this visible-entry refinement.
+
+### Header voice entry refinement — 2026-10-03
+
+- User approved the top-right design instead of the above-composer shortcut.
+  Header now keeps neutral history/more and a separate green pulse-icon + 语音
+  capsule at the far right. New chat moves into more; the bottom shortcut is
+  removed, preserving composer space and the existing transcription controls.
+- Both voice entries still use the unchanged guarded navigation callback. The
+  header entry is hidden in multi-selection and never auto-starts the microphone.
+  No provider, permission, consent, cleanup, or health-write behavior changes.
+- RED: the updated header regression failed on missing pulse/voice action.
+  Updated screen contracts require exactly one visible header shortcut, no
+  bottom duplicate, guarded navigation and working new-chat menu behavior.
+- GREEN: 181 focused tests and TypeScript passed; full Mobile regression passed
+  324 suites / 3224 tests with 1 skipped. Secret scan, dossier consistency,
+  System Map and diff whitespace checks passed.
+- Implementation `70a7460a3` was built into the existing Release simulator target;
+  build/signature/install succeeded with login retained. Native iPhone 17 UI
+  confirmed the far-right green voice capsule, removal of the composer shortcut,
+  navigation into idle voice and back, visible history, and new chat in more.
+  No microphone session or health write was started by this layout acceptance.
+  Logs: `/tmp/reva-voice-release.Jtlenr/header-entry-*.log`.
+- This is local simulator UI acceptance only. The pending audio findings and
+  production authorization gate remain open. Remote main advanced independently;
+  this task did not push, merge, deploy, or publish a vendor build in this turn.
+
+### Authorized acceptance and release continuation — 2026-10-03
+
+- User explicitly authorized closing the historical Store 273 lifecycle and
+  rotating its release identity to the new verified candidate: revoke only the
+  old managed identities, destroy its loopback private key, preserve immutable
+  audit evidence and retain the existing permission scope. This is not approval
+  to clear unknown leases, replay vendor tasks or submit App Review.
+- Follow-up run: `docs/_generated/harness-runs/45cba1f4e1a3.jsonl`, bounded to
+  16000 allocated tokens for acceptance closure and independent review. The
+  earlier exhausted run and its findings remain intact.
+- Clean task checkout rebased the four local entry/UI-audit commits onto
+  `b6bfece100f6c7e7a94a1526331abdce217f2284`; exact main CI `37087232514`
+  is successful. Original user checkout and unrelated work remain untouched.
+- Read-only production check at 02:25 UTC found production still `30ac1c67`,
+  managed authorization still `e19043ec`, and backend/worker/beat active.
+  A new `deploy:backend` business lease created at 02:05:02 UTC is present,
+  pointing to `/tmp/health-app-backup-preflight-15202-1790993101`. Its terminal
+  state and owner are not yet proven. No lease, staged configuration, identity
+  or production state was changed by this task. Rotation/deployment stays
+  blocked until the existing operation has a verified terminal disposition.
+- Source fix `a267b3db7` rejects punctuation-only ASR results without dropping
+  single Unicode letters/numbers. It also fixes a proven synchronous splitter
+  loop: reinserting a short phrase before the same punctuation never advanced.
+  The new scan advances or consumes input, retaining short phrases for the next
+  chunk/tail. This can explain an unresponsive screen, but the old simulator
+  incident's exact triggering chunk was not captured and is not claimed proven.
+- RED: 9 failing new cases / 24 passing prior cases. GREEN: 63 focused cases and
+  TypeScript passed; full Mobile regression 324 suites / 3241 passed, 1 skipped.
+  Independent fixed-candidate safety review GO with 108 tests independently
+  passing. Tests include reset/unmount during an unresolved short-phrase Agent
+  stream, cancellation and no microphone reopening.
+- Fresh CI-mode backend voice/API/integration runner: 66 passed (SQLite contract
+  checks, not PostgreSQL/full remote CI). System Map, secrets, dossier consistency
+  and whitespace checks passed. Logs: `/tmp/reva-voice-release.Jtlenr/acceptance-*`
+  and `independent-safety-a267.log`.
+- Release simulator rebuild from the fixed Mobile source, strict code signature
+  verification and install succeeded. Local label 273 remains simulator-only;
+  it does not replace the existing Store 273 or prove a new TestFlight upload.
+- Native UI on that rebuilt app retained login and the top-right entry. Entry
+  opened idle; explicit microphone start reached listening; close returned to
+  chat; re-entry was idle with no automatic restart. No meaningful spoken sample,
+  audible short-phrase completion or playback-time exit was established in this
+  check; do not substitute these UI checks for those remaining native paths.

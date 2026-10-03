@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LlmModelPicker from './LlmModelPicker';
 import XiaoBaAvatar from './XiaoBaAvatar';
@@ -7,6 +7,7 @@ import type { ModelOption } from '../../services/llmPreference';
 import {
   revaColors as C,
   revaSpacing,
+  revaFonts,
 } from '../../constants/revaTheme';
 
 // header 里只露品牌名/压缩模型名 — 去掉尾部速度档 + 「· 供应商」后缀。
@@ -26,13 +27,13 @@ interface ChatHeaderProps {
   isStreaming: boolean;
   onBack?: () => void;
   onSelectModel: (modelId: string | null) => void;
-  onNewChat: () => void;
+  onOpenVoice?: () => void;
   onOpenHistory: () => void;
   onOpenToolMenu: () => void;
 }
 
 /**
- * 会诊页顶部 header surface：模型选择器 (小巴 ⌄) + 新建/历史/工具三个动作。
+ * 会诊页顶部：模型选择器 (小巴 ⌄) + 历史/更多 + 突出的语音入口。
  * 当前轮运行状态只在 assistant turn 内展示，避免顶部和消息区重复。
  * 纯 props 驱动, 无本地状态。testID 「chat-header-surface」+ a11y 标签保持稳定 (测试引用)。
  */
@@ -44,7 +45,7 @@ export default function ChatHeader({
   llmError,
   onBack,
   onSelectModel,
-  onNewChat,
+  onOpenVoice,
   onOpenHistory,
   onOpenToolMenu,
 }: ChatHeaderProps) {
@@ -78,25 +79,6 @@ export default function ChatHeader({
         <View style={styles.headerRight}>
           <View testID="chat-header-action-group" style={styles.headerActionGroup}>
             <Pressable
-              onPress={onNewChat}
-              hitSlop={8}
-              style={({ pressed }) => [
-                styles.headerAction,
-                styles.primaryHeaderAction,
-                pressed && styles.primaryHeaderActionPressed,
-              ]}
-              accessibilityLabel="新建对话"
-              accessibilityHint="开始一段新的健康会诊"
-              accessibilityRole="button"
-            >
-              <View style={styles.newChatGlyph}>
-                <Ionicons name="chatbubble-outline" size={18} color={C.green700} />
-                <View style={styles.newChatBadge}>
-                  <Ionicons name="add" size={9} color={C.greenOn} />
-                </View>
-              </View>
-            </Pressable>
-            <Pressable
               onPress={onOpenHistory}
               hitSlop={8}
               style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
@@ -117,6 +99,20 @@ export default function ChatHeader({
               <Ionicons name="ellipsis-horizontal" size={18} color={C.ink2} />
             </Pressable>
           </View>
+          {onOpenVoice && (
+            <Pressable
+              testID="chat-header-voice"
+              onPress={onOpenVoice}
+              hitSlop={8}
+              style={({ pressed }) => [styles.voiceAction, pressed && styles.voiceActionPressed]}
+              accessibilityRole="button"
+              accessibilityLabel="实时语音"
+              accessibilityHint="打开语音对话页面，点击麦克风后开始，不是语音转文字"
+            >
+              <Ionicons name="pulse" size={18} color={C.greenOn} />
+              <Text style={styles.voiceLabel} maxFontSizeMultiplier={1.2}>语音</Text>
+            </Pressable>
+          )}
         </View>
       </View>
     </View>
@@ -143,8 +139,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginLeft: 'auto',
+    gap: 6,
   },
-  // 三个一级动作收拢为同一组,让右上角像一个完整的控制器而不是三个散落的按钮。
+  // 历史与更多保持中性分组，语音独立突出；新建对话收进更多。
   headerActionGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -175,29 +172,23 @@ const styles = StyleSheet.create({
   headerActionPressed: {
     backgroundColor: C.green50,
   },
-  primaryHeaderAction: {
-    backgroundColor: C.green50,
-  },
-  primaryHeaderActionPressed: {
-    backgroundColor: C.green100,
-  },
-  newChatGlyph: {
-    width: 22,
-    height: 22,
+  voiceAction: {
+    minHeight: 44,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    gap: 6,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: C.green600,
+    borderWidth: 0,
   },
-  newChatBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -3,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.green500,
-    borderWidth: 1,
-    borderColor: C.greenOn,
+  voiceActionPressed: { backgroundColor: C.green700 },
+  voiceLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.greenOn,
   },
 });

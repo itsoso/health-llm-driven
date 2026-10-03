@@ -40,7 +40,14 @@ RequirementAdmission:
 
 ### Reachable entry repair — 2026-10-03
 
-Restore the existing feature through Chat → 更多操作 → 实时语音对话. Keep the
+Expose the existing feature through a green pulse-icon + 语音 capsule at the far
+right of the chat header. Remove the previous above-composer shortcut. Keep
+history and more as neutral header actions; move new chat into more instead of
+squeezing a fourth action into the header. Retain
+Chat → 更多操作 → 实时语音对话 as a secondary entry. Hide the shortcut during message
+multi-selection; never cover message content with an overlay. Use a minimum
+44-point touch target and the existing compact-header font-scaling convention.
+Both entry points share the same microphone-ownership/navigation guard. Keep the
 first-level conversation-history action and the separate transcription microphone.
 Navigation opens `/voice-chat` without `autoStart`; the voice page's explicit
 microphone and existing AI-consent gate remain authoritative. Active chat streaming
@@ -49,7 +56,7 @@ explanation, so opening the modal cannot create competing microphone ownership.
 This is a reachability bugfix under the existing Capture/ExecutionEvent/WriteIntent
 admission, not new medical-write authority, background listening or full duplex.
 
-Acceptance: idle entry is reachable and closes its menu; active composer/Agent
+Acceptance: idle entry is visible without opening a menu and closes any open menu; active composer/Agent
 work cannot navigate; history and transcription remain available; native simulator
 verification and release gates are separate from mocked regression evidence.
 

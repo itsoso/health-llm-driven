@@ -231,6 +231,19 @@ export default function ChatScreen() {
   const [composerVoiceBusy, setComposerVoiceBusy] = useState(false);
   const [dismissedTodayFocusKey, setDismissedTodayFocusKey] = useState<string | null>(null);
 
+  const openVoiceConversation = useCallback(() => {
+    if (isStreaming || composerVoiceBusy) {
+      Alert.alert('暂时无法进入语音对话', isStreaming
+        ? '请先等待当前回复完成，或手动停止回复。'
+        : '请先结束当前录音或语音转写，并等待发送完成。');
+      return;
+    }
+    setToolMenuVisible(false);
+    Keyboard.dismiss();
+    // Both entry points navigate only; microphone start remains explicit.
+    router.push('/voice-chat');
+  }, [isStreaming, composerVoiceBusy]);
+
   const saveViewingImage = useCallback(async (uri: string) => {
     const source = buildChatImageSource(uri, authToken);
     if (!source) {
@@ -1103,7 +1116,7 @@ export default function ChatScreen() {
           isStreaming={isStreaming}
           onBack={contextEntryActive ? handleExitContext : undefined}
           onSelectModel={handleSelectModel}
-          onNewChat={handleNewChat}
+          onOpenVoice={selectionMode ? undefined : openVoiceConversation}
           onOpenHistory={openHistory}
           onOpenToolMenu={() => setToolMenuVisible(true)}
         />
@@ -1364,20 +1377,14 @@ export default function ChatScreen() {
               </TouchableOpacity>
             </View>
             <ToolMenuRow
+              icon="chatbubble-outline"
+              label="新建对话"
+              onPress={handleNewChat}
+            />
+            <ToolMenuRow
               icon="call-outline"
               label="实时语音对话"
-              onPress={() => {
-                if (isStreaming || composerVoiceBusy) {
-                  Alert.alert('暂时无法进入语音对话', isStreaming
-                    ? '请先等待当前回复完成，或手动停止回复。'
-                    : '请先结束当前录音或语音转写，并等待发送完成。');
-                  return;
-                }
-                setToolMenuVisible(false);
-                Keyboard.dismiss();
-                // Navigation alone must not start the microphone.
-                router.push('/voice-chat');
-              }}
+              onPress={openVoiceConversation}
             />
             <ToolMenuRow
               icon="calendar-outline"

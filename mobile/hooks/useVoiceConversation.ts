@@ -62,6 +62,10 @@ const SPEAKABLE_BOUNDARY = /[。！？!?，,；;：:]|(?<!\d)\.(?!\d)/;
 const MIN_SENTENCE_LEN = 3;
 const MAX_STREAM_FRAGMENT_LEN = 48;
 
+// Silence/noise may be transcribed as punctuation only. Keep even one real
+// letter or number (in any language), but never create an Agent turn for noise.
+const HAS_SPEECH_CONTENT = /[\p{L}\p{N}]/u;
+
 function stripMarkdownForTTS(s: string): string {
   return s
     .replace(/```[\s\S]*?```/g, '')
@@ -355,21 +359,22 @@ export function useVoiceConversation() {
 
   const enqueueSentences = useCallback((chunk: string) => {
     pendingTextRef.current += chunk;
+    let searchFrom = 0;
     while (true) {
-      const m = pendingTextRef.current.match(SPEAKABLE_BOUNDARY);
+      const m = pendingTextRef.current.slice(searchFrom).match(SPEAKABLE_BOUNDARY);
       if ((!m || m.index === undefined) && pendingTextRef.current.length < MAX_STREAM_FRAGMENT_LEN) break;
-      const cut = m && m.index !== undefined ? m.index + 1 : MAX_STREAM_FRAGMENT_LEN;
+      const cut = m && m.index !== undefined ? searchFrom + m.index + 1 : MAX_STREAM_FRAGMENT_LEN;
       const sentence = pendingTextRef.current.slice(0, cut).trim();
-      pendingTextRef.current = pendingTextRef.current.slice(cut);
-      if (sentence) {
-        const clean = stripMarkdownForTTS(sentence).trim();
-        // 太短的微句 (< MIN_SENTENCE_LEN) 退回 pending, 攒到下一句一起 synth, 避免段落首句"是。"独立成轨
-        if (clean.length >= MIN_SENTENCE_LEN) {
-          enqueueTtsText(clean);
-        } else if (clean) {
-          pendingTextRef.current = clean + (pendingTextRef.current.startsWith(' ') ? '' : ' ') + pendingTextRef.current;
-        }
+      const clean = stripMarkdownForTTS(sentence).trim();
+      // Look past a short phrase's boundary without reinserting and matching
+      // that same prefix forever. Retain it for the next chunk or flushTail.
+      if (m && clean && clean.length < MIN_SENTENCE_LEN) {
+        searchFrom = cut;
+        continue;
       }
+      pendingTextRef.current = pendingTextRef.current.slice(cut);
+      searchFrom = 0;
+      if (clean) enqueueTtsText(clean);
     }
     flushTTS();
   }, [enqueueTtsText, flushTTS]);
@@ -599,7 +604,8 @@ export function useVoiceConversation() {
         const result = await session.stop();
         await setPlaybackMode();
         if (!mountedRef.current || finalizeSeq !== listeningStartSeqRef.current) return;
-        const finalText = result.text.trim();
+        const normalized = result.text.trim();
+        const finalText = HAS_SPEECH_CONTENT.test(normalized) ? normalized : '';
         latestPartialRef.current = finalText;
         setTranscript(finalText);
         if (finalText) await submit(finalText);
@@ -657,7 +663,7 @@ export function useVoiceConversation() {
         onTranscript: (text) => {
           if (!mountedRef.current || realtimeAsrRef.current !== session) return;
           const normalized = text.trim();
-          if (!normalized || normalized === latestPartialRef.current) return;
+          if (!HAS_SPEECH_CONTENT.test(normalized) || normalized === latestPartialRef.current) return;
           latestPartialRef.current = normalized;
           setTranscript(normalized);
           if (finalizeListeningRef.current) return;
