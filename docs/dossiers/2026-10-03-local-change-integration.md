@@ -457,3 +457,15 @@ alternatives to AMap.
   the already-reviewed publisher's exact setup-node v5 pin; its test-only file
   is explicitly added to the retained compatibility allowlist, with a RED/GREEN
   regression. Unknown files and runtime changes remain forbidden.
+- Revised isolated candidate e609 received diagnostic-only independent GO
+  (402 passed / two skips); combined local verification was 431 passed / two
+  skips. It was pushed only to `codex/retained-runner-startup-smoke`. Branch CI
+  `37132428781`, fresh-runner job `111230069230`, reproduced the failure after
+  successful materialize/first-Node/tools steps: `CONTRACT_METADATA`. This is
+  direct hosted evidence of a helper path metadata rejection, not yet proof of
+  which path or metadata field. Main and production remain at healthy 3e830.
+- Add CI-only fixed-path `stat` diagnostics after a failed smoke: only numeric
+  ownership/mode and file types for six fixed public-source paths, no file
+  contents, credentials, arbitrary selectors or production operation. Original
+  failure is re-raised even if metadata collection fails. RED/GREEN covers exact
+  paths, stripped token environment and diagnostic timeout failure propagation.
