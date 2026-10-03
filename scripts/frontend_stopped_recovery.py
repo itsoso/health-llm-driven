@@ -43,14 +43,19 @@ def original_evidence(pub,server,build):
 
 
 def lease_evidence(pub,helper,bootstrap,server,build):
+    helper._secure_lease_path(server,pub.LEASE,directory=True)
     if {p.name for p in pub.LEASE.iterdir()}!={'token','label','stage','started_at'}:
         raise RecoveryError('original lease inventory differs')
-    raw={n:server._read_private(pub.LEASE/n).decode().strip() for n in ('token','label','stage','started_at')}
+    raw,fingerprints={},{}
+    for name in ('token','label','stage','started_at'):
+        server.validate_metadata((pub.LEASE/name).lstat(),private=True)
+        fingerprints[name],data=build.data_fingerprint(pub.LEASE/name)
+        raw[name]=data.decode().strip()
     if (raw['label']!='frontend-publication' or raw['stage']!=str(pub.STATE/'frontend-publications'/OPERATION)
             or raw['started_at']!='1791008901' or re.fullmatch('[0-9a-f]{64}',raw['token']) is None):
         raise RecoveryError('original lease binding differs')
     identity=helper._lease_identity(str(pub.LEASE),raw['token'],bootstrap,server)
-    return dict(identity=[list(x) for x in identity],files={n:build.data_fingerprint(pub.LEASE/n)[0] for n in raw})
+    return dict(identity=[list(x) for x in identity],files=fingerprints)
 
 
 def assert_stopped(pub,build):

@@ -167,3 +167,19 @@ def test_pending_recovery_never_exempts_an_unrelated_failed_operation(tmp_path,m
     server,state,op,_=load('test_trusted_frontend_publish_history').evidence.__wrapped__(tmp_path,monkeypatch)
     (op/'failed.json').write_text('{}')
     with pytest.raises(server.LaunchError):server.assert_frontend_rebuild_history(state,pending_stopped_publication=operation)
+
+
+def test_lease_reads_use_the_existing_fixed_alias_boundary(tmp_path):
+    from types import SimpleNamespace
+    m=load('frontend_stopped_recovery');build=load('trusted_frontend_rebuild')
+    lease=tmp_path/'lease';lease.mkdir();calls=[]
+    pub=SimpleNamespace(LEASE=lease,STATE=tmp_path/'state')
+    for n,v in dict(token='a'*64,label='frontend-publication',stage=str(pub.STATE/'frontend-publications'/m.OPERATION),started_at='1791008901').items():
+        (lease/n).write_text(v);(lease/n).chmod(0o600)
+    server=SimpleNamespace(validate_metadata=lambda info,**kw:calls.append(('leaf',info.st_mode,kw)))
+    helper=SimpleNamespace(_secure_lease_path=lambda *a,**kw:calls.append(('alias',kw)),
+                           _lease_identity=lambda *a:((1,2),(3,4)))
+    result=m.lease_evidence(pub,helper,None,server,build)
+    assert calls[0]==('alias',{'directory':True}) and len(calls)==5
+    assert result['identity']==[[1,2],[3,4]]
+    assert set(result['files'])=={'token','label','stage','started_at'}
