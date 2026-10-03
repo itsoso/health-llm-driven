@@ -341,7 +341,7 @@ if {name!r}=='ssh' and sys.argv[-1].endswith('sha256sum -c -'):
     # Match real SSH consuming the checksum pipeline; early exit races SIGPIPE.
     checksums=sys.stdin.buffer.read().decode().splitlines()
     assert [line.split('  ',1)[1] for line in checksums]==['app.ipa','manifest.plist','install.html','install-url.txt','qr.png']
-    with open({str(trace)!r},'a') as f: f.write(json.dumps(['checksum-input',len(checksums)])+'\\n')
+    with open({str(trace)!r},'a') as f: f.write(json.dumps(['checksum-input',str(len(checksums))])+'\\n')
 if {name!r}=='qrencode': pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_bytes(b'QR')
 if {name!r}=='curl' and '-fsS' in sys.argv: sys.stdout.buffer.write(b'synthetic')
 """)
@@ -367,7 +367,7 @@ if {name!r}=='curl' and '-fsS' in sys.argv: sys.stdout.buffer.write(b'synthetic'
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in trace.read_text().splitlines()]
     uploads = [c for c in calls if c[0] == "rsync"]
-    assert [c for c in calls if c[0] == "checksum-input"] == [["checksum-input", 5]]
+    assert [c for c in calls if c[0] == "checksum-input"] == [["checksum-input", "5"]]
     assert len(uploads) == 1
     assert uploads[0][-2].endswith("/public/")
     assert "--delete" not in uploads[0]
