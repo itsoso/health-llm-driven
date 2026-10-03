@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import pwd
 import re
 import secrets
 import signal
@@ -365,8 +366,122 @@ def _load_frontend_finalizer():
     return module
 
 
+def _frontend_publication_backup_digest(root, *, live=False):
+    """Bind immutable backup content and ownership, preserving private runtime cache."""
+    root = Path(root)
+    if live:
+        if root not in {PRODUCTION / "frontend" / ".next", PRODUCTION / "frontend" / "node_modules"}:
+            raise LaunchError("fixed live frontend artifact path required")
+        secure_path(root, directory=True)
+    digest, count = hashlib.sha256(), 0
+    pending = [root]
+    while pending:
+        path = pending.pop()
+        count += 1
+        if count > 150000:
+            raise LaunchError("frontend backup inventory exceeds bound")
+        info = path.lstat()
+        relative = path.relative_to(root)
+        cache_root = root.name == "previous-next" or (live and root == PRODUCTION / "frontend" / ".next")
+        cache = cache_root and relative.parts and relative.parts[0] == "cache"
+        if stat.S_ISLNK(info.st_mode) and (cache or info.st_uid != 0):
+            raise LaunchError("unsafe frontend backup link metadata")
+        if cache and info.st_uid != 0:
+            try:
+                account = pwd.getpwnam("health-web")
+            except KeyError:
+                raise LaunchError("frontend cache identity missing") from None
+            if ((info.st_uid, info.st_gid) != (account.pw_uid, account.pw_gid)
+                    or info.st_mode & 0o022 or stat.S_ISLNK(info.st_mode)
+                    or not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))
+                    or (stat.S_ISREG(info.st_mode) and info.st_nlink != 1)):
+                raise LaunchError("unsafe frontend cache metadata")
+        elif not stat.S_ISLNK(info.st_mode):
+            validate_metadata(info, directory=stat.S_ISDIR(info.st_mode))
+        digest.update((relative.as_posix() + "\0" + str(stat.S_IMODE(info.st_mode)) + "\0"
+                       + str(info.st_uid) + "\0" + str(info.st_gid) + "\0").encode())
+        if stat.S_ISLNK(info.st_mode):
+            try:
+                target = path.resolve(strict=True)
+            except (OSError, RuntimeError):
+                raise LaunchError("invalid frontend backup link") from None
+            if not target.is_relative_to(root.resolve()) or os.path.isabs(os.readlink(path)):
+                raise LaunchError("frontend backup link escapes bundle")
+            digest.update(b"link\0" + os.readlink(path).encode())
+        elif stat.S_ISDIR(info.st_mode):
+            digest.update(b"directory\0")
+            pending.extend(sorted(path.iterdir(), reverse=True))
+        elif stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size < 2_000_000_000:
+            digest.update(b"file\0" + str(info.st_size).encode() + b"\0")
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        else:
+            raise LaunchError("unsupported frontend backup object")
+    return digest.hexdigest()
+
+
+def _frontend_publication_file_digest(path):
+    secure_path(path, private=True)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    digest = hashlib.sha256()
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        validate_metadata(info, private=True)
+        if info.st_size >= 2_000_000_000:
+            raise LaunchError("frontend publication proof exceeds bound")
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def assert_frontend_publication_history(state=None):
+    """New-tree frontend receipts never authorize a backend release."""
+    root = Path(state or STATE) / "frontend-publications"
+    if not os.path.lexists(root):
+        return
+    secure_path(root, directory=True)
+    if stat.S_IMODE(root.lstat().st_mode) != 0o700:
+        raise LaunchError("frontend publication root must remain private")
+    proof_names = {"before.json", "build.log", "install-started.json", "verified.json"}
+    backups = {"previous-next", "previous-node-modules"}
+    keys = {"kind", "publisher_sha", "production_sha", "operation_id", "frontend_tree", "state", "artifact_digest"}
+    for operation in root.iterdir():
+        secure_path(operation, directory=True)
+        if (stat.S_IMODE(operation.lstat().st_mode) != 0o700
+                or re.fullmatch(r"[0-9a-f]{32}", operation.name) is None
+                or {p.name for p in operation.iterdir()} != proof_names | backups | {"intent.json", "completed.json"}):
+            raise LaunchError("unfinished or unknown frontend publication; operator review required")
+        intent = _json(_read_private(operation / "intent.json"))
+        if (not isinstance(intent, dict) or set(intent) != keys or intent["kind"] != "frontend-publication"
+                or intent["operation_id"] != operation.name or intent["state"] != "FRONTEND_STARTED"
+                or intent["artifact_digest"] is not None
+                or any(not isinstance(intent[k], str) or re.fullmatch(r"[0-9a-f]{40}", intent[k]) is None
+                       for k in ("publisher_sha", "production_sha", "frontend_tree"))):
+            raise LaunchError("invalid frontend publication binding")
+        complete = _json(_read_private(operation / "completed.json"))
+        if (not isinstance(complete, dict) or set(complete) != keys | {"proof_sha256", "backups_digest"}
+                or not isinstance(complete["artifact_digest"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", complete["artifact_digest"]) is None
+                or {k: complete[k] for k in keys} != {**intent, "state": "FRONTEND_SUCCEEDED", "artifact_digest": complete["artifact_digest"]}):
+            raise LaunchError("invalid frontend publication completion")
+        for name, status in (("install-started.json", "FRONTEND_INSTALLING"), ("verified.json", "FRONTEND_VERIFIED")):
+            if _json(_read_private(operation / name)) != {**intent, "state": status, "artifact_digest": complete["artifact_digest"]}:
+                raise LaunchError("frontend publication phase differs")
+        before = _json(_read_private(operation / "before.json"))
+        if not isinstance(before, dict) or any(before.get(k) != intent[k] for k in ("publisher_sha", "production_sha", "operation_id", "frontend_tree")):
+            raise LaunchError("frontend publication preflight differs")
+        if complete["proof_sha256"] != {n: _frontend_publication_file_digest(operation / n) for n in proof_names}:
+            raise LaunchError("frontend publication proof hashes differ")
+        for name in backups:
+            secure_path(operation / name, directory=True)
+        if complete["backups_digest"] != {n: _frontend_publication_backup_digest(operation / n) for n in backups}:
+            raise LaunchError("frontend publication backup hashes differ")
+
+
 def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None):
     """Independent frontend evidence must never count as backend success."""
+    assert_frontend_publication_history(state)
     root = Path(state or STATE) / "frontend-rebuilds"
     closures = root.parent / "frontend-rebuild-closures"
     finalizations = root.parent / "frontend-finalizations"

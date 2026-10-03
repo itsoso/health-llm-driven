@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 PYTEST_SHARD_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
 RELEASE_TESTS = (
+    "scripts/test_trusted_frontend_publish.py",
+    "scripts/test_trusted_frontend_publish_history.py",
     "scripts/test_backup_security.py",
     "scripts/test_ci_change_scope.py",
     "scripts/test_deploy_script.py",

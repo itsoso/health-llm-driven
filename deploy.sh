@@ -18,6 +18,10 @@ NC='\033[0m' # No Color
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" = "--publish-frontend" ]]; then
+    shift
+    exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_frontend_publish.py" "$@"
+fi
 if [[ "${1:-}" = "--rebuild-deployed-frontend" ]]; then
     shift
     exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_frontend_rebuild.py" "$@"

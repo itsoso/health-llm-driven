@@ -363,6 +363,8 @@ jobs:
           scripts/test_trusted_ota_publish.py
           scripts/test_testflight_only.py
           scripts/test_trusted_frontend_rebuild.py
+          scripts/test_trusted_frontend_publish.py
+          scripts/test_trusted_frontend_publish_history.py
           scripts/test_bootstrap_trusted_release.py
           scripts/test_trusted_review_reset.py
           scripts/test_review_maintenance_retirement.py
