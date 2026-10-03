@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| 状态 | application and release repairs verified; node-forge backport locally verified; external write authorization pending |
-| 当前阶段 | application G3/G4 verified; G5 blocked by dependency audit and native closure authorization |
+| 状态 | backend and frontend published; dependency mitigation and frontend availability verified |
+| 当前阶段 | G5 backend/frontend receipts complete; G6 page and service readback verified; OAuth grant not exercised |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -317,3 +317,33 @@ recovery chain. It cannot publish another frontend tree, retry an attempted
 recovery, retire another lease, alter backend/config, or bypass failed history.
 Fresh fixed-candidate independent review and exact CI remain required before
 execution. Availability of the restored old frontend is not new publication.
+# Verified publication closeout, 2026-10-03 16:44 UTC+8
+
+User-authorized takeover completed the original operation without rebuilding or
+changing its ID. Recovery publisher `2c1d9d4bf95bdc55e06999e09dd3e616f31b0647`
+received independent G4 GO (164 tests passed, two Linux-only skips). Exact
+[CI 37109213113](https://github.com/itsoso/health-llm-driven/actions/runs/37109213113)
+succeeded, including 2016 release-invariant tests, 84 subtests, and real OpenSSH
+and Linux sandbox checks. The original HIGH advisories remain recorded with
+verified mitigation/backport evidence rather than exemptions.
+
+Canonical preflight digest:
+`14371aa872bafb0dd306536d1c1f117f7cadce10bdc4f6dca693a00951b4cbed`.
+Original frontend operation `637078dd8c584686a59000de91d2dad2` now has both
+`RECOVERY_SUCCEEDED` and `FRONTEND_SUCCEEDED` on the server. Original failed.json
+and all five original evidence files are retained; both old artifact directories
+are retained with bound backup digests; the original business lease is released.
+The publication still identifies the original f8dd build and frontend tree
+`0e0a36d69a526e0ca5395f5c5082a77534dd739c`. Published artifact digest is
+`2d8d765d014a5015ae6eaf016e77d8bab46ff262a3954ae15a4044914a3dfa8e`.
+
+Independent external requests returned 200 without redirects for `/privacy`,
+`/connect/health`, and `/api/v1/health`; both frontend pages contained their
+expected markers. The actual installed braces copy was verified read-only as
+health-web, including its exact mitigated source hash and recursion behavior.
+Frontend was active/running with restart count zero. Production remained clean
+at backend `dbad4e66c29f31c0ae149fecefa6c0d4f3e45283`; backend, worker and beat
+process identities and configuration hashes exactly matched the original before
+snapshot. No backend redeploy, native release, OTA or OAuth grant was performed
+during this frontend recovery. Earlier backend DB backup/restore/offsite steps
+remain explicitly skipped under the recorded user default, not claimed passed.
