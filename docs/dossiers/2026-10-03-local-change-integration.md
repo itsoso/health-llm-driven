@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | status | blocked |
-| current_stage | G5 · Fixed source GO; verifying CI repair before authorized main merge |
+| current_stage | G3 · Main and backend delivered; retained-upload runner bootstrap repair |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Scope | Reconcile explicitly authorized local unique changes onto current main; verify and release |
@@ -355,3 +355,50 @@ alternatives to AMap.
   waive exact new CI or authorize replaying the old failed release. Preserve
   prior failed CI and all production/vendor evidence. Deployment/upload remain
   separate, not established by this main merge.
+
+### 2026-10-03 · Main green, backend deployed, upload pre-claim blocked
+
+- Final repaired source `12dd3e41838f8297eb50fdc2f99e01a832e082ca` received
+  independent GO (audit-only follow-up to 2fda). Local full deployment invariant
+  list: 2153 passed / 10 skipped / 84 subtests. Fast-forward main merge followed
+  the user's explicit instruction; exact CI `37125777415` completed success,
+  all 28 jobs passed, including the actual Linux collision case. Trusted validate
+  `37126329445` also passed. Original failed CI is preserved.
+- Canonical server source and exact CI verified. Mixed-closure read-only inspect
+  passed, then one execution with the same evidence digest returned
+  `CLOSED_UNCHANGED_RELEASE`. Original failed 514 terminal, claims, logs and 274
+  artifact retained; original lease archived preserving inode, precise old
+  identities revoked and old loopback private key removed. Sensitive receipt
+  was captured to a private 0600 file, never printed, then consumed through
+  protected stdin by canonical rotation. Rotation to 12dd returned `INSTALLED`.
+- One backend-only workflow `37127520417` completed success. Actual production
+  SHA is 12dd, its terminal is `SUCCEEDED`, internal/public API health reports
+  API/database/Redis/Celery healthy, actual backend/socket/celery-worker/beat
+  units are active with zero restarts. Auth/me and share-location availability
+  return 401 without authentication. No live audio end-to-end claim is made.
+- One retained-upload workflow `37128017147` failed in job `111217263989` at
+  runner bootstrap after source/tool setup passed. It emitted only the static
+  blocked message, about 54ms after Python startup. Server has no retained-build
+  claim directory and no active business lease; independent Expo read confirms
+  exact 274 still FINISHED with zero submissions. No new build or vendor upload
+  occurred. Original failed workflow will not be rerun.
+- High-confidence cause: official runner image commit
+  `6d942e630479cd99a93dadfc766af11242bfa402` configures `/opt` mode 0777;
+  strict helper loading rejects a writable ancestor before Git/import/network.
+  The workflow normalized only `/opt/reva-release`, not its ancestor. A focused
+  metadata reproduction fails at `/opt` before I/O. The failed VM did not retain
+  its actual stat output, so image defaults are not presented as direct VM proof.
+- Bounded follow-up: harden only exact `/opt` non-recursively on a fresh runner,
+  keep strict loader checks, and exercise actual helper loading in Linux CI and
+  before release credentials are exposed. Fixed-source review and a new exact
+  CI remain mandatory. No bypass, claim reset or repeated submit is permitted.
+- App Store Connect browser session needs login for later processing/availability
+  checks; that does not explain this pre-upload bootstrap failure. AMap remains
+  disabled, and no App Review submission is authorized.
+- Runner repair RED: two new startup regressions failed before implementation.
+  Associated tests GREEN: 392 passed / two Linux-only skips on macOS. The new
+  dedicated sudo Linux CI test executes the workflow's actual hardening function
+  against a private fixture and then loads the real canonical helpers, including
+  ownership, mode, symlink, cache and byte-drift negatives. It does not modify the
+  CI host's actual `/opt` or use vendor credentials. Fixed review and exact remote
+  CI are pending; these local results do not prove the hosted run has passed.

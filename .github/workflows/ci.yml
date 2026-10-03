@@ -330,6 +330,9 @@ jobs:
       - name: Verify real application network boundary in isolated namespace
         run: sudo unshare --net /usr/bin/python3 scripts/test_public_host_network_native.py
 
+      - name: Verify real retained runner filesystem and canonical startup
+        run: sudo "$(command -v python)" -B -m pytest -q --no-cov scripts/test_trusted_retained_testflight.py -k real_linux_runner_bootstrap_and_loader
+
       - name: Run deployment and rollback invariants
         run: >-
           python -m pytest -q --no-cov --tb=short --maxfail=1

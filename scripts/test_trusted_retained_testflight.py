@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -434,3 +435,103 @@ def test_persistent_registry_and_volatile_lease_have_independent_durability(stat
     else:
         assert m.claim(s, SimpleNamespace(), {'sha': SHA}, before)['state'] == 'CLAIMED'
         assert events.index(('fsync', persistent)) < events.index(('lease', volatile))
+
+
+def hardening_code():
+    import yaml
+    w = yaml.safe_load(Path('.github/workflows/trusted-release.yml').read_text())
+    body = w['jobs']['retained-testflight']['steps'][0]['run']
+    return body.split("<<'REVA_RUNNER_ROOT'\n", 1)[1].split('\nREVA_RUNNER_ROOT', 1)[0]
+
+
+def test_retained_runner_hardening_and_smoke_precede_credentials():
+    import yaml
+    w = yaml.safe_load(Path('.github/workflows/trusted-release.yml').read_text())
+    steps = w['jobs']['retained-testflight']['steps']
+    assert "harden(Path('/opt'))" in hardening_code()
+    smoke = next(i for i, step in enumerate(steps) if '--check-runner' in step.get('run', ''))
+    credentials = next(i for i, step in enumerate(steps) if 'EXPO_TOKEN' in str(step))
+    assert smoke < credentials
+    assert all('secrets.' not in str(step) for step in steps[:smoke + 1])
+    assert '--runner ' not in steps[smoke]['run']
+
+
+def test_source_smoke_loads_both_helpers_without_reading_credentials(monkeypatch):
+    m = load('trusted_retained_testflight')
+    seen = []
+    def checked_load(source, sha, filename):
+        seen.append(filename)
+        return SimpleNamespace()
+    def read_git(source, *args):
+        return (SHA + '\n').encode() if args == ('rev-parse', 'HEAD') else b''
+    monkeypatch.setattr(m, 'load', checked_load)
+    monkeypatch.setattr(m, 'git', read_git)
+    class ForbiddenEnvironment(dict):
+        def get(self, *args):
+            raise AssertionError('credential lookup forbidden in smoke')
+    monkeypatch.setattr(m.os, 'environ', ForbiddenEnvironment())
+    m.validate_runner_source(Path('/opt/reva-release/source'), SHA)
+    assert seen == ['built_unuploaded_proof.py', 'trusted_release_gate.py']
+
+
+@pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,
+                    reason='real root-owned canonical loader requires dedicated Linux sudo CI step')
+def test_real_linux_runner_bootstrap_and_loader():
+    import ast
+    import subprocess
+    import tempfile
+    import shutil
+    m = load('trusted_retained_testflight')
+    # Reuse the exact production workflow function; only its final fixed /opt
+    # invocation is excluded so the test never changes the CI host's /opt.
+    tree = ast.parse(hardening_code())
+    tree.body = [item for item in tree.body if isinstance(item, (ast.Import, ast.ImportFrom, ast.FunctionDef))]
+    namespace = {}
+    exec(compile(tree, '<actual-retained-workflow-bootstrap>', 'exec'), namespace)
+    harden = namespace['harden']
+    with tempfile.TemporaryDirectory(prefix='retained-runner-smoke-', dir='/root') as directory:
+        root = Path(directory)
+        opt = root / 'opt'
+        opt.mkdir(mode=0o777)
+        opt.chmod(0o777)
+        source = opt / 'reva-release' / 'source'
+        (source / 'scripts').mkdir(parents=True)
+        for filename in ('built_unuploaded_proof.py', 'trusted_release_gate.py'):
+            shutil.copyfile(Path(__file__).with_name(filename), source / 'scripts' / filename)
+        env = {**m.ENV, 'GIT_AUTHOR_NAME': 'release-test', 'GIT_AUTHOR_EMAIL': 'test@example.invalid',
+               'GIT_COMMITTER_NAME': 'release-test', 'GIT_COMMITTER_EMAIL': 'test@example.invalid'}
+        def git(*args):
+            return subprocess.run(['/usr/bin/git', '-C', str(source), *args], env=env,
+                                  capture_output=True, check=True).stdout
+        git('init', '-b', 'main')
+        git('add', 'scripts/built_unuploaded_proof.py', 'scripts/trusted_release_gate.py')
+        git('commit', '-m', 'test canonical helpers')
+        sha = git('rev-parse', 'HEAD').decode().strip()
+        with pytest.raises(ValueError, match='unsafe canonical'):
+            m.validate_runner_source(source, sha)
+        harden(opt)
+        assert opt.stat().st_mode & 0o777 == 0o755
+        assert m.validate_runner_source(source, sha) is not None
+        cache = source / 'scripts' / '__pycache__'
+        cache.symlink_to(root / 'missing')
+        with pytest.raises(ValueError, match='cached'):
+            m.validate_runner_source(source, sha)
+        cache.unlink()
+        helper = source / 'scripts' / 'built_unuploaded_proof.py'
+        helper.write_text(helper.read_text() + '\n# drift\n')
+        with pytest.raises(ValueError):
+            m.validate_runner_source(source, sha)
+        for mode in (0o700, 0o775):
+            opt.chmod(mode)
+            with pytest.raises(ValueError):
+                harden(opt)
+            assert opt.stat().st_mode & 0o777 == mode
+        opt.chmod(0o755)
+        os.chown(opt, 12345, 0)
+        with pytest.raises(ValueError):
+            harden(opt)
+        os.chown(opt, 0, 0)
+        alias = root / 'opt-alias'
+        alias.symlink_to(opt, target_is_directory=True)
+        with pytest.raises(ValueError):
+            harden(alias)
