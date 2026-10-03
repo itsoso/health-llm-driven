@@ -403,3 +403,15 @@
 - RED: the updated header regression failed on missing pulse/voice action.
   Updated screen contracts require exactly one visible header shortcut, no
   bottom duplicate, guarded navigation and working new-chat menu behavior.
+- GREEN: 181 focused tests and TypeScript passed; full Mobile regression passed
+  324 suites / 3224 tests with 1 skipped. Secret scan, dossier consistency,
+  System Map and diff whitespace checks passed.
+- Implementation `70a7460a3` was built into the existing Release simulator target;
+  build/signature/install succeeded with login retained. Native iPhone 17 UI
+  confirmed the far-right green voice capsule, removal of the composer shortcut,
+  navigation into idle voice and back, visible history, and new chat in more.
+  No microphone session or health write was started by this layout acceptance.
+  Logs: `/tmp/reva-voice-release.Jtlenr/header-entry-*.log`.
+- This is local simulator UI acceptance only. The pending audio findings and
+  production authorization gate remain open. Remote main advanced independently;
+  this task did not push, merge, deploy, or publish a vendor build in this turn.
