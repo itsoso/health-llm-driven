@@ -273,3 +273,28 @@ Only a subsequent real trusted backend deployment may provide the receipt needed
 for isolated frontend publication. First new regression run: 17 expected failures
 before implementation; focused recovery/bootstrap/native suite now 244 passed.
 Full release suite and fixed-commit independent review remain pending.
+
+
+The recovery candidate `dbad4e66c29f31c0ae149fecefa6c0d4f3e45283` passed independent
+G4 (244 tests), exact CI 37098891748 (release integration 1955 passed, nine skips,
+84 subtests, plus three isolated Linux tests) and validate 37099468139. The
+redundant local full suite was interrupted after exact Linux CI passed and is
+not recorded as a local pass. Canonical production preflight and rotation passed;
+old e190 retirement and new dbad authorization were read back. The local private
+closure receipt was removed only after the server's protected intent preserved it.
+
+Trusted backend run 37100225023 succeeded, with exact dbad SUCCEEDED receipt,
+60/60 final health, finalized runtime transaction, schema rollback probe and
+serving contracts. Database dump/restore/offsite were skipped under the existing
+explicit user default in deploy governance; environment backup was performed.
+The earlier recovery paragraph incorrectly implied unconditional DB backup and
+has been aligned with that authoritative preference, without changing the policy.
+
+Frontend operation `c117171afc9e4bc2a85ee6ddfa419d85` has not created an intent or
+lease. Its read-only preflight rejected the existing allowlisted build endpoint
+`http://localhost:8000`, while the fixed service uses `http://127.0.0.1:8000`.
+Normalize only those two already allowed loopback values into the fixed build
+address, preserving original file bytes and fingerprints; other endpoints remain
+rejected. Regression reproduced one failure with five passing negatives before
+the one-line correction. Frontend publication and actual mitigation verification
+remain pending. No new backend or native release is required for this correction.

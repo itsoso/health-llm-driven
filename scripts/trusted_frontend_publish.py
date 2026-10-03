@@ -119,7 +119,7 @@ def configuration(build):
                 raise PublishError('frontend endpoint sources conflict')
             environment.update(values)
             fingerprints[name] = fingerprint
-    if environment.get('BACKEND_URL', 'http://127.0.0.1:8000') != 'http://127.0.0.1:8000':
+    if environment.get('BACKEND_URL', 'http://127.0.0.1:8000') not in ('http://127.0.0.1:8000', 'http://localhost:8000'):
         raise PublishError('frontend build/runtime backend endpoints differ')
     environment['BACKEND_URL'] = 'http://127.0.0.1:8000'
     return environment, fingerprints

@@ -248,3 +248,36 @@ def test_restart_increment_during_page_verification_is_not_success(tmp_path,monk
     audit=m.STATE/'frontend-publications'/plan['operation_id']
     assert m.LEASE.exists() and (audit/'failed.json').exists()
     assert not (audit/'completed.json').exists()
+
+
+@pytest.mark.parametrize('endpoint', ['http://localhost:8000', 'http://127.0.0.1:8000'])
+def test_allowlisted_loopback_build_endpoint_matches_fixed_runtime_without_editing_config(tmp_path, monkeypatch, endpoint):
+    m = load()
+    spec = importlib.util.spec_from_file_location('endpoint_build_test', Path(__file__).with_name('trusted_frontend_rebuild.py'))
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    monkeypatch.setattr(m, 'PRODUCTION', tmp_path)
+    (tmp_path / 'frontend').mkdir()
+    config = tmp_path / 'frontend/.env.local'
+    config.write_text('BACKEND_URL=' + endpoint + '\n')
+    before = config.read_bytes()
+    environment, fingerprints = m.configuration(build)
+    assert environment['BACKEND_URL'] == 'http://127.0.0.1:8000'
+    assert config.read_bytes() == before
+    assert fingerprints['.env.local'] == build.data_fingerprint(config)[0]
+
+
+@pytest.mark.parametrize('endpoint', ['http://localhost:8001', 'http://127.0.0.2:8000',
+                                    'http://localhost.example:8000', 'http://169.254.169.254'])
+def test_unreviewed_build_backend_endpoint_still_rejected(tmp_path, monkeypatch, endpoint):
+    m = load()
+    spec = importlib.util.spec_from_file_location('bad_endpoint_build_test', Path(__file__).with_name('trusted_frontend_rebuild.py'))
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    monkeypatch.setattr(m, 'PRODUCTION', tmp_path)
+    (tmp_path / 'frontend').mkdir()
+    config = tmp_path / 'frontend/.env.local'
+    config.write_text('BACKEND_URL=' + endpoint + '\n')
+    with pytest.raises(build.RebuildError):
+        m.configuration(build)
+    assert config.read_text() == 'BACKEND_URL=' + endpoint + '\n'
