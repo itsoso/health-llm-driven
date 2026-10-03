@@ -449,11 +449,89 @@ def hardening_code():
     return body.split("<<'REVA_RUNNER_ROOT'\n", 1)[1].split('\nREVA_RUNNER_ROOT', 1)[0]
 
 
+def bootstrap_functions():
+    import ast
+    tree = ast.parse(hardening_code())
+    tree.body = [item for item in tree.body if isinstance(item, (ast.Import, ast.ImportFrom, ast.FunctionDef))]
+    namespace = {}
+    exec(compile(tree, '<actual-retained-workflow-bootstrap>', 'exec'), namespace)
+    return namespace
+
+
+@pytest.mark.parametrize('fault', [None, 'absent', 'exists', 'symlink', 'owner', 'group',
+                                  'mode', 'open-swap', 'final-swap', 'denied', 'io',
+                                  'unsupported', 'retained-acl', 'chmod', 'sync'])
+def test_fresh_release_directory_removes_only_inherited_acls_fail_closed(fault):
+    import errno
+    import stat
+    namespace = bootstrap_functions()
+    prepare = namespace['prepare_new']
+    events = []
+    attrs = {'system.posix_acl_access', 'system.posix_acl_default'}
+    info = SimpleNamespace(st_dev=1, st_ino=2, st_uid=0, st_gid=0, st_mode=stat.S_IFDIR | 0o700)
+    if fault == 'symlink':
+        info.st_mode = stat.S_IFLNK | 0o700
+    if fault == 'owner':
+        info.st_uid = 1001
+    if fault == 'group':
+        info.st_gid = 1001
+    if fault == 'mode':
+        info.st_mode = stat.S_IFDIR | 0o777
+    reads = []
+    def lstat():
+        reads.append(True)
+        return SimpleNamespace(**{**vars(info), 'st_ino': 9}) if fault == 'final-swap' and len(reads) > 1 else info
+    path = SimpleNamespace(lstat=lstat)
+    def mkdir(actual, mode):
+        assert actual is path and mode == 0o700
+        events.append('mkdir')
+        if fault == 'exists':
+            raise FileExistsError('existing namespace')
+    def open_dir(actual, flags):
+        assert actual is path and flags == os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        events.append('open')
+        return 42
+    def remove(fd, name):
+        assert fd == 42 and name in attrs
+        events.append(('remove', name))
+        errors = {'absent': errno.ENODATA, 'denied': errno.EPERM, 'io': errno.EIO,
+                  'unsupported': errno.EOPNOTSUPP}
+        if fault in errors:
+            raise OSError(errors[fault], 'fixed fixture error')
+    def chmod(fd, mode):
+        assert fd == 42 and mode == 0o700
+        events.append('chmod')
+        if fault == 'chmod':
+            raise OSError(errno.EPERM, 'chmod fixture')
+    def sync(fd):
+        assert fd == 42
+        events.append('sync')
+        if fault == 'sync':
+            raise OSError(errno.EIO, 'sync fixture')
+    namespace['os'] = SimpleNamespace(
+        mkdir=mkdir, open=open_dir, O_RDONLY=os.O_RDONLY, O_DIRECTORY=os.O_DIRECTORY,
+        O_NOFOLLOW=os.O_NOFOLLOW,
+        fstat=lambda fd: SimpleNamespace(**{**vars(info), 'st_ino': 9}) if fault == 'open-swap' else info,
+        removexattr=remove, listxattr=lambda fd: list(attrs) if fault == 'retained-acl' else [],
+        fchmod=chmod, fsync=sync, close=lambda fd: events.append('close'))
+    if fault in (None, 'absent'):
+        prepare(path)
+        assert {event[1] for event in events if isinstance(event, tuple)} == attrs
+        assert events[-1] == 'close' and events.index('chmod') < events.index('sync')
+    else:
+        with pytest.raises((OSError, ValueError)):
+            prepare(path)
+        if 'open' in events:
+            assert events[-1] == 'close'
+
+
 def test_retained_runner_hardening_and_smoke_precede_credentials():
     import yaml
     w = yaml.safe_load(Path('.github/workflows/trusted-release.yml').read_text())
     steps = w['jobs']['retained-testflight']['steps']
     assert "harden(Path('/opt'))" in hardening_code()
+    assert "prepare_new(Path('/opt/reva-release'))" in hardening_code()
+    assert '/usr/bin/install -d' not in steps[0]['run']
     smoke = next(i for i, step in enumerate(steps) if '--check-runner' in step.get('run', ''))
     credentials = next(i for i, step in enumerate(steps) if 'EXPO_TOKEN' in str(step))
     assert smoke < credentials
@@ -478,13 +556,15 @@ def test_retained_checkout_sets_private_umask_inside_sudo_before_git_init():
 @pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,
                     reason='real root-owned checkout and loader require dedicated Linux sudo CI step')
 @pytest.mark.parametrize('private_checkout', [False, True])
-def test_real_linux_runner_bootstrap_and_loader_checkout_umask(private_checkout):
+@pytest.mark.parametrize('inherited_acl', [False, True])
+def test_real_linux_runner_bootstrap_and_loader_checkout_umask(private_checkout, inherited_acl):
     import shutil
     import tempfile
     m = load('trusted_retained_testflight')
     with tempfile.TemporaryDirectory(prefix='retained-checkout-umask-', dir='/root') as directory:
         root = Path(directory)
-        seed, source = root / 'seed', root / 'source'
+        seed, release = root / 'seed', root / 'release'
+        source = release / 'source'
         (seed / 'scripts').mkdir(parents=True)
         for filename in ('built_unuploaded_proof.py', 'trusted_release_gate.py'):
             shutil.copyfile(Path(__file__).with_name(filename), seed / 'scripts' / filename)
@@ -497,9 +577,22 @@ def test_real_linux_runner_bootstrap_and_loader_checkout_umask(private_checkout)
         git('add', 'scripts/built_unuploaded_proof.py', 'scripts/trusted_release_gate.py')
         git('commit', '-m', 'test canonical checkout')
         sha = git('rev-parse', 'HEAD').decode().strip()
-        # The outer shell supplies the observed permissive inherited mask. Only
-        # the real inner workflow preamble may make the fresh checkout private.
-        inner = (retained_checkout_preamble() if private_checkout else '') + '''
+        if inherited_acl:
+            subprocess.run(['/usr/bin/setfacl', '-m', 'd:u::rwx,d:u:1001:rwx,d:g::rwx,d:m::rwx,d:o::rwx',
+                            '--', str(root)], env=env, capture_output=True, check=True)
+        inherited = os.getxattr(root, 'system.posix_acl_default') if inherited_acl else None
+        if private_checkout:
+            bootstrap_functions()['prepare_new'](release)
+            assert release.stat().st_mode & 0o777 == 0o700
+            assert not {'system.posix_acl_access', 'system.posix_acl_default'} & set(os.listxattr(release))
+        else:
+            release.mkdir()
+        if inherited_acl:
+            assert os.getxattr(root, 'system.posix_acl_default') == inherited
+        # With default ACLs, even the real inner umask cannot secure descendants
+        # unless the fresh namespace first removes inherited ACLs. Without ACLs,
+        # retain the original permissive-mask negative control.
+        inner = (retained_checkout_preamble() if private_checkout or inherited_acl else '') + '''
             /usr/bin/git -c init.templateDir= init -b main "$1"
             /usr/bin/git -C "$1" -c core.hooksPath=/dev/null fetch "$2" "$3"
             /usr/bin/git -C "$1" -c core.hooksPath=/dev/null checkout -B main "$3"

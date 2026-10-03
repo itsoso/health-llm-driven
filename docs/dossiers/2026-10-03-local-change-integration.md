@@ -496,3 +496,20 @@ alternatives to AMap.
   failures preceded implementation; focused tests are 134 passed / four skips.
   This will distinguish initial ACL inheritance from subsequent metadata changes
   on a new isolated CI run, without replaying a failed release or vendor write.
+- Diagnostic b505 received independent diagnostic-only GO (134 passed / four
+  skips). Fresh CI `37134271814`, job `111235509991`, directly shows permissive
+  default ACLs on `/opt` and their inheritance by the release/source directories
+  immediately after materialization. Named uid 1001, group and other receive
+  default rwx grants; source is 0777 and helper is 0666. Metadata remains the same
+  before and after tool installation. This establishes creation-time ACL
+  inheritance as the observed issue, rather than a Node/tool permission change.
+- Independently reviewed bounded fix creates a **new** `/opt/reva-release` with
+  0700 (existing paths fail), validates root identity through a no-follow fd,
+  removes only its two inherited POSIX ACL attributes, then verifies ACL absence,
+  mode and inode identity after chmod/fsync. Only ENODATA is tolerated; all other
+  ACL errors abort. `/opt` default ACL and existing trees are not modified, and
+  source ownership/write/cache/content checks remain strict. Inner umask077 is
+  retained. Sixteen RED failures preceded implementation; focused GREEN is
+  149 passed / six Linux skips. Native Linux controls now explicitly compare
+  inherited default ACL plus umask-only failure against real bootstrap success,
+  and verify the parent default ACL is unchanged. Await fresh CI and final GO.

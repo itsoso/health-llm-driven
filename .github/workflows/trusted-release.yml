@@ -395,6 +395,7 @@ jobs:
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$TARGET_SHA" = "$GITHUB_SHA"
           /usr/bin/sudo /usr/bin/python3 -I -S -B - <<'REVA_RUNNER_ROOT'
+          import errno
           import os
           import stat
           from pathlib import Path
@@ -418,13 +419,42 @@ jobs:
                       raise ValueError('Retained runner root changed during hardening')
               finally:
                   os.close(fd)
+          def prepare_new(path):
+              # Never reuse or normalize a pre-existing publisher namespace.
+              # Mode 0700 masks inherited ACL grants before removing inheritance.
+              os.mkdir(path, 0o700)
+              before = path.lstat()
+              if (not stat.S_ISDIR(before.st_mode) or before.st_uid != 0 or before.st_gid != 0
+                      or stat.S_IMODE(before.st_mode) != 0o700):
+                  raise ValueError('Unexpected fresh publisher directory metadata')
+              fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+              try:
+                  identity = lambda info: (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode)
+                  if identity(os.fstat(fd)) != identity(before):
+                      raise ValueError('Fresh publisher directory changed before ACL isolation')
+                  acls = ('system.posix_acl_access', 'system.posix_acl_default')
+                  for name in acls:
+                      try:
+                          os.removexattr(fd, name)
+                      except OSError as exc:
+                          if exc.errno != errno.ENODATA:
+                              raise
+                  os.fchmod(fd, 0o700)
+                  if set(acls).intersection(os.listxattr(fd)):
+                      raise ValueError('Fresh publisher directory retains an ACL')
+                  os.fsync(fd)
+                  after = path.lstat()
+                  if identity(after) != identity(before) or identity(after) != identity(os.fstat(fd)):
+                      raise ValueError('Fresh publisher directory changed during ACL isolation')
+              finally:
+                  os.close(fd)
           try:
               harden(Path('/opt'))
+              prepare_new(Path('/opt/reva-release'))
           except Exception:
               raise SystemExit('Retained runner root bootstrap blocked.') from None
           print('Retained runner root verified and hardened non-recursively.')
           REVA_RUNNER_ROOT
-          /usr/bin/sudo /usr/bin/install -d -m 0755 /opt/reva-release
           /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_NO_REPLACE_OBJECTS=1 /bin/bash --noprofile --norc -eu -c '
             umask 077
             /usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source
