@@ -157,17 +157,22 @@ def inspect(args, source, helper, bootstrap, server, gate, build):
                 operation_id=args.operation_id, frontend_tree=tree,
                 snapshot=build.snapshot(server), frontend_env=fingerprints,
                 frontend_process=process, public_build_env=environment,
+                restore_preswitch_availability=bool(getattr(args,'restore_preswitch_availability',False)),
                 unit_fingerprint=build.data_fingerprint(Path(RUNTIME['FragmentPath']))[0],
                 toolchain=dict(node=build.run(['/usr/bin/node','--version']).strip(),
                                npm=build.run(['/usr/bin/npm','--version']).strip()))
 
 
-def assert_unchanged(plan, source, helper, bootstrap, server, build, *, restarted=False):
+def assert_preserved(plan, source, helper, bootstrap, server, build):
     helper._revision_proof(plan['production_sha'], source, bootstrap)
     if build.git(PRODUCTION, 'rev-parse', 'HEAD') != plan['production_sha'] or build.snapshot(server) != plan['snapshot'] or configuration(build)[1] != plan['frontend_env']:
         raise PublishError('preserved backend/configuration changed')
     if build.data_fingerprint(Path(RUNTIME['FragmentPath']))[0] != plan['unit_fingerprint']:
         raise PublishError('frontend unit bytes changed')
+
+
+def assert_unchanged(plan, source, helper, bootstrap, server, build, *, restarted=False):
+    assert_preserved(plan,source,helper,bootstrap,server,build)
     current = runtime(build)
     expected = dict(plan['frontend_process'])
     if restarted:
@@ -183,6 +188,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def verify_pages():
+    _verify_pages(include_connection=True)
+
+
+def verify_availability_pages():
+    # The preserved version may legitimately lack /connect/health.
+    _verify_pages(include_connection=False)
+
+
+def _verify_pages(*, include_connection):
     context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     defaults=ssl.get_default_verify_paths()
     cafile=defaults.openssl_cafile if os.path.isfile(defaults.openssl_cafile) else None
@@ -191,7 +205,9 @@ def verify_pages():
     context.load_verify_locations(cafile=cafile,capath=capath)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),urllib.request.HTTPSHandler(context=context))
     for host in ('http://127.0.0.1:30001', 'https://health.executor.life'):
-        for path, marker in (('/privacy','可选足迹与分享'),('/connect/health','小巴健康 · 数据连接')):
+        routes=[('/privacy','可选足迹与分享')]
+        if include_connection: routes.append(('/connect/health','小巴健康 · 数据连接'))
+        for path, marker in routes:
             success = False
             for _ in range(10):
                 try:
@@ -265,6 +281,24 @@ def build_command(build, operation, stage):
     return command
 
 
+STOP_FIELDS='ActiveState,SubState,MainPID,ControlPID,Result,ExecMainCode,ExecMainStatus'
+
+
+def validate_stopped(values):
+    common=dict(MainPID='0',ControlPID='0')
+    normal=[dict(**common,ActiveState='inactive',SubState='dead',Result='success',ExecMainCode=code,ExecMainStatus=status)
+            for code,status in (('0','0'),('1','0'),('2','15'))]
+    terminated=dict(**common,ActiveState='failed',SubState='failed',Result='exit-code',ExecMainCode='1',ExecMainStatus='143')
+    if values not in [*normal,terminated]:
+        raise PublishError('frontend stop outcome is not proved fully stopped')
+
+
+def stopped_runtime(build):
+    values=dict(line.split('=',1) for line in build.run(['/usr/bin/systemctl','show','health-frontend','--property='+STOP_FIELDS]).splitlines())
+    validate_stopped(values)
+    return values
+
+
 def execute(plan, source, helper, bootstrap, server, build, check_locks):
     publisher, production, operation, tree = (plan[k] for k in ('publisher_sha','production_sha','operation_id','frontend_tree'))
     root=STATE/'frontend-publications'
@@ -289,6 +323,9 @@ def execute(plan, source, helper, bootstrap, server, build, check_locks):
         assert_unchanged(plan,source,helper,bootstrap,server,build,restarted=restarted)
         if helper._lease_identity(str(LEASE),token,bootstrap,server)!=identity:
             raise PublishError('business lease changed')
+    stop_attempted=False
+    rename_attempted=False
+    old_digest=None
     try:
         build.copy_build_inputs(source,stage,plan['public_build_env'])
         with (audit/'build.log').open('xb') as log:
@@ -309,14 +346,16 @@ def execute(plan, source, helper, bootstrap, server, build, check_locks):
             # Fully validate the old bundle before any disruptive service action.
             # Live cache bytes may change; no content equality is assumed yet.
             server._frontend_publication_backup_digest(live,live=True)
+        if plan.get('restore_preswitch_availability',False):
+            old_digest=bundle_digest(PRODUCTION/'frontend',build)
         record('install-started.json','FRONTEND_INSTALLING',digest)
         check_locks()
+        stop_attempted=True
         build.run(['/usr/bin/systemctl','stop','health-frontend'])
-        stopped=dict(line.split('=',1) for line in build.run(['/usr/bin/systemctl','show','health-frontend','--property=ActiveState,SubState,MainPID,ControlPID']).splitlines())
-        if stopped != dict(ActiveState='inactive',SubState='dead',MainPID='0',ControlPID='0'):
-            raise PublishError('frontend not stopped')
+        stopped_runtime(build)
         frozen={name:server._frontend_publication_backup_digest(PRODUCTION/'frontend'/name,live=True) for name in ('.next','node_modules')}
         for name,backup in (('.next','previous-next'),('node_modules','previous-node-modules')):
+            rename_attempted=True  # syscall may mutate even when its outcome is unknown
             (PRODUCTION/'frontend'/name).rename(audit/backup)
             (stage/'frontend'/name).rename(PRODUCTION/'frontend'/name)
             backups[backup]=server._frontend_publication_backup_digest(audit/backup)
@@ -342,6 +381,41 @@ def execute(plan, source, helper, bootstrap, server, build, check_locks):
         return complete
     except BaseException:
         if not (audit/'failed.json').exists(): record('failed.json','FRONTEND_NEEDS_OPERATOR',None)
+        if plan.get('restore_preswitch_availability',False) and stop_attempted and not rename_attempted and old_digest is not None:
+            try:
+                # Opt-in only for this executing process, never historical resume.
+                # No rename attempt, backup, unknown process, or changed proof qualifies.
+                if any(os.path.lexists(audit/name) for name in ('previous-next','previous-node-modules','completed.json')):
+                    raise PublishError('restoration boundary already crossed')
+                check_locks()
+                assert_preserved(plan,source,helper,bootstrap,server,build)
+                if helper._lease_identity(str(LEASE),token,bootstrap,server)!=identity:
+                    raise PublishError('restoration lease changed')
+                stopped_runtime(build)
+                for name in ('.next','node_modules'):
+                    server._frontend_publication_backup_digest(PRODUCTION/'frontend'/name,live=True)
+                if bundle_digest(PRODUCTION/'frontend',build)!=old_digest:
+                    raise PublishError('old immutable bundle changed')
+                # Recheck the release identities immediately before the one start.
+                check_locks()
+                assert_preserved(plan,source,helper,bootstrap,server,build)
+                if helper._lease_identity(str(LEASE),token,bootstrap,server)!=identity:
+                    raise PublishError('restoration lease changed before start')
+                stopped_runtime(build)
+                build.run(['/usr/bin/systemctl','start','health-frontend'])
+                restored=stable_runtime(build)
+                verify_availability_pages()
+                if runtime(build)!=restored:
+                    raise PublishError('restored frontend changed during availability readback')
+                assert_unchanged(plan,source,helper,bootstrap,server,build,restarted=True)
+                check_locks()
+                if helper._lease_identity(str(LEASE),token,bootstrap,server)!=identity or bundle_digest(PRODUCTION/'frontend',build)!=old_digest:
+                    raise PublishError('restoration postcondition changed')
+                build.write_json(server,audit/'availability-restored.json',
+                    {**receipt(publisher,production,operation,tree,'FRONTEND_PRESWITCH_AVAILABILITY_RESTORED',old_digest),
+                     'runtime':restored})
+            except BaseException:
+                record('availability-restore-failed.json','FRONTEND_RESTORATION_NEEDS_OPERATOR',None)
         raise PublishError('publication stopped; evidence retained; no retry') from None
 
 
@@ -350,6 +424,8 @@ def main():
     for name in ('publisher-sha','production-sha','frontend-tree','operation-id'):
         parser.add_argument('--'+name,required=True)
     parser.add_argument('--evidence-sha256')
+    parser.add_argument('--restore-preswitch-availability',action='store_true',
+                        help='requires separate policy authorization; bounded old-bundle start only')
     args=parser.parse_args()
     try:
         if not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode or os.geteuid()!=0 or sys.executable!='/usr/bin/python3.12':
