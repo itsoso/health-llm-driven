@@ -89,6 +89,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/share-location/nearby": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Nearby */
+        post: operations["nearby_api_v1_share_location_nearby_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/share-location/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search */
+        post: operations["search_api_v1_share_location_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/ai-consent": {
         parameters: {
             query?: never;
@@ -27611,6 +27645,26 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** LocationItem */
+        LocationItem: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Address */
+            address: string;
+            /** Label */
+            label: string;
+            /** Distance M */
+            distance_m?: number | null;
+        };
+        /** LocationResults */
+        LocationResults: {
+            /** Items */
+            items: components["schemas"]["LocationItem"][];
+            /** Suggested Id */
+            suggested_id?: string | null;
+        };
         /** LogSymptomsRequest */
         LogSymptomsRequest: {
             /**
@@ -28579,6 +28633,25 @@ export interface components {
              * @description 情绪与精力的相关系数
              */
             mood_energy_correlation?: number | null;
+        };
+        /** NearbyRequest */
+        NearbyRequest: {
+            /**
+             * Consent
+             * @constant
+             */
+            consent: "amap-share-location-v1";
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /** Accuracy M */
+            accuracy_m: number;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
         };
         /**
          * NfcTapRequest
@@ -30868,6 +30941,18 @@ export interface components {
              * @description 来源过滤
              */
             source?: string | null;
+        };
+        /** SearchRequest */
+        SearchRequest: {
+            /**
+             * Consent
+             * @constant
+             */
+            consent: "amap-share-location-v1";
+            /** Keyword */
+            keyword: string;
+            /** City */
+            city?: string | null;
         };
         /** SelectModelRequest */
         SelectModelRequest: {
@@ -34731,6 +34816,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JourneyExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    nearby_api_v1_share_location_nearby_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NearbyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocationResults"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_api_v1_share_location_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocationResults"];
                 };
             };
             /** @description Validation Error */

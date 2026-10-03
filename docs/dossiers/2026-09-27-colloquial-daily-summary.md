@@ -1,9 +1,11 @@
 # Colloquial daily summary execution repair
 
+> 历史本地审计补录（2026-10-03）：以下状态、测试数、发布 SHA 与回执来自原工作树既有记录，未在本次整合中重新验证；不是当前生产状态或本轮发布 Gate 的新鲜证据。本轮整合与验证见 docs/dossiers/2026-10-03-local-change-integration.md。
+
 | 字段 | 值 |
 | --- | --- |
-| 状态 | shipping |
-| 当前阶段 | G5 release preparation |
+| 状态 | shipped |
+| 当前阶段 | G6 production verification passed |
 | Last reviewed | 2026-09-28 |
 
 ## G1 — Request and admission
@@ -64,9 +66,47 @@
   without changing production behavior and included in the final focused rerun:
   91 passed, 8 PostgreSQL-only skipped.
 
-## Remaining gates
+## G5 — Release
 
-- Release continuation is authorized. Bind the independent safety review and
-  actual main CI to the exact candidate, deploy from a clean source directory,
-  and verify production revision, services, health and the repaired read scope.
+裁决: PASS
+
+- Candidate and deployed revision: `dcf56c3f9769411b1edbfb2a6e97b9d5d1618fe4`.
+  Independent safety review reconfirmed GO for this immutable diff.
+- Exact main CI [36360900468](https://github.com/itsoso/health-llm-driven/actions/runs/36360900468)
+  completed successfully, including backend shards and PostgreSQL integration.
+- Clean-source CI-mode integration: 2,357 passed, 8 PostgreSQL-only skipped.
+  Offline LLM gate passed invariants, core, trajectories and goldens; the change
+  gate did not require live-provider evaluation.
+- Published from the clean existing release checkout with `./deploy.sh -b`.
+  An initial pre-mutation bundle check exposed a stale local production ref;
+  it was reconciled to the verified production revision. A subsequent Laya
+  preparation timeout retained the original lease and immutable stage without
+  changing backend writers or live configuration. Read-only checks and an
+  independent reviewer approved the supported same-release adoption path.
+- Same-release resume completed with exit 0. No gate was bypassed or lease
+  deleted manually. Database backups/restores/offsite archive were skipped
+  under the existing disabled policy; rollback-schema compatibility passed.
 - Backend-only change; no mobile runtime diff requires OTA or TestFlight.
+
+## G6 — Production verification
+
+裁决: PASS
+
+- Production HEAD matches the candidate, its tracked/untracked working tree is
+  clean, and the release lease was released normally.
+- Backend, socket, Celery worker and beat are active; service restart counters
+  are zero. Public `/api/v1/health` reports API, database, Redis and Celery healthy.
+- Deployment health checks passed three times at 60/60. Laya verification and
+  guard/staged runtime-only KB contracts passed; runtime transaction finalized,
+  with the health-evidence runtime feature flag remaining false.
+- Read-only smoke checks against deployed code passed the exact screenshot
+  daily-summary phrase, both exercise-plan phrasings, and foreign-owner,
+  future, hypothetical and compound-delete rejection cases. Summary reads bind
+  to diet/sleep on the current business day; exercise drafts do not acquire
+  personal-history read authority.
+- This production smoke did not access personal health records or perform a
+  live-provider authenticated conversation. End-to-end orchestration evidence
+  comes from the regression suite, not a claimed manual phone test.
+- Local release logs: `/tmp/reva-summary-release-ci.log`,
+  `/tmp/reva-summary-offline-gate.log`, `/tmp/reva-summary-deploy-resume.log`.
+  This section is the local post-release audit supplement to the deployed commit.

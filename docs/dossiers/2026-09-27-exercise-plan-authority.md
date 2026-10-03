@@ -1,9 +1,11 @@
 # Exercise plan authority / evidence boundary repair
 
+> 历史本地审计补录（2026-10-03）：以下状态、测试数、发布 SHA 与回执来自原工作树既有记录，未在本次整合中重新验证；不是当前生产状态或本轮发布 Gate 的新鲜证据。本轮整合与验证见 docs/dossiers/2026-10-03-local-change-integration.md。
+
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | S5 verification / release preparation |
+| 状态 | shipped |
+| 当前阶段 | production verification complete |
 | Last reviewed | 2026-09-27 |
 
 ## G1 Request and admission
@@ -109,3 +111,49 @@ checkout; retain all other working-tree changes.
 - CI run `36327206956` detected missing structured dossier status and G1
   admission fields. Production was not changed; this documentation follow-up
   supplies those fields and must pass a new exact-revision CI before deployment.
+
+## G4 Fixed-revision safety review
+
+裁决: GO
+
+Independent reviewer rebound GO to
+`3a3f74f0ce9328f6f963e6ec1e119e74f2a4106b`; the follow-up changed only this
+dossier. Runtime code and tests match the reviewed implementation.
+
+## G5 Backend release
+
+裁决: PASS
+
+- Exact target `3a3f74f0ce9328f6f963e6ec1e119e74f2a4106b`: full manually
+  dispatched CI `36327593167` completed successfully. The earlier doc-only
+  push CI is not used in place of full runtime CI.
+- Final clean-checkout CI-mode rerun: 3,899 passed, exit 0.
+- Reused clean release checkout, production-derived private env, root
+  `deploy.sh -b`; exit 0. Source SHA matched before and after deployment.
+- Previous production SHA `d709573a063ba354bb38c203e5f365178ec85860` passed
+  rollback schema compatibility. No managed migrations applied. Database
+  backup/restore/offsite steps remained disabled under the existing release
+  policy; they are not claimed as executed. Env rollback snapshot was sealed.
+- Runtime transaction finalized; temporary local secret candidate removed;
+  remote release lease absent. No uncommitted AMap code was released.
+
+## G6 Production verification
+
+裁决: PASS
+
+- Backend, socket, worker and beat active; production Git tree clean.
+- Health score 60/60; API, PostgreSQL, Redis and Celery connected.
+- Public `https://health.executor.life/api/v1/health` returned healthy from
+  both the local client and production server. The old skill example
+  `health-api.executor.life` does not resolve and was not the app endpoint.
+- All three reported expressions passed read-only checks against deployed
+  parsing/policy code: correct plan scope, bounded owned evidence, no foreign
+  owner or write authority. No user data accessed or synthetic conversations
+  inserted into production. This is not a live personal-plan quality claim.
+- Runtime-only KB guard/staged contracts passed; feature flag remains false;
+  unchanged knowledge inputs were not rewritten; skill counts matched 22/22.
+- No mobile/shared-runtime diff from the existing OTA source, so no empty OTA
+  was published. Existing app clients receive this backend repair directly.
+
+This post-release evidence is a local audit update after the deployed commit;
+it does not alter the exact production revision above.

@@ -1,6 +1,8 @@
 # Source-bound meal item correction
 
-> Status: implementing
+> 历史本地审计补录（2026-10-03）：以下状态、测试数、发布 SHA 与回执来自原工作树既有记录，未在本次整合中重新验证；不是当前生产状态或本轮发布 Gate 的新鲜证据。本轮整合与验证见 docs/dossiers/2026-10-03-local-change-integration.md。
+
+> Status: delivered (backend 210ce15fd; production read-only path verified)
 > Updated: 2026-09-29
 > Related: R5/R10, existing diet photo correction/editor/recalculation contracts
 

@@ -1,9 +1,11 @@
 # Frontend publisher pre-install failure recovery
 
+> 历史本地审计补录（2026-10-03）：以下状态、测试数、发布 SHA 与回执来自原工作树既有记录，未在本次整合中重新验证；不是当前生产状态或本轮发布 Gate 的新鲜证据。本轮整合与验证见 docs/dossiers/2026-10-03-local-change-integration.md。
+
 | 字段 | 值 |
 | --- | --- |
 | 状态 | partial / release-blocked |
-| 当前阶段 | 本地实现和独立 G4 完成；主干 CI 文档闸待修复 |
+| 当前阶段 | 精确 CI 与旧失败封存完成；新主干及并发发布待协调 |
 | Overlay | safety-gate |
 | 研发 Run Ledger | `docs/_generated/harness-runs/8391e1daf4f9.jsonl`（本地，不提交） |
 
@@ -105,3 +107,33 @@ Added CI-contract RED then GREEN; related suite **112 passed, 1 Linux-only skipp
 (`/tmp/reva-publisher-ci-toolchain-tests.log`). Actual Linux re-verification still
 requires pushing the corrected commit and a new exact CI. `release-tests` is the
 failed dependent aggregate, not an independent production failure.
+
+## Latest checkpoint — controlled closure complete, deployment ownership blocked
+
+- User explicitly authorized the CI repair push. Exact candidate
+  `1f4ff88a4e99fff07f1af6c5f90a4156f7d4d737` passed complete CI `35869235093`.
+  Linux release invariants: 1238 passed, 8 skipped, 84 subtests; actual native
+  OpenSSH and sandbox npm probes each passed. Fresh live model gate passed all
+  suites. Validate-only release workflow `35873748042` also succeeded.
+- Canonical root staging was fetched from the fixed origin, checked clean at
+  the exact candidate, and its reviewed operator hashes verified. Bounded fetch
+  failures were preserved; download completed after a successful Git probe.
+- The authorized one-shot closure for `ada1af2bf76245ecae376eadad3f6c63`
+  returned `CLOSED_PREINSTALL_FRONTEND_FAILURE`; protected-stdin acknowledgment
+  returned `FRONTEND_RETIREMENT_ACKNOWLEDGED`. Original failure audit and build
+  remain unchanged; the lease was durably copied and inode-preservingly archived.
+  No service, health data or credential mutation occurred in that closure.
+- Backend rotation did not reach its durable intent. The first request's public
+  key comment was rejected before mutation; after correcting the input, the
+  rotation remained blocked. Read-only investigation verified historical archives,
+  current installation and workspace evidence; it also found another live
+  canonical fetch for `b9511a62b38fbddbf00963efd2445ab98bdab857` and confirmed
+  remote main had advanced to that SHA. Its CI `35874063101` was in progress.
+  No new identity was installed and no GitHub SSH secret was set.
+- Stop external writes pending deployment ownership coordination. Do not kill the
+  other operation, reuse stale main attestation or retry the completed closure.
+  Latest production SHA remains `a1e39bbfab675ac7f52227b33d4673f7bc3ccf87`;
+  backend/worker/beat remain active with PIDs 4055558/4055560/4055561 and zero
+  restarts. No new backend deployment, frontend rebuild or OTA is claimed.
+- G5/G6 remain BLOCK. Mobile trusted-publisher/runtime and native acceptance
+  limitations remain independent; server closure is not an all-platform release.

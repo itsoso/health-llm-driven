@@ -1,8 +1,10 @@
 # 指定餐别的照片份量记录修复
 
+> 历史本地审计补录（2026-10-03）：以下状态、测试数、发布 SHA 与回执来自原工作树既有记录，未在本次整合中重新验证；不是当前生产状态或本轮发布 Gate 的新鲜证据。本轮整合与验证见 docs/dossiers/2026-10-03-local-change-integration.md。
+
 | 字段 | 值 |
 | --- | --- |
-| 状态 | release-blocked-before-live-mutation |
+| 状态 | deployed-production-verified |
 | Controller | health-harness-orchestrator · incident |
 | Overlay | safety-gate |
 
@@ -81,3 +83,12 @@ PG 使用同一 food-vision 文件，选择 `named_meal_photo_fraction or half_o
 只读取证：production 仍 bdf5fe616、env 仍等于原 rollback/candidate、只有旧 COMMITTED terminal、没有新 journal；backend MainPID/ControlPID 均 0，ControlGroup 空且对应 cgroup 不存在，socket/worker/beat inactive，公网 health 502。已向用户明确报告暂时不可用。原 lease/stage 保留，不手工启动服务、改标签或执行无 journal 的整体 rollback。
 
 最小续修仅在去激活锁内对已停止的确切服务执行 `reset-failed`：限定 failed/failed + timeout + MainPID/ControlPID=0 + ControlGroup 空 + cgroup 路径及链接均不存在，任一读取失败、残留进程、其他失败类型均 BLOCK；随后重新证明 inactive。仅继续原 `deploy:backend` 接管入口，不冒用 trusted-launcher 专用恢复链。新鲜 RED 为真实 stop-helper 场景 2 failed / 8 passed；修复后的定向测试还覆盖探针输出看似正确但退出失败的拒绝行为。
+
+### 最终发布结果
+
+- 正式发布 revision：`d709573a063ba354bb38c203e5f365178ec85860`，包含饮食比例修复与两项发布脚本修复。独立 G4 GO（11 项新回归、56 项组合验证），干净候选 CI-mode **340 passed**；System Map、secret scan、shell syntax 与 diff 检查通过。
+- 精确 [CI 36313965912](https://github.com/itsoso/health-llm-driven/actions/runs/36313965912) success 后，使用原 token/lease/stage 执行 `deploy.sh -b`，没有现场改权限、删除锁、改标签或手动重启。
+- 受控清除已证明为空的 backend 停止超时状态，去激活启动证明通过；runtime transaction 依次 PREPARED、INSTALLED、COMMITTED、finalized，deploy.sh exit 0。生产 revision 核验为目标 SHA，多次健康度 **60/60**，Laya、runtime-only KB contract 与 skills manifest 验证通过。
+- 没有新迁移；数据库备份仍按项目默认关闭。公网 health 恢复 healthy，API/database/redis/celery 正常。线上只读解析 `记录晚餐 吃了一半` 和 `记录午餐，我吃了1/5` 均通过；没有向真实用户写入测试记录，不将解析复验冒充真机照片端到端验收。
+- 当前 App 使用服务端修复直接生效。mobile/shared runtime 未变，未发布空 OTA；高德及其他工作树改动不在本次发布范围。
+- 临时本地生产配置副本已删除，原长期生产配置与凭据未删除。以上为部署后的本地交接证据，不改变已验证发布 revision。

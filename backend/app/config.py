@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     sentry_environment: str = "production"
     sentry_traces_sample_rate: float = 0.05  # 性能采样 5%，控制额度
 
+    # Backend-only AMap Web-service credential. Never expose as EXPO_PUBLIC.
+    amap_web_service_key: Optional[SecretStr] = None
+
     # === LLM 成本告警 ===
     llm_daily_cost_alert_usd: float = 1.0  # 24h LLM 成本超过此值就 log warning
     llm_cost_usd_to_cny: float = 7.2  # 端上/看板把按量美元估算换算成人民币展示

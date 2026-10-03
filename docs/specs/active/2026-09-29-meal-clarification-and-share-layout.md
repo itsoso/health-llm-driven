@@ -1,6 +1,8 @@
 # Meal clarification and share-location layout
 
-> Status: implementing
+> 历史本地审计补录（2026-10-03）：以下状态、测试数、发布 SHA 与回执来自原工作树既有记录，未在本次整合中重新验证；不是当前生产状态或本轮发布 Gate 的新鲜证据。本轮整合与验证见 docs/dossiers/2026-10-03-local-change-integration.md。
+
+> Status: shipped (runtime 8bd2655b6; post-release audit in related dossier)
 > Updated: 2026-09-29
 > Related: R5/R10; dossier 2026-09-29-share-location-and-meal-continuation
 
@@ -59,3 +61,6 @@ Rollback is the previous reviewed runtime revision/update, without data rewrite.
 ## Changelog
 
 2026-09-29: bounded missing-input/target clarification and location layout repair.
+Shipped after non-image attachment safety remediation, fixed-commit GO, exact CI,
+backend health verification and production iOS 1.3.4 OTA readback. No GPS/native
+permission rollout or automatic historical meal targeting included.
