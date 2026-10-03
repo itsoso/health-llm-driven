@@ -47,6 +47,18 @@ describe('useRealtimeDictation', () => {
     });
   });
 
+  it('retains a cleanup failure and refuses another capture after native cancel rejects', async () => {
+    const onError = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onError }));
+    await act(async () => { await result.current.startDictation(); });
+    session.cancel.mockRejectedValueOnce(new Error('native cancel failed'));
+    await act(async () => { await result.current.cancelDictation(); });
+    expect(result.current.cleanupFailed).toBe(true);
+    expect(onError).toHaveBeenCalledWith('麦克风未能安全停止，请退出应用后重新打开');
+    await act(async () => { expect(await result.current.startDictation()).toBe(false); });
+    expect(session.start).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the authenticated Alibaba Cloud ASR session as the only dictation provider', async () => {
     const onTranscript = jest.fn();
     const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));

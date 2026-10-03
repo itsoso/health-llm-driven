@@ -21,6 +21,11 @@ const mockRouterPush = jest.fn();
 const mockStartDictation = jest.fn();
 const mockStopDictation = jest.fn();
 const mockCancelDictation = jest.fn();
+let mockUseRealRealtimeDictation = false;
+const mockCloudSession = jest.fn();
+jest.mock('../../../services/cloudRealtimeAsr', () => ({
+  createCloudRealtimeAsrSession: (...args: any[]) => mockCloudSession(...args),
+}));
 let appStateHandler: ((state: string) => void) | undefined;
 let latestRealtimeDictationOptions: any;
 let mockRealtimeDictationState = {
@@ -68,6 +73,9 @@ jest.mock('../../../services/clientEvents', () => ({
 
 jest.mock('../../../hooks/useRealtimeDictation', () => ({
   useRealtimeDictation: (options: any) => {
+    if (mockUseRealRealtimeDictation) {
+      return jest.requireActual('../../../hooks/useRealtimeDictation').useRealtimeDictation(options);
+    }
     latestRealtimeDictationOptions = options;
     return {
       isDictating: mockRealtimeDictationState.isDictating,
@@ -137,6 +145,7 @@ describe('ChatInputBar', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseRealRealtimeDictation = false;
     mockStartDictation.mockResolvedValue(true);
     mockStopDictation.mockResolvedValue(undefined);
     mockCancelDictation.mockResolvedValue(undefined);
@@ -158,6 +167,28 @@ describe('ChatInputBar', () => {
     }) as any);
     latestRealtimeDictationOptions = undefined;
     mockRealtimeDictationState = { isDictating: false, error: null };
+  });
+
+  it('keeps the voice entry busy when the real hook cannot cancel its native session', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockUseRealRealtimeDictation = true;
+    let resolveStart!: (started: boolean) => void;
+    const cancel = jest.fn().mockRejectedValue(new Error('native cancel failed'));
+    mockCloudSession.mockReturnValue({
+      start: () => new Promise<boolean>(resolve => { resolveStart = resolve; }),
+      stop: jest.fn(), cancel,
+    });
+    const onVoiceBusyChange = jest.fn();
+    const view = render(<ChatInputBar onSend={jest.fn()} isStreaming={false} onVoiceBusyChange={onVoiceBusyChange} />);
+    enterKeyboardMode(view);
+    await act(async () => { fireEvent.press(view.getByLabelText('实时语音转文字')); });
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    await act(async () => { fireEvent.press(view.getByLabelText('停止实时语音转文字')); });
+    await act(async () => { resolveStart(false); });
+    expect(cancel).toHaveBeenCalled();
+    expect(onVoiceBusyChange).toHaveBeenLastCalledWith(true);
+    expect(alert).toHaveBeenCalledWith('语音停止失败', '麦克风未能安全停止，请退出应用后重新打开');
+    alert.mockRestore();
   });
 
   afterEach(() => {

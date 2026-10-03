@@ -752,6 +752,7 @@ export default function ChatInputBar({
 
   const realtimeActive = composer.phase === 'live_dictating' || realtimeDictation.isDictating;
   const voiceBusy = realtimeActive
+    || Boolean(realtimeDictation.cleanupFailed || realtimeDictation.isCleaningUp)
     || voiceCleanupPending > 0
     || voiceCleanupFailed
     || composer.phase === 'hold_starting'
@@ -761,6 +762,11 @@ export default function ChatInputBar({
   React.useEffect(() => {
     onVoiceBusyChange?.(voiceBusy);
   }, [onVoiceBusyChange, voiceBusy]);
+  React.useEffect(() => {
+    if (realtimeDictation.cleanupFailed) {
+      Alert.alert('语音停止失败', '麦克风未能安全停止，请退出应用后重新打开');
+    }
+  }, [realtimeDictation.cleanupFailed]);
   const realtimeDictationDisabled = shouldShowDisabledMic(composer);
   const realtimeMicLabel = realtimeActive
     ? '停止实时语音转文字'
