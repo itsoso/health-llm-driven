@@ -58,7 +58,7 @@ Do not revive the previously rejected medication validator exception.
   258 passed, exit 0. This is local integration, not remote full CI.
 - Current map generated and checked; dossier consistency (172), secret scan and
   skill governance passed. OpenAPI regenerated both clients using locked deps.
-- Live LLM gate failed: offline inventories passed, orchestrator 0/5 because
+- Initial local live LLM gate failed: offline inventories passed, orchestrator 0/5 because
   local TokenPlan credential is absent and fallback recipient is undisclosed.
   Did not grant disclosure or set a passing attestation. Production has a
   TokenPlan key, but has no AMap key; presence checks disclosed no secret values.
@@ -74,14 +74,59 @@ tests (66 passed) and mobile location service/editor (31 passed, two suites),
 all exit 0; diff whitespace check passed. Logs are
 `independent-integration-{backend,mobile}77017.log` in the evidence directory.
 
-Delivery remains BLOCKED by the live LLM gate. Source review does not clear
-provider readiness, native acceptance or exact candidate remote CI. Local
-candidate remains unpushed; no passing live attestation written, no deployment
-or TestFlight task started by this integration run. Source worktree still has
-its original 34 dirty/untracked files and original HEAD `9fb13ee63`.
+The initial live LLM block was resolved by the explicitly authorized isolated
+synthetic evaluation (see update below). Source review does not clear provider
+readiness or native acceptance. No deployment or TestFlight task has been
+started by this integration run. Original source worktree changes remain preserved.
 
 Read-only concurrency check found a separate backend-only trusted release
 `37100225023` running for canonical `dbad4e66c`; its CI `37098891748` is green,
 but neither run contains this integration. Do not seize that operation/lease.
-Await user decisions on isolated synthetic server evaluation (no key export or
-production database access) and GPS readiness versus a manual-only rollout.
+The user subsequently authorized isolated synthetic evaluation and requested
+testing the provider first, hiding unavailable lookup controls, and assessing
+alternatives to AMap.
+
+## 2026-10-03 · Live evidence and fail-closed availability follow-up
+
+- Exact `c487d834fb25f79ace21c7a1cf6c8cc137cb4aeb` isolated live evaluation
+  passed: invariants 12, core 50, orchestrator 5 (average 0.92), trajectory 12,
+  goldens 9. No production database access. Result evidence is
+  `/tmp/reva-isolated-live-eval-c487d834-result.json`, SHA-256
+  `dc00b4766094fb119b5199091c2cd387d43a2c5cd9951ddfcf9eb159717f3940`.
+- This exact revision was fast-forward pushed to main with its passing live
+  attestation. Remote full CI `37101325279` is now completed/success. This is
+  not deployment or TestFlight evidence and does not cover the follow-up below.
+- AMap personal account / backend Web-service key created; key remains absent
+  from production configuration and client code. Console still reports no
+  technical service usage license; test success does not authorize public use.
+- Three bounded live requests from the existing backend host used only a public
+  landmark's synthetic coordinates/query: coordinate conversion, reverse
+  geocoding, and text search all returned HTTP 200, status 1 / infocode 10000,
+  with nonempty results. Key passed transiently in memory/SSH stdin; no key
+  value, user location or health data was logged or stored. Temporary loopback
+  test bridge stopped after verification; no production configuration changed.
+- Follow-up implementation: `SHARE_LOCATION_ENABLED=false` by default;
+  authenticated, no-store availability endpoint checks explicit rollout approval,
+  key presence and Redis health without calling AMap or using lookup quota.
+  Enabling requires provider testing, applicable public-use permission and
+  acceptance evidence. The boolean is an operator rollout gate, not automated
+  legal verification or a continuous upstream-health guarantee.
+- Client hides provider consent/GPS/search while readiness is unknown/false or
+  a lookup fails. Manual input stays available. Availability calls neither read
+  GPS nor imply query consent. Late replies after cancel, unmount, identity
+  change or backgrounding cannot enable the controls. Foreground return checks
+  readiness again and requires fresh query consent.
+- RED: backend missing endpoint/flag (4 failures), service missing availability
+  helper (6 failures), UI visibility/lifecycle tests (6 failures). GREEN:
+  project CI-mode backend location/Redis privacy 55 passed; mobile share-flow
+  regression 12 suites / 235 passed; mobile and frontend TypeScript passed.
+  Both API clients regenerated; System Map and secret scan passed.
+- Follow-up remains local/uncommitted, pending fixed-candidate independent
+  safety review, exact revision full CI, simulator acceptance and release gates.
+  No new deployment/upload is claimed. Existing harness delegation budget is
+  only 500 tokens; no additional agent fan-out or budget reset was performed.
+- Alternative recommendation (not implemented): evaluate iOS MapKit POI search
+  against the same public-place sample before switching providers. System
+  reverse geocoding can supply city/street but is not exact restaurant evidence.
+  Any provider switch must revise the explicit disclosure/consent recipient;
+  do not silently send a failed AMap request to another provider.

@@ -1,9 +1,9 @@
 import api from '../api';
 import * as Location from 'expo-location';
-import { nearbyShareLocations, searchShareLocations, shareLocationErrorMessage } from '../shareLocation';
+import { getShareLocationAvailability, nearbyShareLocations, searchShareLocations, shareLocationErrorMessage } from '../shareLocation';
 import { aiConsentRevision, setAIConsentIdentity } from '../aiConsentState';
 
-jest.mock('../api', () => ({ __esModule: true, default: { post: jest.fn() } }));
+jest.mock('../api', () => ({ __esModule: true, default: { get: jest.fn(), post: jest.fn() } }));
 jest.mock('expo-location', () => ({ requestForegroundPermissionsAsync: jest.fn(), getCurrentPositionAsync: jest.fn(), Accuracy: { High: 4 } }));
 
 const result = { items: [{ id: 'p1', name: '示例餐厅', address: '示例路 1 号', label: '示例餐厅', distance_m: 20 }], suggested_id: 'p1' };
@@ -17,6 +17,36 @@ beforeEach(() => {
   (api.post as jest.Mock).mockResolvedValue({ data: result });
 });
 
+it.each([false, null, 'true', {}, undefined])('hides unavailable or malformed availability %s', async enabled => {
+  (api.get as jest.Mock).mockResolvedValue({ data: { enabled } });
+  expect(await getShareLocationAvailability(new AbortController().signal)).toBe(false);
+  expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+});
+it('only enables an explicit true and treats failed readiness checks as unavailable', async () => {
+  (api.get as jest.Mock).mockResolvedValue({ data: { enabled: true } });
+  expect(await getShareLocationAvailability(new AbortController().signal)).toBe(true);
+  (api.get as jest.Mock).mockRejectedValue(new Error('sensitive transport details'));
+  const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  expect(await getShareLocationAvailability(new AbortController().signal)).toBe(false);
+  expect(warning).toHaveBeenCalledWith('share_location_availability_unavailable');
+  warning.mockRestore();
+});
+it.each(['abort', 'identity'])('rejects late availability after %s', async reason => {
+  const response = deferred<any>();
+  (api.get as jest.Mock).mockReturnValue(response.promise);
+  const abort = new AbortController();
+  const pending = getShareLocationAvailability(abort.signal);
+  if (reason === 'abort') abort.abort();
+  else setAIConsentIdentity('readiness-account');
+  response.resolve({ data: { enabled: true } });
+  await expect(pending).resolves.toBe(false);
+  expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+});
+it('does not request readiness when already cancelled', async () => {
+  const abort = new AbortController(); abort.abort();
+  await expect(getShareLocationAvailability(abort.signal)).resolves.toBe(false);
+  expect(api.get).not.toHaveBeenCalled();
+});
 it('never reads GPS or sends queries without this-session consent', async () => {
   await expect(nearbyShareLocations(context(false))).rejects.toThrow();
   await expect(searchShareLocations('示例餐厅', context(false))).rejects.toThrow();

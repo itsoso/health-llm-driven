@@ -11,6 +11,20 @@ export type ShareLocationContext = {
 class ShareLocationError extends Error {}
 const stopped = () => new ShareLocationError('本次定位已停止，请重新查询或手动填写');
 
+export async function getShareLocationAvailability(signal: AbortSignal): Promise<boolean> {
+  const revision = aiConsentRevision();
+  if (signal.aborted) return false;
+  try {
+    const response = await api.get('/share-location/availability', {
+      signal, timeout: 5000, __revaConsentRevision: revision,
+    } as Parameters<typeof api.get>[1]);
+    return !signal.aborted && revision === aiConsentRevision() && response.data?.enabled === true;
+  } catch {
+    if (!signal.aborted) console.warn('share_location_availability_unavailable');
+    return false;
+  }
+}
+
 function check(context: ShareLocationContext) {
   if (!context.consent) throw new ShareLocationError('请先同意本次高德地点查询，或直接手动填写');
   if (context.signal.aborted || context.revision !== aiConsentRevision()) throw stopped();

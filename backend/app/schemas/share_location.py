@@ -57,6 +57,10 @@ class LocationItem(BaseModel):
     distance_m: float | None = None
 
 
+class LocationAvailability(BaseModel):
+    enabled: bool
+
+
 class LocationResults(BaseModel):
     items: list[LocationItem] = Field(max_length=10)
     suggested_id: str | None = None

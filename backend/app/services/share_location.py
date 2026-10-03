@@ -37,8 +37,25 @@ def _subject(user_id):
     return hmac.new(settings.secret_key.encode(), f"share-location:{user_id}".encode(), hashlib.sha256).hexdigest()[:24]
 
 
+def _configured():
+    return bool(settings.share_location_enabled and settings.amap_web_service_key
+                and settings.amap_web_service_key.get_secret_value().strip())
+
+
+def is_available():
+    # No coordinates, provider calls, quota consumption or credential disclosure.
+    if not _configured():
+        return False
+    try:
+        redis = get_redis_client()
+        return redis is not None and redis.ping() is True
+    except Exception:
+        logger.warning("share_location_availability_unavailable")
+        return False
+
+
 def admit(user_id):
-    if not settings.amap_web_service_key or not settings.amap_web_service_key.get_secret_value().strip():
+    if not _configured():
         raise HTTPException(503, "地点查询暂未配置，请手动填写")
     tag = _subject(user_id)
     try:

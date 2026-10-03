@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { revaColors as C } from '../../constants/revaTheme';
 import { aiConsentRevision, subscribeAIConsentInvalidation } from '../../services/aiConsentState';
-import { nearbyShareLocations, searchShareLocations, shareLocationErrorMessage, type SharePlaces } from '../../services/shareLocation';
+import { getShareLocationAvailability, nearbyShareLocations, searchShareLocations, shareLocationErrorMessage, type SharePlaces } from '../../services/shareLocation';
 import { DIET_SHARE_LOCATION_MAX_LENGTH, normalizeDietShareLocation } from './dietShareLocation';
 
 type Props = { initialValue: string; recordDate?: string | null; onConfirm: (label: string) => void; onCancel: () => void };
@@ -14,6 +14,7 @@ export function DietShareLocationEditor({ initialValue, recordDate, onConfirm, o
   const latestDraft = useRef(initialValue);
   const [keyword, setKeyword] = useState('');
   const [consent, setConsent] = useState(false);
+  const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [places, setPlaces] = useState<SharePlaces>({ items: [], suggested_id: null });
@@ -25,30 +26,44 @@ export function DietShareLocationEditor({ initialValue, recordDate, onConfirm, o
   const edited = useRef(Boolean(initialValue));
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
+  const readiness = useRef<AbortController | null>(null);
   const isToday = recordDate === today();
 
   function setDraft(value: string) { latestDraft.current = value; setDraftState(value); }
   function stop() { generation.current += 1; controller.current?.abort(); controller.current = null; }
   function alive() { return active.current && foreground.current && revision === aiConsentRevision(); }
   useEffect(() => {
+    function checkAvailability() {
+      readiness.current?.abort();
+      const abort = new AbortController(); readiness.current = abort;
+      if (!alive()) return;
+      void getShareLocationAvailability(abort.signal).then(enabled => {
+        if (alive() && !abort.signal.aborted) setAvailable(enabled);
+      });
+    }
+    checkAvailability();
     const subscription = AppState.addEventListener('change', state => {
       // iOS's OS permission prompt briefly makes the app inactive. Do not
       // cancel that prompt; only a real background transition cancels work.
       if (state === 'background') {
         foreground.current = false; stop(); permitted.current = false;
+        readiness.current?.abort(); setAvailable(false);
         setConsent(false); setBusy(false); setPlaces({ items: [], suggested_id: null });
         setHint('已停止地点查询；继续查询需重新同意。手填仍可使用。');
-      } else if (state === 'active') foreground.current = true;
+      } else if (state === 'active' && !foreground.current) {
+        foreground.current = true; checkAvailability();
+      }
     });
     const unsubscribe = subscribeAIConsentInvalidation(() => {
       active.current = false; stop(); setBusy(false); setConsent(false); permitted.current = false;
+      readiness.current?.abort(); setAvailable(false);
       setPlaces({ items: [], suggested_id: null }); setDraft(''); setKeyword('');
     });
-    return () => { active.current = false; stop(); subscription.remove(); unsubscribe(); };
+    return () => { active.current = false; stop(); readiness.current?.abort(); subscription.remove(); unsubscribe(); };
   }, []);
 
   async function lookup(mode: 'nearby' | 'search') {
-    if (!alive() || !permitted.current) return;
+    if (!alive() || !permitted.current || !available) return;
     stop();
     const sequence = generation.current;
     const abort = new AbortController(); controller.current = abort;
@@ -67,7 +82,10 @@ export function DietShareLocationEditor({ initialValue, recordDate, onConfirm, o
         setHint('已推荐附近地点，请核对。GPS 无法确定你具体在哪家店。');
       } else setHint(response.items.length ? '请选择实际地点；附近地点不代表你已到店。' : '未找到合适地点，可搜索城市＋店名或手动填写。');
     } catch (cause) {
-      if (alive() && generation.current === sequence) setError(shareLocationErrorMessage(cause));
+      if (alive() && generation.current === sequence) {
+        setError(shareLocationErrorMessage(cause));
+        setAvailable(false); setConsent(false); permitted.current = false;
+      }
     } finally {
       if (active.current && generation.current === sequence) { setBusy(false); controller.current = null; }
     }
@@ -76,20 +94,20 @@ export function DietShareLocationEditor({ initialValue, recordDate, onConfirm, o
     stop(); edited.current = true; setBusy(false); setDraft(value); setHint('');
   }
   function allow() {
-    if (!alive() || permitted.current) return;
+    if (!alive() || permitted.current || !available) return;
     permitted.current = true; setConsent(true);
     if (isToday && !edited.current) void lookup('nearby');
   }
   function finish(confirm: boolean) {
     if (!alive() || (confirm && draft !== latestDraft.current)) return;
-    stop(); active.current = false;
+    stop(); active.current = false; readiness.current?.abort();
     if (confirm) onConfirm(normalizeDietShareLocation(draft)); else onCancel();
   }
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       <Text style={styles.title}>分享地点（可选）</Text>
-      <Text style={styles.help}>优先查找附近餐厅，确认后才公开到图片和文字。仅用于本次分享，不修改饮食记录或足迹。</Text>
-      {!consent ? <View style={styles.notice}>
+      <Text style={styles.help}>地点可手动填写，确认后才公开到图片和文字。仅用于本次分享，不修改饮食记录或足迹。</Text>
+      {available && (!consent ? <View style={styles.notice}>
         <Text style={styles.label}>使用高德地点查询</Text>
         <Text style={styles.help}>同意后，小巴健康将经服务器向高德地图发送本次精确坐标（定位时）或搜索词（搜索时），用于查找地点。我们不保存这些查询内容。不授权也可手动填写，不会后台定位。</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="同意本次高德查询" onPress={allow} style={styles.primary}>
@@ -113,7 +131,7 @@ export function DietShareLocationEditor({ initialValue, recordDate, onConfirm, o
           if (!edited.current) setDraft('');
           setHint('本次查询授权已撤回。已发送的请求无法收回，仍可手动填写。');
         }} style={styles.secondary}><Text style={styles.action}>停止并撤回本次查询</Text></Pressable>
-      </View>}
+      </View>)}
       {busy && <ActivityIndicator accessibilityLabel="正在查询地点" color={C.green600} />}
       {!!error && <Text accessibilityRole="alert" style={styles.help}>{error}</Text>}
       {!!hint && <Text style={styles.help}>{hint}</Text>}

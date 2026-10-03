@@ -29,11 +29,61 @@ def proxy(monkeypatch):
     app.include_router(api.router)
     app.dependency_overrides[get_current_user_required] = lambda: SimpleNamespace(id=17)
     monkeypatch.setattr(service.settings, "amap_web_service_key", SecretStr("synthetic-test-secret"))
+    monkeypatch.setattr(service.settings, "share_location_enabled", True)
     redis = Mock()
     redis.eval.return_value = 1
+    redis.ping.return_value = True
     monkeypatch.setattr(service, "get_redis_client", lambda: redis)
     with TestClient(app) as client:
         yield client, app, redis
+
+
+def test_availability_is_authenticated_private_and_does_not_query_provider(proxy, monkeypatch):
+    client, app, redis = proxy
+    provider = Mock(side_effect=AssertionError("must not call provider"))
+    monkeypatch.setattr(service, "_request", provider)
+    response = client.get("/share-location/availability")
+    assert response.status_code == 200
+    assert response.json() == {"enabled": True}
+    assert response.headers["cache-control"] == "no-store"
+    provider.assert_not_called()
+    redis.eval.assert_not_called()
+    app.dependency_overrides.clear()
+    assert client.get("/share-location/availability").status_code == 401
+
+
+@pytest.mark.parametrize("reason", ["disabled", "key", "redis"])
+def test_unready_service_hidden_and_lookup_denied(proxy, monkeypatch, reason):
+    client, _, redis = proxy
+    if reason == "disabled":
+        monkeypatch.setattr(service.settings, "share_location_enabled", False)
+    elif reason == "key":
+        monkeypatch.setattr(service.settings, "amap_web_service_key", None)
+    else:
+        redis.ping.side_effect = RuntimeError("private infrastructure details")
+        redis.eval.side_effect = RuntimeError("private infrastructure details")
+    provider = Mock(side_effect=AssertionError("must not call provider"))
+    monkeypatch.setattr(service, "_request", provider)
+    response = client.get("/share-location/availability")
+    assert response.json() == {"enabled": False}
+    assert "private" not in response.text
+    assert client.post("/share-location/search", json={"keyword": "公共景点", "consent": "amap-share-location-v1"}).status_code == 503
+    provider.assert_not_called()
+
+
+def test_location_public_enablement_defaults_off():
+    from app.config import Settings
+    assert Settings.model_fields["share_location_enabled"].default is False
+
+
+@pytest.mark.parametrize("redis_state", [None, False])
+def test_availability_requires_healthy_redis(proxy, monkeypatch, redis_state):
+    client, _, redis = proxy
+    if redis_state is None:
+        monkeypatch.setattr(service, "get_redis_client", lambda: None)
+    else:
+        redis.ping.return_value = False
+    assert client.get("/share-location/availability").json() == {"enabled": False}
 
 
 @pytest.mark.parametrize("change", [
@@ -214,6 +264,7 @@ def test_authenticated_application_route_without_record_write(client, db, monkey
     from tests.conftest import create_authenticated_user
     from app.models.daily_health import DietRecord
     user, token = create_authenticated_user(db)
+    monkeypatch.setattr(service.settings, "share_location_enabled", True)
     monkeypatch.setattr(service.settings, "amap_web_service_key", SecretStr("synthetic-test-secret"))
     redis = Mock()
     redis.eval.return_value = 1

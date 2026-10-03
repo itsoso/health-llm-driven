@@ -6,7 +6,7 @@ from fastapi.routing import APIRoute
 
 from app.api.deps import get_current_user_required
 from app.models.user import User
-from app.schemas.share_location import NearbyRequest, SearchRequest, LocationResults
+from app.schemas.share_location import NearbyRequest, SearchRequest, LocationResults, LocationAvailability
 from app.services import share_location
 
 
@@ -30,6 +30,11 @@ class PrivateLookupRoute(APIRoute):
 
 
 router = APIRouter(prefix="/share-location", tags=["share-location"], route_class=PrivateLookupRoute)
+
+
+@router.get("/availability", response_model=LocationAvailability)
+def availability(user: User = Depends(get_current_user_required)):
+    return LocationAvailability(enabled=share_location.is_available())
 
 
 @router.post("/nearby", response_model=LocationResults)

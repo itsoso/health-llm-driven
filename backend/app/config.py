@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     # Backend-only AMap Web-service credential. Never expose as EXPO_PUBLIC.
     amap_web_service_key: Optional[SecretStr] = None
+    # Opt in only after provider testing and public-use authorization review.
+    share_location_enabled: bool = False
 
     # === LLM 成本告警 ===
     llm_daily_cost_alert_usd: float = 1.0  # 24h LLM 成本超过此值就 log warning
