@@ -166,11 +166,14 @@ export async function evaluateInstalledOsvFindings({
   const remaining = [];
   const verificationFailures = [];
   const verified_backport = [];
+  const verified_mitigation = [];
   for (const finding of findings) {
     const details = detailsById.get(finding.id);
-    if (finding.id !== "GHSA-86w9-cpqp-85rv"
-        || finding.packageName !== "node-forge" || finding.version !== "1.4.0"
-        || !details || classifyOsvSeverity(details) !== "HIGH") {
+    const forge = finding.id === "GHSA-86w9-cpqp-85rv"
+      && finding.packageName === "node-forge" && finding.version === "1.4.0";
+    const braces = finding.id === "GHSA-vfj7-8cjw-p6xm"
+      && finding.packageName === "braces" && finding.version === "3.0.3";
+    if ((!forge && !braces) || !details || classifyOsvSeverity(details) !== "HIGH") {
       remaining.push(finding);
       continue;
     }
@@ -178,7 +181,9 @@ export async function evaluateInstalledOsvFindings({
       if (!finding.lockPath || !projectRoot) {
         throw new Error("installed package path and project root are required");
       }
-      const { verifyInstalledCopy } = await import("./node-forge-backport.cjs");
+      const { verifyInstalledCopy } = forge
+        ? await import("./node-forge-backport.cjs")
+        : await import("../frontend/scripts/braces-depth-guard.cjs");
       const evidence = verifyInstalledCopy({ projectRoot, lockPath: finding.lockPath });
       if (evidence?.advisory !== finding.id || evidence.package !== finding.packageName
           || evidence.version !== finding.version || evidence.lockPath !== finding.lockPath
@@ -186,7 +191,7 @@ export async function evaluateInstalledOsvFindings({
           || !/^[a-f0-9]{64}$/.test(evidence.sourceSha256 ?? "")) {
         throw new Error("fixed verifier returned invalid evidence");
       }
-      verified_backport.push({ ...finding, severity: "HIGH", ...evidence });
+      (forge ? verified_backport : verified_mitigation).push({ ...finding, severity: "HIGH", ...evidence });
     } catch (error) {
       verificationFailures.push(
         `${findingLabel(finding)}: ${finding.id} (HIGH); backport verification failed: ${error.message}`,
@@ -196,7 +201,7 @@ export async function evaluateInstalledOsvFindings({
   const result = evaluateOsvFindings(remaining, detailsById, policy, now);
   result.blocked.push(...verificationFailures);
   result.blocked.sort();
-  return { ...result, verified_backport, findings };
+  return { ...result, verified_backport, verified_mitigation, findings };
 }
 
 async function fetchJson(url, options) {
@@ -284,6 +289,9 @@ async function main() {
     }
   }
 
+  for (const item of result.verified_mitigation) {
+    console.log(`- verified_mitigation: ${findingLabel(item)}: ${item.id} (${item.severity}); source sha256 ${item.sourceSha256}`);
+  }
   if (result.blocked.length > 0) {
     console.error("Blocking OSV advisories:");
     for (const item of result.blocked) {
@@ -293,6 +301,8 @@ async function main() {
   }
   if (result.allowed.length > 0) {
     console.log(`OSV audit passed with ${result.allowed.length} active exception(s).`);
+  } else if (result.verified_mitigation.length > 0) {
+    console.log(`OSV audit passed with ${result.verified_mitigation.length} verified_mitigation and ${result.verified_backport.length} verified_backport installation(s); original HIGH advisories remain in the report.`);
   } else if (result.verified_backport.length > 0) {
     console.log(`OSV audit passed with ${result.verified_backport.length} verified_backport installation(s); original HIGH advisories remain in the report.`);
   } else {

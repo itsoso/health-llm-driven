@@ -35,6 +35,8 @@ def test_signature_backport_covers_both_installations_before_credentials(job):
         install = f"npm ci --prefix /opt/reva-release/source/{root} --ignore-scripts"
         verify = f'"$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/{root} --apply'
         assert body.index(install) < body.index(verify)
+        guard = verify.replace("scripts/node-forge-backport.cjs", "frontend/scripts/braces-depth-guard.cjs")
+        assert body.index(install) < body.index(guard)
     assert "secrets." not in str(steps[install_index])
     first_secret = next(i for i, step in enumerate(steps) if "secrets." in str(step))
     assert install_index < first_secret

@@ -223,6 +223,30 @@ After publication, require fresh exact-SHA full CI and trusted validate; only th
 can separately authorized native closure and release-identity rotation proceed.
 No native build/upload or OTA is included in the next backend-only release.
 
+## Braces HIGH follow-up (2026-10-03)
+
+User authorized resolving the new HIGH dependency vulnerability, then releasing.
+Refreshed current main is `f966e97394005bc0b9f297b4132ef5ab61500e2a`; its CI
+`37080647733` failed on `braces@3.0.3` / `GHSA-vfj7-8cjw-p6xm`, while the prior
+node-forge backport passed. Production remains `30ac1c67`, not the candidate.
+
+The npm registry still reports 3.0.3; [upstream issue 70](https://github.com/micromatch/braces/issues/70)
+remains open and recommends a depth bound. This is a local mitigation, not an
+upstream release: parser bounds combined brace/parenthesis depth, and all three
+recursive public/internal AST walkers reject excess depth. Literal, escaped and
+normal patterns remain compatible. Invalid inputs raise a controlled SyntaxError;
+this does not claim to fix arbitrary caller exception handling or other resource limits.
+
+The first regression run failed 21 of 22 cases against the original package.
+The fixed run passed all 22. Actual installation verification pins original and
+fixed source bytes, unchanged executable inventory, package identity and every
+nested installed copy. Normal mobile patch-package and all ignore-scripts trusted
+release installations apply the same bytes. Frontend's self-contained build guard
+also survives the frontend-only production build sandbox. OSV retains HIGH findings
+as verified_mitigation with per-installation evidence; exceptions remain empty.
+New fixed-SHA independent review, full CI and release preflight are still required.
+Production authorization and release state have not been mutated.
+
 ## Work log
 
 - Workflow ledger: `docs/_generated/harness-runs/2b523da0635a.jsonl` (local ignored evidence).

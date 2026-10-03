@@ -1,0 +1,41 @@
+diff --git a/node_modules/braces/lib/compile.js b/node_modules/braces/lib/compile.js
+--- a/node_modules/braces/lib/compile.js
++++ b/node_modules/braces/lib/compile.js
+@@ -7 +7,2 @@
+-  const walk = (node, parent = {}) => {
++  const walk = (node, parent = {}, depth = 0) => {
++    if (depth > 101) throw new SyntaxError('braces exceeds maximum nesting depth (100)');
+@@ -50 +51 @@
+-        output += walk(child, node);
++        output += walk(child, node, depth + 1);
+diff --git a/node_modules/braces/lib/expand.js b/node_modules/braces/lib/expand.js
+--- a/node_modules/braces/lib/expand.js
++++ b/node_modules/braces/lib/expand.js
+@@ -36 +36,2 @@
+-  const walk = (node, parent = {}) => {
++  const walk = (node, parent = {}, depth = 0) => {
++    if (depth > 101) throw new SyntaxError('braces exceeds maximum nesting depth (100)');
+@@ -103 +104 @@
+-        walk(child, node);
++        walk(child, node, depth + 1);
+diff --git a/node_modules/braces/lib/stringify.js b/node_modules/braces/lib/stringify.js
+--- a/node_modules/braces/lib/stringify.js
++++ b/node_modules/braces/lib/stringify.js
+@@ -6 +6,2 @@
+-  const stringify = (node, parent = {}) => {
++  const stringify = (node, parent = {}, depth = 0) => {
++    if (depth > 101) throw new SyntaxError('braces exceeds maximum nesting depth (100)');
+@@ -24 +25 @@
+-        output += stringify(child);
++        output += stringify(child, {}, depth + 1);
+diff --git a/node_modules/braces/lib/parse.js b/node_modules/braces/lib/parse.js
+--- a/node_modules/braces/lib/parse.js
++++ b/node_modules/braces/lib/parse.js
+@@ -147 +147,2 @@
+-      stack.push(block);
++      if (stack.length > 100) throw new SyntaxError('braces exceeds maximum nesting depth (100)');
++      stack.push(block);
+@@ -213 +214,2 @@
+-      stack.push(block);
++      if (stack.length > 100) throw new SyntaxError('braces exceeds maximum nesting depth (100)');
++      stack.push(block);

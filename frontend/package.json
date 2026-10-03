@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/braces-depth-guard.cjs --root . --apply && next build",
+    "postinstall": "node scripts/braces-depth-guard.cjs --root . --apply",
     "start": "next start -H 127.0.0.1 -p 30001",
     "lint": "eslint .",
     "test": "vitest run",

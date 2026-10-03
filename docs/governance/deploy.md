@@ -787,3 +787,18 @@ vim .env
 - ✅ **必须** 在本地维护 `.env` 的备份
 
 ---
+
+#### braces 递归深度修复
+
+`braces@3.0.3` 的 `GHSA-vfj7-8cjw-p6xm` 使用项目本地修复，保留真实版本和原始
+HIGH 公告，不作为上游已发布修复版或风险豁免。解析器限制总括号/花括号嵌套为 100，
+compile、expand、stringify 对直接 AST 输入也限制递归深度（含 root/leaf 开销）。
+超限抛出明确 SyntaxError；调用方仍需正常处理无效输入，不承诺未捕获异常自动恢复。
+
+`frontend/scripts/braces-depth-guard.cjs --root <安装根>` 只验证；显式 `--apply`
+检查所有安装副本的固定原始/修复后字节、完整可执行文件清单和包身份后才应用。
+任何未知版本、缺失/漂移文件或链接均失败。每次验证执行真实恶意/正常模式和 AST
+调用；OSV 只将该精确公告、版本、安装路径标为 `verified_mitigation`，保留其他阻断。
+Mobile 使用固定 patch-package 补丁；Frontend 普通安装及 build 命令执行自包含验证器，
+确保只复制 frontend 的隔离重建仍覆盖修复。Trusted Release/OTA 的 ignore-scripts
+安装在凭据前显式修复 mobile/release-tools 两个根。上游发布后重新评审替换本地修复。

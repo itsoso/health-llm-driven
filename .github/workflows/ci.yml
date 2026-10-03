@@ -305,6 +305,8 @@ jobs:
         run: |
           npm ci --prefix scripts/release-tools --ignore-scripts --no-audit --no-fund
           node scripts/node-forge-backport.cjs --root scripts/release-tools --apply
+          node frontend/scripts/braces-depth-guard.cjs --root scripts/release-tools --apply
+          BRACES_TEST_ROOT=scripts/release-tools node --test scripts/braces-depth-regression.test.cjs scripts/braces-depth-guard.test.cjs
           node scripts/release-tools/apply-compat-patches.cjs
           node --test scripts/release-tools/compat.test.cjs
           node --test scripts/node-forge-backport.test.cjs scripts/osv-npm-audit-gate.test.mjs scripts/osv-npm-audit-backport.integration.test.mjs
@@ -618,7 +620,9 @@ jobs:
         run: node ../scripts/osv-npm-audit-gate.mjs
 
       - name: Test OSV dependency audit gate
-        run: node --test scripts/osv-npm-audit-gate.test.mjs
+        run: |
+          node --test scripts/osv-npm-audit-gate.test.mjs
+          BRACES_TEST_ROOT=frontend node --test scripts/braces-depth-regression.test.cjs scripts/braces-depth-guard.test.cjs
 
       - name: Test (vitest)
         working-directory: frontend
@@ -653,6 +657,8 @@ jobs:
       - name: Verify installed signature backport
         run: |
           node scripts/node-forge-backport.cjs --root mobile
+          node frontend/scripts/braces-depth-guard.cjs --root mobile
+          node --test scripts/braces-depth-regression.test.cjs scripts/braces-depth-guard.test.cjs
           node --test scripts/node-forge-backport.test.cjs scripts/osv-npm-audit-backport.integration.test.mjs
 
       - name: Test patched image parser denial-of-service guards
