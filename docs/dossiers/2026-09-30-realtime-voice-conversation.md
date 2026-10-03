@@ -415,3 +415,47 @@
 - This is local simulator UI acceptance only. The pending audio findings and
   production authorization gate remain open. Remote main advanced independently;
   this task did not push, merge, deploy, or publish a vendor build in this turn.
+
+### Authorized acceptance and release continuation — 2026-10-03
+
+- User explicitly authorized closing the historical Store 273 lifecycle and
+  rotating its release identity to the new verified candidate: revoke only the
+  old managed identities, destroy its loopback private key, preserve immutable
+  audit evidence and retain the existing permission scope. This is not approval
+  to clear unknown leases, replay vendor tasks or submit App Review.
+- Follow-up run: `docs/_generated/harness-runs/45cba1f4e1a3.jsonl`, bounded to
+  16000 allocated tokens for acceptance closure and independent review. The
+  earlier exhausted run and its findings remain intact.
+- Clean task checkout rebased the four local entry/UI-audit commits onto
+  `b6bfece100f6c7e7a94a1526331abdce217f2284`; exact main CI `37087232514`
+  is successful. Original user checkout and unrelated work remain untouched.
+- Read-only production check at 02:25 UTC found production still `30ac1c67`,
+  managed authorization still `e19043ec`, and backend/worker/beat active.
+  A new `deploy:backend` business lease created at 02:05:02 UTC is present,
+  pointing to `/tmp/health-app-backup-preflight-15202-1790993101`. Its terminal
+  state and owner are not yet proven. No lease, staged configuration, identity
+  or production state was changed by this task. Rotation/deployment stays
+  blocked until the existing operation has a verified terminal disposition.
+- Source fix `a267b3db7` rejects punctuation-only ASR results without dropping
+  single Unicode letters/numbers. It also fixes a proven synchronous splitter
+  loop: reinserting a short phrase before the same punctuation never advanced.
+  The new scan advances or consumes input, retaining short phrases for the next
+  chunk/tail. This can explain an unresponsive screen, but the old simulator
+  incident's exact triggering chunk was not captured and is not claimed proven.
+- RED: 9 failing new cases / 24 passing prior cases. GREEN: 63 focused cases and
+  TypeScript passed; full Mobile regression 324 suites / 3241 passed, 1 skipped.
+  Independent fixed-candidate safety review GO with 108 tests independently
+  passing. Tests include reset/unmount during an unresolved short-phrase Agent
+  stream, cancellation and no microphone reopening.
+- Fresh CI-mode backend voice/API/integration runner: 66 passed (SQLite contract
+  checks, not PostgreSQL/full remote CI). System Map, secrets, dossier consistency
+  and whitespace checks passed. Logs: `/tmp/reva-voice-release.Jtlenr/acceptance-*`
+  and `independent-safety-a267.log`.
+- Release simulator rebuild from the fixed Mobile source, strict code signature
+  verification and install succeeded. Local label 273 remains simulator-only;
+  it does not replace the existing Store 273 or prove a new TestFlight upload.
+- Native UI on that rebuilt app retained login and the top-right entry. Entry
+  opened idle; explicit microphone start reached listening; close returned to
+  chat; re-entry was idle with no automatic restart. No meaningful spoken sample,
+  audible short-phrase completion or playback-time exit was established in this
+  check; do not substitute these UI checks for those remaining native paths.
