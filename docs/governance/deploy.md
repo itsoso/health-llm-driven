@@ -534,6 +534,14 @@ unit/覆盖路径/ExecStart/账号、代际模型与锁定依赖、boot ID、cgr
 未知、混合、缺字段 profile 拒绝。沿用原同 inode 租约归档与受保护回执协议，
 不修改失败终态、不续跑原 SHA。历史验收保存原证明，不要求以后版本维持该 PID。
 
+已安装 Laya 的收尾可证明既有 `security-network.conf` 组合，但不得删除安全依赖
+或忽略任意额外 drop-in。三个业务服务必须同时具有固定 Requires/After 依赖，
+guard unit 和 helper 字节须与旧生产、失败候选及收尾源码一致；实际 systemd
+配置、依赖边、启用状态、无进程的 oneshot 成功终态及早于原租约的 activation
+身份全部匹配，稳定读取前后不变。证据写入独立 `network-guard-v1` profile，
+撤权归档后重新核验完整 unit 组合；历史读取严格验证 profile，旧无 guard 证明
+保持原合同。该证明不运行网络加固命令，不改防火墙，也不冒充实时防火墙规则审计。
+
 已构建但未领取上传权限的混合失败不得套用以上旧模式。针对 `514c8c28a` /
 run `37116403140` / build `274`，显式的
 `--retire-installed-laya-built-unuploaded --mixed-secrets-stdin` 变体在全部 installed

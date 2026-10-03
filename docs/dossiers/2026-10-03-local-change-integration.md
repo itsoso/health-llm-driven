@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | status | blocked |
-| current_stage | G4 · Authorized mixed-release closure repair; fixed-source review pending |
+| current_stage | G3 · Authorized network guard proof and retained-build upload implementation |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Scope | Reconcile explicitly authorized local unique changes onto current main; verify and release |
@@ -233,3 +233,62 @@ alternatives to AMap.
   Added directory/dangling-symlink regressions: RED four failures, then guarded
   both import boundaries before loader execution or protected stdin reads.
   No push or production action occurred while review was blocked.
+
+### Mixed closure G5 inspection checkpoint (2026-10-03)
+
+- Fixed `7182799b96c59b91ca3ed3bd056ae1490988eccd` received independent GO;
+  reviewer independently passed 189 focused tests and the actual CLI cache
+  rejection before protected input. The user-authorized additional 16,000-token
+  review allocation is exhausted; ledger total is 48,000 with no reset.
+- Fast-forward main push, exact CI `37121193698`, trusted validate `37122003535`,
+  fresh canonical root staging and its exact source/CI gate all passed.
+- Canonical mixed-closure read-only inspection **BLOCKED**. Location-only
+  exception diagnostics identify `RecoveryProof._units`: effective drop-in
+  inventory differs. No execution digest was supplied, no closure intent was
+  created, no authorization was revoked/rotated, and original lease/claims remain.
+- All three business services have an additional root-owned regular `0644`
+  `security-network.conf`, SHA-256
+  `ab8e275de385f3622c44f50beff226686e608cb1ecffe54f11d5051832336964`.
+  Its exact bytes match `scripts/harden_public_host.py`: the Unit Requires/After
+  dependency on `health-network-guard.service`. The guard is active/exited with
+  Result=success. The current closure proof accepts only the two runtime
+  drop-ins; deleting the security dependency or ignoring unknown files is not
+  an acceptable workaround. This observation is not yet a complete guard proof.
+- Production is still `dbad4e66c29f31c0ae149fecefa6c0d4f3e45283`; fresh health
+  HTTP 200, API/PostgreSQL/Redis/Celery healthy. No backend deployment or upload
+  occurred. Original 274 artifact remains retained; no duplicate build requested.
+- Local simulator Release build succeeded after regenerating ignored Pods with
+  production's optional Rokid SDK disabled. Installed without uninstall/data
+  clearing on the already signed-in iPhone 17 simulator; visible upper-right
+  realtime voice entry opens the explicit-start page and exits correctly.
+  Microphone/audio end-to-end was not exercised, and this is not the store 274
+  binary. No private conversation content was saved as acceptance evidence.
+- Next: authorize a new bounded independent-review allocation for the exact
+  security-network composition proof, implement fail-closed tests, obtain fixed
+  source GO and exact CI, then fresh canonical inspect before any closure.
+  Separately reviewed 274/new-backend pairing and upload remain unimplemented.
+
+### 2026-10-03 · User removes review budget blocker
+
+- User explicitly requested deployment/upload and to ignore the budget. The
+  previous review cap no longer blocks continuation. Existing ledger/history
+  stays intact; additional accounting tranches do not create new user limits.
+  Safety, exact-CI, one-shot claims and failed-operation evidence remain required.
+- Health Harness continues the same incident; Safety Gate mandates independent
+  review of the new fixed commit before push. Existing task worktree is reused;
+  original dirty checkout remains untouched. No App Review or AMap enablement.
+- Network proof implementation is bounded to the existing exact security
+  dependency, its canonical guard/effective configuration, unchanged activation
+  and final revalidation. Removing the drop-in or accepting arbitrary extra
+  overrides remains forbidden.
+- Read-only release-path investigation confirms the current `testflight` target
+  always creates a new build. A separate fixed-274 retained upload path is
+  required; original failed 514 claims, logs, artifact and terminal are immutable.
+  Its design binds the final successfully deployed publisher revision to the
+  unchanged app/runtime tree of 274, globally keys one-shot upload by build ID,
+  holds a business lease across vendor submission, and independently verifies
+  exact vendor completion before closing that lease. No arbitrary artifact IDs,
+  retry of submit, fake backend success or claim reset is permitted.
+- Fresh server read-only vendor proof passed for 274 with empty submissions;
+  isolated old-production schema/KB probes also passed. These diagnostics do
+  not clear the failing network inventory proof or authorize upload by themselves.

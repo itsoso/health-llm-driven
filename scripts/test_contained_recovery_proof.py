@@ -612,11 +612,13 @@ def test_legacy_base_rejects_duplicate_security_canonical_and_dropin_assignments
             proof.validate_unit_base(legacy,canonical,set(),unit,dropin,allow_legacy=True)
 
 
-def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path):
+@pytest.mark.parametrize('network', [False, True])
+def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path, network):
     source = Path(__file__).resolve().parents[1]
     instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
     instance.systemd_root = tmp_path
     instance.installed_laya = True
+    instance._network_guard = lambda old_source: {'profile': 'network-guard-v1'}
     candidates = {unit: (source / 'infra/systemd/dropins' / unit.replace('.service', '-runtime-state.conf')).read_bytes()
                   for unit in proof.UNITS[1:]}
     instance.runtime = SimpleNamespace(_expected_candidate=candidates.__getitem__,
@@ -634,6 +636,9 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
             (directory / '80-reva-health-evidence-runtime.conf').write_bytes(proof.ACTIVATION)
             (directory / '90-runtime-state.conf').write_bytes(candidates[unit])
             paths = [str(directory / name) for name in ('80-reva-health-evidence-runtime.conf', '90-runtime-state.conf')]
+            if network:
+                (directory / 'security-network.conf').write_bytes(b'[Unit]\nRequires=health-network-guard.service\nAfter=health-network-guard.service\n')
+                paths.append(str(directory / 'security-network.conf'))
             values = proof.security_unit_contract(unit)['effective']
         else:
             paths, values = [], {}
@@ -647,6 +652,7 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
                                   _validate_candidate_effective=lambda value: None, _stable_effective_snapshot=lambda value: value)
     result = instance._units(source, transaction)
     assert all('legacy_security_effective' in result[unit] for unit in proof.UNITS[1:])
+    assert ('network_guard' in result) is network
     dropin = tmp_path / 'health-backend.service.d/90-runtime-state.conf'
     dropin.write_bytes(dropin.read_bytes() + b'CapabilityBoundingSet=CAP_SYS_ADMIN\n')
     with pytest.raises(proof.ProofError, match='drop-in bytes differ'):
@@ -655,3 +661,104 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
     properties['health-backend.service']['MemoryMax'] = 'infinity'
     with pytest.raises(proof.ProofError, match='effective security composition differs'):
         instance._units(source, transaction)
+
+
+def network_guard_fixture(tmp_path):
+    source = Path(__file__).resolve().parents[1]
+    instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
+    instance.source = source
+    instance.failed_sha = 'a' * 40
+    instance.installed_laya = True
+    instance.production = tmp_path / 'production'
+    instance.systemd_root = tmp_path / 'systemd'
+    instance.proc = tmp_path / 'proc'
+    instance.lease = tmp_path / 'lease'
+    for directory in (instance.production / 'scripts', instance.systemd_root, instance.proc / 'sys/kernel/random', instance.lease):
+        directory.mkdir(parents=True)
+    instance.bootstrap = SimpleNamespace(canonical_source=lambda sha: source)
+    instance._file = lambda path, *args: (path.read_bytes(), {'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+    instance._no_jobs = lambda: None
+    instance._pids = lambda unit: []
+    instance.runtime = SimpleNamespace(ReleaseTransaction=SimpleNamespace(_stable_exec_start=lambda _, value: value))
+    script = source / 'scripts/harden_public_host.py'
+    (instance.production / 'scripts/harden_public_host.py').write_bytes(script.read_bytes())
+    (instance.systemd_root / 'health-network-guard.service').write_bytes((source / 'infra/systemd/health-network-guard.service').read_bytes())
+    (instance.proc / 'stat').write_text('btime 1000\n')
+    (instance.proc / 'sys/kernel/random/boot_id').write_text('01234567-0123-4123-8123-0123456789ab\n')
+    (instance.lease / 'started_at').write_text('1970-01-01T00:21:40Z\n')
+    guard = 'health-network-guard.service'
+    command = '/usr/bin/python3 -I -S -B /opt/health-app/scripts/harden_public_host.py --network'
+    properties = {guard: {
+        'FragmentPath': str(instance.systemd_root / guard), 'DropInPaths': '', 'NeedDaemonReload': 'no',
+        'ActiveState': 'active', 'SubState': 'exited', 'Result': 'success', 'Type': 'oneshot',
+        'RemainAfterExit': 'yes', 'MainPID': '0', 'NRestarts': '0', 'ExecMainCode': '1', 'ExecMainStatus': '0',
+        'ActiveEnterTimestampMonotonic': '100000003', 'ExecMainStartTimestampMonotonic': '100000001',
+        'ExecMainExitTimestampMonotonic': '100000002',
+        'ExecStart': f'path=/usr/bin/python3\nargv[]={command}\nignore_errors=no',
+        'ExecStartPre': '', 'ExecStartPost': '', 'ExecCondition': '', 'Environment': '', 'EnvironmentFiles': '',
+        'User': '', 'Group': '', 'WorkingDirectory': '',
+        'Requires': 'system.slice sysinit.target',
+        'After': 'basic.target sysinit.target system.slice network-pre.target systemd-journald.socket',
+        'Before': 'health-backend.service celery-worker.service shutdown.target celery-beat.service health-frontend-security-preflight.service health-frontend.service multi-user.target',
+    }}
+    for unit in proof.UNITS[1:]:
+        directory = instance.systemd_root / (unit + '.d')
+        directory.mkdir()
+        (directory / 'security-network.conf').write_bytes(b'[Unit]\nRequires=health-network-guard.service\nAfter=health-network-guard.service\n')
+        properties[unit] = {
+            'Requires': 'system.slice sysinit.target -.mount health-network-guard.service' + (' health-backend.socket' if unit == 'health-backend.service' else ''),
+            'After': 'basic.target systemd-journald.socket systemd-tmpfiles-setup.service sysinit.target system.slice redis-server.service tmp.mount health-network-guard.service network-online.target -.mount postgresql.service'
+                     + (' health-backend.socket' if unit == 'health-backend.service' else ' systemd-remount-fs.service' if unit == 'celery-beat.service' else ''),
+            'Before': 'multi-user.target shutdown.target',
+            'DropInPaths': ' '.join(str(directory / name) for name in ('80-reva-health-evidence-runtime.conf', '90-runtime-state.conf', 'security-network.conf')),
+            'NeedDaemonReload': 'no',
+        }
+    instance.systemd = SimpleNamespace(show=lambda unit, key: properties[unit][key], is_enabled=lambda unit: 'enabled')
+    return instance, source, properties
+
+
+@pytest.mark.parametrize('damage', [None, 'unit', 'script', 'dropin', 'override', 'dependency', 'guard_dependency', 'disabled',
+                                  'reload', 'inactive', 'running', 'failed', 'restarted', 'recent', 'invalid_time',
+                                  'extra_command', 'env', 'pid', 'changed', 'old_mode', 'partial', 'order'])
+def test_network_guard_proof_rejects_unproven_composition(tmp_path, damage):
+    instance, source, properties = network_guard_fixture(tmp_path)
+    guard = properties['health-network-guard.service']
+    business = properties['health-backend.service']
+    if damage in ('unit', 'script', 'dropin'):
+        path = {'unit': instance.systemd_root / 'health-network-guard.service',
+                'script': instance.production / 'scripts/harden_public_host.py',
+                'dropin': instance.systemd_root / 'health-backend.service.d/security-network.conf'}[damage]
+        path.write_bytes(path.read_bytes() + b'# changed\n')
+    if damage == 'override': guard['DropInPaths'] = '/run/systemd/system/service.d/override.conf'
+    if damage == 'dependency': business['Requires'] += ' extra.service'
+    if damage == 'guard_dependency': guard['After'] += ' extra.service'
+    if damage == 'disabled': instance.systemd.is_enabled = lambda unit: 'disabled'
+    if damage == 'reload': guard['NeedDaemonReload'] = 'yes'
+    if damage == 'inactive': guard['ActiveState'] = 'inactive'
+    if damage == 'running': guard['SubState'] = 'running'
+    if damage == 'failed': guard['ExecMainStatus'] = '1'
+    if damage == 'restarted': guard['NRestarts'] = '1'
+    if damage == 'recent': guard['ActiveEnterTimestampMonotonic'] = '250000000'
+    if damage == 'invalid_time': guard['ExecMainStartTimestampMonotonic'] = 'unknown'
+    if damage == 'extra_command': guard['ExecStartPre'] = '/bin/true'
+    if damage == 'env': guard['Environment'] = 'UNEXPECTED=yes'
+    if damage == 'pid': instance._pids = lambda unit: ['123']
+    if damage == 'old_mode': instance.installed_laya = False
+    if damage == 'partial': business['DropInPaths'] = business['DropInPaths'].rsplit(' ', 1)[0]
+    if damage == 'order': guard['ExecMainStartTimestampMonotonic'] = '100000004'
+    if damage == 'changed':
+        calls = 0
+        original_show = instance.systemd.show
+        def show(unit, key):
+            nonlocal calls
+            if key == 'ActiveEnterTimestampMonotonic':
+                calls += 1
+                return '100000003' if calls == 1 else '100000004'
+            return original_show(unit, key)
+        instance.systemd.show = show
+    if damage:
+        with pytest.raises(proof.ProofError): instance._network_guard(source)
+    else:
+        result = instance._network_guard(source)
+        assert result['profile'] == 'network-guard-v1'
+        assert result == instance._network_guard(source, started_at=result['started_at'])

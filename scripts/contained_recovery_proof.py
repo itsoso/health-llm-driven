@@ -27,6 +27,8 @@ LAYA_ASSETS = ("install.py", "serve.py", "model-manifest.json", "requirements.lo
                "reva-laya.service.in", "encoder-config.json.b64", "rl-agent-config.json.b64",
                "tokenizer-config.json.b64", "model-NOTICE.txt")
 ACTIVATION = b"[Service]\nEnvironmentFile=-/var/lib/reva-health-evidence-runtime/enabled.env\n"
+NETWORK_GUARD = "health-network-guard.service"
+NETWORK_DEPENDENCY = b"[Unit]\nRequires=health-network-guard.service\nAfter=health-network-guard.service\n"
 ARTIFACTS = {name: "backend/scripts/" + name for name in (
     "backup_db.sh", "verify_backup_restore.sh", "archive_backup_offsite.sh", "verify_recent_offsite_backup.sh", "rollback_release.sh",
     "activate_health_evidence_runtime.sh", "verify_locked_requirements.py",
@@ -548,8 +550,104 @@ class RecoveryProof:
                 if int(boot[0]) + int(ticks) / os.sysconf("SC_CLK_TCK") >= started - 60:
                     raise ProofError("service child does not predate failed release")
 
-    def _units(self, old_source, transaction):
+    def _network_guard(self, old_source, *, started_at=None):
+        """Prove existing hardening, never invoke its mutating network command.
+
+        This is a narrow installed-Laya closure profile. systemd's implicit
+        dependencies are enumerated as well as the source-declared edges, so
+        reverse dependencies and transient overrides cannot hide in the proof.
+        """
+        if not self.installed_laya:
+            raise ProofError("network guard requires installed unchanged closure")
+        if started_at is None:
+            started_at = self._file(self.lease / "started_at", 0o600)[0].decode()
+        started = datetime.strptime(started_at, "%Y-%m-%dT%H:%M:%SZ\n").replace(tzinfo=UTC).timestamp()
+        boot = re.findall(r"^btime ([0-9]+)$", (self.proc / "stat").read_text(), re.MULTILINE)
+        if len(boot) != 1:
+            raise ProofError("network guard boot time unavailable")
+        identities = {}
+        for relative, live in (
+            ("infra/systemd/health-network-guard.service", self.systemd_root / NETWORK_GUARD),
+            ("scripts/harden_public_host.py", self.production / "scripts/harden_public_host.py"),
+        ):
+            canonical = self._file(old_source / relative)[0]
+            for source in (self.bootstrap.canonical_source(self.failed_sha), self.source):
+                if self._file(source / relative)[0] != canonical:
+                    raise ProofError("network guard canonical source changed")
+            raw, identities[str(live)] = self._file(live, 0o644 if relative.startswith("infra/") else None)
+            if raw != canonical:
+                raise ProofError("network guard live source differs")
+        for unit in UNITS[1:]:
+            path = self.systemd_root / (unit + ".d") / "security-network.conf"
+            raw, identities[str(path)] = self._file(path, 0o644)
+            if raw != NETWORK_DEPENDENCY:
+                raise ProofError("network guard drop-in bytes differ")
+
+        dependencies = {
+            NETWORK_GUARD: {
+                "Requires": "system.slice sysinit.target",
+                "After": "basic.target sysinit.target system.slice network-pre.target systemd-journald.socket",
+                "Before": "health-backend.service celery-worker.service shutdown.target celery-beat.service health-frontend-security-preflight.service health-frontend.service multi-user.target",
+            },
+        }
+        for unit in UNITS[1:]:
+            dependencies[unit] = {
+                "Requires": "system.slice sysinit.target -.mount health-network-guard.service"
+                            + (" health-backend.socket" if unit == "health-backend.service" else ""),
+                "After": "basic.target systemd-journald.socket systemd-tmpfiles-setup.service sysinit.target system.slice redis-server.service tmp.mount health-network-guard.service network-online.target -.mount postgresql.service"
+                         + (" health-backend.socket" if unit == "health-backend.service" else " systemd-remount-fs.service" if unit == "celery-beat.service" else ""),
+                "Before": "multi-user.target shutdown.target",
+            }
+        expected = {
+            "FragmentPath": str(self.systemd_root / NETWORK_GUARD), "DropInPaths": "", "NeedDaemonReload": "no",
+            "ActiveState": "active", "SubState": "exited", "Result": "success", "Type": "oneshot",
+            "RemainAfterExit": "yes", "MainPID": "0", "NRestarts": "0", "ExecMainCode": "1", "ExecMainStatus": "0",
+            **{key: "" for key in ("ExecStartPre", "ExecStartPost", "ExecCondition", "Environment", "EnvironmentFiles", "User", "Group", "WorkingDirectory")},
+        }
+        time_keys = ("ExecMainStartTimestampMonotonic", "ExecMainExitTimestampMonotonic", "ActiveEnterTimestampMonotonic")
+        command = "/usr/bin/python3 -I -S -B /opt/health-app/scripts/harden_public_host.py --network"
+        def service_snapshot():
+            self._no_jobs()
+            fields = {key: self.systemd.show(NETWORK_GUARD, key) for key in expected}
+            if fields != expected or self.systemd.is_enabled(NETWORK_GUARD) != "enabled" or self._pids(NETWORK_GUARD):
+                raise ProofError("network guard effective service differs")
+            fields["ExecStart"] = self.runtime.ReleaseTransaction._stable_exec_start(
+                None, self.systemd.show(NETWORK_GUARD, "ExecStart"))
+            if fields["ExecStart"] != f"path=/usr/bin/python3\nargv[]={command}\nignore_errors=no":
+                raise ProofError("network guard command differs")
+            times = {key: self.systemd.show(NETWORK_GUARD, key) for key in time_keys}
+            if any(not value.isdigit() or int(value) <= 0 for value in times.values()):
+                raise ProofError("network guard activation identity unavailable")
+            ticks = [int(times[key]) for key in time_keys]
+            if ticks != sorted(ticks) or int(boot[0]) + ticks[-1] / 1_000_000 >= started - 60:
+                raise ProofError("network guard did not predate failed release")
+            fields.update(times)
+            fields["boot_id"] = (self.proc / "sys/kernel/random/boot_id").read_text().strip()
+            if re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", fields["boot_id"]) is None:
+                raise ProofError("network guard boot identity unavailable")
+            edges = {}
+            for unit, expected_edges in dependencies.items():
+                edges[unit] = {key: sorted(self.systemd.show(unit, key).split()) for key in expected_edges}
+                if edges[unit] != {key: sorted(value.split()) for key, value in expected_edges.items()}:
+                    raise ProofError("network guard effective dependency composition differs")
+                if unit != NETWORK_GUARD:
+                    paths = [str(self.systemd_root / (unit + ".d") / name) for name in
+                             ("80-reva-health-evidence-runtime.conf", "90-runtime-state.conf", "security-network.conf")]
+                    if self.systemd.show(unit, "DropInPaths").split() != paths or self.systemd.show(unit, "NeedDaemonReload") != "no":
+                        raise ProofError("network guard business drop-in inventory differs")
+            fields["dependencies"] = edges
+            return fields
+        before = service_snapshot()
+        for path, identity in identities.items():
+            if self._file(Path(path))[1] != identity:
+                raise ProofError("network guard files changed during proof")
+        if service_snapshot() != before:
+            raise ProofError("network guard service changed during proof")
+        return {"profile": "network-guard-v1", "started_at": started_at, "files": identities, "service": before}
+
+    def _units(self, old_source, transaction, *, started_at=None):
         result = {}
+        network_units = []
         for unit in UNITS:
             base, base_identity = self._file(self.systemd_root / unit, 0o644)
             old, _ = self._file(old_source / "infra/systemd" / unit)
@@ -576,6 +674,10 @@ class RecoveryProof:
                     if raw != expected:
                         raise ProofError("effective drop-in bytes differ")
                     paths.append(str(path))
+                network = self.systemd_root / (unit + ".d") / "security-network.conf"
+                if self.installed_laya and str(network) in self.systemd.show(unit, "DropInPaths").split():
+                    paths.append(str(network))
+                    network_units.append(unit)
             if self.systemd.show(unit, "DropInPaths").split() != paths:
                 raise ProofError("effective drop-in inventory differs")
             if legacy_security:
@@ -583,6 +685,11 @@ class RecoveryProof:
                           for key in security_unit_contract(unit)["effective"]}
                 entry["legacy_security_effective"] = validate_security_effective(unit, values)
             result[unit] = entry
+        if network_units:
+            if network_units != list(UNITS[1:]):
+                raise ProofError("partial network guard composition forbidden")
+            result["network_guard"] = (self._network_guard(old_source) if started_at is None
+                                       else self._network_guard(old_source, started_at=started_at))
         effective = transaction._old_effective()
         worker = "celery-worker.service"
         old_base = self._file(old_source / "infra/systemd" / worker)[0]
@@ -657,7 +764,7 @@ class RecoveryProof:
             fields = line.split()
             if len(fields) != 4 or not fields[0].isdigit():
                 raise ProofError("systemd job inventory malformed")
-            if fields[1].decode() in UNITS:
+            if fields[1].decode() in (*UNITS, NETWORK_GUARD):
                 raise ProofError("service systemd job remains pending")
 
     def running_snapshot(self):

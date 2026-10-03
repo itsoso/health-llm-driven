@@ -525,3 +525,79 @@ def test_installed_history_rejects_inconsistent_bindings(damage):
     elif damage == "file_mode": evidence["files"]["/etc/reva-laya/service.env"]["mode"] = 0o644
     with pytest.raises(module.ClosureError):
         module.unchanged_laya_profile({"installed_laya": evidence})
+
+
+def test_closed_network_guard_is_revalidated_with_original_start_not_active_lease(tmp_path):
+    m = load()
+    guard = {'profile': 'network-guard-v1', 'started_at': '2026-09-30T00:00:00Z\n'}
+    calls = []
+    transaction = object()
+    p = SimpleNamespace(production_sha='c' * 40, failed_sha='a' * 40,
+                        stage=tmp_path, systemd=object(),
+                        runtime=SimpleNamespace(production_layout=lambda stage: stage,
+                                                ReleaseTransaction=lambda *args: transaction),
+                        _units=lambda source, tx, **kw: calls.append((source, tx, kw)) or {'network_guard': guard.copy()})
+    b = SimpleNamespace(canonical_source=lambda sha: tmp_path, STATE=tmp_path)
+    a = m.ClosureAdapter(p, b, None, 'b' * 40, lambda: None, unchanged=True)
+    evidence = {'snapshot': {'units': {'network_guard': guard}}}
+    a._verify_network_guard(evidence)
+    assert calls == [(tmp_path, transaction, {'started_at': guard['started_at']})]
+    p._units = lambda *a, **k: {'network_guard': guard.copy(), 'drift': True}
+    with pytest.raises(m.ClosureError): a._verify_network_guard(evidence)
+
+
+@pytest.mark.parametrize('guard', [None, {}, False, {'profile': 'other'}, {'profile': 'network-guard-v1'}])
+def test_network_guard_history_cannot_hide_placeholder(guard):
+    m = load()
+    snapshot = {'installed_laya': installed_profile_fixture(), 'units': {'network_guard': guard}}
+    with pytest.raises(m.ClosureError):
+        m.validate_network_guard_snapshot(snapshot, unchanged=True)
+
+
+def test_legacy_history_needs_no_new_guard_proof():
+    m = load()
+    for snapshot in ({}, {'units': {}}, {'installed_laya': installed_profile_fixture()}):
+        m.validate_network_guard_snapshot(snapshot, unchanged=True)
+
+
+@pytest.mark.parametrize('damage', [None, 'profile', 'extra', 'time', 'file_mode', 'uid_bool', 'digest', 'missing_file',
+                                  'extra_file', 'service_type', 'command', 'service_extra', 'dependency', 'dependency_type',
+                                  'inactive', 'reordered_time', 'boot', 'restored', 'mixed'])
+def test_network_guard_history_validates_complete_immutable_shape(tmp_path, damage):
+    spec = importlib.util.spec_from_file_location('network_fixture', Path(__file__).with_name('test_contained_recovery_proof.py'))
+    fixture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    instance, source, _ = fixture.network_guard_fixture(tmp_path)
+    guard = instance._network_guard(source)
+    files = {}
+    for path, value in guard['files'].items():
+        name = path.replace(str(instance.production), '/opt/health-app').replace(str(instance.systemd_root), '/etc/systemd/system')
+        files[name] = {**value, 'dev': 1, 'ino': 2, 'uid': 0, 'gid': 0, 'mode': 0o644}
+    guard['files'] = files
+    guard['service']['FragmentPath'] = '/etc/systemd/system/health-network-guard.service'
+    installed = installed_profile_fixture()
+    installed['started_at'] = guard['started_at']
+    snapshot = {'installed_laya': installed, 'units': {'network_guard': guard}}
+    first = next(iter(files.values()))
+    if damage == 'profile': guard['profile'] = 'other'
+    if damage == 'extra': guard['extra'] = True
+    if damage == 'time': guard['started_at'] = '2026-01-01T00:00:00Z\n'
+    if damage == 'file_mode': first['mode'] = 0o666
+    if damage == 'uid_bool': first['uid'] = False
+    if damage == 'digest': first['sha256'] = 'unknown'
+    if damage == 'missing_file': files.pop(next(iter(files)))
+    if damage == 'extra_file': files['/tmp/other'] = first
+    if damage == 'service_type': guard['service'] = []
+    if damage == 'command': guard['service']['ExecStart'] = '/bin/true'
+    if damage == 'service_extra': guard['service']['extra'] = True
+    if damage == 'dependency': guard['service']['dependencies']['health-backend.service']['Requires'].append('z.service')
+    if damage == 'dependency_type': guard['service']['dependencies']['health-backend.service']['Requires'] = [False]
+    if damage == 'inactive': guard['service']['ActiveState'] = 'inactive'
+    if damage == 'reordered_time': guard['service']['ExecMainStartTimestampMonotonic'] = '999999999'
+    if damage == 'boot': guard['service']['boot_id'] = 'invalid'
+    if damage == 'mixed': snapshot['unstarted_laya'] = {}
+    m = load()
+    if damage:
+        with pytest.raises(m.ClosureError): m.validate_network_guard_snapshot(snapshot, unchanged=damage != 'restored')
+    else:
+        m.validate_network_guard_snapshot(snapshot, unchanged=True)
