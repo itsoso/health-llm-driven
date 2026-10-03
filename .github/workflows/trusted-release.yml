@@ -199,9 +199,11 @@ jobs:
             npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/scripts/release-tools --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/scripts/release-tools --apply
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/mobile --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/mobile --apply
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
@@ -312,9 +314,11 @@ jobs:
             npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/scripts/release-tools --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/scripts/release-tools --apply
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/mobile --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/mobile --apply
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs

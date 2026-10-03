@@ -37,6 +37,9 @@ def test_signature_backport_covers_both_installations_before_credentials(job):
         assert body.index(install) < body.index(verify)
         guard = verify.replace("scripts/node-forge-backport.cjs", "frontend/scripts/braces-depth-guard.cjs")
         assert body.index(install) < body.index(guard)
+        commands = [line.strip() for line in body.replace("\\\n", "").splitlines()]
+        assert any(line.startswith('/usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root')
+                   and line.endswith(guard) for line in commands)
     assert "secrets." not in str(steps[install_index])
     first_secret = next(i for i, step in enumerate(steps) if "secrets." in str(step))
     assert install_index < first_secret

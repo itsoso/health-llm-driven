@@ -370,6 +370,9 @@ def test_ota_verifies_signature_backport_before_claim_and_credentials():
         assert body.index(install) < body.index(verify)
         guard = verify.replace("scripts/node-forge-backport.cjs", "frontend/scripts/braces-depth-guard.cjs")
         assert body.index(install) < body.index(guard)
+        commands = [line.strip() for line in body.replace("\\\n", "").splitlines()]
+        assert any(line.startswith('/usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root')
+                   and line.endswith(guard) for line in commands)
     assert "secrets." not in str(steps[index])
     first_secret = next(i for i, step in enumerate(steps) if "secrets." in str(step))
     assert index < first_secret
