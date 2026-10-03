@@ -700,12 +700,16 @@ def fetch_genetic_variants_categorized(
             if category in by_category:
                 by_category[category].append(item)
 
+        # 结构化分区必须完整: 不在这里截断。旧的 [:10]/[:15] 截断会把注册表靠后的
+        # 安全相关位点 (如 HFE C282Y rs1800562, 营养类第 17 个) 丢掉, 让 Safety /
+        # SupplementAdvisor 硬阻断静默失效。条数天然受活跃 profile + rsid 去重约束;
+        # prompt 体积由 formatter._format_genetic_variants_blob(max_genes) 单独限界。
         return {
             "total": len(unique_variants),
-            "drug_sensitivity": drug_sens[:10],
-            "risk": risk[:10],
-            "protective": protective[:10],
-            **{f"{k}_variants": v[:15] for k, v in by_category.items()},
+            "drug_sensitivity": drug_sens,
+            "risk": risk,
+            "protective": protective,
+            **{f"{k}_variants": v for k, v in by_category.items()},
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] genetic 失败: {e}")
