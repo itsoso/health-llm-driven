@@ -199,7 +199,8 @@
       ],
       "examples": [
         "precise_location_selected_by_user_for_weather_air_quality_and_outdoor_activity_context",
-        "user_confirmed_city_attached_to_a_record_for_monthly_journey_recap"
+        "user_confirmed_city_attached_to_a_record_for_monthly_journey_recap",
+        "one_time_precise_location_sent_via_backend_to_amap_with_separate_consent_for_meal_share_place_candidates"
       ],
       "purpose": [
         "app_functionality",
@@ -219,7 +220,7 @@
           "used_for_tracking": false
         }
       },
-      "collection_notes": "Journey locations are optional, explicitly confirmed city labels linked to the user's existing records. The user can enter a city manually or request a single foreground location lookup for today's record. Journey records do not store coordinates or collect background routes. Sharing requires a separate selection and preview."
+      "collection_notes": "Journey locations are optional, explicitly confirmed city labels linked to the user's existing records. Journey records do not store coordinates or collect background routes. Separately, the meal share editor offers AMap place lookup only after session-specific consent: coordinates (for GPS) or keywords (for search) pass through the authenticated backend to AMap, without account identifiers or health content. Reva does not persist lookup coordinates, queries or candidates. Public place labels require separate confirmation and remain session-only until exported. Updating this declaration does not update App Store Connect."
     }
   ],
   "manual_review_required_before_submission": [
