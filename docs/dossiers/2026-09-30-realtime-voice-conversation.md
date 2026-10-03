@@ -375,3 +375,18 @@
   remains explicit-start-only. Added regression cases for direct visibility,
   streaming/composer-busy refusal, cleanup completion and selection-mode hiding.
   RED: four new tests failed because the visible shortcut was absent.
+- GREEN: 177 focused tests, TypeScript, full Mobile regression (324 suites,
+  3224 passed / 1 skipped), secret scan, dossier consistency, System Map and
+  diff whitespace checks passed. Local implementation commit `4cd2c82db`.
+- Rebuilt and installed the Release simulator app from that Mobile source;
+  signature verification passed and login was preserved. Native UI confirmed
+  shortcut visibility, direct navigation to idle voice, exit back to chat, and
+  keyboard-open visibility/navigation without automatic recording. No controlled
+  narrow-device or large-font rendering pass is claimed. Evidence logs remain in
+  `/tmp/reva-voice-release.Jtlenr/visible-entry-*.log`.
+- Before replacing the prior simulator app, its old voice screen stayed in the
+  answering state and two close attempts did not visibly navigate. Replacement
+  then relaunched successfully. Cause is unverified; the new idle-page exit check
+  does not prove that in-flight playback cleanup issue resolved. Keep this separate
+  from the entry-layout acceptance and do not declare voice G6 fully passed.
+- No push or production release performed for this visible-entry refinement.
