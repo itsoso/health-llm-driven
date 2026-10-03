@@ -48,6 +48,37 @@
 独立恢复成功及外部回读不能替代原后端/Web 发布凭据。
 
 
+#### 独立发布新前端树（已加固服务）
+
+用户明确批准仅发布前端后，使用独立的 canonical operator：
+`deploy.sh --publish-frontend --publisher-sha <current-main-sha>
+--production-sha <original-backend-sha> --frontend-tree <40hex>
+--operation-id <32hex>`。只从服务器对应 publisher 的 root-owned canonical
+staging，以固定系统 Python `-I -S -B` 执行。默认仅返回只读预检摘要；执行
+必须提供相同 `--evidence-sha256`。该入口不改变下述同树重建条件。
+
+发布器必须是当前 main、精确 CI 绿色并通过独立 G4（包括实际前端依赖修补）。
+显式目标树必须匹配 publisher 的完整 frontend tree。原 production SHA 必须
+保持 clean revision，并具有自己的精确 CI 与原后端 `SUCCEEDED` 回执。
+后端、Mobile、共享包与发布器源码不复制进生产 checkout；不轮换授权，不启用
+OAuth，不创建健康数据访问授权，不更改服务 unit 或网络权限。
+
+仅适用于已存在的 `health-web` systemd 前端固定启动契约。沿用隔离构建
+sandbox、资源上限、数据根隔离和公开端点配置白名单；npm 生命周期脚本禁用。
+仅切换 `.next` 与 `node_modules`，保留旧制品；运行时 `.next/cache` 的账户
+权限单独核验，其他制品不可由服务账户修改。生产 Git SHA、后端/worker/beat
+进程身份、restart count 和配置摘要在构建及页面复验前后保持一致。
+
+独立 `frontend-publications/<operation-id>` 在任何副作用前 fsync intent，
+持有原 launcher/build 锁并领取既有 business lease。验证内部与真实公网
+`/privacy` 和 `/connect/health` 后，释放本次 lease 并持久化绑定 SHA、前端树、
+制品与证据摘要的 `FRONTEND_SUCCEEDED`。这不是后端成功回执，也不证明真实
+OAuth grant 完成。失败、未知结果、部分回执或库存漂移阻止后续操作，不自动
+重试、换 ID、回滚、删锁或伪造成功。
+
+当前 GitHub Actions Trusted workflow 没有 frontend 目标；本入口通过既有
+管理通道控制服务器执行与构建，不上传本机脚本，不扩大 cloud RPC。
+
 #### 已部署同树前端的受控重建
 
 用户明确授权后，可从当前 main、真实精确 CI 绿色、独立 G4 GO 的 canonical
