@@ -42,16 +42,43 @@ _ALLOWED_HOSTS = frozenset({
 _UNBOUND = object()
 _user_ctx = ContextVar("ai_consent_user", default=_UNBOUND)
 _cookie_subject_missing = ContextVar("ai_cookie_subject_missing", default=False)
+_system_content_ctx: ContextVar[str | None] = ContextVar("ai_system_content", default=None)
+# Adding a purpose is a privacy review event: its payload must hold no user data.
+_SYSTEM_CONTENT_PURPOSES = frozenset({"system_kb_reindex"})
 
 
 @contextmanager
 def ai_user_scope(user_id: int | None):
-    """Bind one request/job; None explicitly clears inherited identity."""
+    """Bind one request/job; None explicitly clears inherited identity.
+
+    Also clears any enclosing system-content scope: code that binds (or
+    explicitly clears) a user is never covered by a system exemption.
+    """
     token = _user_ctx.set(user_id)
+    system_token = _system_content_ctx.set(None)
     try:
         yield
     finally:
+        _system_content_ctx.reset(system_token)
         _user_ctx.reset(token)
+
+
+@contextmanager
+def ai_system_content_scope(purpose: str):
+    """Opt-in for payloads that contain no user data (System KB documents only).
+
+    Destination disclosure is still enforced; the per-user consent lookup is
+    skipped only while no user is bound. Callers must wrap nothing but
+    system-authored content -- never user queries, records or messages.
+    """
+    if purpose not in _SYSTEM_CONTENT_PURPOSES:
+        raise ValueError("ai_system_content_scope requires a registered purpose")
+    token = _system_content_ctx.set(purpose)
+    logger.info("AI system-content scope entered: purpose=%s", purpose)
+    try:
+        yield
+    finally:
+        _system_content_ctx.reset(token)
 
 
 async def ai_request_scope():
@@ -69,6 +96,7 @@ async def ai_request_scope():
 
 def bind_ai_user(user_id: int) -> None:
     _user_ctx.set(int(user_id))
+    _system_content_ctx.set(None)
 
 
 def bind_ai_cookie_subject(*, missing: bool) -> None:
@@ -202,10 +230,17 @@ def require_ai_consent(user_id: int | None = None, *, destination: str | None = 
             "message": "请刷新页面以确认当前账号，内容未发送",
         })
     if user_id is None:
+        from app.services.llm.usage_tracker import get_caller_user_id
         user_id = _user_ctx.get()
         if user_id is _UNBOUND:
-            from app.services.llm.usage_tracker import get_caller_user_id
             user_id = get_caller_user_id()
+        system_purpose = _system_content_ctx.get()
+        if system_purpose is not None and user_id is None and get_caller_user_id() is None:
+            if not is_disclosed_destination(destination):
+                raise HTTPException(status_code=403, detail={"code": "ai_recipient_not_disclosed", "message": "此 AI 服务尚未完成数据使用披露，暂不可用"})
+            logger.info("AI system-content dispatch: purpose=%s host=%s",
+                        system_purpose, urlsplit(destination).hostname)
+            return
     if not isinstance(user_id, int) or isinstance(user_id, bool) or user_id <= 0:
         raise HTTPException(status_code=403, detail={"code": "ai_consent_required", "message": "请先确认 AI 数据使用授权"})
     if destination is not None:

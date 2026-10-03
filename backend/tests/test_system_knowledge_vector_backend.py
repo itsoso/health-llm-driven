@@ -302,26 +302,59 @@ def test_system_kb_embeddings_honor_configured_batch_size(
     assert calls == [["a", "b"], ["c", "d"], ["e"]]
 
 
-def test_unbound_public_reindex_reports_no_dense_vectors_and_retains_sparse_search(
-    db, monkeypatch, embedding_transport, caplog,
-):
-    """Public KB text does not implicitly exempt a scheduled job from consent."""
-    _seed_vector_knowledge(db)
-    sent = []
-
+def _record_inputs(sent):
     def respond(request):
-        sent.append(request)
-        return _embedding_response([[0.1]])
+        batch = json.loads(request.content)["input"]
+        sent.append(batch)
+        return _embedding_response([[0.1, 0.2, 0.3] for _ in batch])
+    return respond
 
-    embedding_transport(respond, {})
-    monkeypatch.setattr(system_knowledge_service, "_ensure_pgvector_table", lambda _db: True)
+
+def test_userless_embedding_without_system_scope_sends_nothing(embedding_transport, caplog):
+    """No implicit exemption: a bare user-less call (e.g. a query) still fails closed."""
+    sent = []
+    embedding_transport(_record_inputs(sent), {})
     with ai_consent.ai_user_scope(None):
-        result = reindex_knowledge_documents(db, actor="celery:system_kb_reindex")
-        payload = search_knowledge(db, "methylfolate", limit=5)
-
-    assert result["dense_vectors"] == 0
+        assert system_knowledge_service._embed_system_kb_texts(["private query"]) is None
     assert sent == []
     assert "sparse vector fallback remains active" in caplog.text
+
+
+def test_userless_embedding_inside_system_scope_returns_vectors(monkeypatch, embedding_transport):
+    sent = []
+    embedding_transport(_record_inputs(sent), {})
+
+    def no_user_lookup():
+        pytest.fail("system KB embedding must not look up a user's consent")
+
+    monkeypatch.setattr(ai_consent, "SessionLocal", no_user_lookup)
+    with ai_consent.ai_user_scope(None), ai_consent.ai_system_content_scope("system_kb_reindex"):
+        embeddings = system_knowledge_service._embed_system_kb_texts(["doc a", "doc b"])
+
+    assert embeddings == [[0.1, 0.2, 0.3], [0.1, 0.2, 0.3]]
+    assert sent == [["doc a", "doc b"]]
+
+
+def test_unbound_reindex_embeds_kb_documents_but_never_the_search_query(
+    db, monkeypatch, embedding_transport,
+):
+    """The reindex explicitly opts in for KB documents; the query path does not."""
+    _seed_vector_knowledge(db)
+    sent = []
+    embedding_transport(_record_inputs(sent), {})
+    monkeypatch.setattr(system_knowledge_service, "_ensure_pgvector_table", lambda _db: True)
+    monkeypatch.setattr(system_knowledge_service, "_pgvector_backend_for_session", lambda _db: "pgvector")
+    with ai_consent.ai_user_scope(None):
+        reindex_knowledge_documents(db, actor="celery:system_kb_reindex")
+        indexed = [text for batch in sent for text in batch]
+        sent.clear()
+        system_knowledge_service._rank_pgvector_documents(db, {}, "methylfolate", limit=5)
+        payload = search_knowledge(db, "methylfolate", limit=5)
+
+    doc_count = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).count()
+    assert len(indexed) == doc_count > 0
+    assert all("methylfolate" not in text for text in indexed)
+    assert sent == []
     assert payload["retrieval_plan"]["vector_backend"] == "sparse_term_cosine_v1"
     assert "claim:c_mthfr_c677t_hcy_folate_boundary" in [
         item["document"]["doc_id"] for item in payload["results"]
