@@ -483,3 +483,16 @@ alternatives to AMap.
   do not normalize an existing checkout recursively or accept writable sources.
   This fix remains on the diagnostic branch pending RED/GREEN, independent GO
   and the actual full Linux startup pipeline before main integration.
+- Candidate 11fe passed local full CI-mode invariants (2173 passed / 13 skipped /
+  84 subtests) and conditional independent source review, but fresh branch CI
+  `37133407602`, job `111233049691`, still rejected `CONTRACT_METADATA` with the
+  same 0777 directories / 0666 helper. Inner umask alone is therefore insufficient;
+  this candidate is not approved for main or deployment. Main and production
+  remain at 3e830. Do not infer the permission-changing stage from this result.
+- Next diagnostic-only revision brackets materialization and actual tool setup
+  with fixed six-path numeric stat / ACL reads, also retaining failed-smoke
+  evidence. It prints no file contents, credentials or arbitrary selected paths;
+  diagnostic failure never changes the underlying runtime verdict. Four RED
+  failures preceded implementation; focused tests are 134 passed / four skips.
+  This will distinguish initial ACL inheritance from subsequent metadata changes
+  on a new isolated CI run, without replaying a failed release or vendor write.

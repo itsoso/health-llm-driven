@@ -705,12 +705,34 @@ def test_failed_fidelity_smoke_reads_only_fixed_metadata_and_still_fails(monkeyp
     with pytest.raises(subprocess.CalledProcessError) as caught:
         run_fidelity_phase('smoke')
     assert caught.value is failure
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert calls[1][0] == ['/usr/bin/sudo', '/usr/bin/stat', '--format=%u:%g:%a:%F', '--',
                           '/', '/opt', '/opt/reva-release', '/opt/reva-release/source',
                           '/opt/reva-release/source/scripts',
                           '/opt/reva-release/source/scripts/built_unuploaded_proof.py']
+    assert calls[2][0] == ['/usr/bin/sudo', '/usr/bin/getfacl', '--numeric', '--omit-header',
+                          '--absolute-names', '--', *calls[1][0][4:]]
     assert all('EXPO_TOKEN' not in kwargs['env'] for _, kwargs in calls)
+
+
+@pytest.mark.parametrize('phase,shell_index,total', [('materialize', 0, 3), ('tools', 2, 5)])
+def test_fidelity_checkpoints_bracket_real_source_and_tools(monkeypatch, phase, shell_index, total):
+    import subprocess
+    monkeypatch.setattr(sys, 'platform', 'linux')
+    for name, value in {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'itsoso/health-llm-driven',
+                        'GITHUB_SHA': SHA, 'GITHUB_REF': 'refs/heads/codex/diagnostic'}.items():
+        monkeypatch.setenv(name, value)
+    calls = []
+    def execute(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0)
+    monkeypatch.setattr(subprocess, 'run', execute)
+    run_fidelity_phase(phase)
+    assert len(calls) == total
+    assert calls[shell_index][0] == '/bin/bash'
+    for index, args in enumerate(calls):
+        if index != shell_index:
+            assert args[:2] in (['/usr/bin/sudo', '/usr/bin/stat'], ['/usr/bin/sudo', '/usr/bin/getfacl'])
 
 
 def fidelity_command(phase):
@@ -743,6 +765,27 @@ retain canonical URL, real branch SHA, clean source, root and loader checks.
     return body
 
 
+def fidelity_metadata_checkpoint(stage, env):
+    import subprocess
+    if stage not in {'after-materialize', 'before-tools', 'after-tools', 'failed-smoke'}:
+        raise ValueError('fixed metadata checkpoint required')
+    paths = ['/', '/opt', '/opt/reva-release', '/opt/reva-release/source',
+             '/opt/reva-release/source/scripts',
+             '/opt/reva-release/source/scripts/built_unuploaded_proof.py']
+    commands = [(['/usr/bin/sudo', '/usr/bin/stat', '--format=%u:%g:%a:%F', '--', *paths], 'stat'),
+                (['/usr/bin/sudo', '/usr/bin/getfacl', '--numeric', '--omit-header',
+                  '--absolute-names', '--', *paths], 'acl')]
+    for args, label in commands:
+        print('Fixed startup metadata ' + stage + ' ' + label +
+              ', ordered root/opt/release/source/scripts/contract:', flush=True)
+        try:
+            result = subprocess.run(args, env=env, check=False, timeout=15)
+            if result.returncode:
+                print('Fixed metadata diagnostic unavailable; runtime verdict unchanged.', flush=True)
+        except (OSError, subprocess.SubprocessError):
+            print('Fixed metadata diagnostic unavailable; runtime verdict unchanged.', flush=True)
+
+
 def run_fidelity_phase(phase):
     import subprocess
     import re
@@ -760,25 +803,17 @@ def run_fidelity_phase(phase):
            'GITHUB_REF': ref, 'TARGET_SHA': sha}
     print('Credential-free retained startup fidelity: ' + phase +
           '; CI-only main-entry and fresh-CI admission omitted, runtime checks unchanged.', flush=True)
+    if phase == 'tools':
+        fidelity_metadata_checkpoint('before-tools', env)
     try:
         subprocess.run(['/bin/bash', '--noprofile', '--norc', '-euo', 'pipefail', '-c', fidelity_command(phase)],
                        env=env, check=True, timeout=600)
     except subprocess.CalledProcessError:
         if phase == 'smoke':
-            # CI-only, fixed public source paths; no file contents or credentials.
-            print('Fixed startup metadata uid:gid:mode:type, ordered root/opt/release/source/scripts/contract:', flush=True)
-            try:
-                result = subprocess.run(
-                    ['/usr/bin/sudo', '/usr/bin/stat', '--format=%u:%g:%a:%F', '--',
-                     '/', '/opt', '/opt/reva-release', '/opt/reva-release/source',
-                     '/opt/reva-release/source/scripts',
-                     '/opt/reva-release/source/scripts/built_unuploaded_proof.py'],
-                    env=env, check=False, timeout=15)
-                if result.returncode:
-                    print('Fixed metadata diagnostic unavailable; original smoke remains failed.', flush=True)
-            except (OSError, subprocess.SubprocessError):
-                print('Fixed metadata diagnostic unavailable; original smoke remains failed.', flush=True)
+            fidelity_metadata_checkpoint('failed-smoke', env)
         raise
+    if phase in {'materialize', 'tools'}:
+        fidelity_metadata_checkpoint('after-' + phase, env)
 
 
 if __name__ == '__main__':
