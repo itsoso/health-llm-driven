@@ -43,6 +43,7 @@ ALLOWED = frozenset({
     'scripts/test_trusted_retained_testflight.py', 'scripts/trusted_release_server.py',
     'scripts/bootstrap_trusted_release.py', 'scripts/test_trusted_release_server.py',
     'scripts/test_bootstrap_trusted_release.py', 'scripts/test_trusted_release_workflow.py',
+    'scripts/test_mobile_local_qr_script.py',
 })
 BUILD = {'id': BUILD_ID, 'gitCommitHash': OLD_SHA, 'status': 'FINISHED', 'platform': 'IOS',
          'distribution': 'STORE', 'buildProfile': 'production',

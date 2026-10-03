@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -351,8 +352,16 @@ def test_linux_no_clobber_move_preserves_inode_and_existing_destination(tmp_path
     assert not source.exists() and target.stat().st_ino == inode
     source.mkdir()
     source_inode = source.stat().st_ino
-    with pytest.raises(ValueError, match='no-clobber'):
+    # Coreutils versions differ: a skipped collision may return either zero
+    # (then our inode check rejects it) or one (check=True rejects it first).
+    # Both must leave the original source and destination identities intact.
+    with pytest.raises((ValueError, subprocess.CalledProcessError)) as rejected:
         m.move_noreplace(source, target)
+    if isinstance(rejected.value, subprocess.CalledProcessError):
+        assert rejected.value.returncode == 1
+        assert rejected.value.cmd == ['/usr/bin/mv', '--no-clobber', '-T', '--', str(source), str(target)]
+    else:
+        assert 'no-clobber' in str(rejected.value)
     assert source.stat().st_ino == source_inode and target.stat().st_ino == inode
 
 

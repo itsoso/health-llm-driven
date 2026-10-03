@@ -320,3 +320,26 @@ alternatives to AMap.
   9 skipped, 84 subtests; it began before the last durability-test additions,
   which are covered by the separate fresh focused run and must run in exact CI.
   Await new fixed-commit review; no push or production action while NO-GO.
+
+### 2026-10-03 · Exact CI test-harness correction
+
+- Fixed `19fa0743692a7057a8e1e9d41df24079aff9487d` received independent GO:
+  613 passed / one Linux-only skip plus separate-parent durability verification.
+  Fast-forward pushed to main; no deployment or upload followed the push.
+- Exact remote CI `37124819258` failed after 1099 tests at the real Linux
+  no-clobber collision negative case. The operation correctly refused an
+  existing destination, but this coreutils version raises CalledProcessError
+  before the test's expected ValueError. Accept only these two refusal paths,
+  require exit 1/exact command for the subprocess path, and retain both inode
+  preservation assertions. Production move behavior is unchanged.
+- Final local invariant run independently exposed an older QR-test SSH stub
+  that exits without consuming the checksum pipe (SIGPIPE / exit 141), after
+  1948 passed / 10 skipped / 84 subtests. The stub now consumes and validates
+  all five checksum entries. No QR publisher behavior changes. Its exact test
+  path is added to the retained-build operations-only comparison allowlist;
+  runtime/native paths remain rejected. Both failures remain recorded, not rerun
+  away or represented as passing evidence.
+- Repair remains local pending fixed-source review and authorization to push a
+  verified repair onto red main; new exact full CI must pass before release.
+  Original failed release, production services, lease and vendor artifact remain
+  unchanged. AMap remains disabled; no App Review submission is authorized.
