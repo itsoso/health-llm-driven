@@ -461,6 +461,63 @@ def test_retained_runner_hardening_and_smoke_precede_credentials():
     assert '--runner ' not in steps[smoke]['run']
 
 
+def retained_checkout_preamble():
+    import yaml
+    w = yaml.safe_load(Path('.github/workflows/trusted-release.yml').read_text())
+    body = w['jobs']['retained-testflight']['steps'][0]['run']
+    inner = body.split('/bin/bash --noprofile --norc -eu -c \'\n', 1)[1]
+    return inner.split('/usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source', 1)[0]
+
+
+def test_retained_checkout_sets_private_umask_inside_sudo_before_git_init():
+    statements = [line.strip() for line in retained_checkout_preamble().splitlines()
+                  if line.strip() and not line.strip().startswith('#')]
+    assert statements == ['umask 077']
+
+
+@pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0,
+                    reason='real root-owned checkout and loader require dedicated Linux sudo CI step')
+@pytest.mark.parametrize('private_checkout', [False, True])
+def test_real_linux_runner_bootstrap_and_loader_checkout_umask(private_checkout):
+    import shutil
+    import tempfile
+    m = load('trusted_retained_testflight')
+    with tempfile.TemporaryDirectory(prefix='retained-checkout-umask-', dir='/root') as directory:
+        root = Path(directory)
+        seed, source = root / 'seed', root / 'source'
+        (seed / 'scripts').mkdir(parents=True)
+        for filename in ('built_unuploaded_proof.py', 'trusted_release_gate.py'):
+            shutil.copyfile(Path(__file__).with_name(filename), seed / 'scripts' / filename)
+        env = {**m.ENV, 'GIT_AUTHOR_NAME': 'release-test', 'GIT_AUTHOR_EMAIL': 'test@example.invalid',
+               'GIT_COMMITTER_NAME': 'release-test', 'GIT_COMMITTER_EMAIL': 'test@example.invalid'}
+        def git(*args):
+            return subprocess.run(['/usr/bin/git', '-C', str(seed), *args], env=env,
+                                  capture_output=True, check=True).stdout
+        git('init', '-b', 'main')
+        git('add', 'scripts/built_unuploaded_proof.py', 'scripts/trusted_release_gate.py')
+        git('commit', '-m', 'test canonical checkout')
+        sha = git('rev-parse', 'HEAD').decode().strip()
+        # The outer shell supplies the observed permissive inherited mask. Only
+        # the real inner workflow preamble may make the fresh checkout private.
+        inner = (retained_checkout_preamble() if private_checkout else '') + '''
+            /usr/bin/git -c init.templateDir= init -b main "$1"
+            /usr/bin/git -C "$1" -c core.hooksPath=/dev/null fetch "$2" "$3"
+            /usr/bin/git -C "$1" -c core.hooksPath=/dev/null checkout -B main "$3"
+        '''
+        subprocess.run(['/bin/bash', '--noprofile', '--norc', '-eu', '-c',
+                        'umask 000; exec /bin/bash --noprofile --norc -eu -c "$1" fixture "$2" "$3" "$4"',
+                        'inherited-mask', inner, str(source), str(seed), sha],
+                       env=env, capture_output=True, check=True)
+        assert source.stat().st_mode & 0o777 == (0o700 if private_checkout else 0o777)
+        helper = source / 'scripts' / 'built_unuploaded_proof.py'
+        assert helper.stat().st_mode & 0o777 == (0o600 if private_checkout else 0o666)
+        if private_checkout:
+            assert m.validate_runner_source(source, sha) is not None
+        else:
+            with pytest.raises(ValueError, match='CONTRACT_METADATA'):
+                m.validate_runner_source(source, sha)
+
+
 def test_source_smoke_loads_both_helpers_without_reading_credentials(monkeypatch):
     m = load('trusted_retained_testflight')
     seen = []

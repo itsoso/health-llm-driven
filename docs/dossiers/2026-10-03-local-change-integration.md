@@ -469,3 +469,17 @@ alternatives to AMap.
   contents, credentials, arbitrary selectors or production operation. Original
   failure is re-raised even if metadata collection fails. RED/GREEN covers exact
   paths, stripped token environment and diagnostic timeout failure propagation.
+- Exact metadata candidate 791cf received diagnostic-only independent GO
+  (131 passed / two skips). New branch CI `37132892840`, job `111231418588`,
+  reproduced `CONTRACT_METADATA` and retained direct stat evidence: `/`, `/opt`
+  and `/opt/reva-release` are root:root 0755; fresh `source` and `source/scripts`
+  are root:root 0777; `built_unuploaded_proof.py` is root:root 0666. Thus the
+  canonical checkout itself is writable, even after the `/opt` fix. This is
+  evidence from the new isolated reproduction, not retroactive metadata from
+  either discarded publisher VM.
+- Bounded repair is to set `umask 077` inside the retained materialization's root
+  shell **before Git creates the source**. An outer caller umask is insufficient
+  because sudo may change it. Preserve strict owner/type/write/cache/hash checks;
+  do not normalize an existing checkout recursively or accept writable sources.
+  This fix remains on the diagnostic branch pending RED/GREEN, independent GO
+  and the actual full Linux startup pipeline before main integration.
