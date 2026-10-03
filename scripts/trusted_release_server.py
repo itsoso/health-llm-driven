@@ -366,9 +366,13 @@ def _load_frontend_finalizer():
     return module
 
 
-def _frontend_publication_backup_digest(root):
+def _frontend_publication_backup_digest(root, *, live=False):
     """Bind immutable backup content and ownership, preserving private runtime cache."""
     root = Path(root)
+    if live:
+        if root not in {PRODUCTION / "frontend" / ".next", PRODUCTION / "frontend" / "node_modules"}:
+            raise LaunchError("fixed live frontend artifact path required")
+        secure_path(root, directory=True)
     digest, count = hashlib.sha256(), 0
     pending = [root]
     while pending:
@@ -378,7 +382,8 @@ def _frontend_publication_backup_digest(root):
             raise LaunchError("frontend backup inventory exceeds bound")
         info = path.lstat()
         relative = path.relative_to(root)
-        cache = root.name == "previous-next" and relative.parts and relative.parts[0] == "cache"
+        cache_root = root.name == "previous-next" or (live and root == PRODUCTION / "frontend" / ".next")
+        cache = cache_root and relative.parts and relative.parts[0] == "cache"
         if stat.S_ISLNK(info.st_mode) and (cache or info.st_uid != 0):
             raise LaunchError("unsafe frontend backup link metadata")
         if cache and info.st_uid != 0:

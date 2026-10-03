@@ -75,11 +75,13 @@ def test_invalid_publication_blocks_all_existing_history_callers(evidence, mutat
 
 
 @pytest.mark.parametrize('violation', [None, 'owner', 'group', 'mode', 'outside', 'link', 'ownership-drift'])
-def test_private_cache_metadata_is_preserved_and_narrowly_allowed(tmp_path, monkeypatch, violation):
+@pytest.mark.parametrize('live', [False, True])
+def test_private_cache_metadata_is_preserved_and_narrowly_allowed(tmp_path, monkeypatch, violation, live):
     import os
     from types import SimpleNamespace
     server = load('trusted_release_server')
-    root = tmp_path / 'previous-next'
+    monkeypatch.setattr(server, 'PRODUCTION', tmp_path / 'production')
+    root = server.PRODUCTION / 'frontend' / '.next' if live else tmp_path / 'previous-next'
     cache = root / 'cache'
     cache.mkdir(parents=True)
     (cache / 'entry').write_text('cache')
@@ -110,11 +112,29 @@ def test_private_cache_metadata_is_preserved_and_narrowly_allowed(tmp_path, monk
         (cache / 'link').symlink_to('entry')
     if violation in ('owner', 'group', 'mode', 'outside', 'link'):
         with pytest.raises(server.LaunchError):
-            server._frontend_publication_backup_digest(root)
+            server._frontend_publication_backup_digest(root, live=live)
     else:
-        first = server._frontend_publication_backup_digest(root)
+        first = server._frontend_publication_backup_digest(root, live=live)
         assert len(first) == 64
         assert (cache / 'entry').read_text() == 'cache'
         if violation == 'ownership-drift':
             drift = True
-            assert server._frontend_publication_backup_digest(root) != first
+            assert server._frontend_publication_backup_digest(root, live=live) != first
+
+
+def test_live_validation_only_accepts_fixed_secure_production_artifacts(tmp_path, monkeypatch):
+    server = load('trusted_release_server')
+    monkeypatch.setattr(server, 'PRODUCTION', tmp_path / 'production')
+    production = server.PRODUCTION / 'frontend'
+    production.mkdir(parents=True)
+    for name in ('.next', 'node_modules'):
+        (production / name).mkdir()
+    calls = []
+    monkeypatch.setattr(server, 'secure_path', lambda path, **kw: calls.append((path, kw)))
+    monkeypatch.setattr(server, 'validate_metadata', lambda *a, **kw: None)
+    for name in ('.next', 'node_modules'):
+        assert len(server._frontend_publication_backup_digest(production / name, live=True)) == 64
+        assert calls[-1] == (production / name, {'directory': True})
+    for path in (tmp_path / '.next', production / 'previous-next', production / '.next' / 'cache'):
+        with pytest.raises(server.LaunchError, match='fixed live'):
+            server._frontend_publication_backup_digest(path, live=True)

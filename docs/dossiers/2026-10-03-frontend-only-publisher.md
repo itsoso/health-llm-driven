@@ -42,6 +42,14 @@ Pending behavioral regressions, release-invariants CI-mode suite, independent
 fixed-commit safety review and exact final main CI. No passing gate is inferred
 from earlier SHAs.
 
+Initial independent review of `c8297e332c8fdd5a6a4d67f5c72a6b2d7dc6e46c`
+returned NO-GO: old artifact metadata validation happened after frontend stop and
+partial switch. The repaired operator validates both fixed live bundle trees
+during inspect and immediately before stop. After confirmed stop, it binds frozen
+old digests before any rename and compares the retained backups. Synthetic
+invalid cache/link/hardlink/write-permission regressions prove zero service stops
+and zero artifact switches. A new fixed-candidate independent rereview is pending.
+
 ## G5 / G6 release and acceptance
 
 Pending reviewed canonical staging, matching read-only evidence digest,

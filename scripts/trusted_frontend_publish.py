@@ -133,6 +133,8 @@ def inspect(args, source, helper, bootstrap, server, gate, build):
                      build.git(PRODUCTION, 'rev-parse', 'HEAD'),
                      bootstrap._read_json(STATE / args.production_sha / 'completed.json'))
     server.assert_frontend_rebuild_history(STATE)
+    for name in ('.next','node_modules'):
+        server._frontend_publication_backup_digest(PRODUCTION/'frontend'/name,live=True)
     if any(os.path.lexists(path) for path in (LEASE, STATE/'frontend-publications'/args.operation_id, BUILDS/args.operation_id)):
         raise PublishError('existing operation or lease; retry forbidden')
     environment, fingerprints = configuration(build)
@@ -294,17 +296,21 @@ def execute(plan, source, helper, bootstrap, server, build, check_locks):
             live=PRODUCTION/'frontend'/name
             if not stat.S_ISDIR(live.lstat().st_mode) or live.stat().st_dev != audit.stat().st_dev or live.stat().st_dev!=(stage/'frontend'/name).stat().st_dev:
                 raise PublishError('artifact switch requires normal same-filesystem directories')
-            # Backups are hashed after frontend stop, so mutable cache is stable.
+            # Fully validate the old bundle before any disruptive service action.
+            # Live cache bytes may change; no content equality is assumed yet.
+            server._frontend_publication_backup_digest(live,live=True)
         record('install-started.json','FRONTEND_INSTALLING',digest)
         check_locks()
         build.run(['/usr/bin/systemctl','stop','health-frontend'])
         stopped=dict(line.split('=',1) for line in build.run(['/usr/bin/systemctl','show','health-frontend','--property=ActiveState,SubState,MainPID,ControlPID']).splitlines())
         if stopped != dict(ActiveState='inactive',SubState='dead',MainPID='0',ControlPID='0'):
             raise PublishError('frontend not stopped')
+        frozen={name:server._frontend_publication_backup_digest(PRODUCTION/'frontend'/name,live=True) for name in ('.next','node_modules')}
         for name,backup in (('.next','previous-next'),('node_modules','previous-node-modules')):
             (PRODUCTION/'frontend'/name).rename(audit/backup)
             (stage/'frontend'/name).rename(PRODUCTION/'frontend'/name)
             backups[backup]=server._frontend_publication_backup_digest(audit/backup)
+            if backups[backup]!=frozen[name]: raise PublishError('frozen old bundle changed during switch')
             server._sync_directory(PRODUCTION/'frontend'); server._sync_directory(audit)
         build.run(['/usr/bin/systemctl','start','health-frontend'])
         first_runtime=runtime(build)

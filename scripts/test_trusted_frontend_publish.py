@@ -69,7 +69,7 @@ def execution_fixture(tmp_path, monkeypatch):
     events=[]
     def write_private(path,data):
         with path.open('xb') as out: out.write(data)
-    server=SimpleNamespace(secure_path=lambda *a,**kw:None,_sync_directory=lambda p:events.append(('sync',str(p))),_write_private=write_private,_sync_business_lease_parent=lambda:events.append(('lease-sync',)),_frontend_publication_backup_digest=lambda p:'f'*64)
+    server=SimpleNamespace(secure_path=lambda *a,**kw:None,_sync_directory=lambda p:events.append(('sync',str(p))),_write_private=write_private,_sync_business_lease_parent=lambda:events.append(('lease-sync',)),_frontend_publication_backup_digest=lambda p,**kw:'f'*64)
     def copy(source,stage,env):
         (stage/'frontend').mkdir(parents=True)
         for name in ('.next','node_modules'): (stage/'frontend'/name).mkdir(); (stage/'frontend'/name/'new').write_text('new')
@@ -178,3 +178,31 @@ def test_build_disables_install_and_pre_post_build_lifecycle_hooks():
     m=load()
     command=m.build_command(SimpleNamespace(build_command=lambda *a:['npm ci --ignore-scripts --no-audit --no-fund\nnpm run build']),'a'*32,Path('/tmp/stage'))
     assert command[-1]=='npm ci --ignore-scripts --no-audit --no-fund\nnpm run --ignore-scripts build'
+
+
+@pytest.mark.parametrize('bad',['cache-symlink','file-symlink','hardlink','owner'])
+def test_invalid_old_bundle_is_rejected_before_stop_or_rename(tmp_path,monkeypatch,bad):
+    import os
+    from types import SimpleNamespace
+    m,plan,h,s,b,events=execution_fixture(tmp_path,monkeypatch)
+    spec=importlib.util.spec_from_file_location('server_bad_bundle',Path(__file__).with_name('trusted_release_server.py'))
+    server=importlib.util.module_from_spec(spec); spec.loader.exec_module(server)
+    monkeypatch.setattr(server,'PRODUCTION',m.PRODUCTION)
+    monkeypatch.setattr(server,'secure_path',lambda *a,**kw:None)
+    # Root-owned production metadata simulated using actual test account IDs.
+    original=server.validate_metadata
+    monkeypatch.setattr(server,'validate_metadata',lambda info,**kw:None if info.st_uid==os.getuid() and not info.st_mode&0o022 else (_ for _ in ()).throw(server.LaunchError('owner')))
+    monkeypatch.setattr(server.pwd,'getpwnam',lambda _:SimpleNamespace(pw_uid=os.getuid(),pw_gid=os.getgid()))
+    root=m.PRODUCTION/'frontend/.next'
+    if bad=='cache-symlink': (root/'cache').symlink_to(tmp_path)
+    if bad=='file-symlink': (root/'escape').symlink_to('/etc/passwd')
+    if bad=='hardlink': os.link(root/'old',root/'duplicate')
+    if bad=='owner': (root/'old').chmod(0o666)
+    s._frontend_publication_backup_digest=server._frontend_publication_backup_digest
+    renames=[]
+    original_rename=Path.rename
+    monkeypatch.setattr(Path,'rename',lambda self,target:(renames.append((self,target)),original_rename(self,target))[1])
+    with pytest.raises(m.PublishError): m.execute(plan,tmp_path,h,None,s,b,lambda:None)
+    assert not renames
+    assert not any(e[0]=='/usr/bin/systemctl' for e in events)
+    assert (root/'old').exists() and m.LEASE.exists()
