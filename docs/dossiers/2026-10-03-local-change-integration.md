@@ -67,6 +67,21 @@ Do not revive the previously rejected medication validator exception.
 
 ## G4 / G5 / G6
 
-Independent fixed-candidate review pending. Live evaluation, exact remote CI,
-provider readiness, backend and native TestFlight gates remain open; do not
-interpret these local results or imported historical records as release success.
+Independent read-only source review of `77017fbfff4c8fb4a4e487763142a9fa6a7b7ea3`
+against `dbad4e66c29f31c0ae149fecefa6c0d4f3e45283`: **GO**, no confirmed code-level
+safety/privacy blocker. Reviewer independently ran backend location/medication
+tests (66 passed) and mobile location service/editor (31 passed, two suites),
+all exit 0; diff whitespace check passed. Logs are
+`independent-integration-{backend,mobile}77017.log` in the evidence directory.
+
+Delivery remains BLOCKED by the live LLM gate. Source review does not clear
+provider readiness, native acceptance or exact candidate remote CI. Local
+candidate remains unpushed; no passing live attestation written, no deployment
+or TestFlight task started by this integration run. Source worktree still has
+its original 34 dirty/untracked files and original HEAD `9fb13ee63`.
+
+Read-only concurrency check found a separate backend-only trusted release
+`37100225023` running for canonical `dbad4e66c`; its CI `37098891748` is green,
+but neither run contains this integration. Do not seize that operation/lease.
+Await user decisions on isolated synthetic server evaluation (no key export or
+production database access) and GPS readiness versus a manual-only rollout.
