@@ -193,4 +193,12 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 
 `3a923` 的固定 CI-mode 关联集成为 1033 passed / 2 skipped（102.27 秒）；之后仅摘要边界修复，另以新鲜 SQLite/PostgreSQL 定向回归和独立复审覆盖，不把前次集成标为最后代码的全量 CI。整批发布继续 BLOCK，未修改 GitHub live-confirmation 变量或触发发布工作流。
 
-摘要边界修复的最终 PostgreSQL 回归 **52 passed（38.29 秒，Asia/Shanghai）**，临时集群已停止并删除；SQLite 最终 52 passed（4.91 秒）。待新固定提交独立复审，真实模型发布 G3 不因此改变。
+摘要边界修复的最终 PostgreSQL 回归 **52 passed（38.29 秒，Asia/Shanghai）**，临时集群已停止并删除；SQLite 最终 52 passed（4.91 秒）。
+
+### 最终检查点：代码复审 GO，发布仍 NO-GO
+
+摘要修复已保存为 `eeb71eafde8554b1bb793c731b512cee13c537f0`。独立 reviewer 对该固定提交给出 **代码 G4 GO / 整批发布 NO-GO**：两项摘要阻断均已关闭，独立四文件 52 passed（4.01 秒），另核验两种 reader 拒绝顺序、正文、角色、时间、缺切点、插入六类前缀变化，合法旧切点与窗口间隙仍可衔接。受审源码摘要全部匹配；复审没有调用模型、重跑 PostgreSQL 或修改源码。此前 `3a923` 的 NO-GO 记录保留。
+
+[有界诊断复测](../reviews/2026-10-04-release-candidate-diagnostic-repeat.json)预设 3 个原句 Flash 任务、最多 9 次调用，实际 6 次 API 调用，3 个任务契约通过。Gateway 均收到正确的睡眠/饮食与日期范围；没有复现原失败，因此不能确定原提案被拒的原因，也没有应用修复可以关闭该失败。每任务输入均为 12270 tokens，任务耗时 40.78 / 19.15 / 34.73 秒；缓存命中、输出量变化且无同期配对基线，这些仅为诊断记录，不构成提速或语义非劣结论。原失败报告继续有效，未重新计算为整批绿色。
+
+**截至本检查点：优化与摘要修复已本地保存，G3 完整任务质量仍 BLOCK，未 push、merge 或 deploy。** 线上仍为 `a8853dea1207163aaa412974dddfbc050ce3eeea`，backend/worker/beat active、health 200；没有改生产开关、授权、锁或回执。P1/P2、参数压缩继续 eval-only，已否决的写工具说明精简没有启用。独立代码 GO 不替代真实模型质量、精确候选全量 CI 与发布验证。后续从原失败的脱敏 Gateway 提案诊断继续；需确认根因、先复现后修复，再执行同批基线/候选与未见样本验收，通过后才可进入已获用户授权的发布流程。

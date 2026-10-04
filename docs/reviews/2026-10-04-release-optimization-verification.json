@@ -50,7 +50,7 @@
     "No production database data queried. SHOW timezone only confirmed Asia/Shanghai.",
     "No activation of P1/P2, argument transport or rejected write-tool descriptions.",
     "No clinical noninferiority or production latency claim.",
-    "Full exact-candidate CI and release G4 not passed. No deployment, merge, authorization rotation or production mutation.",
+    "Full exact-candidate CI and release G3 not passed. Fixed runtime code G4 GO is distinct from release NO-GO. No deployment, merge, authorization rotation or production mutation.",
     "The old undated-history sorting failure was reproduced on PostgreSQL; NULLS FIRST preserves historical provenance.",
     "Timezone fixture now inserts the documented naive-UTC column value. This does not validate all application timestamp write paths."
   ],
@@ -104,10 +104,47 @@
     ],
     "old_cache_deleted": false,
     "postgres_status": "passed",
-    "independent_review": "pending",
+    "independent_review": "code_GO_release_NO_GO",
     "postgres_passed": 52,
     "postgres_seconds": 38.29,
     "postgres_timezone": "Asia/Shanghai",
-    "temporary_cluster_removed": true
+    "temporary_cluster_removed": true,
+    "independent_passed": 52,
+    "independent_seconds": 4.01,
+    "independent_additional_checks": [
+      "both readers reject reordered prefix",
+      "both readers reject content mutation",
+      "both readers reject role mutation",
+      "both readers reject timestamp mutation",
+      "both readers reject missing cutoff",
+      "both readers reject inserted prefix message",
+      "valid prior cutoff plus window gap accepted"
+    ]
+  },
+  "fixed_runtime_commit": "eeb71eafde8554b1bb793c731b512cee13c537f0",
+  "safety_review_eeb71": {
+    "commit": "eeb71eafde8554b1bb793c731b512cee13c537f0",
+    "reviewer": "prompt_p1_review",
+    "code": "GO",
+    "release": "NO_GO",
+    "closed_findings": [
+      "read/write NULL order mismatch",
+      "numeric-ID incremental cutoff skipped actual prefix messages"
+    ],
+    "remaining_release_blocker": "unresolved G3 full-task model failure",
+    "independent_postgres_rerun": false,
+    "independent_api_calls": 0,
+    "source_hashes_verified": true
+  },
+  "diagnostic_repeat": {
+    "report": "2026-10-04-release-candidate-diagnostic-repeat.json",
+    "status": "passed_contracts_only",
+    "tasks": 3,
+    "actual_api_calls": 6,
+    "max_api_calls": 9,
+    "semantic_noninferiority": "not_established",
+    "original_failure_reproduced": false,
+    "original_failure_fixed": false,
+    "release_effect": "none: bounded diagnosis did not establish the cause or close the original failure"
   }
 }
