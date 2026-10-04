@@ -638,7 +638,7 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
             continue
         prefix = _RECENT.sub("", clause[: domain.start()])
         prefix = re.sub(
-            r"请|要|分别|先|再|查询|查看|读取|调取|结合|分析|洞察|包括|针对|基于|"
+            r"请|要|分别|先|再|查询|查看|读取|调取|结合|分析|洞察|复盘|总结|包括|针对|基于|"
             r"近期|最近|过去|日常|每天|实际|服用|在|的|里|内|\s",
             "",
             prefix,

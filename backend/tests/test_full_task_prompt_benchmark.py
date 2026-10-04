@@ -208,6 +208,26 @@ async def test_analysis_screen_runs_real_empty_kb_without_widening_read_screen(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("verb", ["复盘", "总结"])
+async def test_retrospective_request_completes_real_gateway_and_persistence(
+    db, auth_user_and_headers, monkeypatch, verb,
+):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "app_env", "test")
+    user, _ = auth_user_and_headers
+    scenario = Scenario("retrospective", 7, "available",
+                        f"{verb}我最近7天的睡眠和饮食记录。", allow_knowledge=True)
+    seed_synthetic_records(db, user.id, scenario)
+    row = await run_sample(db, user.id, scenario, "baseline", "qwen3.8-flash", CallBudget(3), live=False)
+    assert row["status"] == "passed_contracts", row
+    assert row["outcome"] == "complete"
+    assert row["quality"]["stream_matches_saved"]
+    assert row["quality"]["health_rows_unchanged"]
+    assert row["gateway_decisions"][0]["reason"] == "health_query_projected_to_calendar_window"
+
+
+@pytest.mark.asyncio
 async def test_gateway_denial_keeps_narrow_read_scope_diagnostics(db, auth_user_and_headers, monkeypatch):
     from app.config import settings
     from eval.full_task_prompt_benchmark import ScriptedProvider
