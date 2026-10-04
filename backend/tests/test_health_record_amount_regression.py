@@ -930,6 +930,7 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
     class FakeAgentConversationService:
         def __init__(self, db):
             self.db = db
+            self.provider_history_references = ()
 
         def get_or_create_conversation(self, user_id, conversation_id=None, title=None):
             from app.models.agent_conversation import AgentConversation

@@ -242,3 +242,9 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 接下来执行精确主干 CI、Trusted validate、canonical bootstrap 轮换、Trusted backend，再按 Web canonical operator 发布前端制品；任何步骤失败保留原回执，禁止重放或清锁。部署与上线复验尚未完成。
 
 最终 CI-mode 关联集成：39 个测试文件，**1054 passed / 2 skipped**，138.57s，0 failure/error。它不替代接下来的精确主干 GitHub CI。
+
+### 精确 CI 第一轮修复
+
+`7985bef01` 的 GitHub CI `37203498721` 暴露两处本地关联集未覆盖的测试接线缺口：旧 r-other 分片目录缺少新增 `test_retrospective_read_scope.py`，以及 `test_health_record_amount_regression.py` 的旧 FakeAgentConversationService 未初始化 `provider_history_references`。两项均先本地复现 RED，补目录 pattern 和 fake 空引用后，发布分片合同、原记录回归及新增 retrospective 回归 **97 passed / 3.45s**。不改变运行时代码、不删除测试、不放宽 oracle；首轮失败原样保留。生产尚未轮换授权或部署。
+
+同轮 balanced-14 的两个 advice 用例把公开 `run_stream` 直接换成 `_run_stream_impl`，跳过 `_report_dispatches` 初始化并在原安全断言前失败。临时合成异常探针确认后，测试仅让 local_advice_response 第一次路由调用返回 None 并立即恢复原函数，保留公开入口和真实最终答案 guard。原强制越界工具、拒绝原因和公开回答断言不变；相关 advice/query outcome **80 passed / 15.37s**，运行时哈希完全不变。

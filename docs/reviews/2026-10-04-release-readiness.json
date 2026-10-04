@@ -190,5 +190,20 @@
     "failed": 1,
     "failure": "Old composed-experiment expectation required an extra model answer after exhausted reads; only expectation changed, all receipts/stream/persistence/outcome equality retained.",
     "confirmation_passed": 55
+  },
+  "ci_first_attempt": {
+    "sha": "7985bef01704a1fec860f33a2261113b67e1a325",
+    "run_id": 37203498721,
+    "status": "failed",
+    "repaired_test_wiring": [
+      "retrospective shard catalog coverage",
+      "legacy conversation fake history reference initialization",
+      "advice route test preserves public entry initialization and real answer guard"
+    ],
+    "targeted_passed": [
+      97,
+      80
+    ],
+    "runtime_changed": false
   }
 }
