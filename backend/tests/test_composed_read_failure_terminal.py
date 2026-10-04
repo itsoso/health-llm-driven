@@ -125,3 +125,48 @@ async def test_terminal_retains_prior_verified_dimension(db, four_domain_user, m
     assert any(g["goal_id"] == "diet" and g["status"] == "verified" for g in done["turn_outcome"]["goals"])
     assert "200千卡" in saved.content
     assert trace.executor._turn_composed_read_retry_exhausted
+
+
+@pytest.mark.parametrize("continuation", [False, True])
+def test_sync_status_goal_excludes_full_scope_early_terminal(db, four_domain_user, continuation):
+    from app.services.agent_kernel.types import ActionableReference
+    from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
+    from app.services.agent_read_task_continuation import read_task_metadata
+    query = "查看我昨天的睡眠和饮食，佳明数据同步完成了吗？"
+    executor = AgentExecutor(db)
+    executor._current_user_id = four_domain_user.id
+    executor._current_turn_user_message = query
+    executor._start_agent_kernel_turn(user_id=four_domain_user.id, message=query, channel="typed")
+    state = executor._agent_kernel_snapshot
+    scope = resolve_owned_read_scope(state)
+    if continuation:
+        prior = read_task_metadata(state, scope, sync_status=True)
+        assert prior is not None
+        executor._start_agent_kernel_turn(user_id=four_domain_user.id, message="再查一下", channel="typed")
+        state = replace(executor._agent_kernel_snapshot, actionable_references=(
+            ActionableReference(kind="owned_read_task", source_message_id="1", data=prior),))
+        executor._agent_kernel_snapshot = state
+        scope = resolve_owned_read_scope(state)
+    assert resolve_sync_status_query(state) is not None
+    decision = decide_tool_capability(state, ToolExecutionRequest("health_query_batch", {"queries": list(scope.queries)}))
+    assert decision.action == "allow"
+    executor._agent_kernel_last_decision = decision
+    executor._stop_exhausted_composed_read_retry("health_query_batch", ERROR, 1)
+    assert not executor._turn_composed_read_retry_exhausted
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("panel", [False, True])
+async def test_failed_batch_does_not_skip_sibling_sync_status(db, four_domain_user, monkeypatch, panel):
+    query = "查看我昨天的睡眠和饮食，佳明数据同步完成了吗？"
+    trace = batch_trace(db, monkeypatch, [[
+        ("health_query_batch", {"queries": [{"dimension": d, "start_date": "2026-09-12",
+           "end_date": "2026-09-12", "timezone": "Asia/Shanghai"} for d in ("sleep", "diet")]}),
+        ("health_query", {"dimension": "garmin"})], ANSWER])
+    from app.services import agent_query_window as reads
+    def failed(*args, **kwargs): raise RuntimeError("synthetic_read_unavailable")
+    monkeypatch.setattr(reads, "read_calendar_health_query", failed)
+    done, _ = await consume(db, trace, four_domain_user, panel=panel, query=query)
+    assert any(r.tool_name == "health_query" and r.arguments.get("dimension") == "garmin" for r in trace.dispatches)
+    assert not trace.executor._turn_composed_read_retry_exhausted
+    assert done["turn_outcome"]["status"] != "complete"

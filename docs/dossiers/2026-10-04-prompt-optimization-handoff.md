@@ -220,3 +220,7 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 新增失败根因已离线复现：底层 batch 瞬态读取失败自动重试一次，随后模型又选择 knowledge_search + single health_query，继续重复读取直到评测预算耗尽。RED 两例失败。窄修复在现有瞬态重试耗尽、Gateway allow 的完整 canonical queries 与当前纯组合读 scope 完全一致时，用 Pi terminate 直接结束本任务，停止同批剩余调用；保留所有既有核实结果，按原完成投影说明本轮未完成。batch 遇首个子查询错误即返回，因此不声称每个维度均实际失败。同步、写入、每日计划、运动计划、医生反馈、待确认、部分 batch、参数失败和重试成功均不触发。新状态与参数修复计数分开，下一用户回合重置。
 
 当前继续固定候选测试与独立审查，再复验受影响真实场景；仍未 push/merge/deploy，不增加原评测上限。失败态可确定性如实结束，不需要再请求模型生成失败文案。正常场景 Flash 单样本输入 14614→12270，但耗时 26.62→38.83 秒，不能宣称端到端提速。写说明压缩及 P1/P2 仍不启用。
+
+独立复审 `f1ce9b9` 虽复跑 31 passed，仍给 G4 NO-GO：新终止条件排除了同步命令，却遗漏“佳明同步完成了吗”这一独立只读目标及 server-bound 续问；健康维度查询范围完整不等于整个任务目标完整。新增四例（当前句、续问、普通 Pi 与 panel 同批 Garmin 状态）全部 RED 后，增加 `resolve_sync_status_query(snapshot)` 排除，最终六文件 **199 passed**。保留 G4 失败，不以纯 sleep/diet live 通过覆盖该边界。
+
+纯读取异常的[真实复验](../reviews/2026-10-04-release-terminal-live-verification.json)在 `f1ce9b9` 上 Flash/Max 均通过：各一次模型调用、两次实际瞬态失败，真实保存 failed/error，没有虚构结果。[标准 live gate](../reviews/2026-10-04-release-final-live-regression.json) 5/5 通过，10 条 API usage 审计完整、零失败；离线 12/50、轨迹 12/9 通过。50 文件集成 3746 passed / 2 skipped，唯一旧实验断言仍要求失败合成轮，更新调用数预期后 55 passed；四臂的参数、真实回执、持久化、流文本与结果一致性断言继续保留。后续生产源码仅增加上述同步状态排除，不改模型提示词、参数修复预算或调用上限。

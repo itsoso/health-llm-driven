@@ -12649,7 +12649,9 @@ class AgentExecutor:
         unfinished, never claims every dimension failed or discards verified data.
         Parameter repair and partial reads retain their separate feedback budget.
         """
-        from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction, resolve_owned_read_scope
+        from app.services.agent_kernel.read_task_scope import (
+            has_owned_sync_instruction, resolve_owned_read_scope, resolve_sync_status_query,
+        )
         from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
 
         snapshot = self._agent_kernel_snapshot
@@ -12660,6 +12662,7 @@ class AgentExecutor:
             or snapshot is None or snapshot.intent.is_write
             or self._turn_daily_read_plan is not None or self._turn_sync_attempted
             or has_owned_sync_instruction(snapshot.envelope.text)
+            or resolve_sync_status_query(snapshot) is not None
             or resolve_exercise_plan_scope(snapshot.envelope.text) is not None
             or classify_clinician_turn(snapshot.envelope.text).kind != "none"
             or self._agent_kernel_pending_confirmation_tools

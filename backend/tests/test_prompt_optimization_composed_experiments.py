@@ -106,7 +106,7 @@ async def test_combined_candidates_preserve_provider_evidence_and_saved_answer(d
             assert all(request.tool_name == 'health_query_batch' for request in requests)
             assert all(request.arguments == requests[0].arguments for request in requests)
             assert not done['write_receipts']
-            assert len(calls) == (1 if p2 else 2)
+            assert len(calls) == ((0 if p2 else 1) if data_state == 'read_failure' else (1 if p2 else 2))
             if data_state == 'read_failure':
                 assert '查询失败' in saved.content or '未完成' in saved.content
                 assert all(receipt.startswith('Error:') for receipt in receipts)
@@ -127,23 +127,18 @@ async def test_combined_candidates_preserve_provider_evidence_and_saved_answer(d
         assert candidate['completion'] == baseline['completion']
         if data_state != 'read_failure':
             assert candidate['calls'][-1]['messages'][1:] == baseline['calls'][-1]['messages'][1:]
-        else:
-            # Failed reads stay in the execution transcript. Server-planned
-            # arguments contain bound dates and different call IDs; compare
-            # normalized Gateway arguments and tool results above, and retain
-            # the exact current question and failure material here.
-            for role in ('user', 'tool'):
-                assert [m.get('content') for m in candidate['calls'][-1]['messages'] if m.get('role') == role] == [
-                    m.get('content') for m in baseline['calls'][-1]['messages'] if m.get('role') == role]
-        assert candidate['calls'][-1]['max_tokens'] == baseline['calls'][-1]['max_tokens']
+        if data_state != 'read_failure':
+            assert candidate['calls'][-1]['max_tokens'] == baseline['calls'][-1]['max_tokens']
     assert runs['p1']['calls'][0] == baseline['calls'][0]
     if data_state != 'read_failure':
         assert runs['p2']['calls'][-1] == baseline['calls'][-1]
         assert runs['combined']['calls'][-1] == runs['p1']['calls'][-1]
         assert len(runs['combined']['calls'][-1]['messages'][0]['content']) < len(baseline['calls'][-1]['messages'][0]['content'])
     else:
-        for run in runs.values():
-            assert run['calls'][-1]['messages'][0] == baseline['calls'][-1]['messages'][0]
+        # Exhausted full-scope failures terminate from the authoritative
+        # receipts above. There is no model synthesis of failed evidence.
+        assert [len(run['calls']) for run in runs.values()] == [1, 1, 0, 0]
+        assert all(run['completion'] == 'error' for run in runs.values())
     if (directory := os.environ.get('REVA_COMPOSED_EXPERIMENT_PAYLOADS')) and data_state == 'available':
         target = Path(directory)
         target.mkdir(parents=True, exist_ok=True)
