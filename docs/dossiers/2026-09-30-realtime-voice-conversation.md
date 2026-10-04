@@ -459,3 +459,24 @@
   chat; re-entry was idle with no automatic restart. No meaningful spoken sample,
   audible short-phrase completion or playback-time exit was established in this
   check; do not substitute these UI checks for those remaining native paths.
+
+### User-requested menu-only voice entry — 2026-10-04
+
+- User found the top-right green voice capsule too large/prominent and requested
+  returning voice to more. Removed only the header shortcut and its unused props
+  and styles. History/more stay compact; new chat and realtime voice remain in
+  more. The separate composer dictation control is unchanged.
+- Menu navigation retains streaming/composer-busy guards and opens `/voice-chat`
+  without automatic microphone start. No voice engine, permission, consent,
+  health-write or backend behavior changed.
+- RED: the new header regression failed because the prominent pulse shortcut was
+  still present (1 failed / 3 passed). GREEN: 155 focused tests passed, including
+  menu navigation, selection exit, history and composer cleanup protections.
+  Full Mobile regression passed 326 suites / 3284 tests, with 1 skipped and
+  1 snapshot passed. TypeScript, System Map, secrets, dossier consistency and
+  whitespace checks passed. Full regression log:
+  `/tmp/reva-menu-only-voice-jest-20261004.log`.
+- Changes are local to the existing task worktree based on main `765b4cdb3`;
+  the original dirty checkout was not changed. This UI revision has not been
+  committed, pushed, deployed or uploaded to TestFlight. No new native simulator
+  acceptance is claimed by the mocked UI regression tests.

@@ -240,7 +240,7 @@ export default function ChatScreen() {
     }
     setToolMenuVisible(false);
     Keyboard.dismiss();
-    // Both entry points navigate only; microphone start remains explicit.
+    // Menu entry navigates only; microphone start remains explicit.
     router.push('/voice-chat');
   }, [isStreaming, composerVoiceBusy]);
 
@@ -1116,7 +1116,6 @@ export default function ChatScreen() {
           isStreaming={isStreaming}
           onBack={contextEntryActive ? handleExitContext : undefined}
           onSelectModel={handleSelectModel}
-          onOpenVoice={selectionMode ? undefined : openVoiceConversation}
           onOpenHistory={openHistory}
           onOpenToolMenu={() => setToolMenuVisible(true)}
         />

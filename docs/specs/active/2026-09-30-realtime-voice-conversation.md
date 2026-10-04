@@ -38,16 +38,14 @@ RequirementAdmission:
 
 ## 3. User Flow
 
-### Reachable entry repair — 2026-10-03
+### Menu-only voice entry — 2026-10-04
 
-Expose the existing feature through a green pulse-icon + 语音 capsule at the far
-right of the chat header. Remove the previous above-composer shortcut. Keep
-history and more as neutral header actions; move new chat into more instead of
-squeezing a fourth action into the header. Retain
-Chat → 更多操作 → 实时语音对话 as a secondary entry. Hide the shortcut during message
-multi-selection; never cover message content with an overlay. Use a minimum
-44-point touch target and the existing compact-header font-scaling convention.
-Both entry points share the same microphone-ownership/navigation guard. Keep the
+Following user feedback that the green header voice capsule is too prominent,
+remove the standalone header action. Keep history and more as compact neutral
+header actions with 44-point touch targets; new chat remains in more. Use
+Chat → 更多操作 → 实时语音对话 as the realtime voice entry, without a header or
+above-composer shortcut, including after leaving message multi-selection.
+The menu entry retains the existing microphone-ownership/navigation guard. Keep the
 first-level conversation-history action and the separate transcription microphone.
 Navigation opens `/voice-chat` without `autoStart`; the voice page's explicit
 microphone and existing AI-consent gate remain authoritative. Active chat streaming
@@ -56,9 +54,13 @@ explanation, so opening the modal cannot create competing microphone ownership.
 This is a reachability bugfix under the existing Capture/ExecutionEvent/WriteIntent
 admission, not new medical-write authority, background listening or full duplex.
 
-Acceptance: idle entry is visible without opening a menu and closes any open menu; active composer/Agent
+Acceptance: no prominent voice shortcut appears in the chat header or composer;
+the more menu exposes one realtime voice entry and closes on successful navigation; active composer/Agent
 work cannot navigate; history and transcription remain available; native simulator
 verification and release gates are separate from mocked regression evidence.
+
+Change note: this supersedes the 2026-10-03 prominent header-entry layout only;
+voice-session behavior and safety boundaries are unchanged.
 
 ```text
 tap microphone

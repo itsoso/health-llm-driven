@@ -18,7 +18,6 @@ describe('ChatHeader', () => {
         isStreaming={false}
         onBack={onBack}
         onSelectModel={jest.fn()}
-        onOpenVoice={jest.fn()}
         onOpenHistory={jest.fn()}
         onOpenToolMenu={jest.fn()}
       />,
@@ -38,7 +37,6 @@ describe('ChatHeader', () => {
         llmError={null}
         isStreaming={false}
         onSelectModel={jest.fn()}
-        onOpenVoice={jest.fn()}
         onOpenHistory={jest.fn()}
         onOpenToolMenu={jest.fn()}
       />,
@@ -60,7 +58,6 @@ describe('ChatHeader', () => {
         llmError={null}
         isStreaming
         onSelectModel={jest.fn()}
-        onOpenVoice={jest.fn()}
         onOpenHistory={jest.fn()}
         onOpenToolMenu={jest.fn()}
       />,
@@ -69,10 +66,9 @@ describe('ChatHeader', () => {
     expect(queryByLabelText('回复中')).toBeNull();
   });
 
-  it('makes labelled voice visually primary and represents more actions without a settings gear', () => {
+  it('keeps only neutral history and more actions without a prominent voice shortcut', () => {
     const onOpenToolMenu = jest.fn();
-    const onOpenVoice = jest.fn();
-    const { getByTestId, getByLabelText, getByText, queryByLabelText } = render(
+    const { getByTestId, getByLabelText, queryByText, queryByTestId, queryByLabelText } = render(
       <ChatHeader
         activeLlmLabel="Qwen3.7 Plus"
         llmModelId="qwen3.7-plus"
@@ -82,7 +78,6 @@ describe('ChatHeader', () => {
         isStreaming={false}
         onSelectModel={jest.fn()}
         onOpenHistory={jest.fn()}
-        onOpenVoice={onOpenVoice}
         onOpenToolMenu={onOpenToolMenu}
       />,
     );
@@ -94,26 +89,18 @@ describe('ChatHeader', () => {
     expect(groupStyle.borderRadius).toBeGreaterThanOrEqual(16);
     expect(groupStyle.minHeight).toBe(40);
     expect(groupStyle.padding).toBe(2);
-    expect(getByTestId('icon-pulse')).toBeTruthy();
-    expect(getByText('语音')).toBeTruthy();
+    expect(queryByTestId('icon-pulse')).toBeNull();
+    expect(queryByTestId('chat-header-voice')).toBeNull();
+    expect(queryByText('语音')).toBeNull();
+    expect(queryByLabelText('实时语音')).toBeNull();
     expect(queryByLabelText('新建对话')).toBeNull();
     expect(getByTestId('icon-time-outline')).toBeTruthy();
     expect(getByTestId('icon-ellipsis-horizontal')).toBeTruthy();
 
-    expect(StyleSheet.flatten(getByLabelText('实时语音').props.style)).toEqual(
-      expect.objectContaining({
-        minHeight: 44,
-        backgroundColor: C.green600,
-        borderWidth: 0,
-      }),
-    );
-    expect(getByLabelText('实时语音').props.hitSlop).toBe(8);
+    expect(groupStyle.backgroundColor).toBe(C.paper2);
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
-    expect(getByTestId('icon-pulse').props.size).toBe(18);
-    fireEvent.press(getByLabelText('实时语音'));
-    expect(onOpenVoice).toHaveBeenCalledTimes(1);
     expect(getByTestId('icon-time-outline').props.size).toBe(18);
     expect(getByTestId('icon-ellipsis-horizontal').props.size).toBe(18);
     expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(

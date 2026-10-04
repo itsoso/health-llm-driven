@@ -899,16 +899,12 @@ describe('ChatScreen', () => {
     };
 
     expect(styleOf(getByTestId('chat-header-surface')).minHeight).toBeLessThanOrEqual(40);
-    expect(styleOf(getByLabelText('实时语音'))).toEqual(
-      expect.objectContaining({ minHeight: 44 }),
-    );
     expect(styleOf(getByLabelText('对话历史'))).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
     expect(styleOf(getByLabelText('更多会诊操作'))).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
-    expect(minHitSlop(getByLabelText('实时语音'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('对话历史'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('更多会诊操作'))).toBeGreaterThanOrEqual(8);
   });
@@ -1001,9 +997,6 @@ describe('ChatScreen', () => {
     const headerSurface = StyleSheet.flatten(getByTestId('chat-header-surface').props.style);
     expect(headerSurface.minHeight).toBeLessThanOrEqual(42);
     expect(headerSurface.paddingVertical).toBeLessThanOrEqual(2);
-    expect(StyleSheet.flatten(getByLabelText('实时语音').props.style)).toEqual(
-      expect.objectContaining({ minHeight: 44 }),
-    );
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
@@ -1723,51 +1716,33 @@ describe('ChatScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/diet');
   });
 
-  it('shows one labelled realtime voice shortcut in the header without a composer duplicate', () => {
+  it('keeps realtime voice exclusively in more without a header or composer shortcut', () => {
     const view = render(<ChatScreen />);
-    const shortcut = within(view.getByTestId('chat-header-surface')).getByRole('button', { name: '实时语音' });
-    expect(view.getByText('语音')).toBeTruthy();
-    expect(view.getAllByRole('button', { name: '实时语音' })).toHaveLength(1);
+    expect(within(view.getByTestId('chat-header-surface')).queryByRole('button', { name: /语音/ })).toBeNull();
+    expect(view.queryByText('语音')).toBeNull();
+    expect(view.queryByTestId('chat-header-voice')).toBeNull();
     expect(view.queryByTestId('chat-realtime-voice-shortcut')).toBeNull();
     expect(view.queryByLabelText('新建对话')).toBeNull();
-    expect(StyleSheet.flatten(shortcut.props.style).minHeight).toBeGreaterThanOrEqual(44);
     expect(view.getByLabelText('对话历史')).toBeTruthy();
     expect(view.queryByText('更多操作')).toBeNull();
-    fireEvent.press(shortcut);
+    expect(mockPush).not.toHaveBeenCalled();
+    fireEvent.press(view.getByLabelText('更多会诊操作'));
+    expect(view.getAllByRole('button', { name: '实时语音对话' })).toHaveLength(1);
+    fireEvent.press(view.getByRole('button', { name: '实时语音对话' }));
     expect(mockPush).toHaveBeenCalledWith('/voice-chat');
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
-  it('guards the visible voice shortcut during streaming', () => {
-    mockIsStreaming = true;
-    const alert = jest.spyOn(Alert, 'alert');
-    const view = render(<ChatScreen />);
-    fireEvent.press(view.getByRole('button', { name: '实时语音' }));
-    expect(mockPush).not.toHaveBeenCalled();
-    expect(alert).toHaveBeenCalledWith('暂时无法进入语音对话', '请先等待当前回复完成，或手动停止回复。');
-  });
-
-  it('guards the visible voice shortcut until composer cleanup finishes', () => {
-    const alert = jest.spyOn(Alert, 'alert');
-    const view = render(<ChatScreen />);
-    const composer = view.UNSAFE_getAllByType('ChatInputBar' as any)[0];
-    act(() => composer.props.onVoiceBusyChange(true));
-    fireEvent.press(view.getByRole('button', { name: '实时语音' }));
-    expect(mockPush).not.toHaveBeenCalled();
-    expect(alert).toHaveBeenCalledWith('暂时无法进入语音对话', '请先结束当前录音或语音转写，并等待发送完成。');
-    act(() => composer.props.onVoiceBusyChange(false));
-    fireEvent.press(view.getByRole('button', { name: '实时语音' }));
-    expect(mockPush).toHaveBeenCalledWith('/voice-chat');
-  });
-
-  it('hides the voice shortcut while selecting messages for sharing', async () => {
+  it('does not restore a header voice shortcut after leaving message selection', async () => {
     mockMessages = [{ id: 'u-1', role: 'user', content: '测试消息' }];
     const view = render(<ChatScreen />);
     await waitFor(() => expect(view.getByLabelText('message-u-1')).toBeTruthy());
     fireEvent(view.getByLabelText('message-u-1'), 'longPress');
     expect(view.queryByRole('button', { name: '实时语音' })).toBeNull();
     fireEvent.press(view.getByLabelText('取消多选'));
-    expect(view.getByRole('button', { name: '实时语音' })).toBeTruthy();
+    expect(view.queryByRole('button', { name: '实时语音' })).toBeNull();
+    fireEvent.press(view.getByLabelText('更多会诊操作'));
+    expect(view.getByRole('button', { name: '实时语音对话' })).toBeTruthy();
   });
 
   it('opens realtime voice from more without starting the microphone', () => {
