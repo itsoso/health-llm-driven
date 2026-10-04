@@ -1,0 +1,111 @@
+{
+  "status": "offline_pass_live_blocked",
+  "base_commit": "7d934b3c6b2540c969b1124b5468b737b6d0c88a",
+  "branch": "codex/reva-prompt-optimization",
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/eval/prompt_benchmark_metrics.py": "d808383721103bfd93fc531dfde465fd8dea0b147cd122a8d2ecd40bba1fb204",
+    "scripts/benchmark_read_synthesis.py": "664a2a5ac47398e422e177157266eaf4bae1dadb56f110c38fc949cf286e7656",
+    "scripts/benchmark_argument_transport.py": "a4247679f7e2fce9b6fada800eef11367da7035e7d9d9d32cb955a21003e6a92",
+    "scripts/profile_prompt_inputs.py": "b2d55b05c5830d2727c49d847b227636239f4b22dc9f6ec78650456d689b9f2f",
+    "backend/tests/test_agent_prompt_sections.py": "1e3a1c45542654f120f1314635f11396e272bf1ede94a0d17cf983f082bddbe5",
+    "backend/tests/fixtures/prompt_base_7d934b3.json": "6de52e278cebabd900cce534caa784246a401635014ae93a203077a39ca9a758",
+    "backend/tests/test_read_synthesis_experiment.py": "61b2544bd3844500d92675304fbee173000b47882a05ae952bc5f02188e92339",
+    "backend/tests/test_owned_read_preplan_experiment.py": "723b60c27dd9b11e57c86b40a48a4aa511ca44116660bb8a90f64d156f389da2",
+    "backend/tests/test_prompt_benchmark_metrics.py": "605f27b485d8de3a9eca3830d70b37b0741cbaac42231d0e383fa93f43c7c192"
+  },
+  "verification": [
+    {
+      "scope": "22 related pytest files, before final measurement retry/cancellation repair",
+      "passed": 707,
+      "seconds": 86.42,
+      "log": "/tmp/reva-prompt-implementation-regression.log"
+    },
+    {
+      "scope": "Final benchmark metrics, budgets, retry and cancellation tests",
+      "passed": 12,
+      "log": "/tmp/reva-p0-review-green.log"
+    },
+    {
+      "scope": "Independent final measurement review",
+      "passed": 12,
+      "verdict": "GO for eval tools only"
+    },
+    {
+      "scope": "System Map, mobile navigation, documentation drift",
+      "status": "passed",
+      "log": "/tmp/reva-p1-system-map-final.log"
+    }
+  ],
+  "offline_harness": {
+    "status": "passed",
+    "llm_cost": "none",
+    "suites": [
+      {
+        "suite": "invariants",
+        "total_cases": 12,
+        "passed": 12,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 1.0,
+        "avg_latency_ms": 0,
+        "regression": []
+      },
+      {
+        "suite": "health_agent_core",
+        "total_cases": 50,
+        "passed": 50,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 1.0,
+        "avg_latency_ms": 0,
+        "regression": []
+      }
+    ],
+    "failed_suites": [],
+    "errors": [],
+    "trajectory_contract": {
+      "status": "passed",
+      "total_cases": 12,
+      "failed_cases": []
+    },
+    "trajectory_goldens": {
+      "status": "passed",
+      "fixture_version": 1,
+      "total_cases": 9,
+      "covered_scenarios": [
+        "duplicate_client_turn_side_effect",
+        "duplicate_same_record_side_effect",
+        "idempotent_client_turn_replay",
+        "meal_context_reestimate",
+        "missing_identity_receipt",
+        "read_only_delete_side_effect",
+        "simple_fruit_write",
+        "simple_water_write",
+        "uncertain_receipt_false_success"
+      ],
+      "failed_cases": []
+    }
+  },
+  "live_gate": {
+    "status": "failed",
+    "live_llm_required": true,
+    "confirmed": false,
+    "evidence": "2026-10-04-prompt-implementation-live-gate.json"
+  },
+  "live_attempt": {
+    "status": "failed",
+    "error_type": "OpenAIError",
+    "api_usage": null,
+    "evidence": "2026-10-04-read-synthesis-live-attempt.json"
+  },
+  "limits": [
+    "No real-model noninferiority or latency result.",
+    "P1 and P2 semantic candidates remain eval-only.",
+    "Synthetic SQLite execution does not verify PostgreSQL semantics.",
+    "No full CI, commit, push, merge or deployment performed in this continuation."
+  ]
+}

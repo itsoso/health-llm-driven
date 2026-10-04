@@ -1,0 +1,114 @@
+{
+  "status": "failed",
+  "batch_id": "9e178c0c24124efda06e7ef2d9eefbda",
+  "mode": "live",
+  "models": [
+    "qwen3.8-flash",
+    "qwen3.8-max"
+  ],
+  "variants": [
+    "baseline"
+  ],
+  "cases": [
+    "owned_read_7d_available",
+    "owned_read_7d_empty",
+    "owned_read_7d_read_failure"
+  ],
+  "planned_tasks": 6,
+  "max_provider_attempts": 18,
+  "per_task_call_cap": 3,
+  "per_task_tool_cap": 3,
+  "max_input_bytes_per_call": 262144,
+  "requested_max_output_tokens_per_call": 1200,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "eval_only",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "owned_read_7d_available",
+      "variant": "baseline",
+      "model": "qwen3.8-flash",
+      "status": "failed",
+      "calls": [
+        {
+          "call_index": 1,
+          "payload_sha256": "c6aba864380199d38865b48f73790ff7c593e8e00042d30f24bd393dc74c8c63",
+          "input_bytes": 33932,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 8485,
+          "output_tokens": 566,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 9.247834207999404
+        }
+      ],
+      "tool_contracts": [],
+      "tool_attempts": 0,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": null,
+      "live": true,
+      "wall_seconds": 10.470451000001049,
+      "database_errors": [],
+      "rejected_tools": [
+        {
+          "name": "knowledge_search",
+          "reason": "out_of_scope"
+        }
+      ],
+      "error_type": "BenchmarkStopped",
+      "stop_reason": "unexpected_tool_or_tool_budget",
+      "evaluation_seconds": 10.544177208008477,
+      "repeat": 0
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "258299423efef311ed5deb4a631f14bdc7aeb473e1516d7cef0a4b27c2f8e81e",
+    "scripts/benchmark_prompt_full_task.py": "b63b4b25aede823dab64bd958564e4ae0762a84b7ba42cd18910561054ac50bf",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/app/services/agent_executor.py": "b6fa3e1782db68a95638f21b41417358cc1009732c0fe75b751adba29d622380",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "5d5ac6ffde8c702edc2a63588d897f983fed6ed30a81ad414bac5380840bc9cc"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+    "Per-sample synthetic user with real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-flash",
+      "variant": "baseline",
+      "tasks": 1,
+      "provider_attempts": 1,
+      "passed_contracts": 0,
+      "failed_tasks": 1,
+      "api_input_tokens_known": 8485,
+      "api_output_tokens_known": 566,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 1,
+      "wall_seconds_all_tasks": {
+        "p50": 10.470451000001049,
+        "p95": 10.470451000001049,
+        "p99": 10.470451000001049
+      }
+    }
+  ]
+}

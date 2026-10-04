@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from functools import lru_cache
 import re
 from typing import Any
 
@@ -17,13 +16,6 @@ _DATE_RULES = "\ndays 参数只表示"
 _BATCH_PLAN = "\nplan 结构:\n"
 _BATCH_EXAMPLE = "\n完整示例 ("
 _BATCH_RESULT = "\n→ 每条回 "
-
-
-# Process-local public metadata only. Exact description text and dimensions are
-# the keys, so registry edits miss immediately. No time-based TTL is needed for
-# these immutable text projections; each helper retains at most 64 LRU entries.
-# Never cache scopes, user data, authorized tool lists or mutable schemas.
-@lru_cache(maxsize=64)
 def _query_description(description: str, dimensions: frozenset[str]) -> str | None:
     """Select whole registry entries including all indented safety prose."""
     if description.count(_DATE_RULES) != 1:
@@ -57,7 +49,6 @@ def _query_description(description: str, dimensions: frozenset[str]) -> str | No
     )
 
 
-@lru_cache(maxsize=64)
 def _batch_description(description: str, query_guidance: str) -> str | None:
     if any(description.count(marker) != 1 for marker in (
         _BATCH_PLAN, _BATCH_EXAMPLE, _BATCH_RESULT,

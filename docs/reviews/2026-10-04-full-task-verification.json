@@ -1,0 +1,126 @@
+{
+  "status": "offline_full_task_harness_verified_live_blocked",
+  "branch": "codex/reva-prompt-optimization",
+  "baseline_commit": "7d934b3c6b2540c969b1124b5468b737b6d0c88a",
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "52a5ac6fc915c119bf550f402de1cac49d7da9e3ec7d5b8dff2ec3b4dee82585",
+    "scripts/benchmark_prompt_full_task.py": "05c58a9933b7eaeaf52dd79ea61abe9237f0d59454a2c05cb17f3313f5875852",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05",
+    "backend/tests/test_full_task_prompt_benchmark.py": "2709431680267fd170bba4bd1fbc99001f2ad804214e4dd25b6831a4be366121"
+  },
+  "prior_runtime_source_sha256_unchanged": {
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/llm/prompt_transport.py": "c2e4356300d028d0e57b74d61da435499f82477ff8a04bed8ec0aee12e41ba7d"
+  },
+  "evidence_sha256": {
+    "2026-10-04-full-task-scripted-final.json": "d55d5533d4ddf933d3b2589c13fc05804cce089569d4f6dd125762a18e7db933",
+    "2026-10-04-full-task-live-gate.json": "e83439ff2d1f5d6541d61a28cf48ce8a08e109fb272869de6cccf49bae3ee08c"
+  },
+  "validation": [
+    {
+      "scope": "new module before implementation",
+      "status": "failed_collection_expected",
+      "log": "/tmp/reva-full-task-red.log"
+    },
+    {
+      "scope": "cached SDK retry reproduction",
+      "status": "failed_before_fix",
+      "log": "/tmp/reva-full-task-cache-red.log",
+      "note": "Separate write-proposal test had an overstrict status expectation, corrected to accept explicit failed_contracts."
+    },
+    {
+      "scope": "new full-task harness and related experiments/metrics",
+      "passed": 64,
+      "seconds": 16.57,
+      "log": "/tmp/reva-full-task-regression-context.log"
+    },
+    {
+      "scope": "independent full-task harness tests",
+      "passed": 20,
+      "seconds": 7.72,
+      "verdict": "GO for offline harness only"
+    },
+    {
+      "scope": "independent network-disabled actual Pi",
+      "checks": [
+        "provider exception consumes one attempt",
+        "normal and cancelled tasks restore session and SQL listener",
+        "SDK cached retries cannot be reused",
+        "post-exit SQL errors cannot contaminate finished samples"
+      ],
+      "status": "passed"
+    },
+    {
+      "scope": "final standalone scripted CLI",
+      "tasks": 24,
+      "provider_attempts": 36,
+      "database_errors": 0,
+      "status": "passed_contracts",
+      "log": "/tmp/reva-full-task-scripted-verified.log"
+    },
+    {
+      "scope": "default CLI without execution option",
+      "status": "plan_only_zero_calls",
+      "output": "/tmp/reva-full-task-plan.json"
+    },
+    {
+      "scope": "offline harness",
+      "invariants": 12,
+      "core": 50,
+      "trajectory_contract": 12,
+      "goldens": 9,
+      "status": "passed",
+      "log": "/tmp/reva-full-task-harness.log"
+    },
+    {
+      "scope": "system map",
+      "status": "passed",
+      "log": "/tmp/reva-full-task-map.log"
+    }
+  ],
+  "invalidated_evidence": [
+    "2026-10-04-full-task-scripted-first.json",
+    "2026-10-04-full-task-scripted-context-degraded.json"
+  ],
+  "invalidated_reason": "Missing lazily imported context tables caused handled degradation. Final fixture registers them before DDL and makes SQL errors fail contracts.",
+  "scripted_calls_per_task": {
+    "baseline": 2,
+    "p1": 2,
+    "p2": 1,
+    "combined": 1
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+    "Per-sample synthetic user with real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement.",
+    "Disposable SQLite proves only this synthetic fixture; not PostgreSQL semantics or production performance.",
+    "No live API calls or new API token savings measured this round.",
+    "All semantic candidates remain eval-only; no application flag/import added.",
+    "Write-tool description compression remains rejected."
+  ],
+  "next_step": "User-authorized private test model configuration, then bounded baseline/combined smoke (2 tasks, max 6 attempts), full four-variant screen, blinded quality/holdout/PostgreSQL/real-request latency gates.",
+  "live_gate": {
+    "required": true,
+    "confirmed": false,
+    "status": "blocked_missing_model_configuration"
+  },
+  "git_actions": {
+    "commit": false,
+    "push": false,
+    "merge": false,
+    "deploy": false
+  }
+}

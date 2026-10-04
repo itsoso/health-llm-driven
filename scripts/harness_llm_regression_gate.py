@@ -136,6 +136,7 @@ def _live_llm_eval_consent_scope(enabled: bool):
 
     from app.database import Base, SessionLocal, engine
     from app.models.agent_audit_log import AgentAuditLog
+    from app.models.llm_usage import LlmUsageLog
     from app.models.user import User
     from app.models.user_profile import UserProfile
     from app.services.ai_consent import (
@@ -150,6 +151,10 @@ def _live_llm_eval_consent_scope(enabled: bool):
             User.__table__,
             UserProfile.__table__,
             AgentAuditLog.__table__,
+            # Keep the normal quota query and API usage audit available. A live
+            # quality run must not silently fall back because its test DB lacks
+            # the provider's accounting table.
+            LlmUsageLog.__table__,
         ],
     )
     suffix = uuid4().hex

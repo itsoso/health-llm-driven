@@ -1,0 +1,34 @@
+{
+  "status": "failed",
+  "candidate_disposition": "experimental_not_runtime",
+  "models": [
+    "qwen3.8-flash",
+    "qwen3.8-max"
+  ],
+  "comparisons": [
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-flash",
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "5c4e66b47a6225119da8808d7c64b080924680e321bb4ec766167745ed5fa94d",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 449,
+          "error_type": "OpenAIError"
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/experimental_argument_transport.py": "ac39e058534182d196660063bcf1f4831da9eff105c8a074cbc8043c42b178a6",
+    "backend/eval/prompt_projection_quality.py": "2e58aded2dcc414b70fb5d43e1afbf81f061f8f7ac873b25e519e1fb76f1696b",
+    "backend/app/services/llm/prompt_transport.py": "a09fe0203c2748d76a82ad0cccae4ebf03db69d5edd5c86d251d0d087ee9d206",
+    "scripts/benchmark_argument_transport.py": "599c2267f8d4b76c7c23ebb7afa23e15c34ecc172fa4af38019144266cb6d254"
+  },
+  "limits": [
+    "Fixed synthetic answer-stage replay; no tools executed.",
+    "Tokenizer diagnostics are not API usage or whole-task savings.",
+    "Semantic noninferiority, persistence and production latency remain unknown."
+  ]
+}

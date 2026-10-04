@@ -1,0 +1,165 @@
+{
+  "status": "dry_run",
+  "candidate_disposition": "experimental_not_runtime",
+  "models": [
+    "qwen3.8-flash",
+    "qwen3.8-max"
+  ],
+  "comparisons": [
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-flash",
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "5c4e66b47a6225119da8808d7c64b080924680e321bb4ec766167745ed5fa94d",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 449
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "be5a7af00420bd76f348ac596b82866568ac89c7b574272aea6a5d8de17986a3",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 446
+        }
+      ]
+    },
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-max",
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "5c4e66b47a6225119da8808d7c64b080924680e321bb4ec766167745ed5fa94d",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 449
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "be5a7af00420bd76f348ac596b82866568ac89c7b574272aea6a5d8de17986a3",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 446
+        }
+      ]
+    },
+    {
+      "case": "answer_spo2_unverified",
+      "model": "qwen3.8-flash",
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "e0ef6a2ea5956c0e95b6d08b54a5166c84e118ef4702e4f280170cb737aa96a5",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 419
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "5731a78a2b3fb921c271d8cbe55473b7fb8b1bf04b49473db276222c4c190d8b",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 420
+        }
+      ]
+    },
+    {
+      "case": "answer_spo2_unverified",
+      "model": "qwen3.8-max",
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "e0ef6a2ea5956c0e95b6d08b54a5166c84e118ef4702e4f280170cb737aa96a5",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 419
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "5731a78a2b3fb921c271d8cbe55473b7fb8b1bf04b49473db276222c4c190d8b",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 420
+        }
+      ]
+    },
+    {
+      "case": "answer_failed_write",
+      "model": "qwen3.8-flash",
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "84a4c75f02da071264e8b5404d3b89758d07e4b6c4500f925f8c984182568aef",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 376
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "4b11ae8ffa33166795c8f8665261c18f6628513b7f3c7d5bc4727b4f6574e09c",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 371
+        }
+      ]
+    },
+    {
+      "case": "answer_failed_write",
+      "model": "qwen3.8-max",
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "84a4c75f02da071264e8b5404d3b89758d07e4b6c4500f925f8c984182568aef",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 376
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "4b11ae8ffa33166795c8f8665261c18f6628513b7f3c7d5bc4727b4f6574e09c",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 371
+        }
+      ]
+    },
+    {
+      "case": "answer_successful_write",
+      "model": "qwen3.8-flash",
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "24a6d617f0154a1537fb09becdf8b90eef418f81d1f949460d520ee540068bab",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 392
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "fa4c5c4aa14ad61c6ac4453b99e889850778bff12a2c965abb0adcdb582eb6a7",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 397
+        }
+      ]
+    },
+    {
+      "case": "answer_successful_write",
+      "model": "qwen3.8-max",
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "24a6d617f0154a1537fb09becdf8b90eef418f81d1f949460d520ee540068bab",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 392
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "fa4c5c4aa14ad61c6ac4453b99e889850778bff12a2c965abb0adcdb582eb6a7",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 397
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/experimental_argument_transport.py": "ac39e058534182d196660063bcf1f4831da9eff105c8a074cbc8043c42b178a6",
+    "backend/eval/prompt_projection_quality.py": "2e58aded2dcc414b70fb5d43e1afbf81f061f8f7ac873b25e519e1fb76f1696b",
+    "backend/app/services/llm/prompt_transport.py": "a09fe0203c2748d76a82ad0cccae4ebf03db69d5edd5c86d251d0d087ee9d206",
+    "scripts/benchmark_argument_transport.py": "599c2267f8d4b76c7c23ebb7afa23e15c34ecc172fa4af38019144266cb6d254"
+  },
+  "limits": [
+    "Fixed synthetic answer-stage replay; no tools executed.",
+    "Tokenizer diagnostics are not API usage or whole-task savings.",
+    "Semantic noninferiority, persistence and production latency remain unknown."
+  ]
+}

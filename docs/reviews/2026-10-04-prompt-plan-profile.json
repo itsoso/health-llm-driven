@@ -1,0 +1,263 @@
+{
+  "status": "offline_diagnostic",
+  "tokenizer": "cl100k_base",
+  "api_usage": null,
+  "source_sha256": {
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/agent_executor.py": "e958a7b42e0cedb47e463f61347e9761bd71ed61c8bd1ad2c8e2768894e1083a",
+    "scripts/profile_prompt_inputs.py": "d10dc8c0f4e8fcd2e31932398840cd2d5d4fa6242db43ae6b7650d0692d9348a"
+  },
+  "limits": [
+    "Serialized JSON tokenizer counts are not provider input tokens.",
+    "Per-component token counts are diagnostic and not strictly additive.",
+    "Captures contain fixed synthetic fixtures; providers are stubbed.",
+    "No quality, latency, billing or production savings are established."
+  ],
+  "registry_json_tokens": 13430,
+  "tools": [
+    {
+      "tool": "health_record",
+      "schema_json_tokens": 3483,
+      "description_string_tokens": 430,
+      "parameters_json_tokens": 3038
+    },
+    {
+      "tool": "health_query",
+      "schema_json_tokens": 2314,
+      "description_string_tokens": 1837,
+      "parameters_json_tokens": 462
+    },
+    {
+      "tool": "health_query_batch",
+      "schema_json_tokens": 1322,
+      "description_string_tokens": 944,
+      "parameters_json_tokens": 362
+    },
+    {
+      "tool": "health_manage",
+      "schema_json_tokens": 1311,
+      "description_string_tokens": 678,
+      "parameters_json_tokens": 618
+    },
+    {
+      "tool": "intervention_cycle",
+      "schema_json_tokens": 1026,
+      "description_string_tokens": 666,
+      "parameters_json_tokens": 343
+    },
+    {
+      "tool": "health_analysis",
+      "schema_json_tokens": 626,
+      "description_string_tokens": 219,
+      "parameters_json_tokens": 392
+    },
+    {
+      "tool": "query_lab_indicators",
+      "schema_json_tokens": 609,
+      "description_string_tokens": 386,
+      "parameters_json_tokens": 206
+    },
+    {
+      "tool": "draft_aigc_media",
+      "schema_json_tokens": 534,
+      "description_string_tokens": 292,
+      "parameters_json_tokens": 224
+    },
+    {
+      "tool": "upload_medical_exam_text",
+      "schema_json_tokens": 490,
+      "description_string_tokens": 303,
+      "parameters_json_tokens": 169
+    },
+    {
+      "tool": "upload_genetic_txt",
+      "schema_json_tokens": 354,
+      "description_string_tokens": 185,
+      "parameters_json_tokens": 152
+    },
+    {
+      "tool": "knowledge_search",
+      "schema_json_tokens": 269,
+      "description_string_tokens": 109,
+      "parameters_json_tokens": 145
+    },
+    {
+      "tool": "record_doctor_feedback",
+      "schema_json_tokens": 236,
+      "description_string_tokens": 97,
+      "parameters_json_tokens": 122
+    },
+    {
+      "tool": "manage_plan",
+      "schema_json_tokens": 234,
+      "description_string_tokens": 31,
+      "parameters_json_tokens": 188
+    },
+    {
+      "tool": "environment_check",
+      "schema_json_tokens": 231,
+      "description_string_tokens": 83,
+      "parameters_json_tokens": 133
+    },
+    {
+      "tool": "query_genetic_profile",
+      "schema_json_tokens": 182,
+      "description_string_tokens": 153,
+      "parameters_json_tokens": 12
+    },
+    {
+      "tool": "realtime_search",
+      "schema_json_tokens": 164,
+      "description_string_tokens": 86,
+      "parameters_json_tokens": 62
+    },
+    {
+      "tool": "supplement_guide",
+      "schema_json_tokens": 59,
+      "description_string_tokens": 31,
+      "parameters_json_tokens": 12
+    }
+  ],
+  "captures": [
+    {
+      "label": "owned-read",
+      "existing_optimization_enabled": false,
+      "provider_calls": 2,
+      "calls": [
+        {
+          "messages_json_tokens": 8514,
+          "tools_json_tokens": 3905,
+          "payload_json_tokens": 12420,
+          "by_role_json_tokens": {
+            "system": 7456,
+            "user": 1061
+          },
+          "tool_names": [
+            "health_query",
+            "health_query_batch",
+            "knowledge_search"
+          ]
+        },
+        {
+          "messages_json_tokens": 10295,
+          "tools_json_tokens": 0,
+          "payload_json_tokens": 10299,
+          "by_role_json_tokens": {
+            "system": 7793,
+            "user": 2505
+          },
+          "tool_names": []
+        }
+      ]
+    },
+    {
+      "label": "owned-read",
+      "existing_optimization_enabled": true,
+      "provider_calls": 2,
+      "calls": [
+        {
+          "messages_json_tokens": 8514,
+          "tools_json_tokens": 2730,
+          "payload_json_tokens": 11245,
+          "by_role_json_tokens": {
+            "system": 7456,
+            "user": 1061
+          },
+          "tool_names": [
+            "health_query",
+            "health_query_batch",
+            "knowledge_search"
+          ]
+        },
+        {
+          "messages_json_tokens": 7986,
+          "tools_json_tokens": 0,
+          "payload_json_tokens": 7990,
+          "by_role_json_tokens": {
+            "system": 5484,
+            "user": 2505
+          },
+          "tool_names": []
+        }
+      ]
+    },
+    {
+      "label": "diet-read",
+      "existing_optimization_enabled": false,
+      "provider_calls": 2,
+      "calls": [
+        {
+          "messages_json_tokens": 6454,
+          "tools_json_tokens": 8105,
+          "payload_json_tokens": 14560,
+          "by_role_json_tokens": {
+            "system": 5743,
+            "user": 700,
+            "assistant": 17
+          },
+          "tool_names": [
+            "health_query",
+            "health_query_batch",
+            "health_manage",
+            "health_analysis",
+            "environment_check",
+            "supplement_guide",
+            "query_genetic_profile",
+            "query_lab_indicators",
+            "intervention_cycle",
+            "knowledge_search",
+            "realtime_search"
+          ]
+        },
+        {
+          "messages_json_tokens": 6746,
+          "tools_json_tokens": 0,
+          "payload_json_tokens": 6750,
+          "by_role_json_tokens": {
+            "system": 6189,
+            "user": 560
+          },
+          "tool_names": []
+        }
+      ]
+    },
+    {
+      "label": "diet-read",
+      "existing_optimization_enabled": true,
+      "provider_calls": 2,
+      "calls": [
+        {
+          "messages_json_tokens": 6480,
+          "tools_json_tokens": 5770,
+          "payload_json_tokens": 12251,
+          "by_role_json_tokens": {
+            "system": 5743,
+            "user": 712,
+            "assistant": 31
+          },
+          "tool_names": [
+            "health_query",
+            "health_query_batch",
+            "health_analysis",
+            "environment_check",
+            "supplement_guide",
+            "query_genetic_profile",
+            "query_lab_indicators",
+            "knowledge_search",
+            "realtime_search"
+          ]
+        },
+        {
+          "messages_json_tokens": 4437,
+          "tools_json_tokens": 0,
+          "payload_json_tokens": 4441,
+          "by_role_json_tokens": {
+            "system": 3880,
+            "user": 560
+          },
+          "tool_names": []
+        }
+      ]
+    }
+  ]
+}

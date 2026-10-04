@@ -1,0 +1,86 @@
+{
+  "status": "failed",
+  "candidate_disposition": "experimental_not_runtime",
+  "batch_id": "5655f14021044ba690dd6dd84e715b31",
+  "phase": "answer",
+  "stream": true,
+  "repetitions": 3,
+  "planned_calls": 48,
+  "max_api_calls": 48,
+  "timeout_seconds_per_call": 90,
+  "max_output_tokens_per_call": 1200,
+  "order": "Paired baseline/candidate; reverse order on alternating repetitions and cases.",
+  "models": [
+    "qwen3.8-flash",
+    "qwen3.8-max"
+  ],
+  "comparisons": [
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-flash:0:baseline",
+          "call_index": 0,
+          "payload_sha256": "c743d826c345b7ae7ed8baf8bbb3f81d9a27bd554e03467a7a01db5daaff68bd",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4324,
+          "first_content_seconds": null,
+          "wall_seconds": 0.492092041997239,
+          "error_type": "OpenAIError",
+          "provider_calls": 1
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/prompt_projection_quality.py": "2e58aded2dcc414b70fb5d43e1afbf81f061f8f7ac873b25e519e1fb76f1696b",
+    "backend/eval/prompt_benchmark_metrics.py": "d808383721103bfd93fc531dfde465fd8dea0b147cd122a8d2ecd40bba1fb204",
+    "scripts/benchmark_argument_transport.py": "a4247679f7e2fce9b6fada800eef11367da7035e7d9d9d32cb955a21003e6a92",
+    "scripts/benchmark_read_synthesis.py": "664a2a5ac47398e422e177157266eaf4bae1dadb56f110c38fc949cf286e7656"
+  },
+  "limits": [
+    "Fixed synthetic answer-stage replay; no tools executed.",
+    "Tokenizer diagnostics are not API usage or whole-task savings.",
+    "Semantic noninferiority, persistence and production latency remain unknown.",
+    "No cold-cache or warm-cache claim; cached tokens only from API usage.",
+    "Fail fast on call/usage errors; unattempted samples remain missing."
+  ],
+  "measurements": [
+    {
+      "model": "qwen3.8-flash",
+      "variant": "baseline",
+      "attempts": 1,
+      "failed_attempts": 1,
+      "contract_failures": 0,
+      "passing_contracts": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_attempts": 1,
+      "input_tokens_per_passing_contract": null,
+      "wall_seconds_all_attempts": {
+        "n": 1,
+        "p50": 0.492092041997239,
+        "p95": 0.492092041997239,
+        "p99": 0.492092041997239
+      },
+      "first_content_seconds": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "limits": [
+        "Answer-stage measurements only; not whole tasks or production latency.",
+        "Nearest-rank percentiles; small samples do not prove tail improvement.",
+        "First content is not first useful/safety-verified UI output.",
+        "Passing deterministic contracts does not establish semantic noninferiority."
+      ]
+    }
+  ]
+}

@@ -238,6 +238,240 @@
         "phase": "verification",
         "sequence": 8,
         "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Static prompt extraction: 32 baseline byte hashes and original runtime regression pass; read synthesis candidate remains eval-only pending live credentials",
+        "phase": "implementation",
+        "sequence": 9,
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "spawn",
+        "message": "Read-only safety review of byte-equivalent extraction and eval-only read synthesis experiment",
+        "phase": "safety",
+        "sequence": 10,
+        "status": "started",
+        "task_id": "prompt-p1",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO only for byte-equivalent extraction and eval-only isolation; independent 130 tests and System Map pass; live quality and latency unknown",
+        "phase": "safety",
+        "sequence": 11,
+        "status": "passed",
+        "task_id": "prompt-p1",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "NO-GO for live benchmark: provider stream compatibility retry bypasses declared call cap; cancellation does not persist failed sample. Synthetic reproductions only; eval isolation unaffected.",
+        "phase": "verification",
+        "sequence": 12,
+        "status": "failed",
+        "task_id": "p0-benchmark-review",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO only for eval isolation: closed owned read reuses Pi/Gateway and original scope. Independent25 tests. Added explicit Pi, context owner, envelope text boundaries. Stub model and SQLite are not live/PostgreSQL or latency evidence.",
+        "phase": "verification",
+        "sequence": 13,
+        "status": "passed",
+        "task_id": "p2-preplan-review",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Prior NO-GO fixed: explicit stream usage prevents compatibility retry; SDK retry and auto recovery scoped off; cancellation persisted then reraised. Independent12 tests pass. GO for eval measurement tools only; no real API quality or speed claim.",
+        "phase": "verification",
+        "sequence": 14,
+        "status": "passed",
+        "task_id": "p0-benchmark-review",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "707 related tests, final12 measurement tests, offline harness and System Map pass. P1 byte-equivalent extraction; P1/P2 eval-only. Live gate failed: provider initialization lacks credentials, zero provider calls. Await private test configuration; no new runtime semantics, commit, push, merge or deploy.",
+        "phase": "verification",
+        "sequence": 15,
+        "status": "blocked",
+        "task_id": "p0-p2-implementation",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Correction to sequence15: final streaming attempt records one FAILED provider wrapper call; missing credential error occurs during client initialization inside wrapper. No API usage or model answer. Do not treat wrapper count or initialization wall time as successful API/latency evidence.",
+        "phase": "verification",
+        "sequence": 16,
+        "status": "blocked",
+        "task_id": "p0-p2-implementation",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Initial independent20 passed1 failed: read_failure fixture assumed one dispatch, then proposed duplicate tool ID after tool error causing PiKernelError. NO-GO for failure-lane evidence; runtime unchanged.",
+        "phase": "verification",
+        "sequence": 17,
+        "status": "failed",
+        "task_id": "composed-experiment-review",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Fixed fixture respects original bounded retry and returns failure after tool receipt. All4 variants preserve real error receipts, normalized queries, outcomes and saved replies; explicit no Pi failure assertion. Independent21 SQLite tests GO for offline isolation only. PostgreSQL separately executed by root.",
+        "phase": "verification",
+        "sequence": 18,
+        "status": "passed",
+        "task_id": "composed-experiment-review",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "77 targeted tests pass; final21 tests pass on disposable PostgreSQL17.11; private Unix-socket cluster stopped/deleted. Normal synthetic whole-task JSON tokens16825->5896 (64.96%); model calls2->1. Not API usage/quality/latency. Real model configuration still missing; semantic candidates remain eval-only. No merge/deploy.",
+        "phase": "verification",
+        "sequence": 19,
+        "status": "blocked",
+        "task_id": "postgres-composed-verification",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "P4 local CPU slice: measure byte-equivalent JSON transport against frozen 7d934b3c6 module before editing. Reject slower regex replacement prototype. No new semantic token reduction or live-model claim; existing P1/P2 remain eval-only.",
+        "phase": "implementation",
+        "sequence": 20,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "spawn",
+        "message": "Independent read-only review of frozen-baseline transport equivalence, malformed output, escaping/numbers, provider integration and bounded performance claims; existing reviewer reused.",
+        "phase": "safety",
+        "sequence": 21,
+        "status": "in_progress",
+        "task_id": "p4-transport-equivalence",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Local baseline target failed before implementation; baseline preservation18 tests pass after correcting test assumption that 1500 valid nested arrays must fail JSON decoder. New runtime bytes remain identical; related48 pass and offline harness/map pass. Path-sensitive live gate still failed required/unconfirmed; no new API attempt without credentials.",
+        "phase": "verification",
+        "sequence": 22,
+        "status": "live_blocked",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO: independent31 tests; frozen fixture matches git; no blocker in byte equivalence, invalid JSON handling, regex scanning or transcript preservation. Local CPU scope only, no new token reduction or end-to-end performance claim.",
+        "phase": "safety",
+        "sequence": 23,
+        "status": "passed",
+        "task_id": "p4-transport-equivalence",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Final GO: report and code/evidence hashes match; metadata-only tool_messages addition verified;17 cases101x10; four Pi captures have no tool messages and remain no-benefit controls. Original independent31 tests stand. No API quality, new token savings or whole-task speed claim.",
+        "phase": "safety",
+        "sequence": 24,
+        "status": "passed",
+        "task_id": "p4-transport-equivalence",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Next P4 slice: bounded reuse of pure public registry description parsing. Frozen7d934b3 baseline; prototype full projection0.0605ms to0.0263ms warm, cold0.0611ms. No additional token savings. Define exact content/dimensions keys and64-entry caps; no users, dates, results or mutable schemas cached. Real traffic/model gates remain unavailable; preserve existing work.",
+        "phase": "implementation",
+        "sequence": 25,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "spawn",
+        "message": "Reuse independent reviewer for bounded public text cache: current authority/schema checks, immediate text invalidation, fixed64 entries per helper, no user/health/ORM/payload cache. Independent32 tests completed; no concurrent tests during upcoming benchmark.",
+        "phase": "safety",
+        "sequence": 26,
+        "status": "in_progress",
+        "task_id": "p4-public-tool-guide-cache",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO with independent32 tests: public-text-only64-entry cache, exact-key invalidation, caller authority/schema rechecked, independent deepcopy. No model quality/new token/whole-task speed conclusion. Frozen baseline verified against git.",
+        "phase": "safety",
+        "sequence": 27,
+        "status": "passed",
+        "task_id": "p4-public-tool-guide-cache",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Public-text cache:135 related tests,32 independent,28 coverage tests with93percent combined; offline harness/map pass. Warm sleep/diet P50 59.25 to25.48 microseconds, cold61.54 microseconds; small local CPU scope. Live gate remains required/unconfirmed; config request pending. Existing work preserved; no external writes.",
+        "phase": "verification",
+        "sequence": 28,
+        "status": "live_blocked",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "spawn",
+        "message": "Independent safety review of eval-only full-task Pi A/B, bounded egress, persistence, failure accounting; no live API or runtime edits.",
+        "phase": "verification",
+        "sequence": 29,
+        "status": "started",
+        "task_id": "full-task-benchmark-review",
+        "tokens": 0
+      },
+      {
+        "event": "review-finding",
+        "message": "Independent review found pre-existing SDK pool could retain retries; RED reproduced, explicit max_retries=0 in client cache key fixed. Later log audit found missing lazy context tables; old scripted reports invalidated. Added explicit model registration and engine SQL error observer to fail handled degradation; 64 related tests pass.",
+        "phase": "verification",
+        "sequence": 30,
+        "status": "corrected",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO for offline full-task harness only. Independent 20 pytest plus network-blocked Pi normal/cancel/error checks. SDK pool retry isolation and SQL listener/session restoration verified; no missing-table degradation. Live semantic/latency and production DB acceptance excluded.",
+        "phase": "verification",
+        "sequence": 31,
+        "status": "passed",
+        "task_id": "full-task-benchmark-review",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Full-task eval runner:64 related tests,20 independent,24 final scripted tasks pass with zero DB errors,36 provider attempts. Offline harness/map pass; earlier degraded fixture reports invalidated. P1/P2 remain eval-only, write description compression rejected. Real model configuration still absent; no API/production performance proof, no commit/push/merge/deploy.",
+        "phase": "verification",
+        "sequence": 32,
+        "status": "live_blocked",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "User now explicitly authorizes production deployment. Private model configuration used only in temporary synthetic-eval process. P1/P2 screen and actual release candidate analysis screen failed; keep experiments eval-only and do not deploy. Standard live synthesis passes with 10 API usage rows; CI-mode related integration 1030 passed/2 skipped, frontend447 passed/1 skipped/build/lint pass. PostgreSQL exposed NULL history order; minimal repair verified, pending final independent review.",
+        "phase": "verification",
+        "sequence": 33,
+        "status": "release_blocked",
+        "tokens": 0
       }
     ]
   },

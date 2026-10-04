@@ -741,7 +741,9 @@ class AgentConversationService:
             .filter(AgentMessage.conversation_id == conversation_id)
             # id 决胜: created_at 同刻(时钟回拨/同毫秒并写)时 user/assistant 顺序
             # 不能翻转,否则多轮历史喂给 LLM 时轮次错位。
-            .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
+            # PostgreSQL otherwise puts NULL timestamps last, letting an old
+            # undated user message masquerade as the current user instruction.
+            .order_by(AgentMessage.created_at.asc().nullsfirst(), AgentMessage.id.asc())
             .all()
         )
         from app.services.health_evidence.delivery import (

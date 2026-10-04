@@ -223,8 +223,17 @@ def test_sdk_transport_hook_rechecks_internal_retry(db, monkeypatch):
     sdk = OpenAI(api_key="test-only", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
                  http_client=httpx.Client(transport=httpx.MockTransport(upstream)), max_retries=1)
     ai_consent.guard_openai_client(sdk)
-    with ai_consent.ai_user_scope(user.id), pytest.raises(APIConnectionError):
+    # Supported SDK versions either propagate the hook's denial directly or
+    # wrap it as a connection error. In both cases the denial must be explicit
+    # and the revoked second request must never reach the transport.
+    with ai_consent.ai_user_scope(user.id), pytest.raises((APIConnectionError, HTTPException)) as denied:
         sdk.chat.completions.create(model="test", messages=[{"role": "user", "content": "private"}])
+    error = denied.value
+    if isinstance(error, APIConnectionError):
+        error = error.__cause__
+    assert isinstance(error, HTTPException)
+    assert error.status_code == 403
+    assert error.detail["code"] == "ai_consent_required"
     assert len(sent) == 1
     sdk.close()
 

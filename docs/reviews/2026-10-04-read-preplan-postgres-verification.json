@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "database": "disposable_local_postgresql",
+  "network": "private_unix_socket_only",
+  "log": "/tmp/reva-p2-postgres.log",
+  "provider": "stub",
+  "production_database_touched": false,
+  "postgres_version": "PostgreSQL 17.11 (Homebrew)",
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "backend/tests/test_owned_read_preplan_experiment.py",
+    "-q",
+    "--no-cov"
+  ],
+  "test_exit_code": 0,
+  "cluster_stopped": true,
+  "temporary_cluster_removed": true,
+  "limits": [
+    "Real Pi/Gateway and PostgreSQL; scripted model.",
+    "No live model quality, API usage or production latency conclusion."
+  ]
+}

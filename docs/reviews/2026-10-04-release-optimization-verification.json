@@ -1,0 +1,76 @@
+{
+  "status": "release_blocked",
+  "reason": "Candidate failed actual full-task read completion; standard synthesis gate does not cover AgentExecutor quality.",
+  "base_commit": "7d934b3c6b2540c969b1124b5468b737b6d0c88a",
+  "main_commit": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+  "production_commit": "a8853dea1207163aaa412974dddfbc050ce3eeea",
+  "tests": [
+    {
+      "scope": "CI-mode related integration before NULL-order repair",
+      "tests": 1032,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2,
+      "source_log": "/tmp/reva-release-integration-final.xml"
+    },
+    {
+      "scope": "PostgreSQL Asia/Shanghai after NULL-order repair and explicit naive-UTC fixture",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "source_log": "/tmp/reva-release-postgres.xml"
+    }
+  ],
+  "additional_tests": [
+    {
+      "scope": "PostgreSQL 17 disposable unix socket UTC: same NULL-order application repair",
+      "passed": 106,
+      "seconds": 91.65
+    },
+    {
+      "scope": "final SQLite history, full task and live-gate harness",
+      "passed": 75
+    },
+    {
+      "scope": "frontend",
+      "passed": 447,
+      "skipped": 1,
+      "build": "passed",
+      "lint_errors": 0,
+      "lint_warnings": 37
+    },
+    {
+      "scope": "final bounded Gateway diagnostics",
+      "passed": 24,
+      "seconds": 8.42
+    }
+  ],
+  "limits": [
+    "No production database data queried. SHOW timezone only confirmed Asia/Shanghai.",
+    "No activation of P1/P2, argument transport or rejected write-tool descriptions.",
+    "No clinical noninferiority or production latency claim.",
+    "Full exact-candidate CI and release G4 not passed. No deployment, merge, authorization rotation or production mutation.",
+    "The old undated-history sorting failure was reproduced on PostgreSQL; NULLS FIRST preserves historical provenance.",
+    "Timezone fixture now inserts the documented naive-UTC column value. This does not validate all application timestamp write paths."
+  ],
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_conversation_service.py": "0d1d244960339d9645afd4a17170e75b159c2f7a58445b446db1d2c9ef592dff",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/llm/prompt_transport.py": "c2e4356300d028d0e57b74d61da435499f82477ff8a04bed8ec0aee12e41ba7d",
+    "backend/eval/full_task_prompt_benchmark.py": "aec7abfcc3ec0a8365f5aa35bd50a143893e62ba09b66ae89bdf01525f49c613",
+    "scripts/benchmark_prompt_full_task.py": "1fdbb75a061c4f5261f20a6afb4ccc43d3b5cca90254de28816af864332b2f92",
+    "scripts/harness_llm_regression_gate.py": "7ac4b01e8f44ecba3d068bfbb08e51f87a139a3de6fe492651e471e3f457775f",
+    "backend/tests/test_agent_history_provenance.py": "02ff6cbbe3487cedad57e93c89787d54043f0ef7d1a80d5a0aaddaa4b87d1462",
+    "backend/tests/test_ai_consent.py": "f46277d6495b5be55bbf7f2012942675dcc6a6a8271a836505123cfc9e7a5257",
+    "backend/tests/test_llm_synthesis_regression_gate.py": "e12eea5a355a86dc91f5614b0588aa6e10f1ac2fa2f30de3e157ef0874dc640f",
+    "backend/tests/test_full_task_prompt_benchmark.py": "7809ac116ad44c35b4a0ae51abefe08eee8e3a3ba1f976e1b19f7ff041cd236a"
+  },
+  "diagnostic_followup": {
+    "report": "2026-10-04-release-candidate-diagnostic.json",
+    "status": "passed_contracts_only",
+    "release_effect": "none: original failure remains unresolved; a later pass is not a fix"
+  }
+}

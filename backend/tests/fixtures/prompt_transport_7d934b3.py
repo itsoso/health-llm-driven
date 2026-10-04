@@ -1,13 +1,6 @@
 """Lossless provider projections; authoritative tool transcripts stay intact."""
 
 import json
-import re
-
-
-# Match complete quoted strings (including escapes) or non-whitespace runs.
-# Only use after JSON validation: an invalid/unclosed string must stay opaque.
-# Group ordinary characters into runs to avoid a Python iteration per character.
-_JSON_LEXEMES = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"|[^ \t\r\n"]+')
 
 
 def _reject_constant(value: str) -> None:
@@ -40,5 +33,21 @@ def compact_tool_json(messages: list[dict]) -> list[dict]:
             # unchanged, rather than being repaired by a transport optimization.
             projected.append(message)
             continue
-        projected.append({**message, "content": "".join(_JSON_LEXEMES.findall(content))})
+        output = []
+        quoted = escaped = False
+        for char in content:
+            if quoted:
+                output.append(char)
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = False
+            elif char == '"':
+                output.append(char)
+                quoted = True
+            elif char not in " \t\r\n":
+                output.append(char)
+        projected.append({**message, "content": "".join(output)})
     return projected

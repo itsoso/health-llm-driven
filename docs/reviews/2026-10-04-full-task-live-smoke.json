@@ -1,0 +1,222 @@
+{
+  "status": "passed_contracts_only",
+  "batch_id": "56c8b56cae6b412fb33222dc2810834e",
+  "mode": "live",
+  "models": [
+    "qwen3.8-max"
+  ],
+  "variants": [
+    "baseline",
+    "combined"
+  ],
+  "cases": [
+    "owned_read_7d_available"
+  ],
+  "planned_tasks": 2,
+  "max_provider_attempts": 6,
+  "per_task_call_cap": 3,
+  "per_task_tool_cap": 3,
+  "max_input_bytes_per_call": 262144,
+  "max_output_tokens_per_call": 1200,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "eval_only",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "owned_read_7d_available",
+      "variant": "baseline",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 1,
+          "payload_sha256": "baba85c7a40ca7fe25e42921351a3631c6679cf4ce7b136e8fb09e5bfb41d1b9",
+          "input_bytes": 30230,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 7546,
+          "output_tokens": 252,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 6.608850959004485
+        },
+        {
+          "call_index": 2,
+          "payload_sha256": "14ad990764722796d4601ebc3164324ae359139bd1b55e0e4460bfd92e23f89b",
+          "input_bytes": 20159,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4724,
+          "output_tokens": 1226,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": 30.066073292007786,
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 31.367128666999633
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 42.03534437500639,
+      "live": true,
+      "wall_seconds": 42.09339020799962,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近7天可核验样本很少：饮食只返回9月12日一条晚餐记录（合成番茄），不能代表当天全天摄入，也无法判断整周饮食情况。睡眠只返回9月13日一条 Garmin 日汇总，只能看到评分和总时长层面的信息，不足以判断整周睡眠模式或恢复状态。本轮只能按这两条样本做有限观察。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 42.3463630000042,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "combined",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 3,
+          "payload_sha256": "83dffaf90e51bc3a21592c1d0436064a453534fee4e28fbe2ae8c63253d3b3cf",
+          "input_bytes": 18234,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4314,
+          "output_tokens": 680,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": 16.598388540995074,
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 18.340172624986735
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 18.80656470899703,
+      "live": true,
+      "wall_seconds": 18.858014833997004,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近7天可核验记录很少，只能做单点观察：9月12日晚餐记录了“合成番茄”，已记录热量200千卡；这不能代表当天或整周实际总摄入。睡眠仅有一条按醒来日期归属的9月13日记录，总时长7小时、评分80分，来源为 Garmin。现有样本不足以判断7天睡眠或饮食趋势、营养充足性或恢复情况。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 18.85963695900864,
+      "repeat": 0
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "52a5ac6fc915c119bf550f402de1cac49d7da9e3ec7d5b8dff2ec3b4dee82585",
+    "scripts/benchmark_prompt_full_task.py": "05c58a9933b7eaeaf52dd79ea61abe9237f0d59454a2c05cb17f3313f5875852",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+    "Per-sample synthetic user with real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-max",
+      "variant": "baseline",
+      "tasks": 1,
+      "provider_attempts": 2,
+      "passed_contracts": 1,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 12270,
+      "api_output_tokens_known": 1478,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 1,
+      "wall_seconds_all_tasks": {
+        "p50": 42.09339020799962,
+        "p95": 42.09339020799962,
+        "p99": 42.09339020799962
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "combined",
+      "tasks": 1,
+      "provider_attempts": 1,
+      "passed_contracts": 1,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 4314,
+      "api_output_tokens_known": 680,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 1,
+      "wall_seconds_all_tasks": {
+        "p50": 18.858014833997004,
+        "p95": 18.858014833997004,
+        "p99": 18.858014833997004
+      }
+    }
+  ]
+}

@@ -1,0 +1,1720 @@
+{
+  "status": "scripted_contracts_passed",
+  "batch_id": "73e1a2142c0d4c00b5d612592ac7c662",
+  "mode": "scripted",
+  "models": [
+    "qwen3.8-flash",
+    "qwen3.8-max"
+  ],
+  "variants": [
+    "baseline",
+    "p1",
+    "p2",
+    "combined"
+  ],
+  "cases": [
+    "owned_read_7d_available",
+    "owned_read_7d_empty",
+    "owned_read_7d_read_failure"
+  ],
+  "planned_tasks": 24,
+  "max_provider_attempts": 72,
+  "per_task_call_cap": 3,
+  "per_task_tool_cap": 3,
+  "max_input_bytes_per_call": 262144,
+  "max_output_tokens_per_call": 1200,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "eval_only",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "owned_read_7d_available",
+      "variant": "baseline",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 1,
+          "payload_sha256": "375ab4b856802314b81321bd1fa4c09160c67c8addf4f490a3aad271474e07b9",
+          "input_bytes": 30232,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 3.170900163240731e-05
+        },
+        {
+          "call_index": 2,
+          "payload_sha256": "14ad990764722796d4601ebc3164324ae359139bd1b55e0e4460bfd92e23f89b",
+          "input_bytes": 20159,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 6.874994141981006e-06,
+          "wall_seconds": 1.3708995538763702e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 1.15916737500811,
+      "live": false,
+      "wall_seconds": 1.2098264999949606,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 1.2891395830083638,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "p1",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 3,
+          "payload_sha256": "375ab4b856802314b81321bd1fa4c09160c67c8addf4f490a3aad271474e07b9",
+          "input_bytes": 30232,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 3.3499993151053786e-05
+        },
+        {
+          "call_index": 4,
+          "payload_sha256": "83dffaf90e51bc3a21592c1d0436064a453534fee4e28fbe2ae8c63253d3b3cf",
+          "input_bytes": 18234,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.3833006960339844e-05,
+          "wall_seconds": 2.2374995751306415e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.31593991701083723,
+      "live": false,
+      "wall_seconds": 0.36435087501013186,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3659813749982277,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "p2",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 5,
+          "payload_sha256": "6e61cb9924c40f2cb321672a1d745949648f197051ef7d8de115d8dffa7dba92",
+          "input_bytes": 20159,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.5666999388486147e-05,
+          "wall_seconds": 2.3083004634827375e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3206557910016272,
+      "live": false,
+      "wall_seconds": 0.3673981659958372,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3692791249923175,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "combined",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 6,
+          "payload_sha256": "d6d8a6824897e8f965dac3320faf7b89bc2d693f79197cc2ce61f8015821bb39",
+          "input_bytes": 18234,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.9457991584204137e-05,
+          "wall_seconds": 2.69579904852435e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.32722420801292174,
+      "live": false,
+      "wall_seconds": 0.37282237500767224,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3744097499875352,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "baseline",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 7,
+          "payload_sha256": "baba85c7a40ca7fe25e42921351a3631c6679cf4ce7b136e8fb09e5bfb41d1b9",
+          "input_bytes": 30230,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 6.233400199562311e-05
+        },
+        {
+          "call_index": 8,
+          "payload_sha256": "a34a910acd08f81c956a16a3a67346d08b17812e8c44a95b0d5513d28b053023",
+          "input_bytes": 20159,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 8.749993867240846e-06,
+          "wall_seconds": 1.5458004781976342e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3532490420038812,
+      "live": false,
+      "wall_seconds": 0.40154575000633486,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.4032537500024773,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "p1",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 9,
+          "payload_sha256": "baba85c7a40ca7fe25e42921351a3631c6679cf4ce7b136e8fb09e5bfb41d1b9",
+          "input_bytes": 30230,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 3.304099664092064e-05
+        },
+        {
+          "call_index": 10,
+          "payload_sha256": "5f9697cc24d200695780979bf10fc183cb7248040810032a00411f78bcca600f",
+          "input_bytes": 18234,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 9.041992598213255e-06,
+          "wall_seconds": 1.6249992768280208e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.32327979200636037,
+      "live": false,
+      "wall_seconds": 0.3740204170026118,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3757309999928111,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "p2",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 11,
+          "payload_sha256": "fb7c2c74ed5898f383e8817d611edb355d8e0f9f2476720439e10d4295e67309",
+          "input_bytes": 20159,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.4250006643123925e-05,
+          "wall_seconds": 2.1500003640539944e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3132150419987738,
+      "live": false,
+      "wall_seconds": 0.36547216698818374,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.36743354200734757,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "combined",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 12,
+          "payload_sha256": "863eba46b3d9b56e41f3f1f2f00935ecbd90f6e7a8de0670fa908d03e472898d",
+          "input_bytes": 18234,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.675001112744212e-05,
+          "wall_seconds": 2.5083005311898887e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.31257987501157913,
+      "live": false,
+      "wall_seconds": 0.35937299999932293,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.36145745900284965,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "combined",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 13,
+          "payload_sha256": "caf8360728773446888e70faed177ee329bb02fc4431417e18524c57306efbae",
+          "input_bytes": 16681,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.5792000340297818e-05,
+          "wall_seconds": 2.241699257865548e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3890915420051897,
+      "live": false,
+      "wall_seconds": 0.43497362500056624,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：目标日期没有可用记录，不代表没有进食。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：目标日期没有可用记录，不能据此判断睡眠情况。\n\n睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.4369409579958301,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "p2",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 14,
+          "payload_sha256": "4d5b45db2fa703130ae6a363a361573f2843dc9e62d3061d6efcbb7682bb1575",
+          "input_bytes": 18606,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 2.63339898083359e-05,
+          "wall_seconds": 3.616699541453272e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3405954999907408,
+      "live": false,
+      "wall_seconds": 0.3887607499927981,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：目标日期没有可用记录，不代表没有进食。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：目标日期没有可用记录，不能据此判断睡眠情况。\n\n睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3907815840066178,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "p1",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 15,
+          "payload_sha256": "375ab4b856802314b81321bd1fa4c09160c67c8addf4f490a3aad271474e07b9",
+          "input_bytes": 30232,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 3.89580090995878e-05
+        },
+        {
+          "call_index": 16,
+          "payload_sha256": "caf8360728773446888e70faed177ee329bb02fc4431417e18524c57306efbae",
+          "input_bytes": 16681,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 7.750000804662704e-06,
+          "wall_seconds": 1.4290999388322234e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.33122208299755584,
+      "live": false,
+      "wall_seconds": 0.38272495799174067,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：目标日期没有可用记录，不代表没有进食。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：目标日期没有可用记录，不能据此判断睡眠情况。\n\n睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3852617500087945,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "baseline",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 17,
+          "payload_sha256": "375ab4b856802314b81321bd1fa4c09160c67c8addf4f490a3aad271474e07b9",
+          "input_bytes": 30232,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 3.629199636634439e-05
+        },
+        {
+          "call_index": 18,
+          "payload_sha256": "4d5b45db2fa703130ae6a363a361573f2843dc9e62d3061d6efcbb7682bb1575",
+          "input_bytes": 18606,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 6.6250067902728915e-06,
+          "wall_seconds": 1.2082993634976447e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3271017910010414,
+      "live": false,
+      "wall_seconds": 0.37207425000087824,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：目标日期没有可用记录，不代表没有进食。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：目标日期没有可用记录，不能据此判断睡眠情况。\n\n睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3741138339973986,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "combined",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 19,
+          "payload_sha256": "caf8360728773446888e70faed177ee329bb02fc4431417e18524c57306efbae",
+          "input_bytes": 16681,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 2.8750000637955964e-05,
+          "wall_seconds": 3.691599704325199e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3166946249984903,
+      "live": false,
+      "wall_seconds": 0.3607564590056427,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：目标日期没有可用记录，不代表没有进食。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：目标日期没有可用记录，不能据此判断睡眠情况。\n\n睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3629536670050584,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "p2",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 20,
+          "payload_sha256": "4d5b45db2fa703130ae6a363a361573f2843dc9e62d3061d6efcbb7682bb1575",
+          "input_bytes": 18606,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.5875004464760423e-05,
+          "wall_seconds": 2.274999860674143e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.320155875000637,
+      "live": false,
+      "wall_seconds": 0.3644027090049349,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：目标日期没有可用记录，不代表没有进食。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：目标日期没有可用记录，不能据此判断睡眠情况。\n\n睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.36650562500290107,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "p1",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 21,
+          "payload_sha256": "baba85c7a40ca7fe25e42921351a3631c6679cf4ce7b136e8fb09e5bfb41d1b9",
+          "input_bytes": 30230,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 3.320799442008138e-05
+        },
+        {
+          "call_index": 22,
+          "payload_sha256": "caf8360728773446888e70faed177ee329bb02fc4431417e18524c57306efbae",
+          "input_bytes": 16681,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 7.624999852851033e-06,
+          "wall_seconds": 1.50829873746261e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3180740420066286,
+      "live": false,
+      "wall_seconds": 0.3637327080068644,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：目标日期没有可用记录，不代表没有进食。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：目标日期没有可用记录，不能据此判断睡眠情况。\n\n睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3659670000051847,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "baseline",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 23,
+          "payload_sha256": "baba85c7a40ca7fe25e42921351a3631c6679cf4ce7b136e8fb09e5bfb41d1b9",
+          "input_bytes": 30230,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 2.6917012291960418e-05
+        },
+        {
+          "call_index": 24,
+          "payload_sha256": "4d5b45db2fa703130ae6a363a361573f2843dc9e62d3061d6efcbb7682bb1575",
+          "input_bytes": 18606,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 8.084010914899409e-06,
+          "wall_seconds": 1.416700251866132e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3134797500097193,
+      "live": false,
+      "wall_seconds": 0.35718970801099204,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：目标日期没有可用记录，不代表没有进食。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：目标日期没有可用记录，不能据此判断睡眠情况。\n\n睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 0.3594474579876987,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "baseline",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 25,
+          "payload_sha256": "375ab4b856802314b81321bd1fa4c09160c67c8addf4f490a3aad271474e07b9",
+          "input_bytes": 30232,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 3.691700112540275e-05
+        },
+        {
+          "call_index": 26,
+          "payload_sha256": "f3670f8478db1d14f2fea5085da3f704a1ec074eb91533e2f2703f8f54d26b86",
+          "input_bytes": 22925,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 5.708003300242126e-06,
+          "wall_seconds": 1.1416996130719781e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3258667920017615,
+      "live": false,
+      "wall_seconds": 0.3696649589983281,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：本轮查询未完成，暂不汇总。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：本轮查询未完成，暂不汇总。",
+      "outcome": "failed",
+      "completion_status": "error",
+      "evaluation_seconds": 0.37182333300006576,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "p1",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 27,
+          "payload_sha256": "375ab4b856802314b81321bd1fa4c09160c67c8addf4f490a3aad271474e07b9",
+          "input_bytes": 30232,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 2.9207993065938354e-05
+        },
+        {
+          "call_index": 28,
+          "payload_sha256": "f3670f8478db1d14f2fea5085da3f704a1ec074eb91533e2f2703f8f54d26b86",
+          "input_bytes": 22925,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 6.332993507385254e-06,
+          "wall_seconds": 1.2332995538599789e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3251700420078123,
+      "live": false,
+      "wall_seconds": 0.37105745800363366,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：本轮查询未完成，暂不汇总。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：本轮查询未完成，暂不汇总。",
+      "outcome": "failed",
+      "completion_status": "error",
+      "evaluation_seconds": 0.3733202919975156,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "p2",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 29,
+          "payload_sha256": "58c49b4a2f39eba762cc3957bf2cbb257f9a5fe6fb7fb9b6862069737d1988bd",
+          "input_bytes": 23131,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 8.66700429469347e-06,
+          "wall_seconds": 1.5249999705702066e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.31001237499003764,
+      "live": false,
+      "wall_seconds": 0.35700966700096615,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：本轮查询未完成，暂不汇总。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：本轮查询未完成，暂不汇总。",
+      "outcome": "failed",
+      "completion_status": "error",
+      "evaluation_seconds": 0.3597726660082117,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "combined",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 30,
+          "payload_sha256": "58c49b4a2f39eba762cc3957bf2cbb257f9a5fe6fb7fb9b6862069737d1988bd",
+          "input_bytes": 23131,
+          "phase": "answer",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.1750002158805728e-05,
+          "wall_seconds": 1.850000990089029e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3083594999916386,
+      "live": false,
+      "wall_seconds": 0.3521817500004545,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：本轮查询未完成，暂不汇总。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：本轮查询未完成，暂不汇总。",
+      "outcome": "failed",
+      "completion_status": "error",
+      "evaluation_seconds": 0.3545947919919854,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "baseline",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 31,
+          "payload_sha256": "baba85c7a40ca7fe25e42921351a3631c6679cf4ce7b136e8fb09e5bfb41d1b9",
+          "input_bytes": 30230,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 3.679200017359108e-05
+        },
+        {
+          "call_index": 32,
+          "payload_sha256": "47998c648a1a9bcf4e452b53a6499d605ff925b46976424a1e537c4d442f6728",
+          "input_bytes": 30630,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 7.875001756474376e-06,
+          "wall_seconds": 1.4125005691312253e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3389685830043163,
+      "live": false,
+      "wall_seconds": 0.4394644169951789,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：本轮查询未完成，暂不汇总。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：本轮查询未完成，暂不汇总。",
+      "outcome": "failed",
+      "completion_status": "error",
+      "evaluation_seconds": 0.4421154580049915,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "p1",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 33,
+          "payload_sha256": "baba85c7a40ca7fe25e42921351a3631c6679cf4ce7b136e8fb09e5bfb41d1b9",
+          "input_bytes": 30230,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": null,
+          "wall_seconds": 3.47500026691705e-05
+        },
+        {
+          "call_index": 34,
+          "payload_sha256": "47998c648a1a9bcf4e452b53a6499d605ff925b46976424a1e537c4d442f6728",
+          "input_bytes": 30630,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 6.165995728224516e-06,
+          "wall_seconds": 1.1957992683164775e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.3335618340061046,
+      "live": false,
+      "wall_seconds": 0.3852160420065047,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：本轮查询未完成，暂不汇总。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：本轮查询未完成，暂不汇总。",
+      "outcome": "failed",
+      "completion_status": "error",
+      "evaluation_seconds": 0.38804195800912566,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "p2",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 35,
+          "payload_sha256": "fada48075888d76b405084fdd7398183242e6733d23c3d285d54bd47f7c191cd",
+          "input_bytes": 30836,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.5207988326437771e-05,
+          "wall_seconds": 2.608299837447703e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.31406362500274554,
+      "live": false,
+      "wall_seconds": 0.3606877089914633,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：本轮查询未完成，暂不汇总。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：本轮查询未完成，暂不汇总。",
+      "outcome": "failed",
+      "completion_status": "error",
+      "evaluation_seconds": 0.36368462500104215,
+      "repeat": 0
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "combined",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 36,
+          "payload_sha256": "fada48075888d76b405084fdd7398183242e6733d23c3d285d54bd47f7c191cd",
+          "input_bytes": 30836,
+          "phase": "tools",
+          "token_source": "synthetic",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cached_tokens": null,
+          "first_content_seconds": 1.545899431221187e-05,
+          "wall_seconds": 2.2916996385902166e-05
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 0.31798716699995566,
+      "live": false,
+      "wall_seconds": 0.3642442919954192,
+      "database_errors": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：本轮查询未完成，暂不汇总。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：本轮查询未完成，暂不汇总。",
+      "outcome": "failed",
+      "completion_status": "error",
+      "evaluation_seconds": 0.36706329199660104,
+      "repeat": 0
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "52a5ac6fc915c119bf550f402de1cac49d7da9e3ec7d5b8dff2ec3b4dee82585",
+    "scripts/benchmark_prompt_full_task.py": "05c58a9933b7eaeaf52dd79ea61abe9237f0d59454a2c05cb17f3313f5875852",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+    "Per-sample synthetic user with real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-flash",
+      "variant": "baseline",
+      "tasks": 3,
+      "provider_attempts": 6,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 6,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.37207425000087824,
+        "p95": 1.2098264999949606,
+        "p99": 1.2098264999949606
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "variant": "combined",
+      "tasks": 3,
+      "provider_attempts": 3,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 3,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.37282237500767224,
+        "p95": 0.43497362500056624,
+        "p99": 0.43497362500056624
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "variant": "p1",
+      "tasks": 3,
+      "provider_attempts": 6,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 6,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.37105745800363366,
+        "p95": 0.38272495799174067,
+        "p99": 0.38272495799174067
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "variant": "p2",
+      "tasks": 3,
+      "provider_attempts": 3,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 3,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.3673981659958372,
+        "p95": 0.3887607499927981,
+        "p99": 0.3887607499927981
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "baseline",
+      "tasks": 3,
+      "provider_attempts": 6,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 6,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.40154575000633486,
+        "p95": 0.4394644169951789,
+        "p99": 0.4394644169951789
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "combined",
+      "tasks": 3,
+      "provider_attempts": 3,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 3,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.3607564590056427,
+        "p95": 0.3642442919954192,
+        "p99": 0.3642442919954192
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "p1",
+      "tasks": 3,
+      "provider_attempts": 6,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 6,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.3740204170026118,
+        "p95": 0.3852160420065047,
+        "p99": 0.3852160420065047
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "p2",
+      "tasks": 3,
+      "provider_attempts": 3,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 3,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.3644027090049349,
+        "p95": 0.36547216698818374,
+        "p99": 0.36547216698818374
+      }
+    }
+  ]
+}

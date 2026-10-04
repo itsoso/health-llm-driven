@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | 本地验证完成，分支交接；未发布 |
+| 当前阶段 | 已获部署授权；标准真实合成回归通过，但整任务候选失败，发布 BLOCK |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -63,3 +63,121 @@ python scripts/benchmark_record_prompt_projection.py --output /tmp/record-prompt
 以上局部测试不是全量 CI 或 PostgreSQL 语义证明。提交已验证分支不等于发布验收；若继续产生改动，补相称测试及独立安全检查，更新 dossier。合并、部署与启用生产开关须单独授权及对应 Gate。
 
 换机提交前补验：前端流式测试 5 passed、1 skipped；秘密扫描通过；仅格式收尾移除实验模块末尾空行，应用代码未改。
+
+## 本机接续检查（2026-10-04）
+
+已 fetch origin；分支 HEAD `7d934b3c6`，相对当前 `origin/main` 为 ahead 1 / behind 0。该分支无开放 PR。原共享 main 与远端分叉且有大量已修改/未跟踪文件，全部保留；在 `/Users/thomas/work/personal/health-prompt-optimization` 新工作树接续本分支，未合并、部署或推送。
+
+Router 选择 implementation / health-harness-orchestrator + safety；命令行 overlay 的 canonical 参数是 `safety`，推荐 skill 为 `safety-gate`。本机使用已有 Python 3.12 创建工作树开发环境并安装后端依赖及 Pi Node lockfile 依赖。未加载已禁用的 superpowers skills。
+
+新增 eval-only 候选 `backend/eval/experimental_argument_transport.py`：仅删除历史 assistant tool_calls.function.arguments 中合法 JSON 的字符串外空白。保留字符串及转义、重复键、数值字面量、工具名/ID、扩展字段、用户原话及工具结果；无效 JSON 原样返回。没有应用导入或生产开关；health_record 描述精简仍否决。
+
+`scripts/benchmark_argument_transport.py` 默认 dry-run，默认同时覆盖 qwen3.8-flash 和 qwen3.8-max 的四个冻结 answer-stage 合成契约（睡眠缺血氧、血氧限制、写失败、写成功）。baseline 已应用现行工具结果紧凑化，candidate 只增加参数空白实验；不执行工具、不访问生产数据库。API 调用显式 `--include-live-llm`，记录真实 usage、缓存、输出、耗时、失败类型和原有质量 oracle；失败退出非零。
+
+离线诊断：[dry-run JSON](../reviews/2026-10-04-argument-transport-dry-run.json)。cl100k_base 对 message JSON 的诊断计数依次为 449→446、420→419、376→371、397→392，降幅 0.24%–1.33%。这不是 Qwen API token 或全任务收益；本候选收益小，不能视为主要优化交付。
+
+真实 API 尝试：[失败证据](../reviews/2026-10-04-argument-transport-live-attempt.json)。本机没有 .env 或继承的模型 API 凭据，首个 baseline 在创建 provider 时 OpenAIError，进程退出 2，无模型回归结果。已请求用户提供已有私有环境路径（不要提供密钥正文）。质量非劣、真实 token 节省与生产长尾仍 Unknown；候选不进入 runtime，不能用离线保真测试替代真实模型验证。
+
+System Map 统一检查通过；离线 harness invariants 12 项、health_agent_core 50 项以及 trajectory contract / goldens 通过。首轮关联回归 131 passed / 3 failed，失败均在 Pi 初始化；安装工作树 Pi 依赖后的最终关联回归 **414 passed**（53.01s），含新增实验保真/隔离测试、stream/non-stream provider、Pi、被否决写描述保留、工具说明投影、预算、质量 oracle 与 fast routing。日志 `/tmp/reva-prompt-continuation-tests-final.log`，不代表全量 CI 或真实模型闸。
+
+复现（工作树 .venv / 私有模型环境自行配置，禁止复制凭据入 Git）：
+
+```bash
+SECRET_KEY=local-synthetic-test-key-only-000000 APP_ENV=test DATABASE_URL=sqlite:///:memory: REDIS_URL=redis://127.0.0.1:1/15 .venv/bin/python scripts/benchmark_argument_transport.py --include-live-llm --output /tmp/argument-transport-live.json
+```
+
+继续方向仍为大工具 schema 与固定 system 材料：先取得同批真实 API 基线，覆盖 flash/max 及多轮工具执行，再决定候选。此次没有重新启用写工具说明精简，没有改变任何生产默认值。
+
+## Token 与响应速度完整方案（2026-10-04 续）
+
+用户要求继续优化并给出完整方案。已形成 [输入 Token 与响应速度优化方案](../plans/2026-10-04-prompt-token-latency-plan.md)，沿用本 Dossier：P0 同批基线 → P1 工具及阶段材料 → P2 扩展已有预规划/核验后直接交付 → P3 完整报告复用 → P4 请求内复用与独立 I/O → P5 缓存/路由预算 → P6 历史/流式。文档包括源码边界、目标、质量闸、真实 A/B、停止/回退条件与顺序；目标下降比例不是已交付收益。
+
+本轮已完成 P0 的离线分项诊断器 `scripts/profile_prompt_inputs.py` 和 [合成测量](../reviews/2026-10-04-prompt-plan-profile.json)。使用现有真实 Pi 接线测试导出 payload，两个场景重新运行 **2 passed**；统一 System Map 检查通过。模型 provider 为 stub，输出仅 tokenizer 计数/工具名/源码摘要；不是 API usage、速度或质量非劣证据。现有优化开启后的答案轮 system 诊断仍为 5484 / 3880 tokens，支持优先调查固定材料；首轮工具输入也有收敛空间。
+
+## 按方案实施 P0–P2（2026-10-04 续）
+
+用户已明确“优化、执行，按照你的规划执行”。继续在 `/Users/thomas/work/personal/health-prompt-optimization` 的指定分支工作；保留原仓库及已有分支改动，未 commit/push/merge/deploy。此次范围仍由本 Dossier 和 harness run `b992d9b915cd` 负责，未新建完成状态。
+
+- **P0**：`prompt_benchmark_metrics.py` 与成对 benchmark 支持有限重复、交替顺序、首正文/完成耗时、API usage、缓存未知值、失败样本和调用上限；小样本百分位仅诊断。错误即停批，缺失 usage 不估算成 API 值。
+- **P1 默认重构**：`agent_prompt_sections.py` 提取基础规则列表；32 种条件组合与 `7d934b3c6` 预先冻结的摘要逐字相同，不改工具 schema、权限、安全地板或模型配置。
+- **P1 候选**：`eval/experimental_read_synthesis.py` 只在既有只读答案阶段去掉固定规划文字；临床来源、R4、行为准则、证据、最终任务核对保留。删除段落哈希变化时返回完整原文；无 app 导入/开关。实际 Pi 回放的答案轮诊断 4441→3688（16.96%），整任务 16668→15915（4.52%）；首轮/工具结果/保存答案一致，但 provider 是 stub。
+- **P2 候选**：`eval/experimental_owned_read_preplan.py` 对封闭且已由现有范围解析器绑定的本人睡眠+饮食请求提出已有批量读计划；从 Pi 到 Gateway 真实执行。合成 SQLite 回放 provider 2→1，日期、返回记录和流回答一致。负例与 owner/原话/附件/待确认/历史工具/重入边界保留模型路径。无 runtime 接线，非 PostgreSQL/质量/速度证明。
+
+独立审查对 P1/P2 的默认等价性和实验隔离给 GO，分别复跑 130 / 25 项。P0 首审发现“自动兼容重试越调用预算、取消漏保存样本”并给 NO-GO；已修复，新增测试先 3 failed / 9 passed，后 **12 passed**，独立复审 **12 passed / GO**。评测时显式要求流 usage，关闭 SDK 重试与模型自动恢复，作用域退出恢复配置；取消保存状态后重抛。此前 NO-GO 保留在原轨迹。
+
+最终关联验证 **707 passed**（86.42s），覆盖写入说明保持、stream/non-stream、实际 Pi、权限、日期、只读合成、历史、缓存布局、报告交付、usage 及新增候选；后续仅评测器修复，定向 12 项再次通过。离线 harness invariants 12、health_agent_core 50、trajectory contract 12 与 goldens 9 全过；统一 System Map 通过。[可携带验证摘要与源码摘要](../reviews/2026-10-04-prompt-implementation-verification.json) 已保存。临时日志 `/tmp/reva-prompt-implementation-regression.log`、`/tmp/reva-p0-review-green.log`。
+
+**G3 仍 BLOCK：真实 LLM 证据缺失。** [路径敏感闸](../reviews/2026-10-04-prompt-implementation-live-gate.json) 为 failed/live required/unconfirmed；[API 尝试](../reviews/2026-10-04-read-synthesis-live-attempt.json) 在 provider 内客户端初始化时 OpenAIError，usage tracker 记录一次失败的包装层调用，没有 API usage 或回答。本机未配置模型凭据，已请求已有私有测试配置路径/服务；不得把初始化失败耗时当模型速度。独立 GO 不覆盖真实质量非劣、生产性能或发布资格。
+
+P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因此不靠切旧开关宣称少一次调用。P4–P6 待真实同批分段数据和前置 Gate；当前未新开并发、共享健康数据缓存或降低模型档位。后续先跑四答案用例筛查，再补完整任务/holdout/PostgreSQL/盲评；详见[方案第八节](../plans/2026-10-04-prompt-token-latency-plan.md)。写说明精简继续 NO-GO，不重新启用。未合并、未部署，未声称全部方案完成。
+
+## PostgreSQL 与组合验证接续（2026-10-04）
+
+用户再次要求继续。本轮未改变应用或候选实现，补强 P2 的 1/7/31 天、实际读数、他人/未来记录排除、无数据语义、保存回答与健康行数不变的断言。一次性 PostgreSQL 17.11 首轮 **18 passed**，加入 P1/P2 组合回放后 **21 passed**；实例仅使用私有 Unix socket，均已停止并删除。[P2 PostgreSQL 证据](../reviews/2026-10-04-read-preplan-postgres-pi-evidence.json)、[组合数据库验证](../reviews/2026-10-04-composed-postgres-verification.json)。这补齐了所测读取路径的 PostgreSQL 证据，不代表迁移、并发或生产负载验证。
+
+新组合回归在正常/空记录/读失败三种场景分别运行 baseline、P1、P2 和两者组合，经实际 provider 准备、Pi、Gateway、数据库及保存；provider 回答和无关上下文块仍为合成替身。正常场景整任务 cl100k_base 序列化诊断：基线 16825，P1 16072（4.48%），P2 6649（60.48%），组合 5896（64.96%），模型调用 2→1。证据、输出预算、终态与保存回答一致。[组合诊断](../reviews/2026-10-04-composed-optimization-pi-profile.json)。不代表 API、全量平均或真实提速。
+
+独立首审 **20 passed / 1 failed / NO-GO**：失败测试错误假设只 dispatch 一次，stub 又在工具失败后重复提案导致 Pi 错误。按实际受限恢复策略修复 fixture，保留两次 dispatch、真实 Error 回执、完整失败 system，并直接断言无 Pi 错误；四臂终态一致。未改生产行为，未把失败视为成功。最后五文件 **77 passed**，独立 **21 passed / GO**；前次失败和修复均留在同一 run，GO 仍限离线。[完整验证摘要](../reviews/2026-10-04-composed-optimization-verification.json) 绑定当前源码哈希和测量口径。
+
+真实模型配置仍缺失，未扩大读取私有配置的范围。默认运行行为保持前轮逐字等价重构，语义候选继续 eval-only，写说明精简继续 NO-GO。**真实模型非劣与速度闸仍 BLOCK**；下一步是私有模型配置与有限 A/B，详见[方案第九节](../plans/2026-10-04-prompt-token-latency-plan.md)。未合并、部署，未声称完整优化目标已完成。
+
+## JSON 传输 CPU 等价优化（2026-10-04 接续）
+
+再次 fetch origin，继续原指定分支并保留所有已有改动，无开放 PR。本轮将 `llm/prompt_transport.py` 的逐字符循环换成对合法 JSON 的字符串/非空白片段扫描。先执行相同 JSON 校验；完整保留字符串、转义、重复键、字段顺序、数值字面量和错误透传。仍只处理既有 `domain_prompt_optimization` 路径中的 tool 消息，不改变开关默认值、用户消息、调用参数、Pi transcript 或权限。
+
+基线在改动前冻结自 `7d934b3c6` 的原模块，首轮目标未达成；直接正则替换的探索版本反而更慢，未采用。最终对相同合成输入做 101 组交替 A/B，每组 10 次，最后一次测量没有同时运行本任务测试。1000 条格式化记录的单次批均耗时 P50 **2.5→1.69 ms（减少 32.11%）**、P95 **2.55→1.76 ms（减少 31.05%）**；已紧凑记录 P50 **1.9→1.06 ms（减少 43.9%）**。17 组输入全都输出相同且不修改原数据；预设局部目标通过。记录完整样本、P50/P95/P99、环境和源码摘要：[最终微基准](../reviews/2026-10-04-transport-cpu-final.json)。基线与首轮结果也保留。
+
+**这是本机合成 CPU 微基准，新增 token 节省为零，不是同批真实请求、API 延迟或全任务提速证据。** 当前组合 Pi 捕获只有 system/user 消息，该路径不进入 tool JSON 扫描，只作为透传对照；不得用其微秒级计时波动宣称收益。已有 P1/P2 的 64.96% 离线输入诊断与此次 CPU 收益不能相加。
+
+先补保真测试；首版把 1500 层合法数组误判为必然超过解码器限制，出现 1 failed / 16 passed，已修正 fixture，并注入 decoder `RecursionError` 单独验证异常分支。改动前保真 **18 passed**；改动后关联 **48 passed**，包含 stream/non-stream provider 和实际 Pi 组合回放；独立审查 **31 passed / GO**。另外对 768 个确定性转义样本逐字比较冻结基线和 serializer 结果，覆盖长字符串、大整数及异常结果。离线 harness 与 System Map 通过。[验证摘要](../reviews/2026-10-04-transport-verification.json)。GO 仅限局部等价优化；[真实 LLM 闸](../reviews/2026-10-04-transport-live-gate.json) 仍 failed / required / unconfirmed。
+
+此次应用差异保持在本地工作树，未 commit/push/merge/deploy；没有重新启用已否决写入说明精简。后续仍需已有私有测试模型环境，执行方案中的有限真实 A/B 和完整任务非劣验收。详细复现及回退见[方案第十节](../plans/2026-10-04-prompt-token-latency-plan.md)。
+
+## 公共工具说明解析复用（2026-10-04 接续）
+
+再次 fetch 并核对指定分支，无开放 PR；保留原工作树全部修改。本轮只给 `agent_tool_prompt_projection.py` 的两个纯文本解析函数增加各 64 项的进程内 LRU。缓存键为完整公共 registry 描述加维度集合，或完整批查询描述加当前查询说明；文本修改立即产生新键。有效期随进程，不依赖时钟 TTL；旧版本按 LRU 淘汰。缓存不保存用户、原话、日期、scope、健康结果、授权工具列表或可变 schema。当次身份检查、工具集合与参数 schema 比较、deepcopy 仍每次执行，缓存不能恢复被移除工具。
+
+新增测试先 **4 failed / 4 passed**，包括原实现重复解析 5 次而非 1 次；加入缓存后关联 **135 passed**，独立 **32 passed / GO**。测试覆盖全部非空维度组合、冷热一致、说明更新/不识别格式、容量、修改返回对象、删除工具、封闭参数、stream/non-stream provider 完整载荷及身份重新检查。模块语句与分支合并覆盖率 **93%**；离线 harness、System Map 通过。[验证摘要](../reviews/2026-10-04-tool-projection-verification.json)。没有数据库业务语义修改。
+
+同一冻结基线 `7d934b3c6` 的六组合成 CPU 测量，每臂 101 组、暖缓存每组 100 次；测量时本任务及独立 reviewer 均无测试并行。睡眠+饮食投影 P50 **59.25→25.48 μs（减少 56.99%）**，P95 **64.74→27.37 μs**；首次未命中单次 P50 **61.54 μs**，存在填充开销。暖缓存是批均值，冷缓存是单次计时，不将二者当作相同的请求延迟分布。预设局部目标通过；绝对节省约 **33.77 μs**，是很小的请求准备开销，不是整体响应速度。[改动前](../reviews/2026-10-04-tool-projection-cpu-before.json)、[改动后](../reviews/2026-10-04-tool-projection-cpu-after.json)。
+
+发送说明与参数不变，新增 token 节省仍为零。P1/P2 语义候选继续 eval-only，写说明精简继续否决；[真实 LLM 闸](../reviews/2026-10-04-tool-projection-live-gate.json) 仍 failed / required / unconfirmed。已再次请求私有测试配置路径或已配置服务地址，没有读取 `.env-online` 或重试已知缺凭据的 API。未 commit/push/merge/deploy。下一步仍需真实模型环境，才能验收有明显输入/调用收益的 P1/P2；见[方案第十一节](../plans/2026-10-04-prompt-token-latency-plan.md)。
+
+## 整任务评测入口（2026-10-04 接续）
+
+本轮补齐 P1/P2 整任务 A/B：`scripts/benchmark_prompt_full_task.py` 默认计划模式，显式选择脚本或真实模型；经过实际 prompt、Pi、Gateway、查询及保存，使用合成用户和真实同意审计。仅允许 test 环境的内存 SQLite；不改变应用运行代码。模型、输入字节、输出 token、调用次数、工具范围和超时均有上限，失败即停批、取消留证、缺失 API usage 不估算成已知值。细节、复现及后续顺序见[方案第十二节](../plans/2026-10-04-prompt-token-latency-plan.md)。
+
+独立审查指出旧 SDK 缓存可能保留重试，先 RED 复现后用显式客户端缓存键修复。随后日志核对发现懒加载上下文缺表；两份早期脚本报告已标为无效，补齐注册并增加数据库错误监听，防止上下文降级被计为通过。Twin 会话使用同一临时数据库；临床等未播种上下文为空、知识库未配置，不能代表复杂患者覆盖。
+
+最终关联 **64 passed**；[最终脚本回放](../reviews/2026-10-04-full-task-scripted-final.json)共 **24 个任务通过**，数据库错误为零、36 次脚本 provider 调用，覆盖正常/空数据/读失败与四变体。baseline/P1 每任务 2 次，P2/组合 1 次；所有通过样本均核对读取范围、其他用户/未来数据隔离、健康行不变、保存与流一致。离线 harness 和 System Map 通过。验证摘要及独立审查见[本轮证据](../reviews/2026-10-04-full-task-verification.json)。
+
+**真实质量与速度仍 BLOCK**：本轮没有真实模型请求、API token 或生产性能收益证据；[路径闸](../reviews/2026-10-04-full-task-live-gate.json)仍 required / unconfirmed。下一步用已授权的私有测试模型环境先跑最多 6 次调用的小筛查，再扩展矩阵和盲评。P1/P2 继续 eval-only，写入说明精简继续否决，全部已有改动保留，未 commit/push/merge/deploy。
+
+
+## 部署授权与真实发布验证（2026-10-04 续）
+
+用户最新明确要求“继续优化，部署到线上”，已覆盖此前不部署的限制；只有通过质量、安全与精确 SHA 发布闸的范围才可上线。已再次 fetch origin：main 仍为 `f201d85b4f0d726b09ff0f8b16acf403d70f3e57`，分支基线 `7d934b3c6`。生产只读核验为 `a8853dea1207163aaa412974dddfbc050ce3eeea`、backend/worker/beat active、health 200，旧后端回执 SUCCEEDED；未修改生产或轮换授权。生产 DOMAIN_PROMPT_OPTIMIZATION=true、报告复用 shadow、decision on、staged off。
+
+### 已执行的真实模型验证
+
+本机没有模型配置，已通过现有管理通道把服务器当前 TokenPlan 配置的两个必要字段传入临时测试进程内存，仅用于固定合成数据。配置值未输出、未入库、未写入 Git；未读取 `.env-online`，未访问生产健康数据。临时进程强制 APP_ENV=test、内存 SQLite、真实授权审计和调用预算。
+
+- [首组 P1/P2 合成筛查](../reviews/2026-10-04-full-task-live-smoke.json)：Max 的整任务 API 输入 12270→4314，调用 2→1，42.09→18.86 秒，契约通过。只是单组诊断，不能作为上线收益或非劣证明。
+- [扩大筛查](../reviews/2026-10-04-full-task-live-screen.json)：24 个计划样本只完成 5 个便按规则停止。Flash 有一组候选更慢；Max 基线提出范围外工具。该报告先于工具名诊断增强，不能推断其具体工具名。P1/P2 继续 eval-only。
+- [真实主干严格读对照](../reviews/2026-10-04-release-main-full-task.json)：使用 origin/main 的完整 app 源码归档，eval-only overlay 不进入 baseline-only app 接线。首个样本选择 knowledge_search，被严格只读 oracle 拒绝。它表示测试范围不适配一般分析，不能当作主干质量失败或候选获胜。
+- 新增独立 analysis 场景，允许通过真实 Gateway 调用本地 reviewed-KB 查询，空知识库必须如实未命中；不改变原严格读场景判据。仍禁止写入、超预算工具和任意外部分析调用。使用原句及未调参“复盘…”表达，记录读窗口、真实查询、知识来源、持久化和健康数据无变更。
+- [主干分析对照](../reviews/2026-10-04-release-main-analysis.json)：原句 Flash/Max 均完成；holdout Flash 被 Gateway 拒绝后未完成，停止批次。
+- [候选分析对照](../reviews/2026-10-04-release-candidate-analysis.json)：原句 Flash 被 Gateway 以 `health_query_dimension_conflict` 拒绝，未完成任务，发布质量闸失败。没有为了绿色重试整个矩阵或放宽边界。后续诊断增加脱敏的请求维度/日期及 Gateway 裁决留证；独立诊断不覆盖本次失败。
+
+标准 live regression 的首次运行虽然返回通过，但测试库缺少 llm_usage_logs，用量/预算降级；[原报告作废](../reviews/2026-10-04-release-live-regression-degraded.json)。已补空库初始化回归（先失败后通过），保留真实 consent，同时创建用量审计表。[重跑及用量审计](../reviews/2026-10-04-release-live-regression-audited.json) 真实 5 个合成用例通过，10 次 MiniMax-M2.5 API 使用记录完整，无失败或模型恢复；offline invariants 12、health-agent rubric 50、trajectory 12/9 通过。该套件不是完整 AgentExecutor 质量验收，不能覆盖上述整任务失败。
+
+### 修复与本地验证
+
+1. OpenAI SDK 3.24 直接传播授权 hook 的 403；旧测试只接受包装后的 APIConnectionError。仅修测试兼容两种错误，并新增具体 403 code、一次发送的强断言，运行时鉴权不变。
+2. PostgreSQL 的 ASC 默认把 NULL 排在最后，旧缺时间消息可能成为最后一个用户消息而失去历史来源边界。build_messages 显式 NULLS FIRST，仍以 ID 决胜；SQLite 原行为相同。失败已在 PostgreSQL 重现，修复后保证旧消息标记“时间未知/不是本轮指令”，当前用户原话仍为最后一条。
+3. PostgreSQL 测试首次集群编码为 SQL_ASCII，无法建立含中文注释的表，该结果无效；重新建 UTF8 一次性集群。时间来源 fixture 改为明确的 naive UTC 列值，避免 aware fixture 经数据库 session timezone 隐式转换。UTC 环境 106 项通过，生产同款 Asia/Shanghai 时区的历史来源 3 项通过；这不证明所有时间写入路径，未迁移或回填已有记录。
+4. CI-mode 关联集成 1030 passed、2 个 PostgreSQL-only skipped；最终 history/评测定向 75 passed、诊断增强 24 passed。前端 447 passed/1 skipped，build、lint（0 error/37 warning）、System Map 和阻断级 Ruff 通过。秘密扫描覆盖 tracked + task untracked，未发现高置信凭据。
+
+[可携带验证摘要](../reviews/2026-10-04-release-optimization-verification.json) 记录源码摘要、测试范围与限制。当前 **G3 / 发布 BLOCK**：整任务非退化未通过；未通过目标 SHA 全量 CI、最终 G4 或生产发布事务。不得以标准 live gate、单组 token 收益、离线 CPU 微基准代替。写入说明精简继续否决，P1/P2/参数实验无 runtime 导入或开关，报告复用维持 shadow。下一步先根据 Gateway 诊断复现失败提案并定位归因，再固定候选、重新成对验证和独立审查；不得带红合并部署。
+
+单次[新增 Gateway 诊断](../reviews/2026-10-04-release-candidate-diagnostic.json)后来完成了同一请求：日期和两个维度正确、原 Gateway 允许执行。这不是修复，不能抵消先前失败，也不重算为整批通过；原失败的完整参数未保存，根因仍待复现。新增测试明确覆盖错误维度被拒、仅保存窄诊断字段（不保存任意参数），最终 24 passed。

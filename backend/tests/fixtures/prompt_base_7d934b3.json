@@ -1,0 +1,261 @@
+{
+  "source_ref": "7d934b3c6",
+  "cases": [
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": false,
+      "gene": false,
+      "menu": false,
+      "exercise": false,
+      "sha256": "313666db873fbc9bd7792ba92daf309d149ed4985b443f0696448af5343470c5"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": false,
+      "gene": false,
+      "menu": false,
+      "exercise": true,
+      "sha256": "7542f312b551bdb432b7c263acadad137399c7765219560abc05070ae7d880d5"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": false,
+      "gene": false,
+      "menu": true,
+      "exercise": false,
+      "sha256": "08ed001e0c66f3ca0f2fc7c180b524ea92e4e5b3e45d9a949c88bfef8771acc9"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": false,
+      "gene": false,
+      "menu": true,
+      "exercise": true,
+      "sha256": "80a0a98b8f723ce4a5359088846c2744f58b45513863c1aaf9937bd761cfc11e"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": false,
+      "gene": true,
+      "menu": false,
+      "exercise": false,
+      "sha256": "0090e6c573d82a70e81e24b758715dd897cc01362a9fea5a578e656b8126ef52"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": false,
+      "gene": true,
+      "menu": false,
+      "exercise": true,
+      "sha256": "5a34eabb80cc3f139e154b1e8ff3ac4c572f4fb6a4a66e8ddb0a6e2d8b180b59"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": false,
+      "gene": true,
+      "menu": true,
+      "exercise": false,
+      "sha256": "88972395a6349fcafe78cf57629d99910f9671f214b78f59a9ee178afa06073b"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": false,
+      "gene": true,
+      "menu": true,
+      "exercise": true,
+      "sha256": "24528a09e5db5eb836b7a0cc9054933c224ae4dd85ab1e2dae1a0c962acf3edd"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": true,
+      "gene": false,
+      "menu": false,
+      "exercise": false,
+      "sha256": "5e03970d5dd55edf69adb2c305e394f7bd7e45c64e7104c32672e964794f7c70"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": true,
+      "gene": false,
+      "menu": false,
+      "exercise": true,
+      "sha256": "4105dc30ad1174f5f9d986b83b65ad64fbe9fa5a059076801e4093599009d10f"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": true,
+      "gene": false,
+      "menu": true,
+      "exercise": false,
+      "sha256": "631f82ab748b15ee2ba0dcbae4edbdc6f61daa1269afeb70ee44b103c9e7ea6a"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": true,
+      "gene": false,
+      "menu": true,
+      "exercise": true,
+      "sha256": "306ed474772686882350e225ed9456d0f7146ea6265cbe43a5a2615b45ed9704"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": true,
+      "gene": true,
+      "menu": false,
+      "exercise": false,
+      "sha256": "adad780bb44523d4876306ff03f361d21878770b32bb7108c5b50b0ee5e106cf"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": true,
+      "gene": true,
+      "menu": false,
+      "exercise": true,
+      "sha256": "3eefd2a2cd2137a6b5084142033b98924d8bc5184114c3593972dac3f95516f0"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": true,
+      "gene": true,
+      "menu": true,
+      "exercise": false,
+      "sha256": "6dd5fd0ca5fa9073296f4c7f0ac70df1aa232276e17f50e9a6750920ef6f6982"
+    },
+    {
+      "synthesis_only": false,
+      "health_evidence_runtime": true,
+      "gene": true,
+      "menu": true,
+      "exercise": true,
+      "sha256": "6e2bffa3d5909c52ce9d74088431b77995b6c571ef5f11b9c39a964e04d59271"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": false,
+      "gene": false,
+      "menu": false,
+      "exercise": false,
+      "sha256": "7db8b9e3b65f068dec561ab4c35f48f625b88bb9548c4f0115a2547795ebcc82"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": false,
+      "gene": false,
+      "menu": false,
+      "exercise": true,
+      "sha256": "2f8ed18e7e4d1b6a2312c08e34ab5cf3fdb540c6c9d8acce45875e78fdc3e3ab"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": false,
+      "gene": false,
+      "menu": true,
+      "exercise": false,
+      "sha256": "46c71125dcf88531913b8b6cfbf8fba600557674b6a74df25deb14fb78140b3f"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": false,
+      "gene": false,
+      "menu": true,
+      "exercise": true,
+      "sha256": "c54cb47fad87f0893ed09d71123e7eff1d3a56f60d10e9e0cb8af493065a05d0"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": false,
+      "gene": true,
+      "menu": false,
+      "exercise": false,
+      "sha256": "23678ede0533dea983cc1f6979899271bfe5f155155e94dba8fb1893e7940ce7"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": false,
+      "gene": true,
+      "menu": false,
+      "exercise": true,
+      "sha256": "e88ac2e6608271284d56b809c46cd0c424b797d277102bddb93bdd98f33ef8d9"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": false,
+      "gene": true,
+      "menu": true,
+      "exercise": false,
+      "sha256": "56e37112d137496d0298a5bc3adf01cb87e7b928729403857a018370148e3dbd"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": false,
+      "gene": true,
+      "menu": true,
+      "exercise": true,
+      "sha256": "2ac29cee35aaca255f47dbb58a04c520a55cd652aadbd6d72faad9a09d784e50"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": true,
+      "gene": false,
+      "menu": false,
+      "exercise": false,
+      "sha256": "94138f738493c4fa3ef581de64e388ecb3ad2d6e6fe46d9e653a96f13ae72d96"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": true,
+      "gene": false,
+      "menu": false,
+      "exercise": true,
+      "sha256": "f26aced148d103b3df0c482c252f09697f2087374765c2acd0f098f5f70cee0f"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": true,
+      "gene": false,
+      "menu": true,
+      "exercise": false,
+      "sha256": "c58d437542484b4d88f4fbbf67109736d6477ca27df9115f07aded1b499580af"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": true,
+      "gene": false,
+      "menu": true,
+      "exercise": true,
+      "sha256": "ab6f48c4044ceb4575bbc0139446390a2f3432c9c54fc7e2197824833a87c1d9"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": true,
+      "gene": true,
+      "menu": false,
+      "exercise": false,
+      "sha256": "012bf17db1813e372d6707b52088d60d1e3de8d32384ac99894297c675b296a1"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": true,
+      "gene": true,
+      "menu": false,
+      "exercise": true,
+      "sha256": "4fa237db98e1d26e5d2c1e98c4a987cf5e728a7c690397a644f2329d837251d3"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": true,
+      "gene": true,
+      "menu": true,
+      "exercise": false,
+      "sha256": "169b7f7fe000c51a3064d4797f3ed65f91c71f493f86567d25cc04df384d23f6"
+    },
+    {
+      "synthesis_only": true,
+      "health_evidence_runtime": true,
+      "gene": true,
+      "menu": true,
+      "exercise": true,
+      "sha256": "df4331f9cbaca0a9720b7df23f1384336eaaae3133a2c8509b611333e9d7546e"
+    }
+  ]
+}
