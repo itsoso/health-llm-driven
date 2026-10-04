@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | 已获部署授权；G3 合成质量筛查与 G4 代码审查 GO，等待精确主干 CI 和受控发布 |
+| 状态 | shipping |
+| 当前阶段 | S7：后端与 Web 已部署 a10e642c；G5 GO，G6 真实用户体验及生产性能待验收 |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -12,6 +12,8 @@
 裁决：PASS。范围是用户授权的既有体验、路由和上下文传输优化及其分支交接，不新增产品入口、健康对象、用户数据权限或自动发布行为。权限、质量地板、写入回执和安全输出边界继续由原系统负责；失败候选不得进入运行路径。本文记录本地实现与证据，不代表全量 CI、生产效果或发布准入。
 
 日期：2026-10-04。接手分支：`codex/reva-prompt-optimization`。本文件是各阶段 dossier 的最新索引；旧文档中的“未授权提交/推送”是当时状态，用户现已授权保存远端分支以便换机继续。用户随后明确要求“想办法解决之后部署”；现已授权按 Gate 完成 main 集成与生产部署，当前发布进度见本文末尾。
+
+**最新交付**：后端与 Web 均已成功发布，精确 SHA、回执、健康检查和限制见[上线验收记录](../reviews/2026-10-04-prompt-deployment.md)。下文保留各阶段失败与检查点；历史“未部署 / BLOCK”不代表最终发布状态，真实用户体验及生产性能仍未完成验收。
 
 ## 当前代码
 
@@ -248,3 +250,23 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 `7985bef01` 的 GitHub CI `37203498721` 暴露两处本地关联集未覆盖的测试接线缺口：旧 r-other 分片目录缺少新增 `test_retrospective_read_scope.py`，以及 `test_health_record_amount_regression.py` 的旧 FakeAgentConversationService 未初始化 `provider_history_references`。两项均先本地复现 RED，补目录 pattern 和 fake 空引用后，发布分片合同、原记录回归及新增 retrospective 回归 **97 passed / 3.45s**。不改变运行时代码、不删除测试、不放宽 oracle；首轮失败原样保留。生产尚未轮换授权或部署。
 
 同轮 balanced-14 的两个 advice 用例把公开 `run_stream` 直接换成 `_run_stream_impl`，跳过 `_report_dispatches` 初始化并在原安全断言前失败。临时合成异常探针确认后，测试仅让 local_advice_response 第一次路由调用返回 None 并立即恢复原函数，保留公开入口和真实最终答案 guard。原强制越界工具、拒绝原因和公开回答断言不变；相关 advice/query outcome **80 passed / 15.37s**，运行时哈希完全不变。
+
+## 后端与 Web 发布完成（2026-10-04）
+
+生产 revision 为 `a10e642cde189c9b414dc8d41346e22f088eaa0e`，运行时代码保持 `35f7438f8` 的已审摘要。精确主干 CI `37204244154` attempt 1、`37204525289` attempt 2 均成功；后者 attempt 1 曾因误读原 CI 进度而多触发并取消，按所有当前 attempt 必须绿色的发布规则完成重跑，历史未隐藏。Trusted validate `37205448925`、backend `37206256120` 成功。
+
+原旧授权按 canonical revoke、验证后销毁旧 loopback 私钥、rotate 顺序退休。首次缺少前置步骤的 rotate 在 intent 前拒绝，检查后按既有协议补齐；没有修改发布器、手改授权、清锁或覆盖旧回执。新后端 `completed.json` 为 `SUCCEEDED`，部署日志三次 **60/60 PASS**。数据库备份、恢复演练和站外归档依权威部署规范默认跳过；不能声称已执行备份。
+
+前端 operation `1302b9e763454e829e5c7f1e25e98a45` 从同 SHA canonical staging，经只读预检摘要绑定、隔离构建、制品切换及页面验证，得到 `FRONTEND_SUCCEEDED`。完整 frontend tree 为 `26b12bed72ee3aa7502d44dc4ef94ba66cc5b6d8`，制品摘要及旧制品摘要保存在[机器可读回执](../reviews/2026-10-04-prompt-deployment-verification.json)。原发布租约已释放，launcher inode 保留，后端/worker/beat 的进程与配置未被 Web 发布改变。
+
+### G5 部署健康
+
+裁决：GO。独立 reviewer 核验原回执和四份前端 proof 摘要、内外网 `/privacy` 与 `/connect/health` 的 200 及页面标识、后端进程/config 保持，以及前端跨稳定窗口无重启。最终四个服务均 active/running、`NRestarts=0`，本次启动以来无 ERROR/CRITICAL/Traceback 日志标记。生产 Git SHA、干净 tracked tree 和 executor 摘要匹配受审版本。
+
+实际应用公开路径 `https://health.executor.life/api/health` 与 `/api/agent/stream` 分别为 **200/401**，TLS 校验通过。第一次复验沿用旧资料中的 `health-api.executor.life`，本机 TLS 失败、服务器 DNS 不可解析；源码确认实际客户端使用 `health.executor.life/api`，改正探测地址后通过。没有改生产 DNS、代理或 TLS 校验，没有重发发布。
+
+### G6 用户体验与性能验收
+
+仍待真实用户路径验收：生产聊天流式显示、完整回答及保存、失败状态如实呈现和实际响应体验。本次生产 smoke 未读取或写入真实健康数据，401 只证明路由与鉴权边界；不能替代上述功能验收。合成质量筛查通过不等于统计非劣，正常样本输入下降 **16.04%** 不等于所有场景下降，整体提速与生产 p95 尚未证实。
+
+本轮交付为后端与 Web，不包含 Mobile OTA、原生包或 TestFlight。已否决写入工具说明精简、P1/P2 和参数传输实验均未启用；报告复用维持 shadow。完整方案中的进一步优化仍按同批基线、质量与长尾闸逐项推进。发布后的证据更新保存在接续分支，生产和 main 保持已验证的 a10e642c，后续不得把文档提交 SHA 当成已部署版本。

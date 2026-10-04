@@ -584,6 +584,44 @@
         "status": "passed",
         "task_id": "final-release-quality",
         "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Exact a10e642 main CI runs 37204244154 attempt 1 and 37204525289 attempt 2 passed; Trusted validate 37205448925 and backend 37206256120 passed. Backend SUCCEEDED receipt, source hash and health 60/60 verified. Canonical frontend operation 1302b9e763454e829e5c7f1e25e98a45 running from matched preflight evidence; do not retry.",
+        "phase": "deployment",
+        "sequence": 46,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Independent read-only verification: exact a10 CI/validate/backend workflows success; backend SUCCEEDED, production SHA exact, health 60/60 x3, services stable NRestarts=0, public 200/401, source/evidence hashes match. Backup skipped under authoritative policy. Full G5 awaits frontend; G6 real-user chat/persistence/failed status and perceived latency remain unverified.",
+        "phase": "deployment",
+        "sequence": 47,
+        "status": "passed",
+        "task_id": "backend-release-verification",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Independent G5 GO: backend SUCCEEDED and frontend operation 1302b9e763454e829e5c7f1e25e98a45 FRONTEND_SUCCEEDED; exact SHA/tree/artifact and four proof hashes match; no failed receipt; lease released and original launcher inode retained; internal/public pages 200 with markers; backend process/config and frontend unit preserved, stable runtime. G6 real-user experience remains pending.",
+        "phase": "deployment",
+        "sequence": 48,
+        "status": "passed",
+        "task_id": "complete-release-verification",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Deployment and bounded post-release smoke complete on a10e642cde189c9b414dc8d41346e22f088eaa0e. Current public application /api/health and /api/agent/stream return 200/401 with TLS verified. Initial stale health-api host failed DNS/TLS and is retained as probe diagnostic; current source/runtime endpoint verified. No user health data accessed. G6 authenticated chat/persistence and production latency remain unverified; no overall speedup claim.",
+        "phase": "verification",
+        "sequence": 49,
+        "status": "completed",
+        "tokens": 0
       }
     ]
   },

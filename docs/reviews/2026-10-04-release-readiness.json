@@ -1,5 +1,5 @@
 {
-  "status": "awaiting_final_review_and_exact_main_ci",
+  "status": "deployed_g5_passed_g6_user_validation_pending",
   "runtime_commit": "35f7438f85954c4d813cee828ea9d8669be99a78",
   "integration": {
     "files": 39,
@@ -205,5 +205,15 @@
       80
     ],
     "runtime_changed": false
+  },
+  "deployed_sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+  "deployment_evidence": "2026-10-04-prompt-deployment-verification.json",
+  "release_gates": {
+    "exact_main_ci": "passed",
+    "trusted_validate": "passed",
+    "backend": "SUCCEEDED",
+    "frontend": "FRONTEND_SUCCEEDED",
+    "G5": "GO",
+    "G6": "pending real-user acceptance and production performance evidence"
   }
 }

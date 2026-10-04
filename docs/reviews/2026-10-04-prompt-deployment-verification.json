@@ -1,0 +1,298 @@
+{
+  "sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+  "runtime_commit": "35f7438f8",
+  "frontend_tree": "26b12bed72ee3aa7502d44dc4ef94ba66cc5b6d8",
+  "ci": [
+    {
+      "run": 37204244154,
+      "attempt": 1,
+      "status": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/37204244154"
+    },
+    {
+      "run": 37204525289,
+      "attempt": 2,
+      "status": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/37204525289"
+    }
+  ],
+  "validate": {
+    "run": 37205448925,
+    "status": "success",
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/37205448925"
+  },
+  "previous_production_sha": "a8853dea1207163aaa412974dddfbc050ce3eeea",
+  "bootstrap": "INSTALLED",
+  "launcher_inode": 7777226,
+  "preflight_rejection": "First rotate rejected before intent because old identity was not yet revoked and loopback.key still existed. Read-only history/workspace/idle checks passed; canonical revoke and verified private-key destruction then completed before successful rotation. All old receipts/lock retained.",
+  "local_release_contracts": {
+    "passed": 2274,
+    "skipped": 15,
+    "seconds": 429.344
+  },
+  "backend_run": 37206256120,
+  "database_backup": {
+    "status": "skipped_by_existing_default",
+    "policy": "docs/governance/deploy.md section 8.3: default skips database backup, restore drill and offsite archive unless DEPLOY_DATABASE_BACKUP=1; rollback schema/runtime/health gates remain required",
+    "observed_log_marker": true
+  },
+  "backend_status": "SUCCEEDED",
+  "backend_workflow_status": "success",
+  "backend_health_scores": [
+    60,
+    60,
+    60
+  ],
+  "backend_max_health_score": 60,
+  "frontend": {
+    "publisher_sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+    "production_sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+    "frontend_tree": "26b12bed72ee3aa7502d44dc4ef94ba66cc5b6d8",
+    "operation_id": "1302b9e763454e829e5c7f1e25e98a45",
+    "status": "FRONTEND_SUCCEEDED",
+    "preflight_evidence_sha256": "e4ded4bb545c194580fd2ca919434a221793394cef0762bcd6e0f679122ca428",
+    "receipt": {
+      "artifact_digest": "1b44e1a849d82d9eae93a54cc77a27c89c92306b05a0563c95932b40753489cf",
+      "backups_digest": {
+        "previous-next": "addd7845c2911a10f6bbffc1862607d0817bc414278ce45dc39a874113efd1c7",
+        "previous-node-modules": "993bc877d3d5d67d84be355111bae49a4d8e08d983bdb785506b8d45ae33303c"
+      },
+      "frontend_tree": "26b12bed72ee3aa7502d44dc4ef94ba66cc5b6d8",
+      "kind": "frontend-publication",
+      "operation_id": "1302b9e763454e829e5c7f1e25e98a45",
+      "production_sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+      "proof_sha256": {
+        "before.json": "e4ded4bb545c194580fd2ca919434a221793394cef0762bcd6e0f679122ca428",
+        "build.log": "2245350f5064488893f92bf34462015c0563eacd7ca68c25b87b7cfb62532175",
+        "install-started.json": "e9c73bbb1ebad4c6b3b862bf192157ab67d167e003fa96ce6ff39cc3c122d66b",
+        "verified.json": "af2d1fd3613d71ed710b7984a817e494f6cc66e074a299d531d768e61145dc35"
+      },
+      "publisher_sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+      "state": "FRONTEND_SUCCEEDED"
+    }
+  },
+  "ci_history": {
+    "run": 37204525289,
+    "attempt_1": "cancelled redundant run after mistaken reading of original watch progress",
+    "attempt_2": "success; rerun necessary because exact-SHA release gate requires every current CI attempt green"
+  },
+  "status": "deployed_g5_passed_g6_user_validation_pending",
+  "postverification": {
+    "checked_at_utc": "2026-10-04T14:01:14.239783+00:00",
+    "production_sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+    "tracked_clean": true,
+    "executor_sha256": "88f581141fe09e35a40bae2d6b03339f085166e69f1640bb197204037a0a4242",
+    "backend_receipt": {
+      "sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+      "state": "SUCCEEDED"
+    },
+    "frontend_receipt": {
+      "artifact_digest": "1b44e1a849d82d9eae93a54cc77a27c89c92306b05a0563c95932b40753489cf",
+      "backups_digest": {
+        "previous-next": "addd7845c2911a10f6bbffc1862607d0817bc414278ce45dc39a874113efd1c7",
+        "previous-node-modules": "993bc877d3d5d67d84be355111bae49a4d8e08d983bdb785506b8d45ae33303c"
+      },
+      "frontend_tree": "26b12bed72ee3aa7502d44dc4ef94ba66cc5b6d8",
+      "kind": "frontend-publication",
+      "operation_id": "1302b9e763454e829e5c7f1e25e98a45",
+      "production_sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+      "proof_sha256": {
+        "before.json": "e4ded4bb545c194580fd2ca919434a221793394cef0762bcd6e0f679122ca428",
+        "build.log": "2245350f5064488893f92bf34462015c0563eacd7ca68c25b87b7cfb62532175",
+        "install-started.json": "e9c73bbb1ebad4c6b3b862bf192157ab67d167e003fa96ce6ff39cc3c122d66b",
+        "verified.json": "af2d1fd3613d71ed710b7984a817e494f6cc66e074a299d531d768e61145dc35"
+      },
+      "publisher_sha": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+      "state": "FRONTEND_SUCCEEDED"
+    },
+    "backend_audit_sha256": {
+      "completed.json": "dc9e48dfbfb8f8164d7db26a38a3e86fe5bcf9d6406ae090216c311908baed36",
+      "deployment.log": "0dea62ecd8c4b94978ca41a62aadcb768c3f9e136a25ff2ea1ef780c0eec70eb",
+      "started.json": "a94476f64da746c5db784e66a8207a55d242ac5e2e5f5b498190f4d17415e251",
+      "deployment-started.json": "febdd1747b66880a9759b49038708a1d286325614493fe6dc9946c585acd6291"
+    },
+    "frontend_receipt_sha256": "bcafc91ca8a313df95dfb9499376e3ecbdfbfda6ef1cc19e3b0dd4988c8ad5fc",
+    "launcher_inode": 7777226,
+    "business_lease_absent": true,
+    "units": {
+      "health-backend": {
+        "MainPID": "1858520",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Sun 2026-10-04 21:42:31 CST",
+        "startup_log_lines": 52,
+        "error_marker_lines": 0
+      },
+      "celery-worker": {
+        "MainPID": "1858522",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Sun 2026-10-04 21:42:31 CST",
+        "startup_log_lines": 792,
+        "error_marker_lines": 0
+      },
+      "celery-beat": {
+        "MainPID": "1858523",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Sun 2026-10-04 21:42:31 CST",
+        "startup_log_lines": 134,
+        "error_marker_lines": 0
+      },
+      "health-frontend": {
+        "MainPID": "1928630",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Sun 2026-10-04 21:58:11 CST",
+        "startup_log_lines": 6,
+        "error_marker_lines": 0
+      }
+    },
+    "deployment_health_scores": [
+      60.0,
+      60.0,
+      60.0
+    ],
+    "database_backup_skipped": true,
+    "internal_http": [
+      {
+        "url": "http://127.0.0.1:8000/health",
+        "method": "GET",
+        "status": 200,
+        "expected_status": 200,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      },
+      {
+        "url": "http://127.0.0.1:8000/api/v1/health",
+        "method": "GET",
+        "status": 200,
+        "expected_status": 200,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      },
+      {
+        "url": "http://127.0.0.1:8000/api/v1/agent/conversations",
+        "method": "GET",
+        "status": 401,
+        "expected_status": 401,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      },
+      {
+        "url": "http://127.0.0.1:8000/api/v1/agent/stream",
+        "method": "POST",
+        "status": 401,
+        "expected_status": 401,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      },
+      {
+        "url": "http://127.0.0.1:30001/privacy",
+        "method": "GET",
+        "status": 200,
+        "expected_status": 200,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      },
+      {
+        "url": "http://127.0.0.1:30001/connect/health",
+        "method": "GET",
+        "status": 200,
+        "expected_status": 200,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      }
+    ],
+    "historical_security_preflight_state": "ActiveState=failed\nSubState=failed",
+    "public_http": [
+      {
+        "url": "https://health.executor.life/api/v1/health",
+        "method": "GET",
+        "status": 200,
+        "expected_status": 200,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      },
+      {
+        "url": "https://health.executor.life/api/v1/agent/stream",
+        "method": "POST",
+        "status": 401,
+        "expected_status": 401,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      },
+      {
+        "url": "https://health.executor.life/privacy",
+        "method": "GET",
+        "status": 200,
+        "expected_status": 200,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      },
+      {
+        "url": "https://health.executor.life/connect/health",
+        "method": "GET",
+        "status": 200,
+        "expected_status": 200,
+        "no_redirect": true,
+        "marker_matches": true,
+        "passed": true
+      }
+    ],
+    "backend_processes_preserved": true,
+    "passed": true,
+    "application_public_paths": [
+      {
+        "url": "https://health.executor.life/api/health",
+        "method": "GET",
+        "status": 200,
+        "tls_verify_result": 0,
+        "passed": true
+      },
+      {
+        "url": "https://health.executor.life/api/agent/stream",
+        "method": "POST",
+        "status": 401,
+        "tls_verify_result": 0,
+        "passed": true
+      }
+    ]
+  },
+  "endpoint_diagnostic": {
+    "first_postcheck": "external probe failed against stale health-api.executor.life from deployment skill / memory",
+    "local_error": "urllib SSL EOF and curl exit 35",
+    "server_error": "DNS name resolution failed for health-api.executor.life",
+    "current_verified_api_origin": "https://health.executor.life/api",
+    "source": "mobile/services/api.ts DEFAULT_API and production public route",
+    "production_config_changed": false,
+    "followup": "Read-only smoke uses current application endpoint; no release retry or TLS relaxation."
+  },
+  "independent_review": {
+    "G5": "GO",
+    "reviewer": "prompt_p1_review",
+    "basis": "Independent server receipt/proof hashes, lease, process/config preservation, stable frontend and internal/public page checks",
+    "G6": "Pending authenticated real-user chat/rendering/persistence/failure-state acceptance; overall latency and statistical noninferiority not established"
+  },
+  "limits": [
+    "Only backend and Web deployed; no OTA/native/TestFlight release.",
+    "No real-user health records read or written during production smoke.",
+    "200/401 and page readbacks prove availability and authentication boundary, not authenticated conversation quality.",
+    "Synthetic quality acceptance does not establish production statistical noninferiority or overall speedup.",
+    "Database backup/restore/offsite archive skipped under existing default; no completed-backup claim."
+  ],
+  "backend_workflow_url": "https://github.com/itsoso/health-llm-driven/actions/runs/37206256120"
+}
