@@ -181,3 +181,16 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 [可携带验证摘要](../reviews/2026-10-04-release-optimization-verification.json) 记录源码摘要、测试范围与限制。当前 **G3 / 发布 BLOCK**：整任务非退化未通过；未通过目标 SHA 全量 CI、最终 G4 或生产发布事务。不得以标准 live gate、单组 token 收益、离线 CPU 微基准代替。写入说明精简继续否决，P1/P2/参数实验无 runtime 导入或开关，报告复用维持 shadow。下一步先根据 Gateway 诊断复现失败提案并定位归因，再固定候选、重新成对验证和独立审查；不得带红合并部署。
 
 单次[新增 Gateway 诊断](../reviews/2026-10-04-release-candidate-diagnostic.json)后来完成了同一请求：日期和两个维度正确、原 Gateway 允许执行。这不是修复，不能抵消先前失败，也不重算为整批通过；原失败的完整参数未保存，根因仍待复现。新增测试明确覆盖错误维度被拒、仅保存窄诊断字段（不保存任意参数），最终 24 passed。
+
+
+### 固定候选独立审查与摘要边界修复
+
+本地保存 `3a92324b36a74ecb69493f2dce97a038d9874161`，未推送。独立 G4 对该固定提交给 **NO-GO**：读取已改 NULLS FIRST，但摘要 writer 仍使用原排序；且增量按 `id > prior_thru` 而非实际顺序判断。审查以真实 ORM 和两轮摘要复现顺序 `[3(NULL),1,2,4,5]` 时遗漏消息 1/2。这个代码阻断与真实模型 G3 失败分别记录。
+
+补回归先重现两项失败，再修复：读写统一 `created_at ASC NULLS FIRST, id ASC`；cache key 升为 v3，TTL 仍为 24 小时，不删除旧 key；缓存保存有序前缀的单向摘要，绑定消息 ID、角色、正文与时间。reader、writer 和“切点相同”提前返回均校验来源前缀；按验证后的前缀位置取增量，顺序/内容/切点变化则拒绝旧摘要并完整重建。缓存只新增摘要值，不另存健康原文。
+
+新增回归覆盖 NULL 位置与数值 ID 不同、v2 隔离、相同切点但前缀重排、正文修改、窗口桥接及收据保留。SQLite 52 项通过；PostgreSQL 复验使用 UTF8、Asia/Shanghai 和独立 worker session。最初测试替身把 `db.close()` 置空，导致 PostgreSQL teardown 自锁；已记录并终止本任务测试进程，临时集群正常停止和删除，随后改成真实独立 session 重跑。没有操作生产锁或发布进程。
+
+`3a923` 的固定 CI-mode 关联集成为 1033 passed / 2 skipped（102.27 秒）；之后仅摘要边界修复，另以新鲜 SQLite/PostgreSQL 定向回归和独立复审覆盖，不把前次集成标为最后代码的全量 CI。整批发布继续 BLOCK，未修改 GitHub live-confirmation 变量或触发发布工作流。
+
+摘要边界修复的最终 PostgreSQL 回归 **52 passed（38.29 秒，Asia/Shanghai）**，临时集群已停止并删除；SQLite 最终 52 passed（4.91 秒）。待新固定提交独立复审，真实模型发布 G3 不因此改变。

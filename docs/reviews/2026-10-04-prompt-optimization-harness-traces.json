@@ -472,6 +472,24 @@
         "sequence": 33,
         "status": "release_blocked",
         "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Fixed commit 3a92324b3 code G4 NO-GO: NULL history order diverges from fold writer and numeric id incremental filter drops rows after reordering. Independent ORM/stub reproduction confirms both. General live-task G3 remains independently blocked.",
+        "phase": "safety",
+        "sequence": 34,
+        "status": "needs_changes",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Fixed independent G4 findings: writer/reader NULLS FIRST; v3 fold cache binds ordered id/role/content/time prefix; position-based increment and early-return validation. New regression first failed; final SQLite52 passed and disposable PostgreSQL52 passed (Asia/Shanghai,38.29s). Release G3 remains blocked by real-model task failure.",
+        "phase": "verification",
+        "sequence": 35,
+        "status": "review_pending",
+        "tokens": 0
       }
     ]
   },

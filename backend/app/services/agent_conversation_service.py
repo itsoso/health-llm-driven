@@ -768,7 +768,7 @@ class AgentConversationService:
                     if budget_enabled:
                         fold = get_fold_summary_boundary(
                             conversation_id,
-                            eligible_message_ids={row.id for row in history[:window_start]},
+                            eligible_messages=history[:window_start],
                         )
                         if fold is not None:
                             through, summary = fold
@@ -780,6 +780,7 @@ class AgentConversationService:
                     else:
                         summary = get_valid_fold_summary(
                             conversation_id, last_overflow_id=history[window_start - 1].id,
+                            ordered_messages=history[:window_start],
                         )
                         if summary:
                             summary_cut = window_start - 1

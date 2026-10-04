@@ -323,3 +323,5 @@ P1/P2 单组 API 输入 12270→4314 不能推导全量收益：扩大样本出�
 4. 通过完整质量门后，固定本地 commit 进行独立 G4，再推送、核对精确 main 全量 CI、使用 canonical trusted-release validate/backend 入口，最后核验实际部署回执、SHA、健康和用户路径。Web 若发布另需对应前端制品回执，不触发 Mobile/native 发布。
 
 本轮修复 PostgreSQL NULL 历史排序和评测审计初始化；没有启用新的语义压缩。最新证据及具体测试见同一 [Dossier](../dossiers/2026-10-04-prompt-optimization-handoff.md#部署授权与真实发布验证2026-10-04-续)。
+
+独立复审补充：历史读取排序与摘要写入必须共用顺序，摘要缓存不得用数值 ID 大小判断已覆盖消息。已改 v3 缓存和有序来源前缀校验；不复用 v2，旧 key 依原 TTL 自然过期。新增源前缀计算有 CPU 成本，未宣称此修复提速或产生新增 token 节省。

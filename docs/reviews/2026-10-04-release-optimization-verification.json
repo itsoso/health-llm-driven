@@ -56,7 +56,7 @@
   ],
   "source_sha256": {
     "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
-    "backend/app/services/agent_conversation_service.py": "0d1d244960339d9645afd4a17170e75b159c2f7a58445b446db1d2c9ef592dff",
+    "backend/app/services/agent_conversation_service.py": "7ee82993270c9ed9b174d829565c6959c7066cd9e4597d4947a447fbba677b3a",
     "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
     "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
     "backend/app/services/llm/prompt_transport.py": "c2e4356300d028d0e57b74d61da435499f82477ff8a04bed8ec0aee12e41ba7d",
@@ -66,11 +66,48 @@
     "backend/tests/test_agent_history_provenance.py": "02ff6cbbe3487cedad57e93c89787d54043f0ef7d1a80d5a0aaddaa4b87d1462",
     "backend/tests/test_ai_consent.py": "f46277d6495b5be55bbf7f2012942675dcc6a6a8271a836505123cfc9e7a5257",
     "backend/tests/test_llm_synthesis_regression_gate.py": "e12eea5a355a86dc91f5614b0588aa6e10f1ac2fa2f30de3e157ef0874dc640f",
-    "backend/tests/test_full_task_prompt_benchmark.py": "7809ac116ad44c35b4a0ae51abefe08eee8e3a3ba1f976e1b19f7ff041cd236a"
+    "backend/tests/test_full_task_prompt_benchmark.py": "7809ac116ad44c35b4a0ae51abefe08eee8e3a3ba1f976e1b19f7ff041cd236a",
+    "backend/app/services/history_compaction.py": "237aa78cd75992bf53bf874163d29200ef35af0f71da4cfe4f870599d393cb07",
+    "backend/tests/test_history_compaction.py": "67efadda95a143c7aa446802e70592051e98b0797e86f631c020d810bef0909c",
+    "backend/tests/test_agent_history_budget.py": "a51bb64351e3344a7fdf53edd9abe9b32de7c0f44827f11a9684780469b736b1"
   },
   "diagnostic_followup": {
     "report": "2026-10-04-release-candidate-diagnostic.json",
     "status": "passed_contracts_only",
     "release_effect": "none: original failure remains unresolved; a later pass is not a fix"
+  },
+  "fixed_integration": {
+    "commit": "3a92324b36a74ecb69493f2dce97a038d9874161",
+    "passed": 1033,
+    "skipped": 2,
+    "seconds": 102.27,
+    "scope": "40 related test files, before independent fold-prefix repair"
+  },
+  "safety_review_3a923": {
+    "code": "NO_GO",
+    "release": "NO_GO",
+    "findings": [
+      "read/write NULL order mismatch",
+      "numeric-ID incremental cutoff skipped actual prefix messages"
+    ]
+  },
+  "fold_followup": {
+    "sqlite_passed": 52,
+    "sqlite_seconds": 4.91,
+    "cache_namespace": "v3",
+    "ttl_seconds": 86400,
+    "prefix_bound_fields": [
+      "id",
+      "role",
+      "content",
+      "created_at"
+    ],
+    "old_cache_deleted": false,
+    "postgres_status": "passed",
+    "independent_review": "pending",
+    "postgres_passed": 52,
+    "postgres_seconds": 38.29,
+    "postgres_timezone": "Asia/Shanghai",
+    "temporary_cluster_removed": true
   }
 }

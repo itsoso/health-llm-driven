@@ -98,7 +98,8 @@ def test_smaller_window_bridges_valid_fold_without_losing_intermediate_turns(db,
     svc, conv, rows = seed(db, auth_user_and_headers, bodies)
     monkeypatch.setattr(hc.settings, 'domain_prompt_optimization', True)
     monkeypatch.setattr(hc.settings, 'llm_history_compaction', True)
-    monkeypatch.setattr(hc, '_cache_get', lambda cid: {'folded_thru_id': rows[4].id, 'summary': '旧窗口摘要'})
+    monkeypatch.setattr(hc, '_cache_get', lambda cid: {'folded_thru_id': rows[4].id, 'summary': '旧窗口摘要',
+        'folded_prefix_sha256': hc._prefix_fingerprint(rows[:5])})
     result = svc.build_messages(conv.id, limit=6)
     assert '旧窗口摘要' in result[0]['content']
     assert f'消息编号：{rows[4].id}' in result[0]['content']
