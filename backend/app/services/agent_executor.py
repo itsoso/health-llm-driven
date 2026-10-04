@@ -12719,6 +12719,46 @@ class AgentExecutor:
         completion = self._composed_read_completion()
         return completion is not None and completion.complete
 
+    def _scoped_read_parameters_repaired(self) -> bool:
+        """Accepted parameters may be repaired even when the data service fails.
+
+        Keep the historical repair budget and data-verification state intact.
+        Only exact owned queries after the latest rejected execution count.
+        """
+        from app.services.agent_kernel.read_task_scope import (
+            has_owned_sync_instruction, resolve_owned_read_scope, resolve_sync_status_query,
+        )
+        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+
+        snapshot = self._agent_kernel_snapshot
+        if (snapshot is None or snapshot.intent.is_write
+                or self._turn_daily_read_plan is not None or self._turn_sync_attempted
+                or has_owned_sync_instruction(snapshot.envelope.text)
+                or resolve_sync_status_query(snapshot) is not None
+                or resolve_exercise_plan_scope(snapshot.envelope.text) is not None
+                or classify_clinician_turn(snapshot.envelope.text).kind != "none"
+                or self._agent_kernel_pending_confirmation_tools):
+            return False
+        scope = resolve_owned_read_scope(snapshot)
+        if scope is None or not scope.queries:
+            return False
+        canonical = lambda query: json.dumps(query, sort_keys=True, ensure_ascii=False)
+        required = {canonical(query) for query in scope.queries}
+        accepted = set()
+        for execution in reversed(self._turn_composed_read_executions):
+            decision = execution.decision
+            if decision is None:
+                continue
+            if decision.action == "block":
+                break
+            if decision.action != "allow" or execution.tool_name != decision.normalized_tool_name:
+                continue
+            queries = ([decision.normalized_args] if execution.tool_name == "health_query" else
+                       decision.normalized_args.get("queries", [])
+                       if execution.tool_name == "health_query_batch" else [])
+            accepted.update(canonical(query) for query in queries if isinstance(query, dict))
+        return required <= accepted
+
     def _recover_irrelevant_read_blocks_after_completed_answer(
         self,
         *,
@@ -22389,7 +22429,8 @@ class AgentExecutor:
         if tool_executed_count <= 0 or not self._request_model_id or self._prefer_fast_record_model:
             return False
         if (self._read_repair_failures and not self._force_no_tools_synthesis
-                and not self._all_scoped_reads_verified()):
+                and not self._all_scoped_reads_verified()
+                and not self._scoped_read_parameters_repaired()):
             # A denied proposal increments tool_executed_count too. Preserve
             # the existing bounded parameter-repair round before handing the
             # final answer back to a manually selected non-tool model.

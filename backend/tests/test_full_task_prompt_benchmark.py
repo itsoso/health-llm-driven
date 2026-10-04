@@ -273,6 +273,46 @@ async def test_actual_provider_can_repair_rejected_read_before_synthesis(
 
 
 @pytest.mark.asyncio
+async def test_repaired_single_reads_with_infrastructure_failure_reach_final_answer(
+    db, auth_user_and_headers, monkeypatch,
+):
+    from app.config import settings
+    from eval.full_task_prompt_benchmark import ScriptedProvider
+
+    monkeypatch.setattr(settings, "app_env", "test")
+    user, _ = auth_user_and_headers
+    scenario = Scenario("repaired-read-failure", 7, "read_failure", allow_knowledge=True)
+    seed_synthetic_records(db, user.id, scenario)
+    tools_seen = []
+
+    class RepairingProvider(ScriptedProvider):
+        async def chat_stream(self, **kwargs):
+            tools_seen.append(bool(kwargs.get("tools")))
+            if kwargs.get("tools"):
+                dimensions = (["heart_rate"] if len(tools_seen) == 1 else
+                              ["sleep", "diet"] if len(tools_seen) == 2 else ["sleep"])
+                yield {"type": "tool_calls", "tool_calls": [
+                    {"id": f"repair-{len(tools_seen)}-{dimension}", "type": "function",
+                     "function": {"name": "health_query", "arguments": json.dumps(
+                         {"dimension": dimension, "days": 7})}}
+                    for dimension in dimensions]}
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+            else:
+                yield {"type": "content", "text": "本次查询失败，无法判断睡眠和饮食状况，请稍后重试。"}
+                yield {"type": "finish", "finish_reason": "stop"}
+
+    row = await run_sample(db, user.id, scenario, "baseline", "qwen3.8-flash", CallBudget(3),
+                           live=False, provider_factory=lambda: RepairingProvider(scenario))
+    assert tools_seen == [True, True, False], row
+    assert row["status"] == "passed_contracts", row
+    assert row["tool_budget"]["physical_dispatches"] == 4
+    assert row["outcome"] == "failed"
+    assert row["completion_status"] == "error"
+    assert row["quality"]["stream_matches_saved"]
+    assert row["quality"]["health_rows_unchanged"]
+
+
+@pytest.mark.asyncio
 async def test_gateway_denial_keeps_narrow_read_scope_diagnostics(db, auth_user_and_headers, monkeypatch):
     from app.config import settings
     from eval.full_task_prompt_benchmark import ScriptedProvider

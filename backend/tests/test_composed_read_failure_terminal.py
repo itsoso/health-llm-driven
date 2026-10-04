@@ -17,6 +17,49 @@ from tests.test_agent_read_repair_round_budget import (
 ERROR = "Error: 查询失败，请稍后重试。"
 
 
+@pytest.mark.parametrize("boundary", [
+    "full", "partial", "date", "owner", "mismatched_tool", "latest_denial", "daily", "unscoped",
+    "sync", "pending", "write", "exercise", "clinician",
+])
+def test_parameter_repair_does_not_require_verified_data_or_reset_budget(
+    db, four_domain_user, monkeypatch, boundary,
+):
+    from app.services.agent_kernel.types import ToolExecutionResult
+
+    executor, decision = setup_executor(db, four_domain_user)
+    queries = [dict(query) for query in decision.normalized_args["queries"]]
+    if boundary == "partial": queries.pop()
+    elif boundary == "date": queries[-1]["start_date"] = "2026-09-01"
+    elif boundary == "owner": queries[-1]["user_id"] = four_domain_user.id + 1
+    decision = replace(decision, normalized_args={"queries": queries})
+    executor._turn_composed_read_executions = [ToolExecutionResult(
+        tool_name="health_query" if boundary == "mismatched_tool" else "health_query_batch",
+        content=ERROR, decision=decision,
+    )]
+    if boundary == "latest_denial":
+        executor._turn_composed_read_executions.append(ToolExecutionResult(
+            tool_name="health_query_batch", content=ERROR, decision=replace(decision, action="block")))
+    elif boundary == "daily": executor._turn_daily_read_plan = object()
+    elif boundary == "unscoped": executor._agent_kernel_snapshot = None
+    elif boundary == "sync": executor._turn_sync_attempted = True
+    elif boundary == "pending": executor._agent_kernel_pending_confirmation_tools = ["synthetic"]
+    elif boundary == "write":
+        snapshot = executor._agent_kernel_snapshot
+        executor._agent_kernel_snapshot = replace(snapshot, intent=replace(snapshot.intent, is_write=True))
+    elif boundary == "exercise":
+        monkeypatch.setattr("app.services.agent_kernel.exercise_plan_scope.resolve_exercise_plan_scope", lambda text: object())
+    elif boundary == "clinician":
+        from types import SimpleNamespace
+        monkeypatch.setattr("app.services.agent_executor.classify_clinician_turn", lambda text: SimpleNamespace(kind="feedback"))
+    executor._read_repair_failures = 1
+    assert executor._scoped_read_parameters_repaired() == (boundary == "full")
+    assert executor._read_repair_failures == 1
+    assert not executor._force_no_tools_synthesis
+    executor._consume_read_repair_failure()
+    assert executor._read_repair_failures == 2
+    assert executor._force_no_tools_synthesis
+
+
 def setup_executor(db, user):
     executor = AgentExecutor(db)
     executor._current_user_id = user.id
@@ -153,6 +196,10 @@ def test_sync_status_goal_excludes_full_scope_early_terminal(db, four_domain_use
     executor._agent_kernel_last_decision = decision
     executor._stop_exhausted_composed_read_retry("health_query_batch", ERROR, 1)
     assert not executor._turn_composed_read_retry_exhausted
+    from app.services.agent_kernel.types import ToolExecutionResult
+    executor._turn_composed_read_executions = [ToolExecutionResult(
+        tool_name="health_query_batch", content=ERROR, decision=decision)]
+    assert not executor._scoped_read_parameters_repaired()
 
 
 @pytest.mark.asyncio
