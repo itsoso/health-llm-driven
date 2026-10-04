@@ -1,0 +1,49 @@
+{
+  "status": "failed",
+  "original_report": "docs/reviews/2026-10-04-release-paired-continuation.json",
+  "original_sha256": "6561091a566e51bc2c50c39a737cbe6d46ee58ec1e6b24afae706f610c965b02",
+  "baseline_commit": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+  "candidate_commit": "85c244edb0b516ae30700f5cb8823d23fa791598",
+  "reason": "Second baseline failure duplicated sleep in batch; Gateway rejected, then baseline prematurely entered answer without repair. This is the already RED/GREEN-fixed repair handoff defect. Preserve both failures; no retries. Continue only last three original slots.",
+  "planned_tasks": 3,
+  "max_provider_attempts": 9,
+  "runner_sha256": "a9a1d0b57606722db72b9b05ae1d0b683ab08603e40e8123d8ca54178d2f7752",
+  "plan": [
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "arm": "candidate"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "arm": "candidate"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "arm": "main"
+    }
+  ],
+  "rows": [
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_read_failure-qwen3.8-flash-candidate.json",
+      "sha256": "c103fc97fac71365134e4d0509d4ead76b79f21f8cb81134bbfb997c80a47590"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "arm": "candidate",
+      "exit_code": 1,
+      "status": "failed",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_read_failure-qwen3.8-max-candidate.json",
+      "sha256": "356b6d0cc340012cda3962d833b011d4f2f00a6d7884568023932bb0bf223e63"
+    }
+  ],
+  "semantic_review": "required"
+}

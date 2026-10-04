@@ -12637,9 +12637,46 @@ class AgentExecutor:
         return result
 
     def _reset_read_repair_budget(self) -> None:
+        self._turn_composed_read_retry_exhausted = False
         self._read_repair_failures = 0
         self._read_repair_batch_active = False
         self._read_repair_batch_failed = False
+
+    def _stop_exhausted_composed_read_retry(self, tool_name: str, result: str, retry_attempt: int) -> None:
+        """Close a pure full-scope read after the existing transient retry fails.
+
+        A batch may stop at its first failed child: this marks the task as
+        unfinished, never claims every dimension failed or discards verified data.
+        Parameter repair and partial reads retain their separate feedback budget.
+        """
+        from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction, resolve_owned_read_scope
+        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+
+        snapshot = self._agent_kernel_snapshot
+        decision = self._agent_kernel_last_decision
+        if (
+            not retry_attempt or tool_name != "health_query_batch"
+            or not should_retry_tool_failure(tool_name, result, attempt=0)
+            or snapshot is None or snapshot.intent.is_write
+            or self._turn_daily_read_plan is not None or self._turn_sync_attempted
+            or has_owned_sync_instruction(snapshot.envelope.text)
+            or resolve_exercise_plan_scope(snapshot.envelope.text) is not None
+            or classify_clinician_turn(snapshot.envelope.text).kind != "none"
+            or self._agent_kernel_pending_confirmation_tools
+            or decision is None or decision.action != "allow"
+            or decision.normalized_tool_name != "health_query_batch"
+            or self._all_scoped_reads_verified()
+        ):
+            return
+        scope = resolve_owned_read_scope(snapshot)
+        queries = decision.normalized_args.get("queries")
+        if scope is None or len(scope.queries) < 2 or not isinstance(queries, list):
+            return
+        canonical = lambda q: json.dumps(q, sort_keys=True, ensure_ascii=False)
+        if sorted(map(canonical, queries)) != sorted(map(canonical, scope.queries)):
+            return
+        self._turn_composed_read_retry_exhausted = True
+        self._force_no_tools_synthesis = True
 
     def _consume_read_repair_failure(self) -> None:
         from app.services.agent_policy_retry import MAX_READ_REPAIR_FAILURES
@@ -15127,6 +15164,7 @@ class AgentExecutor:
                             **response,
                             "terminate": (
                                 bool(response.get("terminate"))
+                                or self._turn_composed_read_retry_exhausted
                                 or (
                                     lead_goal_guard_rejected_write
                                     and lead_remaining_batch_tools == 0
@@ -15143,6 +15181,9 @@ class AgentExecutor:
                         lead_text = _guard_panel_narrative(lead_text)
                         lead_text = _strip_bracket_tool_markers(lead_text)
                         lead_text = _strip_xml_tool_markers(lead_text)
+
+            if self._turn_composed_read_retry_exhausted:
+                raise _SimpleRecordTerminal("本轮读取未完成，已停止重复查询；请稍后重试。", satisfied=False)
 
             if lead_goal_guard_rejected_write:
                 raise _SimpleRecordTerminal(
@@ -19317,6 +19358,9 @@ class AgentExecutor:
                                 pi_terminal_text = _write_rejection_with_receipt_context(
                                     last_recoverable_write_rejection, write_receipts,
                                 )
+                                final_finish_reason = "error"
+                            elif self._turn_composed_read_retry_exhausted:
+                                pi_terminal_text = "本轮读取未完成，已停止重复查询；请稍后重试。"
                                 final_finish_reason = "error"
                             elif remaining_batch_tools == 0:
                                 from app.services.agent_policy_retry import terminal_policy_notice
@@ -25021,6 +25065,7 @@ class AgentExecutor:
                 )
                 continue
 
+            self._stop_exhausted_composed_read_retry(func_name, result, retry_attempt)
             yield ("result", result)
             return
 

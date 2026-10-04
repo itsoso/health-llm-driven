@@ -169,7 +169,7 @@ async def test_full_pi_task_preserves_read_contract_and_persistence(db, auth_use
         assert row["agent_kernel"] == "pi"
         assert all(call["token_source"] == "synthetic" for call in row["calls"])
         rows.append(row)
-    assert [len(row["calls"]) for row in rows] == [2, 2, 1, 1]
+    assert [len(row["calls"]) for row in rows] == ([1, 1, 0, 0] if state == "read_failure" else [2, 2, 1, 1])
     assert rows[0]["tool_contracts"] == rows[1]["tool_contracts"] == rows[2]["tool_contracts"] == rows[3]["tool_contracts"]
 
 
@@ -444,3 +444,49 @@ async def test_cli_cancel_saves_partial_sample_before_propagating(tmp_path, monk
     assert report["status"] == "cancelled" and len(report["rows"]) == 1
     assert report["summary"][0]["failed_tasks"] == 1
     assert report["summary"][0]["wall_seconds_all_tasks"]["p50"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ignores_disabled_tools", [False, True])
+async def test_exhausted_full_scope_read_failure_closes_without_model_read_loop(
+    db, auth_user_and_headers, monkeypatch, ignores_disabled_tools,
+):
+    from app.config import settings
+    from eval.full_task_prompt_benchmark import ScriptedProvider
+    monkeypatch.setattr(settings, "app_env", "test")
+    user, _ = auth_user_and_headers
+    scenario = Scenario("exhausted-read", 7, "read_failure", allow_knowledge=True)
+    seed_synthetic_records(db, user.id, scenario)
+    available = []
+
+    class RepeatAfterInfrastructureFailure(ScriptedProvider):
+        async def chat_stream(self, **kwargs):
+            available.append(bool(kwargs.get("tools")))
+            index = len(available)
+            calls = []
+            if index == 1:
+                calls = [("health_query_batch", {"queries": [
+                    {"dimension": "sleep", "days": 7}, {"dimension": "diet", "days": 7}]})]
+                if ignores_disabled_tools:
+                    calls += [("knowledge_search", {"query": "睡眠和饮食"}),
+                              ("health_query", {"dimension": "sleep", "days": 7})]
+            elif index == 2 and (kwargs.get("tools") or ignores_disabled_tools):
+                calls = [("knowledge_search", {"query": "睡眠和饮食"}),
+                         ("health_query", {"dimension": "sleep", "days": 7})]
+            if calls:
+                yield {"type": "tool_calls", "tool_calls": [
+                    {"id": f"exhausted-{index}-{i}", "type": "function", "function": {
+                        "name": name, "arguments": json.dumps(args)}}
+                    for i, (name, args) in enumerate(calls)]}
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+            else:
+                yield {"type": "content", "text": "本轮读取失败，无法确认睡眠和饮食记录，请稍后重试。"}
+                yield {"type": "finish", "finish_reason": "stop"}
+
+    row = await run_sample(db, user.id, scenario, "baseline", "qwen3.8-max", CallBudget(3),
+                          live=False, provider_factory=lambda: RepeatAfterInfrastructureFailure(scenario))
+    assert available == [True], row
+    assert row["status"] == "passed_contracts", row
+    assert len(row["tool_contracts"]) == 2 and all(c["failed"] for c in row["tool_contracts"])
+    assert row["outcome"] == "failed" and row["completion_status"] == "error"
+    assert row["quality"]["health_rows_unchanged"] and row["quality"]["no_write_receipt"]

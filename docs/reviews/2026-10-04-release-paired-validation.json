@@ -1,0 +1,104 @@
+{
+  "status": "failed",
+  "max_provider_attempts": 36,
+  "planned_tasks": 12,
+  "baseline_commit": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+  "candidate_commit": "85c244edb0b516ae30700f5cb8823d23fa791598",
+  "runner_sha256": "a492004dda0cc6d0253c27f94d66d96d98e163a7295e6237830c7561378b1b01",
+  "plan": [
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-flash",
+      "order": [
+        "main",
+        "candidate"
+      ]
+    },
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-max",
+      "order": [
+        "candidate",
+        "main"
+      ]
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-flash",
+      "order": [
+        "candidate",
+        "main"
+      ]
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-max",
+      "order": [
+        "main",
+        "candidate"
+      ]
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "order": [
+        "main",
+        "candidate"
+      ]
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "order": [
+        "candidate",
+        "main"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-flash",
+      "arm": "main",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_available-qwen3.8-flash-main.json",
+      "sha256": "e1785defd1993e794824f006b847cd02d3050663b6ce58d572b880abdb0fd6fb"
+    },
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-flash",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_available-qwen3.8-flash-candidate.json",
+      "sha256": "c46fcba4bf31e00fa68e2d5f596a477d23378c914cb1dd690ad9a533967ca5b8"
+    },
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-max",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_available-qwen3.8-max-candidate.json",
+      "sha256": "f5066d9e550dd2e652076ee95bcca1f78bc921e0436e5beaccc06a884f90b0fe"
+    },
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-max",
+      "arm": "main",
+      "exit_code": 1,
+      "status": "failed",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_available-qwen3.8-max-main.json",
+      "sha256": "34b1cb74ade7fb210400122f6de23eebfd497d236728242f1de1da5a057ed35e"
+    }
+  ],
+  "semantic_review": "required",
+  "limits": [
+    "Synthetic own/other/future rows; no production database.",
+    "Each task uses a fresh memory database and real consent/audit.",
+    "Small regression screen, not population noninferiority or production latency SLA.",
+    "P1/P2 and rejected write-description experiments not enabled.",
+    "Failure stops the batch; old failures remain separately retained."
+  ]
+}
