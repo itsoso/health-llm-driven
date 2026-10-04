@@ -63,3 +63,36 @@ def test_retrospective_read_rejects_model_expansion(changes):
 def test_retrospective_read_requires_authenticated_owner_match():
     turn = snapshot("复盘我最近7天的睡眠和饮食记录。")
     assert resolve_owned_read_scope(replace(turn, context=replace(turn.context, user_id=42))) is None
+
+
+@pytest.mark.parametrize("alias", [{"dimension": "food"}, {"dimension": "饮食"},
+                                  {"dimension": " diet "}, {"type": "diet"}])
+def test_batch_uses_same_registered_dimension_aliases_as_single(alias):
+    turn = snapshot("分析我最近7天的睡眠和饮食记录。")
+    decision = decide_tool_capability(turn, ToolExecutionRequest("health_query_batch", {
+        "queries": [{**alias, "days": 7}, {"dimension": "sleep", "days": 7}],
+    }))
+    assert decision.action == "allow", decision.reason
+    assert [q["dimension"] for q in decision.normalized_args["queries"]] == ["diet", "sleep"]
+    assert all(q["start_date"] == "2026-09-07" and q["end_date"] == "2026-09-13"
+               for q in decision.normalized_args["queries"])
+
+
+@pytest.mark.parametrize("changes", [{"user_id": 42}, {"owner_id": 42}, {"tenant_id": 42},
+    {"days": 30}, {"days": True}, {"start_date": "2026-09-01"},
+    {"end_date": "2026-09-14"}, {"timezone": "UTC"}, {"period": "night"}])
+def test_dimension_alias_never_discards_original_owner_or_window_fields(changes):
+    turn = snapshot("分析我最近7天的睡眠和饮食记录。")
+    decision = decide_tool_capability(turn, ToolExecutionRequest("health_query_batch", {
+        "queries": [{"dimension": "food", "days": 7, **changes}, {"dimension": "sleep", "days": 7}],
+    }))
+    assert decision.action == "block"
+
+
+def test_alias_does_not_allow_duplicate_or_extra_dimension():
+    turn = snapshot("分析我最近7天的睡眠和饮食记录。")
+    for dimensions in (("food", "diet"), ("food", "sleep", "heart_rate"), ("food", "gene")):
+        decision = decide_tool_capability(turn, ToolExecutionRequest("health_query_batch", {
+            "queries": [{"dimension": d, "days": 7} for d in dimensions],
+        }))
+        assert decision.action == "block"

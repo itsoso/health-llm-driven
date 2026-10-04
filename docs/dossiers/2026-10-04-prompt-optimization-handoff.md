@@ -202,3 +202,13 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 [有界诊断复测](../reviews/2026-10-04-release-candidate-diagnostic-repeat.json)预设 3 个原句 Flash 任务、最多 9 次调用，实际 6 次 API 调用，3 个任务契约通过。Gateway 均收到正确的睡眠/饮食与日期范围；没有复现原失败，因此不能确定原提案被拒的原因，也没有应用修复可以关闭该失败。每任务输入均为 12270 tokens，任务耗时 40.78 / 19.15 / 34.73 秒；缓存命中、输出量变化且无同期配对基线，这些仅为诊断记录，不构成提速或语义非劣结论。原失败报告继续有效，未重新计算为整批绿色。
 
 **截至本检查点：优化与摘要修复已本地保存，G3 完整任务质量仍 BLOCK，未 push、merge 或 deploy。** 线上仍为 `a8853dea1207163aaa412974dddfbc050ce3eeea`，backend/worker/beat active、health 200；没有改生产开关、授权、锁或回执。P1/P2、参数压缩继续 eval-only，已否决的写工具说明精简没有启用。独立代码 GO 不替代真实模型质量、精确候选全量 CI 与发布验证。后续从原失败的脱敏 Gateway 提案诊断继续；需确认根因、先复现后修复，再执行同批基线/候选与未见样本验收，通过后才可进入已获用户授权的发布流程。
+
+## 解决阻断后部署（2026-10-04 续）
+
+用户要求“想办法解决之后部署”。沿用本分支与同一 run，fresh fetch 的 main 未变化。已不依赖随机重跑，分别复现以下问题：
+
+1. [真实 holdout 诊断](../reviews/2026-10-04-release-blocker-holdout-diagnostic.json)中 Flash 正确提出 sleep/diet、days=7，但“复盘”请求仍被拒。`_request` 的 bounded-analysis 前级支持“复盘/总结”，逐域 owner-prefix 却漏掉这两个词。补齐同一语法，RED 4 failed / 34 passed，关联 393 passed；固定 `568d40263788b49a5975da22c25fcdc06f3cc0dc` 获独立 40 passed / safety GO。[真实复验](../reviews/2026-10-04-retrospective-live-verification.json)原句与复盘句、Flash/Max 四任务全部契约通过（8 次 API）；语义输出均限定于实际两条样本，没有据缺失作健康结论。该次源码绑定补充：受审 parser SHA-256 为 `65c9c42e6fbbd7139d5c2a98ce86e4321d36fa9c8a579bd2b3378492ddf620fd`；报告旧生成器未直接列出 parser，后续已补源文件清单。
+2. 独立审查与离线 RED 确认 batch 在维度集合检查时归一化别名，逐项 scope 绑定却取原字段。因此 food、饮食、空白 diet、type=diet 被误拒。修复只统一维度归一化，所有者、天数、日期、时区和 period 继续检查原参数，防止投影丢失限制；四个正例先失败，十个负例保持通过。
+3. 使用实际 `_call_llm_stream`→provider 包装复现首次维度错误后的 **tools→answer**，没有修参轮。原因是手选不可靠工具模型的答案交接仅看“已执行工具数”，而被 Gateway 拒绝的提案也增加该数。现有修参仍有预算且目标未核验时，推迟答案交接；不恢复被移除工具，不改变 Gateway 决策，维持两轮修参上限。完整管线现验证 **tools→tools→answer** 后完成；两次失败仍停止，他人 owner 拒绝只调用一次模型并终止。原失败未保存第一提案，不能声称它必由别名引起；已确认并修复的是该类拒绝后无法自我修正的执行缺陷。
+
+上述新修复定向 134 passed；接下来执行 49 文件 CI-mode 关联集成、一次性 PostgreSQL、独立固定提交审查，再用 main/候选交替的 3 场景 × 2 模型整任务回归（正常、空记录、真实读取异常；最多 36 次 API），保留每个失败。新增 analysis 场景允许已有知识库查询，原严格读 oracle 和历史失败均保留。P1/P2 与写说明压缩不启用，当前没有上线行为。

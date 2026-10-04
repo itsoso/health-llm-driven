@@ -228,6 +228,51 @@ async def test_retrospective_request_completes_real_gateway_and_persistence(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("denials,foreign_owner", [(1, False), (2, False), (1, True)])
+async def test_actual_provider_can_repair_rejected_read_before_synthesis(
+    db, auth_user_and_headers, monkeypatch, denials, foreign_owner,
+):
+    from app.config import settings
+    from eval.full_task_prompt_benchmark import ScriptedProvider
+
+    monkeypatch.setattr(settings, "app_env", "test")
+    user, _ = auth_user_and_headers
+    scenario = Scenario("scope-repair", 7, "available", allow_knowledge=True)
+    seed_synthetic_records(db, user.id, scenario)
+    tool_availability = []
+
+    class RepairingProvider(ScriptedProvider):
+        async def chat_stream(self, **kwargs):
+            tool_availability.append(bool(kwargs.get("tools")))
+            if len(tool_availability) <= 2 and kwargs.get("tools"):
+                bad = ({"dimension": "sleep", "days": 7, "user_id": user.id + 1} if foreign_owner else
+                       {"dimension": "heart_rate", "days": 7})
+                queries = ([bad] if len(tool_availability) <= denials else
+                           [{"dimension": "sleep", "days": 7}, {"dimension": "diet", "days": 7}])
+                yield {"type": "tool_calls", "tool_calls": [{"id": f"repair-{len(tool_availability)}",
+                    "type": "function", "function": {"name": "health_query_batch",
+                    "arguments": json.dumps({"queries": queries})}}]}
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+            else:
+                yield {"type": "content", "text": "本轮按实际查询结果回答，缺少的记录不能推断为健康正常。"}
+                yield {"type": "finish", "finish_reason": "stop"}
+
+    row = await run_sample(db, user.id, scenario, "baseline", "qwen3.8-flash", CallBudget(3),
+                           live=False, provider_factory=lambda: RepairingProvider(scenario))
+    assert tool_availability == ([True] if foreign_owner else [True, True, False]), row
+    assert row["gateway_decisions"][0]["action"] == "block"
+    assert row["quality"]["health_rows_unchanged"]
+    assert row["quality"]["no_write_receipt"]
+    if denials == 1 and not foreign_owner:
+        assert row["status"] == "passed_contracts", row
+        assert row["gateway_decisions"][1]["action"] == "allow"
+    else:
+        assert row["status"] == "failed_contracts", row
+        assert not row["tool_contracts"]
+        assert row["outcome"] != "complete"
+
+
+@pytest.mark.asyncio
 async def test_gateway_denial_keeps_narrow_read_scope_diagnostics(db, auth_user_and_headers, monkeypatch):
     from app.config import settings
     from eval.full_task_prompt_benchmark import ScriptedProvider

@@ -2965,7 +2965,11 @@ def decide_tool_capability(
             for proposal in proposals:
                 if not isinstance(proposal, dict):
                     return _decision("block", "health_query_semantics_unresolved", tool_name, args)
-                query = scope.query(str(proposal.get("dimension") or "").lower())
+                # Use the same registered alias normalization as the batch's
+                # dimension-set check above. Keep the original proposal for
+                # owner/window checks; normalization must not erase them.
+                dimension = normalize_health_query_args(proposal).get("dimension")
+                query = scope.query(str(dimension or "").lower())
                 if query is None:
                     return _decision("block", "health_query_dimension_conflict", tool_name, args)
                 if ("days" in query and "days" in proposal

@@ -22341,6 +22341,12 @@ class AgentExecutor:
 
         if tool_executed_count <= 0 or not self._request_model_id or self._prefer_fast_record_model:
             return False
+        if (self._read_repair_failures and not self._force_no_tools_synthesis
+                and not self._all_scoped_reads_verified()):
+            # A denied proposal increments tool_executed_count too. Preserve
+            # the existing bounded parameter-repair round before handing the
+            # final answer back to a manually selected non-tool model.
+            return False
         if self._request_model_tool_fallback_used:
             return True
         try:

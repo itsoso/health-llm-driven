@@ -57,6 +57,8 @@ SCENARIOS = tuple(Scenario("owned_read_7d_" + state, 7, state)
     # Separate from the strict read screen: analysis may legitimately retrieve
     # reviewed knowledge. Retain the original screen and its failed evidence.
     Scenario("analysis_7d_available", 7, "available", allow_knowledge=True),
+    Scenario("analysis_7d_empty", 7, "empty", allow_knowledge=True),
+    Scenario("analysis_7d_read_failure", 7, "read_failure", allow_knowledge=True),
     Scenario("analysis_7d_holdout", 7, "available",
              "复盘我最近7天的睡眠和饮食记录。", allow_knowledge=True),
 )

@@ -63,6 +63,7 @@ async def run(args):
                   "backend/eval/full_task_prompt_benchmark.py", "scripts/benchmark_prompt_full_task.py",
                   "backend/eval/experimental_read_synthesis.py", "backend/eval/experimental_owned_read_preplan.py",
                   "backend/app/services/agent_executor.py", "backend/app/services/agent_prompt_sections.py",
+                  "backend/app/services/agent_longitudinal_read.py", "backend/app/services/agent_kernel/capability_policy.py",
                   "backend/app/services/agent_tool_prompt_projection.py", "backend/app/services/tool_schema_registry.py",
                   "backend/app/services/llm/providers/openai_provider.py", "backend/app/services/llm/usage_tracker.py")},
               "limits": ["Fixed synthetic read-task screen, not production load or full holdout coverage.",
