@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | 已获部署授权；标准真实合成回归通过，但整任务候选失败，发布 BLOCK |
+| 当前阶段 | 已获部署授权；G3 合成质量筛查与 G4 代码审查 GO，等待精确主干 CI 和受控发布 |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -11,7 +11,7 @@
 
 裁决：PASS。范围是用户授权的既有体验、路由和上下文传输优化及其分支交接，不新增产品入口、健康对象、用户数据权限或自动发布行为。权限、质量地板、写入回执和安全输出边界继续由原系统负责；失败候选不得进入运行路径。本文记录本地实现与证据，不代表全量 CI、生产效果或发布准入。
 
-日期：2026-10-04。接手分支：`codex/reva-prompt-optimization`。本文件是各阶段 dossier 的最新索引；旧文档中的“未授权提交/推送”是当时状态，用户现已授权保存远端分支以便换机继续。未合并 main，未部署，不授权自动发布。
+日期：2026-10-04。接手分支：`codex/reva-prompt-optimization`。本文件是各阶段 dossier 的最新索引；旧文档中的“未授权提交/推送”是当时状态，用户现已授权保存远端分支以便换机继续。用户随后明确要求“想办法解决之后部署”；现已授权按 Gate 完成 main 集成与生产部署，当前发布进度见本文末尾。
 
 ## 当前代码
 
@@ -228,3 +228,17 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 固定 `6e50d4cff0839342058e0c263ec00c043fe496e7` 获独立 30 passed / G4 GO；新边界 PostgreSQL 25 passed。其[最后复验](../reviews/2026-10-04-release-final-terminal-live.json)仍因工具预算失败，完整保留：模型从重复 batch 修成两个合法 single；每个 single 按原有协议瞬态重试一次，sleep×2 + diet×2 需要四次真实派发，而原评测只允许三次。此处没有第三轮模型重复读。独立审查抽取 main/候选原始 wrapper，无 API 复现两 single=4 次派发、加 KB=5 次，两端一致，确认是评测预算定义不兼容既有协议，不能再修改 runtime 迎合旧 cap。
 
 评测 v2 将逻辑与物理口径分开：模型提案总数最多 3（含拒绝/缓存提案，在完整 provider usage 留证后、Pi 派发前检查）；逻辑工具执行事件最多 3（含 server preplan 与重放，来源单独标记）；每个逻辑执行最多 2 次底层派发，总派发最多 6；模型调用仍最多 3。原 API/字节/时限、日期/所有者/写入 oracle 均不变。新 RED 合法两单读失败；修后两单读加 KB、缓存重放、第四逻辑提案、第三单工具派发、第七总派发等负例与原回归共 39 passed。原 v1 失败不重评分为通过，也不拿作质量失败根因已修；新主干/候选须使用同一 v2 协议，单独留新证据。
+
+## 最终控制流修复与发布候选（2026-10-04）
+
+运行时代码冻结在 `35f7438f8`，executor SHA-256 `88f581141fe09e35a40bae2d6b03339f085166e69f1640bb197204037a0a4242`。独立审查实际复现“参数拒绝→两个正确 single 读取各失败两次→旧修参计数仍阻止回答交接”，先 RED 后修复。现在从最近一次拒绝后的真实 Gateway allow 执行记录核对完整 owned canonical scope；参数正确不等于数据 verified，累计修参上限不重置。同步状态及续问、写入、待确认、exercise、clinician、daily 等混合目标保留原保护。相同坏参数缓存重放在 normal/panel 都消耗第二次修参额度并收口。
+
+最终定向 **165 passed / 44.31s**，PostgreSQL 17.11 临时数据库 **71 passed / 90.99s**，集群已清理；独立 **41 passed / 18s** 加真实 Pi/provider 包装合成重放通过。System Map、阻断级 Ruff 和离线 LLM gate 通过。新 helper 不改变模型提示、工具说明、生产开关或数据范围。
+
+[v2 真实配对](../reviews/2026-10-04-release-v2-paired-validation.json) 的 12 个唯一槽位、24 次真实 API：候选 **6/6** 契约及独立语义审查通过，主干 **5/6**，Max 失败场景因再次提工具超过提案上限，原失败完整保留。标准 MiniMax **5/5** 及用量审计对应的 orchestrator 源未变化。窄控制判断后续差异由上述 RED/GREEN 与独立审查绑定，未重复真实矩阵求绿。G3 仅裁决合成质量筛查 GO，G4 仅裁决受审代码 GO。
+
+正常两模型双调用输入由 14,614 降到 12,270（**16.04%**）；empty Max 由 14,217 降到 11,873（**16.49%**）；empty Flash 因多一次修参由 14,217 增到 19,711（**38.64%**）。失败候选各一次模型调用、两次真实失败读取即诚实收口。全部逐对耗时和用量见[发布证据](../reviews/2026-10-04-release-readiness.json)，不删慢样本，不声称统计非劣、整体提速或生产 p95。P1/P2、参数运输及已否决写工具描述实验均未进入生产。
+
+接下来执行精确主干 CI、Trusted validate、canonical bootstrap 轮换、Trusted backend，再按 Web canonical operator 发布前端制品；任何步骤失败保留原回执，禁止重放或清锁。部署与上线复验尚未完成。
+
+最终 CI-mode 关联集成：39 个测试文件，**1054 passed / 2 skipped**，138.57s，0 failure/error。它不替代接下来的精确主干 GitHub CI。
