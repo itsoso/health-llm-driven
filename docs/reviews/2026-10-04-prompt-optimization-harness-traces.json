@@ -1,0 +1,369 @@
+[
+  {
+    "run_id": "1a9709044391",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-prompt-quality-preserving.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Quality preserving prompt reduction and paired regression",
+        "run_id": "1a9709044391",
+        "sequence": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "spawn",
+        "message": "Find high-value provider projection with actual runtime coverage",
+        "phase": "analysis",
+        "sequence": 1,
+        "status": "started",
+        "task_id": "projection-candidate",
+        "tokens": 0
+      },
+      {
+        "agent": "qa-verifier",
+        "event": "spawn",
+        "message": "Reusable synthetic paired semantic validation fixtures",
+        "phase": "implementation",
+        "sequence": 2,
+        "status": "started",
+        "task_id": "quality-contract",
+        "tokens": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "verdict",
+        "message": "Water-only closed task; 503 related tests passed; generic natural-order records deliberately remain full.",
+        "phase": "analysis",
+        "sequence": 3,
+        "status": "passed",
+        "task_id": "projection-candidate",
+        "tokens": 0
+      },
+      {
+        "agent": "qa-verifier",
+        "event": "verdict",
+        "message": "17 frozen synthetic cases; 59 quality/date tests passed; deterministic checks preserve semantic and clinical Unknown.",
+        "phase": "implementation",
+        "sequence": 4,
+        "status": "passed",
+        "task_id": "quality-contract",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "spawn",
+        "message": "Independent boundary and provider quality review, no deployment authorization",
+        "phase": "review",
+        "sequence": 5,
+        "status": "started",
+        "task_id": "record-projection-safety",
+        "tokens": 0
+      },
+      {
+        "agent": "qa-verifier",
+        "event": "verdict",
+        "message": "Live qwen3.8-flash candidate misread 0.5L as missing amount; rejected liter scope. Original failure retained. Unchanged sleep last-night baseline also failed date contract; no overall quality pass claimed.",
+        "phase": "verification",
+        "sequence": 6,
+        "status": "failed",
+        "task_id": "live-record-projection",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "verdict",
+        "message": "NO-GO: narrowed explicit ml candidate regressed on flash350 and250; remove runtime wiring, retain isolated eval only. Max success cannot offset fast-model regressions.",
+        "phase": "review",
+        "sequence": 7,
+        "status": "failed",
+        "task_id": "record-projection-safety",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "verdict",
+        "message": "Runtime candidate completely withdrawn; executor SHA restored previous reviewed state. Independent33 tests and final387 passed. Candidate remains NO-GO; evaluation only, no new delivered token savings.",
+        "phase": "review",
+        "sequence": 8,
+        "status": "passed",
+        "task_id": "record-withdrawal",
+        "tokens": 0
+      }
+    ]
+  },
+  {
+    "run_id": "6ea7dafa1c0a",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-prompt-architecture.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Prompt architecture budget",
+        "run_id": "6ea7dafa1c0a",
+        "sequence": 0
+      },
+      {
+        "agent": "token_architecture_review",
+        "event": "spawn",
+        "message": "Bounded read-only prompt architecture investigation",
+        "phase": "analysis",
+        "sequence": 1,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_safety_review",
+        "event": "spawn",
+        "message": "Independent review of phase-specific prompt and lossless provider transport.",
+        "phase": "verification",
+        "sequence": 2,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "token_architecture_review",
+        "event": "verdict",
+        "message": "Read-only architecture findings incorporated; history and orchestrator limits remain explicit.",
+        "phase": "analysis",
+        "sequence": 3,
+        "status": "completed",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_safety_review",
+        "event": "verdict",
+        "message": "Final GO;42 independent regression tests,500 JSON samples,9 malformed cases; final23-test receipt verified.",
+        "phase": "verification",
+        "sequence": 4,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "verdict",
+        "message": "1210 broad tests passed; one A/B idempotency fixture failure fixed and23 final targeted tests passed. Live gate and API replay passed. No commit/push/deploy.",
+        "phase": "verification",
+        "sequence": 5,
+        "status": "passed",
+        "tokens": 0
+      }
+    ]
+  },
+  {
+    "run_id": "b992d9b915cd",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-scoped-prompt-architecture.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Scoped tools protected history and synthesis delivery",
+        "run_id": "b992d9b915cd",
+        "sequence": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "spawn",
+        "message": "Scoped schema and internal report receipt hooks",
+        "phase": "implementation",
+        "sequence": 1,
+        "status": "started",
+        "task_id": "tool-projection",
+        "tokens": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "spawn",
+        "message": "Provider references and cached fold boundary bridge",
+        "phase": "implementation",
+        "sequence": 2,
+        "status": "started",
+        "task_id": "history-budget",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "spawn",
+        "message": "Independent review of actual provider and Pi delivery boundaries",
+        "phase": "review",
+        "sequence": 3,
+        "status": "started",
+        "task_id": "scoped-safety",
+        "tokens": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "verdict",
+        "phase": "implementation",
+        "sequence": 4,
+        "status": "passed",
+        "task_id": "tool-projection",
+        "tokens": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "verdict",
+        "phase": "implementation",
+        "sequence": 5,
+        "status": "passed",
+        "task_id": "history-budget",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "verdict",
+        "message": "Hidden wrapped-provider recovery can certify a fallback and misattribute its model; fix requested",
+        "phase": "review",
+        "sequence": 6,
+        "status": "blocked",
+        "task_id": "scoped-safety",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "verdict",
+        "message": "Both findings fixed; independent module/hooks/actual Pi 173 passed. Local implementation GO only.",
+        "phase": "review",
+        "sequence": 7,
+        "status": "passed",
+        "task_id": "scoped-safety",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Local implementation verified; 776 related regression plus targeted final hardening; API A/B measured; no commit/push/deploy authorized.",
+        "phase": "verification",
+        "sequence": 8,
+        "tokens": 0
+      }
+    ]
+  },
+  {
+    "run_id": "d472049f70f1",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-laya-routing-coverage.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Laya per-question confidence and redundant-tier elimination",
+        "run_id": "d472049f70f1",
+        "sequence": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "63 decision tests passed, 94.06 percent coverage; local Laya warmed paired replay improves hint coverage without floor violations; agent regression pending",
+        "phase": "G3",
+        "sequence": 1,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "laya_safety_review",
+        "event": "spawn",
+        "message": "Read-only safety review of routing, tests and benchmark; no commit or publication authorization",
+        "phase": "G4",
+        "sequence": 2,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "laya_safety_review",
+        "event": "verdict",
+        "message": "GO after partial status isolates capability advice from model selection and deterministic intent veto suppresses write-to-read misrouting; reviewer independently verified model floors and normal read coverage",
+        "phase": "G4",
+        "sequence": 3,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Final 71 decision tests plus 3898 Agent/Gateway/routing tests passed; 94.28 percent decision coverage; offline LLM and drift gates passed; live local replay finalized with no whole-chat speed claim",
+        "phase": "G3",
+        "sequence": 4,
+        "status": "passed",
+        "tokens": 0
+      }
+    ]
+  },
+  {
+    "run_id": "e228eb7931ab",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-prompt-budget-execution.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Prompt budget and task completion",
+        "run_id": "e228eb7931ab",
+        "sequence": 0
+      },
+      {
+        "agent": "usage_scope",
+        "event": "spawn",
+        "message": "Caller context implementation: 57 tests passed; recorded after completion.",
+        "phase": "verification",
+        "sequence": 1,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "usage_scope",
+        "event": "verdict",
+        "message": "Caller context implementation: 57 tests passed; recorded after completion.",
+        "phase": "verification",
+        "sequence": 2,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "public_task",
+        "event": "spawn",
+        "message": "Closed public grammar implementation: 225 tests passed; recorded after completion.",
+        "phase": "verification",
+        "sequence": 3,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "public_task",
+        "event": "verdict",
+        "message": "Closed public grammar implementation: 225 tests passed; recorded after completion.",
+        "phase": "verification",
+        "sequence": 4,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_safety_review",
+        "event": "spawn",
+        "message": "Final GO confirmed after strict HTTP envelope change; 100 final tests verified; executor e21d1c32ef8fa6ef76d76a3f64e3646deee605f34ea15feef741b6923f9d3971.",
+        "phase": "verification",
+        "sequence": 5,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_safety_review",
+        "event": "verdict",
+        "message": "Final GO confirmed after strict HTTP envelope change; 100 final tests verified; executor e21d1c32ef8fa6ef76d76a3f64e3646deee605f34ea15feef741b6923f9d3971.",
+        "phase": "verification",
+        "sequence": 6,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "verdict",
+        "message": "Local candidate complete: 4057 broad tests,100 final tests,live gate passed,fixed synthetic API replay measured,System Map passed. No commit/push/deploy.",
+        "phase": "verification",
+        "sequence": 7,
+        "status": "passed",
+        "tokens": 0
+      }
+    ]
+  }
+]

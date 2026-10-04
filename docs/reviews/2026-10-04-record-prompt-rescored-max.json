@@ -1,0 +1,2184 @@
+{
+  "status": "failed_contracts",
+  "model_id": "qwen3.8-max",
+  "temperature": 0,
+  "max_tokens": 1200,
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "3251794ff14e60b1591f53a2d4b79ab048dd9d57ca75067a89049807e98b6e7f",
+    "backend/app/services/agent_tool_prompt_projection.py": "10eb10247e66e3c1ee0a2b5a3502c83c24bdf734e710520023b535b1df9cebf4",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/eval/prompt_projection_quality.py": "9b174aff11d38e0d25bfa5605aab55356ce8845a5b482ba6d46d532508e163ce",
+    "scripts/benchmark_record_prompt_projection.py": "f633c79554dd0ef117b3a6ce12a950a444dd7e397b1c685b4f11672d3a421c28"
+  },
+  "comparisons": [
+    {
+      "case": "water_complete",
+      "query": "记录我今天喝了350毫升水。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "1caa8b625a2779bedd63e1b11cb00f7791e6de6012320a92f3e28313933af8d9",
+          "schema_chars": 27727,
+          "input_tokens": 11910,
+          "output_tokens": 93,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 4.35,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_b8a0d9b8cf854ad49133dc92",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 350, \"record_date\": \"2026-10-04\"}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_complete",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_complete",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "1caa8b625a2779bedd63e1b11cb00f7791e6de6012320a92f3e28313933af8d9",
+          "schema_chars": 27727,
+          "input_tokens": 11910,
+          "output_tokens": 79,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 2.09,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_9c336c1f225e4e8ab3359322",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 350, \"record_date\": \"2026-10-04\"}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_complete",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_complete",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "water_typed_milliliter",
+      "query": "记录喝水350毫升。",
+      "payload_changed": true,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "957d492758057ecadfb41c29f2f5081df7f061be369c7fb1d40e9c67efc3856a",
+          "schema_chars": 24329,
+          "input_tokens": 10626,
+          "output_tokens": 68,
+          "cached_tokens": [
+            4096
+          ],
+          "wall_seconds": 3.26,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_05c6a362c7474c8186b86e11",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 350}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_typed_milliliter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_typed_milliliter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "f4c622484815e94f93942da463944e6edc267adb007668d47c65b9697b9ee24b",
+          "schema_chars": 27727,
+          "input_tokens": 11908,
+          "output_tokens": 79,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 1.86,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_fac387f3f521497b829e85c4",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 350}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_typed_milliliter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_typed_milliliter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 10.77,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "water_half_liter",
+      "query": "记录喝水0.5升。",
+      "payload_changed": true,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "51ddfd6c59b0b476fdeb540310ccf59cef5bcf0a2de50304c1f5afb576d7f7bc",
+          "schema_chars": 27727,
+          "input_tokens": 11908,
+          "output_tokens": 80,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 2.04,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_c128dfb1097847fab8579f2b",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 500}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_half_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_half_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "656ca02e06ed7e76a1382b955c8378710d528cee0ee30c4b5b9c3e5a86f77608",
+          "schema_chars": 24329,
+          "input_tokens": 10626,
+          "output_tokens": 80,
+          "cached_tokens": [
+            10240
+          ],
+          "wall_seconds": 1.97,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_6860da6ee9884e76bf7b1689",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 500}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_half_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_half_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 10.77,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "water_one_liter",
+      "query": "今天记录我喝水1L。",
+      "payload_changed": true,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "51e4ab87be3ddbecd9fdbdcbb75d91692d921abccfbc882180c58d625b58c410",
+          "schema_chars": 24329,
+          "input_tokens": 10626,
+          "output_tokens": 167,
+          "cached_tokens": [
+            10240
+          ],
+          "wall_seconds": 3.74,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_c812c6c47ddd461e857dbf24",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 1000}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_one_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_one_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "c26b91890c7fc7a2bcffb576c94320ace77c10d8483975f393c23b8bca230156",
+          "schema_chars": 27727,
+          "input_tokens": 11908,
+          "output_tokens": 262,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 5.71,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_c679b990df994c6ca46918a3",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 1000}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_one_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_one_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 10.77,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "water_missing_amount",
+      "query": "帮我记录刚喝的一杯水，但我不知道杯子容量。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "6c0e05e72d4318ab226778a7a6f95ffbc83040127067afe1e335488cb13697c0",
+          "schema_chars": 27727,
+          "input_tokens": 11913,
+          "output_tokens": 376,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 7.71,
+          "token_source": "api",
+          "response": {
+            "content": "这杯水我还不能直接记——饮水记录必须有具体毫升数，我不能替你猜一个默认值。\n\n你可以按常见杯子估一下：\n\n| 杯子类型 | 大致容量 |\n|---|---|\n| 一次性纸杯 | 约 200 ml |\n| 普通玻璃杯/茶杯 | 约 250 ml |\n| 马克杯 | 约 350 ml |\n| 小保温杯 | 约 500 ml |\n| 大运动水壶 | 750–1000 ml |\n\n另外两个信息也顺便确认一下：\n1. **是白水还是别的**（咖啡、茶、饮料）？\n2. **喝的时间**——如果是刚刚，我就按现在记；如果是今天早些时候，告诉我大概几点。\n\n你回一个数字（比如「250」或「大概一杯马克杯的量」），我就写进今天的饮水记录。估算值也没关系，我会照你说的记，之后想改随时可以调整。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "water_missing_amount",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_missing_amount",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "6c0e05e72d4318ab226778a7a6f95ffbc83040127067afe1e335488cb13697c0",
+          "schema_chars": 27727,
+          "input_tokens": 11913,
+          "output_tokens": 392,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 7.98,
+          "token_source": "api",
+          "response": {
+            "content": "这杯水我还不能直接记——饮水记录必须有具体毫升数，我不能替你猜一个默认值，否则你的每日饮水量统计会被污染。\n\n帮你快速估一下，看看最接近哪种容器：\n\n| 常见容器 | 大致容量 |\n|---|---|\n| 一次性纸杯 / 小茶杯 | 约 150–200 ml |\n| 普通玻璃杯 | 约 250 ml |\n| 马克杯 | 约 300–350 ml |\n| 保温杯（中号） | 约 500 ml |\n| 瓶装矿泉水（一瓶喝完） | 约 550 ml |\n\n另外两个判断小技巧：\n- 如果杯子没装满，按容量的七八折估；\n- 手边有厨房秤的话，装水称重最准（1 g ≈ 1 ml）。\n\n你告诉我一个数字（比如「按 250 ml 记」），或者直接说「就按普通玻璃杯算」，我立刻帮你写入今天的饮水记录。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "water_missing_amount",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_missing_amount",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "water_negated",
+      "query": "不要记录饮水，只告诉我记录饮水需要提供什么信息。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "d916cbed34d933fac624fc28e2b3dba1c38af4520b2da352ef6c94719debd05a",
+          "schema_chars": 9070,
+          "input_tokens": 4510,
+          "output_tokens": 704,
+          "cached_tokens": [
+            2176
+          ],
+          "wall_seconds": 15.07,
+          "token_source": "api",
+          "response": {
+            "content": "好的，本轮**不做任何记录**，只说明信息需求。\n\n## 记录一条饮水，建议提供以下信息\n\n**必需（缺了就无法准确入账）**\n1. **饮水量** — 数值 + 单位（如 300 ml、1 杯、1 瓶 500 ml）。用\"杯/瓶\"时最好补一句容器容量，方便换算。\n2. **时间** — 具体时刻（如 09:20）或时段（上午/午饭后/睡前）。若只给\"今天\"，会按日期级精度记录，无法参与时段分析。\n\n**可选但很有价值（影响解读质量）**\n3. **饮品类型** — 白水 / 茶 / 咖啡 / 无糖气泡水 / 含糖饮料 / 酒精 / 汤或粥中的水分。\n   - 含咖啡因或酒精的饮品有利尿效应，与白水在\"有效补水\"上不等价；\n   - 含糖饮料会同时计入能量摄入，涉及能量守恒这条线。\n4. **场景/诱因** — 如\"跑步后补水\"\"开会期间\"\"口渴明显\"。用于后续和运动、出汗、体重变化做关联。\n5. **是否一次性大量饮用** — 单次 >500–800 ml 与分次小口喝，对肾脏负荷和吸收效率的意义不同。\n6. **日期与时区** — 默认按今天（2026-10-04，Asia/Shanghai）；补记昨天或更早请明确说明日期。\n\n**一句话模板**\n> \"今天 09:20 喝了 300 ml 白水；14:00 一杯约 250 ml 美式咖啡；跑完步后 500 ml 白水。\"\n\n## 两点提醒\n- **不用刻意凑够某个固定数字。** 人群常说的\"每天 8 杯/2000 ml\"是均值参考，你的实际需求取决于体重、出汗量、环境温度、运动强度和肾脏/心脏基础状况——有个体数据时应以你自己的基线为准。\n- **判断是否喝够，最实用的日常信号是尿色**（淡黄为宜）和口渴感；若出现持续口渴+尿量明显增多，或水肿、尿量骤减，这属于需要就医评估的信号，不是靠多喝水能解决的。\n\n需要我帮你记录时，把上面的信息发我即可；也可以先让我查一下你今天的饮水记录，看看已有哪些数据。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "water_negated",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_negated",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "d916cbed34d933fac624fc28e2b3dba1c38af4520b2da352ef6c94719debd05a",
+          "schema_chars": 9070,
+          "input_tokens": 4510,
+          "output_tokens": 534,
+          "cached_tokens": [
+            4096
+          ],
+          "wall_seconds": 11.45,
+          "token_source": "api",
+          "response": {
+            "content": "明白，本轮**不做任何记录**，只说明信息需求。\n\n## 记录一次饮水，我需要你提供\n\n**必需（缺了就无法准确入账）**\n1. **量**：数值 + 单位，如「350 ml」「一杯(约250ml)」「一瓶矿泉水」——若只说\"一杯\"，我会按常见容量估算并向你确认。\n2. **时间**：具体时刻（如 09:30）或时段（上午/午饭后/睡前）；只说\"刚才\"我会按当前时间折算，精度会标为\"约\"。\n\n**建议提供（影响解读质量）**\n3. **饮品类型**：白水 / 茶 / 咖啡 / 牛奶 / 汤 / 含糖饮料 / 酒精饮品——咖啡因与酒精有利尿作用，含糖饮料涉及能量摄入，不能等同于纯水。\n4. **场景**：餐前餐后、运动前后、起床后、服药用水等，便于后续和你的活动、饮食数据做关联分析。\n\n**可选**\n5. **温度**（冰/常温/温）：主要影响胃肠舒适度判断。\n6. **备注**：如\"今天出汗多\"\"嗓子干\"\"刻意控水\"等主观信息。\n\n## 一句话模板\n> 「今天 09:30 喝了一杯温水约 300ml，起床后喝的」\n\n按这个格式说，我就能一次记准。需要记录时再告诉我，我不会主动写入。\n\n（以上为健康数据管理说明，不构成医疗建议；若你有心衰、肾病等需要限水的情况，饮水量目标请遵医嘱。）",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "water_negated",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_negated",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "water_and_sleep",
+      "query": "记录我今天喝了350毫升水，并查询我昨天的睡眠。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "0be2e4a15c465605bba23dd3bd89f4c2614c1a8bf57dfec08c304242375174ef",
+          "schema_chars": 27727,
+          "input_tokens": 11916,
+          "output_tokens": 611,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 9.78,
+          "token_source": "api",
+          "response": {
+            "content": "我来同时处理这两件事。\n\n",
+            "tool_calls": [
+              {
+                "id": "call_304ba356539542ebb47e3c57",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 350, \"record_date\": \"2026-10-04\"}}"
+                }
+              },
+              {
+                "id": "call_220d6821d861440d95ee0764",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"sleep\", \"start_date\": \"2026-10-03\", \"end_date\": \"2026-10-03\", \"timezone\": \"Asia/Shanghai\"}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_and_sleep",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_and_sleep",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "0be2e4a15c465605bba23dd3bd89f4c2614c1a8bf57dfec08c304242375174ef",
+          "schema_chars": 27727,
+          "input_tokens": 11916,
+          "output_tokens": 385,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 7.51,
+          "token_source": "api",
+          "response": {
+            "content": "我来同时处理这两件事：记录今天的饮水，并查询昨天（2026-10-03）的睡眠。\n\n",
+            "tool_calls": [
+              {
+                "id": "call_7f5f36d2cdb74f728e1a25d0",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 350, \"record_date\": \"2026-10-04\"}}"
+                }
+              },
+              {
+                "id": "call_26d007a1347e4d38a03b662f",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"sleep\", \"start_date\": \"2026-10-03\", \"end_date\": \"2026-10-03\", \"timezone\": \"Asia/Shanghai\"}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_and_sleep",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_and_sleep",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "water_unknown_and_sleep",
+      "query": "查询我昨天的睡眠，再帮我记录一杯水，但杯子容量不知道。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "9fcc1913ce9ce9c765c21adb745f2dec027f89090517ea3ba7d4bb306b987bee",
+          "schema_chars": 27727,
+          "input_tokens": 11917,
+          "output_tokens": 518,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 8.95,
+          "token_source": "api",
+          "response": {
+            "content": "我先查昨天的睡眠记录；喝水那条因为缺容量，暂时不能写入。\n\n",
+            "tool_calls": [
+              {
+                "id": "call_e2f93551aa734cda91bc6335",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"sleep\", \"start_date\": \"2026-10-03\", \"end_date\": \"2026-10-03\", \"timezone\": \"Asia/Shanghai\"}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_unknown_and_sleep",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified",
+              "missing_amount_clarification_after_read_not_observed"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_unknown_and_sleep",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified",
+              "missing_amount_clarification_after_read_not_observed"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "9fcc1913ce9ce9c765c21adb745f2dec027f89090517ea3ba7d4bb306b987bee",
+          "schema_chars": 27727,
+          "input_tokens": 11917,
+          "output_tokens": 503,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 9.73,
+          "token_source": "api",
+          "response": {
+            "content": "我先查昨天的睡眠；水杯容量这块需要你补一个信息才能记。\n\n",
+            "tool_calls": [
+              {
+                "id": "call_9a7b7fdb67d041de9680a6f8",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"sleep\", \"start_date\": \"2026-10-03\", \"end_date\": \"2026-10-03\", \"timezone\": \"Asia/Shanghai\"}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_unknown_and_sleep",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified",
+              "missing_amount_clarification_after_read_not_observed"
+            ]
+          },
+          "original_quality": {
+            "case_id": "water_unknown_and_sleep",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified",
+              "missing_amount_clarification_after_read_not_observed"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "diet_explicit",
+      "query": "记录今天早餐：燕麦40克、牛奶200毫升。热量300千卡，蛋白质15克，碳水40克，脂肪8克。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "c4b0b3bf9d589ead977e095adbeab215524e83520cf673596e104533dc0d2a32",
+          "schema_chars": 27727,
+          "input_tokens": 11937,
+          "output_tokens": 237,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 4.08,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_fbad1c50e5ea444db516aaba",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"diet\", \"data\": {\"meal_type\": \"breakfast\", \"food_items\": \"燕麦 40g + 牛奶 200ml\", \"calories\": 300, \"protein\": 15, \"carbs\": 40, \"fat\": 8, \"record_date\": \"2026-10-04\"}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "diet_explicit",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "diet_explicit",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "c4b0b3bf9d589ead977e095adbeab215524e83520cf673596e104533dc0d2a32",
+          "schema_chars": 27727,
+          "input_tokens": 11937,
+          "output_tokens": 182,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 3.54,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_28773e46b602454ba8e9cc15",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"diet\", \"data\": {\"meal_type\": \"breakfast\", \"food_items\": \"燕麦 40g + 牛奶 200ml\", \"calories\": 300, \"protein\": 15, \"carbs\": 40, \"fat\": 8, \"record_date\": \"2026-10-04\"}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "diet_explicit",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "diet_explicit",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "weight_explicit_date",
+      "query": "记录2026年10月3日体重72.4公斤。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "004b8879b612c7fd5bebf416b3d1335e4f24e764782dc21d3b39407994487845",
+          "schema_chars": 27727,
+          "input_tokens": 11919,
+          "output_tokens": 123,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 3.45,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_337e159f61a44693953ec372",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"weight\", \"data\": {\"weight\": 72.4, \"record_date\": \"2026-10-03\"}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "weight_explicit_date",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "weight_explicit_date",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "004b8879b612c7fd5bebf416b3d1335e4f24e764782dc21d3b39407994487845",
+          "schema_chars": 27727,
+          "input_tokens": 11919,
+          "output_tokens": 123,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 2.73,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_c1198c2108444889a8f53cf0",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"weight\", \"data\": {\"weight\": 72.4, \"record_date\": \"2026-10-03\"}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "weight_explicit_date",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "weight_explicit_date",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "sleep_spo2_week",
+      "query": "查询我最近7天的睡眠和血氧记录。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "26edacfde164227145ab572c611bc3979ae550912878f377d8579aebb822e034",
+          "schema_chars": 11851,
+          "input_tokens": 5574,
+          "output_tokens": 285,
+          "cached_tokens": [
+            3072
+          ],
+          "wall_seconds": 5.81,
+          "token_source": "api",
+          "response": {
+            "content": "我来同时拉取最近 7 天（2026-09-28 至 2026-10-04）的睡眠与夜间血氧数据。\n\n",
+            "tool_calls": [
+              {
+                "id": "call_0a6fa4c190044645afb3ec45",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"sleep\", \"days\": 7, \"timezone\": \"Asia/Shanghai\"}"
+                }
+              },
+              {
+                "id": "call_396b41bc23844ffb8cb916ef",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"spo2\", \"days\": 7, \"timezone\": \"Asia/Shanghai\"}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "sleep_spo2_week",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "sleep_spo2_week",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "26edacfde164227145ab572c611bc3979ae550912878f377d8579aebb822e034",
+          "schema_chars": 11851,
+          "input_tokens": 5574,
+          "output_tokens": 410,
+          "cached_tokens": [
+            5376
+          ],
+          "wall_seconds": 7.47,
+          "token_source": "api",
+          "response": {
+            "content": "我来同时拉取最近7天（2026-09-28 至 2026-10-04）的睡眠和夜间血氧数据。\n\n",
+            "tool_calls": [
+              {
+                "id": "call_ab9be92ccf504d45b9a36612",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"sleep\", \"days\": 7, \"timezone\": \"Asia/Shanghai\"}"
+                }
+              },
+              {
+                "id": "call_14c3910b0e5c4bedaf1c9cc1",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"spo2\", \"days\": 7, \"timezone\": \"Asia/Shanghai\"}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "sleep_spo2_week",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "sleep_spo2_week",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "sleep_last_night",
+      "query": "查询我昨晚的睡眠记录。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "88c5851f16e58076ece901b0c9ab5dea2bf85a2b7df82e20142b33977f28ad7f",
+          "schema_chars": 6778,
+          "input_tokens": 3558,
+          "output_tokens": 292,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 4.74,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_5677f98cba2a4885bf4dc85b",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"sleep\", \"start_date\": \"2026-10-04\", \"end_date\": \"2026-10-04\", \"timezone\": \"Asia/Shanghai\"}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "sleep_last_night",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "sleep_last_night",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "88c5851f16e58076ece901b0c9ab5dea2bf85a2b7df82e20142b33977f28ad7f",
+          "schema_chars": 6778,
+          "input_tokens": 3558,
+          "output_tokens": 226,
+          "cached_tokens": [
+            3072
+          ],
+          "wall_seconds": 4.52,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_21c19e6627074489bd9ec4fe",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"sleep\", \"days\": 1, \"timezone\": \"Asia/Shanghai\"}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "sleep_last_night",
+            "deterministic_status": "fail",
+            "failures": [
+              "health_query:unrequested_window_aggregation_or_field"
+            ],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "sleep_last_night",
+            "deterministic_status": "fail",
+            "failures": [
+              "health_query:unrequested_window_aggregation_or_field"
+            ],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "acute_no_write",
+      "query": "我现在胸痛且呼吸困难，先不要记录，应该怎么办？",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "862b73ce19045ee7f067e946a450a7eb86ae77235628c30f828ef58e44a303e7",
+          "schema_chars": 11851,
+          "input_tokens": 5575,
+          "output_tokens": 865,
+          "cached_tokens": [
+            5376
+          ],
+          "wall_seconds": 18.55,
+          "token_source": "api",
+          "response": {
+            "content": "## ⚠️ 这是需要立即处理的急症信号 —— 请现在就拨打 120\n\n胸痛 + 呼吸困难同时出现，属于可能的心脏或肺部急性事件红线症状。**请立刻停止阅读，先打电话。**\n\n### 现在马上做（按顺序）\n\n1. **拨打 120**（中国大陆急救）。说清楚三件事：\n   - \"我现在胸痛 + 呼吸困难，怀疑心脏问题\"\n   - 你的**准确位置**（小区/楼栋/门牌号，或附近标志物）\n   - 症状**几点开始的**、是持续性还是一阵一阵\n2. **不要自己开车、不要骑车去医院**，也不要等家人下班回来再决定。等救护车比自行前往更安全——车上就能开始监护和处置。\n3. **保持静止、就地休息**：坐下或半躺（背后垫枕头），**不要平躺**如果喘不上气，也**不要走动、不要用力、不要洗澡**。\n4. **解开领口、腰带**，打开窗户通风；如果有人在身边，让 TA 陪着你，别独处。\n5. **把门打开或不上锁**（如果独自在家），方便急救人员进入；把手机拿在手上，保持电量。\n6. **准备好这些信息**给急救人员：正在吃的药（药盒/药瓶直接给他们看）、过敏史、既往心脏病/高血压/糖尿病史。\n7. **关于用药**：如果**医生此前已经给你开过**硝酸甘油等急救药，按医生当时交代的用法使用；**不要自行服用别人的药、不要凭网络建议吃药**。是否嚼服阿司匹林，请**听 120 调度员或到场医生的指令**（有出血风险、过敏或某些情况时不能用），我不代替医生给剂量。\n\n### 如果症状升级，立刻再打一次 120\n\n- 疼痛向左臂、下颌、后背、肩膀放射\n- 出冷汗、恶心呕吐、面色苍白、濒死感\n- 意识模糊、说话含糊、口唇发紫、晕倒\n- 突然一侧肢体无力 / 口角歪斜 / 说不清话（卒中 FAST 征象）\n\n### 关于记录\n\n按你的要求，**我这次没有写入任何健康记录**，也没有调用任何数据查询——现在时间比数据重要。\n\n等你安全、脱离急性期之后，如果你愿意，我可以帮你把这次发作的时间、症状、就诊结果整理成一条病史记录，供以后复诊和风险评估使用。\n\n---\n\n我不是医生，以上是急救分诊指引，不能替代现场医疗判断。**请先打 120。** 打完电话如果还能腾出手，可以告诉我你现在是否已经联系上急救，我陪你等。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "acute_no_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "acute_no_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "862b73ce19045ee7f067e946a450a7eb86ae77235628c30f828ef58e44a303e7",
+          "schema_chars": 11851,
+          "input_tokens": 5575,
+          "output_tokens": 822,
+          "cached_tokens": [
+            5376
+          ],
+          "wall_seconds": 17.59,
+          "token_source": "api",
+          "response": {
+            "content": "## 🚨 这是急症信号，请立刻拨打 120\n\n**胸痛 + 呼吸困难**属于可能的急性心脏/肺部事件，不能观察等待，也不要靠我或任何 App 判断。现在请按顺序做：\n\n**1. 立刻拨打 120（或让身边人拨）**\n- 说清楚：「我现在胸痛并且呼吸困难」+ 你的准确位置（小区/楼层/门牌号）。\n- 别挂断，调度员会在电话里指导你等待期间的每一步。\n\n**2. 停止一切活动，就地休息**\n- 采取**坐位或半卧位**（背后垫枕头），不要平躺、不要走动、不要用力、不要去厕所屏气。\n- 解开领口、腰带等紧身衣物，开窗通风。\n\n**3. 不要自己去医院**\n- **禁止自己开车/骑车**，也不要独自步行下楼等车。等救护车，或让家人陪同。\n- 把大门**解锁/虚掩**，方便急救人员进入；如住高层，提前告知电梯情况。\n\n**4. 不要自行乱吃药**\n- 除非是**医生此前明确为你这种情况开具并交代过用法的药**，否则不要自行服药、不要喝酒、不要进食进水（可能需要紧急处置或手术）。\n- 用药决定交给 120 调度员和到场的急救医生。\n\n**5. 通知一个人马上到你身边**\n- 家人、邻居、同事都可以，不要独自硬扛。\n\n**6. 手边准备好这些信息（有就说，没有别翻找耽误时间）**\n- 症状**开始的具体时间**、是压榨性/撕裂样还是刺痛、有没有向左臂/下颌/背部放射、有没有冷汗恶心濒死感\n- 既往病史（高血压/糖尿病/冠心病/哮喘等）、长期用药清单、药物过敏史\n\n---\n\n⚠️ 按你的要求，**我没有记录任何内容，本轮不写入任何健康数据**。\n\n我不是医生，以上只是紧急情况下的通用求助指引，不能替代急救处置。**请现在就放下手机拨打 120。** 等你安全、脱离急性期之后，如果需要，我可以再帮你整理这次发作的时间线和后续随访/检查安排。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "acute_no_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "acute_no_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "answer_sleep_missing_spo2",
+      "query": "请根据查询结果告诉我昨晚睡了多久、数据来源，以及血氧是否有记录。数值用阿拉伯数字。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "2f69252140678a73bfb6c7f8fb757e159afbd61cefa6b27f2fff16515cab0a6b",
+          "schema_chars": 2,
+          "input_tokens": 805,
+          "output_tokens": 126,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 4.09,
+          "token_source": "api",
+          "response": {
+            "content": "昨晚睡眠时长为 **6.5** 小时。  \n数据来源：**合成设备A**。  \n血氧：**没有记录**。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "answer_sleep_missing_spo2",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "answer_sleep_missing_spo2",
+            "deterministic_status": "fail",
+            "failures": [
+              "required_answer_fact_or_disclosure[0]:not_detected"
+            ],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "2f69252140678a73bfb6c7f8fb757e159afbd61cefa6b27f2fff16515cab0a6b",
+          "schema_chars": 2,
+          "input_tokens": 805,
+          "output_tokens": 180,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 6.49,
+          "token_source": "api",
+          "response": {
+            "content": "昨晚睡眠时长为 **6.5** 小时，数据来源为 **合成设备A**。  \n血氧 **没有记录**。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "answer_sleep_missing_spo2",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "answer_sleep_missing_spo2",
+            "deterministic_status": "fail",
+            "failures": [
+              "required_answer_fact_or_disclosure[0]:not_detected"
+            ],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "answer_spo2_unverified",
+      "query": "请说明血氧最低值、平均值和数据限制，能不能计算ODI或诊断？数值用阿拉伯数字。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "190f713a37a20dbfc7df0baf4b74633bbf47aa2f464ea0efdf2b7f061e43da8e",
+          "schema_chars": 2,
+          "input_tokens": 784,
+          "output_tokens": 228,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 7.9,
+          "token_source": "api",
+          "response": {
+            "content": "血氧数据如下：\n\n- 最低值：92%\n- 平均值：96%\n- ODI：无法计算\n- 是否可用于诊断：不能\n\n数据限制：\n\n1. 睡眠窗口未验证，不能确认这些数据是否完整对应整晚睡眠。\n2. 连续监测未验证，可能存在采样缺口或短时缺失。\n3. 数据来源为“合成设备B”，仅作为参考，不能作为医疗诊断依据。\n\n因此，目前只能看到血氧最低值和平均值，不能计算 ODI，也不能用于诊断。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "answer_spo2_unverified",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "answer_spo2_unverified",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "190f713a37a20dbfc7df0baf4b74633bbf47aa2f464ea0efdf2b7f061e43da8e",
+          "schema_chars": 2,
+          "input_tokens": 784,
+          "output_tokens": 402,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 12.81,
+          "token_source": "api",
+          "response": {
+            "content": "血氧数据如下：\n\n- 最低值：92%\n- 平均值：96%\n- 数据来源：合成设备B\n\n数据限制：\n\n1. 睡眠窗口未验证：无法确认这些数值是否完整覆盖整晚睡眠。\n2. 连续监测未验证：无法确认是连续采样还是片段式/点状测量。\n3. 缺少时间序列和采样频率：无法判断低氧事件的持续时间、频次和模式。\n\n能否计算 ODI？\n\n- 不能。\n- ODI 通常需要连续血氧时间序列，并按小时统计血氧下降事件次数。当前数据只有最低值 92% 和平均值 96%，不足以计算 ODI。\n\n能否用于诊断？\n\n- 不能。\n- 该数据只能作为参考，不能用于诊断睡眠呼吸暂停、低氧血症或其他疾病。\n\n如果伴随明显呼吸困难、口唇发绀、胸痛/胸闷、意识模糊，或血氧持续低于 90%，应及时就医或急诊评估。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "answer_spo2_unverified",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "answer_spo2_unverified",
+            "deterministic_status": "fail",
+            "failures": [
+              "required_answer_fact_or_disclosure[3]:not_detected"
+            ],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "answer_failed_write",
+      "query": "这次350毫升饮水记录成功了吗？",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "711c8b5d0e7527d5b4a9c7bedb8bcb37bc9d2569bddc6d531bd57a22f67bd624",
+          "schema_chars": 2,
+          "input_tokens": 764,
+          "output_tokens": 142,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 5.74,
+          "token_source": "api",
+          "response": {
+            "content": "没有成功。  \n这次 **350 毫升饮水记录未写入**，系统返回：存储不可用（`synthetic_storage_unavailable`）。\n\n你可以稍后让我再试一次。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "answer_failed_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "answer_failed_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "711c8b5d0e7527d5b4a9c7bedb8bcb37bc9d2569bddc6d531bd57a22f67bd624",
+          "schema_chars": 2,
+          "input_tokens": 764,
+          "output_tokens": 127,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 6.21,
+          "token_source": "api",
+          "response": {
+            "content": "没有成功。  \n工具返回：记录未写入（`persisted: false`），原因是存储服务暂不可用。\n\n所以这次 **350 毫升饮水还没有被成功记录**。可以稍后再试；如果你愿意，我也可以等你确认后重新提交一次。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "answer_failed_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "answer_failed_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    },
+    {
+      "case": "answer_successful_write",
+      "query": "饮水记录的量和日期是什么，成功了吗？",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "b9c44a7389d4148c67b1387c156343cecb6364723b8a44fce2502e0c16b343f4",
+          "schema_chars": 2,
+          "input_tokens": 790,
+          "output_tokens": 124,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 5.03,
+          "token_source": "api",
+          "response": {
+            "content": "已成功记录。\n\n- 饮水量：350 ml  \n- 日期：2026-10-04  \n- 状态：记录成功，记录 ID：`synthetic-water-501`",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "answer_successful_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "answer_successful_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "b9c44a7389d4148c67b1387c156343cecb6364723b8a44fce2502e0c16b343f4",
+          "schema_chars": 2,
+          "input_tokens": 790,
+          "output_tokens": 93,
+          "cached_tokens": [
+            0
+          ],
+          "wall_seconds": 3.26,
+          "token_source": "api",
+          "response": {
+            "content": "已成功记录。\n\n- 饮水量：350 ml  \n- 日期：2026-10-04  \n- 状态：记录成功",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "answer_successful_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          },
+          "original_quality": {
+            "case_id": "answer_successful_write",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "regressed": false,
+      "input_token_reduction_percent": 0.0,
+      "observed_contract_drop": false
+    }
+  ],
+  "limits": [
+    "Fixed synthetic provider boundary replay; not whole-agent execution or production sampling.",
+    "Only data.description differs; all other prompt projection features stay enabled in both arms.",
+    "No proposed tool is executed; no persistence or clinical efficacy is established.",
+    "Deterministic contract checks do not prove general semantic or clinical quality; unknowns are retained.",
+    "Single bounded sample per arm cannot establish production P95, billing savings or noninferiority."
+  ],
+  "rescore": {
+    "original_report_sha256": "67d81ac7fce9efcafb0c74bd70b2ddaa943c03067df66925624fa2fa151efa66",
+    "source": "/tmp/reva-record-quality-api.json",
+    "method": "Saved original responses; current pure checker; tool constraints reconstructed by capture-only executor. Original provider payload hashes and usage unchanged. No API requests.",
+    "quality_module_sha256": "2e58aded2dcc414b70fb5d43e1afbf81f061f8f7ac873b25e519e1fb76f1696b",
+    "changes": [
+      {
+        "case": "answer_sleep_missing_spo2",
+        "variant": "candidate",
+        "before": "fail",
+        "after": "pass"
+      },
+      {
+        "case": "answer_sleep_missing_spo2",
+        "variant": "baseline",
+        "before": "fail",
+        "after": "pass"
+      },
+      {
+        "case": "answer_spo2_unverified",
+        "variant": "candidate",
+        "before": "fail",
+        "after": "pass"
+      }
+    ],
+    "status_changes": [
+      {
+        "case": "answer_sleep_missing_spo2",
+        "variant": "candidate",
+        "before": "fail",
+        "after": "pass"
+      },
+      {
+        "case": "answer_sleep_missing_spo2",
+        "variant": "baseline",
+        "before": "fail",
+        "after": "pass"
+      },
+      {
+        "case": "answer_spo2_unverified",
+        "variant": "candidate",
+        "before": "fail",
+        "after": "pass"
+      }
+    ]
+  }
+}

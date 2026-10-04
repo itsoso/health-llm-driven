@@ -6,12 +6,14 @@ import json
 import logging
 import math
 import re
+from contextvars import copy_context
 from typing import Dict, Any, List, Optional
 from app.services.intake_intent_classifier import (
     classify_intake_subject,
     looks_like_food_ui_text,
 )
 from app.services.llm import get_vision_provider
+from app.services.llm.usage_tracker import caller_scope
 
 logger = logging.getLogger(__name__)
 
@@ -563,18 +565,17 @@ class FoodRecognitionService:
             logger.info("调用 LLM Vision API 识别食物")
 
             provider = self._get_provider()
-            from app.services.llm.usage_tracker import set_caller
-            set_caller("food_recognition.from_base64")
-            raw_content = await provider.chat_with_vision(
-                messages=[
-                    {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
-                    {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
-                ],
-                image_url=data_url,
-                temperature=0.1,
-                max_tokens=2000,
-                **_vision_chat_options(provider),
-            )
+            with caller_scope("food_recognition.from_base64"):
+                raw_content = await provider.chat_with_vision(
+                    messages=[
+                        {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
+                        {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
+                    ],
+                    image_url=data_url,
+                    temperature=0.1,
+                    max_tokens=2000,
+                    **_vision_chat_options(provider),
+                )
             if not raw_content:
                 logger.error("AI返回空内容")
                 return {
@@ -684,18 +685,17 @@ class FoodRecognitionService:
 
         try:
             provider = self._get_provider()
-            from app.services.llm.usage_tracker import set_caller
-            set_caller("food_recognition.from_url")
-            raw_content = await provider.chat_with_vision(
-                messages=[
-                    {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
-                    {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
-                ],
-                image_url=image_url,
-                temperature=0.1,
-                max_tokens=2000,
-                **_vision_chat_options(provider),
-            )
+            with caller_scope("food_recognition.from_url"):
+                raw_content = await provider.chat_with_vision(
+                    messages=[
+                        {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
+                        {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
+                    ],
+                    image_url=image_url,
+                    temperature=0.1,
+                    max_tokens=2000,
+                    **_vision_chat_options(provider),
+                )
 
             if not raw_content:
                 logger.error("AI返回空内容")
@@ -788,16 +788,15 @@ class FoodRecognitionService:
 只返回JSON，无其他文字。"""
 
             provider = self._get_provider()
-            from app.services.llm.usage_tracker import set_caller
-            set_caller("food_recognition.estimate_nutrition")
-            content = await provider.chat(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"请估算以下食物的营养信息：{food_description}"},
-                ],
-                temperature=0.3,
-                max_tokens=1000,
-            )
+            with caller_scope("food_recognition.estimate_nutrition"):
+                content = await provider.chat(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"请估算以下食物的营养信息：{food_description}"},
+                    ],
+                    temperature=0.3,
+                    max_tokens=1000,
+                )
             return content
 
         async def _run_estimate():
@@ -819,7 +818,8 @@ class FoodRecognitionService:
                 # 在已有事件循环中，创建新线程执行
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as pool:
-                    content = pool.submit(asyncio.run, _run_estimate()).result()
+                    context = copy_context()
+                    content = pool.submit(context.run, asyncio.run, _run_estimate()).result()
             else:
                 content = asyncio.run(_run_estimate())
 

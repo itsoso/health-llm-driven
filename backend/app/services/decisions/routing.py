@@ -14,6 +14,7 @@ from app.services.decisions import (
     DecisionRequest,
     provider_from_settings,
 )
+from app.services.utterance_intent_classifier import classify_agent_utterance
 
 logger = logging.getLogger(__name__)
 _TIERS = {"casual": 0, "balanced": 1, "high_stakes": 2}
@@ -38,6 +39,8 @@ class RouteDecision:
     input_tokens: int = 0
     output_tokens: int = 0
     elapsed_ms: int = 0
+    tier_confidence: float | None = None
+    capability_confidence: float | None = None
 
     def metadata(self) -> dict:
         return asdict(self)
@@ -45,7 +48,7 @@ class RouteDecision:
     def prompt_hint(self) -> str:
         if (
             self.mode != "on"
-            or self.status != "accepted"
+            or self.status not in {"accepted", "partial"}
             or self.capability not in _CAPABILITIES
             or self.capability == "none"
         ):
@@ -89,34 +92,58 @@ async def decide_route(
             },
         },
     )
+    # The model cannot improve a deterministic ceiling; keep the capability
+    # question without spending context or inference on a redundant tier vote.
+    if baseline == "high_stakes":
+        del request.questions["answer_tier"]
     try:
         result = await provider_from_settings().evaluate(request, user_id=user_id)
         if await asyncio.to_thread(runtime_mode) != mode:
             raise DecisionError("configuration_changed")
-        tier = result.answers["answer_tier"]
+        tier = result.answers.get("answer_tier") if "answer_tier" in request.questions else None
         capability = result.answers["capability"]
-        trusted = (
-            min(tier["confidence"], capability["confidence"])
-            >= settings.decision_min_confidence
-        )
-        suggested = tier["choice"]
+        tier_trusted = tier is not None and tier["confidence"] >= settings.decision_min_confidence
+        capability_trusted = capability["confidence"] >= settings.decision_min_confidence
+        capability_rejection = ""
+        if capability_trusted and capability["choice"] != "none":
+            intent = classify_agent_utterance(message)
+            if intent.is_write:
+                capability_rejection = "write_intent"
+            elif capability["choice"] == "health_query" and intent.primary != "read":
+                capability_rejection = "read_intent_unconfirmed"
+            capability_trusted = not capability_rejection
+        trusted = tier_trusted or capability_trusted
+        suggested = tier["choice"] if tier else None
         effective = (
             max((baseline, suggested), key=_TIERS.__getitem__)
-            if trusted and mode == "on"
+            if tier_trusted and mode == "on"
             else baseline
         )
+        reason = ""
+        if capability_rejection:
+            reason = capability_rejection
+        elif not trusted:
+            reason = "low_confidence"
+        elif not capability_trusted:
+            reason = "capability_low_confidence"
+        elif tier is not None and not tier_trusted:
+            reason = "tier_low_confidence"
         outcome = RouteDecision(
             mode,
             provider,
-            "accepted" if trusted else "abstained",
+            # Consumers use accepted to activate model selection. Capability
+            # advice alone must not change that independent behavior.
+            "accepted" if tier_trusted else "partial" if capability_trusted else "abstained",
             effective,
-            reason="" if trusted else "low_confidence",
+            reason=reason,
             suggested_tier=suggested,
-            capability=capability["choice"],
+            capability=capability["choice"] if capability_trusted else None,
             model=result.model,
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             elapsed_ms=round((time.monotonic() - start) * 1000),
+            tier_confidence=tier["confidence"] if tier else None,
+            capability_confidence=capability["confidence"],
         )
     except (DecisionError, HTTPException) as exc:
         reason = str(exc) if isinstance(exc, DecisionError) else "consent_denied"

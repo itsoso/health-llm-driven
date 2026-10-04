@@ -368,18 +368,11 @@ class Settings(BaseSettings):
     # 同时满足(flag + 该模型探针验证过 cache_control 命中且 usage.cached_tokens 透传)。
     # prod 翻开前先跑真网探针: backend/scripts/probe_explicit_cache.py
     llm_explicit_prompt_cache: bool = False
-    # 深分析短路二次合成(计划 rank7):orchestrator 是本回合唯一实质工具、且它已产出过
-    # R4/advice_guard 校验的 synthesis 时,可跳过对话 Agent 的第二次强模型合成,直接把
-    # 那段 synthesis 透传流式下发(省一整次强模型调用,深分析回合时延 -5~15s)。
-    #   'off'    = 默认,零行为变更(ships-off);
-    #   'shadow' = 用户可见行为逐字节不变(双合成照跑),但把 would-be passthrough 文本 +
-    #              计时落到 assistant message.meta.shadow_passthrough,供离线 pairwise judge;
-    #   'on'     = 单工具深分析回合短路二次合成;任何"还需融合其它工具结果(记录/查询/二次
-    #              分析)"的回合 fail-closed 保留二次合成(passthrough 仅当 orchestrator 输出
-    #              本身即完整答案)。透传文本仍过与二次合成**同一条**出站护栏链
-    #              (bracket/xml marker strip + tool-result leak 抑制 + reva-ui strip +
-    #              消费层 menu_share 提取 + thinking_steps),降级/兜底路径不逃 R4。
-    # 未知值 fail-closed 归一到 'off'(见 agent_executor._resolve_synthesis_passthrough_mode)。
+    # 复用已完成综合报告，默认 off；shadow 保持普通模型流程，不存候选全文。
+    # on 还需 domain_prompt_optimization 开启，仅首次对话的单一报告请求可进入。
+    # 进程内回执须绑定用户/回合/工具调用，证明单次正常生成、完整证据与真实安全验证；
+    # 工具 JSON 不构成证明。Pi 正常完成后仍经过公共出站护栏与持久化流程。
+    # 不满足条件或未知值保留外层合成；尚无生产延迟承诺。
     orchestrator_synthesis_passthrough: str = "off"
     # 深分析内层工具进程内直调(计划 rank8):对话 Agent 的 health_analysis(orchestrator)
     # 工具原本 POST localhost /orchestrator/chat(非流式)拿深分析结果 —— 该 loopback 请求

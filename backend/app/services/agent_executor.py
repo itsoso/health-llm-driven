@@ -471,8 +471,16 @@ def _prompt_payload_budget(
     system_chars = 0
     history_chars = 0
     turn_chars = 0
+    tool_result_chars = 0
+    tool_call_chars = 0
     for index, message in enumerate(messages):
         size = len(_stringify_message_content(message.get("content")))
+        if message.get("role") == "tool":
+            tool_result_chars += size
+        if message.get("tool_calls"):
+            tool_call_chars += len(json.dumps(
+                message["tool_calls"], ensure_ascii=False, separators=(",", ":"), default=str,
+            ))
         if message.get("role") == "system":
             system_chars += size
         elif index == last_user_idx:
@@ -494,6 +502,9 @@ def _prompt_payload_budget(
         "system_approx_tokens": system_chars // 4,
         "history_chars": history_chars,
         "history_approx_tokens": history_chars // 4,
+        "dialogue_chars": history_chars - tool_result_chars,
+        "tool_result_chars": tool_result_chars,
+        "tool_call_chars": tool_call_chars,
         "turn_chars": turn_chars,
         "turn_approx_tokens": turn_chars // 4,
         "tool_schema_chars": tool_schema_chars,
@@ -501,6 +512,8 @@ def _prompt_payload_budget(
         "tool_count": len(tools or []),
         "message_approx_tokens": message_chars // 4,
         "total_approx_tokens": (message_chars + tool_schema_chars) // 4,
+        # Keep legacy metrics comparable; this estimate also counts calls.
+        "input_approx_tokens": (message_chars + tool_schema_chars + tool_call_chars) // 4,
     }
 
 
@@ -1040,6 +1053,9 @@ def _project_orchestrator_result(result: str) -> str:
         }
         if data.get("perf") is not None:
             projected["perf"] = data.get("perf")
+        for key in ("error", "error_code", "status", "success", "query", "safety_action", "persisted_card_ids"):
+            if key in data:
+                projected[key] = data[key]
         return json.dumps(projected, ensure_ascii=False)
     except Exception:  # noqa: BLE001 — 投影失败宁可原样返回,不丢内容
         return result
@@ -12982,7 +12998,7 @@ class AgentExecutor:
         if scope is None or (len(scope.queries) < 2 and scope.query("spo2") is None):
             return None
         static_rules = self._build_system_prompt(
-            user_id, conv_id, user_auth_token, intent_query=message, static_rules_only=True,
+            user_id, conv_id, user_auth_token, intent_query=message, static_rules_only=True, synthesis_only=True,
         )
         from app.services.health_context_lite_service import build_lite_health_context
 
@@ -15829,6 +15845,13 @@ class AgentExecutor:
             else None
         )
         self._runtime_run_id = run_id
+        self._prompt_request_index = 0
+        self._provider_history_references = ()
+        self._completed_orchestrator_delivery = None
+        self._current_pi_tool_call_id = None
+        self._report_dispatches = []
+        self._report_initial_user_frame = None
+        self._report_turn_allowed = False
         self._runtime_attempt_id = attempt_id
         self._runtime_managed = bool(runtime_managed)
         self._runtime_write_block_reason = runtime_write_block_reason
@@ -16636,6 +16659,19 @@ class AgentExecutor:
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
         self._health_evidence_answer_budget_active = health_advice_buffered
+        self._public_task = None
+        if (
+            getattr(settings, "domain_prompt_optimization", False)
+            and not health_advice_buffered and not extra_context
+            and pending_choice_resolution is None and retry_recovery is None
+            and not self._agent_kernel_pending_confirmation_tools
+        ):
+            from app.services.agent_public_task import classify_public_task
+            from app.services.llm.task_routing import classify_answer_task_tier
+
+            candidate = classify_public_task(message, has_attachments=bool(images or file_base64))
+            if candidate and classify_answer_task_tier(message, has_attachments=False) == "casual":
+                self._public_task = candidate
         self._analysis_turn_subset = False  # R5:纯分析轮只读工具子集(flag 门控,下方设定)
         self._tool_round_fast_routed = False
         self._lite_tool_round_messages = None
@@ -16710,7 +16746,7 @@ class AgentExecutor:
                     "disable fast route and use quality floor: %s",
                     exc,
                 )
-        if settings.decision_mode != "off":
+        if settings.decision_mode != "off" and self._public_task is None:
             from app.services.decisions.routing import decide_route
 
             self._decision_route = await decide_route(
@@ -17135,7 +17171,7 @@ class AgentExecutor:
         try:
             from app.services.opener_quick_reply import apply_opener_quick_reply_context
 
-            if not self._has_current_input_recovery_advice_goal():
+            if not self._has_current_input_recovery_advice_goal() and self._public_task is None:
                 opener_quick_reply_note = apply_opener_quick_reply_context(
                     self.db,
                     user_id=user_id,
@@ -17151,7 +17187,12 @@ class AgentExecutor:
         # 干预/效应/记忆), 只留核心人格 + R4 边界 + 防回显 + 记录参数指引 + 基础画像。
         # 非快路由回合 lite=False → prompt 逐字节不变。
         _t_stage = time.time()
-        if preplanned_water_turn_call is not None:
+        if self._public_task is not None:
+            from app.services.agent_public_task import public_task_prompt
+
+            system_content = public_task_prompt(self._public_task)
+            self._prompt_context_profile = "public_" + self._public_task
+        elif preplanned_water_turn_call is not None:
             system_content = ""
         else:
             system_content = self._build_system_prompt(
@@ -17281,7 +17322,7 @@ class AgentExecutor:
         # fast-routed 简单回合跳过系统知识库检索: KB claim 是给分析/解读用的依据,
         # 对「今天喝了多少水」无用, 且检索本身占 pre-first-token 壁钟 (kb_ms)。
         system_kb_context = (
-            "" if self._fast_route_simple_turn or health_advice_buffered
+            "" if self._fast_route_simple_turn or health_advice_buffered or self._public_task
             else self._build_system_knowledge_prompt_context(user_id, message)
         )
         pre_stages["kb_ms"] = _pre_stage(_t_stage)
@@ -17337,6 +17378,11 @@ class AgentExecutor:
         # 本轮回答实际使用；真实来源会在工具执行或知识检索时逐项加入。
         pre_stages["inspect_ms"] = _pre_stage(_t_stage)
 
+        if self._public_task:
+            # A closed public question has no health/history dependency. Keep
+            # the current trusted clock, never client-supplied medical context.
+            turn_context_parts = [self._agent_kernel_time_context(client_time_context)]
+
         # 3. 构建对话历史
         _t_stage = time.time()
         history_limit = _history_limit_for_turn(
@@ -17348,7 +17394,7 @@ class AgentExecutor:
         )
         messages = (
             [{"role": "user", "content": user_content}]
-            if preplanned_water_turn_call is not None or self._has_current_input_recovery_advice_goal()
+            if preplanned_water_turn_call is not None or self._has_current_input_recovery_advice_goal() or self._public_task
             else svc.build_messages(conv.id, limit=history_limit)
         )
         if recovered_user_message is not None and (
@@ -17364,6 +17410,7 @@ class AgentExecutor:
             history_limit,
             getattr(self, "_prompt_context_profile", "full"),
         )
+        self._provider_history_references = tuple(svc.provider_history_references)
         recent_messages = messages
         if (
             recent_messages
@@ -17576,6 +17623,10 @@ class AgentExecutor:
                 + read_scope_synthesis_instructions(read_scope)
             )
 
+        if self._public_task:
+            allowed_public_tools = {"environment_check"} if self._public_task == "weather" else set()
+            tools = [t for t in tools if (t.get("function") or {}).get("name") in allowed_public_tools]
+
         # 5. Agent 循环
         full_reply = ""
         unrecovered_output_quality = None
@@ -17614,6 +17665,22 @@ class AgentExecutor:
         # rank7 深分析短路二次合成(passthrough,ships-off,见 config.orchestrator_synthesis_passthrough)。
         # 关时全零开销(capture 受 mode!='off' 门控);shadow 记 meta 不改行为;on 单工具回合短路。
         passthrough_mode = _resolve_synthesis_passthrough_mode()
+        from app.services.orchestrator_delivery import is_single_report_request
+
+        # Initially limit reuse to a fresh, standalone report. Historical goals,
+        # attachments and explicit model selections still require outer synthesis.
+        self._report_turn_allowed = bool(
+            passthrough_mode == "on"
+            and getattr(settings, "domain_prompt_optimization", False)
+            and is_single_report_request(message)
+            and self._runtime_run_id
+            and not recent_messages
+            and not health_advice_buffered
+            and not extra_context and not images and not file_base64
+            and not self._request_model_id and not recovered_user_message
+            and not pending_choice_resolution
+        )
+        report_delivery_meta = None
         passthrough_orch_text: Optional[str] = None   # orchestrator 自产 synthesis(已过 R4)
         passthrough_orch_calls = 0                     # 本回合捕获到 synthesis 的 orchestrator 次数
         passthrough_synthesis_round_ms: Optional[int] = None  # shadow: 二次合成轮壁钟(=可省时延)
@@ -17746,6 +17813,9 @@ class AgentExecutor:
             nonlocal orchestrator_perf, orchestrator_tool_ms, passthrough_orch_calls, passthrough_orch_text
             nonlocal runtime_control_terminal, streamed_answer_evidence_digest, streamed_cards, tool_executed_count
             nonlocal known_supplement_rejection
+            self._completed_orchestrator_delivery = None
+            self._current_pi_tool_call_id = tc["id"]
+            self._report_dispatches.append(tc["id"])
             pending_pi_writes.pop(tc["id"], None)
             _round_tool_names = []
             _tool_started = time.time()
@@ -18565,8 +18635,40 @@ class AgentExecutor:
         self._http_client = httpx.AsyncClient(timeout=90.0)
         pi_started = False
         pi_terminal_text = None
+        public_weather_terminal = None
         try:
-            if (
+            if self._public_task == "weather":
+                from app.services.agent_public_task import public_weather_arguments
+
+                args = public_weather_arguments(message)
+                if args is None or not any(
+                    (t.get("function") or {}).get("name") == "environment_check" for t in tools
+                ):
+                    raise RuntimeError("public_weather_tool_unavailable")
+                weather_call = {
+                    "id": "public_weather", "type": "function",
+                    "function": {"name": "environment_check", "arguments": json.dumps(args, ensure_ascii=False)},
+                }
+                rounds.append({"llm_gen_ms": 0, "tool_exec_ms": 0, "tools": []})
+                messages.append({"role": "assistant", "content": "", "tool_calls": [weather_call]})
+                async for event in _execute_pi_tool(weather_call, 0):
+                    if event.get("event") != "_pi_tool_response":
+                        yield event
+                    elif event["data"].get("is_error"):
+                        payload = _recover_tool_result_payload(event["data"]["content"]) or {}
+                        public_weather_terminal = (
+                            "请告诉我你要查询哪个城市的天气。"
+                            if isinstance(payload, dict) and payload.get("error") == "location_required"
+                            else "天气查询暂时未完成，请稍后重试。"
+                        )
+                # The read was dispatched through the ordinary gateway.
+                # No model planning or repeated weather fetch is needed.
+                tools = []
+
+            if public_weather_terminal is not None:
+                full_reply = public_weather_terminal
+                final_finish_reason = "stop"
+            elif (
                 self._turn_contextual_diet_write_blocked_reason == "confirmation_pending"
                 and self._turn_contextual_diet_cards
             ):
@@ -18597,6 +18699,9 @@ class AgentExecutor:
                             tools = []
                 decision_route = "pi"
                 async with PiKernelSession() as pi:
+                    initial_dialogue = [m for m in messages if m.get("role") != "system"]
+                    if len(initial_dialogue) == 1 and initial_dialogue[0].get("role") == "user":
+                        self._report_initial_user_frame = dict(initial_dialogue[0])
                     await pi.start(messages=messages, tools=tools, max_turns=MAX_TOOL_ROUNDS)
                     pi_started = True
                     round_idx = -1
@@ -18609,6 +18714,22 @@ class AgentExecutor:
                             self._begin_read_repair_batch()
                             round_idx += 1
                             messages = request["messages"]
+                            report_receipt = self._take_orchestrator_delivery(messages)
+                            if (
+                                report_receipt is not None and not remaining_batch_tools
+                                and not blocked_pi_calls and not pending_pi_writes
+                                and not write_receipts and not last_recoverable_write_rejection
+                            ):
+                                # Pi still terminates the loop; its final answer
+                                # then traverses the ordinary delivery guards.
+                                model_name = report_receipt.model
+                                report_delivery_meta = {
+                                    "source": "orchestrator", "model": report_receipt.model,
+                                    "outer_model_calls_avoided": 1,
+                                }
+                                await pi.respond(request, content=report_receipt.text,
+                                                 tool_calls=[], finish_reason="stop")
+                                continue
                             composed_messages = self._composed_synthesis_messages(
                                 user_id, conv.id, user_auth_token, message,
                                 sealed=health_advice_buffered,
@@ -18642,7 +18763,7 @@ class AgentExecutor:
                                     # permission ledger; none grants new consent.
                                     static_rules = self._build_system_prompt(
                                         user_id, conv.id, user_auth_token,
-                                        intent_query=message, static_rules_only=True,
+                                        intent_query=message, static_rules_only=True, synthesis_only=True,
                                     )
                                     instruction = (
                                         "系统已核验的本次查询事实如下：\n" + facts
@@ -19309,6 +19430,9 @@ class AgentExecutor:
             )
             final_finish_reason = "error"
         finally:
+            self._completed_orchestrator_delivery = None
+            self._current_pi_tool_call_id = None
+            self._report_turn_allowed = False
             if self._http_client:
                 await self._http_client.aclose()
                 self._http_client = None
@@ -20205,6 +20329,7 @@ class AgentExecutor:
                 **({"recipe_candidate": recipe_candidate_meta} if recipe_candidate_meta else {}),
                 **({"shadow_passthrough": shadow_passthrough_meta} if shadow_passthrough_meta else {}),
                 **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
+                **({"orchestrator_delivery": report_delivery_meta} if report_delivery_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
                 **({"resolved_pending_choice_source_id": pending_choice_resolution.source_message_id}
@@ -20299,6 +20424,7 @@ class AgentExecutor:
                 **({"kernel_trace": kernel_trace} if kernel_trace else {}),
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
+                **({"orchestrator_delivery": report_delivery_meta} if report_delivery_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             },
@@ -21581,6 +21707,7 @@ class AgentExecutor:
         health_evidence_runtime: bool = False,
         force_full_personal_context: bool = False,
         static_rules_only: bool = False,
+        synthesis_only: bool = False,
     ) -> str:
         """构建统一 Agent 的 system prompt。
 
@@ -21599,6 +21726,13 @@ class AgentExecutor:
             classify_context_profile,
         )
 
+        # This phase is selected only by server-owned, tool-free read
+        # answers (including explicit failed reads). Static rules alone do
+        # not prove that a result is verified or that a task is complete.
+        synthesis_only = bool(
+            synthesis_only and static_rules_only
+            and getattr(settings, "domain_prompt_optimization", False)
+        )
         prompt_snapshot = getattr(self, '_agent_kernel_snapshot', None)
         # Keep static safety rules without preloading unrelated personal data.
         static_rules_only = static_rules_only or self._has_current_input_recovery_advice_goal()
@@ -21649,6 +21783,8 @@ class AgentExecutor:
         )
         if not static_rules_only:
             self._prompt_context_profile = context_profile
+        elif synthesis_only:
+            self._prompt_context_profile = "read_synthesis"
 
         parts = [
             "你是用户的 AI 健康助理。你可以通过工具调用获取、记录和分析用户的健康数据。",
@@ -21668,59 +21804,69 @@ class AgentExecutor:
             "- 若原话同时包含症状、建议请求、写入/查询动作，或是在回答历史中未完成的追问，必须处理这些意图；不能仅因出现城市或酒店就忽略。地点名称候选不是临床安全结论。",
             "- 以下主动分析、取证和建议规则只在用户当前任务或真实新发安全风险需要时适用；单纯旧病史和模型先前的猜测不构成本轮新风险。",
             "",
-            "## 工作方式",
-            "1. 分析用户请求，决定需要调用哪些工具",
-            "2. 调用工具获取或记录数据",
-            "- 组合任务保留每个子目标；同步入队后可查询数据，但不能宣称该任务已完成。问佳明同步状态时用 health_query(dimension=garmin)，系统会关联本会话的真实同步回执。只询问同步状态不代表要重新同步。",
-            "3. 基于返回的数据进行分析和推理",
-            "4. 按本轮任务给出简短确认、查询结果或有据可依的建议",
-            "5. 复合意图时在一次对话中同时处理（如'记一下吃了鱼油，看看对基因有什么影响' → 先记录后查询）",
-            "",
+            *((
+                "## 本轮只依据返回结果回答",
+                "本轮不调用工具，不新增、修改、删除记录或设置提醒；不得声称已执行这些操作。",
+                "仅使用本轮给定证据与背景，保留来源、日期、单位、缺口及不确定性；历史回答不是新事实或授权。",
+                "读取失败、缺失或未核验字段不能当作已核验事实；如实说明未完成或未知，不能补编结果。",
+            ) if synthesis_only else (
+                "## 工作方式",
+                "1. 分析用户请求，决定需要调用哪些工具",
+                "2. 调用工具获取或记录数据",
+                "- 组合任务保留每个子目标；同步入队后可查询数据，但不能宣称该任务已完成。问佳明同步状态时用 health_query(dimension=garmin)，系统会关联本会话的真实同步回执。只询问同步状态不代表要重新同步。",
+                "3. 基于返回的数据进行分析和推理",
+                "4. 按本轮任务给出简短确认、查询结果或有据可依的建议",
+                "5. 复合意图时在一次对话中同时处理（如'记一下吃了鱼油，看看对基因有什么影响' → 先记录后查询）",
+                "",
+            )),
             _HEALTH_STATUS_INTENT_PROMPT,
             "",
             *_CLINICIAN_PROVENANCE_PROMPT_BLOCK,
             "",
-            "## 数据记录规则",
-            "- **核心原则：所有记录操作必须调用 health_record 工具才算完成。绝对不能口头说'已记录'而不调用工具。**",
-            "- **必须使用系统提供的结构化工具调用；禁止输出 `<tool_code>`、`print(...)`、Python 代码或其他伪代码来表示调用。伪代码不会被视为完成记录。**",
-            "- **新增记录**调用 health_record；**修改/删除已有记录**必须调用 health_manage。不要说'没有删除功能'。",
-            "- 用户要删除重复记录时: 先 health_manage(list) 或 health_query(diet) 查候选 ID；如果用户已明确 ID, 直接 health_manage(delete)。",
-            "- 用户说'删除这一餐'、'撤销这顿'、'我刚才不小心删除了'、'把晚餐删掉/恢复'时,这是管理已有饮食记录,绝不能把这句话作为 diet.food_items 新增一条晚餐;先查候选记录并确认。",
-            "- 饮水、补剂打卡：直接执行，不需确认",
-            "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
-            (
-                "- 单一记录请求只处理本轮记录：成功后简短确认记录值；失败或没有可验证回执时，"
-                "只说明未完成或状态不明以及下一步。除非用户同时要求分析，或工具返回新的高危安全告警，"
-                "不得主动展开地点、天气、既往病史、化验、可穿戴数据或通用健康建议。"
-            ),
-            "- 用户说'吃了/服用了XX'：若包含药名、药物剂型(胶囊/缓释片/颗粒/口服液等)、mg/毫克、处方/用药语境 → record_type=medication；补剂/保健品名(鱼油/维C/B族等) → record_type=supplement；明确食物或餐次 → record_type=diet",
-            "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
-            "- 用户明确要设置提醒/闹钟/每天几点提醒,且已给出时间 → 调用 health_record(record_type=reminder, data={title,message,remind_at,recurrence})。每日提醒用 recurrence=daily; remind_at 必须是带 +08:00 的 ISO 时间; 只有 HH:MM 时按下一次北京时间生成。不能回复“系统接口限制”或让用户自己去手机/手表设置。",
-            "- 用户要在时间窗内循环提醒(如 9:00 到 20:00 每 1.5 小时) → 一次调用 health_record(record_type=reminder, data={title,message,start_time,end_time,interval_minutes,recurrence}); 不要降级成单个开始时点。",
-            "- 如果上一轮已在问提醒时段,用户只回复'9点到20点'或'10:30'这类时间,要继承上一轮的任务标题、内容和间隔,直接创建 reminder; 不要丢失上下文或重复询问。",
-            "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
-            "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
-            "- 用户只陈述'准备开始睡觉/开始睡眠/上床睡觉/准备入睡'这类当前开始睡眠事件 → 调用 health_record(record_type=event, data={title:'准备开始睡觉', occurred_at:'刚才或用户给出的时间'}); 不要用 record_type=sleep。record_type=sleep 只用于事后完整睡眠补录,必须有 bedtime、wake_time、sleep_quality。",
-            "- 上述状态陈述若同时请求建议、分析或提问时，只回答问题，不自动记录；除非用户另外明确说“记录”“记一下”或“打卡”。例如'我准备睡觉了，给我一些建议'是建议请求，不调用 health_record。",
-            "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
-            "- **饮食记录必须包含热量和营养估算：识别食物后，根据食物种类和常见份量估算总热量(kcal)、蛋白质(g)、碳水(g)、脂肪(g)、膳食纤维(g)，填入 data.calories/protein/carbs/fat/fiber 字段一起保存。不要记完再问用户'要不要算热量'。**",
-            "- **重要：调用 health_record 时 data 参数必须包含具体内容，不能为空对象 {}。如果你不确定内容，先问用户再记录。**",
-            "- 用户明确要求制作健康行动相关图片、封面或 3-15 秒短视频时，可以使用 draft_aigc_media 创建确认草稿。它不会发送任何内容给百炼；确认卡片必须由用户亲自点击，后端才会向百炼发送草稿绑定的提示词和图生模式下当前消息的图片，并可能消耗 TokenPlan Credits 或产生费用。不能以文字中的“确认”代替卡片点击，也不能声称已经生成。",
-            "- draft_aigc_media 成功后只需简短说明‘创作草稿已准备，请在创作卡片中确认’；不要引用‘上方/下方卡片’，不要重复费用、状态或操作说明，卡片会自行展示并持续更新任务状态。",
-            "- 图生图片/图生视频只能用当前消息中附带的第一张图；没有图时请用户重新上传。生成完成前只能说“生成中”，不能把任务已接受说成“已生成”。",
-            "- AIGC 内容只用于健康行动沟通（如饮食建议封面、晨间拉伸提示、补水提醒短视频）。不得生成医疗诊断、疗效承诺、处方或公开暴露个人健康隐私的素材。",
-            "",
-            "## 分析规则",
-            "- 简单查询（'今天步数多少'）→ health_query",
-            "- 用户问'昨天/最近上传的记录/报告/体检/检查'时,不要默认查综合可穿戴数据;优先调用 health_query(dimension='medical_exam', uploaded_days=1/7)。若包含 MRI/核磁/CT/X光/B超/胃镜/影像/膝关节 等关键词,同时传 keyword。",
-            "- 用户问 MRI/核磁/CT/X光/B超/胃镜/影像报告时,调用 health_query(dimension='medical_exam', keyword='用户原词');不要说没看到报告,除非工具明确返回未找到。",
-            "- 趋势分析（'最近睡眠怎么样'）→ health_analysis",
-            "- 跨领域复杂问题（'我的补剂方案合理吗'、'从基因角度看我该怎么调整'）→ health_analysis(type=orchestrator, question=...)",
-            "",
+            *(() if synthesis_only else (
+                "## 数据记录规则",
+                "- **核心原则：所有记录操作必须调用 health_record 工具才算完成。绝对不能口头说'已记录'而不调用工具。**",
+                "- **必须使用系统提供的结构化工具调用；禁止输出 `<tool_code>`、`print(...)`、Python 代码或其他伪代码来表示调用。伪代码不会被视为完成记录。**",
+                "- **新增记录**调用 health_record；**修改/删除已有记录**必须调用 health_manage。不要说'没有删除功能'。",
+                "- 用户要删除重复记录时: 先 health_manage(list) 或 health_query(diet) 查候选 ID；如果用户已明确 ID, 直接 health_manage(delete)。",
+                "- 用户说'删除这一餐'、'撤销这顿'、'我刚才不小心删除了'、'把晚餐删掉/恢复'时,这是管理已有饮食记录,绝不能把这句话作为 diet.food_items 新增一条晚餐;先查候选记录并确认。",
+                "- 饮水、补剂打卡：直接执行，不需确认",
+                "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
+                (
+                    "- 单一记录请求只处理本轮记录：成功后简短确认记录值；失败或没有可验证回执时，"
+                    "只说明未完成或状态不明以及下一步。除非用户同时要求分析，或工具返回新的高危安全告警，"
+                    "不得主动展开地点、天气、既往病史、化验、可穿戴数据或通用健康建议。"
+                ),
+                "- 用户说'吃了/服用了XX'：若包含药名、药物剂型(胶囊/缓释片/颗粒/口服液等)、mg/毫克、处方/用药语境 → record_type=medication；补剂/保健品名(鱼油/维C/B族等) → record_type=supplement；明确食物或餐次 → record_type=diet",
+                "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
+                "- 用户明确要设置提醒/闹钟/每天几点提醒,且已给出时间 → 调用 health_record(record_type=reminder, data={title,message,remind_at,recurrence})。每日提醒用 recurrence=daily; remind_at 必须是带 +08:00 的 ISO 时间; 只有 HH:MM 时按下一次北京时间生成。不能回复“系统接口限制”或让用户自己去手机/手表设置。",
+                "- 用户要在时间窗内循环提醒(如 9:00 到 20:00 每 1.5 小时) → 一次调用 health_record(record_type=reminder, data={title,message,start_time,end_time,interval_minutes,recurrence}); 不要降级成单个开始时点。",
+                "- 如果上一轮已在问提醒时段,用户只回复'9点到20点'或'10:30'这类时间,要继承上一轮的任务标题、内容和间隔,直接创建 reminder; 不要丢失上下文或重复询问。",
+                "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
+                "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
+                "- 用户只陈述'准备开始睡觉/开始睡眠/上床睡觉/准备入睡'这类当前开始睡眠事件 → 调用 health_record(record_type=event, data={title:'准备开始睡觉', occurred_at:'刚才或用户给出的时间'}); 不要用 record_type=sleep。record_type=sleep 只用于事后完整睡眠补录,必须有 bedtime、wake_time、sleep_quality。",
+                "- 上述状态陈述若同时请求建议、分析或提问时，只回答问题，不自动记录；除非用户另外明确说“记录”“记一下”或“打卡”。例如'我准备睡觉了，给我一些建议'是建议请求，不调用 health_record。",
+                "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
+                "- **饮食记录必须包含热量和营养估算：识别食物后，根据食物种类和常见份量估算总热量(kcal)、蛋白质(g)、碳水(g)、脂肪(g)、膳食纤维(g)，填入 data.calories/protein/carbs/fat/fiber 字段一起保存。不要记完再问用户'要不要算热量'。**",
+                "- **重要：调用 health_record 时 data 参数必须包含具体内容，不能为空对象 {}。如果你不确定内容，先问用户再记录。**",
+                "- 用户明确要求制作健康行动相关图片、封面或 3-15 秒短视频时，可以使用 draft_aigc_media 创建确认草稿。它不会发送任何内容给百炼；确认卡片必须由用户亲自点击，后端才会向百炼发送草稿绑定的提示词和图生模式下当前消息的图片，并可能消耗 TokenPlan Credits 或产生费用。不能以文字中的“确认”代替卡片点击，也不能声称已经生成。",
+                "- draft_aigc_media 成功后只需简短说明‘创作草稿已准备，请在创作卡片中确认’；不要引用‘上方/下方卡片’，不要重复费用、状态或操作说明，卡片会自行展示并持续更新任务状态。",
+                "- 图生图片/图生视频只能用当前消息中附带的第一张图；没有图时请用户重新上传。生成完成前只能说“生成中”，不能把任务已接受说成“已生成”。",
+                "- AIGC 内容只用于健康行动沟通（如饮食建议封面、晨间拉伸提示、补水提醒短视频）。不得生成医疗诊断、疗效承诺、处方或公开暴露个人健康隐私的素材。",
+                "",
+                "## 分析规则",
+                "- 简单查询（'今天步数多少'）→ health_query",
+                "- 用户问'昨天/最近上传的记录/报告/体检/检查'时,不要默认查综合可穿戴数据;优先调用 health_query(dimension='medical_exam', uploaded_days=1/7)。若包含 MRI/核磁/CT/X光/B超/胃镜/影像/膝关节 等关键词,同时传 keyword。",
+                "- 用户问 MRI/核磁/CT/X光/B超/胃镜/影像报告时,调用 health_query(dimension='medical_exam', keyword='用户原词');不要说没看到报告,除非工具明确返回未找到。",
+                "- 趋势分析（'最近睡眠怎么样'）→ health_analysis",
+                "- 跨领域复杂问题（'我的补剂方案合理吗'、'从基因角度看我该怎么调整'）→ health_analysis(type=orchestrator, question=...)",
+                "",
+            )),
             "## 行为准则",
             "- 数据驱动：引用具体数据，不要泛泛而谈",
             "- 用户请求健康分析时可发现相关潜在问题；普通情境告知不扩展为健康分析",
-            "- 取数请求（列出/查询/显示/看一下…记录）：直接调 health_query 如实列出结果（含逐条时间/数值），你的职责本就涵盖记录、查询与分析——绝不要用「我只负责记录与查询」「无法提供分析/建议」这类自我设限开场白（医疗边界只按下方 R4，不用自我声明）。",
+            *(("- 取数请求（列出/查询/显示/看一下…记录）：直接调 health_query 如实列出结果（含逐条时间/数值），你的职责本就涵盖记录、查询与分析——绝不要用「我只负责记录与查询」「无法提供分析/建议」这类自我设限开场白（医疗边界只按下方 R4，不用自我声明）。",
+            ) if not synthesis_only else ()),
             "- 中文回复：简洁实用，仅在本轮任务需要时给出可执行的建议",
             "- 严重异常（HRV持续偏低、SpO2<92%、血压异常）→ 建议就医",
             "- 涉及药物的建议：附加'请咨询医生'免责声明",
@@ -21733,6 +21879,10 @@ class AgentExecutor:
                 "- 本轮权威医学证据已由健康证据运行时完成检索、准入和注入；"
                 "不得再次调用 knowledge_search 替换或扩张证据，只能使用本轮已审定 claim。"
                 if health_evidence_runtime
+                else
+                "- 本轮只能使用已给定且可核验的证据，不得声称做过额外检索；"
+                "无权威依据时明确说明局限，不新增个体处方，绝不编造引用或具体研究。"
+                if synthesis_only
                 else
                 "- 解读异常指标/给健康建议时,先调用 knowledge_search 取依据;"
                 "无命中就如实说明依据来自通用知识,**绝不编造引用或具体研究**。"
@@ -22464,7 +22614,9 @@ class AgentExecutor:
                 "[agent_executor] llm_prefix model=%s sys_hash=%s prefix_hash=%s "
                 "prefix_chars=%d total_chars=%d approx_tokens=%d "
                 "context_profile=%s system_tokens=%d history_tokens=%d "
-                "turn_tokens=%d tool_tokens=%d tool_count=%d payload_tokens=%d",
+                "turn_tokens=%d tool_tokens=%d tool_count=%d payload_tokens=%d "
+                "run_id=%s request_index=%d phase=%s "
+                "dialogue_chars=%d tool_result_chars=%d tool_call_chars=%d input_approx_tokens=%d",
                 model_name, sig["system_hash"], sig["prefix_hash"],
                 sig["prefix_chars"], sig["total_chars"], sig["approx_tokens"],
                 getattr(self, "_prompt_context_profile", "unknown"),
@@ -22474,14 +22626,73 @@ class AgentExecutor:
                 budget["tool_schema_approx_tokens"],
                 budget["tool_count"],
                 budget["total_approx_tokens"],
+                self._runtime_run_id if re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", self._runtime_run_id or "") else "none",
+                getattr(self, "_prompt_request_index", 0) + 1,
+                "tools" if tools else "answer",
+                budget["dialogue_chars"], budget["tool_result_chars"],
+                budget["tool_call_chars"], budget["input_approx_tokens"],
             )
-        except Exception:  # noqa: BLE001 — 观测层绝不断业务
-            pass
+            self._prompt_request_index = getattr(self, "_prompt_request_index", 0) + 1
+        except Exception as exc:  # noqa: BLE001 - telemetry failure stays observable
+            logger.warning("prompt_budget_unavailable error_type=%s", type(exc).__name__)
+
+    def _transport_messages(self, messages: List[Dict]) -> List[Dict]:
+        if not getattr(settings, "domain_prompt_optimization", False):
+            return messages
+        from app.services.llm.prompt_transport import compact_tool_json
+
+        from app.services.agent_history_budget import apply_provider_history_references
+
+        messages = apply_provider_history_references(
+            messages, getattr(self, "_provider_history_references", ()),
+        )
+        return compact_tool_json(messages)
+
+    def _model_tools_for_turn(self, tools: List[Dict]) -> List[Dict]:
+        """Project provider schemas; Pi and the gateway keep their authority.
+
+        Never rebuild from the registry here: an earlier policy may have removed
+        a tool. Ambiguous references, attachments and writes keep their full
+        authorized set. A withheld but authorized Pi tool can still be handled
+        by the existing gateway, without a second planning loop.
+        """
+        if not tools or not getattr(settings, "domain_prompt_optimization", False):
+            return tools
+        snapshot = self._agent_kernel_snapshot
+        if (
+            snapshot is not None
+            and snapshot.envelope.user_id == self._current_user_id
+            and snapshot.context.user_id == self._current_user_id
+        ):
+            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+            from app.services.agent_tool_prompt_projection import project_owned_read_tool_descriptions
+
+            tools = project_owned_read_tool_descriptions(tools, resolve_owned_read_scope(snapshot))
+        public_task = getattr(self, "_public_task", None)
+        if public_task:
+            allowed = {"environment_check"} if public_task == "weather" else set()
+            return [t for t in tools if (t.get("function") or {}).get("name") in allowed]
+        message = self._current_turn_user_message or ""
+        if self._current_turn_has_attachment or _HISTORY_DEPENDENCY_RE.search(message):
+            return tools
+        intent = classify_agent_utterance(message)
+        if intent.is_write or intent.requires_reliable_tool_model or intent.domain == "unknown":
+            return tools
+        names = _tool_names_for_turn(
+            message, fast_route=self._fast_route_simple_turn,
+            analysis_subset=getattr(self, "_analysis_turn_subset", False), domain_subset=True,
+        )
+        if names is None:
+            return tools
+        scoped = [t for t in tools if (t.get("function") or {}).get("name") in names]
+        # A sealed specialist contract wins over a generic domain projection.
+        return scoped or tools
 
     async def _call_llm(
         self, messages: List[Dict], tools: List[Dict],
     ) -> Any:
         """调用 LLM（优先走配置的 agent 端点，回退到默认 provider）"""
+        tools = self._model_tools_for_turn(tools)
         agent_base = settings.agent_base_url
         agent_key = settings.agent_api_key
 
@@ -22493,12 +22704,12 @@ class AgentExecutor:
         if agent_base and agent_key:
             model = settings.agent_model or settings.llm_model
             self._assert_recovery_quality_model(model)
-            return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
+            return await self._call_llm_direct(self._transport_messages(messages), tools, model, agent_base, agent_key)
 
         provider, pass_tools = self._resolve_chat_provider(tools)
         # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
         # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
-        round_messages = self._messages_for_round(messages)
+        round_messages = self._transport_messages(self._messages_for_round(messages))
         self._log_prompt_prefix_signature(round_messages, provider, pass_tools)
         chat_kwargs = {
             "messages": round_messages,
@@ -22575,6 +22786,7 @@ class AgentExecutor:
         Streaming failover: provider 流式报错时回退 tokenplan,镜像 _call_llm
         (df3ae2d8)。已 yield 过 content 后再报错则优雅收尾,不重复回退 (避免双发)。
         """
+        tools = self._model_tools_for_turn(tools)
         retry_composed = self._composed_synthesis_retry_eligible
         self._composed_synthesis_retry_eligible = False
         agent_base = settings.agent_base_url
@@ -22583,7 +22795,7 @@ class AgentExecutor:
             # 直连网关只实现非流式 tool-calling → 退化为单次调用 + 一次性 content。
             model = settings.agent_model or settings.llm_model
             self._assert_recovery_quality_model(model)
-            result = await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
+            result = await self._call_llm_direct(self._transport_messages(messages), tools, model, agent_base, agent_key)
             async for evt in self._result_to_stream_events(result):
                 yield evt
             return
@@ -22591,7 +22803,7 @@ class AgentExecutor:
         provider, pass_tools = self._resolve_chat_provider(tools)
         # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
         # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
-        round_messages = self._messages_for_round(messages)
+        round_messages = self._transport_messages(self._messages_for_round(messages))
         self._log_prompt_prefix_signature(round_messages, provider, pass_tools)
         stream_kwargs: Dict[str, Any] = {
             "messages": round_messages,
@@ -27967,6 +28179,70 @@ class AgentExecutor:
     # 既有工具失败处理 (返回 "Error: ..." 字符串), 回合存活。
     ORCHESTRATOR_IN_PROCESS_TIMEOUT_S: float = 120.0
 
+    def _can_capture_orchestrator_delivery(self, question: str) -> bool:
+        snapshot = self._agent_kernel_snapshot
+        return bool(
+            getattr(self, "_report_turn_allowed", False)
+            and question == self._current_turn_user_message
+            and self._runtime_run_id and self._current_pi_tool_call_id
+            and len(self._report_dispatches) == 1
+            and snapshot is not None
+            and snapshot.envelope.user_id == self._current_user_id
+            and snapshot.context.user_id == self._current_user_id
+            and not snapshot.actionable_references
+            and snapshot.goal is not None and snapshot.goal.kind == "answer"
+            and not snapshot.goal.requires_lookup and not snapshot.goal.requires_verification
+            and not snapshot.goal.requires_clarification and not snapshot.goal.postconditions
+            and not self._agent_kernel_pending_confirmation_tools
+            and not self._agent_kernel_capability_block_reasons
+            and getattr(self._agent_kernel_last_decision, "action", None) == "allow"
+            and getattr(self._agent_kernel_last_decision, "normalized_tool_name", None) == "health_analysis"
+        )
+
+    def _take_orchestrator_delivery(self, messages: List[Dict]):
+        from app.services.orchestrator_delivery import DeliveryReceipt
+
+        receipt = getattr(self, "_completed_orchestrator_delivery", None)
+        self._completed_orchestrator_delivery = None
+        if (
+            type(receipt) is not DeliveryReceipt
+            or not self._can_capture_orchestrator_delivery(receipt.query)
+            or receipt.user_id != self._current_user_id
+            or receipt.turn_id != self._runtime_run_id
+            or receipt.tool_call_id != self._current_pi_tool_call_id
+            or self._report_dispatches != [receipt.tool_call_id]
+        ):
+            return None
+        # Require exactly one current user and a single completed tool pair.
+        # HTTP/cache payloads can never create the private receipt above.
+        dialogue = [m for m in messages if m.get("role") != "system"]
+        if len(dialogue) != 3:
+            return None
+        user, assistant, tool = dialogue
+        calls = assistant.get("tool_calls") or []
+        if (user.get("role") != "user" or user != self._report_initial_user_frame
+                or assistant.get("role") != "assistant" or len(calls) != 1
+                or tool.get("role") != "tool" or tool.get("tool_call_id") != receipt.tool_call_id):
+            return None
+        call = calls[0]
+        function = call.get("function") or {}
+        args = _parse_tool_arguments_for_telemetry(function.get("arguments"))
+        if (call.get("id") != receipt.tool_call_id or function.get("name") != "health_analysis"
+                or args != {"analysis_type": "orchestrator", "question": receipt.query}):
+            return None
+        payload = _recover_tool_result_payload(tool.get("content"))
+        if (not isinstance(payload, dict) or payload.get("synthesis") != receipt.text
+                or payload.get("query") != receipt.query or payload.get("safety_action") != "pass"
+                or payload.get("error") or payload.get("error_code") or payload.get("persisted_card_ids")
+                or payload.get("success") is False or payload.get("status") in ("failed", "error")):
+            return None
+        if (is_internal_process_response(receipt.text) or _looks_like_bare_tool_json(receipt.text)
+                or _leaks_tool_result_json(receipt.text) or enforce_agent_output_quality(receipt.text).flags
+                or _strip_reva_ui_from_llm_text(receipt.text) != receipt.text
+                or _strip_botched_text_tool_leak(receipt.text) != receipt.text):
+            return None
+        return receipt
+
     async def _run_orchestrator_in_process(self, question: str) -> str:
         """进程内直调 run_orchestrator, 替换 localhost POST /orchestrator/chat (rank8)。
 
@@ -28005,10 +28281,22 @@ class AgentExecutor:
         req = OrchestratorRequest(query=question)
         orch_db = SessionLocal()
         try:
-            response = await asyncio.wait_for(
-                run_orchestrator(orch_db, user_id, req),
-                timeout=self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S,
-            )
+            from app.services.orchestrator_delivery import capture_report
+
+            self._completed_orchestrator_delivery = None
+            if self._can_capture_orchestrator_delivery(question):
+                with capture_report(user_id, self._runtime_run_id,
+                                    self._current_pi_tool_call_id, question) as capture:
+                    response = await asyncio.wait_for(
+                        run_orchestrator(orch_db, user_id, req),
+                        timeout=self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S,
+                    )
+                    self._completed_orchestrator_delivery = capture.consume(capture.receipt)
+            else:
+                response = await asyncio.wait_for(
+                    run_orchestrator(orch_db, user_id, req),
+                    timeout=self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S,
+                )
             return json.dumps(
                 response.model_dump(mode="json"), ensure_ascii=False, default=str
             )
@@ -28037,6 +28325,14 @@ class AgentExecutor:
         """执行环境数据查询"""
         ctype = args.get("check_type", "weather")
         city = str(args.get("city") or "").strip() or None
+        if getattr(self, "_public_task", None) == "weather" and not city:
+            from app.models.user_profile import UserProfile
+            from app.services.location_resolver import resolve_effective_location
+
+            profile = self.db.query(UserProfile).filter(UserProfile.user_id == self._current_user_id).first()
+            location = resolve_effective_location(profile)
+            if not location["city"] and not (location["lat"] is not None and location["lon"] is not None):
+                return json.dumps({"error": "location_required", "message": "请告诉我你要查询哪个城市的天气。"}, ensure_ascii=False)
         if ctype == "forecast":
             try:
                 days = int(args.get("days", 3))
@@ -28048,6 +28344,10 @@ class AgentExecutor:
         if getattr(settings, "reads_in_process", True):
             payload = await self._read_environment_in_process(ctype, city=city, days=days)
             if payload is not None:
+                if getattr(self, "_public_task", None) == "weather":
+                    from app.services.agent_public_task import public_weather_payload
+
+                    payload = public_weather_payload(payload, ctype)
                 return _truncate_for_display(json.dumps(payload, ensure_ascii=False, default=str))
         path_map = {
             "weather": "/environment/weather",
@@ -28067,7 +28367,13 @@ class AgentExecutor:
             params["days"] = days
         if params:
             path = f"{path}?{urlencode(params)}"
-        return await self._api_get(f"{base}{path}", headers)
+        result = await self._api_get(f"{base}{path}", headers)
+        if getattr(self, "_public_task", None) == "weather":
+            from app.services.agent_public_task import public_weather_payload
+
+            payload = _recover_tool_result_payload(result)
+            return json.dumps(public_weather_payload(payload, ctype), ensure_ascii=False, default=str)
+        return result
 
     async def _read_environment_in_process(
         self,

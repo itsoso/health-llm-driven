@@ -932,8 +932,9 @@ async def test_analysis_turn_keeps_quality_model(db, auth_user_and_headers, monk
 @pytest.mark.asyncio
 @pytest.mark.parametrize("provider", ["jev", "laya", "systemone"])
 @pytest.mark.parametrize("mode", ["shadow", "on"])
+@pytest.mark.parametrize("tier_confidence,capability_confidence", [(0.99, 0.99), (0.4, 0.99), (0.99, 0.4)])
 async def test_systemone_decision_reaches_real_agent_route(
-    db, auth_user_and_headers, monkeypatch, provider, mode,
+    db, auth_user_and_headers, monkeypatch, provider, mode, tier_confidence, capability_confidence,
 ):
     """Changing providers exercises the same agent route and consented adapter."""
     import httpx
@@ -947,6 +948,8 @@ async def test_systemone_decision_reaches_real_agent_route(
     monkeypatch.setattr(ae.settings, "decision_base_url", "http://127.0.0.1:8092/v1")
     monkeypatch.setattr(ae.settings, "decision_model", "test-decisions")
     monkeypatch.setattr(ae.settings, "decision_api_key", "test-only")
+    monkeypatch.setattr(ae.settings, "decision_admin_control_enabled", False)
+    monkeypatch.setattr(ae.settings, "decision_min_confidence", 0.8)
     monkeypatch.setattr(ae.settings, "staged_response_mode", "off")
     calls = []
 
@@ -955,8 +958,9 @@ async def test_systemone_decision_reaches_real_agent_route(
         calls.append(body)
         answers = {}
         for name, question in body["questions"].items():
-            choice = "high_stakes" if name == "answer_tier" else "health_query"
-            answers[name] = {"type": "choice", "choice": choice, "confidence": .99,
+            choice = "high_stakes" if name == "answer_tier" else "health_analysis"
+            confidence = tier_confidence if name == "answer_tier" else capability_confidence
+            answers[name] = {"type": "choice", "choice": choice, "confidence": confidence,
                 "probabilities": {k: int(k == choice) for k in question["criteria"]}}
         return httpx.Response(200, json={"model": "test-decisions", "answers": answers,
                                         "usage": {"input_tokens": 40, "output_tokens": 0}})
@@ -973,10 +977,14 @@ async def test_systemone_decision_reaches_real_agent_route(
     done = events[-1]["data"]
     assert len(calls) == 1
     assert calls[0]["model"] == "test-decisions"
-    assert done["model"] == ("qwen3.7-max" if mode == "on" else "qwen3.7-plus")
+    tier_applied = mode == "on" and tier_confidence >= 0.8
+    assert done["model"] == ("qwen3.7-max" if tier_applied else "qwen3.7-plus")
     assert done["decision_routing"]["provider"] == provider
     assert done["decision_routing"]["input_tokens"] == 40
-    assert done["decision_routing"]["effective_tier"] == ("high_stakes" if mode == "on" else "balanced")
+    assert done["decision_routing"]["effective_tier"] == ("high_stakes" if tier_applied else "balanced")
+    assert done["decision_routing"]["tier_confidence"] == tier_confidence
+    assert done["decision_routing"]["capability_confidence"] == capability_confidence
+    assert bool(executor._decision_route.prompt_hint()) == (mode == "on" and capability_confidence >= 0.8)
     assert done["write_receipts"] == []
 
 

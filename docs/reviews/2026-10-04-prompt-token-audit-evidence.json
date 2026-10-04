@@ -1,0 +1,986 @@
+{
+  "window_start": "2026-10-01 11:23:21+08:00",
+  "window_end": "2026-10-04 11:23:21+08:00",
+  "production_head": "a8853dea1207163aaa412974dddfbc050ce3eeea",
+  "72h": {
+    "api": {
+      "calls": 164,
+      "input": 694446,
+      "output": 129265,
+      "cached_reported": 243522,
+      "cache_unknown_calls": 34,
+      "failed": 0
+    },
+    "estimate": {
+      "calls": 3,
+      "input": 4945,
+      "output": 0,
+      "cached_reported": 0,
+      "cache_unknown_calls": 3,
+      "failed": 2
+    },
+    "groups": [
+      {
+        "caller": "agent_executor.run_stream",
+        "model": "qwen3.8-max",
+        "source": "api",
+        "calls": 28,
+        "input": 380859,
+        "output": 20439,
+        "cached_reported": 197888,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "agent_executor.run_stream",
+        "model": "qwen3.6-flash",
+        "source": "api",
+        "calls": 10,
+        "input": 97810,
+        "output": 4070,
+        "cached_reported": 22978,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "food_recognition.from_base64",
+        "model": "qwen3.8-max",
+        "source": "api",
+        "calls": 6,
+        "input": 90186,
+        "output": 4992,
+        "cached_reported": 19584,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "food_recognition.from_base64",
+        "model": "qwen3.6-flash",
+        "source": "api",
+        "calls": 5,
+        "input": 60653,
+        "output": 8024,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "genetic.snp_detail",
+        "model": "MiniMax-M2.5",
+        "source": "api",
+        "calls": 18,
+        "input": 16524,
+        "output": 14378,
+        "cached_reported": 768,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "life_event.extractor",
+        "model": "qwen3.6-flash",
+        "source": "api",
+        "calls": 34,
+        "input": 14169,
+        "output": 39337,
+        "cached_reported": 0,
+        "cache_unknown_calls": 34,
+        "failed": 0
+      },
+      {
+        "caller": "insight.llm_pattern_mining",
+        "model": "MiniMax-M2.5",
+        "source": "api",
+        "calls": 5,
+        "input": 11700,
+        "output": 6268,
+        "cached_reported": 2304,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "starter_polish",
+        "model": "deepseek-v4-flash",
+        "source": "api",
+        "calls": 19,
+        "input": 7349,
+        "output": 11277,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "health_trend.analyze",
+        "model": "MiniMax-M2.5",
+        "source": "api",
+        "calls": 18,
+        "input": 6907,
+        "output": 10050,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "agent_executor.run_stream",
+        "model": "deepseek-v4-flash",
+        "source": "api",
+        "calls": 10,
+        "input": 3573,
+        "output": 2798,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "agent_executor.run_stream",
+        "model": "qwen3.8-max",
+        "source": "estimate",
+        "calls": 1,
+        "input": 3473,
+        "output": 0,
+        "cached_reported": 0,
+        "cache_unknown_calls": 1,
+        "failed": 1
+      },
+      {
+        "caller": "health_analysis.analyze_issues",
+        "model": "MiniMax-M2.5",
+        "source": "api",
+        "calls": 1,
+        "input": 2018,
+        "output": 2529,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "insight.llm_pattern_mining",
+        "model": "MiniMax-M2.5",
+        "source": "estimate",
+        "calls": 1,
+        "input": 1302,
+        "output": 0,
+        "cached_reported": 0,
+        "cache_unknown_calls": 1,
+        "failed": 0
+      },
+      {
+        "caller": "food_recognition.from_base64",
+        "model": "deepseek-v4-flash",
+        "source": "api",
+        "calls": 4,
+        "input": 1117,
+        "output": 750,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "memory.dialog_extractor",
+        "model": "deepseek-v4-flash",
+        "source": "api",
+        "calls": 3,
+        "input": 1028,
+        "output": 215,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "multi_model_analyze",
+        "model": "MiniMax-M2.5",
+        "source": "api",
+        "calls": 3,
+        "input": 553,
+        "output": 4138,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "agent_executor.run_stream",
+        "model": "qwen3.6-flash",
+        "source": "estimate",
+        "calls": 1,
+        "input": 170,
+        "output": 0,
+        "cached_reported": 0,
+        "cache_unknown_calls": 1,
+        "failed": 1
+      }
+    ]
+  },
+  "24h": {
+    "api": {
+      "calls": 50,
+      "input": 194717,
+      "output": 43634,
+      "cached_reported": 52352,
+      "cache_unknown_calls": 9,
+      "failed": 0
+    },
+    "estimate": {
+      "calls": 0,
+      "input": 0,
+      "output": 0,
+      "cached_reported": 0,
+      "cache_unknown_calls": 0,
+      "failed": 0
+    },
+    "groups": [
+      {
+        "caller": "agent_executor.run_stream",
+        "model": "qwen3.8-max",
+        "source": "api",
+        "calls": 6,
+        "input": 68792,
+        "output": 4313,
+        "cached_reported": 31744,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "food_recognition.from_base64",
+        "model": "qwen3.8-max",
+        "source": "api",
+        "calls": 4,
+        "input": 59771,
+        "output": 2044,
+        "cached_reported": 19584,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "food_recognition.from_base64",
+        "model": "qwen3.6-flash",
+        "source": "api",
+        "calls": 3,
+        "input": 36239,
+        "output": 5556,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "genetic.snp_detail",
+        "model": "MiniMax-M2.5",
+        "source": "api",
+        "calls": 9,
+        "input": 8262,
+        "output": 7372,
+        "cached_reported": 768,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "agent_executor.run_stream",
+        "model": "qwen3.6-flash",
+        "source": "api",
+        "calls": 1,
+        "input": 7427,
+        "output": 977,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "insight.llm_pattern_mining",
+        "model": "MiniMax-M2.5",
+        "source": "api",
+        "calls": 2,
+        "input": 4784,
+        "output": 2219,
+        "cached_reported": 256,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "life_event.extractor",
+        "model": "qwen3.6-flash",
+        "source": "api",
+        "calls": 9,
+        "input": 3748,
+        "output": 11246,
+        "cached_reported": 0,
+        "cache_unknown_calls": 9,
+        "failed": 0
+      },
+      {
+        "caller": "starter_polish",
+        "model": "deepseek-v4-flash",
+        "source": "api",
+        "calls": 7,
+        "input": 2702,
+        "output": 4200,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "health_trend.analyze",
+        "model": "MiniMax-M2.5",
+        "source": "api",
+        "calls": 6,
+        "input": 2288,
+        "output": 3401,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "memory.dialog_extractor",
+        "model": "deepseek-v4-flash",
+        "source": "api",
+        "calls": 1,
+        "input": 328,
+        "output": 39,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "food_recognition.from_base64",
+        "model": "deepseek-v4-flash",
+        "source": "api",
+        "calls": 1,
+        "input": 193,
+        "output": 142,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      },
+      {
+        "caller": "multi_model_analyze",
+        "model": "MiniMax-M2.5",
+        "source": "api",
+        "calls": 1,
+        "input": 183,
+        "output": 2125,
+        "cached_reported": 0,
+        "cache_unknown_calls": 0,
+        "failed": 0
+      }
+    ]
+  },
+  "messages": {
+    "counts": {
+      "user": 36,
+      "assistant": 40
+    },
+    "user_chars": {
+      "total": 654,
+      "max": 70
+    },
+    "with_usage_by_status": {
+      "complete": {
+        "turns": 10,
+        "input": 240114,
+        "calls": 20
+      },
+      "error": {
+        "turns": 15,
+        "input": 389394,
+        "calls": 29
+      }
+    },
+    "without_usage": 15,
+    "laya": {
+      "n": 32,
+      "statuses": {
+        "fallback": 7,
+        "abstained": 24,
+        "accepted": 1
+      },
+      "reasons": {
+        "timeout": 7,
+        "low_confidence": 24,
+        "": 1
+      },
+      "timeout_ms": [
+        5025,
+        5000,
+        5051,
+        5040,
+        5002,
+        5015,
+        5002
+      ],
+      "reported_input": 2339
+    },
+    "latest_24h": [
+      {
+        "at": "2026-10-03 12:03:34.945046",
+        "chars": 305,
+        "status": "complete",
+        "calls": 2,
+        "input": 21196,
+        "tools": [],
+        "quality_flags": []
+      },
+      {
+        "at": "2026-10-03 12:05:53.226007",
+        "chars": 53,
+        "status": "complete",
+        "calls": null,
+        "input": null,
+        "tools": [],
+        "quality_flags": []
+      },
+      {
+        "at": "2026-10-03 13:00:46.016790",
+        "chars": 50,
+        "status": "error",
+        "calls": 3,
+        "input": 52551,
+        "tools": [
+          "health_query",
+          "health_manage"
+        ],
+        "quality_flags": []
+      },
+      {
+        "at": "2026-10-03 16:05:11.707646",
+        "chars": 111,
+        "status": "error",
+        "calls": 2,
+        "input": 26513,
+        "tools": [
+          "knowledge_search",
+          "query_lab_indicators",
+          "health_query"
+        ],
+        "quality_flags": []
+      },
+      {
+        "at": "2026-10-03 16:06:51.046926",
+        "chars": 44,
+        "status": "error",
+        "calls": 3,
+        "input": 19748,
+        "tools": [],
+        "quality_flags": [
+          "protocol_leak"
+        ]
+      },
+      {
+        "at": "2026-10-03 18:57:18.750950",
+        "chars": 53,
+        "status": "complete",
+        "calls": null,
+        "input": null,
+        "tools": [],
+        "quality_flags": []
+      },
+      {
+        "at": "2026-10-04 09:01:08.622406",
+        "chars": 375,
+        "status": null,
+        "calls": null,
+        "input": null,
+        "tools": null,
+        "quality_flags": null
+      },
+      {
+        "at": "2026-10-04 09:01:09.798686",
+        "chars": 289,
+        "status": null,
+        "calls": null,
+        "input": null,
+        "tools": null,
+        "quality_flags": null
+      },
+      {
+        "at": "2026-10-04 09:26:59.602220",
+        "chars": 53,
+        "status": "complete",
+        "calls": null,
+        "input": null,
+        "tools": [],
+        "quality_flags": []
+      },
+      {
+        "at": "2026-10-04 10:09:27.373718",
+        "chars": 455,
+        "status": "complete",
+        "calls": 2,
+        "input": 29958,
+        "tools": [
+          "environment_check"
+        ],
+        "quality_flags": []
+      },
+      {
+        "at": "2026-10-04 10:10:31.764515",
+        "chars": 327,
+        "status": "complete",
+        "calls": 2,
+        "input": 22263,
+        "tools": [],
+        "quality_flags": []
+      }
+    ]
+  },
+  "prefix": {
+    "n": 25,
+    "profiles": {
+      "full": 23,
+      "minimal": 2
+    },
+    "tool_counts": {
+      "11": 14,
+      "0": 6,
+      "17": 5
+    },
+    "sum_proxy": {
+      "system_tokens": 47952,
+      "history_tokens": 6359,
+      "turn_tokens": 6955,
+      "tool_tokens": 91945,
+      "payload_tokens": 153232
+    },
+    "lite_with_tools": [
+      {
+        "tool_count": 11,
+        "system_proxy": 163,
+        "turn_proxy": 2,
+        "tool_proxy": 4160,
+        "total_proxy": 4326
+      },
+      {
+        "tool_count": 11,
+        "system_proxy": 163,
+        "turn_proxy": 2,
+        "tool_proxy": 4160,
+        "total_proxy": 4326
+      },
+      {
+        "tool_count": 11,
+        "system_proxy": 163,
+        "turn_proxy": 7,
+        "tool_proxy": 4160,
+        "total_proxy": 4330
+      },
+      {
+        "tool_count": 17,
+        "system_proxy": 163,
+        "turn_proxy": 379,
+        "tool_proxy": 6741,
+        "total_proxy": 7284
+      },
+      {
+        "tool_count": 17,
+        "system_proxy": 163,
+        "turn_proxy": 60,
+        "tool_proxy": 6741,
+        "total_proxy": 6964
+      },
+      {
+        "tool_count": 11,
+        "system_proxy": 163,
+        "turn_proxy": 60,
+        "tool_proxy": 4160,
+        "total_proxy": 4384
+      },
+      {
+        "tool_count": 17,
+        "system_proxy": 163,
+        "turn_proxy": 302,
+        "tool_proxy": 6741,
+        "total_proxy": 7206
+      }
+    ],
+    "rows": [
+      {
+        "model": "qwen3.6-flash",
+        "sys_hash": "51fba2bf059a",
+        "prefix_hash": "fbd54de667e3",
+        "prefix_chars": 698,
+        "total_chars": 663,
+        "approx_tokens": 165,
+        "context_profile": "full",
+        "system_tokens": 163,
+        "history_tokens": 0,
+        "turn_tokens": 2,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 4326
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "09a6c76534a7",
+        "prefix_hash": "5d35030ce0e0",
+        "prefix_chars": 11644,
+        "total_chars": 13480,
+        "approx_tokens": 3370,
+        "context_profile": "full",
+        "system_tokens": 2842,
+        "history_tokens": 168,
+        "turn_tokens": 359,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 7530
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "c45e2f192672",
+        "prefix_hash": "a5a3dbdd8e8d",
+        "prefix_chars": 12066,
+        "total_chars": 13165,
+        "approx_tokens": 3291,
+        "context_profile": "full",
+        "system_tokens": 2860,
+        "history_tokens": 68,
+        "turn_tokens": 362,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 7451
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "c45e2f192672",
+        "prefix_hash": "a5a3dbdd8e8d",
+        "prefix_chars": 12066,
+        "total_chars": 15478,
+        "approx_tokens": 3869,
+        "context_profile": "full",
+        "system_tokens": 2860,
+        "history_tokens": 646,
+        "turn_tokens": 362,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 8029
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "c45e2f192672",
+        "prefix_hash": "a5a3dbdd8e8d",
+        "prefix_chars": 12066,
+        "total_chars": 15848,
+        "approx_tokens": 3962,
+        "context_profile": "full",
+        "system_tokens": 2860,
+        "history_tokens": 739,
+        "turn_tokens": 362,
+        "tool_tokens": 0,
+        "tool_count": 0,
+        "payload_tokens": 3962
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "acfd6bffed7c",
+        "prefix_hash": "4a38176b1c7a",
+        "prefix_chars": 12708,
+        "total_chars": 13887,
+        "approx_tokens": 3471,
+        "context_profile": "full",
+        "system_tokens": 2949,
+        "history_tokens": 119,
+        "turn_tokens": 403,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 7632
+      },
+      {
+        "model": "qwen3.6-flash",
+        "sys_hash": "a09a858912cf",
+        "prefix_hash": "5eaf9b5c5dd8",
+        "prefix_chars": 698,
+        "total_chars": 663,
+        "approx_tokens": 165,
+        "context_profile": "minimal",
+        "system_tokens": 163,
+        "history_tokens": 0,
+        "turn_tokens": 2,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 4326
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "b567fb1d1073",
+        "prefix_hash": "3669b707e09e",
+        "prefix_chars": 7480,
+        "total_chars": 8275,
+        "approx_tokens": 2068,
+        "context_profile": "minimal",
+        "system_tokens": 1818,
+        "history_tokens": 0,
+        "turn_tokens": 250,
+        "tool_tokens": 0,
+        "tool_count": 0,
+        "payload_tokens": 2068
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "c45e2f192672",
+        "prefix_hash": "5cbef3c32582",
+        "prefix_chars": 11718,
+        "total_chars": 12448,
+        "approx_tokens": 3112,
+        "context_profile": "full",
+        "system_tokens": 2860,
+        "history_tokens": 0,
+        "turn_tokens": 251,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 7272
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "c45e2f192672",
+        "prefix_hash": "5cbef3c32582",
+        "prefix_chars": 11718,
+        "total_chars": 12862,
+        "approx_tokens": 3215,
+        "context_profile": "full",
+        "system_tokens": 2860,
+        "history_tokens": 103,
+        "turn_tokens": 251,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 7375
+      },
+      {
+        "model": "qwen3.6-flash",
+        "sys_hash": "2036857b22c2",
+        "prefix_hash": "64ecf6a2e92d",
+        "prefix_chars": 698,
+        "total_chars": 681,
+        "approx_tokens": 170,
+        "context_profile": "full",
+        "system_tokens": 163,
+        "history_tokens": 0,
+        "turn_tokens": 7,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 4330
+      },
+      {
+        "model": "qwen3.6-flash",
+        "sys_hash": "b076d8676bbc",
+        "prefix_hash": "a5675794b7c8",
+        "prefix_chars": 698,
+        "total_chars": 2171,
+        "approx_tokens": 542,
+        "context_profile": "full",
+        "system_tokens": 163,
+        "history_tokens": 0,
+        "turn_tokens": 379,
+        "tool_tokens": 6741,
+        "tool_count": 17,
+        "payload_tokens": 7284
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "027e83bb9fb3",
+        "prefix_hash": "464667d80a19",
+        "prefix_chars": 12754,
+        "total_chars": 14943,
+        "approx_tokens": 3735,
+        "context_profile": "full",
+        "system_tokens": 2930,
+        "history_tokens": 152,
+        "turn_tokens": 653,
+        "tool_tokens": 0,
+        "tool_count": 0,
+        "payload_tokens": 3735
+      },
+      {
+        "model": "qwen3.6-flash",
+        "sys_hash": "7d96903ad015",
+        "prefix_hash": "0cf181aaeaa2",
+        "prefix_chars": 698,
+        "total_chars": 892,
+        "approx_tokens": 223,
+        "context_profile": "full",
+        "system_tokens": 163,
+        "history_tokens": 0,
+        "turn_tokens": 60,
+        "tool_tokens": 6741,
+        "tool_count": 17,
+        "payload_tokens": 6964
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "8b0199b15750",
+        "prefix_hash": "e0464d68d45a",
+        "prefix_chars": 13713,
+        "total_chars": 14869,
+        "approx_tokens": 3717,
+        "context_profile": "full",
+        "system_tokens": 2930,
+        "history_tokens": 438,
+        "turn_tokens": 348,
+        "tool_tokens": 6741,
+        "tool_count": 17,
+        "payload_tokens": 10459
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "8b0199b15750",
+        "prefix_hash": "e0464d68d45a",
+        "prefix_chars": 13713,
+        "total_chars": 15215,
+        "approx_tokens": 3803,
+        "context_profile": "full",
+        "system_tokens": 2930,
+        "history_tokens": 525,
+        "turn_tokens": 348,
+        "tool_tokens": 6741,
+        "tool_count": 17,
+        "payload_tokens": 10545
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "08046bd0b2bf",
+        "prefix_hash": "44eed363d14f",
+        "prefix_chars": 9455,
+        "total_chars": 10409,
+        "approx_tokens": 2602,
+        "context_profile": "full",
+        "system_tokens": 1778,
+        "history_tokens": 457,
+        "turn_tokens": 366,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 6762
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "08046bd0b2bf",
+        "prefix_hash": "44eed363d14f",
+        "prefix_chars": 9455,
+        "total_chars": 11905,
+        "approx_tokens": 2976,
+        "context_profile": "full",
+        "system_tokens": 1778,
+        "history_tokens": 831,
+        "turn_tokens": 366,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 7136
+      },
+      {
+        "model": "qwen3.6-flash",
+        "sys_hash": "9e038fe80a62",
+        "prefix_hash": "855e03d5e12e",
+        "prefix_chars": 698,
+        "total_chars": 895,
+        "approx_tokens": 223,
+        "context_profile": "full",
+        "system_tokens": 163,
+        "history_tokens": 0,
+        "turn_tokens": 60,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 4384
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "08046bd0b2bf",
+        "prefix_hash": "218b6cc3424f",
+        "prefix_chars": 9868,
+        "total_chars": 10709,
+        "approx_tokens": 2677,
+        "context_profile": "full",
+        "system_tokens": 1778,
+        "history_tokens": 542,
+        "turn_tokens": 356,
+        "tool_tokens": 0,
+        "tool_count": 0,
+        "payload_tokens": 2677
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "08046bd0b2bf",
+        "prefix_hash": "a4928a6d0c2d",
+        "prefix_chars": 11393,
+        "total_chars": 10782,
+        "approx_tokens": 2695,
+        "context_profile": "full",
+        "system_tokens": 1778,
+        "history_tokens": 898,
+        "turn_tokens": 18,
+        "tool_tokens": 0,
+        "tool_count": 0,
+        "payload_tokens": 2695
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "8985a60554d0",
+        "prefix_hash": "b03eb10464de",
+        "prefix_chars": 12282,
+        "total_chars": 12999,
+        "approx_tokens": 3249,
+        "context_profile": "full",
+        "system_tokens": 3000,
+        "history_tokens": 0,
+        "turn_tokens": 249,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 7410
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "8985a60554d0",
+        "prefix_hash": "b03eb10464de",
+        "prefix_chars": 12282,
+        "total_chars": 13469,
+        "approx_tokens": 3367,
+        "context_profile": "full",
+        "system_tokens": 3000,
+        "history_tokens": 117,
+        "turn_tokens": 249,
+        "tool_tokens": 4160,
+        "tool_count": 11,
+        "payload_tokens": 7527
+      },
+      {
+        "model": "qwen3.6-flash",
+        "sys_hash": "8acd8c737271",
+        "prefix_hash": "4c6c6e90e65f",
+        "prefix_chars": 698,
+        "total_chars": 1860,
+        "approx_tokens": 465,
+        "context_profile": "full",
+        "system_tokens": 163,
+        "history_tokens": 0,
+        "turn_tokens": 302,
+        "tool_tokens": 6741,
+        "tool_count": 17,
+        "payload_tokens": 7206
+      },
+      {
+        "model": "qwen3.8-max",
+        "sys_hash": "8985a60554d0",
+        "prefix_hash": "33a4e4871e16",
+        "prefix_chars": 15037,
+        "total_chars": 16590,
+        "approx_tokens": 4147,
+        "context_profile": "full",
+        "system_tokens": 3000,
+        "history_tokens": 556,
+        "turn_tokens": 590,
+        "tool_tokens": 0,
+        "tool_count": 0,
+        "payload_tokens": 4147
+      }
+    ]
+  },
+  "schema_proxy_measurement": {
+    "full": 6741,
+    "fast": 3437,
+    "analysis": 2873,
+    "recovery": 2349,
+    "knowledge": 207,
+    "weather": 141,
+    "unit": "serialized Unicode characters // 4; not actual provider tokens"
+  },
+  "limitations": [
+    "No raw outbound prompts or model responses archived",
+    "Persisted final responses and provider usage are different evidence surfaces",
+    "Partial prefix log coverage; no per-call run identity in prefix lines",
+    "Caller attribution leaks after food vision set_caller",
+    "Window spans deployments; historical failures may already be fixed",
+    "Message naive timestamps verified against linked usage as local wall time"
+  ]
+}

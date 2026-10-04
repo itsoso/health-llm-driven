@@ -1,0 +1,225 @@
+{
+  "date": "2026-10-04",
+  "remote_baseline": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+  "candidate": "uncommitted_local_worktree",
+  "api_replay": {
+    "method": "Fixed final answer frames from real Pi synthetic tests; same qwen3.8-max, temperature0. Replaced static triage fixture sentinel with the same real worldview/triage text in both variants. Only final answer requests replayed, not end-to-end live execution.",
+    "measurements": [
+      {
+        "case": "composed_read",
+        "enabled": false,
+        "model": [
+          "qwen3.8-max"
+        ],
+        "input_tokens": 7329,
+        "output_tokens": 1974,
+        "token_sources": [
+          "api"
+        ],
+        "cached_tokens": [
+          0
+        ],
+        "sample_wall_seconds": 46.01,
+        "finish_reason": "stop"
+      },
+      {
+        "case": "composed_read",
+        "enabled": true,
+        "model": [
+          "qwen3.8-max"
+        ],
+        "input_tokens": 5753,
+        "output_tokens": 898,
+        "token_sources": [
+          "api"
+        ],
+        "cached_tokens": [
+          0
+        ],
+        "sample_wall_seconds": 23.47,
+        "finish_reason": "stop"
+      },
+      {
+        "case": "diet_read",
+        "enabled": false,
+        "model": [
+          "qwen3.8-max"
+        ],
+        "input_tokens": 4850,
+        "output_tokens": 773,
+        "token_sources": [
+          "api"
+        ],
+        "cached_tokens": [
+          2048
+        ],
+        "sample_wall_seconds": 20.42,
+        "finish_reason": "stop"
+      },
+      {
+        "case": "diet_read",
+        "enabled": true,
+        "model": [
+          "qwen3.8-max"
+        ],
+        "input_tokens": 3274,
+        "output_tokens": 892,
+        "token_sources": [
+          "api"
+        ],
+        "cached_tokens": [
+          0
+        ],
+        "sample_wall_seconds": 20.1,
+        "finish_reason": "stop"
+      }
+    ],
+    "quality_review": "All four responses stopped normally. Candidate composed answer preserves sparse observations, historical diagnosis as background, no treatment or current-risk inference; candidate diet answer does not invent food identity or completeness. Synthetic limited sample, not clinical validation.",
+    "cost_boundary": "Input includes cached tokens; output tokens and sample latency also vary. No billed-cost or p95 claim."
+  },
+  "captured_request_characters": [
+    {
+      "case": "composed_read",
+      "enabled": false,
+      "calls": 2,
+      "request_chars": [
+        17801,
+        15210
+      ],
+      "total_chars": 33011
+    },
+    {
+      "case": "composed_read",
+      "enabled": true,
+      "calls": 2,
+      "request_chars": [
+        17801,
+        11963
+      ],
+      "total_chars": 29764
+    },
+    {
+      "case": "diet_read",
+      "enabled": false,
+      "calls": 2,
+      "request_chars": [
+        24701,
+        9171
+      ],
+      "total_chars": 33872
+    },
+    {
+      "case": "diet_read",
+      "enabled": true,
+      "calls": 2,
+      "request_chars": [
+        19656,
+        5924
+      ],
+      "total_chars": 25580
+    }
+  ],
+  "live_gate": {
+    "status": "passed",
+    "llm_cost": "possible",
+    "suites": [
+      {
+        "suite": "invariants",
+        "total_cases": 12,
+        "passed": 12,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 1.0,
+        "avg_latency_ms": 0,
+        "regression": []
+      },
+      {
+        "suite": "health_agent_core",
+        "total_cases": 50,
+        "passed": 50,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 1.0,
+        "avg_latency_ms": 0,
+        "regression": []
+      },
+      {
+        "suite": "orchestrator",
+        "total_cases": 5,
+        "passed": 5,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 0.96,
+        "avg_latency_ms": 6778,
+        "regression": []
+      }
+    ],
+    "failed_suites": [],
+    "errors": [],
+    "trajectory_contract": {
+      "status": "passed",
+      "total_cases": 12,
+      "failed_cases": []
+    },
+    "trajectory_goldens": {
+      "status": "passed",
+      "fixture_version": 1,
+      "total_cases": 9,
+      "covered_scenarios": [
+        "duplicate_client_turn_side_effect",
+        "duplicate_same_record_side_effect",
+        "idempotent_client_turn_replay",
+        "meal_context_reestimate",
+        "missing_identity_receipt",
+        "read_only_delete_side_effect",
+        "simple_fruit_write",
+        "simple_water_write",
+        "uncertain_receipt_false_success"
+      ],
+      "failed_cases": []
+    }
+  },
+  "live_gate_limit": "The existing ephemeral harness emits missing llm_usage_logs warnings; not usage-persistence proof. API replay creates the usage table and verifies api token source.",
+  "change_gate": {
+    "status": "passed",
+    "live_llm_required": true,
+    "confirmed": true,
+    "confirmation_env": "HARNESS_LIVE_LLM_EVAL_CONFIRMED",
+    "expected_confirmation": null,
+    "changed_paths": [
+      "backend/app/services/agent_executor.py",
+      "backend/app/services/llm/prompt_transport.py"
+    ],
+    "matched_paths": [
+      {
+        "path": "backend/app/services/agent_executor.py",
+        "reason": "agent executor runtime"
+      },
+      {
+        "path": "backend/app/services/llm/prompt_transport.py",
+        "reason": "LLM service/runtime"
+      }
+    ],
+    "next_steps": "",
+    "errors": []
+  },
+  "verification": {
+    "initial_red": 4,
+    "telemetry_red": 1,
+    "final_targeted": 23,
+    "independent_review": "GO;42 independent tests plus500 random JSON and9 malformed cases; final23-test receipt checked",
+    "system_map": "passed",
+    "ruff": "No new findings;11 pre-existing executor findings retained.",
+    "broad_regression": {
+      "passed": 1210,
+      "failed": 1,
+      "failure": "A/B test reused idempotency key; fixed test-only unique client_turn_id,final23 passed. Product idempotency unchanged."
+    }
+  },
+  "sha256": {
+    "backend/app/services/agent_executor.py": "ab2d291b03d9cb79f22a02176505bccfe867b5242ddbda18775de008b3d62d80",
+    "backend/app/services/llm/prompt_transport.py": "a09fe0203c2748d76a82ad0cccae4ebf03db69d5edd5c86d251d0d087ee9d206",
+    "backend/tests/test_agent_prompt_architecture.py": "67e38217ad995ad2b98781f426c8b2c846cc550760882e1caf450fba1d6282b0"
+  },
+  "deployment": "not_committed_not_pushed_not_deployed"
+}

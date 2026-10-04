@@ -398,6 +398,16 @@ _CALLER_USER_UNSET = object()
 
 
 @contextmanager
+def caller_scope(caller: str):
+    """Attribute a nested call without changing request identity or accounting."""
+    token = _caller_ctx.set(caller)
+    try:
+        yield
+    finally:
+        _caller_ctx.reset(token)
+
+
+@contextmanager
 def background_ai_scope(caller: str, *, user_id: int):
     """Isolate a job's owner and accounting; this never grants AI permission.
 
@@ -950,6 +960,13 @@ def wrap_provider(provider):
                                          max_tokens=max_tokens, stream=False, **kwargs)
             return result
         except Exception as exc:
+            # A recovered response still represents multiple provider attempts;
+            # the report caller must not attest it as one original-model result.
+            from app.services.orchestrator_delivery import current_report_capture
+
+            report_capture = current_report_capture()
+            if report_capture is not None:
+                report_capture.invalidate()
             success = False
             caught_error = exc
             actual_model = (

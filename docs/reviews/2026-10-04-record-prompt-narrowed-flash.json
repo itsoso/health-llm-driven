@@ -1,0 +1,588 @@
+{
+  "status": "failed_contracts",
+  "model_id": "qwen3.8-flash",
+  "temperature": 0,
+  "max_tokens": 1200,
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "3251794ff14e60b1591f53a2d4b79ab048dd9d57ca75067a89049807e98b6e7f",
+    "backend/app/services/agent_tool_prompt_projection.py": "6b3bbee1fc6700ce62188997d7ab324ccb968d2a0cf96ade39042d1f8503a513",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/eval/prompt_projection_quality.py": "2e58aded2dcc414b70fb5d43e1afbf81f061f8f7ac873b25e519e1fb76f1696b",
+    "scripts/benchmark_record_prompt_projection.py": "f0c96a27e99a7b3f2c5b375e42d063825bc9291dce214d6a8bb46d4f75a4edda"
+  },
+  "comparisons": [
+    {
+      "case": "water_typed_milliliter",
+      "query": "记录喝水350毫升。",
+      "payload_changed": true,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "f4c622484815e94f93942da463944e6edc267adb007668d47c65b9697b9ee24b",
+          "schema_chars": 27727,
+          "input_tokens": 11908,
+          "output_tokens": 97,
+          "cached_tokens": [
+            10752
+          ],
+          "wall_seconds": 3.96,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_38ac9e3290af42b9a74cbe1a",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 350}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_typed_milliliter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "957d492758057ecadfb41c29f2f5081df7f061be369c7fb1d40e9c67efc3856a",
+          "schema_chars": 24329,
+          "input_tokens": 10626,
+          "output_tokens": 150,
+          "cached_tokens": [
+            8960
+          ],
+          "wall_seconds": 3.67,
+          "token_source": "api",
+          "response": {
+            "content": "请告诉我这次喝了多少毫升（例如 250 ml），以及是白水、茶还是咖啡，我再帮你记录。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "water_typed_milliliter",
+            "deterministic_status": "fail",
+            "failures": [
+              "health_record:water:missing_target"
+            ],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "observed_contract_drop": true,
+      "regressed": true,
+      "attribution": "changed_projection",
+      "input_token_reduction_percent": 10.77
+    },
+    {
+      "case": "water_half_liter",
+      "query": "记录喝水0.5升。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "51ddfd6c59b0b476fdeb540310ccf59cef5bcf0a2de50304c1f5afb576d7f7bc",
+          "schema_chars": 27727,
+          "input_tokens": 11908,
+          "output_tokens": 88,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 1.4,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_94cdc8034ad443ca84dfc28f",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 500}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_half_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "51ddfd6c59b0b476fdeb540310ccf59cef5bcf0a2de50304c1f5afb576d7f7bc",
+          "schema_chars": 27727,
+          "input_tokens": 11908,
+          "output_tokens": 81,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 1.48,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_dc16e4872cf44f57a9896b39",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 500}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_half_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "observed_contract_drop": false,
+      "regressed": false,
+      "attribution": "unchanged_control",
+      "input_token_reduction_percent": 0.0
+    },
+    {
+      "case": "water_one_liter",
+      "query": "今天记录我喝水1L。",
+      "payload_changed": false,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "c26b91890c7fc7a2bcffb576c94320ace77c10d8483975f393c23b8bca230156",
+          "schema_chars": 27727,
+          "input_tokens": 11908,
+          "output_tokens": 88,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 1.5,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_acaffd91b229486f848ce5e2",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 1000}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_one_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "c26b91890c7fc7a2bcffb576c94320ace77c10d8483975f393c23b8bca230156",
+          "schema_chars": 27727,
+          "input_tokens": 11908,
+          "output_tokens": 93,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 1.75,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_56e1cdef39694e8ab489a0cc",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 1000}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_one_liter",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "observed_contract_drop": false,
+      "regressed": false,
+      "attribution": "unchanged_control",
+      "input_token_reduction_percent": 0.0
+    },
+    {
+      "case": "water_ml_250",
+      "query": "记录喝水250ml",
+      "payload_changed": true,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "65ca2c51bf93c3a538fc5a46ca4ed283d48c8e21a5da694cae8ad11a1fc0b776",
+          "schema_chars": 24329,
+          "input_tokens": 10625,
+          "output_tokens": 395,
+          "cached_tokens": [
+            10240
+          ],
+          "wall_seconds": 9.95,
+          "token_source": "api",
+          "response": {
+            "content": "请告诉我您要记录的具体内容。如果是记录喝水，请提供饮水量（毫升，1–5000 ml），例如“喝了 250 ml 水”；我确认数值后才能写入记录。",
+            "finish_reason": "stop"
+          },
+          "quality": {
+            "case_id": "water_ml_250",
+            "deterministic_status": "fail",
+            "failures": [
+              "health_record:water:missing_target"
+            ],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "f234f40cfd01fa6f483ecd5089cbaa8f22e9eb0d02b00120987d9d76c79063ee",
+          "schema_chars": 27727,
+          "input_tokens": 11907,
+          "output_tokens": 106,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 2.29,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_f97c5bce0cfe4d7c894f57ac",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 250}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_ml_250",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "observed_contract_drop": true,
+      "regressed": true,
+      "attribution": "changed_projection",
+      "input_token_reduction_percent": 10.77
+    },
+    {
+      "case": "water_ml_upper_1000",
+      "query": "今天记录我喝水1000ML",
+      "payload_changed": true,
+      "variants": [
+        {
+          "variant": "baseline",
+          "payload_sha256": "30322f57ead2a4966df9246db448c4e0b6d74d27d907efa3e9c2933d75abda57",
+          "schema_chars": 27727,
+          "input_tokens": 11910,
+          "output_tokens": 94,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 1.77,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_40f5e7194a6b46f8a36805ee",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 1000}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_ml_upper_1000",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "candidate",
+          "payload_sha256": "dd3fd59071612749ac9d2f45b54473bbf59556f9876e0bf7d41077a9be48446b",
+          "schema_chars": 24329,
+          "input_tokens": 10628,
+          "output_tokens": 110,
+          "cached_tokens": [
+            10240
+          ],
+          "wall_seconds": 2.11,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_810bc7cb6af34ed5bdbc4432",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 1000}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_ml_upper_1000",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "observed_contract_drop": false,
+      "regressed": false,
+      "attribution": "changed_projection",
+      "input_token_reduction_percent": 10.76
+    },
+    {
+      "case": "water_polite_500",
+      "query": "请帮我记录饮水500毫升。",
+      "payload_changed": true,
+      "variants": [
+        {
+          "variant": "candidate",
+          "payload_sha256": "e0cb5a0db57f9cc562685a078d0d3a20793af04fe3cd57d0dbb1a9244403d191",
+          "schema_chars": 24329,
+          "input_tokens": 10628,
+          "output_tokens": 88,
+          "cached_tokens": [
+            10240
+          ],
+          "wall_seconds": 1.49,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_ca238b9d69e7486c92da3247",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 500}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_polite_500",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        },
+        {
+          "variant": "baseline",
+          "payload_sha256": "3fd804b060c785e9b35861791b3bb68b9b773f6c473f71d24426b55f4c5fa13f",
+          "schema_chars": 27727,
+          "input_tokens": 11910,
+          "output_tokens": 104,
+          "cached_tokens": [
+            11264
+          ],
+          "wall_seconds": 1.72,
+          "token_source": "api",
+          "response": {
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_d012feb83d8c424db1596648",
+                "type": "function",
+                "function": {
+                  "name": "health_record",
+                  "arguments": "{\"record_type\": \"water\", \"data\": {\"amount\": 500}}"
+                }
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          "quality": {
+            "case_id": "water_polite_500",
+            "deterministic_status": "pass",
+            "failures": [],
+            "checks": [
+              "explicit_tool_authorization",
+              "declared_schema_constraints",
+              "complete_logical_plan",
+              "fixture_answer_patterns",
+              "unverified_completion_claims"
+            ],
+            "unknowns": [
+              "clinical_quality_not_automatically_verified",
+              "free_text_semantic_completeness_not_verified",
+              "actual_tool_execution_and_persistence_not_verified"
+            ]
+          }
+        }
+      ],
+      "observed_contract_drop": false,
+      "regressed": false,
+      "attribution": "changed_projection",
+      "input_token_reduction_percent": 10.76
+    }
+  ],
+  "limits": [
+    "Fixed synthetic provider boundary replay; not whole-agent execution or production sampling.",
+    "Only data.description differs; all other prompt projection features stay enabled in both arms.",
+    "No proposed tool is executed; no persistence or clinical efficacy is established.",
+    "Deterministic contract checks do not prove general semantic or clinical quality; unknowns are retained.",
+    "Single bounded sample per arm cannot establish production P95, billing savings or noninferiority."
+  ]
+}

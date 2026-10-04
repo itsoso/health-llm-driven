@@ -106,6 +106,28 @@ def build_summary_message(summary_text: str) -> Dict[str, str]:
     return {"role": "user", "content": f"{_SUMMARY_HEADER}\n{summary_text}\n{_SUMMARY_FOOTER}"}
 
 
+def get_fold_summary_boundary(
+    cid: int, *, eligible_message_ids: set[int],
+) -> tuple[int, str] | None:
+    """Accept an earlier *owned* cut only when the caller bridges the gap.
+
+    A cache made for 15 recent messages can serve a six-message window without
+    another LLM call. The caller must include every original message after this
+    cut, not pretend this summary covers the requested overflow boundary.
+    """
+    cached = _cache_get(cid)
+    if not cached:
+        return None
+    through = cached.get("folded_thru_id")
+    summary = cached.get("summary")
+    if (
+        type(through) is not int or through not in eligible_message_ids
+        or not isinstance(summary, str) or not summary.strip()
+    ):
+        return None
+    return through, summary.strip()
+
+
 # ── 写路径(save_message 触发,后台 fail-soft)────────────────────────
 def schedule_fold_refresh(cid: int, keep_recent: int) -> None:
     """回合收尾后调:有运行中事件循环则后台折叠,否则(celery/同步上下文)静默跳过。"""
