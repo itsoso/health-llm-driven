@@ -480,3 +480,38 @@
   the original dirty checkout was not changed. This UI revision has not been
   committed, pushed, deployed or uploaded to TestFlight. No new native simulator
   acceptance is claimed by the mocked UI regression tests.
+
+### Menu-only entry native publication — 2026-10-04
+
+- User authorized publication and then explicitly requested a new TestFlight
+  package after the existing OTA native-baseline check blocked hot update.
+  The OTA boundary was preserved; no OTA vendor call was made.
+- Candidate `a8853dea1207163aaa412974dddfbc050ce3eeea` was integrated into main.
+  Independent G4 returned GO with 187 focused tests and TypeScript passing.
+  Main CI `37171099156` completed successfully. Fresh CI-mode voice/Agent
+  integration passed 35 tests (SQLite contract scope, not PostgreSQL proof).
+- Trusted validate `37171529156` passed. Canonical server staging independently
+  verified the candidate and exact CI. Initial source fetches timed out before
+  release authorization changed; preparing a local known-commit negotiation ref
+  and fetching canonical GitHub over HTTP/1.1 completed staging. No release or
+  vendor operation was retried. Normal retirement revoked 903's exact identities,
+  destroyed only its revoked loopback private key and installed a885 authorization;
+  historical evidence and the long-lived Expo credential were preserved.
+- Trusted release `37172029300` completed success, including backend, iOS build,
+  TestFlight upload and final result. Actual production HEAD and server SUCCEEDED
+  receipt both equal a885. Public health is healthy; API runs and DB/Redis/Celery
+  are connected. Backend/worker/beat are active with zero restarts.
+- New iOS STORE production build **1.3.4 (275)** is
+  `7c9396db-4bf1-44e1-bfc3-7e9ff187bfac`, FINISHED, bound to a885 and the existing
+  app/project. A separate fresh Expo GraphQL read confirmed exactly one submission,
+  `a8a03353-4deb-4c61-975f-d445c09a8df1`, FINISHED, IOS, correct project, ASC app
+  `6763569720`, and exact submitted build. This is a new package, not reused 274.
+- Workflow elapsed 13m15s (02:45:31–02:58:46 UTC). Jobs: source preflight 9s,
+  readiness 28s, backend 6m05s, iOS build job 8m05s, TestFlight job 4m13s.
+  Build/upload job times include their own dependency preparation and checks;
+  Apple processing and same-package download/acceptance durations are unknown.
+- Apple processing/tester availability remains unverified because the observed
+  App Store Connect browser session is at sign-in. No App Review or public App
+  Store submission was requested or performed. Same-package device/simulator
+  acceptance is not inferred from build/upload success. This entry is audit-only,
+  not a new runtime release candidate.
