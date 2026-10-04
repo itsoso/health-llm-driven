@@ -1,0 +1,235 @@
+{
+  "status": "failed",
+  "batch_id": "d2ef6963ba694414a892c63473d6c174",
+  "mode": "live",
+  "models": [
+    "qwen3.8-flash",
+    "qwen3.8-max"
+  ],
+  "variants": [
+    "baseline"
+  ],
+  "cases": [
+    "analysis_7d_read_failure"
+  ],
+  "planned_tasks": 2,
+  "max_provider_attempts": 6,
+  "per_task_call_cap": 3,
+  "per_task_tool_cap": 3,
+  "max_input_bytes_per_call": 262144,
+  "requested_max_output_tokens_per_call": 1200,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "eval_only",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "analysis_7d_read_failure",
+      "variant": "baseline",
+      "model": "qwen3.8-flash",
+      "status": "failed",
+      "calls": [
+        {
+          "call_index": 1,
+          "payload_sha256": "822ec214a2e4ac8d9f5ff415dd2b1078189a15529dc06682878886edcbc60c36",
+          "input_bytes": 30232,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 7546,
+          "output_tokens": 471,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 6.318475292006042
+        },
+        {
+          "call_index": 2,
+          "payload_sha256": "bf22fd484f2bfe6dacac5f2ba9b738712e164a8c1324545852492f7ad9a5c478",
+          "input_bytes": 31244,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 7765,
+          "output_tokens": 159,
+          "cached_tokens": [
+            7168
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 4.3435041250049835
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 3,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": null,
+      "live": true,
+      "wall_seconds": 13.427637333006714,
+      "database_errors": [],
+      "rejected_tools": [
+        {
+          "name": "health_query",
+          "reason": "budget"
+        }
+      ],
+      "knowledge_contracts": [],
+      "query": "分析我最近7天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "block",
+          "reason": "health_query_dimension_conflict",
+          "requested_read_scope": [
+            {
+              "dimension": "sleep",
+              "days": 7
+            },
+            {
+              "dimension": "sleep",
+              "days": 7
+            },
+            {
+              "dimension": "sleep",
+              "days": 7
+            },
+            {
+              "dimension": "sleep",
+              "days": 7
+            },
+            {
+              "dimension": "diet",
+              "days": 7
+            }
+          ]
+        },
+        {
+          "tool": "health_query",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "sleep",
+              "days": 7
+            }
+          ]
+        },
+        {
+          "tool": "health_query",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "sleep",
+              "days": 7
+            }
+          ]
+        },
+        {
+          "tool": "health_query",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "diet",
+              "days": 7
+            }
+          ]
+        },
+        {
+          "tool": "health_query",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "diet",
+              "days": 7
+            }
+          ]
+        }
+      ],
+      "error_type": "BenchmarkStopped",
+      "stop_reason": "unexpected_tool_or_tool_budget",
+      "evaluation_seconds": 13.581375042005675,
+      "repeat": 0
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "3a5d7cd2241763a4e11561e5c1b38a3a653a1580da1c970d4abe667c25ee8031",
+    "scripts/benchmark_prompt_full_task.py": "8bd0d8495ea13aa776e18cfc0b2c167b3a3525a846702f7a055c3c6c32ed77fe",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/app/services/agent_executor.py": "2fb2d65c090fbe0c6f91b0ba72c8661ab1837dd97c2123e461b9bfba1921f99d",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_longitudinal_read.py": "65c9c42e6fbbd7139d5c2a98ce86e4321d36fa9c8a579bd2b3378492ddf620fd",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+    "Per-sample synthetic user with real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-flash",
+      "variant": "baseline",
+      "tasks": 1,
+      "provider_attempts": 2,
+      "passed_contracts": 0,
+      "failed_tasks": 1,
+      "api_input_tokens_known": 15311,
+      "api_output_tokens_known": 630,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 1,
+      "wall_seconds_all_tasks": {
+        "p50": 13.427637333006714,
+        "p95": 13.427637333006714,
+        "p99": 13.427637333006714
+      }
+    }
+  ]
+}

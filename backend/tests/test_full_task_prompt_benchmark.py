@@ -490,3 +490,81 @@ async def test_exhausted_full_scope_read_failure_closes_without_model_read_loop(
     assert len(row["tool_contracts"]) == 2 and all(c["failed"] for c in row["tool_contracts"])
     assert row["outcome"] == "failed" and row["completion_status"] == "error"
     assert row["quality"]["health_rows_unchanged"] and row["quality"]["no_write_receipt"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_knowledge", [False, True])
+async def test_two_legitimate_single_reads_keep_existing_transient_retries(db, auth_user_and_headers, monkeypatch, with_knowledge):
+    from app.config import settings
+    from eval.full_task_prompt_benchmark import ScriptedProvider
+    monkeypatch.setattr(settings, "app_env", "test")
+    user, _ = auth_user_and_headers
+    scenario = Scenario("single-read-retries", 7, "read_failure", allow_knowledge=True)
+    seed_synthetic_records(db, user.id, scenario)
+    class Singles(ScriptedProvider):
+        async def chat_stream(self, **kwargs):
+            if not any(m.get("role") == "tool" for m in kwargs['messages']):
+                yield {"type": "tool_calls", "tool_calls": [
+                    {"id": "single-"+d, "type": "function", "function": {
+                        "name": "health_query", "arguments": json.dumps({"dimension": d, "days": 7})}}
+                    for d in ("sleep", "diet")] + ([
+                        {"id": "kb", "type": "function", "function": {"name": "knowledge_search", "arguments": json.dumps({"query": "睡眠和饮食"})}}] if with_knowledge else [])}
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+            else:
+                yield {"type": "content", "text": "本轮读取失败，无法确认睡眠和饮食记录。"}
+                yield {"type": "finish", "finish_reason": "stop"}
+    row = await run_sample(db, user.id, scenario, 'baseline', 'qwen3.8-max', CallBudget(3),
+                          live=False, provider_factory=lambda: Singles(scenario))
+    assert row['status'] == 'passed_contracts', row
+    assert row['tool_attempts'] == (5 if with_knowledge else 4)
+    assert row['tool_budget']['logical_executions'] == (3 if with_knowledge else 2)
+    assert row['outcome'] == 'failed'
+
+
+def test_tool_budget_bounds_both_levels_before_excess_dispatch():
+    from eval.full_task_prompt_benchmark import ToolBudget
+    per_request = ToolBudget()
+    per_request.begin_execution()
+    per_request.reserve_dispatch()
+    per_request.reserve_dispatch()
+    with pytest.raises(BenchmarkStopped, match='physical_tool_budget'):
+        per_request.reserve_dispatch()
+    total = ToolBudget()
+    for _ in range(3):
+        total.begin_execution()
+        total.reserve_dispatch()
+        total.reserve_dispatch()
+    with pytest.raises(BenchmarkStopped, match='logical_tool_budget'):
+        total.begin_execution()
+    with pytest.raises(BenchmarkStopped, match='physical_tool_budget'):
+        total.reserve_dispatch()
+    assert total.physical_dispatches == 6
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('count', [3, 4])
+async def test_logical_budget_counts_replays_and_blocks_excess_proposals_before_dispatch(db, auth_user_and_headers, monkeypatch, count):
+    from app.config import settings
+    from eval.full_task_prompt_benchmark import ScriptedProvider
+    monkeypatch.setattr(settings, 'app_env', 'test')
+    user, _ = auth_user_and_headers
+    scenario = Scenario('logical-replay', 7, 'available', allow_knowledge=True)
+    seed_synthetic_records(db, user.id, scenario)
+    class Repeated(ScriptedProvider):
+        async def chat_stream(self, **kwargs):
+            async for event in super().chat_stream(**kwargs):
+                if event.get('type') == 'tool_calls':
+                    event['tool_calls'] = [{'id': 'replay-'+str(i), 'type':'function', 'function':{
+                        'name':'health_query', 'arguments':json.dumps({'dimension':d,'days':7})}}
+                        for i,d in enumerate(['sleep','sleep','diet']+(['diet'] if count==4 else []))]
+                yield event
+    row = await run_sample(db,user.id,scenario,'baseline','qwen3.8-max',CallBudget(3),live=False,
+                           provider_factory=lambda:Repeated(scenario))
+    if count == 4:
+        assert row['stop_reason'] == 'model_tool_proposal_budget'
+        assert row['tool_attempts'] == 0
+    else:
+        assert row['status'] == 'passed_contracts', row
+        assert row['tool_budget']['logical_executions'] == 3
+        assert row['tool_budget']['model_proposals'] == 3
+        assert row['tool_attempts'] == 2

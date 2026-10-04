@@ -56,7 +56,8 @@ async def run(args):
               "mode": "live" if args.include_live_llm else "scripted" if args.scripted else "plan",
               "models": models, "variants": variants, "cases": [case.id for case in cases],
               "planned_tasks": tasks, "max_provider_attempts": args.max_api_calls, "per_task_call_cap": 3,
-              "per_task_tool_cap": 3, "max_input_bytes_per_call": 262144, "requested_max_output_tokens_per_call": 1200,
+              "tool_budget_protocol": "logical-and-physical-v2", "per_task_logical_tool_cap": 3,
+              "per_task_model_tool_proposal_cap": 3, "per_task_tool_cap": 6, "per_logical_dispatch_cap": 2, "max_input_bytes_per_call": 262144, "requested_max_output_tokens_per_call": 1200,
               "provider_timeout_seconds": 45, "task_timeout_seconds": 90,
               "candidate_disposition": "eval_only", "semantic_noninferiority": "not_established", "rows": [],
               "source_sha256": {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in (

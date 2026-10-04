@@ -35,6 +35,34 @@ class CallBudget:
         self.used += 1
 
 
+@dataclass
+class ToolBudget:
+    """Bound logical work separately from the runtime's one transient retry."""
+    model_proposals: int = 0
+    logical_executions: int = 0
+    physical_dispatches: int = 0
+    current_dispatches: int = 0
+
+    def reserve_proposals(self, count):
+        self.model_proposals += count
+        if self.model_proposals > 3:
+            raise BenchmarkStopped("model_tool_proposal_budget")
+
+    def begin_execution(self):
+        if self.logical_executions >= 3:
+            raise BenchmarkStopped("logical_tool_budget")
+        self.logical_executions += 1
+        self.current_dispatches = 0
+
+    def reserve_dispatch(self):
+        if self.physical_dispatches >= 6 or self.current_dispatches >= 2:
+            raise BenchmarkStopped("physical_tool_budget")
+        if not self.logical_executions:
+            raise BenchmarkStopped("dispatch_without_logical_execution")
+        self.physical_dispatches += 1
+        self.current_dispatches += 1
+
+
 @dataclass(frozen=True)
 class Scenario:
     id: str
@@ -105,8 +133,9 @@ def health_digest(db):
 class MeasuredProvider:
     provider_name = "bounded-eval"
 
-    def __init__(self, factory, model, budget, calls, *, live):
+    def __init__(self, factory, model, budget, calls, *, live, tool_budget=None):
         self.factory, self.model, self.budget, self.calls, self.live = factory, model, budget, calls, live
+        self.tool_budget = tool_budget or ToolBudget()
 
     async def chat(self, **kwargs):
         raise BenchmarkStopped("unexpected_nonstream_call")
@@ -128,13 +157,15 @@ class MeasuredProvider:
         self.calls.append(row)
         capture = begin_usage_capture()
         started, finish = perf_counter(), None
-        finish_event, finishes = None, 0
+        finish_event, finishes, proposals = None, 0, 0
         try:
             async with asyncio.timeout(45):
                 async with aclosing(self.factory().chat_stream(**wire)) as stream:
                     async for event in stream:
                         if event.get("type") == "content" and (event.get("text") or "").strip() and row["first_content_seconds"] is None:
                             row["first_content_seconds"] = perf_counter() - started
+                        if event.get("type") == "tool_calls":
+                            proposals += len(event.get("tool_calls") or [])
                         if event.get("type") == "finish":
                             finish = event.get("finish_reason")
                             finish_event, finishes = event, finishes + 1
@@ -148,6 +179,9 @@ class MeasuredProvider:
                     item.get("token_source") != "api" for item in usage["items"]
                 ):
                     raise BenchmarkStopped("missing_single_api_usage")
+            # Count all proposals, including denied/cached ones, after capturing
+            # provider usage but before Pi can dispatch the completed response.
+            self.tool_budget.reserve_proposals(proposals)
             # Some consumers stop at finish; validate usage before releasing it.
             yield finish_event
         except BaseException as exc:
@@ -299,9 +333,14 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                 allowed = {"health_query", "health_query_batch"}
                 if scenario.allow_knowledge:
                     allowed.add("knowledge_search")
-                if request.tool_name not in allowed or row["tool_attempts"] >= 3:
-                    row["rejected_tools"].append({"name": request.tool_name, "reason": "out_of_scope" if request.tool_name not in allowed else "budget"})
+                if request.tool_name not in allowed:
+                    row["rejected_tools"].append({"name": request.tool_name, "reason": "out_of_scope"})
                     raise BenchmarkStopped("unexpected_tool_or_tool_budget")
+                try:
+                    provider.tool_budget.reserve_dispatch()
+                except BenchmarkStopped:
+                    row["rejected_tools"].append({"name": request.tool_name, "reason": "budget"})
+                    raise
                 row["tool_attempts"] += 1
                 if request.tool_name == "knowledge_search":
                     # Actual Gateway and local reviewed-KB retrieval. The
@@ -333,6 +372,10 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                     async with aclosing(executor.run_stream(user_id, scenario.query, channel="typed", client_turn_id=uuid4().hex,
                         extra_context=json.dumps({"model_id": model}))) as events:
                         async for event in events:
+                            if event.get("event") == "tool_call":
+                                # Includes Pi replays and server preplans, never
+                                # counts a retry heartbeat as a new request.
+                                provider.tool_budget.begin_execution()
                             if event.get("event") == "token":
                                 text = event.get("data", {}).get("content", "")
                                 chunks.append(text)
@@ -342,6 +385,8 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                                 done = event["data"]
             finally:
                 row["wall_seconds"] = perf_counter() - task_started
+                row["tool_budget"] = dict(vars(provider.tool_budget))
+                row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined"} else "model_and_existing_server_fallback"
             if done is None:
                 raise BenchmarkStopped("missing_done")
             saved = db.get(AgentMessage, done.get("message_id"))

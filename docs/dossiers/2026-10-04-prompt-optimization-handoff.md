@@ -224,3 +224,7 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 独立复审 `f1ce9b9` 虽复跑 31 passed，仍给 G4 NO-GO：新终止条件排除了同步命令，却遗漏“佳明同步完成了吗”这一独立只读目标及 server-bound 续问；健康维度查询范围完整不等于整个任务目标完整。新增四例（当前句、续问、普通 Pi 与 panel 同批 Garmin 状态）全部 RED 后，增加 `resolve_sync_status_query(snapshot)` 排除，最终六文件 **199 passed**。保留 G4 失败，不以纯 sleep/diet live 通过覆盖该边界。
 
 纯读取异常的[真实复验](../reviews/2026-10-04-release-terminal-live-verification.json)在 `f1ce9b9` 上 Flash/Max 均通过：各一次模型调用、两次实际瞬态失败，真实保存 failed/error，没有虚构结果。[标准 live gate](../reviews/2026-10-04-release-final-live-regression.json) 5/5 通过，10 条 API usage 审计完整、零失败；离线 12/50、轨迹 12/9 通过。50 文件集成 3746 passed / 2 skipped，唯一旧实验断言仍要求失败合成轮，更新调用数预期后 55 passed；四臂的参数、真实回执、持久化、流文本与结果一致性断言继续保留。后续生产源码仅增加上述同步状态排除，不改模型提示词、参数修复预算或调用上限。
+
+固定 `6e50d4cff0839342058e0c263ec00c043fe496e7` 获独立 30 passed / G4 GO；新边界 PostgreSQL 25 passed。其[最后复验](../reviews/2026-10-04-release-final-terminal-live.json)仍因工具预算失败，完整保留：模型从重复 batch 修成两个合法 single；每个 single 按原有协议瞬态重试一次，sleep×2 + diet×2 需要四次真实派发，而原评测只允许三次。此处没有第三轮模型重复读。独立审查抽取 main/候选原始 wrapper，无 API 复现两 single=4 次派发、加 KB=5 次，两端一致，确认是评测预算定义不兼容既有协议，不能再修改 runtime 迎合旧 cap。
+
+评测 v2 将逻辑与物理口径分开：模型提案总数最多 3（含拒绝/缓存提案，在完整 provider usage 留证后、Pi 派发前检查）；逻辑工具执行事件最多 3（含 server preplan 与重放，来源单独标记）；每个逻辑执行最多 2 次底层派发，总派发最多 6；模型调用仍最多 3。原 API/字节/时限、日期/所有者/写入 oracle 均不变。新 RED 合法两单读失败；修后两单读加 KB、缓存重放、第四逻辑提案、第三单工具派发、第七总派发等负例与原回归共 39 passed。原 v1 失败不重评分为通过，也不拿作质量失败根因已修；新主干/候选须使用同一 v2 协议，单独留新证据。
