@@ -13003,6 +13003,41 @@ class AgentExecutor:
         scope = resolve_exercise_plan_scope(snapshot.envelope.text) if snapshot is not None else None
         return exercise_plan_evidence_outcomes(scope, self._turn_composed_read_executions) if scope else []
 
+    def _preplanned_owned_read_calls(
+        self, round_index: int, messages: list[dict], tools: list[dict], *, sealed: bool = False,
+    ) -> list[dict]:
+        """Skip only the planner for a new, closed, already-bound owned read.
+
+        This is a proposal to Pi, never execution authority. Historical turns,
+        references and medical/attachment routes retain the normal provider.
+        """
+        snapshot = self._agent_kernel_snapshot
+        message = self._current_turn_user_message or ""
+        match = re.fullmatch(r"(?:请)?分析我最近([1-9]|[12][0-9]|3[01])天的睡眠和饮食记录[。.!！]?", message)
+        if (
+            not getattr(settings, "domain_prompt_optimization", False)
+            or not getattr(settings, "owned_read_preplanning", False)
+            or round_index != 0 or sealed or not match or snapshot is None
+            or snapshot.intent.is_write or snapshot.actionable_references
+            or snapshot.envelope.user_id != self._current_user_id
+            or snapshot.context.user_id != self._current_user_id
+            or snapshot.envelope.text != message
+            or self._current_turn_has_attachment or self._read_only_turn
+            or self._agent_kernel_pending_confirmation_tools
+            or self._turn_sync_attempted
+            or sum(m.get("role") == "user" for m in messages) != 1
+            or any(m.get("role") in {"tool", "assistant"} or m.get("tool_calls") for m in messages)
+        ):
+            return []
+        calls = self._initial_composed_read_calls(round_index, tools)
+        if len(calls) != 1:
+            return []
+        queries = json.loads(calls[0]["function"]["arguments"])["queries"]
+        if (len(queries) != 2 or {q["dimension"] for q in queries} != {"sleep", "diet"}
+                or any(q.get("days") != int(match[1]) for q in queries)):
+            return []
+        return calls
+
     def _initial_composed_read_calls(self, round_index: int, tools: list[dict]) -> list[dict]:
         """Propose a skipped owned read through Pi; never dispatch outside its gateway."""
         snapshot = self._agent_kernel_snapshot
@@ -16595,6 +16630,7 @@ class AgentExecutor:
         # not a new summary request or authority to read another domain.
         daily_diet_evaluation = is_daily_diet_evaluation(self._turn_daily_read_plan)
         composed_synthesis_used = False
+        owned_read_preplanned = False
         record_write_requested = (
             completion_intent.primary == "write"
             and completion_intent.is_write
@@ -18915,18 +18951,26 @@ class AgentExecutor:
                                 else request["tools"]
                             )
                             self._composed_synthesis_retry_eligible = composed_messages is not None
-                            async for event in self._call_llm_stream(messages, round_tools):
-                                if event.get("type") == "content":
-                                    candidate += event.get("text") or ""
-                                    if first_token_at is None and candidate:
-                                        first_token_at = time.time()
-                                elif event.get("type") == "tool_calls":
-                                    proposed_calls = [
-                                        {**call, "type": call.get("type", "function")}
-                                        for call in (event.get("tool_calls") or [])
-                                    ]
-                                elif event.get("type") == "finish":
-                                    finish_reason = event.get("finish_reason")
+                            proposed_calls = self._preplanned_owned_read_calls(
+                                round_idx, messages, round_tools, sealed=health_advice_buffered,
+                            )
+                            server_preplanned_round = bool(proposed_calls)
+                            if server_preplanned_round:
+                                owned_read_preplanned = True
+                                finish_reason = "tool_calls"
+                            else:
+                                async for event in self._call_llm_stream(messages, round_tools):
+                                    if event.get("type") == "content":
+                                        candidate += event.get("text") or ""
+                                        if first_token_at is None and candidate:
+                                            first_token_at = time.time()
+                                    elif event.get("type") == "tool_calls":
+                                        proposed_calls = [
+                                            {**call, "type": call.get("type", "function")}
+                                            for call in (event.get("tool_calls") or [])
+                                        ]
+                                    elif event.get("type") == "finish":
+                                        finish_reason = event.get("finish_reason")
                             if proposed_calls:
                                 proposed_calls = [
                                     call for call in proposed_calls
@@ -18956,7 +19000,7 @@ class AgentExecutor:
                                         )
                                 if not proposed_calls:
                                     finish_reason = "stop"
-                            if proposed_calls:
+                            if proposed_calls and not server_preplanned_round:
                                 self._record_tool_model_name(self._last_provider_model_name)
                             if not proposed_calls and finish_reason == "stop" and not health_advice_buffered:
                                 proposed_calls = self._initial_composed_read_calls(round_idx, round_tools)
@@ -19166,8 +19210,10 @@ class AgentExecutor:
                                     elif event.get("type") == "finish":
                                         finish_reason = event.get("finish_reason")
                             elapsed = max(0, int((time.time() - started) * 1000))
-                            llm_rounds_ms.append(elapsed)
-                            rounds.append({"llm_gen_ms": elapsed, "tool_exec_ms": 0, "tools": []})
+                            if not server_preplanned_round:
+                                llm_rounds_ms.append(elapsed)
+                            rounds.append({"llm_gen_ms": 0 if server_preplanned_round else elapsed,
+                                           "tool_exec_ms": 0, "tools": []})
                             model_name = self._last_provider_model_name or model_name
                             if (
                                 round_idx == 0 and self._turn_daily_read_plan is not None
@@ -20040,6 +20086,7 @@ class AgentExecutor:
             "tool_decision_llm_rounds": len(llm_rounds_ms),
             "model_wait_ms": model_wait_ms,
             "model_call_count": model_call_count,
+            "owned_read_preplanned": owned_read_preplanned,
             **(
                 {
                     "deterministic_query": {

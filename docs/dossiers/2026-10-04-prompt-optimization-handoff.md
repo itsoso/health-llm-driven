@@ -281,3 +281,12 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 本批总体生产 NO-GO：空结果候选存在 Flash 规划修复成本；证据压缩收益在7天样本不足，Max样本变慢；先前两次营养护栏失败缺原答，另一条“查询”措辞样本未命中冻结日历范围，均原样保留。新诊断批成功不能覆盖这些失败。尚无可审生产接线、丰富档案/路由及精确生产 SHA 验证。本批未合并、推送或部署，不把实验收益报为线上收益。
 
 详情及下一步：[本批结论](../reviews/2026-10-07-prompt-next-candidates.md)、[结构化汇总及六份原始报告哈希](../reviews/2026-10-07-prompt-next-candidates-summary.json)。独立 reviewer `prompt_p1_review` 对两个固定代码提交均裁决 eval GO、生产 NO-GO。新增 answer-stage 留证只作用于合成评测，有 16000 字符上限及截断标记，不捕获 reasoning。
+
+
+## 2026-10-07 P2 runtime integration in progress
+
+用户再次“开干”授权实际接入。候选仅覆盖首个新会话的闭合本人睡眠+饮食分析（1–31 天），无历史/引用/附件/待确认/同步/医疗证据流程。服务端只产生 OwnedReadScope 已绑定的工具提案，仍经 Pi/Gateway、原读取、完整性与回答护栏。独立 `owned_read_preplanning` 默认关闭且还要求 `domain_prompt_optimization`；关闭独立开关恢复当前生产行为。写工具说明精简仍否决，另外两个实验仍 eval-only。
+
+先写失败测试再接入。85 项聚焦测试通过，早期 PostgreSQL 169 项通过（随后增加路由和独立开关测试，待刷新）。decision on/Laya 的 balanced 与 high_stakes 两臂都保持原质量模型，不放宽路由。perf 不把服务端规划计作模型调用。
+
+真实 rich-profile 筛查保留在 `2026-10-07-runtime-preplan-rich-live.json`：已完成三对六条均契约通过；31 天 Max 候选触发 45 秒 provider TimeoutError，原批停止，缺少该 baseline。此失败不得删除或当成功耗时。新三态配对、独立安全审查和完整 CI-mode 正在执行。当前 production **NO-GO**，独立开关未在线开启；尚未推送、合并或部署本轮代码。激活必须另有足够质量与长尾证据，不能用小样本代替计划中的完整非劣验证。

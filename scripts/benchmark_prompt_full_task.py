@@ -59,24 +59,25 @@ async def run(args):
               "tool_budget_protocol": "logical-and-physical-v2", "per_task_logical_tool_cap": 3,
               "per_task_model_tool_proposal_cap": 3, "per_task_tool_cap": 6, "per_logical_dispatch_cap": 2, "max_input_bytes_per_call": 262144, "requested_max_output_tokens_per_call": 1200,
               "provider_timeout_seconds": 45, "task_timeout_seconds": 90,
-              "candidate_disposition": "eval_only", "semantic_noninferiority": "not_established", "rows": [],
+              "candidate_disposition": "runtime_candidate_default_off" if "runtime_preplan" in variants else "eval_only", "semantic_noninferiority": "not_established", "rows": [],
               "source_sha256": {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in (
                   "backend/eval/full_task_prompt_benchmark.py", "scripts/benchmark_prompt_full_task.py",
                   "backend/eval/experimental_read_synthesis.py", "backend/eval/experimental_owned_read_preplan.py",
                   "backend/eval/experimental_empty_read_terminal.py", "backend/eval/experimental_read_evidence_format.py",
-                  "backend/app/services/agent_executor.py", "backend/app/services/agent_prompt_sections.py",
+                  "backend/app/config.py", "backend/app/services/agent_executor.py", "backend/app/services/agent_prompt_sections.py",
                   "backend/app/services/agent_longitudinal_read.py", "backend/app/services/agent_kernel/capability_policy.py",
                   "backend/app/services/agent_tool_prompt_projection.py", "backend/app/services/tool_schema_registry.py",
                   "backend/app/services/llm/providers/openai_provider.py", "backend/app/services/llm/usage_tracker.py")},
               "limits": ["Fixed synthetic read-task screen, not production load or full holdout coverage.",
                          "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
                          "Redis/Twin cache disabled; application prompts and read adapters retained.",
-                         "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+                         "Rich-profile cases seed synthetic allergies, chronic condition and medication; clinical/CGM context and optional local knowledge base remain absent.",
                          "Per-sample synthetic user with real audited consent; no production database.",
                          "First UI content is not a clinically useful-result metric.",
                          "Answer-stage visible content is retained before guards for synthetic-only diagnostics, capped at 16000 characters with explicit truncation. No reasoning content is captured.",
                          "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
                          "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+                         "Baseline and historical eval variants explicitly disable runtime preplanning to isolate its effect.",
                          "No real API token/latency claims in scripted mode; no automatic runtime enablement."]}
     def save():
         report["summary"] = summary(report["rows"])
@@ -150,7 +151,7 @@ def main():
     modes.add_argument("--include-live-llm", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model", choices=["qwen3.8-flash", "qwen3.8-max"], action="append")
-    parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact"], action="append")
+    parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan"], action="append")
     parser.add_argument("--baseline-only", action="store_true", help="Evaluate the runtime in this checkout without injecting an experimental variant.")
     parser.add_argument("--case", choices=[case.id for case in SCENARIOS], action="append")
     parser.add_argument("--repetitions", type=int, default=1)

@@ -17,7 +17,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 REFERENCE_NOW = datetime.fromisoformat("2026-09-13T23:30:00+08:00")
-VARIANTS = ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact")
+VARIANTS = ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan")
 ANSWER_DIAGNOSTIC_CHAR_LIMIT = 16000
 
 
@@ -72,6 +72,7 @@ class Scenario:
     request_text: str | None = None
     allow_knowledge: bool = False
     dense_records: bool = False
+    rich_profile: bool = False
 
     @property
     def query(self):
@@ -93,6 +94,8 @@ SCENARIOS = tuple(Scenario("owned_read_7d_" + state, 7, state)
              "复盘我最近7天的睡眠和饮食记录。", allow_knowledge=True),
     Scenario("analysis_7d_dense", 7, "available", allow_knowledge=True, dense_records=True),
     Scenario("analysis_31d_dense", 31, "available", allow_knowledge=True, dense_records=True),
+    Scenario("analysis_1d_rich", 1, "available", allow_knowledge=True, rich_profile=True),
+    Scenario("analysis_31d_rich", 31, "available", allow_knowledge=True, rich_profile=True),
 )
 
 
@@ -108,6 +111,17 @@ def seed_synthetic_records(db, user_id, scenario):
     require_ephemeral(db)
     from app.models.user import User
     from app.models.daily_health import GarminData, DietRecord
+    if scenario.rich_profile:
+        from app.models.user_profile import UserProfile
+        profile = db.query(UserProfile).filter_by(user_id=user_id).one_or_none()
+        if profile is None:
+            profile = UserProfile(user_id=user_id)
+            db.add(profile)
+        profile.height_cm, profile.current_weight_kg = 167, 49
+        profile.allergies = ["花生"]
+        profile.chronic_conditions = ["慢性肾病"]
+        profile.current_medications = [{"name": "合成长期处方", "dosage": "未知", "frequency": "未知"}]
+        db.flush()
     other = User(name="Synthetic other owner", email=f"other-{uuid4().hex}@example.invalid")
     db.add(other)
     db.flush()
@@ -238,7 +252,7 @@ class ScriptedProvider:
         else:
             answer = ("本轮查询失败，无法确认睡眠和饮食记录，请稍后重试。" if self.scenario.state == "read_failure" else
                       "睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。" if self.scenario.state == "empty" else
-                      "仅依据已返回样本作有限观察，不能据此判断完整健康状态。" if self.scenario.dense_records else
+                      "仅依据已返回样本作有限观察，不能据此判断完整健康状态。" if self.scenario.dense_records or self.scenario.days == 1 else
                       "睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。")
             yield {"type": "content", "text": answer}
             yield {"type": "finish", "finish_reason": "stop"}
@@ -309,7 +323,7 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                 row["database_errors"].append(type(context.original_exception).__name__)
             sqlalchemy_event.listen(engine, "handle_error", database_error)
             stack.callback(sqlalchemy_event.remove, engine, "handle_error", database_error)
-            for name, value in (("domain_prompt_optimization", True), ("agent_base_url", None), ("agent_api_key", None),
+            for name, value in (("domain_prompt_optimization", True), ("owned_read_preplanning", variant == "runtime_preplan"), ("agent_base_url", None), ("agent_api_key", None),
                                 ("task_tiered_routing", True), ("llm_auto_recovery_enabled", False),
                                 ("decision_mode", "off"), ("staged_response_mode", "off")):
                 stack.enter_context(patch.object(settings, name, value))
@@ -341,6 +355,10 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                     raise RuntimeError("synthetic_read_unavailable")
                 stack.enter_context(patch("app.services.agent_longitudinal_read.read_longitudinal_health_query", failed_read))
             executor = ae.AgentExecutor(db)
+            if variant != "runtime_preplan":
+                # Freeze the old runtime's model-first baseline. Historical
+                # eval variants remain independent; never stack preplanners.
+                stack.enter_context(patch.object(executor, "_preplanned_owned_read_calls", lambda *a, **k: []))
             stack.enter_context(patch.object(executor, "_resolve_chat_provider", lambda tools: (provider, tools)))
             dispatch = executor._dispatch_tool_request
             from app.services.agent_kernel.tool_gateway import ToolGateway
@@ -424,7 +442,7 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             finally:
                 row["wall_seconds"] = perf_counter() - task_started
                 row["tool_budget"] = dict(vars(provider.tool_budget))
-                row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined"} else "model_and_existing_server_fallback"
+                row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined", "runtime_preplan"} else "model_and_existing_server_fallback"
             if done is None:
                 raise BenchmarkStopped("missing_done")
             saved = db.get(AgentMessage, done.get("message_id"))
@@ -439,7 +457,9 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                        "expected_outcome": outcome == ("failed" if scenario.state == "read_failure" else "complete"),
                        "answer_present": bool(saved and saved.content.strip()), "semantic_review": "required"}
             row.update(quality=quality, agent_kernel=done.get("perf", {}).get("agent_kernel"), answer=saved.content if saved else None,
-                       outcome=outcome, completion_status=done.get("completion_status"))
+                       outcome=outcome, completion_status=done.get("completion_status"),
+                       runtime_preplanned=done.get("perf", {}).get("owned_read_preplanned", False),
+                       runtime_model_call_count=done.get("perf", {}).get("model_call_count"))
             row["status"] = "passed_contracts" if all(value for key, value in quality.items() if key != "semantic_review") and row["agent_kernel"] == "pi" else "failed_contracts"
     except BaseException as exc:
         row.update(status="cancelled" if isinstance(exc, asyncio.CancelledError) else "failed", error_type=type(exc).__name__)

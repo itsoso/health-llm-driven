@@ -25,6 +25,38 @@ class Scripted:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("days", [1, 31])
+async def test_runtime_variant_keeps_rich_profile_and_actual_model_call_counts(db, auth_user_and_headers, monkeypatch, days):
+    from app.config import settings
+    from eval.full_task_prompt_benchmark import ScriptedProvider
+    monkeypatch.setattr(settings, "app_env", "test")
+    user, _ = auth_user_and_headers
+    scenario = Scenario("runtime-rich", days, "available", rich_profile=True)
+    seed_synthetic_records(db, user.id, scenario)
+    inputs, rows = [], []
+    class Capture(ScriptedProvider):
+        async def chat_stream(self, **kwargs):
+            if not kwargs.get("tools"):
+                inputs.append(json.loads(kwargs["messages"][1]["content"]))
+            async for event in super().chat_stream(**kwargs):
+                yield event
+    for variant in ("baseline", "runtime_preplan"):
+        row = await run_sample(db, user.id, scenario, variant, "qwen3.8-max", CallBudget(3),
+                               live=False, provider_factory=lambda: Capture(scenario))
+        assert row["status"] == "passed_contracts", row
+        assert row["runtime_preplanned"] == (variant == "runtime_preplan")
+        assert row["runtime_model_call_count"] == len(row["calls"])
+        rows.append(row)
+    assert [len(r["calls"]) for r in rows] == [2, 1]
+    assert inputs[0] == inputs[1]
+    profile = inputs[1]["profile_context"]
+    assert profile["authority"] == "background_not_current_read_or_new_consent"
+    for token in ("花生", "慢性肾病", "合成长期处方"):
+        assert token in profile["text"]
+    assert rows[0]["answer"] == rows[1]["answer"]
+
+
+@pytest.mark.asyncio
 async def test_call_cap_is_checked_before_provider_creation():
     created, rows = [], []
     def factory():
