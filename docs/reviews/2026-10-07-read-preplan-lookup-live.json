@@ -1,0 +1,183 @@
+{
+  "status": "failed",
+  "batch_id": "2b257db008b44a0ab3169e74dce94580",
+  "mode": "live",
+  "models": [
+    "qwen3.8-flash",
+    "qwen3.8-max"
+  ],
+  "variants": [
+    "baseline",
+    "p2"
+  ],
+  "cases": [
+    "owned_lookup_7d_available"
+  ],
+  "planned_tasks": 4,
+  "max_provider_attempts": 12,
+  "per_task_call_cap": 3,
+  "tool_budget_protocol": "logical-and-physical-v2",
+  "per_task_logical_tool_cap": 3,
+  "per_task_model_tool_proposal_cap": 3,
+  "per_task_tool_cap": 6,
+  "per_logical_dispatch_cap": 2,
+  "max_input_bytes_per_call": 262144,
+  "requested_max_output_tokens_per_call": 1200,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "eval_only",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "owned_lookup_7d_available",
+      "variant": "baseline",
+      "model": "qwen3.8-flash",
+      "status": "failed_contracts",
+      "calls": [
+        {
+          "call_index": 1,
+          "payload_sha256": "76457c898faef1ce733dda432756c1d65e1bff2bd4a58c0b42d66387a71c747f",
+          "input_bytes": 37356,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 9594,
+          "output_tokens": 220,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 5.071835458977148
+        },
+        {
+          "call_index": 2,
+          "payload_sha256": "1f436aa0fadeb99638aa350fe6de268c07f6a130fb5f849530019f887f729661",
+          "input_bytes": 20373,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4915,
+          "output_tokens": 268,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": 3.3219497090321966,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 4.485626834037248
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": false,
+          "failed": false,
+          "dimensions": [
+            null
+          ],
+          "records_ok": false
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 10.408834833011497,
+      "live": true,
+      "wall_seconds": 10.53823237499455,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "查询我最近7天的睡眠和饮食记录。",
+      "allow_knowledge": false,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "allow",
+          "reason": "read_only_tool",
+          "requested_read_scope": [
+            {
+              "dimension": "sleep",
+              "days": 7
+            },
+            {
+              "dimension": "diet",
+              "days": 7
+            }
+          ]
+        }
+      ],
+      "tool_budget": {
+        "model_proposals": 1,
+        "logical_executions": 1,
+        "physical_dispatches": 1,
+        "current_dispatches": 1
+      },
+      "logical_tool_source": "model_and_existing_server_fallback",
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": false,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n**最近7天查询结果：**\n\n- **睡眠**：暂无可穿戴设备同步的睡眠数据。\n- **饮食**：近7天没有饮食记录（无餐次、无热量数据）。\n\n---\n\n如果你之前有手动记录过睡眠或饮食，可能因设备未同步或记录时间超出7天窗口而未显示。需要我帮你补录某天的数据，或者检查设备同步状态吗？",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 10.644202541967388,
+      "repeat": 0
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "518fcfac98862c5ef95055b0a80858c559d0b172ed0c0f3d8e6fa31082b49a78",
+    "scripts/benchmark_prompt_full_task.py": "c179c884d9e1f0794ffa5d50f0a429464d0b9caafeca2f20e8af9f4868f49a03",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/eval/experimental_empty_read_terminal.py": "ce67631cce0356b9a623664f482ebc64115b8ce8988d5d3fa87bdde08a179cc0",
+    "backend/eval/experimental_read_evidence_format.py": "a6833d3511cb673fd5d78ec5bf0067e379fe97f17a76b252a4ba10909ad3f2e4",
+    "backend/app/services/agent_executor.py": "88f581141fe09e35a40bae2d6b03339f085166e69f1640bb197204037a0a4242",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_longitudinal_read.py": "65c9c42e6fbbd7139d5c2a98ce86e4321d36fa9c8a579bd2b3378492ddf620fd",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+    "Per-sample synthetic user with real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-flash",
+      "variant": "baseline",
+      "tasks": 1,
+      "provider_attempts": 2,
+      "passed_contracts": 0,
+      "failed_tasks": 1,
+      "api_input_tokens_known": 14509,
+      "api_output_tokens_known": 488,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 1,
+      "wall_seconds_all_tasks": {
+        "p50": 10.53823237499455,
+        "p95": 10.53823237499455,
+        "p99": 10.53823237499455
+      }
+    }
+  ]
+}

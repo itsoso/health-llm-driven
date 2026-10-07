@@ -622,6 +622,62 @@
         "sequence": 49,
         "status": "completed",
         "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "2026-10-07 next batch authorized: independently evaluate verified-empty terminal, closed owned-read preplanning and repeated evidence-field interning. Start from dba00171e (runtime a10e642); preserve rejected write-description experiment. Runtime changes require fresh quality and safety evidence.",
+        "phase": "implementation",
+        "sequence": 50,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "415406202 eval candidates committed; 81 tests and offline harness passed. Independent safety reviewer resumed on fixed diff. Empty-terminal live 12/12 contracts; Flash planning-repair increases input despite faster terminal. P2 analysis batch stopped on baseline nutrition guard BLOCK before candidate; failure retained.",
+        "phase": "verification",
+        "sequence": 51,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "28 live screening samples retained, including 3 baseline failures and a semantic row-count error. Candidates stay eval-only. Added bounded synthetic answer diagnostics in 679508d6f; 83 tests and live regression gate passed. One diagnostic available-read batch (max12 calls) will retain pre-guard answers; never substitutes for failed screens.",
+        "phase": "verification",
+        "sequence": 52,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "2026-10-07 independent experimental batch complete: 83 targeted tests, map and live regression gates passed; 32 synthetic task samples /50 Qwen API attempts retained. Reviewer eval GO for 415406202 and679508d6f; production NO-GO. P2 limited three-state screens pass; evidence compaction/empty-terminal adverse samples and all baseline failures retained. No runtime imports, push, merge or deploy.",
+        "phase": "verification",
+        "sequence": 53,
+        "status": "completed",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Independent fixed-diff review: eval GO for 415406202 and 679508d6f. Empty-terminal 12, P2 empty/failure 8, P2 available diagnostic 4 semantic rows passed; evidence-format baseline row2 count error and row5 BLOCK preserved. Limited P2 screening may proceed to separate runtime integration review.",
+        "phase": "verification",
+        "sequence": 54,
+        "status": "passed",
+        "task_id": "next-candidates-20261007",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Production NO-GO for this new batch: no runtime wiring or exact runtime revision validation, incomplete rich-profile/routing coverage, adverse compaction latency and failed controls retained. This does not revoke the prior verified Oct4 deployment.",
+        "phase": "release",
+        "sequence": 55,
+        "status": "blocked",
+        "task_id": "next-candidates-20261007",
+        "tokens": 0
       }
     ]
   },
