@@ -181,3 +181,20 @@ async def test_prior_correction_stays_model_first_in_real_pi(db, owned_data, mon
     assert len(trace.calls) == 2 and not trace.unexpected
     assert not events[-1]["data"]["perf"]["owned_read_preplanned"]
     assert any("更正" in str(m.get("content")) for m in trace.calls[0][0])
+
+
+@pytest.mark.parametrize("path", ["send", "stream"])
+def test_preplanning_cannot_enter_without_ai_consent(client, db, auth_user_and_headers, monkeypatch, path):
+    from unittest.mock import Mock
+    from sqlalchemy.orm import sessionmaker
+    from app.services import ai_consent
+    _, headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(ai_consent, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    admit = Mock(side_effect=AssertionError("no Agent work before consent"))
+    monkeypatch.setattr("app.api.agent._admit_agent_runtime", admit)
+    response = client.post(f"/api/v1/agent/{path}", headers=headers,
+                           json={"message": QUERY, "client_turn_id": f"preplan-consent-{path}"})
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "ai_consent_required"
+    admit.assert_not_called()
