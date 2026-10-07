@@ -74,6 +74,7 @@ async def run(args):
                          "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
                          "Per-sample synthetic user with real audited consent; no production database.",
                          "First UI content is not a clinically useful-result metric.",
+                         "Answer-stage visible content is retained before guards for synthetic-only diagnostics, capped at 16000 characters with explicit truncation. No reasoning content is captured.",
                          "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
                          "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
                          "No real API token/latency claims in scripted mode; no automatic runtime enablement."]}

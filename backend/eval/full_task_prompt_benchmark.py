@@ -18,6 +18,7 @@ from uuid import uuid4
 
 REFERENCE_NOW = datetime.fromisoformat("2026-09-13T23:30:00+08:00")
 VARIANTS = ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact")
+ANSWER_DIAGNOSTIC_CHAR_LIMIT = 16000
 
 
 class BenchmarkStopped(BaseException):
@@ -168,7 +169,8 @@ class MeasuredProvider:
         row = {"call_index": self.budget.used, "payload_sha256": hashlib.sha256(payload).hexdigest(),
                "input_bytes": len(payload), "phase": "tools" if kwargs.get("tools") else "answer",
                "token_source": "unknown" if self.live else "synthetic", "input_tokens": None,
-               "output_tokens": None, "cached_tokens": None, "first_content_seconds": None}
+               "output_tokens": None, "cached_tokens": None, "first_content_seconds": None,
+               "answer_text": None if kwargs.get("tools") else "", "answer_text_truncated": False}
         self.calls.append(row)
         capture = begin_usage_capture()
         started, finish = perf_counter(), None
@@ -177,6 +179,15 @@ class MeasuredProvider:
             async with asyncio.timeout(45):
                 async with aclosing(self.factory().chat_stream(**wire)) as stream:
                     async for event in stream:
+                        # This harness admits only disposable synthetic data.
+                        # Keep visible answer content before output guards for
+                        # diagnosing BLOCK vs false positives. Never capture
+                        # reasoning events, requests, credentials or exceptions.
+                        if event.get("type") == "content" and row["answer_text"] is not None:
+                            text = event.get("text") or ""
+                            remaining = ANSWER_DIAGNOSTIC_CHAR_LIMIT - len(row["answer_text"])
+                            row["answer_text"] += text[:remaining]
+                            row["answer_text_truncated"] |= len(text) > remaining
                         if event.get("type") == "content" and (event.get("text") or "").strip() and row["first_content_seconds"] is None:
                             row["first_content_seconds"] = perf_counter() - started
                         if event.get("type") == "tool_calls":

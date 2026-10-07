@@ -40,6 +40,48 @@ async def test_call_cap_is_checked_before_provider_creation():
 
 
 @pytest.mark.asyncio
+async def test_answer_diagnostics_are_bounded_without_changing_stream_or_usage():
+    rows = []
+    class LongAnswer(Scripted):
+        async def chat_stream(self, **kwargs):
+            yield {"type": "content", "text": "合成" * 10000}
+            yield {"type": "finish", "finish_reason": "stop"}
+    provider = MeasuredProvider(LongAnswer, "synthetic", CallBudget(1), rows, live=False)
+    events = [event async for event in provider.chat_stream(messages=[])]
+    assert events[0]["text"] == "合成" * 10000
+    assert rows[0]["answer_text"] == "合成" * 8000
+    assert rows[0]["answer_text_truncated"] is True
+    assert rows[0]["token_source"] == "synthetic" and rows[0]["input_tokens"] is None
+
+
+@pytest.mark.asyncio
+async def test_blocked_answer_keeps_original_for_synthetic_semantic_review(db, auth_user_and_headers, monkeypatch):
+    from app.config import settings
+    from eval.full_task_prompt_benchmark import ScriptedProvider
+
+    monkeypatch.setattr(settings, "app_env", "test")
+    user, _ = auth_user_and_headers
+    scenario = Scenario("blocked-original", 7, "available")
+    seed_synthetic_records(db, user.id, scenario)
+    unsafe = "你全天营养摄入不足。"
+    class UnsafeAnswer(ScriptedProvider):
+        async def chat_stream(self, **kwargs):
+            if not kwargs.get("tools"):
+                yield {"type": "content", "text": unsafe}
+                yield {"type": "finish", "finish_reason": "stop"}
+            else:
+                async for event in super().chat_stream(**kwargs):
+                    yield event
+    row = await run_sample(db, user.id, scenario, "baseline", "qwen3.8-flash", CallBudget(3),
+                           live=False, provider_factory=lambda: UnsafeAnswer(scenario))
+    assert row["status"] == "failed_contracts" and row["outcome"] == "blocked"
+    assert row["calls"][-1]["answer_text"] == unsafe
+    assert row["calls"][-1]["answer_text_truncated"] is False
+    assert row["calls"][0]["answer_text"] is None
+    assert unsafe not in row["answer"]
+
+
+@pytest.mark.asyncio
 async def test_payload_and_output_bounds_do_not_mutate_original_arguments():
     captured, rows = [], []
     class Provider(Scripted):
