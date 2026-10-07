@@ -290,3 +290,12 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 先写失败测试再接入。85 项聚焦测试通过，早期 PostgreSQL 169 项通过（随后增加路由和独立开关测试，待刷新）。decision on/Laya 的 balanced 与 high_stakes 两臂都保持原质量模型，不放宽路由。perf 不把服务端规划计作模型调用。
 
 真实 rich-profile 筛查保留在 `2026-10-07-runtime-preplan-rich-live.json`：已完成三对六条均契约通过；31 天 Max 候选触发 45 秒 provider TimeoutError，原批停止，缺少该 baseline。此失败不得删除或当成功耗时。新三态配对、独立安全审查和完整 CI-mode 正在执行。当前 production **NO-GO**，独立开关未在线开启；尚未推送、合并或部署本轮代码。激活必须另有足够质量与长尾证据，不能用小样本代替计划中的完整非劣验证。
+
+
+### Runtime P2 final verification checkpoint (2026-10-07)
+
+实现 `f5aff2062` 与 consent 测试 `f3f5fca1c` 已本地提交。CI-mode 1211 passed/2 skipped；最终 PostgreSQL 100 passed、临时实例停止清理；聚焦85+随后consent2，独立重跑87及取消/部分失败对抗2通过，集合重叠不相加。标准 live gate 12/50/5全部通过，10次MiniMax API usage完整；System Map、阻断Ruff和秘密扫描通过。
+
+三份候选报告22流程/29次Qwen API尝试，包含2次超时（usage未知而非零）。最终源码匹配的三态12条全部契约通过，有记录12270→4724输入token、2→1API。丰富档案原批在独立开关之前，必须保留其源码差异，不能冒充最终提交验证。31天Max原批45.61秒超时，新预算限定诊断首对通过后第二候选45.36秒再超时，按规则停止。
+
+独立安全裁决：代码GO、默认关闭部署代码准入GO、生产激活NO-GO。另缺真实生产Decision/Laya路径及完整统计非劣/长尾证据；不能用局部绿或减少token替代。**本轮未push、merge、deploy，也未开启线上独立开关。**继续点为回答阶段超时诊断和冻结回放，不是重新启用写工具说明精简。完整证据见 [运行时报告](../reviews/2026-10-07-runtime-preplan-review.md) 与 [结构化汇总](../reviews/2026-10-07-runtime-preplan-summary.json)。

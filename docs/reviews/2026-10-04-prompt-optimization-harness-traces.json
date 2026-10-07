@@ -678,6 +678,44 @@
         "status": "blocked",
         "task_id": "next-candidates-20261007",
         "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "User authorized runtime P2 integration. Narrow first-turn closed analysis only, existing domain_prompt_optimization gate, no history/references/attachments/medical route. Source wiring and exact model-call accounting implemented; 81 focused tests passed, PostgreSQL and rich-profile live 1d/31d pairs running. Other experiments remain eval-only.",
+        "phase": "implementation",
+        "sequence": 56,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Runtime P2 f5aff2062 with independent default-off switch plus consent tests f3f5fca1c implemented. CI-mode 1211 passed/2 skipped; focused85 and consent2 passed. Three-state live12 contracts pass. Rich31d Max candidate timed out twice across retained original and bounded diagnostic; production activation NO-GO, no oracle/timeout relaxation or green-only retry. PG runtime/routing98 pass; incompatible SQLite-only harness selection27 rejects retained, clean supported100-case PG rerun underway.",
+        "phase": "verification",
+        "sequence": 57,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Independent fixed f5aff2062/f3f5fca1c code safety and default-off code admission GO. 87 focused + 2 cancellation/partial-read adversarial checks pass. All16 completed model answers faithful; failed reads remain failed. Not deployment completion.",
+        "phase": "verification",
+        "sequence": 58,
+        "status": "passed",
+        "task_id": "runtime-p2-code-safety",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Production activation NO-GO: Max31d candidate timeouts45.61s and45.36s retained; real production Decision/Laya path and full noninferiority/long-tail evidence absent. Runtime flag default false. No push/merge/deploy; no relaxation or rejected write compression.",
+        "phase": "verification",
+        "sequence": 59,
+        "status": "blocked",
+        "task_id": "runtime-p2-production-activation",
+        "tokens": 0
       }
     ]
   },

@@ -1,0 +1,28 @@
+{
+  "status": "passed",
+  "live_llm_required": true,
+  "confirmed": true,
+  "confirmation_env": "HARNESS_LIVE_LLM_EVAL_CONFIRMED",
+  "expected_confirmation": "f3f5fca1c64036ef11b055bb945ab736cb4b54a5",
+  "changed_paths": [
+    "backend/app/config.py",
+    "backend/app/services/agent_executor.py",
+    "backend/eval/full_task_prompt_benchmark.py",
+    "backend/tests/test_full_task_prompt_benchmark.py",
+    "backend/tests/test_owned_read_preplanning_runtime.py",
+    "docs/dossiers/2026-10-04-prompt-optimization-handoff.md",
+    "scripts/benchmark_prompt_full_task.py"
+  ],
+  "matched_paths": [
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "reason": "agent executor runtime"
+    },
+    {
+      "path": "backend/eval/full_task_prompt_benchmark.py",
+      "reason": "LLM/eval harness"
+    }
+  ],
+  "next_steps": "",
+  "errors": []
+}
