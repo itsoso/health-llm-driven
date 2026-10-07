@@ -17,7 +17,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 REFERENCE_NOW = datetime.fromisoformat("2026-09-13T23:30:00+08:00")
-VARIANTS = ("baseline", "p1", "p2", "combined")
+VARIANTS = ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact")
 
 
 class BenchmarkStopped(BaseException):
@@ -70,6 +70,7 @@ class Scenario:
     state: str
     request_text: str | None = None
     allow_knowledge: bool = False
+    dense_records: bool = False
 
     @property
     def query(self):
@@ -89,6 +90,8 @@ SCENARIOS = tuple(Scenario("owned_read_7d_" + state, 7, state)
     Scenario("analysis_7d_read_failure", 7, "read_failure", allow_knowledge=True),
     Scenario("analysis_7d_holdout", 7, "available",
              "复盘我最近7天的睡眠和饮食记录。", allow_knowledge=True),
+    Scenario("analysis_7d_dense", 7, "available", allow_knowledge=True, dense_records=True),
+    Scenario("analysis_31d_dense", 31, "available", allow_knowledge=True, dense_records=True),
 )
 
 
@@ -112,7 +115,19 @@ def seed_synthetic_records(db, user_id, scenario):
         GarminData(user_id=other.id, record_date=today, sleep_score=99, total_sleep_duration=599),
         GarminData(user_id=user_id, record_date=today + timedelta(days=1), sleep_score=11, total_sleep_duration=111),
     ])
-    if scenario.state != "empty":
+    if scenario.state != "empty" and scenario.dense_records:
+        for offset in range(scenario.days):
+            day = today - timedelta(days=offset)
+            db.add_all([
+                GarminData(user_id=user_id, record_date=day, sleep_score=80, total_sleep_duration=420),
+                DietRecord(user_id=user_id, record_date=day, meal_type="dinner",
+                           food_name="合成番茄", food_items="合成番茄", calories=200),
+            ])
+        # A distinct same-name row with unknown energy: no deduplication or
+        # imputation from its otherwise matching neighbour is permitted.
+        db.add(DietRecord(user_id=user_id, record_date=today, meal_type="dinner",
+                          food_name="合成番茄", food_items="合成番茄", calories=None))
+    elif scenario.state != "empty":
         db.add_all([
             GarminData(user_id=user_id, record_date=today, sleep_score=80, total_sleep_duration=420),
             DietRecord(user_id=user_id, record_date=today - timedelta(days=1), meal_type="dinner",
@@ -212,6 +227,7 @@ class ScriptedProvider:
         else:
             answer = ("本轮查询失败，无法确认睡眠和饮食记录，请稍后重试。" if self.scenario.state == "read_failure" else
                       "睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。" if self.scenario.state == "empty" else
+                      "仅依据已返回样本作有限观察，不能据此判断完整健康状态。" if self.scenario.dense_records else
                       "睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。")
             yield {"type": "content", "text": answer}
             yield {"type": "finish", "finish_reason": "stop"}
@@ -230,6 +246,11 @@ def tool_contract(request, result, scenario):
     items = payload.get("results", [payload])
     expected = {"sleep": [] if scenario.state == "empty" else [(end, 80, 420)],
                 "diet": [] if scenario.state == "empty" or scenario.days == 1 else [((REFERENCE_NOW.date() - timedelta(days=1)).isoformat(), "合成番茄", 200)]}
+    if scenario.dense_records and scenario.state != "empty":
+        dates = [(REFERENCE_NOW.date() - timedelta(days=offset)).isoformat()
+                 for offset in reversed(range(scenario.days))]
+        expected = {"sleep": [(day, 80, 420) for day in dates],
+                    "diet": [(day, "合成番茄", 200) for day in dates] + [(end, "合成番茄", None)]}
     valid, dimensions = True, []
     for item in items:
         dimension = item.get("dimension")
@@ -365,6 +386,12 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             stack.enter_context(patch.object(executor, "_dispatch_tool_request", measured_dispatch))
             if variant in {"p2", "combined"}:
                 install_owned_read_preplan(executor)
+            elif variant == "empty_terminal":
+                from eval.experimental_empty_read_terminal import install_empty_read_terminal
+                install_empty_read_terminal(executor)
+            elif variant == "evidence_compact":
+                from eval.experimental_read_evidence_format import install_read_evidence_format
+                install_read_evidence_format(executor)
             done, chunks = None, []
             task_started = perf_counter()
             try:

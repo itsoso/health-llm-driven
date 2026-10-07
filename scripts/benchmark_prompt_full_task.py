@@ -63,6 +63,7 @@ async def run(args):
               "source_sha256": {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in (
                   "backend/eval/full_task_prompt_benchmark.py", "scripts/benchmark_prompt_full_task.py",
                   "backend/eval/experimental_read_synthesis.py", "backend/eval/experimental_owned_read_preplan.py",
+                  "backend/eval/experimental_empty_read_terminal.py", "backend/eval/experimental_read_evidence_format.py",
                   "backend/app/services/agent_executor.py", "backend/app/services/agent_prompt_sections.py",
                   "backend/app/services/agent_longitudinal_read.py", "backend/app/services/agent_kernel/capability_policy.py",
                   "backend/app/services/agent_tool_prompt_projection.py", "backend/app/services/tool_schema_registry.py",
@@ -148,7 +149,7 @@ def main():
     modes.add_argument("--include-live-llm", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model", choices=["qwen3.8-flash", "qwen3.8-max"], action="append")
-    parser.add_argument("--variant", choices=["p1", "p2", "combined"], action="append")
+    parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact"], action="append")
     parser.add_argument("--baseline-only", action="store_true", help="Evaluate the runtime in this checkout without injecting an experimental variant.")
     parser.add_argument("--case", choices=[case.id for case in SCENARIOS], action="append")
     parser.add_argument("--repetitions", type=int, default=1)

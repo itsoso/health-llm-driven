@@ -160,7 +160,7 @@ async def test_full_pi_task_preserves_read_contract_and_persistence(db, auth_use
     scenario = Scenario("synthetic-" + state, 7, state)
     seed_synthetic_records(db, user.id, scenario)
     rows = []
-    for variant in ("baseline", "p1", "p2", "combined"):
+    for variant in ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact"):
         row = await run_sample(db, user.id, scenario, variant, "qwen3.8-max", CallBudget(12), live=False)
         assert row["status"] == "passed_contracts", row
         assert row["quality"]["semantic_review"] == "required"
@@ -169,8 +169,50 @@ async def test_full_pi_task_preserves_read_contract_and_persistence(db, auth_use
         assert row["agent_kernel"] == "pi"
         assert all(call["token_source"] == "synthetic" for call in row["calls"])
         rows.append(row)
-    assert [len(row["calls"]) for row in rows] == ([1, 1, 0, 0] if state == "read_failure" else [2, 2, 1, 1])
+    assert [len(row["calls"]) for row in rows] == (
+        [1, 1, 0, 0, 1, 1] if state == "read_failure" else
+        [2, 2, 1, 1, 1, 2] if state == "empty" else [2, 2, 1, 1, 2, 2])
     assert rows[0]["tool_contracts"] == rows[1]["tool_contracts"] == rows[2]["tool_contracts"] == rows[3]["tool_contracts"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("days", [7, 31])
+async def test_dense_evidence_reaches_provider_losslessly(db, auth_user_and_headers, monkeypatch, days):
+    from app.config import settings
+    from eval.full_task_prompt_benchmark import ScriptedProvider
+
+    monkeypatch.setattr(settings, "app_env", "test")
+    user, _ = auth_user_and_headers
+    scenario = Scenario("dense", days, "available", dense_records=True)
+    seed_synthetic_records(db, user.id, scenario)
+    projections, rows = [], []
+
+    class Capture(ScriptedProvider):
+        async def chat_stream(self, **kwargs):
+            if not kwargs.get("tools"):
+                projections.append(deepcopy(kwargs["messages"]))
+            async for event in super().chat_stream(**kwargs):
+                yield event
+
+    for variant in ("baseline", "evidence_compact"):
+        row = await run_sample(db, user.id, scenario, variant, "qwen3.8-max", CallBudget(3),
+                               live=False, provider_factory=lambda: Capture(scenario))
+        assert row["status"] == "passed_contracts", row
+        rows.append(row)
+    assert rows[0]["answer"] == rows[1]["answer"]
+    assert rows[0]["tool_contracts"] == rows[1]["tool_contracts"]
+    baseline, compact = [json.loads(messages[1]["content"]) for messages in projections]
+    assert "unknown_fields_ref" in json.dumps(compact)
+    assert len(json.dumps(projections[1])) < len(json.dumps(projections[0]))
+    for query in compact["read_evidence"]["queries"]:
+        sets = query.pop("unknown_field_sets", None)
+        if sets is not None:
+            for record in query["records"]:
+                record["unknown_fields"] = sets[record.pop("unknown_fields_ref")]
+    assert compact == baseline
+    diet = next(q for q in compact["read_evidence"]["queries"] if q["query"]["dimension"] == "diet")
+    assert len(diet["records"]) == days + 1  # Same-name rows remain distinct.
+    assert diet["records"][-1]["unknown_fields"]["calories"] == "null_in_result"
 
 
 @pytest.mark.asyncio
