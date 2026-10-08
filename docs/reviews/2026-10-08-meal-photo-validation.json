@@ -1,0 +1,83 @@
+{
+  "status": "G3_G4_GO_pending_exact_main_CI_and_deploy",
+  "source_commit": "ae6e99566a7bd3d24992e228bd8bb488d8c03d4c",
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "624719ff6225bbbae44e13ad015e46febd22e9558b3ae1791a2b06037f236545",
+    "backend/app/services/agent_turn_outcome.py": "05d2a621d32a1331ba5bc93842c42d1b7b73af60be88df373e2a22bf33c1e769",
+    "backend/app/services/ai/food_recognition.py": "a1d5fdf9f7fbe29e34c30cab073d372a7c1428064a63877f23ba79742862fe8f",
+    "backend/tests/test_agent_executor_food_vision.py": "9570372f82bc8710f232f0f5469b97b9b4cfdcf2078fdb10235cecf55d896268",
+    "backend/tests/test_agent_turn_outcome.py": "7e16321ca9e6b5039511a46a1ef6b82fd8d48850f5e1bb5b6f3fc5c2a3fce57d",
+    "backend/tests/test_food_recognition_sanitizer.py": "524688d19355b130a9b30665f4f180c026978f79950c6362471edc8eaf3b9d83"
+  },
+  "tests": {
+    "reva-1008-meal-reviewed": {
+      "tests": 312,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xml_sha256": "b59a03e0f2a9c40972aa54172aa3afcd28084ac3e2898dec32f9758a3675b68e"
+    },
+    "reva-1008-meal-pg": {
+      "tests": 196,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xml_sha256": "5688d609dd7196e270d9cf3ee638833aef0c623755381d61f0d68c782af0fe7c"
+    },
+    "reva-1008-meal-pg-next-turn": {
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xml_sha256": "097881fe3fb5ba9f48768e4177757375405ea6e9eb3a78e2c0b1826ef1b7798d"
+    },
+    "reva-1008-meal-ci-integration": {
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xml_sha256": "f1224587bbbc3adcab6b81cc588c7012ee011799c3172c3803d826e264ee3681"
+    }
+  },
+  "red_evidence": {
+    "initial_failures": 6,
+    "review_failures": 3
+  },
+  "mobile_existing_waiting_restore": {
+    "passed": 1,
+    "skipped": 114,
+    "changed": false
+  },
+  "system_map": "passed",
+  "postgres": "disposable PostgreSQL17 stopped after tests; no production data accessed",
+  "boundaries": [
+    "No photo result grants write authority",
+    "current authenticated user, source message and image signature bound",
+    "pure explicit meal capture only; mixed requests retain prior execution",
+    "successful/partial/pending/blocked writes excluded",
+    "service failures remain retryable; malformed model payload is failure",
+    "waiting clarification replays same client turn without rerecognition; next valid photo records once",
+    "rejected write-tool compression and read-preplanning remain disabled"
+  ],
+  "limitations": [
+    "Synthetic images and provider wire stubs in functional tests; not original photo recognition acceptance",
+    "PostgreSQL checks used same executor runtime; later service parser fix verified by unit/integration tests",
+    "Live gate and independent safety review required before push",
+    "No Mobile OTA or native release required; existing waiting_for_user UI contract used"
+  ],
+  "live": {
+    "report": "2026-10-08-meal-photo-live-regression.json",
+    "status": "passed",
+    "api_calls": 10,
+    "failed_calls": 0,
+    "source_unchanged": true
+  },
+  "prior_failed_live": "2026-10-08-meal-photo-live-unconfigured-attempt.json",
+  "independent_review": {
+    "verdict": "GO",
+    "source_commit": "ae6e99566a7bd3d24992e228bd8bb488d8c03d4c",
+    "tests_passed": 244,
+    "contract_probes_passed": 12,
+    "prior_block": "explicit failure and malformed food items misclassified; fixed with RED and reviewed"
+  }
+}

@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | validating |
-| 当前阶段 | 2026-10-08：评分/评测及睡眠事实保真修复通过独立复审；512/8192语义失败，预规划默认关闭，本批未发布 |
+| 当前阶段 | 2026-10-08：优化修复已完成 Backend/Web 发布；餐食图片错误分类修复正在验证，尚未发布 |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -350,3 +350,13 @@ Flash 不改思考控制的真实路由六场景12任务契约通过，但独立
 Trusted validate 37733904268在凭据前失败：现有门禁核对同SHA的每条CI记录，PR事件不满足其main push/workflow_dispatch合同。因此即使同SHA两条CI均绿色，1c862仍不可发布。保留原失败，不重跑、不修改门禁；本次仅追加验证记录，形成独立main发布提交后重新等待完整精确CI。运行时、依赖、评测源码及28份live绑定摘要保持不变。
 
 当前生产仍a10e642cde189c9b414dc8d41346e22f088eaa0e，原回执SUCCEEDED、业务lease不存在、launcher inode7777226。GitHub relay启用且active，隔离官方Git查询main身份一致。尚未撤权、销毁旧私钥、轮换授权或部署。餐食问题已完成只读定位，按用户指定顺序在本次发布后修复；未以截图或时间相近日志冒充完整用户路径验收。
+
+## 2026-10-08 Backend/Web 已发布，接续餐食错误分类修复
+
+第一批优化修复已合入 main 并部署 `0fe1122ad1f5fa3f36bf25607e10339e4b989609`：完整 CI 37734502146 全部29项成功；Trusted validate 37735680343、backend 37736434279 成功，后端回执 SUCCEEDED、健康评分60/60。Web operation `ad84dc77ca0b41a4a5a01a10168ca640` 为 FRONTEND_SUCCEEDED；实际 sharp0.35.5/rsvg2.63.2、公网页面、服务状态与原后端身份保持验证通过。独立 G5 GO，详见[精确发布证明](../reviews/2026-10-08-prompt-deployment-verification.json)。这不等于登录健康流程、Mobile 发布或用户 G6 验收；预规划及被否决预算/写工具说明实验保持关闭。
+
+用户要求发布后修复“记录这餐”图片识别失败及泛化错误。本次沿用原 controller/run，范围为既有识别与终态错误语义，不新增写权限、健康对象或产品入口。已用合成 run_stream 复现 generic write_without_tool：有效 JSON 备注含拒绝词被整体拒绝、nofood 二次清洗丢分类、混合 timeout 被当 nofood、最终错误覆盖了补充提示。
+
+修复先解析并验证模型 JSON，内部派生错误类别；当前用户/消息/图片绑定且封闭纯餐食记录意图下，缺少可记录食物返回 waiting_for_user 并明确未保存；服务或格式失败保持 failed/retryable 并给清楚重试说明。混合任务、部分成功、已有回执、待确认、其他工具失败、只读与来源不明仍走原流程。没有新增草稿/回执或额外写入。有效食物加普通不确定备注继续通过。
+
+G3 本地：312关联回归、21 CI-mode集成、PostgreSQL196项及补充3项下一轮/重放用例通过；原Mobile恢复 waiting_for_user 1项通过；System Map通过。第一轮安全审查发现显式success=false及空food对象会误归nofood，补3项RED后收紧模型契约并复跑。真实模型首轮缺配置失败保留，授权测试配置仅进进程内存；修前10次API通过不替代修后新鲜证据。详见[餐食验证](../reviews/2026-10-08-meal-photo-validation.json)。修后标准live闸10次真实API通过、0失败、用量完整且源码摘要不变，见[修后真实闸](../reviews/2026-10-08-meal-photo-live-regression.json)。独立 G4 复审 GO，绑定 `ae6e99566a7bd3d24992e228bd8bb488d8c03d4c`；reviewer另跑244项与12个Base64/URL契约探针通过。餐食修复尚未push/部署，下一步精确main CI与Trusted后端发布。原截图是餐后残留，不据此声称能还原整餐；本地测试没有复用真实健康图片。
