@@ -121,4 +121,15 @@ describe('ChatScreen history entry', () => {
     await waitFor(() => expect(mockGetConversationsPage).toHaveBeenCalled());
     expect(await findByText('恢复能力分析')).toBeTruthy();
   });
+
+  it('starts a new chat directly from the visible header entry', async () => {
+    const { getByText, getByLabelText } = render(<ChatScreen />);
+
+    expect(getByText('新建')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(getByLabelText('新建对话'));
+    });
+
+    expect(mockNewChat).toHaveBeenCalledTimes(1);
+  });
 });

@@ -18,6 +18,7 @@ describe('ChatHeader', () => {
         isStreaming={false}
         onBack={onBack}
         onSelectModel={jest.fn()}
+        onNewChat={jest.fn()}
         onOpenHistory={jest.fn()}
         onOpenToolMenu={jest.fn()}
       />,
@@ -37,6 +38,7 @@ describe('ChatHeader', () => {
         llmError={null}
         isStreaming={false}
         onSelectModel={jest.fn()}
+        onNewChat={jest.fn()}
         onOpenHistory={jest.fn()}
         onOpenToolMenu={jest.fn()}
       />,
@@ -58,6 +60,7 @@ describe('ChatHeader', () => {
         llmError={null}
         isStreaming
         onSelectModel={jest.fn()}
+        onNewChat={jest.fn()}
         onOpenHistory={jest.fn()}
         onOpenToolMenu={jest.fn()}
       />,
@@ -66,9 +69,9 @@ describe('ChatHeader', () => {
     expect(queryByLabelText('回复中')).toBeNull();
   });
 
-  it('keeps only neutral history and more actions without a prominent voice shortcut', () => {
+  it('shows new chat alongside history and more without a voice shortcut', () => {
     const onOpenToolMenu = jest.fn();
-    const { getByTestId, getByLabelText, queryByText, queryByTestId, queryByLabelText } = render(
+    const { getByTestId, getByLabelText, getByText, queryByText, queryByTestId, queryByLabelText } = render(
       <ChatHeader
         activeLlmLabel="Qwen3.7 Plus"
         llmModelId="qwen3.7-plus"
@@ -77,6 +80,7 @@ describe('ChatHeader', () => {
         llmError={null}
         isStreaming={false}
         onSelectModel={jest.fn()}
+        onNewChat={jest.fn()}
         onOpenHistory={jest.fn()}
         onOpenToolMenu={onOpenToolMenu}
       />,
@@ -93,7 +97,8 @@ describe('ChatHeader', () => {
     expect(queryByTestId('chat-header-voice')).toBeNull();
     expect(queryByText('语音')).toBeNull();
     expect(queryByLabelText('实时语音')).toBeNull();
-    expect(queryByLabelText('新建对话')).toBeNull();
+    expect(getByLabelText('新建对话')).toBeTruthy();
+    expect(getByText('新建')).toBeTruthy();
     expect(getByTestId('icon-time-outline')).toBeTruthy();
     expect(getByTestId('icon-ellipsis-horizontal')).toBeTruthy();
 

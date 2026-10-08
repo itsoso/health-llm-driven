@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LlmModelPicker from './LlmModelPicker';
 import XiaoBaAvatar from './XiaoBaAvatar';
@@ -7,6 +7,7 @@ import type { ModelOption } from '../../services/llmPreference';
 import {
   revaColors as C,
   revaSpacing,
+  revaFonts,
 } from '../../constants/revaTheme';
 
 // header 里只露品牌名/压缩模型名 — 去掉尾部速度档 + 「· 供应商」后缀。
@@ -26,12 +27,13 @@ interface ChatHeaderProps {
   isStreaming: boolean;
   onBack?: () => void;
   onSelectModel: (modelId: string | null) => void;
+  onNewChat: () => void;
   onOpenHistory: () => void;
   onOpenToolMenu: () => void;
 }
 
 /**
- * 会诊页顶部：模型选择器 (小巴 ⌄) + 历史/更多。实时语音收在更多菜单。
+ * 会诊页顶部 header surface：模型选择器 (小巴 ⌄) + 新建/历史/工具三个动作。
  * 当前轮运行状态只在 assistant turn 内展示，避免顶部和消息区重复。
  * 纯 props 驱动, 无本地状态。testID 「chat-header-surface」+ a11y 标签保持稳定 (测试引用)。
  */
@@ -43,6 +45,7 @@ export default function ChatHeader({
   llmError,
   onBack,
   onSelectModel,
+  onNewChat,
   onOpenHistory,
   onOpenToolMenu,
 }: ChatHeaderProps) {
@@ -75,6 +78,26 @@ export default function ChatHeader({
         />
         <View style={styles.headerRight}>
           <View testID="chat-header-action-group" style={styles.headerActionGroup}>
+            <Pressable
+              onPress={onNewChat}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.headerAction,
+                styles.primaryHeaderAction,
+                pressed && styles.primaryHeaderActionPressed,
+              ]}
+              accessibilityLabel="新建对话"
+              accessibilityHint="开始一段新的健康会诊"
+              accessibilityRole="button"
+            >
+              <View style={styles.newChatGlyph}>
+                <Ionicons name="chatbubble-outline" size={18} color={C.green700} />
+                <View style={styles.newChatBadge}>
+                  <Ionicons name="add" size={9} color={C.greenOn} />
+                </View>
+              </View>
+              <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={styles.newChatLabel}>新建</Text>
+            </Pressable>
             <Pressable
               onPress={onOpenHistory}
               hitSlop={8}
@@ -119,11 +142,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   headerRight: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     marginLeft: 'auto',
   },
-  // 历史与更多保持紧凑的中性分组；语音和新建对话收在更多中。
+  // 三个一级动作收拢为同一组,让右上角像一个完整的控制器而不是三个散落的按钮。
   headerActionGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -153,5 +177,41 @@ const styles = StyleSheet.create({
   },
   headerActionPressed: {
     backgroundColor: C.green50,
+  },
+  primaryHeaderAction: {
+    width: 'auto',
+    minWidth: 76,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    gap: 5,
+    backgroundColor: C.green50,
+  },
+  newChatLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.green700,
+  },
+  primaryHeaderActionPressed: {
+    backgroundColor: C.green100,
+  },
+  newChatGlyph: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newChatBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -3,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green500,
+    borderWidth: 1,
+    borderColor: C.greenOn,
   },
 });
