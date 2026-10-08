@@ -594,12 +594,6 @@ _META_RECORD_CAPTURE = re.compile(
     r"(?:如果|若)你(?:实际)?有吃午餐[，,]\s*建议(?:随手)?记一下|"
     r"(?:下次|后续)打卡时(?:请)?(?:带上|填上|补上|附上|提供)(?:具体)?(?:品名|名称|剂量)"
 )
-# Whole, explicit assignments only. A comma in an outer quotation, negation or
-# fact must not authorize deleting the whole sentence. Unknown forms stay.
-_META_RECORD_ACCUMULATION = re.compile(
-    r"(?:如需有效分析[，,]\s*)?(?:建议(?:你)?|请|你可以|可以)(?:先|后续|继续)?积累"
-    r"(?:一段时间的|一周的?|更多|连续)*(?:记录)(?:后再分析)?[。！？!?]*"
-)
 _META_COLLECTION_ACTION = re.compile(r"告诉我|补充|提供|补齐|补全|记录|收集|完善")
 _META_COLLECTION_FIELD = re.compile(
     r"补剂(?:名称)?|剂量|服用时间|单位|情绪|主观感受|工作压力|午餐|加餐|"
@@ -623,8 +617,7 @@ _META_HELP_OFFER = re.compile(
 
 def _completed_scope_invitation(text: str) -> bool:
     if (_META_QUERY_INVITATION.search(text) or _META_GENERAL_QUESTION.fullmatch(text)
-            or _META_HELP_OFFER.fullmatch(text) or _META_RECORD_CAPTURE.search(text)
-            or _META_RECORD_ACCUMULATION.fullmatch(text)):
+            or _META_HELP_OFFER.fullmatch(text) or _META_RECORD_CAPTURE.search(text)):
         return True
     if (_META_CONTINUE_ACTION.search(text) and _META_SELECTION.search(text)
             and re.search(r"想|希望|需要我|还有|要不要|你", text)
