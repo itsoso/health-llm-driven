@@ -592,7 +592,11 @@ _META_CONTINUE_ACTION = re.compile(r"继续|接着|深入|展开|分析|评估|�
 _META_SELECTION = re.compile(r"哪个|哪一项|哪一方面|哪方面|哪(?:个|一)?方向|要不要|某个模块")
 _META_RECORD_CAPTURE = re.compile(
     r"(?:如果|若)你(?:实际)?有吃午餐[，,]\s*建议(?:随手)?记一下|"
-    r"(?:下次|后续)打卡时(?:请)?(?:带上|填上|补上|附上|提供)(?:具体)?(?:品名|名称|剂量)"
+    r"(?:下次|后续)打卡时(?:请)?(?:带上|填上|补上|附上|提供)(?:具体)?(?:品名|名称|剂量)|"
+    # A new collection assignment, not existing records or a quoted clinician
+    # background. Never match across clauses to an unrelated record noun.
+    r"(?:^|[，,])\s*(?:建议(?:你)?|请|你可以|可以)(?:先|后续|继续)?积累"
+    r"[^。！？!?\n，,；;]{0,24}记录"
 )
 _META_COLLECTION_ACTION = re.compile(r"告诉我|补充|提供|补齐|补全|记录|收集|完善")
 _META_COLLECTION_FIELD = re.compile(
