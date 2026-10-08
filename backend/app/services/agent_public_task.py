@@ -147,3 +147,92 @@ def public_weather_payload(payload: object, check_type: str) -> dict:
         }
     # Weather-derived exercise advice is outside this standalone public task.
     return {"weather": data} if check_type == "weather" else data
+
+
+def render_public_weather(message: str, queries: list[dict], results: list[dict], *, reference_now: datetime) -> str:
+    """Render verified public facts without model inference or new data access."""
+    import math
+    from datetime import date, timedelta
+    from app.utils.number_format import format_display_number
+
+    if queries != public_weather_queries(message) or not queries or len(results) != len(queries):
+        raise ValueError("public_weather_result_mismatch")
+
+    def number(value, *, nonnegative=False):
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise ValueError("public_weather_invalid_number")
+        if isinstance(value, str) and not re.fullmatch(r"-?\d+(?:\.\d+)?", value):
+            raise ValueError("public_weather_invalid_number")
+        value = float(value)
+        if not math.isfinite(value) or (nonnegative and value < 0):
+            raise ValueError("public_weather_invalid_number")
+        return format_display_number(value)
+
+    def observation_time(data):
+        for key in ("obsTime", "update_time"):
+            value = data.get(key)
+            if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:[T ][0-9:.+Z-]+)?", value):
+                try:
+                    datetime.fromisoformat(value)
+                except ValueError:
+                    continue
+                return f"来源时间：{value}"
+        return "来源未提供有效观测时间，无法确认观测时点"
+
+    def source(data):
+        return {"qweather": "和风天气", "qweather-v1": "和风天气", "open-meteo": "Open-Meteo", "aqicn.org": "AQICN"}.get(data.get("source"), "来源未标明")
+
+    def condition(data):
+        value = data.get("weather", data.get("text"))
+        if not isinstance(value, str) or not re.fullmatch(r"[晴多少云阴雨雪雷阵暴大中小冻夹冰雹雾霾沙尘扬浮强特浓轻度有局部短时伴转到间歇性风热带飓龙卷]+", value) or len(value) > 20:
+            raise ValueError("public_weather_missing_condition")
+        return value
+
+    lines = []
+    city = queries[0].get("city")
+    if city:
+        lines.append(city)
+    for query, payload in zip(queries, results):
+        kind = query["check_type"]
+        key = "air_quality" if kind == "air_quality" else "weather"
+        if not isinstance(payload, dict):
+            raise ValueError("public_weather_invalid_payload")
+        data = payload if kind == "forecast" else payload.get(key)
+        if not isinstance(data, dict) or data.get("available") is not True:
+            raise ValueError("public_weather_unavailable")
+        if kind == "forecast":
+            forecasts = data.get("forecasts")
+            if not isinstance(forecasts, list) or not forecasts:
+                raise ValueError("public_weather_missing_forecast")
+            by_date = {}
+            for item in forecasts:
+                value = item.get("date") if isinstance(item, dict) else None
+                if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+                    raise ValueError("public_weather_missing_date")
+                day = date.fromisoformat(value)
+                if day in by_date:
+                    raise ValueError("public_weather_duplicate_date")
+                by_date[day] = item
+            offset = 2 if "后天" in message else 1 if "明天" in message else 0 if any(word in message for word in ("今天", "今日", "现在")) else None
+            days = [reference_now.date() + timedelta(days=offset)] if offset is not None else sorted(by_date)
+            for day in days:
+                if day not in by_date:
+                    raise ValueError("public_weather_missing_requested_date")
+                item = by_date[day]
+                low, high = number(item.get("temp_min")), number(item.get("temp_max"))
+                if low > high:
+                    raise ValueError("public_weather_invalid_range")
+                lines.append(f"{day.isoformat()} 天气预报：{condition(item)}，{low}～{high}℃。来源：{source(data)}。")
+        elif kind == "weather":
+            temperature = number(data.get("temperature", data.get("temp")))
+            lines.append(f"天气观测：{condition(data)}，{temperature}℃。来源：{source(data)}；{observation_time(data)}。")
+        else:
+            aqi = number(data.get("aqi"), nonnegative=True)
+            grade = data.get("aqi_description", data.get("category"))
+            if grade not in {"优", "良", "轻度污染", "中度污染", "重度污染", "严重污染"}:
+                level = data.get("aqi_level")
+                grade = f"来源等级 {level}" if type(level) is int and 1 <= level <= 6 else "等级未提供"
+            lines.append(f"空气质量观测：AQI {aqi}，{grade}。来源：{source(data)}；{observation_time(data)}。")
+            if any(word in message for word in ("明天", "后天", "预报")):
+                lines.append("暂无所问日期的空气质量预报，以上观测值不能代表未来空气质量。")
+    return "\n\n".join(lines)

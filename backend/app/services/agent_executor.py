@@ -18871,15 +18871,17 @@ class AgentExecutor:
         pi_started = False
         pi_terminal_text = None
         public_weather_terminal = None
+        public_weather_render_failed = False
         try:
             if self._public_task == "weather":
-                from app.services.agent_public_task import public_weather_queries
+                from app.services.agent_public_task import public_weather_queries, render_public_weather
 
                 queries = public_weather_queries(message)
                 if not queries or not any(
                     (t.get("function") or {}).get("name") == "environment_check" for t in tools
                 ):
                     raise RuntimeError("public_weather_tool_unavailable")
+                public_weather_results = []
                 for query_index, args in enumerate(queries):
                     weather_call = {
                         "id": f"public_weather_{query_index}", "type": "function",
@@ -18897,8 +18899,19 @@ class AgentExecutor:
                                 if isinstance(payload, dict) and payload.get("error") == "location_required"
                                 else "天气或空气质量查询暂时未完成，请稍后重试。"
                             )
+                        else:
+                            public_weather_results.append(_recover_tool_result_payload(event["data"]["content"]) or {})
                     if public_weather_terminal is not None:
                         break
+                if public_weather_terminal is None:
+                    try:
+                        public_weather_terminal = render_public_weather(
+                            message, queries, public_weather_results,
+                            reference_now=self._agent_kernel_reference_now(),
+                        )
+                    except (ValueError, TypeError, OverflowError):
+                        public_weather_render_failed = True
+                        public_weather_terminal = "天气或空气质量数据不完整，暂时无法确认查询结果，请稍后重试。"
                 # The read was dispatched through the ordinary gateway.
                 # No model planning or repeated weather fetch is needed.
                 tools = []
@@ -18927,7 +18940,7 @@ class AgentExecutor:
                 decision_route = food_photo_terminal_reason
             elif public_weather_terminal is not None:
                 full_reply = public_weather_terminal
-                final_finish_reason = "stop"
+                final_finish_reason = "error" if public_weather_render_failed else "stop"
             elif (
                 self._turn_contextual_diet_write_blocked_reason == "confirmation_pending"
                 and self._turn_contextual_diet_cards
@@ -20372,7 +20385,8 @@ class AgentExecutor:
         fallback_reasons = list(self._model_fallback_reasons)
         evidence_cards = []
         if (completion_status == "complete" and turn_outcome.get("status") == "complete"
-                and health_evidence_turn is None and self._turn_selected_exam_id is None):
+                and health_evidence_turn is None and self._turn_selected_exam_id is None
+                and self._public_task is None):
             try:
                 evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
                 if evidence_card:
@@ -20496,7 +20510,7 @@ class AgentExecutor:
         citation_anchor = (
             None
             if (health_evidence_turn is not None or self._has_current_input_recovery_advice_goal()
-                or self._turn_selected_exam_id is not None)
+                or self._turn_selected_exam_id is not None or self._public_task is not None)
             else _citation_anchor_shadow_meta(self.db, user_id, full_reply)
         )
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)

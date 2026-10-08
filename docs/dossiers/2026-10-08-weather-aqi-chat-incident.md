@@ -9,11 +9,11 @@
 - Controller：health-harness-orchestrator（incident），safety-gate overlay。
 - Harness：`6dcf36a10fa2`。
 - 接手基线：`549765a95a5011cb06bd62fe28d669d3f2991892`；此前后端发布：`9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c`。
-- 当前状态：公共天气修复已在 main `e59fd935a6f73bb43d330a9db3602ad8807e01f8`，完整 CI 29 项通过；发布前发现重启中断机制，补充 G3/G4 验证中。生产仍为 `9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c`。下文未合并/未定位记录为当时阶段证据，以末尾续记为准。
+- 当前状态：`62cfbf1bd9dacee54b854b14ad51062a22700642` 已部署成功；真实公共服务 G6 发现 AQI 漏展示和公共回合完成阶段多余 Twin 查询，继续整改。下文阶段记录按时间保留，以末尾续记为准。
 
 ## 用户验收与边界
 
-截图请求为“杭州明天天气温度怎么样？空气质量。”，却返回模型不可用及“没有生成可靠健康建议”。应回答核实的明天天气与温度，明确空气质量是当前观测、不能冒充明日预报。服务失败如实说明，不能制造天气、成功回执或健康建议。
+截图请求为“杭州明天天气温度怎么样？空气质量。”，却返回模型不可用及“没有生成可靠健康建议”。应回答核实的明天天气与温度，明确空气质量是来源观测、保留观测时点不确定性，不能冒充明日预报。服务失败如实说明，不能制造天气、成功回执或健康建议。
 
 保留其他 session 的饮食性能改动及既有写权限、健康安全、附件和待确认上下文边界；不启用被真实模型回归否决的写工具说明压缩。本次仅后端，无移动端或原生发布变更。
 
@@ -96,3 +96,27 @@
 
 - 整改 RED：完整旧配置代际两组合 2 failed / 2 passed；修复仅在恢复证明选择两个受审的完整配置模板，按 canonical production source 精确匹配，不执行历史 Python，也不给正式 publisher 增加接受旧配置的开关。
 - 完整旧模板与真实 `9b05c5c9` backend drop-in 逐字节相同；新/旧 canonical 与相反 live drop-in 混用均拒绝，六个有效信号/超时属性、三服务命令、额外可写路径及未知 canonical 字节均拒绝。旧 journal/版本/租约/终态/权限证明保留。整改后四套相关脚本测试 330 passed。
+
+## 首次正式发布与真实公共服务验收
+
+- `62cfbf1bd9dacee54b854b14ad51062a22700642` 独立 G4 GO，完整旧/新配置真实 canonical 回放通过，混搭拒绝；复审 211 tests passed。
+- 精确 main push CI `37777023123` 与完整 CI `37777036771` 各 29 success。Trusted validate `37779092171` 和 backend `37780127775` 均 success。
+- 生产持久终态 `SUCCEEDED`，实际 HEAD 为 `62cfbf1bd`，业务 lease 已释放，原 launcher lock inode 保持。三次健康评分 60/60，后端/worker/beat/frontend 均 active，NRestarts=0；实际 mixed/30 秒/45 秒和全部信号配置已核验。未将此视为业务验收完成。
+- G6 使用已审 helper `c1abfe197f1dc124e8356f2253027ff6e27abf71cffe3f55c38bad3dd9976f92` 在生产机器隔离内存测试库、合成同意账号执行原句，读取真实公开环境服务，不读写生产健康数据。真实 API 一次、903 输入 token、9.08 秒，完整返回明日日期与 17–27℃；但漏展示已返回的 AQI52，仅说明时间未知，因此 **FAIL**，保留 `docs/reviews/2026-10-08-weather-aqi-production-first.json`。不得把自动 complete 当语义通过。
+- 同次捕获两条 current-weather 内部错误，天气预报和 AQI 源均 available。只知 current endpoint 返回非成功码，未输出异常正文，不能推断具体限流/权限/供应商宕机。源码定位：公共回合完成阶段的 KB evidence fallback 和 citation shadow 仍构建个人 Twin，额外触发天气实况请求；独立整改应跳过这两条个人上下文路径，而不是吞掉服务错误。
+
+## 真实验收后的公共交付整改
+
+- 完成阶段隔离 RED 证实原句额外构建 Twin 两次（use_cache=False/True），自我介绍一次；已在两处公共完成路径跳过个人证据/引用构建，个人健康对照保留。相关 28 项通过，扩展含 CI-mode 集成/引用/对账共 204 passed。
+- 仅加强提示词的候选虽通过 10 次正式 API 通用回归（`2026-10-08-weather-aqi-completion-live-regression.json`），四次专项真实模型仍 **人工 FAIL**：未知时点的第 0、2 案标题称“当前空气质量”，第 3 案省略有效来源日期。狭窄自动 oracle 原先 PASS 不作质量裁决，已保留自动结果并加人工 FAIL，见 `2026-10-08-weather-aqi-completeness-live.json`。该候选未提交/发布。
+- 决策：沿用已闭合公共天气语法及原工具网关，改为确定性呈现已核实的天气、温度、AQI 数值和来源观测时间，取消该路线的模型合成。按 kernel 本轮时间匹配所问日期；数值复用展示格式化真源，缺失或无效来源明确失败，不引入默认城市、健康建议、写权限或自动重试。健康问题保留原模型流程。此实现及对应新验证尚在进行。
+
+## G6 失败后确定性事实呈现
+
+- `62cfbf1bd` 真实公共服务验收失败证据保留为 `docs/reviews/2026-10-08-weather-aqi-production-first.json`。服务返回明日预报与 AQI52，但合成答案遗漏 AQI；公共回合完成阶段还多余构建 Twin，引入两次天气读取错误。
+- 曾尝试提示明确数值完整性；四案真实模型仍有未知观测时间称“当前空气质量”和已知来源时间漏展示，人工判 FAIL，保留 `docs/reviews/2026-10-08-weather-aqi-completeness-live.json`。不发布该提示补丁，原始自动判定单独保留，不覆盖失败。
+- 对已通过闭合公共语法与安全路由的天气回合，网关返回后直接呈现有限天气事实，取消模型合成。预报按冻结本轮参考日期查找明天/后天；来源有效时间按原精度呈现，未知则明确说明；AQI观测不能代表未来预报。缺少日期、不可用来源或非法数值均为失败终态，禁止模型回退或重复读取。
+- 公开回合跳过完成阶段个人 Twin/evidence/citation 构建；个人健康路径保留。未修改个人数据权限、工具描述压缩开关或生产配置。
+- 确定性测试 RED 15 failed → 130 passed；扩展 CI-mode 工具协议、回执、citation、集成回归 220 passed。完成阶段 Twin 隔离专项 3 passed。System Map、diff 检查通过。真实模型通用健康回归与固定提交独立 G4、精确 CI、再次发布及真实公共服务验收仍待完成。
+
+- 当前确定性候选正式真实模型通用健康回归通过：10 次 API 调用均成功，源码哈希前后不变。证据 `docs/reviews/2026-10-08-weather-aqi-deterministic-live-regression.json`。此证据仅证明健康回归；公共天气零模型及真实服务验收单独裁决。
