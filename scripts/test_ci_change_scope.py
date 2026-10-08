@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -208,6 +209,30 @@ def test_preflight_uses_controlled_python_for_all_python_checks() -> None:
     assert '"${PREFLIGHT_PYTHON}" - "${BASELINE_JSON}"' in script
     assert 'run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/check_secret_leaks.py"' in script
     assert 'run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/check_system_map.py"' in script
+
+
+def test_local_preflight_defaults_to_scoped_and_honors_explicit_push(monkeypatch):
+    monkeypatch.delenv("REVA_PREFLIGHT_EVENT_NAME", raising=False)
+    monkeypatch.setenv("REVA_PREFLIGHT_PYTHON", sys.executable)
+    backend = _dry_run_preflight("backend/app/api/today.py\n")
+    assert backend.returncode == 0, backend.stderr
+    assert "backend=1 frontend=0 mobile=0 mac=0" in backend.stdout
+    assert "full=0" in backend.stdout
+    mobile = _dry_run_preflight("mobile/app/index.tsx\n")
+    assert mobile.returncode == 0, mobile.stderr
+    assert "mobile-fast-test.sh" in mobile.stdout
+    assert "full=0" in mobile.stdout
+    for path, command in (("frontend/src/app/page.tsx", "run lint"),
+                          ("apps/mac/Sources/App.swift", "swift test")):
+        scoped = _dry_run_preflight(path + "\n")
+        assert scoped.returncode == 0, scoped.stderr
+        assert command in scoped.stdout
+        assert "full=0" in scoped.stdout
+    monkeypatch.setenv("REVA_PREFLIGHT_EVENT_NAME", "push")
+    push = _dry_run_preflight("backend/app/api/today.py\n")
+    assert push.returncode == 0, push.stderr
+    assert "backend=1 frontend=1 mobile=1 mac=1" in push.stdout
+    assert "full=1" in push.stdout
 
 
 def test_main_push_runs_full_once_for_every_non_documentation_surface():
