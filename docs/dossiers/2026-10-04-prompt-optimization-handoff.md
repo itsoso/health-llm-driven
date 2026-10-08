@@ -410,3 +410,11 @@ Mobile validate `37754437344` 成功，但 publish `37755008534` 在启动阶段
 这是二维码 ad-hoc 交付，不是 OTA/TestFlight/App Store；仅授权设备可安装，当前用户手机覆盖/实际安装与原图登录用户 G6 未验证。后台与新包已交付不能抹去155秒报告长尾或单次餐食探针未定位失败。发布预检修复固定 `1daaafd95594b889bd6942cc692ea9cc1bebbb03` 独立 G4 GO；不会重发失败OTA或放宽原生边界。
 
 独立 QR 公开交付 G5 GO：09:48:44 UTC 回读五份公开制品全部 HTTPS200/TLS通过，完整16,155,578字节IPA与受审hash一致，manifest绑定276和正确Bundle/地址；生产仍5c、无lease、旧latest inode与摘要保持。用户设备覆盖/安装与原图登录健康G6仍未验证。
+
+### 发布后 CI 收尾：原生同意弹窗测试同步
+
+预检和发布证据合入19cf后，CI37759484113的前端任务113252200494出现单例失败：文字已进入DOM但原生dialog尚未open，原findByText后立即toBeVisible抢跑。该提交没有改frontend/backend/mobile运行树，已发布5c与QR276不受改动。失败日志保留，未当作通过；原代码本地完整447通过/1原有跳过不足以替代远端红。
+
+受控延迟open确定性复现相同隐藏strong失败（RED1fail/3pass），仅改测试等待可见dialog角色，并参数化正常/延迟open。保留披露可见、拒绝false、零写入断言，不增加timeout、不skip、不修改产品同意逻辑。定向5、全量448通过/1原有跳过。独立复审与后续精确main CI仍待完成，详见 [测试同步证据](../reviews/2026-10-08-consent-dialog-ci-synchronization.json)。不因此重建已成功发布的包或重跑后端。
+
+测试补丁独立GO，定向5项复验通过，绑定测试hash c5ac04f9bc77b7ec4a7cf8176e2c74c8e578461b8772b75544fabd4676a3c71f。受控延迟证明就绪缺口，不能倒推原CI全部调度；首轮28任务成功、仅frontend失败，保留attempt1并仅对该失败作业请求一次重验。不重发生产后端或二维码包。
