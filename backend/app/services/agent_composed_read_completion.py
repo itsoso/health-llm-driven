@@ -658,6 +658,40 @@ def _uncertain_record_statement(text: str, position: int) -> bool:
     return bool(unknown and not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:unknown.start()]))
 
 
+_DAILY_SLEEP_TOTAL = re.compile(
+    r"(?:总睡眠(?:时长)?|睡眠总时长|睡眠时长|总时长)(?:读数)?(?:均为|都是|为|是)?\s*"
+    r"(?P<quantity>(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>分钟|小时))"
+)
+
+
+def _verified_daily_sleep_quantities(text: str, query: dict, days: int) -> bool:
+    """A narrow exception for total-duration claims checked against every day.
+
+    Date presence alone cannot attest a quantity, a sleep episode or a stage.
+    Every quantity in this sentence must bind to the total-duration predicate;
+    unknown forms, duplicate daily rows and missing measurements stay blocked.
+    """
+    if (not re.search(r"记录|已返回", text)
+            or re.search(r"建议|应该|应当|目标|保持|达到|保证|确保|每晚|整夜|单次", text)):
+        return False
+    rows = query["records"]
+    if len(rows) != days:
+        return False
+    claims = {m.span("quantity"): m for m in _DAILY_SLEEP_TOTAL.finditer(text)}
+    quantities = list(_EXERCISE_QUANTITY.finditer(text))
+    if not quantities:
+        return False
+    for quantity in quantities:
+        claim = claims.get(quantity.span())
+        if claim is None:
+            return False
+        minutes = Decimal(claim["number"]) * (60 if claim["unit"] == "小时" else 1)
+        if any(_summary_decimal(row["known_fields"].get("total_sleep_duration")) != minutes
+               for row in rows):
+            return False
+    return True
+
+
 def _record_description_flags(text: str, completion) -> list[str]:
     flags = []
     if any(not _uncertain_record_statement(text, m.start()) for m in _RECORD_PROVENANCE.finditer(text)):
@@ -678,7 +712,10 @@ def _record_description_flags(text: str, completion) -> list[str]:
             covered.discard(None)
             # Date presence alone does not verify a repeated per-day quantity
             # or activity subtype. Authoritative details remain in the summary.
-            if len(covered) != days or _EXERCISE_QUANTITY.search(text):
+            quantity_unverified = bool(_EXERCISE_QUANTITY.search(text)) and not (
+                dimension == "sleep" and _verified_daily_sleep_quantities(text, query, days)
+            )
+            if len(covered) != days or quantity_unverified:
                 flags.append("unsupported_daily_coverage_removed")
                 break
     return flags
