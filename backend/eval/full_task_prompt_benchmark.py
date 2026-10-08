@@ -338,7 +338,7 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
 
     row = {"case": scenario.id, "variant": variant, "model": model, "status": "running", "calls": [], "tool_contracts": [],
            "tool_attempts": 0, "database": "disposable_sqlite", "first_ui_content_seconds": None, "live": live,
-           "wall_seconds": None, "database_errors": [], "rejected_tools": [], "knowledge_contracts": [],
+           "wall_seconds": None, "database_errors": [], "database_error_details": [], "rejected_tools": [], "knowledge_contracts": [],
            "query": scenario.query, "allow_knowledge": scenario.allow_knowledge, "gateway_decisions": [],
            "production_routing": production_routing, "decision_calls": []}
     original_factory = factory.create_provider_for_model_id
@@ -352,7 +352,19 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             bind = db.get_bind()
             engine = getattr(bind, "engine", bind)
             def database_error(context):
-                row["database_errors"].append(type(context.original_exception).__name__)
+                error = context.original_exception
+                row["database_errors"].append(type(error).__name__)
+                # Never retain SQL, bound parameters, or exception messages.
+                operation = str(context.statement or "").split(None, 1)
+                operation = operation[0].upper() if operation else None
+                row["database_error_details"].append({
+                    "exception_type": type(error).__name__,
+                    "sqlite_errorcode": getattr(error, "sqlite_errorcode", None),
+                    "sqlite_errorname": getattr(error, "sqlite_errorname", None),
+                    "statement_kind": operation if operation in {
+                        "SELECT", "INSERT", "UPDATE", "DELETE", "PRAGMA", "CREATE", "DROP",
+                    } else "other",
+                })
             sqlalchemy_event.listen(engine, "handle_error", database_error)
             stack.callback(sqlalchemy_event.remove, engine, "handle_error", database_error)
             for name, value in (("domain_prompt_optimization", True), ("owned_read_preplanning", variant in {"runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES}), ("agent_base_url", None), ("agent_api_key", None),

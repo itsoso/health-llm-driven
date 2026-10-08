@@ -94,3 +94,8 @@ async def test_actual_pi_keeps_verified_daily_sleep_text(db, auth_user_and_heade
     assert answer in row['answer']
     assert '部分描述缺少记录依据' not in row['answer']
     assert len(row['calls'])==(2 if variant=='baseline' else 1)
+
+
+@pytest.fixture
+def db(benchmark_db):
+    return benchmark_db

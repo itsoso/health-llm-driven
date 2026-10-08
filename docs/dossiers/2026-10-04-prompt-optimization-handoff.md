@@ -334,3 +334,9 @@ Flash 不改思考控制的真实路由六场景12任务契约通过，但独立
 候选8694a449的PR CI37727741607全部29项通过，经独立GO后快进合入main，PR277已合并。main同SHA的CI37728657086在balanced-02失败：`test_full_pi_task_preserves_read_contract_and_persistence[available]` 的empty_terminal返回failed_contracts。该回合仍有两次模型调用和complete终态，不能由此推断所有契约通过；原断言的字典repr截断隐藏了具体quality位。
 
 本地锁定环境单文件66项、原f分片288项、30次六变体available重复均通过；这些不能替代失败的main CI。新增断言仅将既有质量位、工具契约、数据库错误类别和终态序列化为完整诊断，不改通过条件、不含原始用户数据、不改运行时。SQLite StaticPool与Twin多会话共享连接是待验证风险，尚未证明为本次根因。生产保持a10e642c，未执行bootstrap/Trusted部署；餐食图片识别和泛化错误文案仍待本批发布后接续。
+
+### 评测数据库隔离缺陷已确定性复现并修复，待新候选闸
+
+诊断CI37730165508在另一场景展开了InterfaceError，仅数据库上下文检查失败；同轮另一路由场景及最初main失败仍缺历史细项，不追认根因。新增RED证明StaticPool四线程和主会话共用一个连接、worker关闭会回滚主事务。现改为eval-only随机命名共享内存库和独立连接，保持并发、真实链路、所有oracle及生产配置。
+
+319项CI-mode与补充4项负测通过；CLI18任务通过。所有状态断言补完整窄诊断。新鲜live、独立复审和Linux/main精确CI尚待完成；发布仍阻断。完整证据边界见[隔离修复记录](../reviews/2026-10-08-benchmark-database-isolation.md)。

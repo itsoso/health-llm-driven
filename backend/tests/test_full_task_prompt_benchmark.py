@@ -15,6 +15,14 @@ from eval.full_task_prompt_benchmark import (
 )
 
 
+def contract_diagnostics(row):
+    return json.dumps({key: row.get(key) for key in (
+        "case", "variant", "status", "quality", "tool_contracts",
+        "database_errors", "database_error_details", "outcome", "agent_kernel",
+        "error_type",
+    )}, ensure_ascii=False, sort_keys=True)
+
+
 class Scripted:
     provider_name = "synthetic"
     model = "synthetic"
@@ -46,7 +54,7 @@ async def test_runtime_variant_keeps_rich_profile_and_actual_model_call_counts(d
     for variant in ("baseline", "runtime_preplan"):
         row = await run_sample(db, user.id, scenario, variant, "qwen3.8-max", CallBudget(3),
                                live=False, provider_factory=lambda: Capture(scenario))
-        assert row["status"] == "passed_contracts", row
+        assert row["status"] == "passed_contracts", contract_diagnostics(row)
         assert row["runtime_preplanned"] == (variant == "runtime_preplan")
         assert row["runtime_model_call_count"] == len(row["calls"])
         rows.append(row)
@@ -241,12 +249,7 @@ async def test_full_pi_task_preserves_read_contract_and_persistence(db, auth_use
     rows = []
     for variant in ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact"):
         row = await run_sample(db, user.id, scenario, variant, "qwen3.8-max", CallBudget(12), live=False)
-        assert row["status"] == "passed_contracts", json.dumps({
-            key: row.get(key) for key in (
-                "case", "variant", "status", "quality", "tool_contracts",
-                "database_errors", "outcome", "agent_kernel",
-            )
-        }, ensure_ascii=False, sort_keys=True)
+        assert row["status"] == "passed_contracts", contract_diagnostics(row)
         assert row["quality"]["semantic_review"] == "required"
         assert row["quality"]["stream_matches_saved"]
         assert row["quality"]["health_rows_unchanged"]
@@ -281,7 +284,7 @@ async def test_dense_evidence_reaches_provider_losslessly(db, auth_user_and_head
     for variant in ("baseline", "evidence_compact"):
         row = await run_sample(db, user.id, scenario, variant, "qwen3.8-max", CallBudget(3),
                                live=False, provider_factory=lambda: Capture(scenario))
-        assert row["status"] == "passed_contracts", row
+        assert row["status"] == "passed_contracts", contract_diagnostics(row)
         rows.append(row)
     assert rows[0]["answer"] == rows[1]["answer"]
     assert rows[0]["tool_contracts"] == rows[1]["tool_contracts"]
@@ -323,7 +326,7 @@ async def test_analysis_screen_runs_real_empty_kb_without_widening_read_screen(
     row = await run_sample(db, user.id, scenario, "baseline", "qwen3.8-max", CallBudget(3),
                            live=False, provider_factory=lambda: WithKnowledge(scenario))
     if allow_knowledge:
-        assert row["status"] == "passed_contracts", row
+        assert row["status"] == "passed_contracts", contract_diagnostics(row)
         assert any(d["action"] == "allow" for d in row["gateway_decisions"])
         assert len(row["knowledge_contracts"]) == 1
         assert row["knowledge_contracts"][0]["honest_empty_kb"]
@@ -346,7 +349,7 @@ async def test_retrospective_request_completes_real_gateway_and_persistence(
                         f"{verb}我最近7天的睡眠和饮食记录。", allow_knowledge=True)
     seed_synthetic_records(db, user.id, scenario)
     row = await run_sample(db, user.id, scenario, "baseline", "qwen3.8-flash", CallBudget(3), live=False)
-    assert row["status"] == "passed_contracts", row
+    assert row["status"] == "passed_contracts", contract_diagnostics(row)
     assert row["outcome"] == "complete"
     assert row["quality"]["stream_matches_saved"]
     assert row["quality"]["health_rows_unchanged"]
@@ -390,7 +393,7 @@ async def test_actual_provider_can_repair_rejected_read_before_synthesis(
     assert row["quality"]["health_rows_unchanged"]
     assert row["quality"]["no_write_receipt"]
     if denials == 1 and not foreign_owner:
-        assert row["status"] == "passed_contracts", row
+        assert row["status"] == "passed_contracts", contract_diagnostics(row)
         assert row["gateway_decisions"][1]["action"] == "allow"
     else:
         assert row["status"] == "failed_contracts", row
@@ -430,7 +433,7 @@ async def test_repaired_single_reads_with_infrastructure_failure_reach_final_ans
     row = await run_sample(db, user.id, scenario, "baseline", "qwen3.8-flash", CallBudget(3),
                            live=False, provider_factory=lambda: RepairingProvider(scenario))
     assert tools_seen == [True, True, False], row
-    assert row["status"] == "passed_contracts", row
+    assert row["status"] == "passed_contracts", contract_diagnostics(row)
     assert row["tool_budget"]["physical_dispatches"] == 4
     assert row["outcome"] == "failed"
     assert row["completion_status"] == "error"
@@ -557,7 +560,7 @@ async def test_existing_retry_enabled_sdk_client_is_not_reused(db, auth_user_and
         assert constructed[-1]["max_retries"] == 0
         return ScriptedProvider(scenario)
     row = await run_sample(db, user.id, scenario, "combined", "qwen3.8-max", CallBudget(3), live=False, provider_factory=provider_factory)
-    assert row["status"] == "passed_contracts", row
+    assert row["status"] == "passed_contracts", contract_diagnostics(row)
     assert len(constructed) == 1
     assert op._ASYNC_CLIENT_CACHE[old_key] is old_client
     assert op.OpenAIProvider(api_key="unit-test-placeholder")._client_kwargs() == {"api_key": "unit-test-placeholder"}
@@ -668,7 +671,7 @@ async def test_exhausted_full_scope_read_failure_closes_without_model_read_loop(
     row = await run_sample(db, user.id, scenario, "baseline", "qwen3.8-max", CallBudget(3),
                           live=False, provider_factory=lambda: RepeatAfterInfrastructureFailure(scenario))
     assert available == [True], row
-    assert row["status"] == "passed_contracts", row
+    assert row["status"] == "passed_contracts", contract_diagnostics(row)
     assert len(row["tool_contracts"]) == 2 and all(c["failed"] for c in row["tool_contracts"])
     assert row["outcome"] == "failed" and row["completion_status"] == "error"
     assert row["quality"]["health_rows_unchanged"] and row["quality"]["no_write_receipt"]
@@ -906,3 +909,103 @@ async def test_invalid_thinking_probe_batch_stops_before_any_baseline(tmp_path, 
     with pytest.raises(ValueError, match="thinking_probe_requires_live_max_route"):
         await cli.run(args)
     assert not called and not args.output.exists()
+
+
+def test_benchmark_worker_rollback_cannot_erase_request_transaction(db, auth_user_and_headers):
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+    user, _ = auth_user_and_headers
+    db.execute(text('CREATE TABLE benchmark_transaction_probe (value INTEGER)'))
+    db.commit()
+    db.execute(text('INSERT INTO benchmark_transaction_probe VALUES (7)'))
+    with sessionmaker(bind=db.get_bind())() as worker:
+        assert worker.execute(text('SELECT id FROM users WHERE id = :id'), {'id': user.id}).scalar_one() == user.id
+    db.commit()
+    assert db.execute(text('SELECT value FROM benchmark_transaction_probe')).scalars().all() == [7]
+
+
+def test_benchmark_workers_share_rows_not_dbapi_connections(db, auth_user_and_headers):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+    user, _ = auth_user_and_headers
+    sessions = sessionmaker(bind=db.get_bind())
+    barrier = Barrier(4, timeout=5)
+    request_connection = db.connection().connection.driver_connection
+    def read():
+        with sessions() as worker:
+            connection = worker.connection().connection.driver_connection
+            barrier.wait()
+            row = worker.execute(text('SELECT id FROM users WHERE id = :id'), {'id': user.id}).scalar_one()
+            return id(connection), row
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        rows = list(workers.map(lambda _: read(), range(4)))
+    assert len({connection for connection, _ in rows} | {id(request_connection)}) == 5
+    assert [row for _, row in rows] == [user.id] * 4
+
+
+@pytest.fixture
+def db(benchmark_db):
+    return benchmark_db
+
+
+def test_ephemeral_engines_are_isolated_memory_only_and_disposed(monkeypatch):
+    import sqlite3
+    from sqlalchemy import text
+    from app.config import settings
+    from eval.ephemeral_database import create_ephemeral_engine
+    monkeypatch.setattr(settings, 'app_env', 'test')
+    connect = sqlite3.connect
+    uris = []
+    def observe(database, **kwargs):
+        uris.append(database)
+        assert database.startswith('file:reva-eval-')
+        assert database.endswith('?mode=memory&cache=shared') and kwargs['uri'] is True
+        return connect(database, **kwargs)
+    monkeypatch.setattr(sqlite3, 'connect', observe)
+    first, second = create_ephemeral_engine(), create_ephemeral_engine()
+    try:
+        with first.begin() as connection:
+            connection.execute(text('CREATE TABLE isolated_probe (value INTEGER)'))
+            assert connection.execute(text('PRAGMA database_list')).all() == [(0, 'main', '')]
+        with second.connect() as connection:
+            assert connection.execute(text("SELECT name FROM sqlite_master WHERE name = 'isolated_probe'")).all() == []
+        assert uris[0] != uris[1]
+    finally:
+        first.dispose()
+        second.dispose()
+    # Reopening the exact first name after its last connection closes finds a
+    # fresh empty memory database, not retained rows or a file on disk.
+    connection = connect(uris[0], uri=True)
+    try:
+        assert connection.execute("SELECT name FROM sqlite_master WHERE name = 'isolated_probe'").fetchall() == []
+    finally:
+        connection.close()
+
+
+def test_ephemeral_engine_rejects_non_test_environment_before_connecting(monkeypatch):
+    from app.config import settings
+    from eval.ephemeral_database import create_ephemeral_engine
+    monkeypatch.setattr(settings, 'app_env', 'production')
+    with pytest.raises(RuntimeError, match='test_in_memory'):
+        create_ephemeral_engine()
+
+
+@pytest.mark.asyncio
+async def test_benchmark_retains_caught_worker_database_errors(db, auth_user_and_headers, monkeypatch):
+    from sqlalchemy import text
+    from app.twin import builder
+    user, _ = auth_user_and_headers
+    scenario = Scenario('caught-worker-database-error', 7, 'available')
+    seed_synthetic_records(db, user.id, scenario)
+    def broken_reader(worker_db, *args, **kwargs):
+        worker_db.execute(text('SELECT synthetic_missing_column FROM users'))
+    monkeypatch.setattr(builder, '_fill_mood', broken_reader)
+    row = await run_sample(db, user.id, scenario, 'baseline', 'qwen3.8-max', CallBudget(3), live=False)
+    assert row['status'] == 'failed_contracts', contract_diagnostics(row)
+    assert row['quality']['database_context_intact'] is False
+    assert row['database_errors'] and set(row['database_errors']) == {'OperationalError'}
+    assert all(detail['sqlite_errorname'] == 'SQLITE_ERROR' and detail['statement_kind'] == 'SELECT'
+               for detail in row['database_error_details'])
+    assert 'synthetic_missing_column' not in contract_diagnostics(row)

@@ -332,3 +332,19 @@ def sample_medical_exam_data():
             }
         ]
     }
+
+
+@pytest.fixture
+def benchmark_db(monkeypatch):
+    """Real concurrent read benchmark sessions must not share a DBAPI connection."""
+    from app.config import settings
+    from eval.ephemeral_database import create_ephemeral_engine
+
+    monkeypatch.setattr(settings, 'app_env', 'test')
+    engine = create_ephemeral_engine()
+    Base.metadata.create_all(bind=engine)
+    try:
+        with sessionmaker(autocommit=False, autoflush=False, bind=engine)() as session:
+            yield session
+    finally:
+        engine.dispose()

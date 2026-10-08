@@ -84,6 +84,7 @@ async def run(args):
               "candidate_disposition": "eval_only_unproven_model_control" if any(v in THINKING_PROBES for v in variants) else "runtime_candidate_default_off" if "runtime_preplan" in variants else "eval_only", "semantic_noninferiority": "not_established", "rows": [],
               "source_sha256": {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in (
                   "backend/eval/full_task_prompt_benchmark.py", "scripts/benchmark_prompt_full_task.py",
+                  "backend/eval/ephemeral_database.py",
                   "backend/eval/experimental_read_thinking_budget.py", "backend/eval/experimental_read_synthesis.py", "backend/eval/experimental_owned_read_preplan.py",
                   "backend/eval/experimental_empty_read_terminal.py", "backend/eval/experimental_read_evidence_format.py",
                   "backend/app/services/agent_composed_read_completion.py", "backend/app/services/health_context_lite_service.py",
@@ -98,6 +99,7 @@ async def run(args):
                          ("Real resolver and Laya on, staged off, application temperature/output limits retained; admin mode held on locally, real production admin control itself is not exercised."
                           if production_routing else "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test."),
                          "Redis/Twin cache disabled; application prompts and read adapters retained.",
+                         "Disposable shared-memory SQLite uses separate session connections; this is not PostgreSQL concurrency or production-load proof.",
                          "Rich-profile cases seed synthetic allergies, chronic condition and medication; clinical/CGM context and optional local knowledge base remain absent.",
                          "Per-pair synthetic user and record IDs, independent conversations, real audited consent; no production database.",
                          "First UI content is not a clinically useful-result metric.",
@@ -113,6 +115,7 @@ async def run(args):
     save()
     if not args.scripted and not args.include_live_llm:
         return 0
+    engine = None
     try:
         from sqlalchemy.engine import make_url
         url = make_url(settings.effective_database_url)
@@ -130,7 +133,11 @@ async def run(args):
         import app.models.cgm_reading
         import app.models.family_health
         import app.models.clinical_journal
-        from app.database import Base, engine, SessionLocal
+        from app.database import Base
+        from sqlalchemy.orm import sessionmaker
+        from eval.ephemeral_database import create_ephemeral_engine
+        engine = create_ephemeral_engine()
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         from app.models.user import User
         with SessionLocal() as db:
             require_ephemeral(db)
@@ -170,6 +177,9 @@ async def run(args):
         if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
             raise
         return 2
+    finally:
+        if engine is not None:
+            engine.dispose()
 
 
 def main():
