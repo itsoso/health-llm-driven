@@ -810,7 +810,8 @@ async def test_production_controls_are_preserved_and_still_bounded():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("decision_state", ["accepted", "abstained", "timeout"])
-async def test_production_route_keeps_real_resolver_quality_and_decision_budget(db, auth_user_and_headers, monkeypatch, decision_state):
+@pytest.mark.parametrize("variant", ["runtime_preplan", "preplan_budget512"])
+async def test_production_route_keeps_real_resolver_quality_and_decision_budget(db, auth_user_and_headers, monkeypatch, decision_state, variant):
     from app.config import settings
     from app.services.agent_executor import AgentExecutor
     from app.services.llm import factory
@@ -847,7 +848,7 @@ async def test_production_route_keeps_real_resolver_quality_and_decision_budget(
         return original(self, tools)
     monkeypatch.setattr(AgentExecutor, "_resolve_chat_provider", resolve)
     budget = CallBudget(2)
-    row = await run_sample(db, user.id, scenario, "runtime_preplan", "qwen3.8-max", budget,
+    row = await run_sample(db, user.id, scenario, variant, "qwen3.8-max", budget,
                            live=True, production_routing=True)
     assert row["status"] == ("failed_contracts" if decision_state == "timeout" else "passed_contracts"), row
     assert calls == [False] and len(seen_decisions) == 1
@@ -856,7 +857,8 @@ async def test_production_route_keeps_real_resolver_quality_and_decision_budget(
     assert row["decision_routing"]["effective_tier"] == "balanced"
     assert row["decision_routing"]["status"] == ("fallback" if decision_state == "timeout" else decision_state)
     assert row["effective_model_id"] == "qwen3.8-max"
-    assert row["calls"][0]["request_controls"] == {"temperature":0.3, "max_tokens":8000}
+    assert row["calls"][0]["request_controls"] == {"temperature":0.3, "max_tokens":8000,
+        **({"thinking_budget":512} if variant == "preplan_budget512" else {})}
     assert row["decision_calls"][0]["token_source"] == ("unknown" if decision_state == "timeout" else "api")
     assert picked_tiers == (["balanced"] if decision_state == "accepted" else [])
 

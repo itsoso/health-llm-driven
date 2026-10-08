@@ -78,10 +78,10 @@ async def run(args):
               "tool_budget_protocol": "logical-and-physical-v2", "per_task_logical_tool_cap": 3,
               "per_task_model_tool_proposal_cap": 3, "per_task_tool_cap": 6, "per_logical_dispatch_cap": 2, "max_input_bytes_per_call": 262144, "requested_max_output_tokens_per_call": 8000 if production_routing else 1200,
               "provider_timeout_seconds": 45, "task_timeout_seconds": 90,
-              "candidate_disposition": "runtime_candidate_default_off" if "runtime_preplan" in variants else "eval_only", "semantic_noninferiority": "not_established", "rows": [],
+              "candidate_disposition": "eval_only_unproven_model_control" if "preplan_budget512" in variants else "runtime_candidate_default_off" if "runtime_preplan" in variants else "eval_only", "semantic_noninferiority": "not_established", "rows": [],
               "source_sha256": {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in (
                   "backend/eval/full_task_prompt_benchmark.py", "scripts/benchmark_prompt_full_task.py",
-                  "backend/eval/experimental_read_synthesis.py", "backend/eval/experimental_owned_read_preplan.py",
+                  "backend/eval/experimental_read_thinking_budget.py", "backend/eval/experimental_read_synthesis.py", "backend/eval/experimental_owned_read_preplan.py",
                   "backend/eval/experimental_empty_read_terminal.py", "backend/eval/experimental_read_evidence_format.py",
                   "backend/app/services/agent_composed_read_completion.py", "backend/app/services/health_context_lite_service.py",
                   "backend/app/config.py", "backend/app/services/agent_executor.py", "backend/app/services/agent_prompt_sections.py",
@@ -176,9 +176,9 @@ def main():
     modes.add_argument("--include-live-llm", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model", choices=["qwen3.8-flash", "qwen3.8-max"], action="append")
-    parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout"], action="append")
+    parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout", "preplan_budget512"], action="append")
     parser.add_argument("--production-routing", action="store_true", help="Use real provider resolution, request controls and one bounded Laya decision per task.")
-    parser.add_argument("--reference-variant", choices=["baseline", "runtime_legacy_layout"], default="baseline")
+    parser.add_argument("--reference-variant", choices=["baseline", "runtime_legacy_layout", "runtime_preplan"], default="baseline")
     parser.add_argument("--baseline-only", action="store_true", help="Evaluate the runtime in this checkout without injecting an experimental variant.")
     parser.add_argument("--case", choices=[case.id for case in SCENARIOS], action="append")
     parser.add_argument("--repetitions", type=int, default=1)
