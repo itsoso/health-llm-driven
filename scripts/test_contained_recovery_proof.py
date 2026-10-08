@@ -613,7 +613,8 @@ def test_legacy_base_rejects_duplicate_security_canonical_and_dropin_assignments
 
 
 @pytest.mark.parametrize('network', [False, True])
-def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path, network):
+@pytest.mark.parametrize('legacy_drain', [False, True])
+def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path, network, legacy_drain):
     source = Path(__file__).resolve().parents[1]
     instance = proof.RecoveryProof.__new__(proof.RecoveryProof)
     instance.systemd_root = tmp_path
@@ -621,7 +622,30 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
     instance._network_guard = lambda old_source: {'profile': 'network-guard-v1'}
     candidates = {unit: (source / 'infra/systemd/dropins' / unit.replace('.service', '-runtime-state.conf')).read_bytes()
                   for unit in proof.UNITS[1:]}
-    instance.runtime = SimpleNamespace(_expected_candidate=candidates.__getitem__,
+    current_candidates = dict(candidates)
+    import shutil
+    canonical = tmp_path / 'canonical-production'
+    shutil.copytree(source / 'infra/systemd', canonical / 'infra/systemd')
+    source = canonical
+    if legacy_drain:
+        backend = candidates['health-backend.service']
+        for line in (b'KillMode=mixed\n', b'TimeoutStopSec=45s\n', b'KillSignal=SIGTERM\n',
+                     b'RestartKillSignal=SIGTERM\n', b'SendSIGKILL=yes\n', b'FinalKillSignal=SIGKILL\n'):
+            backend = backend.replace(b'\n' + line, b'\n')
+        backend = backend.replace(b' --timeout-graceful-shutdown 30', b'')
+        candidates['health-backend.service'] = backend
+        (source / 'infra/systemd/dropins/health-backend-runtime-state.conf').write_bytes(backend)
+        base = source / 'infra/systemd/health-backend.service'
+        original_base = base.read_bytes().replace(b' --timeout-graceful-shutdown 30', b'')
+        for line in (b'KillMode=mixed\n', b'RestartKillSignal=SIGTERM\n',
+                     b'SendSIGKILL=yes\n', b'FinalKillSignal=SIGKILL\n',
+                     b'# Keep request-owned Pi children alive while the single worker drains.\n'):
+            original_base = original_base.replace(b'\n' + line, b'\n')
+        base.write_bytes(original_base)
+        poison = source / 'backend/scripts/runtime_state_release_transaction.py'
+        poison.parent.mkdir(parents=True)
+        poison.write_text('raise AssertionError("historical Python must not execute")')
+    instance.runtime = SimpleNamespace(_expected_candidate=current_candidates.__getitem__,
         BACKEND_DRAIN_EFFECTIVE={"KillMode": "mixed", "TimeoutStopUSec": "45s", "KillSignal": "15",
                                 "RestartKillSignal": "15", "SendSIGKILL": "yes", "FinalKillSignal": "9"},
         ReleaseTransaction=SimpleNamespace(_stable_exec_start=lambda value: value))
@@ -647,6 +671,8 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
             values = proof.security_unit_contract(unit)['effective']
             if unit == 'health-backend.service':
                 values = {**values, **instance.runtime.BACKEND_DRAIN_EFFECTIVE}
+                if legacy_drain:
+                    values['KillMode'] = 'control-group'
         else:
             paths, values = [], {}
         (tmp_path / unit).write_bytes(original)
@@ -654,7 +680,15 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
     instance.systemd = SimpleNamespace(show=lambda unit, key: properties[unit][key], is_enabled=lambda unit: 'enabled')
     worker = (source / 'infra/systemd/celery-worker.service').read_text()
     command = next(line.removeprefix('ExecStart=') for line in worker.splitlines() if line.startswith('ExecStart='))
-    effective = {'celery-worker.service': {'ExecStart': f'path={command.split()[0]}\nargv[]={command}\nignore_errors=no'}}
+    effective = {}
+    for unit, raw in candidates.items():
+        import re
+        commands = re.findall(rb'^ExecStart=(.+)$', raw, re.M)
+        unit_command = command if unit == 'celery-worker.service' else commands[0].decode()
+        writable = re.findall(rb'^ReadWritePaths=(.+)$', raw, re.M)[0].decode()
+        effective[unit] = {'ExecStart': f'path={unit_command.split()[0]}\nargv[]={unit_command}\nignore_errors=no',
+                           'ReadWritePaths': writable}
+
     transaction = SimpleNamespace(_old_effective=lambda: effective, _stable_exec_start=lambda value: value,
                                   _validate_candidate_effective=lambda value: None, _stable_effective_snapshot=lambda value: value)
     result = instance._units(source, transaction)
@@ -671,6 +705,41 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
         with pytest.raises(proof.ProofError, match='effective backend drain differs'):
             instance._units(source, transaction)
         properties['health-backend.service'][prop] = expected
+    # Whole-generation bytes and effective commands cannot be mixed.
+    if legacy_drain:
+        dropin.write_bytes(current_candidates['health-backend.service'])
+        with pytest.raises(proof.ProofError, match='drop-in bytes differ'):
+            instance._units(source, transaction)
+        dropin.write_bytes(candidates['health-backend.service'])
+        properties['health-backend.service']['KillMode'] = 'mixed'
+        with pytest.raises(proof.ProofError, match='effective backend drain differs'):
+            instance._units(source, transaction)
+        properties['health-backend.service']['KillMode'] = 'control-group'
+    else:
+        older = current_candidates['health-backend.service']
+        for line in (b'KillMode=mixed\n', b'TimeoutStopSec=45s\n', b'KillSignal=SIGTERM\n',
+                     b'RestartKillSignal=SIGTERM\n', b'SendSIGKILL=yes\n', b'FinalKillSignal=SIGKILL\n'):
+            older = older.replace(b'\n' + line, b'\n')
+        older = older.replace(b' --timeout-graceful-shutdown 30', b'')
+        dropin.write_bytes(older)
+        with pytest.raises(proof.ProofError, match='drop-in bytes differ'):
+            instance._units(source, transaction)
+        dropin.write_bytes(candidates['health-backend.service'])
+    for unit in candidates:
+        for prop, suffix, error in [('ExecStart', ' --unexpected', 'command differs'),
+                                    ('ReadWritePaths', ' /unexpected', 'writable paths differ')]:
+            original_value = effective[unit][prop]
+            effective[unit][prop] += suffix
+            with pytest.raises(proof.ProofError, match=error):
+                instance._units(source, transaction)
+            effective[unit][prop] = original_value
+    for unit in candidates:
+        canonical_dropin = source / 'infra/systemd/dropins' / unit.replace('.service', '-runtime-state.conf')
+        original_bytes = canonical_dropin.read_bytes()
+        canonical_dropin.write_bytes(original_bytes + b'ReadWritePaths=/unexpected\n')
+        with pytest.raises(proof.ProofError, match='canonical production runtime profile unsupported'):
+            instance._units(source, transaction)
+        canonical_dropin.write_bytes(original_bytes)
     properties['health-backend.service']['MemoryMax'] = 'infinity'
     with pytest.raises(proof.ProofError, match='effective security composition differs'):
         instance._units(source, transaction)

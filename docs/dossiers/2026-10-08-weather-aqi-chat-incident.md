@@ -86,3 +86,13 @@
 - 最终后端 CI-mode 相关回归 61 passed，包含既有 21 项集成、Pi 写入对账与关闭竞态；无自动重试、取消不伪装成功。
 
 - 30 秒超时边界实验保留 FAIL/部分证实：真实 Uvicorn/uvloop/Pi 的最小 lifespan=off 服务在 30.159 秒退出，客户端断开且没有伪成功/重试，但取消处理与 Pi 主动 await/reap 未证实。见 `docs/reviews/2026-10-08-pi-drain-timeout.json`。不能宣称超时请求完整优雅结束；这是保留 `SendSIGKILL=yes`、`FinalKillSignal=SIGKILL` 和 systemd mixed 最终整组清理的必要理由。此实验不证明生产 systemd 45 秒终态，须由独立评审裁决验证边界。
+
+## 关闭修复独立审查与旧版本恢复整改
+
+- 固定 `6be2a3455` G4 **NO-GO**：使用真实 `9b05c5c9` canonical base 与完整旧 drop-in 的内存回放，恢复证明错误地按新 recovery source 要求新配置，报 `effective drop-in bytes differ`。首次新版本安装前失败必须能证明仍然完整旧 generation，不能让新版排空配置阻断合理恢复。未推送此候选。
+- 独立审查 231 项测试通过但未覆盖该场景；此前旧 journal 恢复原字节测试不等价于完整旧 generation 的 contained proof。需补 RED 测试并按认证 production revision 的精确配置代际修复，拒绝任意旧新混合与被篡改配置，不执行历史代码。
+- 审查认为 30 秒超时部分失败不单独阻断：按生产 systemd 249 文档，mixed 在主进程退出或 45 秒超时后向剩余整个 cgroup 发最终 KILL；必须保留并核验该配置，不宣称应用层主动回收已通过。
+- 更广发布/回滚/activation 测试 362 passed，作为补充证据；不覆盖新发现缺口。
+
+- 整改 RED：完整旧配置代际两组合 2 failed / 2 passed；修复仅在恢复证明选择两个受审的完整配置模板，按 canonical production source 精确匹配，不执行历史 Python，也不给正式 publisher 增加接受旧配置的开关。
+- 完整旧模板与真实 `9b05c5c9` backend drop-in 逐字节相同；新/旧 canonical 与相反 live drop-in 混用均拒绝，六个有效信号/超时属性、三服务命令、额外可写路径及未知 canonical 字节均拒绝。旧 journal/版本/租约/终态/权限证明保留。整改后四套相关脚本测试 330 passed。
