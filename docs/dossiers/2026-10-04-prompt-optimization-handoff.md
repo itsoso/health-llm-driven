@@ -342,3 +342,11 @@ Flash 不改思考控制的真实路由六场景12任务契约通过，但独立
 319项CI-mode与补充4项负测通过；CLI18任务通过。所有状态断言补完整窄诊断。新鲜live、独立复审和Linux/main精确CI尚待完成；发布仍阻断。完整证据边界见[隔离修复记录](../reviews/2026-10-08-benchmark-database-isolation.md)。
 
 隔离修复固定源码515531e96的真实闸5场景+5judge（10 API）通过，28份源码/锁摘要不变；复审补全剩余路由诊断和建表失败清理，13项通过。最终CLI18任务及25份源码摘要完全匹配，证据已持久化。System Map/秘密扫描/阻断Ruff通过，待最终复审与Linux/main CI；仍未部署。
+
+### 精确 main CI 通过，Trusted 预检的事件类型阻断
+
+独立审查对1c86269e4875a16ba27a9dabf763fa08a43175dd裁决代码及默认关闭发布准入GO，实验激活仍NO-GO。PR278的CI37731876684与快进合并后的main CI37732948052均29项成功；Linux balanced-02的f分片293项、agent-i-l分片7136项、twin-api分片4项零失败。它们与本地集合重叠，不合并计数。
+
+Trusted validate 37733904268在凭据前失败：现有门禁核对同SHA的每条CI记录，PR事件不满足其main push/workflow_dispatch合同。因此即使同SHA两条CI均绿色，1c862仍不可发布。保留原失败，不重跑、不修改门禁；本次仅追加验证记录，形成独立main发布提交后重新等待完整精确CI。运行时、依赖、评测源码及28份live绑定摘要保持不变。
+
+当前生产仍a10e642cde189c9b414dc8d41346e22f088eaa0e，原回执SUCCEEDED、业务lease不存在、launcher inode7777226。GitHub relay启用且active，隔离官方Git查询main身份一致。尚未撤权、销毁旧私钥、轮换授权或部署。餐食问题已完成只读定位，按用户指定顺序在本次发布后修复；未以截图或时间相近日志冒充完整用户路径验收。
