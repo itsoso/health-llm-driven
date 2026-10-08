@@ -253,7 +253,7 @@ def _nutrition_assertion_in_clause(clause: str) -> bool:
 # every requested row and field was returned: there is no clinical assessment
 # or prescribed plan in this evidence contract.
 _HEALTH_SUBJECT = (
-    r"(?:睡眠(?:恢复|质量)|恢复(?:水平|质量|状态|程度|能力|情况)?|"
+    r"(?:(?:睡眠)?评分|睡眠(?:恢复|质量)|恢复(?:水平|质量|状态|程度|能力|情况)?|"
     r"你(?:的)?(?:身体)?状态|身体(?:状态|状况)?|生活(?:节奏|作息|状态)|作息|"
     r"训练(?:量|负荷|状态|强度)?|运动(?:量|负荷|强度|安全性)?|(?:总体)?情况|(?:各项)?指标|一切|状态|你)"
 )
@@ -265,6 +265,13 @@ _HEALTH_LINK = (
 _HEALTH_EVALUATION = (
     r"(?:中等偏好|不错|尚可|理想|还可以|良好|稳定|规律|正常|安全|合理|适宜|适量|充分|充足|足够|"
     r"健康|欠佳|不佳|较差|过量|过度|康复|痊愈|恢复|好|差)"
+)
+# Scores in this adapter have values and source names, but no verified grading
+# scale. Fold only an adjacent numeric score before an evaluative predicate;
+# ordinary numbers and comparative record descriptions stay untouched.
+_SCORE_VALUE_BEFORE_GRADE = re.compile(
+    r"(?P<subject>(?:睡眠)?评分)\s*(?:为|是|[:：])?\s*\d+(?:\.\d+)?\s*分?\s*"
+    r"(?:[，,]\s*)?(?=(?:" + _HEALTH_LINK + r"\s*){0,12}" + _HEALTH_EVALUATION + r")"
 )
 _HEALTH_ABSENCE = (
     r"(?:没有(?:发现|看到)?|未见|未发现|不存在|看不到|无|没什么|没啥|没)"
@@ -382,6 +389,11 @@ def _asserted_record_only_claim(pattern: re.Pattern, clause: str) -> bool:
                         or not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:unknown.start()])):
             continue
         if pattern is _CURRENT_HEALTH_CLAIM:
+            if (str(match.group("subject") or "").endswith("评分")
+                    and match.group("evaluation") in {"稳定", "规律"}):
+                # Preserve existing record-comparison behavior. This new score
+                # boundary concerns unverified grades, not numeric variation.
+                continue
             if match.group("evaluation") == "健康" and re.match(r"(?:背景|档案|资料|记录)", suffix):
                 # A health-profile noun does not assert that its owner is healthy.
                 continue
@@ -521,8 +533,9 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
     # Fold only finite uncertainty operations and an adjacent health predicate,
     # then their outer-negation chain. A gap cannot span an empty paragraph.
     # Sentence boundaries and other domain matching views remain unchanged.
+    health_normalized = _SCORE_VALUE_BEFORE_GRADE.sub(r"\g<subject>", normalized)
     health_normalized = _HEALTH_UNCERTAINTY_OPERATION_WRAP.sub(
-        lambda match: re.sub(r"\s+", "", match.group()), normalized,
+        lambda match: re.sub(r"\s+", "", match.group()), health_normalized,
     )
     health_normalized = _HEALTH_UNCERTAINTY_WRAP.sub(
         lambda match: re.sub(r"\s+", " ", match.group()), health_normalized,
