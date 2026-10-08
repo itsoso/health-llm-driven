@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | validating |
-| 当前阶段 | 2026-10-08：优化修复已完成 Backend/Web 发布；餐食图片错误分类修复正在验证，尚未发布 |
+| 当前阶段 | 2026-10-08：优化修复已完成 Backend/Web 发布；餐食图片错误分类修复已部署，原用户照片验收待确认 |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -360,3 +360,11 @@ Trusted validate 37733904268在凭据前失败：现有门禁核对同SHA的每�
 修复先解析并验证模型 JSON，内部派生错误类别；当前用户/消息/图片绑定且封闭纯餐食记录意图下，缺少可记录食物返回 waiting_for_user 并明确未保存；服务或格式失败保持 failed/retryable 并给清楚重试说明。混合任务、部分成功、已有回执、待确认、其他工具失败、只读与来源不明仍走原流程。没有新增草稿/回执或额外写入。有效食物加普通不确定备注继续通过。
 
 G3 本地：312关联回归、21 CI-mode集成、PostgreSQL196项及补充3项下一轮/重放用例通过；原Mobile恢复 waiting_for_user 1项通过；System Map通过。第一轮安全审查发现显式success=false及空food对象会误归nofood，补3项RED后收紧模型契约并复跑。真实模型首轮缺配置失败保留，授权测试配置仅进进程内存；修前10次API通过不替代修后新鲜证据。详见[餐食验证](../reviews/2026-10-08-meal-photo-validation.json)。修后标准live闸10次真实API通过、0失败、用量完整且源码摘要不变，见[修后真实闸](../reviews/2026-10-08-meal-photo-live-regression.json)。独立 G4 复审 GO，绑定 `ae6e99566a7bd3d24992e228bd8bb488d8c03d4c`；reviewer另跑244项与12个Base64/URL契约探针通过。餐食修复尚未push/部署，下一步精确main CI与Trusted后端发布。原截图是餐后残留，不据此声称能还原整餐；本地测试没有复用真实健康图片。
+
+### 餐食修复正式发布与后验
+
+已合入 main 并通过完整精确 CI `37741765620`（29项成功），push CI `37741692327` 成功。Trusted validate `37743406333`、backend `37744317239` 成功，生产精确版本 `1e3a19e58b075364ed6769f91a374cfc991d554b`，正式回执 SUCCEEDED。原授权按 canonical bootstrap 退休，新授权安装成功，原 launcher inode 与历史回执保留，无部署重跑。
+
+上线后验：生产 tracked tree 干净、三个修改的运行时文件摘要与受审源码一致；三轮健康评分60/60；backend、worker、beat正常且restart count为0；实际前端服务 health-frontend 完整身份与上一批Web发布后相同；发布租约已释放。四项公开接口检查（健康200、未授权Agent401、隐私页200、健康连接页200）TLS验证通过；当前配置加载的四项实验/思考开关仍为原关闭值。探针首次误查不存在的 health-web，修正为实际unit后只读复验通过，没有修改生产或重跑部署。详见[餐食发布证明](../reviews/2026-10-08-meal-photo-deployment.json)。
+
+独立 G5 后验复核 GO，确认精确CI、回执、运行时摘要、服务/租约与公开端点证据一致；后续稳定窗口四个服务PID保持且零重启。G6边界：合成流式路径、重放及下一轮测试已通过；未用用户原餐食图片进行真实线上识别，没有读取/写入生产健康记录，不能声称原图识别准确率或用户验收已通过。本次只发布后端，沿用现有Mobile waiting_for_user协议，不需要OTA/原生包，也未执行Mobile发布。
