@@ -64,12 +64,31 @@ def test_selected_exam_context_parser(raw, expected):
 
 
 @pytest.mark.asyncio
-async def test_selected_exam_stream_discards_client_payload_and_other_reports(db, auth_user_and_headers, monkeypatch):
+@pytest.mark.parametrize("with_history", [False, True])
+async def test_selected_exam_stream_discards_client_payload_and_other_reports(db, auth_user_and_headers, monkeypatch, with_history):
     from app.models.agent_conversation import AgentMessage
     from app.services import agent_executor as ae
     user, _ = auth_user_and_headers
     selected = _exam(db, user.id, 'SELECTED_REPORT')
     _exam(db, user.id, 'UNRELATED_SERVER_REPORT')
+    conversation_id = None
+    old_message_ids = []
+    if with_history:
+        from app.models.agent_conversation import AgentConversation
+        conversation = AgentConversation(user_id=user.id, title='Synthetic history')
+        db.add(conversation)
+        db.flush()
+        old_messages = [
+            AgentMessage(conversation_id=conversation.id, role='user', content='解释 UNRELATED_HISTORY_REPORT'),
+            AgentMessage(conversation_id=conversation.id, role='assistant', content='UNRELATED_HISTORY_REPORT 与 CLIENT_OLD_SUMMARY', meta={
+                'cards':[{'type':'metric_table','data':{'title':'UNRELATED_HISTORY_REPORT'}}],
+                'answer_evidence':{'version':'answer-evidence.v1','basis':[{'observation':'UNRELATED_HISTORY_REPORT'}]},
+            }),
+        ]
+        db.add_all(old_messages)
+        db.commit()
+        conversation_id = conversation.id
+        old_message_ids = [item.id for item in old_messages]
     executor = AgentExecutor(db)
     from app.twin import builder as twin_builder
     def reject_unscoped_twin(*args, **kwargs):
@@ -81,6 +100,12 @@ async def test_selected_exam_stream_discards_client_payload_and_other_reports(db
         nonlocal calls
         seen.extend(messages)
         calls += 1
+        if calls == 1:
+            names = {tool['function']['name'] for tool in tools}
+            assert names <= {'health_query', 'knowledge_search', 'realtime_search'}
+            report_tool = next(tool['function'] for tool in tools if tool['function']['name'] == 'health_query')
+            assert report_tool['parameters']['properties']['dimension']['enum'] == ['medical_exam']
+            assert set(report_tool['parameters']['properties']) == {'dimension'}
         if calls == 1:
             return {'content': '', 'tool_calls': [{'id':'selected-report', 'type':'function', 'function': {'name':'health_query','arguments':json.dumps({'dimension':'medical_exam'})}}], 'finish_reason':'tool_calls'}
         return {'content': '已核对所选报告，参考范围不能单独用于诊断。', 'finish_reason':'stop'}
@@ -95,7 +120,7 @@ async def test_selected_exam_stream_discards_client_payload_and_other_reports(db
     monkeypatch.setattr(executor, '_call_llm_stream', stream)
     monkeypatch.setattr(ae.settings, 'health_evidence_runtime_enabled', True)
     events = [event async for event in executor.run_stream(
-        user_id=user.id, channel='typed',
+        user_id=user.id, channel='typed', conversation_id=conversation_id,
         message='请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来 30 天该做什么。',
         extra_context=json.dumps({'from':f'medical-exam/{selected.id}', 'overall_assessment':'CLIENT_UNTRUSTED', 'multi_model':True}),
     )]
@@ -104,6 +129,12 @@ async def test_selected_exam_stream_discards_client_payload_and_other_reports(db
     serialized = json.dumps([seen, events, saved.meta, saved.content], ensure_ascii=False, default=str)
     assert 'CLIENT_UNTRUSTED' not in serialized
     assert 'UNRELATED_SERVER_REPORT' not in serialized
+    assert 'UNRELATED_HISTORY_REPORT' not in serialized
+    assert 'CLIENT_OLD_SUMMARY' not in serialized
+    for old_id in old_message_ids:
+        assert db.get(AgentMessage, old_id) is not None
+    assert executor._current_turn_recent_messages == []
+    assert executor._provider_history_references == ()
     assert 'SELECTED_REPORT' in json.dumps(seen, ensure_ascii=False)
     assert done['turn_outcome']['status'] == 'complete'
     assert 'health_query_not_requested' not in serialized
@@ -209,5 +240,20 @@ async def test_selected_report_mixed_clinical_turn_keeps_safety_without_unscoped
     text = ''.join(e['data'].get('content','') for e in events if e.get('event')=='token')
     assert '未执行所选报告与症状的联合解读' in text
     assert done['turn_outcome']['status'] != 'complete'
+    assert done.get('cards') == []
+    from app.models.agent_conversation import AgentMessage
+    assert db.get(AgentMessage, done['message_id']).meta.get('cards') == []
     if emergency:
         assert '急诊' in text
+
+
+@pytest.mark.parametrize('status', ['failed', 'blocked', 'reconciliation_required'])
+def test_citations_never_readded_to_unsuccessful_terminal(db, auth_user_and_headers, monkeypatch, status):
+    from app.services import medical_citation_policy
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    def forbidden(*a, **k):
+        pytest.fail('failed terminal must not compile new medical citations')
+    monkeypatch.setattr(medical_citation_policy, 'build_medical_citation_bundle', forbidden)
+    event = {'event':'done','data':{'completion_status':'complete','turn_outcome':{'status':status}}}
+    assert executor._attach_medical_citations_to_terminal_event(event,user_id=user.id,user_message='解释体检报告') == event

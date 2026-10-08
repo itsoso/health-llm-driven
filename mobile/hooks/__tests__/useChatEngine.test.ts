@@ -946,6 +946,20 @@ describe('useChatEngine', () => {
     expect(!!assistant?.answerEvidence).toBe(status === 'partial');
   });
 
+  it.each(['error', 'interrupted', 'exception'])('clears early evidence when stream ends with %s', async (end) => {
+    mockStreamChat.mockImplementation(async function* () {
+      yield { type: 'start', conversationId: 777 };
+      yield { type: 'evidence', answerEvidence: earlyAnswerEvidence };
+      if (end === 'error') yield { type: 'error', content: '请求失败，请重试' };
+      if (end === 'exception') throw new Error('Synthetic transport failure');
+    });
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await result.current.sendMessage('解释合成报告'); });
+    const assistant = result.current.messages.find(message => message.role === 'assistant' && !message.cardType);
+    expect(assistant).toBeDefined();
+    expect(assistant?.answerEvidence).toBeUndefined();
+  });
+
   it('restores verified write receipts from assistant history meta', () => {
     const restored = restoreMessagesFromHistory([{
       id: 51,

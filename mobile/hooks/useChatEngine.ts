@@ -1734,6 +1734,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const reconcileAcceptedTurnAfterTransportLoss = async (
       receivedContentSuffix = STREAM_RECOVERY_SUFFIX,
     ): Promise<boolean> => {
+      // Until authoritative recovery succeeds, streamed evidence is provisional.
+      setMessages(prev => prev.map(message => message.id === aId ? {
+        ...message, answerEvidence: undefined, sourcesUsed: undefined, medicalCitations: undefined,
+      } : message));
       const acceptedBeforeReconciliation = (
         acceptedByServer && typeof streamConversationId === 'number'
       );
@@ -2360,6 +2364,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             currentStatus: undefined,
             completionStatus: 'error',
             medicalCitations: undefined,
+          answerEvidence: undefined,
+          sourcesUsed: undefined,
             content: stripThinkingPlaceholder(m.content)
               ? stripThinkingPlaceholder(m.content) + `\n❌ ${errMsg}`
               : `❌ ${errMsg}`,
@@ -2385,6 +2391,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           currentStatus: undefined,
           completionStatus: 'interrupted',
           medicalCitations: undefined,
+          answerEvidence: undefined,
+          sourcesUsed: undefined,
           content: stripThinkingPlaceholder(m.content)
             ? `${stripThinkingPlaceholder(m.content)}\n\n[回复中断，已保留已接收内容]`
             : '[回复中断，请重新提问]',
@@ -2550,6 +2558,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         currentStatus: undefined,
         completionStatus: isAbort ? 'interrupted' : 'error',
         medicalCitations: undefined,
+        answerEvidence: undefined,
+        sourcesUsed: undefined,
         content: stripThinkingPlaceholder(m.content)
           ? (isAbort ? stripThinkingPlaceholder(m.content) + '\n\n[回复中断，已保留已接收内容]' : stripThinkingPlaceholder(m.content) + `\n❌ ${sanitizeChatErrorMessage(err?.message, '请求失败')}`)
           : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${sanitizeChatErrorMessage(err?.message, '请求失败')}`),

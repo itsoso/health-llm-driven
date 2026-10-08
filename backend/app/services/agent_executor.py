@@ -714,6 +714,28 @@ def _selected_exam_tool_allowed(tool_name: str, args: dict) -> bool:
     return False
 
 
+def _selected_exam_provider_tools(tools: list[dict]) -> list[dict]:
+    """Project the admitted provider schema without changing tool authority."""
+    from copy import deepcopy
+
+    projected = []
+    for tool in tools:
+        name = (tool.get("function") or {}).get("name")
+        if name in {"knowledge_search", "realtime_search"}:
+            projected.append(tool)
+        elif name == "health_query":
+            selected = deepcopy(tool)
+            selected["function"]["description"] = "读取本轮所选体检报告，报告选择及所有权由服务端核验。"
+            selected["function"]["parameters"] = {
+                "type": "object",
+                "properties": {"dimension": {"type": "string", "enum": ["medical_exam"]}},
+                "required": ["dimension"],
+                "additionalProperties": False,
+            }
+            projected.append(selected)
+    return projected
+
+
 def _extract_multi_model_flag(extra_context: Optional[str]) -> bool:
     """Mac「默认 3 个」模式在 extra_context 里带 {"multi_model": true}。"""
     if not extra_context:
@@ -14442,7 +14464,8 @@ class AgentExecutor:
         self._bind_agent_kernel_source_message(user_msg.id)
         try:
             self._bind_agent_kernel_actionable_references(
-                svc.build_actionable_references(conv.id)
+                () if self._turn_selected_exam_id is not None
+                else svc.build_actionable_references(conv.id)
             )
         except Exception as exc:  # noqa: BLE001 - context loss must not abort the turn
             logger.warning(
@@ -14452,7 +14475,8 @@ class AgentExecutor:
                 type(exc).__name__,
             )
 
-        self._bind_read_task_reference(user_id, conv.id)
+        if self._turn_selected_exam_id is None:
+            self._bind_read_task_reference(user_id, conv.id)
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
@@ -15645,6 +15669,8 @@ class AgentExecutor:
         if (
             event.get("event") != "done"
             or str(data.get("completion_status") or "complete") != "complete"
+            or (isinstance(data.get("turn_outcome"), dict)
+                and data["turn_outcome"].get("status") not in {"complete", "partial"})
         ):
             return event
 
@@ -17352,7 +17378,8 @@ class AgentExecutor:
         try:
             from app.services.opener_quick_reply import apply_opener_quick_reply_context
 
-            if not self._has_current_input_recovery_advice_goal() and self._public_task is None:
+            if (not self._has_current_input_recovery_advice_goal() and self._public_task is None
+                    and self._turn_selected_exam_id is None):
                 opener_quick_reply_note = apply_opener_quick_reply_context(
                     self.db,
                     user_id=user_id,
@@ -17486,7 +17513,17 @@ class AgentExecutor:
                 turn_context_parts.append(database_verification_snapshot)
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
-        if (
+        if self._turn_selected_exam_id is not None:
+            turn_context_parts.append(
+                "## 所选体检报告范围\n"
+                "本轮只解读用户所选的这一份报告。先调用 health_query 的 medical_exam 维度，"
+                "服务端会核验所有权并读取所选报告；不可自行选择其他报告或补查其它个人记录。"
+                "只以本轮成功读取的报告工具结果作为个人事实，历史消息、旧卡片及客户端摘要不是本轮报告证据。"
+                "读取后直接解释异常项、风险优先级和未来30天可执行的下一步；缺少背景时明确未知，"
+                "需要时向用户询问，不调用其他个人域、历史或管理工具补齐。"
+                "若范围受限，不换工具重试相同的越界读取；如实说明限制并基于已核验内容回答。"
+            )
+        elif (
             extra_context
             and extra_context.strip()
             and health_evidence_turn is None
@@ -17576,7 +17613,8 @@ class AgentExecutor:
         )
         messages = (
             [{"role": "user", "content": user_content}]
-            if preplanned_water_turn_call is not None or self._has_current_input_recovery_advice_goal() or self._public_task
+            if (preplanned_water_turn_call is not None or self._has_current_input_recovery_advice_goal()
+                or self._public_task or self._turn_selected_exam_id is not None)
             else svc.build_messages(conv.id, limit=history_limit)
         )
         if recovered_user_message is not None and (
@@ -17592,7 +17630,9 @@ class AgentExecutor:
             history_limit,
             getattr(self, "_prompt_context_profile", "full"),
         )
-        self._provider_history_references = tuple(svc.provider_history_references)
+        self._provider_history_references = (
+            () if self._turn_selected_exam_id is not None else tuple(svc.provider_history_references)
+        )
         recent_messages = messages
         if (
             recent_messages
@@ -17605,7 +17645,7 @@ class AgentExecutor:
             dict(item) for item in recent_messages[-6:] if isinstance(item, dict)
         ]
         self._turn_contextual_supplement_names = (
-            _resolve_contextual_supplement_names(
+            () if self._turn_selected_exam_id is not None else _resolve_contextual_supplement_names(
                 self.db,
                 user_id=user_id,
                 message=message,
@@ -17793,6 +17833,8 @@ class AgentExecutor:
         read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
         from app.services.agent_input_tool_scope import scope_tools_for_owned_read
         tools = scope_tools_for_owned_read(tools, read_scope)
+        if self._turn_selected_exam_id is not None:
+            tools = _selected_exam_provider_tools(tools)
         if self._has_current_input_recovery_advice_goal():
             from app.services.agent_kernel.current_input_advice_scope import current_input_advice_instructions
             messages[0]["content"] += "\n" + current_input_advice_instructions(message)
@@ -20371,6 +20413,8 @@ class AgentExecutor:
         if (
             health_evidence_turn is not None
             and health_evidence_manifest is not None
+            and completion_status == "complete"
+            and turn_outcome.get("status") in {"complete", "partial", "waiting_for_user"}
         ):
             health_card = health_evidence_turn.card_descriptor(
                 verification=health_verification,
@@ -20424,6 +20468,17 @@ class AgentExecutor:
             except Exception as e:  # noqa: BLE001 — 配方入口失败不影响回合收尾
                 logger.warning(f"[agent_executor] save_recipe 描述符构建失败: {e}")
                 recipe_candidate_meta = None
+
+        # Final projection follows the actual turn outcome, including cards
+        # created after the initial projection (clinical and recipe cards).
+        if completion_status != "complete" or turn_outcome.get("status") not in {"complete", "partial", "waiting_for_user"}:
+            response_cards = [
+                card for card in response_cards
+                if card.get("type") == "diet_draft"
+                and isinstance(card.get("data"), dict)
+                and card["data"].get("recorded") is True
+                and str(card["data"].get("record_id")) in verified_diet_ids
+            ]
 
         # 后置校验 (#3 护栏): record 意图的 turn 却 0 次工具执行时,前面已改写为
         # 用户可见的 fail-closed 文案;这里继续把标记写入 meta/done 供监控使用。
