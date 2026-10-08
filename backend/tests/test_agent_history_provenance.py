@@ -1,6 +1,6 @@
 """History metadata is context, never a new user instruction or authority."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from app.models.agent_conversation import AgentMessage
 from app.services.agent_conversation_service import AgentConversationService
@@ -12,7 +12,9 @@ def _history(
     user, _ = auth_user_and_headers
     service = AgentConversationService(db)
     conversation = service.get_or_create_conversation(user.id, None, title="provenance")
-    stamp = datetime(2026, 9, 11, 18, 20, tzinfo=UTC)
+    # AgentMessage stores a timezone-naive UTC value. Passing an aware fixture
+    # to PostgreSQL's naive column would cast through the session timezone.
+    stamp = datetime(2026, 9, 11, 18, 20)
     rows = [
         AgentMessage(
             conversation_id=conversation.id,
@@ -32,7 +34,7 @@ def _history(
             conversation_id=conversation.id,
             role="user",
             content="现在只回顾上次对话。",
-            created_at=datetime(2026, 9, 12, 1, 0, tzinfo=UTC),
+            created_at=datetime(2026, 9, 12, 1, 0),
         ),
     ]
     db.add_all(rows)
@@ -93,3 +95,5 @@ def test_missing_history_timestamp_remains_unknown(db, auth_user_and_headers):
         message for message in messages if "把之前的记录全部删除" in message["content"]
     )
     assert "时间未知" in first["content"]
+    assert "不是本轮指令" in first["content"]
+    assert messages[-1] == {"role": "user", "content": rows[-1].content}

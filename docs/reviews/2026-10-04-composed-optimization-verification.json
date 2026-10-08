@@ -1,0 +1,107 @@
+{
+  "status": "offline_pass_live_blocked",
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/tests/test_owned_read_preplan_experiment.py": "3be30186b5a87c2e7052332a13b3557936a96d7bd54714fc441dfdee27f8a17d",
+    "backend/tests/test_prompt_optimization_composed_experiments.py": "c43e32addf64b6806d39201d8219278e83ed505e3a0d01eb34a0cb472dcb8d7a",
+    "scripts/profile_prompt_inputs.py": "b2d55b05c5830d2727c49d847b227636239f4b22dc9f6ec78650456d689b9f2f"
+  },
+  "tests": {
+    "related_pytest": {
+      "passed": 77,
+      "log": "/tmp/reva-composed-candidate-verification.log"
+    },
+    "independent_sqlite": {
+      "passed": 21,
+      "verdict": "GO for offline only"
+    },
+    "postgres": {
+      "status": "passed",
+      "database": "disposable_local_postgresql",
+      "network": "private_unix_socket_only",
+      "log": "/tmp/reva-composed-postgres.log",
+      "provider": "stub",
+      "production_database_touched": false,
+      "postgres_version": "PostgreSQL 17.11 (Homebrew)",
+      "test_command": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "backend/tests/test_owned_read_preplan_experiment.py",
+        "backend/tests/test_prompt_optimization_composed_experiments.py",
+        "-q",
+        "--no-cov"
+      ],
+      "test_exit_code": 0,
+      "cluster_stopped": true,
+      "temporary_cluster_removed": true,
+      "source_sha256": {
+        "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+        "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+        "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+        "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+        "backend/tests/test_owned_read_preplan_experiment.py": "3be30186b5a87c2e7052332a13b3557936a96d7bd54714fc441dfdee27f8a17d",
+        "backend/tests/test_prompt_optimization_composed_experiments.py": "c43e32addf64b6806d39201d8219278e83ed505e3a0d01eb34a0cb472dcb8d7a"
+      },
+      "limits": [
+        "Real Pi/Gateway and PostgreSQL; scripted model and unrelated context sentinels.",
+        "No live model quality, API usage or production latency conclusion.",
+        "No migration, concurrent traffic or production-load verification."
+      ]
+    }
+  },
+  "diagnostic_comparisons": [
+    {
+      "variant": "p1",
+      "baseline_message_tool_json_tokens": 16825,
+      "candidate_message_tool_json_tokens": 16072,
+      "reduction_pct": 4.48,
+      "provider_calls": [
+        2,
+        2
+      ]
+    },
+    {
+      "variant": "p2",
+      "baseline_message_tool_json_tokens": 16825,
+      "candidate_message_tool_json_tokens": 6649,
+      "reduction_pct": 60.48,
+      "provider_calls": [
+        2,
+        1
+      ]
+    },
+    {
+      "variant": "combined",
+      "baseline_message_tool_json_tokens": 16825,
+      "candidate_message_tool_json_tokens": 5896,
+      "reduction_pct": 64.96,
+      "provider_calls": [
+        2,
+        1
+      ]
+    }
+  ],
+  "dataset": "Synthetic sleep/diet owned reads; fixed response provider and unrelated context sentinels",
+  "scenarios": [
+    "available",
+    "empty",
+    "read_failure"
+  ],
+  "invariants": [
+    "1,7,31-day owned dates; other owner and future rows excluded",
+    "No health row mutation; stream and persistence agree",
+    "Same Gateway arguments, receipts, completion and outcomes across four variants",
+    "One existing transient read retry preserved; failures never treated as complete",
+    "Failure stage keeps full system and no Pi kernel error"
+  ],
+  "limits": [
+    "No API usage or live model noninferiority.",
+    "No production latency or overall savings established.",
+    "No schema migration/concurrency/load proof.",
+    "Semantic candidates remain eval-only; no new runtime changes, merge or deployment."
+  ]
+}

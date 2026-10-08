@@ -220,3 +220,123 @@ def test_transport_refuses_oversize_response(monkeypatch):
     monkeypatch.setattr(gate.urllib.request, "build_opener", lambda *args: Opener())
     with pytest.raises(gate.GateError, match="exceeds bound"):
         gate._get_json(BASE + "/git/ref/heads/main")
+
+
+class DocumentationAPI(API):
+    def __init__(self, paths=None):
+        super().__init__(main=OTHER)
+        self.comparison = {
+            "status": "ahead", "ahead_by": 1, "behind_by": 0, "total_commits": 1,
+            "base_commit": {"sha": SHA}, "merge_base_commit": {"sha": SHA},
+            "commits": [{"sha": OTHER, "parents": [{"sha": SHA}]}],
+            "files": [{"filename": p, "status": "modified"} for p in
+                      (paths or ["docs/dossiers/2026-10-01-evidence.md"])],
+        }
+
+    def __call__(self, url):
+        if url == BASE + f"/compare/{SHA}...{OTHER}":
+            self.calls.append(url)
+            return self.comparison
+        if url == BASE + f"/actions/workflows/251604315/runs?head_sha={OTHER}&per_page=100":
+            self.calls.append(url)
+            return {"total_count": 1, "workflow_runs": [run(43, head_sha=OTHER)]}
+        if url == BASE + "/actions/runs/43":
+            self.calls.append(url)
+            return run(43, head_sha=OTHER)
+        return super().__call__(url)
+
+
+@pytest.mark.parametrize("path", ["AGENTS.md", "docs/governance/deploy.md",
+                                  "docs/ops/github-relay.md", "docs/dossiers/new.md"])
+def test_green_linear_documentation_descendant_keeps_pinned_candidate(path):
+    gate = load_gate()
+    assert gate.verify_release(SHA, SHA, _get_json=DocumentationAPI([path]))["sha"] == SHA
+
+
+@pytest.mark.parametrize("path", ["mobile/app.json", "backend/app/main.py", "backend/knowledge/a.md",
+                                  "docs/prompts.md", "docs/ops/unknown.md", "docs/dossiers/../x.md",
+                                  "docs/dossiers/nested/x.md", ".github/workflows/trusted-release.yml"])
+def test_documentation_drift_rejects_runtime_and_unlisted_paths(path):
+    gate = load_gate()
+    with pytest.raises(gate.GateError):
+        gate.verify_release(SHA, SHA, _get_json=DocumentationAPI([path]))
+
+
+@pytest.mark.parametrize("changes", [
+    {"status": "diverged"}, {"behind_by": 1}, {"total_commits": 2}, {"ahead_by": True},
+    {"merge_base_commit": {"sha": OTHER}}, {"base_commit": {"sha": OTHER}},
+    {"commits": [{"sha": OTHER, "parents": [{"sha": SHA}, {"sha": "c" * 40}]}]},
+    {"files": []}, {"files": [{"filename": "AGENTS.md", "status": "unknown"}]},
+    {"files": [{"filename": "AGENTS.md", "status": "renamed", "previous_filename": "backend/main.py"}]},
+    {"files": [{"filename": "AGENTS.md", "status": "modified"}] * 300},
+])
+def test_documentation_proof_fails_closed(changes):
+    gate = load_gate()
+    api = DocumentationAPI()
+    api.comparison.update(changes)
+    with pytest.raises(gate.GateError):
+        gate.verify_release(SHA, SHA, _get_json=api)
+
+
+def test_documentation_head_must_have_fresh_green_ci():
+    gate = load_gate()
+    api = DocumentationAPI()
+    def failed_head(url):
+        result = api(url)
+        if f"head_sha={OTHER}" in url:
+            result["workflow_runs"][0]["conclusion"] = "failure"
+        return result
+    with pytest.raises(gate.GateError):
+        gate.verify_release(SHA, SHA, _get_json=failed_head)
+
+
+def test_observed_git_main_must_match_api_main():
+    gate = load_gate()
+    with pytest.raises(gate.GateError):
+        gate.verify_release(SHA, SHA, observed_main="c" * 40, _get_json=DocumentationAPI())
+
+
+@pytest.mark.parametrize("hidden_code", [False, True])
+def test_each_intermediate_commit_is_checked_even_when_net_delta_is_documentation(hidden_code):
+    gate = load_gate()
+    api = DocumentationAPI()
+    middle = "c" * 40
+    overall = {**api.comparison, "ahead_by": 2, "total_commits": 2,
+               "commits": [{"sha": middle, "parents": [{"sha": SHA}]},
+                           {"sha": OTHER, "parents": [{"sha": middle}]}]}
+    calls = []
+    def chain(url):
+        calls.append(url)
+        if url == BASE + f"/compare/{SHA}...{OTHER}":
+            return overall
+        for before, after in [(SHA, middle), (middle, OTHER)]:
+            if url == BASE + f"/compare/{before}...{after}":
+                return {**api.comparison, "base_commit": {"sha": before},
+                        "merge_base_commit": {"sha": before},
+                        "commits": [{"sha": after, "parents": [{"sha": before}]}],
+                        "files": [{"filename": "backend/main.py" if hidden_code else "AGENTS.md",
+                                   "status": "modified"}]}
+        return api(url)
+    if hidden_code:
+        with pytest.raises(gate.GateError):
+            gate.verify_release(SHA, SHA, _get_json=chain)
+    else:
+        assert gate.verify_release(SHA, SHA, observed_main=OTHER, _get_json=chain)["sha"] == SHA
+        assert BASE + f"/compare/{middle}...{OTHER}" in calls
+
+
+@pytest.mark.parametrize("change", ["head", "head_rerun", "candidate_rerun"])
+def test_documentation_attestation_rechecks_both_ci_and_main(change):
+    gate = load_gate()
+    api = DocumentationAPI()
+    def changing(url):
+        result = api(url)
+        if len(api.calls) >= 7:
+            if change == "head" and url.endswith("/git/ref/heads/main"):
+                result["object"]["sha"] = "c" * 40
+            elif "/workflows/" in url and ((change == "head_rerun" and OTHER in url)
+                                            or (change == "candidate_rerun" and SHA in url)):
+                result["workflow_runs"][0]["run_attempt"] = 2
+        return result
+    with pytest.raises(gate.GateError):
+        gate.verify_release(SHA, SHA, _get_json=changing)

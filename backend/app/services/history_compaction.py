@@ -18,6 +18,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -26,7 +28,9 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-_FOLD_KEY = "history_fold:v2:{policy}:{cid}"
+# v3 binds the summary to an ordered prefix. Never reuse v2 summaries written
+# with PostgreSQL NULLS LAST or the old numeric-ID incremental cutoff.
+_FOLD_KEY = "history_fold:v3:{policy}:{cid}"
 _FOLD_TTL_S = 24 * 3600  # 安全评审 2026-07-17: 从 7天缩到 24h(缓存的健康语义摘要缩短驻留)
 _SUMMARY_MAX_CHARS = 1400
 _RECEIPT_LINE_MAX = 12
@@ -87,7 +91,27 @@ def _cache_set(cid: int, payload: Dict[str, Any]) -> None:
 
 
 # ── 读路径(build_messages 调,同步、零 LLM)────────────────────────────
-def get_valid_fold_summary(cid: int, last_overflow_id: int) -> Optional[str]:
+def _prefix_fingerprint(messages: list) -> str:
+    # Cache only the digest, never another copy of health text. Reordering,
+    # insertion, editing, role changes and timestamp repair invalidate reuse.
+    payload = [(message.id, message.role, message.content,
+                message.created_at.isoformat() if message.created_at is not None else None)
+               for message in messages]
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
+def _cached_prefix_end(cached: dict, messages: list) -> int | None:
+    message_ids = [message.id for message in messages]
+    through = cached.get("folded_thru_id")
+    if type(through) is not int or through not in message_ids:
+        return None
+    end = message_ids.index(through) + 1
+    if cached.get("folded_prefix_sha256") != _prefix_fingerprint(messages[:end]):
+        return None
+    return end
+
+
+def get_valid_fold_summary(cid: int, last_overflow_id: int, *, ordered_messages: list) -> Optional[str]:
     """溢出恰好被折叠到 last_overflow_id 时返回摘要文本,否则 None(=现状截断)。
 
     严格相等校验:窗口滑动后有新消息落出而缓存未跟上 → None,绝不用陈旧摘要冒充
@@ -96,7 +120,8 @@ def get_valid_fold_summary(cid: int, last_overflow_id: int) -> Optional[str]:
     cached = _cache_get(cid)
     if not cached:
         return None
-    if cached.get("folded_thru_id") != last_overflow_id:
+    if (cached.get("folded_thru_id") != last_overflow_id
+            or _cached_prefix_end(cached, ordered_messages) is None):
         return None
     text = str(cached.get("summary") or "").strip()
     return text or None
@@ -104,6 +129,29 @@ def get_valid_fold_summary(cid: int, last_overflow_id: int) -> Optional[str]:
 
 def build_summary_message(summary_text: str) -> Dict[str, str]:
     return {"role": "user", "content": f"{_SUMMARY_HEADER}\n{summary_text}\n{_SUMMARY_FOOTER}"}
+
+
+def get_fold_summary_boundary(
+    cid: int, *, eligible_messages: list,
+) -> tuple[int, str] | None:
+    """Accept an earlier *owned* cut only when the caller bridges the gap.
+
+    A cache made for 15 recent messages can serve a six-message window without
+    another LLM call. The caller must include every original message after this
+    cut, not pretend this summary covers the requested overflow boundary.
+    """
+    cached = _cache_get(cid)
+    if not cached:
+        return None
+    through = cached.get("folded_thru_id")
+    summary = cached.get("summary")
+    if (
+        type(through) is not int
+        or _cached_prefix_end(cached, eligible_messages) is None
+        or not isinstance(summary, str) or not summary.strip()
+    ):
+        return None
+    return through, summary.strip()
 
 
 # ── 写路径(save_message 触发,后台 fail-soft)────────────────────────
@@ -198,7 +246,7 @@ async def _refresh_fold(cid: int, keep_recent: int) -> None:
             history = (
                 db.query(AgentMessage)
                 .filter(AgentMessage.conversation_id == cid)
-                .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
+                .order_by(AgentMessage.created_at.asc().nullsfirst(), AgentMessage.id.asc())
                 .all()
             )
         finally:
@@ -221,26 +269,19 @@ async def _refresh_fold(cid: int, keep_recent: int) -> None:
             for projection in projected_overflow
         )
         cached = _cache_get(cid) or {}
+        prefix_end = _cached_prefix_end(cached, overflow)
         if (
-            cached.get("folded_thru_id") == last_overflow_id
+            prefix_end == len(overflow)
             and not contains_sanitized
         ):
             return  # 已是最新
-        if contains_sanitized:
+        if contains_sanitized or prefix_end is None:
             cached = {}
-        prior_thru = cached.get("folded_thru_id")
+            prefix_end = 0
         prior_summary = str(cached.get("summary") or "")
         prior_receipts: List[str] = list(cached.get("receipt_lines") or [])
 
-        fresh = [
-            (message, projection)
-            for message, projection in zip(
-                overflow,
-                projected_overflow,
-                strict=True,
-            )
-            if not isinstance(prior_thru, int) or message.id > prior_thru
-        ]
+        fresh = list(zip(overflow[prefix_end:], projected_overflow[prefix_end:], strict=True))
         if not fresh:
             return
         turns = [
@@ -266,6 +307,7 @@ async def _refresh_fold(cid: int, keep_recent: int) -> None:
 
         _cache_set(cid, {
             "folded_thru_id": last_overflow_id,
+            "folded_prefix_sha256": _prefix_fingerprint(overflow),
             "summary": summary[:_SUMMARY_MAX_CHARS + 600],
             "receipt_lines": receipts,
             "health_release_policy": release_policy,

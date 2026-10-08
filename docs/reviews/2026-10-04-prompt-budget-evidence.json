@@ -1,0 +1,240 @@
+{
+  "date": "2026-10-04",
+  "remote_baseline": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+  "checkout_base": "a8853dea1207163aaa412974dddfbc050ce3eeea",
+  "basis": "Uncommitted local candidate; intervening remote commit changes only voice release dossier.",
+  "provider_replay": {
+    "method": "Fixed synthetic provider request frames captured from real Pi execution with original prompt composer; fake provider drives baseline tool round. Replay frames independently against the same real qwen3.8-max API. Real API responses are inspected, not fed into subsequent captured frames. Not end-to-end production A/B.",
+    "measurements": [
+      {
+        "case": "weather",
+        "enabled": false,
+        "model": [
+          "qwen3.8-max"
+        ],
+        "calls": 2,
+        "input_tokens": 22964,
+        "output_tokens": 211,
+        "token_source": [
+          "api"
+        ],
+        "cached_tokens": [
+          0,
+          11264
+        ],
+        "wall_seconds": 7.22
+      },
+      {
+        "case": "weather",
+        "enabled": true,
+        "model": [
+          "qwen3.8-max"
+        ],
+        "calls": 1,
+        "input_tokens": 660,
+        "output_tokens": 169,
+        "token_source": [
+          "api"
+        ],
+        "cached_tokens": [
+          0
+        ],
+        "wall_seconds": 4.4
+      },
+      {
+        "case": "introduction",
+        "enabled": false,
+        "model": [
+          "qwen3.8-max"
+        ],
+        "calls": 1,
+        "input_tokens": 11287,
+        "output_tokens": 548,
+        "token_source": [
+          "api"
+        ],
+        "cached_tokens": [
+          9216
+        ],
+        "wall_seconds": 9.26
+      },
+      {
+        "case": "introduction",
+        "enabled": true,
+        "model": [
+          "qwen3.8-max"
+        ],
+        "calls": 1,
+        "input_tokens": 515,
+        "output_tokens": 267,
+        "token_source": [
+          "api"
+        ],
+        "cached_tokens": [
+          0
+        ],
+        "wall_seconds": 6.74
+      }
+    ],
+    "quality_review": {
+      "weather": "Candidate states Hangzhou, observation 10:00, cloudy, 18 C from supplied fixture; no exercise or missing rain claims.",
+      "introduction": "Candidate describes Reva capabilities, authorization and physician boundary; no private history or model-brand claim."
+    },
+    "limitations": [
+      "Two synthetic turns only; no production outcomes or tail-latency inference.",
+      "Total input tokens include cached tokens; token reduction is not equivalent to billed savings.",
+      "No DB schema, production data, or deployed configuration changed."
+    ]
+  },
+  "payload_char_replay": [
+    {
+      "case": "weather",
+      "measurements": [
+        {
+          "enabled": false,
+          "calls": 2,
+          "payload_chars": 50367,
+          "tool_counts": [
+            11,
+            11
+          ]
+        },
+        {
+          "enabled": true,
+          "calls": 1,
+          "payload_chars": 1283,
+          "tool_counts": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "case": "introduction",
+      "measurements": [
+        {
+          "enabled": false,
+          "calls": 1,
+          "payload_chars": 24737,
+          "tool_counts": [
+            11
+          ]
+        },
+        {
+          "enabled": true,
+          "calls": 1,
+          "payload_chars": 835,
+          "tool_counts": [
+            0
+          ]
+        }
+      ]
+    }
+  ],
+  "live_regression_gate": {
+    "status": "passed",
+    "llm_cost": "possible",
+    "suites": [
+      {
+        "suite": "invariants",
+        "total_cases": 12,
+        "passed": 12,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 1.0,
+        "avg_latency_ms": 0,
+        "regression": []
+      },
+      {
+        "suite": "health_agent_core",
+        "total_cases": 50,
+        "passed": 50,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 1.0,
+        "avg_latency_ms": 0,
+        "regression": []
+      },
+      {
+        "suite": "orchestrator",
+        "total_cases": 5,
+        "passed": 5,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 0.98,
+        "avg_latency_ms": 7521,
+        "regression": []
+      }
+    ],
+    "failed_suites": [],
+    "errors": [],
+    "trajectory_contract": {
+      "status": "passed",
+      "total_cases": 12,
+      "failed_cases": []
+    },
+    "trajectory_goldens": {
+      "status": "passed",
+      "fixture_version": 1,
+      "total_cases": 9,
+      "covered_scenarios": [
+        "duplicate_client_turn_side_effect",
+        "duplicate_same_record_side_effect",
+        "idempotent_client_turn_replay",
+        "meal_context_reestimate",
+        "missing_identity_receipt",
+        "read_only_delete_side_effect",
+        "simple_fruit_write",
+        "simple_water_write",
+        "uncertain_receipt_false_success"
+      ],
+      "failed_cases": []
+    }
+  },
+  "live_gate_caveat": "Harness ephemeral DB lacked llm_usage_logs; suite results passed but usage persistence unavailable. Separate public replay explicitly created usage table and verified token_source=api.",
+  "verification": {
+    "broad_existing_and_new_tests": 4057,
+    "final_targeted_after_weather_fix": 100,
+    "system_map": "passed",
+    "ruff": "No new findings. agent_executor.py retains 11 pre-existing origin/main findings.",
+    "independent_safety": "Final GO on executor e21d1c32ef8fa6ef76d76a3f64e3646deee605f34ea15feef741b6923f9d3971; reviewer verified final100-test receipt after strict HTTP envelope change."
+  },
+  "sha256": {
+    "backend/app/services/agent_executor.py": "e21d1c32ef8fa6ef76d76a3f64e3646deee605f34ea15feef741b6923f9d3971",
+    "backend/app/services/agent_public_task.py": "7afab063795bea7241cfb8e2f62f5cefddd10a6f3e97dbacbf4043d539ac843c",
+    "backend/app/services/ai/food_recognition.py": "e807bb785441fc4c9b34876feb44ce6ce95faa4aa80e4619c9f8f1141d6a4242",
+    "backend/app/services/llm/usage_tracker.py": "e40899d6a6383d53f99b4f57916966dbc1a90bdedf86c9d9d86d835e42c631dc",
+    "backend/app/services/llm/task_routing.py": "f0522eade7eae6d856340637b31989605475438c8d3dd800e6888b2a9a168a61"
+  },
+  "deployment": "not_committed_not_pushed_not_deployed",
+  "change_gate": {
+    "status": "passed",
+    "live_llm_required": true,
+    "confirmed": true,
+    "confirmation_env": "HARNESS_LIVE_LLM_EVAL_CONFIRMED",
+    "expected_confirmation": null,
+    "changed_paths": [
+      "backend/app/services/agent_executor.py",
+      "backend/app/services/agent_public_task.py",
+      "backend/app/services/ai/food_recognition.py",
+      "backend/app/services/llm/task_routing.py",
+      "backend/app/services/llm/usage_tracker.py"
+    ],
+    "matched_paths": [
+      {
+        "path": "backend/app/services/agent_executor.py",
+        "reason": "agent executor runtime"
+      },
+      {
+        "path": "backend/app/services/llm/task_routing.py",
+        "reason": "LLM service/runtime"
+      },
+      {
+        "path": "backend/app/services/llm/usage_tracker.py",
+        "reason": "LLM service/runtime"
+      }
+    ],
+    "next_steps": "",
+    "errors": []
+  }
+}

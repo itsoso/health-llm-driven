@@ -41,7 +41,19 @@ def _budget_tokens(events: list[dict[str, Any]]) -> int | None:
     if not events:
         return None
     value = events[0].get("budget_tokens")
-    return int(value) if value is not None else None
+    budget = int(value) if value is not None else None
+    for event in events[1:]:
+        if event.get("event") != "budget_extension":
+            continue
+        additional = event.get("additional_tokens")
+        if (budget is None or type(additional) is not int or additional <= 0
+                or event.get("previous_budget") != budget
+                or event.get("new_budget") != budget + additional
+                or not isinstance(event.get("authorization"), str)
+                or not event["authorization"].strip()):
+            raise ValueError("invalid budget extension audit")
+        budget += additional
+    return budget
 
 
 def _total_tokens(events: list[dict[str, Any]]) -> int:
@@ -188,6 +200,21 @@ def cmd_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_extend_budget(args: argparse.Namespace) -> int:
+    """Record an explicit human decision; never reset usage or prior events."""
+    path = Path(args.run)
+    events = _read_events(path)
+    budget = _budget_tokens(events)
+    if budget is None or args.additional_tokens <= 0 or not args.authorization.strip():
+        raise ValueError("positive bounded extension and explicit authorization required")
+    _append(path, {"sequence": _next_sequence(events), "event": "budget_extension",
+                  "previous_budget": budget, "additional_tokens": args.additional_tokens,
+                  "new_budget": budget + args.additional_tokens,
+                  "authorization": args.authorization, "tokens": 0})
+    _write_json(_summarize(_read_events(path)))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Reva harness workflow JSONL trace ledger")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -236,6 +263,12 @@ def build_parser() -> argparse.ArgumentParser:
     summary = sub.add_parser("summary", help="print workflow run summary as JSON")
     summary.add_argument("--run", required=True)
     summary.set_defaults(func=cmd_summary)
+
+    extension = sub.add_parser("extend-budget", help="record explicitly authorized additional budget without resetting history")
+    extension.add_argument("--run", required=True)
+    extension.add_argument("--additional-tokens", type=int, required=True)
+    extension.add_argument("--authorization", required=True)
+    extension.set_defaults(func=cmd_extend_budget)
     return parser
 
 

@@ -157,6 +157,23 @@ independent of `STAGED_RESPONSE_MODE`; existing model preferences and safety
 floors remain authoritative. No downgrade or write permission comes from the
 decision service. Question vocabulary and policy live in `decisions/routing.py`.
 
+Each question is gated independently at the configured confidence threshold.
+An uncertain tier does not discard a confident read-capability suggestion, and
+an uncertain capability never enters the prompt. `accepted` means a confident
+tier decision; `partial` carries capability-only advice without activating model
+selection. Shadow applies neither. If the deterministic floor is already
+`high_stakes` (including an unknown baseline), only the capability question is
+sent; the existing quality floor still applies without a model tier vote.
+
+Capability advice is additionally bounded by the existing utterance classifier:
+explicit writes reject read-capability advice, and `health_query` requires a
+recognized read intent. An unknown phrasing continues through the normal Agent
+without that suggestion. Reasons `write_intent` and `read_intent_unconfirmed`
+make these vetoes observable; they neither deny the user's original task nor
+grant or revoke tool authorization. Metadata includes `tier_confidence` (null
+when not asked) and `capability_confidence`; the numeric scores are observations,
+not accuracy guarantees.
+
 Low confidence, timeout, oversized input, invalid response and denied consent
 produce observable abstention/fallback. The normal agent handles the request;
 the service never forwards it to another decision vendor. No retries are made.
@@ -171,6 +188,30 @@ recipient/address changes. Key rotation does not invalidate consent. Setting a
 new URL alone never authorizes sharing. Setting mode=off is the rollback.
 Removing a remote recipient also restores the base consent revision; users who
 accepted the extended policy may be asked to confirm the current disclosure again.
+
+### Reproduce local routing coverage and latency
+
+`scripts/benchmark_laya_routing.py` calls the real loopback Laya service using
+synthetic Chinese requests. It reads the local private bearer-key JSON, sets
+decision settings only within its own process, and isolates database/Redis
+configuration. It never changes the administrator switch or running service.
+Use the backend Python environment:
+
+```sh
+python scripts/benchmark_laya_routing.py --output /tmp/laya-current.json
+python scripts/benchmark_laya_routing.py --suite validation --output /tmp/laya-validation.json
+python scripts/benchmark_laya_routing.py --routing-ref <baseline-sha> --output /tmp/laya-baseline.json
+```
+
+The optional historical replay changes only the routing module, keeping the
+same current adapter and service. Each case is warmed once and the first pass
+is retained separately from repeated latency samples. Reports include safe
+case IDs, question/token counts, accepted versus partial decisions, wrong
+emitted suggestions and floor violations. A service fallback, wrong suggestion
+or floor violation returns a failing exit code. This small engineering corpus
+does not establish clinical accuracy, production performance or safe global
+enablement. The validation corpus includes failures found during development
+and is now a regression set, not an untouched statistical holdout.
 
 References: [Jev API](https://docs.typesafe.ai/api),
 [Laya HTTP adapter](https://github.com/NandhaKishorM/laya/blob/main/laya/serve.py).

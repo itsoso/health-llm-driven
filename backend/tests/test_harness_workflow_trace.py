@@ -167,3 +167,30 @@ def test_typed_spawn_and_verdict_commands_track_open_agents(tmp_path, capsys):
     assert summary["verdict_count"] == 1
     assert summary["open_agents"] == ["qa-verifier"]
     assert summary["open_tasks"] == ["task-qa"]
+
+
+def test_explicit_budget_extension_is_append_only_and_preserves_usage(tmp_path):
+    trace = _load_trace_module()
+    path = tmp_path / "run.jsonl"
+    trace._append(path, {"sequence": 0, "event": "run_started", "budget_tokens": 100})
+    trace._append(path, {"sequence": 1, "event": "spawn", "tokens": 100})
+    original = path.read_bytes()
+    assert trace.main(["extend-budget", "--run", str(path), "--additional-tokens", "50",
+                       "--authorization", "Explicit user approval for 50 additional tokens"]) == 0
+    assert path.read_bytes().startswith(original)
+    summary = trace._summarize(trace._read_events(path))
+    assert (summary["total_tokens"], summary["budget_tokens"], summary["budget_remaining"]) == (100, 150, 50)
+    assert trace._append_checked_event(path, {"event": "spawn", "tokens": 51}) == 2
+
+
+def test_invalid_budget_extensions_leave_ledger_unchanged(tmp_path):
+    import pytest
+    trace = _load_trace_module()
+    path = tmp_path / "run.jsonl"
+    trace._append(path, {"sequence": 0, "event": "run_started", "budget_tokens": 100})
+    original = path.read_bytes()
+    for amount, authorization in (("0", "approved"), ("-1", "approved"), ("50", " ")):
+        with pytest.raises(ValueError):
+            trace.main(["extend-budget", "--run", str(path), "--additional-tokens", amount,
+                        "--authorization", authorization])
+        assert path.read_bytes() == original

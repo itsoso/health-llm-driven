@@ -1,0 +1,211 @@
+{
+  "status": "passed",
+  "llm_cost": "possible",
+  "suites": [
+    {
+      "suite": "invariants",
+      "total_cases": 12,
+      "passed": 12,
+      "failed": 0,
+      "errored": 0,
+      "avg_score": 1.0,
+      "avg_latency_ms": 0,
+      "regression": []
+    },
+    {
+      "suite": "health_agent_core",
+      "total_cases": 50,
+      "passed": 50,
+      "failed": 0,
+      "errored": 0,
+      "avg_score": 1.0,
+      "avg_latency_ms": 0,
+      "regression": []
+    },
+    {
+      "suite": "orchestrator",
+      "total_cases": 5,
+      "passed": 5,
+      "failed": 0,
+      "errored": 0,
+      "avg_score": 0.94,
+      "avg_latency_ms": 8416,
+      "regression": []
+    }
+  ],
+  "failed_suites": [],
+  "errors": [],
+  "trajectory_contract": {
+    "status": "passed",
+    "total_cases": 12,
+    "failed_cases": []
+  },
+  "trajectory_goldens": {
+    "status": "passed",
+    "fixture_version": 1,
+    "total_cases": 9,
+    "covered_scenarios": [
+      "duplicate_client_turn_side_effect",
+      "duplicate_same_record_side_effect",
+      "idempotent_client_turn_replay",
+      "meal_context_reestimate",
+      "missing_identity_receipt",
+      "read_only_delete_side_effect",
+      "simple_fruit_write",
+      "simple_water_write",
+      "uncertain_receipt_false_success"
+    ],
+    "failed_cases": []
+  },
+  "usage_audit": {
+    "recorded_provider_calls": 10,
+    "rows": [
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "unknown",
+        "prompt_tokens": 1934,
+        "completion_tokens": 569,
+        "cached_tokens": 0,
+        "token_source": "api",
+        "latency_ms": 8157,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "eval.llm_judge",
+        "prompt_tokens": 948,
+        "completion_tokens": 334,
+        "cached_tokens": 0,
+        "token_source": "api",
+        "latency_ms": 5372,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "unknown",
+        "prompt_tokens": 1927,
+        "completion_tokens": 529,
+        "cached_tokens": 1664,
+        "token_source": "api",
+        "latency_ms": 8572,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "eval.llm_judge",
+        "prompt_tokens": 800,
+        "completion_tokens": 479,
+        "cached_tokens": 0,
+        "token_source": "api",
+        "latency_ms": 6115,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "unknown",
+        "prompt_tokens": 1930,
+        "completion_tokens": 684,
+        "cached_tokens": 1664,
+        "token_source": "api",
+        "latency_ms": 10071,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "eval.llm_judge",
+        "prompt_tokens": 839,
+        "completion_tokens": 395,
+        "cached_tokens": 0,
+        "token_source": "api",
+        "latency_ms": 5919,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "unknown",
+        "prompt_tokens": 1824,
+        "completion_tokens": 499,
+        "cached_tokens": 1664,
+        "token_source": "api",
+        "latency_ms": 6859,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "eval.llm_judge",
+        "prompt_tokens": 599,
+        "completion_tokens": 422,
+        "cached_tokens": 0,
+        "token_source": "api",
+        "latency_ms": 5015,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "unknown",
+        "prompt_tokens": 1917,
+        "completion_tokens": 758,
+        "cached_tokens": 1664,
+        "token_source": "api",
+        "latency_ms": 8295,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "MiniMax-M2.5",
+        "caller": "eval.llm_judge",
+        "prompt_tokens": 928,
+        "completion_tokens": 381,
+        "cached_tokens": 0,
+        "token_source": "api",
+        "latency_ms": 4235,
+        "success": 1,
+        "error_type": null,
+        "recovery_action": null,
+        "recovery_model": null
+      }
+    ],
+    "all_api_usage": true,
+    "failed_calls": 0
+  },
+  "source_sha256": {
+    "backend/app/orchestrator/orchestrator.py": "86a882e4ae6cb59b7b3c7b8415601bedb60dee71a7393a22a1f80fcfcf863f18",
+    "scripts/harness_llm_regression_gate.py": "7ac4b01e8f44ecba3d068bfbb08e51f87a139a3de6fe492651e471e3f457775f"
+  }
+}

@@ -132,7 +132,9 @@ def test_low_magnesium_lab_triggers_magnesium():
     """低镁化验 → 镁 (沿用 VDR/低-VD 的 lab 触发模式)."""
     s = SupplementAdvisorSpecialist()
     t = _empty_twin()
-    t.labs = LabsContext(flagged_abnormal=[{"item_name": "血清镁", "value": 0.6}])
+    t.labs = LabsContext(flagged_abnormal=[
+        {"item_name": "血清镁", "value": 0.6, "reference_range": "0.75-1.02"}
+    ])
     f = s.run(t, {})
     ids = {x.get("id") for x in f.findings if x.get("type") == "supplement_rec"}
     assert "magnesium_sleep" in ids

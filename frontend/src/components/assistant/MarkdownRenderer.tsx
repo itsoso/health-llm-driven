@@ -1,5 +1,6 @@
 'use client';
-import ReactMarkdown from 'react-markdown';
+import { memo } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import MetricTableCard, { coerceMetricTable, type RevaUiMetricTableData } from './MetricTableCard';
 import MetricEmptyStateCard, { type RevaUiMetricEmptyStateData } from './MetricEmptyStateCard';
@@ -135,13 +136,8 @@ function headingFont(variant: Variant): { fontFamily: string } | undefined {
 }
 
 export default function MarkdownRenderer({ content, variant = 'light' }: { content: string; variant?: Variant }) {
-  const s = styles[variant];
   const segments = splitRevaUiSegments(content);
-  // 快路径: 单一 markdown 段 (可能已被 strip 掉未闭合的 partial fence, 所以渲染
-  // segment.text 而非原始 content, 否则 partial JSON 会漏进正文)。
-  if (segments.length === 1 && segments[0].kind === 'markdown') {
-    return <MarkdownRendererBase content={segments[0].text} variant={variant} stylesForVariant={s} />;
-  }
+  // Keep the same keyed tree when a partial card completes during streaming.
   return (
     <>
       {segments.map((segment, index) => {
@@ -156,55 +152,67 @@ export default function MarkdownRenderer({ content, variant = 'light' }: { conte
         }
         if (!segment.text.trim()) return null;
         return (
-          <MarkdownRendererBase key={`md-${index}`} content={segment.text} variant={variant} stylesForVariant={s} />
+          <MarkdownRendererBase key={`md-${index}`} content={segment.text} variant={variant} />
         );
       })}
     </>
   );
 }
 
-function MarkdownRendererBase({
+// Renderer functions are React component types: recreating them remounts links
+// and table scrollers on every token, discarding focus and horizontal position.
+function createMarkdownComponents(variant: Variant): Components {
+  const s = styles[variant];
+  return {
+    p: ({ children }) => <p className={s.p}>{children}</p>,
+    ul: ({ children }) => <ul className={s.ul}>{children}</ul>,
+    ol: ({ children }) => <ol className={s.ol}>{children}</ol>,
+    li: ({ children }) => <li className={s.li}>{children}</li>,
+    h1: ({ children }) => <h1 className={s.h1} style={headingFont(variant)}>{children}</h1>,
+    h2: ({ children }) => <h2 className={s.h2} style={headingFont(variant)}>{children}</h2>,
+    h3: ({ children }) => <h3 className={s.h3} style={variant === 'warm' ? undefined : headingFont(variant)}>{children}</h3>,
+    strong: ({ children }) => <strong className={s.strong}>{children}</strong>,
+    em: ({ children }) => <em className={s.em}>{children}</em>,
+    code: ({ ...props }: any) => {
+      const inline = !props.className?.includes('language-');
+      return inline
+        ? <code className={s.inlineCode} {...props} />
+        : <code className={s.codeBlock} {...props} />;
+    },
+    pre: ({ children }) => <pre className={s.pre}>{children}</pre>,
+    blockquote: ({ children }) => <blockquote className={s.blockquote}>{children}</blockquote>,
+    table: ({ children }) => <div className="my-3 overflow-x-auto"><table className={s.table}>{children}</table></div>,
+    thead: ({ children }) => <thead className={s.thead}>{children}</thead>,
+    ...(variant === 'dark' ? { tbody: ({ children }: any) => <tbody className="bg-transparent">{children}</tbody> } : {}),
+    tr: ({ children }) => <tr className={s.tr}>{children}</tr>,
+    th: ({ children }) => <th className={s.th}>{children}</th>,
+    td: ({ children }) => <td className={s.td}>{children}</td>,
+    hr: () => <hr className={s.hr} />,
+    a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className={s.a}>{children}</a>,
+  };
+}
+
+const markdownComponents: Record<Variant, Components> = {
+  dark: createMarkdownComponents('dark'),
+  light: createMarkdownComponents('light'),
+  warm: createMarkdownComponents('warm'),
+};
+const markdownPlugins = [remarkGfm];
+
+// A completed prose segment before a card need not be parsed again as the tail grows.
+const MarkdownRendererBase = memo(function MarkdownRendererBase({
   content,
   variant,
-  stylesForVariant: s,
 }: {
   content: string;
   variant: Variant;
-  stylesForVariant: (typeof styles)[Variant];
 }) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        p: ({ children }) => <p className={s.p}>{children}</p>,
-        ul: ({ children }) => <ul className={s.ul}>{children}</ul>,
-        ol: ({ children }) => <ol className={s.ol}>{children}</ol>,
-        li: ({ children }) => <li className={s.li}>{children}</li>,
-        h1: ({ children }) => <h1 className={s.h1} style={headingFont(variant)}>{children}</h1>,
-        h2: ({ children }) => <h2 className={s.h2} style={headingFont(variant)}>{children}</h2>,
-        h3: ({ children }) => <h3 className={s.h3} style={variant === 'warm' ? undefined : headingFont(variant)}>{children}</h3>,
-        strong: ({ children }) => <strong className={s.strong}>{children}</strong>,
-        em: ({ children }) => <em className={s.em}>{children}</em>,
-        code: ({ ...props }: any) => {
-          const inline = !props.className?.includes('language-');
-          return inline
-            ? <code className={s.inlineCode} {...props} />
-            : <code className={s.codeBlock} {...props} />;
-        },
-        pre: ({ children }) => <pre className={s.pre}>{children}</pre>,
-        blockquote: ({ children }) => <blockquote className={s.blockquote}>{children}</blockquote>,
-        table: ({ children }) => <div className="my-3 overflow-x-auto"><table className={s.table}>{children}</table></div>,
-        thead: ({ children }) => <thead className={s.thead}>{children}</thead>,
-        ...(variant === 'dark' ? { tbody: ({ children }: any) => <tbody className="bg-transparent">{children}</tbody> } : {}),
-        tr: ({ children }) => <tr className={s.tr}>{children}</tr>,
-        th: ({ children }) => <th className={s.th}>{children}</th>,
-        td: ({ children }) => <td className={s.td}>{children}</td>,
-        hr: () => <hr className={s.hr} />,
-        a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className={s.a}>{children}</a>,
-      }}
-    >{content}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={markdownPlugins} components={markdownComponents[variant]}>
+      {content}
+    </ReactMarkdown>
   );
-}
+});
 
 export function splitRevaUiSegments(content: string): MarkdownSegment[] {
   const segments: MarkdownSegment[] = [];

@@ -19,6 +19,7 @@ from app.utils.logging_config import setup_beijing_logging
 from app.config import settings
 from app.middleware.request_body_limit import RequestBodyLimitMiddleware
 from app.middleware.safe_access_log import SafeAccessLogMiddleware, safe_route_template
+from app.utils.share_location_privacy import install_location_log_filters, protect_location_event
 import app.models.smart_reminder  # noqa: F401 - ensure table creation
 import app.models.interaction_feedback  # noqa: F401 - Agent 反馈系统
 import app.models.genetic_data  # noqa: F401 - 基因数据表
@@ -36,6 +37,7 @@ _IS_PRODUCTION = (settings.app_env or "").strip().lower() == "production"
 
 # 设置日志，使用北京时间
 setup_beijing_logging()
+install_location_log_filters()
 
 # Sentry 错误监控（仅当配置了 DSN 才启用，未配置时是 noop）
 if settings.sentry_dsn:
@@ -50,6 +52,8 @@ if settings.sentry_dsn:
         traces_sample_rate=settings.sentry_traces_sample_rate,
         # 健康数据合规：不上传 PII（IP / cookie / headers）
         send_default_pii=False,
+        before_send=protect_location_event,
+        before_send_transaction=protect_location_event,
         integrations=[
             FastApiIntegration(transaction_style="endpoint"),
             SqlalchemyIntegration(),
@@ -395,6 +399,16 @@ app.add_middleware(SafeAccessLogMiddleware)
 
 # 注册路由
 app.include_router(api_router, prefix="/api/v1")
+
+if settings.remote_health_enabled:
+    import json
+    from app.api.remote_health import install_remote_health
+    from app.services.remote_health_oauth import RemoteHealthConfig
+    from app.database import SessionLocal
+    install_remote_health(app, RemoteHealthConfig(
+        origin=settings.remote_health_public_origin,
+        clients=json.loads(settings.remote_health_clients_json),
+    ), SessionLocal)
 
 
 @app.get("/", tags=["系统"])

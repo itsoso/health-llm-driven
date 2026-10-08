@@ -50,22 +50,3 @@ def pick_worst(
         return same_day[0]
     return max(numeric, key=lambda m: severity(as_float(m.get("value"))))
 
-
-def is_standard_hba1c(name: str) -> bool:
-    """标准糖化 (NGSP A1c, code=glucose_hba1c), 排除总糖化 HbA1。
-
-    历史误判: 子串 ``"糖化血红蛋白" in name`` 会吞下「糖化血红蛋白A1」(总糖化 HbA1,
-    参考 6.3–9.0%, 与标准 A1c 是不同指标) → 正常值 7.0% 落进 ≥6.5% 的糖尿病阈值产生假
-    CRITICAL。这里用 biomarker 归一化层的 ``resolve_code`` 精确分流; 它没认成糖化时
-    (如英文 "Hemoglobin A1c" 被最长子串判成 hemoglobin), 用「a1c / hba1c」关键字补救
-    (两者都含 "c", 天然排除总糖化的「A1」「HbA1」形态), 不让规则单点依赖 resolve_code 漏报。
-    """
-    from app.biomarkers.definitions import resolve_code
-
-    code = resolve_code(name or "")
-    if code == "glucose_hba1c":
-        return True
-    if code == "glucose_hba1_total":
-        return False
-    low = (name or "").lower()
-    return "a1c" in low or "hba1c" in low

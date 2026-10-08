@@ -1,0 +1,173 @@
+{
+  "status": "failed",
+  "batch_id": "5d7e9e5545ca4b4fbe146878153419e5",
+  "mode": "live",
+  "models": [
+    "qwen3.8-flash"
+  ],
+  "variants": [
+    "baseline"
+  ],
+  "cases": [
+    "analysis_7d_holdout"
+  ],
+  "planned_tasks": 1,
+  "max_provider_attempts": 3,
+  "per_task_call_cap": 3,
+  "per_task_tool_cap": 3,
+  "max_input_bytes_per_call": 262144,
+  "requested_max_output_tokens_per_call": 1200,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "eval_only",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "analysis_7d_holdout",
+      "variant": "baseline",
+      "model": "qwen3.8-flash",
+      "status": "failed_contracts",
+      "calls": [
+        {
+          "call_index": 1,
+          "payload_sha256": "6d39f18024c05cc33ce7952f2c5d07146f1033ad97553df353e4fc1d4f72e4f7",
+          "input_bytes": 37356,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 9594,
+          "output_tokens": 482,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 11.023394000003464
+        },
+        {
+          "call_index": 2,
+          "payload_sha256": "315cd0c1656e97e0bd8e86c1d692ab6fa387e4eef1697c88fd33de0a7c2cda1f",
+          "input_bytes": 20382,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4869,
+          "output_tokens": 119,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 2.7375939170015045
+        },
+        {
+          "call_index": 3,
+          "payload_sha256": "9fc6258922de1404c2cb6fc3f8205f579a40544e1c06618a0b2f308b76170aaf",
+          "input_bytes": 20600,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4906,
+          "output_tokens": 1362,
+          "cached_tokens": [
+            4096
+          ],
+          "first_content_seconds": 17.971481749991653,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 24.31921762500133
+        }
+      ],
+      "tool_contracts": [],
+      "tool_attempts": 0,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 41.91830266699253,
+      "live": true,
+      "wall_seconds": 42.044252292005694,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "复盘我最近7天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "block",
+          "reason": "health_query_dimension_conflict",
+          "requested_read_scope": [
+            {
+              "dimension": "sleep",
+              "days": 7
+            },
+            {
+              "dimension": "diet",
+              "days": 7
+            }
+          ]
+        }
+      ],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": false,
+        "knowledge_contracts": true,
+        "expected_outcome": false,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n本轮数据查询未完成，不能用其他日期的汇总或历史背景代替本次查询结果。请明确要查看的数据类别和日期，例如“查询昨天的饮食和睡眠”；如果只需要通用建议，也可以直接说明。",
+      "outcome": "blocked",
+      "completion_status": "error",
+      "evaluation_seconds": 42.303296625002986,
+      "repeat": 0
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "aec7abfcc3ec0a8365f5aa35bd50a143893e62ba09b66ae89bdf01525f49c613",
+    "scripts/benchmark_prompt_full_task.py": "1fdbb75a061c4f5261f20a6afb4ccc43d3b5cca90254de28816af864332b2f92",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+    "Per-sample synthetic user with real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-flash",
+      "variant": "baseline",
+      "tasks": 1,
+      "provider_attempts": 3,
+      "passed_contracts": 0,
+      "failed_tasks": 1,
+      "api_input_tokens_known": 19369,
+      "api_output_tokens_known": 1963,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 1,
+      "wall_seconds_all_tasks": {
+        "p50": 42.044252292005694,
+        "p95": 42.044252292005694,
+        "p99": 42.044252292005694
+      }
+    }
+  ]
+}

@@ -1,0 +1,209 @@
+{
+  "status": "awaiting_final_review_and_exact_main_ci",
+  "runtime_commit": "35f7438f85954c4d813cee828ea9d8669be99a78",
+  "integration": {
+    "files": 39,
+    "passed": 1054,
+    "skipped": 2,
+    "failed": 0,
+    "errors": 0,
+    "seconds": 138.572,
+    "ci_mode": true,
+    "junit_sha256": "dab62a27b53f21c27a1e4cd8bbb555fa1dcb2008b2f48116f7f928ad94762325"
+  },
+  "postgres": {
+    "passed": 71,
+    "failures": 0,
+    "seconds": 90.989,
+    "version": "17.11",
+    "timezone": "Asia/Shanghai",
+    "ephemeral_socket_only": true,
+    "cluster_removed": true,
+    "junit_sha256": "0749dd5962f192bf2133ede3ee3735591e40756a08f51bceb8625a145f92f568"
+  },
+  "live_quality": {
+    "v2_paired": "Candidate 6/6 contracts and independent semantic review passed; baseline 5/6. 12 unique slots, 24 API attempts. Reports remain unchanged.",
+    "subsequent_delta": "Only no-tools handoff eligibility for corrected canonical reads after a denial; validated with a failing-before actual-provider synthetic replay. No prompt, tool descriptions, routing flags or scopes changed.",
+    "standard_gate": "5/5 MiniMax scenarios passed; 10 audited API calls; source-bound orchestrator unchanged."
+  },
+  "retained_failed_batches": [
+    "2026-10-04-release-paired-validation.json",
+    "2026-10-04-release-paired-continuation.json",
+    "2026-10-04-release-paired-final-slots.json",
+    "2026-10-04-release-final-terminal-live.json",
+    "2026-10-04-release-v2-paired-validation.json"
+  ],
+  "performance": {
+    "end_to_end_speedup": "not established",
+    "statistical_noninferiority": "not established",
+    "scope": "Synthetic screen only. Normal matched two-call inputs decrease 16.04%; empty Max decreases 16.49%; empty Flash has a parameter repair and rises 38.64%. Latency varies; no overall speedup or production p95 claim.",
+    "v2_all_pairs": [
+      {
+        "case": "analysis_7d_available",
+        "model": "qwen3.8-flash",
+        "main": {
+          "status": "passed_contracts",
+          "input_tokens": 14614,
+          "seconds": 28.27,
+          "api_calls": 2
+        },
+        "candidate": {
+          "status": "passed_contracts",
+          "input_tokens": 12270,
+          "seconds": 17.63,
+          "api_calls": 2
+        }
+      },
+      {
+        "case": "analysis_7d_available",
+        "model": "qwen3.8-max",
+        "main": {
+          "status": "passed_contracts",
+          "input_tokens": 14614,
+          "seconds": 40.92,
+          "api_calls": 2
+        },
+        "candidate": {
+          "status": "passed_contracts",
+          "input_tokens": 12270,
+          "seconds": 49.95,
+          "api_calls": 2
+        }
+      },
+      {
+        "case": "analysis_7d_empty",
+        "model": "qwen3.8-flash",
+        "main": {
+          "status": "passed_contracts",
+          "input_tokens": 14217,
+          "seconds": 28.1,
+          "api_calls": 2
+        },
+        "candidate": {
+          "status": "passed_contracts",
+          "input_tokens": 19711,
+          "seconds": 20.54,
+          "api_calls": 3
+        }
+      },
+      {
+        "case": "analysis_7d_empty",
+        "model": "qwen3.8-max",
+        "main": {
+          "status": "passed_contracts",
+          "input_tokens": 14217,
+          "seconds": 20.35,
+          "api_calls": 2
+        },
+        "candidate": {
+          "status": "passed_contracts",
+          "input_tokens": 11873,
+          "seconds": 27.51,
+          "api_calls": 2
+        }
+      },
+      {
+        "case": "analysis_7d_read_failure",
+        "model": "qwen3.8-flash",
+        "main": {
+          "status": "passed_contracts",
+          "input_tokens": 19110,
+          "seconds": 18.14,
+          "api_calls": 3
+        },
+        "candidate": {
+          "status": "passed_contracts",
+          "input_tokens": 7546,
+          "seconds": 6.74,
+          "api_calls": 1
+        }
+      },
+      {
+        "case": "analysis_7d_read_failure",
+        "model": "qwen3.8-max",
+        "main": {
+          "status": "failed",
+          "input_tokens": 17223,
+          "seconds": 12.33,
+          "api_calls": 2
+        },
+        "candidate": {
+          "status": "passed_contracts",
+          "input_tokens": 7546,
+          "seconds": 8.08,
+          "api_calls": 1
+        }
+      }
+    ]
+  },
+  "disabled_candidates": [
+    "write_tool_description_compression",
+    "P1_read_synthesis_experiment",
+    "P2_owned_read_preplan_experiment",
+    "argument_transport_experiment"
+  ],
+  "production_report_passthrough": "shadow unchanged",
+  "source_sha256": {
+    "backend/app/config.py": "e629f3baa0d0c31e1cc7311ca3cc5a35f4678aff22b7135d1971d4fee622555e",
+    "backend/app/orchestrator/orchestrator.py": "86a882e4ae6cb59b7b3c7b8415601bedb60dee71a7393a22a1f80fcfcf863f18",
+    "backend/app/services/agent_conversation_service.py": "7ee82993270c9ed9b174d829565c6959c7066cd9e4597d4947a447fbba677b3a",
+    "backend/app/services/agent_executor.py": "88f581141fe09e35a40bae2d6b03339f085166e69f1640bb197204037a0a4242",
+    "backend/app/services/agent_history_budget.py": "12b58099d0beed10f01f56a29add19f3b67c8bf47dc3958119f6972e1304b836",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a",
+    "backend/app/services/agent_longitudinal_read.py": "65c9c42e6fbbd7139d5c2a98ce86e4321d36fa9c8a579bd2b3378492ddf620fd",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_public_task.py": "7afab063795bea7241cfb8e2f62f5cefddd10a6f3e97dbacbf4043d539ac843c",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/ai/food_recognition.py": "e807bb785441fc4c9b34876feb44ce6ce95faa4aa80e4619c9f8f1141d6a4242",
+    "backend/app/services/decisions/routing.py": "64f1e7a49c60cc3f05b8d5c16095a569a8e785f92e3234b3a1ed19b7903ede25",
+    "backend/app/services/history_compaction.py": "237aa78cd75992bf53bf874163d29200ef35af0f71da4cfe4f870599d393cb07",
+    "backend/app/services/llm/prompt_transport.py": "c2e4356300d028d0e57b74d61da435499f82477ff8a04bed8ec0aee12e41ba7d",
+    "backend/app/services/llm/task_routing.py": "f0522eade7eae6d856340637b31989605475438c8d3dd800e6888b2a9a168a61",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05",
+    "backend/app/services/orchestrator_delivery.py": "cd91882cd861700ea5e8119f3cf1c887952c1e811857a98c7ddfce2b4dddc07d",
+    "frontend/src/components/assistant/MarkdownRenderer.tsx": "ba72262454600cd2e43420855bf8a4a20c3ed013d10f63ea52bfc9c0020432f5",
+    "frontend/src/components/assistant/__tests__/MarkdownRenderer.streaming.test.tsx": "37d7a6dc2ed15dcf3a86814235e449524f8f187e13022db18a3f4ac714ee0dc3"
+  },
+  "evidence_sha256": {
+    "2026-10-04-release-terminal-live-verification.json": "34e7bc9e86f8ff5ad5cc826c7b8462328353f0257fe3bd22551b15d7dcc22dfc",
+    "2026-10-04-release-final-live-regression.json": "45ea8c4cb5efe778b44acac4992537b4b2422d2e965b4a1f8d74b2b0e1685717",
+    "2026-10-04-release-v2-paired-validation.json": "4827cb8dae4aa1751f3befeb93b238cdcf04525334b21e45b8b0c03607b4a08e"
+  },
+  "final_targeted": {
+    "tests": 165,
+    "passed": 165,
+    "seconds": 44.309,
+    "failures": 0,
+    "junit_sha256": "0af82539f1ea27683f053a622c61c34b23ff6010b0426fb09d523a57c19f8d7a"
+  },
+  "independent_review": {
+    "G3": "GO for synthetic quality screen only",
+    "G4": "GO for reviewed code",
+    "tests_passed": 41,
+    "seconds": 18.0,
+    "executor_sha256": "88f581141fe09e35a40bae2d6b03339f085166e69f1640bb197204037a0a4242",
+    "replay": "Flash denial then valid failed singles: tools true,true,false; repair count 1, four dispatches, failed/error persisted. Subsequent cached denial consumes second repair and terminates in normal and panel paths."
+  },
+  "historical_integration": {
+    "passed": 3746,
+    "skipped": 2,
+    "failed": 1,
+    "failure": "Old composed-experiment expectation required an extra model answer after exhausted reads; only expectation changed, all receipts/stream/persistence/outcome equality retained.",
+    "confirmation_passed": 55
+  },
+  "ci_first_attempt": {
+    "sha": "7985bef01704a1fec860f33a2261113b67e1a325",
+    "run_id": 37203498721,
+    "status": "failed",
+    "repaired_test_wiring": [
+      "retrospective shard catalog coverage",
+      "legacy conversation fake history reference initialization",
+      "advice route test preserves public entry initialization and real answer guard"
+    ],
+    "targeted_passed": [
+      97,
+      80
+    ],
+    "runtime_changed": false
+  }
+}

@@ -36,6 +36,7 @@ from app.services.crisis_lexicon import (
 )
 from app.services.episode.validator import validate_text, TextValidationResult
 from app.services.llm.error_messages import safe_llm_error_message
+from app.services.orchestrator_delivery import current_report_capture
 from app.twin.builder import build_twin
 from app.twin.formatter import twin_to_prompt_blob
 from app.twin.schema import HealthTwin
@@ -253,9 +254,15 @@ def _safety_wrap(text: str, *, source: str = "orchestrator") -> TextValidationRe
     异常时降级 (返回 ok=True / pass / 原文), 不能因为 validator 自身 bug
     把整个 orchestrator 弄挂.
     """
+    capture = current_report_capture() if source == "orchestrator.run" else None
     try:
-        return validate_text(text)
+        result = validate_text(text)
+        if capture is not None:
+            capture.record_validation(text, result)
+        return result
     except Exception as e:  # noqa: BLE001
+        if capture is not None:
+            capture.invalidate()
         logger.warning("[safety_wrap %s] validator 异常, 降级原文: %s", source, e)
         return TextValidationResult(ok=True, action="pass", safe_text=text or "")
 
@@ -1048,6 +1055,9 @@ def _resolve_turn_system_knowledge(
 
         payload = _system_kb_twin_payload(twin)
     except Exception as error:  # noqa: BLE001
+        capture = current_report_capture()
+        if capture is not None:
+            capture.invalidate()
         logger.warning(
             "[orchestrator] system KB setup failed error_type=%s",
             type(error).__name__,
@@ -1079,6 +1089,9 @@ def _resolve_turn_system_knowledge(
                 raise TypeError("lookup_for_twin returned a non-dict result")
             result = candidate
         except Exception as error:  # noqa: BLE001
+            capture = current_report_capture()
+            if capture is not None:
+                capture.invalidate()
             logger.warning(
                 "[orchestrator] system KB lookup failed attempt=%s error_type=%s",
                 attempt + 1,
@@ -1125,6 +1138,9 @@ def _resolve_turn_system_knowledge(
             max_claims=6,
         )
     except Exception as error:  # noqa: BLE001
+        capture = current_report_capture()
+        if capture is not None:
+            capture.invalidate()
         logger.warning(
             "[orchestrator] system KB prompt formatting failed error_type=%s",
             type(error).__name__,
@@ -1157,6 +1173,9 @@ def _attach_kb_evidence_to_findings(
             lookup_result=lookup_result,
         )
     except Exception as e:  # noqa: BLE001
+        capture = current_report_capture()
+        if capture is not None:
+            capture.invalidate()
         logger.debug(f"[orchestrator] system KB evidence attach skipped: {e}")
         return {"findings_updated": 0, "claim_refs": 0}
 
@@ -1439,6 +1458,9 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
         else:
             _record("conversation", ok=False, chars=0, count=0)
     except Exception as e:  # noqa: BLE001
+        capture = current_report_capture()
+        if capture is not None:
+            capture.invalidate()
         _record("conversation", ok=False, chars=0, count=0, error=str(e))
 
     # 2) Clinical Journal case timeline (本次 finding 相关的 metric 历史)
@@ -1467,6 +1489,9 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
             _record("case_timeline", ok=False, chars=0, count=0,
                     error="no_findings")
     except Exception as e:  # noqa: BLE001
+        capture = current_report_capture()
+        if capture is not None:
+            capture.invalidate()
         _record("case_timeline", ok=False, chars=0, count=0, error=str(e))
         logger.debug(f"[orchestrator] case timeline 注入失败 (跳过): {e}")
 
@@ -1482,6 +1507,9 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
         else:
             _record("directives", ok=False, chars=0, count=0)
     except Exception as e:  # noqa: BLE001
+        capture = current_report_capture()
+        if capture is not None:
+            capture.invalidate()
         _record("directives", ok=False, chars=0, count=0, error=str(e))
         logger.debug(f"[orchestrator] directive 注入失败 (跳过): {e}")
 
@@ -1503,6 +1531,9 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
             else:
                 _record("hybrid", ok=False, chars=0, count=0)
         except Exception as e:  # noqa: BLE001
+            capture = current_report_capture()
+            if capture is not None:
+                capture.invalidate()
             _record("hybrid", ok=False, chars=0, count=0, error=str(e))
             logger.debug(f"[orchestrator] hybrid retrieval 注入失败 (跳过): {e}")
 
@@ -1559,6 +1590,7 @@ async def _call_llm(
         {"role": "user", "content": user_prompt},
     ]
     max_toks = _LITE_MAX_TOKENS if lite_mode else _FULL_MAX_TOKENS
+    capture = current_report_capture() if allow_synthesis_override else None
 
     async def _try(provider_type: Optional[str]) -> Optional[str]:
         try:
@@ -1604,13 +1636,23 @@ async def _call_llm(
                 if _section_ctrl
                 else {}
             )
+            if capture is not None:
+                extra_kwargs["return_metadata"] = True
             result = await provider.chat(
                 messages=messages, temperature=0.3, max_tokens=max_toks, **extra_kwargs
             )
+            if capture is not None:
+                capture.record_generation(result, getattr(provider, "model", None))
             if isinstance(result, dict):
                 return (result.get("content") or "").strip() or None
             return str(result or "").strip() or None
+        except asyncio.CancelledError:
+            if capture is not None:
+                capture.invalidate()
+            raise
         except Exception as e:
+            if capture is not None:
+                capture.invalidate()
             from app.services.llm.recovery import diagnose_llm_error
 
             diagnosis = diagnose_llm_error(e)
@@ -1709,6 +1751,9 @@ async def _resolve_cross_review_block(
     block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
     if block is not None:
         return block
+    capture = current_report_capture()
+    if capture is not None:
+        capture.invalidate()
     return _fallback_cross_review_block(findings, twin, db, user_id)
 
 
@@ -1892,6 +1937,50 @@ async def _shadow_parallel_synthesis_worker(
         shadow_db.close()
 
 
+def _report_evidence_complete(
+    *, user_id: int, twin: HealthTwin, specialists: List,
+    findings: List[SpecialistFinding], timings: Dict[str, Any],
+    kb_resolution: _TurnKBResolution, evidence_policy_trace: Dict[str, Any],
+    memory_trace: Dict[str, Any], conflict_block: str, realtime_block: str,
+) -> bool:
+    """A successful report is reusable only when every required stage resolved."""
+    if (
+        type(user_id) is not int or twin.meta.user_id != user_id
+        or twin.meta.failed_partitions or twin.meta.cache_status == "partial"
+        or not specialists or not findings
+        or type(timings.get("failed")) is not list or timings["failed"]
+        or type(timings.get("timed_out")) is not list or timings["timed_out"]
+        or kb_resolution.lookup_ok is not True
+        or type(evidence_policy_trace.get("blocked_count")) is not int
+        or evidence_policy_trace["blocked_count"] != 0
+        or conflict_block != "" or realtime_block != ""
+    ):
+        return False
+    selected = [specialist.name for specialist in specialists]
+    resolved = [finding.specialist_name for finding in findings]
+    if len(set(selected)) != len(selected) or sorted(selected) != sorted(resolved):
+        return False
+    for finding in findings:
+        if (
+            not isinstance(finding.raw, dict) or "error" in finding.raw
+            or finding.raw.get("errors") or finding.raw.get("failed")
+            or finding.raw.get("timed_out") or finding.raw.get("failed_rule_count")
+            or finding.raw.get("status") in ("error", "failed", "timeout", "timed_out")
+            or finding.proposed_cards
+        ):
+            return False
+    stages = memory_trace.get("stages")
+    if not isinstance(stages, dict) or not {
+        "conversation", "case_timeline", "directives", "hybrid",
+    }.issubset(stages):
+        return False
+    return all(
+        isinstance(stage, dict) and type(stage.get("ok")) is bool
+        and "error" in stage and stage["error"] is None
+        for stage in stages.values()
+    )
+
+
 async def run_orchestrator(
     db: Session, user_id: int, req: OrchestratorRequest
 ) -> OrchestratorResponse:
@@ -1907,6 +1996,10 @@ async def run_orchestrator(
     genui = _maybe_build_genui_chart(db, user_id, req)
     if genui is not None:
         return genui
+
+    report_capture = current_report_capture()
+    if report_capture is not None and report_capture.user_id != user_id:
+        report_capture.invalidate()
 
     from app.services.llm.usage_tracker import set_caller
     set_caller("orchestrator.synthesis", user_id=user_id)
@@ -1942,6 +2035,8 @@ async def run_orchestrator(
         from app.services.clinical_journal_service import get_active_case_briefs
         recent_cases = get_active_case_briefs(db, user_id, limit=5)
     except Exception:
+        if report_capture is not None:
+            report_capture.invalidate()
         recent_cases = []
     sp_timings: Dict[str, Any] = {}
     findings = _run_specialists(
@@ -2140,6 +2235,19 @@ async def run_orchestrator(
         logger.info(
             "[orchestrator] planner evidence policy blocked %s unsupported findings",
             evidence_policy_trace["blocked_count"],
+        )
+
+    if report_capture is not None:
+        report_capture.seal(
+            req.query, synthesis,
+            evidence_complete=_report_evidence_complete(
+                user_id=user_id, twin=twin, specialists=specialists, findings=findings,
+                timings=sp_timings, kb_resolution=kb_resolution,
+                evidence_policy_trace=evidence_policy_trace, memory_trace=memory_trace,
+                conflict_block=conflict_arb_block, realtime_block=realtime_evidence_block,
+            ),
+            mode=getattr(settings, "orchestrator_parallel_synthesis", "off"),
+            persisted_card_ids=persisted_card_ids,
         )
 
     return OrchestratorResponse(

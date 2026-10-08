@@ -4,7 +4,7 @@
   "shards": [
     {"label":"a-action","paths":["tests/test_action*.py"],"estimated_seconds":13.755,"scheduling_seconds":34.049},
     {"label":"a-agenda","paths":["tests/test_agenda*.py"],"estimated_seconds":20.336,"scheduling_seconds":27.416},
-    {"label":"a-early-rest","paths":["tests/test_a_to_i_smoke.py","tests/test_account*.py","tests/test_activation*.py","tests/test_adherence*.py","tests/test_admin*.py","tests/test_advice*.py","tests/test_async*.py"],"estimated_seconds":45.535,"scheduling_seconds":51.695},
+    {"label":"a-early-rest","paths":["tests/test_a_to_i_smoke.py","tests/test_account*.py","tests/test_activation*.py","tests/test_acute*.py","tests/test_adherence*.py","tests/test_admin*.py","tests/test_advice*.py","tests/test_async*.py"],"estimated_seconds":45.535,"scheduling_seconds":51.695},
     {"label":"a-late","paths":["tests"],"extra_args":["--ignore=tests/services","--ignore=tests/test_app_store_demo_account.py","--ignore-glob=tests/test_[b-z]*.py","--ignore-glob=tests/test_agent_*.py","--ignore-glob=tests/test_a[_a-h]*.py"],"estimated_seconds":65.938,"scheduling_seconds":49.598},
     {"label":"b","paths":["tests/test_b*.py"],"estimated_seconds":31.336,"scheduling_seconds":56.251},
     {"label":"app-store-demo-account","paths":["tests/test_app_store_demo_account.py"],"estimated_seconds":10.247,"scheduling_seconds":17.608},
@@ -43,7 +43,7 @@
     {"label":"q","paths":["tests/test_q*.py"],"estimated_seconds":4.357,"scheduling_seconds":53.254},
     {"label":"r-record-registration","paths":["tests/test_record*.py","tests/test_registration*.py"],"estimated_seconds":21.216,"scheduling_seconds":16.141},
     {"label":"r-runtime-recovery","paths":["tests/test_runtime*.py","tests/test_recovery*.py"],"estimated_seconds":22.263,"scheduling_seconds":24.716},
-    {"label":"r-other","paths":["tests/test_r4*.py","tests/test_read*.py","tests/test_realtime*.py","tests/test_reasoning*.py","tests/test_recheck*.py","tests/test_redact*.py","tests/test_redis*.py","tests/test_regimen*.py","tests/test_reliable*.py","tests/test_release*.py","tests/test_remember*.py","tests/test_reminder*.py","tests/test_reorder*.py","tests/test_report*.py","tests/test_required*.py","tests/test_retrieval*.py","tests/test_reva*.py","tests/test_rhinitis*.py","tests/test_rokid*.py","tests/test_run_episode*.py"],"estimated_seconds":67.93,"scheduling_seconds":101.981},
+    {"label":"r-other","paths":["tests/test_r4*.py","tests/test_read*.py","tests/test_realtime*.py","tests/test_reasoning*.py","tests/test_recheck*.py","tests/test_reconcile*.py","tests/test_redact*.py","tests/test_redis*.py","tests/test_regimen*.py","tests/test_reliable*.py","tests/test_release*.py","tests/test_remember*.py","tests/test_reminder*.py","tests/test_remote_health*.py","tests/test_reorder*.py","tests/test_report*.py","tests/test_required*.py","tests/test_retrospective*.py","tests/test_retrieval*.py","tests/test_reva*.py","tests/test_rhinitis*.py","tests/test_rokid*.py","tests/test_run_episode*.py"],"estimated_seconds":67.93,"scheduling_seconds":101.981},
     {"label":"s-a-b","paths":["tests/test_s[a-b]*.py"],"estimated_seconds":8.175,"scheduling_seconds":18.811},
     {"label":"s-c-k","paths":["tests/test_s[c-k]*.py"],"extra_args":["-vv"],"estimated_seconds":17.652,"scheduling_seconds":28.388},
     {"label":"s-l-z","paths":["tests/test_s[l-z]*.py"],"estimated_seconds":173.432,"scheduling_seconds":283.264},

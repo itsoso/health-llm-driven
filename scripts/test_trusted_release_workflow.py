@@ -26,6 +26,25 @@ def test_vendor_compatibility_is_checked_before_claiming_release_permission(job)
     assert "EXPO_TOKEN" not in str(steps[install_index])
 
 
+@pytest.mark.parametrize("job", ["ios-build", "testflight"])
+def test_signature_backport_covers_both_installations_before_credentials(job):
+    steps = WORKFLOW["jobs"][job]["steps"]
+    install_index = next(i for i, step in enumerate(steps) if "Install locked CLI" in step.get("name", ""))
+    body = steps[install_index]["run"]
+    for root in ("scripts/release-tools", "mobile"):
+        install = f"npm ci --prefix /opt/reva-release/source/{root} --ignore-scripts"
+        verify = f'"$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/{root} --apply'
+        assert body.index(install) < body.index(verify)
+        guard = verify.replace("scripts/node-forge-backport.cjs", "frontend/scripts/braces-depth-guard.cjs")
+        assert body.index(install) < body.index(guard)
+        commands = [line.strip() for line in body.replace("\\\n", "").splitlines()]
+        assert any(line.startswith('/usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root')
+                   and line.endswith(guard) for line in commands)
+    assert "secrets." not in str(steps[install_index])
+    first_secret = next(i for i, step in enumerate(steps) if "secrets." in str(step))
+    assert install_index < first_secret
+
+
 def test_ci_checks_real_release_tool_consumers_with_the_production_node_version():
     ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     steps = ci["jobs"]["release-invariants"]["steps"]
@@ -66,7 +85,7 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
     assert set(triggers) == {"workflow_dispatch"}
     target = triggers["workflow_dispatch"]["inputs"]["target"]
     assert target["default"] == "validate"
-    assert set(target["options"]) == {"validate", "backend", "release", "testflight"}
+    assert set(target["options"]) == {"validate", "backend", "release", "testflight", "retained-testflight"}
     assert WORKFLOW["permissions"] == {"contents": "read", "actions": "read"}
     assert WORKFLOW["concurrency"]["cancel-in-progress"] is False
     for name, job in WORKFLOW["jobs"].items():
@@ -79,6 +98,7 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
                 "backend": "inputs.target == 'release' || inputs.target == 'backend'",
                 "ios-build": "inputs.target == 'release' || inputs.target == 'testflight'",
                 "testflight": "inputs.target == 'release' || inputs.target == 'testflight'",
+                "retained-testflight": "inputs.target == 'retained-testflight'",
             }[name]
             assert job["if"] == expected
     assert WORKFLOW["jobs"]["build-permission"]["needs"] == "preflight"

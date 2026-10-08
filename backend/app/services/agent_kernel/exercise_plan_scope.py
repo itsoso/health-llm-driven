@@ -11,9 +11,9 @@ import re
 _SELF = r"(?:我(?:自己|本人|个人)?|本人)(?:的)?"
 _HORIZON = r"(?:(?:未来|接下来|今后)?[0-9一二两三四五六七八九十百]{1,4}(?:天|周|个月)|今天|明天|本周|这周|下周|本月|下个月)"
 _DRAFT = re.compile(
-    rf"(?:请你?|麻烦你?)?(?:(?:帮|为|给)我)?(?:制定|起草|生成|设计|拟定|安排)(?:一下)?"
+    rf"(?:请你?|麻烦你?)?(?:(?:帮|为|给)我)?(?:制定|起草|生成|设计|拟定|安排|规划)(?:一下)?"
     rf"(?:{_SELF})?(?P<horizon>{_HORIZON})?的?"
-    r"(?:锻炼|运动|训练)(?:恢复|康复)?的?(?:计划|方案)(?:草稿)?"
+    r"(?:锻炼|运动|训练)(?:恢复|康复)?的?(?:计划|方案)?(?:草稿)?"
 )
 _BASIS_ITEMS = {
     "profile": r"身体(?:状况|情况|状态)|健康(?:状况|情况|状态)",
@@ -44,7 +44,7 @@ def resolve_exercise_plan_scope(text: str) -> ExercisePlanScope | None:
     if basis is None:
         return None
     remainder = normalized[basis.end():]
-    candidates = list(re.finditer(r"(?:请你?|麻烦你?)?(?:(?:帮|为|给)我)?(?:制定|起草|生成|设计|拟定|安排)", remainder))
+    candidates = list(re.finditer(r"(?:请你?|麻烦你?)?(?:(?:帮|为|给)我)?(?:制定|起草|生成|设计|拟定|安排|规划)", remainder))
     if len(candidates) != 1:
         return None
     split = candidates[0].start()
@@ -63,6 +63,21 @@ def resolve_exercise_plan_scope(text: str) -> ExercisePlanScope | None:
         if domain != 'profile' and domain not in dimensions:
             dimensions.append(domain)
     return ExercisePlanScope(draft['horizon'] or '', tuple(dimensions))
+
+
+def has_unresolved_exercise_plan_basis(text: str) -> bool:
+    """Prevent a partial evidence request falling into an unrestricted report read.
+
+    This detector only denies unsupported requests; the full parser above is
+    the sole source of authority, including owners and evidence dimensions.
+    """
+    normalized = re.sub(r"\s+", "", str(text or ""))
+    return bool(
+        re.search(r"基于|结合|根据", normalized)
+        and any(re.search(pattern, normalized) for pattern in _BASIS_ITEMS.values())
+        and _DRAFT.search(normalized)
+        and resolve_exercise_plan_scope(text) is None
+    )
 
 
 def exercise_plan_prompt(scope: ExercisePlanScope) -> str:

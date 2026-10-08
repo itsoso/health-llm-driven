@@ -1,0 +1,112 @@
+{
+  "status": "local_byte_equivalence_and_cpu_target_pass_live_gate_blocked",
+  "baseline_commit": "7d934b3c6b2540c969b1124b5468b737b6d0c88a",
+  "branch": "codex/reva-prompt-optimization",
+  "source_sha256": {
+    "backend/app/services/llm/prompt_transport.py": "c2e4356300d028d0e57b74d61da435499f82477ff8a04bed8ec0aee12e41ba7d",
+    "backend/tests/fixtures/prompt_transport_7d934b3.py": "a09fe0203c2748d76a82ad0cccae4ebf03db69d5edd5c86d251d0d087ee9d206",
+    "backend/tests/test_prompt_transport_equivalence.py": "612b3f11db440445954c12d2d77c4fe8f8fb3eabb933ab88c3b288c9480ea830",
+    "scripts/benchmark_prompt_transport.py": "7600bd2620daf4f8c6cc1804b12a0a3086e379d20da8760dc91326d8b43cfbcc",
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617"
+  },
+  "evidence_sha256": {
+    "2026-10-04-transport-cpu-before.json": "e123449a38ef85a36fb5585b7fd831b8a64279d51fe85d524cf6470a6f2429aa",
+    "2026-10-04-transport-cpu-after.json": "eb9e368555fc563f526a0c22532861296a10805d145f1ba481e6b73bfe02e491",
+    "2026-10-04-transport-cpu-final.json": "528338aa224d4e2a20b38bce81b881f7e5a8f2bf90d0876e8694e22b4bf82a60",
+    "2026-10-04-transport-live-gate.json": "390ccfe5f8fd17e5997c26bee0547bdd4260b5ff6b03c48d0444e53a9891eb5d"
+  },
+  "validation": [
+    {
+      "scope": "initial preservation fixture",
+      "passed": 16,
+      "failed": 1,
+      "log": "/tmp/reva-transport-before-tests.log",
+      "finding": "Incorrect test assumption: valid 1500-level array need not exceed this decoder limit. No runtime change made to satisfy assumption."
+    },
+    {
+      "scope": "corrected preservation tests before implementation",
+      "passed": 18,
+      "log": "/tmp/reva-transport-baseline-tests.log"
+    },
+    {
+      "scope": "transport equivalence, stream/nonstream provider, Pi composition, argument isolation",
+      "passed": 48,
+      "seconds": 8.62,
+      "log": "/tmp/reva-transport-after-tests.log"
+    },
+    {
+      "scope": "independent read-only transport and argument tests",
+      "passed": 31,
+      "verdict": "GO limited to byte-equivalent local CPU change"
+    },
+    {
+      "scope": "offline harness",
+      "invariants_passed": 12,
+      "core_passed": 50,
+      "trajectory_contract_passed": 12,
+      "trajectory_goldens_matched": 9,
+      "log": "/tmp/reva-transport-offline-harness.log"
+    },
+    {
+      "scope": "system map and documentation drift",
+      "status": "passed",
+      "log": "/tmp/reva-transport-system-map.log"
+    },
+    {
+      "scope": "first coverage invocation",
+      "status": "failed",
+      "tests_passed": 18,
+      "reason": "Repository addopts adds --cov=app; targeted tests do not cover whole app. Corrected invocation explicitly measures only changed module; not a global coverage pass.",
+      "log": "/tmp/reva-transport-coverage.log"
+    },
+    {
+      "scope": "changed module coverage",
+      "status": "passed",
+      "tests_passed": 18,
+      "statement_coverage_pct": 100,
+      "branch_coverage_pct": 100,
+      "statements": 19,
+      "branches": 4,
+      "command": "pytest -o addopts= backend/tests/test_prompt_transport_equivalence.py --strict-markers --tb=short --cov=app.services.llm.prompt_transport --cov-branch --cov-report=term-missing --cov-fail-under=90 -q",
+      "log": "/tmp/reva-transport-module-coverage.log"
+    },
+    {
+      "scope": "final independent report and metadata review",
+      "verdict": "GO within local CPU and byte equivalence only",
+      "new_test_runs": 0,
+      "final_benchmark_sha256": "528338aa224d4e2a20b38bce81b881f7e5a8f2bf90d0876e8694e22b4bf82a60"
+    },
+    {
+      "scope": "final documentation drift and diff whitespace",
+      "status": "passed",
+      "log": "/tmp/reva-transport-system-map-final.log"
+    }
+  ],
+  "measurement": {
+    "report": "2026-10-04-transport-cpu-final.json",
+    "status": "local_target_met",
+    "cases": 17,
+    "samples_per_case": 101,
+    "iterations_per_sample": 10,
+    "own_tests_running_concurrently_in_final_measurement": false,
+    "scope": "Synthetic local function CPU, batch-mean quantiles, alternating same-input pairs",
+    "output_and_original_input_preserved": true,
+    "additional_input_token_savings": 0,
+    "composed_pi_control_tool_messages": 0
+  },
+  "live_gate": {
+    "status": "failed",
+    "live_llm_required": true,
+    "confirmed": false,
+    "reason": "No private test model credentials; no repeated API attempt in this slice"
+  },
+  "boundaries": [
+    "Only existing domain_prompt_optimization tool-message path; defaults unchanged.",
+    "No writes, gateway authority, health precision, retries or transcript changes.",
+    "P1/P2 semantic candidates remain eval-only; rejected write descriptions remain excluded.",
+    "No real traffic baseline, API usage, live quality or end-to-end latency proof.",
+    "No commit, push, merge or deployment."
+  ]
+}

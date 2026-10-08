@@ -112,6 +112,7 @@ class AgentConversationService:
     def __init__(self, db: Session):
         self.db = db
         self._postgres_client_turn_locks: dict[int, tuple[Any, Any]] = {}
+        self.provider_history_references = ()
 
     @staticmethod
     def _client_turn_storage_key(user_id: int, client_turn_id: str) -> str:
@@ -733,12 +734,16 @@ class AgentConversationService:
                 raise
 
     def build_messages(self, conversation_id: int, limit: int = 20) -> List[Dict[str, str]]:
+        # Prepared anew per read; apply only at the provider transport boundary.
+        self.provider_history_references = ()
         history = (
             self.db.query(AgentMessage)
             .filter(AgentMessage.conversation_id == conversation_id)
             # id 决胜: created_at 同刻(时钟回拨/同毫秒并写)时 user/assistant 顺序
             # 不能翻转,否则多轮历史喂给 LLM 时轮次错位。
-            .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
+            # PostgreSQL otherwise puts NULL timestamps last, letting an old
+            # undated user message masquerade as the current user instruction.
+            .order_by(AgentMessage.created_at.asc().nullsfirst(), AgentMessage.id.asc())
             .all()
         )
         from app.services.health_evidence.delivery import (
@@ -746,41 +751,93 @@ class AgentConversationService:
         )
 
         projected = project_persisted_health_messages(history)
-        recent = list(zip(history, projected, strict=True))
-        recent = recent[-limit:] if len(recent) > limit else recent
+        budget_enabled = bool(getattr(settings, "domain_prompt_optimization", False))
+        window_start = max(0, len(history) - limit)
+        summary_message = None
+        summary_cut = None
+        # A fold may lag the current window or have been made for a different
+        # keep_recent. Its exact owned boundary plus original gap messages is
+        # safe; relabeling a stale summary as covering the gap is not.
+        if window_start and getattr(settings, "llm_history_compaction", False):
+            try:
+                from app.services.history_compaction import (
+                    build_summary_message, get_fold_summary_boundary,
+                    get_valid_fold_summary,
+                )
+                if not any(message.sanitized for message in projected[:window_start]):
+                    if budget_enabled:
+                        fold = get_fold_summary_boundary(
+                            conversation_id,
+                            eligible_messages=history[:window_start],
+                        )
+                        if fold is not None:
+                            through, summary = fold
+                            summary_cut = next(
+                                i for i, row in enumerate(history[:window_start])
+                                if row.id == through
+                            )
+                            window_start = summary_cut + 1
+                    else:
+                        summary = get_valid_fold_summary(
+                            conversation_id, last_overflow_id=history[window_start - 1].id,
+                            ordered_messages=history[:window_start],
+                        )
+                        if summary:
+                            summary_cut = window_start - 1
+                    if summary_cut is not None:
+                        summary_message = build_summary_message(summary)
+                        summary_message["content"] = _history_message_content(
+                            history[summary_cut], summary_message["content"], summary=True,
+                        )
+            except Exception as exc:  # noqa: BLE001 - retain the established window on cache failure
+                logger.warning("history_fold_unavailable error_type=%s", type(exc).__name__)
+
+        recent = list(zip(history[window_start:], projected[window_start:], strict=True))
         out = [
             {"role": projection.role,
              "content": (projection.content if row is history[-1] and projection.role == "user"
                          else _history_message_content(row, projection.content))}
             for row, projection in recent
         ]
-        # R1 长对话折叠(ships-OFF): 溢出部分现状是**静默丢弃**;flag 开且后台已折叠好
-        # 恰到最后一条溢出消息时, 前置一条前情摘要(纯增益)。缓存无效/异常 = 现状截断
-        # (fail-open, 下一轮后台自愈)。读路径零 LLM 零网络(只读 Redis)。
-        if len(history) > limit and getattr(settings, "llm_history_compaction", False):
-            try:
-                from app.services.history_compaction import (
-                    build_summary_message, get_valid_fold_summary,
+        if budget_enabled:
+            from app.services.agent_history_budget import (
+                ProviderHistoryReference, project_history_budget,
+            )
+
+            budget = project_history_budget(recent)
+            self.provider_history_references = tuple(
+                ProviderHistoryReference(
+                    source_content=out[source_index]["content"],
+                    original_content=out[index]["content"],
+                    replacement_content=_history_message_content(
+                        recent[index][0], budget.contents[index],
+                    ),
+                ) for index, source_index in budget.source_indices
+            )
+        if summary_message is not None:
+            out.insert(0, summary_message)
+        if budget_enabled:
+            from app.services.agent_history_budget import (
+                HISTORY_SOFT_BUDGET_CHARS, apply_provider_history_references,
+            )
+
+            before_chars = sum(len(message["content"]) for message in out)
+            projected_chars = sum(
+                len(message["content"]) for message in apply_provider_history_references(
+                    out, self.provider_history_references,
                 )
-                overflow_projection = projected[:-limit]
-                summary = (
-                    None
-                    if any(
-                        message.sanitized
-                        for message in overflow_projection
-                    )
-                    else get_valid_fold_summary(
-                        conversation_id,
-                        last_overflow_id=history[-limit - 1].id,
-                    )
-                )
-                if summary:
-                    summary_message = build_summary_message(summary)
-                    summary_message["content"] = _history_message_content(
-                        history[-limit - 1], summary_message["content"], summary=True)
-                    out = [summary_message] + out
-            except Exception:  # noqa: BLE001
-                pass
+            )
+            # Content-free soft-budget accounting, never a claim that arbitrary
+            # history can safely be truncated to the target. Legacy window
+            # omissions without a valid fold are explicit in telemetry.
+            logger.info(
+                "history_budget before_chars=%d projected_chars=%d references=%d "
+                "overflow=%d unrepresented_window_messages=%d bridged_messages=%d",
+                before_chars, projected_chars, len(self.provider_history_references),
+                int(projected_chars > HISTORY_SOFT_BUDGET_CHARS),
+                window_start if summary_message is None else 0,
+                max(0, len(recent) - limit),
+            )
         return out
 
     def build_actionable_references(

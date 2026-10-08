@@ -215,16 +215,17 @@ def test_interrupted_or_drifted_closure_never_writes_terminal_and_cannot_retry(
         m.close_transaction(a)
 
 
-def fixture_workspace(m, tmp_path):
-    workspace = tmp_path / m.OLD_SHA
+def fixture_workspace(m, tmp_path, native_sha=None):
+    native_sha = native_sha or m.OLD_SHA
+    workspace = tmp_path / native_sha
     workspace.mkdir(mode=0o700)
     for name in ["build-started.json", "native-started.json"]:
         (workspace / name).write_text(
-            json.dumps({"sha": m.OLD_SHA, "state": "STARTED"})
+            json.dumps({"sha": native_sha, "state": "STARTED"})
         )
     (workspace / "testflight-base.json").write_text(
         json.dumps(
-            {"sha": m.OLD_SHA, "state": "COMPATIBLE", "production_sha": "c" * 40}
+            {"sha": native_sha, "state": "COMPATIBLE", "production_sha": "c" * 40}
         )
     )
     (workspace / "build.lock").write_bytes(b"")
@@ -298,14 +299,16 @@ def test_log_redirect_cannot_forward_token_to_arbitrary_host():
     )
 
 
-def completed_fixture(m, tmp_path, monkeypatch):
-    b, workspace = fixture_workspace(m, tmp_path)
+def completed_fixture(m, tmp_path, monkeypatch, native_sha=None):
+    native_sha = native_sha or m.OLD_SHA
+    profile = m.profile_for(native_sha)
+    b, workspace = fixture_workspace(m, tmp_path, native_sha)
     source = tmp_path / "source"
     source.mkdir()
-    record = tmp_path / m.ROOT_NAME / m.OLD_SHA
+    record = tmp_path / m.ROOT_NAME / native_sha
     record.mkdir(parents=True)
     monkeypatch.setattr(m, "private_directory", lambda *a: None)
-    monkeypatch.setattr(m, "canonical_profile", lambda b: None)
+    monkeypatch.setattr(m, "canonical_profile", lambda b, native_sha=m.OLD_SHA: None)
     installation = {"config": {"inode": 123}, "library": {"sha256": "d" * 64}}
     b.CONFIG = tmp_path / "config"
     b.INSTALLED = tmp_path / "lib" / "executor.py"
@@ -322,21 +325,21 @@ def completed_fixture(m, tmp_path, monkeypatch):
     receipt = "a" * 64
     vendor = {
         "state": "VENDOR_UPLOAD_SUCCEEDED",
-        "run_id": m.RUN_ID,
-        "run_attempt": 2,
+        "run_id": profile["run_id"],
+        "run_attempt": profile["run_attempt"],
         "workflow_id": m.WORKFLOW_ID,
-        "build_id": m.BUILD_ID,
-        "submission_id": m.SUBMISSION_ID,
-        "log_sha256": m.LOG_SHA256,
-        "canonical_hashes": m.CANONICAL_HASHES,
-        "jobs_sha256": "1" * 64,
-        "prior_jobs_sha256": "2" * 64,
+        "build_id": profile["build_id"],
+        "submission_id": profile["submission_id"],
+        "log_sha256": profile["log_sha256"],
+        "canonical_hashes": profile["canonical_hashes"],
+        "jobs_sha256": profile["jobs_sha256"] or "1" * 64,
+        "prior_jobs_sha256": "2" * 64 if profile["run_attempt"] == 2 else None,
     }
     evidence = {
-        "old_sha": m.OLD_SHA,
+        "old_sha": native_sha,
         "closing_sha": "b" * 40,
         "production_sha": "c" * 40,
-        "workspace": m.workspace_evidence(b),
+        "workspace": m.workspace_evidence(b, native_sha),
         "installation": installation,
         "authorized": {"sha256": "3" * 64},
         "locks": {
@@ -355,7 +358,7 @@ def completed_fixture(m, tmp_path, monkeypatch):
         json.dumps(
             {
                 "state": m.TERMINAL,
-                "old_sha": m.OLD_SHA,
+                "old_sha": native_sha,
                 "intent_sha256": m.digest(intent),
             }
         )
@@ -460,3 +463,239 @@ def test_closure_separates_live_and_historical_production(tmp_path, monkeypatch)
     calls.clear()
     m.closed_evidence(b, m.OLD_SHA, receipt, historical=True)
     assert calls == []
+
+
+NATIVE_273_SHA = 'e19043ecb269e20f3bc0a546165e43d467f1fc8c'
+
+
+def modern_metadata(m):
+    run, jobs, _prior, log = metadata(m)
+    run.update(id=36877321184, run_attempt=1, head_sha=NATIVE_273_SHA)
+    job_ids = {
+        'preflight': 110419973839, 'build-permission': 110420049172,
+        'ios-build': 110420683984, 'backend': 110420686145,
+        'testflight': 110424934683, 'release-result': 110427264251,
+    }
+    for job in jobs['jobs']:
+        job['id'] = job_ids[job['name']]
+    log = log.replace(m.BUILD_ID.encode(), b'20d5e73a-a6b9-4c70-ad69-e63d31e058f2').replace(
+        m.SUBMISSION_ID.encode(), b'fcfbb57d-4804-4a36-9c57-eab062bf321e')
+    return run, jobs, None, log
+
+
+def test_second_profile_validates_first_attempt_without_inventing_backend_success():
+    m = load()
+    proof = m.validate_vendor(*modern_metadata(m), native_sha=NATIVE_273_SHA)
+    assert proof['run_id'] == 36877321184
+    assert proof['run_attempt'] == 1
+    assert proof['build_id'] == '20d5e73a-a6b9-4c70-ad69-e63d31e058f2'
+    assert proof['prior_jobs_sha256'] is None
+    assert proof['state'] == 'VENDOR_UPLOAD_SUCCEEDED'
+    assert 'backend' not in proof
+    assert m.validate_vendor(*metadata(m))['run_id'] == m.RUN_ID
+
+
+@pytest.mark.parametrize('mutation', ['unknown_sha', 'wrong_attempt', 'mixed_jobs', 'mixed_log', 'unexpected_prior'])
+def test_second_profile_cannot_mix_or_expand_reviewed_evidence(mutation):
+    m = load()
+    run, jobs, prior, log = modern_metadata(m)
+    sha = NATIVE_273_SHA
+    if mutation == 'unknown_sha':
+        sha = 'f' * 40
+    elif mutation == 'wrong_attempt':
+        run['run_attempt'] = 2
+    elif mutation == 'mixed_jobs':
+        jobs = metadata(m)[1]
+    elif mutation == 'mixed_log':
+        log = metadata(m)[3]
+    elif mutation == 'unexpected_prior':
+        prior = metadata(m)[2]
+    with pytest.raises(m.RetirementError):
+        m.validate_vendor(run, jobs, prior, log, native_sha=sha)
+
+
+def test_new_operator_selects_native_sha_before_reading_credentials(monkeypatch):
+    m = load()
+    events = []
+    monkeypatch.setattr(m.sys, 'argv', ['native_release_retirement.py', '--sha', 'b' * 40,
+        '--production-sha', 'd' * 40, '--native-sha', 'f' * 40])
+    monkeypatch.setattr(m, 'context', lambda sha: events.append('context'))
+    class Input:
+        def read(self, *args):
+            events.append('secret')
+            raise AssertionError('credential read forbidden')
+    monkeypatch.setattr(m.sys, 'stdin', Input())
+    with pytest.raises(m.RetirementError):
+        m.main()
+    assert events == []
+
+
+def reseal_fixture(m, record, intent):
+    evidence = {k: v for k, v in intent.items() if k not in {'evidence_sha256', 'receipt_sha256'}}
+    intent['evidence_sha256'] = m.digest(evidence)
+    (record / 'intent.json').write_text(json.dumps(intent))
+    (record / 'completed.json').write_text(json.dumps({
+        'state': m.TERMINAL, 'old_sha': intent['old_sha'], 'intent_sha256': m.digest(intent),
+    }))
+
+
+def test_second_profile_historical_and_live_roundtrip_preserves_original_evidence(tmp_path, monkeypatch):
+    m = load()
+    b, workspace, record, receipt = completed_fixture(m, tmp_path, monkeypatch, NATIVE_273_SHA)
+    before = {p.name: (p.stat().st_ino, p.read_bytes()) for p in workspace.iterdir()}
+    calls = []
+    b._recovery_production_proof = lambda sha, source: calls.append(sha)
+    live = m.closed_evidence(b, NATIVE_273_SHA, receipt)
+    assert live['state'] == m.TERMINAL
+    assert calls == ['c' * 40]
+    calls.clear()
+    (tmp_path / 'config.retired').mkdir()
+    (tmp_path / 'lib.retired').mkdir()
+    assert m.closed_evidence(b, NATIVE_273_SHA, receipt, historical=True) == live
+    assert calls == []
+    assert before == {p.name: (p.stat().st_ino, p.read_bytes()) for p in workspace.iterdir()}
+    assert not (workspace / 'completed.json').exists()
+    assert not (tmp_path / m.ROOT_NAME / m.OLD_SHA).exists()
+
+
+@pytest.mark.parametrize('field', ['run_id', 'run_attempt', 'build_id', 'submission_id', 'log_sha256', 'canonical_hashes', 'jobs_sha256', 'prior_jobs_sha256'])
+def test_second_profile_history_rejects_resealed_cross_profile_proof(tmp_path, monkeypatch, field):
+    m = load()
+    b, workspace, record, receipt = completed_fixture(m, tmp_path, monkeypatch, NATIVE_273_SHA)
+    intent = json.loads((record / 'intent.json').read_text())
+    old = m.validate_vendor(*metadata(m))
+    intent['vendor'][field] = old[field]
+    reseal_fixture(m, record, intent)
+    with pytest.raises(m.RetirementError, match='vendor proof differs'):
+        m.closed_evidence(b, NATIVE_273_SHA, receipt, historical=True)
+
+
+@pytest.mark.parametrize('mutation', ['receipt', 'lock', 'archive', 'workspace', 'canonical'])
+def test_second_profile_historical_never_bypasses_integrity(tmp_path, monkeypatch, mutation):
+    m = load()
+    b, workspace, record, receipt = completed_fixture(m, tmp_path, monkeypatch, NATIVE_273_SHA)
+    if mutation == 'receipt':
+        receipt = 'f' * 64
+    elif mutation == 'lock':
+        b._recovery_file_identity = lambda p: {'inode': 999}
+    elif mutation == 'archive':
+        b._installation_evidence = lambda *args: {}
+    elif mutation == 'workspace':
+        (workspace / 'build.lock').write_bytes(b'changed')
+    elif mutation == 'canonical':
+        def bad_source(*args):
+            raise m.RetirementError('canonical mismatch')
+        monkeypatch.setattr(m, 'canonical_profile', bad_source)
+    with pytest.raises(m.RetirementError):
+        m.closed_evidence(b, NATIVE_273_SHA, receipt, historical=True)
+
+
+@pytest.mark.parametrize('drift', ['none', 'log', 'jobs', 'run'])
+def test_live_second_profile_fetch_binds_complete_reviewed_digests(monkeypatch, drift):
+    m = load()
+    run, jobs, prior, log = modern_metadata(m)
+    profile = copy.deepcopy(m.profile_for(NATIVE_273_SHA))
+    profile.update(log_sha256=hashlib.sha256(log).hexdigest(), jobs_sha256=m.digest(jobs))
+    monkeypatch.setitem(m.PROFILES, NATIVE_273_SHA, profile)
+    original_run = copy.deepcopy(run)
+    if drift == 'log':
+        log += b'2026-10-01T14:55:00.0000000Z changed extra output\n'
+    elif drift == 'jobs':
+        jobs['jobs'][0]['runner_name'] = 'changed'
+    calls = []
+    def read(url, token, **kwargs):
+        calls.append((url, kwargs))
+        assert token == 'private-test-token'
+        if url.endswith('/actions/runs/36877321184'):
+            if drift == 'run' and len(calls) > 1:
+                return json.dumps({**original_run, 'run_attempt': 2}).encode()
+            return json.dumps(run).encode()
+        if url.endswith('/attempts/1/jobs?per_page=100'):
+            return json.dumps(jobs).encode()
+        if url.endswith('/actions/jobs/110424934683/logs'):
+            assert kwargs == {'logs': True, 'native_sha': NATIVE_273_SHA}
+            return log
+        raise AssertionError('unreviewed evidence requested')
+    monkeypatch.setattr(m, 'read_url', read)
+    if drift == 'none':
+        proof = m.vendor_evidence('private-test-token', NATIVE_273_SHA)
+        assert proof['prior_jobs_sha256'] is None
+        assert len(calls) == 4
+    else:
+        with pytest.raises(m.RetirementError):
+            m.vendor_evidence('private-test-token', NATIVE_273_SHA)
+
+
+def test_second_profile_close_writes_its_own_terminal_only(tmp_path):
+    m = load()
+    a = Adapter(m, tmp_path)
+    a.record = tmp_path / m.ROOT_NAME / NATIVE_273_SHA
+    a.evidence['old_sha'] = NATIVE_273_SHA
+    inspected = m.close_transaction(a)
+    assert not a.record.exists()
+    completed = m.close_transaction(a, inspected['evidence_sha256'])
+    assert completed['sha'] == NATIVE_273_SHA
+    assert json.loads((a.record / 'completed.json').read_text())['old_sha'] == NATIVE_273_SHA
+    assert not (tmp_path / m.ROOT_NAME / m.OLD_SHA).exists()
+
+
+def test_redirect_host_is_bound_to_the_selected_profile():
+    m = load()
+    for sha, allowed, denied in [
+        (m.OLD_SHA, 'productionresultssa18.blob.core.windows.net', 'productionresultssa4.blob.core.windows.net'),
+        (NATIVE_273_SHA, 'productionresultssa4.blob.core.windows.net', 'productionresultssa18.blob.core.windows.net'),
+    ]:
+        assert m.validate_log_redirect('https://' + allowed + '/log?sig=private', sha)
+        for host in (denied, allowed + '.evil.test', 'user@' + allowed):
+            with pytest.raises(m.RetirementError):
+                m.validate_log_redirect('https://' + host + '/log', sha)
+
+
+def test_second_profile_signed_log_request_carries_no_github_credential(monkeypatch):
+    from email.message import Message
+    m = load()
+    headers = Message()
+    headers['Location'] = 'https://productionresultssa4.blob.core.windows.net/log?sig=fixture'
+    requests = []
+    class Response:
+        status = 200
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return None
+        def read(self, limit):
+            return b'log fixture'
+    class Client:
+        def open(self, request, timeout):
+            requests.append(request)
+            if len(requests) == 1:
+                raise m.urllib.error.HTTPError(request.full_url, 302, 'found', headers, None)
+            return Response()
+    monkeypatch.setattr(m, 'opener', lambda: Client())
+    assert m.read_url(m.BASE + '/actions/jobs/110424934683/logs', 'private-token', logs=True,
+                      native_sha=NATIVE_273_SHA) == b'log fixture'
+    assert requests[0].get_header('Authorization') == 'Bearer private-token'
+    assert requests[1].header_items() == []
+
+
+@pytest.mark.parametrize('fault', ['authorized', 'private-key'])
+def test_second_profile_inspection_preserves_installation_revocation_guard(tmp_path, monkeypatch, fault):
+    # Exercise the real bootstrap installation validator against local fixtures.
+    from scripts.test_bootstrap_trusted_release import fixture, PUBLIC, LOOPBACK
+    m = load()
+    b, _calls = fixture(monkeypatch, tmp_path)
+    b.install(NATIVE_273_SHA, 200, PUBLIC)
+    source = tmp_path / 'source'
+    monkeypatch.setattr(b, 'canonical_source', lambda sha: source)
+    monkeypatch.setattr(b, '_assert_idle', lambda: None)
+    monkeypatch.setattr(b, '_recovery_process_proof', lambda: None)
+    b.BUSINESS_LEASE = tmp_path / 'no-lease'
+    monkeypatch.setattr(m, 'canonical_profile', lambda *args: None)
+    if fault == 'authorized':
+        (b.CONFIG / 'loopback.key').unlink()
+    else:
+        b.AUTHORIZED.write_text('unrelated-only\n')
+    adapter = m.Adapter(b, source, 'b' * 40, 'never-use-token', lambda: None, 'c' * 40, NATIVE_273_SHA)
+    with pytest.raises(b.BootstrapError, match='authorized|inventory'):
+        adapter.inspect()
+    assert not adapter.record.exists()

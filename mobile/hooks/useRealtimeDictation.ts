@@ -43,6 +43,11 @@ export function useRealtimeDictation({
   const [durationMs, setDurationMs] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [cleanupFailed, setCleanupFailed] = useState(false);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const cleanupFailedRef = useRef(false);
+  const cleanupPendingRef = useRef(0);
+  const mountedRef = useRef(true);
   const activeRef = useRef(false);
   const acceptingFinalResultsRef = useRef(false);
   const startingRef = useRef(false);
@@ -128,15 +133,30 @@ export function useRealtimeDictation({
 
   const disposeSession = useCallback(async (session: RealtimeAsrSession | null) => {
     if (!session) return;
+    cleanupPendingRef.current += 1;
+    if (mountedRef.current) setIsCleaningUp(true);
     try {
       await session.cancel();
-    } catch (e) {
-      if (__DEV__) console.warn('[useRealtimeDictation] cloud session cleanup failed:', e);
+    } catch {
+      // Retain failure explicitly: a resolved cancellation is not proof of release.
+      cleanupFailedRef.current = true;
+      emitTerminal('failed', 'cloud_asr_cleanup_failed');
+      if (mountedRef.current) {
+        const message = '麦克风未能安全停止，请退出应用后重新打开';
+        setCleanupFailed(true);
+        setError(message);
+        onErrorRef.current?.(message);
+      }
+    } finally {
+      cleanupPendingRef.current -= 1;
+      if (mountedRef.current) setIsCleaningUp(cleanupPendingRef.current > 0);
     }
-  }, []);
+  }, [emitTerminal]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       const session = sessionRef.current;
       const wasActive = activeRef.current || startingRef.current || Boolean(stopPromiseRef.current);
       startGenerationRef.current += 1;
@@ -150,7 +170,8 @@ export function useRealtimeDictation({
   }, [disposeSession, emitTerminal]);
 
   const startDictation = useCallback(async (): Promise<boolean> => {
-    if (activeRef.current || startingRef.current || stopPromiseRef.current) return false;
+    if (cleanupFailedRef.current || cleanupPendingRef.current > 0
+      || activeRef.current || startingRef.current || stopPromiseRef.current) return false;
     const generation = startGenerationRef.current + 1;
     startGenerationRef.current = generation;
     startingRef.current = true;
@@ -165,8 +186,29 @@ export function useRealtimeDictation({
     setError(null);
 
     const session = createCloudRealtimeAsrSession({
-      onTranscript: acceptCloudTranscript,
-      onLevel: setAudioLevel,
+      onTranscript: (text, result) => {
+        if (generation === startGenerationRef.current) acceptCloudTranscript(text, result);
+      },
+      onLevel: (level) => {
+        if (generation === startGenerationRef.current) setAudioLevel(level);
+      },
+      onError: (failure) => {
+        if (generation !== startGenerationRef.current || sessionRef.current !== session) return;
+        startGenerationRef.current += 1;
+        activeRef.current = false;
+        acceptingFinalResultsRef.current = false;
+        startingRef.current = false;
+        sessionRef.current = null;
+        setIsDictating(false);
+        setAudioLevel(0);
+        setError(failure.message);
+        emitAsrTerminal('failed', latestTextRef.current, 'cloud_asr_runtime_failed');
+        emitTerminal('failed', 'cloud_asr_runtime_failed');
+        onErrorRef.current?.(failure.message);
+        // The service may report a native-cleanup failure as a runtime error.
+        // Its idempotent cancel promise preserves that failure for this gate.
+        void disposeSession(session);
+      },
     });
     sessionRef.current = session;
 
@@ -287,6 +329,8 @@ export function useRealtimeDictation({
     durationMs,
     audioLevel,
     error,
+    cleanupFailed,
+    isCleaningUp,
     startDictation,
     stopDictation,
     cancelDictation,

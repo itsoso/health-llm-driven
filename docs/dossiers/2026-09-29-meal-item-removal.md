@@ -1,9 +1,11 @@
 # Meal item correction delivery
 
+> 历史本地审计补录（2026-10-03）：以下状态、测试数、发布 SHA 与回执来自原工作树既有记录，未在本次整合中重新验证；不是当前生产状态或本轮发布 Gate 的新鲜证据。本轮整合与验证见 docs/dossiers/2026-10-03-local-change-integration.md。
+
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | G2 implementation |
+| 状态 | completed |
+| 当前阶段 | G6 production verified |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -64,3 +66,44 @@ REST photo confirmation -> draft deletion -> source-bound proposal -> delivery
 coverage. Initial frozen clean CI-mode was 1,288 passed / one PG-only skip;
 initial independent PG was 92 passed, zero skips, isolated PG17.11 clean stop.
 These initial results do not substitute final-candidate verification/re-review.
+
+## Final candidate G3 / G4
+
+Candidate: `210ce15fd72b0a48bdd54500919eb35813f97c3f`, clean reusable release
+checkout `/private/tmp/reva-half-meal-release.Yd82Ox/source`.
+
+- Local focused: 268 passed / one PG-only skipped, exit 0.
+- Clean CI-mode runner: 1,315 passed / one PG-only skipped, exit 0;
+  `/tmp/reva-item-removal-final-ci.log`.
+- Independent PostgreSQL17.11: 280 passed, zero skips, exit 0, seven full suites;
+  `/tmp/reva-pg-meal-attached.xz6s18/tests.log`. Eleven source/test hashes stable,
+  clean checkout before/after, socket-only synthetic database gracefully stopped.
+- Independent G4 re-review: GO on exact full diff from `fda864c2b`; both blockers
+  closed, independent 77-test focused run passed. No direct write/authority expansion.
+- Clean System Map, secret scan, skill governance, diff check, and LLM path gate
+  passed. No prompt/provider change; live-provider gate not required.
+- Production structural readback verifies unique live owned food asset, source
+  freshness, exact unique removed item and nonempty remainder. No record rewritten.
+
+Pushed exact candidate after GO. Remote CI run `36522826570` completed success.
+
+## G5 / G6 — Delivered
+
+Standard `DEPLOY_ENV_FILE=<private fresh production candidate> ./deploy.sh -b`
+from the clean exact-SHA checkout completed exit 0. Production revision is
+`210ce15fd72b0a48bdd54500919eb35813f97c3f`, tree clean; backend/worker/beat active,
+lease absent, public health HTTP 200. Health score 58/60 PASS, schema and staged
+runtime-only KB contracts passed, runtime transaction finalized. No schema
+change; database backup uses governed default-off policy. Environment candidate
+was copied fresh from production, permission 0600, and removed after completion.
+
+Original screenshot request was re-evaluated against its owned production
+conversation in a SQL `READ ONLY` transaction. It produced
+`waiting_for_user / meal_item_confirmation_required`; proposed remaining food
+excluded the requested item; history delivery retained the exact proposal and
+action seed. Original food, calories and revision stayed unchanged, ORM session
+had no pending writes. No user message was replayed or health record edited.
+
+Backend-only release: no Mobile runtime files changed, no OTA/TestFlight issued.
+Evidence: `/tmp/reva-item-removal-deploy.log`, exact CI run above and parent
+workflow trace. Post-release audit additions remain local, outside deployed SHA.

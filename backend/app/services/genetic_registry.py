@@ -252,6 +252,32 @@ def get_known_snps() -> Dict[str, Dict[str, Any]]:
     return KNOWN_SNPS
 
 
+_GENOTYPE_SEPARATORS_RE = re.compile(r"[\s/|;,()\-]+")
+
+
+def canonical_snp_genotype(rsid: str, genotype: Any) -> Optional[str]:
+    """Map a reported nucleotide genotype ("A/A", "aa", "(G;A)", "TT") onto the
+    registry's canonical key for ``rsid`` (e.g. "AA"/"GA"/"GG" for rs1800562).
+
+    Reuses the upload path's strand/order candidate logic. Returns None for
+    anything that is not exactly two nucleotides or not in the registry map,
+    so callers keep their previous behaviour for unknown strings. Strand
+    complement is skipped for palindromic (A/T, C/G) loci where it is ambiguous.
+    """
+    snp = KNOWN_SNPS.get((rsid or "").strip().lower())
+    if not snp or genotype is None:
+        return None
+    cleaned = _GENOTYPE_SEPARATORS_RE.sub("", str(genotype)).upper()
+    if len(cleaned) != 2 or any(base not in "ACGT" for base in cleaned):
+        return None
+    allowed = set(snp["map"])
+    if set("".join(allowed)) in ({"A", "T"}, {"C", "G"}):
+        return next((c for c in (cleaned, cleaned[::-1]) if c in allowed), None)
+    from app.api.genetic_data import _canonical_genotype
+
+    return _canonical_genotype(cleaned, allowed)
+
+
 def get_snp_metadata(rsid: str) -> Dict[str, Any]:
     snp = KNOWN_SNPS[rsid]
     boundary = _CLAIM_BOUNDARIES.get(snp["category"], {

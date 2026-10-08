@@ -56,8 +56,15 @@ def test_whole_request_proof_does_not_erase_other_intents(message):
 @pytest.mark.asyncio
 @pytest.mark.parametrize('message', [BEDTIME, ACTION])
 async def test_bypassed_local_route_cannot_promote_free_model_prose(db, auth_user_and_headers, monkeypatch, message):
-    from app.services.agent_executor import AgentExecutor
-    monkeypatch.setattr(AgentExecutor, 'run_stream', AgentExecutor._run_stream_impl)
+    from app.services.agent_kernel import current_input_advice_scope as advice_scope
+    original = advice_scope.local_advice_response
+
+    def bypass_local_route_once(text):
+        # Retain the public entry's turn initialization and the real final guard.
+        monkeypatch.setattr(advice_scope, 'local_advice_response', original)
+        return None
+
+    monkeypatch.setattr(advice_scope, 'local_advice_response', bypass_local_route_once)
     monkeypatch.setattr('app.services.agent_input_tool_scope.scope_tools_for_current_input_advice',
                         lambda tools, text: [{'type': 'function', 'function': {
                             'name': 'health_query', 'description': 'Synthetic forced read',

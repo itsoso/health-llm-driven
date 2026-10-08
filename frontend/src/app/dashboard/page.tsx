@@ -6,7 +6,8 @@ import { api } from '@/services/api/client';
 import { dailyHealthApi, garminAnalysisApi, basicHealthApi, healthTrendApi, healthScoreApi } from '@/services/api/health';
 import { dataCollectionApi } from '@/services/api/devices';
 import { useMutation } from '@tanstack/react-query';
-import { format, subDays } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
+import type { components } from '@/types/api';
 import {
   LineChart,
   Line,
@@ -32,7 +33,11 @@ function DashboardContent() {
   const [days] = useState(30);
 
   useEffect(() => { document.title = '首页 | 健康管理'; }, []);
-  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState('');
 
@@ -77,23 +82,35 @@ function DashboardContent() {
     quickRecordMutation.mutate(text);
   };
 
-  const endDate = format(new Date(), 'yyyy-MM-dd');
-  const startDate = format(subDays(new Date(), days), 'yyyy-MM-dd');
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const timezoneQuery = useQuery({
+    queryKey: ['effective-timezone', userId],
+    queryFn: async () => {
+      const response = await api.get<components['schemas']['EffectiveTimezone']>('/profile/me/effective-timezone');
+      new Intl.DateTimeFormat('en', { timeZone: response.data.timezone }).format(now);
+      return response.data;
+    },
+    enabled: !!userId,
+  });
+  const timeZone = timezoneQuery.data?.timezone;
+  const today = timeZone ? formatInTimeZone(now, timeZone, 'yyyy-MM-dd') : undefined;
+  const endDate = today;
+  const startDate = today
+    ? new Date(Date.parse(`${today}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10)
+    : undefined;
 
   // 获取今天的实时数据
-  const { data: todayData, refetch: refetchToday, isFetching: isFetchingToday } = useQuery({
+  const { data: todayData, dataUpdatedAt: todayReadAt, refetch: refetchToday, isFetching: isFetchingToday } = useQuery({
     queryKey: ['garmin-today', userId, today],
     queryFn: () => dailyHealthApi.getMyGarminData(today, today),
     refetchInterval: 15 * 60 * 1000, // 每15分钟自动刷新
-    enabled: !!userId,
+    enabled: !!userId && !!today,
   });
 
   // 获取Garmin数据
   const { data: garminData, refetch: refetchGarminData } = useQuery({
     queryKey: ['garmin-data', userId, startDate, endDate],
     queryFn: () => dailyHealthApi.getMyGarminData(startDate, endDate),
-    enabled: !!userId,
+    enabled: !!userId && !!today,
   });
 
   // 获取基础健康数据
@@ -121,7 +138,7 @@ function DashboardContent() {
   const { data: healthScore } = useQuery({
     queryKey: ['health-score-daily', userId, today],
     queryFn: () => healthScoreApi.getDailyScore(today),
-    enabled: !!userId,
+    enabled: !!userId && !!today,
     staleTime: 10 * 60 * 1000,
   });
   const scoreData = healthScore?.data;
@@ -134,12 +151,12 @@ function DashboardContent() {
   const { data: waterToday } = useQuery({
     queryKey: ['water-today', userId, today],
     queryFn: () => api.get(`/water/records/me/daily-summary?date=${today}`),
-    enabled: !!userId,
+    enabled: !!userId && !!today,
   });
   const { data: dietToday } = useQuery({
     queryKey: ['diet-today', userId, today],
     queryFn: () => api.get(`/diet/records/me/date/${today}`),
-    enabled: !!userId,
+    enabled: !!userId && !!today,
   });
   const { data: weightLatest } = useQuery({
     queryKey: ['weight-latest', userId],
@@ -149,7 +166,7 @@ function DashboardContent() {
 
   // 手动刷新所有数据（包含 Garmin 同步）
   const handleManualRefresh = async () => {
-    if (isRefreshing) return; // 防止重复点击
+    if (isRefreshing || !today) return; // 防止重复点击或时区未就绪
 
     setIsRefreshing(true);
     setRefreshError('');
@@ -175,7 +192,6 @@ function DashboardContent() {
         refetchBasicHealth(),
         refetchComprehensive(),
       ]);
-      setLastUpdate(new Date());
     } catch (error) {
       console.error('刷新数据失败:', error);
       setRefreshError('刷新数据失败，请稍后重试');
@@ -184,13 +200,6 @@ function DashboardContent() {
       setIsRefreshing(false);
     }
   };
-
-  // 监听数据更新
-  useEffect(() => {
-    if (todayData) {
-      setLastUpdate(new Date());
-    }
-  }, [todayData]);
 
   // 下拉刷新触摸事件处理
   useEffect(() => {
@@ -271,12 +280,21 @@ function DashboardContent() {
     const recent14 = sorted.slice(-14);
 
     return recent14.map((item: any) => ({
-      date: format(new Date(item.record_date), 'MM-dd'),
+      date: item.record_date.slice(5, 10),
       sleep: item.sleep_score,
       steps: item.steps,
       heartRate: item.avg_heart_rate,
     }));
   })();
+
+  if (timezoneQuery.isError) {
+    return <main className="p-8" role="alert">无法读取账户时区，请稍后重试。
+      <button onClick={() => timezoneQuery.refetch()}>重试</button>
+    </main>;
+  }
+  if (!timeZone || !today) {
+    return <main className="p-8">正在读取账户时区...</main>;
+  }
 
   return (
     <main
@@ -349,9 +367,12 @@ function DashboardContent() {
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-2xl p-6 mb-8 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h2 className="text-3xl font-bold mb-1">⚡ 今日实时数据</h2>
+              <h2 className="text-3xl font-bold mb-1">⚡ 今日数据</h2>
               <p className="text-indigo-100 text-sm">
-                最后更新: {format(lastUpdate, 'HH:mm:ss')} | 自动刷新中...
+                记录日期: {todayRecord?.record_date ?? today}（{timeZone}）
+              </p>
+              <p className="text-indigo-100 text-sm">
+                页面读取: {todayReadAt ? formatInTimeZone(todayReadAt, timeZone, 'yyyy-MM-dd HH:mm:ss') : '尚未读取'} | 设备同步时间未提供
               </p>
             </div>
             <button

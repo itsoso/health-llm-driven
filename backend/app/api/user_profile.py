@@ -190,15 +190,17 @@ async def get_effective_location(
     return resolve_effective_location(profile)
 
 
-def _effective_timezone_payload(profile: UserProfile) -> EffectiveTimezone:
+def _effective_timezone_payload(profile: Optional[UserProfile]) -> EffectiveTimezone:
     from app.utils.timezone import resolve_timezone_name
     name, source = resolve_timezone_name(
-        profile.manual_timezone, profile.detected_timezone, profile.timezone
+        profile.manual_timezone if profile else None,
+        profile.detected_timezone if profile else None,
+        profile.timezone if profile else None,
     )
     return EffectiveTimezone(
         timezone=name, source=source,
-        detected_timezone=profile.detected_timezone,
-        manual_timezone=profile.manual_timezone,
+        detected_timezone=profile.detected_timezone if profile else None,
+        manual_timezone=profile.manual_timezone if profile else None,
     )
 
 
@@ -221,7 +223,8 @@ async def get_effective_timezone(
 
     所有读时区的 reader 应走 get_user_timezone(同一优先级);本端点给 mobile / 设置页展示用。
     """
-    return _effective_timezone_payload(_get_or_create_profile(db, current_user.id))
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    return _effective_timezone_payload(profile)
 
 
 @router.post("/me/device-timezone", response_model=EffectiveTimezone)

@@ -23,6 +23,7 @@ describe('useRealtimeDictation', () => {
   let callbacks: {
     onTranscript: (text: string, result?: any) => void;
     onLevel?: (level: number) => void;
+    onError?: (error: Error) => void;
   };
 
   beforeEach(() => {
@@ -46,6 +47,18 @@ describe('useRealtimeDictation', () => {
     });
   });
 
+  it('retains a cleanup failure and refuses another capture after native cancel rejects', async () => {
+    const onError = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onError }));
+    await act(async () => { await result.current.startDictation(); });
+    session.cancel.mockRejectedValueOnce(new Error('native cancel failed'));
+    await act(async () => { await result.current.cancelDictation(); });
+    expect(result.current.cleanupFailed).toBe(true);
+    expect(onError).toHaveBeenCalledWith('麦克风未能安全停止，请退出应用后重新打开');
+    await act(async () => { expect(await result.current.startDictation()).toBe(false); });
+    expect(session.start).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the authenticated Alibaba Cloud ASR session as the only dictation provider', async () => {
     const onTranscript = jest.fn();
     const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
@@ -58,6 +71,17 @@ describe('useRealtimeDictation', () => {
     expect(session.start).toHaveBeenCalledTimes(1);
     expect(result.current.isDictating).toBe(true);
     expect(callbacks.onLevel).toEqual(expect.any(Function));
+  });
+
+  it('ends active dictation and reports a runtime disconnect immediately', async () => {
+    const onError = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onError }));
+    await act(async () => { await result.current.startDictation(); });
+    act(() => { callbacks.onError?.(new Error('云端实时语音连接已断开')); });
+    expect(result.current.isDictating).toBe(false);
+    expect(result.current.audioLevel).toBe(0);
+    expect(result.current.error).toBe('云端实时语音连接已断开');
+    expect(onError).toHaveBeenCalledWith('云端实时语音连接已断开');
   });
 
   it('forwards cloud partial text and keeps the cloud final result on release', async () => {

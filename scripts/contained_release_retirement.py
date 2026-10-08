@@ -5,6 +5,7 @@ No CLI, deployment, service restart, new key, or vendor operation lives here.
 The root-managed host and canonical source are explicit trust prerequisites.
 """
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -213,6 +214,8 @@ class ClosureAdapter:
                 and os.path.lexists(b.STATE / "unchanged-release-closures" / p.failed_sha)):
             raise ClosureError("unchanged release closure already attempted")
         snapshot = p.snapshot()
+        validate_built_snapshot(b, snapshot, p.failed_sha, unchanged=self.unchanged)
+        validate_network_guard_snapshot(snapshot, unchanged=self.unchanged)
         if self.unchanged:
             if (os.path.lexists(b.STATE / "contained-service-recoveries" / p.failed_sha)
                     or os.path.lexists(b.STATE / "contained-release-closures" / p.failed_sha)
@@ -337,6 +340,11 @@ class ClosureAdapter:
         b._assert_idle()
         b._recovery_process_proof()
         _workspace_unchanged(b, p.failed_sha, evidence["snapshot"]["workspace"])
+        validate_built_snapshot(b, evidence["snapshot"], p.failed_sha, unchanged=self.unchanged)
+        self._verify_network_guard(evidence)
+        if "built_unuploaded" in evidence["snapshot"]:
+            if p.built_unuploaded() != evidence["snapshot"]["built_unuploaded"]:
+                raise ClosureError("vendor state changed during closure")
         restoration = None if self.unchanged else _restoration(b, p.failed_sha)[2]
         if restoration != evidence["restoration"] or _locks(b, p.failed_sha, evidence["snapshot"]) != evidence["locks"]:
             raise ClosureError("original restoration or lock evidence changed")
@@ -360,8 +368,115 @@ class ClosureAdapter:
                             "library": evidence["library"]}:
             raise ClosureError("closed installation differs")
         self._verify_original_lease_archive(evidence)
+        self._verify_network_guard(evidence)
         self.check()
         return {"installation": installation, "archives": _archives(b, self.record, evidence["snapshot"])}
+
+    def _verify_network_guard(self, evidence):
+        expected = evidence["snapshot"].get("units", {}).get("network_guard")
+        if expected is not None:
+            # The original active lease has already been archived here. Never
+            # infer a new start time or read a replacement lease as authority.
+            p = self.proof
+            transaction = p.runtime.ReleaseTransaction(p.runtime.production_layout(p.stage), p.systemd)
+            current = p._units(self.b.canonical_source(p.production_sha), transaction,
+                               started_at=expected["started_at"])
+            if current != evidence["snapshot"]["units"]:
+                raise ClosureError("network guard or business units changed during closure")
+
+
+def validate_network_guard_snapshot(snapshot, *, unchanged):
+    """History is immutable evidence, not a query of today's host state."""
+    units = snapshot.get("units", {})
+    if not isinstance(units, dict):
+        raise ClosureError("invalid unit evidence")
+    if "network_guard" not in units:
+        return  # Historical closures before this optional profile stay valid.
+    evidence = units["network_guard"]
+    installed = snapshot.get("installed_laya", {})
+    if (not unchanged or not isinstance(installed, dict) or "unstarted_laya" in snapshot
+            or not isinstance(evidence, dict) or set(evidence) != {"profile", "started_at", "files", "service"}
+            or evidence["profile"] != "network-guard-v1" or evidence["started_at"] != installed.get("started_at")
+            or not isinstance(evidence["started_at"], str)
+            or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\n", evidence["started_at"]) is None):
+        raise ClosureError("invalid network guard profile binding")
+    guard = "health-network-guard.service"
+    business = ("health-backend.service", "celery-worker.service", "celery-beat.service")
+    unit = "/etc/systemd/system/" + guard
+    script = "/opt/health-app/scripts/harden_public_host.py"
+    dropins = {"/etc/systemd/system/" + name + ".d/security-network.conf" for name in business}
+    files = evidence["files"]
+    if not isinstance(files, dict) or set(files) != {unit, script} | dropins:
+        raise ClosureError("invalid network guard file inventory")
+    for path, value in files.items():
+        if (not isinstance(value, dict) or set(value) != {"dev", "ino", "uid", "gid", "mode", "sha256"}
+                or any(type(value[k]) is not int or value[k] < 0 for k in ("dev", "ino", "uid", "gid", "mode"))
+                or value["ino"] <= 0 or value["uid"] != 0 or value["gid"] != 0
+                or value["mode"] not in ({0o644, 0o755} if path == script else {0o644})
+                or not isinstance(value["sha256"], str) or re.fullmatch(r"[0-9a-f]{64}", value["sha256"]) is None
+                or path in dropins and value["sha256"] != "ab8e275de385f3622c44f50beff226686e608cb1ecffe54f11d5051832336964"):
+            raise ClosureError("invalid network guard file binding")
+    service = evidence["service"]
+    fixed = {"FragmentPath": unit, "DropInPaths": "", "NeedDaemonReload": "no", "ActiveState": "active",
+             "SubState": "exited", "Result": "success", "Type": "oneshot", "RemainAfterExit": "yes",
+             "MainPID": "0", "NRestarts": "0", "ExecMainCode": "1", "ExecMainStatus": "0",
+             "ExecStart": "path=/usr/bin/python3\nargv[]=/usr/bin/python3 -I -S -B /opt/health-app/scripts/harden_public_host.py --network\nignore_errors=no",
+             **{key: "" for key in ("ExecStartPre", "ExecStartPost", "ExecCondition", "Environment", "EnvironmentFiles", "User", "Group", "WorkingDirectory")}}
+    times = ("ExecMainStartTimestampMonotonic", "ExecMainExitTimestampMonotonic", "ActiveEnterTimestampMonotonic")
+    if (not isinstance(service, dict) or set(service) != set(fixed) | set(times) | {"boot_id", "dependencies"}
+            or any(service.get(k) != v for k, v in fixed.items())
+            or any(not isinstance(service[k], str) or re.fullmatch(r"[1-9][0-9]*", service[k]) is None for k in times)
+            or [int(service[k]) for k in times] != sorted(int(service[k]) for k in times)
+            or not isinstance(service["boot_id"], str)
+            or re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", service["boot_id"]) is None):
+        raise ClosureError("invalid network guard service binding")
+    edges = service["dependencies"]
+    if (not isinstance(edges, dict) or set(edges) != {guard, *business}
+            or any(not isinstance(values, dict) or set(values) != {"Requires", "After", "Before"}
+                   or any(not isinstance(v, list) or not v or any(not isinstance(item, str) for item in v)
+                          or v != sorted(set(v)) for v in values.values()) for values in edges.values())
+            or any(guard not in edges[name][key] for name in business for key in ("Requires", "After"))):
+        raise ClosureError("invalid network guard dependency binding")
+    expected_edges = {guard: {
+        "Requires": "system.slice sysinit.target",
+        "After": "basic.target sysinit.target system.slice network-pre.target systemd-journald.socket",
+        "Before": "health-backend.service celery-worker.service shutdown.target celery-beat.service health-frontend-security-preflight.service health-frontend.service multi-user.target",
+    }}
+    for name in business:
+        expected_edges[name] = {
+            "Requires": "system.slice sysinit.target -.mount health-network-guard.service"
+                        + (" health-backend.socket" if name == "health-backend.service" else ""),
+            "After": "basic.target systemd-journald.socket systemd-tmpfiles-setup.service sysinit.target system.slice redis-server.service tmp.mount health-network-guard.service network-online.target -.mount postgresql.service"
+                     + (" health-backend.socket" if name == "health-backend.service" else " systemd-remount-fs.service" if name == "celery-beat.service" else ""),
+            "Before": "multi-user.target shutdown.target",
+        }
+    if edges != {name: {key: sorted(value.split()) for key, value in values.items()}
+                 for name, values in expected_edges.items()}:
+        raise ClosureError("network guard historical dependency composition differs")
+
+
+def validate_built_snapshot(bootstrap, snapshot, failed_sha, *, unchanged):
+    """Old profiles still reject native markers; new history must be understood."""
+    workspace = snapshot.get("workspace", {})
+    inventory = set(workspace.get("inventory", []))
+    built = "built_unuploaded" in snapshot
+    if not built:
+        if "build-started.json" in inventory:
+            raise ClosureError("native claim missing artifact proof")
+        return
+    if (not unchanged or "installed_laya" not in snapshot or "unstarted_laya" in snapshot
+            or not {"build-started.json", "build.lock"} <= inventory
+            or inventory & {"native-started.json", "testflight-base.json"}
+            or "build-started.json" not in workspace):
+        raise ClosureError("mixed artifact profile binding differs")
+    path = Path(__file__).absolute().with_name("built_unuploaded_proof.py")
+    bootstrap.secure(path)
+    if os.path.lexists(path.parent / "__pycache__"):
+        raise ClosureError("cached vendor history code forbidden")
+    spec = importlib.util.spec_from_file_location("built_unuploaded_history", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.validate_history(snapshot["built_unuploaded"], failed_sha)
 
 
 def unchanged_laya_profile(snapshot):
@@ -453,6 +568,8 @@ def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False):
             or completed["intent_sha256"] != _digest(intent)):
         raise ClosureError("closure audit binding invalid")
     bootstrap.canonical_source(intent["closing_sha"])
+    validate_built_snapshot(bootstrap, intent["snapshot"], sha, unchanged=unchanged)
+    validate_network_guard_snapshot(intent["snapshot"], unchanged=unchanged)
     if unchanged:
         if (intent["restoration"] is not None or not unchanged_laya_profile(intent["snapshot"])
                 or os.path.lexists(bootstrap.STATE / "contained-service-recoveries" / sha)

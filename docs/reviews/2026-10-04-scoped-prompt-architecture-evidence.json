@@ -1,0 +1,128 @@
+{
+  "baseline_remote_main": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+  "scope": "local implementation only; uncommitted, unpushed, undeployed",
+  "source_sha256": {
+    "backend/app/config.py": "e629f3baa0d0c31e1cc7311ca3cc5a35f4678aff22b7135d1971d4fee622555e",
+    "backend/app/services/agent_executor.py": "e958a7b42e0cedb47e463f61347e9761bd71ed61c8bd1ad2c8e2768894e1083a",
+    "backend/app/services/agent_tool_prompt_projection.py": "82345194d0f89e073a9b635dbf919d1021bd9af1d280175a6013e361666c31a8",
+    "backend/app/services/agent_history_budget.py": "12b58099d0beed10f01f56a29add19f3b67c8bf47dc3958119f6972e1304b836",
+    "backend/app/services/agent_conversation_service.py": "84d989b40a7fe710a755379d98ff53540dd788ef2e80fdbe0d055dae8bef3ba7",
+    "backend/app/services/history_compaction.py": "b86ad1d5d2d965f74f3603479f2fb77cf71d8761dd99e4760b3129f326b7b882",
+    "backend/app/services/orchestrator_delivery.py": "cd91882cd861700ea5e8119f3cf1c887952c1e811857a98c7ddfce2b4dddc07d",
+    "backend/app/orchestrator/orchestrator.py": "86a882e4ae6cb59b7b3c7b8415601bedb60dee71a7393a22a1f80fcfcf863f18",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05"
+  },
+  "api_evidence": "2026-10-04-scoped-prompt-api-evidence.json",
+  "test_runs": [
+    {
+      "passed": 776,
+      "log": "/tmp/reva-scoped-regression.log",
+      "junit": "/tmp/reva-scoped-regression.xml",
+      "note": "Before final hidden-recovery and citation hardening"
+    },
+    {
+      "passed": 81,
+      "log": "/tmp/reva-scoped-final-fixes.log",
+      "junit": "/tmp/reva-scoped-final-fixes.xml",
+      "note": "Fresh wrapper recovery and shared medical delivery guard regression; overlaps first suite"
+    },
+    {
+      "passed": 173,
+      "log": "/tmp/reva-delivery-independent-complete-final.log",
+      "note": "Final independent combined receipt module, orchestrator hooks and real Pi integration; overlaps preceding suites"
+    }
+  ],
+  "live_gate": {
+    "status": "passed",
+    "llm_cost": "possible",
+    "suites": [
+      {
+        "suite": "invariants",
+        "total_cases": 12,
+        "passed": 12,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 1.0,
+        "avg_latency_ms": 0,
+        "regression": []
+      },
+      {
+        "suite": "health_agent_core",
+        "total_cases": 50,
+        "passed": 50,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 1.0,
+        "avg_latency_ms": 0,
+        "regression": []
+      },
+      {
+        "suite": "orchestrator",
+        "total_cases": 5,
+        "passed": 5,
+        "failed": 0,
+        "errored": 0,
+        "avg_score": 0.96,
+        "avg_latency_ms": 7424,
+        "regression": []
+      }
+    ],
+    "failed_suites": [],
+    "errors": [],
+    "trajectory_contract": {
+      "status": "passed",
+      "total_cases": 12,
+      "failed_cases": []
+    },
+    "trajectory_goldens": {
+      "status": "passed",
+      "fixture_version": 1,
+      "total_cases": 9,
+      "covered_scenarios": [
+        "duplicate_client_turn_side_effect",
+        "duplicate_same_record_side_effect",
+        "idempotent_client_turn_replay",
+        "meal_context_reestimate",
+        "missing_identity_receipt",
+        "read_only_delete_side_effect",
+        "simple_fruit_write",
+        "simple_water_write",
+        "uncertain_receipt_false_success"
+      ],
+      "failed_cases": []
+    }
+  },
+  "lint": {
+    "baseline": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+    "baseline_findings": 11,
+    "current_findings": 11,
+    "new": []
+  },
+  "system_map": {
+    "passed": true,
+    "log": "/tmp/reva-scoped-system-map-final.log"
+  },
+  "rollbacks": [
+    "domain_prompt_optimization=false",
+    "orchestrator_synthesis_passthrough=off"
+  ],
+  "limits": [
+    "Synthetic fixed API cases; not population/production cost or latency",
+    "History cache bridge may increase input to restore missing original context",
+    "Nonidentical history is not hard-truncated; soft budget only",
+    "Report reuse ships off and covers fresh single-report turns only",
+    "Citation patterns are conservative admission checks, not semantic citation verification"
+  ],
+  "independent_review": {
+    "verdict": "GO for local implementation",
+    "log": "/tmp/reva-delivery-independent-complete-final.log",
+    "closed_findings": [
+      "Hidden wrapped provider recovery must invalidate receipt",
+      "Conservative external attribution veto with bounded own-data positive cases"
+    ],
+    "not_authorized": [
+      "release",
+      "production feature enablement"
+    ]
+  }
+}

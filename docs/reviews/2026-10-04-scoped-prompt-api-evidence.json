@@ -1,0 +1,191 @@
+{
+  "status": "complete",
+  "observed_at_utc": "2026-10-04T05:17:33.415461+00:00",
+  "scope": "synthetic fixed provider payload A/B; not production or end-to-end task evaluation",
+  "model_id": "qwen3.8-max",
+  "temperature": 0,
+  "max_tokens": 300,
+  "maximum_api_requests": 4,
+  "sdk_retries": 0,
+  "consent": "real audited temporary synthetic subject in in-memory test database; normal provider egress guard remains active",
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "e958a7b42e0cedb47e463f61347e9761bd71ed61c8bd1ad2c8e2768894e1083a",
+    "backend/app/services/agent_tool_prompt_projection.py": "82345194d0f89e073a9b635dbf919d1021bd9af1d280175a6013e361666c31a8",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/agent_history_budget.py": "12b58099d0beed10f01f56a29add19f3b67c8bf47dc3958119f6972e1304b836",
+    "backend/app/services/agent_conversation_service.py": "84d989b40a7fe710a755379d98ff53540dd788ef2e80fdbe0d055dae8bef3ba7",
+    "backend/app/services/history_compaction.py": "b86ad1d5d2d965f74f3603479f2fb77cf71d8761dd99e4760b3129f326b7b882",
+    "backend/tests/test_agent_history_budget.py": "b047a120e7b01e01ec361719dfceee5dd32fc2350f1aa57b215268c3e79dd9cd",
+    "backend/tests/test_agent_history_provider.py": "063ad46bbd0508b0080b39e3e99000ae85ff9ca831f12a94c8fa4b335fb81257"
+  },
+  "comparisons": [
+    {
+      "case": "sleep_spo2_owned_schema",
+      "variants": [
+        {
+          "enabled": false,
+          "payload_sha256": "a2944740e734251ea66543598ab458ad81c84e5d17c009f0afa111e139ef5db6",
+          "message_chars": 413,
+          "schema_chars": 7626,
+          "input_tokens": 3554,
+          "output_tokens": 255,
+          "cached_tokens": 0,
+          "token_source": "api",
+          "wall_seconds": 7.74,
+          "response": {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+              {
+                "id": "call_a94fb095a64647e0b9159b3f",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"sleep\", \"days\": 7, \"start_date\": \"2026-09-28\", \"end_date\": \"2026-10-04\", \"timezone\": \"Asia/Shanghai\"}"
+                }
+              },
+              {
+                "id": "call_e04bb3b1734f4857b0855f10",
+                "type": "function",
+                "function": {
+                  "name": "health_query",
+                  "arguments": "{\"dimension\": \"spo2\", \"days\": 7, \"start_date\": \"2026-09-28\", \"end_date\": \"2026-10-04\", \"timezone\": \"Asia/Shanghai\"}"
+                }
+              }
+            ]
+          },
+          "usage_models": [
+            "qwen3.8-max"
+          ],
+          "usage_providers": [
+            "tokenplan"
+          ],
+          "response_checks": {
+            "both_owned_dimensions_preserved": true,
+            "bound_calendar_window_preserved": true,
+            "tool_execution_performed": false
+          }
+        },
+        {
+          "enabled": true,
+          "payload_sha256": "c33e6a8a41c4a9842cb38bb17fd592bedee095458e831af0e7f3dcd58a93b1da",
+          "message_chars": 413,
+          "schema_chars": 5206,
+          "input_tokens": 2620,
+          "output_tokens": 169,
+          "cached_tokens": 0,
+          "token_source": "api",
+          "wall_seconds": 3.01,
+          "response": {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+              {
+                "id": "call_2ca1c0004e0b4ca69f7f65cc",
+                "type": "function",
+                "function": {
+                  "name": "health_query_batch",
+                  "arguments": "{\"queries\": \n[{\"dimension\": \"sleep\", \"days\": 7, \"start_date\": \"2026-09-28\", \"end_date\": \"2026-10-04\", \"timezone\": \"Asia/Shanghai\"}, {\"dimension\": \"spo2\", \"days\": 7, \"start_date\": \"2026-09-28\", \"end_date\": \"2026-10-04\", \"timezone\": \"Asia/Shanghai\"}]\n\n}"
+                }
+              }
+            ]
+          },
+          "usage_models": [
+            "qwen3.8-max"
+          ],
+          "usage_providers": [
+            "tokenplan"
+          ],
+          "response_checks": {
+            "both_owned_dimensions_preserved": true,
+            "bound_calendar_window_preserved": true,
+            "tool_execution_performed": false
+          }
+        }
+      ],
+      "input_token_reduction_percent": 26.28,
+      "payload_invariants": {
+        "messages_equal": true,
+        "tool_names_and_order_equal": true,
+        "parameter_schemas_equal": true,
+        "only_function_descriptions_changed": true
+      }
+    },
+    {
+      "case": "exact_repeated_history",
+      "variants": [
+        {
+          "enabled": false,
+          "payload_sha256": "aaceacce9ad513f9dd562ec106ed1a9e91298bbae0cad7bcaa854a88bafec5bf",
+          "message_chars": 8941,
+          "schema_chars": 2,
+          "input_tokens": 5715,
+          "output_tokens": 162,
+          "cached_tokens": 0,
+          "token_source": "api",
+          "wall_seconds": 5.36,
+          "response": {
+            "content": "历史提及：复查日期为 2026-10-18，过敏药名为青霉素；仅作回顾，不做新的医疗判断或操作。",
+            "finish_reason": "stop"
+          },
+          "usage_models": [
+            "qwen3.8-max"
+          ],
+          "usage_providers": [
+            "tokenplan"
+          ],
+          "response_checks": {
+            "synthetic_date_and_allergy_recalled": true,
+            "historical_not_new_medical_action_boundary_present": true
+          }
+        },
+        {
+          "enabled": true,
+          "payload_sha256": "2915b0773f58ff35ea089be8db6f9f4e75c76259de08355618165c5c4a663f3c",
+          "message_chars": 5030,
+          "schema_chars": 2,
+          "input_tokens": 3174,
+          "output_tokens": 204,
+          "cached_tokens": 2048,
+          "token_source": "api",
+          "wall_seconds": 5.9,
+          "response": {
+            "content": "历史提及：复查日期为2026-10-18，过敏药名为青霉素；仅作回顾，不作新的医疗判断或操作。",
+            "finish_reason": "stop"
+          },
+          "usage_models": [
+            "qwen3.8-max"
+          ],
+          "usage_providers": [
+            "tokenplan"
+          ],
+          "response_checks": {
+            "synthetic_date_and_allergy_recalled": true,
+            "historical_not_new_medical_action_boundary_present": true
+          }
+        }
+      ],
+      "input_token_reduction_percent": 44.46,
+      "payload_invariants": {
+        "message_count_and_order_equal": true,
+        "only_changed_message_index": 4,
+        "changed_role": "assistant",
+        "full_reference_source_present": true,
+        "current_question_equal": true,
+        "database_and_original_message_list_unchanged": true,
+        "tools_absent_on_both_variants": true
+      }
+    }
+  ],
+  "limits": [
+    "Two synthetic cases with one request per variant; no estimate of general history coverage or production P95.",
+    "Schema case changes only function.description fields; messages, tools and parameter schemas remain equal.",
+    "History case changes only one exact duplicate historical assistant body to a source reference; full source remains in the same request.",
+    "Prompt token usage includes provider cache tokens and is not a billing-savings claim.",
+    "Tool calls returned by schema planning are recorded but never executed.",
+    "Maximum output of 300 tokens limits this to input-accounting and a narrow response check, not clinical validation.",
+    "CaptureProvider fixed-payload capture exercises executor _call_llm preprocessing; real API replies do not drive Pi or another tool round."
+  ],
+  "replay_script_sha256": "f33c0f49525282e6afdc345f5dd27d882e59e69afcf82f56df3f46df5cbeac20",
+  "api_request_count": 4
+}

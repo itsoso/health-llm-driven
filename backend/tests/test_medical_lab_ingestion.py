@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from app.models.family_health import MedicalIndicator
 from app.services.agent_executor import AgentExecutor
 from app.services.exam_packages import create_indicator_from_item
@@ -463,3 +465,67 @@ def test_import_from_items_rejects_empty_and_no_narrative(db, auth_user_and_head
             user_id=user.id,
             items_data=[],
         )
+
+
+# ── 2026-09-30 事故回归 (合成数值): 文本解析 / 写入期归一化的子串误配 ──────────────
+
+def _codes(text):
+    return {item["item_code"]: item for item in parse_lab_indicators_from_text(text)}
+
+
+def test_text_parser_does_not_read_egfr_as_creatinine():
+    # 「Cr」IGNORECASE 命中「EPI-cr」→ eGFR 的值被当肌酐, 单位还被默认成 μmol/L
+    assert "CREA" not in _codes("肾小球滤过率(EPI-cr) 96 ml/min")
+
+
+def test_text_parser_does_not_read_crp_as_creatinine():
+    assert "CREA" not in _codes("超敏C反应蛋白 hs-CRP 3.2 mg/L")
+
+
+def test_text_parser_keeps_serum_creatinine_next_to_urine_creatinine():
+    by_code = _codes("肌酐 83 μmol/L，尿肌酐 9.4 mmol/L")
+    assert by_code["CREA"]["value"] == 83
+
+
+def test_text_parser_ignores_ratio_items():
+    by_code = _codes("尿素氮/肌酐 17，尿酸碱度 6.5")
+    assert "BUN" not in by_code
+    assert "CREA" not in by_code
+    assert "UA" not in by_code
+
+
+@pytest.mark.parametrize("text,code,value", [
+    ("CRE 76 μmol/L, ALT 45 U/L", "CREA", 76),
+    ("FPG 7.6 mmol/L, ALT 45 U/L", "FBG", 7.6),
+    ("我是2型糖尿病空腹血糖8.2 ALT 45", "FBG", 8.2),   # 自由文本里的「糖尿病」不是尿糖
+    ("ALT/GPT 88 U/L, AST/GOT 61 U/L", "ALT", 88),
+    ("ALT/GPT 88 U/L, AST/GOT 61 U/L", "AST", 61),
+])
+def test_text_parser_keeps_values_it_cannot_name_positively(text, code, value):
+    """只有「肯定是别的项目」才跳过; 别名表没收录的写法、句子里的无关词不能让值静默丢失。"""
+    assert _codes(text)[code]["value"] == value
+
+
+def test_create_indicator_keeps_raw_name_when_code_hint_names_another_analyte():
+    """OCR/LLM 给的 item_code 与报告原名指向不同分析物时, 以原名为准, 不把尿肌酐改名成「肌酐」。"""
+    indicator = create_indicator_from_item(
+        user_id=1,
+        exam_id=None,
+        record_date=date(2026, 2, 9),
+        item_dict={"item_name": "尿肌酐", "item_code": "CREA", "value": 9.4, "unit": "mmol/L"},
+        source="image_ocr",
+    )
+    assert indicator.name == "尿肌酐"
+    assert indicator.item_code != "CREA"
+
+
+def test_create_indicator_keeps_matching_code_hint():
+    indicator = create_indicator_from_item(
+        user_id=1,
+        exam_id=None,
+        record_date=date(2026, 2, 9),
+        item_dict={"item_name": "肌酐", "item_code": "Cr", "value": 83, "unit": "μmol/L"},
+        source="manual",
+    )
+    assert indicator.item_code == "CREA"
+    assert indicator.name == "肌酐"

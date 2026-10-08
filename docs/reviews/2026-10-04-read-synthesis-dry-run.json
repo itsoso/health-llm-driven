@@ -1,0 +1,588 @@
+{
+  "status": "dry_run",
+  "candidate_disposition": "experimental_not_runtime",
+  "batch_id": "4ebf86e7595a4338ae45d77950c95785",
+  "phase": "answer",
+  "stream": true,
+  "repetitions": 3,
+  "planned_calls": 48,
+  "max_api_calls": 48,
+  "timeout_seconds_per_call": 90,
+  "max_output_tokens_per_call": 1200,
+  "order": "Paired baseline/candidate; reverse order on alternating repetitions and cases.",
+  "models": [
+    "qwen3.8-flash",
+    "qwen3.8-max"
+  ],
+  "comparisons": [
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-flash:0:baseline",
+          "call_index": 0,
+          "payload_sha256": "c743d826c345b7ae7ed8baf8bbb3f81d9a27bd554e03467a7a01db5daaff68bd",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4324
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-flash:0:candidate",
+          "call_index": 1,
+          "payload_sha256": "0132ccdc54b762b2965f55bd25eb9fa2b7f82312f0d94e5f022e45f66bed5819",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3571
+        }
+      ]
+    },
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-flash",
+      "repeat": 1,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-flash:1:candidate",
+          "call_index": 2,
+          "payload_sha256": "0132ccdc54b762b2965f55bd25eb9fa2b7f82312f0d94e5f022e45f66bed5819",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3571
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-flash:1:baseline",
+          "call_index": 3,
+          "payload_sha256": "c743d826c345b7ae7ed8baf8bbb3f81d9a27bd554e03467a7a01db5daaff68bd",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4324
+        }
+      ]
+    },
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-flash",
+      "repeat": 2,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-flash:2:baseline",
+          "call_index": 4,
+          "payload_sha256": "c743d826c345b7ae7ed8baf8bbb3f81d9a27bd554e03467a7a01db5daaff68bd",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4324
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-flash:2:candidate",
+          "call_index": 5,
+          "payload_sha256": "0132ccdc54b762b2965f55bd25eb9fa2b7f82312f0d94e5f022e45f66bed5819",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3571
+        }
+      ]
+    },
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-max",
+      "repeat": 0,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-max:0:baseline",
+          "call_index": 6,
+          "payload_sha256": "c743d826c345b7ae7ed8baf8bbb3f81d9a27bd554e03467a7a01db5daaff68bd",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4324
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-max:0:candidate",
+          "call_index": 7,
+          "payload_sha256": "0132ccdc54b762b2965f55bd25eb9fa2b7f82312f0d94e5f022e45f66bed5819",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3571
+        }
+      ]
+    },
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-max",
+      "repeat": 1,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-max:1:candidate",
+          "call_index": 8,
+          "payload_sha256": "0132ccdc54b762b2965f55bd25eb9fa2b7f82312f0d94e5f022e45f66bed5819",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3571
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-max:1:baseline",
+          "call_index": 9,
+          "payload_sha256": "c743d826c345b7ae7ed8baf8bbb3f81d9a27bd554e03467a7a01db5daaff68bd",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4324
+        }
+      ]
+    },
+    {
+      "case": "answer_sleep_missing_spo2",
+      "model": "qwen3.8-max",
+      "repeat": 2,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-max:2:baseline",
+          "call_index": 10,
+          "payload_sha256": "c743d826c345b7ae7ed8baf8bbb3f81d9a27bd554e03467a7a01db5daaff68bd",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4324
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_sleep_missing_spo2:qwen3.8-max:2:candidate",
+          "call_index": 11,
+          "payload_sha256": "0132ccdc54b762b2965f55bd25eb9fa2b7f82312f0d94e5f022e45f66bed5819",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3571
+        }
+      ]
+    },
+    {
+      "case": "answer_spo2_unverified",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_spo2_unverified:qwen3.8-flash:0:candidate",
+          "call_index": 12,
+          "payload_sha256": "b0b291dbd2796937a9f574e1559abb67ae6db6c077e6524f79945ac3ce2ae3b9",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3542
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_spo2_unverified:qwen3.8-flash:0:baseline",
+          "call_index": 13,
+          "payload_sha256": "212aa091ada207b7b4ad183a1f4c1caff951051256c61aa28bfcb6be5fc21576",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4295
+        }
+      ]
+    },
+    {
+      "case": "answer_spo2_unverified",
+      "model": "qwen3.8-flash",
+      "repeat": 1,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_spo2_unverified:qwen3.8-flash:1:baseline",
+          "call_index": 14,
+          "payload_sha256": "212aa091ada207b7b4ad183a1f4c1caff951051256c61aa28bfcb6be5fc21576",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4295
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_spo2_unverified:qwen3.8-flash:1:candidate",
+          "call_index": 15,
+          "payload_sha256": "b0b291dbd2796937a9f574e1559abb67ae6db6c077e6524f79945ac3ce2ae3b9",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3542
+        }
+      ]
+    },
+    {
+      "case": "answer_spo2_unverified",
+      "model": "qwen3.8-flash",
+      "repeat": 2,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_spo2_unverified:qwen3.8-flash:2:candidate",
+          "call_index": 16,
+          "payload_sha256": "b0b291dbd2796937a9f574e1559abb67ae6db6c077e6524f79945ac3ce2ae3b9",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3542
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_spo2_unverified:qwen3.8-flash:2:baseline",
+          "call_index": 17,
+          "payload_sha256": "212aa091ada207b7b4ad183a1f4c1caff951051256c61aa28bfcb6be5fc21576",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4295
+        }
+      ]
+    },
+    {
+      "case": "answer_spo2_unverified",
+      "model": "qwen3.8-max",
+      "repeat": 0,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_spo2_unverified:qwen3.8-max:0:candidate",
+          "call_index": 18,
+          "payload_sha256": "b0b291dbd2796937a9f574e1559abb67ae6db6c077e6524f79945ac3ce2ae3b9",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3542
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_spo2_unverified:qwen3.8-max:0:baseline",
+          "call_index": 19,
+          "payload_sha256": "212aa091ada207b7b4ad183a1f4c1caff951051256c61aa28bfcb6be5fc21576",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4295
+        }
+      ]
+    },
+    {
+      "case": "answer_spo2_unverified",
+      "model": "qwen3.8-max",
+      "repeat": 1,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_spo2_unverified:qwen3.8-max:1:baseline",
+          "call_index": 20,
+          "payload_sha256": "212aa091ada207b7b4ad183a1f4c1caff951051256c61aa28bfcb6be5fc21576",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4295
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_spo2_unverified:qwen3.8-max:1:candidate",
+          "call_index": 21,
+          "payload_sha256": "b0b291dbd2796937a9f574e1559abb67ae6db6c077e6524f79945ac3ce2ae3b9",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3542
+        }
+      ]
+    },
+    {
+      "case": "answer_spo2_unverified",
+      "model": "qwen3.8-max",
+      "repeat": 2,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_spo2_unverified:qwen3.8-max:2:candidate",
+          "call_index": 22,
+          "payload_sha256": "b0b291dbd2796937a9f574e1559abb67ae6db6c077e6524f79945ac3ce2ae3b9",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 3542
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_spo2_unverified:qwen3.8-max:2:baseline",
+          "call_index": 23,
+          "payload_sha256": "212aa091ada207b7b4ad183a1f4c1caff951051256c61aa28bfcb6be5fc21576",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 4295
+        }
+      ]
+    },
+    {
+      "case": "answer_failed_write",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_failed_write:qwen3.8-flash:0:baseline",
+          "call_index": 24,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_failed_write:qwen3.8-flash:0:candidate",
+          "call_index": 25,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        }
+      ]
+    },
+    {
+      "case": "answer_failed_write",
+      "model": "qwen3.8-flash",
+      "repeat": 1,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_failed_write:qwen3.8-flash:1:candidate",
+          "call_index": 26,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_failed_write:qwen3.8-flash:1:baseline",
+          "call_index": 27,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        }
+      ]
+    },
+    {
+      "case": "answer_failed_write",
+      "model": "qwen3.8-flash",
+      "repeat": 2,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_failed_write:qwen3.8-flash:2:baseline",
+          "call_index": 28,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_failed_write:qwen3.8-flash:2:candidate",
+          "call_index": 29,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        }
+      ]
+    },
+    {
+      "case": "answer_failed_write",
+      "model": "qwen3.8-max",
+      "repeat": 0,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_failed_write:qwen3.8-max:0:baseline",
+          "call_index": 30,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_failed_write:qwen3.8-max:0:candidate",
+          "call_index": 31,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        }
+      ]
+    },
+    {
+      "case": "answer_failed_write",
+      "model": "qwen3.8-max",
+      "repeat": 1,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_failed_write:qwen3.8-max:1:candidate",
+          "call_index": 32,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_failed_write:qwen3.8-max:1:baseline",
+          "call_index": 33,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        }
+      ]
+    },
+    {
+      "case": "answer_failed_write",
+      "model": "qwen3.8-max",
+      "repeat": 2,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_failed_write:qwen3.8-max:2:baseline",
+          "call_index": 34,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_failed_write:qwen3.8-max:2:candidate",
+          "call_index": 35,
+          "payload_sha256": "b800431a0c458be110211f79308eb29ea735d4e5c07fff7ea8366c68ede90666",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6560
+        }
+      ]
+    },
+    {
+      "case": "answer_successful_write",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_successful_write:qwen3.8-flash:0:candidate",
+          "call_index": 36,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_successful_write:qwen3.8-flash:0:baseline",
+          "call_index": 37,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        }
+      ]
+    },
+    {
+      "case": "answer_successful_write",
+      "model": "qwen3.8-flash",
+      "repeat": 1,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_successful_write:qwen3.8-flash:1:baseline",
+          "call_index": 38,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_successful_write:qwen3.8-flash:1:candidate",
+          "call_index": 39,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        }
+      ]
+    },
+    {
+      "case": "answer_successful_write",
+      "model": "qwen3.8-flash",
+      "repeat": 2,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_successful_write:qwen3.8-flash:2:candidate",
+          "call_index": 40,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_successful_write:qwen3.8-flash:2:baseline",
+          "call_index": 41,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        }
+      ]
+    },
+    {
+      "case": "answer_successful_write",
+      "model": "qwen3.8-max",
+      "repeat": 0,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_successful_write:qwen3.8-max:0:candidate",
+          "call_index": 42,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_successful_write:qwen3.8-max:0:baseline",
+          "call_index": 43,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        }
+      ]
+    },
+    {
+      "case": "answer_successful_write",
+      "model": "qwen3.8-max",
+      "repeat": 1,
+      "variants": [
+        {
+          "variant": "baseline",
+          "sample_id": "answer_successful_write:qwen3.8-max:1:baseline",
+          "call_index": 44,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        },
+        {
+          "variant": "candidate",
+          "sample_id": "answer_successful_write:qwen3.8-max:1:candidate",
+          "call_index": 45,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        }
+      ]
+    },
+    {
+      "case": "answer_successful_write",
+      "model": "qwen3.8-max",
+      "repeat": 2,
+      "variants": [
+        {
+          "variant": "candidate",
+          "sample_id": "answer_successful_write:qwen3.8-max:2:candidate",
+          "call_index": 46,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        },
+        {
+          "variant": "baseline",
+          "sample_id": "answer_successful_write:qwen3.8-max:2:baseline",
+          "call_index": 47,
+          "payload_sha256": "2563a85c1659308fd5fd5ce8d2c90ba681b95c0d6392a38765cd21e3401a0b03",
+          "diagnostic_tokenizer": "cl100k_base",
+          "diagnostic_message_json_tokens": 6581
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/prompt_projection_quality.py": "2e58aded2dcc414b70fb5d43e1afbf81f061f8f7ac873b25e519e1fb76f1696b",
+    "backend/eval/prompt_benchmark_metrics.py": "d808383721103bfd93fc531dfde465fd8dea0b147cd122a8d2ecd40bba1fb204",
+    "scripts/benchmark_argument_transport.py": "a4247679f7e2fce9b6fada800eef11367da7035e7d9d9d32cb955a21003e6a92",
+    "scripts/benchmark_read_synthesis.py": "664a2a5ac47398e422e177157266eaf4bae1dadb56f110c38fc949cf286e7656"
+  },
+  "limits": [
+    "Fixed synthetic answer-stage replay; no tools executed.",
+    "Tokenizer diagnostics are not API usage or whole-task savings.",
+    "Semantic noninferiority, persistence and production latency remain unknown.",
+    "No cold-cache or warm-cache claim; cached tokens only from API usage.",
+    "Fail fast on call/usage errors; unattempted samples remain missing."
+  ],
+  "measurements": []
+}

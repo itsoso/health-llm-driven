@@ -1,0 +1,83 @@
+{
+  "status": "withdrawal_and_quality_infrastructure_verified",
+  "candidate_quality": "NO_GO",
+  "new_runtime_token_savings_delivered": false,
+  "deployed": false,
+  "baseline": {
+    "remote": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+    "worktree_head": "a8853dea1207163aaa412974dddfbc050ce3eeea",
+    "runtime_equal": true
+  },
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "e958a7b42e0cedb47e463f61347e9761bd71ed61c8bd1ad2c8e2768894e1083a",
+    "backend/app/services/agent_tool_prompt_projection.py": "054fd897fd4c3964dbe1154f5ae0c6fb8ee813a220f755b741e63f4be6df43d1",
+    "backend/eval/experimental_record_projection.py": "572044b53ca8b48569fc785421bf8078b16c850b7273856e0218da6e689c844a",
+    "backend/eval/prompt_projection_quality.py": "2e58aded2dcc414b70fb5d43e1afbf81f061f8f7ac873b25e519e1fb76f1696b",
+    "scripts/benchmark_record_prompt_projection.py": "dc206edc4c771ca36d2acbd114a1617e9e685015c9cd5de376eb4bdaab650c42"
+  },
+  "tests": {
+    "final": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "387",
+      "time": "72.167",
+      "timestamp": "2026-10-04T14:12:04.491327+08:00"
+    },
+    "independent_provider_and_isolation": {
+      "passed": 33,
+      "log": "/tmp/reva-record-withdrawal-independent.log"
+    },
+    "initial_pre_withdrawal_regression": {
+      "passed": 783,
+      "log": "/tmp/reva-record-regression.log"
+    },
+    "counts_overlap": true
+  },
+  "review": {
+    "withdrawal": "GO",
+    "candidate": "NO_GO",
+    "reason": "Actual changed flash candidates unnecessarily clarified known water amount, both with liter and explicit ml units."
+  },
+  "artifacts": {
+    "2026-10-04-record-prompt-initial-max.json": {
+      "sha256": "67d81ac7fce9efcafb0c74bd70b2ddaa943c03067df66925624fa2fa151efa66",
+      "status": "failed_contracts"
+    },
+    "2026-10-04-record-prompt-live-gate.json": {
+      "sha256": "475ce8091d17aa6fbe77825bd58f73fe2b52e49a72e96b1746d9eb10ca308793",
+      "status": "passed"
+    },
+    "2026-10-04-record-prompt-narrowed-flash.json": {
+      "sha256": "3ad5e9c8d446bedf6b1b9d2e9764c3193310fa884c4b96dc9a2c6694d61e5152",
+      "status": "failed_contracts"
+    },
+    "2026-10-04-record-prompt-narrowed-max.json": {
+      "sha256": "5d5b3b34ced7d1f43772536a1b730578a64520715917a82c06f9be067deaeec4",
+      "status": "passed_contracts"
+    },
+    "2026-10-04-record-prompt-rejected-flash.json": {
+      "sha256": "c6aa3bb2a94c99a97d0c13923c3f9ea1c919da7da83b2b2182146177324bff1e",
+      "status": "failed_contracts"
+    },
+    "2026-10-04-record-prompt-rescored-max.json": {
+      "sha256": "b4856e55fb791b980c21ebe8bb53c3675a1ee62218d0777b874aa3a3c1c64ee0",
+      "status": "failed_contracts"
+    }
+  },
+  "verification": {
+    "system_map": "passed",
+    "ruff_new_files": "passed",
+    "executor_ruff_preexisting": 11,
+    "diff_check": "passed",
+    "isolated_payload_hash_matches_prior_api_pairs": 6,
+    "production_candidate_references": 0
+  },
+  "limitations": [
+    "No production rollout or real-user outcome evidence.",
+    "Deterministic contracts do not establish clinical or general semantic noninferiority.",
+    "An unchanged last-night sleep baseline violated the fixed date proposal contract; retained as unresolved.",
+    "No tool execution or persistence proven by API replay."
+  ]
+}

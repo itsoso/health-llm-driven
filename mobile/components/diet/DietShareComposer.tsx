@@ -11,7 +11,6 @@ import {
   Share,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -42,9 +41,9 @@ import {
   type DietShareRecord,
 } from './dietSharePresentation';
 import { SwipeBackSurface } from './SwipeBackSurface';
+import { DietShareLocationEditor } from './DietShareLocationEditor';
 import { subscribeAIConsentInvalidation } from '../../services/aiConsentState';
 import {
-  DIET_SHARE_LOCATION_MAX_LENGTH,
   normalizeDietShareLocation,
   withDietShareLocation,
 } from './dietShareLocation';
@@ -179,7 +178,6 @@ export function DietShareComposer({
   const contentRevision = contentRevisionRef.current;
   const locationEditingRef = useRef(false);
   const [locationEditing, setLocationEditing] = useState(false);
-  const [locationDraft, setLocationDraft] = useState('');
   const [locationLabel, setLocationLabel] = useState('');
   const headersFingerprint = headerFingerprint(photoSource.headers);
   latestPhotoSourceRef.current = photoSource;
@@ -252,7 +250,6 @@ export function DietShareComposer({
     contentRevisionRef.current += 1;
     locationEditingRef.current = false;
     setLocationEditing(false);
-    setLocationDraft('');
     setLocationLabel('');
 
     if (!visible || closeInFlightRef.current) {
@@ -334,7 +331,6 @@ export function DietShareComposer({
     setReviewDismissed(true);
     locationEditingRef.current = false;
     setLocationEditing(false);
-    setLocationDraft('');
     setLocationLabel('');
     await cleanupResources();
     // The parent conditionally unmounts us. Keep the native presenter alive
@@ -350,18 +346,16 @@ export function DietShareComposer({
   const editLocation = useCallback(() => {
     if (busyActionRef.current || closeInFlightRef.current || phaseRef.current !== 'preview') return;
     locationEditingRef.current = true;
-    setLocationDraft(locationLabel);
     setLocationEditing(true);
-  }, [locationLabel]);
+  }, []);
 
-  const finishLocationEditing = useCallback((apply: boolean) => {
+  const finishLocationEditing = useCallback((label?: string) => {
     if (!locationEditingRef.current || closeInFlightRef.current || busyActionRef.current) return;
     Keyboard.dismiss();
     locationEditingRef.current = false;
     setLocationEditing(false);
-    const next = normalizeDietShareLocation(locationDraft);
-    setLocationDraft('');
-    if (!apply || next === locationLabel) return;
+    const next = normalizeDietShareLocation(label);
+    if (label === undefined || next === locationLabel) return;
     contentRevisionRef.current += 1;
     setLocationLabel(next);
     // Only invalidate the screenshot: retain the edited photo and its redactions.
@@ -372,7 +366,7 @@ export function DietShareComposer({
     if (oldUri) releaseCaptureSafely(oldUri);
     setCapturedUri(null);
     transition('rendering');
-  }, [locationDraft, locationLabel, transition]);
+  }, [locationLabel, transition]);
 
   const finishReviewDismissal = useCallback(() => {
     if (!pendingReviewRef.current || !mountedRef.current) return;
@@ -700,34 +694,12 @@ export function DietShareComposer({
           ) : null}
 
           {phase === 'preview' && locationEditing ? (
-            <ScrollView contentContainerStyle={styles.previewContent} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-              <Text style={styles.title}>分享地点（可选）</Text>
-              <Text style={styles.locationHelp}>填写城市、餐厅或公共地点名称，不建议填写住址、房号。确认后会公开展示在图片和文字中。</Text>
-              <TextInput
-                accessibilityLabel="分享地点"
-                placeholder="例如：杭州 · 湖边餐厅"
-                placeholderTextColor={C.ink3}
-                value={locationDraft}
-                onChangeText={setLocationDraft}
-                maxLength={DIET_SHARE_LOCATION_MAX_LENGTH}
-                style={styles.locationInput}
-                autoFocus
-                returnKeyType="done"
-                onSubmitEditing={() => finishLocationEditing(true)}
-              />
-              <Text style={styles.locationHelp}>仅用于本次分享，不修改饮食记录或足迹。留空即不展示地点。</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="清除分享地点" onPress={() => setLocationDraft('')} style={styles.textActionButton}>
-                <Text style={styles.textAction}>清除地点</Text>
-              </Pressable>
-              <View style={styles.actionRow}>
-                <Pressable accessibilityRole="button" accessibilityLabel="取消地点编辑" onPress={() => finishLocationEditing(false)} style={styles.secondaryAction}>
-                  <Text style={styles.secondaryActionText}>取消</Text>
-                </Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="确认分享地点" onPress={() => finishLocationEditing(true)} style={styles.primaryAction}>
-                  <Text style={styles.primaryActionText}>确认展示</Text>
-                </Pressable>
-              </View>
-            </ScrollView>
+            <DietShareLocationEditor
+              initialValue={locationLabel}
+              recordDate={record.record_date}
+              onConfirm={finishLocationEditing}
+              onCancel={() => finishLocationEditing()}
+            />
           ) : null}
 
           {phase === 'preview' && capturedUri && !locationEditing ? (
@@ -876,7 +848,6 @@ const styles = StyleSheet.create({
   locationEntry: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 16, backgroundColor: C.surface2 },
   locationEntryCopy: { flex: 1, gap: 4 },
   locationHelp: { color: C.ink3, fontSize: 13, lineHeight: 20 },
-  locationInput: { borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 14, fontSize: 16, color: C.ink1, backgroundColor: C.surface2 },
   root: { flex: 1, backgroundColor: C.paper },
   header: {
     minHeight: 64,

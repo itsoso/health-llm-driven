@@ -228,7 +228,7 @@ def test_rollback_restores_service_readable_env_metadata():
 def test_rollback_rewrites_verified_dependency_marker_before_service_start():
     script = ROLLBACK_SCRIPT.read_text(encoding="utf-8")
     install = script.index(
-        "backend/venv/bin/pip install --require-hashes -r backend/requirements.lock"
+        "URLLIB3_NO_OVERRIDE=1 backend/venv/bin/pip install"
     )
     uninstall = script.index(
         "backend/venv/bin/python -m pip uninstall --yes chromadb chroma-hnswlib",
@@ -254,6 +254,7 @@ def test_rollback_rewrites_verified_dependency_marker_before_service_start():
         < start
     )
     assert "umask 022" in script[script.rfind("(", 0, install) : install]
+    assert "--no-binary urllib3-future" in script[install:uninstall]
     assert "/usr/bin/env -i PATH=/usr/bin:/bin" in script[runtime:stdin]
     assert '"$REPO_PATH/backend/venv/bin/python" -I -B -' in script[runtime:stdin]
     assert (

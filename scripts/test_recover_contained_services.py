@@ -14,6 +14,38 @@ def load():
     return module
 
 
+@pytest.mark.parametrize("flags", [
+    ["--retire-installed-laya-built-unuploaded", "--lease-token-stdin"],
+    ["--retire-installed-laya", "--mixed-secrets-stdin"],
+    ["--retire-restored", "--mixed-secrets-stdin"],
+])
+def test_mixed_mode_requires_its_own_protected_input_before_context(monkeypatch, flags):
+    m = load()
+    calls = []
+    monkeypatch.setattr(m, "_context", lambda sha: calls.append(sha))
+    monkeypatch.setattr(m.sys, "argv", ["operator", "--sha", "a" * 40, "--failed-sha", "b" * 40,
+                                      "--production-sha", "c" * 40, *flags])
+    assert m.main() == 1
+    assert calls == []
+
+
+@pytest.mark.parametrize("kind", ["directory", "dangling_symlink"])
+def test_vendor_module_cache_rejected_before_loader_or_secret_read(tmp_path, monkeypatch, kind):
+    from types import SimpleNamespace
+    m = load()
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "built_unuploaded_proof.py").write_text("raise RuntimeError('must not execute')")
+    cache = scripts / "__pycache__"
+    if kind == "directory": cache.mkdir()
+    else: cache.symlink_to(tmp_path / "absent")
+    calls = []
+    monkeypatch.setattr(m, "_load", lambda *args: calls.append(args))
+    with pytest.raises(m.RecoveryError, match="cached"):
+        m._load_vendor_evidence(tmp_path, SimpleNamespace(secure=lambda path: None))
+    assert calls == []
+
+
 def test_absent_original_build_lock_is_verified_without_creating_one(tmp_path):
     from types import SimpleNamespace
     m = load()

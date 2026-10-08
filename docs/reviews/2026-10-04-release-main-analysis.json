@@ -1,0 +1,344 @@
+{
+  "status": "failed",
+  "batch_id": "daf0d3301c11418abfbe46324722ed04",
+  "mode": "live",
+  "models": [
+    "qwen3.8-flash",
+    "qwen3.8-max"
+  ],
+  "variants": [
+    "baseline"
+  ],
+  "cases": [
+    "analysis_7d_available",
+    "analysis_7d_holdout"
+  ],
+  "planned_tasks": 4,
+  "max_provider_attempts": 12,
+  "per_task_call_cap": 3,
+  "per_task_tool_cap": 3,
+  "max_input_bytes_per_call": 262144,
+  "requested_max_output_tokens_per_call": 1200,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "eval_only",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "analysis_7d_available",
+      "variant": "baseline",
+      "model": "qwen3.8-flash",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 1,
+          "payload_sha256": "c6aba864380199d38865b48f73790ff7c593e8e00042d30f24bd393dc74c8c63",
+          "input_bytes": 33932,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 8485,
+          "output_tokens": 361,
+          "cached_tokens": [
+            7168
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 5.593303959001787
+        },
+        {
+          "call_index": 2,
+          "payload_sha256": "0b5f9b752cabb441f4bed64872a7ca03df83249dbc3da6523035dc7b0b389a2b",
+          "input_bytes": 26243,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 6129,
+          "output_tokens": 955,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": 17.710019375008414,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 18.350485542003298
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 26.025799417009694,
+      "live": true,
+      "wall_seconds": 26.10527900001034,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "分析我最近7天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天只返回1条饮食记录和1条睡眠记录，样本不足以判断整体趋势。已记录内容仅能说明有一次晚餐记录，以及一条来自可穿戴日汇总的睡眠记录；不能据此评估恢复、营养是否充足或作息稳定。当前观察严格限于已返回样本。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 26.26241895799467,
+      "repeat": 0
+    },
+    {
+      "case": "analysis_7d_available",
+      "variant": "baseline",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 3,
+          "payload_sha256": "d8439e514169d99ba8c5783b73ddadcb37a2da8740c8bde812b301a6101589a4",
+          "input_bytes": 33930,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 8485,
+          "output_tokens": 382,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 7.605097791005392
+        },
+        {
+          "call_index": 4,
+          "payload_sha256": "cd8a6466638c0d1543838836084a21678ebce3175f078e8af7f040fca6536f0f",
+          "input_bytes": 26243,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 6129,
+          "output_tokens": 1096,
+          "cached_tokens": [
+            0
+          ],
+          "first_content_seconds": 26.622413916993537,
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 27.78225916699739
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 35.89814824999485,
+      "live": true,
+      "wall_seconds": 35.95705899999302,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [
+        {
+          "tool": "knowledge_search",
+          "honest_empty_kb": true,
+          "result": "已审定知识库未命中『成人睡眠时长与睡眠质量建议』相关条目(该主题可能未收录)。请如实说明缺少本系统已审定依据,勿编造引用。"
+        }
+      ],
+      "query": "分析我最近7天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、已检索证据（未逐句核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近7天可分析样本很少：饮食只查到1条晚餐记录，睡眠只查到1条按醒来日期归属的日汇总。以现有数据只能说明有这两次记录，不能判断整周睡眠规律、恢复情况或全天营养摄入是否充足。后续数据同步更完整后，可再做连续趋势复盘。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 35.95981916700839,
+      "repeat": 0
+    },
+    {
+      "case": "analysis_7d_holdout",
+      "variant": "baseline",
+      "model": "qwen3.8-flash",
+      "status": "failed_contracts",
+      "calls": [
+        {
+          "call_index": 5,
+          "payload_sha256": "c41c530935f93174d40e7eae045ab3a7dbd5c196bd11f59d3e247375d1940c32",
+          "input_bytes": 44428,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 11430,
+          "output_tokens": 596,
+          "cached_tokens": [
+            2048
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 10.192955999998958
+        },
+        {
+          "call_index": 6,
+          "payload_sha256": "dd30205bc40fc686c26cbe4625f5f45419f0dc715323c5bdd6e35a5258b26465",
+          "input_bytes": 20104,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4767,
+          "output_tokens": 170,
+          "cached_tokens": [
+            2048
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 3.1508656249934575
+        },
+        {
+          "call_index": 7,
+          "payload_sha256": "478d528090f2a97d98b898ba88b07b55b5986072a5b9525e4addff0086cf471c",
+          "input_bytes": 20322,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4804,
+          "output_tokens": 246,
+          "cached_tokens": [
+            4096
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-flash"
+          ],
+          "wall_seconds": 6.5137415420031175
+        }
+      ],
+      "tool_contracts": [],
+      "tool_attempts": 0,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 20.50468945800094,
+      "live": true,
+      "wall_seconds": 20.611541374993976,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "复盘我最近7天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": false,
+        "knowledge_contracts": true,
+        "expected_outcome": false,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n本轮数据查询未完成，不能用其他日期的汇总或历史背景代替本次查询结果。请明确要查看的数据类别和日期，例如“查询昨天的饮食和睡眠”；如果只需要通用建议，也可以直接说明。",
+      "outcome": "blocked",
+      "completion_status": "error",
+      "evaluation_seconds": 20.613554416995612,
+      "repeat": 0
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "392cdb1f9c0c345304593c018962da6fa183f42ef291d5b4a588e704b8dbe8e6",
+    "scripts/benchmark_prompt_full_task.py": "1fdbb75a061c4f5261f20a6afb4ccc43d3b5cca90254de28816af864332b2f92",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/app/services/agent_executor.py": "b6fa3e1782db68a95638f21b41417358cc1009732c0fe75b751adba29d622380",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "5d5ac6ffde8c702edc2a63588d897f983fed6ed30a81ad414bac5380840bc9cc"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+    "Per-sample synthetic user with real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-flash",
+      "variant": "baseline",
+      "tasks": 2,
+      "provider_attempts": 5,
+      "passed_contracts": 1,
+      "failed_tasks": 1,
+      "api_input_tokens_known": 35615,
+      "api_output_tokens_known": 2328,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 2,
+      "wall_seconds_all_tasks": {
+        "p50": 20.611541374993976,
+        "p95": 26.10527900001034,
+        "p99": 26.10527900001034
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "baseline",
+      "tasks": 1,
+      "provider_attempts": 2,
+      "passed_contracts": 1,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 14614,
+      "api_output_tokens_known": 1478,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 1,
+      "wall_seconds_all_tasks": {
+        "p50": 35.95705899999302,
+        "p95": 35.95705899999302,
+        "p99": 35.95705899999302
+      }
+    }
+  ]
+}

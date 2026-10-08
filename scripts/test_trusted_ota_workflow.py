@@ -358,3 +358,21 @@ def test_node_inventory_accepts_internal_npm_link_and_rejects_hardlinks(tmp_path
     os.link(target, root / "lib/hardlink.js")
     with pytest.raises(ValueError):
         ns["inspect_toolchain"](root)
+
+
+def test_ota_verifies_signature_backport_before_claim_and_credentials():
+    steps = workflow()["jobs"]["ota"]["steps"]
+    index = next(i for i, step in enumerate(steps) if "Install locked CLI" in step.get("name", ""))
+    body = steps[index]["run"]
+    for root in ("scripts/release-tools", "mobile"):
+        install = f"ci --prefix /opt/reva-release/source/{root} --ignore-scripts"
+        verify = f"/opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/{root} --apply"
+        assert body.index(install) < body.index(verify)
+        guard = verify.replace("scripts/node-forge-backport.cjs", "frontend/scripts/braces-depth-guard.cjs")
+        assert body.index(install) < body.index(guard)
+        commands = [line.strip() for line in body.replace("\\\n", "").splitlines()]
+        assert any(line.startswith('/usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root')
+                   and line.endswith(guard) for line in commands)
+    assert "secrets." not in str(steps[index])
+    first_secret = next(i for i, step in enumerate(steps) if "secrets." in str(step))
+    assert index < first_secret

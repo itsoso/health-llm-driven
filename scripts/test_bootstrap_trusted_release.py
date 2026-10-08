@@ -28,14 +28,15 @@ def load_bootstrap():
 
 
 @pytest.mark.parametrize("sha,expiry,public", [
-    ("main", 200, PUBLIC), (SHA, 100, PUBLIC), (SHA, 100 + 28801, PUBLIC),
+    ("main", 200, PUBLIC), (SHA, 100, PUBLIC), (SHA, -1, PUBLIC),
+    (SHA, None, PUBLIC), (SHA, 0.0, PUBLIC),
     (SHA, True, PUBLIC), (SHA, 200, PUBLIC + " comment"),
     (SHA, 200, 'command="id" ' + PUBLIC), (SHA, 200, PUBLIC + "\n"),
     (SHA, 200, "ssh-ed25519 AAAAFixture"),
     (SHA, 200, "ssh-ed25519 " + base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x1f" + bytes(range(31))).decode()),
     (SHA, 200, "ssh-ed25519 " + base64.b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + bytes(range(33))).decode()),
 ])
-def test_install_inputs_are_closed_and_expire_within_eight_hours(sha, expiry, public):
+def test_install_inputs_reject_malformed_or_expired_authorization(sha, expiry, public):
     bootstrap = load_bootstrap()
     with pytest.raises(bootstrap.BootstrapError):
         bootstrap.validate_install(sha, expiry, public, now=100)
@@ -44,6 +45,47 @@ def test_install_inputs_are_closed_and_expire_within_eight_hours(sha, expiry, pu
 def test_valid_install_inputs_are_exact_not_normalized():
     bootstrap = load_bootstrap()
     bootstrap.validate_install(SHA, 100 + 28800, PUBLIC, now=100)
+
+
+@pytest.mark.parametrize("expiry", [0, 100 + 86400 * 90])
+def test_install_accepts_persistent_or_explicit_future_deadline(expiry):
+    load_bootstrap().validate_install(SHA, expiry, PUBLIC, now=100)
+
+
+def test_persistent_authorization_keeps_forced_command_and_loopback_isolation():
+    cloud, loopback = load_bootstrap().key_lines(0, PUBLIC, LOOPBACK)
+    assert cloud == 'command="/usr/bin/python3 -I /usr/local/lib/reva-release/trusted_release_server.py",restrict ' + PUBLIC
+    assert loopback == 'from="127.0.0.1",restrict ' + LOOPBACK
+
+
+def test_persistent_install_is_revocable_without_expiration(monkeypatch, tmp_path):
+    bootstrap, _calls = fixture(monkeypatch, tmp_path)
+    bootstrap.install(SHA, 0, PUBLIC)
+    assert json.loads((bootstrap.CONFIG / "authorized-release.json").read_text())["expires_at"] == 0
+    assert "expiry-time" not in bootstrap.AUTHORIZED.read_text()
+    assert bootstrap.revoke(SHA)["state"] == "REVOKED"
+    assert bootstrap.AUTHORIZED.read_text() == "ssh-ed25519 AAAAExisting unrelated\n"
+
+
+@pytest.mark.parametrize("action", ["install", "rotate"])
+def test_cli_defaults_to_persistent_authorization(monkeypatch, capsys, action):
+    bootstrap = load_bootstrap()
+    argv = [str(SCRIPT), action, "--sha", SHA, "--cloud-public-key", PUBLIC]
+    if action == "rotate":
+        argv += ["--retire-sha", "b" * 40]
+    monkeypatch.setattr(bootstrap.sys, "argv", argv)
+    monkeypatch.setattr(bootstrap.sys, "flags", SimpleNamespace(isolated=1))
+    monkeypatch.setattr(bootstrap.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(bootstrap.os, "umask", lambda mask: 0o077)
+    calls = []
+    def install(sha, expiry, public):
+        calls.append((sha, expiry, public))
+        return {"state": "INSTALLED"}
+    monkeypatch.setattr(bootstrap, "install", install)
+    monkeypatch.setattr(bootstrap, "rotate", lambda old, sha, expiry, public, **kwargs: install(sha, expiry, public))
+    assert bootstrap.main() == 0
+    assert calls == [(SHA, 0, PUBLIC)]
+    assert PUBLIC not in capsys.readouterr().out
 
 
 def test_workspace_evidence_rejects_conflicting_closure_profiles(monkeypatch, tmp_path):
@@ -487,6 +529,77 @@ def rotation_fixture(monkeypatch, tmp_path, *, succeeded=True):
     return bootstrap, calls
 
 
+def test_same_cloud_key_survives_consecutive_versions_without_rewriting_history(monkeypatch, tmp_path):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    original = lifecycle_snapshot(bootstrap)
+    assert bootstrap.rotate(SHA, NEW_SHA, 0, PUBLIC)["state"] == "INSTALLED"
+    assert set(bootstrap._retired_history()) == {SHA}
+    archive, _library = bootstrap._archives(SHA)
+    for name in ("cloud.pub", "authorized-release.json"):
+        assert (archive / name).read_bytes() == original[str(bootstrap.CONFIG / name)][2]
+    assert json.loads((bootstrap.STATE / "retired" / SHA / "intent.json").read_text())["cloud_key_reused"] is True
+    first_intent = (bootstrap.STATE / "retired" / SHA / "intent.json").read_bytes()
+    bootstrap.revoke(NEW_SHA)
+    (bootstrap.CONFIG / "loopback.key").unlink()
+    run = bootstrap._run
+    def next_keys(args, **kwargs):
+        result = run(args, **kwargs)
+        if args[0] == "/usr/bin/ssh-keygen" and "-q" in args:
+            (bootstrap.CONFIG / "loopback.key.pub").write_text(LEGACY_PUBLIC + "\n")
+        return result
+    monkeypatch.setattr(bootstrap, "_run", next_keys)
+    third = "d" * 40
+    assert bootstrap.rotate(NEW_SHA, third, 0, PUBLIC)["state"] == "INSTALLED"
+    assert set(bootstrap._retired_history()) == {SHA, NEW_SHA}
+    assert (bootstrap.STATE / "retired" / SHA / "intent.json").read_bytes() == first_intent
+    assert bootstrap.AUTHORIZED.read_text().count(PUBLIC) == 1
+    bootstrap.revoke(third)
+    (bootstrap.CONFIG / "loopback.key").unlink()
+    assert PUBLIC not in bootstrap.AUTHORIZED.read_text()
+    assert set(bootstrap._retired_history()) == {SHA, NEW_SHA}
+    for used in (SHA, NEW_SHA, third):
+        with pytest.raises(bootstrap.BootstrapError):
+            bootstrap.rotate(third, used, 0, PUBLIC)
+
+
+@pytest.mark.parametrize("fault", ["bare-key", "duplicate", "executor", "policy-sha", "finite", "reuse-audit", "loopback"])
+def test_history_does_not_accept_unproven_persistent_identity(monkeypatch, tmp_path, fault):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    bootstrap.rotate(SHA, NEW_SHA, 0, PUBLIC)
+    if fault == "bare-key":
+        bootstrap.AUTHORIZED.write_text(PUBLIC + "\n")
+    elif fault == "duplicate":
+        bootstrap.AUTHORIZED.write_text(bootstrap.AUTHORIZED.read_text() + PUBLIC + "\n")
+    elif fault == "executor":
+        bootstrap.INSTALLED.write_bytes(b"modified")
+    elif fault in {"policy-sha", "finite"}:
+        path = bootstrap.CONFIG / "authorized-release.json"
+        data = json.loads(path.read_text())
+        data["sha" if fault == "policy-sha" else "expires_at"] = SHA if fault == "policy-sha" else 200
+        path.write_text(json.dumps(data))
+    elif fault == "reuse-audit":
+        path = bootstrap.STATE / "retired" / SHA / "intent.json"
+        data = json.loads(path.read_text())
+        del data["cloud_key_reused"]
+        path.write_text(json.dumps(data))
+    else:
+        bootstrap.AUTHORIZED.write_text(bootstrap.AUTHORIZED.read_text() + LOOPBACK + "\n")
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap._retired_history()
+
+
+@pytest.mark.parametrize("public", [PUBLIC, LOOPBACK, NEW_LOOPBACK])
+def test_persistent_mode_cannot_resurrect_replaced_or_loopback_keys(monkeypatch, tmp_path, public):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    bootstrap.rotate(SHA, NEW_SHA, 0, HOST)
+    bootstrap.revoke(NEW_SHA)
+    (bootstrap.CONFIG / "loopback.key").unlink()
+    before = lifecycle_snapshot(bootstrap)
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.rotate(NEW_SHA, "d" * 40, 0, public)
+    assert lifecycle_snapshot(bootstrap) == before
+
+
 @pytest.mark.parametrize("succeeded", [True, False])
 def test_rotation_preserves_old_install_and_once_evidence(monkeypatch, tmp_path, succeeded):
     bootstrap, calls = rotation_fixture(monkeypatch, tmp_path, succeeded=succeeded)
@@ -825,3 +938,37 @@ def test_native_closure_dispatches_distinct_terminal_with_historical_flag(monkey
     monkeypatch.setattr(bootstrap,'sys',SimpleNamespace(modules={bootstrap.__name__:bootstrap}))
     assert bootstrap._workspace_evidence(SHA,recovery_receipt='c'*64,historical=True)=={'state':'CLOSED_NATIVE_ONLY_VENDOR_UPLOAD'}
     assert received==[(SHA,'c'*64,True)]
+
+
+@pytest.mark.parametrize('fault', [None, 'missing_receipt', 'not_native', 'inspection', 'drift'])
+def test_explicit_finalized_native_rotation_keeps_real_receipts_and_history(monkeypatch, tmp_path, fault):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    monkeypatch.setitem(bootstrap.sys.modules, bootstrap.__name__, bootstrap)
+    proofs = []
+    workspace = {'state': 'SUCCEEDED' if fault == 'not_native' else 'CLOSED_NATIVE_ONLY_VENDOR_UPLOAD'}
+    monkeypatch.setattr(bootstrap, '_workspace_evidence', lambda sha, **kw: (proofs.append(kw) or workspace))
+    count = []
+    def inspect(*args):
+        count.append(True)
+        if fault == 'inspection': raise bootstrap.BootstrapError('live proof rejected')
+        return {'proof': len(count) if fault == 'drift' else 1}
+    module = SimpleNamespace(inspect=inspect, validate_saved=lambda proof, sha: None)
+    monkeypatch.setattr(bootstrap, '_finalized_advance_module', lambda: module)
+    record = bootstrap.STATE / 'retired' / SHA
+    if fault:
+        with pytest.raises(bootstrap.BootstrapError):
+            bootstrap.rotate(SHA, NEW_SHA, 0, PUBLIC,
+                recovery_receipt=None if fault == 'missing_receipt' else 'c' * 64,
+                finalized_production_sha='d' * 40)
+        assert record.exists() == (fault == 'drift')
+        assert (bootstrap.CONFIG / 'authorized-release.json').exists()
+    else:
+        result = bootstrap.rotate(SHA, NEW_SHA, 0, PUBLIC,
+            recovery_receipt='c' * 64, finalized_production_sha='d' * 40)
+        assert result['state'] == 'INSTALLED'
+        intent = json.loads((record / 'intent.json').read_text())
+        assert intent['finalized_native_advance'] == {'proof': 1}
+        module.inspect = lambda *args: pytest.fail('history must not depend on future live state')
+        assert SHA in bootstrap._retired_history()
+        assert not (bootstrap.STATE / NEW_SHA / 'completed.json').exists()
+    assert all(p.get('historical') is True for p in proofs)

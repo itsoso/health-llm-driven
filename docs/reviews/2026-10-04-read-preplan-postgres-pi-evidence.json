@@ -1,0 +1,27 @@
+{
+  "status": "offline_pi_gateway_pass",
+  "source_sha256": {
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b",
+    "backend/tests/test_owned_read_preplan_experiment.py": "3be30186b5a87c2e7052332a13b3557936a96d7bd54714fc441dfdee27f8a17d"
+  },
+  "case": "owned_sleep_diet_seven_days",
+  "database_dialect": "postgresql",
+  "provider_calls": {
+    "baseline": 2,
+    "candidate": 1
+  },
+  "normalized_queries_identical": true,
+  "tool_results_identical": true,
+  "streamed_answer_identical": true,
+  "owned_fixture_record_present": true,
+  "persisted_answer_identical": true,
+  "health_record_counts_unchanged": true,
+  "agent_kernel": "pi",
+  "candidate_disposition": "eval_only",
+  "limits": [
+    "Stub model, real Pi and Gateway with synthetic postgresql fixtures.",
+    "Not API tokens, live quality or latency evidence.",
+    "Does not verify migrations, concurrent requests or production load."
+  ]
+}

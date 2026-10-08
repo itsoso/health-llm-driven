@@ -1,0 +1,101 @@
+{
+  "status": "failed",
+  "original_report": "docs/reviews/2026-10-04-release-paired-validation.json",
+  "original_sha256": "1e76d98eef3c46ad913fa52cbb35f13ee0dfb60a5257714360d021979f9f66d9",
+  "baseline_commit": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+  "candidate_commit": "85c244edb0b516ae30700f5cb8823d23fa791598",
+  "reason": "Baseline answer timed out after a valid read. Preserve failure; no retry. Continue only unattempted original samples.",
+  "planned_tasks": 8,
+  "max_provider_attempts": 24,
+  "runner_sha256": "7a9a66701e409a08f494e388b587ae650b07fe230fdd3f257ff21193ecbd5ef2",
+  "plan": [
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-flash",
+      "arm": "candidate"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-flash",
+      "arm": "main"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-max",
+      "arm": "main"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-max",
+      "arm": "candidate"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "arm": "main"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "arm": "candidate"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "arm": "candidate"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "arm": "main"
+    }
+  ],
+  "rows": [
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-flash",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_empty-qwen3.8-flash-candidate.json",
+      "sha256": "e90aad88ebd9d9c21f1a40e03bc230babcb51570bf6d545050dffa2e90ace009"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-flash",
+      "arm": "main",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_empty-qwen3.8-flash-main.json",
+      "sha256": "92fdcaf9e1d7abe063701fc0e5501ab50c21bf05b3ef5f384dda15ef9e7d722c"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-max",
+      "arm": "main",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_empty-qwen3.8-max-main.json",
+      "sha256": "c6b0a120e5ef66de8794ade8ab925c58bbcae2dad02f3df39696188eb0d1a845"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-max",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_empty-qwen3.8-max-candidate.json",
+      "sha256": "ca17bd7a1ae8dc46507554eb33904a7f6867082e8dd999152404b766466efbf1"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "arm": "main",
+      "exit_code": 1,
+      "status": "failed",
+      "report": "docs/reviews/2026-10-04-release-paired/analysis_7d_read_failure-qwen3.8-flash-main.json",
+      "sha256": "64e679a47708db01fe96944e6b7f9409debe875cc0fea62dbf22b519d2bfdd2c"
+    }
+  ],
+  "semantic_review": "required"
+}

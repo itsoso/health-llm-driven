@@ -170,6 +170,52 @@ def test_shell_does_not_execute_dotenv_and_rejects_unproven_ipa(qr_checkout, tmp
     ).exists()
 
 
+@pytest.mark.parametrize("ipa_input", ["", "/tmp/previous build.ipa"])
+@pytest.mark.parametrize("verify_exit", [0, 41])
+def test_receipt_arguments_work_with_system_bash_nounset(
+    qr_checkout, ipa_input, verify_exit
+):
+    # Execute the real post-export verification block with macOS's Bash 3.2.
+    # Never build, sign, or publish anything; capture only the verifier's argv.
+    script = (qr_checkout / "scripts/mobile-local-qr.sh").read_text()
+    block = "RECEIPT_ARGS=()" + script.split("RECEIPT_ARGS=()", 1)[1].split(
+        "require_command qrencode", 1
+    )[0]
+    source_sha = subprocess.check_output(
+        ["git", "-C", str(qr_checkout), "rev-parse", "HEAD"], text=True
+    ).strip()
+    env = dict(
+        os.environ,
+        ROOT=str(qr_checkout),
+        SOURCE_SHA=source_sha,
+        IPA_INPUT=ipa_input,
+        SAFETY="/tmp/safety checker.py",
+        BUILD_ID="fixture-receipt",
+        IPA_PATH="/tmp/current build.ipa",
+        APP_VERSION="1.3.4",
+        REVA_LOCAL_UPDATES_CHANNEL="production",
+        PUBLIC_DIR="/tmp/public bundle",
+        VERIFY_EXIT=str(verify_exit),
+    )
+    result = subprocess.run(
+        ["/bin/bash", "-c", "set -euo pipefail\n"
+         'python3() { printf "%s\\0" "$@"; return "$VERIFY_EXIT"; }\n' + block],
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == verify_exit, result.stderr.decode()
+    expected = [
+        "-I", env["SAFETY"], "verify-ios-ipa", "--build-id", env["BUILD_ID"],
+        "--ipa", env["IPA_PATH"], "--version", env["APP_VERSION"],
+        "--channel", env["REVA_LOCAL_UPDATES_CHANNEL"], "--sha", source_sha,
+        "--receipt", env["IPA_PATH"] + ".receipt.json", "--public-dir", env["PUBLIC_DIR"],
+    ]
+    if ipa_input:
+        expected.extend(["--require-receipt", ipa_input + ".receipt.json"])
+    assert result.stdout.decode().split("\0")[:-1] == expected
+
+
 def test_native_subprocess_does_not_inherit_health_secrets(qr_checkout, tmp_path):
     binary = tmp_path / "bin"
     binary.mkdir()
@@ -291,6 +337,11 @@ for name in ['manifest.plist','install.html']: (out/name).write_text('public')
         (binary / name).write_text(f"""#!/usr/bin/env python3
 import json,pathlib,sys
 with open({str(trace)!r},'a') as f: f.write(json.dumps([{name!r}]+sys.argv[1:])+'\\n')
+if {name!r}=='ssh' and sys.argv[-1].endswith('sha256sum -c -'):
+    # Match real SSH consuming the checksum pipeline; early exit races SIGPIPE.
+    checksums=sys.stdin.buffer.read().decode().splitlines()
+    assert [line.split('  ',1)[1] for line in checksums]==['app.ipa','manifest.plist','install.html','install-url.txt','qr.png']
+    with open({str(trace)!r},'a') as f: f.write(json.dumps(['checksum-input',str(len(checksums))])+'\\n')
 if {name!r}=='qrencode': pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_bytes(b'QR')
 if {name!r}=='curl' and '-fsS' in sys.argv: sys.stdout.buffer.write(b'synthetic')
 """)
@@ -316,6 +367,7 @@ if {name!r}=='curl' and '-fsS' in sys.argv: sys.stdout.buffer.write(b'synthetic'
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in trace.read_text().splitlines()]
     uploads = [c for c in calls if c[0] == "rsync"]
+    assert [c for c in calls if c[0] == "checksum-input"] == [["checksum-input", "5"]]
     assert len(uploads) == 1
     assert uploads[0][-2].endswith("/public/")
     assert "--delete" not in uploads[0]

@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 PYTEST_SHARD_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
 RELEASE_TESTS = (
+    "scripts/test_trusted_frontend_publish.py",
+    "scripts/test_trusted_frontend_publish_history.py",
     "scripts/test_backup_security.py",
     "scripts/test_ci_change_scope.py",
     "scripts/test_deploy_script.py",
@@ -40,6 +42,20 @@ def _run_bodies(job: dict) -> str:
     )
 
 
+def _action_runtime_version(action: str, version: str) -> str:
+    # Same reviewed v5 pin as the trusted publisher; never accept arbitrary SHAs.
+    reviewed = {("actions/setup-node", "a0853c24544627f65ddf259abe73b1d18a591444"): "v5"}
+    return reviewed.get((action, version), version)
+
+
+def test_action_runtime_pin_mapping_is_exact_and_action_bound():
+    pin = "a0853c24544627f65ddf259abe73b1d18a591444"
+    assert _action_runtime_version("actions/setup-node", pin) == "v5"
+    assert _action_runtime_version("actions/checkout", pin) == pin
+    assert _action_runtime_version("actions/setup-node", "0" * 40) == "0" * 40
+    assert _action_runtime_version("actions/setup-node", "v4") == "v4"
+
+
 def test_ci_first_party_javascript_actions_use_node24_runtimes():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     expected_versions = {
@@ -55,7 +71,7 @@ def test_ci_first_party_javascript_actions_use_node24_runtimes():
             uses = str(step.get("uses") or "")
             action, separator, version = uses.partition("@")
             if separator and action in observed_versions:
-                observed_versions[action].add(version)
+                observed_versions[action].add(_action_runtime_version(action, version))
 
     assert observed_versions == {
         action: {version} for action, version in expected_versions.items()
@@ -221,6 +237,7 @@ def test_runtime_jobs_are_conditioned_on_conservative_scope_outputs():
         "backend-test-shards": "run_backend",
         "backend-quality": "run_backend",
         "release-invariants": "run_release",
+        "retained-runner-startup": "run_release",
         "agent-runtime-postgres": "run_backend",
         "frontend-build": "run_frontend",
         "mobile-typecheck": "run_mobile",
@@ -261,9 +278,11 @@ def test_release_aggregate_is_independent_from_backend_lane():
     assert "classify-changes" in needs
     assert "docs-quality" in needs
     assert "release-invariants" in needs
+    assert "retained-runner-startup" in needs
     assert "backend-test-shards" not in needs
     assert "RUN_RELEASE" in run
     assert "RELEASE_INVARIANTS" in run
+    assert "RETAINED_STARTUP" in run
     assert "release scope skipped by classifier" in run
 
 
@@ -393,6 +412,8 @@ def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_s
         in run
     )
     assert "tests/test_invited_phone_registration_postgres.py" in run
+    for suite in ("oauth", "queries", "transport"):
+        assert f"tests/test_remote_health_{suite}.py" in shlex.split(run)
     assert (
         "tests/test_registration_invitation_service.py::"
         "test_postgres_concurrent_grant_consumption_has_exactly_one_winner"

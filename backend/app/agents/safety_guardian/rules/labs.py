@@ -6,25 +6,60 @@ Twin.labs.flagged_abnormal 已经是收集到的异常项列表。这一层做�
 2. 识别关联模式（肝酶三联升高 = 肝细胞损伤提示）
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.agents.safety_guardian.engine import register
 from app.agents.safety_guardian.lab_pick import as_float as _as_float
-from app.agents.safety_guardian.lab_pick import find_all, is_standard_hba1c, pick_worst
+from app.agents.safety_guardian.lab_pick import find_all, pick_worst
 from app.agents.safety_guardian.schema import Alert, Severity
+from app.biomarkers.definitions import REGISTRY
+from app.biomarkers.normalize import latest_reading, matches_code, reading_for_code, value_for_code
 from app.twin.schema import HealthTwin
+from app.utils.number_format import format_display_number
 
 
 # ─────────────────────── 通用工具 ─────────────────────────
-# 取值一律走 lab_pick.pick_worst(顺序无关、最新检查日、取最差值);首个匹配会被影子项遮蔽。
+# 取值与顺序无关、只看最新检查日、取最差值: 规则追踪指标 (LDL/eGFR/肌酐/尿酸/糖化/肝酶) 走 canonical code
+# (_find_canonical, 名字+单位校验); 白细胞分类走 lab_pick.pick_worst。首个匹配会被影子项遮蔽。
 
 
-def _find_item(
-    abnormals: List[Dict[str, Any]], name_keywords: List[str]
-) -> Optional[Dict[str, Any]]:
-    """首个关键字匹配项 —— 仅用于不触发告警的引用字段。"""
-    matches = find_all(abnormals, name_keywords)
-    return matches[0] if matches else None
+# 各规则原先的子串关键字: 名字不在别名表里时仍按它们兜底识别 (覆盖只收紧)
+LDL_KEYWORDS = ("LDL", "低密度脂蛋白")
+EGFR_KEYWORDS = ("eGFR", "肾小球滤过率")
+CREA_KEYWORDS = ("肌酐", "Cr", "Creatinine")
+UA_KEYWORDS = ("尿酸", "uric")
+HBA1C_KEYWORDS = ("a1c", "hba1c")
+ALT_KEYWORDS = ("谷丙转氨酶", "ALT", "丙氨酸氨基转移酶")
+AST_KEYWORDS = ("谷草转氨酶", "AST", "天冬氨酸氨基转移酶")
+GGT_KEYWORDS = ("谷氨酰转肽酶", "GGT", "γ-谷氨酰转移酶", "γ-GT")
+
+
+def _rows(abnormals: List[Dict[str, Any]]) -> list:
+    return [(str(it.get("exam_date") or ""), it.get("item_name"), it.get("value"), it.get("unit"), it)
+            for it in abnormals]
+
+
+def _find_canonical(
+    abnormals: List[Dict[str, Any]], code: str, keywords: Tuple[str, ...]
+) -> Tuple[Optional[Dict[str, Any]], Optional[float]]:
+    """按 biomarker canonical code 找异常项, 返回 (项, canonical 单位下的值)。
+
+    名字解析命中 code, 或名字不认识但含本规则旧关键字且不与 code 冲突 (覆盖只收紧)。取代纯子串
+    `_find_item` ——「低密度脂蛋白」⊂「极低密度脂蛋白-C」、「肌酐」⊂「尿肌酐」、「尿酸」⊂「尿酸结晶」曾顶替
+    真指标 (2026-09-30 事故)。只看该指标最新日期: 那天风险最高的一项; 那天的值都读不出 (单位量纲不符 /
+    数值不合理) → (项, None), 调用方不得退回 twin 旧值 —— 该项由兜底规则以「需核对」升级呈现。
+    """
+    pick = max if REGISTRY[code].higher_is_risk else min
+    return latest_reading(_rows(abnormals), code, keywords, pick=pick)
+
+
+def _twin_fallback(code: str, raw: Any) -> Optional[float]:
+    """twin.labs.* 兜底值 (collector 已换算到 canonical 单位): 只校验合理区间, 绝不再按别的单位重读。"""
+    v = _as_float(raw)
+    rng = REGISTRY[code].plausible
+    if v is None or (rng is not None and not (rng[0] <= v <= rng[1])):
+        return None
+    return v
 
 
 def _uric_acid_umol(raw: float) -> float:
@@ -36,12 +71,38 @@ def _uric_acid_umol(raw: float) -> float:
     return raw * 59.48 if raw < 25 else raw
 
 
-def _find_standard_hba1c(abnormals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """标准糖化 A1c(排除总糖化 HbA1, 见 lab_pick.is_standard_hba1c), 取最新检查日最高值。"""
-    return pick_worst([it for it in abnormals if is_standard_hba1c(it.get("item_name") or "")])
+def _find_standard_hba1c(
+    abnormals: List[Dict[str, Any]]
+) -> Tuple[Optional[Dict[str, Any]], Optional[float]]:
+    """只匹配标准糖化 (NGSP A1c, code=glucose_hba1c), 排除总糖化 HbA1。
+
+    历史误判: 子串匹配 ``"糖化血红蛋白" in name`` 会把「糖化血红蛋白A1」(总糖化 HbA1,
+    参考 6.3–9.0%, 与标准 A1c 是不同指标) 也吞进来 —— 它的正常值 7.0% 落进 ≥6.5%
+    的糖尿病阈值, 产生假 CRITICAL 告警。这里改用 biomarker 归一化层的 ``resolve_code``,
+    它把「糖化血红蛋白A1c」→ glucose_hba1c、「糖化血红蛋白A1」→ glucose_hba1_total
+    精确分流 (见 app/biomarkers/definitions.py)。
+
+    安全兜底 (不让本规则单点依赖 resolve_code, 避免漏报真糖尿病):
+      - resolve_code 明确判成 glucose_hba1_total → 是总糖化, 直接跳过。
+      - resolve_code 没认成糖化时, 用关键字「a1c / hba1c」补救识别标准 A1c —— 这两个标记里都含 "c",
+        天然排除了总糖化的「A1」「HbA1」形态。
+    返回 (项, NGSP % 值): 最新日期里的最高值, IFCC mmol/mol 换算成 %; 那天都读不出 → (项, None)。
+    """
+    return latest_reading(_rows(abnormals), "glucose_hba1c", HBA1C_KEYWORDS, pick=max)
 
 
 # ─────────────────────── 肝酶三联 ─────────────────────────
+
+
+def _liver_readings(abns: List[Dict[str, Any]]) -> Dict[str, Tuple[Dict[str, Any], float]]:
+    """ALT/AST/GGT 各自最新检查日的最差可读值 (canonical: Gastrin/Fasting/Blast 不是 AST, AST/ALT 比值
+    不是酶, μkat/L 换算成 U/L)。读不出的不算。"""
+    out = {}
+    for name, code, kws in (("ALT", "ALT", ALT_KEYWORDS), ("AST", "AST", AST_KEYWORDS), ("GGT", "GGT", GGT_KEYWORDS)):
+        item, v = _find_canonical(abns, code, kws)
+        if item is not None and v is not None:
+            out[name] = (item, v)
+    return out
 
 
 @register
@@ -59,23 +120,15 @@ def liver_enzyme_pattern(twin: HealthTwin) -> Optional[Alert]:
     if not abns:
         return None
 
-    alt = pick_worst(find_all(abns, ["谷丙转氨酶", "ALT", "丙氨酸氨基转移酶"]))
-    ast = pick_worst(find_all(abns, ["谷草转氨酶", "AST", "天冬氨酸氨基转移酶"]))
-    ggt = pick_worst(find_all(abns, ["谷氨酰转肽酶", "GGT", "γ-谷氨酰转移酶", "γ-GT"]))
+    readings = _liver_readings(abns)
+    alt, ast, ggt = (readings.get(k, (None, None))[0] for k in ("ALT", "AST", "GGT"))
 
     # 至少两项升高才触发
-    hits = [x for x in (alt, ast, ggt) if x is not None]
-    if len(hits) < 2:
+    if len(readings) < 2:
         return None
 
     # 估算最高倍数（ULN 假设为 40）
-    def ratio(item: Optional[Dict[str, Any]]) -> Optional[float]:
-        if not item:
-            return None
-        v = _as_float(item.get("value"))
-        return v / 40.0 if v is not None else None
-
-    max_ratio = max(filter(None, [ratio(alt), ratio(ast), ratio(ggt)]), default=None)
+    max_ratio = max((v / 40.0 for _, v in readings.values()), default=None)
 
     if max_ratio is None:
         return None
@@ -128,10 +181,11 @@ def liver_enzyme_pattern(twin: HealthTwin) -> Optional[Alert]:
 
 @register
 def ldl_high(twin: HealthTwin) -> Optional[Alert]:
-    """LDL 偏高 —— 从 flagged_abnormal 或 labs 顶层字段中取。"""
+    """LDL 偏高 —— 从 flagged_abnormal 或 labs 顶层字段中取 (异常项里没有真 LDL 才用顶层字段)。"""
     abns = twin.labs.flagged_abnormal or []
-    ldl_item = pick_worst(find_all(abns, ["LDL", "低密度脂蛋白"]))
-    ldl_val = _as_float(ldl_item.get("value")) if ldl_item else twin.labs.ldl
+    ldl_item, ldl_val = _find_canonical(abns, "lipid_ldl", LDL_KEYWORDS)
+    if ldl_item is None:  # 最新 LDL 读不出时不退回旧值 (兜底规则升级呈现)
+        ldl_val = _twin_fallback("lipid_ldl", twin.labs.ldl)
 
     if ldl_val is None:
         return None
@@ -157,11 +211,11 @@ def ldl_high(twin: HealthTwin) -> Optional[Alert]:
         severity=severity,
         title=f"LDL {level}",
         message=(
-            f"低密度脂蛋白胆固醇（LDL-C）{ldl_val} mmol/L。LDL 是心血管风险的核心指标，"
+            f"低密度脂蛋白胆固醇（LDL-C）{format_display_number(ldl_val)} mmol/L。LDL 是心血管风险的核心指标，"
             "持续偏高会加速动脉粥样硬化。"
         ),
         action=action,
-        data_citation={"ldl": ldl_val},
+        data_citation={"ldl": format_display_number(ldl_val)},
         references=[
             "https://www.acc.org/latest-in-cardiology/ten-points-to-remember/2018/11/09/14/28/2018-guideline-on-management-of-blood-cholesterol",
         ],
@@ -175,8 +229,9 @@ def ldl_high(twin: HealthTwin) -> Optional[Alert]:
 def hba1c_diabetes_range(twin: HealthTwin) -> Optional[Alert]:
     """糖化血红蛋白进入糖尿病/前期区间。"""
     abns = twin.labs.flagged_abnormal or []
-    item = _find_standard_hba1c(abns)
-    val = _as_float(item.get("value")) if item else twin.labs.hba1c
+    item, val = _find_standard_hba1c(abns)
+    if item is None:
+        val = _twin_fallback("glucose_hba1c", twin.labs.hba1c)
     if val is None:
         return None
 
@@ -186,9 +241,9 @@ def hba1c_diabetes_range(twin: HealthTwin) -> Optional[Alert]:
             category="labs",
             severity=Severity.HIGH,
             title="糖化血红蛋白达糖尿病标准",
-            message=f"HbA1c {val}%，≥6.5% 是糖尿病的诊断阈值。",
+            message=f"HbA1c {format_display_number(val)}%，≥6.5% 是糖尿病的诊断阈值。",
             action="就诊内分泌科确认诊断（需两次非同日检测或伴高血糖症状），启动饮食、运动和可能的药物干预。",
-            data_citation={"hba1c": val},
+            data_citation={"hba1c": format_display_number(val)},
             references=["https://diabetesjournals.org/care/article/47/Supplement_1/S20/153952/"],
             requires_medical_attention=True,
         )
@@ -198,9 +253,9 @@ def hba1c_diabetes_range(twin: HealthTwin) -> Optional[Alert]:
             category="labs",
             severity=Severity.MEDIUM,
             title="糖化血红蛋白进入糖尿病前期",
-            message=f"HbA1c {val}%。5.7-6.4% 为糖尿病前期，干预得当可以逆转。",
+            message=f"HbA1c {format_display_number(val)}%。5.7-6.4% 为糖尿病前期，干预得当可以逆转。",
             action="减重 5-7%、每周 150 分钟中等强度有氧；限制精制碳水和含糖饮料；3-6 个月后复查。",
-            data_citation={"hba1c": val},
+            data_citation={"hba1c": format_display_number(val)},
         )
     return None
 
@@ -216,17 +271,10 @@ def kidney_function_decline(twin: HealthTwin) -> Optional[Alert]:
     不论是否标异常)取更低者 —— flagged 缺失/非数值/被截断, 或实验室没标异常时仍能告警。
     """
     abns = twin.labs.flagged_abnormal or []
-    egfr_item = pick_worst(find_all(abns, ["eGFR", "肾小球滤过率"]), severity=lambda v: -v)
-    creat_item = _find_item(abns, ["肌酐", "Cr", "Creatinine"])
-
-    candidates = [
-        v for v in (
-            _as_float(egfr_item.get("value")) if egfr_item else None,
-            _as_float(twin.labs.egfr),
-        ) if v is not None
-    ]
+    _, flagged_egfr = _find_canonical(abns, "egfr", EGFR_KEYWORDS)
+    _, creat = _find_canonical(abns, "CREA", CREA_KEYWORDS)  # 尿肌酐 / EPI-cr 不再被当血肌酐引用
+    candidates = [v for v in (flagged_egfr, _twin_fallback("egfr", twin.labs.egfr)) if v is not None]
     egfr = min(candidates) if candidates else None
-    creat = _as_float(creat_item.get("value")) if creat_item else None
 
     if egfr is not None and egfr < 60:
         if egfr < 30:
@@ -252,9 +300,9 @@ def kidney_function_decline(twin: HealthTwin) -> Optional[Alert]:
             category="labs",
             severity=sev,
             title=f"肾功能{level}",
-            message=f"eGFR {egfr} ml/min/1.73m²，低于 60 提示慢性肾病（CKD）风险。",
+            message=f"eGFR {format_display_number(egfr)} ml/min/1.73m²，低于 60 提示慢性肾病（CKD）风险。",
             action=action,
-            data_citation={"egfr": egfr, "creatinine": creat},
+            data_citation={"egfr": format_display_number(egfr), "creatinine": creat},
             requires_medical_attention=(sev >= Severity.HIGH),
         )
 
@@ -389,8 +437,9 @@ def uric_acid_high(twin: HealthTwin) -> Optional[Alert]:
     R4:行动为生活方式 + 「降尿酸治疗由医生决定」,不出药名/剂量、不下痛风诊断。
     """
     abns = twin.labs.flagged_abnormal or []
-    ua_item = pick_worst(find_all(abns, ["尿酸", "uric"]), severity=_uric_acid_umol)
-    ua_raw = _as_float(ua_item.get("value")) if ua_item else _as_float(twin.labs.uric_acid)
+    ua_item, ua_raw = _find_canonical(abns, "UA", UA_KEYWORDS)  # 尿酸结晶 / 尿酸碱度 不再顶替血尿酸
+    if ua_item is None:
+        ua_raw = _twin_fallback("UA", twin.labs.uric_acid)
     if ua_raw is None or ua_raw <= 0:
         return None
 
@@ -437,28 +486,40 @@ def uncategorized_abnormal_summary(twin: HealthTwin) -> Optional[Alert]:
     if not abns:
         return None
 
-    # 已被其他规则精确覆盖的关键字
-    covered = [
-        "谷丙转氨酶", "谷草转氨酶", "谷氨酰转肽酶", "ALT", "AST", "GGT",
-        "LDL", "低密度",
-        "eGFR", "肾小球", "肌酐",
-        "淋巴细胞比例", "中性粒细胞比例",
-    ]
+    # 已被其他规则精确覆盖的关键字 (白细胞模式)
+    covered = ["淋巴细胞比例", "中性粒细胞比例"]
+    liver = (("ALT", ALT_KEYWORDS), ("AST", AST_KEYWORDS), ("GGT", GGT_KEYWORDS))
+    # 肝酶: 只有 liver_enzyme_pattern 真触发 (≥2 项) 时, 它实际取用的那几行才算已覆盖。单项升高、
+    # AST/ALT 比值、同一酶的其它行都不触发规则 → 必须落到本兜底, 绝不零痕迹 (旧静态子串「ALT」会吞掉)。
+    liver_used = [item for item, _ in _liver_readings(abns).values()]
+    if len(liver_used) < 2:
+        liver_used = []
 
     def _covered(item: Dict[str, Any]) -> bool:
         name = item.get("item_name") or ""
         if any(kw in name for kw in covered):
             return True
+        if any(item is used for used in liver_used):
+            return True
+        value, unit = item.get("value"), item.get("unit")
+        # LDL / eGFR: 与 ldl_high / kidney_function_decline 同一判定 (reading_for_code), 只藏规则评估过的项。
+        # 旧关键字「低密度」「肌酐」把 VLDL-C、尿肌酐也当已覆盖 → 没有任何规则评估却被静默丢弃。
+        # 血肌酐没有规则评估 (肾功能规则只看 eGFR), 不算已覆盖, 落到本兜底。
+        if reading_for_code(name, value, unit, "lipid_ldl", LDL_KEYWORDS) is not None:
+            return True
+        if reading_for_code(name, value, unit, "egfr", EGFR_KEYWORDS) is not None:
+            return True
         # 尿酸: **值感知**去重 —— 只在 uric_acid_high 会触发(归一化 ≥360)时才算已覆盖;
         # 否则(flagged 但 <360、或低尿酸/数据缺失)让它落到本兜底,**绝不静默丢**(评审 BLOCKING:
         # 加 "尿酸" 进静态 covered 会把规则不触发的 flagged 尿酸一并抹掉 → under-alarm)。
-        if "尿酸" in name or "uric" in name.lower():
-            ua_raw = _as_float(item.get("value"))
-            return ua_raw is not None and ua_raw > 0 and _uric_acid_umol(ua_raw) >= 360
-        # 糖化只把「标准 A1c」算作已覆盖 (hba1c_diabetes_range 处理); 总糖化 HbA1 不是
-        # 该规则的指标, 不能因子串「糖化血红蛋白」被当成已覆盖而静默丢弃 —— 让它落到本兜底。
-        from app.biomarkers.definitions import resolve_code
-        return resolve_code(name) == "glucose_hba1c"
+        # 与 uric_acid_high 同一判定: 尿酸结晶/尿酸碱度 规则不评估, 也就不算已覆盖。
+        ua = reading_for_code(name, value, unit, "UA", UA_KEYWORDS)
+        if ua is not None:
+            return ua > 0 and _uric_acid_umol(ua) >= 360
+        # 糖化只把规则真正评估的「标准 A1c」算作已覆盖; 总糖化 HbA1、单位不符的项不是该规则的指标,
+        # 不能因子串「糖化血红蛋白」被当成已覆盖而静默丢弃 —— 让它落到本兜底。
+        hba1c_item, hba1c_val = _find_standard_hba1c([item])
+        return hba1c_item is not None and hba1c_val is not None  # 读不出的糖化不算已覆盖 → 升级「需核对」
 
     remaining = [it for it in abns if not _covered(it)]
     if not remaining:
@@ -468,16 +529,27 @@ def uncategorized_abnormal_summary(twin: HealthTwin) -> Optional[Alert]:
     if not names:
         return None
 
+    # 规则追踪的指标 (LDL/eGFR/尿酸/糖化/肝酶) 最新一项读不出 (单位量纲不符 / 数值不合理): 规则不能判, 也不退回
+    # 旧值 —— 升级为 MEDIUM「需核对」, 绝不降成 LOW 杂项 (评审: 不确定≠没事)。
+    tracked = (("lipid_ldl", LDL_KEYWORDS), ("egfr", EGFR_KEYWORDS), ("UA", UA_KEYWORDS),
+               ("glucose_hba1c", HBA1C_KEYWORDS), *liver)
+    needs_review = [it.get("item_name") for it in remaining
+                    if any(matches_code(it.get("item_name"), c, kw)
+                           and value_for_code(it.get("value"), it.get("unit"), c) is None for c, kw in tracked)]
     return Alert(
         rule_id="labs.uncategorized_abnormal",
         category="labs",
-        severity=Severity.LOW,
-        title=f"化验单还有 {len(remaining)} 项异常未分类",
+        severity=Severity.MEDIUM if needs_review else Severity.LOW,
+        title=(f"化验单有 {len(needs_review)} 项关键指标单位/数值需核对" if needs_review
+               else f"化验单还有 {len(remaining)} 项异常未分类"),
         message=(
             f"以下指标在最近化验中被标记异常：{'、'.join(names)}"
             f"{'...' if len(remaining) > 5 else ''}。"
-            "它们尚未被 Safety Guardian 的规则库精确覆盖，暂未能自动裁决严重度。"
+            + ("其中血脂/肾功能/尿酸/糖化/肝酶指标的单位或数值无法按标准解读，请对照原始报告核对。" if needs_review
+               else "它们尚未被 Safety Guardian 的规则库精确覆盖，暂未能自动裁决严重度。")
         ),
         action="建议就诊医生逐项解读，或请 AI 助理分析（Phase 1.5 长期分析师会自动处理）。",
-        data_citation={"uncategorized_items": [it.get("item_name") for it in remaining]},
+        data_citation={"uncategorized_items": [it.get("item_name") for it in remaining],
+                       "needs_review_items": needs_review},
+        requires_medical_attention=bool(needs_review),
     )

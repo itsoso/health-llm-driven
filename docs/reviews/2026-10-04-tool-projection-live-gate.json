@@ -1,0 +1,24 @@
+{
+  "status": "failed",
+  "live_llm_required": true,
+  "confirmed": false,
+  "confirmation_env": "HARNESS_LIVE_LLM_EVAL_CONFIRMED",
+  "expected_confirmation": null,
+  "changed_paths": [
+    "backend/app/services/agent_executor.py",
+    "backend/app/services/agent_tool_prompt_projection.py",
+    "backend/app/services/llm/prompt_transport.py"
+  ],
+  "matched_paths": [
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "reason": "agent executor runtime"
+    },
+    {
+      "path": "backend/app/services/llm/prompt_transport.py",
+      "reason": "LLM service/runtime"
+    }
+  ],
+  "next_steps": "Run `python scripts/harness_llm_regression_gate.py --include-live-llm` and preserve the run evidence, then set the repository variable with `gh variable set HARNESS_LIVE_LLM_EVAL_CONFIRMED --body \"$(git rev-parse HEAD)\"` before pushing that exact commit.",
+  "errors": []
+}

@@ -1,0 +1,715 @@
+[
+  {
+    "run_id": "1a9709044391",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-prompt-quality-preserving.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Quality preserving prompt reduction and paired regression",
+        "run_id": "1a9709044391",
+        "sequence": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "spawn",
+        "message": "Find high-value provider projection with actual runtime coverage",
+        "phase": "analysis",
+        "sequence": 1,
+        "status": "started",
+        "task_id": "projection-candidate",
+        "tokens": 0
+      },
+      {
+        "agent": "qa-verifier",
+        "event": "spawn",
+        "message": "Reusable synthetic paired semantic validation fixtures",
+        "phase": "implementation",
+        "sequence": 2,
+        "status": "started",
+        "task_id": "quality-contract",
+        "tokens": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "verdict",
+        "message": "Water-only closed task; 503 related tests passed; generic natural-order records deliberately remain full.",
+        "phase": "analysis",
+        "sequence": 3,
+        "status": "passed",
+        "task_id": "projection-candidate",
+        "tokens": 0
+      },
+      {
+        "agent": "qa-verifier",
+        "event": "verdict",
+        "message": "17 frozen synthetic cases; 59 quality/date tests passed; deterministic checks preserve semantic and clinical Unknown.",
+        "phase": "implementation",
+        "sequence": 4,
+        "status": "passed",
+        "task_id": "quality-contract",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "spawn",
+        "message": "Independent boundary and provider quality review, no deployment authorization",
+        "phase": "review",
+        "sequence": 5,
+        "status": "started",
+        "task_id": "record-projection-safety",
+        "tokens": 0
+      },
+      {
+        "agent": "qa-verifier",
+        "event": "verdict",
+        "message": "Live qwen3.8-flash candidate misread 0.5L as missing amount; rejected liter scope. Original failure retained. Unchanged sleep last-night baseline also failed date contract; no overall quality pass claimed.",
+        "phase": "verification",
+        "sequence": 6,
+        "status": "failed",
+        "task_id": "live-record-projection",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "verdict",
+        "message": "NO-GO: narrowed explicit ml candidate regressed on flash350 and250; remove runtime wiring, retain isolated eval only. Max success cannot offset fast-model regressions.",
+        "phase": "review",
+        "sequence": 7,
+        "status": "failed",
+        "task_id": "record-projection-safety",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "verdict",
+        "message": "Runtime candidate completely withdrawn; executor SHA restored previous reviewed state. Independent33 tests and final387 passed. Candidate remains NO-GO; evaluation only, no new delivered token savings.",
+        "phase": "review",
+        "sequence": 8,
+        "status": "passed",
+        "task_id": "record-withdrawal",
+        "tokens": 0
+      }
+    ]
+  },
+  {
+    "run_id": "6ea7dafa1c0a",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-prompt-architecture.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Prompt architecture budget",
+        "run_id": "6ea7dafa1c0a",
+        "sequence": 0
+      },
+      {
+        "agent": "token_architecture_review",
+        "event": "spawn",
+        "message": "Bounded read-only prompt architecture investigation",
+        "phase": "analysis",
+        "sequence": 1,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_safety_review",
+        "event": "spawn",
+        "message": "Independent review of phase-specific prompt and lossless provider transport.",
+        "phase": "verification",
+        "sequence": 2,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "token_architecture_review",
+        "event": "verdict",
+        "message": "Read-only architecture findings incorporated; history and orchestrator limits remain explicit.",
+        "phase": "analysis",
+        "sequence": 3,
+        "status": "completed",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_safety_review",
+        "event": "verdict",
+        "message": "Final GO;42 independent regression tests,500 JSON samples,9 malformed cases; final23-test receipt verified.",
+        "phase": "verification",
+        "sequence": 4,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "verdict",
+        "message": "1210 broad tests passed; one A/B idempotency fixture failure fixed and23 final targeted tests passed. Live gate and API replay passed. No commit/push/deploy.",
+        "phase": "verification",
+        "sequence": 5,
+        "status": "passed",
+        "tokens": 0
+      }
+    ]
+  },
+  {
+    "run_id": "b992d9b915cd",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-scoped-prompt-architecture.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Scoped tools protected history and synthesis delivery",
+        "run_id": "b992d9b915cd",
+        "sequence": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "spawn",
+        "message": "Scoped schema and internal report receipt hooks",
+        "phase": "implementation",
+        "sequence": 1,
+        "status": "started",
+        "task_id": "tool-projection",
+        "tokens": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "spawn",
+        "message": "Provider references and cached fold boundary bridge",
+        "phase": "implementation",
+        "sequence": 2,
+        "status": "started",
+        "task_id": "history-budget",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "spawn",
+        "message": "Independent review of actual provider and Pi delivery boundaries",
+        "phase": "review",
+        "sequence": 3,
+        "status": "started",
+        "task_id": "scoped-safety",
+        "tokens": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "verdict",
+        "phase": "implementation",
+        "sequence": 4,
+        "status": "passed",
+        "task_id": "tool-projection",
+        "tokens": 0
+      },
+      {
+        "agent": "backend-engineer",
+        "event": "verdict",
+        "phase": "implementation",
+        "sequence": 5,
+        "status": "passed",
+        "task_id": "history-budget",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "verdict",
+        "message": "Hidden wrapped-provider recovery can certify a fallback and misattribute its model; fix requested",
+        "phase": "review",
+        "sequence": 6,
+        "status": "blocked",
+        "task_id": "scoped-safety",
+        "tokens": 0
+      },
+      {
+        "agent": "safety-privacy-reviewer",
+        "event": "verdict",
+        "message": "Both findings fixed; independent module/hooks/actual Pi 173 passed. Local implementation GO only.",
+        "phase": "review",
+        "sequence": 7,
+        "status": "passed",
+        "task_id": "scoped-safety",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Local implementation verified; 776 related regression plus targeted final hardening; API A/B measured; no commit/push/deploy authorized.",
+        "phase": "verification",
+        "sequence": 8,
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Static prompt extraction: 32 baseline byte hashes and original runtime regression pass; read synthesis candidate remains eval-only pending live credentials",
+        "phase": "implementation",
+        "sequence": 9,
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "spawn",
+        "message": "Read-only safety review of byte-equivalent extraction and eval-only read synthesis experiment",
+        "phase": "safety",
+        "sequence": 10,
+        "status": "started",
+        "task_id": "prompt-p1",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO only for byte-equivalent extraction and eval-only isolation; independent 130 tests and System Map pass; live quality and latency unknown",
+        "phase": "safety",
+        "sequence": 11,
+        "status": "passed",
+        "task_id": "prompt-p1",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "NO-GO for live benchmark: provider stream compatibility retry bypasses declared call cap; cancellation does not persist failed sample. Synthetic reproductions only; eval isolation unaffected.",
+        "phase": "verification",
+        "sequence": 12,
+        "status": "failed",
+        "task_id": "p0-benchmark-review",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO only for eval isolation: closed owned read reuses Pi/Gateway and original scope. Independent25 tests. Added explicit Pi, context owner, envelope text boundaries. Stub model and SQLite are not live/PostgreSQL or latency evidence.",
+        "phase": "verification",
+        "sequence": 13,
+        "status": "passed",
+        "task_id": "p2-preplan-review",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Prior NO-GO fixed: explicit stream usage prevents compatibility retry; SDK retry and auto recovery scoped off; cancellation persisted then reraised. Independent12 tests pass. GO for eval measurement tools only; no real API quality or speed claim.",
+        "phase": "verification",
+        "sequence": 14,
+        "status": "passed",
+        "task_id": "p0-benchmark-review",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "707 related tests, final12 measurement tests, offline harness and System Map pass. P1 byte-equivalent extraction; P1/P2 eval-only. Live gate failed: provider initialization lacks credentials, zero provider calls. Await private test configuration; no new runtime semantics, commit, push, merge or deploy.",
+        "phase": "verification",
+        "sequence": 15,
+        "status": "blocked",
+        "task_id": "p0-p2-implementation",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Correction to sequence15: final streaming attempt records one FAILED provider wrapper call; missing credential error occurs during client initialization inside wrapper. No API usage or model answer. Do not treat wrapper count or initialization wall time as successful API/latency evidence.",
+        "phase": "verification",
+        "sequence": 16,
+        "status": "blocked",
+        "task_id": "p0-p2-implementation",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Initial independent20 passed1 failed: read_failure fixture assumed one dispatch, then proposed duplicate tool ID after tool error causing PiKernelError. NO-GO for failure-lane evidence; runtime unchanged.",
+        "phase": "verification",
+        "sequence": 17,
+        "status": "failed",
+        "task_id": "composed-experiment-review",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Fixed fixture respects original bounded retry and returns failure after tool receipt. All4 variants preserve real error receipts, normalized queries, outcomes and saved replies; explicit no Pi failure assertion. Independent21 SQLite tests GO for offline isolation only. PostgreSQL separately executed by root.",
+        "phase": "verification",
+        "sequence": 18,
+        "status": "passed",
+        "task_id": "composed-experiment-review",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "77 targeted tests pass; final21 tests pass on disposable PostgreSQL17.11; private Unix-socket cluster stopped/deleted. Normal synthetic whole-task JSON tokens16825->5896 (64.96%); model calls2->1. Not API usage/quality/latency. Real model configuration still missing; semantic candidates remain eval-only. No merge/deploy.",
+        "phase": "verification",
+        "sequence": 19,
+        "status": "blocked",
+        "task_id": "postgres-composed-verification",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "P4 local CPU slice: measure byte-equivalent JSON transport against frozen 7d934b3c6 module before editing. Reject slower regex replacement prototype. No new semantic token reduction or live-model claim; existing P1/P2 remain eval-only.",
+        "phase": "implementation",
+        "sequence": 20,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "spawn",
+        "message": "Independent read-only review of frozen-baseline transport equivalence, malformed output, escaping/numbers, provider integration and bounded performance claims; existing reviewer reused.",
+        "phase": "safety",
+        "sequence": 21,
+        "status": "in_progress",
+        "task_id": "p4-transport-equivalence",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Local baseline target failed before implementation; baseline preservation18 tests pass after correcting test assumption that 1500 valid nested arrays must fail JSON decoder. New runtime bytes remain identical; related48 pass and offline harness/map pass. Path-sensitive live gate still failed required/unconfirmed; no new API attempt without credentials.",
+        "phase": "verification",
+        "sequence": 22,
+        "status": "live_blocked",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO: independent31 tests; frozen fixture matches git; no blocker in byte equivalence, invalid JSON handling, regex scanning or transcript preservation. Local CPU scope only, no new token reduction or end-to-end performance claim.",
+        "phase": "safety",
+        "sequence": 23,
+        "status": "passed",
+        "task_id": "p4-transport-equivalence",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Final GO: report and code/evidence hashes match; metadata-only tool_messages addition verified;17 cases101x10; four Pi captures have no tool messages and remain no-benefit controls. Original independent31 tests stand. No API quality, new token savings or whole-task speed claim.",
+        "phase": "safety",
+        "sequence": 24,
+        "status": "passed",
+        "task_id": "p4-transport-equivalence",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Next P4 slice: bounded reuse of pure public registry description parsing. Frozen7d934b3 baseline; prototype full projection0.0605ms to0.0263ms warm, cold0.0611ms. No additional token savings. Define exact content/dimensions keys and64-entry caps; no users, dates, results or mutable schemas cached. Real traffic/model gates remain unavailable; preserve existing work.",
+        "phase": "implementation",
+        "sequence": 25,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "spawn",
+        "message": "Reuse independent reviewer for bounded public text cache: current authority/schema checks, immediate text invalidation, fixed64 entries per helper, no user/health/ORM/payload cache. Independent32 tests completed; no concurrent tests during upcoming benchmark.",
+        "phase": "safety",
+        "sequence": 26,
+        "status": "in_progress",
+        "task_id": "p4-public-tool-guide-cache",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO with independent32 tests: public-text-only64-entry cache, exact-key invalidation, caller authority/schema rechecked, independent deepcopy. No model quality/new token/whole-task speed conclusion. Frozen baseline verified against git.",
+        "phase": "safety",
+        "sequence": 27,
+        "status": "passed",
+        "task_id": "p4-public-tool-guide-cache",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Public-text cache:135 related tests,32 independent,28 coverage tests with93percent combined; offline harness/map pass. Warm sleep/diet P50 59.25 to25.48 microseconds, cold61.54 microseconds; small local CPU scope. Live gate remains required/unconfirmed; config request pending. Existing work preserved; no external writes.",
+        "phase": "verification",
+        "sequence": 28,
+        "status": "live_blocked",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "spawn",
+        "message": "Independent safety review of eval-only full-task Pi A/B, bounded egress, persistence, failure accounting; no live API or runtime edits.",
+        "phase": "verification",
+        "sequence": 29,
+        "status": "started",
+        "task_id": "full-task-benchmark-review",
+        "tokens": 0
+      },
+      {
+        "event": "review-finding",
+        "message": "Independent review found pre-existing SDK pool could retain retries; RED reproduced, explicit max_retries=0 in client cache key fixed. Later log audit found missing lazy context tables; old scripted reports invalidated. Added explicit model registration and engine SQL error observer to fail handled degradation; 64 related tests pass.",
+        "phase": "verification",
+        "sequence": 30,
+        "status": "corrected",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "GO for offline full-task harness only. Independent 20 pytest plus network-blocked Pi normal/cancel/error checks. SDK pool retry isolation and SQL listener/session restoration verified; no missing-table degradation. Live semantic/latency and production DB acceptance excluded.",
+        "phase": "verification",
+        "sequence": 31,
+        "status": "passed",
+        "task_id": "full-task-benchmark-review",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Full-task eval runner:64 related tests,20 independent,24 final scripted tasks pass with zero DB errors,36 provider attempts. Offline harness/map pass; earlier degraded fixture reports invalidated. P1/P2 remain eval-only, write description compression rejected. Real model configuration still absent; no API/production performance proof, no commit/push/merge/deploy.",
+        "phase": "verification",
+        "sequence": 32,
+        "status": "live_blocked",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "User now explicitly authorizes production deployment. Private model configuration used only in temporary synthetic-eval process. P1/P2 screen and actual release candidate analysis screen failed; keep experiments eval-only and do not deploy. Standard live synthesis passes with 10 API usage rows; CI-mode related integration 1030 passed/2 skipped, frontend447 passed/1 skipped/build/lint pass. PostgreSQL exposed NULL history order; minimal repair verified, pending final independent review.",
+        "phase": "verification",
+        "sequence": 33,
+        "status": "release_blocked",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Fixed commit 3a92324b3 code G4 NO-GO: NULL history order diverges from fold writer and numeric id incremental filter drops rows after reordering. Independent ORM/stub reproduction confirms both. General live-task G3 remains independently blocked.",
+        "phase": "safety",
+        "sequence": 34,
+        "status": "needs_changes",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Fixed independent G4 findings: writer/reader NULLS FIRST; v3 fold cache binds ordered id/role/content/time prefix; position-based increment and early-return validation. New regression first failed; final SQLite52 passed and disposable PostgreSQL52 passed (Asia/Shanghai,38.29s). Release G3 remains blocked by real-model task failure.",
+        "phase": "verification",
+        "sequence": 35,
+        "status": "review_pending",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Fixed eeb71eafde8554b1bb793c731b512cee13c537f0: code G4 GO. Read/write ordering and prefix provenance findings closed; independent 52 passed in 4.01s plus six prefix-mutation rejection checks; source hashes match. No API calls or source edits by reviewer. Release remains NO-GO due unresolved full-task G3 failure.",
+        "phase": "safety",
+        "sequence": 36,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "orchestrator",
+        "event": "verdict",
+        "message": "Bounded diagnostic repeat completed: 3 Flash original-query tasks, 6 of at most 9 API attempts, all contracts passed but semantic noninferiority not established. Original candidate health_query_dimension_conflict failure not reproduced or fixed; retain original failure. No push, merge, deploy, config change or release authorization rotation. Production remains a8853dea1207163aaa412974dddfbc050ce3eeea, services active and health 200. Code G4 GO does not close release G3.",
+        "phase": "release",
+        "sequence": 37,
+        "status": "blocked",
+        "tokens": 0
+      },
+      {
+        "agent": "orchestrator",
+        "event": "checkpoint",
+        "message": "User requests resolve blockers then deploy. Fresh fetch unchanged f201 main, branch clean at 4aac before work. Reproduced holdout with live Flash: correct sleep/diet days7 proposal blocked. Static cause: retrospective verbs accepted by bounded-analysis parser but missing from per-domain owner-prefix consumption. Regression RED 4 failed/34 passed; minimal fix plus real Pi/persistence regression yields 393 passed. Bounded 4-task Flash/Max live verification running, cap12; no P1/P2 runtime enablement.",
+        "phase": "implementation",
+        "sequence": 38,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Fixed 85c244edb0b516ae30700f5cb8823d23fa791598 code safety GO; independent 114 passed in11.21s. Canonical dimension binding preserves raw owner/window constraints. Bounded repair precedes requested-model answer handoff; terminal/foreign-owner/write/consent boundaries and two-round cap retained. No API calls or edits by reviewer; release still awaits paired live and exact CI.",
+        "phase": "safety",
+        "sequence": 39,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Fixed f1ce9b923 closes full-scope transient retry exhaustion with Pi termination, preserving partial facts and reset. Prior failed paired reports retained. PG54 pass; integration3746 pass2skip plus stale failure-synthesis test corrected, fresh55 pass. Flash/Max failure-state live both pass with1API each; standard5live/10auditedAPI pass. Await final independent G3/G4 and exactmain CI; no production mutation.",
+        "phase": "verification",
+        "sequence": 40,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "f1ce9b9 review NO-GO despite31 tests: independent Garmin sync-status current/continuation goal omitted by early termination. Four RED reproductions; add resolve_sync_status_query exclusion; six files199 pass. Await fixed-commit rereview.",
+        "phase": "safety-review",
+        "sequence": 41,
+        "status": "needs_changes",
+        "task_id": "transient-read-terminal",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "6e50d4cff independent30 pass/17.50s G4 GO; sync-status current+continuation and Pi/panel preserved. Later live failure identified as v1 physical3 budget incompatible with two legitimate reads each retried once; independent main/candidate extraction confirms4 or5 dispatches. Eval v2 design GO; G3 pending v2 verification.",
+        "phase": "safety-review",
+        "sequence": 42,
+        "status": "passed",
+        "task_id": "sync-status-terminal",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "V2 matrix completed: candidate 6/6 semantic/contracts pass, baseline 5/6 with original failure retained. Independent synthetic review reproduced stale repair handoff; narrow fix retains cumulative budget and pure-owned-scope exclusions. Fresh verification in progress.",
+        "phase": "verification",
+        "sequence": 43,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "G4 GO at executor sha256 88f581141fe09e35a40bae2d6b03339f085166e69f1640bb197204037a0a4242 (35f7438f8): independent 41 tests and actual Pi Flash/replayed-denial reproductions pass; cumulative repair budget retained, failed reads stay failed, mixed sync goals preserved. No API used by reviewer.",
+        "phase": "safety-review",
+        "sequence": 44,
+        "status": "passed",
+        "task_id": "repaired-read-handoff",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "G3 synthetic quality screen GO and G4 reviewed code GO: v2 six candidate slots passed semantics/contracts, baseline failure retained; unchanged orchestrator MiniMax5/5; subsequent 35f7438f8 handoff-only delta covered by independent actual-provider/replay tests. No population noninferiority or overall latency claim; exact main CI and release still pending.",
+        "phase": "verification",
+        "sequence": 45,
+        "status": "passed",
+        "task_id": "final-release-quality",
+        "tokens": 0
+      }
+    ]
+  },
+  {
+    "run_id": "d472049f70f1",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-laya-routing-coverage.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Laya per-question confidence and redundant-tier elimination",
+        "run_id": "d472049f70f1",
+        "sequence": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "63 decision tests passed, 94.06 percent coverage; local Laya warmed paired replay improves hint coverage without floor violations; agent regression pending",
+        "phase": "G3",
+        "sequence": 1,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "laya_safety_review",
+        "event": "spawn",
+        "message": "Read-only safety review of routing, tests and benchmark; no commit or publication authorization",
+        "phase": "G4",
+        "sequence": 2,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "laya_safety_review",
+        "event": "verdict",
+        "message": "GO after partial status isolates capability advice from model selection and deterministic intent veto suppresses write-to-read misrouting; reviewer independently verified model floors and normal read coverage",
+        "phase": "G4",
+        "sequence": 3,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Final 71 decision tests plus 3898 Agent/Gateway/routing tests passed; 94.28 percent decision coverage; offline LLM and drift gates passed; live local replay finalized with no whole-chat speed claim",
+        "phase": "G3",
+        "sequence": 4,
+        "status": "passed",
+        "tokens": 0
+      }
+    ]
+  },
+  {
+    "run_id": "e228eb7931ab",
+    "events": [
+      {
+        "budget_tokens": null,
+        "dossier": "docs/dossiers/2026-10-04-prompt-budget-execution.md",
+        "event": "run_started",
+        "kind": "health-harness",
+        "label": "Prompt budget and task completion",
+        "run_id": "e228eb7931ab",
+        "sequence": 0
+      },
+      {
+        "agent": "usage_scope",
+        "event": "spawn",
+        "message": "Caller context implementation: 57 tests passed; recorded after completion.",
+        "phase": "verification",
+        "sequence": 1,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "usage_scope",
+        "event": "verdict",
+        "message": "Caller context implementation: 57 tests passed; recorded after completion.",
+        "phase": "verification",
+        "sequence": 2,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "public_task",
+        "event": "spawn",
+        "message": "Closed public grammar implementation: 225 tests passed; recorded after completion.",
+        "phase": "verification",
+        "sequence": 3,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "public_task",
+        "event": "verdict",
+        "message": "Closed public grammar implementation: 225 tests passed; recorded after completion.",
+        "phase": "verification",
+        "sequence": 4,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_safety_review",
+        "event": "spawn",
+        "message": "Final GO confirmed after strict HTTP envelope change; 100 final tests verified; executor e21d1c32ef8fa6ef76d76a3f64e3646deee605f34ea15feef741b6923f9d3971.",
+        "phase": "verification",
+        "sequence": 5,
+        "status": "started",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_safety_review",
+        "event": "verdict",
+        "message": "Final GO confirmed after strict HTTP envelope change; 100 final tests verified; executor e21d1c32ef8fa6ef76d76a3f64e3646deee605f34ea15feef741b6923f9d3971.",
+        "phase": "verification",
+        "sequence": 6,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "verdict",
+        "message": "Local candidate complete: 4057 broad tests,100 final tests,live gate passed,fixed synthetic API replay measured,System Map passed. No commit/push/deploy.",
+        "phase": "verification",
+        "sequence": 7,
+        "status": "passed",
+        "tokens": 0
+      }
+    ]
+  }
+]

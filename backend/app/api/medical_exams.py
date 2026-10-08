@@ -24,6 +24,7 @@ from app.schemas.medical_exam import (
     MedicalExamResponse,
 )
 from app.services.ai.medical_report_ocr import recognize_medical_report
+from app.services.biomarker_service import ingest_exam_safely
 from app.services.data_collection.medical_exam_import import MedicalExamImportService
 from app.services.exam_packages import create_indicator_from_item
 from app.services.pdf_parser import pdf_parser
@@ -169,6 +170,10 @@ def create_medical_exam(
         return existing
 
     db.refresh(db_exam)
+    ingest_exam_safely(db, db_exam)  # 归一化层旁路 (确认导入曾从不落 biomarker)
+    # rank7 写入闸: 体检写入后 Twin / 安全报告 / 预生成回答必须失效 (其它入库路径都已调用)
+    from app.twin.cache import invalidate_twin
+    invalidate_twin(current_user.id)
     return db_exam
 
 
@@ -347,6 +352,7 @@ def update_medical_exam_item(
 
     db.commit()
     db.refresh(item)
+    ingest_exam_safely(db, exam, same_day=True)  # 校正后重新归一 (同日各体检一起: 去重可能随之变化)
 
     # 让 Twin 重读 (基因/化验改动 → invalidate, 同 Iter 2 Day 1 hook)
     try:
@@ -552,6 +558,7 @@ async def import_medical_exam_from_pdf(
 
         db.commit()
         db.refresh(db_exam)
+        ingest_exam_safely(db, db_exam)
 
         # 统计各类别项目数量
         category_counts = {}
@@ -698,6 +705,7 @@ async def import_medical_exam_from_image(
 
         db.commit()
         db.refresh(db_exam)
+        ingest_exam_safely(db, db_exam)
 
         # 红线#2: 只统计有真实数值且标异常的项 —— value=null 的病理/影像项
         # 已在落库时压回 normal, 响应计数也不得把它们当数值异常上报。

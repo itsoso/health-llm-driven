@@ -21,6 +21,19 @@
 ./deploy.sh -l        # 查看服务日志
 ```
 
+#### 生产服务器的 GitHub 网络路径
+
+生产服务器已配置 `reva-github-relay.service`，通过 `base.executor.life` 转发
+`github.com:443`。服务器上的标准 GitHub HTTPS URL 自动使用该线路，无需修改
+`deploy.sh`、仓库 origin 或 GitHub Actions 的代理环境变量。新 Agent 在服务器
+拉取 canonical source、轮换发布授权或触发发布前，先完成
+[GitHub 代理运维手册](../ops/github-relay.md)的只读检查。
+
+本机和 GitHub Actions runner 不使用服务器的 loopback 映射。网络检查成功不替代
+精确 main/CI、版本授权、旧操作终态和发布锁检查；发布失败仍按原回执恢复，不能
+因为修好了网络就重放已消费的 `run`。代理故障按手册恢复，不关闭证书校验、不换
+第三方源码镜像，也不靠延长超时掩盖断线。
+
 ### 8.2 线上配置管理
 
 注册隔离修复的独立 operator 入口为 canonical `deploy.sh --security-hardening
@@ -34,6 +47,55 @@
 新受审发布器的 `--resume-preflight`。原失败/备份/租约不删除、不重建；
 独立恢复成功及外部回读不能替代原后端/Web 发布凭据。
 
+
+#### 独立发布新前端树（已加固服务）
+
+用户明确批准仅发布前端后，使用独立的 canonical operator：
+`deploy.sh --publish-frontend --publisher-sha <current-main-sha>
+--production-sha <original-backend-sha> --frontend-tree <40hex>
+--operation-id <32hex>`。只从服务器对应 publisher 的 root-owned canonical
+staging，以固定系统 Python `-I -S -B` 执行。默认仅返回只读预检摘要；执行
+必须提供相同 `--evidence-sha256`。该入口不改变下述同树重建条件。
+
+发布器必须是当前 main、精确 CI 绿色并通过独立 G4（包括实际前端依赖修补）。
+显式目标树必须匹配 publisher 的完整 frontend tree。原 production SHA 必须
+保持 clean revision，并具有自己的精确 CI 与原后端 `SUCCEEDED` 回执。
+后端、Mobile、共享包与发布器源码不复制进生产 checkout；不轮换授权，不启用
+OAuth，不创建健康数据访问授权，不更改服务 unit 或网络权限。
+
+仅适用于已存在的 `health-web` systemd 前端固定启动契约。沿用隔离构建
+sandbox、资源上限、数据根隔离和公开端点配置白名单；npm 生命周期脚本禁用。
+构建配置中已在白名单内的 `http://localhost:8000` 与 `http://127.0.0.1:8000`
+统一为固定运行时地址 `http://127.0.0.1:8000`；原配置文件及摘要不变，其他地址
+和端口仍拒绝，多配置文件间的冲突仍阻断。
+仅切换 `.next` 与 `node_modules`，保留旧制品；运行时 `.next/cache` 的账户
+权限单独核验，其他制品不可由服务账户修改。生产 Git SHA、后端/worker/beat
+进程身份、restart count 和配置摘要在构建及页面复验前后保持一致。
+
+独立 `frontend-publications/<operation-id>` 在任何副作用前 fsync intent，
+持有原 launcher/build 锁并领取既有 business lease。验证内部与真实公网
+`/privacy` 和 `/connect/health` 后，释放本次 lease 并持久化绑定 SHA、前端树、
+制品与证据摘要的 `FRONTEND_SUCCEEDED`。这不是后端成功回执，也不证明真实
+OAuth grant 完成。失败、未知结果、部分回执或库存漂移阻止后续操作，不自动
+重试、换 ID、回滚、删锁或伪造成功。
+
+当前 GitHub Actions Trusted workflow 没有 frontend 目标；本入口通过既有
+管理通道控制服务器执行与构建，不上传本机脚本，不扩大 cloud RPC。
+
+2026-10-03 的 `637078dd8c584686a59000de91d2dad2` 操作在停止旧前端后、
+制品首次 rename 前失败。用户明确授权接管后，仅该固定操作可在上述入口增加
+`--resume-stopped-publication`，从当前绿色 main 的 canonical staging 续发。
+它绑定原 f8dd publisher、dbad backend、完整 frontend tree、原发布器源码和
+原构建摘要；不重新构建、不换 operation ID、不轮换身份。原五项证据保持字节
+和 inode，原租约保留到成功。旧前端已恢复时，新预检独立绑定当前稳定进程与
+旧制品摘要，不改写原 before.json。
+
+续发先写独立 recovery intent，再核验双锁、原租约、后端/config、制品与
+停止状态（含固定 cgroup 无残留进程及重复状态读取），然后切换已有候选。
+内外网页面、制品摘要、备份和后端不变均验证后，先 fsync recovery completion，
+再写原 publication completion，最后释放原租约。原 failed.json 保留；历史
+验证仅对该固定操作接受完整交叉绑定的恢复链，其他失败仍阻断。任何恢复意图
+已存在、未知结果或部分切换都禁止自动重试，必须另行调查，不删除证据。
 
 #### 已部署同树前端的受控重建
 
@@ -130,9 +192,20 @@ GitHub 控制面、受审代码、固定工具链和服务器 root 是信任前�
 仅后端变更使用同一入口的 `target=backend`，仍先经过 preflight 与服务器 readiness，
 再执行相同 backend job；不读取 Expo 凭据、不领取构建/上传权限、不运行 iOS jobs。
 
+固定候选的运行中检查允许有限文档漂移：触发时仍须 candidate SHA = workflow SHA =
+当时 main，绝不执行调用方任意指定的旧源码。其后 main 只能沿最多八个线性提交前进，
+每个提交的完整比较仅包含 `AGENTS.md`、`docs/governance/deploy.md`、
+`docs/ops/github-relay.md` 或扁平 `docs/dossiers/*.md`；不按 `.md` 后缀泛化放行。
+发布器、依赖、配置、运行时知识和其他路径一律阻断，代码修改后回退也不例外。
+合并/分叉、比较截断或未知结果阻断。候选及观察到的新 main 均须精确 CI 绿色，
+检查末尾重验 main 和 CI attempt；构建/上传来源始终是原固定候选。
+服务器的 Git main 观察值必须与同一 canonical gate 的 API 证明一致；先核对受审
+helper 字节再隔离执行，不接受本机上传 helper 或缓存证明。不改变已有 claim、
+授权、锁、终态及恢复边界，也不放宽其他发布器的独立检查。
+
 用户明确授权后，已成功部署运行树的 iOS 续发使用 `target=testflight`，不运行 backend
 job、不补写或复用新的后端成功回执。仍先 validate、当前 main 精确 CI 和独立安全复审，
-由 canonical bootstrap 轮换为新 SHA、新短期身份；不得给旧 SHA 续期或清除消费记录。
+由 canonical bootstrap 切换至新 SHA，可沿用当前专用发布公钥；不得复用旧 SHA 或清除消费记录。
 `check-testflight`、`claim-testflight-build`、`claim-testflight-upload` 均在原 launcher
 锁内原子领取既有业务 lease，并持有它完成证明和 vendor claim：实际生产 clean revision、
 对应 SUCCEEDED 和精确历史 CI、无未处理维护、服务及健康检查通过。不能仅检查业务
@@ -151,10 +224,31 @@ build/native 标记仍防止跨入口重放。锁冲突、授权过期、未知�
 后续收尾；仅下述固定历史收尾可解除对应阻断，未知 native-only 库存仍拒绝，不得删除绑定以强行轮换。
 上传完成不等于 Apple processing、测试可用或正式 App Review 完成。
 
+#### 签名工具链的固定安全回补
+
+`node-forge@1.4.0` 的 `GHSA-86w9-cpqp-85rv` 尚无已发布修复版。项目回补固定绑定
+上游提交、原始与修复后源码、补丁及实际安装副本；不修改真实版本号，不添加漏洞豁免。
+`node scripts/node-forge-backport.cjs --root <安装根>` 默认只验证；`--apply` 只应用
+固定回补并执行真实验签正反验证。未知版本、字节漂移、缺失副本或符号链接越界均拒绝。
+Mobile 的既有 patch-package 路径负责普通安装；Trusted Release 与 OTA 禁用生命周期
+脚本，必须在任何凭据或 vendor 调用前，对 mobile 和 release-tools 安装分别显式
+apply/verify。不能用 CI 工作区的通过证明替代新 runner 的实际安装验证。
+OSV 审计继续显示原始发现，仅逐安装路径通过固定验证器的精确公告标为
+`verified_backport`；其他阻断和空 exceptions 保留。上游发布修复后须重新评审移除回补。
+
 #### 固定历史 native-only 收尾
 
-`native_release_retirement.py` 只处理源码固定的 `cad1fd1d33621532e587b265e79f737dfb06d1fe`、
-GitHub run 36111598240 attempt 2 及指定 build/submission。受审 canonical root staging
+`native_release_retirement.py` 只接受源码固定的历史 profile。默认仍为
+`cad1fd1d33621532e587b265e79f737dfb06d1fe`、GitHub run 36111598240 attempt 2
+及指定 build/submission；旧收尾证据格式和前次未进入 vendor 的验证不变。
+显式 `--native-sha e19043ecb269e20f3bc0a546165e43d467f1fc8c` 选择 TestFlight 273：
+run 36877321184 attempt 1、build `20d5e73a-a6b9-4c70-ad69-e63d31e058f2`、
+submission `fcfbb57d-4804-4a36-9c57-eab062bf321e`。该 profile 另绑定完整 jobs 摘要，
+拒绝虚构 prior attempt、新旧 profile 混用和任意调用方提供的 ID/摘要。未知 SHA 拒绝。
+
+当前活跃授权不满足收尾 inspect 前置条件：操作者必须先获得生产授权变更许可，
+按 canonical contract 撤销精确旧身份并销毁旧 loopback 私钥；不能为只读取证放宽
+这一检查。受审 canonical root staging
 以系统 Python `-I -S -B` 执行，先 inspect，再传相同 `--evidence-sha256` 执行；GitHub
 只读凭据只经 stdin JSON 输入。旧 workflow、job、完整日志摘要、原始库存/锁 inode、
 撤权和无残留进程均须匹配。实时生产 SHA 与旧 native binding 的历史 SHA 分开证明，
@@ -166,6 +260,28 @@ GitHub run 36111598240 attempt 2 及指定 build/submission。受审 canonical r
 轮换通过既有 `--recovery-receipt-stdin` 消费回执，禁止把回执放 argv/日志。执行中断、
 摘要变化或丢失回执均阻断，不自动重跑、不伪造 backend SUCCEEDED。历史校验仍保留
 当时生产证明，但不要求未来生产永远停留在该 revision。
+
+#### Native 收尾后已完成后端事务的固定续接
+
+仅旧 native `e19043ecb269e20f3bc0a546165e43d467f1fc8c` 已关闭、原私密
+receipt 完整且身份已撤销时，canonical bootstrap 的 `rotate` 可显式传入
+`--finalized-production-sha 5c3eb6ed2c0c7f18f2a36443aee4216f5fe21670`。
+它只接受源码固定的 `30ac1c67 → 5c3eb6ed2` 单跳 finalized runtime transaction，
+完整原始终态摘要、结构、受保护文件身份都必须一致；不接受任意版本或多跳推断。
+发布器必须是该生产提交的直接子提交，仍须当前 main、精确 CI 与独立 G4。
+
+此路径保留 native closure 的 receipt、原 workspace、锁、安装与撤权证明，
+另行在原双锁内核验当前生产 root-owned clean revision、原生产 ancestry、
+当前生产精确 CI、稳定服务及健康依赖。任何业务 lease、准备事务、reap 残留、
+未知进程或读取中漂移均阻断。证据在 intent 前以及归档前后重复验证。
+
+退休 intent 保存完整 finalized 终态与文件身份摘要；后续历史验证依赖该不可变
+副本，不要求未来生产继续保留同一终态文件。默认轮换与其他 closure 路径不变。
+此证明只允许恢复发布身份，不生成或冒充 backend `SUCCEEDED`；后续正式后端
+部署仍须独立通过运行时闸并生成真实成功回执，再发布前端。数据库备份、恢复
+演练与站外归档沿用下文用户明确设置的 `DEPLOY_DATABASE_BACKUP` 策略，不在
+此恢复入口中覆盖默认值，也不得将跳过记录为通过。
+部分 intent 或轮换失败仍禁止清理、自动恢复或重试。
 
 #### 受审 OTA 发布与未知结果恢复
 
@@ -202,14 +318,35 @@ receipt 不同、租约身份改变、未知部分 claim 或在终态持久化�
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
 核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的
 `scripts/bootstrap_trusted_release.py`。禁止上传本机脚本充当 bootstrap。
-安装器只接受八小时内到期的专用 ed25519 公钥，拒绝覆盖现有安装。
+安装器只接受专用 ed25519 公钥，拒绝覆盖现有安装。用户于 2026-10-01 明确取消
+八小时强制到期：`install` 和 `rotate` 的 `--expires-at` 默认 `0`，表示有效至主动
+撤销。服务器策略同样以整数 `expires_at=0` 表示无自动到期，SSH 授权不写入
+`expiry-time`。仍可显式指定未来 Unix 时间戳；原有正整数期限继续生效，不会因
+升级代码自动续期或复活。负数、布尔值、缺失策略字段等无效输入仍拒绝。
 
 后续授权使用同一 bootstrap 的显式 `rotate --retire-sha <old> --sha <new>`，仅从
 新 SHA 的上述受审 canonical staging 执行。必须先撤销旧 cloud/loopback 授权并删除
 旧 loopback 私钥，证明旧后端成功终止或从未启动、业务 lease 不存在、无发布进程。
 轮换持有原 launcher.lock，核验旧源码哈希、私有目录库存和消费记录，原样归档旧安装，
-再安装新的短期身份；旧 SHA、消费标记和锁 inode 不得删除或复用。任何未知现场或
+再安装绑定新 SHA 的授权。默认永久模式可沿用**当前** `cloud.pub`，从而无需在每次
+发布时更新 GitHub `REVA_RELEASE_SSH_KEY`；显式限时模式继续要求新身份。
+已被替换的历史 cloud key、任何历史 loopback key 都不得恢复使用。
+复用须在退休 intent 记录 `cloud_key_reused=true`；核查归档时只对完整连续复用链、
+当前 canonical 执行器及唯一精确 forced-command/restrict 授权证明通过的 cloud key
+允许仍然有效。待退休安装本身仍必须先撤权，历史 loopback 授权必须消失。
+旧 SHA、消费标记和锁 inode 不得删除或复用。任何未知现场或
 中途失败均保留 intent/安装证据并阻断，不支持通过再次执行重置授权或自动恢复。
+
+loopback 仍限 `127.0.0.1`，每个新版本生成新密钥并在退休前销毁旧私钥。永久模式的
+loopback 也不自动到期；不得对外导出。`revoke --sha <current-sha>` 撤销当前 cloud
+和 loopback 的精确 SSH 授权，普通 revoke 不自动删除 loopback 私钥，退休前仍须完成
+原有私钥销毁检查。密钥泄露时须主动撤销并更换；已经建立的 SSH 会话不因删除
+authorized_keys 自动结束，仍须按发布进程与会话检查处置，不能仅凭撤权宣称泄露已收尾。
+
+该调整只免去反复换密钥，不授予云端任意版本或 shell 权限。每次发布仍须由受审
+管理员入口完成新 SHA 授权、精确 CI、旧操作终态和锁检查；只更新 GitHub Secret
+不等于完成服务器授权。将旧限时安装迁移为永久模式同样走新受审 SHA 的 rotate，
+不得原地篡改旧策略/期限；沿用其 cloud 公钥时 GitHub Secret 保持原值即可。
 
 该生产站点已有一份旧格式 `retired/<sha>/{config,executor}` 归档。兼容读取只接受源码
 中固定 SHA 和受审 inventory 摘要，逐次校验 canonical executor、撤权、无私钥、从未
@@ -217,7 +354,7 @@ receipt 不同、租约身份改变、未知部分 claim 或在终态持久化�
 按目录形状接受任意 legacy 状态。其 SHA 与两类公钥继续参与全历史防复用。
 
 云端身份由服务器 forced-command 限定为绑定同一 SHA 的 `run`、`status`、
-`check`、`claim-build`、`claim-testflight`，不提供 shell/SFTP；服务器内部的短期 loopback 身份不离开服务器。
+`check`、`claim-build`、`claim-testflight`，不提供 shell/SFTP；服务器内部的 loopback 身份不离开服务器。
 后端业务部署仍由受审 fresh source 中的 **`deploy.sh -b`** 执行全部事务闸。
 `DEPLOY_SOURCE_SHA` 仅选择精确来源的 verify-only 模式，不是授权或绕过检查的开关。
 候选环境从当前生产 `root:health-app 0640` 配置派生，不改变其凭据和权限合同。
@@ -396,6 +533,67 @@ unit/覆盖路径/ExecStart/账号、代际模型与锁定依赖、boot ID、cgr
 快照使用独立 `installed-reuse-v1` profile；归档撤权前后复核全部身份和原 env，
 未知、混合、缺字段 profile 拒绝。沿用原同 inode 租约归档与受保护回执协议，
 不修改失败终态、不续跑原 SHA。历史验收保存原证明，不要求以后版本维持该 PID。
+
+已安装 Laya 的收尾可证明既有 `security-network.conf` 组合，但不得删除安全依赖
+或忽略任意额外 drop-in。三个业务服务必须同时具有固定 Requires/After 依赖，
+guard unit 和 helper 字节须与旧生产、失败候选及收尾源码一致；实际 systemd
+配置、依赖边、启用状态、无进程的 oneshot 成功终态及早于原租约的 activation
+身份全部匹配，稳定读取前后不变。证据写入独立 `network-guard-v1` profile，
+撤权归档后重新核验完整 unit 组合；历史读取严格验证 profile，旧无 guard 证明
+保持原合同。该证明不运行网络加固命令，不改防火墙，也不冒充实时防火墙规则审计。
+
+已构建但未领取上传权限的混合失败不得套用以上旧模式。针对 `514c8c28a` /
+run `37116403140` / build `274`，显式的
+`--retire-installed-laya-built-unuploaded --mixed-secrets-stdin` 变体在全部 installed
+Laya 原状态证明之外，使用 `scripts/built_unuploaded_proof.py` 读取 GitHub 与 Expo
+实时证据：固定 canonical 源码哈希、唯一 attempt、六个 job 均终结、构建成功、后端
+失败、上传 claim 失败且上传步骤 skipped，以及精确 EAS ID / 项目 / bundle / SHA /
+版本 / iOS STORE production / FINISHED / 非模拟器 / 空 submissions。厂商构建日志
+和规范化 job 证据均绑定已核验摘要；缺失、漂移、未知状态一律 BLOCK。
+
+该变体必须持有原 build.lock，原 build-started.json 必须精确匹配，任何 native-started
+或 testflight-base 状态拒绝。保护 stdin 仅接受 lease_token、github_token、expo_session
+三项 JSON，不接受 argv 凭据；凭据仅用于本次只读取证，禁止打印或持久化。GitHub
+签名日志重定向不转发凭据，TLS 使用系统信任库，不采用调用者代理或证书覆盖。
+外部证据在 inspect、持久化 intent 后、撤权前及最终复证时重读；历史校验理解严格的
+finished-build-unuploaded-v1 profile，不能丢弃或混用。旧终态、所有 claim、锁和 274
+制品保留。完成只表示 CLOSED_UNCHANGED_RELEASE；不授权上传，不伪造后端成功。
+Laya 资产本身不得在收尾源码中改变。后续使用新绿色 SHA 的 backend-only 发布；
+旧 274 与新后端的组合及独立上传仍须专门受审，禁止重跑原 release 或原上传 job。
+
+#### 固定保留制品 274 的独立上传
+
+完成上述原 mixed-release 收尾和授权轮换后，允许使用新受审 publisher 的
+`target=retained-testflight`。该目标只运行精确 CI/source preflight 和保留制品
+上传，不运行 backend 或 ios-build，不创建新包、不提交 App Review。必须先以
+同一新 SHA 完成真实 backend-only 部署；完整 Git object inventory 与 514 比较，
+仅允许受审代码显式列出的发布工具、测试及审计文档差异，Mobile/backend/shared
+或任意其他路径不同即阻断。不能把 274 改称新 SHA 构建。
+
+`scripts/trusted_retained_testflight.py` 固定原 SHA/run/build/project/bundle/版本
+与 ASC app，不接受操作员选择任意制品。干净托管 runner 在暴露凭据前取得两版
+canonical source，并安装/校验锁定工具和安全回补；凭据只在 runner 内使用。
+实时预上传证明要求原 workflow 精确失败终态、上传步骤 skipped 和精确 FINISHED
+制品空 submissions。服务器在原 launcher/build 锁内独立证明原收尾与退休审计、
+原 build claim 未变且 native claim 不存在、当前真实后端成功与精确版本健康。
+
+全局 `retained-testflight/<固定 build-id>` 一次性 intent 在副作用前持久化，
+业务 lease 从 claim 保持到上传验证完成；旧 514 的记录、锁及制品身份不改。
+同一 build 换新 publisher 也不能重新领取权限。runner 仅调用一次固定 ID 的
+submit，CLI 成功后仍须独立读取厂商状态：唯一 submission、FINISHED、IOS、
+项目/ASC app/submittedBuild 全部精确一致，才允许 finish 重新核验生产并收尾。
+
+finish 先持久化已验证结果和 lease 副本，再 fsync `UPLOADED`，最后将原 lease
+同文件系统 no-clobber 归档并复证。释放锁之前已存在完整持久证明，避免中断后
+出现业务锁空闲但上传审计未完成的窗口；终态已写但尚未归档时，原业务锁继续
+阻断普通部署。只有最后的锁身份检查通过才向调用方返回完成。
+
+终态只记 `UPLOADED`，不代表 Apple processing、测试组可用或 App Review。
+未完成/未知 intent 阻断后续发布与授权轮换；禁止清标记、删锁、重跑 workflow
+或再次 submit。finish 已验证并持久化的同一结果可按受审 recover 入口完成原
+lease 归档与终态写入，不允许用新结果替换原回执。归档保存原 lease 字节和身份，
+已完成 finish 的重放不能释放后来者的 lease。原 mixed closure 的空 submissions
+只表示当时的历史事实，上传后不修改它，也不重新调用旧 live 未上传证明来伪造历史。
 
 #### 固定 Laya PREPARING 事故的缺失租约行政收尾
 
@@ -721,3 +919,18 @@ vim .env
 - ✅ **必须** 在本地维护 `.env` 的备份
 
 ---
+
+#### braces 递归深度修复
+
+`braces@3.0.3` 的 `GHSA-vfj7-8cjw-p6xm` 使用项目本地修复，保留真实版本和原始
+HIGH 公告，不作为上游已发布修复版或风险豁免。解析器限制总括号/花括号嵌套为 100，
+compile、expand、stringify 对直接 AST 输入也限制递归深度（含 root/leaf 开销）。
+超限抛出明确 SyntaxError；调用方仍需正常处理无效输入，不承诺未捕获异常自动恢复。
+
+`frontend/scripts/braces-depth-guard.cjs --root <安装根>` 只验证；显式 `--apply`
+检查所有安装副本的固定原始/修复后字节、完整可执行文件清单和包身份后才应用。
+任何未知版本、缺失/漂移文件或链接均失败。每次验证执行真实恶意/正常模式和 AST
+调用；OSV 只将该精确公告、版本、安装路径标为 `verified_mitigation`，保留其他阻断。
+Mobile 使用固定 patch-package 补丁；Frontend 普通安装及 build 命令执行自包含验证器，
+确保只复制 frontend 的隔离重建仍覆盖修复。Trusted Release/OTA 的 ignore-scripts
+安装在凭据前显式修复 mobile/release-tools 两个根。上游发布后重新评审替换本地修复。

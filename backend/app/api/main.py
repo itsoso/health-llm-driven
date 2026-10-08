@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import (
     auth,
     journey,
+    share_location,
     admin,
     admin_decisions,
     admin_system_map,
@@ -172,6 +173,7 @@ from app.api import (
 
 api_router = APIRouter()
 api_router.include_router(journey.router)
+api_router.include_router(share_location.router)
 
 # ── Auth & Access Control ──────────────────────────────────────────
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])

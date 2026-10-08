@@ -1,9 +1,11 @@
 # Share location layout and truthful meal continuation
 
+> 历史本地审计补录（2026-10-03）：以下状态、测试数、发布 SHA 与回执来自原工作树既有记录，未在本次整合中重新验证；不是当前生产状态或本轮发布 Gate 的新鲜证据。本轮整合与验证见 docs/dossiers/2026-10-03-local-change-integration.md。
+
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | G2 safety remediation |
+| 状态 | shipped |
+| 当前阶段 | G6 verified |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -76,7 +78,7 @@ not used; repository RED/GREEN and fresh verification rules apply.
   `/tmp/reva-location-mobile-regression.log`, `/tmp/reva-meal-input-regression.log`,
   `/tmp/reva-location-native.Ye8bfD/location-{short,long,empty}.png`.
 
-## Remaining gates
+## Candidate verification history
 
 Candidate: `478fbae04e701db1854b96c614ba286d2d3bfb76` (implementation plus
 clean-tree generated System Map; unrelated GPS artifacts remain uncommitted).
@@ -117,3 +119,71 @@ modes. Minimal fix renames the predicate to `has_image` and uses only
 `effective_images`, never `file_base64`. Focused GREEN: 99 passed, exit 0.
 Evidence: `/tmp/reva-meal-nonimage-red.log`, `/tmp/reva-meal-nonimage-green.log`.
 Fresh integration, PostgreSQL and fixed-commit re-review remain required.
+
+## G3 / G4 — Remediation verified
+
+- Final candidate: `8bd2655b6b7d94ec96219c8f3a0bd63a27463f2f`.
+- Clean-source CI-mode: 2,702 passed / 3 PostgreSQL-only skipped, exit 0.
+  Related meal suites separately: 499 passed / 1 PostgreSQL-only skipped.
+- Independent PostgreSQL 17.11: 149 passed / zero skipped, exit 0; source hashes
+  before/after match the fixed candidate. Shutdown checkpoint exceeded the first
+  60-second wait, then completed normally; server, PID and socket absence were
+  independently verified. No forced kill or production connection.
+- Live-provider gate passed again: invariants 12/12, health core 50/50,
+  orchestrator 5/5 (average 0.94), trajectory 12/12 and goldens 9/9.
+  Existing usage-persistence warning limitation above remains unchanged.
+- G4 GO: independent fixed-object re-review confirmed the non-image bypass is
+  closed; no new safety finding. UI/native blobs unchanged from verified render.
+- Final map, secret, dossier, blocking Ruff, scoped ESLint and design-token checks
+  passed. Live evidence bound to the exact SHA before push; three owned commits
+  pushed without force. Unrelated WIP preserved.
+- Evidence: `/tmp/reva-location-final-ci.log`, `/tmp/reva-location-final-live.log`,
+  `/tmp/reva-pg-meal-nonimage.wfCoLp/tests.log` and shutdown evidence in that folder.
+
+## G5 — Publication
+
+Exact candidate CI: https://github.com/itsoso/health-llm-driven/actions/runs/36511196706
+completed successfully. Reused clean release checkout;
+Mobile dependencies copied from identical lockfile, not symlinked into dirty WIP.
+
+Backend `deploy.sh -b` exited 0. Production SHA exactly 8bd2655b6, clean source;
+backend/worker/beat active with zero restart counters. Three health gates passed
+60/60, staged KB contracts passed, runtime finalized and release lease absent.
+Public API/database/Redis/Celery health passed. No new migration; database
+backup/restore/offsite steps default-off per existing policy, not claimed as new
+backup coverage. Candidate config preserves production values.
+
+Fifteen synthetic deployed-helper checks passed with zero DB/provider calls.
+These are read-only code checks, not live historical conversation replay; actual
+stream/persistence evidence is the local/CI and PostgreSQL regression above.
+Backend evidence: `/tmp/reva-location-deploy.log`.
+Temporary sensitive candidate configuration deleted after successful backend
+deployment. No unrelated dirty GPS/native/privacy files entered the candidate.
+
+OTA script exited 0 on the first Hermes upload. Production iOS runtime 1.3.4:
+
+- Group: `2cd9f0ea-e5ce-4a35-94c5-23e1dfc9ca53`.
+- Update: `01a0eafb-4146-7b5b-bf91-332dba1ae631`.
+- Source/main/commit SHA: 8bd2655b6, as verified by EAS readback.
+- Prior known-good group retained in the release manifest:
+  `008cd999-2007-4c17-8398-4d5dfa91c287`.
+
+## G6 — Verified delivery and limits
+
+Production backend revision, stable services, public health and read-only
+deployed-code checks passed. Expo's actual production/iOS/1.3.4 manifest endpoint
+returned HTTP 200 with the exact published update ID and a launch asset; MIME
+manifest content and EAS metadata agree. The first JSON-only Accept probe was
+rejected with 406; using protocol 1's multipart response passed, without changing
+the published update or retrying publication. Local canonical OTA anchors synced
+from the verified manifest. Evidence: `/tmp/reva-location-ota.log`,
+`/tmp/reva-location-eas-after.json`, `/tmp/reva-location-served-headers.txt`,
+`/tmp/reva-location-served-manifest.mime`.
+
+This proves published/served OTA, not installation on the user's phone. Native
+visual evidence is the labelled synthetic simulator component harness above;
+no claim of full-app native rebuild, live GPS or store-review acceptance.
+User must apply the update and regenerate an old share image to see the layout.
+Broader compound-task handling, automatic historical target linking and summary
+quality optimization are not claimed by this bounded release.
+Post-release evidence is a local audit supplement to the deployed commit.

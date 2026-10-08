@@ -1,0 +1,114 @@
+{
+  "status": "local_equivalence_and_cpu_target_pass_live_blocked",
+  "baseline_commit": "7d934b3c6b2540c969b1124b5468b737b6d0c88a",
+  "branch": "codex/reva-prompt-optimization",
+  "source_sha256": {
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/tests/fixtures/tool_projection_7d934b3.py": "054fd897fd4c3964dbe1154f5ae0c6fb8ee813a220f755b741e63f4be6df43d1",
+    "backend/tests/test_tool_projection_cache.py": "9b717492f17b0c70e48c9ac461c932ed8ff36dfb2bc97bf60375f242f0f6530e",
+    "scripts/benchmark_tool_projection.py": "556fa28a36bf8331c407507a890f6845a6acb5a7c43835b7736f5ac81c4899dd",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/agent_executor.py": "061d351f3d72742073840dde7fadcad2e4a82227dc0b4731a20334be5daf2e3b"
+  },
+  "evidence_sha256": {
+    "2026-10-04-tool-projection-cpu-before.json": "5f088828d22c40ea91ba6d7f423b29a07f7a63067211a6f5836d1ca1a1e2716b",
+    "2026-10-04-tool-projection-cpu-after.json": "876982499bbc29a921a28ffed6a2c04bd63d858018cb1d39d39a93b02d5830a3",
+    "2026-10-04-tool-projection-live-gate.json": "7c159d2313bac6f85b8ba671123d511fb08c931b45b6b1f7c627c5c7fbfdf907"
+  },
+  "validation": [
+    {
+      "scope": "new behavior before implementation",
+      "passed": 4,
+      "failed": 4,
+      "log": "/tmp/reva-projection-cache-red.log",
+      "cause": "Repeated parsing five times, missing bounded-cache APIs"
+    },
+    {
+      "scope": "new cache, existing projections, scoped providers, Pi composition and rejected write-description protections",
+      "passed": 135,
+      "seconds": 8.26,
+      "log": "/tmp/reva-projection-cache-green.log"
+    },
+    {
+      "scope": "independent cache, projection and scoped provider",
+      "passed": 32,
+      "seconds": 0.92,
+      "verdict": "GO for local public-text cache only"
+    },
+    {
+      "scope": "changed module coverage",
+      "passed": 28,
+      "reported_combined_coverage_pct": 93,
+      "log": "/tmp/reva-projection-cache-coverage.log"
+    },
+    {
+      "scope": "offline harness",
+      "invariants_passed": 12,
+      "core_passed": 50,
+      "trajectory_contract_passed": 12,
+      "trajectory_goldens_matched": 9,
+      "log": "/tmp/reva-projection-cache-harness.log"
+    },
+    {
+      "scope": "system map",
+      "status": "passed",
+      "log": "/tmp/reva-projection-cache-map.log"
+    }
+  ],
+  "cache_contract": {
+    "cached_functions": [
+      "_query_description",
+      "_batch_description"
+    ],
+    "maxsize_each": 64,
+    "lifetime": "per process, bounded LRU; no time-based TTL for immutable text",
+    "keys": [
+      "exact canonical query description plus supported dimension frozenset",
+      "exact canonical batch description plus current query guidance"
+    ],
+    "values": "immutable public description strings or existing None result for unsupported format",
+    "invalidation": "exact text change misses immediately; old versions evicted by LRU or process restart",
+    "excluded": [
+      "user IDs",
+      "user text",
+      "dates",
+      "scope objects",
+      "health records",
+      "authorized tool lists",
+      "mutable schemas"
+    ],
+    "checks_still_per_call": [
+      "owner matching in executor",
+      "current authorized tool list",
+      "exact current schema and description match",
+      "independent deepcopy"
+    ]
+  },
+  "measurement": {
+    "status": "local_target_met",
+    "synthetic_cases": 6,
+    "samples_per_case": 101,
+    "iterations_per_warm_sample": 100,
+    "scope": "alternating function CPU batches; cold single-call observations excluding cache_clear",
+    "own_and_reviewer_tests_concurrent": false,
+    "additional_input_token_savings": 0,
+    "limits": [
+      "Warm batch means and cold single-call quantiles are different estimands.",
+      "Cold target is a conservative local alert, not request-level noninferiority.",
+      "Savings are tens of microseconds; no real traffic, model or end-to-end speed evidence."
+    ]
+  },
+  "live_gate": {
+    "status": "failed",
+    "required": true,
+    "confirmed": false,
+    "reason": "Private model test configuration unavailable; user asked for path or configured service; no repeat API attempt"
+  },
+  "boundaries": [
+    "Existing defaults unchanged.",
+    "Semantic P1/P2 remain eval-only.",
+    "Rejected write-tool description compression remains excluded.",
+    "No DB business semantics changed.",
+    "No commit/push/merge/deploy."
+  ]
+}

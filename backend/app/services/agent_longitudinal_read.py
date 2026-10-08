@@ -63,12 +63,12 @@ _TOOL_READ = re.compile(
 # These clauses restrict a read; an unrecognized remainder must not disappear
 # into the default recent window or a separate calendar clause.
 _RESTRICTION_PREFIX = re.compile(
-    r"(?:(?:只|仅)(?:查询|查看|读取|调取|分析|复盘|总结|查|看)|仅限|限定(?:范围)?(?:为|在)?|只限)(?:于)?\s*"
+    r"(?:(?:只|仅)(?:查询|查看|读取|调取|分析|洞察|复盘|总结|查|看)|仅限|限定(?:范围)?(?:为|在)?|只限)(?:于)?\s*"
 )
 
 
 _DOMAIN_ITEM_PREFIX = r"(?:我|本人|自己)?(?:的|日常|每天|实际|在|服用|近期|最近)*"
-_DOMAIN_ITEM_SUFFIX = r"(?:的|记录|数据|状态|情况|等等)*"
+_DOMAIN_ITEM_SUFFIX = r"(?:的|记录|数据|状态|情况|等)*"
 _DOMAIN_ITEM = _DOMAIN_ITEM_PREFIX + r"(?:" + "|".join(_DOMAINS.values()) + r")" + _DOMAIN_ITEM_SUFFIX
 _DOMAIN_SCOPE = re.compile(_DOMAIN_ITEM + r"(?:(?:以及|和|与|及|、)" + _DOMAIN_ITEM + r")*")
 _CONTEXT_DOMAIN_ITEM = _DOMAIN_ITEM_PREFIX + r"(?:" + "|".join(_DOMAINS.values()) + r"|情绪|心情|工作)" + _DOMAIN_ITEM_SUFFIX
@@ -76,7 +76,7 @@ _CONTEXT_DOMAIN_SCOPE = re.compile(r"(?:以及|和|与|及)?" + _CONTEXT_DOMAIN_
 _ANALYSIS_GOAL = (
     r"(?:(?:并且|然后|并|再|也|来|这样才能)(?:请)?)?"
     r"(?:(?:依据|基于)(?:真实|已有|这些|上述|以上)(?:数据|记录))?"
-    r"(?:(?:分析|复盘|总结)(?:一下)?(?:(?:我(?:的)?)?(?:当前|现在)?(?:的)?(?:状况|情况|状态))?|"
+    r"(?:(?:分析|洞察|复盘|总结)(?:一下)?(?:(?:我(?:的)?)?(?:当前|现在)?(?:的)?(?:状况|情况|状态))?|"
     r"(?:给|给到|给出|提供)(?:我)?(?:一些|一点|些|点|精准的|你的)?(?:建议|意见)|"
     # Domain-free improvement questions are answer goals, not read filters.
     # Consume their entire grammar: an attached owner/date/filter must survive.
@@ -91,7 +91,7 @@ _METHOD_CLAUSE_RE = re.compile(
 # Subday records are not representable by this calendar-day adapter. These are
 # temporal tokens, not allowed/disallowed request phrases or politeness forms.
 _SUBDAY_SCOPE = re.compile(r"(?:今|昨|前|明|后)(?:早|晨|午)|上午|下午|中午|凌晨|清晨|早上|早晨|午后")
-_RETROSPECTIVE_SCOPE = re.compile(r"(?:分析|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
+_RETROSPECTIVE_SCOPE = re.compile(r"(?:分析|洞察|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
 
 
 _HTML_READ_FRAME = re.compile(
@@ -204,7 +204,7 @@ def longitudinal_read_scope_requested(snapshot) -> bool:
     text = active_health_instruction_text(snapshot.envelope.text)
     return bool(
         _TOOL_READ.search(text)
-        and re.search(r"分析|复盘|总结|建议|状况", text)
+        and re.search(r"分析|洞察|复盘|总结|建议|状况", text)
         and any(re.search(pattern, text) for pattern in _DOMAINS.values())
     )
 
@@ -330,7 +330,7 @@ def _read_projection_parts(active: str) -> list[tuple[str, bool]]:
     domain_words = "|".join(_DOMAINS.values()) + "|情绪|心情|工作"
     list_item = (
         r"(?:我|本人|自己)?(?:的|日常|每天|实际|在|服用|近期|最近)*"
-        r"(?:" + domain_words + r")(?:的|记录|数据|状态|情况|等等)*"
+        r"(?:" + domain_words + r")(?:的|记录|数据|状态|情况|等)*"
     )
     nominal_list = re.compile(r"(?:以及|和|与|及)?" + list_item + r"(?:(?:、|以及|和|与|及)" + list_item + r")*")
     for clause in re.split(r"[，,。；;！？!?\n]", active):
@@ -347,7 +347,7 @@ def _read_projection_parts(active: str) -> list[tuple[str, bool]]:
         explicit = bool(_has_read_clause(clause) or _RESTRICTION_PREFIX.search(clause)
                         or _RETROSPECTIVE_SCOPE.search(clause))
         domain_request = bool(
-            re.search(r"结合|包括|针对|基于|分析|复盘|总结", clause)
+            re.search(r"结合|包括|针对|基于|分析|洞察|复盘|总结", clause)
             and re.search(domain_words, clause)
         )
         if explicit or domain_request:
@@ -371,7 +371,7 @@ def _read_projection_parts(active: str) -> list[tuple[str, bool]]:
 
 def _consume_read_scope(snapshot, scope: str, domains: set[str]) -> bool:
     """Consume a complete date/recent/domain expression, never a date substring."""
-    deep_read = bool(re.search(r"分析|复盘|总结|建议|状况", snapshot.envelope.text))
+    deep_read = bool(re.search(r"分析|洞察|复盘|总结|建议|状况", snapshot.envelope.text))
     residue = (_CONTEXT_DOMAIN_SCOPE if deep_read else _DOMAIN_SCOPE).sub("", scope)
     residue = re.sub(r"(?:我|本人|自己)?的|记录|数据|\s", "", residue)
     if not deep_read:
@@ -411,7 +411,7 @@ def _query_object_scope(clause: str) -> str:
     """
     scope = re.sub(r"(?:并|再|然后)(?:请)?" + _ANALYSIS_GOAL + r"$", "", clause)
     scope = _strip_exam_request_scaffolding(scope)
-    scope = re.sub(r"^(?:先|再|然后)?(?:分析|复盘|总结|结合|包括|针对|基于)(?:一下)?", "", scope)
+    scope = re.sub(r"^(?:先|再|然后)?(?:分析|洞察|复盘|总结|结合|包括|针对|基于)(?:一下)?", "", scope)
     scope = re.sub(r"^(?:我|本人|自己)(?:的)?", "", scope)
     if _RETROSPECTIVE_SCOPE.search(clause):
         scope = re.sub(r"行动|健康情况|健康状态|一天|日程", "", scope)
@@ -428,7 +428,7 @@ def _restricted_read_text(snapshot, active: str) -> str | None:
     # These checks still run in the original policy. The read projection must
     # neither replace their owner error nor reinterpret an observation as a task.
     if (not has_positive_health_read_verb(active) and not _TOOL_READ.search(active)
-            and not re.search(r"分析|复盘|总结|建议|状况", active)
+            and not re.search(r"分析|洞察|复盘|总结|建议|状况", active)
             and not _RESTRICTION_PREFIX.search(active)):
         return active
     from app.services.agent_kernel.capability_policy import (
@@ -462,7 +462,7 @@ def _restricted_read_text(snapshot, active: str) -> str | None:
             return None
         if marker:
             body = clause[marker.end():].strip()
-            scope = re.sub(r"(?:并|再|然后)(?:分析|复盘|总结)(?:一下)?$", "", body)
+            scope = re.sub(r"(?:并|再|然后)(?:分析|洞察|复盘|总结)(?:一下)?$", "", body)
             domains = _record_domains(scope)
             if domains:
                 domain_limits.append(domains)
@@ -615,7 +615,7 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
     bounded_analysis = bool(
         _owned_active(active)
         and any(
-            re.match(r"^(?:请)?(?:分析|复盘|总结)(?:一下)?", clause.strip())
+            re.match(r"^(?:请)?(?:分析|洞察|复盘|总结)(?:一下)?", clause.strip())
             and _RECENT.search(clause)
             and _record_domains(clause)
             for clause in re.split(r"[，,。；;！？!?\n]", active)
@@ -638,7 +638,7 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
             continue
         prefix = _RECENT.sub("", clause[: domain.start()])
         prefix = re.sub(
-            r"请|要|分别|先|再|查询|查看|读取|调取|结合|分析|包括|针对|基于|"
+            r"请|要|分别|先|再|查询|查看|读取|调取|结合|分析|洞察|复盘|总结|包括|针对|基于|"
             r"近期|最近|过去|日常|每天|实际|服用|在|的|里|内|\s",
             "",
             prefix,
@@ -652,7 +652,7 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
             r"查询|查看|读取|调取", clause
         ) and health_read_has_nonself_subject(clause):
             return None
-    if not re.search(r"分析|复盘|总结|建议|状况", active):
+    if not re.search(r"分析|洞察|复盘|总结|建议|状况", active):
         return None
     if not _TOOL_READ.search(active) and not bounded_analysis:
         return None

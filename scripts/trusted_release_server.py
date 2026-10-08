@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import pwd
 import re
 import secrets
 import signal
@@ -44,7 +45,7 @@ class PreparationUncertain(LaunchError):
 
 
 def parse_command(command):
-    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload|claim-ota|finish-ota) ([0-9a-f]{40})", command)
+    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload|claim-ota|finish-ota|claim-retained-testflight|finish-retained-testflight) ([0-9a-f]{40})", command)
     if match is None:
         raise LaunchError("only fixed release commands with an exact SHA are allowed")
     return match.group(1), match.group(2)
@@ -64,7 +65,7 @@ def validate_policy(data, *, now):
         or not isinstance(data["sha"], str)
         or re.fullmatch(r"[0-9a-f]{40}", data["sha"]) is None
         or type(data["expires_at"]) is not int
-        or data["expires_at"] <= now
+        or (data["expires_at"] != 0 and data["expires_at"] <= now)
         or not isinstance(data["executor_sha256"], str)
         or re.fullmatch(r"[0-9a-f]{64}", data["executor_sha256"]) is None
     ):
@@ -75,7 +76,7 @@ def validate_policy(data, *, now):
 def _assert_deployment_window(policy):
     now = time.time()
     validate_policy(policy, now=now)
-    if policy["expires_at"] - now < DEPLOY_TIMEOUT_SECONDS + RECOVERY_MARGIN_SECONDS:
+    if policy["expires_at"] != 0 and policy["expires_at"] - now < DEPLOY_TIMEOUT_SECONDS + RECOVERY_MARGIN_SECONDS:
         raise LaunchError("authorization lifetime is insufficient for deployment and recovery")
 
 
@@ -365,8 +366,179 @@ def _load_frontend_finalizer():
     return module
 
 
-def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None):
+def _frontend_publication_backup_digest(root, *, live=False):
+    """Bind immutable backup content and ownership, preserving private runtime cache."""
+    root = Path(root)
+    if live:
+        if root not in {PRODUCTION / "frontend" / ".next", PRODUCTION / "frontend" / "node_modules"}:
+            raise LaunchError("fixed live frontend artifact path required")
+        secure_path(root, directory=True)
+    digest, count = hashlib.sha256(), 0
+    pending = [root]
+    while pending:
+        path = pending.pop()
+        count += 1
+        if count > 150000:
+            raise LaunchError("frontend backup inventory exceeds bound")
+        info = path.lstat()
+        relative = path.relative_to(root)
+        cache_root = root.name == "previous-next" or (live and root == PRODUCTION / "frontend" / ".next")
+        cache = cache_root and relative.parts and relative.parts[0] == "cache"
+        if stat.S_ISLNK(info.st_mode) and (cache or info.st_uid != 0):
+            raise LaunchError("unsafe frontend backup link metadata")
+        if cache and info.st_uid != 0:
+            try:
+                account = pwd.getpwnam("health-web")
+            except KeyError:
+                raise LaunchError("frontend cache identity missing") from None
+            if ((info.st_uid, info.st_gid) != (account.pw_uid, account.pw_gid)
+                    or info.st_mode & 0o022 or stat.S_ISLNK(info.st_mode)
+                    or not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))
+                    or (stat.S_ISREG(info.st_mode) and info.st_nlink != 1)):
+                raise LaunchError("unsafe frontend cache metadata")
+        elif not stat.S_ISLNK(info.st_mode):
+            validate_metadata(info, directory=stat.S_ISDIR(info.st_mode))
+        digest.update((relative.as_posix() + "\0" + str(stat.S_IMODE(info.st_mode)) + "\0"
+                       + str(info.st_uid) + "\0" + str(info.st_gid) + "\0").encode())
+        if stat.S_ISLNK(info.st_mode):
+            try:
+                target = path.resolve(strict=True)
+            except (OSError, RuntimeError):
+                raise LaunchError("invalid frontend backup link") from None
+            if not target.is_relative_to(root.resolve()) or os.path.isabs(os.readlink(path)):
+                raise LaunchError("frontend backup link escapes bundle")
+            digest.update(b"link\0" + os.readlink(path).encode())
+        elif stat.S_ISDIR(info.st_mode):
+            digest.update(b"directory\0")
+            pending.extend(sorted(path.iterdir(), reverse=True))
+        elif stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size < 2_000_000_000:
+            digest.update(b"file\0" + str(info.st_size).encode() + b"\0")
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        else:
+            raise LaunchError("unsupported frontend backup object")
+    return digest.hexdigest()
+
+
+def _frontend_publication_file_digest(path):
+    secure_path(path, private=True)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    digest = hashlib.sha256()
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        validate_metadata(info, private=True)
+        if info.st_size >= 2_000_000_000:
+            raise LaunchError("frontend publication proof exceeds bound")
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def frontend_stopped_failure(operation):
+    """Bind the one authorized, still-intact stopped-before-rename incident."""
+    intent = dict(kind='frontend-publication', publisher_sha='f8dd4fe8cc962aed54a2db97dc981c82093b93ea',
+                  production_sha='dbad4e66c29f31c0ae149fecefa6c0d4f3e45283',
+                  operation_id='637078dd8c584686a59000de91d2dad2',
+                  frontend_tree='0e0a36d69a526e0ca5395f5c5082a77534dd739c',
+                  state='FRONTEND_STARTED', artifact_digest=None)
+    artifact='2d8d765d014a5015ae6eaf016e77d8bab46ff262a3954ae15a4044914a3dfa8e'
+    if (operation.name!=intent['operation_id']
+            or _json(_read_private(operation/'intent.json'))!=intent
+            or _json(_read_private(operation/'failed.json'))!={**intent,'state':'FRONTEND_NEEDS_OPERATOR'}
+            or _json(_read_private(operation/'install-started.json'))!={**intent,'state':'FRONTEND_INSTALLING','artifact_digest':artifact}):
+        raise LaunchError('fixed stopped frontend incident differs')
+    before=_json(_read_private(operation/'before.json'))
+    if not isinstance(before,dict) or any(before.get(k)!=intent[k] for k in ('publisher_sha','production_sha','operation_id','frontend_tree')):
+        raise LaunchError('original stopped frontend preflight differs')
+    return intent,artifact
+
+
+def validate_frontend_stopped_recovery(operation,complete):
+    _,artifact=frontend_stopped_failure(operation)
+    intent=_json(_read_private(operation/'recovery-intent.json'))
+    finished=_json(_read_private(operation/'recovery-completed.json'))
+    keys={'kind','state','operation_id','recovery_publisher_sha','original_proof',
+          'original_code_sha256','candidate_digest','old_bundle_digest','frontend_process','lease'}
+    if (not isinstance(intent,dict) or set(intent)!=keys or intent['kind']!='frontend-stopped-recovery'
+            or intent['state']!='RECOVERY_STARTED' or intent['operation_id']!=operation.name
+            or not isinstance(intent['recovery_publisher_sha'],str)
+            or re.fullmatch('[0-9a-f]{40}',intent['recovery_publisher_sha']) is None
+            or intent['original_code_sha256']!='d17d896f05340e20735cba86a92eaaf2eeb6b548fd0e56e084ed86e375d15c68'
+            or intent['candidate_digest']!=artifact or not isinstance(intent['old_bundle_digest'],str)
+            or re.fullmatch('[0-9a-f]{64}',intent['old_bundle_digest']) is None
+            or complete.get('artifact_digest')!=artifact
+            or finished!={**intent,'state':'RECOVERY_SUCCEEDED',
+                'intent_sha256':_frontend_publication_file_digest(operation/'recovery-intent.json'),
+                'backups_digest':complete.get('backups_digest')}
+            or complete.get('recovery_sha256')!=_frontend_publication_file_digest(operation/'recovery-completed.json')):
+        raise LaunchError('stopped frontend recovery completion differs')
+    proofs={}
+    for name in ('intent.json','before.json','build.log','install-started.json','failed.json'):
+        path=operation/name;secure_path(path,private=True);info=path.lstat()
+        proofs[name]=dict(dev=info.st_dev,ino=info.st_ino,mode=info.st_mode,uid=info.st_uid,
+                          gid=info.st_gid,sha256=_frontend_publication_file_digest(path))
+    if intent['original_proof']!=proofs:
+        raise LaunchError('original failed publication evidence changed')
+
+
+def assert_frontend_publication_history(state=None, *, pending_stopped_publication=None):
+    """New-tree frontend receipts never authorize a backend release."""
+    root = Path(state or STATE) / "frontend-publications"
+    if not os.path.lexists(root):
+        return
+    secure_path(root, directory=True)
+    if stat.S_IMODE(root.lstat().st_mode) != 0o700:
+        raise LaunchError("frontend publication root must remain private")
+    proof_names = {"before.json", "build.log", "install-started.json", "verified.json"}
+    backups = {"previous-next", "previous-node-modules"}
+    keys = {"kind", "publisher_sha", "production_sha", "operation_id", "frontend_tree", "state", "artifact_digest"}
+    for operation in root.iterdir():
+        secure_path(operation, directory=True)
+        inventory={p.name for p in operation.iterdir()}
+        if pending_stopped_publication is not None and operation.name==pending_stopped_publication:
+            if inventory!={'intent.json','before.json','build.log','install-started.json','failed.json'} or stat.S_IMODE(operation.lstat().st_mode)!=0o700:
+                raise LaunchError('stopped recovery already attempted or partial switch')
+            frontend_stopped_failure(operation)
+            continue
+        recovered='recovery-completed.json' in inventory
+        extras={'failed.json','recovery-intent.json','recovery-completed.json'} if recovered else set()
+        if (stat.S_IMODE(operation.lstat().st_mode) != 0o700
+                or re.fullmatch(r"[0-9a-f]{32}", operation.name) is None
+                or inventory != proof_names | backups | {"intent.json", "completed.json"} | extras):
+            raise LaunchError("unfinished or unknown frontend publication; operator review required")
+        intent = _json(_read_private(operation / "intent.json"))
+        if (not isinstance(intent, dict) or set(intent) != keys or intent["kind"] != "frontend-publication"
+                or intent["operation_id"] != operation.name or intent["state"] != "FRONTEND_STARTED"
+                or intent["artifact_digest"] is not None
+                or any(not isinstance(intent[k], str) or re.fullmatch(r"[0-9a-f]{40}", intent[k]) is None
+                       for k in ("publisher_sha", "production_sha", "frontend_tree"))):
+            raise LaunchError("invalid frontend publication binding")
+        complete = _json(_read_private(operation / "completed.json"))
+        if (not isinstance(complete, dict) or set(complete) != keys | {"proof_sha256", "backups_digest"} | ({'recovery_sha256'} if recovered else set())
+                or not isinstance(complete["artifact_digest"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", complete["artifact_digest"]) is None
+                or {k: complete[k] for k in keys} != {**intent, "state": "FRONTEND_SUCCEEDED", "artifact_digest": complete["artifact_digest"]}):
+            raise LaunchError("invalid frontend publication completion")
+        if recovered:
+            validate_frontend_stopped_recovery(operation,complete)
+        for name, status in (("install-started.json", "FRONTEND_INSTALLING"), ("verified.json", "FRONTEND_VERIFIED")):
+            if _json(_read_private(operation / name)) != {**intent, "state": status, "artifact_digest": complete["artifact_digest"]}:
+                raise LaunchError("frontend publication phase differs")
+        before = _json(_read_private(operation / "before.json"))
+        if not isinstance(before, dict) or any(before.get(k) != intent[k] for k in ("publisher_sha", "production_sha", "operation_id", "frontend_tree")):
+            raise LaunchError("frontend publication preflight differs")
+        if complete["proof_sha256"] != {n: _frontend_publication_file_digest(operation / n) for n in proof_names}:
+            raise LaunchError("frontend publication proof hashes differ")
+        for name in backups:
+            secure_path(operation / name, directory=True)
+        if complete["backups_digest"] != {n: _frontend_publication_backup_digest(operation / n) for n in backups}:
+            raise LaunchError("frontend publication backup hashes differ")
+
+
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None):
     """Independent frontend evidence must never count as backend success."""
+    assert_frontend_publication_history(state,pending_stopped_publication=pending_stopped_publication)
     root = Path(state or STATE) / "frontend-rebuilds"
     closures = root.parent / "frontend-rebuild-closures"
     finalizations = root.parent / "frontend-finalizations"
@@ -478,6 +650,31 @@ def release_status(sha, workspace):
     }
 
 
+def attest_documentation_main(policy, observed_main):
+    """Execute only the policy-bound canonical gate, before any vendor claim."""
+    source = STATE / "bootstrap" / policy["sha"] / "source"
+    script = source / "scripts/trusted_release_gate.py"
+    try:
+        secure_path(script)
+        secure_path(source / ".git/config")
+        env = clean_environment(STATE)
+        env.update(PATH="/usr/bin:/bin", HOME="/nonexistent", GIT_NO_REPLACE_OBJECTS="1",
+                   GIT_CONFIG_SYSTEM="/dev/null")
+        expected = subprocess.run([
+            "/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+            "-C", str(source), "show", policy["sha"] + ":scripts/trusted_release_gate.py",
+        ], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            check=True, timeout=30).stdout
+        if script.read_bytes() != expected:
+            raise LaunchError("documentation gate differs from reviewed source")
+        subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"],
+                        "--workflow-sha", policy["sha"], "--observed-main", observed_main],
+                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, check=True, timeout=300)
+    except (OSError, subprocess.SubprocessError):
+        raise LaunchError("canonical documentation attestation unavailable") from None
+
+
 def check_readiness(policy):
     """Read-only target probes before consuming any build/deployment claim."""
     assert_frontend_rebuild_history()
@@ -495,8 +692,11 @@ def check_readiness(policy):
     result = subprocess.run(git, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             text=True, check=True, timeout=90)
-    if result.stdout.strip() != f"{policy['sha']}\trefs/heads/main":
-        raise LaunchError("remote main differs from authorized release")
+    match = re.fullmatch(r"([0-9a-f]{40})\trefs/heads/main\n?", result.stdout)
+    if match is None:
+        raise LaunchError("invalid remote main observation")
+    if match[1] != policy["sha"]:
+        attest_documentation_main(policy, match[1])
     subprocess.run(["/usr/bin/ssh", "-F", str(CONFIG / "loopback.conf"),
                     "health", "/usr/bin/true"], env=env, stdin=subprocess.DEVNULL,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -532,6 +732,7 @@ def claim_build(policy, workspace, *, native_proof=None):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
+        assert_retained_history()
         if native_proof is None:
             _native_binding(workspace, None)
         if read_status(policy["sha"], workspace)["state"] in {"NEEDS_OPERATOR", "PREPARATION_FAILED"}:
@@ -724,6 +925,7 @@ def testflight_only(policy, workspace, action):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LaunchError("another release invocation is active") from None
+        assert_retained_history()
         _assert_deployment_window(policy)
         if os.path.lexists(BUSINESS_LEASE):
             raise LaunchError("business release in progress")
@@ -774,8 +976,71 @@ def validate_ota_archive(operation):
         raise LaunchError("invalid original OTA lease identity")
 
 
+def _retained_module(sha):
+    if not isinstance(sha, str) or re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+        raise LaunchError("invalid retained publisher identity")
+    source = STATE / "bootstrap" / sha / "source"
+    script = source / "scripts/trusted_retained_testflight.py"
+    secure_path(script)
+    if os.path.lexists(script.parent / "__pycache__"):
+        raise LaunchError("cached retained helper forbidden")
+    env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
+    expected = subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source),
+                               "show", sha + ":scripts/trusted_retained_testflight.py"],
+                              env=env, stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=30).stdout
+    if script.read_bytes() != expected:
+        raise LaunchError("retained helper differs from canonical source")
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location("reviewed_retained_testflight", script)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    module.initialize(source, sha)
+    return module
+
+
+def assert_retained_history():
+    root = STATE / "retained-testflight"
+    if not os.path.lexists(root):
+        return
+    secure_path(root, directory=True)
+    if stat.S_IMODE(root.stat().st_mode) != 0o700:
+        raise LaunchError("invalid retained audit root")
+    for operation in root.iterdir():
+        secure_path(operation, directory=True)
+        if operation.name != "63b61a31-058c-44e5-bb82-67727ca7d073":
+            raise LaunchError("unknown retained artifact audit")
+        intent = _json(_read_private(operation / "intent.json"))
+        module = _retained_module(intent["request"]["sha"])
+        module.validate_history(SimpleNamespace(**globals()), operation)
+
+
+def retained_rpc(policy, action):
+    module = _retained_module(policy["sha"])
+    raw = sys.stdin.buffer.read(1000001)
+    if len(raw) > 1000000:
+        raise LaunchError("oversized retained input")
+    result = subprocess.run([PYTHON, "-I", "-S", "-B", str(Path(module.__file__)),
+                             "--sha", policy["sha"], "--action", action],
+                            env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"},
+                            input=raw, capture_output=True, check=True, timeout=600)
+    value = _json(result.stdout)
+    if action == "claim":
+        if (not isinstance(value, dict) or set(value) != {"sha", "state", "claim_id"}
+                or value["sha"] != policy["sha"] or value["state"] != "CLAIMED"
+                or not isinstance(value["claim_id"], str) or re.fullmatch(r"[0-9a-f]{64}", value["claim_id"]) is None):
+            raise LaunchError("invalid retained claim receipt")
+    elif (not isinstance(value, dict) or set(value) != {"sha", "state", "build_id", "submission_id"}
+          or value["sha"] != policy["sha"] or value["state"] != "UPLOADED" or value["build_id"] != module.BUILD_ID
+          or not isinstance(value["submission_id"], str) or re.fullmatch(module.UUID, value["submission_id"]) is None):
+        raise LaunchError("invalid retained completion receipt")
+    return value
+
+
 def assert_ota_history():
     """Every started OTA must finish before any later publisher or rotation."""
+    assert_retained_history()
     root = STATE / "ota"
     if not os.path.lexists(root):
         return
@@ -1063,12 +1328,12 @@ def validate_loopback(policy):
     public = _read_private(CONFIG / "loopback.pub").decode().strip()
     if re.fullmatch(r"ssh-ed25519 [A-Za-z0-9+/]+={0,2}", public) is None:
         raise LaunchError("invalid loopback public identity")
-    expiry = expiry_time(policy["expires_at"])
-    expected = f'from="127.0.0.1",restrict,expiry-time="{expiry}" {public}'
+    deadline = f',expiry-time="{expiry_time(policy["expires_at"])}"' if policy["expires_at"] != 0 else ""
+    expected = f'from="127.0.0.1",restrict{deadline} {public}'
     keys = _read_private(Path("/root/.ssh/authorized_keys")).decode().splitlines()
     matches = [line for line in keys if public.split()[1] in line]
     if matches != [expected]:
-        raise LaunchError("loopback identity lacks exact local-only expiring authorization")
+        raise LaunchError("loopback identity lacks exact local-only authorization")
 
 
 def laya_private_key():
@@ -1167,6 +1432,8 @@ def main():
             result = testflight_only(policy, workspace, action)
         elif command in {"claim-ota", "finish-ota"}:
             result = ota_rpc(policy, "claim" if command == "claim-ota" else "finish")
+        elif command in {"claim-retained-testflight", "finish-retained-testflight"}:
+            result = retained_rpc(policy, "claim" if command == "claim-retained-testflight" else "finish")
         elif command == "check":
             check_readiness(policy)
             result = {"sha": policy["sha"], "state": "CHECKED"}

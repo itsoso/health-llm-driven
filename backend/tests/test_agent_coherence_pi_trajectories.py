@@ -191,12 +191,14 @@ async def run(db, trace, user, message, **kwargs):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("followup", ["再查一下", "好", "使用 HTML 格式输出"])
 async def test_sync_then_owned_sleep_followup_preserves_date_and_does_not_enqueue_again(
     db,
     owned_data,
     broker,
     clock,
     monkeypatch,
+    followup,
 ):
     user = owned_data
     db.add(
@@ -241,7 +243,7 @@ async def test_sync_then_owned_sleep_followup_preserves_date_and_does_not_enqueu
         ],
     )
     again, persisted = await run(
-        db, second, user, "再查一下", conversation_id=saved.conversation_id
+        db, second, user, followup, conversation_id=saved.conversation_id
     )
     assert len(broker.enqueued) == 1
     assert len(second.dispatches) == 1

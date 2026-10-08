@@ -223,8 +223,17 @@ def test_sdk_transport_hook_rechecks_internal_retry(db, monkeypatch):
     sdk = OpenAI(api_key="test-only", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
                  http_client=httpx.Client(transport=httpx.MockTransport(upstream)), max_retries=1)
     ai_consent.guard_openai_client(sdk)
-    with ai_consent.ai_user_scope(user.id), pytest.raises(APIConnectionError):
+    # Supported SDK versions either propagate the hook's denial directly or
+    # wrap it as a connection error. In both cases the denial must be explicit
+    # and the revoked second request must never reach the transport.
+    with ai_consent.ai_user_scope(user.id), pytest.raises((APIConnectionError, HTTPException)) as denied:
         sdk.chat.completions.create(model="test", messages=[{"role": "user", "content": "private"}])
+    error = denied.value
+    if isinstance(error, APIConnectionError):
+        error = error.__cause__
+    assert isinstance(error, HTTPException)
+    assert error.status_code == 403
+    assert error.detail["code"] == "ai_consent_required"
     assert len(sent) == 1
     sdk.close()
 
@@ -281,3 +290,110 @@ def test_legacy_undisclosed_preference_is_not_selected_or_reported_effective(db,
     monkeypatch.setattr(factory, "get_llm_provider", lambda: safe_default)
     assert factory.create_provider_for_user(user.id, db) is safe_default
     assert get_preference(current_user=user, db=db).model_id is None
+
+
+DASHSCOPE = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
+
+
+def _forbid_consent_db(monkeypatch, ai_consent):
+    def no_db():
+        pytest.fail("system-content scope must not perform a per-user consent lookup")
+    monkeypatch.setattr(ai_consent, "SessionLocal", no_db)
+
+
+def test_userless_call_without_system_scope_still_requires_consent():
+    from app.services import ai_consent
+    with ai_consent.ai_user_scope(None), pytest.raises(HTTPException) as denied:
+        ai_consent.require_ai_consent(destination=DASHSCOPE)
+    assert denied.value.status_code == 403
+    assert denied.value.detail["code"] == "ai_consent_required"
+
+
+def test_system_content_scope_allows_disclosed_destination_without_user(monkeypatch):
+    from app.services import ai_consent
+    _forbid_consent_db(monkeypatch, ai_consent)
+    with ai_consent.ai_user_scope(None), ai_consent.ai_system_content_scope("system_kb_reindex"):
+        ai_consent.require_ai_consent(destination=DASHSCOPE)
+
+
+def test_system_content_scope_still_enforces_destination_disclosure(monkeypatch):
+    from app.services import ai_consent
+    _forbid_consent_db(monkeypatch, ai_consent)
+    with ai_consent.ai_user_scope(None), ai_consent.ai_system_content_scope("system_kb_reindex"):
+        for url in ("https://unknown.example/v1", "http://dashscope.aliyuncs.com/v1", None):
+            with pytest.raises(HTTPException) as denied:
+                ai_consent.require_ai_consent(destination=url)
+            assert denied.value.detail["code"] == "ai_recipient_not_disclosed"
+
+
+def test_system_content_scope_requires_a_registered_purpose():
+    from app.services import ai_consent
+    for purpose in ("", "   ", None, "user_chat", "System_KB_Reindex"):
+        with pytest.raises(ValueError):
+            with ai_consent.ai_system_content_scope(purpose):
+                pass
+
+
+def test_system_content_scope_is_entered_only_by_the_kb_reindex():
+    """New callers need a privacy review; the user query path must stay outside."""
+    import ast
+    from pathlib import Path
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    callers = {}
+    mentions = set()
+    for path in app_dir.rglob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        if "ai_system_content_scope" in source:
+            mentions.add(path.name)
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for inner in ast.walk(node):
+                    if (isinstance(inner, ast.Call) and getattr(inner.func, "id", getattr(inner.func, "attr", None))
+                            == "ai_system_content_scope"):
+                        callers.setdefault(path.name, set()).add(node.name)
+    assert mentions == {"ai_consent.py", "system_knowledge_service.py"}
+    assert callers == {"system_knowledge_service.py": {"_reindex_pgvector_documents"}}
+
+
+def test_system_content_scope_ignored_when_usage_tracker_has_a_caller():
+    """An explicitly cleared request identity plus a tracked caller is not 'user-less'."""
+    from app.services import ai_consent
+    from app.services.llm.usage_tracker import _user_id_ctx
+    token = _user_id_ctx.set(424242)
+    try:
+        with ai_consent.ai_user_scope(None), ai_consent.ai_system_content_scope("system_kb_reindex"):
+            with pytest.raises(HTTPException) as denied:
+                ai_consent.require_ai_consent(destination=DASHSCOPE)
+    finally:
+        _user_id_ctx.reset(token)
+    assert denied.value.detail["code"] == "ai_consent_required"
+
+
+def test_system_content_scope_is_dropped_when_a_user_is_bound(db, monkeypatch):
+    """A user-data section nested in a system job never inherits the exemption."""
+    from app.services import ai_consent
+    user, _ = _headers(db)
+    monkeypatch.setattr(ai_consent, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    with ai_consent.ai_system_content_scope("system_kb_reindex"):
+        with ai_consent.ai_user_scope(user.id), pytest.raises(HTTPException) as denied:
+            ai_consent.require_ai_consent(destination=DASHSCOPE)
+        assert denied.value.detail["code"] == "ai_consent_required"
+        ai_consent.require_ai_consent(destination=DASHSCOPE)
+
+
+@pytest.mark.asyncio
+async def test_system_content_scope_does_not_leak_after_exit_or_into_requests():
+    from app.services import ai_consent
+    with ai_consent.ai_user_scope(None):
+        with ai_consent.ai_system_content_scope("system_kb_reindex"):
+            scope = ai_consent.ai_request_scope()
+            await anext(scope)
+            try:
+                with pytest.raises(HTTPException) as in_request:
+                    ai_consent.require_ai_consent(destination=DASHSCOPE)
+                assert in_request.value.detail["code"] == "ai_consent_required"
+            finally:
+                await scope.aclose()
+        with pytest.raises(HTTPException) as after:
+            ai_consent.require_ai_consent(destination=DASHSCOPE)
+        assert after.value.detail["code"] == "ai_consent_required"

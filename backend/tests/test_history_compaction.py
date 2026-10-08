@@ -6,6 +6,7 @@
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.orm import sessionmaker
 
 from app.services import history_compaction as hc
 from app.services.agent_conversation_service import AgentConversationService
@@ -63,7 +64,8 @@ def test_flag_off_keeps_history_bodies_even_with_cache(db, fake_cache, monkeypat
 def test_flag_on_valid_cache_prepends_summary_window_untouched(db, fake_cache, monkeypatch):
     svc, cid, msgs = _seed_conversation(db, 20)
     # 溢出 = msg-0..msg-4;缓存恰好折到最后一条溢出
-    fake_cache.set(cid, {"folded_thru_id": msgs[4].id, "summary": "前情:讨论了体重趋势"})
+    fake_cache.set(cid, {"folded_thru_id": msgs[4].id, "summary": "前情:讨论了体重趋势",
+                         "folded_prefix_sha256": hc._prefix_fingerprint(msgs[:5])})
     monkeypatch.setattr(hc.settings, "llm_history_compaction", True, raising=False)
     monkeypatch.setattr(
         "app.services.agent_conversation_service.settings.llm_history_compaction",
@@ -109,13 +111,12 @@ async def test_refresh_fold_caches_summary_and_receipts(db, fake_cache, monkeypa
     monkeypatch.setattr(hc.settings, "llm_history_compaction", True, raising=False)
     # _refresh_fold 自建 SessionLocal(call-time import)—— 测试里指到共享 in-memory db
     import app.database as app_db
-    monkeypatch.setattr(app_db, "SessionLocal", lambda: db)
+    monkeypatch.setattr(app_db, "SessionLocal", sessionmaker(bind=db.get_bind()))
 
     async def fake_summarize(prior, turns):
         return f"叙事({len(turns)}条新折)"
     monkeypatch.setattr(hc, "_summarize", fake_summarize)
-    # db.close() 会被 _refresh_fold 调 —— in-memory 共享 fixture 不能真关
-    monkeypatch.setattr(db, "close", lambda: None)
+    # Use the real separate worker session so PostgreSQL read transactions close.
 
     await hc._refresh_fold(cid, keep_recent=15)
     cached = fake_cache.get(cid)
@@ -130,9 +131,9 @@ async def test_refresh_fold_caches_summary_and_receipts(db, fake_cache, monkeypa
 async def test_refresh_fold_incremental_only_new_messages(db, fake_cache, monkeypatch):
     svc, cid, msgs = _seed_conversation(db, 22)  # 溢出 = 0..6
     import app.database as app_db
-    monkeypatch.setattr(app_db, "SessionLocal", lambda: db)
-    monkeypatch.setattr(db, "close", lambda: None)
+    monkeypatch.setattr(app_db, "SessionLocal", sessionmaker(bind=db.get_bind()))
     fake_cache.set(cid, {"folded_thru_id": msgs[4].id, "summary": "旧叙事",
+                         "folded_prefix_sha256": hc._prefix_fingerprint(msgs[:5]),
                          "receipt_lines": ["已记录 X #1"]})
     seen = {}
 
@@ -150,11 +151,71 @@ async def test_refresh_fold_incremental_only_new_messages(db, fake_cache, monkey
 
 
 @pytest.mark.asyncio
+async def test_incremental_fold_uses_history_position_not_numeric_id(db, fake_cache, monkeypatch):
+    svc, cid, msgs = _seed_conversation(db, 5)
+    msgs[2].created_at = None
+    db.commit()
+    monkeypatch.setattr("app.database.SessionLocal", sessionmaker(bind=db.get_bind()))
+    batches = []
+
+    async def summarize(prior, turns):
+        batches.append([turn["content"] for turn in turns])
+        return prior + "|" + "|".join(batches[-1])
+
+    monkeypatch.setattr(hc, "_summarize", summarize)
+    await hc._refresh_fold(cid, keep_recent=4)
+    await hc._refresh_fold(cid, keep_recent=1)
+    assert batches == [[msgs[2].content], [msgs[0].content, msgs[1].content, msgs[3].content]]
+    monkeypatch.setattr(hc.settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(hc.settings, "llm_history_compaction", True)
+    rendered = "\n".join(message["content"] for message in svc.build_messages(cid, limit=1))
+    assert all(msg.content in rendered for msg in msgs)
+
+
+def test_old_order_cache_namespace_is_not_reused(monkeypatch):
+    from app.utils.redis_cache import RedisCache
+    from app.services.health_evidence.delivery import health_release_policy_fingerprint
+    legacy = f"history_fold:v2:{health_release_policy_fingerprint()}:31"
+    cache = {legacy: {"folded_thru_id": 3, "summary": "old order"}}
+    monkeypatch.setattr(RedisCache, "get", lambda key: cache.get(key))
+    assert hc._cache_get(31) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation", ["order", "content"])
+async def test_reordered_prefix_is_rejected_by_reader_and_rebuilt_by_writer(db, fake_cache, monkeypatch, mutation):
+    svc, cid, msgs = _seed_conversation(db, 6)
+    cached = {"folded_thru_id": msgs[2].id, "summary": "OLD_PREFIX",
+              "folded_prefix_sha256": hc._prefix_fingerprint(msgs[:3])}
+    fake_cache.set(cid, cached)
+    if mutation == "order":
+        msgs[5].created_at = None
+    else:
+        msgs[0].content = "edited-source"
+    db.commit()
+    monkeypatch.setattr(hc.settings, "llm_history_compaction", True)
+    monkeypatch.setattr(hc.settings, "domain_prompt_optimization", True)
+    assert all("OLD_PREFIX" not in m["content"] for m in svc.build_messages(cid, limit=2))
+    monkeypatch.setattr("app.database.SessionLocal", sessionmaker(bind=db.get_bind()))
+    captured = []
+
+    async def summarize(prior, turns):
+        captured.append((prior, [turn["content"] for turn in turns]))
+        return "rebuilt"
+
+    monkeypatch.setattr(hc, "_summarize", summarize)
+    await hc._refresh_fold(cid, keep_recent=2 if mutation == "order" else 3)
+    expected = ([msgs[5].content, msgs[0].content, msgs[1].content, msgs[2].content]
+                if mutation == "order" else [msgs[0].content, msgs[1].content, msgs[2].content])
+    assert captured == [("", expected)]
+    assert fake_cache.get(cid)["summary"] == "rebuilt"
+
+
+@pytest.mark.asyncio
 async def test_refresh_fold_llm_failure_keeps_old_cache(db, fake_cache, monkeypatch):
     svc, cid, msgs = _seed_conversation(db, 20)
     import app.database as app_db
-    monkeypatch.setattr(app_db, "SessionLocal", lambda: db)
-    monkeypatch.setattr(db, "close", lambda: None)
+    monkeypatch.setattr(app_db, "SessionLocal", sessionmaker(bind=db.get_bind()))
     fake_cache.set(cid, {"folded_thru_id": msgs[2].id, "summary": "旧"})
 
     async def failing(prior, turns):

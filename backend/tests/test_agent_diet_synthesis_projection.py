@@ -51,7 +51,7 @@ def test_static_projection_retains_same_rules_without_loading_personal_context(d
     assert '本轮权威医学证据已由健康证据运行时完成' not in projected
 
 
-async def _run(db, user, monkeypatch, *, query, panel=False, result_kind='valid', model_id='qwen3.8-max-preview', answer_kind='valid', answer_text=None, record_overrides=None):
+async def _run(db, user, monkeypatch, *, query, panel=False, result_kind='valid', model_id='qwen3.8-max-preview', answer_kind='valid', answer_text=None, record_overrides=None, client_turn_id=None):
     _context_sentinels(monkeypatch)
     from app.services.agent_conversation_service import AgentConversationService
     original_history = AgentConversationService.build_messages
@@ -104,7 +104,7 @@ async def _run(db, user, monkeypatch, *, query, panel=False, result_kind='valid'
             payload = _calendar_payload(request, records=rows, availability='no_data' if result_kind == 'no_data' else 'available')
         return json.dumps(payload)
     monkeypatch.setattr(executor, '_dispatch_tool_request', dispatch)
-    events = [event async for event in executor.run_stream(user.id, query, client_turn_id='projection-' + result_kind,
+    events = [event async for event in executor.run_stream(user.id, query, client_turn_id=client_turn_id or 'projection-' + result_kind,
         extra_context=json.dumps({'multi_model': panel, 'model_id': model_id, 'note': 'ENTRY_SENTINEL'}))]
     done = events[-1]['data']
     saved = db.query(AgentMessage).filter(AgentMessage.id == done['message_id']).one()

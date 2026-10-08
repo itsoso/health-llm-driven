@@ -1,6 +1,6 @@
 """Close the audited legacy native-only upload without inventing backend success.
 
-The fixed legacy profile is deliberately narrow. A root operator at a reviewed,
+The two fixed native profiles are deliberately narrow. A root operator at a reviewed,
 CI-green canonical source performs inspect -> matching digest -> durable intent
 and completion. Old claims, locks and installation bytes are never rewritten.
 A consumed or interrupted closure is never resumed. This certifies a completed
@@ -79,8 +79,46 @@ REQUIRED_STEPS = {
 }
 
 
+NATIVE_273_SHA = "e19043ecb269e20f3bc0a546165e43d467f1fc8c"
+PROFILES = {
+    OLD_SHA: {
+        "run_id": RUN_ID, "run_attempt": 2, "job_ids": JOB_IDS,
+        "log_host": "productionresultssa18.blob.core.windows.net",
+        "build_id": BUILD_ID, "submission_id": SUBMISSION_ID,
+        "log_sha256": LOG_SHA256, "canonical_hashes": CANONICAL_HASHES,
+        # Preserve already-issued legacy proofs: they did not pin the complete
+        # job-response bytes beyond the exact identities and terminal checks.
+        "jobs_sha256": None,
+    },
+    NATIVE_273_SHA: {
+        "run_id": 36877321184, "run_attempt": 1,
+        "log_host": "productionresultssa4.blob.core.windows.net",
+        "job_ids": {
+            "preflight": 110419973839, "build-permission": 110420049172,
+            "ios-build": 110420683984, "backend": 110420686145,
+            "testflight": 110424934683, "release-result": 110427264251,
+        },
+        "build_id": "20d5e73a-a6b9-4c70-ad69-e63d31e058f2",
+        "submission_id": "fcfbb57d-4804-4a36-9c57-eab062bf321e",
+        "log_sha256": "3798063ca9da49a7c0916c2f2c38bff490f719a85b36f66e7fbb3c532085df59",
+        "jobs_sha256": "9754876edb874fbbda3c1c4c660627fba0b808e5b311c04b3d0e677ca4f20569",
+        "canonical_hashes": {
+            ".github/workflows/trusted-release.yml": "3f37eab8434236bb53cb7a36d2cb98ba48a522bb3755085867c8c189f2bfe0d1",
+            "scripts/trusted_eas_build.py": "c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a",
+            "scripts/trusted_release_server.py": "00817f271df303cf9a683d1b95a3b4757c183c04f00e2173651434adffc8a00b",
+        },
+    },
+}
+
+
 class RetirementError(Exception):
     """Fixed, secret-free operator diagnostics."""
+
+
+def profile_for(native_sha):
+    if not isinstance(native_sha, str) or native_sha not in PROFILES:
+        raise RetirementError("unsupported native legacy revision")
+    return PROFILES[native_sha]
 
 
 def digest(value):
@@ -129,13 +167,14 @@ def steps_map(job):
     return result
 
 
-def validate_vendor(run, jobs, prior, log):
+def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
+    profile = profile_for(native_sha)
     expected = {
-        "id": RUN_ID,
-        "run_attempt": 2,
+        "id": profile["run_id"],
+        "run_attempt": profile["run_attempt"],
         "workflow_id": WORKFLOW_ID,
         "path": ".github/workflows/trusted-release.yml",
-        "head_sha": OLD_SHA,
+        "head_sha": native_sha,
         "head_branch": "main",
         "event": "workflow_dispatch",
         "status": "completed",
@@ -151,9 +190,11 @@ def validate_vendor(run, jobs, prior, log):
     ):
         raise RetirementError("exact native workflow terminal required")
     current = jobs_map(jobs)
-    first = jobs_map(prior)
+    if profile["run_attempt"] == 1 and prior is not None:
+        raise RetirementError("unexpected earlier native attempt evidence")
+    first = jobs_map(prior) if profile["run_attempt"] == 2 else None
     for name, job in current.items():
-        if job.get("id") != JOB_IDS[name] or job.get("conclusion") != (
+        if job.get("id") != profile["job_ids"][name] or job.get("conclusion") != (
             "skipped" if name == "backend" else "success"
         ):
             raise RetirementError("native-only job identity or terminal differs")
@@ -166,7 +207,7 @@ def validate_vendor(run, jobs, prior, log):
                 raise RetirementError("native vendor step did not succeed")
     # Attempt 1 failed before vendor create. Never close a profile with an
     # uncertain earlier create/upload, even if a later rerun happens to pass.
-    if (
+    if first is not None and (
         first["backend"].get("conclusion") != "skipped"
         or first["testflight"].get("conclusion") != "skipped"
         or first["ios-build"].get("conclusion") != "failure"
@@ -184,10 +225,10 @@ def validate_vendor(run, jobs, prior, log):
     ]
     submission = (
         "Submission details: https://expo.dev/accounts/itsoso/projects/health-pilot/submissions/"
-        + SUBMISSION_ID
+        + profile["submission_id"]
     )
     if (
-        body.count(BUILD_ID) != 1
+        body.count(profile["build_id"]) != 1
         or body.count(submission) != 1
         or body.count("✔ Submitted your app to Apple App Store Connect!") != 1
         or body.count(
@@ -198,15 +239,15 @@ def validate_vendor(run, jobs, prior, log):
         raise RetirementError("exact vendor build and upload terminal missing")
     return {
         "state": "VENDOR_UPLOAD_SUCCEEDED",
-        "run_id": RUN_ID,
-        "run_attempt": 2,
+        "run_id": profile["run_id"],
+        "run_attempt": profile["run_attempt"],
         "workflow_id": WORKFLOW_ID,
-        "build_id": BUILD_ID,
-        "submission_id": SUBMISSION_ID,
+        "build_id": profile["build_id"],
+        "submission_id": profile["submission_id"],
         "log_sha256": hashlib.sha256(log).hexdigest(),
         "jobs_sha256": digest(jobs),
-        "prior_jobs_sha256": digest(prior),
-        "canonical_hashes": CANONICAL_HASHES,
+        "prior_jobs_sha256": digest(prior) if prior is not None else None,
+        "canonical_hashes": profile["canonical_hashes"],
     }
 
 
@@ -232,11 +273,12 @@ def opener():
     )
 
 
-def validate_log_redirect(url):
+def validate_log_redirect(url, native_sha=OLD_SHA):
+    profile = profile_for(native_sha)
     part = urllib.parse.urlsplit(url)
     if (
         part.scheme != "https"
-        or part.hostname != "productionresultssa18.blob.core.windows.net"
+        or part.hostname != profile["log_host"]
         or part.username is not None
         or part.password is not None
         or part.port not in (None, 443)
@@ -246,7 +288,7 @@ def validate_log_redirect(url):
     return True
 
 
-def read_url(url, token, *, logs=False):
+def read_url(url, token, *, logs=False, native_sha=OLD_SHA):
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -265,7 +307,7 @@ def read_url(url, token, *, logs=False):
             if not logs or error.code != 302:
                 raise
             location = error.headers.get("Location", "")
-            validate_log_redirect(location)
+            validate_log_redirect(location, native_sha)
             # Signed storage URL receives no GitHub token or caller headers.
             response = client.open(urllib.request.Request(location), timeout=20)
         with response:
@@ -279,27 +321,32 @@ def read_url(url, token, *, logs=False):
         raise RetirementError("native GitHub evidence unavailable") from None
 
 
-def vendor_evidence(token):
-    run = json_value(read_url(BASE + f"/actions/runs/{RUN_ID}", token))
-    jobs = json_value(
-        read_url(BASE + f"/actions/runs/{RUN_ID}/attempts/2/jobs?per_page=100", token)
-    )
-    prior = json_value(
-        read_url(BASE + f"/actions/runs/{RUN_ID}/attempts/1/jobs?per_page=100", token)
-    )
+def vendor_evidence(token, native_sha=OLD_SHA):
+    profile = profile_for(native_sha)
+    run_url = BASE + f"/actions/runs/{profile['run_id']}"
+    run = json_value(read_url(run_url, token))
+    jobs = json_value(read_url(
+        run_url + f"/attempts/{profile['run_attempt']}/jobs?per_page=100", token
+    ))
+    prior = (json_value(read_url(run_url + "/attempts/1/jobs?per_page=100", token))
+             if profile["run_attempt"] == 2 else None)
     log = read_url(
-        BASE + f"/actions/jobs/{JOB_IDS['testflight']}/logs", token, logs=True
+        BASE + f"/actions/jobs/{profile['job_ids']['testflight']}/logs", token,
+        logs=True, native_sha=native_sha
     )
-    proof = validate_vendor(run, jobs, prior, log)
-    if proof["log_sha256"] != LOG_SHA256:
+    proof = validate_vendor(run, jobs, prior, log, native_sha=native_sha)
+    if proof["log_sha256"] != profile["log_sha256"]:
         raise RetirementError("reviewed native vendor log bytes differ")
-    if json_value(read_url(BASE + f"/actions/runs/{RUN_ID}", token)) != run:
+    if profile["jobs_sha256"] is not None and proof["jobs_sha256"] != profile["jobs_sha256"]:
+        raise RetirementError("reviewed native workflow job bytes differ")
+    if json_value(read_url(run_url, token)) != run:
         raise RetirementError("native workflow changed during inspection")
     return proof
 
 
-def workspace_evidence(b):
-    workspace = b.STATE / OLD_SHA
+def workspace_evidence(b, native_sha=OLD_SHA):
+    profile_for(native_sha)
+    workspace = b.STATE / native_sha
     inventory = b._inventory(
         workspace,
         {
@@ -310,17 +357,17 @@ def workspace_evidence(b):
         },
     )
     for name in ("build-started.json", "native-started.json"):
-        if b._read_json(workspace / name) != {"sha": OLD_SHA, "state": "STARTED"}:
+        if b._read_json(workspace / name) != {"sha": native_sha, "state": "STARTED"}:
             raise RetirementError("native claim differs")
     proof = b._read_json(workspace / "testflight-base.json")
     if (
         not isinstance(proof, dict)
         or set(proof) != {"sha", "state", "production_sha"}
-        or proof["sha"] != OLD_SHA
+        or proof["sha"] != native_sha
         or proof["state"] != "COMPATIBLE"
         or not isinstance(proof["production_sha"], str)
         or re.fullmatch("[a-f0-9]{40}", proof["production_sha"]) is None
-        or proof["production_sha"] == OLD_SHA
+        or proof["production_sha"] == native_sha
         or (workspace / "build.lock").read_bytes() != b""
     ):
         raise RetirementError("native-only production binding differs")
@@ -350,6 +397,8 @@ def close_transaction(adapter, evidence_sha256=None):
         raise RetirementError("closure already attempted; retry forbidden")
     adapter.check_record_parent()
     evidence = adapter.inspect()
+    native_sha = evidence.get("old_sha")
+    profile_for(native_sha)
     fingerprint = digest(evidence)
     if evidence_sha256 is None:
         return {"state": "INSPECTED_NATIVE_ONLY_UPLOAD", "evidence_sha256": fingerprint}
@@ -372,9 +421,9 @@ def close_transaction(adapter, evidence_sha256=None):
         raise RetirementError("native evidence changed after durable intent")
     write_json(
         adapter.record / "completed.json",
-        {"state": TERMINAL, "old_sha": OLD_SHA, "intent_sha256": digest(intent)},
+        {"state": TERMINAL, "old_sha": native_sha, "intent_sha256": digest(intent)},
     )
-    return {"state": TERMINAL, "sha": OLD_SHA, "receipt": receipt}
+    return {"state": TERMINAL, "sha": native_sha, "receipt": receipt}
 
 
 def private_directory(b, path):
@@ -389,15 +438,17 @@ def private_directory(b, path):
         raise RetirementError("root-only native audit directory required")
 
 
-def canonical_profile(b):
-    source = b.canonical_source(OLD_SHA)
-    for name, expected in CANONICAL_HASHES.items():
+def canonical_profile(b, native_sha=OLD_SHA):
+    profile = profile_for(native_sha)
+    source = b.canonical_source(native_sha)
+    for name, expected in profile["canonical_hashes"].items():
         b.secure(source / name)
         if hashlib.sha256((source / name).read_bytes()).hexdigest() != expected:
             raise RetirementError("native legacy executor profile differs")
 
 
-def no_conflicts(b):
+def no_conflicts(b, native_sha=OLD_SHA):
+    profile_for(native_sha)
     for name in (
         "recoveries",
         "partial-laya-closures",
@@ -407,19 +458,21 @@ def no_conflicts(b):
         "lost-closure-receipt-acknowledgments",
         "contained-service-recoveries",
     ):
-        if os.path.lexists(b.STATE / name / OLD_SHA):
+        if os.path.lexists(b.STATE / name / native_sha):
             raise RetirementError("conflicting native closure history")
 
 
 class Adapter:
-    def __init__(self, b, source, closing_sha, token, check_locks, production_sha):
+    def __init__(self, b, source, closing_sha, token, check_locks, production_sha, native_sha=OLD_SHA):
+        profile_for(native_sha)
+        self.native_sha = native_sha
         self.b = b
         self.source = source
         self.closing_sha = closing_sha
         self.production_sha = production_sha
         self.token = token
         self.check_locks = check_locks
-        self.record = b.STATE / ROOT_NAME / OLD_SHA
+        self.record = b.STATE / ROOT_NAME / self.native_sha
 
     def check_record_parent(self):
         if os.path.lexists(self.record.parent):
@@ -430,22 +483,22 @@ class Adapter:
     def inspect(self):
         b = self.b
         self.check_locks()
-        no_conflicts(b)
-        canonical_profile(b)
+        no_conflicts(b, self.native_sha)
+        canonical_profile(b, self.native_sha)
         if b.canonical_source(self.closing_sha) != self.source:
             raise RetirementError("closing source changed")
         b._assert_idle()
         b._recovery_process_proof()
         if os.path.lexists(b.BUSINESS_LEASE):
             raise RetirementError("business release lease present")
-        installation = b._installation_evidence(OLD_SHA, b.CONFIG, b.INSTALLED.parent)
-        workspace = workspace_evidence(b)
+        installation = b._installation_evidence(self.native_sha, b.CONFIG, b.INSTALLED.parent)
+        workspace = workspace_evidence(b, self.native_sha)
         b._recovery_production_proof(self.production_sha, self.source)
-        vendor = vendor_evidence(self.token)
+        vendor = vendor_evidence(self.token, self.native_sha)
         authorized = b._recovery_file_identity(b.AUTHORIZED)
         locks = {
             "launcher": b._recovery_file_identity(b.STATE / "launcher.lock"),
-            "build": b._recovery_file_identity(b.STATE / OLD_SHA / "build.lock"),
+            "build": b._recovery_file_identity(b.STATE / self.native_sha / "build.lock"),
         }
         b._assert_idle()
         b._recovery_process_proof()
@@ -453,7 +506,7 @@ class Adapter:
         if os.path.lexists(b.BUSINESS_LEASE):
             raise RetirementError("business release lease appeared")
         return {
-            "old_sha": OLD_SHA,
+            "old_sha": self.native_sha,
             "closing_sha": self.closing_sha,
             "production_sha": self.production_sha,
             "workspace": workspace,
@@ -465,10 +518,9 @@ class Adapter:
 
 
 def closed_evidence(b, sha, receipt, *, historical=False):
-    if sha != OLD_SHA:
-        raise RetirementError("unsupported native legacy revision")
-    no_conflicts(b)
-    canonical_profile(b)
+    profile = profile_for(sha)
+    no_conflicts(b, sha)
+    canonical_profile(b, sha)
     record = b.STATE / ROOT_NAME / sha
     private_directory(b, record.parent)
     private_directory(b, record)
@@ -518,13 +570,13 @@ def closed_evidence(b, sha, receipt, *, historical=False):
     source = b.canonical_source(intent["closing_sha"])
     expected_vendor = {
         "state": "VENDOR_UPLOAD_SUCCEEDED",
-        "run_id": RUN_ID,
-        "run_attempt": 2,
+        "run_id": profile["run_id"],
+        "run_attempt": profile["run_attempt"],
         "workflow_id": WORKFLOW_ID,
-        "build_id": BUILD_ID,
-        "submission_id": SUBMISSION_ID,
-        "log_sha256": LOG_SHA256,
-        "canonical_hashes": CANONICAL_HASHES,
+        "build_id": profile["build_id"],
+        "submission_id": profile["submission_id"],
+        "log_sha256": profile["log_sha256"],
+        "canonical_hashes": profile["canonical_hashes"],
     }
     vendor = intent["vendor"]
     if (
@@ -534,12 +586,14 @@ def closed_evidence(b, sha, receipt, *, historical=False):
         or any(
             not isinstance(vendor[k], str)
             or re.fullmatch("[a-f0-9]{64}", vendor[k]) is None
-            for k in ("jobs_sha256", "prior_jobs_sha256")
+            for k in (("jobs_sha256", "prior_jobs_sha256") if profile["run_attempt"] == 2 else ("jobs_sha256",))
         )
+        or (profile["run_attempt"] == 1 and vendor.get("prior_jobs_sha256") is not None)
+        or (profile["jobs_sha256"] is not None and vendor.get("jobs_sha256") != profile["jobs_sha256"])
     ):
         raise RetirementError("native vendor proof differs")
     if (
-        workspace_evidence(b) != intent["workspace"]
+        workspace_evidence(b, sha) != intent["workspace"]
         or not isinstance(intent["production_sha"], str)
         or re.fullmatch("[a-f0-9]{40}", intent["production_sha"]) is None
     ):
@@ -575,7 +629,7 @@ def context(sha):
         or not sys.flags.dont_write_bytecode
         or sys.executable != "/usr/bin/python3.12"
         or re.fullmatch("[a-f0-9]{40}", sha) is None
-        or sha == OLD_SHA
+        or sha in PROFILES
     ):
         raise RetirementError("isolated canonical root operator required")
     source = ROOT / "bootstrap" / sha / "source"
@@ -635,8 +689,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--sha", required=True)
     parser.add_argument("--production-sha", required=True)
+    parser.add_argument("--native-sha", default=OLD_SHA)
     parser.add_argument("--evidence-sha256")
     args = parser.parse_args()
+    profile_for(args.native_sha)
     b, source = context(args.sha)
     if re.fullmatch("[a-f0-9]{40}", args.production_sha) is None:
         raise RetirementError("exact current production SHA required")
@@ -664,16 +720,16 @@ def main():
     build_fd = None
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        build_fd = b._acquire_existing_build_lock(OLD_SHA)
+        build_fd = b._acquire_existing_build_lock(args.native_sha)
         if build_fd is None:
             raise RetirementError("original native build lock required")
 
         def check():
             b._assert_original_lock(b.STATE / "launcher.lock", fd)
-            b._assert_original_lock(b.STATE / OLD_SHA / "build.lock", build_fd)
+            b._assert_original_lock(b.STATE / args.native_sha / "build.lock", build_fd)
 
         result = close_transaction(
-            Adapter(b, source, args.sha, secret["github_token"], check, args.production_sha),
+            Adapter(b, source, args.sha, secret["github_token"], check, args.production_sha, args.native_sha),
             args.evidence_sha256,
         )
         check()

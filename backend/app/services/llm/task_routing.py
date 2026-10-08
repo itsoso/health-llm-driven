@@ -13,6 +13,7 @@ import re
 import unicodedata
 from typing import Optional
 
+from app.services.agent_public_task import classify_public_task
 from app.services.crisis_lexicon import contains_crisis_language
 from app.services.drug_lexicon import (
     drug_name_free_text_terms,
@@ -391,6 +392,8 @@ def classify_answer_task_tier(
         if (intent.domain == "diet" and intent.is_write) or intent.domain == "aigc_media":
             return "balanced"
         return "high_stakes"
+    if classify_public_task(message, has_attachments=has_attachments) is not None:
+        return "casual"
     if (
         intent.primary in {"read", "write"}
         and intent.domain != "unknown"

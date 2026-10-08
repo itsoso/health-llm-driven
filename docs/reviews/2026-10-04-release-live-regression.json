@@ -1,0 +1,60 @@
+{
+  "status": "passed",
+  "llm_cost": "possible",
+  "suites": [
+    {
+      "suite": "invariants",
+      "total_cases": 12,
+      "passed": 12,
+      "failed": 0,
+      "errored": 0,
+      "avg_score": 1.0,
+      "avg_latency_ms": 0,
+      "regression": []
+    },
+    {
+      "suite": "health_agent_core",
+      "total_cases": 50,
+      "passed": 50,
+      "failed": 0,
+      "errored": 0,
+      "avg_score": 1.0,
+      "avg_latency_ms": 0,
+      "regression": []
+    },
+    {
+      "suite": "orchestrator",
+      "total_cases": 5,
+      "passed": 5,
+      "failed": 0,
+      "errored": 0,
+      "avg_score": 0.98,
+      "avg_latency_ms": 8310,
+      "regression": []
+    }
+  ],
+  "failed_suites": [],
+  "errors": [],
+  "trajectory_contract": {
+    "status": "passed",
+    "total_cases": 12,
+    "failed_cases": []
+  },
+  "trajectory_goldens": {
+    "status": "passed",
+    "fixture_version": 1,
+    "total_cases": 9,
+    "covered_scenarios": [
+      "duplicate_client_turn_side_effect",
+      "duplicate_same_record_side_effect",
+      "idempotent_client_turn_replay",
+      "meal_context_reestimate",
+      "missing_identity_receipt",
+      "read_only_delete_side_effect",
+      "simple_fruit_write",
+      "simple_water_write",
+      "uncertain_receipt_false_success"
+    ],
+    "failed_cases": []
+  }
+}

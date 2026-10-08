@@ -1,0 +1,176 @@
+{
+  "status": "candidate_passed_baseline_failures",
+  "max_provider_attempts": 36,
+  "planned_tasks": 12,
+  "baseline_commit": "f201d85b4f0d726b09ff0f8b16acf403d70f3e57",
+  "candidate_commit": "96e71c3745b34a628b0fd7ac1f56371f81916682",
+  "runner_sha256": "4dfabc1b5d8eb8cdc193c9464db94ef4ae301fb69303838400fac6ec900e7a5c",
+  "plan": [
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-flash",
+      "order": [
+        "main",
+        "candidate"
+      ]
+    },
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-max",
+      "order": [
+        "candidate",
+        "main"
+      ]
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-flash",
+      "order": [
+        "candidate",
+        "main"
+      ]
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-max",
+      "order": [
+        "main",
+        "candidate"
+      ]
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "order": [
+        "main",
+        "candidate"
+      ]
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "order": [
+        "candidate",
+        "main"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-flash",
+      "arm": "main",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_available-qwen3.8-flash-main.json",
+      "sha256": "670be5264528bb35c278b3dea988cda0c12011d466a39c9658ec6d0f6792a57e"
+    },
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-flash",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_available-qwen3.8-flash-candidate.json",
+      "sha256": "7acd2329d955c61ca714f4e26efdfa49f05ef0cfada34eca8c7a65ca00ab7062"
+    },
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-max",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_available-qwen3.8-max-candidate.json",
+      "sha256": "fb5aa2c48d28f818a6391d7e0262323b001d6ec2ae6b98e78cc94115df23c222"
+    },
+    {
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-max",
+      "arm": "main",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_available-qwen3.8-max-main.json",
+      "sha256": "efdd14e28019f7e04b01468f122a24506ce49d25045be6d453e48bface6b03ab"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-flash",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_empty-qwen3.8-flash-candidate.json",
+      "sha256": "bbd4f0eaf5475bf22c8893549c784824cf0601554e2c1afbb221c25ac7ab9e4d"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-flash",
+      "arm": "main",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_empty-qwen3.8-flash-main.json",
+      "sha256": "89bc6fadae33298a81eda4e952402d4cd9caac918704aeebe3e197477744f750"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-max",
+      "arm": "main",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_empty-qwen3.8-max-main.json",
+      "sha256": "e48c82bc887e69c2a00ef06fc7027c1f2e81dba44866adbf00f358f019c5f60c"
+    },
+    {
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-max",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_empty-qwen3.8-max-candidate.json",
+      "sha256": "e790d8981f41860395f983703e2c5150a6f09833267fa2a4954767a406724126"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "arm": "main",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_read_failure-qwen3.8-flash-main.json",
+      "sha256": "1dbba8f01e5361c7a40899b5f969930659b902ab7d52625fd02d901361f828d4"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_read_failure-qwen3.8-flash-candidate.json",
+      "sha256": "884ec530d15ae279309a559e701c791d5923e5eb9458726d216da2aab4738fec"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "arm": "candidate",
+      "exit_code": 0,
+      "status": "passed_contracts_only",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_read_failure-qwen3.8-max-candidate.json",
+      "sha256": "ee5d52c5ca480962db6c4d8f4c95ea2c8e97d23426230ee1ecf5b3c4592c5468"
+    },
+    {
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "arm": "main",
+      "exit_code": 1,
+      "status": "failed",
+      "report": "docs/reviews/2026-10-04-release-v2-paired/analysis_7d_read_failure-qwen3.8-max-main.json",
+      "sha256": "9487c2b5d8a165c58cb1a7fc5d4b4e64e72dabff1b70b3e31643c2028fac5d01"
+    }
+  ],
+  "semantic_review": "required",
+  "limits": [
+    "Synthetic own/other/future rows; no production database.",
+    "Each task uses a fresh memory database and real consent/audit.",
+    "Small regression screen, not population noninferiority or production latency SLA.",
+    "P1/P2 and rejected write-description experiments not enabled.",
+    "Candidate failure stops the batch. Baseline failures remain failed and do not prevent unattempted candidate slots. No retries."
+  ]
+}

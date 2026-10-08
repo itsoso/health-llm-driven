@@ -5,7 +5,6 @@
 大多数是"时机错开"级别的提醒（吸收拮抗），少数是真正的风险（鱼油+抗凝）。
 """
 
-import re
 from datetime import date
 from typing import List, Optional
 
@@ -13,6 +12,7 @@ from app.agents.safety_guardian.engine import register
 from app.agents.safety_guardian.rules.ddi import _has_drug_class, _med_names
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.twin.schema import HealthTwin
+from app.utils.lab_range import is_below_range as _is_below_range
 from app.utils.timezone import get_china_today
 
 
@@ -302,26 +302,6 @@ def _ppi_keywords() -> List[str]:
         return list(_CLASS_KEYWORDS.get("抑酸药(PPI/P-CAB)", []))
     except Exception:  # pragma: no cover - 退化到内置名单，fail-loud 不静默丢规则
         return ["泮托拉唑", "奥美拉唑", "埃索美拉唑", "雷贝拉唑", "兰索拉唑", "伏诺拉生"]
-
-
-def _is_below_range(value, reference_range) -> Optional[bool]:
-    """value < 参考下限 → True;> 下限/无法判向 → False;不可解析或缺值 → None。"""
-    if value is None or not reference_range:
-        return None
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return None
-    rr = str(reference_range)
-    # lo-hi:兼容多种分隔符(ASCII - ~、全角 ～－、中文 至、en/em dash);收紧数字 token 防误锚
-    m = re.search(r"(\d+(?:\.\d+)?)\s*[-~～–—－至]\s*(\d+(?:\.\d+)?)", rr)
-    if m:
-        return v < float(m.group(1))
-    # 仅下限:≥X / >X / >=X
-    m2 = re.search(r"[≥>＞]\s*=?\s*(\d+(?:\.\d+)?)", rr)
-    if m2:
-        return v < float(m2.group(1))
-    return None  # 不可解析(如 "<X"、纯文字) → 交 unclear 分支兜底,不静默当正常
 
 
 @register

@@ -295,6 +295,25 @@ def fetch_ecg_latest(db: Session, user_id: int) -> Optional[Dict[str, Any]]:
 # ─────────────────────────── medical exam abnormal ────────────────────
 
 
+def _latest_day_candidates(base_q, code: str, patterns, page_size: int = 200) -> list:
+    """按 (record_date, id) 倒序分页, 收集到该指标最新匹配日的全部行为止 (无日期行并入, 见 latest_reading)。"""
+    from app.biomarkers.normalize import matches_row
+
+    cands, newest, offset = [], None, 0
+    while True:
+        page = base_q.offset(offset).limit(page_size).all()
+        for v, n, u, d, name_en, item_code in page:
+            if newest is not None and d is not None and d != newest:
+                return cands
+            row = (d, n, v, u, None, (name_en, item_code))
+            cands.append(row)
+            if newest is None and d is not None and matches_row(n, code, patterns, row[5]):
+                newest = d
+        if len(page) < page_size:
+            return cands
+        offset += page_size
+
+
 def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
     """从 MedicalIndicator 抓最新一次的常用化验项数值.
 
@@ -303,7 +322,11 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
       alt / ast / ggt / creatinine / egfr / uric_acid
       血常规 CBC: hemoglobin / hematocrit / rbc / platelet / mch / mchc / neutrophil_pct
 
-    每个 key 取该用户该指标的最新一次记录 (按 record_date desc).
+    每个 key 取该用户该指标的最新一次记录 (按 record_date desc, 同日按 id desc).
+    有 biomarker registry 定义的 key 经 reading_for_code 复核, 值为 canonical 单位 (与 LabsContext 字段注释
+    一致): ILIKE 只是 SQL 预筛 —— 「%低密度脂蛋白%」会捞到同日的「极低密度脂蛋白-C」, 「%肌酐%」会捞到被
+    写入期改名成「肌酐」的尿肌酐(mg/g)。只看该指标最新一天: 那天能读出的值 (未识别的单位写法照读);
+    那天都读不出 (单位量纲不符 / 数值不合理) → 缺失, 绝不退回更旧的值冒充现值。
     """
     out: Dict[str, float] = {}
     try:
@@ -318,14 +341,14 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             "hdl": ["HDL", "高密度脂蛋白"],
             "total_cholesterol": ["TC", "总胆固醇"],
             "triglycerides": ["TG", "甘油三酯"],
-            "blood_glucose": ["FBG", "空腹血糖"],
+            "blood_glucose": ["FBG", "FPG", "空腹血糖"],
             "hba1c": ["HBA1C", "HbA1c", "糖化血红蛋白"],
-            "alt": ["ALT", "谷丙转氨酶"],
-            "ast": ["AST", "谷草转氨酶"],
+            "alt": ["ALT", "GPT", "谷丙转氨酶"],
+            "ast": ["AST", "GOT", "谷草转氨酶"],
             "ggt": ["GGT", "γ-谷氨酰", "谷氨酰转肽酶"],
-            "creatinine": ["CREA", "肌酐"],
+            "creatinine": ["CRE", "SCr", "肌酐"],
             "egfr": ["eGFR", "肾小球滤过率"],
-            "uric_acid": ["UA", "尿酸"],
+            "uric_acid": ["UA", "uric", "尿酸"],
             # PhenoAge 输入项 (单位见 LabsContext 字段注释):
             "albumin": ["ALB", "白蛋白"],
             "crp": ["hs-CRP", "hsCRP", "CRP", "C反应蛋白", "C-反应蛋白"],
@@ -336,8 +359,24 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             # 改走下方 cbc_analyte_of 锚定白名单 (防 白细胞酯酶/网织血红蛋白/MPV 等复合名污染)。
         }
 
+        # 有 registry 定义的 key → canonical code (候选行逐条复核, 取首个真命中)
+        KEY_CODES = {
+            "ldl": "lipid_ldl", "hdl": "lipid_hdl", "total_cholesterol": "lipid_tc",
+            "triglycerides": "lipid_tg", "blood_glucose": "glucose_fasting", "hba1c": "glucose_hba1c",
+            "alt": "ALT", "ast": "AST", "ggt": "GGT",
+            "creatinine": "CREA", "egfr": "egfr", "uric_acid": "UA",
+        }
+
+        # 只扩 SQL 预筛 (捞出别名表才认识的写法), 绝不当身份关键字: 「Anti-Glomerular Basement Membrane
+        # Ab」「丙氨酸」(血浆氨基酸)「Low density lipoprotein receptor」都含这些词 —— 身份只由 registry 判。
+        PREFILTER_EXTRA = {
+            "ldl": ["low density", "low-density"], "hdl": ["high density", "high-density"],
+            "hba1c": ["A1C"], "alt": ["丙氨酸"], "ast": ["天冬氨酸", "天门冬氨酸"],
+            "ggt": ["谷氨酰基", "谷氨酰转移酶"], "egfr": ["GFR", "Glomerular", "CKD-EPI"], "uric_acid": ["urate"],
+        }
+
         from sqlalchemy import or_
-        from app.biomarkers.definitions import resolve_code
+        from app.biomarkers.normalize import latest_reading, normalize_observation
 
         for key, patterns in KEY_PATTERNS.items():
             # 构建 OR 条件: name_en/name/item_code 任一匹配关键字
@@ -345,27 +384,27 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
                 MedicalIndicator.name.ilike(f"%{p}%") |
                 MedicalIndicator.name_en.ilike(f"%{p}%") |
                 MedicalIndicator.item_code.ilike(f"%{p}%")
-                for p in patterns
+                for p in (*patterns, *PREFILTER_EXTRA.get(key, ()))
             ])
             base_q = (
-                db.query(MedicalIndicator.value, MedicalIndicator.name)
+                db.query(MedicalIndicator.value, MedicalIndicator.name, MedicalIndicator.unit,
+                         MedicalIndicator.record_date, MedicalIndicator.name_en, MedicalIndicator.item_code)
                 .filter(
                     MedicalIndicator.user_id == user_id,
                     MedicalIndicator.value.isnot(None),
                     cond,
                 )
-                .order_by(desc(MedicalIndicator.record_date))
+                .order_by(desc(MedicalIndicator.record_date), desc(MedicalIndicator.id))
             )
-            # hba1c 医疗敏感: 子串「糖化血红蛋白」会吞下「糖化血红蛋白A1」(总糖化 HbA1,
-            # 与标准 A1c 是不同指标, 参考 6.3–9.0%)。该总糖化值喂进 twin.labs.hba1c →
-            # 污染 SafetyGuardian 糖尿病阈值规则的 fallback。用 canonical resolve_code 校验:
-            # 只接受解析为 glucose_hba1c(标准 A1c)的行, 逐条向旧回退直到命中。
-            if key == "hba1c":
-                row = None
-                for cand_value, cand_name in base_q.limit(20).all():
-                    if resolve_code(cand_name or "") == "glucose_hba1c":
-                        row = (cand_value,)
-                        break
+            # 医疗敏感 (喂 SafetyGuardian 阈值 fallback / PhenoAge): 例如「糖化血红蛋白A1」(总糖化,
+            # 参考 6.3–9.0%) 不是标准 A1c、VLDL-C 不是 LDL。逐条向旧回退直到 canonical 命中。
+            code = KEY_CODES.get(key)
+            if code is not None:
+                # 只取该指标最新一天; 那天读不出 → 缺失, 绝不退回更旧的值冒充现值。
+                # 分页扫过 SQL 宽前缀的假命中 (几十条 UA-* 尿常规不能把真血尿酸挤出窗口), 读到最新匹配日为止。
+                cands = _latest_day_candidates(base_q, code, patterns)
+                _, reading = latest_reading(cands, code, patterns)
+                row = (reading,) if reading is not None else None
             else:
                 row = base_q.first()
             if row and row[0] is not None:
@@ -401,23 +440,36 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
                 for p in prefilters
             ])
             rows = (
-                db.query(MedicalIndicator.value, MedicalIndicator.name)
+                db.query(MedicalIndicator.value, MedicalIndicator.name, MedicalIndicator.unit,
+                         MedicalIndicator.record_date)
                 .filter(
                     MedicalIndicator.user_id == user_id,
                     MedicalIndicator.value.isnot(None),
                     cond,
                 )
-                .order_by(desc(MedicalIndicator.record_date))
+                .order_by(desc(MedicalIndicator.record_date), desc(MedicalIndicator.id))
                 .limit(30)
                 .all()
             )
-            for cand_value, cand_name in rows:  # newest-first; 取首个锚定命中
-                if cbc_analyte_of(cand_name) == key:
-                    try:
-                        out[key] = float(cand_value)
-                    except (TypeError, ValueError):
-                        pass
-                    break
+            newest_day = None
+            for cand_value, cand_name, cand_unit, cand_day in rows:  # newest-first; 取首个锚定命中
+                if cbc_analyte_of(cand_name) != key:
+                    continue
+                if newest_day is not None and cand_day != newest_day:
+                    break  # 最新一天都读不出: 缺失, 不退回旧值
+                newest_day = cand_day
+                if key == "hemoglobin":
+                    # 写入期归一化器曾把 MCH(pg)、MCHC(≈330 g/L) 改名成「血红蛋白」—— 名字锚定挡不住,
+                    # 再过 registry hemoglobin 的单位闸门 + 合理区间 (g/dL 换算成 g/L); 同一天内找真值。
+                    norm = normalize_observation("血红蛋白", cand_value, cand_unit)
+                    if norm is None:
+                        continue
+                    cand_value = norm.normalized_value
+                try:
+                    out[key] = float(cand_value)
+                except (TypeError, ValueError):
+                    pass
+                break
         return out
     except Exception as e:
         logger.warning(f"[twin.collectors] fetch_latest_labs 失败: {e}")
@@ -648,12 +700,16 @@ def fetch_genetic_variants_categorized(
             if category in by_category:
                 by_category[category].append(item)
 
+        # 结构化分区必须完整: 不在这里截断。旧的 [:10]/[:15] 截断会把注册表靠后的
+        # 安全相关位点 (如 HFE C282Y rs1800562, 营养类第 17 个) 丢掉, 让 Safety /
+        # SupplementAdvisor 硬阻断静默失效。条数天然受活跃 profile + rsid 去重约束;
+        # prompt 体积由 formatter._format_genetic_variants_blob(max_genes) 单独限界。
         return {
             "total": len(unique_variants),
-            "drug_sensitivity": drug_sens[:10],
-            "risk": risk[:10],
-            "protective": protective[:10],
-            **{f"{k}_variants": v[:15] for k, v in by_category.items()},
+            "drug_sensitivity": drug_sens,
+            "risk": risk,
+            "protective": protective,
+            **{f"{k}_variants": v for k, v in by_category.items()},
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] genetic 失败: {e}")

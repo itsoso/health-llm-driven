@@ -99,6 +99,35 @@ def test_live_llm_synthetic_consent_requires_disposable_test_database():
     )
 
 
+def test_live_scope_initializes_usage_audit_in_empty_database(monkeypatch):
+    from sqlalchemy import create_engine, inspect
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from app import database
+    from app.config import settings
+    from app.models.llm_usage import LlmUsageLog
+    from app.services import ai_consent
+
+    engine = create_engine("sqlite:///:memory:", poolclass=StaticPool)
+    sessions = sessionmaker(bind=engine)
+    monkeypatch.setattr(settings, "app_env", "test")
+    monkeypatch.setattr(settings, "database_url", "sqlite:///:memory:")
+    monkeypatch.setattr(database, "engine", engine)
+    monkeypatch.setattr(database, "SessionLocal", sessions)
+    monkeypatch.setattr(ai_consent, "SessionLocal", sessions)
+    try:
+        with _load_gate_module()._live_llm_eval_consent_scope(True):
+            ai_consent.require_ai_consent(destination="https://dashscope.aliyuncs.com/compatible-mode/v1")
+            assert inspect(engine).has_table("llm_usage_logs")
+            with sessions() as db:
+                db.add(LlmUsageLog(provider="synthetic", model="fixture", prompt_tokens=1,
+                                   completion_tokens=1, total_tokens=2, token_source="api"))
+                db.commit()
+                assert db.query(LlmUsageLog).count() == 1
+    finally:
+        engine.dispose()
+
+
 def test_agent_trajectory_contract_is_part_of_the_offline_gate():
     module = _load_gate_module()
 

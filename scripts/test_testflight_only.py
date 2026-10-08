@@ -166,6 +166,19 @@ def test_native_only_allows_only_reviewed_publisher_and_dossier_delta():
     ])
 
 
+def test_native_only_reuses_gate_documentation_policy_and_reviewed_gate_files():
+    from test_trusted_release_gate import load_gate
+    proof, gate = load_proof(), load_gate()
+    proof.validate_changed_paths([
+        "AGENTS.md", "docs/ops/github-relay.md", "docs/dossiers/evidence.md",
+        "scripts/trusted_release_gate.py", "scripts/test_trusted_release_gate.py",
+        "scripts/test_trusted_release_server.py",
+    ], documentation_path=gate.is_release_documentation)
+    with pytest.raises(proof.PreflightError):
+        proof.validate_changed_paths(["backend/knowledge/runtime.md"],
+                                     documentation_path=gate.is_release_documentation)
+
+
 @pytest.mark.parametrize("receipt", [None, {}, {"sha": PRODUCTION_SHA, "state": "NEEDS_OPERATOR"},
                                      {"sha": SHA, "state": "SUCCEEDED"}])
 def test_native_only_requires_exact_successful_live_backend_receipt(receipt):

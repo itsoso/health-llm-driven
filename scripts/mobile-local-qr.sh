@@ -300,7 +300,7 @@ fi
 python3 -I "${SAFETY}" verify-ios-ipa --build-id "${BUILD_ID}" --ipa "${IPA_PATH}" \
   --version "${APP_VERSION}" --channel "${REVA_LOCAL_UPDATES_CHANNEL}" \
   --sha "${SOURCE_SHA}" --receipt "${IPA_PATH}.receipt.json" \
-  --public-dir "${PUBLIC_DIR}" "${RECEIPT_ARGS[@]}"
+  --public-dir "${PUBLIC_DIR}" ${RECEIPT_ARGS[@]+"${RECEIPT_ARGS[@]}"}
 require_command qrencode
 INSTALL_URL="$(<"${PUBLIC_DIR}/install-url.txt")"
 qrencode -o "${PUBLIC_DIR}/qr.png" -s 12 -m 2 "${INSTALL_URL}"

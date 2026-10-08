@@ -149,6 +149,8 @@ interface Props {
     options?: ChatInputSendOptions,
   ) => boolean | Promise<boolean>;
   isStreaming: boolean;
+  /** Prevent navigation to another voice surface while capture or submission is active. */
+  onVoiceBusyChange?: (busy: boolean) => void;
   /** Prefills the composer when callers deep-link into chat with a prompt. */
   initialText?: string;
   /** Bumps when callers need to inject the same prompt text again. */
@@ -165,6 +167,7 @@ interface Props {
 export default function ChatInputBar({
   onSend,
   isStreaming,
+  onVoiceBusyChange,
   initialText,
   initialTextKey,
   onMedicalExamImportResult,
@@ -604,7 +607,22 @@ export default function ChatInputBar({
     applyVoiceTranscript('realtime_mic', base ? `${base} ${clean}` : clean, asr);
   }, [applyVoiceTranscript]);
 
-  const realtimeDictation = useRealtimeDictation({
+  const [voiceCleanupPending, setVoiceCleanupPending] = useState(0);
+  const [voiceCleanupFailed, setVoiceCleanupFailed] = useState(false);
+  const trackVoiceCleanup = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
+    setVoiceCleanupPending(count => count + 1);
+    try {
+      return await operation();
+    } catch (error) {
+      // A rejected cleanup is not proof the microphone was released.
+      setVoiceCleanupFailed(true);
+      Alert.alert('语音停止失败', '暂时无法进入语音对话，请退出应用后重新打开。');
+      throw error;
+    } finally {
+      setVoiceCleanupPending(count => count - 1);
+    }
+  }, []);
+  const rawRealtimeDictation = useRealtimeDictation({
     onTranscript: handleRealtimeTranscript,
     onEnd: () => {
       if (activeVoiceSourceRef.current === 'dictation') {
@@ -613,6 +631,11 @@ export default function ChatInputBar({
     },
     onError: (message) => dispatchComposer({ type: 'fail', errorCode: message || 'dictation_failed' }),
   });
+  const realtimeDictation = {
+    ...rawRealtimeDictation,
+    stopDictation: () => trackVoiceCleanup(rawRealtimeDictation.stopDictation),
+    cancelDictation: () => trackVoiceCleanup(rawRealtimeDictation.cancelDictation),
+  };
 
   stopDictationRef.current = realtimeDictation.stopDictation;
   cancelDictationRef.current = realtimeDictation.cancelDictation;
@@ -728,6 +751,22 @@ export default function ChatInputBar({
   }, [handleKeyboardSubmit]);
 
   const realtimeActive = composer.phase === 'live_dictating' || realtimeDictation.isDictating;
+  const voiceBusy = realtimeActive
+    || Boolean(realtimeDictation.cleanupFailed || realtimeDictation.isCleaningUp)
+    || voiceCleanupPending > 0
+    || voiceCleanupFailed
+    || composer.phase === 'hold_starting'
+    || composer.phase === 'hold_recording'
+    || composer.phase === 'hold_transcribing'
+    || composer.phase === 'submitting';
+  React.useEffect(() => {
+    onVoiceBusyChange?.(voiceBusy);
+  }, [onVoiceBusyChange, voiceBusy]);
+  React.useEffect(() => {
+    if (realtimeDictation.cleanupFailed) {
+      Alert.alert('语音停止失败', '麦克风未能安全停止，请退出应用后重新打开');
+    }
+  }, [realtimeDictation.cleanupFailed]);
   const realtimeDictationDisabled = shouldShowDisabledMic(composer);
   const realtimeMicLabel = realtimeActive
     ? '停止实时语音转文字'

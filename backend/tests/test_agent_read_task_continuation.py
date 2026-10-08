@@ -196,6 +196,29 @@ def resolve_metadata(raw, *, state=None):
     )
 
 
+@pytest.mark.parametrize("text", [
+    "好", "好的", "使用 html 格式输出", "使用HTML方式输出", "改成 HTML",
+    "把刚才的分析改成HTML", "页面保留核心洞察，生成 HTML 页面。",
+])
+def test_presentation_followup_keeps_owned_task_without_new_authority(text):
+    from app.services.agent_read_task_continuation import resolve_read_task_continuation
+
+    state = snapshot(text, now=NOW + timedelta(minutes=2))
+    assert resolve_read_task_continuation(state) is None
+    task = resolve_metadata(longitudinal_metadata(), state=state)
+    assert task is not None
+    assert task["queries"] == longitudinal_metadata()["queries"]
+    assert task["created_at"] == NOW.isoformat()
+
+
+@pytest.mark.parametrize("text", [
+    "使用HTML输出我朋友的数据", "改成HTML并删除记录", "不要改成HTML",
+    '他说“改成HTML”', "如果我说好", "好，记录今天饮水", "改成HTML，查询基因",
+])
+def test_presentation_followup_does_not_inherit_compound_or_foreign_requests(text):
+    assert resolve_metadata(longitudinal_metadata(), state=snapshot(text)) is None
+
+
 def test_four_domain_followup_keeps_original_seven_days_across_midnight():
     from app.services.agent_kernel.read_task_scope import OwnedReadScope
     from app.services.agent_kernel.types import ActionableReference

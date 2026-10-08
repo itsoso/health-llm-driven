@@ -75,16 +75,78 @@ def _read(get_json, path):
     return result
 
 
-def _assert_main(get_json, sha):
+def _main_sha(get_json):
     ref = _read(get_json, "/git/ref/heads/main")
     obj = ref.get("object")
     if (
         ref.get("ref") != "refs/heads/main"
         or not isinstance(obj, dict)
         or obj.get("type") != "commit"
-        or obj.get("sha") != sha
+        or not isinstance(obj.get("sha"), str)
+        or re.fullmatch(r"[0-9a-f]{40}", obj["sha"]) is None
     ):
-        raise GateError("Release SHA is not current GitHub main")
+        raise GateError("Malformed GitHub main ref")
+    return obj["sha"]
+
+
+def is_release_documentation(path):
+    """Explicit non-runtime documents; never infer safety from .md alone."""
+    return isinstance(path, str) and (
+        path in {"AGENTS.md", "docs/governance/deploy.md", "docs/ops/github-relay.md"}
+        or re.fullmatch(r"docs/dossiers/[A-Za-z0-9][A-Za-z0-9_-]*\.md", path) is not None
+    )
+
+
+def _documentation_files(payload):
+    files = payload.get("files")
+    # GitHub compare returns at most 300 files. A full page is ambiguous.
+    if not isinstance(files, list) or not 0 < len(files) < 300:
+        raise GateError("Incomplete documentation comparison")
+    seen = set()
+    for item in files:
+        if (not isinstance(item, dict) or not is_release_documentation(item.get("filename"))
+                or item.get("status") not in {"added", "removed", "modified", "renamed"}
+                or item["filename"] in seen
+                or (item.get("status") == "renamed"
+                    and not is_release_documentation(item.get("previous_filename")))
+                or ("previous_filename" in item
+                    and not is_release_documentation(item["previous_filename"]))):
+            raise GateError("Main contains runtime or unknown changes")
+        seen.add(item["filename"])
+
+
+def _documentation_descendant(get_json, sha, head, *, _max_commits=8):
+    """Bounded linear ancestry, checking each commit (including reverted code)."""
+    payload = _read(get_json, f"/compare/{sha}...{head}")
+    commits = payload.get("commits")
+    count = payload.get("total_commits")
+    if (payload.get("status") != "ahead" or type(count) is not int or not 1 <= count <= _max_commits
+            or type(payload.get("ahead_by")) is not int or payload["ahead_by"] != count
+            or type(payload.get("behind_by")) is not int or payload["behind_by"] != 0
+            or not isinstance(commits, list) or len(commits) != count
+            or not isinstance(payload.get("base_commit"), dict)
+            or payload["base_commit"].get("sha") != sha
+            or not isinstance(payload.get("merge_base_commit"), dict)
+            or payload["merge_base_commit"].get("sha") != sha):
+        raise GateError("Unproven or oversized documentation ancestry")
+    previous, seen = sha, {sha}
+    for commit in commits:
+        if not isinstance(commit, dict):
+            raise GateError("Malformed documentation commit")
+        current, parents = commit.get("sha"), commit.get("parents")
+        if (not isinstance(current, str) or re.fullmatch(r"[0-9a-f]{40}", current) is None
+                or current in seen or not isinstance(parents, list) or len(parents) != 1
+                or not isinstance(parents[0], dict) or parents[0].get("sha") != previous):
+            raise GateError("Documentation commits must be a linear descendant chain")
+        # Immutable exact commit comparisons cannot conceal a code edit/revert.
+        if count == 1:
+            _documentation_files(payload)
+        else:
+            _documentation_descendant(get_json, previous, current, _max_commits=1)
+        seen.add(current)
+        previous = current
+    if previous != head:
+        raise GateError("Documentation ancestry does not reach main")
 
 
 def _positive_int(value):
@@ -139,23 +201,37 @@ def _receipt(run, sha, workflow_sha):
     }
 
 
-def verify_release(sha, workflow_sha, *, _get_json=_get_json):
+def verify_release(sha, workflow_sha, *, observed_main=None, _get_json=_get_json):
     """Attest fixed-origin current metadata; injection is internal test-only."""
     if (
         not isinstance(sha, str) or not isinstance(workflow_sha, str)
         or re.fullmatch(r"[0-9a-f]{40}", sha) is None
         or re.fullmatch(r"[0-9a-f]{40}", workflow_sha) is None
         or sha != workflow_sha
+        or (observed_main is not None and (
+            not isinstance(observed_main, str) or re.fullmatch(r"[0-9a-f]{40}", observed_main) is None))
     ):
         raise GateError("Release and workflow must use the same exact 40-character SHA")
-    _assert_main(_get_json, sha)
+    head = _main_sha(_get_json)
+    if observed_main is not None and head != observed_main:
+        raise GateError("Git and GitHub main observations differ")
+    head_receipt = None
+    if head != sha:
+        _documentation_descendant(_get_json, sha, head)
+        head_receipt = _receipt(_latest(_get_json, head), head, head)
+        detail = _read(_get_json, f"/actions/runs/{head_receipt['ci_run_id']}")
+        if _receipt(detail, head, head) != head_receipt:
+            raise GateError("Main CI attempt changed during validation")
     receipt = _receipt(_latest(_get_json, sha), sha, workflow_sha)
     detail = _read(_get_json, f"/actions/runs/{receipt['ci_run_id']}")
     if _receipt(detail, sha, workflow_sha) != receipt:
         raise GateError("CI attempt changed during validation")
-    _assert_main(_get_json, sha)
+    if _main_sha(_get_json) != head:
+        raise GateError("Main changed during validation")
     if _receipt(_latest(_get_json, sha), sha, workflow_sha) != receipt:
         raise GateError("Latest CI changed during validation")
+    if head_receipt is not None and _receipt(_latest(_get_json, head), head, head) != head_receipt:
+        raise GateError("Main CI changed during validation")
     return receipt
 
 
@@ -166,9 +242,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--sha", required=True)
     parser.add_argument("--workflow-sha", required=True)
+    parser.add_argument("--observed-main")
     args = parser.parse_args()
     try:
-        receipt = verify_release(args.sha, args.workflow_sha)
+        receipt = verify_release(args.sha, args.workflow_sha, observed_main=args.observed_main)
     except GateError as error:
         print(f"release gate: {error}", file=sys.stderr)
         return 1

@@ -148,3 +148,16 @@ def test_log_emits_one_line_without_content_leak(db, caplog):
     assert "TOPSECRET_SYSTEM_PROMPT" not in msg
     assert "TOPSECRET_USER_MESSAGE" not in msg
     assert "TOPSECRET_TOOL_DESCRIPTION" not in msg
+
+
+def test_prefix_budget_can_be_joined_to_a_run_without_content(db, caplog):
+    executor = AgentExecutor(db)
+    executor._runtime_run_id = 'run_synthetic123'
+    provider = type('P', (), {'model':'synthetic'})()
+    with caplog.at_level(logging.INFO, logger='app.services.agent_executor'):
+        executor._log_prompt_prefix_signature([{'role':'user','content':'private'}], provider, [{'function':{'name':'health_query'}}])
+        executor._log_prompt_prefix_signature([{'role':'user','content':'private'}], provider, [])
+    lines = [r.getMessage() for r in caplog.records if 'llm_prefix' in r.getMessage()]
+    assert 'run_id=run_synthetic123 request_index=1 phase=tools' in lines[0]
+    assert 'run_id=run_synthetic123 request_index=2 phase=answer' in lines[1]
+    assert all('private' not in line for line in lines)

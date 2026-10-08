@@ -471,8 +471,16 @@ def _prompt_payload_budget(
     system_chars = 0
     history_chars = 0
     turn_chars = 0
+    tool_result_chars = 0
+    tool_call_chars = 0
     for index, message in enumerate(messages):
         size = len(_stringify_message_content(message.get("content")))
+        if message.get("role") == "tool":
+            tool_result_chars += size
+        if message.get("tool_calls"):
+            tool_call_chars += len(json.dumps(
+                message["tool_calls"], ensure_ascii=False, separators=(",", ":"), default=str,
+            ))
         if message.get("role") == "system":
             system_chars += size
         elif index == last_user_idx:
@@ -494,6 +502,9 @@ def _prompt_payload_budget(
         "system_approx_tokens": system_chars // 4,
         "history_chars": history_chars,
         "history_approx_tokens": history_chars // 4,
+        "dialogue_chars": history_chars - tool_result_chars,
+        "tool_result_chars": tool_result_chars,
+        "tool_call_chars": tool_call_chars,
         "turn_chars": turn_chars,
         "turn_approx_tokens": turn_chars // 4,
         "tool_schema_chars": tool_schema_chars,
@@ -501,6 +512,8 @@ def _prompt_payload_budget(
         "tool_count": len(tools or []),
         "message_approx_tokens": message_chars // 4,
         "total_approx_tokens": (message_chars + tool_schema_chars) // 4,
+        # Keep legacy metrics comparable; this estimate also counts calls.
+        "input_approx_tokens": (message_chars + tool_schema_chars + tool_call_chars) // 4,
     }
 
 
@@ -1040,6 +1053,9 @@ def _project_orchestrator_result(result: str) -> str:
         }
         if data.get("perf") is not None:
             projected["perf"] = data.get("perf")
+        for key in ("error", "error_code", "status", "success", "query", "safety_action", "persisted_card_ids"):
+            if key in data:
+                projected[key] = data[key]
         return json.dumps(projected, ensure_ascii=False)
     except Exception:  # noqa: BLE001 — 投影失败宁可原样返回,不丢内容
         return result
@@ -6128,7 +6144,7 @@ _DIET_NON_FOOD_FIELD_RE = re.compile(
 )
 _DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
     r"(?:没吃那么多|没有吃那么多|没全吃|没有全吃|没吃完|没有吃完|"
-    r"实际.{0,8}只吃|只吃了?|只有吃了?|我吃了)",
+    r"实际.{0,8}只吃|只吃了?|只有吃了?|我吃了|(?:刚才|刚刚)(?:早餐|午餐|晚餐|加餐)吃了)",
     re.I,
 )
 _DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
@@ -6276,7 +6292,7 @@ _DIET_FACTUAL_LATEST_CORRECTION_SHAPE_RE = re.compile(
     rf"(?:{_DIET_FACTUAL_WRITE_SUFFIX_PATTERN})?\s*[。！!]*$",
 )
 _DIET_FACTUAL_CORRECTION_SHAPE_RE = re.compile(
-    rf"^(?:{_DIET_FACTUAL_DATE_PATTERN}\s*)?(?:我\s*)?"
+    rf"^(?:(?:{_DIET_FACTUAL_DATE_PATTERN}|刚才|刚刚)\s*)?(?:我\s*)?"
     rf"(?:{_DIET_FACTUAL_SHORTFALL_PATTERN}\s*[,，]\s*)?"
     rf"{_DIET_FACTUAL_MEAL_PATTERN}\s*"
     rf"{_DIET_FACTUAL_CALORIE_DESCRIPTOR_PATTERN}\s*"
@@ -6301,6 +6317,17 @@ _DIET_FACTUAL_CONSUMPTION_FIRST_CORRECTION_RE = re.compile(
     r"\s*[。！!]*$",
     re.I,
 )
+_DIET_COMMAND_FIRST_CORRECTION_RE = re.compile(
+    r"^(?:(?:请|麻烦)\s*)?(?:帮我\s*)?(?:修改|更正|修正|更新|调整)"
+    rf"(?:(?:{_DIET_FACTUAL_DATE_PATTERN}|\d{{4}}-\d{{2}}-\d{{2}})(?:的)?)?"
+    rf"{_DIET_FACTUAL_MEAL_PATTERN}(?:的)?(?:记录)?(?:\s*#(?P<record_id>[1-9]\d{{0,9}}))?"
+    r"\s*[,，]\s*(?:我)?(?:实际)?(?:只)?吃了(?:其中的)?"
+    rf"{_DIET_FACTUAL_PORTION_PLACEHOLDER}"
+    rf"(?:[。；;]\s*(?:修改|更正|修正|更新|调整)"
+    rf"(?:(?:{_DIET_FACTUAL_DATE_PATTERN}|\d{{4}}-\d{{2}}-\d{{2}})(?:的)?)?"
+    rf"{_DIET_FACTUAL_MEAL_PATTERN}(?:的)?记录)?[。！!]*$",
+)
+
 _DIET_FACTUAL_PHOTO_SUBJECT_PATTERN = (
     r"(?:(?:这|整|本)(?:一)?(?:餐|顿|份|盘|桌菜?)|(?:这|整)些)"
 )
@@ -6422,6 +6449,7 @@ def _meal_fraction_utterance_has_factual_shape(
     return any(pattern.fullmatch(marked) for pattern in (
         _DIET_FACTUAL_CORRECTION_SHAPE_RE,
         _DIET_FACTUAL_CONSUMPTION_FIRST_CORRECTION_RE,
+        _DIET_COMMAND_FIRST_CORRECTION_RE,
         _DIET_FACTUAL_PHOTO_SHAPE_RE,
         _DIET_FACTUAL_BARE_PHOTO_SHAPE_RE,
     ))
@@ -6674,6 +6702,15 @@ def _parse_explicit_diet_correction(
     if not meal_type:
         return None
 
+    # Repeated commands may clarify the same target, never silently switch meals.
+    if len({_normalize_diet_meal_type(match.group(0))
+            for match in _DIET_CORRECTION_MEAL_RE.finditer(text)}) != 1:
+        return None
+    explicit_dates = {_normalize_relative_date(match.group(0), reference_now=reference_now)
+                      for match in _MESSAGE_DATE_RE.finditer(text)}
+    if len(explicit_dates) > 1:
+        return None
+
     date_match = _MESSAGE_DATE_RE.search(text)
     target_date = _normalize_relative_date(
         date_match.group(0) if date_match else "today",
@@ -6691,12 +6728,18 @@ def _parse_explicit_diet_correction(
     consumed_portion = _partial_meal_consumed_portion(text)
     if consumed_portion is not None:
         consumed_fraction, consumed_fraction_label = consumed_portion
-        return {
+        result = {
             "date": target_date,
             "meal_type": meal_type,
             "consumed_fraction": consumed_fraction,
             "consumed_fraction_label": consumed_fraction_label,
         }
+        token = _DIET_FRACTION_TOKEN_RE.search(text)
+        marked = text[:token.start()] + _DIET_FACTUAL_PORTION_PLACEHOLDER + text[token.end():]
+        command = _DIET_COMMAND_FIRST_CORRECTION_RE.fullmatch(marked)
+        if command and command.group("record_id"):
+            result["record_id"] = int(command.group("record_id"))
+        return result
 
     partial_signal = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
     if (
@@ -6736,6 +6779,22 @@ def _parse_explicit_diet_correction(
         "meal_type": meal_type,
         "food_items": replacement,
     }
+
+
+def _diet_correction_candidate_message(
+    correction: Mapping[str, Any], candidates: Sequence[Mapping[str, Any]],
+) -> str:
+    meal = _MEAL_TYPE_ZH.get(correction.get("meal_type"), "餐食")
+    lines = [_diet_correction_unresolved_message("ambiguous_target")]
+    for row in candidates[:5]:
+        record_id = row.get("id") or row.get("record_id")
+        label = " ".join(str(row.get("food_items") or "餐食内容未填写").split())[:80]
+        command = (f"修改{correction['date']}{meal}记录#{record_id}，"
+                   f"我只吃了{correction['consumed_fraction_label']}")
+        lines.append(f"记录 #{record_id}：{label}。回复「{command}」。")
+    if len(candidates) > 5:
+        lines.append("还有其他符合条件的记录，可在饮食记录列表中选择后修改。")
+    return "\n".join(lines)
 
 
 def _diet_correction_update_data(
@@ -11895,6 +11954,12 @@ def _medication_batch_control_action(text: str) -> Optional[str]:
     return None
 
 
+def _is_water_backfill_turn(text: str, reference_now: datetime) -> bool:
+    from app.services.water_backfill import is_water_backfill_control, parse_water_backfill
+
+    return is_water_backfill_control(text) or parse_water_backfill(text, reference_now=reference_now) is not None
+
+
 def _medication_batch_turn_bypasses_multi_model(text: str) -> bool:
     """Keep deterministic intake statements outside model panels.
 
@@ -12572,9 +12637,49 @@ class AgentExecutor:
         return result
 
     def _reset_read_repair_budget(self) -> None:
+        self._turn_composed_read_retry_exhausted = False
         self._read_repair_failures = 0
         self._read_repair_batch_active = False
         self._read_repair_batch_failed = False
+
+    def _stop_exhausted_composed_read_retry(self, tool_name: str, result: str, retry_attempt: int) -> None:
+        """Close a pure full-scope read after the existing transient retry fails.
+
+        A batch may stop at its first failed child: this marks the task as
+        unfinished, never claims every dimension failed or discards verified data.
+        Parameter repair and partial reads retain their separate feedback budget.
+        """
+        from app.services.agent_kernel.read_task_scope import (
+            has_owned_sync_instruction, resolve_owned_read_scope, resolve_sync_status_query,
+        )
+        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+
+        snapshot = self._agent_kernel_snapshot
+        decision = self._agent_kernel_last_decision
+        if (
+            not retry_attempt or tool_name != "health_query_batch"
+            or not should_retry_tool_failure(tool_name, result, attempt=0)
+            or snapshot is None or snapshot.intent.is_write
+            or self._turn_daily_read_plan is not None or self._turn_sync_attempted
+            or has_owned_sync_instruction(snapshot.envelope.text)
+            or resolve_sync_status_query(snapshot) is not None
+            or resolve_exercise_plan_scope(snapshot.envelope.text) is not None
+            or classify_clinician_turn(snapshot.envelope.text).kind != "none"
+            or self._agent_kernel_pending_confirmation_tools
+            or decision is None or decision.action != "allow"
+            or decision.normalized_tool_name != "health_query_batch"
+            or self._all_scoped_reads_verified()
+        ):
+            return
+        scope = resolve_owned_read_scope(snapshot)
+        queries = decision.normalized_args.get("queries")
+        if scope is None or len(scope.queries) < 2 or not isinstance(queries, list):
+            return
+        canonical = lambda q: json.dumps(q, sort_keys=True, ensure_ascii=False)
+        if sorted(map(canonical, queries)) != sorted(map(canonical, scope.queries)):
+            return
+        self._turn_composed_read_retry_exhausted = True
+        self._force_no_tools_synthesis = True
 
     def _consume_read_repair_failure(self) -> None:
         from app.services.agent_policy_retry import MAX_READ_REPAIR_FAILURES
@@ -12613,6 +12718,46 @@ class AgentExecutor:
             return bool(goals) and all(goal['status'] == 'verified' for goal in goals)
         completion = self._composed_read_completion()
         return completion is not None and completion.complete
+
+    def _scoped_read_parameters_repaired(self) -> bool:
+        """Accepted parameters may be repaired even when the data service fails.
+
+        Keep the historical repair budget and data-verification state intact.
+        Only exact owned queries after the latest rejected execution count.
+        """
+        from app.services.agent_kernel.read_task_scope import (
+            has_owned_sync_instruction, resolve_owned_read_scope, resolve_sync_status_query,
+        )
+        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+
+        snapshot = self._agent_kernel_snapshot
+        if (snapshot is None or snapshot.intent.is_write
+                or self._turn_daily_read_plan is not None or self._turn_sync_attempted
+                or has_owned_sync_instruction(snapshot.envelope.text)
+                or resolve_sync_status_query(snapshot) is not None
+                or resolve_exercise_plan_scope(snapshot.envelope.text) is not None
+                or classify_clinician_turn(snapshot.envelope.text).kind != "none"
+                or self._agent_kernel_pending_confirmation_tools):
+            return False
+        scope = resolve_owned_read_scope(snapshot)
+        if scope is None or not scope.queries:
+            return False
+        canonical = lambda query: json.dumps(query, sort_keys=True, ensure_ascii=False)
+        required = {canonical(query) for query in scope.queries}
+        accepted = set()
+        for execution in reversed(self._turn_composed_read_executions):
+            decision = execution.decision
+            if decision is None:
+                continue
+            if decision.action == "block":
+                break
+            if decision.action != "allow" or execution.tool_name != decision.normalized_tool_name:
+                continue
+            queries = ([decision.normalized_args] if execution.tool_name == "health_query" else
+                       decision.normalized_args.get("queries", [])
+                       if execution.tool_name == "health_query_batch" else [])
+            accepted.update(canonical(query) for query in queries if isinstance(query, dict))
+        return required <= accepted
 
     def _recover_irrelevant_read_blocks_after_completed_answer(
         self,
@@ -12861,11 +13006,12 @@ class AgentExecutor:
     def _initial_composed_read_calls(self, round_index: int, tools: list[dict]) -> list[dict]:
         """Propose a skipped owned read through Pi; never dispatch outside its gateway."""
         snapshot = self._agent_kernel_snapshot
+        queued_sync = self._turn_sync_queued and self._turn_garmin_sync_job is not None
         if (
-            snapshot is None or snapshot.intent.is_write
+            snapshot is None or (snapshot.intent.is_write and not queued_sync)
             or self._turn_daily_read_plan is not None
             or self._force_no_tools_synthesis or self._read_repair_failures
-            or self._turn_sync_attempted
+            or (self._turn_sync_attempted and not queued_sync)
             or classify_clinician_turn(self._current_turn_user_message).kind != "none"
             or not any((tool.get("function") or {}).get("name") == "health_query_batch" for tool in tools)
         ):
@@ -12874,7 +13020,7 @@ class AgentExecutor:
             has_owned_sync_instruction, resolve_owned_read_scope,
         )
 
-        if has_owned_sync_instruction(snapshot.envelope.text):
+        if has_owned_sync_instruction(snapshot.envelope.text) and not queued_sync:
             return []
         scope = resolve_owned_read_scope(snapshot)
         from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
@@ -12884,6 +13030,14 @@ class AgentExecutor:
             # failed adapters are disclosed, not retried indefinitely.
             queries = [goal['query'] for goal in self._exercise_plan_goal_outcomes()
                        if goal['reason_code'] == 'query_not_executed']
+        elif queued_sync:
+            # Resume only the explicitly bound read goal once. Existing rows
+            # and the job result are separate evidence; this never requeues or
+            # waits for background completion, including pending/failed jobs.
+            if any(execution.tool_name in {"health_query", "health_query_batch"}
+                   for execution in self._turn_composed_read_executions):
+                return []
+            queries = list(scope.queries) if scope is not None else []
         else:
             if round_index != 0 or self._turn_composed_read_executions:
                 return []
@@ -12924,7 +13078,7 @@ class AgentExecutor:
         if scope is None or (len(scope.queries) < 2 and scope.query("spo2") is None):
             return None
         static_rules = self._build_system_prompt(
-            user_id, conv_id, user_auth_token, intent_query=message, static_rules_only=True,
+            user_id, conv_id, user_auth_token, intent_query=message, static_rules_only=True, synthesis_only=True,
         )
         from app.services.health_context_lite_service import build_lite_health_context
 
@@ -13073,6 +13227,34 @@ class AgentExecutor:
                 *snapshot.actionable_references, reference,
             ))
             self._agent_kernel_event_bus.rebind_snapshot(self._agent_kernel_snapshot, reason='owned_read_task_continuation')
+        self._bind_diet_portion_reference(user_id, conversation_id)
+
+    def _bind_diet_portion_reference(self, user_id: int, conversation_id: int) -> None:
+        from app.services.agent_diet_continuation import (
+            is_bare_portion_correction, load_diet_portion_reference, resolve_diet_portion_correction,
+        )
+        snapshot = self._ensure_agent_kernel_turn()
+        if snapshot.envelope.media:
+            return
+        reference = load_diet_portion_reference(self.db, user_id, conversation_id, snapshot)
+        if reference is not None:
+            snapshot = replace(snapshot, actionable_references=(*snapshot.actionable_references, reference))
+        correction = resolve_diet_portion_correction(snapshot)
+        if correction is not None and correction.get("consumed_fraction") is not None:
+            intent = replace(snapshot.intent, primary="mutate", domain="diet", operation="update",
+                             is_write=True, scope={"date": correction["date"],
+                                                  "meal_type": correction.get("meal_type") or ""})
+        elif is_bare_portion_correction(snapshot.envelope.text):
+            # A fraction alone cannot create a new meal or select an unrelated draft.
+            intent = replace(snapshot.intent, primary="chat", domain="diet", operation="clarify",
+                             is_write=False, scope={})
+        else:
+            return
+        self._agent_kernel_snapshot = replace(snapshot, intent=intent, goal=compile_goal_spec(
+            envelope=snapshot.envelope, context=snapshot.context, intent=intent,
+            actionable_references=snapshot.actionable_references,
+        ))
+        self._agent_kernel_event_bus.rebind_snapshot(self._agent_kernel_snapshot, reason="owned_diet_portion_resolved")
 
     def _capture_owner_scoped_manage_list_reference(
         self,
@@ -13123,10 +13305,12 @@ class AgentExecutor:
             "systolic",
             "diastolic",
             "record_date",
+            "created_at",
             "meal_type",
             "food_items",
             "name",
             "status",
+            "calories", "protein", "carbs", "fat", "fiber", "alcohol_units",
         }
         records = tuple(
             {
@@ -15023,6 +15207,7 @@ class AgentExecutor:
                             **response,
                             "terminate": (
                                 bool(response.get("terminate"))
+                                or self._turn_composed_read_retry_exhausted
                                 or (
                                     lead_goal_guard_rejected_write
                                     and lead_remaining_batch_tools == 0
@@ -15039,6 +15224,9 @@ class AgentExecutor:
                         lead_text = _guard_panel_narrative(lead_text)
                         lead_text = _strip_bracket_tool_markers(lead_text)
                         lead_text = _strip_xml_tool_markers(lead_text)
+
+            if self._turn_composed_read_retry_exhausted:
+                raise _SimpleRecordTerminal("本轮读取未完成，已停止重复查询；请稍后重试。", satisfied=False)
 
             if lead_goal_guard_rejected_write:
                 raise _SimpleRecordTerminal(
@@ -15741,6 +15929,13 @@ class AgentExecutor:
             else None
         )
         self._runtime_run_id = run_id
+        self._prompt_request_index = 0
+        self._provider_history_references = ()
+        self._completed_orchestrator_delivery = None
+        self._current_pi_tool_call_id = None
+        self._report_dispatches = []
+        self._report_initial_user_frame = None
+        self._report_turn_allowed = False
         self._runtime_attempt_id = attempt_id
         self._runtime_managed = bool(runtime_managed)
         self._runtime_write_block_reason = runtime_write_block_reason
@@ -15987,12 +16182,22 @@ class AgentExecutor:
                 run_id=run_id,
             )
 
+            from app.services.agent_read_task_continuation import load_read_task_reference
+
+            owned_read_followup = (
+                conversation_id is not None
+                and not effective_images and not file_base64
+                and load_read_task_reference(
+                    self.db, user_id, conversation_id, self._agent_kernel_snapshot,
+                ) is not None
+            )
             if (
                 retry_recovery is None
                 and not effective_images
                 and not file_base64
                 and not _extract_multi_model_flag(extra_context)
                 and needs_input_clarification(effective_message)
+                and not owned_read_followup
             ):
                 async for event in self._run_input_clarification_stream(
                     user_id=user_id,
@@ -16460,6 +16665,7 @@ class AgentExecutor:
                     )
                 )
             )
+            and not _is_water_backfill_turn(message, self._agent_kernel_reference_now())
             and not _has_fast_record_write_intent(message or "")
             # 面板有自己的发布点与回显式记录兜底: 危机回合走普通路径拿热线兜底。
             and not contains_crisis_language(message or "")
@@ -16537,6 +16743,19 @@ class AgentExecutor:
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
         self._health_evidence_answer_budget_active = health_advice_buffered
+        self._public_task = None
+        if (
+            getattr(settings, "domain_prompt_optimization", False)
+            and not health_advice_buffered and not extra_context
+            and pending_choice_resolution is None and retry_recovery is None
+            and not self._agent_kernel_pending_confirmation_tools
+        ):
+            from app.services.agent_public_task import classify_public_task
+            from app.services.llm.task_routing import classify_answer_task_tier
+
+            candidate = classify_public_task(message, has_attachments=bool(images or file_base64))
+            if candidate and classify_answer_task_tier(message, has_attachments=False) == "casual":
+                self._public_task = candidate
         self._analysis_turn_subset = False  # R5:纯分析轮只读工具子集(flag 门控,下方设定)
         self._tool_round_fast_routed = False
         self._lite_tool_round_messages = None
@@ -16611,7 +16830,7 @@ class AgentExecutor:
                     "disable fast route and use quality floor: %s",
                     exc,
                 )
-        if settings.decision_mode != "off":
+        if settings.decision_mode != "off" and self._public_task is None:
             from app.services.decisions.routing import decide_route
 
             self._decision_route = await decide_route(
@@ -16924,6 +17143,23 @@ class AgentExecutor:
                     yield evt
                 return
 
+        if (health_evidence_turn is None and not read_only_tools
+                and not images and not file_base64):
+            from app.services.water_backfill import resolve_water_backfill_turn
+
+            water_result = resolve_water_backfill_turn(
+                self.db, user_id=user_id, source_message_id=user_msg.id,
+                reference_now=self._agent_kernel_reference_now(),
+                runtime_write_block_reason=self._runtime_write_block_reason,
+            )
+            if water_result is not None:
+                async for evt in self._run_water_backfill_result(
+                    water_result, svc=svc, conv=conv, user_id=user_id,
+                    client_turn_id=client_turn_id, start_time=start_time,
+                ):
+                    yield evt
+                return
+
         # Multi-medication intake is a server-owned two-turn transaction:
         # source-bound proposal now, strict immediate confirmation next turn.
         # It runs after the durable user ACK but before recipes, prompts, or any
@@ -17019,7 +17255,7 @@ class AgentExecutor:
         try:
             from app.services.opener_quick_reply import apply_opener_quick_reply_context
 
-            if not self._has_current_input_recovery_advice_goal():
+            if not self._has_current_input_recovery_advice_goal() and self._public_task is None:
                 opener_quick_reply_note = apply_opener_quick_reply_context(
                     self.db,
                     user_id=user_id,
@@ -17035,7 +17271,12 @@ class AgentExecutor:
         # 干预/效应/记忆), 只留核心人格 + R4 边界 + 防回显 + 记录参数指引 + 基础画像。
         # 非快路由回合 lite=False → prompt 逐字节不变。
         _t_stage = time.time()
-        if preplanned_water_turn_call is not None:
+        if self._public_task is not None:
+            from app.services.agent_public_task import public_task_prompt
+
+            system_content = public_task_prompt(self._public_task)
+            self._prompt_context_profile = "public_" + self._public_task
+        elif preplanned_water_turn_call is not None:
             system_content = ""
         else:
             system_content = self._build_system_prompt(
@@ -17165,7 +17406,7 @@ class AgentExecutor:
         # fast-routed 简单回合跳过系统知识库检索: KB claim 是给分析/解读用的依据,
         # 对「今天喝了多少水」无用, 且检索本身占 pre-first-token 壁钟 (kb_ms)。
         system_kb_context = (
-            "" if self._fast_route_simple_turn or health_advice_buffered
+            "" if self._fast_route_simple_turn or health_advice_buffered or self._public_task
             else self._build_system_knowledge_prompt_context(user_id, message)
         )
         pre_stages["kb_ms"] = _pre_stage(_t_stage)
@@ -17221,6 +17462,11 @@ class AgentExecutor:
         # 本轮回答实际使用；真实来源会在工具执行或知识检索时逐项加入。
         pre_stages["inspect_ms"] = _pre_stage(_t_stage)
 
+        if self._public_task:
+            # A closed public question has no health/history dependency. Keep
+            # the current trusted clock, never client-supplied medical context.
+            turn_context_parts = [self._agent_kernel_time_context(client_time_context)]
+
         # 3. 构建对话历史
         _t_stage = time.time()
         history_limit = _history_limit_for_turn(
@@ -17232,7 +17478,7 @@ class AgentExecutor:
         )
         messages = (
             [{"role": "user", "content": user_content}]
-            if preplanned_water_turn_call is not None or self._has_current_input_recovery_advice_goal()
+            if preplanned_water_turn_call is not None or self._has_current_input_recovery_advice_goal() or self._public_task
             else svc.build_messages(conv.id, limit=history_limit)
         )
         if recovered_user_message is not None and (
@@ -17248,6 +17494,7 @@ class AgentExecutor:
             history_limit,
             getattr(self, "_prompt_context_profile", "full"),
         )
+        self._provider_history_references = tuple(svc.provider_history_references)
         recent_messages = messages
         if (
             recent_messages
@@ -17460,6 +17707,10 @@ class AgentExecutor:
                 + read_scope_synthesis_instructions(read_scope)
             )
 
+        if self._public_task:
+            allowed_public_tools = {"environment_check"} if self._public_task == "weather" else set()
+            tools = [t for t in tools if (t.get("function") or {}).get("name") in allowed_public_tools]
+
         # 5. Agent 循环
         full_reply = ""
         unrecovered_output_quality = None
@@ -17498,6 +17749,22 @@ class AgentExecutor:
         # rank7 深分析短路二次合成(passthrough,ships-off,见 config.orchestrator_synthesis_passthrough)。
         # 关时全零开销(capture 受 mode!='off' 门控);shadow 记 meta 不改行为;on 单工具回合短路。
         passthrough_mode = _resolve_synthesis_passthrough_mode()
+        from app.services.orchestrator_delivery import is_single_report_request
+
+        # Initially limit reuse to a fresh, standalone report. Historical goals,
+        # attachments and explicit model selections still require outer synthesis.
+        self._report_turn_allowed = bool(
+            passthrough_mode == "on"
+            and getattr(settings, "domain_prompt_optimization", False)
+            and is_single_report_request(message)
+            and self._runtime_run_id
+            and not recent_messages
+            and not health_advice_buffered
+            and not extra_context and not images and not file_base64
+            and not self._request_model_id and not recovered_user_message
+            and not pending_choice_resolution
+        )
+        report_delivery_meta = None
         passthrough_orch_text: Optional[str] = None   # orchestrator 自产 synthesis(已过 R4)
         passthrough_orch_calls = 0                     # 本回合捕获到 synthesis 的 orchestrator 次数
         passthrough_synthesis_round_ms: Optional[int] = None  # shadow: 二次合成轮壁钟(=可省时延)
@@ -17630,6 +17897,9 @@ class AgentExecutor:
             nonlocal orchestrator_perf, orchestrator_tool_ms, passthrough_orch_calls, passthrough_orch_text
             nonlocal runtime_control_terminal, streamed_answer_evidence_digest, streamed_cards, tool_executed_count
             nonlocal known_supplement_rejection
+            self._completed_orchestrator_delivery = None
+            self._current_pi_tool_call_id = tc["id"]
+            self._report_dispatches.append(tc["id"])
             pending_pi_writes.pop(tc["id"], None)
             _round_tool_names = []
             _tool_started = time.time()
@@ -18449,8 +18719,40 @@ class AgentExecutor:
         self._http_client = httpx.AsyncClient(timeout=90.0)
         pi_started = False
         pi_terminal_text = None
+        public_weather_terminal = None
         try:
-            if (
+            if self._public_task == "weather":
+                from app.services.agent_public_task import public_weather_arguments
+
+                args = public_weather_arguments(message)
+                if args is None or not any(
+                    (t.get("function") or {}).get("name") == "environment_check" for t in tools
+                ):
+                    raise RuntimeError("public_weather_tool_unavailable")
+                weather_call = {
+                    "id": "public_weather", "type": "function",
+                    "function": {"name": "environment_check", "arguments": json.dumps(args, ensure_ascii=False)},
+                }
+                rounds.append({"llm_gen_ms": 0, "tool_exec_ms": 0, "tools": []})
+                messages.append({"role": "assistant", "content": "", "tool_calls": [weather_call]})
+                async for event in _execute_pi_tool(weather_call, 0):
+                    if event.get("event") != "_pi_tool_response":
+                        yield event
+                    elif event["data"].get("is_error"):
+                        payload = _recover_tool_result_payload(event["data"]["content"]) or {}
+                        public_weather_terminal = (
+                            "请告诉我你要查询哪个城市的天气。"
+                            if isinstance(payload, dict) and payload.get("error") == "location_required"
+                            else "天气查询暂时未完成，请稍后重试。"
+                        )
+                # The read was dispatched through the ordinary gateway.
+                # No model planning or repeated weather fetch is needed.
+                tools = []
+
+            if public_weather_terminal is not None:
+                full_reply = public_weather_terminal
+                final_finish_reason = "stop"
+            elif (
                 self._turn_contextual_diet_write_blocked_reason == "confirmation_pending"
                 and self._turn_contextual_diet_cards
             ):
@@ -18481,6 +18783,9 @@ class AgentExecutor:
                             tools = []
                 decision_route = "pi"
                 async with PiKernelSession() as pi:
+                    initial_dialogue = [m for m in messages if m.get("role") != "system"]
+                    if len(initial_dialogue) == 1 and initial_dialogue[0].get("role") == "user":
+                        self._report_initial_user_frame = dict(initial_dialogue[0])
                     await pi.start(messages=messages, tools=tools, max_turns=MAX_TOOL_ROUNDS)
                     pi_started = True
                     round_idx = -1
@@ -18493,6 +18798,22 @@ class AgentExecutor:
                             self._begin_read_repair_batch()
                             round_idx += 1
                             messages = request["messages"]
+                            report_receipt = self._take_orchestrator_delivery(messages)
+                            if (
+                                report_receipt is not None and not remaining_batch_tools
+                                and not blocked_pi_calls and not pending_pi_writes
+                                and not write_receipts and not last_recoverable_write_rejection
+                            ):
+                                # Pi still terminates the loop; its final answer
+                                # then traverses the ordinary delivery guards.
+                                model_name = report_receipt.model
+                                report_delivery_meta = {
+                                    "source": "orchestrator", "model": report_receipt.model,
+                                    "outer_model_calls_avoided": 1,
+                                }
+                                await pi.respond(request, content=report_receipt.text,
+                                                 tool_calls=[], finish_reason="stop")
+                                continue
                             composed_messages = self._composed_synthesis_messages(
                                 user_id, conv.id, user_auth_token, message,
                                 sealed=health_advice_buffered,
@@ -18526,7 +18847,7 @@ class AgentExecutor:
                                     # permission ledger; none grants new consent.
                                     static_rules = self._build_system_prompt(
                                         user_id, conv.id, user_auth_token,
-                                        intent_query=message, static_rules_only=True,
+                                        intent_query=message, static_rules_only=True, synthesis_only=True,
                                     )
                                     instruction = (
                                         "系统已核验的本次查询事实如下：\n" + facts
@@ -18640,6 +18961,20 @@ class AgentExecutor:
                             if not proposed_calls and finish_reason == "stop" and not health_advice_buffered:
                                 proposed_calls = self._initial_composed_read_calls(round_idx, round_tools)
                                 if proposed_calls:
+                                    candidate = ""
+                                    finish_reason = "tool_calls"
+                            if (not proposed_calls and finish_reason == "stop" and round_idx == 0
+                                    and not health_advice_buffered and not self._read_only_turn
+                                    and not images and not file_base64 and not write_receipts):
+                                from app.services.agent_diet_continuation import resolve_diet_portion_correction
+                                portion = resolve_diet_portion_correction(self._ensure_agent_kernel_turn())
+                                if portion is not None and portion.get("consumed_fraction") is not None:
+                                    lookup_args = {"record_type": "diet", "operation": "list", "limit": 20,
+                                                   "date": portion["date"], "meal_type": portion["meal_type"]}
+                                    if portion.get("target") == "latest":
+                                        lookup_args = {"record_type": "diet", "operation": "list", "limit": 2}
+                                    proposed_calls = [{"id": "diet-portion-lookup", "type": "function", "function": {
+                                        "name": "health_manage", "arguments": json.dumps(lookup_args)}}]
                                     candidate = ""
                                     finish_reason = "tool_calls"
                             if (
@@ -19067,6 +19402,9 @@ class AgentExecutor:
                                     last_recoverable_write_rejection, write_receipts,
                                 )
                                 final_finish_reason = "error"
+                            elif self._turn_composed_read_retry_exhausted:
+                                pi_terminal_text = "本轮读取未完成，已停止重复查询；请稍后重试。"
+                                final_finish_reason = "error"
                             elif remaining_batch_tools == 0:
                                 from app.services.agent_policy_retry import terminal_policy_notice
 
@@ -19179,6 +19517,9 @@ class AgentExecutor:
             )
             final_finish_reason = "error"
         finally:
+            self._completed_orchestrator_delivery = None
+            self._current_pi_tool_call_id = None
+            self._report_turn_allowed = False
             if self._http_client:
                 await self._http_client.aclose()
                 self._http_client = None
@@ -20075,6 +20416,7 @@ class AgentExecutor:
                 **({"recipe_candidate": recipe_candidate_meta} if recipe_candidate_meta else {}),
                 **({"shadow_passthrough": shadow_passthrough_meta} if shadow_passthrough_meta else {}),
                 **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
+                **({"orchestrator_delivery": report_delivery_meta} if report_delivery_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
                 **({"resolved_pending_choice_source_id": pending_choice_resolution.source_message_id}
@@ -20169,6 +20511,7 @@ class AgentExecutor:
                 **({"kernel_trace": kernel_trace} if kernel_trace else {}),
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
+                **({"orchestrator_delivery": report_delivery_meta} if report_delivery_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             },
@@ -20413,6 +20756,46 @@ class AgentExecutor:
         ):
             return None
         return intent
+
+    async def _run_water_backfill_result(
+        self, result, *, svc, conv, user_id, client_turn_id, start_time,
+    ):
+        """Persist the precise text preview before a later turn can confirm it."""
+        status = result["status"]
+        receipts = result.get("write_receipts") or []
+        pending = status in {"pending", "clarification"}
+        outcome = classify_agent_turn_outcome(
+            completion_status="error" if status == "error" else "complete",
+            final_text=result["reply"], write_receipts=receipts,
+            runtime_control_unavailable=result.get("runtime_control_unavailable", False),
+            pending_confirmation_tools=["water_backfill"] if pending else [],
+        )
+        if status == "clarification":
+            outcome.update(status="waiting_for_user", category="clarification_required",
+                           reason_code=result.get("reason", "water_backfill_missing_facts"))
+        meta = {
+            "mode": "water_backfill", "llm_rounds": 0, "llm_ms": 0,
+            "verified_no_change": result.get("verified_no_change", False),
+            "elapsed_ms": int((time.time() - start_time) * 1000),
+            "write_receipts": receipts, "tools_used": [], "cards": [],
+            "client_turn_finalized": True, "record_intent_no_tool": False,
+            "turn_outcome": outcome,
+            **agent_completion_metadata("error" if status == "error" else "complete", outcome),
+            **({"water_backfill_intent_id": result["intent_id"],
+                "water_backfill_plan": result["plan"],
+                "pending_write_intent_ids": [result["intent_id"]],
+                "pending_write_intent_kinds": ["water_backfill"]} if result.get("intent_id") is not None else {}),
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        conv.updated_at = datetime.now(UTC)
+        assistant = svc.save_message(
+            conv.id, "assistant", result["reply"], meta=meta,
+            client_turn_id=client_turn_id, client_turn_user_id=user_id,
+        )
+        yield {"event": "token", "data": {"content": result["reply"]}}
+        yield {"event": "done", "data": {
+            **meta, "conversation_id": conv.id, "message_id": assistant.id,
+        }}
 
     @staticmethod
     def _medication_batch_items_text(payload: Mapping[str, Any]) -> str:
@@ -21411,6 +21794,7 @@ class AgentExecutor:
         health_evidence_runtime: bool = False,
         force_full_personal_context: bool = False,
         static_rules_only: bool = False,
+        synthesis_only: bool = False,
     ) -> str:
         """构建统一 Agent 的 system prompt。
 
@@ -21429,6 +21813,13 @@ class AgentExecutor:
             classify_context_profile,
         )
 
+        # This phase is selected only by server-owned, tool-free read
+        # answers (including explicit failed reads). Static rules alone do
+        # not prove that a result is verified or that a task is complete.
+        synthesis_only = bool(
+            synthesis_only and static_rules_only
+            and getattr(settings, "domain_prompt_optimization", False)
+        )
         prompt_snapshot = getattr(self, '_agent_kernel_snapshot', None)
         # Keep static safety rules without preloading unrelated personal data.
         static_rules_only = static_rules_only or self._has_current_input_recovery_advice_goal()
@@ -21479,102 +21870,20 @@ class AgentExecutor:
         )
         if not static_rules_only:
             self._prompt_context_profile = context_profile
+        elif synthesis_only:
+            self._prompt_context_profile = "read_synthesis"
 
-        parts = [
-            "你是用户的 AI 健康助理。你可以通过工具调用获取、记录和分析用户的健康数据。",
-            "你是唯一的对话入口——用户的所有健康相关请求（记录数据、查询指标、深度分析、图片识别）都由你处理。",
-            (
-                "每轮用户消息前会附带系统生成的本轮时间信息。"
-                "解析今天、昨天、前天、明天、昨晚、刚才、几点提醒、起床或入睡建议时，"
-                "必须以其中的用户本地当前时间为唯一基准；若本轮时间信息缺失，不得猜测当前日期或时间。"
-                "不得沿用历史消息中的旧日期或旧时间。"
-            ),
-            "",
-            "## 本轮任务边界",
-            # Share one parsed task contract with tool exposure and dispatch.
-            *self._exercise_plan_prompt_parts(prompt_snapshot),
-            "- 先识别本轮原话的全部意图，再决定是否需要取数、写入或建议；不是每一轮都需要健康分析。",
-            "- 普通抵达、出差、入住等情境告知，仅简短确认用户自述的地点/住处，作为本次对话背景；不自动修改常住地址或健康记录，不声称已永久记住。没有健康问题时不主动展开病史、药物、补剂、指标、医学引用或免责声明。",
-            "- 若原话同时包含症状、建议请求、写入/查询动作，或是在回答历史中未完成的追问，必须处理这些意图；不能仅因出现城市或酒店就忽略。地点名称候选不是临床安全结论。",
-            "- 以下主动分析、取证和建议规则只在用户当前任务或真实新发安全风险需要时适用；单纯旧病史和模型先前的猜测不构成本轮新风险。",
-            "",
-            "## 工作方式",
-            "1. 分析用户请求，决定需要调用哪些工具",
-            "2. 调用工具获取或记录数据",
-            "- 组合任务保留每个子目标；同步入队后可查询数据，但不能宣称该任务已完成。问佳明同步状态时用 health_query(dimension=garmin)，系统会关联本会话的真实同步回执。只询问同步状态不代表要重新同步。",
-            "3. 基于返回的数据进行分析和推理",
-            "4. 按本轮任务给出简短确认、查询结果或有据可依的建议",
-            "5. 复合意图时在一次对话中同时处理（如'记一下吃了鱼油，看看对基因有什么影响' → 先记录后查询）",
-            "",
-            _HEALTH_STATUS_INTENT_PROMPT,
-            "",
-            *_CLINICIAN_PROVENANCE_PROMPT_BLOCK,
-            "",
-            "## 数据记录规则",
-            "- **核心原则：所有记录操作必须调用 health_record 工具才算完成。绝对不能口头说'已记录'而不调用工具。**",
-            "- **必须使用系统提供的结构化工具调用；禁止输出 `<tool_code>`、`print(...)`、Python 代码或其他伪代码来表示调用。伪代码不会被视为完成记录。**",
-            "- **新增记录**调用 health_record；**修改/删除已有记录**必须调用 health_manage。不要说'没有删除功能'。",
-            "- 用户要删除重复记录时: 先 health_manage(list) 或 health_query(diet) 查候选 ID；如果用户已明确 ID, 直接 health_manage(delete)。",
-            "- 用户说'删除这一餐'、'撤销这顿'、'我刚才不小心删除了'、'把晚餐删掉/恢复'时,这是管理已有饮食记录,绝不能把这句话作为 diet.food_items 新增一条晚餐;先查候选记录并确认。",
-            "- 饮水、补剂打卡：直接执行，不需确认",
-            "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
-            (
-                "- 单一记录请求只处理本轮记录：成功后简短确认记录值；失败或没有可验证回执时，"
-                "只说明未完成或状态不明以及下一步。除非用户同时要求分析，或工具返回新的高危安全告警，"
-                "不得主动展开地点、天气、既往病史、化验、可穿戴数据或通用健康建议。"
-            ),
-            "- 用户说'吃了/服用了XX'：若包含药名、药物剂型(胶囊/缓释片/颗粒/口服液等)、mg/毫克、处方/用药语境 → record_type=medication；补剂/保健品名(鱼油/维C/B族等) → record_type=supplement；明确食物或餐次 → record_type=diet",
-            "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
-            "- 用户明确要设置提醒/闹钟/每天几点提醒,且已给出时间 → 调用 health_record(record_type=reminder, data={title,message,remind_at,recurrence})。每日提醒用 recurrence=daily; remind_at 必须是带 +08:00 的 ISO 时间; 只有 HH:MM 时按下一次北京时间生成。不能回复“系统接口限制”或让用户自己去手机/手表设置。",
-            "- 用户要在时间窗内循环提醒(如 9:00 到 20:00 每 1.5 小时) → 一次调用 health_record(record_type=reminder, data={title,message,start_time,end_time,interval_minutes,recurrence}); 不要降级成单个开始时点。",
-            "- 如果上一轮已在问提醒时段,用户只回复'9点到20点'或'10:30'这类时间,要继承上一轮的任务标题、内容和间隔,直接创建 reminder; 不要丢失上下文或重复询问。",
-            "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
-            "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
-            "- 用户只陈述'准备开始睡觉/开始睡眠/上床睡觉/准备入睡'这类当前开始睡眠事件 → 调用 health_record(record_type=event, data={title:'准备开始睡觉', occurred_at:'刚才或用户给出的时间'}); 不要用 record_type=sleep。record_type=sleep 只用于事后完整睡眠补录,必须有 bedtime、wake_time、sleep_quality。",
-            "- 上述状态陈述若同时请求建议、分析或提问时，只回答问题，不自动记录；除非用户另外明确说“记录”“记一下”或“打卡”。例如'我准备睡觉了，给我一些建议'是建议请求，不调用 health_record。",
-            "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
-            "- **饮食记录必须包含热量和营养估算：识别食物后，根据食物种类和常见份量估算总热量(kcal)、蛋白质(g)、碳水(g)、脂肪(g)、膳食纤维(g)，填入 data.calories/protein/carbs/fat/fiber 字段一起保存。不要记完再问用户'要不要算热量'。**",
-            "- **重要：调用 health_record 时 data 参数必须包含具体内容，不能为空对象 {}。如果你不确定内容，先问用户再记录。**",
-            "- 用户明确要求制作健康行动相关图片、封面或 3-15 秒短视频时，可以使用 draft_aigc_media 创建确认草稿。它不会发送任何内容给百炼；确认卡片必须由用户亲自点击，后端才会向百炼发送草稿绑定的提示词和图生模式下当前消息的图片，并可能消耗 TokenPlan Credits 或产生费用。不能以文字中的“确认”代替卡片点击，也不能声称已经生成。",
-            "- draft_aigc_media 成功后只需简短说明‘创作草稿已准备，请在创作卡片中确认’；不要引用‘上方/下方卡片’，不要重复费用、状态或操作说明，卡片会自行展示并持续更新任务状态。",
-            "- 图生图片/图生视频只能用当前消息中附带的第一张图；没有图时请用户重新上传。生成完成前只能说“生成中”，不能把任务已接受说成“已生成”。",
-            "- AIGC 内容只用于健康行动沟通（如饮食建议封面、晨间拉伸提示、补水提醒短视频）。不得生成医疗诊断、疗效承诺、处方或公开暴露个人健康隐私的素材。",
-            "",
-            "## 分析规则",
-            "- 简单查询（'今天步数多少'）→ health_query",
-            "- 用户问'昨天/最近上传的记录/报告/体检/检查'时,不要默认查综合可穿戴数据;优先调用 health_query(dimension='medical_exam', uploaded_days=1/7)。若包含 MRI/核磁/CT/X光/B超/胃镜/影像/膝关节 等关键词,同时传 keyword。",
-            "- 用户问 MRI/核磁/CT/X光/B超/胃镜/影像报告时,调用 health_query(dimension='medical_exam', keyword='用户原词');不要说没看到报告,除非工具明确返回未找到。",
-            "- 趋势分析（'最近睡眠怎么样'）→ health_analysis",
-            "- 跨领域复杂问题（'我的补剂方案合理吗'、'从基因角度看我该怎么调整'）→ health_analysis(type=orchestrator, question=...)",
-            "",
-            "## 行为准则",
-            "- 数据驱动：引用具体数据，不要泛泛而谈",
-            "- 用户请求健康分析时可发现相关潜在问题；普通情境告知不扩展为健康分析",
-            "- 取数请求（列出/查询/显示/看一下…记录）：直接调 health_query 如实列出结果（含逐条时间/数值），你的职责本就涵盖记录、查询与分析——绝不要用「我只负责记录与查询」「无法提供分析/建议」这类自我设限开场白（医疗边界只按下方 R4，不用自我声明）。",
-            "- 中文回复：简洁实用，仅在本轮任务需要时给出可执行的建议",
-            "- 严重异常（HRV持续偏低、SpO2<92%、血压异常）→ 建议就医",
-            "- 涉及药物的建议：附加'请咨询医生'免责声明",
-            "",
-            # 意图门控(token 优化 #5):命中/未知才发,与旧行为逐字节一致
-            *(_GENE_RULES_PROMPT_BLOCK if _wants_gene_rules_block(intent_query) else ()),
-            *(_MENU_SHARE_PROMPT_BLOCK if _wants_menu_share_block(intent_query) else ()),
-            "## 安全与边界 (R4 — 必须严格遵守)",
-            (
-                "- 本轮权威医学证据已由健康证据运行时完成检索、准入和注入；"
-                "不得再次调用 knowledge_search 替换或扩张证据，只能使用本轮已审定 claim。"
-                if health_evidence_runtime
-                else
-                "- 解读异常指标/给健康建议时,先调用 knowledge_search 取依据;"
-                "无命中就如实说明依据来自通用知识,**绝不编造引用或具体研究**。"
-            ),
-            "- **不得把补剂/保健品作为针对某指标异常的治疗或\"护X\"方案推荐**(例:不得说\"姜黄素/NAC 护肝\")。补剂相关一律表述为\"是否需要请医生评估\";任何剂量数字必须注明\"须医生确认\"。",
-            "- 任何把指标改善归因于某项干预(如\"ALT 下降=某方案有效\")**必须标注\"相关性,非因果\"**,不得下因果结论。",
-            "- **不得对结构性发现下\"无需处理/不用管\"的临床判断**;改为\"通常定期随访,以医生意见为准\"。",
-            "- 若工具结果带有『数据合理性提示』(或 _data_plausibility_warning 字段),先把该数值当作疑似录入错误、提示用户核实原始报告,核实前不要据此下结论;**若用户确认数值属实,仍须按其严重程度正常处置(例如危急值建议就医)**,不得因『疑似错误』而忽略一个可能真实的危急值。",
-            "- 不做诊断;不下诊断标签(如不直接断言\"代谢综合征\",用\"…的风险信号\"并建议就医确认)。",
-            "- 不要说\"你的诊断非常准确\"。用户自述疼痛/功能问题时,改为\"你的描述提示可能存在某种模式,需要结合医生/康复师评估\";训练建议只作为健康管理/康复辅助动作,不是诊断或治疗处方。",
-            "- **绝对不要把工具返回的原始 JSON / 数组 / 字段名(如 record_date、meal_type、food_items、`[{...}]`)复述或粘贴进回复。工具结果只供你阅读,必须用自然语言概括给用户**(例:今天只有早餐记录,没有午餐;而不是把 `[{\"record_date\":...,\"meal_type\":\"breakfast\",...}]` 贴出来)。",
-        ]
+        from app.services.agent_prompt_sections import build_base_prompt_parts
+
+        parts = build_base_prompt_parts(
+            synthesis_only=synthesis_only,
+            health_evidence_runtime=health_evidence_runtime,
+            exercise_plan_parts=self._exercise_plan_prompt_parts(prompt_snapshot),
+            health_status_intent_prompt=_HEALTH_STATUS_INTENT_PROMPT,
+            clinician_provenance_parts=_CLINICIAN_PROVENANCE_PROMPT_BLOCK,
+            gene_rules_parts=_GENE_RULES_PROMPT_BLOCK if _wants_gene_rules_block(intent_query) else (),
+            menu_share_parts=_MENU_SHARE_PROMPT_BLOCK if _wants_menu_share_block(intent_query) else (),
+        )
 
         # 注入 ak-kbase gene_knowledge 高优先级警示规则（PM/缺陷/纯合风险）
         # lite 回合跳过: 分析用的基因规则库对「记录喝水/多少水」是纯 prefill 噪音。
@@ -22119,6 +22428,13 @@ class AgentExecutor:
 
         if tool_executed_count <= 0 or not self._request_model_id or self._prefer_fast_record_model:
             return False
+        if (self._read_repair_failures and not self._force_no_tools_synthesis
+                and not self._all_scoped_reads_verified()
+                and not self._scoped_read_parameters_repaired()):
+            # A denied proposal increments tool_executed_count too. Preserve
+            # the existing bounded parameter-repair round before handing the
+            # final answer back to a manually selected non-tool model.
+            return False
         if self._request_model_tool_fallback_used:
             return True
         try:
@@ -22294,7 +22610,9 @@ class AgentExecutor:
                 "[agent_executor] llm_prefix model=%s sys_hash=%s prefix_hash=%s "
                 "prefix_chars=%d total_chars=%d approx_tokens=%d "
                 "context_profile=%s system_tokens=%d history_tokens=%d "
-                "turn_tokens=%d tool_tokens=%d tool_count=%d payload_tokens=%d",
+                "turn_tokens=%d tool_tokens=%d tool_count=%d payload_tokens=%d "
+                "run_id=%s request_index=%d phase=%s "
+                "dialogue_chars=%d tool_result_chars=%d tool_call_chars=%d input_approx_tokens=%d",
                 model_name, sig["system_hash"], sig["prefix_hash"],
                 sig["prefix_chars"], sig["total_chars"], sig["approx_tokens"],
                 getattr(self, "_prompt_context_profile", "unknown"),
@@ -22304,14 +22622,73 @@ class AgentExecutor:
                 budget["tool_schema_approx_tokens"],
                 budget["tool_count"],
                 budget["total_approx_tokens"],
+                self._runtime_run_id if re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", self._runtime_run_id or "") else "none",
+                getattr(self, "_prompt_request_index", 0) + 1,
+                "tools" if tools else "answer",
+                budget["dialogue_chars"], budget["tool_result_chars"],
+                budget["tool_call_chars"], budget["input_approx_tokens"],
             )
-        except Exception:  # noqa: BLE001 — 观测层绝不断业务
-            pass
+            self._prompt_request_index = getattr(self, "_prompt_request_index", 0) + 1
+        except Exception as exc:  # noqa: BLE001 - telemetry failure stays observable
+            logger.warning("prompt_budget_unavailable error_type=%s", type(exc).__name__)
+
+    def _transport_messages(self, messages: List[Dict]) -> List[Dict]:
+        if not getattr(settings, "domain_prompt_optimization", False):
+            return messages
+        from app.services.llm.prompt_transport import compact_tool_json
+
+        from app.services.agent_history_budget import apply_provider_history_references
+
+        messages = apply_provider_history_references(
+            messages, getattr(self, "_provider_history_references", ()),
+        )
+        return compact_tool_json(messages)
+
+    def _model_tools_for_turn(self, tools: List[Dict]) -> List[Dict]:
+        """Project provider schemas; Pi and the gateway keep their authority.
+
+        Never rebuild from the registry here: an earlier policy may have removed
+        a tool. Ambiguous references, attachments and writes keep their full
+        authorized set. A withheld but authorized Pi tool can still be handled
+        by the existing gateway, without a second planning loop.
+        """
+        if not tools or not getattr(settings, "domain_prompt_optimization", False):
+            return tools
+        snapshot = self._agent_kernel_snapshot
+        if (
+            snapshot is not None
+            and snapshot.envelope.user_id == self._current_user_id
+            and snapshot.context.user_id == self._current_user_id
+        ):
+            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+            from app.services.agent_tool_prompt_projection import project_owned_read_tool_descriptions
+
+            tools = project_owned_read_tool_descriptions(tools, resolve_owned_read_scope(snapshot))
+        public_task = getattr(self, "_public_task", None)
+        if public_task:
+            allowed = {"environment_check"} if public_task == "weather" else set()
+            return [t for t in tools if (t.get("function") or {}).get("name") in allowed]
+        message = self._current_turn_user_message or ""
+        if self._current_turn_has_attachment or _HISTORY_DEPENDENCY_RE.search(message):
+            return tools
+        intent = classify_agent_utterance(message)
+        if intent.is_write or intent.requires_reliable_tool_model or intent.domain == "unknown":
+            return tools
+        names = _tool_names_for_turn(
+            message, fast_route=self._fast_route_simple_turn,
+            analysis_subset=getattr(self, "_analysis_turn_subset", False), domain_subset=True,
+        )
+        if names is None:
+            return tools
+        scoped = [t for t in tools if (t.get("function") or {}).get("name") in names]
+        # A sealed specialist contract wins over a generic domain projection.
+        return scoped or tools
 
     async def _call_llm(
         self, messages: List[Dict], tools: List[Dict],
     ) -> Any:
         """调用 LLM（优先走配置的 agent 端点，回退到默认 provider）"""
+        tools = self._model_tools_for_turn(tools)
         agent_base = settings.agent_base_url
         agent_key = settings.agent_api_key
 
@@ -22323,12 +22700,12 @@ class AgentExecutor:
         if agent_base and agent_key:
             model = settings.agent_model or settings.llm_model
             self._assert_recovery_quality_model(model)
-            return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
+            return await self._call_llm_direct(self._transport_messages(messages), tools, model, agent_base, agent_key)
 
         provider, pass_tools = self._resolve_chat_provider(tools)
         # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
         # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
-        round_messages = self._messages_for_round(messages)
+        round_messages = self._transport_messages(self._messages_for_round(messages))
         self._log_prompt_prefix_signature(round_messages, provider, pass_tools)
         chat_kwargs = {
             "messages": round_messages,
@@ -22405,6 +22782,7 @@ class AgentExecutor:
         Streaming failover: provider 流式报错时回退 tokenplan,镜像 _call_llm
         (df3ae2d8)。已 yield 过 content 后再报错则优雅收尾,不重复回退 (避免双发)。
         """
+        tools = self._model_tools_for_turn(tools)
         retry_composed = self._composed_synthesis_retry_eligible
         self._composed_synthesis_retry_eligible = False
         agent_base = settings.agent_base_url
@@ -22413,7 +22791,7 @@ class AgentExecutor:
             # 直连网关只实现非流式 tool-calling → 退化为单次调用 + 一次性 content。
             model = settings.agent_model or settings.llm_model
             self._assert_recovery_quality_model(model)
-            result = await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
+            result = await self._call_llm_direct(self._transport_messages(messages), tools, model, agent_base, agent_key)
             async for evt in self._result_to_stream_events(result):
                 yield evt
             return
@@ -22421,7 +22799,7 @@ class AgentExecutor:
         provider, pass_tools = self._resolve_chat_provider(tools)
         # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
         # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
-        round_messages = self._messages_for_round(messages)
+        round_messages = self._transport_messages(self._messages_for_round(messages))
         self._log_prompt_prefix_signature(round_messages, provider, pass_tools)
         stream_kwargs: Dict[str, Any] = {
             "messages": round_messages,
@@ -24443,6 +24821,14 @@ class AgentExecutor:
             current_message,
             reference_now=self._agent_kernel_reference_now(),
         )
+        from app.services.agent_diet_continuation import is_bare_portion_correction, resolve_diet_portion_correction
+        if correction is None and self._agent_kernel_snapshot is not None:
+            correction = resolve_diet_portion_correction(self._agent_kernel_snapshot)
+        if correction is None and is_bare_portion_correction(current_message):
+            raise _SimpleRecordTerminal(
+                "尚未修改。没有可核实的上一餐保存回执；请先保存餐食草稿，或说明要修改的日期和餐次。",
+                satisfied=False,
+            )
         if not correction:
             if _unsafe_diet_correction_requested(current_message):
                 for tool_call in tool_calls:
@@ -24513,9 +24899,15 @@ class AgentExecutor:
                     headers,
                 )
                 lookup_done = True
+                if lookup_error is None:
+                    self._capture_owner_scoped_manage_list_reference(
+                        "health_manage", {"record_type": "diet", "operation": "list"},
+                        json.dumps(records, ensure_ascii=False),
+                    )
             return records, lookup_error
 
         normalized: List[Dict[str, Any]] = []
+        correction_emitted = False
         for tool_call in tool_calls:
             function = tool_call.get("function") or {}
             tool_name = function.get("name")
@@ -24543,6 +24935,9 @@ class AgentExecutor:
                 normalized.append(tool_call)
                 continue
 
+            if correction_emitted:
+                continue
+
             candidates, error = await _lookup_records()
             candidate_rows = [
                 row for row in (candidates if isinstance(candidates, list) else [])
@@ -24555,6 +24950,10 @@ class AgentExecutor:
                     reference_now=self._agent_kernel_reference_now(),
                 ) if not error else None
                 candidate_rows = [candidate] if candidate is not None else []
+            selected_id = correction.get("record_id")
+            if selected_id is not None:
+                candidate_rows = [row for row in candidate_rows
+                                  if (row.get("id") or row.get("record_id")) == selected_id]
             update_data = (
                 _diet_correction_update_data(correction, candidate_rows[0])
                 if not error and len(candidate_rows) == 1
@@ -24598,10 +24997,13 @@ class AgentExecutor:
                 )
                 self._turn_diet_correction_unresolved_reason = unresolved_reason
                 raise _SimpleRecordTerminal(
-                    _diet_correction_unresolved_message(unresolved_reason),
+                    _diet_correction_candidate_message(correction, candidate_rows)
+                    if unresolved_reason == "ambiguous_target" and correction.get("consumed_fraction")
+                    else _diet_correction_unresolved_message(unresolved_reason),
                     satisfied=False,
                 )
 
+            correction_emitted = True
             normalized.append({
                 **tool_call,
                 "function": {
@@ -24707,6 +25109,7 @@ class AgentExecutor:
                 )
                 continue
 
+            self._stop_exhausted_composed_read_retry(func_name, result, retry_attempt)
             yield ("result", result)
             return
 
@@ -27773,6 +28176,70 @@ class AgentExecutor:
     # 既有工具失败处理 (返回 "Error: ..." 字符串), 回合存活。
     ORCHESTRATOR_IN_PROCESS_TIMEOUT_S: float = 120.0
 
+    def _can_capture_orchestrator_delivery(self, question: str) -> bool:
+        snapshot = self._agent_kernel_snapshot
+        return bool(
+            getattr(self, "_report_turn_allowed", False)
+            and question == self._current_turn_user_message
+            and self._runtime_run_id and self._current_pi_tool_call_id
+            and len(self._report_dispatches) == 1
+            and snapshot is not None
+            and snapshot.envelope.user_id == self._current_user_id
+            and snapshot.context.user_id == self._current_user_id
+            and not snapshot.actionable_references
+            and snapshot.goal is not None and snapshot.goal.kind == "answer"
+            and not snapshot.goal.requires_lookup and not snapshot.goal.requires_verification
+            and not snapshot.goal.requires_clarification and not snapshot.goal.postconditions
+            and not self._agent_kernel_pending_confirmation_tools
+            and not self._agent_kernel_capability_block_reasons
+            and getattr(self._agent_kernel_last_decision, "action", None) == "allow"
+            and getattr(self._agent_kernel_last_decision, "normalized_tool_name", None) == "health_analysis"
+        )
+
+    def _take_orchestrator_delivery(self, messages: List[Dict]):
+        from app.services.orchestrator_delivery import DeliveryReceipt
+
+        receipt = getattr(self, "_completed_orchestrator_delivery", None)
+        self._completed_orchestrator_delivery = None
+        if (
+            type(receipt) is not DeliveryReceipt
+            or not self._can_capture_orchestrator_delivery(receipt.query)
+            or receipt.user_id != self._current_user_id
+            or receipt.turn_id != self._runtime_run_id
+            or receipt.tool_call_id != self._current_pi_tool_call_id
+            or self._report_dispatches != [receipt.tool_call_id]
+        ):
+            return None
+        # Require exactly one current user and a single completed tool pair.
+        # HTTP/cache payloads can never create the private receipt above.
+        dialogue = [m for m in messages if m.get("role") != "system"]
+        if len(dialogue) != 3:
+            return None
+        user, assistant, tool = dialogue
+        calls = assistant.get("tool_calls") or []
+        if (user.get("role") != "user" or user != self._report_initial_user_frame
+                or assistant.get("role") != "assistant" or len(calls) != 1
+                or tool.get("role") != "tool" or tool.get("tool_call_id") != receipt.tool_call_id):
+            return None
+        call = calls[0]
+        function = call.get("function") or {}
+        args = _parse_tool_arguments_for_telemetry(function.get("arguments"))
+        if (call.get("id") != receipt.tool_call_id or function.get("name") != "health_analysis"
+                or args != {"analysis_type": "orchestrator", "question": receipt.query}):
+            return None
+        payload = _recover_tool_result_payload(tool.get("content"))
+        if (not isinstance(payload, dict) or payload.get("synthesis") != receipt.text
+                or payload.get("query") != receipt.query or payload.get("safety_action") != "pass"
+                or payload.get("error") or payload.get("error_code") or payload.get("persisted_card_ids")
+                or payload.get("success") is False or payload.get("status") in ("failed", "error")):
+            return None
+        if (is_internal_process_response(receipt.text) or _looks_like_bare_tool_json(receipt.text)
+                or _leaks_tool_result_json(receipt.text) or enforce_agent_output_quality(receipt.text).flags
+                or _strip_reva_ui_from_llm_text(receipt.text) != receipt.text
+                or _strip_botched_text_tool_leak(receipt.text) != receipt.text):
+            return None
+        return receipt
+
     async def _run_orchestrator_in_process(self, question: str) -> str:
         """进程内直调 run_orchestrator, 替换 localhost POST /orchestrator/chat (rank8)。
 
@@ -27811,10 +28278,22 @@ class AgentExecutor:
         req = OrchestratorRequest(query=question)
         orch_db = SessionLocal()
         try:
-            response = await asyncio.wait_for(
-                run_orchestrator(orch_db, user_id, req),
-                timeout=self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S,
-            )
+            from app.services.orchestrator_delivery import capture_report
+
+            self._completed_orchestrator_delivery = None
+            if self._can_capture_orchestrator_delivery(question):
+                with capture_report(user_id, self._runtime_run_id,
+                                    self._current_pi_tool_call_id, question) as capture:
+                    response = await asyncio.wait_for(
+                        run_orchestrator(orch_db, user_id, req),
+                        timeout=self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S,
+                    )
+                    self._completed_orchestrator_delivery = capture.consume(capture.receipt)
+            else:
+                response = await asyncio.wait_for(
+                    run_orchestrator(orch_db, user_id, req),
+                    timeout=self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S,
+                )
             return json.dumps(
                 response.model_dump(mode="json"), ensure_ascii=False, default=str
             )
@@ -27843,6 +28322,14 @@ class AgentExecutor:
         """执行环境数据查询"""
         ctype = args.get("check_type", "weather")
         city = str(args.get("city") or "").strip() or None
+        if getattr(self, "_public_task", None) == "weather" and not city:
+            from app.models.user_profile import UserProfile
+            from app.services.location_resolver import resolve_effective_location
+
+            profile = self.db.query(UserProfile).filter(UserProfile.user_id == self._current_user_id).first()
+            location = resolve_effective_location(profile)
+            if not location["city"] and not (location["lat"] is not None and location["lon"] is not None):
+                return json.dumps({"error": "location_required", "message": "请告诉我你要查询哪个城市的天气。"}, ensure_ascii=False)
         if ctype == "forecast":
             try:
                 days = int(args.get("days", 3))
@@ -27854,6 +28341,10 @@ class AgentExecutor:
         if getattr(settings, "reads_in_process", True):
             payload = await self._read_environment_in_process(ctype, city=city, days=days)
             if payload is not None:
+                if getattr(self, "_public_task", None) == "weather":
+                    from app.services.agent_public_task import public_weather_payload
+
+                    payload = public_weather_payload(payload, ctype)
                 return _truncate_for_display(json.dumps(payload, ensure_ascii=False, default=str))
         path_map = {
             "weather": "/environment/weather",
@@ -27873,7 +28364,13 @@ class AgentExecutor:
             params["days"] = days
         if params:
             path = f"{path}?{urlencode(params)}"
-        return await self._api_get(f"{base}{path}", headers)
+        result = await self._api_get(f"{base}{path}", headers)
+        if getattr(self, "_public_task", None) == "weather":
+            from app.services.agent_public_task import public_weather_payload
+
+            payload = _recover_tool_result_payload(result)
+            return json.dumps(public_weather_payload(payload, ctype), ensure_ascii=False, default=str)
+        return result
 
     async def _read_environment_in_process(
         self,

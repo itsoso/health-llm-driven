@@ -1,0 +1,200 @@
+{
+  "status": "passed_contracts_only",
+  "batch_id": "c520267c51964625ad371eb790133bdd",
+  "mode": "live",
+  "models": [
+    "qwen3.8-max"
+  ],
+  "variants": [
+    "baseline"
+  ],
+  "cases": [
+    "analysis_7d_empty"
+  ],
+  "planned_tasks": 1,
+  "max_provider_attempts": 3,
+  "per_task_call_cap": 3,
+  "tool_budget_protocol": "logical-and-physical-v2",
+  "per_task_logical_tool_cap": 3,
+  "per_task_model_tool_proposal_cap": 3,
+  "per_task_tool_cap": 6,
+  "per_logical_dispatch_cap": 2,
+  "max_input_bytes_per_call": 262144,
+  "requested_max_output_tokens_per_call": 1200,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "eval_only",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "analysis_7d_empty",
+      "variant": "baseline",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 1,
+          "payload_sha256": "1384233aa7d88ead7c45c019a70492f9ca50c41766a98890ac3f8d8e61e865ba",
+          "input_bytes": 33930,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 8485,
+          "output_tokens": 396,
+          "cached_tokens": [
+            8192
+          ],
+          "first_content_seconds": null,
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 6.5264459579921095
+        },
+        {
+          "call_index": 2,
+          "payload_sha256": "fd7a3ce8bc7dbaa5de12b56f8ee8b3fa3c81bd30deb690a9666c2e9453729302",
+          "input_bytes": 24690,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 5732,
+          "output_tokens": 415,
+          "cached_tokens": [
+            5120
+          ],
+          "first_content_seconds": 10.780898375000106,
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 12.277546500001336
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 2,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 20.291202959007933,
+      "live": true,
+      "wall_seconds": 20.351733542003785,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [
+        {
+          "tool": "knowledge_search",
+          "honest_empty_kb": true,
+          "result": "已审定知识库未命中『成人睡眠时长与睡眠健康建议 饮食记录 营养均衡』相关条目(该主题可能未收录)。请如实说明缺少本系统已审定依据,勿编造引用。"
+        }
+      ],
+      "query": "分析我最近7天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "diet",
+              "days": 7,
+              "start_date": "2026-09-07",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            },
+            {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-09-07",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            }
+          ]
+        },
+        {
+          "tool": "knowledge_search",
+          "action": "allow",
+          "reason": "read_only_tool",
+          "requested_read_scope": [
+            {}
+          ]
+        }
+      ],
+      "tool_budget": {
+        "model_proposals": 2,
+        "logical_executions": 2,
+        "physical_dispatches": 2,
+        "current_dispatches": 1
+      },
+      "logical_tool_source": "model_and_existing_server_fallback",
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、已检索证据（未逐句核验）、模型推断。\n查询范围：饮食，2026-09-07至2026-09-13，Asia/Shanghai。\n\n饮食：目标日期没有可用记录，不代表没有进食。\n\n查询范围：睡眠，2026-09-07至2026-09-13，Asia/Shanghai。\n\n睡眠：目标日期没有可用记录，不能据此判断睡眠情况。\n\n最近 7 天范围内未读取到睡眠和饮食记录，因此暂无法分析睡眠时长、睡眠质量或饮食热量与营养分布。\n\n这只能说明该时间段内没有可分析的数据，不能推断为你没有睡觉或没有进食。若相关数据后续完成同步或上传，可以再查看趋势。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "evaluation_seconds": 20.42229899999802,
+      "repeat": 0
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "bdadd9b77530c474706bf39563d33f661314d869458edb167131e440a063a55c",
+    "scripts/benchmark_prompt_full_task.py": "b4b5adb8d5090993a7df4c7d1aee6e333d8695166efc870985e55f40a9b2697f",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/app/services/agent_executor.py": "b6fa3e1782db68a95638f21b41417358cc1009732c0fe75b751adba29d622380",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_longitudinal_read.py": "282ad9dda8e253248d299deaf12f5787bb146db689c8527efaceaa6bb68d2f29",
+    "backend/app/services/agent_kernel/capability_policy.py": "9e7f0e65ca1253c927442bf20402a61412fdf7a2756660a2c845c880b4570473",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "5d5ac6ffde8c702edc2a63588d897f983fed6ed30a81ad414bac5380840bc9cc"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Unseeded clinical/CGM context is empty; optional local knowledge base is absent. Not rich-patient coverage.",
+    "Per-sample synthetic user with real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-max",
+      "variant": "baseline",
+      "tasks": 1,
+      "provider_attempts": 2,
+      "passed_contracts": 1,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 14217,
+      "api_output_tokens_known": 811,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 1,
+      "wall_seconds_all_tasks": {
+        "p50": 20.351733542003785,
+        "p95": 20.351733542003785,
+        "p99": 20.351733542003785
+      }
+    }
+  ]
+}

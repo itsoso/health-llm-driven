@@ -38,6 +38,30 @@ RequirementAdmission:
 
 ## 3. User Flow
 
+### Menu-only voice entry — 2026-10-04
+
+Following user feedback that the green header voice capsule is too prominent,
+remove the standalone header action. Keep history and more as compact neutral
+header actions with 44-point touch targets; new chat remains in more. Use
+Chat → 更多操作 → 实时语音对话 as the realtime voice entry, without a header or
+above-composer shortcut, including after leaving message multi-selection.
+The menu entry retains the existing microphone-ownership/navigation guard. Keep the
+first-level conversation-history action and the separate transcription microphone.
+Navigation opens `/voice-chat` without `autoStart`; the voice page's explicit
+microphone and existing AI-consent gate remain authoritative. Active chat streaming
+or composer capture/start/transcription/submission blocks entry with a visible
+explanation, so opening the modal cannot create competing microphone ownership.
+This is a reachability bugfix under the existing Capture/ExecutionEvent/WriteIntent
+admission, not new medical-write authority, background listening or full duplex.
+
+Acceptance: no prominent voice shortcut appears in the chat header or composer;
+the more menu exposes one realtime voice entry and closes on successful navigation; active composer/Agent
+work cannot navigate; history and transcription remain available; native simulator
+verification and release gates are separate from mocked regression evidence.
+
+Change note: this supersedes the 2026-10-03 prominent header-entry layout only;
+voice-session behavior and safety boundaries are unchanged.
+
 ```text
 tap microphone
   -> authenticated realtime ASR session starts

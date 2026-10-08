@@ -25,6 +25,55 @@ def load_server():
     return module
 
 
+@pytest.mark.parametrize("accepted", [True, False])
+def test_readiness_drift_requires_canonical_gate_before_loopback(monkeypatch, tmp_path, accepted):
+    server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "validate_loopback", lambda _: None)
+    observed = "c" * 40
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(stdout=observed + "\trefs/heads/main\n")
+    monkeypatch.setattr(server.subprocess, "run", run)
+    def attest(authorized, head):
+        assert authorized == policy() and head == observed
+        assert len(calls) == 1
+        if not accepted:
+            raise server.LaunchError("documentation gate rejected")
+    monkeypatch.setattr(server, "attest_documentation_main", attest)
+    if accepted:
+        server.check_readiness(policy())
+        assert calls[-1][-2:] == ["health", "/usr/bin/true"]
+    else:
+        with pytest.raises(server.LaunchError):
+            server.check_readiness(policy())
+        assert len(calls) == 1
+
+
+def test_documentation_attestation_verifies_canonical_bytes_and_binds_observed_head(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(server, "STATE", tmp_path)
+    script = tmp_path / "bootstrap" / SHA / "source/scripts/trusted_release_gate.py"
+    script.parent.mkdir(parents=True)
+    script.write_bytes(b"canonical gate")
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(stdout=b"canonical gate")
+    monkeypatch.setattr(server.subprocess, "run", run)
+    observed = "c" * 40
+    server.attest_documentation_main(policy(), observed)
+    assert calls[0][0][-2:] == ["show", SHA + ":scripts/trusted_release_gate.py"]
+    assert calls[1][0] == [server.PYTHON, "-I", "-S", "-B", str(script),
+                           "--sha", SHA, "--workflow-sha", SHA, "--observed-main", observed]
+    assert calls[1][1]["check"] is True
+    script.write_bytes(b"tampered")
+    calls.clear()
+    with pytest.raises(server.LaunchError):
+        server.attest_documentation_main(policy(), observed)
+    assert len(calls) == 1
+
+
 def policy(**changes):
     result = {"sha": SHA, "expires_at": 7300, "executor_sha256": HASH}
     result.update(changes)
@@ -63,6 +112,24 @@ def test_policy_rejects_expiry_and_injected_fields(changes):
 def test_policy_binds_exact_revision_and_executor():
     server = load_server()
     assert server.validate_policy(policy(), now=100) == policy()
+
+
+def test_persistent_policy_does_not_expire_but_still_binds_revision(monkeypatch):
+    server = load_server()
+    persistent = policy(expires_at=0)
+    monkeypatch.setattr(server.time, "time", lambda: 2000000000)
+    assert server.validate_policy(persistent, now=2000000000) == persistent
+    server._assert_deployment_window(persistent)
+    assert server.authorize_command("check " + SHA, persistent) == "check"
+    with pytest.raises(server.LaunchError):
+        server.authorize_command("run " + "c" * 40, persistent)
+
+
+@pytest.mark.parametrize("expiry", [-1, None, 0.0, False])
+def test_only_integer_zero_means_persistent_authorization(expiry):
+    server = load_server()
+    with pytest.raises(server.LaunchError):
+        server.validate_policy(policy(expires_at=expiry), now=100)
 
 
 @pytest.mark.parametrize("uid,mode,nlink", [(501, 0o600, 1), (0, 0o660, 1), (0, 0o644, 1), (0, 0o600, 2)])
@@ -579,24 +646,28 @@ def test_production_env_accepts_root_service_group_0640_without_chmod():
     server.validate_production_env_metadata(metadata, 100)
 
 
-def test_loopback_rejects_added_shell_directives_or_broader_authorization(monkeypatch):
+@pytest.mark.parametrize("expiry,authorization", [
+    (200, b'from="127.0.0.1",restrict,expiry-time="19700101000320" ssh-ed25519 AAAA'),
+    (0, b'from="127.0.0.1",restrict ssh-ed25519 AAAA'),
+])
+def test_loopback_rejects_added_shell_directives_or_broader_authorization(monkeypatch, expiry, authorization):
     server = load_server()
     monkeypatch.setattr(server, "secure_path", lambda *args, **kwargs: None)
     monkeypatch.setattr(server, "expiry_time", lambda _expiry: "19700101000320", raising=False)
     values = {
         "loopback.conf": server.loopback_config().encode(),
         "loopback.pub": b"ssh-ed25519 AAAA",
-        "authorized_keys": b'from="127.0.0.1",restrict,expiry-time="19700101000320" ssh-ed25519 AAAA',
+        "authorized_keys": authorization,
     }
     monkeypatch.setattr(server, "_read_private", lambda path: values[path.name])
-    server.validate_loopback(policy(expires_at=200))
+    server.validate_loopback(policy(expires_at=expiry))
     values["authorized_keys"] += b"\nssh-ed25519 AAAA"
     with pytest.raises(server.LaunchError):
-        server.validate_loopback(policy(expires_at=200))
+        server.validate_loopback(policy(expires_at=expiry))
     values["authorized_keys"] = values["authorized_keys"].splitlines()[0]
     values["loopback.conf"] += b"  LocalCommand id\n"
     with pytest.raises(server.LaunchError):
-        server.validate_loopback(policy(expires_at=200))
+        server.validate_loopback(policy(expires_at=expiry))
 
 
 def test_deploy_uses_only_fixed_command_and_private_authoritative_env(monkeypatch, tmp_path):

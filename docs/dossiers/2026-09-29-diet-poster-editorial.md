@@ -1,9 +1,11 @@
 # Diet poster editorial simplification
 
+> 历史本地审计补录（2026-10-03）：以下状态、测试数、发布 SHA 与回执来自原工作树既有记录，未在本次整合中重新验证；不是当前生产状态或本轮发布 Gate 的新鲜证据。本轮整合与验证见 docs/dossiers/2026-10-03-local-change-integration.md。
+
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | G3 verification |
+| 状态 | closed |
+| 当前阶段 | G6 production readback PASS |
 | Controller | health-harness-orchestrator |
 
 ## G1 — Scope
@@ -54,4 +56,46 @@ Screenshots: `/tmp/reva-editorial-{short,long,no-location,pending,confirmed}.png
 This is component-layout evidence, not real-data/full-app/hardware acceptance.
 The temporary fixture entry was removed after export and is not part of release.
 
-Publication is pending clean-candidate CI-mode validation and exact-main CI.
+## G3–G5 — Clean candidate validation
+
+Candidate: `fda864c2b7f491be79db7b4523896a499581730d`.
+Clean checkout: `/private/tmp/reva-half-meal-release.Yd82Ox/source`.
+Matching package lock and copied dependencies reused; no unrelated root WIP.
+
+- CI-mode Mobile main: 310 suites, 2,886 passed, one existing skipped.
+- Isolated chat input / chat screen / auth / GPS prompt: 75 / 64 / 33 / 7 passed.
+- Total: 314 suites, 3,065 passed, one skipped; shell chain exited 0.
+- TypeScript, scoped ESLint, design token ratchet: PASS.
+- Image parser security test and seven OSV gate tests: PASS; production audit
+  found no high, critical or unknown-severity advisories.
+- Secret scan, dossier consistency, skill governance and System Map: PASS.
+- No health behavior, identity isolation, write path or API contract change;
+  safety overlay, PostgreSQL and live LLM regressions are not applicable.
+- Five-state simulator component evidence above: PASS, synthetic-only limits apply.
+
+Logs: `/tmp/reva-editorial-ci-{main,input,chat,auth,gps}.log`.
+Exact-main CI `36513830065`: success for the candidate SHA; fresh readback verified
+before release. Remote main advanced from the green `8bd2655b6` without divergence.
+Release terminal: `mobile-ota`; standard script exited 0 from the clean candidate,
+runtime 1.3.4, with no bypasses. One Hermes export and one upload attempt.
+
+## G6 — Production readback
+
+裁决: PASS
+
+- Production iOS group: `fc8792f0-627c-4937-928c-c2a640a784f8`.
+- Update: `01a0eb0e-ec64-7a0b-bc3e-ff3bdc3deb02`.
+- EAS readback matches exact candidate SHA, iOS and runtime 1.3.4.
+- Actual production Expo protocol 1 multipart response: HTTP 200; header and
+  parsed manifest both match this update, runtime and a present launch asset.
+- Rollback group: `2cd9f0ea-e5ce-4a35-94c5-23e1dfc9ca53`.
+- Root manifest/anchor synced only after checking the expected previous group.
+- Evidence: `/tmp/reva-editorial-ota.log`, `/tmp/reva-editorial-eas-after.json`,
+  `/tmp/reva-editorial-served-{headers.txt,manifest.mime}`; release checkout retains
+  its append-only `.mobile-ota-audit.jsonl`.
+
+Production is serving the new bundle; no claim is made that a user's phone has
+already installed it. User confirms the app update and regenerates the share
+image. Backend remains unchanged at `8bd2655b6`; no TestFlight/native rollout.
+This post-release evidence is a local audit supplement after the published SHA;
+all unrelated GPS/native/privacy WIP and prior dossiers remain preserved.

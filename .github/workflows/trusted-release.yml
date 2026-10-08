@@ -11,7 +11,7 @@ on:
         required: true
         default: validate
         type: choice
-        options: [validate, backend, release, testflight]
+        options: [validate, backend, release, testflight, retained-testflight]
 permissions:
   contents: read
   actions: read
@@ -198,6 +198,14 @@ jobs:
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/scripts/release-tools --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/scripts/release-tools --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/mobile --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/mobile --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
@@ -305,6 +313,14 @@ jobs:
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/scripts/release-tools --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/scripts/release-tools --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/mobile --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
+            "$node_bin/node" /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/mobile --apply
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
@@ -362,6 +378,142 @@ jobs:
             EXPO_TOKEN="$EXPO_TOKEN" CI=1 \
             "$node_bin/node" /opt/reva-release/source/scripts/release-tools/node_modules/eas-cli/bin/run \
               submit -p ios --id "$BUILD_ID" --profile production --non-interactive --wait
+
+  retained-testflight:
+    if: inputs.target == 'retained-testflight'
+    needs: preflight
+    environment: release-production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Materialize exact publisher and fixed retained source before credentials
+        env:
+          TARGET_SHA: ${{ inputs.sha }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_REPOSITORY" = itsoso/health-llm-driven
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$TARGET_SHA" = "$GITHUB_SHA"
+          /usr/bin/sudo /usr/bin/python3 -I -S -B - <<'REVA_RUNNER_ROOT'
+          import errno
+          import os
+          import stat
+          from pathlib import Path
+          def harden(path):
+              before = path.lstat()
+              if (not stat.S_ISDIR(before.st_mode) or before.st_uid != 0 or before.st_gid != 0
+                      or stat.S_IMODE(before.st_mode) not in (0o755, 0o777)):
+                  raise ValueError('Unexpected retained runner root metadata')
+              fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+              try:
+                  opened = os.fstat(fd)
+                  identity = lambda info: (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode)
+                  if identity(opened) != identity(before):
+                      raise ValueError('Retained runner root changed before hardening')
+                  os.fchmod(fd, 0o755)
+                  os.fsync(fd)
+                  after = path.lstat()
+                  if (identity(after) != identity(os.fstat(fd))
+                          or (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino)
+                          or stat.S_IMODE(after.st_mode) != 0o755):
+                      raise ValueError('Retained runner root changed during hardening')
+              finally:
+                  os.close(fd)
+          def prepare_new(path):
+              # Never reuse or normalize a pre-existing publisher namespace.
+              # Mode 0700 masks inherited ACL grants before removing inheritance.
+              os.mkdir(path, 0o700)
+              before = path.lstat()
+              if (not stat.S_ISDIR(before.st_mode) or before.st_uid != 0 or before.st_gid != 0
+                      or stat.S_IMODE(before.st_mode) != 0o700):
+                  raise ValueError('Unexpected fresh publisher directory metadata')
+              fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+              try:
+                  identity = lambda info: (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode)
+                  if identity(os.fstat(fd)) != identity(before):
+                      raise ValueError('Fresh publisher directory changed before ACL isolation')
+                  acls = ('system.posix_acl_access', 'system.posix_acl_default')
+                  for name in acls:
+                      try:
+                          os.removexattr(fd, name)
+                      except OSError as exc:
+                          if exc.errno != errno.ENODATA:
+                              raise
+                  os.fchmod(fd, 0o700)
+                  if set(acls).intersection(os.listxattr(fd)):
+                      raise ValueError('Fresh publisher directory retains an ACL')
+                  os.fsync(fd)
+                  after = path.lstat()
+                  if identity(after) != identity(before) or identity(after) != identity(os.fstat(fd)):
+                      raise ValueError('Fresh publisher directory changed during ACL isolation')
+              finally:
+                  os.close(fd)
+          try:
+              harden(Path('/opt'))
+              prepare_new(Path('/opt/reva-release'))
+          except Exception:
+              raise SystemExit('Retained runner root bootstrap blocked.') from None
+          print('Retained runner root verified and hardened non-recursively.')
+          REVA_RUNNER_ROOT
+          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_NO_REPLACE_OBJECTS=1 /bin/bash --noprofile --norc -eu -c '
+            umask 077
+            /usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source
+            cd /opt/reva-release/source
+            /usr/bin/git remote add origin https://github.com/itsoso/health-llm-driven.git
+            /usr/bin/git -c core.hooksPath=/dev/null fetch --depth=1 origin "$1"
+            test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
+            /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
+            /usr/bin/git -c core.hooksPath=/dev/null fetch --depth=1 origin 514c8c28a87ad5761a6f66b284c19a69dff33e8f
+            test "$(/usr/bin/git rev-parse FETCH_HEAD)" = 514c8c28a87ad5761a6f66b284c19a69dff33e8f
+            test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
+            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
+          ' reva-bootstrap "$TARGET_SHA"
+      - name: Fixed Node toolchain
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22.13.0
+          package-manager-cache: false
+      - name: Install and verify locked vendor tools without credentials
+        run: |
+          node_bin="$(dirname "$(command -v node)")"
+          for tree in scripts/release-tools mobile; do
+            /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root npm ci --prefix "/opt/reva-release/source/$tree" --ignore-scripts --no-audit --no-fund
+            /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root "/opt/reva-release/source/$tree" --apply
+            /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root "$node_bin/node" /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root "/opt/reva-release/source/$tree" --apply
+          done
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root "$node_bin/node" /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
+          /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root "$node_bin/node" --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
+      - name: Verify canonical retained runner startup without credentials
+        env:
+          TARGET_SHA: ${{ inputs.sha }}
+        run: |
+          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_retained_testflight.py \
+              --check-runner --sha "$TARGET_SHA"
+      - name: Attest claim and submit retained 274 once then verify vendor receipt
+        env:
+          TARGET_SHA: ${{ inputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+          EXPO_TOKEN: ${{ secrets.REVA_RELEASE_EXPO_TOKEN }}
+          RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
+          RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
+        run: |
+          test -n "$GH_TOKEN"
+          test -n "$EXPO_TOKEN"
+          test -n "$RELEASE_KEY"
+          test -n "$RELEASE_HOST_KEYS"
+          umask 077
+          private_dir="$(mktemp -d)"
+          trap 'rm -f -- "$private_dir/key" "$private_dir/known_hosts"; rmdir -- "$private_dir"' EXIT
+          printf '%s\n' "$RELEASE_KEY" > "$private_dir/key"
+          printf '%s\n' "$RELEASE_HOST_KEYS" > "$private_dir/known_hosts"
+          unset RELEASE_KEY RELEASE_HOST_KEYS
+          node_path="$(command -v node)"
+          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root GH_TOKEN="$GH_TOKEN" EXPO_TOKEN="$EXPO_TOKEN" \
+            /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_retained_testflight.py \
+              --runner --sha "$TARGET_SHA" --key "$private_dir/key" --known-hosts "$private_dir/known_hosts" --node "$node_path"
+      - name: Record limited upload result
+        run: echo 'Retained build 274 upload was independently verified. No new build, backend redeployment or App Review. Apple processing and TestFlight availability remain separate.' >> "$GITHUB_STEP_SUMMARY"
 
   release-result:
     if: always() && (inputs.target == 'release' || inputs.target == 'testflight')
