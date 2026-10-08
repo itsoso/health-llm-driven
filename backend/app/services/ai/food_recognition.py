@@ -359,8 +359,11 @@ def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
 
 def _sanitize_vision_payload(result: Any) -> Dict[str, Any]:
     """A malformed model contract is a failure, not evidence of an empty plate."""
-    if (not isinstance(result, dict) or not isinstance(result.get("foods"), list)
-            or any(not isinstance(item, dict) for item in result["foods"])):
+    if (not isinstance(result, dict) or result.get("success") is False
+            or not isinstance(result.get("foods"), list)
+            or any(not isinstance(item, dict)
+                   or not isinstance(item.get("name"), str) or not item["name"].strip()
+                   for item in result["foods"])):
         return sanitize_food_recognition_result({
             "success": False, "foods": [], "error": "AI响应格式错误，请重试",
         })

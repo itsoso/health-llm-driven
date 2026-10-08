@@ -35,7 +35,7 @@ def test_no_food_classification_survives_repeated_sanitization():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("response", ["", "抱歉，看不清这张图片", "{}", "[]", '{"foods":null}', '{"foods":[null]}'])
+@pytest.mark.parametrize("response", ["", "抱歉，看不清这张图片", "{}", "[]", '{"foods":null}', '{"foods":[null]}', '{"foods":[{}]}', '{"foods":[{"name":" "}]}', '{"success":false,"foods":[],"error":"识别超时，请重试"}'])
 async def test_invalid_vision_contract_is_not_no_food(response):
     class Provider:
         async def chat_with_vision(self, **kwargs):
