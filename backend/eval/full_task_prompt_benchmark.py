@@ -17,7 +17,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 REFERENCE_NOW = datetime.fromisoformat("2026-09-13T23:30:00+08:00")
-VARIANTS = ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan")
+VARIANTS = ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout")
 ANSWER_DIAGNOSTIC_CHAR_LIMIT = 16000
 
 
@@ -184,7 +184,13 @@ class MeasuredProvider:
                "input_bytes": len(payload), "phase": "tools" if kwargs.get("tools") else "answer",
                "token_source": "unknown" if self.live else "synthetic", "input_tokens": None,
                "output_tokens": None, "cached_tokens": None, "first_content_seconds": None,
-               "answer_text": None if kwargs.get("tools") else "", "answer_text_truncated": False}
+               "answer_text": None if kwargs.get("tools") else "", "answer_text_truncated": False,
+               "first_event_seconds": None, "first_reasoning_seconds": None,
+               "last_event_seconds": None, "last_event_type": None,
+               "event_counts": {"reasoning": 0, "content": 0, "tool_calls": 0, "finish": 0, "other": 0},
+               "request_controls": {key: wire[key] for key in
+                   ("temperature", "max_tokens", "thinking_budget", "enable_thinking")
+                   if key in wire and type(wire[key]) in (bool, int, float)}}
         self.calls.append(row)
         capture = begin_usage_capture()
         started, finish = perf_counter(), None
@@ -193,6 +199,17 @@ class MeasuredProvider:
             async with asyncio.timeout(45):
                 async with aclosing(self.factory().chat_stream(**wire)) as stream:
                     async for event in stream:
+                        event_seconds = perf_counter() - started
+                        event_type = event.get("type")
+                        event_type = event_type if event_type in row["event_counts"] else "other"
+                        if row["first_event_seconds"] is None:
+                            row["first_event_seconds"] = event_seconds
+                        row["last_event_seconds"] = event_seconds
+                        row["last_event_type"] = event_type
+                        row["event_counts"][event_type] += 1
+                        if event_type == "reasoning" and row["first_reasoning_seconds"] is None:
+                            row["first_reasoning_seconds"] = event_seconds
+                        # Keep timing/counts only for reasoning; never retain its text.
                         # This harness admits only disposable synthetic data.
                         # Keep visible answer content before output guards for
                         # diagnosing BLOCK vs false positives. Never capture
@@ -323,7 +340,7 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                 row["database_errors"].append(type(context.original_exception).__name__)
             sqlalchemy_event.listen(engine, "handle_error", database_error)
             stack.callback(sqlalchemy_event.remove, engine, "handle_error", database_error)
-            for name, value in (("domain_prompt_optimization", True), ("owned_read_preplanning", variant == "runtime_preplan"), ("agent_base_url", None), ("agent_api_key", None),
+            for name, value in (("domain_prompt_optimization", True), ("owned_read_preplanning", variant in {"runtime_preplan", "runtime_legacy_layout"}), ("agent_base_url", None), ("agent_api_key", None),
                                 ("task_tiered_routing", True), ("llm_auto_recovery_enabled", False),
                                 ("decision_mode", "off"), ("staged_response_mode", "off")):
                 stack.enter_context(patch.object(settings, name, value))
@@ -343,6 +360,11 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             stack.enter_context(patch("app.twin.cache.get_cached_twin", lambda *a, **k: None))
             stack.enter_context(patch("app.twin.cache.set_cached_twin", lambda *a, **k: False))
             stack.enter_context(patch("app.twin.cache.invalidate_twin", lambda *a, **k: None))
+            # The profile is background, but its clock must still agree with
+            # the frozen request clock. Never send contradictory synthetic times.
+            assert REFERENCE_NOW.hour == 23
+            stack.enter_context(patch("app.services.health_context_lite_service._get_time_period",
+                                      lambda: (REFERENCE_NOW.strftime("%H:%M"), "深夜")))
             clock = ExecutionContext.now.__func__
             stack.enter_context(patch.object(ExecutionContext, "now", classmethod(lambda cls, **kwargs: clock(cls, **{**kwargs, "now_utc": REFERENCE_NOW}))))
             for name in ("create_provider_for_model_id", "create_provider_for_user", "get_llm_provider"):
@@ -355,10 +377,15 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                     raise RuntimeError("synthetic_read_unavailable")
                 stack.enter_context(patch("app.services.agent_longitudinal_read.read_longitudinal_health_query", failed_read))
             executor = ae.AgentExecutor(db)
-            if variant != "runtime_preplan":
+            if variant not in {"runtime_preplan", "runtime_legacy_layout"}:
                 # Freeze the old runtime's model-first baseline. Historical
                 # eval variants remain independent; never stack preplanners.
                 stack.enter_context(patch.object(executor, "_preplanned_owned_read_calls", lambda *a, **k: []))
+            if variant == "runtime_legacy_layout":
+                from app.services import agent_composed_read_completion as completion_module
+                original_instructions = completion_module.read_scope_synthesis_instructions
+                stack.enter_context(patch.object(completion_module, "read_scope_synthesis_instructions",
+                    lambda scope, **kwargs: original_instructions(scope, include_layout=True)))
             stack.enter_context(patch.object(executor, "_resolve_chat_provider", lambda tools: (provider, tools)))
             dispatch = executor._dispatch_tool_request
             from app.services.agent_kernel.tool_gateway import ToolGateway
@@ -442,7 +469,7 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             finally:
                 row["wall_seconds"] = perf_counter() - task_started
                 row["tool_budget"] = dict(vars(provider.tool_budget))
-                row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined", "runtime_preplan"} else "model_and_existing_server_fallback"
+                row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined", "runtime_preplan", "runtime_legacy_layout"} else "model_and_existing_server_fallback"
             if done is None:
                 raise BenchmarkStopped("missing_done")
             saved = db.get(AgentMessage, done.get("message_id"))

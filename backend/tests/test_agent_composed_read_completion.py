@@ -498,3 +498,17 @@ def test_absent_or_unverified_diet_does_not_imply_existing_records(executions):
     assert "饮食" in result.trusted_fact_summary
     if not executions or executions[0].content["records"]:
         assert not result.complete
+
+
+def test_compact_synthesis_layout_preserves_every_evidence_boundary():
+    from types import SimpleNamespace
+    from app.services.agent_composed_read_completion import read_scope_synthesis_instructions
+    scope = SimpleNamespace(queries=[{"dimension":"diet", "days":31}, {"dimension":"sleep", "days":31}])
+    original = read_scope_synthesis_instructions(scope)
+    compact = read_scope_synthesis_instructions(scope, include_layout=False)
+    old_layout = ("回答先给能由本轮记录支持的结论，再按已查领域各用一两句说明，最多三条下一步，可以没有下一步。"
+                  "普通复盘控制在800字以内；用户明确要求详细报告时才展开。")
+    assert original.count(old_layout) == 1
+    assert compact == original.replace(old_layout, "")
+    for safety_rule in ("没有本轮可核验的医嘱", "不得自行去重", "全天营养是否充足无法判断", "不能推算ODI"):
+        assert safety_rule in compact

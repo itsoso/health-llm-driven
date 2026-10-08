@@ -879,14 +879,17 @@ def _facts(dimension: str, payload: dict) -> str:
     return text
 
 
-def read_scope_synthesis_instructions(scope) -> str:
+def read_scope_synthesis_instructions(scope, *, include_layout: bool = True) -> str:
     if len(scope.queries) < 2 and not any("days" in query for query in scope.queries):
         return ""
     return (
         "\n[实际记录分析的证据边界]\n"
-        "回答先给能由本轮记录支持的结论，再按已查领域各用一两句说明，最多三条下一步，可以没有下一步。"
-        "普通复盘控制在800字以内；用户明确要求详细报告时才展开。"
-        "短续问只补充新的结论和依据，不重写上一轮报告、不反复展开同一批数值。"
+        + (
+            "回答先给能由本轮记录支持的结论，再按已查领域各用一两句说明，最多三条下一步，可以没有下一步。"
+            "普通复盘控制在800字以内；用户明确要求详细报告时才展开。"
+            if include_layout else ""
+        )
+        + "短续问只补充新的结论和依据，不重写上一轮报告、不反复展开同一批数值。"
         "完成冻结范围的查询后不要再邀请用户选择日期、模块、评估方向或收集新字段。"
         "未要求日程时不生成分时段行动表；先把当前问题完整回答，再结束。"
         "先区分实际查到的记录、未知项目与一般建议。病史时间是用户背景，"

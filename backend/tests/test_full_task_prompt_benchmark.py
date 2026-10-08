@@ -37,6 +37,9 @@ async def test_runtime_variant_keeps_rich_profile_and_actual_model_call_counts(d
     class Capture(ScriptedProvider):
         async def chat_stream(self, **kwargs):
             if not kwargs.get("tools"):
+                rules = kwargs["messages"][0]["content"]
+                assert "不超过200字" in rules
+                assert "800字" not in rules and "最多三条下一步" not in rules
                 inputs.append(json.loads(kwargs["messages"][1]["content"]))
             async for event in super().chat_stream(**kwargs):
                 yield event
@@ -49,6 +52,8 @@ async def test_runtime_variant_keeps_rich_profile_and_actual_model_call_counts(d
         rows.append(row)
     assert [len(r["calls"]) for r in rows] == [2, 1]
     assert inputs[0] == inputs[1]
+    assert "23:30" in inputs[1]["time_context"]
+    assert "时间: 23点 (深夜)" in inputs[1]["profile_context"]["text"]
     profile = inputs[1]["profile_context"]
     assert profile["authority"] == "background_not_current_read_or_new_consent"
     for token in ("花生", "慢性肾病", "合成长期处方"):
@@ -724,3 +729,49 @@ async def test_logical_budget_counts_replays_and_blocks_excess_proposals_before_
         assert row['tool_budget']['logical_executions'] == 3
         assert row['tool_budget']['model_proposals'] == 3
         assert row['tool_attempts'] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["no_event", "reasoning", "content"])
+async def test_timeout_keeps_stage_metrics_without_reasoning_or_exception_text(phase):
+    rows = []
+    hidden = "synthetic private reasoning must not be stored"
+    class TimeoutStage:
+        async def chat_stream(self, **kwargs):
+            if phase != "no_event":
+                yield {"type": phase, "text": hidden if phase == "reasoning" else "合成未完成回答"}
+            raise TimeoutError("sensitive transport detail must not be stored")
+    provider = MeasuredProvider(TimeoutStage, "synthetic", CallBudget(1), rows, live=False)
+    with pytest.raises(BenchmarkStopped, match="provider_TimeoutError"):
+        _ = [event async for event in provider.chat_stream(messages=[], thinking_budget=512)]
+    row = rows[0]
+    assert row["last_event_type"] == (None if phase == "no_event" else phase)
+    assert row["event_counts"]["reasoning"] == int(phase == "reasoning")
+    assert (row["first_reasoning_seconds"] is not None) == (phase == "reasoning")
+    assert (row["first_event_seconds"] is not None) == (phase != "no_event")
+    assert row["request_controls"] == {"temperature": 0, "max_tokens": 1200, "thinking_budget": 512}
+    assert hidden not in json.dumps(row)
+    assert "sensitive transport" not in json.dumps(row)
+    assert row["input_tokens"] is None
+
+
+@pytest.mark.asyncio
+async def test_stage_metrics_do_not_change_events_or_payload():
+    rows, captured = [], []
+    expected = [{"type":"reasoning", "text":"hidden synthetic reasoning"},
+                {"type":"content", "text":"合成答案"},
+                {"type":"finish", "finish_reason":"stop"}]
+    class Stages:
+        async def chat_stream(self, **kwargs):
+            captured.append(kwargs)
+            for event in expected:
+                yield event
+    provider = MeasuredProvider(Stages, "synthetic", CallBudget(1), rows, live=False)
+    events = [event async for event in provider.chat_stream(messages=[], enable_thinking=True)]
+    assert events == expected
+    row = rows[0]
+    assert row["event_counts"] == {"reasoning":1, "content":1, "tool_calls":0, "finish":1, "other":0}
+    assert row["first_event_seconds"] <= row["first_reasoning_seconds"] <= row["first_content_seconds"] <= row["last_event_seconds"]
+    assert row["last_event_type"] == "finish"
+    assert row["payload_sha256"] == hashlib.sha256(json.dumps(captured[0], ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+    assert "hidden synthetic reasoning" not in json.dumps(row)

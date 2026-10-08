@@ -46,7 +46,8 @@ async def run(args):
     models = args.model or ["qwen3.8-flash", "qwen3.8-max"]
     if getattr(args, "baseline_only", False) and args.variant:
         raise ValueError("baseline_only_conflicts_with_variant")
-    variants = ["baseline"] if getattr(args, "baseline_only", False) else ["baseline", *(args.variant or ["p1", "p2", "combined"])]
+    reference_variant = getattr(args, "reference_variant", "baseline")
+    variants = [reference_variant] if getattr(args, "baseline_only", False) else [reference_variant, *(args.variant or ["p1", "p2", "combined"])]
     tasks = len(cases) * len(models) * len(variants) * args.repetitions
     if not 1 <= args.repetitions <= 3 or not 1 <= args.max_api_calls <= 256 or len(set(models)) != len(models) or len(set(variants)) != len(variants):
         raise ValueError("invalid_or_duplicate_batch_parameters")
@@ -54,7 +55,7 @@ async def run(args):
         raise ValueError("worst_case_calls_exceed_budget")
     report = {"status": "running" if args.scripted or args.include_live_llm else "plan_only", "batch_id": uuid4().hex,
               "mode": "live" if args.include_live_llm else "scripted" if args.scripted else "plan",
-              "models": models, "variants": variants, "cases": [case.id for case in cases],
+              "models": models, "variants": variants, "reference_variant": reference_variant, "cases": [case.id for case in cases],
               "planned_tasks": tasks, "max_provider_attempts": args.max_api_calls, "per_task_call_cap": 3,
               "tool_budget_protocol": "logical-and-physical-v2", "per_task_logical_tool_cap": 3,
               "per_task_model_tool_proposal_cap": 3, "per_task_tool_cap": 6, "per_logical_dispatch_cap": 2, "max_input_bytes_per_call": 262144, "requested_max_output_tokens_per_call": 1200,
@@ -64,6 +65,7 @@ async def run(args):
                   "backend/eval/full_task_prompt_benchmark.py", "scripts/benchmark_prompt_full_task.py",
                   "backend/eval/experimental_read_synthesis.py", "backend/eval/experimental_owned_read_preplan.py",
                   "backend/eval/experimental_empty_read_terminal.py", "backend/eval/experimental_read_evidence_format.py",
+                  "backend/app/services/agent_composed_read_completion.py", "backend/app/services/health_context_lite_service.py",
                   "backend/app/config.py", "backend/app/services/agent_executor.py", "backend/app/services/agent_prompt_sections.py",
                   "backend/app/services/agent_longitudinal_read.py", "backend/app/services/agent_kernel/capability_policy.py",
                   "backend/app/services/agent_tool_prompt_projection.py", "backend/app/services/tool_schema_registry.py",
@@ -72,7 +74,7 @@ async def run(args):
                          "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
                          "Redis/Twin cache disabled; application prompts and read adapters retained.",
                          "Rich-profile cases seed synthetic allergies, chronic condition and medication; clinical/CGM context and optional local knowledge base remain absent.",
-                         "Per-sample synthetic user with real audited consent; no production database.",
+                         "Per-pair synthetic user and record IDs, independent conversations, real audited consent; no production database.",
                          "First UI content is not a clinically useful-result metric.",
                          "Answer-stage visible content is retained before guards for synthetic-only diagnostics, capped at 16000 characters with explicit truncation. No reasoning content is captured.",
                          "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
@@ -114,25 +116,27 @@ async def run(args):
             for model in models:
                 for repeat in range(args.repetitions):
                     order = variants if (index + repeat) % 2 == 0 else list(reversed(variants))
-                    for variant in order:
-                        with SessionLocal() as db:
-                            user = User(name="Synthetic evaluation subject", email=f"eval-{uuid4().hex}@example.invalid", is_active=True, is_approved=True)
-                            db.add(user)
-                            db.commit()
-                            seed_synthetic_records(db, user.id, case)
+                    # Same owner and source record IDs in both arms. Each run
+                    # still creates its own conversation, and verifies no health writes.
+                    with SessionLocal() as db:
+                        user = User(name="Synthetic evaluation subject", email=f"eval-{uuid4().hex}@example.invalid", is_active=True, is_approved=True)
+                        db.add(user)
+                        db.commit()
+                        seed_synthetic_records(db, user.id, case)
+                        for variant in order:
                             try:
                                 row = await run_sample(db, user.id, case, variant, model, budget, live=args.include_live_llm)
                             except (asyncio.CancelledError, KeyboardInterrupt) as exc:
                                 if hasattr(exc, "benchmark_sample"):
                                     report["rows"].append(exc.benchmark_sample)
                                 raise
-                        row["repeat"] = repeat
-                        report["rows"].append(row)
-                        save()
-                        if row["status"] != "passed_contracts":
-                            report["status"] = "failed"
+                            row["repeat"] = repeat
+                            report["rows"].append(row)
                             save()
-                            return 1
+                            if row["status"] != "passed_contracts":
+                                report["status"] = "failed"
+                                save()
+                                return 1
         report["status"] = "passed_contracts_only" if args.include_live_llm else "scripted_contracts_passed"
         save()
         return 0
@@ -151,7 +155,8 @@ def main():
     modes.add_argument("--include-live-llm", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model", choices=["qwen3.8-flash", "qwen3.8-max"], action="append")
-    parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan"], action="append")
+    parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout"], action="append")
+    parser.add_argument("--reference-variant", choices=["baseline", "runtime_legacy_layout"], default="baseline")
     parser.add_argument("--baseline-only", action="store_true", help="Evaluate the runtime in this checkout without injecting an experimental variant.")
     parser.add_argument("--case", choices=[case.id for case in SCENARIOS], action="append")
     parser.add_argument("--repetitions", type=int, default=1)
