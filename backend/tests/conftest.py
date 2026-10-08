@@ -342,8 +342,8 @@ def benchmark_db(monkeypatch):
 
     monkeypatch.setattr(settings, 'app_env', 'test')
     engine = create_ephemeral_engine()
-    Base.metadata.create_all(bind=engine)
     try:
+        Base.metadata.create_all(bind=engine)
         with sessionmaker(autocommit=False, autoflush=False, bind=engine)() as session:
             yield session
     finally:

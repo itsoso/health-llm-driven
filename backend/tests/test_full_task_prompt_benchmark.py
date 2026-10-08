@@ -396,7 +396,7 @@ async def test_actual_provider_can_repair_rejected_read_before_synthesis(
         assert row["status"] == "passed_contracts", contract_diagnostics(row)
         assert row["gateway_decisions"][1]["action"] == "allow"
     else:
-        assert row["status"] == "failed_contracts", row
+        assert row["status"] == "failed_contracts", contract_diagnostics(row)
         assert not row["tool_contracts"]
         assert row["outcome"] != "complete"
 
@@ -700,7 +700,7 @@ async def test_two_legitimate_single_reads_keep_existing_transient_retries(db, a
                 yield {"type": "finish", "finish_reason": "stop"}
     row = await run_sample(db, user.id, scenario, 'baseline', 'qwen3.8-max', CallBudget(3),
                           live=False, provider_factory=lambda: Singles(scenario))
-    assert row['status'] == 'passed_contracts', row
+    assert row['status'] == 'passed_contracts', contract_diagnostics(row)
     assert row['tool_attempts'] == (5 if with_knowledge else 4)
     assert row['tool_budget']['logical_executions'] == (3 if with_knowledge else 2)
     assert row['outcome'] == 'failed'
@@ -749,7 +749,7 @@ async def test_logical_budget_counts_replays_and_blocks_excess_proposals_before_
         assert row['stop_reason'] == 'model_tool_proposal_budget'
         assert row['tool_attempts'] == 0
     else:
-        assert row['status'] == 'passed_contracts', row
+        assert row['status'] == 'passed_contracts', contract_diagnostics(row)
         assert row['tool_budget']['logical_executions'] == 3
         assert row['tool_budget']['model_proposals'] == 3
         assert row['tool_attempts'] == 2
@@ -858,7 +858,7 @@ async def test_production_route_keeps_real_resolver_quality_and_decision_budget(
     budget = CallBudget(2)
     row = await run_sample(db, user.id, scenario, variant, "qwen3.8-max", budget,
                            live=True, production_routing=True)
-    assert row["status"] == ("failed_contracts" if decision_state == "timeout" else "passed_contracts"), row
+    assert row["status"] == ("failed_contracts" if decision_state == "timeout" else "passed_contracts"), contract_diagnostics(row)
     assert calls == [False] and len(seen_decisions) == 1
     assert len(row["calls"]) == 1 and len(row["decision_calls"]) == 1 and budget.used == 2
     assert row["decision_routing"]["provider"] == "laya"

@@ -1,0 +1,804 @@
+{
+  "status": "scripted_contracts_passed",
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "334c834b6ca7e261acab4a9c3d609fde78c151dc2757a5e866930c6e6a75f32b",
+    "scripts/benchmark_prompt_full_task.py": "7b4a7a04c32fc1124407818bb2037d54022d0a5d252247d3b1061a66ffc06605",
+    "backend/eval/ephemeral_database.py": "ab8177858394c077fa4f354f63033de2c60475ef8d3e4817c85a323f3e64cc1c",
+    "backend/eval/experimental_read_thinking_budget.py": "1e8aaeb343e848728a3ed45007d6d4428f25d3c335c509c95d92be94556dffbc",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/eval/experimental_empty_read_terminal.py": "ce67631cce0356b9a623664f482ebc64115b8ce8988d5d3fa87bdde08a179cc0",
+    "backend/eval/experimental_read_evidence_format.py": "a6833d3511cb673fd5d78ec5bf0067e379fe97f17a76b252a4ba10909ad3f2e4",
+    "backend/app/services/agent_composed_read_completion.py": "6026f4725629a6af10e2e2229c9bff1816d324cdb1ab836a06e2586d3cb8108e",
+    "backend/app/services/health_context_lite_service.py": "e414ebafd386f7ce15b1abcd2819be5da2b08ae0ab87c44c47def6108b02b265",
+    "backend/app/config.py": "ba55ea0ab6a455d630bcd6cf344a635eaffa9a165c4f6fb3a9f226c768f28eed",
+    "backend/app/services/agent_executor.py": "587113f67838ce79939a34fd1cb240723795c20768371f99e9e626ad86202bff",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_longitudinal_read.py": "65c9c42e6fbbd7139d5c2a98ce86e4321d36fa9c8a579bd2b3378492ddf620fd",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05",
+    "backend/app/services/llm/model_registry.py": "e6bbae10fe66f11a46d51b2dc4ea27535c084604db567279b48cf2bdc582cbd1",
+    "backend/app/services/llm/factory.py": "c898fc90e35d6832e64ccb535044029bd78fc82f155e76462766c5e9c9fbc2c6",
+    "backend/app/services/llm/task_routing.py": "f0522eade7eae6d856340637b31989605475438c8d3dd800e6888b2a9a168a61",
+    "backend/app/services/decisions/config.py": "9ecfb9295aa6891437b7fe9445437b6bd829b22fdff6e759e51074c7bdbfb2c8",
+    "backend/app/services/decisions/routing.py": "64f1e7a49c60cc3f05b8d5c16095a569a8e785f92e3234b3a1ed19b7903ede25",
+    "backend/app/services/decisions/systemone.py": "d9a30d9ce78d0013184a11c0a3e33f2be92ed9af6da306d2574885f780be2b42"
+  },
+  "summary": [
+    {
+      "model": "qwen3.8-max",
+      "variant": "baseline",
+      "tasks": 3,
+      "provider_attempts": 5,
+      "decision_attempts": 0,
+      "total_call_attempts": 5,
+      "total_api_attempts": 0,
+      "decision_input_tokens_known": 0,
+      "decision_output_tokens_known": 0,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.38629566703457385,
+        "p95": 2.196711292024702,
+        "p99": 2.196711292024702
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "combined",
+      "tasks": 3,
+      "provider_attempts": 2,
+      "decision_attempts": 0,
+      "total_call_attempts": 2,
+      "total_api_attempts": 0,
+      "decision_input_tokens_known": 0,
+      "decision_output_tokens_known": 0,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.40520037501119077,
+        "p95": 0.4164027079823427,
+        "p99": 0.4164027079823427
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "empty_terminal",
+      "tasks": 3,
+      "provider_attempts": 4,
+      "decision_attempts": 0,
+      "total_call_attempts": 4,
+      "total_api_attempts": 0,
+      "decision_input_tokens_known": 0,
+      "decision_output_tokens_known": 0,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.462193124985788,
+        "p95": 0.4679273330257274,
+        "p99": 0.4679273330257274
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "evidence_compact",
+      "tasks": 3,
+      "provider_attempts": 5,
+      "decision_attempts": 0,
+      "total_call_attempts": 5,
+      "total_api_attempts": 0,
+      "decision_input_tokens_known": 0,
+      "decision_output_tokens_known": 0,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.38552891596918926,
+        "p95": 0.40055220801150426,
+        "p99": 0.40055220801150426
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "p1",
+      "tasks": 3,
+      "provider_attempts": 5,
+      "decision_attempts": 0,
+      "total_call_attempts": 5,
+      "total_api_attempts": 0,
+      "decision_input_tokens_known": 0,
+      "decision_output_tokens_known": 0,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.38766845798818395,
+        "p95": 0.4105727500282228,
+        "p99": 0.4105727500282228
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "p2",
+      "tasks": 3,
+      "provider_attempts": 2,
+      "decision_attempts": 0,
+      "total_call_attempts": 2,
+      "total_api_attempts": 0,
+      "decision_input_tokens_known": 0,
+      "decision_output_tokens_known": 0,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 0,
+      "api_output_tokens_known": 0,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": false,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 0.39752058300655335,
+        "p95": 0.4129189579980448,
+        "p99": 0.4129189579980448
+      }
+    }
+  ],
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Disposable shared-memory SQLite uses separate session connections; this is not PostgreSQL concurrency or production-load proof.",
+    "Rich-profile cases seed synthetic allergies, chronic condition and medication; clinical/CGM context and optional local knowledge base remain absent.",
+    "Per-pair synthetic user and record IDs, independent conversations, real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Answer-stage visible content is retained before guards for synthetic-only diagnostics, capped at 16000 characters with explicit truncation. No reasoning content is captured.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+    "Baseline and historical eval variants explicitly disable runtime preplanning to isolate its effect.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "rows": [
+    {
+      "case": "owned_read_7d_available",
+      "variant": "baseline",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "p1",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "p2",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "combined",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "empty_terminal",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_available",
+      "variant": "evidence_compact",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "evidence_compact",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "empty_terminal",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "combined",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "p2",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "p1",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_empty",
+      "variant": "baseline",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "baseline",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "p1",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "p2",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "combined",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "empty_terminal",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    },
+    {
+      "case": "owned_read_7d_read_failure",
+      "variant": "evidence_compact",
+      "status": "passed_contracts",
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        },
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": true,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "database_errors": [],
+      "database_error_details": [],
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required"
+      },
+      "agent_kernel": "pi"
+    }
+  ]
+}
