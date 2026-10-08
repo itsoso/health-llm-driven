@@ -1,0 +1,126 @@
+{
+  "kind": "initial_visual_model_screening",
+  "rows": [
+    {
+      "sample": "sample-1",
+      "variant": "baseline",
+      "model": "qwen-vl-max",
+      "latency_ms": 7201,
+      "response_chars": 481,
+      "prompt_tokens": 2139,
+      "completion_tokens": 186,
+      "cached_tokens": 0,
+      "success": true,
+      "foods_count": 1,
+      "finish_reason": "stop"
+    },
+    {
+      "sample": "sample-1",
+      "variant": "compact",
+      "model": "qwen-vl-max",
+      "latency_ms": 3817,
+      "response_chars": 363,
+      "prompt_tokens": 2167,
+      "completion_tokens": 145,
+      "cached_tokens": 0,
+      "success": true,
+      "foods_count": 1,
+      "finish_reason": "stop"
+    },
+    {
+      "sample": "sample-1",
+      "variant": "flash",
+      "model": "qwen3-vl-flash",
+      "latency_ms": 2640,
+      "response_chars": 508,
+      "prompt_tokens": 2722,
+      "completion_tokens": 206,
+      "cached_tokens": 0,
+      "success": true,
+      "foods_count": 1,
+      "finish_reason": "stop"
+    },
+    {
+      "sample": "sample-2",
+      "variant": "flash",
+      "model": "qwen3-vl-flash",
+      "latency_ms": 2831,
+      "response_chars": 513,
+      "prompt_tokens": 2722,
+      "completion_tokens": 219,
+      "cached_tokens": 0,
+      "success": true,
+      "foods_count": 1,
+      "finish_reason": "stop"
+    },
+    {
+      "sample": "sample-2",
+      "variant": "compact",
+      "model": "qwen-vl-max",
+      "latency_ms": 4532,
+      "response_chars": 367,
+      "prompt_tokens": 2167,
+      "completion_tokens": 145,
+      "cached_tokens": 0,
+      "success": true,
+      "foods_count": 1,
+      "finish_reason": "stop"
+    },
+    {
+      "sample": "sample-2",
+      "variant": "baseline",
+      "model": "qwen-vl-max",
+      "latency_ms": 5013,
+      "response_chars": 501,
+      "prompt_tokens": 2139,
+      "completion_tokens": 196,
+      "cached_tokens": 0,
+      "success": true,
+      "foods_count": 1,
+      "finish_reason": "stop"
+    },
+    {
+      "sample": "sample-3",
+      "variant": "baseline",
+      "model": "qwen-vl-max",
+      "latency_ms": 5116,
+      "response_chars": 488,
+      "prompt_tokens": 2139,
+      "completion_tokens": 194,
+      "cached_tokens": 0,
+      "success": true,
+      "foods_count": 1,
+      "finish_reason": "stop"
+    },
+    {
+      "sample": "sample-3",
+      "variant": "compact",
+      "model": "qwen-vl-max",
+      "latency_ms": 3473,
+      "response_chars": 344,
+      "prompt_tokens": 2167,
+      "completion_tokens": 133,
+      "cached_tokens": 0,
+      "success": true,
+      "foods_count": 1,
+      "finish_reason": "stop"
+    },
+    {
+      "sample": "sample-3",
+      "variant": "flash",
+      "model": "qwen3-vl-flash",
+      "latency_ms": 1603,
+      "response_chars": 182,
+      "prompt_tokens": 2722,
+      "completion_tokens": 114,
+      "cached_tokens": 0,
+      "success": false,
+      "foods_count": 0,
+      "finish_reason": "stop"
+    }
+  ],
+  "decision": {
+    "flash": "rejected_food_recall_failure",
+    "compact": "expand_paired_validation"
+  }
+}

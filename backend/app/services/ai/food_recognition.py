@@ -101,6 +101,16 @@ FOOD_RECOGNITION_SYSTEM_PROMPT = """你是专业的食物识别与营养估算�
    - 只有真正包含营养项目、单位和每100g/每份基准的标签才使用 nutrition_label；不能因为图片是截图就套用标签规则。
 8. 只返回合法 JSON。"""
 
+FOOD_RECOGNITION_OUTPUT_FORMAT = (
+    "输出格式：JSON 用单行紧凑格式，不加缩进或字段之间的空白；保留全部要求的字段与规则。"
+)
+
+
+def _food_recognition_request_prompt() -> str:
+    # Reduce generated formatting tokens; retain the full recognition policy,
+    # all fields, unknown values and the existing provider/model selection.
+    return FOOD_RECOGNITION_SYSTEM_PROMPT + "\n" + FOOD_RECOGNITION_OUTPUT_FORMAT
+
 
 def _as_number(value: Any, maximum: Optional[float] = None) -> Optional[float]:
     if value is None:
@@ -589,7 +599,7 @@ class FoodRecognitionService:
             with caller_scope("food_recognition.from_base64"):
                 raw_content = await provider.chat_with_vision(
                     messages=[
-                        {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
+                        {"role": "system", "content": _food_recognition_request_prompt()},
                         {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
                     ],
                     image_url=data_url,
@@ -687,7 +697,7 @@ class FoodRecognitionService:
             with caller_scope("food_recognition.from_url"):
                 raw_content = await provider.chat_with_vision(
                     messages=[
-                        {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
+                        {"role": "system", "content": _food_recognition_request_prompt()},
                         {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
                     ],
                     image_url=image_url,
