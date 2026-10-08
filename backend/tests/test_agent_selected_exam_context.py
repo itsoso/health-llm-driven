@@ -94,6 +94,15 @@ async def test_selected_exam_stream_discards_client_payload_and_other_reports(db
     def reject_unscoped_twin(*args, **kwargs):
         pytest.fail('selected report must not read the whole personal Twin')
     monkeypatch.setattr(twin_builder, 'build_twin', reject_unscoped_twin)
+    from app.services.agent_conversation_service import AgentConversationService
+    monkeypatch.setattr(AgentConversationService, 'build_actionable_references', reject_unscoped_twin)
+    monkeypatch.setattr(executor, '_bind_read_task_reference', reject_unscoped_twin)
+    from app.services import agent_read_task_continuation, diet_photo_correction, water_backfill, procedure_recipe_service
+    monkeypatch.setattr(agent_read_task_continuation, 'load_read_task_reference', reject_unscoped_twin)
+    monkeypatch.setattr(diet_photo_correction, 'build_correction_proposal', reject_unscoped_twin)
+    monkeypatch.setattr(water_backfill, 'resolve_water_backfill_turn', reject_unscoped_twin)
+    monkeypatch.setattr(procedure_recipe_service, 'match_trigger', reject_unscoped_twin)
+    monkeypatch.setattr(executor, '_resolve_medication_batch_turn', reject_unscoped_twin)
     seen = []
     calls = 0
     async def completion(messages, tools):

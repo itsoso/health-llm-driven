@@ -14464,8 +14464,7 @@ class AgentExecutor:
         self._bind_agent_kernel_source_message(user_msg.id)
         try:
             self._bind_agent_kernel_actionable_references(
-                () if self._turn_selected_exam_id is not None
-                else svc.build_actionable_references(conv.id)
+                svc.build_actionable_references(conv.id)
             )
         except Exception as exc:  # noqa: BLE001 - context loss must not abort the turn
             logger.warning(
@@ -14475,8 +14474,7 @@ class AgentExecutor:
                 type(exc).__name__,
             )
 
-        if self._turn_selected_exam_id is None:
-            self._bind_read_task_reference(user_id, conv.id)
+        self._bind_read_task_reference(user_id, conv.id)
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
@@ -16195,7 +16193,7 @@ class AgentExecutor:
                     user_id=user_id,
                     user_message=recovered_user_message,
                 )
-            elif not images and not file_base64:
+            elif not images and not file_base64 and _selected_exam_context_id(extra_context) is None:
                 retry_recovery = resolve_retryable_turn_recovery(
                     self.db,
                     user_id=user_id,
@@ -16250,6 +16248,7 @@ class AgentExecutor:
             if (
                 not effective_images and not file_base64
                 and isinstance(choice_conversation_id, int)
+                and _selected_exam_context_id(extra_context) is None
                 and needs_input_clarification(effective_message)
             ):
                 from app.services.agent_pending_choice import resolve_pending_choice
@@ -16285,6 +16284,7 @@ class AgentExecutor:
 
             owned_read_followup = (
                 conversation_id is not None
+                and _selected_exam_context_id(extra_context) is None
                 and not effective_images and not file_base64
                 and load_read_task_reference(
                     self.db, user_id, conversation_id, self._agent_kernel_snapshot,
@@ -17239,7 +17239,8 @@ class AgentExecutor:
         self._bind_agent_kernel_source_message(user_msg.id)
         try:
             self._bind_agent_kernel_actionable_references(
-                svc.build_actionable_references(conv.id)
+                () if self._turn_selected_exam_id is not None
+                else svc.build_actionable_references(conv.id)
             )
         except Exception as exc:  # noqa: BLE001 - context loss must not abort the turn
             logger.warning(
@@ -17249,9 +17250,11 @@ class AgentExecutor:
                 exc,
             )
 
-        self._bind_read_task_reference(user_id, conv.id)
+        if self._turn_selected_exam_id is None:
+            self._bind_read_task_reference(user_id, conv.id)
 
-        if health_evidence_turn is None and not read_only_tools and not images and not file_base64:
+        if (health_evidence_turn is None and self._turn_selected_exam_id is None
+                and not read_only_tools and not images and not file_base64):
             from app.services.diet_photo_correction import build_correction_proposal
 
             proposal = build_correction_proposal(
@@ -17266,8 +17269,8 @@ class AgentExecutor:
                     yield evt
                 return
 
-        if (health_evidence_turn is None and not read_only_tools
-                and not images and not file_base64):
+        if (health_evidence_turn is None and self._turn_selected_exam_id is None
+                and not read_only_tools and not images and not file_base64):
             from app.services.water_backfill import resolve_water_backfill_turn
 
             water_result = resolve_water_backfill_turn(
@@ -17290,6 +17293,7 @@ class AgentExecutor:
         # execute a health write.
         if (
             health_evidence_turn is None
+            and self._turn_selected_exam_id is None
             and not read_only_tools
             and not images
             and not file_base64
@@ -17319,6 +17323,7 @@ class AgentExecutor:
         # 正常 LLM 路径, 但记 warning 可观测)。
         if (
             health_evidence_turn is None
+            and self._turn_selected_exam_id is None
             and not images
             and not file_base64
         ):
