@@ -241,7 +241,12 @@ async def test_full_pi_task_preserves_read_contract_and_persistence(db, auth_use
     rows = []
     for variant in ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact"):
         row = await run_sample(db, user.id, scenario, variant, "qwen3.8-max", CallBudget(12), live=False)
-        assert row["status"] == "passed_contracts", row
+        assert row["status"] == "passed_contracts", json.dumps({
+            key: row.get(key) for key in (
+                "case", "variant", "status", "quality", "tool_contracts",
+                "database_errors", "outcome", "agent_kernel",
+            )
+        }, ensure_ascii=False, sort_keys=True)
         assert row["quality"]["semantic_review"] == "required"
         assert row["quality"]["stream_matches_saved"]
         assert row["quality"]["health_rows_unchanged"]

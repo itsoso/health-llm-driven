@@ -328,3 +328,9 @@ Flash 不改思考控制的真实路由六场景12任务契约通过，但独立
 用户接续要求“发布之后解决”餐食图片识别和报错文案，按先发布再修复顺序继续。候选773经官方HTTPS推送到接续分支并创建PR277，原SSH连接失败与远端未更新检查保留。CI37726902417暴露multidict新漏洞和旧Next/sharp版本断言；已修为305ca6777，仅升级multidict锁块至6.9.1及更新三条期望版本。
 
 本地发现venv版本漂移后已对齐134包完整生产锁；50项锁/版本测试、56项传输/API测试通过，完整库存漏洞审计通过（本地默认audit的ensurepip SIGABRT失败单独保留，未改CI命令）。锁定环境标准live重新运行10次真实API，0失败、用量完整、27份源码/锁摘要不变。证据与限制见[发布预检续节](../reviews/2026-10-08-prompt-release-preflight.md)及[锁定环境真实闸](../reviews/2026-10-08-release-locked-live-regression.json)。尚未main合并或部署；截图问题将在本批发布后接续，不能把泛化失败文案当作已定位根因。
+
+### Main 合并后的 CI 断点：保留失败，补充诊断
+
+候选8694a449的PR CI37727741607全部29项通过，经独立GO后快进合入main，PR277已合并。main同SHA的CI37728657086在balanced-02失败：`test_full_pi_task_preserves_read_contract_and_persistence[available]` 的empty_terminal返回failed_contracts。该回合仍有两次模型调用和complete终态，不能由此推断所有契约通过；原断言的字典repr截断隐藏了具体quality位。
+
+本地锁定环境单文件66项、原f分片288项、30次六变体available重复均通过；这些不能替代失败的main CI。新增断言仅将既有质量位、工具契约、数据库错误类别和终态序列化为完整诊断，不改通过条件、不含原始用户数据、不改运行时。SQLite StaticPool与Twin多会话共享连接是待验证风险，尚未证明为本次根因。生产保持a10e642c，未执行bootstrap/Trusted部署；餐食图片识别和泛化错误文案仍待本批发布后接续。
