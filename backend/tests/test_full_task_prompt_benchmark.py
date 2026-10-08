@@ -809,7 +809,8 @@ async def test_production_controls_are_preserved_and_still_bounded():
 
 
 @pytest.mark.asyncio
-async def test_production_route_keeps_real_resolver_quality_and_decision_budget(db, auth_user_and_headers, monkeypatch):
+@pytest.mark.parametrize("decision_state", ["accepted", "abstained", "timeout"])
+async def test_production_route_keeps_real_resolver_quality_and_decision_budget(db, auth_user_and_headers, monkeypatch, decision_state):
     from app.config import settings
     from app.services.agent_executor import AgentExecutor
     from app.services.llm import factory
@@ -819,7 +820,9 @@ async def test_production_route_keeps_real_resolver_quality_and_decision_budget(
     user, _ = auth_user_and_headers
     scenario = Scenario("real-route", 31, "available", rich_profile=True)
     seed_synthetic_records(db, user.id, scenario)
-    seen_decisions = wire(monkeypatch, fake_result("balanced"))
+    from app.services.decisions import DecisionError
+    seen_decisions = wire(monkeypatch, fake_result("balanced", confidence=0.1 if decision_state == "abstained" else 0.95),
+                          error=DecisionError("timeout") if decision_state == "timeout" else None)
     from app.services.llm import task_routing
     picked_tiers = []
     real_picker = task_routing.pick_model_id_by_tier
@@ -829,6 +832,13 @@ async def test_production_route_keeps_real_resolver_quality_and_decision_budget(
     monkeypatch.setattr(task_routing, "pick_model_id_by_tier", pick)
     class Provider(ScriptedProvider):
         model = "qwen3.8-max"
+        async def chat_stream(self, **kwargs):
+            from app.services.llm.usage_tracker import _capture_usage_entry
+            # A wire stub for exercising live-mode accounting, not API evidence.
+            _capture_usage_entry({"token_source": "api", "prompt_tokens": 123, "completion_tokens": 7,
+                                  "cached_tokens": None, "model": self.model, "success": True})
+            async for event in super().chat_stream(**kwargs):
+                yield event
     monkeypatch.setattr(factory, "create_provider_for_model_id", lambda *a, **k: Provider(scenario))
     calls = []
     original = AgentExecutor._resolve_chat_provider
@@ -838,13 +848,36 @@ async def test_production_route_keeps_real_resolver_quality_and_decision_budget(
     monkeypatch.setattr(AgentExecutor, "_resolve_chat_provider", resolve)
     budget = CallBudget(2)
     row = await run_sample(db, user.id, scenario, "runtime_preplan", "qwen3.8-max", budget,
-                           live=False, production_routing=True)
-    assert row["status"] == "passed_contracts", row
+                           live=True, production_routing=True)
+    assert row["status"] == ("failed_contracts" if decision_state == "timeout" else "passed_contracts"), row
     assert calls == [False] and len(seen_decisions) == 1
     assert len(row["calls"]) == 1 and len(row["decision_calls"]) == 1 and budget.used == 2
     assert row["decision_routing"]["provider"] == "laya"
     assert row["decision_routing"]["effective_tier"] == "balanced"
+    assert row["decision_routing"]["status"] == ("fallback" if decision_state == "timeout" else decision_state)
     assert row["effective_model_id"] == "qwen3.8-max"
     assert row["calls"][0]["request_controls"] == {"temperature":0.3, "max_tokens":8000}
-    assert row["decision_calls"][0]["token_source"] == "synthetic"
-    assert picked_tiers == ["balanced"]
+    assert row["decision_calls"][0]["token_source"] == ("unknown" if decision_state == "timeout" else "api")
+    assert picked_tiers == (["balanced"] if decision_state == "accepted" else [])
+
+
+@pytest.mark.asyncio
+async def test_library_production_route_rejects_nonlive_before_database_or_factories():
+    with pytest.raises(ValueError, match="production_routing_requires_live_opt_in"):
+        await run_sample(None, 1, Scenario("non-live", 7, "available"), "runtime_preplan",
+                         "qwen3.8-max", CallBudget(2), live=False, production_routing=True)
+
+
+def test_summary_counts_unknown_decision_usage_and_excludes_scripted_api_attempts():
+    cli = load_cli()
+    sample = {"model": "qwen3.8-max", "variant": "baseline", "status": "failed_contracts",
+              "wall_seconds": 1, "live": True,
+              "calls": [{"token_source": "api", "input_tokens": 100, "output_tokens": 10}],
+              "decision_calls": [{"token_source": "unknown", "input_tokens": None, "output_tokens": None}]}
+    result = cli.summary([sample])[0]
+    assert result["all_api_usage_known"] is False
+    assert result["usage_unknown_calls"] == 1 and result["total_api_attempts"] == 2
+    sample.update(live=False, calls=[{"token_source": "synthetic"}], decision_calls=[])
+    result = cli.summary([sample])[0]
+    assert result["total_call_attempts"] == 1 and result["total_api_attempts"] == 0
+    assert result["all_api_usage_known"] is False

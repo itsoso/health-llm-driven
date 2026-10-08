@@ -314,6 +314,8 @@ def tool_contract(request, result, scenario):
 
 
 async def run_sample(db, user_id, scenario, variant, model, budget, *, live, provider_factory=None, production_routing=False):
+    if production_routing and not live:
+        raise ValueError("production_routing_requires_live_opt_in")
     require_ephemeral(db)
     if variant not in VARIANTS or scenario.state not in {"available", "empty", "read_failure"} or scenario.days not in {1, 7, 31}:
         raise ValueError("unsupported_sample")
@@ -534,7 +536,7 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             if production_routing:
                 route = row.get("decision_routing") or {}
                 quality["decision_route_exercised"] = (route.get("mode") == "on"
-                    and route.get("status") in {"accepted", "partial"}
+                    and route.get("status") in {"accepted", "partial", "abstained"}
                     and len(row["decision_calls"]) == 1 and row["decision_calls"][0]["status"] == "passed")
             row.update(quality=quality, agent_kernel=done.get("perf", {}).get("agent_kernel"), answer=saved.content if saved else None,
                        outcome=outcome, completion_status=done.get("completion_status"),

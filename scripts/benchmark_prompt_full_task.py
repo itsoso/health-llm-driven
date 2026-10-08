@@ -28,23 +28,29 @@ def summary(rows):
         calls = [call for sample in samples for call in sample["calls"]]
         decisions = [call for sample in samples for call in sample.get("decision_calls", [])]
         known = [call for call in calls if call["token_source"] == "api"]
+        all_calls = calls + decisions
+        api_attempts = [call for sample in samples if sample.get("live") for call in
+                        [*sample["calls"], *sample.get("decision_calls", [])]]
+        unknown = sum(call["token_source"] != "api" for call in api_attempts)
         times = sorted(sample["wall_seconds"] for sample in samples if sample.get("wall_seconds") is not None)
         result.append({"model": model, "variant": variant, "tasks": len(samples), "provider_attempts": len(calls),
-                       "decision_attempts": len(decisions), "total_api_attempts": len(calls) + len(decisions),
+                       "decision_attempts": len(decisions), "total_call_attempts": len(all_calls),
+                       "total_api_attempts": len(api_attempts),
                        "decision_input_tokens_known": sum(c["input_tokens"] for c in decisions if c["token_source"] == "api"),
                        "decision_output_tokens_known": sum(c["output_tokens"] for c in decisions if c["token_source"] == "api"),
                        "passed_contracts": sum(sample["status"] == "passed_contracts" for sample in samples),
                        "failed_tasks": sum(sample["status"] != "passed_contracts" for sample in samples),
                        "api_input_tokens_known": sum(call["input_tokens"] for call in known),
                        "api_output_tokens_known": sum(call["output_tokens"] for call in known),
-                       "usage_unknown_calls": len(calls) - len(known),
-                       "all_api_usage_known": bool(calls) and len(known) == len(calls),
+                       "usage_unknown_calls": unknown,
+                       "all_api_usage_known": bool(api_attempts) and unknown == 0,
                        "timed_tasks": len(times),
                        "wall_seconds_all_tasks": {f"p{p}": times[math.ceil(len(times) * p / 100) - 1] if times else None for p in (50, 95, 99)}})
     return result
 
 
 async def run(args):
+    from app.config import settings
     cases = [case for case in SCENARIOS if case.id in args.case] if args.case else [
         case for case in SCENARIOS if case.id.startswith("owned_read_")]
     models = args.model or ["qwen3.8-flash", "qwen3.8-max"]
@@ -63,6 +69,10 @@ async def run(args):
     report = {"status": "running" if args.scripted or args.include_live_llm else "plan_only", "batch_id": uuid4().hex,
               "mode": "live" if args.include_live_llm else "scripted" if args.scripted else "plan",
               "production_routing": production_routing, "per_task_decision_call_cap": int(production_routing),
+              "decision_controls": ({"timeout_seconds": settings.decision_timeout_seconds,
+                  "min_confidence": settings.decision_min_confidence,
+                  "max_input_bytes": settings.decision_max_input_bytes,
+                  "provider": "laya", "admin_control": "held_on_locally"} if production_routing else None),
               "models": models, "variants": variants, "reference_variant": reference_variant, "cases": [case.id for case in cases],
               "planned_tasks": tasks, "max_provider_attempts": args.max_api_calls, "per_task_call_cap": 3,
               "tool_budget_protocol": "logical-and-physical-v2", "per_task_logical_tool_cap": 3,
@@ -79,6 +89,7 @@ async def run(args):
                   "backend/app/services/agent_tool_prompt_projection.py", "backend/app/services/tool_schema_registry.py",
                   "backend/app/services/llm/providers/openai_provider.py", "backend/app/services/llm/usage_tracker.py",
                   "backend/app/services/llm/model_registry.py", "backend/app/services/llm/factory.py",
+                  "backend/app/services/llm/task_routing.py", "backend/app/services/decisions/config.py",
                   "backend/app/services/decisions/routing.py", "backend/app/services/decisions/systemone.py")},
               "limits": ["Fixed synthetic read-task screen, not production load or full holdout coverage.",
                          ("Real resolver and Laya on, staged off, application temperature/output limits retained; admin mode held on locally, real production admin control itself is not exercised."
@@ -100,7 +111,6 @@ async def run(args):
     if not args.scripted and not args.include_live_llm:
         return 0
     try:
-        from app.config import settings
         from sqlalchemy.engine import make_url
         url = make_url(settings.effective_database_url)
         if settings.app_env != "test" or url.get_backend_name() != "sqlite" or url.database not in (None, "", ":memory:"):
