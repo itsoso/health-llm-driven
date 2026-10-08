@@ -4,6 +4,24 @@ from datetime import datetime, timedelta, date
 from app.models.user import User
 
 
+@pytest.fixture(autouse=True)
+def task_publishers(monkeypatch):
+    """Module-local publisher boundary doubles; each test receives fresh call state.
+
+    API tests validate persistence and enqueue contracts, not broker transport.
+    Patch these two bound methods only, leaving Celery Task and other modules intact.
+    """
+    from unittest.mock import Mock
+    from app.tasks.live_run_narrative import generate_narrative
+    from app.tasks.live_run_hr_replay import replay_hr_rules
+
+    narrative = Mock(name="generate_narrative.delay")
+    replay = Mock(name="replay_hr_rules.apply_async")
+    monkeypatch.setattr(generate_narrative, "delay", narrative)
+    monkeypatch.setattr(replay_hr_rules, "apply_async", replay)
+    return narrative, replay
+
+
 @pytest.fixture
 def test_user(db):
     """创建测试用户"""
@@ -292,3 +310,73 @@ class TestLiveRunEventStructures:
         data = response.json()
         assert len(data["events"]) == 1
         assert data["events"][0]["metric_snapshot"]["current_hr"] == 165
+
+
+@pytest.mark.parametrize("failed_task", [None, "narrative", "hr_replay", "both"])
+def test_end_run_publisher_contract(
+    client, auth_headers, db, task_publishers, caplog, failed_task,
+):
+    """API persistence is independent of broker availability; delivery is not asserted."""
+    from kombu.exceptions import OperationalError
+    from app.models.live_run import LiveRunSession
+
+    narrative, replay = task_publishers
+    if failed_task in {"narrative", "both"}:
+        narrative.side_effect = OperationalError("test broker unavailable")
+    if failed_task in {"hr_replay", "both"}:
+        replay.side_effect = OperationalError("test broker unavailable")
+    started = client.post(
+        "/api/v1/live-run/start", json={"target_label": "easy"}, headers=auth_headers,
+    )
+    assert started.status_code == 201
+    run_id = started.json()["id"]
+    narrative.assert_not_called()
+    replay.assert_not_called()
+    response = client.post(
+        f"/api/v1/live-run/{run_id}/end",
+        json={"total_distance_m": 1234, "total_duration_s": 432}, headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["narrative_status"] == "pending"
+    narrative.assert_called_once_with(run_id)
+    replay.assert_called_once_with(args=[run_id], countdown=300)
+    db.expire_all()
+    saved = db.get(LiveRunSession, run_id)
+    assert saved.ended_at is not None
+    assert saved.total_distance_m == 1234
+    assert saved.total_duration_s == 432
+    assert saved.narrative_status == "pending"
+    assert ("enqueue narrative failed" in caplog.text) == (failed_task in {"narrative", "both"})
+    assert ("enqueue hr_replay failed" in caplog.text) == (failed_task in {"hr_replay", "both"})
+
+
+@pytest.mark.parametrize("invalid_request", ["malformed", "unauthenticated", "foreign_owner", "missing"])
+def test_rejected_end_never_publishes(client, auth_headers, db, test_user, task_publishers, invalid_request):
+    from app.models.live_run import LiveRunSession
+
+    started = client.post(
+        "/api/v1/live-run/start", json={"target_label": "easy"}, headers=auth_headers,
+    )
+    assert started.status_code == 201
+    run_id = started.json()["id"]
+    headers = auth_headers
+    payload = {"total_distance_m": 1000, "total_duration_s": 300}
+    expected = {"malformed": 422, "unauthenticated": 401, "foreign_owner": 403, "missing": 404}[invalid_request]
+    if invalid_request == "malformed":
+        payload = {"total_distance_m": "invalid"}
+    elif invalid_request == "unauthenticated":
+        headers = {}
+    elif invalid_request == "foreign_owner":
+        other = User(username="other_run_owner", name="Other test runner", email="other-run@example.com", hashed_password="x", is_active=True, is_approved=True)
+        db.add(other)
+        db.flush()
+        db.get(LiveRunSession, run_id).user_id = other.id
+        db.commit()
+    elif invalid_request == "missing":
+        run_id += 99999
+    response = client.post(f"/api/v1/live-run/{run_id}/end", json=payload, headers=headers)
+    assert response.status_code == expected
+    for publisher in task_publishers:
+        publisher.assert_not_called()
+    db.expire_all()
+    assert db.get(LiveRunSession, started.json()["id"]).ended_at is None

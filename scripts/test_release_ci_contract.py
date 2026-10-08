@@ -233,7 +233,6 @@ def test_runtime_jobs_are_conditioned_on_conservative_scope_outputs():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
     expected = {
-        "backend-test-plan": "run_backend",
         "backend-test-shards": "run_backend",
         "backend-quality": "run_backend",
         "release-invariants": "run_release",
@@ -372,15 +371,19 @@ def test_slow_shard_replacements_cover_predecessor_scopes_exactly_once():
 def test_ci_uses_timing_balanced_workers_without_merging_pytest_processes():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
-    plan = jobs["backend-test-plan"]
+    plan = jobs["classify-changes"]
     shards = jobs["backend-test-shards"]
     shard_runs = _run_bodies(shards)
 
     assert "build_ci_pytest_matrix.py" in _run_bodies(plan)
-    assert "fromJson(needs.backend-test-plan.outputs.matrix)" in str(
+    assert "fromJson(needs.classify-changes.outputs.matrix)" in str(
         shards["strategy"]["matrix"]
     )
-    assert "backend-test-plan" in shards["needs"]
+    assert "backend-test-plan" not in jobs
+    assert shards["needs"] == ["classify-changes"]
+    assert plan["outputs"]["matrix"] == "${{ steps.plan.outputs.matrix }}"
+    plan_step = next(step for step in plan["steps"] if step.get("id") == "plan")
+    assert "steps.scope.outputs.run_backend == 'true'" in plan_step["if"]
     assert "run_ci_pytest_worker.py" in shard_runs
     assert "matrix.shards" in shard_runs
     assert shards["strategy"]["fail-fast"] is False
@@ -419,3 +422,14 @@ def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_s
         "test_postgres_concurrent_grant_consumption_has_exactly_one_winner"
         in run
     )
+
+
+def test_live_run_broker_delivery_is_verified_with_real_isolated_redis():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["agent-runtime-postgres"]
+    assert job["services"]["redis"]["image"] == "redis:7-alpine"
+    step = next(s for s in job["steps"] if s.get("name") == "Verify live-run task publishing on isolated Redis")
+    assert step["env"]["TEST_LIVE_RUN_BROKER_URL"] == "redis://127.0.0.1:6379/15"
+    assert 'test -n "$TEST_LIVE_RUN_BROKER_URL"' in step["run"]
+    assert "tests/test_live_run_broker_integration.py" in step["run"]
+    assert "continue-on-error" not in step

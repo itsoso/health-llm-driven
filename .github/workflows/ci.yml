@@ -21,6 +21,7 @@ jobs:
       run_release: ${{ steps.scope.outputs.run_release }}
       release_only: ${{ steps.scope.outputs.release_only }}
       full: ${{ steps.scope.outputs.full }}
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -47,6 +48,13 @@ jobs:
           printf '%s\n' "$CHANGED_FILES" | \
             python3 scripts/ci_change_scope.py \
               --event-name "$EVENT_NAME" --format github >> "$GITHUB_OUTPUT"
+
+      - name: Build timing-balanced pytest matrix
+        id: plan
+        if: ${{ steps.scope.outputs.run_backend == 'true' }}
+        run: >-
+          python3 backend/scripts/build_ci_pytest_matrix.py
+          --workers 16 --github-output "$GITHUB_OUTPUT"
 
   docs-quality:
     runs-on: ubuntu-latest
@@ -97,28 +105,11 @@ jobs:
       - name: Check Agent Skill governance
         run: python scripts/check_agent_skill_governance.py check
 
-  backend-test-plan:
-    name: backend-test-plan
-    runs-on: ubuntu-latest
-    needs: classify-changes
-    if: ${{ needs.classify-changes.outputs.run_backend == 'true' }}
-    outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Build timing-balanced pytest matrix
-        id: plan
-        run: >-
-          python3 backend/scripts/build_ci_pytest_matrix.py
-          --workers 16 --github-output "$GITHUB_OUTPUT"
-
   backend-test-shards:
     name: backend-test-${{ matrix.label }}
     runs-on: ubuntu-latest
     needs:
       - classify-changes
-      - backend-test-plan
     if: ${{ needs.classify-changes.outputs.run_backend == 'true' }}
     # Each catalog shard remains a fresh pytest process. Workers only share the
     # dependency install, then execute isolated processes in historical-time
@@ -129,7 +120,7 @@ jobs:
     timeout-minutes: 50
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.backend-test-plan.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.classify-changes.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v5
 
@@ -438,6 +429,15 @@ jobs:
           --health-timeout 5s
           --health-retries 10
           --tmpfs /var/lib/postgresql/data:rw
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v5
 
@@ -462,6 +462,20 @@ jobs:
         run: |
           pip install --require-hashes -r requirements.lock
           pip install -r requirements-dev.txt
+
+      - name: Verify live-run task publishing on isolated Redis
+        working-directory: backend
+        env:
+          APP_ENV: test
+          CI: "true"
+          DATABASE_URL: "sqlite:///:memory:"
+          REDIS_URL: redis://127.0.0.1:1/15
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          TEST_LIVE_RUN_BROKER_URL: redis://127.0.0.1:6379/15
+        run: |
+          test -n "$TEST_LIVE_RUN_BROKER_URL"
+          python -m pytest -q --no-cov --tb=short --maxfail=1 tests/test_live_run_broker_integration.py
 
       - name: Verify isolated review closure PostgreSQL boundary
         env:

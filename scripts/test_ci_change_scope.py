@@ -208,3 +208,25 @@ def test_preflight_uses_controlled_python_for_all_python_checks() -> None:
     assert '"${PREFLIGHT_PYTHON}" - "${BASELINE_JSON}"' in script
     assert 'run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/check_secret_leaks.py"' in script
     assert 'run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/check_system_map.py"' in script
+
+
+def test_main_push_runs_full_once_for_every_non_documentation_surface():
+    classifier = _load_classifier()
+    for path in ("backend/app/api/live_run.py", "backend/tests/test_live_run.py", "mobile/app/index.tsx", "frontend/src/app/page.tsx", "apps/mac/Sources/App.swift", "deploy.sh"):
+        result = classifier.classify_changes([path], event_name="push")
+        assert result["full"] is True, path
+        assert all(result[key] for key in classifier.RUNTIME_KEYS), path
+        assert not result["release_only"]
+
+
+def test_pr_and_local_keep_scoped_feedback_while_docs_push_stays_light():
+    classifier = _load_classifier()
+    for event in ("pull_request", "local"):
+        result = classifier.classify_changes(["backend/app/api/live_run.py"], event_name=event)
+        _assert_only_runtime_scopes(result, "run_backend", "run_type_drift")
+    result = classifier.classify_changes(["docs/reviews/release.json"], event_name="push")
+    assert result["docs_only"] and not result["full"]
+
+
+def test_unknown_event_fails_closed_even_for_documentation():
+    assert _load_classifier().classify_changes(["README.md"], event_name="unknown")["full"]
