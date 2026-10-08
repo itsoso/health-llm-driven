@@ -54,3 +54,28 @@ def test_keep_veto_for_unverified_daily_quantities(mutation,text):
     result=project_composed_answer_quality(enforce_agent_output_quality(text),completion)
     assert 'unsupported_daily_coverage_removed' in result.flags
     assert text not in result.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('variant', ['baseline','runtime_preplan'])
+async def test_actual_pi_keeps_verified_daily_sleep_text(db, auth_user_and_headers, monkeypatch, variant):
+    from app.config import settings
+    from eval.full_task_prompt_benchmark import Scenario, ScriptedProvider, CallBudget, run_sample, seed_synthetic_records
+    monkeypatch.setattr(settings, 'app_env', 'test')
+    user, _ = auth_user_and_headers
+    scenario=Scenario('sleep-evidence-replay',31,'available',allow_knowledge=True,dense_records=True)
+    seed_synthetic_records(db,user.id,scenario)
+    answer='睡眠：31天均为Garmin来源，已返回的每日总睡眠420分钟、评分80分。'
+    class RecordedAnswer(ScriptedProvider):
+        async def chat_stream(self, **kwargs):
+            if kwargs.get('tools'):
+                async for event in super().chat_stream(**kwargs): yield event
+            else:
+                yield {'type':'content','text':answer}
+                yield {'type':'finish','finish_reason':'stop'}
+    row=await run_sample(db,user.id,scenario,variant,'qwen3.8-flash',CallBudget(3),
+        live=False,provider_factory=lambda: RecordedAnswer(scenario))
+    assert row['status']=='passed_contracts',row
+    assert answer in row['answer']
+    assert '部分描述缺少记录依据' not in row['answer']
+    assert len(row['calls'])==(2 if variant=='baseline' else 1)
