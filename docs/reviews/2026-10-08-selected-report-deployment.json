@@ -93,7 +93,7 @@
   "push_ci": 37749831509,
   "limits": [
     "No logged-in production user health flow or original full-resolution meal photo acceptance",
-    "Mobile OTA publish failed before server claim; not delivered. Native baseline incompatible. No native/TestFlight change.",
+    "Mobile native QR ad-hoc build276 published and public artifacts verified; OTA remains blocked and device installation unverified.",
     "Public smoke reads no user health records and performs no health writes"
   ],
   "full_ci": 37750199480,
@@ -120,7 +120,9 @@
     "route": "local QR ad-hoc default",
     "candidate_sha": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
     "build_number": "276",
-    "status": "preparing",
+    "status": "PUBLISHED_VERIFIED",
+    "evidence": "2026-10-08-selected-report-qr-publication.json",
+    "artifact_review": "2026-10-08-selected-report-qr-artifact-review.json",
     "scope": "No TestFlight/App Store submission; no device install claimed"
   }
 }

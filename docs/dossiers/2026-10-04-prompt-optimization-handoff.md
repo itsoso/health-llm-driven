@@ -400,3 +400,11 @@ Mobile validate `37754437344` 成功，但 publish `37755008534` 在启动阶段
 新鲜 Expo 只读查询完整短页：production/runtime1.3.4 的四个 STORE 构建 272–275 存在三种不同原生 fingerprint，旧基线问题并非只换 latest 即可解决。channel mapping 查询超时，保持未验证；无供应商写入。证据见 [原生 cohort](../reviews/2026-10-08-native-cohort-readonly.json)。默认二维码原生交付准备精确已部署 5c / build276，独立 clean clone，使用已有签名/profile、rokid-production 独立 channel；不注册设备、不 submit TestFlight，IPA 核验和公开回读前不称已发布。
 
 预检覆盖修复仅增加无凭据的真实上下文/原生源码检查，放在 validate/publish 的凭据阶段之前；正式发布仍保留全部原私钥、授权和单次 claim/vendor 检查。错误使用固定 phase/reason，未知异常不输出载荷。RED8、producer105、root含OTA/server/QR共150项通过；System Map、secret、diff检查通过，独立复审进行中。原始70ms启动失败根因仍未证明；不重发原失败，也不扩大原生准入。
+
+### 同源码二维码原生包已发布
+
+因完整 production/runtime1.3.4 cohort 不兼容，保留 OTA NO-GO，按仓库默认二维码方式交付。独立 canonical clean 5c 构建 **1.3.4（276）**，已有有效签名/profile，runtime1.3.4、rokid-production channel，未创建凭据/注册设备/操作手机。归档、ad-hoc 导出及独立签名/team/bundle/生产 entitlement/profile证书/嵌入生产API/源码和IPA回执绑定验证通过。IPA SHA256 `a5d928152d5f8d3977c10ed3475a63397e0e64326685ef386830ff84f84b5bb4`。
+
+独立首次上传 GO 后复用原 IPA 和相邻回执，只执行一次发布。新固定目录 `20261008-qr276-release-5c1ef73518af`；使用 `--no-latest` 保留旧真实 latest 目录，其 inode 和清单/安装页摘要后验保持。脚本 exit0；公网 app.ipa、manifest、install.html、install-url 和 qr.png 五份文件均 HTTP200、逐字摘要一致，生产仍5c且无发布lease。新安装页：https://health.executor.life/mobile-install/ios/20261008-qr276-release-5c1ef73518af/install.html 。详见 [QR发布回读](../reviews/2026-10-08-selected-report-qr-publication.json) 与 [独立制品复核](../reviews/2026-10-08-selected-report-qr-artifact-review.json)。
+
+这是二维码 ad-hoc 交付，不是 OTA/TestFlight/App Store；仅授权设备可安装，当前用户手机覆盖/实际安装与原图登录用户 G6 未验证。后台与新包已交付不能抹去155秒报告长尾或单次餐食探针未定位失败。发布预检修复固定 `1daaafd95594b889bd6942cc692ea9cc1bebbb03` 独立 G4 GO；不会重发失败OTA或放宽原生边界。

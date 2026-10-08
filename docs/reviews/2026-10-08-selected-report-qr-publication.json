@@ -1,0 +1,63 @@
+{
+  "state": "PUBLISHED_VERIFIED",
+  "checked_at_utc": "2026-10-08T09:47:46.420424+00:00",
+  "source_sha": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
+  "version": "1.3.4",
+  "build": "276",
+  "runtime": "1.3.4",
+  "channel": "rokid-production",
+  "build_id": "20261008-qr276-release-5c1ef73518af",
+  "install_page": "https://health.executor.life/mobile-install/ios/20261008-qr276-release-5c1ef73518af/install.html",
+  "qr_url": "https://health.executor.life/mobile-install/ios/20261008-qr276-release-5c1ef73518af/qr.png",
+  "first_upload_only": true,
+  "original_ipa_reused": true,
+  "no_latest": true,
+  "files": {
+    "app.ipa": {
+      "sha256": "a5d928152d5f8d3977c10ed3475a63397e0e64326685ef386830ff84f84b5bb4",
+      "bytes": 16155578,
+      "http_status": 200,
+      "public_hash_matches": true
+    },
+    "manifest.plist": {
+      "sha256": "5e35b1fb11b4163217e5106001455a64842c582a894db57e08c7407a24a8f6e6",
+      "bytes": 784,
+      "http_status": 200,
+      "public_hash_matches": true
+    },
+    "install.html": {
+      "sha256": "b6aaa84014dfe042cd6b2e612ace8abeb25fd475358ed1dd6f91030b2e4642e6",
+      "bytes": 514,
+      "http_status": 200,
+      "public_hash_matches": true
+    },
+    "install-url.txt": {
+      "sha256": "847ea59b71b5eaa1c6f21e33660eeb84464bdfac8175faceb275b295a2beab58",
+      "bytes": 159,
+      "http_status": 200,
+      "public_hash_matches": true
+    },
+    "qr.png": {
+      "sha256": "fd26cf15958824ef2211532eb6986c6b31b52867fb35e56fffe095d55af44003",
+      "bytes": 1142,
+      "http_status": 200,
+      "public_hash_matches": true
+    }
+  },
+  "server": {
+    "latest": {
+      "is_symlink": false,
+      "inode": 5133934,
+      "sha256": {
+        "manifest.plist": "bd918a3e78b97bd4c03fc8c272e248d1bb7afc961f4c446394233ab0b7cdb000",
+        "install.html": "14626f1e83600610408daedf52a88c60b8290f28e6065d4df089533fe0e9412a"
+      }
+    },
+    "production_sha": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
+    "lease_absent": true
+  },
+  "limits": [
+    "Ad-hoc profile permits registered devices; user phone coverage and installation unverified",
+    "No TestFlight/App Store or OTA delivery claim"
+  ]
+}
