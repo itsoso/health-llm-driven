@@ -408,3 +408,5 @@ Mobile validate `37754437344` 成功，但 publish `37755008534` 在启动阶段
 独立首次上传 GO 后复用原 IPA 和相邻回执，只执行一次发布。新固定目录 `20261008-qr276-release-5c1ef73518af`；使用 `--no-latest` 保留旧真实 latest 目录，其 inode 和清单/安装页摘要后验保持。脚本 exit0；公网 app.ipa、manifest、install.html、install-url 和 qr.png 五份文件均 HTTP200、逐字摘要一致，生产仍5c且无发布lease。新安装页：https://health.executor.life/mobile-install/ios/20261008-qr276-release-5c1ef73518af/install.html 。详见 [QR发布回读](../reviews/2026-10-08-selected-report-qr-publication.json) 与 [独立制品复核](../reviews/2026-10-08-selected-report-qr-artifact-review.json)。
 
 这是二维码 ad-hoc 交付，不是 OTA/TestFlight/App Store；仅授权设备可安装，当前用户手机覆盖/实际安装与原图登录用户 G6 未验证。后台与新包已交付不能抹去155秒报告长尾或单次餐食探针未定位失败。发布预检修复固定 `1daaafd95594b889bd6942cc692ea9cc1bebbb03` 独立 G4 GO；不会重发失败OTA或放宽原生边界。
+
+独立 QR 公开交付 G5 GO：09:48:44 UTC 回读五份公开制品全部 HTTPS200/TLS通过，完整16,155,578字节IPA与受审hash一致，manifest绑定276和正确Bundle/地址；生产仍5c、无lease、旧latest inode与摘要保持。用户设备覆盖/安装与原图登录健康G6仍未验证。

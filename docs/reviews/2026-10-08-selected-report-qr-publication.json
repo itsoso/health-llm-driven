@@ -59,5 +59,14 @@
   "limits": [
     "Ad-hoc profile permits registered devices; user phone coverage and installation unverified",
     "No TestFlight/App Store or OTA delivery claim"
-  ]
+  ],
+  "independent_G5": {
+    "verdict": "GO",
+    "checked_at_utc": "2026-10-08T09:48:44Z",
+    "public_files_tls_and_hash_verified": true,
+    "manifest_build_bundle_target_verified": true,
+    "backend_same_sha_and_no_lease": true,
+    "old_latest_unchanged": true,
+    "user_device_G6": "unverified"
+  }
 }
