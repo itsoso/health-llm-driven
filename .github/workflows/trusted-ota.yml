@@ -157,6 +157,13 @@ jobs:
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
+    - name: Read-only publisher context and native source preflight
+      env:
+        TARGET_SHA: ${{ inputs.sha }}
+      run: |
+        [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+        test "$TARGET_SHA" = "$GITHUB_SHA"
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_ota_publish.py --sha "$TARGET_SHA" --preflight
     - name: Publish one bound iOS artifact and verify server receipt
       if: inputs.target == 'publish'
       env:

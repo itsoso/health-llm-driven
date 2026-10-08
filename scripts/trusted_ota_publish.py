@@ -576,7 +576,7 @@ class Adapter:
             ) from None
 
 
-def context(sha):
+def context(sha, *, require_credentials=True):
     if (
         sys.platform != "linux"
         or os.geteuid() != 0
@@ -600,8 +600,9 @@ def context(sha):
         SOURCE / "scripts/release-tools/node_modules/eas-cli/package.json",
     ):
         secure(path)
-    for path in (ROOT / "key", ROOT / "known_hosts"):
-        secure(path, private=True)
+    if require_credentials:
+        for path in (ROOT / "key", ROOT / "known_hosts"):
+            secure(path, private=True)
     if os.path.lexists(SOURCE / "scripts/__pycache__") or os.path.lexists(
         SOURCE / ".git/commondir"
     ):
@@ -654,10 +655,59 @@ def context(sha):
     return contract
 
 
+
+# Diagnostic output is selected from closed constants, never exception payloads.
+_CONTEXT_REASONS = {
+    "fixed isolated root hosted publisher required": "publisher_execution_context_invalid",
+    "root-owned publisher path required": "publisher_path_untrusted",
+    "cached code or shared checkout forbidden": "publisher_cached_or_shared_source",
+    "publisher code differs from reviewed commit": "publisher_code_mismatch",
+    "locked vendor CLI required": "publisher_cli_version_mismatch",
+    "publisher contract differs": "publisher_contract_mismatch",
+}
+_SOURCE_REASONS = {
+    "wrong source revision": "runtime_source_revision_mismatch",
+    "dirty runtime source": "runtime_source_dirty",
+    "native or unknown mobile input changed": "native_source_incompatible",
+    "runtime/project binding differs": "native_runtime_binding_mismatch",
+}
+
+
+class PreflightError(PublishError):
+    def __init__(self, phase, reason):
+        super().__init__("publisher preflight blocked")
+        self.phase = phase
+        self.reason = reason
+
+
+def preflight(sha):
+    """Check real publisher/source admission without keys, network or claims."""
+    try:
+        contract = context(sha, require_credentials=False)
+    except Exception as exc:
+        reason = (_CONTEXT_REASONS.get(str(exc))
+                  if isinstance(exc, PublishError) else None)
+        raise PreflightError("publisher_context", reason or "publisher_context_unavailable") from None
+    try:
+        contract.validate_source(SOURCE, sha)
+    except Exception as exc:
+        reason = _SOURCE_REASONS.get(str(exc)) if isinstance(exc, ValueError) else None
+        raise PreflightError("native_source", reason or "native_source_unavailable") from None
+    return contract
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--sha", required=True)
+    parser.add_argument("--preflight", action="store_true")
     args = parser.parse_args()
+    preflight(args.sha)
+    if args.preflight:
+        print(json.dumps({"state": "PREFLIGHT_PASSED", "phase": "native_source",
+                          "reason": "context_and_source_verified"}, sort_keys=True))
+        return
+    # Publication still rechecks every original context constraint, including
+    # private root-owned key files, after the credential-free preflight.
     contract = context(args.sha)
     token = os.environ.get("EXPO_TOKEN", "")
     if not token or len(token) > 8192 or any(c.isspace() for c in token):
@@ -666,12 +716,20 @@ def main():
     print(json.dumps(result, sort_keys=True))
 
 
-if __name__ == "__main__":
+def cli():
     try:
         main()
+    except PreflightError as exc:
+        print(json.dumps({"state": "BLOCKED", "phase": exc.phase,
+                          "reason": exc.reason}, sort_keys=True), file=sys.stderr)
+        return 1
     except Exception:
-        print(
-            "Trusted OTA blocked; retain original claim and vendor evidence, never retry publication",
-            file=sys.stderr,
-        )
-        raise SystemExit(1) from None
+        print(json.dumps({"state": "BLOCKED", "phase": "publication",
+                          "reason": "publication_failed_retain_evidence_no_retry"},
+                         sort_keys=True), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(cli())

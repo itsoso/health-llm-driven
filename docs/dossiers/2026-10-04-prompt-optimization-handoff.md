@@ -388,3 +388,15 @@ G3 本地：312关联回归、21 CI-mode集成、PostgreSQL196项及补充3项�
 餐食补证另保留一次断言失败：等待用户终态已成立，但该探针未完整保留“尚未保存”文案/流持久化失败的分项数据；后续带诊断的通过不能追认原失败或证明语义重复性。最终代码针对无食物与低置信确认的实际流契约 4 项通过，视觉解析及四个餐食关键函数相对已部署版本未变。此限制不包装成原图 G6 全通过，详见 `docs/reviews/2026-10-08-selected-report-validation.json`。发布仍待固定提交安全 GO、精确主干完整 CI、后端和 OTA 回执。
 
 独立 G4 对 `2a9650fa3` 给出 GO：后端 115、原历史对抗 2、Mobile 201 通过，额外 schema 不变性/权限断言通过；最终两份真实模型证据共 36 份源码哈希匹配。GO 不替代上线或逐条临床正文验收。随后仅提交本轮脱敏证据，不改变受审运行时；用户已授权合并 main、后端及手机发布。
+
+### 后端正式上线；Mobile OTA 未交付
+
+发布版本 `5c1ef73518af8e49066cc9aab19c9558a084e05f` 已快进 main，完整 CI `37750199480` 29 项成功，Trusted validate `37751737519` 和 backend `37753182343` 成功。生产同 SHA 正式回执 SUCCEEDED，五个关键运行时文件摘要一致；三轮健康 60/60，四个公开 HTTP/TLS 检查通过，四个服务正常、零重启，旧前端身份保持。独立 G5 后端 GO。按发布治理默认跳过数据库备份/恢复演练/站外归档，不把跳过记为通过。预规划和被否决实验仍关闭。
+
+Mobile validate `37754437344` 成功，但 publish `37755008534` 在启动阶段失败；服务器无该 SHA 的 OTA claim/目录或业务 lease，未进入供应商发布，未重发。泛化捕获没有保存细项，不能断言该次启动失败的具体根因。另用实际合约独立确认：固定原生 cad 基线相对本次源码有原生模块、配置和依赖变更，兼容性 BLOCK；仅换为历史 a885/275 也不能自动证明整个 production runtime cohort 相容。当前 validate 未调用发布器上下文和源码兼容性检查，是确定的预检覆盖缺口，正在修复；不扩大 allowlist、不改基线绕过，也不宣布手机已更新。
+
+详见 [本批发布证据](../reviews/2026-10-08-selected-report-deployment.json)。后端已交付；手机新包渠道待用户选择及对应签名/发布 Gate。原图全分辨率验收、登录用户 G6 和稳定提速仍未验证。
+
+新鲜 Expo 只读查询完整短页：production/runtime1.3.4 的四个 STORE 构建 272–275 存在三种不同原生 fingerprint，旧基线问题并非只换 latest 即可解决。channel mapping 查询超时，保持未验证；无供应商写入。证据见 [原生 cohort](../reviews/2026-10-08-native-cohort-readonly.json)。默认二维码原生交付准备精确已部署 5c / build276，独立 clean clone，使用已有签名/profile、rokid-production 独立 channel；不注册设备、不 submit TestFlight，IPA 核验和公开回读前不称已发布。
+
+预检覆盖修复仅增加无凭据的真实上下文/原生源码检查，放在 validate/publish 的凭据阶段之前；正式发布仍保留全部原私钥、授权和单次 claim/vendor 检查。错误使用固定 phase/reason，未知异常不输出载荷。RED8、producer105、root含OTA/server/QR共150项通过；System Map、secret、diff检查通过，独立复审进行中。原始70ms启动失败根因仍未证明；不重发原失败，也不扩大原生准入。

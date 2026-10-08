@@ -1,0 +1,111 @@
+{
+  "schema": "native-cohort-readonly-review.v1",
+  "candidate_sha": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
+  "cohort_checked_at_utc": "2026-10-08T09:20:21.831460+00:00",
+  "saved_at_utc": "2026-10-08T09:23:19.907303+00:00",
+  "auth": "Existing authenticated Expo login through already installed EAS CLI 23.2.0; no .env-online read or credentials printed/saved",
+  "query": {
+    "command": "build:list",
+    "platform": "ios",
+    "status": "finished",
+    "runtime-version": "1.3.4",
+    "channel": "production",
+    "limit": 50,
+    "offset": 0,
+    "json": true,
+    "non-interactive": true
+  },
+  "pagination": {
+    "first_page_count": 4,
+    "requested_limit": 50,
+    "complete_short_page": true,
+    "duplicate_ids": false
+  },
+  "builds": [
+    {
+      "platform": "IOS",
+      "status": "FINISHED",
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "appIdentifier": "life.executor.health",
+      "isForIosSimulator": false,
+      "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "runtimeVersion": "1.3.4",
+      "runtimeId": "01a0d7a6-0281-7852-bb56-85fa3f295484",
+      "channel": "production",
+      "channelId": "019dd201-1503-7ec9-a7b8-ed264891a7c5",
+      "buildNumber": "275",
+      "buildId": "7c9396db-4bf1-44e1-bfc3-7e9ff187bfac",
+      "gitCommitHash": "a8853dea1207163aaa412974dddfbc050ce3eeea",
+      "fingerprint": "ce5e38aa6458023c28cf310c09af1bd853edf88d"
+    },
+    {
+      "platform": "IOS",
+      "status": "FINISHED",
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "appIdentifier": "life.executor.health",
+      "isForIosSimulator": false,
+      "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "runtimeVersion": "1.3.4",
+      "runtimeId": "01a0d7a6-0281-7852-bb56-85fa3f295484",
+      "channel": "production",
+      "channelId": "019dd201-1503-7ec9-a7b8-ed264891a7c5",
+      "buildNumber": "274",
+      "buildId": "63b61a31-058c-44e5-bb82-67727ca7d073",
+      "gitCommitHash": "514c8c28a87ad5761a6f66b284c19a69dff33e8f",
+      "fingerprint": "ce5e38aa6458023c28cf310c09af1bd853edf88d"
+    },
+    {
+      "platform": "IOS",
+      "status": "FINISHED",
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "appIdentifier": "life.executor.health",
+      "isForIosSimulator": false,
+      "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "runtimeVersion": "1.3.4",
+      "runtimeId": "01a0d7a6-0281-7852-bb56-85fa3f295484",
+      "channel": "production",
+      "channelId": "019dd201-1503-7ec9-a7b8-ed264891a7c5",
+      "buildNumber": "273",
+      "buildId": "20d5e73a-a6b9-4c70-ad69-e63d31e058f2",
+      "gitCommitHash": "e19043ecb269e20f3bc0a546165e43d467f1fc8c",
+      "fingerprint": "8f3e41ecdfdeeaaa7a32a1d5b2dc5e4b49d968c4"
+    },
+    {
+      "platform": "IOS",
+      "status": "FINISHED",
+      "distribution": "STORE",
+      "buildProfile": "production",
+      "appIdentifier": "life.executor.health",
+      "isForIosSimulator": false,
+      "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "runtimeVersion": "1.3.4",
+      "runtimeId": "01a0d7a6-0281-7852-bb56-85fa3f295484",
+      "channel": "production",
+      "channelId": "019dd201-1503-7ec9-a7b8-ed264891a7c5",
+      "buildNumber": "272",
+      "buildId": "bfdd2bc9-db49-4ccd-bfbc-679287be4855",
+      "gitCommitHash": "cad1fd1d33621532e587b265e79f737dfb06d1fe",
+      "fingerprint": "ded09f66a371160f8ba4c880b10623973953fbfd"
+    }
+  ],
+  "distinct_fingerprints": 3,
+  "channel_query": {
+    "command": "channel:view production --limit 50 --offset 0 --json --non-interactive",
+    "status": "unverified",
+    "failure_type": "TimeoutExpired",
+    "timeout_seconds": 45,
+    "attempts": 1,
+    "mapping_observed": false
+  },
+  "verdict": "NO_GO",
+  "reason": "Complete published-contract build cohort contains three different native fingerprints under the same production channel and 1.3.4 runtime. Pinning only build 275 cannot satisfy the unchanged full-cohort contract.",
+  "boundaries": [
+    "Read-only Expo metadata queries only; no credential installation, builds, submissions, updates or channel changes.",
+    "Build completion is not proof of Apple processing, distribution availability or device acceptance.",
+    "Channel mapping query timed out and has not been retried.",
+    "Evidence is the whitelisted projection of the successful CLI response; no artifact URLs or raw credentials retained."
+  ]
+}

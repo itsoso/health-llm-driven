@@ -510,3 +510,212 @@ def test_preclaim_payload_binds_validated_production_branch_and_artifact(tmp_pat
     assert claims[0]["branch_id"] == m.validate_channel(channel(m))["branch_id"]
     assert claims[0]["branch_name"] == "production"
     assert claims[0]["artifact"] == f.proof
+
+
+def test_preflight_needs_no_credentials_or_publication_calls(monkeypatch, capsys):
+    from types import SimpleNamespace
+    m = load()
+    calls = []
+    contract = SimpleNamespace(validate_source=lambda root, sha: calls.append(('source', root, sha)))
+    def context(sha, *, require_credentials=True):
+        calls.append(('context', sha, require_credentials))
+        assert require_credentials is False
+        return contract
+    monkeypatch.setattr(m, 'context', context)
+    monkeypatch.setattr(m, 'publish', lambda *a: pytest.fail('preflight must never publish'))
+    monkeypatch.setattr(m, 'Adapter', lambda *a: pytest.fail('preflight must never construct credential adapter'))
+    monkeypatch.delenv('EXPO_TOKEN', raising=False)
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40, '--preflight'])
+    assert m.cli() == 0
+    assert calls == [('context', 'c'*40, False), ('source', m.SOURCE, 'c'*40)]
+    assert json.loads(capsys.readouterr().out) == {'state':'PREFLIGHT_PASSED','phase':'native_source','reason':'context_and_source_verified'}
+
+
+@pytest.mark.parametrize('phase, error, reason', [
+    ('context', 'root-owned publisher path required', 'publisher_path_untrusted'),
+    ('context', 'secret vendor credential payload', 'publisher_context_unavailable'),
+    ('source', 'native or unknown mobile input changed', 'native_source_incompatible'),
+    ('source', 'dirty runtime source', 'runtime_source_dirty'),
+    ('source', 'secret vendor credential payload', 'native_source_unavailable'),
+])
+def test_preflight_emits_only_static_diagnostics(monkeypatch, capsys, phase, error, reason):
+    from types import SimpleNamespace
+    m = load()
+    def fail():
+        raise (m.PublishError(error) if phase == 'context' else ValueError(error))
+    contract = SimpleNamespace(validate_source=lambda *a: fail())
+    monkeypatch.setattr(m, 'context', lambda *a, **k: fail() if phase == 'context' else contract)
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40, '--preflight'])
+    assert m.cli() == 1
+    captured = capsys.readouterr()
+    assert 'secret' not in captured.err + captured.out
+    assert json.loads(captured.err) == {'state':'BLOCKED','phase':'publisher_context' if phase=='context' else 'native_source','reason':reason}
+
+
+def test_publish_runs_preflight_before_credentials_and_retains_full_context(monkeypatch):
+    from types import SimpleNamespace
+    m = load()
+    calls=[]
+    contract=SimpleNamespace(validate_source=lambda *a:calls.append('source'))
+    def context(sha, *, require_credentials=True):
+        calls.append('private-context' if require_credentials else 'public-context')
+        if require_credentials:
+            raise m.PublishError('private publisher file requires mode 0600')
+        return contract
+    monkeypatch.setattr(m,'context',context)
+    monkeypatch.setattr(m,'publish',lambda *a:pytest.fail('private checks must not be bypassed'))
+    monkeypatch.setattr(m.sys,'argv',['publisher','--sha','c'*40])
+    assert m.cli() == 1
+    assert calls == ['public-context','source','private-context']
+
+
+def test_preflight_uses_real_native_contract_and_still_blocks_changed_package(monkeypatch, capsys):
+    m = load()
+    spec = importlib.util.spec_from_file_location('ota_preflight_native_test', Path(__file__).with_name('trusted_ota.py'))
+    contract = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(contract)
+    calls=[]
+    def git(root, *args):
+        calls.append(args)
+        if args == ('rev-parse', 'HEAD'):
+            return ('c'*40+'\n').encode()
+        if args[0] == 'status' or args[0] == 'merge-base':
+            return b''
+        if args[0] == 'diff':
+            return b'mobile/package.json\n'
+        pytest.fail('native incompatibility must fail before any later read')
+    monkeypatch.setattr(contract, 'git', git)
+    monkeypatch.setattr(m, 'context', lambda *a, **k: contract)
+    monkeypatch.setattr(m, 'Adapter', lambda *a: pytest.fail('native incompatibility must not reach vendor adapter'))
+    monkeypatch.setattr(m.sys,'argv',['publisher','--sha','c'*40,'--preflight'])
+    assert m.cli() == 1
+    assert json.loads(capsys.readouterr().err)['reason'] == 'native_source_incompatible'
+    assert ('merge-base', '--is-ancestor', m.NATIVE_SHA, 'c'*40) in calls
+    assert contract.NATIVE_SHA == m.NATIVE_SHA == 'cad1fd1d33621532e587b265e79f737dfb06d1fe'
+
+
+def test_preflight_failure_blocks_publish_before_credential_lookup(monkeypatch):
+    m = load()
+    calls=[]
+    def fail(sha, *, require_credentials=True):
+        calls.append(require_credentials)
+        raise m.PublishError('publisher code differs from reviewed commit')
+    monkeypatch.setattr(m,'context',fail)
+    original_get = m.os.environ.get
+    def get(key, *args):
+        if key == 'EXPO_TOKEN':
+            pytest.fail('credentials read before preflight passed')
+        return original_get(key, *args)
+    monkeypatch.setattr(m.os.environ, 'get', get)
+    monkeypatch.setattr(m.sys,'argv',['publisher','--sha','c'*40])
+    assert m.cli() == 1
+    assert calls == [False]
+
+
+def runner_context_fixture(tmp_path, monkeypatch):
+    """Actual context/secure/source code over a synthetic sealed hosted layout."""
+    from types import SimpleNamespace
+    m=load()
+    root=tmp_path/'runner'
+    source=root/'source'
+    scripts=Path(__file__).parent
+    contents={
+        source/'scripts'/name:(scripts/name).read_bytes()
+        for name in ('trusted_ota_publish.py','trusted_ota.py','trusted_release_gate.py')
+    }
+    contents.update({
+        source/'.git/config':b'[core]\n',
+        source/'mobile/app.json':json.dumps({'expo':{'version':m.RUNTIME,'runtimeVersion':{'policy':'appVersion'},'extra':{'eas':{'projectId':m.PROJECT}}}}).encode(),
+        root/'node/bin/node':b'fixed node',
+        source/'scripts/release-tools/node_modules/eas-cli/bin/run':b'fixed eas',
+        source/'mobile/node_modules/expo/bin/cli':b'fixed expo',
+        source/'scripts/release-tools/package-lock.json':json.dumps({'packages':{'node_modules/eas-cli':{'version':'23.2.0'}}}).encode(),
+        source/'scripts/release-tools/node_modules/eas-cli/package.json':b'{"version":"23.2.0"}',
+    })
+    for path,data in contents.items():
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_bytes(data)
+    for key,value in {'ROOT':root,'SOURCE':source,'NODE':root/'node/bin/node','EAS':source/'scripts/release-tools/node_modules/eas-cli/bin/run','EXPO':source/'mobile/node_modules/expo/bin/cli','__file__':str(source/'scripts/trusted_ota_publish.py')}.items():
+        monkeypatch.setattr(m,key,value)
+    monkeypatch.setattr(m,'sys',SimpleNamespace(platform='linux',executable='/usr/bin/python3',flags=SimpleNamespace(isolated=1,no_site=1,dont_write_bytecode=1)))
+    monkeypatch.setattr(m.os,'geteuid',lambda:0)
+    original_lstat=Path.lstat
+    faults={}
+    def lstat(path):
+        info=original_lstat(path)
+        values={'st_uid':0,'st_mode':info.st_mode & ~0o022,'st_nlink':info.st_nlink}
+        values.update(faults.get(path,{}))
+        return SimpleNamespace(**values)
+    monkeypatch.setattr(Path,'lstat',lstat)
+    calls=[]
+    def run(args,**kwargs):
+        calls.append(args)
+        assert args[0]=='/usr/bin/git', 'preflight must never invoke vendor or SSH'
+        assert kwargs['env'].get('EXPO_TOKEN') is None
+        if 'show' in args:
+            ref=args[-1]
+            if ':scripts/' in ref:
+                output=contents[source/'scripts'/ref.split(':scripts/',1)[1]]
+            else:
+                assert ref=='c'*40+':mobile/app.json'
+                output=json.dumps({'expo':{'version':m.RUNTIME,'runtimeVersion':m.RUNTIME,'extra':{'eas':{'projectId':m.PROJECT}}}}).encode()
+        elif 'rev-parse' in args:
+            output=('c'*40+'\n').encode()
+        else:
+            assert 'status' in args or 'merge-base' in args or 'diff' in args
+            output=b''
+        return SimpleNamespace(stdout=output)
+    monkeypatch.setattr(m.subprocess,'run',run)
+    monkeypatch.setattr(m.urllib.request,'urlopen',lambda *a,**k:pytest.fail('preflight must not use network'))
+    original_get=m.os.environ.get
+    def get(key,*args):
+        if key=='EXPO_TOKEN':pytest.fail('preflight must not read provider credential')
+        return original_get(key,*args)
+    monkeypatch.setattr(m.os.environ,'get',get)
+    # Importlib must not leave bytecode in the synthetic checkout either.
+    import sys
+    monkeypatch.setattr(sys,'dont_write_bytecode',True)
+    return m,faults,calls
+
+
+def test_real_context_preflight_works_without_key_or_token_but_publish_context_requires_key(tmp_path,monkeypatch):
+    m,faults,calls=runner_context_fixture(tmp_path,monkeypatch)
+    assert not (m.ROOT/'key').exists()
+    m.preflight('c'*40)
+    assert any('merge-base' in args for args in calls)
+    with pytest.raises(FileNotFoundError):
+        m.context('c'*40)
+    for name in ('key','known_hosts'):
+        path=m.ROOT/name
+        path.write_text('synthetic fixture only')
+        path.chmod(0o600)
+    m.context('c'*40)
+    (m.ROOT/'key').chmod(0o644)
+    with pytest.raises(m.PublishError,match='mode 0600'):
+        m.context('c'*40)
+
+
+@pytest.mark.parametrize('fault',['platform','uid','interpreter','isolated','site','bytecode','canonical','file_uid','file_writable','parent_writable','file_symlink','file_hardlink','cache','commondir','code_bytes'])
+def test_real_context_preflight_rejects_unsafe_runner(tmp_path,monkeypatch,fault):
+    import stat
+    m,faults,calls=runner_context_fixture(tmp_path,monkeypatch)
+    script=m.SOURCE/'scripts/trusted_ota_publish.py'
+    if fault=='platform':m.sys.platform='darwin'
+    elif fault=='uid':monkeypatch.setattr(m.os,'geteuid',lambda:1001)
+    elif fault=='interpreter':m.sys.executable='/untrusted/python'
+    elif fault=='isolated':m.sys.flags.isolated=0
+    elif fault=='site':m.sys.flags.no_site=0
+    elif fault=='bytecode':m.sys.flags.dont_write_bytecode=0
+    elif fault=='canonical':m.__file__='/tmp/copied-publisher.py'
+    elif fault=='file_uid':faults[script]={'st_uid':1001}
+    elif fault=='file_writable':faults[script]={'st_mode':stat.S_IFREG|0o666}
+    elif fault=='parent_writable':faults[m.ROOT]={'st_mode':stat.S_IFDIR|0o777}
+    elif fault=='file_symlink':faults[script]={'st_mode':stat.S_IFLNK|0o777}
+    elif fault=='file_hardlink':faults[script]={'st_nlink':2}
+    elif fault=='cache':(m.SOURCE/'scripts/__pycache__').mkdir()
+    elif fault=='commondir':(m.SOURCE/'.git/commondir').write_text('/untrusted')
+    elif fault=='code_bytes':script.write_text('different code')
+    with pytest.raises(m.PreflightError) as caught:
+        m.preflight('c'*40)
+    assert caught.value.phase=='publisher_context'
+    assert caught.value.reason in {*m._CONTEXT_REASONS.values(),'publisher_context_unavailable'}

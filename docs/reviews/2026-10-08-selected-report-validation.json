@@ -1,5 +1,5 @@
 {
-  "status": "G3_G4_GO_pending_exact_main_CI_backend_OTA",
+  "status": "G3_G4_GO_backend_G5_GO_mobile_delivery_BLOCKED",
   "source_commit": "2a9650fa35fd354a8c55b90f34fba750758a7836",
   "source_sha256": {
     "backend/app/services/agent_executor.py": "9abbbf7ca9f60696bb49519473a21cc5e6427ede5467c98c5c0e90ea0841f77f",
@@ -89,5 +89,6 @@
     "mobile_passed": 201,
     "source_hashes_verified": 36,
     "limits": "No independent full clinical prose review; no latency gain or original-photo G6 claim"
-  }
+  },
+  "deployment_evidence": "2026-10-08-selected-report-deployment.json"
 }
