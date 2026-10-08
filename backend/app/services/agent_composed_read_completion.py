@@ -258,7 +258,7 @@ _HEALTH_SUBJECT = (
     r"训练(?:量|负荷|状态|强度)?|运动(?:量|负荷|强度|安全性)?|(?:总体)?情况|(?:各项)?指标|一切|状态|你)"
 )
 _HEALTH_LINK = (
-    r"(?:的|得|是|为|属于|呈现(?:出|为)?|表现为|处于|达到|已经|目前|总体|整体|"
+    r"(?:的|得|是|为|属于|算是|呈现(?:出|为)?|表现为|处于|达到|已经|目前|总体|整体|"
     r"看起来|显得|似乎|可能|相对|比较|较为|非常|很|太|偏|稍|仍然|仍|还|了|"
     r"并非|并不|并没有|没有|并|不|是否|有无|能否|较)"
 )
@@ -270,7 +270,7 @@ _HEALTH_EVALUATION = (
 # scale. Fold only an adjacent numeric score before an evaluative predicate;
 # ordinary numbers and comparative record descriptions stay untouched.
 _SCORE_VALUE_BEFORE_GRADE = re.compile(
-    r"(?P<subject>(?:睡眠)?评分)\s*(?:为|是|[:：])?\s*\d+(?:\.\d+)?\s*分?\s*"
+    r"(?P<subject>(?:睡眠)?评分)\s*(?:为|是|达到|[:：])?\s*[（(]?\s*\d+(?:\.\d+)?\s*分?\s*[）)]?\s*"
     r"(?:[，,]\s*)?(?=(?:" + _HEALTH_LINK + r"\s*){0,12}" + _HEALTH_EVALUATION + r")"
 )
 _HEALTH_ABSENCE = (
@@ -389,7 +389,13 @@ def _asserted_record_only_claim(pattern: re.Pattern, clause: str) -> bool:
                         or not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:unknown.start()])):
             continue
         if pattern is _CURRENT_HEALTH_CLAIM:
-            if (str(match.group("subject") or "").endswith("评分")
+            score_subject = str(match.group("subject") or "").endswith("评分")
+            if (score_subject and match.group("evaluation") == "差"
+                    and re.match(r"(?:值|异|\s*\d+(?:\.\d+)?\s*分)", suffix)):
+                continue
+            if score_subject and re.match(r"\s*与否", suffix) and _NUTRITION_UNKNOWN.search(suffix):
+                continue
+            if (score_subject
                     and match.group("evaluation") in {"稳定", "规律"}):
                 # Preserve existing record-comparison behavior. This new score
                 # boundary concerns unverified grades, not numeric variation.

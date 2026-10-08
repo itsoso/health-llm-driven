@@ -59,6 +59,8 @@ async def run(args):
     reference_variant = getattr(args, "reference_variant", "baseline")
     variants = [reference_variant] if getattr(args, "baseline_only", False) else [reference_variant, *(args.variant or ["p1", "p2", "combined"])]
     production_routing = getattr(args, "production_routing", False)
+    if "preplan_budget512" in variants and (not production_routing or models != ["qwen3.8-max"]):
+        raise ValueError("thinking_probe_requires_live_max_route")
     if production_routing and args.scripted:
         raise ValueError("production_routing_requires_live_opt_in")
     tasks = len(cases) * len(models) * len(variants) * args.repetitions

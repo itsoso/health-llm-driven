@@ -883,3 +883,20 @@ def test_summary_counts_unknown_decision_usage_and_excludes_scripted_api_attempt
     result = cli.summary([sample])[0]
     assert result["total_call_attempts"] == 1 and result["total_api_attempts"] == 0
     assert result["all_api_usage_known"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("models,production", [(None, True), (["qwen3.8-flash"], True), (["qwen3.8-max"], False)])
+async def test_invalid_thinking_probe_batch_stops_before_any_baseline(tmp_path, monkeypatch, models, production):
+    cli = load_cli()
+    called = []
+    async def sample(*args, **kwargs):
+        called.append(True)
+        raise AssertionError("must not run")
+    monkeypatch.setattr(cli, "run_sample", sample)
+    args = SimpleNamespace(case=["analysis_31d_rich"], model=models, variant=["preplan_budget512"],
+        repetitions=1, max_api_calls=16, scripted=False, include_live_llm=True,
+        production_routing=production, output=tmp_path / "report.json")
+    with pytest.raises(ValueError, match="thinking_probe_requires_live_max_route"):
+        await cli.run(args)
+    assert not called and not args.output.exists()
