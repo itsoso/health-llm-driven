@@ -41,7 +41,7 @@ from app.services.tool_schema_registry import (
     get_health_tools,
 )
 from app.services.lab_plausibility import annotate_if_implausible
-from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
+from app.services.llm.error_messages import safe_error_site, safe_llm_error_message, safe_tool_error_message
 from app.services.llm.acute_vitals import acute_vital_reading
 from app.services.agent_post_write_safety import missing_post_write_safety_text
 from app.services.health_query_dimensions import normalize_health_query_args
@@ -18873,29 +18873,32 @@ class AgentExecutor:
         public_weather_terminal = None
         try:
             if self._public_task == "weather":
-                from app.services.agent_public_task import public_weather_arguments
+                from app.services.agent_public_task import public_weather_queries
 
-                args = public_weather_arguments(message)
-                if args is None or not any(
+                queries = public_weather_queries(message)
+                if not queries or not any(
                     (t.get("function") or {}).get("name") == "environment_check" for t in tools
                 ):
                     raise RuntimeError("public_weather_tool_unavailable")
-                weather_call = {
-                    "id": "public_weather", "type": "function",
-                    "function": {"name": "environment_check", "arguments": json.dumps(args, ensure_ascii=False)},
-                }
-                rounds.append({"llm_gen_ms": 0, "tool_exec_ms": 0, "tools": []})
-                messages.append({"role": "assistant", "content": "", "tool_calls": [weather_call]})
-                async for event in _execute_pi_tool(weather_call, 0):
-                    if event.get("event") != "_pi_tool_response":
-                        yield event
-                    elif event["data"].get("is_error"):
-                        payload = _recover_tool_result_payload(event["data"]["content"]) or {}
-                        public_weather_terminal = (
-                            "请告诉我你要查询哪个城市的天气。"
-                            if isinstance(payload, dict) and payload.get("error") == "location_required"
-                            else "天气查询暂时未完成，请稍后重试。"
-                        )
+                for query_index, args in enumerate(queries):
+                    weather_call = {
+                        "id": f"public_weather_{query_index}", "type": "function",
+                        "function": {"name": "environment_check", "arguments": json.dumps(args, ensure_ascii=False)},
+                    }
+                    rounds.append({"llm_gen_ms": 0, "tool_exec_ms": 0, "tools": []})
+                    messages.append({"role": "assistant", "content": "", "tool_calls": [weather_call]})
+                    async for event in _execute_pi_tool(weather_call, query_index):
+                        if event.get("event") != "_pi_tool_response":
+                            yield event
+                        elif event["data"].get("is_error"):
+                            payload = _recover_tool_result_payload(event["data"]["content"]) or {}
+                            public_weather_terminal = (
+                                "请告诉我你要查询哪个城市的天气。"
+                                if isinstance(payload, dict) and payload.get("error") == "location_required"
+                                else "天气或空气质量查询暂时未完成，请稍后重试。"
+                            )
+                    if public_weather_terminal is not None:
+                        break
                 # The read was dispatched through the ordinary gateway.
                 # No model planning or repeated weather fetch is needed.
                 tools = []
@@ -19690,7 +19693,7 @@ class AgentExecutor:
                 and not failed_write_operations else "error"
             )
         except Exception as exc:
-            logger.error("Pi agent failed user=%s error_type=%s", user_id, type(exc).__name__)
+            logger.error("Pi agent failed error_type=%s error_site=%s", type(exc).__name__, safe_error_site(exc))
             full_reply = (
                 _unverified_write_message(write_receipts)
                 if unverified_write_operations

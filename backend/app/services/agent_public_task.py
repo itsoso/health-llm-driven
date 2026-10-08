@@ -20,7 +20,7 @@ def public_task_prompt(task: PublicTask) -> str:
             "先用 environment_check 获取天气；当前时间以系统本轮时间为准。"
             "仅按用户明确指定的城市传 city；未指定时不传，由服务端解析用户设置的位置。"
             "没有位置时只请用户提供城市；获取失败如实说明，绝不编造天气或默认城市。"
-            "只概括工具核实的地点、观测/预报时间、天气和温度。天气预报不是当前实况。"
+            "只概括工具核实的地点、观测/预报时间、天气和温度。天气预报不是当前实况。空气质量工具仅返回当前观测，必须标注观测时间；不能称为明天或后天空气质量预报。未来空气质量未提供时明确说明暂无预报，不从天气推测AQI。"
         )
     return common + (
         "简短介绍：可以协助整理和查询本人的健康记录、解读已有资料并跟进健康计划。"
@@ -41,8 +41,9 @@ _PREFIX = r"(?:请)?(?:帮我)?(?:(?:查一下|查下|查询|查|看看|看一�
 _WEATHER = re.compile(
     _PREFIX
     + rf"(?:{_LOCATION}(?:的)?(?:{_TIME})?|{_TIME}(?:的)?(?:{_LOCATION})?)?"
-    + r"(?:的)?(?:天气(?:预报|怎么样|如何|怎样)?|(?:会)?下雨(?:吗)?|"
+    + r"(?:的)?(?:天气(?:温度|气温)?(?:预报|怎么样|如何|怎样)?|(?:会)?下雨(?:吗)?|"
     r"(?:气温|温度)(?:是多少|多少)(?:度)?)"
+    r"(?:[?。!！,、 ]*(?:和|及)?(?:空气质量|AQI)(?:怎么样|如何|怎样)?)?"
     r"[?。!！]*"
 )
 _INTRODUCTION = re.compile(
@@ -85,6 +86,21 @@ def public_weather_arguments(message: str) -> dict | None:
     return args
 
 
+def public_weather_queries(message: str) -> list[dict] | None:
+    """Compile bounded weather and current AQI reads for the same location."""
+    weather = public_weather_arguments(message)
+    if weather is None:
+        return None
+    queries = [weather]
+    text = unicodedata.normalize("NFKC", message)
+    if "空气质量" in text or "AQI" in text:
+        air = {"check_type": "air_quality"}
+        if "city" in weather:
+            air["city"] = weather["city"]
+        queries.append(air)
+    return queries
+
+
 def public_weather_payload(payload: object, check_type: str) -> dict:
     """Unavailable provider defaults must never become observed weather."""
     data = (
@@ -101,6 +117,11 @@ def public_weather_payload(payload: object, check_type: str) -> dict:
         return {
             "error": "weather_unavailable",
             "message": "天气查询暂时未完成，请稍后重试。",
+        }
+    if check_type == "air_quality":
+        return {
+            "air_quality": data,
+            "observation_scope": "current_air_quality_not_forecast",
         }
     # Weather-derived exercise advice is outside this standalone public task.
     return {"weather": data} if check_type == "weather" else data
