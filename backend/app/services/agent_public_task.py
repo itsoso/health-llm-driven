@@ -166,7 +166,7 @@ def render_public_weather(message: str, queries: list[dict], results: list[dict]
         value = float(value)
         if not math.isfinite(value) or (nonnegative and value < 0):
             raise ValueError("public_weather_invalid_number")
-        return format_display_number(value)
+        return value
 
     def observation_time(data):
         for key in ("obsTime", "update_time"):
@@ -184,7 +184,17 @@ def render_public_weather(message: str, queries: list[dict], results: list[dict]
 
     def condition(data):
         value = data.get("weather", data.get("text"))
-        if not isinstance(value, str) or not re.fullmatch(r"[晴多少云阴雨雪雷阵暴大中小冻夹冰雹雾霾沙尘扬浮强特浓轻度有局部短时伴转到间歇性风热带飓龙卷]+", value) or len(value) > 20:
+        # Exact finite labels emitted by WeatherService._weather_code_to_text.
+        adapter_labels = {
+            "晴朗", "大部晴朗", "局部多云", "多云", "雾", "霜雾",
+            "小毛毛雨", "中毛毛雨", "大毛毛雨", "小雨", "中雨", "大雨",
+            "冻雨", "大冻雨", "小雪", "中雪", "大雪", "雪粒",
+            "小阵雨", "中阵雨", "大阵雨", "小阵雪", "大阵雪",
+            "雷暴", "雷暴伴冰雹", "大雷暴伴冰雹",
+        }
+        if not isinstance(value, str) or (value not in adapter_labels and (
+            not re.fullmatch(r"[晴多少云阴雨雪雷阵暴大中小冻夹冰雹雾霾沙尘扬浮强特浓轻度有局部短时伴转到间歇性风热带飓龙卷]+", value) or len(value) > 20
+        )):
             raise ValueError("public_weather_missing_condition")
         return value
 
@@ -214,7 +224,7 @@ def render_public_weather(message: str, queries: list[dict], results: list[dict]
                     raise ValueError("public_weather_duplicate_date")
                 by_date[day] = item
             offset = 2 if "后天" in message else 1 if "明天" in message else 0 if any(word in message for word in ("今天", "今日", "现在")) else None
-            days = [reference_now.date() + timedelta(days=offset)] if offset is not None else sorted(by_date)
+            days = [reference_now.date() + timedelta(days=offset)] if offset is not None else [reference_now.date() + timedelta(days=index) for index in range(query["days"])]
             for day in days:
                 if day not in by_date:
                     raise ValueError("public_weather_missing_requested_date")
@@ -222,12 +232,13 @@ def render_public_weather(message: str, queries: list[dict], results: list[dict]
                 low, high = number(item.get("temp_min")), number(item.get("temp_max"))
                 if low > high:
                     raise ValueError("public_weather_invalid_range")
+                low, high = format_display_number(low), format_display_number(high)
                 lines.append(f"{day.isoformat()} 天气预报：{condition(item)}，{low}～{high}℃。来源：{source(data)}。")
         elif kind == "weather":
-            temperature = number(data.get("temperature", data.get("temp")))
+            temperature = format_display_number(number(data.get("temperature", data.get("temp"))))
             lines.append(f"天气观测：{condition(data)}，{temperature}℃。来源：{source(data)}；{observation_time(data)}。")
         else:
-            aqi = number(data.get("aqi"), nonnegative=True)
+            aqi = format_display_number(number(data.get("aqi"), nonnegative=True))
             grade = data.get("aqi_description", data.get("category"))
             if grade not in {"优", "良", "轻度污染", "中度污染", "重度污染", "严重污染"}:
                 level = data.get("aqi_level")

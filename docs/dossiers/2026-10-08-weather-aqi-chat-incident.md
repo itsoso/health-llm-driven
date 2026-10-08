@@ -120,3 +120,7 @@
 - 确定性测试 RED 15 failed → 130 passed；扩展 CI-mode 工具协议、回执、citation、集成回归 220 passed。完成阶段 Twin 隔离专项 3 passed。System Map、diff 检查通过。真实模型通用健康回归与固定提交独立 G4、精确 CI、再次发布及真实公共服务验收仍待完成。
 
 - 当前确定性候选正式真实模型通用健康回归通过：10 次 API 调用均成功，源码哈希前后不变。证据 `docs/reviews/2026-10-08-weather-aqi-deterministic-live-regression.json`。此证据仅证明健康回归；公共天气零模型及真实服务验收单独裁决。
+
+- 固定 `6bc041795089a835dbd6de6c9f4634ae9114bcb3` 独立 G4 NO-GO：有限条件校验拒绝现有 Open-Meteo 合法词（晴朗、霜雾、毛毛雨等）；泛预报未约束当前完整日期窗口，可能把陈旧、越界或不完整返回标成功。候选未推送，返回实现与测试阶段。该版本通用健康真实模型 PASS 不豁免天气专项失败。
+
+- G4 三项整改：覆盖适配器全部26种有限描述；泛预报要求本轮日期起 `query.days` 完整窗口，过期与越界不展示；温度上下限在格式化前比较。RED 10 failed → 160 passed；扩展 CI-mode 回归 253 passed，System Map 通过。最终正式健康实模回归10 API调用全部成功且源码哈希未变，见 `docs/reviews/2026-10-08-weather-aqi-deterministic-final-live-regression.json`。等待新固定提交 G4/CI/发布与真实公共验收。

@@ -59,7 +59,9 @@ def test_only_facts_render_without_changing_payload():
 
 
 def test_generic_forecast_lists_source_dates_without_default_city():
-    answer = public.render_public_weather('天气预报', public.public_weather_queries('天气预报'), data()[:1], reference_now=NOW)
+    results = data()[:1]
+    results[0]['forecasts'].append({'date': '2026-10-08', 'temp_min': 10, 'temp_max': 20, 'weather': '晴'})
+    answer = public.render_public_weather('天气预报', public.public_weather_queries('天气预报'), results, reference_now=NOW)
     assert '2026-10-09' in answer and '2026-10-10' in answer
     assert answer.index('2026-10-09') < answer.index('2026-10-10')
     assert '杭州' not in answer
@@ -86,4 +88,34 @@ def test_malformed_facts_fail_closed(damage):
     if damage == 'bool': results[0]['forecasts'][1]['temp_max'] = False
     if damage == 'inf': results[0]['forecasts'][1]['temp_max'] = float('inf')
     if damage == 'negative_aqi': results[1]['air_quality']['aqi'] = -1
+    with pytest.raises(ValueError): render(results=results)
+
+
+@pytest.mark.parametrize('code', [0, 1, 2, 3, 45, 48, 51, 53, 55, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99])
+def test_all_adapter_weather_labels_render(code):
+    from app.services.environment.weather_service import WeatherService
+    label = WeatherService._weather_code_to_text(None, code)
+    results = data(); results[0]['forecasts'][1]['weather'] = label
+    assert label in render(results=results)
+
+
+def test_generic_forecast_requires_complete_current_window():
+    with pytest.raises(ValueError):
+        public.render_public_weather('天气预报', public.public_weather_queries('天气预报'), data()[:1], reference_now=NOW)
+
+
+def test_generic_forecast_excludes_stale_and_beyond_requested_window():
+    results = data()[:1]
+    results[0]['forecasts'].extend([
+        {'date': '2026-10-08', 'temp_min': 10, 'temp_max': 20, 'weather': '晴'},
+        {'date': '2026-10-07', 'temp_min': 10, 'temp_max': 20, 'weather': '晴'},
+        {'date': '2026-10-11', 'temp_min': 10, 'temp_max': 20, 'weather': '晴'},
+    ])
+    answer = public.render_public_weather('天气预报', public.public_weather_queries('天气预报'), results, reference_now=NOW)
+    assert '2026-10-07' not in answer and '2026-10-11' not in answer
+    assert answer.index('2026-10-08') < answer.index('2026-10-09') < answer.index('2026-10-10')
+
+
+def test_temperature_order_is_checked_before_rounding():
+    results = data(); results[0]['forecasts'][1].update(temp_min=20.004, temp_max=20.001)
     with pytest.raises(ValueError): render(results=results)

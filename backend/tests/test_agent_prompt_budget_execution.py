@@ -509,7 +509,7 @@ async def test_compound_air_quality_failure_does_not_generate_forecast(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("damage", ["missing_date", "bool_temperature", "nan_aqi"])
+@pytest.mark.parametrize("damage", ["missing_date", "bool_temperature", "nan_aqi", "generic_missing_day"])
 async def test_deterministic_weather_invalid_facts_fail_done_and_persist(
     db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, damage,
 ):
@@ -533,8 +533,9 @@ async def test_deterministic_weather_invalid_facts_fail_done_and_persist(
         fetched.append(check_type)
         return results[0] if check_type == "forecast" else results[1]['air_quality']
     monkeypatch.setattr(executor, "_read_environment_in_process", read)
-    events = [event async for event in executor.run_stream(user_id=user.id, message=MESSAGE)]
-    assert fetched == ['forecast', 'air_quality']
+    message = "杭州天气预报" if damage == "generic_missing_day" else MESSAGE
+    events = [event async for event in executor.run_stream(user_id=user.id, message=message)]
+    assert fetched == (["forecast"] if damage == "generic_missing_day" else ["forecast", "air_quality"])
     assert not provider.calls
     done = events[-1]['data']
     assert done['turn_outcome']['status'] != 'complete'
