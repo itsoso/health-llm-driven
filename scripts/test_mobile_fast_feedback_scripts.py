@@ -51,13 +51,13 @@ def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibilit
 def test_frontend_dependency_overrides_close_nanoid_and_postcss_advisories() -> None:
     package_json = json.loads((ROOT / "frontend" / "package.json").read_text())
 
-    assert package_json["dependencies"]["next"] == "16.3.6"
-    assert package_json["devDependencies"]["eslint-config-next"] == "16.3.6"
+    assert package_json["dependencies"]["next"] == "16.3.8"
+    assert package_json["devDependencies"]["eslint-config-next"] == "16.3.8"
     assert package_json["devDependencies"]["postcss"] == "8.5.26"
     assert package_json["overrides"]["postcss"] == "8.5.26"
     assert package_json["overrides"]["postcss-selector-parser"] == "6.1.3"
     assert package_json["overrides"]["nanoid"] == "3.3.18"
-    assert package_json["overrides"]["sharp"] == "0.35.4"
+    assert package_json["overrides"]["sharp"] == "0.35.5"
 
 
 def test_release_tool_dependency_overrides_close_known_advisories() -> None:
