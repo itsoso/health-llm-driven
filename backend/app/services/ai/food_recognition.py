@@ -18,12 +18,14 @@ from app.services.llm.usage_tracker import caller_scope
 logger = logging.getLogger(__name__)
 
 MAX_RECOGNIZED_FOODS = 12
+NO_RECORDABLE_FOOD_ERROR = "图片中未识别到可记录的食物，请重新拍摄餐食本身。"
 _NON_FOOD_INTENT_KINDS = {"diet_management", "medication", "supplement"}
 _FOOD_CONTEXT_SUFFIX_RE = re.compile(
     r"(?:酸奶|饮料|果汁|茶|咖啡|牛奶|豆奶|沙拉|水果|坚果|面包|麦片|粥|饭|面|菜|汤|蛋|肉)$",
     re.I,
 )
 _SAFE_OPERATIONAL_ERRORS = {
+    NO_RECORDABLE_FOOD_ERROR,
     "智能识别服务不可用",
     "AI返回空内容，请重试",
     "图片中未识别到食物，请确保图片清晰且包含食物内容",
@@ -313,11 +315,15 @@ def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
         operational_error = _clean_text(result.get("error"), 120)
         if result.get("success") is False:
             error = operational_error if operational_error in _SAFE_OPERATIONAL_ERRORS else "识别失败，请重试"
+        elif not isinstance(result.get("foods"), list):
+            error = "AI响应格式错误，请重试"
         else:
-            error = "图片中未识别到可记录的食物，请重新拍摄餐食本身。"
+            error = NO_RECORDABLE_FOOD_ERROR
         sanitized.update({
             "success": False,
             "error": error,
+            # Derive the code locally; never trust a model/caller's error_code.
+            "error_code": "no_recordable_food" if error == NO_RECORDABLE_FOOD_ERROR else "recognition_failed",
             "meal_description": "未识别到可记录的食物",
             "total_calories": None,
             "total_protein": None,
@@ -349,6 +355,18 @@ def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
     sanitized["meal_description"] = "、".join(descriptions)[:300]
     sanitized["success"] = True
     return sanitized
+
+
+def _sanitize_vision_payload(result: Any) -> Dict[str, Any]:
+    """A malformed model contract is a failure, not evidence of an empty plate."""
+    if (not isinstance(result, dict) or not isinstance(result.get("foods"), list)
+            or any(not isinstance(item, dict) for item in result["foods"])):
+        return sanitize_food_recognition_result({
+            "success": False, "foods": [], "error": "AI响应格式错误，请重试",
+        })
+    return sanitize_food_recognition_result({
+        "success": True, "foods": result["foods"], "health_tips": result.get("health_tips"),
+    })
 
 
 def merge_food_recognition_results(
@@ -587,16 +605,6 @@ class FoodRecognitionService:
             content = raw_content.strip()
             logger.info("AI原始响应已接收 response_length=%s", len(content))
 
-            # 检查是否是拒绝识别的回复
-            refuse_keywords = ["无法识别", "抱歉", "不是食物", "cannot identify", "sorry", "not food", "看不清", "无法分析"]
-            if any(keyword in content.lower() for keyword in refuse_keywords):
-                logger.warning("AI无法识别图片内容 response_length=%s", len(content))
-                return {
-                    "success": False,
-                    "error": "图片中未识别到食物，请确保图片清晰且包含食物内容",
-                    "foods": [],
-                }
-
             # 使用改进的JSON提取函数
             json_content = extract_json_from_text(content)
             logger.info("已提取识别JSON json_length=%s", len(json_content))
@@ -611,25 +619,13 @@ class FoodRecognitionService:
                     len(content),
                 )
 
-                # 检查是否是拒绝识别的情况
-                if any(keyword in content.lower() for keyword in refuse_keywords):
-                    return {
-                        "success": False,
-                        "error": "图片中未识别到食物，请重新拍照或选择包含食物的图片",
-                        "foods": [],
-                    }
                 return {
                     "success": False,
                     "error": "AI响应格式错误，请重试",
                     "foods": [],
                 }
 
-            result["success"] = True
-
-            # 验证返回的数据结构
-            if "foods" not in result:
-                result["foods"] = []
-            result = sanitize_food_recognition_result(result)
+            result = _sanitize_vision_payload(result)
 
             foods_count = len(result.get('foods', []))
             logger.info(f"食物识别完成: success={result.get('success')} foods={foods_count}")
@@ -713,8 +709,7 @@ class FoodRecognitionService:
 
             try:
                 result = json.loads(json_content)
-                result["success"] = True
-                return sanitize_food_recognition_result(result)
+                return _sanitize_vision_payload(result)
             except json.JSONDecodeError as e:
                 logger.error(
                     "URL食物识别JSON解析失败 line=%s column=%s response_length=%s",

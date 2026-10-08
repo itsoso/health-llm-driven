@@ -14,6 +14,47 @@ from app.services.ai.food_recognition import (
 from app.config import Settings
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["recognize_food_from_base64", "recognize_food_from_url"])
+async def test_valid_food_json_is_not_rejected_by_refusal_words_in_notes(method):
+    class Provider:
+        async def chat_with_vision(self, **kwargs):
+            return json.dumps({"foods": [{"name": "米饭", "quantity": "约1碗"}],
+                               "health_tips": "配菜看不清，无法识别的部分不作估算。"}, ensure_ascii=False)
+    service = FoodRecognitionService()
+    service._provider = Provider()
+    result = await getattr(service, method)("synthetic-image")
+    assert result["success"] is True
+    assert [item["name"] for item in result["foods"]] == ["米饭"]
+
+
+def test_no_food_classification_survives_repeated_sanitization():
+    first = sanitize_food_recognition_result({"foods": []})
+    assert first.get("error_code") == "no_recordable_food"
+    assert sanitize_food_recognition_result(first) == first
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", ["", "抱歉，看不清这张图片", "{}", "[]", '{"foods":null}', '{"foods":[null]}'])
+async def test_invalid_vision_contract_is_not_no_food(response):
+    class Provider:
+        async def chat_with_vision(self, **kwargs):
+            return response
+    service = FoodRecognitionService()
+    service._provider = Provider()
+    result = sanitize_food_recognition_result(await service.recognize_food_from_base64("synthetic-image"))
+    assert result["success"] is False
+    assert result.get("error_code") != "no_recordable_food"
+    assert "未识别到" not in result["error"]
+
+
+def test_timeout_cannot_claim_no_food_via_untrusted_code():
+    result = sanitize_food_recognition_result({"success": False, "foods": [],
+        "error": "识别超时，请重试", "error_code": "no_recordable_food"})
+    assert result.get("error_code") != "no_recordable_food"
+    assert result["error"] == "识别超时，请重试"
+
+
 def test_default_vision_model_uses_current_fast_food_recognition_model():
     assert Settings.model_fields["llm_vision_model"].default == "qwen3-vl-flash"
 

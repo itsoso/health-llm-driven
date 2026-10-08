@@ -118,6 +118,119 @@ def _food_photo_executor(db, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("results,status", [
+    ([{"success": True, "foods": []}], "waiting_for_user"),
+    ([{"success": False, "foods": [], "error": "识别超时，请重试"}], "failed"),
+    ([{"success": True, "foods": []},
+      {"success": False, "foods": [], "error": "识别超时，请重试"}], "failed"),
+])
+async def test_unusable_meal_photo_preserves_precise_terminal_and_replays_once(
+    db, tmp_path, monkeypatch, results, status,
+):
+    from app.models.agent_conversation import AgentMessage
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognition = AsyncMock(side_effect=results)
+    monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64", recognition)
+    llm = AsyncMock(return_value={"content": "请补充食物名称和份量。", "finish_reason": "stop"})
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(executor, "_call_llm", llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(llm))
+    images = [{"base64": VALID_PNG_BASE64, "type": "png"}]
+    if len(results) > 1:
+        images.append({"base64": _png_base64((30, 40, 50)), "type": "png"})
+    kwargs = dict(user_id=user.id, message="记录这餐", user_auth_token="test-token",
+                  images=images, client_turn_id="unusable-meal-photo")
+    events = [event async for event in executor.run_stream(**kwargs)]
+    done = next(event["data"] for event in events if event.get("event") == "done")
+    text = "".join(event["data"].get("content", "") for event in events if event.get("event") == "token")
+    saved = db.get(AgentMessage, done["message_id"])
+    assert done["turn_outcome"]["status"] == status
+    assert done["completion_status"] == ("complete" if status == "waiting_for_user" else "error")
+    assert "尚未保存" in text and "这轮没有完成记录动作" not in text
+    assert text == saved.content
+    assert saved.meta["turn_outcome"] == done["turn_outcome"]
+    assert sum(event.get("event") == "request_persisted" for event in events) == 1
+    assert done["perf"]["pre_llm_stages"]["vision_ms"] >= 0
+    assert done["perf"]["action_type"] == "diet_photo"
+    assert not done.get("write_receipts") and not done.get("cards")
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
+    assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).count() == 0
+    llm.assert_not_awaited()
+    if status == "waiting_for_user":
+        replay = [event async for event in executor.run_stream(**kwargs)]
+        replay_done = next(event["data"] for event in replay if event.get("event") == "done")
+        assert replay_done["message_id"] == done["message_id"]
+    else:
+        # Failed turns retain the established retry path; do not freeze service
+        # failures into non-retryable clarification completions.
+        assert done["turn_outcome"]["retryable"] is True
+    assert recognition.await_count == len(results)
+    assert db.query(AgentMessage).filter(AgentMessage.conversation_id == done["conversation_id"], AgentMessage.role == "assistant").count() == 1
+    if status == "waiting_for_user":
+        recognition.side_effect = None
+        recognition.return_value = _food_result()
+        llm.return_value = {"content": "已记录这餐。", "finish_reason": "stop"}
+        following = [event async for event in executor.run_stream(**{
+            **kwargs, "client_turn_id": "next-valid-meal-photo",
+            "conversation_id": done["conversation_id"],
+        })]
+        following_done = next(event["data"] for event in following if event.get("event") == "done")
+        assert following_done["turn_outcome"]["status"] == "complete"
+        assert len(following_done["write_receipts"]) == 1
+        assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 1
+
+
+def test_no_food_error_aggregation_does_not_hide_a_timeout():
+    assert not AgentExecutor._food_recognition_found_no_food([
+        "图片中未识别到可记录的食物，请重新拍摄餐食本身。", "识别超时，请重试",
+    ])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message,eligible", [
+    ("记录这餐", True), ("请帮我记录晚餐", True),
+    ("记录这餐，米饭一碗", False), ("记录这餐并记录饮水200ml", False),
+    ("不要记录这餐", False), ("分析这餐", False), ("这是妈妈的晚餐", False),
+    ("他说：记录这餐", False), ("记录这餐\n引用：记录体重60kg", False),
+    ("明天记录晚餐", False), ("记录晚餐 吃了一半", False),
+])
+async def test_unusable_photo_terminal_has_closed_original_input_scope(
+    db, tmp_path, monkeypatch, message, eligible,
+):
+    from app.services.ai.food_recognition import food_recognition_service
+    executor, _ = _food_photo_executor(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64",
+                        AsyncMock(return_value={"foods": []}))
+    images = [{"base64": VALID_PNG_BASE64, "type": "png"}]
+    await executor._analyze_food_images_with_structured_vision(message, images)
+    assert (executor._unusable_food_photo_terminal(message, images) is not None) is eligible
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["user", "source", "image", "receipt", "pending", "blocked", "read_only"])
+async def test_unusable_photo_terminal_cannot_reuse_stale_or_written_evidence(
+    db, tmp_path, monkeypatch, changed,
+):
+    from app.services.ai.food_recognition import food_recognition_service
+    executor, _ = _food_photo_executor(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64",
+                        AsyncMock(return_value={"foods": []}))
+    images = [{"base64": VALID_PNG_BASE64, "type": "png"}]
+    await executor._analyze_food_images_with_structured_vision("记录这餐", images)
+    if changed == "user": executor._current_user_id += 1
+    elif changed == "source": executor._current_turn_source_message_id += 1
+    elif changed == "image": images = [{"base64": _png_base64((1, 2, 3)), "type": "png"}]
+    elif changed == "receipt": executor._turn_contextual_diet_receipts = [{"verified": True}]
+    elif changed == "pending": executor._agent_kernel_pending_confirmation_tools = ["health_record"]
+    elif changed == "blocked": executor._turn_contextual_diet_write_blocked_reason = "capture_failed"
+    else: executor._read_only_turn = True
+    assert executor._unusable_food_photo_terminal("记录这餐", images) is None
+
+
+@pytest.mark.asyncio
 async def test_image_nutrition_label_rejected_model_write_preserves_saved_receipt(
     db, tmp_path, monkeypatch
 ):

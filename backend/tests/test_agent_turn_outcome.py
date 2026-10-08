@@ -1,4 +1,35 @@
+import pytest
+
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
+
+
+@pytest.mark.parametrize("facts,expected", [
+    ({}, "clarification_required"),
+    ({"completion_status": "error"}, "execution_error"),
+    ({"tool_failure_tools": ["health_record"]}, "tool_failed"),
+    ({"capability_block_reasons": ["scope_denied"]}, "tool_blocked"),
+    ({"write_reconciliation_required": True}, "write_reconciliation_required"),
+    ({"runtime_control_unavailable": True}, "service_unavailable"),
+    ({"medical_boundary_flags": ["missing_evidence"]}, "medical_evidence_required"),
+    ({"output_quality_flags": ["protocol_leak"]}, "invalid_answer"),
+    ({"write_receipts": [{"verified": True}]}, "success"),
+    ({"pending_confirmation_tools": ["health_record"]}, "confirmation_required"),
+    ({"record_intent_no_tool": True}, "action_not_executed"),
+])
+def test_photo_input_clarification_never_overrides_execution_facts(facts, expected):
+    result = classify_agent_turn_outcome(**{
+        "completion_status": "complete", "final_text": "尚未保存，请补充食物名称和份量。",
+        "input_clarification_reason": "meal_photo_details_required", **facts,
+    })
+    assert result["category"] == expected
+
+
+def test_unknown_clarification_code_cannot_change_outcome():
+    result = classify_agent_turn_outcome(
+        completion_status="complete", final_text="完成回答。",
+        input_clarification_reason="caller_claimed_clarification",
+    )
+    assert result["status"] == "complete"
 
 
 def test_success_outcome_is_explicit_when_a_write_receipt_exists():

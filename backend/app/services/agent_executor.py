@@ -12133,6 +12133,7 @@ class AgentExecutor:
         self._turn_contextual_diet_record_id: Optional[int] = None
         self._turn_contextual_diet_consumed_fraction: Optional[float] = None
         self._turn_contextual_diet_write_blocked_reason: Optional[str] = None
+        self._turn_food_photo_recognition: dict[str, Any] | None = None
         self._turn_pending_write_intent_ids: list[int] = []
         self._turn_pending_write_intent_kinds: list[str] = []
         self._turn_medication_tool_intent_id: Optional[int] = None
@@ -16523,6 +16524,7 @@ class AgentExecutor:
         self._turn_contextual_diet_record_id = None
         self._turn_contextual_diet_consumed_fraction = None
         self._turn_contextual_diet_write_blocked_reason = None
+        self._turn_food_photo_recognition = None
         self._ensure_agent_kernel_turn(channel=channel)
         clinician_turn_decision = classify_clinician_turn(message or "")
         # Backend-owned health evidence runtime. Clinical semantics are compiled
@@ -17844,6 +17846,7 @@ class AgentExecutor:
         goal_allowed_record_ids: set[str] = set()
         runtime_control_terminal = False
         deterministic_diet_correction_terminal = False
+        food_photo_terminal_reason = None
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
@@ -18788,7 +18791,29 @@ class AgentExecutor:
                 # No model planning or repeated weather fetch is needed.
                 tools = []
 
-            if public_weather_terminal is not None:
+            if (not file_base64 and not health_advice_buffered
+                    and retry_recovery is None and pending_choice_resolution is None
+                    and not write_receipts and not unverified_write_operations
+                    and not failed_write_operations and not pending_pi_writes
+                    and not runtime_control_terminal):
+                food_photo_terminal_reason = self._unusable_food_photo_terminal(message, images or [])
+
+            if food_photo_terminal_reason is not None:
+                if food_photo_terminal_reason == "meal_photo_details_required":
+                    full_reply = (
+                        "这张照片里未能确认可记录的食物和份量，尚未保存这餐。"
+                        "请补充吃了什么、吃了多少，或发送能看清餐食的照片。"
+                        "如果照片只有餐后残留，无法据此还原整餐。"
+                    )
+                    final_finish_reason = "stop"
+                else:
+                    full_reply = (
+                        "餐食图片识别暂时未能完成，尚未保存这餐。"
+                        "请稍后重试，或直接写明食物名称和份量。"
+                    )
+                    final_finish_reason = "error"
+                decision_route = food_photo_terminal_reason
+            elif public_weather_terminal is not None:
                 full_reply = public_weather_terminal
                 final_finish_reason = "stop"
             elif (
@@ -19615,6 +19640,7 @@ class AgentExecutor:
             and not runtime_control_terminal
             and not known_supplement_rejection
             and not deterministic_diet_correction_terminal
+            and food_photo_terminal_reason is None
             and not any(
                 reason == "supplement_dosage_requires_clarification"
                 for reason in self._agent_kernel_capability_block_reasons
@@ -20197,6 +20223,10 @@ class AgentExecutor:
             action_outcomes=action_outcomes,
             output_quality_flags=output_quality.flags,
             medical_boundary_flags=medical_boundary.violations,
+            input_clarification_reason=(
+                food_photo_terminal_reason
+                if food_photo_terminal_reason == "meal_photo_details_required" else None
+            ),
         )
         kernel_snapshot = self._agent_kernel_snapshot
         health_write_requested = bool(
@@ -23732,6 +23762,7 @@ class AgentExecutor:
 
     async def _analyze_food_images_with_structured_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """Prefer strict food-recognition JSON over free-form vision prose for diet photos."""
+        self._turn_food_photo_recognition = None
         if not images:
             return None
         if len(images) > 3:
@@ -23799,7 +23830,7 @@ class AgentExecutor:
                     errors.append(error)
                     image_classifications[image_index] = (
                         "non_food"
-                        if self._food_recognition_found_no_food([error])
+                        if result.get("error_code") == "no_recordable_food"
                         else "unknown"
                     )
             if recognized_results:
@@ -23824,6 +23855,18 @@ class AgentExecutor:
                     merged_result,
                     contextual_capture=capture,
                 )
+            if (unique_image_indexes and len(image_classifications) == len(unique_image_indexes)
+                    and all(value in {"non_food", "unknown"} for value in image_classifications.values())):
+                self._turn_food_photo_recognition = {
+                    "user_id": self._current_user_id,
+                    "source_message_id": self._current_turn_source_message_id,
+                    "images": self._food_photo_image_signature(images),
+                    "reason": (
+                        "meal_photo_details_required"
+                        if all(value == "non_food" for value in image_classifications.values())
+                        else "meal_photo_recognition_failed"
+                    ),
+                }
             if errors and self._looks_like_food_photo_context(user_message):
                 if not self._food_recognition_found_no_food(errors):
                     if any("实际食用重量" in error for error in errors):
@@ -23847,8 +23890,39 @@ class AgentExecutor:
 
     @staticmethod
     def _food_recognition_found_no_food(errors: List[str]) -> bool:
-        joined = " ".join(errors)
-        return bool(re.search(r"未识别到(?:可记录的)?食物|重新拍摄餐食|不是食物|not food", joined, re.I))
+        return bool(errors) and all(
+            re.search(r"未识别到(?:可记录的)?食物|重新拍摄餐食|不是食物|not food", error, re.I)
+            for error in errors
+        )
+
+    @staticmethod
+    def _food_photo_image_signature(images: List[dict]) -> tuple[tuple[str, str], ...]:
+        return tuple((str(image.get("type", "jpeg")), hashlib.sha256(
+            str(image.get("base64") or "").encode("utf-8"),
+        ).hexdigest()) for image in images)
+
+    def _unusable_food_photo_terminal(self, message: str, images: List[dict]) -> str | None:
+        """A current owned photo result can explain missing input, never grant a write."""
+        from app.services.utterance_intent_classifier import is_explicit_order_intake
+
+        result = self._turn_food_photo_recognition
+        if (not result or not 1 <= len(images) <= 3 or self._read_only_turn
+                or not self._current_user_id or not self._current_turn_source_message_id
+                or len(self._current_turn_image_urls) != len(images)
+                or result.get("user_id") != self._current_user_id
+                or result.get("source_message_id") != self._current_turn_source_message_id
+                or result.get("images") != self._food_photo_image_signature(images)
+                or self._turn_contextual_diet_receipts or self._turn_attachment_write_receipts
+                or self._turn_contextual_diet_cards or self._turn_contextual_diet_write_blocked_reason
+                or self._agent_kernel_pending_confirmation_tools
+                or self._agent_kernel_capability_block_reasons or self._agent_kernel_tool_failure_tools):
+            return None
+        intent = classify_agent_utterance(message, reference_now=self._agent_kernel_reference_now())
+        # Do not let provenance/quote normalization erase another task or subject.
+        if intent.normalized != "".join(message.split()).lower() or not is_explicit_order_intake(intent):
+            return None
+        reason = result.get("reason")
+        return reason if reason in {"meal_photo_details_required", "meal_photo_recognition_failed"} else None
 
     def _capture_contextual_meal_photo(
         self,
