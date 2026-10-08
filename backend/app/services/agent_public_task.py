@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime
 from typing import Literal
 
 PublicTask = Literal["weather", "introduction"]
@@ -20,7 +21,7 @@ def public_task_prompt(task: PublicTask) -> str:
             "先用 environment_check 获取天气；当前时间以系统本轮时间为准。"
             "仅按用户明确指定的城市传 city；未指定时不传，由服务端解析用户设置的位置。"
             "没有位置时只请用户提供城市；获取失败如实说明，绝不编造天气或默认城市。"
-            "只概括工具核实的地点、观测/预报时间、天气和温度。天气预报不是当前实况。空气质量工具仅返回当前观测，必须标注观测时间；不能称为明天或后天空气质量预报。未来空气质量未提供时明确说明暂无预报，不从天气推测AQI。"
+            "只概括工具核实的地点、观测/预报时间、天气和温度。天气预报不是当前实况。空气质量工具仅返回当前观测；来源给出有效观测时间时按原精度标注，时间未知时明确说明来源未提供有效观测时间，不能用本轮系统时间替代；不能称为明天或后天空气质量预报。未来空气质量未提供时明确说明暂无预报，不从天气推测AQI。"
         )
     return common + (
         "简短介绍：可以协助整理和查询本人的健康记录、解读已有资料并跟进健康计划。"
@@ -119,9 +120,30 @@ def public_weather_payload(payload: object, check_type: str) -> dict:
             "message": "天气查询暂时未完成，请稍后重试。",
         }
     if check_type == "air_quality":
+        # QWeather v1 metadata.tag is an opaque cache tag, despite the legacy
+        # adapter exposing it as update_time. Never turn it into a timestamp.
+        times = {}
+        for key in ("update_time", "obsTime"):
+            value = data.get(key)
+            if not isinstance(value, str) or not re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}(?:[T ][0-9:.+Z-]+)?", value
+            ):
+                continue
+            try:
+                datetime.fromisoformat(value)
+            except ValueError:
+                continue
+            times[key] = value
         return {
-            "air_quality": data,
+            # Public observations only. Provider health/exercise advice belongs
+            # to the health lane with its normal evidence and safety context.
+            "air_quality": {**{key: data[key] for key in (
+                "available", "source", "city", "station",
+                "aqi", "aqi_level", "aqi_description", "category", "primary_pollutant",
+                "pm25", "pm10", "o3", "no2", "so2", "co",
+            ) if key in data}, **times},
             "observation_scope": "current_air_quality_not_forecast",
+            "observation_time_status": "reported" if times else "unavailable",
         }
     # Weather-derived exercise advice is outside this standalone public task.
     return {"weather": data} if check_type == "weather" else data

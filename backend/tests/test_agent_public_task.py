@@ -156,3 +156,33 @@ def test_air_quality_payload_explicitly_labels_current_observation():
     result = public_weather_payload({'available': True, 'aqi': 23}, 'air_quality')
     assert result['observation_scope'] == 'current_air_quality_not_forecast'
     assert result['air_quality']['aqi'] == 23
+
+
+def test_public_air_quality_retains_observations_without_health_advice():
+    from app.services.agent_public_task import public_weather_payload
+    facts = {'available': True, 'source': 'qweather-v1', 'city': '杭州',
+             'station': 'synthetic', 'aqi': 51, 'aqi_level': 2,
+             'aqi_description': '良', 'primary_pollutant': 'PM2.5',
+             'pm25': 12, 'pm10': 20, 'o3': 30, 'no2': 4, 'so2': 5, 'co': 0.4,
+             'update_time': '2026-10-08T19:00:00+08:00'}
+    raw = {**facts, **{key: 'OUT_OF_SCOPE_HEALTH_ADVICE_SENTINEL' for key in (
+        'advice_general', 'advice_sensitive', 'exercise_advice', 'health_effect',
+        'health_implications', 'future_unknown_advice')}}
+    assert public_weather_payload(raw, 'air_quality')['air_quality'] == facts
+    assert raw['exercise_advice'] == 'OUT_OF_SCOPE_HEALTH_ADVICE_SENTINEL'
+
+
+@pytest.mark.parametrize('timestamp', ['opaque-cache-tag', '2026-02-30T10:00:00+08:00', '', None])
+def test_public_aqi_does_not_present_provider_tag_as_observation_time(timestamp):
+    from app.services.agent_public_task import public_weather_payload
+    result = public_weather_payload({'available': True, 'aqi': 51, 'update_time': timestamp}, 'air_quality')
+    assert 'update_time' not in result['air_quality']
+    assert result['observation_time_status'] == 'unavailable'
+
+
+@pytest.mark.parametrize('key,value', [('update_time', '2026-10-08T19:00:00+08:00'), ('obsTime', '2026-10-08T10:00Z'), ('update_time', '2026-10-08 19:00:00'), ('update_time', '2026-10-08')])
+def test_public_aqi_preserves_valid_source_time_without_inventing_precision(key, value):
+    from app.services.agent_public_task import public_weather_payload
+    result = public_weather_payload({'available': True, 'aqi': 51, key: value}, 'air_quality')
+    assert result['air_quality'][key] == value
+    assert result['observation_time_status'] == 'reported'

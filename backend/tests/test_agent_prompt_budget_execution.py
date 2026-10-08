@@ -156,7 +156,9 @@ async def test_public_turn_uses_compact_provider_payload(
         if check_type == "forecast":
             return {"available": True, "forecasts": [{"date": "2026-10-09", "tempMax": "22"}]}
         if check_type == "air_quality":
-            return {"available": True, "aqi": 23, "obsTime": "2026-10-08T10:00+08:00"}
+            return {"available": True, "aqi": 23, "obsTime": "2026-10-08T10:00+08:00",
+                    "advice_sensitive": "OUT_OF_SCOPE_HEALTH_ADVICE_SENTINEL",
+                    "exercise_advice": "OUT_OF_SCOPE_HEALTH_ADVICE_SENTINEL"}
         return {
             "weather": {
                 "available": True,
@@ -183,6 +185,7 @@ async def test_public_turn_uses_compact_provider_payload(
         assert not call.get("tools")  # Public weather reads before a single synthesis.
         payload = json.dumps(call["messages"], ensure_ascii=False)
         assert "OLD_PRIVATE_HEALTH_SENTINEL" not in payload
+        assert "OUT_OF_SCOPE_HEALTH_ADVICE_SENTINEL" not in payload
         assert len(payload) < 2500
     assert len(provider.calls) == 1
     expected_reads = (
