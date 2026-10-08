@@ -154,7 +154,7 @@ def test_compound_weather_does_not_admit_unrelated_clauses(suffix):
 def test_air_quality_payload_explicitly_labels_current_observation():
     from app.services.agent_public_task import public_weather_payload
     result = public_weather_payload({'available': True, 'aqi': 23}, 'air_quality')
-    assert result['observation_scope'] == 'current_air_quality_not_forecast'
+    assert result['observation_scope'] == 'air_quality_observation_not_forecast'
     assert result['air_quality']['aqi'] == 23
 
 
@@ -186,3 +186,10 @@ def test_public_aqi_preserves_valid_source_time_without_inventing_precision(key,
     result = public_weather_payload({'available': True, 'aqi': 51, key: value}, 'air_quality')
     assert result['air_quality'][key] == value
     assert result['observation_time_status'] == 'reported'
+
+
+def test_public_weather_prompt_does_not_assert_air_quality_freshness():
+    from app.services.agent_public_task import public_task_prompt
+    prompt = public_task_prompt('weather')
+    assert '无法确认观测时点' in prompt
+    assert '不得称空气质量为实时、最新、今天、此刻或当前' in prompt

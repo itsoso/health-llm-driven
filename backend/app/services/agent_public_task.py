@@ -21,7 +21,7 @@ def public_task_prompt(task: PublicTask) -> str:
             "先用 environment_check 获取天气；当前时间以系统本轮时间为准。"
             "仅按用户明确指定的城市传 city；未指定时不传，由服务端解析用户设置的位置。"
             "没有位置时只请用户提供城市；获取失败如实说明，绝不编造天气或默认城市。"
-            "只概括工具核实的地点、观测/预报时间、天气和温度。天气预报不是当前实况。空气质量工具仅返回当前观测；来源给出有效观测时间时按原精度标注，时间未知时明确说明来源未提供有效观测时间，不能用本轮系统时间替代；不能称为明天或后天空气质量预报。未来空气质量未提供时明确说明暂无预报，不从天气推测AQI。"
+            "只概括工具核实的地点、观测/预报时间、天气和温度。天气预报不是当前实况。空气质量工具返回的是观测值；来源给出有效观测时间时按原精度标注，不能据此推断实时性。时间未知时明确说明来源未提供有效观测时间、无法确认观测时点；不得称空气质量为实时、最新、今天、此刻或当前，也不能用本轮系统时间替代；不能称为明天或后天空气质量预报。未来空气质量未提供时明确说明暂无预报，不从天气推测AQI。"
         )
     return common + (
         "简短介绍：可以协助整理和查询本人的健康记录、解读已有资料并跟进健康计划。"
@@ -142,7 +142,7 @@ def public_weather_payload(payload: object, check_type: str) -> dict:
                 "aqi", "aqi_level", "aqi_description", "category", "primary_pollutant",
                 "pm25", "pm10", "o3", "no2", "so2", "co",
             ) if key in data}, **times},
-            "observation_scope": "current_air_quality_not_forecast",
+            "observation_scope": "air_quality_observation_not_forecast",
             "observation_time_status": "reported" if times else "unavailable",
         }
     # Weather-derived exercise advice is outside this standalone public task.

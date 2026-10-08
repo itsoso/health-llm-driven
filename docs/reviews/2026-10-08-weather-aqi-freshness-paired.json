@@ -1,0 +1,127 @@
+{
+  "source_hashes": {
+    "backend/app/services/agent_public_task.py": "dea2fa10106f05d44036931d37fb878107717cb27a7b7c6a84a8d45bae7f659b",
+    "backend/app/services/llm/error_messages.py": "c94bbf7a9fb6ac6541411be9cac8c60a5c7626ff05d6a69299abd57a31d7670d",
+    "backend/app/services/agent_executor.py": "57a80931653cb5941f2a946e5ce67437dcbe4c33aa9de12d530316f6efec8711",
+    "backend/app/services/health_read.py": "42a7c6ab9f3c5f6a706cc1ac32696680edc60180f7d5c77e5a79a19db35f7dd9",
+    "backend/app/services/agent_kernel/health_semantics.py": "2f25d247f7cc56d307bf8cdaecc63d9e5aa1da8393cc6247b67eeff4f1698640",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a"
+  },
+  "domain_prompt_optimization": true,
+  "synthetic_only": true,
+  "source_unchanged": true,
+  "api_calls": [
+    {
+      "model": "MiniMax-M2.5"
+    },
+    {
+      "model": "MiniMax-M2.5"
+    }
+  ],
+  "diagnostic_errors": [],
+  "sql_errors": [],
+  "cases": [
+    {
+      "prior_health_plan": false,
+      "synthetic_reply": "根据查询结果：\n\n**杭州明天（2026年10月9日）天气预报：**\n- 天气：多云\n- 温度：18°C ~ 24°C\n\n**空气质量：**\n- AQI：51（良）\n- 说明：该数据为观测值，来源仅标注更新日期为2026-10-08，未提供具体观测时间，无法确认是否为实时数据，暂无明天空气质量预报。",
+      "aqi_input_boundary": {
+        "advice_fields_absent": true,
+        "advice_sentinels_absent": true,
+        "aqi_observation_preserved": true,
+        "forecast_preserved": true,
+        "reply_sentinel_absent": true,
+        "opaque_tag_absent": true,
+        "invalid_time_marked_unavailable": true,
+        "invalid_time_honest_reply": true,
+        "invalid_time_no_freshness_claim": true
+      },
+      "oracle": {
+        "complete": true,
+        "tomorrow_forecast_requested": true,
+        "temperatures": true,
+        "aqi_time_honest": true,
+        "no_health_advice": true
+      },
+      "seconds": 6.06,
+      "completion": "complete",
+      "environment_reads": [
+        {
+          "type": "forecast",
+          "city": "杭州",
+          "days": 2
+        },
+        {
+          "type": "air_quality",
+          "city": "杭州",
+          "days": 3
+        }
+      ],
+      "usage": {
+        "calls": 1,
+        "prompt_tokens": 741,
+        "completion_tokens": 290,
+        "models": [
+          "MiniMax-M2.5"
+        ],
+        "failed_calls": 0
+      },
+      "api_usage_only": true
+    },
+    {
+      "prior_health_plan": true,
+      "synthetic_reply": "杭州明天（2026年10月9日）天气预报：\n\n- **天气**：多云\n- **温度**：18°C ~ 24°C\n\n**空气质量**：AQI 51，良（来源未提供有效观测时间，无法确认具体观测时点）",
+      "aqi_input_boundary": {
+        "advice_fields_absent": true,
+        "advice_sentinels_absent": true,
+        "aqi_observation_preserved": true,
+        "forecast_preserved": true,
+        "reply_sentinel_absent": true,
+        "opaque_tag_absent": true,
+        "invalid_time_marked_unavailable": true,
+        "invalid_time_honest_reply": true,
+        "invalid_time_no_freshness_claim": true
+      },
+      "oracle": {
+        "complete": true,
+        "tomorrow_forecast_requested": true,
+        "temperatures": true,
+        "aqi_time_honest": true,
+        "no_health_advice": true
+      },
+      "seconds": 4.99,
+      "completion": "complete",
+      "environment_reads": [
+        {
+          "type": "forecast",
+          "city": "杭州",
+          "days": 2
+        },
+        {
+          "type": "air_quality",
+          "city": "杭州",
+          "days": 3
+        }
+      ],
+      "usage": {
+        "calls": 1,
+        "prompt_tokens": 732,
+        "completion_tokens": 357,
+        "models": [
+          "MiniMax-M2.5"
+        ],
+        "failed_calls": 0
+      },
+      "api_usage_only": true
+    }
+  ],
+  "limits": [
+    "Two synthetic public cases, not production P95",
+    "Original production RuntimeError not reproduced or localized"
+  ],
+  "prior_candidate_semantic_failure": {
+    "evidence": "2026-10-08-weather-aqi-projection-live.json",
+    "case": "unknown observation time",
+    "verdict": "FAIL",
+    "reason": "Claimed realtime despite unknown observation time; retained original evidence."
+  }
+}

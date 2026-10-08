@@ -194,7 +194,7 @@ async def test_public_turn_uses_compact_provider_payload(
     )
     assert fetched == expected_reads
     if "空气质量" in query:
-        assert "current_air_quality_not_forecast" in payload
+        assert "air_quality_observation_not_forecast" in payload
         assert "不能称为明天或后天空气质量预报" in payload
     assert events[-1]["data"]["write_receipts"] == []
 
