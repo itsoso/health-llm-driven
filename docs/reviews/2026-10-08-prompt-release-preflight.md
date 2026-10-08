@@ -44,3 +44,13 @@
 获此窄范围授权后：推送受审候选并完成真实 CI；候选绿色后合并，确认 main 精确 SHA CI 全绿；核对发布锁/原回执/旧授权终态；通过 canonical bootstrap 轮换、Trusted validate/backend 及 Web 制品发布；验证 Linux sharp/librsvg、生产 SHA、服务健康与持久回执。任何失败保留原操作，不清锁或重复发布。Mobile OTA/原生包不在本次后端与 Web 发布范围。
 
 结构化摘要与本地日志摘要见 [预检证据](2026-10-08-prompt-release-preflight.json)。
+
+## 后续：PR 277 的真实 CI 修复
+
+用户要求先发布、再处理餐食图片识别与失败文案，继续推进修复推送。官方 SSH 连接失败后先确认远端未更新，再经同一仓库官方 HTTPS 成功推送，未改全局 Git 配置。已创建 [PR 277](https://github.com/itsoso/health-llm-driven/pull/277)；尚未合并或部署。
+
+首轮 CI `37726902417` 抓到 `multidict 6.7.1` 的 [CVE-2026-104874](https://github.com/aio-libs/multidict/security/advisories/GHSA-54p9-h82j-f925)，以及测试仍断言旧 Next/sharp 版本。固定修复 `305ca6777911a007a7733a1137ca5cb08ef5bbbf` 仅改变 lock 中 multidict 为 6.9.1（其余锁定版本不变）和三条版本断言；原安全测试未删除或豁免。三种集合操作引用计数无泄漏，50 项锁/版本合同、56 项 provider/usage/integration 测试通过。
+
+本地原 venv 与生产锁有版本差异，不能将此前本地测试称为锁定环境验收；现已用完整 hash 锁对齐，`verify_locked_requirements.py` 校验134包通过。普通本地 pip-audit 因 ensurepip 子进程 SIGABRT 失败，原错误保留；完整锁库存的 `--disable-pip --no-deps --require-hashes` 审计通过，CI 原审计命令保持不变，Linux 结果仍须等待新 CI。
+
+已在锁定环境重新执行标准真实模型闸：10 次 API、完整 API 用量、0 失败，固定305源码及 requirements.lock 共27份运行前后摘要不变；见[锁定环境真实验证](2026-10-08-release-locked-live-regression.json)。这仍不激活任何历史 NO-GO 候选，也不构成新的统计非劣证明。新精确 CI、main合并与Trusted发布尚待完成。

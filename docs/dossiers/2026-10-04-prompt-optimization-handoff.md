@@ -322,3 +322,9 @@ Flash 不改思考控制的真实路由六场景12任务契约通过，但独立
 新鲜 CI-mode 48 文件 **2468 passed / 2 skipped**，零失败；两项 SQLite skip 的 PostgreSQL 同源证据已在前轮保留。两端 npm ci/OSV 审计通过；Mobile tsc 与聊天头部6项通过；Web 447 passed / 1 skipped、build、lint通过（37 warnings）。Mobile 三次审计网络失败如实保留，第四次原闸完整通过。macOS sharp 实际 rsvg2.63.2，仍需最终 Linux 产物证据。System Map/秘密检查通过。
 
 生产仍为 a10e642c，服务健康；只读核对预算0、staged off、parallel section thinking off，预规划未配置且候选默认false。AGENTS 第7节要求主干非绿停止外部写入，因此本轮尚未push、merge、部署或更新CI变量；需要明确允许推送受审修复以恢复CI，再等待精确主干全绿后按Trusted流程发布后端与Web。完整断点、修复版本、限制和下一步见[发布预检](../reviews/2026-10-08-prompt-release-preflight.md)及[结构化证据](../reviews/2026-10-08-prompt-release-preflight.json)。
+
+### PR 277 真实 CI 与锁定环境补验
+
+用户接续要求“发布之后解决”餐食图片识别和报错文案，按先发布再修复顺序继续。候选773经官方HTTPS推送到接续分支并创建PR277，原SSH连接失败与远端未更新检查保留。CI37726902417暴露multidict新漏洞和旧Next/sharp版本断言；已修为305ca6777，仅升级multidict锁块至6.9.1及更新三条期望版本。
+
+本地发现venv版本漂移后已对齐134包完整生产锁；50项锁/版本测试、56项传输/API测试通过，完整库存漏洞审计通过（本地默认audit的ensurepip SIGABRT失败单独保留，未改CI命令）。锁定环境标准live重新运行10次真实API，0失败、用量完整、27份源码/锁摘要不变。证据与限制见[发布预检续节](../reviews/2026-10-08-prompt-release-preflight.md)及[锁定环境真实闸](../reviews/2026-10-08-release-locked-live-regression.json)。尚未main合并或部署；截图问题将在本批发布后接续，不能把泛化失败文案当作已定位根因。
