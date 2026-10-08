@@ -1,0 +1,9 @@
+{
+  "status": "failed",
+  "source_commit": "2a9650fa35fd354a8c55b90f34fba750758a7836",
+  "terminal": "waiting_for_user",
+  "failed_check": "explicit_not_saved_text_or_stream_equals_persisted",
+  "provider_calls": 1,
+  "scope": "Actual vision, screenshot thumbnail, isolated consented user",
+  "limitations": "Probe asserted before writing metadata. Need bounded diagnostic to distinguish no-food vs low-confidence clarification."
+}

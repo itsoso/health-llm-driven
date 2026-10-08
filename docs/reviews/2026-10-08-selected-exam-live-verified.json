@@ -1,0 +1,197 @@
+{
+  "schema_version": "selected-exam-live-acceptance.v1",
+  "synthetic_data_only": true,
+  "attempts": 1,
+  "harness_prior_failures": [
+    "selected-exam-live-acceptance.json",
+    "selected-exam-live-diagnostic.json"
+  ],
+  "harness_correction": "generated ephemeral HMAC secret before importing settings; no production secret used",
+  "request_timeout_seconds": 180,
+  "model_round_budget": 6,
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "ebb0c1ca5b66a5dcaafd4ec0c0d44a3dbaa0b889322f416bdf754d5bce5a63e8",
+    "backend/app/services/health_read.py": "42a7c6ab9f3c5f6a706cc1ac32696680edc60180f7d5c77e5a79a19db35f7dd9",
+    "backend/app/services/agent_kernel/health_semantics.py": "2f25d247f7cc56d307bf8cdaecc63d9e5aa1da8393cc6247b67eeff4f1698640",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a"
+  },
+  "source_commit": "fad79b9e111e6cee20dd2594f22a22dceae579e6",
+  "latency_seconds": 71.92,
+  "checks": {
+    "terminal_done": true,
+    "persisted_assistant": true,
+    "outcome_complete": false,
+    "selected_report_reached_model": true,
+    "real_read_dispatched": true,
+    "only_read_tools": false,
+    "other_report_absent": true,
+    "foreign_report_absent": true,
+    "client_payload_absent": true,
+    "no_unscoped_twin": true,
+    "no_sql_errors": true,
+    "report_records_unchanged": true,
+    "no_write_receipts": true,
+    "discusses_selected_abnormality": true,
+    "action_horizon_addressed": true,
+    "no_permission_denial": true
+  },
+  "diagnostic_errors": [],
+  "sql_errors": [],
+  "model_rounds": 4,
+  "dispatched_tools": [
+    "health_query",
+    "query_lab_indicators",
+    "knowledge_search"
+  ],
+  "reply_sha256": "1c3a3cf05c41b6408c0ae4f9133262e084ee981d175a20450fa34642126a272d",
+  "reply_characters": 1228,
+  "turn_outcome": {
+    "status": "blocked",
+    "category": "tool_blocked",
+    "reason_code": "selected_report_scope_required",
+    "retryable": false,
+    "dispatch_started": false,
+    "verified_receipt_count": 0,
+    "actions": [],
+    "refusal_detected": false,
+    "capability_block_count": 1,
+    "tool_failure_count": 0,
+    "confirmation_required": false
+  },
+  "unscoped_twin_calls": 0,
+  "usage_audit": {
+    "recorded_calls": 4,
+    "rows": [
+      {
+        "provider": "tokenplan",
+        "model": "qwen3.8-max",
+        "prompt_tokens": 11385,
+        "completion_tokens": 495,
+        "cached_tokens": 10240,
+        "token_source": "api",
+        "latency_ms": 13331,
+        "success": 1,
+        "error_type": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "qwen3.8-max",
+        "prompt_tokens": 11735,
+        "completion_tokens": 268,
+        "cached_tokens": 11264,
+        "token_source": "api",
+        "latency_ms": 6219,
+        "success": 1,
+        "error_type": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "qwen3.8-max",
+        "prompt_tokens": 12241,
+        "completion_tokens": 199,
+        "cached_tokens": 11264,
+        "token_source": "api",
+        "latency_ms": 6853,
+        "success": 1,
+        "error_type": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "qwen3.8-max",
+        "prompt_tokens": 5679,
+        "completion_tokens": 1646,
+        "cached_tokens": 0,
+        "token_source": "api",
+        "latency_ms": 42937,
+        "success": 1,
+        "error_type": null
+      }
+    ],
+    "all_api_usage": true
+  },
+  "source_unchanged": true,
+  "status": "failed",
+  "evaluation_role": "pre_history_scope_diagnostic",
+  "finding": "Selected report data isolated, but unnecessary model read proposal caused selected_report_scope_required terminal block. Public knowledge_search also excluded by original narrow tool-name oracle; terminal failure remains independent.",
+  "provider_event_summary": [
+    {
+      "type": "reasoning",
+      "finish_reason": null,
+      "count": 438
+    },
+    {
+      "type": "content",
+      "finish_reason": null,
+      "count": 219
+    },
+    {
+      "type": "tool_calls",
+      "finish_reason": null,
+      "count": 3
+    },
+    {
+      "type": "finish",
+      "finish_reason": "tool_calls",
+      "count": 3
+    },
+    {
+      "type": "finish",
+      "finish_reason": "stop",
+      "count": 1
+    }
+  ],
+  "provider_tool_proposals": [
+    [
+      {
+        "name": "health_query",
+        "arg_keys": [
+          "dimension"
+        ]
+      },
+      {
+        "name": "health_query",
+        "arg_keys": [
+          "dimension",
+          "uploaded_days"
+        ]
+      }
+    ],
+    [
+      {
+        "name": "query_lab_indicators",
+        "arg_keys": [
+          "names",
+          "since"
+        ]
+      },
+      {
+        "name": "knowledge_search",
+        "arg_keys": [
+          "query"
+        ]
+      },
+      {
+        "name": "health_query",
+        "arg_keys": [
+          "dimension",
+          "days"
+        ]
+      }
+    ],
+    [
+      {
+        "name": "health_query_batch",
+        "arg_keys": [
+          "queries"
+        ]
+      },
+      {
+        "name": "health_query",
+        "arg_keys": [
+          "dimension",
+          "indicator"
+        ]
+      }
+    ]
+  ]
+}

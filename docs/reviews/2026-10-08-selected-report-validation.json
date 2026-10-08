@@ -1,0 +1,93 @@
+{
+  "status": "G3_G4_GO_pending_exact_main_CI_backend_OTA",
+  "source_commit": "2a9650fa35fd354a8c55b90f34fba750758a7836",
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "9abbbf7ca9f60696bb49519473a21cc5e6427ede5467c98c5c0e90ea0841f77f",
+    "backend/app/services/agent_kernel/health_semantics.py": "2f25d247f7cc56d307bf8cdaecc63d9e5aa1da8393cc6247b67eeff4f1698640",
+    "backend/app/services/health_read.py": "42a7c6ab9f3c5f6a706cc1ac32696680edc60180f7d5c77e5a79a19db35f7dd9",
+    "backend/tests/test_agent_kernel_capability_policy.py": "4eb9cf3a6d86a20d08bd648633c25c2f51f54b55148339d62168d18259dae32c",
+    "backend/tests/test_agent_selected_exam_context.py": "ab93c26716419938814156efdd495c74ba7558c2afd86bc395a564eec0e37658",
+    "mobile/app/(tabs)/__tests__/chat.test.tsx": "24943e0b600f25f9c04121df3bbde3b742de191aa3970745e5be43898d917409",
+    "mobile/app/(tabs)/chat.tsx": "06cbfdcc6a59c472747c0fe94c828bd6f62a23acb745061725907b16727ef2b2",
+    "mobile/hooks/__tests__/useChatEngine.test.ts": "ecc3fc14d2aa11c3e96f2614d63c16077493b9d550f6fdf890ddaff9e4e08310",
+    "mobile/hooks/useChatEngine.ts": "69d45ba9986ed2e0899e374a317544baf92e276edb97b940f9f2ef239adafd8b"
+  },
+  "tests": {
+    "reva-1008-exam-postgres": {
+      "tests": 375,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "54a8e229c843f87574079a65602f43820c422bbab6730dffcf2403e8b20341f5"
+    },
+    "reva-1008-exam-release-postgres": {
+      "tests": 26,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "cce9f111e62ed8a1503263605a6b2e9ba563523eaca3b374f43a40bdf8529783"
+    },
+    "reva-1008-exam-release-ci-integration": {
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "029151c25c4d96d6b0c88399745e7ac0992cfa8d133baeba64ac18f528dcb5fe"
+    },
+    "reva-1008-meal-final-contract": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "56eb8c3f220cbacca2dcb11eecd95cc3f06cb5f07b217a06a5cfbc032b871254"
+    }
+  },
+  "other_checks": {
+    "backend_selected_completion": 203,
+    "backend_semantics_capability": 3260,
+    "medical_citations": 20,
+    "mobile": 229,
+    "typescript": "passed",
+    "system_map": "passed",
+    "locked_dependencies": 134,
+    "secret_scan": "passed"
+  },
+  "live": {
+    "selected_report": "2026-10-08-selected-exam-live-release.json",
+    "standard_regression": "2026-10-08-selected-report-release-live-regression.json",
+    "vision": "2026-10-08-meal-photo-live-vision.json"
+  },
+  "limits": [
+    "Selected report live acceptance was synthetic and bounded, 155.35 seconds/4 API calls; no claim of stable latency improvement or independent full clinical prose review.",
+    "Original full-resolution meal photo unavailable. One screenshot-thumbnail probe failed an over-specific text/persistence assertion without preserving complete diagnostic metadata; subsequent success does not establish its cause or repeated semantic consistency.",
+    "No production user health records queried or written.",
+    "iOS simulator device exists but candidate UI not manually verified; UI rendering/hook tests passed. OTA publication and device update are separate."
+  ],
+  "meal_unchanged_from_production": {
+    "sha": "1e3a19e58b075364ed6769f91a374cfc991d554b",
+    "entire_files": [
+      "backend/app/services/ai/food_recognition.py",
+      "backend/app/services/agent_turn_outcome.py"
+    ],
+    "ast_identical_functions": [
+      "_unusable_food_photo_terminal",
+      "_food_recognition_found_no_food",
+      "_contextual_diet_confirmation_reply",
+      "_capture_contextual_meal_photo"
+    ],
+    "deterministic_outcomes_verified": [
+      "no_recordable_food",
+      "low_confidence_confirmation"
+    ],
+    "original_failed_probe": "2026-10-08-meal-photo-release-probe-failed.json"
+  },
+  "independent_review": {
+    "verdict": "GO",
+    "commit": "2a9650fa35fd354a8c55b90f34fba750758a7836",
+    "backend_passed": 115,
+    "history_adversarial_passed": 2,
+    "mobile_passed": 201,
+    "source_hashes_verified": 36,
+    "limits": "No independent full clinical prose review; no latency gain or original-photo G6 claim"
+  }
+}

@@ -1,0 +1,219 @@
+{
+  "schema_version": "meal-vision-followup.v1",
+  "service_cases": [
+    {
+      "case": "blank",
+      "model": "qwen-vl-max",
+      "success": false,
+      "foods_count": 0,
+      "error_code": "no_recordable_food",
+      "safe_error": "图片中未识别到可记录的食物，请重新拍摄餐食本身。",
+      "latency_ms": 2244,
+      "usage": [
+        {
+          "completion_tokens": 39,
+          "prompt_tokens": 973,
+          "total_tokens": 1012,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": null,
+            "rejected_prediction_tokens": null,
+            "text_tokens": 39
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 0,
+            "image_tokens": 66,
+            "text_tokens": 907
+          }
+        }
+      ],
+      "rice_identity_pass": null
+    },
+    {
+      "case": "user_visible_residue_crop",
+      "model": "qwen-vl-max",
+      "success": false,
+      "foods_count": 0,
+      "error_code": "no_recordable_food",
+      "safe_error": "图片中未识别到可记录的食物，请重新拍摄餐食本身。",
+      "latency_ms": 1584,
+      "usage": [
+        {
+          "completion_tokens": 48,
+          "prompt_tokens": 944,
+          "total_tokens": 992,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": null,
+            "rejected_prediction_tokens": null,
+            "text_tokens": 48
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 0,
+            "image_tokens": 37,
+            "text_tokens": 907
+          }
+        }
+      ],
+      "rice_identity_pass": null
+    },
+    {
+      "case": "public_rice",
+      "model": "qwen-vl-max",
+      "success": true,
+      "foods_count": 1,
+      "error_code": null,
+      "safe_error": null,
+      "latency_ms": 5083,
+      "usage": [
+        {
+          "completion_tokens": 165,
+          "prompt_tokens": 1689,
+          "total_tokens": 1854,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": null,
+            "rejected_prediction_tokens": null,
+            "text_tokens": 165
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 0,
+            "image_tokens": 782,
+            "text_tokens": 907
+          }
+        }
+      ],
+      "rice_identity_pass": true
+    }
+  ],
+  "full_stream": {
+    "status": "passed",
+    "scope": "Isolated consented synthetic user; cropped screenshot thumbnail, not original full-resolution meal photo",
+    "model": "qwen-vl-max",
+    "api_calls": 1,
+    "usage": [
+      {
+        "completion_tokens": 52,
+        "prompt_tokens": 944,
+        "total_tokens": 996,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": null,
+          "rejected_prediction_tokens": null,
+          "text_tokens": 52
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": 37,
+          "text_tokens": 907
+        }
+      }
+    ],
+    "latency_ms": 2426,
+    "terminal": "waiting_for_user",
+    "stream_equals_persisted": true,
+    "zero_health_writes": true,
+    "database_errors": 0,
+    "replay_without_second_recognition": true,
+    "source_sha256": {
+      "backend/app/services/agent_executor.py": "ebb0c1ca5b66a5dcaafd4ec0c0d44a3dbaa0b889322f416bdf754d5bce5a63e8",
+      "backend/app/services/ai/food_recognition.py": "a1d5fdf9f7fbe29e34c30cab073d372a7c1428064a63877f23ba79742862fe8f",
+      "backend/app/services/agent_turn_outcome.py": "05d2a621d32a1331ba5bc93842c42d1b7b73af60be88df373e2a22bf33c1e769"
+    }
+  },
+  "invalid_attempt": {
+    "status": "invalid_database_missing_table",
+    "scope": "Isolated consented synthetic user; cropped screenshot thumbnail, not original full-resolution meal photo",
+    "model": "qwen-vl-max",
+    "api_calls": 1,
+    "usage": [
+      {
+        "completion_tokens": 66,
+        "prompt_tokens": 944,
+        "total_tokens": 1010,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": null,
+          "rejected_prediction_tokens": null,
+          "text_tokens": 66
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": 37,
+          "text_tokens": 907
+        }
+      }
+    ],
+    "latency_ms": 3492,
+    "terminal": "waiting_for_user",
+    "stream_equals_persisted": true,
+    "zero_health_writes": true,
+    "replay_without_second_recognition": true,
+    "source_sha256": {
+      "backend/app/services/agent_executor.py": "ebb0c1ca5b66a5dcaafd4ec0c0d44a3dbaa0b889322f416bdf754d5bce5a63e8",
+      "backend/app/services/ai/food_recognition.py": "a1d5fdf9f7fbe29e34c30cab073d372a7c1428064a63877f23ba79742862fe8f",
+      "backend/app/services/agent_turn_outcome.py": "05d2a621d32a1331ba5bc93842c42d1b7b73af60be88df373e2a22bf33c1e769"
+    }
+  },
+  "limits": [
+    "User attachment is a screenshot; only the embedded thumbnail was cropped in memory. Original full-resolution capture not available.",
+    "All acceptance used an isolated consented test user; no production health records queried or written.",
+    "Public rice fixture CC0 by Douglas Perkins, https://commons.wikimedia.org/wiki/File:A_bowl_of_rice.jpg",
+    "No production vision model or compression settings changed.",
+    "A release probe had a text/persistence assertion failure. Subsequent successful diagnostic is not proof of repeated semantic consistency; no original-photo G6 claim."
+  ],
+  "release_full_stream": {
+    "status": "passed",
+    "scope": "Isolated consented synthetic user; cropped screenshot thumbnail, not original full-resolution meal photo",
+    "model": "qwen-vl-max",
+    "api_calls": 1,
+    "usage": [
+      {
+        "completion_tokens": 50,
+        "prompt_tokens": 944,
+        "total_tokens": 994,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": null,
+          "rejected_prediction_tokens": null,
+          "text_tokens": 50
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": 37,
+          "text_tokens": 907
+        }
+      }
+    ],
+    "latency_ms": 2661,
+    "terminal": "waiting_for_user",
+    "stream_equals_persisted": true,
+    "zero_health_writes": true,
+    "database_errors": 0,
+    "replay_without_second_recognition": true,
+    "source_sha256": {
+      "backend/app/services/agent_executor.py": "9abbbf7ca9f60696bb49519473a21cc5e6427ede5467c98c5c0e90ea0841f77f",
+      "backend/app/services/ai/food_recognition.py": "a1d5fdf9f7fbe29e34c30cab073d372a7c1428064a63877f23ba79742862fe8f",
+      "backend/app/services/agent_turn_outcome.py": "05d2a621d32a1331ba5bc93842c42d1b7b73af60be88df373e2a22bf33c1e769"
+    }
+  },
+  "release_probe_failed": "2026-10-08-meal-photo-release-probe-failed.json"
+}
