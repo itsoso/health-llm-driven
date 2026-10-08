@@ -1116,6 +1116,7 @@ export default function ChatScreen() {
           isStreaming={isStreaming}
           onBack={contextEntryActive ? handleExitContext : undefined}
           onSelectModel={handleSelectModel}
+          onNewChat={handleNewChat}
           onOpenHistory={openHistory}
           onOpenToolMenu={() => setToolMenuVisible(true)}
         />
@@ -1375,11 +1376,6 @@ export default function ChatScreen() {
                 <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
-            <ToolMenuRow
-              icon="chatbubble-outline"
-              label="新建对话"
-              onPress={handleNewChat}
-            />
             <ToolMenuRow
               icon="call-outline"
               label="实时语音对话"

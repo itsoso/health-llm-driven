@@ -1005,7 +1005,7 @@ describe('ChatScreen', () => {
     );
   });
 
-  it('starts a new chat from more and closes the menu', async () => {
+  it('starts a new chat from the header and closes an open menu', async () => {
     mockFetchConversationStarters
       .mockResolvedValueOnce({
         opener: null,
@@ -1683,7 +1683,7 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('keeps new chat available in more while history stays first-level', async () => {
+  it('keeps new chat and history first-level while more holds secondary actions', async () => {
     mockFetchConversationStarters
       .mockResolvedValueOnce({
         opener: null,
@@ -1700,7 +1700,7 @@ describe('ChatScreen', () => {
       fireEvent.press(getByLabelText('更多会诊操作'));
     });
 
-    expect(getByText('新建对话')).toBeTruthy();
+    expect(queryByText('新建对话')).toBeNull();
     expect(queryByText('对话历史')).toBeNull();
     expect(getByText('更多操作')).toBeTruthy();
     expect(getByTestId('chat-tool-menu-overlay').props.accessible).toBe(false);
@@ -1722,7 +1722,7 @@ describe('ChatScreen', () => {
     expect(view.queryByText('语音')).toBeNull();
     expect(view.queryByTestId('chat-header-voice')).toBeNull();
     expect(view.queryByTestId('chat-realtime-voice-shortcut')).toBeNull();
-    expect(view.queryByLabelText('新建对话')).toBeNull();
+    expect(view.getByLabelText('新建对话')).toBeTruthy();
     expect(view.getByLabelText('对话历史')).toBeTruthy();
     expect(view.queryByText('更多操作')).toBeNull();
     expect(mockPush).not.toHaveBeenCalled();
