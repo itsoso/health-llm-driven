@@ -654,6 +654,11 @@ class RecoveryProof:
             overrides = {"ReadWritePaths"} if unit.endswith(".service") else set()
             if unit in {"health-backend.service", "celery-beat.service"}:
                 overrides.add("ExecStart")
+            if unit == "health-backend.service":
+                # These scalar directives are replaced by the exact transactional
+                # drop-in below; a pre-drain base unit may remain installed.
+                overrides |= {"KillMode", "TimeoutStopSec", "KillSignal",
+                              "RestartKillSignal", "SendSIGKILL", "FinalKillSignal"}
             if unit == "celery-beat.service":
                 overrides |= {"StateDirectory", "StateDirectoryMode"}
             legacy_security = validate_unit_base(
@@ -684,6 +689,10 @@ class RecoveryProof:
                 values = {key: self.systemd.show(unit, key)
                           for key in security_unit_contract(unit)["effective"]}
                 entry["legacy_security_effective"] = validate_security_effective(unit, values)
+            if unit == "health-backend.service":
+                for prop, expected in self.runtime.BACKEND_DRAIN_EFFECTIVE.items():
+                    if self.systemd.show(unit, prop) != expected:
+                        raise ProofError(f"effective backend drain differs: {prop}")
             result[unit] = entry
         if network_units:
             if network_units != list(UNITS[1:]):

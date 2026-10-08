@@ -58,8 +58,13 @@ BACKEND_EXEC_START_PATH = "/opt/health-app/backend/venv/bin/uvicorn"
 BACKEND_EXEC_START_ARGV = (
     f"{BACKEND_EXEC_START_PATH} main:app --fd 3 --workers 1 "
     "--limit-concurrency 100 --proxy-headers "
-    "--forwarded-allow-ips=127.0.0.1 --no-access-log"
+    "--forwarded-allow-ips=127.0.0.1 --no-access-log --timeout-graceful-shutdown 30"
 )
+
+BACKEND_DRAIN_EFFECTIVE = {
+    "KillMode": "mixed", "TimeoutStopUSec": "45s", "KillSignal": "15",
+    "RestartKillSignal": "15", "SendSIGKILL": "yes", "FinalKillSignal": "9",
+}
 
 
 class TransactionError(RuntimeError):
@@ -299,6 +304,12 @@ def _expected_candidate(unit: str) -> bytes:
             "# challenges remain pinned to the worker that created them.\n"
             "ExecStart=\n"
             f"ExecStart={BACKEND_EXEC_START_ARGV}\n"
+            "KillMode=mixed\n"
+            "TimeoutStopSec=45s\n"
+            "KillSignal=SIGTERM\n"
+            "RestartKillSignal=SIGTERM\n"
+            "SendSIGKILL=yes\n"
+            "FinalKillSignal=SIGKILL\n"
             "ReadWritePaths=\n"
             "ReadWritePaths=/var/lib/health-app/uploads "
             "/var/cache/health-app/skills-hub "
@@ -2990,6 +3001,9 @@ class ReleaseTransaction:
                 self.systemd.show(unit, "ExecStart")
             )
             if unit == "health-backend.service":
+                for prop, expected_value in BACKEND_DRAIN_EFFECTIVE.items():
+                    if self.systemd.show(unit, prop) != expected_value:
+                        raise TransactionError(f"candidate backend drain mismatch: {prop}")
                 expected_exec_start = "\n".join(
                     (
                         f"path={BACKEND_EXEC_START_PATH}",

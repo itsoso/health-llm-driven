@@ -622,6 +622,8 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
     candidates = {unit: (source / 'infra/systemd/dropins' / unit.replace('.service', '-runtime-state.conf')).read_bytes()
                   for unit in proof.UNITS[1:]}
     instance.runtime = SimpleNamespace(_expected_candidate=candidates.__getitem__,
+        BACKEND_DRAIN_EFFECTIVE={"KillMode": "mixed", "TimeoutStopUSec": "45s", "KillSignal": "15",
+                                "RestartKillSignal": "15", "SendSIGKILL": "yes", "FinalKillSignal": "9"},
         ReleaseTransaction=SimpleNamespace(_stable_exec_start=lambda value: value))
     instance._file = lambda path, *args: (path.read_bytes(), {'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
     properties = {}
@@ -629,6 +631,9 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
         original = (source / 'infra/systemd' / unit).read_bytes()
         if unit.endswith('.service'):
             keys = {key.encode() for key in proof.security_unit_contract(unit)['directives']}
+            if unit == 'health-backend.service':
+                keys |= {b'KillMode', b'TimeoutStopSec', b'KillSignal',
+                         b'RestartKillSignal', b'SendSIGKILL', b'FinalKillSignal'}
             original = b''.join(line for line in original.splitlines(keepends=True)
                                 if line.split(b'=', 1)[0] not in keys)
             directory = tmp_path / (unit + '.d')
@@ -640,6 +645,8 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
                 (directory / 'security-network.conf').write_bytes(b'[Unit]\nRequires=health-network-guard.service\nAfter=health-network-guard.service\n')
                 paths.append(str(directory / 'security-network.conf'))
             values = proof.security_unit_contract(unit)['effective']
+            if unit == 'health-backend.service':
+                values = {**values, **instance.runtime.BACKEND_DRAIN_EFFECTIVE}
         else:
             paths, values = [], {}
         (tmp_path / unit).write_bytes(original)
@@ -658,6 +665,12 @@ def test_units_proof_accepts_legacy_base_only_with_actual_exact_dropins(tmp_path
     with pytest.raises(proof.ProofError, match='drop-in bytes differ'):
         instance._units(source, transaction)
     dropin.write_bytes(candidates['health-backend.service'])
+    for prop in instance.runtime.BACKEND_DRAIN_EFFECTIVE:
+        expected = properties['health-backend.service'][prop]
+        properties['health-backend.service'][prop] = 'unexpected'
+        with pytest.raises(proof.ProofError, match='effective backend drain differs'):
+            instance._units(source, transaction)
+        properties['health-backend.service'][prop] = expected
     properties['health-backend.service']['MemoryMax'] = 'infinity'
     with pytest.raises(proof.ProofError, match='effective security composition differs'):
         instance._units(source, transaction)

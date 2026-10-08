@@ -9,7 +9,7 @@
 - Controller：health-harness-orchestrator（incident），safety-gate overlay。
 - Harness：`6dcf36a10fa2`。
 - 接手基线：`549765a95a5011cb06bd62fe28d669d3f2991892`；此前后端发布：`9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c`。
-- 状态：实现及 G3 验证中；尚未 G4、合并或部署本次修复。
+- 当前状态：公共天气修复已在 main `e59fd935a6f73bb43d330a9db3602ad8807e01f8`，完整 CI 29 项通过；发布前发现重启中断机制，补充 G3/G4 验证中。生产仍为 `9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c`。下文未合并/未定位记录为当时阶段证据，以末尾续记为准。
 
 ## 用户验收与边界
 
@@ -69,3 +69,20 @@
 - 最终候选两案 API 输入 741/732 token、各一次模型调用、耗时 6.06/4.99 秒。此值取代前述中间候选指标。两案均合成公共观测，不作实际杭州天气、生产 P95 或历史异常根因证明。
 
 - 最终 21 项 CI-mode 集成与 System Map 通过。正式真实模型回归 10 次 API 调用全部成功，34 个源文件哈希与最终运行时一致：`docs/reviews/2026-10-08-weather-aqi-freshness-live-regression.json`。该轮开始时 runtime 已修改但尚未 commit，故以文件哈希与最终提交逐一匹配，不把报告中的起始 HEAD 冒充当时干净源码。
+
+## 发布重启中断机制与补充整改
+
+- 原请求日志时间线：19:00:33 systemd 开始停止后端；19:00:37 同一旧进程首轮模型返回两个工具调用，随后 RuntimeError，零工具执行，紧接着完成应用退出。生产有效配置为 `KillMode=control-group`、SIGTERM、45 秒停止上限，uvloop 0.22.1。未记录任何健康原文或身份信息。
+- 本地真实 Pi 子进程在模型等待期间被终止：uvloop 3/3 在 `stdin.write` 抛原生 RuntimeError；标准 asyncio 3/3 返回受控 PiKernelError。此结果与发布停止时间线吻合，定位为关闭期间工具子进程先于模型返回退出的机制，不能称为上游模型不可用。未复演生产用户请求。脱敏证据见 `docs/reviews/2026-10-08-pi-shutdown-reproduction.json`。
+- Pi 对已退出/关闭管道及关闭竞态统一抛 `pi_transport_failed`，无自动重试；未关闭管道的未知 RuntimeError 和 CancelledError 保持传播，避免掩盖异常或重复写入。新增 RED 2 failed；修复后传输相关 22 passed。
+- 后端单 worker 采用 `KillMode=mixed`：先仅向主进程发送 SIGTERM，由 Uvicorn 最多 30 秒排空请求，再在 systemd 45 秒上限下强制结束残留进程。配置由现有事务化 drop-in 发布，验证有效信号、范围与超时；保留原 journal schema 及恢复路径。
+- 本地真实 Uvicorn/uvloop/Pi HTTP 对照：初始信号作用于整组时 3/3 请求失败；只作用于主进程时 3/3 完成且子进程回收。只使用合成回复、不访问模型或数据库，信号实验不冒充 Linux systemd 端到端验证。可重跑 `scripts/probe_pi_graceful_shutdown.py`；结果 `docs/reviews/2026-10-08-pi-graceful-drain.json`。
+- 首次迁移限制：现有可信发布先停止旧服务再安装新 drop-in，因此本次旧配置第一次停止仍可能中断进行中的请求；新配置只保护其生效后的重启。不提前手工修改生产 unit，不绕事务授权。超过 30 秒的请求仍可能被取消，不承诺零中断。
+- `e59fd935a` 已通过 push CI `37773119726`（24 success / 5 skipped）及完整 CI `37773170496`（29 success）。新增关闭修复须重新完成固定提交 G4 与精确主干 CI，不能沿用该绿色结果发布新代码。
+
+- 关闭修复后的正式真实模型回归再次通过：10 次 API 调用均成功，35 个源文件哈希未变（包含 Pi transport），见 `docs/reviews/2026-10-08-weather-aqi-shutdown-live-regression.json`。System Map 使用仓库 Python 3.12 PATH 校验通过。
+- 发布配置及恢复相关最终源测试 220 passed：六项有效 drain 配置篡改均被拒绝；无新增 drain 字段的旧 journal 仍能安装新配置并恢复原旧 drop-in 字节。
+
+- 最终后端 CI-mode 相关回归 61 passed，包含既有 21 项集成、Pi 写入对账与关闭竞态；无自动重试、取消不伪装成功。
+
+- 30 秒超时边界实验保留 FAIL/部分证实：真实 Uvicorn/uvloop/Pi 的最小 lifespan=off 服务在 30.159 秒退出，客户端断开且没有伪成功/重试，但取消处理与 Pi 主动 await/reap 未证实。见 `docs/reviews/2026-10-08-pi-drain-timeout.json`。不能宣称超时请求完整优雅结束；这是保留 `SendSIGKILL=yes`、`FinalKillSignal=SIGKILL` 和 systemd mixed 最终整组清理的必要理由。此实验不证明生产 systemd 45 秒终态，须由独立评审裁决验证边界。

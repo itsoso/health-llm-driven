@@ -1,0 +1,38 @@
+{
+  "scope": "Local real uvicorn/uvloop/Pi with synthetic 60-second model await; main-only SIGTERM; not a real systemd TimeoutStopSec=45 proof",
+  "graceful_timeout_seconds": 30,
+  "synthetic_model_wait_seconds": 60,
+  "uvicorn_version": "0.32.0",
+  "uvloop_version": "0.22.1",
+  "provider_calls": 0,
+  "model_retries": 0,
+  "http_status": "RemoteDisconnected",
+  "exit_seconds_after_sigterm": 30.159,
+  "server_returncode": -15,
+  "cancelled": false,
+  "cleanup_completed": false,
+  "completed": false,
+  "child_reaped": false,
+  "child_gone": false,
+  "forced_cleanup": false,
+  "pass": false,
+  "first_attempt": {
+    "result": "FAIL",
+    "cleanup_marker": "missing",
+    "limitation": "Harness exited on missing marker; detailed timing and child state not retained."
+  },
+  "confirmed": [
+    "Server exited 30.159 seconds after main-only SIGTERM with graceful timeout 30 seconds.",
+    "Client received RemoteDisconnected, never a successful completion.",
+    "No provider calls or model retries occurred."
+  ],
+  "unproven": [
+    "The request cancellation handler did not run before server exit.",
+    "Pi async context cleanup and awaited child reap were not observed.",
+    "Immediate child existence check still saw the child; later process inspection found no live Pi, which does not prove awaited reap.",
+    "No live systemd KillMode=mixed or TimeoutStopSec=45 behavior was exercised."
+  ],
+  "configuration_note": "Minimal ASGI app used lifespan=off; this does not reproduce production lifespan teardown.",
+  "mechanism": "uvicorn 0.32.0 shutdown cancels outstanding tasks without awaiting them; capture_signals then replays SIGTERM. This can end the main process before asynchronous request cleanup is scheduled.",
+  "release_boundary": "Bounded main exit and non-success are evidenced; guaranteed child cleanup remains a systemd cgroup final-kill boundary. Do not disable SendSIGKILL/FinalKillSignal or infer successful draining."
+}
