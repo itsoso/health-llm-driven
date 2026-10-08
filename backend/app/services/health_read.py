@@ -88,6 +88,38 @@ def canonical_read(
     return None
 
 
+def read_selected_medical_exam(db: Session, user_id: Optional[int], exam_id: int, *, reference_date: date) -> str:
+    """Read one selected report after checking ownership; never substitute another report."""
+    from app.models.medical_exam import MedicalExam
+    from sqlalchemy.orm import selectinload
+
+    if user_id is None or type(exam_id) is not int or exam_id <= 0:
+        return "Error: 无法读取所选体检报告，请重新选择你自己的报告。"
+    exam = db.query(MedicalExam).options(selectinload(MedicalExam.items)).filter(
+        MedicalExam.id == exam_id,
+        MedicalExam.user_id == user_id,
+        MedicalExam.exam_date <= reference_date,
+    ).one_or_none()
+    if exam is None:
+        return "Error: 无法读取所选体检报告，请重新选择你自己的报告。"
+    return json.dumps({
+        "exam_id": exam.id,
+        "exam_date": exam.exam_date.isoformat(),
+        "exam_type": exam.exam_type,
+        "overall_assessment": exam.overall_assessment,
+        "conclusions": exam.conclusions,
+        "count": len(exam.items),
+        "items": [{
+            "name": item.item_name,
+            "value": item.value if item.value is not None else item.value_text,
+            "unit": item.unit,
+            "reference_range": item.reference_range,
+            "is_abnormal": item.is_abnormal,
+            "record_date": exam.exam_date.isoformat(),
+        } for item in exam.items],
+    }, ensure_ascii=False)
+
+
 # ── 病症发作 → IllnessEpisode ────────────────────────────────────────────
 def read_illness_episodes(
     db: Session,

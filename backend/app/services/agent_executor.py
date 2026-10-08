@@ -681,6 +681,39 @@ MULTI_MODEL_SYNTH_ID = "claude-opus-4.7"
 MULTI_MODEL_MAX_LEAD_ROUNDS = 6
 
 
+def _selected_exam_context_id(extra_context: Optional[str]) -> Optional[int]:
+    """Client input selects a report; it supplies neither ownership nor evidence."""
+    try:
+        payload = json.loads(extra_context or "null")
+    except (TypeError, ValueError):
+        return None
+    origin = payload.get("from") if isinstance(payload, dict) else None
+    if not isinstance(origin, str) or not origin.startswith("medical-exam/"):
+        return None
+    match = re.fullmatch(r"medical-exam/([1-9][0-9]{0,9})", origin)
+    return int(match.group(1)) if match else 0
+
+
+def _selected_exam_tool_allowed(tool_name: str, args: dict) -> bool:
+    """Closed read scope: selected report plus public, non-personal knowledge."""
+    if tool_name in {"knowledge_search", "realtime_search"}:
+        return True
+    if tool_name == "query_lab_indicators":
+        return True
+    if tool_name == "health_manage":
+        return args.get("operation") == "list" and args.get("record_type") == "medical_exam"
+    if tool_name == "health_query":
+        return _normalize_health_query_args(args).get("dimension") == "medical_exam"
+    if tool_name == "health_query_batch":
+        queries = args.get("queries")
+        return bool(isinstance(queries, list) and queries and all(
+            isinstance(query, dict)
+            and _normalize_health_query_args(query).get("dimension") == "medical_exam"
+            for query in queries
+        ))
+    return False
+
+
 def _extract_multi_model_flag(extra_context: Optional[str]) -> bool:
     """Mac「默认 3 个」模式在 extra_context 里带 {"multi_model": true}。"""
     if not extra_context:
@@ -12134,6 +12167,7 @@ class AgentExecutor:
         self._turn_contextual_diet_consumed_fraction: Optional[float] = None
         self._turn_contextual_diet_write_blocked_reason: Optional[str] = None
         self._turn_food_photo_recognition: dict[str, Any] | None = None
+        self._turn_selected_exam_id: Optional[int] = None
         self._turn_pending_write_intent_ids: list[int] = []
         self._turn_pending_write_intent_kinds: list[str] = []
         self._turn_medication_tool_intent_id: Optional[int] = None
@@ -16525,6 +16559,10 @@ class AgentExecutor:
         self._turn_contextual_diet_consumed_fraction = None
         self._turn_contextual_diet_write_blocked_reason = None
         self._turn_food_photo_recognition = None
+        self._turn_selected_exam_id = _selected_exam_context_id(extra_context)
+        if self._turn_selected_exam_id is not None:
+            # Discard the client's report summary, values and control hints.
+            extra_context = json.dumps({"from": f"medical-exam/{self._turn_selected_exam_id}"})
         self._ensure_agent_kernel_turn(channel=channel)
         clinician_turn_decision = classify_clinician_turn(message or "")
         # Backend-owned health evidence runtime. Clinical semantics are compiled
@@ -16534,6 +16572,7 @@ class AgentExecutor:
         health_verification = None
         health_evidence_manifest: Optional[Dict[str, Any]] = None
         health_continuation_attempted = False
+        selected_exam_clinical_scope_limited = False
         health_compile_ms = 0
         health_compile_started_at = time.time()
         if getattr(settings, "health_evidence_runtime_enabled", False):
@@ -16570,15 +16609,32 @@ class AgentExecutor:
                 and not clinician_context_precedes_health_release
             ):
                 try:
-                    health_evidence_turn = (
-                        _health_evidence.build_health_evidence_turn(
-                            self.db,
-                            user_id=user_id,
-                            query=clinical_query,
+                    if self._turn_selected_exam_id is not None:
+                        # The current clinical runtime needs a broader safety profile
+                        # than this report selector authorizes. Preserve triage with
+                        # explicit missing partitions, never preload another report.
+                        from app.twin.schema import HealthTwin, TwinMeta
+                        selected_exam_clinical_scope_limited = True
+                        health_evidence_turn = _health_evidence.compile_health_evidence_turn(
+                            twin=HealthTwin(meta=TwinMeta(
+                                user_id=user_id,
+                                generated_at=self._agent_kernel_reference_now(),
+                                failed_partitions=["acute", "collectors", "medication", "safety_profile", "chronic"],
+                            )),
                             intent=health_intent,
+                            authority_results=(),
                             now=self._agent_kernel_reference_now(),
                         )
-                    )
+                    else:
+                        health_evidence_turn = (
+                            _health_evidence.build_health_evidence_turn(
+                                self.db,
+                                user_id=user_id,
+                                query=clinical_query,
+                                intent=health_intent,
+                                now=self._agent_kernel_reference_now(),
+                            )
+                        )
                 except Exception as exc:  # noqa: BLE001 - never fall back to legacy advice
                     logger.exception(
                         "[health_evidence] turn compilation failed user=%s "
@@ -17447,7 +17503,8 @@ class AgentExecutor:
         # fast-routed 简单回合跳过系统知识库检索: KB claim 是给分析/解读用的依据,
         # 对「今天喝了多少水」无用, 且检索本身占 pre-first-token 壁钟 (kb_ms)。
         system_kb_context = (
-            "" if self._fast_route_simple_turn or health_advice_buffered or self._public_task
+            "" if (self._fast_route_simple_turn or health_advice_buffered or self._public_task
+                   or self._turn_selected_exam_id is not None)
             else self._build_system_knowledge_prompt_context(user_id, message)
         )
         pre_stages["kb_ms"] = _pre_stage(_t_stage)
@@ -18334,11 +18391,15 @@ class AgentExecutor:
                 and parsed_tool_args.get("record_type") == "diet"
                 and parsed_tool_args.get("operation") == "list"
             )
-            if evidence_read and not replayed_read:
+            read_result_succeeded = (
+                not result.lstrip().startswith("Error")
+                and not result_declares_explicit_failure(result)
+            )
+            if evidence_read and not replayed_read and read_result_succeeded:
                 answer_evidence_tool_calls.append(
                     (func_name, parsed_tool_args, result)
                 )
-            if func_name in _GENUI_TABLE_TOOLS and not replayed_read:
+            if func_name in _GENUI_TABLE_TOOLS and not replayed_read and read_result_succeeded:
                 if (
                     genui_table_on
                     or genui_diet_summary_on
@@ -18615,6 +18676,7 @@ class AgentExecutor:
                 not transient_local_rejection
                 and not health_advice_buffered
                 and func_name in _GENUI_TABLE_TOOLS
+                and read_result_succeeded
                 and not replayed_read
                 and (
                     genui_table_on
@@ -19839,6 +19901,15 @@ class AgentExecutor:
                     health_evidence_turn.verifier_failure()
                 )
             full_reply = health_verification.text
+            if selected_exam_clinical_scope_limited:
+                full_reply = (
+                    "本轮未执行所选报告与症状的联合解读，也未读取其他个人健康记录。"
+                    "请先单独解读这份报告，或另发消息说明当前症状。\n\n" + full_reply
+                )
+                medical_boundary.flagged = True
+                medical_boundary.violations = list(dict.fromkeys([
+                    *medical_boundary.violations, "selected_report_combined_scope_not_supported",
+                ]))
             health_evidence_manifest = health_evidence_turn.public_manifest(
                 verification=health_verification,
             )
@@ -20251,7 +20322,7 @@ class AgentExecutor:
         fallback_reasons = list(self._model_fallback_reasons)
         evidence_cards = []
         if (completion_status == "complete" and turn_outcome.get("status") == "complete"
-                and health_evidence_turn is None):
+                and health_evidence_turn is None and self._turn_selected_exam_id is None):
             try:
                 evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
                 if evidence_card:
@@ -20283,7 +20354,7 @@ class AgentExecutor:
                 streamed_cards,
                 evidence_cards,
             )
-            if completion_status == "complete"
+            if completion_status == "complete" and turn_outcome.get("status") in {"complete", "partial", "waiting_for_user"}
             else _merge_agent_card_descriptors([
                 card for card in self._turn_contextual_diet_cards
                 if card.get("type") == "diet_draft"
@@ -20361,14 +20432,18 @@ class AgentExecutor:
         # 摘要进 meta + done, 客户端不读不炸。内部全 fail-soft, 绝不打死回合。
         citation_anchor = (
             None
-            if health_evidence_turn is not None or self._has_current_input_recovery_advice_goal()
+            if (health_evidence_turn is not None or self._has_current_input_recovery_advice_goal()
+                or self._turn_selected_exam_id is not None)
             else _citation_anchor_shadow_meta(self.db, user_id, full_reply)
         )
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
         recovery_data_guard_meta = self._recovery_data_guard_meta()
-        answer_evidence = early_answer_evidence
+        answer_evidence = (
+            early_answer_evidence
+            if turn_outcome.get("status") in {"complete", "partial"} else None
+        )
         answer_evidence_digest = ""
-        if completion_status == "complete":
+        if completion_status == "complete" and turn_outcome.get("status") in {"complete", "partial"}:
             try:
                 from app.services.answer_evidence import (
                     answer_evidence_sha256,
@@ -21902,7 +21977,8 @@ class AgentExecutor:
         )
         prompt_snapshot = getattr(self, '_agent_kernel_snapshot', None)
         # Keep static safety rules without preloading unrelated personal data.
-        static_rules_only = static_rules_only or self._has_current_input_recovery_advice_goal()
+        static_rules_only = (static_rules_only or self._has_current_input_recovery_advice_goal()
+                             or self._turn_selected_exam_id is not None)
         if prompt_snapshot is not None and "classifier:conversation_feedback" in prompt_snapshot.intent.evidence:
             return (
                 "你是 Reva 健康助手小巴。用户正在反馈对话质量。结合历史原话和实际工具结果，"
@@ -25250,6 +25326,15 @@ class AgentExecutor:
         from app.services.agent_policy_retry import is_terminal_policy_reason
 
         parsed_args = _parse_tool_arguments_for_telemetry(args_raw)
+        if self._turn_selected_exam_id is not None and not _selected_exam_tool_allowed(tool_name, parsed_args):
+            decision = CapabilityDecision("block", "selected_report_scope_required", tool_name, parsed_args)
+            self._agent_kernel_record_capability_decision(tool_name, decision)
+            result = json.dumps({
+                "status": "failed", "success": False,
+                "error_code": decision.reason, "retryable": False, "dispatch_started": False,
+                "message": "本轮仅能核对所选体检报告，未执行超出该报告范围的个人记录查询。",
+            }, ensure_ascii=False)
+            return self._agent_kernel_record_tool_result(tool_name, parsed_args, result)
         request_key = (source, tool_name, json.dumps(parsed_args, sort_keys=True, ensure_ascii=False, default=str))
         blocked_request_cache = getattr(self, "_agent_kernel_blocked_request_cache", None)
         if blocked_request_cache is None:
@@ -26176,6 +26261,12 @@ class AgentExecutor:
         """执行健康数据查询"""
         args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
+        if dim == "medical_exam" and self._turn_selected_exam_id is not None:
+            from app.services.health_read import read_selected_medical_exam
+            return read_selected_medical_exam(
+                self.db, self._current_user_id, self._turn_selected_exam_id,
+                reference_date=self._agent_kernel_reference_now().date(),
+            )
         if dim == "garmin":
             from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
             from app.services.agent_query_window import parse_query_window
@@ -28002,6 +28093,8 @@ class AgentExecutor:
         """
         record_type = args.get("record_type")
         operation = args.get("operation")
+        if self._turn_selected_exam_id is not None and record_type == "medical_exam" and operation == "list":
+            return await self._exec_health_query(base, headers, {"dimension": "medical_exam"})
         record_id = canonical_health_manage_record_id(args.get("record_id"))
         data = args.get("data") or {}
         if (
@@ -29504,6 +29597,8 @@ class AgentExecutor:
 
         **批量**: 传 names=[...] 一次查多个指标(省 LLM 往返轮);单指标传 name(shape 向后兼容不变)。
         """
+        if self._turn_selected_exam_id is not None:
+            return await self._exec_health_query(base, headers, {"dimension": "medical_exam"})
         if self._current_user_id is None:
             return "Error: 当前会话无 user_id, 无法查询"
 

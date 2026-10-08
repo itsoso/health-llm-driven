@@ -2176,8 +2176,31 @@ REPORT_USE_TRAILING_WITHDRAWAL_RE = re.compile(
 )
 
 
+# Product entry prompts are closed speech acts. Match the original whole input,
+# before material stripping; a quoted prompt, added owner or withdrawal must not
+# inherit this authority. The 30-day horizon describes advice, not a read window.
+_PRODUCT_REPORT_INTERPRETATION_RE = re.compile(
+    r"请基于(?:我(?:自己|本人|个人)?|本人)(?:的)?"
+    r"(?:最新(?:这份|一份|的)?|刚导入的)"
+    r"(?:体检/化验报告|体检报告|化验报告)，?"
+    r"(?:解释异常项、风险优先级和未来30天该做什么|"
+    r"解释异常/关键指标、需要复核的地方，以及接下来30天最重要的健康行动)"
+    r"[。.]?"
+)
+
+
+def _product_report_interpretation_clause(text: str) -> str:
+    normalized = re.sub(r"[ \t]+", "", str(text or "")).replace(",", "，")
+    if _PRODUCT_REPORT_INTERPRETATION_RE.fullmatch(normalized):
+        return "请基于我的体检报告解释"
+    return ""
+
+
 def _active_owned_report_use_clause(text: str) -> str:
     """Resolve the last active current-user report-use speech act."""
+    product_clause = _product_report_interpretation_clause(text)
+    if product_clause:
+        return product_clause
     normalized = active_health_read_authority_text(str(text or "")).strip()
     if (
         CURRENT_USER_REPORT_REFERENCE_RE.search(normalized) is None

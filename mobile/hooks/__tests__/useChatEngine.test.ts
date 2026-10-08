@@ -912,6 +912,40 @@ describe('useChatEngine', () => {
     }));
   });
 
+  it.each([
+    ['failed', 'complete', false], ['blocked', 'complete', false],
+    ['refused', 'complete', false], ['reconciliation_required', 'complete', false],
+    [undefined, 'error', false], [undefined, 'interrupted', false],
+    ['partial', 'complete', true], ['waiting_for_user', 'complete', true],
+    ['complete', 'complete', true], [undefined, undefined, true],
+  ])('restores answer artifacts only for eligible terminal history: %s / %s', (status, completion, allowed) => {
+    const restored = restoreMessagesFromHistory([{
+      id: 81, role: 'assistant', content: '合成报告回复',
+      meta: {
+        turn_outcome: { status }, completion_status: completion,
+        sources_used: ['synthetic-report'], answer_evidence: earlyAnswerEvidence,
+        cards: [{ type: 'health_evidence', data: { intent: { intent_id: 'health_advice.symptom.low_back_pain' } }, actions: [] }],
+      },
+    }]);
+    expect(restored.some(message => !!message.cardType)).toBe(allowed);
+    expect(!!restored[0].answerEvidence).toBe(allowed);
+    expect(!!restored[0].sourcesUsed).toBe(allowed);
+  });
+
+  it.each(['failed', 'partial'])('settles early answer evidence according to terminal outcome %s', async (status) => {
+    mockStreamChat.mockImplementation(async function* (...args: any[]) {
+      yield { type: 'persisted', conversationId: 777, userMessageId: 41, clientTurnId: args[6] };
+      yield { type: 'evidence', answerEvidence: earlyAnswerEvidence };
+      yield { type: 'token', content: '合成报告回复' };
+      yield { type: 'done', conversationId: 777, messageId: 901, completionStatus: 'complete', terminalStatus: status };
+    });
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await result.current.sendMessage('解释合成报告'); });
+    const assistant = result.current.messages.find(message => message.role === 'assistant' && !message.cardType);
+    expect(assistant?.streaming).toBe(false);
+    expect(!!assistant?.answerEvidence).toBe(status === 'partial');
+  });
+
   it('restores verified write receipts from assistant history meta', () => {
     const restored = restoreMessagesFromHistory([{
       id: 51,

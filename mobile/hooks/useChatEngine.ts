@@ -189,6 +189,16 @@ function upsertOptimisticTurnPair(
 
 /** 2026-05-14 FIX-7: 把 message.meta (后端持久化的性能/可解释性 JSON)
  * 映射到 UIMessage 字段, 让 reload 也能恢复 chat bubble footer. */
+function allowsAnswerArtifacts(phase: string): boolean {
+  return phase === 'completed' || phase === 'partial' || phase === 'waiting_for_user';
+}
+
+function historyAllowsAnswerArtifacts(meta: any): boolean {
+  return allowsAnswerArtifacts(recoveredAgentPhase(
+    meta?.completion_status, meta?.turn_outcome?.status, false,
+  ));
+}
+
 function applyMeta(msg: any): Partial<UIMessage> {
   const meta = msg?.meta;
   if (!meta || typeof meta !== 'object') return {};
@@ -208,13 +218,13 @@ function applyMeta(msg: any): Partial<UIMessage> {
     model: typeof meta.model === 'string' ? meta.model : undefined,
     llmUsage: meta.llm_usage && typeof meta.llm_usage === 'object' ? meta.llm_usage : undefined,
     perf: meta.perf && typeof meta.perf === 'object' ? meta.perf : undefined,
-    sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
-    answerEvidence: normalizeAnswerEvidence(meta.answer_evidence),
+    sourcesUsed: historyAllowsAnswerArtifacts(meta) && Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
+    answerEvidence: historyAllowsAnswerArtifacts(meta) ? normalizeAnswerEvidence(meta.answer_evidence) : undefined,
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     terminalStatus: normalizeAgentTerminalStatus(meta.turn_outcome?.status),
     generationStatus: meta.generation_status,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
-    medicalCitations: normalizeMedicalCitations(meta.medical_citations),
+    medicalCitations: historyAllowsAnswerArtifacts(meta) ? normalizeMedicalCitations(meta.medical_citations) : undefined,
     thinkingSteps: normalizeThinkingSteps(meta.thinking_steps ?? meta.thought_steps),
     writeReceipts: noWriteTerminal
       ? []
@@ -407,7 +417,8 @@ export function restoreMessagesFromHistory(
   (msgs || []).forEach((m: any, i: number) => {
     const baseId = `${idPrefix}-${m.id || i}`;
     const messageMeta = applyMeta(m);
-    const serverCards = dedupeServerCards(renderServerCards(m?.meta?.cards));
+    const serverCards = historyAllowsAnswerArtifacts(m?.meta)
+      ? dedupeServerCards(renderServerCards(m?.meta?.cards)) : [];
     const hasTerminalMedicationCard = serverCards.some((card) => {
       if (card.type !== 'medication_draft') return false;
       const decisionStatus = normalizeMedicationDecisionStatus(card.data?.decision_status)
@@ -2232,11 +2243,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           }
           const allowDoneCards = (
             evt.requestPersisted !== false
-            && (
-              terminalTurn.phase === 'completed'
-              || terminalTurn.phase === 'partial'
-              || terminalTurn.phase === 'waiting_for_user'
-            )
+            && allowsAnswerArtifacts(terminalTurn.phase)
             && typeof evt.messageId === 'number'
           );
           const rawDoneCards = (
@@ -2278,10 +2285,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               model: evt.model,
               llmUsage: evt.llmUsage,
               perf: evt.perf,
-              sourcesUsed: evt.sourcesUsed,
-              answerEvidence: evt.answerEvidence ?? m.answerEvidence,
+              sourcesUsed: allowDoneCards ? evt.sourcesUsed : undefined,
+              answerEvidence: allowDoneCards ? evt.answerEvidence ?? m.answerEvidence : undefined,
               toolsUsed: evt.toolsUsed,
-              medicalCitations: evt.medicalCitations,
+              medicalCitations: allowDoneCards ? evt.medicalCitations : undefined,
               completionStatus: effectiveCompletionStatus,
               terminalStatus: evt.terminalStatus,
               generationStatus: evt.generationStatus,

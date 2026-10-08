@@ -7263,3 +7263,38 @@ def test_v42_capability_digest_is_stable_across_fresh_processes():
     }
 
     assert len(digests) == 1
+
+@pytest.mark.parametrize('message', [
+    '请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来 30 天该做什么。',
+    '请基于本人最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于我最新的体检报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于我刚导入的体检报告，解释异常/关键指标、需要复核的地方，以及接下来 30 天最重要的健康行动。',
+])
+def test_product_report_interpretation_requests_are_owned_reads(message):
+    decision = decide_tool_capability(_snapshot(message), _request('health_query', {'dimension': 'medical_exam'}))
+    assert decision.action == 'allow', decision
+    assert decision.normalized_args == {'dimension': 'medical_exam'}
+
+@pytest.mark.parametrize('prefix,suffix', [
+    ('不要', ''), ('假设', ''), ('他说“', '”'), ('', '但不要读取报告'),
+    ('', '并查询我妈妈的报告'), ('', '并记录今天的血压'),
+])
+def test_product_report_interpretation_does_not_expand_authority(prefix, suffix):
+    message = prefix + '请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么' + suffix
+    decision = decide_tool_capability(_snapshot(message), _request('health_query', {'dimension': 'medical_exam'}))
+    assert decision.action == 'block', decision
+
+@pytest.mark.parametrize('message', [
+    '请基于我妈妈最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于我和妈妈最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于我这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于我最新这份体检/化验报告，解释异常项、风险优先级和查询未来30天的记录。',
+    '明天请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '> 请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '“请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。”',
+    '请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。取消',
+    '请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。报告属于妈妈的',
+])
+def test_product_report_interpretation_rejects_nonself_material_or_different_act(message):
+    decision = decide_tool_capability(_snapshot(message), _request('health_query', {'dimension': 'medical_exam'}))
+    assert decision.action == 'block', decision
