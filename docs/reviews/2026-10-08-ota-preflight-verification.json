@@ -1,6 +1,6 @@
 {
   "source_commit": "1daaafd95594b889bd6942cc692ea9cc1bebbb03",
-  "status": "G3_G4_GO_pending_exact_main_CI",
+  "status": "G3_G4_GO_exact_main_CI_passed_OTA_still_NO_GO",
   "independent_review": "GO fixed commit; independent105 passed retained; publisher tests only removed two unused imports after review",
   "tests": {
     "producer": 105,
@@ -24,5 +24,12 @@
     "Production1.3.4 cohort incompatible; OTA remains NO_GO",
     "Original 70ms failure cause unknown; no original run retry",
     "No native allowlist or baseline change; no claim/vendor call from preflight"
-  ]
+  ],
+  "ci": {
+    "sha": "19cf3b34a7b5344d2177894d91877c4cf01f0390",
+    "run": 37759484113,
+    "attempt": 2,
+    "jobs_success": 29,
+    "attempt1_frontend_failure_retained": true
+  }
 }

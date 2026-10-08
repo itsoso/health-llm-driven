@@ -23,6 +23,18 @@
     "test_sha256": "c5ac04f9bc77b7ec4a7cf8176e2c74c8e578461b8772b75544fabd4676a3c71f",
     "limits": "Controlled deferred-open proves readiness gap; original CI complete scheduling trace unavailable. Retain attempt1 failure and fresh exact-SHA CI result."
   },
-  "main_ci": "pending",
-  "publication": "Backend5c and QR276 unchanged; no new build/deploy needed for test-only fix."
+  "main_ci": {
+    "sha": "34031393d3c623801910b8747ccebae42238d331",
+    "run": 37761397416,
+    "conclusion": "success",
+    "jobs_success": 5,
+    "jobs_scope_skipped": 9
+  },
+  "publication": "Backend5c and QR276 unchanged; no new build/deploy needed for test-only fix.",
+  "original_sha_recheck": {
+    "run": 37759484113,
+    "attempt": 2,
+    "success_jobs": 29,
+    "attempt1_failure_retained": true
+  }
 }
