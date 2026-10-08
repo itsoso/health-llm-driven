@@ -659,36 +659,42 @@ def _uncertain_record_statement(text: str, position: int) -> bool:
 
 
 _DAILY_SLEEP_TOTAL = re.compile(
-    r"(?:总睡眠(?:时长)?|睡眠总时长|睡眠时长|总时长)(?:读数)?(?:均为|都是|为|是)?\s*"
-    r"(?P<quantity>(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>分钟|小时))"
+    r"(?:睡眠(?:记录)?[：:]\s*)?"
+    r"(?:(?P<days>\d+)天均为(?P<source>Garmin)来源[，,]\s*)?"
+    r"(?:(?:已返回|已记录)的|(?:睡眠)?记录(?:的|显示)?)"
+    r"(?:每日|每天)(?:总睡眠(?:时长)?|睡眠总时长|睡眠时长|总时长)"
+    r"(?:读数)?(?:均为|都是|为|是)?\s*"
+    r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>分钟|小时)"
+    r"(?:[、，,]\s*评分(?P<score>\d+(?:\.\d+)?)(?:分)?)?[。！？!?]*", re.I,
 )
 
 
 def _verified_daily_sleep_quantities(text: str, query: dict, days: int) -> bool:
-    """A narrow exception for total-duration claims checked against every day.
+    """Accept only an entire finite record statement with every claim verified.
 
-    Date presence alone cannot attest a quantity, a sleep episode or a stage.
-    Every quantity in this sentence must bind to the total-duration predicate;
-    unknown forms, duplicate daily rows and missing measurements stay blocked.
+    Matching a total-duration substring must never authorize adjacent stages,
+    recommendations, score values or full-episode assertions. Unknown prose
+    retains the existing veto instead of acquiring a partial-match exception.
     """
-    if (not re.search(r"记录|已返回", text)
-            or re.search(r"建议|应该|应当|目标|保持|达到|保证|确保|每晚|整夜|单次", text)):
-        return False
+    claim = _DAILY_SLEEP_TOTAL.fullmatch(text)
     rows = query["records"]
-    if len(rows) != days:
+    if claim is None or len(rows) != days:
         return False
-    claims = {m.span("quantity"): m for m in _DAILY_SLEEP_TOTAL.finditer(text)}
-    quantities = list(_EXERCISE_QUANTITY.finditer(text))
-    if not quantities:
+    if claim["days"] is not None and Decimal(claim["days"]) != days:
         return False
-    for quantity in quantities:
-        claim = claims.get(quantity.span())
-        if claim is None:
+    expected = {"total_sleep_duration": Decimal(claim["number"]) * (60 if claim["unit"] == "小时" else 1)}
+    if claim["score"] is not None:
+        expected["sleep_score"] = Decimal(claim["score"])
+    for row in rows:
+        known = row["known_fields"]
+        if any(_summary_decimal(known.get(field)) != value for field, value in expected.items()):
             return False
-        minutes = Decimal(claim["number"]) * (60 if claim["unit"] == "小时" else 1)
-        if any(_summary_decimal(row["known_fields"].get("total_sleep_duration")) != minutes
-               for row in rows):
-            return False
+        if claim["source"] is not None:
+            sources = known.get("sources")
+            if (not isinstance(sources, dict) or not sources
+                    or any(sources.get(field) != "garmin" for field in expected)
+                    or any(value != "garmin" for value in sources.values())):
+                return False
     return True
 
 

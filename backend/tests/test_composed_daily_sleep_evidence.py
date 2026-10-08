@@ -10,7 +10,7 @@ from tests.test_agent_composed_read_completion import execution, scope
 
 def daily_completion(days=31):
     completion = evaluate_composed_read_completion(scope('diet','sleep'), [execution(),
-        execution('sleep', rows=[{'record_date':'2026-09-12','total_sleep_duration':420,'sleep_score':80}])])
+        execution('sleep', rows=[{'record_date':'2026-09-12','total_sleep_duration':420,'sleep_score':80,'sources':{'total_sleep_duration':'garmin','sleep_score':'garmin'}}])])
     evidence = deepcopy(completion.verified_evidence)
     query = next(q for q in evidence['queries'] if q['query']['dimension']=='sleep')
     start = date(2026,8,14)
@@ -38,6 +38,15 @@ def test_keep_verified_daily_sleep_quantities(text):
     ('different_duration','每日总睡眠420分钟。'),
     ('duplicate_day','每日总睡眠420分钟。'),
     ('none','每日总睡眠480分钟。'),
+    ('wrong_source','睡眠：31天均为Garmin来源，已返回的每日总睡眠420分钟、评分80分。'),
+    ('none','睡眠：32天均为Garmin来源，已返回的每日总睡眠420分钟、评分80分。'),
+    ('missing_score','睡眠记录每日总时长7小时、评分80分。'),
+    ('none','睡眠记录每日深睡眠总时长7小时。'),
+    ('none','睡眠记录每日REM睡眠总时长7小时。'),
+    ('none','请按照已有记录每天维持睡眠总时长7小时。'),
+    ('none','你可以参照记录每天睡眠总时长7小时。'),
+    ('none','睡眠记录每日总时长7小时、评分90分。'),
+    ('none','睡眠记录每日总时长7小时，是本人的完整睡眠。'),
     ('none','建议保持睡眠记录每日总时长7小时。'),
     ('none','每天总睡眠420分钟，是本人的完整睡眠。'),
     ('none','每日总睡眠8小时。'),
@@ -50,6 +59,8 @@ def test_keep_veto_for_unverified_daily_quantities(mutation,text):
     if mutation=='missing_day': query['records'].pop()
     elif mutation=='missing_duration': query['records'][0]['known_fields'].pop('total_sleep_duration')
     elif mutation=='different_duration': query['records'][0]['known_fields']['total_sleep_duration']=480
+    elif mutation=='wrong_source': query['records'][0]['known_fields']['sources']['total_sleep_duration']='apple_health'
+    elif mutation=='missing_score': query['records'][0]['known_fields'].pop('sleep_score')
     elif mutation=='duplicate_day': query['records'].append(deepcopy(query['records'][0]))
     result=project_composed_answer_quality(enforce_agent_output_quality(text),completion)
     assert 'unsupported_daily_coverage_removed' in result.flags
