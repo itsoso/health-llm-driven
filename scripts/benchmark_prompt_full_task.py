@@ -16,6 +16,7 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
+from eval.experimental_read_thinking_budget import THINKING_PROBES
 from eval.full_task_prompt_benchmark import CallBudget, SCENARIOS, run_sample, seed_synthetic_records, require_ephemeral
 
 
@@ -59,7 +60,7 @@ async def run(args):
     reference_variant = getattr(args, "reference_variant", "baseline")
     variants = [reference_variant] if getattr(args, "baseline_only", False) else [reference_variant, *(args.variant or ["p1", "p2", "combined"])]
     production_routing = getattr(args, "production_routing", False)
-    if "preplan_budget512" in variants and (not production_routing or models != ["qwen3.8-max"]):
+    if any(v in THINKING_PROBES for v in variants) and (not production_routing or models != ["qwen3.8-max"]):
         raise ValueError("thinking_probe_requires_live_max_route")
     if production_routing and args.scripted:
         raise ValueError("production_routing_requires_live_opt_in")
@@ -80,7 +81,7 @@ async def run(args):
               "tool_budget_protocol": "logical-and-physical-v2", "per_task_logical_tool_cap": 3,
               "per_task_model_tool_proposal_cap": 3, "per_task_tool_cap": 6, "per_logical_dispatch_cap": 2, "max_input_bytes_per_call": 262144, "requested_max_output_tokens_per_call": 8000 if production_routing else 1200,
               "provider_timeout_seconds": 45, "task_timeout_seconds": 90,
-              "candidate_disposition": "eval_only_unproven_model_control" if "preplan_budget512" in variants else "runtime_candidate_default_off" if "runtime_preplan" in variants else "eval_only", "semantic_noninferiority": "not_established", "rows": [],
+              "candidate_disposition": "eval_only_unproven_model_control" if any(v in THINKING_PROBES for v in variants) else "runtime_candidate_default_off" if "runtime_preplan" in variants else "eval_only", "semantic_noninferiority": "not_established", "rows": [],
               "source_sha256": {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in (
                   "backend/eval/full_task_prompt_benchmark.py", "scripts/benchmark_prompt_full_task.py",
                   "backend/eval/experimental_read_thinking_budget.py", "backend/eval/experimental_read_synthesis.py", "backend/eval/experimental_owned_read_preplan.py",
@@ -178,7 +179,7 @@ def main():
     modes.add_argument("--include-live-llm", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model", choices=["qwen3.8-flash", "qwen3.8-max"], action="append")
-    parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout", "preplan_budget512"], action="append")
+    parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES], action="append")
     parser.add_argument("--production-routing", action="store_true", help="Use real provider resolution, request controls and one bounded Laya decision per task.")
     parser.add_argument("--reference-variant", choices=["baseline", "runtime_legacy_layout", "runtime_preplan"], default="baseline")
     parser.add_argument("--baseline-only", action="store_true", help="Evaluate the runtime in this checkout without injecting an experimental variant.")

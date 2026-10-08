@@ -1,6 +1,6 @@
 """Bounded synthetic Pi/Gateway A/B. Never imported by application runtime.
 
-This evaluates a fixed model and read task, not routing or clinical noninferiority.
+Fixed-model or explicit production-routing screens; neither proves clinical noninferiority.
 Only disposable in-memory SQLite is accepted. Provider/tool failures stop the
 sample instead of being hidden by application recovery. Consent remains real.
 """
@@ -16,8 +16,11 @@ from time import perf_counter
 from unittest.mock import patch
 from uuid import uuid4
 
+from eval.experimental_read_thinking_budget import THINKING_PROBES
+
 REFERENCE_NOW = datetime.fromisoformat("2026-09-13T23:30:00+08:00")
-VARIANTS = ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout", "preplan_budget512")
+
+VARIANTS = ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES)
 ANSWER_DIAGNOSTIC_CHAR_LIMIT = 16000
 
 
@@ -316,7 +319,7 @@ def tool_contract(request, result, scenario):
 async def run_sample(db, user_id, scenario, variant, model, budget, *, live, provider_factory=None, production_routing=False):
     if production_routing and not live:
         raise ValueError("production_routing_requires_live_opt_in")
-    if variant == "preplan_budget512" and (not production_routing or model != "qwen3.8-max"):
+    if variant in THINKING_PROBES and (not production_routing or model != "qwen3.8-max"):
         raise ValueError("thinking_probe_requires_live_max_route")
     require_ephemeral(db)
     if variant not in VARIANTS or scenario.state not in {"available", "empty", "read_failure"} or scenario.days not in {1, 7, 31}:
@@ -352,7 +355,7 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                 row["database_errors"].append(type(context.original_exception).__name__)
             sqlalchemy_event.listen(engine, "handle_error", database_error)
             stack.callback(sqlalchemy_event.remove, engine, "handle_error", database_error)
-            for name, value in (("domain_prompt_optimization", True), ("owned_read_preplanning", variant in {"runtime_preplan", "runtime_legacy_layout", "preplan_budget512"}), ("agent_base_url", None), ("agent_api_key", None),
+            for name, value in (("domain_prompt_optimization", True), ("owned_read_preplanning", variant in {"runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES}), ("agent_base_url", None), ("agent_api_key", None),
                                 ("task_tiered_routing", True), ("llm_auto_recovery_enabled", False),
                                 ("decision_mode", "on" if production_routing else "off"), ("staged_response_mode", "off"),
                                 ("decision_provider", "laya"), ("decision_admin_control_enabled", False)):
@@ -424,13 +427,13 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                     raise RuntimeError("synthetic_read_unavailable")
                 stack.enter_context(patch("app.services.agent_longitudinal_read.read_longitudinal_health_query", failed_read))
             executor = ae.AgentExecutor(db)
-            if variant not in {"runtime_preplan", "runtime_legacy_layout", "preplan_budget512"}:
+            if variant not in {"runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES}:
                 # Freeze the old runtime's model-first baseline. Historical
                 # eval variants remain independent; never stack preplanners.
                 stack.enter_context(patch.object(executor, "_preplanned_owned_read_calls", lambda *a, **k: []))
-            if variant == "preplan_budget512":
+            if variant in THINKING_PROBES:
                 from eval.experimental_read_thinking_budget import install_read_thinking_budget
-                install_read_thinking_budget(executor)
+                install_read_thinking_budget(executor, budget=THINKING_PROBES[variant])
             if variant == "runtime_legacy_layout":
                 from app.services import agent_composed_read_completion as completion_module
                 original_instructions = completion_module.read_scope_synthesis_instructions
@@ -524,7 +527,7 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                     route = executor._decision_route
                     row["decision_routing"] = route.metadata() if route is not None else None
                     row["effective_model_id"] = executor._last_effective_model_id
-                row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined", "runtime_preplan", "runtime_legacy_layout", "preplan_budget512"} else "model_and_existing_server_fallback"
+                row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined", "runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES} else "model_and_existing_server_fallback"
             if done is None:
                 raise BenchmarkStopped("missing_done")
             saved = db.get(AgentMessage, done.get("message_id"))
@@ -543,10 +546,10 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                 quality["decision_route_exercised"] = (route.get("mode") == "on"
                     and route.get("status") in {"accepted", "partial", "abstained"}
                     and len(row["decision_calls"]) == 1 and row["decision_calls"][0]["status"] == "passed")
-            if variant == "preplan_budget512":
+            if variant in THINKING_PROBES:
                 quality["thinking_control_applied"] = (not row["calls"] and scenario.state == "read_failure") or (
                     bool(row["calls"]) and all(c["phase"] == "answer"
-                        and c["request_controls"].get("thinking_budget") == 512 for c in row["calls"]))
+                        and c["request_controls"].get("thinking_budget") == THINKING_PROBES[variant] for c in row["calls"]))
             row.update(quality=quality, agent_kernel=done.get("perf", {}).get("agent_kernel"), answer=saved.content if saved else None,
                        outcome=outcome, completion_status=done.get("completion_status"),
                        runtime_preplanned=done.get("perf", {}).get("owned_read_preplanned", False),

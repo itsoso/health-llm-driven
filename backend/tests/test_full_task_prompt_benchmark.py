@@ -810,7 +810,7 @@ async def test_production_controls_are_preserved_and_still_bounded():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("decision_state", ["accepted", "abstained", "timeout"])
-@pytest.mark.parametrize("variant", ["runtime_preplan", "preplan_budget512"])
+@pytest.mark.parametrize("variant", ["runtime_preplan", "preplan_budget512", "preplan_budget8192"])
 async def test_production_route_keeps_real_resolver_quality_and_decision_budget(db, auth_user_and_headers, monkeypatch, decision_state, variant):
     from app.config import settings
     from app.services.agent_executor import AgentExecutor
@@ -858,7 +858,7 @@ async def test_production_route_keeps_real_resolver_quality_and_decision_budget(
     assert row["decision_routing"]["status"] == ("fallback" if decision_state == "timeout" else decision_state)
     assert row["effective_model_id"] == "qwen3.8-max"
     assert row["calls"][0]["request_controls"] == {"temperature":0.3, "max_tokens":8000,
-        **({"thinking_budget":512} if variant == "preplan_budget512" else {})}
+        **({"thinking_budget":int(variant.removeprefix("preplan_budget"))} if variant.startswith("preplan_budget") else {})}
     assert row["decision_calls"][0]["token_source"] == ("unknown" if decision_state == "timeout" else "api")
     assert picked_tiers == (["balanced"] if decision_state == "accepted" else [])
 
@@ -887,14 +887,15 @@ def test_summary_counts_unknown_decision_usage_and_excludes_scripted_api_attempt
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("models,production", [(None, True), (["qwen3.8-flash"], True), (["qwen3.8-max"], False)])
-async def test_invalid_thinking_probe_batch_stops_before_any_baseline(tmp_path, monkeypatch, models, production):
+@pytest.mark.parametrize("variant", ["preplan_budget512", "preplan_budget8192"])
+async def test_invalid_thinking_probe_batch_stops_before_any_baseline(tmp_path, monkeypatch, models, production, variant):
     cli = load_cli()
     called = []
     async def sample(*args, **kwargs):
         called.append(True)
         raise AssertionError("must not run")
     monkeypatch.setattr(cli, "run_sample", sample)
-    args = SimpleNamespace(case=["analysis_31d_rich"], model=models, variant=["preplan_budget512"],
+    args = SimpleNamespace(case=["analysis_31d_rich"], model=models, variant=[variant],
         repetitions=1, max_api_calls=16, scripted=False, include_live_llm=True,
         production_routing=production, output=tmp_path / "report.json")
     with pytest.raises(ValueError, match="thinking_probe_requires_live_max_route"):

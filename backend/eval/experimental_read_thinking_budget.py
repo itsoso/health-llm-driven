@@ -6,7 +6,12 @@ is not a verified model-registry capability or an approved production setting.
 """
 
 
-def install_read_thinking_budget(executor):
+THINKING_PROBES = {"preplan_budget512": 512, "preplan_budget8192": 8192}
+
+
+def install_read_thinking_budget(executor, *, budget=512):
+    if type(budget) is not int or budget not in THINKING_PROBES.values():
+        raise ValueError("unsupported_eval_thinking_budget")
     original_plan = executor._preplanned_owned_read_calls
     original_controls = executor._maybe_apply_synthesis_thinking_budget
     preplanned = False
@@ -24,7 +29,7 @@ def install_read_thinking_budget(executor):
         if (preplanned and executor._last_effective_model_id == 'qwen3.8-max'
                 and not executor._requires_quality_floor()
                 and not executor._turn_invoked_deep_analysis and not wire.get('tools')):
-            wire['thinking_budget'] = 512
+            wire['thinking_budget'] = budget
 
     executor._preplanned_owned_read_calls = plan
     executor._maybe_apply_synthesis_thinking_budget = controls
