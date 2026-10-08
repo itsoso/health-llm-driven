@@ -513,6 +513,22 @@ async def test_baseline_only_plan_does_not_inject_experiments(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_production_route_cli_requires_live_opt_in(tmp_path, monkeypatch):
+    cli = load_cli()
+    called = []
+    async def sample(*args, **kwargs):
+        called.append(True)
+        raise AssertionError("must not run")
+    monkeypatch.setattr(cli, "run_sample", sample)
+    args = SimpleNamespace(case=["owned_read_7d_available"], model=["qwen3.8-max"], variant=None,
+                           repetitions=1, max_api_calls=4, scripted=True, include_live_llm=False,
+                           baseline_only=True, production_routing=True, output=tmp_path / "plan.json")
+    with pytest.raises(ValueError, match="production_routing_requires_live_opt_in"):
+        await cli.run(args)
+    assert not called
+
+
+@pytest.mark.asyncio
 async def test_existing_retry_enabled_sdk_client_is_not_reused(db, auth_user_and_headers, monkeypatch):
     from app.config import settings
     from app.services.llm.providers import openai_provider as op
@@ -775,3 +791,60 @@ async def test_stage_metrics_do_not_change_events_or_payload():
     assert row["last_event_type"] == "finish"
     assert row["payload_sha256"] == hashlib.sha256(json.dumps(captured[0], ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
     assert "hidden synthetic reasoning" not in json.dumps(row)
+
+
+@pytest.mark.asyncio
+async def test_production_controls_are_preserved_and_still_bounded():
+    rows, seen = [], []
+    class Capture(Scripted):
+        async def chat_stream(self, **kwargs):
+            seen.append(kwargs)
+            async for event in super().chat_stream(**kwargs): yield event
+    p = MeasuredProvider(Capture, "synthetic", CallBudget(1), rows, live=False, preserve_controls=True)
+    _ = [e async for e in p.chat_stream(messages=[], model=None, temperature=0.3, max_tokens=8000)]
+    assert seen[0]["temperature"] == 0.3 and seen[0]["max_tokens"] == 8000
+    with pytest.raises(BenchmarkStopped, match="output_budget"):
+        _ = [e async for e in p.chat_stream(messages=[], max_tokens=8001)]
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_production_route_keeps_real_resolver_quality_and_decision_budget(db, auth_user_and_headers, monkeypatch):
+    from app.config import settings
+    from app.services.agent_executor import AgentExecutor
+    from app.services.llm import factory
+    from eval.full_task_prompt_benchmark import ScriptedProvider
+    from tests.test_decision_routing import wire, fake_result
+    monkeypatch.setattr(settings, "app_env", "test")
+    user, _ = auth_user_and_headers
+    scenario = Scenario("real-route", 31, "available", rich_profile=True)
+    seed_synthetic_records(db, user.id, scenario)
+    seen_decisions = wire(monkeypatch, fake_result("balanced"))
+    from app.services.llm import task_routing
+    picked_tiers = []
+    real_picker = task_routing.pick_model_id_by_tier
+    def pick(tier, **kwargs):
+        picked_tiers.append(tier)
+        return real_picker(tier, **kwargs)
+    monkeypatch.setattr(task_routing, "pick_model_id_by_tier", pick)
+    class Provider(ScriptedProvider):
+        model = "qwen3.8-max"
+    monkeypatch.setattr(factory, "create_provider_for_model_id", lambda *a, **k: Provider(scenario))
+    calls = []
+    original = AgentExecutor._resolve_chat_provider
+    def resolve(self, tools):
+        calls.append(bool(tools))
+        return original(self, tools)
+    monkeypatch.setattr(AgentExecutor, "_resolve_chat_provider", resolve)
+    budget = CallBudget(2)
+    row = await run_sample(db, user.id, scenario, "runtime_preplan", "qwen3.8-max", budget,
+                           live=False, production_routing=True)
+    assert row["status"] == "passed_contracts", row
+    assert calls == [False] and len(seen_decisions) == 1
+    assert len(row["calls"]) == 1 and len(row["decision_calls"]) == 1 and budget.used == 2
+    assert row["decision_routing"]["provider"] == "laya"
+    assert row["decision_routing"]["effective_tier"] == "balanced"
+    assert row["effective_model_id"] == "qwen3.8-max"
+    assert row["calls"][0]["request_controls"] == {"temperature":0.3, "max_tokens":8000}
+    assert row["decision_calls"][0]["token_source"] == "synthetic"
+    assert picked_tiers == ["balanced"]

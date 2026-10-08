@@ -163,17 +163,24 @@ def health_digest(db):
 class MeasuredProvider:
     provider_name = "bounded-eval"
 
-    def __init__(self, factory, model, budget, calls, *, live, tool_budget=None):
+    def __init__(self, factory, model, budget, calls, *, live, tool_budget=None, preserve_controls=False):
         self.factory, self.model, self.budget, self.calls, self.live = factory, model, budget, calls, live
         self.tool_budget = tool_budget or ToolBudget()
+        self.preserve_controls = preserve_controls
 
     async def chat(self, **kwargs):
         raise BenchmarkStopped("unexpected_nonstream_call")
 
     async def chat_stream(self, **kwargs):
         from app.services.llm.usage_tracker import begin_usage_capture, end_usage_capture, summarize_usage_capture
-        wire = {**kwargs, "model": None, "temperature": 0, "max_tokens": min(int(kwargs.get("max_tokens") or 1200), 1200),
-                "return_metadata": True, "stream_options": {"include_usage": True}}
+        if self.preserve_controls:
+            maximum = kwargs.get("max_tokens")
+            if type(maximum) is not int or not 1 <= maximum <= 8000:
+                raise BenchmarkStopped("output_budget")
+            wire = {**kwargs, "return_metadata": True, "stream_options": {"include_usage": True}}
+        else:
+            wire = {**kwargs, "model": None, "temperature": 0, "max_tokens": min(int(kwargs.get("max_tokens") or 1200), 1200),
+                    "return_metadata": True, "stream_options": {"include_usage": True}}
         payload = json.dumps(wire, ensure_ascii=False, sort_keys=True, default=str).encode()
         if len(payload) > 262144:
             raise BenchmarkStopped("input_budget")
@@ -306,7 +313,7 @@ def tool_contract(request, result, scenario):
             "dimensions": sorted(dimensions), "records_ok": bool(valid)}
 
 
-async def run_sample(db, user_id, scenario, variant, model, budget, *, live, provider_factory=None):
+async def run_sample(db, user_id, scenario, variant, model, budget, *, live, provider_factory=None, production_routing=False):
     require_ephemeral(db)
     if variant not in VARIANTS or scenario.state not in {"available", "empty", "read_failure"} or scenario.days not in {1, 7, 31}:
         raise ValueError("unsupported_sample")
@@ -325,7 +332,8 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
     row = {"case": scenario.id, "variant": variant, "model": model, "status": "running", "calls": [], "tool_contracts": [],
            "tool_attempts": 0, "database": "disposable_sqlite", "first_ui_content_seconds": None, "live": live,
            "wall_seconds": None, "database_errors": [], "rejected_tools": [], "knowledge_contracts": [],
-           "query": scenario.query, "allow_knowledge": scenario.allow_knowledge, "gateway_decisions": []}
+           "query": scenario.query, "allow_knowledge": scenario.allow_knowledge, "gateway_decisions": [],
+           "production_routing": production_routing, "decision_calls": []}
     original_factory = factory.create_provider_for_model_id
     make_provider = provider_factory or ((lambda: original_factory(model)) if live else (lambda: ScriptedProvider(scenario)))
     provider = MeasuredProvider(make_provider, model, budget, row["calls"], live=live)
@@ -342,7 +350,8 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             stack.callback(sqlalchemy_event.remove, engine, "handle_error", database_error)
             for name, value in (("domain_prompt_optimization", True), ("owned_read_preplanning", variant in {"runtime_preplan", "runtime_legacy_layout"}), ("agent_base_url", None), ("agent_api_key", None),
                                 ("task_tiered_routing", True), ("llm_auto_recovery_enabled", False),
-                                ("decision_mode", "off"), ("staged_response_mode", "off")):
+                                ("decision_mode", "on" if production_routing else "off"), ("staged_response_mode", "off"),
+                                ("decision_provider", "laya"), ("decision_admin_control_enabled", False)):
                 stack.enter_context(patch.object(settings, name, value))
             stack.enter_context(patch.object(openai_provider, "_DEFAULT_MAX_RETRIES", 0))
             client_kwargs = openai_provider.OpenAIProvider._client_kwargs
@@ -368,8 +377,42 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             clock = ExecutionContext.now.__func__
             stack.enter_context(patch.object(ExecutionContext, "now", classmethod(lambda cls, **kwargs: clock(cls, **{**kwargs, "now_utc": REFERENCE_NOW}))))
             for name in ("create_provider_for_model_id", "create_provider_for_user", "get_llm_provider"):
-                stack.enter_context(patch.object(factory, name, lambda *a, **k: provider))
-            stack.enter_context(patch("app.services.llm.task_routing.pick_model_id_by_tier", lambda *a, **k: model))
+                original = getattr(factory, name)
+                def measured_factory(*args, _original=original, **kwargs):
+                    actual = _original(*args, **kwargs)
+                    if isinstance(actual, MeasuredProvider):
+                        return actual
+                    return MeasuredProvider(lambda: actual, getattr(actual, "model", model), budget,
+                        row["calls"], live=live, tool_budget=provider.tool_budget, preserve_controls=True)
+                stack.enter_context(patch.object(factory, name,
+                    measured_factory if production_routing else lambda *a, **k: provider))
+            if production_routing:
+                from app.services.decisions import routing as decision_routing
+                original_decision_factory = decision_routing.provider_from_settings
+                class BoundedDecision:
+                    async def evaluate(self, request, *, user_id):
+                        if row["decision_calls"]:
+                            raise BenchmarkStopped("decision_call_budget")
+                        budget.reserve()
+                        entry = {"token_source": "unknown" if live else "synthetic",
+                                 "input_tokens": None, "output_tokens": None, "status": "running"}
+                        row["decision_calls"].append(entry)
+                        start = perf_counter()
+                        try:
+                            result = await original_decision_factory().evaluate(request, user_id=user_id)
+                            entry.update(status="passed", model=result.model,
+                                input_tokens=result.input_tokens if live else None,
+                                output_tokens=result.output_tokens if live else None,
+                                token_source="api" if live else "synthetic")
+                            return result
+                        except BaseException as exc:
+                            entry.update(status="failed", error_type=type(exc).__name__)
+                            raise
+                        finally:
+                            entry["wall_seconds"] = perf_counter() - start
+                stack.enter_context(patch.object(decision_routing, "provider_from_settings", BoundedDecision))
+            if not production_routing:
+                stack.enter_context(patch("app.services.llm.task_routing.pick_model_id_by_tier", lambda *a, **k: model))
             if variant in {"p1", "combined"}:
                 stack.enter_context(patch("app.services.agent_prompt_sections.build_base_prompt_parts", build_read_synthesis_parts))
             if scenario.state == "read_failure":
@@ -386,7 +429,8 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                 original_instructions = completion_module.read_scope_synthesis_instructions
                 stack.enter_context(patch.object(completion_module, "read_scope_synthesis_instructions",
                     lambda scope, **kwargs: original_instructions(scope, include_layout=True)))
-            stack.enter_context(patch.object(executor, "_resolve_chat_provider", lambda tools: (provider, tools)))
+            if not production_routing:
+                stack.enter_context(patch.object(executor, "_resolve_chat_provider", lambda tools: (provider, tools)))
             dispatch = executor._dispatch_tool_request
             from app.services.agent_kernel.tool_gateway import ToolGateway
             preflight = ToolGateway.preflight
@@ -469,6 +513,10 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             finally:
                 row["wall_seconds"] = perf_counter() - task_started
                 row["tool_budget"] = dict(vars(provider.tool_budget))
+                if production_routing:
+                    route = executor._decision_route
+                    row["decision_routing"] = route.metadata() if route is not None else None
+                    row["effective_model_id"] = executor._last_effective_model_id
                 row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined", "runtime_preplan", "runtime_legacy_layout"} else "model_and_existing_server_fallback"
             if done is None:
                 raise BenchmarkStopped("missing_done")
@@ -483,6 +531,11 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                        "knowledge_contracts": all(c["honest_empty_kb"] for c in row["knowledge_contracts"]),
                        "expected_outcome": outcome == ("failed" if scenario.state == "read_failure" else "complete"),
                        "answer_present": bool(saved and saved.content.strip()), "semantic_review": "required"}
+            if production_routing:
+                route = row.get("decision_routing") or {}
+                quality["decision_route_exercised"] = (route.get("mode") == "on"
+                    and route.get("status") in {"accepted", "partial"}
+                    and len(row["decision_calls"]) == 1 and row["decision_calls"][0]["status"] == "passed")
             row.update(quality=quality, agent_kernel=done.get("perf", {}).get("agent_kernel"), answer=saved.content if saved else None,
                        outcome=outcome, completion_status=done.get("completion_status"),
                        runtime_preplanned=done.get("perf", {}).get("owned_read_preplanned", False),

@@ -26,9 +26,13 @@ def summary(rows):
     result = []
     for (model, variant), samples in sorted(groups.items()):
         calls = [call for sample in samples for call in sample["calls"]]
+        decisions = [call for sample in samples for call in sample.get("decision_calls", [])]
         known = [call for call in calls if call["token_source"] == "api"]
         times = sorted(sample["wall_seconds"] for sample in samples if sample.get("wall_seconds") is not None)
         result.append({"model": model, "variant": variant, "tasks": len(samples), "provider_attempts": len(calls),
+                       "decision_attempts": len(decisions), "total_api_attempts": len(calls) + len(decisions),
+                       "decision_input_tokens_known": sum(c["input_tokens"] for c in decisions if c["token_source"] == "api"),
+                       "decision_output_tokens_known": sum(c["output_tokens"] for c in decisions if c["token_source"] == "api"),
                        "passed_contracts": sum(sample["status"] == "passed_contracts" for sample in samples),
                        "failed_tasks": sum(sample["status"] != "passed_contracts" for sample in samples),
                        "api_input_tokens_known": sum(call["input_tokens"] for call in known),
@@ -48,17 +52,21 @@ async def run(args):
         raise ValueError("baseline_only_conflicts_with_variant")
     reference_variant = getattr(args, "reference_variant", "baseline")
     variants = [reference_variant] if getattr(args, "baseline_only", False) else [reference_variant, *(args.variant or ["p1", "p2", "combined"])]
+    production_routing = getattr(args, "production_routing", False)
+    if production_routing and args.scripted:
+        raise ValueError("production_routing_requires_live_opt_in")
     tasks = len(cases) * len(models) * len(variants) * args.repetitions
     if not 1 <= args.repetitions <= 3 or not 1 <= args.max_api_calls <= 256 or len(set(models)) != len(models) or len(set(variants)) != len(variants):
         raise ValueError("invalid_or_duplicate_batch_parameters")
-    if (args.scripted or args.include_live_llm) and tasks * 3 > args.max_api_calls:
+    if (args.scripted or args.include_live_llm) and tasks * (4 if production_routing else 3) > args.max_api_calls:
         raise ValueError("worst_case_calls_exceed_budget")
     report = {"status": "running" if args.scripted or args.include_live_llm else "plan_only", "batch_id": uuid4().hex,
               "mode": "live" if args.include_live_llm else "scripted" if args.scripted else "plan",
+              "production_routing": production_routing, "per_task_decision_call_cap": int(production_routing),
               "models": models, "variants": variants, "reference_variant": reference_variant, "cases": [case.id for case in cases],
               "planned_tasks": tasks, "max_provider_attempts": args.max_api_calls, "per_task_call_cap": 3,
               "tool_budget_protocol": "logical-and-physical-v2", "per_task_logical_tool_cap": 3,
-              "per_task_model_tool_proposal_cap": 3, "per_task_tool_cap": 6, "per_logical_dispatch_cap": 2, "max_input_bytes_per_call": 262144, "requested_max_output_tokens_per_call": 1200,
+              "per_task_model_tool_proposal_cap": 3, "per_task_tool_cap": 6, "per_logical_dispatch_cap": 2, "max_input_bytes_per_call": 262144, "requested_max_output_tokens_per_call": 8000 if production_routing else 1200,
               "provider_timeout_seconds": 45, "task_timeout_seconds": 90,
               "candidate_disposition": "runtime_candidate_default_off" if "runtime_preplan" in variants else "eval_only", "semantic_noninferiority": "not_established", "rows": [],
               "source_sha256": {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in (
@@ -69,9 +77,12 @@ async def run(args):
                   "backend/app/config.py", "backend/app/services/agent_executor.py", "backend/app/services/agent_prompt_sections.py",
                   "backend/app/services/agent_longitudinal_read.py", "backend/app/services/agent_kernel/capability_policy.py",
                   "backend/app/services/agent_tool_prompt_projection.py", "backend/app/services/tool_schema_registry.py",
-                  "backend/app/services/llm/providers/openai_provider.py", "backend/app/services/llm/usage_tracker.py")},
+                  "backend/app/services/llm/providers/openai_provider.py", "backend/app/services/llm/usage_tracker.py",
+                  "backend/app/services/llm/model_registry.py", "backend/app/services/llm/factory.py",
+                  "backend/app/services/decisions/routing.py", "backend/app/services/decisions/systemone.py")},
               "limits": ["Fixed synthetic read-task screen, not production load or full holdout coverage.",
-                         "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test.",
+                         ("Real resolver and Laya on, staged off, application temperature/output limits retained; admin mode held on locally, real production admin control itself is not exercised."
+                          if production_routing else "Fixed requested model, temperature zero and output cap; decision/staged routing off and not under test."),
                          "Redis/Twin cache disabled; application prompts and read adapters retained.",
                          "Rich-profile cases seed synthetic allergies, chronic condition and medication; clinical/CGM context and optional local knowledge base remain absent.",
                          "Per-pair synthetic user and record IDs, independent conversations, real audited consent; no production database.",
@@ -125,7 +136,7 @@ async def run(args):
                         seed_synthetic_records(db, user.id, case)
                         for variant in order:
                             try:
-                                row = await run_sample(db, user.id, case, variant, model, budget, live=args.include_live_llm)
+                                row = await run_sample(db, user.id, case, variant, model, budget, live=args.include_live_llm, production_routing=production_routing)
                             except (asyncio.CancelledError, KeyboardInterrupt) as exc:
                                 if hasattr(exc, "benchmark_sample"):
                                     report["rows"].append(exc.benchmark_sample)
@@ -156,6 +167,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model", choices=["qwen3.8-flash", "qwen3.8-max"], action="append")
     parser.add_argument("--variant", choices=["p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout"], action="append")
+    parser.add_argument("--production-routing", action="store_true", help="Use real provider resolution, request controls and one bounded Laya decision per task.")
     parser.add_argument("--reference-variant", choices=["baseline", "runtime_legacy_layout"], default="baseline")
     parser.add_argument("--baseline-only", action="store_true", help="Evaluate the runtime in this checkout without injecting an experimental variant.")
     parser.add_argument("--case", choices=[case.id for case in SCENARIOS], action="append")
