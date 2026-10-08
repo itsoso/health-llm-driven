@@ -433,3 +433,24 @@ def test_live_run_broker_delivery_is_verified_with_real_isolated_redis():
     assert 'test -n "$TEST_LIVE_RUN_BROKER_URL"' in step["run"]
     assert "tests/test_live_run_broker_integration.py" in step["run"]
     assert "continue-on-error" not in step
+def test_live_run_api_contracts_are_selected_by_ci_catalog():
+    import ast
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    catalog = json.loads((root / ".github/ci/backend-pytest-shards.json").read_text())
+    selected = {
+        path.split("::", 1)[1]
+        for shard in catalog["shards"] for path in shard["paths"]
+        if path.startswith("tests/test_live_run.py::")
+    }
+    module = ast.parse((root / "backend/tests/test_live_run.py").read_text())
+    assert not [node.name for node in module.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name.startswith("test_")
+                and not any(ast.unparse(decorator).startswith("pytest.fixture")
+                            for decorator in node.decorator_list)], "top-level tests would be excluded by the CI catalog"
+    classes = {node.name for node in module.body if isinstance(node, ast.ClassDef)
+               and node.name.startswith("Test")}
+    assert classes == selected
