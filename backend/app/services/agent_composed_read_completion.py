@@ -660,12 +660,13 @@ def _uncertain_record_statement(text: str, position: int) -> bool:
 
 _DAILY_SLEEP_TOTAL = re.compile(
     r"(?:睡眠(?:记录)?[：:]\s*)?"
-    r"(?:(?P<days>\d+)天均为(?P<source>Garmin)来源[，,]\s*)?"
-    r"(?:(?:已返回|已记录)的|(?:睡眠)?记录(?:的|显示)?)"
+    r"(?:(?P<days>\d+)天均为(?P<source>Garmin)来源"
+    r"(?:[、，,](?P<wake>按醒来日期)记录)?[，,]\s*)?"
+    r"(?P<record_intro>(?:已返回|已记录)的|(?:睡眠)?记录(?:的|显示)?)?"
     r"(?:每日|每天)(?:总睡眠(?:时长)?|睡眠总时长|睡眠时长|总时长)"
     r"(?:读数)?(?:均为|都是|为|是)?\s*"
     r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>分钟|小时)"
-    r"(?:[、，,]\s*评分(?P<score>\d+(?:\.\d+)?)(?:分)?)?[。！？!?]*", re.I,
+    r"(?:[、，,]\s*评分(?P<score>\d+(?:\.\d+)?)(?:分)?)?[。；;！？!?]*", re.I,
 )
 
 
@@ -679,6 +680,10 @@ def _verified_daily_sleep_quantities(text: str, query: dict, days: int) -> bool:
     claim = _DAILY_SLEEP_TOTAL.fullmatch(text)
     rows = query["records"]
     if claim is None or len(rows) != days:
+        return False
+    if not (claim["record_intro"] or claim["source"]):
+        return False
+    if claim["wake"] is not None and query.get("date_attribution") != "wake_date":
         return False
     if claim["days"] is not None and Decimal(claim["days"]) != days:
         return False

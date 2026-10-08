@@ -19,11 +19,13 @@ def daily_completion(days=31):
     query['records'] = [dict(deepcopy(row), record_index=i) for i in range(days)]
     for i,r in enumerate(query['records']): r['known_fields']['record_date']=(start+timedelta(days=i)).isoformat()
     query['record_count']=days
+    query['date_attribution']='wake_date'
     return replace(completion, verified_evidence=evidence), query
 
 @pytest.mark.parametrize('text', [
     '睡眠：31天均为Garmin来源，已返回的每日总睡眠420分钟、评分80分。',
     '睡眠记录每日总时长为7小时。',
+    '睡眠：31天均为Garmin来源、按醒来日期记录，每日总睡眠420分钟、评分80；',
     '已记录的每日睡眠总时长均为420分钟。',
 ])
 def test_keep_verified_daily_sleep_quantities(text):
@@ -41,6 +43,7 @@ def test_keep_verified_daily_sleep_quantities(text):
     ('wrong_source','睡眠：31天均为Garmin来源，已返回的每日总睡眠420分钟、评分80分。'),
     ('none','睡眠：32天均为Garmin来源，已返回的每日总睡眠420分钟、评分80分。'),
     ('missing_score','睡眠记录每日总时长7小时、评分80分。'),
+    ('wrong_attribution','睡眠：31天均为Garmin来源、按醒来日期记录，每日总睡眠420分钟、评分80；'),
     ('none','睡眠记录每日深睡眠总时长7小时。'),
     ('none','睡眠记录每日REM睡眠总时长7小时。'),
     ('none','请按照已有记录每天维持睡眠总时长7小时。'),
@@ -59,6 +62,7 @@ def test_keep_veto_for_unverified_daily_quantities(mutation,text):
     if mutation=='missing_day': query['records'].pop()
     elif mutation=='missing_duration': query['records'][0]['known_fields'].pop('total_sleep_duration')
     elif mutation=='different_duration': query['records'][0]['known_fields']['total_sleep_duration']=480
+    elif mutation=='wrong_attribution': query['date_attribution']='unknown'
     elif mutation=='wrong_source': query['records'][0]['known_fields']['sources']['total_sleep_duration']='apple_health'
     elif mutation=='missing_score': query['records'][0]['known_fields'].pop('sleep_score')
     elif mutation=='duplicate_day': query['records'].append(deepcopy(query['records'][0]))
@@ -76,7 +80,7 @@ async def test_actual_pi_keeps_verified_daily_sleep_text(db, auth_user_and_heade
     user, _ = auth_user_and_headers
     scenario=Scenario('sleep-evidence-replay',31,'available',allow_knowledge=True,dense_records=True)
     seed_synthetic_records(db,user.id,scenario)
-    answer='睡眠：31天均为Garmin来源，已返回的每日总睡眠420分钟、评分80分。'
+    answer='睡眠：31天均为Garmin来源、按醒来日期记录，每日总睡眠420分钟、评分80；'
     class RecordedAnswer(ScriptedProvider):
         async def chat_stream(self, **kwargs):
             if kwargs.get('tools'):
