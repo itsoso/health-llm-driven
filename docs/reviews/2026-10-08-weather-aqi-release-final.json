@@ -1,0 +1,249 @@
+{
+  "deployed_sha": "be8bd98e10db01241dd0b9e6e4c34181a9061345",
+  "full_ci": {
+    "conclusion": "success",
+    "databaseId": 37784722390,
+    "headSha": "be8bd98e10db01241dd0b9e6e4c34181a9061345",
+    "jobs": [
+      {
+        "name": "classify-changes",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-quality",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "release-invariants",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "docs-quality",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "mobile-typecheck",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-plan",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "type-drift",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "retained-runner-startup",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "mac-build",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "frontend-build",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "agent-runtime-postgres",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-06",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-08",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-15",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-04",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-03",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-11",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-13",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-07",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-14",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-10",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-16",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-09",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-05",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-02",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-01",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-test-balanced-12",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "release-tests",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend-tests",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "status": "completed"
+  },
+  "trusted_validate_run": 37786822337,
+  "trusted_validate_conclusion": "success",
+  "trusted_backend": {
+    "conclusion": "success",
+    "databaseId": 37787877892,
+    "headSha": "be8bd98e10db01241dd0b9e6e4c34181a9061345",
+    "jobs": [
+      {
+        "name": "preflight",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-permission",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "retained-testflight",
+        "status": "completed",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "ios-build",
+        "status": "completed",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "testflight",
+        "status": "completed",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "release-result",
+        "status": "completed",
+        "conclusion": "skipped"
+      }
+    ],
+    "status": "completed"
+  },
+  "production": {
+    "expected_sha": "be8bd98e10db01241dd0b9e6e4c34181a9061345",
+    "markers": {
+      "started.json": {
+        "sha": "be8bd98e10db01241dd0b9e6e4c34181a9061345",
+        "state": "STARTED"
+      },
+      "prepared.json": {
+        "sha": "be8bd98e10db01241dd0b9e6e4c34181a9061345",
+        "state": "PREPARED"
+      },
+      "deployment-started.json": {
+        "sha": "be8bd98e10db01241dd0b9e6e4c34181a9061345",
+        "state": "DEPLOYING"
+      },
+      "completed.json": {
+        "sha": "be8bd98e10db01241dd0b9e6e4c34181a9061345",
+        "state": "SUCCEEDED"
+      }
+    },
+    "production_sha": "be8bd98e10db01241dd0b9e6e4c34181a9061345",
+    "lease_present": false,
+    "services": {
+      "health-backend": "active",
+      "celery-worker": "active",
+      "celery-beat": "active",
+      "health-frontend": "active"
+    },
+    "backend": {
+      "KillMode": "mixed",
+      "TimeoutStopUSec": "45s",
+      "KillSignal": "15",
+      "RestartKillSignal": "15",
+      "SendSIGKILL": "yes",
+      "FinalKillSignal": "9",
+      "NRestarts": "0",
+      "NeedDaemonReload": "no",
+      "single_worker": true,
+      "graceful_30s": true
+    }
+  },
+  "public_https_health": {
+    "status_code": 200,
+    "status": "healthy"
+  },
+  "independent_g4": "GO",
+  "acceptance_helper_sha256": "50e08427b5e48d76b423522942fe49702093057b2d150fb0db7464ca58be993e",
+  "scope": "Backend code deployed; server-side run_stream with synthetic isolated database and actual public environment services. No real-device UI acceptance claimed."
+}

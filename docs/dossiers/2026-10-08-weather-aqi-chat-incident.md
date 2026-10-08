@@ -2,14 +2,14 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | S5 验证与独立审查 |
+| 状态 | shipped |
+| 当前阶段 | S6 已发布且服务端真实验收通过 |
 
 - 日期：2026-10-08
 - Controller：health-harness-orchestrator（incident），safety-gate overlay。
 - Harness：`6dcf36a10fa2`。
 - 接手基线：`549765a95a5011cb06bd62fe28d669d3f2991892`；此前后端发布：`9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c`。
-- 当前状态：`62cfbf1bd9dacee54b854b14ad51062a22700642` 已部署成功；真实公共服务 G6 发现 AQI 漏展示和公共回合完成阶段多余 Twin 查询，继续整改。下文阶段记录按时间保留，以末尾续记为准。
+- 当前状态：`be8bd98e10db01241dd0b9e6e4c34181a9061345` 已合入 main、部署成功并通过真实公共服务 G6；以下为按时间保留的历史记录，以末尾最终裁决为准。
 
 ## 用户验收与边界
 
@@ -124,3 +124,20 @@
 - 固定 `6bc041795089a835dbd6de6c9f4634ae9114bcb3` 独立 G4 NO-GO：有限条件校验拒绝现有 Open-Meteo 合法词（晴朗、霜雾、毛毛雨等）；泛预报未约束当前完整日期窗口，可能把陈旧、越界或不完整返回标成功。候选未推送，返回实现与测试阶段。该版本通用健康真实模型 PASS 不豁免天气专项失败。
 
 - G4 三项整改：覆盖适配器全部26种有限描述；泛预报要求本轮日期起 `query.days` 完整窗口，过期与越界不展示；温度上下限在格式化前比较。RED 10 failed → 160 passed；扩展 CI-mode 回归 253 passed，System Map 通过。最终正式健康实模回归10 API调用全部成功且源码哈希未变，见 `docs/reviews/2026-10-08-weather-aqi-deterministic-final-live-regression.json`。等待新固定提交 G4/CI/发布与真实公共验收。
+
+## G3/G4 最终代码与质量裁决
+
+裁决：PASS。固定部署候选 `be8bd98e10db01241dd0b9e6e4c34181a9061345`；253 项本地 CI-mode 回归、83 项独立审查测试通过，三个 G4 阻断关闭。正式健康实模10调用、35份源码摘要匹配候选；文件摘要绑定提交前测量结果，不能把报告 source_commit 字段冒称为最终提交。未恢复被否决的写工具说明压缩。
+
+## G5 最终发布裁决
+
+裁决：PASS。自动 CI `37784570636` 成功，完整 CI `37784722390` 的29项均成功；Trusted validate `37786822337` 与 backend `37787877892` 成功。服务器生产 SHA 与候选一致，持久化回执 `SUCCEEDED`，发布 lease 已释放，4个服务 active，后端 NRestarts=0，公开 HTTPS 健康接口200/healthy。授权切换保留 launcher 锁 inode，原部署回执保留。结构化证据见 `docs/reviews/2026-10-08-weather-aqi-release-final.json`。本次仅后端，无 OTA 或原生包发布。
+
+## G6 最终真实服务裁决
+
+裁决：PASS。使用已部署源码、临时隔离用户库和实际公共天气服务，执行截图原句“杭州明天天气温度怎么样？空气质量。”；真实网关恰好预报与空气质量两读，模型/Pi/Twin尝试均为零，空 usage 捕获桶且隔离库无 usage 行，无 ERROR 或 SQL 错误。日期、天气、温度上下限、AQI与等级、未知观测时点及未来AQI缺失均准确呈现，流式内容等于保存内容，done及保存终态均complete。
+
+- 实际结果：2026-10-09晴，17～27℃；来源AQI57、良，明确未提供有效观测时间，不能代表未来空气质量。成功复验0.96秒、零模型调用及输入token；这是一次服务端样本，不是手机端耗时或生产P95结论。
+- 第一次新版验收真实事实与终态已全通过，但统计oracle误将 tracker 的正常空捕获 `None` 视为失败，原FAIL保留为 `docs/reviews/2026-10-08-weather-aqi-zero-usage-oracle-first.json`。独立9项正反检查确认修正仅验收器：同时要求空捕获桶、隔离库零usage行和无任何provider/Pi/Twin尝试；不改生产代码、不追认旧FAIL。
+- 修正验收器固定摘要 `50e08427b5e48d76b423522942fe49702093057b2d150fb0db7464ca58be993e` 获独立GO，新执行PASS：`docs/reviews/2026-10-08-weather-aqi-production-final.json`。真实用户手机界面未在本次操作，不冒称设备端验收。
+- 原62cf生产漏AQI、提示词方案 freshness 失败及6bc独立NO-GO证据全部保留。后续提交仅归档本节及证据，部署运行时代码精确绑定上述be8提交。
