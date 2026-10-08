@@ -42,6 +42,8 @@ def check_response(content: str, expected: dict) -> list[str]:
         return ["invalid_root"]
     foods = value["foods"]
     failures = []
+    if value.get("success") is False:
+        failures.append("explicit_recognition_failure")
     if not {"foods", "meal_description", "health_tips"} <= value.keys():
         failures.append("missing_top_fields")
     if len(foods) != expected["food_count"]:
@@ -50,6 +52,8 @@ def check_response(content: str, expected: dict) -> list[str]:
         if not isinstance(food, dict) or not FOOD_FIELDS <= food.keys():
             failures.append("missing_food_fields")
             continue
+        if not isinstance(food["name"], str) or not food["name"].strip():
+            failures.append("invalid_food_name")
         for key in ("quantity_grams", "label_basis_grams", "calories", "protein", "carbs", "fat", "fiber", "confidence", "portion_confidence"):
             number = food[key]
             if number is not None and (

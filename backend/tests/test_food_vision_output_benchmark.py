@@ -119,3 +119,26 @@ def test_observer_restores_singleton_and_discards_private_responses(existing_ove
     assert provider.__dict__ == before
     assert provider._get_client() is original_client
     assert calls == [{"model": "synthetic"}]
+
+
+@pytest.mark.parametrize("food_count", [0, 1])
+def test_explicit_provider_failure_cannot_pass_as_food_or_nonfood(food_count):
+    value = response()
+    value["success"] = False
+    if not food_count:
+        value["foods"] = []
+    assert "explicit_recognition_failure" in benchmark.check_response(json.dumps(value), {"food_count": food_count})
+
+
+@pytest.mark.parametrize("name", [None, 123, True, [], "", " \t\n"])
+def test_missing_food_identity_cannot_pass_count_only_oracle(name):
+    value = response()
+    value["foods"][0]["name"] = name
+    assert "invalid_food_name" in benchmark.check_response(json.dumps(value), {"food_count": 1})
+
+
+def test_valid_food_identity_preserves_unknown_nutrition_and_confidence():
+    value = response()
+    for key in ["quantity_grams", "label_basis_grams", "calories", "protein", "carbs", "fat", "fiber", "confidence", "portion_confidence"]:
+        value["foods"][0][key] = None
+    assert benchmark.check_response(json.dumps(value), {"food_count": 1}) == []
