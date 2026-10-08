@@ -1,0 +1,267 @@
+{
+  "status": "failed",
+  "batch_id": "c3cae683a422480a895200c6a2f8415c",
+  "mode": "live",
+  "production_routing": true,
+  "per_task_decision_call_cap": 1,
+  "models": [
+    "qwen3.8-max"
+  ],
+  "variants": [
+    "baseline",
+    "runtime_preplan"
+  ],
+  "reference_variant": "baseline",
+  "cases": [
+    "analysis_31d_rich"
+  ],
+  "planned_tasks": 6,
+  "max_provider_attempts": 24,
+  "per_task_call_cap": 3,
+  "tool_budget_protocol": "logical-and-physical-v2",
+  "per_task_logical_tool_cap": 3,
+  "per_task_model_tool_proposal_cap": 3,
+  "per_task_tool_cap": 6,
+  "per_logical_dispatch_cap": 2,
+  "max_input_bytes_per_call": 262144,
+  "requested_max_output_tokens_per_call": 8000,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "runtime_candidate_default_off",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "analysis_31d_rich",
+      "variant": "baseline",
+      "model": "qwen3.8-max",
+      "status": "failed_contracts",
+      "calls": [
+        {
+          "call_index": 2,
+          "payload_sha256": "d6ed658297f0a9e7d8c2cb5b537f3491c925a400dc61cdb4da4d9bf925501888",
+          "input_bytes": 9626,
+          "phase": "tools",
+          "token_source": "api",
+          "input_tokens": 2626,
+          "output_tokens": 2266,
+          "cached_tokens": [
+            null
+          ],
+          "first_content_seconds": null,
+          "answer_text": null,
+          "answer_text_truncated": false,
+          "first_event_seconds": 0.7304517499869689,
+          "first_reasoning_seconds": 0.7304517499869689,
+          "last_event_seconds": 11.071611083985772,
+          "last_event_type": "finish",
+          "event_counts": {
+            "reasoning": 592,
+            "content": 0,
+            "tool_calls": 1,
+            "finish": 1,
+            "other": 0
+          },
+          "request_controls": {
+            "temperature": 0.3,
+            "max_tokens": 8000
+          },
+          "actual_models": [
+            "qwen3.6-flash"
+          ],
+          "wall_seconds": 11.073922291980125
+        },
+        {
+          "call_index": 3,
+          "payload_sha256": "2728d60fbf7104f42c24dc9864229ad5b958bd99617d5dd55166ba6049842925",
+          "input_bytes": 20058,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4726,
+          "output_tokens": 1036,
+          "cached_tokens": [
+            4096
+          ],
+          "first_content_seconds": 21.443617500015534,
+          "answer_text": "近31天可核验记录很少：睡眠仅1条，且按醒来日期归属；饮食仅1条晚餐记录。现有样本只能作单点观察，不能判断31天睡眠趋势、恢复情况或全天营养摄入。下一步只能按单条记录解读，待有更多连续记录再做趋势分析。",
+          "answer_text_truncated": false,
+          "first_event_seconds": 1.573948958015535,
+          "first_reasoning_seconds": 1.573948958015535,
+          "last_event_seconds": 22.373594374977984,
+          "last_event_type": "finish",
+          "event_counts": {
+            "reasoning": 287,
+            "content": 18,
+            "tool_calls": 0,
+            "finish": 1,
+            "other": 0
+          },
+          "request_controls": {
+            "temperature": 0.3,
+            "max_tokens": 8000
+          },
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 22.375036458019167
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 36.70491291600047,
+      "live": true,
+      "wall_seconds": 36.763492707978,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "分析我最近31天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "sleep",
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            },
+            {
+              "dimension": "diet",
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            }
+          ]
+        }
+      ],
+      "production_routing": true,
+      "decision_calls": [
+        {
+          "token_source": "unknown",
+          "input_tokens": null,
+          "output_tokens": null,
+          "status": "failed",
+          "error_type": "DecisionError",
+          "wall_seconds": 2.005248458008282
+        }
+      ],
+      "tool_budget": {
+        "model_proposals": 1,
+        "logical_executions": 1,
+        "physical_dispatches": 1,
+        "current_dispatches": 1
+      },
+      "decision_routing": {
+        "mode": "on",
+        "provider": "laya",
+        "status": "fallback",
+        "effective_tier": "balanced",
+        "reason": "timeout",
+        "suggested_tier": null,
+        "capability": null,
+        "model": null,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "elapsed_ms": 2005,
+        "tier_confidence": null,
+        "capability_confidence": null
+      },
+      "effective_model_id": "qwen3.8-max",
+      "logical_tool_source": "model_and_existing_server_fallback",
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required",
+        "decision_route_exercised": false
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-08-14至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-08-14至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近31天可核验记录很少：睡眠仅1条，且按醒来日期归属；饮食仅1条晚餐记录。现有样本只能作单点观察，不能判断31天睡眠趋势、恢复情况或全天营养摄入。下一步只能按单条记录解读，待有更多连续记录再做趋势分析。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "runtime_preplanned": false,
+      "runtime_model_call_count": 2,
+      "evaluation_seconds": 36.84236216702266,
+      "repeat": 0
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "440e036ea18d76dc6b9c3d86d270acc753df22a06e96aa9da39213a16e9e60d0",
+    "scripts/benchmark_prompt_full_task.py": "149814c0f2565f1f0f0d4fdaddb5cd497fc134a86cd2dac27ec5693b43a11ccd",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/eval/experimental_empty_read_terminal.py": "ce67631cce0356b9a623664f482ebc64115b8ce8988d5d3fa87bdde08a179cc0",
+    "backend/eval/experimental_read_evidence_format.py": "a6833d3511cb673fd5d78ec5bf0067e379fe97f17a76b252a4ba10909ad3f2e4",
+    "backend/app/services/agent_composed_read_completion.py": "34083e967189c51583116bc41a2b73abb70adc20e8c6017170de9667c3ab4107",
+    "backend/app/services/health_context_lite_service.py": "e414ebafd386f7ce15b1abcd2819be5da2b08ae0ab87c44c47def6108b02b265",
+    "backend/app/config.py": "ba55ea0ab6a455d630bcd6cf344a635eaffa9a165c4f6fb3a9f226c768f28eed",
+    "backend/app/services/agent_executor.py": "30ecc4fa37ccde86e7093f88db72b48b6251ea31d245b6250ea4ae09f721e8f5",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_longitudinal_read.py": "65c9c42e6fbbd7139d5c2a98ce86e4321d36fa9c8a579bd2b3378492ddf620fd",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05",
+    "backend/app/services/llm/model_registry.py": "e6bbae10fe66f11a46d51b2dc4ea27535c084604db567279b48cf2bdc582cbd1",
+    "backend/app/services/llm/factory.py": "c898fc90e35d6832e64ccb535044029bd78fc82f155e76462766c5e9c9fbc2c6",
+    "backend/app/services/decisions/routing.py": "64f1e7a49c60cc3f05b8d5c16095a569a8e785f92e3234b3a1ed19b7903ede25",
+    "backend/app/services/decisions/systemone.py": "d9a30d9ce78d0013184a11c0a3e33f2be92ed9af6da306d2574885f780be2b42"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Real resolver and Laya on, staged off, application temperature/output limits retained; admin mode held on locally, real production admin control itself is not exercised.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Rich-profile cases seed synthetic allergies, chronic condition and medication; clinical/CGM context and optional local knowledge base remain absent.",
+    "Per-pair synthetic user and record IDs, independent conversations, real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Answer-stage visible content is retained before guards for synthetic-only diagnostics, capped at 16000 characters with explicit truncation. No reasoning content is captured.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+    "Baseline and historical eval variants explicitly disable runtime preplanning to isolate its effect.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-max",
+      "variant": "baseline",
+      "tasks": 1,
+      "provider_attempts": 2,
+      "decision_attempts": 1,
+      "total_api_attempts": 3,
+      "decision_input_tokens_known": 0,
+      "decision_output_tokens_known": 0,
+      "passed_contracts": 0,
+      "failed_tasks": 1,
+      "api_input_tokens_known": 7352,
+      "api_output_tokens_known": 3302,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 1,
+      "wall_seconds_all_tasks": {
+        "p50": 36.763492707978,
+        "p95": 36.763492707978,
+        "p99": 36.763492707978
+      }
+    }
+  ]
+}

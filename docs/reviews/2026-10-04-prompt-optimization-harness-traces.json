@@ -716,6 +716,57 @@
         "status": "blocked",
         "task_id": "runtime-p2-production-activation",
         "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Oct8 fixed 0e2e6fa16: align frozen eval clocks and owner-record identities; remove conflicting composed-read layout only. Independent161 tests and6scope byte equivalence GO for code. Six31d Max real answers pass semantics but latency mixed, 2/3 pairs slower; earlier timeouts remain. Production activation NO-GO. New bounded production resolver/Laya harness in progress, source controls preserved, no app routing changes.",
+        "phase": "verification",
+        "sequence": 60,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "agent": "root",
+        "event": "checkpoint",
+        "message": "Oct8 99a1a6a20 eval safety GO after independent98 tests. Aligned5s Laya6 tasks contracts pass but reviewer found unsupported score grade in candidate row2; same paired answer payload, no causal blame on preplanning. Fix rating boundary plus restore optional next step removed with old layout. Isolated Max512 probe 26.70s to7.81s, API accepted and contracts pass, unproven eval only; no registry/flag change. PG and expanded composed-synthesis tests underway; activation NO-GO.",
+        "phase": "implementation",
+        "sequence": 61,
+        "status": "in_progress",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "ef85536f5: 512 probe rejected by independent semantic review of paired and expanded tasks. d04752f27 adds eval-only 8192 screen, 120 targeted tests passed. Production activation and release remain NO-GO. Accumulation filter reviewer found quoted/negated comma scope issue; repair pending.",
+        "phase": "validation",
+        "sequence": 62,
+        "status": "needs_changes",
+        "tokens": 0
+      },
+      {
+        "agent": "prompt_p1_review",
+        "event": "verdict",
+        "message": "Independent d201cdcc9 code GO: 39 tests, exact original Flash row9 raw answer preserved, 10 adversarial evidence controls maintained. Bounded code fix only; runtime preplanning and 512/8192 production activation NO-GO.",
+        "phase": "validation",
+        "sequence": 63,
+        "status": "passed",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "d201cdcc9 final delta: 180 related tests plus 25 PostgreSQL evidence tests passed; fixed-source standard live gate 10 real API calls, all usage known, no failures, 26 hashes unchanged. Earlier 59387 2441 pass/2 skip local CI-mode and 253 PG; earlier helper 1128 adjacent pass not final-source. Original erroneous sleep statement replay repaired. 512/8192 rejected; Flash input -31.65% small cohort but semantic and latency NO-GO. Origin/main advanced to8a7d85df0, no push/merge/deploy. See Oct8 validation report.",
+        "phase": "validation",
+        "sequence": 64,
+        "status": "code_go_activation_no_go",
+        "tokens": 0
+      },
+      {
+        "event": "checkpoint",
+        "message": "Final supplementary PG: both consent concurrency cases skipped by SQLite now passed on disposable PostgreSQL; final d201 source unchanged. Source-bound live gate retained, earlier end-only hash capture explicitly not accepted as exact-source evidence. Full documentation and rejected experiments retained; no external writes.",
+        "phase": "validation",
+        "sequence": 65,
+        "status": "code_go_activation_no_go",
+        "tokens": 0
       }
     ]
   },
