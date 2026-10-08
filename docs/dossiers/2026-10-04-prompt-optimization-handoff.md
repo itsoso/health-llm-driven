@@ -314,3 +314,11 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 新增积累记录正则过滤因跨行引用/否定可能误删已有信息，已全部撤回，保留 12 项上下文保真回归；`agent_composed_read_completion.py` 恢复到 ef85536f5（评分等级修复仍保留）。写工具描述精简继续否决。
 
 Flash 不改思考控制的真实路由六场景12任务契约通过，但独立语义及性能仍NO-GO。最终代码d201cdcc9另修复了真实睡眠事实误删，180项相关测试、25项PostgreSQL边界和独立39项通过，固定源码标准真实闸10次API成功。结果、失败样本、固定源码和限制统一见 [10月8日修复记录](../reviews/2026-10-08-prompt-timeout-resolution.md)。本批未 push、merge、deploy，生产激活仍 NO-GO；10月4日的已部署结果不得混作本批验收。
+
+### 2026-10-08 发布请求：本地就绪，主干红色 CI 阻断外部写入
+
+用户明确要求合并 main 并上线。已在接续分支无冲突接入 main `8a7d85df0`，原工作树保留。发现 main CI `37721192561` 因依赖安全审计失败；固定本地修复 `246e697ea` 更新 Mobile compression/shell-quote/source-map-js，及 Web source-map-js/Next.js/sharp，未添加审计豁免。独立审查对完整代码/依赖范围 GO，三个后端运行时文件与已审 d201 完全一致；真实模型证据的 26 个摘要不变，未重新启用任何被否决实验。
+
+新鲜 CI-mode 48 文件 **2468 passed / 2 skipped**，零失败；两项 SQLite skip 的 PostgreSQL 同源证据已在前轮保留。两端 npm ci/OSV 审计通过；Mobile tsc 与聊天头部6项通过；Web 447 passed / 1 skipped、build、lint通过（37 warnings）。Mobile 三次审计网络失败如实保留，第四次原闸完整通过。macOS sharp 实际 rsvg2.63.2，仍需最终 Linux 产物证据。System Map/秘密检查通过。
+
+生产仍为 a10e642c，服务健康；只读核对预算0、staged off、parallel section thinking off，预规划未配置且候选默认false。AGENTS 第7节要求主干非绿停止外部写入，因此本轮尚未push、merge、部署或更新CI变量；需要明确允许推送受审修复以恢复CI，再等待精确主干全绿后按Trusted流程发布后端与Web。完整断点、修复版本、限制和下一步见[发布预检](../reviews/2026-10-08-prompt-release-preflight.md)及[结构化证据](../reviews/2026-10-08-prompt-release-preflight.json)。
