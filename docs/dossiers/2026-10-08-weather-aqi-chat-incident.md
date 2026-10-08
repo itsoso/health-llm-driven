@@ -67,3 +67,5 @@
 - 公共载荷标记改为 `air_quality_observation_not_forecast`，不暗示观测新鲜度；提示要求时间未知时不得称空气质量为实时、最新、今天、此刻或当前，并明确无法确认观测时点。
 - 新 RED 2 failed；修复后 426 项相关回归通过。新两案真实模型验收通过，见 `docs/reviews/2026-10-08-weather-aqi-freshness-paired.json`：有效日期保持来源精度；未知时间仅报告 AQI 观测值并声明时点未知，无额外健康建议。
 - 最终候选两案 API 输入 741/732 token、各一次模型调用、耗时 6.06/4.99 秒。此值取代前述中间候选指标。两案均合成公共观测，不作实际杭州天气、生产 P95 或历史异常根因证明。
+
+- 最终 21 项 CI-mode 集成与 System Map 通过。正式真实模型回归 10 次 API 调用全部成功，34 个源文件哈希与最终运行时一致：`docs/reviews/2026-10-08-weather-aqi-freshness-live-regression.json`。该轮开始时 runtime 已修改但尚未 commit，故以文件哈希与最终提交逐一匹配，不把报告中的起始 HEAD 冒充当时干净源码。
