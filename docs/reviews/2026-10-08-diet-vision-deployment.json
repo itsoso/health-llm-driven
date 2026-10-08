@@ -1,0 +1,215 @@
+{
+  "checked_at_utc": "2026-10-08T11:05:15.462691+00:00",
+  "production_sha": "9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c",
+  "tracked_clean": true,
+  "receipt": {
+    "sha": "9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c",
+    "state": "SUCCEEDED"
+  },
+  "business_lease_absent": true,
+  "launcher_inode": 7777226,
+  "audit_sha256": {
+    "started.json": "f31a811fc79286decfab7140e9ba9cf8460c80af2dfecfa2933f992dc4c96f95",
+    "deployment-started.json": "a5e7b59bf4d8b247d380052cd1942ed9704668cb01fd02281aeee5b5a5d69ffc",
+    "completed.json": "d35dc88ce6d87a17e0ed8fbdd486643d66b681ca8d4340db09616e88ad587859",
+    "deployment.log": "404d6c5c53f66a79278a400fd4373d633e2073a639049219ad907c7d0bd1c34b"
+  },
+  "units": {
+    "health-backend": {
+      "MainPID": "2531103",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 19:03:45 CST"
+    },
+    "celery-worker": {
+      "MainPID": "2531105",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 19:03:45 CST"
+    },
+    "celery-beat": {
+      "MainPID": "2531106",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 19:03:45 CST"
+    },
+    "health-frontend": {
+      "MainPID": "2285301",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 14:49:49 CST"
+    }
+  },
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "9abbbf7ca9f60696bb49519473a21cc5e6427ede5467c98c5c0e90ea0841f77f",
+    "backend/app/services/agent_turn_outcome.py": "05d2a621d32a1331ba5bc93842c42d1b7b73af60be88df373e2a22bf33c1e769",
+    "backend/app/services/ai/food_recognition.py": "f900e1dfa2ca51a5a8352bc2b8a70a537e4b9c0a783c472bdd6533bfb5ad3da5",
+    "backend/app/services/health_read.py": "42a7c6ab9f3c5f6a706cc1ac32696680edc60180f7d5c77e5a79a19db35f7dd9",
+    "backend/app/services/agent_kernel/health_semantics.py": "2f25d247f7cc56d307bf8cdaecc63d9e5aa1da8393cc6247b67eeff4f1698640"
+  },
+  "loaded_settings": {
+    "owned_read_preplanning": false,
+    "synthesis_thinking_budget": 0,
+    "staged_response_mode": "off",
+    "parallel_synthesis_section_thinking": "off"
+  },
+  "settings_scope": "deployed source loading current config; not process memory inspection",
+  "health_scores": [
+    "60",
+    "60",
+    "60"
+  ],
+  "public_http": [
+    {
+      "url": "https://health.executor.life/api/health",
+      "method": "GET",
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "url": "https://health.executor.life/api/agent/stream",
+      "method": "POST",
+      "expected": 401,
+      "passed": true
+    },
+    {
+      "url": "https://health.executor.life/privacy",
+      "method": "GET",
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "url": "https://health.executor.life/connect/health",
+      "method": "GET",
+      "expected": 200,
+      "passed": true
+    }
+  ],
+  "candidate": "9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c",
+  "push_ci": 37763557501,
+  "limits": [
+    "Bounded synthetic actual FoodRecognitionService validation, no user diet writes; not mobile authenticated end-to-end persistence or production P95 proof",
+    "Input prompt increases 28 tokens; measured reduction is output formatting/generation",
+    "Original 28-row benchmark did not enforce explicit failure/name guards; kept unchanged, superseded by new strict 14-response quality replay",
+    "Backend-only release; existing native QR build276 retained; physical device installation remains unverified"
+  ],
+  "full_ci": 37763564796,
+  "full_ci_jobs_passed": 29,
+  "trusted_validate": 37766738783,
+  "trusted_backend": 37766910707,
+  "trusted_backend_conclusion": "success",
+  "G4": {
+    "reviewer": "prompt_p1_review",
+    "verdict": "GO",
+    "sha": "9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c"
+  },
+  "independent_G5": {
+    "verdict": "GO",
+    "reviewer": "prompt_p1_review",
+    "verified_at_utc": "2026-10-08T11:07:16Z",
+    "sha": "9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c",
+    "G6_uncovered": [
+      "real photo mobile end-to-end save",
+      "production P95 and sustained latency improvement"
+    ]
+  },
+  "database_backup": "Skipped per deploy governance default; not a backup/restore verification claim",
+  "source_preparation": {
+    "initial_fetch": "timed out after 90 seconds before release or authorization consumption",
+    "initial_artifacts_preserved": "/var/lib/reva-release/bootstrap/9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c/preparation-timeout-evidence",
+    "resolution": "Validated root-controlled production object cache with reviewed bootstrap; canonical Git fetch using only allowed /opt/health-app/.git/objects alternate; exact clean source and helper hashes verified",
+    "backend_dispatch_count": 1
+  },
+  "production_service_smoke_initial": {
+    "kind": "deployed_actual_food_recognition_service_smoke",
+    "sha": "9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c",
+    "rows": [
+      {
+        "sample": "synthetic-1",
+        "success": true,
+        "food_count": 1,
+        "failures": [
+          "constrained_value"
+        ],
+        "latency_ms": 5802
+      },
+      {
+        "sample": "synthetic-2",
+        "success": true,
+        "food_count": 2,
+        "failures": [],
+        "latency_ms": 5505
+      },
+      {
+        "sample": "synthetic-3",
+        "success": false,
+        "food_count": 0,
+        "failures": [],
+        "latency_ms": 1278
+      },
+      {
+        "sample": "synthetic-4",
+        "success": false,
+        "food_count": 0,
+        "failures": [],
+        "latency_ms": 2832
+      }
+    ],
+    "diet_writes": false,
+    "limits": [
+      "synthetic images only",
+      "not authenticated mobile end-to-end save",
+      "logical service calls, not physical SDK attempts"
+    ]
+  },
+  "production_service_smoke_corrected": {
+    "kind": "deployed_actual_food_recognition_service_smoke",
+    "sha": "9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c",
+    "rows": [
+      {
+        "sample": "synthetic-1",
+        "success": true,
+        "food_count": 1,
+        "failures": [],
+        "latency_ms": 5562
+      },
+      {
+        "sample": "synthetic-2",
+        "success": true,
+        "food_count": 2,
+        "failures": [],
+        "latency_ms": 5266
+      },
+      {
+        "sample": "synthetic-3",
+        "success": false,
+        "food_count": 0,
+        "failures": [],
+        "latency_ms": 1361
+      },
+      {
+        "sample": "synthetic-4",
+        "success": false,
+        "food_count": 0,
+        "failures": [],
+        "latency_ms": 1188
+      }
+    ],
+    "diet_writes": false,
+    "oracle_revision": "honors pre-existing numeric tolerance; preserves exact categorical and unknown checks",
+    "limits": [
+      "synthetic images only",
+      "not authenticated mobile end-to-end save",
+      "logical service calls, not physical SDK attempts"
+    ]
+  },
+  "service_smoke_oracle_correction": {
+    "original_harness_sha256": "e56c11e7b2177a47a69ea53856f6fa75bedcce454eaefb025e3dd820a5f835b8",
+    "corrected_harness_sha256": "6780ca07a76cb4e3ab66feb8f26470f02a322b3ae249d87928b91b0b28c5dca4",
+    "finding": "First harness omitted existing numeric tolerance 0.5; exact label calories 380.019120458891 cannot equal service one-decimal normalization. Restored original tolerance; retained exact categories/unknowns. Original failure retained, new four-case replay independently passed. Original response values were not retained, so other original mismatches cannot be retrospectively excluded."
+  }
+}
