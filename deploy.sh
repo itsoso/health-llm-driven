@@ -126,6 +126,13 @@ if [[ ! "$SERVER" =~ ^[A-Za-z0-9._@:-]+$ ||
     exit 1
 fi
 
+# Diagnostic milestones only: integer seconds since this Bash started. Never
+# wrap release commands here: an if/&& wrapper would change errexit semantics.
+release_timing_checkpoint() {
+    [[ "${1:-}" =~ ^[a-z_]{1,48}$ ]] || return 64
+    printf 'REVA_RELEASE_TIMING phase=%s shell_elapsed_seconds=%s\n' "$1" "$SECONDS" >&2
+}
+
 # 打印带颜色的消息
 print_step() {
     echo -e "${BLUE}==>${NC} $1"
@@ -3364,6 +3371,7 @@ deploy_backend() {
     local activate_laya_service
     activate_laya_service="$(laya_service_command activate)"
 
+    release_timing_checkpoint backend_started
     print_step "部署后端..."
     assert_remote_release_lock_if_acquired
     remote_dependency_sync="$(remote_dependency_sync_command)" || return 1
@@ -3375,11 +3383,13 @@ deploy_backend() {
     # 环境错误必须在数据库备份、恢复演练和站外归档之前失败。相同文件的
     # 摘要由后续上传阶段复用；文件若在预检后改变，则会自动重新校验。
     validate_deploy_env_preflight
+    release_timing_checkpoint env_checked
 
     # 1. 准备发布工具（数据库备份默认关闭）+ 记录发布前回滚点
     backup_database
     determine_system_kb_activation_need
     inspect_runtime_state_transaction_before_deploy
+    release_timing_checkpoint preparation_checked
     if [[ "$RUNTIME_STATE_ALREADY_FINALIZED" = "1" ]]; then
         if ! verify_laya_service ||
             ! prove_health_evidence_runtime_process_flag false ||
@@ -3418,6 +3428,7 @@ deploy_backend() {
         _REMOTE_RELEASE_LOCK_ABANDONED=0
 
         # 2. 同步环境变量并受控撤销运行时授权。
+        release_timing_checkpoint env_staging_started
         if ! sync_env; then
             return 1
         fi
@@ -3430,6 +3441,7 @@ deploy_backend() {
         # path clears delegation internally, so there must be no signal window
         # between live mutation and the caller restoring the preserve state.
         _REMOTE_RELEASE_LOCK_ABANDONED=1
+        release_timing_checkpoint deactivation_started
         if ! deactivate_health_evidence_runtime_before_mutation; then
             return 1
         fi
@@ -3459,6 +3471,8 @@ deploy_backend() {
     fi
     local remote_git_sync
     remote_git_sync="$(remote_git_sync_command)"
+
+    release_timing_checkpoint guard_started
 
     # 3. Guard phase：先启动新代码，不写入任何 System KB artifact。这样旧服务
     # 永远看不到新 runtime-only 文档，且健康失败可安全回到发布前代码。
@@ -3524,6 +3538,7 @@ deploy_backend() {
         print_error "发布锁与现场保留，请先在服务器确认 transaction terminal state"
         exit 1
     fi
+    release_timing_checkpoint guard_command_completed
     if ! verify_laya_service ||
         ! prove_health_evidence_runtime_process_flag false ||
         ! verify_deployed_revision; then
@@ -3567,6 +3582,8 @@ deploy_backend() {
         exit 1
     fi
 
+    release_timing_checkpoint guard_gates_passed
+
     # 所有 guard Gate 通过后才提交 state transaction。commit 会精确删除
     # 已迁移的 legacy beat shelf；失败仍可从快照回到发布前 SHA。
     if ! commit_runtime_state_transaction_after_guard; then
@@ -3577,6 +3594,8 @@ deploy_backend() {
     # generic hold 的旧代码。rollback runner 还会定向 archive 作为第二层防线。
     ROLLBACK_COMMIT="$DEPLOY_EXPECTED_SHA"
     print_success "generic-hold guard 已成为回滚地板: ${ROLLBACK_COMMIT:0:12}"
+
+    release_timing_checkpoint kb_activation_started
 
     # 5. KB activation phase：此时线上已运行 hold-aware 新代码，feature flag=false。
     assert_remote_release_lock
@@ -3607,6 +3626,8 @@ deploy_backend() {
         print_error "发布锁与现场保留，请先确认数据库事务与 advisory lock 已终止"
         exit 1
     fi
+
+    release_timing_checkpoint kb_command_completed
 
     # 6. 数据激活后再次跑完整健康度；失败回到同一 guard SHA 并隔离 pack。
     if ! verify_deployment; then
@@ -3640,8 +3661,12 @@ deploy_backend() {
     fi
     _REMOTE_RELEASE_LOCK_DELEGATED=0
 
+    release_timing_checkpoint kb_gates_passed
+
     # 6.5 所有 fatal gate 通过后再验证第一方 Agent skills manifest。
     wait_for_agent_skills_manifest
+
+    release_timing_checkpoint manifest_passed
 
     # Manifest generation can take long enough for a late service crash or
     # restart loop to appear. Re-prove the exact candidate, health, staged KB
@@ -3660,6 +3685,8 @@ deploy_backend() {
         exit 1
     fi
 
+    release_timing_checkpoint terminal_gates_passed
+
     # 只有完整终态健康、revision 与 staged serving contract 都通过后，才
     # 记录本次输入摘要；任何中途失败都保持 marker 陈旧，下一次自动重跑写入。
     if ! record_system_kb_input_digest; then
@@ -3675,6 +3702,7 @@ deploy_backend() {
         exit 1
     fi
 
+    release_timing_checkpoint finalized
     print_success "后端 guard + System KB staged deployment 完成；运行时仍保持 feature flag=false"
 }
 
