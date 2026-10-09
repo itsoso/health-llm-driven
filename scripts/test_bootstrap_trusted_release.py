@@ -995,3 +995,54 @@ def test_backend_bootstrap_cannot_replace_recovery_gate(monkeypatch, tmp_path, e
         bootstrap.rotate(SHA, NEW_SHA, 200, HOST, backend_ci=True, **extra)
     assert not calls
     assert lifecycle_snapshot(bootstrap) == before
+
+
+def test_retained_candidate_closure_conflicts_with_every_other_closure(monkeypatch, tmp_path):
+    bootstrap, _ = fixture(monkeypatch, tmp_path)
+    (bootstrap.STATE / 'retained-candidate-closures' / SHA).mkdir(parents=True)
+    (bootstrap.STATE / 'native-only-closures' / SHA).mkdir(parents=True)
+    with pytest.raises(bootstrap.BootstrapError, match='conflicting'):
+        bootstrap._workspace_evidence(SHA)
+
+
+def test_retained_candidate_dispatch_preserves_historical_mode(monkeypatch, tmp_path):
+    bootstrap, _ = fixture(monkeypatch, tmp_path)
+    (bootstrap.STATE / 'retained-candidate-closures' / SHA).mkdir(parents=True)
+    source = tmp_path / 'canonical'; source.mkdir()
+    (source / 'retained_candidate_retirement.py').write_text('# fixture\n')
+    bootstrap.__file__ = str(source / 'bootstrap_trusted_release.py')
+    monkeypatch.setattr(bootstrap, 'secure', lambda *a, **k: None)
+    received = []
+    def closed(b, sha, receipt, *, historical):
+        received.append((sha, receipt, historical))
+        return {'state': 'CLOSED_RETAINED_CANDIDATE_FAILURE'}
+    imported = SimpleNamespace(closed_evidence=closed)
+    monkeypatch.setattr(bootstrap.importlib.util, 'module_from_spec', lambda spec: imported)
+    monkeypatch.setattr(bootstrap.importlib.util, 'spec_from_file_location', lambda *a: SimpleNamespace(
+        loader=SimpleNamespace(exec_module=lambda module: None)))
+    monkeypatch.setattr(bootstrap, 'sys', SimpleNamespace(modules={bootstrap.__name__: bootstrap}))
+    assert bootstrap._workspace_evidence(SHA, recovery_receipt='c'*64, historical=True) == {
+        'state': 'CLOSED_RETAINED_CANDIDATE_FAILURE'}
+    assert received == [(SHA, 'c'*64, True)]
+
+
+def test_retained_candidate_rotation_preserves_failure_and_blocks_reuse(monkeypatch, tmp_path):
+    bootstrap, _ = rotation_fixture(monkeypatch, tmp_path)
+    completed = bootstrap.STATE / SHA / 'completed.json'
+    completed.write_text(json.dumps({'sha': SHA, 'state': 'NEEDS_OPERATOR'}))
+    original = completed.read_bytes()
+    workspace = {'state': 'CLOSED_RETAINED_CANDIDATE_FAILURE', 'closure': 'e'*64}
+    proofs = []
+    def inspect(sha, **kwargs):
+        proofs.append(kwargs)
+        assert kwargs.get('recovery_receipt') == 'c'*64
+        return workspace
+    monkeypatch.setattr(bootstrap, '_workspace_evidence', inspect)
+    result = bootstrap.rotate(SHA, NEW_SHA, 200, HOST, recovery_receipt='c'*64)
+    assert result['state'] == 'INSTALLED'
+    assert completed.read_bytes() == original
+    assert not (bootstrap.STATE / NEW_SHA / 'completed.json').exists()
+    assert bootstrap._retired_history()[SHA]['workspace'] == workspace
+    assert any(p.get('historical') is True for p in proofs)
+    with pytest.raises(bootstrap.BootstrapError, match='already used'):
+        bootstrap._assert_fresh_sha(SHA, bootstrap._retired_history())

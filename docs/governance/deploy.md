@@ -1007,3 +1007,31 @@ compile、expand、stringify 对直接 AST 输入也限制递归深度（含 roo
 Mobile 使用固定 patch-package 补丁；Frontend 普通安装及 build 命令执行自包含验证器，
 确保只复制 frontend 的隔离重建仍覆盖修复。Trusted Release/OTA 的 ignore-scripts
 安装在凭据前显式修复 mobile/release-tools 两个根。上游发布后重新评审替换本地修复。
+
+### Retained candidate 的失败发布闭合
+
+`retained_candidate_retirement.py` 处理一种独立终态：backend-only 发布原回执为
+`NEEDS_OPERATOR`，rollback 已保留 candidate，runtime terminal 已是该 candidate 的
+`COMMITTED / finalized / target=candidate`，transaction/reap、business lease 和发布进程均已退出。
+此入口不修复服务、不再次 finalize、不重写失败回执，也不把失败发布标成成功。
+若上述条件不成立，必须先诊断真实运行态，不能用闭合绕过。
+
+操作来自新 main 精确绿色 SHA 的 canonical root-owned checkout，使用系统
+`python3.12 -I -S -B`。关闭前按既有 revoke 流程撤销旧双身份并移除旧 loopback 私钥；
+闭合只接受原 installation 的撤权证据，不提供 credential 清理捷径。入口参数为
+`--sha <reviewed-closing-sha> --failed-sha <failed-candidate-sha>`；第一次只读 inspect
+返回 evidence digest。确认后第二次加 `--evidence-sha256 <digest>`，固定原 launcher lock
+并重新检查：完整失败 workspace 的原始字节/元数据、原 canonical executor 与各阶段回执、
+生产 clean revision、runtime terminal、服务进程及 runtime flag、schema、runtime-only KB、
+health 依赖与未认证 auth 拒绝。任何变化均阻断。
+
+独立 root-only `retained-candidate-closures/<failed-sha>/` 先持久化 `intent.json`，
+再次验证后才写 `completed.json` 并签发随机 receipt。成功终态仅为
+`CLOSED_RETAINED_CANDIDATE_FAILURE`。receipt 输出必须直接接入受保护回执文件或既有保密
+传输通道，禁止进入终端日志、用户消息或命令行。若 intent 已存在、完成写失败或回执遗失，
+不允许重试、删目录或重建回执；保留现场另行审核。
+
+后续 bootstrap rotate 通过既有 protected recovery-receipt 通道消费这个独立终态，
+不会允许旧 SHA 再次发布。历史核验继续校验原 workspace、installation 归档、原锁与闭合
+审计，但只验证审计内的 runtime/service/probe 快照，不要求未来生产仍运行旧 candidate。
+当前首次 rotate 仍须核验实时生产没有漂移。该回执不代表 OTA、TestFlight、业务验收或新发布完成。
