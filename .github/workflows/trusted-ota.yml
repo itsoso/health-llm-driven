@@ -68,6 +68,7 @@ jobs:
         PY
         /usr/bin/sudo /usr/bin/install -d -m 0755 /opt/reva-release
         /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_NO_REPLACE_OBJECTS=1 /bin/bash --noprofile --norc -eu -c '
+          umask 022
           /usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source
           cd /opt/reva-release/source
           /usr/bin/git remote add origin https://github.com/itsoso/health-llm-driven.git
@@ -140,22 +141,30 @@ jobs:
     - name: Install locked CLI and app dependencies without lifecycle scripts or shared cache
       run: |
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/hostedtoolcache/node/22.13.0/x64/lib/node_modules/npm/bin/npm-cli.js \
           ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund --cache /opt/reva-release/npm-cache
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/hostedtoolcache/node/22.13.0/x64/lib/node_modules/npm/bin/npm-cli.js \
           ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund --cache /opt/reva-release/npm-cache
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/scripts/release-tools --apply
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/scripts/release-tools --apply
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/mobile --apply
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/mobile --apply
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
     - name: Read-only publisher context and native source preflight
       env:

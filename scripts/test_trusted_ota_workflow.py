@@ -390,3 +390,47 @@ def test_validate_executes_real_credential_free_publisher_preflight_before_publi
     assert '/usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_ota_publish.py' in run
     assert '--sha "$TARGET_SHA" --preflight' in run
     assert 'EXPO_TOKEN' not in run and 'RELEASE_KEY' not in run and 'ssh ' not in run
+
+
+def test_canonical_git_creation_is_sealed_under_inherited_group_umask(tmp_path):
+    import stat
+
+    body = named('Materialize exact canonical')['run']
+    shell = body.split("/bin/bash --noprofile --norc -eu -c '", 1)[1].split("' reva-bootstrap", 1)[0]
+    # Execute the exact producer prefix through git init, without network fetch.
+    prefix = shell.split('cd /opt/reva-release/source', 1)[0]
+    source = tmp_path / 'source'
+    assert not source.exists()
+    prefix = prefix.replace('/opt/reva-release/source', str(source))
+    result = subprocess.run(['/bin/bash', '--noprofile', '--norc', '-eu', '-c', 'umask 0002\n' + prefix],
+                            env={'PATH':'/usr/bin:/bin','HOME':str(tmp_path),'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null'}, capture_output=True)
+    assert result.returncode == 0
+    assert stat.S_IMODE(source.stat().st_mode) == 0o755
+    assert stat.S_IMODE((source / '.git').stat().st_mode) == 0o755
+    assert stat.S_IMODE((source / '.git/config').stat().st_mode) == 0o644
+
+
+def test_every_locked_dependency_producer_sets_umask_inside_root_shell(tmp_path):
+    import shlex
+    import stat
+    import sys
+
+    body = named('Install locked CLI')['run']
+    commands = body.replace('\\\n', '').splitlines()
+    producers = [shlex.split(line) for line in commands if line.strip()]
+    assert len(producers) == 8
+    for index, argv in enumerate(producers):
+        assert argv[:3] == ['/usr/bin/sudo','/usr/bin/env','-i']
+        # Keep the actual root-child shell/forwarding wrapper, replacing only
+        # its executable with a filesystem producer having npm bin-links semantics.
+        shell_index = argv.index('/bin/bash')
+        child = argv[shell_index:shell_index + 6]
+        assert child[:4] == ['/bin/bash','--noprofile','--norc','-eu']
+        assert child[4] == '-c'
+        out = tmp_path / str(index)
+        code = "import os,pathlib; p=pathlib.Path(__import__('sys').argv[1]); p.mkdir(); (p/'file').write_text('x'); (p/'bin').write_text('x'); mask=os.umask(0); os.umask(mask); (p/'bin').chmod(0o777 & ~mask)"
+        command = [*child, 'reva-locked-tools', sys.executable, '-c', code, str(out)]
+        result = subprocess.run(['/bin/bash','-c','umask 0002; exec "$@"','test-parent',*command], capture_output=True)
+        assert result.returncode == 0
+        assert [stat.S_IMODE((out / name).stat().st_mode) for name in ('file','bin')] == [0o644,0o755]
+        assert stat.S_IMODE(out.stat().st_mode) == 0o755
