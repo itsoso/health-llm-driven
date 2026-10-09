@@ -5,6 +5,7 @@ from app.services.utterance_intent_classifier import classify_agent_utterance, h
 
 
 REQUEST = "记录下来，我的头痛已经消失了。目前一切正常，除了偶尔有点鼻塞之外。"
+APPROX_REQUEST = "记录下来，我的感冒症状已经消失了。目前一切正常，除了偶尔打三四个喷嚏之外。"
 
 
 def parse(text):
@@ -12,7 +13,7 @@ def parse(text):
     return parse_symptom_status_observation(text)
 
 
-@pytest.mark.parametrize("text", [REQUEST, "请记录，我的头痛已经消失了。",
+@pytest.mark.parametrize("text", [REQUEST, APPROX_REQUEST, "请记录，我的头痛已经消失了。",
     "帮我记录一下，我的眼睛发痒已经消失了，但偶尔还有轻微鼻塞。",
     "记录下来，我的鼻塞已经恢复正常了。", "记录一下，我的头疼好了，目前一切正常。"])
 def test_explicit_self_status_preserves_entire_observation_without_inference(text):
@@ -44,6 +45,15 @@ def test_other_retracted_symptom_rules_are_not_relaxed():
     assert has_retracted_symptom_write("记录我头痛，说错了，撤回这条记录。")
 
 
+def test_approximate_count_grammar_is_adjacent_and_never_numeric_severity():
+    import re
+    from app.services.agent_symptom_status_observation import _SNEEZE_COUNT
+    assert re.fullmatch(_SNEEZE_COUNT, "一两")
+    assert re.fullmatch(_SNEEZE_COUNT, "三四")
+    assert not re.fullmatch(_SNEEZE_COUNT, "三六")
+    assert not re.fullmatch(_SNEEZE_COUNT, "3;停药")
+
+
 def test_whitespace_preserved_and_oversized_text_rejected_without_clipping():
     text = "记录下来， 我的头痛已经消失了。"
     assert parse(text)["description"] == text
@@ -62,6 +72,7 @@ def test_status_count_is_preserved_as_text_not_rhinitis_quantification():
     from app.services.agent_executor import (
         _extract_clear_symptom_record, _extract_clear_rhinitis_record,
         _is_proven_pure_symptom_record_request, _apply_authorized_symptom_payload,
+        _build_deterministic_symptom_tool_call,
     )
     assert parse(COUNT_REQUEST) == {"body_part": "general", "description": COUNT_REQUEST}
     assert _extract_clear_symptom_record(COUNT_REQUEST) == parse(COUNT_REQUEST)
@@ -71,18 +82,22 @@ def test_status_count_is_preserved_as_text_not_rhinitis_quantification():
         "date": "2020-01-01", "diagnosis": "模型推断", "body_part": "respiratory"}}
     applied = _apply_authorized_symptom_payload(args, parse(COUNT_REQUEST))
     assert applied == {"record_type": "symptom", "data": parse(COUNT_REQUEST)}
+    assert _build_deterministic_symptom_tool_call(COUNT_REQUEST, write_receipts=[], has_attachment=True) is None
+    assert _build_deterministic_symptom_tool_call(COUNT_REQUEST, write_receipts=[{"verified": True}]) is None
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("message,expected_write", [
-    (REQUEST, True), (COUNT_REQUEST, True),
-    (REQUEST + "不要记录。", False),
-    (REQUEST.replace("我的头痛", "我妈妈的头痛"), False),
-    ('他说："' + REQUEST + '"', False),
-    (COUNT_REQUEST + "删除旧病程。", False),
+@pytest.mark.parametrize("model_behavior", ["symptom_tool", "no_tool", "wrong_tool"])
+@pytest.mark.parametrize("message,expected_write,read_only", [
+    (REQUEST, True, False), (COUNT_REQUEST, True, False), (APPROX_REQUEST, True, False),
+    (REQUEST + "不要记录。", False, False),
+    (REQUEST.replace("我的头痛", "我妈妈的头痛"), False, False),
+    ('他说："' + REQUEST + '"', False, False),
+    (COUNT_REQUEST + "删除旧病程。", False, False),
+    (REQUEST, False, True),
 ])
 async def test_stream_persists_exact_status_without_illness_mutation(
-    db, client, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, message, expected_write,
+    db, client, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, message, expected_write, model_behavior, read_only,
 ):
     import json
     from datetime import date, datetime, timezone
@@ -104,10 +119,12 @@ async def test_stream_persists_exact_status_without_illness_mutation(
     async def fake_llm(messages, tools):
         nonlocal calls
         calls += 1
+        if model_behavior == "no_tool":
+            return {"content": "本次记录尚未完成。", "finish_reason": "stop"}
         if calls == 1:
             return {"content": "", "finish_reason": "tool_calls", "tool_calls": [{
                 "id": "synthetic-status-observation", "type": "function", "function": {
-                    "name": "health_record", "arguments": json.dumps({"record_type": "symptom",
+                    "name": "health_record", "arguments": json.dumps({"record_type": "rhinitis" if model_behavior == "wrong_tool" else "symptom",
                         "data": {"body_part": "respiratory", "description": "模型截断",
                                  "severity": 8, "notes": "模型推断"}}, ensure_ascii=False),
                 }}]}
@@ -133,7 +150,7 @@ async def test_stream_persists_exact_status_without_illness_mutation(
     monkeypatch.setattr(executor, "_api_post", api_post)
     events = [event async for event in executor.run_stream(
         user_id=user.id, message=message, user_auth_token=headers["Authorization"].split(" ", 1)[1],
-        channel="typed",
+        channel="typed", read_only_tools=read_only,
     )]
     rows = db.query(SymptomEntry).filter_by(user_id=user.id).all()
     done = next(event["data"] for event in events if event.get("event") == "done")
@@ -160,3 +177,5 @@ async def test_stream_persists_exact_status_without_illness_mutation(
     assert len(done["write_receipts"]) == 1
     assert done["write_receipts"][0]["verified"] is True
     assert done["turn_outcome"]["category"] == "success"
+    assert "symptom_status_observation_preplanned" in done["fallback_reasons"]
+    assert calls == 0

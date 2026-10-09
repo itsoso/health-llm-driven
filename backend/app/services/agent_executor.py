@@ -19206,9 +19206,32 @@ class AgentExecutor:
                             proposed_calls = self._preplanned_owned_read_calls(
                                 round_idx, messages, round_tools, sealed=health_advice_buffered,
                             )
+                            if proposed_calls:
+                                owned_read_preplanned = True
+                            from app.services.agent_symptom_status_observation import parse_symptom_status_observation
+                            if (
+                                not proposed_calls and round_idx == 0
+                                and not health_advice_buffered and not self._read_only_turn
+                                and not deterministic_symptom_fallback_attempted
+                                and not unverified_write_operations and not failed_write_operations
+                                and not self._agent_kernel_pending_confirmation_tools
+                                and parse_symptom_status_observation(message) is not None
+                                and any((tool.get("function") or {}).get("name") == "health_record"
+                                        for tool in round_tools)
+                            ):
+                                # An exact self-authored status observation is a
+                                # proposal, never a receipt: Pi still validates,
+                                # authorizes and dispatches the ordinary write.
+                                symptom_call = _build_deterministic_symptom_tool_call(
+                                    message, write_receipts=write_receipts,
+                                    has_attachment=bool(images or file_base64 or self._current_turn_has_attachment),
+                                )
+                                if symptom_call is not None:
+                                    proposed_calls = [symptom_call]
+                                    deterministic_symptom_fallback_attempted = True
+                                    self._record_model_fallback_reason("symptom_status_observation_preplanned")
                             server_preplanned_round = bool(proposed_calls)
                             if server_preplanned_round:
-                                owned_read_preplanned = True
                                 finish_reason = "tool_calls"
                             else:
                                 async for event in self._call_llm_stream(messages, round_tools):
@@ -19713,7 +19736,8 @@ class AgentExecutor:
                                 if pi_terminal_text is None and self._agent_kernel_pending_confirmation_tools:
                                     pi_terminal_text = _pending_confirmation_reply_from_tool_results(messages) or None
                                 if (
-                                    pi_terminal_text is None and self._prefer_fast_record_model
+                                    pi_terminal_text is None
+                                    and (self._prefer_fast_record_model or deterministic_symptom_fallback_attempted)
                                     and write_receipts and not last_recoverable_write_rejection
                                 ):
                                     quality = combine_post_record_quality_responses(post_record_qualities)
