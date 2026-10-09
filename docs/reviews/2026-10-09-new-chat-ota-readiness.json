@@ -1,0 +1,98 @@
+{
+  "date": "2026-10-09",
+  "candidate": "bede48d6b0ca02e70c1c69c27f66bf54427b86ff",
+  "new_chat_fix": "8a7d85df0d9c19a40613a1f1c704dc80dd52e7af",
+  "fix_in_origin_main": true,
+  "tests": {
+    "jest_passed": 213,
+    "typescript_exit": 0
+  },
+  "ota_source_gate": "native or unknown mobile input changed",
+  "ota_cohort_gate": "production runtime native fingerprints differ",
+  "production_cohort_observed": [
+    {
+      "id": "7c9396db-4bf1-44e1-bfc3-7e9ff187bfac",
+      "appBuildVersion": "275",
+      "gitCommitHash": "a8853dea1207163aaa412974dddfbc050ce3eeea",
+      "runtime": {
+        "id": "01a0d7a6-0281-7852-bb56-85fa3f295484",
+        "version": "1.3.4"
+      },
+      "updateChannel": {
+        "id": "019dd201-1503-7ec9-a7b8-ed264891a7c5",
+        "name": "production"
+      },
+      "fingerprint": {
+        "id": "01a1014e-8f14-7164-a37d-f44c4d28f5f9",
+        "hash": "ce5e38aa6458023c28cf310c09af1bd853edf88d"
+      }
+    },
+    {
+      "id": "63b61a31-058c-44e5-bb82-67727ca7d073",
+      "appBuildVersion": "274",
+      "gitCommitHash": "514c8c28a87ad5761a6f66b284c19a69dff33e8f",
+      "runtime": {
+        "id": "01a0d7a6-0281-7852-bb56-85fa3f295484",
+        "version": "1.3.4"
+      },
+      "updateChannel": {
+        "id": "019dd201-1503-7ec9-a7b8-ed264891a7c5",
+        "name": "production"
+      },
+      "fingerprint": {
+        "id": "01a1014e-8f14-7164-a37d-f44c4d28f5f9",
+        "hash": "ce5e38aa6458023c28cf310c09af1bd853edf88d"
+      }
+    },
+    {
+      "id": "20d5e73a-a6b9-4c70-ad69-e63d31e058f2",
+      "appBuildVersion": "273",
+      "gitCommitHash": "e19043ecb269e20f3bc0a546165e43d467f1fc8c",
+      "runtime": {
+        "id": "01a0d7a6-0281-7852-bb56-85fa3f295484",
+        "version": "1.3.4"
+      },
+      "updateChannel": {
+        "id": "019dd201-1503-7ec9-a7b8-ed264891a7c5",
+        "name": "production"
+      },
+      "fingerprint": {
+        "id": "01a0f7e6-923e-7012-91b1-7c8f65df0fed",
+        "hash": "8f3e41ecdfdeeaaa7a32a1d5b2dc5e4b49d968c4"
+      }
+    },
+    {
+      "id": "bfdd2bc9-db49-4ccd-bfbc-679287be4855",
+      "appBuildVersion": "272",
+      "gitCommitHash": "cad1fd1d33621532e587b265e79f737dfb06d1fe",
+      "runtime": {
+        "id": "01a0d7a6-0281-7852-bb56-85fa3f295484",
+        "version": "1.3.4"
+      },
+      "updateChannel": {
+        "id": "019dd201-1503-7ec9-a7b8-ed264891a7c5",
+        "name": "production"
+      },
+      "fingerprint": {
+        "id": "01a0d7a6-028c-7cbb-88f2-1e6d2aeb97ea",
+        "hash": "ded09f66a371160f8ba4c880b10623973953fbfd"
+      }
+    }
+  ],
+  "published": false,
+  "note": "Read-only EAS evidence; cohort mismatch is independently sufficient to reject. No new OTA claim or vendor update. Simulator current-candidate UI not yet verified.",
+  "latest_production_update": {
+    "id": "01a0eb0e-ec64-7a0b-bc3e-ff3bdc3deb02",
+    "group": "fc8792f0-627c-4937-928c-c2a640a784f8",
+    "createdAt": "2026-09-29T02:46:58.916Z",
+    "runtimeVersion": "1.3.4",
+    "gitCommitHash": "fda864c2b7f491be79db7b4523896a499581730d",
+    "platform": "ios"
+  },
+  "main_ci": {
+    "run_id": 37893443784,
+    "sha": "bede48d6b0ca02e70c1c69c27f66bf54427b86ff",
+    "jobs_passed": 30,
+    "jobs_total": 30
+  }
+}

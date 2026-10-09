@@ -120,3 +120,13 @@
 - 历史回执文件mtime进一步分解：started→deployment-started为4.724秒，deployment-started→completed约357.86秒，因此该轮source准备不是主要瓶颈。时间来自历史文件元数据，不是新分段日志。
 - G4首轮发现新增计时测试未纳入release-invariants显式清单；已补workflow和CI契约注册，21项计时/CI契约通过。新增注册后待固定提交复审。
 - G4复审固定`c51e03b47`：GO（仅代码集成）；独立21项通过、Bash语法和累计diff检查通过。另依赖/接线41项、项目`CI=true`集成3项通过。代码本轮仅本地提交；没有为了测量重启生产，也没有触发新全量远端CI。待下一次实际发布批次携带计时并获得同SHA CI及终态回执后，才用新分段数据裁决端到端优化。
+
+## 首页新建入口与 OTA 续接（2026-10-09）
+
+- 用户要求完成后再发一次OTA，恢复首页新建。实时Git证明`8a7d85df0`已在main，首页无条件进入chat，ChatHeader无条件显示“新建”，回调接`handleNewChat`；不重复改写已修复UI。
+- 独立新鲜验证：ChatHeader 4项、首页/历史入口/engine 209项Jest通过，TypeScript通过。模拟器通过进程级DEVELOPER_DIR可用，未冒充当前候选安装界面已验收。
+- 本轮已审计时改动合入main `bede48d6b0ca02e70c1c69c27f66bf54427b86ff`，CI run37893443784开始。后端仍28b2471d72a3，尚未为了OTA部署候选。
+- OTA准入明确BLOCK：当前main相对固定原生包272包含RevaPcmPlayer原生Swift模块、权限文案及依赖变动，source gate拒绝；实时EAS生产runtime1.3.4原生build272/273/274/275具有三种不同fingerprint，真实`validate_builds`返回`production runtime native fingerprints differ`。更新单一NATIVE_BUILD常量不能消除cohort冲突，禁止放宽校验。
+- 旧“新建”修复确实已合并，历史37721228551被CI拦住；随后37755008534在publisher中失败，无新的发布成功证据。本轮未claim、未触发vendor update、未发布OTA。已请求用户确认改走独立runtime的新扫码安装包；在回复前不变更原生版本/签名/分发方式。证据见`docs/reviews/2026-10-09-new-chat-ota-readiness.json`。
+- EAS production channel实时回读：最新iOS update group为`fc8792f0-627c-4937-928c-c2a640a784f8`，update为`01a0eb0e-ec64-7a0b-bc3e-ff3bdc3deb02`，创建于2026-09-29，源码`fda864c2b7f491be79db7b4523896a499581730d`；不是本次新建修复的发布回执。不推断用户设备当前已应用哪个bundle。
+- 主干候选`bede48d6b`的CI run37893443784最终30/30 job全部success。CI已满足，本轮OTA仍因source/cohort准入BLOCK；不因CI绿色越过原生边界。证据文档本地保存，待用户选择后随下一批集成，避免仅记录结果再触发重复完整CI。
