@@ -406,6 +406,21 @@ describe('SettingsScreen', () => {
     expect(getByText('刚刚同步')).toBeTruthy();
   });
 
+  it.each([0, 5])('shows incomplete activity sync instead of recent success at %s minutes', (minutes) => {
+    const message = '运动记录未完整同步，请稍后重新同步；上次成功时间不代表本轮运动已完整同步。';
+    mockGarminStatus = { bound: true, health: 'stale', credentials_valid: true,
+      requires_mfa: false, last_error: message, error_count: 0,
+      minutes_since_last_sync: minutes };
+    const { getByText, getByRole, queryByText } = render(<SettingsScreen />);
+    expect(getByText('同步未完成')).toBeTruthy();
+    expect(queryByText('刚刚同步')).toBeNull();
+    expect(queryByText('5 分钟前')).toBeNull();
+    expect(queryByText('凭证失效')).toBeNull();
+    fireEvent.press(getByRole('button', { name: `Garmin 连接，同步未完成，${message}` }));
+    expect(mockPush).toHaveBeenCalledWith('/garmin-connection');
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
   it('opens Garmin recovery instead of starting a blind sync from settings', () => {
     mockGarminStatus = {
       bound: true,
