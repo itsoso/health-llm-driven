@@ -27,3 +27,32 @@ def test_no_4000_token_cap_left_in_final_answer_paths():
     assert m, "chat_kwargs 块未找到"
     assert "ANSWER_MAX_TOKENS" in m.group(0), "主回复 chat_kwargs 仍是裸 max_tokens"
     assert '"max_tokens": 4000' not in m.group(0)
+
+
+async def test_closed_html_request_keeps_document_budget_in_actual_provider_call(db, monkeypatch):
+    executor = ae.AgentExecutor(db)
+    executor._current_turn_user_message = '今天是否适合运动？给我推荐适合我的运动的方式以及运动的强度，最终生成一个HTML页面。'
+    executor._fast_route_simple_turn = True
+    executor._staged_response_mode = 'on'
+    executor._staged_answer_task_tier = 'balanced'
+    captured = []
+    class Provider:
+        model = 'synthetic-budget'
+        async def chat_stream(self, **kwargs):
+            captured.append(kwargs['max_tokens'])
+            yield {'type':'content', 'text':'synthetic'}
+            yield {'type':'finish', 'finish_reason':'stop'}
+    monkeypatch.setattr(executor, '_resolve_chat_provider', lambda tools: (Provider(), tools))
+    monkeypatch.setattr(ae.settings, 'agent_base_url', None)
+    monkeypatch.setattr(ae.settings, 'agent_api_key', None)
+    for tools in [[], [{'type':'function','function':{'name':'knowledge_search'}}]]:
+        _ = [event async for event in executor._call_llm_stream([{'role':'user','content':'synthetic'}],tools)]
+    assert captured == [ae.ANSWER_MAX_TOKENS, ae.ANSWER_MAX_TOKENS]
+
+
+def test_html_word_outside_closed_contract_does_not_expand_fast_budget(db):
+    executor = ae.AgentExecutor(db)
+    executor._fast_route_simple_turn = True
+    for message in ['HTML是什么意思', '查一下今天喝水量', '帮我制定未来十天的锻炼计划']:
+        executor._current_turn_user_message = message
+        assert executor._answer_max_tokens() == ae.FAST_ROUTE_ANSWER_MAX_TOKENS

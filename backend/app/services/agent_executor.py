@@ -13959,6 +13959,11 @@ class AgentExecutor:
             except (TypeError, ValueError):
                 configured = HEALTH_EVIDENCE_ANSWER_MAX_TOKENS
             return min(ANSWER_MAX_TOKENS, max(1, configured))
+        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+        document_scope = resolve_exercise_plan_scope(self._current_turn_user_message)
+        if document_scope is not None and document_scope.output_format == "html":
+            # Structured documents need closing tags, even on a fast model.
+            return ANSWER_MAX_TOKENS
         if self._fast_route_simple_turn:
             return FAST_ROUTE_ANSWER_MAX_TOKENS
         if (
