@@ -92,16 +92,18 @@ async def test_stream_uses_only_current_owned_report_evidence(db, auth_user_and_
     events = [event async for event in executor.run_stream(user_id=user.id, channel='typed',
         conversation_id=conv.id, message=question,
         extra_context=json.dumps({'data':'UNTRUSTED_CLIENT_HEALTH'}))]
-    assert any(event.get('event') == 'done' for event in events)
+    done = next(event['data'] for event in events if event.get('event') == 'done')
     context = json.dumps(seen, ensure_ascii=False)
     assert 'UNRELATED_HISTORY_PRIVATE' not in context
     assert 'UNTRUSTED_CLIENT_HEALTH' not in context
     if question == MEDICAL:
         assert 'SYNTHETIC_OWNED_REPORT' in context
+        assert done['turn_outcome']['status'] == 'complete'
     else:
         assert executor._turn_sync_attempted
         assert not executor._turn_sync_queued  # no synthetic credential; honest precondition failure
         assert executor._turn_focused_read_result['availability'] == 'no_data'
+        assert done['turn_outcome']['status'] != 'complete'
 
 
 @pytest.mark.asyncio
@@ -158,5 +160,22 @@ async def test_sync_receipt_and_existing_run_remain_independent(db, auth_user_an
     assert executor._turn_focused_read_result['availability'] == 'available'
     assert executor._turn_focused_read_result['freshness'] == 'existing_record_not_sync_proof'
     assert executor._turn_sync_status_result['job_success_verified'] is (job_state == 'SUCCESS')
-    assert any(event.get('event') == 'done' for event in events)
+    done = next(event['data'] for event in events if event.get('event') == 'done')
+    assert (done['turn_outcome']['status'] == 'complete') is (job_state == 'SUCCESS')
     assert executor._sync_goal_outcomes()[0]['status'] == ('verified' if job_state == 'SUCCESS' else 'failed')
+
+
+@pytest.mark.asyncio
+async def test_selected_report_precedes_general_anatomy_scope(db, auth_user_and_headers):
+    user, _ = auth_user_and_headers
+    row = MedicalExam(user_id=user.id, exam_date=date(2020, 1, 1),
+                      exam_type='MRI', overall_assessment='双肩MRI SELECTED_SYNTHETIC')
+    db.add(row)
+    db.commit()
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = MEDICAL
+    executor._turn_selected_exam_id = row.id
+    result = await executor._exec_health_query('', {}, {'dimension':'medical_exam'})
+    assert 'SELECTED_SYNTHETIC' in result
+    assert executor._focused_read_scopes() == (None, None)

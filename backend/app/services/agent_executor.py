@@ -12827,6 +12827,8 @@ class AgentExecutor:
     def _focused_read_scopes(self):
         from app.services.agent_kernel.medical_narrative_read_scope import resolve_medical_narrative_read_scope
         from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
+        if self._turn_selected_exam_id is not None:
+            return None, None
         text = self._current_turn_user_message
         return resolve_medical_narrative_read_scope(text), resolve_garmin_workout_review_scope(text)
 
