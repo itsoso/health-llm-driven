@@ -651,25 +651,8 @@ async def refresh_workout_heart_rate(
             if hr_points:
                 record.heart_rate_data = json.dumps(hr_points)
 
-                # 如果心率区间数据为空，从心率采样计算
-                total_zone_seconds = sum([
-                    record.hr_zone_1_seconds or 0,
-                    record.hr_zone_2_seconds or 0,
-                    record.hr_zone_3_seconds or 0,
-                    record.hr_zone_4_seconds or 0,
-                    record.hr_zone_5_seconds or 0
-                ])
-
-                if total_zone_seconds == 0:
-                    logger.info(f"运动 {workout_id} 心率区间数据为空，从心率采样计算")
-                    max_hr = record.max_heart_rate or 180
-                    zone_seconds = sync_service._calculate_hr_zones_from_samples(hr_points, max_hr)
-                    record.hr_zone_1_seconds = zone_seconds[0]
-                    record.hr_zone_2_seconds = zone_seconds[1]
-                    record.hr_zone_3_seconds = zone_seconds[2]
-                    record.hr_zone_4_seconds = zone_seconds[3]
-                    record.hr_zone_5_seconds = zone_seconds[4]
-                    logger.info(f"计算得到心率区间: {zone_seconds}")
+                # Keep existing/native zone information. The activity peak
+                # cannot substitute for a validated personal zone threshold.
 
                 db.commit()
                 _invalidate_twin(current_user.id)
@@ -678,26 +661,10 @@ async def refresh_workout_heart_rate(
                     "status": "success",
                     "message": f"获取到 {len(hr_points)} 个心率采样点",
                     "points_count": len(hr_points),
-                    "zones_calculated": total_zone_seconds == 0
+                    "zones_calculated": False
                 }
 
-        # 如果无法获取详细心率，使用模拟曲线
-        if record.avg_heart_rate and record.duration_seconds:
-            hr_points = sync_service._generate_simulated_hr_curve(
-                record.avg_heart_rate,
-                record.max_heart_rate,
-                record.duration_seconds
-            )
-            if hr_points:
-                record.heart_rate_data = json.dumps(hr_points)
-                db.commit()
-                _invalidate_twin(current_user.id)
-                return {
-                    "status": "simulated",
-                    "message": f"使用模拟心率曲线 ({len(hr_points)} 点)",
-                    "points_count": len(hr_points)
-                }
-
+        # No source samples: leave any historical curve and zones untouched.
         return {
             "status": "no_data",
             "message": "无法获取心率数据",

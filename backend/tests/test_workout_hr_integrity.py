@@ -77,7 +77,62 @@ def test_native_running_cadence_remains_steps_per_minute():
         "startTimeLocal": "2026-01-01T10:00:00", "duration": 60,
         "averageRunningCadenceInStepsPerMinute": 150,
         "maxRunningCadenceInStepsPerMinute": 165,
+        "hrTimeInZones": [{"secsInZone": 1}, 2, {"secsInZone": 3}, 4, 5],
     }, 1)
     assert parsed["avg_cadence"] == 150
     assert parsed["max_cadence"] == 165
+    assert [parsed[f"hr_zone_{i}_seconds"] for i in range(1, 6)] == [1, 2, 3, 4, 5]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("samples", [None, {"unsupported": True}, {"heartRateSamples": [[0, 120], [10000, 130]]}])
+@pytest.mark.parametrize("zones", [[0, 0, 0, 0, 0], [1, 2, 3, 4, 5]])
+async def test_refresh_never_fabricates_curve_or_zones(db, monkeypatch, samples, zones):
+    from app.api import workout as api
+    from app.services.auth import GarminCredentialService
+
+    user = User(name="synthetic-refresh")
+    db.add(user)
+    db.commit()
+    historical_curve = json.dumps([{"time": 0, "hr": 110}])
+    record = WorkoutRecord(
+        user_id=user.id, workout_date=date(2026, 1, 1), workout_type="running",
+        duration_seconds=60, avg_heart_rate=130, max_heart_rate=140,
+        source="garmin", external_id="7654321", heart_rate_data=historical_curve,
+        **{f"hr_zone_{i}_seconds": v for i, v in enumerate(zones, 1)},
+    )
+    db.add(record)
+    db.commit()
+    service = object.__new__(workout_sync.WorkoutSyncService)
+    service.user_id = user.id
+
+    async def details(_):
+        return {"heart_rate_data": samples}
+
+    monkeypatch.setattr(service, "get_activity_details", details)
+    monkeypatch.setattr(workout_sync, "WorkoutSyncService", lambda **_: service)
+    monkeypatch.setattr(GarminCredentialService, "get_decrypted_credentials", lambda *_: {
+        "email": "synthetic@example.invalid", "password": "synthetic-test-only"
+    })
+    invalidated = []
+    monkeypatch.setattr(api, "_invalidate_twin", invalidated.append)
+    if samples is None and not any(zones):
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as rejected:
+            await api.refresh_workout_heart_rate(record.id, User(id=user.id + 10000), db)
+        assert rejected.value.status_code == 404
+        assert record.heart_rate_data == historical_curve
+        assert invalidated == []
+    result = await api.refresh_workout_heart_rate(record.id, user, db)
+    if samples and samples.get("heartRateSamples"):
+        assert result["status"] == "success"
+        assert result["zones_calculated"] is False
+        assert json.loads(record.heart_rate_data) == [{"time": 0, "hr": 120}, {"time": 10, "hr": 130}]
+        assert invalidated == [user.id]
+    else:
+        assert result["status"] == "no_data"
+        assert result["points_count"] == 0
+        assert record.heart_rate_data == historical_curve
+        assert invalidated == []
+    assert [getattr(record, f"hr_zone_{i}_seconds") for i in range(1, 6)] == zones
 
