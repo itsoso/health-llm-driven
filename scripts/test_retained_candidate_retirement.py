@@ -166,10 +166,10 @@ def history_fixture(monkeypatch, tmp_path):
         live["services"][unit] = {
             "ActiveState": "active",
             "SubState": "listening" if unit.endswith(".socket") else "running",
-            "MainPID": "0" if unit.endswith(".socket") else "123",
-            "NRestarts": "0",
+            "MainPID": "" if unit.endswith(".socket") else "123",
+            "NRestarts": "" if unit.endswith(".socket") else "0",
             "ActiveEnterTimestampMonotonic": "123",
-            "ControlGroup": "/system.slice/" + unit,
+            "ControlGroup": "" if unit.endswith(".socket") else "/system.slice/" + unit,
             "Result": "success",
         }
         if unit.endswith(".service"):
@@ -1304,3 +1304,86 @@ def test_quarantine_archive_rejects_weakened_evidence(field, value):
     evidence[field] = value
     with pytest.raises(m.RetirementError):
         m.validate_quarantine_evidence(evidence, "b" * 40)
+
+
+@pytest.mark.parametrize("socket_state", ["running", "listening"])
+def test_live_service_snapshot_socket_roundtrips_archive(
+    monkeypatch, tmp_path, socket_state
+):
+    """Exercise real snapshot serialization with absent systemd socket properties."""
+    m, _, _, _, evidence = history_fixture(monkeypatch, tmp_path / "history")
+    spec = importlib.util.spec_from_file_location(
+        "retained_socket_live_proof",
+        Path(__file__).with_name("contained_recovery_proof.py"),
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    proof = object.__new__(module.RecoveryProof)
+    proof.proc = tmp_path / "proc"
+    proof.cgroup = tmp_path / "cgroup"
+    raw = copy.deepcopy(evidence["live"]["services"])
+    socket = raw["health-backend.socket"]
+    socket.update(MainPID="", NRestarts="", ControlGroup="", SubState=socket_state)
+    for unit, values in raw.items():
+        if unit.endswith(".service"):
+            values.pop("processes")
+            values["RestartUSec"] = "5s"
+            group = proof.cgroup / values["ControlGroup"].lstrip("/")
+            group.mkdir(parents=True)
+            (group / "cgroup.procs").write_text("123\n")
+    process = proof.proc / "123"
+    process.mkdir(parents=True)
+    (process / "stat").write_bytes(b"123 (worker) " + b"0 " * 19 + b"789\n")
+    (process / "environ").write_bytes(b"HEALTH_EVIDENCE_RUNTIME_ENABLED=false\0")
+    proof.systemd = SimpleNamespace(show=lambda unit, prop: raw[unit].get(prop, ""))
+    monkeypatch.setattr(proof, "_no_jobs", lambda: None)
+    evidence["live"]["services"] = proof.running_services_snapshot()
+    m.validate_live_snapshot(evidence["live"], "b" * 40)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("MainPID", "0"),
+        ("MainPID", "123"),
+        ("MainPID", "unknown"),
+        ("MainPID", None),
+        ("NRestarts", "0"),
+        ("NRestarts", "n/a"),
+        ("NRestarts", None),
+        ("ActiveEnterTimestampMonotonic", ""),
+        ("ActiveEnterTimestampMonotonic", "0"),
+        ("SubState", "dead"),
+    ],
+)
+def test_archive_socket_rejects_noncanonical_absence(
+    monkeypatch, tmp_path, field, value
+):
+    m, _, _, _, evidence = history_fixture(monkeypatch, tmp_path)
+    socket = evidence["live"]["services"]["health-backend.socket"]
+    socket.update(MainPID="", NRestarts="", ControlGroup="")
+    socket[field] = value
+    with pytest.raises(m.RetirementError):
+        m.validate_live_snapshot(evidence["live"], "b" * 40)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("MainPID", ""),
+        ("NRestarts", ""),
+        ("MainPID", "0"),
+        ("MainPID", "456"),
+        ("NRestarts", "n/a"),
+        ("processes", {}),
+        ("processes", {"123": "0"}),
+    ],
+)
+def test_archive_service_identity_remains_strict(monkeypatch, tmp_path, field, value):
+    m, _, _, _, evidence = history_fixture(monkeypatch, tmp_path)
+    evidence["live"]["services"]["health-backend.socket"].update(
+        MainPID="", NRestarts=""
+    )
+    evidence["live"]["services"]["health-backend.service"][field] = value
+    with pytest.raises(m.RetirementError):
+        m.validate_live_snapshot(evidence["live"], "b" * 40)

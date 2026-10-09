@@ -1452,9 +1452,14 @@ def validate_live_snapshot(live, sha):
             not in ({"running"} if service else {"listening", "running"})
             or any(
                 not isinstance(value[k], str) or not value[k].isdigit()
-                for k in ("MainPID", "NRestarts", "ActiveEnterTimestampMonotonic")
+                for k in (
+                    ("MainPID", "NRestarts", "ActiveEnterTimestampMonotonic")
+                    if service
+                    else ("ActiveEnterTimestampMonotonic",)
+                )
             )
             or int(value["ActiveEnterTimestampMonotonic"]) <= 0
+            or (not service and (value["MainPID"] != "" or value["NRestarts"] != ""))
         ):
             raise RetirementError("invalid archived service readiness")
         if service:

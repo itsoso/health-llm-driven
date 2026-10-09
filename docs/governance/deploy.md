@@ -1070,3 +1070,9 @@ workspace 部署开始/完成时间窗一致；短 SHA actor 只是其中一项�
 计数、审计身份和时间窗；首次 rotate 重验当前状态，历史轮转只验证归档。
 定向 PostgreSQL 验证入口为 `RETAINED_TEST_DATABASE_URL`（库名须含 test），
 使用测试专属 schema，不能用 SQLite 或 mock 代替 JSONB、时间窗、锁和回滚证明。
+
+retirement 服务快照归档区分 socket 与 service：systemd 的 socket 无
+`MainPID` / `NRestarts` 属性，固定读取器返回空串，归档只接受这两个字段的精确
+空串；数字 `0`、任意文本、缺字段或 null 均不代替缺省属性。service 仍要求
+数字 MainPID/NRestarts、有效启动时间和绑定的进程身份。socket 仍须 active、
+listening/running、Result=success 且启动时间为正数；该适配不改变实时服务验证。
