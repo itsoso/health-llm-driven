@@ -37,7 +37,7 @@ def test_catalog_preserves_exact_original_selectors_once():
     selectors = [s for group in runner.SHARDS for s in group]
     assert len(runner.SHARDS) == 2
     assert len(selectors) == len(set(selectors))
-    assert set(selectors) == {"tests/" + s for s in LEGACY_SELECTORS}
+    assert set(selectors) == {"tests/" + s for s in LEGACY_SELECTORS} | {"tests/test_life_navigation.py", "tests/test_health_week_navigation.py", "tests/test_health_navigation_concurrency.py", "tests/test_lifenav_grants.py"}
 
 
 def config():

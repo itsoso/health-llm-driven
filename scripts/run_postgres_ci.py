@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Two bounded pytest processes, each owning a freshly created local test database.
 
-Selectors preserve the original PostgreSQL CI suite. Static file grouping uses
+Selectors preserve the original PostgreSQL CI suite and include personal/Health
+navigation transaction and concurrency coverage. Original file grouping uses
 run 37877803968 completion timings (approximately 168s/167s, excluding startup).
 Migration/idempotency and real Redis checks remain preceding workflow steps.
 """
@@ -29,6 +30,8 @@ SHARDS = (
         "tests/test_agent_supplement_persistence_postgres.py",  # 17s
         "tests/test_pi_kernel_executor.py",  # 10s
         "tests/test_latest_meal_correction.py",  # 4s
+        "tests/test_life_navigation.py",
+        "tests/test_health_navigation_concurrency.py",
     ),
     (
         "tests/test_agent_runtime_concurrency.py",
@@ -45,6 +48,8 @@ SHARDS = (
         "tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records",
         "tests/test_remote_health_oauth.py",
         "tests/test_remote_health_queries.py",
+        "tests/test_health_week_navigation.py",
+        "tests/test_lifenav_grants.py",
     ),
 )
 OWN_NAME = re.compile(r"reva_ci_test_[0-9a-f]{32}_0[12]\Z")
