@@ -54,3 +54,15 @@ def test_local_publishers_do_not_execute_repo_helpers_or_vendor():
         result = subprocess.run(['/bin/sh', str(script), 'production', '--confirm'], env={'PATH': '/nonexistent'}, capture_output=True, text=True)
         assert result.returncode == 78
         assert 'trusted-ota.yml' in result.stderr
+
+
+def test_native_baseline_matches_delivered_testflight_276():
+    m = module()
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location('ota_publisher', root / 'scripts/trusted_ota_publish.py')
+    publisher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(publisher)
+    expected = ('1.3.5', '7fe06d8b34750b6bd56db8d5ec45d1aee705b02e', '09719eb6-2887-4100-9ccb-6533fd9d71ed')
+    for contract in (m, publisher):
+        assert (contract.RUNTIME, contract.NATIVE_SHA, contract.NATIVE_BUILD) == expected
+    assert json.loads((root / 'mobile/app.json').read_text())['expo']['version'] == m.RUNTIME

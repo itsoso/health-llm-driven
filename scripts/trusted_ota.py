@@ -12,10 +12,10 @@ import sys
 from pathlib import Path
 
 PROJECT = '911ea84f-bc7e-4a12-90cf-33966b6f7398'
-RUNTIME = '1.3.4'
+RUNTIME = '1.3.5'
 CHANNEL = 'production'
-NATIVE_SHA = 'cad1fd1d33621532e587b265e79f737dfb06d1fe'
-NATIVE_BUILD = 'bfdd2bc9-db49-4ccd-bfbc-679287be4855'
+NATIVE_SHA = '7fe06d8b34750b6bd56db8d5ec45d1aee705b02e'
+NATIVE_BUILD = '09719eb6-2887-4100-9ccb-6533fd9d71ed'
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1'}
 

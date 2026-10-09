@@ -591,7 +591,7 @@ def test_preflight_uses_real_native_contract_and_still_blocks_changed_package(mo
     assert m.cli() == 1
     assert json.loads(capsys.readouterr().err)['reason'] == 'native_source_incompatible'
     assert ('merge-base', '--is-ancestor', m.NATIVE_SHA, 'c'*40) in calls
-    assert contract.NATIVE_SHA == m.NATIVE_SHA == 'cad1fd1d33621532e587b265e79f737dfb06d1fe'
+    assert contract.NATIVE_SHA == m.NATIVE_SHA == '7fe06d8b34750b6bd56db8d5ec45d1aee705b02e'
 
 
 def test_preflight_failure_blocks_publish_before_credential_lookup(monkeypatch):

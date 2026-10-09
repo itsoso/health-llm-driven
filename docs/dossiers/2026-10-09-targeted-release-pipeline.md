@@ -278,3 +278,6 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - 固定 dc8d9109a 独立 G4 NO-GO：后续失败终态会令 Mobile 清除已验证保存卡片，历史恢复也隐藏。独立反例复现；未推送或部署此候选。
 - 追加最小 Mobile 修复：在 failed 等非完整回复中，只保留匹配 verified diet_record 回执且 recorded=true 的餐食卡。实时收尾和历史恢复复用同一过滤函数，回复失败状态不改，草稿/无回执/不匹配卡片仍隐藏；仅返回服务器已持久化 messageId 的终态。RED 1 failed/3 passed，GREEN三套181 passed，TypeScript通过；重复卡补验中。
 - 后端最终173 passed、CI=true项目集成3 passed、System Map与秘密扫描通过；标准真实模型回归10次API、0失败，源文件哈希与固定后端提交一致，证据 /tmp/reva-diet-stream-live-result.json。该标准回归不等于真实用户照片的成对时延或质量评估。新固定提交待独立复审及远端CI，尚未部署/OTA。
+- e4ac5c966 独立G4 GO：固定快照Mobile211 passed及无回执/错误资源类型/未持久化/缺messageId四项额外边界通过；已合入main，CI37930959574运行。后端修复不改变任何模型输入输出；Mobile失败时仅保留持久化回执卡。
+- OTA准备发现固定基线仍为1.3.4，不能直接发布1.3.5 JS。按本会话已核验TestFlight276构建回执升级三处绑定：runtime1.3.5、native SHA7fe06d8b34750b6bd56db8d5ec45d1aee705b02e、build09719eb6-2887-4100-9ccb-6533fd9d71ed。已保存EAS回执FINISHED/STORE/production、原生指纹11aca32700f896b9e3f46e8587dc052de72090dd，IPA/Apple分发证据见前文；本次本机EAS只读刷新认证不可用，发布器仍须实时校验完整cohort和指纹。不扩大OTA路径白名单，不删除旧版本历史，不更改渠道映射。
+- 基线绑定RED复现，旧常量测试更新后121项通过。新提交须独立复审与新精确CI，再做后端及OTA validate/publish；不能把此前绿CI或本地构建回执替代新发布Gate。
