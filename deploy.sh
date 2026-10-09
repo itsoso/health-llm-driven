@@ -3479,6 +3479,9 @@ deploy_backend() {
     _REMOTE_RELEASE_LOCK_DELEGATED=1
     set +e
     ssh $SERVER "
+        $(declare -f release_timing_checkpoint)
+        SECONDS=0
+        release_timing_checkpoint remote_guard_started && \
         echo '停止后端 socket 与所有 writer...' && \
         systemctl stop health-backend.socket && \
         systemctl stop health-backend && \
@@ -3487,6 +3490,7 @@ deploy_backend() {
         test \"\$(systemctl show health-backend -p ActiveState --value)\" = inactive && \
         test \"\$(systemctl show celery-worker -p ActiveState --value)\" = inactive && \
         test \"\$(systemctl show celery-beat -p ActiveState --value)\" = inactive && \
+        release_timing_checkpoint remote_writers_stopped && \
         if [ '$RUNTIME_STATE_RESUME_PHASE' != 'COMMITTED' ]; then \
             /usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \
                 prepare '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA' \
@@ -3494,6 +3498,7 @@ deploy_backend() {
         fi && \
         cd $REMOTE_PATH && \
         $remote_git_sync && \
+        release_timing_checkpoint remote_checkout_completed && \
         $activate_laya_service && \
         if [ '$RUNTIME_STATE_RESUME_PHASE' != 'COMMITTED' ]; then \
             /usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \
@@ -3506,17 +3511,20 @@ deploy_backend() {
         echo '加载环境变量...' && \
         set -a && source .env && set +a && \
         $remote_dependency_sync && \
+        release_timing_checkpoint remote_dependencies_completed && \
         echo '执行受控数据库迁移...' && \
         test -r /etc/health-app/migration.env && \
         set -a && source /etc/health-app/migration.env && set +a && \
         test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
         test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
         python scripts/apply_managed_migrations.py && \
+        release_timing_checkpoint remote_migrations_completed && \
         unset MIGRATION_DATABASE_URL && \
         (cd '$REMOTE_BACKUP_PREFLIGHT_DIR' && \
             sha256sum --strict -c staged.sha256 >/dev/null) && \
         echo '启动服务前验证完整 runtime schema...' && \
         PYTHONPATH=. python '$REMOTE_BACKUP_PREFLIGHT_DIR/verify_runtime_schema_compatibility.py' && \
+        release_timing_checkpoint remote_schema_completed && \
         test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
         test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
         echo '重启后端服务...' && \
@@ -3524,6 +3532,7 @@ deploy_backend() {
         systemctl restart health-backend && \
         echo '重启 Celery worker & beat...' && \
         systemctl restart celery-worker celery-beat && \
+        release_timing_checkpoint remote_services_restarted && \
         echo '统计本地 skills...' && \
         find skills -maxdepth 2 -name SKILL.md | wc -l | xargs printf '  本地 SKILL.md: %s 个\\n'
     "

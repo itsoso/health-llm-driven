@@ -244,3 +244,24 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - 首个1.3.5候选 `1033a3099` CI `37921723275` 在 Mobile app-config 旧版本精确断言失败（仍期望1.3.4）。保持失败记录，未启动构建。更新版本契约测试名称/精确期望至1.3.5，保留appVersion runtime与production能力边界断言；不修改历史OTA baseline fixtures。
 - 修正断言后 app-config/ChatHeader 合计43 passed；独立app-config 39 passed，版本源码哈希不变、G4 GO沿用。
 - 1033候选后续balanced-09另暴露验收模板app_version旧值；最小同步 `real-device-acceptance.template.json` 至1.3.5，全部占位符及false检查项原样保留，未声明设备验收。完整release-pack回归64 passed。ASC已由用户完成登录并回读最新仍为1.3.4(275)，无1.3.5新包；后台可用于后续独立处理/分发核验。
+
+### TestFlight 1.3.5 (276) 与服务端发布完成（2026-10-09）
+
+- 精确 main `7fe06d8b34750b6bd56db8d5ec45d1aee705b02e` 完整 CI `37922798912` 成功；该模板文档候选的自动轻量 CI 不作为完整验证。Trusted validate `37923921378` 与 release `37924699485` 均成功。GitHub 查询有网络 EOF，原运行未重建；首次 validate CLI 在 GET 工作流阶段失败，确认未 dispatch 后使用官方 API 触发一次。
+- 服务端同 SHA 持久 `SUCCEEDED`，回执 SHA256 `146912e8801f90df21114139d96406028316b907ab116f1a7bf2861fb00b23ce`；backend/frontend/Celery worker/beat active，业务 lease 已释放，公网 health HTTP 200。生产真实用户数据未读取或写入。
+- EAS 唯一构建 `09719eb6-2887-4100-9ccb-6533fd9d71ed`：1.3.5 (276)，IOS / STORE / production，精确源码相同，FINISHED。构建创建 11:38:04 UTC、完成 11:44:58 UTC（约 6 分 55 秒）；不据单次数据宣称长尾性能改善。
+- 唯一 submission `81028957-cf20-4904-8f3d-a674d53e8f81` 上传成功。ASC build `d7e8ad8c-72d8-4854-bc03-9058085d7f9f` 的上传状态为“完成”，确切 1.3.5 (276) 已绑定既有 Team (Expo) 与“内部测试”两个内部组，测试说明保存成功。没有增加新测试员或提交 App Review。
+- 下载精确 IPA 核验版本、build、bundle `life.executor.health`、runtime 1.3.5 与 production channel；codesign deep/strict 校验通过，商店 profile 不可调试、无设备列表。IPA SHA256 `23e51c8d0455d8bfceec5f4d6fe2e46816dadef2a03251f5c33133685e607761`。第一次 urllib 下载 HTTP 403，curl 读取同一 vendor 制品成功，未重建或重上传。
+- 本机证据 `/tmp/reva-testflight-135-final.json`、`/tmp/reva-testflight-135-upload.log`、`/tmp/reva-testflight-135-276-available.jpg`。本次未做 276 真机安装或用户态端到端验收，不能将签名/上传/分组替代设备验证；未送审、未发 OTA。新原生 runtime 已交付，不改旧 OTA baseline 绕过兼容性闸。
+- 本节保留本地作为发布后回执，不推进已发布的 main。原主目录及其他会话工作未修改。
+
+### 发布速度实测与第一批优化（2026-10-09）
+
+- 用户要求同时分析并改进后端部署和 TestFlight 发布。沿用当前 ledger；保留上述 276 发布回执及原主目录的其他会话改动。
+- 基线：[机器可读耗时](../reviews/2026-10-09-release-latency-baseline.json)。run 37924699485 共 930 秒：backend 385 秒、iOS job 505 秒、TestFlight job 368 秒；两条路径已并行，不能再把“并行后端与构建”当新优化。构建结束后的 upload claim 166 秒、实际重验/上传 165 秒是当前关键路径。
+- 后端 deploy.sh guard 段 152 秒；日志证明 Python 依赖已复用、Pi 安装约 5 秒。新增独立 remote_* 时钟检查点细分停止 writer、checkout、依赖、迁移、schema 和服务重启；固定阶段名和秒数仅写 stderr，原失败链与锁保持，不声称计时本身缩短部署。
+- 接受：ios-build/testflight 两个独立 npm ci 根固定并发 2，均使用锁文件、ignore-scripts、干净 runner 与既有环境清理；必须 join 两项且全部成功才做安全补丁/领取权限/接触 vendor 凭据。无跨运行缓存、无新权限、无自动重试。
+- 真实本机安装对照：同锁文件、每组新缓存，serial 126.27 秒、parallel 83.90 秒；仅一个 macOS/Node25 样本，不等同 Linux/Node22 正式 runner，不宣称全发布或 P95 改善。下一次正常授权发布以相同步骤耗时验证。
+- 拒绝：历史备份双线程哈希。冷/暖数据差异大；ABBA 串行 29.33/21.61 秒，并行 22.14/29.03 秒，没有稳定收益，已撤回运行代码和对应实验测试。所有原始摘要检查通过；实验中新增的“两个任务都必须开始”测试也暴露 executor.map 可能取消尚未开始任务，此失败记录保留，不计入通过结果。生产源/回执/缓存未修改，也未清除 OS page cache。
+- 后续优先级：P1 为 bootstrap 持久公钥复用链 O(N²) 的单次完整图验证，必须另做循环/断链/授权改变/归档篡改反例和固定提交独立评审；P2 根据新增 guard 分段实测，优化实际耗时函数，保留停服、迁移、schema 与稳定窗口；P3 评估构建产物准备与同包上传衔接，继续保持失败不重放。暂不引入共享特权缓存或跳过完整字节验证。
+- 停止条件：任一依赖失败仍能进入 patch/claim、凭据提前可见、原回执/失败语义变化、或真实耗时无稳定改善，均撤回相应优化。正式效果待绿色候选下一次发布回执；不为计时重复发 TestFlight 包。

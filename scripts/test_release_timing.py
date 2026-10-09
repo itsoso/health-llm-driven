@@ -38,3 +38,29 @@ def test_failed_command_still_stops_before_later_checkpoint():
     assert result.returncode == 23
     assert 'phase=guard_started' in result.stderr
     assert 'phase=finalized' not in result.stderr
+
+
+def test_guard_has_separate_remote_clock_and_dependency_schema_restart_boundaries():
+    source = (ROOT / 'deploy.sh').read_text()
+    body = source.split('release_timing_checkpoint guard_started', 1)[1].split('CODE_EXIT=$?', 1)[0]
+    assert '$(declare -f release_timing_checkpoint)' in body
+    assert 'SECONDS=0' in body
+    boundaries = [
+        'release_timing_checkpoint remote_guard_started',
+        'systemctl stop health-backend.socket',
+        'release_timing_checkpoint remote_writers_stopped',
+        '$remote_git_sync',
+        'release_timing_checkpoint remote_checkout_completed',
+        '$remote_dependency_sync',
+        'release_timing_checkpoint remote_dependencies_completed',
+        'python scripts/apply_managed_migrations.py',
+        'release_timing_checkpoint remote_migrations_completed',
+        'verify_runtime_schema_compatibility.py',
+        'release_timing_checkpoint remote_schema_completed',
+        'systemctl restart celery-worker celery-beat',
+        'release_timing_checkpoint remote_services_restarted',
+    ]
+    offsets = [body.index(x) for x in boundaries]
+    assert offsets == sorted(offsets)
+    for label in [x for x in boundaries if x.startswith('release_timing_checkpoint')]:
+        assert label + ' &&' in body

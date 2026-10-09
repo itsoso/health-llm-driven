@@ -1,0 +1,206 @@
+{
+  "source_sha": "7fe06d8b34750b6bd56db8d5ec45d1aee705b02e",
+  "release_run": 37924699485,
+  "workflow_wall_seconds": 930,
+  "jobs": [
+    {
+      "name": "preflight",
+      "seconds": 9.0,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 0.0
+        },
+        {
+          "name": "Materialize canonical source and check exact CI without production credentials",
+          "seconds": 6.0
+        },
+        {
+          "name": "Record non-release result",
+          "seconds": 0.0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "build-permission",
+      "seconds": 33.0,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 0.0
+        },
+        {
+          "name": "Independently materialize and recheck before read-only server readiness checks",
+          "seconds": 4.0
+        },
+        {
+          "name": "Check actual server readiness without consuming authorization",
+          "seconds": 27.0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "ios-build",
+      "seconds": 505.0,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 0.0
+        },
+        {
+          "name": "Independently materialize and recheck before parallel native build",
+          "seconds": 4.0
+        },
+        {
+          "name": "Fixed Node toolchain",
+          "seconds": 5.0
+        },
+        {
+          "name": "Install locked CLI and app dependencies without lifecycle scripts or shared cache",
+          "seconds": 27.0
+        },
+        {
+          "name": "Claim one build in this job before every vendor create attempt",
+          "seconds": 31.0
+        },
+        {
+          "name": "Build once without uploading to Apple",
+          "seconds": 435.0
+        },
+        {
+          "name": "Post Fixed Node toolchain",
+          "seconds": 0.0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "backend",
+      "seconds": 385.0,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 0.0
+        },
+        {
+          "name": "Independently materialize and recheck before accessing production credentials",
+          "seconds": 4.0
+        },
+        {
+          "name": "Start the fixed server-side release capability",
+          "seconds": 379.0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "testflight",
+      "seconds": 368.0,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 0.0
+        },
+        {
+          "name": "Independently materialize and recheck as soon as the build finishes",
+          "seconds": 4.0
+        },
+        {
+          "name": "Fixed Node toolchain",
+          "seconds": 6.0
+        },
+        {
+          "name": "Install locked CLI and app dependencies without lifecycle scripts or shared cache",
+          "seconds": 25.0
+        },
+        {
+          "name": "Claim one-time TestFlight upload permission before exposing vendor credentials",
+          "seconds": 166.0
+        },
+        {
+          "name": "Revalidate and upload the exact finished build",
+          "seconds": 165.0
+        },
+        {
+          "name": "Post Fixed Node toolchain",
+          "seconds": 0.0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "release-result",
+      "seconds": 4.0,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 0.0
+        },
+        {
+          "name": "Join backend deployment and TestFlight upload outcomes",
+          "seconds": 1.0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0.0
+        }
+      ]
+    }
+  ],
+  "backend_guard_seconds": 152,
+  "dependency_reuse_observed": true,
+  "pi_install_seconds_rounded": 5,
+  "history_probe": {
+    "original_seconds": 103.66,
+    "ota_seconds": 0.04,
+    "warmup_parallel_seconds": 35.87,
+    "warmup_serial_seconds": 25.2,
+    "abba": [
+      {
+        "mode": "serial",
+        "seconds": 29.33
+      },
+      {
+        "mode": "parallel",
+        "seconds": 22.14
+      },
+      {
+        "mode": "parallel",
+        "seconds": 29.03
+      },
+      {
+        "mode": "serial",
+        "seconds": 21.61
+      }
+    ],
+    "decision": "parallel hashing rejected: no stable benefit; production source unchanged"
+  },
+  "dependency_install_experiment": {
+    "environment": "local macOS Node 25, not production Node 22 runner",
+    "same_lockfiles": true,
+    "fresh_cache_per_mode": true,
+    "lifecycle_scripts": false,
+    "serial_seconds": 126.27,
+    "parallel_seconds": 83.9,
+    "parallelism": 2,
+    "limit": "one paired sample; registry/network/order and platform may affect result; no production P95 claim"
+  },
+  "release_side_effects_for_experiment": false
+}
