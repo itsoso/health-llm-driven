@@ -6,6 +6,7 @@ import { revaFonts } from '../../constants/revaTheme';
 import { preprocessMarkdownTables } from '../../utils/markdownTables';
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { splitHtmlTableContent, type SafeHtmlTable } from '../../utils/safeHtmlTable';
+import { parseSafeHtmlDocument, type SafeHtmlDocument } from '../../utils/safeHtmlDocument';
 
 function TablePreview({ table, source }: { table: SafeHtmlTable; source: string }) {
   const { c } = useTheme();
@@ -41,6 +42,24 @@ function TablePreview({ table, source }: { table: SafeHtmlTable; source: string 
   );
 }
 
+function DocumentPreview({ document, source }: { document: SafeHtmlDocument; source: string }) {
+  const { c } = useTheme();
+  const [sourceVisible, setSourceVisible] = useState(false);
+  return <View testID="safe-html-document" style={[styles.container, { borderColor: c.separator }]}>
+    <Text style={[styles.caption, { color: c.labelSecondary }]}>HTML 文档（安全阅读模式）</Text>
+    {document.blocks.map((block, index) => <Text key={index} selectable
+      accessibilityRole={block.kind === 'heading' ? 'header' : undefined}
+      style={[styles.text, styles.disclosure, { color: c.labelPrimary, fontWeight: block.kind === 'heading' ? '600' : '400', paddingLeft: 12 + (block.depth ?? 0) * 16 }]}>
+      {block.kind === 'list' && block.marker ? `${block.marker} ${block.text}` : block.text}
+    </Text>)}
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: sourceVisible }}
+      onPress={() => setSourceVisible(visible => !visible)} style={styles.disclosure}>
+      <Text style={{ color: c.brand, fontSize: 13 }}>{sourceVisible ? '收起 HTML 源码' : '查看 HTML 源码'}</Text>
+    </Pressable>
+    {sourceVisible ? <Text selectable style={[styles.source, { color: c.labelSecondary }]}>{source}</Text> : null}
+  </View>;
+}
+
 type Props = Pick<React.ComponentProps<typeof Markdown>, 'style' | 'rules'> & {
   content: string;
   allowHtmlTables?: boolean;
@@ -55,6 +74,8 @@ export default function SafeTableMarkdown({ content, style, rules, allowHtmlTabl
   // keeping the existing loose-Markdown cleanup for ordinary prose.
   return <>{parts.map((part, index) => {
     if (allowHtmlTables && part.kind === 'table') return <TablePreview key={index} table={part.table} source={part.source} />;
+    const document = allowHtmlTables && part.kind === 'source' ? parseSafeHtmlDocument(part.source) : null;
+    if (document) return <DocumentPreview key={index} document={document} source={part.source} />;
     if (allowHtmlTables && part.kind === 'source') return (
       <View key={index} style={[styles.container, { borderColor: c.separator }]}>
         <Text style={[styles.disclosure, { color: c.labelSecondary }]}>HTML 源码（暂不支持此格式预览）</Text>

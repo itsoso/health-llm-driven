@@ -46,7 +46,8 @@ def test_medical_boundary_removes_unverified_dose_and_schedule_claims():
     assert result.flagged is True
     assert "2000IU" not in result.text
     assert "已安排" not in result.text
-    assert "用户陈述" in result.text
+    assert "用户陈述" not in result.text
+    assert "上下文信息（未逐项核验）" in result.text
     assert "已检索证据" in result.text
     assert "模型推断" in result.text
 
@@ -72,3 +73,12 @@ def test_deterministic_source_label_does_not_exempt_unsafe_advice():
     assert "unverified_dose_action" in result.violations
     assert "建议每天服用鱼油2粒" not in result.text
     assert result.text.startswith("信息来源：工具读取结果。")
+
+
+def test_model_generation_alone_does_not_attest_user_fact_provenance():
+    result = enforce_medical_evidence_boundaries(
+        "这份补剂建议仍需核对既往资料。", model_generated=True,
+    )
+    assert result.text.startswith("信息来源：上下文信息（未逐项核验）、模型推断。")
+    assert "用户陈述" not in result.text
+    assert "已检索证据" not in result.text

@@ -130,3 +130,14 @@
 - 旧“新建”修复确实已合并，历史37721228551被CI拦住；随后37755008534在publisher中失败，无新的发布成功证据。本轮未claim、未触发vendor update、未发布OTA。已请求用户确认改走独立runtime的新扫码安装包；在回复前不变更原生版本/签名/分发方式。证据见`docs/reviews/2026-10-09-new-chat-ota-readiness.json`。
 - EAS production channel实时回读：最新iOS update group为`fc8792f0-627c-4937-928c-c2a640a784f8`，update为`01a0eb0e-ec64-7a0b-bc3e-ff3bdc3deb02`，创建于2026-09-29，源码`fda864c2b7f491be79db7b4523896a499581730d`；不是本次新建修复的发布回执。不推断用户设备当前已应用哪个bundle。
 - 主干候选`bede48d6b`的CI run37893443784最终30/30 job全部success。CI已满足，本轮OTA仍因source/cohort准入BLOCK；不因CI绿色越过原生边界。证据文档本地保存，待用户选择后随下一批集成，避免仅记录结果再触发重复完整CI。
+
+## 完整HTML回复截图续接（2026-10-09）
+
+- 截图新增问题：完整HTML文档回退为“不支持此格式预览”，同时存在未完成提示。源码定位SafeTableMarkdown仅支持严格table语法；这与旧spec明确非目标一致，不能声称主干已支持完整文档。
+- 按incident + Health Harness + safety overlay执行，禁用superpowers。准入为既有观察面的安全阅读扩展，详见`docs/specs/active/2026-10-09-safe-html-document-reading.md`。HTML仅投影为原生文本，保留源码，不执行脚本/网络/CSS、不生成动作。
+- 未完成状态和健康证据链单独只读调查；截图不能证明健康数据是否来自先前上下文，也不能证明服务端完成状态。禁止复制用户截图中的健康数值入fixture或用隐藏错误提示伪装修复。
+- 使用现有parent run；Mobile parser/展示文件单一writer，后端scope调查只读。原OTA/native兼容阻断及待确认的原生发布方式继续有效，用户发送截图不构成同意更改分发方式。
+- 第二处源码复现：准确复合句未命中closed运动scope，后续个人查询被误报nonself。新增有限今日本人推荐句式及独立HTML输出尾句；返回`今天`与空evidence_dimensions，只允许原有背景与知识工具。第三人/引用/否定/额外操作继续拒绝，原始模型输入保留HTML要求。先RED 7项失败，最终1226项scope/邻近回归通过（39.42秒）；不将fixture模型的complete当作真实HTML交付验收。
+- 来源标签修复：原代码用model_generated直接断言“用户陈述”，无法证明个人事实出处。改为“上下文信息（未逐项核验）”，保留模型推断与实际检索标签，药物/写入/医生指示规则不变。配置正确测试环境后RED断言失败；修复后含医学边界/来源/选择题邻近2977项通过（20.47秒）。早期未配置数据库和一次不存在的测试路径均明确失败，不计入通过结果。
+- LLM变更路径闸返回live_llm_required=false；本机检查模型凭据仅输出是否存在，未发现可用的相关provider凭据。未执行真实模型端到端复现，不宣称来源真实性或本次截图的中断原因已被确认。未读取生产健康载荷或复制其数值到fixtures。
+- Mobile安全文档阅读：先RED缺模块，再实现；有序列表审查发现编号丢失，补RED（1 failed/18 passed）后保留ol默认编号、ul标记、嵌套层级及多段续文。最终四套160项Jest通过（3.793秒）、TypeScript通过；System Map和diff检查通过。未知/active/不完整/超限、含不支持表格/编号属性的文档继续整体source fallback，静态阅读不是任意浏览器页面渲染。当前候选模拟器UI与真实生成HTML仍未验收。

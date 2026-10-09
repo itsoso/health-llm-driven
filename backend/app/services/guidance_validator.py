@@ -765,7 +765,7 @@ def enforce_medical_evidence_boundaries(
             safe_parts.append("相关安排尚无已核验的完成回执，不能确认已经完成。")
         out = "\n\n".join(dict.fromkeys(safe_parts))
     # Provenance affects the label only; deterministic output keeps every check.
-    labels = ["用户陈述"] if model_generated else ["工具读取结果"]
+    labels = ["上下文信息（未逐项核验）"] if model_generated else ["工具读取结果"]
     if evidence_sources:
         labels.append("已检索证据（未逐句核验）")
     if model_generated:

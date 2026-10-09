@@ -15,6 +15,13 @@ _DRAFT = re.compile(
     rf"(?:{_SELF})?(?P<horizon>{_HORIZON})?的?"
     r"(?:锻炼|运动|训练)(?:恢复|康复)?的?(?:计划|方案)?(?:草稿)?"
 )
+_TODAY_RECOMMENDATION = re.compile(
+    r"今天(?:我)?是否适合运动[？?](?:请)?给我推荐适合我的运动(?:的)?方式"
+    r"以及运动(?:的)?强度"
+)
+_HTML_OUTPUT_SUFFIX = re.compile(
+    r"[，,。；;](?:最终|最后)生成一个HTML页面$", re.IGNORECASE
+)
 _BASIS_ITEMS = {
     "profile": r"身体(?:状况|情况|状态)|健康(?:状况|情况|状态)",
     "medical_exam": r"体检报告|体检结果|检查报告|化验报告",
@@ -35,6 +42,11 @@ class ExercisePlanScope:
 def resolve_exercise_plan_scope(text: str) -> ExercisePlanScope | None:
     # Do not strip quotes/markdown/reporting frames: those are not authority.
     normalized = re.sub(r"\s+", "", str(text or "")).rstrip("。.!！")
+    # Consume only a closed, independent output-format suffix. The caller's
+    # original message remains intact; HTML does not grant personal reads.
+    normalized = _HTML_OUTPUT_SUFFIX.sub("", normalized)
+    if _TODAY_RECOMMENDATION.fullmatch(normalized):
+        return ExercisePlanScope('今天', ())
     direct = _DRAFT.fullmatch(normalized)
     if direct:
         return ExercisePlanScope(direct['horizon'] or '', ())
