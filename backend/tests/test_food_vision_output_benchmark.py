@@ -29,7 +29,8 @@ def test_candidate_replay_matches_runtime_prompt_exactly():
     from app.services.ai import food_recognition as food
 
     assert benchmark.COMPACT_FORMAT == food.FOOD_RECOGNITION_OUTPUT_FORMAT
-    assert food._food_recognition_request_prompt() == (
+    assert benchmark.variant_prompt("wire") == food._food_recognition_request_prompt()
+    assert benchmark.variant_prompt("compact") == (
         food.FOOD_RECOGNITION_SYSTEM_PROMPT + "\n" + benchmark.COMPACT_FORMAT
     )
 
@@ -142,3 +143,15 @@ def test_valid_food_identity_preserves_unknown_nutrition_and_confidence():
     for key in ["quantity_grams", "label_basis_grams", "calories", "protein", "carbs", "fat", "fiber", "confidence", "portion_confidence"]:
         value["foods"][0][key] = None
     assert benchmark.check_response(json.dumps(value), {"food_count": 1}) == []
+
+
+def test_replay_normalizes_production_wrapper_and_wire_keys_only_for_candidate():
+    from app.services.ai import food_recognition as food
+    canonical = response()
+    keys = food.FOOD_RECOGNITION_WIRE_KEYS
+    wire = {keys.get(k,k): v for k,v in canonical.items()}
+    wire["foods"] = [{keys.get(k,k): v for k,v in canonical["foods"][0].items()}]
+    wrapped = "```json\n" + json.dumps(wire) + "\n```"
+    assert benchmark.check_response(benchmark.normalize_replay_response(wrapped, "wire"), EXPECTED) == []
+    assert benchmark.check_response(benchmark.normalize_replay_response(wrapped, "compact"), EXPECTED)
+    assert benchmark.check_response(benchmark.normalize_replay_response("```json\n" + json.dumps(canonical) + "\n```", "compact"), EXPECTED) == []

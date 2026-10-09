@@ -106,10 +106,53 @@ FOOD_RECOGNITION_OUTPUT_FORMAT = (
 )
 
 
+FOOD_RECOGNITION_WIRE_KEYS = {
+    "quantity_grams": "grams",
+    "label_basis_grams": "basis_grams",
+    "portion_confidence": "portion_conf",
+    "meal_description": "meal",
+    "health_tips": "tips",
+    "nutrition_basis": "basis",
+    "confidence": "conf",
+    "quantity": "portion",
+}
+
+
 def _food_recognition_request_prompt() -> str:
-    # Reduce generated formatting tokens; retain the full recognition policy,
-    # all fields, unknown values and the existing provider/model selection.
-    return FOOD_RECOGNITION_SYSTEM_PROMPT + "\n" + FOOD_RECOGNITION_OUTPUT_FORMAT
+    # Rename transport keys throughout the complete policy, without adding a
+    # second schema or changing values, unknowns, model, or recognition rules.
+    prompt = FOOD_RECOGNITION_SYSTEM_PROMPT + "\n" + FOOD_RECOGNITION_OUTPUT_FORMAT
+    return re.sub(
+        r"\b(" + "|".join(FOOD_RECOGNITION_WIRE_KEYS) + r")\b",
+        lambda match: FOOD_RECOGNITION_WIRE_KEYS[match.group()],
+        prompt,
+    )
+
+
+def _expand_food_recognition_wire_payload(payload: Any) -> Any:
+    # Keep public results canonical. Expand only schema fields, never arbitrary
+    # nested metadata or string values. Older full-key responses remain valid.
+    if not isinstance(payload, dict):
+        return payload
+    reverse = {value: key for key, value in FOOD_RECOGNITION_WIRE_KEYS.items()}
+
+    def expand(value: dict, allowed: set) -> dict:
+        result = {}
+        for key, item in value.items():
+            canonical = reverse.get(key, key)
+            target = canonical if canonical in allowed else key
+            if target in result:
+                raise ValueError("ambiguous food wire field")
+            result[target] = item
+        return result
+
+    top_fields = {"meal_description", "health_tips"}
+    result = expand(payload, top_fields)
+    if isinstance(result.get("foods"), list):
+        food_fields = set(FOOD_RECOGNITION_WIRE_KEYS) - top_fields
+        result["foods"] = [expand(item, food_fields) if isinstance(item, dict) else item
+                           for item in result["foods"]]
+    return result
 
 
 def _as_number(value: Any, maximum: Optional[float] = None) -> Optional[float]:
@@ -638,7 +681,7 @@ class FoodRecognitionService:
                     "foods": [],
                 }
 
-            result = _sanitize_vision_payload(result)
+            result = _sanitize_vision_payload(_expand_food_recognition_wire_payload(result))
 
             foods_count = len(result.get('foods', []))
             logger.info(f"食物识别完成: success={result.get('success')} foods={foods_count}")
@@ -722,7 +765,7 @@ class FoodRecognitionService:
 
             try:
                 result = json.loads(json_content)
-                return _sanitize_vision_payload(result)
+                return _sanitize_vision_payload(_expand_food_recognition_wire_payload(result))
             except json.JSONDecodeError as e:
                 logger.error(
                     "URL食物识别JSON解析失败 line=%s column=%s response_length=%s",

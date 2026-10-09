@@ -281,3 +281,23 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - e4ac5c966 独立G4 GO：固定快照Mobile211 passed及无回执/错误资源类型/未持久化/缺messageId四项额外边界通过；已合入main，CI37930959574运行。后端修复不改变任何模型输入输出；Mobile失败时仅保留持久化回执卡。
 - OTA准备发现固定基线仍为1.3.4，不能直接发布1.3.5 JS。按本会话已核验TestFlight276构建回执升级三处绑定：runtime1.3.5、native SHA7fe06d8b34750b6bd56db8d5ec45d1aee705b02e、build09719eb6-2887-4100-9ccb-6533fd9d71ed。已保存EAS回执FINISHED/STORE/production、原生指纹11aca32700f896b9e3f46e8587dc052de72090dd，IPA/Apple分发证据见前文；本次本机EAS只读刷新认证不可用，发布器仍须实时校验完整cohort和指纹。不扩大OTA路径白名单，不删除旧版本历史，不更改渠道映射。
 - 基线绑定RED复现，旧常量测试更新后121项通过。新提交须独立复审与新精确CI，再做后端及OTA validate/publish；不能把此前绿CI或本地构建回执替代新发布Gate。
+
+### 本轮发布结果：收尾失败，OTA未执行
+
+- 最终候选 e3210b1161f76944733b6522e0ff21695858614c；独立G4 GO；完整CI37931373747的30项全部成功；validate37932502649成功；规范staging和bootstrap授权轮换完成，保留旧安装与回执。
+- 后端工作流37933398517失败，原始持久回执state=NEEDS_OPERATOR，SHA256=e60e31e742f5cc6d36d9e4578119e4c112bb81bf3d7761d708b6cd083c7f94d4。禁止重发同SHA、覆写回执或按锁空闲推断成功。
+- 部署日志guard两次健康评分60/60、manifest通过；最终LAYA_VERIFIED后、下一次verify_deployment打印前失败，收敛到进程/去激活证明阶段（也可能SSH故障，缺少具体错误码）。自动恢复结果ROLLBACK_OK，runtime_state=candidate-retained；恢复保留e321代码，运行环境flag=false。当前四服务active、健康200，原业务lease已释放。这些不是部署成功或用户验收证据。
+- 只读Systemd时间线：13:03:04UTC首次重启完成，13:04:27UTC开始恢复停机，13:04:45UTC恢复完成；期间未观察到Main process exited或自动重启事件。13:04:24UTC有route=pi回合结束（8.52秒）。PiKernelSession的环境白名单不含HEALTH_EVIDENCE_RUNTIME_ENABLED，而证明要求整个cgroup全部进程唯一flag=false：存在可复现代码冲突，时间相关性支持但尚无当时PID级证据证明唯一根因。
+- 独立恢复边界调查：现有contained retirement仅适用checkout前、prior终态与原lease/stage保留；本案不匹配。runtime finalize不能代替失败terminal gate，不能把NEEDS_OPERATOR改为SUCCEEDED。未调用任何恢复变更入口，未发OTA、未重建TestFlight。下一步需对进程证明冲突及本阶段受审恢复路径分别修复验证，保留原失败审计。
+- 本次分段：remote guard停写2秒，checkout累计113秒，依赖累计176秒，迁移177秒，schema180秒，服务重启180秒；manifest总337秒。授权轮换历史校验读取约6.29GB。不得将本次发布称为提速成功。
+
+
+## 饮食识别 4～5 秒体验：同图短字段复测
+
+- 固定 `qwen3.8-flash`、同一组图片字节、temperature=0.1、max_tokens=2000 与关闭 thinking；不改模型、分辨率、写入工具说明、营养规则或权限。三张已授权餐食照片，加标签、订单、非食物、界面合成样本；AB/BA 交替，两个独立时间轮次、每轮两遍、共56调用。没有写入生产健康记录。
+- 第一候选在完整提示后追加单字母映射说明，输入反增113 Token、整体P50 2378→2885ms，否决。首轮严格JSON校验将一个生产可解析的代码块计为失败，保留原报告；第二候选重新全量运行并统一使用生产解析，未篡改原分数。
+- 第二候选只在完整规则和JSON示例中替换八个冗长字段名，不加第二份schema；服务端仅还原顶层与food字段，不修改字符串或任意嵌套元数据，兼容旧长字段响应，混合冲突字段拒绝并返回失败。API结果保持原契约。
+- 两轮各自改善餐食照片均值：4653→3108ms、4331→3231ms。合并真实照片P50 4334→2909ms、样本P95 6497→4780ms；全部样本P50 3578→2682ms、样本P95 6662→4508ms。每调用输入少19 Token，平均输出191.46→165.75（约13.43%）；未声称大幅压缩输入。
+- 56次API均成功、冻结质量契约均通过；仅证明这些样本的字段/数量/品名/标签值/订单数量/未知值及未授权完成措辞，不能证明临床营养真值、全面语义不退化或线上端到端P95。聚合无健康原文证据：`docs/reviews/2026-10-09-food-wire-replay.json`。
+- RED 7 failed/4 passed；实现后识别/权限/实际executor/benchmark回归262 passed，额外冲突消费端回归与CI-mode集成继续验证。System Map通过。停止条件为新质量失败、同图P50或P95恶化、成本增加或冲突字段可记录；发布后仍须核对首卡、保存和总耗时，必要时回滚。
+- Pi标志修复固定`f8a1c3372`独立G4 GO：38 Python +26真实Node；新失败收尾协议`2dd7c2420`独立审查发现撤权前置死环，BLOCK并修复中。旧`e321`失败回执保持原样；本轮尚未push、部署或发布OTA。

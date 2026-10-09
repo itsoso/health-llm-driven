@@ -135,9 +135,29 @@ def observe_provider_responses(provider):
             provider._get_client = previous
 
 
-async def replay(cases, variants, repeats, user_id):
+def variant_prompt(variant):
     from app.services.ai.food_recognition import (
         FOOD_RECOGNITION_SYSTEM_PROMPT,
+        _food_recognition_request_prompt,
+    )
+    if variant == "wire":
+        return _food_recognition_request_prompt()
+    return FOOD_RECOGNITION_SYSTEM_PROMPT + ("\n" + COMPACT_FORMAT if variant == "compact" else "")
+
+
+def normalize_replay_response(content, variant):
+    from app.services.ai.food_recognition import (
+        _expand_food_recognition_wire_payload,
+        extract_json_from_text,
+    )
+    extracted = extract_json_from_text(content)
+    if variant == "wire":
+        return json.dumps(_expand_food_recognition_wire_payload(json.loads(extracted)), ensure_ascii=False)
+    return extracted
+
+
+async def replay(cases, variants, repeats, user_id):
+    from app.services.ai.food_recognition import (
         _vision_chat_options,
     )
     from app.services.ai_consent import ai_user_scope
@@ -157,11 +177,9 @@ async def replay(cases, variants, repeats, user_id):
                     start = time.perf_counter()
                     row = {"sample": f"sample-{case_index + 1}", "repeat": repeat, "variant": variant, "api_success": False, "failures": []}
                     try:
-                        prompt = FOOD_RECOGNITION_SYSTEM_PROMPT
+                        prompt = variant_prompt(variant)
                         model = provider.model
-                        if variant == "compact":
-                            prompt += "\n" + COMPACT_FORMAT
-                        elif variant == "flash":
+                        if variant == "flash":
                             model = "qwen3-vl-flash"
                         content = await provider.chat_with_vision(
                             messages=[{"role": "system", "content": prompt}, {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"}],
@@ -171,7 +189,7 @@ async def replay(cases, variants, repeats, user_id):
                         )
                         response = captured[-1]
                         usage = response.usage
-                        row.update(api_success=True, model=model, response_chars=len(content), prompt_tokens=getattr(usage, "prompt_tokens", None), completion_tokens=getattr(usage, "completion_tokens", None), cached_tokens=getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", None), failures=check_response(content, case["expected"]))
+                        row.update(api_success=True, model=model, response_chars=len(content), prompt_tokens=getattr(usage, "prompt_tokens", None), completion_tokens=getattr(usage, "completion_tokens", None), cached_tokens=getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", None), failures=check_response(normalize_replay_response(content, variant), case["expected"]))
                         if response.choices[0].finish_reason != "stop":
                             row["failures"].append("incomplete_response")
                     except Exception as exc:  # noqa: BLE001 -- retain failures without logging private API response bodies
@@ -188,12 +206,12 @@ def main():
     parser.add_argument("--include-live-llm", action="store_true")
     parser.add_argument("--user-id", type=int)
     parser.add_argument("--repeats", type=int, default=2)
-    parser.add_argument("--variants", nargs="+", choices=("baseline", "compact", "flash"), default=["baseline", "compact"])
+    parser.add_argument("--variants", nargs="+", choices=("baseline", "compact", "wire", "flash"), default=["baseline", "compact"])
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     cases = json.loads(args.manifest.read_text())
-    if not isinstance(cases, list) or not cases or not 1 <= args.repeats <= 5 or len(cases) > 12 or len(set(args.variants)) != len(args.variants) or "baseline" not in args.variants:
-        parser.error("require 1-12 cases, 1-5 repeats and distinct variants including baseline")
+    if not isinstance(cases, list) or not cases or not 1 <= args.repeats <= 5 or len(cases) > 12 or len(set(args.variants)) != len(args.variants) or not {"baseline", "compact"}.intersection(args.variants):
+        parser.error("require 1-12 cases, 1-5 repeats and distinct variants including baseline or compact")
     if args.include_live_llm and (args.user_id is None or args.user_id <= 0):
         parser.error("live replay requires an existing consented --user-id")
     # Validate frozen oracles before any billable request.
