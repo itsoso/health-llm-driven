@@ -319,3 +319,10 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - 原canonical child生产聚合诊断：target/matched/archived/reviewed/correct_type均11，证明不是缺失行；仍由原staged在353行拒绝。只输出计数与源码栈，日志`/tmp/reva-retained-kb-count-diagnostic.log`；不替代sealed artifact、审计来源及完整不可服务证明。新的真实PostgreSQL回归已复现原staged失败，专用隔离证明验证中。
 - `1a7a4c86296f246daca18caefa4e29391b0eed9b` 独立G4 GO（479零skip含13真实PG，另4 PG负例），精确CI`37946610730`全部30项成功，validate`37947768429`及canonical staging成功。首次readonly inspect为ProofError（阶段标签停在vision_overlay），原始失败保留；后续独立running_services_snapshot通过，旧Pi缺flag是源码可证风险但非该次确证根因。
 - 完整canonical只读诊断继续通过quarantine/application和服务前后稳定性证明，随后在`validate_live_snapshot:1459`以`invalid archived service readiness`拒绝。真实systemd socket active/running/Result=success，MainPID/NRestarts属性不存在（show空串）；归档验证误把socket当service要求这两项数字。新增真实socket shape回归及最小契约修复中。无intent、无撤权、无部署/OTA，所有旧失败保留。
+
+## 实际交付进展（2026-10-10）
+
+- `3a75b0567adec01b585260b562cd397194293240` 独立G4 GO，498零skip（含13真实PG）；精确CI`37950049412`全部30项成功，validate`37951214267`成功。canonical生产完整inspect通过，独立closure终态`CLOSED_RETAINED_CANDIDATE_FAILURE`及bootstrap轮换完成；旧e321失败回执哈希及原锁inode保持。回执只保存在root-only文件，未输出秘密。
+- 后端实际部署`37954997061` completed/success；持久回执3a75 `SUCCEEDED`，live HEAD一致、四服务active、health200/healthy、业务lease不存在。三个真实模型验收源码hash与线上文件一致，私有证据`/tmp/reva-food-wire-deployed-check.json`。这确认提速实现已部署，不等于手机端到端时延验收。
+- OTA validate`37956709983`在无凭据publisher_context阻断，reason=`publisher_path_untrusted`。规范checkout、固定Node硬化、锁定依赖安装成功；preflight失败，publish/audit步骤跳过，没有OTA claim或上传。不重发该失败run；正在定位具体路径元数据，禁止放宽root-owned/无group-write/无symlink约束。当前TestFlight基线仍1.3.5(276)，本轮不重建原生包。
+- OTA 路径诊断补充：锁定 EAS/Expo tar SHA512 与 bin 元数据核验通过，但 npm 10.9.2 的 bin-links 会按进程 umask 重设可执行文件权限，因此不能从 tar 模式排除安装阶段问题；尚无 hosted runner 的具体违规对象证据。新增仅固定资源角色、祖先层级及 owner/writable/kind/hardlink 枚举的无凭据诊断，保留所有原准入约束；不做推测性权限修复。后台新鲜只读复验仍为3a75 SUCCEEDED、四服务active、health200。
