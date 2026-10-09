@@ -129,10 +129,10 @@ describe('app.config app links', () => {
     });
   });
 
-  it('separates the journey native candidate from the prior 1.3.3 OTA runtime', () => {
+  it('separates the native candidate from the incompatible 1.3.4 OTA runtime', () => {
     const config = configForVariant('production');
 
-    expect(config.version).toBe('1.3.4');
+    expect(config.version).toBe('1.3.5');
     expect(config.runtimeVersion).toEqual({ policy: 'appVersion' });
     expect(config.extra?.release).toEqual({
       variant: 'production',
