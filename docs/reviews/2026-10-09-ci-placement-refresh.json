@@ -72,5 +72,17 @@
     "backend_queue_total_seconds": 643,
     "previous_backend_queue_total_seconds": 313,
     "verdict": "No end-to-end improvement; next candidate reduces worker jobs to12 preserving all60 process groups"
-  }
+  },
+  "twelve_worker_result": {
+    "sha": "259e97abfbc64c0966a6157ec80537177a1761c8",
+    "run_id": 37887237784,
+    "status": "completed",
+    "conclusion": "success",
+    "jobs_success": 26,
+    "wall_seconds": 494,
+    "runner_minutes": 99.07,
+    "worker_queue_max_seconds": 46,
+    "verdict": "rejected: lower queue did not offset longer sequential workers; restore reviewed16worker configuration"
+  },
+  "final_decision": "Restore16workers and keep3run telemetry/log reader; no demonstrated end-to-end speed gain this round"
 }

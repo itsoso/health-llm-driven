@@ -535,20 +535,3 @@ def test_composed_read_shards_partition_every_test_function_once(tmp_path):
         ) == 0
     assert len(calls) == 4
     assert all((timeout, attempts) == (600, 1) for _, timeout, attempts in calls)
-
-
-def test_twelve_workers_preserve_every_isolated_group_and_execution_policy():
-    import copy
-    from collections import Counter
-    from scripts.build_ci_pytest_matrix import balance_shards, load_catalog
-    shards = load_catalog()
-    before = copy.deepcopy(shards)
-    workers = balance_shards(shards, worker_count=12)
-    assert len(workers) == 12
-    assert [worker['label'] for worker in workers] == [f'balanced-{i:02d}' for i in range(1, 13)]
-    assigned = Counter(label for worker in workers for label in worker['shards'].split(','))
-    assert assigned == Counter(shard['label'] for shard in shards)
-    assert len(assigned) == 60 and set(assigned.values()) == {1}
-    # Placement must not mutate paths/exclusions, deadlines, attempts, estimates
-    # or any other process policy in the source catalog.
-    assert shards == before

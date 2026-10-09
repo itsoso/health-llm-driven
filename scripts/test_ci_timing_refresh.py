@@ -86,11 +86,10 @@ def test_real_catalog_retains_all_shards_and_process_policies():
     assert payload["timing_source"]["run_id"] == 37884822646
     assert payload['timing_source']['aggregation'] == 'maximum'
     assert [r['run_id'] for r in payload['timing_source']['runs']] == [37877803968, 37880423513, 37884822646]
-    assignments = matrix.balance_shards(shards, worker_count=payload["worker_count"])
-    assert payload["worker_count"] == len(assignments) == 12
+    assignments = matrix.balance_shards(shards, worker_count=16)
     assigned = [label for worker in assignments for label in worker["shards"].split(",")]
     assert sorted(assigned) == sorted(shard["label"] for shard in shards)
-    assert max(worker["estimated_seconds"] for worker in assignments) == 326.99
+    assert max(worker["estimated_seconds"] for worker in assignments) == 249.368
     assert next(shard for shard in shards if shard["label"] == "a-agenda")["estimated_seconds"] == 20.336
 
 

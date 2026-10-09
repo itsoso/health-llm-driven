@@ -202,13 +202,10 @@ def _receipt(run, sha, workflow_sha):
 
 
 
-# The exact candidate SHA binds this topology. Keep the RPC stable while
-# making the narrower worker inventory explicit in target admission receipts.
-_BACKEND_POLICY_VERSION = "backend-v1-workers-12"
 _BACKEND_REQUIRED_JOBS = frozenset({
     "classify-changes", "docs-quality", "backend-quality", "agent-runtime-postgres",
     "backend-tests", "release-invariants", "type-drift", "backend-release-ready-v1",
-    *(f"backend-test-balanced-{index:02d}" for index in range(1, 13)),
+    *(f"backend-test-balanced-{index:02d}" for index in range(1, 17)),
 })
 
 
@@ -260,11 +257,6 @@ def _backend_jobs(get_json, receipt):
             if state != ("completed", "success"):
                 raise GateError("Required backend CI job is not successful")
             required[job["name"]] = job["id"]
-    worker_names = {name for name in names if name.startswith("backend-test-balanced-")}
-    expected_workers = {name for name in _BACKEND_REQUIRED_JOBS
-                        if name.startswith("backend-test-balanced-")}
-    if worker_names != expected_workers:
-        raise GateError("Backend CI worker topology differs from policy")
     if set(required) != _BACKEND_REQUIRED_JOBS:
         raise GateError("Required backend CI jobs are missing")
     return required
@@ -291,7 +283,7 @@ def _verify_backend(get_json, sha, observed_main):
             raise GateError("CI attempt changed during validation")
     if _backend_runs(get_json, sha) != receipts or _main_sha(get_json) != head:
         raise GateError("Main or CI history changed during validation")
-    return dict(receipts[-1], target="backend-v1", policy_version=_BACKEND_POLICY_VERSION)
+    return dict(receipts[-1], target="backend-v1", policy_version="backend-v1")
 
 def verify_release(sha, workflow_sha, *, observed_main=None, target="full", _get_json=_get_json):
     """Attest fixed-origin current metadata; injection is internal test-only."""
