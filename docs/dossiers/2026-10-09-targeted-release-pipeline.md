@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | validated |
-| 当前阶段 | S7 发布后验证 |
+| 状态 | validating |
+| 当前阶段 | S5 修复候选验证（此前基础设施发布已完成） |
 
 ## 范围与授权
 
@@ -196,3 +196,20 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - Fresh local evidence: medical PostgreSQL 41 passed; focused executor PostgreSQL 7 passed; symptom PostgreSQL 921 passed (overlaps classifier regression); authorization suite 3494 passed; Garmin/reader PostgreSQL first 46 and supplemental 17 passed; Mobile 62 passed plus TypeScript; MCP 53 passed; CI-mode integration/selected/new-sync 39 passed; System Map regenerated and checked. These are distinct overlapping suites, not an additive total.
 - Real-model acceptance is in progress. The symptom runner's first formal attempt failed with ValueError before case evidence; retained at `/tmp/reva-1009-symptom-status-live-frozen-01.json`, not counted as passing. Runtime source is frozen during live verification. Fixed-commit independent safety review, main exact CI, backend deployment and production acceptance are still pending.
 - OTA remains separately blocked by the previously established runtime/fingerprint incompatibility. No pin bypass or legacy local publisher is used; no new native distribution has been performed.
+
+### Final candidate review and first live acceptance
+
+- Independent review of the initial repair found missing finite symptom/distance vocabulary and UTC-calendar prefilter errors. Commits `b31caeacf`, `57da6536a` and `5857723e1` address those cases and selected-report precedence. Independent delta review: 137 tests plus one PostgreSQL calendar counterexample passed; no gateway or write-receipt bypass.
+- Garmin partial activity status now survives authentication renewal and heart-rate-only success. `fcc9d0695` passed author and independent PostgreSQL suites (67 each, overlapping). Review caught the settings home still showing a recent successful timestamp; `5a2ee191d` fixes its text and accessibility label. Author Mobile 57 and independent 49 tests passed; TypeScript passed.
+- Frozen `fcc9d0695` live standard gate passed (10 actual model calls); current and legacy selected-report cases passed (3 calls each), including full assessment tail, historical isolation and stored-text caveats. Symptom acceptance passed with one verified deterministic write and zero positive-path model calls; cancellation used one actual model call and made no write. Zero-call execution is not represented as a live-model positive result.
+- The direct imaging narrative live case failed: actual model proposals did not dispatch through the strict canonical keyword boundary. Three actual model calls and the failed proof are retained. This is a release blocker, not a passing selected-report result; a canonical Pi proposal repair is under test.
+- The first Garmin live runner failed before provider execution because its synthetic User fixture omitted a required name. The original runner/failure metadata are retained; a corrected one-shot runner is prepared, not counted as acceptance.
+- Fresh CI-mode integration plus focused-stream PostgreSQL checks: 11 passed. System Map and tracked-secret scan passed before the narrative delta. Final fixed-source live verification, independent review, exact main CI and backend release remain outstanding. Production still runs the successful `28b2471d72a3afdc7aba681bb5762dccfbae99bc`; no deployment or OTA has been attempted in this repair stage.
+
+### Final local release candidate
+
+- Fixed runtime `a461edf6b1f0af6c04e490c596c990647dfcfaff`: independent combined G4 **GO**, 55 tests including the three independently discovered unsupported-claim counterexamples. The rejected keyword guard is removed. Closed Garmin sync/review now traverses ordinary Pi/gateway for one sync and one current-day read, then returns verified facts and explicit limitations with zero model synthesis. It does not claim to provide a complete personal training analysis. Read-only, owner, failure, pending and receipt boundaries remain active.
+- Final Garmin PostgreSQL 38 passed; fresh project CI-mode PostgreSQL integration 3 passed; System Map and secret scan passed. The independent deterministic end-to-end sample took 0.59 seconds with zero model calls, real Pi/gateway and isolated synthetic persistence; external Garmin enqueue alone was replaced by a pending test job. This does not prove production Garmin ingestion has finished and is not called a real-model positive result.
+- Final revision standard live gate passed with actual API usage. Medical current/legacy selected-report and narrative, symptom and exercise-HTML samples passed at `30d064392`; independent noninterference review confirms the final delta is limited to closed Garmin handling. These samples retain their original SHA. Actual Mobile parsing accepted the complete synthetic HTML document, and parent content review found no invented personal diagnoses/readings. No current native simulator build or OTA delivery is claimed.
+- Earlier failures remain evidence: direct narrative zero dispatch, generic Garmin sync filtering, missing deterministic status disclosure, unnecessary selected-report realtime search, HTML media routing/truncation, zero-record novice inference and unsupported model claims were repaired. A standard `30d064392` run also hit one 45-second provider timeout; it remains failed, not relabeled. The final standard run passed with the same bound.
+- Machine evidence and explicit sample bindings: [owned health repair verification](../reviews/2026-10-09-owned-health-repair-verification.json). Local gates are complete; exact main CI and trusted backend release are next. The native runtime/fingerprint OTA blocker remains; no incompatible pin or legacy publisher is used.

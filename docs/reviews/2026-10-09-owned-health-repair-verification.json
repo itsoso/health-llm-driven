@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "runtime_commit": "a461edf6b1f0af6c04e490c596c990647dfcfaff",
+  "status": "local_gates_passed_not_released",
+  "synthetic_health_data_only": true,
+  "production_health_reads": 0,
+  "production_health_writes": 0,
+  "safety_review": {
+    "status": "GO",
+    "commit": "a461edf6b1f0af6c04e490c596c990647dfcfaff",
+    "independent_tests": 55,
+    "log": "/tmp/reva-g4-a461edf6.log"
+  },
+  "noninterference": {
+    "prior_runtime": "30d06439218368a50213c544d8cc318c8172d896",
+    "review": "Independent reviewer confirmed final delta only affects closed Garmin review; prior medical, HTML and symptom samples retain original revisions, not relabeled as final-SHA live runs."
+  },
+  "verification": {
+    "postgresql_final_garmin": 38,
+    "ci_mode_integration_postgresql": 3,
+    "system_map": "passed",
+    "secret_scan": "passed"
+  },
+  "samples": [
+    {
+      "case": "standard",
+      "source_commit": "a461edf6b1f0af6c04e490c596c990647dfcfaff",
+      "kind": "final_revision_real_model",
+      "proof_path": "/tmp/reva-1009-projection-final-standard/standard-proof.json",
+      "proof_sha256": "7a440641763eaa228d6d06da31f8f897a66461a07359148c26151c42e6409670",
+      "machine_status": "passed",
+      "checks": null,
+      "actual_api_calls": 10,
+      "latency_seconds": null,
+      "content_review": null,
+      "suites": [
+        {
+          "suite": "invariants",
+          "total_cases": 12,
+          "passed": 12,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "health_agent_core",
+          "total_cases": 50,
+          "passed": 50,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "orchestrator",
+          "total_cases": 5,
+          "passed": 5,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 0.94,
+          "avg_latency_ms": 9905,
+          "regression": []
+        }
+      ]
+    },
+    {
+      "case": "garmin",
+      "source_commit": "a461edf6b1f0af6c04e490c596c990647dfcfaff",
+      "kind": "final_revision_deterministic_zero_model",
+      "proof_path": "/tmp/reva-examdiag-garmin-deterministic-v6/proof.json",
+      "proof_sha256": "54b94129f7ec8cf488264384e86285c9272ef3e7356aa776fc210828805ac030",
+      "machine_status": "pending_content_review",
+      "checks": {
+        "done_persisted": true,
+        "delivered_matches_persisted": true,
+        "partial_outcome": true,
+        "sync_owner_once": true,
+        "real_gateway_read_sync": true,
+        "only_allowed_tools": true,
+        "today_owner_selected": true,
+        "existing_not_sync_proof": true,
+        "sync_not_verified": true,
+        "foreign_and_yesterday_absent": true,
+        "no_model_messages": true,
+        "verified_metrics_visible": true,
+        "no_background_reads": true,
+        "no_health_writes": true,
+        "workouts_unchanged": true,
+        "no_write_receipts": true,
+        "no_sql_error": true,
+        "no_stream_error": true,
+        "sync_pending_disclosed": true,
+        "just_run_identity_not_claimed": true,
+        "missing_age_disclosed": true,
+        "missing_series_disclosed": true,
+        "no_affirmative_sync_success": true,
+        "zero_provider_calls_and_usage": true,
+        "canonical_tool_counts": true,
+        "deterministic_reason": true,
+        "source_unchanged": true
+      },
+      "actual_api_calls": 0,
+      "latency_seconds": 0.59,
+      "content_review": {
+        "status": "passed",
+        "reviewer": "parent assistant",
+        "checks": [
+          "pending status explicit",
+          "existing record not current activity proof",
+          "metrics match synthetic record",
+          "no inferred age or heart-rate zones",
+          "limits and next step explicit",
+          "not a full personal training analysis"
+        ]
+      }
+    },
+    {
+      "case": "exercise_html",
+      "source_commit": "30d06439218368a50213c544d8cc318c8172d896",
+      "kind": "prior_revision_real_model_noninterference_reviewed",
+      "proof_path": "/tmp/reva-1009-exercise-html-live-v3/exercise-html-proof.json",
+      "proof_sha256": "e48053c35b1990bc4410f079c637bee1afa338c12d0750803220d49455a7e2af",
+      "machine_status": "pending_content_review",
+      "checks": {
+        "terminal_done": true,
+        "persisted_assistant": true,
+        "outcome_complete": true,
+        "no_execution_error": true,
+        "no_sql_errors": true,
+        "html_requirement_reached_provider": true,
+        "mobile_full_document_supported": true,
+        "no_write_receipts": true,
+        "only_public_knowledge_dispatch": true,
+        "no_nonself_denial": true,
+        "no_external_health_http": true,
+        "medical_tables_still_empty": true,
+        "real_api_usage": true
+      },
+      "actual_api_calls": 3,
+      "latency_seconds": 11.35,
+      "content_review": {
+        "status": "passed",
+        "reviewer": "parent assistant",
+        "checks": [
+          "no invented personal diagnosis or wearable readings",
+          "missing personal evidence explicit",
+          "conditional generic advice",
+          "complete document accepted by actual Mobile parser"
+        ]
+      }
+    },
+    {
+      "case": "medical_legacy",
+      "source_commit": "30d06439218368a50213c544d8cc318c8172d896",
+      "kind": "prior_revision_real_model_noninterference_reviewed",
+      "proof_path": "/tmp/reva-1009-release-medical-final/legacy-selected-proof.json",
+      "proof_sha256": "95503a14f54a4b82ecda24a939085b0ccb73fec7c058a7dea6889e0be4a23681",
+      "machine_status": "passed",
+      "checks": {
+        "terminal_done": true,
+        "persisted_assistant": true,
+        "outcome_complete": true,
+        "selected_report_reached_model": true,
+        "full_narrative_tail_reached_model": true,
+        "source_caveat_reached_model": true,
+        "source_caveat_in_reply": true,
+        "real_read_dispatched": true,
+        "only_read_tools": true,
+        "other_report_absent": true,
+        "foreign_report_absent": true,
+        "old_conversation_absent": true,
+        "old_conversation_preserved": true,
+        "client_payload_absent": true,
+        "no_unscoped_twin": true,
+        "no_unscoped_history_or_profile": true,
+        "no_sql_errors": true,
+        "report_records_unchanged": true,
+        "no_write_receipts": true,
+        "discusses_selected_abnormality": true,
+        "action_horizon_addressed": true,
+        "no_permission_denial": true
+      },
+      "actual_api_calls": 3,
+      "latency_seconds": 70.18,
+      "content_review": null
+    },
+    {
+      "case": "medical_current",
+      "source_commit": "30d06439218368a50213c544d8cc318c8172d896",
+      "kind": "prior_revision_real_model_noninterference_reviewed",
+      "proof_path": "/tmp/reva-1009-release-medical-final/current-selected-proof.json",
+      "proof_sha256": "b77dff31aa4c9b4350cd9bb6ce3802e635d05ab3172e8282a43402fbe5b620d0",
+      "machine_status": "passed",
+      "checks": {
+        "terminal_done": true,
+        "persisted_assistant": true,
+        "outcome_complete": true,
+        "selected_report_reached_model": true,
+        "full_narrative_tail_reached_model": true,
+        "source_caveat_reached_model": true,
+        "source_caveat_in_reply": true,
+        "real_read_dispatched": true,
+        "only_read_tools": true,
+        "other_report_absent": true,
+        "foreign_report_absent": true,
+        "old_conversation_absent": true,
+        "old_conversation_preserved": true,
+        "client_payload_absent": true,
+        "no_unscoped_twin": true,
+        "no_unscoped_history_or_profile": true,
+        "no_sql_errors": true,
+        "report_records_unchanged": true,
+        "no_write_receipts": true,
+        "discusses_selected_abnormality": true,
+        "action_horizon_addressed": true,
+        "no_permission_denial": true
+      },
+      "actual_api_calls": 3,
+      "latency_seconds": 58.72,
+      "content_review": null
+    },
+    {
+      "case": "medical_narrative",
+      "source_commit": "30d06439218368a50213c544d8cc318c8172d896",
+      "kind": "prior_revision_real_model_noninterference_reviewed",
+      "proof_path": "/tmp/reva-1009-release-medical-final/narrative-selected-proof.json",
+      "proof_sha256": "273899df7570b7cb98dd029bea8b6ecbf3babe1236bbaacb9fe0f559981d98ca",
+      "machine_status": "passed",
+      "checks": {
+        "terminal_done": true,
+        "persisted_assistant": true,
+        "outcome_complete": true,
+        "selected_report_reached_model": true,
+        "full_narrative_tail_reached_model": true,
+        "source_caveat_reached_model": true,
+        "source_caveat_in_reply": true,
+        "real_read_dispatched": true,
+        "only_read_tools": true,
+        "other_report_absent": true,
+        "foreign_report_absent": true,
+        "old_conversation_absent": true,
+        "old_conversation_preserved": true,
+        "client_payload_absent": true,
+        "no_unscoped_twin": true,
+        "no_unscoped_history_or_profile": true,
+        "no_sql_errors": true,
+        "report_records_unchanged": true,
+        "no_write_receipts": true,
+        "discusses_selected_abnormality": true,
+        "historical_date_disclosed": true,
+        "no_permission_denial": true
+      },
+      "actual_api_calls": 2,
+      "latency_seconds": 36.18,
+      "content_review": null
+    },
+    {
+      "case": "symptom",
+      "source_commit": "30d06439218368a50213c544d8cc318c8172d896",
+      "kind": "prior_revision_deterministic_positive_real_model_negative_noninterference_reviewed",
+      "proof_path": "/tmp/reva-1009-symptom-status-live-frozen-08.json",
+      "proof_sha256": "997b502e47cc91404415f9d9073c77f210930b969dd2c474a6c49ae062665c12",
+      "machine_status": "passed",
+      "checks": null,
+      "actual_api_calls": 1,
+      "latency_seconds": null,
+      "content_review": null,
+      "cases": [
+        {
+          "case_id": "resolved_with_residual",
+          "checks": {
+            "terminal_done": true,
+            "no_execution_error": true,
+            "no_external_health_http": true,
+            "illness_unchanged": true,
+            "exact_single_entry": true,
+            "no_inferred_fields": true,
+            "one_real_api_write": true,
+            "verified_receipt": true,
+            "success_outcome": true,
+            "usage_honest": true
+          },
+          "real_api_call_count": 0,
+          "latency_seconds": 1.63,
+          "receipt_count": 1
+        },
+        {
+          "case_id": "explicit_cancellation",
+          "checks": {
+            "terminal_done": true,
+            "no_execution_error": true,
+            "no_external_health_http": true,
+            "illness_unchanged": true,
+            "no_symptom_write": true,
+            "no_write_receipts": true,
+            "usage_honest": true
+          },
+          "real_api_call_count": 1,
+          "latency_seconds": 13.36,
+          "receipt_count": 0
+        }
+      ]
+    }
+  ],
+  "retained_failures": [
+    "Initial symptom live could not produce verified write; replaced closed explicit-status path with ordinary Pi deterministic proposal.",
+    "Direct narrative zero dispatch; corrected canonical Pi read.",
+    "Garmin fixture missing required name; corrected only synthetic fixture.",
+    "Garmin sync removed by generic answer filter and goal guard; corrected exact scoped sync only.",
+    "Selected report unnecessary realtime search failure; removed from selected report contract.",
+    "HTML media proposal rejection and output truncation; bounded read-only recovery, static prompt and document budget.",
+    "Garmin uncertain sync disclosure and unsupported personal claims; deterministic notices and final zero-model fact projection.",
+    "Independent ffff5f3e0 review rejected keyword claim guard; original three counterexamples preserved and closed by final projection.",
+    "30d064392 standard suite one 45-second provider timeout; failed proof retained. Final a461 standard gate passed with same bounded timeout."
+  ],
+  "release": {
+    "main_exact_ci": "pending",
+    "backend_deployment": "pending",
+    "ota": "blocked_native_runtime_fingerprint_incompatibility",
+    "native_distribution_approval": "pending"
+  }
+}
