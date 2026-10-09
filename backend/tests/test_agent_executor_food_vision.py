@@ -746,6 +746,88 @@ async def test_unsafe_photo_fraction_closes_model_diet_write_adapter(
     assert db.query(DietRecord).count() == 0
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("persist", [False, True])
+async def test_photo_saved_receipt_supports_exact_portion_followup(
+    db, client, tmp_path, monkeypatch, isolated_agent_protocol_transport, persist,
+):
+    from app.models.agent_conversation import AgentConversation, AgentMessage
+    from app.twin.schema import HealthTwin, TwinMeta
+    from app.services.auth import auth_service
+    from urllib.parse import urlsplit
+
+    if persist and db.get_bind().dialect.name != "postgresql":
+        pytest.skip("persisted photo portion correction requires PostgreSQL")
+
+    producer, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    token = auth_service.create_access_token({"sub": str(user.id)})
+    now = datetime.now(timezone.utc)
+    producer._agent_kernel_reference_now = lambda: now
+    conv = AgentConversation(user_id=user.id)
+    db.add(conv)
+    db.flush()
+    source = AgentMessage(conversation_id=conv.id, role="user", content="记录这餐",
+                          image_url=producer._current_turn_image_urls[0])
+    db.add(source)
+    db.flush()
+    producer._current_turn_source_message_id = source.id
+    capture = producer._capture_contextual_meal_photo("记录这餐", _food_result(), image_index=0)
+    assert capture is not None and capture.record is not None
+    db.add(AgentMessage(conversation_id=conv.id, role="assistant", content="已保存饮食",
+        meta={"client_turn_finalized": True, "write_receipts": producer._turn_contextual_diet_receipts}))
+    db.commit()
+
+    monkeypatch.setattr("app.twin.builder.build_twin", lambda _db, user_id, **kwargs:
+                        HealthTwin(meta=TwinMeta(user_id=user_id, generated_at=now)))
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "Use authorized tools.")
+    calls = []
+
+    async def provider(messages, tools):
+        yield {"type": "content", "text": "已修正。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def get_records(url, headers):
+        if persist:
+            parsed = urlsplit(url)
+            response = client.get(parsed.path + "?" + parsed.query, headers=headers)
+            assert response.status_code == 200
+            return response.json(), None
+        record = capture.record
+        return [{"id": record.id, "record_date": record.record_date.isoformat(),
+                 "meal_type": record.meal_type, "food_items": record.food_items,
+                 "calories": record.calories}], None
+
+    async def dispatch(request, token):
+        calls.append(request)
+        if persist:
+            return await executor._exec_health_manage("http://testserver/api/v1",
+                {"Authorization": f"Bearer {token}"}, request.arguments)
+        return json.dumps({"id": capture.record.id, "resource_type": "diet_record", "status": "verified"})
+
+    async def put(url, headers, data):
+        response = client.put(urlsplit(url).path, headers=headers, json=data)
+        assert response.status_code == 200
+        return response.text
+
+    monkeypatch.setattr(executor, "_call_llm_stream", provider)
+    monkeypatch.setattr(executor, "_api_get_json", get_records)
+    monkeypatch.setattr(executor, "_api_put", put)
+    monkeypatch.setattr(executor, "_dispatch_tool_request", dispatch)
+    events = [event async for event in executor.run_stream(user_id=user.id,
+        conversation_id=conv.id, message="我只吃了其中的三分之一。", user_auth_token=token)]
+    assert len(calls) == 1, events[-1]
+    assert calls[0].arguments["operation"] == "update"
+    assert calls[0].arguments["record_id"] == capture.record.id
+    assert calls[0].arguments["data"]["calories"] == pytest.approx(66)
+    assert events[-1]["data"]["completion_status"] == "complete"
+    assert events[-1]["data"]["write_receipts"][0]["action"] == "update"
+    if persist:
+        db.expire_all()
+        assert db.query(DietRecord).count() == 1
+        assert db.get(DietRecord, capture.record.id).calories == pytest.approx(66)
+
+
 def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
     db, tmp_path, monkeypatch
 ):
@@ -763,6 +845,8 @@ def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
         "resource_type": "diet_record",
         "resource_id": str(result.record.id),
         "date": result.record.record_date.isoformat(),
+        "action": "create",
+        "completed_at": executor._agent_kernel_reference_now().isoformat(),
         "verified": True,
     }]
     card = executor._turn_contextual_diet_cards[0]
@@ -851,6 +935,8 @@ def test_agent_explicit_food_photo_write_records_outside_meal_window(
         "resource_type": "diet_record",
         "resource_id": str(result.record.id),
         "date": result.record.record_date.isoformat(),
+        "action": "create",
+        "completed_at": executor._agent_kernel_reference_now().isoformat(),
         "verified": True,
     }]
     card = executor._turn_contextual_diet_cards[0]
@@ -1448,6 +1534,8 @@ def test_contextual_meal_capture_replays_after_executor_restart(
         "resource_type": "diet_record",
         "resource_id": str(first.record.id),
         "date": first.record.record_date.isoformat(),
+        "action": "create",
+        "completed_at": restarted._agent_kernel_reference_now().isoformat(),
         "verified": True,
     }]
     assert len(restarted._turn_contextual_diet_cards) == 1

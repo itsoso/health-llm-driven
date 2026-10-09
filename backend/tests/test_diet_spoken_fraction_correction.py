@@ -312,6 +312,7 @@ def test_bare_portion_never_inherits_unverified_or_stale_context(db, meal_receip
     "修改午餐记录，我只吃了其中的五分之一。修改今天的午餐记录。",
     "刚才午餐吃了三分之一",
     "我只吃了三分之一",
+    "我只吃了其中的三分之一。",
 ])
 async def test_real_pi_gateway_executes_exact_correction_without_model_tool_call(
         db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, message):
@@ -322,7 +323,7 @@ async def test_real_pi_gateway_executes_exact_correction_without_model_tool_call
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "Use authorized tools.")
     conversation_id = None
-    if message == "我只吃了三分之一":
+    if message in {"我只吃了三分之一", "我只吃了其中的三分之一。"}:
         from app.models.agent_conversation import AgentConversation, AgentMessage
         now = datetime.now(timezone.utc)
         conv = AgentConversation(user_id=user.id)

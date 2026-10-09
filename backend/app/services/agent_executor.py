@@ -24624,6 +24624,8 @@ class AgentExecutor:
                 "resource_type": "diet_record",
                 "resource_id": str(result.record.id),
                 "date": result.record.record_date.isoformat(),
+                "action": "create",
+                "completed_at": self._agent_kernel_reference_now().isoformat(),
                 "verified": True,
             }
             if receipt not in self._turn_contextual_diet_receipts:
