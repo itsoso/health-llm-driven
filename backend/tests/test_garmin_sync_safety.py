@@ -192,6 +192,8 @@ async def test_scheduler_workout_failure_is_not_reported_as_success(
     assert result["success"] is False
     if partial_result:
         assert result["activities_error_count"] == 1
+        from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+        assert credential.last_error == GARMIN_ACTIVITY_PARTIAL_MESSAGE
     assert persisted_last_sync == old_last_sync
     assert success_calls == []
 

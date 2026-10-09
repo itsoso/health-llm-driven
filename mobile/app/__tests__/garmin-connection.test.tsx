@@ -75,6 +75,17 @@ describe('GarminConnectionScreen', () => {
     mockInvalidateHealthSnapshot.mockResolvedValue(undefined);
   });
 
+  it('shows partial activity sync despite a recent prior success without asking for login', () => {
+    const message = '运动记录未完整同步，请稍后重新同步；上次成功时间不代表本轮运动已完整同步。';
+    mockStatus = { ...mockStatus, bound: true, health: 'stale', credentials_valid: true,
+      last_sync_at: '2026-10-09T02:00:00Z', minutes_since_last_sync: 5, last_error: message };
+    const { getByText, queryByText } = render(<GarminConnectionScreen />);
+    expect(getByText(message)).toBeTruthy();
+    expect(queryByText('连接正常')).toBeNull();
+    expect(queryByText('需要重新连接')).toBeNull();
+    expect(queryByText('最近同步：5 分钟前')).toBeNull();
+  });
+
   it('binds and tests an unbound Garmin account without displaying the password', async () => {
     const { getByLabelText, getByRole } = render(<GarminConnectionScreen />);
 

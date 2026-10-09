@@ -169,7 +169,9 @@ class GarminConnectService(GarminGettersMixin):
             cred.requires_mfa = False
             cred.credentials_valid = True
             cred.error_count = 0
-            cred.last_error = None
+            from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+            if cred.last_error != GARMIN_ACTIVITY_PARTIAL_MESSAGE:
+                cred.last_error = None
             db.commit()
         except Exception as e:
             db.rollback()
@@ -418,7 +420,9 @@ class GarminConnectService(GarminGettersMixin):
                 cred.error_count = 0
                 cred.login_locked_until = None
                 cred.credentials_valid = True
-                cred.last_error = None
+                from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+                if cred.last_error != GARMIN_ACTIVITY_PARTIAL_MESSAGE:
+                    cred.last_error = None
                 db.commit()
                 logger.info(f"{self._log_prefix()} ✅ 登录成功，已重置失败计数")
         except Exception as e:

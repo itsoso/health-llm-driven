@@ -188,6 +188,9 @@ def get_credential_status(
             last = last.replace(tzinfo=timezone.utc)
         minutes_since = max(0, int((now - last).total_seconds() / 60))
 
+    from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+    activity_partial = cred.last_error == GARMIN_ACTIVITY_PARTIAL_MESSAGE
+
     # health 判定：已绑定但待验证/首次同步不等于 unbound。
     if cred.requires_mfa:
         health = "error"
@@ -195,6 +198,8 @@ def get_credential_status(
         health = "error"
     elif cred.error_count >= 3:
         health = "error"
+    elif activity_partial:
+        health = "stale"
     elif minutes_since is None:
         health = "stale"
     elif minutes_since > 60 * 12:  # 12h 没同步
@@ -205,6 +210,8 @@ def get_credential_status(
     err = None
     if cred.requires_mfa:
         err = "Garmin 需要两步验证，请完成验证码确认"
+    elif activity_partial:
+        err = GARMIN_ACTIVITY_PARTIAL_MESSAGE
     elif cred.last_error:
         err = safe_garmin_error_message(RuntimeError(cred.last_error))
 

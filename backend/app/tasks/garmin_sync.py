@@ -138,6 +138,8 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
             synced_activities = workout_result.get("synced_count", 0)
             activities_error_count = workout_result.get("failed_count", 0)
             if activities_error_count:
+                if not garmin_credential_service.mark_activity_sync_partial(db, user_id):
+                    raise RuntimeError("garmin_activity_partial_status_not_persisted")
                 if notify_on_failure:
                     _notify_garmin_sync_failed(user_id, reason="activity_partial_failure")
                 return {"status": "partial", "success_count": success_count,
@@ -249,7 +251,7 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
                     logger.warning(f"Agent Planning Loop 失败（不影响同步）: {e}")
 
             # 更新同步状态
-            if not garmin_credential_service.update_sync_status(db, user_id):
+            if not garmin_credential_service.update_sync_status(db, user_id, activities_verified=True):
                 from app.services.data_collection.garmin_errors import GarminSyncError
 
                 raise GarminSyncError("Garmin sync status persistence failed")
@@ -549,7 +551,9 @@ def _renew_single_session(db, cred, prefix: str) -> str:
         cred.login_locked_until = None
         cred.credentials_valid = True
         cred.requires_mfa = False
-        cred.last_error = None
+        from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+        if cred.last_error != GARMIN_ACTIVITY_PARTIAL_MESSAGE:
+            cred.last_error = None
         cred.error_count = 0
         db.commit()
         logger.info(f"{prefix} Garmin 原生 token 已检查并更新")

@@ -266,6 +266,9 @@ def test_celery_workout_failure_retries_instead_of_marking_success(
     from app.twin import builder as twin_builder
 
     credential = _create_garmin_credential(db, user_id=1)
+    previous_success = datetime.now(UTC) - timedelta(minutes=5)
+    credential.last_sync_at = previous_success
+    db.commit()
     status_updates = []
 
     class DbContext(AbstractContextManager):
@@ -319,6 +322,18 @@ def test_celery_workout_failure_retries_instead_of_marking_success(
         result = garmin_task.sync_user_garmin_data.run(credential.user_id, days=1)
         assert result["status"] == "partial"
         assert result["activities_error_count"] == 1
+        from app.api.data_collection import get_credential_status
+        from app.api.data_health import _garmin_status
+        current_user = db.get(User, credential.user_id)
+        db.refresh(credential)
+        assert credential.credentials_valid is True
+        assert credential.error_count == 0
+        assert (credential.last_sync_at.replace(tzinfo=UTC) if credential.last_sync_at.tzinfo is None else credential.last_sync_at.astimezone(UTC)) == previous_success
+        assert credential.last_error == "运动记录未完整同步，请稍后重新同步；上次成功时间不代表本轮运动已完整同步。"
+        status = get_credential_status(current_user=current_user, db=db)
+        assert status['health'] != 'healthy'
+        assert status['last_error'] == credential.last_error
+        assert _garmin_status(db, credential.user_id, datetime.now(UTC))['message'] == credential.last_error
     else:
         with pytest.raises(RetryScheduled, match="GarminSyncError"):
             garmin_task.sync_user_garmin_data.run(credential.user_id, days=1)

@@ -1055,6 +1055,8 @@ class WorkoutSyncService:
 
             if not activities:
                 logger.info(f"{self._log_prefix()}没有找到活动")
+                from app.services.auth import garmin_credential_service
+                garmin_credential_service.clear_activity_sync_partial(db, user_id)
                 return {"synced_count": 0, "failed_count": 0, "status": "success"}
 
             synced_count = 0
@@ -1231,6 +1233,11 @@ class WorkoutSyncService:
                 _invalidate_twin(user_id)
             logger.info(f"{self._log_prefix()}同步完成，共 {synced_count} 条活动")
 
+            from app.services.auth import garmin_credential_service
+            if failed_count:
+                garmin_credential_service.mark_activity_sync_partial(db, user_id)
+            else:
+                garmin_credential_service.clear_activity_sync_partial(db, user_id)
             return {"synced_count": synced_count, "failed_count": failed_count,
                     "status": "partial" if failed_count and synced_count else "error" if failed_count else "success"}
 

@@ -245,6 +245,13 @@ async def test_central_workout_sync_does_not_invalidate_without_changes(
 async def test_activity_parse_failure_preserves_prior_commits_and_reports_partial(db, monkeypatch, flush_failure):
     from app.services import workout_sync
     user = _user(db)
+    from app.models.user import GarminCredential
+    from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+    from datetime import datetime, timezone
+    prior = datetime.now(timezone.utc)
+    credential = GarminCredential(user_id=user.id,garmin_email='synthetic@example.invalid',
+        encrypted_password='unused',credentials_valid=True,last_sync_at=prior)
+    db.add(credential);db.commit()
     service = object.__new__(workout_sync.WorkoutSyncService)
     service.user_id = user.id
     service.client = type('Client', (), {'get_activities_by_date': lambda *_: [
@@ -266,6 +273,18 @@ async def test_activity_parse_failure_preserves_prior_commits_and_reports_partia
     result = await service.sync_activities(db, user.id, days=1)
     assert result == {'synced_count': 2, 'failed_count': 1, 'status': 'partial'}
     assert db.query(WorkoutRecord).filter(WorkoutRecord.user_id == user.id).count() == 2
+    db.refresh(credential)
+    assert credential.last_error == GARMIN_ACTIVITY_PARTIAL_MESSAGE
+    assert credential.credentials_valid is True
+    # Activity-only success clears its warning but cannot advance full-sync time.
+    service.client = type('EmptyClient', (), {'get_activities_by_date': lambda *_: []})()
+    assert (await service.sync_activities(db,user.id,days=1))['status'] == 'success'
+    db.refresh(credential)
+    assert credential.last_error is None
+    observed = credential.last_sync_at
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    assert observed == prior
 
 
 def test_activity_uses_explicit_gmt_timestamp_and_retains_local_calendar_date():
