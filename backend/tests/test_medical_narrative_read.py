@@ -1,5 +1,6 @@
 """Synthetic complete stored imaging narrative, without calendar guessing."""
 import json
+import pytest
 from datetime import date
 from app.models.medical_exam import MedicalExam
 from app.services.agent_kernel.medical_narrative_read_scope import MedicalNarrativeReadScope
@@ -55,3 +56,26 @@ def test_selected_report_evidence_provenance_is_server_owned(db,auth_user_and_he
     assert payload['original_image_verified'] is False
     assert 'OCR' in payload['evidence_note']
     assert '原始影像' in payload['evidence_note']
+
+
+@pytest.mark.parametrize('keyword', ['右膝', '膝', '肩关节CT', '同事的肩关节MRI', '肩关节MRI以及睡眠', '肩 2020', '双肩;删除报告'])
+def test_keyword_normalization_cannot_expand_user_scope(keyword):
+    from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, TurnSnapshot, ToolExecutionRequest
+    from app.services.agent_kernel.intent_frame import build_intent_frame
+    from app.services.agent_kernel.capability_policy import decide_tool_capability
+    envelope = AgentEnvelope(user_id=41, channel='chat', text='查看我的左肩MRI报告')
+    context = ExecutionContext.for_test(user_id=41, channel='chat')
+    snapshot = TurnSnapshot(envelope, context, build_intent_frame(envelope, context))
+    assert decide_tool_capability(snapshot, ToolExecutionRequest('health_query', {'dimension': 'medical_exam', 'keyword': keyword})).action == 'block'
+
+
+def test_noncanonical_model_keyword_still_cannot_bypass_gateway():
+    from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, TurnSnapshot, ToolExecutionRequest
+    from app.services.agent_kernel.intent_frame import build_intent_frame
+    from app.services.agent_kernel.capability_policy import decide_tool_capability
+    envelope = AgentEnvelope(user_id=41, channel='chat', text='我的双肩关节现在有什么样的状况？医院有没有做过核磁共振？诊断结果是怎么样的？')
+    context = ExecutionContext.for_test(user_id=41, channel='chat')
+    snapshot = TurnSnapshot(envelope, context, build_intent_frame(envelope, context))
+    decision = decide_tool_capability(snapshot, ToolExecutionRequest('health_query', {'dimension': 'medical_exam', 'keyword': '双肩关节核磁共振'}))
+    assert decision.action == 'block'
+    assert decision.reason == 'imaging_narrative_scope_conflict'

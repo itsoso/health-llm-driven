@@ -179,3 +179,49 @@ async def test_selected_report_precedes_general_anatomy_scope(db, auth_user_and_
     result = await executor._exec_health_query('', {}, {'dimension':'medical_exam'})
     assert 'SELECTED_SYNTHETIC' in result
     assert executor._focused_read_scopes() == (None, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('availability', ['available', 'no_data', 'requires_selection'])
+async def test_narrative_read_is_canonical_before_model_can_guess_keyword(db, auth_user_and_headers, monkeypatch, availability):
+    from app.models.agent_conversation import AgentMessage
+    from app.services import agent_executor as ae
+    user, _ = auth_user_and_headers
+    narrative = '双肩MRI：' + '合成报告段落。' * 100 + 'COMPLETE_NARRATIVE_TAIL'
+    if availability == 'requires_selection':
+        narrative += '合成' * 12000
+    if availability != 'no_data':
+        db.add(MedicalExam(user_id=user.id, exam_date=date(2020, 1, 1), exam_type='MRI', overall_assessment=narrative))
+        db.commit()
+    executor = AgentExecutor(db)
+    dispatched = []
+    original = executor._dispatch_tool_request
+    async def dispatch(request, token):
+        dispatched.append((request.tool_name, dict(request.arguments)))
+        return await original(request, token)
+    monkeypatch.setattr(executor, '_dispatch_tool_request', dispatch)
+    seen = []
+    async def stream(messages, tools):
+        seen.append((messages, tools))
+        if not any(m.get('role') == 'tool' and 'availability' in str(m.get('content')) for m in messages):
+            # Reproduce the failed live shape: a semantically descriptive keyword
+            # is not the server canonical keyword. Never relax the gateway for it.
+            yield {'type':'tool_calls','tool_calls':[{'id':'model-guess','type':'function','function':{'name':'health_query','arguments':json.dumps({'dimension':'medical_exam','keyword':'双肩关节核磁共振'})}}]}
+            yield {'type':'finish','finish_reason':'tool_calls'}
+        else:
+            text = ('已读取完整历史报告文本；OCR摘要未核验原始影像，不代表当前诊断。'
+                    if availability == 'available' else '未能核验完整报告，需要补充或选择报告。')
+            yield {'type':'content','text':text}
+            yield {'type':'finish','finish_reason':'stop'}
+    monkeypatch.setattr(executor, '_call_llm_stream', stream)
+    monkeypatch.setattr(ae.settings, 'health_evidence_runtime_enabled', True)
+    events=[e async for e in executor.run_stream(user_id=user.id,channel='typed',message=MEDICAL)]
+    done=next(e['data'] for e in events if e.get('event')=='done')
+    assert dispatched == [('health_query', {'dimension':'medical_exam','keyword':'肩'})]
+    assert len(seen) == 1
+    assert all((t.get('function') or {}).get('name') != 'health_query' for t in seen[0][1])
+    assert executor._turn_focused_read_result['availability'] == availability
+    assert (done['turn_outcome']['status']=='complete') == (availability == 'available')
+    if availability == 'available':
+        assert 'COMPLETE_NARRATIVE_TAIL' in str(seen[0][0])
+        assert 'OCR摘要' in db.get(AgentMessage,done['message_id']).content

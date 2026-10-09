@@ -19204,12 +19204,31 @@ class AgentExecutor:
                                 or self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
                                 else request["tools"]
                             )
+                            if (medical_scope is not None
+                                    and self._turn_focused_read_result is not None):
+                                # The closed report read has returned its complete
+                                # result (including explicit absence/failure). Do
+                                # not ask the model to guess another personal scope.
+                                round_tools = [tool for tool in round_tools
+                                               if (tool.get("function") or {}).get("name") == "knowledge_search"]
                             self._composed_synthesis_retry_eligible = composed_messages is not None
                             proposed_calls = self._preplanned_owned_read_calls(
                                 round_idx, messages, round_tools, sealed=health_advice_buffered,
                             )
                             if proposed_calls:
                                 owned_read_preplanned = True
+                            if (not proposed_calls and round_idx == 0
+                                    and medical_scope is not None
+                                    and self._turn_selected_exam_id is None
+                                    and not health_advice_buffered and not self._read_only_turn
+                                    and not images and not file_base64 and not self._current_turn_has_attachment
+                                    and not self._agent_kernel_pending_confirmation_tools):
+                                # Full user grammar fixes anatomy/modality. This
+                                # is only a proposal: ordinary Pi validation and
+                                # the capability gateway still authorize dispatch.
+                                proposed_calls = self._initial_composed_read_calls(round_idx, round_tools)
+                                if proposed_calls:
+                                    self._record_model_fallback_reason("owned_imaging_read_preplanned")
                             from app.services.agent_symptom_status_observation import parse_symptom_status_observation
                             if (
                                 not proposed_calls and round_idx == 0
