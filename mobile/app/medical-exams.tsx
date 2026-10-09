@@ -92,7 +92,13 @@ export default function MedicalExamsScreen() {
           </View>
         ) : null}
 
-        {!examsQuery.isLoading && exams.length === 0 ? (
+        {examsQuery.isError ? (
+          <View style={styles.emptyWrap}>
+            <Text style={txt.empty}>报告加载失败，请重试</Text>
+            <Pressable onPress={() => examsQuery.refetch()} accessibilityRole="button"><Text>重试</Text></Pressable>
+          </View>
+        ) : null}
+        {!examsQuery.isLoading && !examsQuery.isError && exams.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Ionicons name="document-text-outline" size={36} color={c.labelTertiary} />
             <Text style={txt.empty}>

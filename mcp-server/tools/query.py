@@ -1,4 +1,4 @@
-"""健康数据查询工具 - 10 个只读查询端点"""
+"""健康数据只读查询工具。"""
 import json
 import logging
 from datetime import date, datetime
@@ -147,3 +147,66 @@ async def get_achievements() -> str:
     client = get_client()
     data = await client.get("/achievements/me")
     return _json(data)
+
+
+_REPORT_EVIDENCE_NOTE = (
+    "来源为已存储的报告文本，可能包含 OCR 摘要；未核验原始影像。"
+    "摘要未提及某项不代表该项正常或没有病史；解读具体分级前读取报告详情。"
+)
+
+
+def _report_read_error() -> str:
+    # Never turn HTTP/permission/schema failures into an empty medical history.
+    return _json({"status": "error", "code": "medical_report_read_failed",
+                  "message": "报告读取失败，本次未确认报告内容，不能据此判断没有相关病史。"})
+
+
+def _valid_report(value) -> bool:
+    return (isinstance(value, dict) and "error" not in value and "detail" not in value
+            and type(value.get("id")) is int and value["id"] > 0
+            and "overall_assessment" in value
+            and (value["overall_assessment"] is None
+                 or isinstance(value["overall_assessment"], str)))
+
+
+async def get_medical_exam_reports(limit: int = 20, skip: int = 0) -> str:
+    """分页查询认证本人的体检/影像报告摘要，不代表完整病史。
+
+    摘要有明确截断标记；具体结论/分级请用 get_medical_exam_report(id)
+    读取全文。limit 为 1..100，skip 为非负整数。失败不能解释为没有报告。
+    """
+    if type(limit) is not int or not 1 <= limit <= 100 or type(skip) is not int or skip < 0:
+        raise ValueError("limit must be 1..100 and skip must be a nonnegative integer")
+    data = await get_client().get("/medical-exams/me", params={"limit": limit, "skip": skip})
+    if not isinstance(data, list) or len(data) > limit or not all(_valid_report(row) for row in data):
+        return _report_read_error()
+    reports = []
+    for row in data:
+        summary = row["overall_assessment"]
+        truncated = summary is not None and len(summary) > 500
+        reports.append({
+            **{key: row[key] for key in ("id", "exam_date", "exam_type", "body_system") if key in row},
+            "overall_assessment": summary[:500] + "..." if truncated else summary,
+            "overall_assessment_truncated": truncated,
+            "detail_tool": "get_medical_exam_report",
+            "detail_path": f"/medical-exams/me/{row['id']}",
+        })
+    return _json({"status": "ok", "reports": reports, "limit": limit, "skip": skip,
+                  "may_have_more": len(data) == limit,
+                  "next_skip": skip + limit if len(data) == limit else None,
+                  "message": "本页报告摘要。" if reports else "本页未返回报告记录。",
+                  "original_image_verified": False, "evidence_note": _REPORT_EVIDENCE_NOTE})
+
+
+async def get_medical_exam_report(exam_id: int) -> str:
+    """读取认证本人的指定报告全文，保留完整 overall_assessment 和已记录来源字段。
+
+    exam_id 来自报告列表。不核验原影像、不修改报告；拒绝/失败不代表无病史。
+    """
+    if type(exam_id) is not int or exam_id <= 0:
+        raise ValueError("exam_id must be a positive integer")
+    data = await get_client().get(f"/medical-exams/me/{exam_id}")
+    if not _valid_report(data) or data["id"] != exam_id:
+        return _report_read_error()
+    return _json({"status": "ok", "report": data,
+                  "original_image_verified": False, "evidence_note": _REPORT_EVIDENCE_NOTE})

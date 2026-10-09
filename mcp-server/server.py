@@ -13,6 +13,8 @@ from tools.query import (
     get_water_intake,
     get_weight_history,
     get_workout_history,
+    get_medical_exam_reports,
+    get_medical_exam_report,
 )
 from tools.record import (
     record_blood_pressure,
@@ -38,7 +40,7 @@ mcp = FastMCP(
     description="AI-powered health management system - query health data, record measurements, and get health analysis",
 )
 
-# ---- 查询工具 (10) ----
+# ---- 查询工具 ----
 mcp.tool()(get_health_summary)
 mcp.tool()(get_weight_history)
 mcp.tool()(get_blood_pressure_history)
@@ -49,6 +51,8 @@ mcp.tool()(get_workout_history)
 mcp.tool()(get_diet_records)
 mcp.tool()(get_checkin_status)
 mcp.tool()(get_achievements)
+mcp.tool()(get_medical_exam_reports)
+mcp.tool()(get_medical_exam_report)
 
 # ---- 记录工具 (5) ----
 mcp.tool()(record_water)

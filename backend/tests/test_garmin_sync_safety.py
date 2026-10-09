@@ -134,9 +134,11 @@ def test_periodic_selection_rejects_invalid_credentials_without_token(db) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("partial_result", [False, True])
 async def test_scheduler_workout_failure_is_not_reported_as_success(
     db,
     monkeypatch,
+    partial_result,
 ) -> None:
     credential = _credential(db, "workout-failure")
     old_last_sync = datetime.now(UTC) - timedelta(days=2)
@@ -157,6 +159,8 @@ async def test_scheduler_workout_failure_is_not_reported_as_success(
             pass
 
         async def sync_activities(self, *_args, **_kwargs):
+            if partial_result:
+                return {"synced_count": 1, "failed_count": 1, "status": "partial"}
             raise RuntimeError("workout service unavailable")
 
     from app.services import sync_lock, workout_sync
@@ -186,6 +190,8 @@ async def test_scheduler_workout_failure_is_not_reported_as_success(
     if persisted_last_sync and persisted_last_sync.tzinfo is None:
         persisted_last_sync = persisted_last_sync.replace(tzinfo=UTC)
     assert result["success"] is False
+    if partial_result:
+        assert result["activities_error_count"] == 1
     assert persisted_last_sync == old_last_sync
     assert success_calls == []
 

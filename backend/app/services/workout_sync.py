@@ -380,12 +380,18 @@ class WorkoutSyncService:
 
         # 时间
         start_time_local = activity.get("startTimeLocal")
+        local_time = (datetime.fromisoformat(start_time_local.replace("Z", "+00:00"))
+                      if start_time_local else None)
+        start_time_gmt = activity.get("startTimeGMT")
         start_time = None
-        if start_time_local:
-            try:
-                start_time = datetime.fromisoformat(start_time_local.replace("Z", "+00:00"))
-            except:
-                pass
+        if start_time_gmt:
+            start_time = datetime.fromisoformat(start_time_gmt.replace("Z", "+00:00"))
+            start_time = (start_time.replace(tzinfo=UTC) if start_time.utcoffset() is None
+                          else start_time.astimezone(UTC))
+        elif local_time is not None and local_time.utcoffset() is not None:
+            start_time = local_time.astimezone(UTC)
+        if local_time is None and start_time is None:
+            raise ValueError("activity_date_missing")
 
         duration_seconds = int(activity.get("duration", 0))
         moving_duration = int(activity.get("movingDuration", 0))
@@ -448,7 +454,7 @@ class WorkoutSyncService:
         max_power = activity.get("maxPower")
         normalized_power = activity.get("normPower")
 
-        workout_date = start_time.date() if start_time else date.today()
+        workout_date = local_time.date() if local_time is not None else start_time.date()
 
         return {
             "user_id": user_id,
@@ -1049,9 +1055,10 @@ class WorkoutSyncService:
 
             if not activities:
                 logger.info(f"{self._log_prefix()}没有找到活动")
-                return {"synced_count": 0}
+                return {"synced_count": 0, "failed_count": 0, "status": "success"}
 
             synced_count = 0
+            failed_count = 0
 
             for activity in activities:
                 try:
@@ -1158,6 +1165,13 @@ class WorkoutSyncService:
                     if existing:
                         # 更新已有记录（只更新缺失的数据）
                         updated = False
+                        # A fresh GMT timestamp repairs legacy local-naive rows;
+                        # receipt success must refer to correctly timed data.
+                        if parsed.get("start_time") is not None:
+                            for field in ("start_time", "end_time", "workout_date"):
+                                if getattr(existing, field) != parsed.get(field):
+                                    setattr(existing, field, parsed.get(field))
+                                    updated = True
 
                         # 更新心率数据（如果缺失）
                         if not existing.heart_rate_data and parsed.get("heart_rate_data"):
@@ -1194,6 +1208,8 @@ class WorkoutSyncService:
                         db.add(db_record)
                         try:
                             db.flush()
+                            db.commit()
+                            committed_changes = True
                             synced_count += 1
                             logger.info(f"{self._log_prefix()}同步活动: {parsed['workout_name']} ({parsed['workout_type']})")
                         except Exception as flush_err:
@@ -1204,7 +1220,9 @@ class WorkoutSyncService:
                                 raise
 
                 except Exception as e:
-                    logger.error(f"{self._log_prefix()}解析活动失败: {e}")
+                    db.rollback()
+                    failed_count += 1
+                    logger.error("%s解析活动失败 error_type=%s", self._log_prefix(), type(e).__name__)
                     continue
 
             db.commit()
@@ -1213,7 +1231,8 @@ class WorkoutSyncService:
                 _invalidate_twin(user_id)
             logger.info(f"{self._log_prefix()}同步完成，共 {synced_count} 条活动")
 
-            return {"synced_count": synced_count}
+            return {"synced_count": synced_count, "failed_count": failed_count,
+                    "status": "partial" if failed_count and synced_count else "error" if failed_count else "success"}
 
         except Exception as e:
             if committed_changes:

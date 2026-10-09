@@ -976,9 +976,11 @@ async def sync_garmin_activities(
         _invalidate_twin(current_user.id)
 
         return {
-            "status": "success",
+            "status": result.get("status", "success"),
             "synced_count": result["synced_count"],
-            "message": f"成功同步 {result['synced_count']} 条运动记录"
+            "failed_count": result.get("failed_count", 0),
+            "message": (f"已同步 {result['synced_count']} 条运动记录，部分活动未完成，请查看同步状态"
+                        if result.get("failed_count", 0) else f"成功同步 {result['synced_count']} 条运动记录")
         }
     except Exception as e:
         import traceback

@@ -253,9 +253,11 @@ async def test_sync_stream_mfa_session_is_returned_but_never_logged(
     assert secret_session_id not in caplog.text
 
 
+@pytest.mark.parametrize("partial_result", [False, True])
 def test_celery_workout_failure_retries_instead_of_marking_success(
     db,
     monkeypatch,
+    partial_result,
 ) -> None:
     from app.services import anomaly_detection_service, auth as auth_service_module, workout_sync
     from app.services.data_collection import garmin_connect
@@ -286,6 +288,8 @@ def test_celery_workout_failure_retries_instead_of_marking_success(
             pass
 
         async def sync_activities(self, *_args, **_kwargs):
+            if partial_result:
+                return {"synced_count": 1, "failed_count": 1, "status": "partial"}
             raise RuntimeError("workout service unavailable")
 
     class RetryScheduled(Exception):
@@ -311,8 +315,13 @@ def test_celery_workout_failure_retries_instead_of_marking_success(
     monkeypatch.setattr(notifications.regenerate_briefing_for_user, "delay", lambda *_args: None)
     monkeypatch.setattr(garmin_task.sync_user_garmin_data, "retry", schedule_retry)
 
-    with pytest.raises(RetryScheduled, match="GarminSyncError"):
-        garmin_task.sync_user_garmin_data.run(credential.user_id, days=1)
+    if partial_result:
+        result = garmin_task.sync_user_garmin_data.run(credential.user_id, days=1)
+        assert result["status"] == "partial"
+        assert result["activities_error_count"] == 1
+    else:
+        with pytest.raises(RetryScheduled, match="GarminSyncError"):
+            garmin_task.sync_user_garmin_data.run(credential.user_id, days=1)
 
     assert status_updates == []
 

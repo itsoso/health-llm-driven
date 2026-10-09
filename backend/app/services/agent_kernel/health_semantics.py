@@ -2181,7 +2181,7 @@ REPORT_USE_TRAILING_WITHDRAWAL_RE = re.compile(
 # inherit this authority. The 30-day horizon describes advice, not a read window.
 _PRODUCT_REPORT_INTERPRETATION_RE = re.compile(
     r"请基于(?:我(?:自己|本人|个人)?|本人)(?:的)?"
-    r"(?:最新(?:这份|一份|的)?|刚导入的)"
+    r"(?:最新(?:这份|一份|的)?|刚导入的|这份)"
     r"(?:体检/化验报告|体检报告|化验报告)，?"
     r"(?:解释异常项、风险优先级和未来30天该做什么|"
     r"解释异常/关键指标、需要复核的地方，以及接下来30天最重要的健康行动)"
@@ -2189,9 +2189,16 @@ _PRODUCT_REPORT_INTERPRETATION_RE = re.compile(
 )
 
 
+_LEGACY_PRODUCT_REPORT_INTERPRETATION_RE = re.compile(
+    r"请基于这次体检异常解读，帮我按优先级梳理风险、行动、复查安排和需要向医生确认的问题。"
+    r"不要替代诊断或用药建议。"
+)
+
+
 def _product_report_interpretation_clause(text: str) -> str:
     normalized = re.sub(r"[ \t]+", "", str(text or "")).replace(",", "，")
-    if _PRODUCT_REPORT_INTERPRETATION_RE.fullmatch(normalized):
+    if (_PRODUCT_REPORT_INTERPRETATION_RE.fullmatch(normalized)
+            or _LEGACY_PRODUCT_REPORT_INTERPRETATION_RE.fullmatch(normalized)):
         return "请基于我的体检报告解释"
     return ""
 
@@ -2631,10 +2638,18 @@ def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
     from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
 
+    if _product_report_interpretation_clause(text):
+        return False
     if resolve_exercise_plan_scope(text) is not None:
         # Full role consumption proves only that there is no foreign subject.
         # Evidence read authority is checked independently at the gateway.
         return False
+    from app.services.agent_kernel.medical_narrative_read_scope import resolve_medical_narrative_read_scope
+    if resolve_medical_narrative_read_scope(text) is not None:
+        return False  # Tool dimensions/selectors remain bound independently.
+    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
+    if resolve_garmin_workout_review_scope(text) is not None:
+        return False  # Only subject proof; exact tool scope remains gateway-owned.
     subject_scope = clinical_interpretation_query_scope(
         active_health_read_authority_text(text)
     )

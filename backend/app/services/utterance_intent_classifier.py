@@ -310,6 +310,14 @@ def classify_agent_utterance(
             )
         return _intent(raw, normalized, "unknown", "unknown", "none", 0.0, "empty")
 
+    from app.services.agent_symptom_status_observation import parse_symptom_status_observation
+    if parse_symptom_status_observation(raw) is not None:
+        return _intent(
+            raw, normalized, "write", "symptom", "create", 0.96,
+            "explicit_self_symptom_status_observation", is_write=True,
+            requires_reliable_tool_model=True,
+        )
+
     if _is_conversation_feedback_only(normalized):
         return _intent(raw, normalized, "chat", "unknown", "none", 0.94, "conversation_feedback")
 
@@ -960,6 +968,9 @@ def _has_direct_symptom_write_command(text: str) -> bool:
 
 def has_retracted_symptom_write(text: str) -> bool:
     """Reject a later symptom denial, correction, or revocation."""
+    from app.services.agent_symptom_status_observation import parse_symptom_status_observation
+    if parse_symptom_status_observation(text) is not None:
+        return False
     if not _has_direct_symptom_write_command(text):
         return False
     sanitized = text

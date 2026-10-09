@@ -2497,7 +2497,11 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     from app.services.agent_longitudinal_read import longitudinal_read_contract_payload
     from app.services.agent_kernel.exercise_plan_scope import exercise_plan_scope_contract_payload
     from app.services.agent_kernel.current_input_advice_scope import current_input_advice_scope_contract_payload
+    from app.services.agent_kernel.garmin_workout_review_scope import garmin_workout_review_scope_contract_payload
+    from app.services.agent_kernel.medical_narrative_read_scope import medical_narrative_read_scope_contract_payload
     return {
+        "medical_narrative_read_scope": medical_narrative_read_scope_contract_payload(),
+        "garmin_workout_review_scope": garmin_workout_review_scope_contract_payload(),
         "current_input_advice_scope": current_input_advice_scope_contract_payload(),
         "exercise_plan_scope": exercise_plan_scope_contract_payload(),
         "read_task_scope": read_task_scope_contract_payload(),
@@ -2605,6 +2609,45 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
+    from app.services.agent_kernel.medical_narrative_read_scope import resolve_medical_narrative_read_scope
+    imaging_scope = resolve_medical_narrative_read_scope(snapshot.envelope.text)
+    if imaging_scope is not None:
+        if (type(snapshot.context.user_id) is not int or snapshot.context.user_id <= 0
+                or type(snapshot.envelope.user_id) is not int
+                or snapshot.envelope.user_id != snapshot.context.user_id):
+            return _decision("block", "health_query_subject_not_current_user", tool_name, args)
+        expected = imaging_scope.query_args()
+        if tool_name == "health_query":
+            if args.get("dimension") == "medical_exam" and set(args) <= set(expected) and all(
+                expected[key] == value for key, value in args.items()
+            ):
+                return _decision("allow", "owned_imaging_narrative_read", tool_name, expected)
+            return _decision("block", "imaging_narrative_scope_conflict", tool_name, args)
+        if tool_name == "health_manage":
+            allowed = {"record_type": "medical_exam", "operation": "list", "keyword": imaging_scope.anatomy}
+            if (args.get("record_type") == "medical_exam" and args.get("operation") == "list"
+                    and set(args) <= set(allowed) and all(allowed[key] == value for key, value in args.items())):
+                return _decision("allow", "owned_imaging_narrative_read", "health_query", expected)
+            return _decision("block", "imaging_narrative_scope_conflict", tool_name, args)
+        if tool_name != "knowledge_search":
+            return _decision("block", "imaging_narrative_tool_not_allowed", tool_name, args)
+    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
+    garmin_review = resolve_garmin_workout_review_scope(snapshot.envelope.text)
+    if garmin_review is not None:
+        if (type(snapshot.context.user_id) is not int or snapshot.context.user_id <= 0
+                or type(snapshot.envelope.user_id) is not int
+                or snapshot.envelope.user_id != snapshot.context.user_id):
+            return _decision("block", "health_query_subject_not_current_user", tool_name, args)
+        expected = garmin_review.query_args(snapshot.context.current_time, snapshot.context.timezone)
+        if tool_name == "health_query":
+            if (args.get("dimension") == "workout" and set(args) <= set(expected)
+                    and all(expected[key] == value for key, value in args.items())):
+                return _decision("allow", "garmin_running_review_today", tool_name, expected)
+            return _decision("block", "garmin_running_review_scope_conflict", tool_name, args)
+        if tool_name == "health_record" and args == {"record_type": "garmin_sync", "data": {}}:
+            return _decision("allow", "explicit_owned_garmin_sync", tool_name, args, receipt_required=False)
+        if tool_name != "knowledge_search":
+            return _decision("block", "garmin_running_review_tool_not_allowed", tool_name, args)
     if tool_name == "health_record" and request.source != "procedure_recipe_replay":
         args = _recover_explicit_illness_create_from_generic_memory(snapshot, args)
         args = _project_exact_illness_create_from_model_fields(snapshot, args)

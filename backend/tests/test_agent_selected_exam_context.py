@@ -57,6 +57,8 @@ async def test_selected_exam_unavailable_never_falls_back(db, auth_user_and_head
     ({'from': 'medical-exam/not-an-id'}, 0),
     ({'from': 'medical-exam/-2'}, 0),
     ({'from': 'other-page/12'}, None),
+    ({'from': 'exam-explain/12', 'summary': 'CLIENT_UNTRUSTED'}, 12),
+    ({'from': 'exam-explain/-2'}, 0),
 ])
 def test_selected_exam_context_parser(raw, expected):
     from app.services.agent_executor import _selected_exam_context_id
@@ -65,7 +67,13 @@ def test_selected_exam_context_parser(raw, expected):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("with_history", [False, True])
-async def test_selected_exam_stream_discards_client_payload_and_other_reports(db, auth_user_and_headers, monkeypatch, with_history):
+@pytest.mark.parametrize("prompt, context_prefix", [
+    ('请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来 30 天该做什么。', 'medical-exam'),
+    ('请基于我这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。', 'medical-exam'),
+    ('请基于这次体检异常解读，帮我按优先级梳理风险、行动、复查安排和需要向医生确认的问题。不要替代诊断或用药建议。', 'medical-exam'),
+    ('请基于这次体检异常解读，帮我按优先级梳理风险、行动、复查安排和需要向医生确认的问题。不要替代诊断或用药建议。', 'exam-explain'),
+])
+async def test_selected_exam_stream_discards_client_payload_and_other_reports(db, auth_user_and_headers, monkeypatch, with_history, prompt, context_prefix):
     from app.models.agent_conversation import AgentMessage
     from app.services import agent_executor as ae
     user, _ = auth_user_and_headers
@@ -130,8 +138,8 @@ async def test_selected_exam_stream_discards_client_payload_and_other_reports(db
     monkeypatch.setattr(ae.settings, 'health_evidence_runtime_enabled', True)
     events = [event async for event in executor.run_stream(
         user_id=user.id, channel='typed', conversation_id=conversation_id,
-        message='请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来 30 天该做什么。',
-        extra_context=json.dumps({'from':f'medical-exam/{selected.id}', 'overall_assessment':'CLIENT_UNTRUSTED', 'multi_model':True}),
+        message=prompt,
+        extra_context=json.dumps({'from':f'{context_prefix}/{selected.id}', 'overall_assessment':'CLIENT_UNTRUSTED', 'multi_model':True}),
     )]
     done = next(e['data'] for e in events if e.get('event') == 'done')
     saved = db.get(AgentMessage, done['message_id'])

@@ -35,7 +35,7 @@ export interface RelatedCardSummary {
 }
 
 export interface ExamExplain {
-  exam: { id: number; exam_type: string | null; exam_date: string };
+  exam: { id: number; exam_type: string | null; exam_date: string; overall_assessment?: string | null; conclusions?: unknown[] | null };
   abnormal_items: AbnormalItem[];
   trends: Record<string, TrendPoint[]>;
   explanation: {

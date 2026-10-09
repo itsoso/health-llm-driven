@@ -279,6 +279,10 @@ async def _sync_user_garmin_data_impl(
             )
             raise
         result["activities_count"] = workout_result.get("synced_count", 0)
+        result["activities_error_count"] = workout_result.get("failed_count", 0)
+        if result["activities_error_count"]:
+            from app.services.data_collection.garmin_errors import GarminSyncError
+            raise GarminSyncError("Garmin partial activity failure")
         logger.info(f"用户 {user_id} 运动活动同步完成: {result['activities_count']} 条")
 
         # 从运动记录中提取最新的 VO2Max 并更新到每日数据

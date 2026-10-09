@@ -337,3 +337,13 @@ def test_status_only_never_reads_sleep_without_explicit_scope(monkeypatch):
     )
     assert result["data"]["availability"] == "not_requested"
     assert result["status"] == "unknown"
+
+
+@pytest.mark.parametrize('count,expected', [(1,'failed'),(-1,'unknown'),(True,'unknown'),(0,'completed')])
+def test_activity_failure_count_cannot_be_hidden_by_celery_success(monkeypatch,count,expected):
+    result=read(monkeypatch,{'status':'SUCCESS','result':{
+        'status':'success','success_count':1,'error_count':0,'activities_count':2,
+        'activities_error_count':count,
+    }})
+    assert result['status']==expected
+    assert result['job_success_verified'] is (expected=='completed')

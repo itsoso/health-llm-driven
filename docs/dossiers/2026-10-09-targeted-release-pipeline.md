@@ -185,3 +185,14 @@
 - 另发现第三人复合查询会错误授权读取当前认证本人的workout（无其他user_id投射，不是跨用户DB泄露）；限制性owner检查补丁在独立回归和取消/引用边界复审中。
 
 - owner补丁最终仅独立正向分析分句递归查归属，不删除否定词；最终3428 passed（29.16秒）。既有取消第三人后本人读正对照保留。仍发现未修的单独取消投射缺陷：本人同步后明确不要分析第三人，旧fallback仍可能读本人7天；不将本次限制性补丁宣称为全部取消语义修复。
+
+## 2026-10-09 — Owned medical, Garmin and symptom repair candidate
+
+User authorized all reported repairs, server deployment and one OTA. This candidate preserves prior local fixes; no write-tool description reduction is re-enabled. Admission and boundaries: `docs/specs/active/2026-10-09-owned-health-record-repair.md`.
+
+- Medical: owned ID detail API and explicit request errors, complete assessment in explanation, canonical and legacy selected-report selectors, current/legacy product utterance compatibility, bounded complete MRI narrative read, MCP list/detail tools and CI coverage. Client summaries are discarded as evidence; stored text is not original-image verification.
+- Garmin: closed sync/read/review scope, actual today's Garmin running records, isolated personal context, current job receipts distinct from activity availability, per-activity failure propagation and committed-count integrity, UTC ingestion with unknown-time limitations.
+- Symptom: explicit self status observations retain the complete original recovery/residual wording; no inferred severity or illness resolution. Existing gateway, API, write receipt and failure boundaries remain active.
+- Fresh local evidence: medical PostgreSQL 41 passed; focused executor PostgreSQL 7 passed; symptom PostgreSQL 921 passed (overlaps classifier regression); authorization suite 3494 passed; Garmin/reader PostgreSQL first 46 and supplemental 17 passed; Mobile 62 passed plus TypeScript; MCP 53 passed; CI-mode integration/selected/new-sync 39 passed; System Map regenerated and checked. These are distinct overlapping suites, not an additive total.
+- Real-model acceptance is in progress. The symptom runner's first formal attempt failed with ValueError before case evidence; retained at `/tmp/reva-1009-symptom-status-live-frozen-01.json`, not counted as passing. Runtime source is frozen during live verification. Fixed-commit independent safety review, main exact CI, backend deployment and production acceptance are still pending.
+- OTA remains separately blocked by the previously established runtime/fingerprint incompatibility. No pin bypass or legacy local publisher is used; no new native distribution has been performed.

@@ -90,3 +90,31 @@ def test_explain_unrepairable_stays_fail_soft(db):
     assert out is not None
     assert out["explanation"] is None          # fail-soft 保持
     assert len(out["abnormal_items"]) == 1     # 包其余部分完好
+
+
+def test_narrative_only_explain_preserves_entire_ocr_summary(db):
+    user, _ = create_authenticated_user(db)
+    narrative = "合成报告摘要。" * 600 + "末尾完整证据"
+    exam = MedicalExam(user_id=user.id, exam_date=date(2026, 5, 1),
+                       overall_assessment=narrative, conclusions=[{"finding": "合成结论"}])
+    db.add(exam)
+    db.commit()
+    provider = _mock_provider('{"summary":"合成解读","actions":[]}')
+    with patch("app.services.llm.get_llm_provider", return_value=provider):
+        out = build_exam_explain(db, user.id, exam.id)
+    prompt = provider.chat.call_args.kwargs["messages"][0]["content"]
+    assert narrative in prompt
+    assert "合成结论" in prompt
+    assert "不是原始影像" in prompt
+    assert out["exam"]["overall_assessment"] == narrative
+    assert out["exam"]["conclusions"] == exam.conclusions
+
+
+def test_narrative_foreign_owner_cannot_invoke_explanation(db):
+    user, _ = create_authenticated_user(db)
+    exam = MedicalExam(user_id=user.id, exam_date=date(2026, 5, 1), overall_assessment="合成私有摘要")
+    db.add(exam)
+    db.commit()
+    with patch("app.services.llm.get_llm_provider") as provider:
+        assert build_exam_explain(db, user.id + 1000, exam.id) is None
+    provider.assert_not_called()

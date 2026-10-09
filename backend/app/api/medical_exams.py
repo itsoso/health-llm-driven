@@ -277,6 +277,21 @@ def get_my_medical_exam_report_summaries(
     return [_medical_exam_report_summary(exam) for exam in exams]
 
 
+@router.get("/me/{exam_id}", response_model=MedicalExamResponse)
+def get_my_medical_exam(
+    exam_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Return one complete owned report independently of list pagination."""
+    exam = db.query(MedicalExam).options(selectinload(MedicalExam.items)).filter(
+        MedicalExam.id == exam_id, MedicalExam.user_id == current_user.id,
+    ).first()
+    if exam is None:
+        raise HTTPException(status_code=404, detail="体检不存在或无权限")
+    return exam
+
+
 # ========== Calibrate UI: 单条 item 校正 (OCR 抽错值后用户回写) ==========
 
 @router.get("/{exam_id}/explain", summary="体检异常解释包 (review #2, 2026-05-12)")

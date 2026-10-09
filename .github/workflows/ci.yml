@@ -201,6 +201,9 @@ jobs:
         working-directory: backend
         run: python -m pip_audit -r requirements.lock --require-hashes --progress-spinner=off
 
+      - name: Health MCP tool contracts
+        run: python -m pytest --noconftest -c /dev/null --rootdir . -o addopts= -o asyncio_mode=auto -p no:cacheprovider -q mcp-server/tests
+
       - name: Lint (ruff, non-blocking warnings)
         working-directory: backend
         continue-on-error: true
