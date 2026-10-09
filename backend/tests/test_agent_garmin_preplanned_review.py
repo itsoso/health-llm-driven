@@ -19,7 +19,7 @@ PROMPT = '同步一下佳明的数据，获取到我最新的运动的数据，�
     {'record_type': 'garmin_sync'},
     {'record_type': 'garmin_sync', 'data': {'days': 7}},
 ])
-async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user_and_headers, monkeypatch, guessed_args, job_state):
+async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user_and_headers, monkeypatch, guessed_args, job_state, _model_reply=None, _capture=None):
     from app.services import agent_executor as ae
     from app.services import agent_garmin_sync_status as status
     from app.tasks.garmin_sync import sync_user_garmin_data
@@ -30,7 +30,7 @@ async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user
         db.add(GarminCredential(user_id=user.id, garmin_email='synthetic@example.invalid',
             encrypted_password='unused', sync_enabled=True, credentials_valid=True))
     row = WorkoutRecord(user_id=user.id, workout_date=now.date(), workout_type='running',
-        source='garmin', distance_meters=3000, duration_seconds=1500,
+        source='garmin', distance_meters=3000, duration_seconds=1500, avg_heart_rate=127, max_heart_rate=143,
         start_time=(now-timedelta(minutes=30)).astimezone(timezone.utc),
         end_time=(now-timedelta(minutes=5)).astimezone(timezone.utc))
     db.add(row);db.commit()
@@ -53,7 +53,7 @@ async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user
                 'function':{'name':'health_record','arguments':json.dumps(guessed_args)}}]}
             yield {'type':'finish','finish_reason':'tool_calls'}
         else:
-            yield {'type':'content','text':'可以参考已保存的运动记录。'}
+            yield {'type':'content','text':_model_reply or '可以参考已保存的运动记录。'}
             yield {'type':'finish','finish_reason':'stop'}
     monkeypatch.setattr(executor,'_call_llm_stream',stream)
     events=[event async for event in executor.run_stream(user_id=user.id,channel='typed',message=PROMPT)]
@@ -78,6 +78,8 @@ async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user
     from app.models.agent_conversation import AgentMessage
     saved = db.get(AgentMessage,done['message_id'])
     delivered = ''.join(e.get('data',{}).get('content','') for e in events if e.get('event')=='token')
+    if _capture is not None:
+        _capture.update(done=done, saved=saved.content, delivered=delivered, provider_messages=seen[0][0])
     for body in (saved.content,delivered):
         assert '尚不能确认它就是你刚才的跑步' in body
         if job_state == 'SUCCESS':
@@ -168,3 +170,30 @@ async def test_pi_cannot_dispatch_sync_outside_turn_boundary(db,auth_user_and_he
         assert enqueue.call_count==1
         assert enqueue.call_args.args==(user.id,)
         assert sum(name=='health_record' for name,_ in dispatched)==1
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('unsupported', [True, False])
+async def test_garmin_reply_cannot_invent_age_hrmax_series_or_safety(db,auth_user_and_headers,monkeypatch,unsupported):
+    bad = '按你40岁计算，心率达到最大心率70%；全程心率稳定，没有异常，运动强度正常适中，这次跑步安全。'
+    careful = '缺少年龄、实测最大心率及连续心率曲线，不能推算最大心率占比，也不能判断全程稳定、无异常或运动安全。'
+    captured={}
+    await test_canonical_sync_then_today_read_precedes_model_guess(
+        db,auth_user_and_headers,monkeypatch,{'record_type':'garmin_sync'},'PENDING',
+        _model_reply=bad if unsupported else careful,_capture=captured)
+    provider_input=json.dumps(captured['provider_messages'],ensure_ascii=False)
+    for field in ('unavailable_evidence','age','personal_maximum_heart_rate','heart_rate_time_series'):
+        assert field in provider_input
+    assert '不得猜年龄或计算个人最大心率百分比、心率区间、训练区间' in provider_input
+
+    for reply in (captured['saved'],captured['delivered']):
+        if unsupported:
+            assert all(claim not in reply for claim in ('40岁','70%','全程心率稳定','没有异常','运动强度正常适中','这次跑步安全'))
+            assert '127' in reply and '143' in reply
+            assert '年龄' in reply and '最大心率' in reply and ('心率曲线' in reply or '连续心率' in reply)
+        else:
+            assert careful in reply
+    reasons=captured['done'].get('fallback_reasons',[])
+    assert ('garmin_review_evidence_fallback' in reasons) is unsupported
+    assert captured['done']['turn_outcome']['status']=='partial'

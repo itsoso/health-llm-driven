@@ -17992,6 +17992,9 @@ class AgentExecutor:
                    '解释本轮实际返回的完整报告摘要和检查日期；这是OCR或人工录入的存储文字，未核验原始影像。'
                    '历史检查不能断言当前诊断；未返回结果时说明未能核验，不猜测分级或病史。')
             )
+        if garmin_scope is not None:
+            from app.services.agent_garmin_review_evidence import GARMIN_REVIEW_EVIDENCE_LIMITS
+            messages[0]["content"] += "\n" + GARMIN_REVIEW_EVIDENCE_LIMITS
         if self._has_current_input_recovery_advice_goal():
             from app.services.agent_kernel.current_input_advice_scope import current_input_advice_instructions
             messages[0]["content"] += "\n" + current_input_advice_instructions(message)
@@ -20132,6 +20135,11 @@ class AgentExecutor:
         if self._turn_daily_read_plan is not None and self._turn_daily_read_plan.sync_status_requested:
             full_reply = self._trusted_read_summary()
         full_reply = self._unresolved_read_failure_notice() or full_reply
+        if self._focused_read_scopes()[1] is not None:
+            from app.services.agent_garmin_review_evidence import has_unsupported_garmin_claim, bounded_garmin_record_facts
+            if has_unsupported_garmin_claim(full_reply):
+                self._record_model_fallback_reason("garmin_review_evidence_fallback")
+                full_reply = self._trusted_read_summary() + "\n\n" + bounded_garmin_record_facts(self._turn_focused_read_result)
         from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
 
         composed_boundary = enforce_composed_synthesis_boundaries(

@@ -635,7 +635,9 @@ def read_latest_garmin_running_review(
     result = {'availability': 'no_data', 'record': None,
               'selection': 'latest_recorded_running_today',
               'start_date': day.isoformat(), 'end_date': day.isoformat(), 'timezone': timezone,
-              'freshness': 'existing_record_not_sync_proof', 'matches_reported_distance': None}
+              'freshness': 'existing_record_not_sync_proof', 'matches_reported_distance': None,
+              'unavailable_evidence': ['age', 'personal_maximum_heart_rate', 'resting_heart_rate', 'heart_rate_time_series'],
+              'evidence_limits': 'Summary metrics cannot establish heart-rate zones, variability, personal safety, or a progression prescription.'}
     # Garmin's GMT-only fallback may store a UTC calendar date. Authority is
     # the user's local absolute-time window, never that fallback date. Unknown
     # starts on the stored local day remain ambiguous rather than disappearing.
