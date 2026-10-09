@@ -301,3 +301,7 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - 56次API均成功、冻结质量契约均通过；仅证明这些样本的字段/数量/品名/标签值/订单数量/未知值及未授权完成措辞，不能证明临床营养真值、全面语义不退化或线上端到端P95。聚合无健康原文证据：`docs/reviews/2026-10-09-food-wire-replay.json`。
 - RED 7 failed/4 passed；实现后识别/权限/实际executor/benchmark回归262 passed，额外冲突消费端回归与CI-mode集成继续验证。System Map通过。停止条件为新质量失败、同图P50或P95恶化、成本增加或冲突字段可记录；发布后仍须核对首卡、保存和总耗时，必要时回滚。
 - Pi标志修复固定`f8a1c3372`独立G4 GO：38 Python +26真实Node；新失败收尾协议`2dd7c2420`独立审查发现撤权前置死环，BLOCK并修复中。旧`e321`失败回执保持原样；本轮尚未push、部署或发布OTA。
+
+- 固定`1720a749b`独立G4 GO：264项回归通过；额外穷举256种长短字段混合组合完全等价、8种冲突均拒绝；56条真实指标与提示哈希重算吻合。父方补充边界44 passed、CI-mode集成3 passed。标准真实模型回归10次API/0失败、三个运行源码hash运行前后一致，证据`/tmp/reva-food-wire-runtime-live-result.json`；这是通用交互回归，不替代照片56次对照或线上首卡验收。
+
+- `2dd7c2420`的两项BLOCK已修补待重审：通用revoke仍拒绝NEEDS_OPERATOR，独立closure在durable intent和重复证据后精确撤销旧双身份/旧loopback私钥，失败留intent且不给completion/receipt；补齐candidate effective units、network guard与Laya安装/服务/候选证明。437项回归通过（含真实install→NEEDS_OPERATOR→close及写失败/后置偏离）；原GH失败run终态由operator独立fresh核验。未运行生产收尾或推送。

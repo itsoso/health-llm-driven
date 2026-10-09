@@ -1014,16 +1014,24 @@ Mobile 使用固定 patch-package 补丁；Frontend 普通安装及 build 命令
 `NEEDS_OPERATOR`，rollback 已保留 candidate，runtime terminal 已是该 candidate 的
 `COMMITTED / finalized / target=candidate`，transaction/reap、business lease 和发布进程均已退出。
 此入口不修复服务、不再次 finalize、不重写失败回执，也不把失败发布标成成功。
-若上述条件不成立，必须先诊断真实运行态，不能用闭合绕过。
+若上述条件不成立，必须先诊断真实运行态，不能用闭合绕过。操作前还必须独立读取原 GitHub
+发布 run 的最新状态、核对 SHA/workflow/run attempt 并确认已终态，留存脱敏回执。此次原
+失败 run 为 `37933398517`、candidate 为 `e3210b1161f76944733b6522e0ff21695858614c`；
+closure 本身不调用 GitHub 写接口，也不把本机 launcher 无进程视为远端 workflow 已终止。
 
 操作来自新 main 精确绿色 SHA 的 canonical root-owned checkout，使用系统
-`python3.12 -I -S -B`。关闭前按既有 revoke 流程撤销旧双身份并移除旧 loopback 私钥；
-闭合只接受原 installation 的撤权证据，不提供 credential 清理捷径。入口参数为
+`python3.12 -I -S -B`。闭合前保留旧双身份和 loopback 私钥；通用 revoke 对 `NEEDS_OPERATOR` 的拒绝不变。
+独立闭合先核验原 installation 和精确双授权，持久化 intent 并重复完整证明后，才精确撤销
+这两条授权、删除已绑定的旧 loopback 私钥，重新核验 installation 与运行态后写 completion。入口参数为
 `--sha <reviewed-closing-sha> --failed-sha <failed-candidate-sha>`；第一次只读 inspect
 返回 evidence digest。确认后第二次加 `--evidence-sha256 <digest>`，固定原 launcher lock
 并重新检查：完整失败 workspace 的原始字节/元数据、原 canonical executor 与各阶段回执、
 生产 clean revision、runtime terminal、服务进程及 runtime flag、schema、runtime-only KB、
-health 依赖与未认证 auth 拒绝。任何变化均阻断。
+health 依赖与未认证 auth 拒绝。candidate-effective 检查复用现有 unit proof，核验
+FragmentPath、全部 DropInPaths、ExecStart、ReadWritePaths、安全配置、enablement 与 network guard；
+Laya 检查绑定 candidate 的导出源码/manifest、原安装回执及 immutable generation，并复用
+`verify_install` 验证隔离账户、服务身份、未授权拒绝和 synthetic inference。上述探针均只读，
+不创建 lease、不 activate、不 finalize。任何变化均阻断。
 
 独立 root-only `retained-candidate-closures/<failed-sha>/` 先持久化 `intent.json`，
 再次验证后才写 `completed.json` 并签发随机 receipt。成功终态仅为

@@ -1,8 +1,9 @@
 """Close a failed backend claim whose retained candidate is already finalized.
 
-This isolated root operator only writes its separate closure audit. It never
-finalizes a runtime transaction, edits the consumed workspace, restarts a service,
-changes credentials or authorizes retry of the failed revision.
+This isolated root operator writes its separate closure audit, then precisely
+revokes the consumed identities after durable intent and repeated live proofs.
+It never finalizes a runtime transaction, edits the consumed workspace, restarts
+a service or authorizes retry of the failed revision.
 """
 
 import argparse
@@ -17,7 +18,9 @@ import stat
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path("/var/lib/reva-release")
 RUNTIME = Path("/var/lib/health-app/release-state")
@@ -139,6 +142,7 @@ def close_transaction(adapter, evidence_sha256=None):
     write_json(adapter.record / "intent.json", intent)
     if adapter.inspect() != evidence:
         raise RetirementError("closure evidence changed after intent")
+    adapter.retire_authorization(evidence)
     write_json(
         adapter.record / "completed.json",
         {
@@ -216,6 +220,160 @@ def load(b, path, name):
     return module
 
 
+def candidate_configuration(b, source, sha, marker, proof, runtime):
+    """Use only existing read-only effective-unit and installation verifiers."""
+    candidate = b.canonical_source(sha)
+    proof.bootstrap = b
+    proof.source = source
+    proof.production_sha = sha
+    proof.production = Path("/opt/health-app")
+    proof.failed_sha = sha
+    proof.runtime = runtime
+    proof.systemd_root = Path("/etc/systemd/system")
+    proof.installed_laya = True
+    proof.stage = None
+    proof.lease = None
+    transaction = object.__new__(runtime.ReleaseTransaction)
+    transaction.systemd = proof.systemd
+    # _old_effective only consumes these read-only layout fields. No fabricated
+    # release-stage pathname or lease is passed to production_layout/transaction.
+    transaction.layout = SimpleNamespace(
+        base_units={unit: proof.systemd_root / unit for unit in runtime.UNITS},
+        legacy_shelf_base=Path("/opt/health-app/backend/data/celerybeat-schedule"),
+        current_shelf_base=Path("/var/lib/health-app/celery-beat/celerybeat-schedule"),
+    )
+    started = datetime.fromtimestamp(
+        (b.STATE / sha / "deployment-started.json").stat().st_mtime, UTC
+    )
+    units = proof._units(
+        candidate, transaction, started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ\n")
+    )
+    laya = candidate_laya(b, source, sha, marker, proof)
+    return {"units": units, "laya": laya}
+
+
+def candidate_laya(b, source, sha, marker, proof):
+    installer = load(b, source / "infra/laya/install.py", "retained_laya_verifier")
+    candidate = b.canonical_source(sha) / "infra/laya"
+    assets = {}
+    for name in installer.ASSETS:
+        raw, _ = proof._file(candidate / name)
+        if raw != proof._file(source / "infra/laya" / name)[0]:
+            raise RetirementError("closing Laya implementation differs from candidate")
+        assets[name] = hashlib.sha256(raw).hexdigest()
+    server = load(
+        b, source / "scripts/trusted_release_server.py", "retained_laya_environment"
+    )
+    config = installer.parse_config(server.read_production_env())
+    if config is None:
+        raise RetirementError(
+            "retained candidate requires installed Laya configuration"
+        )
+    generation, _, _, expected = installer.expected_install(candidate, config)
+    receipt_path = installer.STATE / "install.json"
+    raw, receipt_identity = proof._file(receipt_path, 0o600)
+    receipt = b._read_json(receipt_path)
+    if (
+        set(receipt)
+        != {
+            "generation",
+            "unit_sha256",
+            "env_sha256",
+            "state",
+            "candidate_sha",
+            "lease",
+        }
+        or not isinstance(receipt["candidate_sha"], str)
+        or re.fullmatch("[a-f0-9]{40}", receipt["candidate_sha"]) is None
+        or not isinstance(receipt["lease"], str)
+        or re.fullmatch("[a-f0-9]{64}", receipt["lease"]) is None
+    ):
+        raise RetirementError("Laya installed receipt provenance invalid")
+    installer.reusable(receipt, expected)
+    origin = b.canonical_source(receipt["candidate_sha"]) / "infra/laya"
+    if installer.expected_install(origin, config)[3] != expected:
+        raise RetirementError("Laya origin does not match retained candidate")
+    exported = installer.STATE / "sources" / sha
+    proof._directory(exported)
+    if {item.name for item in exported.iterdir()} != {*installer.ASSETS, "source.json"}:
+        raise RetirementError("candidate Laya export inventory differs")
+    parser = load(
+        b, source / "scripts/contained_recovery_proof.py", "retained_export_parser"
+    )
+    manifest = parser.object_json(proof._file(exported / "source.json", 0o400)[0])
+    if manifest != {
+        "sha": sha,
+        "old_sha": marker["old_sha"],
+        "old_has_decisions": True,
+        "files": assets,
+    }:
+        raise RetirementError("candidate Laya export binding differs")
+    exported_files = {}
+    for name in (*installer.ASSETS, "source.json"):
+        raw, exported_files[name] = proof._file(exported / name, 0o400)
+        if name in assets and hashlib.sha256(raw).hexdigest() != assets[name]:
+            raise RetirementError("candidate Laya export bytes differ")
+    absent = [
+        installer.STATE / "install.json.pending",
+        installer.UNIT.with_name(installer.UNIT.name + ".pending"),
+        installer.ENV.with_name(installer.ENV.name + ".pending"),
+    ]
+    if any(os.path.lexists(path) for path in absent):
+        raise RetirementError("Laya pending activation remains")
+
+    def snapshot():
+        value = installer.service_identity(generation)
+        if proof.systemd.show("reva-laya.service", "NeedDaemonReload") != "no":
+            raise RetirementError("Laya reload pending")
+        value["ExecStart"] = runtime_exec = (
+            proof.runtime.ReleaseTransaction._stable_exec_start(
+                None, proof.systemd.show("reva-laya.service", "ExecStart")
+            )
+        )
+        executable = generation / "venv/bin/python"
+        if (
+            runtime_exec
+            != f"path={executable}\nargv[]={executable} -I {generation / 'serve.py'}\nignore_errors=no"
+        ):
+            raise RetirementError("Laya effective command differs")
+        pids = proof._pids("reva-laya.service")
+        if pids != [value["MainPID"]]:
+            raise RetirementError("Laya process inventory differs")
+        value["processes"] = {
+            pid: (proof.proc / pid / "stat")
+            .read_bytes()
+            .rsplit(b")", 1)[-1]
+            .split()[19]
+            .decode()
+            for pid in pids
+        }
+        value["boot_id"] = (
+            (proof.proc / "sys/kernel/random/boot_id").read_text().strip()
+        )
+        return value
+
+    files = {
+        str(path): proof._file(path)[1]
+        for path in (receipt_path, installer.UNIT, installer.ENV)
+    }
+    before = snapshot()
+    installer.verify_install(candidate, config)
+    if snapshot() != before or any(
+        proof._file(Path(path))[1] != value for path, value in files.items()
+    ):
+        raise RetirementError("Laya changed during candidate verification")
+    return {
+        "candidate_sha": sha,
+        "assets": assets,
+        "expected": expected,
+        "receipt": receipt,
+        "receipt_identity": receipt_identity,
+        "files": files,
+        "exported_source": exported_files,
+        "services": before,
+    }
+
+
 def live_state(b, source, closing_sha, sha):
     b._assert_idle()
     b._recovery_process_proof()
@@ -255,6 +413,7 @@ def live_state(b, source, closing_sha, sha):
     proof.proc = Path("/proc")
     proof.cgroup = Path("/sys/fs/cgroup")
     proof.systemd = runtime.SubprocessSystemd()
+    configuration = candidate_configuration(b, source, sha, marker, proof, runtime)
     before = proof.running_services_snapshot()
     recovery = load(
         b,
@@ -264,7 +423,11 @@ def live_state(b, source, closing_sha, sha):
     recovery._application_probes(sha, closing_sha)
     recovery._http_probes()
     time.sleep(7)
-    if proof.running_services_snapshot() != before:
+    if (
+        proof.running_services_snapshot() != before
+        or candidate_configuration(b, source, sha, marker, proof, runtime)
+        != configuration
+    ):
         raise RetirementError("services changed during inspection")
     b._recovery_production_proof(sha, source)
     assert_no_transaction(RUNTIME)
@@ -276,6 +439,7 @@ def live_state(b, source, closing_sha, sha):
         "terminal": marker,
         "terminal_identity": identity,
         "services": before,
+        "configuration": configuration,
         "probes": {
             "schema": True,
             "runtime_only_kb": True,
@@ -283,6 +447,282 @@ def live_state(b, source, closing_sha, sha):
             "health_dependencies": True,
             "runtime_flag_false": True,
         },
+    }
+
+
+def validate_configuration(b, source, sha, configuration):
+    """Replay archived contracts using canonical files, never live host state."""
+    if not isinstance(configuration, dict) or set(configuration) != {"units", "laya"}:
+        raise RetirementError("candidate configuration evidence incomplete")
+    runtime = load(
+        b,
+        source / "backend/scripts/runtime_state_release_transaction.py",
+        "retained_archived_runtime",
+    )
+    module = load(
+        b, source / "scripts/contained_recovery_proof.py", "retained_archived_units"
+    )
+    closure = load(
+        b,
+        source / "scripts/contained_release_retirement.py",
+        "retained_archived_network",
+    )
+    units = configuration["units"]
+    required = {*module.UNITS, "effective", "network_guard"}
+    if not isinstance(units, dict) or set(units) != required:
+        raise RetirementError("candidate effective unit inventory incomplete")
+    closure.validate_network_guard_snapshot(
+        {
+            "units": units,
+            "installed_laya": {"started_at": units["network_guard"].get("started_at")},
+        },
+        unchanged=True,
+    )
+    proof = object.__new__(module.RecoveryProof)
+    proof.bootstrap = b
+    proof.runtime = runtime
+    proof.stage = None
+    proof.lease = None
+    candidate = b.canonical_source(sha)
+    dropins, _ = proof._production_unit_profile(candidate)
+    transaction = object.__new__(runtime.ReleaseTransaction)
+    effective = runtime.ReleaseTransaction._stable_effective_snapshot(
+        transaction, units["effective"]
+    )
+    if effective != units["effective"]:
+        raise RetirementError("archived effective properties are not canonical")
+    worker = "/opt/health-app/backend/venv/bin/celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=4"
+    proof._production_effective(transaction, effective, dropins, worker)
+    for unit in module.UNITS:
+        value = units[unit]
+        required_entry = (
+            {"base"}
+            if unit.endswith(".socket")
+            else {
+                "base",
+                "80-reva-health-evidence-runtime.conf",
+                "90-runtime-state.conf",
+            }
+        )
+        if (
+            not isinstance(value, dict)
+            or set(value) - {"legacy_security_effective"} != required_entry
+        ):
+            raise RetirementError("archived unit files incomplete")
+        if "legacy_security_effective" in value:
+            module.validate_security_effective(unit, value["legacy_security_effective"])
+        for name in required_entry:
+            validate_file_identity(value[name], modes={0o644})
+        if unit.endswith(".service"):
+            for name, raw in [
+                ("80-reva-health-evidence-runtime.conf", module.ACTIVATION),
+                ("90-runtime-state.conf", dropins[unit]),
+            ]:
+                if value[name]["sha256"] != hashlib.sha256(raw).hexdigest():
+                    raise RetirementError("archived candidate drop-in differs")
+            paths = " ".join(
+                "/etc/systemd/system/" + unit + ".d/" + name
+                for name in (
+                    "80-reva-health-evidence-runtime.conf",
+                    "90-runtime-state.conf",
+                    "security-network.conf",
+                )
+            )
+            if (
+                effective[unit]["FragmentPath"] != "/etc/systemd/system/" + unit
+                or effective[unit]["DropInPaths"] != paths
+            ):
+                raise RetirementError("archived effective unit source differs")
+    validate_laya_snapshot(b, source, sha, configuration["laya"])
+
+
+def validate_file_identity(value, *, modes, root_group=True):
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"dev", "ino", "uid", "gid", "mode", "sha256"}
+        or any(
+            type(value[k]) is not int or value[k] < 0
+            for k in ("dev", "ino", "uid", "gid", "mode")
+        )
+        or value["uid"] != 0
+        or root_group
+        and value["gid"] != 0
+        or value["ino"] <= 0
+        or value["mode"] not in modes
+        or not isinstance(value["sha256"], str)
+        or re.fullmatch("[a-f0-9]{64}", value["sha256"]) is None
+    ):
+        raise RetirementError("archived file identity invalid")
+
+
+def validate_laya_snapshot(b, source, sha, value):
+    required = {
+        "candidate_sha",
+        "assets",
+        "expected",
+        "receipt",
+        "receipt_identity",
+        "files",
+        "exported_source",
+        "services",
+    }
+    if (
+        not isinstance(value, dict)
+        or set(value) != required
+        or value["candidate_sha"] != sha
+    ):
+        raise RetirementError("archived Laya candidate binding invalid")
+    installer = load(b, source / "infra/laya/install.py", "retained_archived_laya")
+    candidate = b.canonical_source(sha) / "infra/laya"
+    assets = {
+        name: hashlib.sha256((candidate / name).read_bytes()).hexdigest()
+        for name in installer.ASSETS
+    }
+    if value["assets"] != assets:
+        raise RetirementError("archived Laya candidate assets differ")
+    expected = value["expected"]
+    generation, _, _, synthetic = installer.expected_install(
+        candidate, {"DECISION_API_KEY": ""}
+    )
+    if (
+        not isinstance(expected, dict)
+        or set(expected) != {"generation", "unit_sha256", "env_sha256"}
+        or any(
+            not isinstance(v, str) or re.fullmatch("[a-f0-9]{64}", v) is None
+            for v in expected.values()
+        )
+        or any(expected[k] != synthetic[k] for k in ("generation", "unit_sha256"))
+    ):
+        raise RetirementError("archived Laya generation differs")
+    receipt = value["receipt"]
+    if (
+        not isinstance(receipt, dict)
+        or set(receipt) != {*expected, "state", "candidate_sha", "lease"}
+        or not isinstance(receipt["candidate_sha"], str)
+        or re.fullmatch("[a-f0-9]{40}", receipt["candidate_sha"]) is None
+        or not isinstance(receipt["lease"], str)
+        or re.fullmatch("[a-f0-9]{64}", receipt["lease"]) is None
+    ):
+        raise RetirementError("archived Laya receipt invalid")
+    installer.reusable(receipt, expected)
+    origin = installer.expected_install(
+        b.canonical_source(receipt["candidate_sha"]) / "infra/laya",
+        {"DECISION_API_KEY": ""},
+    )[3]
+    if any(origin[k] != expected[k] for k in ("generation", "unit_sha256")):
+        raise RetirementError("archived Laya origin differs")
+    files = value["files"]
+    paths = {
+        str(installer.STATE / "install.json"),
+        str(installer.UNIT),
+        str(installer.ENV),
+    }
+    if not isinstance(files, dict) or set(files) != paths:
+        raise RetirementError("archived Laya files incomplete")
+    for path, identity in files.items():
+        mode = (
+            0o640
+            if path == str(installer.ENV)
+            else 0o644
+            if path == str(installer.UNIT)
+            else 0o600
+        )
+        validate_file_identity(
+            identity, modes={mode}, root_group=path != str(installer.ENV)
+        )
+    if (
+        files[str(installer.STATE / "install.json")] != value["receipt_identity"]
+        or files[str(installer.UNIT)]["sha256"] != expected["unit_sha256"]
+        or files[str(installer.ENV)]["sha256"] != expected["env_sha256"]
+    ):
+        raise RetirementError("archived Laya file binding differs")
+    exported = value["exported_source"]
+    if not isinstance(exported, dict) or set(exported) != {*assets, "source.json"}:
+        raise RetirementError("archived Laya export incomplete")
+    for name, identity in exported.items():
+        validate_file_identity(identity, modes={0o400})
+        if name in assets and identity["sha256"] != assets[name]:
+            raise RetirementError("archived Laya export binding differs")
+    service = value["services"]
+    fixed = {
+        "ActiveState": "active",
+        "SubState": "running",
+        "FragmentPath": str(installer.UNIT),
+        "DropInPaths": "",
+        "User": "reva-laya",
+        "Group": "reva-laya",
+        "UnitFileState": "enabled",
+    }
+    executable = generation / "venv/bin/python"
+    if (
+        not isinstance(service, dict)
+        or set(service)
+        != {*fixed, "MainPID", "NRestarts", "ExecStart", "processes", "boot_id"}
+        or any(service[k] != v for k, v in fixed.items())
+        or any(
+            not isinstance(service[k], str) or not service[k].isdigit()
+            for k in ("MainPID", "NRestarts")
+        )
+        or int(service["MainPID"]) <= 1
+        or service["ExecStart"]
+        != f"path={executable}\nargv[]={executable} -I {generation / 'serve.py'}\nignore_errors=no"
+        or not isinstance(service["processes"], dict)
+        or set(service["processes"]) != {service["MainPID"]}
+        or any(
+            not isinstance(v, str) or not v.isdigit() or int(v) <= 0
+            for v in service["processes"].values()
+        )
+        or not isinstance(service["boot_id"], str)
+        or re.fullmatch(
+            "[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}", service["boot_id"]
+        )
+        is None
+    ):
+        raise RetirementError("archived Laya service identity differs")
+
+
+def active_installation_evidence(b, sha, executor):
+    config = b._inventory(
+        b.CONFIG,
+        {
+            "known_hosts",
+            "loopback.conf",
+            "authorized-release.json",
+            "loopback.pub",
+            "cloud.pub",
+            "loopback.key",
+        },
+    )
+    library = b._inventory(b.INSTALLED.parent, {b.INSTALLED.name})
+    policy = b._read_json(b.CONFIG / "authorized-release.json")
+    if (
+        not isinstance(policy, dict)
+        or set(policy) != {"sha", "expires_at", "executor_sha256"}
+        or policy["sha"] != sha
+        or type(policy["expires_at"]) is not int
+        or policy["executor_sha256"] != executor
+        or library[b.INSTALLED.name]["sha256"] != executor
+    ):
+        raise RetirementError("active installation binding differs")
+    public = [
+        (b.CONFIG / name).read_text().strip() for name in ("cloud.pub", "loopback.pub")
+    ]
+    for key in public:
+        b.validate_install(sha, 1, key, now=0)
+    if public[0] == public[1]:
+        raise RetirementError("release identities must differ")
+    b.secure(b.AUTHORIZED, private=True)
+    lines = b.AUTHORIZED.read_text().splitlines()
+    expected = b.key_lines(policy["expires_at"], *public)
+    if any(
+        [line for line in lines if key.split()[1] in line] != [exact]
+        for key, exact in zip(public, expected)
+    ):
+        raise RetirementError("original active authorization differs")
+    return {
+        "config": config,
+        "library": library,
+        "authorized": b._recovery_file_identity(b.AUTHORIZED),
     }
 
 
@@ -304,10 +744,19 @@ class Adapter:
         no_conflicts(b, self.sha)
         if b.canonical_source(self.closing_sha) != self.source:
             raise RetirementError("closing source changed")
-        installation = b._installation_evidence(self.sha, b.CONFIG, b.INSTALLED.parent)
         before = workspace_evidence(b, self.sha)
+        active = active_installation_evidence(b, self.sha, before["executor_sha256"])
+        installation = {
+            "config": {
+                key: value
+                for key, value in active["config"].items()
+                if key != "loopback.key"
+            },
+            "library": active["library"],
+        }
         live = live_state(b, self.source, self.closing_sha, self.sha)
         validate_live_snapshot(live, self.sha)
+        validate_configuration(b, self.source, self.sha, live["configuration"])
         if workspace_evidence(b, self.sha) != before:
             raise RetirementError("original workspace changed during inspection")
         self.check_locks()
@@ -316,9 +765,56 @@ class Adapter:
             "closing_sha": self.closing_sha,
             "workspace": before,
             "installation": installation,
+            "active_installation": active,
             "live": live,
             "launcher": b._recovery_file_identity(b.STATE / "launcher.lock"),
         }
+
+    def retire_authorization(self, evidence):
+        # The caller has persisted intent and repeated the complete live proof.
+        # Do not relax bootstrap.revoke for other NEEDS_OPERATOR workspaces.
+        b = self.b
+        self.check_locks()
+        if (
+            active_installation_evidence(
+                b, self.sha, evidence["workspace"]["executor_sha256"]
+            )
+            != evidence["active_installation"]
+        ):
+            raise RetirementError(
+                "active authorization changed before closure revocation"
+            )
+        policy = b._read_json(b.CONFIG / "authorized-release.json")
+        public = [
+            (b.CONFIG / name).read_text().strip()
+            for name in ("cloud.pub", "loopback.pub")
+        ]
+        expected = b.key_lines(policy["expires_at"], *public)
+        retained = b"".join(
+            line
+            for line in b.AUTHORIZED.read_bytes().splitlines(keepends=True)
+            if line.decode().rstrip("\r\n") not in expected
+        )
+        b._replace_authorized(retained)
+        if b.AUTHORIZED.read_bytes() != retained:
+            raise RetirementError("closure revocation postcondition failed")
+        original_config = evidence["active_installation"]["config"]
+        if b._inventory(b.CONFIG, original_config.keys() - {"."}) != original_config:
+            raise RetirementError("configuration drift before old private key removal")
+        (b.CONFIG / "loopback.key").unlink()
+        sync(b.CONFIG)
+        if (
+            b._installation_evidence(self.sha, b.CONFIG, b.INSTALLED.parent)
+            != evidence["installation"]
+        ):
+            raise RetirementError("post-revocation installation differs")
+        if (
+            workspace_evidence(b, self.sha) != evidence["workspace"]
+            or live_state(b, self.source, self.closing_sha, self.sha)
+            != evidence["live"]
+        ):
+            raise RetirementError("retained candidate changed after revocation")
+        self.check_locks()
 
 
 def validate_live_snapshot(live, sha):
@@ -326,6 +822,7 @@ def validate_live_snapshot(live, sha):
         "terminal",
         "terminal_identity",
         "services",
+        "configuration",
         "probes",
     }:
         raise RetirementError("invalid retained live snapshot")
@@ -427,6 +924,7 @@ def closed_evidence(b, sha, receipt, *, historical=False):
         "closing_sha",
         "workspace",
         "installation",
+        "active_installation",
         "live",
         "launcher",
         "evidence_sha256",
@@ -460,8 +958,24 @@ def closed_evidence(b, sha, receipt, *, historical=False):
         )
     ):
         raise RetirementError("original protected closure receipt required")
+    active = intent["active_installation"]
+    if (
+        not isinstance(active, dict)
+        or set(active) != {"config", "library", "authorized"}
+        or not isinstance(active["config"], dict)
+        or "loopback.key" not in active["config"]
+        or intent["installation"]
+        != {
+            "config": {
+                k: v for k, v in active["config"].items() if k != "loopback.key"
+            },
+            "library": active["library"],
+        }
+    ):
+        raise RetirementError("archived revocation installation binding invalid")
     source = b.canonical_source(intent["closing_sha"])
     validate_live_snapshot(intent["live"], sha)
+    validate_configuration(b, source, sha, intent["live"]["configuration"])
     if workspace_evidence(b, sha) != intent["workspace"]:
         raise RetirementError("original failed workspace changed")
     config, library = b._archives(sha)
