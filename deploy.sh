@@ -18,6 +18,10 @@ NC='\033[0m' # No Color
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" = "--select-vision-model" ]]; then
+    shift
+    exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_vision_model.py" "$@"
+fi
 if [[ "${1:-}" = "--prepare-frontend-artifact" ]]; then
     shift
     exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_frontend_artifact.py" "$@"
@@ -184,6 +188,57 @@ arm_remote_release_cleanup_after_terminal_mode_success() {
     # terminal proof. This is the common adoption cleanup edge for frontend,
     # backend, env, restart, and controlled activation.
     _REMOTE_RELEASE_LOCK_ABANDONED=0
+}
+
+check_remote_vision_model_history() {
+    local publisher_sha local_sha
+    local_sha="$(git -C "$SCRIPT_DIR" rev-parse HEAD)" || return 70
+    publisher_sha="${DEPLOY_SOURCE_SHA:-$local_sha}"
+    if ! [[ "$publisher_sha" =~ ^[0-9a-f]{40}$ ]] || [[ "$publisher_sha" != "$local_sha" ]]; then
+        print_error "模型配置审计检查必须绑定精确本地发布源码"
+        return 70
+    fi
+    # Fixed readonly system Python bootstrap checks the staged entry BEFORE it
+    # executes. Never import a checker from the mutable live checkout.
+    ssh "$SERVER" /usr/bin/python3.12 -I -S -B - "$publisher_sha" <<'REMOTE_VISION_MODEL_HISTORY'
+import hashlib
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+try:
+    sha = sys.argv[1]
+    if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+        raise ValueError("invalid binding")
+    root = Path("/var/lib/reva-release/vision-models")
+    if not os.path.lexists(root):
+        raise SystemExit(0)
+    source = Path("/var/lib/reva-release/bootstrap") / sha / "source"
+    entry = source / "scripts/trusted_vision_model.py"
+    for path in [*reversed(entry.parents), entry, root, source / ".git/config"]:
+        info = path.lstat()
+        expected = stat.S_ISREG if path in (entry, source / ".git/config") else stat.S_ISDIR
+        if info.st_uid != 0 or info.st_mode & 0o022 or not expected(info.st_mode) or (expected == stat.S_ISREG and info.st_nlink != 1):
+            raise ValueError("unsafe staged checker")
+    environment = {"PATH":"/usr/bin:/bin", "HOME":"/root", "LC_ALL":"C",
+                   "GIT_CONFIG_NOSYSTEM":"1", "GIT_CONFIG_GLOBAL":"/dev/null",
+                   "GIT_CONFIG_SYSTEM":"/dev/null", "GIT_NO_REPLACE_OBJECTS":"1"}
+    def git(*args):
+        return subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+                               "-C",str(source),*args],env=environment,stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=True,timeout=30,text=True).stdout.strip()
+    if git("rev-parse","HEAD") != sha:
+        raise ValueError("staged revision differs")
+    raw = entry.read_bytes()
+    if len(raw) > 1000000 or hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() != git("rev-parse",sha+":scripts/trusted_vision_model.py"):
+        raise ValueError("staged checker hash differs")
+    os.execve("/usr/bin/python3.12",["/usr/bin/python3.12","-I","-S","-B",str(entry),"--check-history","--publisher-sha",sha],environment)
+except Exception:
+    print("vision model history admission failed",file=sys.stderr)
+    raise SystemExit(70)
+REMOTE_VISION_MODEL_HISTORY
 }
 
 acquire_remote_release_lock() {
@@ -4781,9 +4836,11 @@ main() {
     esac
     case $DEPLOY_MODE in
         "all"|"frontend"|"backend"|"env"|"health-evidence"|"app-store-review-reset"|"restart")
+            check_remote_vision_model_history
             acquire_remote_release_lock "deploy:${DEPLOY_MODE}"
             install_release_cleanup_traps
             assert_remote_release_lock
+            check_remote_vision_model_history
             ;;
     esac
 

@@ -76,6 +76,39 @@ READY 绑定 publisher SHA、完整 frontend tree、锁文件、公开配置、�
 
 ### 8.2 线上配置管理
 
+#### 独立视觉模型配置事务
+
+`deploy.sh --select-vision-model --publisher-sha <current-main-sha>
+--production-sha <deployed-sha> --operation-id <32hex>` 是 operator-only
+入口，默认只读预检；携相同 `--evidence-sha256` 才执行。执行前须精确
+publisher 完整 CI 与独立 G4 GO、实际生产成功回执及原 launcher/business
+锁检查。只允许 `qwen3.8-flash`，不开放 SSH RPC 或新的认证入口。
+
+仅创建 `/var/lib/reva-vision-model/model.env` 与三个现有服务的模型专用
+drop-in；不修改原 `.env`、持久健康授权、发布身份、服务用户或沙箱。
+必须证明有效 EnvironmentFile 顺序保留原 `.env` 和可选 `enabled.env`，
+模型文件实际最后加载，并拒绝环境删除规则及未知来源。受保护文件采用
+身份与变更元数据检查；证据只声明本操作未写这些文件且元数据未漂移，
+不声明逐字节比较，不读取其秘密内容。
+
+配置安装、有界重启、三服务真实 PID 中唯一非秘密模型变量、既有授权
+开关和沙箱、loopback 健康检查通过后，先持久化
+`CONFIG_SUCCEEDED_PENDING_MODEL_ACCEPTANCE` 回执再释放原 lease。
+该终态明确真实模型调用为零、模型验收仍 pending，不是
+`VISION_SUCCEEDED` 或 G6。线上合成验收另行核对现有已授权服务通道、
+实际型号、usage 与请求硬边界；不得伪造真实评测确认。
+
+同入口的 `--rollback` 默认仍只读预检，执行同样绑定新鲜摘要和独占
+lease，只恢复本操作模型专用文件。未知写入或重启结果保留现场与锁，
+禁止盲目重放；配置恢复不证明已退役型号能够服务。后续 canonical
+后端发布保留模型 overlay，须将其纳入有效配置验收；受审替换或移除
+必须显式处理，不能凭基础 `.env` 的模型值推断实际运行模型。
+未终结模型配置审计阻断其它 canonical 发布，禁止删审计或清锁绕过。
+`--finalize-config` / `--finalize-rollback` 只允许在已持久化 verified
+效果、真实服务与模型专用文件回读及原 lease 身份一致时补终态和锁收尾，
+不重放安装、daemon-reload、restart 或模型调用。缺失 verified、部分锁
+身份不明或效果漂移均 BLOCK，保留原现场供负责方受审处理。
+
 注册隔离修复的独立 operator 入口为 canonical `deploy.sh --security-hardening
 --sha <final-sha>`，只在该版本 backend 与前端制品均已成功发布后执行。
 入口、配置备份、互斥与实际隔离验收约束见
