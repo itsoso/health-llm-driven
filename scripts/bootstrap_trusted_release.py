@@ -213,11 +213,14 @@ def _assert_installable(sha):
     _assert_known_activity(history)
 
 
-def install(sha, expiry, public):
+def install(sha, expiry, public, *, backend_ci=False):
     validate_install(sha, expiry, public, now=int(time.time()))
     _assert_installable(sha)
     source, server = reviewed_source(sha)
-    _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
+    if backend_ci:
+        _run(["/usr/bin/python3.12", "-I", "-S", "-B", str(source / "scripts/trusted_backend_admission.py"), "--sha", sha])
+    else:
+        _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
     fd = os.open(STATE / "launcher.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         secure(STATE / "launcher.lock", private=True)
@@ -299,14 +302,26 @@ def _inventory(directory, names):
 
 def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     workspace = STATE / sha
+    retained_closure = os.path.lexists(STATE / "retained-candidate-closures" / sha)
     native_closure = os.path.lexists(STATE / "native-only-closures" / sha)
     partial_laya = os.path.lexists(STATE / "partial-laya-closures" / sha)
     review_closure = os.path.lexists(STATE / "review-maintenance-closures" / sha)
     unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
     contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
     lost_receipt_ack = os.path.lexists(STATE / "lost-closure-receipt-acknowledgments" / sha)
-    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure)) > 1:
+    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure, retained_closure)) > 1:
         raise BootstrapError("conflicting release closure evidence")
+    if retained_closure:
+        if lost_receipt_ack or os.path.lexists(STATE / "recoveries" / sha):
+            raise BootstrapError("conflicting retained candidate closure evidence")
+        path = Path(__file__).absolute().with_name("retained_candidate_retirement.py")
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached retained candidate proof forbidden")
+        spec = importlib.util.spec_from_file_location("reviewed_retained_candidate", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt, historical=historical)
     if native_closure:
         if lost_receipt_ack or os.path.lexists(STATE / "recoveries" / sha):
             raise BootstrapError("conflicting native closure evidence")
@@ -744,12 +759,17 @@ def _finalized_advance_module():
     return module
 
 
-def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None):
+def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
     source, server = reviewed_source(sha)
-    _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
+    if backend_ci:
+        if recovery_receipt is not None or finalized_production_sha is not None:
+            raise BootstrapError("backend CI admission cannot replace recovery or native closure gates")
+        _run(["/usr/bin/python3.12", "-I", "-S", "-B", str(source / "scripts/trusted_backend_admission.py"), "--sha", sha])
+    else:
+        _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
     secure(STATE)
     # Rotation may not recreate the global lock inode of an existing install.
     secure(STATE / "launcher.lock", private=True)
@@ -793,7 +813,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
                     sys.modules[__name__], source, old_sha, finalized_production_sha) != advance:
                 raise BootstrapError("finalized production evidence changed during rotation")
         check_locks()
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"}:
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]
@@ -1347,11 +1367,13 @@ def main():
         create.add_argument("--sha", required=True)
         create.add_argument("--expires-at", default=0, type=int, help="Unix deadline; default 0 stays valid until revocation")
         create.add_argument("--cloud-public-key", required=True)
+        create.add_argument("--backend-ci", action="store_true", help="derive narrow backend admission from actual production evidence")
         rotation = commands.add_parser("rotate", allow_abbrev=False)
         rotation.add_argument("--retire-sha", required=True)
         rotation.add_argument("--sha", required=True)
         rotation.add_argument("--expires-at", default=0, type=int, help="Unix deadline; default 0 permits reuse of the current cloud key")
         rotation.add_argument("--cloud-public-key", required=True)
+        rotation.add_argument("--backend-ci", action="store_true", help="derive narrow backend admission from actual production evidence")
         rotation.add_argument("--recovery-receipt-stdin", action="store_true")
         rotation.add_argument("--finalized-production-sha", help="fixed reviewed native-closure production advance only")
         remove = commands.add_parser("revoke", allow_abbrev=False)
@@ -1382,9 +1404,11 @@ def main():
                     raise BootstrapError("exact protected recovery receipt required")
                 receipt = raw.rstrip(b"\n").decode("ascii")
             result = rotate(args.retire_sha, args.sha, args.expires_at, args.cloud_public_key,
-                            recovery_receipt=receipt, finalized_production_sha=args.finalized_production_sha)
+                            recovery_receipt=receipt, finalized_production_sha=args.finalized_production_sha,
+                            **({"backend_ci": True} if args.backend_ci else {}))
         elif args.action == "install":
-            result = install(args.sha, args.expires_at, args.cloud_public_key)
+            result = install(args.sha, args.expires_at, args.cloud_public_key,
+                             **({"backend_ci": True} if args.backend_ci else {}))
         else:
             result = revoke(args.sha)
         print(json.dumps(result, sort_keys=True))

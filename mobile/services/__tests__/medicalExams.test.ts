@@ -7,6 +7,7 @@ jest.mock('../api', () => ({
 import api from '../api';
 import {
   listMedicalExams,
+  getMedicalExam,
   countAbnormal,
   compareExams,
   relativeExamDate,
@@ -46,14 +47,14 @@ describe('listMedicalExams', () => {
     expect(mockGet).toHaveBeenCalledWith('/medical-exams/me?limit=10');
   });
 
-  it('returns empty on error (no throw)', async () => {
+  it('propagates request failures', async () => {
     mockGet.mockRejectedValueOnce(new Error('500'));
-    expect(await listMedicalExams()).toEqual([]);
+    await expect(listMedicalExams()).rejects.toThrow();
   });
 
   it('returns empty when shape is wrong', async () => {
     mockGet.mockResolvedValueOnce({ data: { not: 'array' } });
-    expect(await listMedicalExams()).toEqual([]);
+    await expect(listMedicalExams()).rejects.toThrow();
   });
 });
 
@@ -384,3 +385,10 @@ describe('relativeExamDate', () => {
     expect(relativeExamDate('not-a-date', NOW)).toBe('not-a-date');
   });
 });
+
+ it('fetches a full owned report by ID independently of list pagination', async () => {
+   const exam = makeExam({ id: 501, overall_assessment: '合成摘要'.repeat(600) + '末尾证据' });
+   mockGet.mockResolvedValueOnce({ data: exam });
+   expect(await getMedicalExam(501)).toEqual(exam);
+   expect(mockGet).toHaveBeenLastCalledWith('/medical-exams/me/501');
+ });

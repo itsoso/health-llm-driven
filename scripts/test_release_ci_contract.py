@@ -8,11 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 PYTEST_SHARD_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
 RELEASE_TESTS = (
+    "scripts/test_run_postgres_ci.py",
+    "scripts/test_backend_release_scope.py",
+    "scripts/test_trusted_backend_admission.py",
+    "scripts/test_backend_release_wiring.py",
+    "scripts/test_trusted_frontend_artifact.py",
     "scripts/test_trusted_frontend_publish.py",
     "scripts/test_trusted_frontend_publish_history.py",
     "scripts/test_backup_security.py",
     "scripts/test_ci_change_scope.py",
     "scripts/test_deploy_script.py",
+    "scripts/test_release_timing.py",
     "scripts/test_generate_api_types.py",
     "scripts/test_health_evidence_activation_runner.py",
     "scripts/test_release_lock.py",
@@ -233,7 +239,6 @@ def test_runtime_jobs_are_conditioned_on_conservative_scope_outputs():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
     expected = {
-        "backend-test-plan": "run_backend",
         "backend-test-shards": "run_backend",
         "backend-quality": "run_backend",
         "release-invariants": "run_release",
@@ -372,15 +377,19 @@ def test_slow_shard_replacements_cover_predecessor_scopes_exactly_once():
 def test_ci_uses_timing_balanced_workers_without_merging_pytest_processes():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
-    plan = jobs["backend-test-plan"]
+    plan = jobs["classify-changes"]
     shards = jobs["backend-test-shards"]
     shard_runs = _run_bodies(shards)
 
     assert "build_ci_pytest_matrix.py" in _run_bodies(plan)
-    assert "fromJson(needs.backend-test-plan.outputs.matrix)" in str(
+    assert "fromJson(needs.classify-changes.outputs.matrix)" in str(
         shards["strategy"]["matrix"]
     )
-    assert "backend-test-plan" in shards["needs"]
+    assert "backend-test-plan" not in jobs
+    assert shards["needs"] == ["classify-changes"]
+    assert plan["outputs"]["matrix"] == "${{ steps.plan.outputs.matrix }}"
+    plan_step = next(step for step in plan["steps"] if step.get("id") == "plan")
+    assert "steps.scope.outputs.run_backend == 'true'" in plan_step["if"]
     assert "run_ci_pytest_worker.py" in shard_runs
     assert "matrix.shards" in shard_runs
     assert shards["strategy"]["fail-fast"] is False
@@ -394,9 +403,18 @@ def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_s
         for step in job["steps"]
         if step.get("name") == "Run Runtime and medication PostgreSQL semantics"
     )
-    run = str(postgres_step["run"])
+    command = shlex.split(str(postgres_step["run"]))
+    assert command == ["python", "../scripts/run_postgres_ci.py", "--output", "$RUNNER_TEMP/postgres-ci"]
+    import ast
+    tree = ast.parse((ROOT / "scripts/run_postgres_ci.py").read_text())
+    selection = next(node.value for node in tree.body if isinstance(node, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id == "SHARDS" for target in node.targets))
+    groups = ast.literal_eval(selection)
+    assert len(groups) == 2
+    run = " ".join(selector for group in groups for selector in group)
     env = postgres_step["env"]
-
+    assert env["APP_ENV"] == "test" and env["CI"] == "true"
+    assert env["DATABASE_URL"] == env["TEST_DATABASE_URL"]
     assert env["TEST_DATABASE_URL"].startswith("postgresql://")
     assert "tests/test_latest_meal_correction.py" in run
     assert env["REGISTRATION_INVITATION_ROLLOUT_ENABLED"] == "true"
@@ -419,3 +437,35 @@ def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_s
         "test_postgres_concurrent_grant_consumption_has_exactly_one_winner"
         in run
     )
+
+
+def test_live_run_broker_delivery_is_verified_with_real_isolated_redis():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["agent-runtime-postgres"]
+    assert job["services"]["redis"]["image"] == "redis:7-alpine"
+    step = next(s for s in job["steps"] if s.get("name") == "Verify live-run task publishing on isolated Redis")
+    assert step["env"]["TEST_LIVE_RUN_BROKER_URL"] == "redis://127.0.0.1:6379/15"
+    assert 'test -n "$TEST_LIVE_RUN_BROKER_URL"' in step["run"]
+    assert "tests/test_live_run_broker_integration.py" in step["run"]
+    assert "continue-on-error" not in step
+def test_live_run_api_contracts_are_selected_by_ci_catalog():
+    import ast
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    catalog = json.loads((root / ".github/ci/backend-pytest-shards.json").read_text())
+    selected = {
+        path.split("::", 1)[1]
+        for shard in catalog["shards"] for path in shard["paths"]
+        if path.startswith("tests/test_live_run.py::")
+    }
+    module = ast.parse((root / "backend/tests/test_live_run.py").read_text())
+    assert not [node.name for node in module.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name.startswith("test_")
+                and not any(ast.unparse(decorator).startswith("pytest.fixture")
+                            for decorator in node.decorator_list)], "top-level tests would be excluded by the CI catalog"
+    classes = {node.name for node in module.body if isinstance(node, ast.ClassDef)
+               and node.name.startswith("Test")}
+    assert classes == selected

@@ -136,6 +136,15 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
                 )
                 raise
             synced_activities = workout_result.get("synced_count", 0)
+            activities_error_count = workout_result.get("failed_count", 0)
+            if activities_error_count:
+                if not garmin_credential_service.mark_activity_sync_partial(db, user_id):
+                    raise RuntimeError("garmin_activity_partial_status_not_persisted")
+                if notify_on_failure:
+                    _notify_garmin_sync_failed(user_id, reason="activity_partial_failure")
+                return {"status": "partial", "success_count": success_count,
+                        "error_count": error_count, "activities_count": synced_activities,
+                        "activities_error_count": activities_error_count}
             logger.info(f"用户 {user_id} 运动活动同步完成: {synced_activities} 条")
 
             # 从运动记录中提取 VO2Max 更新到每日数据
@@ -242,7 +251,7 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
                     logger.warning(f"Agent Planning Loop 失败（不影响同步）: {e}")
 
             # 更新同步状态
-            if not garmin_credential_service.update_sync_status(db, user_id):
+            if not garmin_credential_service.update_sync_status(db, user_id, activities_verified=True):
                 from app.services.data_collection.garmin_errors import GarminSyncError
 
                 raise GarminSyncError("Garmin sync status persistence failed")
@@ -258,14 +267,15 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
             # fail-loud 补缝(safety-review N2):非 auth 的软错误可能整批失败
             # (success_count==0 & error_count>0)却走到这里返回 success —— agent 触发
             # 路径承诺过"万一没成功我也会告诉你",此路径必须通知,否则窄 silent-green。
-            if notify_on_failure and success_count == 0 and error_count > 0:
+            if notify_on_failure and ((success_count == 0 and error_count > 0) or activities_error_count):
                 _notify_garmin_sync_failed(user_id, reason="no_data_synced")
 
             return {
-                "status": "success",
+                "status": "partial" if error_count or activities_error_count else "success",
                 "success_count": success_count,
                 "error_count": error_count,
-                "activities_count": synced_activities
+                "activities_count": synced_activities,
+                "activities_error_count": activities_error_count
             }
 
     except Exception as e:
@@ -541,7 +551,9 @@ def _renew_single_session(db, cred, prefix: str) -> str:
         cred.login_locked_until = None
         cred.credentials_valid = True
         cred.requires_mfa = False
-        cred.last_error = None
+        from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+        if cred.last_error != GARMIN_ACTIVITY_PARTIAL_MESSAGE:
+            cred.last_error = None
         cred.error_count = 0
         db.commit()
         logger.info(f"{prefix} Garmin 原生 token 已检查并更新")

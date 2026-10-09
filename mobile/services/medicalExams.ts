@@ -52,12 +52,18 @@ export interface MedicalExam {
 }
 
 export async function listMedicalExams(limit = 50): Promise<MedicalExam[]> {
-  try {
-    const res = await api.get<MedicalExam[]>(`/medical-exams/me?limit=${limit}`);
-    return Array.isArray(res.data) ? res.data : [];
-  } catch {
-    return [];
+  const res = await api.get<MedicalExam[]>(`/medical-exams/me?limit=${limit}`);
+  if (!Array.isArray(res.data)) throw new Error('报告列表响应格式不正确，请重试');
+  return res.data;
+}
+
+export async function getMedicalExam(examId: number): Promise<MedicalExam> {
+  if (!Number.isSafeInteger(examId) || examId <= 0) throw new Error('报告编号无效');
+  const res = await api.get<MedicalExam>(`/medical-exams/me/${examId}`);
+  if (!res.data || res.data.id !== examId || !Array.isArray(res.data.items)) {
+    throw new Error('报告详情响应格式不正确，请重试');
   }
+  return res.data;
 }
 
 /**

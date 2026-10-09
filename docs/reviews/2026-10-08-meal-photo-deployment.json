@@ -1,0 +1,105 @@
+{
+  "checked_at_utc": "2026-10-08T07:43:38.354724+00:00",
+  "production_sha": "1e3a19e58b075364ed6769f91a374cfc991d554b",
+  "tracked_clean": true,
+  "receipt": {
+    "sha": "1e3a19e58b075364ed6769f91a374cfc991d554b",
+    "state": "SUCCEEDED"
+  },
+  "business_lease_absent": true,
+  "launcher_inode": 7777226,
+  "audit_sha256": {
+    "started.json": "9d7a247b2217abb8f6f00b2d5b5b64466efc852856da15f5ea1a6903cb744dcd",
+    "deployment-started.json": "c77e82f158c9824c8d65c338f297cebe71d09858f3d32feeab42175ecea7b6b4",
+    "completed.json": "afd096f68a41109a21f7c59ce37a32e8b1390b2ca7a3e1cdc5bfcde43a730a30",
+    "deployment.log": "2c0282a0792887d192544e7a49b971299ced7177bf15c347063ad0673237aba6"
+  },
+  "units": {
+    "health-backend": {
+      "MainPID": "2379358",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 15:40:51 CST"
+    },
+    "celery-worker": {
+      "MainPID": "2379360",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 15:40:51 CST"
+    },
+    "celery-beat": {
+      "MainPID": "2379361",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 15:40:51 CST"
+    },
+    "health-frontend": {
+      "MainPID": "2285301",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 14:49:49 CST"
+    }
+  },
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "624719ff6225bbbae44e13ad015e46febd22e9558b3ae1791a2b06037f236545",
+    "backend/app/services/agent_turn_outcome.py": "05d2a621d32a1331ba5bc93842c42d1b7b73af60be88df373e2a22bf33c1e769",
+    "backend/app/services/ai/food_recognition.py": "a1d5fdf9f7fbe29e34c30cab073d372a7c1428064a63877f23ba79742862fe8f"
+  },
+  "loaded_settings": {
+    "owned_read_preplanning": false,
+    "synthesis_thinking_budget": 0,
+    "staged_response_mode": "off",
+    "parallel_synthesis_section_thinking": "off"
+  },
+  "settings_scope": "deployed source loading current config; not process memory inspection",
+  "health_scores": [
+    "60",
+    "60",
+    "60"
+  ],
+  "public_http": [
+    {
+      "url": "https://health.executor.life/api/health",
+      "method": "GET",
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "url": "https://health.executor.life/api/agent/stream",
+      "method": "POST",
+      "expected": 401,
+      "passed": true
+    },
+    {
+      "url": "https://health.executor.life/privacy",
+      "method": "GET",
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "url": "https://health.executor.life/connect/health",
+      "method": "GET",
+      "expected": 200,
+      "passed": true
+    }
+  ],
+  "candidate": "1e3a19e58b075364ed6769f91a374cfc991d554b",
+  "full_ci": 37741765620,
+  "push_ci": 37741692327,
+  "limits": [
+    "No logged-in user health flow or original-photo recognition acceptance",
+    "No Mobile OTA/native/TestFlight; backend-only change",
+    "Public smoke reads no user health records and performs no health writes"
+  ],
+  "status": "deployed_postverified_G5_GO",
+  "validate_run": 37743406333,
+  "backend_workflow": 37744317239,
+  "frontend_service_preserved": true,
+  "probe_correction": "First local postcheck used non-existent health-web unit name and failed assertion; actual health-frontend verified against previous publication evidence. Probe corrected and rerun read-only; production and deployment were not rerun.",
+  "independent_G5": "GO; original-photo and logged-in health G6 acceptance not claimed",
+  "stable_service_recheck": "Same four PIDs and zero restarts after postverification"
+}

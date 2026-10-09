@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import AiConsentDialog from './AiConsentDialog';
 import { manageAiConsent, requireAiConsent, setAiConsentUser } from '@/services/aiConsent';
@@ -29,10 +29,26 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); setAiConsentUser(null); vi.unstubAllGlobals(); });
 
-it('shows actual disclosure and lets the user decline without a write', async () => {
+it.each([false, true])('shows actual disclosure and lets the user decline without a write (deferred open: %s)', async (deferredOpen) => {
+  let pendingDialog: HTMLDialogElement | undefined;
+  if (deferredOpen) {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true, value(this: HTMLDialogElement) { pendingDialog = this; },
+    });
+  }
   render(<AiConsentDialog />);
   const result = requireAiConsent().then(() => true, () => false);
-  expect(await screen.findByText('测试服务接收方')).toBeVisible();
+  const recipient = await screen.findByText('测试服务接收方');
+  // Text can mount before the passive effect opens the native dialog.
+  // Wait for its visible role, rather than treating DOM presence as visibility.
+  const visibleDialog = screen.findByRole('dialog', { name: '第三方 AI 数据使用' });
+  if (deferredOpen) {
+    expect(recipient).not.toBeVisible();
+    await waitFor(() => expect(pendingDialog).toBeDefined());
+    act(() => pendingDialog!.setAttribute('open', ''));
+  }
+  expect(await visibleDialog).toBeVisible();
+  expect(recipient).toBeVisible();
   expect(screen.getByText('本次输入')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: '暂不同意' }));
   expect(await result).toBe(false);

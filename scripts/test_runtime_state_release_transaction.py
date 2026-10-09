@@ -84,6 +84,8 @@ class FakeSystemd:
             self.enablement[unit] = "enabled"
 
     def show(self, unit: str, prop: str) -> str:
+        if prop in runtime_transaction.BACKEND_DRAIN_EFFECTIVE:
+            return runtime_transaction.BACKEND_DRAIN_EFFECTIVE[prop]
         if prop == "ActiveState":
             return self.active_states.get(unit, self.active_state)
         live = self.layout.live_dropins[unit]
@@ -1569,7 +1571,13 @@ def test_dropins_enforce_minimal_external_writable_boundaries() -> None:
         "ExecStart=\n"
         "ExecStart=/opt/health-app/backend/venv/bin/uvicorn main:app --fd 3 "
         "--workers 1 --limit-concurrency 100 --proxy-headers "
-        "--forwarded-allow-ips=127.0.0.1 --no-access-log\n"
+        "--forwarded-allow-ips=127.0.0.1 --no-access-log --timeout-graceful-shutdown 30\n"
+        "KillMode=mixed\n"
+        "TimeoutStopSec=45s\n"
+        "KillSignal=SIGTERM\n"
+        "RestartKillSignal=SIGTERM\n"
+        "SendSIGKILL=yes\n"
+        "FinalKillSignal=SIGKILL\n"
         "ReadWritePaths=\n"
         "ReadWritePaths=/var/lib/health-app/uploads "
         "/var/cache/health-app/skills-hub "
@@ -2814,3 +2822,50 @@ def test_commit_requires_candidate_and_removes_only_legacy_shelf(
         json.loads((layout.transaction_root / "journal.json").read_text())["phase"]
         == "COMMITTED"
     )
+
+
+@pytest.mark.parametrize('property_name,bad_value', [
+    ('KillMode', 'control-group'), ('TimeoutStopUSec', 'infinity'), ('KillSignal', '9'),
+    ('SendSIGKILL', 'no'), ('FinalKillSignal', '15'), ('RestartKillSignal', '9'),
+])
+def test_candidate_rejects_unsafe_backend_drain(tmp_path, monkeypatch, property_name, bad_value):
+    transaction, _, lock_dir, token = _transaction(tmp_path)
+    transaction.prepare('a' * 40, 'b' * 40, lock_dir, token)
+    original = transaction.systemd.show
+    def show(unit, prop):
+        if unit == 'health-backend.service' and prop == property_name:
+            return bad_value
+        return original(unit, prop)
+    monkeypatch.setattr(transaction.systemd, 'show', show)
+    with pytest.raises(TransactionError, match='backend drain'):
+        transaction.install('a' * 40, 'b' * 40, lock_dir, token)
+
+
+def test_backend_drain_contract_is_transactionally_installed():
+    for path in ('health-backend.service', 'dropins/health-backend-runtime-state.conf'):
+        body = (ROOT / 'infra/systemd' / path).read_text()
+        assert 'KillMode=mixed\n' in body
+        assert 'TimeoutStopSec=45s\n' in body
+        assert 'KillSignal=SIGTERM\n' in body
+        assert 'RestartKillSignal=SIGTERM\n' in body
+        assert 'SendSIGKILL=yes\n' in body
+        assert 'FinalKillSignal=SIGKILL\n' in body
+        assert '--timeout-graceful-shutdown 30' in body
+
+
+def test_old_journal_without_drain_fields_restores_legacy_dropin(tmp_path):
+    transaction, layout, lock_dir, token = _transaction(tmp_path)
+    dropin = layout.live_dropins['health-backend.service']
+    dropin.parent.mkdir(parents=True)
+    legacy = b'[Service]\nKillMode=control-group\nTimeoutStopSec=45s\nKillSignal=SIGTERM\n'
+    dropin.write_bytes(legacy)
+    dropin.chmod(0o644)
+    transaction.prepare('a' * 40, 'b' * 40, lock_dir, token)
+    journal = _journal(layout)
+    assert set(journal['old_effective']['health-backend.service']) == {
+        'FragmentPath', 'DropInPaths', 'ExecStart', 'ReadWritePaths',
+    }
+    transaction.install('a' * 40, 'b' * 40, lock_dir, token)
+    assert b'KillMode=mixed\n' in dropin.read_bytes()
+    assert transaction.restore('a' * 40, lock_dir, token) == 'restored'
+    assert dropin.read_bytes() == legacy

@@ -2,6 +2,7 @@
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,40 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/trusted-release.yml").read_text())
+
+
+@pytest.mark.parametrize('job', ['ios-build', 'testflight'])
+@pytest.mark.parametrize('failure', ['', 'release-tools', 'mobile'])
+def test_dependency_installs_overlap_and_both_failures_block_patching(tmp_path, job, failure):
+    body = next(s['run'] for s in WORKFLOW['jobs'][job]['steps']
+                if s.get('name', '').startswith('Install locked CLI'))
+    # Execute the real installation shell, replacing only privileged execution
+    # and npm's external side effect. A rendezvous fails if installs serialize.
+    body = body.split('"$node_bin/node"', 1)[0]
+    body = body.rsplit('/usr/bin/sudo', 1)[0]
+    body = body.replace('/usr/bin/sudo ', '')
+    (tmp_path / 'node').write_text('#!/bin/sh\nexit 0\n')
+    (tmp_path / 'node').chmod(0o755)
+    npm = tmp_path / 'npm'
+    npm.write_text(f'''#!{sys.executable}
+import pathlib, sys, time
+root = pathlib.Path({str(tmp_path)!r})
+name = pathlib.Path(sys.argv[sys.argv.index('--prefix') + 1]).name
+(root / (name + '.started')).touch()
+deadline = time.monotonic() + 3
+while not all((root / (n + '.started')).exists() for n in ['mobile', 'release-tools']):
+    if time.monotonic() > deadline: sys.exit(19)
+    time.sleep(.01)
+(root / (name + '.finished')).touch()
+sys.exit(23 if name == {failure!r} else 0)
+''')
+    npm.chmod(0o755)
+    result = subprocess.run(['/bin/bash', '--noprofile', '--norc', '-euo', 'pipefail', '-c',
+                             body + '\necho PATCHING_ALLOWED'],
+                            env={'PATH': f'{tmp_path}:/usr/bin:/bin'}, capture_output=True, text=True, timeout=10)
+    assert (result.returncode == 0) == (not failure)
+    assert ('PATCHING_ALLOWED' in result.stdout) == (not failure)
+    assert all((tmp_path / (n + '.finished')).exists() for n in ['mobile', 'release-tools'])
 
 
 @pytest.mark.parametrize("job", ["ios-build", "testflight"])
@@ -85,7 +120,7 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
     assert set(triggers) == {"workflow_dispatch"}
     target = triggers["workflow_dispatch"]["inputs"]["target"]
     assert target["default"] == "validate"
-    assert set(target["options"]) == {"validate", "backend", "release", "testflight", "retained-testflight"}
+    assert set(target["options"]) == {"validate", "backend", "backend-v1", "release", "testflight", "retained-testflight"}
     assert WORKFLOW["permissions"] == {"contents": "read", "actions": "read"}
     assert WORKFLOW["concurrency"]["cancel-in-progress"] is False
     for name, job in WORKFLOW["jobs"].items():
@@ -94,8 +129,8 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
         if name not in {"preflight", "release-result"}:
             assert job["environment"] == "release-production"
             expected = {
-                "build-permission": "inputs.target == 'release' || inputs.target == 'backend' || inputs.target == 'testflight'",
-                "backend": "inputs.target == 'release' || inputs.target == 'backend'",
+                "build-permission": "inputs.target == 'release' || (inputs.target == 'backend' || inputs.target == 'backend-v1') || inputs.target == 'testflight'",
+                "backend": "inputs.target == 'release' || (inputs.target == 'backend' || inputs.target == 'backend-v1')",
                 "ios-build": "inputs.target == 'release' || inputs.target == 'testflight'",
                 "testflight": "inputs.target == 'release' || inputs.target == 'testflight'",
                 "retained-testflight": "inputs.target == 'retained-testflight'",

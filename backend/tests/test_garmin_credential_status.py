@@ -79,3 +79,26 @@ def test_data_health_accepts_native_token_without_synthetic_expiry(db):
 
     assert status["session_valid"] is True
     assert status["status"] == "ok"
+
+
+def test_activity_partial_preserves_login_and_prior_success_until_full_success(db):
+    from app.services.auth import garmin_credential_service
+    user = _make_user(db)
+    prior = datetime.now(timezone.utc) - timedelta(minutes=5)
+    cred = GarminCredential(user_id=user.id, garmin_email='synthetic@example.invalid',
+        encrypted_password='unused', credentials_valid=True, error_count=0,
+        last_sync_at=prior, garth_session=encode_native_token_store('{"di_token":"synthetic","di_refresh_token":"synthetic"}'))
+    db.add(cred);db.commit()
+    for _ in range(4):
+        assert garmin_credential_service.mark_activity_sync_partial(db,user.id)
+    db.refresh(cred)
+    assert cred.credentials_valid is True and cred.error_count == 0
+    assert (cred.last_sync_at.replace(tzinfo=timezone.utc) if cred.last_sync_at.tzinfo is None else cred.last_sync_at.astimezone(timezone.utc)) == prior
+    assert get_credential_status(current_user=user,db=db)['health']=='stale'
+    assert _garmin_status(db,user.id,datetime.now(timezone.utc))['status']=='warning'
+    assert not garmin_credential_service.mark_activity_sync_partial(db,user.id+1000)
+    assert garmin_credential_service.update_sync_status(db,user.id)
+    assert get_credential_status(current_user=user,db=db)["health"] == "stale"
+    assert garmin_credential_service.update_sync_status(db,user.id,activities_verified=True)
+    assert get_credential_status(current_user=user,db=db)['health']=='healthy'
+    assert _garmin_status(db,user.id,datetime.now(timezone.utc))['status']=='ok'

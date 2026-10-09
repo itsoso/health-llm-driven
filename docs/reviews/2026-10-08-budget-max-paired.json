@@ -1,0 +1,980 @@
+{
+  "status": "passed_contracts_only",
+  "batch_id": "3766173d4ce34c48996345617b3c135c",
+  "mode": "live",
+  "production_routing": true,
+  "per_task_decision_call_cap": 1,
+  "decision_controls": {
+    "timeout_seconds": 5.0,
+    "min_confidence": 0.8,
+    "max_input_bytes": 12000,
+    "provider": "laya",
+    "admin_control": "held_on_locally"
+  },
+  "models": [
+    "qwen3.8-max"
+  ],
+  "variants": [
+    "runtime_preplan",
+    "preplan_budget512"
+  ],
+  "reference_variant": "runtime_preplan",
+  "cases": [
+    "analysis_31d_rich"
+  ],
+  "planned_tasks": 6,
+  "max_provider_attempts": 24,
+  "per_task_call_cap": 3,
+  "tool_budget_protocol": "logical-and-physical-v2",
+  "per_task_logical_tool_cap": 3,
+  "per_task_model_tool_proposal_cap": 3,
+  "per_task_tool_cap": 6,
+  "per_logical_dispatch_cap": 2,
+  "max_input_bytes_per_call": 262144,
+  "requested_max_output_tokens_per_call": 8000,
+  "provider_timeout_seconds": 45,
+  "task_timeout_seconds": 90,
+  "candidate_disposition": "eval_only_unproven_model_control",
+  "semantic_noninferiority": "not_established",
+  "rows": [
+    {
+      "case": "analysis_31d_rich",
+      "variant": "runtime_preplan",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 2,
+          "payload_sha256": "fc5cd46fe7a5273afc8fd8e176f0954fe40f68ebe564fdbdb8d1ee56cab9fd54",
+          "input_bytes": 20178,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4750,
+          "output_tokens": 665,
+          "cached_tokens": [
+            2048
+          ],
+          "first_content_seconds": 16.25104200001806,
+          "answer_text": "近31天可核验样本很少：睡眠仅1条（9/13，总时长7小时，评分80，Garmin），饮食仅1条（9/12晚餐“合成番茄”，记录热量200千卡）。这两条只能作为单点观察，不能代表31天整体睡眠或饮食模式，也无法判断营养是否充足。",
+          "answer_text_truncated": false,
+          "first_event_seconds": 3.5633646250353195,
+          "first_reasoning_seconds": 3.5633646250353195,
+          "last_event_seconds": 17.30001808400266,
+          "last_event_type": "finish",
+          "event_counts": {
+            "reasoning": 174,
+            "content": 20,
+            "tool_calls": 0,
+            "finish": 1,
+            "other": 0
+          },
+          "request_controls": {
+            "temperature": 0.3,
+            "max_tokens": 8000
+          },
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 17.304542209021747
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 19.78414341597818,
+      "live": true,
+      "wall_seconds": 19.846994582971092,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "分析我最近31天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "diet",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            },
+            {
+              "dimension": "sleep",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            }
+          ]
+        }
+      ],
+      "production_routing": true,
+      "decision_calls": [
+        {
+          "token_source": "api",
+          "input_tokens": 99,
+          "output_tokens": 0,
+          "status": "passed",
+          "model": "laya-multilingual@aa8c91ca088e",
+          "wall_seconds": 0.4567629169905558
+        }
+      ],
+      "tool_budget": {
+        "model_proposals": 0,
+        "logical_executions": 1,
+        "physical_dispatches": 1,
+        "current_dispatches": 1
+      },
+      "decision_routing": {
+        "mode": "on",
+        "provider": "laya",
+        "status": "abstained",
+        "effective_tier": "balanced",
+        "reason": "low_confidence",
+        "suggested_tier": "balanced",
+        "capability": null,
+        "model": "laya-multilingual@aa8c91ca088e",
+        "input_tokens": 99,
+        "output_tokens": 0,
+        "elapsed_ms": 457,
+        "tier_confidence": 0.4822,
+        "capability_confidence": 0.6913
+      },
+      "effective_model_id": "qwen3.8-max",
+      "logical_tool_source": "model_and_server_preplan",
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required",
+        "decision_route_exercised": true
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-08-14至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-08-14至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近31天可核验样本很少：睡眠仅1条（9/13，总时长7小时，评分80，Garmin），饮食仅1条（9/12晚餐“合成番茄”，记录热量200千卡）。这两条只能作为单点观察，不能代表31天整体睡眠或饮食模式，也无法判断营养是否充足。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "runtime_preplanned": true,
+      "runtime_model_call_count": 1,
+      "evaluation_seconds": 19.941775667015463,
+      "repeat": 0
+    },
+    {
+      "case": "analysis_31d_rich",
+      "variant": "preplan_budget512",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 4,
+          "payload_sha256": "5cc8ee85181f1ba0d925c81ee5b77dda151b65f61f57e8df40b173284de8bcfd",
+          "input_bytes": 20202,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4738,
+          "output_tokens": 421,
+          "cached_tokens": [
+            2048
+          ],
+          "first_content_seconds": 5.6635412920149975,
+          "answer_text": "过去31天（8/14–9/13）实际返回的记录非常少：\n\n**饮食**：仅9月12日晚餐1条（合成番茄，200 kcal），其余日期无记录，无法判断整体摄入模式。\n\n**睡眠**：仅9月13日1条（Garmin，总时长7小时，评分80），无深睡/REM等分期数据，无法评估睡眠质量趋势。\n\n**观察**：数据覆盖不足以支撑任何趋势分析或健康结论。当前样本既不能说明饮食充足与否，也不能反映睡眠规律。如需有效分析，建议先积累一段时间的连续记录。",
+          "answer_text_truncated": false,
+          "first_event_seconds": 1.0833462920272723,
+          "first_reasoning_seconds": 1.0833462920272723,
+          "last_event_seconds": 8.150237458001357,
+          "last_event_type": "finish",
+          "event_counts": {
+            "reasoning": 79,
+            "content": 40,
+            "tool_calls": 0,
+            "finish": 1,
+            "other": 0
+          },
+          "request_controls": {
+            "temperature": 0.3,
+            "max_tokens": 8000,
+            "thinking_budget": 512
+          },
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 8.15101858304115
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 9.019009958021343,
+      "live": true,
+      "wall_seconds": 9.072523250011727,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "分析我最近31天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "diet",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            },
+            {
+              "dimension": "sleep",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            }
+          ]
+        }
+      ],
+      "production_routing": true,
+      "decision_calls": [
+        {
+          "token_source": "api",
+          "input_tokens": 99,
+          "output_tokens": 0,
+          "status": "passed",
+          "model": "laya-multilingual@aa8c91ca088e",
+          "wall_seconds": 0.3878629590035416
+        }
+      ],
+      "tool_budget": {
+        "model_proposals": 0,
+        "logical_executions": 1,
+        "physical_dispatches": 1,
+        "current_dispatches": 1
+      },
+      "decision_routing": {
+        "mode": "on",
+        "provider": "laya",
+        "status": "abstained",
+        "effective_tier": "balanced",
+        "reason": "low_confidence",
+        "suggested_tier": "balanced",
+        "capability": null,
+        "model": "laya-multilingual@aa8c91ca088e",
+        "input_tokens": 99,
+        "output_tokens": 0,
+        "elapsed_ms": 388,
+        "tier_confidence": 0.4822,
+        "capability_confidence": 0.6913
+      },
+      "effective_model_id": "qwen3.8-max",
+      "logical_tool_source": "model_and_server_preplan",
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required",
+        "decision_route_exercised": true,
+        "thinking_control_applied": true
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-08-14至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-08-14至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n过去31天（8/14–9/13）实际返回的记录非常少：\n\n**饮食**：仅9月12日晚餐1条（合成番茄，200 kcal），其余日期无记录，无法判断整体摄入模式。\n\n**睡眠**：仅9月13日1条（Garmin，总时长7小时，评分80），无深睡/REM等分期数据，无法评估睡眠质量趋势。\n\n**观察**：数据覆盖不足以支撑任何趋势分析或健康结论。当前样本既不能说明饮食充足与否，也不能反映睡眠规律。如需有效分析，建议先积累一段时间的连续记录。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "runtime_preplanned": true,
+      "runtime_model_call_count": 1,
+      "evaluation_seconds": 9.075268083019182,
+      "repeat": 0
+    },
+    {
+      "case": "analysis_31d_rich",
+      "variant": "preplan_budget512",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 6,
+          "payload_sha256": "778ad576458f9efbba2e799d945a14cba8bc29d8e3b96c0ef30bf714d58791ac",
+          "input_bytes": 20202,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4738,
+          "output_tokens": 353,
+          "cached_tokens": [
+            3072
+          ],
+          "first_content_seconds": 5.785766958026215,
+          "answer_text": "过去31天内，你的记录非常少，无法做趋势分析：\n\n- **饮食**：仅1条记录（9月12日晚餐，200千卡），不足以判断任何饮食模式。\n- **睡眠**：仅1条记录（9月13日，总时长7小时，评分80，来源Garmin），无阶段分布数据，无法评估睡眠质量变化。\n\n数据量太少，暂时只能确认这两条记录本身存在，无法得出规律性观察或给出针对性建议。",
+          "answer_text_truncated": false,
+          "first_event_seconds": 1.4294067500159144,
+          "first_reasoning_seconds": 1.4294067500159144,
+          "last_event_seconds": 8.071918875037227,
+          "last_event_type": "finish",
+          "event_counts": {
+            "reasoning": 70,
+            "content": 32,
+            "tool_calls": 0,
+            "finish": 1,
+            "other": 0
+          },
+          "request_controls": {
+            "temperature": 0.3,
+            "max_tokens": 8000,
+            "thinking_budget": 512
+          },
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 8.072845917020459
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 8.864683208987117,
+      "live": true,
+      "wall_seconds": 8.920755208993796,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "分析我最近31天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "diet",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            },
+            {
+              "dimension": "sleep",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            }
+          ]
+        }
+      ],
+      "production_routing": true,
+      "decision_calls": [
+        {
+          "token_source": "api",
+          "input_tokens": 99,
+          "output_tokens": 0,
+          "status": "passed",
+          "model": "laya-multilingual@aa8c91ca088e",
+          "wall_seconds": 0.3892352089751512
+        }
+      ],
+      "tool_budget": {
+        "model_proposals": 0,
+        "logical_executions": 1,
+        "physical_dispatches": 1,
+        "current_dispatches": 1
+      },
+      "decision_routing": {
+        "mode": "on",
+        "provider": "laya",
+        "status": "abstained",
+        "effective_tier": "balanced",
+        "reason": "low_confidence",
+        "suggested_tier": "balanced",
+        "capability": null,
+        "model": "laya-multilingual@aa8c91ca088e",
+        "input_tokens": 99,
+        "output_tokens": 0,
+        "elapsed_ms": 389,
+        "tier_confidence": 0.4822,
+        "capability_confidence": 0.6913
+      },
+      "effective_model_id": "qwen3.8-max",
+      "logical_tool_source": "model_and_server_preplan",
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required",
+        "decision_route_exercised": true,
+        "thinking_control_applied": true
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-08-14至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-08-14至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n过去31天内，你的记录非常少，无法做趋势分析：\n\n- **饮食**：仅1条记录（9月12日晚餐，200千卡），不足以判断任何饮食模式。\n- **睡眠**：仅1条记录（9月13日，总时长7小时，评分80，来源Garmin），无阶段分布数据，无法评估睡眠质量变化。\n\n数据量太少，暂时只能确认这两条记录本身存在，无法得出规律性观察或给出针对性建议。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "runtime_preplanned": true,
+      "runtime_model_call_count": 1,
+      "evaluation_seconds": 8.922743542003445,
+      "repeat": 1
+    },
+    {
+      "case": "analysis_31d_rich",
+      "variant": "runtime_preplan",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 8,
+          "payload_sha256": "b040321835c3df916e5bd5f99a46cf598dc6f29c7c724b2c56b1977fde756746",
+          "input_bytes": 20178,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4750,
+          "output_tokens": 793,
+          "cached_tokens": [
+            3072
+          ],
+          "first_content_seconds": 17.45878433296457,
+          "answer_text": "近31天可核验样本很少：饮食只有1条晚餐记录，睡眠只有1条按醒来日期归属的记录。\n\n因此只能把它们视为单点样本，不能据此判断31天的睡眠趋势、饮食模式、营养充足性或恢复情况。若后续形成连续多日记录，再看趋势更合适。",
+          "answer_text_truncated": false,
+          "first_event_seconds": 1.2437549579772167,
+          "first_reasoning_seconds": 1.2437549579772167,
+          "last_event_seconds": 18.613927124999464,
+          "last_event_type": "finish",
+          "event_counts": {
+            "reasoning": 213,
+            "content": 20,
+            "tool_calls": 0,
+            "finish": 1,
+            "other": 0
+          },
+          "request_controls": {
+            "temperature": 0.3,
+            "max_tokens": 8000
+          },
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 18.61552470800234
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 19.390554207959212,
+      "live": true,
+      "wall_seconds": 19.44236699998146,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "分析我最近31天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "diet",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            },
+            {
+              "dimension": "sleep",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            }
+          ]
+        }
+      ],
+      "production_routing": true,
+      "decision_calls": [
+        {
+          "token_source": "api",
+          "input_tokens": 99,
+          "output_tokens": 0,
+          "status": "passed",
+          "model": "laya-multilingual@aa8c91ca088e",
+          "wall_seconds": 0.40386041696183383
+        }
+      ],
+      "tool_budget": {
+        "model_proposals": 0,
+        "logical_executions": 1,
+        "physical_dispatches": 1,
+        "current_dispatches": 1
+      },
+      "decision_routing": {
+        "mode": "on",
+        "provider": "laya",
+        "status": "abstained",
+        "effective_tier": "balanced",
+        "reason": "low_confidence",
+        "suggested_tier": "balanced",
+        "capability": null,
+        "model": "laya-multilingual@aa8c91ca088e",
+        "input_tokens": 99,
+        "output_tokens": 0,
+        "elapsed_ms": 404,
+        "tier_confidence": 0.4822,
+        "capability_confidence": 0.6913
+      },
+      "effective_model_id": "qwen3.8-max",
+      "logical_tool_source": "model_and_server_preplan",
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required",
+        "decision_route_exercised": true
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-08-14至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-08-14至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近31天可核验样本很少：饮食只有1条晚餐记录，睡眠只有1条按醒来日期归属的记录。\n\n因此只能把它们视为单点样本，不能据此判断31天的睡眠趋势、饮食模式、营养充足性或恢复情况。若后续形成连续多日记录，再看趋势更合适。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "runtime_preplanned": true,
+      "runtime_model_call_count": 1,
+      "evaluation_seconds": 19.444220083008986,
+      "repeat": 1
+    },
+    {
+      "case": "analysis_31d_rich",
+      "variant": "runtime_preplan",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 10,
+          "payload_sha256": "66c1f037249790a7d80e542a8c09018eaaa784e722e55f196ca1438d5827739c",
+          "input_bytes": 20178,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4750,
+          "output_tokens": 785,
+          "cached_tokens": [
+            3072
+          ],
+          "first_content_seconds": 18.480518791999202,
+          "answer_text": "近31天可核验样本很少：饮食只返回1条晚餐记录；睡眠只返回1条按醒来日期归属的日汇总。基于这两条记录，无法判断这段时间的饮食结构、睡眠趋势或恢复情况。",
+          "answer_text_truncated": false,
+          "first_event_seconds": 1.8679929170175456,
+          "first_reasoning_seconds": 1.8679929170175456,
+          "last_event_seconds": 19.168080999981612,
+          "last_event_type": "finish",
+          "event_counts": {
+            "reasoning": 218,
+            "content": 12,
+            "tool_calls": 0,
+            "finish": 1,
+            "other": 0
+          },
+          "request_controls": {
+            "temperature": 0.3,
+            "max_tokens": 8000
+          },
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 19.169750624976587
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 20.015656083996873,
+      "live": true,
+      "wall_seconds": 20.07398191699758,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "分析我最近31天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "diet",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            },
+            {
+              "dimension": "sleep",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            }
+          ]
+        }
+      ],
+      "production_routing": true,
+      "decision_calls": [
+        {
+          "token_source": "api",
+          "input_tokens": 99,
+          "output_tokens": 0,
+          "status": "passed",
+          "model": "laya-multilingual@aa8c91ca088e",
+          "wall_seconds": 0.3791032080189325
+        }
+      ],
+      "tool_budget": {
+        "model_proposals": 0,
+        "logical_executions": 1,
+        "physical_dispatches": 1,
+        "current_dispatches": 1
+      },
+      "decision_routing": {
+        "mode": "on",
+        "provider": "laya",
+        "status": "abstained",
+        "effective_tier": "balanced",
+        "reason": "low_confidence",
+        "suggested_tier": "balanced",
+        "capability": null,
+        "model": "laya-multilingual@aa8c91ca088e",
+        "input_tokens": 99,
+        "output_tokens": 0,
+        "elapsed_ms": 379,
+        "tier_confidence": 0.4822,
+        "capability_confidence": 0.6913
+      },
+      "effective_model_id": "qwen3.8-max",
+      "logical_tool_source": "model_and_server_preplan",
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required",
+        "decision_route_exercised": true
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-08-14至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-08-14至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近31天可核验样本很少：饮食只返回1条晚餐记录；睡眠只返回1条按醒来日期归属的日汇总。基于这两条记录，无法判断这段时间的饮食结构、睡眠趋势或恢复情况。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "runtime_preplanned": true,
+      "runtime_model_call_count": 1,
+      "evaluation_seconds": 20.0761512920144,
+      "repeat": 2
+    },
+    {
+      "case": "analysis_31d_rich",
+      "variant": "preplan_budget512",
+      "model": "qwen3.8-max",
+      "status": "passed_contracts",
+      "calls": [
+        {
+          "call_index": 12,
+          "payload_sha256": "fb3726f1f71f63b7f63ea13e52d824dfca7eed3b4271127a1d12108bac92ceb9",
+          "input_bytes": 20202,
+          "phase": "answer",
+          "token_source": "api",
+          "input_tokens": 4738,
+          "output_tokens": 411,
+          "cached_tokens": [
+            3072
+          ],
+          "first_content_seconds": 5.380279875011183,
+          "answer_text": "过去31天（8月14日–9月13日）实际返回的记录非常少：\n\n**饮食**：仅1条——9月12日晚餐\"合成番茄\"，记录热量200 kcal。蛋白质、碳水、脂肪等营养素字段为空，无法评估营养结构。\n\n**睡眠**：仅1条——9月13日（Garmin），总时长7小时，评分80分。各阶段时长和入睡/醒来时间未返回。\n\n**小结**：31天窗口内两个维度各只有1条记录，样本量不足以观察趋势或规律。如果你近期有使用其他设备或App记录，可能存在同步未覆盖的情况。",
+          "answer_text_truncated": false,
+          "first_event_seconds": 1.1802506250096485,
+          "first_reasoning_seconds": 1.1802506250096485,
+          "last_event_seconds": 7.93533683399437,
+          "last_event_type": "finish",
+          "event_counts": {
+            "reasoning": 71,
+            "content": 41,
+            "tool_calls": 0,
+            "finish": 1,
+            "other": 0
+          },
+          "request_controls": {
+            "temperature": 0.3,
+            "max_tokens": 8000,
+            "thinking_budget": 512
+          },
+          "actual_models": [
+            "qwen3.8-max"
+          ],
+          "wall_seconds": 7.936566709016915
+        }
+      ],
+      "tool_contracts": [
+        {
+          "tool": "health_query_batch",
+          "arguments_ok": true,
+          "failed": false,
+          "dimensions": [
+            "diet",
+            "sleep"
+          ],
+          "records_ok": true
+        }
+      ],
+      "tool_attempts": 1,
+      "database": "disposable_sqlite",
+      "first_ui_content_seconds": 8.766371208010241,
+      "live": true,
+      "wall_seconds": 8.824977332958952,
+      "database_errors": [],
+      "rejected_tools": [],
+      "knowledge_contracts": [],
+      "query": "分析我最近31天的睡眠和饮食记录。",
+      "allow_knowledge": true,
+      "gateway_decisions": [
+        {
+          "tool": "health_query_batch",
+          "action": "allow",
+          "reason": "health_query_projected_to_calendar_window",
+          "requested_read_scope": [
+            {
+              "dimension": "diet",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            },
+            {
+              "dimension": "sleep",
+              "days": 31,
+              "start_date": "2026-08-14",
+              "end_date": "2026-09-13",
+              "timezone": "Asia/Shanghai"
+            }
+          ]
+        }
+      ],
+      "production_routing": true,
+      "decision_calls": [
+        {
+          "token_source": "api",
+          "input_tokens": 99,
+          "output_tokens": 0,
+          "status": "passed",
+          "model": "laya-multilingual@aa8c91ca088e",
+          "wall_seconds": 0.3441160840447992
+        }
+      ],
+      "tool_budget": {
+        "model_proposals": 0,
+        "logical_executions": 1,
+        "physical_dispatches": 1,
+        "current_dispatches": 1
+      },
+      "decision_routing": {
+        "mode": "on",
+        "provider": "laya",
+        "status": "abstained",
+        "effective_tier": "balanced",
+        "reason": "low_confidence",
+        "suggested_tier": "balanced",
+        "capability": null,
+        "model": "laya-multilingual@aa8c91ca088e",
+        "input_tokens": 99,
+        "output_tokens": 0,
+        "elapsed_ms": 344,
+        "tier_confidence": 0.4822,
+        "capability_confidence": 0.6913
+      },
+      "effective_model_id": "qwen3.8-max",
+      "logical_tool_source": "model_and_server_preplan",
+      "quality": {
+        "stream_matches_saved": true,
+        "database_context_intact": true,
+        "health_rows_unchanged": true,
+        "no_write_receipt": true,
+        "read_contracts": true,
+        "knowledge_contracts": true,
+        "expected_outcome": true,
+        "answer_present": true,
+        "semantic_review": "required",
+        "decision_route_exercised": true,
+        "thinking_control_applied": true
+      },
+      "agent_kernel": "pi",
+      "answer": "信息来源：用户陈述、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-08-14至2026-09-13，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n查询范围：睡眠，2026-08-14至2026-09-13，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n过去31天（8月14日–9月13日）实际返回的记录非常少：\n\n**饮食**：仅1条——9月12日晚餐\"合成番茄\"，记录热量200 kcal。蛋白质、碳水、脂肪等营养素字段为空，无法评估营养结构。\n\n**睡眠**：仅1条——9月13日（Garmin），总时长7小时，评分80分。各阶段时长和入睡/醒来时间未返回。\n\n**小结**：31天窗口内两个维度各只有1条记录，样本量不足以观察趋势或规律。如果你近期有使用其他设备或App记录，可能存在同步未覆盖的情况。",
+      "outcome": "complete",
+      "completion_status": "complete",
+      "runtime_preplanned": true,
+      "runtime_model_call_count": 1,
+      "evaluation_seconds": 8.827012708992697,
+      "repeat": 2
+    }
+  ],
+  "source_sha256": {
+    "backend/eval/full_task_prompt_benchmark.py": "a5bb5522596ffe06d98828e766a7c9a501c4de6d4c5094c2de72fd63bb712d68",
+    "scripts/benchmark_prompt_full_task.py": "c9c61ba056f479422f78c1b015e8197a2a5065238229db8400368e35370946df",
+    "backend/eval/experimental_read_thinking_budget.py": "5fd2fed7b36e5a2d0baadb5a49e9f124ba46edd8235b6eaa7d44109b511e2173",
+    "backend/eval/experimental_read_synthesis.py": "bb23ec6de450b4f08924e2f577520f1a92184f18cb8b6e8b1bfee58b9d17f617",
+    "backend/eval/experimental_owned_read_preplan.py": "9de6ac723ddf3968a75174e3543f7e30796ceeeabd9574a1b68c74eb6ff57068",
+    "backend/eval/experimental_empty_read_terminal.py": "ce67631cce0356b9a623664f482ebc64115b8ce8988d5d3fa87bdde08a179cc0",
+    "backend/eval/experimental_read_evidence_format.py": "a6833d3511cb673fd5d78ec5bf0067e379fe97f17a76b252a4ba10909ad3f2e4",
+    "backend/app/services/agent_composed_read_completion.py": "4e678d1db62190868a67deeba3f00c6636e737f8992d142b9b6ed38aca2e0496",
+    "backend/app/services/health_context_lite_service.py": "e414ebafd386f7ce15b1abcd2819be5da2b08ae0ab87c44c47def6108b02b265",
+    "backend/app/config.py": "ba55ea0ab6a455d630bcd6cf344a635eaffa9a165c4f6fb3a9f226c768f28eed",
+    "backend/app/services/agent_executor.py": "587113f67838ce79939a34fd1cb240723795c20768371f99e9e626ad86202bff",
+    "backend/app/services/agent_prompt_sections.py": "a430fac679df19998d78f007c5a3abd933c84af4daf3edecc69a5e15b1396caa",
+    "backend/app/services/agent_longitudinal_read.py": "65c9c42e6fbbd7139d5c2a98ce86e4321d36fa9c8a579bd2b3378492ddf620fd",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a",
+    "backend/app/services/agent_tool_prompt_projection.py": "0842cd57a4599159ea78889740878a153f6112b9f83a028e176fcd0baed0b44b",
+    "backend/app/services/tool_schema_registry.py": "d0b4c0745ca73912c2a09f42c525e4bf90fe05ecc548bb99a84a5106587c6fb4",
+    "backend/app/services/llm/providers/openai_provider.py": "30de34ae466ff6c525170d0810cda04186c18050cb1ac3bda88efd7d16c06dc3",
+    "backend/app/services/llm/usage_tracker.py": "8309b63852951317e310f06550809b718d29f4ccaca2f6d85abb40c425cfec05",
+    "backend/app/services/llm/model_registry.py": "e6bbae10fe66f11a46d51b2dc4ea27535c084604db567279b48cf2bdc582cbd1",
+    "backend/app/services/llm/factory.py": "c898fc90e35d6832e64ccb535044029bd78fc82f155e76462766c5e9c9fbc2c6",
+    "backend/app/services/llm/task_routing.py": "f0522eade7eae6d856340637b31989605475438c8d3dd800e6888b2a9a168a61",
+    "backend/app/services/decisions/config.py": "9ecfb9295aa6891437b7fe9445437b6bd829b22fdff6e759e51074c7bdbfb2c8",
+    "backend/app/services/decisions/routing.py": "64f1e7a49c60cc3f05b8d5c16095a569a8e785f92e3234b3a1ed19b7903ede25",
+    "backend/app/services/decisions/systemone.py": "d9a30d9ce78d0013184a11c0a3e33f2be92ed9af6da306d2574885f780be2b42"
+  },
+  "limits": [
+    "Fixed synthetic read-task screen, not production load or full holdout coverage.",
+    "Real resolver and Laya on, staged off, application temperature/output limits retained; admin mode held on locally, real production admin control itself is not exercised.",
+    "Redis/Twin cache disabled; application prompts and read adapters retained.",
+    "Rich-profile cases seed synthetic allergies, chronic condition and medication; clinical/CGM context and optional local knowledge base remain absent.",
+    "Per-pair synthetic user and record IDs, independent conversations, real audited consent; no production database.",
+    "First UI content is not a clinically useful-result metric.",
+    "Answer-stage visible content is retained before guards for synthetic-only diagnostics, capped at 16000 characters with explicit truncation. No reasoning content is captured.",
+    "Small-sample percentiles and deterministic contracts do not prove noninferiority.",
+    "The output cap is a request parameter; reported API completion usage can exceed it and remains recorded.",
+    "Baseline and historical eval variants explicitly disable runtime preplanning to isolate its effect.",
+    "No real API token/latency claims in scripted mode; no automatic runtime enablement."
+  ],
+  "summary": [
+    {
+      "model": "qwen3.8-max",
+      "variant": "preplan_budget512",
+      "tasks": 3,
+      "provider_attempts": 3,
+      "decision_attempts": 3,
+      "total_call_attempts": 6,
+      "total_api_attempts": 6,
+      "decision_input_tokens_known": 297,
+      "decision_output_tokens_known": 0,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 14214,
+      "api_output_tokens_known": 1185,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 8.920755208993796,
+        "p95": 9.072523250011727,
+        "p99": 9.072523250011727
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "variant": "runtime_preplan",
+      "tasks": 3,
+      "provider_attempts": 3,
+      "decision_attempts": 3,
+      "total_call_attempts": 6,
+      "total_api_attempts": 6,
+      "decision_input_tokens_known": 297,
+      "decision_output_tokens_known": 0,
+      "passed_contracts": 3,
+      "failed_tasks": 0,
+      "api_input_tokens_known": 14250,
+      "api_output_tokens_known": 2243,
+      "usage_unknown_calls": 0,
+      "all_api_usage_known": true,
+      "timed_tasks": 3,
+      "wall_seconds_all_tasks": {
+        "p50": 19.846994582971092,
+        "p95": 20.07398191699758,
+        "p99": 20.07398191699758
+      }
+    }
+  ]
+}

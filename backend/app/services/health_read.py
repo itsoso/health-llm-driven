@@ -88,6 +88,40 @@ def canonical_read(
     return None
 
 
+def read_selected_medical_exam(db: Session, user_id: Optional[int], exam_id: int, *, reference_date: date) -> str:
+    """Read one selected report after checking ownership; never substitute another report."""
+    from app.models.medical_exam import MedicalExam
+    from sqlalchemy.orm import selectinload
+
+    if user_id is None or type(exam_id) is not int or exam_id <= 0:
+        return "Error: 无法读取所选体检报告，请重新选择你自己的报告。"
+    exam = db.query(MedicalExam).options(selectinload(MedicalExam.items)).filter(
+        MedicalExam.id == exam_id,
+        MedicalExam.user_id == user_id,
+        MedicalExam.exam_date <= reference_date,
+    ).one_or_none()
+    if exam is None:
+        return "Error: 无法读取所选体检报告，请重新选择你自己的报告。"
+    return json.dumps({
+        "exam_id": exam.id,
+        "original_image_verified": False,
+        "evidence_note": "依据为服务端已存储的报告文本和指标，可能包含OCR或人工录入内容；本次未核验原始影像。",
+        "exam_date": exam.exam_date.isoformat(),
+        "exam_type": exam.exam_type,
+        "overall_assessment": exam.overall_assessment,
+        "conclusions": exam.conclusions,
+        "count": len(exam.items),
+        "items": [{
+            "name": item.item_name,
+            "value": item.value if item.value is not None else item.value_text,
+            "unit": item.unit,
+            "reference_range": item.reference_range,
+            "is_abnormal": item.is_abnormal,
+            "record_date": exam.exam_date.isoformat(),
+        } for item in exam.items],
+    }, ensure_ascii=False)
+
+
 # ── 病症发作 → IllnessEpisode ────────────────────────────────────────────
 def read_illness_episodes(
     db: Session,
@@ -580,3 +614,120 @@ def _safe_rollback(db: Session) -> None:
         db.rollback()
     except Exception:
         pass
+
+
+def read_latest_garmin_running_review(
+    db: Session, user_id: int, *, reference_now: datetime, timezone: str,
+    reported_distance_km: float | None = None,
+) -> dict:
+    """Read at most one completed, dated Garmin running record for this day.
+
+    This attests to existing records only. It never attests to a background job
+    completing or to the selected event being the just-reported activity.
+    """
+    from datetime import UTC
+    from zoneinfo import ZoneInfo
+    from app.models.daily_health import WorkoutRecord
+    if type(user_id) is not int or user_id <= 0 or reference_now.utcoffset() is None:
+        raise ValueError('garmin_review_owner_and_time_required')
+    local_now = reference_now.astimezone(ZoneInfo(timezone))
+    day = local_now.date()
+    result = {'availability': 'no_data', 'record': None,
+              'selection': 'latest_recorded_running_today',
+              'start_date': day.isoformat(), 'end_date': day.isoformat(), 'timezone': timezone,
+              'freshness': 'existing_record_not_sync_proof', 'matches_reported_distance': None,
+              'unavailable_evidence': ['age', 'personal_maximum_heart_rate', 'resting_heart_rate', 'heart_rate_time_series'],
+              'evidence_limits': 'Summary metrics cannot establish heart-rate zones, variability, personal safety, or a progression prescription.'}
+    # Garmin's GMT-only fallback may store a UTC calendar date. Authority is
+    # the user's local absolute-time window, never that fallback date. Unknown
+    # starts on the stored local day remain ambiguous rather than disappearing.
+    from sqlalchemy import and_
+    day_start = datetime.combine(day, time.min, tzinfo=ZoneInfo(timezone)).astimezone(UTC)
+    day_end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=ZoneInfo(timezone)).astimezone(UTC)
+    rows = db.query(WorkoutRecord).filter(
+        WorkoutRecord.user_id == user_id,
+        or_(and_(WorkoutRecord.start_time >= day_start, WorkoutRecord.start_time < day_end),
+            and_(WorkoutRecord.start_time.is_(None), WorkoutRecord.workout_date == day)),
+        WorkoutRecord.workout_type == 'running', WorkoutRecord.source == 'garmin',
+    ).order_by(WorkoutRecord.start_time.desc(), WorkoutRecord.id.desc()).limit(101).all()
+    if len(rows) > 100:
+        return {**result, 'availability': 'ambiguous', 'reason_code': 'too_many_records'}
+    completed = []
+    for row in rows:
+        if row.start_time is None or row.end_time is None:
+            return {**result, 'availability': 'ambiguous', 'reason_code': 'activity_time_unknown'}
+        start, end = row.start_time, row.end_time
+        # SQLite drops offsets on DateTime(timezone=True); production PG retains
+        # them. New Garmin timestamps are normalized to UTC at ingestion.
+        if start.utcoffset() is None or end.utcoffset() is None:
+            if db.bind.dialect.name != 'sqlite':
+                return {**result, 'availability': 'ambiguous', 'reason_code': 'activity_time_unknown'}
+            start, end = start.replace(tzinfo=UTC), end.replace(tzinfo=UTC)
+        if (start.astimezone(ZoneInfo(timezone)).date() != day
+                or end <= start or start > reference_now or end > reference_now):
+            continue
+        completed.append((start, end, row))
+    completed.sort(key=lambda item: item[0], reverse=True)
+    if not completed:
+        return result
+    if len(completed) > 1 and completed[0][0] == completed[1][0]:
+        return {**result, 'availability': 'ambiguous', 'reason_code': 'latest_activity_not_unique'}
+    start, end, row = completed[0]
+    result.update(availability='available', record={
+        'id': row.id, 'source': 'garmin', 'workout_type': 'running',
+        'record_date': day.isoformat(), 'start_time': start.isoformat(), 'end_time': end.isoformat(),
+        'duration_seconds': row.duration_seconds, 'distance_meters': row.distance_meters,
+        'avg_heart_rate': row.avg_heart_rate, 'max_heart_rate': row.max_heart_rate,
+        'avg_pace_seconds_per_km': row.avg_pace_seconds_per_km,
+        'calories': row.calories,
+    })
+    if reported_distance_km is not None and row.distance_meters is not None:
+        result['matches_reported_distance'] = abs(row.distance_meters - reported_distance_km * 1000) <= 1
+    return result
+
+
+def read_owned_imaging_reports(db: Session, user_id: int, scope, *, reference_date: date) -> str:
+    """Complete stored narrative for an explicit owner/anatomy/modality scope.
+
+    No implicit recency window. Stored narrative may be OCR and is not proof
+    of original-image review or of a current diagnosis.
+    """
+    from sqlalchemy import String, cast
+    from sqlalchemy.orm import selectinload
+    from app.models.medical_exam import MedicalExam, MedicalExamItem
+    from app.services.agent_kernel.medical_narrative_read_scope import MedicalNarrativeReadScope
+    if type(user_id) is not int or user_id <= 0 or not isinstance(scope, MedicalNarrativeReadScope):
+        raise ValueError('imaging_report_scope_required')
+    if scope.modality != 'MRI' or scope.anatomy not in {
+        side + body for side in ('', '左', '右') for body in ('肩','膝','髋','肘','腕','踝')
+    }:
+        raise ValueError('imaging_report_scope_invalid')
+    searchable = (MedicalExam.overall_assessment, MedicalExam.exam_type,
+                  MedicalExam.body_system, cast(MedicalExam.conclusions, String))
+    def contains(term):
+        pattern = '%' + term + '%'
+        return or_(*(column.ilike(pattern) for column in searchable),
+            MedicalExam.items.any(or_(MedicalExamItem.item_name.ilike(pattern), MedicalExamItem.value_text.ilike(pattern))))
+    rows = db.query(MedicalExam).options(selectinload(MedicalExam.items)).filter(
+        MedicalExam.user_id == user_id, MedicalExam.exam_date <= reference_date,
+        contains(scope.anatomy), or_(contains('MRI'), contains('磁共振'), contains('核磁')),
+    ).order_by(MedicalExam.exam_date.desc(), MedicalExam.id.desc()).limit(11).all()
+    result = {'availability': 'no_data', 'reports': [],
+              'scope': {'anatomy': scope.anatomy, 'modality': scope.modality},
+              'limitations': ['stored_text_may_be_ocr_not_original_image_verification',
+                              'past_report_not_current_diagnosis', 'missing_report_not_proof_exam_never_happened']}
+    if len(rows) > 10:
+        result.update(availability='requires_selection', reason_code='too_many_imaging_reports')
+    elif rows:
+        reports = [{'id': row.id, 'exam_date': row.exam_date.isoformat(), 'exam_type': row.exam_type,
+                    'overall_assessment': row.overall_assessment, 'conclusions': row.conclusions,
+                    'items': [{'item_name': item.item_name, 'value_text': item.value_text,
+                               'value': item.value, 'unit': item.unit, 'result': item.result,
+                               'source': item.source} for item in row.items],
+                    'narrative_available': bool(row.overall_assessment or row.conclusions or any(item.value_text for item in row.items))}
+                   for row in rows]
+        if len(json.dumps(reports, ensure_ascii=False)) > 20000:
+            result.update(availability='requires_selection', reason_code='imaging_narrative_over_budget')
+        else:
+            result.update(availability='available', reports=reports)
+    return json.dumps(result, ensure_ascii=False, default=str)

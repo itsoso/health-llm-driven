@@ -143,6 +143,14 @@ export default function ExamExplainScreen() {
             </Text>
           </View>
 
+          {data.exam.overall_assessment ? (
+            <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+              <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>报告文本摘要</Text>
+              <Text style={{ color: c.labelSecondary }}>OCR 或人工录入摘要，不是原始影像；请核对原报告。</Text>
+              <Text selectable style={{ color: c.labelPrimary }}>{data.exam.overall_assessment}</Text>
+            </View>
+          ) : null}
+
           {/* Summary */}
           {expl?.summary && (
             <View style={[styles.card, { backgroundColor: c.brandLight, borderColor: c.brand }]}>
@@ -166,7 +174,7 @@ export default function ExamExplainScreen() {
             navigationMode="return"
             label="跟小巴讨论这些异常项"
             accessibilityLabel="跟小巴讨论这些异常项"
-            prompt="请基于这次体检异常解读，帮我按优先级梳理风险、行动、复查安排和需要向医生确认的问题。不要替代诊断或用药建议。"
+            prompt="请基于我这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。"
             context={createExamExplainAgentContext(data as any)}
             badge={`体检异常 ${data.abnormal_items.length} 项`}
           />

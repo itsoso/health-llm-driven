@@ -189,6 +189,30 @@ function upsertOptimisticTurnPair(
 
 /** 2026-05-14 FIX-7: 把 message.meta (后端持久化的性能/可解释性 JSON)
  * 映射到 UIMessage 字段, 让 reload 也能恢复 chat bubble footer. */
+function allowsAnswerArtifacts(phase: string): boolean {
+  return phase === 'completed' || phase === 'partial' || phase === 'waiting_for_user';
+}
+
+// A failed analysis cannot revoke a meal already committed by the server.
+// Keep this exception restricted to matching, verified diet receipts.
+function terminalAnswerCards(cards: any, receipts: any, allowAnswer: boolean): any[] {
+  if (!Array.isArray(cards)) return [];
+  if (allowAnswer) return cards;
+  const verifiedIds = new Set((Array.isArray(receipts) ? receipts : [])
+    .filter(r => r?.verified === true && r.resource_type === 'diet_record'
+      && r.resource_id != null && String(r.resource_id).trim() !== '')
+    .map(r => String(r.resource_id)));
+  return cards.filter(card => card?.type === 'diet_draft'
+    && card.data?.recorded === true && card.data.record_id != null
+    && verifiedIds.has(String(card.data.record_id)));
+}
+
+function historyAllowsAnswerArtifacts(meta: any): boolean {
+  return allowsAnswerArtifacts(recoveredAgentPhase(
+    meta?.completion_status, meta?.turn_outcome?.status, false,
+  ));
+}
+
 function applyMeta(msg: any): Partial<UIMessage> {
   const meta = msg?.meta;
   if (!meta || typeof meta !== 'object') return {};
@@ -208,13 +232,13 @@ function applyMeta(msg: any): Partial<UIMessage> {
     model: typeof meta.model === 'string' ? meta.model : undefined,
     llmUsage: meta.llm_usage && typeof meta.llm_usage === 'object' ? meta.llm_usage : undefined,
     perf: meta.perf && typeof meta.perf === 'object' ? meta.perf : undefined,
-    sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
-    answerEvidence: normalizeAnswerEvidence(meta.answer_evidence),
+    sourcesUsed: historyAllowsAnswerArtifacts(meta) && Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
+    answerEvidence: historyAllowsAnswerArtifacts(meta) ? normalizeAnswerEvidence(meta.answer_evidence) : undefined,
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     terminalStatus: normalizeAgentTerminalStatus(meta.turn_outcome?.status),
     generationStatus: meta.generation_status,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
-    medicalCitations: normalizeMedicalCitations(meta.medical_citations),
+    medicalCitations: historyAllowsAnswerArtifacts(meta) ? normalizeMedicalCitations(meta.medical_citations) : undefined,
     thinkingSteps: normalizeThinkingSteps(meta.thinking_steps ?? meta.thought_steps),
     writeReceipts: noWriteTerminal
       ? []
@@ -407,7 +431,9 @@ export function restoreMessagesFromHistory(
   (msgs || []).forEach((m: any, i: number) => {
     const baseId = `${idPrefix}-${m.id || i}`;
     const messageMeta = applyMeta(m);
-    const serverCards = dedupeServerCards(renderServerCards(m?.meta?.cards));
+    const serverCards = dedupeServerCards(renderServerCards(terminalAnswerCards(
+      m?.meta?.cards, m?.meta?.write_receipts, historyAllowsAnswerArtifacts(m?.meta),
+    )));
     const hasTerminalMedicationCard = serverCards.some((card) => {
       if (card.type !== 'medication_draft') return false;
       const decisionStatus = normalizeMedicationDecisionStatus(card.data?.decision_status)
@@ -1723,6 +1749,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const reconcileAcceptedTurnAfterTransportLoss = async (
       receivedContentSuffix = STREAM_RECOVERY_SUFFIX,
     ): Promise<boolean> => {
+      // Until authoritative recovery succeeds, streamed evidence is provisional.
+      setMessages(prev => prev.map(message => message.id === aId ? {
+        ...message, answerEvidence: undefined, sourcesUsed: undefined, medicalCitations: undefined,
+      } : message));
       const acceptedBeforeReconciliation = (
         acceptedByServer && typeof streamConversationId === 'number'
       );
@@ -2232,16 +2262,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           }
           const allowDoneCards = (
             evt.requestPersisted !== false
-            && (
-              terminalTurn.phase === 'completed'
-              || terminalTurn.phase === 'partial'
-              || terminalTurn.phase === 'waiting_for_user'
-            )
+            && allowsAnswerArtifacts(terminalTurn.phase)
             && typeof evt.messageId === 'number'
           );
-          const rawDoneCards = (
-            allowDoneCards && Array.isArray((evt as any).cards)
-          ) ? (evt as any).cards : [];
+          const rawDoneCards = evt.requestPersisted !== false && typeof evt.messageId === 'number'
+            ? terminalAnswerCards((evt as any).cards, evt.writeReceipts, allowDoneCards)
+            : [];
           const terminalServerCards = dedupeServerCards(renderServerCards(rawDoneCards));
           const terminalCards = terminalCardsForMessages(terminalServerCards);
           // done 收尾原子性: 把 token 缓冲里最后一批一起折进这次 setMessages, 且同帧
@@ -2278,10 +2304,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               model: evt.model,
               llmUsage: evt.llmUsage,
               perf: evt.perf,
-              sourcesUsed: evt.sourcesUsed,
-              answerEvidence: evt.answerEvidence ?? m.answerEvidence,
+              sourcesUsed: allowDoneCards ? evt.sourcesUsed : undefined,
+              answerEvidence: allowDoneCards ? evt.answerEvidence ?? m.answerEvidence : undefined,
               toolsUsed: evt.toolsUsed,
-              medicalCitations: evt.medicalCitations,
+              medicalCitations: allowDoneCards ? evt.medicalCitations : undefined,
               completionStatus: effectiveCompletionStatus,
               terminalStatus: evt.terminalStatus,
               generationStatus: evt.generationStatus,
@@ -2353,6 +2379,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             currentStatus: undefined,
             completionStatus: 'error',
             medicalCitations: undefined,
+          answerEvidence: undefined,
+          sourcesUsed: undefined,
             content: stripThinkingPlaceholder(m.content)
               ? stripThinkingPlaceholder(m.content) + `\n❌ ${errMsg}`
               : `❌ ${errMsg}`,
@@ -2378,6 +2406,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           currentStatus: undefined,
           completionStatus: 'interrupted',
           medicalCitations: undefined,
+          answerEvidence: undefined,
+          sourcesUsed: undefined,
           content: stripThinkingPlaceholder(m.content)
             ? `${stripThinkingPlaceholder(m.content)}\n\n[回复中断，已保留已接收内容]`
             : '[回复中断，请重新提问]',
@@ -2543,6 +2573,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         currentStatus: undefined,
         completionStatus: isAbort ? 'interrupted' : 'error',
         medicalCitations: undefined,
+        answerEvidence: undefined,
+        sourcesUsed: undefined,
         content: stripThinkingPlaceholder(m.content)
           ? (isAbort ? stripThinkingPlaceholder(m.content) + '\n\n[回复中断，已保留已接收内容]' : stripThinkingPlaceholder(m.content) + `\n❌ ${sanitizeChatErrorMessage(err?.message, '请求失败')}`)
           : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${sanitizeChatErrorMessage(err?.message, '请求失败')}`),

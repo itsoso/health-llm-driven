@@ -148,3 +148,47 @@ async def test_missing_pi_runtime_never_falls_back_to_legacy_loop(tmp_path):
     with pytest.raises(PiKernelError, match="pi_runtime_unavailable"):
         async with PiKernelSession(command=[str(tmp_path / "missing-node")]):
             pytest.fail("unavailable runtime must fail before any tool call")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("runtime_flag", ["false", "true", None])
+async def test_child_preserves_explicit_runtime_flag_without_inheriting_secrets(
+    tmp_path, monkeypatch, runtime_flag
+):
+    flag_name = "HEALTH_EVIDENCE_RUNTIME_ENABLED"
+    if runtime_flag is None:
+        monkeypatch.delenv(flag_name, raising=False)
+    else:
+        monkeypatch.setenv(flag_name, runtime_flag)
+    for key in ("TOKENPLAN_API_KEY", "DATABASE_URL", "NODE_OPTIONS", "NODE_PATH"):
+        monkeypatch.setenv(key, "synthetic-sensitive-value")
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import json,os\ninput()\n"
+        f"assert os.environ.get({flag_name!r}) == {runtime_flag!r}\n"
+        "assert not any(key in os.environ for key in "
+        "['TOKENPLAN_API_KEY','DATABASE_URL','NODE_OPTIONS','NODE_PATH'])\n"
+        "print(json.dumps({'type':'done','content':'clean','messages':[],"
+        "'finish_reason':'stop','turns':1}),flush=True)\n"
+    )
+    async with PiKernelSession(command=[sys.executable, str(child)]) as session:
+        await session.start(messages=[], tools=[], max_turns=2)
+        assert (await anext(session))["content"] == "clean"
+    assert session.returncode == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("runtime_flag", ["", "False", "TRUE", "0", "1", " false", "false\n", "synthetic-secret"])
+async def test_invalid_runtime_flag_rejects_before_spawning_child(monkeypatch, runtime_flag):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setenv("HEALTH_EVIDENCE_RUNTIME_ENABLED", runtime_flag)
+    spawn = AsyncMock()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    session = PiKernelSession()
+    with pytest.raises(PiKernelError) as error:
+        async with session:
+            pass
+    assert str(error.value) == "pi_invalid_runtime_flag"
+    spawn.assert_not_awaited()
+    assert session.process is None

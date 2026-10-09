@@ -11,7 +11,7 @@ on:
         required: true
         default: validate
         type: choice
-        options: [validate, backend, release, testflight, retained-testflight]
+        options: [validate, backend, backend-v1, release, testflight, retained-testflight]
 permissions:
   contents: read
   actions: read
@@ -30,6 +30,7 @@ jobs:
       - name: Materialize canonical source and check exact CI without production credentials
         env:
           TARGET_SHA: ${{ inputs.sha }}
+          CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
         run: |
           test "$GITHUB_REF" = refs/heads/main
           test "$GITHUB_REPOSITORY" = itsoso/health-llm-driven
@@ -44,13 +45,13 @@ jobs:
             test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
             /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
-          ' reva-bootstrap "$TARGET_SHA"
+            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1" --target "$2"
+          ' reva-bootstrap "$TARGET_SHA" "$CI_TARGET"
       - name: Record non-release result
         run: echo 'Exact source and CI preflight passed. This is not a deployment receipt.' >> "$GITHUB_STEP_SUMMARY"
 
   build-permission:
-    if: inputs.target == 'release' || inputs.target == 'backend' || inputs.target == 'testflight'
+    if: inputs.target == 'release' || (inputs.target == 'backend' || inputs.target == 'backend-v1') || inputs.target == 'testflight'
     needs: preflight
     environment: release-production
     runs-on: ubuntu-24.04
@@ -59,6 +60,7 @@ jobs:
       - name: Independently materialize and recheck before read-only server readiness checks
         env:
           TARGET_SHA: ${{ inputs.sha }}
+          CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
         run: |
           test "$GITHUB_REF" = refs/heads/main
           test "$GITHUB_REPOSITORY" = itsoso/health-llm-driven
@@ -73,12 +75,14 @@ jobs:
             test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
             /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
-          ' reva-bootstrap "$TARGET_SHA"
+            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1" --target "$2"
+          ' reva-bootstrap "$TARGET_SHA" "$CI_TARGET"
       - name: Check actual server readiness without consuming authorization
         env:
           TARGET_SHA: ${{ inputs.sha }}
-          RELEASE_RPC: ${{ inputs.target == 'testflight' && 'check-testflight' || 'check' }}
+          CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
+          RELEASE_RPC: ${{ inputs.target == 'testflight' && 'check-testflight' || inputs.target == 'backend-v1' && 'check-backend-v1' || 'check' }}
+          BACKEND_RPC: ${{ inputs.target == 'backend-v1' && 'run-backend-v1' || 'run' }}
           RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
           RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
         run: |
@@ -86,7 +90,7 @@ jobs:
           test -n "$RELEASE_HOST_KEYS"
           /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
             /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
-              --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
+              --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA" --target "$CI_TARGET"
           umask 077
           private_dir="$(mktemp -d)"
           trap 'rm -f -- "$private_dir/key" "$private_dir/known_hosts"; rmdir -- "$private_dir"' EXIT
@@ -105,7 +109,7 @@ jobs:
               --sha "$TARGET_SHA" --state CHECKED
 
   backend:
-    if: inputs.target == 'release' || inputs.target == 'backend'
+    if: inputs.target == 'release' || (inputs.target == 'backend' || inputs.target == 'backend-v1')
     needs: build-permission
     environment: release-production
     runs-on: ubuntu-24.04
@@ -114,6 +118,7 @@ jobs:
       - name: Independently materialize and recheck before accessing production credentials
         env:
           TARGET_SHA: ${{ inputs.sha }}
+          CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
         run: |
           test "$GITHUB_REF" = refs/heads/main
           test "$GITHUB_REPOSITORY" = itsoso/health-llm-driven
@@ -128,11 +133,13 @@ jobs:
             test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
             /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
-          ' reva-bootstrap "$TARGET_SHA"
+            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1" --target "$2"
+          ' reva-bootstrap "$TARGET_SHA" "$CI_TARGET"
       - name: Start the fixed server-side release capability
         env:
           TARGET_SHA: ${{ inputs.sha }}
+          CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
+          BACKEND_RPC: ${{ inputs.target == 'backend-v1' && 'run-backend-v1' || 'run' }}
           RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
           RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
         run: |
@@ -152,7 +159,7 @@ jobs:
             -o UserKnownHostsFile="$private_dir/known_hosts" \
             -o GlobalKnownHostsFile=/dev/null -o ClearAllForwardings=yes \
             -o ConnectTimeout=15 -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            -i "$private_dir/key" root@39.98.206.178 "run $TARGET_SHA" | \
+            -i "$private_dir/key" root@39.98.206.178 "$BACKEND_RPC $TARGET_SHA" | \
             /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
             /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_receipt.py \
               --sha "$TARGET_SHA" --state SUCCEEDED
@@ -194,9 +201,17 @@ jobs:
         run: |
           node_bin="$(dirname "$(command -v node)")"
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
-            npm ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund
+            npm ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund &
+          cli_install_pid=$!
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
-            npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
+            npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund &
+          app_install_pid=$!
+          # Two independent roots, no cross-run cache or credentials. Join both
+          # even on failure; patching/claims must never race unfinished installs.
+          install_status=0
+          wait "$cli_install_pid" || install_status=$?
+          wait "$app_install_pid" || install_status=$?
+          test "$install_status" -eq 0
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/scripts/release-tools --apply
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
@@ -309,9 +324,17 @@ jobs:
         run: |
           node_bin="$(dirname "$(command -v node)")"
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
-            npm ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund
+            npm ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund &
+          cli_install_pid=$!
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
-            npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund
+            npm ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund &
+          app_install_pid=$!
+          # Two independent roots, no cross-run cache or credentials. Join both
+          # even on failure; patching/claims must never race unfinished installs.
+          install_status=0
+          wait "$cli_install_pid" || install_status=$?
+          wait "$app_install_pid" || install_status=$?
+          test "$install_status" -eq 0
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
             "$node_bin/node" /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/scripts/release-tools --apply
           /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \

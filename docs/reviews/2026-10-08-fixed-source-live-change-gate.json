@@ -1,0 +1,73 @@
+{
+  "status": "passed",
+  "live_llm_required": true,
+  "confirmed": true,
+  "confirmation_env": "HARNESS_LIVE_LLM_EVAL_CONFIRMED",
+  "expected_confirmation": "d201cdcc9866f7315286fdfa52e5e0bf143eaaf0",
+  "changed_paths": [
+    "backend/app/config.py",
+    "backend/app/services/agent_composed_read_completion.py",
+    "backend/app/services/agent_executor.py",
+    "backend/eval/experimental_empty_read_terminal.py",
+    "backend/eval/experimental_read_evidence_format.py",
+    "backend/eval/experimental_read_thinking_budget.py",
+    "backend/eval/full_task_prompt_benchmark.py",
+    "backend/tests/test_agent_composed_read_completion.py",
+    "backend/tests/test_composed_daily_sleep_evidence.py",
+    "backend/tests/test_composed_record_context_preservation.py",
+    "backend/tests/test_composed_score_interpretation.py",
+    "backend/tests/test_empty_read_terminal_experiment.py",
+    "backend/tests/test_full_task_prompt_benchmark.py",
+    "backend/tests/test_owned_read_preplanning_runtime.py",
+    "backend/tests/test_read_evidence_format_experiment.py",
+    "backend/tests/test_read_thinking_budget_experiment.py",
+    "docs/dossiers/2026-10-04-prompt-optimization-handoff.md",
+    "docs/plans/2026-10-04-prompt-token-latency-plan.md",
+    "docs/reviews/2026-10-04-prompt-deployment-verification.json",
+    "docs/reviews/2026-10-04-prompt-deployment.md",
+    "docs/reviews/2026-10-04-prompt-optimization-harness-traces.json",
+    "docs/reviews/2026-10-04-release-readiness.json",
+    "docs/reviews/2026-10-07-empty-terminal-live.json",
+    "docs/reviews/2026-10-07-evidence-compact-live.json",
+    "docs/reviews/2026-10-07-prompt-change-gate.json",
+    "docs/reviews/2026-10-07-prompt-live-regression-gate.json",
+    "docs/reviews/2026-10-07-prompt-next-candidates-summary.json",
+    "docs/reviews/2026-10-07-prompt-next-candidates.md",
+    "docs/reviews/2026-10-07-read-preplan-diagnostic-live.json",
+    "docs/reviews/2026-10-07-read-preplan-empty-failure-live.json",
+    "docs/reviews/2026-10-07-read-preplan-live.json",
+    "docs/reviews/2026-10-07-read-preplan-lookup-live.json",
+    "docs/reviews/2026-10-07-runtime-preplan-change-gate.json",
+    "docs/reviews/2026-10-07-runtime-preplan-live-regression.json",
+    "docs/reviews/2026-10-07-runtime-preplan-max-diagnostic-live.json",
+    "docs/reviews/2026-10-07-runtime-preplan-review.md",
+    "docs/reviews/2026-10-07-runtime-preplan-rich-live.json",
+    "docs/reviews/2026-10-07-runtime-preplan-states-live.json",
+    "docs/reviews/2026-10-07-runtime-preplan-summary.json",
+    "scripts/benchmark_prompt_full_task.py"
+  ],
+  "matched_paths": [
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "reason": "agent executor runtime"
+    },
+    {
+      "path": "backend/eval/experimental_empty_read_terminal.py",
+      "reason": "LLM/eval harness"
+    },
+    {
+      "path": "backend/eval/experimental_read_evidence_format.py",
+      "reason": "LLM/eval harness"
+    },
+    {
+      "path": "backend/eval/experimental_read_thinking_budget.py",
+      "reason": "LLM/eval harness"
+    },
+    {
+      "path": "backend/eval/full_task_prompt_benchmark.py",
+      "reason": "LLM/eval harness"
+    }
+  ],
+  "next_steps": "",
+  "errors": []
+}

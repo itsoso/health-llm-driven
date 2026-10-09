@@ -15,6 +15,13 @@ _DRAFT = re.compile(
     rf"(?:{_SELF})?(?P<horizon>{_HORIZON})?的?"
     r"(?:锻炼|运动|训练)(?:恢复|康复)?的?(?:计划|方案)?(?:草稿)?"
 )
+_TODAY_RECOMMENDATION = re.compile(
+    r"今天(?:我)?是否适合运动[？?](?:请)?给我推荐适合我的运动(?:的)?方式"
+    r"以及运动(?:的)?强度"
+)
+_HTML_OUTPUT_SUFFIX = re.compile(
+    r"[，,。；;](?:最终|最后)生成一个HTML页面$", re.IGNORECASE
+)
 _BASIS_ITEMS = {
     "profile": r"身体(?:状况|情况|状态)|健康(?:状况|情况|状态)",
     "medical_exam": r"体检报告|体检结果|检查报告|化验报告",
@@ -27,6 +34,7 @@ _SEPARATOR = re.compile(r"(?:[，,、]|以及|和|与|及)+")
 class ExercisePlanScope:
     horizon: str
     evidence_dimensions: tuple[str, ...]
+    output_format: str = 'text'
 
     def queries(self) -> list[dict[str, str]]:
         return [{"dimension": d} for d in self.evidence_dimensions]
@@ -35,9 +43,15 @@ class ExercisePlanScope:
 def resolve_exercise_plan_scope(text: str) -> ExercisePlanScope | None:
     # Do not strip quotes/markdown/reporting frames: those are not authority.
     normalized = re.sub(r"\s+", "", str(text or "")).rstrip("。.!！")
+    # Consume only a closed, independent output-format suffix. The caller's
+    # original message remains intact; HTML does not grant personal reads.
+    output_format = 'html' if _HTML_OUTPUT_SUFFIX.search(normalized) else 'text'
+    normalized = _HTML_OUTPUT_SUFFIX.sub("", normalized)
+    if _TODAY_RECOMMENDATION.fullmatch(normalized):
+        return ExercisePlanScope('今天', (), output_format)
     direct = _DRAFT.fullmatch(normalized)
     if direct:
-        return ExercisePlanScope(direct['horizon'] or '', ())
+        return ExercisePlanScope(direct['horizon'] or '', (), output_format)
     # A basis declaration requires an explicit self owner; that owner may
     # govern a coordinated list, but no unmatched token can inherit it.
     basis = re.match(rf"(?:请你?)?(?:基于|结合|根据){_SELF}", normalized)
@@ -62,7 +76,7 @@ def resolve_exercise_plan_scope(text: str) -> ExercisePlanScope | None:
             return None
         if domain != 'profile' and domain not in dimensions:
             dimensions.append(domain)
-    return ExercisePlanScope(draft['horizon'] or '', tuple(dimensions))
+    return ExercisePlanScope(draft['horizon'] or '', tuple(dimensions), output_format)
 
 
 def has_unresolved_exercise_plan_basis(text: str) -> bool:
@@ -88,9 +102,24 @@ def exercise_plan_prompt(scope: ExercisePlanScope) -> str:
         '没有列出的个人数据不要额外查询，使用已提供的背景并说明未核验之处；不要误报为用户身份或权限问题。'
         '列出的依据必须实际查询，缺失或失败须说明，不能声称已完整审阅。'
         '体检查询返回的是已有指标/报告摘要，病史返回历史事件；都不能证明目前已康复或适合某训练强度。'
+        '没有运动记录或健康证据缺失时，不能据此判断运动水平，'
+        '不能据此认定无禁忌或今天适合运动；只提供明确前提下的通用选项。'
         '说明取数覆盖：体检沿用近365天指标与报告摘要，病史最多最近100条历史事件；这不是完整病历审阅。'
         '区分已知事实、未知风险与有条件的建议；不得开方、调整用药或作医疗安全保证。'
         '草稿不等于已保存、已执行或已创建提醒，不能调用写入或不受限的健康分析工具。'
+        + (
+            '\n[本轮静态 HTML 输出要求]\n'
+            '用户要求的 HTML 页面是本条回复中的静态文档，不是图片、视频或创作任务。'
+            '此处输出要求优先于通用创作说明；只能使用本轮实际开放的工具，'
+            '不得调用 draft_aigc_media、保存、发布或其他写入工具。'
+            '直接在唯一的 ```html 代码块中输出完整文档，包含 <!DOCTYPE html>、'
+            '<html>、<head> 和 <body> 及各自闭合标签。正文使用标题、段落和列表。'
+            '不使用 CSS、style 标签或 style 属性，不写表格、装饰容器或重复说明；'
+            '正文不超过600个汉字，优先保证闭合所有标签及代码块。'
+            '不含脚本、事件处理器、iframe、表单、网络请求或外部资源；'
+            '不要声称已发布、保存或生成媒体。保留上述证据局限和有条件建议。'
+            if scope.output_format == 'html' else ''
+        )
     )
 
 

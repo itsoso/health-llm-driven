@@ -1,0 +1,147 @@
+{
+  "schema_version": "selected-exam-live-acceptance.v1",
+  "synthetic_data_only": true,
+  "attempts": 1,
+  "request_timeout_seconds": 180,
+  "model_round_budget": 6,
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "ebb0c1ca5b66a5dcaafd4ec0c0d44a3dbaa0b889322f416bdf754d5bce5a63e8",
+    "backend/app/services/health_read.py": "42a7c6ab9f3c5f6a706cc1ac32696680edc60180f7d5c77e5a79a19db35f7dd9",
+    "backend/app/services/agent_kernel/health_semantics.py": "2f25d247f7cc56d307bf8cdaecc63d9e5aa1da8393cc6247b67eeff4f1698640",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a"
+  },
+  "source_commit": "fad79b9e111e6cee20dd2594f22a22dceae579e6",
+  "latency_seconds": 9.24,
+  "checks": {
+    "terminal_done": true,
+    "persisted_assistant": true,
+    "outcome_complete": false,
+    "selected_report_reached_model": false,
+    "real_read_dispatched": false,
+    "only_read_tools": false,
+    "other_report_absent": true,
+    "foreign_report_absent": true,
+    "client_payload_absent": true,
+    "no_unscoped_twin": true,
+    "no_sql_errors": true,
+    "report_records_unchanged": true,
+    "no_write_receipts": true,
+    "discusses_selected_abnormality": false,
+    "action_horizon_addressed": false,
+    "no_permission_denial": true
+  },
+  "diagnostic_errors": [
+    {
+      "logger": "app.services.agent_executor",
+      "level": "ERROR",
+      "exception_type": "RuntimeError",
+      "frames": [
+        {
+          "file": "/Users/thomas/work/personal/health-prompt-optimization/backend/app/services/agent_executor.py",
+          "line": 19504,
+          "function": "_run_stream_impl"
+        },
+        {
+          "file": "/Users/thomas/work/personal/health-prompt-optimization/backend/app/services/agent_executor.py",
+          "line": 18105,
+          "function": "_execute_pi_tool"
+        },
+        {
+          "file": "/Users/thomas/work/personal/health-prompt-optimization/backend/app/services/agent_executor.py",
+          "line": 4309,
+          "function": "_read_operation_fingerprint"
+        },
+        {
+          "file": "/Users/thomas/work/personal/health-prompt-optimization/backend/app/services/agent_executor.py",
+          "line": 3719,
+          "function": "_write_operation_fingerprint"
+        },
+        {
+          "file": "/Users/thomas/work/personal/health-prompt-optimization/backend/app/services/agent_runtime_identity.py",
+          "line": 26,
+          "function": "runtime_hmac_digest"
+        }
+      ]
+    }
+  ],
+  "sql_errors": [],
+  "model_rounds": 1,
+  "dispatched_tools": [],
+  "reply_sha256": "796c4a4446fa2469f5529e264227bbc2caee6588a9cb2ea1f40a26a9771f5bca",
+  "reply_characters": 29,
+  "turn_outcome": {
+    "status": "failed",
+    "category": "execution_error",
+    "reason_code": "completion_error",
+    "retryable": true,
+    "dispatch_started": false,
+    "verified_receipt_count": 0,
+    "actions": [],
+    "refusal_detected": false,
+    "capability_block_count": 0,
+    "tool_failure_count": 0,
+    "confirmation_required": false
+  },
+  "unscoped_twin_calls": 0,
+  "usage_audit": {
+    "recorded_calls": 1,
+    "rows": [
+      {
+        "provider": "tokenplan",
+        "model": "qwen3.8-max",
+        "prompt_tokens": 11385,
+        "completion_tokens": 285,
+        "cached_tokens": 10240,
+        "token_source": "api",
+        "latency_ms": 8480,
+        "success": 1,
+        "error_type": null
+      }
+    ],
+    "all_api_usage": true
+  },
+  "source_unchanged": true,
+  "status": "failed",
+  "evaluation_validity": "invalid_test_configuration",
+  "configuration_failure": "Ephemeral harness lacked >=32-byte runtime HMAC secret; production code correctly failed closed before dispatch.",
+  "provider_event_summary": [
+    {
+      "type": "reasoning",
+      "finish_reason": null,
+      "count": 56
+    },
+    {
+      "type": "content",
+      "finish_reason": null,
+      "count": 4
+    },
+    {
+      "type": "tool_calls",
+      "finish_reason": null,
+      "count": 1
+    },
+    {
+      "type": "finish",
+      "finish_reason": "tool_calls",
+      "count": 1
+    }
+  ],
+  "provider_tool_proposals": [
+    [
+      {
+        "name": "health_query",
+        "arg_keys": [
+          "dimension",
+          "days"
+        ]
+      },
+      {
+        "name": "health_query",
+        "arg_keys": [
+          "dimension",
+          "uploaded_days"
+        ]
+      }
+    ]
+  ]
+}

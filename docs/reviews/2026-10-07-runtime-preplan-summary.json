@@ -1,0 +1,364 @@
+{
+  "date": "2026-10-07",
+  "status": "runtime_implemented_default_off",
+  "code_sha": "f3f5fca1c64036ef11b055bb945ab736cb4b54a5",
+  "production_activation": "NO-GO",
+  "reason": "Two retained qwen3.8-max 31d candidate timeouts; statistical noninferiority and long-tail acceptance not established.",
+  "default_flag": "owned_read_preplanning=false",
+  "scope": "Only first-turn closed own sleep/diet analysis 1-31d; domain optimization also required; normal Pi/Gateway and guards retained.",
+  "reports": [
+    {
+      "path": "docs/reviews/2026-10-07-runtime-preplan-rich-live.json",
+      "sha256": "d903ad7a2cddce6978e74593e4cb459f33371ad81e74c7a10e2b01ce11ab2ea4",
+      "status": "failed",
+      "rows": 7,
+      "api_attempts": 10,
+      "usage_unknown_calls": 1,
+      "source_matches_final": false,
+      "source_mismatches": [
+        "backend/eval/full_task_prompt_benchmark.py",
+        "scripts/benchmark_prompt_full_task.py",
+        "backend/app/services/agent_executor.py"
+      ],
+      "failures": [
+        {
+          "row": 6,
+          "case": "analysis_31d_rich",
+          "model": "qwen3.8-max",
+          "variant": "runtime_preplan",
+          "reason": "provider_TimeoutError",
+          "wall_seconds": 45.609725458023604
+        }
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-10-07-runtime-preplan-states-live.json",
+      "sha256": "8fa964b18491bf0eaec60da4b85ea63f0cb5ba18c299a652afb567025dd844bd",
+      "status": "passed_contracts_only",
+      "rows": 12,
+      "api_attempts": 15,
+      "usage_unknown_calls": 0,
+      "source_matches_final": true,
+      "source_mismatches": [],
+      "failures": []
+    },
+    {
+      "path": "docs/reviews/2026-10-07-runtime-preplan-max-diagnostic-live.json",
+      "sha256": "8fefad571573bed05c9e719ee1851e8ab21cb041314aa41947e46fc349511329",
+      "status": "failed",
+      "rows": 3,
+      "api_attempts": 4,
+      "usage_unknown_calls": 1,
+      "source_matches_final": true,
+      "source_mismatches": [],
+      "failures": [
+        {
+          "row": 2,
+          "case": "analysis_31d_rich",
+          "model": "qwen3.8-max",
+          "variant": "runtime_preplan",
+          "reason": "provider_TimeoutError",
+          "wall_seconds": 45.359620375034865
+        }
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-rich-live.json",
+      "case": "analysis_1d_rich",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": false,
+      "baseline": {
+        "calls": 2,
+        "input_tokens": 12143,
+        "wall_seconds": 20.97267091704998,
+        "outcome": "complete"
+      },
+      "candidate": {
+        "calls": 1,
+        "input_tokens": 4553,
+        "wall_seconds": 11.227549457980786,
+        "outcome": "complete"
+      },
+      "input_reduction_percent": 62.51,
+      "wall_reduction_percent": 46.47
+    },
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-rich-live.json",
+      "case": "analysis_1d_rich",
+      "model": "qwen3.8-max",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": false,
+      "baseline": {
+        "calls": 2,
+        "input_tokens": 12143,
+        "wall_seconds": 29.0506677920348,
+        "outcome": "complete"
+      },
+      "candidate": {
+        "calls": 1,
+        "input_tokens": 4553,
+        "wall_seconds": 25.01955862500472,
+        "outcome": "complete"
+      },
+      "input_reduction_percent": 62.51,
+      "wall_reduction_percent": 13.88
+    },
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-rich-live.json",
+      "case": "analysis_31d_rich",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": false,
+      "baseline": {
+        "calls": 2,
+        "input_tokens": 12364,
+        "wall_seconds": 28.07126158295432,
+        "outcome": "complete"
+      },
+      "candidate": {
+        "calls": 1,
+        "input_tokens": 4771,
+        "wall_seconds": 17.267618791025598,
+        "outcome": "complete"
+      },
+      "input_reduction_percent": 61.41,
+      "wall_reduction_percent": 38.49
+    },
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-states-live.json",
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": true,
+      "baseline": {
+        "calls": 2,
+        "input_tokens": 12270,
+        "wall_seconds": 32.24611275002826,
+        "outcome": "complete"
+      },
+      "candidate": {
+        "calls": 1,
+        "input_tokens": 4724,
+        "wall_seconds": 16.270932833955158,
+        "outcome": "complete"
+      },
+      "input_reduction_percent": 61.5,
+      "wall_reduction_percent": 49.54
+    },
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-states-live.json",
+      "case": "analysis_7d_available",
+      "model": "qwen3.8-max",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": true,
+      "baseline": {
+        "calls": 2,
+        "input_tokens": 12270,
+        "wall_seconds": 36.56291149999015,
+        "outcome": "complete"
+      },
+      "candidate": {
+        "calls": 1,
+        "input_tokens": 4724,
+        "wall_seconds": 28.51503725000657,
+        "outcome": "complete"
+      },
+      "input_reduction_percent": 61.5,
+      "wall_reduction_percent": 22.01
+    },
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-states-live.json",
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": true,
+      "baseline": {
+        "calls": 3,
+        "input_tokens": 19711,
+        "wall_seconds": 20.411411082954146,
+        "outcome": "complete"
+      },
+      "candidate": {
+        "calls": 1,
+        "input_tokens": 4327,
+        "wall_seconds": 9.075052416999824,
+        "outcome": "complete"
+      },
+      "input_reduction_percent": 78.05,
+      "wall_reduction_percent": 55.54
+    },
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-states-live.json",
+      "case": "analysis_7d_empty",
+      "model": "qwen3.8-max",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": true,
+      "baseline": {
+        "calls": 2,
+        "input_tokens": 11873,
+        "wall_seconds": 31.59150454198243,
+        "outcome": "complete"
+      },
+      "candidate": {
+        "calls": 1,
+        "input_tokens": 4327,
+        "wall_seconds": 15.30237070901785,
+        "outcome": "complete"
+      },
+      "input_reduction_percent": 63.56,
+      "wall_reduction_percent": 51.56
+    },
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-states-live.json",
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-flash",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": true,
+      "baseline": {
+        "calls": 1,
+        "input_tokens": 7546,
+        "wall_seconds": 6.352412250009365,
+        "outcome": "failed"
+      },
+      "candidate": {
+        "calls": 0,
+        "input_tokens": 0,
+        "wall_seconds": 0.8494760419707745,
+        "outcome": "failed"
+      },
+      "input_reduction_percent": 100.0,
+      "wall_reduction_percent": 86.63
+    },
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-states-live.json",
+      "case": "analysis_7d_read_failure",
+      "model": "qwen3.8-max",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": true,
+      "baseline": {
+        "calls": 1,
+        "input_tokens": 7546,
+        "wall_seconds": 7.463316207984462,
+        "outcome": "failed"
+      },
+      "candidate": {
+        "calls": 0,
+        "input_tokens": 0,
+        "wall_seconds": 0.7001929589896463,
+        "outcome": "failed"
+      },
+      "input_reduction_percent": 100.0,
+      "wall_reduction_percent": 90.62
+    },
+    {
+      "report": "docs/reviews/2026-10-07-runtime-preplan-max-diagnostic-live.json",
+      "case": "analysis_31d_rich",
+      "model": "qwen3.8-max",
+      "repeat": 0,
+      "both_contracts_passed": true,
+      "source_matches_final": true,
+      "baseline": {
+        "calls": 2,
+        "input_tokens": 12364,
+        "wall_seconds": 42.94075499998871,
+        "outcome": "complete"
+      },
+      "candidate": {
+        "calls": 1,
+        "input_tokens": 4771,
+        "wall_seconds": 31.504281750007067,
+        "outcome": "complete"
+      },
+      "input_reduction_percent": 61.41,
+      "wall_reduction_percent": 26.63
+    }
+  ],
+  "independent_review": {
+    "reviewer": "prompt_p1_review",
+    "code_safety": "GO",
+    "default_off_deployment_code_admission": "GO",
+    "production_activation": "NO-GO",
+    "reviewed_commits": [
+      "f5aff206212652b1e0878f8d7bd0999e4d334642",
+      "f3f5fca1c64036ef11b055bb945ab736cb4b54a5"
+    ],
+    "focused_passed": 87,
+    "additional_adversarial_passed": 2,
+    "semantic_reviews": {
+      "rich": "6 answers faithful; 1 timeout; source differs",
+      "states": "8 faithful answers, 4 failed reads retained",
+      "max_diagnostic": "2 faithful answers, 1 timeout"
+    },
+    "remaining_gaps": [
+      "two Max31d candidate timeouts",
+      "live production Decision/Laya path not covered",
+      "full frozen noninferiority and long-tail acceptance incomplete"
+    ]
+  },
+  "external_mutations": {
+    "push": false,
+    "merge": false,
+    "deploy": false,
+    "production_flag_change": false
+  },
+  "samples": 22,
+  "api_attempts": 29,
+  "verification": {
+    "ci_mode": {
+      "counts": {
+        "passed": 1211,
+        "skipped": 2
+      },
+      "junit_sha256": "198e9611d27a77439bc61906054881c5296cc693dfdba8dc7b5c8cde1e3ce8b8"
+    },
+    "postgresql": {
+      "counts": {
+        "passed": 100
+      },
+      "junit_sha256": "ae821f100cd966132b5696cee6257a6bc61d2e672c09cd65b2b21e7e08d93461"
+    },
+    "focused": {
+      "counts": {
+        "passed": 85
+      },
+      "junit_sha256": "2cff3e1b41a452056aef18678c8310e8962458b8d949e24ecfb92c78ab696cba"
+    },
+    "consent_increment": {
+      "passed": 2,
+      "included_in_final_pg": true
+    },
+    "overlapping_tests_not_additive": true,
+    "postgresql_cleanup": {
+      "exit_code": 0,
+      "ephemeral_postgres": true,
+      "cluster_removed": true,
+      "tests": [
+        "test_owned_read_preplanning_runtime.py",
+        "test_agent_coherence_pi_trajectories.py",
+        "test_decision_routing.py"
+      ]
+    },
+    "retained_pg_selection_error": {
+      "failed": 27,
+      "reason": "SQLite-only full-task harness correctly refused PostgreSQL environment. Actual runtime42/coherence29/routing27 passed in same batch. Rerun supported tests100 passed.",
+      "cleanup": "pg_ctl initial 60s wait expired during shutdown checkpoint; server log and missing PID confirmed shutdown, then own temporary directory removed. No forced kill."
+    },
+    "live_regression": "docs/reviews/2026-10-07-runtime-preplan-live-regression.json",
+    "change_gate": "docs/reviews/2026-10-07-runtime-preplan-change-gate.json",
+    "system_map": "passed",
+    "ruff_F821_F822_E9": "passed",
+    "secret_scan": "passed_including_staged_reports"
+  }
+}

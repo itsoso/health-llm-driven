@@ -457,3 +457,32 @@ def test_failed_old_privacy_readback_never_claims_restoration(tmp_path,monkeypat
     assert not (audit/'availability-restored.json').exists() and not (audit/'completed.json').exists()
     assert events.count(('/usr/bin/systemctl','start','health-frontend'))==1
     assert m.LEASE.exists()
+
+
+def test_prepared_publication_uses_consumer_and_never_builds(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    m,plan,helper,server,build,events=execution_fixture(tmp_path,monkeypatch)
+    plan['prepared_artifact']={'artifact_id':plan['operation_id']}
+    build.copy_build_inputs(None,m.BUILDS/plan['operation_id'],{})
+    def consume(plan,source,publisher,build,server,audit):
+        server._write_private(audit/'build.log',b'previous preparation log')
+        events.append(('consumed',))
+        return 'e'*64
+    monkeypatch.setattr(m,'load_artifact',lambda *a:SimpleNamespace(consume=consume))
+    monkeypatch.setattr(m.subprocess,'run',lambda *a,**kw:pytest.fail('prepared publication must not build'))
+    result=m.execute(plan,Path('/canonical'),helper,None,server,build,lambda:None)
+    assert result['state']=='FRONTEND_SUCCEEDED'
+    assert ('consumed',) in events
+    assert not m.LEASE.exists()
+
+
+def test_prepared_verification_failure_keeps_lease_and_never_stops_service(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    m,plan,helper,server,build,events=execution_fixture(tmp_path,monkeypatch)
+    plan['prepared_artifact']={'artifact_id':plan['operation_id']}
+    def reject(*args):raise ValueError('prepared artifact changed')
+    monkeypatch.setattr(m,'load_artifact',lambda *a:SimpleNamespace(consume=reject))
+    with pytest.raises(m.PublishError):m.execute(plan,Path('/canonical'),helper,None,server,build,lambda:None)
+    assert m.LEASE.exists()
+    assert not any('stop' in event for event in events)
+    assert (m.STATE/'frontend-publications'/plan['operation_id']/'failed.json').exists()

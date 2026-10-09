@@ -1,0 +1,166 @@
+{
+  "schema_version": "selected-exam-live-acceptance.v1",
+  "synthetic_data_only": true,
+  "attempts": 1,
+  "harness_prior_failures": [
+    "selected-exam-live-acceptance.json",
+    "selected-exam-live-diagnostic.json"
+  ],
+  "harness_correction": "generated ephemeral HMAC secret before importing settings; no production secret used",
+  "request_timeout_seconds": 180,
+  "model_round_budget": 6,
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "6b6fbce0dfd1451174c800138386ed8d995138c229ae486bf2313e037a721cc1",
+    "backend/app/services/health_read.py": "42a7c6ab9f3c5f6a706cc1ac32696680edc60180f7d5c77e5a79a19db35f7dd9",
+    "backend/app/services/agent_kernel/health_semantics.py": "2f25d247f7cc56d307bf8cdaecc63d9e5aa1da8393cc6247b67eeff4f1698640",
+    "backend/app/services/agent_kernel/capability_policy.py": "57cd64d67aa3a44091c6b355c335b7b830aca24c62b012ff17656cd5894c207a"
+  },
+  "source_commit": "df5e3ba469d9ba21295e20bd1f6c7de85ed6bb10",
+  "latency_seconds": 44.97,
+  "checks": {
+    "terminal_done": true,
+    "persisted_assistant": true,
+    "outcome_complete": true,
+    "selected_report_reached_model": true,
+    "real_read_dispatched": true,
+    "only_read_tools": true,
+    "other_report_absent": true,
+    "foreign_report_absent": true,
+    "old_conversation_absent": true,
+    "old_conversation_preserved": true,
+    "client_payload_absent": true,
+    "no_unscoped_twin": true,
+    "no_sql_errors": true,
+    "report_records_unchanged": true,
+    "no_write_receipts": true,
+    "discusses_selected_abnormality": true,
+    "action_horizon_addressed": true,
+    "no_permission_denial": true
+  },
+  "diagnostic_errors": [],
+  "provider_event_summary": [
+    {
+      "type": "reasoning",
+      "finish_reason": null,
+      "count": 166
+    },
+    {
+      "type": "tool_calls",
+      "finish_reason": null,
+      "count": 2
+    },
+    {
+      "type": "finish",
+      "finish_reason": "tool_calls",
+      "count": 2
+    },
+    {
+      "type": "content",
+      "finish_reason": null,
+      "count": 249
+    },
+    {
+      "type": "finish",
+      "finish_reason": "stop",
+      "count": 1
+    }
+  ],
+  "provider_tool_proposals": [
+    [
+      {
+        "name": "health_query",
+        "arg_keys": [
+          "dimension"
+        ]
+      }
+    ],
+    [
+      {
+        "name": "knowledge_search",
+        "arg_keys": [
+          "query",
+          "n_results"
+        ]
+      },
+      {
+        "name": "knowledge_search",
+        "arg_keys": [
+          "query",
+          "n_results"
+        ]
+      }
+    ]
+  ],
+  "sql_errors": [],
+  "model_rounds": 3,
+  "dispatched_tools": [
+    "health_query",
+    "knowledge_search",
+    "knowledge_search"
+  ],
+  "reply_sha256": "9961533556be4b4c83c5579163f3c4220da89a43679fe836e1894bd7f3d20fc7",
+  "reply_characters": 1383,
+  "turn_outcome": {
+    "status": "complete",
+    "category": "success",
+    "reason_code": "completed",
+    "retryable": false,
+    "dispatch_started": false,
+    "verified_receipt_count": 0,
+    "actions": [],
+    "refusal_detected": false,
+    "capability_block_count": 0,
+    "tool_failure_count": 0,
+    "confirmation_required": false
+  },
+  "unscoped_twin_calls": 0,
+  "usage_audit": {
+    "recorded_calls": 3,
+    "rows": [
+      {
+        "provider": "tokenplan",
+        "model": "qwen3.8-max",
+        "prompt_tokens": 5171,
+        "completion_tokens": 139,
+        "cached_tokens": 0,
+        "token_source": "api",
+        "latency_ms": 6988,
+        "success": 1,
+        "error_type": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "qwen3.8-max",
+        "prompt_tokens": 5345,
+        "completion_tokens": 159,
+        "cached_tokens": 5120,
+        "token_source": "api",
+        "latency_ms": 3928,
+        "success": 1,
+        "error_type": null
+      },
+      {
+        "provider": "tokenplan",
+        "model": "qwen3.8-max",
+        "prompt_tokens": 5579,
+        "completion_tokens": 1223,
+        "cached_tokens": 5120,
+        "token_source": "api",
+        "latency_ms": 32516,
+        "success": 1,
+        "error_type": null
+      }
+    ],
+    "all_api_usage": true
+  },
+  "source_unchanged": true,
+  "reproduction_script": {
+    "path": "/tmp/reva-1008-selected-exam-live.py",
+    "sha256": "0e43c7c7f24b0f11371ee0fdd24a15b299baf25ff30471b79d87f89d0cf4c2a1",
+    "launcher_sha256": "52504f49344822ec48cdd62c813b378e9f691e7082490f93a0914c54911acdeb"
+  },
+  "status": "passed",
+  "evaluation_role": "provider_history_and_tool_projection_acceptance_before_background_binding_hardening",
+  "release_verdict": "not_final_release_evidence",
+  "limitation": "Existing tests did not spy on ordinary read-task/actionable binding reads; separate hardening is pending."
+}

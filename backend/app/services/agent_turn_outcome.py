@@ -147,6 +147,7 @@ def classify_agent_turn_outcome(
     goal_outcomes: Iterable[dict[str, Any]] = (),
     output_quality_flags: Iterable[str] = (),
     medical_boundary_flags: Iterable[str] = (),
+    input_clarification_reason: str | None = None,
 ) -> dict[str, Any]:
     """Return a stable, content-free outcome payload for ``done.meta``.
 
@@ -310,6 +311,14 @@ def classify_agent_turn_outcome(
             category="no_answer",
             reason_code="empty_final_text",
             retryable=True,
+        )
+
+    if (input_clarification_reason == "meal_photo_details_required"
+            and not dispatch_started and not receipts and not actions and not goals):
+        return outcome(
+            status="waiting_for_user", category="clarification_required",
+            reason_code=input_clarification_reason, retryable=False,
+            confirmation_required=True,
         )
 
     return outcome(

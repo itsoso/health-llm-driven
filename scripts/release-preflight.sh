@@ -6,7 +6,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASE_REF="${REVA_PREFLIGHT_BASE_REF:-origin/main}"
-EVENT_NAME="${REVA_PREFLIGHT_EVENT_NAME:-push}"
+EVENT_NAME="${REVA_PREFLIGHT_EVENT_NAME:-local}"
 DRY_RUN="${REVA_PREFLIGHT_DRY_RUN:-0}"
 if [[ -n "${REVA_PREFLIGHT_PYTHON:-}" ]]; then
   PREFLIGHT_PYTHON="${REVA_PREFLIGHT_PYTHON}"

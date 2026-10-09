@@ -366,3 +366,20 @@ describe('agentTurnState', () => {
 it('recovers a partial result instead of treating the generated answer as completed', () => {
   expect(recoveredAgentPhase('complete', 'partial', false)).toBe('partial');
 });
+
+it.each(['error', 'interrupted'] as const)('clears progress label on legacy done %s without changing retry semantics', completionStatus => {
+  const submitted = reduceAgentTurn(createIdleAgentTurn(), {
+    type: 'submit', turnId: 'legacy-label', at: 1, label: '正在提交…',
+  });
+  const accepted = reduceAgentTurn(submitted, {
+    type: 'accepted', at: 2, label: '正在理解…',
+  });
+  const done = reduceAgentTurn(accepted, {
+    type: 'done', at: 3, completionStatus, retryable: true, retryMode: 'retry_source',
+  });
+  expect(done.label).toBeUndefined();
+  expect(done.phase).toBe(completionStatus === 'error' ? 'failed' : 'interrupted');
+  expect(done.recoverable).toBe(true);
+  expect(done.retryMode).toBe('retry_source');
+  expect(done.turnId).toBe('legacy-label');
+});

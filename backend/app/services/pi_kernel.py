@@ -39,6 +39,14 @@ class PiKernelSession:
     async def __aenter__(self):
         # Do not inherit database/provider credentials or Node preload hooks.
         env = {key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL", "SYSTEMROOT") if key in os.environ}
+        # Release attestation checks this non-secret flag on every service child.
+        # Preserve explicit state exactly; never manufacture a disabled proof
+        # for a missing, enabled, or malformed parent setting.
+        runtime_flag = os.environ.get("HEALTH_EVIDENCE_RUNTIME_ENABLED")
+        if runtime_flag is not None:
+            if runtime_flag not in {"false", "true"}:
+                raise PiKernelError("pi_invalid_runtime_flag")
+            env["HEALTH_EVIDENCE_RUNTIME_ENABLED"] = runtime_flag
         try:
             self.process = await asyncio.create_subprocess_exec(
                 *self.command,
@@ -76,11 +84,20 @@ class PiKernelSession:
             raise PiKernelError("pi_frame_too_large")
         if self.process is None or self.process.stdin is None:
             raise PiKernelError("pi_not_started")
+        if self.process.returncode is not None or self.process.stdin.is_closing():
+            raise PiKernelError("pi_transport_failed")
         try:
             self.process.stdin.write(payload)
             await asyncio.wait_for(self.process.stdin.drain(), timeout=self.timeout)
         except (OSError, asyncio.TimeoutError) as exc:
             raise PiKernelError("pi_transport_failed") from exc
+        except RuntimeError as exc:
+            # uvloop raises RuntimeError when a child exits between the check
+            # above and write/drain. Normalize only a demonstrably closed pipe;
+            # unrelated runtime failures must retain their original identity.
+            if self.process.returncode is not None or self.process.stdin.is_closing():
+                raise PiKernelError("pi_transport_failed") from exc
+            raise
 
     async def start(self, *, messages: list[dict], tools: list[dict], max_turns: int):
         if self._started or not isinstance(max_turns, int) or max_turns < 1:

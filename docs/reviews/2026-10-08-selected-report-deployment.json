@@ -1,0 +1,128 @@
+{
+  "checked_at_utc": "2026-10-08T09:16:43.892559+00:00",
+  "production_sha": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
+  "tracked_clean": true,
+  "receipt": {
+    "sha": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
+    "state": "SUCCEEDED"
+  },
+  "business_lease_absent": true,
+  "launcher_inode": 7777226,
+  "audit_sha256": {
+    "started.json": "539ed6e7c3cf38c26a64804392d3fcb861d5e587e2111156735a6ffba104b217",
+    "deployment-started.json": "87d513a904e8d36faf85aa0262374cd069b4ecbc6bfac20567d0b57bc9dfd067",
+    "completed.json": "e020e29346a0678e08ee8ab37d122ea7057d79fb958c9111d7ab0e1eb5391630",
+    "deployment.log": "f53f4c624e29772f738a52857d90d8a6855789ee944c95410ad51928ad923031"
+  },
+  "units": {
+    "health-backend": {
+      "MainPID": "2454186",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 17:02:33 CST"
+    },
+    "celery-worker": {
+      "MainPID": "2454188",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 17:02:33 CST"
+    },
+    "celery-beat": {
+      "MainPID": "2454189",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 17:02:33 CST"
+    },
+    "health-frontend": {
+      "MainPID": "2285301",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Thu 2026-10-08 14:49:49 CST"
+    }
+  },
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "9abbbf7ca9f60696bb49519473a21cc5e6427ede5467c98c5c0e90ea0841f77f",
+    "backend/app/services/agent_turn_outcome.py": "05d2a621d32a1331ba5bc93842c42d1b7b73af60be88df373e2a22bf33c1e769",
+    "backend/app/services/ai/food_recognition.py": "a1d5fdf9f7fbe29e34c30cab073d372a7c1428064a63877f23ba79742862fe8f",
+    "backend/app/services/health_read.py": "42a7c6ab9f3c5f6a706cc1ac32696680edc60180f7d5c77e5a79a19db35f7dd9",
+    "backend/app/services/agent_kernel/health_semantics.py": "2f25d247f7cc56d307bf8cdaecc63d9e5aa1da8393cc6247b67eeff4f1698640"
+  },
+  "loaded_settings": {
+    "owned_read_preplanning": false,
+    "synthesis_thinking_budget": 0,
+    "staged_response_mode": "off",
+    "parallel_synthesis_section_thinking": "off"
+  },
+  "settings_scope": "deployed source loading current config; not process memory inspection",
+  "health_scores": [
+    "60",
+    "60",
+    "60"
+  ],
+  "public_http": [
+    {
+      "url": "https://health.executor.life/api/health",
+      "method": "GET",
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "url": "https://health.executor.life/api/agent/stream",
+      "method": "POST",
+      "expected": 401,
+      "passed": true
+    },
+    {
+      "url": "https://health.executor.life/privacy",
+      "method": "GET",
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "url": "https://health.executor.life/connect/health",
+      "method": "GET",
+      "expected": 200,
+      "passed": true
+    }
+  ],
+  "candidate": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
+  "push_ci": 37749831509,
+  "limits": [
+    "No logged-in production user health flow or original full-resolution meal photo acceptance",
+    "Mobile native QR ad-hoc build276 published and public artifacts verified; OTA remains blocked and device installation unverified.",
+    "Public smoke reads no user health records and performs no health writes"
+  ],
+  "full_ci": 37750199480,
+  "full_ci_jobs_passed": 29,
+  "trusted_validate": 37751737519,
+  "trusted_backend": 37753182343,
+  "independent_backend_G5": "GO",
+  "database_backup": "Skipped per deploy governance default; not a backup/restore verification claim",
+  "ota": {
+    "validate": 37754437344,
+    "validate_result": "success",
+    "publish": 37755008534,
+    "publish_result": "failure",
+    "server_operation_exists": false,
+    "business_lease_exists": false,
+    "vendor_publication": "not reached: server claim absent; no repeat dispatched",
+    "native_contract": "BLOCK: native or unknown mobile input changed",
+    "native_baseline": "cad1fd1d33621532e587b265e79f737dfb06d1fe",
+    "startup_failure_cause": "Unknown: generic exception suppression; source incompatibility independently verified, not proven as this startup failure cause",
+    "log_sha256": "7149f372d380644a7594755c3dd1e1ce32558cb870f9ed27791f45fac8bf7e8f",
+    "independent_review": "NO_GO: retained failed publication; complete native compatibility evidence required"
+  },
+  "native_delivery": {
+    "route": "local QR ad-hoc default",
+    "candidate_sha": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
+    "build_number": "276",
+    "status": "PUBLISHED_VERIFIED",
+    "evidence": "2026-10-08-selected-report-qr-publication.json",
+    "artifact_review": "2026-10-08-selected-report-qr-artifact-review.json",
+    "scope": "No TestFlight/App Store submission; no device install claimed"
+  }
+}

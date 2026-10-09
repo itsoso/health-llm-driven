@@ -1,0 +1,55 @@
+{
+  "schema": "qr-artifact-independent-review.v1",
+  "verdict": "GO_FIRST_UPLOAD_ONLY",
+  "checked_at_utc": "2026-10-08T09:44:08.462774+00:00",
+  "saved_at_utc": "2026-10-08T09:45:51.590298+00:00",
+  "source_sha": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
+  "source_tracked_clean": true,
+  "source_helpers_match_git_blobs": true,
+  "ipa_sha256": "a5d928152d5f8d3977c10ed3475a63397e0e64326685ef386830ff84f84b5bb4",
+  "ipa_bytes": 16155578,
+  "receipt_sha256": "f0a181bae87da0072fce52b57120e9c8d1c3530e417947157ee05e43ac5bb5e9",
+  "receipt_source_and_ipa_verified": true,
+  "receipt_metadata_matches_independent_verification": true,
+  "strict_deep_signature_verified": true,
+  "signer_authorized_by_profile": true,
+  "team": "QA2U724DAN",
+  "bundle": "life.executor.health",
+  "version": "1.3.4",
+  "build": "276",
+  "runtime": "1.3.4",
+  "channel": "rokid-production",
+  "expo_updates_url": "https://u.expo.dev/911ea84f-bc7e-4a12-90cf-33966b6f7398",
+  "api_url_found_in_embedded_js_bundle": "https://health.executor.life/api",
+  "js_bundle_sha256": "801c626da629cf1646dcca4710724a057e447c76f96e1df0ae7a1df582d24fbb",
+  "production_entitlements": {
+    "application-identifier": "QA2U724DAN.life.executor.health",
+    "com.apple.developer.team-identifier": "QA2U724DAN",
+    "get-task-allow": false,
+    "aps-environment": "production",
+    "com.apple.developer.healthkit": true
+  },
+  "profile_expires_utc": "2027-04-24T13:45:11Z",
+  "profile_ad_hoc": true,
+  "profile_device_count": 1,
+  "device_identifiers_emitted": false,
+  "user_device_coverage_verified": false,
+  "first_upload": {
+    "build_id": "20261008-qr276-release-5c1ef73518af",
+    "require_original_receipt": true,
+    "no_latest": true,
+    "remote_readonly_checks": {
+      "production_sha": "5c1ef73518af8e49066cc9aab19c9558a084e05f",
+      "lease_absent": true,
+      "destination_absent": true,
+      "latest_is_real_directory": true,
+      "latest_inode": 5133934
+    }
+  },
+  "boundaries": [
+    "No upload or public reachability is claimed by this review.",
+    "Only the exact verified IPA and original source-bound receipt are approved for the first upload to the absent immutable destination.",
+    "Retain the existing latest directory unchanged. An ambiguous upload is not authorization to repeat or overwrite it.",
+    "No device installation, TestFlight/App Store delivery, clinical user acceptance or production OTA compatibility is claimed."
+  ]
+}

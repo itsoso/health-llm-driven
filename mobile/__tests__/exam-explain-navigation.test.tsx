@@ -19,7 +19,7 @@ import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createExamExplainAgentContext, serializeAgentContext } from '../utils/agentContext';
 
 const report = {
-  exam: { id: 7, exam_type: '测试体检', exam_date: '2026-09-01' },
+  exam: { id: 7, exam_type: '测试体检', exam_date: '2026-09-01', overall_assessment: '合成OCR摘要'.repeat(250) + '完整末尾', conclusions: [{ finding: '合成结论' }] },
   abnormal_items: [{ item_name: '测试指标', value: 2, value_text: null, unit: null,
     reference_range: '3–5', is_abnormal: 'low', gene_links: [] }],
   explanation: { summary: '测试报告解读', actions: [], recheck_window_days: 0, see_doctor_specialty: null },
@@ -61,7 +61,7 @@ describe('exam explanation navigation', () => {
     expect(mockRouter.dismissTo).toHaveBeenCalledWith({
       pathname: '/(tabs)/chat',
       params: {
-        prompt: '请基于这次体检异常解读，帮我按优先级梳理风险、行动、复查安排和需要向医生确认的问题。不要替代诊断或用药建议。',
+        prompt: '请基于我这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
         context: serializeAgentContext(createExamExplainAgentContext(report)),
         badge: '体检异常 1 项', newChat: '1', contextEntry: '1',
       },
@@ -75,3 +75,12 @@ describe('exam explanation navigation', () => {
     expect(mockRouter.dismissTo).not.toHaveBeenCalled();
   });
 });
+
+ it('shows full source narrative and binds chat to the owned report selector', () => {
+   const screen = render(<ExamExplainScreen />);
+   expect(screen.getByText(report.exam.overall_assessment)).toBeTruthy();
+   expect(screen.getByText(/不是原始影像/)).toBeTruthy();
+   const context = createExamExplainAgentContext(report);
+   expect(context.from).toBe('medical-exam/7');
+   expect(JSON.stringify(context)).toContain(report.exam.overall_assessment);
+ });

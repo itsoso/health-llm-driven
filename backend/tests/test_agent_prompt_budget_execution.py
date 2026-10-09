@@ -116,6 +116,7 @@ async def test_disabled_projection_preserves_payload(db, monkeypatch):
     [
         ("请介绍一下你自己", set()),
         ("杭州今天天气怎么样？", {"environment_check"}),
+        ("杭州明天天气温度怎么样？空气质量。", {"environment_check"}),
     ],
 )
 async def test_public_turn_uses_compact_provider_payload(
@@ -149,9 +150,19 @@ async def test_public_turn_uses_compact_provider_payload(
 
     monkeypatch.setattr(routing, "decide_route", unexpected_decision)
     fetched = []
+    if tool_names:
+        def no_pi(*args, **kwargs):
+            pytest.fail("Deterministic public weather must not start Pi")
+        monkeypatch.setattr("app.services.pi_kernel.PiKernelSession", no_pi)
 
     async def weather_read(check_type, *, city, days):
         fetched.append((check_type, city))
+        if check_type == "forecast":
+            return {"available": True, "source": "qweather", "forecasts": [{"date": "2026-10-09", "temp_max": 22, "temp_min": 17, "weather": "多云"}]}
+        if check_type == "air_quality":
+            return {"available": True, "aqi": 23, "aqi_description": "良", "obsTime": "2026-10-08T10:00+08:00",
+                    "advice_sensitive": "OUT_OF_SCOPE_HEALTH_ADVICE_SENTINEL",
+                    "exercise_advice": "OUT_OF_SCOPE_HEALTH_ADVICE_SENTINEL"}
         return {
             "weather": {
                 "available": True,
@@ -163,6 +174,9 @@ async def test_public_turn_uses_compact_provider_payload(
         }
 
     monkeypatch.setattr(executor, "_read_environment_in_process", weather_read)
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    monkeypatch.setattr(executor, "_agent_kernel_reference_now", lambda: datetime(2026, 10, 8, 23, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
     events = [
         event
         async for event in executor.run_stream(
@@ -173,14 +187,28 @@ async def test_public_turn_uses_compact_provider_payload(
         )
     ]
     assert events[-1]["event"] == "done"
-    assert provider.calls
-    for call in provider.calls:
-        assert not call.get("tools")  # Public weather reads before a single synthesis.
-        payload = json.dumps(call["messages"], ensure_ascii=False)
+    from app.models.agent_conversation import AgentMessage
+    answer = db.get(AgentMessage, events[-1]["data"]["message_id"]).content
+    assert "OLD_PRIVATE_HEALTH_SENTINEL" not in answer
+    assert "OUT_OF_SCOPE_HEALTH_ADVICE_SENTINEL" not in answer
+    assert events[-1]["data"]["turn_outcome"]["status"] == "complete"
+    if tool_names:
+        assert not provider.calls
+        assert "℃" in answer
+    else:
+        assert len(provider.calls) == 1
+        payload = json.dumps(provider.calls[0]["messages"], ensure_ascii=False)
         assert "OLD_PRIVATE_HEALTH_SENTINEL" not in payload
         assert len(payload) < 2500
-    assert len(provider.calls) == 1
-    assert fetched == ([("weather", "杭州")] if tool_names else [])
+    expected_reads = (
+        [("forecast", "杭州"), ("air_quality", "杭州")]
+        if "空气质量" in query else ([("weather", "杭州")] if tool_names else [])
+    )
+    assert fetched == expected_reads
+    if "空气质量" in query:
+        assert "AQI 23" in answer
+        assert "2026-10-09" in answer
+        assert "暂无所问日期的空气质量预报" in answer
     assert events[-1]["data"]["write_receipts"] == []
 
 
@@ -430,7 +458,7 @@ async def test_public_payload_replay(
                 }
             )
         assert pair[1]["payload_chars"] < pair[0]["payload_chars"] * 0.7
-        assert pair[1]["calls"] == 1
+        assert pair[1]["calls"] == (0 if "天气" in query else 1)
         results.append(
             {
                 "case": "weather" if "天气" in query else "introduction",
@@ -445,3 +473,90 @@ async def test_public_payload_replay(
         Path(output).write_text(
             json.dumps(live_payloads, ensure_ascii=False, indent=2) + "\n"
         )
+
+
+@pytest.mark.asyncio
+async def test_compound_air_quality_failure_does_not_generate_forecast(
+    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport,
+):
+    from tests.test_agent_executor_fast_routing import _wire_common
+    from app.models.agent_conversation import AgentMessage
+    user, _ = auth_user_and_headers
+    executor = ae.AgentExecutor(db)
+    provider = CaptureProvider()
+    _wire_common(executor, monkeypatch, lambda _: provider)
+    monkeypatch.setattr("app.services.llm.factory.create_provider_for_user", lambda *a, **kw: provider)
+    monkeypatch.setattr(ae, "get_health_tools", get_health_tools)
+    monkeypatch.setattr(ae.settings, "domain_prompt_optimization", True)
+    fetched = []
+
+    async def read(check_type, *, city, days):
+        fetched.append(check_type)
+        if check_type == "forecast":
+            return {"available": True, "forecasts": [{"tempMax": "22"}]}
+        return {"available": False, "aqi": 999}
+
+    monkeypatch.setattr(executor, "_read_environment_in_process", read)
+    events = [event async for event in executor.run_stream(
+        user_id=user.id, message="杭州明天天气温度怎么样？空气质量。",
+    )]
+    assert fetched == ["forecast", "air_quality"]
+    assert not provider.calls
+    answer = db.get(AgentMessage, events[-1]["data"]["message_id"]).content
+    assert "空气质量查询暂时未完成" in answer
+    assert "999" not in answer
+    assert events[-1]["data"]["completion_status"] == "error"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("damage", ["missing_date", "bool_temperature", "nan_aqi", "generic_missing_day"])
+async def test_deterministic_weather_invalid_facts_fail_done_and_persist(
+    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, damage,
+):
+    from tests.test_agent_executor_fast_routing import _wire_common
+    from tests.test_public_weather_render import NOW, MESSAGE, data
+    from app.models.agent_conversation import AgentMessage
+    user, _ = auth_user_and_headers
+    executor = ae.AgentExecutor(db)
+    provider = CaptureProvider()
+    _wire_common(executor, monkeypatch, lambda _: provider)
+    monkeypatch.setattr("app.services.llm.factory.create_provider_for_user", lambda *a, **kw: provider)
+    monkeypatch.setattr(ae, "get_health_tools", get_health_tools)
+    monkeypatch.setattr(ae.settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(executor, "_agent_kernel_reference_now", lambda: NOW)
+    results = data()
+    if damage == "missing_date": results[0]['forecasts'] = results[0]['forecasts'][:1]
+    if damage == "bool_temperature": results[0]['forecasts'][1]['temp_min'] = True
+    if damage == "nan_aqi": results[1]['air_quality']['aqi'] = float('nan')
+    fetched = []
+    async def read(check_type, **kwargs):
+        fetched.append(check_type)
+        return results[0] if check_type == "forecast" else results[1]['air_quality']
+    monkeypatch.setattr(executor, "_read_environment_in_process", read)
+    message = "杭州天气预报" if damage == "generic_missing_day" else MESSAGE
+    events = [event async for event in executor.run_stream(user_id=user.id, message=message)]
+    assert fetched == (["forecast"] if damage == "generic_missing_day" else ["forecast", "air_quality"])
+    assert not provider.calls
+    done = events[-1]['data']
+    assert done['turn_outcome']['status'] != 'complete'
+    saved = db.get(AgentMessage, done['message_id'])
+    assert saved.meta['turn_outcome']['status'] != 'complete'
+    assert '数据不完整' in saved.content
+
+
+@pytest.mark.asyncio
+async def test_personal_health_query_still_uses_model(
+    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport,
+):
+    from tests.test_agent_executor_fast_routing import _wire_common
+    user, _ = auth_user_and_headers
+    executor = ae.AgentExecutor(db)
+    provider = CaptureProvider()
+    _wire_common(executor, monkeypatch, lambda _: provider)
+    monkeypatch.setattr("app.services.llm.factory.create_provider_for_user", lambda *a, **kw: provider)
+    monkeypatch.setattr(ae, "get_health_tools", get_health_tools)
+    monkeypatch.setattr(ae.settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(ae.settings, "decision_mode", "off")
+    _ = [event async for event in executor.run_stream(user_id=user.id, message="查询我今天的饮食记录")]
+    assert executor._public_task is None
+    assert provider.calls

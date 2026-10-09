@@ -5,6 +5,46 @@
 
 ### 8.1 部署方式
 
+#### 复用候选的完整 CI
+
+`main` 的非纯文档 push 首次即运行完整 CI；PR 和本地预检保留按变更范围执行，
+纯文档 push 保留轻量验证。发布前查询并等待目标精确 SHA 已有的 CI，不能例行
+再触发一轮 `workflow_dispatch`。手动完整 CI 只用于明确的恢复或补验证需求
+（例如历史候选或纯文档候选尚无所需完整验证）。不得通过取消同 SHA 的运行中
+或失败记录制造绿色；全部适用运行仍按现有 trusted release gate 裁决。
+
+#### 版本化后端准入（backend-v1）
+
+`trusted-release.yml` 的显式 `target=backend-v1` 可在无关端侧 job 仍运行时申请
+后端发布；旧 `backend` / `release` / 原生及 OTA 开始入口继续要求完整 CI。
+该目标并非调用方声明“只改后端”即放行：服务器必须读取实际生产 HEAD 和该
+SHA 的 root-owned `SUCCEEDED` 回执，使用 `backend_release_scope.py` 验证
+生产至候选的完整逐提交变更。初版仅允许该脚本列明的三个服务实现文件及限定
+测试/文档；未知范围、缺失基线、合并、重命名、安全/依赖/迁移/共享契约/发布
+代码均回到 full。所有后端分片、PostgreSQL、质量、类型、发布不变量、文档
+及 `backend-release-ready-v1` 必须在当前 main 精确 SHA 的可信 CI 中成功。
+所有同 SHA 运行及 attempt 都须核验；任何已观察到的失败、取消或未知状态拒绝。
+
+可信 bootstrap 的 `install/rotate --backend-ci` 是同一服务端范围闸的显式入口，
+不豁免旧授权终态、锁或独立 G4，不可与恢复/原生收尾选项混用。新 key 调用旧
+`run` 或原生/OTA claim 时仍在领取资格前检查 full；既有 finish 动作继续按原
+绑定回执完成收尾，避免发布成功后因 main 前进留下悬挂租约。
+协议启用须安装新受审 canonical executor；仅合入 workflow 不等于线上已启用。
+
+#### 同主机前端制品准备与复用
+
+canonical `deploy.sh --prepare-frontend-artifact --publisher-sha <sha>
+--frontend-tree <tree> --artifact-id <32hex>` 默认只读预检，携相同
+`--evidence-sha256` 才实际准备。准备仍要求当前 main 完整 CI 和独立 G4，
+使用原 systemd sandbox，领取独立编译锁，不占用业务发布租约、不停服务。
+发布时给原 `--publish-frontend` 增加 `--prepared-artifact`，使用与 operation ID 相同的制品 ID；
+原证据摘要流程、生产检查、租约、切换和回滚全部保留。
+
+READY 绑定 publisher SHA、完整 frontend tree、锁文件、公开配置、工具链/
+平台、构建配方、构建日志及制品摘要。消费前重验并原子领取，禁止重用、失败
+重发或自动回退重编译。相同主机准备只能缩短最后发布阶段及允许准备与后端
+工作重叠，不等于跨 runner CI 制品投产，也不证明总构建算力下降。
+
 **唯一部署入口: `deploy.sh`**
 
 所有线上部署必须通过项目根目录的 `deploy.sh` 脚本执行，禁止手动 SSH 到服务器进行部署操作。
@@ -35,6 +75,39 @@
 第三方源码镜像，也不靠延长超时掩盖断线。
 
 ### 8.2 线上配置管理
+
+#### 独立视觉模型配置事务
+
+`deploy.sh --select-vision-model --publisher-sha <current-main-sha>
+--production-sha <deployed-sha> --operation-id <32hex>` 是 operator-only
+入口，默认只读预检；携相同 `--evidence-sha256` 才执行。执行前须精确
+publisher 完整 CI 与独立 G4 GO、实际生产成功回执及原 launcher/business
+锁检查。只允许 `qwen3.8-flash`，不开放 SSH RPC 或新的认证入口。
+
+仅创建 `/var/lib/reva-vision-model/model.env` 与三个现有服务的模型专用
+drop-in；不修改原 `.env`、持久健康授权、发布身份、服务用户或沙箱。
+必须证明有效 EnvironmentFile 顺序保留原 `.env` 和可选 `enabled.env`，
+模型文件实际最后加载，并拒绝环境删除规则及未知来源。受保护文件采用
+身份与变更元数据检查；证据只声明本操作未写这些文件且元数据未漂移，
+不声明逐字节比较，不读取其秘密内容。
+
+配置安装、有界重启、三服务真实 PID 中唯一非秘密模型变量、既有授权
+开关和沙箱、loopback 健康检查通过后，先持久化
+`CONFIG_SUCCEEDED_PENDING_MODEL_ACCEPTANCE` 回执再释放原 lease。
+该终态明确真实模型调用为零、模型验收仍 pending，不是
+`VISION_SUCCEEDED` 或 G6。线上合成验收另行核对现有已授权服务通道、
+实际型号、usage 与请求硬边界；不得伪造真实评测确认。
+
+同入口的 `--rollback` 默认仍只读预检，执行同样绑定新鲜摘要和独占
+lease，只恢复本操作模型专用文件。未知写入或重启结果保留现场与锁，
+禁止盲目重放；配置恢复不证明已退役型号能够服务。后续 canonical
+后端发布保留模型 overlay，须将其纳入有效配置验收；受审替换或移除
+必须显式处理，不能凭基础 `.env` 的模型值推断实际运行模型。
+未终结模型配置审计阻断其它 canonical 发布，禁止删审计或清锁绕过。
+`--finalize-config` / `--finalize-rollback` 只允许在已持久化 verified
+效果、真实服务与模型专用文件回读及原 lease 身份一致时补终态和锁收尾，
+不重放安装、daemon-reload、restart 或模型调用。缺失 verified、部分锁
+身份不明或效果漂移均 BLOCK，保留原现场供负责方受审处理。
 
 注册隔离修复的独立 operator 入口为 canonical `deploy.sh --security-hardening
 --sha <final-sha>`，只在该版本 backend 与前端制品均已成功发布后执行。
@@ -934,3 +1007,49 @@ compile、expand、stringify 对直接 AST 输入也限制递归深度（含 roo
 Mobile 使用固定 patch-package 补丁；Frontend 普通安装及 build 命令执行自包含验证器，
 确保只复制 frontend 的隔离重建仍覆盖修复。Trusted Release/OTA 的 ignore-scripts
 安装在凭据前显式修复 mobile/release-tools 两个根。上游发布后重新评审替换本地修复。
+
+### Retained candidate 的失败发布闭合
+
+`retained_candidate_retirement.py` 处理一种独立终态：backend-only 发布原回执为
+`NEEDS_OPERATOR`，rollback 已保留 candidate，runtime terminal 已是该 candidate 的
+`COMMITTED / finalized / target=candidate`，transaction/reap、business lease 和发布进程均已退出。
+此入口不修复服务、不再次 finalize、不重写失败回执，也不把失败发布标成成功。
+若上述条件不成立，必须先诊断真实运行态，不能用闭合绕过。操作前还必须独立读取原 GitHub
+发布 run 的最新状态、核对 SHA/workflow/run attempt 并确认已终态，留存脱敏回执。此次原
+失败 run 为 `37933398517`、candidate 为 `e3210b1161f76944733b6522e0ff21695858614c`；
+closure 本身不调用 GitHub 写接口，也不把本机 launcher 无进程视为远端 workflow 已终止。
+
+操作来自新 main 精确绿色 SHA 的 canonical root-owned checkout，使用系统
+`python3.12 -I -S -B`。闭合前保留旧双身份和 loopback 私钥；通用 revoke 对 `NEEDS_OPERATOR` 的拒绝不变。
+独立闭合先核验原 installation 和精确双授权，持久化 intent 并重复完整证明后，才精确撤销
+这两条授权、删除已绑定的旧 loopback 私钥，重新核验 installation 与运行态后写 completion。入口参数为
+`--sha <reviewed-closing-sha> --failed-sha <failed-candidate-sha>`；第一次只读 inspect
+返回 evidence digest。确认后第二次加 `--evidence-sha256 <digest>`，固定原 launcher lock
+并重新检查：完整失败 workspace 的原始字节/元数据、原 canonical executor 与各阶段回执、
+生产 clean revision、runtime terminal、服务进程及 runtime flag、schema、runtime-only KB、
+health 依赖与未认证 auth 拒绝。candidate-effective 检查复用现有 unit proof，核验
+FragmentPath、全部 DropInPaths、ExecStart、ReadWritePaths、安全配置、enablement 与 network guard；
+Laya 检查绑定 candidate 的导出源码/manifest、原安装回执及 immutable generation，并复用
+`verify_install` 验证隔离账户、服务身份、未授权拒绝和 synthetic inference。上述探针均只读，
+不创建 lease、不 activate、不 finalize。任何变化均阻断。
+
+独立 root-only `retained-candidate-closures/<failed-sha>/` 先持久化 `intent.json`，
+再次验证后才写 `completed.json` 并签发随机 receipt。成功终态仅为
+`CLOSED_RETAINED_CANDIDATE_FAILURE`。receipt 输出必须直接接入受保护回执文件或既有保密
+传输通道，禁止进入终端日志、用户消息或命令行。若 intent 已存在、完成写失败或回执遗失，
+不允许重试、删目录或重建回执；保留现场另行审核。
+
+后续 bootstrap rotate 通过既有 protected recovery-receipt 通道消费这个独立终态，
+不会允许旧 SHA 再次发布。历史核验继续校验原 workspace、installation 归档、原锁与闭合
+审计，但只验证审计内的 runtime/service/probe 快照，不要求未来生产仍运行旧 candidate。
+当前首次 rotate 仍须核验实时生产没有漂移。该回执不代表 OTA、TestFlight、业务验收或新发布完成。
+
+
+retained candidate 的已治理 Vision overlay 通过独立证明处理：核验原 model-selection
+的 before/intent/verified/completed 操作绑定、摘要、canonical publisher 与原 production
+成功回执；model.env 与三个 drop-in 必须是现有 operator 的精确只读字节。真实服务四个
+DropInPaths 必须恰为已知基础三项加唯一末位 model overlay，EnvironmentFiles 顺序、
+UnsetEnvironment、进程身份与实际 model 均由现有 vision validator 检查。
+只有这个已验证 overlay 可在私有基础 unit 证明视图中剥离，其他属性一律透传；原始四路径、
+model 文件、进程及历史摘要独立归档，前后变化阻断。历史验证不读取未来 live model/PID。
+CLI 失败仅输出固定 stage、白名单异常类和禁止自动重试状态，不输出异常原文、回溯或 argv。

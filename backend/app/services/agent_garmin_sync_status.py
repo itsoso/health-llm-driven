@@ -160,7 +160,10 @@ def _job_observation(meta: Any, job_id: str) -> tuple[str, str, str]:
         for value in counts
     ):
         return "unknown", state, "job_business_result_invalid"
-    if result["error_count"]:
+    activities_errors = result.get("activities_error_count", 0)
+    if type(activities_errors) is not int or activities_errors < 0:
+        return "unknown", state, "job_business_result_invalid"
+    if result["error_count"] or activities_errors:
         return "failed", state, "job_partial_failure"
     return "completed", state, "job_reported_success"
 

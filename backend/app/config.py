@@ -279,6 +279,9 @@ class Settings(BaseSettings):
     # fixed lanes preserve provider prefix-cache reuse and withheld-tool reruns
     # remain the fail-open escape hatch.
     domain_prompt_optimization: bool = False
+    # Closed first-turn owned sleep/diet reads may skip model planning only.
+    # Independent rollout/rollback switch; Pi, Gateway and answer guards remain.
+    owned_read_preplanning: bool = False
     # XiaoBa Agent Kernel: shadow keeps decisions observable but does not block;
     # enforce blocks policy-denied write tools at the single execution choke point.
     agent_kernel_policy_mode: Literal["enforce", "shadow"] = "enforce"

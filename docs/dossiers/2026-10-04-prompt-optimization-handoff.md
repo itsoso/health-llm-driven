@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | 已获部署授权；G3 合成质量筛查与 G4 代码审查 GO，等待精确主干 CI 和受控发布 |
+| 状态 | validating |
+| 当前阶段 | 2026-10-08：优化修复已完成 Backend/Web 发布；餐食图片错误分类修复已部署，原用户照片验收待确认 |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -13,7 +13,9 @@
 
 日期：2026-10-04。接手分支：`codex/reva-prompt-optimization`。本文件是各阶段 dossier 的最新索引；旧文档中的“未授权提交/推送”是当时状态，用户现已授权保存远端分支以便换机继续。用户随后明确要求“想办法解决之后部署”；现已授权按 Gate 完成 main 集成与生产部署，当前发布进度见本文末尾。
 
-## 当前代码
+**10月4日交付（不包含本轮10月8日修复）**：后端与 Web 均已成功发布，精确 SHA、回执、健康检查和限制见[上线验收记录](../reviews/2026-10-04-prompt-deployment.md)。下文保留各阶段失败与检查点；历史“未部署 / BLOCK”不代表最终发布状态，真实用户体验及生产性能仍未完成验收。
+
+## 10月4日交接时的代码
 
 分支基于已 fetch 的 `origin/main`：`f201d85b4f0d726b09ff0f8b16acf403d70f3e57`。此前隔离工作树 HEAD `a8853dea1` 与该主干只差发布文档，运行时代码相同。不要以旧本地 checkout 替代 fetch 后的比较，也不要覆盖其他工作树修改。
 
@@ -248,3 +250,186 @@ P3 现有 Pi 测试确认 legacy passthrough flag 仍保留最终模型轮，因
 `7985bef01` 的 GitHub CI `37203498721` 暴露两处本地关联集未覆盖的测试接线缺口：旧 r-other 分片目录缺少新增 `test_retrospective_read_scope.py`，以及 `test_health_record_amount_regression.py` 的旧 FakeAgentConversationService 未初始化 `provider_history_references`。两项均先本地复现 RED，补目录 pattern 和 fake 空引用后，发布分片合同、原记录回归及新增 retrospective 回归 **97 passed / 3.45s**。不改变运行时代码、不删除测试、不放宽 oracle；首轮失败原样保留。生产尚未轮换授权或部署。
 
 同轮 balanced-14 的两个 advice 用例把公开 `run_stream` 直接换成 `_run_stream_impl`，跳过 `_report_dispatches` 初始化并在原安全断言前失败。临时合成异常探针确认后，测试仅让 local_advice_response 第一次路由调用返回 None 并立即恢复原函数，保留公开入口和真实最终答案 guard。原强制越界工具、拒绝原因和公开回答断言不变；相关 advice/query outcome **80 passed / 15.37s**，运行时哈希完全不变。
+
+## 后端与 Web 发布完成（2026-10-04）
+
+生产 revision 为 `a10e642cde189c9b414dc8d41346e22f088eaa0e`，运行时代码保持 `35f7438f8` 的已审摘要。精确主干 CI `37204244154` attempt 1、`37204525289` attempt 2 均成功；后者 attempt 1 曾因误读原 CI 进度而多触发并取消，按所有当前 attempt 必须绿色的发布规则完成重跑，历史未隐藏。Trusted validate `37205448925`、backend `37206256120` 成功。
+
+原旧授权按 canonical revoke、验证后销毁旧 loopback 私钥、rotate 顺序退休。首次缺少前置步骤的 rotate 在 intent 前拒绝，检查后按既有协议补齐；没有修改发布器、手改授权、清锁或覆盖旧回执。新后端 `completed.json` 为 `SUCCEEDED`，部署日志三次 **60/60 PASS**。数据库备份、恢复演练和站外归档依权威部署规范默认跳过；不能声称已执行备份。
+
+前端 operation `1302b9e763454e829e5c7f1e25e98a45` 从同 SHA canonical staging，经只读预检摘要绑定、隔离构建、制品切换及页面验证，得到 `FRONTEND_SUCCEEDED`。完整 frontend tree 为 `26b12bed72ee3aa7502d44dc4ef94ba66cc5b6d8`，制品摘要及旧制品摘要保存在[机器可读回执](../reviews/2026-10-04-prompt-deployment-verification.json)。原发布租约已释放，launcher inode 保留，后端/worker/beat 的进程与配置未被 Web 发布改变。
+
+### G5 部署健康
+
+裁决：GO。独立 reviewer 核验原回执和四份前端 proof 摘要、内外网 `/privacy` 与 `/connect/health` 的 200 及页面标识、后端进程/config 保持，以及前端跨稳定窗口无重启。最终四个服务均 active/running、`NRestarts=0`，本次启动以来无 ERROR/CRITICAL/Traceback 日志标记。生产 Git SHA、干净 tracked tree 和 executor 摘要匹配受审版本。
+
+实际应用公开路径 `https://health.executor.life/api/health` 与 `/api/agent/stream` 分别为 **200/401**，TLS 校验通过。第一次复验沿用旧资料中的 `health-api.executor.life`，本机 TLS 失败、服务器 DNS 不可解析；源码确认实际客户端使用 `health.executor.life/api`，改正探测地址后通过。没有改生产 DNS、代理或 TLS 校验，没有重发发布。
+
+### G6 用户体验与性能验收
+
+仍待真实用户路径验收：生产聊天流式显示、完整回答及保存、失败状态如实呈现和实际响应体验。本次生产 smoke 未读取或写入真实健康数据，401 只证明路由与鉴权边界；不能替代上述功能验收。合成质量筛查通过不等于统计非劣，正常样本输入下降 **16.04%** 不等于所有场景下降，整体提速与生产 p95 尚未证实。
+
+本轮交付为后端与 Web，不包含 Mobile OTA、原生包或 TestFlight。已否决写入工具说明精简、P1/P2 和参数传输实验均未启用；报告复用维持 shadow。完整方案中的进一步优化仍按同批基线、质量与长尾闸逐项推进。发布后的证据更新保存在接续分支，生产和 main 保持已验证的 a10e642c，后续不得把文档提交 SHA 当成已部署版本。
+
+
+## 2026-10-07：下一批优化实验验证完成
+
+用户“开干”后完成空结果结束、既有 P2 闭合本人读取预规划、重复字段缺口字典三项独立候选。代码提交 `415406202`、诊断留证提交 `679508d6f`；相对 `dba00171e` 的应用运行时差异为空，写工具说明精简仍 NO-GO。
+
+32 个合成流程样本、50 次 Qwen API 调用已完整留证。P2 两模型有数据输入 12270→4724（减少 61.5%）、空数据 11873→4327（减少 63.56%），对应四组成功样本耗时均下降；失败状态仍 failed/error。独立语义检查通过有限三态筛查，允许单独进入后续生产接入评审。83 项关联测试、System Map、秘密扫描与项目 live regression gate 通过。
+
+本批总体生产 NO-GO：空结果候选存在 Flash 规划修复成本；证据压缩收益在7天样本不足，Max样本变慢；先前两次营养护栏失败缺原答，另一条“查询”措辞样本未命中冻结日历范围，均原样保留。新诊断批成功不能覆盖这些失败。尚无可审生产接线、丰富档案/路由及精确生产 SHA 验证。本批未合并、推送或部署，不把实验收益报为线上收益。
+
+详情及下一步：[本批结论](../reviews/2026-10-07-prompt-next-candidates.md)、[结构化汇总及六份原始报告哈希](../reviews/2026-10-07-prompt-next-candidates-summary.json)。独立 reviewer `prompt_p1_review` 对两个固定代码提交均裁决 eval GO、生产 NO-GO。新增 answer-stage 留证只作用于合成评测，有 16000 字符上限及截断标记，不捕获 reasoning。
+
+
+## 2026-10-07 P2 runtime integration in progress
+
+用户再次“开干”授权实际接入。候选仅覆盖首个新会话的闭合本人睡眠+饮食分析（1–31 天），无历史/引用/附件/待确认/同步/医疗证据流程。服务端只产生 OwnedReadScope 已绑定的工具提案，仍经 Pi/Gateway、原读取、完整性与回答护栏。独立 `owned_read_preplanning` 默认关闭且还要求 `domain_prompt_optimization`；关闭独立开关恢复当前生产行为。写工具说明精简仍否决，另外两个实验仍 eval-only。
+
+先写失败测试再接入。85 项聚焦测试通过，早期 PostgreSQL 169 项通过（随后增加路由和独立开关测试，待刷新）。decision on/Laya 的 balanced 与 high_stakes 两臂都保持原质量模型，不放宽路由。perf 不把服务端规划计作模型调用。
+
+真实 rich-profile 筛查保留在 `2026-10-07-runtime-preplan-rich-live.json`：已完成三对六条均契约通过；31 天 Max 候选触发 45 秒 provider TimeoutError，原批停止，缺少该 baseline。此失败不得删除或当成功耗时。新三态配对、独立安全审查和完整 CI-mode 正在执行。当前 production **NO-GO**，独立开关未在线开启；尚未推送、合并或部署本轮代码。激活必须另有足够质量与长尾证据，不能用小样本代替计划中的完整非劣验证。
+
+
+### Runtime P2 final verification checkpoint (2026-10-07)
+
+实现 `f5aff2062` 与 consent 测试 `f3f5fca1c` 已本地提交。CI-mode 1211 passed/2 skipped；最终 PostgreSQL 100 passed、临时实例停止清理；聚焦85+随后consent2，独立重跑87及取消/部分失败对抗2通过，集合重叠不相加。标准 live gate 12/50/5全部通过，10次MiniMax API usage完整；System Map、阻断Ruff和秘密扫描通过。
+
+三份候选报告22流程/29次Qwen API尝试，包含2次超时（usage未知而非零）。最终源码匹配的三态12条全部契约通过，有记录12270→4724输入token、2→1API。丰富档案原批在独立开关之前，必须保留其源码差异，不能冒充最终提交验证。31天Max原批45.61秒超时，新预算限定诊断首对通过后第二候选45.36秒再超时，按规则停止。
+
+独立安全裁决：代码GO、默认关闭部署代码准入GO、生产激活NO-GO。另缺真实生产Decision/Laya路径及完整统计非劣/长尾证据；不能用局部绿或减少token替代。**本轮未push、merge、deploy，也未开启线上独立开关。**继续点为回答阶段超时诊断和冻结回放，不是重新启用写工具说明精简。完整证据见 [运行时报告](../reviews/2026-10-07-runtime-preplan-review.md) 与 [结构化汇总](../reviews/2026-10-07-runtime-preplan-summary.json)。
+
+## 2026-10-08：超时定位、真实路由与评分边界修复
+
+接续指定分支，保留原主工作树。已修评测双时钟/记录身份，补真实resolver/Laya与生产参数路径，修复评测库入口和用量汇总缺口；真实语义审查发现无等级标准却称“评分尚可”，已补输出拦截与有界重写验证。组合布局去重同时恢复“可以没有下一步”。固定代码到 `f4cd470bd`，后续验证及精确证据统一在[本轮报告](../reviews/2026-10-08-prompt-timeout-resolution.md)。
+
+真实路由输入下降35.24%，但首对耗时变慢且一条语义失败，不能据此关闭生产Gate。新的Max思考预算512仅为隔离实验，初次探针有明显提速，尚待同源扩大验证。默认预规划和预算均未在线开启，写工具说明精简仍否决。本批尚未push、merge、deploy；既有部署授权仍有效，满足Gate后再执行。
+
+
+### 2026-10-08 最新断点：质量优先，撤回有损过滤
+
+过滤撤回检查点为 `59387c25d`，最终睡眠事实保真修复为 `d201cdcc9`。512 三重复与扩大回放、8192 三场景均已完成并经独立审查，**语义 NO-GO**；出现新增采集要求、未知同步归因、日汇总误述为每晚/单次睡眠等问题。8192 对照的基线也存在单条日汇总误称单次睡眠，保留基线缺陷。不得启用预算或降低质量标准求绿。
+
+新增积累记录正则过滤因跨行引用/否定可能误删已有信息，已全部撤回，保留 12 项上下文保真回归；`agent_composed_read_completion.py` 恢复到 ef85536f5（评分等级修复仍保留）。写工具描述精简继续否决。
+
+Flash 不改思考控制的真实路由六场景12任务契约通过，但独立语义及性能仍NO-GO。最终代码d201cdcc9另修复了真实睡眠事实误删，180项相关测试、25项PostgreSQL边界和独立39项通过，固定源码标准真实闸10次API成功。结果、失败样本、固定源码和限制统一见 [10月8日修复记录](../reviews/2026-10-08-prompt-timeout-resolution.md)。本批未 push、merge、deploy，生产激活仍 NO-GO；10月4日的已部署结果不得混作本批验收。
+
+### 2026-10-08 发布请求：本地就绪，主干红色 CI 阻断外部写入
+
+用户明确要求合并 main 并上线。已在接续分支无冲突接入 main `8a7d85df0`，原工作树保留。发现 main CI `37721192561` 因依赖安全审计失败；固定本地修复 `246e697ea` 更新 Mobile compression/shell-quote/source-map-js，及 Web source-map-js/Next.js/sharp，未添加审计豁免。独立审查对完整代码/依赖范围 GO，三个后端运行时文件与已审 d201 完全一致；真实模型证据的 26 个摘要不变，未重新启用任何被否决实验。
+
+新鲜 CI-mode 48 文件 **2468 passed / 2 skipped**，零失败；两项 SQLite skip 的 PostgreSQL 同源证据已在前轮保留。两端 npm ci/OSV 审计通过；Mobile tsc 与聊天头部6项通过；Web 447 passed / 1 skipped、build、lint通过（37 warnings）。Mobile 三次审计网络失败如实保留，第四次原闸完整通过。macOS sharp 实际 rsvg2.63.2，仍需最终 Linux 产物证据。System Map/秘密检查通过。
+
+生产仍为 a10e642c，服务健康；只读核对预算0、staged off、parallel section thinking off，预规划未配置且候选默认false。AGENTS 第7节要求主干非绿停止外部写入，因此本轮尚未push、merge、部署或更新CI变量；需要明确允许推送受审修复以恢复CI，再等待精确主干全绿后按Trusted流程发布后端与Web。完整断点、修复版本、限制和下一步见[发布预检](../reviews/2026-10-08-prompt-release-preflight.md)及[结构化证据](../reviews/2026-10-08-prompt-release-preflight.json)。
+
+### PR 277 真实 CI 与锁定环境补验
+
+用户接续要求“发布之后解决”餐食图片识别和报错文案，按先发布再修复顺序继续。候选773经官方HTTPS推送到接续分支并创建PR277，原SSH连接失败与远端未更新检查保留。CI37726902417暴露multidict新漏洞和旧Next/sharp版本断言；已修为305ca6777，仅升级multidict锁块至6.9.1及更新三条期望版本。
+
+本地发现venv版本漂移后已对齐134包完整生产锁；50项锁/版本测试、56项传输/API测试通过，完整库存漏洞审计通过（本地默认audit的ensurepip SIGABRT失败单独保留，未改CI命令）。锁定环境标准live重新运行10次真实API，0失败、用量完整、27份源码/锁摘要不变。证据与限制见[发布预检续节](../reviews/2026-10-08-prompt-release-preflight.md)及[锁定环境真实闸](../reviews/2026-10-08-release-locked-live-regression.json)。尚未main合并或部署；截图问题将在本批发布后接续，不能把泛化失败文案当作已定位根因。
+
+### Main 合并后的 CI 断点：保留失败，补充诊断
+
+候选8694a449的PR CI37727741607全部29项通过，经独立GO后快进合入main，PR277已合并。main同SHA的CI37728657086在balanced-02失败：`test_full_pi_task_preserves_read_contract_and_persistence[available]` 的empty_terminal返回failed_contracts。该回合仍有两次模型调用和complete终态，不能由此推断所有契约通过；原断言的字典repr截断隐藏了具体quality位。
+
+本地锁定环境单文件66项、原f分片288项、30次六变体available重复均通过；这些不能替代失败的main CI。新增断言仅将既有质量位、工具契约、数据库错误类别和终态序列化为完整诊断，不改通过条件、不含原始用户数据、不改运行时。SQLite StaticPool与Twin多会话共享连接是待验证风险，尚未证明为本次根因。生产保持a10e642c，未执行bootstrap/Trusted部署；餐食图片识别和泛化错误文案仍待本批发布后接续。
+
+### 评测数据库隔离缺陷已确定性复现并修复，待新候选闸
+
+诊断CI37730165508在另一场景展开了InterfaceError，仅数据库上下文检查失败；同轮另一路由场景及最初main失败仍缺历史细项，不追认根因。新增RED证明StaticPool四线程和主会话共用一个连接、worker关闭会回滚主事务。现改为eval-only随机命名共享内存库和独立连接，保持并发、真实链路、所有oracle及生产配置。
+
+319项CI-mode与补充4项负测通过；CLI18任务通过。所有状态断言补完整窄诊断。新鲜live、独立复审和Linux/main精确CI尚待完成；发布仍阻断。完整证据边界见[隔离修复记录](../reviews/2026-10-08-benchmark-database-isolation.md)。
+
+隔离修复固定源码515531e96的真实闸5场景+5judge（10 API）通过，28份源码/锁摘要不变；复审补全剩余路由诊断和建表失败清理，13项通过。最终CLI18任务及25份源码摘要完全匹配，证据已持久化。System Map/秘密扫描/阻断Ruff通过，待最终复审与Linux/main CI；仍未部署。
+
+### 精确 main CI 通过，Trusted 预检的事件类型阻断
+
+独立审查对1c86269e4875a16ba27a9dabf763fa08a43175dd裁决代码及默认关闭发布准入GO，实验激活仍NO-GO。PR278的CI37731876684与快进合并后的main CI37732948052均29项成功；Linux balanced-02的f分片293项、agent-i-l分片7136项、twin-api分片4项零失败。它们与本地集合重叠，不合并计数。
+
+Trusted validate 37733904268在凭据前失败：现有门禁核对同SHA的每条CI记录，PR事件不满足其main push/workflow_dispatch合同。因此即使同SHA两条CI均绿色，1c862仍不可发布。保留原失败，不重跑、不修改门禁；本次仅追加验证记录，形成独立main发布提交后重新等待完整精确CI。运行时、依赖、评测源码及28份live绑定摘要保持不变。
+
+当前生产仍a10e642cde189c9b414dc8d41346e22f088eaa0e，原回执SUCCEEDED、业务lease不存在、launcher inode7777226。GitHub relay启用且active，隔离官方Git查询main身份一致。尚未撤权、销毁旧私钥、轮换授权或部署。餐食问题已完成只读定位，按用户指定顺序在本次发布后修复；未以截图或时间相近日志冒充完整用户路径验收。
+
+## 2026-10-08 Backend/Web 已发布，接续餐食错误分类修复
+
+第一批优化修复已合入 main 并部署 `0fe1122ad1f5fa3f36bf25607e10339e4b989609`：完整 CI 37734502146 全部29项成功；Trusted validate 37735680343、backend 37736434279 成功，后端回执 SUCCEEDED、健康评分60/60。Web operation `ad84dc77ca0b41a4a5a01a10168ca640` 为 FRONTEND_SUCCEEDED；实际 sharp0.35.5/rsvg2.63.2、公网页面、服务状态与原后端身份保持验证通过。独立 G5 GO，详见[精确发布证明](../reviews/2026-10-08-prompt-deployment-verification.json)。这不等于登录健康流程、Mobile 发布或用户 G6 验收；预规划及被否决预算/写工具说明实验保持关闭。
+
+用户要求发布后修复“记录这餐”图片识别失败及泛化错误。本次沿用原 controller/run，范围为既有识别与终态错误语义，不新增写权限、健康对象或产品入口。已用合成 run_stream 复现 generic write_without_tool：有效 JSON 备注含拒绝词被整体拒绝、nofood 二次清洗丢分类、混合 timeout 被当 nofood、最终错误覆盖了补充提示。
+
+修复先解析并验证模型 JSON，内部派生错误类别；当前用户/消息/图片绑定且封闭纯餐食记录意图下，缺少可记录食物返回 waiting_for_user 并明确未保存；服务或格式失败保持 failed/retryable 并给清楚重试说明。混合任务、部分成功、已有回执、待确认、其他工具失败、只读与来源不明仍走原流程。没有新增草稿/回执或额外写入。有效食物加普通不确定备注继续通过。
+
+G3 本地：312关联回归、21 CI-mode集成、PostgreSQL196项及补充3项下一轮/重放用例通过；原Mobile恢复 waiting_for_user 1项通过；System Map通过。第一轮安全审查发现显式success=false及空food对象会误归nofood，补3项RED后收紧模型契约并复跑。真实模型首轮缺配置失败保留，授权测试配置仅进进程内存；修前10次API通过不替代修后新鲜证据。详见[餐食验证](../reviews/2026-10-08-meal-photo-validation.json)。修后标准live闸10次真实API通过、0失败、用量完整且源码摘要不变，见[修后真实闸](../reviews/2026-10-08-meal-photo-live-regression.json)。独立 G4 复审 GO，绑定 `ae6e99566a7bd3d24992e228bd8bb488d8c03d4c`；reviewer另跑244项与12个Base64/URL契约探针通过。餐食修复尚未push/部署，下一步精确main CI与Trusted后端发布。原截图是餐后残留，不据此声称能还原整餐；本地测试没有复用真实健康图片。
+
+### 餐食修复正式发布与后验
+
+已合入 main 并通过完整精确 CI `37741765620`（29项成功），push CI `37741692327` 成功。Trusted validate `37743406333`、backend `37744317239` 成功，生产精确版本 `1e3a19e58b075364ed6769f91a374cfc991d554b`，正式回执 SUCCEEDED。原授权按 canonical bootstrap 退休，新授权安装成功，原 launcher inode 与历史回执保留，无部署重跑。
+
+上线后验：生产 tracked tree 干净、三个修改的运行时文件摘要与受审源码一致；三轮健康评分60/60；backend、worker、beat正常且restart count为0；实际前端服务 health-frontend 完整身份与上一批Web发布后相同；发布租约已释放。四项公开接口检查（健康200、未授权Agent401、隐私页200、健康连接页200）TLS验证通过；当前配置加载的四项实验/思考开关仍为原关闭值。探针首次误查不存在的 health-web，修正为实际unit后只读复验通过，没有修改生产或重跑部署。详见[餐食发布证明](../reviews/2026-10-08-meal-photo-deployment.json)。
+
+独立 G5 后验复核 GO，确认精确CI、回执、运行时摘要、服务/租约与公开端点证据一致；后续稳定窗口四个服务PID保持且零重启。G6边界：合成流式路径、重放及下一轮测试已通过；未用用户原餐食图片进行真实线上识别，没有读取/写入生产健康记录，不能声称原图识别准确率或用户验收已通过。本次只发布后端，沿用现有Mobile waiting_for_user协议，不需要OTA/原生包，也未执行Mobile发布。
+
+## 2026-10-08 截图问题后续：所选体检报告与手机端错误一致性
+
+用户要求“全部解决并发布”，并追加体检报告截图：产品入口的报告解读原话被误判未授权，失败回复同时附有化验卡和回答依据。本轮延续原 Dossier/run，不复制截图中的个人指标。
+
+- 补齐两个既有产品入口原话的封闭授权识别；30 天为建议时间范围，不扩展个人数据读取窗口。引用、他人、撤回等负例仍不授权。
+- `medical-exam/{id}` 仅作为选择器；服务端按认证用户、报告 ID 和非未来日期核验，禁止回退其它报告。客户端摘要和控制提示不作医学证据。
+- 所选报告回合不加载全量 Twin、其它报告、旧聊天摘要或可执行历史引用；历史聊天仍原样持久化。模型只获得所选报告读工具与公共知识工具，服务端另行检查范围和原有授权。
+- 失败、阻断和中断的卡片、回答依据与引用在后端最终出口和 Mobile 实时/历史路径保持一致；保留真实写入回执以及正常部分成功结果。组合症状超出所选报告范围时明确未完成联合解读，保留原有紧急分流。
+- Mobile 的“基于 基于……”标签去重；这部分按 Trusted OTA 发布，不涉及原生变化。
+
+验证保留了失败过程：首轮安全评审发现旧会话泄漏到模型，补充真实历史对抗测试后修复；真实模型首次有效报告验收完成了报告读取但又尝试范围外工具，终态 blocked，未作为通过。后续收窄模型工具投影并补上下文规则。独立脚本曾缺少测试签名密钥，相关失败已标明测试环境无效，未修改生产密钥或绕过同意校验。最终上线状态以本节后续精确 SHA、CI、后端和 OTA 回执为准，当前仍在验证中。
+
+餐食使用生产配置的真实视觉模型验证了空白、截图中的餐盘残渣及公开米饭图片；残渣端到端为待补充信息、无健康写入、流与持久化一致，同一请求重放不再次识别。截图裁剪仅在临时内存/目录处理，不提交原图；它不是原始全分辨率照片验收。首个端到端脚本缺失指标表导致上下文降级，已作废；补齐全部模型表并使用独立连接的临时内存库后通过且数据库错误为零。详见 `docs/reviews/2026-10-08-meal-photo-live-vision.json`。此前被否决的写入工具说明精简与未准入预规划继续关闭。
+
+最终运行时 `2a9650fa35fd354a8c55b90f34fba750758a7836`：语义/授权 3260、执行 203、引用 20、Mobile 229、TypeScript、System Map、锁定依赖 134 与 CI-mode 集成 21 通过。PostgreSQL 原回归 375、最终所选报告 26 通过，临时集群已删除。最终真实报告验收 19 检查、4 次 API、source 不变，历史/档案/Twin 读取 spy 和 SQL 错误均为零；标准真实模型闸 10 次 API 通过。**最终报告耗时 155.35 秒，存在长尾，不宣称稳定提速**。中间源码变化导致一份标准闸 `failed_source_changed`，保持失败记录，不算发布证据。
+
+餐食补证另保留一次断言失败：等待用户终态已成立，但该探针未完整保留“尚未保存”文案/流持久化失败的分项数据；后续带诊断的通过不能追认原失败或证明语义重复性。最终代码针对无食物与低置信确认的实际流契约 4 项通过，视觉解析及四个餐食关键函数相对已部署版本未变。此限制不包装成原图 G6 全通过，详见 `docs/reviews/2026-10-08-selected-report-validation.json`。发布仍待固定提交安全 GO、精确主干完整 CI、后端和 OTA 回执。
+
+独立 G4 对 `2a9650fa3` 给出 GO：后端 115、原历史对抗 2、Mobile 201 通过，额外 schema 不变性/权限断言通过；最终两份真实模型证据共 36 份源码哈希匹配。GO 不替代上线或逐条临床正文验收。随后仅提交本轮脱敏证据，不改变受审运行时；用户已授权合并 main、后端及手机发布。
+
+### 后端正式上线；Mobile OTA 未交付
+
+发布版本 `5c1ef73518af8e49066cc9aab19c9558a084e05f` 已快进 main，完整 CI `37750199480` 29 项成功，Trusted validate `37751737519` 和 backend `37753182343` 成功。生产同 SHA 正式回执 SUCCEEDED，五个关键运行时文件摘要一致；三轮健康 60/60，四个公开 HTTP/TLS 检查通过，四个服务正常、零重启，旧前端身份保持。独立 G5 后端 GO。按发布治理默认跳过数据库备份/恢复演练/站外归档，不把跳过记为通过。预规划和被否决实验仍关闭。
+
+Mobile validate `37754437344` 成功，但 publish `37755008534` 在启动阶段失败；服务器无该 SHA 的 OTA claim/目录或业务 lease，未进入供应商发布，未重发。泛化捕获没有保存细项，不能断言该次启动失败的具体根因。另用实际合约独立确认：固定原生 cad 基线相对本次源码有原生模块、配置和依赖变更，兼容性 BLOCK；仅换为历史 a885/275 也不能自动证明整个 production runtime cohort 相容。当前 validate 未调用发布器上下文和源码兼容性检查，是确定的预检覆盖缺口，正在修复；不扩大 allowlist、不改基线绕过，也不宣布手机已更新。
+
+详见 [本批发布证据](../reviews/2026-10-08-selected-report-deployment.json)。后端已交付；手机新包渠道待用户选择及对应签名/发布 Gate。原图全分辨率验收、登录用户 G6 和稳定提速仍未验证。
+
+新鲜 Expo 只读查询完整短页：production/runtime1.3.4 的四个 STORE 构建 272–275 存在三种不同原生 fingerprint，旧基线问题并非只换 latest 即可解决。channel mapping 查询超时，保持未验证；无供应商写入。证据见 [原生 cohort](../reviews/2026-10-08-native-cohort-readonly.json)。默认二维码原生交付准备精确已部署 5c / build276，独立 clean clone，使用已有签名/profile、rokid-production 独立 channel；不注册设备、不 submit TestFlight，IPA 核验和公开回读前不称已发布。
+
+预检覆盖修复仅增加无凭据的真实上下文/原生源码检查，放在 validate/publish 的凭据阶段之前；正式发布仍保留全部原私钥、授权和单次 claim/vendor 检查。错误使用固定 phase/reason，未知异常不输出载荷。RED8、producer105、root含OTA/server/QR共150项通过；System Map、secret、diff检查通过，独立复审进行中。原始70ms启动失败根因仍未证明；不重发原失败，也不扩大原生准入。
+
+### 同源码二维码原生包已发布
+
+因完整 production/runtime1.3.4 cohort 不兼容，保留 OTA NO-GO，按仓库默认二维码方式交付。独立 canonical clean 5c 构建 **1.3.4（276）**，已有有效签名/profile，runtime1.3.4、rokid-production channel，未创建凭据/注册设备/操作手机。归档、ad-hoc 导出及独立签名/team/bundle/生产 entitlement/profile证书/嵌入生产API/源码和IPA回执绑定验证通过。IPA SHA256 `a5d928152d5f8d3977c10ed3475a63397e0e64326685ef386830ff84f84b5bb4`。
+
+独立首次上传 GO 后复用原 IPA 和相邻回执，只执行一次发布。新固定目录 `20261008-qr276-release-5c1ef73518af`；使用 `--no-latest` 保留旧真实 latest 目录，其 inode 和清单/安装页摘要后验保持。脚本 exit0；公网 app.ipa、manifest、install.html、install-url 和 qr.png 五份文件均 HTTP200、逐字摘要一致，生产仍5c且无发布lease。新安装页：https://health.executor.life/mobile-install/ios/20261008-qr276-release-5c1ef73518af/install.html 。详见 [QR发布回读](../reviews/2026-10-08-selected-report-qr-publication.json) 与 [独立制品复核](../reviews/2026-10-08-selected-report-qr-artifact-review.json)。
+
+这是二维码 ad-hoc 交付，不是 OTA/TestFlight/App Store；仅授权设备可安装，当前用户手机覆盖/实际安装与原图登录用户 G6 未验证。后台与新包已交付不能抹去155秒报告长尾或单次餐食探针未定位失败。发布预检修复固定 `1daaafd95594b889bd6942cc692ea9cc1bebbb03` 独立 G4 GO；不会重发失败OTA或放宽原生边界。
+
+独立 QR 公开交付 G5 GO：09:48:44 UTC 回读五份公开制品全部 HTTPS200/TLS通过，完整16,155,578字节IPA与受审hash一致，manifest绑定276和正确Bundle/地址；生产仍5c、无lease、旧latest inode与摘要保持。用户设备覆盖/安装与原图登录健康G6仍未验证。
+
+### 发布后 CI 收尾：原生同意弹窗测试同步
+
+预检和发布证据合入19cf后，CI37759484113的前端任务113252200494出现单例失败：文字已进入DOM但原生dialog尚未open，原findByText后立即toBeVisible抢跑。该提交没有改frontend/backend/mobile运行树，已发布5c与QR276不受改动。失败日志保留，未当作通过；原代码本地完整447通过/1原有跳过不足以替代远端红。
+
+受控延迟open确定性复现相同隐藏strong失败（RED1fail/3pass），仅改测试等待可见dialog角色，并参数化正常/延迟open。保留披露可见、拒绝false、零写入断言，不增加timeout、不skip、不修改产品同意逻辑。定向5、全量448通过/1原有跳过。独立复审与后续精确main CI仍待完成，详见 [测试同步证据](../reviews/2026-10-08-consent-dialog-ci-synchronization.json)。不因此重建已成功发布的包或重跑后端。
+
+测试补丁独立GO，定向5项复验通过，绑定测试hash c5ac04f9bc77b7ec4a7cf8176e2c74c8e578461b8772b75544fabd4676a3c71f。受控延迟证明就绪缺口，不能倒推原CI全部调度；首轮28任务成功、仅frontend失败，保留attempt1并仅对该失败作业请求一次重验。不重发生产后端或二维码包。
+
+### 本轮最终交付状态
+
+业务修复已合入main，生产后端与公开二维码包保持经完整29项CI验证的精确5c源码，后端及QR各自独立G5 GO。预检修复19cf的原CI37759484113保留attempt1前端失败；仅失败作业重验后attempt2全部29项成功。测试同步修复34031393d的精确CI37761397416成功（按变更范围5项通过、9项跳过），无生产同意逻辑变化，不需要重复部署或造包。
+
+安装交付为iOS1.3.4（276）ad-hoc固定新链接；旧latest、失败OTA原操作和历史回执全部保留。原IPA及相邻回执另存工作树ignored私有artifacts目录。OTA仍因完整原生cohort不兼容保持NO-GO；用户手机覆盖/安装、原始全分辨率餐图与登录健康路径G6未验证，155秒报告长尾未宣称优化完成。被否决的写工具说明精简及未准入预规划继续关闭。本节仅收尾验证证据，不改变已交付业务源码。
+
+
+### 2026-10-09 Flash 配置专用发布（实施中）
+
+用户要求先部署、线上验收，保留原凭据与持久授权。原工程 `/Users/thomas/work/personal/health-llm-driven` 的受配置 `ssh health` 已核实可用；此前直连 IP 不匹配该别名。原工程 dirty 内容完整保留，本改动在独立工作树实施。
+
+另一后端发布 Trusted 37881761730 已成功，服务器精确 28b2471d72a3afdc7aba681bb5762dccfbae99bc / SUCCEEDED，原 lease1217 已正常释放，三个服务 active。该发布非本模型任务启动。视觉基础配置仍 qwen-vl-max。现有工厂支持配置选择 qwen3.8-flash，因此无需将未推默认值候选 8cacc61e 作为本配置切换前置。
+
+通用 deploy.sh -e 会撤销持久健康访问授权，不能用于本次仅切模型。新增受审 model-only operator，固定一个非秘密模型配置文件及三个模型专用 drop-in，配置成功与线上模型验收分阶段。当前仍为实现/评审，未执行生产模型变更；付费调用零。最多12次合成调用、累计5元授权保持。官方价格与上下文已核实；请求限制实际落实和已授权真实服务验收通道仍待完成，不假确认 LLM Gate、不读取凭据或新增权限。

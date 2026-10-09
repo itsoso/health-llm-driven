@@ -84,12 +84,12 @@ def _requires_full(path: str) -> bool:
 
 
 def classify_changes(
-    paths: Iterable[str], *, event_name: str = "push"
+    paths: Iterable[str], *, event_name: str = "local"
 ) -> dict[str, bool]:
     """Return fail-closed CI scopes for a normalized changed-file list."""
 
     normalized = sorted({path.strip().lstrip("./") for path in paths if path.strip()})
-    if event_name == "workflow_dispatch" or not normalized:
+    if event_name not in {"push", "pull_request", "local"} or not normalized:
         return _full_result()
     if any(_requires_full(path) for path in normalized):
         return _full_result()
@@ -126,6 +126,12 @@ def classify_changes(
         else:
             return _full_result()
 
+    # Main is the release candidate: select full coverage on its first run,
+    # instead of duplicating scoped push CI with a manual full workflow.
+    # Local preflight and PR feedback retain their conservative scope lanes.
+    if event_name == "push" and not result["docs_only"]:
+        return _full_result()
+
     result["release_only"] = result["run_release"] and not any(
         result[key]
         for key in (
@@ -146,7 +152,7 @@ def _parse_args() -> argparse.Namespace:
         choices=("json", "github", "shell"),
         default="json",
     )
-    parser.add_argument("--event-name", default="push")
+    parser.add_argument("--event-name", default="local")
     return parser.parse_args()
 
 

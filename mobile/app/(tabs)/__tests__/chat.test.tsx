@@ -1789,6 +1789,17 @@ describe('ChatScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/journey');
   });
 
+  it.each(['基于合成体检报告', '合成体检报告'])(
+    'renders one context prefix for %s', async (badge) => {
+      mockRouteParams = { badge };
+      const view = render(<ChatScreen />);
+      await waitFor(() => {
+        expect(view.getByText(/^基于\s*合成体检报告$/)).toBeTruthy();
+      });
+      expect(view.queryByText(/基于\s*基于/)).toBeNull();
+    },
+  );
+
   it('starts a new conversation when opened from an Agent context entry', async () => {
     mockRouteParams = {
       prompt: '请基于我近 7 天睡眠数据分析今晚最该调整的 3 件事。',

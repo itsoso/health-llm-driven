@@ -157,6 +157,13 @@ jobs:
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
+    - name: Read-only publisher context and native source preflight
+      env:
+        TARGET_SHA: ${{ inputs.sha }}
+      run: |
+        [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+        test "$TARGET_SHA" = "$GITHUB_SHA"
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_ota_publish.py --sha "$TARGET_SHA" --preflight
     - name: Publish one bound iOS artifact and verify server receipt
       if: inputs.target == 'publish'
       env:
@@ -211,7 +218,7 @@ jobs:
             names = {'ota-claim.json', 'ota-preflight.json', 'ota-vendor-receipt.json', 'ota-receipt.json'}
             if not isinstance(sha, str) or re.fullmatch(r'[0-9a-f]{40}', sha) is None or not set(records) <= names:
                 raise ValueError('unknown audit identity')
-            bindings = {'project': '911ea84f-bc7e-4a12-90cf-33966b6f7398', 'runtime': '1.3.4', 'channel': 'production', 'platform': 'ios'}
+            bindings = {'project': '911ea84f-bc7e-4a12-90cf-33966b6f7398', 'runtime': '1.3.5', 'channel': 'production', 'platform': 'ios'}
             for name, value in records.items():
                 if not isinstance(value, dict) or value.get('sha') != sha:
                     raise ValueError('audit SHA differs')

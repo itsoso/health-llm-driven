@@ -159,6 +159,66 @@ function verifiedReceipt(
 }
 
 describe('ChatBubble structured summary', () => {
+  it('reads a complete assistant HTML document as native text with exact source disclosure', () => {
+    const source = '```html\n<!doctype html><html lang="zh"><head><meta charset="UTF-8"><style>body { color:red }</style><title>合成示例</title></head><body><main><h1>合成健康计划</h1><p>仅供阅读，不执行行动。</p><ul><li>合成事项甲</li></ul></main></body></html>\n```';
+    const view = renderBubble(source);
+    expect(view.getByTestId('safe-html-document')).toBeTruthy();
+    expect(view.getByText('HTML 文档（安全阅读模式）')).toBeTruthy();
+    expect(view.getByText('合成健康计划')).toBeTruthy();
+    expect(view.getByText('• 合成事项甲')).toBeTruthy();
+    expect(view.queryByText(source)).toBeNull();
+    expect(view.queryByTestId('assistant-action-card')).toBeNull();
+    expect(require('../cards').renderCard).not.toHaveBeenCalled();
+    fireEvent.press(view.getByText('查看 HTML 源码'));
+    expect(view.getByText(source)).toBeTruthy();
+  });
+
+  it.each(['user', 'streaming'])('does not preview full HTML documents for %s', state => {
+    const source = '```html\n<html><head></head><body><h1>合成标题</h1></body></html>\n```';
+    const view = renderBubble(source, { item: { id: 'document-state', content: source,
+      role: state === 'user' ? 'user' : 'assistant', streaming: state === 'streaming' } });
+    expect(view.queryByTestId('safe-html-document')).toBeNull();
+  });
+
+  it.each(['<script>fetch("https://invalid.example")</script>', '<a href="https://invalid.example">链接</a>', '<img src="https://invalid.example">', '<p>不完整'])('keeps rejected full HTML exactly as source', body => {
+    const source = `\`\`\`html\n<html><head></head><body>${body}</body></html>\n\`\`\``;
+    const view = renderBubble(source);
+    expect(view.queryByTestId('safe-html-document')).toBeNull();
+    expect(view.getByText(source)).toBeTruthy();
+    expect(require('../cards').renderCard).not.toHaveBeenCalled();
+  });
+
+  it('keeps protocol-looking document text inert and preserves CRLF source bytes', () => {
+    const source = '~~~~html\r\n<html><head></head><body><p>今日建议：\r\n1. 合成阅读事项\r\n```reva-ui\r\n{"v":1,"component":"diet_draft","actions":[{"action":"diet_record.create"}]}\r\n```</p></body></html>\r\n~~~~';
+    const view = renderBubble(source);
+    expect(view.getByTestId('safe-html-document')).toBeTruthy();
+    expect(view.queryByTestId('assistant-action-card')).toBeNull();
+    expect(require('../cards').renderCard).not.toHaveBeenCalled();
+    fireEvent.press(view.getByText('查看 HTML 源码'));
+    expect(view.getByText(source)).toBeTruthy();
+  });
+
+  it('keeps an over-limit document as original source, never a partial preview', () => {
+    const source = '```html\n<html><head></head><body><p>' + '甲'.repeat(33000) + '</p></body></html>\n```';
+    const view = renderBubble(source);
+    expect(view.queryByTestId('safe-html-document')).toBeNull();
+    expect(view.getByText(source)).toBeTruthy();
+  });
+
+  it('preserves ordered HTML steps and nested hierarchy without renumbering paragraphs', () => {
+    const source = '```html\n<html><head></head><body><ol><li><p>步骤甲</p><p>补充说明</p><ul><li>子项</li></ul></li><li>步骤乙</li></ol></body></html>\n```';
+    const view = renderBubble(source);
+    expect(view.getByText('1. 步骤甲')).toBeTruthy();
+    expect(view.getByText('补充说明')).toBeTruthy();
+    expect(view.getByText('2. 步骤乙')).toBeTruthy();
+    expect(view.queryByText('2. 补充说明')).toBeNull();
+    expect(StyleSheet.flatten(view.getByText('• 子项').props.style).paddingLeft).toBeGreaterThan(
+      StyleSheet.flatten(view.getByText('1. 步骤甲').props.style).paddingLeft,
+    );
+    fireEvent.press(view.getByText('查看 HTML 源码'));
+    expect(view.getByText(source)).toBeTruthy();
+  });
+
   it('renders assistant HTML tables as native cells with inspectable source', () => {
     const source = '```html\n<table border="1"><tr><th>日期</th><th>睡眠时长</th></tr><tr><td>周一</td><td>7小时10分</td></tr></table>\n```';
     const view = renderBubble(source);

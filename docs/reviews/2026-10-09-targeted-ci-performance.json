@@ -1,0 +1,65 @@
+{
+  "sha": "2c6ee449dc5f83aa183d46aaa320f7695744b530",
+  "run_id": 37877803968,
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": 30,
+  "wall_seconds": 466.0,
+  "runner_minutes": 100.77,
+  "previous_wall_seconds": 644,
+  "previous_runner_minutes": 121.97,
+  "wall_reduction_pct": 27.64,
+  "runner_reduction_pct": 17.38,
+  "baseline_run_id": 37795770707,
+  "baseline_sha": "af4ba8cfb70376945c25a845b870f2051528f9a9",
+  "measurement": "workflow_created_to_last_job_completed",
+  "limitations": [
+    "Single run comparison, not stable P95",
+    "New run includes two additional jobs; test coverage is not reduced",
+    "First iteration production Git compatibility rejection was corrected and verified by second iteration"
+  ],
+  "postgres_passed": 313,
+  "real_artifact_build_consume_passed": 1,
+  "second_iteration": {
+    "sha": "28b2471d72a3afdc7aba681bb5762dccfbae99bc",
+    "run_id": 37880423513,
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": 30,
+    "wall_seconds": 500.0,
+    "runner_minutes": 95.47,
+    "baseline_wall_seconds": 644,
+    "baseline_runner_minutes": 121.97,
+    "wall_reduction_vs_baseline_pct": 22.36,
+    "runner_reduction_vs_baseline_pct": 21.73,
+    "previous_iteration_wall_seconds": 466,
+    "postgres_job_seconds": 272,
+    "postgres_step_seconds": 185,
+    "limitations": [
+      "Single run comparisons, not P95",
+      "Overall wall time is slower than first iteration; late backend shard now critical",
+      "No frontend production republish; build-once consumption verified in native Linux CI"
+    ],
+    "postgres_passed": 313,
+    "postgres_isolation_passed": 3,
+    "postgres_runner_seconds": 184.613,
+    "deployment": {
+      "run_id": 37881761730,
+      "sha": "28b2471d72a3afdc7aba681bb5762dccfbae99bc",
+      "receipt_state": "SUCCEEDED",
+      "lease_present": false,
+      "health_score": "60/60",
+      "local_health_http": 200,
+      "public_health_http": 200,
+      "services_active": [
+        "health-backend",
+        "health-frontend",
+        "celery-worker",
+        "celery-beat"
+      ],
+      "database_backup_executed": false,
+      "database_backup_policy": "Existing user-authorized opt-in default; no database backup, restore rehearsal or offsite archive performed",
+      "backend_operation_wall_seconds": 362.58
+    }
+  }
+}

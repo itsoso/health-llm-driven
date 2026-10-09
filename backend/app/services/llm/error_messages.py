@@ -6,6 +6,7 @@ gateway internals. Chat surfaces must show a short actionable message instead.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -97,12 +98,12 @@ def safe_llm_error_message(error: Any) -> str:
             "你已发送的内容已保留，请稍后重试。"
         )
     if is_llm_quota_error(error):
-        return "当前模型额度已用尽。请切换模型或稍后重试；本轮没有生成可靠健康建议。"
+        return "当前模型额度已用尽。请切换模型或稍后重试；本轮回答未能完成。"
     if is_llm_rate_limit_error(error):
-        return "当前模型服务请求过于频繁。请稍后重试；本轮没有生成可靠健康建议。"
+        return "当前模型服务请求过于频繁。请稍后重试；本轮回答未能完成。"
     if "timeout" in text or "timed out" in text or "超时" in text:
-        return "模型服务响应超时。请稍后重试；本轮没有生成可靠健康建议。"
-    return "模型服务暂时不可用。请稍后重试；本轮没有生成可靠健康建议。"
+        return "模型服务响应超时。请稍后重试；本轮回答未能完成。"
+    return "本轮回答未能完成，请稍后重试。"
 
 
 def safe_tool_error_message(tool_name: str, error: Any) -> str:
@@ -125,3 +126,19 @@ def safe_tool_error_message(tool_name: str, error: Any) -> str:
     if "403" in text or "401" in text or "permission" in text or "权限" in text:
         return f"暂时没有权限完成{label}，请检查账号状态后重试。"
     return f"{label}暂时无法完成，请稍后重试。"
+
+
+def safe_error_site(error: BaseException) -> str:
+    """One application code location, without stack, source, locals or message.
+
+    A fixed module/line makes an internal failure actionable while keeping
+    provider bodies, credentials and personal payloads out of production logs.
+    """
+    site = "unknown"
+    frame = error.__traceback__
+    while frame is not None:
+        module = frame.tb_frame.f_globals.get("__name__", "")
+        if isinstance(module, str) and re.fullmatch(r"app(?:\.[a-zA-Z_][a-zA-Z_0-9]*)+", module):
+            site = f"{module}:{frame.tb_lineno}"
+        frame = frame.tb_next
+    return site

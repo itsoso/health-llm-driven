@@ -516,8 +516,10 @@ def test_composed_read_shards_partition_every_test_function_once(tmp_path):
         for label in labels
         for path in by_label[label]["paths"]
     )
-    measured = [by_label[label]["scheduling_seconds"] for label in labels]
-    assert max(measured) / min(measured) < 1.01
+    # The partitioning estimates stay balanced; fresh observed process times
+    # may differ and affect worker placement without changing these partitions.
+    estimates = [by_label[label]["estimated_seconds"] for label in labels]
+    assert max(estimates) / min(estimates) < 1.01
 
     calls = []
 

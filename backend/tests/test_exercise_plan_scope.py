@@ -11,6 +11,8 @@ from tests.test_agent_coherence_pi_trajectories import (
     _isolate_twin_cache as _isolate_twin_cache, clock as clock, owned_data as owned_data,
 )
 
+TODAY_RECOMMENDATION = '今天是否适合运动？给我推荐适合我的运动的方式以及运动的强度，最终生成一个HTML页面。'
+
 CONTEXT_PLAN = '基于我的身体状况，体检报告，以及历史记录的病症，帮我制定10天的锻炼恢复计划。'
 PLANS = ['帮我制定未来十天的锻炼计划', '制定未来十天的锻炼计划',
          '请为我设计未来14天的运动计划', '帮我起草下周的训练计划']
@@ -90,12 +92,15 @@ def test_plan_requires_matching_authenticated_owner():
 
 
 @pytest.mark.parametrize('panel', [False, True])
-@pytest.mark.parametrize('text', PLANS[:2])
+@pytest.mark.parametrize('text', [*PLANS[:2], TODAY_RECOMMENDATION])
 async def test_real_pi_draft_finishes_without_personal_reads(db, owned_data, monkeypatch, panel, text):
     from tests.test_agent_read_repair_round_budget import batch_trace, consume, ANSWER
     trace = batch_trace(db, monkeypatch, [ANSWER])
     done, saved = await consume(db, trace, owned_data, panel=panel, query=text)
     assert not trace.dispatches
+    assert trace.executor._current_turn_user_message == text
+    if 'HTML' in text:
+        assert any(m.get('role') == 'user' and 'HTML' in str(m.get('content', '')) for m in trace.calls[0][0])
     assert done['turn_outcome']['status'] == 'complete', (done['turn_outcome'], trace.executor._turn_composed_read_executions)
     assert '只能查询' not in saved.content
     assert all(t['function']['name'] == 'knowledge_search' for t in trace.calls[0][1])
@@ -173,3 +178,57 @@ async def test_failed_plan_basis_never_becomes_successful_personal_plan(db, owne
     assert done['turn_outcome']['status'] != 'complete'
     assert '尚未查询完成' in saved.content
     assert len(trace.calls) == 2  # no unbounded retry
+
+
+@pytest.mark.parametrize('text', [TODAY_RECOMMENDATION,
+    TODAY_RECOMMENDATION.replace('，最终生成一个HTML页面。', '。'),
+    '今天我是否适合运动？请给我推荐适合我的运动方式以及运动强度，最后生成一个HTML页面。',
+])
+def test_today_recommendation_is_only_a_draft_not_personal_read_authority(text):
+    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+    scope = resolve_exercise_plan_scope(text)
+    assert scope is not None
+    assert scope.horizon == '今天'
+    assert scope.evidence_dimensions == ()
+    assert scope.queries() == []
+    assert not health_read_has_nonself_subject(text)
+    for dimension in ['activity', 'sleep', 'workout', 'medical_exam', 'illness']:
+        decision = decide({'dimension': dimension}, text)
+        assert decision.action == 'block'
+        assert decision.reason != 'health_query_subject_not_current_user'
+
+
+@pytest.mark.parametrize('text', [
+    TODAY_RECOMMENDATION.replace('我的运动', '张三的运动'),
+    '“' + TODAY_RECOMMENDATION + '”',
+    '分析例句：' + TODAY_RECOMMENDATION,
+    '假如' + TODAY_RECOMMENDATION,
+    TODAY_RECOMMENDATION + '不要读取记录。',
+    TODAY_RECOMMENDATION + '并删除病史。',
+    TODAY_RECOMMENDATION + '附加未知条件。',
+    TODAY_RECOMMENDATION.replace('最终生成一个HTML页面', '最终读取所有病史并生成一个HTML页面'),
+    TODAY_RECOMMENDATION.replace('今天是否', '不要判断今天是否'),
+    TODAY_RECOMMENDATION.replace('今天是否', '根据刚才那份报告，今天是否'),
+])
+def test_today_recommendation_rejects_unconsumed_authority_or_output_tail(text):
+    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+    assert resolve_exercise_plan_scope(text) is None
+
+
+@pytest.mark.parametrize('panel', [False, True])
+async def test_today_draft_recovers_from_model_proposed_unrequested_personal_read(db, owned_data, monkeypatch, panel):
+    from tests.test_agent_read_repair_round_budget import batch_trace, consume, ANSWER
+    trace = batch_trace(db, monkeypatch, [[('health_query', {'dimension': 'workout'})], ANSWER])
+    done, saved = await consume(db, trace, owned_data, panel=panel, query=TODAY_RECOMMENDATION)
+    assert not trace.dispatches
+    assert done['turn_outcome']['status'] == 'complete'
+    assert len(trace.calls) == 2
+    assert '只能查询' not in saved.content
+
+
+@pytest.mark.parametrize('base', [*PLANS, CONTEXT_PLAN])
+def test_html_format_suffix_preserves_the_existing_draft_authority(base):
+    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+    html_scope = resolve_exercise_plan_scope(base.rstrip('。') + '，最终生成一个HTML页面。')
+    assert html_scope.output_format == 'html'
+    assert replace(html_scope, output_format='text') == resolve_exercise_plan_scope(base)

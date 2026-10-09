@@ -1,0 +1,178 @@
+{
+  "sha": "0fe1122ad1f5fa3f36bf25607e10339e4b989609",
+  "ci": {
+    "full": 37734502146,
+    "full_successful_jobs": 29,
+    "doc_push": 37734488818
+  },
+  "validate": 37735680343,
+  "backend_workflow": 37736434279,
+  "status": "backend_and_web_deployed",
+  "backend": {
+    "checked_at_utc": "2026-10-08T06:33:11.174355+00:00",
+    "production_sha": "0fe1122ad1f5fa3f36bf25607e10339e4b989609",
+    "tracked_clean": true,
+    "backend_receipt": {
+      "sha": "0fe1122ad1f5fa3f36bf25607e10339e4b989609",
+      "state": "SUCCEEDED"
+    },
+    "backend_audit_sha256": {
+      "started.json": "44621404cc04c27e134a478ac50d57a5fe21bde4a67dce54d319f4a2c40b3f72",
+      "deployment-started.json": "99ec362a63ee81c86c9e8c44281395c8924432f0636d2ac80b58b141b5046c2c",
+      "completed.json": "cbfaf6781f7469eddbfb8d3098327fd86628fc6cc0ad8314ddf12ce775e27bf6",
+      "deployment.log": "0ea5975bda8eaa7b338def9c0ee90789429daee3f0016a3872afc16ba2a621d7"
+    },
+    "launcher_inode": 7777226,
+    "business_lease_absent": true,
+    "units": {
+      "health-backend": {
+        "MainPID": "2213574",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Thu 2026-10-08 14:19:29 CST"
+      },
+      "celery-worker": {
+        "MainPID": "2213576",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Thu 2026-10-08 14:19:29 CST"
+      },
+      "celery-beat": {
+        "MainPID": "2213577",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Thu 2026-10-08 14:19:29 CST"
+      }
+    },
+    "health_scores": [
+      "60",
+      "60",
+      "60"
+    ]
+  },
+  "frontend": {
+    "checked_at_utc": "2026-10-08T06:51:17.611290+00:00",
+    "receipt": {
+      "artifact_digest": "53b7ee619db505aea7324a4e75216ba5802c243c5ccf5f16cde45a8adb40d068",
+      "backups_digest": {
+        "previous-next": "ded951a76934236a15058854a65e211bac08423083d96bf3616a3883bd9e7de9",
+        "previous-node-modules": "993bc877d3d5d67d84be355111bae49a4d8e08d983bdb785506b8d45ae33303c"
+      },
+      "frontend_tree": "26066d14ca8c67c4ddfb5216f655acf714948695",
+      "kind": "frontend-publication",
+      "operation_id": "ad84dc77ca0b41a4a5a01a10168ca640",
+      "production_sha": "0fe1122ad1f5fa3f36bf25607e10339e4b989609",
+      "proof_sha256": {
+        "before.json": "f87dccdf3f0194576eab5b165384ccecced5ccda8083c6e99ad8c1dd5ac1d9e2",
+        "build.log": "a9512d7f2102f5351a92414a994465755ef48f07b1c6d6390d864c41f36653b7",
+        "install-started.json": "624df79f20fdfdac6a89b78e49cf980ddd4463f5bf45f144f6815b6b1f0c5542",
+        "verified.json": "b7435c2c3a0c1da11ca51173caa2ff1763ca650ec62b11d1a2175d0a7956d6bd"
+      },
+      "publisher_sha": "0fe1122ad1f5fa3f36bf25607e10339e4b989609",
+      "state": "FRONTEND_SUCCEEDED"
+    },
+    "proof_hashes_match": true,
+    "sharp_version": "0.35.5",
+    "rsvg_version": "2.63.2",
+    "business_lease_absent": true,
+    "launcher_inode": 7777226,
+    "units": {
+      "health-backend": {
+        "MainPID": "2213574",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Thu 2026-10-08 14:19:29 CST"
+      },
+      "celery-worker": {
+        "MainPID": "2213576",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Thu 2026-10-08 14:19:29 CST"
+      },
+      "celery-beat": {
+        "MainPID": "2213577",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Thu 2026-10-08 14:19:29 CST"
+      },
+      "health-frontend": {
+        "MainPID": "2285301",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Thu 2026-10-08 14:49:49 CST"
+      }
+    },
+    "production_sha": "0fe1122ad1f5fa3f36bf25607e10339e4b989609"
+  },
+  "public_and_config": {
+    "checked_at_utc": "2026-10-08T06:37:12.048667+00:00",
+    "sha": "0fe1122ad1f5fa3f36bf25607e10339e4b989609",
+    "settings": {
+      "owned_read_preplanning": false,
+      "synthesis_thinking_budget": 0,
+      "staged_response_mode": "off",
+      "parallel_synthesis_section_thinking": "off"
+    },
+    "public_http": [
+      {
+        "url": "https://health.executor.life/api/health",
+        "method": "GET",
+        "exit_code": 0,
+        "status": 200,
+        "tls_verify_result": 0,
+        "passed": true
+      },
+      {
+        "url": "https://health.executor.life/api/agent/stream",
+        "method": "POST",
+        "exit_code": 0,
+        "status": 401,
+        "tls_verify_result": 0,
+        "passed": true
+      }
+    ],
+    "scope": "configuration loaded by deployed source and existing production config; no secrets printed, no health records read/written"
+  },
+  "web_public_checks": [
+    {
+      "path": "/privacy",
+      "status": 200,
+      "tls_verify_result": 0,
+      "page_marker": true,
+      "passed": true
+    },
+    {
+      "path": "/connect/health",
+      "status": 200,
+      "tls_verify_result": 0,
+      "page_marker": true,
+      "passed": true
+    }
+  ],
+  "backend_processes_preserved": true,
+  "limits": [
+    "Meal-photo repair is not included in this deployed revision.",
+    "No Mobile OTA, native build or TestFlight release.",
+    "Public smoke verifies availability/authentication boundaries, not authenticated health-record workflows.",
+    "Deployed source loads current configuration; no claim of process-memory inspection.",
+    "Default-off optimization experiments remain production-activation NO_GO."
+  ],
+  "post_web_settings": {
+    "checked_at_utc": "2026-10-08T06:58:53.390766+00:00",
+    "sha": "0fe1122ad1f5fa3f36bf25607e10339e4b989609",
+    "settings": {
+      "owned_read_preplanning": false,
+      "synthesis_thinking_budget": 0,
+      "staged_response_mode": "off",
+      "parallel_synthesis_section_thinking": "off"
+    },
+    "scope": "configuration loaded by deployed source; no process memory or health data inspected"
+  }
+}

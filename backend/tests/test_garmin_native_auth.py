@@ -431,6 +431,9 @@ def test_fresh_native_login_persists_encrypted_token_store(db, monkeypatch) -> N
     from app.services.data_collection.garmin_native_auth import decode_native_token_store
 
     user, _credential = _create_saved_credential(db, "fresh")
+    from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+    _credential.last_error = GARMIN_ACTIVITY_PARTIAL_MESSAGE
+    db.commit()
     fake_garmin = _install_fake_garmin(monkeypatch)
     service = GarminConnectService(
         "garmin-fresh@example.com",
@@ -447,6 +450,7 @@ def test_fresh_native_login_persists_encrypted_token_store(db, monkeypatch) -> N
         '{"di_token":"new","di_refresh_token":"refresh"}'
     )
     assert stored.requires_mfa is False
+    assert stored.last_error == GARMIN_ACTIVITY_PARTIAL_MESSAGE
 
 
 def test_native_token_restore_uses_login_tokenstore_and_persists_rotation(db, monkeypatch) -> None:
@@ -545,6 +549,8 @@ def test_session_renewal_delegates_to_shared_native_service(db, monkeypatch) -> 
     from app.tasks.garmin_sync import _renew_single_session
 
     user, credential = _create_saved_credential(db, "renew")
+    from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+    credential.last_error = GARMIN_ACTIVITY_PARTIAL_MESSAGE
     credential.garth_session = encode_native_token_store(
         '{"di_token":"renew-old","di_refresh_token":"renew-refresh"}'
     )
@@ -564,6 +570,7 @@ def test_session_renewal_delegates_to_shared_native_service(db, monkeypatch) -> 
     result = _renew_single_session(db, credential, "[test-renew]")
 
     assert result == "renewed"
+    assert credential.last_error == GARMIN_ACTIVITY_PARTIAL_MESSAGE
     assert calls == [
         (credential.garmin_email, "fake-password", credential.is_cn, user.id),
     ]

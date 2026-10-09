@@ -1,0 +1,86 @@
+{
+  "candidate_sha": "246e697eaa94d3ef5795c7efc23c183db966d80e",
+  "source_sha256": {
+    "backend/app/config.py": "ba55ea0ab6a455d630bcd6cf344a635eaffa9a165c4f6fb3a9f226c768f28eed",
+    "backend/app/services/agent_executor.py": "587113f67838ce79939a34fd1cb240723795c20768371f99e9e626ad86202bff",
+    "backend/app/services/agent_composed_read_completion.py": "6026f4725629a6af10e2e2229c9bff1816d324cdb1ab836a06e2586d3cb8108e",
+    "mobile/package.json": "9b696a59bd8cfcc1fdb4b4ddd33e0040299c28f9e693e24aa5f0f5e0a813e6e7",
+    "mobile/package-lock.json": "f8a142aa84ae7e1f4437f1cf2df4bcb7ea9bfd428dc1a3f03493528742bb8a34",
+    "frontend/package.json": "8de592c337bf6e318fa085f6c8f8875c01c03056fbf69faee012aa2c3dacae3b",
+    "frontend/package-lock.json": "f840018024e2160b71a39cdaa1f825da6c8307b04dc794f1aa38b07981c02ad5"
+  },
+  "date": "2026-10-08",
+  "status": "local_verified_external_write_blocked",
+  "remote_main": "8a7d85df0d9c19a40613a1f1c704dc80dd52e7af",
+  "remote_main_ci": {
+    "id": 37721192561,
+    "conclusion": "failure"
+  },
+  "production_sha_observed": "a10e642cde189c9b414dc8d41346e22f088eaa0e",
+  "backend_ci_mode": {
+    "tests": 2470,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "seconds": 982.6
+  },
+  "independent_review": "GO for fixed code/dependencies; production activation remains NO_GO",
+  "live_evidence": {
+    "source_commit": "d201cdcc9866f7315286fdfa52e5e0bf143eaaf0",
+    "report": "2026-10-08-fixed-source-live-regression.json",
+    "unchanged_source_hashes": 26,
+    "new_api_calls_this_release_preflight": 0
+  },
+  "frontend": {
+    "passed": 447,
+    "skipped": 1,
+    "files": 78,
+    "build": "passed",
+    "lint_errors": 0,
+    "lint_warnings": 37,
+    "installed_sharp": "0.35.5",
+    "macos_loaded_librsvg": "2.63.2",
+    "linux_loaded_librsvg": "not_verified"
+  },
+  "mobile": {
+    "typecheck": "passed",
+    "jest_passed": 6,
+    "jest_suites": 2
+  },
+  "audits": {
+    "mobile": "passed_on_fourth_run",
+    "frontend": "passed_after_next_sharp_updates",
+    "exceptions_added": false,
+    "prior_mobile_transport_failures": 3
+  },
+  "production_configuration_observed": {
+    "owned_read_preplanning": "not_explicitly_set; candidate default false",
+    "synthesis_thinking_budget": "0",
+    "staged_response_mode": "off",
+    "parallel_synthesis_section_thinking": "off"
+  },
+  "external_actions": {
+    "push": false,
+    "merge": false,
+    "deploy": false,
+    "ci_variable_update": false
+  },
+  "blocker": "AGENTS.md section 7 prohibits external writes when main CI is red; explicit narrow authorization required to push the reviewed repair candidate before main returns green.",
+  "local_log_sha256": {
+    "reva-1008-release-dependency-tests.log": "03a02b467454baa1b312276020628b4f6ce9d4fb87ef3d3947445fdb18a54a9e",
+    "reva-1008-release-mobile-audit.log": "b46addbe19ad5acc51993ddffd5ccf1ea259c2dfa80fef520ad2ea4d9702db45",
+    "reva-1008-release-mobile-audit-v2.log": "b46addbe19ad5acc51993ddffd5ccf1ea259c2dfa80fef520ad2ea4d9702db45",
+    "reva-1008-release-mobile-audit-v3.log": "b46addbe19ad5acc51993ddffd5ccf1ea259c2dfa80fef520ad2ea4d9702db45",
+    "reva-1008-release-mobile-audit-diagnostic.log": "a434c71f12553c666eb8f98c3520f8441d3d45a3f723eeb233fab7405a8601c6",
+    "reva-1008-release-frontend-audit.log": "f3d2b9d29b882f5f5796ea64564607dbafdf888338038b7c06b0392ccb46536d",
+    "reva-1008-release-frontend-audit-v2.log": "dbbcb5adcd277b8f684ffbf8ec18659fb87c1bb032449f1175d45a9d39236baf",
+    "reva-1008-release-mobile-tsc.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "reva-1008-release-mobile-tests.log": "2267e35574fb2652b3c331dadb363948b39519eb02815fd0846ec5cbf94ec007",
+    "reva-1008-release-frontend-tests.log": "6cfcca5f689075008f9f367acad0fe87d91ed24012a18ed31a4822580bfbf48c",
+    "reva-1008-release-frontend-build.log": "c40f1711f84ba9411da2a0ccbe2fee58a7c4117bcfee82b40fec83217626bbb7",
+    "reva-1008-release-frontend-lint.log": "0ca6429dab67d28340d4849074b8653d4e27d647d36bc3351b1ea6bf0a87a59a",
+    "reva-1008-release-backend-ci.log": "441557ce961c5d2d704bd13204b4f0ee62e5b5ab2076e72b7f9e41c4a39366c8",
+    "reva-1008-release-map.log": "31bac452f5d0b5f24932f597d8b703a610121fa45283ae8e103ef518fe95ce62",
+    "reva-1008-release-secrets.log": "2e66ce1fcc9166340888dc947c09850e6b5c7447b280e8ade479435703457945"
+  }
+}

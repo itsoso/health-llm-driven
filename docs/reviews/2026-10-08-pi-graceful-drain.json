@@ -1,0 +1,56 @@
+{
+  "scope": "Local uvicorn uvloop and real Pi; synthetic answer; owned process signals emulate initial systemd kill scope; not live systemd or provider proof",
+  "results": [
+    {
+      "mode": "control_group",
+      "attempt": 1,
+      "status": "error",
+      "error_type": "PiKernelError",
+      "child_gone": true,
+      "server_exit": -15
+    },
+    {
+      "mode": "control_group",
+      "attempt": 2,
+      "status": "error",
+      "error_type": "PiKernelError",
+      "child_gone": true,
+      "server_exit": -15
+    },
+    {
+      "mode": "control_group",
+      "attempt": 3,
+      "status": "error",
+      "error_type": "PiKernelError",
+      "child_gone": true,
+      "server_exit": -15
+    },
+    {
+      "mode": "main_only",
+      "attempt": 1,
+      "status": "complete",
+      "content": "synthetic weather answer",
+      "child_reaped": true,
+      "child_gone": true,
+      "server_exit": -15
+    },
+    {
+      "mode": "main_only",
+      "attempt": 2,
+      "status": "complete",
+      "content": "synthetic weather answer",
+      "child_reaped": true,
+      "child_gone": true,
+      "server_exit": -15
+    },
+    {
+      "mode": "main_only",
+      "attempt": 3,
+      "status": "complete",
+      "content": "synthetic weather answer",
+      "child_reaped": true,
+      "child_gone": true,
+      "server_exit": -15
+    }
+  ]
+}

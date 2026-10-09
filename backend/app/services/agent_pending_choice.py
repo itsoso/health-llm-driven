@@ -83,6 +83,8 @@ def _options(content: str) -> list[dict[str, Any]] | None:
         unicodedata.normalize("NFKC", label) for label in (
             "信息来源：用户陈述、模型推断。",
             "信息来源：用户陈述、已检索证据（未逐句核验）、模型推断。",
+            "信息来源：上下文信息（未逐项核验）、模型推断。",
+            "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。",
         )
     }:
         lines = lines[1:]

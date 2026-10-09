@@ -18,6 +18,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   listMedicalExams,
+  getMedicalExam,
   compareExams,
   updateMedicalExamItem,
   type MedicalExam,
@@ -47,8 +48,14 @@ export default function MedicalExamDetailScreen() {
     enabled: gate.status === 'unlocked',
   });
 
+  const examQuery = useQuery({
+    queryKey: ['medical-exam', examId],
+    queryFn: () => getMedicalExam(examId),
+    staleTime: 60_000,
+    enabled: gate.status === 'unlocked' && Number.isSafeInteger(examId) && examId > 0,
+  });
   const exams = examsQuery.data ?? [];
-  const exam = exams.find(e => e.id === examId);
+  const exam = examQuery.data;
   const idx = exams.findIndex(e => e.id === examId);
   // exams 按日期倒序, idx+1 是更早的一次
   const previous = idx >= 0 && idx + 1 < exams.length ? exams[idx + 1] : null;
@@ -85,7 +92,7 @@ export default function MedicalExamDetailScreen() {
     );
   }
 
-  if (examsQuery.isLoading) {
+  if (examQuery.isLoading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
@@ -113,7 +120,8 @@ export default function MedicalExamDetailScreen() {
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.emptyWrap}>
-          <Text style={txt.empty}>记录不存在或已被删除</Text>
+          <Text style={txt.empty}>{examQuery.isError ? '报告加载失败，请重试' : '记录不存在或无权限'}</Text>
+          <Pressable onPress={() => examQuery.refetch()} accessibilityRole="button"><Text>重试</Text></Pressable>
         </View>
       </SafeAreaView>
     );
@@ -159,9 +167,10 @@ export default function MedicalExamDetailScreen() {
           <View style={styles.assessmentCard}>
             <View style={styles.assessmentHeader}>
               <Ionicons name="sparkles" size={14} color={c.brand} />
-              <Text style={txt.sectionTitle}>AI 解读</Text>
+              <Text style={txt.sectionTitle}>报告文本摘要</Text>
             </View>
-            <Text style={txt.assessmentBody}>{exam.overall_assessment}</Text>
+            <Text style={txt.assessmentBody}>OCR 或人工录入摘要，不是原始影像；请核对原报告。</Text>
+            <Text selectable style={txt.assessmentBody}>{exam.overall_assessment}</Text>
           </View>
         ) : null}
 
@@ -196,6 +205,7 @@ export default function MedicalExamDetailScreen() {
         onSaved={() => {
           setEditing(null);
           queryClient.invalidateQueries({ queryKey: ['medical-exams'] });
+          queryClient.invalidateQueries({ queryKey: ['medical-exam', examId] });
         }}
       />
     </SafeAreaView>

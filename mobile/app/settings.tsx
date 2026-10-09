@@ -546,6 +546,7 @@ function GarminStatusRow({
       if (!status.credentials_valid) return '凭证失效';
       return `${status.error_count} 次失败`;
     }
+    if (health === 'stale' && status.last_error) return '同步未完成';
     if (safeMins == null) return '从未同步';
     if (safeMins < 1) return '刚刚同步';
     if (safeMins < 60) return `${safeMins} 分钟前`;
@@ -558,7 +559,7 @@ function GarminStatusRow({
       style={styles.settingRow}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Garmin 连接，${statusText}`}
+      accessibilityLabel={`Garmin 连接，${statusText}${health === 'stale' && status?.last_error ? `，${status.last_error}` : ''}`}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <Ionicons name="watch-outline" size={18} color={C.ink2} />

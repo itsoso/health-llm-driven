@@ -1,0 +1,35 @@
+{
+  "source_commit": "1daaafd95594b889bd6942cc692ea9cc1bebbb03",
+  "status": "G3_G4_GO_exact_main_CI_passed_OTA_still_NO_GO",
+  "independent_review": "GO fixed commit; independent105 passed retained; publisher tests only removed two unused imports after review",
+  "tests": {
+    "producer": 105,
+    "root_ota_server_qr": 150,
+    "red_new_tests_failed": 8
+  },
+  "source_sha256": {
+    "scripts/trusted_ota_publish.py": "e06c0794fc1934a275ba355c995d7bd193c2f5e155baeab21a24dfa5d9517e21",
+    ".github/workflows/trusted-ota.yml": "71304602590ccc8cfd3991186fb3a350846fdcebdbb7bcfac0b05aadc9dbbd9d",
+    "scripts/test_trusted_ota_publish.py": "af5a1a162abdd0767c9db4f307d727bf4133b1189c747b5b39c070159518602b",
+    "scripts/test_trusted_ota_workflow.py": "681c49bd1eb66810c758f72da97d6a051fe0d58b6916f7b0042e2ea061369f6d"
+  },
+  "checks": {
+    "system_map": "passed",
+    "secrets": "passed",
+    "diff": "passed",
+    "llm_live_change_gate": "not required"
+  },
+  "scope": "Credential-free context and native source preflight in validate/publish before secrets; existing private key checks and vendor exactly-once sequence retained",
+  "limits": [
+    "Production1.3.4 cohort incompatible; OTA remains NO_GO",
+    "Original 70ms failure cause unknown; no original run retry",
+    "No native allowlist or baseline change; no claim/vendor call from preflight"
+  ],
+  "ci": {
+    "sha": "19cf3b34a7b5344d2177894d91877c4cf01f0390",
+    "run": 37759484113,
+    "attempt": 2,
+    "jobs_success": 29,
+    "attempt1_frontend_failure_retained": true
+  }
+}

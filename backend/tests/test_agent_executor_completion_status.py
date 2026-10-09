@@ -5549,3 +5549,47 @@ async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_use
     assert last_user["content"][0] == {"type": "text", "text": "这张照片里是什么建筑？"}
     assert last_user["content"][1]["type"] == "image_url"
     assert last_user["content"][1]["image_url"]["url"] == "data:image/jpeg;base64,YWJjMTIz"
+
+
+@pytest.mark.asyncio
+async def test_unresolved_symptom_stream_does_not_invite_retry(
+    db, auth_user_and_headers, monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    message = "帮我记录一下，眼睛发痒已经消失了，但偶尔还有轻微鼻塞。"
+    calls = 0
+
+    async def fake_llm(messages, tools):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "content": "", "finish_reason": "tool_calls",
+                "tool_calls": [{"id": "synthetic-observation", "type": "function",
+                    "function": {"name": "health_record", "arguments": json.dumps({
+                        "record_type": "symptom", "data": {
+                            "body_part": "respiratory", "description": message,
+                        },
+                    }, ensure_ascii=False)}}],
+            }
+        return {"content": "本次记录未完成。", "finish_reason": "stop"}
+
+    async def forbidden_dispatch(request, user_token):
+        pytest.fail("Unresolved symptom must never reach persistence")
+
+    monkeypatch.setattr(executor, "_call_llm", fake_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", forbidden_dispatch)
+    events = [event async for event in executor.run_stream(
+        user_id=user.id, message=message, user_auth_token="test-token",
+    )]
+    done = next(event["data"] for event in events if event.get("event") == "done")
+    rendered = "".join(event["data"].get("content", "") for event in events
+                       if event.get("event") == "token")
+    assert done["write_receipts"] == []
+    assert done["turn_outcome"]["retryable"] is False
+    assert done["turn_outcome"]["reason_code"] == "symptom_write_not_authorized"
+    assert "重试" not in rendered
+    assert not done.get("recovery_action")
+    assert "这轮没有完成记录动作" in rendered

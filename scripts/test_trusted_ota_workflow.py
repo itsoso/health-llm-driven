@@ -247,7 +247,7 @@ def valid_records():
         "ota-claim.json": {
             "sha": sha,
             "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
-            "runtime": "1.3.4",
+            "runtime": "1.3.5",
             "platform": "ios",
             "channel": "production",
             "branch_id": branch,
@@ -267,7 +267,7 @@ def valid_records():
         "ota-receipt.json": {
             **ids,
             "state": "SUCCEEDED",
-            "runtime": "1.3.4",
+            "runtime": "1.3.5",
             "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
             "channel": "production",
             "platform": "ios",
@@ -376,3 +376,17 @@ def test_ota_verifies_signature_backport_before_claim_and_credentials():
     assert "secrets." not in str(steps[index])
     first_secret = next(i for i, step in enumerate(steps) if "secrets." in str(step))
     assert index < first_secret
+
+
+def test_validate_executes_real_credential_free_publisher_preflight_before_publish():
+    steps=workflow()['jobs']['ota']['steps']
+    preflight=named('Read-only publisher context and native source preflight')
+    assert 'if' not in preflight
+    assert steps.index(named('Install locked CLI')) < steps.index(preflight) < steps.index(named('Publish one bound'))
+    assert preflight['env'] == {'TARGET_SHA':'${{ inputs.sha }}'}
+    assert 'secrets.' not in str(preflight)
+    run=preflight['run']
+    assert '/usr/bin/env -i PATH=/usr/bin:/bin HOME=/root' in run
+    assert '/usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_ota_publish.py' in run
+    assert '--sha "$TARGET_SHA" --preflight' in run
+    assert 'EXPO_TOKEN' not in run and 'RELEASE_KEY' not in run and 'ssh ' not in run

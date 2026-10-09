@@ -41,6 +41,11 @@ export interface ChatContextRouteInput {
 export function serializeAgentContext(context: AgentContextPayload | string): string {
   const raw = typeof context === 'string' ? context : JSON.stringify(context);
   if (raw.length <= AGENT_CONTEXT_MAX_CHARS) return raw;
+  if (typeof context !== 'string' && /^medical-exam\/[1-9]\d*$/.test(String(context.from))) {
+    // Preserve a parseable selector; the server re-reads the entire owned report.
+    // A partial client narrative must never masquerade as complete evidence.
+    return JSON.stringify({ from: context.from, evidence_mode: 'server_owned_full_report' });
+  }
   const suffix = '...[truncated]';
   return `${raw.slice(0, AGENT_CONTEXT_MAX_CHARS - suffix.length)}${suffix}`;
 }
@@ -648,8 +653,12 @@ export function createExamExplainAgentContext(data: Record<string, any>): AgentC
   const exam = data.exam ?? {};
   const expl = data.explanation ?? {};
   return {
-    from: `exam-explain/${exam.id ?? data.exam_id ?? 'current'}`,
+    from: `medical-exam/${exam.id ?? data.exam_id ?? 'current'}`,
     feedback_intent: 'exam_abnormal_review',
+    evidence_mode: 'server_owned_full_report',
+    source_note: '报告文本摘要（OCR 或人工录入），不是原始影像；需核对原报告。',
+    overall_assessment: exam.overall_assessment ?? null,
+    conclusions: exam.conclusions ?? null,
     exam: {
       id: exam.id ?? null,
       date: exam.exam_date ?? null,

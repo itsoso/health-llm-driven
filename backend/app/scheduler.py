@@ -279,6 +279,14 @@ async def _sync_user_garmin_data_impl(
             )
             raise
         result["activities_count"] = workout_result.get("synced_count", 0)
+        result["activities_error_count"] = workout_result.get("failed_count", 0)
+        if result["activities_error_count"]:
+            from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+            if not garmin_credential_service.mark_activity_sync_partial(db, user_id):
+                raise RuntimeError("garmin_activity_partial_status_not_persisted")
+            result["success"] = False
+            result["message"] = GARMIN_ACTIVITY_PARTIAL_MESSAGE
+            return result
         logger.info(f"用户 {user_id} 运动活动同步完成: {result['activities_count']} 条")
 
         # 从运动记录中提取最新的 VO2Max 并更新到每日数据
@@ -291,7 +299,7 @@ async def _sync_user_garmin_data_impl(
             result["message"] += f", 失败 {result['error_count']} 天"
 
         # 更新最后同步时间（会重置错误状态）
-        if not garmin_credential_service.update_sync_status(db, user_id):
+        if not garmin_credential_service.update_sync_status(db, user_id, activities_verified=True):
             from app.services.data_collection.garmin_errors import GarminSyncError
 
             raise GarminSyncError("Garmin sync status persistence failed")

@@ -1,0 +1,155 @@
+{
+  "date": "2026-10-08",
+  "source_commit": "d201cdcc9866f7315286fdfa52e5e0bf143eaaf0",
+  "guard_sha256": "6026f4725629a6af10e2e2229c9bff1816d324cdb1ab836a06e2586d3cb8108e",
+  "code_review": "GO for bounded fixes; activation remains NO_GO",
+  "local_checks": [
+    {
+      "name": "prior_runtime_ci",
+      "source_commit": "59387c25d",
+      "source_log": "reva-1008-final-ci.xml",
+      "tests": 2443,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2,
+      "seconds": 594.54,
+      "scope": "local targeted regression, not full repository CI"
+    },
+    {
+      "name": "prior_runtime_postgres",
+      "source_commit": "59387c25d",
+      "source_log": "reva-1008-postgres.xml",
+      "tests": 253,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 122.84,
+      "scope": "local targeted regression, not full repository CI"
+    },
+    {
+      "name": "final_targeted",
+      "source_commit": "d201cdcc9866f7315286fdfa52e5e0bf143eaaf0",
+      "source_log": "reva-1008-sleep-original-green.xml",
+      "tests": 180,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 4.13,
+      "scope": "local targeted regression, not full repository CI"
+    },
+    {
+      "name": "narrowed_postgres",
+      "source_commit": "952d9d685",
+      "source_log": "reva-1008-daily-final-postgres.xml",
+      "tests": 62,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 5.16,
+      "scope": "local targeted regression, not full repository CI"
+    },
+    {
+      "name": "wake_date_postgres",
+      "source_commit": "d201cdcc9866f7315286fdfa52e5e0bf143eaaf0",
+      "source_log": "reva-1008-wake-final-postgres.xml",
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.27,
+      "scope": "local targeted regression, not full repository CI"
+    },
+    {
+      "name": "postgresql_consent_concurrency",
+      "source_commit": "d201cdcc9866f7315286fdfa52e5e0bf143eaaf0",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 2.54,
+      "scope": "PostgreSQL independent transactions and row locks; closes the two SQLite skips"
+    }
+  ],
+  "independent_review": {
+    "source_commit": "d201cdcc9866f7315286fdfa52e5e0bf143eaaf0",
+    "tests_passed": 39,
+    "seconds": 3.0,
+    "original_flash_answer_replay": "preserved verbatim through guard and projection",
+    "additional_negative_controls": 10,
+    "no_new_api_calls": true
+  },
+  "model_batches": [
+    {
+      "report": "2026-10-08-budget-max-paired.json",
+      "sha256": "8132f1e0771f69774e9e4d0257f7a1a6cca66a0b8cc38ed18a2463643ded9e0f",
+      "task_count": 6,
+      "verdict": "NO_GO",
+      "limitations": "Collection request; 512 rejected."
+    },
+    {
+      "report": "2026-10-08-budget-max-expanded.json",
+      "sha256": "e704c3c02422af2c6cd116b3d781c7ef16cfa8e07a82a4641e31475e7fc7546d",
+      "task_count": 12,
+      "verdict": "NO_GO",
+      "limitations": "Collection requests, unsupported sync and sleep interval claims; 512 rejected."
+    },
+    {
+      "report": "2026-10-08-budget8192-max-screen.json",
+      "sha256": "4ef35fd2026ac6f3a5531e734866ca28b9dc037745bd377017fc1c7bfd0f83e8",
+      "task_count": 6,
+      "verdict": "NO_GO",
+      "limitations": "Candidate nightly/zero variance claims and baseline single episode claim; both retained."
+    },
+    {
+      "report": "2026-10-08-production-route-flash-expanded.json",
+      "sha256": "8e7fb280ad128fffb61b65d518665589609bbe48a2695dfca7daa739c3762736",
+      "task_count": 12,
+      "verdict": "NO_GO",
+      "limitations": "Baseline scope invitation/valid fact deletion; candidate read provenance claim. Last timing pair locally interfered."
+    },
+    {
+      "report": "2026-10-08-daily-sleep-quality-replay.json",
+      "sha256": "22c741a4cfda1e2f2eda2386f612741689a36d2f14aa7112fcfc8af1f46567aa",
+      "task_count": 4,
+      "verdict": "semantic_screen_pass_only",
+      "limitations": "Old c6d34338d source; no duration-quantity branch hit; all timings locally interfered; not final-source or noninferiority evidence."
+    }
+  ],
+  "activation": "NO_GO",
+  "deployed": false,
+  "limitations": [
+    "120 frozen-case noninferiority and stable tail improvements unproven.",
+    "True Laya adapter was exercised with locally held-on admin mode; observed decisions all abstained.",
+    "Projected quantity exception only permits whole finite verified record statements; unknown prose keeps prior veto.",
+    "No prompt/default/model capability changes enable a rejected candidate.",
+    "New origin/main history requires reviewed integration and exact CI before any external write."
+  ],
+  "live_gate": {
+    "report_path": "2026-10-08-fixed-source-live-regression.json",
+    "status": "passed",
+    "source_unchanged": true,
+    "source_file_count": 26,
+    "api_calls": 10,
+    "all_api_usage_known": true,
+    "failed_api_calls": 0,
+    "limitation": "Standard orchestrator gate; not composed-read noninferiority or latency evidence.",
+    "source_commit": "d201cdcc9866f7315286fdfa52e5e0bf143eaaf0"
+  },
+  "change_gate": {
+    "status": "passed",
+    "expected_confirmation": "d201cdcc9866f7315286fdfa52e5e0bf143eaaf0",
+    "local_only": true
+  },
+  "skipped_checks": [
+    {
+      "test": "tests.test_ai_consent.test_stale_profile_edit_cannot_resurrect_revoked_permission",
+      "reason": "requires PostgreSQL independent transactions",
+      "postgresql_followup": "passed"
+    },
+    {
+      "test": "tests.test_ai_consent.test_concurrent_first_grants_are_serialized_and_both_audited",
+      "reason": "requires PostgreSQL row locks",
+      "postgresql_followup": "passed"
+    }
+  ]
+}

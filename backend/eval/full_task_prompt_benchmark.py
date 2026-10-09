@@ -1,6 +1,6 @@
 """Bounded synthetic Pi/Gateway A/B. Never imported by application runtime.
 
-This evaluates a fixed model and read task, not routing or clinical noninferiority.
+Fixed-model or explicit production-routing screens; neither proves clinical noninferiority.
 Only disposable in-memory SQLite is accepted. Provider/tool failures stop the
 sample instead of being hidden by application recovery. Consent remains real.
 """
@@ -16,8 +16,12 @@ from time import perf_counter
 from unittest.mock import patch
 from uuid import uuid4
 
+from eval.experimental_read_thinking_budget import THINKING_PROBES
+
 REFERENCE_NOW = datetime.fromisoformat("2026-09-13T23:30:00+08:00")
-VARIANTS = ("baseline", "p1", "p2", "combined")
+
+VARIANTS = ("baseline", "p1", "p2", "combined", "empty_terminal", "evidence_compact", "runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES)
+ANSWER_DIAGNOSTIC_CHAR_LIMIT = 16000
 
 
 class BenchmarkStopped(BaseException):
@@ -70,6 +74,8 @@ class Scenario:
     state: str
     request_text: str | None = None
     allow_knowledge: bool = False
+    dense_records: bool = False
+    rich_profile: bool = False
 
     @property
     def query(self):
@@ -89,6 +95,10 @@ SCENARIOS = tuple(Scenario("owned_read_7d_" + state, 7, state)
     Scenario("analysis_7d_read_failure", 7, "read_failure", allow_knowledge=True),
     Scenario("analysis_7d_holdout", 7, "available",
              "复盘我最近7天的睡眠和饮食记录。", allow_knowledge=True),
+    Scenario("analysis_7d_dense", 7, "available", allow_knowledge=True, dense_records=True),
+    Scenario("analysis_31d_dense", 31, "available", allow_knowledge=True, dense_records=True),
+    Scenario("analysis_1d_rich", 1, "available", allow_knowledge=True, rich_profile=True),
+    Scenario("analysis_31d_rich", 31, "available", allow_knowledge=True, rich_profile=True),
 )
 
 
@@ -104,6 +114,17 @@ def seed_synthetic_records(db, user_id, scenario):
     require_ephemeral(db)
     from app.models.user import User
     from app.models.daily_health import GarminData, DietRecord
+    if scenario.rich_profile:
+        from app.models.user_profile import UserProfile
+        profile = db.query(UserProfile).filter_by(user_id=user_id).one_or_none()
+        if profile is None:
+            profile = UserProfile(user_id=user_id)
+            db.add(profile)
+        profile.height_cm, profile.current_weight_kg = 167, 49
+        profile.allergies = ["花生"]
+        profile.chronic_conditions = ["慢性肾病"]
+        profile.current_medications = [{"name": "合成长期处方", "dosage": "未知", "frequency": "未知"}]
+        db.flush()
     other = User(name="Synthetic other owner", email=f"other-{uuid4().hex}@example.invalid")
     db.add(other)
     db.flush()
@@ -112,7 +133,19 @@ def seed_synthetic_records(db, user_id, scenario):
         GarminData(user_id=other.id, record_date=today, sleep_score=99, total_sleep_duration=599),
         GarminData(user_id=user_id, record_date=today + timedelta(days=1), sleep_score=11, total_sleep_duration=111),
     ])
-    if scenario.state != "empty":
+    if scenario.state != "empty" and scenario.dense_records:
+        for offset in range(scenario.days):
+            day = today - timedelta(days=offset)
+            db.add_all([
+                GarminData(user_id=user_id, record_date=day, sleep_score=80, total_sleep_duration=420),
+                DietRecord(user_id=user_id, record_date=day, meal_type="dinner",
+                           food_name="合成番茄", food_items="合成番茄", calories=200),
+            ])
+        # A distinct same-name row with unknown energy: no deduplication or
+        # imputation from its otherwise matching neighbour is permitted.
+        db.add(DietRecord(user_id=user_id, record_date=today, meal_type="dinner",
+                          food_name="合成番茄", food_items="合成番茄", calories=None))
+    elif scenario.state != "empty":
         db.add_all([
             GarminData(user_id=user_id, record_date=today, sleep_score=80, total_sleep_duration=420),
             DietRecord(user_id=user_id, record_date=today - timedelta(days=1), meal_type="dinner",
@@ -133,17 +166,24 @@ def health_digest(db):
 class MeasuredProvider:
     provider_name = "bounded-eval"
 
-    def __init__(self, factory, model, budget, calls, *, live, tool_budget=None):
+    def __init__(self, factory, model, budget, calls, *, live, tool_budget=None, preserve_controls=False):
         self.factory, self.model, self.budget, self.calls, self.live = factory, model, budget, calls, live
         self.tool_budget = tool_budget or ToolBudget()
+        self.preserve_controls = preserve_controls
 
     async def chat(self, **kwargs):
         raise BenchmarkStopped("unexpected_nonstream_call")
 
     async def chat_stream(self, **kwargs):
         from app.services.llm.usage_tracker import begin_usage_capture, end_usage_capture, summarize_usage_capture
-        wire = {**kwargs, "model": None, "temperature": 0, "max_tokens": min(int(kwargs.get("max_tokens") or 1200), 1200),
-                "return_metadata": True, "stream_options": {"include_usage": True}}
+        if self.preserve_controls:
+            maximum = kwargs.get("max_tokens")
+            if type(maximum) is not int or not 1 <= maximum <= 8000:
+                raise BenchmarkStopped("output_budget")
+            wire = {**kwargs, "return_metadata": True, "stream_options": {"include_usage": True}}
+        else:
+            wire = {**kwargs, "model": None, "temperature": 0, "max_tokens": min(int(kwargs.get("max_tokens") or 1200), 1200),
+                    "return_metadata": True, "stream_options": {"include_usage": True}}
         payload = json.dumps(wire, ensure_ascii=False, sort_keys=True, default=str).encode()
         if len(payload) > 262144:
             raise BenchmarkStopped("input_budget")
@@ -153,7 +193,14 @@ class MeasuredProvider:
         row = {"call_index": self.budget.used, "payload_sha256": hashlib.sha256(payload).hexdigest(),
                "input_bytes": len(payload), "phase": "tools" if kwargs.get("tools") else "answer",
                "token_source": "unknown" if self.live else "synthetic", "input_tokens": None,
-               "output_tokens": None, "cached_tokens": None, "first_content_seconds": None}
+               "output_tokens": None, "cached_tokens": None, "first_content_seconds": None,
+               "answer_text": None if kwargs.get("tools") else "", "answer_text_truncated": False,
+               "first_event_seconds": None, "first_reasoning_seconds": None,
+               "last_event_seconds": None, "last_event_type": None,
+               "event_counts": {"reasoning": 0, "content": 0, "tool_calls": 0, "finish": 0, "other": 0},
+               "request_controls": {key: wire[key] for key in
+                   ("temperature", "max_tokens", "thinking_budget", "enable_thinking")
+                   if key in wire and type(wire[key]) in (bool, int, float)}}
         self.calls.append(row)
         capture = begin_usage_capture()
         started, finish = perf_counter(), None
@@ -162,6 +209,26 @@ class MeasuredProvider:
             async with asyncio.timeout(45):
                 async with aclosing(self.factory().chat_stream(**wire)) as stream:
                     async for event in stream:
+                        event_seconds = perf_counter() - started
+                        event_type = event.get("type")
+                        event_type = event_type if event_type in row["event_counts"] else "other"
+                        if row["first_event_seconds"] is None:
+                            row["first_event_seconds"] = event_seconds
+                        row["last_event_seconds"] = event_seconds
+                        row["last_event_type"] = event_type
+                        row["event_counts"][event_type] += 1
+                        if event_type == "reasoning" and row["first_reasoning_seconds"] is None:
+                            row["first_reasoning_seconds"] = event_seconds
+                        # Keep timing/counts only for reasoning; never retain its text.
+                        # This harness admits only disposable synthetic data.
+                        # Keep visible answer content before output guards for
+                        # diagnosing BLOCK vs false positives. Never capture
+                        # reasoning events, requests, credentials or exceptions.
+                        if event.get("type") == "content" and row["answer_text"] is not None:
+                            text = event.get("text") or ""
+                            remaining = ANSWER_DIAGNOSTIC_CHAR_LIMIT - len(row["answer_text"])
+                            row["answer_text"] += text[:remaining]
+                            row["answer_text_truncated"] |= len(text) > remaining
                         if event.get("type") == "content" and (event.get("text") or "").strip() and row["first_content_seconds"] is None:
                             row["first_content_seconds"] = perf_counter() - started
                         if event.get("type") == "tool_calls":
@@ -212,6 +279,7 @@ class ScriptedProvider:
         else:
             answer = ("本轮查询失败，无法确认睡眠和饮食记录，请稍后重试。" if self.scenario.state == "read_failure" else
                       "睡眠和饮食均未查到本轮范围内的记录，缺少数据，无法判断健康状态。" if self.scenario.state == "empty" else
+                      "仅依据已返回样本作有限观察，不能据此判断完整健康状态。" if self.scenario.dense_records or self.scenario.days == 1 else
                       "睡眠记录显示420分钟、评分80；饮食有一条合成番茄记录，200千卡。未记录的指标仍未知，不能据此判断完整健康状态。")
             yield {"type": "content", "text": answer}
             yield {"type": "finish", "finish_reason": "stop"}
@@ -230,6 +298,11 @@ def tool_contract(request, result, scenario):
     items = payload.get("results", [payload])
     expected = {"sleep": [] if scenario.state == "empty" else [(end, 80, 420)],
                 "diet": [] if scenario.state == "empty" or scenario.days == 1 else [((REFERENCE_NOW.date() - timedelta(days=1)).isoformat(), "合成番茄", 200)]}
+    if scenario.dense_records and scenario.state != "empty":
+        dates = [(REFERENCE_NOW.date() - timedelta(days=offset)).isoformat()
+                 for offset in reversed(range(scenario.days))]
+        expected = {"sleep": [(day, 80, 420) for day in dates],
+                    "diet": [(day, "合成番茄", 200) for day in dates] + [(end, "合成番茄", None)]}
     valid, dimensions = True, []
     for item in items:
         dimension = item.get("dimension")
@@ -243,7 +316,11 @@ def tool_contract(request, result, scenario):
             "dimensions": sorted(dimensions), "records_ok": bool(valid)}
 
 
-async def run_sample(db, user_id, scenario, variant, model, budget, *, live, provider_factory=None):
+async def run_sample(db, user_id, scenario, variant, model, budget, *, live, provider_factory=None, production_routing=False):
+    if production_routing and not live:
+        raise ValueError("production_routing_requires_live_opt_in")
+    if variant in THINKING_PROBES and (not production_routing or model != "qwen3.8-max"):
+        raise ValueError("thinking_probe_requires_live_max_route")
     require_ephemeral(db)
     if variant not in VARIANTS or scenario.state not in {"available", "empty", "read_failure"} or scenario.days not in {1, 7, 31}:
         raise ValueError("unsupported_sample")
@@ -261,8 +338,9 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
 
     row = {"case": scenario.id, "variant": variant, "model": model, "status": "running", "calls": [], "tool_contracts": [],
            "tool_attempts": 0, "database": "disposable_sqlite", "first_ui_content_seconds": None, "live": live,
-           "wall_seconds": None, "database_errors": [], "rejected_tools": [], "knowledge_contracts": [],
-           "query": scenario.query, "allow_knowledge": scenario.allow_knowledge, "gateway_decisions": []}
+           "wall_seconds": None, "database_errors": [], "database_error_details": [], "rejected_tools": [], "knowledge_contracts": [],
+           "query": scenario.query, "allow_knowledge": scenario.allow_knowledge, "gateway_decisions": [],
+           "production_routing": production_routing, "decision_calls": []}
     original_factory = factory.create_provider_for_model_id
     make_provider = provider_factory or ((lambda: original_factory(model)) if live else (lambda: ScriptedProvider(scenario)))
     provider = MeasuredProvider(make_provider, model, budget, row["calls"], live=live)
@@ -274,12 +352,25 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             bind = db.get_bind()
             engine = getattr(bind, "engine", bind)
             def database_error(context):
-                row["database_errors"].append(type(context.original_exception).__name__)
+                error = context.original_exception
+                row["database_errors"].append(type(error).__name__)
+                # Never retain SQL, bound parameters, or exception messages.
+                operation = str(context.statement or "").split(None, 1)
+                operation = operation[0].upper() if operation else None
+                row["database_error_details"].append({
+                    "exception_type": type(error).__name__,
+                    "sqlite_errorcode": getattr(error, "sqlite_errorcode", None),
+                    "sqlite_errorname": getattr(error, "sqlite_errorname", None),
+                    "statement_kind": operation if operation in {
+                        "SELECT", "INSERT", "UPDATE", "DELETE", "PRAGMA", "CREATE", "DROP",
+                    } else "other",
+                })
             sqlalchemy_event.listen(engine, "handle_error", database_error)
             stack.callback(sqlalchemy_event.remove, engine, "handle_error", database_error)
-            for name, value in (("domain_prompt_optimization", True), ("agent_base_url", None), ("agent_api_key", None),
+            for name, value in (("domain_prompt_optimization", True), ("owned_read_preplanning", variant in {"runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES}), ("agent_base_url", None), ("agent_api_key", None),
                                 ("task_tiered_routing", True), ("llm_auto_recovery_enabled", False),
-                                ("decision_mode", "off"), ("staged_response_mode", "off")):
+                                ("decision_mode", "on" if production_routing else "off"), ("staged_response_mode", "off"),
+                                ("decision_provider", "laya"), ("decision_admin_control_enabled", False)):
                 stack.enter_context(patch.object(settings, name, value))
             stack.enter_context(patch.object(openai_provider, "_DEFAULT_MAX_RETRIES", 0))
             client_kwargs = openai_provider.OpenAIProvider._client_kwargs
@@ -297,11 +388,50 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             stack.enter_context(patch("app.twin.cache.get_cached_twin", lambda *a, **k: None))
             stack.enter_context(patch("app.twin.cache.set_cached_twin", lambda *a, **k: False))
             stack.enter_context(patch("app.twin.cache.invalidate_twin", lambda *a, **k: None))
+            # The profile is background, but its clock must still agree with
+            # the frozen request clock. Never send contradictory synthetic times.
+            assert REFERENCE_NOW.hour == 23
+            stack.enter_context(patch("app.services.health_context_lite_service._get_time_period",
+                                      lambda: (REFERENCE_NOW.strftime("%H:%M"), "深夜")))
             clock = ExecutionContext.now.__func__
             stack.enter_context(patch.object(ExecutionContext, "now", classmethod(lambda cls, **kwargs: clock(cls, **{**kwargs, "now_utc": REFERENCE_NOW}))))
             for name in ("create_provider_for_model_id", "create_provider_for_user", "get_llm_provider"):
-                stack.enter_context(patch.object(factory, name, lambda *a, **k: provider))
-            stack.enter_context(patch("app.services.llm.task_routing.pick_model_id_by_tier", lambda *a, **k: model))
+                original = getattr(factory, name)
+                def measured_factory(*args, _original=original, **kwargs):
+                    actual = _original(*args, **kwargs)
+                    if isinstance(actual, MeasuredProvider):
+                        return actual
+                    return MeasuredProvider(lambda: actual, getattr(actual, "model", model), budget,
+                        row["calls"], live=live, tool_budget=provider.tool_budget, preserve_controls=True)
+                stack.enter_context(patch.object(factory, name,
+                    measured_factory if production_routing else lambda *a, **k: provider))
+            if production_routing:
+                from app.services.decisions import routing as decision_routing
+                original_decision_factory = decision_routing.provider_from_settings
+                class BoundedDecision:
+                    async def evaluate(self, request, *, user_id):
+                        if row["decision_calls"]:
+                            raise BenchmarkStopped("decision_call_budget")
+                        budget.reserve()
+                        entry = {"token_source": "unknown" if live else "synthetic",
+                                 "input_tokens": None, "output_tokens": None, "status": "running"}
+                        row["decision_calls"].append(entry)
+                        start = perf_counter()
+                        try:
+                            result = await original_decision_factory().evaluate(request, user_id=user_id)
+                            entry.update(status="passed", model=result.model,
+                                input_tokens=result.input_tokens if live else None,
+                                output_tokens=result.output_tokens if live else None,
+                                token_source="api" if live else "synthetic")
+                            return result
+                        except BaseException as exc:
+                            entry.update(status="failed", error_type=type(exc).__name__)
+                            raise
+                        finally:
+                            entry["wall_seconds"] = perf_counter() - start
+                stack.enter_context(patch.object(decision_routing, "provider_from_settings", BoundedDecision))
+            if not production_routing:
+                stack.enter_context(patch("app.services.llm.task_routing.pick_model_id_by_tier", lambda *a, **k: model))
             if variant in {"p1", "combined"}:
                 stack.enter_context(patch("app.services.agent_prompt_sections.build_base_prompt_parts", build_read_synthesis_parts))
             if scenario.state == "read_failure":
@@ -309,7 +439,20 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                     raise RuntimeError("synthetic_read_unavailable")
                 stack.enter_context(patch("app.services.agent_longitudinal_read.read_longitudinal_health_query", failed_read))
             executor = ae.AgentExecutor(db)
-            stack.enter_context(patch.object(executor, "_resolve_chat_provider", lambda tools: (provider, tools)))
+            if variant not in {"runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES}:
+                # Freeze the old runtime's model-first baseline. Historical
+                # eval variants remain independent; never stack preplanners.
+                stack.enter_context(patch.object(executor, "_preplanned_owned_read_calls", lambda *a, **k: []))
+            if variant in THINKING_PROBES:
+                from eval.experimental_read_thinking_budget import install_read_thinking_budget
+                install_read_thinking_budget(executor, budget=THINKING_PROBES[variant])
+            if variant == "runtime_legacy_layout":
+                from app.services import agent_composed_read_completion as completion_module
+                original_instructions = completion_module.read_scope_synthesis_instructions
+                stack.enter_context(patch.object(completion_module, "read_scope_synthesis_instructions",
+                    lambda scope, **kwargs: original_instructions(scope, include_layout=True)))
+            if not production_routing:
+                stack.enter_context(patch.object(executor, "_resolve_chat_provider", lambda tools: (provider, tools)))
             dispatch = executor._dispatch_tool_request
             from app.services.agent_kernel.tool_gateway import ToolGateway
             preflight = ToolGateway.preflight
@@ -365,6 +508,12 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             stack.enter_context(patch.object(executor, "_dispatch_tool_request", measured_dispatch))
             if variant in {"p2", "combined"}:
                 install_owned_read_preplan(executor)
+            elif variant == "empty_terminal":
+                from eval.experimental_empty_read_terminal import install_empty_read_terminal
+                install_empty_read_terminal(executor)
+            elif variant == "evidence_compact":
+                from eval.experimental_read_evidence_format import install_read_evidence_format
+                install_read_evidence_format(executor)
             done, chunks = None, []
             task_started = perf_counter()
             try:
@@ -386,7 +535,11 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
             finally:
                 row["wall_seconds"] = perf_counter() - task_started
                 row["tool_budget"] = dict(vars(provider.tool_budget))
-                row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined"} else "model_and_existing_server_fallback"
+                if production_routing:
+                    route = executor._decision_route
+                    row["decision_routing"] = route.metadata() if route is not None else None
+                    row["effective_model_id"] = executor._last_effective_model_id
+                row["logical_tool_source"] = "model_and_server_preplan" if variant in {"p2", "combined", "runtime_preplan", "runtime_legacy_layout", *THINKING_PROBES} else "model_and_existing_server_fallback"
             if done is None:
                 raise BenchmarkStopped("missing_done")
             saved = db.get(AgentMessage, done.get("message_id"))
@@ -400,8 +553,19 @@ async def run_sample(db, user_id, scenario, variant, model, budget, *, live, pro
                        "knowledge_contracts": all(c["honest_empty_kb"] for c in row["knowledge_contracts"]),
                        "expected_outcome": outcome == ("failed" if scenario.state == "read_failure" else "complete"),
                        "answer_present": bool(saved and saved.content.strip()), "semantic_review": "required"}
+            if production_routing:
+                route = row.get("decision_routing") or {}
+                quality["decision_route_exercised"] = (route.get("mode") == "on"
+                    and route.get("status") in {"accepted", "partial", "abstained"}
+                    and len(row["decision_calls"]) == 1 and row["decision_calls"][0]["status"] == "passed")
+            if variant in THINKING_PROBES:
+                quality["thinking_control_applied"] = (not row["calls"] and scenario.state == "read_failure") or (
+                    bool(row["calls"]) and all(c["phase"] == "answer"
+                        and c["request_controls"].get("thinking_budget") == THINKING_PROBES[variant] for c in row["calls"]))
             row.update(quality=quality, agent_kernel=done.get("perf", {}).get("agent_kernel"), answer=saved.content if saved else None,
-                       outcome=outcome, completion_status=done.get("completion_status"))
+                       outcome=outcome, completion_status=done.get("completion_status"),
+                       runtime_preplanned=done.get("perf", {}).get("owned_read_preplanned", False),
+                       runtime_model_call_count=done.get("perf", {}).get("model_call_count"))
             row["status"] = "passed_contracts" if all(value for key, value in quality.items() if key != "semantic_review") and row["agent_kernel"] == "pi" else "failed_contracts"
     except BaseException as exc:
         row.update(status="cancelled" if isinstance(exc, asyncio.CancelledError) else "failed", error_type=type(exc).__name__)

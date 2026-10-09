@@ -545,7 +545,7 @@ describe('agentContext', () => {
     });
 
     expect(context).toMatchObject({
-      from: 'exam-explain/7',
+      from: 'medical-exam/7',
       feedback_intent: 'exam_abnormal_review',
       exam: { date: '2026-05-21', type: '体检', hospital_name: '三甲医院' },
       abnormal_items: [{ name: 'LDL-C', value: 3.8, unit: 'mmol/L', flag: 'high', gene_links: ['APOE'] }],
@@ -722,3 +722,12 @@ describe('agentContext', () => {
     });
   });
 });
+
+ it('serializes oversized medical context as a complete owned-report reference, never a partial summary', () => {
+   const narrative = '合成摘要'.repeat(2000) + '末尾证据';
+   const context = createExamExplainAgentContext({ exam: { id: 7, overall_assessment: narrative } });
+   expect(JSON.stringify(context)).toContain(narrative);
+   const serialized = serializeAgentContext(context);
+   expect(JSON.parse(serialized)).toMatchObject({ from: 'medical-exam/7', evidence_mode: 'server_owned_full_report' });
+   expect(serialized).not.toContain('[truncated]');
+ });

@@ -65,7 +65,8 @@ def test_negative_training_load_is_rejected_at_api_boundary():
 
 
 @pytest.mark.asyncio
-async def test_successful_garmin_sync_invalidates_twin(db, monkeypatch):
+@pytest.mark.parametrize("failed_count", [0, 1])
+async def test_successful_garmin_sync_invalidates_twin(db, monkeypatch, failed_count):
     """A device resync must not leave the previous ACWR/Safety result cached."""
     from app.services import auth, sync_lock, workout_sync
     from app.services.data_collection import garmin_connect
@@ -98,7 +99,8 @@ async def test_successful_garmin_sync_invalidates_twin(db, monkeypatch):
         async def sync_activities(self, _db, user_id, days):
             assert user_id == user.id
             assert days == 7
-            return {"synced_count": 2}
+            return {"synced_count": 2, "failed_count": failed_count,
+                    "status": "partial" if failed_count else "success"}
 
     monkeypatch.setattr(auth, "GarminCredentialService", FakeCredentialService)
     monkeypatch.setattr(
@@ -140,6 +142,9 @@ async def test_successful_garmin_sync_invalidates_twin(db, monkeypatch):
     )
 
     assert result["synced_count"] == 2
+    assert result["failed_count"] == failed_count
+    assert result["status"] == ("partial" if failed_count else "success")
+    assert ("部分活动未完成" in result["message"]) is bool(failed_count)
     assert invalidated == [user.id]
     assert released == [user.id]
 
@@ -191,7 +196,7 @@ async def test_central_workout_sync_invalidates_twin_after_persisting_activity(
 
     result = await service.sync_activities(db, user.id, days=7)
 
-    assert result == {"synced_count": 1}
+    assert result == {"synced_count": 1, "failed_count": 0, "status": "success"}
     assert invalidated == [user.id]
     assert (
         db.query(WorkoutRecord)
@@ -231,5 +236,75 @@ async def test_central_workout_sync_does_not_invalidate_without_changes(
 
     result = await service.sync_activities(db, user.id, days=7)
 
-    assert result == {"synced_count": 0}
+    assert result == {"synced_count": 0, "failed_count": 0, "status": "success"}
     assert invalidated == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flush_failure", [False, True])
+async def test_activity_parse_failure_preserves_prior_commits_and_reports_partial(db, monkeypatch, flush_failure):
+    from app.services import workout_sync
+    user = _user(db)
+    from app.models.user import GarminCredential
+    from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
+    from datetime import datetime, timezone
+    prior = datetime.now(timezone.utc)
+    credential = GarminCredential(user_id=user.id,garmin_email='synthetic@example.invalid',
+        encrypted_password='unused',credentials_valid=True,last_sync_at=prior)
+    db.add(credential);db.commit()
+    service = object.__new__(workout_sync.WorkoutSyncService)
+    service.user_id = user.id
+    service.client = type('Client', (), {'get_activities_by_date': lambda *_: [
+        {'activityId': 'good-a'}, {'activityId': 'bad'}, {'activityId': 'good-b'},
+    ]})()
+    monkeypatch.setattr(service, '_ensure_authenticated', lambda: None)
+    def parse(activity, owner):
+        if activity['activityId'] == 'bad' and not flush_failure:
+            raise ValueError('synthetic_invalid_activity')
+        return {'user_id': owner, 'workout_date': date(2026, 10, 9),
+                'workout_type': None if activity['activityId'] == 'bad' else 'running', 'duration_seconds': 600,
+                'workout_name': 'Synthetic', 'source': 'garmin',
+                'external_id': activity['activityId']}
+    monkeypatch.setattr(service, '_parse_activity', parse)
+    async def details(_id):
+        return {}
+    monkeypatch.setattr(service, 'get_activity_details', details)
+    monkeypatch.setattr(workout_sync, '_invalidate_twin', lambda _: None)
+    result = await service.sync_activities(db, user.id, days=1)
+    assert result == {'synced_count': 2, 'failed_count': 1, 'status': 'partial'}
+    assert db.query(WorkoutRecord).filter(WorkoutRecord.user_id == user.id).count() == 2
+    db.refresh(credential)
+    assert credential.last_error == GARMIN_ACTIVITY_PARTIAL_MESSAGE
+    assert credential.credentials_valid is True
+    # Activity-only success clears its warning but cannot advance full-sync time.
+    service.client = type('EmptyClient', (), {'get_activities_by_date': lambda *_: []})()
+    assert (await service.sync_activities(db,user.id,days=1))['status'] == 'success'
+    db.refresh(credential)
+    assert credential.last_error is None
+    observed = credential.last_sync_at
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    assert observed == prior
+
+
+def test_activity_uses_explicit_gmt_timestamp_and_retains_local_calendar_date():
+    from datetime import UTC, datetime
+    from app.services.workout_sync import WorkoutSyncService
+    service = object.__new__(WorkoutSyncService)
+    service.user_id = 41
+    parsed = service._parse_activity({'activityId': 'synthetic-time',
+        'startTimeLocal': '2026-10-09T00:30:00', 'startTimeGMT': '2026-10-08T16:30:00',
+        'duration': 600, 'activityType': {'typeKey': 'running'}}, 41)
+    assert parsed['start_time'] == datetime(2026,10,8,16,30,tzinfo=UTC)
+    assert parsed['workout_date'] == date(2026,10,9)
+
+
+def test_naive_local_only_timestamp_cannot_claim_an_absolute_instant():
+    from app.services.workout_sync import WorkoutSyncService
+    service = object.__new__(WorkoutSyncService)
+    service.user_id = 41
+    parsed = service._parse_activity({'activityId': 'synthetic-time',
+        'startTimeLocal': '2026-10-09T00:30:00', 'duration': 600,
+        'activityType': {'typeKey': 'running'}}, 41)
+    assert parsed['start_time'] is None
+    assert parsed['workout_date'] == date(2026,10,9)

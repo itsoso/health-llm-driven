@@ -1,6 +1,6 @@
 /* eslint-disable import/first */
 import React from 'react';
-import { fireEvent } from '@testing-library/react-native';
+import { fireEvent, waitFor } from '@testing-library/react-native';
 
 import { renderWithProviders } from '../../test-utils';
 
@@ -10,7 +10,7 @@ const mockListMedicalExams = jest.fn();
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockBack, push: mockPush }),
-  useFocusEffect: (cb: () => void | (() => void)) => cb(),
+  useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
 
 jest.mock('../../services/medicalExams', () => {
@@ -39,4 +39,11 @@ describe('MedicalExamsScreen import entry', () => {
       params: { focus: 'medical' },
     });
   });
+  it('shows a retryable fetch error rather than an empty report collection', async () => {
+    mockListMedicalExams.mockRejectedValue(new Error('synthetic_unavailable'));
+    const view = renderWithProviders(<MedicalExamsScreen />);
+    await waitFor(() => expect(view.getByText('报告加载失败，请重试')).toBeTruthy());
+    expect(view.queryByText('导入第一份报告')).toBeNull();
+  });
+
 });

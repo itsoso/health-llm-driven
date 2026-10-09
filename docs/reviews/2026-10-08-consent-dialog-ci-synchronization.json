@@ -1,0 +1,40 @@
+{
+  "source_parent": "19cf3b34a7b5344d2177894d91877c4cf01f0390",
+  "ci_run": 37759484113,
+  "failed_job": 113252200494,
+  "failed_test": "AiConsentDialog shows actual disclosure and lets the user decline without a write",
+  "failure": "Recipient DOM node present but not visible before native dialog is open",
+  "ci_log_sha256": "3a17cd996e9130d53f23eb07b355bc892aeb67c781e7418316b0d6c9e98aac9a",
+  "deterministic_red": {
+    "failed": 1,
+    "passed": 3,
+    "log_sha256": "7f155440c9752ca0c1311b0be78d278b543a5589bfb8f8b0dd5edbff50ed4b69"
+  },
+  "fixed_checks": {
+    "focused_passed": 5,
+    "frontend_full_passed": 448,
+    "existing_skipped": 1,
+    "log_sha256": "07aef063ebfc76665b73e86d4841628e9a8f5f40ad0c2a6fe3305acf35c39d38"
+  },
+  "scope": "Test-only visible-role synchronization and controlled deferred-open coverage. Preserve disclosure visibility, decline=false and writes=0. No timeout increase, skip or production consent change.",
+  "independent_review": {
+    "verdict": "GO",
+    "focused_passed": 5,
+    "test_sha256": "c5ac04f9bc77b7ec4a7cf8176e2c74c8e578461b8772b75544fabd4676a3c71f",
+    "limits": "Controlled deferred-open proves readiness gap; original CI complete scheduling trace unavailable. Retain attempt1 failure and fresh exact-SHA CI result."
+  },
+  "main_ci": {
+    "sha": "34031393d3c623801910b8747ccebae42238d331",
+    "run": 37761397416,
+    "conclusion": "success",
+    "jobs_success": 5,
+    "jobs_scope_skipped": 9
+  },
+  "publication": "Backend5c and QR276 unchanged; no new build/deploy needed for test-only fix.",
+  "original_sha_recheck": {
+    "run": 37759484113,
+    "attempt": 2,
+    "success_jobs": 29,
+    "attempt1_failure_retained": true
+  }
+}

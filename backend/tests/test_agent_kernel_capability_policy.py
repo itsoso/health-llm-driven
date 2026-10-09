@@ -7263,3 +7263,89 @@ def test_v42_capability_digest_is_stable_across_fresh_processes():
     }
 
     assert len(digests) == 1
+
+@pytest.mark.parametrize('message', [
+    '请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来 30 天该做什么。',
+    '请基于我这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于本人最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于我最新的体检报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于我刚导入的体检报告，解释异常/关键指标、需要复核的地方，以及接下来 30 天最重要的健康行动。',
+])
+def test_product_report_interpretation_requests_are_owned_reads(message):
+    decision = decide_tool_capability(_snapshot(message), _request('health_query', {'dimension': 'medical_exam'}))
+    assert decision.action == 'allow', decision
+    assert decision.normalized_args == {'dimension': 'medical_exam'}
+
+@pytest.mark.parametrize('prefix,suffix', [
+    ('不要', ''), ('假设', ''), ('他说“', '”'), ('', '但不要读取报告'),
+    ('', '并查询我妈妈的报告'), ('', '并记录今天的血压'),
+])
+def test_product_report_interpretation_does_not_expand_authority(prefix, suffix):
+    message = prefix + '请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么' + suffix
+    decision = decide_tool_capability(_snapshot(message), _request('health_query', {'dimension': 'medical_exam'}))
+    assert decision.action == 'block', decision
+
+@pytest.mark.parametrize('message', [
+    '请基于我妈妈最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于我和妈妈最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '请基于我最新这份体检/化验报告，解释异常项、风险优先级和查询未来30天的记录。',
+    '明天请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '> 请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。',
+    '“请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。”',
+    '请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。取消',
+    '请基于我最新这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。报告属于妈妈的',
+])
+def test_product_report_interpretation_rejects_nonself_material_or_different_act(message):
+    decision = decide_tool_capability(_snapshot(message), _request('health_query', {'dimension': 'medical_exam'}))
+    assert decision.action == 'block', decision
+
+
+@pytest.mark.parametrize("text", (
+    "同步我朋友的佳明数据，分析他的跑步",
+    "同步我的佳明数据，分析他的跑步",
+    "同步我的佳明数据；总结她的运动",
+    "同步我的佳明数据。复盘同事的训练",
+))
+def test_compound_foreign_workout_never_substitutes_current_users_history(text):
+    decision = decide_tool_capability(
+        _snapshot(text), _request("health_query", {"dimension": "workout", "days": 1}),
+    )
+    assert decision.action == "block"
+    assert decision.reason == "health_query_subject_not_current_user"
+
+
+@pytest.mark.parametrize("text", (
+    "同步我的佳明数据，‘分析他的跑步’",
+    "如果同步我的佳明数据，再分析他的跑步",
+))
+def test_non_authorizing_compound_cannot_authorize_workout_history(text):
+    decision = decide_tool_capability(
+        _snapshot(text), _request("health_query", {"dimension": "workout", "days": 1}),
+    )
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize("text", (
+    "不同步朋友的佳明，分析我的跑步",
+    "同步我的佳明数据，别分析他的跑步，分析我的跑步",
+))
+def test_cancelled_foreign_clause_preserves_existing_owned_workout_read(text):
+    decision = decide_tool_capability(
+        _snapshot(text), _request("health_query", {"dimension": "workout", "days": 1}),
+    )
+    assert decision.action == "allow"
+    assert decision.reason == "health_query_projected_to_turn_semantics"
+    # Preserve the existing ordinary analysis projection; this does not bind
+    # a latest-workout or a just-completed-workout request.
+    assert decision.normalized_args == {"dimension": "workout", "days": 7}
+
+
+@pytest.mark.parametrize('suffix', ['', '并查询朋友的报告', '并删除旧记录'])
+def test_legacy_mobile_report_explanation_is_whole_owned_act(suffix):
+    text='请基于这次体检异常解读，帮我按优先级梳理风险、行动、复查安排和需要向医生确认的问题。不要替代诊断或用药建议。'
+    decision=decide_tool_capability(_snapshot(text+suffix),_request('health_query',{'dimension':'medical_exam'}))
+    assert decision.action == ('block' if suffix else 'allow')
+    if not suffix:
+        assert decision.normalized_args == {'dimension':'medical_exam'}
+    for invalid in ('“'+text+'”','如果'+text,text.replace('帮我','帮我朋友'),text+'不要读取报告'):
+        assert decide_tool_capability(_snapshot(invalid),_request('health_query',{'dimension':'medical_exam'})).action=='block'

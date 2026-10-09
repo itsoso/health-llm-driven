@@ -1,0 +1,143 @@
+# 天气与空气质量组合查询故障
+
+| 字段 | 值 |
+| --- | --- |
+| 状态 | shipped |
+| 当前阶段 | S6 已发布且服务端真实验收通过 |
+
+- 日期：2026-10-08
+- Controller：health-harness-orchestrator（incident），safety-gate overlay。
+- Harness：`6dcf36a10fa2`。
+- 接手基线：`549765a95a5011cb06bd62fe28d669d3f2991892`；此前后端发布：`9b05c5c9ef27b5401b6b31b37892c28ed1d1ec2c`。
+- 当前状态：`be8bd98e10db01241dd0b9e6e4c34181a9061345` 已合入 main、部署成功并通过真实公共服务 G6；以下为按时间保留的历史记录，以末尾最终裁决为准。
+
+## 用户验收与边界
+
+截图请求为“杭州明天天气温度怎么样？空气质量。”，却返回模型不可用及“没有生成可靠健康建议”。应回答核实的明天天气与温度，明确空气质量是来源观测、保留观测时点不确定性，不能冒充明日预报。服务失败如实说明，不能制造天气、成功回执或健康建议。
+
+保留其他 session 的饮食性能改动及既有写权限、健康安全、附件和待确认上下文边界；不启用被真实模型回归否决的写工具说明压缩。本次仅后端，无移动端或原生发布变更。
+
+## 已证事实与未决根因
+
+- 生产窄时间窗日志及按认证所有者限定的只读元数据表明：模型首轮成功，返回两个工具调用，随后执行器捕获 `RuntimeError`；没有工具请求/执行记录。未输出消息原文、健康载荷、密钥或异常全文。
+- 不能由该日志裁决模型宕机。原日志仅记录异常类型，不足以定位内部失败。
+- 当前生产进程与 CLI 身份密钥仅检查长度布尔值，均符合最小长度；不能将合成短密钥实验认定为生产根因。
+- 合成真实 Pi 两工具可完成；畸形参数可能在 Node 拒绝后进入第二模型轮，因此一个已完成 round 不排除下一轮早期失败。
+- 两次初始真实模型基线未复现 RuntimeError，但 domain_prompt_optimization 与生产配置不同，仅作诊断，不用来作严格性能对照。
+- **历史 RuntimeError 尚未闭合根因。** 以下为有测试证据的独立缺陷修复，不能将路由变化等同于解释历史异常。
+
+## 已实现
+
+1. 闭合公共问题语法覆盖天气温度与空气质量组合；由服务端编译同城天气/预报和当前 AQI 两个读取，经原工具网关执行，再单轮模型合成。
+2. 空气质量载荷和公共提示明确当前观测而非未来预报，保留不可用数据拒绝条件；工具失败终止合成且最终状态为 error。
+3. 通用失败文案不再臆断发生健康建议任务；未知内部异常不再冒充已确认的模型服务宕机。额度、限流、超时仍保留明确类别与重试指引。
+4. 异常日志增加单一应用代码位置（模块名与行号），不输出异常正文、绝对路径、源码、局部变量或整段堆栈；移除该日志中的原始用户 ID。
+
+## 验证
+
+- 公共组合路由：RED 4 failed / 66 passed；实现后邻近测试 90 passed。
+- 错误文案：RED 5 failed；代码位置辅助函数 RED 1 failed / 5 passed；实现后与额度测试 14 passed。
+- 整合回归：416 passed，包括真实 Pi 协议、公共路由、危机语言安全与额度控制；不把合成环境读取当真实天气服务验证。
+- AQI 不可用最终状态断言已通过；现有结果归一化已返回 error，不需要额外状态补丁。
+- System Map 校验通过。
+- 正式 `harness_llm_regression_gate.py --include-live-llm` 等价程序入口通过；10 次 API usage 调用均成功、源码哈希未变。证据：`docs/reviews/2026-10-08-weather-aqi-live-regression.json`。此通用健康回归不替代截图原句专项验收。
+- CI-mode 集成 21 passed；同生产 domain_prompt_optimization=True 的专项真实模型配对两案通过，见 `docs/reviews/2026-10-08-weather-aqi-paired.json`。基线输入 23003/23329 token、各两次 qwen3.8-max 调用；候选各 685 token、各一次默认 MiniMax-M2.5 调用；耗时 9.61/8.52 秒 → 5.24/4.09 秒。收益包含路由模型变化，不是同模型纯压缩对照；仅两例、合成公共数据，不代表线上 P95 或天气真实性。候选均正确区分日期、18–24℃与当前 AQI51，明确无明日 AQI 预报。基线额外健康/户外建议被人工判为偏离任务，保留该失败。固定提交独立 G4、精确 SHA CI 与发布仍待记录。
+
+## 发布与剩余验证
+
+本次尚未合并或部署。不宣称历史异常已完全排除；必须分别记录代码修复、真实模型质量、CI、生产终态回执和用户路径验收。
+
+## G1 既有行为修复准入
+
+裁决：PASS。修复既有公共环境查询的组合表达漏路由及错误文案，不新增 Health OS 对象、数据接收方、个人数据读取授权或写权限，不新增产品入口。用户原句及健康上下文隔离、天气真实性、日期边界是验收标准。
+
+## 独立审查发现与整改
+
+- 固定候选 `19cd262b9`（运行时同 `96133ef49`）首轮独立安全审查 NO-GO：公共 AQI 分支透传了服务附带的健康/运动建议，而此前合成样本不含这些字段。未推送该候选。
+- 改为公共路线的观测字段 allowlist；不改健康路线的通用环境服务。含建议哨兵的 payload 与完整 provider 输入测试 RED 2 failed / 89 passed，修复后通过。
+- 生产公共环境读取确证 qweather-v1 `update_time` 为不透明缓存标签，不是时间。公共投影剔除无效时间并显式标记未知；提示禁止以系统时间替代。时间验证 RED 8 failed，修复后通过。未存放实际标签值或个人数据。
+- 修复后 425 项相关回归、21 项 CI-mode 集成、System Map 通过。新正式真实模型回归 10 API 调用通过，源码哈希匹配：`docs/reviews/2026-10-08-weather-aqi-final-live-regression.json`；保留前一版本证据，不覆盖失败。
+- 含五类健康建议哨兵、分别有效时间与不透明标签的两案真实 provider/Pi 验证通过，输入 716/707 token，耗时 3.77/3.88 秒。观测事实保留，建议与标签未进入模型，第二案明确来源时间未知。见 `docs/reviews/2026-10-08-weather-aqi-projection-live.json`。
+- 此新证据替代前版 685 token 作为当前候选值；语义与载荷不同，不把两次延迟直接归因于投影改动。当前接口类别不证明实际数据新鲜度；第二案措辞含“实时”同时注明来源时间未知，独立复审核对中。
+- 截图历史 RuntimeError 仍未定位；当前发布范围是已证公共组合路由、错误文案与观测投影缺陷。尚未合并或发布。
+
+## 观测时点二次整改
+
+- 固定 `0dbda6322` 再审 NO-GO：原第二案的“实时数据”与来源时间未知矛盾。前一证据的自动检查虽通过，人工语义裁决为 FAIL，保留原回复与证据，不以局部测试通过代替语义通过。
+- 公共载荷标记改为 `air_quality_observation_not_forecast`，不暗示观测新鲜度；提示要求时间未知时不得称空气质量为实时、最新、今天、此刻或当前，并明确无法确认观测时点。
+- 新 RED 2 failed；修复后 426 项相关回归通过。新两案真实模型验收通过，见 `docs/reviews/2026-10-08-weather-aqi-freshness-paired.json`：有效日期保持来源精度；未知时间仅报告 AQI 观测值并声明时点未知，无额外健康建议。
+- 最终候选两案 API 输入 741/732 token、各一次模型调用、耗时 6.06/4.99 秒。此值取代前述中间候选指标。两案均合成公共观测，不作实际杭州天气、生产 P95 或历史异常根因证明。
+
+- 最终 21 项 CI-mode 集成与 System Map 通过。正式真实模型回归 10 次 API 调用全部成功，34 个源文件哈希与最终运行时一致：`docs/reviews/2026-10-08-weather-aqi-freshness-live-regression.json`。该轮开始时 runtime 已修改但尚未 commit，故以文件哈希与最终提交逐一匹配，不把报告中的起始 HEAD 冒充当时干净源码。
+
+## 发布重启中断机制与补充整改
+
+- 原请求日志时间线：19:00:33 systemd 开始停止后端；19:00:37 同一旧进程首轮模型返回两个工具调用，随后 RuntimeError，零工具执行，紧接着完成应用退出。生产有效配置为 `KillMode=control-group`、SIGTERM、45 秒停止上限，uvloop 0.22.1。未记录任何健康原文或身份信息。
+- 本地真实 Pi 子进程在模型等待期间被终止：uvloop 3/3 在 `stdin.write` 抛原生 RuntimeError；标准 asyncio 3/3 返回受控 PiKernelError。此结果与发布停止时间线吻合，定位为关闭期间工具子进程先于模型返回退出的机制，不能称为上游模型不可用。未复演生产用户请求。脱敏证据见 `docs/reviews/2026-10-08-pi-shutdown-reproduction.json`。
+- Pi 对已退出/关闭管道及关闭竞态统一抛 `pi_transport_failed`，无自动重试；未关闭管道的未知 RuntimeError 和 CancelledError 保持传播，避免掩盖异常或重复写入。新增 RED 2 failed；修复后传输相关 22 passed。
+- 后端单 worker 采用 `KillMode=mixed`：先仅向主进程发送 SIGTERM，由 Uvicorn 最多 30 秒排空请求，再在 systemd 45 秒上限下强制结束残留进程。配置由现有事务化 drop-in 发布，验证有效信号、范围与超时；保留原 journal schema 及恢复路径。
+- 本地真实 Uvicorn/uvloop/Pi HTTP 对照：初始信号作用于整组时 3/3 请求失败；只作用于主进程时 3/3 完成且子进程回收。只使用合成回复、不访问模型或数据库，信号实验不冒充 Linux systemd 端到端验证。可重跑 `scripts/probe_pi_graceful_shutdown.py`；结果 `docs/reviews/2026-10-08-pi-graceful-drain.json`。
+- 首次迁移限制：现有可信发布先停止旧服务再安装新 drop-in，因此本次旧配置第一次停止仍可能中断进行中的请求；新配置只保护其生效后的重启。不提前手工修改生产 unit，不绕事务授权。超过 30 秒的请求仍可能被取消，不承诺零中断。
+- `e59fd935a` 已通过 push CI `37773119726`（24 success / 5 skipped）及完整 CI `37773170496`（29 success）。新增关闭修复须重新完成固定提交 G4 与精确主干 CI，不能沿用该绿色结果发布新代码。
+
+- 关闭修复后的正式真实模型回归再次通过：10 次 API 调用均成功，35 个源文件哈希未变（包含 Pi transport），见 `docs/reviews/2026-10-08-weather-aqi-shutdown-live-regression.json`。System Map 使用仓库 Python 3.12 PATH 校验通过。
+- 发布配置及恢复相关最终源测试 220 passed：六项有效 drain 配置篡改均被拒绝；无新增 drain 字段的旧 journal 仍能安装新配置并恢复原旧 drop-in 字节。
+
+- 最终后端 CI-mode 相关回归 61 passed，包含既有 21 项集成、Pi 写入对账与关闭竞态；无自动重试、取消不伪装成功。
+
+- 30 秒超时边界实验保留 FAIL/部分证实：真实 Uvicorn/uvloop/Pi 的最小 lifespan=off 服务在 30.159 秒退出，客户端断开且没有伪成功/重试，但取消处理与 Pi 主动 await/reap 未证实。见 `docs/reviews/2026-10-08-pi-drain-timeout.json`。不能宣称超时请求完整优雅结束；这是保留 `SendSIGKILL=yes`、`FinalKillSignal=SIGKILL` 和 systemd mixed 最终整组清理的必要理由。此实验不证明生产 systemd 45 秒终态，须由独立评审裁决验证边界。
+
+## 关闭修复独立审查与旧版本恢复整改
+
+- 固定 `6be2a3455` G4 **NO-GO**：使用真实 `9b05c5c9` canonical base 与完整旧 drop-in 的内存回放，恢复证明错误地按新 recovery source 要求新配置，报 `effective drop-in bytes differ`。首次新版本安装前失败必须能证明仍然完整旧 generation，不能让新版排空配置阻断合理恢复。未推送此候选。
+- 独立审查 231 项测试通过但未覆盖该场景；此前旧 journal 恢复原字节测试不等价于完整旧 generation 的 contained proof。需补 RED 测试并按认证 production revision 的精确配置代际修复，拒绝任意旧新混合与被篡改配置，不执行历史代码。
+- 审查认为 30 秒超时部分失败不单独阻断：按生产 systemd 249 文档，mixed 在主进程退出或 45 秒超时后向剩余整个 cgroup 发最终 KILL；必须保留并核验该配置，不宣称应用层主动回收已通过。
+- 更广发布/回滚/activation 测试 362 passed，作为补充证据；不覆盖新发现缺口。
+
+- 整改 RED：完整旧配置代际两组合 2 failed / 2 passed；修复仅在恢复证明选择两个受审的完整配置模板，按 canonical production source 精确匹配，不执行历史 Python，也不给正式 publisher 增加接受旧配置的开关。
+- 完整旧模板与真实 `9b05c5c9` backend drop-in 逐字节相同；新/旧 canonical 与相反 live drop-in 混用均拒绝，六个有效信号/超时属性、三服务命令、额外可写路径及未知 canonical 字节均拒绝。旧 journal/版本/租约/终态/权限证明保留。整改后四套相关脚本测试 330 passed。
+
+## 首次正式发布与真实公共服务验收
+
+- `62cfbf1bd9dacee54b854b14ad51062a22700642` 独立 G4 GO，完整旧/新配置真实 canonical 回放通过，混搭拒绝；复审 211 tests passed。
+- 精确 main push CI `37777023123` 与完整 CI `37777036771` 各 29 success。Trusted validate `37779092171` 和 backend `37780127775` 均 success。
+- 生产持久终态 `SUCCEEDED`，实际 HEAD 为 `62cfbf1bd`，业务 lease 已释放，原 launcher lock inode 保持。三次健康评分 60/60，后端/worker/beat/frontend 均 active，NRestarts=0；实际 mixed/30 秒/45 秒和全部信号配置已核验。未将此视为业务验收完成。
+- G6 使用已审 helper `c1abfe197f1dc124e8356f2253027ff6e27abf71cffe3f55c38bad3dd9976f92` 在生产机器隔离内存测试库、合成同意账号执行原句，读取真实公开环境服务，不读写生产健康数据。真实 API 一次、903 输入 token、9.08 秒，完整返回明日日期与 17–27℃；但漏展示已返回的 AQI52，仅说明时间未知，因此 **FAIL**，保留 `docs/reviews/2026-10-08-weather-aqi-production-first.json`。不得把自动 complete 当语义通过。
+- 同次捕获两条 current-weather 内部错误，天气预报和 AQI 源均 available。只知 current endpoint 返回非成功码，未输出异常正文，不能推断具体限流/权限/供应商宕机。源码定位：公共回合完成阶段的 KB evidence fallback 和 citation shadow 仍构建个人 Twin，额外触发天气实况请求；独立整改应跳过这两条个人上下文路径，而不是吞掉服务错误。
+
+## 真实验收后的公共交付整改
+
+- 完成阶段隔离 RED 证实原句额外构建 Twin 两次（use_cache=False/True），自我介绍一次；已在两处公共完成路径跳过个人证据/引用构建，个人健康对照保留。相关 28 项通过，扩展含 CI-mode 集成/引用/对账共 204 passed。
+- 仅加强提示词的候选虽通过 10 次正式 API 通用回归（`2026-10-08-weather-aqi-completion-live-regression.json`），四次专项真实模型仍 **人工 FAIL**：未知时点的第 0、2 案标题称“当前空气质量”，第 3 案省略有效来源日期。狭窄自动 oracle 原先 PASS 不作质量裁决，已保留自动结果并加人工 FAIL，见 `2026-10-08-weather-aqi-completeness-live.json`。该候选未提交/发布。
+- 决策：沿用已闭合公共天气语法及原工具网关，改为确定性呈现已核实的天气、温度、AQI 数值和来源观测时间，取消该路线的模型合成。按 kernel 本轮时间匹配所问日期；数值复用展示格式化真源，缺失或无效来源明确失败，不引入默认城市、健康建议、写权限或自动重试。健康问题保留原模型流程。此实现及对应新验证尚在进行。
+
+## G6 失败后确定性事实呈现
+
+- `62cfbf1bd` 真实公共服务验收失败证据保留为 `docs/reviews/2026-10-08-weather-aqi-production-first.json`。服务返回明日预报与 AQI52，但合成答案遗漏 AQI；公共回合完成阶段还多余构建 Twin，引入两次天气读取错误。
+- 曾尝试提示明确数值完整性；四案真实模型仍有未知观测时间称“当前空气质量”和已知来源时间漏展示，人工判 FAIL，保留 `docs/reviews/2026-10-08-weather-aqi-completeness-live.json`。不发布该提示补丁，原始自动判定单独保留，不覆盖失败。
+- 对已通过闭合公共语法与安全路由的天气回合，网关返回后直接呈现有限天气事实，取消模型合成。预报按冻结本轮参考日期查找明天/后天；来源有效时间按原精度呈现，未知则明确说明；AQI观测不能代表未来预报。缺少日期、不可用来源或非法数值均为失败终态，禁止模型回退或重复读取。
+- 公开回合跳过完成阶段个人 Twin/evidence/citation 构建；个人健康路径保留。未修改个人数据权限、工具描述压缩开关或生产配置。
+- 确定性测试 RED 15 failed → 130 passed；扩展 CI-mode 工具协议、回执、citation、集成回归 220 passed。完成阶段 Twin 隔离专项 3 passed。System Map、diff 检查通过。真实模型通用健康回归与固定提交独立 G4、精确 CI、再次发布及真实公共服务验收仍待完成。
+
+- 当前确定性候选正式真实模型通用健康回归通过：10 次 API 调用均成功，源码哈希前后不变。证据 `docs/reviews/2026-10-08-weather-aqi-deterministic-live-regression.json`。此证据仅证明健康回归；公共天气零模型及真实服务验收单独裁决。
+
+- 固定 `6bc041795089a835dbd6de6c9f4634ae9114bcb3` 独立 G4 NO-GO：有限条件校验拒绝现有 Open-Meteo 合法词（晴朗、霜雾、毛毛雨等）；泛预报未约束当前完整日期窗口，可能把陈旧、越界或不完整返回标成功。候选未推送，返回实现与测试阶段。该版本通用健康真实模型 PASS 不豁免天气专项失败。
+
+- G4 三项整改：覆盖适配器全部26种有限描述；泛预报要求本轮日期起 `query.days` 完整窗口，过期与越界不展示；温度上下限在格式化前比较。RED 10 failed → 160 passed；扩展 CI-mode 回归 253 passed，System Map 通过。最终正式健康实模回归10 API调用全部成功且源码哈希未变，见 `docs/reviews/2026-10-08-weather-aqi-deterministic-final-live-regression.json`。等待新固定提交 G4/CI/发布与真实公共验收。
+
+## G3/G4 最终代码与质量裁决
+
+裁决：PASS。固定部署候选 `be8bd98e10db01241dd0b9e6e4c34181a9061345`；253 项本地 CI-mode 回归、83 项独立审查测试通过，三个 G4 阻断关闭。正式健康实模10调用、35份源码摘要匹配候选；文件摘要绑定提交前测量结果，不能把报告 source_commit 字段冒称为最终提交。未恢复被否决的写工具说明压缩。
+
+## G5 最终发布裁决
+
+裁决：PASS。自动 CI `37784570636` 成功，完整 CI `37784722390` 的29项均成功；Trusted validate `37786822337` 与 backend `37787877892` 成功。服务器生产 SHA 与候选一致，持久化回执 `SUCCEEDED`，发布 lease 已释放，4个服务 active，后端 NRestarts=0，公开 HTTPS 健康接口200/healthy。授权切换保留 launcher 锁 inode，原部署回执保留。结构化证据见 `docs/reviews/2026-10-08-weather-aqi-release-final.json`。本次仅后端，无 OTA 或原生包发布。
+
+## G6 最终真实服务裁决
+
+裁决：PASS。使用已部署源码、临时隔离用户库和实际公共天气服务，执行截图原句“杭州明天天气温度怎么样？空气质量。”；真实网关恰好预报与空气质量两读，模型/Pi/Twin尝试均为零，空 usage 捕获桶且隔离库无 usage 行，无 ERROR 或 SQL 错误。日期、天气、温度上下限、AQI与等级、未知观测时点及未来AQI缺失均准确呈现，流式内容等于保存内容，done及保存终态均complete。
+
+- 实际结果：2026-10-09晴，17～27℃；来源AQI57、良，明确未提供有效观测时间，不能代表未来空气质量。成功复验0.96秒、零模型调用及输入token；这是一次服务端样本，不是手机端耗时或生产P95结论。
+- 第一次新版验收真实事实与终态已全通过，但统计oracle误将 tracker 的正常空捕获 `None` 视为失败，原FAIL保留为 `docs/reviews/2026-10-08-weather-aqi-zero-usage-oracle-first.json`。独立9项正反检查确认修正仅验收器：同时要求空捕获桶、隔离库零usage行和无任何provider/Pi/Twin尝试；不改生产代码、不追认旧FAIL。
+- 修正验收器固定摘要 `50e08427b5e48d76b423522942fe49702093057b2d150fb0db7464ca58be993e` 获独立GO，新执行PASS：`docs/reviews/2026-10-08-weather-aqi-production-final.json`。真实用户手机界面未在本次操作，不冒称设备端验收。
+- 原62cf生产漏AQI、提示词方案 freshness 失败及6bc独立NO-GO证据全部保留。后续提交仅归档本节及证据，部署运行时代码精确绑定上述be8提交。

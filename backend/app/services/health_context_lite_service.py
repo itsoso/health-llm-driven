@@ -687,13 +687,19 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
                 WorkoutRecord.user_id == user_id,
                 WorkoutRecord.workout_date >= today - timedelta(days=30)
             ).scalar() or 0
-            if workout_30d_count <= 4:
+            if workout_30d_count == 0:
+                parts.append(
+                    "最近30天未查询到运动记录；运动水平未知。"
+                    "记录缺失不代表没有运动、无禁忌或今天适合运动。"
+                )
+            elif workout_30d_count <= 4:
                 level = "新手"
             elif workout_30d_count <= 12:
                 level = "中等"
             else:
                 level = "活跃"
-            parts.append(f"运动水平: {level} (最近30天{workout_30d_count}次运动)")
+            if workout_30d_count > 0:
+                parts.append(f"运动水平: {level} (最近30天{workout_30d_count}次运动)")
         except Exception:
             pass
 

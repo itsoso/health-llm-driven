@@ -201,7 +201,91 @@ def _receipt(run, sha, workflow_sha):
     }
 
 
-def verify_release(sha, workflow_sha, *, observed_main=None, _get_json=_get_json):
+
+_BACKEND_REQUIRED_JOBS = frozenset({
+    "classify-changes", "docs-quality", "backend-quality", "agent-runtime-postgres",
+    "backend-tests", "release-invariants", "type-drift", "backend-release-ready-v1",
+    *(f"backend-test-balanced-{index:02d}" for index in range(1, 17)),
+})
+
+
+def _backend_run_receipt(run, sha):
+    # Reuse every origin/identity check of the full gate. Only an explicitly
+    # running workflow may lack a final success; queued and failed runs block.
+    if not isinstance(run, dict) or (run.get("status"), run.get("conclusion")) not in (
+        ("in_progress", None), ("completed", "success"),
+    ):
+        raise GateError("Backend CI is not running or successful")
+    return _receipt(dict(run, status="completed", conclusion="success"), sha, sha)
+
+
+def _backend_runs(get_json, sha):
+    payload = _read(get_json, f"/actions/workflows/{_WORKFLOW_ID}/runs?head_sha={sha}&per_page=100")
+    runs, count = payload.get("workflow_runs"), payload.get("total_count")
+    if (not isinstance(runs, list) or not runs or type(count) is not int
+            or count != len(runs) or count >= 100):
+        raise GateError("Incomplete backend CI history")
+    receipts = [_backend_run_receipt(run, sha) for run in runs]
+    if len({receipt["ci_run_id"] for receipt in receipts}) != count:
+        raise GateError("Duplicate backend CI history")
+    return sorted(receipts, key=lambda receipt: receipt["ci_run_id"])
+
+
+def _backend_jobs(get_json, receipt):
+    run_id, attempt = receipt["ci_run_id"], receipt["ci_run_attempt"]
+    payload = _read(get_json, f"/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")
+    jobs, count = payload.get("jobs"), payload.get("total_count")
+    if (not isinstance(jobs, list) or type(count) is not int
+            or count != len(jobs) or not 0 < count < 100):
+        raise GateError("Incomplete backend CI jobs")
+    identities, names = set(), set()
+    required = {}
+    for job in jobs:
+        if (not isinstance(job, dict) or not _positive_int(job.get("id"))
+                or type(job.get("run_id")) is not int or job["run_id"] != run_id
+                or job.get("head_sha") != receipt["sha"]
+                or not isinstance(job.get("name"), str) or not job["name"].strip()
+                or job["id"] in identities or job["name"] in names):
+            raise GateError("Malformed or duplicate backend CI job")
+        identities.add(job["id"])
+        names.add(job["name"])
+        state = (job.get("status"), job.get("conclusion"))
+        if state not in (("queued", None), ("waiting", None), ("in_progress", None),
+                         ("completed", "success"), ("completed", "skipped")):
+            raise GateError("Observed CI job failure or unknown state")
+        if job["name"] in _BACKEND_REQUIRED_JOBS:
+            if state != ("completed", "success"):
+                raise GateError("Required backend CI job is not successful")
+            required[job["name"]] = job["id"]
+    if set(required) != _BACKEND_REQUIRED_JOBS:
+        raise GateError("Required backend CI jobs are missing")
+    return required
+
+
+def _verify_backend(get_json, sha, observed_main):
+    head = _main_sha(get_json)
+    if head != sha or (observed_main is not None and head != observed_main):
+        raise GateError("Backend release must use exact current main")
+    receipts = _backend_runs(get_json, sha)
+    jobs = {}
+    for receipt in receipts:
+        run_id = receipt["ci_run_id"]
+        if _backend_run_receipt(_read(get_json, f"/actions/runs/{run_id}"), sha) != receipt:
+            raise GateError("CI attempt changed during validation")
+        jobs[run_id] = _backend_jobs(get_json, receipt)
+    if _backend_runs(get_json, sha) != receipts:
+        raise GateError("CI history changed during validation")
+    for receipt in receipts:
+        run_id = receipt["ci_run_id"]
+        if _backend_jobs(get_json, receipt) != jobs[run_id]:
+            raise GateError("CI job identity changed during validation")
+        if _backend_run_receipt(_read(get_json, f"/actions/runs/{run_id}"), sha) != receipt:
+            raise GateError("CI attempt changed during validation")
+    if _backend_runs(get_json, sha) != receipts or _main_sha(get_json) != head:
+        raise GateError("Main or CI history changed during validation")
+    return dict(receipts[-1], target="backend-v1", policy_version="backend-v1")
+
+def verify_release(sha, workflow_sha, *, observed_main=None, target="full", _get_json=_get_json):
     """Attest fixed-origin current metadata; injection is internal test-only."""
     if (
         not isinstance(sha, str) or not isinstance(workflow_sha, str)
@@ -212,6 +296,10 @@ def verify_release(sha, workflow_sha, *, observed_main=None, _get_json=_get_json
             not isinstance(observed_main, str) or re.fullmatch(r"[0-9a-f]{40}", observed_main) is None))
     ):
         raise GateError("Release and workflow must use the same exact 40-character SHA")
+    if target not in ("full", "backend-v1"):
+        raise GateError("Unknown release target")
+    if target == "backend-v1":
+        return _verify_backend(_get_json, sha, observed_main)
     head = _main_sha(_get_json)
     if observed_main is not None and head != observed_main:
         raise GateError("Git and GitHub main observations differ")
@@ -243,9 +331,10 @@ def main():
     parser.add_argument("--sha", required=True)
     parser.add_argument("--workflow-sha", required=True)
     parser.add_argument("--observed-main")
+    parser.add_argument("--target", choices=("full", "backend-v1"), default="full")
     args = parser.parse_args()
     try:
-        receipt = verify_release(args.sha, args.workflow_sha, observed_main=args.observed_main)
+        receipt = verify_release(args.sha, args.workflow_sha, observed_main=args.observed_main, target=args.target)
     except GateError as error:
         print(f"release gate: {error}", file=sys.stderr)
         return 1

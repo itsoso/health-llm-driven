@@ -1,0 +1,227 @@
+{
+  "scope": "local owned real Pi child terminated while Python awaits a model response; no production operation, provider call, or database",
+  "before_fix_trials": [
+    {
+      "loop": "asyncio.unix_events",
+      "uvloop_version": "0.22.1",
+      "initial_frame": "model_request",
+      "child_returncode": 1,
+      "exception_type": "PiKernelError",
+      "safe_frames": [
+        {
+          "file": "reva-examdiag-pi-shutdown.py",
+          "line": 18,
+          "function": "probe"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 170,
+          "function": "respond"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 83,
+          "function": "_send"
+        }
+      ],
+      "cause_type": "ConnectionResetError",
+      "fixed_code": "pi_transport_failed"
+    },
+    {
+      "loop": "asyncio.unix_events",
+      "uvloop_version": "0.22.1",
+      "initial_frame": "model_request",
+      "child_returncode": 1,
+      "exception_type": "PiKernelError",
+      "safe_frames": [
+        {
+          "file": "reva-examdiag-pi-shutdown.py",
+          "line": 18,
+          "function": "probe"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 170,
+          "function": "respond"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 83,
+          "function": "_send"
+        }
+      ],
+      "cause_type": "ConnectionResetError",
+      "fixed_code": "pi_transport_failed"
+    },
+    {
+      "loop": "asyncio.unix_events",
+      "uvloop_version": "0.22.1",
+      "initial_frame": "model_request",
+      "child_returncode": 1,
+      "exception_type": "PiKernelError",
+      "safe_frames": [
+        {
+          "file": "reva-examdiag-pi-shutdown.py",
+          "line": 18,
+          "function": "probe"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 170,
+          "function": "respond"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 83,
+          "function": "_send"
+        }
+      ],
+      "cause_type": "ConnectionResetError",
+      "fixed_code": "pi_transport_failed"
+    },
+    {
+      "loop": "uvloop",
+      "uvloop_version": "0.22.1",
+      "initial_frame": "model_request",
+      "child_returncode": 1,
+      "exception_type": "RuntimeError",
+      "safe_frames": [
+        {
+          "file": "reva-examdiag-pi-shutdown.py",
+          "line": 18,
+          "function": "probe"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 170,
+          "function": "respond"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 80,
+          "function": "_send"
+        },
+        {
+          "file": "python-stdlib/asyncio/streams.py",
+          "line": 346,
+          "function": "write"
+        },
+        {
+          "file": "uvloop/handles/stream.pyx",
+          "line": 675,
+          "function": "uvloop.loop.UVStream.write"
+        },
+        {
+          "file": "uvloop/handles/handle.pyx",
+          "line": 159,
+          "function": "uvloop.loop.UVHandle._ensure_alive"
+        }
+      ],
+      "cause_type": null
+    },
+    {
+      "loop": "uvloop",
+      "uvloop_version": "0.22.1",
+      "initial_frame": "model_request",
+      "child_returncode": 1,
+      "exception_type": "RuntimeError",
+      "safe_frames": [
+        {
+          "file": "reva-examdiag-pi-shutdown.py",
+          "line": 18,
+          "function": "probe"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 170,
+          "function": "respond"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 80,
+          "function": "_send"
+        },
+        {
+          "file": "python-stdlib/asyncio/streams.py",
+          "line": 346,
+          "function": "write"
+        },
+        {
+          "file": "uvloop/handles/stream.pyx",
+          "line": 675,
+          "function": "uvloop.loop.UVStream.write"
+        },
+        {
+          "file": "uvloop/handles/handle.pyx",
+          "line": 159,
+          "function": "uvloop.loop.UVHandle._ensure_alive"
+        }
+      ],
+      "cause_type": null
+    },
+    {
+      "loop": "uvloop",
+      "uvloop_version": "0.22.1",
+      "initial_frame": "model_request",
+      "child_returncode": 1,
+      "exception_type": "RuntimeError",
+      "safe_frames": [
+        {
+          "file": "reva-examdiag-pi-shutdown.py",
+          "line": 18,
+          "function": "probe"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 170,
+          "function": "respond"
+        },
+        {
+          "file": "backend/app/services/pi_kernel.py",
+          "line": 80,
+          "function": "_send"
+        },
+        {
+          "file": "python-stdlib/asyncio/streams.py",
+          "line": 346,
+          "function": "write"
+        },
+        {
+          "file": "uvloop/handles/stream.pyx",
+          "line": 675,
+          "function": "uvloop.loop.UVStream.write"
+        },
+        {
+          "file": "uvloop/handles/handle.pyx",
+          "line": 159,
+          "function": "uvloop.loop.UVHandle._ensure_alive"
+        }
+      ],
+      "cause_type": null
+    }
+  ],
+  "red_evidence": {
+    "new_tests_failed": 2,
+    "new_tests_passed": 2,
+    "reasons": [
+      "uvloop native RuntimeError escaped",
+      "closed write race RuntimeError escaped"
+    ]
+  },
+  "interpretation": "Reproduces the transport mechanism; production signal causality additionally depends on independently captured journal and service KillMode evidence.",
+  "after_fix_verification": {
+    "command": "APP_ENV=test DATABASE_URL=sqlite:///:memory: .venv/bin/python -m pytest backend/tests/test_pi_shutdown_transport.py backend/tests/test_pi_kernel_bridge.py backend/tests/test_pi_kernel_executor.py -q --no-cov",
+    "passed": 22,
+    "failed": 0,
+    "seconds": 3.93,
+    "coverage": [
+      "real uvloop Pi normal completion",
+      "real uvloop Pi child exit before response",
+      "close between precheck and write",
+      "unrelated open-transport RuntimeError propagates",
+      "CancelledError propagates",
+      "existing bridge and executor cases"
+    ],
+    "no_retries_added": true
+  }
+}

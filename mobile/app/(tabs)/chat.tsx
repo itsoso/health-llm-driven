@@ -1228,7 +1228,7 @@ export default function ChatScreen() {
           <View style={styles.contextBanner}>
             <Ionicons name="link-outline" size={13} color={C.green500} />
             <Text style={txt.contextBanner} numberOfLines={1}>
-              基于 {contextBadge}
+              {contextBadge.trim().startsWith('基于') ? contextBadge.trim() : `基于 ${contextBadge.trim()}`}
             </Text>
             <TouchableOpacity onPress={() => setContextBadge(null)} hitSlop={8}>
               <Ionicons name="close" size={14} color={C.ink3} />

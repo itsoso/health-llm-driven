@@ -74,6 +74,7 @@ def get_data_integrity(
 def _garmin_status(db: Session, user_id: int, now: datetime) -> dict:
     """Garmin 连接 & session 状态"""
     from app.models.user import GarminCredential
+    from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
 
     cred = db.query(GarminCredential).filter(
         GarminCredential.user_id == user_id,
@@ -100,6 +101,9 @@ def _garmin_status(db: Session, user_id: int, now: datetime) -> dict:
     elif not cred.credentials_valid:
         status = "error"
         message = cred.last_error or "凭证无效"
+    elif cred.last_error == GARMIN_ACTIVITY_PARTIAL_MESSAGE:
+        status = "warning"
+        message = cred.last_error
     elif not session_valid:
         status = "warning"
         message = "Session 已过期，等待自动续期"

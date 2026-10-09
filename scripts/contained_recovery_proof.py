@@ -645,7 +645,55 @@ class RecoveryProof:
             raise ProofError("network guard service changed during proof")
         return {"profile": "network-guard-v1", "started_at": started_at, "files": identities, "service": before}
 
+    def _production_unit_profile(self, old_source):
+        """Select complete audited data profiles, never import historical code."""
+        expected = {unit: self.runtime._expected_candidate(unit) for unit in UNITS[1:]}
+        legacy = expected["health-backend.service"]
+        for line in (b"KillMode=mixed\n", b"TimeoutStopSec=45s\n", b"KillSignal=SIGTERM\n",
+                     b"RestartKillSignal=SIGTERM\n", b"SendSIGKILL=yes\n", b"FinalKillSignal=SIGKILL\n"):
+            if legacy.count(b"\n" + line) != 1:
+                raise ProofError("audited backend drain template differs")
+            legacy = legacy.replace(b"\n" + line, b"\n")
+        argument = b" --timeout-graceful-shutdown 30"
+        if legacy.count(argument) != 1:
+            raise ProofError("audited backend graceful command differs")
+        legacy = legacy.replace(argument, b"")
+        drain = {"KillMode": "mixed", "TimeoutStopUSec": "45s", "KillSignal": "15",
+                 "RestartKillSignal": "15", "SendSIGKILL": "yes", "FinalKillSignal": "9"}
+        for unit in UNITS[1:]:
+            canonical = self._file(old_source / "infra/systemd/dropins" /
+                                   unit.replace(".service", "-runtime-state.conf"))[0]
+            if unit == "health-backend.service" and canonical == legacy:
+                expected[unit] = legacy
+                drain["KillMode"] = "control-group"
+            elif canonical != expected[unit]:
+                raise ProofError("canonical production runtime profile unsupported")
+        return expected, drain
+
+    def _production_effective(self, transaction, effective, expected_dropins, worker_command):
+        # Inputs here are exact audited profiles selected against canonical
+        # production revision above, not arbitrary historical unit directives.
+        for unit in UNITS[1:]:
+            raw = expected_dropins[unit]
+            commands = re.findall(rb"^ExecStart=(.+)$", raw, re.M)
+            if unit == "celery-worker.service":
+                command = worker_command
+            elif len(commands) == 1:
+                command = commands[0].decode("ascii")
+            else:
+                raise ProofError("production command profile ambiguous")
+            expected_command = f"path={command.split()[0]}\nargv[]={command}\nignore_errors=no"
+            if transaction._stable_exec_start(effective[unit]["ExecStart"]) != expected_command:
+                raise ProofError("effective production command differs")
+            writable = re.findall(rb"^ReadWritePaths=(.+)$", raw, re.M)
+            if len(writable) != 1:
+                raise ProofError("production writable profile ambiguous")
+            actual = {value.removeprefix("-") for value in effective[unit]["ReadWritePaths"].split()}
+            if actual != set(writable[0].decode("ascii").split()):
+                raise ProofError("effective production writable paths differ")
+
     def _units(self, old_source, transaction, *, started_at=None):
+        expected_dropins, expected_drain = self._production_unit_profile(old_source)
         result = {}
         network_units = []
         for unit in UNITS:
@@ -654,11 +702,16 @@ class RecoveryProof:
             overrides = {"ReadWritePaths"} if unit.endswith(".service") else set()
             if unit in {"health-backend.service", "celery-beat.service"}:
                 overrides.add("ExecStart")
+            if unit == "health-backend.service":
+                # These scalar directives are replaced by the exact transactional
+                # drop-in below; a pre-drain base unit may remain installed.
+                overrides |= {"KillMode", "TimeoutStopSec", "KillSignal",
+                              "RestartKillSignal", "SendSIGKILL", "FinalKillSignal"}
             if unit == "celery-beat.service":
                 overrides |= {"StateDirectory", "StateDirectoryMode"}
             legacy_security = validate_unit_base(
                 base, old, overrides, unit,
-                self.runtime._expected_candidate(unit) if unit.endswith(".service") else b"",
+                expected_dropins[unit] if unit.endswith(".service") else b"",
                 allow_legacy=self.installed_laya,
             )
             if self.systemd.show(unit, "NeedDaemonReload") != "no" or self.systemd.is_enabled(unit) != "enabled":
@@ -668,7 +721,7 @@ class RecoveryProof:
             entry = {"base": base_identity}
             paths = []
             if unit.endswith(".service"):
-                for name, expected in (("80-reva-health-evidence-runtime.conf", ACTIVATION), ("90-runtime-state.conf", self.runtime._expected_candidate(unit))):
+                for name, expected in (("80-reva-health-evidence-runtime.conf", ACTIVATION), ("90-runtime-state.conf", expected_dropins[unit])):
                     path = self.systemd_root / (unit + ".d") / name
                     raw, entry[name] = self._file(path, 0o644)
                     if raw != expected:
@@ -684,6 +737,10 @@ class RecoveryProof:
                 values = {key: self.systemd.show(unit, key)
                           for key in security_unit_contract(unit)["effective"]}
                 entry["legacy_security_effective"] = validate_security_effective(unit, values)
+            if unit == "health-backend.service":
+                for prop, expected in expected_drain.items():
+                    if self.systemd.show(unit, prop) != expected:
+                        raise ProofError(f"effective backend drain differs: {prop}")
             result[unit] = entry
         if network_units:
             if network_units != list(UNITS[1:]):
@@ -697,10 +754,13 @@ class RecoveryProof:
         if len(commands) != 1:
             raise ProofError("canonical worker command ambiguous")
         command = commands[0].decode()
+        if command != ("/opt/health-app/backend/venv/bin/celery "
+                       "-A app.celery_app:celery_app worker --loglevel=info --concurrency=4"):
+            raise ProofError("canonical worker command unsupported")
         expected = f"path={command.split()[0]}\nargv[]={command}\nignore_errors=no"
         if transaction._stable_exec_start(effective[worker]["ExecStart"]) != expected:
             raise ProofError("effective worker command differs")
-        transaction._validate_candidate_effective({"old_effective": effective})
+        self._production_effective(transaction, effective, expected_dropins, command)
         result["effective"] = transaction._stable_effective_snapshot(effective)
         return result
 

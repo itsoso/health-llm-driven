@@ -1664,3 +1664,29 @@ def test_v45_bare_trailing_veto_revokes_read_authority(veto):
     assert semantics.resolve_health_read_act(
         f"查询我的痛风记录，{veto}"
     ).status != "active"
+
+
+@pytest.mark.parametrize("text", (
+    "同步我朋友的佳明数据，分析他的跑步",
+    "同步我的佳明数据，分析他的跑步",
+    "同步我的佳明数据；总结她的运动",
+    "同步我的佳明数据。复盘同事的训练",
+))
+def test_active_compound_analysis_keeps_each_read_owner(text):
+    assert semantics.health_read_has_nonself_subject(text) is True
+
+
+@pytest.mark.parametrize("text", (
+    "同步我的佳明数据，分析我的跑步",
+    "“分析他的跑步”。查看我的睡眠",
+))
+def test_compound_analysis_owner_check_keeps_self_and_quoted_material(text):
+    assert semantics.health_read_has_nonself_subject(text) is False
+
+
+def test_product_selected_this_report_prompt_keeps_owned_scope():
+    text = '请基于我这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。'
+    assert semantics._product_report_interpretation_clause(text)
+    assert semantics.health_read_has_nonself_subject(text) is False
+    for invalid in (text.replace('我这份', '朋友这份'), '“'+text+'”', '如果'+text, text+'不要读取报告', text+'删除记录'):
+        assert not semantics._product_report_interpretation_clause(invalid)

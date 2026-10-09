@@ -14,6 +14,8 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
+GARMIN_ACTIVITY_PARTIAL_MESSAGE = "运动记录未完整同步，请稍后重新同步；上次成功时间不代表本轮运动已完整同步。"
+
 # JWT配置
 SECRET_KEY = settings.secret_key
 ALGORITHM = "HS256"
@@ -312,17 +314,39 @@ class GarminCredentialService:
         return False
 
     @staticmethod
-    def update_sync_status(db: Session, user_id: int, last_sync_at: datetime = None) -> bool:
+    def update_sync_status(db: Session, user_id: int, last_sync_at: datetime = None, *, activities_verified: bool = False) -> bool:
         """更新同步状态（同步成功时调用）"""
         credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
         if credential:
             credential.last_sync_at = last_sync_at or datetime.now(UTC)
             credential.credentials_valid = True  # 同步成功表示凭证有效
             credential.error_count = 0  # 重置错误计数
-            credential.last_error = None
+            if activities_verified or credential.last_error != GARMIN_ACTIVITY_PARTIAL_MESSAGE:
+                credential.last_error = None
             db.commit()
             return True
         return False
+
+    @staticmethod
+    def mark_activity_sync_partial(db: Session, user_id: int) -> bool:
+        """Persist incomplete activity import without changing login validity."""
+        credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
+        if credential is None:
+            return False
+        credential.last_error = GARMIN_ACTIVITY_PARTIAL_MESSAGE
+        db.commit()
+        return True
+
+    @staticmethod
+    def clear_activity_sync_partial(db: Session, user_id: int) -> bool:
+        """A verified activity-only import does not advance whole-sync time."""
+        credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
+        if credential is None:
+            return False
+        if credential.last_error == GARMIN_ACTIVITY_PARTIAL_MESSAGE:
+            credential.last_error = None
+            db.commit()
+        return True
 
     @staticmethod
     def update_sync_error(db: Session, user_id: int, error_message: str, is_auth_error: bool = False) -> bool:

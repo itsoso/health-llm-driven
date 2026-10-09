@@ -253,18 +253,25 @@ def _nutrition_assertion_in_clause(clause: str) -> bool:
 # every requested row and field was returned: there is no clinical assessment
 # or prescribed plan in this evidence contract.
 _HEALTH_SUBJECT = (
-    r"(?:睡眠(?:恢复|质量)|恢复(?:水平|质量|状态|程度|能力|情况)?|"
+    r"(?:(?:睡眠)?评分|睡眠(?:恢复|质量)|恢复(?:水平|质量|状态|程度|能力|情况)?|"
     r"你(?:的)?(?:身体)?状态|身体(?:状态|状况)?|生活(?:节奏|作息|状态)|作息|"
     r"训练(?:量|负荷|状态|强度)?|运动(?:量|负荷|强度|安全性)?|(?:总体)?情况|(?:各项)?指标|一切|状态|你)"
 )
 _HEALTH_LINK = (
-    r"(?:的|得|是|为|属于|呈现(?:出|为)?|表现为|处于|达到|已经|目前|总体|整体|"
+    r"(?:的|得|是|为|属于|算是|呈现(?:出|为)?|表现为|处于|达到|已经|目前|总体|整体|"
     r"看起来|显得|似乎|可能|相对|比较|较为|非常|很|太|偏|稍|仍然|仍|还|了|"
     r"并非|并不|并没有|没有|并|不|是否|有无|能否|较)"
 )
 _HEALTH_EVALUATION = (
     r"(?:中等偏好|不错|尚可|理想|还可以|良好|稳定|规律|正常|安全|合理|适宜|适量|充分|充足|足够|"
     r"健康|欠佳|不佳|较差|过量|过度|康复|痊愈|恢复|好|差)"
+)
+# Scores in this adapter have values and source names, but no verified grading
+# scale. Fold only an adjacent numeric score before an evaluative predicate;
+# ordinary numbers and comparative record descriptions stay untouched.
+_SCORE_VALUE_BEFORE_GRADE = re.compile(
+    r"(?P<subject>(?:睡眠)?评分)\s*(?:为|是|达到|[:：])?\s*[（(]?\s*\d+(?:\.\d+)?\s*分?\s*[）)]?\s*"
+    r"(?:[，,]\s*)?(?=(?:" + _HEALTH_LINK + r"\s*){0,12}" + _HEALTH_EVALUATION + r")"
 )
 _HEALTH_ABSENCE = (
     r"(?:没有(?:发现|看到)?|未见|未发现|不存在|看不到|无|没什么|没啥|没)"
@@ -382,6 +389,17 @@ def _asserted_record_only_claim(pattern: re.Pattern, clause: str) -> bool:
                         or not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:unknown.start()])):
             continue
         if pattern is _CURRENT_HEALTH_CLAIM:
+            score_subject = str(match.group("subject") or "").endswith("评分")
+            if (score_subject and match.group("evaluation") == "差"
+                    and re.match(r"(?:值|异|\s*\d+(?:\.\d+)?\s*分)", suffix)):
+                continue
+            if score_subject and re.match(r"\s*与否", suffix) and _NUTRITION_UNKNOWN.search(suffix):
+                continue
+            if (score_subject
+                    and match.group("evaluation") in {"稳定", "规律"}):
+                # Preserve existing record-comparison behavior. This new score
+                # boundary concerns unverified grades, not numeric variation.
+                continue
             if match.group("evaluation") == "健康" and re.match(r"(?:背景|档案|资料|记录)", suffix):
                 # A health-profile noun does not assert that its owner is healthy.
                 continue
@@ -530,8 +548,9 @@ def enforce_composed_synthesis_boundaries(text: str, completion, *, require_advi
     # Sentence boundaries and other domain matching views remain unchanged.
     health_clauses = []
     for normalized in views:
+        health_normalized = _SCORE_VALUE_BEFORE_GRADE.sub(r"\g<subject>", normalized)
         health_normalized = _HEALTH_UNCERTAINTY_OPERATION_WRAP.sub(
-            lambda match: re.sub(r"\s+", "", match.group()), normalized,
+            lambda match: re.sub(r"\s+", "", match.group()), health_normalized,
         )
         health_normalized = _HEALTH_UNCERTAINTY_WRAP.sub(
             lambda match: re.sub(r"\s+", " ", match.group()), health_normalized,
@@ -648,6 +667,51 @@ def _uncertain_record_statement(text: str, position: int) -> bool:
     return bool(unknown and not _HEALTH_UNCERTAINTY_NEGATION.search(prefix[:unknown.start()]))
 
 
+_DAILY_SLEEP_TOTAL = re.compile(
+    r"(?:睡眠(?:记录)?[：:]\s*)?"
+    r"(?:(?P<days>\d+)天均为(?P<source>Garmin)来源"
+    r"(?:[、，,](?P<wake>按醒来日期)记录)?[，,]\s*)?"
+    r"(?P<record_intro>(?:已返回|已记录)的|(?:睡眠)?记录(?:的|显示)?)?"
+    r"(?:每日|每天)(?:总睡眠(?:时长)?|睡眠总时长|睡眠时长|总时长)"
+    r"(?:读数)?(?:均为|都是|为|是)?\s*"
+    r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>分钟|小时)"
+    r"(?:[、，,]\s*评分(?P<score>\d+(?:\.\d+)?)(?:分)?)?[。；;！？!?]*", re.I,
+)
+
+
+def _verified_daily_sleep_quantities(text: str, query: dict, days: int) -> bool:
+    """Accept only an entire finite record statement with every claim verified.
+
+    Matching a total-duration substring must never authorize adjacent stages,
+    recommendations, score values or full-episode assertions. Unknown prose
+    retains the existing veto instead of acquiring a partial-match exception.
+    """
+    claim = _DAILY_SLEEP_TOTAL.fullmatch(text)
+    rows = query["records"]
+    if claim is None or len(rows) != days:
+        return False
+    if not (claim["record_intro"] or claim["source"]):
+        return False
+    if claim["wake"] is not None and query.get("date_attribution") != "wake_date":
+        return False
+    if claim["days"] is not None and Decimal(claim["days"]) != days:
+        return False
+    expected = {"total_sleep_duration": Decimal(claim["number"]) * (60 if claim["unit"] == "小时" else 1)}
+    if claim["score"] is not None:
+        expected["sleep_score"] = Decimal(claim["score"])
+    for row in rows:
+        known = row["known_fields"]
+        if any(_summary_decimal(known.get(field)) != value for field, value in expected.items()):
+            return False
+        if claim["source"] is not None:
+            sources = known.get("sources")
+            if (not isinstance(sources, dict) or not sources
+                    or any(sources.get(field) != "garmin" for field in expected)
+                    or any(value != "garmin" for value in sources.values())):
+                return False
+    return True
+
+
 def _record_description_flags(text: str, completion) -> list[str]:
     flags = []
     if any(not _uncertain_record_statement(text, m.start()) for m in _RECORD_PROVENANCE.finditer(text)):
@@ -668,7 +732,10 @@ def _record_description_flags(text: str, completion) -> list[str]:
             covered.discard(None)
             # Date presence alone does not verify a repeated per-day quantity
             # or activity subtype. Authoritative details remain in the summary.
-            if len(covered) != days or _EXERCISE_QUANTITY.search(text):
+            quantity_unverified = bool(_EXERCISE_QUANTITY.search(text)) and not (
+                dimension == "sleep" and _verified_daily_sleep_quantities(text, query, days)
+            )
+            if len(covered) != days or quantity_unverified:
                 flags.append("unsupported_daily_coverage_removed")
                 break
     return flags
@@ -903,14 +970,17 @@ def _facts(dimension: str, payload: dict) -> str:
     return text
 
 
-def read_scope_synthesis_instructions(scope) -> str:
+def read_scope_synthesis_instructions(scope, *, include_layout: bool = True) -> str:
     if len(scope.queries) < 2 and not any("days" in query for query in scope.queries):
         return ""
     return (
         "\n[实际记录分析的证据边界]\n"
-        "回答先给能由本轮记录支持的结论，再按已查领域各用一两句说明，最多三条下一步，可以没有下一步。"
-        "普通复盘控制在800字以内；用户明确要求详细报告时才展开。"
-        "短续问只补充新的结论和依据，不重写上一轮报告、不反复展开同一批数值。"
+        + (
+            "回答先给能由本轮记录支持的结论，再按已查领域各用一两句说明，最多三条下一步，可以没有下一步。"
+            "普通复盘控制在800字以内；用户明确要求详细报告时才展开。"
+            if include_layout else ""
+        )
+        + "短续问只补充新的结论和依据，不重写上一轮报告、不反复展开同一批数值。"
         "完成冻结范围的查询后不要再邀请用户选择日期、模块、评估方向或收集新字段。"
         "未要求日程时不生成分时段行动表；先把当前问题完整回答，再结束。"
         "先区分实际查到的记录、未知项目与一般建议。病史时间是用户背景，"

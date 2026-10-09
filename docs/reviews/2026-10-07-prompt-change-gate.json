@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "live_llm_required": true,
+  "confirmed": true,
+  "confirmation_env": "HARNESS_LIVE_LLM_EVAL_CONFIRMED",
+  "expected_confirmation": "679508d6f4780e675b0f53f10ced05677d9aacb2",
+  "changed_paths": [
+    "backend/eval/experimental_empty_read_terminal.py",
+    "backend/eval/experimental_read_evidence_format.py",
+    "backend/eval/full_task_prompt_benchmark.py",
+    "backend/tests/test_empty_read_terminal_experiment.py",
+    "backend/tests/test_full_task_prompt_benchmark.py",
+    "backend/tests/test_read_evidence_format_experiment.py",
+    "docs/plans/2026-10-04-prompt-token-latency-plan.md",
+    "scripts/benchmark_prompt_full_task.py"
+  ],
+  "matched_paths": [
+    {
+      "path": "backend/eval/experimental_empty_read_terminal.py",
+      "reason": "LLM/eval harness"
+    },
+    {
+      "path": "backend/eval/experimental_read_evidence_format.py",
+      "reason": "LLM/eval harness"
+    },
+    {
+      "path": "backend/eval/full_task_prompt_benchmark.py",
+      "reason": "LLM/eval harness"
+    }
+  ],
+  "next_steps": "",
+  "errors": []
+}
