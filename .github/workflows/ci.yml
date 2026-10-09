@@ -330,6 +330,7 @@ jobs:
           scripts/test_backup_security.py
           scripts/test_ci_change_scope.py
           scripts/test_deploy_script.py
+          scripts/test_release_timing.py
           scripts/test_generate_api_types.py
           scripts/test_health_evidence_activation_runner.py
           scripts/test_release_lock.py
