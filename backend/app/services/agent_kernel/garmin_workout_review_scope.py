@@ -22,7 +22,7 @@ class GarminWorkoutReviewScope:
 
 _SYNC = re.compile(r'(?:请|请你|帮我|请帮我)?同步(?:一下)?(?:我的?)?(?:佳明|Garmin)(?:的)?数据', re.I)
 _READ = re.compile(r'(?:获取(?:到)?|查看)(?:一下)?(?:我的?)?最新(?:一次)?(?:的)?运动(?:的)?(?:记录|数据)')
-_BACKGROUND = re.compile(r'我(?:今天|刚才|刚|已经)?(?:跑了(?P<distance>[0-9]+(?:\.[0-9]+)?)(?:公里|千米)|跑步了)')
+_BACKGROUND = re.compile(r'我(?:今天|刚才|刚|已经)?(?:跑了(?P<distance>[0-9]+(?:\.[0-9]+)?|[一二三四五六七八九十])(?:公里|千米)|跑步了)')
 _ANALYSIS = re.compile(r'(?:请|请你|帮我)?分析(?:一下)?(?:我)?刚才(?:(?:的|这次)?跑步|跑的情况怎么样)')
 _ADVICE = re.compile(r'(?:并|并且|再)?给我(?:一些|点)?建议')
 
@@ -40,7 +40,8 @@ def resolve_garmin_workout_review_scope(text: str) -> GarminWorkoutReviewScope |
         if background is None:
             return None
         if background['distance'] is not None:
-            distance = float(background['distance'])
+            spoken = background['distance']
+            distance = float('一二三四五六七八九十'.index(spoken) + 1) if spoken in '一二三四五六七八九十' else float(spoken)
             if not 0 < distance <= 500:
                 return None
     if not _ANALYSIS.fullmatch(clauses[-2]) or not _ADVICE.fullmatch(clauses[-1]):

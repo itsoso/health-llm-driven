@@ -75,3 +75,17 @@ def test_spoken_compound_instruction_consumes_all_roles():
     assert scope.reported_distance_km == 3
     for suffix in ('，删掉其他记录', '，不要同步', '，分析他人的数据'):
         assert resolve_garmin_workout_review_scope(text.rstrip('。') + suffix) is None
+
+
+@pytest.mark.parametrize('distance,expected',[('一',1),('三',3),('十',10),('3.5',3.5)])
+def test_closed_spoken_distance(distance,expected):
+    text=f'同步一下佳明的数据，获取到我最新的运动的数据，我跑了{distance}公里，分析一下刚才跑的情况怎么样，给我一些建议。'
+    scope=resolve_garmin_workout_review_scope(text)
+    assert scope is not None
+    assert scope.reported_distance_km==expected
+
+
+@pytest.mark.parametrize('background',['我跑了很多公里','我跑了NaN公里','我跑了无限公里','朋友跑了三公里','我没跑三公里','我跑了零公里','我跑了一百公里'])
+def test_unknown_or_unowned_distance_is_not_bound(background):
+    text=f'同步一下佳明的数据，获取到我最新的运动的数据，{background}，分析一下刚才跑的情况怎么样，给我一些建议。'
+    assert resolve_garmin_workout_review_scope(text) is None

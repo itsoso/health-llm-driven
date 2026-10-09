@@ -636,8 +636,16 @@ def read_latest_garmin_running_review(
               'selection': 'latest_recorded_running_today',
               'start_date': day.isoformat(), 'end_date': day.isoformat(), 'timezone': timezone,
               'freshness': 'existing_record_not_sync_proof', 'matches_reported_distance': None}
+    # Garmin's GMT-only fallback may store a UTC calendar date. Authority is
+    # the user's local absolute-time window, never that fallback date. Unknown
+    # starts on the stored local day remain ambiguous rather than disappearing.
+    from sqlalchemy import and_
+    day_start = datetime.combine(day, time.min, tzinfo=ZoneInfo(timezone)).astimezone(UTC)
+    day_end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=ZoneInfo(timezone)).astimezone(UTC)
     rows = db.query(WorkoutRecord).filter(
-        WorkoutRecord.user_id == user_id, WorkoutRecord.workout_date == day,
+        WorkoutRecord.user_id == user_id,
+        or_(and_(WorkoutRecord.start_time >= day_start, WorkoutRecord.start_time < day_end),
+            and_(WorkoutRecord.start_time.is_(None), WorkoutRecord.workout_date == day)),
         WorkoutRecord.workout_type == 'running', WorkoutRecord.source == 'garmin',
     ).order_by(WorkoutRecord.start_time.desc(), WorkoutRecord.id.desc()).limit(101).all()
     if len(rows) > 100:

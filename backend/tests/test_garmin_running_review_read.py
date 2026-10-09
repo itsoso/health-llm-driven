@@ -44,3 +44,36 @@ def test_unknown_timestamp_cannot_fall_back_to_older_run(db,auth_user_and_header
 def test_empty_day_cannot_reuse_yesterdays_run(db,auth_user_and_headers):
     user,_=auth_user_and_headers;add(db,user.id,day=8)
     assert read(db,user.id)['availability']=='no_data'
+
+
+@pytest.mark.parametrize('zone,start,stored_day', [
+    ('Asia/Shanghai', datetime(2026,10,8,16,30,tzinfo=timezone.utc), date(2026,10,8)),
+    ('America/Los_Angeles', datetime(2026,10,10,1,30,tzinfo=timezone.utc), date(2026,10,10)),
+])
+def test_absolute_start_selects_local_day_despite_utc_fallback_date(db,auth_user_and_headers,zone,start,stored_day):
+    from datetime import timedelta
+    user,_=auth_user_and_headers
+    row=WorkoutRecord(user_id=user.id,workout_date=stored_day,workout_type='running',
+        source='garmin',start_time=start,end_time=start+timedelta(minutes=30),distance_meters=3000)
+    db.add(row);db.commit()
+    reference=(datetime(2026,10,9,2,tzinfo=timezone.utc) if zone=='Asia/Shanghai'
+               else datetime(2026,10,10,3,tzinfo=timezone.utc))
+    result=read_latest_garmin_running_review(db,user.id,reference_now=reference,timezone=zone)
+    assert result['availability']=='available'
+    assert result['record']['id']==row.id
+    assert result['start_date']=='2026-10-09'
+    assert result['record']['record_date']=='2026-10-09'
+
+
+def test_stored_local_day_does_not_authorize_outside_absolute_day(db,auth_user_and_headers):
+    user,_=auth_user_and_headers
+    row=add(db,user.id,day=8,hour=15)
+    row.workout_date=date(2026,10,9);db.commit()
+    assert read(db,user.id)['availability']=='no_data'
+
+
+def test_missing_end_with_utc_fallback_date_is_ambiguous(db,auth_user_and_headers):
+    user,_=auth_user_and_headers
+    row=add(db,user.id,day=8,hour=17)
+    row.end_time=None;db.commit()
+    assert read(db,user.id)['availability']=='ambiguous'
