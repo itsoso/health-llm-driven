@@ -2345,3 +2345,35 @@ def test_missing_post_write_safety_text_only_restores_dropped_titles():
         "如你此刻有明显不适、或刚记录的数值明显异常,请及时就医。"
     )
     assert helper("已记录血压。", [unavailable]) == unavailable
+
+
+@pytest.mark.parametrize("reason", (
+    "health_record_authorization_target_unresolved",
+    "explicit_write_cancellation",
+    "update_requires_exact_target_evidence",
+))
+def test_blocked_record_copy_matches_non_retryable_outcome(reason):
+    from app.services.agent_turn_outcome import classify_agent_turn_outcome
+
+    reply = _record_intent_needs_detail_message(
+        "合成记录请求", reason_codes=(reason,),
+    )
+    outcome = classify_agent_turn_outcome(
+        completion_status="complete", final_text=reply,
+        capability_block_reasons=(reason,), record_intent_no_tool=True,
+    )
+    assert outcome["retryable"] is False
+    assert "还没记下来" in reply
+    assert "重试" not in reply
+    assert "确认按钮" not in reply
+    assert "写库失败" not in reply
+    assert "这轮没有完成记录动作" in reply
+
+
+def test_record_target_mismatch_keeps_specific_correction_guidance():
+    reply = _record_intent_needs_detail_message(
+        "合成记录请求", reason_codes=("health_record_target_mismatch",),
+    )
+    assert "名称或剂量" in reply
+    assert "重新发送" in reply
+    assert "本轮没有执行记录" in reply

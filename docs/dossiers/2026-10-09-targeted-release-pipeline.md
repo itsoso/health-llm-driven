@@ -160,3 +160,22 @@
 - 新截图不视为此前主干红色修复推送或原生分发方式的授权。保留本地 `f11dd28ca`，生产与远端未变。
 - 重试安全基线29 passed；只读生产窗口聚合发现两次无已验证写入回执告警，不读取/输出原始健康内容，不将聚合告警绑定到用户请求。复合恢复描述的写入授权仍在调查，不用放宽网关或推断病程痊愈来消除失败。
 - 确认另一个独立UI缺陷：legacy done(error/interrupted，无terminalStatus)保留accepted阶段label，导致终态仍显示正在理解。RED两项失败；只在这两个分支清label，状态、恢复与重试语义不变。最终state/engine/ChatScreen 231 passed（11.446秒）、TypeScript和diff通过。不能据此声称截图新重试永久卡住或记录失败根因已解决。
+
+## 医疗影像报告可见性只读诊断（2026-10-09）
+
+- 用户说明历史快照来自本人 `GET /api/v1/medical-exams/me`，关键叙述在 `overall_assessment`；历史快照不等于当日实时读取。未把用户原始诊断或数值复制到证据。当前会话无本人Health API读取凭据，未声称实时数据库存在或删除已被核验。
+- 代码证据：本人API依认证owner过滤并返回 `MedicalExamResponse`，该schema保留完整overall_assessment。Mobile原列表/详情及选定报告上下文保留字段；相关文件与已知生产28b2471d版本一致。
+- 本地纯规则复现：`查看我的膝关节MRI报告`通过语义归属检查，`查看我的双膝关节MRI报告`及多句本人影像查询被误判nonself；语法只覆盖左/右/双侧，不覆盖双及自然复合问法。属于读前拦截，不能证明数据缺失。
+- `exam_explain_service._build_explain_prompt`和调用处只传日期/类型/异常items，遗漏overall_assessment；合成纯叙述报告标记不进入prompt。health_read普通摘要截180字，/me/reports截500字；全文匹配后摘要仍可能不含匹配片段。
+- Mobile `listMedicalExams`捕获请求错误返回空数组；详情从最近50条查ID，旧记录可能被显示为不存在。现有54项相关测试通过但未覆盖这些语义缺陷。
+- 仓库health-query Skill未列medical-exams入口；当前其他Agent的实际工具白名单/认证未获得，不能断言其具体拦截原因。此阶段仅诊断医疗报告链，不扩大读取授权、不修改报告、不补造病史。
+
+- 进一步症状流复现：现有pre-dispatch症状授权拒绝未进入capability blocks，误给retryable=true。最小本地补丁登记既有静态拒绝码并移除确定性拒绝的盲重试邀请，不扩大写入。新增真实流/文案6 passed、危机不回显9 passed；全404关联检查运行中。涉及agent_executor路径，live LLM gate明确required/unconfirmed，尚不具备发布条件；不将局部测试或用户新截图当作真实模型验收。
+- 医疗报告补充：API/health_query_labs合成33 passed，两个真实摘要函数的合成尾部标记均被截断；独立MCP服务仅有日常指标工具，无报告专属读取。未核验其他Agent已部署工具白名单，不能把仓库配置推定为其实际权限。
+
+- 症状恢复错误分类补丁最终全关联404 passed（328.61秒），另危机9 passed。legacy UI固定5c8923ebd独立G4 GO、30项独立测试通过。后台写入权限没有扩大；真实模型gate与发布授权仍未解除。
+
+## Garmin复合同步指令续接
+
+- 新截图显示设置同步时间与聊天复合请求被本人范围门拦截。只读调查区分队列入队、运动拉取完成与分析证据；不将设置刚刚同步视为本轮指令成功。
+- 合成探针：单句同步佳明可通过；追加最新运动读取/跑步分析被判nonself并拒绝。继续检查第三人/否定/取消边界，未直接放宽权限。

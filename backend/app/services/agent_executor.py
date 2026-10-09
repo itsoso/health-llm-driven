@@ -6017,6 +6017,13 @@ def _record_intent_needs_detail_message(
             f"「{text}」还没记下来：待写入的名称或剂量没能与这条请求准确对应。"
             "请补全每项的名称、数量和单位后重新发送；本轮没有执行记录。"
         )
+    # Capability blocks are deterministic boundaries, not transient failures.
+    # Match turn_outcome.retryable=False without inventing a confirmation UI.
+    if any(str(reason).strip() for reason in reason_codes):
+        return (
+            "这条请求还没记下来，这轮没有完成记录动作。"
+            "请先说明要新增记录，还是更新已有记录；如果要更新，请说明是哪一条及需要修改的内容。"
+        )
     # 例子跨多领域(饮食/饮水/体测/档案属性/血压), 不再只给饮食/运动 —— 否则记鞋码却被要求
     # 补早餐(founder 2026-07-17 实测)。档案属性/个人事实(鞋码/衣码/喜好)现在走 remember,
     # 一般不会落到这里; 落到这里的多是真·笼统输入。
@@ -25714,6 +25721,9 @@ class AgentExecutor:
                 "user=%s message_chars=%s",
                 self._current_user_id,
                 len(getattr(self, "_current_turn_user_message", "") or ""),
+            )
+            self._agent_kernel_capability_block_reasons.append(
+                "symptom_write_not_authorized"
             )
             return local_write_rejection(
                 "symptom_write_not_authorized",
