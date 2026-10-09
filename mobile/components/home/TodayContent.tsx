@@ -17,6 +17,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
+  Text,
   Alert,
   RefreshControl,
   ScrollView,
@@ -631,6 +633,10 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
         actionSignal={primaryActionSignal}
         onSignalPress={(signal) => openSignalRoute(signal, router)}
       />
+
+      <Pressable accessibilityRole="button" accessibilityLabel="查看健康周导航" onPress={() => router.push('/my-progress?navigation=week' as any)} style={{ paddingVertical: 14 }}>
+        <Text style={{ color: revaColors.green600, fontWeight: '700' }}>查看健康周导航 · 最近 7 天</Text>
+      </Pressable>
 
       {/* 6 · 情境天气:只有行动/空气风险相关时出现 */}
       <RevaWeatherRow relevanceText={primaryActionContext} />

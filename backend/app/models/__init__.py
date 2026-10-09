@@ -47,6 +47,8 @@ from app.models.weight import WeightRecord
 from app.models.waist import WaistRecord
 from app.models.daily_operating_plan import DailyOperatingPlan
 from app.models.intervention_event import InterventionEvent
+from app.models.health_navigation import HealthNavigationOccurrence, HealthNavigationOperation, HealthNavigationDay
+from app.models.lifenav_grant import LifeNavGrant, LifeNavAccessAudit
 from app.models.daily_artifact import DailyArtifactEvent
 from app.models.epigenetic_report import EpigeneticReport
 from app.models.blood_pressure import BloodPressureRecord

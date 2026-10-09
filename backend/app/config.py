@@ -675,6 +675,9 @@ class Settings(BaseSettings):
                     )
 
     remote_health_enabled: bool = False
+    health_navigation_enabled: bool = False
+    lifenav_integration_enabled: bool = False
+    lifenav_recipients_json: str = "{}"
     remote_health_public_origin: str = "https://health.executor.life"
     remote_health_clients_json: str = "[]"
 

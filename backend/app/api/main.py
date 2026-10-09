@@ -17,6 +17,8 @@ from app.api import (
     movement_plan,
     diet_plan,
     daily_plan,
+    health_navigation,
+    integration_lifenav,
     dynamic_views,
     trajectory,
     users,
@@ -200,6 +202,8 @@ api_router.include_router(admin_longevity.router, prefix="/admin/longevity", tag
 api_router.include_router(movement_plan.router)
 api_router.include_router(diet_plan.router)
 api_router.include_router(daily_plan.router)
+api_router.include_router(health_navigation.router)
+api_router.include_router(integration_lifenav.router)
 api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
 api_router.include_router(performance.router)
 api_router.include_router(data_health.router, prefix="/data-health", tags=["data-health"])

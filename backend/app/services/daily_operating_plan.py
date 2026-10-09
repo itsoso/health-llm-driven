@@ -296,7 +296,10 @@ def _guard_plan_actions(
     plan_date: date,
     actions: List[Dict[str, Any]],
     personal_matrix: Dict[str, Any] | None = None,
+    transactional: bool = False,
 ) -> List[Dict[str, Any]]:
+    from app.config import settings
+    transactional = transactional or settings.health_navigation_enabled
     guarded: List[Dict[str, Any]] = []
     for index, action in enumerate(actions):
         candidate = AdviceCandidate(
@@ -315,18 +318,20 @@ def _guard_plan_actions(
             valid_for_date=plan_date,
         )
         try:
-            decision = guard_and_record_advice(db, candidate)
+            decision = guard_and_record_advice(db, candidate, commit=False) if transactional else guard_and_record_advice(db, candidate)
         except AdviceGuardError as exc:
             logger.warning("[daily_plan] action blocked by missing advice contract: %s", exc)
             continue
         except SQLAlchemyError as exc:
+            if transactional:
+                raise
             db.rollback()
             logger.warning("[daily_plan] advice ledger unavailable, keeping action: %s", exc)
-            guarded.append(action)
+            guarded.append({**action, "navigation_safety_state": "unknown"} if settings.health_navigation_enabled else action)
             continue
 
         if decision.allowed:
-            guarded.append(action)
+            guarded.append({**action, "navigation_safety_state": "allowed"} if settings.health_navigation_enabled else action)
         else:
             logger.info(
                 "[daily_plan] action blocked by AdviceGuard user=%s reason=%s title=%s",
@@ -496,11 +501,17 @@ def _attach_personal_prediction_contexts(
     return enriched
 
 
-def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None = None) -> Dict[str, Any]:
+def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None = None, *, commit: bool = True) -> Dict[str, Any]:
     """构建并缓存当天 Daily Operating Plan.
 
     v0 使用 deterministic 规则, 先把产品对象稳定下来; 后续可在同一响应合同下接 LLM planner.
     """
+    from app.config import settings
+    if settings.health_navigation_enabled:
+        # All source planners and confirmations serialize owner-first, before
+        # AdviceLedger or source-plan locks. NO KEY UPDATE permits child FK locks.
+        from app.models.user import User
+        db.query(User).filter_by(id=user_id).populate_existing().with_for_update(key_share=True).one()
     plan_date = plan_date or date.today()
     twin = build_twin(db, user_id, use_cache=False)
     active_cycle = get_active_cycle(db, user_id)
@@ -625,6 +636,7 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         plan_date=plan_date,
         actions=actions,
         personal_matrix=personal_matrix,
+        transactional=not commit,
     )[:5]
     actions = _bind_actions_to_active_cycle(actions, active_cycle_summary)
     try:
@@ -725,7 +737,14 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         existing.doctor_escalation = payload["doctor_escalation"]
         existing.verification = payload["verification"]
         existing.updated_at = datetime.now(timezone.utc)
-        db.commit()
+        from app.config import settings
+        if settings.health_navigation_enabled:
+            from app.services.health_week_navigation import materialize_plan
+            materialize_plan(db, existing)
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(existing)
         payload["id"] = existing.id
         return payload
@@ -745,7 +764,14 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         verification=payload["verification"],
     )
     db.add(row)
-    db.commit()
+    from app.config import settings
+    if settings.health_navigation_enabled:
+        from app.services.health_week_navigation import materialize_plan
+        materialize_plan(db, row)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     payload["id"] = row.id
     return payload

@@ -16,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -35,6 +35,7 @@ import { spacing, radii } from '../constants/theme';
 import { useTheme, type SemanticTone, type SemanticPalette } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
 import EvidenceChip from '../components/shared/EvidenceChip';
+import HealthWeekNavigation from '../components/home/HealthWeekNavigation';
 
 const WINDOW_OPTIONS = [
   { label: '7 天', days: 7 },
@@ -56,6 +57,11 @@ export const OUTCOME_COLORS: Record<string, { tone: SemanticTone; label: string;
 };
 
 export default function MyProgressScreen() {
+  const params = useLocalSearchParams<{ navigation?: string }>();
+  return params.navigation === 'week' ? <HealthWeekNavigation /> : <LegacyProgressScreen />;
+}
+
+function LegacyProgressScreen() {
   const router = useRouter();
   const { c, s: sem } = useTheme();
   const qc = useQueryClient();

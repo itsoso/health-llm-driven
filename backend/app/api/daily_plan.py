@@ -224,6 +224,11 @@ def submit_my_daily_plan_action_feedback(
         action_snapshot=_action_execution_snapshot(action, action_key),
     )
     db.add(row)
+    from app.config import settings
+    if settings.health_navigation_enabled:
+        from app.services.health_week_navigation import record_source_event
+        db.flush()
+        record_source_event(db, row)
     _sync_source_card_lifecycle(
         db,
         user_id=current_user.id,
@@ -300,6 +305,11 @@ def record_my_daily_plan_action_event(
         action_snapshot=action_snapshot,
     )
     db.add(row)
+    from app.config import settings
+    if settings.health_navigation_enabled:
+        from app.services.health_week_navigation import record_source_event
+        db.flush()
+        record_source_event(db, row)
     _sync_source_card_lifecycle(
         db,
         user_id=current_user.id,

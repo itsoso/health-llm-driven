@@ -163,6 +163,8 @@ async def get_current_user(
     # Only a successfully bound identity may relay its original credential.
     request.state._authenticated_relay_credential = None
     bearer_token = token
+    if (bearer_token and bearer_token.startswith("ln1_")) or request.headers.get("x-api-key", "").startswith("ln1_"):
+        raise HTTPException(status_code=403, detail="LifeNav 专用凭据不能访问通用接口")
     if bearer_token == WEB_SESSION_AUTH_SENTINEL:
         bearer_token = None
 

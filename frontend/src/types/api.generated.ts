@@ -2298,6 +2298,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/health-navigation/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Summary */
+        get: operations["summary_api_v1_health_navigation_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-navigation/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh */
+        post: operations["refresh_api_v1_health_navigation_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-navigation/actions/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_v1_health_navigation_actions__ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-navigation/actions/{ref}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm */
+        post: operations["confirm_api_v1_health_navigation_actions__ref__events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-navigation/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Grants */
+        get: operations["list_grants_api_v1_health_navigation_grants_get"];
+        put?: never;
+        /** Create Grant */
+        post: operations["create_grant_api_v1_health_navigation_grants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-navigation/grants/{grant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Grant */
+        delete: operations["revoke_grant_api_v1_health_navigation_grants__grant_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/lifenav/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange Code */
+        post: operations["exchange_code_api_v1_integrations_lifenav_exchange_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/lifenav/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Summary */
+        get: operations["get_summary_api_v1_integrations_lifenav_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/monitoring/health": {
         parameters: {
             query?: never;
@@ -26760,6 +26897,55 @@ export interface components {
             /** Updated At */
             updated_at?: string | null;
         };
+        /** HealthWeekNavigation */
+        HealthWeekNavigation: {
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "health_week_navigation.v1";
+            /**
+             * Local Date
+             * Format: date
+             */
+            local_date: string;
+            /** Timezone */
+            timezone: string;
+            /** Timezone Source */
+            timezone_source: string;
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "ready" | "partial" | "not_generated" | "unavailable";
+            /** Projection Revision */
+            projection_revision: string;
+            /** Projection Sequence */
+            projection_sequence: number;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Source As Of */
+            source_as_of: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Review Window */
+            review_window: {
+                [key: string]: unknown;
+            };
+            /** Actions */
+            actions: components["schemas"]["NavigationAction"][];
+            review: components["schemas"]["NavigationReview"];
+            /** Restrictions */
+            restrictions: {
+                [key: string]: unknown;
+            }[];
+        };
         /** HearingHealthTaskCreate */
         HearingHealthTaskCreate: {
             /**
@@ -27543,6 +27729,119 @@ export interface components {
             occurred_display: string;
             /** Notes */
             notes?: string | null;
+        };
+        /** LifeNavCodeExchange */
+        LifeNavCodeExchange: {
+            /** Client Id */
+            client_id: string;
+            /**
+             * Client Secret
+             * Format: password
+             */
+            client_secret: string;
+            /**
+             * Code
+             * Format: password
+             */
+            code: string;
+            /** Redirect Uri */
+            redirect_uri: string;
+            /** State */
+            state: string;
+            /**
+             * Code Verifier
+             * Format: password
+             */
+            code_verifier: string;
+        };
+        /** LifeNavGrantCreate */
+        LifeNavGrantCreate: {
+            /** Recipient Id */
+            recipient_id: string;
+            /** Redirect Uri */
+            redirect_uri: string;
+            /** State */
+            state: string;
+            /** Code Challenge */
+            code_challenge: string;
+            /**
+             * Scope
+             * @default navigation:generic
+             * @constant
+             */
+            scope: "navigation:generic";
+            /**
+             * Window Policy
+             * @default current_trailing7
+             * @constant
+             */
+            window_policy: "current_trailing7";
+            /**
+             * Expires In Days
+             * @default 7
+             */
+            expires_in_days: number;
+        };
+        /** LifeNavGrantCreated */
+        LifeNavGrantCreated: {
+            /** Grant Id */
+            grant_id: string;
+            /** Authorization Url */
+            authorization_url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** LifeNavGrantView */
+        LifeNavGrantView: {
+            /** Grant Id */
+            grant_id: string;
+            /** Recipient Id */
+            recipient_id: string;
+            /**
+             * Scope
+             * @default navigation:generic
+             * @constant
+             */
+            scope: "navigation:generic";
+            /**
+             * Window Policy
+             * @default current_trailing7
+             * @constant
+             */
+            window_policy: "current_trailing7";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /** Connected */
+            connected: boolean;
+        };
+        /** LifeNavToken */
+        LifeNavToken: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default Bearer
+             * @constant
+             */
+            token_type: "Bearer";
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
         };
         /** LiveRunEndRequest */
         LiveRunEndRequest: {
@@ -28675,6 +28974,121 @@ export interface components {
              * @description 情绪与精力的相关系数
              */
             mood_energy_correlation?: number | null;
+        };
+        /** NavigationAction */
+        NavigationAction: {
+            /** Action Ref */
+            action_ref: string;
+            /** Action Revision */
+            action_revision: string;
+            /** Share Title */
+            share_title: string;
+            /** Share Completion Criterion */
+            share_completion_criterion: string;
+            /**
+             * Execution Status
+             * @enum {string}
+             */
+            execution_status: "pending" | "completed" | "skipped" | "deferred" | "withdrawn" | "unknown";
+            /**
+             * Safety State
+             * @enum {string}
+             */
+            safety_state: "allowed" | "restricted" | "unknown";
+            /** Requires Health Review */
+            requires_health_review: boolean;
+            /**
+             * Scheduling Mode
+             * @enum {string}
+             */
+            scheduling_mode: "flexible" | "view_only";
+            /** Detail Ref */
+            detail_ref: string;
+        };
+        /** NavigationActionDetail */
+        NavigationActionDetail: {
+            /** Action Ref */
+            action_ref: string;
+            /** Action Revision */
+            action_revision: string;
+            /** Title */
+            title: string;
+            /** Completion Criterion */
+            completion_criterion: string;
+            /**
+             * Execution Status
+             * @enum {string}
+             */
+            execution_status: "pending" | "completed" | "skipped" | "deferred" | "withdrawn" | "unknown";
+            /**
+             * Safety State
+             * @enum {string}
+             */
+            safety_state: "allowed" | "restricted" | "unknown";
+            /** Requires Health Review */
+            requires_health_review: boolean;
+            /**
+             * Scheduling Mode
+             * @constant
+             */
+            scheduling_mode: "view_only";
+            /**
+             * Plan Date
+             * Format: date
+             */
+            plan_date: string;
+            /** Action Key */
+            action_key: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Can Confirm */
+            can_confirm: boolean;
+        };
+        /** NavigationEventReceipt */
+        NavigationEventReceipt: {
+            action: components["schemas"]["NavigationActionDetail"];
+            /** Idempotent */
+            idempotent: boolean;
+        };
+        /** NavigationEventRequest */
+        NavigationEventRequest: {
+            /**
+             * Event Type
+             * @enum {string}
+             */
+            event_type: "completed" | "skipped" | "deferred";
+            /** Expected Revision */
+            expected_revision: string;
+            /**
+             * Operation Id
+             * Format: uuid
+             */
+            operation_id: string;
+        };
+        /** NavigationReview */
+        NavigationReview: {
+            /** Recorded Days */
+            recorded_days: number;
+            /** Window Days */
+            window_days: number;
+            /**
+             * Coverage Status
+             * @enum {string}
+             */
+            coverage_status: "complete" | "partial" | "missing";
+            /** Completed Occurrences */
+            completed_occurrences: number;
+            /** Skipped Occurrences */
+            skipped_occurrences: number;
+            /** Deferred Occurrences */
+            deferred_occurrences: number;
+            /** Unknown Occurrences */
+            unknown_occurrences: number;
+            /** Claim Boundary */
+            claim_boundary: string;
         };
         /** NearbyRequest */
         NearbyRequest: {
@@ -38320,6 +38734,260 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DailyPlanActionEventResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summary_api_v1_health_navigation_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthWeekNavigation"];
+                };
+            };
+        };
+    };
+    refresh_api_v1_health_navigation_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthWeekNavigation"];
+                };
+            };
+        };
+    };
+    detail_api_v1_health_navigation_actions__ref__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NavigationActionDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_api_v1_health_navigation_actions__ref__events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NavigationEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NavigationEventReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_grants_api_v1_health_navigation_grants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeNavGrantView"][];
+                };
+            };
+        };
+    };
+    create_grant_api_v1_health_navigation_grants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifeNavGrantCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeNavGrantCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_grant_api_v1_health_navigation_grants__grant_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exchange_code_api_v1_integrations_lifenav_exchange_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifeNavCodeExchange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeNavToken"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_summary_api_v1_integrations_lifenav_summary_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthWeekNavigation"];
                 };
             };
             /** @description Validation Error */

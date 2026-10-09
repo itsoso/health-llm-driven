@@ -231,7 +231,7 @@ def load_active_advice_candidates(
     return [_row_to_candidate(row) for row in rows]
 
 
-def guard_and_record_advice(db: Session, candidate: AdviceCandidate) -> AdviceDecision:
+def guard_and_record_advice(db: Session, candidate: AdviceCandidate, *, commit: bool = True) -> AdviceDecision:
     """Evaluate advice against active user advice and persist the decision."""
 
     existing_same_source = (
@@ -245,6 +245,18 @@ def guard_and_record_advice(db: Session, candidate: AdviceCandidate) -> AdviceDe
         .first()
     )
     if existing_same_source:
+        if not commit:
+            # A displayed navigation action must be re-evaluated against the
+            # current personal matrix, not inherit yesterday's allowed verdict.
+            peers = [item for item in load_active_advice_candidates(db, candidate.user_id, domain=candidate.domain)
+                     if not (item.source == candidate.source and item.source_id == candidate.source_id
+                             and item.advice_key == candidate.advice_key)]
+            decision = AdviceGuard(peers).evaluate(candidate)
+            existing_same_source.decision = "allowed" if decision.allowed else "blocked"
+            existing_same_source.status = "active" if decision.allowed else "blocked"
+            existing_same_source.reason = decision.reason
+            db.flush()
+            return decision
         return AdviceDecision(
             allowed=existing_same_source.decision == "allowed",
             reason=f"existing_{existing_same_source.reason}",
@@ -287,8 +299,13 @@ def guard_and_record_advice(db: Session, candidate: AdviceCandidate) -> AdviceDe
     )
     db.add(row)
     try:
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except IntegrityError:
+        if not commit:
+            raise
         db.rollback()
         return AdviceDecision(
             allowed=False,

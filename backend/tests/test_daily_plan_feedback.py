@@ -68,9 +68,14 @@ def test_daily_plan_feedback_stores_standard_prediction_record(
     from app.api import daily_plan
 
     today = date.today()
+    # A prediction event needs a real parent plan under PostgreSQL FK rules.
+    from app.models.daily_operating_plan import DailyOperatingPlan
+    stored_plan = DailyOperatingPlan(user_id=user.id, plan_date=today, actions=[])
+    db.add(stored_plan)
+    db.commit()
     prediction = _prediction_context()
     monkeypatch.setattr(daily_plan, "build_daily_operating_plan", lambda db, uid, plan_date=None: {
-        "id": 123,
+        "id": stored_plan.id,
         "plan_date": today.isoformat(),
         "actions": [
             {
@@ -159,8 +164,13 @@ def test_daily_plan_action_event_stores_standard_prediction_record(
     from app.api import daily_plan
 
     today = date.today()
+    # A prediction event needs a real parent plan under PostgreSQL FK rules.
+    from app.models.daily_operating_plan import DailyOperatingPlan
+    stored_plan = DailyOperatingPlan(user_id=user.id, plan_date=today, actions=[])
+    db.add(stored_plan)
+    db.commit()
     monkeypatch.setattr(daily_plan, "build_daily_operating_plan", lambda db, uid, plan_date=None: {
-        "id": 124,
+        "id": stored_plan.id,
         "plan_date": today.isoformat(),
         "actions": [
             {
