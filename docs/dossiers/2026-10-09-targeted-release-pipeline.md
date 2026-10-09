@@ -147,3 +147,10 @@
 - 固定提交 `f242926f9` 独立 G4：GO，仅代码集成。独立 Mobile 141 passed、后端 81 passed，退出码均为 0；diff 检查通过。HTML 仅投影至原生 Text，未知/超限内容整体回退源码；运动句式不新增个人证据权限；来源标签不跳过医学输出校验。
 - 父流程新鲜项目 CI-mode 集成 3 passed（1.45 秒）。本机最终 Mobile 160 passed 与 TypeScript、运动范围关联 1226 passed、医学输出关联 2977 passed 已记录。各组存在重叠，不累计为独立用例数。
 - 真实模型、当前候选模拟器和远端精确 CI 尚未完成；不能据此宣称截图中断根因已解决或生产验收通过。现有原生 runtime/指纹 OTA 阻断继续有效，不绕过发布 Gate。
+
+### 完整 CI 捕获来源标签消费端回归
+
+- `fe17837c7` 已合入 main；CI `37895496999` 的 balanced-14 中真实流式编号续接两项失败。新来源标签未在 `agent_pending_choice` 的固定前缀集合中，导致 pending_choice 未持久化。保留失败记录，未部署、未取消或重跑同 SHA。
+- 同类源码搜索发现 `agent_context_statement` 的固定医学拒绝文案也消费旧前缀。新增两种精确新标签兼容，旧标签继续用于历史消息；不允许任意来源前缀，不改变选项权限、整个消息哈希绑定或上下文健康边界。
+- 正确环境 RED：6 failed / 132 passed，含真实 stream 两条及两个消费端的新标签。最小修复后：149 passed（6.61 秒），含 pending-choice、context-statement、真实 stream、guidance 和项目 CI-mode integration；diff 通过。固定补丁独立审查和远端验证待完成。
+- 独立安全 reviewer 已补充此前后端范围无额外部署安全阻断，但必须先让修复后的目标精确 CI 通过，再走 trusted validate/readiness 和正式发布流程。Mobile/native OTA 阻断仍有效。

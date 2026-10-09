@@ -236,13 +236,20 @@ async def test_context_caption_cannot_consume_attachment_or_entry_task(db, auth_
 
 
 @pytest.mark.asyncio
-async def test_previous_offtopic_medical_refusal_is_not_user_medical_context(db, auth_user_and_headers, monkeypatch):
+@pytest.mark.parametrize("prefix", [
+    "",
+    "信息来源：用户陈述、模型推断。\n",
+    "信息来源：用户陈述、已检索证据（未逐句核验）、模型推断。\n",
+    "信息来源：上下文信息（未逐项核验）、模型推断。\n",
+    "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n",
+])
+async def test_previous_offtopic_medical_refusal_is_not_user_medical_context(db, auth_user_and_headers, monkeypatch, prefix):
     user, _ = auth_user_and_headers
     svc = AgentConversationService(db)
     conv = svc.get_or_create_conversation(user.id, None, title="合成偏题恢复")
     svc.save_message(conv.id, "user", "落地成都")
     from app.services.guidance_validator import _ADVICE_HOLD
-    svc.save_message(conv.id, "assistant", _ADVICE_HOLD)
+    svc.save_message(conv.id, "assistant", prefix + _ADVICE_HOLD)
     executor = AgentExecutor(db)
     _no_heavy_work(executor, monkeypatch)
     events = [e async for e in executor.run_stream(user_id=user.id,

@@ -139,6 +139,8 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
             _ADVICE_HOLD,
             "信息来源：用户陈述、模型推断。\n" + _ADVICE_HOLD,
             "信息来源：用户陈述、已检索证据（未逐句核验）、模型推断。\n" + _ADVICE_HOLD,
+            "信息来源：上下文信息（未逐项核验）、模型推断。\n" + _ADVICE_HOLD,
+            "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n" + _ADVICE_HOLD,
         }
         if not (known_ack or plain_receipt or guard_refusal):
             return False

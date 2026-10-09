@@ -173,10 +173,16 @@ def test_newest_assistant_cannot_reactivate_an_older_choice(db, stored_choice):
                                   reply="1", now=NOW) is None
 
 
-def test_known_medical_source_label_does_not_hide_read_choice():
+@pytest.mark.parametrize("label", [
+    "信息来源：用户陈述、模型推断。",
+    "信息来源：用户陈述、已检索证据（未逐句核验）、模型推断。",
+    "信息来源：上下文信息（未逐项核验）、模型推断。",
+    "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。",
+])
+def test_known_medical_source_label_does_not_hide_read_choice(label):
     from types import SimpleNamespace
     from datetime import datetime, timezone
     from app.services.agent_pending_choice import build_pending_choice
     message = SimpleNamespace(id=99, conversation_id=3, role='assistant', meta={'client_turn_finalized': True},
-        content='信息来源：用户陈述、模型推断。\n请选择一项，回复编号：\n1. 查看昨晚睡眠\n2. 查看昨天饮食')
+        content=label + '\n请选择一项，回复编号：\n1. 查看昨晚睡眠\n2. 查看昨天饮食')
     assert build_pending_choice(message, now=datetime.now(timezone.utc)) is not None
