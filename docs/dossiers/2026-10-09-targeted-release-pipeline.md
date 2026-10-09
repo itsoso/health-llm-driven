@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | S5 设计核查与实现 |
+| 状态 | validated |
+| 当前阶段 | S7 发布后验证 |
 
 ## 范围与授权
 
@@ -61,4 +61,20 @@
 - 原PG语义清单按历史耗时分为两个有界子进程，共用已安装依赖，每组创建独立随机PG数据库、在线Redis DB13/14及pytest缓存。保留原超时、迁移与Redis专项；创建冲突不删除他库，清理失败仍红，输出独立JUnit和日志。
 - 本机真实PG与在线Redis完整验证：146 + 167 = 313 passed，0 skipped，0 failed。独立收集原313个nodeid与两份JUnit并集完全一致，无重复。`/tmp/reva-pg-ci-20261009/selection-equality.json`保存清单核对结果。
 - 本机首轮SQL_ASCII临时库不支持中文注释；改为UTF8重建专用临时库。隔离探针曾因macOS checkpoint导致DROP DATABASE超过30秒而红；只调整专用本机临时库fsync/synchronous_commit完成质量验证，CI的PG16与原30秒管理SQL超时保持不变。本机237.208秒不作为性能收益证据，真实收益待新完整CI。
-- System Map、Dossier、秘密扫描和diff检查通过。System Map首次因shell PATH缺Python3.12退出，使用项目venv PATH后通过。第二轮固定提交G4及主干CI尚待完成，生产仍未修改。
+- System Map、Dossier、秘密扫描和diff检查通过。System Map首次因shell PATH缺Python3.12退出，使用项目venv PATH后通过。此阶段第二轮固定提交G4及主干CI尚待完成，生产未修改；后续结果见下节。
+
+## 第二轮 G4 与真实 CI
+
+- 固定提交 `28b2471d72a3afdc7aba681bb5762dccfbae99bc` 独立G4 GO：173 passed、3项真实PG/Redis探针按审查范围明确skip；作者此前38项含真实探针通过。原20个selector与父提交不可变CI命令逐项相同。
+- 已合入main，[完整CI 37880423513](https://github.com/itsoso/health-llm-driven/actions/runs/37880423513) 30/30成功。真实PG16隔离探针3 passed，原PG业务146 + 167 = 313 passed，原真实Redis6 passed和closure PG9 passed。
+- PG并行runner184.613秒（原339.26秒），PG job 442→272秒。全CI墙钟500秒（8分20秒），比首轮466秒慢34秒，比原基线644秒减少22.36%。runner分钟95.47，比原121.97减少21.73%。最后分片13排队148秒、执行328秒成为关键路径；不能把局部PG提速宣称为全CI单调提速，不能宣称3～5分钟已达成。
+- [Trusted validate 37881127428](https://github.com/itsoso/health-llm-driven/actions/runs/37881127428)成功；canonical生产只读admission成功，精确绑定CI run37880423513，修复真实Git兼容拒绝。
+- 已按原规则撤销be8bd98e1授权、销毁旧loopback私钥，启动canonical新SHA轮换；当时正在核验历史发布证据，尚无部署成功回执；最终结果见下节。历史前端node_modules证据读取数GB是独立发布耗时点，本次不跳过或删除证据。
+
+## G5 发布与 G6 线上验证
+
+- canonical轮换成功，执行器安装绑定`28b2471d72a3afdc7aba681bb5762dccfbae99bc`。[正式后端发布37881761730](https://github.com/itsoso/health-llm-driven/actions/runs/37881761730)经原preflight/readiness后执行一次；服务器`completed.json`为该精确SHA的`SUCCEEDED`，业务lease已释放。服务器started→completed实际362.58秒（约6分3秒），不含此前授权轮换，未达1～2分钟目标。
+- 生产Git HEAD为同一SHA，部署健康评分60/60，runtime-only KB serving contract通过。`health-backend`、`health-frontend`、`celery-worker`、`celery-beat`均active；内网与公网`/api/v1/health`均HTTP200。
+- 本次环境配置及回滚点备份已执行。依据用户既有授权及`docs/governance/deploy.md`中`DEPLOY_DATABASE_BACKUP`默认关闭策略，**数据库备份、恢复演练和站外归档未执行**；不是本次优化新增豁免。过程说明曾将关键词误判为数据库备份阶段，已向用户明确纠正。
+- 与原生产be8bd98e1相比，backend/app、frontend、mobile无应用运行时代码变化。本次不做Mobile/TestFlight发布，不重建或切换未变化的前端；前端prepared-artifact真实构建/消费已在Linux CI通过，未声称生产制品切换或1～2分钟部署达标。
+- G5 PASS（精确CI及终态回执）；G6 PASS（运行版本、服务、公开健康及发布收尾）。本轮基础设施交付完成，性能目标部分达成；后续优化依据是晚启动的backend分片和历史证据重复遍历，1～3/3～5/1～2分钟及P95目标仍未证明，不擅自购买runner或削减安全/业务验证。
