@@ -14,7 +14,7 @@ PROMPT = '同步一下佳明的数据，获取到我最新的运动的数据，�
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('job_state', ['PENDING', 'SUCCESS', 'FAILURE', 'missing_credentials', 'enqueue_error'])
+@pytest.mark.parametrize('job_state', ['PENDING', 'SUCCESS', 'FAILURE', 'INVALID_STATE', 'missing_credentials', 'enqueue_error'])
 @pytest.mark.parametrize('guessed_args', [
     {'record_type': 'garmin_sync'},
     {'record_type': 'garmin_sync', 'data': {'days': 7}},
@@ -53,7 +53,7 @@ async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user
                 'function':{'name':'health_record','arguments':json.dumps(guessed_args)}}]}
             yield {'type':'finish','finish_reason':'tool_calls'}
         else:
-            yield {'type':'content','text':'同步已入队但尚未确认完成；今天已存记录不能证明就是刚才这次跑步，只能有条件地分析。'}
+            yield {'type':'content','text':'可以参考已保存的运动记录。'}
             yield {'type':'finish','finish_reason':'stop'}
     monkeypatch.setattr(executor,'_call_llm_stream',stream)
     events=[event async for event in executor.run_stream(user_id=user.id,channel='typed',message=PROMPT)]
@@ -75,6 +75,21 @@ async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user
         assert done['turn_outcome']['status']=='partial'
     assert not executor._agent_kernel_capability_block_reasons
     assert db.query(WorkoutRecord).filter_by(user_id=user.id).count()==1
+    from app.models.agent_conversation import AgentMessage
+    saved = db.get(AgentMessage,done['message_id'])
+    delivered = ''.join(e.get('data',{}).get('content','') for e in events if e.get('event')=='token')
+    for body in (saved.content,delivered):
+        assert '尚不能确认它就是你刚才的跑步' in body
+        if job_state == 'SUCCESS':
+            assert '同步任务已返回成功' in body
+            assert '不能据此保证活动数据完整' in body
+        elif job_state == 'FAILURE':
+            assert '同步任务失败' in body
+        elif job_state in {'missing_credentials','enqueue_error'}:
+            assert '本轮同步没有取得已提交确认' in body
+        else:
+            assert '同步任务已提交，尚未核实完成' in body
+
 
 
 def test_goal_guard_allows_only_canonical_closed_owned_sync():

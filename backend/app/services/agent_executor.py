@@ -13373,7 +13373,8 @@ class AgentExecutor:
 
     def _trusted_sync_summary(self) -> str:
         from app.services.agent_kernel.read_task_scope import resolve_sync_status_query, is_owned_oxygen_sync_diagnostic
-        if resolve_sync_status_query(self._ensure_agent_kernel_turn()) is None:
+        if (self._focused_read_scopes()[1] is None
+                and resolve_sync_status_query(self._ensure_agent_kernel_turn()) is None):
             return ""
         if self._turn_sync_attempted and not self._turn_sync_queued:
             return '本轮同步没有取得已提交确认；之前的成功任务不能证明本次同步成功。'
@@ -15611,7 +15612,7 @@ class AgentExecutor:
         panel_completion = self._composed_read_completion()
         if panel_completion is not None and not panel_completion.complete:
             full_reply = panel_completion.trusted_fact_summary
-        elif panel_synthesis_messages is not None and panel_completion is not None:
+        elif (panel_synthesis_messages is not None or self._focused_read_scopes()[1] is not None) and panel_completion is not None:
             full_reply = panel_completion.trusted_fact_summary + "\n\n" + full_reply
         panel_sync_summary = self._trusted_sync_summary()
         if panel_sync_summary:
@@ -20075,7 +20076,7 @@ class AgentExecutor:
             full_reply = composed_completion.trusted_fact_summary
             if final_finish_reason != "stop":
                 full_reply += "\n\n本轮没有生成有效回答，请稍后重试。"
-        elif composed_synthesis_used and composed_completion is not None:
+        elif (composed_synthesis_used or self._focused_read_scopes()[1] is not None) and composed_completion is not None:
             if final_finish_reason != "stop":
                 # A status flag does not make an incomplete model candidate
                 # safe to publish. Retain verified facts, not partial prose.
