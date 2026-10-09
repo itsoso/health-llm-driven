@@ -7166,6 +7166,7 @@ def _normalize_goal_guarded_tool_calls(
     *,
     lookup_completed: bool = False,
     allowed_record_ids: Optional[set[str]] = None,
+    original_user_message: str = "",
 ) -> List[Dict[str, Any]]:
     """Fail closed when a model violates the current task's mutation contract."""
     if goal is None:
@@ -7228,6 +7229,13 @@ def _normalize_goal_guarded_tool_calls(
             )
             if is_diet_create_recovery:
                 violates_contract = False
+            if name == "health_record" and args == {"record_type": "garmin_sync", "data": {}}:
+                from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
+                # This exact compound request explicitly asks for sync. It is
+                # not a general exception to read-only goals or record writes;
+                # Pi and the capability gateway still enforce owner authority.
+                if resolve_garmin_workout_review_scope(original_user_message) is not None:
+                    violates_contract = False
             if violates_contract:
                 logger.warning(
                     "[agent_executor] goal contract blocked prohibited mutation "
@@ -17908,11 +17916,32 @@ class AgentExecutor:
         tools = scope_tools_for_exercise_plan(tools, message)
         from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
         tools = scope_tools_for_current_input_advice(tools, message)
+        # Preserve only explicitly requested sync across the generic answer
+        # filter, never restore capabilities removed by earlier boundaries.
+        _, admitted_garmin_scope = self._focused_read_scopes()
+        garmin_sync_tools = []
+        if (admitted_garmin_scope is not None and not self._read_only_turn
+                and not health_advice_buffered and not self._current_turn_has_attachment):
+            from copy import deepcopy
+            for tool in tools:
+                if (tool.get("function") or {}).get("name") == "health_record":
+                    sync_tool = deepcopy(tool)
+                    sync_tool["function"]["parameters"] = {
+                        "type": "object", "additionalProperties": False,
+                        "properties": {
+                            "record_type": {"type": "string", "enum": ["garmin_sync"]},
+                            "data": {"type": "object", "properties": {}, "additionalProperties": False},
+                        },
+                        "required": ["record_type", "data"],
+                    }
+                    garmin_sync_tools.append(sync_tool)
         tools = scope_tools_for_goal(
             tools,
             self._agent_kernel_snapshot.goal
             if self._agent_kernel_snapshot is not None else None,
         )
+        if garmin_sync_tools:
+            tools = [tool for tool in tools if (tool.get("function") or {}).get("name") != "health_record"] + garmin_sync_tools
         if completion_intent.reason == "conversation_feedback":
             tools = []
 
@@ -19204,8 +19233,12 @@ class AgentExecutor:
                                 or self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
                                 else request["tools"]
                             )
-                            if (medical_scope is not None
-                                    and self._turn_focused_read_result is not None):
+                            if garmin_scope is not None and self._turn_sync_attempted:
+                                round_tools = [tool for tool in round_tools
+                                               if (tool.get("function") or {}).get("name") != "health_record"]
+                            if ((medical_scope is not None or garmin_scope is not None)
+                                    and self._turn_focused_read_result is not None
+                                    and (garmin_scope is None or self._turn_sync_attempted)):
                                 # The closed report read has returned its complete
                                 # result (including explicit absence/failure). Do
                                 # not ask the model to guess another personal scope.
@@ -19229,6 +19262,16 @@ class AgentExecutor:
                                 proposed_calls = self._initial_composed_read_calls(round_idx, round_tools)
                                 if proposed_calls:
                                     self._record_model_fallback_reason("owned_imaging_read_preplanned")
+                            if (not proposed_calls and garmin_scope is not None
+                                    and self._turn_selected_exam_id is None
+                                    and not health_advice_buffered and not self._read_only_turn
+                                    and not images and not file_base64 and not self._current_turn_has_attachment
+                                    and not self._agent_kernel_pending_confirmation_tools):
+                                # Propose sync once, then the bounded current-day
+                                # read and this job's status, before explanation.
+                                proposed_calls = self._initial_composed_read_calls(round_idx, round_tools)
+                                if proposed_calls:
+                                    self._record_model_fallback_reason("owned_garmin_review_preplanned")
                             from app.services.agent_symptom_status_observation import parse_symptom_status_observation
                             if (
                                 not proposed_calls and round_idx == 0
@@ -19583,6 +19626,7 @@ class AgentExecutor:
                                     self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
                                     lookup_completed=goal_lookup_completed,
                                     allowed_record_ids=goal_allowed_record_ids,
+                                    original_user_message=self._current_turn_user_message,
                                 )
                                 rejected_goal_writes = _goal_guard_rejected_writes(
                                     goal_guard_candidates,
