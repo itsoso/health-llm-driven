@@ -332,3 +332,14 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - 已用真实Git首次建库复现：继承umask0002时canonical source创建为0775，原校验正确拒绝。修复在root Git shell及各锁定依赖生产者root子shell内设置022，再exec固定argv；不chmod/chown现有树。作者RED真实目录模式失败，GREEN140通过，覆盖source/.git/config与依赖目录/普通文件/bin模式。待固定独立G4、新CI及hosted预检。
 - f504f0d0c精确完整CI37960716054全部30项成功，canonical staging完成；OTA validate37961746754仍在publisher祖先2 writable阻断，证明仅umask不足。没有轮换生产授权、后端部署或OTA claim。后续改为拒绝已有路径的fresh-source创建：仅对新空目录通过dirfd规范继承default ACL和0755，并记录固定阶段元数据。default ACL仍为待hosted证实机制，不能将本地umask复现当作已解决根因。
 - c6f8af755将source改为parent-dirfd下独占新建空目录，以NOFOLLOW/inode/empty绑定，仅该新目录清除default ACL并设0755；已有目录/链接/不安全parent及非ENODATA错误均拒绝。创建、checkout后、依赖后输出固定安全元数据，secure未改。作者153通过/1 mac明确skip；真实Linux ACL测试在Ubuntu必须执行，尚未据本机结果宣称已验证ACL机制。
+
+## 统一发布交接（2026-10-10）
+
+已读取“优化 README”会话 `01a120c7-1ba0-75c3-9487-447bd5bfa28f` 中用户直接指令“实现之后整合session,其他session的内容，做最终的部署和发布”。本会话停止新的push/deploy/OTA，保留代码，由该会话统一整合发布。没有持有业务lease或进行中的生产变更。
+
+- 生产仍为 `3a75b0567adec01b585260b562cd397194293240`：持久SUCCEEDED、四服务active、health200、餐食识别等三个源码hash与真实模型验收相同；交接前新鲜证据 `/tmp/reva-food-wire-handoff-production.json`。原e321失败回执保持，特殊retained closure已完成，不得重做。
+- 远端main为 `f504f0d0cfc98cafb118cbb05051b8612bd9fb75`，完整CI `37960716054` 30项成功。该候选只完成canonical staging，没有轮换3a75授权或部署。OTA预检 `37961746754` 仍失败；没有OTA claim、上传或发布回执。禁止把旧失败运行重跑当成发布恢复。
+- 本地待整合为 `c6f8af755` + dossier `041d8229b` + `d56560ee0cedcba580e11157b81d007ee81e19ca`：fresh-source创建、ACL边界、阶段诊断；最后一提交消除空FileExistsError捕获，后续parent严格验证不变。固定代码独立G4 GO，168 passed/1 mac平台明确skip，日志 `/tmp/reva-g4-ota-d56560ee0.log`。尚未push；Linux真实ACL测试及hosted效果仍待新精确CI/预检，不能宣称机制已确证或OTA已修复。
+- 餐食提速实现 `1720a749b` 已是生产祖先：56次同图配对无冻结契约失败，真实照片P50 4334→2909ms、样本P95 6497→4780ms；是识别段小样本，不是手机端到端验收。报告 `docs/reviews/2026-10-09-food-wire-replay.json`。不再启用被否决的写工具说明精简。
+- 原生基线仍TestFlight 1.3.5(276)，native SHA `7fe06d8b34750b6bd56db8d5ec45d1aee705b02e`、EAS build `09719eb6-2887-4100-9ccb-6533fd9d71ed`。当前已合入但未OTA的Mobile改动包含 `mobile/hooks/useChatEngine.ts` 的核验后首卡保留；统一整合后重新判断完整Mobile/native差异。
+- 接续顺序：整合上述本地固定代码及其他session → 独立G4/新精确CI → 无凭据hosted路径与native预检 → 从3a75成功授权走普通canonical rotate与后端部署 → 同SHA trusted OTA validate/publish及回执验收。原特殊失败收尾脚本已消费，禁止再运行；`/tmp/reva-ota-source-stage.py` 仅用于过f504源码staging；`/tmp/reva-ota-normal-rotate.py` 从未运行。统一整合后使用这些普通操作模板前，须重新核对整合SHA和源码hash。唯一真实部署入口仍deploy.sh的可信workflow路径。
