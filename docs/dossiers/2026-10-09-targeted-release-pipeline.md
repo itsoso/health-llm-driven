@@ -312,3 +312,8 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 
 - 父方单独调用相同canonical candidate_laya只读函数，生产generation/来源回执/导出源码/账户/service/401/synthetic inference真实通过；没有传evidence digest或写closure，不替代完整retirement证明。日志`/tmp/reva-retained-laya-diagnostic.log`仅含passed。
 - vision overlay私有适配已实现待固定G4：493项相关测试通过；真实列表恰为原三项+唯一末位model路径，独立验证文件/环境/进程model及完整历史来源，只投影DropInPaths，其他属性原样；前后复验及首次rotate实时复验，未来历史仅验证归档。CLI仅输出固定stage、白名单异常类与retry_allowed=false，禁止原始异常/argv/健康载荷回显。尚未执行生产新适配。
+
+- `5f8051576` overlay修复497项通过；合并另会话纯规划文档后候选`fdeb4ceb6e66d5633891a44398b97aa3fbba683a`独立G4 GO（454+8），精确CI`37942968544`全部30项成功，Trusted validate`37944086974`成功；canonical staging通过。未改变已通过10次真实API回归的应用源码哈希。
+- 该候选生产readonly inspect通过Vision配置阶段，在`application_probes`以CalledProcessError阻断；无intent、无撤权、无新部署/OTA。独立canonical child安全诊断定位`verify_runtime_only_kb_contract.py:353`，要求active/reviewed目标集合不满足；schema与前置来源校验已通过。源码证实rollback的candidate-retained路径同样先quarantine后commit/finalize，staged active profile与合法隔离状态矛盾，不能因此认定KB损坏。
+- 正在实施独立`ROLLBACK_QUARANTINED`严格证明：完整sealed ID/type/review/artifact、全部archived、generic目标不可见/runtime全可见集合空、flag=false、原workspace与完整SHA/审计/时间窗绑定；保留schema、advisory lock和projection正负例。不写DB修复、不改guard、不catch staged失败fallback。projection使用savepoint sentinel后回滚，应称无持久业务写入而非零SQL写。新固定G4、PostgreSQL证据与CI待完成。
+- 原canonical child生产聚合诊断：target/matched/archived/reviewed/correct_type均11，证明不是缺失行；仍由原staged在353行拒绝。只输出计数与源码栈，日志`/tmp/reva-retained-kb-count-diagnostic.log`；不替代sealed artifact、审计来源及完整不可服务证明。新的真实PostgreSQL回归已复现原staged失败，专用隔离证明验证中。

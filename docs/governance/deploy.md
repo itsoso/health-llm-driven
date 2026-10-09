@@ -1053,3 +1053,20 @@ UnsetEnvironment、进程身份与实际 model 均由现有 vision validator 检
 只有这个已验证 overlay 可在私有基础 unit 证明视图中剥离，其他属性一律透传；原始四路径、
 model 文件、进程及历史摘要独立归档，前后变化阻断。历史验证不读取未来 live model/PID。
 CLI 失败仅输出固定 stage、白名单异常类和禁止自动重试状态，不输出异常原文、回溯或 argv。
+
+retained rollback 的 KB 状态使用独立 `ROLLBACK_QUARANTINED` 契约：
+`rollback_release.sh` 在 candidate-retained 分支也先归档 runtime-only pack，
+随后才 commit/finalize runtime 文件事务。因此该终态不意味着 KB 已重新导入或
+处于 staged active 状态。retirement 不复用 staged 的 active-pack 前置，不在
+staged 失败后 fallback，也不通过恢复 KB 或修改数据库绕过验证。
+固定隔离子进程保留 canonical/revision/venv/schema 验证，另证明 sealed 全集
+完整、类型与 reviewed 元数据正确、全部 archived、sealed claim artifact 一致、
+generic/runtime serving 均为零。原 rollback 审计必须与完整候选 SHA 对应的不可变
+workspace 部署开始/完成时间窗一致；短 SHA actor 只是其中一项约束，不能单独授权。
+审计 target/matched 必须等于精确全集，archived 允许 0（幂等隔离）到全集数量。
+保留原 Desktop/Genetic 正反 projection、PostgreSQL 事务 advisory lock 与
+`_TransactionPreservingProbeSession`：探针包含 savepoint 内合成记录与 schema
+空 UPDATE，保证回滚、无持久业务写入，并非零 SQL 写操作。独立归档仅保存摘要、
+计数、审计身份和时间窗；首次 rotate 重验当前状态，历史轮转只验证归档。
+定向 PostgreSQL 验证入口为 `RETAINED_TEST_DATABASE_URL`（库名须含 test），
+使用测试专属 schema，不能用 SQLite 或 mock 代替 JSONB、时间窗、锁和回滚证明。
