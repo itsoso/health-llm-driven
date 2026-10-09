@@ -536,8 +536,39 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
             raise LaunchError("frontend publication backup hashes differ")
 
 
-def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None):
+def assert_vision_model_history(state=None, *, pending_operation=None):
+    """Unknown model-configuration outcomes block every existing launcher.
+
+    Configuration success with model acceptance pending is an honest separate
+    terminal state, not a paid-inference success receipt.
+    """
+    root = Path(state or STATE) / 'vision-models'
+    if not os.path.lexists(root):
+        return
+    secure_path(root,directory=True)
+    for audit in root.iterdir():
+        if re.fullmatch(r'[0-9a-f]{32}',audit.name) is None:
+            raise LaunchError('unknown vision configuration audit')
+        secure_path(audit,directory=True)
+        if audit.name == pending_operation:
+            continue
+        terminal = audit / ('rollback-completed.json' if os.path.lexists(audit / 'rollback-intent.json') else 'completed.json')
+        if not os.path.lexists(terminal):
+            raise LaunchError('unfinished vision configuration operation')
+        secure_path(terminal,private=True)
+        if terminal.stat().st_size > 32768:
+            raise LaunchError('vision configuration receipt exceeds bound')
+        value = _json(terminal.read_bytes())
+        expected = 'CONFIG_ROLLED_BACK' if terminal.name == 'rollback-completed.json' else 'CONFIG_SUCCEEDED_PENDING_MODEL_ACCEPTANCE'
+        if value.get('state') != expected or value.get('operation_id') != audit.name or value.get('model_requests') != 0:
+            raise LaunchError('unknown vision configuration terminal receipt')
+        if expected == 'CONFIG_SUCCEEDED_PENDING_MODEL_ACCEPTANCE' and value.get('model_acceptance') != 'PENDING':
+            raise LaunchError('configuration cannot manufacture model acceptance')
+
+
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None):
     """Independent frontend evidence must never count as backend success."""
+    assert_vision_model_history(state,pending_operation=pending_vision_operation)
     assert_frontend_publication_history(state,pending_stopped_publication=pending_stopped_publication)
     root = Path(state or STATE) / "frontend-rebuilds"
     closures = root.parent / "frontend-rebuild-closures"
