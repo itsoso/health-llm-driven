@@ -38,6 +38,12 @@ def test_safe_html_output_is_preserved_byte_for_byte():
     '<p>你的蛋白质摄入<br>不足。</p>',
     '<div>你的蛋白质摄入</div><div>不足。</div>',
     '<p>你的恢复状<br>态良好。</p>',
+    '<p>你的蛋白质摄入不&shy;足。</p>',
+    '<p>你的蛋白质摄入不&#x200b;足。</p>',
+    '<p>你的蛋白质摄入不&#xfe0f;足。</p>',
+    '<p>你的蛋白质摄入不&#x3164;足。</p>',
+    '<p><s>无法确认</s>你的蛋白质摄入不足。</p>',
+    '<table><tr><td>无法确认</td></tr>你的蛋白质摄入不足。</table>',
 ])
 def test_nonsemantic_html_cannot_supply_visibility_or_hidden_negation(html):
     from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries

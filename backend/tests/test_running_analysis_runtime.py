@@ -75,6 +75,10 @@ async def test_running_analysis_keeps_weather_tools_and_original_question(
     '<p>你的蛋白质摄入<br>不足。</p>',
     '<div>你的蛋白质摄入</div><div>不足。</div>',
     '<p>这些饮食和睡眠记录是模<br>板占位数据。</p>',
+    '<p>你的蛋白质摄入不&shy;足。</p>',
+    '<p>你的蛋白质摄入不&#x200b;足。</p>',
+    '<p>你的蛋白质摄入不&#xfe0f;足。</p>',
+    '<p><s>无法确认</s>你的蛋白质摄入不足。</p>',
 ])
 async def test_composite_retains_health_evidence_guards_before_stream_and_save(
     db, owned_data, monkeypatch, panel, single_domain, reply,

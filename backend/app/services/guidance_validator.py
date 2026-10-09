@@ -611,9 +611,8 @@ class _MedicalHTMLText(HTMLParser):
         "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "tr", "br", "hr",
     })
     _VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
-    _SEMANTIC = _BLOCKS | frozenset({
-        "html", "body", "span", "strong", "b", "em", "i", "u", "s", "small",
-        "table", "thead", "tbody", "tfoot", "td", "th", "caption", "code",
+    _SEMANTIC = (_BLOCKS - {"tr"}) | frozenset({
+        "html", "body", "span", "strong", "b", "em", "i", "u", "small", "code",
     })
 
     def __init__(self):
@@ -661,6 +660,13 @@ class _MedicalHTMLText(HTMLParser):
         self.unsupported_presentation = True
 
     def handle_data(self, data):
+        # Display-ignorable/combining controls can visually join an assertion
+        # while keeping its matching tokens separate (e.g. &shy;). Do not
+        # silently strip them or guess font rendering. The supported report
+        # subset excludes such presentation; literal plain text is unchanged.
+        if any((unicodedata.category(char)[0] in {"C", "M"} and char not in "\n\r\t")
+               or char in "\u115f\u1160\u3164\uffa0" for char in data):
+            self.unsupported_presentation = True
         self.parts.append(data)
 
 
