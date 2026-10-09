@@ -2641,6 +2641,23 @@ def health_read_has_nonself_subject(text: str) -> bool:
     if has_explicit_nonself_health_owner(subject_scope):
         return True
 
+    # A leading sync/background clause must not hide the owner of a later
+    # analysis request. Inspect only independent active clauses after material
+    # projection; this is a restrictive check and never grants read authority.
+    clauses = re.split(r"[，,。；;！？!?\n]", subject_scope)
+    if len(clauses) > 1:
+        for clause in clauses:
+            analysis_clause = re.sub(
+                r"^(?:再|然后)?"
+                r"(?:分析|洞察|复盘|总结)(?:一下)?",
+                "查询",
+                _strip_exam_request_scaffolding(clause.strip()),
+                count=1,
+            )
+            if (READ_VERB_RE.match(analysis_clause)
+                    and health_read_has_nonself_subject(analysis_clause)):
+                return True
+
     # Analysis is a speech act, not the record owner ("分析本周的饮食").
     # Normalize only the leading request scaffold for this ownership check;
     # do not discard any owner, date, filter or independent clause, and do not
