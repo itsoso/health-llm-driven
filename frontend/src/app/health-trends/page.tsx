@@ -24,18 +24,21 @@ const TREND_ICONS: Record<string, string> = {
   improving: '📈',
   declining: '📉',
   stable: '➡️',
+  unknown: '—',
 };
 
 const TREND_LABELS: Record<string, string> = {
   improving: '改善中',
   declining: '下降中',
   stable: '平稳',
+  unknown: '暂无判断',
 };
 
 const TREND_COLORS: Record<string, string> = {
   improving: 'text-green-600 bg-green-50',
   declining: 'text-red-600 bg-red-50',
   stable: 'text-blue-600 bg-blue-50',
+  unknown: 'text-gray-600 bg-gray-100',
 };
 
 function HealthTrendsContent() {
@@ -43,13 +46,13 @@ function HealthTrendsContent() {
   const [selectedDim, setSelectedDim] = useState<string | null>(null);
   const [period, setPeriod] = useState('7d');
 
-  const { data: latestData, isLoading } = useQuery({
+  const { data: latestData, isLoading, isError, refetch } = useQuery({
     queryKey: ['health-trends-latest', user?.id],
     queryFn: () => healthTrendApi.getLatest(),
     enabled: !!user?.id,
   });
 
-  const { data: detailData, isLoading: isDetailLoading } = useQuery({
+  const { data: detailData, isLoading: isDetailLoading, isError: detailError, refetch: refetchDetail } = useQuery({
     queryKey: ['health-trends-detail', user?.id, selectedDim, period],
     queryFn: () => healthTrendApi.getDimension(selectedDim!, period),
     enabled: !!user?.id && !!selectedDim,
@@ -64,6 +67,10 @@ function HealthTrendsContent() {
 
       {isLoading ? (
         <div className="text-center text-gray-500 py-12">加载中...</div>
+      ) : isError ? (
+        <div role="alert" className="bg-red-50 text-red-800 rounded-xl p-5">
+          趋势数据加载失败。<button onClick={() => refetch()} className="ml-3 underline">重试趋势数据</button>
+        </div>
       ) : !latest?.dimensions?.length ? (
         <div className="text-center text-gray-500 py-12">
           <p className="text-lg mb-2">暂无趋势数据</p>
@@ -90,10 +97,10 @@ function HealthTrendsContent() {
                   {DIMENSION_LABELS[dim.dimension] || dim.dimension}
                 </div>
                 <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs mt-2 ${
-                  TREND_COLORS[dim.trend_direction || 'stable']
+                  TREND_COLORS[dim.trend_direction || 'unknown'] || TREND_COLORS.unknown
                 }`}>
-                  {TREND_ICONS[dim.trend_direction || 'stable']}{' '}
-                  {TREND_LABELS[dim.trend_direction || 'stable']}
+                  {TREND_ICONS[dim.trend_direction || 'unknown'] || TREND_ICONS.unknown}{' '}
+                  {TREND_LABELS[dim.trend_direction || 'unknown'] || TREND_LABELS.unknown}
                 </div>
                 {dim.insights?.[0] && (
                   <p className="text-xs text-gray-500 mt-2 line-clamp-2">
@@ -130,6 +137,10 @@ function HealthTrendsContent() {
 
               {isDetailLoading ? (
                 <div className="text-center text-gray-400 py-8">分析加载中...</div>
+              ) : detailError ? (
+                <div role="alert" className="bg-red-50 text-red-800 rounded-xl p-4">
+                  详细报告加载失败。<button onClick={() => refetchDetail()} className="ml-3 underline">重试详细报告</button>
+                </div>
               ) : detail?.full_report ? (
                 <div className="space-y-4">
                   {/* 洞察 */}

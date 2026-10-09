@@ -1,0 +1,200 @@
+{
+  "date": "2026-10-10",
+  "head_at_handoff": "6adc1de1badccc76ef4ca3b9dc03ec3a714a574c",
+  "task_commits": [],
+  "status": "work complete locally; stopped; no push/deploy or production operation",
+  "files": [
+    {
+      "path": "backend/app/api/daily_recommendation.py",
+      "sha256": "f46ae10986680452cb13a3637129b49f15e51b593ef50d26c8775c53ebbfb38a"
+    },
+    {
+      "path": "backend/app/api/environment.py",
+      "sha256": "feb23bc3a0058bd2f816cdcb019f3b1603a6b5daaeb6bd533a46f374d035cbb2"
+    },
+    {
+      "path": "backend/app/services/daily_insights_analyzer.py",
+      "sha256": "4b6bec323efb96939b8c9be65348efe0b97f5e90d1d0c80a5ae2dfd71ecae152"
+    },
+    {
+      "path": "backend/app/services/daily_recommendation.py",
+      "sha256": "bc04448236fb6d86b9eefe0679350360a51380d81669b3903e0d4c63e995f911"
+    },
+    {
+      "path": "backend/app/services/llm/factory.py",
+      "sha256": "f34befba7515217ad451c6630ae26f7c7dda6cd08e4ffe03463d434b749aef5d"
+    },
+    {
+      "path": "backend/app/services/llm/usage_tracker.py",
+      "sha256": "38d2cb47d417ebd6e60163af78649c09a73b4f89eb4f70a7d57df8a29ce6ff38"
+    },
+    {
+      "path": "backend/app/services/llm_health_analyzer.py",
+      "sha256": "d1991e7c74ce01d2c4a8642cbb83f1c33fc07c0d75cacbdadf1ce6e984b06d03"
+    },
+    {
+      "path": "backend/tests/test_daily_insights_tokenplan.py",
+      "sha256": "0fd2b0a04a9b602a2bab7803e51bbd8ed284a28048ae1e4283f295736e2f93e6"
+    },
+    {
+      "path": "backend/tests/test_environment_display.py",
+      "sha256": "84abfefe5c82a20c83ec48b3f9a97dde903de3533c09f7ceab16c717aadcd764"
+    },
+    {
+      "path": "docs/dossiers/2026-10-09-daily-insights-tokenplan.md",
+      "sha256": "4ab4dcc2e13cd0622638815ca7de0e3b793e3aa2b2e9b445167806888ab2c659"
+    },
+    {
+      "path": "docs/dossiers/2026-10-09-dashboard-completeness.md",
+      "sha256": "840db755cb545d894285eb6eef32cc4b326ba225dea4dad92f4bd2147180f860"
+    },
+    {
+      "path": "docs/dossiers/2026-10-09-environment-route.md",
+      "sha256": "ff757d10b3a4ebaf6f543e098bb9faa1f8aa23778fee98e58c420e68eb1f6a23"
+    },
+    {
+      "path": "docs/dossiers/2026-10-09-web-page-audit.md",
+      "sha256": "1ef6972eb7ea5ca7d0fb26def1b2a2d7f86aa7d4844577faf89578d69fe0f4c9"
+    },
+    {
+      "path": "docs/reviews/2026-10-09-web-page-audit-local.json",
+      "sha256": "aea099a09939e2fc0e3d70d57f4c58541a5a1b0402d9b66c1803f87a13f01e9c"
+    },
+    {
+      "path": "docs/reviews/2026-10-09-web-page-audit-online.json",
+      "sha256": "2d1c9f7c22d09e77aa438c3e15e583857990eb4a93ac8476115ecb18f45b08e6"
+    },
+    {
+      "path": "frontend/scripts/audit-navigation.cjs",
+      "sha256": "7f86ac059336228eebb4f2f8dfc6d3bf6de21fe53b73d2c236f71705f710f791"
+    },
+    {
+      "path": "frontend/src/app/activity-status/page.test.tsx",
+      "sha256": "c33969baa9e328823b19f376e470e369951c54ad380c364baa58693c51d1a552"
+    },
+    {
+      "path": "frontend/src/app/activity-status/page.tsx",
+      "sha256": "53661a027a874c3152ba3399263e588c657bb550bbadc902876dabd39b9f5701"
+    },
+    {
+      "path": "frontend/src/app/ai-insights/page.tsx",
+      "sha256": "5c78389dcee23105115e0c3e24d27a209e3f756ae7e4e1cd64a95a0a96baa07f"
+    },
+    {
+      "path": "frontend/src/app/analysis/page.test.tsx",
+      "sha256": "0341faf069c53375d9d2b63a09869dab3cc75f52e5f4d2277b4c026600b6b312"
+    },
+    {
+      "path": "frontend/src/app/analysis/page.tsx",
+      "sha256": "32a80ffbe6b75398fcb743c064430c3fd06aa549320b8abbd733b62e3c15f562"
+    },
+    {
+      "path": "frontend/src/app/daily-insights/components/AiInsightsSection.test.tsx",
+      "sha256": "1d122f95f92794b6b13229f86aa850e310621861e2251a8c0352c46294717a82"
+    },
+    {
+      "path": "frontend/src/app/daily-insights/components/AiInsightsSection.tsx",
+      "sha256": "4bc5613be531d99c81b5000d768db4fb6255e3a6c065c7b340da3554504f9f90"
+    },
+    {
+      "path": "frontend/src/app/daily-insights/page.test.tsx",
+      "sha256": "a12e09452bd29a93c4d8cc5c133ec5d8ba9139bed7947719c9d0e816eab93f24"
+    },
+    {
+      "path": "frontend/src/app/daily-insights/page.tsx",
+      "sha256": "2cd268b4487e824ce275307a44e843617b6ad58e9daf397ee4bcc261332c50a5"
+    },
+    {
+      "path": "frontend/src/app/daily-insights/types.ts",
+      "sha256": "9d544ed427bf11123ec5b5c4ac4c55ba3a8c586b91304aa8c21a963469c428eb"
+    },
+    {
+      "path": "frontend/src/app/dashboard/chartRuntime.test.ts",
+      "sha256": "af6afd551c6849821c028e613d3dde75a33e0a80bf434a65797435315cdf1295"
+    },
+    {
+      "path": "frontend/src/app/dashboard/page.test.tsx",
+      "sha256": "b7659b04b99efd3be40e67147af65f75335dd998b4bcd5e5931a20a8478ce918"
+    },
+    {
+      "path": "frontend/src/app/dashboard/page.tsx",
+      "sha256": "995a10b9e7863e401acb1495967561b46c056e79ff7b53b0eec358374866d695"
+    },
+    {
+      "path": "frontend/src/app/data-collection/page.tsx",
+      "sha256": "2cb4940b8b4da60bdb0ba95babb2e555046bae92a5313bcfcd5a877e1b64056b"
+    },
+    {
+      "path": "frontend/src/app/environment/page.test.tsx",
+      "sha256": "899846bdeb23c62151f093ad240baa3e89d2a19470594de473c2e9bbde8deefe"
+    },
+    {
+      "path": "frontend/src/app/environment/page.tsx",
+      "sha256": "2c4f692390551e43e166d2e7cfa6f142e635815d04683f83d05aece8e7c3b04a"
+    },
+    {
+      "path": "frontend/src/app/health-trends/page.test.tsx",
+      "sha256": "61751c0784e76608eb7748ce1c620500754d35c224334f1ebac2d84c7fe6ea6c"
+    },
+    {
+      "path": "frontend/src/app/health-trends/page.tsx",
+      "sha256": "d7376eadcbd4bd01372bb67bbee2c987056bae664a26dd43782a981cb6b7a696"
+    },
+    {
+      "path": "frontend/src/app/supplement-products/page.test.tsx",
+      "sha256": "255dfa7d5e40ea5f252ba0cf3bbb352531ff02b6d961f40fb838a3b530b25b8e"
+    },
+    {
+      "path": "frontend/src/app/supplement-products/page.tsx",
+      "sha256": "f50b853aa9d21ab064e9834ac1eab9028e735c410dde5bcf75b49c6a5063df94"
+    },
+    {
+      "path": "frontend/src/components/navigationRoutes.test.ts",
+      "sha256": "7f9b2930c7e09748b27df0e29806cea30396932df129222f359860b2d2e89540"
+    },
+    {
+      "path": "frontend/src/services/aiConsent.subject.test.ts",
+      "sha256": "4a19e99241d3a12ae112d24a6f6ded9768bc31c51b1224fae33842f2eac6a6ee"
+    },
+    {
+      "path": "frontend/src/services/api/client.ts",
+      "sha256": "c620f4f2bb7b8e3f24fdb267990b35494ea0097ec2565cc4ea154949fa247959"
+    },
+    {
+      "path": "frontend/src/services/api/health.ts",
+      "sha256": "cb1d7222cbc8777ff7881f4795188760b6c4e9571e03f6a52967a82fc27f39a3"
+    }
+  ],
+  "shared_dependencies": [
+    "frontend/next.config.js: existing react-is alias supplied by another session; retained, not authored here",
+    "frontend/src/app/workout/components/chartRuntime.test.ts: other session test, included in regression",
+    "docs/_generated/system-map.json: regenerated shared artifact including other-session changes; regenerate after integration"
+  ],
+  "exclude_other_session_files": [
+    "backend/app/services/agent_executor.py",
+    "backend/tests/test_agent_executor_food_vision.py",
+    "backend/tests/test_diet_spoken_fraction_correction.py",
+    "docs/dossiers/2026-10-09-photo-portion-receipt.md",
+    "docs/reviews/2026-10-09-vision-model-online-acceptance.json",
+    "docs/reviews/2026-10-09-vision-model-online-acceptance.md"
+  ],
+  "evidence": {
+    "frontend_regression": "63 passed in 15 files; /tmp/page-audit-regression-final.log",
+    "tokenplan_postgres": "92 passed; /tmp/daily-insights-tokenplan-tests.log",
+    "environment_unit": "11 passed; /tmp/environment-display-green.log",
+    "typecheck": "passed; /tmp/page-audit-type-final.log",
+    "system_map": "passed; /tmp/page-audit-system-map-final.log",
+    "independent_safety": "GO by /root/tokenplan_safety_review for Token Plan and final page audit (separate scoped reviews)"
+  },
+  "unfinished": [
+    "integration of diverged main",
+    "CI-mode integration gate",
+    "exact target SHA CI",
+    "clean-revision deployment",
+    "production Token Plan config/successful call acceptance",
+    "production route/chart/data acceptance",
+    "page audit prioritized backlog in dossier"
+  ],
+  "release_lease": "none held by this session",
+  "background_tasks": "none running; dev servers/test PostgreSQL stopped; no automation created"
+}

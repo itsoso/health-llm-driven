@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api/client';
 import { dailyHealthApi, garminAnalysisApi, basicHealthApi, healthTrendApi, healthScoreApi } from '@/services/api/health';
 import { dataCollectionApi } from '@/services/api/devices';
@@ -27,8 +27,7 @@ import { bloodPressureSaveFeedback } from '../blood-pressure/saveFeedback';
 
 function DashboardContent() {
   const router = useRouter();
-  const { user, isAuthenticated } = useAuth();
-  const queryClient = useQueryClient();
+  const { user } = useAuth();
   const userId = user?.id;
   const [days] = useState(30);
 
@@ -48,10 +47,12 @@ function DashboardContent() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // 数据健康度
-  const [dataHealth, setDataHealth] = useState<Record<string, { status: string; message: string }> | null>(null);
-  useEffect(() => {
-    api.get('/data-health/status').then(r => setDataHealth(r.data)).catch(() => {});
-  }, []);
+  const dataHealthQuery = useQuery({
+    queryKey: ['data-health', userId],
+    queryFn: () => api.get<Record<string, { status: string; message: string }>>('/data-health/status'),
+    enabled: !!userId,
+  });
+  const dataHealth = dataHealthQuery.data?.data;
 
   // 快速记录
   const [quickInput, setQuickInput] = useState('');
@@ -99,7 +100,7 @@ function DashboardContent() {
     : undefined;
 
   // 获取今天的实时数据
-  const { data: todayData, dataUpdatedAt: todayReadAt, refetch: refetchToday, isFetching: isFetchingToday } = useQuery({
+  const { data: todayData, dataUpdatedAt: todayReadAt, refetch: refetchToday, isFetching: isFetchingToday, isError: todayError } = useQuery({
     queryKey: ['garmin-today', userId, today],
     queryFn: () => dailyHealthApi.getMyGarminData(today, today),
     refetchInterval: 15 * 60 * 1000, // 每15分钟自动刷新
@@ -107,35 +108,37 @@ function DashboardContent() {
   });
 
   // 获取Garmin数据
-  const { data: garminData, refetch: refetchGarminData } = useQuery({
+  const { data: garminData, refetch: refetchGarminData, isError: garminError, isPending: garminPending } = useQuery({
     queryKey: ['garmin-data', userId, startDate, endDate],
     queryFn: () => dailyHealthApi.getMyGarminData(startDate, endDate),
     enabled: !!userId && !!today,
   });
 
   // 获取基础健康数据
-  const { data: basicHealth, refetch: refetchBasicHealth } = useQuery({
+  const { data: basicHealth, refetch: refetchBasicHealth, isError: basicHealthError } = useQuery({
     queryKey: ['basic-health', userId],
     queryFn: () => basicHealthApi.getMyLatest(),
     enabled: !!userId,
   });
 
   // 获取综合分析
-  const { data: comprehensive, refetch: refetchComprehensive } = useQuery({
+  const { data: comprehensive, refetch: refetchComprehensive, isError: comprehensiveError } = useQuery({
     queryKey: ['garmin-comprehensive', userId, 7],
     queryFn: () => garminAnalysisApi.getMyComprehensive(7),
     enabled: !!userId,
   });
 
   // 获取健康趋势数据
-  const { data: trendData } = useQuery({
+  const trendQuery = useQuery({
     queryKey: ['health-trends-latest', userId],
     queryFn: () => healthTrendApi.getLatest(),
     enabled: !!userId,
   });
 
+  const trendData = trendQuery.data;
+
   // 每日健康评分
-  const { data: healthScore } = useQuery({
+  const { data: healthScore, refetch: refetchHealthScore, isError: healthScoreError } = useQuery({
     queryKey: ['health-score-daily', userId, today],
     queryFn: () => healthScoreApi.getDailyScore(today),
     enabled: !!userId && !!today,
@@ -147,20 +150,20 @@ function DashboardContent() {
   const scoreBg = (s: number) =>
     s >= 90 ? 'from-emerald-600 to-teal-600' : s >= 75 ? 'from-green-600 to-emerald-600' : s >= 60 ? 'from-yellow-600 to-amber-600' : 'from-red-600 to-rose-600';
 
-  // 非 Garmin 用户数据：饮水/饮食/体重（当 Garmin 数据为空时展示）
-  const { data: waterToday } = useQuery({
+  // 手动记录与设备数据独立展示，不能因连接 Garmin 而隐藏。
+  const { data: waterToday, refetch: refetchWater, isError: waterError } = useQuery({
     queryKey: ['water-today', userId, today],
-    queryFn: () => api.get(`/water/records/me/daily-summary?date=${today}`),
+    queryFn: () => api.get<{ total_amount: number; target_amount: number }>(`/water/records/me/date/${today}`),
     enabled: !!userId && !!today,
   });
-  const { data: dietToday } = useQuery({
+  const { data: dietToday, refetch: refetchDiet, isError: dietError } = useQuery({
     queryKey: ['diet-today', userId, today],
-    queryFn: () => api.get(`/diet/records/me/date/${today}`),
+    queryFn: () => api.get<{ meals_count: number; total_calories: number }>(`/diet/records/me/date/${today}`),
     enabled: !!userId && !!today,
   });
-  const { data: weightLatest } = useQuery({
+  const { data: weightLatest, refetch: refetchWeight, isError: weightError } = useQuery({
     queryKey: ['weight-latest', userId],
-    queryFn: () => api.get('/weight/records/me?limit=1'),
+    queryFn: () => api.get<Array<{ weight: number; record_date: string }>>('/weight/records/me?limit=1'),
     enabled: !!userId,
   });
 
@@ -176,22 +179,31 @@ function DashboardContent() {
         try {
           await dataCollectionApi.syncGarmin(userId, today);
           console.log('Garmin 同步已触发');
-        } catch (syncError) {
-          console.warn('Garmin 同步失败:', syncError);
-          // 同步失败不影响数据刷新
+        } catch {
+          setRefreshError('Garmin 同步失败，已继续刷新现有记录');
         }
       }
 
       // 2. 等待 2 秒让同步有时间完成
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // 3. 使所有相关查询失效并重新获取
-      await Promise.all([
+      // 3. 重新获取所有仪表盘数据
+      const results = await Promise.all([
         refetchToday(),
         refetchGarminData(),
         refetchBasicHealth(),
         refetchComprehensive(),
+        refetchWater(),
+        refetchDiet(),
+        refetchWeight(),
+        trendQuery.refetch(),
+        refetchHealthScore(),
+        dataHealthQuery.refetch(),
       ]);
+      // React Query refetch 默认返回错误状态，不会抛异常。
+      if (results.some(result => result.isError)) {
+        setRefreshError('部分数据刷新失败，已保留上次成功读取的数据，请重试');
+      }
     } catch (error) {
       console.error('刷新数据失败:', error);
       setRefreshError('刷新数据失败，请稍后重试');
@@ -318,7 +330,7 @@ function DashboardContent() {
             {isRefreshing ? (
               <>
                 <span className="text-xl animate-spin">🔄</span>
-                <span className="font-semibold">正在同步 Garmin 数据...</span>
+                <span className="font-semibold">正在刷新健康数据...</span>
               </>
             ) : pullDistance > 60 ? (
               <>
@@ -400,7 +412,7 @@ function DashboardContent() {
             </div>
           )}
 
-          {todayRecord ? (
+          {todayRecord && (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
                 <div className="flex items-center gap-2 mb-2">
@@ -408,7 +420,7 @@ function DashboardContent() {
                   <p className="text-sm font-medium text-indigo-100">睡眠分数</p>
                 </div>
                 <p className="text-3xl font-bold">
-                  {todayRecord.sleep_score || '-'}
+                  {todayRecord.sleep_score ?? '-'}
                 </p>
               </div>
 
@@ -428,7 +440,7 @@ function DashboardContent() {
                   <p className="text-sm font-medium text-indigo-100">静息心率</p>
                 </div>
                 <p className="text-3xl font-bold">
-                  {todayRecord.resting_heart_rate || '-'}
+                  {todayRecord.resting_heart_rate ?? '-'}
                   {todayRecord.resting_heart_rate && <span className="text-lg ml-1">bpm</span>}
                 </p>
               </div>
@@ -489,7 +501,7 @@ function DashboardContent() {
                   <p className="text-sm font-medium text-indigo-100">HRV</p>
                 </div>
                 <p className="text-3xl font-bold">
-                  {todayRecord.hrv || '-'}
+                  {todayRecord.hrv ?? '-'}
                   {todayRecord.hrv && <span className="text-lg ml-1">ms</span>}
                 </p>
               </div>
@@ -500,23 +512,24 @@ function DashboardContent() {
                   <p className="text-sm font-medium text-indigo-100">压力水平</p>
                 </div>
                 <p className="text-3xl font-bold">
-                  {todayRecord.stress_level || '-'}
+                  {todayRecord.stress_level ?? '-'}
                 </p>
               </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {/* 没有 Garmin 数据时展示手动记录的数据 */}
+          )}
+          <div className={`grid grid-cols-2 ${todayRecord ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-4 mt-4`}>
               <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-2xl">💧</span>
                   <p className="text-sm font-medium text-indigo-100">今日饮水</p>
                 </div>
                 <p className="text-3xl font-bold">
-                  {waterToday?.data?.total_amount || 0}
+                  {waterToday?.data?.total_amount ?? '-'}
                   <span className="text-lg ml-1">ml</span>
                 </p>
-                <p className="text-xs text-indigo-200 mt-1">目标 {waterToday?.data?.target_amount || 2000}ml</p>
+                <p className="text-xs text-indigo-200 mt-1">
+                  {waterError ? '饮水数据加载失败' : waterToday?.data ? `目标 ${waterToday.data.target_amount}ml` : '正在读取饮水数据...'}
+                </p>
               </div>
 
               <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
@@ -525,13 +538,13 @@ function DashboardContent() {
                   <p className="text-sm font-medium text-indigo-100">今日饮食</p>
                 </div>
                 <p className="text-3xl font-bold">
-                  {Array.isArray(dietToday?.data) ? dietToday.data.length : 0}
+                  {dietToday?.data?.meals_count ?? '-'}
                   <span className="text-lg ml-1">餐</span>
                 </p>
                 <p className="text-xs text-indigo-200 mt-1">
-                  {Array.isArray(dietToday?.data) && dietToday.data.length > 0
-                    ? `${dietToday.data.reduce((s: number, d: any) => s + (d.calories || 0), 0).toFixed(0)} kcal`
-                    : '暂无记录'}
+                  {dietError ? '饮食数据加载失败' : dietToday?.data
+                    ? `${dietToday.data.total_calories} kcal`
+                    : '正在读取饮食数据...'}
                 </p>
               </div>
 
@@ -546,24 +559,29 @@ function DashboardContent() {
                   return (
                     <>
                       <p className="text-3xl font-bold">
-                        {latest?.weight || '-'}
+                        {latest?.weight ?? '-'}
                         {latest?.weight && <span className="text-lg ml-1">kg</span>}
                       </p>
-                      <p className="text-xs text-indigo-200 mt-1">{latest?.record_date || '暂无记录'}</p>
+                      <p className="text-xs text-indigo-200 mt-1">{weightError ? '体重数据加载失败' : latest?.record_date || (weightLatest ? '暂无记录' : '正在读取体重数据...')}</p>
                     </>
                   );
                 })()}
               </div>
 
-              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20 flex flex-col items-center justify-center cursor-pointer hover:bg-white/20 transition"
+              {!todayRecord && <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20 flex flex-col items-center justify-center cursor-pointer hover:bg-white/20 transition"
                 onClick={() => router.push('/settings#garmin')}>
                 <span className="text-3xl mb-2">⌚</span>
                 <p className="text-sm font-medium text-indigo-100">连接智能手表</p>
                 <p className="text-xs text-indigo-200 mt-1">解锁更多健康数据</p>
-              </div>
+              </div>}
             </div>
-          )}
         </div>
+
+        {(todayError || garminError || basicHealthError || comprehensiveError || healthScoreError || dataHealthQuery.isError) && (
+          <p role="alert" className="mb-4 rounded-lg bg-amber-50 p-3 text-amber-900">
+            部分健康数据加载失败，请点击手动刷新重试。缺失数据不代表没有记录。
+          </p>
+        )}
 
         {/* 数据健康度状态条 */}
         {dataHealth && (
@@ -757,12 +775,14 @@ function DashboardContent() {
         </div>
 
         {/* 健康趋势卡片 */}
-        {(trendData?.data?.dimensions?.length ?? 0) > 0 && (
-          <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+        <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-semibold text-gray-800">健康趋势</h3>
               <a href="/health-trends" className="text-sm text-blue-500">查看详情 →</a>
             </div>
+            {trendQuery.isError && <p role="alert">健康趋势加载失败，请重试</p>}
+            {trendQuery.isPending && <p>正在读取健康趋势...</p>}
+            {trendQuery.isSuccess && !trendData?.data?.dimensions?.length && <p className="text-sm text-gray-500">暂无趋势报告</p>}
             <div className="grid grid-cols-2 gap-2">
               {trendData?.data?.dimensions?.map((dim: any) => {
                 const icons: Record<string, string> = { weight: '⚖️', sleep: '😴', exercise: '🏃', overall: '💚' };
@@ -773,8 +793,8 @@ function DashboardContent() {
                   <div key={dim.dimension} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50">
                     <span>{icons[dim.dimension] || '📊'}</span>
                     <span className="text-sm text-gray-700">{labels[dim.dimension] || dim.dimension}</span>
-                    <span className={`ml-auto font-medium ${trendColors[dim.trend_direction || 'stable']}`}>
-                      {trendIcons[dim.trend_direction || 'stable']}
+                    <span className={`ml-auto font-medium ${trendColors[dim.trend_direction] || 'text-gray-500'}`}>
+                      {trendIcons[dim.trend_direction] || '暂无判断'}
                     </span>
                   </div>
                 );
@@ -783,8 +803,7 @@ function DashboardContent() {
             {trendData?.data?.dimensions?.[0]?.insights?.[0] && (
               <p className="text-xs text-gray-500 mt-2">{trendData?.data?.dimensions?.[0]?.insights?.[0]}</p>
             )}
-          </div>
-        )}
+        </div>
 
         {/* 基础健康数据 */}
         {basicHealth?.data && (
@@ -817,15 +836,21 @@ function DashboardContent() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
             <h2 className="text-2xl font-bold mb-6 text-gray-900">睡眠分数趋势</h2>
+            {garminPending && <p>正在读取趋势数据...</p>}
+            {garminError && <p role="alert">趋势数据加载失败，请重试</p>}
+            {!garminPending && !garminError && !chartData.length && <p>最近14天暂无设备数据</p>}
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                {/* React 19 JSX omits function defaultProps; Recharts 2 needs these axis settings. */}
                 <XAxis
+                  {...XAxis.defaultProps}
                   dataKey="date"
                   stroke="#6b7280"
                   style={{ fontSize: '12px', fontWeight: 500 }}
                 />
                 <YAxis
+                  {...YAxis.defaultProps}
                   domain={[0, 100]}
                   stroke="#6b7280"
                   style={{ fontSize: '12px', fontWeight: 500 }}
@@ -843,6 +868,8 @@ function DashboardContent() {
                   wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
                 />
                 <Line
+                  xAxisId={0}
+                  yAxisId={0}
                   type="monotone"
                   dataKey="sleep"
                   stroke="#6366f1"
@@ -856,15 +883,20 @@ function DashboardContent() {
 
           <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
             <h2 className="text-2xl font-bold mb-6 text-gray-900">步数趋势</h2>
+            {garminPending && <p>正在读取趋势数据...</p>}
+            {garminError && <p role="alert">趋势数据加载失败，请重试</p>}
+            {!garminPending && !garminError && !chartData.length && <p>最近14天暂无设备数据</p>}
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis
+                  {...XAxis.defaultProps}
                   dataKey="date"
                   stroke="#6b7280"
                   style={{ fontSize: '12px', fontWeight: 500 }}
                 />
                 <YAxis
+                  {...YAxis.defaultProps}
                   stroke="#6b7280"
                   style={{ fontSize: '12px', fontWeight: 500 }}
                 />
@@ -881,6 +913,8 @@ function DashboardContent() {
                   wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
                 />
                 <Bar
+                  xAxisId={0}
+                  yAxisId={0}
                   dataKey="steps"
                   fill="#10b981"
                   name="步数"

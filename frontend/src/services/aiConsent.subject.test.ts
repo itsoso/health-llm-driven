@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { agentApi } from './api/ai';
+import { healthAnalysisApi } from './api/health';
 import { fetchWithAiSubject, registerAiConsentPresenter, requireAiConsent, setAiConsentUser } from './aiConsent';
 import api from './api/client';
 
@@ -89,4 +90,61 @@ it('rejects a server receipt for a different subject instead of treating it as a
     data_types: ['输入'], purpose: '响应请求',
   }));
   await expect(requireAiConsent()).rejects.toThrow('授权状态尚未确认');
+});
+
+it('does not overwrite an explicit A permit on an Axios read after switching to B', async () => {
+  const headers = await requireAiConsent();
+  setAiConsentUser(202); cookieSubject = 202;
+  let sentSubject: unknown;
+  await expect(api.get('/analysis/me/issues', {
+    headers,
+    adapter: async config => {
+      sentSubject = config.headers.get('X-Reva-AI-Subject');
+      if (sentSubject !== String(cookieSubject)) {
+        throw { response: { status: 409, data: { detail: { code: 'auth_session_changed' } } } };
+      }
+      dispatches.push(cookieSubject);
+      return { config, data: {}, status: 200, statusText: 'OK', headers: {} };
+    },
+  })).rejects.toThrow('账号已变化');
+  expect(sentSubject).toBe('101');
+  expect(dispatches).toEqual([]);
+});
+
+it('rejects an explicit A Axios AI permit before dispatch when the current in-memory user is B', async () => {
+  const headers = await requireAiConsent();
+  setAiConsentUser(202); cookieSubject = 202;
+  let adapterCalls = 0;
+  await expect(api.post('/chat/transcribe', { audio_base64: 'synthetic' }, {
+    headers,
+    adapter: async config => {
+      adapterCalls += 1;
+      return { config, data: {}, status: 200, statusText: 'OK', headers: {} };
+    },
+  })).rejects.toThrow('账号已变化');
+  expect(adapterCalls).toBe(0);
+});
+
+
+it('keeps the analysis page subject when accounts switch before the Axios interceptor runs', async () => {
+  const originalAdapter = api.defaults.adapter;
+  let sentSubject: unknown;
+  api.defaults.adapter = async config => {
+    sentSubject = config.headers.get('X-Reva-AI-Subject');
+    expect(config.params.force_refresh).toBe(true);
+    if (sentSubject !== String(cookieSubject)) {
+      throw { response: { status: 409, data: { detail: { code: 'auth_session_changed' } } } };
+    }
+    dispatches.push(cookieSubject);
+    return { config, data: {}, status: 200, statusText: 'OK', headers: {} };
+  };
+  try {
+    const pending = healthAnalysisApi.analyzeMyIssues(true, 101);
+    setAiConsentUser(202); cookieSubject = 202;
+    await expect(pending).rejects.toThrow('账号已变化');
+    expect(sentSubject).toBe('101');
+    expect(dispatches).toEqual([]);
+  } finally {
+    api.defaults.adapter = originalAdapter;
+  }
 });

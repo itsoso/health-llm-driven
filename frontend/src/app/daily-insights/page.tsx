@@ -67,7 +67,7 @@ function DailyInsightsContent() {
 
   // 获取建议数据（1天和7天）
   const { data: recommendationsData, isLoading, error, refetch } = useQuery({
-    queryKey: ['daily-recommendations'],
+    queryKey: ['daily-recommendations', user?.id],
     queryFn: () => dailyRecommendationApi.getMyRecommendations(true),
     enabled: isAuthenticated,
   });
@@ -106,8 +106,9 @@ function DailyInsightsContent() {
 
   // 刷新建议（清除缓存并重新生成）
   const refreshMutation = useMutation({
-    mutationFn: async () => {
-      const aiHeaders = await requireAiConsent();
+    mutationFn: async (subjectId: number | undefined) => {
+      if (!subjectId) throw new Error('请先登录');
+      const aiHeaders = await requireAiConsent(String(subjectId));
       const res = await fetch(`${API_BASE}/daily-recommendation/me/refresh?use_llm=true`, {
         method: 'POST',
         headers: {
@@ -121,12 +122,19 @@ function DailyInsightsContent() {
       }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['daily-recommendations'] });
-      setRefreshMessage({ type: 'success', text: '✓ 建议已刷新' });
+    onSuccess: (result, subjectId) => {
+      if (user?.id !== subjectId) return;
+      queryClient.setQueryData(['daily-recommendations', subjectId], { data: result });
+      const analysisFailed = [result.one_day, result.seven_day].some(
+        (period) => period?.llm_analysis?.available === false || period?.llm_analysis?.error,
+      );
+      setRefreshMessage(analysisFailed
+        ? { type: 'error', text: 'Token Plan 分析暂不可用，请稍后重试' }
+        : { type: 'success', text: '✓ 建议已刷新' });
       setTimeout(() => setRefreshMessage(null), 3000);
     },
-    onError: (error: Error) => {
+    onError: (error: Error, subjectId) => {
+      if (user?.id !== subjectId) return;
       setRefreshMessage({ type: 'error', text: `✗ ${error.message}` });
       setTimeout(() => setRefreshMessage(null), 5000);
     },
@@ -295,7 +303,7 @@ function DailyInsightsContent() {
                 </span>
               )}
               <button
-                onClick={() => refreshMutation.mutate()}
+                onClick={() => refreshMutation.mutate(user?.id)}
                 disabled={refreshMutation.isPending}
                 className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 disabled:opacity-50 transition-colors text-sm font-medium flex items-center gap-1"
                 title="清除缓存并重新生成建议"
@@ -339,7 +347,7 @@ function DailyInsightsContent() {
                   {currentData?.ai_insights ? (
                     <span className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded">✓ AI增强</span>
                   ) : currentData?.llm_analysis?.available === false ? (
-                    <span className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded">AI未启用</span>
+                    <span className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded">Token Plan 分析暂不可用</span>
                   ) : null}
                 </div>
               </div>

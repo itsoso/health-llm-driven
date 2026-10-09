@@ -17,6 +17,7 @@ from app.models.user_profile import UserProfile
 from app.api.deps import get_current_user_required
 from app.services.environment import weather_service, air_quality_service, environment_advisor
 from app.services.location_resolver import resolve_effective_location
+from app.utils.number_format import format_card_numbers
 
 router = APIRouter(prefix="/environment", tags=["environment"])
 logger = logging.getLogger(__name__)
@@ -64,7 +65,9 @@ async def get_weather(
     exercise_advice = weather_service.get_exercise_advice(weather)
 
     return {
-        "weather": weather,
+        "weather": {**weather, "display": format_card_numbers({
+            key: weather.get(key) for key in ("temperature", "feels_like", "humidity", "wind_speed")
+        })},
         "exercise_advice": exercise_advice
     }
 
@@ -114,7 +117,9 @@ async def get_air_quality(
     if not aqi.get("available"):
         # 回退到 AQICN / Open-Meteo
         aqi = await air_quality_service.get_air_quality(city, lat, lon)
-    return aqi
+    return {**aqi, "display": format_card_numbers({
+        key: aqi.get(key) for key in ("aqi", "pm25", "pm10")
+    })}
 
 
 @router.get("/advice", summary="获取综合环境健康建议")

@@ -307,3 +307,10 @@ def create_provider_for_user(user_id: int, db, task_tier: str | None = None) -> 
         from fastapi import HTTPException
         raise HTTPException(status_code=403, detail={"code": "ai_recipient_not_disclosed", "message": "系统默认 AI 服务尚未完成数据使用披露，暂不可用"})
     return provider
+
+
+def create_tokenplan_provider() -> LLMProvider:
+    """Fixed vendor route: keep quotas/PII guards, disable cross-provider recovery."""
+    from app.services.llm.usage_tracker import wrap_provider
+    from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+    return wrap_provider_pii_scrub(wrap_provider(create_llm_provider("tokenplan"), allow_recovery=False))

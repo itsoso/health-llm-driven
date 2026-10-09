@@ -6,6 +6,16 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  // App Router uses Next's bundled React. Recharts 2's react-is 16 cannot
+  // recognize its React 19 elements and silently omits the chart children.
+  turbopack: {
+    resolveAlias: { 'react-is': 'next/dist/compiled/react-is' },
+  },
+  webpack(config) {
+    config.resolve.alias['react-is'] = require.resolve('next/dist/compiled/react-is');
+    return config;
+  },
+
   // 跳过 Server Actions 的 origin 校验（反向代理场景下 origin header 可能缺失）
   experimental: {
     serverActions: {

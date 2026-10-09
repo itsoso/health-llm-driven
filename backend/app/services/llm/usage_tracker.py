@@ -926,7 +926,7 @@ def record_usage(
         logger.warning(f"[LLM Usage] 写日志失败 (旁路, 不影响业务): {e}")
 
 
-def wrap_provider(provider):
+def wrap_provider(provider, *, allow_recovery=True):
     """
     把 LLMProvider 实例的 chat() 包一层 usage 追踪.
     返回原 provider (就地修改 chat 方法).
@@ -975,7 +975,7 @@ def wrap_provider(provider):
                 or getattr(provider, "default_model", None)
                 or "unknown"
             )
-            if _recovery_depth_ctx.get() <= 0:
+            if allow_recovery and _recovery_depth_ctx.get() <= 0:
                 from app.config import settings
                 from app.services.llm.recovery import (
                     diagnose_llm_error,

@@ -111,6 +111,8 @@ export interface DailyRecommendation {
   };
   exercise_recommendations?: ExerciseRecommendation[];
   llm_analysis?: {
+    provider?: string;
+    model?: string;
     available: boolean;
     error?: string;
     environment_advice?: string;

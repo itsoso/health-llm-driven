@@ -6,7 +6,7 @@ from typing import Optional
 from app.config import settings
 from app.database import get_db
 from app.services.daily_recommendation import DailyRecommendationService
-from app.services.llm_health_analyzer import llm_analyzer
+from app.services.daily_insights_analyzer import TokenPlanHealthAnalyzer, recommendations_cache_matches
 from app.models.user import User
 from app.models.daily_recommendation import DailyRecommendation
 from app.api.deps import get_current_user_required, require_self_or_admin
@@ -135,7 +135,7 @@ async def get_my_recommendations(
 
     # 1. 尝试从 Redis 获取缓存
     cached_result = get_cached_daily_recommendation(current_user.id, date_str)
-    if cached_result:
+    if recommendations_cache_matches(cached_result, use_llm):
         logger.info(f"✅ Redis 缓存命中：用户 {current_user.id} 日期 {date_str}")
         cached_result["cached"] = True
         cached_result["cache_source"] = "redis"
@@ -153,7 +153,7 @@ async def get_my_recommendations(
             for _ in range(30):  # 最多等 30s
                 await asyncio.sleep(1)
                 cached_result = get_cached_daily_recommendation(current_user.id, date_str)
-                if cached_result:
+                if recommendations_cache_matches(cached_result, use_llm):
                     cached_result["cached"] = True
                     cached_result["cache_source"] = "redis"
                     return cached_result
@@ -468,9 +468,12 @@ def get_llm_status():
     """
     检查大模型服务状态
     """
+    analyzer = TokenPlanHealthAnalyzer()
     return {
-        "available": llm_analyzer.is_available(),
-        "message": "LLM服务可用" if llm_analyzer.is_available() else "LLM服务不可用，请配置 LLM Provider"
+        "available": analyzer.is_available(),
+        "provider": "tokenplan",
+        "model": analyzer.model,
+        "message": "Token Plan 服务可用" if analyzer.is_available() else "Token Plan 服务不可用，请检查配置"
     }
 
 

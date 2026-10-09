@@ -16,7 +16,12 @@ export const api = axios.create({
 
 api.interceptors.request.use(async config => {
   const captured = aiSessionHeaders();
-  const headers = isAiRequest(config.url, config.method) ? await requireAiConsent() : captured;
+  // Preserve a caller's verified subject across the asynchronous dispatch boundary.
+  const expectedSubject = config.headers.get('X-Reva-AI-Subject') ?? captured['X-Reva-AI-Subject'];
+  const subject = expectedSubject == null ? undefined : String(expectedSubject);
+  const headers = isAiRequest(config.url, config.method)
+    ? await requireAiConsent(subject)
+    : subject ? { 'X-Reva-AI-Subject': subject } : captured;
   if (headers['X-Reva-AI-Subject']) config.headers.set('X-Reva-AI-Subject', headers['X-Reva-AI-Subject']);
   return config;
 });

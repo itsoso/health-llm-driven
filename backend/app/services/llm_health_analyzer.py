@@ -849,14 +849,13 @@ class LLMHealthAnalyzer:
             return llm_result
 
         except json.JSONDecodeError as e:
-            logger.error(f"LLM返回结果解析失败: {e}")
+            logger.error("LLM返回结果解析失败 error_type=%s", type(e).__name__)
             return {
-                "available": True,
-                "error": "分析结果解析失败",
-                "raw_response": content if 'content' in locals() else None
+                "available": False,
+                "error": "分析结果解析失败"
             }
         except Exception as e:
-            logger.error(f"LLM分析失败: {e}")
+            logger.error("LLM分析失败 error_type=%s", type(e).__name__)
             return {
                 "available": False,
                 "error": str(e)

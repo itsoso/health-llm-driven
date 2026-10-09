@@ -174,8 +174,11 @@ export const healthAnalysisApi = {
   getAdvice: (userId: number, checkinDate: string) =>
     api.get(`/analysis/user/${userId}/advice`, { params: { checkin_date: checkinDate } }),
   // 使用 /me 端点
-  analyzeMyIssues: (forceRefresh: boolean = false) =>
-    api.get('/analysis/me/issues', { params: { force_refresh: forceRefresh } }),
+  analyzeMyIssues: (forceRefresh: boolean = false, expectedSubject?: number) =>
+    api.get('/analysis/me/issues', {
+      params: { force_refresh: forceRefresh },
+      headers: expectedSubject === undefined ? undefined : { 'X-Reva-AI-Subject': String(expectedSubject) },
+    }),
   getMyAdvice: (checkinDate: string) =>
     api.get('/analysis/me/advice', { params: { checkin_date: checkinDate } }),
 };

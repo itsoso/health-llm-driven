@@ -1,0 +1,359 @@
+{
+  "checkedAt": "2026-10-09T15:08:31.723Z",
+  "baseUrl": "https://health.executor.life",
+  "scope": "anonymous HTTP route availability; authenticated data and interactions not verified",
+  "routesChecked": 50,
+  "problemCount": 5,
+  "results": [
+    {
+      "path": "/",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/",
+      "redirects": []
+    },
+    {
+      "path": "/activity-status",
+      "status": 404,
+      "notFound": true,
+      "finalPath": "/activity-status",
+      "redirects": []
+    },
+    {
+      "path": "/admin",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/admin",
+      "redirects": []
+    },
+    {
+      "path": "/admin/applications",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/admin/applications",
+      "redirects": []
+    },
+    {
+      "path": "/agenda",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/agenda",
+      "redirects": []
+    },
+    {
+      "path": "/ai-assistant",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/ai-assistant",
+      "redirects": []
+    },
+    {
+      "path": "/ai-insights",
+      "status": 404,
+      "notFound": true,
+      "finalPath": "/ai-insights",
+      "redirects": []
+    },
+    {
+      "path": "/analysis",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/analysis",
+      "redirects": []
+    },
+    {
+      "path": "/blood-pressure",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/blood-pressure",
+      "redirects": []
+    },
+    {
+      "path": "/body-composition",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/body-composition",
+      "redirects": []
+    },
+    {
+      "path": "/checkin",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/checkin",
+      "redirects": []
+    },
+    {
+      "path": "/daily-insights",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/daily-insights",
+      "redirects": []
+    },
+    {
+      "path": "/dashboard",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/dashboard",
+      "redirects": []
+    },
+    {
+      "path": "/data-collection",
+      "status": 404,
+      "notFound": true,
+      "finalPath": "/data-collection",
+      "redirects": []
+    },
+    {
+      "path": "/data-connections",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/data-connections",
+      "redirects": []
+    },
+    {
+      "path": "/diet",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/diet",
+      "redirects": []
+    },
+    {
+      "path": "/diet-recommendation",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/diet-recommendation",
+      "redirects": []
+    },
+    {
+      "path": "/disease",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/disease",
+      "redirects": []
+    },
+    {
+      "path": "/environment",
+      "status": 404,
+      "notFound": true,
+      "finalPath": "/environment",
+      "redirects": []
+    },
+    {
+      "path": "/excretion",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/excretion",
+      "redirects": []
+    },
+    {
+      "path": "/family",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/family",
+      "redirects": []
+    },
+    {
+      "path": "/genetic",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/genetic",
+      "redirects": []
+    },
+    {
+      "path": "/goals",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/goals",
+      "redirects": []
+    },
+    {
+      "path": "/health-extras",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/health-extras",
+      "redirects": []
+    },
+    {
+      "path": "/health-report",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/health-report",
+      "redirects": []
+    },
+    {
+      "path": "/health-score",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/health-score",
+      "redirects": []
+    },
+    {
+      "path": "/heart-rate",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/heart-rate",
+      "redirects": []
+    },
+    {
+      "path": "/illness",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/illness",
+      "redirects": []
+    },
+    {
+      "path": "/liver",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/liver",
+      "redirects": []
+    },
+    {
+      "path": "/login",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/login",
+      "redirects": []
+    },
+    {
+      "path": "/medical-exams",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/medical-exams",
+      "redirects": []
+    },
+    {
+      "path": "/medication",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/medication",
+      "redirects": []
+    },
+    {
+      "path": "/mood",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/mood",
+      "redirects": []
+    },
+    {
+      "path": "/prescriptions",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/prescriptions",
+      "redirects": []
+    },
+    {
+      "path": "/profile",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/profile",
+      "redirects": []
+    },
+    {
+      "path": "/register",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/register",
+      "redirects": []
+    },
+    {
+      "path": "/review",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/review",
+      "redirects": []
+    },
+    {
+      "path": "/rhinitis",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/rhinitis",
+      "redirects": []
+    },
+    {
+      "path": "/settings",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/settings",
+      "redirects": []
+    },
+    {
+      "path": "/skills",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/skills",
+      "redirects": []
+    },
+    {
+      "path": "/sleep",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/sleep",
+      "redirects": []
+    },
+    {
+      "path": "/smart-plan",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/smart-plan",
+      "redirects": []
+    },
+    {
+      "path": "/supplement-products",
+      "status": 404,
+      "notFound": true,
+      "finalPath": "/supplement-products",
+      "redirects": []
+    },
+    {
+      "path": "/supplement-recommendation",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/supplement-recommendation",
+      "redirects": []
+    },
+    {
+      "path": "/supplements",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/supplements",
+      "redirects": []
+    },
+    {
+      "path": "/water",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/water",
+      "redirects": []
+    },
+    {
+      "path": "/weight",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/weight",
+      "redirects": []
+    },
+    {
+      "path": "/womens-health",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/womens-health",
+      "redirects": []
+    },
+    {
+      "path": "/workout",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/workout",
+      "redirects": []
+    },
+    {
+      "path": "/workout-guidance",
+      "status": 200,
+      "notFound": false,
+      "finalPath": "/workout-guidance",
+      "redirects": []
+    }
+  ]
+}

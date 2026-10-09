@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { requireAiConsent } from '@/services/aiConsent';
 import { healthAnalysisApi } from '@/services/api/health';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -9,21 +9,23 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 function AnalysisContent() {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
-  const [forceRefresh, setForceRefresh] = useState(false);
-
-  const { data: response, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['health-analysis', forceRefresh],
-    queryFn: () => healthAnalysisApi.analyzeMyIssues(forceRefresh),
-    enabled: isAuthenticated,
+  const queryClient = useQueryClient();
+  const { data: response, isLoading, refetch, isFetching, isError } = useQuery({
+    queryKey: ['health-analysis', userId],
+    queryFn: () => healthAnalysisApi.analyzeMyIssues(false, userId),
+    enabled: isAuthenticated && !!userId,
   });
-
-  // 实际数据在 response.data 中
   const analysis = response?.data;
-
-  const handleRefresh = () => {
-    setForceRefresh(true);
-    refetch().then(() => setForceRefresh(false));
-  };
+  const refresh = useMutation({
+    mutationFn: async (subjectId: number) => {
+      await requireAiConsent(String(subjectId));
+      return healthAnalysisApi.analyzeMyIssues(true, subjectId);
+    },
+    onSuccess: (result, subjectId) => {
+      if (userId === subjectId) queryClient.setQueryData(['health-analysis', subjectId], result);
+    },
+  });
+  const handleRefresh = () => { if (userId) refresh.mutate(userId); };
 
   if (isLoading) {
     return (
@@ -39,9 +41,20 @@ function AnalysisContent() {
     );
   }
 
+  if (isError) {
+    return <main className="min-h-screen bg-gray-50 p-8">
+      <h1 className="text-2xl font-bold mb-4">健康分析</h1>
+      <div role="alert" className="rounded-xl bg-red-50 p-5 text-red-800">
+        健康分析加载失败，请重试。<button onClick={() => refetch()} className="ml-3 underline">重新加载</button>
+      </div>
+    </main>;
+  }
+
   return (
     <main className="min-h-screen p-8 bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <div className="max-w-4xl mx-auto">
+        <h1 className="text-2xl font-bold mb-6">健康分析</h1>
+        {refresh.isError && <div role="alert" className="mb-4 bg-red-50 text-red-800 p-4 rounded-xl">重新分析失败，当前显示上次结果，请稍后重试。</div>}
         <div className="flex justify-between items-center mb-6">
           <div>
             {analysis?.cached && (
@@ -52,10 +65,10 @@ function AnalysisContent() {
           </div>
           <button
             onClick={handleRefresh}
-            disabled={isFetching}
+            disabled={isFetching || refresh.isPending}
             className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md"
           >
-            {isFetching && (
+            {(isFetching || refresh.isPending) && (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
             )}
             重新分析
@@ -105,9 +118,9 @@ function AnalysisContent() {
 
         {!analysis?.issues?.length && !analysis?.recommendations?.length && !analysis?.summary && !analysis?.error && (
           <div className="bg-white p-8 rounded-xl shadow-lg text-center border border-gray-200">
-            <div className="text-6xl mb-4">🎉</div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">暂无健康问题</h2>
-            <p className="text-gray-800 text-lg leading-7">根据当前数据，未发现明显的健康问题。请继续保持良好的生活习惯！</p>
+            <div className="text-6xl mb-4">📋</div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">暂无可用分析</h2>
+            <p className="text-gray-800 text-lg leading-7">请确认已有健康记录，或点击重新分析获取结果。</p>
           </div>
         )}
       </div>

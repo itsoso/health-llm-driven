@@ -7,21 +7,13 @@ from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.basic_health import BasicHealthData
 from app.models.daily_recommendation import DailyRecommendation
-from app.services.llm_health_analyzer import llm_analyzer
+from app.services.daily_insights_analyzer import TokenPlanHealthAnalyzer, analysis_route, recommendations_cache_matches
 from app.utils.timezone import get_china_today, get_china_now
 import logging
 import json
 import asyncio
 
 logger = logging.getLogger(__name__)
-
-# 尝试导入 RAG Pipeline
-try:
-    from app.services.knowledge.rag_pipeline import rag_pipeline
-    RAG_AVAILABLE = True
-except ImportError:
-    RAG_AVAILABLE = False
-    logger.warning("RAG Pipeline 未导入，知识库增强功能将不可用")
 
 # 尝试导入环境服务 (直接从子模块导入，避免 app.services 包的循环依赖)
 try:
@@ -40,6 +32,13 @@ class DailyRecommendationService:
     基于前一天的Garmin数据（睡眠、运动、心率等），
     生成今天的个性化健康建议
     """
+
+    @property
+    def analyzer(self):
+        # Only initialize on model-backed requests, never choose the global route.
+        if not hasattr(self, "_analyzer"):
+            self._analyzer = TokenPlanHealthAnalyzer()
+        return self._analyzer
 
     async def get_environment_data(
         self,
@@ -671,7 +670,7 @@ class DailyRecommendationService:
             # 如果睡眠和运动数据来自不同日期，需要在提示词中明确说明
             logger.info(f"睡眠数据日期: {sleep_data.record_date if sleep_data else 'N/A'}, 运动数据日期: {activity_data.record_date if activity_data else 'N/A'}")
 
-        llm_result = await llm_analyzer.analyze_daily_health(
+        llm_result = await self.analyzer.analyze_daily_health(
             db=db,
             user_id=user_id,
             yesterday_data=combined_data,
@@ -749,39 +748,9 @@ class DailyRecommendationService:
             if llm_result.get("exercise_recommendations"):
                 rule_result["exercise_recommendations"] = llm_result.get("exercise_recommendations")
 
-        # RAG 知识库增强（如果可用）
-        if RAG_AVAILABLE and rag_pipeline.is_available():
-            try:
-                # 构建用户上下文
-                user_context = llm_analyzer._build_user_context(db, user_id)
-
-                # 获取知识库增强建议
-                rag_result = rag_pipeline.enhance_daily_advice(
-                    rule_analysis=rule_analysis,
-                    user_context=user_context,
-                    health_data={
-                        "sleep_score": yesterday_data.sleep_score if yesterday_data else None,
-                        "steps": yesterday_data.steps if yesterday_data else None,
-                        "resting_heart_rate": yesterday_data.resting_heart_rate if yesterday_data else None,
-                        "stress_level": yesterday_data.stress_level if yesterday_data else None,
-                        "body_battery": yesterday_data.body_battery_most_charged if yesterday_data else None
-                    }
-                )
-
-                if rag_result.get("enhanced"):
-                    rule_result["knowledge_enhanced"] = True
-                    rule_result["knowledge_tips"] = rag_result.get("enhanced_tips", [])
-                    rule_result["knowledge_highlights"] = rag_result.get("knowledge_highlights", [])
-                    rule_result["personalized_focus"] = rag_result.get("personalized_focus")
-                    logger.info(f"RAG 知识库增强成功，使用了 {rag_result.get('knowledge_sources', 0)} 条知识")
-                else:
-                    rule_result["knowledge_enhanced"] = False
-
-            except Exception as e:
-                logger.error(f"RAG 知识库增强失败: {e}")
-                rule_result["knowledge_enhanced"] = False
-        else:
-            rule_result["knowledge_enhanced"] = False
+        # Legacy RAG retrieval sends health queries to a separate embeddings API.
+        # Daily insights has a Token Plan-only model egress contract.
+        rule_result["knowledge_enhanced"] = False
 
         return rule_result
 
@@ -979,6 +948,8 @@ class DailyRecommendationService:
             and cached.one_day_recommendation
             and cached.seven_day_recommendation
             and cached.analysis_date == analysis_date  # 确保分析的是最新数据
+            and recommendations_cache_matches({"one_day": cached.one_day_recommendation,
+                                               "seven_day": cached.seven_day_recommendation}, use_llm)
         )
 
         if cache_valid:
@@ -1000,6 +971,9 @@ class DailyRecommendationService:
 
         # 生成7天建议（基于最近7天的数据）
         seven_day_rec = await self.generate_seven_day_recommendation(db, user_id, use_llm)
+
+        for period in (one_day_rec, seven_day_rec):
+            period["_analysis_route"] = analysis_route(use_llm)
 
         # 保存到数据库
         if cached:
@@ -1167,7 +1141,7 @@ class DailyRecommendationService:
         # 如果启用LLM，添加LLM分析
         if use_llm and yesterday_data:
             try:
-                llm_result = await llm_analyzer.analyze_daily_health(
+                llm_result = await self.analyzer.analyze_daily_health(
                     db=db,
                     user_id=user_id,
                     yesterday_data=yesterday_data,
@@ -1191,14 +1165,21 @@ class DailyRecommendationService:
                     result["enhanced_recommendations"] = combined_recs[:7]
 
                     result["ai_insights"] = {
-                        "health_summary": llm_result.get("summary", ""),
-                        "key_insights": llm_result.get("insights", []),
-                        "today_focus": llm_result.get("focus", ""),
+                        "health_summary": llm_result.get("health_summary", ""),
+                        "key_insights": llm_result.get("key_insights", []),
+                        "today_focus": llm_result.get("today_focus", ""),
                         "encouragement": llm_result.get("encouragement", ""),
                         "warnings": llm_result.get("warnings", [])
                     }
+                    result["ai_advice"] = {
+                        "sleep": llm_result.get("sleep_advice"),
+                        "activity": llm_result.get("activity_advice"),
+                        "heart_health": llm_result.get("heart_health_advice"),
+                        "recovery": llm_result.get("recovery_advice"),
+                        "environment": llm_result.get("environment_advice"),
+                    }
             except Exception as e:
-                logger.error(f"LLM分析失败: {e}")
-                result["llm_analysis"] = {"available": False, "error": str(e)}
+                logger.error("LLM分析失败 error_type=%s", type(e).__name__)
+                result["llm_analysis"] = {"available": False, "provider": "tokenplan", "error": "Token Plan 分析暂不可用"}
 
         return result

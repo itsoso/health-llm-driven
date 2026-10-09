@@ -7,14 +7,20 @@ interface AiInsightsSectionProps {
 }
 
 export function AiInsightsSection({ currentData }: AiInsightsSectionProps) {
+  const analysisFailed = currentData?.llm_analysis?.available === false || Boolean(currentData?.llm_analysis?.error);
   return (
     <>
+      {analysisFailed && (
+        <div role="alert" className="bg-amber-50 text-amber-800 rounded-xl p-4 mb-6">
+          阿里云 Token Plan 分析暂不可用，请稍后刷新重试。下方指标与规则建议仍可查看。
+        </div>
+      )}
       {/* AI 健康摘要 */}
-      {currentData?.ai_insights && (
+      {!analysisFailed && currentData?.ai_insights && (
         <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl shadow-lg p-6 mb-6 text-white">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold">✨ AI 智能助理</h2>
-            <span className="text-xs bg-white/20 px-2 py-1 rounded">由大模型生成</span>
+            <span className="text-xs bg-white/20 px-2 py-1 rounded">{currentData.llm_analysis?.provider === 'tokenplan' ? '阿里云 Token Plan' : '由大模型生成'}</span>
           </div>
 
           {/* 健康摘要 */}
@@ -63,7 +69,7 @@ export function AiInsightsSection({ currentData }: AiInsightsSectionProps) {
       )}
 
       {/* AI 详细建议 */}
-      {currentData?.ai_advice && (
+      {!analysisFailed && currentData?.ai_advice && (
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4">🧠 AI 个性化建议</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
