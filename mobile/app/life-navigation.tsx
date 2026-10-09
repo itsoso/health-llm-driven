@@ -24,7 +24,7 @@ function PersonalWeek({owner}:{owner:number}){
   if(!workspace||lock.current)return;lock.current=true;setBusy(true);const version=epoch.current;
   try{const saved=await saveLifeWorkspace(owner,workspace.revision??0,data);if(version===epoch.current){setWorkspace(saved);setTitle('');setCriterion('');setMessage('已保存个人安排')}}
   catch(error){if(version===epoch.current)setMessage((error as {response?:{status:number}}).response?.status===409?'另一设备已更新，草稿已保留，请重新读取后核对。':'保存失败，草稿已保留。')}
-  finally{lock.current=false;if(version===epoch.current)setBusy(false)}
+  finally{lock.current=false;setBusy(false)}
  }
  function withTasks(next:LifeTask[]):LifeData{return {...workspace?.data,weeks:{...workspace?.data?.weeks,[weekKey]:{...week,tasks:next}}}}
  function add(){if(!workspace||!title.trim())return;void save(withTasks([...tasks,{id:taskId(),date:today,title:title.trim(),criterion,role:tasks.filter(t=>t.date===today&&t.role==='main').length?'other':'main',track_id:'main',slot:'flexible',status:'planned',estimated_minutes:null,actual_minutes:null,result:'',root_cause:'',improvement:''}]))}

@@ -48,10 +48,10 @@ function HealthView({owner}:{owner:number}){
    if(version!==epoch.current)return;
    if((error as {response?:{status:number}}).response?.status===409){attempt.current=null;setSelected(null);setDetail(null);setMessage('行动已变化，请重新核对。');setReload(v=>v+1)}
    else setMessage('结果尚未确认，请使用同一操作重试。');
-  }finally{lock.current=false;if(version===epoch.current)setBusy(false)}
+  }finally{lock.current=false;setBusy(false)}
  }
  async function refresh(){if(lock.current)return;lock.current=true;setBusy(true);const version=epoch.current;
-  try{await api.post('/health-navigation/refresh',undefined,{headers});if(version===epoch.current)setReload(v=>v+1)}catch{if(version===epoch.current)setMessage('更新失败，未获得新的安全判断。')}finally{lock.current=false;if(version===epoch.current)setBusy(false)}
+  try{await api.post('/health-navigation/refresh',undefined,{headers});if(version===epoch.current)setReload(v=>v+1)}catch{if(version===epoch.current)setMessage('更新失败，未获得新的安全判断。')}finally{lock.current=false;setBusy(false)}
  }
  return <main className="min-h-screen bg-stone-50 px-4 py-8"><div className="mx-auto max-w-5xl space-y-4">
   <h1 className="text-3xl font-bold">健康周导航</h1><p>健康执行由 Health 记录；生活安排独立保存。</p>

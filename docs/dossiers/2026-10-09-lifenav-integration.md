@@ -65,6 +65,8 @@ W7: 条件未满足，维持关闭。
 - Web：4 suites/20 项相关测试，TypeScript 通过。Mobile：6 suites/24 项相关测试，TypeScript 通过。
 - 仅本任务暂存树的隔离候选：System Map/mobile-nav/doc-drift 通过；Next 生产构建通过。双端 OpenAPI 类型 --check、高置信秘密扫描、diff 检查通过。未改变依赖。现有 node_modules 实际 Next16.3.4，与 package 锁声明16.3.8不同；本地构建不能替代精确锁依赖 CI。
 - 实际内置浏览器：隔离候选生产构建、真实 JWT HttpOnly Cookie 登录、专用 PG 合成账号，初始空白 revision0 → 创建本人任务/标准 → 显式保存 → 刷新 revision1 正文恢复 → 周视图同一任务通过。原通知/health 探针未挂入最小测试 API，404 不视为全站验收；没有生产健康数据。截图 /tmp/navlife-native-workspace-20261010.png。开发模式 CSP/webpack 调试未作为验收，最终使用未放宽 CSP 的生产构建。
-- 本轮 Mobile 现场仍受 Mac 锁屏影响未完成；Web 全部备份导入/历史恢复/计时现场路径尚未逐项验收，以自动测试补充，不冒充现场通过。
+- 本轮 Mobile 现场仍受 Mac 锁屏影响未完成；Web 计时开始保存 → 刷新截止时间恢复 → 显式结束后任务仍未开始已现场通过；全部备份导入/历史恢复现场路径尚未逐项验收，以自动测试补充，不冒充现场通过。
 
 交付为本地实现和本地验证；未 push/deploy/OTA。当前 main 分叉且存在其他 agent 未提交修改，禁止外部发布；上线须重新准备干净精确 SHA、真实 CI、迁移部署和余下现场验收。独立固定提交安全复核记录随后追加。
+
+固定实现提交 e7ad6451355d136755c1a9157d0444e1ffa22556：独立 lifenav_readiness 安全 GO，无阻断。非阻断 busy 残留建议已进一步修复：Web 刷新中重新读取、Mobile 保存中后台/前台两个失败回归先复现，再调整请求结束清理忙碌状态；所有正文更新仍受 epoch/账号身份校验。新增 2 项测试通过，最终累计 Web21、Mobile25。测试服务和合成登录会话均清理，不保留外接或生产权限。
