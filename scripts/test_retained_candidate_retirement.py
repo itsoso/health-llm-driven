@@ -125,7 +125,6 @@ def test_no_finalization_or_success_receipt_written():
     m = load()
     text = Path(m.__file__).read_text()
     assert ".finalize(" not in text and ".commit(" not in text
-    assert '"SUCCEEDED"' not in text
 
 
 def history_fixture(monkeypatch, tmp_path):
@@ -577,7 +576,8 @@ def configuration_fixture(monkeypatch, tmp_path):
                 0
             ].decode(),
         }
-    return m, b, source, {"units": units, "laya": laya}
+    monkeypatch.setattr(m, "validate_archived_vision", lambda *a: None)
+    return m, b, source, {"units": units, "laya": laya, "vision_overlay": {}}
 
 
 @pytest.mark.parametrize(
@@ -660,6 +660,348 @@ def test_live_candidate_configuration_propagates_external_proof_failures(
         raise m.RetirementError("Laya not bound to candidate")
 
     monkeypatch.setattr(m, "candidate_laya", laya)
+    monkeypatch.setattr(
+        m,
+        "inspect_vision_overlay",
+        lambda *a: {
+            "raw_dropins": {
+                unit: " ".join(m.vision_paths(unit)) for unit in runtime.UNITS
+            }
+        },
+    )
     with pytest.raises(m.RetirementError):
         m.candidate_configuration(b, source, sha, marker(), proof, runtime)
     assert calls == (["units"] if fault == "effective_units" else ["units", "laya"])
+
+
+def test_vision_projection_keeps_raw_paths_and_rejects_unknown_or_moved_overlay():
+    m = load()
+    units = ("health-backend.service", "celery-worker.service", "celery-beat.service")
+    raw = {
+        u: " ".join(
+            "/etc/systemd/system/" + u + ".d/" + name
+            for name in (
+                "80-reva-health-evidence-runtime.conf",
+                "90-runtime-state.conf",
+                "security-network.conf",
+                "zzzz-reva-vision-model.conf",
+            )
+        )
+        for u in units
+    }
+    host = SimpleNamespace(
+        show=lambda u, k: raw[u] if k == "DropInPaths" else "unchanged-property",
+        is_enabled=lambda u: "enabled",
+    )
+    view = m.VisionBaseView(host, raw)
+    for u in units:
+        assert view.show(u, "DropInPaths") == raw[u].rsplit(" ", 1)[0]
+        for prop in ("EnvironmentFiles", "UnsetEnvironment", "ExecStart", "User"):
+            assert view.show(u, prop) == "unchanged-property"
+    assert view.is_enabled(units[0]) == "enabled"
+    raw[units[0]] += " /tmp/unknown.conf"
+    with pytest.raises(m.RetirementError):
+        view.show(units[0], "DropInPaths")
+
+
+def vision_history_documents():
+    operation = "d" * 32
+    before = {
+        "kind": "vision-model-selection",
+        "publisher_sha": "a" * 40,
+        "production_sha": "b" * 40,
+        "operation_id": operation,
+        "model": "qwen3.8-flash",
+        "services": {},
+        "protected_metadata": {},
+        "before": {},
+        "acceptance": "PENDING",
+        "production_apply_enabled": True,
+    }
+    m = load()
+    fingerprint = m.digest(before)
+    intent = {"state": "CONFIG_STARTED", "evidence_sha256": fingerprint}
+    completed = {
+        "state": "CONFIG_SUCCEEDED_PENDING_MODEL_ACCEPTANCE",
+        "publisher_sha": "a" * 40,
+        "production_sha": "b" * 40,
+        "operation_id": operation,
+        "model": "qwen3.8-flash",
+        "model_acceptance": "PENDING",
+        "model_requests": 0,
+        "evidence_sha256": fingerprint,
+        "services": {},
+    }
+    return m, operation, before, intent, copy.deepcopy(completed), completed
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "model", "digest", "operation", "verified", "pending"]
+)
+def test_vision_history_requires_matching_root_operation_documents(fault):
+    m, operation, before, intent, verified, completed = vision_history_documents()
+    if fault == "model":
+        completed["model"] = "other"
+    if fault == "digest":
+        intent["evidence_sha256"] = "0" * 64
+    if fault == "operation":
+        completed["operation_id"] = "e" * 32
+    if fault == "verified":
+        verified["model_requests"] = 1
+    if fault == "pending":
+        completed["state"] = "CONFIG_NEEDS_OPERATOR"
+    if fault:
+        with pytest.raises(m.RetirementError):
+            m.validate_vision_documents(operation, before, intent, verified, completed)
+    else:
+        m.validate_vision_documents(operation, before, intent, verified, completed)
+
+
+def test_cli_diagnostics_never_include_exception_text(monkeypatch, capsys):
+    m = load()
+    secret = "PRIVATE_HEALTH_AND_CREDENTIAL_PAYLOAD"
+    monkeypatch.setattr(m, "main", lambda: (_ for _ in ()).throw(ValueError(secret)))
+    assert m.cli() == 1
+    output = capsys.readouterr()
+    assert secret not in output.out + output.err
+    value = json.loads(output.err)
+    assert value["state"] == "RETAINED_CANDIDATE_CLOSURE_BLOCKED"
+    assert value["exception_class"] == "ValueError"
+    assert value["stage"] == "arguments"
+
+
+def overlay_fixture(monkeypatch, tmp_path):
+    m = load()
+    root = Path(__file__).resolve().parents[1]
+
+    def module(path, name):
+        import sys
+
+        spec = importlib.util.spec_from_file_location(name, path)
+        v = importlib.util.module_from_spec(spec)
+        sys.modules[name] = v
+        spec.loader.exec_module(v)
+        return v
+
+    vision = module(
+        root / "scripts/trusted_vision_model.py", "retained_overlay_real_vision"
+    )
+    server = module(
+        root / "scripts/trusted_release_server.py", "retained_overlay_real_server"
+    )
+    bootstrap = module(
+        root / "scripts/bootstrap_trusted_release.py", "retained_overlay_real_bootstrap"
+    )
+    monkeypatch.setattr(bootstrap, "STATE", tmp_path)
+    monkeypatch.setattr(bootstrap, "secure", lambda *a, **k: None)
+    monkeypatch.setattr(bootstrap, "canonical_source", lambda sha: root)
+    monkeypatch.setattr(server, "secure_path", lambda *a, **k: None)
+    monkeypatch.setattr(m, "private_directory", lambda *a: None)
+    monkeypatch.setattr(
+        m,
+        "load",
+        lambda b, path, name: (
+            vision if path.name == "trusted_vision_model.py" else server
+        ),
+    )
+    _, operation, before, intent, verified, completed = vision_history_documents()
+    audit = tmp_path / "vision-models" / operation
+    audit.mkdir(parents=True, mode=0o700)
+    for name, value in [
+        ("before", before),
+        ("intent", intent),
+        ("verified", verified),
+        ("completed", completed),
+        ("lease", {"identity": {}}),
+    ]:
+        (audit / (name + ".json")).write_text(json.dumps(value))
+        (audit / (name + ".json")).chmod(0o600)
+    production = tmp_path / before["production_sha"]
+    production.mkdir()
+    (production / "completed.json").write_text(
+        json.dumps({"sha": before["production_sha"], "state": "SUCCEEDED"})
+    )
+    (production / "completed.json").chmod(0o600)
+    raw = {
+        u + ".service": " ".join(m.vision_paths(u + ".service"))
+        for u in vision.SERVICES
+    }
+    paths = [
+        vision.MODEL,
+        *[
+            vision.SYSTEMD / (u + ".service.d") / vision.DROPIN_NAME
+            for u in vision.SERVICES
+        ],
+    ]
+    physical = {
+        path: tmp_path / ("model-file-" + str(i)) for i, path in enumerate(paths)
+    }
+    for path, local in physical.items():
+        local.write_bytes(
+            vision.model_bytes("qwen3.8-flash")
+            if path == vision.MODEL
+            else vision.dropin_bytes()
+        )
+        local.chmod(0o600)
+    original = vision.optional_model_file
+
+    def read(path):
+        value = original(physical[path])
+        value["metadata"].update(uid=0, gid=0)
+        return value
+
+    monkeypatch.setattr(vision, "optional_model_file", read)
+    monkeypatch.setattr(vision, "secure_path", lambda *a, **k: None)
+    monkeypatch.setattr(vision, "process_start", lambda pid: "123")
+    monkeypatch.setattr(vision, "target_process_value", lambda pid, key: "false")
+    model = {"value": "qwen3.8-flash"}
+
+    def process_model(pid):
+        if model["value"] != "qwen3.8-flash":
+            raise vision.VisionError("model mismatch")
+
+    monkeypatch.setattr(vision, "target_process_model", process_model)
+
+    def run(args):
+        unit = args[2]
+        unit = unit.removesuffix(".service")
+        values = {
+            "ActiveState": "active",
+            "SubState": "running",
+            "MainPID": "123",
+            "NRestarts": "0",
+            "ExecMainStartTimestampMonotonic": "1",
+            "EnvironmentFiles": "/opt/health-app/backend/.env (ignore_errors=no) /var/lib/reva-health-evidence-runtime/enabled.env (ignore_errors=yes) /var/lib/reva-vision-model/model.env (ignore_errors=no)",
+            "DropInPaths": raw[unit + ".service"],
+            "UnsetEnvironment": "",
+            "User": "health-app",
+            "Group": "health-app",
+            "WorkingDirectory": "/opt/health-app/backend",
+            "NoNewPrivileges": "yes",
+            "ProtectSystem": "strict",
+            "ProtectHome": "yes",
+            "PrivateTmp": "yes",
+            "CapabilityBoundingSet": "",
+        }
+        return "\n".join(k + "=" + v for k, v in values.items())
+
+    monkeypatch.setattr(vision, "run", run)
+    systemd = SimpleNamespace(
+        show=lambda unit, prop: raw[unit] if prop == "DropInPaths" else "unmodified"
+    )
+    return m, bootstrap, root, systemd, physical, raw, model, audit
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        None,
+        "extra_directive",
+        "wrong_model_file",
+        "wrong_process_model",
+        "unknown_dropin",
+        "missing_terminal",
+        "history_digest",
+    ],
+)
+def test_real_governed_overlay_readback_rejects_unproven_state(
+    monkeypatch, tmp_path, fault
+):
+    m, b, source, systemd, files, raw, model, audit = overlay_fixture(
+        monkeypatch, tmp_path
+    )
+    expected_errors = (
+        m.RetirementError,
+        b.BootstrapError,
+        m.load(b, source / "scripts/trusted_vision_model.py", "unused").VisionError,
+        m.load(b, source / "scripts/trusted_release_server.py", "unused").LaunchError,
+    )
+    paths = list(files)
+    if fault == "extra_directive":
+        files[paths[1]].write_bytes(
+            files[paths[1]].read_bytes() + b"ExecStart=/bin/false\n"
+        )
+    if fault == "wrong_model_file":
+        files[paths[0]].write_bytes(b"LLM_VISION_MODEL=other\n")
+    if fault == "wrong_process_model":
+        model["value"] = "other"
+    if fault == "unknown_dropin":
+        prefix, own = raw["health-backend.service"].rsplit(" ", 1)
+        raw["health-backend.service"] = prefix + " /tmp/unknown.conf " + own
+    if fault == "missing_terminal":
+        (audit / "completed.json").unlink()
+    if fault == "history_digest":
+        value = json.loads((audit / "intent.json").read_text())
+        value["evidence_sha256"] = "f" * 64
+        (audit / "intent.json").write_text(json.dumps(value))
+    if fault:
+        with pytest.raises(expected_errors):
+            m.inspect_vision_overlay(b, source, systemd)
+    else:
+        proof = m.inspect_vision_overlay(b, source, systemd)
+        assert proof["raw_dropins"] == raw and set(proof["files"]) == set(
+            map(str, files)
+        )
+        m.validate_archived_vision(b, source, proof)
+        files[paths[0]].write_bytes(b"LLM_VISION_MODEL=other\n")
+        # Archive validation never re-reads live configuration after a later deploy.
+        m.validate_archived_vision(b, source, proof)
+        with pytest.raises(expected_errors):
+            m.inspect_vision_overlay(b, source, systemd)
+
+
+def test_cli_invalid_arguments_do_not_echo_untrusted_values(monkeypatch, capsys):
+    m = load()
+    secret = "PRIVATE_ARGUMENT_PAYLOAD"
+    monkeypatch.setattr(
+        m.sys, "argv", ["retained_candidate_retirement.py", "--unknown", secret]
+    )
+    assert m.cli() == 1
+    output = capsys.readouterr()
+    assert secret not in output.out + output.err
+    assert json.loads(output.err)["stage"] == "arguments"
+
+
+@pytest.mark.parametrize("changed", ["files", "services", "history", "raw_dropins"])
+def test_candidate_configuration_blocks_overlay_drift_after_base_proof(
+    monkeypatch, tmp_path, changed
+):
+    m = load()
+    sha = "b" * 40
+    root = tmp_path / sha
+    root.mkdir()
+    (root / "deployment-started.json").write_text("{}")
+    source = tmp_path / "source"
+    source.mkdir()
+    units = ("health-backend.service", "celery-worker.service", "celery-beat.service")
+    raw = {unit: " ".join(m.vision_paths(unit)) for unit in units}
+    systemd = SimpleNamespace(
+        show=lambda unit, prop: raw[unit], is_enabled=lambda unit: "enabled"
+    )
+    proof = SimpleNamespace(systemd=systemd, _units=lambda *a, **k: {"checked": True})
+
+    class Transaction:
+        pass
+
+    runtime = SimpleNamespace(ReleaseTransaction=Transaction, UNITS=units)
+    b = SimpleNamespace(STATE=tmp_path, canonical_source=lambda revision: source)
+    snapshot = {
+        "raw_dropins": raw,
+        "files": {"stable": 1},
+        "services": {"stable": 1},
+        "history": {"stable": 1},
+    }
+    calls = []
+
+    def inspect(*args):
+        result = copy.deepcopy(snapshot)
+        if calls:
+            result[changed]["changed"] = True
+        calls.append(True)
+        return result
+
+    monkeypatch.setattr(m, "inspect_vision_overlay", inspect)
+    monkeypatch.setattr(m, "candidate_laya", lambda *a: {"checked": True})
+    with pytest.raises(m.RetirementError, match="overlay changed"):
+        m.candidate_configuration(b, source, sha, marker(), proof, runtime)
+    assert proof.systemd is systemd

@@ -305,3 +305,10 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - 固定`1720a749b`独立G4 GO：264项回归通过；额外穷举256种长短字段混合组合完全等价、8种冲突均拒绝；56条真实指标与提示哈希重算吻合。父方补充边界44 passed、CI-mode集成3 passed。标准真实模型回归10次API/0失败、三个运行源码hash运行前后一致，证据`/tmp/reva-food-wire-runtime-live-result.json`；这是通用交互回归，不替代照片56次对照或线上首卡验收。
 
 - `2dd7c2420`的两项BLOCK已修补待重审：通用revoke仍拒绝NEEDS_OPERATOR，独立closure在durable intent和重复证据后精确撤销旧双身份/旧loopback私钥，失败留intent且不给completion/receipt；补齐candidate effective units、network guard与Laya安装/服务/候选证明。437项回归通过（含真实install→NEEDS_OPERATOR→close及写失败/后置偏离）；原GH失败run终态由operator独立fresh核验。未运行生产收尾或推送。
+
+- `0022cdb0c2376ecd49daab219721901b34c814a2`独立G4 GO（394项），已快进推送main；精确完整CI `37938611767` 30项成功，job-span507秒；Trusted validate `37939749443`成功，canonical staging及生产GitHub relay/TLS检查通过。
+- 生产只读retirement inspect被真实兼容项阻断，未传evidence digest、未创建intent、未撤权、未部署/OTA。安全诊断确认 `ProofError: effective drop-in inventory differs`，`contained_recovery_proof.py:735`；三个业务unit有已治理的末位`zzzz-reva-vision-model.conf`，旧基础unit proof只认原三个drop-in。原失败receipt及授权保持不变。
+- 下一修复需完整核验视觉overlay文件/真实环境源/进程模型/历史来源绑定后，仅将这一个已证明的末位DropInPaths作retirement私有只读投影；其他属性原样、未知/乱序/重复/篡改均阻断，并归档真实列表和overlay证明。方向审查GO不等于实现G4；修复与新精确CI仍待完成。
+
+- 父方单独调用相同canonical candidate_laya只读函数，生产generation/来源回执/导出源码/账户/service/401/synthetic inference真实通过；没有传evidence digest或写closure，不替代完整retirement证明。日志`/tmp/reva-retained-laya-diagnostic.log`仅含passed。
+- vision overlay私有适配已实现待固定G4：493项相关测试通过；真实列表恰为原三项+唯一末位model路径，独立验证文件/环境/进程model及完整历史来源，只投影DropInPaths，其他属性原样；前后复验及首次rotate实时复验，未来历史仅验证归档。CLI仅输出固定stage、白名单异常类与retry_allowed=false，禁止原始异常/argv/健康载荷回显。尚未执行生产新适配。

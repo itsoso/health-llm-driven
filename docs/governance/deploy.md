@@ -1043,3 +1043,13 @@ Laya 检查绑定 candidate 的导出源码/manifest、原安装回执及 immuta
 不会允许旧 SHA 再次发布。历史核验继续校验原 workspace、installation 归档、原锁与闭合
 审计，但只验证审计内的 runtime/service/probe 快照，不要求未来生产仍运行旧 candidate。
 当前首次 rotate 仍须核验实时生产没有漂移。该回执不代表 OTA、TestFlight、业务验收或新发布完成。
+
+
+retained candidate 的已治理 Vision overlay 通过独立证明处理：核验原 model-selection
+的 before/intent/verified/completed 操作绑定、摘要、canonical publisher 与原 production
+成功回执；model.env 与三个 drop-in 必须是现有 operator 的精确只读字节。真实服务四个
+DropInPaths 必须恰为已知基础三项加唯一末位 model overlay，EnvironmentFiles 顺序、
+UnsetEnvironment、进程身份与实际 model 均由现有 vision validator 检查。
+只有这个已验证 overlay 可在私有基础 unit 证明视图中剥离，其他属性一律透传；原始四路径、
+model 文件、进程及历史摘要独立归档，前后变化阻断。历史验证不读取未来 live model/PID。
+CLI 失败仅输出固定 stage、白名单异常类和禁止自动重试状态，不输出异常原文、回溯或 argv。

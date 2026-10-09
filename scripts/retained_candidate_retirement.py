@@ -139,10 +139,13 @@ def close_transaction(adapter, evidence_sha256=None):
         "evidence_sha256": fingerprint,
         "receipt_sha256": hashlib.sha256(receipt.encode()).hexdigest(),
     }
+    stage("intent")
     write_json(adapter.record / "intent.json", intent)
     if adapter.inspect() != evidence:
         raise RetirementError("closure evidence changed after intent")
+    stage("revocation")
     adapter.retire_authorization(evidence)
+    stage("completion")
     write_json(
         adapter.record / "completed.json",
         {
@@ -220,6 +223,290 @@ def load(b, path, name):
     return module
 
 
+STAGE = "arguments"
+STAGES = {
+    "arguments",
+    "canonical_ci",
+    "locks",
+    "workspace",
+    "authorization",
+    "runtime",
+    "vision_overlay",
+    "effective_units",
+    "laya",
+    "application_probes",
+    "history",
+    "intent",
+    "revocation",
+    "completion",
+}
+
+
+def stage(name):
+    global STAGE
+    if name not in STAGES:
+        raise RetirementError("unknown diagnostic stage")
+    STAGE = name
+
+
+def vision_paths(unit):
+    return [
+        "/".join(("/etc/systemd/system", unit + ".d", name))
+        for name in (
+            "80-reva-health-evidence-runtime.conf",
+            "90-runtime-state.conf",
+            "security-network.conf",
+            "zzzz-reva-vision-model.conf",
+        )
+    ]
+
+
+class VisionBaseView:
+    """Private exact projection: every property except these paths stays raw."""
+
+    def __init__(self, systemd, raw):
+        self.systemd = systemd
+        self.raw = dict(raw)
+        if set(self.raw) != {
+            "health-backend.service",
+            "celery-worker.service",
+            "celery-beat.service",
+        }:
+            raise RetirementError("vision unit inventory differs")
+        if any(
+            value != " ".join(vision_paths(unit)) for unit, value in self.raw.items()
+        ):
+            raise RetirementError("unrecognized raw unit drop-ins")
+
+    def show(self, unit, prop):
+        value = self.systemd.show(unit, prop)
+        if unit in self.raw and prop == "DropInPaths":
+            if value != self.raw[unit]:
+                raise RetirementError("raw model drop-ins changed")
+            return " ".join(vision_paths(unit)[:-1])
+        return value
+
+    def is_enabled(self, unit):
+        return self.systemd.is_enabled(unit)
+
+
+def validate_vision_documents(operation, before, intent, verified, completed):
+    if (
+        not isinstance(before, dict)
+        or set(before)
+        != {
+            "kind",
+            "publisher_sha",
+            "production_sha",
+            "operation_id",
+            "model",
+            "services",
+            "protected_metadata",
+            "before",
+            "acceptance",
+            "production_apply_enabled",
+        }
+        or before["kind"] != "vision-model-selection"
+        or before["model"] != "qwen3.8-flash"
+        or before["operation_id"] != operation
+        or before["acceptance"] != "PENDING"
+        or before["production_apply_enabled"] is not True
+        or any(
+            not isinstance(before[k], str)
+            or re.fullmatch("[a-f0-9]{40}", before[k]) is None
+            for k in ("publisher_sha", "production_sha")
+        )
+        or not isinstance(operation, str)
+        or re.fullmatch("[a-f0-9]{32}", operation) is None
+    ):
+        raise RetirementError("vision original operation binding invalid")
+    expected = {
+        "state": "CONFIG_SUCCEEDED_PENDING_MODEL_ACCEPTANCE",
+        "publisher_sha": before["publisher_sha"],
+        "production_sha": before["production_sha"],
+        "operation_id": operation,
+        "model": "qwen3.8-flash",
+        "model_acceptance": "PENDING",
+        "model_requests": 0,
+        "evidence_sha256": digest(before),
+    }
+    if (
+        not isinstance(completed, dict)
+        or set(completed) != {*expected, "services"}
+        or any(completed[k] != v for k, v in expected.items())
+        or type(completed["model_requests"]) is not int
+        or completed != verified
+        or intent != {"state": "CONFIG_STARTED", "evidence_sha256": digest(before)}
+    ):
+        raise RetirementError(
+            "vision terminal does not bind verified original operation"
+        )
+    return expected
+
+
+def vision_history(b, source, operation):
+    root = b.STATE / "vision-models" / operation
+    inventory = b._inventory(
+        root,
+        {"before.json", "intent.json", "lease.json", "verified.json", "completed.json"},
+    )
+    before, intent, verified, completed = (
+        b._read_json(root / name)
+        for name in ("before.json", "intent.json", "verified.json", "completed.json")
+    )
+    summary = validate_vision_documents(operation, before, intent, verified, completed)
+    publisher = b.canonical_source(summary["publisher_sha"])
+    b.canonical_source(summary["production_sha"])
+    if b._read_json(b.STATE / summary["production_sha"] / "completed.json") != {
+        "sha": summary["production_sha"],
+        "state": "SUCCEEDED",
+    }:
+        raise RetirementError("vision original production success unproven")
+    path = publisher / "scripts/trusted_vision_model.py"
+    b.secure(path)
+    return {
+        "operation": summary,
+        "inventory": inventory,
+        "publisher_operator_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
+def inspect_vision_overlay(b, source, systemd):
+    stage("vision_overlay")
+    vision = load(
+        b, source / "scripts/trusted_vision_model.py", "retained_vision_overlay"
+    )
+    server = load(
+        b, source / "scripts/trusted_release_server.py", "retained_vision_history"
+    )
+    server.assert_vision_model_history(b.STATE)
+    root = b.STATE / "vision-models"
+    private_directory(b, root)
+    operations = sorted(path.name for path in root.iterdir())
+    if len(operations) != 1 or re.fullmatch("[a-f0-9]{32}", operations[0]) is None:
+        raise RetirementError("only one proven initial vision operation supported")
+    history = vision_history(b, source, operations[0])
+    vision.finalization_model_files(rolled_back=False)
+    files = {
+        str(path): vision.optional_model_file(path)
+        for path in [
+            vision.MODEL,
+            *(
+                vision.SYSTEMD / (unit + ".service.d") / vision.DROPIN_NAME
+                for unit in vision.SERVICES
+            ),
+        ]
+    }
+    if any(
+        item["metadata"]["uid"] != 0
+        or item["metadata"]["gid"] != 0
+        or stat.S_IMODE(item["metadata"]["mode"]) != 0o600
+        for item in files.values()
+    ):
+        raise RetirementError("vision model file metadata differs")
+    services = vision.service_snapshot(installed=True)
+    raw = {}
+    for unit in vision.SERVICES:
+        name = unit + ".service"
+        raw[name] = systemd.show(name, "DropInPaths")
+        if raw[name] != services[unit]["DropInPaths"]:
+            raise RetirementError("vision service snapshots differ")
+        pid = int(services[unit]["MainPID"])
+        vision.target_process_model(pid)
+        if vision.process_start(pid) != services[unit]["process_start"]:
+            raise RetirementError("vision process identity changed")
+    VisionBaseView(systemd, raw)
+    return {
+        "model": "qwen3.8-flash",
+        "history": history,
+        "files": files,
+        "services": services,
+        "raw_dropins": raw,
+    }
+
+
+def validate_archived_vision(b, source, value):
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"model", "history", "files", "services", "raw_dropins"}
+        or value["model"] != "qwen3.8-flash"
+    ):
+        raise RetirementError("archived vision profile differs")
+    operation = value["history"]["operation"]["operation_id"]
+    if vision_history(b, source, operation) != value["history"]:
+        raise RetirementError("archived vision operation evidence changed")
+    vision = load(
+        b, source / "scripts/trusted_vision_model.py", "retained_archived_vision"
+    )
+    VisionBaseView(None, value["raw_dropins"])
+    expected_files = {
+        "/var/lib/reva-vision-model/model.env": vision.model_bytes(
+            "qwen3.8-flash"
+        ).decode()
+    }
+    expected_files.update(
+        {
+            vision_paths(unit)[-1]: vision.dropin_bytes().decode()
+            for unit in value["raw_dropins"]
+        }
+    )
+    if not isinstance(value["files"], dict) or set(value["files"]) != set(
+        expected_files
+    ):
+        raise RetirementError("archived vision file inventory differs")
+    for path, content in expected_files.items():
+        item = value["files"][path]
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"metadata", "content"}
+            or item["content"] != content
+        ):
+            raise RetirementError("archived vision file content differs")
+        metadata = item["metadata"]
+        if (
+            not isinstance(metadata, dict)
+            or set(metadata)
+            != {
+                "dev",
+                "ino",
+                "mode",
+                "nlink",
+                "uid",
+                "gid",
+                "size",
+                "mtime_ns",
+                "ctime_ns",
+            }
+            or any(type(v) is not int or v < 0 for v in metadata.values())
+            or metadata["uid"] != 0
+            or metadata["gid"] != 0
+            or metadata["nlink"] != 1
+            or metadata["ino"] <= 0
+            or metadata["size"] != len(content.encode())
+            or metadata["mode"] != stat.S_IFREG | 0o600
+        ):
+            raise RetirementError("archived vision metadata differs")
+    if not isinstance(value["services"], dict) or set(value["services"]) != set(
+        vision.SERVICES
+    ):
+        raise RetirementError("archived vision service inventory differs")
+    for unit, service in value["services"].items():
+        if (
+            service.get("DropInPaths") != value["raw_dropins"][unit + ".service"]
+            or service.get("ActiveState") != "active"
+            or service.get("SubState") != "running"
+            or any(
+                not isinstance(service.get(k), str)
+                or not service[k].isdigit()
+                or int(service[k]) <= 0
+                for k in ("MainPID", "process_start")
+            )
+        ):
+            raise RetirementError("archived vision service binding differs")
+        vision.validate_env_sources(service.get("EnvironmentFiles"), installed=True)
+        vision.validate_unset_environment(service.get("UnsetEnvironment"))
+
+
 def candidate_configuration(b, source, sha, marker, proof, runtime):
     """Use only existing read-only effective-unit and installation verifiers."""
     candidate = b.canonical_source(sha)
@@ -245,11 +532,23 @@ def candidate_configuration(b, source, sha, marker, proof, runtime):
     started = datetime.fromtimestamp(
         (b.STATE / sha / "deployment-started.json").stat().st_mtime, UTC
     )
-    units = proof._units(
-        candidate, transaction, started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ\n")
+    raw_systemd = proof.systemd
+    overlay = inspect_vision_overlay(b, source, raw_systemd)
+    proof.systemd = transaction.systemd = VisionBaseView(
+        raw_systemd, overlay["raw_dropins"]
     )
+    try:
+        stage("effective_units")
+        units = proof._units(
+            candidate, transaction, started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ\n")
+        )
+    finally:
+        proof.systemd = raw_systemd
+    stage("laya")
     laya = candidate_laya(b, source, sha, marker, proof)
-    return {"units": units, "laya": laya}
+    if inspect_vision_overlay(b, source, raw_systemd) != overlay:
+        raise RetirementError("vision overlay changed during candidate verification")
+    return {"units": units, "laya": laya, "vision_overlay": overlay}
 
 
 def candidate_laya(b, source, sha, marker, proof):
@@ -420,6 +719,7 @@ def live_state(b, source, closing_sha, sha):
         source / "scripts/recover_contained_services.py",
         "retained_application_probe",
     )
+    stage("application_probes")
     recovery._application_probes(sha, closing_sha)
     recovery._http_probes()
     time.sleep(7)
@@ -452,8 +752,14 @@ def live_state(b, source, closing_sha, sha):
 
 def validate_configuration(b, source, sha, configuration):
     """Replay archived contracts using canonical files, never live host state."""
-    if not isinstance(configuration, dict) or set(configuration) != {"units", "laya"}:
+    stage("history")
+    if not isinstance(configuration, dict) or set(configuration) != {
+        "units",
+        "laya",
+        "vision_overlay",
+    }:
         raise RetirementError("candidate configuration evidence incomplete")
+    validate_archived_vision(b, source, configuration["vision_overlay"])
     runtime = load(
         b,
         source / "backend/scripts/runtime_state_release_transaction.py",
@@ -744,7 +1050,9 @@ class Adapter:
         no_conflicts(b, self.sha)
         if b.canonical_source(self.closing_sha) != self.source:
             raise RetirementError("closing source changed")
+        stage("workspace")
         before = workspace_evidence(b, self.sha)
+        stage("authorization")
         active = active_installation_evidence(b, self.sha, before["executor_sha256"])
         installation = {
             "config": {
@@ -754,6 +1062,7 @@ class Adapter:
             },
             "library": active["library"],
         }
+        stage("runtime")
         live = live_state(b, self.source, self.closing_sha, self.sha)
         validate_live_snapshot(live, self.sha)
         validate_configuration(b, self.source, self.sha, live["configuration"])
@@ -1063,8 +1372,13 @@ def context(sha):
     return b, source
 
 
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise RetirementError("invalid operator arguments")
+
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser = _Parser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--sha", required=True)
     parser.add_argument("--failed-sha", required=True)
     parser.add_argument("--evidence-sha256")
@@ -1076,7 +1390,9 @@ def main():
         and re.fullmatch("[a-f0-9]{64}", args.evidence_sha256) is None
     ):
         raise RetirementError("exact distinct revisions and optional digest required")
+    stage("canonical_ci")
     b, source = context(args.sha)
+    stage("locks")
     b.secure(b.STATE / "launcher.lock", private=True)
     fd = os.open(b.STATE / "launcher.lock", os.O_RDWR | os.O_NOFOLLOW)
     try:
@@ -1095,12 +1411,46 @@ def main():
         os.close(fd)
 
 
-if __name__ == "__main__":
+def cli():
+    stage("arguments")
     try:
         main()
-    except Exception:  # noqa: BLE001 -- operator boundary must suppress secret-bearing exception text.
+        return 0
+    except Exception as exc:  # noqa: BLE001 -- no exception text may cross this secret-bearing boundary.
+        known = {
+            "RetirementError",
+            "BootstrapError",
+            "ProofError",
+            "TransactionError",
+            "VisionError",
+            "RecoveryError",
+            "InstallError",
+            "LaunchError",
+            "OSError",
+            "FileNotFoundError",
+            "PermissionError",
+            "ValueError",
+            "KeyError",
+            "TypeError",
+            "AttributeError",
+            "CalledProcessError",
+            "TimeoutExpired",
+        }
+        kind = type(exc).__name__
         print(
-            "RETAINED_CANDIDATE_CLOSURE_BLOCKED: preserve all evidence; no automatic retry",
+            json.dumps(
+                {
+                    "state": "RETAINED_CANDIDATE_CLOSURE_BLOCKED",
+                    "stage": STAGE,
+                    "exception_class": kind if kind in known else "OtherError",
+                    "retry_allowed": False,
+                },
+                sort_keys=True,
+            ),
             file=sys.stderr,
         )
-        raise SystemExit(1)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(cli())
