@@ -31,6 +31,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from typing import List, Sequence
 
 
@@ -598,13 +599,61 @@ def _regimen_assertion_text(sentence: str) -> str:
     return projected
 
 
+class _MedicalHTMLText(HTMLParser):
+    """Text-only safety view; never renders HTML or fetches external resources."""
+
+    _BLOCKS = frozenset({
+        "p", "div", "section", "article", "aside", "main", "header", "footer",
+        "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "tr", "br", "hr",
+    })
+    _VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.stack: list[tuple[str, bool]] = []
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        hidden = bool(self.stack and self.stack[-1][1]) or (
+            tag in {"script", "style", "template", "head"} or "hidden" in attributes
+            or bool(re.search(r"(?:display\s*:\s*none|visibility\s*:\s*hidden)",
+                              attributes.get("style") or "", re.I))
+        )
+        if not hidden:
+            if tag in self._BLOCKS:
+                self.parts.append("\n")
+            elif tag in {"td", "th"}:
+                self.parts.append(" ")
+        if tag not in self._VOID:
+            self.stack.append((tag, hidden))
+
+    def handle_endtag(self, tag):
+        hidden = bool(self.stack and self.stack[-1][1])
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
+        if not hidden and tag in self._BLOCKS:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if not self.stack or not self.stack[-1][1]:
+            self.parts.append(data)
+
+
 def _medical_assertion_matching_text(text: str) -> str:
     """Use the same matching view at the early gate and per-sentence guard.
 
-    Normalize typography and bounded list markers only for matching. Keep the
+    Normalize HTML text/entities, typography and list markers for matching. Keep the
     original text for output and exact independently trusted clinician relays.
     """
     normalized = unicodedata.normalize("NFKC", text or "")
+    if re.search(r"</?[A-Za-z][^>]*>|<!--", normalized):
+        parser = _MedicalHTMLText()
+        parser.feed(normalized)
+        parser.close()
+        normalized = unicodedata.normalize("NFKC", "".join(parser.parts))
     return re.sub(
         r"(^|[。；;!?！？\n])[^\S\n]*"
         r"(?:[-*+•][^\S\n]+|(?:\d+[.)、]|\(\d+\))[^\S\n]*)",

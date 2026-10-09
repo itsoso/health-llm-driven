@@ -675,10 +675,24 @@ def project_composed_answer_quality(quality, completion, *, require_advice_bound
             or (len(completion.verified_evidence["queries"]) < 2 and not require_advice_boundary)):
         return quality
     from app.services.agent_output_quality import AgentOutputQualityResult, enforce_agent_output_quality
+    from app.services.guidance_validator import _medical_assertion_matching_text
 
     trusted = enforce_agent_output_quality(completion.trusted_fact_summary).text
     trusted_end = quality.text.find(trusted) + len(trusted) if trusted in quality.text else 0
     prefix, body = quality.text[:trusted_end], quality.text[trusted_end:]
+    # HTML entities contain semicolons and tags can split assertion tokens.
+    # Check the full text view before segmenting; do not splice a rejected
+    # fragment back into an HTML document or return broken markup as success.
+    if re.search(r"</?[A-Za-z][^>]*>|<!--", body):
+        html_flags = tuple(dict.fromkeys(
+            flag for clause in _NUTRITION_CLAUSE_BREAK.split(_medical_assertion_matching_text(body))
+            for flag in _record_description_flags(clause, completion)
+        ))
+        if html_flags:
+            safe = trusted + "\n\n部分描述缺少记录依据，未展示；已核验记录见上。"
+            return AgentOutputQualityResult(
+                safe, tuple(dict.fromkeys((*quality.flags, *html_flags))), quality.original_length, len(safe),
+            )
     kept, removed, in_invitation, record_flags = [], False, False, []
     for segment in re.findall(r"[^。；;！？!?\n]+[。；;！？!?]*|[。；;！？!?\n]+", body):
         matching = re.sub(r"^[ \t]*(?:\d+[.)、]|[-*+] )?[ \t]*", "", segment)

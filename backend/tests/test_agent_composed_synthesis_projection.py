@@ -1708,8 +1708,8 @@ async def test_production_explicit_date_reference_executes_four_owned_reads(db, 
 async def test_correction_reason_does_not_promote_candidate_text(db, four_domain_user, monkeypatch):
     import app.services.agent_composed_read_completion as boundaries
     enforce = boundaries.enforce_composed_synthesis_boundaries
-    def with_untrusted_details(text, completion):
-        result = enforce(text, completion)
+    def with_untrusted_details(text, completion, **kwargs):
+        result = enforce(text, completion, **kwargs)
         if result.flagged:
             result.violations.extend(["unsupported_existing_regimen:SYSTEM_INJECTION_SENTINEL", "unknown_reason"])
         return result
@@ -1735,8 +1735,8 @@ async def test_correction_quota_denial_does_not_trigger_another_provider(db, fou
 async def test_unknown_boundary_reason_does_not_start_correction(db, four_domain_user, monkeypatch):
     import app.services.agent_composed_read_completion as boundaries
     enforce = boundaries.enforce_composed_synthesis_boundaries
-    def unknown_reason(text, completion):
-        result = enforce(text, completion)
+    def unknown_reason(text, completion, **kwargs):
+        result = enforce(text, completion, **kwargs)
         if result.flagged:
             result.violations = ["unknown_reason:SYSTEM_INJECTION_SENTINEL"]
         return result

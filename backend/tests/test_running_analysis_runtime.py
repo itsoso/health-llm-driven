@@ -64,6 +64,10 @@ async def test_running_analysis_keeps_weather_tools_and_original_question(
     "你的恢复状态良好，可以跑步5公里。",
     "你的蛋白质摄入不足。",
     "这些饮食和睡眠记录是模板占位数据。",
+    "<p>你的蛋白质摄入<strong>不足</strong>。</p>",
+    "<p>你的蛋白质摄入<span>&#19981;&#36275;</span>。</p>",
+    "<p>你的恢复状态<strong>良好</strong>，可以跑步<b>5</b>公里。</p>",
+    "<p>这些饮食和睡眠记录是模<strong>板</strong>占<span>位</span>数据。</p>",
 ])
 async def test_composite_retains_health_evidence_guards_before_stream_and_save(
     db, owned_data, monkeypatch, panel, single_domain, reply,
