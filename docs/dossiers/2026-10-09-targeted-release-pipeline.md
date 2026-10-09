@@ -224,3 +224,20 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - `6062f1cfb` 收紧所选报告内容边界：未知不当阴性、不据单项指标推个体病因概率、人群目标不变个人运动或减重处方。作者 PostgreSQL 82 passed、独立 82 passed / 代码 G4 GO；最终 CI-mode PostgreSQL 基础集成 3 passed。
 - 新目录 `/tmp/reva-1009-selected-evidence-limits` 三份单次真实模型验收（legacy/current/variant）各 24 项机器检查通过，各 3 次真实 API，共 9 次，源码绑定 `6062f1cfb` 且前后哈希不变，无重试。独立逐篇人工内容 GO，原机器 proof 保持 pending_content_review，裁决独立保存并绑定内容与 proof 哈希。旧 BLOCK 证据不覆盖。样本通过不等同线上用户验收。
 - 下一步：证据提交后的精确 main CI → Trusted Release validate → 服务端部署和健康回执。OTA 原生 cohort 不兼容阻断仍在；不改 fingerprint pin 或借旧入口发布。
+
+### 服务端发布回执（2026-10-09）
+
+- 当前 main 发布候选 `993908ddf6c15a3cfff98c4e399e9ae592146900`：精确 CI `37911602321` 成功；Trusted Release validate `37912566007` 成功；backend `37913658754` 成功。
+- 服务器持久回执 `SUCCEEDED`，SHA256 `0739415f09217525923057c76f112a49f238c510baefd91eaac08bbb8e72bc45`；生产运行 HEAD 同候选，backend/frontend/Celery worker/beat 全部 active，无遗留业务发布锁。公开 health HTTP 200；所选本人报告详情未认证 HTTP 401（只验证鉴权边界，未读取真实用户健康数据）。
+- `/tmp/reva-release-993908dd-final.json` 保存本轮终态摘要。此发布后记录暂留本地，避免更改已经发布且 CI 绿色的 main 候选。
+- 服务端部署完成；线上真实用户 Garmin 同步、本人医疗数据和当前移动 UI 仍未做用户态验收，不能以合成验收或 health 200 冒充。
+- OTA 未发布：`1.3.4` production 原生 cohort fingerprint 不一致且存在原生输入变化。新原生 runtime/安装包交付授权问题仍待用户答复；未修改固定原生基线，未调用 vendor update，未触发失败 OTA 重试。
+
+### 新原生 TestFlight 发布授权（2026-10-09）
+
+- 用户明确要求“发布新的testflight版本”并“授权发布”，解除此前新原生交付待授权状态。本轮范围是 production TestFlight 新包，不包含正式 App Review/公开商店提交。
+- 新鲜核验：origin/main 与生产仍为 `993908ddf`，后端回执 SUCCEEDED，无业务 lease；EAS 最新 production STORE iOS 构建为 1.3.4 (275)，近期列表无运行中构建。
+- 最小配置变更：appVersion `1.3.4 → 1.3.5`，runtime 仍由 appVersion 派生，新原生 cohort 避免旧 1.3.4 指纹混用。production autoIncrement 保持，不手工预测/占用 build number；不改旧 OTA baseline 常量。
+- 原主目录仍有其他会话 WIP 和分叉，保持原样；本轮只在既有 `health-prompt-optimization` 工作树继续。
+- Expo production 配置已解析验证 1.3.5、appVersion runtime policy、原 bundle identifier；锁定发布 CLI 的安全回补及 3 项兼容测试通过。候选 CI、独立 G4、构建上传、Apple processing 和同包验收分别记证，不把上传等同测试可用。
+- 本地新鲜验证：ChatHeader 4 passed，Mobile TypeScript通过；CI-mode基础集成与发布契约合计95 passed（本次无DB逻辑变化，SQLite快速层；既有PG证据不冒充新运行）；独立发布契约253 passed，production Expo配置复核，G4 GO。仅版本配置变化，不改变服务端、模型提示、权限或数据读取范围。
