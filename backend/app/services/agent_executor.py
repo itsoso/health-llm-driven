@@ -18033,6 +18033,31 @@ class AgentExecutor:
             },
         }
 
+        # Publish only owner-bound, committed meal receipts before model synthesis.
+        # A slow follow-up answer must not hide an already saved meal.
+        verified_photo_ids = {
+            str(receipt["resource_id"])
+            for receipt in self._turn_contextual_diet_receipts
+            if receipt.get("verified") is True
+            and receipt.get("resource_type") == "diet_record"
+            and receipt.get("resource_id") is not None
+        }
+        for card in self._turn_contextual_diet_cards:
+            data = card.get("data")
+            if (card.get("type") != "diet_draft" or not isinstance(data, dict)
+                    or data.get("recorded") is not True
+                    or str(data.get("record_id")) not in verified_photo_ids):
+                continue
+            before = len(streamed_cards)
+            streamed_cards = _merge_agent_card_descriptors(streamed_cards, [card])
+            if len(streamed_cards) > before:
+                _mark_perf_milestone("write_verified_ms")
+                _mark_perf_milestone("first_card_ms")
+                _mark_perf_milestone("first_useful_ms")
+                yield {"event": "card", "data": {
+                    "anchor": "contextual_meal_receipt", "descriptor": card,
+                }}
+
         # 2026-07-01: pre-LLM 阶段计时 SSE (纯埋点, mac 端解析未知 event 会 tolerate)。
         # 在进入 round loop 前发, 客户端可据此先画出 first-token 前的 waterfall。
         yield {

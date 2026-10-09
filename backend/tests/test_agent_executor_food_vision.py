@@ -255,7 +255,15 @@ async def test_image_nutrition_label_rejected_model_write_preserves_saved_receip
     async def recognize_food(*_args, **_kwargs):
         return _nutrition_label_food_result()
 
+    events = []
+
     async def fake_call_llm(messages, tools):
+        # A slow or rejected follow-up must not hide the committed meal.
+        early_cards = [e["data"]["descriptor"] for e in events
+                       if e.get("event") == "card"]
+        assert len(early_cards) == 1
+        assert early_cards[0]["data"]["recorded"] is True
+        assert early_cards[0]["data"]["record_id"] != 999
         nonlocal llm_calls
         llm_calls += 1
         if llm_calls == 1:
@@ -294,16 +302,14 @@ async def test_image_nutrition_label_rejected_model_write_preserves_saved_receip
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
 
-    events = [
-        event
-        async for event in executor.run_stream(
-            user_id=user.id,
-            message="记录这餐 20 克坚果，并按营养成分表计算。",
-            user_auth_token="test-token",
-            images=[{"base64": VALID_PNG_BASE64, "type": "png"}],
-            client_turn_id="turn-nutrition-label-auto-save",
-        )
-    ]
+    async for event in executor.run_stream(
+        user_id=user.id,
+        message="记录这餐 20 克坚果，并按营养成分表计算。",
+        user_auth_token="test-token",
+        images=[{"base64": VALID_PNG_BASE64, "type": "png"}],
+        client_turn_id="turn-nutrition-label-auto-save",
+    ):
+        events.append(event)
 
     rendered = "".join(
         event["data"].get("content", "")
