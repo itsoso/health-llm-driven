@@ -330,3 +330,5 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - 93953a3d8仅修佳明测试时钟：实时now−30分钟在北京时间午夜后落入昨日，原fixture却标今天；生产按start_time筛选正确。冻结ExecutionContext.now至合成日中午并从同一上下文派生记录，真实午夜RED19失败/21通过、GREEN40通过，未改生产日期或权限逻辑。与5fb Linux夹具修复一起等待新精确CI；原失败不重跑、不覆盖。
 - d7ddaefdf精确完整CI37959159002全部30项成功；无凭据OTA validate37960150375明确诊断publisher/ancestor_depth=2/writable，即canonical source根目录组或其他用户可写。没有claim/上传/新后端部署。按实际生产者修复root Git/npm子进程的创建umask，禁止放宽secure或递归修复未知目录；原失败回执保留。
 - 已用真实Git首次建库复现：继承umask0002时canonical source创建为0775，原校验正确拒绝。修复在root Git shell及各锁定依赖生产者root子shell内设置022，再exec固定argv；不chmod/chown现有树。作者RED真实目录模式失败，GREEN140通过，覆盖source/.git/config与依赖目录/普通文件/bin模式。待固定独立G4、新CI及hosted预检。
+- f504f0d0c精确完整CI37960716054全部30项成功，canonical staging完成；OTA validate37961746754仍在publisher祖先2 writable阻断，证明仅umask不足。没有轮换生产授权、后端部署或OTA claim。后续改为拒绝已有路径的fresh-source创建：仅对新空目录通过dirfd规范继承default ACL和0755，并记录固定阶段元数据。default ACL仍为待hosted证实机制，不能将本地umask复现当作已解决根因。
+- c6f8af755将source改为parent-dirfd下独占新建空目录，以NOFOLLOW/inode/empty绑定，仅该新目录清除default ACL并设0755；已有目录/链接/不安全parent及非ENODATA错误均拒绝。创建、checkout后、依赖后输出固定安全元数据，secure未改。作者153通过/1 mac明确skip；真实Linux ACL测试在Ubuntu必须执行，尚未据本机结果宣称已验证ACL机制。
