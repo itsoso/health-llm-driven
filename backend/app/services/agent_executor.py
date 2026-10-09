@@ -7160,6 +7160,22 @@ def _build_goal_verification_tool_call(
     }
 
 
+def _is_complete_static_html_reply(text: str) -> bool:
+    """Validate recovery output shape; the client still uses its safe renderer."""
+    if len(text) > 100_000:
+        return False
+    document = re.fullmatch(r"\s*```html\s*\n(.*?)\n```\s*", text, re.I | re.S)
+    if document is None:
+        return False
+    html = document.group(1)
+    if re.search(r"<(?:script|iframe|object|embed|form|img|link)\b|\son[a-z]+\s*=|javascript:", html, re.I):
+        return False
+    return re.fullmatch(
+        r"\s*<!doctype\s+html>\s*<html(?:\s[^>]*)?>\s*<head(?:\s[^>]*)?>.*?</head>"
+        r"\s*<body(?:\s[^>]*)?>.+?</body>\s*</html>\s*", html, re.I | re.S,
+    ) is not None
+
+
 def _normalize_goal_guarded_tool_calls(
     tool_calls: List[Dict[str, Any]],
     goal: Optional[GoalSpec],
@@ -18103,6 +18119,8 @@ class AgentExecutor:
         last_recoverable_write_rejection: Optional[str] = None
         last_recoverable_write_rejection_code: Optional[str] = None
         goal_guard_write_recovery_attempted = False
+        static_html_recovery_succeeded = False
+        static_html_recovery_attempted = False
         pending_pi_writes: dict[str, tuple[str, Dict[str, Any]]] = {}
 
         def _reconcile_pi_preflight_rejections(transcript, completed_round, *, settled=False):
@@ -19666,15 +19684,57 @@ class AgentExecutor:
                                     and len(rejected_goal_writes)
                                     == len(goal_guard_candidates)
                                 ):
-                                    # End from the deterministic server boundary.
-                                    # No denied call or follow-up model prose can
-                                    # claim that the rejected effect succeeded.
-                                    goal_guard_write_recovery_attempted = True
-                                    pi_terminal_text = _GOAL_GUARD_TERMINAL_MESSAGE
-                                    final_finish_reason = "error"
+                                    # The refused action remains refused. A closed
+                                    # static-document request may be answered once
+                                    # without tools; no media action is performed.
+                                    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+                                    html_scope = resolve_exercise_plan_scope(message)
+                                    may_render_html = (
+                                        html_scope is not None and html_scope.output_format == "html"
+                                        and not static_html_recovery_attempted
+                                        and self._turn_selected_exam_id is None
+                                        and not images and not file_base64 and not self._current_turn_has_attachment
+                                        and not self._agent_kernel_pending_confirmation_tools
+                                        and not health_advice_buffered
+                                        and not write_receipts and not failed_write_operations
+                                        and not unverified_write_operations and not runtime_control_terminal
+                                        and not self._agent_kernel_tool_failure_tools
+                                        and not self._agent_kernel_capability_block_reasons
+                                        and all(name == "draft_aigc_media" for name, _ in rejected_goal_writes)
+                                    )
+                                    recovered_html = ""
+                                    recovery_finish = None
+                                    recovery_had_tools = False
+                                    if may_render_html:
+                                        static_html_recovery_attempted = True
+                                        recovery_messages = list(messages) + [{"role": "system", "content": (
+                                            "刚才的媒体操作提案已拒绝，未执行任何生成、保存或发布动作。"
+                                            "用户只需要回复中的完整静态HTML文档。现在不使用任何工具，"
+                                            "只输出一个完整```html代码块，包含DOCTYPE、html、head、body。"
+                                            "保留健康建议护栏及已有证据的不确定性；不要脚本、网络资源或外部操作。"
+                                        )}]
+                                        html_recovery_started = time.time()
+                                        async for event in self._call_llm_stream(recovery_messages, []):
+                                            if event.get("type") == "content":
+                                                recovered_html += event.get("text") or ""
+                                            elif event.get("type") == "tool_calls":
+                                                recovery_had_tools = True
+                                            elif event.get("type") == "finish":
+                                                recovery_finish = event.get("finish_reason")
+                                        llm_rounds_ms.append(max(0, int((time.time() - html_recovery_started) * 1000)))
+                                        static_html_recovery_succeeded = (
+                                            recovery_finish == "stop" and not recovery_had_tools
+                                            and _is_complete_static_html_reply(recovered_html)
+                                        )
                                     proposed_calls = []
-                                    candidate = _GOAL_GUARD_TERMINAL_MESSAGE
-                                    finish_reason = "error"
+                                    if static_html_recovery_succeeded:
+                                        candidate = recovered_html
+                                        finish_reason = "stop"
+                                    else:
+                                        pi_terminal_text = _GOAL_GUARD_TERMINAL_MESSAGE
+                                        final_finish_reason = "error"
+                                        candidate = _GOAL_GUARD_TERMINAL_MESSAGE
+                                        finish_reason = "error"
                                 # Canonicalize once before issuing the call to
                                 # Pi so the durable plan and dispatch identity
                                 # describe the same authorized health payload.
@@ -19699,7 +19759,7 @@ class AgentExecutor:
                                         if isinstance(data_object, dict):
                                             args["data"] = data_object
                                     function["arguments"] = json.dumps(args, ensure_ascii=False)
-                                if not proposed_calls:
+                                if not proposed_calls and not static_html_recovery_succeeded:
                                     candidate = (
                                         _GOAL_GUARD_TERMINAL_MESSAGE
                                         if goal_guard_write_recovery_attempted
@@ -19843,7 +19903,8 @@ class AgentExecutor:
                                     last_recoverable_write_rejection, write_receipts,
                                 )
                                 final_finish_reason = "error"
-                            if goal_guard_write_recovery_attempted and not write_receipts:
+                            if (goal_guard_write_recovery_attempted and not write_receipts
+                                    and not static_html_recovery_succeeded):
                                 full_reply = _GOAL_GUARD_TERMINAL_MESSAGE
                                 final_finish_reason = "error"
 
