@@ -13066,6 +13066,13 @@ class AgentExecutor:
             or classify_clinician_turn(message).kind != "none"
         ):
             return None
+        from app.services.agent_longitudinal_read import project_running_analysis_read
+
+        if project_running_analysis_read(snapshot.envelope.text) is not None:
+            # History completion is only one part of this composite task.
+            # Keep the original transcript and tools for public weather and
+            # the requested output; ordinary evidence/safety guards still run.
+            return None
         completion = self._composed_read_completion()
         if completion is None or not completion.complete or completion.verified_evidence is None:
             return None

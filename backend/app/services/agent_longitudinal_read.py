@@ -11,6 +11,8 @@ from datetime import timedelta
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from app.services.agent_public_task import _LOCATION as _PUBLIC_WEATHER_LOCATION
+
 from app.services.agent_kernel.health_semantics import (
     active_health_instruction_text,
     health_read_has_nonself_subject,
@@ -105,6 +107,52 @@ _HTML_PRESENTATION_SUFFIX = re.compile(
     r"(?:形式|方式|格式)\s*(?:来\s*)?(?:表达|输出|展示|呈现)\s*[。.!！]?",
     re.I,
 )
+
+# Composite advice has several independent roles. Consume the entire active
+# speech act before projecting its history basis; never delete arbitrary
+# weather/advice/format substrings from an otherwise restricted request.
+_RUNNING_ANALYSIS_READ = re.compile(
+    r"(?:请)?(?:基于|结合|根据)(?:我|本人)的(?:身体|健康)(?:状况|情况|状态)[，,]"
+    r"(?:以及|结合)?(?:(?:我|本人)的)?"
+    r"(?P<window>(?:最近|近|过去)(?:[0-9]+|[一二两三四五六七八九十]+)(?:天|日|周)|近期|最近)的?"
+    r"(?P<domains>(?:饮食|餐食|睡眠)(?:(?:和|与|以及|及|、)?(?:饮食|餐食|睡眠))?)[，,]"
+    r"(?:(?:(?:我)?还有|以及|结合)?(?:现在|当前|今天)的?"
+    + r"(?P<city>" + _PUBLIC_WEATHER_LOCATION + r")的?天气[，,])?"
+    r"(?:请)?分析(?:我)?是否适合跑步(?:以及跑多远)?"
+    r"(?:[，,](?:跑多远|怎么跑|注意事项))*[。.]?"
+    r"(?:(?:[，,])?给我(?:详细的)?分析[。.]?)?"
+    r"(?:(?:[，,])?(?:最终|最后)?(?:生成|输出)(?:一个)?HTML页面[。.]?)?",
+    re.I,
+)
+
+
+def project_running_analysis_read(source: str) -> str | None:
+    """Project only owned diet/sleep history; preserve the original task outside.
+
+    This grants neither medical-history reads nor workout writes. The weather
+    date belongs to public weather, not to historical records. The resulting
+    window must still pass the ordinary bounded longitudinal authorization.
+    """
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+
+    original = str(source or "")
+    if active_health_read_authority_text(original) != original.strip():
+        return None
+    if _NEGATIVE.search(original) or _MUTATION.search(original):
+        return None
+    match = _RUNNING_ANALYSIS_READ.fullmatch(re.sub(r"[ \t]+", "", original.strip()))
+    if match is None:
+        return None
+    return f"查询我的{match['window']}的{match['domains']}记录并分析"
+
+
+def running_analysis_weather_city(source: str) -> str | None:
+    """Public-weather goal only; None is absent, empty means current location."""
+    if project_running_analysis_read(source) is None:
+        return None
+    match = _RUNNING_ANALYSIS_READ.fullmatch(re.sub(r"[ \t]+", "", source.strip()))
+    city = match["city"]
+    return "" if city in {"这里", "這裡", "当地", "当前城市"} else city
 
 
 def _project_read_presentation(source: str) -> str | None:
@@ -574,7 +622,8 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     # fail the stricter read-authority boundary instead of becoming empty syntax.
     if not active_health_read_authority_text(source_text):
         return None
-    active = (_project_read_presentation(source_text)
+    active = (project_running_analysis_read(source_text)
+              or _project_read_presentation(source_text)
               or active_health_instruction_text(source_text))
     active = project_active_quote_roles(active)
     if active is None:
@@ -607,7 +656,8 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
     ):
         return None
     # Match the full source, never the quote/material-stripped ``active`` text.
-    active = _project_read_presentation(snapshot.envelope.text) or active
+    active = (project_running_analysis_read(snapshot.envelope.text)
+              or _project_read_presentation(snapshot.envelope.text) or active)
     # A direct analysis of an explicitly bounded recent record window also
     # requests a read (e.g. 分析最近一周的睡眠血氧). Keep the historical
     # explicit-owner/tool requirements for other longitudinal speech acts.
