@@ -56,7 +56,7 @@ def test_hosted_ota_never_uses_developer_checkout_or_cached_deps():
     assert job["runs-on"] == "ubuntu-24.04"
     assert job["environment"] == "release-production"
     for step in job["steps"]:
-        if "Publish one bound" in step.get("name", ""):
+        if any(name in step.get("name", "") for name in ("Publish one bound", "Read-only vendor admission")):
             continue
         assert "secrets." not in str(step)
         assert "actions/checkout" not in str(step)
@@ -210,10 +210,10 @@ def test_node_hardening_rejects_external_symlink_before_chown(tmp_path):
 def test_failure_artifact_is_fixed_whitelist_and_pinned_action():
     stage = named("Stage validated OTA audit")
     upload = named("Preserve OTA audit")
-    assert stage["if"] == "always() && inputs.target == 'publish'"
+    assert stage["if"] == "always()"
     assert (
         upload["if"]
-        == "always() && inputs.target == 'publish' && steps.ota-audit.outcome == 'success'"
+        == "always() && steps.ota-audit.outcome == 'success'"
     )
     assert stage["id"] == "ota-audit"
     assert (
@@ -223,6 +223,7 @@ def test_failure_artifact_is_fixed_whitelist_and_pinned_action():
     assert upload["with"]["include-hidden-files"] is False
     assert upload["with"]["if-no-files-found"] == "ignore"
     assert set(upload["with"]["path"].splitlines()) == {
+        "/opt/reva-release/audit/ota-diagnostic.json",
         "/opt/reva-release/audit/ota-claim.json",
         "/opt/reva-release/audit/ota-preflight.json",
         "/opt/reva-release/audit/ota-vendor-receipt.json",
@@ -559,3 +560,44 @@ def test_fresh_canonical_enodata_creates_exact_mode_without_touching_parent(tmp_
     assert result['inherited_default_acl'] is False
     assert stat.S_IMODE((tmp_path / 'source').stat().st_mode) == 0o755
     assert tmp_path.stat().st_mode == parent_before
+
+
+def test_vendor_admission_only_follows_all_uncredentialed_gates():
+    steps = workflow()['jobs']['ota']['steps']
+    admission = named('Read-only vendor admission')
+    assert admission['if'] == "inputs.target == 'validate'"
+    assert steps.index(named('Read-only publisher context')) < steps.index(admission)
+    assert admission['env'] == {'TARGET_SHA': '${{ inputs.sha }}', 'EXPO_TOKEN': '${{ secrets.REVA_RELEASE_EXPO_TOKEN }}'}
+    assert '--admission' in admission['run'] and '--preflight' not in admission['run']
+    assert 'trusted_release_gate.py' in admission['run']
+    assert 'env -i' in admission['run'] and '-I -S -B' in admission['run']
+    assert 'RELEASE_KEY' not in str(admission) and 'RELEASE_HOST_KEYS' not in str(admission)
+
+
+@pytest.mark.parametrize('mutation', ['none', 'phase', 'reason', 'secret', 'success'])
+def test_early_safe_diagnostic_audit_is_strictly_closed(mutation):
+    ns = embedded_functions(named('Stage validated OTA audit'))
+    value = {'sha': 'c'*40, 'state': 'BLOCKED', 'phase': 'baseline', 'reason': 'command_failed'}
+    if mutation == 'phase': value['phase'] = 'https://private.example'
+    if mutation == 'reason': value['reason'] = 'SECRET'
+    if mutation == 'secret': value['stderr'] = 'SECRET'
+    if mutation == 'success': value['state'] = 'ADMISSION_PASSED'
+    records = {'ota-diagnostic.json': value}
+    if mutation == 'none':
+        assert ns['validate_records'](records, 'c'*40) == records
+    else:
+        with pytest.raises(ValueError): ns['validate_records'](records, 'c'*40)
+
+
+def test_every_publisher_diagnostic_round_trips_through_audit_whitelist():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('ota_safe_diagnostic_contract', ROOT / 'scripts/trusted_ota_publish.py')
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    validate = embedded_functions(named('Stage validated OTA audit'))['validate_records']
+    for phase in m.DIAGNOSTIC_PHASES - {'admission'}:
+        for reason in m.DIAGNOSTIC_REASONS - {'verified'}:
+            records = {'ota-diagnostic.json': m.diagnostic('c'*40, 'BLOCKED', phase, reason)}
+            assert validate(records, 'c'*40) == records
+    records = {'ota-diagnostic.json': m.diagnostic('c'*40, 'ADMISSION_PASSED', 'admission', 'verified')}
+    assert validate(records, 'c'*40) == records

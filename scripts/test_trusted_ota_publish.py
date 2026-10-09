@@ -819,3 +819,162 @@ def test_unknown_path_diagnostics_never_leak(monkeypatch, capsys, bad):
     assert m.cli()==1
     value=json.loads(capsys.readouterr().err)
     assert value=={'state':'BLOCKED','phase':'publisher_context','reason':'publisher_path_untrusted'}
+
+
+def test_vendor_admission_has_no_export_claim_or_update(tmp_path):
+    m = load()
+    f = Fake(m, tmp_path)
+    result = m.vendor_admission(f)
+    assert result[0] == 'a' * 40
+    assert f.events == ['gate', 'source', 'baseline', 'cohort', 'channel-before', 'environment']
+    assert f.vendor_calls == 0
+
+
+@pytest.mark.parametrize('tag', ['baseline', 'cohort', 'channel-before'])
+def test_admission_errors_are_closed_phase_diagnostics(tmp_path, tag):
+    m = load()
+    f = Fake(m, tmp_path)
+    original = f.eas
+    def failed(args, current):
+        if current == tag:
+            raise RuntimeError('SECRET https://private.example/token')
+        return original(args, current)
+    f.eas = failed
+    with pytest.raises(m.PhaseError) as caught:
+        m.vendor_admission(f)
+    assert caught.value.phase == tag
+    assert caught.value.reason == 'operation_failed'
+    assert 'SECRET' not in str(caught.value)
+    assert f.vendor_calls == 0
+
+
+def test_admission_cli_does_not_require_ssh_credentials_or_publish(monkeypatch, tmp_path, capsys):
+    m = load()
+    f = Fake(m, tmp_path)
+    monkeypatch.setattr(m, 'preflight', lambda sha: None)
+    def context(sha, *, require_credentials=True):
+        assert require_credentials is False
+        return object()
+    monkeypatch.setattr(m, 'context', context)
+    monkeypatch.setattr(m, 'Adapter', lambda *args: f)
+    monkeypatch.setattr(m, 'persist_diagnostic', lambda data: None)
+    monkeypatch.setattr(m, 'publish', lambda *a: pytest.fail('no publish in admission'))
+    monkeypatch.setenv('EXPO_TOKEN', 'private-token')
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40, '--admission'])
+    assert m.cli() == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output['state'] == 'ADMISSION_PASSED'
+    assert f.vendor_calls == 0 and 'export' not in f.events
+
+
+def test_phase_timeout_never_exposes_command_or_token():
+    m = load()
+    def fail():
+        raise m.subprocess.TimeoutExpired(['token=SECRET'], 3, output=b'PRIVATE')
+    with pytest.raises(m.PhaseError) as caught:
+        m.phase_call('baseline', fail)
+    assert caught.value.reason == 'command_timeout'
+    assert 'SECRET' not in str(caught.value)
+
+
+@pytest.mark.parametrize('method,phase', [
+    ('gate', 'gate-before'), ('validate_source', 'source-before'),
+    ('environment', 'environment'), ('export', 'export'), ('artifact', 'artifact'),
+])
+def test_early_failure_blocks_before_claim_with_static_phase(tmp_path, method, phase):
+    m = load()
+    f = Fake(m, tmp_path)
+    def fail(*args):
+        raise RuntimeError('secret token and private URL')
+    setattr(f, method, fail)
+    with pytest.raises(m.PhaseError) as caught:
+        m.publish(f, 'c'*40)
+    assert caught.value.phase == phase
+    assert caught.value.reason == 'operation_failed'
+    assert not any('claim' in e for e in f.events)
+    assert f.vendor_calls == 0
+
+
+@pytest.mark.parametrize('failure,reason', [('exit', 'command_failed'), ('timeout', 'command_timeout'), ('json', 'metadata_invalid')])
+def test_real_admission_adapter_classifies_process_failures(monkeypatch, tmp_path, failure, reason):
+    m = load()
+    monkeypatch.setattr(m, 'ROOT', tmp_path)
+    def run(*args, **kwargs):
+        kwargs['stdout'].write(b'PRIVATE malformed response')
+        kwargs['stderr'].write(b'SECRET')
+        if failure == 'timeout': raise m.subprocess.TimeoutExpired(['SECRET'], 1)
+        return type('Result', (), {'returncode': 1 if failure == 'exit' else 0})()
+    monkeypatch.setattr(m.subprocess, 'run', run)
+    adapter = m.Adapter('c'*40, None, 'SECRET')
+    with pytest.raises(m.PhaseError) as caught:
+        m.phase_call('baseline', adapter.eas, ['build:view', m.NATIVE_BUILD, '--json'], 'baseline')
+    assert caught.value.reason == reason
+    assert caught.value.phase == ('baseline-json' if failure == 'json' else 'baseline')
+    assert 'PRIVATE' not in str(caught.value) and 'SECRET' not in str(caught.value)
+
+
+def test_cli_retains_preclaim_diagnostic_without_raw_exception(monkeypatch, capsys):
+    m = load()
+    saved = []
+    monkeypatch.setattr(m, 'preflight', lambda sha: None)
+    def fail(*a, **k): raise ValueError('SECRET')
+    monkeypatch.setattr(m, 'context', fail)
+    monkeypatch.setattr(m, 'persist_diagnostic', saved.append)
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40])
+    assert m.cli() == 1
+    out = capsys.readouterr()
+    assert json.loads(out.err) == saved[0] == {
+        'sha': 'c'*40, 'state': 'BLOCKED', 'phase': 'private-context', 'reason': 'operation_failed'}
+    assert 'SECRET' not in out.err
+
+
+def test_safe_diagnostic_file_is_private_exclusive_and_fsynced(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    m = load()
+    monkeypatch.setattr(m, 'ROOT', tmp_path)
+    original = Path.lstat
+    def trusted(path):
+        if path == tmp_path or path in tmp_path.parents:
+            return SimpleNamespace(st_uid=0, st_mode=m.stat.S_IFDIR | 0o755)
+        return original(path)
+    monkeypatch.setattr(Path, 'lstat', trusted)
+    value = m.diagnostic('c'*40, 'BLOCKED', 'baseline', 'command_failed')
+    m.persist_diagnostic(value)
+    path = tmp_path / 'ota-diagnostic.json'
+    assert json.loads(path.read_text()) == value
+    assert path.stat().st_mode & 0o777 == 0o600
+    with pytest.raises(FileExistsError): m.persist_diagnostic(value)
+    assert json.loads(path.read_text()) == value
+
+
+@pytest.mark.parametrize('token', ['', 'has whitespace', 'x'*8193])
+def test_admission_rejects_invalid_credential_before_adapter(monkeypatch, capsys, token):
+    m = load()
+    saved = []
+    monkeypatch.setattr(m, 'preflight', lambda sha: None)
+    monkeypatch.setattr(m, 'context', lambda *a, **k: None)
+    monkeypatch.setattr(m, 'Adapter', lambda *a: pytest.fail('no vendor before credential check'))
+    monkeypatch.setattr(m, 'persist_diagnostic', saved.append)
+    monkeypatch.setenv('EXPO_TOKEN', token)
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40, '--admission'])
+    assert m.cli() == 1
+    output = json.loads(capsys.readouterr().err)
+    assert output['phase'] == 'credential'
+    assert saved == [output]
+
+
+def test_diagnostic_retention_failure_is_visible_and_never_retries(monkeypatch, capsys):
+    m = load()
+    calls = []
+    monkeypatch.setattr(m, 'preflight', lambda sha: None)
+    def fail_context(*a, **k): raise ValueError('SECRET')
+    def fail_persist(data):
+        calls.append(data)
+        raise OSError('private path SECRET')
+    monkeypatch.setattr(m, 'context', fail_context)
+    monkeypatch.setattr(m, 'persist_diagnostic', fail_persist)
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40])
+    assert m.cli() == 1
+    output = capsys.readouterr().err
+    assert len(calls) == 1 and 'SECRET' not in output
+    assert 'diagnostic_persistence_unavailable' in output

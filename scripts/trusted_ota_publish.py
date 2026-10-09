@@ -51,6 +51,72 @@ class PublishError(Exception):
     """Fixed diagnostics only; never vendor payloads or process exceptions."""
 
 
+# Closed vocabulary: never derive a diagnostic from exception text or vendor data.
+DIAGNOSTIC_PHASES = frozenset({
+    "private-context", "credential", "gate-before", "source-before", "baseline",
+    "baseline-json", "cohort", "cohort-json", "cohort-next", "cohort-next-json",
+    "native-binding", "channel-before", "channel-before-json", "channel-binding",
+    "environment", "export", "source-after", "artifact", "publication", "admission",
+})
+DIAGNOSTIC_REASONS = frozenset({
+    "operation_failed", "command_failed", "command_timeout", "command_unavailable",
+    "metadata_invalid", "verified",
+})
+
+
+class CommandError(PublishError):
+    def __init__(self, reason):
+        super().__init__("isolated command failed")
+        self.reason = reason
+
+
+class PhaseError(PublishError):
+    def __init__(self, phase, reason):
+        super().__init__("operation blocked; retry forbidden")
+        self.phase = phase
+        self.reason = reason
+
+
+def phase_call(phase, operation, *args, **kwargs):
+    if phase not in DIAGNOSTIC_PHASES:
+        raise PublishError("unknown diagnostic phase")
+    try:
+        return operation(*args, **kwargs)
+    except PhaseError:
+        raise
+    except subprocess.TimeoutExpired:
+        raise PhaseError(phase, "command_timeout") from None
+    except CommandError as exc:
+        reason = exc.reason if exc.reason in DIAGNOSTIC_REASONS else "operation_failed"
+        raise PhaseError(phase, reason) from None
+    except Exception:
+        raise PhaseError(phase, "operation_failed") from None
+
+
+def diagnostic(sha, state, phase, reason):
+    if (not isinstance(sha, str) or re.fullmatch(r"[a-f0-9]{40}", sha) is None
+            or state not in {"BLOCKED", "ADMISSION_PASSED"}
+            or phase not in DIAGNOSTIC_PHASES or reason not in DIAGNOSTIC_REASONS
+            or (state == "ADMISSION_PASSED") != (phase == "admission")
+            or (state == "ADMISSION_PASSED") != (reason == "verified")):
+        raise PublishError("invalid safe diagnostic")
+    return {"sha": sha, "state": state, "phase": phase, "reason": reason}
+
+
+def persist_diagnostic(value):
+    # Only an exclusive bounded JSON file under trusted root ancestors; never raw logs.
+    value = diagnostic(**value)
+    for path in [*reversed(ROOT.parents), ROOT]:
+        info = path.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise PublishError("untrusted diagnostic root")
+    with private_file(ROOT / "ota-diagnostic.json") as stream:
+        stream.write(json.dumps(value, sort_keys=True).encode())
+        stream.flush()
+        os.fsync(stream.fileno())
+    fsync_directory(ROOT)
+
+
 def unique(pairs):
     result = {}
     for k, v in pairs:
@@ -225,10 +291,11 @@ def environment(token):
     return result
 
 
-def publish(adapter, sha):
-    adapter.gate()
-    adapter.validate_source()
-    base = adapter.eas(["build:view", NATIVE_BUILD, "--json"], "baseline")
+def vendor_admission(adapter):
+    """Read-only vendor admission. No export, server RPC, or vendor update."""
+    phase_call("gate-before", adapter.gate)
+    phase_call("source-before", adapter.validate_source)
+    base = phase_call("baseline", adapter.eas, ["build:view", NATIVE_BUILD, "--json"], "baseline")
     args = [
         "build:list",
         "--platform",
@@ -246,11 +313,11 @@ def publish(adapter, sha):
         "--json",
         "--non-interactive",
     ]
-    cohort = adapter.eas(args, "cohort")
+    cohort = phase_call("cohort", adapter.eas, args, "cohort")
     if not isinstance(cohort, list) or len(cohort) > 50:
-        raise PublishError("native cohort page is invalid")
+        raise PhaseError("cohort", "metadata_invalid")
     if len(cohort) == 50:
-        second = adapter.eas(
+        second = phase_call("cohort-next", adapter.eas,
             [
                 *args[: args.index("--offset") + 1],
                 "50",
@@ -259,9 +326,9 @@ def publish(adapter, sha):
             "cohort-next",
         )
         if not isinstance(second, list):
-            raise PublishError("native cohort second page invalid")
+            raise PhaseError("cohort-next", "metadata_invalid")
         cohort = cohort + second
-    fingerprint = validate_builds(base, cohort)
+    fingerprint = phase_call("native-binding", validate_builds, base, cohort)
     channel_args = [
         "channel:view",
         "production",
@@ -272,11 +339,17 @@ def publish(adapter, sha):
         "--json",
         "--non-interactive",
     ]
-    mapping = validate_channel(adapter.eas(channel_args, "channel-before"))
-    remote_environment = adapter.environment()
-    adapter.export()
-    adapter.validate_source()
-    proof = adapter.artifact()
+    mapping = phase_call("channel-binding", validate_channel,
+                         phase_call("channel-before", adapter.eas, channel_args, "channel-before"))
+    remote_environment = phase_call("environment", adapter.environment)
+    return fingerprint, mapping, remote_environment, channel_args
+
+
+def publish(adapter, sha):
+    fingerprint, mapping, remote_environment, channel_args = vendor_admission(adapter)
+    phase_call("export", adapter.export)
+    phase_call("source-after", adapter.validate_source)
+    proof = phase_call("artifact", adapter.artifact)
     claim = {
         "sha": sha,
         "project": PROJECT,
@@ -421,16 +494,16 @@ class Adapter:
                     fsync_directory(ROOT)
             fsync_directory(ROOT)
             if result.returncode != 0:
-                raise PublishError("isolated command failed; outcome must be inspected")
+                raise CommandError("command_failed")
             with out_path.open("rb") as stream:
                 raw = stream.read(2_000_001)
             if len(raw) > 2_000_000:
                 raise PublishError("command output exceeds bound")
             return raw
+        except subprocess.TimeoutExpired:
+            raise CommandError("command_timeout") from None
         except (OSError, subprocess.SubprocessError):
-            raise PublishError(
-                "isolated command outcome unavailable; retry forbidden"
-            ) from None
+            raise CommandError("command_unavailable") from None
 
     def gate(self):
         # Each invocation gets a unique read-only log name; publication is never repeated.
@@ -454,14 +527,14 @@ class Adapter:
         self.contract.validate_source(SOURCE, self.sha)
 
     def eas(self, args, tag):
-        return parsed(
-            self.run(
-                [str(NODE), str(EAS), *args],
-                tag,
-                with_token=True,
-                timeout=1800 if tag == "publish" else 180,
-            )
-        )
+        raw = self.run([str(NODE), str(EAS), *args], tag, with_token=True,
+                       timeout=1800 if tag == "publish" else 180)
+        try:
+            return parsed(raw)
+        except PublishError:
+            if tag + "-json" in DIAGNOSTIC_PHASES:
+                raise PhaseError(tag + "-json", "metadata_invalid") from None
+            raise
 
     def export(self):
         if os.path.lexists(ROOT / "artifact"):
@@ -713,7 +786,9 @@ def preflight(sha):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--sha", required=True)
-    parser.add_argument("--preflight", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--preflight", action="store_true")
+    mode.add_argument("--admission", action="store_true")
     args = parser.parse_args()
     preflight(args.sha)
     if args.preflight:
@@ -722,11 +797,28 @@ def main():
         return
     # Publication still rechecks every original context constraint, including
     # private root-owned key files, after the credential-free preflight.
-    contract = context(args.sha)
-    token = os.environ.get("EXPO_TOKEN", "")
-    if not token or len(token) > 8192 or any(c.isspace() for c in token):
-        raise PublishError("private Expo credential required")
-    result = publish(Adapter(args.sha, contract, token), args.sha)
+    try:
+        contract = phase_call("private-context", context, args.sha,
+                              require_credentials=not args.admission)
+        token = os.environ.get("EXPO_TOKEN", "")
+        if not token or len(token) > 8192 or any(c.isspace() for c in token):
+            raise PhaseError("credential", "operation_failed")
+        adapter = Adapter(args.sha, contract, token)
+        if args.admission:
+            vendor_admission(adapter)
+            result = diagnostic(args.sha, "ADMISSION_PASSED", "admission", "verified")
+            persist_diagnostic(result)
+        else:
+            result = phase_call("publication", publish, adapter, args.sha)
+    except PhaseError as exc:
+        result = diagnostic(args.sha, "BLOCKED", exc.phase, exc.reason)
+        # Even if durable audit cannot be created, emit only the safe closed object.
+        print(json.dumps(result, sort_keys=True), file=sys.stderr)
+        try:
+            persist_diagnostic(result)
+        except Exception:
+            print('{"state":"BLOCKED","reason":"diagnostic_persistence_unavailable"}', file=sys.stderr)
+        raise
     print(json.dumps(result, sort_keys=True))
 
 
@@ -744,6 +836,8 @@ def cli():
                     and type(value["ancestor_depth"]) is int and 0 <= value["ancestor_depth"] <= 32):
                 result["path_diagnostic"] = value
         print(json.dumps(result, sort_keys=True), file=sys.stderr)
+        return 1
+    except PhaseError:
         return 1
     except Exception:
         print(json.dumps({"state": "BLOCKED", "phase": "publication",
