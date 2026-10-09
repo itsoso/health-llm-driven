@@ -229,4 +229,6 @@ async def test_today_draft_recovers_from_model_proposed_unrequested_personal_rea
 @pytest.mark.parametrize('base', [*PLANS, CONTEXT_PLAN])
 def test_html_format_suffix_preserves_the_existing_draft_authority(base):
     from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
-    assert resolve_exercise_plan_scope(base.rstrip('。') + '，最终生成一个HTML页面。') == resolve_exercise_plan_scope(base)
+    html_scope = resolve_exercise_plan_scope(base.rstrip('。') + '，最终生成一个HTML页面。')
+    assert html_scope.output_format == 'html'
+    assert replace(html_scope, output_format='text') == resolve_exercise_plan_scope(base)
