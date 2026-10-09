@@ -193,6 +193,20 @@ function allowsAnswerArtifacts(phase: string): boolean {
   return phase === 'completed' || phase === 'partial' || phase === 'waiting_for_user';
 }
 
+// A failed analysis cannot revoke a meal already committed by the server.
+// Keep this exception restricted to matching, verified diet receipts.
+function terminalAnswerCards(cards: any, receipts: any, allowAnswer: boolean): any[] {
+  if (!Array.isArray(cards)) return [];
+  if (allowAnswer) return cards;
+  const verifiedIds = new Set((Array.isArray(receipts) ? receipts : [])
+    .filter(r => r?.verified === true && r.resource_type === 'diet_record'
+      && r.resource_id != null && String(r.resource_id).trim() !== '')
+    .map(r => String(r.resource_id)));
+  return cards.filter(card => card?.type === 'diet_draft'
+    && card.data?.recorded === true && card.data.record_id != null
+    && verifiedIds.has(String(card.data.record_id)));
+}
+
 function historyAllowsAnswerArtifacts(meta: any): boolean {
   return allowsAnswerArtifacts(recoveredAgentPhase(
     meta?.completion_status, meta?.turn_outcome?.status, false,
@@ -417,8 +431,9 @@ export function restoreMessagesFromHistory(
   (msgs || []).forEach((m: any, i: number) => {
     const baseId = `${idPrefix}-${m.id || i}`;
     const messageMeta = applyMeta(m);
-    const serverCards = historyAllowsAnswerArtifacts(m?.meta)
-      ? dedupeServerCards(renderServerCards(m?.meta?.cards)) : [];
+    const serverCards = dedupeServerCards(renderServerCards(terminalAnswerCards(
+      m?.meta?.cards, m?.meta?.write_receipts, historyAllowsAnswerArtifacts(m?.meta),
+    )));
     const hasTerminalMedicationCard = serverCards.some((card) => {
       if (card.type !== 'medication_draft') return false;
       const decisionStatus = normalizeMedicationDecisionStatus(card.data?.decision_status)
@@ -2250,9 +2265,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             && allowsAnswerArtifacts(terminalTurn.phase)
             && typeof evt.messageId === 'number'
           );
-          const rawDoneCards = (
-            allowDoneCards && Array.isArray((evt as any).cards)
-          ) ? (evt as any).cards : [];
+          const rawDoneCards = evt.requestPersisted !== false && typeof evt.messageId === 'number'
+            ? terminalAnswerCards((evt as any).cards, evt.writeReceipts, allowDoneCards)
+            : [];
           const terminalServerCards = dedupeServerCards(renderServerCards(rawDoneCards));
           const terminalCards = terminalCardsForMessages(terminalServerCards);
           // done 收尾原子性: 把 token 缓冲里最后一批一起折进这次 setMessages, 且同帧

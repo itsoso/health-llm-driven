@@ -960,6 +960,33 @@ describe('useChatEngine', () => {
     expect(assistant?.answerEvidence).toBeUndefined();
   });
 
+  it.each([
+    [true, '701', true], [false, '701', false],
+    [true, '702', false], [true, undefined, false],
+  ])('keeps only a committed meal after failed synthesis: %s/%s', async (verified, resourceId, expected) => {
+    const card = { type: 'diet_draft', data: { card_id: 'saved-meal', recorded: true, record_id: 701 }, actions: [] };
+    const draft = { type: 'diet_draft', data: { card_id: 'draft', recorded: false, record_id: 701 }, actions: [] };
+    const receipt = { verified, resource_type: 'diet_record', resource_id: resourceId };
+    mockStreamChat.mockImplementation(async function* (...args: any[]) {
+      yield { type: 'persisted', conversationId: 777, userMessageId: 41, clientTurnId: args[6] };
+      yield { type: 'card', card };
+      yield { type: 'done', conversationId: 777, messageId: 901,
+        completionStatus: 'error', terminalStatus: 'failed',
+        cards: [card, card, draft], writeReceipts: [receipt] };
+    });
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await result.current.sendMessage('记录这餐'); });
+    const cards = result.current.messages.filter(m => m.cardType);
+    expect(cards).toHaveLength(expected ? 1 : 0);
+    if (expected) expect(cards[0].cardData.recorded).toBe(true);
+    const assistant = result.current.messages.find(m => m.role === 'assistant' && !m.cardType);
+    expect(assistant?.completionStatus).toBe('error');
+    const history = restoreMessagesFromHistory([{ id: 901, role: 'assistant', content: '分析失败',
+      meta: { completion_status: 'error', turn_outcome: { status: 'failed' },
+        cards: [card, card, draft], write_receipts: [receipt] } }]);
+    expect(history.filter(m => m.cardType)).toHaveLength(expected ? 1 : 0);
+  });
+
   it('restores verified write receipts from assistant history meta', () => {
     const restored = restoreMessagesFromHistory([{
       id: 51,

@@ -275,3 +275,6 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - 最小改动：在 agent_start 后、任何后续模型调用前，仅流式返回本轮 verified diet_record 回执匹配且 recorded=true 的卡片；保留原模型、提示词、识别、校准、写入、确认与最终回复。补齐 write_verified_ms/first_card_ms 便于后续测量。不将草稿、未核验卡片或部分回复当作保存成功。
 - RED：真实保存入口的回归在模型开始时断言尚无卡片，失败；GREEN：卡片先返回，后续拒绝写入仍保留同一条原始记录。测试注入未验证卡片及同 ID 草稿，均不得提前发布。第一轮后端173项、Mobile流协议37项通过。最终顺序及独立 coverage 文件重验中，标准 live gate 与 G4 待验；无生产提速或发布声明。
 - 另一 checkout 的份量修正回执补丁与视觉工作保持不动。本轮只解决结果展示被长回复阻塞，未宣称降低 Vision 本身或整体模型生成时延。
+- 固定 dc8d9109a 独立 G4 NO-GO：后续失败终态会令 Mobile 清除已验证保存卡片，历史恢复也隐藏。独立反例复现；未推送或部署此候选。
+- 追加最小 Mobile 修复：在 failed 等非完整回复中，只保留匹配 verified diet_record 回执且 recorded=true 的餐食卡。实时收尾和历史恢复复用同一过滤函数，回复失败状态不改，草稿/无回执/不匹配卡片仍隐藏；仅返回服务器已持久化 messageId 的终态。RED 1 failed/3 passed，GREEN三套181 passed，TypeScript通过；重复卡补验中。
+- 后端最终173 passed、CI=true项目集成3 passed、System Map与秘密扫描通过；标准真实模型回归10次API、0失败，源文件哈希与固定后端提交一致，证据 /tmp/reva-diet-stream-live-result.json。该标准回归不等于真实用户照片的成对时延或质量评估。新固定提交待独立复审及远端CI，尚未部署/OTA。
