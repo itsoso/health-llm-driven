@@ -600,46 +600,59 @@ def _regimen_assertion_text(sentence: str) -> str:
 
 
 class _MedicalHTMLText(HTMLParser):
-    """Text-only safety view; never renders HTML or fetches external resources."""
+    """Conservative text view, not a browser visibility/CSS interpreter.
+
+    Only attribute-free semantic markup has a supported presentation. Callers
+    accepting HTML advice must reject other presentations, not infer visibility.
+    """
 
     _BLOCKS = frozenset({
         "p", "div", "section", "article", "aside", "main", "header", "footer",
         "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "tr", "br", "hr",
     })
     _VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
+    _SEMANTIC = _BLOCKS | frozenset({
+        "html", "body", "span", "strong", "b", "em", "i", "u", "s", "small",
+        "table", "thead", "tbody", "tfoot", "td", "th", "caption", "code",
+    })
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
-        self.stack: list[tuple[str, bool]] = []
+        self.stack: list[str] = []
+        self.unsupported_presentation = False
 
     def handle_starttag(self, tag, attrs):
-        attributes = dict(attrs)
-        hidden = bool(self.stack and self.stack[-1][1]) or (
-            tag in {"script", "style", "template", "head"} or "hidden" in attributes
-            or bool(re.search(r"(?:display\s*:\s*none|visibility\s*:\s*hidden)",
-                              attributes.get("style") or "", re.I))
-        )
-        if not hidden:
-            if tag in self._BLOCKS:
-                self.parts.append("\n")
-            elif tag in {"td", "th"}:
-                self.parts.append(" ")
+        if tag not in self._SEMANTIC or attrs:
+            self.unsupported_presentation = True
+        if tag in self._BLOCKS:
+            self.parts.append("\n")
+        elif tag in {"td", "th"}:
+            self.parts.append(" ")
         if tag not in self._VOID:
-            self.stack.append((tag, hidden))
+            self.stack.append(tag)
 
     def handle_endtag(self, tag):
-        hidden = bool(self.stack and self.stack[-1][1])
-        for index in range(len(self.stack) - 1, -1, -1):
-            if self.stack[index][0] == tag:
-                del self.stack[index:]
-                break
-        if not hidden and tag in self._BLOCKS:
+        if not self.stack or self.stack[-1] != tag:
+            self.unsupported_presentation = True
+        else:
+            self.stack.pop()
+        if tag in self._BLOCKS:
             self.parts.append("\n")
 
     def handle_data(self, data):
-        if not self.stack or not self.stack[-1][1]:
-            self.parts.append(data)
+        self.parts.append(data)
+
+
+def _unsupported_medical_html_presentation(text: str) -> bool:
+    """Fail closed for CSS, active/hidden content and ambiguous HTML trees."""
+    normalized = unicodedata.normalize("NFKC", text or "")
+    if not re.search(r"</?[A-Za-z][^>]*>|<!--", normalized):
+        return False
+    parser = _MedicalHTMLText()
+    parser.feed(normalized)
+    parser.close()
+    return parser.unsupported_presentation or bool(parser.stack)
 
 
 def _medical_assertion_matching_text(text: str) -> str:

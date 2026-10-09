@@ -493,6 +493,7 @@ def _unverified_regimen_continuation(clause: str) -> bool:
 def enforce_composed_synthesis_boundaries(text: str, completion, *, require_advice_boundary: bool = False):
     from app.services.guidance_validator import (
         GuidanceValidationResult, _medical_assertion_matching_text,
+        _unsupported_medical_html_presentation,
     )
 
     evidence = completion.verified_evidence if completion is not None and completion.complete else None
@@ -510,6 +511,12 @@ def enforce_composed_synthesis_boundaries(text: str, completion, *, require_advi
             '或确诊及排除睡眠呼吸暂停。若有持续不适，请就医评估。')
     if len(evidence["queries"]) < 2 and not require_advice_boundary:
         return GuidanceValidationResult(text=text)
+    if _unsupported_medical_html_presentation(text):
+        return GuidanceValidationResult(
+            text=completion.trusted_fact_summary + "\n\n"
+            "报告的 HTML 显示格式未通过校验，暂未发布；以上仅展示已核验的记录。",
+            flagged=True, violations=["unsupported_html_presentation"],
+        )
     # Formatting normalization is confined to the matching view. Accepted text
     # is returned byte-for-byte, including its uncertainty and record qualifiers.
     normalized = re.sub(r"[*_`]", "", _medical_assertion_matching_text(text))
