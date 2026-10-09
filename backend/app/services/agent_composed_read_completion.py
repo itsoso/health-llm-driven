@@ -492,7 +492,7 @@ def _unverified_regimen_continuation(clause: str) -> bool:
 
 def enforce_composed_synthesis_boundaries(text: str, completion, *, require_advice_boundary: bool = False):
     from app.services.guidance_validator import (
-        GuidanceValidationResult, _medical_assertion_matching_text,
+        GuidanceValidationResult, _medical_assertion_matching_views,
         _unsupported_medical_html_presentation,
     )
 
@@ -519,8 +519,8 @@ def enforce_composed_synthesis_boundaries(text: str, completion, *, require_advi
         )
     # Formatting normalization is confined to the matching view. Accepted text
     # is returned byte-for-byte, including its uncertainty and record qualifiers.
-    normalized = re.sub(r"[*_`]", "", _medical_assertion_matching_text(text))
-    clauses = _NUTRITION_CLAUSE_BREAK.split(normalized)
+    views = [re.sub(r"[*_`]", "", view) for view in _medical_assertion_matching_views(text)]
+    clauses = [clause for view in views for clause in _NUTRITION_CLAUSE_BREAK.split(view)]
     reasons = []
     if (any(q["query"]["dimension"] == "diet" for q in evidence["queries"])
             and any(_nutrition_assertion_in_clause(c) for c in clauses)):
@@ -528,14 +528,16 @@ def enforce_composed_synthesis_boundaries(text: str, completion, *, require_advi
     # Fold only finite uncertainty operations and an adjacent health predicate,
     # then their outer-negation chain. A gap cannot span an empty paragraph.
     # Sentence boundaries and other domain matching views remain unchanged.
-    health_normalized = _HEALTH_UNCERTAINTY_OPERATION_WRAP.sub(
-        lambda match: re.sub(r"\s+", "", match.group()), normalized,
-    )
-    health_normalized = _HEALTH_UNCERTAINTY_WRAP.sub(
-        lambda match: re.sub(r"\s+", " ", match.group()), health_normalized,
-    )
-    if any(_asserted_record_only_claim(_CURRENT_HEALTH_CLAIM, c)
-           for c in _NUTRITION_CLAUSE_BREAK.split(health_normalized)):
+    health_clauses = []
+    for normalized in views:
+        health_normalized = _HEALTH_UNCERTAINTY_OPERATION_WRAP.sub(
+            lambda match: re.sub(r"\s+", "", match.group()), normalized,
+        )
+        health_normalized = _HEALTH_UNCERTAINTY_WRAP.sub(
+            lambda match: re.sub(r"\s+", " ", match.group()), health_normalized,
+        )
+        health_clauses.extend(_NUTRITION_CLAUSE_BREAK.split(health_normalized))
+    if any(_asserted_record_only_claim(_CURRENT_HEALTH_CLAIM, c) for c in health_clauses):
         reasons.append("unsupported_current_health_inference")
     if any(_quantified_exercise_plan(c) for c in clauses):
         reasons.append("unsupported_exercise_program")
@@ -682,7 +684,7 @@ def project_composed_answer_quality(quality, completion, *, require_advice_bound
             or (len(completion.verified_evidence["queries"]) < 2 and not require_advice_boundary)):
         return quality
     from app.services.agent_output_quality import AgentOutputQualityResult, enforce_agent_output_quality
-    from app.services.guidance_validator import _medical_assertion_matching_text
+    from app.services.guidance_validator import _medical_assertion_matching_views
 
     trusted = enforce_agent_output_quality(completion.trusted_fact_summary).text
     trusted_end = quality.text.find(trusted) + len(trusted) if trusted in quality.text else 0
@@ -692,7 +694,8 @@ def project_composed_answer_quality(quality, completion, *, require_advice_bound
     # fragment back into an HTML document or return broken markup as success.
     if re.search(r"</?[A-Za-z][^>]*>|<!--", body):
         html_flags = tuple(dict.fromkeys(
-            flag for clause in _NUTRITION_CLAUSE_BREAK.split(_medical_assertion_matching_text(body))
+            flag for view in _medical_assertion_matching_views(body)
+            for clause in _NUTRITION_CLAUSE_BREAK.split(view)
             for flag in _record_description_flags(clause, completion)
         ))
         if html_flags:

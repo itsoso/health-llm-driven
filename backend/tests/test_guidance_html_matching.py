@@ -35,6 +35,9 @@ def test_safe_html_output_is_preserved_byte_for_byte():
     '<p style="visibility:hidden"><span style="visibility:visible">你的蛋白质摄入不足。</span></p>',
     '<p style="display:none-block">你的蛋白质摄入不足。</p>',
     '<head><title>报告</title><body>你的蛋白质摄入不足。</body>',
+    '<p>你的蛋白质摄入<br>不足。</p>',
+    '<div>你的蛋白质摄入</div><div>不足。</div>',
+    '<p>你的恢复状<br>态良好。</p>',
 ])
 def test_nonsemantic_html_cannot_supply_visibility_or_hidden_negation(html):
     from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
@@ -45,3 +48,9 @@ def test_nonsemantic_html_cannot_supply_visibility_or_hidden_negation(html):
     result = enforce_composed_synthesis_boundaries(html, completion, require_advice_boundary=True)
     assert result.flagged
     assert html not in result.text
+
+
+def test_basic_html_line_break_is_supported_without_css():
+    from app.services.guidance_validator import _unsupported_medical_html_presentation
+
+    assert not _unsupported_medical_html_presentation('<p>记录<br/>需要核实。</p>')

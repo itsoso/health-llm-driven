@@ -640,6 +640,26 @@ class _MedicalHTMLText(HTMLParser):
         if tag in self._BLOCKS:
             self.parts.append("\n")
 
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        # HTML void elements may use XML-style syntax. Nonvoid self-closing
+        # syntax is ambiguous in HTML, so never treat it as a balanced tree.
+        if tag not in self._VOID:
+            self.unsupported_presentation = True
+
+    def handle_comment(self, data):
+        self.unsupported_presentation = True
+
+    def handle_decl(self, decl):
+        if decl.lower() != "doctype html":
+            self.unsupported_presentation = True
+
+    def handle_pi(self, data):
+        self.unsupported_presentation = True
+
+    def unknown_decl(self, data):
+        self.unsupported_presentation = True
+
     def handle_data(self, data):
         self.parts.append(data)
 
@@ -672,6 +692,18 @@ def _medical_assertion_matching_text(text: str) -> str:
         r"(?:[-*+•][^\S\n]+|(?:\d+[.)、]|\(\d+\))[^\S\n]*)",
         r"\1", normalized,
     )
+
+
+def _medical_assertion_matching_views(text: str) -> tuple[str, ...]:
+    """HTML layout is not a semantic sentence boundary or negation authority.
+
+    Check both paragraph-preserving and layout-joined text; a safe view must
+    never cancel a violation found in the other. Plain text keeps its semantics.
+    """
+    primary = _medical_assertion_matching_text(text)
+    if not re.search(r"</?[A-Za-z][^>]*>|<!--", text):
+        return (primary,)
+    return tuple(dict.fromkeys((primary, re.sub(r"\s+", "", primary))))
 
 
 def _unsupported_advice_reasons(
