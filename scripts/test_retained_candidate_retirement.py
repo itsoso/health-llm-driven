@@ -146,6 +146,7 @@ def history_fixture(monkeypatch, tmp_path):
         },
         "services": {},
         "configuration": {"units": {}, "laya": {}},
+        "kb_quarantine": quarantine_fixture(sha),
         "probes": {
             "schema": True,
             "runtime_only_kb": True,
@@ -165,10 +166,10 @@ def history_fixture(monkeypatch, tmp_path):
         live["services"][unit] = {
             "ActiveState": "active",
             "SubState": "listening" if unit.endswith(".socket") else "running",
-            "MainPID": "0" if unit.endswith(".socket") else "123",
-            "NRestarts": "0",
+            "MainPID": "" if unit.endswith(".socket") else "123",
+            "NRestarts": "" if unit.endswith(".socket") else "0",
             "ActiveEnterTimestampMonotonic": "123",
-            "ControlGroup": "/system.slice/" + unit,
+            "ControlGroup": "" if unit.endswith(".socket") else "/system.slice/" + unit,
             "Result": "success",
         }
         if unit.endswith(".service"):
@@ -400,6 +401,7 @@ def test_active_failed_claim_can_close_without_pre_revocation(
     # policy, authorization, durable writes and post-revocation checks are real.
     live = history_fixture(monkeypatch, tmp_path / "sample")[4]["live"]
     live["terminal"] = marker(sha)
+    live["kb_quarantine"]["candidate_sha"] = sha
     monkeypatch.setattr(m, "live_state", lambda *a: copy.deepcopy(live))
     monkeypatch.setattr(m, "validate_configuration", lambda *a: None)
     adapter = m.Adapter(b, source, closing, sha, lambda: None)
@@ -1005,3 +1007,383 @@ def test_candidate_configuration_blocks_overlay_drift_after_base_proof(
     with pytest.raises(m.RetirementError, match="overlay changed"):
         m.candidate_configuration(b, source, sha, marker(), proof, runtime)
     assert proof.systemd is systemd
+
+
+@pytest.fixture
+def retained_pg(monkeypatch):
+    """Opt-in real PostgreSQL; no SQLite emulation of quarantine/JSONB/locks."""
+    import os
+    import sys
+    import uuid
+    from datetime import UTC, datetime
+
+    url = os.environ.get("RETAINED_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("RETAINED_TEST_DATABASE_URL required for PostgreSQL proof")
+    monkeypatch.setenv("SECRET_KEY", "retained-test-secret-key-32-chars!!")
+    monkeypatch.setenv(
+        "GARMIN_ENCRYPTION_KEY", "mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU="
+    )
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.orm import Session
+
+    parsed = make_url(url)
+    assert parsed.get_backend_name() == "postgresql" and "test" in parsed.database
+    backend = Path(__file__).resolve().parents[1] / "backend"
+    sys.path.insert(0, str(backend))
+    import app.models  # noqa: F401
+    from app.database import Base
+    from app.services.system_knowledge_importer import import_system_kb_artifacts
+
+    from scripts import quarantine_runtime_only_kb as quarantine
+    from scripts import verify_runtime_only_kb_contract as probe
+
+    engine = create_engine(url)
+    schema = "retained_test_" + uuid.uuid4().hex
+    with engine.begin() as conn:
+        conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+    connection = engine.connect()
+    connection.execute(text(f'SET search_path TO "{schema}"'))
+    connection.commit()
+    Base.metadata.create_all(connection)
+    connection.commit()
+    db = Session(bind=connection)
+    manifest_path = backend / "data/system_kb_v2_seed/review_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    before = datetime.now(UTC)
+    import_system_kb_artifacts(db, manifest_path.parent, actor="test:retained-import")
+    quarantine.quarantine_runtime_only_documents(
+        db, manifest=manifest, actor="rollback:" + "b" * 12
+    )
+    after = datetime.now(UTC)
+    try:
+        yield db, probe, manifest, before, after
+    finally:
+        db.rollback()
+        db.close()
+        connection.close()
+        with engine.begin() as conn:
+            conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        engine.dispose()
+        sys.path.remove(str(backend))
+
+
+def test_retained_quarantine_postgres_accepts_actual_rollback_and_rolls_back(
+    retained_pg,
+):
+    from app.models.system_knowledge import KBDocument
+    from sqlalchemy import text
+
+    db, probe, manifest, before, after = retained_pg
+    m = load()
+    # The original probe genuinely rejects the actual rollback state.
+    with pytest.raises(RuntimeError, match="active reviewed pack mismatch"):
+        probe.verify_runtime_only_database(db, manifest=manifest, require_present=True)
+    db.rollback()
+    original = db.query(KBDocument).count()
+    db.rollback()
+    result = m.quarantined_kb_probe(
+        db, probe, manifest, "b" * 40, before, after, runtime_enabled=False
+    )
+    assert result["state"] == "ROLLBACK_QUARANTINED"
+    assert (
+        result["generic_eligible_documents"] == result["runtime_eligible_claims"] == 0
+    )
+    assert db.query(KBDocument).count() == original
+    db.rollback()
+    assert (
+        db.execute(
+            text(
+                "SELECT count(*) FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory'"
+            )
+        ).scalar()
+        == 0
+    )
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing",
+        "active",
+        "type",
+        "review",
+        "artifact",
+        "audit_actor",
+        "audit_time",
+        "audit_json",
+        "enabled",
+    ],
+)
+def test_retained_quarantine_postgres_rejects_corruption(retained_pg, fault):
+    from datetime import timedelta
+
+    from app.models.system_knowledge import KBAudit, KBDocument
+
+    db, probe, manifest, before, after = retained_pg
+    ids = probe.runtime_only_document_ids(manifest)
+    doc = (
+        db.query(KBDocument)
+        .filter(KBDocument.doc_id.in_(ids), KBDocument.doc_type == "claim")
+        .first()
+    )
+    audit = db.query(KBAudit).filter(KBAudit.op == "rollback_kb_quarantine").one()
+    if fault == "missing":
+        from app.models.system_knowledge import KBEdge
+        from sqlalchemy import or_
+
+        db.query(KBEdge).filter(
+            or_(KBEdge.src_doc_id == doc.doc_id, KBEdge.dst_doc_id == doc.doc_id)
+        ).delete(synchronize_session=False)
+        db.delete(doc)
+    elif fault == "active":
+        doc.is_archived = False
+    elif fault == "type":
+        doc.doc_type = "entity"
+    elif fault == "review":
+        doc.metadata_json = {**doc.metadata_json, "review_status": "pending"}
+    elif fault == "artifact":
+        doc.title = "corrupted artifact"
+    elif fault == "audit_actor":
+        audit.actor = "rollback:" + "a" * 12
+    elif fault == "audit_time":
+        audit.ts = before - timedelta(days=1)
+    elif fault == "audit_json":
+        audit.diff = {**audit.diff, "matched_documents": True}
+    db.commit()
+    m = load()
+    with pytest.raises((m.RetirementError, RuntimeError)):
+        m.quarantined_kb_probe(
+            db,
+            probe,
+            manifest,
+            "b" * 40,
+            before,
+            after,
+            runtime_enabled=fault == "enabled",
+        )
+
+
+def quarantine_fixture(sha):
+    return {
+        "state": "ROLLBACK_QUARANTINED",
+        "candidate_sha": sha,
+        "started": "2026-10-09T00:00:00+00:00",
+        "completed": "2026-10-09T02:00:00+00:00",
+        "audit_time": "2026-10-09T01:00:00+00:00",
+        "audit_id": 1,
+        "audit_sha256": "a" * 64,
+        "pack_sha256": "b" * 64,
+        "target_documents": 11,
+        "matched_documents": 11,
+        "generic_eligible_documents": 0,
+        "runtime_eligible_claims": 0,
+        "desktop_held_documents": 0,
+        "genetic_held_claims": 0,
+    }
+
+
+@pytest.mark.parametrize("fail_after_projection", [False, True])
+def test_retained_quarantine_postgres_lock_and_exception_rollback(
+    retained_pg, monkeypatch, fail_after_projection
+):
+    from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
+    from sqlalchemy import event, text
+
+    db, probe, manifest, before, after = retained_pg
+    initial = tuple(db.query(model).count() for model in (KBDocument, KBEdge, KBAudit))
+    db.rollback()
+    commits = []
+    event.listen(db, "before_commit", lambda session: commits.append(True))
+    original = probe._verify_surface_projections
+    calls = []
+
+    def checked_projection(*args, **kwargs):
+        with db.get_bind().engine.connect() as second:
+            assert (
+                second.execute(
+                    text("SELECT pg_try_advisory_xact_lock(:key)"),
+                    {"key": probe.SYSTEM_KB_RELEASE_MUTATION_LOCK_KEY},
+                ).scalar()
+                is False
+            )
+            second.rollback()
+        result = original(*args, **kwargs)
+        assert result == (0, 0)
+        probe._assert_system_kb_release_mutation_lock_held(db)
+        calls.append(result)
+        if fail_after_projection:
+            raise RuntimeError("injected projection failure")
+        return result
+
+    monkeypatch.setattr(probe, "_verify_surface_projections", checked_projection)
+    m = load()
+    if fail_after_projection:
+        with pytest.raises(RuntimeError, match="injected projection failure"):
+            m.quarantined_kb_probe(
+                db, probe, manifest, "b" * 40, before, after, runtime_enabled=False
+            )
+    else:
+        m.quarantined_kb_probe(
+            db, probe, manifest, "b" * 40, before, after, runtime_enabled=False
+        )
+    assert calls and not commits
+    assert (
+        tuple(db.query(model).count() for model in (KBDocument, KBEdge, KBAudit))
+        == initial
+    )
+    db.rollback()
+    with db.get_bind().engine.connect() as second:
+        assert (
+            second.execute(
+                text("SELECT pg_try_advisory_xact_lock(:key)"),
+                {"key": probe.SYSTEM_KB_RELEASE_MUTATION_LOCK_KEY},
+            ).scalar()
+            is True
+        )
+        second.rollback()
+
+
+def test_retained_quarantine_postgres_accepts_idempotent_audit(retained_pg):
+    from app.models.system_knowledge import KBAudit
+
+    db, probe, manifest, before, after = retained_pg
+    audit = db.query(KBAudit).filter(KBAudit.op == "rollback_kb_quarantine").one()
+    audit.diff = {**audit.diff, "archived_documents": 0}
+    db.commit()
+    result = load().quarantined_kb_probe(
+        db, probe, manifest, "b" * 40, before, after, runtime_enabled=False
+    )
+    assert result["state"] == "ROLLBACK_QUARANTINED"
+
+
+def test_quarantine_child_fixed_isolation_and_bounded_evidence(monkeypatch):
+    m = load()
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(stdout=json.dumps(quarantine_fixture("b" * 40)).encode())
+
+    monkeypatch.setattr(m.subprocess, "run", run)
+    assert (
+        m.quarantined_application_probes("b" * 40, "c" * 40)["state"]
+        == "ROLLBACK_QUARANTINED"
+    )
+    argv, kwargs = calls[0]
+    assert argv[:5] == ["/usr/bin/python3.12", "-I", "-S", "-B", "-c"]
+    assert kwargs["env"] == m.ENV and kwargs["check"] is True
+    assert kwargs["stderr"] == m.subprocess.DEVNULL
+    monkeypatch.setattr(
+        m.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout=b"x" * 8193)
+    )
+    with pytest.raises(m.RetirementError, match="exceeds bound"):
+        m.quarantined_application_probes("b" * 40, "c" * 40)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("candidate_sha", "a" * 40),
+        ("state", "STAGED"),
+        ("runtime_eligible_claims", 1),
+        ("generic_eligible_documents", 1),
+        ("desktop_held_documents", 1),
+        ("genetic_held_claims", 1),
+        ("matched_documents", 10),
+        ("audit_id", True),
+        ("audit_time", "2026-10-10T01:00:00+00:00"),
+        ("completed", "2026-10-08T00:00:00+00:00"),
+        ("audit_sha256", "invalid"),
+    ],
+)
+def test_quarantine_archive_rejects_weakened_evidence(field, value):
+    m = load()
+    evidence = quarantine_fixture("b" * 40)
+    evidence[field] = value
+    with pytest.raises(m.RetirementError):
+        m.validate_quarantine_evidence(evidence, "b" * 40)
+
+
+@pytest.mark.parametrize("socket_state", ["running", "listening"])
+def test_live_service_snapshot_socket_roundtrips_archive(
+    monkeypatch, tmp_path, socket_state
+):
+    """Exercise real snapshot serialization with absent systemd socket properties."""
+    m, _, _, _, evidence = history_fixture(monkeypatch, tmp_path / "history")
+    spec = importlib.util.spec_from_file_location(
+        "retained_socket_live_proof",
+        Path(__file__).with_name("contained_recovery_proof.py"),
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    proof = object.__new__(module.RecoveryProof)
+    proof.proc = tmp_path / "proc"
+    proof.cgroup = tmp_path / "cgroup"
+    raw = copy.deepcopy(evidence["live"]["services"])
+    socket = raw["health-backend.socket"]
+    socket.update(MainPID="", NRestarts="", ControlGroup="", SubState=socket_state)
+    for unit, values in raw.items():
+        if unit.endswith(".service"):
+            values.pop("processes")
+            values["RestartUSec"] = "5s"
+            group = proof.cgroup / values["ControlGroup"].lstrip("/")
+            group.mkdir(parents=True)
+            (group / "cgroup.procs").write_text("123\n")
+    process = proof.proc / "123"
+    process.mkdir(parents=True)
+    (process / "stat").write_bytes(b"123 (worker) " + b"0 " * 19 + b"789\n")
+    (process / "environ").write_bytes(b"HEALTH_EVIDENCE_RUNTIME_ENABLED=false\0")
+    proof.systemd = SimpleNamespace(show=lambda unit, prop: raw[unit].get(prop, ""))
+    monkeypatch.setattr(proof, "_no_jobs", lambda: None)
+    evidence["live"]["services"] = proof.running_services_snapshot()
+    m.validate_live_snapshot(evidence["live"], "b" * 40)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("MainPID", "0"),
+        ("MainPID", "123"),
+        ("MainPID", "unknown"),
+        ("MainPID", None),
+        ("NRestarts", "0"),
+        ("NRestarts", "n/a"),
+        ("NRestarts", None),
+        ("ActiveEnterTimestampMonotonic", ""),
+        ("ActiveEnterTimestampMonotonic", "0"),
+        ("SubState", "dead"),
+    ],
+)
+def test_archive_socket_rejects_noncanonical_absence(
+    monkeypatch, tmp_path, field, value
+):
+    m, _, _, _, evidence = history_fixture(monkeypatch, tmp_path)
+    socket = evidence["live"]["services"]["health-backend.socket"]
+    socket.update(MainPID="", NRestarts="", ControlGroup="")
+    socket[field] = value
+    with pytest.raises(m.RetirementError):
+        m.validate_live_snapshot(evidence["live"], "b" * 40)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("MainPID", ""),
+        ("NRestarts", ""),
+        ("MainPID", "0"),
+        ("MainPID", "456"),
+        ("NRestarts", "n/a"),
+        ("processes", {}),
+        ("processes", {"123": "0"}),
+    ],
+)
+def test_archive_service_identity_remains_strict(monkeypatch, tmp_path, field, value):
+    m, _, _, _, evidence = history_fixture(monkeypatch, tmp_path)
+    evidence["live"]["services"]["health-backend.socket"].update(
+        MainPID="", NRestarts=""
+    )
+    evidence["live"]["services"]["health-backend.service"][field] = value
+    with pytest.raises(m.RetirementError):
+        m.validate_live_snapshot(evidence["live"], "b" * 40)

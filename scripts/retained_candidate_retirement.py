@@ -673,6 +673,258 @@ def candidate_laya(b, source, sha, marker, proof):
     }
 
 
+def quarantined_kb_probe(
+    db, probe, manifest, sha, started, completed, *, runtime_enabled
+):
+    """Prove rollback compensation, with no persistent business writes."""
+    from app.models.system_knowledge import KBAudit, KBDocument
+    from app.services.health_evidence.authority import (
+        is_current_health_evidence_document,
+    )
+    from app.services.system_knowledge_service import serialize_document
+
+    if (
+        runtime_enabled is not False
+        or re.fullmatch(r"[a-f0-9]{40}", sha) is None
+        or started.tzinfo is None
+        or completed.tzinfo is None
+        or started >= completed
+        or db.get_bind().dialect.name != "postgresql"
+    ):
+        raise RetirementError("invalid quarantined KB context")
+    try:
+        probe.acquire_system_kb_release_mutation_lock(db)
+        probe._assert_system_kb_release_mutation_lock_held(db)
+        probe.verify_runtime_only_policy(manifest, allow_fully_revoked=True)
+        target_ids = frozenset(probe.runtime_only_document_ids(manifest))
+        types = probe._expected_document_types(probe._runtime_packs(manifest))
+        documents = db.query(KBDocument).filter(KBDocument.doc_id.in_(target_ids)).all()
+        if frozenset(d.doc_id for d in documents) != target_ids or any(
+            d.is_archived is not True
+            or d.doc_type != types[d.doc_id]
+            or (d.metadata_json or {}).get("review_status") != "reviewed"
+            for d in documents
+        ):
+            raise RetirementError("quarantined KB exact archived pack mismatch")
+        if any(
+            not is_current_health_evidence_document(serialize_document(d))
+            for d in documents
+            if d.doc_id in probe.HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS
+        ):
+            raise RetirementError("quarantined KB sealed artifact mismatch")
+        audits = (
+            db.query(KBAudit)
+            .filter(
+                KBAudit.op == "rollback_kb_quarantine",
+                KBAudit.actor == "rollback:" + sha[:12],
+                KBAudit.ts >= started,
+                KBAudit.ts <= completed,
+            )
+            .all()
+        )
+        if len(audits) != 1:
+            raise RetirementError("quarantined KB rollback audit ambiguous")
+        audit = audits[0]
+        counts = audit.diff
+        if (
+            audit.doc_id is not None
+            or not isinstance(counts, dict)
+            or set(counts)
+            != {"target_documents", "matched_documents", "archived_documents"}
+            or any(type(v) is not int for v in counts.values())
+            or counts["target_documents"] != len(target_ids)
+            or counts["matched_documents"] != len(target_ids)
+            or not 0 <= counts["archived_documents"] <= len(target_ids)
+        ):
+            raise RetirementError("quarantined KB rollback audit counts invalid")
+        # This is not the guard CLI: completeness, reviewed/type, sealed artifacts
+        # and all-archived have already been proved. Reuse its exact shared serving
+        # and positive/negative surface checks, under a protected transaction.
+        session = probe._TransactionPreservingProbeSession(db)
+        report = probe.verify_runtime_only_database(
+            session, manifest=manifest, require_present=False, allow_fully_revoked=True
+        )
+        if (
+            report["generic_eligible_documents"] != 0
+            or report["runtime_eligible_claims"] != 0
+        ):
+            raise RetirementError("quarantined KB serving leak")
+        session.finish()
+        probe._assert_system_kb_release_mutation_lock_held(db)
+        return {
+            "state": "ROLLBACK_QUARANTINED",
+            "candidate_sha": sha,
+            "started": started.isoformat(),
+            "completed": completed.isoformat(),
+            "audit_id": audit.id,
+            "audit_time": audit.ts.isoformat(),
+            "audit_sha256": digest(
+                {
+                    "id": audit.id,
+                    "ts": audit.ts.isoformat(),
+                    "diff": counts,
+                    "op": audit.op,
+                    "actor": audit.actor,
+                }
+            ),
+            "pack_sha256": digest(
+                sorted((d.doc_id, digest(serialize_document(d))) for d in documents)
+            ),
+            **report,
+        }
+    finally:
+        db.rollback()
+
+
+def quarantined_probe_child(sha, closing_sha):
+    """Fixed isolated child; retained terminal admission precedes DB access."""
+    import contextlib
+
+    entry = Path(__file__).absolute()
+    recovery = _local_module(
+        entry.with_name("recover_contained_services.py"), "retained_child_recovery"
+    )
+    source, b, server = recovery._context(closing_sha, verify_ci=False)
+    if entry != source / "scripts/retained_candidate_retirement.py":
+        raise RetirementError("canonical retained child required")
+    workspace_evidence(b, sha)
+    validate_terminal(b._read_json(RUNTIME / "runtime-state-terminal.json"), sha)
+    reset = load(b, source / "scripts/trusted_review_reset.py", "retained_child_reset")
+    reset._assert_isolated_search_path()
+    candidate = b.canonical_source(sha)
+    reset._revision_proof(sha, candidate, b)
+    reset._validate_application_imports(candidate, server)
+    reset._validate_venv(server)
+    sys.path.append("/opt/health-app/backend/venv/lib/python3.12/site-packages")
+    environment = reset._parse_maintenance_environment(server.read_production_env())
+    os.environ.clear()
+    os.environ.update(environment)
+    os.chdir(candidate / "backend")
+    sys.path.insert(0, str(candidate / "backend"))
+    with (
+        contextlib.redirect_stdout(reset._BoundedSummary()),
+        contextlib.redirect_stderr(reset._BoundedSummary()),
+    ):
+        reset._validate_effective_target(candidate, environment)
+        schema = load(
+            b,
+            candidate / "backend/scripts/verify_runtime_schema_compatibility.py",
+            "retained_child_schema",
+        )
+        schema.main()
+        probe = load(
+            b,
+            candidate / "backend/scripts/verify_runtime_only_kb_contract.py",
+            "retained_child_kb",
+        )
+        manifest = probe._load_manifest(
+            Path("data/system_kb_v2_seed/review_manifest.json")
+        )
+        from app.database import SessionLocal
+
+        with SessionLocal() as db:
+            result = quarantined_kb_probe(
+                db,
+                probe,
+                manifest,
+                sha,
+                datetime.fromtimestamp(
+                    (b.STATE / sha / "deployment-started.json").stat().st_mtime, UTC
+                ),
+                datetime.fromtimestamp(
+                    (b.STATE / sha / "completed.json").stat().st_mtime, UTC
+                ),
+                runtime_enabled=probe.settings.health_evidence_runtime_enabled,
+            )
+    print(json.dumps(result, sort_keys=True))
+
+
+def _local_module(path, name):
+    # Only called after the parent attests this root canonical directory and CI.
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def quarantined_application_probes(sha, closing_sha):
+    code = (
+        "import runpy; m=runpy.run_path("
+        + repr(str(Path(__file__).absolute()))
+        + "); m['quarantined_probe_child']("
+        + repr(sha)
+        + ","
+        + repr(closing_sha)
+        + ")"
+    )
+    result = subprocess.run(
+        ["/usr/bin/python3.12", "-I", "-S", "-B", "-c", code],
+        env=ENV,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=True,
+        timeout=180,
+    )
+    if len(result.stdout) > 8192:
+        raise RetirementError("quarantined KB evidence exceeds bound")
+    evidence = json.loads(result.stdout)
+    validate_quarantine_evidence(evidence, sha)
+    return evidence
+
+
+def validate_quarantine_evidence(value, sha):
+    fields = {
+        "state",
+        "candidate_sha",
+        "started",
+        "completed",
+        "audit_id",
+        "audit_time",
+        "audit_sha256",
+        "pack_sha256",
+        "target_documents",
+        "matched_documents",
+        "generic_eligible_documents",
+        "runtime_eligible_claims",
+        "desktop_held_documents",
+        "genetic_held_claims",
+    }
+    if not isinstance(value, dict) or set(value) != fields:
+        raise RetirementError("invalid quarantined KB evidence")
+    if (
+        value["state"] != "ROLLBACK_QUARANTINED"
+        or value["candidate_sha"] != sha
+        or any(
+            type(value[k]) is not int or value[k] < 0
+            for k in fields
+            if k.endswith(("documents", "claims")) or k == "audit_id"
+        )
+        or value["audit_id"] < 1
+        or value["target_documents"] < 1
+        or value["matched_documents"] != value["target_documents"]
+        or value["generic_eligible_documents"] != 0
+        or value["runtime_eligible_claims"] != 0
+        or value["desktop_held_documents"] != 0
+        or value["genetic_held_claims"] != 0
+        or any(
+            not isinstance(value[k], str)
+            or re.fullmatch(r"[a-f0-9]{64}", value[k]) is None
+            for k in ("audit_sha256", "pack_sha256")
+        )
+    ):
+        raise RetirementError("invalid quarantined KB result")
+    dates = [
+        datetime.fromisoformat(value[k]) for k in ("started", "audit_time", "completed")
+    ]
+    if (
+        any(d.tzinfo is None for d in dates)
+        or not dates[0] <= dates[1] <= dates[2]
+        or dates[0] >= dates[2]
+    ):
+        raise RetirementError("invalid quarantined KB audit window")
+
+
 def live_state(b, source, closing_sha, sha):
     b._assert_idle()
     b._recovery_process_proof()
@@ -720,7 +972,7 @@ def live_state(b, source, closing_sha, sha):
         "retained_application_probe",
     )
     stage("application_probes")
-    recovery._application_probes(sha, closing_sha)
+    kb_evidence = quarantined_application_probes(sha, closing_sha)
     recovery._http_probes()
     time.sleep(7)
     if (
@@ -737,6 +989,7 @@ def live_state(b, source, closing_sha, sha):
         raise RetirementError("terminal changed during inspection")
     return {
         "terminal": marker,
+        "kb_quarantine": kb_evidence,
         "terminal_identity": identity,
         "services": before,
         "configuration": configuration,
@@ -1132,10 +1385,12 @@ def validate_live_snapshot(live, sha):
         "terminal_identity",
         "services",
         "configuration",
+        "kb_quarantine",
         "probes",
     }:
         raise RetirementError("invalid retained live snapshot")
     validate_terminal(live["terminal"], sha)
+    validate_quarantine_evidence(live["kb_quarantine"], sha)
     identity = live["terminal_identity"]
     if (
         not isinstance(identity, dict)
@@ -1197,9 +1452,14 @@ def validate_live_snapshot(live, sha):
             not in ({"running"} if service else {"listening", "running"})
             or any(
                 not isinstance(value[k], str) or not value[k].isdigit()
-                for k in ("MainPID", "NRestarts", "ActiveEnterTimestampMonotonic")
+                for k in (
+                    ("MainPID", "NRestarts", "ActiveEnterTimestampMonotonic")
+                    if service
+                    else ("ActiveEnterTimestampMonotonic",)
+                )
             )
             or int(value["ActiveEnterTimestampMonotonic"]) <= 0
+            or (not service and (value["MainPID"] != "" or value["NRestarts"] != ""))
         ):
             raise RetirementError("invalid archived service readiness")
         if service:

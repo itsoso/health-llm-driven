@@ -41,6 +41,8 @@ jobs:
         # Fresh hosted images make /opt writable. Seal it before canonical checkout;
         # this is bootstrap normalization, never an exemption from publisher checks.
         /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B - <<'PY'
+        import errno
+        import json
         import os
         from pathlib import Path
         import stat
@@ -61,13 +63,62 @@ jobs:
             finally:
                 os.close(fd)
 
+        def create_canonical_source(parent):
+            parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                p = os.fstat(parent_fd)
+                if p.st_uid != 0 or p.st_gid != 0 or p.st_mode & 0o022:
+                    raise ValueError('untrusted canonical parent')
+                # Never normalize an existing checkout or follow a caller's link.
+                os.mkdir('source', 0o700, dir_fd=parent_fd)
+                before = os.stat('source', dir_fd=parent_fd, follow_symlinks=False)
+                fd = os.open('source', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+                try:
+                    initial = os.fstat(fd)
+                    if ((initial.st_dev, initial.st_ino) != (before.st_dev, before.st_ino)
+                            or initial.st_uid != 0 or initial.st_gid != 0 or os.listdir(fd)):
+                        raise ValueError('new canonical directory identity differs')
+                    inherited = True
+                    try:
+                        os.removexattr(fd, 'system.posix_acl_default')
+                    except OSError as exc:
+                        if exc.errno != errno.ENODATA:
+                            raise
+                        inherited = False
+                    os.fchmod(fd, 0o755)
+                    try:
+                        os.getxattr(fd, 'system.posix_acl_default')
+                    except OSError as exc:
+                        if exc.errno != errno.ENODATA:
+                            raise
+                    else:
+                        raise ValueError('new canonical default ACL remains')
+                    after = os.fstat(fd)
+                    visible = os.stat('source', dir_fd=parent_fd, follow_symlinks=False)
+                    if ((after.st_dev, after.st_ino) != (before.st_dev, before.st_ino)
+                            or (visible.st_dev, visible.st_ino) != (after.st_dev, after.st_ino)
+                            or not stat.S_ISDIR(visible.st_mode)
+                            or after.st_uid != 0 or after.st_gid != 0
+                            or stat.S_IMODE(after.st_mode) != 0o755):
+                        raise ValueError('new canonical directory sealing failed')
+                    return {'role': 'source', 'phase': 'created', 'mode': '0755',
+                            'root_owned': True, 'default_acl_present': False,
+                            'inherited_default_acl': inherited}
+                finally:
+                    os.close(fd)
+            finally:
+                os.close(parent_fd)
+
         root = Path('/').lstat()
         if not stat.S_ISDIR(root.st_mode) or root.st_uid != 0 or root.st_mode & 0o022:
             raise ValueError('untrusted filesystem root')
         seal_bootstrap_directory(Path('/opt'))
+        if not os.path.lexists('/opt/reva-release'):
+            os.mkdir('/opt/reva-release', 0o755)
+        print(json.dumps(create_canonical_source(Path('/opt/reva-release')), sort_keys=True))
         PY
-        /usr/bin/sudo /usr/bin/install -d -m 0755 /opt/reva-release
         /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_NO_REPLACE_OBJECTS=1 /bin/bash --noprofile --norc -eu -c '
+          umask 022
           /usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source
           cd /opt/reva-release/source
           /usr/bin/git remote add origin https://github.com/itsoso/health-llm-driven.git
@@ -77,6 +128,36 @@ jobs:
           test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
           /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
         ' reva-bootstrap "$TARGET_SHA"
+    - name: Canonical source metadata after_checkout
+      run: |
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B - <<'PY'
+        import errno
+        import json
+        import os
+        import stat
+        fd = os.open('/opt/reva-release/source', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(fd)
+            visible = os.stat('/opt/reva-release/source', follow_symlinks=False)
+            acl = True
+            try:
+                os.getxattr(fd, 'system.posix_acl_default')
+            except OSError as exc:
+                if exc.errno != errno.ENODATA:
+                    raise
+                acl = False
+            trusted = (info.st_uid == 0 and info.st_gid == 0
+                       and stat.S_IMODE(info.st_mode) == 0o755 and not acl
+                       and (info.st_dev, info.st_ino) == (visible.st_dev, visible.st_ino))
+            print(json.dumps({'role': 'source', 'phase': 'after_checkout',
+                              'mode': format(stat.S_IMODE(info.st_mode), '04o'),
+                              'root_owned': info.st_uid == 0 and info.st_gid == 0,
+                              'default_acl_present': acl, 'trusted': trusted}, sort_keys=True))
+            if not trusted:
+                raise ValueError('canonical source metadata changed')
+        finally:
+            os.close(fd)
+        PY
     - name: Fixed Node toolchain
       uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
       with:
@@ -140,23 +221,61 @@ jobs:
     - name: Install locked CLI and app dependencies without lifecycle scripts or shared cache
       run: |
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/hostedtoolcache/node/22.13.0/x64/lib/node_modules/npm/bin/npm-cli.js \
           ci --prefix /opt/reva-release/source/scripts/release-tools --ignore-scripts --no-audit --no-fund --cache /opt/reva-release/npm-cache
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/hostedtoolcache/node/22.13.0/x64/lib/node_modules/npm/bin/npm-cli.js \
           ci --prefix /opt/reva-release/source/mobile --ignore-scripts --no-audit --no-fund --cache /opt/reva-release/npm-cache
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/scripts/release-tools --apply
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/scripts/release-tools --apply
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/node-forge-backport.cjs --root /opt/reva-release/source/mobile --apply
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/frontend/scripts/braces-depth-guard.cjs --root /opt/reva-release/source/mobile --apply
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node /opt/reva-release/source/scripts/release-tools/apply-compat-patches.cjs
         /usr/bin/sudo /usr/bin/env -i PATH=/opt/hostedtoolcache/node/22.13.0/x64/bin:/usr/bin:/bin HOME=/root \
+          /bin/bash --noprofile --norc -eu -c 'umask 022; exec "$@"' reva-locked-tools \
           /opt/hostedtoolcache/node/22.13.0/x64/bin/node --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
+    - name: Canonical source metadata after_dependencies
+      run: |
+        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B - <<'PY'
+        import errno
+        import json
+        import os
+        import stat
+        fd = os.open('/opt/reva-release/source', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(fd)
+            visible = os.stat('/opt/reva-release/source', follow_symlinks=False)
+            acl = True
+            try:
+                os.getxattr(fd, 'system.posix_acl_default')
+            except OSError as exc:
+                if exc.errno != errno.ENODATA:
+                    raise
+                acl = False
+            trusted = (info.st_uid == 0 and info.st_gid == 0
+                       and stat.S_IMODE(info.st_mode) == 0o755 and not acl
+                       and (info.st_dev, info.st_ino) == (visible.st_dev, visible.st_ino))
+            print(json.dumps({'role': 'source', 'phase': 'after_dependencies',
+                              'mode': format(stat.S_IMODE(info.st_mode), '04o'),
+                              'root_owned': info.st_uid == 0 and info.st_gid == 0,
+                              'default_acl_present': acl, 'trusted': trusted}, sort_keys=True))
+            if not trusted:
+                raise ValueError('canonical source metadata changed')
+        finally:
+            os.close(fd)
+        PY
     - name: Read-only publisher context and native source preflight
       env:
         TARGET_SHA: ${{ inputs.sha }}

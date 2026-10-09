@@ -312,3 +312,34 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 
 - 父方单独调用相同canonical candidate_laya只读函数，生产generation/来源回执/导出源码/账户/service/401/synthetic inference真实通过；没有传evidence digest或写closure，不替代完整retirement证明。日志`/tmp/reva-retained-laya-diagnostic.log`仅含passed。
 - vision overlay私有适配已实现待固定G4：493项相关测试通过；真实列表恰为原三项+唯一末位model路径，独立验证文件/环境/进程model及完整历史来源，只投影DropInPaths，其他属性原样；前后复验及首次rotate实时复验，未来历史仅验证归档。CLI仅输出固定stage、白名单异常类与retry_allowed=false，禁止原始异常/argv/健康载荷回显。尚未执行生产新适配。
+
+- `5f8051576` overlay修复497项通过；合并另会话纯规划文档后候选`fdeb4ceb6e66d5633891a44398b97aa3fbba683a`独立G4 GO（454+8），精确CI`37942968544`全部30项成功，Trusted validate`37944086974`成功；canonical staging通过。未改变已通过10次真实API回归的应用源码哈希。
+- 该候选生产readonly inspect通过Vision配置阶段，在`application_probes`以CalledProcessError阻断；无intent、无撤权、无新部署/OTA。独立canonical child安全诊断定位`verify_runtime_only_kb_contract.py:353`，要求active/reviewed目标集合不满足；schema与前置来源校验已通过。源码证实rollback的candidate-retained路径同样先quarantine后commit/finalize，staged active profile与合法隔离状态矛盾，不能因此认定KB损坏。
+- 正在实施独立`ROLLBACK_QUARANTINED`严格证明：完整sealed ID/type/review/artifact、全部archived、generic目标不可见/runtime全可见集合空、flag=false、原workspace与完整SHA/审计/时间窗绑定；保留schema、advisory lock和projection正负例。不写DB修复、不改guard、不catch staged失败fallback。projection使用savepoint sentinel后回滚，应称无持久业务写入而非零SQL写。新固定G4、PostgreSQL证据与CI待完成。
+- 原canonical child生产聚合诊断：target/matched/archived/reviewed/correct_type均11，证明不是缺失行；仍由原staged在353行拒绝。只输出计数与源码栈，日志`/tmp/reva-retained-kb-count-diagnostic.log`；不替代sealed artifact、审计来源及完整不可服务证明。新的真实PostgreSQL回归已复现原staged失败，专用隔离证明验证中。
+- `1a7a4c86296f246daca18caefa4e29391b0eed9b` 独立G4 GO（479零skip含13真实PG，另4 PG负例），精确CI`37946610730`全部30项成功，validate`37947768429`及canonical staging成功。首次readonly inspect为ProofError（阶段标签停在vision_overlay），原始失败保留；后续独立running_services_snapshot通过，旧Pi缺flag是源码可证风险但非该次确证根因。
+- 完整canonical只读诊断继续通过quarantine/application和服务前后稳定性证明，随后在`validate_live_snapshot:1459`以`invalid archived service readiness`拒绝。真实systemd socket active/running/Result=success，MainPID/NRestarts属性不存在（show空串）；归档验证误把socket当service要求这两项数字。新增真实socket shape回归及最小契约修复中。无intent、无撤权、无部署/OTA，所有旧失败保留。
+
+## 实际交付进展（2026-10-10）
+
+- `3a75b0567adec01b585260b562cd397194293240` 独立G4 GO，498零skip（含13真实PG）；精确CI`37950049412`全部30项成功，validate`37951214267`成功。canonical生产完整inspect通过，独立closure终态`CLOSED_RETAINED_CANDIDATE_FAILURE`及bootstrap轮换完成；旧e321失败回执哈希及原锁inode保持。回执只保存在root-only文件，未输出秘密。
+- 后端实际部署`37954997061` completed/success；持久回执3a75 `SUCCEEDED`，live HEAD一致、四服务active、health200/healthy、业务lease不存在。三个真实模型验收源码hash与线上文件一致，私有证据`/tmp/reva-food-wire-deployed-check.json`。这确认提速实现已部署，不等于手机端到端时延验收。
+- OTA validate`37956709983`在无凭据publisher_context阻断，reason=`publisher_path_untrusted`。规范checkout、固定Node硬化、锁定依赖安装成功；preflight失败，publish/audit步骤跳过，没有OTA claim或上传。不重发该失败run；正在定位具体路径元数据，禁止放宽root-owned/无group-write/无symlink约束。当前TestFlight基线仍1.3.5(276)，本轮不重建原生包。
+- OTA 路径诊断补充：锁定 EAS/Expo tar SHA512 与 bin 元数据核验通过，但 npm 10.9.2 的 bin-links 会按进程 umask 重设可执行文件权限，因此不能从 tar 模式排除安装阶段问题；尚无 hosted runner 的具体违规对象证据。新增仅固定资源角色、祖先层级及 owner/writable/kind/hardlink 枚举的无凭据诊断，保留所有原准入约束；不做推测性权限修复。后台新鲜只读复验仍为3a75 SUCCEEDED、四服务active、health200。
+- 诊断提交 d5b797d（dossier后继f16ab6486）独立G4 GO，144项通过；精确CI37958088141保留失败记录。release-invariants命中新增fixture跨平台缺陷：Linux外部临时目录01777先于故意违规文件被拒绝。5fb1c68a仅修fixture外部祖先模拟，增加Linux式参数RED9失败，独立153通过；生产secure不变。另balanced-13暴露5项佳明读取测试跨午夜失败，待分别定位修复。未触发OTA或新后端部署，生产仍3a75。
+- 93953a3d8仅修佳明测试时钟：实时now−30分钟在北京时间午夜后落入昨日，原fixture却标今天；生产按start_time筛选正确。冻结ExecutionContext.now至合成日中午并从同一上下文派生记录，真实午夜RED19失败/21通过、GREEN40通过，未改生产日期或权限逻辑。与5fb Linux夹具修复一起等待新精确CI；原失败不重跑、不覆盖。
+- d7ddaefdf精确完整CI37959159002全部30项成功；无凭据OTA validate37960150375明确诊断publisher/ancestor_depth=2/writable，即canonical source根目录组或其他用户可写。没有claim/上传/新后端部署。按实际生产者修复root Git/npm子进程的创建umask，禁止放宽secure或递归修复未知目录；原失败回执保留。
+- 已用真实Git首次建库复现：继承umask0002时canonical source创建为0775，原校验正确拒绝。修复在root Git shell及各锁定依赖生产者root子shell内设置022，再exec固定argv；不chmod/chown现有树。作者RED真实目录模式失败，GREEN140通过，覆盖source/.git/config与依赖目录/普通文件/bin模式。待固定独立G4、新CI及hosted预检。
+- f504f0d0c精确完整CI37960716054全部30项成功，canonical staging完成；OTA validate37961746754仍在publisher祖先2 writable阻断，证明仅umask不足。没有轮换生产授权、后端部署或OTA claim。后续改为拒绝已有路径的fresh-source创建：仅对新空目录通过dirfd规范继承default ACL和0755，并记录固定阶段元数据。default ACL仍为待hosted证实机制，不能将本地umask复现当作已解决根因。
+- c6f8af755将source改为parent-dirfd下独占新建空目录，以NOFOLLOW/inode/empty绑定，仅该新目录清除default ACL并设0755；已有目录/链接/不安全parent及非ENODATA错误均拒绝。创建、checkout后、依赖后输出固定安全元数据，secure未改。作者153通过/1 mac明确skip；真实Linux ACL测试在Ubuntu必须执行，尚未据本机结果宣称已验证ACL机制。
+
+## 统一发布交接（2026-10-10）
+
+已读取“优化 README”会话 `01a120c7-1ba0-75c3-9487-447bd5bfa28f` 中用户直接指令“实现之后整合session,其他session的内容，做最终的部署和发布”。本会话停止新的push/deploy/OTA，保留代码，由该会话统一整合发布。没有持有业务lease或进行中的生产变更。
+
+- 生产仍为 `3a75b0567adec01b585260b562cd397194293240`：持久SUCCEEDED、四服务active、health200、餐食识别等三个源码hash与真实模型验收相同；交接前新鲜证据 `/tmp/reva-food-wire-handoff-production.json`。原e321失败回执保持，特殊retained closure已完成，不得重做。
+- 远端main为 `f504f0d0cfc98cafb118cbb05051b8612bd9fb75`，完整CI `37960716054` 30项成功。该候选只完成canonical staging，没有轮换3a75授权或部署。OTA预检 `37961746754` 仍失败；没有OTA claim、上传或发布回执。禁止把旧失败运行重跑当成发布恢复。
+- 本地待整合为 `c6f8af755` + dossier `041d8229b` + `d56560ee0cedcba580e11157b81d007ee81e19ca`：fresh-source创建、ACL边界、阶段诊断；最后一提交消除空FileExistsError捕获，后续parent严格验证不变。固定代码独立G4 GO，168 passed/1 mac平台明确skip，日志 `/tmp/reva-g4-ota-d56560ee0.log`。尚未push；Linux真实ACL测试及hosted效果仍待新精确CI/预检，不能宣称机制已确证或OTA已修复。
+- 餐食提速实现 `1720a749b` 已是生产祖先：56次同图配对无冻结契约失败，真实照片P50 4334→2909ms、样本P95 6497→4780ms；是识别段小样本，不是手机端到端验收。报告 `docs/reviews/2026-10-09-food-wire-replay.json`。不再启用被否决的写工具说明精简。
+- 原生基线仍TestFlight 1.3.5(276)，native SHA `7fe06d8b34750b6bd56db8d5ec45d1aee705b02e`、EAS build `09719eb6-2887-4100-9ccb-6533fd9d71ed`。当前已合入但未OTA的Mobile改动包含 `mobile/hooks/useChatEngine.ts` 的核验后首卡保留；统一整合后重新判断完整Mobile/native差异。
+- 接续顺序：整合上述本地固定代码及其他session → 独立G4/新精确CI → 无凭据hosted路径与native预检 → 从3a75成功授权走普通canonical rotate与后端部署 → 同SHA trusted OTA validate/publish及回执验收。原特殊失败收尾脚本已消费，禁止再运行；`/tmp/reva-ota-source-stage.py` 仅用于过f504源码staging；`/tmp/reva-ota-normal-rotate.py` 从未运行。统一整合后使用这些普通操作模板前，须重新核对整合SHA和源码hash。唯一真实部署入口仍deploy.sh的可信workflow路径。
