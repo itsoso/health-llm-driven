@@ -84,5 +84,13 @@
     "worker_queue_max_seconds": 46,
     "verdict": "rejected: lower queue did not offset longer sequential workers; restore reviewed16worker configuration"
   },
-  "final_decision": "Restore16workers and keep3run telemetry/log reader; no demonstrated end-to-end speed gain this round"
+  "final_decision": "Restore16workers and keep3run telemetry/log reader; no demonstrated end-to-end speed gain this round",
+  "restoration_ci": {
+    "sha": "e42686d4b5e200ba7e289df4e89d40c310f64d0b",
+    "run_id": 37888154411,
+    "jobs_success": 30,
+    "wall_seconds": 499,
+    "runner_minutes": 97.87,
+    "note": "same code/config as10db; wall variability precludes further speedup claim"
+  }
 }
