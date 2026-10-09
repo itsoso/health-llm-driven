@@ -634,6 +634,9 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
         onSignalPress={(signal) => openSignalRoute(signal, router)}
       />
 
+      <Pressable accessibilityRole="button" accessibilityLabel="安排我的一周" onPress={() => router.push('/life-navigation' as any)} style={{ paddingVertical: 14 }}>
+        <Text style={{ color: revaColors.green600, fontWeight: '700' }}>周导航 · 安排我的一周</Text>
+      </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="查看健康周导航" onPress={() => router.push('/my-progress?navigation=week' as any)} style={{ paddingVertical: 14 }}>
         <Text style={{ color: revaColors.green600, fontWeight: '700' }}>查看健康周导航 · 最近 7 天</Text>
       </Pressable>

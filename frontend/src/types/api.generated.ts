@@ -2366,6 +2366,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/life-navigation/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace */
+        get: operations["workspace_api_v1_life_navigation_workspace_get"];
+        /** Save */
+        put: operations["save_api_v1_life_navigation_workspace_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/life-navigation/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** History */
+        get: operations["history_api_v1_life_navigation_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/life-navigation/restore/{revision}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore */
+        post: operations["restore_api_v1_life_navigation_restore__revision__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/life-navigation/backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backup */
+        get: operations["backup_api_v1_life_navigation_backup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/life-navigation/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Workspace */
+        post: operations["import_workspace_api_v1_life_navigation_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health-navigation/grants": {
         parameters: {
             query?: never;
@@ -20750,6 +20836,31 @@ export interface components {
             /** Is Approved */
             is_approved: boolean;
         };
+        /** Archive */
+        Archive: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Body
+             * @default
+             */
+            body: string;
+            /** Source Revision */
+            source_revision: number;
+        };
         /**
          * AssistantDashboardDeviceLayout
          * @description 单设备首页布局配置
@@ -25129,6 +25240,43 @@ export interface components {
             /** Last Data Date */
             last_data_date?: string | null;
         };
+        /** Focus */
+        Focus: {
+            /**
+             * Phase
+             * @default idle
+             * @enum {string}
+             */
+            phase: "idle" | "focus" | "rest" | "paused";
+            /**
+             * Focus Minutes
+             * @default 25
+             */
+            focus_minutes: number;
+            /**
+             * Rest Minutes
+             * @default 5
+             */
+            rest_minutes: number;
+            /**
+             * Rounds
+             * @default 4
+             */
+            rounds: number;
+            /**
+             * Current Round
+             * @default 1
+             */
+            current_round: number;
+            /** Deadline */
+            deadline?: string | null;
+            /** Remaining Seconds */
+            remaining_seconds?: number | null;
+            /** Paused Phase */
+            paused_phase?: ("focus" | "rest") | null;
+            /** Task Id */
+            task_id?: string | null;
+        };
         /**
          * FoodItem
          * @description 识别出的单个食物
@@ -27703,6 +27851,60 @@ export interface components {
             /** Evidence */
             evidence?: string[];
         };
+        /** LifeBackup */
+        "LifeBackup-Input": {
+            /**
+             * Schema Version
+             * @default life_navigation.backup.v1
+             * @constant
+             */
+            schema_version: "life_navigation.backup.v1";
+            workspace: components["schemas"]["LifeWorkspace-Input"];
+            /** History */
+            history?: components["schemas"]["LifeHistory-Input"][];
+        };
+        /** LifeBackup */
+        "LifeBackup-Output": {
+            /**
+             * Schema Version
+             * @default life_navigation.backup.v1
+             * @constant
+             */
+            schema_version: "life_navigation.backup.v1";
+            workspace: components["schemas"]["LifeWorkspace-Output"];
+            /** History */
+            history?: components["schemas"]["LifeHistory-Output"][];
+        };
+        /** LifeData */
+        "LifeData-Input": {
+            strategy?: components["schemas"]["Strategy"];
+            /** Quarters */
+            quarters?: {
+                [key: string]: components["schemas"]["Quarter"];
+            };
+            /** Weeks */
+            weeks?: {
+                [key: string]: components["schemas"]["Week"];
+            };
+            /** Opportunities */
+            opportunities?: components["schemas"]["Opportunity"][];
+            focus?: components["schemas"]["Focus"];
+        };
+        /** LifeData */
+        "LifeData-Output": {
+            strategy?: components["schemas"]["Strategy"];
+            /** Quarters */
+            quarters?: {
+                [key: string]: components["schemas"]["Quarter"];
+            };
+            /** Weeks */
+            weeks?: {
+                [key: string]: components["schemas"]["Week"];
+            };
+            /** Opportunities */
+            opportunities?: components["schemas"]["Opportunity"][];
+            focus?: components["schemas"]["Focus"];
+        };
         /** LifeEventCreate */
         LifeEventCreate: {
             /** Title */
@@ -27729,6 +27931,34 @@ export interface components {
             occurred_display: string;
             /** Notes */
             notes?: string | null;
+        };
+        /** LifeHistory */
+        "LifeHistory-Input": {
+            /** Revision */
+            revision: number;
+            data: components["schemas"]["LifeData-Input"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** LifeHistory */
+        "LifeHistory-Output": {
+            /** Revision */
+            revision: number;
+            data: components["schemas"]["LifeData-Output"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** LifeImport */
+        LifeImport: {
+            /** Expected Revision */
+            expected_revision: number;
+            backup: components["schemas"]["LifeBackup-Input"];
         };
         /** LifeNavCodeExchange */
         LifeNavCodeExchange: {
@@ -27842,6 +28072,51 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+        };
+        /** LifeRevisionRequest */
+        LifeRevisionRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** LifeWorkspace */
+        "LifeWorkspace-Input": {
+            /**
+             * Schema Version
+             * @default life_navigation.v1
+             * @constant
+             */
+            schema_version: "life_navigation.v1";
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
+            data?: components["schemas"]["LifeData-Input"];
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** LifeWorkspace */
+        "LifeWorkspace-Output": {
+            /**
+             * Schema Version
+             * @default life_navigation.v1
+             * @constant
+             */
+            schema_version: "life_navigation.v1";
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
+            data?: components["schemas"]["LifeData-Output"];
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** LifeWorkspaceWrite */
+        LifeWorkspaceWrite: {
+            /** Expected Revision */
+            expected_revision: number;
+            data: components["schemas"]["LifeData-Input"];
         };
         /** LiveRunEndRequest */
         LiveRunEndRequest: {
@@ -29220,6 +29495,29 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** Note */
+        Note: {
+            /**
+             * Valuable
+             * @default
+             */
+            valuable: string;
+            /**
+             * Beautiful
+             * @default
+             */
+            beautiful: string;
+            /**
+             * Mistake
+             * @default
+             */
+            mistake: string;
+            /**
+             * Learning
+             * @default
+             */
+            learning: string;
+        };
         /**
          * NotificationSettingsUpdate
          * @description 推送设置更新
@@ -29352,6 +29650,73 @@ export interface components {
              * @description snooze_7d 时可覆盖 (默认 7), 范围 1-30
              */
             snooze_days?: number | null;
+        };
+        /** Opportunity */
+        Opportunity: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "macro" | "industry" | "people" | "customer";
+            /**
+             * Insight
+             * @default
+             */
+            insight: string;
+            /**
+             * Evidence
+             * @default
+             */
+            evidence: string;
+            /**
+             * Personal Fit
+             * @default
+             */
+            personal_fit: string;
+            /**
+             * Assumption
+             * @default
+             */
+            assumption: string;
+            /**
+             * Next Step
+             * @default
+             */
+            next_step: string;
+            /**
+             * Success Criteria
+             * @default
+             */
+            success_criteria: string;
+            /**
+             * Risk Limit
+             * @default
+             */
+            risk_limit: string;
+            /** Review Date */
+            review_date?: string | null;
+            /**
+             * Result
+             * @default
+             */
+            result: string;
+            /**
+             * Evidence Level
+             * @default unknown
+             * @enum {string}
+             */
+            evidence_level: "unknown" | "hypothesis" | "signal" | "supported";
+            /**
+             * Fit
+             * @default unknown
+             * @enum {string}
+             */
+            fit: "unknown" | "low" | "medium" | "high";
         };
         /** OptimizationLogResponse */
         OptimizationLogResponse: {
@@ -30327,6 +30692,34 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** Quarter */
+        Quarter: {
+            /**
+             * Review
+             * @default
+             */
+            review: string;
+            /**
+             * Strategy
+             * @default
+             */
+            strategy: string;
+            /**
+             * Decomposition
+             * @default
+             */
+            decomposition: string;
+            /**
+             * Plan
+             * @default
+             */
+            plan: string;
+            /**
+             * Risk
+             * @default
+             */
+            risk: string;
+        };
         /** QuickRecordRequest */
         QuickRecordRequest: {
             /** Text */
@@ -30889,6 +31282,29 @@ export interface components {
             spec?: string | null;
             /** Package Units */
             package_units?: number | null;
+        };
+        /** Review */
+        Review: {
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Gap
+             * @default
+             */
+            gap: string;
+            /**
+             * Learning
+             * @default
+             */
+            learning: string;
+            /**
+             * Next Week
+             * @default
+             */
+            next_week: string;
         };
         /**
          * ReviewListItem
@@ -31939,6 +32355,24 @@ export interface components {
             /** Target Specs */
             target_specs?: unknown[] | null;
         };
+        /** Strategy */
+        Strategy: {
+            /**
+             * Vision
+             * @default
+             */
+            vision: string;
+            /**
+             * Annual Goal
+             * @default
+             */
+            annual_goal: string;
+            /**
+             * Primary Question
+             * @default
+             */
+            primary_question: string;
+        };
         /**
          * SubscribeSettingsRequest
          * @description 订阅设置请求
@@ -32832,6 +33266,72 @@ export interface components {
              */
             speed: number;
         };
+        /** Task */
+        Task: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /**
+             * Role
+             * @default other
+             * @enum {string}
+             */
+            role: "main" | "auxiliary" | "other";
+            /**
+             * Track Id
+             * @default misc
+             * @enum {string}
+             */
+            track_id: "main" | "aux1" | "aux2" | "important" | "misc";
+            /**
+             * Slot
+             * @default flexible
+             * @enum {string}
+             */
+            slot: "morning" | "afternoon" | "evening" | "flexible";
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Criterion
+             * @default
+             */
+            criterion: string;
+            /** Estimated Minutes */
+            estimated_minutes?: number | null;
+            /** Actual Minutes */
+            actual_minutes?: number | null;
+            /**
+             * Status
+             * @default planned
+             * @enum {string}
+             */
+            status: "planned" | "doing" | "done" | "skipped";
+            /**
+             * Result
+             * @default
+             */
+            result: string;
+            /**
+             * Root Cause
+             * @default
+             */
+            root_cause: string;
+            /**
+             * Improvement
+             * @default
+             */
+            improvement: string;
+        };
         /**
          * TestPushRequest
          * @description 测试推送请求
@@ -33014,6 +33514,34 @@ export interface components {
              */
             token_type: string;
             user: components["schemas"]["app__schemas__auth__UserResponse"];
+        };
+        /** Track */
+        Track: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "main" | "aux1" | "aux2" | "important" | "misc";
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Criterion
+             * @default
+             */
+            criterion: string;
+            /**
+             * Strategy Link
+             * @default
+             */
+            strategy_link: string;
+            /**
+             * Next Step
+             * @default
+             */
+            next_step: string;
         };
         /** TrainingReadinessResponse */
         TrainingReadinessResponse: {
@@ -34305,6 +34833,20 @@ export interface components {
             gender?: string | null;
             /** Phone */
             phone?: string | null;
+        };
+        /** Week */
+        Week: {
+            /** Tracks */
+            tracks?: components["schemas"]["Track"][];
+            /** Tasks */
+            tasks?: components["schemas"]["Task"][];
+            /** Notes */
+            notes?: {
+                [key: string]: components["schemas"]["Note"];
+            };
+            review?: components["schemas"]["Review"];
+            /** Archives */
+            archives?: components["schemas"]["Archive"][];
         };
         /** WeeklyPlanListItem */
         WeeklyPlanListItem: {
@@ -38840,6 +39382,167 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NavigationEventReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_api_v1_life_navigation_workspace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeWorkspace-Output"];
+                };
+            };
+        };
+    };
+    save_api_v1_life_navigation_workspace_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifeWorkspaceWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeWorkspace-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    history_api_v1_life_navigation_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeHistory-Output"][];
+                };
+            };
+        };
+    };
+    restore_api_v1_life_navigation_restore__revision__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifeRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeWorkspace-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backup_api_v1_life_navigation_backup_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeBackup-Output"];
+                };
+            };
+        };
+    };
+    import_workspace_api_v1_life_navigation_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifeImport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeWorkspace-Output"];
                 };
             };
             /** @description Validation Error */

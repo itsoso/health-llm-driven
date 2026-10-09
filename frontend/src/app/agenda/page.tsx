@@ -1,5 +1,9 @@
 'use client';
 
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import LifeNavigationWorkspace from '@/components/life-navigation/LifeNavigationWorkspace';
 import {
   CalendarCheck,
   Circle,
@@ -74,6 +78,7 @@ function AgendaContent() {
           <div>
             <p className="text-sm font-semibold text-slate-500">Health Agenda</p>
             <h1 className="mt-1 text-3xl font-bold tracking-normal text-slate-950">今日议程</h1>
+            <Link href="/agenda?navigation=week">周导航 · 安排我的一周</Link>
             <p className="mt-2 text-sm text-slate-600">
               {data ? `${data.agenda_date} · ${summary.total} 项` : '协议、复查、训练灯和设备数据质量的一处视图'}
             </p>
@@ -181,7 +186,9 @@ function StatePanel({ icon, title, description }: { icon?: React.ReactNode; titl
 export default function AgendaPage() {
   return (
     <ProtectedRoute>
-      <AgendaContent />
+      <Suspense fallback={<p>正在加载导航…</p>}><AgendaMode /></Suspense>
     </ProtectedRoute>
   );
 }
+
+function AgendaMode(){const params=useSearchParams();return params.get("navigation")==="week"?<LifeNavigationWorkspace/>:<AgendaContent/>;}

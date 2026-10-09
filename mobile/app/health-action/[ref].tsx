@@ -1,3 +1,4 @@
+import { subscribeAIConsentInvalidation } from '../../services/aiConsentState';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, ScrollView, Text, View } from 'react-native';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -35,6 +36,10 @@ export default function HealthActionDetailScreen() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => { subscription.remove(); clearInterval(timer); };
   }, []);
+  useEffect(() => subscribeAIConsentInvalidation(() => {
+    epoch.current++; attempt.current = null; setAction(null); setSelected(null); setSaving(false); setLoading(false);
+    setMessage('登录状态已变化，请重新打开导航。');
+  }), []);
   const saveLock = useRef(false);
   const refreshLock = useRef(false);
   useFocusEffect(useCallback(() => {
@@ -64,10 +69,12 @@ export default function HealthActionDetailScreen() {
     attempt.current = input;
     try {
       await recordHealthNavigationEvent(ref, input);
+      if (!mounted.current || version !== epoch.current) return;
       const fresh = await fetchHealthNavigationAction(ref);
       if (mounted.current && version === epoch.current) { setAction(fresh); setSelected(null); setMessage('已保存并刷新 Health 状态。'); }
       attempt.current = null;
     } catch (error) {
+      if (!mounted.current || version !== epoch.current) return;
       const status = (error as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
         attempt.current = null;

@@ -10,7 +10,9 @@
  * 这是产品价值锚点 — 没这页用户给朋友讲产品时只有概念, 没有"我变好了多少"证据.
  */
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import HealthNavigationView from '@/components/health-navigation/HealthNavigationView';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useState, useCallback, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { api } from '@/services/api/client';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -377,7 +379,9 @@ function CardRow({ card }: { card: ProgressCard }) {
 export default function MyProgressPage() {
   return (
     <ProtectedRoute>
-      <MyProgressInner />
+      <Suspense fallback={<p>正在加载导航…</p>}><ProgressMode /></Suspense>
     </ProtectedRoute>
   );
 }
+
+function ProgressMode(){const params=useSearchParams();return params.get("navigation")==="week"?<HealthNavigationView/>:<MyProgressInner/>;}

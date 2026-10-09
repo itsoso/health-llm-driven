@@ -364,3 +364,5 @@ __all__ = [
     "KBEdge",
     "KBAudit",
 ]
+
+from app.models.life_navigation import LifeNavigationWorkspace

@@ -36,9 +36,9 @@ class PrivateIntegrationRoute(APIRoute):
                 exc.headers = {**(exc.headers or {}), **PRIVATE_HEADERS}
                 raise
             except Exception as exc:
-                logger.error("LifeNav request unavailable error_type=%s", type(exc).__name__)
+                logger.error("Private Reva request unavailable error_type=%s", type(exc).__name__)
                 return JSONResponse(status_code=503, content={
-                    'detail': 'LifeNav 连接暂不可用，请稍后重试'}, headers=PRIVATE_HEADERS)
+                    'detail': '此功能暂不可用，请稍后重试'}, headers=PRIVATE_HEADERS)
         return handle
 
 

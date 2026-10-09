@@ -173,6 +173,8 @@ from app.api import (
     community,
 )
 
+from app.api import life_navigation
+
 api_router = APIRouter()
 api_router.include_router(journey.router)
 api_router.include_router(share_location.router)
@@ -203,6 +205,7 @@ api_router.include_router(movement_plan.router)
 api_router.include_router(diet_plan.router)
 api_router.include_router(daily_plan.router)
 api_router.include_router(health_navigation.router)
+api_router.include_router(life_navigation.router)
 api_router.include_router(integration_lifenav.router)
 api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
 api_router.include_router(performance.router)

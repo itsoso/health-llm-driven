@@ -1,3 +1,4 @@
+import { subscribeAIConsentInvalidation } from '../../services/aiConsentState';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, AppState, Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
@@ -17,6 +18,10 @@ export default function HealthWeekNavigation() {
   const focusVersion = React.useRef(0);
   const [now, setNow] = useState(Date.now());
   const [refresh, setRefresh] = useState(0);
+  useEffect(() => subscribeAIConsentInvalidation(() => {
+    focusVersion.current++; setData(null); setGrants([]); setGrantError(''); setLoading(false);
+    setMessage('登录状态已变化，请重新打开导航。');
+  }), []);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') setRefresh(value => value + 1);

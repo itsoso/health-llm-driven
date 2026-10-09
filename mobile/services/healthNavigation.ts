@@ -1,4 +1,14 @@
 import api from './api';
+import type { AxiosRequestConfig } from 'axios';
+import { aiConsentRevision } from './aiConsentState';
+
+async function sessionRequest<T>(send: (config: AxiosRequestConfig) => Promise<{ data: T }>): Promise<T> {
+  const revision = aiConsentRevision();
+  const config = { __revaConsentRevision: revision } as AxiosRequestConfig;
+  const { data } = await send(config);
+  if (revision !== aiConsentRevision()) throw new Error('登录状态已变化，请重新打开导航。');
+  return data;
+}
 
 export type NavigationExecutionStatus = 'pending' | 'completed' | 'skipped' | 'deferred' | 'withdrawn' | 'unknown';
 export interface HealthNavigationAction {
@@ -58,27 +68,22 @@ function actionPath(ref: string): string {
   return `/health-navigation/actions/${encodeURIComponent(ref)}`;
 }
 export async function fetchHealthWeekNavigation(): Promise<HealthWeekNavigation> {
-  const { data } = await api.get<HealthWeekNavigation>('/health-navigation/summary');
-  return data;
+  return sessionRequest(config => api.get<HealthWeekNavigation>('/health-navigation/summary', config));
 }
 export async function refreshHealthWeekNavigation(): Promise<unknown> {
-  const { data } = await api.post('/health-navigation/refresh');
-  return data;
+  return sessionRequest(config => api.post('/health-navigation/refresh', undefined, config));
 }
 export async function fetchHealthNavigationAction(ref: string): Promise<HealthNavigationActionDetail> {
-  const { data } = await api.get<HealthNavigationActionDetail>(actionPath(ref));
-  return data;
+  return sessionRequest(config => api.get<HealthNavigationActionDetail>(actionPath(ref), config));
 }
 export async function recordHealthNavigationEvent(ref: string, input: NavigationEventInput): Promise<unknown> {
-  const { data } = await api.post(`${actionPath(ref)}/events`, input);
-  return data;
+  return sessionRequest(config => api.post(`${actionPath(ref)}/events`, input, config));
 }
 export async function fetchHealthNavigationGrants(): Promise<NavigationGrant[]> {
-  const { data } = await api.get<NavigationGrant[]>('/health-navigation/grants');
-  return data;
+  return sessionRequest(config => api.get<NavigationGrant[]>('/health-navigation/grants', config));
 }
 export async function revokeHealthNavigationGrant(id: string): Promise<void> {
-  await api.delete(`/health-navigation/grants/${encodeURIComponent(id)}`);
+  await sessionRequest(config => api.delete(`/health-navigation/grants/${encodeURIComponent(id)}`, config));
 }
 export const navigationStatusLabel: Record<NavigationExecutionStatus, string> = {
   pending: '待记录', completed: '已完成', skipped: '已跳过', deferred: '已延期', withdrawn: '已撤回', unknown: '状态未知',

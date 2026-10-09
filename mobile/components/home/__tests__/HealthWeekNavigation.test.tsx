@@ -42,3 +42,12 @@ describe('Health week navigation', () => {
     expect(view.queryByText(/已完成 0/)).toBeNull();
   });
 });
+
+it('clears visible records immediately when the login identity is invalidated', async () => {
+  const { invalidateAIConsent } = require('../../../services/aiConsentState');
+  (fetchHealthWeekNavigation as jest.Mock).mockResolvedValue({ availability:'ready', actions:[],review_window:{start_date:'2026-10-03',end_date:'2026-10-09'},review:{recorded_days:2,window_days:7} });
+  const view=render(<HealthWeekNavigation/>);
+  await waitFor(()=>view.getByText('已记录 2/7 天'));
+  require('@testing-library/react-native').act(()=>invalidateAIConsent());
+  expect(view.queryByText('已记录 2/7 天')).toBeNull();
+});

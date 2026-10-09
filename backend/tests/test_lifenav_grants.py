@@ -304,3 +304,10 @@ def test_integration_token_has_no_ordinary_health_or_write_authority(db, recipie
                                json={'user_id': user.id, 'record_date': '2026-10-09', 'amount': 250})
         assert response.status_code in (401, 403)
     assert token not in caplog.text
+
+def test_private_navigation_rejects_previous_account_subject(db, recipient, integration_client):
+    from app.services.auth import auth_service
+    user=owner(db)
+    token=auth_service.create_access_token({'sub':str(user.id)})
+    response=integration_client.get('/api/v1/health-navigation/grants',headers={'Authorization':'Bearer '+token,'X-Reva-AI-Subject':str(user.id+1)})
+    assert response.status_code==409
