@@ -321,5 +321,133 @@
     "backend_deployment": "pending",
     "ota": "blocked_native_runtime_fingerprint_incompatibility",
     "native_distribution_approval": "pending"
+  },
+  "ci_followup": {
+    "failed_candidate": "3bcce550cb11fec94b03aec6ddb97b731b6c699b",
+    "run_id": 37909184530,
+    "failures": [
+      "type-drift: missing generated owned-report detail route",
+      "backend-test-balanced-12: missing server-owned exam_abnormal_review prompt label"
+    ],
+    "repair_commit": "d1dd58cab4c0f99982accdb86aa2d0323ad5bd31",
+    "checks": {
+      "api_type_generation_check": "passed",
+      "mobile_tsc": "passed",
+      "frontend_tsc": "passed",
+      "postgresql_regression": 82,
+      "independent_regression": 82,
+      "independent_safety": "GO",
+      "original_failing_assertion": "unchanged",
+      "client_feedback_intent": "discarded; server uses fixed read-only label"
+    },
+    "logs": [
+      "/tmp/reva-api-types-final-check.log",
+      "/tmp/exam-continuation-ci-pg-green.log",
+      "/tmp/reva-g4-exam-label-frozen.log"
+    ],
+    "release_status": "not_deployed",
+    "clinical_content_review": {
+      "status": "BLOCK",
+      "source_commit": "d1dd58cab4c0f99982accdb86aa2d0323ad5bd31",
+      "proof_path": "/tmp/reva-1009-selected-d1dd58cab/legacy-selected-proof.json",
+      "machine_status": "passed",
+      "reason": "Unsupported individual familial disease probability and unconditional population exercise targets in individual action list despite missing clinical context. Source proofs preserved; machine checks do not imply clinical acceptance."
+    }
+  },
+  "final_runtime_commit": "6062f1cfbd8bdfb9eaa2eb6dcce251215925e64d",
+  "selected_content_repair": {
+    "status": "local_gates_passed_not_released",
+    "commit": "6062f1cfbd8bdfb9eaa2eb6dcce251215925e64d",
+    "postgresql": 82,
+    "independent_tests": 82,
+    "independent_code_review": "GO",
+    "ci_mode_integration_postgresql": 3,
+    "samples": [
+      {
+        "case": "legacy",
+        "source_commit": "6062f1cfbd8bdfb9eaa2eb6dcce251215925e64d",
+        "proof_path": "/tmp/reva-1009-selected-evidence-limits/legacy-selected-proof.json",
+        "proof_sha256": "2dd14097b2ddd9f6373a5b5051210a96f1469df3dc80fa2fae2d66fc6f20dedb",
+        "machine_status": "pending_content_review",
+        "checks_passed": true,
+        "actual_api_calls": 3,
+        "source_unchanged": true,
+        "content_review": {
+          "schema_version": "independent-content-review.v1",
+          "verdict": "GO",
+          "scope": "legacy selected-report synthetic sample only",
+          "runtime_revision": "6062f1cfbd8bdfb9eaa2eb6dcce251215925e64d",
+          "evidence_sha256": {
+            "legacy-synthetic-reply.txt": "6491d4362897c2d65474fba4108383f8b2459c4ddcf904565b9d848bd1057bb1",
+            "legacy-selected-proof.json": "2dd14097b2ddd9f6373a5b5051210a96f1469df3dc80fa2fae2d66fc6f20dedb"
+          },
+          "conclusions": {
+            "missing_background_remains_unknown": "PASS",
+            "no_unsupported_individual_disease_probability": "PASS",
+            "population_guidance_separate_from_personal_plan": "PASS",
+            "no_unqualified_individual_exercise_prescription": "PASS",
+            "single_lab_finding_not_general_health_clearance": "PASS"
+          },
+          "reviewer": "health_repair_independent_g4"
+        }
+      },
+      {
+        "case": "current",
+        "source_commit": "6062f1cfbd8bdfb9eaa2eb6dcce251215925e64d",
+        "proof_path": "/tmp/reva-1009-selected-evidence-limits/current-selected-proof.json",
+        "proof_sha256": "c8b1d325ec6dd7f20e7ae016f785376694ff480c23f708d5e0cf123c1dfa37ab",
+        "machine_status": "pending_content_review",
+        "checks_passed": true,
+        "actual_api_calls": 3,
+        "source_unchanged": true,
+        "content_review": {
+          "schema_version": "independent-content-review.v1",
+          "verdict": "GO",
+          "scope": "current selected-report synthetic sample only",
+          "runtime_revision": "6062f1cfbd8bdfb9eaa2eb6dcce251215925e64d",
+          "evidence_sha256": {
+            "current-synthetic-reply.txt": "b18c54fdb0ea997d79302fb25c12775544a5e52e8eeaf86c328ec1b08a3d3bc4",
+            "current-selected-proof.json": "c8b1d325ec6dd7f20e7ae016f785376694ff480c23f708d5e0cf123c1dfa37ab"
+          },
+          "conclusions": {
+            "missing_background_remains_unknown": "PASS",
+            "no_unsupported_individual_disease_probability": "PASS",
+            "population_guidance_separate_from_personal_plan": "PASS",
+            "no_unqualified_individual_exercise_prescription": "PASS",
+            "other_samples_require_separate_review": true
+          },
+          "reviewer": "health_repair_independent_g4"
+        }
+      },
+      {
+        "case": "variant",
+        "source_commit": "6062f1cfbd8bdfb9eaa2eb6dcce251215925e64d",
+        "proof_path": "/tmp/reva-1009-selected-evidence-limits/variant-selected-proof.json",
+        "proof_sha256": "6505cadb96cde099bc38b918e9d948f6b36ba468ac069f99036338f3c5f7138a",
+        "machine_status": "pending_content_review",
+        "checks_passed": true,
+        "actual_api_calls": 3,
+        "source_unchanged": true,
+        "content_review": {
+          "schema_version": "independent-content-review.v1",
+          "verdict": "GO",
+          "scope": "variant selected-report synthetic sample only",
+          "runtime_revision": "6062f1cfbd8bdfb9eaa2eb6dcce251215925e64d",
+          "evidence_sha256": {
+            "variant-synthetic-reply.txt": "31ca67c835ba5ecf96d675d1ab325558b17885a334e63f0c1ba4e4fb17c11fae",
+            "variant-selected-proof.json": "6505cadb96cde099bc38b918e9d948f6b36ba468ac069f99036338f3c5f7138a"
+          },
+          "conclusions": {
+            "missing_background_remains_unknown": "PASS",
+            "no_unsupported_individual_disease_probability": "PASS",
+            "population_guidance_separate_from_personal_plan": "PASS",
+            "no_unqualified_individual_exercise_prescription": "PASS",
+            "single_lab_finding_not_general_health_clearance": "PASS"
+          },
+          "reviewer": "health_repair_independent_g4"
+        }
+      }
+    ],
+    "noninterference": "Only selected-report server prompt changed after a461edf6; earlier unrelated samples keep their original revisions."
   }
 }

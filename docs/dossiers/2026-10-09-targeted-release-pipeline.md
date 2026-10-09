@@ -213,3 +213,14 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - Final revision standard live gate passed with actual API usage. Medical current/legacy selected-report and narrative, symptom and exercise-HTML samples passed at `30d064392`; independent noninterference review confirms the final delta is limited to closed Garmin handling. These samples retain their original SHA. Actual Mobile parsing accepted the complete synthetic HTML document, and parent content review found no invented personal diagnoses/readings. No current native simulator build or OTA delivery is claimed.
 - Earlier failures remain evidence: direct narrative zero dispatch, generic Garmin sync filtering, missing deterministic status disclosure, unnecessary selected-report realtime search, HTML media routing/truncation, zero-record novice inference and unsupported model claims were repaired. A standard `30d064392` run also hit one 45-second provider timeout; it remains failed, not relabeled. The final standard run passed with the same bound.
 - Machine evidence and explicit sample bindings: [owned health repair verification](../reviews/2026-10-09-owned-health-repair-verification.json). Local gates are complete; exact main CI and trusted backend release are next. The native runtime/fingerprint OTA blocker remains; no incompatible pin or legacy publisher is used.
+
+### 精确 CI 失败与修复（2026-10-09）
+
+- `3bcce550c` 的 CI `37909184530` 阻断：新增本人报告详情路由漏同步两端生成类型；体检续问测试期望的可信入口意图标签被清理。未部署该候选。
+- `d1dd58cab` 同步两端 OpenAPI 类型，并由服务端补入固定只读 `exam_abnormal_review` 标签；不恢复客户端摘要或 `feedback_intent`。原失败断言保持不变，新增恶意标签隔离断言。
+- API 生成一致性、Mobile/Web TypeScript 均通过；作者 PostgreSQL 82 passed，独立安全复核 82 passed / G4 GO。新旧所选报告真实模型补验及下一候选精确 CI 尚待完成。
+- `d1dd58cab` legacy 实模机器检查通过，但人工 G4 内容审阅 **BLOCK**：缺年龄/家族史仍下调具体遗传疾病可能性，且将一般运动目标放入无适用条件的个人行动清单。保留 `/tmp/reva-1009-selected-d1dd58cab` 原始证据；不能将机器通过当作医学内容通过。返回实现收紧所选报告解读约束，发布未执行。
+
+- `6062f1cfb` 收紧所选报告内容边界：未知不当阴性、不据单项指标推个体病因概率、人群目标不变个人运动或减重处方。作者 PostgreSQL 82 passed、独立 82 passed / 代码 G4 GO；最终 CI-mode PostgreSQL 基础集成 3 passed。
+- 新目录 `/tmp/reva-1009-selected-evidence-limits` 三份单次真实模型验收（legacy/current/variant）各 24 项机器检查通过，各 3 次真实 API，共 9 次，源码绑定 `6062f1cfb` 且前后哈希不变，无重试。独立逐篇人工内容 GO，原机器 proof 保持 pending_content_review，裁决独立保存并绑定内容与 proof 哈希。旧 BLOCK 证据不覆盖。样本通过不等同线上用户验收。
+- 下一步：证据提交后的精确 main CI → Trusted Release validate → 服务端部署和健康回执。OTA 原生 cohort 不兼容阻断仍在；不改 fingerprint pin 或借旧入口发布。
