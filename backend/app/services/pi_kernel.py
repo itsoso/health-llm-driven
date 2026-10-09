@@ -39,6 +39,14 @@ class PiKernelSession:
     async def __aenter__(self):
         # Do not inherit database/provider credentials or Node preload hooks.
         env = {key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL", "SYSTEMROOT") if key in os.environ}
+        # Release attestation checks this non-secret flag on every service child.
+        # Preserve explicit state exactly; never manufacture a disabled proof
+        # for a missing, enabled, or malformed parent setting.
+        runtime_flag = os.environ.get("HEALTH_EVIDENCE_RUNTIME_ENABLED")
+        if runtime_flag is not None:
+            if runtime_flag not in {"false", "true"}:
+                raise PiKernelError("pi_invalid_runtime_flag")
+            env["HEALTH_EVIDENCE_RUNTIME_ENABLED"] = runtime_flag
         try:
             self.process = await asyncio.create_subprocess_exec(
                 *self.command,
