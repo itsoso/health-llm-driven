@@ -696,7 +696,7 @@ def _selected_exam_context_id(extra_context: Optional[str]) -> Optional[int]:
 
 def _selected_exam_tool_allowed(tool_name: str, args: dict) -> bool:
     """Closed read scope: selected report plus public, non-personal knowledge."""
-    if tool_name in {"knowledge_search", "realtime_search"}:
+    if tool_name == "knowledge_search":
         return True
     if tool_name == "query_lab_indicators":
         return True
@@ -721,7 +721,7 @@ def _selected_exam_provider_tools(tools: list[dict]) -> list[dict]:
     projected = []
     for tool in tools:
         name = (tool.get("function") or {}).get("name")
-        if name in {"knowledge_search", "realtime_search"}:
+        if name == "knowledge_search":
             projected.append(tool)
         elif name == "health_query":
             selected = deepcopy(tool)

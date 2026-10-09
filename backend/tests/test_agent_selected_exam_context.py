@@ -119,7 +119,7 @@ async def test_selected_exam_stream_discards_client_payload_and_other_reports(db
         calls += 1
         if calls == 1:
             names = {tool['function']['name'] for tool in tools}
-            assert names <= {'health_query', 'knowledge_search', 'realtime_search'}
+            assert names <= {'health_query', 'knowledge_search'}
             report_tool = next(tool['function'] for tool in tools if tool['function']['name'] == 'health_query')
             assert report_tool['parameters']['properties']['dimension']['enum'] == ['medical_exam']
             assert set(report_tool['parameters']['properties']) == {'dimension'}
@@ -209,6 +209,7 @@ async def test_terminal_card_delivery_uses_actual_outcome(db, auth_user_and_head
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('tool,args', [
+    ('realtime_search', {'query':'synthetic latest guideline'}),
     ('health_analysis', {'analysis_type':'orchestrator', 'question':'analyze'}),
     ('health_manage', {'record_type':'diet','operation':'list'}),
     ('health_query', {'dimension':'genetic'}),
