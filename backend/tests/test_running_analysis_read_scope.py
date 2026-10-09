@@ -95,3 +95,21 @@ def test_explicit_public_weather_is_scoped_separately_from_health_history():
         assert decide(args, text=REQUEST, tool="environment_check").action == "block"
     pure = "查询我最近的饮食和睡眠并分析"
     assert decide({}, text=pure, tool="environment_check").action == "block"
+
+
+@pytest.mark.parametrize("domains", ["睡眠", "饮食", "睡眠和睡眠"])
+@pytest.mark.parametrize("has_weather", [False, True])
+def test_single_domain_composite_cannot_use_broad_analysis(domains, has_weather):
+    from app.services.agent_input_tool_scope import scope_tools_for_owned_read
+
+    text = REQUEST.replace("饮食睡眠", domains)
+    if not has_weather:
+        text = text.replace("我还有现在的杭州的天气，", "")
+    scope = resolve_owned_read_scope(snapshot(text))
+    assert scope is not None and len(scope.queries) == 1
+    tools = [{"function": {"name": name}} for name in (
+        "health_query", "environment_check", "health_record", "health_analysis")]
+    expected = ["health_query", "environment_check"] if has_weather else ["health_query"]
+    assert [t["function"]["name"] for t in scope_tools_for_owned_read(tools, scope)] == expected
+    assert decide({"analysis_type": "comprehensive", "days": 30},
+                  text=text, tool="health_analysis").action == "block"

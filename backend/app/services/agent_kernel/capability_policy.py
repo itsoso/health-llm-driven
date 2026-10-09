@@ -2695,7 +2695,7 @@ def decide_tool_capability(
         return _decision("block", "garmin_sync_scope_unresolved", tool_name, args,
                          receipt_required=False)
     from app.services.agent_kernel.read_task_scope import (
-        owned_read_tool_names, resolve_owned_read_scope,
+        owned_read_tool_names, requires_owned_read_tool_scope, resolve_owned_read_scope,
     )
     from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
     if is_current_input_advice(snapshot.envelope.text) and tool_name != "knowledge_search":
@@ -2751,7 +2751,7 @@ def decide_tool_capability(
         if any(key not in expected or value != expected[key] for key, value in args.items()):
             return _decision("block", "owned_read_tool_out_of_scope", tool_name, args)
         return _decision("allow", "owned_read_explicit_weather", tool_name, expected)
-    if (owned_scope is not None and len(owned_scope.queries) > 1
+    if (owned_scope is not None and requires_owned_read_tool_scope(owned_scope)
             and tool_name not in owned_read_tool_names(owned_scope)):
         # General analysis can read outside the frozen window and persist
         # caches/actions. Schema exposure is not an authorization boundary.

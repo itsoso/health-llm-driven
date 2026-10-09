@@ -38,9 +38,9 @@ def scope_tools_for_owned_read(tools: list[dict[str, Any]], scope) -> list[dict[
     Filter the existing set; never re-enable a tool removed by another boundary.
     Single-domain adapters retain their existing compatibility behavior.
     """
-    from app.services.agent_kernel.read_task_scope import owned_read_tool_names
+    from app.services.agent_kernel.read_task_scope import owned_read_tool_names, requires_owned_read_tool_scope
 
-    if scope is None or len(scope.queries) <= 1:
+    if scope is None or not requires_owned_read_tool_scope(scope):
         return tools
     return [tool for tool in tools
             if (tool.get("function") or {}).get("name") in owned_read_tool_names(scope)]

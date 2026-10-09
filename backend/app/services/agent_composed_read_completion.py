@@ -490,7 +490,7 @@ def _unverified_regimen_continuation(clause: str) -> bool:
     return False
 
 
-def enforce_composed_synthesis_boundaries(text: str, completion):
+def enforce_composed_synthesis_boundaries(text: str, completion, *, require_advice_boundary: bool = False):
     from app.services.guidance_validator import (
         GuidanceValidationResult, _medical_assertion_matching_text,
     )
@@ -508,7 +508,7 @@ def enforce_composed_synthesis_boundaries(text: str, completion):
         return GuidanceValidationResult(text=completion.trusted_fact_summary + '\n\n'
             '解读范围：仅可比较相同来源、相同口径的观测，不能据此判断整夜低氧、睡眠阶段关联，'
             '或确诊及排除睡眠呼吸暂停。若有持续不适，请就医评估。')
-    if len(evidence["queries"]) < 2:
+    if len(evidence["queries"]) < 2 and not require_advice_boundary:
         return GuidanceValidationResult(text=text)
     # Formatting normalization is confined to the matching view. Accepted text
     # is returned byte-for-byte, including its uncertainty and record qualifiers.
@@ -665,14 +665,14 @@ def _record_description_flags(text: str, completion) -> list[str]:
     return flags
 
 
-def project_composed_answer_quality(quality, completion):
+def project_composed_answer_quality(quality, completion, *, require_advice_boundary: bool = False):
     """Remove resolved-scope solicitations without granting any safety exemption.
 
     Call only after checking the complete unfiltered model answer. An audit flag
     distinguishes this presentation correction from a medical/task failure.
     """
     if (completion is None or not completion.complete or not completion.verified_evidence
-            or len(completion.verified_evidence["queries"]) < 2):
+            or (len(completion.verified_evidence["queries"]) < 2 and not require_advice_boundary)):
         return quality
     from app.services.agent_output_quality import AgentOutputQualityResult, enforce_agent_output_quality
 

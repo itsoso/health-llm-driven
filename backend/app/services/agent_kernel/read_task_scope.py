@@ -237,6 +237,7 @@ class OwnedReadScope:
     queries: tuple[dict[str, str | int], ...]
     limitations: tuple[str, ...] = ()
     weather_city: str | None = None
+    composite_advice: bool = False
 
     def query(self, dimension: str) -> dict[str, str | int] | None:
         return next(
@@ -247,6 +248,10 @@ class OwnedReadScope:
 def owned_read_tool_names(scope: OwnedReadScope) -> frozenset[str]:
     """Shared exposure/dispatch boundary, included in the authorization digest."""
     return OWNED_MULTI_READ_TOOL_NAMES | ({"environment_check"} if scope.weather_city is not None else set())
+
+
+def requires_owned_read_tool_scope(scope: OwnedReadScope) -> bool:
+    return len(scope.queries) > 1 or scope.composite_advice
 
 
 def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
@@ -273,13 +278,15 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         longitudinal_read_restrictions_unresolved, longitudinal_read_projection_text,
         _record_domains,
         running_analysis_weather_city,
+        project_running_analysis_read,
     )
     if longitudinal_read_restrictions_unresolved(snapshot):
         return None
     longitudinal = resolve_longitudinal_read_queries(snapshot)
     if longitudinal is not None:
         return OwnedReadScope(longitudinal, longitudinal_read_limitations(snapshot),
-                              running_analysis_weather_city(snapshot.envelope.text))
+                              weather_city=running_analysis_weather_city(snapshot.envelope.text),
+                              composite_advice=project_running_analysis_read(snapshot.envelope.text) is not None)
     text = _active(snapshot.envelope.text)
     if text is None or not _owned_active(text) or _MUTATION.search(text) or not _READ.search(text):
         return None

@@ -14393,6 +14393,7 @@ class AgentExecutor:
         from app.services.agent_composed_read_completion import read_scope_notices, read_scope_synthesis_instructions
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         panel_read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+        panel_composite_advice = bool(panel_read_scope and panel_read_scope.composite_advice)
         if panel_read_scope is not None:
             system_content += ('\n本轮必须逐项完成的服务端只读范围：'
                 + json.dumps(list(panel_read_scope.queries), ensure_ascii=False)
@@ -14472,7 +14473,9 @@ class AgentExecutor:
             from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
 
             composed_boundary = enforce_composed_synthesis_boundaries(
-                safe, self._composed_read_completion() if panel_synthesis_messages is not None else None,
+                safe, self._composed_read_completion()
+                if panel_synthesis_messages is not None or panel_composite_advice else None,
+                require_advice_boundary=panel_composite_advice,
             )
             panel_medical_flags.update(composed_boundary.violations)
             boundary = enforce_medical_evidence_boundaries(
@@ -15452,7 +15455,9 @@ class AgentExecutor:
         from app.services.agent_composed_read_completion import project_composed_answer_quality
 
         output_quality = project_composed_answer_quality(
-            output_quality, panel_completion if panel_synthesis_messages is not None else None,
+            output_quality, panel_completion
+            if panel_synthesis_messages is not None or panel_composite_advice else None,
+            require_advice_boundary=panel_composite_advice,
         )
         panel_quality_flags.update(output_quality.flags)
         full_reply = output_quality.text
@@ -17700,6 +17705,7 @@ class AgentExecutor:
         from app.services.agent_composed_read_completion import read_scope_notices, read_scope_synthesis_instructions
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+        composite_advice = bool(read_scope and read_scope.composite_advice)
         from app.services.agent_input_tool_scope import scope_tools_for_owned_read
         tools = scope_tools_for_owned_read(tools, read_scope)
         if self._has_current_input_recovery_advice_goal():
@@ -19687,7 +19693,8 @@ class AgentExecutor:
         from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
 
         composed_boundary = enforce_composed_synthesis_boundaries(
-            full_reply, composed_completion if composed_synthesis_used else None,
+            full_reply, composed_completion if composed_synthesis_used or composite_advice else None,
+            require_advice_boundary=composite_advice,
         )
         medical_boundary = enforce_medical_evidence_boundaries(
             composed_boundary.text,
@@ -19928,7 +19935,8 @@ class AgentExecutor:
         from app.services.agent_composed_read_completion import project_composed_answer_quality
 
         output_quality = project_composed_answer_quality(
-            output_quality, composed_completion if composed_synthesis_used else None,
+            output_quality, composed_completion if composed_synthesis_used or composite_advice else None,
+            require_advice_boundary=composite_advice,
         )
         full_reply = output_quality.text
         if response_output_buffered:
