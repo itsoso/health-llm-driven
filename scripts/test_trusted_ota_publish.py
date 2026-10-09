@@ -728,7 +728,8 @@ def test_real_context_preflight_rejects_unsafe_runner(tmp_path,monkeypatch,fault
     ('expo', 'mobile/node_modules/expo/bin/cli'), ('cli_lock', 'scripts/release-tools/package-lock.json'),
     ('eas_package', 'scripts/release-tools/node_modules/eas-cli/package.json'),
 ])
-def test_real_context_reports_closed_path_asset(monkeypatch, tmp_path, capsys, asset, relative):
+@pytest.mark.parametrize("linux_tmp_mode", [None, 0o1777])
+def test_real_context_reports_closed_path_asset(monkeypatch, tmp_path, capsys, asset, relative, linux_tmp_mode):
     import stat
     from types import SimpleNamespace
 
@@ -747,8 +748,15 @@ def test_real_context_reports_closed_path_asset(monkeypatch, tmp_path, capsys, a
     original = Path.lstat
     def metadata(path):
         info = original(path)
-        # Host ownership differs on macOS; real kind/mode/nlink remain intact.
-        return SimpleNamespace(st_uid=0, st_mode=info.st_mode & ~stat.S_ISVTX,
+        mode = info.st_mode
+        if linux_tmp_mode is not None and path == tmp_path:
+            mode = stat.S_IFDIR | linux_tmp_mode
+        # The hosted checkout lives beneath sealed /opt, not pytest's /tmp.
+        # Model only those external ancestors; preserve every real source-tree
+        # kind/mode/link count, including the intentionally unsafe target.
+        if path in source.parents:
+            mode = stat.S_IFDIR | 0o755
+        return SimpleNamespace(st_uid=0, st_mode=mode,
                                st_nlink=info.st_nlink)
     monkeypatch.setattr(Path, 'lstat', metadata)
     monkeypatch.setattr(m, 'SOURCE', source)
