@@ -340,3 +340,190 @@ def test_documentation_attestation_rechecks_both_ci_and_main(change):
         return result
     with pytest.raises(gate.GateError):
         gate.verify_release(SHA, SHA, _get_json=changing)
+
+
+BACKEND_GATE = load_gate()
+BACKEND_JOBS = (
+    'classify-changes', 'docs-quality', 'backend-quality', 'agent-runtime-postgres',
+    'backend-tests', 'release-invariants', 'type-drift', 'backend-release-ready-v1',
+    *(f'backend-test-balanced-{i:02d}' for i in range(1, 17)),
+)
+
+
+class BackendAPI(API):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.jobs = [dict(id=i + 1, name=name, run_id=42, head_sha=SHA,
+                          status='completed', conclusion='success')
+                     for i, name in enumerate(BACKEND_JOBS)]
+        self.jobs.append(dict(id=99, name='mac-build', run_id=42, head_sha=SHA,
+                              status='in_progress', conclusion=None))
+
+    def __call__(self, url):
+        if '/attempts/' in url and '/jobs?' in url:
+            self.calls.append(url)
+            run_id = int(url.split('/runs/')[1].split('/')[0])
+            return {'total_count': len(self.jobs),
+                    'jobs': [dict(job, run_id=run_id) for job in self.jobs]}
+        if '/actions/runs/' in url:
+            self.calls.append(url)
+            run_id = int(url.rsplit('/', 1)[1])
+            return next(item for item in self.runs if item['id'] == run_id)
+        return super().__call__(url)
+
+
+def backend_verify(api):
+    return BACKEND_GATE.verify_release(SHA, SHA, target='backend-v1', _get_json=api)
+
+
+def test_backend_ready_does_not_wait_for_unrelated_running_job():
+    api = BackendAPI(runs=[run(status='in_progress', conclusion=None)])
+    receipt = backend_verify(api)
+    assert receipt == dict(sha=SHA, workflow_sha=SHA, ci_run_id=42, ci_run_attempt=1,
+                           target='backend-v1', policy_version='backend-v1')
+    assert sum('/attempts/1/jobs?' in url for url in api.calls) == 2
+
+
+@pytest.mark.parametrize('name', BACKEND_JOBS)
+@pytest.mark.parametrize('state', ['missing', 'skipped', 'queued'])
+def test_backend_requires_every_concrete_job(name, state):
+    api = BackendAPI()
+    if state == 'missing':
+        api.jobs = [job for job in api.jobs if job['name'] != name]
+    else:
+        for job in api.jobs:
+            if job['name'] == name:
+                job.update(status='queued' if state == 'queued' else 'completed',
+                           conclusion=None if state == 'queued' else state)
+    with pytest.raises(BACKEND_GATE.GateError):
+        backend_verify(api)
+
+
+@pytest.mark.parametrize('changes', [
+    {'id': True}, {'name': ''}, {'head_sha': OTHER},
+    {'status': 'completed', 'conclusion': 'failure'},
+    {'status': 'completed', 'conclusion': 'cancelled'},
+    {'status': 'in_progress', 'conclusion': 'success'},
+    {'status': 'mystery', 'conclusion': None},
+])
+def test_backend_rejects_malformed_or_failed_unrelated_job(changes):
+    api = BackendAPI()
+    api.jobs[-1].update(changes)
+    with pytest.raises(BACKEND_GATE.GateError, match='CI|job|Job'):
+        backend_verify(api)
+
+
+@pytest.mark.parametrize('change', ['duplicate', 'truncated', 'wrong_run', 'boolean_count'])
+def test_backend_jobs_inventory_fails_closed(change):
+    api = BackendAPI()
+    def altered(url):
+        value = api(url)
+        if '/jobs?' in url:
+            if change == 'duplicate':
+                value['jobs'][-1] = dict(value['jobs'][0])
+            elif change == 'truncated':
+                value['total_count'] += 1
+            elif change == 'boolean_count':
+                value['total_count'] = True
+            else:
+                value['jobs'][0]['run_id'] = 999
+        return value
+    with pytest.raises(BACKEND_GATE.GateError, match='CI|job|Job'):
+        backend_verify(altered)
+
+
+@pytest.mark.parametrize('change', ['rerun', 'new_run', 'job_failure', 'job_replaced', 'main'])
+def test_backend_control_plane_races_fail_closed(change):
+    api = BackendAPI()
+    count = 0
+    def racing(url):
+        nonlocal count
+        if '/jobs?' in url:
+            count += 1
+            if count == 2:
+                if change == 'job_failure':
+                    api.jobs[-1].update(status='completed', conclusion='failure')
+                elif change == 'job_replaced':
+                    api.jobs[0]['id'] = 101
+        if count >= 1:
+            if change == 'rerun':
+                api.runs[0]['run_attempt'] = 2
+            elif change == 'new_run':
+                api.runs = [run(), run(43)]
+            elif change == 'main':
+                api.main = OTHER
+        return api(url)
+    with pytest.raises(BACKEND_GATE.GateError, match='CI|job|Job|Main|main'):
+        backend_verify(racing)
+
+
+def test_backend_checks_older_run_current_attempt_instead_of_choosing_newer_green():
+    api = BackendAPI(runs=[run(41, run_attempt=2, status='queued', conclusion=None), run()])
+    with pytest.raises(BACKEND_GATE.GateError, match='CI'):
+        backend_verify(api)
+
+
+@pytest.mark.parametrize('target', ['', None, 'backend', 'full\n', [], 'backend-v2'])
+def test_unknown_target_rejected_before_network(target):
+    api = API()
+    with pytest.raises(BACKEND_GATE.GateError):
+        BACKEND_GATE.verify_release(SHA, SHA, target=target, _get_json=api)
+    assert api.calls == []
+
+
+def test_backend_cannot_hide_failed_job_in_older_current_attempt():
+    api = BackendAPI(runs=[run(41, run_attempt=2), run()])
+    def older_failed(url):
+        result = api(url)
+        if '/runs/41/attempts/2/jobs?' in url:
+            result['jobs'][-1].update(status='completed', conclusion='failure')
+        return result
+    with pytest.raises(BACKEND_GATE.GateError):
+        backend_verify(older_failed)
+
+
+def test_backend_checks_every_run_and_allows_safe_optional_completion():
+    api = BackendAPI(runs=[run(41, run_attempt=2), run(status='in_progress', conclusion=None)])
+    count = 0
+    def completing(url):
+        nonlocal count
+        if '/jobs?' in url:
+            count += 1
+            if count > 2:
+                api.jobs[-1].update(status='completed', conclusion='success')
+        return api(url)
+    assert backend_verify(completing)['ci_run_id'] == 42
+    assert count == 4
+
+
+@pytest.mark.parametrize('field,value', [('repository', {'full_name': 'evil/repo'}),
+                                        ('head_repository', {'full_name': 'evil/repo'}),
+                                        ('workflow_id', 1), ('head_sha', OTHER),
+                                        ('event', 'pull_request'), ('head_branch', 'feature'),
+                                        ('run_attempt', True)])
+def test_backend_preserves_canonical_run_identity_checks(field, value):
+    with pytest.raises(BACKEND_GATE.GateError):
+        backend_verify(BackendAPI(runs=[run(**{field: value})]))
+
+
+def test_backend_requires_current_main_not_documentation_exception():
+    with pytest.raises(BACKEND_GATE.GateError, match='current main'):
+        backend_verify(BackendAPI(main=OTHER))
+
+
+def test_target_cli_is_strict_and_defaults_to_full(monkeypatch, capsys):
+    from types import SimpleNamespace
+    gate = load_gate()
+    seen = []
+    monkeypatch.setattr(gate.sys, 'flags', SimpleNamespace(isolated=1))
+    monkeypatch.setattr(gate, 'verify_release', lambda *args, **kwargs: seen.append(kwargs) or {})
+    monkeypatch.setattr(gate.sys, 'argv', ['gate', '--sha', SHA, '--workflow-sha', SHA])
+    assert gate.main() == 0
+    assert seen[-1]['target'] == 'full'
+    monkeypatch.setattr(gate.sys, 'argv', ['gate', '--sha', SHA, '--workflow-sha', SHA, '--target', 'backend-v1'])
+    assert gate.main() == 0
+    assert seen[-1]['target'] == 'backend-v1'
+    monkeypatch.setattr(gate.sys, 'argv', ['gate', '--sha', SHA, '--workflow-sha', SHA, '--target', 'backend'])
+    with pytest.raises(SystemExit):
+        gate.main()
+    capsys.readouterr()

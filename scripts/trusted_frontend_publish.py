@@ -4,6 +4,7 @@ Runs only from canonical current-main staging. Installs artifacts rather than
 tracked source/package files; hardened systemd launches Next directly. Unknown
 outcomes retain the business lease and immutable audit; never retry automatically.
 """
+from types import SimpleNamespace
 import argparse
 import fcntl
 import hashlib
@@ -145,7 +146,8 @@ def inspect(args, source, helper, bootstrap, server, gate, build):
     server.assert_frontend_rebuild_history(STATE)
     for name in ('.next','node_modules'):
         server._frontend_publication_backup_digest(PRODUCTION/'frontend'/name,live=True)
-    if any(os.path.lexists(path) for path in (LEASE, STATE/'frontend-publications'/args.operation_id, BUILDS/args.operation_id)):
+    prepared = bool(getattr(args, 'prepared_artifact', False))
+    if any(os.path.lexists(path) for path in (LEASE, STATE/'frontend-publications'/args.operation_id)) or (not prepared and os.path.lexists(BUILDS/args.operation_id)):
         raise PublishError('existing operation or lease; retry forbidden')
     environment, fingerprints = configuration(build)
     process = stable_runtime(build)
@@ -153,7 +155,7 @@ def inspect(args, source, helper, bootstrap, server, gate, build):
     package = json.loads((source/'frontend/package.json').read_text())
     if package['scripts']['build'] != 'node scripts/braces-depth-guard.cjs --root . --apply && next build':
         raise PublishError('reviewed frontend build command differs')
-    return dict(publisher_sha=args.publisher_sha, production_sha=args.production_sha,
+    plan = dict(publisher_sha=args.publisher_sha, production_sha=args.production_sha,
                 operation_id=args.operation_id, frontend_tree=tree,
                 snapshot=build.snapshot(server), frontend_env=fingerprints,
                 frontend_process=process, public_build_env=environment,
@@ -161,6 +163,15 @@ def inspect(args, source, helper, bootstrap, server, gate, build):
                 unit_fingerprint=build.data_fingerprint(Path(RUNTIME['FragmentPath']))[0],
                 toolchain=dict(node=build.run(['/usr/bin/node','--version']).strip(),
                                npm=build.run(['/usr/bin/npm','--version']).strip()))
+    if prepared:
+        artifact = load_artifact(source, build)
+        expected = artifact.binding(source, args.publisher_sha, tree, args.operation_id, environment, build)
+        plan['prepared_artifact'] = artifact.verify(expected, SimpleNamespace(bundle_digest=bundle_digest), build, server)
+    return plan
+
+
+def load_artifact(source, build):
+    return build.module_at(source/'scripts/trusted_frontend_artifact.py', 'publication_artifact', build.secure_entry)
 
 
 def assert_preserved(plan, source, helper, bootstrap, server, build):
@@ -327,16 +338,20 @@ def execute(plan, source, helper, bootstrap, server, build, check_locks):
     rename_attempted=False
     old_digest=None
     try:
-        build.copy_build_inputs(source,stage,plan['public_build_env'])
-        with (audit/'build.log').open('xb') as log:
-            subprocess.run(build_command(build,operation,stage),env=build.ENV,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=1900)
-            log.flush(); os.fsync(log.fileno())
-        group=Path('/sys/fs/cgroup/system.slice')/f'reva-frontend-build-{operation}.service'
-        if group.exists() and any(p.read_text().strip() for p in group.rglob('cgroup.procs')):
-            raise PublishError('build descendants remain')
-        build.freeze_artifacts(stage)
-        prepare_cache(stage/'frontend')
-        digest=bundle_digest(stage/'frontend',build)
+        if 'prepared_artifact' in plan:
+            artifact = load_artifact(source, build)
+            digest = artifact.consume(plan, source, SimpleNamespace(bundle_digest=bundle_digest), build, server, audit)
+        else:
+            build.copy_build_inputs(source,stage,plan['public_build_env'])
+            with (audit/'build.log').open('xb') as log:
+                subprocess.run(build_command(build,operation,stage),env=build.ENV,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=1900)
+                log.flush(); os.fsync(log.fileno())
+            group=Path('/sys/fs/cgroup/system.slice')/f'reva-frontend-build-{operation}.service'
+            if group.exists() and any(p.read_text().strip() for p in group.rglob('cgroup.procs')):
+                raise PublishError('build descendants remain')
+            build.freeze_artifacts(stage)
+            prepare_cache(stage/'frontend')
+            digest=bundle_digest(stage/'frontend',build)
         stable()
         backups={}
         for name,backup in (('.next','previous-next'),('node_modules','previous-node-modules')):
@@ -424,6 +439,8 @@ def main():
     for name in ('publisher-sha','production-sha','frontend-tree','operation-id'):
         parser.add_argument('--'+name,required=True)
     parser.add_argument('--evidence-sha256')
+    parser.add_argument('--prepared-artifact', action='store_true',
+                        help='consume the verified artifact whose ID equals operation-id; never rebuild')
     parser.add_argument('--resume-stopped-publication',action='store_true',
                         help='explicit operator continuation of the fixed 637078 incident only')
     parser.add_argument('--restore-preswitch-availability',action='store_true',
@@ -450,6 +467,8 @@ def main():
             try:
                 check_locks()
                 recovery=None
+                if args.resume_stopped_publication and args.prepared_artifact:
+                    raise PublishError('prepared artifact cannot resume a historical failure')
                 if args.resume_stopped_publication:
                     recovery=build.module_at(source/'scripts/frontend_stopped_recovery.py','stopped_recovery',build.secure_entry)
                     plan=recovery.inspect(args,source,sys.modules[__name__],helper,bootstrap,server,gate,build)

@@ -213,11 +213,14 @@ def _assert_installable(sha):
     _assert_known_activity(history)
 
 
-def install(sha, expiry, public):
+def install(sha, expiry, public, *, backend_ci=False):
     validate_install(sha, expiry, public, now=int(time.time()))
     _assert_installable(sha)
     source, server = reviewed_source(sha)
-    _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
+    if backend_ci:
+        _run(["/usr/bin/python3.12", "-I", "-S", "-B", str(source / "scripts/trusted_backend_admission.py"), "--sha", sha])
+    else:
+        _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
     fd = os.open(STATE / "launcher.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         secure(STATE / "launcher.lock", private=True)
@@ -744,12 +747,17 @@ def _finalized_advance_module():
     return module
 
 
-def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None):
+def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
     source, server = reviewed_source(sha)
-    _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
+    if backend_ci:
+        if recovery_receipt is not None or finalized_production_sha is not None:
+            raise BootstrapError("backend CI admission cannot replace recovery or native closure gates")
+        _run(["/usr/bin/python3.12", "-I", "-S", "-B", str(source / "scripts/trusted_backend_admission.py"), "--sha", sha])
+    else:
+        _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
     secure(STATE)
     # Rotation may not recreate the global lock inode of an existing install.
     secure(STATE / "launcher.lock", private=True)
@@ -1347,11 +1355,13 @@ def main():
         create.add_argument("--sha", required=True)
         create.add_argument("--expires-at", default=0, type=int, help="Unix deadline; default 0 stays valid until revocation")
         create.add_argument("--cloud-public-key", required=True)
+        create.add_argument("--backend-ci", action="store_true", help="derive narrow backend admission from actual production evidence")
         rotation = commands.add_parser("rotate", allow_abbrev=False)
         rotation.add_argument("--retire-sha", required=True)
         rotation.add_argument("--sha", required=True)
         rotation.add_argument("--expires-at", default=0, type=int, help="Unix deadline; default 0 permits reuse of the current cloud key")
         rotation.add_argument("--cloud-public-key", required=True)
+        rotation.add_argument("--backend-ci", action="store_true", help="derive narrow backend admission from actual production evidence")
         rotation.add_argument("--recovery-receipt-stdin", action="store_true")
         rotation.add_argument("--finalized-production-sha", help="fixed reviewed native-closure production advance only")
         remove = commands.add_parser("revoke", allow_abbrev=False)
@@ -1382,9 +1392,11 @@ def main():
                     raise BootstrapError("exact protected recovery receipt required")
                 receipt = raw.rstrip(b"\n").decode("ascii")
             result = rotate(args.retire_sha, args.sha, args.expires_at, args.cloud_public_key,
-                            recovery_receipt=receipt, finalized_production_sha=args.finalized_production_sha)
+                            recovery_receipt=receipt, finalized_production_sha=args.finalized_production_sha,
+                            **({"backend_ci": True} if args.backend_ci else {}))
         elif args.action == "install":
-            result = install(args.sha, args.expires_at, args.cloud_public_key)
+            result = install(args.sha, args.expires_at, args.cloud_public_key,
+                             **({"backend_ci": True} if args.backend_ci else {}))
         else:
             result = revoke(args.sha)
         print(json.dumps(result, sort_keys=True))

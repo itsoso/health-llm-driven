@@ -85,7 +85,7 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
     assert set(triggers) == {"workflow_dispatch"}
     target = triggers["workflow_dispatch"]["inputs"]["target"]
     assert target["default"] == "validate"
-    assert set(target["options"]) == {"validate", "backend", "release", "testflight", "retained-testflight"}
+    assert set(target["options"]) == {"validate", "backend", "backend-v1", "release", "testflight", "retained-testflight"}
     assert WORKFLOW["permissions"] == {"contents": "read", "actions": "read"}
     assert WORKFLOW["concurrency"]["cancel-in-progress"] is False
     for name, job in WORKFLOW["jobs"].items():
@@ -94,8 +94,8 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
         if name not in {"preflight", "release-result"}:
             assert job["environment"] == "release-production"
             expected = {
-                "build-permission": "inputs.target == 'release' || inputs.target == 'backend' || inputs.target == 'testflight'",
-                "backend": "inputs.target == 'release' || inputs.target == 'backend'",
+                "build-permission": "inputs.target == 'release' || (inputs.target == 'backend' || inputs.target == 'backend-v1') || inputs.target == 'testflight'",
+                "backend": "inputs.target == 'release' || (inputs.target == 'backend' || inputs.target == 'backend-v1')",
                 "ios-build": "inputs.target == 'release' || inputs.target == 'testflight'",
                 "testflight": "inputs.target == 'release' || inputs.target == 'testflight'",
                 "retained-testflight": "inputs.target == 'retained-testflight'",

@@ -12,7 +12,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 from app.database import Base, get_db
 
@@ -103,8 +102,16 @@ def _noop_twin_cache(monkeypatch):
     monkeypatch.setattr(twin_cache, "invalidate_twin", lambda user_id: None)
 
 
+@pytest.fixture(scope="session")
+def _sqlite_schema_template():
+    from tests.sqlite_template import SQLiteTemplate
+
+    with SQLiteTemplate() as template:
+        yield template
+
+
 @pytest.fixture(scope="function")
-def db():
+def db(_sqlite_schema_template):
     """创建测试数据库.
 
     默认保持现有 SQLite 单测速度; 设置 TEST_DATABASE_URL=postgresql://...test...
@@ -119,13 +126,14 @@ def db():
             raise RuntimeError("TEST_DATABASE_URL must point to a PostgreSQL database with 'test' in its name")
         engine = create_engine(test_database_url, pool_pre_ping=True)
     else:
-        # 使用 StaticPool 确保所有连接使用同一个内存数据库
-        # 使用 check_same_thread=False 允许多线程访问
-        engine = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool
-        )
+        # Every test still owns a fresh StaticPool engine; only an empty,
+        # event-free schema is copied. Custom DDL/connection events use the
+        # original lifecycle, and PostgreSQL below is unchanged.
+        with _sqlite_schema_template.database(Base.metadata) as engine:
+            TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+            with TestingSessionLocal() as session:
+                yield session
+        return
 
     # 清除可能存在的元数据缓存
     Base.metadata.drop_all(bind=engine)

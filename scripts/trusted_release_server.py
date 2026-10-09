@@ -45,7 +45,7 @@ class PreparationUncertain(LaunchError):
 
 
 def parse_command(command):
-    match = re.fullmatch(r"(run|status|check|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload|claim-ota|finish-ota|claim-retained-testflight|finish-retained-testflight) ([0-9a-f]{40})", command)
+    match = re.fullmatch(r"(run|status|check|check-backend-v1|run-backend-v1|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload|claim-ota|finish-ota|claim-retained-testflight|finish-retained-testflight) ([0-9a-f]{40})", command)
     if match is None:
         raise LaunchError("only fixed release commands with an exact SHA are allowed")
     return match.group(1), match.group(2)
@@ -673,6 +673,27 @@ def attest_documentation_main(policy, observed_main):
                        stderr=subprocess.DEVNULL, check=True, timeout=300)
     except (OSError, subprocess.SubprocessError):
         raise LaunchError("canonical documentation attestation unavailable") from None
+
+
+def attest_backend_ci(policy):
+    """Fixed backend RPC derives eligibility from trusted production evidence."""
+    script = STATE / "bootstrap" / policy["sha"] / "source/scripts/trusted_backend_admission.py"
+    secure_path(script)
+    subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"]],
+                   env=clean_environment(STATE), stdin=subprocess.DEVNULL,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   check=True, timeout=300)
+
+
+def attest_full_ci(policy):
+    """Backend-only provisioning never authorizes native or OTA claims."""
+    script = STATE / "bootstrap" / policy["sha"] / "source/scripts/trusted_release_gate.py"
+    secure_path(script)
+    subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"],
+                    "--workflow-sha", policy["sha"]],
+                   env=clean_environment(STATE), stdin=subprocess.DEVNULL,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   check=True, timeout=300)
 
 
 def check_readiness(policy):
@@ -1376,7 +1397,7 @@ def invitation_only_config(production):
     return "\n".join(lines) + "\n" + "".join(f"{key}={value}\n" for key, value in keys.items())
 
 
-def deploy(policy, workspace):
+def deploy(policy, workspace, *, backend_ci=False):
     # Provisioning remains a separate privileged, reviewed installation step.
     _assert_deployment_window(policy)
     validate_loopback(policy)
@@ -1399,7 +1420,10 @@ def deploy(policy, workspace):
     env.update(DEPLOY_SOURCE_SHA=policy["sha"], DEPLOY_ENV_FILE=str(candidate))
     source = workspace / "source"
     # Fresh CI/main attestation immediately before business deployment.
-    execute([PYTHON, "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", policy["sha"], "--workflow-sha", policy["sha"]], source, env, workspace / "preparation.log")
+    if backend_ci:
+        attest_backend_ci(policy)
+    else:
+        execute([PYTHON, "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", policy["sha"], "--workflow-sha", policy["sha"]], source, env, workspace / "preparation.log")
     _assert_deployment_window(policy)
     execute(["/bin/bash", str(source / "deploy.sh"), "-b"], source, env, workspace / "deployment.log")
 
@@ -1422,6 +1446,9 @@ def main():
             raise LaunchError("installed executor differs from reviewed authorization")
         secure_path(STATE, directory=True)
         workspace = STATE / policy["sha"]
+        if command not in {"status", "check", "check-backend-v1", "run-backend-v1",
+                           "finish-ota", "finish-retained-testflight"}:
+            attest_full_ci(policy)
         if command == "status":
             result = release_status(policy["sha"], workspace)
         elif command in {"check-testflight", "claim-testflight-build", "claim-testflight-upload"}:
@@ -1434,7 +1461,9 @@ def main():
             result = ota_rpc(policy, "claim" if command == "claim-ota" else "finish")
         elif command in {"claim-retained-testflight", "finish-retained-testflight"}:
             result = retained_rpc(policy, "claim" if command == "claim-retained-testflight" else "finish")
-        elif command == "check":
+        elif command in {"check", "check-backend-v1"}:
+            if command == "check-backend-v1":
+                attest_backend_ci(policy)
             check_readiness(policy)
             result = {"sha": policy["sha"], "state": "CHECKED"}
         elif command == "claim-testflight":
@@ -1442,6 +1471,12 @@ def main():
         elif command == "claim-build":
             workspace.mkdir(mode=0o700, exist_ok=True)
             result = claim_build(policy, workspace)
+        elif command == "run-backend-v1":
+            # Reject missing/full-required CI before creating/consuming a claim.
+            attest_backend_ci(policy)
+            workspace.mkdir(mode=0o700, exist_ok=True)
+            result = run_once(policy, workspace, lambda: prepare_source(policy, workspace),
+                              lambda: deploy(policy, workspace, backend_ci=True))
         else:
             workspace.mkdir(mode=0o700, exist_ok=True)
             result = run_once(policy, workspace, lambda: prepare_source(policy, workspace), lambda: deploy(policy, workspace))

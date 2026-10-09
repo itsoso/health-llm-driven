@@ -13,6 +13,38 @@
 （例如历史候选或纯文档候选尚无所需完整验证）。不得通过取消同 SHA 的运行中
 或失败记录制造绿色；全部适用运行仍按现有 trusted release gate 裁决。
 
+#### 版本化后端准入（backend-v1）
+
+`trusted-release.yml` 的显式 `target=backend-v1` 可在无关端侧 job 仍运行时申请
+后端发布；旧 `backend` / `release` / 原生及 OTA 开始入口继续要求完整 CI。
+该目标并非调用方声明“只改后端”即放行：服务器必须读取实际生产 HEAD 和该
+SHA 的 root-owned `SUCCEEDED` 回执，使用 `backend_release_scope.py` 验证
+生产至候选的完整逐提交变更。初版仅允许该脚本列明的三个服务实现文件及限定
+测试/文档；未知范围、缺失基线、合并、重命名、安全/依赖/迁移/共享契约/发布
+代码均回到 full。所有后端分片、PostgreSQL、质量、类型、发布不变量、文档
+及 `backend-release-ready-v1` 必须在当前 main 精确 SHA 的可信 CI 中成功。
+所有同 SHA 运行及 attempt 都须核验；任何已观察到的失败、取消或未知状态拒绝。
+
+可信 bootstrap 的 `install/rotate --backend-ci` 是同一服务端范围闸的显式入口，
+不豁免旧授权终态、锁或独立 G4，不可与恢复/原生收尾选项混用。新 key 调用旧
+`run` 或原生/OTA claim 时仍在领取资格前检查 full；既有 finish 动作继续按原
+绑定回执完成收尾，避免发布成功后因 main 前进留下悬挂租约。
+协议启用须安装新受审 canonical executor；仅合入 workflow 不等于线上已启用。
+
+#### 同主机前端制品准备与复用
+
+canonical `deploy.sh --prepare-frontend-artifact --publisher-sha <sha>
+--frontend-tree <tree> --artifact-id <32hex>` 默认只读预检，携相同
+`--evidence-sha256` 才实际准备。准备仍要求当前 main 完整 CI 和独立 G4，
+使用原 systemd sandbox，领取独立编译锁，不占用业务发布租约、不停服务。
+发布时给原 `--publish-frontend` 增加 `--prepared-artifact <32hex>`，其值须
+等于 operation ID；原证据摘要流程、生产检查、租约、切换和回滚全部保留。
+
+READY 绑定 publisher SHA、完整 frontend tree、锁文件、公开配置、工具链/
+平台、构建配方、构建日志及制品摘要。消费前重验并原子领取，禁止重用、失败
+重发或自动回退重编译。相同主机准备只能缩短最后发布阶段及允许准备与后端
+工作重叠，不等于跨 runner CI 制品投产，也不证明总构建算力下降。
+
 **唯一部署入口: `deploy.sh`**
 
 所有线上部署必须通过项目根目录的 `deploy.sh` 脚本执行，禁止手动 SSH 到服务器进行部署操作。

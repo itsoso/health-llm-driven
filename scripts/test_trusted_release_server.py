@@ -894,3 +894,48 @@ def test_workspace_parent_fsync_failure_preserves_marker_and_blocks_all_work(mon
     with pytest.raises(server.LaunchError):
         server.run_once(policy(), tmp_path, lambda: calls.append("prepare"), lambda: calls.append("deploy"))
     assert calls == []
+
+
+@pytest.mark.parametrize('action,gate_name', [
+    ('run', 'attest_full_ci'), ('claim-build', 'attest_full_ci'),
+    ('claim-ota', 'attest_full_ci'), ('claim-retained-testflight', 'attest_full_ci'),
+    ('run-backend-v1', 'attest_backend_ci'), ('check-backend-v1', 'attest_backend_ci'),
+])
+def test_main_rejects_ci_before_creating_workspace_or_claim(monkeypatch, tmp_path, action, gate_name):
+    server = load_server()
+    monkeypatch.setattr(server, 'sys', SimpleNamespace(flags=SimpleNamespace(isolated=1), argv=['fixed'], stderr=io.StringIO()))
+    monkeypatch.setattr(server.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(server.os, 'umask', lambda _: None)
+    monkeypatch.setattr(server.time, 'time', lambda: 100)
+    monkeypatch.setattr(server, 'STATE', tmp_path)
+    monkeypatch.setattr(server, 'secure_path', lambda *a, **kw: None)
+    digest = hashlib.sha256(SCRIPT.read_bytes()).hexdigest()
+    monkeypatch.setattr(server, '_read_private', lambda _: json.dumps(policy(executor_sha256=digest)).encode())
+    monkeypatch.setenv('SSH_ORIGINAL_COMMAND', action + ' ' + SHA)
+    calls = []
+    def reject(_):
+        calls.append(gate_name)
+        raise server.LaunchError('CI rejected')
+    monkeypatch.setattr(server, gate_name, reject)
+    assert server.main() == 1
+    assert calls == [gate_name]
+    assert not (tmp_path / SHA).exists()
+
+
+@pytest.mark.parametrize('action,rpc', [('finish-ota', 'ota_rpc'), ('finish-retained-testflight', 'retained_rpc')])
+def test_bound_finish_can_close_without_new_release_admission(monkeypatch, tmp_path, action, rpc):
+    server = load_server()
+    monkeypatch.setattr(server, 'sys', SimpleNamespace(flags=SimpleNamespace(isolated=1), argv=['fixed'], stderr=io.StringIO()))
+    monkeypatch.setattr(server.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(server.os, 'umask', lambda _: None)
+    monkeypatch.setattr(server.time, 'time', lambda: 100)
+    monkeypatch.setattr(server, 'STATE', tmp_path)
+    monkeypatch.setattr(server, 'secure_path', lambda *a, **kw: None)
+    digest = hashlib.sha256(SCRIPT.read_bytes()).hexdigest()
+    monkeypatch.setattr(server, '_read_private', lambda _: json.dumps(policy(executor_sha256=digest)).encode())
+    monkeypatch.setenv('SSH_ORIGINAL_COMMAND', action + ' ' + SHA)
+    monkeypatch.setattr(server, 'attest_full_ci', lambda _: pytest.fail('finish must retain existing receipt-bound closure'))
+    calls = []
+    monkeypatch.setattr(server, rpc, lambda policy, verb: calls.append(verb) or {'state': 'FINISHED'})
+    assert server.main() == 0
+    assert calls == ['finish']

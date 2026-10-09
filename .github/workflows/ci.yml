@@ -343,6 +343,9 @@ jobs:
           scripts/test_prune_unlocked_requirements.py
           scripts/test_public_host_boundaries.py
           scripts/test_trusted_release_gate.py
+          scripts/test_backend_release_scope.py
+          scripts/test_trusted_backend_admission.py
+          scripts/test_backend_release_wiring.py
           scripts/test_trusted_deploy_source.py
           scripts/test_trusted_release_workflow.py
           scripts/test_trusted_release_receipt.py
@@ -360,6 +363,7 @@ jobs:
           scripts/test_trusted_retained_testflight.py
           scripts/test_trusted_frontend_rebuild.py
           scripts/test_trusted_frontend_publish.py
+          scripts/test_trusted_frontend_artifact.py
           scripts/test_trusted_frontend_publish_history.py
           scripts/test_frontend_stopped_recovery.py
           scripts/test_bootstrap_trusted_release.py
@@ -407,6 +411,39 @@ jobs:
           /usr/bin/npm --version
           native_dir="$(sudo mktemp -d /root/reva-frontend-test.XXXXXX)"
           sudo --preserve-env=REVA_TEST_FRONTEND_SANDBOX "$(command -v python)" -m pytest --basetemp="$native_dir/pytest" --noconftest --no-cov -q scripts/test_trusted_frontend_rebuild.py -k native_frontend_sandbox
+
+  frontend-artifact-integration:
+    name: frontend-artifact-integration
+    runs-on: ubuntu-24.04
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.13.0
+          package-manager-cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install isolated artifact test dependencies
+        run: python -m pip install pytest==9.1.1
+      - name: Build and consume a real frontend artifact without recompiling
+        run: |
+          # setup-node lives in /opt, which the real production sandbox must hide.
+          # Give this disposable runner the same fixed /usr/bin tool interface;
+          # never weaken the data-root deny list or skip the real npm probe.
+          node_root="$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")"
+          test "$("$node_root/bin/node" --version)" = v22.13.0
+          test ! -e /usr/local/lib/reva-frontend-test-node
+          sudo cp -a "$node_root" /usr/local/lib/reva-frontend-test-node
+          sudo chown -hR root:root /usr/local/lib/reva-frontend-test-node
+          sudo ln -sfn /usr/local/lib/reva-frontend-test-node/bin/node /usr/bin/node
+          sudo ln -sfn /usr/local/lib/reva-frontend-test-node/lib/node_modules/npm/bin/npm-cli.js /usr/bin/npm
+          /usr/bin/node --version
+          /usr/bin/npm --version
+          sudo env REVA_TEST_FRONTEND_ARTIFACT_BUILD=1 "$(command -v python)" -m pytest --noconftest -c /dev/null -o addopts= -q scripts/test_trusted_frontend_artifact.py -k native_prepare
 
   agent-runtime-postgres:
     name: agent-runtime-postgres
@@ -586,6 +623,24 @@ jobs:
           if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success || "$RUNTIME_POSTGRES" != success ]]; then
             exit 1
           fi
+
+  backend-release-ready-v1:
+    runs-on: ubuntu-latest
+    needs: [classify-changes, docs-quality, backend-test-shards, backend-quality, agent-runtime-postgres, backend-tests, release-invariants, type-drift]
+    if: ${{ always() && github.event_name != 'pull_request' && needs.classify-changes.outputs.run_backend == 'true' && needs.classify-changes.outputs.run_release == 'true' && needs.classify-changes.outputs.run_type_drift == 'true' }}
+    steps:
+      - name: Require every backend release dependency to have actually passed
+        env:
+          REQUIRED_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          results = json.loads(os.environ['REQUIRED_RESULTS'])
+          expected = {'classify-changes', 'docs-quality', 'backend-test-shards', 'backend-quality', 'agent-runtime-postgres', 'backend-tests', 'release-invariants', 'type-drift'}
+          if set(results) != expected or any(value.get('result') != 'success' for value in results.values()):
+              sys.exit('Backend release checks missing or not successful')
+          print('backend-v1 target checks passed; production scope admission is still required')
+          PY
 
   retained-runner-startup:
     runs-on: ubuntu-24.04

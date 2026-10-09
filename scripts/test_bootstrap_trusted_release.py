@@ -972,3 +972,26 @@ def test_explicit_finalized_native_rotation_keeps_real_receipts_and_history(monk
         assert SHA in bootstrap._retired_history()
         assert not (bootstrap.STATE / NEW_SHA / 'completed.json').exists()
     assert all(p.get('historical') is True for p in proofs)
+
+
+@pytest.mark.parametrize('action', ['install', 'rotate'])
+def test_backend_bootstrap_uses_bound_admission_before_keys(monkeypatch, tmp_path, action):
+    if action == 'install':
+        bootstrap, calls = fixture(monkeypatch, tmp_path)
+        bootstrap.install(SHA, 200, PUBLIC, backend_ci=True)
+    else:
+        bootstrap, calls = rotation_fixture(monkeypatch, tmp_path, succeeded=True)
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, backend_ci=True)
+    assert calls[0][1:4] == ['-I', '-S', '-B']
+    assert calls[0][4].endswith('/scripts/trusted_backend_admission.py')
+    assert '--base' not in calls[0]
+
+
+@pytest.mark.parametrize('extra', [{'recovery_receipt': 'unsafe'}, {'finalized_production_sha': SHA}])
+def test_backend_bootstrap_cannot_replace_recovery_gate(monkeypatch, tmp_path, extra):
+    bootstrap, calls = rotation_fixture(monkeypatch, tmp_path, succeeded=True)
+    before = lifecycle_snapshot(bootstrap)
+    with pytest.raises(bootstrap.BootstrapError, match='cannot replace'):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, backend_ci=True, **extra)
+    assert not calls
+    assert lifecycle_snapshot(bootstrap) == before
