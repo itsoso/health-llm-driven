@@ -119,7 +119,15 @@ async def test_sync_receipt_and_existing_run_remain_independent(db, auth_user_an
     from app.tasks.garmin_sync import sync_user_garmin_data
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
-    now = executor._agent_kernel_reference_now()
+    from app.services.agent_kernel.types import ExecutionContext
+    # A real clock near midnight makes now-30m a previous-day activity.
+    # Freeze the turn and fixture together; this test requires a completed run today.
+    fixed_utc = datetime(2026, 10, 9, 4, tzinfo=timezone.utc)
+    original_clock = ExecutionContext.now.__func__
+    monkeypatch.setattr(ExecutionContext, 'now', classmethod(
+        lambda cls, **kwargs: original_clock(cls, **{**kwargs, 'now_utc': fixed_utc})
+    ))
+    now = ExecutionContext.now(user_id=user.id, channel='typed').current_time
     db.add(GarminCredential(user_id=user.id, garmin_email='synthetic@example.test',
                            encrypted_password='unused-synthetic', sync_enabled=True, credentials_valid=True))
     db.add(WorkoutRecord(user_id=user.id, workout_date=now.date(), workout_type='running',
