@@ -13,10 +13,10 @@ it('supports bounded search and resets pagination for a new search', async () =>
   const read = vi.spyOn(api, 'get').mockResolvedValue({ data: { items: [{ id: 1, name: 'Synthetic product', brand: 'Test brand' }], total: 25 } });
   show(); await screen.findByText('Synthetic product');
   fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-  await waitFor(() => expect(read).toHaveBeenCalledWith('/supplements/products', { params: { search: undefined, limit: 20, offset: 20 } }));
+  await waitFor(() => expect(read).toHaveBeenCalledWith('/supplements/products', { headers: { 'X-Reva-AI-Subject': '7' }, params: { search: undefined, limit: 20, offset: 20 } }));
   fireEvent.change(screen.getByLabelText('产品名称或品牌'), { target: { value: ' test brand ' } });
   fireEvent.click(screen.getByRole('button', { name: '搜索' }));
-  await waitFor(() => expect(read).toHaveBeenCalledWith('/supplements/products', { params: { search: 'test brand', limit: 20, offset: 0 } }));
+  await waitFor(() => expect(read).toHaveBeenCalledWith('/supplements/products', { headers: { 'X-Reva-AI-Subject': '7' }, params: { search: 'test brand', limit: 20, offset: 0 } }));
   expect(client.getQueryData(['supplement-products', 7, 'test brand', 0])).toBeTruthy();
 });
 it('distinguishes an empty product library from a failed request', async () => {

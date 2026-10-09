@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/services/api/client';
+import { queryOwnerHeaders } from '@/services/api/queryOwner';
 
 interface EnvironmentReading {
   available: boolean;
@@ -23,16 +24,17 @@ function reading(value: number | null | undefined, unit = '') {
 
 function EnvironmentContent() {
   const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const weather = useQuery({
-    queryKey: ['environment', 'weather', user?.id],
-    queryFn: async () => (await api.get<{ weather: EnvironmentReading }>('/environment/weather')).data.weather,
-    enabled: isAuthenticated && !!user?.id,
+    queryKey: ['environment', 'weather', userId],
+    queryFn: async () => (await api.get<{ weather: EnvironmentReading }>('/environment/weather', { headers: queryOwnerHeaders(userId) })).data.weather,
+    enabled: isAuthenticated && !!userId,
     staleTime: 10 * 60 * 1000,
   });
   const air = useQuery({
-    queryKey: ['environment', 'air', user?.id],
-    queryFn: async () => (await api.get<EnvironmentReading>('/environment/air-quality')).data,
-    enabled: isAuthenticated && !!user?.id,
+    queryKey: ['environment', 'air', userId],
+    queryFn: async () => (await api.get<EnvironmentReading>('/environment/air-quality', { headers: queryOwnerHeaders(userId) })).data,
+    enabled: isAuthenticated && !!userId,
     staleTime: 10 * 60 * 1000,
   });
   const available = (data?: EnvironmentReading) => data?.available && data.source !== 'default';

@@ -4,6 +4,7 @@ import { fetchWithAiSubject as fetch, requireAiConsent } from '@/services/aiCons
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryOwnerHeaders } from '@/services/api/queryOwner';
 import { dailyRecommendationApi } from '@/services/api/health';
 import { externalRecommendationApi, ExternalRecommendation } from '@/services/api/content';
 import { useAuth } from '@/contexts/AuthContext';
@@ -67,21 +68,21 @@ function DailyInsightsContent() {
 
   // 获取建议数据（1天和7天）
   const { data: recommendationsData, isLoading, error, refetch } = useQuery({
-    queryKey: ['daily-recommendations', user?.id],
-    queryFn: () => dailyRecommendationApi.getMyRecommendations(true),
-    enabled: isAuthenticated,
+    queryKey: ['daily-recommendations', userId],
+    queryFn: () => dailyRecommendationApi.getMyRecommendations(true, userId),
+    enabled: isAuthenticated && !!userId,
   });
 
   // 获取外部建议（今日预览）
   const { data: externalRecsData } = useQuery({
-    queryKey: ['external-recommendations-today'],
+    queryKey: ['external-recommendations-today', userId],
     queryFn: () => externalRecommendationApi.getToday(),
-    enabled: isAuthenticated && activeTab !== 'external',
+    enabled: isAuthenticated && !!userId && activeTab !== 'external',
   });
 
   // 获取外部建议（分页列表）
   const { data: paginatedExternalData, isLoading: externalLoading } = useQuery({
-    queryKey: ['external-recommendations-paginated', externalPage, externalCategory, externalDateRange],
+    queryKey: ['external-recommendations-paginated', userId, externalPage, externalCategory, externalDateRange],
     queryFn: async () => {
       const dateParams = getDateRangeParams();
       let url = `${API_BASE}/external-recommendations?page=${externalPage}&page_size=${pageSize}`;
@@ -92,7 +93,7 @@ function DailyInsightsContent() {
         url += `&start_date=${dateParams.start_date}`;
       }
       const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { ...queryOwnerHeaders(userId), Authorization: `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('加载失败');
       const result = await res.json();
@@ -101,7 +102,7 @@ function DailyInsightsContent() {
       }
       return result as PaginatedExternalResponse;
     },
-    enabled: isAuthenticated && activeTab === 'external',
+    enabled: isAuthenticated && !!userId && activeTab === 'external',
   });
 
   // 刷新建议（清除缓存并重新生成）
@@ -182,7 +183,7 @@ function DailyInsightsContent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['external-recommendations-paginated'] });
-      queryClient.invalidateQueries({ queryKey: ['external-recommendations-today'] });
+      queryClient.invalidateQueries({ queryKey: ['external-recommendations-today', userId] });
     },
   });
 

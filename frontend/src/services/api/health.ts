@@ -1,3 +1,4 @@
+import { queryOwnerHeaders } from './queryOwner';
 import api from './client';
 
 export interface BodyAnalysisItem {
@@ -141,7 +142,7 @@ export const basicHealthApi = {
   getUserData: (userId: number) => api.get(`/basic-health/user/${userId}`),
   getLatest: (userId: number) => api.get(`/basic-health/user/${userId}/latest`),
   // 使用 /me 端点，自动使用当前登录用户
-  getMyLatest: () => api.get('/basic-health/me/latest'),
+  getMyLatest: (expectedSubject?: number) => api.get('/basic-health/me/latest', { headers: expectedSubject === undefined ? undefined : queryOwnerHeaders(expectedSubject) }),
   getMyData: () => api.get('/basic-health/me'),
 };
 
@@ -149,8 +150,9 @@ export const basicHealthApi = {
 export const dailyHealthApi = {
   createGarminData: (data: any) => api.post('/daily-health/garmin', data),
   // 使用 /me 端点，自动使用当前登录用户
-  getMyGarminData: (startDate?: string, endDate?: string) =>
+  getMyGarminData: (startDate?: string, endDate?: string, expectedSubject?: number) =>
     api.get('/daily-health/garmin/me', {
+      headers: expectedSubject === undefined ? undefined : queryOwnerHeaders(expectedSubject),
       params: { start_date: startDate, end_date: endDate },
     }),
   // 保留旧方法以兼容
@@ -196,8 +198,8 @@ export const garminAnalysisApi = {
   getComprehensive: (userId: number, days: number = 7) =>
     api.get(`/garmin-analysis/user/${userId}/comprehensive`, { params: { days } }),
   // 使用 /me 端点，自动使用当前登录用户
-  getMyComprehensive: (days: number = 7) =>
-    api.get('/garmin-analysis/me/comprehensive', { params: { days } }),
+  getMyComprehensive: (days: number = 7, expectedSubject?: number) =>
+    api.get('/garmin-analysis/me/comprehensive', { params: { days }, headers: expectedSubject === undefined ? undefined : queryOwnerHeaders(expectedSubject) }),
   analyzeMySleep: (days: number = 7) =>
     api.get('/garmin-analysis/me/sleep', { params: { days } }),
   analyzeMyHeartRate: (days: number = 7) =>
@@ -212,8 +214,8 @@ export const garminAnalysisApi = {
 
 // 数据收集状态
 export const healthScoreApi = {
-  getDailyScore: (targetDate?: string) =>
-    api.get<HealthScoreResult>('/health-score/daily/me', { params: { target_date: targetDate } }),
+  getDailyScore: (targetDate?: string, expectedSubject?: number) =>
+    api.get<HealthScoreResult>('/health-score/daily/me', { params: { target_date: targetDate }, headers: expectedSubject === undefined ? undefined : queryOwnerHeaders(expectedSubject) }),
   getScoreTrend: (days: number = 7) =>
     api.get<HealthScoreTrend>('/health-score/trend/me', { params: { days } }),
 };
@@ -237,7 +239,7 @@ export const healthReportApi = {
 
 // 健康评分 API
 export const healthTrendApi = {
-  getLatest: () =>
+  getLatest: (expectedSubject?: number) =>
     api.get<{
       report_date: string | null;
       dimensions: Array<{
@@ -249,8 +251,8 @@ export const healthTrendApi = {
         risk_alerts: string[];
         report_date: string;
       }>;
-    }>('/health-trends/latest'),
-  getDimension: (dimension: string, period: string = '7d') =>
+    }>('/health-trends/latest', { headers: expectedSubject === undefined ? undefined : queryOwnerHeaders(expectedSubject) }),
+  getDimension: (dimension: string, period: string = '7d', expectedSubject?: number) =>
     api.get<{
       id: number;
       report_date: string;
@@ -263,7 +265,7 @@ export const healthTrendApi = {
       risk_alerts: string[];
       full_report: string | null;
       created_at: string;
-    }>(`/health-trends/${dimension}`, { params: { period } }),
+    }>(`/health-trends/${dimension}`, { params: { period }, headers: expectedSubject === undefined ? undefined : queryOwnerHeaders(expectedSubject) }),
   getHistory: (limit: number = 20, offset: number = 0) =>
     api.get<{
       total: number;
@@ -288,8 +290,8 @@ export const dailyRecommendationApi = {
   getToday: (userId: number, useLlm: boolean = true) =>
     api.get(`/daily-recommendation/user/${userId}/today`, { params: { use_llm: useLlm } }),
   // 使用 /me 端点
-  getMyRecommendations: (useLlm: boolean = true) =>
-    api.get('/daily-recommendation/me', { params: { use_llm: useLlm } }),
+  getMyRecommendations: (useLlm: boolean = true, expectedSubject?: number) =>
+    api.get('/daily-recommendation/me', { params: { use_llm: useLlm }, headers: expectedSubject === undefined ? undefined : queryOwnerHeaders(expectedSubject) }),
 };
 
 // 补剂管理

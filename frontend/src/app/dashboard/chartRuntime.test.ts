@@ -28,6 +28,7 @@ describe('dashboard charts in the App Router runtime', () => {
           if (id === '@/contexts/AuthContext') return { useAuth: () => ({ user: { id: 77 } }) };
           if (id === '@/components/ProtectedRoute') return { __esModule: true, default: ({ children }) => children };
           if (id === '@/services/api/client') return { api: {} };
+          if (id === '@/services/api/queryOwner') return {}; // Chart rendering never dispatches queries.
           if (id === '@/services/api/health' || id === '@/services/api/devices' || id.includes('blood-pressure/saveFeedback')) return {};
           if (id === '@tanstack/react-query') return {
             useMutation: () => ({}),

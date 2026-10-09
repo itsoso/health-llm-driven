@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/services/api/client';
+import { queryOwnerHeaders } from '@/services/api/queryOwner';
 interface ActivityRecord {
   id: number; status_text: string; category: string; start_time: string;
   actual_end_time?: string | null; is_active: boolean;
@@ -17,15 +18,16 @@ function timestamp(value?: string | null) {
 }
 function ActivityContent() {
   const { user } = useAuth();
+  const userId = user?.id;
   const current = useQuery({
-    queryKey: ['activity-status', 'current', user?.id],
-    queryFn: async () => (await api.get<ActivityRecord | null>('/activity-status/records/me/current')).data,
-    enabled: !!user?.id,
+    queryKey: ['activity-status', 'current', userId],
+    queryFn: async () => (await api.get<ActivityRecord | null>('/activity-status/records/me/current', { headers: queryOwnerHeaders(userId) })).data,
+    enabled: !!userId,
   });
   const history = useQuery({
-    queryKey: ['activity-status', 'history', user?.id],
-    queryFn: async () => (await api.get<ActivityRecord[]>('/activity-status/records/me', { params: { limit: 20 } })).data,
-    enabled: !!user?.id,
+    queryKey: ['activity-status', 'history', userId],
+    queryFn: async () => (await api.get<ActivityRecord[]>('/activity-status/records/me', { headers: queryOwnerHeaders(userId), params: { limit: 20 } })).data,
+    enabled: !!userId,
   });
   return <main className="min-h-screen bg-gray-50 p-4 md:p-8"><div className="max-w-4xl mx-auto">
     <h1 className="text-2xl font-bold mb-6">活动状态</h1>

@@ -43,19 +43,20 @@ const TREND_COLORS: Record<string, string> = {
 
 function HealthTrendsContent() {
   const { user } = useAuth();
+  const userId = user?.id;
   const [selectedDim, setSelectedDim] = useState<string | null>(null);
   const [period, setPeriod] = useState('7d');
 
   const { data: latestData, isLoading, isError, refetch } = useQuery({
-    queryKey: ['health-trends-latest', user?.id],
-    queryFn: () => healthTrendApi.getLatest(),
-    enabled: !!user?.id,
+    queryKey: ['health-trends-latest', userId],
+    queryFn: () => healthTrendApi.getLatest(userId),
+    enabled: !!userId,
   });
 
   const { data: detailData, isLoading: isDetailLoading, isError: detailError, refetch: refetchDetail } = useQuery({
-    queryKey: ['health-trends-detail', user?.id, selectedDim, period],
-    queryFn: () => healthTrendApi.getDimension(selectedDim!, period),
-    enabled: !!user?.id && !!selectedDim,
+    queryKey: ['health-trends-detail', userId, selectedDim, period],
+    queryFn: () => healthTrendApi.getDimension(selectedDim!, period, userId),
+    enabled: !!userId && !!selectedDim,
   });
 
   const latest = latestData?.data;

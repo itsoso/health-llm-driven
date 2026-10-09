@@ -5,18 +5,20 @@ import { useQuery } from '@tanstack/react-query';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/services/api/client';
+import { queryOwnerHeaders } from '@/services/api/queryOwner';
 interface Product { id: number; name: string; brand: string; category?: string | null; description?: string | null; }
 interface ProductList { items: Product[]; total: number; }
 const pageSize = 20;
 function ProductContent() {
   const { user } = useAuth();
+  const userId = user?.id;
   const [input, setInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const products = useQuery({
-    queryKey: ['supplement-products', user?.id, search, page],
-    queryFn: async () => (await api.get<ProductList>('/supplements/products', { params: { search: search || undefined, limit: pageSize, offset: page * pageSize } })).data,
-    enabled: !!user?.id,
+    queryKey: ['supplement-products', userId, search, page],
+    queryFn: async () => (await api.get<ProductList>('/supplements/products', { headers: queryOwnerHeaders(userId), params: { search: search || undefined, limit: pageSize, offset: page * pageSize } })).data,
+    enabled: !!userId,
   });
   return <main className="min-h-screen bg-gray-50 p-4 md:p-8"><div className="max-w-5xl mx-auto">
     <h1 className="text-2xl font-bold mb-2">补剂产品库</h1>

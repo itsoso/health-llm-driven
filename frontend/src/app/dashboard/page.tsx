@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api/client';
+import { queryOwnerHeaders } from '@/services/api/queryOwner';
 import { dailyHealthApi, garminAnalysisApi, basicHealthApi, healthTrendApi, healthScoreApi } from '@/services/api/health';
 import { dataCollectionApi } from '@/services/api/devices';
 import { useMutation } from '@tanstack/react-query';
@@ -49,7 +50,7 @@ function DashboardContent() {
   // 数据健康度
   const dataHealthQuery = useQuery({
     queryKey: ['data-health', userId],
-    queryFn: () => api.get<Record<string, { status: string; message: string }>>('/data-health/status'),
+    queryFn: () => api.get<Record<string, { status: string; message: string }>>('/data-health/status', { headers: queryOwnerHeaders(userId) }),
     enabled: !!userId,
   });
   const dataHealth = dataHealthQuery.data?.data;
@@ -86,7 +87,7 @@ function DashboardContent() {
   const timezoneQuery = useQuery({
     queryKey: ['effective-timezone', userId],
     queryFn: async () => {
-      const response = await api.get<components['schemas']['EffectiveTimezone']>('/profile/me/effective-timezone');
+      const response = await api.get<components['schemas']['EffectiveTimezone']>('/profile/me/effective-timezone', { headers: queryOwnerHeaders(userId) });
       new Intl.DateTimeFormat('en', { timeZone: response.data.timezone }).format(now);
       return response.data;
     },
@@ -102,7 +103,7 @@ function DashboardContent() {
   // 获取今天的实时数据
   const { data: todayData, dataUpdatedAt: todayReadAt, refetch: refetchToday, isFetching: isFetchingToday, isError: todayError } = useQuery({
     queryKey: ['garmin-today', userId, today],
-    queryFn: () => dailyHealthApi.getMyGarminData(today, today),
+    queryFn: () => dailyHealthApi.getMyGarminData(today, today, userId),
     refetchInterval: 15 * 60 * 1000, // 每15分钟自动刷新
     enabled: !!userId && !!today,
   });
@@ -110,28 +111,28 @@ function DashboardContent() {
   // 获取Garmin数据
   const { data: garminData, refetch: refetchGarminData, isError: garminError, isPending: garminPending } = useQuery({
     queryKey: ['garmin-data', userId, startDate, endDate],
-    queryFn: () => dailyHealthApi.getMyGarminData(startDate, endDate),
+    queryFn: () => dailyHealthApi.getMyGarminData(startDate, endDate, userId),
     enabled: !!userId && !!today,
   });
 
   // 获取基础健康数据
   const { data: basicHealth, refetch: refetchBasicHealth, isError: basicHealthError } = useQuery({
     queryKey: ['basic-health', userId],
-    queryFn: () => basicHealthApi.getMyLatest(),
+    queryFn: () => basicHealthApi.getMyLatest(userId),
     enabled: !!userId,
   });
 
   // 获取综合分析
   const { data: comprehensive, refetch: refetchComprehensive, isError: comprehensiveError } = useQuery({
     queryKey: ['garmin-comprehensive', userId, 7],
-    queryFn: () => garminAnalysisApi.getMyComprehensive(7),
+    queryFn: () => garminAnalysisApi.getMyComprehensive(7, userId),
     enabled: !!userId,
   });
 
   // 获取健康趋势数据
   const trendQuery = useQuery({
     queryKey: ['health-trends-latest', userId],
-    queryFn: () => healthTrendApi.getLatest(),
+    queryFn: () => healthTrendApi.getLatest(userId),
     enabled: !!userId,
   });
 
@@ -140,7 +141,7 @@ function DashboardContent() {
   // 每日健康评分
   const { data: healthScore, refetch: refetchHealthScore, isError: healthScoreError } = useQuery({
     queryKey: ['health-score-daily', userId, today],
-    queryFn: () => healthScoreApi.getDailyScore(today),
+    queryFn: () => healthScoreApi.getDailyScore(today, userId),
     enabled: !!userId && !!today,
     staleTime: 10 * 60 * 1000,
   });
@@ -153,17 +154,17 @@ function DashboardContent() {
   // 手动记录与设备数据独立展示，不能因连接 Garmin 而隐藏。
   const { data: waterToday, refetch: refetchWater, isError: waterError } = useQuery({
     queryKey: ['water-today', userId, today],
-    queryFn: () => api.get<{ total_amount: number; target_amount: number }>(`/water/records/me/date/${today}`),
+    queryFn: () => api.get<{ total_amount: number; target_amount: number }>(`/water/records/me/date/${today}`, { headers: queryOwnerHeaders(userId) }),
     enabled: !!userId && !!today,
   });
   const { data: dietToday, refetch: refetchDiet, isError: dietError } = useQuery({
     queryKey: ['diet-today', userId, today],
-    queryFn: () => api.get<{ meals_count: number; total_calories: number }>(`/diet/records/me/date/${today}`),
+    queryFn: () => api.get<{ meals_count: number; total_calories: number }>(`/diet/records/me/date/${today}`, { headers: queryOwnerHeaders(userId) }),
     enabled: !!userId && !!today,
   });
   const { data: weightLatest, refetch: refetchWeight, isError: weightError } = useQuery({
     queryKey: ['weight-latest', userId],
-    queryFn: () => api.get<Array<{ weight: number; record_date: string }>>('/weight/records/me?limit=1'),
+    queryFn: () => api.get<Array<{ weight: number; record_date: string }>>('/weight/records/me?limit=1', { headers: queryOwnerHeaders(userId) }),
     enabled: !!userId,
   });
 
