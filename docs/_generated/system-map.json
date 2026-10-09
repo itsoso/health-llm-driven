@@ -6,10 +6,10 @@
     "mobile_routes": 135,
     "model_files": 122,
     "safety_rules_total": 65,
-    "service_files": 476,
+    "service_files": 477,
     "specialists": 13,
     "twin_partitions": 15,
-    "web_pages": 76
+    "web_pages": 81
   },
   "coverage": {
     "api_boundaries": {
@@ -2790,6 +2790,20 @@
     },
     {
       "coverage": "complete",
+      "id": "surface.web.activity-status",
+      "kind": "surface",
+      "name": "Web /activity-status",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/activity-status/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
       "id": "surface.web.admin",
       "kind": "surface",
       "name": "Web /admin",
@@ -2958,6 +2972,20 @@
     },
     {
       "coverage": "complete",
+      "id": "surface.web.ai-insights",
+      "kind": "surface",
+      "name": "Web /ai-insights",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/ai-insights/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
       "id": "surface.web.analysis",
       "kind": "surface",
       "name": "Web /analysis",
@@ -3056,6 +3084,20 @@
     },
     {
       "coverage": "complete",
+      "id": "surface.web.data-collection",
+      "kind": "surface",
+      "name": "Web /data-collection",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/data-collection/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
       "id": "surface.web.data-connections",
       "kind": "surface",
       "name": "Web /data-connections",
@@ -3118,6 +3160,20 @@
       "owner": "web",
       "source": {
         "path": "frontend/src/app/disease/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
+      "id": "surface.web.environment",
+      "kind": "surface",
+      "name": "Web /environment",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/environment/page.tsx",
         "type": "code"
       },
       "tags": [
@@ -3742,6 +3798,20 @@
     },
     {
       "coverage": "complete",
+      "id": "surface.web.supplement-products",
+      "kind": "surface",
+      "name": "Web /supplement-products",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/supplement-products/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
       "id": "surface.web.supplement-recommendation",
       "kind": "surface",
       "name": "Web /supplement-recommendation",
@@ -3998,6 +4068,16 @@
       "coverage": "complete",
       "from": "component.frontend",
       "source": {
+        "path": "frontend/src/app/activity-status/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.activity-status",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
         "path": "frontend/src/app/admin/page.tsx",
         "type": "code"
       },
@@ -4118,6 +4198,16 @@
       "coverage": "complete",
       "from": "component.frontend",
       "source": {
+        "path": "frontend/src/app/ai-insights/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.ai-insights",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
         "path": "frontend/src/app/analysis/page.tsx",
         "type": "code"
       },
@@ -4188,6 +4278,16 @@
       "coverage": "complete",
       "from": "component.frontend",
       "source": {
+        "path": "frontend/src/app/data-collection/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.data-collection",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
         "path": "frontend/src/app/data-connections/page.tsx",
         "type": "code"
       },
@@ -4232,6 +4332,16 @@
         "type": "code"
       },
       "to": "surface.web.disease",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
+        "path": "frontend/src/app/environment/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.environment",
       "type": "renders"
     },
     {
@@ -4672,6 +4782,16 @@
         "type": "code"
       },
       "to": "surface.web.smart-plan.param-id",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
+        "path": "frontend/src/app/supplement-products/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.supplement-products",
       "type": "renders"
     },
     {

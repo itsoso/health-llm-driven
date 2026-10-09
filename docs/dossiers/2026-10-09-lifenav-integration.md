@@ -1,5 +1,15 @@
 # LifeNav 整合交付记录
 
+| 字段 | 值 |
+| --- | --- |
+| 状态 | building |
+| 当前阶段 | S5 统一整合与发布验证 |
+
+## G1 范围准入
+
+裁决：PASS。用户明确授权可选个人周导航核心扩展，原生复用认证；Health保持事实与执行权威，个人规划不获得额外健康数据/写权限。需求与范围见现有feature spec；外接与七天验证维持未完成。
+
+
 Status: implemented-local; external-validation-blocked
 Owner: Health Harness
 Baseline: 5aff9e45a
