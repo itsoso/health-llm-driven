@@ -847,3 +847,29 @@ class TestCalendarMeanCoverage:
         assert '档案目标（可能为默认值，未确认由用户设定）' in context
         assert f'步数{steps or 8000}' in context and '睡眠7.5h' in context
         assert '健康目标:' not in context
+
+
+@pytest.mark.parametrize('other_has_workouts', [False, True])
+def test_no_owned_workouts_does_not_establish_beginner_or_exercise_clearance(db, test_user, other_has_workouts):
+    from app.models.daily_health import WorkoutRecord
+    from app.services import health_context_lite_service as service
+    if other_has_workouts:
+        other = User(username='synthetic_other_workout_owner', name='Synthetic other', email='synthetic-other-workout@example.invalid', hashed_password='x', is_active=True)
+        db.add(other); db.flush()
+        db.add(WorkoutRecord(user_id=other.id, workout_date=date.today(), workout_type='walking'))
+        db.commit()
+    context = service._build_context(db, test_user.id, budget=service.INJECTION_RECOVERY)
+    assert '运动水平: 新手' not in context
+    assert '最近30天未查询到运动记录' in context
+    assert '运动水平未知' in context
+    assert '不代表没有运动、无禁忌或今天适合运动' in context
+
+
+def test_owned_workout_count_remains_available(db, test_user):
+    from app.models.daily_health import WorkoutRecord
+    from app.services import health_context_lite_service as service
+    db.add(WorkoutRecord(user_id=test_user.id, workout_date=date.today(), workout_type='walking'))
+    db.commit()
+    context = service._build_context(db, test_user.id, budget=service.INJECTION_RECOVERY)
+    assert '最近30天1次运动' in context
+    assert '最近30天未查询到运动记录' not in context

@@ -34,3 +34,10 @@ def test_plain_exercise_keeps_plain_output_and_existing_scope():
     '给朋友设计运动计划，最终生成一个HTML页面。'])
 def test_unclosed_or_foreign_html_request_has_no_scope(text):
     assert resolve_exercise_plan_scope(text) is None
+
+
+def test_html_output_is_bounded_and_missing_evidence_is_not_clearance():
+    prompt = exercise_plan_prompt(resolve_exercise_plan_scope(HTML))
+    for requirement in ('不使用 CSS', '不超过600个汉字', '不能据此判断运动水平',
+                        '不能据此认定无禁忌或今天适合运动', '优先保证闭合'):
+        assert requirement in prompt
