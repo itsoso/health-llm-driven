@@ -88,3 +88,10 @@
 - 三轮全部作为调度样本，最终回放最慢分别277.683→240.492、268.947→241.656、267.975→243.961秒。总进程工作量逐轮不变。**这些不是独立保留集或真实新CI总耗时**，新CI是最终裁决；证据见`docs/reviews/2026-10-09-ci-placement-refresh.json`。
 - 本机日志/调度/CI合约、worker runner与CI-mode集成验证；System Map通过。等待固定提交独立G4及实际CI结果。
 - 历史发布校验本轮不改：两次idle跨越durable intent，不能缓存可变证据或删除复验；同盘双并发收益未证明，且避免干扰另一会话视觉发布。此改动仅CI配置/遥测工具，合入即生效，无需重启应用或轮换生产授权。
+
+### 续轮实测裁决与 runner 容量调整
+
+- 固定10db27885独立G4 GO，独立56 passed并重算3份ZIP；父方80 passed。已合入main，CI37886141575实际30/30成功。
+- **仅刷新16worker权重没有证明端到端收益**：463秒vs紧邻462秒；runner100.65vs96.17分钟；最慢测试步骤269vs268秒，worker排队累计643vs313秒。保留此结果，不宣称提速。
+- 接续候选收敛为12个worker job，仍运行原60组独立进程和全部原参数。目的是在观测到的20个同时活动job约束下减少排队及重复环境准备；不是减少测试。同步固定required job集与生成矩阵的契约，缺失/失败/skip不放行，full gate不变。待独立审查和新CI裁决。
+- 12worker实现RED 4 failed/197 passed，GREEN兼容321 passed；父方CI-mode集成3项、System Map、秘密扫描和Dossier检查通过。回执policy_version为backend-v1-workers-12，target/RPC保持backend-v1；默认full gate不改。实际workflow命令、默认CLI、目录worker_count及门禁名单均经契约测试对齐。

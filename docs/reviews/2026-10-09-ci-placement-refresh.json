@@ -58,5 +58,19 @@
     "fitted_max_seconds": 213.046,
     "independent_run_max_seconds": 297.495,
     "reason": "regressed independent run versus unchanged placement267.975"
+  },
+  "first_live_result": {
+    "sha": "10db27885c976bcd9c1fd2e01f1e9ea66d5a4509",
+    "run_id": 37886141575,
+    "jobs_success": 30,
+    "wall_seconds": 463,
+    "previous_main_wall_seconds": 462,
+    "runner_minutes": 100.65,
+    "previous_main_runner_minutes": 96.17,
+    "backend_step_max_seconds": 269,
+    "previous_backend_step_max_seconds": 268,
+    "backend_queue_total_seconds": 643,
+    "previous_backend_queue_total_seconds": 313,
+    "verdict": "No end-to-end improvement; next candidate reduces worker jobs to12 preserving all60 process groups"
   }
 }

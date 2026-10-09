@@ -54,7 +54,7 @@ jobs:
         if: ${{ steps.scope.outputs.run_backend == 'true' }}
         run: >-
           python3 backend/scripts/build_ci_pytest_matrix.py
-          --workers 16 --github-output "$GITHUB_OUTPUT"
+          --workers 12 --github-output "$GITHUB_OUTPUT"
 
   docs-quality:
     runs-on: ubuntu-latest

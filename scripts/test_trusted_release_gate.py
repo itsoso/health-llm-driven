@@ -346,7 +346,7 @@ BACKEND_GATE = load_gate()
 BACKEND_JOBS = (
     'classify-changes', 'docs-quality', 'backend-quality', 'agent-runtime-postgres',
     'backend-tests', 'release-invariants', 'type-drift', 'backend-release-ready-v1',
-    *(f'backend-test-balanced-{i:02d}' for i in range(1, 17)),
+    *(f'backend-test-balanced-{i:02d}' for i in range(1, 13)),
 )
 
 
@@ -380,7 +380,7 @@ def test_backend_ready_does_not_wait_for_unrelated_running_job():
     api = BackendAPI(runs=[run(status='in_progress', conclusion=None)])
     receipt = backend_verify(api)
     assert receipt == dict(sha=SHA, workflow_sha=SHA, ci_run_id=42, ci_run_attempt=1,
-                           target='backend-v1', policy_version='backend-v1')
+                           target='backend-v1', policy_version='backend-v1-workers-12')
     assert sum('/attempts/1/jobs?' in url for url in api.calls) == 2
 
 
@@ -527,3 +527,12 @@ def test_target_cli_is_strict_and_defaults_to_full(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         gate.main()
     capsys.readouterr()
+
+
+def test_backend_rejects_old_sixteen_worker_topology():
+    api = BackendAPI()
+    api.jobs.extend(dict(id=100 + i, name=f'backend-test-balanced-{i:02d}',
+                         run_id=42, head_sha=SHA, status='completed', conclusion='success')
+                    for i in range(13, 17))
+    with pytest.raises(BACKEND_GATE.GateError):
+        backend_verify(api)

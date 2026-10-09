@@ -120,7 +120,7 @@ def build_matrix(catalog: Path, worker_count: int) -> dict[str, Any]:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
-    parser.add_argument("--workers", type=int, default=16)
+    parser.add_argument("--workers", type=int, default=12)
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args(argv)
 

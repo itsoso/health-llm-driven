@@ -87,3 +87,35 @@ def test_real_artifact_verification_runs_in_parallel_without_skip_flag():
     assert 'REVA_TEST_FRONTEND_ARTIFACT_BUILD=1' in command
     assert '-k native_prepare' in command
     assert 'continue-on-error' not in job and 'continue-on-error' not in job['steps'][-1]
+
+
+def test_actual_ci_matrix_and_release_policy_have_exact_same_twelve_workers(tmp_path):
+    import json
+    import os
+    import subprocess
+    import sys
+    from collections import Counter
+    jobs = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
+    plan = next(step for step in jobs['classify-changes']['steps'] if step.get('id') == 'plan')
+    output = tmp_path / 'github-output'
+    command = plan['run'].replace('python3 ', '"' + sys.executable + '" ', 1)
+    result = subprocess.run(['/bin/bash', '-eu', '-c', command], cwd=ROOT,
+                            env={**os.environ, 'GITHUB_OUTPUT': str(output)}, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    emitted = output.read_text().strip()
+    assert emitted.startswith('matrix=') and '\n' not in emitted
+    workers = json.loads(emitted.removeprefix('matrix='))['include']
+    expected = {f'backend-test-balanced-{i:02d}' for i in range(1, 13)}
+    actual = {jobs['backend-test-shards']['name'].replace('${{ matrix.label }}', row['label']) for row in workers}
+    assert len(workers) == 12 and actual == expected
+    gate = module('trusted_release_gate')
+    required_workers = {name for name in gate._BACKEND_REQUIRED_JOBS if name.startswith('backend-test-balanced-')}
+    assert actual == required_workers
+    catalog = json.loads((ROOT / '.github/ci/backend-pytest-shards.json').read_text())
+    assert catalog['worker_count'] == len(workers)
+    assignments = Counter(label for row in workers for label in row['shards'].split(','))
+    assert assignments == Counter(shard['label'] for shard in catalog['shards'])
+    assert len(assignments) == 60 and set(assignments.values()) == {1}
+    default = subprocess.run([sys.executable, str(ROOT / 'backend/scripts/build_ci_pytest_matrix.py')],
+                             cwd=ROOT, capture_output=True, text=True, check=True)
+    assert json.loads(default.stdout)['include'] == workers
