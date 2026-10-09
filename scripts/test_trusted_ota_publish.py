@@ -719,3 +719,95 @@ def test_real_context_preflight_rejects_unsafe_runner(tmp_path,monkeypatch,fault
         m.preflight('c'*40)
     assert caught.value.phase=='publisher_context'
     assert caught.value.reason in {*m._CONTEXT_REASONS.values(),'publisher_context_unavailable'}
+
+
+@pytest.mark.parametrize('asset,relative', [
+    ('publisher', 'scripts/trusted_ota_publish.py'), ('git_config', '.git/config'),
+    ('ota_contract', 'scripts/trusted_ota.py'), ('release_gate', 'scripts/trusted_release_gate.py'),
+    ('node', 'node/bin/node'), ('eas', 'scripts/release-tools/node_modules/eas-cli/bin/run'),
+    ('expo', 'mobile/node_modules/expo/bin/cli'), ('cli_lock', 'scripts/release-tools/package-lock.json'),
+    ('eas_package', 'scripts/release-tools/node_modules/eas-cli/package.json'),
+])
+def test_real_context_reports_closed_path_asset(monkeypatch, tmp_path, capsys, asset, relative):
+    import stat
+    from types import SimpleNamespace
+
+    m = load()
+    source = tmp_path / 'source'
+    paths = ['scripts/trusted_ota_publish.py', '.git/config', 'scripts/trusted_ota.py',
+             'scripts/trusted_release_gate.py', 'node/bin/node',
+             'scripts/release-tools/node_modules/eas-cli/bin/run', 'mobile/node_modules/expo/bin/cli',
+             'scripts/release-tools/package-lock.json', 'scripts/release-tools/node_modules/eas-cli/package.json']
+    for name in paths:
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('fixture')
+        path.chmod(0o644)
+    (source / relative).chmod(0o664)
+    original = Path.lstat
+    def metadata(path):
+        info = original(path)
+        # Host ownership differs on macOS; real kind/mode/nlink remain intact.
+        return SimpleNamespace(st_uid=0, st_mode=info.st_mode & ~stat.S_ISVTX,
+                               st_nlink=info.st_nlink)
+    monkeypatch.setattr(Path, 'lstat', metadata)
+    monkeypatch.setattr(m, 'SOURCE', source)
+    monkeypatch.setattr(m, '__file__', str(source / paths[0]))
+    monkeypatch.setattr(m, 'NODE', source / 'node/bin/node')
+    monkeypatch.setattr(m, 'EAS', source / paths[5])
+    monkeypatch.setattr(m, 'EXPO', source / paths[6])
+    monkeypatch.setattr(m.sys, 'platform', 'linux')
+    monkeypatch.setattr(m.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(m.sys, 'executable', '/usr/bin/python3')
+    monkeypatch.setattr(m.sys, 'flags', SimpleNamespace(isolated=1,no_site=1,dont_write_bytecode=1))
+    monkeypatch.setattr(m.sys, 'argv', ['publisher','--sha','c'*40,'--preflight'])
+    assert m.cli() == 1
+    value = json.loads(capsys.readouterr().err)
+    assert value['path_diagnostic'] == {'asset':asset, 'ancestor_depth':0, 'violation':'writable'}
+    assert str(tmp_path) not in json.dumps(value)
+
+
+@pytest.mark.parametrize('violation', ['owner','writable','kind','hardlink'])
+@pytest.mark.parametrize('depth', [0, 1])
+def test_secure_diagnostic_preserves_each_boundary(monkeypatch, violation, depth):
+    import stat
+    from types import SimpleNamespace
+    m=load()
+    target=Path('/fixed/asset')
+    def metadata(path):
+        leaf = path == target
+        info=SimpleNamespace(st_uid=0,st_mode=(stat.S_IFREG|0o644) if leaf else (stat.S_IFDIR|0o755),st_nlink=1)
+        if path == (target if depth == 0 else target.parent):
+            if violation == 'owner': info.st_uid=1000
+            if violation == 'writable': info.st_mode |= 0o020
+            if violation == 'kind': info.st_mode=stat.S_IFLNK|0o644
+            if violation == 'hardlink': info.st_nlink=2
+        return info
+    monkeypatch.setattr(Path,'lstat',metadata)
+    if depth == 1 and violation == 'hardlink':
+        m.secure(target, asset='eas')  # directory link counts never were forbidden
+        return
+    with pytest.raises(m.PublishError) as caught:
+        m.secure(target,asset='eas')
+    assert caught.value.diagnostic == {'asset':'eas','ancestor_depth':depth,'violation':violation}
+
+
+@pytest.mark.parametrize('bad', [
+    {'asset':'secret /path/token','ancestor_depth':0,'violation':'owner'},
+    {'asset':[],'ancestor_depth':0,'violation':'owner'},
+    {'asset':'eas','ancestor_depth':True,'violation':'owner'},
+    {'asset':'eas','ancestor_depth':33,'violation':'owner'},
+    {'asset':'eas','ancestor_depth':0,'violation':['secret']},
+    {'asset':'eas','ancestor_depth':0,'violation':'owner','payload':'secret'},
+])
+def test_unknown_path_diagnostics_never_leak(monkeypatch, capsys, bad):
+    m=load()
+    error=m.PathTrustError('eas',0,'owner')
+    error.diagnostic=bad
+    def blocked(*a,**k):
+        raise error
+    monkeypatch.setattr(m,'context',blocked)
+    monkeypatch.setattr(m.sys,'argv',['publisher','--sha','c'*40,'--preflight'])
+    assert m.cli()==1
+    value=json.loads(capsys.readouterr().err)
+    assert value=={'state':'BLOCKED','phase':'publisher_context','reason':'publisher_path_untrusted'}

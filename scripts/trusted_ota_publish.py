@@ -348,18 +348,30 @@ def publish(adapter, sha):
     return result
 
 
-def secure(path, *, private=False):
+_PATH_ASSETS = frozenset({"publisher", "git_config", "ota_contract", "release_gate", "node", "eas", "expo", "cli_lock", "eas_package"})
+_PATH_VIOLATIONS = frozenset({"owner", "writable", "kind", "hardlink"})
+
+
+class PathTrustError(PublishError):
+    def __init__(self, asset, depth, violation):
+        super().__init__("root-owned publisher path required")
+        self.diagnostic = None
+        if isinstance(asset, str) and asset in _PATH_ASSETS and type(depth) is int and 0 <= depth <= 32 and isinstance(violation, str) and violation in _PATH_VIOLATIONS:
+            self.diagnostic = {"asset": asset, "ancestor_depth": depth, "violation": violation}
+
+
+def secure(path, *, private=False, asset=None):
     path = Path(path)
     for item in [*reversed(path.parents), path]:
         info = item.lstat()
         kind = stat.S_ISREG if item == path else stat.S_ISDIR
-        if (
-            info.st_uid != 0
-            or info.st_mode & 0o022
-            or not kind(info.st_mode)
-            or (item == path and info.st_nlink != 1)
-        ):
-            raise PublishError("root-owned publisher path required")
+        violation = ("owner" if info.st_uid != 0 else
+                     "writable" if info.st_mode & 0o022 else
+                     "kind" if not kind(info.st_mode) else
+                     "hardlink" if item == path and info.st_nlink != 1 else None)
+        if violation:
+            depth = 0 if item == path else list(path.parents).index(item) + 1
+            raise PathTrustError(asset, depth, violation)
     if private and stat.S_IMODE(info.st_mode) != 0o600:
         raise PublishError("private publisher file requires mode 0600")
 
@@ -588,18 +600,18 @@ def context(sha, *, require_credentials=True):
         or Path(__file__).absolute() != SOURCE / "scripts/trusted_ota_publish.py"
     ):
         raise PublishError("fixed isolated root hosted publisher required")
-    for path in (
-        Path(__file__).absolute(),
-        SOURCE / ".git/config",
-        SOURCE / "scripts/trusted_ota.py",
-        SOURCE / "scripts/trusted_release_gate.py",
-        NODE,
-        EAS,
-        EXPO,
-        SOURCE / "scripts/release-tools/package-lock.json",
-        SOURCE / "scripts/release-tools/node_modules/eas-cli/package.json",
+    for asset, path in (
+        ("publisher", Path(__file__).absolute()),
+        ("git_config", SOURCE / ".git/config"),
+        ("ota_contract", SOURCE / "scripts/trusted_ota.py"),
+        ("release_gate", SOURCE / "scripts/trusted_release_gate.py"),
+        ("node", NODE),
+        ("eas", EAS),
+        ("expo", EXPO),
+        ("cli_lock", SOURCE / "scripts/release-tools/package-lock.json"),
+        ("eas_package", SOURCE / "scripts/release-tools/node_modules/eas-cli/package.json"),
     ):
-        secure(path)
+        secure(path, asset=asset)
     if require_credentials:
         for path in (ROOT / "key", ROOT / "known_hosts"):
             secure(path, private=True)
@@ -674,8 +686,9 @@ _SOURCE_REASONS = {
 
 
 class PreflightError(PublishError):
-    def __init__(self, phase, reason):
+    def __init__(self, phase, reason, diagnostic=None):
         super().__init__("publisher preflight blocked")
+        self.diagnostic = diagnostic
         self.phase = phase
         self.reason = reason
 
@@ -687,7 +700,8 @@ def preflight(sha):
     except Exception as exc:
         reason = (_CONTEXT_REASONS.get(str(exc))
                   if isinstance(exc, PublishError) else None)
-        raise PreflightError("publisher_context", reason or "publisher_context_unavailable") from None
+        raise PreflightError("publisher_context", reason or "publisher_context_unavailable",
+                             exc.diagnostic if isinstance(exc, PathTrustError) else None) from None
     try:
         contract.validate_source(SOURCE, sha)
     except Exception as exc:
@@ -720,8 +734,16 @@ def cli():
     try:
         main()
     except PreflightError as exc:
-        print(json.dumps({"state": "BLOCKED", "phase": exc.phase,
-                          "reason": exc.reason}, sort_keys=True), file=sys.stderr)
+        result = {"state": "BLOCKED", "phase": exc.phase, "reason": exc.reason}
+        if exc.diagnostic is not None:
+            # Revalidate the closed schema at the output boundary as well.
+            value = exc.diagnostic
+            if (isinstance(value, dict) and set(value) == {"asset", "ancestor_depth", "violation"}
+                    and isinstance(value["asset"], str) and value["asset"] in _PATH_ASSETS
+                    and isinstance(value["violation"], str) and value["violation"] in _PATH_VIOLATIONS
+                    and type(value["ancestor_depth"]) is int and 0 <= value["ancestor_depth"] <= 32):
+                result["path_diagnostic"] = value
+        print(json.dumps(result, sort_keys=True), file=sys.stderr)
         return 1
     except Exception:
         print(json.dumps({"state": "BLOCKED", "phase": "publication",
