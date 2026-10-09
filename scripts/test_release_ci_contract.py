@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 PYTEST_SHARD_CATALOG = ROOT / ".github" / "ci" / "backend-pytest-shards.json"
 RELEASE_TESTS = (
+    "scripts/test_run_postgres_ci.py",
     "scripts/test_backend_release_scope.py",
     "scripts/test_trusted_backend_admission.py",
     "scripts/test_backend_release_wiring.py",
@@ -401,9 +402,18 @@ def test_postgres_gate_runs_invitation_migration_and_merge_concurrency_without_s
         for step in job["steps"]
         if step.get("name") == "Run Runtime and medication PostgreSQL semantics"
     )
-    run = str(postgres_step["run"])
+    command = shlex.split(str(postgres_step["run"]))
+    assert command == ["python", "../scripts/run_postgres_ci.py", "--output", "$RUNNER_TEMP/postgres-ci"]
+    import ast
+    tree = ast.parse((ROOT / "scripts/run_postgres_ci.py").read_text())
+    selection = next(node.value for node in tree.body if isinstance(node, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id == "SHARDS" for target in node.targets))
+    groups = ast.literal_eval(selection)
+    assert len(groups) == 2
+    run = " ".join(selector for group in groups for selector in group)
     env = postgres_step["env"]
-
+    assert env["APP_ENV"] == "test" and env["CI"] == "true"
+    assert env["DATABASE_URL"] == env["TEST_DATABASE_URL"]
     assert env["TEST_DATABASE_URL"].startswith("postgresql://")
     assert "tests/test_latest_meal_correction.py" in run
     assert env["REGISTRATION_INVITATION_ROLLOUT_ENABLED"] == "true"

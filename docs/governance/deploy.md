@@ -37,8 +37,8 @@ canonical `deploy.sh --prepare-frontend-artifact --publisher-sha <sha>
 --frontend-tree <tree> --artifact-id <32hex>` 默认只读预检，携相同
 `--evidence-sha256` 才实际准备。准备仍要求当前 main 完整 CI 和独立 G4，
 使用原 systemd sandbox，领取独立编译锁，不占用业务发布租约、不停服务。
-发布时给原 `--publish-frontend` 增加 `--prepared-artifact <32hex>`，其值须
-等于 operation ID；原证据摘要流程、生产检查、租约、切换和回滚全部保留。
+发布时给原 `--publish-frontend` 增加 `--prepared-artifact`，使用与 operation ID 相同的制品 ID；
+原证据摘要流程、生产检查、租约、切换和回滚全部保留。
 
 READY 绑定 publisher SHA、完整 frontend tree、锁文件、公开配置、工具链/
 平台、构建配方、构建日志及制品摘要。消费前重验并原子领取，禁止重用、失败

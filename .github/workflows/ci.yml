@@ -344,6 +344,7 @@ jobs:
           scripts/test_public_host_boundaries.py
           scripts/test_trusted_release_gate.py
           scripts/test_backend_release_scope.py
+          scripts/test_run_postgres_ci.py
           scripts/test_trusted_backend_admission.py
           scripts/test_backend_release_wiring.py
           scripts/test_trusted_deploy_source.py
@@ -559,9 +560,20 @@ jobs:
           test "$(psql "$PG_URL" -Atc "SELECT COUNT(*) FROM pg_indexes WHERE indexname='ix_agent_tool_operations_run_scope'")" = "1"
           psql "$PG_URL" -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 
+      - name: Verify PostgreSQL shard database isolation
+        env:
+          APP_ENV: test
+          CI: "true"
+          REVA_PG_PARALLEL_TEST_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+          REVA_REDIS_PARALLEL_TEST_URL: redis://127.0.0.1:6379/0
+        run: python -m pytest -q --no-cov scripts/test_run_postgres_ci.py -k real_postgres
+
       - name: Run Runtime and medication PostgreSQL semantics
         working-directory: backend
         env:
+          APP_ENV: test
+          CI: "true"
+          REDIS_URL: redis://127.0.0.1:6379/0
           SECRET_KEY: test-secret-key-32-chars-minimum!!
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
@@ -569,29 +581,16 @@ jobs:
           REGISTRATION_INVITATION_ROLLOUT_ENABLED: "true"
           REGISTRATION_INVITATION_ENFORCEMENT_ENABLED: "true"
           TZ: Asia/Shanghai
-        run: >-
-          python -m pytest -q --no-cov --tb=short --maxfail=5
-          --timeout=120 --timeout-method=signal
-          tests/test_agent_runtime_concurrency.py
-          tests/test_agent_runtime_tool_operations.py
-          tests/test_agent_runtime_reconciliation.py
-          tests/test_agent_supplement_persistence_postgres.py
-          tests/test_supplement_taken_count_drop_migration.py
-          tests/test_latest_meal_correction.py
-          tests/test_diet_spoken_fraction_correction.py
-          tests/test_pi_kernel_executor.py
-          tests/test_pi_kernel_write_reconciliation.py
-          tests/test_medication_intake_batch.py
-          tests/test_write_intent_medication_batch_schema.py
-          tests/test_medication_intake_batch_postgres.py
-          tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss
-          tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract
-          tests/test_invited_phone_registration_postgres.py
-          tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner
-          tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records
-          tests/test_remote_health_oauth.py
-          tests/test_remote_health_queries.py
-          tests/test_remote_health_transport.py
+        run: python ../scripts/run_postgres_ci.py --output "$RUNNER_TEMP/postgres-ci"
+
+      - name: Preserve PostgreSQL shard evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: postgres-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/postgres-ci/
+          if-no-files-found: warn
+          retention-days: 14
 
   backend-tests:
     runs-on: ubuntu-latest

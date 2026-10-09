@@ -1,0 +1,23 @@
+{
+  "sha": "2c6ee449dc5f83aa183d46aaa320f7695744b530",
+  "run_id": 37877803968,
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": 30,
+  "wall_seconds": 466.0,
+  "runner_minutes": 100.77,
+  "previous_wall_seconds": 644,
+  "previous_runner_minutes": 121.97,
+  "wall_reduction_pct": 27.64,
+  "runner_reduction_pct": 17.38,
+  "baseline_run_id": 37795770707,
+  "baseline_sha": "af4ba8cfb70376945c25a845b870f2051528f9a9",
+  "measurement": "workflow_created_to_last_job_completed",
+  "limitations": [
+    "Single run comparison, not stable P95",
+    "New run includes two additional jobs; test coverage is not reduced",
+    "Production admission rejected legacy SSH origin and branch metadata before any authorization mutation; compatibility fix pending"
+  ],
+  "postgres_passed": 313,
+  "real_artifact_build_consume_passed": 1
+}

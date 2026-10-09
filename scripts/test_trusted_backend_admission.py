@@ -288,3 +288,65 @@ def test_http_alternate_never_reaches_git(production_repo):
     (production / '.git/objects/info/http-alternates').write_text('https://evil.invalid/objects\n')
     with pytest.raises(m.AdmissionError, match='alternates'):
         m.production_evidence()
+
+
+def test_existing_production_ssh_origin_and_historical_tracking_branches(production_repo):
+    m, production, git, sha, proof = production_repo
+    git('remote', 'set-url', 'origin', 'git@github.com:itsoso/health-llm-driven.git')
+    for branch in ('main', 'executor-v2', 'claude/quizzical-matsumoto'):
+        git('config', f'branch.{branch}.remote', 'origin')
+        git('config', f'branch.{branch}.merge', f'refs/heads/{branch}')
+    assert m.production_evidence() == (sha, {'sha': sha, 'state': 'SUCCEEDED'})
+
+
+@pytest.mark.parametrize('kind', ['ssh_origin', 'historical_branch'])
+def test_source_does_not_inherit_production_config_exceptions(production_repo, kind):
+    m, production, git, sha, proof = production_repo
+    if kind == 'ssh_origin':
+        git('remote', 'set-url', 'origin', 'git@github.com:itsoso/health-llm-driven.git')
+    else:
+        git('config', 'branch.executor-v2.remote', 'origin')
+        git('config', 'branch.executor-v2.merge', 'refs/heads/executor-v2')
+    with pytest.raises(m.AdmissionError, match='noncanonical Git'):
+        m.validate_git_metadata(production, source=True)
+
+
+@pytest.mark.parametrize('key,value', [
+    ('branch.executor-v2.remote', 'evil'),
+    ('branch.executor-v2.merge', 'refs/heads/main'),
+    ('branch.executor-v2.merge', 'refs/heads/../executor-v2'),
+    ('branch.executor-v2.merge', 'refs/heads/executor-v2\n'),
+    ('branch.executor-v2.remote', 'origin\n'),
+    ('branch.executor-v2.rebase', 'true'),
+    ('core.hooksPath', '/untrusted'),
+    ('core.fsmonitor', '/untrusted'),
+    ('core.sshCommand', '/untrusted'),
+    ('include.path', '/untrusted'),
+    ('diff.external', '/untrusted'),
+    ('credential.helper', '/untrusted'),
+    ('remote.origin.uploadpack', '/untrusted'),
+    ('remote.origin.url', 'git@evil.invalid:itsoso/health-llm-driven.git'),
+    ('remote.origin.url', 'git@github.com:evil/health-llm-driven.git'),
+])
+def test_production_config_compatibility_never_allows_unsafe_settings(production_repo, key, value):
+    m, production, git, sha, proof = production_repo
+    git('config', 'branch.executor-v2.remote', 'origin')
+    git('config', 'branch.executor-v2.merge', 'refs/heads/executor-v2')
+    git('config', key, value)
+    with pytest.raises(m.AdmissionError, match='noncanonical Git'):
+        m.validate_git_metadata(production)
+
+
+@pytest.mark.parametrize('branch', ['../outside', '.hidden', 'topic.lock', 'a//b', 'a..b', 'a/', 'a\\b', 'topic\n'])
+def test_production_branch_names_must_be_canonical_refs(production_repo, branch):
+    m, production, git, sha, proof = production_repo
+    if '\n' in branch:
+        # Git's writer rejects literal newline keys; inspect malicious on-disk
+        # escaped subsection syntax without depending on that writer safeguard.
+        with (production / '.git/config').open('a') as stream:
+            stream.write('[branch "topic\\n"]\n remote = origin\n merge = refs/heads/topic\\n\n')
+    else:
+        git('config', f'branch.{branch}.remote', 'origin')
+        git('config', f'branch.{branch}.merge', f'refs/heads/{branch}')
+    with pytest.raises(m.AdmissionError, match='noncanonical Git'):
+        m.validate_git_metadata(production)

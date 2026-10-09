@@ -39,10 +39,26 @@
 - 同服务器预构建制品已实现：原sandbox实际构建、固定源码/工具链/配置绑定、root-owned READY、摘要校验、单次消费。Linux真实Next构建/消费新增并行CI job，本机明确跳过，不宣称生产可用。
 - Python依赖锁复用原先已有。Pi npm冷/热对照只节约约1.6秒理想值，不足以引入新的失效复杂性，因此未增加缓存。跨runner CI前端制品直接投产因工具链/公开配置/隔离不同而不采用；本轮同host准备复用不算消除CI重复编译。
 - 接线回归321项通过；审查中修复旧run消费资格前检查和已发布OTA终态收尾被新闸阻断的问题，并补充真实调用顺序测试。
-- 当前尚未固定提交/G4、合入main、运行新完整CI或安装生产执行器。1～3/3～5/1～2分钟目标尚未证明。
+- 此处为首轮本机实现证据；后续固定提交、主干CI和生产兼容检查见下节。1～3/3～5/1～2分钟目标尚未证明。
 
 ## G3 本机验证
 
 裁决：PASS（本机可执行范围）。目标gate、scope、executor、bootstrap、workflow与CI合约594项通过；admission文件/Git对抗及邻近兼容530项通过（两组有重叠，不累计为独立案例数）。前端制品与发布邻近189 passed、3项Linux测试明确跳过；CI-mode集成和夹具守卫20 passed。System Map、Dossier一致性、diff检查通过。
 
 部署脚本与发布邻近组合首轮395 passed/3 skipped/2 failed：两项失败均因启动环境PATH未指向项目Python3.12；同一失败模块补齐PATH后15项全部通过。未降低断言或修改业务代码。新pipeline完整CI、真实PostgreSQL、真实Linux制品准备/消费与生产启用仍待后续验证。
+
+## 首轮 G4 与主干 CI
+
+- 固定提交 `2c6ee449dc5f83aa183d46aaa320f7695744b530` 独立G4 GO（代码集成）；独立640 passed/1 Linux明确skip，另20项SQLite/CI-mode通过。审查未冒充生产放行。
+- 已合入main，自动完整CI [37877803968](https://github.com/itsoso/health-llm-driven/actions/runs/37877803968) **30/30成功**；新真实Linux制品一次构建及无重编译消费 **1 passed / 114.40秒**；真实PG语义 **313 passed / 339.26秒**，真实Redis专项6 passed。
+- 相同墙钟口径644→466秒（10分44秒→7分46秒），减少27.64%；runner分钟121.97→100.77，减少17.38%。新增两个job仍改善；这是单轮观测，非P95。详见 [机器证据](../reviews/2026-10-09-targeted-ci-performance.json)。PG job 442秒成为关键路径；3～5分钟目标尚未达成。
+- Trusted validate [37878527903](https://github.com/itsoso/health-llm-driven/actions/runs/37878527903)成功。生产保持 `be8bd98e10db01241dd0b9e6e4c34181a9061345`，没有应用运行时代码差异。
+- 新门禁生产只读验收发现真实兼容缺口：canonical源码与full CI均PASS，但生产Git使用固定同仓库SSH origin及合法历史branch metadata，被过窄配置表拒绝。未撤权、未轮换、未部署；保留该失败并补真实Git回归后独立重审，不修改生产历史配置来迎合门禁。
+
+## 第二轮：生产兼容与 PostgreSQL 并行
+
+- 生产Git仅额外允许固定同仓库SSH origin及合法历史分支的精确origin/merge绑定；canonical源码仍要求HTTPS和main。危险配置、未知项、控制字符、非法ref仍拒绝。兼容专项64项、邻近556项通过；父方新鲜admission/CI合约/CI-mode集成83项通过。
+- 原PG语义清单按历史耗时分为两个有界子进程，共用已安装依赖，每组创建独立随机PG数据库、在线Redis DB13/14及pytest缓存。保留原超时、迁移与Redis专项；创建冲突不删除他库，清理失败仍红，输出独立JUnit和日志。
+- 本机真实PG与在线Redis完整验证：146 + 167 = 313 passed，0 skipped，0 failed。独立收集原313个nodeid与两份JUnit并集完全一致，无重复。`/tmp/reva-pg-ci-20261009/selection-equality.json`保存清单核对结果。
+- 本机首轮SQL_ASCII临时库不支持中文注释；改为UTF8重建专用临时库。隔离探针曾因macOS checkpoint导致DROP DATABASE超过30秒而红；只调整专用本机临时库fsync/synchronous_commit完成质量验证，CI的PG16与原30秒管理SQL超时保持不变。本机237.208秒不作为性能收益证据，真实收益待新完整CI。
+- System Map、Dossier、秘密扫描和diff检查通过。System Map首次因shell PATH缺Python3.12退出，使用项目venv PATH后通过。第二轮固定提交G4及主干CI尚待完成，生产仍未修改。

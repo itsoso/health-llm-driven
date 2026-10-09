@@ -142,9 +142,25 @@ def validate_git_metadata(repo, *, source=False):
     config = configparser.ConfigParser(interpolation=None)
     config.read_string(raw.decode("utf-8"))
     allowed = {"core": {"repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase", "precomposeunicode"},
-               'remote "origin"': {"url", "fetch"}, 'branch "main"': {"remote", "merge"}}
-    if (any(section not in allowed or set(config[section]) - allowed[section] for section in config.sections())
-            or config.defaults() or config.get('remote "origin"', 'url', fallback='') != _ORIGIN):
+               'remote "origin"': {"url", "fetch"}}
+    origins = {_ORIGIN} if source else {_ORIGIN, "git@github.com:itsoso/health-llm-driven.git"}
+    invalid = bool(config.defaults()) or config.get('remote "origin"', 'url', fallback='') not in origins
+    for section in config.sections():
+        branch = re.fullmatch(r'branch "([A-Za-z0-9][A-Za-z0-9._/-]*)"', section)
+        if branch:
+            name = branch[1]
+            valid_name = (not name.endswith('.') and '..' not in name
+                          and all(part and not part.startswith('.') and not part.endswith('.lock')
+                                  for part in name.split('/')))
+            invalid |= (not valid_name or (source and name != 'main')
+                        or set(config[section]) != {'remote', 'merge'}
+                        or config.get(section, 'remote', fallback='') != 'origin'
+                        or config.get(section, 'merge', fallback='') != 'refs/heads/' + name)
+        else:
+            invalid |= section not in allowed or bool(set(config[section]) - allowed.get(section, set()))
+        invalid |= any(any(ord(char) < 32 or ord(char) == 127 for char in value)
+                       for value in config[section].values())
+    if invalid:
         raise AdmissionError("noncanonical Git configuration")
     for name in ("HEAD", "index", "packed-refs", "shallow"):
         if os.path.lexists(directory / name):
