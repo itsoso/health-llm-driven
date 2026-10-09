@@ -314,62 +314,6 @@ class WorkoutSyncService:
         logger.warning(f"未识别的运动类型: typeKey='{garmin_type}', 活动名称='{activity_name}'，归类为other")
         return "other"
 
-    def _calculate_hr_zones_from_samples(
-        self,
-        hr_samples: List[Dict[str, int]],
-        max_hr: int = 180
-    ) -> List[int]:
-        """
-        从心率采样数据计算心率区间时长
-
-        Args:
-            hr_samples: 心率采样数据 [{"time": seconds, "hr": bpm}, ...]
-            max_hr: 最大心率（用于计算区间）
-
-        Returns:
-            [zone1_seconds, zone2_seconds, zone3_seconds, zone4_seconds, zone5_seconds]
-        """
-        if not hr_samples:
-            return [0, 0, 0, 0, 0]
-
-        # 心率区间定义（基于最大心率百分比）
-        # Zone 1: 50-60% (恢复区)
-        # Zone 2: 60-70% (燃脂区)
-        # Zone 3: 70-80% (有氧区)
-        # Zone 4: 80-90% (乳酸阈值区)
-        # Zone 5: 90-100% (最大心率区)
-        zone_thresholds = [
-            (0, max_hr * 0.60),      # Zone 1
-            (max_hr * 0.60, max_hr * 0.70),  # Zone 2
-            (max_hr * 0.70, max_hr * 0.80),  # Zone 3
-            (max_hr * 0.80, max_hr * 0.90),  # Zone 4
-            (max_hr * 0.90, max_hr * 1.2),   # Zone 5 (允许超过100%)
-        ]
-
-        zone_seconds = [0, 0, 0, 0, 0]
-
-        # 计算每个采样点所在的区间
-        for i in range(len(hr_samples)):
-            hr = hr_samples[i]["hr"]
-
-            # 计算该采样点代表的时长（到下一个采样点的时间）
-            if i < len(hr_samples) - 1:
-                duration = hr_samples[i + 1]["time"] - hr_samples[i]["time"]
-            else:
-                # 最后一个点，使用前一个间隔
-                if i > 0:
-                    duration = hr_samples[i]["time"] - hr_samples[i - 1]["time"]
-                else:
-                    duration = 1  # 只有一个点，假设1秒
-
-            # 确定心率所在区间
-            for zone_idx, (min_hr, max_hr_threshold) in enumerate(zone_thresholds):
-                if min_hr <= hr < max_hr_threshold:
-                    zone_seconds[zone_idx] += duration
-                    break
-
-        return zone_seconds
-
     def _parse_activity(self, activity: Dict[str, Any], user_id: int) -> Dict[str, Any]:
         """解析Garmin活动数据"""
         # 基本信息
@@ -683,69 +627,6 @@ class WorkoutSyncService:
                     sampled.append(p)
                     last_time = p['time']
             hr_points = sampled
-
-        return hr_points
-
-    def _generate_simulated_hr_curve(
-        self,
-        avg_hr: int,
-        max_hr: Optional[int],
-        duration_seconds: int
-    ) -> List[Dict[str, int]]:
-        """
-        根据平均心率和最大心率生成模拟心率曲线
-        模拟热身 -> 运动 -> 冷却的曲线
-        """
-        import random
-
-        if not avg_hr or duration_seconds <= 0:
-            return []
-
-        max_hr = max_hr or int(avg_hr * 1.15)
-        min_hr = max(int(avg_hr * 0.7), 60)  # 热身心率
-
-        hr_points = []
-        interval = 10  # 每10秒一个点（更精细的粒度）
-        num_points = duration_seconds // interval
-
-        if num_points < 3:
-            return []
-
-        # 热身阶段（前 10%）
-        warmup_points = max(1, int(num_points * 0.1))
-        # 运动阶段（中间 80%）
-        main_points = int(num_points * 0.8)
-        # 冷却阶段（后 10%）
-        cooldown_points = num_points - warmup_points - main_points
-
-        current_time = 0
-
-        # 热身：从 min_hr 逐渐上升到 avg_hr
-        for i in range(warmup_points):
-            progress = (i + 1) / warmup_points
-            hr = int(min_hr + (avg_hr - min_hr) * progress)
-            hr += random.randint(-3, 3)  # 添加一点随机波动
-            hr_points.append({"time": current_time, "hr": max(min_hr, min(max_hr, hr))})
-            current_time += interval
-
-        # 主运动阶段：在 avg_hr 和 max_hr 之间波动
-        for i in range(main_points):
-            # 使用正弦波模拟心率波动
-            import math
-            wave = math.sin(i / 10) * 0.3 + 0.7  # 0.4 到 1.0 之间
-            hr = int(avg_hr + (max_hr - avg_hr) * wave * 0.5)
-            hr += random.randint(-5, 5)  # 添加随机波动
-            hr_points.append({"time": current_time, "hr": max(min_hr, min(max_hr, hr))})
-            current_time += interval
-
-        # 冷却阶段：从当前心率逐渐下降到 min_hr
-        last_hr = hr_points[-1]["hr"] if hr_points else avg_hr
-        for i in range(cooldown_points):
-            progress = (i + 1) / max(1, cooldown_points)
-            hr = int(last_hr - (last_hr - min_hr) * progress)
-            hr += random.randint(-3, 3)
-            hr_points.append({"time": current_time, "hr": max(min_hr, min(max_hr, hr))})
-            current_time += interval
 
         return hr_points
 
@@ -1093,53 +974,10 @@ class WorkoutSyncService:
                                     parsed["heart_rate_data"] = json.dumps(hr_points)
                                     logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(hr_points)} 个心率采样点")
 
-                                    # 如果心率区间数据为空，从心率采样计算
-                                    total_zone_seconds = sum([
-                                        parsed.get("hr_zone_1_seconds", 0),
-                                        parsed.get("hr_zone_2_seconds", 0),
-                                        parsed.get("hr_zone_3_seconds", 0),
-                                        parsed.get("hr_zone_4_seconds", 0),
-                                        parsed.get("hr_zone_5_seconds", 0)
-                                    ])
-
-                                    if total_zone_seconds == 0:
-                                        logger.info(f"{self._log_prefix()}活动 {activity_id} 心率区间数据为空，从心率采样计算")
-                                        max_hr = parsed.get("max_heart_rate") or 180
-                                        zone_seconds = self._calculate_hr_zones_from_samples(hr_points, max_hr)
-                                        parsed["hr_zone_1_seconds"] = zone_seconds[0]
-                                        parsed["hr_zone_2_seconds"] = zone_seconds[1]
-                                        parsed["hr_zone_3_seconds"] = zone_seconds[2]
-                                        parsed["hr_zone_4_seconds"] = zone_seconds[3]
-                                        parsed["hr_zone_5_seconds"] = zone_seconds[4]
-                                        logger.info(f"{self._log_prefix()}活动 {activity_id} 计算得到心率区间: {zone_seconds}")
-                                else:
-                                    # 如果无法获取详细心率，使用平均心率生成简单曲线
-                                    avg_hr = parsed.get("avg_heart_rate") or (existing.avg_heart_rate if existing else None)
-                                    max_hr = parsed.get("max_heart_rate") or (existing.max_heart_rate if existing else None)
-                                    if avg_hr and duration:
-                                        # 生成模拟心率曲线（热身-运动-冷却）
-                                        hr_points = self._generate_simulated_hr_curve(avg_hr, max_hr, duration)
-                                        if hr_points:
-                                            parsed["heart_rate_data"] = json.dumps(hr_points)
-                                            logger.info(f"{self._log_prefix()}活动 {activity_id} 使用模拟心率曲线 ({len(hr_points)} 点)")
-
-                                            # 从模拟心率曲线计算心率区间
-                                            total_zone_seconds = sum([
-                                                parsed.get("hr_zone_1_seconds", 0),
-                                                parsed.get("hr_zone_2_seconds", 0),
-                                                parsed.get("hr_zone_3_seconds", 0),
-                                                parsed.get("hr_zone_4_seconds", 0),
-                                                parsed.get("hr_zone_5_seconds", 0)
-                                            ])
-
-                                            if total_zone_seconds == 0:
-                                                zone_seconds = self._calculate_hr_zones_from_samples(hr_points, max_hr or 180)
-                                                parsed["hr_zone_1_seconds"] = zone_seconds[0]
-                                                parsed["hr_zone_2_seconds"] = zone_seconds[1]
-                                                parsed["hr_zone_3_seconds"] = zone_seconds[2]
-                                                parsed["hr_zone_4_seconds"] = zone_seconds[3]
-                                                parsed["hr_zone_5_seconds"] = zone_seconds[4]
-                                                logger.info(f"{self._log_prefix()}活动 {activity_id} 从模拟曲线计算心率区间: {zone_seconds}")
+                                # Unsupported/missing samples remain missing. Summary
+                                # average/peak HR cannot reconstruct a measured curve.
+                                # Zones come only from Garmin's native activity payload;
+                                # a workout peak is not the user's physiological HRmax.
 
                             # 解析GPS路线数据
                             if details_data.get("gps_data"):
