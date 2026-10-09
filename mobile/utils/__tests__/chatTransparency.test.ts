@@ -197,3 +197,55 @@ it('retains partial outcome meaning when legacy status is error', () => {
   expect(profile.headline).toContain('部分完成');
   expect(profile.toolLabel).toBe('尝试调用 Skill');
 });
+
+it('shows every measured model call separately from the agent round count', () => {
+  const profile = buildAgentTransparency({
+    model: 'qwen3.8-max', llmRounds: 1, completionStatus: 'complete',
+    llmUsage: { calls: 2, items: [
+      { caller: 'food_recognition.from_base64', model: 'qwen3.8-flash', latency_ms: 3100, prompt_tokens: 900, completion_tokens: 180, token_source: 'api', success: true },
+      { caller: 'agent', model: 'qwen3.8-max', latency_ms: 27900, prompt_tokens: 17900, completion_tokens: 1400, cached_tokens: 12000, token_source: 'api', success: true },
+    ] },
+    perf: { turn_setup_ms: 0, write_verified_ms: 4000, first_card_ms: 4010, end_to_end_total_ms: 31800 },
+  });
+  expect(profile.modelCalls).toHaveLength(2);
+  expect(profile.modelCalls[0].value).toContain('图片识别');
+  expect(profile.modelCalls[0].value).toContain('qwen3.8-flash');
+  expect(profile.modelCalls[0].value).toContain('输入 900');
+  expect(profile.modelCalls[1].value).toContain('输入 17.9k');
+  expect(profile.modelCalls[1].value).toContain('缓存命中 12k');
+  expect(profile.milestones).toContainEqual({ label: '记录已核验', value: '4s' });
+  expect(profile.milestones).toContainEqual({ label: '回复完成', value: '31.8s' });
+});
+
+it('does not invent per-call tokens, purpose, timing or success for legacy metadata', () => {
+  const profile = buildAgentTransparency({ llmUsage: { calls: 2, items: [{ model: 'legacy' }, { model: 'new', success: false, prompt_tokens: 0, token_source: 'estimate' }] } });
+  expect(profile.modelCalls[0].value).toBe('模型调用 · legacy');
+  expect(profile.modelCalls[1].value).toContain('输入 0');
+  expect(profile.modelCalls[1].value).toContain('估算');
+  expect(profile.modelCalls[1].value).toContain('失败');
+  expect(profile.milestones).toEqual([]);
+});
+
+it('marks missing image usage instead of presenting reported calls as the complete cost', () => {
+  const profile = buildAgentTransparency({
+    perf: { pre_llm_stages: { vision_ms: 3100 } },
+    llmUsage: { calls: 2, items: [{ caller: 'agent_executor.run_stream', model: 'qwen3.6-flash' }, { caller: 'agent_executor.run_stream', model: 'qwen3.8-max' }] },
+  });
+  expect(profile.usageCoverageLine).toContain('图像阶段的独立调用尚无法核对');
+  expect(profile.usageCoverageLine).toContain('不代表已核验的完整成本');
+});
+
+it('aligns verified record timing with request-entry timing and labels incomplete outcomes', () => {
+  const profile = buildAgentTransparency({ terminalStatus: 'partial', perf: { turn_setup_ms: 200, write_verified_ms: 4000, end_to_end_total_ms: 9000 } });
+  expect(profile.milestones).toContainEqual({ label: '记录已核验', value: '4.2s' });
+  expect(profile.milestones).toContainEqual({ label: '本轮结束', value: '9s' });
+  expect(profile.milestones.some(row => row.label === '回复完成')).toBe(false);
+});
+
+
+it.each([undefined, 'unknown'])('does not infer successful completion from duration with status %s', terminalStatus => {
+  const profile = buildAgentTransparency({ terminalStatus, perf: { end_to_end_total_ms: 9000, write_verified_ms: 4000 } });
+  expect(profile.milestones).toContainEqual({ label: '本轮结束', value: '9s' });
+  expect(profile.milestones).toContainEqual({ label: '记录已核验', value: '4s（处理开始后）' });
+  expect(profile.milestones.some(row => row.label === '回复完成')).toBe(false);
+});

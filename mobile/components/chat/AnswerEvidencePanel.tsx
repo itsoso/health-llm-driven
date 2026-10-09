@@ -162,11 +162,14 @@ export default function AnswerEvidencePanel({
     [answerEvidence, processItems, sourceCount],
   );
   const technicalRows = [
+    ...(profile.milestones.length > 0 ? [{ label: '处理进度', value: profile.milestones.map(s => `${s.label} ${s.value}`).join(' · ') }] : []),
+    ...(profile.modelCalls.length > 0 ? [{ label: '逐次模型调用', value: profile.modelCalls.map(s => `${s.label} ${s.value}`).join('\n') }] : []),
     ...(profile.routing.length > 0 ? [{ label: '模型选择', value: profile.routing.join(' · ') }] : []),
     ...(profile.stages.length > 0 ? [{ label: '准备阶段', value: profile.stages.map(s => `${s.label} ${s.value}`).join(' · ') }] : []),
     ...(profile.rounds.length > 0 ? [{ label: '处理轮次', value: profile.rounds.map(r => `${r.label} ${r.value}`).join('\n') }] : []),
     ...(profile.costLine ? [{ label: '成本估算', value: profile.costLine }] : []),
     ...(profile.tokenLine ? [{ label: 'Token', value: profile.tokenLine }] : []),
+    ...(profile.usageCoverageLine ? [{ label: '统计范围', value: profile.usageCoverageLine }] : []),
     ...(profile.errorLine ? [{ label: '失败信息', value: profile.errorLine }] : []),
     ...(profile.traceLine ? [{ label: '追踪信息', value: profile.traceLine }] : []),
   ];

@@ -136,7 +136,7 @@ export default function Workspace({ owner, onViewHealth }: {
             if (version === epoch.current && active.current) {
                 const shared = await exportLifeBackup(backup, () => version === epoch.current && alive.current && active.current);
                 if (version === epoch.current)
-                    setMessage(shared ? '已导出备份' : '已取消导出');
+                    setMessage(shared ? '已打开备份分享，请以系统保存结果为准。' : '已取消导出');
             }
         }
     }

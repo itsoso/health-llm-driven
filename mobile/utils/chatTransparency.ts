@@ -1,4 +1,10 @@
 export interface LlmUsageCallLike {
+  caller?: string | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  cached_tokens?: number | null;
+  token_source?: string | null;
+  latency_ms?: number | null;
   run_id?: string | null;
   provider?: string | null;
   model?: string | null;
@@ -45,6 +51,8 @@ export interface AgentPerfProfileLike {
   llm_ttft_ms?: number | null;
   end_to_end_ttft_ms?: number | null;
   first_evidence_ms?: number | null;
+  first_card_ms?: number | null;
+  write_verified_ms?: number | null;
   llm_full_ms?: number | null;
   rounds?: AgentPerfRoundLike[] | null;
   orchestrator_tool_ms?: number | null;
@@ -82,11 +90,14 @@ export interface AgentTransparencyProfile {
   headline: string;
   costLine?: string;
   tokenLine?: string;
+  usageCoverageLine?: string;
   errorLine?: string;
   traceLine?: string;
   bands: AgentTransparencyBand[];
   stages: AgentTransparencyRow[];
   rounds: AgentTransparencyRow[];
+  modelCalls: AgentTransparencyRow[];
+  milestones: AgentTransparencyRow[];
   sources: string[];
   tools: string[];
   toolLabel: '调用 Skill' | '尝试调用 Skill';
@@ -280,6 +291,41 @@ function buildRounds(input: AgentTransparencyInput): AgentTransparencyRow[] {
     .map((ms, index) => ({ label: `第 ${index + 1} 轮`, value: `生成 ${formatDurationMs(ms)}` }));
 }
 
+function buildModelCalls(usage?: LlmUsageProfileLike | null): AgentTransparencyRow[] {
+  const items = Array.isArray(usage?.items) ? usage.items : [];
+  return items.filter(item => item && typeof item === 'object').map((item, index) => {
+    const purpose = item.caller === 'food_recognition.from_base64' || item.caller === 'food_recognition.from_url'
+      ? '图片识别'
+      : item.caller === 'food_recognition.estimate_nutrition' ? '营养估算'
+        : item.caller === 'agent_executor.run_stream' ? 'Agent 处理' : '模型调用';
+    const parts = [purpose, cleanText(item.model) || '模型未记录'];
+    if (typeof item.latency_ms === 'number' && Number.isFinite(item.latency_ms) && item.latency_ms >= 0) {
+      parts.push(formatDurationMs(item.latency_ms));
+    }
+    for (const [label, value] of [['输入', item.prompt_tokens], ['输出', item.completion_tokens], ['缓存命中', item.cached_tokens]] as const) {
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) parts.push(`${label} ${formatTokenCount(value)}`);
+    }
+    if (item.token_source === 'estimate') parts.push('Token 为估算');
+    if (item.token_source === 'api') parts.push('Token 为接口实测');
+    if (item.success === false) parts.push('失败');
+    return { label: `调用 ${index + 1}`, value: parts.join(' · ') };
+  });
+}
+
+function buildMilestones(perf?: AgentPerfProfileLike | null, complete = false): AgentTransparencyRow[] {
+  if (!perf) return [];
+  const rows: AgentTransparencyRow[] = [];
+  // Backend milestones start at run_stream; align them to the request-entry clock.
+  for (const [label, value] of [['记录已核验', perf.write_verified_ms], ['首卡已发出', perf.first_card_ms]] as const) {
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      const aligned = typeof perf.turn_setup_ms === 'number' && Number.isFinite(perf.turn_setup_ms) && perf.turn_setup_ms >= 0;
+      rows.push({ label, value: aligned ? formatDurationMs(value + perf.turn_setup_ms!) : `${formatDurationMs(value)}（处理开始后）` });
+    }
+  }
+  if (positive(perf.end_to_end_total_ms)) rows.push({ label: complete ? '回复完成' : '本轮结束', value: formatDurationMs(perf.end_to_end_total_ms) });
+  return rows;
+}
+
 export function buildAgentTransparency(input: AgentTransparencyInput): AgentTransparencyProfile {
   const total = positive(input.perf?.end_to_end_total_ms)
     || positive(input.perf?.total_ms)
@@ -292,7 +338,8 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
   };
   const outcomeLabel = outcomeLabels[input.terminalStatus || ''];
   if (outcomeLabel) headlineParts.push(outcomeLabel);
-  const model = String(input.model || '').trim();
+  const models = uniqueClean((input.llmUsage?.items || []).map(item => item?.model || ''));
+  const model = models.length > 1 ? models.join(' / ') : String(input.model || models[0] || '').trim();
   const planCost = formatCostCny(input.llmUsage?.tokenplan_cost_cny);
   if (planCost) headlineParts.push(`约${planCost}`);
   if (total) headlineParts.push(formatDurationMs(total));
@@ -314,18 +361,31 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
   const bands = buildBands(input.perf, total);
   const stages = buildStages(input.perf);
   const rounds = buildRounds(input);
-  const visible = headlineParts.length > 0 || !!costLine || !!tokenLine || !!errorLine || !!traceLine || sources.length > 0 || tools.length > 0 || routing.length > 0;
+  const modelCalls = buildModelCalls(input.llmUsage);
+  const explicitlyComplete = input.completionStatus === 'complete'
+    && (!input.terminalStatus || input.terminalStatus === 'completed' || input.terminalStatus === 'complete');
+  const milestones = buildMilestones(input.perf, explicitlyComplete);
+  const reportedImageCall = input.llmUsage?.items?.some(item =>
+    item?.caller === 'food_recognition.from_base64' || item?.caller === 'food_recognition.from_url');
+  const usageCoverageLine = positive(input.perf?.pre_llm_stages?.vision_ms) && !reportedImageCall
+    ? '图像阶段的独立调用尚无法核对；Token 与费用仅含已上报调用，不代表已核验的完整成本'
+    : positive(input.llmUsage?.calls) > (input.llmUsage?.items?.length || 0)
+      ? '逐次明细不完整；总计以已上报的汇总为准' : undefined;
+  const visible = modelCalls.length > 0 || milestones.length > 0 || headlineParts.length > 0 || !!costLine || !!tokenLine || !!errorLine || !!traceLine || sources.length > 0 || tools.length > 0 || routing.length > 0;
 
   return {
     visible,
     headline: headlineParts.join(' · '),
     costLine,
     tokenLine,
+    usageCoverageLine,
     errorLine,
     traceLine,
     bands,
     stages,
     rounds,
+    modelCalls,
+    milestones,
     sources,
     tools,
     toolLabel,

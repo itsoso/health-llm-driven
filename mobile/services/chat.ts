@@ -81,6 +81,8 @@ export interface LlmUsageCall {
   provider?: string;
   model?: string;
   caller?: string;
+  cached_tokens?: number | null;
+  token_source?: string | null;
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
