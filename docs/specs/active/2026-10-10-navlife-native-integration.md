@@ -21,7 +21,7 @@ GET /life-navigation/workspace只读返回空个人workspace或已保存版本�
 
 工作区v1：strategy（愿景/年度目标/当前问题），quarters（年季度键、五文本），weeks（周一日期键、五主线、任务、日记录、review和archives），opportunities（本人输入验证卡），focus（时间戳计时）；正文有长度/总量限制，日期与跨周任务归属强校验，初始正文为空。服务端生成revision/更新时间；保留最近20次版本，历史恢复产生新revision。导出完整工作区与版本，不包含健康投影或鉴权信息；导入严格schema，显式确认且带当前revision，事务内替换并保留恢复路径。历史数量/保留边界明确显示，不宣称无限版本。
 
-Web负责完整规划编辑与版本/备份；Mobile负责当周与今日任务执行、简短回顾，并链接原健康导航。Health摘要只在内存获取/清理，不进入workspace、归档、导出或人工AI打包；不持久化action_ref。
+Web与Mobile均提供完整规划编辑、版本恢复和备份；Mobile原生八视图的验收与发布见 [Mobile 补齐规格](2026-10-10-lifenav-mobile.md)。两端链接原健康导航。Health摘要只在内存获取/清理，不进入workspace、归档、导出或人工AI打包；不持久化action_ref。
 
 计时采用绝对deadline和暂停剩余秒数，跨页面、刷新从服务端恢复。开始/暂停/继续/结束由本人发起；结束不改任何任务状态或健康事件。不新增后台推送、系统置顶能力声明。
 
