@@ -647,6 +647,7 @@ class Adapter:
                 "Content-Type": "application/json",
                 "Authorization": "Bearer " + self.token,
                 "Cache-Control": "no-cache",
+                "User-Agent": "reva-trusted-ota/1.0",
             },
             method="POST",
         )

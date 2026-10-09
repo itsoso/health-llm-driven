@@ -228,6 +228,42 @@ def test_fixed_remote_environment_is_allowed_but_never_merged_into_process():
     assert m.validate_environment(data) == {"APP_VARIANT": "production"}
 
 
+def test_environment_request_identifies_client_and_keeps_tls_redirect_proxy_guards(monkeypatch):
+    m = load()
+    observed = {}
+    class Response:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, limit):
+            assert limit == 2_000_001
+            return json.dumps({'data': {'app': {'byId': {
+                'id': m.PROJECT, 'environmentVariablesIncludingSensitive': [],
+                'ownerAccount': {'environmentVariablesIncludingSensitive': []},
+            }}}}).encode()
+    class Client:
+        def open(self, request, *, timeout):
+            observed['request'] = request
+            assert timeout == 20
+            # Expo denies Python-urllib defaults; keep a stable honest client identity.
+            assert request.get_header('User-agent') == 'reva-trusted-ota/1.0'
+            assert request.get_header('Authorization') == 'Bearer private-token'
+            assert request.full_url == 'https://api.expo.dev/graphql'
+            return Response()
+    def opener(*handlers):
+        assert handlers[0].proxies == {}
+        assert isinstance(handlers[1], m.urllib.request.HTTPRedirectHandler)
+        with pytest.raises(m.PublishError):
+            handlers[1].redirect_request(None, None, None, None, None, None)
+        assert handlers[2]._context.verify_mode == m.ssl.CERT_REQUIRED
+        assert handlers[2]._context.check_hostname
+        return Client()
+    monkeypatch.setattr(m.urllib.request, 'build_opener', opener)
+    assert m.Adapter('c'*40, None, 'private-token').environment() == {}
+    assert json.loads(observed['request'].data)['variables'] == {
+        'appId': m.PROJECT, 'environment': 'production'}
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

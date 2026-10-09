@@ -129,6 +129,38 @@ def test_manifest_parser_accepts_actual_expo_multipart_structure():
     assert o.parse_manifest(c, ct, raw) == {'id': 'test'}
 
 
+def test_manifest_request_uses_client_identity_and_retains_protocol_tls_guards(monkeypatch):
+    o, c = load('trusted_ota_server'), load('trusted_ota')
+    ct, raw = envelope([('manifest', b'{"id":"test"}')])
+    class Response:
+        status = 200
+        headers = {'Content-Type': ct}
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, limit):
+            assert limit == 2_000_001
+            return raw
+    class Client:
+        def open(self, request, *, timeout):
+            assert timeout == 20
+            assert request.full_url == 'https://u.expo.dev/' + c.PROJECT
+            assert request.get_header('User-agent') == 'reva-trusted-ota/1.0'
+            assert request.get_header('Expo-protocol-version') == '1'
+            assert request.get_header('Expo-runtime-version') == c.RUNTIME
+            assert request.get_header('Expo-channel-name') == 'production'
+            assert request.get_header('Authorization') is None
+            return Response()
+    def opener(*handlers):
+        assert handlers[0].proxies == {}
+        with pytest.raises(ValueError):
+            handlers[1].redirect_request(None, None, None, None, None, None)
+        assert handlers[2]._context.verify_mode == o.ssl.CERT_REQUIRED
+        assert handlers[2]._context.check_hostname
+        return Client()
+    monkeypatch.setattr(o.urllib.request, 'build_opener', opener)
+    assert o.manifest(c) == {'id': 'test'}
+
+
 @pytest.mark.parametrize('parts', [
     [('manifest', b'{}'), ('manifest', b'{}')],
     [('directive', b'{}')],

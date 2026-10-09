@@ -40,3 +40,5 @@ Web 独立操作 86cb1a54961245c789cc89e4204cbcff 生成 FRONTEND_SUCCEEDED，�
 OTA validate 37969771532 成功，canonical 目录/ACL 问题已解除。publish 37971203861 在 publication 阶段阻断：服务器 ota/<sha>、claim、租约均不存在，GitHub audit artifact 数量 0，没有可恢复的 vendor receipt。不得把泛化日志或短耗时推定为具体根因，不重跑此失败 run，也未执行第二次 vendor update。现有发布器把 claim 前阶段异常全部泛化且不归档安全诊断；本次继续补充闭集诊断和无 export/claim/update 的只读供应商准入，保留全部安全 Gate，修复后的候选需重新审查和 CI。Mobile OTA 发布尚未完成。
 
 诊断改进先取得失败测试，再完成实现；新鲜发布工具验证 195 passed、1 macOS Linux ACL 不适用 skip。独立 ota_diagnostic_review 对四个固定文件摘要裁决 G4 GO。validate 现在包含受既有源码和精确 CI 闸保护的认证只读供应商准入；未增加发布次数或放宽单次 claim/回执恢复规则。下一候选须先完整 CI，再执行该只读诊断，确认前置条件后才部署和发布。
+
+6d7d2513acc64d9f6058c5497a56dd7bfd719c75 完整 CI 37973005464 全部 30 jobs 成功，独立 lifenav_readiness 对固定 commit GO。只读 validate 37974122743 的审计诊断明确阻断于 environment，baseline/cohort/channel 全部通过；未 export、claim、RPC 或 update，未轮换生产授权。相同本地只读 GraphQL 请求通过既有 Expo CLI 会话验证：Python 默认客户端标识 HTTP 403，明确 reva-trusted-ota/1.0 后 HTTP 200、环境校验 PASS、项目及账号环境变量均为空；固定 manifest endpoint 同样从 403 变为 204（当前无适用更新，不能视为 manifest 成功）。两处请求补充诚实稳定的客户端标识，保留 TLS/代理/重定向/环境白名单/manifest 字节验证；先失败回归再实现，197 passed、1 macOS 不适用 skip。最终候选仍须独立复核、完整 CI、真实只读准入，不将本地兼容验证冒充线上发布成功。

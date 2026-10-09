@@ -76,6 +76,7 @@ def manifest(contract):
     request = urllib.request.Request('https://u.expo.dev/' + contract.PROJECT, headers={
         'expo-platform': 'ios', 'expo-runtime-version': contract.RUNTIME, 'expo-channel-name': 'production',
         'expo-protocol-version': '1', 'Accept': 'multipart/mixed', 'Cache-Control': 'no-cache',
+        'User-Agent': 'reva-trusted-ota/1.0',
     })
     with opener.open(request, timeout=20) as response:
         if response.status != 200:
