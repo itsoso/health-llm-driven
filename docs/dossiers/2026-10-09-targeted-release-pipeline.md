@@ -243,3 +243,4 @@ User authorized all reported repairs, server deployment and one OTA. This candid
 - 本地新鲜验证：ChatHeader 4 passed，Mobile TypeScript通过；CI-mode基础集成与发布契约合计95 passed（本次无DB逻辑变化，SQLite快速层；既有PG证据不冒充新运行）；独立发布契约253 passed，production Expo配置复核，G4 GO。仅版本配置变化，不改变服务端、模型提示、权限或数据读取范围。
 - 首个1.3.5候选 `1033a3099` CI `37921723275` 在 Mobile app-config 旧版本精确断言失败（仍期望1.3.4）。保持失败记录，未启动构建。更新版本契约测试名称/精确期望至1.3.5，保留appVersion runtime与production能力边界断言；不修改历史OTA baseline fixtures。
 - 修正断言后 app-config/ChatHeader 合计43 passed；独立app-config 39 passed，版本源码哈希不变、G4 GO沿用。
+- 1033候选后续balanced-09另暴露验收模板app_version旧值；最小同步 `real-device-acceptance.template.json` 至1.3.5，全部占位符及false检查项原样保留，未声明设备验收。完整release-pack回归64 passed。ASC已由用户完成登录并回读最新仍为1.3.4(275)，无1.3.5新包；后台可用于后续独立处理/分发核验。
