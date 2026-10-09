@@ -120,6 +120,10 @@ async def test_selected_exam_stream_discards_client_payload_and_other_reports(db
         if calls == 1:
             names = {tool['function']['name'] for tool in tools}
             assert names <= {'health_query', 'knowledge_search'}
+            selected_instructions = str(messages)
+            assert '缺少年龄、家族史等变量时，不得推断具体疾病或病因的个体概率高低' in selected_instructions
+            assert '不能把人群运动目标、强度、频次或减重速度写成个人行动处方' in selected_instructions
+            assert '未知不等于阴性、没有病史或没有禁忌' in selected_instructions
             report_tool = next(tool['function'] for tool in tools if tool['function']['name'] == 'health_query')
             assert report_tool['parameters']['properties']['dimension']['enum'] == ['medical_exam']
             assert set(report_tool['parameters']['properties']) == {'dimension'}
