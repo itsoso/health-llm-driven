@@ -116,7 +116,7 @@ def test_node_hardening_and_commands_use_only_fixed_pinned_toolchain():
 def test_hosted_opt_is_sealed_before_canonical_checkout():
     first = workflow()["jobs"]["ota"]["steps"][0]["run"]
     assert first.index("seal_bootstrap_directory(Path('/opt'))") < first.index(
-        "/usr/bin/install -d"
+        "os.mkdir('/opt/reva-release', 0o755)"
     )
     # Later checks must still reject a writable ancestor, not waive it.
     assert "Path('/'), Path('/opt')" in named("Harden fixed Node")["run"]
@@ -434,3 +434,128 @@ def test_every_locked_dependency_producer_sets_umask_inside_root_shell(tmp_path)
         assert result.returncode == 0
         assert [stat.S_IMODE((out / name).stat().st_mode) for name in ('file','bin')] == [0o644,0o755]
         assert stat.S_IMODE(out.stat().st_mode) == 0o755
+
+
+def fresh_source_helpers(monkeypatch):
+    import os
+    from types import SimpleNamespace
+    ns = embedded_functions(named('Materialize exact canonical'))
+    original = os.fstat
+    def root_metadata(fd):
+        s = original(fd)
+        return SimpleNamespace(st_uid=0, st_gid=0, st_mode=s.st_mode, st_dev=s.st_dev, st_ino=s.st_ino)
+    monkeypatch.setattr(ns['os'], 'fstat', root_metadata)
+    return ns
+
+
+@pytest.mark.parametrize('existing', ['directory', 'symlink'])
+def test_fresh_canonical_source_rejects_existing_without_mutation(tmp_path, monkeypatch, existing):
+    ns = fresh_source_helpers(monkeypatch)
+    target = tmp_path / 'source'
+    if existing == 'directory':
+        target.mkdir(); (target / 'keep').write_text('unchanged')
+    else:
+        target.symlink_to(tmp_path, target_is_directory=True)
+    before = target.lstat()
+    with pytest.raises((FileExistsError, ValueError)):
+        ns['create_canonical_source'](tmp_path)
+    assert target.lstat() == before
+
+
+def test_fresh_canonical_source_only_accepts_enodata(tmp_path, monkeypatch):
+    import errno
+    ns = fresh_source_helpers(monkeypatch)
+    def denied(*args):
+        raise OSError(errno.EACCES, 'static test')
+    monkeypatch.setattr(ns['os'], 'removexattr', denied, raising=False)
+    with pytest.raises(OSError):
+        ns['create_canonical_source'](tmp_path)
+
+
+def test_fresh_canonical_source_removes_real_linux_default_acl(tmp_path, monkeypatch):
+    import os
+    import stat
+    import struct
+    import sys
+    if sys.platform != 'linux':
+        pytest.skip('real Linux POSIX default ACL required; macOS is not evidence')
+    ns = fresh_source_helpers(monkeypatch)
+    # Linux POSIX ACL xattr v2, owner/group/other all rwx. No setfacl dependency.
+    acl = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', tag, 7, 0xffffffff) for tag in (1,4,32))
+    os.setxattr(tmp_path, 'system.posix_acl_default', acl)
+    old = os.umask(0o022)
+    try:
+        baseline = tmp_path / 'baseline'
+        baseline.mkdir()
+        assert stat.S_IMODE(baseline.stat().st_mode) == 0o777
+        result = ns['create_canonical_source'](tmp_path)
+        assert result['inherited_default_acl'] is True
+        source = tmp_path / 'source'
+        assert stat.S_IMODE(source.stat().st_mode) == 0o755
+        assert 'system.posix_acl_default' not in os.listxattr(source)
+        child = source / 'child'; child.mkdir()
+        (child / 'file').write_text('safe')
+        assert stat.S_IMODE(child.stat().st_mode) == 0o755
+        assert stat.S_IMODE((child / 'file').stat().st_mode) == 0o644
+        assert os.getxattr(tmp_path, 'system.posix_acl_default') == acl
+    finally:
+        os.umask(old)
+
+
+def test_fresh_canonical_source_rejects_writable_parent(tmp_path, monkeypatch):
+    ns = fresh_source_helpers(monkeypatch)
+    tmp_path.chmod(0o777)
+    with pytest.raises(ValueError, match='untrusted canonical parent'):
+        ns['create_canonical_source'](tmp_path)
+    assert not (tmp_path / 'source').exists()
+
+
+def test_fresh_canonical_source_rejects_linked_parent(tmp_path, monkeypatch):
+    ns = fresh_source_helpers(monkeypatch)
+    link = tmp_path / 'linked'; link.symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(OSError):
+        ns['create_canonical_source'](link)
+    assert not (tmp_path / 'source').exists()
+
+
+def test_source_metadata_diagnostics_precede_credentials():
+    steps = workflow()['jobs']['ota']['steps']
+    before_node = next(i for i, s in enumerate(steps) if s.get('name') == 'Fixed Node toolchain')
+    after_checkout = steps.index(named('Canonical source metadata after_checkout'))
+    after_dependencies = steps.index(named('Canonical source metadata after_dependencies'))
+    assert after_checkout < before_node
+    assert steps.index(named('Install locked CLI')) < after_dependencies < steps.index(named('Read-only publisher'))
+    for stage in ('after_checkout', 'after_dependencies'):
+        body = named('Canonical source metadata ' + stage)['run']
+        assert "'role': 'source'" in body and "'phase': '" + stage + "'" in body
+        assert 'os.getxattr' in body and 'print(json.dumps' in body
+        assert 'fchmod' not in body and 'removexattr' not in body and 'secrets.' not in body
+
+
+@pytest.mark.parametrize('operation', ['removexattr', 'getxattr'])
+@pytest.mark.parametrize('code_name', ['EACCES', 'EIO', 'ENOTSUP'])
+def test_fresh_canonical_acl_unknown_errors_are_blocking(tmp_path, monkeypatch, operation, code_name):
+    import errno
+    ns = fresh_source_helpers(monkeypatch)
+    monkeypatch.setattr(ns['os'], 'removexattr', lambda *a: None, raising=False)
+    def failed(*args):
+        raise OSError(getattr(errno, code_name), 'fixed synthetic failure')
+    monkeypatch.setattr(ns['os'], operation, failed, raising=False)
+    with pytest.raises(OSError) as caught:
+        ns['create_canonical_source'](tmp_path)
+    assert caught.value.errno == getattr(errno, code_name)
+
+
+def test_fresh_canonical_enodata_creates_exact_mode_without_touching_parent(tmp_path, monkeypatch):
+    import errno
+    import stat
+    ns = fresh_source_helpers(monkeypatch)
+    def absent(*args):
+        raise OSError(errno.ENODATA, 'no default ACL')
+    monkeypatch.setattr(ns['os'], 'removexattr', absent, raising=False)
+    monkeypatch.setattr(ns['os'], 'getxattr', absent, raising=False)
+    parent_before = tmp_path.stat().st_mode
+    result = ns['create_canonical_source'](tmp_path)
+    assert result['inherited_default_acl'] is False
+    assert stat.S_IMODE((tmp_path / 'source').stat().st_mode) == 0o755
+    assert tmp_path.stat().st_mode == parent_before
