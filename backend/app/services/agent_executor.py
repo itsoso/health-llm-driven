@@ -19324,6 +19324,16 @@ class AgentExecutor:
                             server_preplanned_round = bool(proposed_calls)
                             if server_preplanned_round:
                                 finish_reason = "tool_calls"
+                            elif (garmin_scope is not None and self._turn_sync_attempted
+                                    and self._turn_focused_read_result is not None):
+                                # Thin records cannot support free-form personal
+                                # training analysis. Respond through Pi using only
+                                # verified facts, without a model synthesis call.
+                                from app.services.agent_garmin_review_evidence import bounded_garmin_record_facts
+                                candidate = bounded_garmin_record_facts(self._turn_focused_read_result)
+                                finish_reason = "stop"
+                                server_preplanned_round = True
+                                self._record_model_fallback_reason("garmin_review_deterministic_facts")
                             else:
                                 async for event in self._call_llm_stream(messages, round_tools):
                                     if event.get("type") == "content":
@@ -20136,10 +20146,23 @@ class AgentExecutor:
             full_reply = self._trusted_read_summary()
         full_reply = self._unresolved_read_failure_notice() or full_reply
         if self._focused_read_scopes()[1] is not None:
-            from app.services.agent_garmin_review_evidence import has_unsupported_garmin_claim, bounded_garmin_record_facts
-            if has_unsupported_garmin_claim(full_reply):
-                self._record_model_fallback_reason("garmin_review_evidence_fallback")
-                full_reply = self._trusted_read_summary() + "\n\n" + bounded_garmin_record_facts(self._turn_focused_read_result)
+            from app.services.agent_garmin_review_evidence import bounded_garmin_record_facts
+            from app.services.agent_policy_retry import terminal_policy_notice
+            # All exits share this factual projection, including denied or
+            # failed reads. Never replace the actual outcome with success.
+            boundary_notice = self._unresolved_read_failure_notice() or terminal_policy_notice(
+                self._agent_kernel_capability_block_reasons,
+                has_verified_writes=any(r.get("verified") is True for r in write_receipts),
+            )
+            if self._read_only_turn:
+                boundary_notice = boundary_notice or "本轮为只读请求，未执行同步。"
+            if self._agent_kernel_tool_failure_tools:
+                boundary_notice = boundary_notice or "本轮工具执行失败，未完成全部请求。"
+            self._record_model_fallback_reason("garmin_review_deterministic_facts")
+            full_reply = "\n\n".join(part for part in (
+                boundary_notice, self._trusted_read_summary(),
+                bounded_garmin_record_facts(self._turn_focused_read_result),
+            ) if part)
         from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
 
         composed_boundary = enforce_composed_synthesis_boundaries(

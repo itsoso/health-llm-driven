@@ -56,6 +56,9 @@ async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user
             yield {'type':'content','text':_model_reply or '可以参考已保存的运动记录。'}
             yield {'type':'finish','finish_reason':'stop'}
     monkeypatch.setattr(executor,'_call_llm_stream',stream)
+    async def unexpected_nonstream(*args, **kwargs):
+        pytest.fail('closed Garmin review must not call a completion model')
+    monkeypatch.setattr(executor,'_call_llm',unexpected_nonstream)
     events=[event async for event in executor.run_stream(user_id=user.id,channel='typed',message=PROMPT)]
     done=next(event['data'] for event in events if event.get('event')=='done')
     assert enqueue.call_count == (0 if job_state == 'missing_credentials' else 1)
@@ -65,8 +68,7 @@ async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user
     assert dispatched[0][1] == {'record_type':'garmin_sync','data':{}}
     assert dispatched[1][1] == {'dimension':'workout','start_date':now.date().isoformat(),
         'end_date':now.date().isoformat(),'timezone':'Asia/Shanghai'}
-    assert len(seen)==1
-    assert not any(t.get('function',{}).get('name') in {'health_record','health_query'} for t in seen[0][1])
+    assert seen == []
     assert executor._turn_focused_read_result['record']['id']==row.id
     assert executor._turn_focused_read_result['freshness']=='existing_record_not_sync_proof'
     assert executor._turn_sync_status_result['job_success_verified'] is (job_state == 'SUCCESS')
@@ -79,7 +81,7 @@ async def test_canonical_sync_then_today_read_precedes_model_guess(db, auth_user
     saved = db.get(AgentMessage,done['message_id'])
     delivered = ''.join(e.get('data',{}).get('content','') for e in events if e.get('event')=='token')
     if _capture is not None:
-        _capture.update(done=done, saved=saved.content, delivered=delivered, provider_messages=seen[0][0])
+        _capture.update(done=done, saved=saved.content, delivered=delivered, model_calls=len(seen))
     for body in (saved.content,delivered):
         assert '尚不能确认它就是你刚才的跑步' in body
         if job_state == 'SUCCESS':
@@ -126,7 +128,7 @@ def test_goal_guard_sync_exception_cannot_authorize_other_mutations(text,args):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('boundary', ['read_only', 'cross_owner_after_read'])
+@pytest.mark.parametrize('boundary', ['read_only', 'owned_no_model_surface'])
 async def test_pi_cannot_dispatch_sync_outside_turn_boundary(db,auth_user_and_headers,monkeypatch,boundary):
     from app.services import agent_executor as ae
     from app.services import agent_garmin_sync_status as status
@@ -148,7 +150,7 @@ async def test_pi_cannot_dispatch_sync_outside_turn_boundary(db,auth_user_and_he
     async def stream(messages,tools):
         if not proposals:
             args={'record_type':'garmin_sync','data':{}}
-            if boundary=='cross_owner_after_read':args['user_id']=user.id+1000
+            if boundary=='owned_no_model_surface':args['user_id']=user.id+1000
             proposals.append(args)
             yield {'type':'tool_calls','tool_calls':[{'id':'boundary-attempt','type':'function',
                 'function':{'name':'health_record','arguments':json.dumps(args)}}]}
@@ -170,30 +172,47 @@ async def test_pi_cannot_dispatch_sync_outside_turn_boundary(db,auth_user_and_he
         assert enqueue.call_count==1
         assert enqueue.call_args.args==(user.id,)
         assert sum(name=='health_record' for name,_ in dispatched)==1
+        assert proposals == []
 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('unsupported', [True, False])
-async def test_garmin_reply_cannot_invent_age_hrmax_series_or_safety(db,auth_user_and_headers,monkeypatch,unsupported):
-    bad = '按你40岁计算，心率达到最大心率70%；全程心率稳定，没有异常，运动强度正常适中，这次跑步安全。'
-    careful = '缺少年龄、实测最大心率及连续心率曲线，不能推算最大心率占比，也不能判断全程稳定、无异常或运动安全。'
+@pytest.mark.parametrize('model_text', [
+    '年龄未知，所以按40岁估算。',
+    '全程没有异常。',
+    '最大心率未知，所以每周增加3次。',
+    '缺少年龄、最大心率和连续心率曲线，不能据此推断运动安全。',
+])
+async def test_closed_garmin_projects_facts_without_any_model_analysis(db,auth_user_and_headers,monkeypatch,model_text):
     captured={}
     await test_canonical_sync_then_today_read_precedes_model_guess(
         db,auth_user_and_headers,monkeypatch,{'record_type':'garmin_sync'},'PENDING',
-        _model_reply=bad if unsupported else careful,_capture=captured)
-    provider_input=json.dumps(captured['provider_messages'],ensure_ascii=False)
-    for field in ('unavailable_evidence','age','personal_maximum_heart_rate','heart_rate_time_series'):
-        assert field in provider_input
-    assert '不得猜年龄或计算个人最大心率百分比、心率区间、训练区间' in provider_input
-
+        _model_reply=model_text,_capture=captured)
+    assert captured['model_calls']==0
     for reply in (captured['saved'],captured['delivered']):
-        if unsupported:
-            assert all(claim not in reply for claim in ('40岁','70%','全程心率稳定','没有异常','运动强度正常适中','这次跑步安全'))
-            assert '127' in reply and '143' in reply
-            assert '年龄' in reply and '最大心率' in reply and ('心率曲线' in reply or '连续心率' in reply)
-        else:
-            assert careful in reply
-    reasons=captured['done'].get('fallback_reasons',[])
-    assert ('garmin_review_evidence_fallback' in reasons) is unsupported
+        assert model_text not in reply
+        assert '127' in reply and '143' in reply
+        assert '年龄' in reply and '最大心率' in reply and ('心率曲线' in reply or '连续心率' in reply)
+        assert all(claim not in reply for claim in ('40岁','全程没有异常','每周增加3次'))
     assert captured['done']['turn_outcome']['status']=='partial'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool,args', [
+    ('health_record',{'record_type':'garmin_sync','data':{},'user_id':99}),
+    ('health_query',{'dimension':'workout','user_id':99}),
+])
+async def test_closed_garmin_gateway_rejects_cross_owner_arguments(tool,args):
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    from app.services.agent_kernel.types import AgentEnvelope,ExecutionContext,TurnSnapshot,ToolExecutionRequest
+    from app.services.agent_kernel.intent_frame import build_intent_frame
+    envelope=AgentEnvelope(user_id=41,channel='typed',text=PROMPT)
+    context=ExecutionContext.for_test(user_id=41,channel='typed')
+    snapshot=TurnSnapshot(envelope,context,build_intent_frame(envelope,context),policy_mode='enforce')
+    called=[]
+    async def dispatch(request):
+        called.append(request)
+        return '{}'
+    result=await ToolGateway(snapshot).execute(ToolExecutionRequest(tool,args),dispatch)
+    assert result.decision.action=='block'
+    assert called==[]
