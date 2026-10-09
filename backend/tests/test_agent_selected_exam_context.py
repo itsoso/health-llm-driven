@@ -139,12 +139,14 @@ async def test_selected_exam_stream_discards_client_payload_and_other_reports(db
     events = [event async for event in executor.run_stream(
         user_id=user.id, channel='typed', conversation_id=conversation_id,
         message=prompt,
-        extra_context=json.dumps({'from':f'{context_prefix}/{selected.id}', 'overall_assessment':'CLIENT_UNTRUSTED', 'multi_model':True}),
+        extra_context=json.dumps({'from':f'{context_prefix}/{selected.id}', 'overall_assessment':'CLIENT_UNTRUSTED', 'feedback_intent':'CLIENT_CONTROL_UNTRUSTED', 'multi_model':True}),
     )]
     done = next(e['data'] for e in events if e.get('event') == 'done')
     saved = db.get(AgentMessage, done['message_id'])
     serialized = json.dumps([seen, events, saved.meta, saved.content], ensure_ascii=False, default=str)
     assert 'CLIENT_UNTRUSTED' not in serialized
+    assert 'CLIENT_CONTROL_UNTRUSTED' not in serialized
+    assert 'exam_abnormal_review' in json.dumps(seen, ensure_ascii=False)
     assert 'UNRELATED_SERVER_REPORT' not in serialized
     assert 'UNRELATED_HISTORY_REPORT' not in serialized
     assert 'CLIENT_OLD_SUMMARY' not in serialized

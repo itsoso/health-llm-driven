@@ -17633,6 +17633,7 @@ class AgentExecutor:
         if self._turn_selected_exam_id is not None:
             turn_context_parts.append(
                 "## 所选体检报告范围\n"
+                "入口意图：exam_abnormal_review（体检异常解读与就医问题准备，仅阅读，不授权写入）。\n"
                 "本轮只解读用户所选的这一份报告。先调用 health_query 的 medical_exam 维度，"
                 "服务端会核验所有权并读取所选报告；不可自行选择其他报告或补查其它个人记录。"
                 "只以本轮成功读取的报告工具结果作为个人事实，历史消息、旧卡片及客户端摘要不是本轮报告证据。"

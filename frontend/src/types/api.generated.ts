@@ -3565,6 +3565,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/medical-exams/me/{exam_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Medical Exam
+         * @description Return one complete owned report independently of list pagination.
+         */
+        get: operations["get_my_medical_exam_api_v1_medical_exams_me__exam_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/medical-exams/{exam_id}/explain": {
         parameters: {
             query?: never;
@@ -40179,6 +40199,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MedicalExamReportSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_medical_exam_api_v1_medical_exams_me__exam_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exam_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MedicalExamResponse"];
                 };
             };
             /** @description Validation Error */
