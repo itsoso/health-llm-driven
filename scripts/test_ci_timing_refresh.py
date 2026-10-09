@@ -83,11 +83,13 @@ def test_real_catalog_retains_all_shards_and_process_policies():
     payload = json.loads(matrix.DEFAULT_CATALOG.read_text())
     shards = matrix.load_catalog()
     assert payload["timing_source"]["sample_count"] == len(shards) == 60
-    assert payload["timing_source"]["run_id"] == 37793465362
+    assert payload["timing_source"]["run_id"] == 37884822646
+    assert payload['timing_source']['aggregation'] == 'maximum'
+    assert [r['run_id'] for r in payload['timing_source']['runs']] == [37877803968, 37880423513, 37884822646]
     assignments = matrix.balance_shards(shards, worker_count=16)
     assigned = [label for worker in assignments for label in worker["shards"].split(",")]
     assert sorted(assigned) == sorted(shard["label"] for shard in shards)
-    assert max(worker["estimated_seconds"] for worker in assignments) == 356.083
+    assert max(worker["estimated_seconds"] for worker in assignments) == 249.368
     assert next(shard for shard in shards if shard["label"] == "a-agenda")["estimated_seconds"] == 20.336
 
 
@@ -157,7 +159,8 @@ def test_refresh_rejects_invalid_source_identity(run_id, head_sha):
         )
 
 
-def test_refresh_cli_ignores_aggregate_duplicates_and_keeps_output_on_failure(tmp_path):
+@pytest.mark.parametrize('step_workers', [(1, 2), (1,), ()])
+def test_refresh_cli_ignores_aggregate_duplicates_and_keeps_output_on_failure(tmp_path, step_workers):
     import subprocess
     import sys
     import zipfile
@@ -173,7 +176,8 @@ def test_refresh_cli_ignores_aggregate_duplicates_and_keeps_output_on_failure(tm
         for i, label in enumerate(('a', 'b'), 1):
             body = _successful_log(label)
             logs.writestr(f'{i}_backend-test-balanced-{i:02}.txt', body)
-            logs.writestr(f'backend-test-balanced-{i:02}/7_Run isolated shards (balanced-{i:02}).txt', body)
+            if i in step_workers:
+                logs.writestr(f'backend-test-balanced-{i:02}/7_Run isolated shards (balanced-{i:02}).txt', body)
     result = subprocess.run(command, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert matrix.load_catalog(output)[0]['scheduling_seconds'] == 1.234
@@ -184,3 +188,45 @@ def test_refresh_cli_ignores_aggregate_duplicates_and_keeps_output_on_failure(tm
     result = subprocess.run(command, capture_output=True, text=True)
     assert result.returncode != 0
     assert output.read_bytes() == previous
+
+
+@pytest.mark.parametrize('entries', [
+    [('1_backend-test-balanced-01.txt', 'a'), ('2_backend-test-balanced-01.txt', 'a')],
+    [('1_backend-test-balanced-01.txt', 'a'),
+     ('backend-test-balanced-01/7_Run isolated shards (balanced-01).txt', 'b')],
+    [('backend-test-balanced-01/7_Run isolated shards (balanced-02).txt', 'a')],
+])
+def test_archive_rejects_duplicate_conflicting_or_mislabeled_workers(tmp_path, entries):
+    import zipfile
+    path = tmp_path / 'logs.zip'
+    with zipfile.ZipFile(path, 'w') as archive:
+        for name, label in entries:
+            archive.writestr(name, _successful_log(label))
+    with zipfile.ZipFile(path) as archive, pytest.raises(ValueError):
+        _refresh_module().archive_logs(archive)
+
+
+def test_multi_run_placement_uses_maximum_and_preserves_policy():
+    first = {'worker_count': 2, **_catalog()}
+    second = copy.deepcopy(first)
+    second['timing_source'].update(run_id=999, head_sha='b' * 40)
+    second['shards'][0]['scheduling_seconds'] = 12
+    second['shards'][1]['scheduling_seconds'] = 3
+    before = copy.deepcopy([first, second])
+    combined = _refresh_module().combine_samples([first, second])
+    assert [s['scheduling_seconds'] for s in combined['shards']] == [12, 8]
+    assert combined['timing_source']['aggregation'] == 'maximum'
+    assert combined['timing_source']['runs'] == [s['timing_source'] for s in before]
+    assert [first, second] == before
+    assert combined['shards'][0]['estimated_seconds'] == 90
+
+
+def test_multi_run_rejects_changed_policy_or_duplicate_run():
+    first = {'worker_count': 2, **_catalog()}
+    second = copy.deepcopy(first)
+    with pytest.raises(ValueError):
+        _refresh_module().combine_samples([first, second])
+    second['timing_source'].update(run_id=999, head_sha='b' * 40)
+    second['shards'][0]['estimated_seconds'] = 91
+    with pytest.raises(ValueError):
+        _refresh_module().combine_samples([first, second])

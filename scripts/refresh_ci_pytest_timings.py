@@ -64,6 +64,60 @@ def refresh_catalog(catalog, logs, *, run_id, head_sha):
     return result
 
 
+def archive_logs(archive):
+    """Choose one complete log per worker; GitHub may omit per-step entries."""
+    workers = {}
+    for name in archive.namelist():
+        aggregate = re.fullmatch(r'\d+_backend-test-(balanced-\d+)\.txt', name)
+        step = re.fullmatch(r'backend-test-(balanced-\d+)/\d+_Run isolated shards \((balanced-\d+)\)\.txt', name)
+        if not aggregate and not step:
+            continue
+        if step and step[1] != step[2]:
+            raise ValueError('mismatched worker log identity')
+        worker = (aggregate or step)[1]
+        kind = 'aggregate' if aggregate else 'step'
+        entries = workers.setdefault(worker, {})
+        if kind in entries:
+            raise ValueError('duplicate worker log')
+        entries[kind] = archive.read(name).decode('utf-8')
+    if not workers:
+        raise ValueError('missing isolated-run logs')
+    logs = []
+    for worker in sorted(workers):
+        entries = workers[worker]
+        if len(entries) == 2:
+            # Compare telemetry, ignoring timestamps and unrelated setup output.
+            def telemetry(log):
+                return [line.split(marker, 1)[1] for line in log.splitlines()
+                        for marker in ('[ci-worker] ', '[ci-shard-timing] ') if marker in line]
+            if telemetry(entries['aggregate']) != telemetry(entries['step']):
+                raise ValueError('conflicting worker timing logs')
+        logs.append(entries.get('aggregate', entries.get('step')))
+    return logs
+
+
+def combine_samples(samples):
+    """Use conservative per-shard maxima across fully validated successful runs."""
+    if len(samples) < 2:
+        raise ValueError('at least two distinct runs required')
+    def policy(sample):
+        return (sample['worker_count'], [
+            {k: v for k, v in row.items() if k != 'scheduling_seconds'}
+            for row in sample['shards']])
+    if (len({s['timing_source']['run_id'] for s in samples}) != len(samples)
+            or any(policy(s) != policy(samples[0]) for s in samples)):
+        raise ValueError('samples must be distinct runs with identical execution policies')
+    result = copy.deepcopy(samples[-1])
+    for i, row in enumerate(result['shards']):
+        row['scheduling_seconds'] = max(s['shards'][i]['scheduling_seconds'] for s in samples)
+    result['timing_source'].update(
+        aggregation='maximum',
+        runs=[copy.deepcopy(s['timing_source']) for s in samples],
+        note='Per-shard maximum of the listed fully successful runs; placement only. Execution policies unchanged.',
+    )
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--catalog', type=Path, required=True)
@@ -71,17 +125,19 @@ def main():
     parser.add_argument('--run-id', type=int, required=True)
     parser.add_argument('--head-sha', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--additional-run', nargs=3, action='append', default=[],
+                        metavar=('RUN_ID', 'HEAD_SHA', 'LOGS_ZIP'))
     args = parser.parse_args()
-    with zipfile.ZipFile(args.logs_zip) as archive:
-        # GitHub also includes aggregate logs: select only the isolated-run step.
-        names = sorted(name for name in archive.namelist() if re.fullmatch(
-            r'backend-test-balanced-\d+/\d+_Run isolated shards \(balanced-\d+\)\.txt', name))
-        if not names or len(names) != len(set(names)):
-            raise ValueError('missing or duplicate isolated-run logs')
-        logs = [archive.read(name).decode('utf-8') for name in names]
-    result = refresh_catalog(json.loads(args.catalog.read_text()), logs,
-                             run_id=args.run_id, head_sha=args.head_sha)
-    result['timing_source']['logs_zip_sha256'] = hashlib.sha256(args.logs_zip.read_bytes()).hexdigest()
+    catalog = json.loads(args.catalog.read_text())
+    samples = []
+    for run_id, head_sha, path in [(args.run_id, args.head_sha, args.logs_zip), *args.additional_run]:
+        path = Path(path)
+        with zipfile.ZipFile(path) as archive:
+            logs = archive_logs(archive)
+        sample = refresh_catalog(catalog, logs, run_id=int(run_id), head_sha=head_sha)
+        sample['timing_source']['logs_zip_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        samples.append(sample)
+    result = combine_samples(samples) if len(samples) > 1 else samples[0]
     # Preserve the existing one-shard-per-line catalog format for small diffs.
     compact = lambda value: json.dumps(value, separators=(',', ':'))
     text = '{\n  "worker_count": ' + str(result['worker_count']) + ',\n'

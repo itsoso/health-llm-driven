@@ -1,0 +1,62 @@
+{
+  "policy_unchanged": true,
+  "worker_count": 16,
+  "shard_count": 60,
+  "aggregation": "per_shard_maximum_of_all_three_listed_runs",
+  "measurement": "all three runs used for placement weights; retrospective replay, not holdout or fresh CI outcome",
+  "runs": [
+    {
+      "run_id": 37880423513,
+      "sha": "28b2471d72a3afdc7aba681bb5762dccfbae99bc",
+      "used_for_weights": true,
+      "logs_zip_sha256": "77665fa9a3c945034be01de311750e9fa5d44c26aeca9f712b96dd11574ef4bf",
+      "old": {
+        "min_seconds": 153.064,
+        "max_seconds": 268.947,
+        "total_seconds": 3372.66
+      },
+      "new": {
+        "min_seconds": 160.555,
+        "max_seconds": 241.656,
+        "total_seconds": 3372.66
+      }
+    },
+    {
+      "run_id": 37884822646,
+      "sha": "a2323a0ee8fc8ad0e06eeb4ededeb799998f494e",
+      "used_for_weights": true,
+      "logs_zip_sha256": "845b2d83a0c46f770d2638c80178d95d0d01f3a319e1704f263e16b5d3e33ed3",
+      "old": {
+        "min_seconds": 145.575,
+        "max_seconds": 267.975,
+        "total_seconds": 3355.503
+      },
+      "new": {
+        "min_seconds": 168.895,
+        "max_seconds": 243.961,
+        "total_seconds": 3355.503
+      }
+    },
+    {
+      "run_id": 37877803968,
+      "sha": "2c6ee449dc5f83aa183d46aaa320f7695744b530",
+      "used_for_weights": true,
+      "logs_zip_sha256": "43ef7fca922391b2a8beee63290fdb355a7ccdfcb5476cd93cd625fade8b8ae5",
+      "old": {
+        "min_seconds": 161.363,
+        "max_seconds": 277.683,
+        "total_seconds": 3475.371
+      },
+      "new": {
+        "min_seconds": 179.478,
+        "max_seconds": 240.492,
+        "total_seconds": 3475.371
+      }
+    }
+  ],
+  "rejected_single_run_refresh": {
+    "fitted_max_seconds": 213.046,
+    "independent_run_max_seconds": 297.495,
+    "reason": "regressed independent run versus unchanged placement267.975"
+  }
+}
