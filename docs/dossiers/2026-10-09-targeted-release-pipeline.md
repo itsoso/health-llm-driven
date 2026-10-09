@@ -154,3 +154,9 @@
 - 同类源码搜索发现 `agent_context_statement` 的固定医学拒绝文案也消费旧前缀。新增两种精确新标签兼容，旧标签继续用于历史消息；不允许任意来源前缀，不改变选项权限、整个消息哈希绑定或上下文健康边界。
 - 正确环境 RED：6 failed / 132 passed，含真实 stream 两条及两个消费端的新标签。最小修复后：149 passed（6.61 秒），含 pending-choice、context-statement、真实 stream、guidance 和项目 CI-mode integration；diff 通过。固定补丁独立审查和远端验证待完成。
 - 独立安全 reviewer 已补充此前后端范围无额外部署安全阻断，但必须先让修复后的目标精确 CI 通过，再走 trusted validate/readiness 和正式发布流程。Mobile/native OTA 阻断仍有效。
+
+## 症状恢复记录与重试截图续接（2026-10-09）
+
+- 新截图不视为此前主干红色修复推送或原生分发方式的授权。保留本地 `f11dd28ca`，生产与远端未变。
+- 重试安全基线29 passed；只读生产窗口聚合发现两次无已验证写入回执告警，不读取/输出原始健康内容，不将聚合告警绑定到用户请求。复合恢复描述的写入授权仍在调查，不用放宽网关或推断病程痊愈来消除失败。
+- 确认另一个独立UI缺陷：legacy done(error/interrupted，无terminalStatus)保留accepted阶段label，导致终态仍显示正在理解。RED两项失败；只在这两个分支清label，状态、恢复与重试语义不变。最终state/engine/ChatScreen 231 passed（11.446秒）、TypeScript和diff通过。不能据此声称截图新重试永久卡住或记录失败根因已解决。
