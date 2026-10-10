@@ -168,3 +168,46 @@ The first sandboxed Mac attempt could not create fixture sockets and omitted the
 repository PYTHONPATH for subprocess tests; the canonical-environment rerun with
 synthetic-only socket permission passed. Deployment/installer/provisioning/lifecycle
 regressions before the io_uring addition: 443 passed. Linux evidence remains separate.
+
+## Local lifecycle continuation after green 9f10
+
+The historical fixed candidate `9f10f37cb800cc0c202a09d18220c98fe62ae73f` has
+full CI success at run `38036868221`, including observed systemd 249.11 and 255.4
+and the exact shared credential reader. That evidence is retained separately from
+this local lifecycle increment and grants no production authorization.
+
+New internal runtime orchestration uses an injected canonical host and fixed
+socket/service names. Durable intent precedes each effect; fresh guarded readback
+follows it. Proxy publication/removal is bound to the exact approved receipt,
+nginx validation precedes reload, and both units stop in one fixed host request.
+Keys, state, audit, Health service identities and accounts/groups must remain
+unchanged. Unknown outcomes stop without cleanup, replay or lease release.
+
+The versioned history reader validates ordered context-bound records and the
+existing provision writer's exact metadata format. Read-only recovery requires
+authenticated original provenance, live original lease, exact current readback
+and independently confirmed final durability/guard acknowledgement. Even confirmed
+completion yields no executable actions. Visible completion files are insufficient.
+Actual synthetic provisioning output is consumed by a compatibility test; no
+credential contents are read into history or recovery evidence.
+
+Scoped independent runtime review found that `ACTIVE_UNBOUND` asserted an
+unobserved binding state. The result is corrected to `ACTIVE_UNVERIFIED`, with
+acceptance and revocation explicitly unconfirmed. The final frozen increment
+requires a separate fixed-commit review before draft publication. Production host
+adapter, release-history admission, owner-input adapter and host-reboot startup
+remain unimplemented; synthetic tests do not establish real activation.
+
+Cross-family clarification: the agent-neutral contract requires different model
+families, not Claude specifically. No repository taxonomy establishes different
+GPT versions or sol/astra/luna as qualifying families. An authorized non-Claude
+different-family reviewer, or an explicit governance interpretation of an available
+pair, may satisfy the original requirement. Same-family substitution would be an
+exception and cannot be silently recorded as completion. No alternative provider
+was invoked and no private source was exported.
+
+Frozen local verification: 704 deployment/lifecycle/provisioning/isolation and
+trusted-installer tests passed, including 85 new history tests and 69 new runtime
+tests. All 15 activation and 13 stop journal-write interruption positions are
+covered. Secret scan, dossier consistency and System Map checks passed. These
+results cover local internal logic; no production adapter or acceptance is implied.

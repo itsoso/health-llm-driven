@@ -145,3 +145,41 @@ retries. It has no input adapter, CLI, production caller or activation authority
 Canonical provenance, lock/path guard implementation, lifecycle history admission
 and activation/recovery remain integration work. A visible completion record alone
 cannot authorize activation after an uncertain fsync or final-guard failure.
+
+## Preserved green candidate and local lifecycle continuation
+
+Exact commit `9f10f37cb800cc0c202a09d18220c98fe62ae73f` passed full CI
+[`38036868221`](https://github.com/itsoso/health-llm-driven/actions/runs/38036868221).
+Native jobs observed systemd 249.11 and 255.4, including the shared production
+credential reader digest `e3ba7520c8b0854ba83a6d16dcca65647fff48ce568b9b5b84cb5b108ace3cdf`.
+Both private-owner and exact named-service-UID ACL credential forms passed with
+read-only mount evidence. This proves synthetic runner containment, not production
+identity, routing or egress. Local deployment regressions passed 550 tests;
+CI-mode backend/bridge passed 220 with 2 skips. The saved 9f10 evidence remains
+immutable historical evidence; subsequent lifecycle changes need their own tests.
+
+Read-only task history identifies the original failed release owner as
+`优化 README`, thread `01a120c7-1ba0-75c3-9487-447bd5bfa28f`. Its turn
+`01a1246a-93ae-74b1-b0fd-2a4674286ab6` records deployment of `637520e25`,
+dispatch and observation of run `38031474956`, and failure handling. That thread
+reports rollback to `346035f78` and later blocked reconciliation of an unresolved
+write and the failed batch. These are attributed task reports, not fresh production
+proof. This continuation makes no production calls, sends no message to the owner,
+and clears no locks or retained receipts.
+
+The agent-neutral product contract requires a cross-family capstone (line 54)
+and explains it as different model families (line 48). It does not require Claude.
+The historical Claude × GPT example establishes that pair, but there is no found
+taxonomy mapping GPT versions or sol/astra/luna to different families. Available
+GPT options therefore cannot yet be claimed to satisfy this gate. An authorized,
+connected non-Claude different-family reviewer could satisfy the original rule;
+a governance interpretation of a specific available model pair is another route.
+Only accepting same-family review as a substitute would require an explicit
+exception. No alternate provider is invoked or private code transmitted here.
+
+The frozen local lifecycle increment adds injected-host start/stop sequencing,
+strict runtime/provision metadata histories and read-only conservative recovery.
+Related deployment regressions passed 704 tests. No production adapter, installed
+history admission or boot enablement is supplied. The owner-input adapter remains
+pending independently. Fixed-commit review and candidate-specific CI are required
+before advancing this increment beyond draft status.

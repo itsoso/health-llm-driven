@@ -189,6 +189,30 @@ original lease on any uncertain outcome; merely finding `completed.json` does no
 prove fsync/final-guard success or permit activation. Tests use synthetic temporary
 directories only. This internal implementation does not select the owner-input UI.
 
+`neo_wechat_runtime_lifecycle.py` implements bounded start/stop sequencing against
+an injected trusted host. It records intent before each effect, starts the socket
+and then the service explicitly, publishes only the receipt-bound include, validates
+nginx before reload, and checks read-only readiness. Stop requests both fixed units
+together, then removes only that exact include and validates/reloads. Every step
+rechecks the original lease, bound configuration/unit/proxy identities and preserved
+Health services, keys, state, audit and accounts/groups. An exception after the
+claim begins retains an uncertain operation, with no retry or compensation.
+
+`neo_wechat_lifecycle_history.py` validates a separate versioned runtime history
+and provisioning history. Its recovery inspection is read-only and returns no
+executable actions. Complete ordered records, authenticated original provenance,
+the original live lease, exact current readback, and independently authenticated
+fsync/final-guard acknowledgement are all required even to classify an original
+completion. A visible completion file or matching hashes alone are insufficient.
+
+These modules have no production host adapter, command runner, lifecycle dispatcher
+or integration with installed release-history admission. They do not authorize
+execution from user-supplied snapshots. Tests inject synthetic hosts and faults;
+they do not establish actual systemd/nginx activation. Both units remain static:
+host-reboot startup needs later reviewed integration and real acceptance;
+`Restart=on-failure` alone is not evidence for that behavior. The input-adapter
+decision is separate from this implementation work and remains pending.
+
 `neo_wechat_linux_probe.py` adds an ephemeral-runner-only synthetic systemd test
 using retained directives from the real unit template. It exercises effective
 filesystem, credential, socket, cgroup and privilege boundaries with positive
