@@ -3,6 +3,14 @@ from typing import Any, Iterable
 import re
 
 
+def is_general_inspiration_request(text: str) -> bool:
+    """A complete conversational answer request grants no personal reads."""
+    normalized = re.sub(r"\s+", "", str(text or "")).strip("。.!！?？")
+    return re.fullmatch(
+        r"(?:请你?|麻烦你?)?给我(?:一些|一点)(?:启发|思路)", normalized,
+    ) is not None
+
+
 def is_general_advice_only_request(text: str) -> bool:
     """Prove a whole request is general knowledge, not a failed personal scope.
 
@@ -11,7 +19,7 @@ def is_general_advice_only_request(text: str) -> bool:
     Do not use quote/material stripping here: quoted requests are not acts.
     """
     normalized = re.sub(r"\s+", "", str(text or "")).strip("。.!！?？")
-    return re.fullmatch(
+    return is_general_inspiration_request(text) or re.fullmatch(
         r"(?:请你?|麻烦你?)?(?:解释|介绍|讲解|说明)(?:一下)?"
         r"(?:高原旅行|高原出行|旅行|睡眠|饮食|运动)(?:的)?"
         r"(?:通用|一般性)(?:准备)?(?:原则|注意事项|建议)",

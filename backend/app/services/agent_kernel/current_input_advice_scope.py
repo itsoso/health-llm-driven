@@ -58,9 +58,10 @@ _FOLLOW_UP_TITLE_RE = re.compile(
 )
 
 CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS = """
-本轮只依据用户当前输入，回答其通用健康建议、睡前问题或所提供行动标题的解释；不要假设用户描述了病症。
+本轮只依据用户当前输入，回答其通用健康建议、启发或思路、睡前问题或所提供行动标题的解释；不要假设用户描述了病症。
 这不是个人记录查询，不读取病史、用药、睡眠、设备数据或其他个人资料；不调用综合分析或恢复评估工具。可检索通用知识。
 不得将历史、缓存、背景档案、标题或模型推测冒充已核实个人事实。明确本轮未查询个人记录；信息不足时说明限制并问必要问题，不要求用户为普通建议补查询日期。
+请求启发或思路时，直接提供可选择的通用方向和一个轻量起步方法；不把上一轮未完成的个人数据查询自动带入本轮，也不声称已制定或保存个体化计划。
 睡前问题先回应如何判断是否适合休息，给有条件的非药物建议；不能断言其健康状态、安全性、睡眠债或个人作息已经核实。不要凭钟点保证可以入睡或忽略急性不适。
 行动解释分清一般目的、如何准备和何时应暂停或咨询专业人员。仅凭标题不能确定为什么安排在今天、具体检查项目、禁忌或医嘱，须明确这些未知，不编造个体化方案或宣称执行了行动。
 保留适用的就医警示。不要给药物或补剂的开始、停用、继续、剂量、频次、时点或疗程指令，用药问题只提示向医生或药师核对。
@@ -100,9 +101,13 @@ def is_current_input_advice(text: str) -> bool:
     if match:
         title = _FOLLOW_UP_TITLE_RE.fullmatch(match["title"])
         return bool(title and _is_bounded_condition(title["condition"]))
-    from app.services.agent_policy_retry import is_general_advice_only_request
+    from app.services.agent_policy_retry import (
+        is_general_advice_only_request, is_general_inspiration_request,
+    )
 
-    return "睡眠" in text and is_general_advice_only_request(text)
+    return is_general_inspiration_request(text) or (
+        "睡眠" in text and is_general_advice_only_request(text)
+    )
 
 
 def current_input_advice_instructions(text: str) -> str:

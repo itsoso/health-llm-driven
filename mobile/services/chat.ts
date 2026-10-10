@@ -916,22 +916,35 @@ export async function getConversationMessages(
   if (opts?.beforeMessageId) params.set('before_message_id', String(opts.beforeMessageId));
   const query = params.toString();
   const qs = query ? `?${query}` : '';
-  const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}${qs}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('history_sync_timeout'));
+      controller.abort();
+    }, 10000);
   });
-  if (!res.ok) {
-    throw new Error(`getConversationMessages failed: ${res.status}`);
+  try {
+    const res = await Promise.race([fetch(`${BASE_URL}/agent/conversations/${conversationId}${qs}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+      signal: controller.signal,
+    }), deadline]);
+    if (!res.ok) {
+      throw new Error(`getConversationMessages failed: ${res.status}`);
+    }
+    const data = await Promise.race([res.json(), deadline]);
+    return {
+      messages: data.messages || [],
+      total_messages: data.total_messages ?? (data.messages?.length ?? 0),
+      has_more: typeof data.has_more === 'boolean' ? data.has_more : undefined,
+      oldest_message_id: typeof data.oldest_message_id === 'number'
+        ? data.oldest_message_id
+        : undefined,
+    };
+  } finally {
+    clearTimeout(timer!);
   }
-  const data = await res.json();
-  return {
-    messages: data.messages || [],
-    total_messages: data.total_messages ?? (data.messages?.length ?? 0),
-    has_more: typeof data.has_more === 'boolean' ? data.has_more : undefined,
-    oldest_message_id: typeof data.oldest_message_id === 'number'
-      ? data.oldest_message_id
-      : undefined,
-  };
 }
 
 export async function getAgentTurnStatus(

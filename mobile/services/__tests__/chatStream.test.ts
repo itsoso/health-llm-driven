@@ -8,7 +8,7 @@ jest.mock('../api', () => ({
   BASE_URL: 'https://example.test/api/v1',
 }));
 
-import { streamChat } from '../chat';
+import { streamChat, getConversationMessages } from '../chat';
 import { buildClientCapsHeader } from '../clientCaps';
 import { setAppEgressMode } from '../egressPolicy';
 import { invalidateAIConsent } from '../aiConsentState';
@@ -1115,5 +1115,30 @@ describe('streamChat', () => {
     xhr.onprogress?.();
     await first;
     await iter.return?.(undefined as any);
+  });
+});
+
+
+describe('bounded conversation history synchronization', () => {
+  it('rejects and aborts a history request that never resolves', async () => {
+    jest.useFakeTimers();
+    setAppEgressMode('cloud_account');
+    const originalFetch = global.fetch;
+    let signal: AbortSignal | undefined;
+    global.fetch = jest.fn((_url, options) => {
+      signal = options?.signal as AbortSignal;
+      return new Promise(() => {});
+    }) as any;
+    try {
+      const pending = getConversationMessages(777);
+      const rejected = expect(pending).rejects.toThrow('history_sync_timeout');
+      await jest.advanceTimersByTimeAsync(10000);
+      await rejected;
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      global.fetch = originalFetch;
+      jest.useRealTimers();
+      setAppEgressMode(null);
+    }
   });
 });

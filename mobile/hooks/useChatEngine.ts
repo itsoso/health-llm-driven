@@ -1235,6 +1235,51 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
   }, [reconcileActiveTurnFromServer]);
 
+  // History-only recovery has no live transport to drive its retry loop.
+  // Keep it bounded and never resend the accepted source request.
+  const historyRecoveryTurnId = messages.some(message => message.recoveryPending)
+    ? activeTurn.turnId : undefined;
+  useEffect(() => {
+    if (!historyRecoveryTurnId || isStreaming || isAgentTurnTerminal(activeTurnRef.current)
+        || serverRecoveryTimersRef.current.size > 0) return;
+    const id = activeTurnRef.current.conversationId;
+    if (!id) return;
+    const generation = turnQueueGenerationRef.current;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const applies = () => !cancelled
+      && generation === turnQueueGenerationRef.current
+      && activeTurnRef.current.turnId === historyRecoveryTurnId
+      && conversationIdRef.current === id
+      && !isAgentTurnTerminal(activeTurnRef.current);
+    const schedule = (attempt: number) => {
+      timer = setTimeout(async () => {
+        serverRecoveryTimersRef.current.delete(timer!);
+        if (!applies()) return;
+        const recovered = await recoverConversationFromServer(id, historyRecoveryTurnId);
+        if (!applies() || recovered) {
+          if (recovered) void clearPendingStream();
+          return;
+        }
+        if (attempt + 1 < SERVER_RECOVERY_DELAYS_MS.length) {
+          schedule(attempt + 1);
+        } else {
+          dispatchAgentTurn({ type: 'recover', serverStatus: 'running', at: Date.now(),
+            conversationId: id, label: STREAM_RECOVERY_PENDING_NOTICE });
+          setMessages(current => current.map(message => message.sourceTurnId === historyRecoveryTurnId
+            && message.role === 'assistant' ? { ...message, streaming: false,
+              recoveryPending: false, currentStatus: undefined, content: STREAM_RECOVERY_PENDING_NOTICE } : message));
+        }
+      }, SERVER_RECOVERY_DELAYS_MS[attempt]);
+      serverRecoveryTimersRef.current.add(timer);
+    };
+    schedule(0);
+    return () => {
+      cancelled = true;
+      if (timer) { clearTimeout(timer); serverRecoveryTimersRef.current.delete(timer); }
+    };
+  }, [historyRecoveryTurnId, isStreaming, recoverConversationFromServer, dispatchAgentTurn]);
+
   const loadConversationFromServer = useCallback(async (
     id: number,
     idPrefix: string = 'hist',
@@ -1736,6 +1781,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           });
           setMessages(prev => prev.map(message => message.id === aId ? {
             ...message,
+            streaming: false,
+            recoveryPending: false,
+            currentStatus: undefined,
             content: message.content === STREAM_RECOVERY_NOTICE
               ? STREAM_RECOVERY_PENDING_NOTICE
               : message.content.replace(receivedContentSuffix, `\n\n[${STREAM_RECOVERY_PENDING_NOTICE}]`),

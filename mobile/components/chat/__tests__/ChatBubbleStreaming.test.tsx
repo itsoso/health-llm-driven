@@ -483,6 +483,29 @@ describe('ChatBubble streaming degraded render', () => {
     expect(mockMarkdownMount).not.toHaveBeenCalled();
   });
 
+  it('shows a neutral recovery panel without streaming flags or thinking steps', () => {
+    const { getByText, queryByText, queryByTestId } = renderBubble({
+      id: 'assistant-empty-recovery', role: 'assistant', content: '',
+      streaming: false, recoveryPending: true,
+    });
+    expect(getByText('正在同步回答')).toBeTruthy();
+    expect(getByText('正在检查完整回答，请稍候。')).toBeTruthy();
+    expect(queryByText('消息已保存，正在检查完整回答。')).toBeNull();
+    expect(queryByTestId('assistant-thinking-indicator')).toBeNull();
+  });
+
+  it('shows history synchronization without pretending the model is still analyzing', () => {
+    const { getByText, queryByText, queryByTestId, queryByLabelText } = renderBubble({
+      id: 'assistant-recovery', role: 'assistant', content: '小巴还在处理，正在同步完整回答。',
+      streaming: true, recoveryPending: true, thinkingSteps: ['正在理解你的问题'],
+    });
+    expect(getByText('正在同步回答')).toBeTruthy();
+    expect(queryByText('正在分析')).toBeNull();
+    expect(queryByText('正在理解你的问题')).toBeNull();
+    expect(queryByTestId('assistant-thinking-indicator')).toBeNull();
+    expect(queryByLabelText('停止本轮分析')).toBeNull();
+  });
+
   it('uses the same thinking panel while waiting for the first status event', () => {
     const { getAllByTestId, getByTestId, getByText, queryByTestId } = renderBubble({
       id: 'assistant-waiting-for-status',

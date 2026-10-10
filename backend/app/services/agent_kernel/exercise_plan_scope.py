@@ -19,6 +19,11 @@ _TODAY_RECOMMENDATION = re.compile(
     r"今天(?:我)?是否适合运动[？?](?:请)?给我推荐适合我的运动(?:的)?方式"
     r"以及运动(?:的)?强度"
 )
+_PLAN_QUESTION = re.compile(
+    rf"(?:请你?|麻烦你?)?(?:我)?(?P<horizon>{_HORIZON})"
+    r"(?:应该|该|应|要)?(?:如何|怎么|怎样)(?:制定|安排|规划|设计)"
+    r"(?:锻炼|运动|训练)(?:计划|方案)[？?]?"
+)
 _HTML_OUTPUT_SUFFIX = re.compile(
     r"[，,。；;](?:最终|最后)生成一个HTML页面$", re.IGNORECASE
 )
@@ -49,6 +54,9 @@ def resolve_exercise_plan_scope(text: str) -> ExercisePlanScope | None:
     normalized = _HTML_OUTPUT_SUFFIX.sub("", normalized)
     if _TODAY_RECOMMENDATION.fullmatch(normalized):
         return ExercisePlanScope('今天', (), output_format)
+    question = _PLAN_QUESTION.fullmatch(normalized)
+    if question:
+        return ExercisePlanScope(question['horizon'], (), output_format)
     direct = _DRAFT.fullmatch(normalized)
     if direct:
         return ExercisePlanScope(direct['horizon'] or '', (), output_format)

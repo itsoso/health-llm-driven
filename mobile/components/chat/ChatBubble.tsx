@@ -226,7 +226,8 @@ function ChatBubbleInner({
   const processingStatusLabel = currentStatus
     || (item.streaming && (placeholderOnly || !visibleMarkdown.trim()) ? '正在理解你的问题…' : '');
   const showProcessingPanel = !isUser && (
-    thinkingSteps.length > 0
+    item.recoveryPending
+    || thinkingSteps.length > 0
     || !!processingStatusLabel
   );
   const rawVisibleAssistantMarkdown = (
@@ -1256,9 +1257,10 @@ function ChatBubbleInner({
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {renderMessageImages()}
-            {item.streaming && showProcessingPanel ? (
+            {(item.streaming || item.recoveryPending) && showProcessingPanel ? (
               <View onLayout={() => reportContentPaint('progress')}>
                 <ThinkingStepsPanel
+                  recoveryPending={item.recoveryPending}
                   steps={thinkingSteps}
                   streaming={item.streaming}
                   statusLabel={processingStatusLabel}
@@ -2752,7 +2754,9 @@ function ThinkingStepsPanel({
   streaming,
   statusLabel,
   onStop,
+  recoveryPending,
 }: {
+  recoveryPending?: boolean;
   steps: string[];
   streaming?: boolean;
   statusLabel?: string;
@@ -2761,7 +2765,16 @@ function ThinkingStepsPanel({
   // 完成态默认折叠成一条 slim pill;流式态保持实时进度展开 (用户要看到它在干活).
   const [expanded, setExpanded] = React.useState(false);
   const cleanStatusLabel = String(statusLabel || '').trim();
-  if (steps.length === 0 && !cleanStatusLabel) return null;
+  if (!recoveryPending && steps.length === 0 && !cleanStatusLabel) return null;
+
+  if (recoveryPending) {
+    return (
+      <View testID="assistant-recovery-panel" style={styles.thinkingAnalysisCard}>
+        <Text style={txt.thinkingAnalysisEyebrow}>正在同步回答</Text>
+        <Text style={txt.thinkingAnalysisTitle}>正在检查完整回答，请稍候。</Text>
+      </View>
+    );
+  }
 
   const latestStep = steps[steps.length - 1];
 

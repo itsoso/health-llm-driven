@@ -3755,6 +3755,60 @@ describe('useChatEngine', () => {
     await act(async () => { finishStream?.(); await Promise.resolve(); });
   });
 
+  it.each(['complete', 'reconciliation_required'])('automatically synchronizes a remounted %s turn without another focus event', async outcome => {
+    jest.useFakeTimers();
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '777';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1, phase: 'running', turnId: 'turn-auto-sync', conversationId: 777,
+      startedAt: Date.now() - 1000, updatedAt: Date.now(), recoverable: true, hadWrite: false,
+    });
+    mockGetConversationMessages.mockResolvedValue({ total_messages: 1, messages: [
+      { id: 1, role: 'user', content: '给我一些启发', meta: { client_turn_id: 'turn-auto-sync' } },
+    ] });
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await result.current.loadLatestConversation(); });
+    mockGetConversationMessages.mockResolvedValue({ total_messages: 2, messages: [
+      { id: 1, role: 'user', content: '给我一些启发', meta: { client_turn_id: 'turn-auto-sync' } },
+      { id: 2, role: 'assistant', content: '这是完整回答', meta: {
+        client_turn_id: 'turn-auto-sync', client_turn_finalized: true, completion_status: 'complete',
+        turn_outcome: { status: outcome },
+      } },
+    ] });
+    await act(async () => { await jest.advanceTimersByTimeAsync(65000); });
+    expect(result.current.activeTurn.phase).toBe(outcome === 'complete' ? 'completed' : 'reconciliation_required');
+    expect(mockStreamChat).not.toHaveBeenCalled();
+    const calls = mockGetConversationMessages.mock.calls.length;
+    await act(async () => { await jest.advanceTimersByTimeAsync(120000); });
+    expect(mockGetConversationMessages).toHaveBeenCalledTimes(calls);
+  });
+
+  it('bounds remounted synchronization without resending an unknown write', async () => {
+    jest.useFakeTimers();
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '777';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1, phase: 'running', turnId: 'turn-unknown-sync', conversationId: 777,
+      startedAt: Date.now(), updatedAt: Date.now(), recoverable: true, hadWrite: true, writeVerified: false,
+    });
+    mockGetConversationMessages.mockResolvedValue({ total_messages: 1, messages: [
+      { id: 1, role: 'user', content: '记录饮食', meta: { client_turn_id: 'turn-unknown-sync' } },
+    ] });
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await result.current.loadLatestConversation(); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(65000); });
+    expect(result.current.messages.find(message => message.role === 'assistant')).toMatchObject({
+      streaming: false, recoveryPending: false,
+      content: '完整回答尚未同步，消息已保存。稍后返回会话可继续同步。',
+    });
+    expect(result.current.activeTurn.retryMode).toBeUndefined();
+    expect(result.current.activeTurn.writeVerified).toBe(false);
+    const calls = mockGetConversationMessages.mock.calls.length;
+    await act(async () => { await jest.advanceTimersByTimeAsync(120000); });
+    expect(mockGetConversationMessages).toHaveBeenCalledTimes(calls);
+    expect(mockStreamChat).not.toHaveBeenCalled();
+  });
+
   it('restores a pending thinking bubble after the chat engine remounts', async () => {
     mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '777';
     mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({

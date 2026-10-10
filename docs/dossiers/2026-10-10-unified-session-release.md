@@ -176,3 +176,39 @@ NO-GO候选CI-mode，原退出130/KeyboardInterrupt证据保留。新增实际
 Adapter归档路径回归RED1failed3passed，再改为同一proof._file取证结构，
 覆盖字节、权限与inode替换拒绝，组合GREEN379passed、2PGskip。
 PostgreSQL业务探测代码未改变，原新鲜15passed仍有效；修复候选重新G4和CI。
+
+## 截图记录暂停事件（2026-10-10，未恢复）
+
+生产当前15a04365ca70aeb5ac7e64c0d2aab8c2d53ada57已部署；本次记录被Runtime保护性暂停拒绝。控制代际8、已确认代际7，一条旧Run仍为missing_receipt/reconciliation_required。旧助手声明的回执与对应持久记录不一致；最后一次拒绝不能证明之前的尝试没有副作用。独立安全审查BLOCK直接结算为reconciled_no_effect，旧Run保持UNKNOWN；未确认代际、未恢复、未重放记录。
+
+前瞻修复：同fingerprint已有in_flight/uncertain/verified时，后来rejected/failed不得覆盖既有状态和回执绑定。6项RED先复现，随后8项基本正反测试及4项真实AgentMessage重新加载/恢复测试通过；相邻365项通过；真实PostgreSQL checkpoint与rollout共51项通过。独立只读审查对此局部改动GO，不等于固定候选发布Gate，也不解决已被覆盖的历史证据。保留其他session的图片补剂、消息时间、Mobile改动，尚未提交或发布本次修复。
+
+现有恢复API要求已认证管理员；本任务已询问使用现有管理员会话或另建受审服务器运维恢复入口，选择仍待回复。不能使用数据库直改、伪造管理员身份或把UNKNOWN标记为未写入来解锁。该认证恢复断点不追溯否定此前已完成的后端/Web/OTA发布。
+
+本机实际锁屏条件下simctl启动和截图通过（lock_before/after均locked）；该证据仅证明锁屏模拟器传输，不证明已登录的饮食写入、客户端已应用新OTA或硬件功能通过。
+
+
+## 截图记录暂停修复候选（2026-10-11，部署待执行）
+
+用户后续明确“忽略掉 确保修复可用”，授权通过现有服务器运维身份恢复未来准入，保留原 UNKNOWN，不重放、不结算为无效果。此前“选择待回复”断点已解除。新增 Linux root 专用 review/resume CLI，无 HTTP 出口、无冒充管理员；锁定控制行，核对版本、代际、完整事件计数与未决 Run 摘要，运维审核对象和恢复事件同事务提交。新增 PostgreSQL/SQLite managed 迁移保留历史审计；同指纹后续拒绝不能覆盖原 in_flight/uncertain/verified 检查点。
+
+固定候选为 36bdb5b046b1ff5a1a6ac5febf101ae2aa8551b4。冻结 CI-mode 3511 passed、22 skipped、84 subtests passed，真实 PostgreSQL 66 passed；独立 G4 GO。完整 dispatch CI 38066021686 的 32 作业均成功。同 SHA push CI 38066020769 的 r-other 分片两次 204 秒超时导致失败，发布门禁正确阻断 bootstrap，未产生 retirement intent，原授权仍为 15a04365。已仅重跑失败 CI 项，原日志保存在 /tmp/reva-operator-push-ci-failed.log；最终 G5 需所有当前 attempt 成功后重新裁决。
+
+最新生产只读核对：paused/reconciliation_detected，version=26，generation=8，ack=7，完整事件计数=8，未知 Run=1，其摘要 55c85a085500e68387ec8e4f9ab2b209b72de91a0298a28ba027eb35078f9d4c，对应工具操作=0。生产恢复、部署和 G6 尚未完成。其他 session 未固定的照片/时间/Mobile 改动留在工作树，未混入本批次；本批次后端修复不需要 OTA 或 TestFlight。
+
+
+## 截图记录暂停修复交付（2026-10-11，G6 GO）
+
+同 SHA 的全部当前 CI attempt 已绿色：38066021686 attempt 1 和 38066020769 attempt 2 各 32 作业成功，main 精确匹配 36bdb5b。授权轮换的两次前置拒绝均未产生退休 intent；第一因 CI 红，第二因遗漏旧发布身份撤权。完成 canonical revoke、原锁下无租约/终态/精确授权证明及旧私钥销毁后，轮换成功，未重发任何已消费发布。封存索引更新为 4 个 archived 和 1 个活动回滚操作，后续两轮仅约 80 KB 逻辑读取、零物理读取。
+
+Trusted backend run 38068852967 success；服务器 /var/lib/reva-release/36bdb5b046b1ff5a1a6ac5febf101ae2aa8551b4/completed.json 为 SUCCEEDED。managed migration、schema 和三轮 60/60 健康门通过。依用户既有策略默认跳过数据库备份/恢复演练/站外归档；发布工具、回滚 schema、运行态事务与健康验收仍执行。生产 HEAD 精确、工作树干净，health-backend / health-frontend / celery-worker / celery-beat 全 active，公开 health HTTP 200，发布租约已释放。未执行真实模型评测，临时精确 SHA waiver 已删除并验证缺失。
+
+部署后使用受审 Linux root CLI 生成原 v26/gen8/ack7/1 UNKNOWN 审核对象，原样传入 resume，退出 0。控制恢复 active/v27/gen8/ack8；独立新会话 evaluate 没有重新暂停，受影响账号 admission 为 managed=true / mode_enforce。原 Run、2 次尝试、6 条事件、0 工具操作和 2 条消息的字段摘要与恢复前完全一致，operator 审计对象与审核输入一致。恢复证明新请求准入已解锁；不结算或重放旧 UNKNOWN、不宣称此前聚餐记录已补写。生产未执行新健康写入/真实模型评测/手机业务验收。
+
+本批次纯后端，不需要 OTA/TestFlight；此前 15a04365 的 Web/OTA 发布证据保留。其他 session 未固定照片/时间/Mobile 改动保持原工作树，不纳入此紧急恢复候选。详细私密交付回执保留工作树，不推进已部署候选。
+
+## 2026-10-11 早间计划问句与 Mobile 终态同步修复
+
+用户截图绑定两个完整问句：今天应该如何制定锻炼计划；给我一些启发。只读、owner-scoped 线上元数据确认两轮均已 finalized、completion_status=error、turn_outcome=blocked；第二轮手机仍显示正在分析，属于终态同步缺失。未输出健康正文或用户标识，未回放原请求。
+
+G2/G3：closed fullmatch 新增未来计划问句，无 evidence_dimensions；启发请求复用 current-input answer scope，仅开放 knowledge_search，不授予个人读写。RED 为5项行为失败、9项反例通过；原SQLite环境4项PG fixture拒绝保留，不计通过。UTF8 PostgreSQL17 新鲜回归172 passed（首次环境路径错误保留）。Mobile 215 passed、tsc passed，10秒历史请求截止覆盖body读取；remount自动有界同步，unknown write不重发，finalized source-turn隔离及终态停轮询。恢复展示不冒称分析或保存。已保留其他session照片补剂dirty，只纳入本次归属片段。后续固定候选G4、CI-mode、精确main CI、后端部署与OTA仍待执行，未做真实模型评测。
