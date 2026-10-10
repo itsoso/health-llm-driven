@@ -67,6 +67,10 @@ dependency checks passed (details in review record). Final combined verification
 PR280 was created and remains unmerged. New continuation changes need their own
 fixed review and CI. Cross-family capstone was blocked by automatic
 approval review because its external private-code destination was not authorized.
+The owner subsequently cancelled Claude before the authorized retry was initiated;
+no retry/source transmission occurred. Same-family independent review cannot be
+recorded as the mandatory cross-family capstone. No applicable exception procedure
+was found; G3 retains this unresolved governance decision.
 
 G4: first fixed application review of `4892c41b1e8cd19ec5262ff5dc91b518316fa6b0`
 was NO-GO: browser CSP callback, revoked-grant capacity and missing authorization/

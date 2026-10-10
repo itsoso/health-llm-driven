@@ -74,7 +74,19 @@ capstone. Automatic approval review rejected sending a private source packet to
 the installed Claude CLI, because that external destination was not specifically
 authorized. The command was not executed and neither source packet nor output was
 created. Do not retry through a different route or record platform same-family
-review as this capstone. Explicit destination authorization is a remaining gate.
+review as this capstone. The owner briefly approved that exact destination at
+07:04 UTC, then explicitly cancelled Claude at 07:04:48 before any retry was
+initiated. No Claude process or source transmission was initiated by this task
+during that interval. Do not use Claude or another external provider as a workaround.
+
+`docs/specs/product-pipeline-contract.md` G3 still requires a cross-family capstone
+for this high-risk change. The available independent platform reviewers are in
+the same model family. The inspected contract and product-pipeline/safety/deploy
+governance document no applicable waiver or alternate-family provider procedure.
+Therefore current independent reviews and synthetic tests remain useful evidence
+but do not satisfy that requirement. Any candidate-specific exception requires
+an explicit governance-owner decision, recording the unmet requirement and residual
+risk; no policy was modified and no exception is claimed here.
 
 ## Production evidence and limits
 

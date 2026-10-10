@@ -6,6 +6,9 @@ All Health/credential paths are remapped to synthetic fixtures. Service identity
 is an existing unprivileged nobody UID, not the production account. The retained
 sandbox directives come from the actual unit template. PrivateNetwork is added
 to guarantee no outside-network contact; this does NOT validate production egress.
+Static verification uses the exact probe bytes with synthetic dependency stubs in
+an isolated SYSTEMD_UNIT_PATH. Actual systemctl start separately validates host
+dependencies and runtime behavior; those stubs are never installed or started.
 
 Run: sudo /usr/bin/python3 scripts/neo_wechat_linux_probe.py --ephemeral-runner --require-linux
 UNSUPPORTED exits 77 (1 when required); PASS is printed only after both actual
@@ -50,6 +53,19 @@ SERVICE_KEYS = PATH_KEYS | {
     "RestartSec", "TimeoutStopSec", "KillMode", "StandardOutput", "StandardError", "SyslogIdentifier",
 }
 SYNTHETIC = "public synthetic fixture; no personal data\n"
+# Only parser/job-graph fixtures. Never installed into a manager's search path.
+# v249 supports SYSTEMD_UNIT_PATH; --recursive-errors is not available in v249.
+# https://github.com/systemd/systemd/blob/v249/src/analyze/analyze-verify.c
+_STUB_UNIT = "[Unit]\nDescription=Synthetic static verification dependency\nDefaultDependencies=no\n"
+VERIFY_DEPENDENCIES = {
+    **{name: _STUB_UNIT for name in ("sysinit.target", "basic.target", "shutdown.target")},
+    **{name: _STUB_UNIT + "[Slice]\n" for name in ("system.slice", "-.slice")},
+    **{name: _STUB_UNIT + "[Service]\nType=oneshot\nExecStart=/usr/bin/true\n"
+       for name in ("systemd-remount-fs.service", "systemd-tmpfiles-setup.service", "systemd-journald.service")},
+    "systemd-journald.socket": _STUB_UNIT + "[Socket]\nListenStream=/run/neo-wx-static-only-journal.sock\n",
+    "tmp.mount": _STUB_UNIT + "[Mount]\nWhat=tmpfs\nWhere=/tmp\nType=tmpfs\n",
+    "-.mount": _STUB_UNIT + "[Mount]\nWhat=tmpfs\nWhere=/\nType=tmpfs\n",
+}
 
 
 def render_unit(template, name, *, uid, gid, control=False):
@@ -130,7 +146,7 @@ def render_unit(template, name, *, uid, gid, control=False):
         if control and key in ("InaccessiblePaths", "SocketBindDeny"):
             value = ""
         lines.append(key + "=" + value)
-    lines.extend(("RemainAfterExit=yes", "RuntimeMaxSec=30", "TimeoutStartSec=30", "PrivateNetwork=yes"))
+    lines.extend(("RemainAfterExit=yes", "TimeoutStartSec=30", "PrivateNetwork=yes"))
     plan["config"] = remap("/etc/neo-wechat/config.json")
     plan["readonly"] = remap("/opt/neo-wechat") + "/synthetic-record"
     return "\n".join(lines) + "\n", plan
@@ -236,6 +252,26 @@ def run(*args, timeout=45):
     return result.stdout
 
 
+def verify_unit(unit, fixture):
+    """Fail on every diagnostic, excluding host units by load path, not text filters."""
+    directory = fixture / "verify-units"
+    directory.mkdir(mode=0o755)
+    for name, content in VERIFY_DEPENDENCIES.items():
+        (directory / name).write_text(content)
+    candidate = directory / unit.name
+    candidate.write_bytes(unit.read_bytes())
+    # No trailing colon: defaults are replaced, not appended. The CLI argument's
+    # directory is also isolated; v249 prepends it to its generated unit path.
+    verified = subprocess.run(["/usr/bin/systemd-analyze", "--man=no", "verify", str(candidate)],
+                              capture_output=True, text=True, timeout=20,
+                              env={"PATH": "/usr/bin:/bin", "LANG": "C", "SYSTEMD_COLORS": "0",
+                                   "SYSTEMD_UNIT_PATH": str(directory)})
+    if verified.returncode or verified.stderr.strip() or verified.stdout.strip():
+        raise RuntimeError("unit verification failed: " + (verified.stderr or verified.stdout)[:4000])
+    return {"dependency_scope": "synthetic static dependencies only",
+            "unit_sha256": hashlib.sha256(candidate.read_bytes()).hexdigest()}
+
+
 def native(template):
     identity = pwd.getpwnam("nobody")
     results = []
@@ -271,12 +307,7 @@ def native(template):
             marker.chmod(0o644)
             unit.write_text(text)
             unit.chmod(0o644)
-            # An unsupported directive must not silently turn into a passing test.
-            verified = subprocess.run(["/usr/bin/systemd-analyze", "verify", str(unit)],
-                                      capture_output=True, text=True, timeout=20,
-                                      env={"PATH": "/usr/bin:/bin", "LANG": "C"})
-            if verified.returncode or verified.stderr.strip():
-                raise RuntimeError("unit verification failed: " + verified.stderr[:4000])
+            verification = verify_unit(unit, fixture)
             run("/usr/bin/systemctl", "daemon-reload")
             registered = True
             try:
@@ -289,6 +320,8 @@ def native(template):
             assert run("/usr/bin/systemctl", "is-active", name + ".service").strip() == "active"
             report = json.loads((state / "report.json").read_text())
             assert report["status"] == "PASS" and report["control"] == control
+            report["static_verification"] = verification
+            report["host_dependency_start"] = "PASS"
             results.append(report)
         finally:
             # Stop must succeed before removing any possible working/state paths.

@@ -60,7 +60,8 @@ def test_render_retains_all_sandbox_directives_from_actual_template():
     assert "User=65534" in text and "Group=65534" in text
     assert "SupplementaryGroups=\n" in text
     assert "PrivateNetwork=yes" in text
-    assert "Restart=no" in text and "RuntimeMaxSec=30" in text
+    assert "Restart=no" in text and "TimeoutStartSec=30" in text
+    assert "TimeoutStopSec=30" in text and "RuntimeMaxSec=" not in text
     assert "@REVISION@" not in text and "[Install]" not in text
     assert all(path.startswith("/run/neo-wx-probe-0123456789ab-fixtures/fs/")
                for path in plan["hidden_files"])
@@ -140,3 +141,58 @@ def test_unsupported_is_not_success(monkeypatch, capsys):
     assert probe.main(["--ephemeral-runner"]) == 77
     assert probe.main(["--ephemeral-runner", "--require-linux"]) == 1
     assert '"status": "UNSUPPORTED"' in capsys.readouterr().out
+
+
+VENDOR_WARNING = "/lib/systemd/system/snapd.service:23: Unknown key name 'RestartMode' in section 'Service', ignoring.\n"
+OWN_NAME = "neo-wx-probe-0123456789ab.service"
+
+
+def test_verify_uses_exact_copy_and_only_synthetic_dependency_path(tmp_path, monkeypatch):
+    unit = tmp_path / OWN_NAME
+    unit.write_text(render()[0])
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    captured = []
+    def fake_run(argv, **kwargs):
+        captured.append((argv, kwargs))
+        copied = Path(argv[-1])
+        assert copied.read_bytes() == unit.read_bytes()
+        assert copied.parent == fixture / "verify-units"
+        assert kwargs["env"]["SYSTEMD_UNIT_PATH"] == str(copied.parent)
+        assert not kwargs["env"]["SYSTEMD_UNIT_PATH"].endswith(":")
+        assert "--man=no" in argv
+        assert set(p.name for p in copied.parent.iterdir()) == set(probe.VERIFY_DEPENDENCIES) | {OWN_NAME}
+        assert all(not p.is_symlink() for p in copied.parent.iterdir())
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+    report = probe.verify_unit(unit, fixture)
+    assert len(captured) == 1
+    assert report["dependency_scope"] == "synthetic static dependencies only"
+    assert report["unit_sha256"] == probe.hashlib.sha256(unit.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("diagnostic", [
+    VENDOR_WARNING,
+    f"{OWN_NAME}: RuntimeMaxSec= has no effect in combination with Type=oneshot. Ignoring.\n",
+    VENDOR_WARNING + f"/run/systemd/system/{OWN_NAME}:23: Unknown key name 'ProtectSystemX' in section 'Service', ignoring.\n",
+    "Failed to initialize manager: Permission denied\n",
+])
+def test_isolated_verification_rejects_all_stderr(tmp_path, monkeypatch, diagnostic):
+    unit = tmp_path / OWN_NAME
+    unit.write_text(render()[0])
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    monkeypatch.setattr(probe.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 0, "", diagnostic))
+    with pytest.raises(RuntimeError, match="unit verification failed"):
+        probe.verify_unit(unit, fixture)
+
+
+@pytest.mark.parametrize("returncode,stdout", [(1, ""), (0, "unexpected output")])
+def test_isolated_verification_rejects_nonzero_and_unknown_output(tmp_path, monkeypatch, returncode, stdout):
+    unit = tmp_path / OWN_NAME
+    unit.write_text(render()[0])
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    monkeypatch.setattr(probe.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], returncode, stdout, ""))
+    with pytest.raises(RuntimeError, match="unit verification failed"):
+        probe.verify_unit(unit, fixture)
