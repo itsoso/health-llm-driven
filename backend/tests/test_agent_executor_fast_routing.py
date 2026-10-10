@@ -2377,3 +2377,15 @@ def test_record_target_mismatch_keeps_specific_correction_guidance():
     assert "名称或剂量" in reply
     assert "重新发送" in reply
     assert "本轮没有执行记录" in reply
+
+
+def test_photo_supplement_target_mismatch_explains_image_binding_not_missing_user_units():
+    reply = _record_intent_needs_detail_message(
+        '记录四种补剂 NAC 2粒 其他各1粒',
+        reason_codes=('health_record_target_mismatch',), has_images=True,
+    )
+    assert '图片识别结果' in reply
+    assert '本轮没有执行记录' in reply
+    assert '请补全每项' not in reply
+    assert '已记录' not in reply
+    assert '瓶身名称' in reply

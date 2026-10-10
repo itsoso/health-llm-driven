@@ -6004,7 +6004,7 @@ _CRISIS_RECORD_NOT_SAVED_MESSAGE = "这次的记录还没有保存。"
 
 
 def _record_intent_needs_detail_message(
-    record_text: str, *, reason_codes: Sequence[str] = (),
+    record_text: str, *, reason_codes: Sequence[str] = (), has_images: bool = False,
 ) -> str:
     """No verified record: acknowledge incompletion without inventing a cause.
 
@@ -6013,6 +6013,12 @@ def _record_intent_needs_detail_message(
     """
     text = (record_text or "").strip()
     if "health_record_target_mismatch" in reason_codes:
+        if has_images and "补剂" in text:
+            return (
+                "这次补剂还没记下来：图片识别结果未能与本次要求逐项对应。"
+                "请补充瓶身名称清晰的照片，或写出每种补剂的名称和对应数量。"
+                "本轮没有执行记录。"
+            )
         return (
             f"「{text}」还没记下来：待写入的名称或剂量没能与这条请求准确对应。"
             "请补全每项的名称、数量和单位后重新发送；本轮没有执行记录。"
@@ -17440,6 +17446,25 @@ class AgentExecutor:
                     yield evt
                 return
 
+        # A closed request for today's existing plan reads only the owner/date
+        # snapshot. The GET daily-plan endpoint is a builder and must not be used.
+        from app.services.daily_plan_chat import resolve_daily_plan_request
+        daily_plan_request = resolve_daily_plan_request(self._agent_kernel_snapshot)
+        if (
+            daily_plan_request is not None
+            and daily_plan_request[0] == user_id
+            and health_evidence_turn is None
+            and not self._has_isolated_report_scope()
+            and not images
+            and not file_base64
+        ):
+            async for evt in self._run_daily_plan_snapshot(
+                daily_plan_request, svc=svc, conv=conv, user_id=user_id,
+                client_turn_id=client_turn_id, start_time=start_time,
+            ):
+                yield evt
+            return
+
         # ── Slice 3 程序性配方: 触发短语精确匹配 (先于 fast-path/LLM)。
         # strip 后等值才命中 (不做模糊匹配, 控误触发); 命中 → 确定性逐步重放,
         # 每步确认策略沿用该 kind 既有 confirm tier (typed_only/never_auto 原样
@@ -20102,6 +20127,7 @@ class AgentExecutor:
                 else _record_intent_needs_detail_message(
                     message,
                     reason_codes=self._agent_kernel_capability_block_reasons,
+                    has_images=bool(images),
                 )
             )
             if full_reply.strip() != fail_closed_reply:
@@ -21320,6 +21346,66 @@ class AgentExecutor:
         ):
             return None
         return intent
+
+    async def _run_daily_plan_snapshot(
+        self, request, *, svc, conv, user_id, client_turn_id, start_time,
+    ):
+        from sqlalchemy.exc import SQLAlchemyError
+        from app.services.daily_plan_chat import (
+            read_daily_plan_snapshot, render_daily_plan_snapshot, render_daily_plan_draft,
+        )
+        from zoneinfo import ZoneInfo
+
+        owner, day = request
+        if owner != user_id:
+            raise ValueError("Daily plan owner mismatch")
+        evidence = {"plan_date": day.isoformat(), "source": "daily_operating_plans"}
+        status = "complete"
+        try:
+            payload = read_daily_plan_snapshot(self.db, owner, day)
+            if payload["found"]:
+                reply = render_daily_plan_snapshot(payload)
+                evidence["result_kind"] = "saved_snapshot"
+            else:
+                context = self._agent_kernel_snapshot.context
+                local_now = context.current_time.astimezone(ZoneInfo(context.timezone))
+                if local_now.date() != day:
+                    raise ValueError("Daily plan turn date mismatch")
+                reply = render_daily_plan_draft(local_now)
+                evidence["result_kind"] = "generic_draft"
+            evidence.update({k: payload[k] for k in ("found", "id", "updated_at", "status") if k in payload})
+        except (SQLAlchemyError, ValueError) as exc:
+            self.db.rollback()
+            logger.warning("[daily_plan_chat] snapshot read failed error_type=%s", type(exc).__name__)
+            status = "error"
+            evidence["status"] = "unavailable"
+            evidence["result_kind"] = "read_error"
+            reply = "今日计划暂时读取失败，请稍后重试。本次没有生成、保存或执行计划。"
+        outcome = classify_agent_turn_outcome(
+            completion_status=status, final_text=reply, write_receipts=[],
+            tool_failure_tools=["daily_plan_snapshot"] if status == "error" else [],
+        )
+        meta = {
+            "mode": "daily_plan_snapshot", "model_call_count": 0,
+            "llm_rounds": 0, "llm_ms": 0, "model": None,
+            "elapsed_ms": max(0, int((time.time() - start_time) * 1000)),
+            "write_receipts": [], "tools_used": [], "cards": [],
+            "sources_used": ["本人当日已保存计划"] if evidence.get("found") else [],
+            "daily_plan_read": evidence,
+            "client_turn_finalized": True, "record_intent_no_tool": False,
+            "turn_outcome": outcome,
+            **agent_completion_metadata(status, outcome),
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        conv.updated_at = datetime.now(UTC)
+        assistant = svc.save_message(
+            conv.id, "assistant", reply, meta=meta,
+            client_turn_id=client_turn_id, client_turn_user_id=user_id,
+        )
+        yield {"event": "token", "data": {"content": reply}}
+        yield {"event": "done", "data": {
+            **meta, "conversation_id": conv.id, "message_id": assistant.id,
+        }}
 
     async def _run_water_backfill_result(
         self, result, *, svc, conv, user_id, client_turn_id, start_time,

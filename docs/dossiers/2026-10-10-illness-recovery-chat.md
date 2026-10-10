@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G4 固定实现8338aa6d1独立安全GO；精确候选CI与部署待完成 |
+| 当前阶段 | G4独立安全GO；637520e25完整CI31 jobs全绿；部署因既有Runtime未决Run熔断而回滚，G5/G6 BLOCK |
 
 2026-10-10；quick_fix，无 primary controller；safety-gate overlay。
 
@@ -32,3 +32,5 @@
 最终补验：classifier 878 passed，真实 UTF8 PostgreSQL17 本人恢复/真实API/病程读取46 passed、exit 0，测试库与服务器正常停止（/tmp/reva-cold-pg.log）。阻断名称/语法静态检查通过。新测试由既有h-j目录glob覆盖，无需新增CI分片或删覆盖。当前fa470的backend-quality已通过可信REST终态回读为completed/success（05:53:04Z），之前缺失终态原记录保留；尚未据此部署。本任务不触及混合executor，也不触及live-change高风险路径；不得将离线通过宣称真实LLM评测。
 
 G4：GO。独立lifenav_readiness只读复核固定8338aa6d1d35438d4d12f6c88fd78153e83147d7，确认全本人病程查询没有limit20截断误绑定，仅同名唯一active/improving、精确status字段获得权威；既有写出口记录本人声明，不作诊断或新增自治出口。另补两条截图原话的真实Pi对话→真实API→保存回答→verified illness_episode/update回执绑定集成，36项全通过（合成provider，不是真实LLM调用）。首次回执断言用了record_id而规范字段为resource_id，纠正为真实字段且加强status/action/verified和持久化消息回执一致性断言；不弱化已落库或跨账号隔离断言。此新增测试与文档不改变已审runtime。
+
+G5/G6补充：精确候选637520e25 CI38030652894全部31作业成功。后端38031474956未通过agent_runtime_circuit硬闸，终态NEEDS_OPERATOR并自动回滚到346035f78，服务正常；因此本修复尚未在线生效，未验证真实用户更新。既有generation8/ack7、1条missing_receipt未决Run需真人管理员审核，禁止自动ack、重放或重发。Web仅准备READY，OTA仅validate成功，均未发布。发布失败与回滚证据已附统一release receipt，保留历史原证据。

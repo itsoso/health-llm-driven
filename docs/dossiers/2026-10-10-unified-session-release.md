@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | 新批整合并纳入本人病程恢复修复，G4 GO；等待最终SHA完整CI与发布，旧阻断原样保留 |
+| 状态 | blocked |
+| 当前阶段 | 最终637520e25完整CI全绿；后端被既有Runtime熔断硬闸拒绝并回滚，G5/G6 BLOCK；Web/OTA未发布 |
 
 ## G1 范围准入
 
@@ -74,3 +74,23 @@ OTA publish 37977844821 取得原 vendor receipt 后在核验命令阶段失败�
 CI38028857846汇总completed/success，但backend-quality job114145419234及REST/check-run/GraphQL仍in_progress、conclusion和completed_at为空，尽管所有step含Complete job均success。独立lifenav_readiness裁决G5 BLOCK：步骤、workflow汇总及本地测试均不能替代该作业最终可信回执。完整full发布器只看汇总的形式通过不消除已知冲突；未轮换、未部署、未触发本批OTA，不换SHA、不重跑来绕过。等原job/check可信终态收敛后再复核。当前生产346035f78成功终态、clean、四服务active、无业务lease已回读。本地验收文档不提交推进main；详细证据追加于原统一发布receipt latest_attempt，原历史回执保留。
 
 原fa470作业终态于后续可信REST回读已恢复completed/success，completed_at=2026-10-10T05:53:04Z；此前缺失终态及传输EOF原记录保留，未重跑或换SHA绕过。用户随后截图触发新的本人病程恢复修复，8338aa6d1固定runtime独立G4 GO、6331相邻+878分类器+46PG与36完整Pi集成通过。仅新增四个干净backend文件、独立回归和Dossier；混合executor/今日计划等继续排除。新候选需自己的完整CI、部署和原渠道OTA，未发布前不确认线上修复。
+
+## 637520e25 最终候选与原样保留的发布失败
+
+G4 GO，G5 CI准入 GO：本人病程恢复修复已纳入候选，真实Pi链路测试使用合成provider；36新测试、6331相邻回归、46 PostgreSQL测试通过。本地CI-mode 2844 passed、20 skipped、84 subtests；精确CI38030652894全部31 jobs completed/success，独立核验确认main与候选一致。
+
+授权轮换成功并保留原346成功回执和锁inode。Web同主机制品a49b9258db5b42ef92bb519dcc4c65c4已READY，绑定完整树21087a159231ee621661816cc4e6afa3bada58c6和artifact_digest ea739cbea7539622466647c7a16c1148a183d469d84a2babee4fee9893ef7d0f；只准备，未消费或切换。Trusted OTA validate38031168634成功，未dispatch publish。
+
+G5/G6 BLOCK：backend38031474956失败，固定637终态NEEDS_OPERATOR。健康评分60/60但独立硬闸agent_runtime_circuit=paused:reconciliation_detected:generation8:ack7。只读控制面显示1条missing_receipt未决Run（12:24开始、12:33 reconciliation，早于发布），uncertain_operations=0不证明无副作用。自动回滚后生产clean346035f78，四服务active、lease不存在，内外健康200。Web publication与637 OTA目录均不存在。
+
+独立评审要求真人管理员先审核原未决Run的证据与实际效果；resume只ack精确代际，不结算未知结果，不能为通过发布闸自动执行。保持暂停，不重放写入、不重发失败SHA、不发布Web/OTA、不撤除恢复身份、不修改原NEEDS_OPERATOR或旧失败记录。具体回执见统一release receipt latest_attempt；该证据更新只留工作树，不推进已验证候选。
+
+## 用户再次授权的全 session 清点与本地整合
+
+2026-10-10 用户明确授权所有 session 修复代码合入 main 并发布。已逐项核对工作树、分支和现有 session，不合并历史未审临床 PR，不覆盖其他 session 的证据或私密验收截图。Workout 三个原提交 2ab5bd9e9/ef53e17e8/e2e75519a 合为本地主干 2be02053b/d699c3a61/8b4d033bc；缓存归属分支运行逻辑已存在，局部重复定义在 cacd20c31 去除，相对637不改变缓存行为。语音6bc52c309及e3af70ea6与main当前修复重叠，冲突核对保留更新后的清理/短句/异常测试，未重复提交运行代码；四套72tests passed。Workout测试修正完整Garmin成功返回契约，缓存与Workout组合67tests passed。独立固定cacd20c31 G4 GO，仅覆盖Workout整合。
+
+其余本地今日计划、图片补剂失败提示与锁屏模拟器工具继续纳入统一候选；不是声称图片识别完整修复。外部Agent grant仍仅提案，未新增授权。锁屏工具19本地tests通过，当前Mac实际unlocked，不能声称实际锁屏验收通过。微信桥接分支eeaa3a8bc仍在原session开发；其新Linux隔离/独立固定审查及跨family审核未通过，保持draft/未部署，不使用旧commit的GO代替。
+
+原生产missing_receipt Run的只读补充证据：user sealed计划1项，health_record状态rejected、0回执；assistant有1条verified/create回执。闭集资源核验显示资源存在、归属匹配、assistant会话绑定和回执时间在attempt窗口，但持久化资源operation identity不匹配。仅输出布尔与计数，未读取正文/原始健康值。不能推断NO_EFFECT，也不能据此确认该Run完全成功；既有无Operation的Run无安全结算入口，仍需真人审核，不直接改DB、不补造Operation、不自动resume。
+
+部署/OTA阻断原样保留：637失败终态NEEDS_OPERATOR、原自动回滚及所有失败历史不变，真实模型G3缺授权凭据。最新固定候选还需全量CI-mode、精确main完整CI、独立G4/G5以及失败生命周期闭合。未推送本轮本地整合，不执行第二次637发布，不用新SHA逃避原状态。

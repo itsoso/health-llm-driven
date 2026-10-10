@@ -86,3 +86,15 @@ backend 请求 38012631907 只在无生产凭据 preflight 失败，固定错误
 可信 workflow 增加无凭证、无发送的固定 TCP/SSH banner 前检与 `target=transport`，五秒预算内失败；成功仅证明路由响应，不代替 host identity/auth/readiness。Pi 安装增加独立阶段耗时，保留真实非零退出码。现有 OTA 单次 export、环境摘要复用、依赖锁复用和 timing-balanced CI 保留；Pi 缓存及跨 runner 工具复用需生产计时和来源协议，未冒充已实现。
 
 G3 增量证据：封存/独立 operator 新增 61 项通过（含归档规模 0/4/12 时 hot 内容校验恒为两项）；相关既有回归 385 项通过；transport 相关 211 项通过、6 项原 Linux 专用测试在 macOS 跳过；Pi timing/deploy 186 项通过。完整 CI-mode release-invariants、固定提交安全审查、精确远端 CI、真实 transport、生产封存迁移、部署及 OTA 仍按顺序执行，未据这些局部结果宣称上线。
+
+## 优化候选上线与 OTA 阻断回执（2026-10-10）
+
+固定候选 `346035f78b362804df06e1524099f87294286ef6` 已 commit/push；独立 G4 GO。新鲜冻结候选 CI-mode release-invariants 为 2792 passed、20 skipped、84 subtests passed，真实 exit 0；精确 GitHub CI `38018784603` 30/30 success。transport `38019324984` 与 OTA 只读准入 `38019329765` success，transport banner 0.53 秒只证明线路响应。
+
+生产历史首次全量封存 generation 1，3 条归档保留；授权已轮换为该 SHA。首次遗漏旧授权撤销的前置 BLOCK 保留，尚未 intent/claim；按原撤权及原锁流程修正后完成安装。只读诊断产生的唯一 CPython 3.10 bytecode 被连同 inode/hash 证据移出 canonical source，未删除备份/审计，后续隔离 Python 3.12 禁写 bytecode。初次全量封存 258.28 秒是迁移成本。相同历史集合下 frontend-history 首次逻辑读取 rchar 从 2,727,370,325 降至 685,092,350 字节（减少 74.88%），仅为该校验阶段，不作为全流程 I/O、缓存受控耗时或未来 SLA 的证明。
+
+后端 trusted run `38020468119` completed/success。生产 `completed.json` SUCCEEDED、实际 clean HEAD 均精确等于本候选；health-backend、celery-worker、celery-beat、health-frontend 全 active，内公网 health HTTP 200。生产 deployment.log finalized 346 秒，实际 Pi installer 123→129 秒，保留每阶段时间用于下一轮基线。
+
+OTA 仅派发一次 `38020977702`，completed/failure。source/CI 与 readonly context 通过后，独立 privileged gate 输出闭集 `GitHub metadata unavailable`，在 publisher 调用前 exit 1；没有合法 publisher audit artifact。最终生产只读核实该 SHA OTA operation 与活动 business lease 均不存在，未调用 vendor update。没有原 claim/group/update receipt 可 recover，不重发失败批次、不换 SHA 绕过。G5 后端通过、OTA BLOCK；G6 优化/后端在线读取有证据，候选 Mobile UI 和真实 Mac 锁屏仍未验证，不宣称全部发布完成。
+
+原始本地日志与闭集生产最终读取汇总见 `docs/reviews/2026-10-10-release-optimization-receipt.json`。最终现场回执留工作区，不推送新 docs-only SHA 改变已上线候选。下一步须在受审批次中处理 GitHub 元数据读取的暂态失败，并重新固定完整候选走原 Gate；不得对本失败批次执行第二次发布。
