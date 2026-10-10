@@ -90,8 +90,13 @@ work. Final completion requires real closed-Mac/restart receipt and user-owned h
 Parent authorized continued independent local lifecycle preparation while external
 review permission is pending. The specific secret-entry surface is an unresolved
 G2 branch: reviewed owner-operated SSH hidden-input UI versus an existing browser
-secret manager. A choice has been requested; actual provisioning/activation writers
-remain stopped until resolved. No re-request or retry of Claude export occurred.
+secret manager. A choice has been requested; selecting and connecting an owner-input
+adapter remains stopped until resolved. The earlier decision to defer all lifecycle
+implementation was our sequencing choice, not a governance prohibition. Local
+transport-independent transactions, injected-host activation/stop logic and
+synthetic interruption tests may proceed under the existing scope. Production
+dispatch still needs reviewed provenance, history/lease gates and fixed-code G4.
+No re-request or retry of Claude export occurred.
 
 Independent work: offline provisioning validation/hashing with synthetic inputs;
 ephemeral Linux systemd containment probe and portable contracts; pure lifecycle
@@ -118,3 +123,12 @@ readback rejects drop-ins and leaves both units inactive; production activation
 and recovery remain unimplemented. CI-mode backend/bridge rerun passed 171 tests
 with one environment-specific skip. A new fixed review and actual Linux CI must
 cover these corrected bytes before any further gate claim.
+
+Continuation at `eeaa3a8bc`: native systemd 249.11 job `114163305601` passed in
+CI `38034927895`, with protected and positive-control runs. Full CI nevertheless
+failed in Ubuntu 24.04 job `114163336534` at the credential private-mode assertion;
+later release checks did not run. A mode-bit-only test cannot distinguish a POSIX
+ACL mask from actual owning-group access. The correction must verify the exact
+credential file/directory ACL or private-owner form and read-only access, never
+merely allow broader mode bits. This is a probe correction, not a sandbox policy
+change. Production identity, proxy/egress and live acceptance remain unverified.

@@ -163,8 +163,13 @@ exact bridge nginx include/proxy group/reload may change; deactivation/removal
 preserves encrypted data, keys and audit by default; no account/group purge is
 authorized; recovery reconciles the original operation and never reinstalls,
 redownloads, changes operation ID or recreates a lost lease. The old dormant
-receipt remains immutable. Lifecycle writers and history-reader rollout remain
-unimplemented pending the G2 surface decision and fixed-code review.
+receipt remains immutable. Local transport-independent provisioning transactions,
+injected-host activation/stop implementations and conservative recovery readback
+can be prepared and tested before the input-surface decision. This does not permit
+production execution or choose an owner-input adapter. The actual input adapter
+awaits the owner choice; all lifecycle dispatch and history-reader rollout still
+require exact fixed-code review and existing release gates. No general cleanup of
+partially installed objects or recreation of missing leases is authorized.
 
 `neo_wechat_linux_probe.py` adds an ephemeral-runner-only synthetic systemd test
 using retained directives from the real unit template. It exercises effective

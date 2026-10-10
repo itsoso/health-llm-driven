@@ -435,3 +435,150 @@ def test_unit_diagnostics_preserve_original_and_query_socket_too(monkeypatch, jo
     message = probe.unit_failure_diagnostics(RuntimeError('original start failure'), 'probe.service', 'probe.socket')
     assert 'original start failure' in message
     assert ('journal unavailable' if journal_fails else 'synthetic socket detail') in message
+
+
+def credential_stat(mode=0o440, uid=0):
+    return probe.os.stat_result((probe.stat.S_IFREG | mode, 0, 0, 1, uid, 0, 0, 0, 0, 0))
+
+
+def credential_acl(uid=65534):
+    import struct
+    entries = [(1, 4, 0xffffffff), (2, 4, uid), (4, 0, 0xffffffff),
+               (16, 4, 0xffffffff), (32, 0, 0xffffffff)]
+    return struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *entry) for entry in entries)
+
+
+def test_credential_acl_mask_is_not_owning_group_access():
+    report = probe.validate_credential_metadata(credential_stat(), credential_acl(), 65534)
+    assert report['access_model'] == 'root_owner_service_uid_read_acl'
+    assert report['mode'] == '0440' and report['uid'] == 0
+
+
+def test_credential_legacy_service_owned_mode_requires_no_acl():
+    report = probe.validate_credential_metadata(credential_stat(0o400, 65534), None, 65534)
+    assert report['access_model'] == 'service_owner_read_only'
+
+
+@pytest.mark.parametrize('mode,owner,acl', [
+    (0o440, 0, None), (0o444, 0, credential_acl()),
+    (0o640, 0, credential_acl()), (0o450, 0, credential_acl()),
+    (0o440, 123, credential_acl()), (0o440, 65534, credential_acl()),
+    (0o400, 0, None), (0o400, 123, None),
+    (0o440, 0, credential_acl(123)), (0o440, 0, b''),
+    (0o440, 0, b'\x03' + credential_acl()[1:]),
+    (0o440, 0, credential_acl()[:-1]),
+])
+def test_credential_metadata_rejects_unreviewed_access(mode, owner, acl):
+    with pytest.raises(AssertionError, match='credential'):
+        probe.validate_credential_metadata(credential_stat(mode, owner), acl, 65534)
+
+
+@pytest.mark.parametrize('entry,permission', [(0, 6), (1, 6), (2, 4), (3, 6), (4, 4)])
+def test_credential_acl_rejects_write_group_other_or_broad_mask(entry, permission):
+    import struct
+    acl = bytearray(credential_acl())
+    struct.pack_into('<H', acl, 4 + 8 * entry + 2, permission)
+    with pytest.raises(AssertionError, match='credential'):
+        probe.validate_credential_metadata(credential_stat(), bytes(acl), 65534)
+
+
+def test_credential_acl_rejects_extra_named_identity_and_duplicates():
+    import struct
+    for tag in (2, 8):
+        acl = credential_acl() + struct.pack('<HHI', tag, 4, 123)
+        with pytest.raises(AssertionError, match='credential'):
+            probe.validate_credential_metadata(credential_stat(), acl, 65534)
+
+
+def test_credential_symlink_is_not_regular_file():
+    info = probe.os.stat_result((probe.stat.S_IFLNK | 0o400, 0, 0, 1, 65534, 0, 0, 0, 0, 0))
+    with pytest.raises(AssertionError, match='credential'):
+        probe.validate_credential_metadata(info, None, 65534)
+
+
+def directory_metadata(acl=True):
+    import struct
+    info = probe.os.stat_result((probe.stat.S_IFDIR | (0o550 if acl else 0o500),
+                                 0, 0, 1, 0 if acl else 65534, 0, 0, 0, 0, 0))
+    encoded = bytearray(credential_acl()) if acl else None
+    if acl:
+        for index in (0, 1, 3):
+            struct.pack_into('<H', encoded, 4 + 8 * index + 2, 5)
+        encoded = bytes(encoded)
+    return info, encoded
+
+
+@pytest.mark.parametrize('acl', [False, True])
+def test_credential_directory_allows_only_service_and_root_traversal(acl):
+    info, encoded = directory_metadata(acl)
+    report = probe.validate_credential_metadata(info, encoded, 65534, directory=True)
+    assert report['mode'] == ('0550' if acl else '0500')
+
+
+@pytest.mark.parametrize('default', [b'', credential_acl()])
+def test_credential_directory_rejects_any_default_acl(default):
+    info, encoded = directory_metadata()
+    with pytest.raises(AssertionError, match='default ACL'):
+        probe.validate_credential_metadata(info, encoded, 65534, directory=True, default_acl=default)
+
+
+@pytest.mark.parametrize('index', [1, 2, 4])
+def test_credential_directory_rejects_wrong_traversal_grants(index):
+    import struct
+    info, encoded = directory_metadata()
+    encoded = bytearray(encoded)
+    struct.pack_into('<H', encoded, 4 + 8 * index + 2, 4 if index == 1 else 5)
+    with pytest.raises(AssertionError, match='credential ACL'):
+        probe.validate_credential_metadata(info, bytes(encoded), 65534, directory=True)
+
+
+@pytest.mark.parametrize('error', [errno.ENODATA, errno.EOPNOTSUPP, errno.EACCES, errno.EIO])
+def test_credential_xattr_absence_is_distinct_from_read_failure(monkeypatch, error):
+    def fail(*args):
+        raise OSError(error, 'synthetic')
+    monkeypatch.setattr(probe.os, 'getxattr', fail, raising=False)
+    if error in (errno.ENODATA, errno.EOPNOTSUPP):
+        assert probe.credential_xattr(99, 'system.posix_acl_access') is None
+    else:
+        with pytest.raises(OSError):
+            probe.credential_xattr(99, 'system.posix_acl_access')
+
+
+@pytest.mark.parametrize('readonly', [False, True])
+def test_credential_owned_fallback_requires_effective_readonly_mount(monkeypatch, readonly):
+    from types import SimpleNamespace
+    monkeypatch.setattr(probe.os, 'fstat', lambda fd: credential_stat(0o400, 65534))
+    monkeypatch.setattr(probe, 'credential_xattr', lambda *a: None)
+    monkeypatch.setattr(probe.os, 'fstatvfs', lambda fd: SimpleNamespace(f_flag=probe.os.ST_RDONLY if readonly else 0))
+    if readonly:
+        assert probe.credential_fd_metadata(99, 65534)['mount_read_only'] is True
+    else:
+        with pytest.raises(AssertionError, match='mount must be read-only'):
+            probe.credential_fd_metadata(99, 65534)
+
+
+@pytest.mark.parametrize('write_error', [None, errno.EACCES, errno.EROFS, errno.EIO])
+def test_credential_runtime_read_write_and_nofollow_controls(monkeypatch, write_error):
+    closed = []
+    def fake_open(path, flags, **kwargs):
+        assert flags & probe.os.O_NOFOLLOW and flags & probe.os.O_CLOEXEC
+        if path == '/synthetic':
+            assert flags & probe.os.O_DIRECTORY
+            return 90
+        assert path == 'encryption_key' and kwargs == {'dir_fd': 90}
+        if flags & probe.os.O_WRONLY:
+            if write_error is not None:
+                raise OSError(write_error, 'synthetic')
+            return 92
+        return 91
+    monkeypatch.setattr(probe.os, 'open', fake_open)
+    monkeypatch.setattr(probe.os, 'close', closed.append)
+    monkeypatch.setattr(probe.os, 'read', lambda fd, count: probe.SYNTHETIC.encode())
+    monkeypatch.setattr(probe, 'credential_fd_metadata', lambda *a, **k: {'numeric_fixture': 1})
+    if write_error in (errno.EACCES, errno.EROFS):
+        result = probe.probe_credentials('/synthetic', ['encryption_key'], 65534)
+        assert result['files'][0]['write_open_errno'] == write_error
+    else:
+        with pytest.raises(AssertionError, match='credential write'):
+            probe.probe_credentials('/synthetic', ['encryption_key'], 65534)
+    assert closed == ([91, 92, 90] if write_error is None else [91, 90])

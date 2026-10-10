@@ -30,6 +30,7 @@ import resource
 import shutil
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import uuid
@@ -267,6 +268,82 @@ def validate_cgroup(values):
     assert int(parts[0]) * 4 == int(parts[1]), "CPU cgroup quota"
 
 
+def validate_credential_metadata(info, acl, uid, *, directory=False, default_acl=None):
+    """Validate both upstream credential permission representations, not just mode.
+
+    systemd v255 src/core/exec-credential.c:176-191,663-678 (also v249
+    execute.c:2307-2322,2423-2437): root-owned named UID ACL, or chown fallback.
+    Linux posix_acl_xattr.h: v2 header and little-endian tag/permission/id entries.
+    With an ACL, st_mode's group bits are the MASK, not owning-group access.
+    """
+    mode = stat.S_IMODE(info.st_mode)
+    assert (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)), "credential object type"
+    assert default_acl is None, "credential default ACL forbidden"
+    permission = 5 if directory else 4
+    entries = []
+    if acl is None:
+        assert info.st_uid == uid and mode == permission << 6, "credential private owner mode"
+        model = "service_owner_read_only"
+    else:
+        assert len(acl) == 44 and struct.unpack_from('<I', acl)[0] == 2, "credential ACL format"
+        entries = list(struct.iter_unpack('<HHI', acl[4:]))
+        undefined = 0xffffffff
+        expected = [(1, permission, undefined), (2, permission, uid), (4, 0, undefined),
+                    (16, permission, undefined), (32, 0, undefined)]
+        assert entries == expected, "credential ACL grants unexpected access"
+        assert info.st_uid == 0 and mode == (permission << 6 | permission << 3), "credential ACL owner/mask mode"
+        model = "root_owner_service_uid_read_acl"
+    return {"mode": format(mode, '04o'), "uid": info.st_uid, "gid": info.st_gid,
+            "acl": entries, "access_model": model}
+
+
+def credential_xattr(fd, name):
+    try:
+        return os.getxattr(fd, name)
+    except OSError as error:
+        # ramfs may not support ACLs; other failures are evidence failures.
+        if error.errno in (errno.ENODATA, errno.EOPNOTSUPP):
+            return None
+        raise
+
+
+def credential_fd_metadata(fd, uid, *, directory=False):
+    report = validate_credential_metadata(os.fstat(fd), credential_xattr(fd, 'system.posix_acl_access'), uid,
+                                         directory=directory,
+                                         default_acl=credential_xattr(fd, 'system.posix_acl_default'))
+    # Chown fallback is secure only on the read-only mount: the owner must not
+    # regain writes via chmod. Check the actual mount in this worker namespace.
+    assert os.fstatvfs(fd).f_flag & os.ST_RDONLY, "credential mount must be read-only"
+    report['mount_read_only'] = True
+    return report
+
+
+def probe_credentials(directory, names, uid):
+    dfd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        report = {"directory": credential_fd_metadata(dfd, uid, directory=True), "files": []}
+        for name in names:
+            assert name in CREDENTIALS, "unexpected credential name"
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dfd)
+            try:
+                metadata = credential_fd_metadata(fd, uid)
+                assert os.read(fd, len(SYNTHETIC.encode()) + 1) == SYNTHETIC.encode(), "credential copied"
+            finally:
+                os.close(fd)
+            try:
+                writable = os.open(name, os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dfd)
+            except OSError as error:
+                assert error.errno in (errno.EACCES, errno.EPERM, errno.EROFS), "credential write denial"
+                metadata['write_open_errno'] = error.errno
+            else:
+                os.close(writable)
+                raise AssertionError("credential write-open permitted")
+            report['files'].append(metadata)
+        return report
+    finally:
+        os.close(dfd)
+
+
 def worker(plan_path):
     """Executed by systemd as an unprivileged UID in the real sandbox."""
     plan = json.loads(Path(plan_path).read_text())
@@ -300,11 +377,7 @@ def worker(plan_path):
             assert not plan["control"] and error.errno in (errno.EACCES, errno.EPERM), "hidden path control"
         else:
             assert plan["control"] and contents == SYNTHETIC, "sensitive fixture exposed"
-    creds = Path(os.environ["CREDENTIALS_DIRECTORY"])
-    for name in plan["credentials"]:
-        path = creds / name
-        assert path.read_text() == SYNTHETIC, "credential copied"
-        assert stat.S_IMODE(path.stat().st_mode) & 0o077 == 0, "credential private mode"
+    credential_report = probe_credentials(os.environ["CREDENTIALS_DIRECTORY"], plan["credentials"], plan["uid"])
     with listener:
         listener.settimeout(10)
         with listener.accept()[0] as accepted:
@@ -323,7 +396,8 @@ def worker(plan_path):
     output = {"status": "PASS", "control": plan["control"], "hidden_fixtures": len(plan["hidden_files"]),
               "unix_socket": "inherited FD PASS", "ip_syscalls": ip_attempts,
               "io_uring_syscalls": io_attempts,
-              "credential_copies": "PASS", "cgroup": limits, "privilege_limits": "PASS"}
+              "credential_copies": "PASS", "credential_metadata": credential_report,
+              "cgroup": limits, "privilege_limits": "PASS"}
     (Path(plan["state"]) / "report.json").write_text(json.dumps(output))
 
 
