@@ -167,9 +167,13 @@ def test_application_units_hide_staking_data_and_bound_resources():
 
 def load(name):
     import importlib.util
+    import sys
     path = ROOT / 'scripts' / f'{name}.py'
     spec = importlib.util.spec_from_file_location('tested_' + name, path)
     result = importlib.util.module_from_spec(spec)
+    # Match Python's import protocol, including helpers that consult their own
+    # module object. Do not rely on a stale __pycache__ masking this branch.
+    sys.modules[spec.name] = result
     spec.loader.exec_module(result)
     return result
 

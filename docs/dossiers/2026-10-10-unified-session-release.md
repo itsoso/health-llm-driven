@@ -94,3 +94,11 @@ G5/G6 BLOCK：backend38031474956失败，固定637终态NEEDS_OPERATOR。健康�
 原生产missing_receipt Run的只读补充证据：user sealed计划1项，health_record状态rejected、0回执；assistant有1条verified/create回执。闭集资源核验显示资源存在、归属匹配、assistant会话绑定和回执时间在attempt窗口，但持久化资源operation identity不匹配。仅输出布尔与计数，未读取正文/原始健康值。不能推断NO_EFFECT，也不能据此确认该Run完全成功；既有无Operation的Run无安全结算入口，仍需真人审核，不直接改DB、不补造Operation、不自动resume。
 
 部署/OTA阻断原样保留：637失败终态NEEDS_OPERATOR、原自动回滚及所有失败历史不变，真实模型G3缺授权凭据。最新固定候选还需全量CI-mode、精确main完整CI、独立G4/G5以及失败生命周期闭合。未推送本轮本地整合，不执行第二次637发布，不用新SHA逃避原状态。
+
+## f343 本地固定验证与加载器修正
+
+独立固定 f343706ca G4 GO，限源码而非 G3/G5/G6。整合后 PostgreSQL 129 passed，测试库正常停止；语音72、缓存/Workout67通过。System Map、202份Dossier和新增文件秘密扫描均通过。真实 simctl+xctest 系统设置启动/点击/滑动/截图 exit0，目录0700、回执0600；实际锁前后均unlocked，源码SHA为空且Reva业务验收unverified，不能替代锁屏或候选功能验收。
+
+固定副本以PYTHONDONTWRITEBYTECODE=1运行原CI-mode release-invariants，545 passed后1 failed（404.96s）。原失败在test_public_host_boundaries的动态测试load未注册sys.modules，导致无缓存时_host_hardening_evidence的失败归档分支KeyError；旧字节缓存使该分支提前BootstrapError掩盖加载器问题。只修测试loader按Python正常import协议先注册module，再exec；不修改生产bootstrap、安全校验或失败终态。相关192tests passed，但原CI-mode失败仍保留，修正候选需无缓存固定副本完整重验。
+
+微信桥接精确eeaa CI38034927895已终态failure；systemd249通过，但release-invariants的另一合成unit因credential private mode断言失败。原owner仍开发中，禁止合入红CI或使用此前draft GO。
