@@ -11,6 +11,7 @@ from urllib.parse import urlencode, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
+from .oauth import audit
 
 
 class HealthError(ValueError):
@@ -32,6 +33,7 @@ class HealthTransport:
             limits=httpx.Limits(max_connections=2, max_keepalive_connections=1))
 
     def request(self, url, *, form=None, body=None, token=None):
+        started = time.monotonic()
         headers = {'Accept': 'application/json, text/event-stream'}
         if form is not None:
             headers['Content-Type'] = 'application/x-www-form-urlencoded'
@@ -48,6 +50,8 @@ class HealthTransport:
                     raise HealthError('health_unavailable')
                 raw = bytearray()
                 for part in response.iter_bytes():
+                    if time.monotonic() - started > 10:
+                        raise HealthError('health_deadline')
                     raw.extend(part)
                     if len(raw) > 131072:
                         raise HealthError('health_response_too_large')
@@ -97,6 +101,7 @@ class HealthClient:
             with self.store.transaction() as snapshot:
                 snapshot['health'] = {**self._binding(), 'status': 'pending', 'state': state,
                     'verifier': verifier, 'expires': int(self.clock()) + 300}
+                audit(snapshot, 'health_consent_started', self.clock())
             return self.issuer + '/authorize?' + urlencode({'client_id': self.client_id,
                 'response_type': 'code', 'redirect_uri': self.callback, 'resource': self.resource,
                 'scope': 'health:read', 'state': state, 'code_challenge_method': 'S256',
@@ -121,6 +126,7 @@ class HealthClient:
             snapshot['health'] = {**self._binding(), 'status': 'connected',
                 'access_token': response['access_token'], 'refresh_token': response['refresh_token'],
                 'expires': int(self.clock()) + response['expires_in']}
+            audit(snapshot, 'health_tokens_saved', self.clock())
 
     def complete(self, state, code, issuer):
         with self.store.lock:
@@ -135,6 +141,7 @@ class HealthClient:
             # precedes launch; a crash or malformed response requires fresh consent.
             with self.store.transaction() as snapshot:
                 snapshot['health'] = {**self._binding(), 'status': 'relink_required'}
+                audit(snapshot, 'health_code_exchange_reserved', self.clock())
             response = self._request(self.issuer + '/token', form={'grant_type': 'authorization_code',
                 'client_id': self.client_id, 'code': code, 'code_verifier': pending['verifier'],
                 'redirect_uri': self.callback, 'resource': self.resource})
@@ -149,6 +156,7 @@ class HealthClient:
         with self.store.transaction() as snapshot:
             snapshot['health'] = {**self._binding(), 'status': 'relink_required',
                                   'refresh_token': current['refresh_token']}
+            audit(snapshot, 'health_refresh_reserved', self.clock())
         response = self._request(self.issuer + '/token', form={'grant_type': 'refresh_token',
             'client_id': self.client_id, 'refresh_token': current['refresh_token'],
             'resource': self.resource, 'scope': 'health:read'})
@@ -170,12 +178,16 @@ class HealthClient:
         except (ValueError, ZoneInfoNotFoundError):
             raise HealthError('health_query_invalid') from None
         with self.store.lock:
+            with self.store.transaction() as snapshot:
+                audit(snapshot, 'health_read_requested', self.clock())
             result = self._request(self.resource, token=self._access(), body={'jsonrpc': '2.0',
                 'id': 1, 'method': 'tools/call', 'params': {'name': tool, 'arguments': dict(args)}})
             if (not isinstance(result, dict) or result.get('jsonrpc') != '2.0'
                     or type(result.get('id')) is not int or result['id'] != 1 or 'error' in result
                     or not isinstance(result.get('result'), dict) or result['result'].get('isError')):
                 raise HealthError('health_query_unavailable')
+            with self.store.transaction() as snapshot:
+                audit(snapshot, 'health_read_completed', self.clock())
             return result['result']
 
     def revoke(self):
@@ -183,6 +195,7 @@ class HealthClient:
             current = self._state()
             with self.store.transaction() as snapshot:
                 snapshot['health'] = {'status': 'disconnected'}
+                audit(snapshot, 'health_connection_revoked', self.clock())
             token = current.get('refresh_token')
             if token:
                 self._request(self.issuer + '/revoke', form={'client_id': self.client_id, 'token': token})

@@ -701,7 +701,7 @@ def _assert_known_activity(history, old_sha=None):
 
 
 def assert_frontend_rebuild_history(*, backup_memo=None):
-    if not any(os.path.lexists(STATE / name) for name in ("frontend-rebuilds", "frontend-publications")):
+    if not any(os.path.lexists(STATE / name) for name in ("frontend-rebuilds", "frontend-publications", "neo-wechat")):
         return
     path = Path(__file__).with_name("trusted_release_server.py")
     secure(path)

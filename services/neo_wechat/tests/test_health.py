@@ -161,6 +161,27 @@ def test_local_revoke_survives_upstream_uncertainty(linked):
     assert len(transport.calls) == 2
 
 
+def test_health_audit_records_authority_and_reads_without_content(linked):
+    client, transport, _ = linked
+    connect(client)
+    transport.response = {'jsonrpc': '2.0', 'id': 1, 'result': {
+        'structuredContent': {'records': [{'private_health_value': 123}]}}}
+    client.query('get_sleep', {'start_date': '2026-01-01',
+        'end_date': '2026-01-02', 'timezone': 'UTC'})
+    client.revoke()
+    entries = client.store.read()['audit']
+    assert [entry['event'] for entry in entries] == [
+        'health_consent_started', 'health_code_exchange_reserved',
+        'health_tokens_saved', 'health_read_requested', 'health_read_completed',
+        'health_connection_revoked']
+    assert all(set(entry) == {'event', 'at'} for entry in entries)
+    assert all(entry['at'] == 10000 for entry in entries)
+    serialized = str(entries)
+    assert 'private_health_value' not in serialized
+    assert '2026-01-01' not in serialized
+    assert 'a' * 43 not in serialized and 'r' * 43 not in serialized
+
+
 @pytest.mark.parametrize('response', [
     {'access_token': 'a' * 43, 'refresh_token': 'r' * 43, 'scope': 'health:write', 'expires_in': 600, 'token_type': 'Bearer'},
     {'access_token': 'a' * 43, 'refresh_token': 'r' * 43, 'scope': 'health:read', 'expires_in': 3650 * 86400, 'token_type': 'Bearer'},

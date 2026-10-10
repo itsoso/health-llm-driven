@@ -97,6 +97,7 @@ def test_pkce_browser_consent_to_authenticated_mcp_and_revocation(environment):
     request = parse_qs(urlsplit(authorize.headers['location']).query)['request'][0]
     preview = client.get(authorize.headers['location'], headers=admin)
     assert '3650' in preview.text
+    assert "form-action 'self' https://client.example" in preview.headers['content-security-policy']
     token = re.search(r'name="csrf" value="([^"]+)"', preview.text)[1]
     approved = client.post('/neo-wechat/admin/consent', headers={**admin, 'Origin': service.config.origin},
         data={'request': request, 'approved': 'yes', 'csrf': token}, follow_redirects=False)

@@ -27,6 +27,26 @@ def load_bootstrap():
     return module
 
 
+def test_bridge_only_history_is_checked_before_rotation_after_reboot(monkeypatch, tmp_path):
+    bootstrap = load_bootstrap()
+    (tmp_path / "neo-wechat").mkdir()
+    monkeypatch.setattr(bootstrap, "STATE", tmp_path)
+    monkeypatch.setattr(bootstrap, "secure", lambda *_a, **_k: None)
+    calls = []
+    def check(state, **kwargs):
+        calls.append(state)
+        raise bootstrap.BootstrapError("unfinished bridge history")
+    server = SimpleNamespace(assert_frontend_rebuild_history=check)
+    fake_spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda _: None))
+    monkeypatch.setattr(bootstrap, "importlib", SimpleNamespace(util=SimpleNamespace(
+        spec_from_file_location=lambda *_: fake_spec,
+        module_from_spec=lambda _: server,
+    )))
+    with pytest.raises(bootstrap.BootstrapError, match="unfinished bridge"):
+        bootstrap.assert_frontend_rebuild_history()
+    assert calls == [tmp_path]
+
+
 @pytest.mark.parametrize("sha,expiry,public", [
     ("main", 200, PUBLIC), (SHA, 100, PUBLIC), (SHA, -1, PUBLIC),
     (SHA, None, PUBLIC), (SHA, 0.0, PUBLIC),

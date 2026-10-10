@@ -108,3 +108,28 @@ def test_refresh_never_extends_grant_and_invalid_mac_cannot_revoke(auth):
     p.exchange(dict(grant_type='refresh_token', client_id='neo', resource=p.config.resource,
                     refresh_token=first['refresh_token']))
     assert [x['expires'] for x in original.values()] == [x['expires'] for x in p.store.read()['oauth']['grants'].values()]
+
+
+def test_revoked_grants_do_not_exhaust_ten_year_reconsent_capacity(auth):
+    p, _ = auth
+    for _ in range(25):
+        issued = tokens(auth)
+        p.revoke(issued['refresh_token'], 'neo')
+    request, _ = pending(auth)
+    assert p.preview(request)['grant_days'] == 3650
+    with pytest.raises(OAuthError): p.validate(issued['access_token'], 'wechat:inbox')
+
+
+def test_authorization_audit_is_bounded_and_contains_no_tokens(auth):
+    p, _ = auth
+    issued = tokens(auth)
+    p.revoke(issued['refresh_token'], 'neo')
+    events = p.store.read()['audit']
+    assert {'oauth_request_created', 'oauth_consent_approved', 'oauth_tokens_issued',
+            'oauth_grant_revoked'} <= {row['event'] for row in events}
+    assert all(set(row) == {'event', 'at'} for row in events)
+    assert not any(issued[key] in str(events) for key in ('access_token', 'refresh_token'))
+    from services.neo_wechat.oauth import audit
+    snapshot = {'audit': []}
+    for number in range(1100): audit(snapshot, 'synthetic_event', number)
+    assert len(snapshot['audit']) == 1000

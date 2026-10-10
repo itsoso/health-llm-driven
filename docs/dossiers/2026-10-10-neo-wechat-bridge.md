@@ -51,6 +51,8 @@ expansion, arbitrary RPC relay or identity inferred from incoming WeChat content
 
 - PRD: `docs/prd/2026-10-10-neo-wechat-bridge.md`
 - Plan: `docs/plans/2026-10-10-neo-wechat-bridge.md`
+- Feature spec: `docs/specs/active/2026-10-10-neo-wechat-bridge.md`
+- Review/evidence: `docs/reviews/2026-10-10-neo-wechat-bridge.md`
 - T1 encrypted bounded storage and inbox/outbox.
 - T2 independent OAuth and MCP/owner UI.
 - T3 separately consented owner-only Health adapter.
@@ -59,5 +61,17 @@ expansion, arbitrary RPC relay or identity inferred from incoming WeChat content
 
 ## G3 / G4 / G5 / G6
 
-Pending. No deployment, secret creation, QR request, grant or live signal has occurred.
-Final completion requires real closed-Mac/restart receipt and user-owned handoffs.
+G3: local service, PostgreSQL isolation, frontend, deployment, System Map and
+dependency checks passed (details in review record). Final combined verification
+and exact revision CI remain pending. Cross-family capstone was blocked by automatic
+approval review because its external private-code destination was not authorized.
+
+G4: first fixed application review of `4892c41b1e8cd19ec5262ff5dc91b518316fa6b0`
+was NO-GO: browser CSP callback, revoked-grant capacity and missing authorization/
+Health audit evidence. Corrections and regressions are implemented; fresh fixed
+combined review remains pending. No deployment is admitted by this status.
+
+G5/G6: pending. No deployment, secret creation, QR request, grant or live signal
+has occurred. Installer currently ends at dormant placement; approved secret-entry
+surface, reviewed activation/removal/recovery and Linux sandbox validation remain
+work. Final completion requires real closed-Mac/restart receipt and user-owned handoffs.

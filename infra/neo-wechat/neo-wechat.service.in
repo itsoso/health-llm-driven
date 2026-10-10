@@ -1,0 +1,68 @@
+# Candidate template. No [Install] section: this must not be enabled by packaging.
+# A separate reviewed transaction substitutes exactly one immutable revision.
+[Unit]
+Description=Owner-private Neo WeChat bridge
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+ConditionPathExists=/etc/neo-wechat/config.json
+ConditionPathExists=/etc/neo-wechat/encryption_key
+ConditionPathExists=/etc/neo-wechat/admin_password_hash
+ConditionPathExists=/etc/neo-wechat/slack_webhook
+
+[Service]
+Type=simple
+User=neo-wechat
+Group=neo-wechat
+SupplementaryGroups=neo-wechat-proxy
+WorkingDirectory=/var/lib/neo-wechat
+ExecStart=/opt/neo-wechat/releases/@REVISION@/venv/bin/python -I -B -m services.neo_wechat.server --config /etc/neo-wechat/config.json --socket /run/neo-wechat/bridge.sock
+LoadCredential=encryption_key:/etc/neo-wechat/encryption_key
+LoadCredential=admin_password_hash:/etc/neo-wechat/admin_password_hash
+LoadCredential=slack_webhook:/etc/neo-wechat/slack_webhook
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+RuntimeDirectory=neo-wechat
+RuntimeDirectoryMode=0755
+StateDirectory=neo-wechat
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/neo-wechat /run/neo-wechat
+ReadOnlyPaths=/etc/neo-wechat/config.json /opt/neo-wechat
+InaccessiblePaths=-/opt/health-app -/etc/health-app -/var/lib/health-app -/var/lib/reva-health-evidence-runtime -/var/backups -/var/log/health-app -/var/cache/health-app -/etc/reva-release -/var/lib/reva-release -/srv -/data -/mnt -/media -/etc/neo-wechat/encryption_key -/etc/neo-wechat/admin_password_hash -/etc/neo-wechat/slack_webhook
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SocketBindDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+MemoryMax=256M
+MemorySwapMax=0
+CPUQuota=25%
+TasksMax=32
+LimitNOFILE=256
+LimitCORE=0
+Restart=on-failure
+RestartSec=20
+TimeoutStopSec=30
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=neo-wechat

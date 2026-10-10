@@ -32,6 +32,7 @@ class Settings(BaseModel):
         for uri in (self.origin, self.redirect_uri):
             parsed = urlsplit(uri)
             if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
+                    or not re.fullmatch(r'[A-Za-z0-9.-]+', parsed.hostname)
                     or parsed.query or parsed.fragment or '*' in uri or any(ord(c) < 33 for c in uri)):
                 raise ValueError('exact_https_url_required')
         if urlsplit(self.origin).path or self.origin.endswith('/'):
@@ -67,6 +68,13 @@ def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def audit(state, event, now):
+    """Only constant event names, no caller data or secrets, in encrypted state."""
+    events = state.setdefault('audit', [])
+    events.append({'event': event, 'at': now})
+    state['audit'] = events[-1000:]
+
+
 class OAuth:
     def __init__(self, store, key, config, clock=time.time):
         if len(key) != 32 or store.owner != config.owner:
@@ -83,7 +91,8 @@ class OAuth:
     def _prune(self, data):
         now = self.clock()
         for name in ('pending', 'codes', 'grants'):
-            data[name] = {k: v for k, v in data[name].items() if v['expires'] > now}
+            data[name] = {k: v for k, v in data[name].items() if v['expires'] > now and not v.get('revoked')}
+        data['codes'] = {k: v for k, v in data['codes'].items() if v['grant_id'] in data['grants']}
         if any(len(data[name]) >= limit for name, limit in [('pending', 50), ('codes', 50), ('grants', 20)]):
             raise OAuthError('authorization_capacity')
 
@@ -104,6 +113,7 @@ class OAuth:
             data = self._data(state)
             self._prune(data)
             data['pending'][digest(raw)] = {**a.model_dump(), 'expires': self.clock() + 300}
+            audit(state, 'oauth_request_created', self.clock())
         return raw
 
     def preview(self, raw):
@@ -123,6 +133,7 @@ class OAuth:
                 raise OAuthError('request_expired')
             callback = {'state': request['state'], 'iss': self.config.issuer}
             if not approved:
+                audit(state, 'oauth_consent_denied', self.clock())
                 return {**callback, 'error': 'access_denied'}
             if len(data['grants']) >= 20:
                 raise OAuthError('authorization_capacity')
@@ -133,6 +144,7 @@ class OAuth:
             code = secrets.token_urlsafe(32)
             data['codes'][digest(code)] = {**request, 'grant_id': ident,
                 'expires': self.clock() + 60, 'used': False}
+            audit(state, 'oauth_consent_approved', self.clock())
             return {**callback, 'code': code}
 
     def _grant(self, data, ident):
@@ -215,6 +227,7 @@ class OAuth:
                     result = self._issue(data, ident)
             else:
                 raise OAuthError('unsupported_grant_type')
+            audit(state, 'oauth_replay_revoked' if error else 'oauth_tokens_issued', self.clock())
         if error:
             raise OAuthError(error)
         return result
@@ -241,6 +254,7 @@ class OAuth:
             grant = self._data(state)['grants'].get(ident)
             if grant:
                 grant['revoked'] = True
+                audit(state, 'oauth_grant_revoked', self.clock())
 
     def revoke_all(self, owner):
         if owner != self.config.owner:
@@ -251,3 +265,4 @@ class OAuth:
                 grant['revoked'] = True
             data['codes'].clear()
             data['pending'].clear()
+            audit(state, 'oauth_all_revoked', self.clock())

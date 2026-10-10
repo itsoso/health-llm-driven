@@ -21,7 +21,7 @@ RequirementAdmission:
   claim_hedging: missing data is unknown, overlapping sources are not additive
   verification_window: local synthetic tests before release approval
   success_metric: supported client retrieves only consenting user's requested bounded records
-  added_user_burden: one website login and explicit permission approval per 30-day grant
+  added_user_burden: one website login and explicit permission approval per grant (30-day default)
   non_goals: health writes, family proxy, diagnoses, arbitrary URL access, production activation
   smallest_end_to_end_slice: OAuth consent then sleep/diet/exercise tool call and revocation
   spec_required: yes
@@ -29,7 +29,7 @@ RequirementAdmission:
 
 ## User and surface contract
 
-The operator pre-registers an exact HTTPS callback and public client ID after approval. A compatible client discovers OAuth metadata, creates an S256 PKCE request, and opens `/connect/health`. Website owner authentication and an explicit allow/deny choice are mandatory. Approved grants last at most 30 days; access tokens last at most 10 minutes. `/connect/health` without a request lists active grants and revokes them.
+The operator pre-registers an exact HTTPS callback and public client ID after approval. A compatible client discovers OAuth metadata, creates an S256 PKCE request, and opens `/connect/health`. Website owner authentication and an explicit allow/deny choice are mandatory. Grants default to 30 days. The separately approved independent WeChat client may configure a new owner-pinned grant up to 3650 days; this does not change existing stored grant expiries. Access tokens last at most 10 minutes and newly issued rotating refresh tokens at most 30 days. The configured duration is shown before consent; policy changes invalidate stale pending requests. `/connect/health` without a request lists active grants and revokes them.
 
 Only the backend determines user identity. Family proxy, API Key, and first-party Bearer sessions cannot consent. The frontend binds the displayed account to approval and aborts stale account/request responses. Consent uses same-origin HttpOnly cookies and checks Origin on mutations. OAuth tokens are opaque and do not authenticate to the general REST API.
 

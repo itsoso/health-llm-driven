@@ -429,14 +429,17 @@ class Service:
 
     def app(self):
         service = self
+        callback = urlsplit(self.config.redirect_uri)
+        callback_origin = callback.scheme + '://' + callback.netloc
+        csp = ("default-src 'none'; script-src 'self'; img-src data:; form-action 'self' "
+               + callback_origin + "; frame-ancestors 'none'; base-uri 'none'").encode()
         class Privacy:
             def __init__(self, app): self.inner = app
             async def __call__(self, scope, receive, send):
                 async def private_send(message):
                     if message['type'] == 'http.response.start':
                         message['headers'] += [(b'cache-control', b'no-store'), (b'referrer-policy', b'no-referrer'),
-                            (b'x-content-type-options', b'nosniff'), (b'content-security-policy',
-                             b"default-src 'none'; script-src 'self'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")]
+                            (b'x-content-type-options', b'nosniff'), (b'content-security-policy', csp)]
                     await send(message)
                 await self.inner(scope, receive, private_send)
         app = Starlette(routes=[Route('/{path:path}', self.endpoint, methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])])

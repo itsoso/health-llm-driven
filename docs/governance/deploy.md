@@ -96,6 +96,22 @@ Python 锁文件未变时的依赖复用不证明 Pi runtime 可用，Pi 安装�
 
 ### 8.2 线上配置管理
 
+#### 独立 Neo 微信桥的首次休眠安装
+
+canonical `deploy.sh --neo-wechat --publisher-sha <current-main-sha>
+--production-sha <deployed-sha> --operation-id <32hex>` 默认只读检查；二次提供
+相同 `--evidence-sha256` 才安装隔离账号、锁定运行时和 inactive/static unit。
+要求当前 main 精确完整 CI、独立 G4、外部先验验证的 root-owned canonical
+staging、原 launcher flock/business lease，以及已通过既有 bootstrap 安装的
+同字节新版 executor。入口不修改发布身份、Health 服务或共享凭据。
+
+唯一成功终态为 `INSTALLED_DORMANT`；不启用服务、不发布 nginx 路由、不生成
+配置/秘密、不扫码、不授权、不发 Slack。用户密钥输入与后续激活另过受审流程。
+持久 intent/verified/completed 绑定同一源码与操作；未知或部分失败保留原审计与
+lease，且经既有历史检查链阻断发布/轮换，重启丢失临时锁也不能绕过。禁止换
+operation ID 重试、删锁、自动回滚或手动复制文件完成安装。前置可信执行与恢复
+边界、未合并 PR252 的冲突和人工接力见 [微信桥部署说明](../ops/neo-wechat-deployment.md)。
+
 #### 独立视觉模型配置事务
 
 `deploy.sh --select-vision-model --publisher-sha <current-main-sha>

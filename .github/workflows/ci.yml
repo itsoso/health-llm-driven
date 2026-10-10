@@ -204,6 +204,15 @@ jobs:
       - name: Health MCP tool contracts
         run: python -m pytest --noconftest -c /dev/null --rootdir . -o addopts= -o asyncio_mode=auto -p no:cacheprovider -q mcp-server/tests
 
+      - name: Independent WeChat bridge audit and isolated tests
+        run: |
+          python -m pip_audit -r services/neo_wechat/requirements.lock --require-hashes --progress-spinner=off
+          python -m venv /tmp/neo-wechat-ci
+          /tmp/neo-wechat-ci/bin/pip install --require-hashes --only-binary=:all: -r services/neo_wechat/requirements.lock
+          /tmp/neo-wechat-ci/bin/pip install pytest==9.1.1
+          /tmp/neo-wechat-ci/bin/python -m pytest -q services/neo_wechat/tests
+          node --check services/neo_wechat/qr.js
+
       - name: Lint (ruff, non-blocking warnings)
         working-directory: backend
         continue-on-error: true
@@ -371,6 +380,7 @@ jobs:
           scripts/test_trusted_retained_testflight.py
           scripts/test_trusted_frontend_rebuild.py
           scripts/test_trusted_vision_model.py
+          scripts/test_trusted_neo_wechat.py
           scripts/test_trusted_frontend_publish.py
           scripts/test_trusted_frontend_artifact.py
           scripts/test_trusted_frontend_publish_history.py

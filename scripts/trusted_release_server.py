@@ -829,12 +829,64 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
     return catalog
 
 
+def assert_neo_wechat_history(state=None):
+    """Durable bridge uncertainty blocks release/rotation even after reboot."""
+    root = Path(state or STATE) / "neo-wechat"
+    if not os.path.lexists(root):
+        return
+    secure_path(root, directory=True)
+    if stat.S_IMODE(root.lstat().st_mode) != 0o700:
+        raise LaunchError("bridge audit root must remain private")
+    audits = list(root.iterdir())
+    if len(audits) != 1:
+        raise LaunchError("unexpected first-install bridge history")
+    audit = audits[0]
+    if re.fullmatch(r"[0-9a-f]{32}", audit.name) is None:
+        raise LaunchError("unknown bridge operation identity")
+    secure_path(audit, directory=True)
+    if stat.S_IMODE(audit.lstat().st_mode) != 0o700:
+        raise LaunchError("bridge audit must remain private")
+    if {p.name for p in audit.iterdir()} != {"before.json", "intent.json", "lease.json", "verified.json", "completed.json"}:
+        raise LaunchError("unfinished bridge installation; preserve evidence")
+    values = {}
+    for name in ("before", "intent", "lease", "verified", "completed"):
+        path = audit / (name + ".json")
+        secure_path(path, private=True)
+        if path.stat().st_size > 262144:
+            raise LaunchError("bridge audit exceeds bound")
+        values[name] = _json(path.read_bytes())
+    complete = values["completed"]
+    expected = {"state", "publisher_sha", "production_sha", "operation_id", "evidence_sha256",
+                "runtime_sha256", "proxy_gid", "activated", "nginx_included", "health_services_unchanged", "secrets_created"}
+    if (not isinstance(complete, dict) or set(complete) != expected
+            or complete != values["verified"] or complete["state"] != "INSTALLED_DORMANT"
+            or complete["operation_id"] != audit.name
+            or any(complete[k] is not False for k in ("activated", "nginx_included", "secrets_created"))
+            or complete["health_services_unchanged"] is not True
+            or type(complete["proxy_gid"]) is not int or complete["proxy_gid"] <= 0
+            or any(re.fullmatch(r"[0-9a-f]{40}", str(complete[k])) is None for k in ("publisher_sha", "production_sha"))
+            or any(re.fullmatch(r"[0-9a-f]{64}", str(complete[k])) is None for k in ("evidence_sha256", "runtime_sha256"))):
+        raise LaunchError("unknown bridge terminal receipt")
+    before_hash = hashlib.sha256(json.dumps(values["before"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if (before_hash != complete["evidence_sha256"]
+            or values["intent"] != {"state": "INSTALL_STARTED", "evidence_sha256": before_hash,
+                                    "operation_id": audit.name, "publisher_sha": complete["publisher_sha"]}
+            or any(values["before"].get(k) != complete[k] for k in ("publisher_sha", "production_sha", "operation_id"))
+            or set(values["lease"]) != {"identity"}
+            or not isinstance(values["lease"]["identity"], list)
+            or len(values["lease"]["identity"]) != 2
+            or any(not isinstance(pair, list) or len(pair) != 2 or any(type(v) is not int or v < 0 for v in pair)
+                   for pair in values["lease"]["identity"])):
+        raise LaunchError("bridge evidence binding differs")
+
+
 def assert_vision_model_history(state=None, *, pending_operation=None):
     """Unknown model-configuration outcomes block every existing launcher.
 
     Configuration success with model acceptance pending is an honest separate
     terminal state, not a paid-inference success receipt.
     """
+    assert_neo_wechat_history(state)
     root = Path(state or STATE) / 'vision-models'
     if not os.path.lexists(root):
         return
