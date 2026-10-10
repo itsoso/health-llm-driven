@@ -262,3 +262,46 @@ def test_old_target_quarantine_postgres_preserves_documents_and_runtime(retained
     db.rollback()
     assert db.execute(text("SELECT count(*) FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory'")).scalar() == 0
     db.rollback()
+
+
+@pytest.mark.parametrize('change', ['none', 'bytes', 'mode', 'replacement'])
+def test_actual_archive_preimage_uses_original_file_identity(tmp_path, monkeypatch, change):
+    """Exercise real file getters and Adapter method, with a synthetic trust root."""
+    m = module()
+    b = m.load(Path(__file__).with_name('bootstrap_trusted_release.py'), 'rollback_archive_bootstrap')
+    proof_module = m.load(Path(__file__).with_name('contained_recovery_proof.py'), 'rollback_archive_proof')
+    monkeypatch.setattr(b, 'secure', lambda *args, **kwargs: None)
+    monkeypatch.setattr(m, 'b_helper', lambda *args, **kwargs: proof_module)
+    proof = object.__new__(proof_module.RecoveryProof)
+    proof.bootstrap = b
+    backup = tmp_path / 'backup.env'
+    original = b'SYNTHETIC=true\nHEALTH_EVIDENCE_RUNTIME_ENABLED=false\n'
+    backup.write_bytes(original)
+    backup.chmod(0o600)
+    _, identity = proof._file(backup, 0o600)
+    assert {'ino', 'dev'} <= identity.keys()
+    assert {'inode', 'device'} <= b._recovery_file_identity(backup).keys()
+    a = object.__new__(m.Adapter)
+    a.b, a.source = b, tmp_path
+    a.r = m.load(Path(__file__).with_name('retained_candidate_retirement.py'), 'rollback_archive_helpers')
+    a.record = tmp_path / 'record'
+    a.record.mkdir(mode=0o700)
+    evidence = {'live': {'environment': {'backup_path': str(backup), 'backup': identity}}}
+    if change == 'bytes':
+        backup.write_bytes(b'CHANGED=true\n')
+    elif change == 'mode':
+        backup.chmod(0o640)
+    elif change == 'replacement':
+        replacement = tmp_path / 'replacement.env'
+        replacement.write_bytes(original)
+        replacement.chmod(0o600)
+        replacement.replace(backup)
+    if change == 'none':
+        a.archive_preimage(evidence)
+        archive = a.record / 'rollback.env'
+        assert archive.read_bytes() == original
+        assert archive.stat().st_mode & 0o777 == 0o600
+    else:
+        with pytest.raises((m.RetirementError, proof_module.ProofError)):
+            a.archive_preimage(evidence)
+        assert not (a.record / 'rollback.env').exists()

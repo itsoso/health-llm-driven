@@ -321,8 +321,11 @@ class Adapter:
     def archive_preimage(self, evidence):
         path = Path(evidence['live']['environment']['backup_path'])
         self.b.secure(path, private=True)
-        require(self.b._recovery_file_identity(path) == evidence['live']['environment']['backup'])
-        raw = path.read_bytes()
+        module = b_helper(self.b, self.source, 'contained_recovery_proof.py', 'rollback_archive_proof')
+        proof = object.__new__(module.RecoveryProof)
+        proof.bootstrap = self.b
+        raw, identity = proof._file(path, 0o600)
+        require(identity == evidence['live']['environment']['backup'])
         fd = os.open(self.record / 'rollback.env', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, 'wb') as out:
             os.fchmod(out.fileno(), 0o600)

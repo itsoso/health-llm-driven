@@ -169,3 +169,10 @@ host mutation，未宣称新后端、Web、OTA已经发布。
 （45.82s），包含旧actor成功/失败actor拒绝，以及paused8/ack7和
 reconciliation_required Run保持不变；隔离测试库已停止。地图和秘密扫描通过。
 这些仅为本地G3证据；尚待固定SHA独立G4、完整CI与真实主机inspect。
+
+固定cca4017a0独立G4 NO-GO：归档preimage比较了两个helper不同身份字段
+（ino/dev与inode/device），会在intent后必然失败。生产未执行；中断该
+NO-GO候选CI-mode，原退出130/KeyboardInterrupt证据保留。新增实际
+Adapter归档路径回归RED1failed3passed，再改为同一proof._file取证结构，
+覆盖字节、权限与inode替换拒绝，组合GREEN379passed、2PGskip。
+PostgreSQL业务探测代码未改变，原新鲜15passed仍有效；修复候选重新G4和CI。
