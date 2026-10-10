@@ -1,6 +1,5 @@
 'use client';
-/* Full-page links intentionally trigger the unsaved-draft beforeunload guard. */
-/* eslint-disable @next/next/no-html-link-for-pages */
+import Link from 'next/link';
 import React, { useEffect, useRef, useState } from 'react';
 import { Compass, Sun, CalendarDays, Timer, BookOpen, Award, Flag, Sprout, Archive, Menu, ChevronLeft, ChevronRight, Undo2, Redo2 } from 'lucide-react';
 import { useWorkspaceHistory } from './useWorkspaceHistory';
@@ -57,8 +56,38 @@ function SessionWorkspace({ owner }: {
     } }).catch(e => { if (alive.current && epoch === requestEpoch.current && !ctrl.signal.aborted)
         setError(message(e)); }); return () => { alive.current = false; requestEpoch.current++; ctrl.abort(); }; }, [owner, clearDraftHistory]);
     useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
-    useEffect(() => { if (!dirty)
-        return; const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; }; window.addEventListener('beforeunload', handler); return () => window.removeEventListener('beforeunload', handler); }, [dirty]);
+    useEffect(() => {
+        if (!dirty) return;
+        const route = new URL(window.location.href);
+        const routeState = window.history.state;
+        const sameRoute = (url: URL) => url.origin === route.origin && url.pathname === route.pathname && url.search === route.search;
+        const confirmLeave = () => window.confirm('离开会丢弃未保存的导航草稿。确定离开？');
+        const unload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+        const click = (event: MouseEvent) => {
+            if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+            if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download') || (link.target && link.target !== '_self')) return;
+            const destination = new URL(link.href, route);
+            // External/full-document exits retain the browser beforeunload guard.
+            if (destination.origin !== route.origin || sameRoute(destination)) return;
+            if (!confirmLeave()) { event.preventDefault(); event.stopImmediatePropagation(); }
+        };
+        const pop = (event: PopStateEvent) => {
+            if (sameRoute(new URL(window.location.href)) || confirmLeave()) return;
+            // Capture runs before the App Router's bubbling popstate listener.
+            // Restore the original URL/tree before that listener can unmount drafts.
+            event.stopImmediatePropagation();
+            window.history.pushState(routeState, '', route.href);
+        };
+        window.addEventListener('beforeunload', unload);
+        document.addEventListener('click', click, true);
+        window.addEventListener('popstate', pop, true);
+        return () => {
+            window.removeEventListener('beforeunload', unload);
+            document.removeEventListener('click', click, true);
+            window.removeEventListener('popstate', pop, true);
+        };
+    }, [dirty]);
     const edit = (fn: (value: LifeData) => void) => { if (!draft || writeLock.current)
         return; const next = copy(draft); fn(next); if (JSON.stringify(next) === JSON.stringify(draft)) return; draftHistory.capture(draft); setDraft(next); setDirty(true); setNotice(''); };
     const moveHistory = (direction: 'undo' | 'redo') => {
@@ -167,8 +196,8 @@ function SessionWorkspace({ owner }: {
     const completedCount = todayTasks.filter(t => t.status === 'done').length;
     return <main className={css.workspace}>
   <aside className={css.sidebar}>
-    <div className={css.brandRow}><a className={css.brand} href="/" aria-label="Reva 首页"><span className={css.brandMark}><Compass size={23} aria-hidden="true"/></span><span>Reva<span className={css.brandSub}>人生与时间导航</span></span></a><button type="button" className={css.menuButton} aria-label={menuOpen ? '收起导航' : '展开导航'} aria-expanded={menuOpen} aria-controls="life-navigation-menu" onClick={() => setMenuOpen(v => !v)}><Menu size={20} aria-hidden="true"/></button></div>
-    <nav id="life-navigation-menu" className={`${css.tabs} ${menuOpen ? css.menuOpen : ''}`} aria-label="人生导航视图">{navGroups.map(group => <div className={css.navGroup} key={group.label}><p className={css.navLabel}>{group.label}</p>{group.items.map(({ title, icon: Icon }) => <button type="button" className={`${css.tab} ${tab === title ? css.active : ''}`} aria-pressed={tab === title} key={title} onClick={() => { setTab(title); setMenuOpen(false); if (title === '备份') void loadHistory(); }}><Icon size={17} aria-hidden="true"/><span>{title}</span></button>)}</div>)}<a className={css.healthLink} href="/my-progress?navigation=week">查看 Health 健康周导航 <span aria-hidden="true">↗</span></a></nav>
+    <div className={css.brandRow}><Link className={css.brand} href="/" aria-label="Reva 首页"><span className={css.brandMark}><Compass size={23} aria-hidden="true"/></span><span>Reva<span className={css.brandSub}>人生与时间导航</span></span></Link><button type="button" className={css.menuButton} aria-label={menuOpen ? '收起导航' : '展开导航'} aria-expanded={menuOpen} aria-controls="life-navigation-menu" onClick={() => setMenuOpen(v => !v)}><Menu size={20} aria-hidden="true"/></button></div>
+    <nav id="life-navigation-menu" className={`${css.tabs} ${menuOpen ? css.menuOpen : ''}`} aria-label="人生导航视图">{navGroups.map(group => <div className={css.navGroup} key={group.label}><p className={css.navLabel}>{group.label}</p>{group.items.map(({ title, icon: Icon }) => <button type="button" className={`${css.tab} ${tab === title ? css.active : ''}`} aria-pressed={tab === title} key={title} onClick={() => { setTab(title); setMenuOpen(false); if (title === '备份') void loadHistory(); }}><Icon size={17} aria-hidden="true"/><span>{title}</span></button>)}</div>)}<Link className={css.healthLink} href="/my-progress?navigation=week">查看 Health 健康周导航 <span aria-hidden="true">↗</span></Link></nav>
     <p className={css.sidebarNote}>方向 · 行动 · 时间 · 复盘<br/>让每一天，都朝向自己。</p>
   </aside>
   <div className={css.content}>

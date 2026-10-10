@@ -60,3 +60,5 @@ OTA publish 37977844821 取得原 vendor receipt 后在核验命令阶段失败�
 本批范围：Garmin未完成同步状态真实性、本人当天刚才运动候选查询（不确定具体运动身份）、补剂旧ID批量API显式actual_dosage及落库回执和双端类型、Mobile新对话/附件/依据栏UI、缺热量草稿如实展示、LifeNav Web日期/任务/撤销重做/离页保护及聊天首页入口。相关各Dossier的局部PG/测试证据保留，固定SHA安全审查与完整集成待执行。
 
 排除未完成内容：daily_plan_chat及agent_executor混合改动缺授权真实模型闸，保留未提交；图片补剂完整识别确认写链路与热量识别根因尚未完成；外部Agent grant仅提案未实施；锁屏模拟器工具独立未验收。不把这些未交付项冒充修复，也不读生产秘密。候选冻结前仍保留所有其他session源码/原始收据。
+
+固定首候选ea86f74fe独立G4 NO-GO：全局Next Link与客户端返回会绕过原beforeunload丢草稿。新增真实Navigation+workspace集成4项RED后修复：dirty时document click capture阻止取消的站内Link；window popstate capture在App Router前取消并恢复原路由/tree，保留同页hash与新标签行为；工作区出口复用Link避免双重整页提示。新8项回归GREEN，后续固定修正候选重审；未推送NO-GO候选。冻结ea86全量Mobile发现旧新建文本断言不适配图标按钮，保留失败并改为可访问label+实际回调验证，不放宽新建行为。

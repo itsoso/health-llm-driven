@@ -123,9 +123,9 @@ describe('ChatScreen history entry', () => {
   });
 
   it('starts a new chat directly from the visible header entry', async () => {
-    const { getByText, getByLabelText } = render(<ChatScreen />);
+    const { getByLabelText } = render(<ChatScreen />);
 
-    expect(getByText('新建')).toBeTruthy();
+    expect(getByLabelText('新建对话')).toBeTruthy();
     await act(async () => {
       fireEvent.press(getByLabelText('新建对话'));
     });

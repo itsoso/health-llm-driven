@@ -38,3 +38,5 @@ G3 PASS（本批 Web 范围）；G4 GO（独立 reviewer 对当前 diff 的保�
 - 合成截图：`/tmp/lifenav-web-alignment-desktop-20261010.jpg`、`/tmp/lifenav-web-alignment-mobile-20261010.jpg`。预览 fixture 只在忽略的 node_modules 缓存中，不纳入产品代码。
 - 独立审查发现的站内导航离页保护、计时/归档历史捕获、重新读取后残余派生状态均已修正并复审 GO。首页离页确认依赖现有 beforeunload，未把浏览器未显示的确认弹窗记为验收通过。
 - 没有 commit、push、merge 或部署；共享工作树的其他变更保持原样。生产精确 SHA CI/部署/验收尚未执行。
+
+统一owner固定ea86f74fe审查发现全局顶栏Link和客户端返回未受原beforeunload保护，裁决NO-GO；新增真实Navigation+workspace取消/确认/返回测试4项RED。统一离页capture guard修正后，与原导航测试共8项GREEN；新候选仍需固定SHA独立复审，不能沿用之前局部GO。取消返回恢复原route/tree，确认才允许App Router；同页hash及新标签不阻断。
