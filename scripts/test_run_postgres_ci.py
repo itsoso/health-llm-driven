@@ -116,12 +116,17 @@ def test_waits_for_both_children_and_propagates_each_failure(tmp_path, codes, ex
     assert json.loads((tmp_path / "run/summary.json").read_text())["exit_codes"] == codes
 
 
-def test_creation_collision_never_drops_unowned_database(tmp_path):
+@pytest.mark.parametrize('run_id', ['020afaf053a745c6a81a5dee7097df3a', '01' + 'a' * 30, 'a' * 32])
+def test_creation_collision_never_drops_unowned_database(tmp_path, monkeypatch, run_id):
+    monkeypatch.setattr(runner.uuid, 'uuid4', lambda: runner.uuid.UUID(hex=run_id))
     connection = Connection(fail_create=2)
     def must_not_spawn(*args, **kwargs): pytest.fail("must create both isolated databases first")
     assert runner.run(config(), tmp_path / "run", connect=lambda _: connection, redis_check=lambda _: None, popen=must_not_spawn) == 1
     drops = [q for q in connection.queries if "DROP DATABASE" in q]
-    assert len(drops) == 1 and "_01" in drops[0] and "_02" not in drops[0]
+    # Match the complete owned identifier: the random run ID can start with 02.
+    expected = runner.sql.SQL("DROP DATABASE {}").format(
+        runner.sql.Identifier(f"reva_ci_test_{run_id}_01"))
+    assert drops == [repr(expected)]
 
 
 def test_cleanup_failure_is_red_even_when_pytest_passes(tmp_path):

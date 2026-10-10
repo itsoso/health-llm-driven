@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 SCOPE = "health:read"
 PREFIX = "/api/v1/remote-health"
 ACCESS_SECONDS = 600
-GRANT_SECONDS = 30 * 86400
+REFRESH_SECONDS = 30 * 86400
 
 
 class RegisteredClient(BaseModel):
@@ -29,14 +29,21 @@ class RegisteredClient(BaseModel):
     client_id: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9._-]+$")
     client_name: str = Field(min_length=1, max_length=80)
     redirect_uris: list[str] = Field(min_length=1, max_length=4)
+    grant_days: int = Field(default=30, ge=1, le=3650, strict=True)
+    allowed_user_id: int | None = Field(default=None, gt=0, strict=True)
 
     @model_validator(mode="after")
     def validate_redirects(self):
+        if self.grant_days > 30 and self.allowed_user_id is None:
+            raise ValueError("Grants longer than 30 days require an explicit account owner")
         for uri in self.redirect_uris:
             p = urlsplit(uri)
             if p.scheme != "https" or not p.hostname or p.username or p.password or p.fragment or p.query or "*" in uri or len(uri) > 500:
                 raise ValueError("Register exact HTTPS redirects without query, fragment or credentials")
         return self
+
+    def consent_policy(self):
+        return {"grant_days": self.grant_days, "allowed_user_id": self.allowed_user_id}
 
 
 class RemoteHealthConfig(BaseModel):
@@ -78,7 +85,8 @@ class RemoteHealthOAuth:
         if item is None:
             return None
         return OAuthClientInformationFull(
-            **item.model_dump(), token_endpoint_auth_method="none", scope=SCOPE,
+            **item.model_dump(exclude={"grant_days", "allowed_user_id"}),
+            token_endpoint_auth_method="none", scope=SCOPE,
             grant_types=["authorization_code", "refresh_token"], response_types=["code"],
         )
 
@@ -103,7 +111,8 @@ class RemoteHealthOAuth:
             raise AuthorizeError("invalid_request", "State is required")
         with self.session() as db:
             raw = self._store(db, "pending", int(time.time()) + 300,
-                              payload={**params.model_dump(mode="json"), "client_id": client.client_id})
+                              payload={**params.model_dump(mode="json"), "client_id": client.client_id,
+                                       "client_policy": configured.consent_policy()})
             db.commit()
         return self.config.origin + "/connect/health?request=" + raw
 
@@ -111,6 +120,9 @@ class RemoteHealthOAuth:
         row = db.get(RemoteHealthCredential, digest(raw))
         if not row or row.kind != "pending" or row.used_at is not None or row.expires_at <= time.time():
             raise ValueError("Authorization request expired or already used")
+        client = next((c for c in self.config.clients if c.client_id == row.payload["client_id"]), None)
+        if client is None or row.payload.get("client_policy") != client.consent_policy():
+            raise ValueError("Client policy changed; restart authorization")
         return row
 
     def preview(self, raw):
@@ -120,7 +132,7 @@ class RemoteHealthOAuth:
             if client is None:
                 raise ValueError("Client is no longer registered")
             return {"client_name": client.client_name, "scope": SCOPE,
-                    "expires_in_days": 30, "data_categories": ["sleep", "diet", "exercise"]}
+                    "expires_in_days": client.grant_days, "data_categories": ["sleep", "diet", "exercise"]}
 
     def consent(self, raw, user_id, expected_user_id, approved):
         if user_id != expected_user_id:
@@ -132,6 +144,8 @@ class RemoteHealthOAuth:
             client = next((c for c in self.config.clients if c.client_id == params["client_id"]), None)
             if client is None or params["redirect_uri"] not in client.redirect_uris:
                 raise ValueError("Client is no longer registered")
+            if client.allowed_user_id is not None and client.allowed_user_id != user_id:
+                raise ValueError("This account is not authorized for the registered client")
             user = db.get(User, user_id)
             if not user or not user.is_active or not user.is_approved:
                 raise ValueError("Account unavailable")
@@ -143,7 +157,8 @@ class RemoteHealthOAuth:
             callback = {"state": params["state"], "iss": self.config.issuer}
             if approved:
                 grant = RemoteHealthGrant(id=str(uuid.uuid4()), user_id=user_id, client_id=client.client_id,
-                    scope=SCOPE, resource=self.config.resource, created_at=now, expires_at=now + GRANT_SECONDS)
+                    scope=SCOPE, resource=self.config.resource, created_at=now,
+                    expires_at=now + client.grant_days * 86400)
                 db.add(grant)
                 db.flush()
                 callback["code"] = self._store(db, "code", now + 60, grant.id, params)
@@ -162,7 +177,8 @@ class RemoteHealthOAuth:
             return None
         if grant.scope != SCOPE or grant.resource != self.config.resource:
             return None
-        if not any(c.client_id == grant.client_id for c in self.config.clients):
+        client = next((c for c in self.config.clients if c.client_id == grant.client_id), None)
+        if client is None or (client.allowed_user_id is not None and client.allowed_user_id != grant.user_id):
             return None
         user = db.get(User, grant.user_id)
         if not user or not user.is_active or not user.is_approved:
@@ -183,7 +199,7 @@ class RemoteHealthOAuth:
     def _tokens(self, db, grant):
         now = int(time.time())
         access = self._store(db, "access", min(now + ACCESS_SECONDS, grant.expires_at), grant.id)
-        refresh = self._store(db, "refresh", grant.expires_at, grant.id)
+        refresh = self._store(db, "refresh", min(now + REFRESH_SECONDS, grant.expires_at), grant.id)
         return OAuthToken(access_token=access, token_type="Bearer", expires_in=min(ACCESS_SECONDS, grant.expires_at-now),
                           refresh_token=refresh, scope=SCOPE)
 

@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 interface Consent {
   client_name: string;
   scope: 'health:read';
-  expires_in_days: 30;
+  expires_in_days: number;
   data_categories: string[];
   user_id: number;
 }
@@ -43,7 +43,8 @@ function isConsent(value: unknown): value is Consent {
   if (!isObject(value)) return false;
   const categories = value.data_categories;
   return validName(value.client_name) && value.scope === 'health:read'
-    && value.expires_in_days === 30 && Number.isSafeInteger(value.user_id)
+    && typeof value.expires_in_days === 'number' && Number.isInteger(value.expires_in_days)
+    && value.expires_in_days >= 1 && value.expires_in_days <= 3650 && Number.isSafeInteger(value.user_id)
     && Array.isArray(categories) && categories.length === 3
     && ['sleep', 'diet', 'exercise'].every(category => categories.includes(category));
 }
@@ -211,7 +212,7 @@ function ConnectionContent() {
               <p className="text-slate-700"><strong className="break-words text-slate-900">{view.consent.client_name}</strong> 请求访问此账户的健康记录。</p>
               <div className="space-y-3 text-sm leading-6 text-slate-600">
                 <p>允许读取：睡眠、饮食和运动记录。该连接只有读取权限，不能新增、修改或删除健康记录。</p>
-                <p>授权有效期为 30 天。你可以随时在本页的连接管理中撤销访问。</p>
+                <p>授权有效期为 {view.consent.expires_in_days} 天。你可以随时在本页的连接管理中撤销访问。访问令牌短期有效，刷新令牌定期轮换。</p>
                 <p>连接的应用将收到你查询范围内的健康数据，请确认你信任此应用。</p>
               </div>
               <div className="flex flex-wrap gap-3">

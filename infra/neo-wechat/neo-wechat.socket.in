@@ -1,0 +1,19 @@
+# Candidate socket. Remains static and inactive after dormant installation.
+# systemd owns the parent directory and passes the listener to the service.
+[Unit]
+Description=Owner-private Neo WeChat bridge Unix socket
+ConditionPathExists=/etc/neo-wechat/config.json
+ConditionPathExists=/etc/neo-wechat/encryption_key
+ConditionPathExists=/etc/neo-wechat/admin_password_hash
+ConditionPathExists=/etc/neo-wechat/slack_webhook
+
+[Socket]
+ListenStream=/run/neo-wechat/bridge.sock
+Backlog=16
+SocketUser=neo-wechat
+SocketGroup=neo-wechat-proxy
+SocketMode=0660
+DirectoryMode=0755
+RemoveOnStop=yes
+Service=neo-wechat.service
+FileDescriptorName=neo-wechat-http

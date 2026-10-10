@@ -104,3 +104,13 @@ G5/G6 BLOCK：backend38031474956失败，固定637终态NEEDS_OPERATOR。健康�
 微信桥接精确eeaa CI38034927895已终态failure；systemd249通过，但release-invariants的另一合成unit因credential private mode断言失败。原owner仍开发中，禁止合入红CI或使用此前draft GO。
 
 加载器修正后的无缓存单项继续暴露原测试只捕获BootstrapError，真实失败归档路径按模块契约抛RecoveryError。保留该失败；进一步将fixture源码复制到独立临时目录、禁字节缓存，并校验具体unknown host recovery history理由及真实加载模块的RecoveryError类型，避免无关缓存守卫让用例假通过。最终相关192tests passed（4.83s）。已主动中断明确仍红的c585全量进程，197passed/KeyboardInterrupt、exit2（106.82s），不冒称通过，不再等待已知失败执行到末尾；最后修正固定候选再完整验证。生产bootstrap或历史恢复代码始终未改。
+
+## 最新微信已提交代码的本地主干整合
+
+用户再次要求继续推进，并明确本次无需 Claude 审核；该裁决仅限本次任务，不修改全局治理。保留已有独立安全审查与真实测试要求，不增加替代外部审查前置。
+
+冻结微信分支 cfc996e7495e0d3bb9eebf9610694ec9bd97dac2 合入本地 main，原 owner 工作树干净；仅整合已提交代码，不覆盖其后续工作。其精确 CI38038910636已无失败或待运行检查；此前33be868的失败记录保留。合并无冲突，不启用服务、创建秘密、发起扫码/OAuth或改变生产权限。生产适配器、发布历史准入和开机启动仍未交付，微信实际收发未验证。
+
+组合验证：桥接/生命周期/事务/历史/安装器479 passed、1 macOS环境skip；Web授权页20 passed；秘密扫描、203份Dossier与System Map通过。首次混合测试未指定测试数据库而连接本机PostgreSQL失败；修正测试配置后又发现原backend虚拟环境缺MCP依赖，两个启动失败均保留，不宣称通过。改用已安装仓库精确mcp1.30.0、pydantic2.12.5的既有测试环境，在独立UTF8 PostgreSQL17运行OAuth与既有隔离/今日计划/Workout回归；结果待实际执行记录。独立固定合并评审、合并后的CI-mode与精确远端main完整CI仍须通过。
+
+2026-10-10 16:57 Asia/Shanghai的新鲜只读生产核查：clean346035f78、四服务active；637 completed.json仍NEEDS_OPERATOR，GitHub38031474956仍completed/failure；launcher inode7777226保留，瞬时/proc/locks未观察到被持有，business lease不存在。runtime仍paused generation8/ack7。原标记与旧回滚证据保留；租约不存在不构成收口。原发布由本线程负责，有效管理员审核及本场景受审收口入口仍缺失。未重试发布、撤权、改回执、清锁或resume，G5/G6仍BLOCK。

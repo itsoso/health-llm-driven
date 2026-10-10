@@ -204,6 +204,15 @@ jobs:
       - name: Health MCP tool contracts
         run: python -m pytest --noconftest -c /dev/null --rootdir . -o addopts= -o asyncio_mode=auto -p no:cacheprovider -q mcp-server/tests
 
+      - name: Independent WeChat bridge audit and isolated tests
+        run: |
+          python -m pip_audit -r services/neo_wechat/requirements.lock --require-hashes --progress-spinner=off
+          python -m venv /tmp/neo-wechat-ci
+          /tmp/neo-wechat-ci/bin/pip install --require-hashes --only-binary=:all: -r services/neo_wechat/requirements.lock
+          /tmp/neo-wechat-ci/bin/pip install pytest==9.1.1
+          /tmp/neo-wechat-ci/bin/python -m pytest -q services/neo_wechat/tests
+          node --check services/neo_wechat/qr.js
+
       - name: Lint (ruff, non-blocking warnings)
         working-directory: backend
         continue-on-error: true
@@ -278,10 +287,30 @@ jobs:
           path: /tmp/system_kb_eval_metrics.json
           if-no-files-found: ignore
 
+  neo-wechat-systemd249:
+    runs-on: ubuntu-22.04
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify actual target systemd 249 containment with synthetic fixtures
+        run: |
+          trap 'cat /tmp/neo-wechat-systemd249.json' EXIT
+          sudo /usr/bin/python3 scripts/neo_wechat_linux_probe.py --ephemeral-runner --require-linux > /tmp/neo-wechat-systemd249.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/neo-wechat-systemd249.json') as stream:
+              result = json.load(stream)
+          assert result['status'] == 'PASS' and result['systemd_249_observed'] is True, 'Target systemd 249 was not verified'
+          PY
+
   release-invariants:
     name: release-invariants
     runs-on: ubuntu-latest
-    needs: classify-changes
+    needs: [classify-changes, neo-wechat-systemd249]
     if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
     timeout-minutes: 25
     steps:
@@ -323,6 +352,9 @@ jobs:
 
       - name: Verify real application network boundary in isolated namespace
         run: sudo unshare --net /usr/bin/python3 scripts/test_public_host_network_native.py
+
+      - name: Verify synthetic WeChat systemd containment on disposable runner
+        run: sudo /usr/bin/python3 scripts/neo_wechat_linux_probe.py --ephemeral-runner --require-linux
 
       - name: Verify real retained runner filesystem and canonical startup
         run: sudo "$(command -v python)" -B -m pytest -q --no-cov scripts/test_trusted_retained_testflight.py -k real_linux_runner_bootstrap_and_loader
@@ -371,6 +403,13 @@ jobs:
           scripts/test_trusted_retained_testflight.py
           scripts/test_trusted_frontend_rebuild.py
           scripts/test_trusted_vision_model.py
+          scripts/test_trusted_neo_wechat.py
+          scripts/test_neo_wechat_linux_isolation.py
+          scripts/test_neo_wechat_provisioning.py
+          scripts/test_neo_wechat_provision_transaction.py
+          scripts/test_neo_wechat_lifecycle.py
+          scripts/test_neo_wechat_lifecycle_history.py
+          scripts/test_neo_wechat_runtime_lifecycle.py
           scripts/test_trusted_frontend_publish.py
           scripts/test_trusted_frontend_artifact.py
           scripts/test_trusted_frontend_publish_history.py

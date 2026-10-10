@@ -18,6 +18,10 @@ NC='\033[0m' # No Color
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" = "--neo-wechat" ]]; then
+    shift
+    exec /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_neo_wechat.py" "$@"
+fi
 if [[ "${1:-}" = "--select-vision-model" ]]; then
     shift
     exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_vision_model.py" "$@"
@@ -220,11 +224,13 @@ try:
     if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
         raise ValueError("invalid binding")
     root = Path("/var/lib/reva-release/vision-models")
-    if not os.path.lexists(root):
+    bridge_root = Path("/var/lib/reva-release/neo-wechat")
+    roots = [path for path in (root, bridge_root) if os.path.lexists(path)]
+    if not roots:
         raise SystemExit(0)
     source = Path("/var/lib/reva-release/bootstrap") / sha / "source"
     entry = source / "scripts/trusted_vision_model.py"
-    for path in [*reversed(entry.parents), entry, root, source / ".git/config"]:
+    for path in [*reversed(entry.parents), entry, *roots, source / ".git/config"]:
         info = path.lstat()
         expected = stat.S_ISREG if path in (entry, source / ".git/config") else stat.S_ISDIR
         if info.st_uid != 0 or info.st_mode & 0o022 or not expected(info.st_mode) or (expected == stat.S_ISREG and info.st_nlink != 1):
