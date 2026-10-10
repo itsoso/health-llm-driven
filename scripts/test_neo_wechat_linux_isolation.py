@@ -352,3 +352,86 @@ def test_isolated_verification_rejects_nonzero_and_unknown_output(tmp_path, monk
     monkeypatch.setattr(probe.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], returncode, stdout, ""))
     with pytest.raises(RuntimeError, match="unit verification failed"):
         probe.verify_unit(unit, fixture)
+
+
+def cleanup_objects(tmp_path):
+    paths = [tmp_path / name for name in ('probe.service', 'probe.socket', 'fixture', 'state', 'runtime', 'marker')]
+    for path in paths:
+        if path.name in ('fixture', 'state', 'runtime'):
+            path.mkdir()
+        else:
+            path.write_text('synthetic')
+    return paths
+
+
+def test_cleanup_inactive_unloaded_unit_never_resets_failed(tmp_path, monkeypatch):
+    paths = cleanup_objects(tmp_path)
+    calls = []
+    def fake_run(*args, **kwargs):
+        calls.append(args)
+        if args[1] == 'show':
+            return 'LoadState=not-found\nActiveState=inactive\n'
+        assert args[1] != 'reset-failed'
+        return ''
+    monkeypatch.setattr(probe, 'run', fake_run)
+    probe.cleanup_probe(*paths, registered=True, primary_error=None)
+    assert calls[0][1:] == ('stop', 'probe.socket', 'probe.service')
+    assert calls[-1][1] == 'daemon-reload'
+    assert not any(path.exists() for path in paths)
+
+
+def test_cleanup_resets_only_failed_then_requires_inactive(tmp_path, monkeypatch):
+    paths = cleanup_objects(tmp_path)
+    calls = []
+    failed = True
+    def fake_run(*args, **kwargs):
+        nonlocal failed
+        calls.append(args)
+        if args[1] == 'reset-failed':
+            assert args[-1] == 'probe.service'
+            failed = False
+        if args[1] == 'show':
+            active = 'failed' if failed and args[-1] == 'probe.service' else 'inactive'
+            return f'LoadState=loaded\nActiveState={active}\n'
+        return ''
+    monkeypatch.setattr(probe, 'run', fake_run)
+    probe.cleanup_probe(*paths, registered=True, primary_error=None)
+    assert sum(call[1] == 'reset-failed' for call in calls) == 1
+    assert not any(path.exists() for path in paths)
+
+
+@pytest.mark.parametrize('failure', ['stop', 'show', 'reset-failed'])
+def test_cleanup_failure_preserves_primary_and_all_paths(tmp_path, monkeypatch, failure):
+    paths = cleanup_objects(tmp_path)
+    def fake_run(*args, **kwargs):
+        if args[1] == failure:
+            raise RuntimeError('cleanup synthetic ' + failure)
+        if args[1] == 'show':
+            return 'LoadState=loaded\nActiveState=failed\n'
+        return ''
+    monkeypatch.setattr(probe, 'run', fake_run)
+    with pytest.raises(RuntimeError, match='primary synthetic.*cleanup synthetic ' + failure):
+        probe.cleanup_probe(*paths, registered=True, primary_error=RuntimeError('primary synthetic'))
+    assert all(path.exists() for path in paths)
+
+
+@pytest.mark.parametrize('state', ['active', 'activating', 'deactivating', 'unexpected'])
+def test_cleanup_refuses_removal_without_confirmed_stop(tmp_path, monkeypatch, state):
+    paths = cleanup_objects(tmp_path)
+    monkeypatch.setattr(probe, 'run', lambda *a, **k: f'LoadState=loaded\nActiveState={state}\n' if a[1] == 'show' else '')
+    with pytest.raises(RuntimeError, match='cleanup failed'):
+        probe.cleanup_probe(*paths, registered=True, primary_error=None)
+    assert all(path.exists() for path in paths)
+
+
+@pytest.mark.parametrize('journal_fails', [False, True])
+def test_unit_diagnostics_preserve_original_and_query_socket_too(monkeypatch, journal_fails):
+    def fake_run(*args, **kwargs):
+        assert '--unit=probe.service' in args and '--unit=probe.socket' in args
+        if journal_fails:
+            raise RuntimeError('journal unavailable')
+        return 'synthetic socket detail'
+    monkeypatch.setattr(probe, 'run', fake_run)
+    message = probe.unit_failure_diagnostics(RuntimeError('original start failure'), 'probe.service', 'probe.socket')
+    assert 'original start failure' in message
+    assert ('journal unavailable' if journal_fails else 'synthetic socket detail') in message

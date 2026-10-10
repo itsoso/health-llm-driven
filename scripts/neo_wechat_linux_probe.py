@@ -377,6 +377,48 @@ def verify_unit(unit, fixture, *paired_units):
             "paired_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in candidates[1:]}}
 
 
+def unit_failure_diagnostics(error, *units):
+    """Keep the triggering error even when its scoped journal is unavailable."""
+    try:
+        diagnostics = run("/usr/bin/journalctl", "--no-pager", "--output=cat", "-n", "30",
+                          *("--unit=" + unit for unit in units))[-2400:]
+    except (OSError, RuntimeError, subprocess.SubprocessError) as journal_error:
+        diagnostics = "journal unavailable: " + str(journal_error)[:600]
+    return "synthetic unit failed: " + repr(error)[:1000] + "; scoped journal: " + diagnostics
+
+
+def cleanup_probe(unit, socket_unit, fixture, state, runtime, marker, *, registered, primary_error):
+    """Prove both units inactive before removal; never replace the primary error."""
+    try:
+        if registered:
+            run("/usr/bin/systemctl", "stop", socket_unit.name, unit.name)
+            for candidate in (unit, socket_unit):
+                def read_state():
+                    output = run("/usr/bin/systemctl", "show", "--property=LoadState,ActiveState", candidate.name)
+                    values = dict(line.split("=", 1) for line in output.splitlines())
+                    if set(values) != {"LoadState", "ActiveState"} or values["LoadState"] not in ("loaded", "not-found"):
+                        raise RuntimeError("unexpected cleanup unit state: " + output[:500])
+                    return values["ActiveState"]
+                active = read_state()
+                # Inactive units may already have been garbage-collected by the
+                # manager. reset-failed on such a unit is invalid, not cleanup.
+                if active == "failed":
+                    run("/usr/bin/systemctl", "reset-failed", candidate.name)
+                    active = read_state()
+                if active != "inactive":
+                    raise RuntimeError("cleanup unit not inactive: " + candidate.name + " " + active)
+        unit.unlink(missing_ok=True)
+        socket_unit.unlink(missing_ok=True)
+        run("/usr/bin/systemctl", "daemon-reload")
+        for owned in (fixture, state, runtime):
+            if owned.exists():
+                shutil.rmtree(owned)
+        marker.unlink(missing_ok=True)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as cleanup_error:
+        primary = ("primary failure: " + repr(primary_error)[:3000] + "; ") if primary_error is not None else ""
+        raise RuntimeError(primary + "cleanup failed: " + repr(cleanup_error)[:800]) from cleanup_error
+
+
 def native(template):
     io_uring_numbers()  # Fail before any host mutation if the ABI is unsupported.
     identity = pwd.getpwnam("nobody")
@@ -396,6 +438,7 @@ def native(template):
             raise RuntimeError("probe object collision")
         fixture.mkdir(mode=0o755)
         registered = False
+        primary_error = None
         try:
             for target in plan["hidden_files"] + [plan["config"], plan["readonly"]]:
                 path = Path(target)
@@ -437,11 +480,9 @@ def native(template):
                     assert client.recv(9) == b"synthetic", "root client Unix exchange"
                 # Wait for the oneshot checks and report to finish, with their 30s timeout.
                 run("/usr/bin/systemctl", "start", name + ".service")
-            except (RuntimeError, OSError, AssertionError):
-                # Only our uniquely named synthetic unit is queried, never other services.
-                diagnostics = run("/usr/bin/journalctl", "--no-pager", "--output=cat", "-n", "30",
-                                  "--unit=" + name + ".service")
-                raise RuntimeError("synthetic unit failed: " + diagnostics[-4000:]) from None
+            except (RuntimeError, OSError, AssertionError, subprocess.SubprocessError) as error:
+                # Only this synthetic pair is queried, never unrelated services.
+                raise RuntimeError(unit_failure_diagnostics(error, unit.name, socket_unit.name)) from error
             assert run("/usr/bin/systemctl", "is-active", name + ".service").strip() == "active"
             report = json.loads((state / "report.json").read_text())
             assert report["status"] == "PASS" and report["control"] == control
@@ -449,19 +490,12 @@ def native(template):
             report["host_dependency_start"] = "PASS"
             report["listener_sha256"] = hashlib.sha256((fixture / "listener.py").read_bytes()).hexdigest()
             results.append(report)
+        except BaseException as error:
+            primary_error = error
+            raise
         finally:
-            # Stop must succeed before removing any possible working/state paths.
-            if registered:
-                run("/usr/bin/systemctl", "stop", socket_unit.name, unit.name)
-                run("/usr/bin/systemctl", "reset-failed", name + ".service")
-                run("/usr/bin/systemctl", "reset-failed", socket_unit.name)
-            unit.unlink(missing_ok=True)
-            socket_unit.unlink(missing_ok=True)
-            run("/usr/bin/systemctl", "daemon-reload")
-            for owned in (fixture, state, runtime):
-                if owned.exists():
-                    shutil.rmtree(owned)
-            marker.unlink(missing_ok=True)
+            cleanup_probe(unit, socket_unit, fixture, state, runtime, marker,
+                          registered=registered, primary_error=primary_error)
     return {"status": "PASS", "manager": version,
             "systemd_249_observed": bool(re.match(r"systemd 249(?:\s|$)", version)),
             "template_sha256": hashlib.sha256(template.encode()).hexdigest(), "runs": results,
