@@ -4,7 +4,7 @@ import hashlib
 import time
 
 import pytest
-from pydantic import AnyUrl
+from pydantic import AnyUrl, ValidationError
 
 from app.services.remote_health_oauth import RemoteHealthOAuth, RemoteHealthConfig
 from mcp.server.auth.provider import AuthorizationParams, TokenError
@@ -27,6 +27,15 @@ def owner(db):
 
 
 async def issue(provider, owner):
+    client, pending = await pending_request(provider)
+    redirect = provider.consent(pending, owner.id, owner.id, True)
+    from urllib.parse import urlsplit, parse_qs
+    code = parse_qs(urlsplit(redirect).query)["code"][0]
+    loaded = await provider.load_authorization_code(client, code)
+    return client, loaded
+
+
+async def pending_request(provider):
     client = await provider.get_client("test-client")
     verifier = "a" * 43
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -35,11 +44,113 @@ async def issue(provider, owner):
         redirect_uri_provided_explicitly=True, resource=provider.config.resource)
     url = await provider.authorize(client, params)
     pending = url.split("request=")[1]
-    redirect = provider.consent(pending, owner.id, owner.id, True)
-    from urllib.parse import urlsplit, parse_qs
-    code = parse_qs(urlsplit(redirect).query)["code"][0]
-    loaded = await provider.load_authorization_code(client, code)
-    return client, loaded
+    return client, pending
+
+
+def configure_client(provider, **policy):
+    config = provider.config.model_dump()
+    config["clients"][0].update(policy)
+    provider.config = RemoteHealthConfig(**config)
+
+
+@pytest.mark.parametrize("policy", [
+    {"grant_days": 0}, {"grant_days": 3651}, {"grant_days": True},
+    {"grant_days": "3650"}, {"grant_days": 30.5},
+    {"grant_days": 31}, {"grant_days": 3650},
+    {"allowed_user_id": 0}, {"allowed_user_id": -1},
+    {"allowed_user_id": True}, {"allowed_user_id": "1"},
+])
+def test_client_policy_rejects_invalid_or_unpinned_long_grants(provider, policy):
+    with pytest.raises(ValidationError):
+        configure_client(provider, **policy)
+
+
+async def test_client_policy_defaults_and_sdk_metadata_stay_public(provider):
+    configured = provider.config.clients[0]
+    assert configured.grant_days == 30
+    assert configured.allowed_user_id is None
+    configure_client(provider, grant_days=3650, allowed_user_id=123)
+    client = await provider.get_client("test-client")
+    assert "grant_days" not in client.model_dump()
+    assert "allowed_user_id" not in client.model_dump()
+    assert client.scope == "health:read"
+    assert client.token_endpoint_auth_method == "none"
+
+
+@pytest.mark.parametrize("days", [1, 30, 3650])
+async def test_consent_preview_and_new_grant_lifetime_match_policy(provider, owner, days):
+    from app.models.remote_health_oauth import RemoteHealthGrant
+    configure_client(provider, grant_days=days, allowed_user_id=owner.id)
+    _, pending = await pending_request(provider)
+    assert provider.preview(pending)["expires_in_days"] == days
+    client, code = await issue(provider, owner)
+    token = await provider.exchange_authorization_code(client, code)
+    access = await provider.load_access_token(token.access_token)
+    with provider.session() as session:
+        grant = session.get(RemoteHealthGrant, access.claims["grant_id"])
+        assert grant.expires_at - grant.created_at == days * 86400
+    refresh = await provider.load_refresh_token(client, token.refresh_token)
+    assert refresh.expires_at <= int(time.time()) + 30 * 86400
+    assert token.expires_in == 600
+
+
+async def test_owner_pin_rejects_wrong_account_before_creating_grant(provider, owner, db):
+    from app.models.remote_health_oauth import RemoteHealthGrant
+    from tests.conftest import create_authenticated_user
+    other = create_authenticated_user(db)[0]
+    configure_client(provider, grant_days=3650, allowed_user_id=owner.id)
+    _, pending = await pending_request(provider)
+    with pytest.raises(ValueError, match="account"):
+        provider.consent(pending, other.id, other.id, True)
+    assert db.query(RemoteHealthGrant).count() == 0
+    # A failed wrong-account attempt does not consume the rightful owner's consent.
+    assert "code=" in provider.consent(pending, owner.id, owner.id, True)
+
+
+async def test_owner_pin_is_rechecked_for_existing_code_access_and_refresh(provider, owner):
+    client, first_code = await issue(provider, owner)
+    tokens = await provider.exchange_authorization_code(client, first_code)
+    _, pending_code = await issue(provider, owner)
+    refresh = await provider.load_refresh_token(client, tokens.refresh_token)
+    configure_client(provider, allowed_user_id=owner.id + 1)
+    assert await provider.load_access_token(tokens.access_token) is None
+    assert await provider.load_refresh_token(client, tokens.refresh_token) is None
+    assert await provider.load_authorization_code(client, pending_code.code) is None
+    with pytest.raises(TokenError):
+        await provider.exchange_refresh_token(client, refresh, ["health:read"])
+    with pytest.raises(TokenError):
+        await provider.exchange_authorization_code(client, pending_code)
+
+
+async def test_pending_consent_rejects_policy_change_before_approval(provider, owner, db):
+    from app.models.remote_health_oauth import RemoteHealthGrant
+    _, pending = await pending_request(provider)
+    assert provider.preview(pending)["expires_in_days"] == 30
+    configure_client(provider, grant_days=3650, allowed_user_id=owner.id)
+    with pytest.raises(ValueError, match="changed"):
+        provider.preview(pending)
+    with pytest.raises(ValueError, match="changed"):
+        provider.consent(pending, owner.id, owner.id, True)
+    assert db.query(RemoteHealthGrant).count() == 0
+
+
+@pytest.mark.parametrize("original_days,new_days", [(30, 3650), (3650, 30)])
+async def test_lifetime_policy_changes_do_not_rewrite_existing_grants(provider, owner, original_days, new_days):
+    from app.models.remote_health_oauth import RemoteHealthGrant
+    configure_client(provider, grant_days=original_days, allowed_user_id=owner.id)
+    client, code = await issue(provider, owner)
+    tokens = await provider.exchange_authorization_code(client, code)
+    access = await provider.load_access_token(tokens.access_token)
+    with provider.session() as session:
+        original = session.get(RemoteHealthGrant, access.claims["grant_id"])
+        original_expiry = original.expires_at
+        assert original_expiry - original.created_at == original_days * 86400
+    configure_client(provider, grant_days=new_days, allowed_user_id=owner.id)
+    refresh = await provider.load_refresh_token(client, tokens.refresh_token)
+    rotated = await provider.exchange_refresh_token(client, refresh, ["health:read"])
+    assert await provider.load_access_token(rotated.access_token) is not None
+    with provider.session() as session:
+        assert session.get(RemoteHealthGrant, access.claims["grant_id"]).expires_at == original_expiry
 
 
 async def test_code_single_use_and_tokens_are_user_bound(provider, owner):
@@ -53,7 +164,9 @@ async def test_code_single_use_and_tokens_are_user_bound(provider, owner):
         await provider.exchange_authorization_code(client, code)
 
 
-async def test_refresh_replay_revokes_grant(provider, owner):
+@pytest.mark.parametrize("grant_days", [30, 3650])
+async def test_refresh_replay_revokes_grant(provider, owner, grant_days):
+    configure_client(provider, grant_days=grant_days, allowed_user_id=owner.id)
     client, code = await issue(provider, owner)
     first = await provider.exchange_authorization_code(client, code)
     refresh = await provider.load_refresh_token(client, first.refresh_token)

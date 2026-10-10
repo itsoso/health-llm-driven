@@ -41,6 +41,21 @@ afterEach(() => {
 });
 
 describe('first-party health consent', () => {
+  it('displays the dedicated new client grant duration without silently using the old default', async () => {
+    mocks.fetch.mockImplementation(() => reply({ ...consent, expires_in_days: 3650 }));
+    render(<HealthConnectionPage />);
+    expect(await screen.findByRole('button', { name: '允许只读访问' })).toBeEnabled();
+    expect(screen.getByText(/3650 天/)).toBeInTheDocument();
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, -1, 3651, 30.5, '3650'])('rejects an invalid displayed grant duration %s', async (days) => {
+    mocks.fetch.mockImplementation(() => reply({ ...consent, expires_in_days: days }));
+    render(<HealthConnectionPage />);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '允许只读访问' })).not.toBeInTheDocument();
+  });
+
   it('shows the exact account and read-only consent without approving automatically', async () => {
     render(<HealthConnectionPage />);
     expect(await screen.findByRole('button', { name: '允许只读访问' })).toBeEnabled();
