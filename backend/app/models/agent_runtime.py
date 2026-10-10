@@ -1,7 +1,8 @@
 """Content-free control-plane ledger for first-party Agent runs."""
 from __future__ import annotations
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, JSON, String, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -278,6 +279,10 @@ class AgentRuntimeRolloutEvent(Base):
     id = Column(Integer, primary_key=True)
     action = Column(String(16), nullable=False)
     actor_kind = Column(String(16), nullable=False)
+    operator_review = Column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        nullable=True,
+    )
     reason_code = Column(String(64), nullable=False)
     actor_user_id = Column(
         Integer,
@@ -296,7 +301,7 @@ class AgentRuntimeRolloutEvent(Base):
             name="ck_agent_runtime_rollout_events_action",
         ),
         CheckConstraint(
-            "actor_kind IN ('system', 'admin')",
+            "actor_kind IN ('system', 'admin', 'operator')",
             name="ck_agent_runtime_rollout_events_actor",
         ),
         CheckConstraint(
@@ -306,7 +311,7 @@ class AgentRuntimeRolloutEvent(Base):
             name="ck_agent_runtime_rollout_events_reason",
         ),
         CheckConstraint(
-            "(action = 'resume' AND actor_kind = 'admin' "
+            "(action = 'resume' AND actor_kind IN ('admin', 'operator') "
             "AND reason_code = 'manual_resume') OR "
             "(action = 'pause' AND ((actor_kind = 'admin' "
             "AND reason_code = 'manual_pause') OR "
@@ -315,6 +320,19 @@ class AgentRuntimeRolloutEvent(Base):
             "'stale_lease_detected'))))",
             name="ck_agent_runtime_rollout_events_transition",
         ),
+        CheckConstraint(
+            "(actor_kind = 'operator' AND actor_user_id IS NULL AND "
+            "operator_review IS NOT NULL AND jsonb_typeof(operator_review) = 'object') OR "
+            "(actor_kind <> 'operator' AND operator_review IS NULL)",
+            name="ck_agent_runtime_rollout_events_operator_review",
+        ).ddl_if(dialect="postgresql"),
+        CheckConstraint(
+            "(actor_kind = 'operator' AND actor_user_id IS NULL AND "
+            "operator_review IS NOT NULL AND json_valid(operator_review) "
+            "AND json_type(operator_review) = 'object') OR "
+            "(actor_kind <> 'operator' AND operator_review IS NULL)",
+            name="ck_agent_runtime_rollout_events_operator_review",
+        ).ddl_if(dialect="sqlite"),
         CheckConstraint(
             "terminal_runs >= 0 AND failed_runs >= 0 AND "
             "reconciliation_runs >= 0 AND stale_active_runs >= 0",

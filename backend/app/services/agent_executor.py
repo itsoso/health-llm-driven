@@ -14203,13 +14203,23 @@ class AgentExecutor:
             meta["write_state"] = previous_summary
         operations = dict(meta.get("write_operations") or {})
         operation = dict(operations.get(fingerprint) or {})
-        operation.update({
-            "status": status,
-            "tool": tool_name,
-            "updated_at": updated_at,
-        })
-        if receipt:
-            operation["receipt_operation_id"] = receipt.get("operation_id")
+        # Admission rejection describes this attempt only. It cannot settle a
+        # previous dispatch of the same operation, nor erase its verified
+        # receipt. Recovery must continue to see the earlier durable evidence.
+        preserve_operation = status in {"rejected", "failed"} and operation.get(
+            "status"
+        ) in {"in_flight", "uncertain", "verified"}
+        if preserve_operation:
+            if previous_summary.get("fingerprint") == fingerprint:
+                meta["write_state"] = previous_summary
+        else:
+            operation.update({
+                "status": status,
+                "tool": tool_name,
+                "updated_at": updated_at,
+            })
+            if receipt:
+                operation["receipt_operation_id"] = receipt.get("operation_id")
         operations[fingerprint] = operation
         meta["write_operations"] = operations
         meta["write_receipts"] = existing_receipts
