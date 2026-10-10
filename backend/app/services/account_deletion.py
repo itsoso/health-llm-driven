@@ -61,38 +61,6 @@ def _cache_key_owner(key: bytes) -> str | None:
             return matched.group("owner")
     return None
 
-# Audit only key metadata. Unknown/legacy namespaces (including hashed owners,
-# conversation IDs and shared Celery payloads) cannot prove user-data absence.
-# Deliberately do not infer ownership from a number elsewhere in a key.
-_CACHE_OWNER_PATTERNS = tuple(re.compile(pattern) for pattern in (
-    r"(?:daily_rec|supplement_rec|rec_gen_lock):(?P<owner>[1-9][0-9]*):[0-9]{4}-[0-9]{2}-[0-9]{2}",
-    r"dim_analysis:(?P<owner>[1-9][0-9]*):[0-9]{4}-[0-9]{2}-[0-9]{2}:[^:\n]+",
-    r"(?:twin:v2|twin_env):(?P<owner>[1-9][0-9]*)",
-    r"safety:v3:(?P<owner>[1-9][0-9]*):s[0-9]+:l[0-9]+:d[01]",
-    r"(?:starter_polish:v2|starter_pregen:v2|starter_pregen:inflight:v2):(?P<owner>[1-9][0-9]*):[a-f0-9]+",
-    r"starter_pregen:idx:v2:(?P<owner>[1-9][0-9]*)",
-    r"agent_loop:push_count:(?P<owner>[1-9][0-9]*):[0-9]{8}",
-    r"genetic_report:agent_summary:v1:u(?P<owner>[1-9][0-9]*):p[1-9][0-9]*",
-    r"genetic_snp_detail:v2:user=(?P<owner>[1-9][0-9]*):rsid=[^:\n]+:gt=[^:\n]+",
-    r"observability:dashboard:d=[0-9]+:u=(?P<owner>[1-9][0-9]*):j=[01]",
-))
-_CACHE_SCAN_MAX_PAGES = 128
-_CACHE_SCAN_MAX_KEYS = 10_000
-_CACHE_KEY_MAX_BYTES = 4096
-
-
-def _cache_key_owner(key: bytes) -> str | None:
-    """Return only a proven owner from a known producer's exact key shape."""
-    try:
-        text = key.decode("utf-8")
-    except UnicodeDecodeError:
-        return None
-    for pattern in _CACHE_OWNER_PATTERNS:
-        matched = pattern.fullmatch(text)
-        if matched is not None:
-            return matched.group("owner")
-    return None
-
 
 def _table(db: Session, table_name: str) -> Table:
     if not _IDENTIFIER.fullmatch(table_name):

@@ -1,5 +1,14 @@
 # Garmin heart-rate ingestion integrity
 
+| 字段 | 值 |
+| --- | --- |
+| 状态 | building |
+| 当前阶段 | S5 integrated validation; fixed candidate review pending |
+
+## G1 准入
+
+裁决：PASS。修复现有设备数据来源失真，保留缺失信息；不推导医疗结论、不批量改写历史。用户已授权整合各session代码至main并发布。
+
 Status: local implementation; not released. Controller: health-harness-orchestrator; overlay: safety-gate.
 
 ## Problem and bounded change
@@ -29,3 +38,7 @@ Historical remediation requires a separate design with explicit provenance, orig
 ## Stable local helper identity recommendation
 
 Repeated Keychain prompts may follow a changed executable/signing identity; the observed helper rebuild changed its ad hoc identifier. The exact prompt cause has not been verified. Prefer a stable named and signed helper, keep binary identity stable per release, and use the OS authorization interface for that single helper and single Health credential item if the user chooses persistent trust. Do not permit all applications, disable Keychain locking, copy secrets into environment variables, or change ACLs in this task. No promise of zero prompts after reboot or security events.
+
+## 跨 session 整合验证
+
+原三个提交合入main。整合首次测试8失败、55通过：心率断言仍保留，失败集中于旧测试仅接受synced_count，而Garmin同步状态真实性修复已明确新增status/failed_count。测试改为断言完整当前成功契约，不删心率、分区、历史保留及缓存验证；待新鲜回归与固定提交独立GO。

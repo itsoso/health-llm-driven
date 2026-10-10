@@ -60,7 +60,9 @@ async def test_sync_uses_samples_and_native_zones_only(
 
     monkeypatch.setattr(service, "get_activity_details", details)
     monkeypatch.setattr(workout_sync, "_invalidate_twin", lambda _: None)
-    assert await service.sync_activities(db, user.id, days=1) == {"synced_count": 0 if existing else 1}
+    assert await service.sync_activities(db, user.id, days=1) == {
+        "status": "success", "synced_count": 0 if existing else 1, "failed_count": 0,
+    }
     record = db.query(WorkoutRecord).filter_by(user_id=user.id, external_id="7654321").one()
     points = json.loads(record.heart_rate_data) if record.heart_rate_data else None
     assert points == (historic_points if existing else expected_points)
