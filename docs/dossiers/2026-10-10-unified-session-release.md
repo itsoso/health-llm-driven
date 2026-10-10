@@ -228,3 +228,5 @@ OTA validate38095352125 success；publish38095471949原workflow failure（finish
 修复使用完整本人问句投影，限定1–31天、服务器时区与认证身份，周健康概览仅读取饮食/睡眠/运动实际记录。其他健康领域未查询的限制同源进入提示、回答与续问；不授予补剂/用药或宽泛health_analysis权限。Mobile透传业务terminalStatus；非完整终态普通步骤用中性展示，不计为完成，警示保留。未知工具success未改成健康成功凭证。
 
 G3：周范围解析2项先RED、反例7项因helper缺失RED、身份反例通过；Mobile新增6项先RED，197项相邻回归与tsc通过。真实PostgreSQL工具派发/持久化与固定候选G4/G5仍在执行。保留其他session照片补剂与时间WIP，仅暂存本次代码和归属UI片段；不宣称已部署此次修复。用户长期不需要真实模型评测的偏好继续适用。
+
+G4 首轮13dc16217为NO-GO：原文strip前缺权限角色核对，四空格/Tab代码材料可被投影为实际个人读。发布前已阻断，未push或部署；新增2项真实gateway反例先RED，修复校验原文active_health_read_authority_text一致性，16项overview正反通过。该缺陷不通过豁免，修复提交重新独立G4。首次PG回归启动时有短暂错误notice插入位置，原失败日志保留；修复后另起新鲜回归，不能把失败算通过。

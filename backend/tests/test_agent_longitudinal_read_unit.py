@@ -447,3 +447,14 @@ def test_overview_discloses_limited_health_coverage():
     from app.services.agent_composed_read_completion import read_scope_notices
     notices = read_scope_notices(resolve_owned_read_scope(snapshot('最近一周我的健康情况如何?')))
     assert any('其他健康领域未查询' in notice for notice in notices)
+
+@pytest.mark.parametrize('prefix', ['    ', '\t'])
+def test_overview_code_material_cannot_grant_personal_reads(prefix):
+    from app.services.agent_longitudinal_read import project_recent_health_overview
+    from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+    from tests.test_sleep_oxygen_read_scope import decide
+    text = prefix + '最近一周我的健康情况如何?'
+    assert project_recent_health_overview(text) is None
+    assert resolve_longitudinal_read_queries(snapshot(text)) is None
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    assert decide({'dimension': 'sleep', 'days': 7}, text).action == 'block'

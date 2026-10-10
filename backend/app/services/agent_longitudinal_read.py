@@ -59,12 +59,17 @@ def project_recent_health_overview(text: str) -> str | None:
     turn quoted questions, additional filters or another person's data into
     authority, and does not grant clinical-history reads or writes.
     """
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+
+    original = str(text or '')
+    if active_health_read_authority_text(original) != original.strip():
+        return None
     recent = _RECENT.pattern
     match = re.fullmatch(
         rf"(?:请)?(?:(?P<before>{recent})(?:的)?(?:我|本人)(?:的)?|"
         rf"(?:我|本人)(?P<after>{recent})(?:的)?)"
         r"健康(?:情况|状况|状态)(?:如何|怎么样|怎样)[?？。.!！]?",
-        str(text or '').strip(),
+        original.strip(),
     )
     if match is None:
         return None
