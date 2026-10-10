@@ -38,6 +38,8 @@ def evidence(tmp_path, monkeypatch):
     for name in ('previous-next', 'previous-node-modules'):
         (op / name).mkdir()
         (op / name / 'file').write_text(name)
+        # CI's restrictive umask must not make the mode mutation a no-op.
+        (op / name / 'file').chmod(0o644)
         backups[name] = server._frontend_publication_backup_digest(op / name)
     complete = {**intent, 'state': 'FRONTEND_SUCCEEDED', 'artifact_digest': 'e' * 64,
                 'proof_sha256': {n: hashlib.sha256((op / n).read_bytes()).hexdigest()
@@ -166,7 +168,7 @@ def test_rotation_memo_avoids_duplicate_backup_content_reads(evidence, monkeypat
     assert len(reads) == 2 * first
 
 
-@pytest.mark.parametrize('mutation', ['same-size-restored-time', 'new-file', 'deleted-file', 'unsafe-mode', 'escape-link'])
+@pytest.mark.parametrize('mutation', ['same-size-restored-time', 'new-file', 'deleted-file', 'changed-mode', 'escape-link'])
 def test_memo_never_hides_changed_history(evidence, mutation):
     import os
     server, state, op, complete = evidence
@@ -181,8 +183,8 @@ def test_memo_never_hides_changed_history(evidence, mutation):
         (file.parent / 'unexpected').write_text('new')
     elif mutation == 'deleted-file':
         file.unlink()
-    elif mutation == 'unsafe-mode':
-        # fixture validate_metadata is replaced, so test real checker separately
+    elif mutation == 'changed-mode':
+        # Detect a changed digest even when both modes are independently valid.
         file.chmod(0o600)
     else:
         (file.parent / 'escape').symlink_to('/tmp')
