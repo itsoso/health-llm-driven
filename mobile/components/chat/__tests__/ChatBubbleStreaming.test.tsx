@@ -582,9 +582,9 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByText('正在理解你的问题')).toBeNull();
     expect(getByText('今天饮食总结如下。')).toBeTruthy();
 
-    expect(getByLabelText('展开回答依据')).toHaveStyle({ minHeight: 44 });
+    expect(getByLabelText('展开处理详情')).toHaveStyle({ minHeight: 44 });
     expect(getByLabelText('复制回答')).toHaveStyle({ width: 44, height: 44 });
-    fireEvent.press(getByLabelText('展开回答依据'));
+    fireEvent.press(getByLabelText('展开处理详情'));
     expect(getByText('处理摘要')).toBeTruthy();
     expect(getByText('理解你的问题')).toBeTruthy();
     expect(getByText('读取记录信息')).toBeTruthy();
@@ -593,7 +593,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByText('正在理解你的问题')).toBeNull();
     expect(queryByText('整理回复中')).toBeNull();
 
-    fireEvent.press(getByLabelText('收起回答依据'));
+    fireEvent.press(getByLabelText('收起处理详情'));
     expect(queryByText('读取记录信息')).toBeNull();
   });
 
@@ -732,7 +732,7 @@ describe('ChatBubble streaming degraded render', () => {
       },
     });
 
-    fireEvent.press(getByLabelText('展开回答依据'));
+    fireEvent.press(getByLabelText('展开处理详情'));
 
     expect(getByText('完成 2 个处理步骤，1 项需要注意')).toBeTruthy();
     expect(getByTestId('icon-alert-circle-outline')).toBeTruthy();

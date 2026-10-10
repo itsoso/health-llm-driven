@@ -181,12 +181,16 @@ def get_credential_status(
         }
 
     minutes_since = None
+    future_sync_time = False
     if cred.last_sync_at:
         now = datetime.now(timezone.utc)
         last = cred.last_sync_at
         if last.tzinfo is None:
             last = last.replace(tzinfo=timezone.utc)
-        minutes_since = max(0, int((now - last).total_seconds() / 60))
+        age_seconds = (now - last).total_seconds()
+        future_sync_time = age_seconds < -60
+        if not future_sync_time:
+            minutes_since = max(0, int(age_seconds / 60))
 
     from app.services.auth import GARMIN_ACTIVITY_PARTIAL_MESSAGE
     activity_partial = cred.last_error == GARMIN_ACTIVITY_PARTIAL_MESSAGE
@@ -198,7 +202,7 @@ def get_credential_status(
         health = "error"
     elif cred.error_count >= 3:
         health = "error"
-    elif activity_partial:
+    elif activity_partial or cred.last_error or future_sync_time:
         health = "stale"
     elif minutes_since is None:
         health = "stale"
@@ -214,6 +218,8 @@ def get_credential_status(
         err = GARMIN_ACTIVITY_PARTIAL_MESSAGE
     elif cred.last_error:
         err = safe_garmin_error_message(RuntimeError(cred.last_error))
+    elif future_sync_time:
+        err = "同步时间异常，暂时无法确认最近同步结果，请重新同步后核实。"
 
     return {
         "bound": True,

@@ -85,7 +85,7 @@ const CONTENT = '已为你记录今天的体重。';
 
 // 透视面板 (AgentTransparencyPanel) 折叠头的展开按钮 accessibilityLabel —
 // toolsUsed 现在经 buildAgentTransparency 收进这个面板, 展开后以 "调用 Skill" 行 + chip 呈现.
-const EXPAND_LABEL = '展开回答依据';
+const EXPAND_LABEL = '展开处理详情';
 
 describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
   it('renders an always-visible medical source panel below a completed health answer', () => {

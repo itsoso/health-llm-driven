@@ -2637,6 +2637,10 @@ def _health_read_segment_has_target(text: str) -> bool:
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
     from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+    from app.services.agent_longitudinal_read import is_recent_workout_read
+
+    if is_recent_workout_read(text):
+        return False  # Whole-command subject proof; dates/tools remain gateway-bound.
 
     if _product_report_interpretation_clause(text):
         return False

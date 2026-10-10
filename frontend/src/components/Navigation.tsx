@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
-import { useState, useRef, useEffect } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { Suspense, useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import NotificationCenter from '@/components/NotificationCenter';
 import {
   Home,
+  Compass,
   LayoutDashboard,
   Sparkles,
   Heart,
@@ -66,7 +67,12 @@ interface NavGroup {
 }
 
 export default function Navigation() {
+  return <Suspense fallback={null}><NavigationContent /></Suspense>;
+}
+
+function NavigationContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, isAuthenticated, logout, isLoading: authLoading } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -79,6 +85,7 @@ export default function Navigation() {
     { href: '/', label: '首页', icon: <Home className="w-4 h-4" /> },
     { href: '/dashboard', label: '健康概览', icon: <LayoutDashboard className="w-4 h-4" /> },
     { href: '/agenda', label: '今日议程', icon: <CalendarCheck className="w-4 h-4" /> },
+    { href: '/agenda?navigation=week', label: '人生导航', icon: <Compass className="w-4 h-4" /> },
     { href: '/daily-insights', label: '今日建议', icon: <Sparkles className="w-4 h-4" /> },
     { href: '/ai-assistant', label: '智能助理', icon: <MessageCircle className="w-4 h-4" /> },
     { href: '/smart-plan', label: '智能计划', icon: <CalendarCheck className="w-4 h-4" /> },
@@ -168,6 +175,10 @@ export default function Navigation() {
   }, []);
 
   const isActive = (href: string) => {
+    if (href === '/agenda' || href === '/agenda?navigation=week') {
+      const isLifeNavigation = searchParams.get('navigation') === 'week';
+      return pathname === '/agenda' && (href.includes('?') ? isLifeNavigation : !isLifeNavigation);
+    }
     if (href === '/') {
       return pathname === '/';
     }
@@ -200,24 +211,23 @@ export default function Navigation() {
                 className="rounded-lg flex-shrink-0 shadow-md group-hover:shadow-purple-500/20 transition-all"
                 priority
               />
-              <span className="hidden sm:inline text-xl tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">自由是自律的泡沫</span>
+              <span className="hidden 2xl:inline text-base tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">自由是自律的泡沫</span>
             </Link>
           </div>
 
-          {/* 桌面导航菜单（lg+，仅导航项，用户菜单由下方独立区块处理） */}
-          <div className="hidden lg:flex lg:items-center lg:gap-1 flex-1 justify-end" ref={dropdownRef}>
+          {/* 桌面导航菜单（xl+，仅导航项，用户菜单由下方独立区块处理） */}
+          <div className="hidden xl:flex xl:items-center xl:gap-1 flex-1 justify-end" ref={dropdownRef}>
             {/* 主要导航项 */}
             {mainNavItems.slice(1).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-2 xl:px-3 py-2 rounded-md text-sm xl:text-base font-medium transition-all duration-200 flex items-center gap-1.5 xl:gap-2 whitespace-nowrap flex-shrink-0 ${
+                className={`px-2 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1.5 xl:gap-2 whitespace-nowrap flex-shrink-0 ${
                   isActive(item.href)
                     ? 'bg-purple-600/90 text-white shadow-sm'
                     : 'text-gray-300 hover:bg-white/5 hover:text-white'
                 }`}
               >
-                {item.icon}
                 <span>{item.label}</span>
               </Link>
             ))}
@@ -227,13 +237,12 @@ export default function Navigation() {
               <div key={group.label} className="relative flex-shrink-0">
                 <button
                   onClick={() => setOpenDropdown(openDropdown === group.label ? null : group.label)}
-                  className={`px-2 xl:px-3 py-2 rounded-md text-sm xl:text-base font-medium transition-all duration-200 flex items-center gap-1 xl:gap-1.5 whitespace-nowrap ${
+                  className={`px-2 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1 xl:gap-1.5 whitespace-nowrap ${
                     isGroupActive(group)
                       ? 'bg-purple-600/90 text-white shadow-sm'
                       : 'text-gray-300 hover:bg-white/5 hover:text-white'
                   }`}
                 >
-                  {group.icon}
                   <span>{group.label}</span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 transition-transform duration-200 ${openDropdown === group.label ? 'rotate-180' : ''}`}
@@ -264,8 +273,8 @@ export default function Navigation() {
             ))}
           </div>
 
-          {/* 平板导航菜单（md~lg，仅图标） */}
-          <div className="hidden md:flex lg:hidden md:items-center md:space-x-1">
+          {/* 平板导航菜单（md~xl，仅图标） */}
+          <div className="hidden md:flex xl:hidden md:items-center md:space-x-1">
             {mainNavItems.slice(1).map((item) => (
               <Link
                 key={item.href}
@@ -309,7 +318,7 @@ export default function Navigation() {
                     <span className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-700 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-inner">
                       {user?.name?.charAt(0) || '?'}
                     </span>
-                    <span className="hidden xl:inline truncate max-w-[100px] text-base font-medium tracking-wide">{user?.name}</span>
+                    <span className="hidden 2xl:inline truncate max-w-[100px] text-base font-medium tracking-wide">{user?.name}</span>
                     <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
                   </button>
                   {showUserMenu && (

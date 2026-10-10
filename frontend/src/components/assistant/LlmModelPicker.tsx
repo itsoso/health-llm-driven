@@ -71,7 +71,7 @@ export default function LlmModelPicker({
         aria-expanded={open}
         onClick={() => setOpen(value => !value)}
         disabled={disabled}
-        className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-[#D8D3C4] px-3 py-[5px] text-[12.5px] text-[#6B665A] transition-colors hover:border-[#C96442] disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border border-[#D8D3C4] px-3 py-[5px] text-[12.5px] text-[#6B665A] transition-colors hover:border-[#C96442] disabled:cursor-not-allowed disabled:opacity-60"
         title="切换当前对话使用的 AI 模型"
       >
         <Brain className="h-3.5 w-3.5 shrink-0 text-[#948F80]" />

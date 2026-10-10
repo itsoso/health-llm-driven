@@ -243,6 +243,13 @@ function ChatBubbleInner({
     && item.completionStatus !== 'error';
   const messageExportActionsEnabled = isUser || assistantCompletionActionsEnabled;
   const images = item.imageUris;
+  // Strip only the generated trailing marker when every attachment has a renderable source.
+  // Stored text remains intact for copying, replay and accessibility.
+  const userCaption = isUser && images?.length
+    && images.every(uri => !!buildChatImageSource(uri, imageAuthToken))
+    ? displayText.replace(/\n?\[附图:\s*(\d+)张\]\s*$/, (marker, count) =>
+      Number(count) === images.length ? '' : marker).trimEnd()
+    : displayText;
   const transparency = useMemo(
     () => buildAgentTransparency({
       elapsedMs: item.elapsedMs,
@@ -1231,7 +1238,7 @@ function ChatBubbleInner({
               </View>
             )}
             {renderMessageImages()}
-            {displayText ? <Text style={txt.bubbleUser}>{displayText}</Text> : null}
+            {userCaption ? <Text style={txt.bubbleUser}>{userCaption}</Text> : null}
             {showMessageTime ? <MessageTime label={sentTimeShort} isUser /> : null}
             {renderMessageActions()}
           </TouchableOpacity>

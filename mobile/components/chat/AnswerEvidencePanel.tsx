@@ -181,23 +181,25 @@ export default function AnswerEvidencePanel({
     || (!!answerEvidence && processItems.length > 0);
   const hasDetails = !!answerEvidence || sourceCount > 0 || processItems.length > 0 || hasTechnicalDetails;
   const hasWarning = evidenceSummary.tone === 'warning';
+  const detailLabel = answerEvidence || sourceCount > 0 ? '回答依据' : '处理详情';
+  if (!hasDetails && !completionActionsEnabled) return null;
 
   return (
     <View testID="assistant-utility-panel" style={styles.panel}>
-      <View style={styles.rail}>
+      <View style={[styles.rail, !answerEvidence && sourceCount === 0 && styles.quietRail]}>
         {hasDetails ? (
           <Pressable
             onPress={() => setOpen(value => !value)}
             style={({ pressed }) => [styles.evidenceButton, pressed && styles.pressed]}
             accessibilityRole="button"
-            accessibilityLabel={open ? '收起回答依据' : '展开回答依据'}
+            accessibilityLabel={`${open ? '收起' : '展开'}${detailLabel}`}
             accessibilityState={{ expanded: open }}
           >
             <View style={styles.railIcon}>
               <Ionicons name="document-text-outline" size={13} color={C.green700} />
             </View>
             <Text style={txt.evidenceLabel} numberOfLines={1}>
-              {`回答依据${evidenceCount > 0 ? ` · ${evidenceCount}项` : ''}`}
+              {`${detailLabel}${evidenceCount > 0 ? ` · ${evidenceCount}项` : ''}`}
             </Text>
             <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={C.ink3} />
           </Pressable>
@@ -465,6 +467,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     gap: 2,
   },
+  quietRail: { backgroundColor: 'transparent' },
   evidenceButton: {
     minHeight: 44,
     flex: 1,

@@ -134,6 +134,9 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
                     user_id,
                     type(e).__name__,
                 )
+                db.rollback()
+                if not garmin_credential_service.mark_activity_sync_partial(db, user_id):
+                    raise RuntimeError("garmin_activity_partial_status_not_persisted") from e
                 raise
             synced_activities = workout_result.get("synced_count", 0)
             activities_error_count = workout_result.get("failed_count", 0)

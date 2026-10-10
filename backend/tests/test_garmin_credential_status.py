@@ -20,7 +20,7 @@ def _make_user(db) -> User:
     return user
 
 
-def test_garmin_credential_status_clamps_future_sync_age(db):
+def test_garmin_credential_status_does_not_claim_future_sync_success(db):
     user = _make_user(db)
     db.add(GarminCredential(
         user_id=user.id,
@@ -34,8 +34,9 @@ def test_garmin_credential_status_clamps_future_sync_age(db):
 
     status = get_credential_status(current_user=user, db=db)
 
-    assert status["minutes_since_last_sync"] == 0
-    assert status["health"] == "healthy"
+    assert status["minutes_since_last_sync"] is None
+    assert status["health"] == "stale"
+    assert "时间" in status["last_error"]
 
 
 def test_garmin_credential_status_surfaces_mfa_as_actionable_error(db):
@@ -102,3 +103,17 @@ def test_activity_partial_preserves_login_and_prior_success_until_full_success(d
     assert garmin_credential_service.update_sync_status(db,user.id,activities_verified=True)
     assert get_credential_status(current_user=user,db=db)['health']=='healthy'
     assert _garmin_status(db,user.id,datetime.now(timezone.utc))['status']=='ok'
+
+
+def test_recent_success_does_not_hide_latest_sync_failure(db):
+    from app.services.auth import garmin_credential_service
+    user = _make_user(db)
+    db.add(GarminCredential(user_id=user.id, garmin_email='synthetic@example.invalid',
+        encrypted_password='unused', credentials_valid=True,
+        last_sync_at=datetime.now(timezone.utc)))
+    db.commit()
+    garmin_credential_service.update_sync_error(db, user.id, 'temporary sync failure')
+    status = get_credential_status(current_user=user, db=db)
+    assert status['health'] == 'stale'
+    assert status['last_error']
+    assert status['credentials_valid'] is True

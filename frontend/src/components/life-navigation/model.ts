@@ -19,6 +19,18 @@ export function ensureWeek(data: LifeData, monday: string): LifeData { const nex
 export function localDate(now = new Date()): string { return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; }
 export function addDays(date: string, amount: number): string { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() + amount); return localDate(d); }
 export function mondayOf(date: string): string { const day = new Date(`${date}T12:00:00`).getDay(); return addDays(date, -(day === 0 ? 6 : day - 1)); }
+export function weekDayLabel(date: string): string {
+    return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(`${date}T12:00:00`).getDay()];
+}
+export function weekNumber(date: string): number {
+    // ISO weeks belong to the year of their Thursday; UTC arithmetic avoids DST gaps.
+    const thursday = new Date(`${date}T12:00:00Z`);
+    thursday.setUTCDate(thursday.getUTCDate() + 4 - (thursday.getUTCDay() || 7));
+    const yearStart = new Date(0);
+    yearStart.setUTCFullYear(thursday.getUTCFullYear(), 0, 1);
+    yearStart.setUTCHours(12, 0, 0, 0);
+    return Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
 export function blankTask(date: string, role: LifeTask['role']): LifeTask { return { id: newId(), date, role, track_id: role === 'main' ? 'main' : role === 'auxiliary' ? 'aux1' : 'misc', slot: 'flexible', title: '', criterion: '', estimated_minutes: null, actual_minutes: null, status: 'planned', result: '', root_cause: '', improvement: '' }; }
 export function reviewDraft(week: LifeWeek): LifeReview {
     const tasks = week.tasks.filter(t => t.title.trim());

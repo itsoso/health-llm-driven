@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | S5 统一整合与发布验证 |
+| 状态 | shipping |
+| 当前阶段 | S7 发布已完成，Mobile 现场验收未验证 |
 
 ## G1 范围准入
 
@@ -21,11 +21,11 @@
 
 ## G4 发布前闸
 
-安全 GO，待精确 SHA 完整 CI。不得以本地检查替代。所有外接 LifeNav 开关继续关闭；没有接收方真实联调或七天使用证据。
+安全 GO；最终候选 b5e96ee84236b7ecdcd2de4914fbe6e2d13b432b 的完整 CI 37974764859 全部 30 jobs 成功。不得以本地检查替代。所有外接 LifeNav 开关继续关闭；没有接收方真实联调或七天使用证据。
 
 ## G5 与 G6 发布和现场验证
 
-待执行后端可信发布、Web 独立发布和 iOS 可信 OTA 的 validate/publish；每次均绑定同一完整绿色 SHA，记录持久回执及公开健康检查。不得重跑已失败的旧 OTA 或使用旧包冒充候选。Mobile 模拟器现场仍有未验证项，当前未申请 App Store/TestFlight 发布。部署成功与真实用户流程验收分别记录。
+G5：PASS。后端可信发布、Web 独立发布和 iOS 可信 OTA 均有持久成功回执，最终细节见下节和 `docs/reviews/2026-10-10-unified-session-release-receipt.json`。不得重跑已失败的旧 OTA 或使用旧包冒充候选。G6：真实登录 Web 周导航与相关页面通过，Mobile 模拟器/设备现场仍未验证；没有宣称客户端已经下载应用此 OTA，也未申请 App Store/TestFlight 发布。外接与七天试用保持未完成，不因发布成功改变状态。
 
 ## 首轮统一候选发布实绩
 
@@ -42,3 +42,21 @@ OTA validate 37969771532 成功，canonical 目录/ACL 问题已解除。publish
 诊断改进先取得失败测试，再完成实现；新鲜发布工具验证 195 passed、1 macOS Linux ACL 不适用 skip。独立 ota_diagnostic_review 对四个固定文件摘要裁决 G4 GO。validate 现在包含受既有源码和精确 CI 闸保护的认证只读供应商准入；未增加发布次数或放宽单次 claim/回执恢复规则。下一候选须先完整 CI，再执行该只读诊断，确认前置条件后才部署和发布。
 
 6d7d2513acc64d9f6058c5497a56dd7bfd719c75 完整 CI 37973005464 全部 30 jobs 成功，独立 lifenav_readiness 对固定 commit GO。只读 validate 37974122743 的审计诊断明确阻断于 environment，baseline/cohort/channel 全部通过；未 export、claim、RPC 或 update，未轮换生产授权。相同本地只读 GraphQL 请求通过既有 Expo CLI 会话验证：Python 默认客户端标识 HTTP 403，明确 reva-trusted-ota/1.0 后 HTTP 200、环境校验 PASS、项目及账号环境变量均为空；固定 manifest endpoint 同样从 403 变为 204（当前无适用更新，不能视为 manifest 成功）。两处请求补充诚实稳定的客户端标识，保留 TLS/代理/重定向/环境白名单/manifest 字节验证；先失败回归再实现，197 passed、1 macOS 不适用 skip。最终候选仍须独立复核、完整 CI、真实只读准入，不将本地兼容验证冒充线上发布成功。
+
+## 最终发布回执与剩余验收
+
+最终候选 b5e96ee84236b7ecdcd2de4914fbe6e2d13b432b 独立安全 GO，完整 CI 37974764859 成功；OTA 认证只读准入 37975652253 返回 ADMISSION_PASSED，Trusted Release validate 37976487728 成功。规范轮换 ef64 → b5e96 成功，原失败日志、旧后端/Web 终态及 launcher inode 7777226 保留，旧 loopback 私钥销毁。
+
+后端 run 37976912480 成功，服务器 completed.json 为精确候选 SUCCEEDED；最终内外网健康接口 200、两种导航未登录 401、四服务 active、业务租约不存在。Web 已成功制品树 4dd6ebaa2fa84e1b009354f60c47edfa88a07153 与最终候选完全相同，保留独立发布回执 86cb1a54961245c789cc89e4204cbcff，未重复上传相同应用树。最终 Chrome 实际读取个人工作区并切换周计划，生产未写测试数据；截图保留本地，不提交用户载荷。
+
+OTA publish 37977844821 取得原 vendor receipt 后在核验命令阶段失败，保留工作流 failure 与完整审计 artifact，未重跑 workflow 或 vendor update。原 group a87acf6d-c6b8-4ece-9390-97afaad6973e、update 01a12214-45b0-7fba-aea3-3259bc232c1a 的独立供应商回读通过；生产 canonical manifest 核验确认 update/runtime/project/bundle/全部 assets 相同。仅执行 canonical trusted_ota_server.py 的原双锁同回执 recover，最终服务器 OTA completed.json 为 SUCCEEDED，intent 摘要 4b7c5dd9b2d3577ab0eb9f16359855fd37691dcc498b79ae9345fe02711f6f38、receipt 摘要 793fa207194ad54234daafd1eac0a86ee7862dd1c34f678be8d96ba2bf441fcb，持久租约归档通过，原业务租约释放。工作流失败不被改写为成功，服务器恢复成功与之分别记录。
+
+代码发布与用户使用验收分别记录：Web 现场已核验；iOS OTA 的发布与 manifest 字节证明已核验，客户端实际应用及 Mobile 现场仍未验证。外部接收方联调与完整七天使用不是此次可即时完成的证据，所有外接开关仍关闭。两份原视觉验收文档已从保留的 stash 恢复到原路径，旧地图未覆盖新地图。最终验收文档仅作为工作区证据更新，不推进已发布的 main SHA。
+
+## 下一批统一发布候选（2026-10-10，整合中）
+
+沿用用户整合其他 session 并全部发布的授权，root 接回唯一提交和发布所有权；生产当前为 346035f78，新增 harness 主干 ec1d6c7c9 的精确 CI38022547083成功。旧5fe及346失败OTA保留，禁止重发或换SHA绕过；本批为新增产品行为候选，须自己的完整Gate。
+
+本批范围：Garmin未完成同步状态真实性、本人当天刚才运动候选查询（不确定具体运动身份）、补剂旧ID批量API显式actual_dosage及落库回执和双端类型、Mobile新对话/附件/依据栏UI、缺热量草稿如实展示、LifeNav Web日期/任务/撤销重做/离页保护及聊天首页入口。相关各Dossier的局部PG/测试证据保留，固定SHA安全审查与完整集成待执行。
+
+排除未完成内容：daily_plan_chat及agent_executor混合改动缺授权真实模型闸，保留未提交；图片补剂完整识别确认写链路与热量识别根因尚未完成；外部Agent grant仅提案未实施；锁屏模拟器工具独立未验收。不把这些未交付项冒充修复，也不读生产秘密。候选冻结前仍保留所有其他session源码/原始收据。

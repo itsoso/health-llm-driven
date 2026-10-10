@@ -11,6 +11,8 @@
  */
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowUp,
@@ -907,10 +909,19 @@ function AIAssistantInner() {
     <main className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#F7F6F2] text-[#16201B]">
       <header className="relative z-[70] shrink-0 overflow-visible border-b border-[#E7E5DE] bg-[#F7F6F2]/95 px-3 py-2.5 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-1">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <Link
+              href="/"
+              aria-label="返回首页"
+              title="返回首页"
+              className="mr-1 inline-flex h-9 shrink-0 items-center gap-2 rounded-xl px-1 text-sm font-medium text-[#16201B] transition-colors hover:bg-[#E8F2EC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B]"
+            >
+              <Image src="/logo.png" alt="自由是自律的泡沫" width={28} height={28} className="shrink-0 rounded-lg" />
+              <span className="hidden sm:inline">首页</span>
+            </Link>
             <button
               onClick={() => setHistoryOpen(open => !open)}
-              className="mr-1 flex h-9 w-9 items-center justify-center rounded-xl text-[#8A938D] transition-colors hover:bg-[#E8F2EC] hover:text-[#16201B]"
+              className="mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[#8A938D] transition-colors hover:bg-[#E8F2EC] hover:text-[#16201B]"
               title="打开/收起历史记录"
             >
               <PanelLeft className="h-4.5 w-4.5" />
@@ -927,7 +938,8 @@ function AIAssistantInner() {
           </div>
           <button
             onClick={startNewConversation}
-            className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#D7D5CC] bg-[#FFFFFF] px-3 text-sm font-medium text-[#16201B] transition-colors hover:border-[#1F8A5B] hover:bg-[#E8F2EC]"
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-[#D7D5CC] bg-[#FFFFFF] px-3 text-sm font-medium text-[#16201B] transition-colors hover:border-[#1F8A5B] hover:bg-[#E8F2EC]"
+            aria-label="新对话"
           >
             <MessageSquarePlus className="h-4 w-4" />
             <span className="hidden sm:inline">新对话</span>
@@ -938,7 +950,8 @@ function AIAssistantInner() {
                 if (shareSelectionMode) exitShareSelection();
                 else setShareSelectionMode(true);
               }}
-              className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#CDE6D8] bg-[#E8F2EC] px-3 text-sm font-medium text-[#115738] transition-colors hover:border-[#1F8A5B] hover:bg-[#CDE6D8]"
+              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-[#CDE6D8] bg-[#E8F2EC] px-3 text-sm font-medium text-[#115738] transition-colors hover:border-[#1F8A5B] hover:bg-[#CDE6D8]"
+              aria-label={shareSelectionMode ? '取消选择' : '选择分享'}
             >
               {shareSelectionMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
               <span className="hidden sm:inline">{shareSelectionMode ? '取消选择' : '选择分享'}</span>

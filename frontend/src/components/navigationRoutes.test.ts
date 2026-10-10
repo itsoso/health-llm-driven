@@ -17,6 +17,6 @@ it('every declared navigation URL has a Next.js page', () => {
   };
   visit(source);
   expect(routes.size).toBeGreaterThan(30);
-  const missing = [...routes].filter(route => !fs.existsSync(path.resolve('src/app', route.slice(1), 'page.tsx')));
+  const missing = [...routes].filter(route => !fs.existsSync(path.resolve('src/app', new URL(route, 'https://reva.test').pathname.slice(1), 'page.tsx')));
   expect(missing, `Missing navigation routes: ${missing.join(', ')}`).toEqual([]);
 });

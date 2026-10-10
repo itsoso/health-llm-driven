@@ -1012,6 +1012,11 @@ def read_scope_synthesis_instructions(scope, *, include_layout: bool = True) -> 
 def read_scope_notices(scope) -> tuple[str, ...]:
     """One disclosure source for the prompt, final answer, and trusted facts."""
     lines = []
+    if "recent_workout_candidates_not_identified_event" in scope.limitations:
+        lines.append(
+            "本次先查询当前账号当天已保存的运动候选记录；尚不能确认哪条就是刚才那次。"
+            "未触发设备同步；没有匹配记录时不能用旧运动代替，多条记录不能合并冒充本次运动。"
+        )
     if "scope_diet_sleep_only" in scope.limitations:
         lines.append("本次复盘仅覆盖饮食与睡眠记录；活动等其他健康领域未覆盖。")
     if "default_recent_7_days" in scope.limitations:

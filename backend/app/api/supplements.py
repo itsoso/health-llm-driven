@@ -18,6 +18,7 @@ from app.schemas.supplement import (
     SupplementRecordUpdate,
     SupplementRecordResponse,
     SupplementBatchCheckin,
+    SupplementBatchCheckinResponse,
     SupplementIntakeBatchCreate,
     SupplementWithRecord,
     FrequentSupplement,
@@ -223,13 +224,18 @@ def create_supplement_record(
     return db_record
 
 
-@router.post("/records/batch")
+@router.post("/records/batch", response_model=SupplementBatchCheckinResponse)
 def batch_checkin(
     batch: SupplementBatchCheckin,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """批量补剂打卡（需要登录，自动使用当前用户）"""
+    """按 ID 批量记录本人补剂服用。
+
+    actual_dosage 保存明确提供的实际服用量（例如 2粒），不要用定义的
+    常规 dosage 或瓶身规格代替。回执 actual_dosage=null 表示未记录数量，
+    不能宣称具体数量已保存；已知数量可通过本接口补录。
+    """
     # 使用当前登录用户的 ID，忽略请求中的 user_id
     user_id = current_user.id
 
@@ -241,29 +247,32 @@ def batch_checkin(
         seen.add(checkin.supplement_id)
         _get_owned_supplement(db, user_id, checkin.supplement_id)
 
-    results = []
+    pending = []
     for checkin in batch.checkins:
         supplement_id, taken = checkin.supplement_id, checkin.taken
-        existing = db.query(SupplementRecord).filter(
+        record = db.query(SupplementRecord).filter(
             SupplementRecord.user_id == user_id,
             SupplementRecord.supplement_id == supplement_id,
             SupplementRecord.record_date == batch.record_date
         ).first()
-
-        if existing:
-            existing.taken = taken
-            results.append({"supplement_id": supplement_id, "action": "updated"})
-        else:
+        action = "updated" if record is not None else "created"
+        if record is None:
             record = SupplementRecord(
-                supplement_id=supplement_id,
-                user_id=user_id,  # 使用当前登录用户的 ID
+                supplement_id=supplement_id, user_id=user_id,
                 record_date=batch.record_date,
-                taken=taken
             )
             db.add(record)
-            results.append({"supplement_id": supplement_id, "action": "created"})
+        record.taken = taken
+        if "actual_dosage" in checkin.model_fields_set:
+            record.actual_dosage = checkin.actual_dosage
+        pending.append((record, action))
 
     db.commit()
+    results = [{
+        "supplement_id": record.supplement_id, "action": action,
+        "record_id": record.id, "record_date": record.record_date,
+        "taken": record.taken, "actual_dosage": record.actual_dosage,
+    } for record, action in pending]
     _invalidate_twin(user_id)
     return {"message": "批量打卡成功", "results": results}
 

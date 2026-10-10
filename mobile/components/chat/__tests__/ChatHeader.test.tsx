@@ -98,15 +98,17 @@ describe('ChatHeader', () => {
     expect(queryByText('语音')).toBeNull();
     expect(queryByLabelText('实时语音')).toBeNull();
     expect(getByLabelText('新建对话')).toBeTruthy();
-    expect(getByText('新建')).toBeTruthy();
-    expect(getByTestId('icon-time-outline')).toBeTruthy();
+    expect(getByText('新对话')).toBeTruthy();
+    expect(getByTestId('icon-create-outline')).toBeTruthy();
+    expect(queryByTestId('icon-add')).toBeNull();
+    expect(getByTestId('icon-chatbubbles-outline')).toBeTruthy();
     expect(getByTestId('icon-ellipsis-horizontal')).toBeTruthy();
 
     expect(groupStyle.backgroundColor).toBe(C.paper2);
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
-    expect(getByTestId('icon-time-outline').props.size).toBe(18);
+    expect(getByTestId('icon-chatbubbles-outline').props.size).toBe(18);
     expect(getByTestId('icon-ellipsis-horizontal').props.size).toBe(18);
     expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),

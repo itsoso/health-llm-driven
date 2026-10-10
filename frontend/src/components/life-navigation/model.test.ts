@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { blankData, ensureWeek, reviewDraft, applyReviewDraft, focusStart, focusPause, focusResume, focusAdvance, parseBackup } from './model';
+import { weekNumber, weekDayLabel } from './model';
+describe('calendar navigation at year boundaries', () => {
+    it('uses ISO week numbers for dates that belong to the adjacent week year', () => {
+        expect(weekNumber('2021-01-01')).toBe(53);
+        expect(weekNumber('2024-12-30')).toBe(1);
+        expect(weekNumber('2026-10-10')).toBe(41);
+        expect(weekDayLabel('2026-10-11')).toBe('周日');
+        expect(weekDayLabel('2026-10-12')).toBe('周一');
+    });
+});
 describe('Life navigation deterministic semantics', () => {
     it('uses the same task object in day, week and slot views', () => {
         const data = ensureWeek(blankData(), '2026-10-05');

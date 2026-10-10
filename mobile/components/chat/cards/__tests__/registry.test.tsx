@@ -1815,10 +1815,10 @@ describe('renderCard 安全降级', () => {
     expect(getByText('鸡胸肉 200g')).toBeTruthy();
     expect(getByText('杂粮饭 100g')).toBeTruthy();
     expect(getByText('西兰花')).toBeTruthy();
-    expect(getByText('晚餐草稿 · 识别完成')).toBeTruthy();
+    expect(getByText('晚餐草稿 · 热量待估算')).toBeTruthy();
     expect(getByText('蛋白')).toBeTruthy();
     expect(getByText('46g')).toBeTruthy();
-    expect(getByText('营养为估算值，保存前可继续修正')).toBeTruthy();
+    expect(getByText('尚未估出总热量。请点“修正”核对实际吃了哪些食物及份量；未吃的汤底、蘸料可删除。')).toBeTruthy();
   });
 
   it('lets users inspect every recognized diet item before confirming', () => {
@@ -1971,8 +1971,8 @@ describe('renderCard 安全降级', () => {
 
     expect(element).not.toBeNull();
     const { getByText } = render(element!);
-    expect(getByText('午餐草稿 · 识别完成')).toBeTruthy();
-    expect(getByText('营养为估算值，保存前可继续修正')).toBeTruthy();
+    expect(getByText('午餐草稿 · 热量待估算')).toBeTruthy();
+    expect(getByText('尚未估出总热量。请点“修正”核对实际吃了哪些食物及份量；未吃的汤底、蘸料可删除。')).toBeTruthy();
   });
 
   it('does not render diet drafts built from captured UI copy instead of food', () => {
@@ -3182,4 +3182,20 @@ describe('renderServerCards 防御', () => {
     expect(renderServerCards({} as any)).toEqual([]);
     expect(renderServerCards('string' as any)).toEqual([]);
   });
+});
+
+
+it('does not label a high-confidence food list with missing calories as a complete nutrition estimate', () => {
+  const element = renderCard({ type: 'diet_draft', data: {
+    meal_type: 'lunch', food_items: '火锅汤底 约1份 + 豆制品 约1盘',
+    confidence: 0.95, calories: null, protein: null, carbs: null,
+  }, actions: [] } as any);
+  const view = render(element!);
+  expect(view.getByText('午餐草稿 · 热量待估算')).toBeTruthy();
+  expect(view.getByText('热量缺失')).toBeTruthy();
+  expect(view.queryByText('高置信')).toBeNull();
+  expect(view.queryByText('-- kcal')).toBeNull();
+  expect(view.getByText('未估出')).toBeTruthy();
+  fireEvent.press(view.getByText('修正'));
+  expect(view.getByDisplayValue('火锅汤底 约1份 + 豆制品 约1盘')).toBeTruthy();
 });

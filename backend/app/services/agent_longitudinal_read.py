@@ -95,6 +95,27 @@ _METHOD_CLAUSE_RE = re.compile(
 _SUBDAY_SCOPE = re.compile(r"(?:今|昨|前|明|后)(?:早|晨|午)|上午|下午|中午|凌晨|清晨|早上|早晨|午后")
 _RETROSPECTIVE_SCOPE = re.compile(r"(?:分析|洞察|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
 
+_RECENT_WORKOUT_READ = re.compile(
+    r"(?:请(?:你)?|麻烦)?(?:帮我|给我)?"
+    r"(?:分析|复盘|总结|查看|查询|看看)(?:一下)?"
+    r"(?:我(?:的)?|本人(?:的)?)?(?:刚才|刚刚)(?:的)?"
+    r"(?:运动|锻炼|训练)(?:记录|数据)?[。.!！]?"
+)
+
+
+def is_recent_workout_read(text: str) -> bool:
+    """A complete owned read command, not a substring or a sync/write request.
+
+    Just-now is an event reference, not an owner. This authorizes today's
+    candidate lookup only; matching the particular event remains unverified.
+    Quotes, foreign owners, extra dates and restrictions cannot be discarded.
+    """
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+
+    source = str(text or "")
+    return (active_health_read_authority_text(source) == source.strip()
+            and _RECENT_WORKOUT_READ.fullmatch(source.strip()) is not None)
+
 
 _HTML_READ_FRAME = re.compile(
     r"(?:使用|用)\s*HTML\s*方式\s*输出\s*"
@@ -622,7 +643,8 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     # fail the stricter read-authority boundary instead of becoming empty syntax.
     if not active_health_read_authority_text(source_text):
         return None
-    active = (project_running_analysis_read(source_text)
+    active = (("查询我的今天的运动记录" if is_recent_workout_read(source_text) else None)
+              or project_running_analysis_read(source_text)
               or _project_read_presentation(source_text)
               or active_health_instruction_text(source_text))
     active = project_active_quote_roles(active)

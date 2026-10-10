@@ -532,7 +532,9 @@ function GarminStatusRow({
     ? Math.max(0, Math.floor(mins))
     : null;
 
+  const syncUnconfirmed = Boolean(status?.last_error) || (typeof mins === 'number' && mins < 0);
   const dot =
+    health === 'healthy' && syncUnconfirmed ? revaSemantic.caution.fg :
     health === 'healthy' ? revaSemantic.normal.fg :
     health === 'stale' ? revaSemantic.caution.fg :
     health === 'error' ? revaSemantic.risk.fg :
@@ -546,7 +548,8 @@ function GarminStatusRow({
       if (!status.credentials_valid) return '凭证失效';
       return `${status.error_count} 次失败`;
     }
-    if (health === 'stale' && status.last_error) return '同步未完成';
+    if (status.last_error) return '同步未完成';
+    if (typeof mins === 'number' && mins < 0) return '同步时间待核实';
     if (safeMins == null) return '从未同步';
     if (safeMins < 1) return '刚刚同步';
     if (safeMins < 60) return `${safeMins} 分钟前`;
@@ -559,7 +562,7 @@ function GarminStatusRow({
       style={styles.settingRow}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Garmin 连接，${statusText}${health === 'stale' && status?.last_error ? `，${status.last_error}` : ''}`}
+      accessibilityLabel={`Garmin 连接，${statusText}${health !== 'error' && status?.last_error ? `，${status.last_error}` : ''}`}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <Ionicons name="watch-outline" size={18} color={C.ink2} />

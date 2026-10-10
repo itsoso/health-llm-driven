@@ -7089,7 +7089,11 @@ export interface paths {
         put?: never;
         /**
          * Batch Checkin
-         * @description 批量补剂打卡（需要登录，自动使用当前用户）
+         * @description 按 ID 批量记录本人补剂服用。
+         *
+         *     actual_dosage 保存明确提供的实际服用量（例如 2粒），不要用定义的
+         *     常规 dosage 或瓶身规格代替。回执 actual_dosage=null 表示未记录数量，
+         *     不能宣称具体数量已保存；已知数量可通过本接口补录。
          */
         post: operations["batch_checkin_api_v1_supplements_records_batch_post"];
         delete?: never;
@@ -32675,12 +32679,42 @@ export interface components {
             /** Checkins */
             checkins: components["schemas"]["SupplementCheckinItem"][];
         };
+        /** SupplementBatchCheckinResponse */
+        SupplementBatchCheckinResponse: {
+            /** Message */
+            message: string;
+            /** Results */
+            results: components["schemas"]["SupplementCheckinResult"][];
+        };
         /** SupplementCheckinItem */
         SupplementCheckinItem: {
             /** Supplement Id */
             supplement_id: number;
             /** Taken */
             taken: boolean;
+            /**
+             * Actual Dosage
+             * @description 用户明确提供的本次实际服用量（如2粒）；不是瓶身规格或常规剂量。省略时保留原值，显式null清除数量；是否已服以taken为准。
+             */
+            actual_dosage?: string | null;
+        };
+        /** SupplementCheckinResult */
+        SupplementCheckinResult: {
+            /** Supplement Id */
+            supplement_id: number;
+            /** Action */
+            action: string;
+            /** Record Id */
+            record_id: number;
+            /**
+             * Record Date
+             * Format: date
+             */
+            record_date: string;
+            /** Taken */
+            taken: boolean;
+            /** Actual Dosage */
+            actual_dosage?: string | null;
         };
         /** SupplementDefinitionCreate */
         SupplementDefinitionCreate: {
@@ -47374,7 +47408,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SupplementBatchCheckinResponse"];
                 };
             };
             /** @description Validation Error */

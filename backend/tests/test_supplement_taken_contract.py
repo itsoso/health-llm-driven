@@ -304,3 +304,98 @@ def test_quick_record_affirmative_supplement_text_still_parses(text):
     record_type, _data = _parse_quick_record(text)
 
     assert record_type == "supplement"
+
+
+def test_batch_actual_dosage_round_trip_and_boolean_only_update_preserves_it(client, db):
+    user, token = create_authenticated_user(db)
+    first = _definition(db, user.id, 'NAC')
+    second = _definition(db, user.id, 'Omega-3')
+    day = date.today().isoformat()
+    payload = {'record_date': day, 'checkins': [
+        {'supplement_id': first.id, 'taken': True, 'actual_dosage': '2粒'},
+        {'supplement_id': second.id, 'taken': True, 'actual_dosage': '1粒'},
+    ]}
+    response = client.post(f'{RECORDS}/batch', json=payload, headers=_headers(token))
+    assert response.status_code == 200, response.text
+    assert [row['actual_dosage'] for row in response.json()['results']] == ['2粒', '1粒']
+    assert all(row['taken'] is True and row['record_id'] for row in response.json()['results'])
+    repeat = client.post(f'{RECORDS}/batch', json=payload, headers=_headers(token))
+    assert repeat.status_code == 200
+    assert len(_rows(db, first.id)) == 1
+    payload['checkins'] = [{'supplement_id': first.id, 'taken': True}]
+    response = client.post(f'{RECORDS}/batch', json=payload, headers=_headers(token))
+    assert response.json()['results'][0]['actual_dosage'] == '2粒'
+    read = client.get(f'/api/v1/supplements/me/date/{day}', headers=_headers(token))
+    assert read.status_code == 200
+    records = {item['supplement']['id']: item['record'] for item in read.json()}
+    assert records[first.id]['actual_dosage'] == '2粒'
+    assert records[second.id]['actual_dosage'] == '1粒'
+    db.refresh(first)
+    assert first.dosage is None
+
+
+def test_batch_dosage_foreign_target_rejects_whole_batch(client, db):
+    user, token = create_authenticated_user(db)
+    other, _ = create_authenticated_user(db)
+    own = _definition(db, user.id)
+    foreign = _definition(db, other.id)
+    response = client.post(f'{RECORDS}/batch', headers=_headers(token), json={
+        'record_date': date.today().isoformat(), 'checkins': [
+            {'supplement_id': own.id, 'taken': True, 'actual_dosage': '2粒'},
+            {'supplement_id': foreign.id, 'taken': True, 'actual_dosage': '1粒'},
+        ],
+    })
+    assert response.status_code == 404
+    assert _rows(db, own.id) == []
+    assert _rows(db, foreign.id) == []
+
+
+def test_batch_boolean_only_receipt_does_not_invent_definition_dosage(client, db):
+    user, token = create_authenticated_user(db)
+    supp = _definition(db, user.id)
+    supp.dosage = '每日2粒'
+    db.commit()
+    response = client.post(f'{RECORDS}/batch', headers=_headers(token), json={
+        'record_date': date.today().isoformat(),
+        'checkins': [{'supplement_id': supp.id, 'taken': True}],
+    })
+    assert response.status_code == 200
+    assert response.json()['results'][0]['actual_dosage'] is None
+    assert _rows(db, supp.id)[0].actual_dosage is None
+
+
+@pytest.mark.parametrize('dosage', [' ', 'x' * 41, 2, True])
+def test_batch_rejects_invalid_actual_dosage_before_any_write(client, db, dosage):
+    user, token = create_authenticated_user(db)
+    first = _definition(db, user.id, 'NAC')
+    second = _definition(db, user.id, 'Omega-3')
+    response = client.post(f'{RECORDS}/batch', headers=_headers(token), json={
+        'record_date': date.today().isoformat(), 'checkins': [
+            {'supplement_id': first.id, 'taken': True, 'actual_dosage': '2粒'},
+            {'supplement_id': second.id, 'taken': True, 'actual_dosage': dosage},
+        ],
+    })
+    assert response.status_code == 422
+    assert _rows(db, first.id) == []
+    assert _rows(db, second.id) == []
+
+
+def test_batch_untake_preserves_dosage_until_explicitly_cleared(client, db):
+    user, token = create_authenticated_user(db)
+    supp = _definition(db, user.id)
+    db.add(SupplementRecord(user_id=user.id, supplement_id=supp.id,
+                           record_date=date.today(), taken=True, actual_dosage='2粒'))
+    db.commit()
+    payload = {'record_date': date.today().isoformat(),
+               'checkins': [{'supplement_id': supp.id, 'taken': False}]}
+    response = client.post(f'{RECORDS}/batch', headers=_headers(token), json=payload)
+    assert response.status_code == 200
+    result = response.json()['results'][0]
+    assert result['taken'] is False
+    assert result['actual_dosage'] == '2粒'
+    payload['checkins'][0]['actual_dosage'] = None
+    response = client.post(f'{RECORDS}/batch', headers=_headers(token), json=payload)
+    assert response.status_code == 200
+    assert response.json()['results'][0]['actual_dosage'] is None
+    db.expire_all()
+    assert _rows(db, supp.id)[0].actual_dosage is None

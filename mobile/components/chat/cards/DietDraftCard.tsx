@@ -427,9 +427,9 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       <CardShell
         icon={MEAL_ICONS[mealType]}
         iconColor={C.green600}
-        title={data.auto_save_fallback === true ? `${mealLabel}草稿 · 自动保存待确认` : `${mealLabel}草稿 · 识别完成`}
-        badge={confidenceBadge(data.confidence)}
-        badgeColor={C.green500}
+        title={data.auto_save_fallback === true ? `${mealLabel}草稿 · 自动保存待确认` : `${mealLabel}草稿 · ${caloriesValue == null ? '热量待估算' : '识别完成'}`}
+        badge={caloriesValue == null ? '热量缺失' : confidenceBadge(data.confidence)}
+        badgeColor={caloriesValue == null ? revaSemantic.caution.fg : C.green500}
         bg={C.paper}
         style={styles.compactCard}
       >
@@ -503,7 +503,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         <View style={styles.compactNutritionStrip}>
           <View style={styles.compactNutritionItem}>
             <Text style={styles.compactNutritionLabel}>估算热量</Text>
-            <Text style={styles.compactNutritionValue}>{caloriesValue == null ? '--' : Math.round(caloriesValue)} kcal</Text>
+            <Text style={styles.compactNutritionValue}>{caloriesValue == null ? '未估出' : `${Math.round(caloriesValue)} kcal`}</Text>
           </View>
           <View style={styles.compactNutritionItem}>
             <Text style={styles.compactNutritionLabel}>蛋白</Text>
@@ -541,7 +541,9 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         ) : null}
 
         <Text maxFontSizeMultiplier={1.12} style={styles.compactBoundary}>
-          营养为估算值，保存前可继续修正
+          {caloriesValue == null
+            ? '尚未估出总热量。请点“修正”核对实际吃了哪些食物及份量；未吃的汤底、蘸料可删除。'
+            : '营养为估算值，保存前可继续修正'}
         </Text>
         <MealPhotoGallery
           visible={galleryVisible}

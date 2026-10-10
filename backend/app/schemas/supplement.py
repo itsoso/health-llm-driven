@@ -153,6 +153,19 @@ class SupplementCheckinItem(BaseModel):
 
     supplement_id: StrictInt
     taken: StrictBool  # true=已服, false=未服/取消打卡
+    actual_dosage: Optional[str] = Field(
+        default=None, min_length=1, max_length=40,
+        description="用户明确提供的本次实际服用量（如2粒）；不是瓶身规格或常规剂量。省略时保留原值，显式null清除数量；是否已服以taken为准。",
+    )
+
+    @field_validator("actual_dosage")
+    @classmethod
+    def nonblank_actual_dosage(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("actual_dosage must not be blank")
+        return value
 
 
 class SupplementBatchCheckin(BaseModel):
@@ -161,6 +174,20 @@ class SupplementBatchCheckin(BaseModel):
     user_id: Optional[int] = None  # 可选，如果不提供则使用当前登录用户
     record_date: date
     checkins: List[SupplementCheckinItem]
+
+
+class SupplementCheckinResult(BaseModel):
+    supplement_id: int
+    action: str
+    record_id: int
+    record_date: date
+    taken: bool
+    actual_dosage: Optional[str] = None
+
+
+class SupplementBatchCheckinResponse(BaseModel):
+    message: str
+    results: List[SupplementCheckinResult]
 
 
 class SupplementIntakeBatchItem(BaseModel):

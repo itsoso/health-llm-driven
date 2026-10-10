@@ -75,13 +75,14 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 
 const ChatBubble = require('../ChatBubble').default;
 
-function renderBubble(content: string) {
+function renderBubble(content: string, overrides: Partial<UIMessage> = {}) {
   const qc = new QueryClient();
   const message: UIMessage = {
     id: 'assistant-reva-ui',
     role: 'assistant',
     content,
     streaming: false,
+    ...overrides,
   };
   return render(
     <QueryClientProvider client={qc}>
@@ -148,4 +149,32 @@ describe('ChatBubble reva-ui blocks', () => {
     expect(queryByText(/```reva-ui/)).toBeNull();
     expect(queryByText(/"component":"record_quality"/)).toBeNull();
   });
+});
+
+
+describe('chat visual hierarchy', () => {
+  it('shows the photo and caption without duplicating the attachment marker', () => {
+    const view = renderBubble('记录补剂\n[附图: 1张]', {
+      role: 'user', imageUris: ['file:///photo.jpg'],
+    });
+    expect(view.getByLabelText('打开图片 1')).toBeTruthy();
+    expect(view.getByText('记录补剂')).toBeTruthy();
+    expect(view.queryByText(/\[附图:/)).toBeNull();
+  });
+
+  it('retains attachment information when a protected photo cannot be rendered', () => {
+    const view = renderBubble('记录补剂\n[附图: 1张]', {
+      role: 'user', imageUris: ['https://example.com/api/v1/upload/files/chat/photo.jpg'],
+    });
+    expect(view.queryByLabelText('打开图片 1')).toBeNull();
+    expect(view.getByText(/\[附图:/)).toBeTruthy();
+  });
+});
+
+
+it('does not erase unmatched attachment counts or text inside the caption', () => {
+  const view = renderBubble('说明 [附图: 2张] 请检查\n[附图: 2张]', {
+    role: 'user', imageUris: ['file:///photo.jpg'],
+  });
+  expect(view.getByText('说明 [附图: 2张] 请检查\n[附图: 2张]')).toBeTruthy();
 });

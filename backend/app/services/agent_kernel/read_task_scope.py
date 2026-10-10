@@ -254,7 +254,8 @@ def owned_read_tool_names(scope: OwnedReadScope) -> frozenset[str]:
 
 
 def requires_owned_read_tool_scope(scope: OwnedReadScope) -> bool:
-    return len(scope.queries) > 1 or scope.composite_advice
+    return (len(scope.queries) > 1 or scope.composite_advice
+            or "recent_workout_candidates_not_identified_event" in scope.limitations)
 
 
 def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
@@ -268,6 +269,16 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
+    from app.services.agent_longitudinal_read import is_recent_workout_read
+    if is_recent_workout_read(snapshot.envelope.text):
+        zone = ZoneInfo(snapshot.context.timezone)
+        now = snapshot.context.current_time
+        day = (now.replace(tzinfo=zone) if now.utcoffset() is None else now.astimezone(zone)).date().isoformat()
+        return OwnedReadScope(
+            ({"dimension": "workout", "start_date": day, "end_date": day,
+              "timezone": snapshot.context.timezone},),
+            ("recent_workout_candidates_not_identified_event",),
+        )
     from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
     garmin_review = resolve_garmin_workout_review_scope(snapshot.envelope.text)
     if garmin_review is not None:

@@ -403,12 +403,13 @@ describe('SettingsScreen', () => {
     const { getByText, queryByText } = render(<SettingsScreen />);
 
     expect(queryByText('-471 分钟前')).toBeNull();
-    expect(getByText('刚刚同步')).toBeTruthy();
+    expect(queryByText('刚刚同步')).toBeNull();
+    expect(getByText('同步时间待核实')).toBeTruthy();
   });
 
   it.each([0, 5])('shows incomplete activity sync instead of recent success at %s minutes', (minutes) => {
     const message = '运动记录未完整同步，请稍后重新同步；上次成功时间不代表本轮运动已完整同步。';
-    mockGarminStatus = { bound: true, health: 'stale', credentials_valid: true,
+    mockGarminStatus = { bound: true, health: 'healthy', credentials_valid: true,
       requires_mfa: false, last_error: message, error_count: 0,
       minutes_since_last_sync: minutes };
     const { getByText, getByRole, queryByText } = render(<SettingsScreen />);

@@ -87,16 +87,11 @@ export default function ChatHeader({
                 pressed && styles.primaryHeaderActionPressed,
               ]}
               accessibilityLabel="新建对话"
-              accessibilityHint="开始一段新的健康会诊"
+              accessibilityHint="开始新对话，当前对话保留在历史中"
               accessibilityRole="button"
             >
-              <View style={styles.newChatGlyph}>
-                <Ionicons name="chatbubble-outline" size={18} color={C.green700} />
-                <View style={styles.newChatBadge}>
-                  <Ionicons name="add" size={9} color={C.greenOn} />
-                </View>
-              </View>
-              <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={styles.newChatLabel}>新建</Text>
+              <Ionicons name="create-outline" size={18} color={C.green700} />
+              <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={styles.newChatLabel}>新对话</Text>
             </Pressable>
             <Pressable
               onPress={onOpenHistory}
@@ -106,7 +101,7 @@ export default function ChatHeader({
               accessibilityHint="查看和切换历史对话"
               accessibilityRole="button"
             >
-              <Ionicons name="time-outline" size={18} color={C.ink2} />
+              <Ionicons name="chatbubbles-outline" size={18} color={C.ink2} />
             </Pressable>
             <Pressable
               onPress={onOpenToolMenu}
@@ -180,7 +175,7 @@ const styles = StyleSheet.create({
   },
   primaryHeaderAction: {
     width: 'auto',
-    minWidth: 76,
+    minWidth: 88,
     paddingHorizontal: 10,
     flexDirection: 'row',
     gap: 5,
@@ -194,24 +189,5 @@ const styles = StyleSheet.create({
   },
   primaryHeaderActionPressed: {
     backgroundColor: C.green100,
-  },
-  newChatGlyph: {
-    width: 22,
-    height: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  newChatBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -3,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.green500,
-    borderWidth: 1,
-    borderColor: C.greenOn,
   },
 });
