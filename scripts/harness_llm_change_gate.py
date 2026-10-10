@@ -12,6 +12,7 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Callable, Iterable
@@ -20,6 +21,7 @@ from typing import Callable, Iterable
 ROOT = Path(__file__).resolve().parents[1]
 CONFIRMATION_ENV = "HARNESS_LIVE_LLM_EVAL_CONFIRMED"
 CONFIRMATION_TARGET_ENV = "HARNESS_LIVE_LLM_EVAL_TARGET_SHA"
+WAIVER_ENV = "HARNESS_LIVE_LLM_EVAL_WAIVED_SHA"
 LIVE_GATE_COMMAND = "python scripts/harness_llm_regression_gate.py --include-live-llm"
 
 HIGH_RISK_RULES: tuple[tuple[str, str], ...] = (
@@ -106,9 +108,14 @@ def evaluate_paths(paths: Iterable[str], *, env: dict[str, str]) -> dict[str, ob
         or env.get("GITHUB_SHA", "").strip()
         or None
     )
-    status = "passed" if not live_required or confirmed else "failed"
+    waived = bool(
+        live_required and not confirmed and expected_confirmation
+        and re.fullmatch(r"[0-9a-f]{40}", expected_confirmation)
+        and env.get(WAIVER_ENV, "").strip() == expected_confirmation
+    )
+    status = "passed" if not live_required or confirmed else ("waived" if waived else "failed")
     next_steps = ""
-    if live_required and not confirmed:
+    if live_required and not confirmed and not waived:
         next_steps = (
             f"Run `{LIVE_GATE_COMMAND}` and preserve the run evidence, then set "
             f"the repository variable with `gh variable set {CONFIRMATION_ENV} "
@@ -118,6 +125,9 @@ def evaluate_paths(paths: Iterable[str], *, env: dict[str, str]) -> dict[str, ob
         "status": status,
         "live_llm_required": live_required,
         "confirmed": confirmed,
+        "waived": waived,
+        "waiver_env": WAIVER_ENV,
+        "waiver_reason": "user_requested_skip_for_exact_revision" if waived else None,
         "confirmation_env": CONFIRMATION_ENV,
         "expected_confirmation": expected_confirmation,
         "changed_paths": changed_paths,
@@ -131,7 +141,7 @@ def _print_text(payload: dict[str, object]) -> None:
     print(
         "LLM live-change regression gate: "
         f"{payload['status']} (live_llm_required={payload['live_llm_required']}, "
-        f"confirmed={payload['confirmed']})"
+        f"confirmed={payload['confirmed']}, waived={payload['waived']})"
     )
     for match in payload["matched_paths"]:  # type: ignore[index]
         print(f"  [LIVE] {match['path']}: {match['reason']}")
@@ -173,7 +183,7 @@ def main(
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         _print_text(payload)
-    return 0 if payload["status"] == "passed" else 1
+    return 0 if payload["status"] in {"passed", "waived"} else 1
 
 
 if __name__ == "__main__":

@@ -234,8 +234,9 @@ jobs:
         env:
           HARNESS_CHANGE_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
           HARNESS_LIVE_LLM_EVAL_CONFIRMED: ${{ vars.HARNESS_LIVE_LLM_EVAL_CONFIRMED }}
+          HARNESS_LIVE_LLM_EVAL_WAIVED_SHA: ${{ vars.HARNESS_LIVE_LLM_EVAL_WAIVED_SHA }}
           HARNESS_LIVE_LLM_EVAL_TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        # Zero-cost path gate: high-risk LLM/prompt/model/eval changes must carry explicit live-eval evidence.
+        # Zero-cost path gate: live evidence by default; a user-approved exact-SHA waiver is reported separately.
         run: python scripts/harness_llm_change_gate.py --base-ref "$HARNESS_CHANGE_BASE_REF"
 
       - name: LLM synthesis regression gate

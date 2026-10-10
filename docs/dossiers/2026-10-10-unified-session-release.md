@@ -144,3 +144,7 @@ G5/G6 BLOCK：backend38031474956失败，固定637终态NEEDS_OPERATOR。健康�
 用户明确要求取消管理员登录步骤并继续部署。取消该人工等待，不自动恢复Runtime或结算UNKNOWN。范围调整为部署准入与Runtime恢复解耦：普通健康报告保留paused的healthy=false，部署显式允许经过账本一致性证明的reconciliation暂停，并明确deferred_failures。严格拒绝未知状态、错误代际、缺失证据及其他critical失败。原Runtime实际是受影响账号隔离，并非全局只读；保持既有scoped策略，不新增写许可。
 
 部署解析器真实RED7failed（缺少显式flag），实现后GREEN7passed；shell语法通过。模型G3和原失败发布生命周期仍分别验证，不因本次取消登录而伪造通过或重放原SHA。
+
+## 用户取消本次真实模型评测
+
+用户明确“取消真实模型评测 发布部署ota”，取消本次真实评测前置但不伪造评测成功。实现精确SHA豁免通道，默认要求保持；报告waived且confirmed=false，原CONFIRMED变量不修改。真实RED6failed/11passed，根/插件镜像及package组合GREEN28passed；失效SHA、布尔/无目标及变更检测失败均阻断。固定提交后绑定临时仓库变量再推送，发布后清除。既有离线、安全、精确CI、后端及OTA回执和原失败生命周期闸保留。

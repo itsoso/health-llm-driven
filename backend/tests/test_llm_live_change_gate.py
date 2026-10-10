@@ -181,3 +181,36 @@ def test_ci_hard_wires_llm_change_gate():
     assert backend_checkout["with"]["fetch-depth"] == 0, (
         "change detection needs full history"
     )
+
+
+def test_explicit_current_sha_waiver_is_not_live_confirmation(capsys):
+    module = _load_gate_module()
+    sha = 'a' * 40
+    assert module.main(['--json', '--path', 'backend/app/services/agent_executor.py'],
+        env={'GITHUB_SHA': sha, 'HARNESS_LIVE_LLM_EVAL_WAIVED_SHA': sha}) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['status'] == 'waived'
+    assert payload['confirmed'] is False
+    assert payload['waived'] is True
+    assert payload['waiver_reason'] == 'user_requested_skip_for_exact_revision'
+    assert payload['live_llm_required'] is True
+
+
+@pytest.mark.parametrize('waiver,target', [('1', 'a' * 40), ('a' * 39, 'a' * 40),
+    ('b' * 40, 'a' * 40), ('A' * 40, 'A' * 40), ('a' * 40, '')])
+def test_live_waiver_cannot_be_boolean_stale_or_unbound(capsys, waiver, target):
+    module = _load_gate_module()
+    assert module.main(['--json', '--path', 'backend/app/services/agent_executor.py'],
+        env={'HARNESS_LIVE_LLM_EVAL_TARGET_SHA': target,
+             'HARNESS_LIVE_LLM_EVAL_WAIVED_SHA': waiver}) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['waived'] is False
+    assert payload['confirmed'] is False
+
+
+def test_change_detection_failure_still_blocks_even_with_waiver(capsys):
+    module = _load_gate_module(); sha = 'a' * 40
+    assert module.main(['--json'], env={'GITHUB_SHA': sha,
+        'HARNESS_LIVE_LLM_EVAL_WAIVED_SHA': sha},
+        changed_paths_fn=lambda base, head: ([], ['change detection failed'])) == 1
+    assert json.loads(capsys.readouterr().out)['status'] == 'failed'

@@ -13,6 +13,17 @@
 （例如历史候选或纯文档候选尚无所需完整验证）。不得通过取消同 SHA 的运行中
 或失败记录制造绿色；全部适用运行仍按现有 trusted release gate 裁决。
 
+#### 本次发布的真实模型评测豁免
+
+默认仍要求高风险 LLM 变更具备真实评测证据。只有用户明确取消当前发布的
+真实评测时，维护者才可将仓库变量 `HARNESS_LIVE_LLM_EVAL_WAIVED_SHA` 设置为
+当前发布的完整小写 SHA。CI 将它与目标 SHA 精确比较，返回 `status=waived`、
+`confirmed=false` 和固定豁免原因。不得设置 CONFIRMED 冒充评测通过。
+
+没有目标、布尔值、短 SHA、旧 SHA、变更检测错误均不放行。豁免不作用于下一
+提交，也不取消离线安全测试、独立安全审查、精确 CI、失败发布收口或 OTA 回执
+校验。用户决定及候选绑定写入当前 Dossier；发布后清除该临时仓库变量。
+
 #### 生产凭据之前的 runner 线路预检
 
 `trusted-release.yml` 在精确源码/CI preflight 后运行固定 TCP/SSH 标识预检，再进入
