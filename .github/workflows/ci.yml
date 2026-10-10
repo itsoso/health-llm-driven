@@ -406,6 +406,7 @@ jobs:
           scripts/test_trusted_neo_wechat.py
           scripts/test_neo_wechat_linux_isolation.py
           scripts/test_neo_wechat_provisioning.py
+          scripts/test_neo_wechat_provision_transaction.py
           scripts/test_neo_wechat_lifecycle.py
           scripts/test_trusted_frontend_publish.py
           scripts/test_trusted_frontend_artifact.py

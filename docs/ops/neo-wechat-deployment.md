@@ -115,6 +115,14 @@ separate credentials through `LoadCredential`, never through an EnvironmentFile.
 Actual Linux `systemd-analyze verify` and sandbox behavior are deployment gates;
 Mac unit tests do not establish host compatibility.
 
+Systemd credentials can be service-owned with private permission bits or root-owned
+with an exact named-service-UID POSIX ACL, depending on backing filesystem support.
+The ACL mask appears in group mode bits and is not itself an owning-group grant.
+Credential acceptance must verify the exact file and directory owner/ACL, deny
+extra principals, and require the actual credential mount to be read-only. A
+mode-only `0440` exception is not sufficient. The application reader and native
+probe must share the same validator so a probe success covers the real read path.
+
 ## Interrupted install and rollback
 
 An unknown command or persistence outcome is not retried. The original operation,
@@ -170,6 +178,16 @@ production execution or choose an owner-input adapter. The actual input adapter
 awaits the owner choice; all lifecycle dispatch and history-reader rollout still
 require exact fixed-code review and existing release gates. No general cleanup of
 partially installed objects or recreation of missing leases is authorized.
+
+`neo_wechat_provision_transaction.py` is the internal, transport-independent
+one-shot writer. It consumes the validated memory bundle through trusted directory
+descriptors and a required canonical-lock/path guard; defaults require root-owned
+files. Its separate `provision-v1` metadata namespace is not part of the dormant
+installer's immutable audit. No current CLI or production entry invokes it, and
+no current history reader admits its records. The future caller must retain its
+original lease on any uncertain outcome; merely finding `completed.json` does not
+prove fsync/final-guard success or permit activation. Tests use synthetic temporary
+directories only. This internal implementation does not select the owner-input UI.
 
 `neo_wechat_linux_probe.py` adds an ephemeral-runner-only synthetic systemd test
 using retained directives from the real unit template. It exercises effective

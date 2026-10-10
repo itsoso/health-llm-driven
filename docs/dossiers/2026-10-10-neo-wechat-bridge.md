@@ -132,3 +132,16 @@ ACL mask from actual owning-group access. The correction must verify the exact
 credential file/directory ACL or private-owner form and read-only access, never
 merely allow broader mode bits. This is a probe correction, not a sandbox policy
 change. Production identity, proxy/egress and live acceptance remain unverified.
+
+Independent review of `120e0f472` found the application's credential reader also
+used the mode-only assumption. The continuation extracts a strict stdlib reader
+shared by the application and the synthetic native worker; native evidence must
+bind its exact module digest. No broader credential access is permitted.
+
+The local provisioning transaction now accepts only an already-validated memory
+bundle and trusted directory descriptors. It creates four fixed files and a
+separate one-shot metadata namespace, preserves uncertain writes and rejects
+retries. It has no input adapter, CLI, production caller or activation authority.
+Canonical provenance, lock/path guard implementation, lifecycle history admission
+and activation/recovery remain integration work. A visible completion record alone
+cannot authorize activation after an uncertain fsync or final-guard failure.

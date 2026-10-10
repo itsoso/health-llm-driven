@@ -122,6 +122,7 @@ def test_main_rejects_activation_before_reading_config_credentials_or_store(monk
         monkeypatch.delenv(key, raising=False)
     reads = []
     monkeypatch.setattr(server, 'private_file', lambda *a, **kw: reads.append(a))
+    monkeypatch.setattr(server, 'read_credential', lambda *a, **kw: reads.append(a))
     monkeypatch.setattr(server, 'Store', lambda *a, **kw: reads.append(a))
     with pytest.raises(ValueError, match='socket_activation_required'):
         server.main()
@@ -174,6 +175,7 @@ def test_main_starts_collector_with_verified_listener_and_forces_asyncio(monkeyp
     monkeypatch.setenv('CREDENTIALS_DIRECTORY', '/synthetic/credentials')
     monkeypatch.setattr(server, 'inherited_listener', activated)
     monkeypatch.setattr(server, 'private_file', read)
+    monkeypatch.setattr(server, 'read_credential', lambda directory, name: read(Path(directory) / name))
     monkeypatch.setattr(server, 'Store', State)
     monkeypatch.setattr(server, 'Service', FakeService)
     monkeypatch.setattr(uvicorn, 'Server', Server)

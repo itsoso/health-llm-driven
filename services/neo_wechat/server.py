@@ -25,6 +25,7 @@ from starlette.routing import Route
 from .binding import Binding, BindingError
 from .listener import inherited_listener
 from .core import Bridge, BridgeError
+from .credentials import read_credential
 from .oauth import OAuth, OAuthError, Settings, SCOPES, digest
 from .store import Store, StoreError
 from .transport import Transport, TransportError, validate_webhook
@@ -86,13 +87,12 @@ def form(raw):
     return {k: v[0] for k, v in values.items()}
 
 
-def private_file(path, max_bytes=65536, root_required=False, secret=False):
+def private_file(path, max_bytes=65536, root_required=False):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, 'rb') as stream:
         info = os.fstat(stream.fileno())
         if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o022
-                or info.st_uid not in ({0} if root_required else {0, os.geteuid()}) or info.st_size > max_bytes
-                or secret and info.st_mode & 0o077):
+                or info.st_uid not in ({0} if root_required else {0, os.geteuid()}) or info.st_size > max_bytes):
             raise ValueError('unsafe_configuration')
         return stream.read(max_bytes + 1)
 
@@ -470,9 +470,9 @@ def main():
         if config.state_dir != '/var/lib/neo-wechat':
             raise ValueError('installation_state_required')
         credentials = Path(os.environ['CREDENTIALS_DIRECTORY'])
-        key = base64.b64decode(private_file(credentials / 'encryption_key', secret=True).strip(), validate=True)
-        password = private_file(credentials / 'admin_password_hash', secret=True).strip()
-        webhook = private_file(credentials / 'slack_webhook', secret=True).decode().strip()
+        key = base64.b64decode(read_credential(credentials, 'encryption_key').strip(), validate=True)
+        password = read_credential(credentials, 'admin_password_hash').strip()
+        webhook = read_credential(credentials, 'slack_webhook').decode().strip()
         store = Store(Path(config.state_dir), key, config.owner)
         health = None
         if config.health_client_id:
