@@ -276,9 +276,17 @@ def test_cached_helper_is_rejected_before_top_level_execution(tmp_path, monkeypa
 def test_completed_host_audit_is_retireable_but_unknown_attempt_is_not(tmp_path, monkeypatch):
     import json
     import pytest
+    import sys
     m = load('bootstrap_trusted_release')
     monkeypatch.setattr(m, 'STATE', tmp_path)
     monkeypatch.setattr(m, 'secure', lambda *args, **kwargs: None)
+    # Exercise the failure-history branch, not an unrelated source-cache guard.
+    source = tmp_path / 'source'
+    source.mkdir()
+    for name in ('bootstrap_trusted_release.py', 'public_host_recovery.py'):
+        (source / name).write_bytes((ROOT / 'scripts' / name).read_bytes())
+    monkeypatch.setattr(m, '__file__', str(source / 'bootstrap_trusted_release.py'))
+    monkeypatch.setattr(sys, 'dont_write_bytecode', True)
     sha = 'a' * 40
     root = tmp_path / sha / 'host-hardening'
     root.mkdir(parents=True, mode=0o700)
@@ -293,8 +301,9 @@ def test_completed_host_audit_is_retireable_but_unknown_attempt_is_not(tmp_path,
         m._host_hardening_evidence(sha)
     (root / 'completed.json').write_text(json.dumps(records['completed.json']))
     (root / 'failed.json').write_text('{}')
-    with pytest.raises(m.BootstrapError):
+    with pytest.raises(Exception, match='unknown host recovery history') as failure:
         m._host_hardening_evidence(sha)
+    assert type(failure.value) is sys.modules['host_recovery_history'].RecoveryError
 
 
 def test_final_frontend_receipt_requires_live_digest_and_unique_attempt(tmp_path, monkeypatch):

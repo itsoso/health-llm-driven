@@ -102,3 +102,5 @@ G5/G6 BLOCK：backend38031474956失败，固定637终态NEEDS_OPERATOR。健康�
 固定副本以PYTHONDONTWRITEBYTECODE=1运行原CI-mode release-invariants，545 passed后1 failed（404.96s）。原失败在test_public_host_boundaries的动态测试load未注册sys.modules，导致无缓存时_host_hardening_evidence的失败归档分支KeyError；旧字节缓存使该分支提前BootstrapError掩盖加载器问题。只修测试loader按Python正常import协议先注册module，再exec；不修改生产bootstrap、安全校验或失败终态。相关192tests passed，但原CI-mode失败仍保留，修正候选需无缓存固定副本完整重验。
 
 微信桥接精确eeaa CI38034927895已终态failure；systemd249通过，但release-invariants的另一合成unit因credential private mode断言失败。原owner仍开发中，禁止合入红CI或使用此前draft GO。
+
+加载器修正后的无缓存单项继续暴露原测试只捕获BootstrapError，真实失败归档路径按模块契约抛RecoveryError。保留该失败；进一步将fixture源码复制到独立临时目录、禁字节缓存，并校验具体unknown host recovery history理由及真实加载模块的RecoveryError类型，避免无关缓存守卫让用例假通过。最终相关192tests passed（4.83s）。已主动中断明确仍红的c585全量进程，197passed/KeyboardInterrupt、exit2（106.82s），不冒称通过，不再等待已知失败执行到末尾；最后修正固定候选再完整验证。生产bootstrap或历史恢复代码始终未改。
