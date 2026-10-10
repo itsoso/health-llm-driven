@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | blocked |
-| 当前阶段 | 最终637520e25完整CI全绿；后端被既有Runtime熔断硬闸拒绝并回滚，G5/G6 BLOCK；Web/OTA未发布 |
+| 当前阶段 | 本地整合、Runtime恢复延后与本次真实评测精确SHA豁免已实现；正在收口637失败发布，最新候选尚待完整CI与后端/Web/OTA发布 |
 
 ## G1 范围准入
 
@@ -148,3 +148,24 @@ G5/G6 BLOCK：backend38031474956失败，固定637终态NEEDS_OPERATOR。健康�
 ## 用户取消本次真实模型评测
 
 用户明确“取消真实模型评测 发布部署ota”，取消本次真实评测前置但不伪造评测成功。实现精确SHA豁免通道，默认要求保持；报告waived且confirmed=false，原CONFIRMED变量不修改。真实RED6failed/11passed，根/插件镜像及package组合GREEN28passed；失效SHA、布尔/无目标及变更检测失败均阻断。固定提交后绑定临时仓库变量再推送，发布后清除。既有离线、安全、精确CI、后端及OTA回执和原失败生命周期闸保留。
+
+
+## 自动回滚来源核对与独立收口实现
+
+原637失败回执及历史保留；生产仍为346035f78。原自动回滚成功会清理
+preflight stage 和 transaction，不能因此要求重造 sealed stage。只读核对
+原日志唯一指定的一份 root0600 rollback env 备份，文件名/ctime在原部署
+窗口内；按原回滚规则规范化后与当前生产env字节一致，未扫描其他备份。
+该证据只是收口前置，不是实际收口或新部署回执。
+
+新增窄化 operator 和 bootstrap 独立终态分支，保护原 workspace/日志/锁，
+精确绑定旧 terminal、旧 schema/KB、稳定服务和原双身份；独立 intent 与
+归档 preimage 后撤销旧身份，保护 receipt 供新候选 rotate 消费。
+任何真实执行须在固定候选独立G4及完整精确CI全绿后进行。当前尚未执行
+host mutation，未宣称新后端、Web、OTA已经发布。
+
+收口实现 RED21failed 后，最终本地组合474passed、15 PostgreSQL专项skip；
+根复核组合375passed。真实PostgreSQL17针对operator与既有KB回滚验证15passed
+（45.82s），包含旧actor成功/失败actor拒绝，以及paused8/ack7和
+reconciliation_required Run保持不变；隔离测试库已停止。地图和秘密扫描通过。
+这些仅为本地G3证据；尚待固定SHA独立G4、完整CI与真实主机inspect。

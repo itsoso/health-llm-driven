@@ -302,6 +302,7 @@ def _inventory(directory, names):
 
 def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     workspace = STATE / sha
+    rollback_closure = os.path.lexists(STATE / "rolled-back-release-closures" / sha)
     retained_closure = os.path.lexists(STATE / "retained-candidate-closures" / sha)
     native_closure = os.path.lexists(STATE / "native-only-closures" / sha)
     partial_laya = os.path.lexists(STATE / "partial-laya-closures" / sha)
@@ -309,8 +310,19 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
     contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
     lost_receipt_ack = os.path.lexists(STATE / "lost-closure-receipt-acknowledgments" / sha)
-    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure, retained_closure)) > 1:
+    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure, retained_closure, rollback_closure)) > 1:
         raise BootstrapError("conflicting release closure evidence")
+    if rollback_closure:
+        if lost_receipt_ack or os.path.lexists(STATE / "recoveries" / sha):
+            raise BootstrapError("conflicting rolled-back release closure evidence")
+        path = Path(__file__).absolute().with_name("rolled_back_release_operator.py")
+        secure(path)
+        if os.path.lexists(path.parent / "__pycache__"):
+            raise BootstrapError("cached rolled-back release proof forbidden")
+        spec = importlib.util.spec_from_file_location("reviewed_rolled_back_release", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt, historical=historical)
     if retained_closure:
         if lost_receipt_ack or os.path.lexists(STATE / "recoveries" / sha):
             raise BootstrapError("conflicting retained candidate closure evidence")
@@ -904,7 +916,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
                     sys.modules[__name__], source, old_sha, finalized_production_sha) != advance:
                 raise BootstrapError("finalized production evidence changed during rotation")
         check_locks()
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE"}:
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE", "CLOSED_ROLLED_BACK_RELEASE"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]

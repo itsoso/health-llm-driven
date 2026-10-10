@@ -426,6 +426,9 @@ jobs:
           scripts/test_built_unuploaded_proof.py
           scripts/test_contained_release_retirement.py
           scripts/test_lost_closure_receipt_acknowledgment.py
+          scripts/test_rolled_back_release_operator.py
+          scripts/test_rolled_back_release_retirement.py
+          scripts/test_isolated_live_eval_policy.py
           scripts/test_partial_laya_retirement.py
           scripts/test_mobile_local_qr_script.py
           scripts/test_mobile_local_qr_safety.py
@@ -569,6 +572,12 @@ jobs:
         env:
           REVA_REVIEW_CLOSURE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
         run: python -m pytest -q --noconftest --no-cov scripts/test_review_maintenance_retirement.py -k postgres
+
+      - name: Verify old-target rollback closure PostgreSQL boundary
+        env:
+          APP_ENV: test
+          RETAINED_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+        run: python -m pytest -q --noconftest --no-cov scripts/test_rolled_back_release_operator.py -k postgres
 
       - name: Verify Runtime migration upgrade and idempotency
         working-directory: backend

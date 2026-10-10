@@ -1168,3 +1168,32 @@ retirement 服务快照归档区分 socket 与 service：systemd 的 socket 无
 空串；数字 `0`、任意文本、缺字段或 null 均不代替缺省属性。service 仍要求
 数字 MainPID/NRestarts、有效启动时间和绑定的进程身份。socket 仍须 active、
 listening/running、Result=success 且启动时间为正数；该适配不改变实时服务验证。
+
+
+### 自动回滚至旧 revision 的独立收口
+
+`scripts/rolled_back_release_operator.py` 仅处理已完成自动回滚、原回执为
+`NEEDS_OPERATOR` 的 backend-only 发布。默认只读取证；不重新部署原失败 SHA，
+不恢复 Runtime、不确认 UNKNOWN 操作。原 workspace、日志、失败回执及 launcher
+lock 保持原字节。收口状态为独立的 `CLOSED_ROLLED_BACK_RELEASE`。
+
+必须从精确完整 CI 全绿的 current main canonical staging，以系统 Python
+`-I -S -B` 和 root 本地管理通道执行。验证精确旧 SHA 的 `RESTORE_FINALIZED`
+九字段 terminal、原日志唯一完整 `ROLLBACK_OK`、原发布窗口、旧配置及 Laya
+来源、PostgreSQL schema/KB 隔离、服务 PID 稳定、HTTP、双身份、无活动发布及
+无 transaction。原自动回滚会删除 preflight stage；不存在本身不能证明恢复。
+环境来源只能是原日志唯一完整行指定的 `/var/backups/health-app/env/.env.*`，
+核对这一份文件的 root 私有元数据、文件名时间和 ctime，再按原回滚规则
+归一化，与当前 env 字节相等；不遍历其他备份，不以候选 deployment.env 代替。
+
+显式执行须绑定先前 inspect 的完整 `--evidence-sha256`，intent 前后重复取证。
+独立审计先落盘，然后归档必要的 rollback.env、精确撤销原 cloud/loopback
+授权，并验证 loopback 私钥的派生公钥后删除该旧私钥。任何 intent 后失败
+保留原现场且禁止自动重试。新 receipt 只能写入新建的 root0600 单链接文件
+`/var/lib/reva-release/operator-receipts/<closing-sha>/closure-<32hex>.json`，
+父目录 root0700；不得输出到终端、管道、临时目录或已有非空文件。
+
+后续 canonical bootstrap rotate 从服务器保护文件通过既有 receipt stdin
+通道消费收口回执；不放入命令行、日志或聊天。历史复核保存原失败链和
+归档 preimage 的摘要，不要求未来生产仍停留在回滚 SHA。收口成功仍不是
+新候选部署成功；新 SHA 继续走 backend、Web、trusted OTA 各自的回执与验证。
