@@ -10,7 +10,6 @@ import html
 import json
 import os
 from pathlib import Path
-import socket
 import stat
 import threading
 import time
@@ -24,6 +23,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route
 
 from .binding import Binding, BindingError
+from .listener import inherited_listener
 from .core import Bridge, BridgeError
 from .oauth import OAuth, OAuthError, Settings, SCOPES, digest
 from .store import Store, StoreError
@@ -461,36 +461,38 @@ def main():
     # These are fixed installation paths, never remote API arguments.
     if args.config != '/etc/neo-wechat/config.json' or args.socket != '/run/neo-wechat/bridge.sock':
         raise ValueError('installation_paths_required')
-    config = Config.model_validate(decode_json(private_file(args.config, root_required=True)))
-    if config.state_dir != '/var/lib/neo-wechat':
-        raise ValueError('installation_state_required')
-    credentials = Path(os.environ['CREDENTIALS_DIRECTORY'])
-    key = base64.b64decode(private_file(credentials / 'encryption_key', secret=True).strip(), validate=True)
-    password = private_file(credentials / 'admin_password_hash', secret=True).strip()
-    webhook = private_file(credentials / 'slack_webhook', secret=True).decode().strip()
-    store = Store(Path(config.state_dir), key, config.owner)
-    health = None
-    if config.health_client_id:
-        from .health import HealthClient, HealthTransport
-        health = HealthClient(store, HealthTransport(), config.origin, config.health_client_id)
-    service = Service(config, store, key, password, webhook, health=health)
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    # Refuse stale socket replacement; systemd RuntimeDirectory owns cleanup.
-    sock.bind(args.socket)
-    os.chown(args.socket, -1, config.proxy_gid)
-    os.chmod(args.socket, 0o660)
-    worker = threading.Thread(target=service.collect, name='collector', daemon=True)
-    worker.start()
+    # --socket identifies the expected inherited endpoint; this process never
+    # binds, listens, creates, removes or changes permissions on socket paths.
+    sock = inherited_listener(args.socket)
+    store = service = worker = None
     try:
+        config = Config.model_validate(decode_json(private_file(args.config, root_required=True)))
+        if config.state_dir != '/var/lib/neo-wechat':
+            raise ValueError('installation_state_required')
+        credentials = Path(os.environ['CREDENTIALS_DIRECTORY'])
+        key = base64.b64decode(private_file(credentials / 'encryption_key', secret=True).strip(), validate=True)
+        password = private_file(credentials / 'admin_password_hash', secret=True).strip()
+        webhook = private_file(credentials / 'slack_webhook', secret=True).decode().strip()
+        store = Store(Path(config.state_dir), key, config.owner)
+        health = None
+        if config.health_client_id:
+            from .health import HealthClient, HealthTransport
+            health = HealthClient(store, HealthTransport(), config.origin, config.health_client_id)
+        service = Service(config, store, key, password, webhook, health=health)
+        worker = threading.Thread(target=service.collect, name='collector', daemon=True)
+        worker.start()
         import uvicorn
-        uvicorn.Server(uvicorn.Config(service.app(), access_log=False, log_config=None,
+        uvicorn.Server(uvicorn.Config(service.app(), loop='asyncio', access_log=False, log_config=None,
             log_level='critical', proxy_headers=False, server_header=False, limit_concurrency=8,
             timeout_keep_alive=5)).run(sockets=[sock])
     finally:
-        service.stop.set()
-        worker.join(timeout=45)
+        if service is not None:
+            service.stop.set()
+        if worker is not None and worker.ident is not None:
+            worker.join(timeout=45)
         sock.close()
-        store.close()
+        if store is not None:
+            store.close()
 
 
 if __name__ == '__main__':

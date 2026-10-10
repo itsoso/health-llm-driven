@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Synthetic native systemd containment probe, ONLY for an ephemeral CI host.
 
-No application code, package install, external network traffic or real secrets.
+No application startup, package install, external network traffic or real secrets.
+The exact production stdlib listener module is exercised with a synthetic socket.
 All Health/credential paths are remapped to synthetic fixtures. Service identity
 is an existing unprivileged nobody UID, not the production account. The retained
 sandbox directives come from the actual unit template. PrivateNetwork is added
@@ -16,11 +17,13 @@ sandbox and positive controls complete and cleanup succeeds. No claim of systemd
 249 compatibility is made when the observed manager has a different version.
 """
 import argparse
+import ctypes
 import errno
 import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import pwd
 import re
 import resource
@@ -34,7 +37,10 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "infra/neo-wechat/neo-wechat.service.in"
+SOCKET_TEMPLATE = TEMPLATE.with_name("neo-wechat.socket.in")
+LISTENER_SOURCE = ROOT / "services/neo_wechat/listener.py"
 CREDENTIALS = ("encryption_key", "admin_password_hash", "slack_webhook")
+DENIED_SYSCALLS = "~bind listen io_uring_setup io_uring_enter io_uring_register"
 PRESERVED_PREFIXES = (
     "Protect", "PrivateTmp=", "PrivateDevices=", "NoNewPrivileges=",
     "CapabilityBoundingSet=", "AmbientCapabilities=", "Restrict", "LockPersonality=",
@@ -43,7 +49,7 @@ PRESERVED_PREFIXES = (
 PATH_KEYS = {"ReadWritePaths", "ReadOnlyPaths", "InaccessiblePaths", "WorkingDirectory"}
 SERVICE_KEYS = PATH_KEYS | {
     "Type", "User", "Group", "SupplementaryGroups", "ExecStart", "LoadCredential", "Environment",
-    "UMask", "RuntimeDirectory", "RuntimeDirectoryMode", "StateDirectory", "StateDirectoryMode",
+    "UMask", "StateDirectory", "StateDirectoryMode",
     "ProtectSystem", "ProtectHome", "PrivateTmp", "PrivateDevices", "ProtectProc", "ProcSubset",
     "NoNewPrivileges", "CapabilityBoundingSet", "AmbientCapabilities", "RestrictSUIDSGID",
     "RestrictRealtime", "RestrictNamespaces", "LockPersonality", "ProtectKernelTunables",
@@ -58,7 +64,7 @@ SYNTHETIC = "public synthetic fixture; no personal data\n"
 # https://github.com/systemd/systemd/blob/v249/src/analyze/analyze-verify.c
 _STUB_UNIT = "[Unit]\nDescription=Synthetic static verification dependency\nDefaultDependencies=no\n"
 VERIFY_DEPENDENCIES = {
-    **{name: _STUB_UNIT for name in ("sysinit.target", "basic.target", "shutdown.target")},
+    **{name: _STUB_UNIT for name in ("sysinit.target", "basic.target", "shutdown.target", "sockets.target")},
     **{name: _STUB_UNIT + "[Slice]\n" for name in ("system.slice", "-.slice")},
     **{name: _STUB_UNIT + "[Service]\nType=oneshot\nExecStart=/usr/bin/true\n"
        for name in ("systemd-remount-fs.service", "systemd-tmpfiles-setup.service", "systemd-journald.service")},
@@ -98,11 +104,16 @@ def render_unit(template, name, *, uid, gid, control=False):
     for key, expected in {
         "User": "neo-wechat", "Group": "neo-wechat", "SupplementaryGroups": "neo-wechat-proxy",
         "Type": "simple", "SocketBindDeny": "any", "Restart": "on-failure",
-        "RuntimeDirectory": "neo-wechat", "StateDirectory": "neo-wechat",
-        "ReadWritePaths": "/var/lib/neo-wechat /run/neo-wechat",
+        "StateDirectory": "neo-wechat", "Requires": "neo-wechat.socket",
+        "ReadWritePaths": "/var/lib/neo-wechat",
     }.items():
         if values.get(key) != expected:
             raise ValueError("unit template shape changed: " + key)
+    filters = [value for _, key, value in items if key == "SystemCallFilter"]
+    if filters != ["@system-service", DENIED_SYSCALLS]:
+        raise ValueError("exact bind/listen syscall boundary required")
+    if "neo-wechat.socket" not in values.get("After", "").split():
+        raise ValueError("socket startup ordering required")
     if any(key.startswith("Exec") and key != "ExecStart" for _, key, _ in items):
         raise ValueError("additional unit commands forbidden")
     credentials = [value for _, key, value in items if key == "LoadCredential"]
@@ -118,10 +129,11 @@ def render_unit(template, name, *, uid, gid, control=False):
             raise ValueError("unexpected template path")
         return str(fixture / "fs" / path.lstrip("/"))
 
-    lines = ["[Unit]", "Description=Synthetic Neo WeChat sandbox evidence", "[Service]"]
+    lines = ["[Unit]", "Description=Synthetic Neo WeChat sandbox evidence",
+             f"Requires={name}.socket", f"After={name}.socket", "[Service]"]
     overrides = {
         "User": str(uid), "Group": str(gid), "SupplementaryGroups": "",
-        "Type": "oneshot", "RuntimeDirectory": name, "StateDirectory": name,
+        "Type": "oneshot", "StateDirectory": name,
         "ExecStart": f"/usr/bin/python3 -I -B {fixture}/probe.py --worker {fixture}/plan.json",
         "Restart": "no", "SyslogIdentifier": name,
     }
@@ -145,11 +157,105 @@ def render_unit(template, name, *, uid, gid, control=False):
             value = cred + ":" + remap(path)
         if control and key in ("InaccessiblePaths", "SocketBindDeny"):
             value = ""
+        if control and key == "SystemCallFilter" and value == DENIED_SYSCALLS:
+            continue
         lines.append(key + "=" + value)
     lines.extend(("RemainAfterExit=yes", "TimeoutStartSec=30", "PrivateNetwork=yes"))
     plan["config"] = remap("/etc/neo-wechat/config.json")
     plan["readonly"] = remap("/opt/neo-wechat") + "/synthetic-record"
     return "\n".join(lines) + "\n", plan
+
+
+def render_socket(template, plan, *, gid):
+    expected = {"ListenStream": "/run/neo-wechat/bridge.sock", "SocketUser": "neo-wechat",
+                "SocketGroup": "neo-wechat-proxy", "SocketMode": "0660", "DirectoryMode": "0755",
+                "RemoveOnStop": "yes", "Service": "neo-wechat.service",
+                "FileDescriptorName": "neo-wechat-http", "Backlog": "16"}
+    items, section = [], None
+    for raw in template.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            if line not in ("[Unit]", "[Socket]"):
+                raise ValueError("unexpected socket section")
+            section = line
+        elif "=" not in line or section is None:
+            raise ValueError("unexpected socket syntax")
+        elif section == "[Socket]":
+            key, value = line.split("=", 1)
+            if key not in expected and (key, value) != ("Accept", "no"):
+                raise ValueError("unreviewed socket directive")
+            items.append((key, value))
+    values = dict(items)
+    if len(values) != len(items) or any(values.get(key) != value for key, value in expected.items()):
+        raise ValueError("socket template shape changed")
+    overrides = {"ListenStream": plan["runtime"] + "/bridge.sock", "SocketUser": str(plan["uid"]),
+                 "SocketGroup": str(gid), "Service": plan["name"] + ".service"}
+    lines = ["[Unit]", "Description=Synthetic Neo WeChat activation socket", "[Socket]"]
+    lines.extend(key + "=" + overrides.get(key, value) for key, value in items)
+    return "\n".join(lines) + "\n"
+
+
+def exercise_ip_policy(control):
+    """Test both bind forms and Linux implicit autobind via listen, independently."""
+    attempts = []
+    for family, address in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        for operation, port in (("bind", 0), ("bind", 43193), ("listen", None)):
+            with socket.socket(family, socket.SOCK_STREAM) as candidate:
+                try:
+                    if operation == "bind":
+                        candidate.bind((address, port))
+                    else:
+                        candidate.listen(1)
+                except OSError as error:
+                    assert not control and error.errno in (errno.EPERM, errno.EACCES), "IP syscall control"
+                else:
+                    assert control, "IP " + operation + " permitted"
+            attempts.append({"family": int(family), "operation": operation, "port": port,
+                             "result": "allowed" if control else "denied"})
+    return attempts
+
+
+def io_uring_numbers():
+    # Native x86_64 and arm64 share 425..427 (Linux v5.15 syscall_64.tbl /
+    # include/uapi/asm-generic/unistd.h). No guessed compatibility-ABI numbers.
+    if (sys.platform != "linux" or platform.machine() not in ("x86_64", "aarch64")
+            or ctypes.sizeof(ctypes.c_void_p) != 8 or ctypes.sizeof(ctypes.c_long) != 8):
+        raise ValueError("io_uring probe requires verified native Linux x86_64 or aarch64 ABI")
+    return (("io_uring_setup", 425, (0, 0)),
+            ("io_uring_enter", 426, (-1, 0, 0, 0, 0, 0)),
+            ("io_uring_register", 427, (-1, 0, 0, 0)))
+
+
+def invoke_io_uring(number, args):
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.syscall.restype = ctypes.c_long
+    ctypes.set_errno(0)
+    result = libc.syscall(ctypes.c_long(number), *(ctypes.c_long(arg) for arg in args))
+    return int(result), ctypes.get_errno()
+
+
+def exercise_io_uring_policy(control):
+    outcomes = []
+    for name, number, args in io_uring_numbers():
+        result, error = invoke_io_uring(number, args)
+        if result >= 0:
+            # Setup is the only syscall here that could return an owned FD.
+            if name == "io_uring_setup":
+                os.close(result)
+            assert control and name == "io_uring_setup", "io_uring syscall unexpectedly succeeded"
+            outcome = "allowed_result_closed"
+        else:
+            assert result == -1, "io_uring malformed return value"
+            if error in (errno.EPERM, errno.EACCES):
+                outcome = "control_permission_denied_not_attributable" if control else "denied"
+            else:
+                assert control and error in (errno.EBADF, errno.EINVAL, errno.EFAULT, errno.ENOSYS), "io_uring denial missing"
+                outcome = "kernel_unavailable_not_attributable" if error == errno.ENOSYS else "allowed_invalid_arguments"
+        outcomes.append({"syscall": name, "number": number, "result": result,
+                         "errno": error if result < 0 else 0, "outcome": outcome})
+    return outcomes
 
 
 def validate_cgroup(values):
@@ -165,6 +271,12 @@ def worker(plan_path):
     """Executed by systemd as an unprivileged UID in the real sandbox."""
     plan = json.loads(Path(plan_path).read_text())
     assert os.getuid() == plan["uid"] != 0, "unprivileged UID"
+    # Copy of the production stdlib-only adapter, with only the expected path remapped.
+    sys.path.insert(0, plan["fixture"])
+    from listener import inherited_listener
+    listener = inherited_listener(plan["runtime"] + "/bridge.sock")
+    # asyncio calls listen again even for activated sockets; adapter must no-op.
+    listener.listen(16)
     status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines())
     assert status["NoNewPrivs"].strip() == "1", "no-new-privileges"
     for cap in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"):
@@ -193,26 +305,14 @@ def worker(plan_path):
         path = creds / name
         assert path.read_text() == SYNTHETIC, "credential copied"
         assert stat.S_IMODE(path.stat().st_mode) & 0o077 == 0, "credential private mode"
-    runtime = Path(plan["runtime"])
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
-        listener.bind(str(runtime / "bridge.sock"))
-        listener.listen(1)
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-            client.settimeout(2)
-            client.connect(str(runtime / "bridge.sock"))
-            with listener.accept()[0] as accepted:
-                accepted.settimeout(2)
-                client.sendall(b"synthetic")
-                assert accepted.recv(9) == b"synthetic", "Unix socket exchange"
-    for family, address in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
-        with socket.socket(family, socket.SOCK_STREAM) as listener:
-            try:
-                listener.bind((address, 0))
-                listener.listen(1)
-            except OSError as error:
-                assert not plan["control"] and error.errno in (errno.EPERM, errno.EACCES), "IP bind control"
-            else:
-                assert plan["control"], "IP listener permitted"
+    with listener:
+        listener.settimeout(10)
+        with listener.accept()[0] as accepted:
+            accepted.settimeout(10)
+            assert accepted.recv(9) == b"synthetic", "inherited Unix socket exchange"
+            accepted.sendall(b"synthetic")
+    ip_attempts = exercise_ip_policy(plan["control"])
+    io_attempts = exercise_io_uring_policy(plan["control"])
     entries = Path("/proc/self/cgroup").read_text().splitlines()
     unified = [entry[3:] for entry in entries if entry.startswith("0::/")]
     assert len(unified) == 1 and ".." not in Path(unified[0]).parts, "unified cgroup path"
@@ -221,7 +321,8 @@ def worker(plan_path):
               for name in ("memory.max", "memory.swap.max", "pids.max", "cpu.max")}
     validate_cgroup(limits)
     output = {"status": "PASS", "control": plan["control"], "hidden_fixtures": len(plan["hidden_files"]),
-              "unix_socket": "PASS", "ip_bind": "allowed" if plan["control"] else "denied",
+              "unix_socket": "inherited FD PASS", "ip_syscalls": ip_attempts,
+              "io_uring_syscalls": io_attempts,
               "credential_copies": "PASS", "cgroup": limits, "privilege_limits": "PASS"}
     (Path(plan["state"]) / "report.json").write_text(json.dumps(output))
 
@@ -252,27 +353,32 @@ def run(*args, timeout=45):
     return result.stdout
 
 
-def verify_unit(unit, fixture):
+def verify_unit(unit, fixture, *paired_units):
     """Fail on every diagnostic, excluding host units by load path, not text filters."""
     directory = fixture / "verify-units"
     directory.mkdir(mode=0o755)
     for name, content in VERIFY_DEPENDENCIES.items():
         (directory / name).write_text(content)
-    candidate = directory / unit.name
-    candidate.write_bytes(unit.read_bytes())
+    candidates = []
+    for source in (unit, *paired_units):
+        candidate = directory / source.name
+        candidate.write_bytes(source.read_bytes())
+        candidates.append(candidate)
     # No trailing colon: defaults are replaced, not appended. The CLI argument's
     # directory is also isolated; v249 prepends it to its generated unit path.
-    verified = subprocess.run(["/usr/bin/systemd-analyze", "--man=no", "verify", str(candidate)],
+    verified = subprocess.run(["/usr/bin/systemd-analyze", "--man=no", "verify", *map(str, candidates)],
                               capture_output=True, text=True, timeout=20,
                               env={"PATH": "/usr/bin:/bin", "LANG": "C", "SYSTEMD_COLORS": "0",
                                    "SYSTEMD_UNIT_PATH": str(directory)})
     if verified.returncode or verified.stderr.strip() or verified.stdout.strip():
         raise RuntimeError("unit verification failed: " + (verified.stderr or verified.stdout)[:4000])
     return {"dependency_scope": "synthetic static dependencies only",
-            "unit_sha256": hashlib.sha256(candidate.read_bytes()).hexdigest()}
+            "unit_sha256": hashlib.sha256(candidates[0].read_bytes()).hexdigest(),
+            "paired_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in candidates[1:]}}
 
 
 def native(template):
+    io_uring_numbers()  # Fail before any host mutation if the ABI is unsupported.
     identity = pwd.getpwnam("nobody")
     results = []
     version = run("/usr/bin/systemd-analyze", "--version").splitlines()[0]
@@ -283,8 +389,10 @@ def native(template):
         state = Path(plan["state"])
         runtime = Path(plan["runtime"])
         unit = Path("/run/systemd/system") / (name + ".service")
+        socket_unit = unit.with_suffix(".socket")
+        socket_text = render_socket(SOCKET_TEMPLATE.read_text(), plan, gid=identity.pw_gid)
         marker = Path(plan["tmp_marker"])
-        if any(path.exists() or path.is_symlink() for path in (fixture, state, runtime, unit, marker)):
+        if any(path.exists() or path.is_symlink() for path in (fixture, state, runtime, unit, socket_unit, marker)):
             raise RuntimeError("probe object collision")
         fixture.mkdir(mode=0o755)
         registered = False
@@ -301,18 +409,35 @@ def native(template):
                     parent.chmod(0o755)
             shutil.copyfile(__file__, fixture / "probe.py")
             (fixture / "probe.py").chmod(0o644)
+            shutil.copyfile(LISTENER_SOURCE, fixture / "listener.py")
+            (fixture / "listener.py").chmod(0o644)
             (fixture / "plan.json").write_text(json.dumps(plan))
             (fixture / "plan.json").chmod(0o644)
             marker.write_text(SYNTHETIC)
             marker.chmod(0o644)
             unit.write_text(text)
             unit.chmod(0o644)
-            verification = verify_unit(unit, fixture)
+            socket_unit.write_text(socket_text)
+            socket_unit.chmod(0o644)
+            verification = verify_unit(unit, fixture, socket_unit)
             run("/usr/bin/systemctl", "daemon-reload")
             registered = True
             try:
+                run("/usr/bin/systemctl", "start", socket_unit.name)
+                assert runtime.stat().st_uid == 0 and stat.S_IMODE(runtime.stat().st_mode) == 0o755
+                node = (runtime / "bridge.sock").stat()
+                assert stat.S_ISSOCK(node.st_mode) and node.st_uid == identity.pw_uid
+                assert node.st_gid == identity.pw_gid and stat.S_IMODE(node.st_mode) == 0o660
+                # Enqueue the service explicitly; don't depend on client traffic to start it.
+                run("/usr/bin/systemctl", "--no-block", "start", unit.name)
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                    client.settimeout(15)
+                    client.connect(str(runtime / "bridge.sock"))
+                    client.sendall(b"synthetic")
+                    assert client.recv(9) == b"synthetic", "root client Unix exchange"
+                # Wait for the oneshot checks and report to finish, with their 30s timeout.
                 run("/usr/bin/systemctl", "start", name + ".service")
-            except RuntimeError:
+            except (RuntimeError, OSError, AssertionError):
                 # Only our uniquely named synthetic unit is queried, never other services.
                 diagnostics = run("/usr/bin/journalctl", "--no-pager", "--output=cat", "-n", "30",
                                   "--unit=" + name + ".service")
@@ -322,13 +447,16 @@ def native(template):
             assert report["status"] == "PASS" and report["control"] == control
             report["static_verification"] = verification
             report["host_dependency_start"] = "PASS"
+            report["listener_sha256"] = hashlib.sha256((fixture / "listener.py").read_bytes()).hexdigest()
             results.append(report)
         finally:
             # Stop must succeed before removing any possible working/state paths.
             if registered:
-                run("/usr/bin/systemctl", "stop", name + ".service")
+                run("/usr/bin/systemctl", "stop", socket_unit.name, unit.name)
                 run("/usr/bin/systemctl", "reset-failed", name + ".service")
+                run("/usr/bin/systemctl", "reset-failed", socket_unit.name)
             unit.unlink(missing_ok=True)
+            socket_unit.unlink(missing_ok=True)
             run("/usr/bin/systemctl", "daemon-reload")
             for owned in (fixture, state, runtime):
                 if owned.exists():
@@ -337,6 +465,7 @@ def native(template):
     return {"status": "PASS", "manager": version,
             "systemd_249_observed": bool(re.match(r"systemd 249(?:\s|$)", version)),
             "template_sha256": hashlib.sha256(template.encode()).hexdigest(), "runs": results,
+            "socket_template_sha256": hashlib.sha256(SOCKET_TEMPLATE.read_bytes()).hexdigest(),
             "scope": "synthetic remapped paths and nobody UID; production identity, egress and proxy unverified"}
 
 

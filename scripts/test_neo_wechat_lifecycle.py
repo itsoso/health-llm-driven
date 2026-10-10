@@ -144,6 +144,7 @@ def test_deactivation_plan_is_fixed_and_preserves_owner_material():
     plan = life.deactivation_plan(receipt())
     assert plan['executable_actions'] == []
     assert plan['steps'] == list(life.DEACTIVATION_STEPS)
+    assert 'stop_and_disable_only_neo_wechat_service_and_socket' in plan['steps']
     assert plan['preserve'] == ['keys', 'encrypted_data', 'audit', 'accounts', 'groups']
     assert plan['revocation'] == 'requires_separate_confirmed_receipt'
     assert 'delete' not in str(plan)

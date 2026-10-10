@@ -87,21 +87,30 @@ caches, logs, backups and optional data mounts, and exposes only its candidate
 directory for writes. Global pip configuration is masked and configuration is
 explicitly disabled. No shared environment or application credentials are used.
 
-Before installing the unit, the runtime is made root-owned and read-only to the
+Before installing the units, the runtime is made root-owned and read-only to the
 service account, each regular file and directory is fsynced, and a sandboxed
 import/QR-asset check must pass without starting the application. The resulting
 runtime digest is bound to the receipt. The nginx fragment is parked in that
-release directory; it is not included or reloaded. The unit is verified and
-daemon-reloaded, but must remain `inactive` and `static` with no enablement section.
+release directory; it is not included or reloaded. Both service and socket units
+are verified and daemon-reloaded, but must remain `inactive` and `static` with no
+enablement section. No Unix socket path is opened by the dormant installer.
 Both config and state directories remain empty. The receipt includes the dedicated
 proxy group ID needed by the later nonsecret configuration.
 
 Runtime containment: systemd 249-compatible directives, CPU 25%, memory 256 MiB,
 32 tasks, 256 descriptors, no privilege acquisition, no capabilities, private
-temporary files/devices, read-only filesystem with only bridge state/runtime
-directories writable. `SocketBindDeny=any` denies IP listening; the application
-binds only `/run/neo-wechat/bridge.sock`, owner-private with group access for the
-dedicated proxy group. Health paths are inaccessible. The runtime receives three
+temporary files/devices, read-only filesystem with only bridge state writable.
+The service must inherit exactly one pre-opened listening Unix socket from systemd
+at `/run/neo-wechat/bridge.sock`; the socket unit owns its path lifecycle, independent
+of service restarts. The service's seccomp policy denies both `bind` and `listen`,
+including unbound TCP `listen()` autobind, and the three io_uring entry syscalls
+that could otherwise provide asynchronous bind/listen operations on newer kernels.
+A strictly validated inherited socket
+adapter avoids asyncio's redundant `listen()` call without relaxing kernel policy.
+`SocketBindDeny=any` alone is not a safety boundary: native systemd 249 CI demonstrated
+an IP listener escaping it. The revised boundary still requires real passing CI.
+The socket is owner-private with group access for only the dedicated proxy group.
+Health paths are inaccessible. The runtime receives three
 separate credentials through `LoadCredential`, never through an EnvironmentFile.
 Actual Linux `systemd-analyze verify` and sandbox behavior are deployment gates;
 Mac unit tests do not establish host compatibility.
@@ -136,7 +145,9 @@ registered OAuth public client and exact callback, Health owner binding, and pro
 group ID. Config must be root-owned, mode 0640, group `neo-wechat`; secret originals
 must be root-owned 0600. A reviewed activation transaction must verify all of this,
 nginx worker membership in only the dedicated proxy group, and the exact HTTPS
-locations before starting the service and publishing the route.
+locations before starting both the socket and service and publishing the route.
+Explicitly start the service so collection does not wait for the first MCP request.
+Stop/unpublish operations must stop both units; preserve encrypted state and keys.
 
 G2 continuation: the proposed owner-operated SSH terminal with hidden `/dev/tty`
 prompts has been presented as a surface choice; acceptance remains pending. The

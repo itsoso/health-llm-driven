@@ -23,7 +23,7 @@ RECONCILIATION_STEPS = (
 DEACTIVATION_STEPS = (
     'verify_exact_bridge_publication_and_original_receipts',
     'record_stop_and_unpublish_intent',
-    'stop_and_disable_only_neo_wechat_unit',
+    'stop_and_disable_only_neo_wechat_service_and_socket',
     'unpublish_only_recorded_exact_bridge_nginx_include',
     'validate_nginx_configuration_before_reload',
     'reload_nginx_only_after_validation',

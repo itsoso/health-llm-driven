@@ -2,7 +2,8 @@
 # A separate reviewed transaction substitutes exactly one immutable revision.
 [Unit]
 Description=Owner-private Neo WeChat bridge
-After=network-online.target
+After=network-online.target neo-wechat.socket
+Requires=neo-wechat.socket
 Wants=network-online.target
 StartLimitIntervalSec=300
 StartLimitBurst=3
@@ -24,11 +25,9 @@ LoadCredential=slack_webhook:/etc/neo-wechat/slack_webhook
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
 UMask=0077
-RuntimeDirectory=neo-wechat
-RuntimeDirectoryMode=0755
 StateDirectory=neo-wechat
 StateDirectoryMode=0700
-ReadWritePaths=/var/lib/neo-wechat /run/neo-wechat
+ReadWritePaths=/var/lib/neo-wechat
 ReadOnlyPaths=/etc/neo-wechat/config.json /opt/neo-wechat
 InaccessiblePaths=-/opt/health-app -/etc/health-app -/var/lib/health-app -/var/lib/reva-health-evidence-runtime -/var/backups -/var/log/health-app -/var/cache/health-app -/etc/reva-release -/var/lib/reva-release -/srv -/data -/mnt -/media -/etc/neo-wechat/encryption_key -/etc/neo-wechat/admin_password_hash -/etc/neo-wechat/slack_webhook
 ProtectSystem=strict
@@ -52,6 +51,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SocketBindDeny=any
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
+SystemCallFilter=~bind listen io_uring_setup io_uring_enter io_uring_register
 SystemCallErrorNumber=EPERM
 MemoryMax=256M
 MemorySwapMax=0

@@ -29,11 +29,142 @@ def test_unit_contains_only_isolated_bridge_paths():
     assert b"SupplementaryGroups=neo-wechat-proxy\n" in raw
     assert b"/opt/neo-wechat/releases/" + b"a" * 40 + b"/venv/bin/python" in raw
     assert b"--socket /run/neo-wechat/bridge.sock" in raw
-    assert b"ReadWritePaths=/var/lib/neo-wechat /run/neo-wechat\n" in raw
+    assert b"ReadWritePaths=/var/lib/neo-wechat\n" in raw
+    assert b"RuntimeDirectory=" not in raw
+    assert b"RuntimeDirectoryMode=" not in raw
+    assert b"Requires=neo-wechat.socket\n" in raw
+    assert b"After=network-online.target neo-wechat.socket\n" in raw
+    assert (b"SystemCallFilter=@system-service\n"
+            b"SystemCallFilter=~bind listen io_uring_setup io_uring_enter io_uring_register\n") in raw
     assert b"LoadCredential=encryption_key:/etc/neo-wechat/encryption_key\n" in raw
     assert b"EnvironmentFile=" not in raw
     assert b"WorkingDirectory=/opt/health" not in raw
     assert b"WantedBy=" not in raw  # no install/enable default
+
+
+def test_socket_unit_is_fixed_unix_only_and_static():
+    raw = neo.socket_unit_bytes()
+    assert b"ListenStream=/run/neo-wechat/bridge.sock\n" in raw
+    assert raw.count(b"ListenStream=") == 1
+    for line in (b"SocketUser=neo-wechat", b"SocketGroup=neo-wechat-proxy",
+                 b"SocketMode=0660", b"DirectoryMode=0755", b"RemoveOnStop=yes",
+                 b"Service=neo-wechat.service", b"FileDescriptorName=neo-wechat-http",
+                 b"Backlog=16"):
+        assert line + b"\n" in raw
+    assert b"WantedBy=" not in raw
+    assert b"[Install]\n" not in raw
+    for name in ('config.json', 'encryption_key', 'admin_password_hash', 'slack_webhook'):
+        assert ('ConditionPathExists=/etc/neo-wechat/' + name + '\n').encode() in raw
+
+
+def unit_fixture(tmp_path, monkeypatch):
+    monkeypatch.setattr(neo, "UNIT", tmp_path / "neo-wechat.service")
+    monkeypatch.setattr(neo, "SOCKET_UNIT", tmp_path / "neo-wechat.socket")
+    monkeypatch.setattr(neo, "RUN_ROOT", tmp_path / "run-neo-wechat")
+    monkeypatch.setattr(neo, "secure_path", lambda *_a, **_k: None)
+    commands = []
+    def run(command):
+        commands.append(command)
+        if command[1] == 'show':
+            path = tmp_path / command[2]
+            return '\n'.join(('LoadState=loaded', 'ActiveState=inactive',
+                              'UnitFileState=static', 'FragmentPath=' + str(path), 'DropInPaths='))
+        return ''
+    monkeypatch.setattr(neo, "run", run)
+    return commands
+
+
+def test_installs_verifies_both_units_without_start_or_enable(tmp_path, monkeypatch):
+    commands = unit_fixture(tmp_path, monkeypatch)
+    neo.install_units('a' * 40)
+    assert neo.UNIT.read_bytes() == neo.render_unit('a' * 40)
+    assert neo.SOCKET_UNIT.read_bytes() == neo.socket_unit_bytes()
+    assert ['/usr/bin/systemd-analyze', 'verify', str(neo.UNIT), str(neo.SOCKET_UNIT)] in commands
+    assert {command[2] for command in commands if command[1] == 'show'} == {
+        'neo-wechat.service', 'neo-wechat.socket'}
+    assert all('--all' in command for command in commands if command[1] == 'show')
+    assert not any(arg in {'start', 'restart', 'enable', '--now'} for command in commands for arg in command)
+
+
+@pytest.mark.parametrize('unit', ['neo-wechat.service', 'neo-wechat.socket'])
+@pytest.mark.parametrize('bad', ['ActiveState=active', 'UnitFileState=enabled',
+                                 'UnitFileState=enabled-runtime', 'LoadState=error',
+                                 'FragmentPath=/foreign', 'DropInPaths=/etc/systemd/system/service.d/override.conf'])
+def test_dormant_readback_rejects_active_enabled_or_foreign_units(tmp_path, monkeypatch, unit, bad):
+    unit_fixture(tmp_path, monkeypatch)
+    neo.install_units('a' * 40)
+    original = neo.run
+    def changed(command):
+        result = original(command)
+        if command[1] == 'show' and command[2] == unit:
+            field = bad.split('=')[0] + '='
+            result = '\n'.join(bad if line.startswith(field) else line for line in result.splitlines())
+        return result
+    monkeypatch.setattr(neo, 'run', changed)
+    with pytest.raises(neo.DeployError, match='inactive'):
+        neo.assert_dormant_units('a' * 40)
+
+
+def test_dormant_readback_rejects_socket_path_or_changed_unit(tmp_path, monkeypatch):
+    unit_fixture(tmp_path, monkeypatch)
+    neo.install_units('a' * 40)
+    neo.RUN_ROOT.mkdir()
+    with pytest.raises(neo.DeployError, match='runtime'):
+        neo.assert_dormant_units('a' * 40)
+    neo.RUN_ROOT.rmdir()
+    neo.SOCKET_UNIT.write_bytes(b'# changed')
+    with pytest.raises(neo.DeployError, match='readback'):
+        neo.assert_dormant_units('a' * 40)
+
+
+@pytest.mark.parametrize('which', ['UNIT', 'SOCKET_UNIT', 'RUN_ROOT'])
+def test_first_install_rejects_existing_unit_or_runtime_path(tmp_path, monkeypatch, which):
+    for name in ('RUNTIME_ROOT', 'CONFIG_ROOT', 'DATA_ROOT', 'UNIT', 'SOCKET_UNIT', 'RUN_ROOT'):
+        monkeypatch.setattr(neo, name, tmp_path / name)
+    monkeypatch.setattr(neo, 'secure_path', lambda *_a, **_k: None)
+    getattr(neo, which).write_text('synthetic')
+    with pytest.raises(neo.DeployError, match='existing bridge objects'):
+        neo.assert_first_install()
+
+
+def test_first_install_checks_socket_and_rejects_enabled_missing_fragment(tmp_path, monkeypatch):
+    for name in ('RUNTIME_ROOT', 'CONFIG_ROOT', 'DATA_ROOT', 'UNIT', 'SOCKET_UNIT', 'RUN_ROOT'):
+        monkeypatch.setattr(neo, name, tmp_path / name)
+    monkeypatch.setattr(neo, 'UNIT', tmp_path / 'neo-wechat.service')
+    monkeypatch.setattr(neo, 'SOCKET_UNIT', tmp_path / 'neo-wechat.socket')
+    monkeypatch.setattr(neo, 'secure_path', lambda *_a, **_k: None)
+    def missing(*_args):
+        raise KeyError('synthetic')
+    monkeypatch.setattr(neo.pwd, 'getpwnam', missing)
+    monkeypatch.setattr(neo.grp, 'getgrnam', missing)
+    commands = []
+    def state(command):
+        commands.append(command)
+        return 'LoadState=not-found\nActiveState=inactive\nDropInPaths=\nUnitFileState=' + (
+            'enabled' if command[2] == 'neo-wechat.socket' else '')
+    monkeypatch.setattr(neo, 'run', state)
+    with pytest.raises(neo.DeployError, match='unexpected existing bridge unit'):
+        neo.assert_first_install()
+    assert [command[2] for command in commands] == ['neo-wechat.service', 'neo-wechat.socket']
+    assert all('--all' in command for command in commands)
+
+
+@pytest.mark.parametrize('unit', ['neo-wechat.service', 'neo-wechat.socket'])
+def test_first_install_rejects_preexisting_dropins_with_missing_base(tmp_path, monkeypatch, unit):
+    for name in ('RUNTIME_ROOT', 'CONFIG_ROOT', 'DATA_ROOT', 'UNIT', 'SOCKET_UNIT', 'RUN_ROOT'):
+        monkeypatch.setattr(neo, name, tmp_path / name)
+    monkeypatch.setattr(neo, 'UNIT', tmp_path / 'neo-wechat.service')
+    monkeypatch.setattr(neo, 'SOCKET_UNIT', tmp_path / 'neo-wechat.socket')
+    monkeypatch.setattr(neo, 'secure_path', lambda *_a, **_k: None)
+    def missing(*_args):
+        raise KeyError('synthetic')
+    monkeypatch.setattr(neo.pwd, 'getpwnam', missing)
+    monkeypatch.setattr(neo.grp, 'getgrnam', missing)
+    monkeypatch.setattr(neo, 'run', lambda command:
+        'LoadState=not-found\nActiveState=inactive\nUnitFileState=\nDropInPaths=' + (
+            '/etc/systemd/system/socket.d/override.conf' if command[2] == unit else ''))
+    with pytest.raises(neo.DeployError, match='unexpected existing bridge unit'):
+        neo.assert_first_install()
 
 
 def test_proxy_template_never_creates_tcp_listener_or_health_route():
@@ -373,8 +504,25 @@ def test_generated_lock_comments_and_qr_asset_are_admitted(tmp_path):
     for name in ("__init__.py", "server.py", "store.py", "oauth.py", "qr.js", "README.md"):
         (service / name).write_text("# synthetic")
     (service / "requirements.lock").write_text("example==1.0 \\\n    --hash=sha256:" + "a" * 64 + "\n    # via example\n")
+    (service / 'listener.py').write_text('# synthetic')
+    for name in ('neo-wechat.service.in', 'neo-wechat.socket.in', 'nginx-locations.conf'):
+        (root / 'infra/neo-wechat' / name).write_text('# synthetic')
     assert neo.runtime_inputs(root)["bytes"] > 0
     assert "services/neo_wechat/qr.js" in neo.package_inventory(root)
+
+
+@pytest.mark.parametrize('missing', ['neo-wechat.service.in', 'neo-wechat.socket.in', 'nginx-locations.conf'])
+def test_preflight_requires_paired_unit_and_proxy_inputs_before_mutation(tmp_path, missing):
+    root = package_fixture(tmp_path)
+    service = root / 'services/neo_wechat'
+    for name in ('__init__.py', 'server.py', 'listener.py', 'store.py', 'oauth.py', 'qr.js'):
+        (service / name).write_text('# synthetic')
+    (service / 'requirements.lock').write_text('example==1.0 --hash=sha256:' + 'a' * 64)
+    for name in ('neo-wechat.service.in', 'neo-wechat.socket.in', 'nginx-locations.conf'):
+        if name != missing:
+            (root / 'infra/neo-wechat' / name).write_text('# synthetic')
+    with pytest.raises(neo.DeployError, match='infrastructure'):
+        neo.runtime_inputs(root)
 
 
 def test_ordinary_deploy_checks_bridge_when_no_vision_history():

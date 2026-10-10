@@ -109,3 +109,12 @@ concurrent `637520e25` release run `38031474956` failed at 06:42:57 with retaine
 and retry forbidden. It must be reconciled by the original release owner, never
 bypassed. Fresh draft-only G4 for `6fd5e5d44` passed 214 independent tests. A dedicated
 Ubuntu 22.04 job now requires actual systemd 249 evidence before release-invariants.
+
+Native run `38033498010` failed an actual IP-listening check under systemd 249;
+the old SocketBindDeny-only boundary is rejected. The corrective candidate now
+uses paired static service/socket units, strict inherited listener validation before
+secrets, and seccomp denial of bind/listen plus io_uring entry syscalls. Installer
+readback rejects drop-ins and leaves both units inactive; production activation
+and recovery remain unimplemented. CI-mode backend/bridge rerun passed 171 tests
+with one environment-specific skip. A new fixed review and actual Linux CI must
+cover these corrected bytes before any further gate claim.

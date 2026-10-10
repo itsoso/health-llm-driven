@@ -11,7 +11,8 @@
 4. Keep Health authority separate: new dedicated Health registered client with a
    pinned Health owner and explicit new 3650-day consent; old clients default 30 days.
    Relay only three existing projected read tools, exact resource, no token forwarding.
-5. Harden a dedicated Unix-socket systemd service and exact HTTPS proxy paths. Only a
+5. Harden a dedicated systemd service with a pre-opened Unix socket and seccomp
+   denial of all new bind/listen calls, plus exact HTTPS proxy paths. Only a
    reviewed bounded `deploy.sh` mode may install it, under existing release ownership,
    exact main/full CI/G4 and immutable receipt semantics. Stop if gates unavailable.
 6. Run adversarial/local and integration tests, independent review, protected PR/CI.

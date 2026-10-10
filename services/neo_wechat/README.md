@@ -5,6 +5,13 @@ activation is gated; test evidence alone does not prove live WeChat, Slack, OAut
 Health discovery or closed-Mac acceptance. See the delivery dossier and deployment
 runbook for current status.
 
+The runtime receives one already-listening Unix socket from systemd. It refuses
+missing, extra, wrong-process, wrong-name, TCP or non-listening descriptors before
+opening credentials or state. Kernel seccomp denies new `bind` and `listen` calls
+and the io_uring syscall route;
+the validated listener adapter supports asyncio without creating another listener.
+Both service and socket remain dormant until the reviewed owner activation flow.
+
 ## Authority and storage
 
 `store.py` holds an OS process lease before reading encrypted state. A single process

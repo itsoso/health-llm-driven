@@ -135,3 +135,36 @@ Concurrent release run `38031474956` for `637520e25` ended in failure at
 06:42:57 UTC. Its server launcher reported “evidence retained, retry forbidden”
 and receipt validation failed. This is not a successful production receipt;
 the operation and lease must be reconciled through the original release owner.
+
+## Native systemd 249 defect and corrective boundary
+
+Runs `38032903850` and `38033130316` failed static probe validation. The probe's
+ineffective oneshot `RuntimeMaxSec` was removed, retaining actual start/stop
+timeouts. Static validation now uses exact candidate bytes and synthetic dependency
+stubs in an isolated unit load path, rejecting all diagnostics; actual host startup
+is independently exercised. Superseded runs were cancelled after failure evidence
+was retained, never marked successful.
+
+Run `38033498010`, fixed `ee076911e`, passed static validation then demonstrated an
+actual protected worker could open an IP listener under `SocketBindDeny=any` on
+systemd 249. This is a security finding, not a test waiver. Upstream issue #30556
+and fix 736b774 describe the empty allow-map failure; BPF-install failure is another
+fail-open path. The log alone does not distinguish those causes. A revised boundary
+uses systemd socket activation plus seccomp denial of both bind and listen, with
+the inherited AF_UNIX listener validated before private inputs. New fixed review
+and actual native tests are required; no previous draft GO covers the new bytes.
+
+The revised seccomp deny set also contains io_uring_setup, io_uring_enter and
+io_uring_register. This closes the asynchronous equivalents documented by
+[liburing bind](https://man7.org/linux/man-pages/man3/io_uring_prep_bind.3.html)
+and [liburing listen](https://man7.org/linux/man-pages/man3/io_uring_prep_listen.3.html).
+Protected native calls must fail with permission errors. If an unprotected control
+is also denied by the host, that particular io_uring observation is explicitly
+not attributed to the service filter. Existing direct bind/listen positive controls
+remain mandatory.
+
+Updated local CI-mode backend and bridge integration: 171 passed, 1 skipped.
+The first sandboxed Mac attempt could not create fixture sockets and omitted the
+repository PYTHONPATH for subprocess tests; the canonical-environment rerun with
+synthetic-only socket permission passed. Deployment/installer/provisioning/lifecycle
+regressions before the io_uring addition: 443 passed. Linux evidence remains separate.

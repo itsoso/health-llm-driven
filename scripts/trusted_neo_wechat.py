@@ -32,6 +32,8 @@ RUNTIME_ROOT = Path("/opt/neo-wechat")
 CONFIG_ROOT = Path("/etc/neo-wechat")
 DATA_ROOT = Path("/var/lib/neo-wechat")
 UNIT = Path("/etc/systemd/system/neo-wechat.service")
+SOCKET_UNIT = Path("/etc/systemd/system/neo-wechat.socket")
+RUN_ROOT = Path("/run/neo-wechat")
 INSTALLED_EXECUTOR = Path("/usr/local/lib/reva-release/trusted_release_server.py")
 ENV = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C",
        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -86,6 +88,10 @@ def render_unit(revision):
 
 def proxy_bytes():
     return (ROOT / "infra/neo-wechat/nginx-locations.conf").read_bytes()
+
+
+def socket_unit_bytes():
+    return (ROOT / "infra/neo-wechat/neo-wechat.socket.in").read_bytes()
 
 
 def package_inventory(source):
@@ -167,10 +173,15 @@ def exact_full_ci(gate, publisher):
 
 
 def runtime_inputs(source):
-    for name in ("__init__.py", "server.py", "store.py", "core.py", "oauth.py", "qr.js", "requirements.lock"):
+    for name in ("__init__.py", "server.py", "listener.py", "store.py", "core.py", "oauth.py", "qr.js", "requirements.lock"):
         path = source / "services/neo_wechat" / name
         if not path.is_file() or path.is_symlink():
             raise DeployError("complete locked runtime inputs required")
+        file_digest(path)
+    for name in ("neo-wechat.service.in", "neo-wechat.socket.in", "nginx-locations.conf"):
+        path = source / "infra/neo-wechat" / name
+        if not path.is_file() or path.is_symlink():
+            raise DeployError("complete infrastructure inputs required")
         file_digest(path)
     lock = (source / "services/neo_wechat/requirements.lock").read_text()
     logical = lock.replace("\\\n", "").splitlines()
@@ -279,7 +290,7 @@ def protected_metadata():
 
 
 def assert_first_install():
-    for path in (RUNTIME_ROOT, CONFIG_ROOT, DATA_ROOT, UNIT, Path("/run/neo-wechat")):
+    for path in (RUNTIME_ROOT, CONFIG_ROOT, DATA_ROOT, UNIT, SOCKET_UNIT, RUN_ROOT):
         if os.path.lexists(path):
             raise DeployError("existing bridge objects require explicit recovery or upgrade")
         secure_path(path.parent, directory=True)
@@ -295,9 +306,36 @@ def assert_first_install():
         except KeyError:
             continue
         raise DeployError("existing bridge group requires review")
-    state = run(["/usr/bin/systemctl", "show", "neo-wechat.service", "--property=LoadState,ActiveState"])
-    if set(state.splitlines()) != {"LoadState=not-found", "ActiveState=inactive"}:
-        raise DeployError("unexpected existing bridge service")
+    for unit in (UNIT, SOCKET_UNIT):
+        state = run(["/usr/bin/systemctl", "show", unit.name,
+                     "--property=LoadState,ActiveState,UnitFileState,DropInPaths", "--all"])
+        if set(state.splitlines()) != {"LoadState=not-found", "ActiveState=inactive", "UnitFileState=", "DropInPaths="}:
+            raise DeployError("unexpected existing bridge unit")
+
+
+def assert_dormant_units(publisher):
+    for unit, expected in ((UNIT, render_unit(publisher)), (SOCKET_UNIT, socket_unit_bytes())):
+        state = run(["/usr/bin/systemctl", "show", unit.name,
+                     "--property=LoadState,ActiveState,UnitFileState,FragmentPath,DropInPaths", "--all"])
+        if set(state.splitlines()) != {"LoadState=loaded", "ActiveState=inactive",
+                                      "UnitFileState=static", "FragmentPath=" + str(unit), "DropInPaths="}:
+            raise DeployError("bridge units must remain inactive and not enabled")
+        secure_path(unit)
+        if unit.read_bytes() != expected:
+            raise DeployError("bridge unit readback differs")
+    if os.path.lexists(RUN_ROOT):
+        raise DeployError("dormant install must not create a runtime socket path")
+
+
+def install_units(publisher):
+    # No start/enable operation: both the service and its Unix listener stay
+    # dormant. The service cannot create listeners itself under its syscall
+    # policy; a later separately reviewed activation must start the socket.
+    write_once(UNIT, render_unit(publisher), mode=0o644)
+    write_once(SOCKET_UNIT, socket_unit_bytes(), mode=0o644)
+    run(["/usr/bin/systemd-analyze", "verify", str(UNIT), str(SOCKET_UNIT)])
+    run(["/usr/bin/systemctl", "daemon-reload"])
+    assert_dormant_units(publisher)
 
 
 def assert_installed_history(source):
@@ -417,19 +455,11 @@ def install_payload(plan, source, check, helper, bootstrap):
     directory(DATA_ROOT, 0o700)
     os.chown(DATA_ROOT, uid, gid)
     sync_directory(DATA_ROOT)
-    write_once(UNIT, render_unit(publisher), mode=0o644)
-    run(["/usr/bin/systemd-analyze", "verify", str(UNIT)])
-    run(["/usr/bin/systemctl", "daemon-reload"])
-    state = run(["/usr/bin/systemctl", "show", "neo-wechat.service", "--property=ActiveState,UnitFileState,FragmentPath"])
-    if set(state.splitlines()) != {"ActiveState=inactive", "UnitFileState=static", "FragmentPath=" + str(UNIT)}:
-        raise DeployError("bridge must remain inactive and not enabled")
+    install_units(publisher)
     if health_snapshot() != plan["health_services"]:
         raise DeployError("Health service identities changed")
     if protected_metadata() != plan["protected_metadata"]:
         raise DeployError("protected configuration metadata changed")
-    if UNIT.read_bytes() != render_unit(publisher):
-        raise DeployError("bridge unit readback differs")
-    secure_path(UNIT)
     if list(CONFIG_ROOT.iterdir()) or list(DATA_ROOT.iterdir()):
         raise DeployError("dormant install must not create secrets or runtime data")
     verify_account()
