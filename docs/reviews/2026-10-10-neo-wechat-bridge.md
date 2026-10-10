@@ -21,8 +21,30 @@ Corrections: permit the registered callback origin in CSP with constrained host
 syntax; prune revoked/expired grants while denying their tokens; add bounded,
 encrypted generic audit events for consent/token/replay/revoke and Health reads.
 New regression tests cover callback policy, repeated revoke/reconsent capacity and
-audit absence of tokens, arguments and returned health content. Targeted browser
-retest and a new independent fixed combined-diff review are pending.
+audit absence of tokens, arguments and returned health content. The prior reviewer
+retested actual Service.app headers in Chromium: the registered callback was
+reached and the unregistered callback remained blocked. All 25 revoked access and
+refresh tokens failed without harming the new grant; revoke-all/reconsent also
+worked. Targeted OAuth/Health/server verification: 36 passed.
+
+## Combined fixed review — GO for draft PR only
+
+New independent read-only reviewer `combined_security_review` reviewed the entire
+`fa4703060594472933bca35553c9de05c5016cd6..f7785ec68d604188afe2a1f7a9d1a68f85d480ea`
+diff. No new P1/P2 issue was identified for publishing the explicitly dormant
+candidate as a draft PR. This is not deployment or activation approval.
+
+The reviewer independently ran service, installer, bootstrap and release-server
+suites: 375 passed. Owner/destination pinning, encrypted atomic state, process
+lease, rotation/replay/revoke, generic Slack signal, uncertain sends and durable
+release-history gates were examined. The sole formatting observation (extra blank
+EOF in installer tests) was removed without changing behavior.
+
+Deployment blockers: exact current-main/full CI and release ownership; verified
+external canonical bootstrap and installed executor with PR252 trust concerns
+resolved; cross-family capstone; actual Linux/systemd containment; reviewed
+secret-entry, activation, removal and interrupted-install recovery; personal owner
+handoffs and real closed-Mac/restart/revoke acceptance.
 
 ## Verification before combined review
 
@@ -35,12 +57,15 @@ retest and a new independent fixed combined-diff review are pending.
   Linux systemd sandbox behavior.
 - Initial CI-mode combined run from repository root failed one existing migration
   relative-path test; rerun from required backend cwd: 148 passed, 1 skipped.
-  Final run after the new application regressions is pending.
+  Final run after the new application regressions: 151 passed, 1 skipped.
 - Complete hash-locked service dependency audit: 17 packages, no vulnerabilities.
   Local audit used `--disable-pip --no-deps` after the auditor's temporary ensurepip
   subprocess aborted; the full pinned lock was still audited. CI retains hash checks.
 - JavaScript vendor syntax, System Map canonical graph/mobile-nav/doc-drift,
   dossier consistency and whitespace checks passed before final documentation edits.
+- Fresh tracked-file high-confidence secret scan passed. LLM change classifier
+  passed with no live LLM evaluation required; it does not replace the cross-family
+  review requirement.
 
 ## Cross-family capstone — not run
 

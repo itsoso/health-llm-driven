@@ -382,4 +382,3 @@ def test_ordinary_deploy_checks_bridge_when_no_vision_history():
     block = raw[raw.index("def git(*args):") - 1100:raw.index("def git(*args):")]
     assert 'Path("/var/lib/reva-release/neo-wechat")' in block
     assert "if not roots:" in block
-

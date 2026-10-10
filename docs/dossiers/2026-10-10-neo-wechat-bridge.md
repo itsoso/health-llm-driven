@@ -62,14 +62,17 @@ expansion, arbitrary RPC relay or identity inferred from incoming WeChat content
 ## G3 / G4 / G5 / G6
 
 G3: local service, PostgreSQL isolation, frontend, deployment, System Map and
-dependency checks passed (details in review record). Final combined verification
-and exact revision CI remain pending. Cross-family capstone was blocked by automatic
+dependency checks passed (details in review record). Final combined verification:
+151 passed, 1 skipped. Exact revision CI remains pending. Cross-family capstone was blocked by automatic
 approval review because its external private-code destination was not authorized.
 
 G4: first fixed application review of `4892c41b1e8cd19ec5262ff5dc91b518316fa6b0`
 was NO-GO: browser CSP callback, revoked-grant capacity and missing authorization/
-Health audit evidence. Corrections and regressions are implemented; fresh fixed
-combined review remains pending. No deployment is admitted by this status.
+Health audit evidence. Corrections and regressions are implemented and the targeted
+real-browser, revoke/reconsent and audit retest passed. Fresh independent combined
+review of `f7785ec68d604188afe2a1f7a9d1a68f85d480ea`: **GO for a draft PR of the
+dormant candidate only**, no new P1/P2 findings, 375 independent tests passed.
+This explicitly does not admit deployment or activation.
 
 G5/G6: pending. No deployment, secret creation, QR request, grant or live signal
 has occurred. Installer currently ends at dormant placement; approved secret-entry
