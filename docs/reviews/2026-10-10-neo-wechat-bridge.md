@@ -211,3 +211,14 @@ trusted-installer tests passed, including 85 new history tests and 69 new runtim
 tests. All 15 activation and 13 stop journal-write interruption positions are
 covered. Secret scan, dossier consistency and System Map checks passed. These
 results cover local internal logic; no production adapter or acceptance is implied.
+
+Fixed `33be868e79fca1be3405b537c6de0b2fe5357b5f` received independent draft/CI
+GO with 262 focused tests and no P1/P2 findings. CI `38038342570` nevertheless
+failed release invariants after 822 passing tests: the existing PostgreSQL cleanup
+test searched for substring `_02` in a full SQL representation, so a random run
+ID starting `02` falsely rejected a correct `_01` drop. A deterministic regression
+using the actual failing run ID reproduced the failure. The test now requires the
+complete exact owned identifier and one DROP statement, retaining the unowned
+database protection. The production runner is unchanged. Focused follow-up:
+191 passed, 3 environment-dependent skips. The failed CI remains failed; the
+corrected candidate needs fresh fixed review and CI, not a lucky rerun.
