@@ -110,6 +110,14 @@ def _is_non_action_title(title: str) -> bool:
     s = (title or "").strip()
     if not s:
         return True
+    # A device measurement is evidence, not an action to review.
+    if re.fullmatch(
+        r"(?:(?:Garmin\s+)?Readiness|HRV|身体电量)\s*[:：]?\s*"
+        r"\d+(?:\.\d+)?(?:\s*/\s*100|\s*ms|\s*分)?"
+        r"(?:\s*[,，:：]\s*(?:状态良好|良好|正常|偏低|偏高))?[。.!！]?",
+        s, re.IGNORECASE,
+    ):
+        return True
     # Status labels often arrive decorated ("已记录✅", "午餐已记录"). Keep only
     # letters and digits for classification so presentation glyphs never turn a
     # write receipt into an action to follow up.
@@ -249,18 +257,22 @@ def _try_action_card_due(db: Session, user_id: int) -> Optional[OpenerSuggestion
     for card in cards:
         # 卡标题可能是告警文案 ("…（阈值 95%），请注意"), 内联前人性化。
         # 系统回执 ("已为您记录") 不是行动目标, 不能套"检验日"模板。
-        title = humanize_card_title((card.title or "").strip()[:40])
-        if _is_non_action_title(title):
+        raw_title = (card.title or "").strip()
+        if _is_non_action_title(raw_title):
             continue
+        title = humanize_card_title(raw_title[:40])
 
         # 距 check_back 还有几天 (中国时间)
         chk = card.check_back_date
         if chk.tzinfo is None:
             chk = chk.replace(tzinfo=timezone.utc)
-        days_until = max(0, (chk.astimezone(CHINA_TZ).date() - datetime.now(CHINA_TZ).date()).days)
+        days_until = (chk.astimezone(CHINA_TZ).date() - datetime.now(CHINA_TZ).date()).days
 
-        if days_until == 0:
-            text = f"「{title}」今天到复盘时间了。当前更接近哪种情况？"
+        if days_until < 0:
+            text = f"之前安排了「{title}」，现在进展怎么样？"
+            quick_replies = ["已完成", "还没完成", "需要调整"]
+        elif days_until == 0:
+            text = f"今天可以回顾「{title}」。现在进展怎么样？"
             quick_replies = ["已完成", "还没完成", "需要调整"]
         elif days_until == 1:
             text = f"明天复盘「{title}」。现在进展顺利吗？"

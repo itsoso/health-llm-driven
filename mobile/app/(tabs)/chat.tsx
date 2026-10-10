@@ -301,7 +301,10 @@ export default function ChatScreen() {
 
   // P1: opener — chat tab mount 时拉一次, 用户发了第一条 message 后自动隐藏.
   // null = 还没拉到 / 无信号; 退化到默认 SUGGESTIONS chip.
-  const [opener, setOpener] = useState<ConversationOpener | null>(null);
+  const [freshStart, setFreshStart] = useState(false);
+  const freshStartRef = useRef(false);
+  const [storedOpener, setOpener] = useState<ConversationOpener | null>(null);
+  const opener = freshStart ? null : storedOpener;
   const [starterSuggestions, setStarterSuggestions] = useState<SuggestionCard[]>(SUGGESTIONS);
   const [startersReady, setStartersReady] = useState(false);
   const [bootstrapReady, setBootstrapReady] = useState(false);
@@ -336,7 +339,8 @@ export default function ChatScreen() {
   }, [startersReady, messages.length, starterSuggestions]);
 
   // P3-3: 拉 top 1-2 条 memory, 显示在 opener 上方"我记得你: <X>"
-  const [memoryOpener, setMemoryOpener] = useState<MemoryOpenerItem[]>([]);
+  const [storedMemoryOpener, setMemoryOpener] = useState<MemoryOpenerItem[]>([]);
+  const memoryOpener = freshStart ? [] : storedMemoryOpener;
   const refreshMemoryOpener = useCallback(async (shouldSkip?: () => boolean) => {
     const items = await fetchMemoryOpener(2);
     if (!shouldSkip?.()) setMemoryOpener(items);
@@ -411,6 +415,8 @@ export default function ChatScreen() {
       lastContextKey.current = contextKey;
       const forceNewConversation = params.newChat === '1';
       if (forceNewConversation) {
+        freshStartRef.current = true;
+        setFreshStart(true);
         newChat();
       }
       if (params.badge) setContextBadge(params.badge);
@@ -568,7 +574,7 @@ export default function ChatScreen() {
   // React 会把这次 setMessages 与紧随的 sendMessage 内部 setMessages 批处理:
   // [synthetic] → [synthetic, userMsg, aiMsg]。
   const injectOpeningContinuity = useCallback((activeOpener: ConversationOpener | null) => {
-    if (messagesEmptyRef.current !== true) return;
+    if (freshStartRef.current || messagesEmptyRef.current !== true) return;
     const text = buildOpeningContinuityText(activeOpener, memoryOpenerRef.current);
     if (!text) return;
     setMessages(prev => {
@@ -761,6 +767,8 @@ export default function ChatScreen() {
   }, []);
 
   const handleNewChat = useCallback(() => {
+    freshStartRef.current = true;
+    setFreshStart(true);
     setToolMenuVisible(false);
     exitSelectionMode();
     setContextBadge(null);
@@ -1196,6 +1204,7 @@ export default function ChatScreen() {
             ListEmptyComponent={
               bootstrapReady ? (
                 <EmptyStateHome
+                  freshStart={freshStart}
                   memoryOpener={memoryOpener}
                   opener={opener}
                   onOpenMemory={() => router.push('/memory')}
@@ -1291,6 +1300,7 @@ export default function ChatScreen() {
         {bootstrapReady
           && messages.length === 0
           && !selectionMode
+          && !freshStart
           && !opener
           && !keyboardVisible
           && (

@@ -847,3 +847,35 @@ def test_problem_followup_isolates_users(db):
     _add_problem(db, 2, name="别人的胃溃疡", next_due=date.today() - timedelta(days=5))
     out = compute_conversation_opener(db, user_id=1)
     assert out is None or out.source != "health_problem"
+
+@pytest.mark.parametrize('title', ['Garmin Readiness 72/100，状态良好', 'HRV 56ms', '身体电量 80/100'])
+def test_metric_snapshot_is_not_a_due_action(db, title):
+    from app.models.action_card import ActionCard
+    from app.services.conversation_opener import _try_action_card_due
+    db.add(ActionCard(user_id=1, title=title, content='snapshot', status='active', check_back_date=datetime.now(timezone.utc)))
+    db.commit()
+    assert _try_action_card_due(db, 1) is None
+
+
+def test_overdue_action_does_not_claim_it_is_due_today(db):
+    from app.models.action_card import ActionCard
+    from app.services.conversation_opener import _try_action_card_due
+    db.add(ActionCard(user_id=1, title='提前晚餐', content='plan', status='active', check_back_date=datetime.now(timezone.utc)-timedelta(days=4)))
+    db.commit()
+    opener = _try_action_card_due(db, 1)
+    assert opener is not None
+    assert '今天到' not in opener.text
+    assert '哪种情况' not in opener.text
+
+@pytest.mark.parametrize('title', [
+    'HRV 50ms 以下时减少训练强度',
+    '身体电量 20 以下时提前休息',
+    'Garmin Readiness 72/100，状态良好时按计划散步',
+])
+def test_metric_condition_does_not_hide_an_actual_action(db, title):
+    from app.models.action_card import ActionCard
+    from app.services.conversation_opener import _try_action_card_due
+    db.add(ActionCard(user_id=1, title=title, content='action',
+        status='active', check_back_date=datetime.now(timezone.utc)))
+    db.commit()
+    assert _try_action_card_due(db, 1) is not None

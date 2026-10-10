@@ -530,7 +530,7 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(view.queryByLabelText('正在准备小巴')).toBeNull();
       expect(view.getByText(/今天先确认午餐记录/)).toBeTruthy();
-      expect(view.getByText('依据 1 条饮食')).toBeTruthy();
+      expect(view.queryByText('依据 1 条饮食')).toBeNull();
       expect(view.queryByText('查询全天饮食')).toBeNull();
     });
   });
@@ -605,6 +605,26 @@ describe('ChatScreen', () => {
     });
     // 键盘 token 始终保持 0 —— 小巴有话说时不弹键盘。
     expect(bar().props.autoFocusToken).toBe(0);
+  });
+
+  it('starts a fresh topic after New even when refresh returns the previous opener', async () => {
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: { text: '旧行动等待复盘', source: 'action_card_due', quick_replies: [], priority: 100 },
+      suggestions: null, onboarding: false,
+    });
+    mockFetchMemoryOpener.mockResolvedValue([]);
+    const { getByText, queryByText, getByLabelText, UNSAFE_getAllByType } = render(<ChatScreen />);
+    await waitFor(() => expect(getByText(/旧行动等待复盘/)).toBeTruthy());
+    await act(async () => { fireEvent.press(getByLabelText('更多会诊操作')); });
+    await act(async () => { fireEvent.press(getByLabelText('新建对话')); });
+    await waitFor(() => expect(getByText(/想记录饮食、体重/)).toBeTruthy());
+    expect(queryByText(/旧行动等待复盘/)).toBeNull();
+    mockSetMessages.mockClear();
+    await act(async () => {
+      void UNSAFE_getAllByType('ChatInputBar' as any)[0].props.onSend('新的问题');
+    });
+    expect(mockSendMessage).toHaveBeenCalled();
+    expect(mockSetMessages).not.toHaveBeenCalled();
   });
 
   it('does not reserve conversation header space for an unscheduled pending action', () => {
@@ -1016,7 +1036,7 @@ describe('ChatScreen', () => {
         suggestions: [{ text: '复盘我最近一次跑步（5.2km / 30min / 均心率 145）', key: 'workout', priority: 50 }],
       });
 
-    const { getByLabelText, getByText } = render(<ChatScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
 
     await waitFor(() => {
       expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
@@ -1031,7 +1051,8 @@ describe('ChatScreen', () => {
 
     await waitFor(() => {
       expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
-      expect(getByText('复盘我最近一次跑步（5.2km / 30min / 均心率 145）')).toBeTruthy();
+      expect(queryByText('复盘我最近一次跑步（5.2km / 30min / 均心率 145）')).toBeNull();
+      expect(getByText(/想记录饮食、体重/)).toBeTruthy();
     });
     expect(mockNewChat).toHaveBeenCalled();
   });
@@ -1122,7 +1143,7 @@ describe('ChatScreen', () => {
 
     await waitFor(() => {
       expect(getByText(/今天就是「夜间血氧复盘」的检验日，做到了吗？/)).toBeTruthy();
-      expect(getByText('依据 1 条医疗')).toBeTruthy();
+      expect(queryByText('依据 1 条医疗')).toBeNull();
       expect(queryByText(/旧记忆/)).toBeNull();
     });
 

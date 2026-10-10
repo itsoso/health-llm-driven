@@ -72,6 +72,7 @@ const QUICK_START_ACTIONS: {
 ];
 
 interface Props {
+  freshStart?: boolean;
   memoryOpener: MemoryOpenerItem[];
   opener: ConversationOpener | null;
   onOpenMemory: () => void;
@@ -270,6 +271,7 @@ function TodayCockpit({
 }
 
 export default function EmptyStateHome({
+  freshStart = false,
   memoryOpener,
   opener,
   onOpenMemory,
@@ -285,7 +287,33 @@ export default function EmptyStateHome({
   const greeting = greetingForHour(new Date().getHours());
   const todayCockpit = <TodayCockpit focus={todayFocus} onOpenToday={onOpenToday} />;
 
-  // opener 存在 → 完整开场气泡(问候 + opener.text + 可选记忆 footnote + quick replies)。
+  if (freshStart) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.bubbleRow}>
+          <XiaoBaAvatar size={AVATAR} />
+          <View style={styles.bubble}>
+            <Text style={txt.bubbleBody}>
+              <Text style={txt.greetingInline}>{greeting}。</Text>
+              想记录饮食、体重，或聊聊今天的健康情况？直接告诉我就好。
+            </Text>
+            {showReplyActions && onQuickAction && <View style={styles.quickStartRow}>
+              {QUICK_START_ACTIONS.filter(({ action }) => action !== 'connect_device').map(({ action, icon }) => (
+                <Pressable key={action} style={styles.quickStartAction}
+                  accessibilityRole="button" accessibilityLabel={QUICK_ACTION_LABEL[action]}
+                  onPress={() => onQuickAction(action)}>
+                  <Ionicons name={icon} size={16} color={C.green600} />
+                  <Text style={txt.quickStartLabel}>{QUICK_ACTION_LABEL[action]}</Text>
+                </Pressable>
+              ))}
+            </View>}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // 开场内容只展示自己的来源，不把另一次记忆查询冒充为依据。
   if (opener) {
     const openerText = formatOpenerText(opener.text);
     const replies = buildVisibleOpenerReplies(opener.quick_replies || []);
@@ -299,13 +327,7 @@ export default function EmptyStateHome({
               <Text style={txt.greetingInline}>{greeting}。</Text>
               {openerText}
             </Text>
-            {showMemory && (
-              <MemoryFootnote
-                count={memoryOpener.length}
-                typeLabel={memoryOpener[0]?.type_label}
-                onOpenMemory={onOpenMemory}
-              />
-            )}
+
           </View>
         </View>
 

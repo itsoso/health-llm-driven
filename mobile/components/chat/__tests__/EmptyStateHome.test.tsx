@@ -22,7 +22,7 @@ describe('EmptyStateHome', () => {
     ])).toBe('鼻炎发作时优先生理盐水冲洗。 避免连续使用喷剂。');
   });
 
-  it('renders the opening bubble with a quiet memory source affordance', () => {
+  it('does not attribute an opener to unrelated memory', () => {
     const onOpenMemory = jest.fn();
     const onOpenerQuickReply = jest.fn();
     const opener = {
@@ -43,17 +43,11 @@ describe('EmptyStateHome', () => {
     // greeting is folded INTO the bubble as the first sentence + opener text follows.
     expect(getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeTruthy();
     expect(getByText(/今天就是「提前晚餐」的检验日，做到了吗？/)).toBeTruthy();
-    // The opener keeps provenance without embedding another body paragraph.
+    // A separately fetched memory is not evidence for this opener.
     expect(queryByText('对花粉过敏')).toBeNull();
-    expect(getByText('依据 1 条过敏')).toBeTruthy();
+    expect(queryByText('依据 1 条过敏')).toBeNull();
 
-    // Provenance remains tappable without adding another filled button surface.
-    const source = getByLabelText('查看和校准 AI 记忆');
-    const sourceStyle = StyleSheet.flatten(source.props.style);
-    expect(sourceStyle.backgroundColor).toBeUndefined();
-    expect(source.props.hitSlop).toBe(8);
-    fireEvent.press(source);
-    expect(onOpenMemory).toHaveBeenCalled();
+    expect(onOpenMemory).not.toHaveBeenCalled();
   });
 
   it('renders 小巴 as a branded assistant avatar in the opening bubble', () => {
@@ -307,4 +301,20 @@ describe('EmptyStateHome', () => {
     expect(queryByLabelText('记录体重')).toBeNull();
     expect(queryByLabelText('连接设备')).toBeNull();
   });
+});
+
+
+it('fresh conversation does not reuse a follow-up or unrelated medical memory', () => {
+  const action = jest.fn();
+  const { queryByText, getByLabelText, getByText } = render(<EmptyStateHome
+    freshStart
+    memoryOpener={[{ id: 1, type: 'medical', type_label: '医嘱', content: '旧记录' }]}
+    opener={{ text: 'Garmin Readiness 72/100 今天复盘', source: 'action_card_due', quick_replies: [], priority: 100 }}
+    onOpenMemory={jest.fn()} onOpenerQuickReply={jest.fn()} onQuickAction={action}
+  />);
+  expect(queryByText(/Garmin Readiness/)).toBeNull();
+  expect(queryByText(/依据.*医嘱/)).toBeNull();
+  expect(getByText(/想记录饮食、体重/)).toBeTruthy();
+  fireEvent.press(getByLabelText('拍照记一餐'));
+  expect(action).toHaveBeenCalledWith('photo_meal');
 });
