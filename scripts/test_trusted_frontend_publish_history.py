@@ -144,3 +144,107 @@ def test_live_validation_only_accepts_fixed_secure_production_artifacts(tmp_path
     for path in (tmp_path / '.next', production / 'previous-next', production / '.next' / 'cache'):
         with pytest.raises(server.LaunchError, match='fixed live'):
             server._frontend_publication_backup_digest(path, live=True)
+
+
+def test_rotation_memo_avoids_duplicate_backup_content_reads(evidence, monkeypatch):
+    server, state, op, complete = evidence
+    original = server.os.open
+    reads = []
+    def tracked(path, *args, **kwargs):
+        if Path(path).name == 'file':
+            reads.append(path)
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(server.os, 'open', tracked)
+    memo = {}
+    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    first = len(reads)
+    assert first == 2
+    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    assert len(reads) == first
+    # New invocation must fully verify again, not trust an earlier run.
+    server.assert_frontend_rebuild_history(state, backup_memo={})
+    assert len(reads) == 2 * first
+
+
+@pytest.mark.parametrize('mutation', ['same-size-restored-time', 'new-file', 'deleted-file', 'unsafe-mode', 'escape-link'])
+def test_memo_never_hides_changed_history(evidence, mutation):
+    import os
+    server, state, op, complete = evidence
+    memo = {}
+    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    file = op / 'previous-node-modules/file'
+    before = file.stat()
+    if mutation == 'same-size-restored-time':
+        file.write_bytes(b'X' * before.st_size)
+        os.utime(file, ns=(before.st_atime_ns, before.st_mtime_ns))
+    elif mutation == 'new-file':
+        (file.parent / 'unexpected').write_text('new')
+    elif mutation == 'deleted-file':
+        file.unlink()
+    elif mutation == 'unsafe-mode':
+        # fixture validate_metadata is replaced, so test real checker separately
+        file.chmod(0o600)
+    else:
+        (file.parent / 'escape').symlink_to('/tmp')
+    with pytest.raises(server.LaunchError):
+        server.assert_frontend_rebuild_history(state, backup_memo=memo)
+
+
+def test_memo_does_not_hide_invalid_proof(evidence):
+    server, state, op, _ = evidence
+    memo = {}
+    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    (op / 'build.log').write_text('invalid proof')
+    with pytest.raises(server.LaunchError):
+        server.assert_frontend_rebuild_history(state, backup_memo=memo)
+
+
+def test_inconsistent_hash_is_never_memoized(evidence, monkeypatch):
+    server, _, op, _ = evidence
+    memo = {}
+    original = server.os.open
+    def changing(path, *args, **kwargs):
+        if Path(path).name == 'file':
+            Path(path).write_text('changed between metadata and open')
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(server.os, 'open', changing)
+    with pytest.raises(server.LaunchError, match='changed'):
+        server._frontend_publication_backup_digest(op / 'previous-next', memo=memo, expected='f' * 64)
+    assert memo == {}
+
+
+def test_cache_hit_rechecks_end_of_inventory(evidence, monkeypatch):
+    server, state, op, _ = evidence
+    memo = {}
+    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    original = server._frontend_publication_backup_fingerprint
+    calls = 0
+    def changing(path):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            (Path(path) / 'file').write_text('changed during cached scan')
+        return original(path)
+    monkeypatch.setattr(server, '_frontend_publication_backup_fingerprint', changing)
+    with pytest.raises(server.LaunchError, match='changed'):
+        server.assert_frontend_rebuild_history(state, backup_memo=memo)
+
+
+def test_live_artifact_never_populates_or_uses_rotation_memo(evidence, monkeypatch):
+    server, _, op, _ = evidence
+    monkeypatch.setattr(server, 'PRODUCTION', op)
+    root = op / 'frontend/.next'
+    root.mkdir(parents=True)
+    (root / 'file').write_text('live')
+    memo = {}
+    first = server._frontend_publication_backup_digest(root, live=True, memo=memo, expected='f' * 64)
+    (root / 'file').write_text('new live')
+    assert server._frontend_publication_backup_digest(root, live=True, memo=memo) != first
+    assert memo == {}
+
+
+def test_invalid_expected_hash_does_not_populate_memo(evidence):
+    server, _, op, _ = evidence
+    memo = {}
+    server._frontend_publication_backup_digest(op / 'previous-next', memo=memo, expected='f' * 64)
+    assert memo == {}

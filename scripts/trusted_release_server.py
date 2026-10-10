@@ -366,14 +366,14 @@ def _load_frontend_finalizer():
     return module
 
 
-def _frontend_publication_backup_digest(root, *, live=False):
-    """Bind immutable backup content and ownership, preserving private runtime cache."""
+def _frontend_publication_backup_entries(root, *, live=False):
+    """Revalidate every entry on every pass, including cache hits."""
     root = Path(root)
     if live:
         if root not in {PRODUCTION / "frontend" / ".next", PRODUCTION / "frontend" / "node_modules"}:
             raise LaunchError("fixed live frontend artifact path required")
         secure_path(root, directory=True)
-    digest, count = hashlib.sha256(), 0
+    count = 0
     pending = [root]
     while pending:
         path = pending.pop()
@@ -398,27 +398,82 @@ def _frontend_publication_backup_digest(root, *, live=False):
                 raise LaunchError("unsafe frontend cache metadata")
         elif not stat.S_ISLNK(info.st_mode):
             validate_metadata(info, directory=stat.S_ISDIR(info.st_mode))
-        digest.update((relative.as_posix() + "\0" + str(stat.S_IMODE(info.st_mode)) + "\0"
-                       + str(info.st_uid) + "\0" + str(info.st_gid) + "\0").encode())
+        target = None
         if stat.S_ISLNK(info.st_mode):
             try:
-                target = path.resolve(strict=True)
+                resolved = path.resolve(strict=True)
             except (OSError, RuntimeError):
                 raise LaunchError("invalid frontend backup link") from None
-            if not target.is_relative_to(root.resolve()) or os.path.isabs(os.readlink(path)):
+            target = os.readlink(path)
+            if not resolved.is_relative_to(root.resolve()) or os.path.isabs(target):
                 raise LaunchError("frontend backup link escapes bundle")
-            digest.update(b"link\0" + os.readlink(path).encode())
+        elif stat.S_ISDIR(info.st_mode):
+            pending.extend(sorted(path.iterdir(), reverse=True))
+        elif not (stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size < 2_000_000_000):
+            raise LaunchError("unsupported frontend backup object")
+        yield path, relative, info, target
+
+
+def _frontend_backup_identity(info):
+    values = (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+              info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    if any(type(value) is not int for value in values):
+        raise LaunchError("frontend backup identity unavailable")
+    return values
+
+
+def _frontend_publication_backup_fingerprint(root):
+    fingerprint = hashlib.sha256()
+    for _path, relative, info, target in _frontend_publication_backup_entries(root):
+        # ctime cannot be restored with utime; no persistent or cross-run cache.
+        record = [relative.as_posix(), *_frontend_backup_identity(info), target]
+        fingerprint.update(json.dumps(record, separators=(",", ":")).encode() + b"\n")
+    return fingerprint.hexdigest()
+
+
+def _frontend_publication_backup_digest(root, *, live=False, memo=None, expected=None):
+    """Keep historical digest bytes; reuse only inside one locked rotation."""
+    root = Path(root)
+    before = None
+    key = str(root.absolute())
+    if memo is not None and not live:
+        before = _frontend_publication_backup_fingerprint(root)
+        saved = memo.get(key)
+        if saved is not None and saved[0] == before:
+            if _frontend_publication_backup_fingerprint(root) != before:
+                raise LaunchError("frontend backup changed during verification")
+            return saved[1]
+    digest = hashlib.sha256()
+    for path, relative, info, target in _frontend_publication_backup_entries(root, live=live):
+        digest.update((relative.as_posix() + "\0" + str(stat.S_IMODE(info.st_mode)) + "\0"
+                       + str(info.st_uid) + "\0" + str(info.st_gid) + "\0").encode())
+        if target is not None:
+            digest.update(b"link\0" + target.encode())
         elif stat.S_ISDIR(info.st_mode):
             digest.update(b"directory\0")
-            pending.extend(sorted(path.iterdir(), reverse=True))
-        elif stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size < 2_000_000_000:
+        else:
             digest.update(b"file\0" + str(info.st_size).encode() + b"\0")
-            with path.open("rb") as stream:
+            if before is None:
+                # Preserve the existing non-memo path for publishers/live data.
+                stream = path.open("rb")
+            else:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                stream = os.fdopen(fd, "rb")
+            with stream:
+                if before is not None and _frontend_backup_identity(os.fstat(stream.fileno())) != _frontend_backup_identity(info):
+                    raise LaunchError("frontend backup file changed before read")
                 for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                     digest.update(chunk)
-        else:
-            raise LaunchError("unsupported frontend backup object")
-    return digest.hexdigest()
+                if before is not None and _frontend_backup_identity(os.fstat(stream.fileno())) != _frontend_backup_identity(info):
+                    raise LaunchError("frontend backup file changed during read")
+    result = digest.hexdigest()
+    if before is not None:
+        after = _frontend_publication_backup_fingerprint(root)
+        if after != before:
+            raise LaunchError("frontend backup changed during verification")
+        if expected is not None and result == expected:
+            memo[key] = (after, result)
+    return result
 
 
 def _frontend_publication_file_digest(path):
@@ -482,7 +537,7 @@ def validate_frontend_stopped_recovery(operation,complete):
         raise LaunchError('original failed publication evidence changed')
 
 
-def assert_frontend_publication_history(state=None, *, pending_stopped_publication=None):
+def assert_frontend_publication_history(state=None, *, pending_stopped_publication=None, backup_memo=None):
     """New-tree frontend receipts never authorize a backend release."""
     root = Path(state or STATE) / "frontend-publications"
     if not os.path.lexists(root):
@@ -532,7 +587,15 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
             raise LaunchError("frontend publication proof hashes differ")
         for name in backups:
             secure_path(operation / name, directory=True)
-        if complete["backups_digest"] != {n: _frontend_publication_backup_digest(operation / n) for n in backups}:
+        expected_backups = complete["backups_digest"]
+        if not isinstance(expected_backups, dict) or set(expected_backups) != backups:
+            raise LaunchError("invalid frontend publication backup proof")
+        observed_backups = {
+            name: _frontend_publication_backup_digest(operation / name, memo=backup_memo,
+                                                      expected=expected_backups[name])
+            for name in backups
+        }
+        if expected_backups != observed_backups:
             raise LaunchError("frontend publication backup hashes differ")
 
 
@@ -566,10 +629,10 @@ def assert_vision_model_history(state=None, *, pending_operation=None):
             raise LaunchError('configuration cannot manufacture model acceptance')
 
 
-def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None):
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None, backup_memo=None):
     """Independent frontend evidence must never count as backend success."""
     assert_vision_model_history(state,pending_operation=pending_vision_operation)
-    assert_frontend_publication_history(state,pending_stopped_publication=pending_stopped_publication)
+    assert_frontend_publication_history(state,pending_stopped_publication=pending_stopped_publication,backup_memo=backup_memo)
     root = Path(state or STATE) / "frontend-rebuilds"
     closures = root.parent / "frontend-rebuild-closures"
     finalizations = root.parent / "frontend-finalizations"

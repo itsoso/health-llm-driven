@@ -700,7 +700,7 @@ def _assert_known_activity(history, old_sha=None):
             raise BootstrapError("existing release activity requires operator review")
 
 
-def assert_frontend_rebuild_history():
+def assert_frontend_rebuild_history(*, backup_memo=None):
     if not any(os.path.lexists(STATE / name) for name in ("frontend-rebuilds", "frontend-publications")):
         return
     path = Path(__file__).with_name("trusted_release_server.py")
@@ -708,7 +708,7 @@ def assert_frontend_rebuild_history():
     spec = importlib.util.spec_from_file_location("frontend_history_server", path)
     server = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(server)
-    server.assert_frontend_rebuild_history(STATE)
+    server.assert_frontend_rebuild_history(STATE, backup_memo=backup_memo)
 
 
 def assert_ota_history():
@@ -724,8 +724,8 @@ def assert_ota_history():
     server.assert_ota_history()
 
 
-def _assert_idle():
-    assert_frontend_rebuild_history()
+def _assert_idle(*, backup_memo=None):
+    assert_frontend_rebuild_history(backup_memo=backup_memo)
     assert_ota_history()
     if os.path.lexists(BUSINESS_LEASE):
         raise BootstrapError("business release lease exists; retirement forbidden")
@@ -786,6 +786,15 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
                     raise BootstrapError("historical build lock appeared")
             else:
                 _assert_original_lock(build_path, build_fd)
+        # Ephemeral memo shared only by the two checks under this launcher lock.
+        backup_memo = {}
+        def check_idle(phase):
+            began = time.monotonic()
+            print(json.dumps({"stage": phase, "state": "STARTED"}), file=sys.stderr, flush=True)
+            _assert_idle(backup_memo=backup_memo)
+            print(json.dumps({"stage": phase, "state": "VERIFIED",
+                              "elapsed_seconds": round(time.monotonic() - began, 2),
+                              "memoized_backups": len(backup_memo)}), file=sys.stderr, flush=True)
         check_locks()
         history = _retired_history()
         _assert_fresh_sha(sha, history)
@@ -824,7 +833,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         if public in loopback_keys or (public in retired_keys and not reuse_cloud):
             raise BootstrapError("only the current cloud identity may be reused for persistent authorization")
         _installation_inputs(sha, expiry, public)
-        _assert_idle()
+        check_idle("history-before-intent")
         # Intent is durable before either rename. No cleanup, rollback, or
         # automatic resume: a partial rotation remains a blocking audit record.
         root = STATE / "retired"
@@ -844,7 +853,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         check_locks()
         _write(record / "intent.json", json.dumps(intent, sort_keys=True).encode())
         check_locks()
-        _assert_idle()
+        check_idle("history-before-retirement")
         check_advance()
         for current, archive in ((CONFIG, archive_config), (INSTALLED.parent, archive_library)):
             os.rename(current, archive)

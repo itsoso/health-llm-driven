@@ -1046,3 +1046,19 @@ def test_retained_candidate_rotation_preserves_failure_and_blocks_reuse(monkeypa
     assert any(p.get('historical') is True for p in proofs)
     with pytest.raises(bootstrap.BootstrapError, match='already used'):
         bootstrap._assert_fresh_sha(SHA, bootstrap._retired_history())
+
+
+def test_rotate_shares_memo_only_between_its_two_idle_checks(monkeypatch, tmp_path):
+    bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
+    checks = []
+    original = bootstrap._assert_idle
+    def checked(**kwargs):
+        checks.append(kwargs.get('backup_memo'))
+        return original(**kwargs)
+    monkeypatch.setattr(bootstrap, '_assert_idle', checked)
+    bootstrap.rotate(SHA, 'b' * 40, 200, HOST)
+    assert len(checks) == 2
+    assert isinstance(checks[0], dict)
+    assert checks[0] is checks[1]
+    bootstrap._assert_idle()
+    assert checks[-1] is None
