@@ -221,7 +221,7 @@ def score_error_rate_from_logs() -> dict:
 
 
 def score_agent_runtime_circuit(session_factory=None) -> dict:
-    """Fail the release gate when the Agent write circuit is paused."""
+    """Report circuit health separately from explicit release-only safety."""
     max_attempts = 3
     retry_delay_seconds = 0.1
     factory = session_factory
@@ -238,6 +238,7 @@ def score_agent_runtime_circuit(session_factory=None) -> dict:
                     "score": 0,
                     "detail": "disabled",
                     "healthy": True,
+                    "release_safe": True,
                 }
             else:
                 from app.models.agent_runtime import AgentRuntimeRolloutState
@@ -253,23 +254,49 @@ def score_agent_runtime_circuit(session_factory=None) -> dict:
                         "score": 0,
                         "detail": "not_initialized",
                         "healthy": True,
+                        "release_safe": True,
                     }
                 else:
-                    status = str(state.status or "").strip().lower()
-                    reason = str(state.reason_code or "none").strip().lower()
-                    generation = int(state.reconciliation_generation or 0)
-                    acknowledged = int(
-                        state.reconciliation_acknowledged_generation or 0
+                    status = state.status
+                    reason = state.reason_code or "none"
+                    generation = state.reconciliation_generation
+                    acknowledged = state.reconciliation_acknowledged_generation
+                    valid_generations = (
+                        type(generation) is int and type(acknowledged) is int
+                        and generation >= 0 and acknowledged >= 0
                     )
+                    healthy = (
+                        valid_generations and status == "active"
+                        and generation == acknowledged
+                        and reason in {"none", "manual_resume"}
+                    )
+                    release_safe = healthy
+                    if (
+                        valid_generations and status == "paused"
+                        and reason == "reconciliation_detected"
+                        and generation >= 1 and acknowledged < generation
+                    ):
+                        from sqlalchemy import func
+                        from app.models.agent_runtime import AgentRunEvent
+
+                        # Same content-free ledger invariant used by scoped
+                        # reconciliation admission. This does not resume the
+                        # circuit or grant writes to affected subjects.
+                        count = db.query(func.count(AgentRunEvent.id)).filter(
+                            AgentRunEvent.event_name == "run.reconciliation_required"
+                        ).scalar()
+                        release_safe = type(count) is int and count == generation
                     result = {
                         "score": 0,
                         "detail": (
                             f"{status}:{reason}:generation={generation}:"
                             f"ack={acknowledged}"
-                        ),
-                        "healthy": (
-                            status == "active" and generation == acknowledged
-                        ),
+                        ) if valid_generations and status in {"active", "paused"}
+                        and reason in {"none", "manual_pause", "manual_resume",
+                                       "system_failure_rate", "reconciliation_detected",
+                                       "stale_lease_detected"} else "invalid_control_state",
+                        "healthy": healthy,
+                        "release_safe": release_safe,
                     }
         except Exception as exc:
             failure = exc
@@ -278,11 +305,11 @@ def score_agent_runtime_circuit(session_factory=None) -> dict:
                 try:
                     db.close()
                 except Exception as close_exc:
-                    # A successfully observed paused/mismatched circuit remains
-                    # an authoritative hard failure and must not be retried.
-                    # Every other close failure is infrastructure uncertainty:
+                    # An unsafe circuit remains an authoritative failure.
+                    # A release-safe observation with a failed close is still
+                    # infrastructure uncertainty:
                     # fold it into the same bounded, content-free retry path.
-                    if result is None or result.get("healthy") is not False:
+                    if result is None or result.get("release_safe") is not False:
                         if failure is None:
                             failure = close_exc
                         result = None
@@ -296,6 +323,7 @@ def score_agent_runtime_circuit(session_factory=None) -> dict:
                     f"unavailable:{type(failure).__name__}:attempts={attempt}"
                 ),
                 "healthy": False,
+                "release_safe": False,
             }
         time.sleep(retry_delay_seconds)
 
@@ -306,7 +334,7 @@ def score_agent_runtime_circuit(session_factory=None) -> dict:
 # 主流程
 # ============================================================
 
-def calculate_health_score(base_url: str = "http://localhost:8000", skip_tests: bool = False) -> dict:
+def calculate_health_score(base_url: str = "http://localhost:8000", skip_tests: bool = False, allow_paused_runtime: bool = False) -> dict:
     """计算系统健康度综合评分"""
     results = {}
 
@@ -328,7 +356,17 @@ def calculate_health_score(base_url: str = "http://localhost:8000", skip_tests: 
         if result.get("healthy") is False
     ]
 
+    deferred_failures = []
+    circuit = results["agent_runtime_circuit"]
+    if (
+        allow_paused_runtime is True and circuit.get("healthy") is False
+        and circuit.get("release_safe") is True
+    ):
+        critical_failures.remove("agent_runtime_circuit")
+        deferred_failures.append("agent_runtime_circuit")
+
     return {
+        "deferred_failures": deferred_failures,
         "total_score": round(total, 1),
         "max_possible": max_possible,
         "pass": total >= FAIL_THRESHOLD and not critical_failures,
@@ -344,6 +382,7 @@ def main():
     parser.add_argument("--remote", action="store_true", help="检查远程生产环境")
     parser.add_argument("--json", action="store_true", help="JSON 格式输出")
     parser.add_argument("--skip-tests", action="store_true", help="跳过测试（用于部署后快速检查）")
+    parser.add_argument("--allow-paused-runtime", action="store_true", help="部署专用：保留已核验的协调暂停，仍报告未恢复")
     parser.add_argument("--url", default=None, help="自定义 API base URL")
     args = parser.parse_args()
 
@@ -352,7 +391,7 @@ def main():
     else:
         base_url = args.url or "http://localhost:8000"
 
-    report = calculate_health_score(base_url, skip_tests=args.skip_tests)
+    report = calculate_health_score(base_url, skip_tests=args.skip_tests, allow_paused_runtime=args.allow_paused_runtime)
 
     if args.json:
         print(json.dumps(report, ensure_ascii=False))

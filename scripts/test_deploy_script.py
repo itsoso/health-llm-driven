@@ -5301,3 +5301,29 @@ def test_activation_persists_launch_intent_before_systemd_rpc():
     assert intent < durable_sync < systemd_rpc
     assert 'test ! -e "$intent_file"' in body
     assert 'rm -f "$success_marker" "$outcome_file"' not in body
+
+
+@pytest.mark.parametrize("safe,detail,deferred,allowed", [
+    (True, "paused:reconciliation_detected:generation=8:ack=7", ["agent_runtime_circuit"], True),
+    (False, "paused:reconciliation_detected:generation=8:ack=7", ["agent_runtime_circuit"], False),
+    (True, "paused:unknown:generation=8:ack=7", ["agent_runtime_circuit"], False),
+    (True, "active:reconciliation_detected:generation=8:ack=7", ["agent_runtime_circuit"], False),
+    (True, "paused:reconciliation_detected:generation=8:ack=8", ["agent_runtime_circuit"], False),
+    (True, "paused:reconciliation_detected:generation=8:ack=7", ["health_check"], False),
+    (True, "paused:reconciliation_detected:generation=8:ack=7", [], False),
+])
+def test_deploy_runtime_deferral_requires_explicit_safe_report(safe, detail, deferred, allowed):
+    import json
+    text = DEPLOY_SCRIPT.read_text()
+    assert "--allow-paused-runtime" in text
+    start = text.index('    AGENT_RUNTIME_CIRCUIT=$(echo "$SCORE" | python3 -c "')
+    start += len('    AGENT_RUNTIME_CIRCUIT=$(echo "$SCORE" | python3 -c "')
+    end = text.index('" 2>/dev/null)', start)
+    code = text[start:end]
+    report = {"deferred_failures": deferred, "dimensions": {"agent_runtime_circuit":
+        {"healthy": False, "release_safe": safe, "detail": detail}}}
+    result = subprocess.run([sys.executable, "-c", code], input=json.dumps(report),
+                            text=True, capture_output=True)
+    assert (result.returncode == 0) is allowed
+    if allowed:
+        assert result.stdout.strip() == detail

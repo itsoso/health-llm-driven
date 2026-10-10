@@ -57,6 +57,20 @@ READY 绑定 publisher SHA、完整 frontend tree、锁文件、公开配置、�
 重发或自动回退重编译。相同主机准备只能缩短最后发布阶段及允许准备与后端
 工作重叠，不等于跨 runner CI 制品投产，也不证明总构建算力下降。
 
+#### 保留 Runtime 隔离的发布准入
+
+代码发布不要求先恢复 Runtime 或进行应用管理员登录。部署健康检查显式使用
+`--allow-paused-runtime`；普通健康检查仍将暂停报告为不健康，不改变原评分语义。
+仅 `paused/reconciliation_detected`、有效非负 generation/ack 且存在未确认代际、
+reconciliation 事件总数与 generation 一致时，发布报告可将这项移入
+`deferred_failures`。保留 `healthy=false`，额外的 `release_safe=true` 只表示现有
+隔离可保持，不表示未决写入已解决或 Runtime 已恢复。
+
+部署端再次验证精确的暂停原因、代际关系、唯一延后项及明确安全声明，并打印
+恢复延后警告。未知原因、事件账本不一致、数据库或会话关闭异常、其他健康失败
+仍阻断。部署不 ack、不 resume、不结算 UNKNOWN、不新增写入授权。
+Runtime 原有受影响账号隔离和未受影响账号的准入策略均不改变。
+
 #### 分段计时与 Pi runtime
 
 `deploy.sh` 的脱敏计时写入 stderr，保留原 stdout 回执和失败退出码。本地与远程

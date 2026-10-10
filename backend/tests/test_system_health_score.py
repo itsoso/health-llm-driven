@@ -236,6 +236,7 @@ def test_agent_runtime_circuit_score_is_content_free(db, monkeypatch):
         "score": 0,
         "detail": "paused:reconciliation_detected:generation=1:ack=0",
         "healthy": False,
+        "release_safe": False,
     }
 
 
@@ -288,6 +289,7 @@ def test_agent_runtime_circuit_retries_transient_unavailable_and_closes_sessions
         "score": 0,
         "detail": "active:none:generation=1:ack=1",
         "healthy": True,
+        "release_safe": True,
     }
     assert factory.call_count == 2
     sleep.assert_called_once()
@@ -316,6 +318,7 @@ def test_agent_runtime_circuit_persistent_unavailable_is_bounded_and_redacted(
         "score": 0,
         "detail": "unavailable:RuntimeError:attempts=3",
         "healthy": False,
+        "release_safe": False,
     }
     assert "secret" not in result["detail"]
     assert "db.example" not in result["detail"]
@@ -348,6 +351,7 @@ def test_agent_runtime_circuit_close_failure_is_bounded_and_redacted(
         "score": 0,
         "detail": "unavailable:RuntimeError:attempts=3",
         "healthy": False,
+        "release_safe": False,
     }
     assert "close-secret" not in result["detail"]
     assert "db.example" not in result["detail"]
@@ -381,6 +385,7 @@ def test_agent_runtime_circuit_paused_hard_fails_without_retry(monkeypatch):
         "score": 0,
         "detail": "paused:reconciliation_detected:generation=2:ack=1",
         "healthy": False,
+        "release_safe": False,
     }
     factory.assert_called_once_with()
     sleep.assert_not_called()
@@ -406,3 +411,136 @@ def test_agent_runtime_circuit_generation_mismatch_hard_fails_without_retry(
     factory.assert_called_once_with()
     sleep.assert_not_called()
     session.close.assert_called_once_with()
+
+
+def test_reconciliation_pause_release_safe_requires_matching_ledger(monkeypatch):
+    from app.services import agent_runtime_rollout
+    monkeypatch.setattr(agent_runtime_rollout, 'runtime_control_enabled', lambda: True)
+    for count, expected in ((2, True), (1, False), (True, False)):
+        session = _runtime_circuit_session(_runtime_circuit_state(status='paused', reason_code='reconciliation_detected', generation=2, acknowledged_generation=1))
+        session.query.return_value.filter.return_value.scalar.return_value = count
+        result = score_agent_runtime_circuit(session_factory=lambda: session)
+        assert result['healthy'] is False
+        assert result['release_safe'] is expected
+
+
+def test_release_safe_never_coerces_bad_circuit_or_generation(monkeypatch):
+    from app.services import agent_runtime_rollout
+    monkeypatch.setattr(agent_runtime_rollout, 'runtime_control_enabled', lambda: True)
+    for status, reason, generation, ack in (
+        ('active', 'none', 2, 1), ('paused', 'manual_pause', 2, 1),
+        ('paused', 'reconciliation_detected', 0, 0),
+        ('paused', 'reconciliation_detected', 2, 2),
+        ('paused', 'reconciliation_detected', 2, -1),
+        ('paused', 'reconciliation_detected', True, 0),
+        ('paused', 'reconciliation_detected', '2', 1),
+    ):
+        session = _runtime_circuit_session(_runtime_circuit_state(status=status, reason_code=reason, generation=generation, acknowledged_generation=ack))
+        session.query.return_value.filter.return_value.scalar.return_value = 2
+        result = score_agent_runtime_circuit(session_factory=lambda: session)
+        assert result['healthy'] is False
+        assert result['release_safe'] is False
+
+
+def test_release_defer_is_explicit_and_does_not_hide_other_critical_failures():
+    circuit = {'score': 0, 'healthy': False, 'release_safe': True, 'detail': 'paused:reconciliation_detected:generation=2:ack=1'}
+    with patch('scripts.system_health_score.score_health_check', return_value={'score':30}), patch('scripts.system_health_score.score_api_latency', return_value={'score':20}), patch('scripts.system_health_score.score_error_rate_from_logs', return_value={'score':10}), patch('scripts.system_health_score.score_agent_runtime_circuit', return_value=circuit):
+        for flag in (False, 1, 'true'):
+            result = calculate_health_score(skip_tests=True, allow_paused_runtime=flag)
+            assert result['pass'] is False
+            assert result['critical_failures'] == ['agent_runtime_circuit']
+            assert result['deferred_failures'] == []
+        result = calculate_health_score(skip_tests=True, allow_paused_runtime=True)
+        assert result['pass'] is True
+        assert result['deferred_failures'] == ['agent_runtime_circuit']
+        assert result['dimensions']['agent_runtime_circuit']['healthy'] is False
+        circuit['release_safe'] = 1
+        assert calculate_health_score(skip_tests=True, allow_paused_runtime=True)['pass'] is False
+        circuit['release_safe'] = True
+        with patch('scripts.system_health_score.score_health_check', return_value={'score':30, 'healthy':False}):
+            result = calculate_health_score(skip_tests=True, allow_paused_runtime=True)
+            assert result['pass'] is False
+            assert result['critical_failures'] == ['health_check']
+
+
+def test_release_safe_pause_close_failure_remains_unavailable(monkeypatch):
+    from app.services import agent_runtime_rollout
+    monkeypatch.setattr(agent_runtime_rollout, 'runtime_control_enabled', lambda: True)
+    sessions = []
+    for _ in range(3):
+        session = _runtime_circuit_session(_runtime_circuit_state(status='paused', reason_code='reconciliation_detected', generation=2, acknowledged_generation=1))
+        session.query.return_value.filter.return_value.scalar.return_value = 2
+        session.close.side_effect = RuntimeError('private-database-detail')
+        sessions.append(session)
+    factory = MagicMock(side_effect=iter(sessions))
+    with patch('scripts.system_health_score.time.sleep'):
+        result = score_agent_runtime_circuit(session_factory=factory)
+    assert result == {'score': 0, 'detail': 'unavailable:RuntimeError:attempts=3', 'healthy': False, 'release_safe': False}
+    assert factory.call_count == 3
+
+
+def test_release_safe_pause_ledger_failure_remains_unavailable(monkeypatch):
+    from app.services import agent_runtime_rollout
+    monkeypatch.setattr(agent_runtime_rollout, 'runtime_control_enabled', lambda: True)
+    session = _runtime_circuit_session(_runtime_circuit_state(status='paused', reason_code='reconciliation_detected', generation=2, acknowledged_generation=1))
+    session.query.return_value.filter.return_value.scalar.side_effect = RuntimeError('private-ledger-detail')
+    with patch('scripts.system_health_score.time.sleep'):
+        result = score_agent_runtime_circuit(session_factory=lambda: session)
+    assert result['release_safe'] is False
+    assert result['healthy'] is False
+    assert result['detail'] == 'unavailable:RuntimeError:attempts=3'
+
+
+def test_cli_paused_runtime_defer_requires_explicit_switch(monkeypatch):
+    from scripts import system_health_score
+    for flag in ([], ['--allow-paused-runtime']):
+        monkeypatch.setattr(sys, 'argv', ['system_health_score.py', '--json', *flag])
+        with patch('scripts.system_health_score.calculate_health_score', return_value={'pass':True}) as calculate:
+            try:
+                system_health_score.main()
+            except SystemExit as exit:
+                assert exit.code == 0
+        assert calculate.call_args.kwargs['allow_paused_runtime'] is bool(flag)
+
+
+def test_release_safe_real_ledger_projection_is_readonly(db, monkeypatch, auth_user_and_headers):
+    from app.models.agent_runtime import AgentRun, AgentRunEvent
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+    from app.config import settings
+
+    monkeypatch.setattr(settings, 'agent_runtime_mode', 'enforce')
+    user, _ = auth_user_and_headers
+    state = AgentRuntimeRolloutService(db).get_state()
+    state.status = 'paused'
+    state.reason_code = 'reconciliation_detected'
+    state.reconciliation_generation = 2
+    state.reconciliation_acknowledged_generation = 1
+    run = AgentRun(run_id='score-ledger-synthetic', user_id=user.id,
+                   current_attempt_id='score-ledger-attempt',
+                   status='reconciliation_required', origin='test')
+    db.add(run)
+    db.flush()
+    for sequence in (1, 2):
+        db.add(AgentRunEvent(run_id=run.run_id, sequence_no=sequence,
+                            event_name='run.reconciliation_required'))
+    db.commit()
+    snapshot = (state.status, state.reason_code, state.reconciliation_generation,
+                state.reconciliation_acknowledged_generation, run.status)
+    # The score owns/ closes its session in production; keep the fixture session
+    # alive while spying on every mutation method during the read-only call.
+    wrapper = MagicMock(wraps=db)
+    wrapper.close = MagicMock()
+    result = score_agent_runtime_circuit(session_factory=lambda: wrapper)
+    assert result['healthy'] is False and result['release_safe'] is True
+    wrapper.close.assert_called_once_with()
+    for method in (wrapper.add, wrapper.commit, wrapper.flush, wrapper.rollback):
+        method.assert_not_called()
+    db.refresh(state)
+    db.refresh(run)
+    assert (state.status, state.reason_code, state.reconciliation_generation,
+            state.reconciliation_acknowledged_generation, run.status) == snapshot
+    db.add(AgentRunEvent(run_id=run.run_id, sequence_no=3,
+                        event_name='run.reconciliation_required'))
+    db.commit()
+    result = score_agent_runtime_circuit(session_factory=lambda: wrapper)
+    assert result['healthy'] is False and result['release_safe'] is False

@@ -1347,7 +1347,7 @@ verify_deployment() {
     SCORE=$(ssh $SERVER "
         cd $REMOTE_PATH/backend && \
         source venv/bin/activate && \
-        python scripts/system_health_score.py --skip-tests --url http://localhost:8000 --json 2>/dev/null
+        python scripts/system_health_score.py --skip-tests --allow-paused-runtime --url http://localhost:8000 --json 2>/dev/null
     " 2>/dev/null)
 
     if [[ -z "$SCORE" ]]; then
@@ -1383,7 +1383,20 @@ if not isinstance(dimensions, dict):
 circuit = dimensions.get('agent_runtime_circuit')
 if not isinstance(circuit, dict):
     raise SystemExit(1)
-detail = str(circuit.get('detail', 'missing'))
+detail = circuit.get('detail')
+deferred = payload.get('deferred_failures')
+if not isinstance(detail, str) or not isinstance(deferred, list):
+    raise SystemExit(1)
+if circuit.get('healthy') is False:
+    match = re.fullmatch(r'paused:reconciliation_detected:generation=([0-9]+):ack=([0-9]+)', detail)
+    if (circuit.get('release_safe') is not True or
+        deferred != ['agent_runtime_circuit'] or match is None):
+        raise SystemExit(1)
+    generation, acknowledged = map(int, match.groups())
+    if not (0 <= acknowledged < generation):
+        raise SystemExit(1)
+elif circuit.get('healthy') is not True or deferred:
+    raise SystemExit(1)
 print(re.sub(r'[^A-Za-z0-9_.:=,-]', '_', detail)[:160])
 " 2>/dev/null)
 
@@ -1393,7 +1406,10 @@ print(re.sub(r'[^A-Za-z0-9_.:=,-]', '_', detail)[:160])
         return 1
     fi
 
-    if [[ "$PASSED" == "true" ]]; then
+    if [[ "$PASSED" == "true" && "$CRITICAL_FAILURES" == "none" ]]; then
+        if [[ "$AGENT_RUNTIME_CIRCUIT" == paused:* ]]; then
+            print_warning "Runtime 恢复已延后，保留现有账号隔离: ${AGENT_RUNTIME_CIRCUIT}"
+        fi
         print_success "健康度: ${TOTAL}/60 ✅ PASS"
         return 0
     else
