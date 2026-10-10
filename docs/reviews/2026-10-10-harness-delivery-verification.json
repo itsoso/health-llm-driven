@@ -1,0 +1,59 @@
+{
+  "recorded_at": "2026-10-10T04:00:27.399129+00:00",
+  "implementation_sha": "aada1ad598cead66db3792ff43a8a833c2834830",
+  "verified_candidate_sha": "bd80c9663b9e7635c49c4366875c005c7554a1f0",
+  "scope": "engineering_workflow_and_tools",
+  "local_integration": {
+    "passed": 2844,
+    "skipped": 20,
+    "subtests_passed": 84,
+    "seconds": 538.97,
+    "exit_code": 0,
+    "clean_source_snapshot": true
+  },
+  "independent_review": {
+    "verdict": "GO",
+    "passed": 250,
+    "skipped": 1,
+    "evidence_only_followup_review": "GO"
+  },
+  "ci": {
+    "run_id": 38021812837,
+    "conclusion": "success",
+    "jobs_success": 31,
+    "jobs_total": 31,
+    "wall_seconds": 544,
+    "ota_runner_startup_seconds": 100,
+    "release_invariants_seconds": 247,
+    "longest_backend_shard_seconds": 418,
+    "stable_speedup_claimed": false
+  },
+  "ota_prepare": {
+    "run_id": 38022366081,
+    "conclusion": "success",
+    "artifact_id": 11658818589,
+    "diagnostic": {
+      "phase": "preparation",
+      "reason": "verified",
+      "sha": "bd80c9663b9e7635c49c4366875c005c7554a1f0",
+      "state": "PREPARATION_PASSED"
+    },
+    "diagnostic_sha256": "9b3b158968412fc4a6f8ac48dfa437362459ae882919e1c5eb913e0aa9eb2c0b",
+    "publish_step": "skipped",
+    "claim_consumed_by_this_validation": false,
+    "vendor_update_called": false,
+    "release_authorized": false
+  },
+  "production": {
+    "changed_by_this_implementation": false,
+    "prior_backend_sha": "346035f78b362804df06e1524099f87294286ef6",
+    "prior_evidence": "docs/reviews/2026-10-10-harness-existing-release-readback.json"
+  },
+  "native": {
+    "build_created": false,
+    "testflight_uploaded": false,
+    "apple_processing": "not_applicable_no_new_native_build",
+    "device_acceptance": "not_performed_no_application_change"
+  },
+  "next_release_requirement": "Revalidate the then-current exact green main SHA; backend must match before publish; preserve prior receipts."
+}
