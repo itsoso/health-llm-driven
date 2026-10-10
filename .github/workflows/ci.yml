@@ -334,6 +334,8 @@ jobs:
           scripts/test_ci_change_scope.py
           scripts/test_deploy_script.py
           scripts/test_release_timing.py
+          scripts/test_release_performance_report.py
+          scripts/test_trusted_ota_startup.py
           scripts/test_generate_api_types.py
           scripts/test_health_evidence_activation_runner.py
           scripts/test_release_lock.py
@@ -683,6 +685,36 @@ jobs:
       - name: Exercise actual isolated retained startup CLI without credentials
         run: python -B scripts/test_trusted_retained_testflight.py --fidelity-phase smoke
 
+  ota-runner-startup:
+    runs-on: ubuntu-24.04
+    needs: classify-changes
+    if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install credential-free OTA test adapter dependencies
+        run: python -m pip install --disable-pip-version-check pytest==9.1.1 PyYAML==6.0.3
+      - name: Materialize actual OTA startup without release admission
+        run: python -B scripts/test_trusted_ota_startup.py --fidelity-phase materialize
+      - name: Fixed OTA publisher Node toolchain
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22.13.0
+          package-manager-cache: false
+      - name: Exercise actual OTA dependencies and patches
+        run: python -B scripts/test_trusted_ota_startup.py --fidelity-phase tools
+      - name: Exercise actual isolated OTA preflight
+        run: python -B scripts/test_trusted_ota_startup.py --fidelity-phase smoke
+      - name: Export and verify real iOS artifact without publishing
+        run: python -B scripts/test_trusted_ota_startup.py --fidelity-phase export
+
   release-tests:
     runs-on: ubuntu-latest
     needs:
@@ -690,6 +722,7 @@ jobs:
       - docs-quality
       - release-invariants
       - retained-runner-startup
+      - ota-runner-startup
     if: ${{ always() }}
     steps:
       - name: Enforce release-only gates
@@ -698,9 +731,10 @@ jobs:
           DOCS_QUALITY: ${{ needs.docs-quality.result }}
           RELEASE_INVARIANTS: ${{ needs.release-invariants.result }}
           RETAINED_STARTUP: ${{ needs.retained-runner-startup.result }}
+          OTA_STARTUP: ${{ needs.ota-runner-startup.result }}
         run: |
-          printf 'release gates: selected=%s docs=%s invariants=%s retained-startup=%s\n' \
-            "$RUN_RELEASE" "$DOCS_QUALITY" "$RELEASE_INVARIANTS" "$RETAINED_STARTUP"
+          printf 'release gates: selected=%s docs=%s invariants=%s retained-startup=%s ota-startup=%s\n' \
+            "$RUN_RELEASE" "$DOCS_QUALITY" "$RELEASE_INVARIANTS" "$RETAINED_STARTUP" "$OTA_STARTUP"
           if [[ "$DOCS_QUALITY" != success ]]; then
             exit 1
           fi
@@ -708,7 +742,7 @@ jobs:
             echo "release scope skipped by classifier"
             exit 0
           fi
-          if [[ "$RELEASE_INVARIANTS" != success || "$RETAINED_STARTUP" != success ]]; then
+          if [[ "$RELEASE_INVARIANTS" != success || "$RETAINED_STARTUP" != success || "$OTA_STARTUP" != success ]]; then
             exit 1
           fi
 

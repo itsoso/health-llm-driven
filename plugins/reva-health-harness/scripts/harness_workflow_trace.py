@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+from datetime import datetime, timezone
 import uuid
 from pathlib import Path
 from typing import Any
@@ -109,6 +111,64 @@ def _append_checked_event(run_path: Path, base_event: dict[str, Any]) -> int:
     return 0
 
 
+DELIVERY_ENUMS = {
+    "target": {"ci", "backend", "ota", "testflight"},
+    "stage": {"preflight", "validate", "authorization", "build", "deploy", "publish", "upload", "processing", "distribution", "acceptance"},
+    "status": {"pending", "running", "succeeded", "failed", "blocked", "unknown"},
+    "claim_state": {"not_applicable", "unconsumed", "consumed", "unknown"},
+}
+DELIVERY_OPTIONAL = ("ci_run_id", "ci_attempt", "operation_id", "build_id", "update_id", "started_at", "ended_at")
+
+
+def _delivery_reference(event: dict[str, Any]) -> dict[str, Any]:
+    """Validate an observation, never promote caller assertions to release authority.
+
+    Evidence is a repository-relative JSON/Markdown receipt index; URLs, query
+    strings, payloads, credentials and arbitrary commentary are not supported.
+    Original receipts and the normal release gates remain authoritative.
+    """
+    fields = ("candidate_sha", "evidence", "recorded_at", *DELIVERY_ENUMS, *DELIVERY_OPTIONAL)
+    result = {key: event[key] for key in fields if event.get(key) is not None}
+    for key, allowed in DELIVERY_ENUMS.items():
+        if result.get(key) not in allowed:
+            raise ValueError(f"invalid delivery {key}")
+    if not re.fullmatch(r"[0-9a-f]{40}", str(result.get("candidate_sha", ""))):
+        raise ValueError("delivery requires full candidate SHA")
+    evidence = result.get("evidence", "")
+    if (not isinstance(evidence, str) or len(evidence) > 240 or
+            not re.fullmatch(r"docs/(?:reviews|_generated)/[A-Za-z0-9_./-]+\.(?:json|jsonl|md)", evidence) or
+            any(part in {".", "..", ""} or part.startswith(".") for part in evidence.split("/"))):
+        raise ValueError("invalid delivery evidence reference")
+    for key in ("ci_run_id", "ci_attempt"):
+        if key in result and (type(result[key]) is not int or not 0 < result[key] < 10**20):
+            raise ValueError(f"invalid delivery {key}")
+    if "ci_attempt" in result and "ci_run_id" not in result:
+        raise ValueError("ci_attempt requires ci_run_id")
+    for key in ("operation_id", "build_id", "update_id"):
+        if key in result and not re.fullmatch(r"(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", str(result[key])):
+            raise ValueError(f"invalid delivery {key}")
+    timestamps = {}
+    for key in ("recorded_at", "started_at", "ended_at"):
+        if key in result:
+            value = result[key]
+            if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})", value):
+                raise ValueError(f"invalid delivery {key}")
+            timestamps[key] = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if "started_at" in timestamps and "ended_at" in timestamps and timestamps["ended_at"] < timestamps["started_at"]:
+        raise ValueError("delivery end precedes start")
+    result["authority"] = "unverified_index_only"
+    result["next_action"] = "verify_original_evidence_and_remaining_gates"
+    if result["target"] == "ota" and (result["claim_state"] in {"consumed", "unknown"} or result["status"] == "unknown"):
+        result["next_action"] = "inspect_original_receipt_do_not_republish"
+    return result
+
+
+def cmd_delivery(args: argparse.Namespace) -> int:
+    event = {key: getattr(args, key) for key in ("candidate_sha", "evidence", *DELIVERY_ENUMS, *DELIVERY_OPTIONAL)}
+    event["recorded_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return _append_checked_event(Path(args.run), {"event": "delivery_reference", **_delivery_reference(event)})
+
+
 def _summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     started = events[0] if events else {}
     budget = _budget_tokens(events)
@@ -124,6 +184,7 @@ def _summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
         "kind": started.get("kind"),
         "dossier": started.get("dossier"),
         "event_count": len(events),
+        "delivery_references": [_delivery_reference(e) for e in events if e.get("event") == "delivery_reference"],
         "total_tokens": total,
         "budget_tokens": budget,
         "budget_remaining": None if budget is None else budget - total,
@@ -259,6 +320,16 @@ def build_parser() -> argparse.ArgumentParser:
     verdict.add_argument("--tokens", type=int, default=0)
     verdict.add_argument("--message")
     verdict.set_defaults(func=cmd_verdict)
+
+    delivery = sub.add_parser("delivery", help="index an unverified delivery observation; does not authorize release")
+    delivery.add_argument("--run", required=True)
+    delivery.add_argument("--candidate-sha", required=True)
+    delivery.add_argument("--evidence", required=True, help="repository-relative receipt path, never a payload or URL")
+    for key, choices in DELIVERY_ENUMS.items():
+        delivery.add_argument("--" + key.replace("_", "-"), choices=sorted(choices), required=True)
+    for key in DELIVERY_OPTIONAL:
+        delivery.add_argument("--" + key.replace("_", "-"), type=int if key in {"ci_run_id", "ci_attempt"} else str)
+    delivery.set_defaults(func=cmd_delivery)
 
     summary = sub.add_parser("summary", help="print workflow run summary as JSON")
     summary.add_argument("--run", required=True)

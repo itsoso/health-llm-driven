@@ -56,7 +56,7 @@ DIAGNOSTIC_PHASES = frozenset({
     "private-context", "credential", "gate-before", "source-before", "baseline",
     "baseline-json", "cohort", "cohort-json", "cohort-next", "cohort-next-json",
     "native-binding", "channel-before", "channel-before-json", "channel-binding",
-    "environment", "export", "source-after", "artifact", "publication", "admission",
+    "environment", "export", "source-after", "artifact", "publication", "admission", "preparation",
     "gate-preclaim", "channel-preclaim", "environment-preclaim", "artifact-preclaim",
     "claim-ota", "vendor-publish", "vendor-readback", "channel-after",
     "environment-after", "artifact-after", "finish-ota",
@@ -98,10 +98,11 @@ def phase_call(phase, operation, *args, **kwargs):
 
 def diagnostic(sha, state, phase, reason):
     if (not isinstance(sha, str) or re.fullmatch(r"[a-f0-9]{40}", sha) is None
-            or state not in {"BLOCKED", "ADMISSION_PASSED"}
+            or state not in {"BLOCKED", "ADMISSION_PASSED", "PREPARATION_PASSED"}
             or phase not in DIAGNOSTIC_PHASES or reason not in DIAGNOSTIC_REASONS
             or (state == "ADMISSION_PASSED") != (phase == "admission")
-            or (state == "ADMISSION_PASSED") != (reason == "verified")):
+            or (state == "PREPARATION_PASSED") != (phase == "preparation")
+            or (state != "BLOCKED") != (reason == "verified")):
         raise PublishError("invalid safe diagnostic")
     return {"sha": sha, "state": state, "phase": phase, "reason": reason}
 
@@ -348,7 +349,13 @@ def vendor_admission(adapter):
     return fingerprint, mapping, remote_environment, channel_args
 
 
-def publish(adapter, sha):
+def prepare(adapter, sha):
+    """Exercise the publication preparation on a fresh VM without consuming a claim.
+
+    All reads, export and drift checks are shared with publish. This is evidence
+    for this run only: a later publisher rechecks and exports on its own VM.
+    No server RPC or vendor mutation is reachable from this function.
+    """
     fingerprint, mapping, remote_environment, channel_args = vendor_admission(adapter)
     phase_call("export", adapter.export)
     phase_call("source-after", adapter.validate_source)
@@ -363,18 +370,26 @@ def publish(adapter, sha):
         "branch_name": mapping["branch_name"],
         "artifact": proof,
     }
+    phase_call("gate-preclaim", adapter.gate)
+    if phase_call("channel-preclaim", validate_channel, phase_call(
+        "channel-preclaim", adapter.eas, channel_args, "channel-preclaim"
+    )) != mapping:
+        raise PhaseError("channel-preclaim", "metadata_invalid")
+    if phase_call("environment-preclaim", adapter.environment) != remote_environment:
+        raise PhaseError("environment-preclaim", "metadata_invalid")
+    if phase_call("artifact-preclaim", adapter.artifact) != proof:
+        raise PhaseError("artifact-preclaim", "metadata_invalid")
+    return claim, mapping, remote_environment, channel_args, fingerprint
+
+
+def publish(adapter, sha):
+    claim, mapping, remote_environment, channel_args, fingerprint = prepare(adapter, sha)
+    proof = claim["artifact"]
     adapter.write("ota-claim.json", claim)
     adapter.write(
         "ota-preflight.json",
         {"sha": sha, "native_fingerprint": fingerprint, "mapping": mapping},
     )
-    phase_call("gate-preclaim", adapter.gate)
-    if (
-        phase_call("channel-preclaim", validate_channel, phase_call("channel-preclaim", adapter.eas, channel_args, "channel-preclaim")) != mapping
-        or phase_call("environment-preclaim", adapter.environment) != remote_environment
-        or phase_call("artifact-preclaim", adapter.artifact) != proof
-    ):
-        raise PublishError("prepublication inputs changed")
     if phase_call("claim-ota", adapter.rpc, "claim-ota", claim) != {"sha": sha, "state": "CLAIMED"}:
         raise PublishError("server OTA claim not confirmed")
     # Exactly one write opportunity. No retries around this call or any outcome.
@@ -793,6 +808,8 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--preflight", action="store_true")
     mode.add_argument("--admission", action="store_true")
+    mode.add_argument("--prepare", action="store_true",
+                      help="verify real export through preclaim checks without publishing")
     args = parser.parse_args()
     preflight(args.sha)
     if args.preflight:
@@ -803,12 +820,16 @@ def main():
     # private root-owned key files, after the credential-free preflight.
     try:
         contract = phase_call("private-context", context, args.sha,
-                              require_credentials=not args.admission)
+                              require_credentials=not (args.admission or args.prepare))
         token = os.environ.get("EXPO_TOKEN", "")
         if not token or len(token) > 8192 or any(c.isspace() for c in token):
             raise PhaseError("credential", "operation_failed")
         adapter = Adapter(args.sha, contract, token)
-        if args.admission:
+        if args.prepare:
+            phase_call("publication", prepare, adapter, args.sha)
+            result = diagnostic(args.sha, "PREPARATION_PASSED", "preparation", "verified")
+            persist_diagnostic(result)
+        elif args.admission:
             vendor_admission(adapter)
             result = diagnostic(args.sha, "ADMISSION_PASSED", "admission", "verified")
             persist_diagnostic(result)

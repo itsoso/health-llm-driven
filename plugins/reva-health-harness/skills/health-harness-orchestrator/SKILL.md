@@ -34,21 +34,31 @@ implementation.
 1. **Scope:** inspect `AGENTS.md`, the active Dossier, relevant source and tests,
    dirty files, open PRs, and exact acceptance evidence.
 2. **Plan:** define the smallest coherent tasks and cross-surface contracts.
-   Keep one writer per shared file set.
+   Keep one writer per shared file set. Work on `main` by default; create an
+   isolated branch/worktree only when the user explicitly requests it. Preserve
+   other writers' changes; serialize overlapping edits.
 3. **Implement:** use Codex subagents only for independent bounded work.
    Read-only investigators and reviewers may run in parallel; stateful writers
-   need disjoint ownership or isolated worktrees.
+   need disjoint file ownership. Delegation grants no additional release authority.
 4. **G3 incremental QA:** test each completed slice. For a real defect, establish
    the cause and a failing test before changing production behavior. LLM-facing
    changes also pass `scripts/harness_llm_change_gate.py` and any required live
-   regression gate.
+   regression gate. After the live gate passes and CI configuration mutation is
+   authorized, bind its one-time confirmation before an authorized push:
+   `gh variable set HARNESS_LIVE_LLM_EVAL_CONFIRMED --body "$(git rev-parse HEAD)"`.
+   A later commit cannot reuse that confirmation.
 5. **G4 safety review:** sensitive health data, medication, genetics, safety rules,
    authentication, notifications, and write paths require the selected safety
    overlay. BLOCK returns to implementation and requires re-review.
 6. **G5 release health:** hand off to exactly one target-specific release workflow only
-   after tests and review pass. Native changes are not mobile OTA changes.
-7. **G6 validate:** prove the actual production/user path and return evidence to the
-   parent controller or close this run when operating independently.
+   after tests and review pass and the user has authorized that release target.
+   Select the target and prerequisites from `AGENTS.md`, the registry, and
+   `docs/governance/deploy.md`; do not invent a mobile-only backend bypass.
+   Native changes are not mobile OTA changes.
+7. **G6 validate:** for authorized releases, prove the actual production/user path
+   and return evidence to the parent controller or close this run when operating
+   independently. For implementation-only work, report local verification and
+   the remaining release Gates without claiming production success.
 
 For multi-agent, interruptible, or adversarial-review work, keep one trace:
 
@@ -64,6 +74,20 @@ When delegated, reuse the parent run instead of calling `init`. Record subagent
 starts with `spawn`, Gate decisions with `verdict`, checkpoints with `event`, and
 resume from `summary`. Exit code `2` means stop and reduce scope or seek a human
 decision.
+
+## Authorization and recovery
+
+- Modification, commit, push, merge, deploy, and release are separate actions.
+  Continue already-authorized work; do not infer additional authorization from
+  use of this Skill. Follow `AGENTS.md` for commits and integration; do not
+  mandate a PR, administrative merge bypass, or model-specific attribution.
+- For OTA, use trusted validate then publish for the same current green main SHA,
+  with the backend already deployed at that SHA. On failure preserve the original
+  receipt and follow `docs/governance/deploy.md` recovery; do not republish an
+  unknown outcome or consume a new claim to replace an unfinished operation.
+- Report CI, deployment, OTA receipt, upload, Apple processing/distribution, and
+  user-path acceptance separately, only for the requested targets. A green
+  preflight/validate run is not a release receipt.
 
 ## Completion discipline
 

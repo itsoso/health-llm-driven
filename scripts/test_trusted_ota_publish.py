@@ -1056,3 +1056,142 @@ def test_publication_command_failure_identifies_exact_step_without_retry(tmp_pat
     assert (caught.value.phase, caught.value.reason) == (phase, 'command_failed')
     assert f.vendor_calls == vendor_calls
     assert 'write:ota-receipt.json' not in f.events
+
+
+def test_prepare_exports_once_and_stops_before_any_server_or_vendor_write(tmp_path):
+    m = load()
+    f = Fake(m, tmp_path)
+    claim, mapping, remote_environment, channel_args, fingerprint = m.prepare(f, 'c' * 40)
+    assert claim['artifact'] == f.proof
+    assert claim['sha'] == 'c' * 40
+    assert mapping['branch_name'] == 'production'
+    assert remote_environment == {}
+    assert channel_args[0] == 'channel:view'
+    assert f.events.count('export') == 1
+    assert f.events.count('gate') == 2
+    assert f.events.count('source') == 2
+    assert 'channel-preclaim' in f.events
+    assert f.events.count('environment') == 2
+    assert not any(e.startswith('write:') or e in ('claim-ota', 'finish-ota') for e in f.events)
+    assert f.vendor_calls == 0
+
+
+@pytest.mark.parametrize('changed', ['channel', 'environment', 'artifact'])
+def test_prepare_detects_preclaim_input_drift_without_consuming_claim(tmp_path, changed):
+    m = load()
+    f = Fake(m, tmp_path)
+    if changed == 'channel':
+        f.fail = 'channel'
+    else:
+        original = getattr(f, changed)
+        calls = 0
+        def drifting():
+            nonlocal calls
+            calls += 1
+            value = original()
+            if calls == 2:
+                return {**value, 'changed': True}
+            return value
+        setattr(f, changed, drifting)
+    with pytest.raises(m.PhaseError) as caught:
+        m.prepare(f, 'c' * 40)
+    assert caught.value.phase == changed + '-preclaim'
+    assert f.vendor_calls == 0
+    assert 'claim-ota' not in f.events
+
+
+@pytest.mark.parametrize('method,phase', [
+    ('gate', 'gate-before'), ('validate_source', 'source-before'),
+    ('environment', 'environment'), ('export', 'export'), ('artifact', 'artifact'),
+])
+def test_prepare_fails_closed_before_claim(tmp_path, method, phase):
+    m = load()
+    f = Fake(m, tmp_path)
+    def failed(*args):
+        raise RuntimeError('secret token or vendor body')
+    setattr(f, method, failed)
+    with pytest.raises(m.PhaseError) as caught:
+        m.prepare(f, 'c' * 40)
+    assert caught.value.phase == phase
+    assert 'secret' not in str(caught.value)
+    assert f.vendor_calls == 0 and 'claim-ota' not in f.events
+
+
+def test_prepare_cli_exports_without_ssh_credentials_or_publish(monkeypatch, tmp_path, capsys):
+    m = load()
+    f = Fake(m, tmp_path)
+    saved = []
+    monkeypatch.setattr(m, 'preflight', lambda sha: None)
+    def context(sha, *, require_credentials=True):
+        assert require_credentials is False
+        return object()
+    monkeypatch.setattr(m, 'context', context)
+    monkeypatch.setattr(m, 'Adapter', lambda *args: f)
+    monkeypatch.setattr(m, 'persist_diagnostic', saved.append)
+    monkeypatch.setattr(m, 'publish', lambda *args: pytest.fail('preparation cannot publish'))
+    monkeypatch.setenv('EXPO_TOKEN', 'private-token')
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c' * 40, '--prepare'])
+    assert m.cli() == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output == {'sha': 'c' * 40, 'state': 'PREPARATION_PASSED',
+                      'phase': 'preparation', 'reason': 'verified'}
+    assert saved == [output]
+    assert f.events.count('export') == 1
+    assert f.vendor_calls == 0 and 'claim-ota' not in f.events
+
+
+def test_publication_still_exports_once_after_preparation_refactor(tmp_path):
+    m = load()
+    f = Fake(m, tmp_path)
+    assert m.publish(f, 'c' * 40)['state'] == 'SUCCEEDED'
+    assert f.events.count('export') == 1
+    assert f.events.count('claim-ota') == 1
+    assert f.vendor_calls == 1
+
+
+@pytest.mark.parametrize('method,phase', [
+    ('gate', 'gate-preclaim'), ('validate_source', 'source-after'),
+    ('environment', 'environment-preclaim'), ('artifact', 'artifact-preclaim'),
+])
+def test_prepare_rechecks_fail_closed_after_export(tmp_path, method, phase):
+    m = load()
+    f = Fake(m, tmp_path)
+    original = getattr(f, method)
+    calls = 0
+    def failed_second_check(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError('secret vendor response')
+        return original(*args)
+    setattr(f, method, failed_second_check)
+    with pytest.raises(m.PhaseError) as caught:
+        m.prepare(f, 'c' * 40)
+    assert caught.value.phase == phase
+    assert f.events.count('export') == 1
+    assert f.vendor_calls == 0 and 'claim-ota' not in f.events
+
+
+def test_prepare_cli_export_failure_is_not_passed_and_retains_safe_diagnostic(monkeypatch, tmp_path, capsys):
+    m = load()
+    f = Fake(m, tmp_path)
+    def fail_export():
+        f.events.append('export')
+        raise RuntimeError('PRIVATE vendor data')
+    f.export = fail_export
+    saved = []
+    monkeypatch.setattr(m, 'preflight', lambda sha: None)
+    monkeypatch.setattr(m, 'context', lambda *args, **kwargs: object())
+    monkeypatch.setattr(m, 'Adapter', lambda *args: f)
+    monkeypatch.setattr(m, 'persist_diagnostic', saved.append)
+    monkeypatch.setenv('EXPO_TOKEN', 'private-token')
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c' * 40, '--prepare'])
+    assert m.cli() == 1
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert json.loads(captured.err) == {
+        'sha': 'c' * 40, 'state': 'BLOCKED', 'phase': 'export', 'reason': 'operation_failed',
+    }
+    assert saved == [json.loads(captured.err)]
+    assert f.events.count('export') == 1
+    assert f.vendor_calls == 0 and 'claim-ota' not in f.events

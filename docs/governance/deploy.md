@@ -384,9 +384,13 @@ receipt 完整且身份已撤销时，canonical bootstrap 的 `rotate` 可显式
 VM 从固定 GitHub canonical source 安装锁定工具链，凭据仅在只读源码/CI 闸后暴露。
 信任前提与 backend 相同，不声称防御 GitHub/runner root/供应商控制面失陷。
 
-`validate` 在无凭据预检与精确 CI 闸后使用既有 Expo 凭据，执行只读供应商准入：
-原生 baseline/cohort、channel 和 production 环境。该模式不导出制品、不领取 claim、
-不调用服务器 RPC 或 vendor update，也不注入 SSH 私钥。通过预检后的准入/发布失败
+`validate` 在无凭据预检与精确 CI 闸后使用既有 Expo 凭据，调用 `--prepare`：
+检查原生 baseline/cohort、channel 和 production 环境，实际导出并核验 iOS 制品，
+再复验源码、CI、channel、环境及制品，停在 claim 前。它不领取 claim、不调用服务器
+RPC 或 vendor update，也不注入 SSH 私钥。`--admission` 保留为不导出制品的廉价
+只读诊断入口，不替代 workflow validate。`PREPARATION_PASSED` 不表示后端已部署、
+授权可消费或 OTA 已发布。publish 在自己的新 runner 再次导出一次并完成全部原闸，
+不会把前一 runner 的准备结果当作发布许可或共享可信缓存。通过预检后的准入/发布失败
 只归档固定字段的闭集 phase/reason 诊断，禁止上传原始供应商输出、异常和凭据。
 
 仅允许相对固定原生 build 的已知 JS/TS/图片变动。实际 production channel、完整

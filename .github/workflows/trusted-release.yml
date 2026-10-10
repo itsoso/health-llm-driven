@@ -1,4 +1,5 @@
 name: Trusted release
+run-name: "Trusted release · ${{ inputs.target }} · ${{ inputs.sha }}"
 on:
   workflow_dispatch:
     inputs:

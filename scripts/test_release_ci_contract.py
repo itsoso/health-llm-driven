@@ -19,6 +19,8 @@ RELEASE_TESTS = (
     "scripts/test_ci_change_scope.py",
     "scripts/test_deploy_script.py",
     "scripts/test_release_timing.py",
+    "scripts/test_release_performance_report.py",
+    "scripts/test_trusted_ota_startup.py",
     "scripts/test_generate_api_types.py",
     "scripts/test_health_evidence_activation_runner.py",
     "scripts/test_release_lock.py",
@@ -469,3 +471,26 @@ def test_live_run_api_contracts_are_selected_by_ci_catalog():
     classes = {node.name for node in module.body if isinstance(node, ast.ClassDef)
                and node.name.startswith("Test")}
     assert classes == selected
+
+
+def test_ota_startup_is_fresh_credential_free_and_failure_blocks_release():
+    import subprocess
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text())
+    job = workflow['jobs']['ota-runner-startup']
+    assert job['runs-on'] == 'ubuntu-24.04'
+    assert job['permissions'] == {'contents': 'read'}
+    assert 'secrets.' not in str(job)
+    bodies = _run_bodies(job)
+    for phase in ('materialize', 'tools', 'smoke', 'export'):
+        assert f'scripts/test_trusted_ota_startup.py --fidelity-phase {phase}' in bodies
+    assert 'EXPO_TOKEN' not in bodies and 'continue-on-error' not in str(job)
+    aggregate = workflow['jobs']['release-tests']
+    assert 'ota-runner-startup' in aggregate['needs']
+    gate = aggregate['steps'][0]
+    assert gate['env']['OTA_STARTUP'] == '${{ needs.ota-runner-startup.result }}'
+    for status in ('success', 'failure', 'skipped', 'cancelled'):
+        result = subprocess.run(['/bin/bash', '-eu', '-c', gate['run']],
+            env={'PATH': '/nonexistent', 'RUN_RELEASE': 'true', 'DOCS_QUALITY': 'success',
+                 'RELEASE_INVARIANTS': 'success', 'RETAINED_STARTUP': 'success', 'OTA_STARTUP': status},
+            capture_output=True, text=True)
+        assert (result.returncode == 0) == (status == 'success')

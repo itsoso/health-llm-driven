@@ -1,0 +1,124 @@
+{
+  "candidate_sha": "346035f78b362804df06e1524099f87294286ef6",
+  "backend_receipt": {
+    "sha": "346035f78b362804df06e1524099f87294286ef6",
+    "state": "SUCCEEDED"
+  },
+  "production_sha": "346035f78b362804df06e1524099f87294286ef6",
+  "lease_present": false,
+  "services": {
+    "health-backend": "active",
+    "celery-worker": "active",
+    "celery-beat": "active",
+    "health-frontend": "active",
+    "reva-github-relay": "active"
+  },
+  "history_seal_observed": {
+    "generation": 1,
+    "sealed_by_sha": "346035f78b362804df06e1524099f87294286ef6",
+    "active_operation": "86cb1a54961245c789cc89e4204cbcff",
+    "record_count": 4
+  },
+  "timing": [
+    {
+      "phase": "backend_started",
+      "shell_elapsed_seconds": 10
+    },
+    {
+      "phase": "env_checked",
+      "shell_elapsed_seconds": 10
+    },
+    {
+      "phase": "preparation_checked",
+      "shell_elapsed_seconds": 15
+    },
+    {
+      "phase": "env_staging_started",
+      "shell_elapsed_seconds": 23
+    },
+    {
+      "phase": "deactivation_started",
+      "shell_elapsed_seconds": 64
+    },
+    {
+      "phase": "guard_started",
+      "shell_elapsed_seconds": 101
+    },
+    {
+      "phase": "remote_guard_started",
+      "shell_elapsed_seconds": 0
+    },
+    {
+      "phase": "remote_writers_stopped",
+      "shell_elapsed_seconds": 3
+    },
+    {
+      "phase": "remote_checkout_completed",
+      "shell_elapsed_seconds": 100
+    },
+    {
+      "phase": "remote_pi_install_started",
+      "shell_elapsed_seconds": 123
+    },
+    {
+      "phase": "remote_pi_install_completed",
+      "shell_elapsed_seconds": 129
+    },
+    {
+      "phase": "remote_dependencies_completed",
+      "shell_elapsed_seconds": 153
+    },
+    {
+      "phase": "remote_migrations_completed",
+      "shell_elapsed_seconds": 154
+    },
+    {
+      "phase": "remote_schema_completed",
+      "shell_elapsed_seconds": 157
+    },
+    {
+      "phase": "remote_services_restarted",
+      "shell_elapsed_seconds": 157
+    },
+    {
+      "phase": "guard_command_completed",
+      "shell_elapsed_seconds": 258
+    },
+    {
+      "phase": "guard_gates_passed",
+      "shell_elapsed_seconds": 294
+    },
+    {
+      "phase": "kb_activation_started",
+      "shell_elapsed_seconds": 299
+    },
+    {
+      "phase": "kb_command_completed",
+      "shell_elapsed_seconds": 299
+    },
+    {
+      "phase": "kb_gates_passed",
+      "shell_elapsed_seconds": 308
+    },
+    {
+      "phase": "manifest_passed",
+      "shell_elapsed_seconds": 308
+    },
+    {
+      "phase": "terminal_gates_passed",
+      "shell_elapsed_seconds": 342
+    },
+    {
+      "phase": "finalized",
+      "shell_elapsed_seconds": 346
+    }
+  ],
+  "observed_on": "2026-10-10",
+  "source": "read-only SSH readback of existing owner release; no deployment or authorization mutation by this task",
+  "workflow_run_id": 38020468119,
+  "history_seal_authenticity": "metadata observed; not an independent signature verification",
+  "first_migration_seconds": null,
+  "native_build_created_by_this_task": false,
+  "ota_published_by_this_task": false,
+  "public_health_http": 200
+}

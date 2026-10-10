@@ -194,3 +194,78 @@ def test_invalid_budget_extensions_leave_ledger_unchanged(tmp_path):
             trace.main(["extend-budget", "--run", str(path), "--additional-tokens", amount,
                         "--authorization", authorization])
         assert path.read_bytes() == original
+
+
+def _delivery_args(path):
+    return ["delivery", "--run", str(path), "--candidate-sha", "a" * 40,
+            "--target", "ota", "--stage", "publish", "--status", "unknown",
+            "--claim-state", "consumed", "--evidence", "docs/reviews/ota-receipt.json"]
+
+
+def test_delivery_index_preserves_attempts_and_never_grants_release_authority(tmp_path):
+    trace = _load_trace_module()
+    path = tmp_path / "run.jsonl"
+    trace._append(path, {"event": "run_started"})
+    for attempt in ("1", "2"):
+        assert trace.main(_delivery_args(path) + ["--ci-run-id", "123", "--ci-attempt", attempt]) == 0
+    summary = trace._summarize(trace._read_events(path))
+    deliveries = summary["delivery_references"]
+    assert [item["ci_attempt"] for item in deliveries] == [1, 2]
+    assert all(item["authority"] == "unverified_index_only" for item in deliveries)
+    assert deliveries[-1]["next_action"] == "inspect_original_receipt_do_not_republish"
+    assert "delivery_complete" not in summary
+
+
+def test_delivery_rejects_invalid_or_sensitive_fields_without_writing(tmp_path):
+    import pytest
+    trace = _load_trace_module()
+    path = tmp_path / "run.jsonl"
+    trace._append(path, {"event": "run_started"})
+    original = path.read_bytes()
+    for extra in (["--candidate-sha", "main"], ["--evidence", "https://host/a?token=secret"],
+                  ["--evidence", "docs/reviews/../../.env-online"], ["--ci-attempt", "0"],
+                  ["--operation-id", "secret token"], ["--ended-at", "yesterday"]):
+        with pytest.raises(ValueError):
+            trace.main(_delivery_args(path) + extra)
+        assert path.read_bytes() == original
+
+
+def test_uploaded_and_green_are_only_observations(tmp_path):
+    trace = _load_trace_module()
+    path = tmp_path / "run.jsonl"
+    trace._append(path, {"event": "run_started"})
+    assert trace.main(_delivery_args(path) + ["--target", "testflight", "--stage", "upload",
+                     "--status", "succeeded", "--claim-state", "unknown"]) == 0
+    entry = trace._summarize(trace._read_events(path))["delivery_references"][0]
+    assert entry["next_action"] == "verify_original_evidence_and_remaining_gates"
+
+
+def test_delivery_summary_revalidates_manually_appended_assertions():
+    import pytest
+    trace = _load_trace_module()
+    with pytest.raises(ValueError):
+        trace._summarize([{"event": "run_started"}, {"event": "delivery_reference", "status": "complete"}])
+
+
+def test_packaged_trace_matches_canonical():
+    assert (ROOT / "scripts/harness_workflow_trace.py").read_bytes() == (
+        ROOT / "plugins/reva-health-harness/scripts/harness_workflow_trace.py").read_bytes()
+
+
+def test_delivery_retains_receipt_identifiers_and_rejects_reversed_time(tmp_path):
+    import pytest
+    trace = _load_trace_module()
+    path = tmp_path / "run.jsonl"
+    trace._append(path, {"event": "run_started"})
+    identifier = "12345678-1234-1234-1234-123456789abc"
+    args = _delivery_args(path) + ["--operation-id", "c" * 32, "--build-id", identifier,
+                                  "--update-id", identifier, "--started-at", "2026-10-10T01:00:00Z",
+                                  "--ended-at", "2026-10-10T01:05:00Z"]
+    assert trace.main(args) == 0
+    observation = trace._summarize(trace._read_events(path))["delivery_references"][0]
+    assert observation["build_id"] == observation["update_id"] == identifier
+    assert observation["operation_id"] == "c" * 32
+    before = path.read_bytes()
+    with pytest.raises(ValueError):
+        trace.main(args + ["--ended-at", "2026-10-09T01:05:00Z"])
+    assert path.read_bytes() == before

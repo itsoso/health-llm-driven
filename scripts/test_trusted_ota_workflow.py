@@ -56,7 +56,7 @@ def test_hosted_ota_never_uses_developer_checkout_or_cached_deps():
     assert job["runs-on"] == "ubuntu-24.04"
     assert job["environment"] == "release-production"
     for step in job["steps"]:
-        if any(name in step.get("name", "") for name in ("Publish one bound", "Read-only vendor admission")):
+        if any(name in step.get("name", "") for name in ("Publish one bound", "Prepare exact OTA artifact")):
             continue
         assert "secrets." not in str(step)
         assert "actions/checkout" not in str(step)
@@ -564,11 +564,11 @@ def test_fresh_canonical_enodata_creates_exact_mode_without_touching_parent(tmp_
 
 def test_vendor_admission_only_follows_all_uncredentialed_gates():
     steps = workflow()['jobs']['ota']['steps']
-    admission = named('Read-only vendor admission')
+    admission = named('Prepare exact OTA artifact')
     assert admission['if'] == "inputs.target == 'validate'"
     assert steps.index(named('Read-only publisher context')) < steps.index(admission)
     assert admission['env'] == {'TARGET_SHA': '${{ inputs.sha }}', 'EXPO_TOKEN': '${{ secrets.REVA_RELEASE_EXPO_TOKEN }}'}
-    assert '--admission' in admission['run'] and '--preflight' not in admission['run']
+    assert '--prepare' in admission['run'] and '--preflight' not in admission['run']
     assert 'trusted_release_gate.py' in admission['run']
     assert 'env -i' in admission['run'] and '-I -S -B' in admission['run']
     assert 'RELEASE_KEY' not in str(admission) and 'RELEASE_HOST_KEYS' not in str(admission)
@@ -595,9 +595,18 @@ def test_every_publisher_diagnostic_round_trips_through_audit_whitelist():
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     validate = embedded_functions(named('Stage validated OTA audit'))['validate_records']
-    for phase in m.DIAGNOSTIC_PHASES - {'admission'}:
+    for phase in m.DIAGNOSTIC_PHASES - {'admission', 'preparation'}:
         for reason in m.DIAGNOSTIC_REASONS - {'verified'}:
             records = {'ota-diagnostic.json': m.diagnostic('c'*40, 'BLOCKED', phase, reason)}
             assert validate(records, 'c'*40) == records
     records = {'ota-diagnostic.json': m.diagnostic('c'*40, 'ADMISSION_PASSED', 'admission', 'verified')}
     assert validate(records, 'c'*40) == records
+
+
+def test_preparation_diagnostic_round_trip_does_not_allow_false_success():
+    validate = embedded_functions(named("Stage validated OTA audit"))["validate_records"]
+    value = {"sha": "c" * 40, "state": "PREPARATION_PASSED", "phase": "preparation", "reason": "verified"}
+    assert validate({"ota-diagnostic.json": value}, "c" * 40)
+    for changes in ({"phase": "vendor-publish"}, {"reason": "command_failed"}, {"state": "BLOCKED"}):
+        with pytest.raises(ValueError):
+            validate({"ota-diagnostic.json": {**value, **changes}}, "c" * 40)
