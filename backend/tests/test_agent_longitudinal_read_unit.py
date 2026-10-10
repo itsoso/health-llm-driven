@@ -408,3 +408,42 @@ def test_extended_calendar_domains_keep_unsupported_windows_closed(day):
     assert resolve_owned_read_scope(snapshot(
         f"请查询{day}的饮食、睡眠、运动和实际服用的补剂记录，并基于这些记录分析。"
     )) is None
+
+@pytest.mark.parametrize('text', ['最近一周我的健康情况如何?', '我最近7天的健康状况怎么样？'])
+def test_owned_recent_health_overview_freezes_lifestyle_window(text):
+    s = snapshot(text)
+    queries = resolve_longitudinal_read_queries(s)
+    assert queries is not None
+    assert {q['dimension'] for q in queries} == {'diet', 'sleep', 'workout'}
+    assert all(q['start_date'] == '2031-03-29' and q['end_date'] == '2031-04-04' for q in queries)
+    assert 'health_overview_lifestyle_only' in longitudinal_read_limitations(s)
+    from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+    assert resolve_owned_read_scope(s).queries == queries
+
+
+@pytest.mark.parametrize('text', [
+    '最近一周妈妈的健康情况如何?', '“最近一周我的健康情况如何?”',
+    '不要查询，最近一周我的健康情况如何?', '最近一周我的健康情况如何?只看昨天',
+    '最近一周我的健康情况如何?并修改记录', '最近32天我的健康情况如何?',
+    '如果最近一周我的健康情况如何?',
+])
+def test_overview_does_not_erase_owner_or_filters(text):
+    from app.services.agent_longitudinal_read import project_recent_health_overview
+    assert project_recent_health_overview(text) is None
+
+
+def test_overview_rejects_mismatched_identity():
+    s = snapshot('最近一周我的健康情况如何?')
+    assert resolve_longitudinal_read_queries(replace(s, context=replace(s.context, user_id=18))) is None
+
+@pytest.mark.parametrize('dimension', ['hrv', 'medication', 'supplements'])
+def test_overview_cannot_expand_to_unrequested_domains(dimension):
+    from tests.test_sleep_oxygen_read_scope import decide
+    assert decide({'dimension': dimension, 'days': 7}, '最近一周我的健康情况如何?').action == 'block'
+
+
+def test_overview_discloses_limited_health_coverage():
+    from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+    from app.services.agent_composed_read_completion import read_scope_notices
+    notices = read_scope_notices(resolve_owned_read_scope(snapshot('最近一周我的健康情况如何?')))
+    assert any('其他健康领域未查询' in notice for notice in notices)

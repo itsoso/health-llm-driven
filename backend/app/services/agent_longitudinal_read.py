@@ -50,6 +50,30 @@ _NEGATIVE = re.compile(
 )
 _MUTATION = re.compile(r"删除|撤销|写入|保存|添加|记下来|修改|更新|执行计划")
 _RECENT = re.compile(r"(?:最近|近|过去)([0-9]+|[一二两三四五六七八九十]+)(天|日|周)")
+
+
+def project_recent_health_overview(text: str) -> str | None:
+    """Bind a whole owned overview question to bounded lifestyle records.
+
+    This projection consumes every character of the current request. It cannot
+    turn quoted questions, additional filters or another person's data into
+    authority, and does not grant clinical-history reads or writes.
+    """
+    recent = _RECENT.pattern
+    match = re.fullmatch(
+        rf"(?:请)?(?:(?P<before>{recent})(?:的)?(?:我|本人)(?:的)?|"
+        rf"(?:我|本人)(?P<after>{recent})(?:的)?)"
+        r"健康(?:情况|状况|状态)(?:如何|怎么样|怎样)[?？。.!！]?",
+        str(text or '').strip(),
+    )
+    if match is None:
+        return None
+    window = match['before'] or match['after']
+    duration = _RECENT.fullmatch(window)
+    days = _number(duration[1]) * (7 if duration[2] == '周' else 1)
+    if not 1 <= days <= 31:
+        return None
+    return f'查询我的{window}饮食、睡眠、运动记录并分析'
 _AMBIGUOUS_DATE = re.compile(
     r"\d{4}[-/年]|\d{1,2}月|(?<!\d)\d{1,2}[-/]\d{1,2}(?!\d)|"
     r"(?<![当目])(?:今|昨|前|明|后)(?:天|日|晚|夜)|"
@@ -636,6 +660,7 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     never model-authored authority. None means unsupported scope, not no request.
     """
     source_text = snapshot.envelope.text if text_override is None else text_override
+    source_text = project_recent_health_overview(source_text) or source_text
     from app.services.agent_kernel.health_semantics import active_health_read_authority_text
 
     # The role projector intentionally drops independent quoted material, but
@@ -664,10 +689,13 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
         isinstance(owner, bool)
         or not isinstance(owner, int)
         or owner <= 0
+        or type(snapshot.envelope.user_id) is not int
         or snapshot.envelope.user_id != owner
     ):
         return None
-    active = active_health_instruction_text(snapshot.envelope.text)
+    active = active_health_instruction_text(
+        project_recent_health_overview(snapshot.envelope.text) or snapshot.envelope.text
+    )
     active = project_active_quote_roles(active)
     if active is None:
         return None
@@ -783,6 +811,8 @@ def longitudinal_read_limitations(snapshot) -> tuple[str, ...]:
         return ()
     text, _, defaulted = _request(snapshot)
     result = ["default_recent_7_days"] if defaulted else []
+    if project_recent_health_overview(snapshot.envelope.text) is not None:
+        result.append("health_overview_lifestyle_only")
     if re.search(r"情绪|心情", text):
         result.append("mood_not_queried")
     if re.search(r"工作", text):

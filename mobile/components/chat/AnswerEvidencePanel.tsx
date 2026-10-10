@@ -15,13 +15,14 @@ import {
 } from '../../utils/chatTransparency';
 import { SocialBrandIcon } from '../common/SocialBrandIcon';
 import { AttributionDetails, normalizedAttributionCount } from './AttributionChips';
+import type { AgentTerminalStatus } from '../../utils/agentTurnState';
 import type { AnswerEvidence } from '../../services/answerEvidence';
 
 type ProcessTone = 'complete' | 'warning';
 
 interface ProcessItem {
   label: string;
-  tone: ProcessTone;
+  tone: ProcessTone | 'neutral';
 }
 
 interface EvidenceSummary {
@@ -37,6 +38,7 @@ interface Props {
   thinkingSteps: readonly string[];
   completionActionsEnabled: boolean;
   incomplete?: boolean;
+  terminalStatus?: AgentTerminalStatus;
   onOpenMemory: () => void;
   onShareWeChat: () => void;
   onShareXiaohongshu: () => void;
@@ -59,14 +61,14 @@ function completedProcessLabel(raw: string): string {
   return cleaned.replace(/^正在/, '').replace(/中$/, '').trim();
 }
 
-export function buildEvidenceProcessItems(steps: readonly string[]): ProcessItem[] {
+export function buildEvidenceProcessItems(steps: readonly string[], completed = true): ProcessItem[] {
   const seen = new Set<string>();
   const items: ProcessItem[] = [];
   for (const raw of steps) {
     const label = completedProcessLabel(raw);
     if (!label || seen.has(label)) continue;
     seen.add(label);
-    items.push({ label, tone: WARNING_STEP.test(label) ? 'warning' : 'complete' });
+    items.push({ label, tone: WARNING_STEP.test(label) ? 'warning' : completed ? 'complete' : 'neutral' });
   }
   return items;
 }
@@ -74,9 +76,15 @@ export function buildEvidenceProcessItems(steps: readonly string[]): ProcessItem
 export function buildEvidenceSummary(
   sourceCount: number,
   processItems: readonly ProcessItem[],
+  incomplete = false,
 ): EvidenceSummary {
+  if (incomplete) return {
+    title: '本轮处理未完成',
+    subtitle: '处理记录仅供核对，不代表所需数据已取得',
+    tone: 'warning',
+  };
   const completeCount = processItems.filter(item => item.tone === 'complete').length;
-  const warningCount = processItems.length - completeCount;
+  const warningCount = processItems.filter(item => item.tone === 'warning').length;
   const tone: ProcessTone = warningCount > 0 ? 'warning' : 'complete';
 
   if (sourceCount > 0) {
@@ -135,6 +143,7 @@ export default function AnswerEvidencePanel({
   thinkingSteps,
   completionActionsEnabled,
   incomplete = false,
+  terminalStatus,
   onOpenMemory,
   onShareWeChat,
   onShareXiaohongshu,
@@ -144,13 +153,19 @@ export default function AnswerEvidencePanel({
   const [open, setOpen] = useState(false);
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const sourceCount = normalizedAttributionCount(sources);
-  const processItems = useMemo(() => buildEvidenceProcessItems(thinkingSteps), [thinkingSteps]);
+  const businessIncomplete = incomplete || (terminalStatus !== undefined && terminalStatus !== 'complete');
+  const processItems = useMemo(
+    () => buildEvidenceProcessItems(thinkingSteps, !businessIncomplete),
+    [thinkingSteps, businessIncomplete],
+  );
   const structuredCount = answerEvidence
     ? answerEvidence.basis.length + answerEvidence.limitations.length
     : 0;
   const evidenceCount = answerEvidence ? structuredCount : sourceCount;
   const evidenceSummary = useMemo(
-    () => answerEvidence
+    () => businessIncomplete
+      ? buildEvidenceSummary(sourceCount, processItems, true)
+      : answerEvidence
       ? {
         title: answerEvidence.summary,
         subtitle: answerEvidence.limitations.length > 0
@@ -159,7 +174,7 @@ export default function AnswerEvidencePanel({
         tone: answerEvidence.limitations.length > 0 ? 'warning' as const : 'complete' as const,
       }
       : buildEvidenceSummary(sourceCount, processItems),
-    [answerEvidence, processItems, sourceCount],
+    [answerEvidence, processItems, sourceCount, businessIncomplete],
   );
   const technicalRows = [
     ...(profile.milestones.length > 0 ? [{ label: '处理进度', value: profile.milestones.map(s => `${s.label} ${s.value}`).join(' · ') }] : []),
@@ -323,17 +338,18 @@ export default function AnswerEvidencePanel({
               <View style={styles.processList}>
                 {processItems.map((item, index) => {
                   const warning = item.tone === 'warning';
+                  const neutral = item.tone === 'neutral';
                   return (
                     <View
                       key={item.label}
                       style={styles.processRow}
-                      accessibilityLabel={warning ? `需要注意：${item.label}` : `已完成：${item.label}`}
+                      accessibilityLabel={warning ? `需要注意：${item.label}` : neutral ? `处理阶段：${item.label}` : `已完成：${item.label}`}
                     >
-                      <View style={[styles.processIcon, warning && styles.processIconWarning]}>
+                      <View style={[styles.processIcon, warning && styles.processIconWarning, neutral && styles.processIconNeutral]}>
                         <Ionicons
-                          name={warning ? 'alert' : 'checkmark'}
+                          name={warning ? 'alert' : neutral ? 'ellipse-outline' : 'checkmark'}
                           size={10}
-                          color={warning ? revaSemantic.caution.fg : '#FFFFFF'}
+                          color={warning ? revaSemantic.caution.fg : neutral ? C.ink3 : '#FFFFFF'}
                         />
                       </View>
                       <Text style={[txt.processLabel, warning && txt.processLabelWarning]}>{item.label}</Text>
@@ -566,6 +582,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.green600,
     zIndex: 1,
   },
+  processIconNeutral: { backgroundColor: C.paper2 },
   processIconWarning: {
     backgroundColor: revaSemantic.caution.bg,
     borderWidth: StyleSheet.hairlineWidth,

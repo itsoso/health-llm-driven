@@ -1328,6 +1328,7 @@ function ChatBubbleInner({
                   thinkingSteps={thinkingSteps}
                   completionActionsEnabled={assistantCompletionActionsEnabled}
                   incomplete={incompleteAssistantReply}
+                  terminalStatus={item.terminalStatus}
                   onOpenMemory={() => router.push('/memory')}
                   onShareWeChat={() => { void handleShare('wechat'); }}
                   onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}

@@ -212,3 +212,19 @@ Trusted backend run 38068852967 success；服务器 /var/lib/reva-release/36bdb5
 用户截图绑定两个完整问句：今天应该如何制定锻炼计划；给我一些启发。只读、owner-scoped 线上元数据确认两轮均已 finalized、completion_status=error、turn_outcome=blocked；第二轮手机仍显示正在分析，属于终态同步缺失。未输出健康正文或用户标识，未回放原请求。
 
 G2/G3：closed fullmatch 新增未来计划问句，无 evidence_dimensions；启发请求复用 current-input answer scope，仅开放 knowledge_search，不授予个人读写。RED 为5项行为失败、9项反例通过；原SQLite环境4项PG fixture拒绝保留，不计通过。UTF8 PostgreSQL17 新鲜回归172 passed（首次环境路径错误保留）。Mobile 215 passed、tsc passed，10秒历史请求截止覆盖body读取；remount自动有界同步，unknown write不重发，finalized source-turn隔离及终态停轮询。恢复展示不冒称分析或保存。已保留其他session照片补剂dirty，只纳入本次归属片段。后续固定候选G4、CI-mode、精确main CI、后端部署与OTA仍待执行，未做真实模型评测。
+
+### 2026-10-11 早间修复 G4–G6 交付结果
+
+固定候选 f8c1dc4cd39a9ca9adead008715d31f325345f5d；独立 G4 GO，补充10项个人工具拒绝、6项 scope 负例通过。固定 PG172、Mobile214、tsc、System Map通过；保留照片 dirty 的相邻 Mobile215通过。固定 CI-mode3511 passed、22 skipped、84 subtests；完整CI38093915948 attempt1全部32作业success。
+
+初次operator校验因本次启动生成两份Python3.10 bytecode被拒，发生在任何撤销/轮换之前；核对header/来源/近期生成/精确目录清单后只移除本次两文件，改用-B并禁bytecode；原失败保留。授权轮换后旧身份撤销及私钥销毁，终态和锁不变。后端38094910214 success，服务器SUCCEEDED；生产精确SHA、树干净、四服务active、HTTP200、新鲜health60/60；只读生产问句和反例scope probe通过。
+
+OTA validate38095352125 success；publish38095471949原workflow failure（finish-ota），不抹绿。原verified.json已绑定实际发布227820a6-2bcb-44bf-8f7c-49380ff9ccb6 / 01a1282f-097c-7862-8006-016f9c6dca10；canonical recover使用原receipt完成SUCCEEDED，无新publish/claim，租约释放。iOS模拟器production1.3.5(276)冷启动已加载同update，successful_launch_count=1、failed_launch_count=0，登录页渲染正常。该结果仅证明OTA下载和启动，未登录、未做真实模型评测或真实用户会话验收。临时候选waiver已删除，验证缺失。原失败与完整索引见 docs/reviews/2026-10-11-morning-chat-release-receipt.json。照片补剂session dirty仍完整保留，不属于本次候选；本记录不宣称整个未提交批次已发布。
+
+## 2026-10-11 周健康概览查询与摘要真实性修复
+
+截图完整问句“最近一周我的健康情况如何?”；只读生产元数据绑定 run_af7002b7e8b043ca，completion_status=error，turn_outcome=blocked / health_query_dimension_conflict。kernel_trace.status=complete 仅代表内核结束，不是业务成功；两项工具请求被阻断。阶段字符串出现已取得相关数据，Mobile错误用非失败字符串统计完成绿勾。未读取输出原始健康正文、未重放请求或调用真实模型。
+
+修复使用完整本人问句投影，限定1–31天、服务器时区与认证身份，周健康概览仅读取饮食/睡眠/运动实际记录。其他健康领域未查询的限制同源进入提示、回答与续问；不授予补剂/用药或宽泛health_analysis权限。Mobile透传业务terminalStatus；非完整终态普通步骤用中性展示，不计为完成，警示保留。未知工具success未改成健康成功凭证。
+
+G3：周范围解析2项先RED、反例7项因helper缺失RED、身份反例通过；Mobile新增6项先RED，197项相邻回归与tsc通过。真实PostgreSQL工具派发/持久化与固定候选G4/G5仍在执行。保留其他session照片补剂与时间WIP，仅暂存本次代码和归属UI片段；不宣称已部署此次修复。用户长期不需要真实模型评测的偏好继续适用。

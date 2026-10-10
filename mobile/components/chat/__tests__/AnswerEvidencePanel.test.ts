@@ -5,6 +5,18 @@ import {
 import { normalizeAnswerEvidence } from '../../../services/answerEvidence';
 
 describe('AnswerEvidencePanel process summary', () => {
+  it('does not promote stages to completed work when the business turn did not complete', () => {
+    const items = buildEvidenceProcessItems(['已取得相关数据', '整理回复中', '查询失败'], false);
+    expect(items).toEqual([
+      { label: '已取得相关数据', tone: 'neutral' },
+      { label: '整理回答', tone: 'neutral' },
+      { label: '查询失败', tone: 'warning' },
+    ]);
+    expect(buildEvidenceSummary(0, items, true)).toEqual({
+      title: '本轮处理未完成', subtitle: '处理记录仅供核对，不代表所需数据已取得', tone: 'warning',
+    });
+  });
+
   it('uses completed language, preserves order, and removes duplicate status events', () => {
     expect(buildEvidenceProcessItems([
       '正在理解你的问题',

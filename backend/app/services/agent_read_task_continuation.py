@@ -14,6 +14,7 @@ _DIMENSIONS = frozenset({"diet", "sleep", "workout", "supplements", "spo2"})
 _LIMITATIONS = frozenset(
     {
         "scope_diet_sleep_only",
+        "health_overview_lifestyle_only",
         "default_recent_7_days",
         "mood_not_queried",
         "work_not_queried",

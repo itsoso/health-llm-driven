@@ -341,3 +341,24 @@ async def test_provider_ignoring_exhausted_tool_list_still_cannot_dispatch(
     assert not trace.dispatches
     assert trace.executor._read_repair_failures == 2
     assert done["turn_outcome"]["status"] != "complete"
+
+@pytest.mark.parametrize('panel', [False, True])
+async def test_week_health_question_uses_bounded_reads_and_persists_complete(
+    db, four_domain_user, monkeypatch, panel,
+):
+    query = '最近一周我的健康情况如何?'
+    queries = [{'dimension': dimension, 'days': 7} for dimension in ('diet', 'sleep', 'workout')]
+    trace = batch_trace(db, monkeypatch, [[('health_query_batch', {'queries': queries})], ANSWER])
+    done, saved = await consume(db, trace, four_domain_user, panel=panel, query=query)
+    assert done['completion_status'] == 'complete'
+    assert done['turn_outcome']['status'] == 'complete'
+    assert '本轮数据查询未完成' not in saved.content
+    assert len(trace.dispatches) == 1
+    assert trace.dispatches[0].tool_name == 'health_query_batch'
+    assert {q['dimension'] for q in trace.dispatches[0].arguments['queries']} == {'diet', 'sleep', 'workout'}
+    assert all(q['start_date'] == '2026-09-07' and q['end_date'] == '2026-09-13'
+               for q in trace.dispatches[0].arguments['queries'])
+    assert all(t['function']['name'] in {'health_query', 'health_query_batch', 'knowledge_search'}
+               for t in trace.calls[0][1])
+    assert len(trace.calls) <= 2
+    assert '其他健康领域未查询' in trace.calls[0][0][0]['content']

@@ -29,3 +29,32 @@ it('keeps copy available when there is no evidence', () => {
   fireEvent.press(view.getByLabelText('复制回答'));
   expect(props.onCopy).toHaveBeenCalled();
 });
+
+
+it.each(['blocked', 'partial', 'failed'] as const)('does not show successful steps for a %s business outcome', terminalStatus => {
+  const view = render(<AnswerEvidencePanel {...props} terminalStatus={terminalStatus}
+    thinkingSteps={['已取得相关数据', '整理回复中', '查询失败']} />);
+  fireEvent.press(view.getByLabelText('展开处理详情'));
+  expect(view.getByText('本轮处理未完成')).toBeTruthy();
+  expect(view.queryByLabelText('已完成：已取得相关数据')).toBeNull();
+  expect(view.getByLabelText('处理阶段：已取得相关数据')).toBeTruthy();
+  expect(view.getByLabelText('需要注意：查询失败')).toBeTruthy();
+});
+
+it('does not claim completed steps for an interrupted generated response', () => {
+  const view = render(<AnswerEvidencePanel {...props} incomplete terminalStatus="complete"
+    thinkingSteps={['整理回复中']} />);
+  fireEvent.press(view.getByLabelText('展开处理详情'));
+  expect(view.getByText('本轮处理未完成')).toBeTruthy();
+  expect(view.getByLabelText('处理阶段：整理回答')).toBeTruthy();
+});
+
+
+it('preserves completed process indicators for a successful business outcome', () => {
+  const view = render(<AnswerEvidencePanel {...props} terminalStatus="complete"
+    thinkingSteps={['检查健康数据', '整理回复中']} />);
+  fireEvent.press(view.getByLabelText('展开处理详情'));
+  expect(view.getByText('这条回答完成了 2 个处理步骤')).toBeTruthy();
+  expect(view.getByLabelText('已完成：检查健康数据')).toBeTruthy();
+  expect(view.queryByText('本轮处理未完成')).toBeNull();
+});

@@ -671,6 +671,18 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText(/整理回答/)).toBeTruthy();
   });
 
+  it('passes a blocked business outcome despite a completely generated answer', () => {
+    const { getByLabelText, getByText, queryByLabelText } = renderBubble({
+      id: 'blocked-generated-answer', role: 'assistant', content: '本轮数据查询未完成。',
+      completionStatus: 'complete', terminalStatus: 'blocked',
+      thinkingSteps: ['已取得相关数据', '整理回复中'],
+    });
+    fireEvent.press(getByLabelText('展开处理详情'));
+    expect(getByText('本轮处理未完成')).toBeTruthy();
+    expect(queryByLabelText('已完成：已取得相关数据')).toBeNull();
+    expect(getByLabelText('处理阶段：整理回答')).toBeTruthy();
+  });
+
   it('shows structured evidence before verified text without enabling completion actions', () => {
     const { getByLabelText, getByText, queryByLabelText } = renderBubble({
       id: 'assistant-streaming-answer-evidence',
