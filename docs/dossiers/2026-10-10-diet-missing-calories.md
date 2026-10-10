@@ -8,7 +8,7 @@
 primary controller: health-harness-orchestrator；overlay: safety-gate。
 
 ## G1 准入
-PASS。用户截图火锅草稿食物列表已识别，热量和宏量值为空，却显示高置信、识别完成。应明确识别食物不等于完成营养估算，不能把缺失当零或用部分热量冒充整餐总值。
+裁决：PASS。用户截图火锅草稿食物列表已识别，热量和宏量值为空，却显示高置信、识别完成。应明确识别食物不等于完成营养估算，不能把缺失当零或用部分热量冒充整餐总值。
 
 ## G2 源码定位与范围
 PASS（局部展示修复）。food_recognition.sanitize_food_recognition_result 汇总逐项营养：任一食物缺对应营养即返回该总值null，保留缺失语义。agent_executor 映射 total_calories 到草稿 calories；DietDraftCard 的紧凑态固定“识别完成”“营养为估算值”，置信徽章只看识别confidence，因此与空值矛盾。

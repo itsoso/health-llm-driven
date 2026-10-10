@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | shipping |
-| 当前阶段 | S7 发布已完成，Mobile 现场验收未验证 |
+| 状态 | building |
+| 当前阶段 | 下一批固定候选 G4 GO，最终集成与发布待完成；旧批发布证据保留 |
 
 ## G1 范围准入
 
@@ -64,3 +64,5 @@ OTA publish 37977844821 取得原 vendor receipt 后在核验命令阶段失败�
 固定首候选ea86f74fe独立G4 NO-GO：全局Next Link与客户端返回会绕过原beforeunload丢草稿。新增真实Navigation+workspace集成4项RED后修复：dirty时document click capture阻止取消的站内Link；window popstate capture在App Router前取消并恢复原路由/tree，保留同页hash与新标签行为；工作区出口复用Link避免双重整页提示。新8项回归GREEN，后续固定修正候选重审；未推送NO-GO候选。冻结ea86全量Mobile发现旧新建文本断言不适配图标按钮，保留失败并改为可访问label+实际回调验证，不放宽新建行为。
 
 固定候选完整release-invariants在485项通过后发现新增recent-workout回归未纳入原r-other CI目录，真实exit1；保留/tmp/reva-next-frozen-ci-mode.log，补原catalog显式条目，不删除原覆盖。PG首次库名不含test被保护拒绝；修正库名后initdb默认SQL_ASCII导致中文DDL注释编码错误，保留两次失败日志，测试服务器均正常停止；后续明确UTF8隔离库重跑，不据环境失败宣称生产故障或PG通过。
+
+冻结产品树PG验证112项通过、2项真实Pi链路未进入模型调用；发现副本缺少已有锁定Pi依赖目录，补齐复用后只重检这两项。当前不算PG总闸通过，原失败与环境断点保留。
