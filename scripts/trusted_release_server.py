@@ -8,6 +8,7 @@ import datetime
 import fcntl
 import grp
 import hashlib
+import hmac
 import importlib.util
 import json
 import os
@@ -537,11 +538,219 @@ def validate_frontend_stopped_recovery(operation,complete):
         raise LaunchError('original failed publication evidence changed')
 
 
-def assert_frontend_publication_history(state=None, *, pending_stopped_publication=None, backup_memo=None):
+def _history_json(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+
+def _release_io_snapshot():
+    try:
+        raw = Path('/proc/self/io').read_text()
+    except OSError:
+        return None
+    values = dict(re.findall(r'^(rchar|read_bytes): ([0-9]+)$', raw, re.MULTILINE))
+    return {k: int(values[k]) for k in ('rchar', 'read_bytes')} if len(values) == 2 else None
+
+
+def _history_signature(key, purpose, value):
+    return hmac.new(key, purpose.encode() + b"\0" + _history_json(value), hashlib.sha256).hexdigest()
+
+
+def _history_private(path):
+    secure_path(path, private=True)
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1:
+        raise LaunchError("unsafe history seal file")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, 'rb') as stream:
+        opened = os.fstat(stream.fileno())
+        validate_metadata(opened, private=True)
+        if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+            raise LaunchError("history seal identity changed")
+        raw = stream.read(1_000_001)
+    if len(raw) > 1_000_000:
+        raise LaunchError("history seal exceeds bound")
+    return raw
+
+
+def _history_signed(key, purpose, value):
+    return _history_json({'payload': value, 'signature': _history_signature(key, purpose, value)})
+
+
+def _history_verify(key, purpose, raw):
+    value = _json(raw)
+    if (not isinstance(value, dict) or set(value) != {'payload', 'signature'}
+            or not isinstance(value['signature'], str)
+            or not hmac.compare_digest(value['signature'], _history_signature(key, purpose, value['payload']))):
+        raise LaunchError("history seal signature differs")
+    return value['payload']
+
+
+def _frontend_history_seal(state, *, recovery=False):
+    root = Path(state) / 'frontend-history-seal'
+    if not os.path.lexists(root):
+        return None
+    secure_path(root, directory=True)
+    if stat.S_IMODE(root.lstat().st_mode) != 0o700:
+        raise LaunchError("history seal directory must remain private")
+    names = {p.name for p in root.iterdir()}
+    generations = sorted(n for n in names if re.fullmatch(r'[0-9]{10}\.json', n))
+    allowed = {'key', 'anchor.json'} | set(generations)
+    if recovery:
+        allowed |= {'update-intent.json', 'anchor.pending'}
+    if (not generations or len(generations) > 1000 or 'key' not in names
+            or names - allowed or generations != [f'{n:010d}.json' for n in range(1, len(generations) + 1)]):
+        raise LaunchError("partial or unknown history seal inventory")
+    key = _history_private(root / 'key')
+    if len(key) != 32:
+        raise LaunchError("invalid history seal key")
+    previous = None
+    digests = []
+    payload = None
+    for generation, name in enumerate(generations, 1):
+        raw = _history_private(root / name)
+        payload = _history_verify(key, 'reva-frontend-history-checkpoint-v1', raw)
+        fields = {'schema', 'purpose', 'generation', 'previous', 'sealed_by_sha', 'active_operation',
+                  'live_digest', 'records'}
+        if (not isinstance(payload, dict) or set(payload) != fields
+                or type(payload['schema']) is not int or payload['schema'] != 1
+                or payload['purpose'] != 'frontend-publication-history'
+                or type(payload['generation']) is not int or payload['generation'] != generation
+                or payload['previous'] != previous
+                or not isinstance(payload['sealed_by_sha'], str)
+                or re.fullmatch('[0-9a-f]{40}', payload['sealed_by_sha']) is None
+                or not isinstance(payload['live_digest'], str)
+                or re.fullmatch('[0-9a-f]{64}', payload['live_digest']) is None
+                or not isinstance(payload['records'], dict) or not 1 <= len(payload['records']) <= 4096
+                or any(not isinstance(k, str) or re.fullmatch('[0-9a-f]{32}', k) is None
+                       or not isinstance(v, str) or re.fullmatch('[0-9a-f]{64}', v) is None
+                       for k, v in payload['records'].items())
+                or not isinstance(payload['active_operation'], str)
+                or payload['active_operation'] not in payload['records']):
+            raise LaunchError("invalid history checkpoint binding")
+        previous = hashlib.sha256(raw).hexdigest()
+        digests.append(previous)
+    anchor = None
+    if 'anchor.json' in names:
+        anchor = _history_verify(key, 'reva-frontend-history-anchor-v1', _history_private(root / 'anchor.json'))
+    expected = {'generation': len(generations), 'checkpoint_sha256': previous}
+    tail = anchor != expected
+    old = {'generation': len(generations) - 1, 'checkpoint_sha256': digests[-2]} if len(digests) > 1 else None
+    if tail and (not recovery or anchor != old):
+        raise LaunchError("history anchor or terminal generation differs")
+    if 'update-intent.json' in names:
+        intent = _history_verify(key, 'reva-frontend-history-update-v1', _history_private(root / 'update-intent.json'))
+        if intent != expected:
+            raise LaunchError("history update intent differs")
+    if 'anchor.pending' in names:
+        pending = _history_verify(key, 'reva-frontend-history-anchor-v1', _history_private(root / 'anchor.pending'))
+        if pending != expected:
+            raise LaunchError("history pending anchor differs")
+    return dict(payload=payload, digest=previous, key=key, root=root,
+                incomplete=tail or 'update-intent.json' in names or 'anchor.pending' in names)
+
+
+def _history_write(path, raw):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    _sync_directory(path.parent)
+
+
+def _history_commit_anchor(seal):
+    root, key = seal['root'], seal['key']
+    value = {'generation': seal['payload']['generation'], 'checkpoint_sha256': seal['digest']}
+    intent = root / 'update-intent.json'
+    intent_raw = _history_signed(key, 'reva-frontend-history-update-v1', value)
+    if not os.path.lexists(intent):
+        _history_write(intent, intent_raw)
+    pending = root / 'anchor.pending'
+    if not os.path.lexists(pending):
+        _history_write(pending, _history_signed(key, 'reva-frontend-history-anchor-v1', value))
+    os.replace(pending, root / 'anchor.json')
+    _sync_directory(root)
+    intent.unlink()
+    try:
+        _sync_directory(root)
+    except OSError:
+        # Preserve an explicit incomplete marker even after an unlink/fsync failure.
+        _history_write(intent, intent_raw)
+        raise
+
+
+def seal_frontend_publication_history(state, *, active_operation, live_digest,
+                                      sealed_by_sha='0' * 40, backup_memo=None):
+    if (not isinstance(active_operation, str) or re.fullmatch('[0-9a-f]{32}', active_operation) is None
+            or not isinstance(live_digest, str) or re.fullmatch('[0-9a-f]{64}', live_digest) is None
+            or not isinstance(sealed_by_sha, str) or re.fullmatch('[0-9a-f]{40}', sealed_by_sha) is None):
+        raise LaunchError("exact frontend seal binding required")
+    old = _frontend_history_seal(state)
+    records = assert_frontend_publication_history(state, backup_memo=backup_memo,
+                                                 _force_operations={active_operation})
+    complete = _json(_read_private(Path(state) / 'frontend-publications' / active_operation / 'completed.json'))
+    if active_operation not in records or complete['artifact_digest'] != live_digest:
+        raise LaunchError("active frontend differs from original publication")
+    if not 1 <= len(records) <= 4096:
+        raise LaunchError('history catalog exceeds bound')
+    root = Path(state) / 'frontend-history-seal'
+    if old is None:
+        root.mkdir(mode=0o700)
+        _sync_directory(root.parent)
+        key = secrets.token_bytes(32)
+        _history_write(root / 'key', key)
+        generation, previous = 1, None
+    else:
+        key = old['key']
+        generation, previous = old['payload']['generation'] + 1, old['digest']
+    if generation > 1000:
+        raise LaunchError('history generation bound reached; explicit maintenance required')
+    payload = dict(schema=1, purpose='frontend-publication-history', generation=generation,
+                   previous=previous, sealed_by_sha=sealed_by_sha, active_operation=active_operation,
+                   live_digest=live_digest, records=records)
+    raw = _history_signed(key, 'reva-frontend-history-checkpoint-v1', payload)
+    _history_write(root / f'{generation:010d}.json', raw)
+    current = dict(root=root, key=key, payload=payload, digest=hashlib.sha256(raw).hexdigest())
+    _history_commit_anchor(current)
+    return dict(state='FRONTEND_HISTORY_SEALED', generation=generation,
+                checkpoint_sha256=current['digest'], active_operation=active_operation,
+                archived_operations=len(records) - 1)
+
+
+def inspect_frontend_history_seal(state):
+    seal = _frontend_history_seal(state, recovery=True)
+    if seal is None or not seal['incomplete']:
+        raise LaunchError("no incomplete history checkpoint")
+    return dict(state='FRONTEND_HISTORY_SEAL_INCOMPLETE', checkpoint_sha256=seal['digest'],
+                active_operation=seal['payload']['active_operation'], generation=seal['payload']['generation'])
+
+
+def finish_frontend_history_seal(state, *, checkpoint_sha256, live_digest):
+    seal = _frontend_history_seal(state, recovery=True)
+    if (seal is None or not seal['incomplete'] or checkpoint_sha256 != seal['digest']
+            or live_digest != seal['payload']['live_digest']):
+        raise LaunchError("original incomplete seal or live binding differs")
+    records = assert_frontend_publication_history(state, _seal_snapshot=seal,
+                                                 _force_operations={seal['payload']['active_operation']})
+    if records != seal['payload']['records']:
+        raise LaunchError("history changed before seal completion")
+    _history_commit_anchor(seal)
+    return dict(state='FRONTEND_HISTORY_SEALED', checkpoint_sha256=seal['digest'],
+                generation=seal['payload']['generation'], active_operation=seal['payload']['active_operation'])
+
+
+def assert_frontend_publication_history(state=None, *, pending_stopped_publication=None, backup_memo=None,
+                                        _force_operations=(), _seal_snapshot=None):
     """New-tree frontend receipts never authorize a backend release."""
+    started, io_before = time.monotonic(), _release_io_snapshot()
+    seal = _seal_snapshot if _seal_snapshot is not None else _frontend_history_seal(state or STATE)
+    catalog = {}
+    archived, verified = 0, 0
     root = Path(state or STATE) / "frontend-publications"
     if not os.path.lexists(root):
-        return
+        if seal is not None:
+            raise LaunchError("sealed frontend history is missing")
+        return catalog
     secure_path(root, directory=True)
     if stat.S_IMODE(root.lstat().st_mode) != 0o700:
         raise LaunchError("frontend publication root must remain private")
@@ -590,6 +799,17 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
         expected_backups = complete["backups_digest"]
         if not isinstance(expected_backups, dict) or set(expected_backups) != backups:
             raise LaunchError("invalid frontend publication backup proof")
+        catalog[operation.name] = hashlib.sha256(_history_json({'intent': intent, 'completed': complete})).hexdigest()
+        if seal is not None and operation.name in seal['payload']['records']:
+            if (operation.name == seal['payload']['active_operation']
+                    and complete['artifact_digest'] != seal['payload']['live_digest']):
+                raise LaunchError('sealed active frontend binding differs')
+            if seal['payload']['records'][operation.name] != catalog[operation.name]:
+                raise LaunchError("sealed frontend audit differs")
+            if operation.name != seal['payload']['active_operation'] and operation.name not in _force_operations:
+                archived += 1
+                continue
+        verified += 1
         observed_backups = {
             name: _frontend_publication_backup_digest(operation / name, memo=backup_memo,
                                                       expected=expected_backups[name])
@@ -597,6 +817,16 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
         }
         if expected_backups != observed_backups:
             raise LaunchError("frontend publication backup hashes differ")
+    if seal is not None and not set(seal['payload']['records']).issubset(catalog):
+        raise LaunchError("sealed frontend audit disappeared")
+    io_after = _release_io_snapshot()
+    delta = {k: io_after[k] - io_before[k] for k in io_before} if io_before is not None and io_after is not None else None
+    print(json.dumps(dict(stage='frontend-history', state='VERIFIED',
+                          elapsed_seconds=round(time.monotonic() - started, 2),
+                          archived_operations=archived, rollback_operations_verified=verified,
+                          io=delta, io_measurement='available' if delta is not None else 'unavailable')),
+          file=sys.stderr, flush=True)
+    return catalog
 
 
 def assert_vision_model_history(state=None, *, pending_operation=None):
@@ -629,10 +859,13 @@ def assert_vision_model_history(state=None, *, pending_operation=None):
             raise LaunchError('configuration cannot manufacture model acceptance')
 
 
-def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None, backup_memo=None):
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None, backup_memo=None, _seal_snapshot=None):
     """Independent frontend evidence must never count as backend success."""
     assert_vision_model_history(state,pending_operation=pending_vision_operation)
-    assert_frontend_publication_history(state,pending_stopped_publication=pending_stopped_publication,backup_memo=backup_memo)
+    publication_options = dict(pending_stopped_publication=pending_stopped_publication, backup_memo=backup_memo)
+    if _seal_snapshot is not None:
+        publication_options['_seal_snapshot'] = _seal_snapshot
+    assert_frontend_publication_history(state, **publication_options)
     root = Path(state or STATE) / "frontend-rebuilds"
     closures = root.parent / "frontend-rebuild-closures"
     finalizations = root.parent / "frontend-finalizations"

@@ -759,6 +759,88 @@ def _finalized_advance_module():
     return module
 
 
+def _frontend_live_seal_binding(source, server, *, active_operation=None):
+    modules = {}
+    for name in ('trusted_frontend_rebuild', 'trusted_frontend_publish'):
+        path = source / 'scripts' / (name + '.py')
+        secure(path)
+        spec = importlib.util.spec_from_file_location('seal_' + name, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        modules[name] = module
+    frontend = server.PRODUCTION / 'frontend'
+    for name in ('.next', 'node_modules'):
+        server._frontend_publication_backup_digest(frontend / name, live=True)
+    digest = modules['trusted_frontend_publish'].bundle_digest(frontend, modules['trusted_frontend_rebuild'])
+    root = STATE / 'frontend-publications'
+    candidates = []
+    for operation in root.iterdir():
+        complete = server._json(server._read_private(operation / 'completed.json'))
+        if complete.get('artifact_digest') == digest:
+            candidates.append(operation.name)
+    if active_operation is not None:
+        if active_operation not in candidates:
+            raise BootstrapError('explicit frontend operation does not match live artifact')
+    elif len(candidates) == 1:
+        active_operation = candidates[0]
+    else:
+        raise BootstrapError('frontend live binding is absent or ambiguous')
+    return active_operation, digest
+
+
+def frontend_history_seal(sha, *, active_operation=None, inspect=False, checkpoint_sha256=None):
+    source, server = reviewed_source(sha)
+    _run(['/usr/bin/python3.12', '-I', '-S', '-B', str(source / 'scripts/trusted_release_gate.py'),
+          '--sha', sha, '--workflow-sha', sha])
+    policy = _read_json(CONFIG / 'authorized-release.json')
+    server.validate_policy(policy, now=int(time.time()))
+    secure(STATE / 'launcher.lock', private=True)
+    fd = os.open(STATE / 'launcher.lock', os.O_RDWR | os.O_NOFOLLOW)
+    build_fd = None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        build_fd = _acquire_existing_build_lock(policy['sha'])
+        def locks():
+            _assert_original_lock(STATE / 'launcher.lock', fd)
+            if build_fd is not None:
+                _assert_original_lock(STATE / policy['sha'] / 'build.lock', build_fd)
+            elif os.path.lexists(STATE / policy['sha'] / 'build.lock'):
+                raise BootstrapError('historical build lock appeared')
+        locks()
+        if os.path.lexists(BUSINESS_LEASE):
+            raise BootstrapError('active business release blocks history sealing')
+        _recovery_process_proof()
+        assert_ota_history()
+        if inspect:
+            result = server.inspect_frontend_history_seal(STATE)
+        else:
+            memo = {}
+            if checkpoint_sha256 is None:
+                server.assert_frontend_rebuild_history(STATE, backup_memo=memo)
+            else:
+                snapshot = server._frontend_history_seal(STATE, recovery=True)
+                server.assert_frontend_rebuild_history(STATE, _seal_snapshot=snapshot)
+            active_operation, digest = _frontend_live_seal_binding(source, server, active_operation=active_operation)
+            locks()
+            if os.path.lexists(BUSINESS_LEASE):
+                raise BootstrapError('business release appeared during seal validation')
+            _recovery_process_proof()
+            assert_ota_history()
+            if checkpoint_sha256 is None:
+                result = server.seal_frontend_publication_history(
+                    STATE, active_operation=active_operation, live_digest=digest,
+                    sealed_by_sha=sha, backup_memo=memo)
+            else:
+                result = server.finish_frontend_history_seal(
+                    STATE, checkpoint_sha256=checkpoint_sha256, live_digest=digest)
+        locks()
+        return result
+    finally:
+        if build_fd is not None:
+            os.close(build_fd)
+        os.close(fd)
+
+
 def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
@@ -833,6 +915,26 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         if public in loopback_keys or (public in retired_keys and not reuse_cloud):
             raise BootstrapError("only the current cloud identity may be reused for persistent authorization")
         _installation_inputs(sha, expiry, public)
+        if os.path.lexists(STATE / 'frontend-history-seal'):
+            sealed = server._frontend_history_seal(STATE)
+            observed = server.assert_frontend_publication_history(STATE, backup_memo=backup_memo)
+            if set(observed) != set(sealed['payload']['records']):
+                # Only complete, validated new publications reach this point.
+                # Refresh before any retirement intent or business consumption.
+                # Other incomplete histories must block before writing a seal.
+                _assert_idle(backup_memo=backup_memo)
+                if os.path.lexists(BUSINESS_LEASE):
+                    raise BootstrapError('business release blocks history refresh')
+                _recovery_process_proof()
+                active, live = _frontend_live_seal_binding(source, server)
+                check_locks()
+                if os.path.lexists(BUSINESS_LEASE):
+                    raise BootstrapError('business release appeared during history refresh')
+                _recovery_process_proof()
+                assert_ota_history()
+                server.seal_frontend_publication_history(
+                    STATE, active_operation=active, live_digest=live,
+                    sealed_by_sha=sha, backup_memo=backup_memo)
         check_idle("history-before-intent")
         # Intent is durable before either rename. No cleanup, rollback, or
         # automatic resume: a partial rotation remains a blocking audit record.
@@ -1397,8 +1499,20 @@ def main():
         acknowledgment.add_argument("--sha", required=True)
         acknowledgment.add_argument("--evidence-sha256")
         acknowledgment.add_argument("--accept-lost-closure-receipt", action="store_true")
+        sealing = commands.add_parser('seal-frontend-history', allow_abbrev=False)
+        sealing.add_argument('--sha', required=True)
+        sealing.add_argument('--active-operation')
+        sealing.add_argument('--inspect', action='store_true')
+        sealing.add_argument('--checkpoint-sha256')
         args = parser.parse_args()
-        if args.action == "recover-preparation":
+        if args.action == 'seal-frontend-history':
+            if args.inspect and (args.checkpoint_sha256 is not None or args.active_operation is not None):
+                raise BootstrapError('inspection cannot mutate or choose history')
+            if args.checkpoint_sha256 is not None and re.fullmatch('[0-9a-f]{64}', args.checkpoint_sha256) is None:
+                raise BootstrapError('exact original checkpoint digest required')
+            result = frontend_history_seal(args.sha, active_operation=args.active_operation,
+                                           inspect=args.inspect, checkpoint_sha256=args.checkpoint_sha256)
+        elif args.action == "recover-preparation":
             result = recover_preparation(args.retire_sha, args.sha, args.production_sha,
                                          evidence_sha256=args.evidence_sha256)
         elif args.action == "acknowledge-lost-closure-receipt":

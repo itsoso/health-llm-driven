@@ -120,7 +120,7 @@ def test_dispatch_cannot_auto_publish_or_reuse_test_runner():
     assert set(triggers) == {"workflow_dispatch"}
     target = triggers["workflow_dispatch"]["inputs"]["target"]
     assert target["default"] == "validate"
-    assert set(target["options"]) == {"validate", "backend", "backend-v1", "release", "testflight", "retained-testflight"}
+    assert set(target["options"]) == {"validate", "transport", "backend", "backend-v1", "release", "testflight", "retained-testflight"}
     assert WORKFLOW["permissions"] == {"contents": "read", "actions": "read"}
     assert WORKFLOW["concurrency"]["cancel-in-progress"] is False
     for name, job in WORKFLOW["jobs"].items():

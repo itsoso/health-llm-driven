@@ -184,7 +184,7 @@ def test_pi_install_is_required_even_when_python_dependency_cache_is_reused():
     start = script.index("remote_dependency_sync_command() {")
     end = script.index("compute_release_input_digests() {", start)
     body = script[start:end]
-    assert "bash pi-runtime/install.sh || return 1" in body
+    assert r'bash pi-runtime/install.sh || return "\$?"' in body
     assert body.index("bash pi-runtime/install.sh") < body.index("dependency lock unchanged")
 
 

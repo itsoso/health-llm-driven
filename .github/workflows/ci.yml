@@ -353,6 +353,7 @@ jobs:
           scripts/test_backend_release_wiring.py
           scripts/test_trusted_deploy_source.py
           scripts/test_trusted_release_workflow.py
+          scripts/test_trusted_runner_transport.py
           scripts/test_trusted_release_receipt.py
           scripts/test_trusted_release_server.py
           scripts/test_native_release_retirement.py
@@ -371,6 +372,8 @@ jobs:
           scripts/test_trusted_frontend_publish.py
           scripts/test_trusted_frontend_artifact.py
           scripts/test_trusted_frontend_publish_history.py
+          scripts/test_trusted_frontend_history_seal.py
+          scripts/test_frontend_history_seal_bootstrap.py
           scripts/test_frontend_stopped_recovery.py
           scripts/test_bootstrap_trusted_release.py
           scripts/test_trusted_review_reset.py

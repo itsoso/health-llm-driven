@@ -64,3 +64,32 @@ def test_guard_has_separate_remote_clock_and_dependency_schema_restart_boundarie
     assert offsets == sorted(offsets)
     for label in [x for x in boundaries if x.startswith('release_timing_checkpoint')]:
         assert label + ' &&' in body
+
+
+@pytest.mark.parametrize('installer_exit', [0, 23])
+def test_pi_install_checkpoints_use_real_generated_command_and_preserve_exit(tmp_path, installer_exit):
+    import os
+    import shlex
+    env_file = tmp_path / 'deploy.env'
+    env_file.write_text('DEPLOY_SERVER=synthetic\nDEPLOY_PATH=/tmp/synthetic-release\n')
+    prepared = subprocess.run(['/bin/bash', '-eu', '-c',
+        'source ' + shlex.quote(str(ROOT / 'deploy.sh')) +
+        '\nREMOTE_RELEASE_STATE_DIR=/tmp/synthetic-release-state\nREQUIREMENTS_LOCK_SHA=' + 'c' * 64 +
+        '\nremote_dependency_sync_command'], capture_output=True, text=True,
+        env={**os.environ, 'DEPLOY_ENV_FILE': str(env_file)})
+    assert prepared.returncode == 0, prepared.stderr
+    # Execute the actual Pi preamble from the generated remote command. Stop at
+    # the Python-cache boundary so this test needs no live host or dependencies.
+    preamble = prepared.stdout.split("    release_state_dir=", 1)[0]
+    runtime = tmp_path / 'pi-runtime'
+    runtime.mkdir()
+    (runtime / 'install.sh').write_text(f'printf "installer-called\\n"\nexit {installer_exit}\n')
+    result = subprocess.run(['/bin/bash', '-eu', '-c', preamble + '\n}\nsync_backend_dependencies'],
+                            cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == installer_exit, (result.stdout, result.stderr)
+    assert result.stdout == 'installer-called\n'
+    assert re.search(r'REVA_RELEASE_TIMING phase=remote_pi_install_started shell_elapsed_seconds=\d+\n', result.stderr)
+    if installer_exit == 0:
+        assert re.search(r'REVA_RELEASE_TIMING phase=remote_pi_install_completed shell_elapsed_seconds=\d+\n', result.stderr)
+    else:
+        assert 'phase=remote_pi_install_completed' not in result.stderr

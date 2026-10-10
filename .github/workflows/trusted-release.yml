@@ -7,11 +7,11 @@ on:
         required: true
         type: string
       target:
-        description: Validate first; backend deploys, release deploys and uploads, testflight only uploads deployed runtime
+        description: transport checks the runner route only; validate checks preflight; backend deploys, release deploys and uploads, testflight uploads deployed runtime
         required: true
         default: validate
         type: choice
-        options: [validate, backend, backend-v1, release, testflight, retained-testflight]
+        options: [validate, transport, backend, backend-v1, release, testflight, retained-testflight]
 permissions:
   contents: read
   actions: read
@@ -47,8 +47,12 @@ jobs:
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
             /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1" --target "$2"
           ' reva-bootstrap "$TARGET_SHA" "$CI_TARGET"
+      - name: Probe fixed production TCP and SSH banner without credentials
+        run: |
+          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_runner_transport.py
       - name: Record non-release result
-        run: echo 'Exact source and CI preflight passed. This is not a deployment receipt.' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'Exact source, CI and runner transport preflight passed. Transport does not prove authentication or host identity; no authorization was consumed. This is not a deployment receipt.' >> "$GITHUB_STEP_SUMMARY"
 
   build-permission:
     if: inputs.target == 'release' || (inputs.target == 'backend' || inputs.target == 'backend-v1') || inputs.target == 'testflight'

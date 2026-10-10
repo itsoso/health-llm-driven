@@ -1,6 +1,6 @@
 # 部署规范 🚀
 
-> 从 `AGENTS.md §8` 拆出（2026-05-31, Agent Operating Harness Phase 2,见 [`docs/design-agent-operating-harness.md`](design-agent-operating-harness.md)）。`AGENTS.md` 现在只留章节导航,本文件是本章权威全文 —— 硬规范裁判权不变。
+> 从 `AGENTS.md §8` 拆出（2026-05-31, Agent Operating Harness Phase 2,见 [`docs/design-agent-operating-harness.md`](../design-agent-operating-harness.md)）。`AGENTS.md` 现在只留章节导航,本文件是本章权威全文 —— 硬规范裁判权不变。
 
 
 ### 8.1 部署方式
@@ -12,6 +12,18 @@
 再触发一轮 `workflow_dispatch`。手动完整 CI 只用于明确的恢复或补验证需求
 （例如历史候选或纯文档候选尚无所需完整验证）。不得通过取消同 SHA 的运行中
 或失败记录制造绿色；全部适用运行仍按现有 trusted release gate 裁决。
+
+#### 生产凭据之前的 runner 线路预检
+
+`trusted-release.yml` 在精确源码/CI preflight 后运行固定 TCP/SSH 标识预检，再进入
+含生产凭据的 job。显式 `target=transport` 仅执行 preflight，不执行授权轮换、部署、
+原生构建或上传。`trusted_runner_transport.py` 固定连接 `39.98.206.178:22`，建连和
+读取共用五秒预算，不读凭据、不发送认证数据、不领取 claim。成功只证明该 runner
+当时可读取 endpoint 的 SSH 标识，不证明鉴权、主机身份或服务就绪。
+
+真实发布仍须后续 strict host key、只读 readiness、执行前精确 CI 和一次性 claim；
+不得用 transport 回执代替这些闸。预检失败不会自动重发已消费的发布或 OTA。此入口
+可在昂贵的授权轮换前发现线路阻断，但网络可达不代表授权或发布已经完成。
 
 #### 版本化后端准入（backend-v1）
 
@@ -44,6 +56,14 @@ READY 绑定 publisher SHA、完整 frontend tree、锁文件、公开配置、�
 平台、构建配方、构建日志及制品摘要。消费前重验并原子领取，禁止重用、失败
 重发或自动回退重编译。相同主机准备只能缩短最后发布阶段及允许准备与后端
 工作重叠，不等于跨 runner CI 制品投产，也不证明总构建算力下降。
+
+#### 分段计时与 Pi runtime
+
+`deploy.sh` 的脱敏计时写入 stderr，保留原 stdout 回执和失败退出码。本地与远程
+shell 分别计时，覆盖源码、依赖、迁移、schema、服务与收尾边界。Pi 安装另有
+`remote_pi_install_started` / `remote_pi_install_completed`；失败不输出 completed。
+Python 锁文件未变时的依赖复用不证明 Pi runtime 可用，Pi 安装仍执行。计时不能
+替代健康或终态证明；尚未实现 Pi 缓存及跨 runner 工具镜像，需实测再裁决。
 
 **唯一部署入口: `deploy.sh`**
 
@@ -412,11 +432,27 @@ receipt 不同、租约身份改变、未知部分 claim 或在终态持久化�
 复用须在退休 intent 记录 `cloud_key_reused=true`；核查归档时只对完整连续复用链、
 当前 canonical 执行器及唯一精确 forced-command/restrict 授权证明通过的 cloud key
 允许仍然有效。待退休安装本身仍必须先撤权，历史 loopback 授权必须消失。
-同一次持锁轮换的两次历史检查可共享进程内备份摘要 memo：首轮须完整哈希且匹配
-原始回执，前后库存身份指纹一致；次轮仍完整核验回执、权限、链接与两次库存指纹，
-仅未变化制品复用摘要。包含纳秒 ctime 的指纹不一致时不得复用；不落盘、不跨命令，
-live 制品不使用此优化。旧摘要格式和失败阻断语义不变，详见
-[授权校验 I/O](../ops/release-authorization-io.md)。
+历史 Web 备份可使用受保护的 `frontend-history-seal` 封存索引。首次封存必须完整
+校验全部历史正文与原回执；无索引时继续旧全量路径。索引绑定 live publication
+及其唯一活动回滚集合，使用独立 root 私密密钥、用途隔离 HMAC、代次链和 anchor。
+日常仍全量核验所有小审计、日志摘要、顶层库存、消费/撤权和未完成操作；仅已封存且
+审计一致的 archived 备份跳过内部遍历和正文哈希。live 与活动回滚制品仍须完整核验。
+新未知或部分操作、证据消失、签名失效和未完成索引更新均 BLOCK，不自动删锁、
+删索引或降级放行。物理历史备份不会因此被删除。旧备份恢复或晋升回滚前必须重新
+全量校验原摘要，封存不证明 archived blob 当前仍完整。
+
+独立 canonical bootstrap 的 `seal-frontend-history --sha <reviewed-sha>` 可在轮换前
+首次封存；`--inspect` 只读检查原部分 checkpoint；`--checkpoint-sha256 <original-digest>`
+仅完成原更新。三者仍要求精确 CI、原锁、授权策略、无业务租约/发布进程和 OTA 历史
+闭合，seal/finish 还核验 live 绑定和活动回滚内容。更新持原锁、原子写入并 fsync；
+中断不生成新授权、不消费业务 claim，不重跑发布。密钥与全部 state 被 root 同时
+回退不在此签名保护的威胁覆盖内，不能宣称外部防回滚。
+
+同一次持锁轮换仍可对确需全量核验的备份共享进程内 memo：首轮完整哈希且匹配
+原回执，次轮验证权限、链接和前后库存指纹，仅完全未变时复用摘要；纳秒 ctime
+变化也使其失效。不落盘、不跨命令，不用于 live。实现和收尾边界详见
+[授权校验 I/O](../ops/release-authorization-io.md)。新版索引必须从受审且精确 CI
+绿色的 canonical revision 启用，源码实现或本地测试不证明生产迁移完成。
 
 旧 SHA、消费标记和锁 inode 不得删除或复用。任何未知现场或
 中途失败均保留 intent/安装证据并阻断，不支持通过再次执行重置授权或自动恢复。

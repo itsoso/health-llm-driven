@@ -3007,6 +3007,7 @@ remote_dependency_sync_command() {
         return 70
     fi
     cat <<REMOTE_DEPENDENCY_SYNC
+$(declare -f release_timing_checkpoint)
 verify_backend_runtime_dependencies() {
     # Root metadata checks cannot prove that the backend can import new wheels.
     # Use the fixed service identity, clean environment and no production secret.
@@ -3016,7 +3017,9 @@ verify_backend_runtime_dependencies() {
 }
 sync_backend_dependencies() {
     # Pi is a required backend runtime; the Python lock cache cannot prove it.
-    bash pi-runtime/install.sh || return 1
+    release_timing_checkpoint remote_pi_install_started || return "\$?"
+    bash pi-runtime/install.sh || return "\$?"
+    release_timing_checkpoint remote_pi_install_completed || return "\$?"
     release_state_dir='$REMOTE_RELEASE_STATE_DIR'
     requirements_marker="\${release_state_dir}/requirements-lock.sha256"
     requirements_expected='$REQUIREMENTS_LOCK_SHA'
