@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | 下一批固定候选 G4 GO，最终集成与发布待完成；旧批发布证据保留 |
+| 当前阶段 | 新批整合并纳入本人病程恢复修复，G4 GO；等待最终SHA完整CI与发布，旧阻断原样保留 |
 
 ## G1 范围准入
 
@@ -66,3 +66,11 @@ OTA publish 37977844821 取得原 vendor receipt 后在核验命令阶段失败�
 固定候选完整release-invariants在485项通过后发现新增recent-workout回归未纳入原r-other CI目录，真实exit1；保留/tmp/reva-next-frozen-ci-mode.log，补原catalog显式条目，不删除原覆盖。PG首次库名不含test被保护拒绝；修正库名后initdb默认SQL_ASCII导致中文DDL注释编码错误，保留两次失败日志，测试服务器均正常停止；后续明确UTF8隔离库重跑，不据环境失败宣称生产故障或PG通过。
 
 冻结产品树PG验证112项通过、2项真实Pi链路未进入模型调用；发现副本缺少已有锁定Pi依赖目录，补齐复用后只重检这两项。当前不算PG总闸通过，原失败与环境断点保留。
+
+## 新批 G5 终态核验阻断
+
+固定候选 fa4703060594472933bca35553c9de05c5016cd6 已提交和推送。新鲜本地 CI-mode 发布不变量 2844 passed、20 skipped、84 subtests、exit 0；Web 全量538 passed/1 skip、Mobile全量3412 passed/1 skip，双端TypeScript通过；PG完整运行112通过2项因冻结副本缺既有锁定Pi依赖失败，补齐原锁定依赖后同两项PG补验通过。保留原失败而不宣称单次114全绿。
+
+CI38028857846汇总completed/success，但backend-quality job114145419234及REST/check-run/GraphQL仍in_progress、conclusion和completed_at为空，尽管所有step含Complete job均success。独立lifenav_readiness裁决G5 BLOCK：步骤、workflow汇总及本地测试均不能替代该作业最终可信回执。完整full发布器只看汇总的形式通过不消除已知冲突；未轮换、未部署、未触发本批OTA，不换SHA、不重跑来绕过。等原job/check可信终态收敛后再复核。当前生产346035f78成功终态、clean、四服务active、无业务lease已回读。本地验收文档不提交推进main；详细证据追加于原统一发布receipt latest_attempt，原历史回执保留。
+
+原fa470作业终态于后续可信REST回读已恢复completed/success，completed_at=2026-10-10T05:53:04Z；此前缺失终态及传输EOF原记录保留，未重跑或换SHA绕过。用户随后截图触发新的本人病程恢复修复，8338aa6d1固定runtime独立G4 GO、6331相邻+878分类器+46PG与36完整Pi集成通过。仅新增四个干净backend文件、独立回归和Dossier；混合executor/今日计划等继续排除。新候选需自己的完整CI、部署和原渠道OTA，未发布前不确认线上修复。

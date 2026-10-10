@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G3 SQLite 和 PostgreSQL 回归通过；固定候选独立安全审查待完成 |
+| 当前阶段 | G4 固定实现8338aa6d1独立安全GO；精确候选CI与部署待完成 |
 
 2026-10-10；quick_fix，无 primary controller；safety-gate overlay。
 
@@ -30,3 +30,5 @@
 固定候选独立 safety 审查、精确 CI、后端部署和线上用户路径验证尚未完成。当前 main fa4703060 的 backend-quality 终态冲突是先前整合批次外部阻断，不通过重跑、换 SHA 或删记录绕过。此任务是新产品修复，可本地实现和审查，但不能在上游准入未明确时执行外部发布。
 
 最终补验：classifier 878 passed，真实 UTF8 PostgreSQL17 本人恢复/真实API/病程读取46 passed、exit 0，测试库与服务器正常停止（/tmp/reva-cold-pg.log）。阻断名称/语法静态检查通过。新测试由既有h-j目录glob覆盖，无需新增CI分片或删覆盖。当前fa470的backend-quality已通过可信REST终态回读为completed/success（05:53:04Z），之前缺失终态原记录保留；尚未据此部署。本任务不触及混合executor，也不触及live-change高风险路径；不得将离线通过宣称真实LLM评测。
+
+G4：GO。独立lifenav_readiness只读复核固定8338aa6d1d35438d4d12f6c88fd78153e83147d7，确认全本人病程查询没有limit20截断误绑定，仅同名唯一active/improving、精确status字段获得权威；既有写出口记录本人声明，不作诊断或新增自治出口。另补两条截图原话的真实Pi对话→真实API→保存回答→verified illness_episode/update回执绑定集成，36项全通过（合成provider，不是真实LLM调用）。首次回执断言用了record_id而规范字段为resource_id，纠正为真实字段且加强status/action/verified和持久化消息回执一致性断言；不弱化已落库或跨账号隔离断言。此新增测试与文档不改变已审runtime。
