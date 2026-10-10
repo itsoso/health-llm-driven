@@ -8,6 +8,7 @@ case is a pass. Pytest on macOS runs only these construction/validation tests.
 """
 import importlib.util
 from pathlib import Path
+import subprocess
 
 import pytest
 import yaml
@@ -32,6 +33,18 @@ def test_ci_requires_actual_target_manager_before_release_invariants():
     assert '--ephemeral-runner --require-linux' in commands
     assert "result['systemd_249_observed'] is True" in commands
     assert "result['status'] == 'PASS'" in commands
+
+
+def test_ci_native_failure_remains_failed_and_emits_diagnostics(tmp_path):
+    jobs = yaml.safe_load((TEMPLATE.parents[2] / '.github/workflows/ci.yml').read_text())['jobs']
+    command = next(step['run'] for step in jobs['neo-wechat-systemd249']['steps'] if 'run' in step)
+    command = command.replace('/tmp/neo-wechat-systemd249.json', str(tmp_path / 'report.json'))
+    # Synthetic shell control: no sudo or systemd command executes in this test.
+    result = subprocess.run(['bash', '-e', '-c',
+        "sudo() { printf '%s\\n' '{\"status\":\"FAIL\",\"reason\":\"synthetic\"}'; return 1; };\n" + command],
+        text=True, capture_output=True)
+    assert result.returncode == 1
+    assert '"reason":"synthetic"' in result.stdout
 
 
 def render(control=False):

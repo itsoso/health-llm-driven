@@ -298,8 +298,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Verify actual target systemd 249 containment with synthetic fixtures
         run: |
+          trap 'cat /tmp/neo-wechat-systemd249.json' EXIT
           sudo /usr/bin/python3 scripts/neo_wechat_linux_probe.py --ephemeral-runner --require-linux > /tmp/neo-wechat-systemd249.json
-          cat /tmp/neo-wechat-systemd249.json
           python3 - <<'PY'
           import json
           with open('/tmp/neo-wechat-systemd249.json') as stream:
