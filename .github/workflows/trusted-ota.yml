@@ -351,7 +351,7 @@ jobs:
                 if not isinstance(value, dict) or value.get('sha') != sha:
                     raise ValueError('audit SHA differs')
                 if name == 'ota-diagnostic.json':
-                    phases = {'private-context', 'credential', 'gate-before', 'source-before', 'baseline', 'baseline-json', 'cohort', 'cohort-json', 'cohort-next', 'cohort-next-json', 'native-binding', 'channel-before', 'channel-before-json', 'channel-binding', 'environment', 'export', 'source-after', 'artifact', 'publication', 'admission'}
+                    phases = {'private-context', 'credential', 'gate-before', 'source-before', 'baseline', 'baseline-json', 'cohort', 'cohort-json', 'cohort-next', 'cohort-next-json', 'native-binding', 'channel-before', 'channel-before-json', 'channel-binding', 'environment', 'export', 'source-after', 'artifact', 'publication', 'admission', 'gate-preclaim', 'channel-preclaim', 'environment-preclaim', 'artifact-preclaim', 'claim-ota', 'vendor-publish', 'vendor-readback', 'channel-after', 'environment-after', 'artifact-after', 'finish-ota'}
                     reasons = {'operation_failed', 'command_failed', 'command_timeout', 'command_unavailable', 'metadata_invalid', 'verified'}
                     if (set(value) != {'sha', 'state', 'phase', 'reason'} or value['state'] not in ('BLOCKED', 'ADMISSION_PASSED')
                             or not isinstance(value['phase'], str) or value['phase'] not in phases

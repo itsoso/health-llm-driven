@@ -57,6 +57,9 @@ DIAGNOSTIC_PHASES = frozenset({
     "baseline-json", "cohort", "cohort-json", "cohort-next", "cohort-next-json",
     "native-binding", "channel-before", "channel-before-json", "channel-binding",
     "environment", "export", "source-after", "artifact", "publication", "admission",
+    "gate-preclaim", "channel-preclaim", "environment-preclaim", "artifact-preclaim",
+    "claim-ota", "vendor-publish", "vendor-readback", "channel-after",
+    "environment-after", "artifact-after", "finish-ota",
 })
 DIAGNOSTIC_REASONS = frozenset({
     "operation_failed", "command_failed", "command_timeout", "command_unavailable",
@@ -365,17 +368,17 @@ def publish(adapter, sha):
         "ota-preflight.json",
         {"sha": sha, "native_fingerprint": fingerprint, "mapping": mapping},
     )
-    adapter.gate()
+    phase_call("gate-preclaim", adapter.gate)
     if (
-        validate_channel(adapter.eas(channel_args, "channel-preclaim")) != mapping
-        or adapter.environment() != remote_environment
-        or adapter.artifact() != proof
+        phase_call("channel-preclaim", validate_channel, phase_call("channel-preclaim", adapter.eas, channel_args, "channel-preclaim")) != mapping
+        or phase_call("environment-preclaim", adapter.environment) != remote_environment
+        or phase_call("artifact-preclaim", adapter.artifact) != proof
     ):
         raise PublishError("prepublication inputs changed")
-    if adapter.rpc("claim-ota", claim) != {"sha": sha, "state": "CLAIMED"}:
+    if phase_call("claim-ota", adapter.rpc, "claim-ota", claim) != {"sha": sha, "state": "CLAIMED"}:
         raise PublishError("server OTA claim not confirmed")
     # Exactly one write opportunity. No retries around this call or any outcome.
-    published = adapter.eas(
+    published = phase_call("vendor-publish", adapter.eas,
         [
             "update",
             "--channel",
@@ -394,19 +397,19 @@ def publish(adapter, sha):
         ],
         "publish",
     )
-    receipt = validate_update(published, sha)
+    receipt = phase_call("vendor-publish", validate_update, published, sha)
     adapter.write("ota-vendor-receipt.json", receipt)
-    readback = validate_update(
-        adapter.eas(["update:view", receipt["group_id"], "--json"], "readback"), sha
+    readback = phase_call("vendor-readback", validate_update,
+        phase_call("vendor-readback", adapter.eas, ["update:view", receipt["group_id"], "--json"], "readback"), sha
     )
     if (
         readback != receipt
-        or adapter.artifact() != proof
-        or validate_channel(adapter.eas(channel_args, "channel-after")) != mapping
-        or adapter.environment() != remote_environment
+        or phase_call("artifact-after", adapter.artifact) != proof
+        or phase_call("channel-after", validate_channel, phase_call("channel-after", adapter.eas, channel_args, "channel-after")) != mapping
+        or phase_call("environment-after", adapter.environment) != remote_environment
     ):
         raise PublishError("published update or channel changed")
-    if adapter.rpc("finish-ota", receipt) != {"sha": sha, "state": "SUCCEEDED"}:
+    if phase_call("finish-ota", adapter.rpc, "finish-ota", receipt) != {"sha": sha, "state": "SUCCEEDED"}:
         raise PublishError("server manifest verification not confirmed")
     result = {
         **receipt,

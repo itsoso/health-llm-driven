@@ -1014,3 +1014,45 @@ def test_diagnostic_retention_failure_is_visible_and_never_retries(monkeypatch, 
     output = capsys.readouterr().err
     assert len(calls) == 1 and 'SECRET' not in output
     assert 'diagnostic_persistence_unavailable' in output
+
+@pytest.mark.parametrize('step,phase,vendor_calls', [
+    ('gate', 'gate-preclaim', 0),
+    ('channel-preclaim', 'channel-preclaim', 0),
+    ('claim-ota', 'claim-ota', 0),
+    ('publish', 'vendor-publish', 1),
+    ('readback', 'vendor-readback', 1),
+    ('finish-ota', 'finish-ota', 1),
+])
+def test_publication_command_failure_identifies_exact_step_without_retry(tmp_path, step, phase, vendor_calls):
+    m = load()
+    f = Fake(m, tmp_path)
+    if step == 'gate':
+        original = f.gate
+        calls = []
+        def fail_gate():
+            calls.append(1)
+            if len(calls) == 2:
+                raise m.CommandError('command_failed')
+            return original()
+        f.gate = fail_gate
+    elif step in ('claim-ota', 'finish-ota'):
+        original = f.rpc
+        def fail_rpc(name, payload):
+            if name == step:
+                raise m.CommandError('command_failed')
+            return original(name, payload)
+        f.rpc = fail_rpc
+    else:
+        original = f.eas
+        def fail_eas(args, tag):
+            if tag == step:
+                if tag == 'publish':
+                    f.vendor_calls += 1
+                raise m.CommandError('command_failed')
+            return original(args, tag)
+        f.eas = fail_eas
+    with pytest.raises(m.PhaseError) as caught:
+        m.publish(f, 'c' * 40)
+    assert (caught.value.phase, caught.value.reason) == (phase, 'command_failed')
+    assert f.vendor_calls == vendor_calls
+    assert 'write:ota-receipt.json' not in f.events
