@@ -114,3 +114,11 @@ G5/G6 BLOCK：backend38031474956失败，固定637终态NEEDS_OPERATOR。健康�
 组合验证：桥接/生命周期/事务/历史/安装器479 passed、1 macOS环境skip；Web授权页20 passed；秘密扫描、203份Dossier与System Map通过。首次混合测试未指定测试数据库而连接本机PostgreSQL失败；修正测试配置后又发现原backend虚拟环境缺MCP依赖，两个启动失败均保留，不宣称通过。改用已安装仓库精确mcp1.30.0、pydantic2.12.5的既有测试环境，在独立UTF8 PostgreSQL17运行OAuth与既有隔离/今日计划/Workout回归；结果待实际执行记录。独立固定合并评审、合并后的CI-mode与精确远端main完整CI仍须通过。
 
 2026-10-10 16:57 Asia/Shanghai的新鲜只读生产核查：clean346035f78、四服务active；637 completed.json仍NEEDS_OPERATOR，GitHub38031474956仍completed/failure；launcher inode7777226保留，瞬时/proc/locks未观察到被持有，business lease不存在。runtime仍paused generation8/ack7。原标记与旧回滚证据保留；租约不存在不构成收口。原发布由本线程负责，有效管理员审核及本场景受审收口入口仍缺失。未重试发布、撤权、改回执、清锁或resume，G5/G6仍BLOCK。
+
+## 合并固定评审发现的失败历史准入修复
+
+715976493的独立G4 NO-GO：dormant安装入口只验证当前生产SUCCEEDED和lease缺失，publisher已经installed之后若其backend失败回滚，仍可能放行安装；这是P1，不因不激活应用而豁免。已中断该已知NO-GO候选的CI-mode，原记录260passed/KeyboardInterrupt、147.47s、exit2保留，不宣称通过。
+
+先运行实际inspect合成回归：旧production成功、publisher installed、publisher或另一SHA的STARTED/NEEDS_OPERATOR、lease缺失；旧实现错误进入后续package检查，1failed。修复复用canonical bootstrap的_retired_history、_assert_known_activity、_workspace_evidence和_recovery_process_proof：launcher锁内先检查全部受审历史和当前publisher终态/残留进程；取得lease后首次主机修改前和payload结束后再检查。未知结果保留audit/lease，不把原失败改成功，不推断空lease等于已收口。新增post-claim未知历史拒绝安装回归。330相关tests passed（15.11s）。修正候选需新的独立固定G4及完整CI-mode。
+
+组合UTF8 PostgreSQL17实际155passed（130.86s），包括remote Health OAuth26、今日计划29、Workout15、Garmin33、账户缓存52；测试库已正常停止。该证明覆盖真实SQL方言与授权owner/过期/策略变更，不代表生产凭据、微信收发或锁屏验收。生产未修改，live模型证据仍缺配置；最新离线live-change检查确实failed/confirmed=false，未虚构确认变量。G5/G6仍BLOCK。
