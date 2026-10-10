@@ -23,7 +23,7 @@ def recovery_fixture(monkeypatch, tmp_path):
     monkeypatch.setattr(b, "_recovery_process_proof", lambda: None, raising=False)
     monkeypatch.setattr(b, "_recovery_production_proof", lambda *args: None, raising=False)
     monkeypatch.setattr(b, "_recovery_toolchain_proof", lambda: {"git": "fixture"}, raising=False)
-    monkeypatch.setattr(b, "_assert_idle", lambda: None)
+    monkeypatch.setattr(b, "_assert_idle", lambda *, backup_memo=None: None)
     w = b.STATE / SHA
     w.mkdir(mode=0o700)
     (w / "home").mkdir(mode=0o700)
