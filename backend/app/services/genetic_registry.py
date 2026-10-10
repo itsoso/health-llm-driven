@@ -26,7 +26,14 @@ KNOWN_SNPS = _load_legacy_known_snps()
 _VARIANT_TYPES = {
     "rs5030655": "indel_proxy",
     "rs4646994": "structural_indel",
-    "rs1265181": "hla_proxy_marker",
+    "rs1265181": "hla_proxy_marker",  # HLA-B*58:01 — allopurinol SJS/TEN
+    # rs1061235 is the consumer-chip tag SNP for HLA-A*31:01 (carbamazepine
+    # SCAR) — a tier0/pharmgkb_1a lethal allele, just like rs1265181. It is a
+    # genotyping proxy, NOT the allele itself, so a "negative" cannot be read as
+    # "no risk". Tag it so the formatter keeps the proxy caveat (is_proxy_variant)
+    # after the tier0-HLA grade promotion — otherwise only one of the two tier0
+    # HLA tag SNPs would surface the "阴性不代表无风险" guardrail.
+    "rs1061235": "hla_proxy_marker",  # HLA-A*31:01 — carbamazepine SCAR
     "rs429358": "haplotype_component",
 }
 
