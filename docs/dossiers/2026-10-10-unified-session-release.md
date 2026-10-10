@@ -122,3 +122,19 @@ G5/G6 BLOCK：backend38031474956失败，固定637终态NEEDS_OPERATOR。健康�
 先运行实际inspect合成回归：旧production成功、publisher installed、publisher或另一SHA的STARTED/NEEDS_OPERATOR、lease缺失；旧实现错误进入后续package检查，1failed。修复复用canonical bootstrap的_retired_history、_assert_known_activity、_workspace_evidence和_recovery_process_proof：launcher锁内先检查全部受审历史和当前publisher终态/残留进程；取得lease后首次主机修改前和payload结束后再检查。未知结果保留audit/lease，不把原失败改成功，不推断空lease等于已收口。新增post-claim未知历史拒绝安装回归。330相关tests passed（15.11s）。修正候选需新的独立固定G4及完整CI-mode。
 
 组合UTF8 PostgreSQL17实际155passed（130.86s），包括remote Health OAuth26、今日计划29、Workout15、Garmin33、账户缓存52；测试库已正常停止。该证明覆盖真实SQL方言与授权owner/过期/策略变更，不代表生产凭据、微信收发或锁屏验收。生产未修改，live模型证据仍缺配置；最新离线live-change检查确实failed/confirmed=false，未虚构确认变量。G5/G6仍BLOCK。
+
+## 用户授权解决发布阻断后的实现范围
+
+用户先明确“授权部署”，随后要求“解决掉”。转入implementation：仅补当前发布恢复与真实评测所缺的验证边界，不改变健康写入权限，不补造历史Operation，不把UNKNOWN当NO_EFFECT，不复用原失败SHA、不关闭模型闸。唯一父Dossier/trace继续沿用。
+
+只读发现：真实root0600 runtime-state-terminal.json具有精确9字段，old/terminal=346035f78、candidate=637520e25、target=old、phase/result=RESTORE_FINALIZED、transaction_id=3c602ff3481ca9e70ac0daaae2742bf4，reap名称一致；runtime-state-transaction不存在，原字节摘要eac4964d0217457f757993392f74b40461af36f6694a15225f12610592492a96。该证据不是收口回执；仍需日志唯一ROLLBACK_OK、环境/schema/KB、稳定服务、权限与无残留进程的完整链。
+
+本地实施分为两个互不重叠的验证模块：回滚旧版本typed proof/admission；隔离live-eval配置/环境/预算/审计contract。先RED后GREEN、固定提交后独立safety review。第一阶段均不提供生产mutation、秘密输入、密钥退休或eval调用入口，不交付CLOSED/部署/模型成功回执。所有未知字段、错误身份、缺失证据、漂移、残留和预算越界均失败。模型用正常factory/consent/PII/quota/usage，秘密保持原主机、不得导出；缺少可信launcher是必须实现并复审的前置。
+
+真人管理员对原未决Run的审核与认证仍是独立前置。现有API /agent-runtime/resume仅恢复未来准入，不结算未知写入、不闭合原失败发布；不得用后台直接DB更新、伪造管理员身份或新授权掩盖缺失认证。缺少模型baseline时只能报告当前场景是否通过，不宣称无退化。G3/G5/G6未完成，不把新只读terminal当全链PASS。
+
+## 发布阻断验证模块的实际结果
+
+回滚旧版本模块真实行为RED72failed/2passed、GREEN102passed；隔离评测模块调用库存缺失用例真实RED1failed、GREEN60passed。根独立组合验证162passed（0.12s）。两个模块都是纯函数，不读取生产秘密、不执行IO/撤权/模型调用、不产生CLOSED或生产授权；真实隔离与原失败生命周期仍须可信入口完成。原缺失模型baseline不能报告无退化。
+
+浏览器连接两次返回request-header policy读取失败，尚无法取得正式已登录管理员会话。已向用户请求可用登录入口或通过现有管理员会话恢复未来准入，明确不要发送密码或Token；没有直接修改DB、伪造JWT或结算UNKNOWN。部署授权继续有效，不要求重复授权。
