@@ -225,7 +225,8 @@ try:
         raise ValueError("invalid binding")
     root = Path("/var/lib/reva-release/vision-models")
     bridge_root = Path("/var/lib/reva-release/neo-wechat")
-    roots = [path for path in (root, bridge_root) if os.path.lexists(path)]
+    lifecycle_root = Path("/var/lib/reva-release/neo-wechat-lifecycle")
+    roots = [path for path in (root, bridge_root, lifecycle_root) if os.path.lexists(path)]
     if not roots:
         raise SystemExit(0)
     source = Path("/var/lib/reva-release/bootstrap") / sha / "source"

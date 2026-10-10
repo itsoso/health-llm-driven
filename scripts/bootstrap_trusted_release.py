@@ -713,7 +713,7 @@ def _assert_known_activity(history, old_sha=None):
 
 
 def assert_frontend_rebuild_history(*, backup_memo=None):
-    if not any(os.path.lexists(STATE / name) for name in ("frontend-rebuilds", "frontend-publications", "neo-wechat")):
+    if not any(os.path.lexists(STATE / name) for name in ("frontend-rebuilds", "frontend-publications", "neo-wechat", "neo-wechat-lifecycle")):
         return
     path = Path(__file__).with_name("trusted_release_server.py")
     secure(path)
@@ -724,7 +724,7 @@ def assert_frontend_rebuild_history(*, backup_memo=None):
 
 
 def assert_ota_history():
-    if not any(os.path.lexists(STATE / name) for name in ("ota", "retained-testflight")):
+    if not any(os.path.lexists(STATE / name) for name in ("ota", "retained-testflight", "neo-wechat", "neo-wechat-lifecycle")):
         return
     path = Path(__file__).with_name("trusted_release_server.py")
     secure(path)

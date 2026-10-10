@@ -831,6 +831,12 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
 
 def assert_neo_wechat_history(state=None):
     """Durable bridge uncertainty blocks release/rotation even after reboot."""
+    # Lifecycle writers use a separate namespace: the immutable dormant install
+    # receipt cannot admit them. No canonical closure/lease-retirement protocol
+    # is installed yet. Even empty or apparently completed history must block;
+    # do not import a workspace helper or accept caller-supplied proof here.
+    if os.path.lexists(Path(state or STATE) / "neo-wechat-lifecycle"):
+        raise LaunchError("bridge lifecycle closure is unacknowledged; preserve evidence")
     root = Path(state or STATE) / "neo-wechat"
     if not os.path.lexists(root):
         return
@@ -1440,6 +1446,7 @@ def retained_rpc(policy, action):
 
 def assert_ota_history():
     """Every started OTA must finish before any later publisher or rotation."""
+    assert_neo_wechat_history()
     assert_retained_history()
     root = STATE / "ota"
     if not os.path.lexists(root):

@@ -119,6 +119,18 @@ def test_once_only_claim_lease_and_finish(state):
         m.claim(s, SimpleNamespace(), {'sha': 'b' * 40}, {**before, 'sha': 'b' * 40})
 
 
+def test_bridge_lifecycle_uncertainty_blocks_retained_before_claim_or_lease(state, monkeypatch):
+    s, m, before = state
+    gate = load('trusted_release_server')
+    monkeypatch.setattr(gate, 'STATE', s.STATE)
+    monkeypatch.setattr(s, 'assert_ota_history', gate.assert_ota_history)
+    (s.STATE / 'neo-wechat-lifecycle').mkdir()
+    with pytest.raises(gate.LaunchError, match='bridge lifecycle closure'):
+        m.claim(s, SimpleNamespace(), {'sha': SHA}, before)
+    assert not m.operation().parent.exists()
+    assert not s.BUSINESS_LEASE.exists()
+
+
 @pytest.mark.parametrize('bad', ['vendor', 'claim', 'production'])
 def test_unknown_or_drift_preserves_claim_and_lease(state, monkeypatch, bad):
     s, m, before = state

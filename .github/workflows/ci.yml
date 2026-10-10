@@ -411,6 +411,9 @@ jobs:
           scripts/test_neo_wechat_lifecycle.py
           scripts/test_neo_wechat_lifecycle_history.py
           scripts/test_neo_wechat_runtime_lifecycle.py
+          scripts/test_neo_wechat_installed_history.py
+          scripts/test_neo_wechat_host.py
+          scripts/test_neo_wechat_boot.py
           scripts/test_trusted_frontend_publish.py
           scripts/test_trusted_frontend_artifact.py
           scripts/test_trusted_frontend_publish_history.py

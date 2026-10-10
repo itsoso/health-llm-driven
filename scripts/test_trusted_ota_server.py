@@ -55,6 +55,15 @@ def test_claim_is_single_use_and_holds_business_lease_until_proven_finish(state)
         o.claim(s, c, {'sha': SHA}, value)
 
 
+def test_bridge_lifecycle_uncertainty_blocks_ota_before_claim_or_lease(state):
+    s, o, c, value = state
+    (s.STATE / 'neo-wechat-lifecycle').mkdir()
+    with pytest.raises(s.LaunchError, match='bridge lifecycle closure'):
+        o.claim(s, c, {'sha': SHA}, value)
+    assert not (s.STATE / 'ota').exists()
+    assert not s.BUSINESS_LEASE.exists()
+
+
 def test_manifest_mismatch_keeps_original_lease_and_no_terminal(state, monkeypatch):
     s, o, c, value = state
     o.claim(s, c, {'sha': SHA}, value)
