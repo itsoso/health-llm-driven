@@ -48,5 +48,3 @@ def inherited_listener(expected_path):
         if listener is not None:
             listener.close()
         raise ValueError('socket_activation_required') from None
-
-
