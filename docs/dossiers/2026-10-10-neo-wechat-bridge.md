@@ -63,7 +63,9 @@ expansion, arbitrary RPC relay or identity inferred from incoming WeChat content
 
 G3: local service, PostgreSQL isolation, frontend, deployment, System Map and
 dependency checks passed (details in review record). Final combined verification:
-151 passed, 1 skipped. Exact revision CI remains pending. Cross-family capstone was blocked by automatic
+151 passed, 1 skipped. Exact `3b834ea74` CI passed at run `38031204452`; draft
+PR280 was created and remains unmerged. New continuation changes need their own
+fixed review and CI. Cross-family capstone was blocked by automatic
 approval review because its external private-code destination was not authorized.
 
 G4: first fixed application review of `4892c41b1e8cd19ec5262ff5dc91b518316fa6b0`
@@ -78,3 +80,25 @@ G5/G6: pending. No deployment, secret creation, QR request, grant or live signal
 has occurred. Installer currently ends at dormant placement; approved secret-entry
 surface, reviewed activation/removal/recovery and Linux sandbox validation remain
 work. Final completion requires real closed-Mac/restart receipt and user-owned handoffs.
+
+## S5 continuation and bounded G2 decision
+
+Parent authorized continued independent local lifecycle preparation while external
+review permission is pending. The specific secret-entry surface is an unresolved
+G2 branch: reviewed owner-operated SSH hidden-input UI versus an existing browser
+secret manager. A choice has been requested; actual provisioning/activation writers
+remain stopped until resolved. No re-request or retry of Claude export occurred.
+
+Independent work: offline provisioning validation/hashing with synthetic inputs;
+ephemeral Linux systemd containment probe and portable contracts; pure lifecycle
+inventory/reconciliation planning. These helpers do not supply a working lifecycle
+entry or change production. Health revocation uncertainty was found and corrected:
+local reads stop first, the encrypted refresh token survives in revocation_pending
+for explicit owner retry, relinking is blocked, and HTTP acknowledgment is not
+misreported as proof of grant removal.
+
+PR252 is open and is not a code prerequisite; it freezes legacy writers but does
+not ship the external launcher. The actual dependency is independently established
+canonical staging provenance plus the installed executor's new history enforcement.
+Absent that proof, release-trust repair requires a separate bounded feature. The
+concurrent637520 release reported at06:38 must be freshly reconciled, never bypassed.

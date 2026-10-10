@@ -26,6 +26,21 @@ same-UID bootstrap attacks. It was open during implementation, and its proposed
 policy is not represented here as merged policy. Its concrete trust findings must
 be considered in G4 and conflict resolution before merging this entry.
 
+PR252 is not a code dependency and supplies no replacement launcher. Its actual
+`deploy.sh` exits 78 before legacy writers. The concrete concern is execution before
+local guards (Git replacement/filter behavior, import shadows, and shell/Python
+startup hooks). An inner bridge guard cannot establish initial provenance. If the
+existing external verification of canonical root-owned staging and interpreter
+can be demonstrated, the currently merged governed bootstrap remains a possible
+path. If not, a separate bounded release-trust repair needs its own G2/G4 and
+rollout evidence. If PR252 merges first, its freeze must be reconciled through the
+approved external-launcher feature; this bridge adds no exemption.
+
+The 06:38 UTC concurrent release report for production candidate `637520e25`
+had successful preflight/readiness but no terminal receipt. This task did not
+inspect or alter that operation. Fresh production revision, completion evidence
+and both locks must be established before any bridge operation or executor rotation.
+
 Before executing any repository bytes as root, the authorized operator must use
 the existing trusted bootstrap to establish the canonical origin, exact reviewed
 revision and actual file bytes, secure ancestors, interpreter ownership, and
@@ -122,6 +137,30 @@ group ID. Config must be root-owned, mode 0640, group `neo-wechat`; secret origi
 must be root-owned 0600. A reviewed activation transaction must verify all of this,
 nginx worker membership in only the dedicated proxy group, and the exact HTTPS
 locations before starting the service and publishing the route.
+
+G2 continuation: the proposed owner-operated SSH terminal with hidden `/dev/tty`
+prompts has been presented as a surface choice; acceptance remains pending. The
+new offline provisioning helper validates exact nonsecret configuration, supplied
+key shape, admin-password confirmation and the finn workspace/channel confirmation,
+and prepares an in-memory credential bundle with a fresh password salt. It has no
+CLI, filesystem writer, environment secret reader or network. It is not a secret
+entry surface or authorization to create secrets. URL shape cannot establish the
+webhook's actual channel; owner selection and real sender acceptance remain required.
+
+Bounded lifecycle decisions retained for the next implementation stage: only the
+exact bridge nginx include/proxy group/reload may change; deactivation/removal
+preserves encrypted data, keys and audit by default; no account/group purge is
+authorized; recovery reconciles the original operation and never reinstalls,
+redownloads, changes operation ID or recreates a lost lease. The old dormant
+receipt remains immutable. Lifecycle writers and history-reader rollout remain
+unimplemented pending the G2 surface decision and fixed-code review.
+
+`neo_wechat_linux_probe.py` adds an ephemeral-runner-only synthetic systemd test
+using retained directives from the real unit template. It exercises effective
+filesystem, credential, socket, cgroup and privilege boundaries with positive
+controls. Paths/identity are synthetic and PrivateNetwork is added; it does not
+prove production egress, proxy access or systemd249 unless that version is actually
+observed. Unsupported hosts fail required mode. It must never run on Health.
 
 For Slack, the owner creates/authorizes an app with **Incoming Webhooks** enabled
 and the `incoming-webhook` OAuth scope, selecting private channel `C0C89QBQLBB` in

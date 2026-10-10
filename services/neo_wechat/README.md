@@ -42,6 +42,11 @@ website consent screen. It relays only get_sleep/get_diet/get_exercise with boun
 dates and timezone. Tokens are independently encrypted, not forwarded from Neo.
 Uncertain code/refresh exchanges require fresh owner linking. Existing Health grants
 keep their stored expiry; other clients retain the30-day default.
+Revocation stops local reads before its upstream request. A failed request retains
+only the encrypted refresh token in `revocation_pending`; restart never retries it
+automatically, and relinking is blocked until an explicit owner revoke succeeds.
+An upstream HTTP acknowledgment is not independent proof that a grant disappeared:
+verify the Health grant-management surface, especially after uncertain code exchange.
 
 ## Owner handoffs — not performed by tests or startup
 

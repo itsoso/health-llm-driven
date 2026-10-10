@@ -333,6 +333,9 @@ jobs:
       - name: Verify real application network boundary in isolated namespace
         run: sudo unshare --net /usr/bin/python3 scripts/test_public_host_network_native.py
 
+      - name: Verify synthetic WeChat systemd containment on disposable runner
+        run: sudo /usr/bin/python3 scripts/neo_wechat_linux_probe.py --ephemeral-runner --require-linux
+
       - name: Verify real retained runner filesystem and canonical startup
         run: sudo "$(command -v python)" -B -m pytest -q --no-cov scripts/test_trusted_retained_testflight.py -k real_linux_runner_bootstrap_and_loader
 
@@ -381,6 +384,9 @@ jobs:
           scripts/test_trusted_frontend_rebuild.py
           scripts/test_trusted_vision_model.py
           scripts/test_trusted_neo_wechat.py
+          scripts/test_neo_wechat_linux_isolation.py
+          scripts/test_neo_wechat_provisioning.py
+          scripts/test_neo_wechat_lifecycle.py
           scripts/test_trusted_frontend_publish.py
           scripts/test_trusted_frontend_artifact.py
           scripts/test_trusted_frontend_publish_history.py

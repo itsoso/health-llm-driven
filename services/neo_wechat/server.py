@@ -197,8 +197,15 @@ class Service:
         if state['login']:
             content += self.html_form('qr-cancel', csrf, {'attempt': login['attempt']}, '取消本次二维码')
         if self.health:
-            content += '<p>健康记录连接：' + html.escape(str(self.health.status())) + '</p>'
-            content += self.html_form('health-start', csrf, {}, '前往 Health 确认新的本人只读授权')
+            health_status = self.health.status()
+            labels = {'connected': '已连接', 'disconnected': '未连接', 'pending': '等待本人授权',
+                      'relink_required': '连接结果不确定，需本人检查并撤销旧授权',
+                      'revocation_pending': '本地读取已停止，远端撤销尚待完成'}
+            content += '<p>健康记录连接：' + html.escape(labels.get(health_status, '状态异常')) + '</p>'
+            if health_status == 'revocation_pending':
+                content += '<p>可使用下方撤销按钮再次提交撤销。请在 Health 授权管理页面核实最终状态。</p>'
+            elif health_status in ('disconnected', 'pending'):
+                content += self.html_form('health-start', csrf, {}, '前往 Health 确认新的本人只读授权')
         content += self.html_form('revoke', csrf, {}, '撤销本桥接授权并停止收发')
         return self.page('Neo 微信桥接设置', content, csrf)
 

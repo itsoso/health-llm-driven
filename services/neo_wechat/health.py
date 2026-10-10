@@ -94,7 +94,7 @@ class HealthClient:
 
     def begin(self):
         with self.store.lock:
-            if self._state()['status'] in {'connected', 'relink_required'}:
+            if self._state()['status'] in {'connected', 'relink_required', 'revocation_pending'}:
                 raise HealthError('health_revoke_required')
             state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
             challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
@@ -193,9 +193,18 @@ class HealthClient:
     def revoke(self):
         with self.store.lock:
             current = self._state()
-            with self.store.transaction() as snapshot:
-                snapshot['health'] = {'status': 'disconnected'}
-                audit(snapshot, 'health_connection_revoked', self.clock())
             token = current.get('refresh_token')
+            with self.store.transaction() as snapshot:
+                # Drop local read authority before external IO. Retain only the
+                # encrypted refresh token needed for an explicit owner retry of
+                # the idempotent revoke endpoint; never refresh or read with it.
+                snapshot['health'] = ({**self._binding(), 'status': 'revocation_pending',
+                                       'refresh_token': token} if token else {'status': 'disconnected'})
+                audit(snapshot, 'health_local_access_revoked', self.clock())
             if token:
                 self._request(self.issuer + '/revoke', form={'client_id': self.client_id, 'token': token})
+                with self.store.transaction() as snapshot:
+                    snapshot['health'] = {'status': 'disconnected'}
+                    # OAuth revocation acknowledges unknown/already-expired
+                    # tokens too; this is request acceptance, not grant-list proof.
+                    audit(snapshot, 'health_revocation_accepted', self.clock())

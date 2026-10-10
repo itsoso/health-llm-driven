@@ -154,11 +154,36 @@ def test_local_revoke_survives_upstream_uncertainty(linked):
     connect(client)
     transport.failure = True
     with pytest.raises(HealthError): client.revoke()
-    assert client.status() == 'disconnected'
+    assert client.status() == 'revocation_pending'
     assert transport.calls[-1][0] == client.issuer + '/revoke'
     assert 'access_token' not in str(client.store.read().get('health'))
+    with pytest.raises(HealthError): client.begin()
+    with pytest.raises(HealthError):
+        client.query('get_sleep', {'start_date': '2026-01-01', 'end_date': '2026-01-02', 'timezone': 'UTC'})
+    transport.failure = False
     client.revoke()
-    assert len(transport.calls) == 2
+    assert len(transport.calls) == 3
+    assert client.status() == 'disconnected'
+    assert 'refresh_token' not in str(client.store.read().get('health'))
+
+
+def test_pending_revoke_survives_restart_and_only_explicit_revoke_reuses_token(linked):
+    client, transport, _ = linked
+    connect(client)
+    transport.failure = True
+    with pytest.raises(HealthError): client.revoke()
+    before = len(transport.calls)
+    path = client.store.path
+    client.store.close()
+    with Store(path, b'k' * 32, 'owner') as reopened:
+        resumed = HealthClient(reopened, transport, 'https://health.example', 'bridge-health')
+        assert resumed.status() == 'revocation_pending'
+        assert len(transport.calls) == before
+        with pytest.raises(HealthError): resumed.begin()
+        transport.failure = False
+        resumed.revoke()
+        assert transport.calls[-1][1]['form']['token'] == 'r' * 43
+        assert resumed.status() == 'disconnected'
 
 
 def test_health_audit_records_authority_and_reads_without_content(linked):
@@ -173,7 +198,7 @@ def test_health_audit_records_authority_and_reads_without_content(linked):
     assert [entry['event'] for entry in entries] == [
         'health_consent_started', 'health_code_exchange_reserved',
         'health_tokens_saved', 'health_read_requested', 'health_read_completed',
-        'health_connection_revoked']
+        'health_local_access_revoked', 'health_revocation_accepted']
     assert all(set(entry) == {'event', 'at'} for entry in entries)
     assert all(entry['at'] == 10000 for entry in entries)
     serialized = str(entries)

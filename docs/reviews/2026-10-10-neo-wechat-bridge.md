@@ -87,3 +87,27 @@ message was performed. No G5 or G6 pass is claimed.
 The bounded installer is dormant-only. Approved secret-entry tooling, reviewed
 activation/removal/recovery, Linux sandbox verification and live end-to-end
 acceptance remain work; this record is not a completed production delivery.
+
+## Local continuation after draft PR280
+
+PR280 at `3b834ea74f4f3c47c9af9bc0687dd654bd91ab74` passed full CI run
+`38031204452`. Current main was rechecked as `637520e25` before the continuation.
+The following additions require a fresh fixed-commit review and their own CI:
+
+- Health revocation now persists `revocation_pending` before remote I/O, drops
+  local access immediately, blocks relinking, and retains only the encrypted
+  refresh token needed for explicit owner retry after an uncertain response.
+- Offline provisioning validation and password hashing accept synthetic inputs
+  only in tests. There is no secret-entry CLI, environment reader or writer.
+- Pure lifecycle evidence validators fail closed on missing provenance, changed
+  leases and ambiguous finalization. They provide no execution authority; the
+  current installer does not yet emit their step records.
+- The native systemd probe runs solely on an explicitly disposable Linux runner,
+  remapping sensitive paths to public synthetic fixtures. It requires actual
+  positive and negative controls plus cleanup before PASS. Mac reports
+  UNSUPPORTED; actual systemd 249, production identities and egress remain unproven.
+
+Local service, provisioning, lifecycle, portable Linux contracts and installer
+tests: **214 passed**. Secret scan and dossier consistency passed. No production
+action or private secret was used. The owner-operated SSH hidden-input UI choice
+is a pending G2 decision; provisioning/activation writers remain stopped.
