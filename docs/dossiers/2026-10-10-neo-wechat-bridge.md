@@ -8,6 +8,26 @@
 | 状态 | building |
 | Branch | codex/neo-wechat-health-bridge |
 
+Latest preserved green candidate: `cfc996e7495e0d3bb9eebf9610694ec9bd97dac2`,
+full CI `38038910636` (31 jobs). The subsequent host/history/boot continuation is
+local-only and requires its own fixed review and CI. No production issuer,
+owner-input adapter or boot activation is enabled by this continuation.
+
+Original release-owner handoff at 2026-10-10 08:57:32 UTC confirms production
+`346035f78b362804df06e1524099f87294286ef6`; failed `637520e25` remains
+`NEEDS_OPERATOR`, runtime paused (generation 8 / ack 7). Original task
+`01a120c7-1ba0-75c3-9487-447bd5bfa28f` and authenticated administrator own
+reconciliation. Lock absence cannot admit deployment. Gemini private-diff review
+permission and the owner-operated secret-entry surface remain pending.
+
+Local adapter continuation is now implemented and verified with 985 passed / 6
+skipped, including 72 host/boot and 40 installed-history tests. New release,
+OTA/retained claims and bootstrap admission reject unresolved lifecycle history.
+The original owner's reviewed `c45c15277` installer-history correction is included.
+Production capability issuance, durable closure, boot activation and the nginx
+post-stop 502 proof remain incomplete; no activation is admitted. A new fixed
+review and complete CI are required for this candidate.
+
 ## User request
 
 > 1、授予读取健康数据的权限 2、期限3650天  其他没问题 开干

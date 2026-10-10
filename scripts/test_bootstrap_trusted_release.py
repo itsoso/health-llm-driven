@@ -27,24 +27,27 @@ def load_bootstrap():
     return module
 
 
-def test_bridge_only_history_is_checked_before_rotation_after_reboot(monkeypatch, tmp_path):
+@pytest.mark.parametrize('namespace', ['neo-wechat', 'neo-wechat-lifecycle'])
+@pytest.mark.parametrize('gate', ['assert_frontend_rebuild_history', 'assert_ota_history'])
+def test_bridge_only_history_is_checked_before_rotation_after_reboot(monkeypatch, tmp_path, namespace, gate):
     bootstrap = load_bootstrap()
-    (tmp_path / "neo-wechat").mkdir()
+    (tmp_path / namespace).mkdir()
     monkeypatch.setattr(bootstrap, "STATE", tmp_path)
+    monkeypatch.setattr(bootstrap, "__file__", str(tmp_path / 'canonical/bootstrap_trusted_release.py'))
     monkeypatch.setattr(bootstrap, "secure", lambda *_a, **_k: None)
     calls = []
-    def check(state, **kwargs):
-        calls.append(state)
+    def check(*args, **kwargs):
+        calls.append(args)
         raise bootstrap.BootstrapError("unfinished bridge history")
-    server = SimpleNamespace(assert_frontend_rebuild_history=check)
+    server = SimpleNamespace(assert_frontend_rebuild_history=check, assert_ota_history=check)
     fake_spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda _: None))
     monkeypatch.setattr(bootstrap, "importlib", SimpleNamespace(util=SimpleNamespace(
         spec_from_file_location=lambda *_: fake_spec,
         module_from_spec=lambda _: server,
     )))
     with pytest.raises(bootstrap.BootstrapError, match="unfinished bridge"):
-        bootstrap.assert_frontend_rebuild_history()
-    assert calls == [tmp_path]
+        getattr(bootstrap, gate)()
+    assert calls == ([(tmp_path,)] if gate == 'assert_frontend_rebuild_history' else [()])
 
 
 @pytest.mark.parametrize("sha,expiry,public", [

@@ -472,6 +472,14 @@ def install_payload(plan, source, check, helper, bootstrap):
     return complete
 
 
+def assert_backend_history(bootstrap, publisher):
+    """Reuse canonical closed-history admission; an absent lease is insufficient."""
+    history = bootstrap._retired_history()
+    bootstrap._assert_known_activity(history, old_sha=publisher)
+    bootstrap._workspace_evidence(publisher)
+    bootstrap._recovery_process_proof()
+
+
 def install_dormant(plan):
     publisher, production, operation = plan["publisher_sha"], plan["production_sha"], plan["operation_id"]
     source, helper, bootstrap, server, _gate = load_reviewed(publisher)
@@ -511,12 +519,14 @@ def install_dormant(plan):
             # Close the last absence-check/atomic-claim gap with real production
             # observations after ownership is acquired and before the first host mutation.
             check()
+            assert_backend_history(bootstrap, publisher)
             if health_snapshot() != plan["health_services"] or protected_metadata() != plan["protected_metadata"]:
                 raise DeployError("production changed before bridge lease acquisition")
             helper._revision_proof(production, source, bootstrap)
             if package_inventory(source) != plan["files"]:
                 raise DeployError("source changed before bridge installation")
             complete = install_payload(plan, source, check, helper, bootstrap)
+            assert_backend_history(bootstrap, publisher)
             write_json(audit / "verified.json", complete)
             check()
             if {path.name for path in LEASE.iterdir()} != {"token", "label", "stage", "started_at"}:
@@ -552,6 +562,7 @@ def inspect(publisher, production, operation=None, *, _lock=None):
         helper._assert_lock(server, lock, fd)
         ci = exact_full_ci(gate, publisher)
         assert_installed_history(source)
+        assert_backend_history(bootstrap, publisher)
         server.assert_frontend_rebuild_history()
         server.assert_ota_history()
         helper._revision_proof(production, source, bootstrap)

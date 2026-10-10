@@ -11,6 +11,75 @@ neo = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(neo)
 
 
+@pytest.mark.parametrize("failed_is_publisher", [True, False])
+@pytest.mark.parametrize("terminal", ["STARTED", "NEEDS_OPERATOR"])
+def test_backend_history_rejects_unclosed_attempt_without_lease(tmp_path, monkeypatch, failed_is_publisher, terminal):
+    import json
+    import sys
+    spec = importlib.util.spec_from_file_location("neo_backend_history_regression", Path(neo.__file__).with_name("bootstrap_trusted_release.py"))
+    bootstrap = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = bootstrap
+    spec.loader.exec_module(bootstrap)
+    publisher, production = "a" * 40, "b" * 40
+    failed = publisher if failed_is_publisher else "c" * 40
+    monkeypatch.setattr(bootstrap, "STATE", tmp_path)
+    monkeypatch.setattr(bootstrap, "secure", lambda *_a, **_k: None)
+    monkeypatch.setattr(bootstrap, "_retired_history", lambda: {production: {"verified": True}})
+    monkeypatch.setattr(bootstrap, "_recovery_process_proof", lambda: pytest.fail("unclosed history must stop before process inspection"))
+    for sha, state in ((production, "SUCCEEDED"), (failed, terminal)):
+        directory = tmp_path / sha
+        directory.mkdir()
+        (directory / "started.json").write_text(json.dumps({"sha": sha, "state": "STARTED"}))
+        if state != "STARTED":
+            (directory / "completed.json").write_text(json.dumps({"sha": sha, "state": state}))
+    from types import SimpleNamespace
+    flags = neo.sys.flags
+    class IsolatedFlags:
+        isolated = no_site = dont_write_bytecode = True
+        def __getattr__(self, name):
+            return getattr(flags, name)
+    (tmp_path / "launcher.lock").write_bytes(b"")
+    monkeypatch.setattr(neo, "STATE", tmp_path)
+    monkeypatch.setattr(neo, "LEASE", tmp_path / "business-lease")
+    monkeypatch.setattr(neo.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(neo.sys, "executable", "/usr/bin/python3.12")
+    monkeypatch.setattr(neo.sys, "flags", IsolatedFlags())
+    monkeypatch.delenv("SSH_ORIGINAL_COMMAND", raising=False)
+    monkeypatch.setattr(neo, "secure_path", lambda *_a, **_k: None)
+    helper = SimpleNamespace(_assert_lock=lambda *_: None, _revision_proof=lambda *_: None)
+    server = SimpleNamespace(assert_frontend_rebuild_history=lambda: None, assert_ota_history=lambda: None)
+    monkeypatch.setattr(neo, "load_reviewed", lambda _: (tmp_path, helper, bootstrap, server, None))
+    monkeypatch.setattr(neo, "exact_full_ci", lambda *_: {})
+    monkeypatch.setattr(neo, "assert_installed_history", lambda *_: None)
+    monkeypatch.setattr(neo, "package_inventory", lambda *_: pytest.fail("unclosed backend must stop before package or host inspection"))
+    with pytest.raises(bootstrap.BootstrapError):
+        neo.inspect(publisher, production, "d" * 32)
+    assert not (tmp_path / "neo-wechat").exists()
+    assert not (tmp_path / "business-lease").exists()
+
+
+def test_backend_history_requires_verified_retirements_and_process_proof():
+    from types import SimpleNamespace
+    calls = []
+    history = {"b" * 40: {"verified_closure": True}}
+    bootstrap = SimpleNamespace(
+        _retired_history=lambda: history,
+        _assert_known_activity=lambda h, old_sha: calls.append(("known", h is history, old_sha)),
+        _workspace_evidence=lambda sha: calls.append(("workspace", sha)),
+        _recovery_process_proof=lambda: calls.append(("process",)),
+    )
+    neo.assert_backend_history(bootstrap, "a" * 40)
+    assert calls == [("known", True, "a" * 40), ("workspace", "a" * 40), ("process",)]
+
+
+def test_install_checks_backend_history_before_claim_and_after_claim(monkeypatch):
+    import inspect
+    entry = inspect.getsource(neo.inspect)
+    install = inspect.getsource(neo.install_dormant)
+    assert entry.index("assert_backend_history(bootstrap, publisher)") < entry.index("package_inventory(source)")
+    assert install.index("assert_backend_history(bootstrap, publisher)") < install.index("install_payload(plan")
+
+
 def test_candidate_digest_changes_with_every_input():
     assert neo.digest({"files": {"a": "one"}}) != neo.digest({"files": {"a": "two"}})
     assert neo.digest({"a": 1, "b": 2}) == neo.digest({"b": 2, "a": 1})
@@ -332,7 +401,11 @@ def transaction_fixture(tmp_path, monkeypatch):
         return tuple((p.stat().st_dev, p.stat().st_ino) for p in (lease, lease / "token"))
     helper = SimpleNamespace(_assert_lock=lambda *_: None, _lease_identity=identity, _revision_proof=lambda *_: None)
     server = SimpleNamespace(_sync_business_lease_parent=lambda: None)
-    monkeypatch.setattr(neo, "load_reviewed", lambda _: (tmp_path, helper, None, server, None))
+    bootstrap = SimpleNamespace(_retired_history=lambda: {},
+                                _assert_known_activity=lambda *_a, **_k: None,
+                                _workspace_evidence=lambda *_: None,
+                                _recovery_process_proof=lambda: None)
+    monkeypatch.setattr(neo, "load_reviewed", lambda _: (tmp_path, helper, bootstrap, server, None))
     plan = {"publisher_sha": "a" * 40, "production_sha": "b" * 40,
             "operation_id": "c" * 32, "files": {}, "health_services": {}, "protected_metadata": {}}
     monkeypatch.setattr(neo, "inspect", lambda *_a, **_k: plan)
@@ -384,6 +457,20 @@ def test_uncertain_install_keeps_original_lease_and_audit(tmp_path, monkeypatch)
     with pytest.raises(FileExistsError):
         neo.install_dormant(plan)
     assert lease.stat().st_ino == original_inode
+
+
+def test_new_backend_uncertainty_after_claim_prevents_host_install(tmp_path, monkeypatch):
+    state, lease, plan = transaction_fixture(tmp_path, monkeypatch)
+    def uncertain(*_):
+        raise RuntimeError("synthetic newly unclosed backend history")
+    monkeypatch.setattr(neo, "assert_backend_history", uncertain)
+    monkeypatch.setattr(neo, "install_payload", lambda *_: pytest.fail("no host mutation after uncertain history"))
+    with pytest.raises(neo.DeployError, match="unknown"):
+        neo.install_dormant(plan)
+    assert lease.exists()
+    audit = state / "neo-wechat" / plan["operation_id"]
+    assert (audit / "failed.json").exists()
+    assert not (audit / "completed.json").exists()
 
 
 def test_completion_fsync_failure_does_not_claim_success(tmp_path, monkeypatch):
@@ -529,4 +616,5 @@ def test_ordinary_deploy_checks_bridge_when_no_vision_history():
     raw = Path(neo.__file__).parents[1].joinpath("deploy.sh").read_text()
     block = raw[raw.index("def git(*args):") - 1100:raw.index("def git(*args):")]
     assert 'Path("/var/lib/reva-release/neo-wechat")' in block
+    assert 'Path("/var/lib/reva-release/neo-wechat-lifecycle")' in block
     assert "if not roots:" in block
