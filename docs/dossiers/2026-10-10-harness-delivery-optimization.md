@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | in_progress |
-| 当前阶段 | S5 实现与增量验证 |
+| 当前阶段 | G5 精确提交 CI 验证 |
 
 ## G1 范围与授权
 
@@ -29,12 +29,14 @@ run_path：`docs/_generated/harness-runs/19e0be37a2cc.jsonl`（本地，不提�
 
 ## G3 验证
 
-已观察 OTA prepare 10 项 RED、startup helper 14 项 RED、ledger 4 项 RED、doctor 3 项 RED、性能报告 13 项 RED、workflow 3 项 RED。组合定向 325 passed / 1 macOS 不适用 skip；适配器治理与包合同 115 passed；来源治理、System Map、秘密扫描及 diff-check 通过。完整 CI-mode 工具集成仍待固定提交验证。工作区 `.venv/bin/python3.12` 可用但不在 PATH；测试使用独立临时 Python 3.12 环境，不修改全局解释器。
+已观察 OTA prepare 10 项 RED、startup helper 14 项 RED、ledger 4 项 RED、doctor 3 项 RED、性能报告 13 项 RED、workflow 3 项 RED。组合定向 325 passed / 1 macOS 不适用 skip；适配器治理与包合同 115 passed；来源治理、System Map、秘密扫描及 diff-check 通过。固定实现提交 `aada1ad598cead66db3792ff43a8a833c2834830` 在干净源码快照中执行当前 CI YAML 的完整 release-invariants 命令：2844 passed、20 skipped、84 subtests passed，538.97 秒，退出码 0。快照内治理/包/ledger/doctor 130 passed，193 份 Dossier 检查通过；未将其他任务的脏文件带入候选。真实 Linux startup/export 仍待远端 CI。工作区 `.venv/bin/python3.12` 可用但不在 PATH；测试使用独立临时 Python 3.12 环境，不修改全局解释器。
 
 ## G4 安全审查
 
-待固定提交独立审查。任何 BLOCK 回实现，不绕过来源、精确 CI、授权、消费记录或租约。
+裁决：GO，独立 reviewer 审查固定实现提交 `aada1ad598cead66db3792ff43a8a833c2834830`，250 passed / 1 skipped；额外验证伪造 authority、未知 OTA 结果、证据路径穿越和矛盾诊断状态。四项前向场景通过：保留他人脏文件、沿用 S5 父 run、未知发布不重发、扫码安装不转 TestFlight。该 GO 不替代精确 SHA CI 或部署许可。任何 BLOCK 回实现，不绕过来源、精确 CI、授权、消费记录或租约。
 
 ## G5 发布与 G6 验收
 
 本轮尚未 push/deploy/OTA。已有生产发布 `38020468119` 归其原运行所有：只读复验后端 SUCCEEDED、生产 SHA=346035f78、租约已释放、五项服务 active；封存 generation 1 覆盖四条历史记录。部署脚本 finalized=346 秒；远端 checkout 阶段从 3→100 秒，Pi install 123→129 秒，不据单次观测宣称稳定提速。原回执见 `docs/reviews/2026-10-10-harness-existing-release-readback.json`。同 SHA 发布不重发。源码交付、CI、生产工具启用、供应商上传、Apple processing、模拟器验收分别记录。
+
+旧 SHA 的 OTA run `38020977702` 在发布器调用前因 GitHub metadata unavailable 失败；本轮只读核对失败日志，不重发。新 CI 和工具交付需要精确提交的远端验证，不需为本轮工程工具改动另建原生 TestFlight 包。
