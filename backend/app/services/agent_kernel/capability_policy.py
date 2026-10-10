@@ -1200,8 +1200,20 @@ def _authorized_illness_update_args(
     args: dict[str, Any],
     requested_id: int,
 ) -> dict[str, Any] | None:
+    from app.services.write_intent_scope import direct_self_illness_recovery_entity
+
     turn_text = normalize_health_authorization_text(snapshot.envelope.text)
     records = _owner_scoped_manage_list_records(snapshot, "illness")
+    recovery_entity = direct_self_illness_recovery_entity(snapshot.envelope.text)
+    if recovery_entity is not None:
+        # A current recovery report cannot rewrite a historical resolved episode.
+        # Only one matching ongoing episode can bind the model's proposed ID.
+        records = tuple(
+            record for record in records
+            if record.get("status") in {"active", "improving"}
+            and _normalize_entity_name(record.get("name"))
+            == _normalize_entity_name(recovery_entity)
+        )
     requested_record = next(
         (
             record
@@ -1268,6 +1280,10 @@ def _illness_update_patch(
     snapshot: TurnSnapshot,
     requested_id: int | None = None,
 ) -> dict[str, Any] | None:
+    from app.services.write_intent_scope import direct_self_illness_recovery_entity
+
+    if direct_self_illness_recovery_entity(snapshot.envelope.text) is not None:
+        return {"status": "resolved"}
     text = "".join(
         normalize_health_authorization_text(snapshot.envelope.text).split()
     )

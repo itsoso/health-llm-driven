@@ -43,6 +43,7 @@ from app.services.utterance_intent_lexicon import (
 )
 from app.services.write_intent_scope import (
     direct_event_values,
+    direct_self_illness_recovery_entity,
     direct_remember_fact_values,
     direct_supplement_group_values,
     has_explicit_authorizing_write_request,
@@ -309,6 +310,13 @@ def classify_agent_utterance(
                 "analyzed_material", requires_reliable_tool_model=True,
             )
         return _intent(raw, normalized, "unknown", "unknown", "none", 0.0, "empty")
+
+    if direct_self_illness_recovery_entity(raw) is not None:
+        return _intent(
+            raw, normalized, "mutate", "illness", "update", 0.96,
+            "explicit_self_illness_recovery", is_write=True,
+            requires_reliable_tool_model=True,
+        )
 
     from app.services.agent_symptom_status_observation import parse_symptom_status_observation
     if parse_symptom_status_observation(raw) is not None:

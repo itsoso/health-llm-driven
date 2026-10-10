@@ -37,6 +37,7 @@ from app.services.agent_kernel.types import (
 )
 from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
 from app.services.write_intent_scope import (
+    direct_self_illness_recovery_entity,
     explicit_whole_record_delete_targets,
     has_explicit_authorizing_update_request,
     has_explicit_authorizing_write_request,
@@ -452,6 +453,7 @@ def _compile_health_manage_mutation_goal(
     delete_targets = (
         explicit_whole_record_delete_targets(text) if not envelope.media else ()
     )
+    recovery_entity = direct_self_illness_recovery_entity(text)
     mutation_operation = "delete" if delete_targets else intent.operation
     if (
         envelope.media
@@ -467,6 +469,7 @@ def _compile_health_manage_mutation_goal(
         or (mutation_operation == "delete" and not delete_targets)
         or (
             mutation_operation != "delete"
+            and recovery_entity is None
             and HEALTH_MANAGE_MUTATION_COMMAND_RE.search(text) is None
         )
     ):
@@ -480,7 +483,7 @@ def _compile_health_manage_mutation_goal(
             ("record_id", str(record_id))
             for _, record_id in delete_targets
         )
-    illness_entity = extract_owned_illness_entity(text)
+    illness_entity = recovery_entity or extract_owned_illness_entity(text)
     if illness_entity is not None:
         target_record_type = "illness"
         target_values.append(("name", illness_entity))

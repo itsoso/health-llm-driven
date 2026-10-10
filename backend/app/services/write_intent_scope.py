@@ -1871,6 +1871,30 @@ def explicit_whole_record_delete_target(value: str) -> tuple[str, int] | None:
     return targets[0]
 
 
+_DIRECT_SELF_ILLNESS_RECOVERY_RE = re.compile(
+    r"^(?:(?:请|请帮我|帮我)?更新我的(?P<command_entity>.{2,100}?)"
+    r"(?:的)?状态[：:]|我(?:的)?(?P<self_entity>.{2,100}?))"
+    r"(?:已经|已)?(?:完全|彻底)?(?:痊愈|康复)(?:了)?$"
+)
+
+
+def direct_self_illness_recovery_entity(value: str) -> str | None:
+    """One closed self report authorizes resolution, never guessed disease/owner.
+
+    Keep the full original turn: quoted, uncertain, conditional, retracted or
+    additional clauses cannot borrow authority from a recovery substring.
+    """
+    text = normalize_write_scope_text(value).strip("。.!！")
+    match = _DIRECT_SELF_ILLNESS_RECOVERY_RE.fullmatch(text)
+    if match is None:
+        return None
+    from app.services.agent_kernel.health_semantics import resolve_illness_entity
+
+    entity = match.group("command_entity") or match.group("self_entity")
+    resolution = resolve_illness_entity(entity)
+    return resolution.entity if resolution.status == "exact" else None
+
+
 def has_explicit_authorizing_update_request(value: str) -> bool:
     """Authorize only a direct current-user correction speech act.
 
@@ -1878,6 +1902,8 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     quoted example, hypothetical, third-party instruction, or later ownership
     correction must not lend authority to an otherwise parseable value patch.
     """
+    if direct_self_illness_recovery_entity(value) is not None:
+        return True
     normalized = normalize_write_scope_text(value)
     normalized_statement = normalized.strip("。.!！?？")
     direct_water_update = any(
