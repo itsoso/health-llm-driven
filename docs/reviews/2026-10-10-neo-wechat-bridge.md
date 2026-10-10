@@ -111,3 +111,15 @@ Local service, provisioning, lifecycle, portable Linux contracts and installer
 tests: **214 passed**. Secret scan and dossier consistency passed. No production
 action or private secret was used. The owner-operated SSH hidden-input UI choice
 is a pending G2 decision; provisioning/activation writers remain stopped.
+
+Fresh independent reviewer `continuation_security_review` reviewed fixed commit
+`6fd5e5d44e142d127a1a216e927869b8758acd2c`, independently passed the 214 tests,
+and found no P1/P2 issue: GO for updating the draft and ephemeral CI only. The
+recommended dedicated Ubuntu 22.04 job now requires both PASS and an observed
+systemd 249; release-invariants depends on that job. Newer systemd evidence alone
+does not satisfy this check.
+
+Concurrent release run `38031474956` for `637520e25` ended in failure at
+06:42:57 UTC. Its server launcher reported “evidence retained, retry forbidden”
+and receipt validation failed. This is not a successful production receipt;
+the operation and lease must be reconciled through the original release owner.

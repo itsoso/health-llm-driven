@@ -10,6 +10,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -17,6 +18,20 @@ SPEC = importlib.util.spec_from_file_location(
 probe = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(probe)
 TEMPLATE = Path(__file__).resolve().parents[1] / "infra/neo-wechat/neo-wechat.service.in"
+
+
+def test_ci_requires_actual_target_manager_before_release_invariants():
+    jobs = yaml.safe_load((TEMPLATE.parents[2] / '.github/workflows/ci.yml').read_text())['jobs']
+    job = jobs['neo-wechat-systemd249']
+    assert job['runs-on'] == 'ubuntu-22.04'
+    assert job['permissions'] == {'contents': 'read'}
+    assert job['timeout-minutes'] <= 5
+    assert 'neo-wechat-systemd249' in jobs['release-invariants']['needs']
+    assert 'always()' not in jobs['release-invariants']['if']
+    commands = '\n'.join(step.get('run', '') for step in job['steps'])
+    assert '--ephemeral-runner --require-linux' in commands
+    assert "result['systemd_249_observed'] is True" in commands
+    assert "result['status'] == 'PASS'" in commands
 
 
 def render(control=False):

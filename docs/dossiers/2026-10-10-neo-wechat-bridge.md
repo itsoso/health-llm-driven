@@ -101,4 +101,7 @@ PR252 is open and is not a code prerequisite; it freezes legacy writers but does
 not ship the external launcher. The actual dependency is independently established
 canonical staging provenance plus the installed executor's new history enforcement.
 Absent that proof, release-trust repair requires a separate bounded feature. The
-concurrent637520 release reported at06:38 must be freshly reconciled, never bypassed.
+concurrent `637520e25` release run `38031474956` failed at 06:42:57 with retained evidence
+and retry forbidden. It must be reconciled by the original release owner, never
+bypassed. Fresh draft-only G4 for `6fd5e5d44` passed 214 independent tests. A dedicated
+Ubuntu 22.04 job now requires actual systemd 249 evidence before release-invariants.
