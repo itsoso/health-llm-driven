@@ -12,7 +12,7 @@ import { useDailyDiet, useFrequentDietFoods } from '../hooks/useDiet';
 import { estimateSourceForRecord, useDietEstimate, type EstimateSource, type EstimateSourceCache } from '../hooks/useDietEstimate';
 import { createDietRecord, updateDietRecord, recalculateDietRecordNutrition, deleteDietRecord, dietRecordImageUrls, discardDietPhotoDraft, getDietPhotoDraftStatus, recognizeFood, type DietRecord, type DietRecordCreate, type DietRecordUpdate, type FoodItem, type FrequentFood } from '../services/diet';
 import { computeDietTotals, isPendingNutrition } from '../utils/dietTotals';
-import { assertDietEditActive, DietEditTimeoutError, runDietEditWithDeadline } from '../utils/dietEditDeadline';
+import { assertDietEditActive, DietEditCancelledError, DietEditTimeoutError, runDietEditWithDeadline } from '../utils/dietEditDeadline';
 import * as ImagePicker from 'expo-image-picker';
 import type { ImagePickerAsset } from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
@@ -23,6 +23,7 @@ import { buildDietShareCaption } from '../components/diet/DietShareCard';
 import { DietShareComposer } from '../components/diet/DietShareComposer';
 import { buildDietShareDateLabel } from '../components/diet/dietSharePresentation';
 import { useToast } from '../hooks/useToast';
+import { aiConsentRevision, subscribeAIConsentInvalidation } from '../services/aiConsentState';
 import { useAuth } from '../hooks/useAuth';
 import {
   revaColors as C,
@@ -500,6 +501,36 @@ export default function DietScreen() {
   const [editSaving, setEditSaving] = useState(false);
   const editSavingRef = useRef(false);
   const editOperationRef = useRef<{ signature: string; key: string } | null>(null);
+  const editControllerRef = useRef<AbortController | null>(null);
+  const editIdentityRef = useRef({ owner: authUserId, token: authToken });
+  editIdentityRef.current = { owner: authUserId, token: authToken };
+  useEffect(() => {
+    const invalidate = () => {
+      editControllerRef.current?.abort();
+      editControllerRef.current = null;
+      editOperationRef.current = null;
+      editSavingRef.current = false;
+      setEditSaving(false);
+      setShowForm(false);
+      setEditingRecord(null);
+    };
+    invalidate();
+    const unsubscribe = subscribeAIConsentInvalidation(invalidate);
+    return () => {
+      unsubscribe();
+      editControllerRef.current?.abort();
+      editControllerRef.current = null;
+    };
+  }, [authUserId, authToken]);
+
+  useEffect(() => {
+    editSavingRef.current = false;
+    setEditSaving(false);
+    return () => {
+      editControllerRef.current?.abort();
+      editControllerRef.current = null;
+    };
+  }, [editingRecord?.id, showForm]);
   const [draftEstimateSource, setDraftEstimateSource] = useState<EstimateSource | null>(null);
   const [quickDraft, setQuickDraft] = useState<DietQuickDraft | null>(null);
   const [photoCaptureStage, setPhotoCaptureStage] = useState<PhotoCaptureStage>('idle');
@@ -665,6 +696,14 @@ export default function DietScreen() {
     );
     const corrected = isPhotoCorrection && photoDraftWasCorrected(formDefaults, record);
     const confirmationStartedAt = Date.now();
+    const editSession = { owner: authUserId!, revision: aiConsentRevision() };
+    let editController: AbortController | null = null;
+    const editIsCurrent = () => Boolean(editController && !editController.signal.aborted
+      && editControllerRef.current === editController
+      && editIdentityRef.current.owner === editSession.owner
+      && editIdentityRef.current.token === authToken
+      && aiConsentRevision() === editSession.revision);
+    const assertCurrent = () => { if (!editIsCurrent()) throw new DietEditCancelledError(); };
     try {
       if (editingRecord) {
         const consumedFraction = parseDietPortion(editPortionValue);
@@ -685,11 +724,16 @@ export default function DietScreen() {
           Alert.alert('含酒饮食需手动修正', '请保持原食物和份额，只修改标准杯或营养数值。');
           return;
         }
+        if (!Number.isSafeInteger(editSession.owner) || editSession.owner <= 0
+          || editingRecord.user_id !== editSession.owner) throw new DietEditCancelledError();
+        editController = new AbortController();
+        editControllerRef.current = editController;
         editSavingRef.current = true;
         setEditSaving(true);
         await runDietEditWithDeadline(async (signal) => {
           // Invalidate any older local estimate before a corrected description is persisted.
           const joinedWrite = await cancelEstimate(editingRecord.id);
+          assertCurrent();
           assertDietEditActive(signal);
           if (isAtomicDietRecalculation(editingRecord, record, editPortionValue)) {
             const expectedUpdatedAt = joinedWrite?.updated_at ?? editingRecord.updated_at ?? null;
@@ -707,7 +751,7 @@ export default function DietScreen() {
               meal_type: record.meal_type,
               expected_updated_at: expectedUpdatedAt,
               consumed_fraction: consumedFraction,
-            }, editOperationRef.current.key, { signal });
+            }, editOperationRef.current.key, { signal, session: editSession });
           } else {
             // MealForm displays the suffix-free description. Preserve the stored
             // canonical suffix when this is a manual nutrient/meal-type edit.
@@ -717,15 +761,17 @@ export default function DietScreen() {
             await updateDietRecord(editingRecord.id, {
               ...buildEditedDietPatch(editingRecord, manualRevision),
               expected_updated_at: joinedWrite?.updated_at ?? editingRecord.updated_at ?? null,
-            }, { signal });
+            }, { signal, session: editSession });
           }
+          assertCurrent();
           assertDietEditActive(signal);
           sourceMapRef.current.delete(editingRecord.id);
           reconciledRef.current.delete(editingRecord.id);
           editOperationRef.current = null;
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           qc.invalidateQueries({ queryKey: ['diet'] });
-        });
+        }, editController.signal);
+        assertCurrent();
       } else {
         const revised = mergeRevisedDraft(formDefaults, record);
         if (revised.photo_draft_token && authUserId) {
@@ -761,6 +807,7 @@ export default function DietScreen() {
       setQuickDraft(null);
       activeDraftRef.current = false;
     } catch (error) {
+      if (editingRecord && (!editIsCurrent() || error instanceof DietEditCancelledError)) return;
       if (editingRecord && (
         error instanceof DietEditTimeoutError
         || ['ECONNABORTED', 'ETIMEDOUT', 'ERR_CANCELED'].includes(String((error as { code?: string })?.code))
@@ -810,12 +857,13 @@ export default function DietScreen() {
       }
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     } finally {
-      if (editingRecord) {
+      if (editingRecord && editIsCurrent()) {
+        editControllerRef.current = null;
         editSavingRef.current = false;
         setEditSaving(false);
       }
     }
-  }, [authUserId, cancelEstimate, draftEstimateSource, editPortionValue, editingRecord, formDefaults, qc, returnToChatAfterConfirm, saveNewDietRecord, toast]);
+  }, [authToken, authUserId, cancelEstimate, draftEstimateSource, editPortionValue, editingRecord, formDefaults, qc, returnToChatAfterConfirm, saveNewDietRecord, toast]);
 
   const handleConfirmQuickDraft = useCallback(async () => {
     if (!quickDraft) return;

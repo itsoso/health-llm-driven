@@ -1,4 +1,4 @@
-import { assertDietEditActive, DietEditTimeoutError, runDietEditWithDeadline } from '../dietEditDeadline';
+import { assertDietEditActive, DietEditCancelledError, DietEditTimeoutError, runDietEditWithDeadline } from '../dietEditDeadline';
 
 describe('diet edit deadline', () => {
   afterEach(() => jest.useRealTimers());
@@ -32,6 +32,18 @@ describe('diet edit deadline', () => {
     release();
     await Promise.resolve();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('settles immediately on external cancellation without waiting for the deadline', async () => {
+    jest.useFakeTimers();
+    const controller = new AbortController();
+    let signal!: AbortSignal;
+    const promise = runDietEditWithDeadline(async s => { signal = s; return new Promise<never>(() => {}); }, controller.signal);
+    const check = expect(promise).rejects.toBeInstanceOf(DietEditCancelledError);
+    controller.abort();
+    await check;
+    expect(signal.aborted).toBe(true);
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   it('cleans the timer and preserves the result and original error', async () => {

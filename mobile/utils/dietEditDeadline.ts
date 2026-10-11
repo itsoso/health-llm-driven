@@ -5,6 +5,10 @@ export class DietEditTimeoutError extends Error {
   }
 }
 
+export class DietEditCancelledError extends Error {
+  constructor() { super('diet_edit_cancelled'); this.name = 'DietEditCancelledError'; }
+}
+
 export function assertDietEditActive(signal: AbortSignal): void {
   if (signal.aborted) throw new DietEditTimeoutError();
 }
@@ -14,9 +18,16 @@ export function assertDietEditActive(signal: AbortSignal): void {
  */
 export async function runDietEditWithDeadline<T>(
   operation: (signal: AbortSignal) => Promise<T>,
+  externalSignal?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancel = () => {};
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    cancel = () => { controller.abort(); reject(new DietEditCancelledError()); };
+    if (externalSignal?.aborted) cancel();
+    else externalSignal?.addEventListener('abort', cancel);
+  });
   const deadline = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
       controller.abort();
@@ -24,8 +35,9 @@ export async function runDietEditWithDeadline<T>(
     }, 35000);
   });
   try {
-    return await Promise.race([operation(controller.signal), deadline]);
+    return await Promise.race([externalSignal?.aborted ? Promise.reject(new DietEditCancelledError()) : operation(controller.signal), deadline, cancelled]);
   } finally {
+    externalSignal?.removeEventListener('abort', cancel);
     if (timer !== undefined) clearTimeout(timer);
   }
 }

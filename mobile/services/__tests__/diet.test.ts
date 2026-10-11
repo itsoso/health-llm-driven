@@ -1,15 +1,18 @@
 /* eslint-disable import/first */
 
 const mockApiPost = jest.fn();
+const mockApiPut = jest.fn();
 
 jest.mock('../api', () => ({
   __esModule: true,
   default: {
     post: (...args: any[]) => mockApiPost(...args),
+    put: (...args: any[]) => mockApiPut(...args),
   },
 }));
 
 import {
+  updateDietRecord,
   createDietRecord,
   dietRecordImageUrls,
   recalculateDietRecordNutrition,
@@ -134,5 +137,32 @@ describe('diet service', () => {
     } satisfies DietRecord;
 
     expect(dietRecordImageUrls(record)).toEqual(['/legacy-cover.jpg']);
+  });
+});
+
+ describe('diet edit session transport', () => {
+  it.each(['manual', 'recalculate'])('binds %s requests to the initiating session', async mode => {
+    const { aiConsentRevision, invalidateAIConsent } = require('../aiConsentState');
+    const revision = aiConsentRevision();
+    const options = { signal: new AbortController().signal, session: { owner: 1, revision } };
+    const send = mode === 'manual' ? mockApiPut : mockApiPost;
+    send.mockClear();
+    let resolve!: (value: unknown) => void;
+    send.mockReturnValueOnce(new Promise(done => { resolve = done; }));
+    const promise = mode === 'manual' ? updateDietRecord(88, { calories: 620 }, options)
+      : recalculateDietRecordNutrition(88, { food_items: '拌面2盘', expected_updated_at: null }, 'stable-key', options);
+    expect(send.mock.calls[0][2]).toEqual(expect.objectContaining({
+      signal: options.signal, headers: expect.objectContaining({ 'X-Reva-AI-Subject': '1' }),
+      __revaConsentRevision: revision,
+    }));
+    const check = expect(promise).rejects.toThrow('auth_session_changed');
+    invalidateAIConsent();
+    resolve({ data: { id: 88 } });
+    await check;
+    send.mockClear();
+    const stale = mode === 'manual' ? updateDietRecord(88, {}, options)
+      : recalculateDietRecordNutrition(88, { food_items: '拌面2盘', expected_updated_at: null }, 'stable-key', options);
+    await expect(stale).rejects.toThrow('auth_session_changed');
+    expect(send).not.toHaveBeenCalled();
   });
 });

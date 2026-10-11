@@ -255,8 +255,18 @@ export async function createDietRecord(record: DietRecordCreate): Promise<DietRe
   return data;
 }
 
-export async function updateDietRecord(id: number, patch: DietRecordUpdate, options?: { signal: AbortSignal }): Promise<DietRecord> {
-  const { data } = await api.put<DietRecord>(`/diet/records/${id}`, patch, options);
+type DietEditOptions = { signal: AbortSignal; session?: DietReadSession };
+
+function dietEditConfig(options?: DietEditOptions): AxiosRequestConfig & { __revaConsentRevision?: number } {
+  if (!options?.session) return options ?? {};
+  const { owner, revision } = options.session;
+  if (!Number.isSafeInteger(owner) || owner <= 0 || revision !== aiConsentRevision()) throw new Error('auth_session_changed');
+  return { signal: options.signal, headers: { 'X-Reva-AI-Subject': String(owner) }, __revaConsentRevision: revision };
+}
+
+export async function updateDietRecord(id: number, patch: DietRecordUpdate, options?: DietEditOptions): Promise<DietRecord> {
+  const { data } = await api.put<DietRecord>(`/diet/records/${id}`, patch, options ? dietEditConfig(options) : undefined);
+  if (options) dietEditConfig(options);
   return data;
 }
 
@@ -264,17 +274,19 @@ export async function recalculateDietRecordNutrition(
   id: number,
   request: DietRecordNutritionRecalculateRequest,
   idempotencyKey: string,
-  options?: { signal: AbortSignal },
+  options?: DietEditOptions,
 ): Promise<DietRecord> {
   const operationKey = idempotencyKey.trim();
   if (!operationKey) {
     throw new Error('diet_recalculation_idempotency_key_required');
   }
+  const config = dietEditConfig(options);
   const { data } = await api.post<DietRecord>(
     `/diet/records/${id}/recalculate-nutrition`,
     request,
-    { ...options, headers: { 'Idempotency-Key': operationKey } },
+    { ...config, headers: { ...config.headers, 'Idempotency-Key': operationKey } },
   );
+  if (options) dietEditConfig(options);
   return data;
 }
 

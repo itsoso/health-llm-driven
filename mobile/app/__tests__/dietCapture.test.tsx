@@ -15,6 +15,7 @@ const mockReturnToChatWithContext = jest.fn();
 const mockDietShareComposer = jest.fn();
 const mockMeals: any[] = [];
 const mockToastShow = jest.fn();
+let mockAuth = { token: 'diet-auth-token', user: { id: 1 }, isLoading: false };
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockRouterBack, push: (...args: any[]) => mockRouterPush(...args) }),
@@ -79,7 +80,7 @@ jest.mock('../../services/diet', () => ({
 }));
 
 jest.mock('../../hooks/useAuth', () => ({
-  useAuth: () => ({ token: 'diet-auth-token', user: { id: 1 }, isLoading: false }),
+  useAuth: () => mockAuth,
 }));
 
 jest.mock('../../hooks/useToast', () => ({
@@ -179,6 +180,7 @@ describe('DietScreen capture deeplink', () => {
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
   });
   beforeEach(() => {
+    mockAuth = { token: 'diet-auth-token', user: { id: 1 }, isLoading: false };
     mockMealForm.mockClear();
     mockEstimate.mockClear();
     jest.clearAllMocks();
@@ -740,6 +742,63 @@ describe('DietScreen capture deeplink', () => {
       await act(async () => { await mockMealForm.mock.lastCall?.[0].onSubmit(correction); });
       expect(service.recalculateDietRecordNutrition.mock.calls[1][2]).toBe(key);
     } finally { alert.mockRestore(); jest.useRealTimers(); }
+  });
+
+  it.each(['switch', 'new-token', 'consent', 'unmount'])('cancels a pending revision join on %s before dispatch', async mode => {
+    const service = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    let release!: (value: unknown) => void;
+    mockCancelEstimate.mockReturnValueOnce(new Promise(resolve => { release = resolve; }));
+    mockMeals.push({ id: 49, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '拌面约1盘', calories: 550, protein: 23, carbs: 55, fat: 26,
+      alcohol_units: 0, updated_at: '2026-09-20T12:00:00Z', image_url: null });
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getByLabelText('编辑'));
+    let save!: Promise<void>;
+    await act(async () => {
+      save = mockMealForm.mock.lastCall?.[0].onSubmit({ record_date: todayStr(), meal_type: 'dinner',
+        food_items: '拌面约2盘', calories: 550, protein: 23, carbs: 55, fat: 26, alcohol_units: 0 });
+    });
+    await act(async () => {
+      if (mode === 'unmount') view.unmount();
+      else if (mode === 'consent') require('../../services/aiConsentState').invalidateAIConsent();
+      else { mockAuth = { ...mockAuth, token: 'replacement-token', user: { id: mode === 'switch' ? 2 : 1 } }; view.rerender(<DietScreen />); }
+    });
+    await act(async () => {
+      release(null);
+      await save;
+    });
+    expect(service.recalculateDietRecordNutrition).not.toHaveBeenCalled();
+    expect(service.updateDietRecord).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
+  it('ignores a late response from the previous session while a new edit is open', async () => {
+    const service = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    let complete!: (value: unknown) => void;
+    service.recalculateDietRecordNutrition.mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
+    mockMeals.push({ id: 49, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '拌面约1盘', calories: 550, protein: 23, carbs: 55, fat: 26,
+      alcohol_units: 0, updated_at: '2026-09-20T12:00:00Z', image_url: null });
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getByLabelText('编辑'));
+    let save!: Promise<void>;
+    await act(async () => { save = mockMealForm.mock.lastCall?.[0].onSubmit({ record_date: todayStr(), meal_type: 'dinner',
+      food_items: '拌面约2盘', calories: 550, protein: 23, carbs: 55, fat: 26, alcohol_units: 0 }); });
+    const options = service.recalculateDietRecordNutrition.mock.calls[0][3];
+    expect(options.session).toEqual({ owner: 1, revision: expect.any(Number) });
+    await act(async () => { mockAuth = { ...mockAuth, token: 'replacement-token' }; view.rerender(<DietScreen />); });
+    fireEvent.press(view.getByLabelText('编辑'));
+    await act(async () => { complete({ id: 49 }); await save; });
+    expect(options.signal.aborted).toBe(true);
+    expect(view.getByTestId('meal-form')).toBeTruthy();
+    expect(mockMealForm.mock.lastCall?.[0].saving).toBe(false);
+    expect(alert).not.toHaveBeenCalled();
+    alert.mockRestore();
   });
 
   it('locks a standalone recalculation, blocks double submit, and reuses its key after failure', async () => {
