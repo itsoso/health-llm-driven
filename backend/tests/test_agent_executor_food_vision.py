@@ -352,6 +352,11 @@ async def test_low_confidence_mobile_meal_photo_returns_confirmation_without_llm
     from app.services.ai.food_recognition import food_recognition_service
 
     executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    from app.services.decisions import routing
+    monkeypatch.setattr(settings, 'decision_mode', 'on')
+    async def forbidden_optional_route(*args, **kwargs):
+        raise AssertionError('Explicit meal photo must not wait on optional routing')
+    monkeypatch.setattr(routing, 'decide_route', forbidden_optional_route)
     low_confidence = _food_result()
     low_confidence["foods"][0]["confidence"] = 0.80
     llm_calls = 0
@@ -1684,3 +1689,22 @@ def test_explicit_aigc_photo_request_never_enters_food_preprocessing(db, monkeyp
         1,
         "基于这张照片生成今天活动的短视频，以此照片为开头。",
     ) is False
+
+
+@pytest.mark.parametrize('message,auto_save,has_file,read_only,clinical_advice,expected', [
+    ('记录这餐', True, False, False, False, True),
+    ('请帮我记录晚餐', True, False, False, False, True),
+    ('分析这餐，不要记录', True, False, False, False, False),
+    ('记录这餐并分析糖尿病饮食', True, False, False, False, False),
+    ('记录体重71kg', True, False, False, False, False),
+    ('不要记录这餐', True, False, False, False, False),
+    ('记录明天的晚餐', True, False, False, False, False),
+    ('记录这餐', False, False, False, False, False),
+    ('记录这餐', True, True, False, False, False),
+    ('记录这餐', True, False, True, False, False),
+    ('记录这餐', True, False, False, True, False),
+])
+def test_meal_capture_skips_only_redundant_optional_route(message, auto_save, has_file, read_only, clinical_advice, expected):
+    from app.services.agent_executor import _meal_photo_optional_route_unneeded
+    assert _meal_photo_optional_route_unneeded(message, auto_save=auto_save, has_file=has_file,
+                                              read_only=read_only, clinical_advice=clinical_advice) is expected

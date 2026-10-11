@@ -762,6 +762,21 @@ def _is_diet_photo_auto_save_turn(extra_context: Optional[str], *, has_images: b
     )
 
 
+def _meal_photo_optional_route_unneeded(
+    message: str, *, auto_save: bool, has_file: bool,
+    read_only: bool, clinical_advice: bool,
+) -> bool:
+    """Closed Mobile meal capture needs no advisory model vote.
+
+    This removes waiting only; vision/capture authorization still runs unchanged.
+    Mixed advice, cancellation, non-diet writes and unknown intent keep routing.
+    """
+    if not auto_save or has_file or read_only or clinical_advice:
+        return False
+    from app.services.utterance_intent_classifier import is_explicit_order_intake
+    return is_explicit_order_intake(classify_agent_utterance(message))
+
+
 def _gathered_data_context(messages: List[Dict[str, Any]], limit: int = 6000) -> str:
     """从 lead 回合的 messages 里抽出工具结果文本, 作为给其它模型的共享数据上下文。"""
     chunks: list[str] = []
@@ -17075,6 +17090,7 @@ class AgentExecutor:
             message or "", has_images=bool(images), has_file=bool(file_base64)
         )
         self._decision_route = None
+        routing_started_at = time.perf_counter()
         staged_preclassified_tier: Optional[str] = None
         staged_preclassification_failed = False
         if self._staged_response_mode != "off" or settings.decision_mode != "off":
@@ -17093,7 +17109,12 @@ class AgentExecutor:
                     "disable fast route and use quality floor: %s",
                     exc,
                 )
-        if settings.decision_mode != "off" and self._public_task is None:
+        if (settings.decision_mode != "off" and self._public_task is None
+                and not _meal_photo_optional_route_unneeded(
+                    message or "", auto_save=self._diet_photo_auto_save,
+                    has_file=bool(file_base64), read_only=bool(read_only_tools),
+                    clinical_advice=health_advice_buffered,
+                )):
             from app.services.decisions.routing import decide_route
 
             self._decision_route = await decide_route(
@@ -17179,6 +17200,7 @@ class AgentExecutor:
         # 目标: 找 pre-first-token 阶段瓶颈 + 驱动 mac 端 waterfall。**绝不改任何行为**。
         # fail-soft: 每个计时点用 _pre_stage() 包起来, 计时异常不影响主流程 (返回 0)。
         pre_stages: Dict[str, int] = {
+            "routing_ms": round((time.perf_counter() - routing_started_at) * 1000),
             "conv_ms": 0, "opener_ms": 0, "system_prompt_ms": 0,
             "kb_ms": 0, "inspect_ms": 0, "history_ms": 0, "vision_ms": 0,
         }
