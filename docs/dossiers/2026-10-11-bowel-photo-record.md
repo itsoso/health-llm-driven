@@ -4,8 +4,8 @@
 |---|---|
 | slug | bowel-photo-record |
 | 创建日期 | 2026-10-11 |
-| 当前阶段 | G4 安全审查完成；等待发布 Gate |
-| 状态 | building |
+| 当前阶段 | G6 发布交付与模拟器启动验收完成 |
+| 状态 | delivered |
 | 负责 | root |
 | 反馈环 | Mobile Jest / PostgreSQL / simulator |
 
@@ -41,10 +41,18 @@ Backend 与 Mobile 按计划分开写；已增加聊天附件菜单“排便记�
 
 
 ## G5/G6 发布与验收
-未部署，未发布 OTA；原失败发布保留，不能更换候选绕过。相机硬件实拍未验证。
+发布代码 SHA：`d7773dd62a5212e330a26dce7ebd428b9547f438`。完整 main CI run38111551439 全部32 jobs成功；该 SHA 本地 CI-mode 集成3579 passed /22 skipped /84 subtests passed；锁定 Axios1.20.0环境 tsc及60项相关Mobile测试通过。
+
+后端 run38112608831 与服务端 completed.json 均 SUCCEEDED，线上 HEAD为该SHA，四个服务active、公网健康接口200。PostgreSQL核验照片/幂等三列nullable、blood_present无默认值、owner+UUID唯一索引存在。
+
+OTA先 validate run38113235513成功，再 publish run38113358161 attempt1成功，production/iOS/runtime1.3.5，group `1d0add52-3906-416b-b098-57f3590baeb6`，update `01a1295a-76c8-7e88-8998-5129b4e05a48`。服务端完成回执SUCCEEDED，发布租约已释放。默认iPhone17后台模拟器下载并二次冷启动采用该update：successful_launch_count=1、failed_launch_count=0，登录界面显示正常。
+
+相机硬件实拍、真实账号生产记录写入未验证；不将启动验收等同这些路径通过。纯JS/TS更新，无需TestFlight。真实模型评测沿用用户豁免，其他Gate保留。私有发布证据：docs/reviews/2026-10-11-bowel-photo-release-receipt.json。
 
 ## 发布整合补充：饮食记录入口与账号隔离
 饮食已保存卡片新增“查看饮食记录”，打开现有 /diet 弹窗，合法 record_date 定位当日，无日期或非法日期回到当前日。109项卡片测试与类型检查通过，提交 abba1b168。
 发布增量安全审查对 abba1b168 裁决 NO-GO：目标页 daily/frequent 缓存未绑定账号，会复用前账号数据。已补真实 React Query hook RED（4项失败）→ GREEN：daily/stats/frequent 键绑定 owner 与会话 revision，未登录禁用且手动 refetch 拒绝；敏感结果不持久化，inactive cache立即回收。读取绑定 subject/revision，晚到响应和 owner 不匹配拒绝。切号、退出、同账号新登录、旧持久缓存和常吃食物均有回归。
-39项相关测试、tsc、System Map检查通过；日志 /tmp/reva-diet-owner-red.log、/tmp/reva-diet-owner-final.log、/tmp/reva-diet-owner-tsc.log。等待固定新候选独立重审及完整CI。
+39项相关测试、tsc、System Map检查通过；日志 /tmp/reva-diet-owner-red.log、/tmp/reva-diet-owner-final.log、/tmp/reva-diet-owner-tsc.log。固定 f2f1b8fc 候选独立重审GO，独立87项测试通过；d7773dd62a Axios类型收窄增量独立40项通过，最终完整CI成功。
 原 9c120 OTA attempt1 的 preclaim 失败证据保留；在此前已呈现的一次窄例外后，用户再次直接授权“部署和发布OTA”，独立 operational G4 GO 原 run38108049009 一次 attempt2。先收尾原候选，不能通过推新SHA绕过未完成OTA；attempt2再失败不得续行。
+
+原9c120 OTA run38108049009 attempt2最终SUCCEEDED，更新01a12931-1eef-7fc4-bfbf-d65ecfae7bfd启动成功，attempt1失败证据仍保留。新候选授权轮换最初因未先撤销旧身份/销毁精确旧私钥而在前置检查失败；完成规定前置动作及独立operational GO后轮换成功，两次操作日志分别保留。
