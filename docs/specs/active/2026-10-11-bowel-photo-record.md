@@ -13,7 +13,7 @@
 - first_user_fit: 日常消化道观察和个人记录复核
 - core_loop_step: observation -> HealthTwin evidence -> outcome review
 - first_class_objects: HealthTwin, ExecutionEvent
-- target_surface: Mobile 记录页与排便记录弹窗
+- target_surface: Mobile 记录页、聊天附件菜单与排便记录弹窗
 - source_of_truth: authenticated owner's excretion_records
 - safety_level: sensitive health data and private medical photo
 - prescription_or_causal_verdict: none

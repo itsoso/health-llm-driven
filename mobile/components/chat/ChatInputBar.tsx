@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
@@ -1229,6 +1230,15 @@ export default function ChatInputBar({
               <AttachmentGridItem icon="camera-outline" label="拍照记餐" hint="拍照后先预览，发送后记录这餐" onPress={handleCaptureMealPhoto} />
               <AttachmentGridItem icon="images-outline" label="相册" hint={`从相册选择照片，当前最多${pendingImageLimit}张`} onPress={handlePickImage} />
               <AttachmentGridItem icon="document-outline" label="文件" hint="选择文档或报告" onPress={handlePickFile} />
+              <AttachmentGridItem
+                icon="clipboard-outline"
+                label="排便记录"
+                hint="填写状态，可拍照留存私人记录"
+                onPress={() => {
+                  closeAttachmentMenu();
+                  router.push('/bowel-record');
+                }}
+              />
               <AttachmentGridItem
                 icon="document-text-outline"
                 label="导入体检报告"

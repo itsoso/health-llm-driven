@@ -27,7 +27,7 @@
 - docs/plans/2026-10-11-bowel-photo-record.md
 
 ## S4/S5
-Backend 与 Mobile 按计划分开写；父 run: docs/_generated/harness-runs/aa47ef58d1b7.jsonl。
+Backend 与 Mobile 按计划分开写；已增加聊天附件菜单“排便记录”直达弹窗，关闭菜单且不走聊天图片发送。入口 RED（缺按钮）后 GREEN98 passed；私有上传相关新鲜回归56 passed / 2 PG-only skipped。父 run: docs/_generated/harness-runs/aa47ef58d1b7.jsonl。
 
 ## G3 测试
 裁决: PASS（本地实现验证，不代替发布前完整 CI）。Backend RED 10 项行为失败已保存；SQLite 44 passed / 3 PG-only skipped；隔离 PostgreSQL 47 passed（含并发同 UUID 收敛/不同载荷409），受管迁移两方言2 passed。Mobile 6 个相关 suite 155 passed，tsc exit0；类型生成、System Map、Dossier consistency、diff check通过。
@@ -35,7 +35,9 @@ Backend 与 Mobile 按计划分开写；父 run: docs/_generated/harness-runs/aa
 
 
 ## G4 独立安全审查
-待评审。
+主批次 be08913cf 已交独立 morning_safety_review。独立 Mobile 16 passed、SQLite 19 passed / 3 PG-only skipped；暂无阻断，等待聊天入口追加固定 revision 的最终裁决。
+原图仍沿用既有账号删除时的私有目录清理；单条观察记录删除不等于照片擦除，本版不新增照片删除承诺。
+
 
 ## G5/G6 发布与验收
 未部署，未发布 OTA；原失败发布保留，不能更换候选绕过。相机硬件实拍未验证。

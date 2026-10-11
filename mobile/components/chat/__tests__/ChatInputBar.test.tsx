@@ -406,6 +406,17 @@ describe('ChatInputBar', () => {
     expect(getByText('导入体检报告').props.numberOfLines).toBeUndefined();
   });
 
+  it('opens private bowel recording from chat without sending the photo to the conversation', () => {
+    const onSend = jest.fn();
+    const screen = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    fireEvent.press(screen.getByLabelText('附件菜单'));
+    fireEvent.press(screen.getByLabelText('排便记录'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/bowel-record');
+    expect(screen.queryByTestId('attachment-action-grid')).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(mockTakePhoto).not.toHaveBeenCalled();
+  });
+
   it('stages a meal photo so the user can continue shooting before one combined send', async () => {
     const photo = { uri: 'file:///meal.jpg', base64: 'base64-meal', type: 'jpeg' };
     mockTakePhoto.mockResolvedValueOnce([photo]);
