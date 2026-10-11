@@ -13,3 +13,9 @@ Base64 和 URL 识别共用固定日志格式，记录 provider 等待及 decode
 计时 RED 11 failed 后实现；最终识别输出、未知值、usage/context、取消和日志汇总相关测试74 passed，真实退出码0。日志 `/tmp/reva-food-passive-timing-red.log`、`/tmp/reva-food-passive-timing-final.log`；初次测试未配置本地数据库失败，随后显式隔离SQLite作为纯逻辑单元测试环境，不涉及数据库语义验证。
 
 现有旧样本清单引用的图片不完整；不使用异图或旧报告代替当前同批基线。provider 已通过线程调用，不是事件循环同步阻塞。多图串行仍需先核对同批请求证据和 executor 所有权；暂不改变并发、输出合同、分辨率或模型。本轮没有线上提速百分比。下一步从自然发生且已同意的请求收集指标窗口，并与 API 现有 vision/calibration/draft 分段共同裁决运行优化；无需主动增加真实评测请求。
+
+## 独立审查与证据边界
+
+G4 GO：固定代码候选 `1210729227c5f7432101641bd95c776b3bc37e52`，独立74项测试、exit0；日志 `/tmp/reva-food-timing-independent-isolated.log`。独立COVERAGE_FILE隔离了其他session的coverage输出；此前共享coverage冲突证据保留，未作为通过依据。此GO不替代完整CI、部署和线上验收。
+
+只读检索今日北京时间00:00起既有 health-backend journal 的固定 `[diet_photo] recognition completed` 指标，匹配样本0（不是证明没有请求），分位数均null。输出 `/tmp/reva-food-natural-request-baseline.json` 只含聚合指标，没有导出原日志或发起模型请求。合成 NullHandler 下每阶段计时中位开销0.00234ms，不能推导生产日志I/O成本或线上收益；证据 `/tmp/reva-food-passive-timing-overhead.json`。System Map、diff及路径敏感LLM变更闸通过，后者live_required=false。
