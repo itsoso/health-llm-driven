@@ -1,4 +1,6 @@
 import api from './api';
+import type { AxiosRequestConfig } from 'axios';
+import { aiConsentRevision } from './aiConsentState';
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type VoiceMealType = MealType | 'extra';
@@ -191,14 +193,32 @@ export interface VoiceFoodParseResponse {
   parser_version: string;
 }
 
-export async function getDailyDiet(date: string): Promise<DailyDietSummary> {
-  const { data } = await api.get<DailyDietSummary>(`/diet/records/me/date/${date}`);
+export interface DietReadSession { owner: number; revision: number }
+
+async function readForSession<T>(session: DietReadSession | undefined, send: (config: AxiosRequestConfig) => Promise<{ data: T }>): Promise<T> {
+  const assertSession = () => {
+    if (session && (!Number.isSafeInteger(session.owner) || session.owner <= 0 || session.revision !== aiConsentRevision())) {
+      throw new Error('auth_session_changed');
+    }
+  };
+  assertSession();
+  const config = session ? {
+    headers: { 'X-Reva-AI-Subject': String(session.owner) },
+    __revaConsentRevision: session.revision,
+  } as AxiosRequestConfig : {};
+  const { data } = await send(config);
+  assertSession();
   return data;
 }
 
-export async function getDietStats(days = 7): Promise<DietStats> {
-  const { data } = await api.get<DietStats>('/diet/records/me/stats', { params: { days } });
+export async function getDailyDiet(date: string, session?: DietReadSession): Promise<DailyDietSummary> {
+  const data = await readForSession<DailyDietSummary>(session, config => api.get(`/diet/records/me/date/${date}`, config));
+  if (session && data.meals.some(record => record.user_id !== session.owner)) throw new Error('record_owner_mismatch');
   return data;
+}
+
+export async function getDietStats(days = 7, session?: DietReadSession): Promise<DietStats> {
+  return readForSession<DietStats>(session, config => api.get('/diet/records/me/stats', { ...config, params: { days } }));
 }
 
 export interface FrequentFood {
@@ -215,11 +235,10 @@ export interface FrequentFood {
  * 常吃食物 (后端 /diet/records/me/frequent 按历史频次聚合). 用于一键复用.
  * 营养素是按历史中位数估算, 可能为 null —— 调用方不应假装精确.
  */
-export async function getFrequentFoods(limit = 8, days = 30): Promise<FrequentFood[]> {
-  const { data } = await api.get<FrequentFood[]>('/diet/records/me/frequent', {
-    params: { limit, days },
-  });
-  return data;
+export async function getFrequentFoods(limit = 8, days = 30, session?: DietReadSession): Promise<FrequentFood[]> {
+  return readForSession<FrequentFood[]>(session, config => api.get('/diet/records/me/frequent', {
+    ...config, params: { limit, days },
+  }));
 }
 
 export async function createDietRecord(record: DietRecordCreate): Promise<DietRecord> {

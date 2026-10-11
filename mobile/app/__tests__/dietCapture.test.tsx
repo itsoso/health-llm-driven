@@ -49,6 +49,7 @@ jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
 });
 
 jest.mock('../../hooks/useDiet', () => ({
+  useFrequentDietFoods: () => ({ data: [], refetch: jest.fn() }),
   useDailyDiet: () => ({
     data: { meals: mockMeals, meals_count: mockMeals.length, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 },
     refetch: jest.fn(),

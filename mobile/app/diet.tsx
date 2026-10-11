@@ -4,13 +4,13 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { uuid } from 'expo-modules-core';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { useDailyDiet } from '../hooks/useDiet';
+import { useDailyDiet, useFrequentDietFoods } from '../hooks/useDiet';
 import { estimateSourceForRecord, useDietEstimate, type EstimateSource, type EstimateSourceCache } from '../hooks/useDietEstimate';
-import { createDietRecord, updateDietRecord, recalculateDietRecordNutrition, deleteDietRecord, dietRecordImageUrls, discardDietPhotoDraft, getDietPhotoDraftStatus, getFrequentFoods, recognizeFood, type DietRecord, type DietRecordCreate, type DietRecordUpdate, type FoodItem, type FrequentFood } from '../services/diet';
+import { createDietRecord, updateDietRecord, recalculateDietRecordNutrition, deleteDietRecord, dietRecordImageUrls, discardDietPhotoDraft, getDietPhotoDraftStatus, recognizeFood, type DietRecord, type DietRecordCreate, type DietRecordUpdate, type FoodItem, type FrequentFood } from '../services/diet';
 import { computeDietTotals, isPendingNutrition } from '../utils/dietTotals';
 import * as ImagePicker from 'expo-image-picker';
 import type { ImagePickerAsset } from 'expo-image-picker';
@@ -490,11 +490,7 @@ export default function DietScreen() {
   // 仅当已保存的食物描述未改变时复用原始估算来源，避免修正餐食后重试旧照片/语音。
   const sourceMapRef = useRef<Map<number, EstimateSourceCache>>(new Map());
   const reconciledRef = useRef<Set<number>>(new Set());
-  const frequentQuery = useQuery({
-    queryKey: ['diet', 'frequent'],
-    queryFn: () => getFrequentFoods(8, 30),
-    staleTime: 10 * 60 * 1000,
-  });
+  const frequentQuery = useFrequentDietFoods();
   const [showForm, setShowForm] = useState(false);
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
