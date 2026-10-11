@@ -274,3 +274,13 @@ run/job、attempt、原 estimate 和 selection digest；新增契约回归先 RE
 当前远端 main 非绿，依据 AGENTS.md 第 7 节暂停外部源码写入与部署；须获得用户
 明确批准仅推送该受审 CI 修复以恢复主干，再等待新精确 CI 全绿。此例外不准直接
 部署或跳过测试。后续实际收口、部署和 OTA 仍须各自 Gate，原发布不重试。
+
+
+### 2026-10-11 收口包装脚本权限校验修复
+
+- 用户在源会话明确“授权测试发布”；统一 owner 已核对该用户消息。两条受审修复推送至 `dc846deaeed24fe25bcf393295e712df1f7856fd`，完整 CI `38105186298` 首次全部 32 项通过；原超时分片本次首次 224.510 秒通过。当地固定源码 CI-mode 3571 passed、22 skipped、84 subtests passed，退出码 0。
+- 新 SHA canonical staging 成功，旧 `43121` 候选只读 inspection 被正确阻断：可执行包装文件为 `0700`，原代码却调用只允许 `0600` 的私密配置检查，后续又要求 `0700`。该矛盾导致无法收口。检查失败发生在任何 recovery intent、旧 key 撤销或 closure 之前；原失败现场和收据未改，也未重跑旧发布。
+- 最小修复只调整三个固定可执行包装脚本的类型校验：沿用 root-owned 路径、禁止软链和硬链策略，明确常规文件、精确 `0700`、固定脚本字节；私密 JSON、环境与 key 的 `0600` 策略保持原样。补充实际 `secure` 逻辑与叶文件模式/软链/硬链/所有权/目录/字节的正反测试，避免再次由整体 mock 隐藏互斥条件。
+- 行为 RED：3 failed、4 passed；实现后首轮 590 passed、1 failed，唯一失败为测试错误地假设 wrapper 校验只执行一次（manifest 会重复校验），已修正该断言。新固定 SHA 仍必须独立 G4、fresh 完整 CI 后才能执行收口与发布。其他 session 三份性能诊断 dirty 不纳入此候选。
+
+- 最终相邻回归：591 passed，退出码 0（`/tmp/reva-wrapper-mode-green-final.log`）。

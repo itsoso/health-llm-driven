@@ -1191,10 +1191,11 @@ def _predeploy_attestation_evidence(sha, source, digest):
         raise BootstrapError("predeploy tool inventory differs")
     for command in ('ssh', 'scp', 'python3'):
         path = workspace / 'bin' / command
-        secure(path, private=True)
+        # Executable wrappers are root-private 0700, not 0600 configuration.
+        secure(path)
         target = '/usr/bin/python3.12' if command == 'python3' else '/usr/bin/' + command
         args = '' if command == 'python3' else ' -F /etc/reva-release/loopback.conf'
-        if path.read_bytes() != f'#!/bin/sh\nexec {target}{args} "$@"\n'.encode() or stat.S_IMODE(path.stat().st_mode) != 0o700:
+        if not stat.S_ISREG(path.lstat().st_mode) or path.read_bytes() != f'#!/bin/sh\nexec {target}{args} "$@"\n'.encode() or stat.S_IMODE(path.stat().st_mode) != 0o700:
             raise BootstrapError('predeploy tool bytes differ')
     expected_gate = PREDEPLOY_ATTESTATION_IMPLEMENTATIONS[digest]
     for name, expected in (('trusted_release_server.py', digest), ('trusted_release_gate.py', expected_gate)):

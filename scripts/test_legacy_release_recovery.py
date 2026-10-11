@@ -4,6 +4,9 @@ import fcntl
 import hashlib
 import json
 import os
+import stat
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from test_bootstrap_trusted_release import HOST, NEW_LOOPBACK, PUBLIC, SHA, fixture
@@ -614,3 +617,49 @@ def test_predeploy_closure_failure_after_intent_is_retained_and_never_retried(mo
         assert b.AUTHORIZED.read_bytes() != keys
         assert not (b.CONFIG / 'loopback.key').exists()
     with pytest.raises(b.BootstrapError, match='already attempted'): inspect(b)
+
+
+@pytest.mark.parametrize("damage", [None, "0600", "0755", "symlink", "hardlink", "owner", "bytes", "directory"])
+def test_attestation_executable_wrappers_use_real_secure_policy(monkeypatch, tmp_path, damage):
+    from test_bootstrap_trusted_release import load_bootstrap
+    b, w, _ = attestation_fixture(monkeypatch, tmp_path)
+    target = w / "bin/ssh"
+    if damage in ("0600", "0755"):
+        target.chmod(int(damage, 8))
+    elif damage == "symlink":
+        original = tmp_path / "original-wrapper"
+        target.rename(original)
+        target.symlink_to(original)
+    elif damage == "hardlink":
+        os.link(target, tmp_path / "wrapper-alias")
+    elif damage == "directory":
+        target.unlink()
+        target.mkdir(mode=0o700)
+    elif damage == "bytes":
+        target.write_bytes(b"#!/bin/sh\nexec /bin/false\n")
+    real = load_bootstrap()
+    original_secure = real.secure
+    class RootObservedPath(type(Path())):
+        def lstat(self):
+            observed = super().lstat()
+            mode = observed.st_mode
+            if stat.S_ISDIR(mode):
+                mode &= ~0o022
+            return SimpleNamespace(st_uid=1 if damage == "owner" and str(self) == str(target) else 0,
+                                   st_mode=mode, st_nlink=observed.st_nlink)
+    monkeypatch.setattr(real, "Path", RootObservedPath)
+    checked = []
+    def secure(path, **kwargs):
+        if Path(path).parent == w / "bin":
+            checked.append(Path(path).name)
+            original_secure(path, **kwargs)
+    monkeypatch.setattr(b, "secure", secure)
+    canonical = b.canonical_source(SHA)
+    digest = hashlib.sha256(b.INSTALLED.read_bytes()).hexdigest()
+    if damage:
+        with pytest.raises(b.BootstrapError if damage in ("0600", "0755", "bytes", "directory") else real.BootstrapError):
+            b._predeploy_attestation_evidence(SHA, canonical, digest)
+    else:
+        b._predeploy_attestation_evidence(SHA, canonical, digest)
+        assert set(checked) == {"ssh", "scp", "python3"}
+    assert not (b.STATE / "recoveries").exists()
