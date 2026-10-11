@@ -577,7 +577,9 @@ function ChatBubbleInner({
         setGroupActionState('done');
         const refreshFailed = refreshResults.some(refresh => refresh.status === 'rejected');
         if (expiredTerminal) {
-          toast.show('确认已过期，未写入；请重新发送完整用药记录', 'info');
+          toast.show(descriptor.type === 'supplement_draft'
+            ? '确认已过期，未写入；请重新发送完整补剂记录'
+            : '确认已过期，未写入；请重新发送完整用药记录', 'info');
         } else if (receiptPersistenceFailed) {
           toast.show('已写入，但本机未保存防重复凭证', 'error');
         } else {
@@ -694,7 +696,7 @@ function ChatBubbleInner({
     ? buildChatImageSource(chatDietShareInput.photoUri, imageAuthToken)
     : undefined;
   const canEditDietShare = Boolean(chatDietShareInput?.available && chatDietPhotoSource);
-  const renderedCardData = item.cardType === 'medication_draft' && cardDataRecord
+  const renderedCardData = (item.cardType === 'medication_draft' || item.cardType === 'supplement_draft') && cardDataRecord
     ? { ...cardDataRecord, ...(cardDecisionStatus ? { decision_status: cardDecisionStatus } : {}) }
     : effectiveCardData;
   const renderedCardActions = cardDecisionStatus && cardDecisionStatus !== 'pending'

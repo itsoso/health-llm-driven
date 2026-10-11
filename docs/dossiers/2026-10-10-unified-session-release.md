@@ -230,3 +230,13 @@ OTA validate38095352125 success；publish38095471949原workflow failure（finish
 G3：周范围解析2项先RED、反例7项因helper缺失RED、身份反例通过；Mobile新增6项先RED，197项相邻回归与tsc通过。真实PostgreSQL工具派发/持久化与固定候选G4/G5仍在执行。保留其他session照片补剂与时间WIP，仅暂存本次代码和归属UI片段；不宣称已部署此次修复。用户长期不需要真实模型评测的偏好继续适用。
 
 G4 首轮13dc16217为NO-GO：原文strip前缺权限角色核对，四空格/Tab代码材料可被投影为实际个人读。发布前已阻断，未push或部署；新增2项真实gateway反例先RED，修复校验原文active_health_read_authority_text一致性，16项overview正反通过。该缺陷不通过豁免，修复提交重新独立G4。首次PG回归启动时有短暂错误notice插入位置，原失败日志保留；修复后另起新鲜回归，不能把失败算通过。
+
+### 周健康概览 G3–G6 交付（2456ccb795ef6971d39bdaa4053bb9b961be7eda）
+
+固定PG304 passed，Mobile196 passed，tsc/SystemMap/LLM-change gate通过；独立G4 GO。CI-mode3511 passed、22 skipped、84 subtests；完整CI38096671642 attempt1 r-other两次204秒截止原日志保留，attempt2全部32作业success。只重跑失败项，无跳闸或截止放宽。本人问题完整投影冻结七天diet/sleep/workout，覆盖限制进入提示/回复/续问，引用与代码材料、身份、日期、临床域均有负例。
+
+canonical staging/轮换成功，旧身份撤销及旧私钥在原锁下销毁、原终态/锁保留；backend38098171274 success，服务器SUCCEEDED、HEAD精确且干净、四服务active、公开health HTTP200、健康60/60、租约释放。生产纯解析正反probe通过，无个人读写与模型调用。
+
+OTA validate38098599857 success；publish38098726274原workflow failure，finish-ota/command_failed。原artifact11686193305保留供应商group51e5d9b5-3678-4ed6-8898-0344b95b8f5a、update01a12863-d98e-7407-ad80-5d43e1ba1674。第一次canonical recover完成verified与原租约archive后失败，未写terminal；只读归档校验通过，再以同一原receipt完成受审恢复，SUCCEEDED且原租约退休。未重发vendor update或换claim，原失败不抹绿。模拟器production runtime1.3.5冷启动加载相同update，成功次数1、失败0；登录页可见，真实登录业务会话未验证。用户不需要真实模型评测的偏好保留。
+
+交付回执docs/reviews/2026-10-11-week-health-release-receipt.json。额外发布优化观察：r-other截止估值67.93秒与完整成功baseline124.751秒漂移；operator包装前置重复扫描前端历史，仍出现多GB读取，canonical内部memo两检查25.95/22.1秒；OTA收尾目录fsync需另批修复。以上不冒充已优化，不在已消费发布期间改helper。其他session照片/时间dirty保持原样，不纳入此批次；本补充记录仅本地，不推进已发布main。

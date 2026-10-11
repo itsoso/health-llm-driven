@@ -4395,3 +4395,16 @@ describe('useChatEngine', () => {
     });
   });
 });
+
+it('restores supplement terminal status and only its scoped receipts', () => {
+  const receipt = { operation_id: 'write_intent:photo_supplement_intake:42:7', status: 'verified', resource_type: 'supplement_record', resource_id: '7', completed_at: '2026-10-10T14:00:00Z', verified: true };
+  const restored = restoreMessagesFromHistory([{ id: 900, role: 'assistant', content: '请核对', meta: {
+    completion_status: 'complete', write_receipts: [receipt], cards: [{ type: 'supplement_draft', data: {
+      supplement_name: 'NAC', write_intent_id: 42, items: [{ supplement_name: 'NAC', actual_dosage: '2粒' }], decision_status: 'executed', write_receipts: [receipt],
+    }, actions: [] }],
+  } }]);
+  const card = restored.find(row => row.cardType === 'supplement_draft');
+  expect(card?.decisionStatus).toBe('executed');
+  expect(card?.writeReceipts).toEqual([expect.objectContaining({ resourceType: 'supplement_record', resourceId: '7' })]);
+  expect(card?.cardActions).toEqual([]);
+});

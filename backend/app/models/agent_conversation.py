@@ -58,7 +58,9 @@ class AgentMessage(Base):
     rating = Column(Integer, nullable=True)
     meta = Column(JSONB, nullable=True)
     client_turn_id = Column(String(112), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    # This existing timestamp-without-time-zone column stores UTC. An aware
+    # parameter is converted to the PostgreSQL session zone before insertion.
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
 
     conversation = relationship("AgentConversation", back_populates="messages")
 

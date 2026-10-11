@@ -16,6 +16,9 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 interface SupplementDraftData {
+  items?: unknown;
+  taken_date?: unknown;
+  decision_status?: unknown;
   supplement_name?: unknown;
   dose?: unknown;
   taken_time?: unknown;
@@ -71,26 +74,56 @@ function timeLabel(value: unknown): string | undefined {
 }
 
 export function SupplementDraftCardView(data: SupplementDraftData) {
+  const items = Array.isArray(data.items) ? data.items.map((value) => {
+    const item = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+    return {
+      name: text(item.supplement_name) || '名称待核对',
+      dosage: text(item.actual_dosage) || '数量待核对',
+      strength: text(item.observed_strength),
+    };
+  }) : [];
+  const takenDate = text(data.taken_date);
+  const status = text(data.decision_status);
+  const terminal = status === 'executed'
+    ? { title: '已记录', badge: '已写入', boundary: '已按确认内容写入本次补剂记录。' }
+    : status === 'dismissed'
+      ? { title: '已取消', badge: '未写入', boundary: '已取消，这组记录没有写入。' }
+      : status === 'expired'
+        ? { title: '已过期', badge: '未写入', boundary: '确认已过期，这组记录没有写入；请重新发送。' }
+        : undefined;
   const supplementName = text(data.supplement_name) || '待确认补剂';
   const dose = text(data.dose);
   const takenAt = timeLabel(data.taken_time);
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
   const isSuggestion = text(data.presentation_state) === 'suggestion';
-  const boundary = text(data.boundary) || '确认后记录为已服用; 如正在用药或有慢病, 先核对相互作用。';
+  const boundary = terminal?.boundary || text(data.boundary) || '确认后记录为已服用; 如正在用药或有慢病, 先核对相互作用。';
 
   return (
     <CardShell
       icon="leaf"
       iconColor={SUPP_ACCENT}
-      title={isSuggestion ? '补剂 · 待核对' : '补剂 · 待确认'}
-      badge={isSuggestion ? '去记录' : '需核对'}
+      title={terminal ? `补剂 · ${terminal.title}` : isSuggestion ? '补剂 · 待核对' : '补剂 · 待确认'}
+      badge={terminal?.badge || (isSuggestion ? '去记录' : '需核对')}
       badgeColor={SUPP_ACCENT}
       bg={SUPP_TINT}
     >
-      <Text maxFontSizeMultiplier={1.18} style={styles.supplementName}>
-        {supplementName}
-      </Text>
+      {items.length > 0 ? (
+        <View style={styles.itemList}>
+          {items.map((item, index) => (
+            <View key={index} style={styles.itemRow}>
+              <Text maxFontSizeMultiplier={1.18} style={styles.itemName}>{item.name}</Text>
+              <Text maxFontSizeMultiplier={1.12} style={styles.chip}>本次 {item.dosage}</Text>
+              {item.strength ? <Text style={styles.metaText}>规格 {item.strength}</Text> : null}
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text maxFontSizeMultiplier={1.18} style={styles.supplementName}>
+          {supplementName}
+        </Text>
+      )}
+      {takenDate ? <Text style={styles.metaText}>记录日期 {takenDate}</Text> : null}
 
       {(dose || takenAt) ? (
         <View style={styles.chipRow}>
@@ -140,6 +173,17 @@ export const SupplementDraftCardSpec: CardSpec<SupplementDraftData> = {
 };
 
 const styles = StyleSheet.create({
+  itemList: { gap: 12, marginVertical: 10 },
+  itemRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  itemName: {
+    flexGrow: 1,
+    flexShrink: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 16,
+    lineHeight: 23,
+    fontWeight: '700',
+    color: C.ink1,
+  } as TextStyle,
   supplementName: {
     fontFamily: revaFonts.sans,
     fontSize: 18,

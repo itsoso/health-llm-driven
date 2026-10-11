@@ -1971,7 +1971,7 @@ ${sectionTitle}
     );
   });
 
-  it('shows an expired terminal state instead of a retry error for a 409 confirmation', async () => {
+  it.each(['medication_draft', 'supplement_draft'])('shows an expired terminal state for %s', async (cardType) => {
     dispatchChatCardAction.mockResolvedValueOnce({
       status: 'expired',
       decision_status: 'expired',
@@ -1989,7 +1989,7 @@ ${sectionTitle}
       id: 'assistant-expired-medication',
       role: 'assistant',
       content: '',
-      cardType: 'medication_draft',
+      cardType: cardType as UIMessage['cardType'],
       cardData: { items: [{ medication_name: '伊托必利' }] },
       cardActions: [{
         id: 'confirm-medication-42',
@@ -2010,12 +2010,13 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(mockToastShow).toHaveBeenCalledWith(
-        '确认已过期，未写入；请重新发送完整用药记录',
+        cardType === 'supplement_draft' ? '确认已过期，未写入；请重新发送完整补剂记录' : '确认已过期，未写入；请重新发送完整用药记录',
         'info',
       );
     });
     expect(mockToastShow).not.toHaveBeenCalledWith('操作失败，请稍后重试', 'error');
     expect(mockRememberVerifiedWriteReceipt).not.toHaveBeenCalled();
+    expect(renderCard.mock.calls.some(([card]: any[]) => card.type === cardType && card.data?.decision_status === 'expired')).toBe(true);
   });
 
   it('shows every frozen medication safety alert in the confirmation surface', () => {

@@ -473,6 +473,10 @@ export function restoreMessagesFromHistory(
           ? m.meta.client_turn_id
           : undefined,
         createdAt: m.created_at,
+        ...(card.type === 'supplement_draft' ? {
+          writeReceipts: normalizeWriteReceipts(card.data?.write_receipts),
+          decisionStatus: normalizeMedicationDecisionStatus(card.data?.decision_status),
+        } : {}),
         ...(isMedicationCard ? {
           writeReceipts: normalizeWriteReceipts(card.data?.write_receipts) ?? messageMeta.writeReceipts,
           safetyAlerts: normalizeMedicationSafetyAlerts(card.data?.safety_alerts) ?? messageMeta.safetyAlerts,

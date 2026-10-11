@@ -7,6 +7,7 @@ user_id 一律取自 token(不信任客户端)。
 import logging
 
 from app.services.water_backfill import WaterBackfillConflict
+from app.services.photo_supplement_intake import PhotoSupplementConflict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -132,6 +133,12 @@ async def confirm_write_intent(
         return svc.confirm(db, current_user.id, intent_id)
     except LookupError:
         raise HTTPException(status_code=404, detail="写意图不存在")
+    except PhotoSupplementConflict as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="补剂确认计划或记录已变化，或尚未完整展示，请重新核对",
+        ) from exc
     except WaterBackfillConflict as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="饮水补记计划已过期、尚未展示或已有记录发生变化，请重新核对") from exc
@@ -181,6 +188,12 @@ async def dismiss_write_intent(
         return svc.dismiss(db, current_user.id, intent_id)
     except LookupError:
         raise HTTPException(status_code=404, detail="写意图不存在")
+    except PhotoSupplementConflict as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="补剂确认计划或记录已变化，或尚未完整展示，请重新核对",
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         logger.error(

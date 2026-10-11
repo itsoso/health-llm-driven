@@ -88,6 +88,9 @@ export async function dispatchChatCardAction(
     case 'write_intent.confirm':
       assertManualConfirm(action);
       assertRegisteredWritePolicy(action);
+      if (context?.cardType === 'supplement_draft' || action.capability_id === 'supplement_draft.v1') {
+        return dispatchPhotoSupplementAction(action, context);
+      }
       {
         const medicationBatch = readMedicationBatchContext(action, context);
         const intentId = readWriteIntentId(action);
@@ -149,6 +152,9 @@ export async function dispatchChatCardAction(
     case 'write_intent.dismiss':
       assertManualConfirm(action);
       assertRegisteredWritePolicy(action);
+      if (context?.cardType === 'supplement_draft' || action.capability_id === 'supplement_draft.v1') {
+        return dispatchPhotoSupplementAction(action, context);
+      }
       {
         const medicationBatch = readMedicationBatchContext(action, context);
         const intentId = readWriteIntentId(action);
@@ -199,6 +205,62 @@ export async function dispatchChatCardAction(
     default:
       throw new Error('unsupported_card_action');
   }
+}
+
+async function dispatchPhotoSupplementAction(
+  action: ChatCardActionDescriptor,
+  context?: ChatCardActionContext,
+): Promise<ChatCardActionResult> {
+  const intentId = readWriteIntentId(action);
+  const data = context?.cardData;
+  const items = data?.items;
+  if (context?.cardType !== 'supplement_draft'
+    || action.capability_id !== 'supplement_draft.v1'
+    || data?.write_intent_id !== intentId
+    || !Array.isArray(items) || items.length < 2 || items.length > 8
+    || typeof data.taken_date !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}$/.test(data.taken_date)) {
+    throw new Error('invalid_photo_supplement_context');
+  }
+  const expected = new Map<number, string>();
+  for (const item of items) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)
+      || !Number.isInteger(item.supplement_id) || item.supplement_id <= 0
+      || typeof item.actual_dosage !== 'string' || !/^[1-9]粒$/.test(item.actual_dosage)
+      || expected.has(item.supplement_id)) {
+      throw new Error('invalid_photo_supplement_items');
+    }
+    expected.set(item.supplement_id, item.actual_dosage);
+  }
+  const result = action.action === 'write_intent.dismiss'
+    ? await dismissWriteIntent(intentId) : await confirmWriteIntent(intentId);
+  if (result.status === 'expired' || result.status === 'dismissed') {
+    return { status: result.status, decision_status: result.status };
+  }
+  if (result.status !== 'executed' || !Array.isArray(result.write_receipts)
+    || result.write_receipts.length !== expected.size) {
+    throw new Error('photo_supplement_receipts_missing');
+  }
+  const seen = new Set<number>();
+  const resourceIds = new Set<string>();
+  const receipts = result.write_receipts.map(value => {
+    const raw = value as unknown as Record<string, unknown>;
+    const receipt = normalizeWriteReceipt(raw);
+    const supplementId = raw?.supplement_id;
+    if (!receipt || typeof supplementId !== 'number' || !expected.has(supplementId)
+      || seen.has(supplementId) || raw.status !== 'verified' || raw.verified !== true
+      || raw.resource_type !== 'supplement_record' || raw.action !== 'create' || raw.taken !== true
+      || raw.actual_dosage !== expected.get(supplementId) || raw.record_date !== data.taken_date
+      || receipt.operationId !== `write_intent:photo_supplement_intake:${intentId}:${receipt.resourceId}`
+      || resourceIds.has(String(receipt.resourceId))) {
+      throw new Error('photo_supplement_receipts_invalid');
+    }
+    seen.add(supplementId);
+    resourceIds.add(String(receipt.resourceId));
+    return receipt;
+  });
+  return { status: 'completed', decision_status: 'executed',
+    receipt: receipts[receipts.length - 1], write_receipts: receipts };
 }
 
 function isExpiredWriteIntentConfirmation(error: unknown): boolean {

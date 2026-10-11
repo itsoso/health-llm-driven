@@ -50,7 +50,7 @@ def list_pending(db: Session, user_id: int) -> List[Dict[str, Any]]:
             WriteIntent.status == "pending",
             # Batch plans require the exact itemized chat preview; the generic
             # Home card only renders title/description and cannot present it.
-            WriteIntent.kind.notin_(["medication_intake_batch", "water_backfill"]),
+            WriteIntent.kind.notin_(["medication_intake_batch", "water_backfill", "photo_supplement_intake"]),
         )
         .order_by(WriteIntent.created_at.desc())
         .all()
@@ -525,6 +525,12 @@ def confirm(
     )
     if wi is None:
         raise LookupError("write_intent not found")  # 端点 → 404(含 IDOR)
+    if wi.kind == "photo_supplement_intake":
+        if trust_tier not in (None, "manual_confirm"):
+            raise ValueError("photo supplement intake requires manual confirmation")
+        from app.services.photo_supplement_intake import confirm as confirm_photo
+
+        return confirm_photo(db, user_id, intent_id)
     if wi.kind == "water_backfill":
         if trust_tier not in (None, "manual_confirm"):
             raise ValueError("water backfill requires manual confirmation")
@@ -810,6 +816,10 @@ def dismiss(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
     )
     if wi is None:
         raise LookupError("write_intent not found")
+    if wi.kind == "photo_supplement_intake":
+        from app.services.photo_supplement_intake import dismiss as dismiss_photo
+
+        return dismiss_photo(db, user_id, intent_id)
     if wi.status != "pending":
         if wi.kind in {"medication_intake_batch", "water_backfill"} and wi.status == "executed":
             # Confirm won the race. Return the same verifiable terminal result
