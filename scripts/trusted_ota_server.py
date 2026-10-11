@@ -153,7 +153,9 @@ def archive_lease(server, operation, lease):
         if os.path.lexists(retired):
             raise ValueError('retired lease already exists')
         os.rename(original, retired)
-        server._sync_directory(original.parent)
+    # Recovery must repeat the durability barrier for this same archived lease
+    # if the previous rename succeeded but its parent fsync was uncertain.
+    server._sync_business_lease_parent()
     server.validate_ota_archive(operation)
 
 

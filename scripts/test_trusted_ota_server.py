@@ -232,3 +232,47 @@ def test_ota_recovery_never_recreates_missing_original_build_lock(state):
         with o.transaction_locks(s, SimpleNamespace(), SHA, create=False):
             pytest.fail('missing lock accepted')
     assert not (s.STATE / SHA / 'build.lock').exists()
+
+
+def test_archive_syncs_validated_business_parent_without_following_alias(state, monkeypatch):
+    s, o, c, value = state
+    o.claim(s, c, {'sha': SHA}, value)
+    real_sync = s._sync_directory
+    syncs = []
+    def reject_alias(path):
+        if Path(path) == s.BUSINESS_LEASE.parent:
+            raise OSError('fixed lock alias cannot be opened with O_NOFOLLOW')
+        return real_sync(path)
+    real_parent_sync = s._sync_business_lease_parent
+    def parent_sync():
+        syncs.append('validated-parent')
+        return real_parent_sync()
+    monkeypatch.setattr(s, '_sync_directory', reject_alias)
+    monkeypatch.setattr(s, '_sync_business_lease_parent', parent_sync)
+    assert o.finish(s, c, SHA, {'sha': SHA, 'group_id': UUID, 'update_id': UUID})['state'] == 'SUCCEEDED'
+    assert syncs == ['validated-parent']
+    s.assert_ota_history()
+
+
+def test_archive_parent_sync_failure_preserves_same_receipt_and_cannot_republish(state, monkeypatch):
+    s, o, c, value = state
+    o.claim(s, c, {'sha': SHA}, value)
+    receipt = {'sha': SHA, 'group_id': UUID, 'update_id': UUID}
+    real_sync = s._sync_business_lease_parent
+    syncs = []
+    def fail_sync():
+        syncs.append('failed')
+        raise OSError('directory synchronization uncertain')
+    monkeypatch.setattr(s, '_sync_business_lease_parent', fail_sync)
+    with pytest.raises(OSError): o.finish(s, c, SHA, receipt)
+    operation = s.STATE / 'ota' / SHA
+    assert (operation / 'verified.json').exists()
+    assert not (operation / 'completed.json').exists()
+    with pytest.raises(Exception): o.claim(s, c, {'sha': SHA}, value)
+    def retry_original_sync():
+        syncs.append('synced-original')
+        return real_sync()
+    monkeypatch.setattr(s, '_sync_business_lease_parent', retry_original_sync)
+    monkeypatch.setattr(o, 'manifest', lambda _: (_ for _ in ()).throw(AssertionError('vendor request forbidden')))
+    assert o.finish(s, c, SHA, receipt)['state'] == 'SUCCEEDED'
+    assert syncs == ['failed', 'synced-original']
