@@ -6,7 +6,9 @@ import json
 import logging
 import math
 import re
+from contextlib import contextmanager
 from contextvars import copy_context
+from time import perf_counter
 from typing import Dict, Any, List, Optional
 from app.services.intake_intent_classifier import (
     classify_intake_subject,
@@ -16,6 +18,32 @@ from app.services.llm import get_vision_provider
 from app.services.llm.usage_tracker import caller_scope
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _vision_stage(input_kind: str, stage: str):
+    """Passive elapsed time only; no image, URL, response or exception text.
+
+    Provider time includes SDK scheduling, transport, retries and model waiting;
+    it must not be described as pure inference or time to first token.
+    """
+    import asyncio
+
+    started = perf_counter()
+    outcome = "returned"
+    try:
+        yield
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
+    except Exception:
+        outcome = "failed"
+        raise
+    finally:
+        logger.info(
+            "food_vision_stage input_kind=%s stage=%s outcome=%s elapsed_ms=%s",
+            input_kind, stage, outcome, round((perf_counter() - started) * 1000),
+        )
 
 MAX_RECOGNIZED_FOODS = 12
 NO_RECORDABLE_FOOD_ERROR = "图片中未识别到可记录的食物，请重新拍摄餐食本身。"
@@ -639,7 +667,7 @@ class FoodRecognitionService:
             logger.info("调用 LLM Vision API 识别食物")
 
             provider = self._get_provider()
-            with caller_scope("food_recognition.from_base64"):
+            with _vision_stage("base64", "provider"), caller_scope("food_recognition.from_base64"):
                 raw_content = await provider.chat_with_vision(
                     messages=[
                         {"role": "system", "content": _food_recognition_request_prompt()},
@@ -666,7 +694,9 @@ class FoodRecognitionService:
             logger.info("已提取识别JSON json_length=%s", len(json_content))
 
             try:
-                result = json.loads(json_content)
+                with _vision_stage("base64", "decode_sanitize"):
+                    result = json.loads(json_content)
+                    result = _sanitize_vision_payload(_expand_food_recognition_wire_payload(result))
             except json.JSONDecodeError as e:
                 logger.error(
                     "食物识别JSON解析失败 line=%s column=%s response_length=%s",
@@ -680,8 +710,6 @@ class FoodRecognitionService:
                     "error": "AI响应格式错误，请重试",
                     "foods": [],
                 }
-
-            result = _sanitize_vision_payload(_expand_food_recognition_wire_payload(result))
 
             foods_count = len(result.get('foods', []))
             logger.info(f"食物识别完成: success={result.get('success')} foods={foods_count}")
@@ -737,7 +765,7 @@ class FoodRecognitionService:
 
         try:
             provider = self._get_provider()
-            with caller_scope("food_recognition.from_url"):
+            with _vision_stage("url", "provider"), caller_scope("food_recognition.from_url"):
                 raw_content = await provider.chat_with_vision(
                     messages=[
                         {"role": "system", "content": _food_recognition_request_prompt()},
@@ -764,8 +792,9 @@ class FoodRecognitionService:
             json_content = extract_json_from_text(content)
 
             try:
-                result = json.loads(json_content)
-                return _sanitize_vision_payload(_expand_food_recognition_wire_payload(result))
+                with _vision_stage("url", "decode_sanitize"):
+                    result = json.loads(json_content)
+                    return _sanitize_vision_payload(_expand_food_recognition_wire_payload(result))
             except json.JSONDecodeError as e:
                 logger.error(
                     "URL食物识别JSON解析失败 line=%s column=%s response_length=%s",
