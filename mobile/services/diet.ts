@@ -194,18 +194,19 @@ export interface VoiceFoodParseResponse {
 }
 
 export interface DietReadSession { owner: number; revision: number }
+type DietReadConfig = Pick<AxiosRequestConfig, 'headers'> & { __revaConsentRevision?: number };
 
-async function readForSession<T>(session: DietReadSession | undefined, send: (config: AxiosRequestConfig) => Promise<{ data: T }>): Promise<T> {
+async function readForSession<T>(session: DietReadSession | undefined, send: (config: DietReadConfig) => Promise<{ data: T }>): Promise<T> {
   const assertSession = () => {
     if (session && (!Number.isSafeInteger(session.owner) || session.owner <= 0 || session.revision !== aiConsentRevision())) {
       throw new Error('auth_session_changed');
     }
   };
   assertSession();
-  const config = session ? {
+  const config: DietReadConfig = session ? {
     headers: { 'X-Reva-AI-Subject': String(session.owner) },
     __revaConsentRevision: session.revision,
-  } as AxiosRequestConfig : {};
+  } : {};
   const { data } = await send(config);
   assertSession();
   return data;

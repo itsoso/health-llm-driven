@@ -10,15 +10,16 @@ export type BowelRecordInput = components['schemas']['ExcretionRecordCreate'] & 
 };
 export type BowelRecord = components['schemas']['ExcretionRecordResponse'];
 export interface BowelSession { owner: number; revision: number }
+type BowelRequestConfig = Pick<AxiosRequestConfig, 'headers'> & { __revaConsentRevision: number };
 
-async function scoped<T>(session: BowelSession, send: (config: AxiosRequestConfig) => Promise<{ data: T }>): Promise<T> {
+async function scoped<T>(session: BowelSession, send: (config: BowelRequestConfig) => Promise<{ data: T }>): Promise<T> {
   if (!Number.isSafeInteger(session.owner) || session.owner <= 0 || session.revision !== aiConsentRevision()) {
     throw new Error('auth_session_changed');
   }
-  const config = {
+  const config: BowelRequestConfig = {
     headers: { 'X-Reva-AI-Subject': String(session.owner) },
     __revaConsentRevision: session.revision,
-  } as AxiosRequestConfig;
+  };
   const { data } = await send(config);
   if (session.revision !== aiConsentRevision()) throw new Error('auth_session_changed');
   return data;
