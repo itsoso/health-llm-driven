@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { CardShell } from './CardShell';
 import { DietRecordAdjustEditor } from './RecordQualityCard';
 import { MEAL_ICONS, MACRO_HUES, MacroBar, IngredientChips } from './mealCardVisuals';
@@ -98,6 +99,7 @@ interface DietDraftData {
   boundary?: unknown;
   time?: unknown;
   recorded_at?: unknown;
+  record_date?: unknown;
   photo_url?: unknown;
   photo_urls?: unknown;
   photo_asset_ids?: unknown;
@@ -317,6 +319,7 @@ function findDietAdjustRecord(
 }
 
 export function DietDraftCardView(data: DietDraftCardViewProps) {
+  const router = useRouter();
   const [editing, setEditing] = React.useState(false);
   const [showAllIngredients, setShowAllIngredients] = React.useState(false);
   const [savedAdjustOpen, setSavedAdjustOpen] = React.useState(() => (
@@ -638,6 +641,36 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
             {receiptMessage || '已计入今日饮食'}
           </Text>
         </View>
+      ) : null}
+
+      {isRecorded ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="查看饮食记录"
+          accessibilityHint="弹出饮食记录，可查看当天其他餐食"
+          onPress={() => {
+            const date = text(data.record_date);
+            const parsed = date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+              ? new Date(`${date}T00:00:00Z`)
+              : null;
+            if (parsed && Number.isFinite(parsed.getTime())
+              && parsed.toISOString().slice(0, 10) === date) {
+              router.push({ pathname: '/diet', params: { date } });
+            } else {
+              router.push('/diet');
+            }
+          }}
+          style={({ pressed }) => [styles.recordedAdjustButton, pressed && styles.editButtonPressed]}
+        >
+          <View style={styles.recordedAdjustIcon}>
+            <Ionicons name="list-outline" size={15} color={C.green700} />
+          </View>
+          <View style={styles.recordedAdjustCopy}>
+            <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>查看饮食记录</Text>
+            <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustHint}>查看当天餐食与营养汇总</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={C.green700} />
+        </Pressable>
       ) : null}
 
       {isRecorded && adjustRecord && adjustRecordId != null ? (
