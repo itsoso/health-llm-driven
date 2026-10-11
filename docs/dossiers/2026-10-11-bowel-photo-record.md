@@ -4,7 +4,7 @@
 |---|---|
 | slug | bowel-photo-record |
 | 创建日期 | 2026-10-11 |
-| 当前阶段 | S5 实现 |
+| 当前阶段 | G4 安全审查完成；等待发布 Gate |
 | 状态 | building |
 | 负责 | root |
 | 反馈环 | Mobile Jest / PostgreSQL / simulator |
@@ -35,7 +35,8 @@ Backend 与 Mobile 按计划分开写；已增加聊天附件菜单“排便记�
 
 
 ## G4 独立安全审查
-主批次 be08913cf 已交独立 morning_safety_review。独立 Mobile 16 passed、SQLite 19 passed / 3 PG-only skipped；暂无阻断，等待聊天入口追加固定 revision 的最终裁决。
+裁决: GO。独立 morning_safety_review 审查源代码候选 09a293f64f83cee280afbef0f84b3d776b34c5d5（包含 be08913cf）。独立 Mobile 16 passed、SQLite 19 passed / 3 PG-only skipped、聊天入口1 passed，均 exit0；保留 PostgreSQL47 passed证据。明确 owner/subject/epoch、私有短效签名、人工确认、幂等与未知数据边界。
+追加入口全套98 passed、tsc exit0；类型生成 --check通过。本地 iOS JS export exit0（仅构建验证，包含当前工作树既有饮食入口 WIP，不作为发布制品或精确提交验收）。
 原图仍沿用既有账号删除时的私有目录清理；单条观察记录删除不等于照片擦除，本版不新增照片删除承诺。
 
 
