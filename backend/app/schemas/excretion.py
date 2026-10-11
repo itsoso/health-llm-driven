@@ -1,5 +1,6 @@
 """排泄记录 Schemas"""
 from datetime import date, datetime, time
+from uuid import UUID
 from typing import Optional, List, Dict
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -8,6 +9,9 @@ class ExcretionRecordCreate(BaseModel):
     record_date: date
     record_time: Optional[time] = None
     type: str = Field(..., pattern="^(bowel|urine)$")
+
+    photo_key: Optional[str] = Field(None, max_length=300)
+    client_request_id: Optional[UUID] = None
 
     # 大便字段
     stool_type: Optional[int] = Field(None, ge=1, le=7)
@@ -40,6 +44,10 @@ class ExcretionRecordUpdate(BaseModel):
 
 
 class ExcretionRecordResponse(BaseModel):
+    photo_key: Optional[str] = None
+    photo_url: Optional[str] = None
+    photo_unavailable: bool = False
+    client_request_id: Optional[str] = None
     id: int
     user_id: int
     record_date: date

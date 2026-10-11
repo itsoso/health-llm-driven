@@ -333,6 +333,7 @@ export default function RecordScreen() {
             <MoreRecordBtn icon="document-text-outline" label="化验记录" color={CAT_HUES.green} onPress={() => router.push('/medical-exams' as any)} />
             <MoreRecordBtn icon="git-branch-outline" label="基因" color={CAT_HUES.teal} onPress={() => router.push('/genetic-report' as any)} />
             <MoreRecordBtn icon="moon-outline" label="睡眠" color={CAT_HUES.purple} onPress={() => router.push('/sleep' as any)} />
+            <MoreRecordBtn icon="clipboard-outline" label="排便记录" color={CAT_HUES.teal} onPress={() => router.push('/bowel-record' as any)} />
             <MoreRecordBtn icon="barbell-outline" label="运动" color={CAT_HUES.pink} onPress={() => router.push('/workout-list' as any)} />
             <MoreRecordBtn icon="cloud-upload-outline" label="导入档案" color={CAT_HUES.purple} onPress={() => router.push('/import' as any)} />
             <MoreRecordBtn icon="flag-outline" label="目标" color={CAT_HUES.green} onPress={() => router.push('/goals' as any)} />

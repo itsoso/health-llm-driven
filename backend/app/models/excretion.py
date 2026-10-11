@@ -1,6 +1,6 @@
 """排泄记录数据模型"""
 from datetime import UTC, datetime
-from sqlalchemy import Column, Integer, String, DateTime, Date, Time, ForeignKey, Text, Boolean, Index
+from sqlalchemy import Column, Integer, String, DateTime, Date, Time, ForeignKey, Text, Boolean, Index, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -24,7 +24,7 @@ class ExcretionRecord(Base):
     color = Column(String(20), nullable=True)          # brown/yellow/green/black/red/pale
     amount = Column(String(10), nullable=True)         # small/medium/large
     duration_minutes = Column(Integer, nullable=True)
-    blood_present = Column(Boolean, nullable=True, default=False)
+    blood_present = Column(Boolean, nullable=True)
 
     # === 小便字段 ===
     urine_color = Column(String(20), nullable=True)    # transparent/light_yellow/yellow/dark_yellow/amber/brown/red
@@ -35,12 +35,17 @@ class ExcretionRecord(Base):
     pain_level = Column(Integer, nullable=True)        # 0-5
     notes = Column(Text, nullable=True)
 
+    photo_key = Column(String(300), nullable=True)
+    client_request_id = Column(String(36), nullable=True)
+    client_request_hash = Column(String(64), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     user = relationship("User", backref="excretion_records")
 
     __table_args__ = (
+        UniqueConstraint("user_id", "client_request_id", name="uq_excretion_user_client_request"),
         Index('idx_excretion_user_date', 'user_id', 'record_date'),
         Index('idx_excretion_user_date_type', 'user_id', 'record_date', 'type'),
     )

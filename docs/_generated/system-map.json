@@ -3,7 +3,7 @@
   "counts": {
     "api_routers": 172,
     "celery_tasks": 73,
-    "mobile_routes": 135,
+    "mobile_routes": 137,
     "model_files": 122,
     "safety_rules_total": 65,
     "service_files": 482,
@@ -1494,6 +1494,20 @@
       "owner": "mobile",
       "source": {
         "path": "mobile/app/body-measurements.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "mobile"
+      ]
+    },
+    {
+      "coverage": "complete",
+      "id": "surface.mobile.bowel-record",
+      "kind": "surface",
+      "name": "Mobile /bowel-record",
+      "owner": "mobile",
+      "source": {
+        "path": "mobile/app/bowel-record.tsx",
         "type": "code"
       },
       "tags": [
@@ -5037,6 +5051,16 @@
         "type": "code"
       },
       "to": "surface.mobile.body-measurements",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.mobile",
+      "source": {
+        "path": "mobile/app/bowel-record.tsx",
+        "type": "code"
+      },
+      "to": "surface.mobile.bowel-record",
       "type": "renders"
     },
     {

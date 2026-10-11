@@ -1,4 +1,10 @@
 """排泄记录 API"""
+import hashlib
+import json
+import re
+import stat
+from pathlib import Path
+
 from datetime import date, time, timedelta
 from collections import defaultdict, Counter
 from typing import Optional, List
@@ -7,6 +13,9 @@ from statistics import stdev
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from sqlalchemy.exc import IntegrityError
+
+from app.services.private_uploads import build_signed_private_upload_url
 
 from app.database import get_db
 from app.api.deps import get_current_user_required
@@ -20,20 +29,91 @@ from app.schemas.excretion import (
 router = APIRouter(prefix="/excretion", tags=["排泄记录"])
 
 
+def _validate_photo_key(key: str | None, owner_id: int) -> str | None:
+    if key is None:
+        return None
+    match = re.fullmatch(
+        r"medical/([1-9][0-9]*)/([A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:jpg|jpeg|png|gif|webp))",
+        key,
+    )
+    if not match or int(match.group(1)) != owner_id:
+        raise HTTPException(status_code=400, detail="照片必须是当前账号上传的私有图片")
+    from app.api.upload import UPLOAD_DIR
+    root = Path(UPLOAD_DIR)
+    path = root
+    try:
+        for part in Path(key).parts:
+            path = path / part
+            if path.is_symlink():
+                raise ValueError("symlink")
+        if not stat.S_ISREG(path.stat().st_mode) or path.stat().st_nlink != 1:
+            raise ValueError("not_regular_private_file")
+        path.resolve(strict=True).relative_to(root.resolve(strict=True))
+    except (OSError, ValueError):
+        raise HTTPException(status_code=400, detail="照片不存在或不可关联") from None
+    return key
+
+
+def _response(record: ExcretionRecord) -> ExcretionRecordResponse:
+    response = ExcretionRecordResponse.model_validate(record)
+    if record.photo_key:
+        try:
+            _validate_photo_key(record.photo_key, record.user_id)
+        except HTTPException:
+            # The durable record remains readable; never sign missing or untrusted media.
+            response.photo_key = None
+            response.photo_unavailable = True
+        else:
+            response.photo_url = build_signed_private_upload_url(
+                "medical", record.user_id, record.photo_key.rsplit("/", 1)[1]
+            )
+    return response
+
+
+def _replay(record: ExcretionRecord, request_hash: str) -> ExcretionRecordResponse:
+    if record.client_request_hash != request_hash:
+        raise HTTPException(status_code=409, detail="此次保存标识已用于不同内容，请重新打开记录表单")
+    return _response(record)
+
+
 @router.post("/records", response_model=ExcretionRecordResponse, summary="创建排泄记录")
 async def create_record(
     data: ExcretionRecordCreate,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
+    payload = data.model_dump(mode="json")
+    request_id = payload.pop("client_request_id")
+    request_hash = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    ).hexdigest()
+    if request_id:
+        existing = db.query(ExcretionRecord).filter_by(
+            user_id=current_user.id, client_request_id=request_id
+        ).first()
+        if existing:
+            return _replay(existing, request_hash)
+    _validate_photo_key(data.photo_key, current_user.id)
+    values = data.model_dump(exclude={"client_request_id"})
     record = ExcretionRecord(
-        user_id=current_user.id,
-        **data.model_dump(),
+        user_id=current_user.id, **values,
+        client_request_id=request_id,
+        client_request_hash=request_hash if request_id else None,
     )
     db.add(record)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if request_id:
+            winner = db.query(ExcretionRecord).filter_by(
+                user_id=current_user.id, client_request_id=request_id
+            ).first()
+            if winner:
+                return _replay(winner, request_hash)
+        raise
     db.refresh(record)
-    return ExcretionRecordResponse.model_validate(record)
+    return _response(record)
 
 
 @router.get("/records/me", response_model=List[ExcretionRecordResponse], summary="获取排泄记录列表")
@@ -53,7 +133,7 @@ async def get_my_records(
     if end_date:
         query = query.filter(ExcretionRecord.record_date <= end_date)
     records = query.order_by(desc(ExcretionRecord.record_date), desc(ExcretionRecord.record_time)).limit(limit).all()
-    return [ExcretionRecordResponse.model_validate(r) for r in records]
+    return [_response(r) for r in records]
 
 
 @router.get("/records/me/today", response_model=List[ExcretionRecordResponse], summary="获取今日排泄记录")
@@ -66,7 +146,7 @@ async def get_today_records(
         ExcretionRecord.user_id == current_user.id,
         ExcretionRecord.record_date == today,
     ).order_by(desc(ExcretionRecord.record_time)).all()
-    return [ExcretionRecordResponse.model_validate(r) for r in records]
+    return [_response(r) for r in records]
 
 
 @router.get("/records/{record_id}", response_model=ExcretionRecordResponse, summary="获取单条排泄记录")
@@ -81,7 +161,7 @@ async def get_record(
     ).first()
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
-    return ExcretionRecordResponse.model_validate(record)
+    return _response(record)
 
 
 @router.put("/records/{record_id}", response_model=ExcretionRecordResponse, summary="更新排泄记录")
@@ -102,7 +182,7 @@ async def update_record(
         setattr(record, key, value)
     db.commit()
     db.refresh(record)
-    return ExcretionRecordResponse.model_validate(record)
+    return _response(record)
 
 
 @router.delete("/records/{record_id}", summary="删除排泄记录")

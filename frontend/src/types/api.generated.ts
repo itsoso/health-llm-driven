@@ -24677,6 +24677,10 @@ export interface components {
             record_time?: string | null;
             /** Type */
             type: string;
+            /** Photo Key */
+            photo_key?: string | null;
+            /** Client Request Id */
+            client_request_id?: string | null;
             /** Stool Type */
             stool_type?: number | null;
             /** Color */
@@ -24700,6 +24704,17 @@ export interface components {
         };
         /** ExcretionRecordResponse */
         ExcretionRecordResponse: {
+            /** Photo Key */
+            photo_key?: string | null;
+            /** Photo Url */
+            photo_url?: string | null;
+            /**
+             * Photo Unavailable
+             * @default false
+             */
+            photo_unavailable: boolean;
+            /** Client Request Id */
+            client_request_id?: string | null;
             /** Id */
             id: number;
             /** User Id */
