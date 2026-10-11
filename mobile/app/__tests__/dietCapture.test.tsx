@@ -640,6 +640,7 @@ describe('DietScreen capture deeplink', () => {
         consumed_fraction: 1,
       },
       expect.any(String),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(dietService.updateDietRecord).not.toHaveBeenCalled();
   });
@@ -677,6 +678,7 @@ describe('DietScreen capture deeplink', () => {
         expected_updated_at: '2026-09-20T12:00:00Z', consumed_fraction: 0.2,
       },
       expect.any(String),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(dietService.updateDietRecord).not.toHaveBeenCalled();
   });
@@ -707,6 +709,37 @@ describe('DietScreen capture deeplink', () => {
     expect(dietService.recalculateDietRecordNutrition).not.toHaveBeenCalled();
     expect(dietService.updateDietRecord).not.toHaveBeenCalled();
     alertSpy.mockRestore();
+  });
+
+  it('unlocks a stalled 1-to-2 plate edit and ignores a late result without replacing its retry key', async () => {
+    jest.useFakeTimers();
+    const service = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    let complete!: (value: unknown) => void;
+    service.recalculateDietRecordNutrition.mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
+    mockMeals.push({ id: 49, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '拌面约1盘+肉约3块', calories: 550, protein: 23, carbs: 55, fat: 26,
+      alcohol_units: 0, updated_at: '2026-09-20T12:00:00Z', image_url: null });
+    try {
+      const view = render(<DietScreen />);
+      fireEvent.press(view.getByLabelText('编辑'));
+      const correction = { record_date: todayStr(), meal_type: 'dinner', food_items: '拌面约2盘+肉约3块',
+        calories: 550, protein: 23, carbs: 55, fat: 26, alcohol_units: 0 };
+      let save!: Promise<void>;
+      await act(async () => { save = mockMealForm.mock.lastCall?.[0].onSubmit(correction); await Promise.resolve(); });
+      const key = service.recalculateDietRecordNutrition.mock.calls[0][2];
+      const signal = service.recalculateDietRecordNutrition.mock.calls[0][3].signal;
+      await act(async () => { jest.advanceTimersByTime(35000); await save; });
+      expect(mockMealForm.mock.lastCall?.[0].saving).toBe(false);
+      expect(alert).toHaveBeenCalledWith('更新仍未确认', expect.stringContaining('修改内容已保留'));
+      expect(signal.aborted).toBe(true);
+      await act(async () => { complete({ id: 49 }); await Promise.resolve(); });
+      expect(view.getByTestId('meal-form')).toBeTruthy();
+      service.recalculateDietRecordNutrition.mockResolvedValueOnce({ id: 49 });
+      await act(async () => { await mockMealForm.mock.lastCall?.[0].onSubmit(correction); });
+      expect(service.recalculateDietRecordNutrition.mock.calls[1][2]).toBe(key);
+    } finally { alert.mockRestore(); jest.useRealTimers(); }
   });
 
   it('locks a standalone recalculation, blocks double submit, and reuses its key after failure', async () => {
@@ -820,7 +853,7 @@ describe('DietScreen capture deeplink', () => {
 
     expect(dietService.updateDietRecord).toHaveBeenCalledWith(43, expect.objectContaining({
       calories: 620,
-    }));
+    }), expect.objectContaining({ signal: expect.anything() }));
     expect(dietService.updateDietRecord.mock.calls[0][1]).not.toHaveProperty('food_items');
     expect(dietService.recalculateDietRecordNutrition).not.toHaveBeenCalled();
   });
@@ -849,7 +882,7 @@ describe('DietScreen capture deeplink', () => {
       source: 'user_corrected', ai_recognized: 0, ai_confidence: null,
       ai_raw_result: null, health_tips: null,
       expected_updated_at: '2026-09-20T12:00:00Z',
-    });
+    }, expect.objectContaining({ signal: expect.anything() }));
     expect(dietService.recalculateDietRecordNutrition).not.toHaveBeenCalled();
   });
 
@@ -878,7 +911,7 @@ describe('DietScreen capture deeplink', () => {
 
     expect(dietService.updateDietRecord).toHaveBeenCalledWith(44, {
       meal_type: 'lunch', expected_updated_at: '2026-09-20T12:01:00Z',
-    });
+    }, expect.objectContaining({ signal: expect.anything() }));
   });
 
   it('rejects medication-looking diet draft deeplinks before opening the meal form', async () => {

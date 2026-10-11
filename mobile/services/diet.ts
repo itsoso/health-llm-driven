@@ -255,8 +255,8 @@ export async function createDietRecord(record: DietRecordCreate): Promise<DietRe
   return data;
 }
 
-export async function updateDietRecord(id: number, patch: DietRecordUpdate): Promise<DietRecord> {
-  const { data } = await api.put<DietRecord>(`/diet/records/${id}`, patch);
+export async function updateDietRecord(id: number, patch: DietRecordUpdate, options?: { signal: AbortSignal }): Promise<DietRecord> {
+  const { data } = await api.put<DietRecord>(`/diet/records/${id}`, patch, options);
   return data;
 }
 
@@ -264,6 +264,7 @@ export async function recalculateDietRecordNutrition(
   id: number,
   request: DietRecordNutritionRecalculateRequest,
   idempotencyKey: string,
+  options?: { signal: AbortSignal },
 ): Promise<DietRecord> {
   const operationKey = idempotencyKey.trim();
   if (!operationKey) {
@@ -272,7 +273,7 @@ export async function recalculateDietRecordNutrition(
   const { data } = await api.post<DietRecord>(
     `/diet/records/${id}/recalculate-nutrition`,
     request,
-    { headers: { 'Idempotency-Key': operationKey } },
+    { ...options, headers: { 'Idempotency-Key': operationKey } },
   );
   return data;
 }

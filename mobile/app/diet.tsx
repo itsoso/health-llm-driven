@@ -12,6 +12,7 @@ import { useDailyDiet, useFrequentDietFoods } from '../hooks/useDiet';
 import { estimateSourceForRecord, useDietEstimate, type EstimateSource, type EstimateSourceCache } from '../hooks/useDietEstimate';
 import { createDietRecord, updateDietRecord, recalculateDietRecordNutrition, deleteDietRecord, dietRecordImageUrls, discardDietPhotoDraft, getDietPhotoDraftStatus, recognizeFood, type DietRecord, type DietRecordCreate, type DietRecordUpdate, type FoodItem, type FrequentFood } from '../services/diet';
 import { computeDietTotals, isPendingNutrition } from '../utils/dietTotals';
+import { assertDietEditActive, DietEditTimeoutError, runDietEditWithDeadline } from '../utils/dietEditDeadline';
 import * as ImagePicker from 'expo-image-picker';
 import type { ImagePickerAsset } from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
@@ -686,41 +687,45 @@ export default function DietScreen() {
         }
         editSavingRef.current = true;
         setEditSaving(true);
-        // Invalidate any older local estimate before a corrected description is persisted.
-        const joinedWrite = await cancelEstimate(editingRecord.id);
-        if (isAtomicDietRecalculation(editingRecord, record, editPortionValue)) {
-          const expectedUpdatedAt = joinedWrite?.updated_at ?? editingRecord.updated_at ?? null;
-          const signature = JSON.stringify([
-            editingRecord.id, record.food_items, record.meal_type, consumedFraction, expectedUpdatedAt,
-          ]);
-          if (editOperationRef.current?.signature !== signature) {
-            editOperationRef.current = {
-              signature,
-              key: createStandaloneDietRecalculationKey(),
-            };
+        await runDietEditWithDeadline(async (signal) => {
+          // Invalidate any older local estimate before a corrected description is persisted.
+          const joinedWrite = await cancelEstimate(editingRecord.id);
+          assertDietEditActive(signal);
+          if (isAtomicDietRecalculation(editingRecord, record, editPortionValue)) {
+            const expectedUpdatedAt = joinedWrite?.updated_at ?? editingRecord.updated_at ?? null;
+            const signature = JSON.stringify([
+              editingRecord.id, record.food_items, record.meal_type, consumedFraction, expectedUpdatedAt,
+            ]);
+            if (editOperationRef.current?.signature !== signature) {
+              editOperationRef.current = {
+                signature,
+                key: createStandaloneDietRecalculationKey(),
+              };
+            }
+            await recalculateDietRecordNutrition(editingRecord.id, {
+              food_items: record.food_items,
+              meal_type: record.meal_type,
+              expected_updated_at: expectedUpdatedAt,
+              consumed_fraction: consumedFraction,
+            }, editOperationRef.current.key, { signal });
+          } else {
+            // MealForm displays the suffix-free description. Preserve the stored
+            // canonical suffix when this is a manual nutrient/meal-type edit.
+            const manualRevision = foodOrPortionChanged
+              ? record
+              : { ...record, food_items: editingRecord.food_items };
+            await updateDietRecord(editingRecord.id, {
+              ...buildEditedDietPatch(editingRecord, manualRevision),
+              expected_updated_at: joinedWrite?.updated_at ?? editingRecord.updated_at ?? null,
+            }, { signal });
           }
-          await recalculateDietRecordNutrition(editingRecord.id, {
-            food_items: record.food_items,
-            meal_type: record.meal_type,
-            expected_updated_at: expectedUpdatedAt,
-            consumed_fraction: consumedFraction,
-          }, editOperationRef.current.key);
-        } else {
-          // MealForm displays the suffix-free description. Preserve the stored
-          // canonical suffix when this is a manual nutrient/meal-type edit.
-          const manualRevision = foodOrPortionChanged
-            ? record
-            : { ...record, food_items: editingRecord.food_items };
-          await updateDietRecord(editingRecord.id, {
-            ...buildEditedDietPatch(editingRecord, manualRevision),
-            expected_updated_at: joinedWrite?.updated_at ?? editingRecord.updated_at ?? null,
-          });
-        }
-        sourceMapRef.current.delete(editingRecord.id);
-        reconciledRef.current.delete(editingRecord.id);
-        editOperationRef.current = null;
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        qc.invalidateQueries({ queryKey: ['diet'] });
+          assertDietEditActive(signal);
+          sourceMapRef.current.delete(editingRecord.id);
+          reconciledRef.current.delete(editingRecord.id);
+          editOperationRef.current = null;
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          qc.invalidateQueries({ queryKey: ['diet'] });
+        });
       } else {
         const revised = mergeRevisedDraft(formDefaults, record);
         if (revised.photo_draft_token && authUserId) {
@@ -756,6 +761,14 @@ export default function DietScreen() {
       setQuickDraft(null);
       activeDraftRef.current = false;
     } catch (error) {
+      if (editingRecord && (
+        error instanceof DietEditTimeoutError
+        || ['ECONNABORTED', 'ETIMEDOUT', 'ERR_CANCELED'].includes(String((error as { code?: string })?.code))
+      )) {
+        qc.invalidateQueries({ queryKey: ['diet'] });
+        Alert.alert('更新仍未确认', '等待时间较长，已停止等待，修改内容已保留。服务器可能已收到请求，请先查看记录，再决定是否重试。');
+        return;
+      }
       const response = (error as {
         response?: { status?: number; data?: { detail?: { code?: string } } };
       })?.response;
@@ -1456,7 +1469,7 @@ export default function DietScreen() {
               },
               editPortionValue,
             ))}
-            nutritionReadOnlyHint="旧营养仅供参考，保存后按新描述和份额重新估算"
+            nutritionReadOnlyHint={editSaving ? '正在按新描述和份额重新估算，请稍候…' : '旧营养仅供参考，保存后按新描述和份额重新估算'}
             onDescriptionChange={setEditFoodItems}
             saving={editSaving}
             onSubmit={handleSave}
