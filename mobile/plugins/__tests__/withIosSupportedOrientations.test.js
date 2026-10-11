@@ -5,6 +5,7 @@ const plist = require('@expo/plist').default;
 
 const {
   _SUPPORTED_ORIENTATIONS,
+  _applySupportedOrientationsToInfoPlist,
   _applyIosReleaseScopeToInfoPlist,
   _patchGeneratedInfoPlist,
   _resolveGeneratedInfoPlistPath,
@@ -24,6 +25,16 @@ describe('withIosSupportedOrientations', () => {
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('preserves all iPad orientations for the explicitly enabled tablet config', () => {
+    const patched = _applySupportedOrientationsToInfoPlist({}, true);
+    expect(patched['UISupportedInterfaceOrientations~ipad']).toEqual([
+      'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+      'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight',
+    ]);
+    expect(patched.UIRequiresFullScreen).toBe(false);
+    expect(patched.UISupportedInterfaceOrientations).toEqual(['UIInterfaceOrientationPortrait']);
   });
 
   it('patches the Expo generated app Info.plist even when the target directory is app', () => {

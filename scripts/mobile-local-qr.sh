@@ -114,7 +114,7 @@ const profile = mergeProfile(profileName);
 if (typeof profile.channel !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(profile.channel)) {
   throw new Error('Local QR build requires an explicit valid update channel');
 }
-const allowed = new Set(['APP_VARIANT', 'SENTRY_DISABLE_AUTO_UPLOAD', 'ROKID_IOS_SDK_ENABLED',
+const allowed = new Set(['REVA_IPAD_ENABLED', 'APP_VARIANT', 'SENTRY_DISABLE_AUTO_UPLOAD', 'ROKID_IOS_SDK_ENABLED',
   'ROKID_IOS_CLIENT_FRAMEWORK_PATH', 'ROKID_IOS_CLIENT_HAS_CALLBACK_API',
   'ROKID_IOS_CLIENT_VERSION', 'ROKID_IOS_SIMULATOR', 'ROKID_IOS_CALLBACK_SCHEME']);
 const values = Object.entries(profile.env || {});
@@ -131,6 +131,7 @@ PROFILE_ENV=()
 while IFS=$'\t' read -r key value; do
   PROFILE_ENV+=("${key}=${value}")
   case "${key}" in
+    REVA_IPAD_ENABLED) REVA_IPAD_ENABLED="${value}" ;;
     APP_VARIANT) APP_VARIANT="${value}" ;;
     REVA_LOCAL_UPDATES_CHANNEL) REVA_LOCAL_UPDATES_CHANNEL="${value}" ;;
   esac
@@ -290,6 +291,9 @@ NODE
 fi
 
 RECEIPT_ARGS=()
+if [ "${REVA_IPAD_ENABLED:-0}" = "1" ]; then
+  RECEIPT_ARGS+=(--require-ipad)
+fi
 if [ -n "${IPA_INPUT}" ]; then
   RECEIPT_ARGS+=(--require-receipt "${IPA_INPUT}.receipt.json")
 fi

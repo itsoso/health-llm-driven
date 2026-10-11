@@ -7,9 +7,17 @@ const SUPPORTED_ORIENTATIONS = [
   'UIInterfaceOrientationPortrait',
 ];
 
-function applySupportedOrientationsToInfoPlist(infoPlist) {
+function applySupportedOrientationsToInfoPlist(infoPlist, supportsTablet = false) {
   infoPlist.UISupportedInterfaceOrientations = [...SUPPORTED_ORIENTATIONS];
-  delete infoPlist['UISupportedInterfaceOrientations~ipad'];
+  if (supportsTablet) {
+    infoPlist['UISupportedInterfaceOrientations~ipad'] = [
+      'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+      'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight',
+    ];
+    infoPlist.UIRequiresFullScreen = false;
+  } else {
+    delete infoPlist['UISupportedInterfaceOrientations~ipad'];
+  }
   return infoPlist;
 }
 
@@ -76,7 +84,7 @@ function resolveGeneratedInfoPlistPath(platformProjectRoot, modRequest = {}) {
   return path.join(platformProjectRoot, 'HealthPilot', 'Info.plist');
 }
 
-function patchGeneratedInfoPlist(platformProjectRoot, modRequest = {}) {
+function patchGeneratedInfoPlist(platformProjectRoot, modRequest = {}, supportsTablet = false) {
   const infoPlistPath = resolveGeneratedInfoPlistPath(platformProjectRoot, modRequest);
   if (!fs.existsSync(infoPlistPath)) {
     throw new Error(`withIosSupportedOrientations could not find ${infoPlistPath}`);
@@ -84,14 +92,14 @@ function patchGeneratedInfoPlist(platformProjectRoot, modRequest = {}) {
 
   const current = plist.parse(fs.readFileSync(infoPlistPath, 'utf8'));
   const patched = applyIosReleaseScopeToInfoPlist(
-    applySupportedOrientationsToInfoPlist(current),
+    applySupportedOrientationsToInfoPlist(current, supportsTablet),
   );
   fs.writeFileSync(infoPlistPath, plist.build(patched), 'utf8');
 }
 
 function withIosSupportedOrientations(config) {
   config = withInfoPlist(config, (mod) => {
-    applySupportedOrientationsToInfoPlist(mod.modResults);
+    applySupportedOrientationsToInfoPlist(mod.modResults, config.ios?.supportsTablet === true);
     applyIosReleaseScopeToInfoPlist(mod.modResults);
     return mod;
   });
@@ -99,7 +107,7 @@ function withIosSupportedOrientations(config) {
   return withDangerousMod(config, [
     'ios',
     (cfg) => {
-      patchGeneratedInfoPlist(cfg.modRequest.platformProjectRoot, cfg.modRequest);
+      patchGeneratedInfoPlist(cfg.modRequest.platformProjectRoot, cfg.modRequest, cfg.ios?.supportsTablet === true);
       return cfg;
     },
   ]);

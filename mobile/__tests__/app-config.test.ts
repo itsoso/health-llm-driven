@@ -6,6 +6,7 @@ function configForVariant(variant?: string, env: Record<string, string | undefin
   const previous = process.env.APP_VARIANT;
   const optionalEnvKeys = [
     'REVA_IOS_BUILD_NUMBER',
+    'REVA_IPAD_ENABLED',
     'REVA_LOCAL_UPDATES_CHANNEL',
     'REVA_ANDROID_INTERNAL',
     'EAS_BUILD_PLATFORM',
@@ -215,6 +216,28 @@ describe('app.config app links', () => {
     expect(env.REVA_MARKETING_VERSION).toBe('1.3.0');
     expect(env.PATH).toBe('/usr/bin');
     expect(env.LANG).toBe('en_US.UTF-8');
+  });
+
+  it.each(['preview', 'development'])('rejects iPad distribution outside production: %s', (variant) => {
+    expect(() => configForVariant(variant, { REVA_IPAD_ENABLED: '1' })).toThrow(/iPad/i);
+  });
+
+  it('rejects iPad configuration in an Android build', () => {
+    expect(() => configForVariant('production', { REVA_IPAD_ENABLED: '1', EAS_BUILD_PLATFORM: 'android' })).toThrow(/iPad/i);
+  });
+
+  it('enables native iPad support only for the explicit internal profile', () => {
+    const config = configForVariant('production', { REVA_IPAD_ENABLED: '1' });
+    expect(config.ios.supportsTablet).toBe(true);
+    expect(config.ios.infoPlist['UISupportedInterfaceOrientations~ipad']).toEqual([
+      'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+      'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight',
+    ]);
+    expect(config.ios.infoPlist.UIRequiresFullScreen).toBe(false);
+    expect(config.ios.bundleIdentifier).toBe('life.executor.health');
+    expect(config.runtimeVersion).toEqual({ policy: 'appVersion' });
+    const profile = require('../eas.json').build['ipad-adhoc'];
+    expect(profile).toEqual(expect.objectContaining({ extends: 'production', distribution: 'internal', env: expect.objectContaining({ REVA_IPAD_ENABLED: '1' }) }));
   });
 
   it('keeps the App Store production binary iPhone-only and portrait-only', () => {

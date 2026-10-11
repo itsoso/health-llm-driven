@@ -30,6 +30,7 @@ def test_local_qr_resolves_inherited_update_channel_from_selected_profile():
     resolver = script.split("<<'NODE'\n", 1)[1].split("\nNODE", 1)[0]
     for profile, channel in [
         ("production", "production"),
+        ("ipad-adhoc", "production"),
         ("preview", "preview"),
         ("rokid-adhoc", "rokid-production"),
     ]:
@@ -41,6 +42,8 @@ def test_local_qr_resolves_inherited_update_channel_from_selected_profile():
             check=True,
         )
         assert f"REVA_LOCAL_UPDATES_CHANNEL\t{channel}" in result.stdout
+        if profile == "ipad-adhoc":
+            assert "REVA_IPAD_ENABLED\t1" in result.stdout
 
 
 @pytest.mark.parametrize("channel", [None, "", "production\npreview", "$(echo unsafe)"])

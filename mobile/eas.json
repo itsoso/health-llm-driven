@@ -123,6 +123,13 @@
     "rokid-adhoc": {
       "extends": "rokid-production",
       "distribution": "internal"
+    },
+    "ipad-adhoc": {
+      "extends": "production",
+      "distribution": "internal",
+      "env": {
+        "REVA_IPAD_ENABLED": "1"
+      }
     }
   },
   "submit": {

@@ -237,3 +237,32 @@ def test_existing_ipa_requires_exact_source_and_digest_receipt(guard, tmp_path):
     ipa.write_bytes(b"changed")
     with pytest.raises(guard.UnsafeIPA):
         guard.check_receipt(ipa, receipt, "a" * 40)
+
+
+def test_ipad_candidate_rejects_iphone_only_ipa(guard, package):
+    app, info, _, _, _, run, _ = package
+    info['UIDeviceFamily'] = [1]
+    (app / 'Info.plist').write_bytes(plistlib.dumps(info))
+    with pytest.raises(guard.UnsafeIPA, match='iPad'):
+        guard.verify_app(app, version='1.3.4', channel='production', runner=run, require_ipad=True)
+
+
+@pytest.mark.parametrize('missing', ['family', 'orientations', 'multitasking', None])
+def test_ipad_candidate_requires_native_family_orientations_and_multitasking(guard, package, missing):
+    app, info, _, _, _, run, _ = package
+    info['UIDeviceFamily'] = [1, 2]
+    info['UISupportedInterfaceOrientations~ipad'] = [
+        'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+        'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight',
+    ]
+    info['UIRequiresFullScreen'] = False
+    if missing == 'family': info['UIDeviceFamily'] = [1]
+    if missing == 'orientations': info['UISupportedInterfaceOrientations~ipad'].pop()
+    if missing == 'multitasking': info['UIRequiresFullScreen'] = True
+    (app / 'Info.plist').write_bytes(plistlib.dumps(info))
+    if missing:
+        with pytest.raises(guard.UnsafeIPA, match='iPad'):
+            guard.verify_app(app, version='1.3.4', channel='production', runner=run, require_ipad=True)
+    else:
+        result = guard.verify_app(app, version='1.3.4', channel='production', runner=run, require_ipad=True)
+        assert result['supports_ipad'] is True

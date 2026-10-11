@@ -21,6 +21,7 @@ const IS_ANDROID_INTERNAL = process.env.REVA_ANDROID_INTERNAL === '1';
 const INCLUDE_ROKID = process.env.ROKID_IOS_SDK_ENABLED === '1';
 const INCLUDE_WATCH = process.env.INCLUDE_WATCH_APP === '1';
 const INCLUDE_SIRI = process.env.INCLUDE_SIRI_INTENTS === '1';
+const IPAD_ENABLED = process.env.REVA_IPAD_ENABLED === '1';
 const IOS_BUILD_NUMBER = process.env.REVA_IOS_BUILD_NUMBER?.trim();
 const LOCAL_UPDATES_CHANNEL = process.env.REVA_LOCAL_UPDATES_CHANNEL;
 
@@ -128,6 +129,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   )) {
     throw new Error('Android internal builds require preview identity and no optional native capabilities');
   }
+  if (IPAD_ENABLED && (VARIANT !== 'production' || process.env.EAS_BUILD_PLATFORM === 'android')) {
+    throw new Error('iPad internal distribution requires a production iOS identity');
+  }
   // EAS injects its channel itself; only the local QR build needs this input.
   const expectedLocalChannel = IS_DEV
     ? 'development'
@@ -200,7 +204,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   ios: {
     ...(config.ios ?? {}),
     ...(IOS_BUILD_NUMBER ? { buildNumber: IOS_BUILD_NUMBER } : {}),
-    supportsTablet: false,
+    supportsTablet: IPAD_ENABLED,
     bundleIdentifier: bundleId,
     associatedDomains: Array.from(new Set([
       ...(((config.ios as any)?.associatedDomains ?? []) as string[]),
@@ -217,6 +221,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...baseInfoPlist,
       CFBundleDisplayName: displayName,
       UISupportedInterfaceOrientations: ['UIInterfaceOrientationPortrait'],
+      ...(IPAD_ENABLED ? {
+        'UISupportedInterfaceOrientations~ipad': [
+          'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+          'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight',
+        ],
+        UIRequiresFullScreen: false,
+      } : {}),
       CFBundleURLTypes: [
         ...baseUrlTypes,
         ...(INCLUDE_ROKID ? [{

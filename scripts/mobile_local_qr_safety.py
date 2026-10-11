@@ -68,7 +68,7 @@ def extract_ipa(ipa, destination):
         archive.extractall(destination)
 
 
-def verify_app(app, *, version, channel, runner=subprocess.run, now=None):
+def verify_app(app, *, version, channel, runner=subprocess.run, now=None, require_ipad=False):
     require(
         channel in {"production", "rokid-production"}, "not a production update channel"
     )
@@ -80,6 +80,14 @@ def verify_app(app, *, version, channel, runner=subprocess.run, now=None):
     expo = plistlib.loads((app / "Expo.plist").read_bytes())
     require(info.get("CFBundleIdentifier") == BUNDLE, "bundle mismatch")
     require(info.get("CFBundleShortVersionString") == version, "version mismatch")
+    supports_ipad = 2 in info.get("UIDeviceFamily", [])
+    if require_ipad:
+        require(supports_ipad, "iPad device family missing")
+        require(set(info.get("UISupportedInterfaceOrientations~ipad", [])) == {
+            "UIInterfaceOrientationPortrait", "UIInterfaceOrientationPortraitUpsideDown",
+            "UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight",
+        }, "iPad orientations incomplete")
+        require(info.get("UIRequiresFullScreen") is False, "iPad multitasking disabled")
     build = info.get("CFBundleVersion", "")
     require(
         isinstance(build, str)
@@ -178,6 +186,7 @@ def verify_app(app, *, version, channel, runner=subprocess.run, now=None):
         "runtime": version,
         "channel": channel,
         "device_count": len(devices),
+        "supports_ipad": supports_ipad,
     }
 
 
@@ -239,7 +248,7 @@ def assemble_public(ipa, output, *, build_id, metadata):
     (output / "manifest.plist").write_bytes(plistlib.dumps(manifest))
     title = html.escape(metadata["title"])
     (output / "install.html").write_text(
-        f'<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><body><h1>{title}</h1><p>{html.escape(metadata["version"])} ({html.escape(metadata["build"])})</p><img src="qr.png" alt="安装二维码"><p><a href="{html.escape(install_url)}">在 iPhone 上安装</a></p><p>仅适用于此分发描述文件已注册的设备。</p></body></html>',
+        f'<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><body><h1>{title}</h1><p>{html.escape(metadata["version"])} ({html.escape(metadata["build"])})</p><img src="qr.png" alt="安装二维码"><p><a href="{html.escape(install_url)}">在 iPhone 或 iPad 上安装</a></p><p>仅适用于此分发描述文件已注册的设备。</p></body></html>',
         encoding="utf-8",
     )
     (output / "install-url.txt").write_text(install_url + "\n")
@@ -254,6 +263,7 @@ def main():
     parser.add_argument("--version")
     parser.add_argument("--channel")
     parser.add_argument("--sha")
+    parser.add_argument("--require-ipad", action="store_true")
     parser.add_argument("--require-receipt", type=Path)
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--public-dir", type=Path)
@@ -281,7 +291,7 @@ def main():
         extract_ipa(args.ipa, directory)
         apps = list((directory / "Payload").glob("*.app"))
         require(len(apps) == 1, "expected one application")
-        metadata = verify_app(apps[0], version=args.version, channel=args.channel)
+        metadata = verify_app(apps[0], version=args.version, channel=args.channel, require_ipad=args.require_ipad)
     write_receipt(args.ipa, args.receipt, args.sha, metadata)
     assemble_public(
         args.ipa, args.public_dir, build_id=args.build_id, metadata=metadata
