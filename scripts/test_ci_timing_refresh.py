@@ -230,3 +230,29 @@ def test_multi_run_rejects_changed_policy_or_duplicate_run():
     second['shards'][0]['estimated_seconds'] = 91
     with pytest.raises(ValueError):
         _refresh_module().combine_samples([first, second])
+
+
+def test_reviewed_r_other_baseline_retains_selection_and_worker_limits(monkeypatch):
+    import hashlib
+    monkeypatch.syspath_prepend(str(ROOT / 'backend/scripts'))
+    spec = importlib.util.spec_from_file_location('calibrated_ci_worker', ROOT / 'backend/scripts/run_ci_pytest_worker.py')
+    worker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(worker)
+    payload = json.loads((ROOT / '.github/ci/backend-pytest-shards.json').read_text())
+    row = next(row for row in payload['shards'] if row['label'] == 'r-other')
+    assert worker.shard_timeout_seconds(row) == 574
+    evidence = payload['deadline_calibration']['r-other']
+    assert evidence['run_id'] == 38099901426
+    assert evidence['head_sha'] == '43121bbf46b33b5699a4a6dd753c636d842ef944'
+    assert evidence['job_id'] == 114353526558
+    assert evidence['attempt'] == 1 and evidence['return_code'] == 0
+    assert row['estimated_seconds'] == evidence['process_wall_seconds'] == 191.127
+    selection = {key: row[key] for key in ('paths', 'exclude_paths', 'extra_args', 'process_groups') if key in row}
+    assert hashlib.sha256(json.dumps(selection, sort_keys=True).encode()).hexdigest() == evidence['selection_sha256']
+    assert 'timeout_seconds' not in row and 'max_attempts' not in row
+    assert worker.MIN_SHARD_TIMEOUT_SECONDS == 180
+    assert worker.MAX_SHARD_TIMEOUT_SECONDS == 600
+    assert worker.SHARD_TIMEOUT_MULTIPLIER == 3
+    assert worker.shard_max_attempts(row) == 2
+    assert '--timeout=120' in worker.BASE_PYTEST_ARGS
+    assert '--maxfail=5' in worker.BASE_PYTEST_ARGS

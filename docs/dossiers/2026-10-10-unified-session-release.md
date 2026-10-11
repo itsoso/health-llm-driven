@@ -257,3 +257,20 @@ OTA 同批补修：复用已有 `_sync_business_lease_parent` 对受管 `/run/lo
 绑定的目录 fsync；保留 `/var/lock` 固定链接校验及任意链接拒绝。已 rename、未完成
 fsync 的恢复必须对同一原 lease 再做同步，不能用可见归档冒充持久完成。两个初始
 失败回归与一个恢复同步失败回归均先 RED，再修实现；本补修仍须固定 G4 和新 SHA CI。
+
+## CI 截止漂移：发布暂停与受审校准
+
+38101892798 attempt 1 与仅失败项重跑的 attempt 2 均在 r-other 两次 204 秒
+截止后失败，原四次超时与失败聚合终态保留，不继续盲目重跑。3398f2a72 的本地
+CI-mode 为 3570 passed、22 skipped、84 subtests passed / exit 0，仍不能替代远端红灯。
+
+完整成功 main 43121bbf 的 CI 38099901426、job 114353526558 中，r-other 首次
+完整通过的进程 wall time 为 191.127 秒（exit 0），而既有估值为 67.93 秒。
+独立校准仅将该 estimate 绑定到这条成功证据；路径选择、placement、进程隔离、
+单用例 120 秒、三倍截止规则、180–600 秒边界及最多两次尝试不变。新派生截止
+为 574 秒；不把超时当成功样本，也不豁免断言失败。元数据保留 baseline SHA、
+run/job、attempt、原 estimate 和 selection digest；新增契约回归先 RED 后 GREEN。
+
+当前远端 main 非绿，依据 AGENTS.md 第 7 节暂停外部源码写入与部署；须获得用户
+明确批准仅推送该受审 CI 修复以恢复主干，再等待新精确 CI 全绿。此例外不准直接
+部署或跳过测试。后续实际收口、部署和 OTA 仍须各自 Gate，原发布不重试。
