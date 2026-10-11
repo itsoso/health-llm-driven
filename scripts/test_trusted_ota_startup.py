@@ -10,6 +10,7 @@ import sys
 
 import pytest
 
+import json
 
 SHA = 'a' * 40
 
@@ -169,7 +170,14 @@ try:
         'reviewed_test_ota_publisher', '/opt/reva-release/source/scripts/trusted_ota_publish.py')
     publisher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(publisher)
-    contract = publisher.preflight(sha)
+    try:
+        contract = publisher.preflight(sha)
+    except publisher.PreflightError as exc:
+        if exc.phase != 'native_source' or exc.reason != 'native_source_incompatible':
+            raise
+        print(json.dumps({'sha': sha, 'state': 'TEST_NATIVE_RELEASE_REQUIRED',
+                          'release_authorized': False, 'export_performed': False}, sort_keys=True))
+        raise SystemExit(0)
     adapter = publisher.Adapter(sha, contract, None)
     adapter.export()
     adapter.validate_source()
@@ -216,6 +224,14 @@ def fidelity_command(phase):
     return '\n'.join(bodies)
 
 
+def expected_native_rejection(output):
+    try:
+        value = json.loads(output)
+    except (ValueError, TypeError):
+        return False
+    return value == {'phase': 'native_source', 'reason': 'native_source_incompatible', 'state': 'BLOCKED'}
+
+
 def run_fidelity_phase(phase):
     import re
     if sys.platform != 'linux' or os.environ.get('GITHUB_ACTIONS') != 'true':
@@ -232,8 +248,20 @@ def run_fidelity_phase(phase):
            'GITHUB_REPOSITORY': repository, 'GITHUB_SHA': sha,
            'GITHUB_REF': ref, 'TARGET_SHA': sha}
     print('Credential-free OTA fidelity: ' + phase + '; no release authorization.', flush=True)
-    subprocess.run(['/bin/bash', '--noprofile', '--norc', '-euo', 'pipefail', '-c', command],
-                   env=env, check=True, timeout=1000 if phase == 'export' else 900)
+    options = {'capture_output': True, 'text': True} if phase == 'smoke' else {}
+    try:
+        result = subprocess.run(['/bin/bash', '--noprofile', '--norc', '-euo', 'pipefail', '-c', command],
+                                env=env, check=True, timeout=1000 if phase == 'export' else 900, **options)
+    except subprocess.CalledProcessError as exc:
+        # A native release is not an OTA candidate. Prove the actual publisher
+        # rejects it; never turn an unknown context/runtime error into a pass.
+        if phase != 'smoke' or not expected_native_rejection(exc.stdout):
+            raise
+        print(exc.stdout, end='')
+        print('TEST_NATIVE_RELEASE_REQUIRED: OTA remains blocked; no release authorization.')
+        return
+    if phase == 'smoke':
+        print(result.stdout, end='')
 
 
 if __name__ == '__main__':
@@ -241,3 +269,36 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--fidelity-phase', choices=(*PHASE_STEPS, 'export'), required=True)
     run_fidelity_phase(parser.parse_args().fidelity_phase)
+
+
+def test_expected_native_rejection_is_exact_and_not_release_authorization():
+    assert expected_native_rejection('{"phase":"native_source","reason":"native_source_incompatible","state":"BLOCKED"}\n')
+    for payload in [
+        {"phase":"publisher_context","reason":"native_source_incompatible","state":"BLOCKED"},
+        {"phase":"native_source","reason":"native_runtime_binding_mismatch","state":"BLOCKED"},
+        {"phase":"native_source","reason":"native_source_incompatible","state":"SUCCEEDED"},
+    ]:
+        assert not expected_native_rejection(json.dumps(payload))
+    assert not expected_native_rejection('not json')
+    assert not expected_native_rejection('{"phase":"native_source","reason":"native_source_incompatible","state":"BLOCKED"}\nextra')
+
+
+@pytest.mark.parametrize('phase,reason,accepted', [
+    ('smoke', 'native_source_incompatible', True),
+    ('smoke', 'native_runtime_binding_mismatch', False),
+    ('tools', 'native_source_incompatible', False),
+])
+def test_fidelity_accepts_only_actual_expected_native_block(monkeypatch, phase, reason, accepted, capsys):
+    monkeypatch.setattr(sys, 'platform', 'linux')
+    for name, value in {'GITHUB_ACTIONS':'true', 'GITHUB_REPOSITORY':'itsoso/health-llm-driven',
+                        'GITHUB_SHA':SHA, 'GITHUB_REF':'refs/heads/main'}.items():
+        monkeypatch.setenv(name, value)
+    def failed(args, **kwargs):
+        raise subprocess.CalledProcessError(1, args, output=json.dumps({
+            'phase':'native_source', 'reason':reason, 'state':'BLOCKED'}) + '\n')
+    monkeypatch.setattr(subprocess, 'run', failed)
+    if accepted:
+        run_fidelity_phase(phase)
+        assert 'OTA remains blocked; no release authorization' in capsys.readouterr().out
+    else:
+        with pytest.raises(subprocess.CalledProcessError): run_fidelity_phase(phase)

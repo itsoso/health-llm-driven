@@ -26,7 +26,8 @@
 
 ## G5 发布
 
-尚未构建或发布IPA。
+原候选8f30458b5的完整CI 38144526405发现OTA startup按预期拒绝原生变化(native_source_incompatible)，不得将其作为绿色发布证据。修订仅credential-free CI fidelity：保留真实publisher原样执行与BLOCKED输出，smoke只接受严格匹配的原生拒绝；export记录TEST_NATIVE_RELEASE_REQUIRED及export_performed=false，不导出、不调用gate/claim/vendor。未知上下文、runtime错误和其他phase失败仍阻断。真实trusted OTA发布入口不变，原生包只走独立扫码校验；本轮不会发OTA。新增正反测试先RED后GREEN，234 tests passed。待独立审查、修订候选完整CI与实际IPA。
+
 
 ## G6 验收
 
