@@ -35,3 +35,5 @@ deadline测试先RED（缺少功能模块）后GREEN。新增屏幕回归覆盖�
 首轮独立审查 NO-GO：deadline未绑定会话/卸载，旧等待及回调可能影响新编辑界面。修订绑定owner、token、consent revision、operation controller；订阅会话失效、切号及组件卸载，立即取消。join后、派发前及成功/错误/ finally前均验证当前操作；手动与原子请求携带subject/revision，服务端owner/CAS不变。会话取消静默结束旧操作，不向新会话展示旧错误；35秒超时保留重试key/修改及不确定文案。新增切号、同owner换token、consent失效、卸载的迟到join，以及新编辑界面中的旧响应回归。首轮审查日志 `/tmp/reva-diet-edit-independent-safety.log`；新增回归先RED `/tmp/reva-diet-session-red.log`。等待修订后独立复审。
 
 修订验证：5 suites / 51 passed；tsc exit0，System Map与diff-check通过。日志 `/tmp/reva-diet-session-final3.log`、`/tmp/reva-diet-session-tsc3.log`。
+
+复审期间补充同一记录保存中重复编辑防护（handleEdit锁），新增幂等重试key保留及正常成功关表单回归。先RED `/tmp/reva-diet-same-edit-red.log` 后GREEN；5 suites / 52 passed，tsc、地图、diff-check通过。日志 `/tmp/reva-diet-edit-final52.log`、`/tmp/reva-diet-edit-tsc52.log`。

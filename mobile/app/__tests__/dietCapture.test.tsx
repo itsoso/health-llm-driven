@@ -775,6 +775,31 @@ describe('DietScreen capture deeplink', () => {
     alert.mockRestore();
   });
 
+  it('does not reopen the same record or clear its operation key while saving', async () => {
+    const service = require('../../services/diet');
+    const { todayStr } = jest.requireActual('../../utils/dietDate');
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    let fail!: (reason: unknown) => void;
+    service.recalculateDietRecordNutrition.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+    mockMeals.push({ id: 49, user_id: 1, record_date: todayStr(), meal_type: 'dinner',
+      food_items: '拌面约1盘', calories: 550, protein: 23, carbs: 55, fat: 26,
+      alcohol_units: 0, updated_at: '2026-09-20T12:00:00Z', image_url: null });
+    const view = render(<DietScreen />);
+    fireEvent.press(view.getByLabelText('编辑'));
+    const correction = { record_date: todayStr(), meal_type: 'dinner', food_items: '拌面约2盘',
+      calories: 550, protein: 23, carbs: 55, fat: 26, alcohol_units: 0 };
+    let save!: Promise<void>;
+    await act(async () => { save = mockMealForm.mock.lastCall?.[0].onSubmit(correction); });
+    const key = service.recalculateDietRecordNutrition.mock.calls[0][2];
+    fireEvent.press(view.getByLabelText('编辑'));
+    await act(async () => { fail(new Error('synthetic')); await save; });
+    service.recalculateDietRecordNutrition.mockResolvedValueOnce({ id: 49 });
+    await act(async () => { await mockMealForm.mock.lastCall?.[0].onSubmit(correction); });
+    expect(service.recalculateDietRecordNutrition.mock.calls[1][2]).toBe(key);
+    expect(view.queryByTestId('meal-form')).toBeNull();
+    alert.mockRestore();
+  });
+
   it('ignores a late response from the previous session while a new edit is open', async () => {
     const service = require('../../services/diet');
     const { todayStr } = jest.requireActual('../../utils/dietDate');

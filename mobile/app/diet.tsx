@@ -1039,6 +1039,7 @@ export default function DietScreen() {
   }, [qc, toast]);
 
   const handleEdit = useCallback((r: DietRecord) => {
+    if (editSavingRef.current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     activeDraftRef.current = true;
     setEditingRecord(r);
