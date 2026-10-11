@@ -11,6 +11,8 @@ import os
 import re
 import ssl
 import sys
+import time
+import urllib.error
 import urllib.request
 
 _BASE = "https://api.github.com/repos/itsoso/health-llm-driven"
@@ -53,13 +55,66 @@ def _get_json(url):
     if token:
         headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(url, headers=headers, method="GET")
-    with opener.open(request, timeout=_TIMEOUT) as response:
-        if response.status != 200 or response.geturl() != url:
-            raise GateError("Unexpected GitHub response")
-        raw = response.read(_MAX_RESPONSE + 1)
-        if len(raw) > _MAX_RESPONSE:
-            raise GateError("GitHub response exceeds bound")
-        return json.loads(raw)
+    # Retries share the original per-read deadline, rather than multiplying it.
+    deadline = time.monotonic() + _TIMEOUT
+    for attempt in range(3):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise GateError("GitHub network deadline exceeded; retry release validation later")
+        try:
+            with opener.open(request, timeout=remaining) as response:
+                if response.status != 200 or response.geturl() != url:
+                    raise GateError("Unexpected GitHub response")
+                raw = response.read(_MAX_RESPONSE + 1)
+                if time.monotonic() >= deadline:
+                    raise GateError("GitHub network deadline exceeded; retry release validation later")
+                if len(raw) > _MAX_RESPONSE:
+                    raise GateError("GitHub response exceeds bound")
+                return json.loads(raw)
+        except urllib.error.HTTPError as error:
+            # Never emit body, URL, headers, token or the exception text.
+            response_headers = error.headers or {}
+            rate_limited = error.code == 429 or (
+                error.code == 403 and (
+                    response_headers.get("X-RateLimit-Remaining") == "0"
+                    or response_headers.get("Retry-After") is not None
+                )
+            )
+            retry_after = response_headers.get("Retry-After")
+            error.close()
+            if rate_limited:
+                message = "GitHub rate limit exhausted; wait for API quota recovery before release validation"
+                if error.code == 403:
+                    raise GateError(message) from None
+            elif error.code == 401:
+                raise GateError("GitHub authentication rejected; verify release credential configuration") from None
+            elif error.code == 404:
+                raise GateError("GitHub metadata not found; verify repository and candidate identity") from None
+            elif error.code == 403:
+                raise GateError("GitHub access denied; verify release API access") from None
+            elif 500 <= error.code <= 599:
+                message = "GitHub service unavailable; retry release validation later"
+            else:
+                raise GateError("GitHub HTTP request rejected; inspect release API access") from None
+            if retry_after is None:
+                delay = 1.0
+            elif isinstance(retry_after, str) and re.fullmatch(r"[0-9]{1,9}", retry_after):
+                delay = float(retry_after)
+            else:
+                # Unknown/date-form backoff is not permission to retry early.
+                delay = _TIMEOUT
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, ssl.SSLError):
+                raise GateError("GitHub TLS verification failed; inspect system trust") from None
+            message = "GitHub network unavailable; inspect connectivity before release validation"
+            delay = 1.0
+        except (TimeoutError, ConnectionError):
+            message = "GitHub network unavailable; inspect connectivity before release validation"
+            delay = 1.0
+        if attempt == 2 or delay >= deadline - time.monotonic():
+            raise GateError(message) from None
+        time.sleep(delay)
+
 
 
 def _read(get_json, path):

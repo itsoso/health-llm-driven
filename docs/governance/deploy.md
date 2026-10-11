@@ -1197,3 +1197,26 @@ lock 保持原字节。收口状态为独立的 `CLOSED_ROLLED_BACK_RELEASE`。
 通道消费收口回执；不放入命令行、日志或聊天。历史复核保存原失败链和
 归档 preimage 的摘要，不要求未来生产仍停留在回滚 SHA。收口成功仍不是
 新候选部署成功；新 SHA 继续走 backend、Web、trusted OTA 各自的回执与验证。
+
+### 部署前 GitHub 再校验失败的独立收口
+
+`recover-preparation` 可识别独立的 `predeploy-attestation-failure` 实现 profile：
+仅接受经审查的完整 executor/gate 摘要与 canonical/installed/policy 三方一致、
+STARTED/PREPARING/PREPARED/DEPLOYING/NEEDS_OPERATOR 精确回执、固定 wrapper 与
+唯一末行 GitHub 元数据失败。全保留树 manifest 不变，deployment.log、build.lock、
+业务 lease、原生 claim 或未知文件任一出现即拒绝，不将“没有日志”单独当执行证明。
+
+该实现控制流证明失败 gate 仅使用标准库读取 GitHub 元数据，尚未启动 deploy.sh。
+收口不扫描 schema/KB 或个人健康数据，也不证明业务功能验收。生产证明绑定独立指定的
+旧 SHA、COMMITTED 终态、现有配置派生的完整 candidate env、早于消费的进程/配置身份、
+backend socket/backend/worker/beat 的规范化有效启动命令、unit/drop-in 与环境文件路径；
+排除 runtime activation override，并跨六秒稳定窗口复核。frontend 不在此 profile 的
+服务验收范围；不得据此宣称全站验收。首次随机 Laya 配置无法确定性重建时拒绝。
+
+沿用原锁和两阶段摘要确认、先 fsync intent、精确撤销旧双身份与私钥、后置证明及
+受保护回执通道。新终态为 CLOSED_PREDEPLOY_ATTESTATION_FAILURE，保留原
+NEEDS_OPERATOR 与全部消费记录，不将原发布改为成功，不重试原 SHA；任何意图后失败
+保留未完成记录并阻断再次执行。此入口只撤权，后续候选仍须独立 G4、精确绿色 main CI、
+新授权、后端部署与 OTA validate/publish。授权来源仍是用户的部署维护授权，设计审查
+本身不授予操作权限。GitHub 配额耗尽只给明确原因；短暂 429/5xx/连接故障最多三次
+尝试，共享原十秒预算，TLS/鉴权失败及真实 CI 红灯不得重试。

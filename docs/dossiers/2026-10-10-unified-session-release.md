@@ -240,3 +240,15 @@ canonical staging/轮换成功，旧身份撤销及旧私钥在原锁下销毁�
 OTA validate38098599857 success；publish38098726274原workflow failure，finish-ota/command_failed。原artifact11686193305保留供应商group51e5d9b5-3678-4ed6-8898-0344b95b8f5a、update01a12863-d98e-7407-ad80-5d43e1ba1674。第一次canonical recover完成verified与原租约archive后失败，未写terminal；只读归档校验通过，再以同一原receipt完成受审恢复，SUCCEEDED且原租约退休。未重发vendor update或换claim，原失败不抹绿。模拟器production runtime1.3.5冷启动加载相同update，成功次数1、失败0；登录页可见，真实登录业务会话未验证。用户不需要真实模型评测的偏好保留。
 
 交付回执docs/reviews/2026-10-11-week-health-release-receipt.json。额外发布优化观察：r-other截止估值67.93秒与完整成功baseline124.751秒漂移；operator包装前置重复扫描前端历史，仍出现多GB读取，canonical内部memo两检查25.95/22.1秒；OTA收尾目录fsync需另批修复。以上不冒充已优化，不在已消费发布期间改helper。其他session照片/时间dirty保持原样，不纳入此批次；本补充记录仅本地，不推进已发布main。
+
+## 2026-10-11 补剂照片整合发布与部署前限流事故
+
+43121bbf 的独立安全 GO、PG 107 个通过、Mobile 378 个通过及精确 main CI
+38099901426 的 32 jobs 成功已完成。后端发布 38100748192 在准备成功后、执行
+deploy.sh 前的匿名 GitHub 元数据校验因 API 配额耗尽失败，保留 NEEDS_OPERATOR。
+线上仍为 2456ccb；此补剂候选没有部署成功，OTA 未开始。不得重新触发原发布。
+
+正在增加实现摘要绑定的部署前失败独立收口与限流诊断。独立审查发现并要求修正
+两秒稳定窗口及残留 activation override 检查；生产服务与配置只读证明、终态解析、
+私钥对应校验、意图后失败禁止重试均补直接回归。新代码尚待固定提交的 G4 与完整 CI，
+实际撤权及后续发布仍待上述闸满足。真实模型评测继续遵循用户的永久豁免。

@@ -55,6 +55,12 @@ PHASE_CLONE_TIMEOUT_EXECUTORS = {
 PHASE_CLONE_COMPLETED_EXECUTORS = {
     "bdfd21ed1bd67c38ed04916257758ab76970cb3be38f1cacc7f675eb807c2bd4",
 }
+# Implementation-level proof: this executor opens deployment.log only after
+# the exact read-only gate succeeds. Never a release-SHA exemption or retry.
+PREDEPLOY_ATTESTATION_IMPLEMENTATIONS = {
+    "81dfedcc8ccbeb8b88181a0a309abbfb129d0d48a8d83ce2a42b5d112d5829eb":
+        "72b1e2423e54d9251bcabe262798366af25ebbe0aee29197c1c6b64547ac180e",
+}
 PROC = Path("/proc")
 
 
@@ -916,7 +922,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
                     sys.modules[__name__], source, old_sha, finalized_production_sha) != advance:
                 raise BootstrapError("finalized production evidence changed during rotation")
         check_locks()
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE", "CLOSED_ROLLED_BACK_RELEASE"}:
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_PREDEPLOY_ATTESTATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE", "CLOSED_ROLLED_BACK_RELEASE"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         retired_keys = {(config / name).read_text().strip()
                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]
@@ -1111,6 +1117,8 @@ def _legacy_clone_evidence(sha):
 def _recoverable_clone_evidence(sha):
     source = canonical_source(sha)
     digest = hashlib.sha256((source / "scripts/trusted_release_server.py").read_bytes()).hexdigest()
+    if digest in PREDEPLOY_ATTESTATION_IMPLEMENTATIONS:
+        return _predeploy_attestation_evidence(sha, source, digest)
     phase_timeout = digest in PHASE_CLONE_TIMEOUT_EXECUTORS
     phase_completed = digest in PHASE_CLONE_COMPLETED_EXECUTORS
     if not phase_timeout and not phase_completed:
@@ -1160,9 +1168,57 @@ def _recoverable_clone_evidence(sha):
             "manifest": _preparation_manifest(workspace)}
 
 
+def _predeploy_attestation_evidence(sha, source, digest):
+    workspace = STATE / sha
+    required = {"started.json", "completed.json", "preparation-started.json", "prepared.json",
+                "deployment-started.json", "preparation.log", "deployment.env", "home", "bin", "source"}
+    secure(workspace)
+    if stat.S_IMODE(workspace.stat().st_mode) != 0o700 or {p.name for p in workspace.iterdir()} != required:
+        raise BootstrapError("predeploy attestation inventory unproven")
+    for name, state in (("started.json", "STARTED"), ("completed.json", "NEEDS_OPERATOR"),
+                        ("preparation-started.json", "PREPARING"), ("prepared.json", "PREPARED"),
+                        ("deployment-started.json", "DEPLOYING")):
+        expected = {"sha": sha, "state": state}
+        if name == "preparation-started.json": expected["executor_sha256"] = digest
+        secure(workspace / name, private=True)
+        if _read_json(workspace / name) != expected:
+            raise BootstrapError("predeploy attestation phase differs")
+    for name in ("home", "bin", "source"):
+        secure(workspace / name)
+        if stat.S_IMODE((workspace / name).stat().st_mode) != 0o700:
+            raise BootstrapError("predeploy private directory required")
+    if list((workspace / "home").iterdir()) or {p.name for p in (workspace / 'bin').iterdir()} != {'ssh', 'scp', 'python3'}:
+        raise BootstrapError("predeploy tool inventory differs")
+    for command in ('ssh', 'scp', 'python3'):
+        path = workspace / 'bin' / command
+        secure(path, private=True)
+        target = '/usr/bin/python3.12' if command == 'python3' else '/usr/bin/' + command
+        args = '' if command == 'python3' else ' -F /etc/reva-release/loopback.conf'
+        if path.read_bytes() != f'#!/bin/sh\nexec {target}{args} "$@"\n'.encode() or stat.S_IMODE(path.stat().st_mode) != 0o700:
+            raise BootstrapError('predeploy tool bytes differ')
+    expected_gate = PREDEPLOY_ATTESTATION_IMPLEMENTATIONS[digest]
+    for name, expected in (('trusted_release_server.py', digest), ('trusted_release_gate.py', expected_gate)):
+        for root in (source, workspace / 'source'):
+            path = root / 'scripts' / name
+            secure(path)
+            if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise BootstrapError('predeploy implementation differs')
+    log = workspace / 'preparation.log'
+    secure(log, private=True)
+    if log.stat().st_size > 16_000_000:
+        raise BootstrapError('predeploy transcript exceeds bound')
+    raw = log.read_bytes()
+    failure = b'release gate: GitHub metadata unavailable\n'
+    if not raw.endswith(failure) or raw.count(failure) != 1 or raw.count(b'release gate:') != 1:
+        raise BootstrapError('predeploy read-only attestation failure unproven')
+    secure(workspace / 'deployment.env', private=True)
+    return {'profile': 'predeploy-attestation-failure', 'executor_sha256': digest,
+            'gate_sha256': expected_gate, 'manifest': _preparation_manifest(workspace)}
+
+
 def _recovery_build_identity(sha, workspace):
     path = STATE / sha / "build.lock"
-    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain"}:
+    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain", "predeploy-attestation-failure"}:
         if os.path.lexists(path):
             raise BootstrapError("absent historical build lock appeared")
         return None
@@ -1170,7 +1226,7 @@ def _recovery_build_identity(sha, workspace):
 
 
 def _assert_recovery_build_lock(sha, fd, workspace):
-    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain"}:
+    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain", "predeploy-attestation-failure"}:
         if fd is not None or _recovery_build_identity(sha, workspace) is not None:
             raise BootstrapError("phase clone build lock must remain absent")
     elif fd is None:
@@ -1268,6 +1324,144 @@ def _recovery_file_identity(path):
             "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
+def _predeploy_module(source, name):
+    path = source / 'scripts' / name
+    secure(path)
+    if os.path.lexists(path.parent / '__pycache__'):
+        raise BootstrapError('cached canonical operator code forbidden')
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location('predeploy_' + name.removesuffix('.py'), path)
+    value = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = value
+    spec.loader.exec_module(value)
+    return value
+
+
+def _predeploy_production_proof(old_sha, production_sha, source):
+    """Read-only live proof; never execute the failed source or candidate env."""
+    server = _predeploy_module(source, 'trusted_release_server.py')
+    proof_module = _predeploy_module(source, 'contained_recovery_proof.py')
+    # Only the lease-independent read-only methods are used. This label is not
+    # an original lease, claim, sealed stage or deployment authorization.
+    reader = SimpleNamespace(secure=secure, BUSINESS_LEASE=BUSINESS_LEASE)
+    proof = proof_module.RecoveryProof(source, reader, server, old_sha,
+                                       production_sha, 'no-predeployment-lease')
+    live = server.read_production_env()
+    if not any(re.match(r'\s*(?:export\s+)?DECISION_', line, re.I) for line in live.splitlines()):
+        raise BootstrapError('unprovable random initial Laya environment')
+    normalized = server.invitation_only_config(live)
+    lines = [line for line in normalized.splitlines() if not line.startswith(('DEPLOY_SERVER=', 'DEPLOY_PATH='))]
+    expected = ('\n'.join(lines) + '\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n').encode()
+    candidate = STATE / old_sha / 'deployment.env'
+    secure(candidate, private=True)
+    if candidate.read_bytes() != expected:
+        raise BootstrapError('predeploy environment does not derive from live production')
+    # This read context supplies only the real terminal/transaction path; it
+    # neither constructs a fake release stage nor permits mutation methods.
+    layout = SimpleNamespace(transaction_root=proof.runtime_root / 'runtime-state-transaction')
+    transaction = proof.runtime.ReleaseTransaction(layout, proof.systemd)
+    marker = transaction._load_terminal_marker()
+    if marker['phase'] != 'COMMITTED' or marker['terminal_sha'] != production_sha:
+        raise BootstrapError('predeploy current production terminal differs')
+    proof._absent(layout.transaction_root, transaction._preparing_root(),
+                  Path('/var/lib/reva-health-evidence-runtime/enabled.env'),
+                  Path('/run/reva-health-evidence-activation'),
+                  Path('/opt/health-app/backend/.env.reva-release.tmp'))
+    if list(proof.runtime_root.glob('runtime-state-transaction.reap-*')):
+        raise BootstrapError('predeploy runtime cleanup remains pending')
+    for unit in proof_module.UNITS[1:]:
+        proof._absent(Path('/run/systemd/system') / (unit + '.d') / '90-reva-health-evidence-activation.conf')
+    began = (STATE / old_sha / 'started.json').stat().st_mtime
+    units = _predeploy_unit_configuration(proof, transaction, canonical_source(production_sha), began)
+    boot_epoch = time.time() - float((PROC / 'uptime').read_text().split()[0])
+    cutoff = int((began - boot_epoch - 1) * 1_000_000)
+    before = proof.running_services_snapshot()
+    for fields in before.values():
+        if int(fields['ActiveEnterTimestampMonotonic']) >= cutoff:
+            raise BootstrapError('predeploy service started after original consumption')
+        if fields.get('NRestarts') not in ('', '0'):
+            raise BootstrapError('predeploy service restarted')
+        for started in fields.get('processes', {}).values():
+            if int(started) / os.sysconf('SC_CLK_TCK') * 1_000_000 >= cutoff:
+                raise BootstrapError('predeploy service descendant started after consumption')
+    status = _run(['/usr/bin/curl', '--silent', '--show-error', '--fail', '--max-time', '10',
+                   '--output', '/dev/null', '--write-out', '%{http_code}',
+                   'http://127.0.0.1:8000/api/v1/health'], capture=True)
+    if status.stdout != '200':
+        raise BootstrapError('predeploy production health unavailable')
+    time.sleep(6)
+    if (proof.running_services_snapshot() != before or server.read_production_env() != live
+            or _predeploy_unit_configuration(proof, transaction, canonical_source(production_sha), began) != units):
+        raise BootstrapError('predeploy production changed across stability window')
+    secure(transaction._terminal_marker_path(), private=True)
+    return {'environment_sha256': hashlib.sha256(live.encode()).hexdigest(),
+            'candidate_environment_sha256': hashlib.sha256(expected).hexdigest(),
+            'terminal': _recovery_file_identity(transaction._terminal_marker_path()),
+            'services': before, 'units': units, 'health_http': 200}
+
+
+def _predeploy_unit_configuration(proof, transaction, old_source, began):
+    """Bind existing backend units without implying a lease or Laya closure."""
+    units = ('health-backend.socket', 'health-backend.service', 'celery-worker.service', 'celery-beat.service')
+    result = {}
+    def identity(path):
+        secure(path)
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_mtime >= began:
+            raise BootstrapError('predeploy unit configuration changed after consumption')
+        return {'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'inode': info.st_ino,
+                'device': info.st_dev, 'mode': stat.S_IMODE(info.st_mode), 'mtime_ns': info.st_mtime_ns}
+    for unit in units:
+        fields = {name: proof.systemd.show(unit, name) for name in
+                  ('NeedDaemonReload', 'FragmentPath', 'DropInPaths', 'ExecStart', 'EnvironmentFiles', 'Listen')}
+        base = Path('/etc/systemd/system') / unit
+        if fields['NeedDaemonReload'] != 'no' or fields['FragmentPath'] != str(base):
+            raise BootstrapError('predeploy effective unit source differs')
+        entry = {'base': identity(base)}
+        if unit.endswith('.socket'):
+            if fields['DropInPaths'] or fields['ExecStart'] or fields['EnvironmentFiles'] or fields['Listen'] != '127.0.0.1:8000 (Stream)':
+                raise BootstrapError('predeploy socket configuration differs')
+        else:
+            dropins = fields['DropInPaths'].split()
+            parent = Path(str(base) + '.d')
+            required = [str(parent / name) for name in ('80-reva-health-evidence-runtime.conf', '90-runtime-state.conf')]
+            optional = [str(parent / name) for name in ('security-network.conf', 'zzzz-reva-vision-model.conf')]
+            if dropins != required + [name for name in optional if name in dropins]:
+                raise BootstrapError('predeploy effective drop-in inventory differs')
+            for path in dropins:
+                entry[path] = identity(Path(path))
+            command_path = (old_source / 'infra/systemd' / unit if unit == 'celery-worker.service' else
+                            old_source / 'infra/systemd/dropins' / ('health-backend-runtime-state.conf' if unit == 'health-backend.service' else 'celery-beat-runtime-state.conf'))
+            secure(command_path)
+            commands = re.findall(r'^ExecStart=(.+)$', command_path.read_text(), re.M)
+            if len(commands) != 1:
+                raise BootstrapError('predeploy canonical command ambiguous')
+            command = commands[0]
+            fields['ExecStart'] = transaction._stable_exec_start(fields['ExecStart'])
+            if fields['ExecStart'] != f'path={command.split()[0]}\nargv[]={command}\nignore_errors=no':
+                raise BootstrapError('predeploy effective command differs')
+            expected_env = '/opt/health-app/backend/.env (ignore_errors=no) /var/lib/reva-health-evidence-runtime/enabled.env (ignore_errors=yes)'
+            if optional[1] in dropins:
+                expected_env += ' /var/lib/reva-vision-model/model.env (ignore_errors=no)'
+                entry['vision_environment'] = identity(Path('/var/lib/reva-vision-model/model.env'))
+            fields['EnvironmentFiles'] = ' '.join(fields['EnvironmentFiles'].splitlines())
+            if fields['EnvironmentFiles'] != expected_env:
+                raise BootstrapError('predeploy effective environment paths differ')
+        entry['effective'] = fields
+        result[unit] = entry
+    return result
+
+
+def _predeploy_loopback_key_proof():
+    key = CONFIG / 'loopback.key'
+    secure(key, private=True)
+    before = _recovery_file_identity(key)
+    actual = _run(['/usr/bin/ssh-keygen', '-y', '-f', str(key)], capture=True).stdout.strip().split()
+    expected = (CONFIG / 'loopback.pub').read_text().strip().split()
+    if actual != expected or _recovery_file_identity(key) != before:
+        raise BootstrapError('predeploy loopback private/public identity differs')
+
+
 def _recovery_snapshot(old_sha, sha, production_sha, source):
     if os.path.lexists(BUSINESS_LEASE):
         raise BootstrapError("business lease blocks historical recovery")
@@ -1300,12 +1494,16 @@ def _recovery_snapshot(old_sha, sha, production_sha, source):
     _recovery_process_proof()
     if workspace != _recoverable_clone_evidence(old_sha) or os.path.lexists(BUSINESS_LEASE):
         raise BootstrapError("historical evidence changed during proof")
-    return {"old_sha": old_sha, "recovery_sha": sha, "production_sha": production_sha,
+    result = {"old_sha": old_sha, "recovery_sha": sha, "production_sha": production_sha,
             "workspace": workspace, "config": config, "library": library,
             "authorized": _recovery_file_identity(AUTHORIZED),
             "locks": {"launcher": _recovery_file_identity(STATE / "launcher.lock"),
                       "build": _recovery_build_identity(old_sha, workspace)},
             "toolchain": toolchain}
+    if workspace.get('profile') == 'predeploy-attestation-failure':
+        _predeploy_loopback_key_proof()
+        result['predeploy_production'] = _predeploy_production_proof(old_sha, production_sha, source)
+    return result
 
 
 def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
@@ -1336,11 +1534,13 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
         if old_sha in history or any(os.path.lexists(p) for p in _archives(old_sha)):
             raise BootstrapError("historical retirement already attempted")
         evidence = _recovery_snapshot(old_sha, sha, production_sha, source)
+        predeploy = evidence['workspace'].get('profile') == 'predeploy-attestation-failure'
+        terminal_state = 'CLOSED_PREDEPLOY_ATTESTATION_FAILURE' if predeploy else 'RECOVERED_PREPARATION_FAILURE'
         digest = _digest_json(evidence)
         _assert_original_lock(lock, fd)
         _assert_recovery_build_lock(old_sha, build_fd, evidence["workspace"])
         if evidence_sha256 is None:
-            return {"sha": old_sha, "state": "RECOVERABLE_PREPARATION_FAILURE", "evidence_sha256": digest}
+            return {"sha": old_sha, "state": 'RECOVERABLE_PREDEPLOY_ATTESTATION_FAILURE' if predeploy else "RECOVERABLE_PREPARATION_FAILURE", "evidence_sha256": digest}
         if digest != evidence_sha256:
             raise BootstrapError("historical evidence differs from reviewed inspection")
         if not record.parent.exists():
@@ -1378,14 +1578,16 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
         _assert_idle()
         _recovery_process_proof()
         _recovery_production_proof(production_sha, source)
+        if predeploy and _predeploy_production_proof(old_sha, production_sha, source) != evidence['predeploy_production']:
+            raise BootstrapError('predeploy production changed after revocation')
         _assert_original_lock(lock, fd)
         _assert_recovery_build_lock(old_sha, build_fd, evidence["workspace"])
         if os.path.lexists(BUSINESS_LEASE):
             raise BootstrapError("business lease appeared during recovery")
         _write(record / "completed.json", json.dumps({"old_sha": old_sha,
-               "state": "RECOVERED_PREPARATION_FAILURE", "intent_sha256": _digest_json(intent),
+               "state": terminal_state, "intent_sha256": _digest_json(intent),
                "installation": installation}, sort_keys=True).encode())
-        return {"sha": old_sha, "state": "RECOVERED_PREPARATION_FAILURE", "receipt": receipt}
+        return {"sha": old_sha, "state": terminal_state, "receipt": receipt}
     finally:
         if build_fd is not None:
             os.close(build_fd)
@@ -1397,12 +1599,17 @@ def _recovered_preparation_evidence(sha, *, recovery_receipt=None):
     _inventory(record, {"intent.json", "completed.json"})
     intent = _read_json(record / "intent.json")
     completed = _read_json(record / "completed.json")
+    workspace = _recoverable_clone_evidence(sha)
+    predeploy = workspace.get('profile') == 'predeploy-attestation-failure'
+    terminal_state = 'CLOSED_PREDEPLOY_ATTESTATION_FAILURE' if predeploy else 'RECOVERED_PREPARATION_FAILURE'
     expected_keys = {"old_sha", "recovery_sha", "production_sha", "workspace", "config",
                      "library", "authorized", "locks", "toolchain", "receipt_sha256", "evidence_sha256"}
+    if predeploy:
+        expected_keys.add('predeploy_production')
     if (not isinstance(intent, dict) or set(intent) != expected_keys or intent["old_sha"] != sha
             or not isinstance(completed, dict) or set(completed) != {
                 "old_sha", "state", "intent_sha256", "installation"}
-            or completed["old_sha"] != sha or completed["state"] != "RECOVERED_PREPARATION_FAILURE"
+            or completed["old_sha"] != sha or completed["state"] != terminal_state
             or completed["intent_sha256"] != _digest_json(intent)
             or intent["evidence_sha256"] != _digest_json({k: v for k, v in intent.items()
                                                         if k not in {"receipt_sha256", "evidence_sha256"}})
@@ -1428,7 +1635,7 @@ def _recovered_preparation_evidence(sha, *, recovery_receipt=None):
         config, library = CONFIG, INSTALLED.parent
     if completed["installation"] != _installation_evidence(sha, config, library):
         raise BootstrapError("recovered installation differs")
-    return {"state": "RECOVERED_PREPARATION_FAILURE", "recovery": _digest_json(completed),
+    return {"state": terminal_state, "recovery": _digest_json(completed),
             "workspace": intent["workspace"]}
 
 

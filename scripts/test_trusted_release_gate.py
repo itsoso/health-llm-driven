@@ -205,7 +205,9 @@ def test_transport_is_get_only_bounded_and_rejects_redirects(monkeypatch):
     monkeypatch.setenv("SSL_CERT_FILE", "/nonexistent/untrusted.pem")
     monkeypatch.setattr(gate.urllib.request, "build_opener", build)
     assert gate._get_json(BASE + "/git/ref/heads/main") == {"ok": True}
-    assert observed == {"method": "GET", "url": BASE + "/git/ref/heads/main", "timeout": 10}
+    assert observed["method"] == "GET"
+    assert observed["url"] == BASE + "/git/ref/heads/main"
+    assert 0 < observed["timeout"] <= 10
 
 
 def test_transport_refuses_oversize_response(monkeypatch):
@@ -527,3 +529,114 @@ def test_target_cli_is_strict_and_defaults_to_full(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         gate.main()
     capsys.readouterr()
+
+
+def transport_sequence(monkeypatch, gate, outcomes):
+    import time
+    monkeypatch.setattr(gate, 'time', time, raising=False)
+    clock = [0.0]
+    calls = []
+    class Response(io.BytesIO):
+        status = 200
+        def geturl(self):
+            return BASE + '/git/ref/heads/main'
+    class Opener:
+        def open(self, request, timeout):
+            calls.append(timeout)
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return Response(json.dumps(outcome).encode())
+    monkeypatch.setattr(gate.urllib.request, 'build_opener', lambda *handlers: Opener())
+    monkeypatch.setattr(gate.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(gate.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    return clock, calls
+
+
+def test_transport_rate_limit_is_actionable_and_sanitized(monkeypatch):
+    import urllib.error
+    gate = load_gate()
+    error = urllib.error.HTTPError(BASE + '/secret', 403, 'secret-token',
+                                   {'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '9999999999'},
+                                   io.BytesIO(b'private response'))
+    _, calls = transport_sequence(monkeypatch, gate, [error])
+    with pytest.raises(gate.GateError, match='rate limit exhausted') as caught:
+        gate._get_json(BASE + '/git/ref/heads/main')
+    assert len(calls) == 1
+    assert 'secret' not in str(caught.value) and 'private' not in str(caught.value)
+
+
+@pytest.mark.parametrize('status', [429, 500, 502, 503])
+def test_transient_http_retry_stays_inside_original_budget(monkeypatch, status):
+    import urllib.error
+    gate = load_gate()
+    error = urllib.error.HTTPError(BASE, status, 'sensitive', {'Retry-After': '1'}, None)
+    clock, calls = transport_sequence(monkeypatch, gate, [error, {'ok': True}])
+    assert gate._get_json(BASE + '/git/ref/heads/main') == {'ok': True}
+    assert calls == [10, 9] and clock[0] == 1
+
+
+@pytest.mark.parametrize('status', [401, 403, 404])
+def test_permanent_http_failure_is_not_retried(monkeypatch, status):
+    import urllib.error
+    gate = load_gate()
+    _, calls = transport_sequence(monkeypatch, gate, [urllib.error.HTTPError(BASE, status, 'token', {}, None)])
+    with pytest.raises(gate.GateError):
+        gate._get_json(BASE + '/git/ref/heads/main')
+    assert len(calls) == 1
+
+
+def test_connection_errors_retry_at_most_three_times(monkeypatch):
+    import urllib.error
+    gate = load_gate()
+    _, calls = transport_sequence(monkeypatch, gate, [urllib.error.URLError('private') for _ in range(3)])
+    with pytest.raises(gate.GateError, match='network unavailable') as caught:
+        gate._get_json(BASE + '/git/ref/heads/main')
+    assert len(calls) == 3 and calls[0] == 10 and calls[-1] < 10
+    assert 'private' not in str(caught.value)
+
+
+def test_long_retry_after_fails_closed_without_sleep(monkeypatch):
+    import urllib.error
+    gate = load_gate()
+    clock, calls = transport_sequence(monkeypatch, gate, [urllib.error.HTTPError(BASE, 429, 'secret', {'Retry-After': '60'}, None)])
+    with pytest.raises(gate.GateError, match='rate limit exhausted'):
+        gate._get_json(BASE + '/git/ref/heads/main')
+    assert clock[0] == 0 and calls == [10]
+
+
+@pytest.mark.parametrize('header', ['9999999999999999999999999', 'Sun, 11 Oct 2026 23:59:00 GMT', 'sensitive'])
+def test_unknown_or_oversize_backoff_fails_closed(monkeypatch, header):
+    import urllib.error
+    gate = load_gate()
+    clock, calls = transport_sequence(monkeypatch, gate, [urllib.error.HTTPError(BASE, 429, 'secret', {'Retry-After': header}, None)])
+    with pytest.raises(gate.GateError, match='rate limit exhausted') as caught:
+        gate._get_json(BASE + '/git/ref/heads/main')
+    assert clock[0] == 0 and calls == [10]
+    assert header not in str(caught.value)
+
+
+def test_connection_attempt_that_consumes_budget_is_not_retried(monkeypatch):
+    import urllib.error
+    gate = load_gate()
+    clock, calls = transport_sequence(monkeypatch, gate, [])
+    def open_request(request, timeout):
+        calls.append(timeout)
+        clock[0] += 9.5
+        raise urllib.error.URLError('private-host-token')
+    class Opener:
+        open = staticmethod(open_request)
+    monkeypatch.setattr(gate.urllib.request, 'build_opener', lambda *handlers: Opener())
+    with pytest.raises(gate.GateError, match='network unavailable'):
+        gate._get_json(BASE + '/git/ref/heads/main')
+    assert clock[0] == 9.5 and calls == [10]
+
+
+def test_tls_validation_failure_is_not_retried(monkeypatch):
+    import ssl
+    import urllib.error
+    gate = load_gate()
+    _, calls = transport_sequence(monkeypatch, gate, [urllib.error.URLError(ssl.SSLError('private'))])
+    with pytest.raises(gate.GateError, match='TLS verification failed'):
+        gate._get_json(BASE + '/git/ref/heads/main')
+    assert calls == [10]

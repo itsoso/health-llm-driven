@@ -12,6 +12,73 @@ NEW_SHA = "b" * 40
 PRODUCTION_SHA = "c" * 40
 
 
+def attestation_fixture(monkeypatch, tmp_path):
+    b, w, calls = recovery_fixture(monkeypatch, tmp_path)
+    canonical = b.canonical_source(SHA)
+    digest = hashlib.sha256(b.INSTALLED.read_bytes()).hexdigest()
+    gate = canonical / 'scripts/trusted_release_gate.py'
+    gate.write_bytes(b'synthetic read-only gate\n')
+    gate.chmod(0o600)
+    monkeypatch.setattr(b, 'PREDEPLOY_ATTESTATION_IMPLEMENTATIONS', {digest: hashlib.sha256(gate.read_bytes()).hexdigest()}, raising=False)
+    (w / 'build.lock').unlink()
+    for name, state in [('preparation-started.json', 'PREPARING'), ('prepared.json', 'PREPARED'), ('deployment-started.json', 'DEPLOYING')]:
+        value = {'sha': SHA, 'state': state}
+        if name == 'preparation-started.json': value['executor_sha256'] = digest
+        b._write(w / name, json.dumps(value).encode())
+    (w / 'source/scripts').mkdir(parents=True, mode=0o700)
+    (w / 'source').chmod(0o700)
+    for name in ['trusted_release_server.py', 'trusted_release_gate.py']:
+        b._write(w / 'source/scripts' / name, (canonical / 'scripts' / name).read_bytes())
+    (w / 'bin').mkdir(mode=0o700)
+    for command in ('ssh', 'scp', 'python3'):
+        target = '/usr/bin/python3.12' if command == 'python3' else '/usr/bin/' + command
+        args = '' if command == 'python3' else ' -F /etc/reva-release/loopback.conf'
+        b._write(w / 'bin' / command, f'#!/bin/sh\nexec {target}{args} "$@"\n'.encode())
+        (w / 'bin' / command).chmod(0o700)
+    b._write(w / 'deployment.env', b'synthetic environment\n')
+    (w / 'preparation.log').write_text('synthetic fixed Git preparation\nrelease gate: GitHub metadata unavailable\n')
+    monkeypatch.setattr(b, '_predeploy_production_proof', lambda *args: {'synthetic': 'stable'}, raising=False)
+    monkeypatch.setattr(b, '_predeploy_loopback_key_proof', lambda: None, raising=False)
+    return b, w, calls
+
+
+def test_predeploy_attestation_closure_preserves_failed_scene(monkeypatch, tmp_path):
+    b, w, calls = attestation_fixture(monkeypatch, tmp_path)
+    original = b._preparation_manifest(w)
+    plan = inspect(b)
+    assert plan['state'] == 'RECOVERABLE_PREDEPLOY_ATTESTATION_FAILURE'
+    assert not (b.STATE / 'recoveries').exists()
+    result = recover(b, plan['evidence_sha256'])
+    assert result['state'] == 'CLOSED_PREDEPLOY_ATTESTATION_FAILURE'
+    assert b._preparation_manifest(w) == original
+    assert b._read_json(w / 'completed.json')['state'] == 'NEEDS_OPERATOR'
+    assert not (w / 'build.lock').exists()
+    assert b._workspace_evidence(SHA, recovery_receipt=result['receipt'])['state'] == result['state']
+    assert not any('deploy.sh' in str(c) for c in calls)
+
+
+@pytest.mark.parametrize('damage', ['gate', 'executor', 'log', 'duplicate', 'extra', 'deployment', 'claim', 'bin', 'phase', 'lock', 'production'])
+def test_predeploy_attestation_rejects_unproven_scene(monkeypatch, tmp_path, damage):
+    b, w, _ = attestation_fixture(monkeypatch, tmp_path)
+    original_keys = b.AUTHORIZED.read_bytes()
+    if damage in ('gate', 'executor'):
+        name = 'trusted_release_gate.py' if damage == 'gate' else 'trusted_release_server.py'
+        (w / 'source/scripts' / name).write_bytes(b'changed')
+    elif damage in ('log', 'duplicate'):
+        (w / 'preparation.log').write_text('other failure\n' if damage == 'log' else 'release gate: GitHub metadata unavailable\n' * 2)
+    elif damage in ('extra', 'deployment', 'claim', 'lock'):
+        name = {'extra': 'unknown', 'deployment': 'deployment.log', 'claim': 'build-started.json', 'lock': 'build.lock'}[damage]
+        b._write(w / name, b'')
+    elif damage == 'bin': (w / 'bin/ssh').write_bytes(b'changed')
+    elif damage == 'phase': (w / 'prepared.json').write_text('{}')
+    else:
+        def fail(*args): raise b.BootstrapError('production changed')
+        monkeypatch.setattr(b, '_predeploy_production_proof', fail)
+    with pytest.raises(b.BootstrapError): inspect(b)
+    assert b.AUTHORIZED.read_bytes() == original_keys
+    assert not (b.STATE / 'recoveries').exists()
+
+
 def recovery_fixture(monkeypatch, tmp_path):
     b, calls = fixture(monkeypatch, tmp_path)
     b.install(SHA, 200, PUBLIC)
@@ -522,3 +589,28 @@ def test_phase_timeout_does_not_relax_existing_proofs(monkeypatch, tmp_path, pro
 def test_phase_timeout_original_launcher_lock_is_still_required(monkeypatch, tmp_path):
     monkeypatch.setattr(__import__(__name__), "recovery_fixture", phase_timeout_fixture)
     test_recovery_holds_original_locks(monkeypatch, tmp_path, "launcher.lock")
+
+
+@pytest.mark.parametrize('failure_call', [2, 3])
+def test_predeploy_closure_failure_after_intent_is_retained_and_never_retried(monkeypatch, tmp_path, failure_call):
+    b, w, _ = attestation_fixture(monkeypatch, tmp_path)
+    original = b._preparation_manifest(w)
+    keys = b.AUTHORIZED.read_bytes()
+    plan = inspect(b)
+    count = 0
+    def proof(*args):
+        nonlocal count
+        count += 1
+        if count == failure_call: raise b.BootstrapError('production proof failed after intent')
+        return {'synthetic': 'stable'}
+    monkeypatch.setattr(b, '_predeploy_production_proof', proof)
+    with pytest.raises(b.BootstrapError, match='proof failed'): recover(b, plan['evidence_sha256'])
+    record = b.STATE / 'recoveries' / SHA
+    assert (record / 'intent.json').exists()
+    assert not (record / 'completed.json').exists()
+    assert b._preparation_manifest(w) == original
+    if failure_call == 2: assert b.AUTHORIZED.read_bytes() == keys
+    else:
+        assert b.AUTHORIZED.read_bytes() != keys
+        assert not (b.CONFIG / 'loopback.key').exists()
+    with pytest.raises(b.BootstrapError, match='already attempted'): inspect(b)
