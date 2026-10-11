@@ -255,9 +255,9 @@ def run_fidelity_phase(phase):
     except subprocess.CalledProcessError as exc:
         # A native release is not an OTA candidate. Prove the actual publisher
         # rejects it; never turn an unknown context/runtime error into a pass.
-        if phase != 'smoke' or not expected_native_rejection(exc.stdout):
+        if phase != 'smoke' or exc.stdout != '' or not expected_native_rejection(exc.stderr):
             raise
-        print(exc.stdout, end='')
+        print(exc.stderr, end='', file=sys.stderr)
         print('TEST_NATIVE_RELEASE_REQUIRED: OTA remains blocked; no release authorization.')
         return
     if phase == 'smoke':
@@ -294,7 +294,7 @@ def test_fidelity_accepts_only_actual_expected_native_block(monkeypatch, phase, 
                         'GITHUB_SHA':SHA, 'GITHUB_REF':'refs/heads/main'}.items():
         monkeypatch.setenv(name, value)
     def failed(args, **kwargs):
-        raise subprocess.CalledProcessError(1, args, output=json.dumps({
+        raise subprocess.CalledProcessError(1, args, output='', stderr=json.dumps({
             'phase':'native_source', 'reason':reason, 'state':'BLOCKED'}) + '\n')
     monkeypatch.setattr(subprocess, 'run', failed)
     if accepted:
@@ -302,3 +302,35 @@ def test_fidelity_accepts_only_actual_expected_native_block(monkeypatch, phase, 
         assert 'OTA remains blocked; no release authorization' in capsys.readouterr().out
     else:
         with pytest.raises(subprocess.CalledProcessError): run_fidelity_phase(phase)
+
+
+@pytest.mark.parametrize('stdout,stderr', [
+    ('{"phase":"native_source","reason":"native_source_incompatible","state":"BLOCKED"}', ''),
+    ('extra', '{"phase":"native_source","reason":"native_source_incompatible","state":"BLOCKED"}'),
+    ('', '{"phase":"native_source","reason":"native_source_incompatible","state":"BLOCKED"}\nextra'),
+    ('', '{"phase":"publisher_context","reason":"native_source_incompatible","state":"BLOCKED"}'),
+])
+def test_fidelity_rejects_wrong_stream_or_additional_diagnostics(monkeypatch, stdout, stderr):
+    monkeypatch.setattr(sys, 'platform', 'linux')
+    for name, value in {'GITHUB_ACTIONS':'true', 'GITHUB_REPOSITORY':'itsoso/health-llm-driven',
+                        'GITHUB_SHA':SHA, 'GITHUB_REF':'refs/heads/main'}.items():
+        monkeypatch.setenv(name, value)
+    def failed(args, **kwargs):
+        raise subprocess.CalledProcessError(1, args, output=stdout, stderr=stderr)
+    monkeypatch.setattr(subprocess, 'run', failed)
+    with pytest.raises(subprocess.CalledProcessError): run_fidelity_phase('smoke')
+
+
+def test_smoke_recognizes_actual_publisher_cli_stderr(monkeypatch, capsys):
+    import importlib.util
+    path = Path(__file__).with_name('trusted_ota_publish.py')
+    spec = importlib.util.spec_from_file_location('ipad_fidelity_publisher', path)
+    publisher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(publisher)
+    def rejected():
+        raise publisher.PreflightError('native_source', 'native_source_incompatible')
+    monkeypatch.setattr(publisher, 'main', rejected)
+    assert publisher.cli() == 1
+    output = capsys.readouterr()
+    assert output.out == ''
+    assert expected_native_rejection(output.err)
