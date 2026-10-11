@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, RefreshControl, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -103,7 +104,7 @@ export default function FamilyScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => backOrChat(router)} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={26} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>家庭健康</Text>

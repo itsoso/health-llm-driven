@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 import React, { useMemo } from 'react';
 import {
   ScrollView,
@@ -82,7 +83,7 @@ export default function PrivacyPolicyScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="返回">
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>隐私政策</Text>

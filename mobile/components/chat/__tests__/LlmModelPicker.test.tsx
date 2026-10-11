@@ -32,10 +32,27 @@ const options: ModelOption[] = [
 ];
 
 describe('Mobile LlmModelPicker', () => {
+  it('hides selection for a member even with cached options', () => {
+    const onSelect = jest.fn();
+    const view = render(<LlmModelPicker canSelectModel={false} currentLabel="Qwen3.7 Plus"
+      currentModelId="qwen3.7-plus" options={options} savingModelId={null} onSelect={onSelect} />);
+    expect(view.getByText('小巴')).toBeTruthy();
+    expect(view.queryByLabelText(/切换 AI 模型/)).toBeNull();
+    expect(view.queryByTestId('icon-chevron-down')).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('does not expose infrastructure provider names to admins', () => {
+    const view = render(<LlmModelPicker canSelectModel currentLabel="Qwen3.7 Plus"
+      currentModelId="qwen3.7-plus" options={options} savingModelId={null} onSelect={jest.fn()} />);
+    fireEvent.press(view.getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus'));
+    expect(view.queryByText(/tokenplan/i)).toBeNull();
+    expect(view.getByText('qwen3.7-plus')).toBeTruthy();
+  });
   it('uses 小巴 as the visible assistant persona', () => {
     const onSelect = jest.fn();
     const { getByText, queryByText } = render(
-      <LlmModelPicker
+      <LlmModelPicker canSelectModel
         currentLabel="Qwen3.7 Plus"
         currentModelId="qwen3.7-plus"
         options={options}
@@ -51,7 +68,7 @@ describe('Mobile LlmModelPicker', () => {
   it('renders the header 小巴 title with stronger brand scale', () => {
     const onSelect = jest.fn();
     const { getByLabelText, getByTestId, getByText } = render(
-      <LlmModelPicker
+      <LlmModelPicker canSelectModel
         variant="header"
         currentLabel="Qwen3.7 Plus"
         currentModelId="qwen3.7-plus"
@@ -73,7 +90,7 @@ describe('Mobile LlmModelPicker', () => {
   it('opens options and selects a model inline', () => {
     const onSelect = jest.fn();
     const { getByLabelText, getByText } = render(
-      <LlmModelPicker
+      <LlmModelPicker canSelectModel
         currentLabel="Qwen3.7 Plus"
         currentModelId="qwen3.7-plus"
         options={options}
@@ -91,7 +108,7 @@ describe('Mobile LlmModelPicker', () => {
   it('stays openable while a reply is streaming', () => {
     const onSelect = jest.fn();
     const { getByLabelText, getByText } = render(
-      <LlmModelPicker
+      <LlmModelPicker canSelectModel
         currentLabel="Qwen3.7 Plus"
         currentModelId="qwen3.7-plus"
         options={options}
@@ -110,7 +127,7 @@ describe('Mobile LlmModelPicker', () => {
   it('hides lower-version models from stale option payloads', () => {
     const onSelect = jest.fn();
     const { getByLabelText, queryByText } = render(
-      <LlmModelPicker
+      <LlmModelPicker canSelectModel
         currentLabel="Qwen3.7 Plus"
         currentModelId="qwen3.7-plus"
         options={options}

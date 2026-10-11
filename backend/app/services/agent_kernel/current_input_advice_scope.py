@@ -88,9 +88,24 @@ def is_wearable_placement_question(text: str) -> bool:
     return bool(isinstance(text, str) and _WEARABLE_PLACEMENT_QUESTION.fullmatch(text.strip()))
 
 
+_DAILY_PLAN_RE = re.compile(
+    r"(?:请你?|麻烦你?)?(?:(?:帮|为|给)我)?(?:规划|安排|制定)(?:一下)?"
+    r"(?:我(?:的)?)?(?:今天|明天|本周|这周|下周)的?"
+    r"(?:饮食|运动|睡眠)(?:(?:和|与|及|、|以及)?(?:饮食|运动|睡眠)){1,2}"
+    r"(?:的)?(?:计划|安排|方案|草稿)?[。？?！!]?"
+)
+
+
+def is_daily_planning_advice(text: str) -> bool:
+    """A fully consumed draft request grants no personal read or write."""
+    return bool(isinstance(text, str) and len(text) <= 128
+                and _DAILY_PLAN_RE.fullmatch(text.replace(' ', '').replace('\u3000', '')))
+
+
 def is_current_input_advice(text: str) -> bool:
     """Prove an entire current-input answer goal; unknown residue stays strict."""
-    if is_current_input_recovery_advice(text) or is_wearable_placement_question(text):
+    if (is_current_input_recovery_advice(text) or is_wearable_placement_question(text)
+            or is_daily_planning_advice(text)):
         return True
     if not isinstance(text, str) or len(text) > 512 or any(ch in text for ch in "\r\n\t"):
         return False
@@ -111,6 +126,11 @@ def is_current_input_advice(text: str) -> bool:
 
 
 def current_input_advice_instructions(text: str) -> str:
+    if is_daily_planning_advice(text):
+        return (CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS
+                + '\n本轮任务是饮食、运动和睡眠的通用安排草稿。直接按用户指定的领域和期限给出有条件、可选择的安排，'
+                '而不是睡前问答；不查询个人记录，不要求查询日期。明确未核验个人数据、未保存计划。'
+                '不使用历史上下文推断当前健康状况，不保证运动安全或给出用药补剂指令。')
     if is_wearable_placement_question(text):
         return _WEARABLE_PLACEMENT_INSTRUCTIONS
     if is_current_input_recovery_advice(text):
@@ -152,6 +172,7 @@ def local_advice_response(message: str) -> tuple[str, str] | None:
     A bare general-health request is not silently changed into sleep advice.
     """
     if (is_current_input_recovery_advice(message) or is_wearable_placement_question(message)
+            or is_daily_planning_advice(message)
             or not is_current_input_advice(message)):
         return None
     candidate = message.replace(" ", "").replace("\u3000", "")

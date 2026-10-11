@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextStyle, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -93,7 +94,7 @@ export default function VoiceStyleScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>语音风格</Text>

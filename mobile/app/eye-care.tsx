@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 /**
  * 科学用眼 (20-20-20) 设置屏。
  *
@@ -45,7 +46,7 @@ export default function EyeCareScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>科学用眼</Text>

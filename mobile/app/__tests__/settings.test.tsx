@@ -5,6 +5,8 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { revaColors } from '../../constants/revaTheme';
 
 const mockBack = jest.fn();
+const mockNavigate = jest.fn();
+let mockCanGoBack = false;
 const mockPush = jest.fn();
 const mockLogout = jest.fn();
 const mockRequestAccountDeletion = jest.fn();
@@ -22,7 +24,7 @@ let mockProfile: any = {
 };
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ back: mockBack, push: mockPush, canGoBack: () => false }),
+  useRouter: () => ({ back: mockBack, push: mockPush, navigate: mockNavigate, canGoBack: () => mockCanGoBack }),
   useFocusEffect: (callback: () => void) => {
     const React = require('react');
     React.useEffect(callback, [callback]);
@@ -136,10 +138,12 @@ jest.mock('../../services/gpsRefreshStatus', () => ({
 }));
 
 import SettingsScreen from '../settings';
+import MeScreen from '../(tabs)/me';
 
 describe('SettingsScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCanGoBack = false;
     mockGarminStatus = { health: 'healthy', minutes_since_last_sync: 3 };
     mockProfile = {
       use_manual_location: false,
@@ -156,6 +160,15 @@ describe('SettingsScreen', () => {
     mockLogout.mockResolvedValue(undefined);
     mockReadGPSRefreshStatus.mockResolvedValue({ state: 'idle' });
     mockGPSRefreshStatusListener = null;
+  });
+
+  it('returns from the personal tab to chat even with tab history', () => {
+    mockCanGoBack = true;
+    const view = render(<MeScreen />);
+    fireEvent.press(view.getByRole('button', { name: '返回小巴' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/(tabs)/chat');
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(view.getByText('个人中心与设置')).toBeTruthy();
   });
 
   it('surfaces GPS and city positioning as one explicit clickable entry', () => {

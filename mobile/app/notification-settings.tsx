@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Switch, Alert, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -84,7 +85,7 @@ export default function NotificationSettingsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>推送通知</Text>

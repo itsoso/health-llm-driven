@@ -1,3 +1,4 @@
+import { backOrChat } from '../../utils/backOrChat';
 /**
  * Reasoning Trace - 决策历史列表
  *
@@ -173,7 +174,7 @@ export default function TraceListScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="返回">
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>推理回放</Text>

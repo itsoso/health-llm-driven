@@ -17,6 +17,7 @@ import { spacing, radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import { useToast } from '../../hooks/useToast';
 import { createSafetyAlertAgentContext, pushChatWithContext } from '../../utils/agentContext';
+import BackToChatBar from '../../components/common/BackToChatBar';
 
 function getSeverityKey(s: any): string { return typeof s === 'string' ? s : s?.label ?? 'info'; }
 
@@ -73,9 +74,10 @@ export default function ActionsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <BackToChatBar style={{ marginHorizontal: spacing.xl, marginTop: spacing.md }} />
       {/* Header */}
       <View style={styles.header}>
-        <Text style={txt.title}>行动</Text>
+        <Text style={txt.title}>安全告警</Text>
         {totalActions > 0 && (
           <View style={styles.countBadge}>
             <Text style={txt.countText}>{totalActions}</Text>

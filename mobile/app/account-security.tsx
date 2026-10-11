@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -50,7 +51,7 @@ export default function AccountSecurityScreen() {
         await setPassword(newPassword);
       }
       Alert.alert(hasPassword ? '密码已修改' : '密码已设置', '下次也可以用手机号 + 密码登录。', [
-        { text: '知道了', onPress: () => router.back() },
+        { text: '知道了', onPress: () => backOrChat(router) },
       ]);
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.message || '保存失败，请稍后重试';
@@ -63,7 +64,7 @@ export default function AccountSecurityScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>账号安全</Text>

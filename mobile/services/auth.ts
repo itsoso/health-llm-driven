@@ -27,6 +27,7 @@ import {
 } from './authLogoutTombstone';
 
 export interface User {
+  is_admin?: boolean;
   id: number;
   username?: string;
   email?: string;

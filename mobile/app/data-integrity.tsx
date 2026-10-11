@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 /**
  * /data-integrity —— 数据自检(消费后端 GET /data-health/integrity,PR #152)。
  *
@@ -75,7 +76,7 @@ export default function DataIntegrityScreen() {
 
   const header = (
     <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.back()} hitSlop={10} accessibilityLabel="返回">
+      <TouchableOpacity onPress={() => backOrChat(router)} hitSlop={10} accessibilityLabel="返回">
         <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
       </TouchableOpacity>
       <Text style={[styles.title, { color: c.labelPrimary }]}>数据自检</Text>

@@ -190,6 +190,8 @@ async def test_simple_record_stream_gates_new_models_before_first_tool_round(
 ):
     """Exercise the real run_stream fast-record classifier, without executing a write."""
     user, _headers = auth_user_and_headers
+    user.is_admin = True
+    db.commit()
     executor = AgentExecutor(db)
     calls = []
 
@@ -263,6 +265,8 @@ async def test_unreliable_manual_model_uses_fallback_for_tools_then_selected_mod
 ):
     """Manual GLM can borrow Qwen for tool calls, but final synthesis must stay GLM."""
     user, _headers = auth_user_and_headers
+    user.is_admin = True
+    db.commit()
     executor = AgentExecutor(db)
     provider_calls = []
     qwen_stream_calls = {"n": 0}
@@ -371,6 +375,8 @@ async def test_provider_error_fallback_for_tools_returns_to_manual_model_for_fin
     tool-calling → F2 回退到可靠工具模型(测试环境无可靠模型可用 → 默认 tokenplan
     mock=Qwen)拿数据; 最终合成轮仍回 Opus 非流式桥。绝不走 chat_stream 白等超时。"""
     user, _headers = auth_user_and_headers
+    user.is_admin = True
+    db.commit()
     executor = AgentExecutor(db)
     provider_calls = []
     qwen_stream_calls = {"n": 0}

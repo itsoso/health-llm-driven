@@ -33,6 +33,7 @@ export default function LlmModelPicker({
   disabled,
   error,
   onSelect,
+  canSelectModel = false,
 }: {
   currentLabel: string;
   currentModelId: string | null;
@@ -41,11 +42,14 @@ export default function LlmModelPicker({
   disabled?: boolean;
   error?: string | null;
   onSelect: (modelId: string | null) => void;
+  canSelectModel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const visibleOptions = sanitizeModelOptions(options);
   const activeModelId = canonicalModelId(currentModelId);
+
+  useEffect(() => { if (!canSelectModel) setOpen(false); }, [canSelectModel]);
 
   useEffect(() => {
     if (!open) return;
@@ -62,6 +66,8 @@ export default function LlmModelPicker({
     setOpen(false);
     onSelect(canonicalModelId(modelId));
   };
+
+  if (!canSelectModel) return <span className="font-medium text-[#29261F]">小巴</span>;
 
   return (
     <div ref={rootRef} className="relative z-[80] min-w-0">
@@ -132,7 +138,7 @@ export default function LlmModelPicker({
                         </span>
                       </span>
                       <span className="mt-0.5 block truncate font-mono text-[11px] text-[#948F80]">
-                        {option.provider} · {option.model}
+                        {option.model}
                       </span>
                       {option.note && (
                         <span className="mt-0.5 block line-clamp-2 text-xs text-[#948F80]">{option.note}</span>

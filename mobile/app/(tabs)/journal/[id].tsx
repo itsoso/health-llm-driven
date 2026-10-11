@@ -1,3 +1,4 @@
+import { backOrChat } from '../../../utils/backOrChat';
 /**
  * Clinical Journal - Case Timeline 详情
  *
@@ -161,6 +162,9 @@ export default function CaseDetailScreen() {
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.center}>
           <ActivityIndicator size="large" color={c.brand} />
+          <TouchableOpacity onPress={() => backOrChat(router)} accessibilityRole="button" accessibilityLabel="返回" style={{ minHeight: 44, justifyContent: 'center' }}>
+            <Text style={{ color: c.brand }}>返回</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -172,7 +176,7 @@ export default function CaseDetailScreen() {
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>找不到该案例</Text>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
+          <TouchableOpacity onPress={() => backOrChat(router)} accessibilityRole="button" accessibilityLabel="返回" style={styles.backLink}>
             <Text style={styles.backLinkText}>返回</Text>
           </TouchableOpacity>
         </View>
@@ -186,7 +190,7 @@ export default function CaseDetailScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="返回">
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{caseData.title ?? caseData.theme}</Text>

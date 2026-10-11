@@ -14,6 +14,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   ArrowUp,
   CheckSquare,
@@ -159,6 +160,7 @@ export default function AIAssistantPage() {
 }
 
 function AIAssistantInner() {
+  const { user: authUser } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeConvId, setActiveConvId] = useState<number | undefined>(undefined);
@@ -927,6 +929,7 @@ function AIAssistantInner() {
               <PanelLeft className="h-4.5 w-4.5" />
             </button>
             <LlmModelPicker
+              canSelectModel={authUser?.is_admin === true}
               currentLabel={llmPref.label || '系统默认'}
               currentModelId={llmPref.model_id}
               options={llmOptions}

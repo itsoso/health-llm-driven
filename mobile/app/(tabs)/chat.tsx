@@ -159,7 +159,7 @@ function ChatTimeDivider({ label }: { label: string }) {
 }
 
 export default function ChatScreen() {
-  const { token: authToken } = useAuth();
+  const { token: authToken, user: authUser } = useAuth();
   const chat = useChatEngine();
   const {
     messages,
@@ -1116,6 +1116,7 @@ export default function ChatScreen() {
       <StatusBar style="dark" backgroundColor="transparent" translucent />
       <View style={{ paddingTop: insets.top }}>
         <ChatHeader
+          canSelectModel={authUser?.is_admin === true}
           activeLlmLabel={activeLlmLabel}
           llmModelId={llmModelId}
           llmOptions={llmOptions}
@@ -1373,75 +1374,80 @@ export default function ChatScreen() {
         <Pressable
           testID="chat-tool-menu-overlay"
           accessible={false}
-          style={styles.menuOverlay}
+          style={[styles.menuOverlay, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}
           onPress={() => setToolMenuVisible(false)}
         >
-          <Pressable testID="chat-tool-menu-sheet" accessible={false} style={styles.toolSheet}>
+          <Pressable testID="chat-tool-menu-sheet" accessible={false} style={styles.toolSheet} accessibilityViewIsModal>
             <View style={styles.toolSheetHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={txt.toolSheetTitle}>更多操作</Text>
-                <Text style={txt.toolSheetSub}>语音对话、记录与分享</Text>
+                <Text style={txt.toolSheetSub}>常用功能、个人设置与对话管理</Text>
               </View>
-              <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭更多操作">
+              <TouchableOpacity onPress={() => setToolMenuVisible(false)} style={styles.toolMenuClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="关闭更多操作">
                 <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
-            <ToolMenuRow
-              icon="call-outline"
-              label="实时语音对话"
-              onPress={openVoiceConversation}
-            />
-            <ToolMenuRow
-              icon="calendar-outline"
-              label="今日计划"
-              onPress={() => {
-                setToolMenuVisible(false);
-                handleOpenToday();
-              }}
-            />
-            <ToolMenuRow
-              icon="restaurant-outline"
-              label="饮食记录"
-              onPress={() => {
-                setToolMenuVisible(false);
-                router.push('/diet');
-              }}
-            />
-            <ToolMenuRow
-              icon="navigate-outline"
-              label="这一路 · 月度足迹"
-              onPress={() => {
-                setToolMenuVisible(false);
-                router.push('/journey');
-              }}
-            />
-            <ToolMenuRow
-              icon="person-circle-outline"
-              label="我 · 个人中心与设置"
-              onPress={() => {
-                setToolMenuVisible(false);
-                router.navigate('/(tabs)/me');
-              }}
-            />
-            {messages.some(isShareableChatMessage) && (
+            <ScrollView testID="chat-tool-menu-scroll" keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }}>
+              <Text style={txt.toolMenuGroup}>常用功能</Text>
               <ToolMenuRow
-                icon={selectionMode ? 'close' : 'checkbox-outline'}
-                label={selectionMode ? '取消多选' : '选择多条分享'}
+                icon="call-outline"
+                label="实时语音对话"
+                onPress={openVoiceConversation}
+              />
+              <ToolMenuRow
+                icon="calendar-outline"
+                label="今日计划"
                 onPress={() => {
                   setToolMenuVisible(false);
-                  if (selectionMode) exitSelectionMode();
-                  else setSelectionMode(true);
+                  handleOpenToday();
                 }}
               />
-            )}
-            {conversationId && messages.length > 0 && (
               <ToolMenuRow
-                icon="trash-outline"
-                label="删除当前对话"
-                destructive
-                onPress={handleDeleteCurrentConversation}
+                icon="restaurant-outline"
+                label="饮食记录"
+                onPress={() => {
+                  setToolMenuVisible(false);
+                  router.push('/diet');
+                }}
               />
-            )}
+              <ToolMenuRow
+                icon="navigate-outline"
+                label="这一路 · 月度足迹"
+                onPress={() => {
+                  setToolMenuVisible(false);
+                  router.push('/journey');
+                }}
+              />
+              <Text style={txt.toolMenuGroup}>个人</Text>
+              <ToolMenuRow
+                icon="person-circle-outline"
+                label="我 · 个人中心与设置"
+                onPress={() => {
+                  setToolMenuVisible(false);
+                  router.navigate('/(tabs)/me');
+                }}
+              />
+              {(messages.some(isShareableChatMessage) || (conversationId && messages.length > 0)) ? <Text style={txt.toolMenuGroup}>对话管理</Text> : null}
+              {messages.some(isShareableChatMessage) && (
+                <ToolMenuRow
+                  icon={selectionMode ? 'close' : 'checkbox-outline'}
+                  label={selectionMode ? '取消多选' : '选择多条分享'}
+                  onPress={() => {
+                    setToolMenuVisible(false);
+                    if (selectionMode) exitSelectionMode();
+                    else setSelectionMode(true);
+                  }}
+                />
+              )}
+              {conversationId && messages.length > 0 && (
+                <ToolMenuRow
+                  icon="trash-outline"
+                  label="删除当前对话"
+                  destructive
+                  onPress={handleDeleteCurrentConversation}
+                />
+              )}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1499,7 +1505,7 @@ function ToolMenuRow({
       accessibilityLabel={label}
     >
       <Ionicons name={icon} size={18} color={color} />
-      <Text style={[txt.toolMenuText, { color }]}>{label}</Text>
+      <Text style={[txt.toolMenuText, { color, flex: 1 }]}>{label}</Text>
       <Ionicons name="chevron-forward" size={14} color={C.ink3} style={{ marginLeft: 'auto' }} />
     </TouchableOpacity>
   );
@@ -1571,9 +1577,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.28)',
     justifyContent: 'flex-start',
     paddingHorizontal: revaSpacing.s4,
-    paddingTop: 82,
+    alignItems: 'center',
   },
   toolSheet: {
+    maxHeight: '100%',
+    width: '100%',
+    maxWidth: 560,
     backgroundColor: C.paper,
     borderRadius: revaRadii.xl,
     padding: revaSpacing.s3,
@@ -1581,6 +1590,7 @@ const styles = StyleSheet.create({
     borderColor: C.line,
     ...revaShadows.lg,
   },
+  toolMenuClose: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
   toolSheetHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1654,6 +1664,7 @@ const txt = {
   shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
   cancelSelectionButton: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   shareButton: { fontFamily: revaFonts.sans, fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
+  toolMenuGroup: { color: C.ink3, fontSize: 12, fontWeight: '600', marginTop: 12, marginBottom: 8 } as TextStyle,
   toolSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 } as TextStyle,
   toolSheetSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
   toolMenuText: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '700' } as TextStyle,

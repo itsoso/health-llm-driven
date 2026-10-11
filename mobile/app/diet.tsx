@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, ActivityIndicator, Share, Modal } from 'react-native';
 import { Image } from 'expo-image';
@@ -1410,7 +1411,7 @@ export default function DietScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.backBtn}
           accessibilityRole="button" accessibilityLabel="返回小巴"
           accessibilityHint="返回打开饮食记录前的页面">
           <Ionicons name="chevron-back" size={24} color={C.ink1} />

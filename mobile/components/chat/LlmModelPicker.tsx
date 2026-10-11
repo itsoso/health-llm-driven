@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -51,6 +51,7 @@ export default function LlmModelPicker({
   error,
   variant = 'default',
   onSelect,
+  canSelectModel = false,
 }: {
   currentLabel: string;
   currentModelId: string | null;
@@ -60,16 +61,24 @@ export default function LlmModelPicker({
   error?: string | null;
   variant?: 'default' | 'header';
   onSelect: (modelId: string | null) => void;
+  canSelectModel?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
   const visibleOptions = useMemo(() => sanitizeModelOptions(options), [options]);
   const activeModelId = canonicalModelId(currentModelId);
+  useEffect(() => { if (!canSelectModel) setVisible(false); }, [canSelectModel]);
 
   const selectModel = (modelId: string | null) => {
     setVisible(false);
     onSelect(canonicalModelId(modelId));
   };
   const isHeader = variant === 'header';
+
+  if (!canSelectModel) {
+    return <View style={[styles.root, isHeader && styles.rootHeader]}>
+      <Text maxFontSizeMultiplier={1.2} style={isHeader ? txt.headerTitle : txt.triggerTitle}>小巴</Text>
+    </View>;
+  }
 
   return (
     <View style={[styles.root, isHeader && styles.rootHeader]}>
@@ -167,7 +176,7 @@ export default function LlmModelPicker({
                           </Text>
                         </View>
                       </View>
-                      <Text style={txt.optionMeta} numberOfLines={1}>{option.provider} · {option.model}</Text>
+                      <Text style={txt.optionMeta} numberOfLines={1}>{option.model}</Text>
                       {!!option.note && <Text style={txt.optionNote} numberOfLines={2}>{option.note}</Text>}
                     </View>
                     {active && <Ionicons name="checkmark-circle" size={18} color={C.green500} />}

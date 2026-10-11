@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 /**
  * Directive 管理 — 外部指令通道.
  *
@@ -123,7 +124,7 @@ export default function DirectivesScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>硬性指令</Text>

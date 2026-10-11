@@ -32,10 +32,21 @@ const options: ModelOption[] = [
 ];
 
 describe('LlmModelPicker', () => {
+  it('hides selection for non-admins with stale cached options', () => {
+    render(<LlmModelPicker canSelectModel={false} currentLabel="Qwen3.7 Plus" currentModelId="qwen3.7-plus"
+      options={options} savingModelId={null} onSelect={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /当前模型/ })).toBeNull();
+  });
+  it('hides infrastructure provider names for administrators', () => {
+    render(<LlmModelPicker canSelectModel currentLabel="Qwen3.7 Plus" currentModelId="qwen3.7-plus"
+      options={options} savingModelId={null} onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /当前模型/ }));
+    expect(screen.queryByText(/tokenplan/i)).toBeNull();
+  });
   it('opens options and selects a model without page navigation', () => {
     const onSelect = vi.fn();
     render(
-      <LlmModelPicker
+      <LlmModelPicker canSelectModel
         currentLabel="Qwen3.7 Plus"
         currentModelId="qwen3.7-plus"
         options={options}
@@ -53,7 +64,7 @@ describe('LlmModelPicker', () => {
 
   it('renders the dropdown above assistant page content', () => {
     render(
-      <LlmModelPicker
+      <LlmModelPicker canSelectModel
         currentLabel="Qwen3.7 Plus"
         currentModelId="qwen3.7-plus"
         options={options}
@@ -70,7 +81,7 @@ describe('LlmModelPicker', () => {
 
   it('hides lower-version models from stale option payloads', () => {
     render(
-      <LlmModelPicker
+      <LlmModelPicker canSelectModel
         currentLabel="Qwen3.7 Plus"
         currentModelId="qwen3.7-plus"
         options={options}

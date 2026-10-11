@@ -10,6 +10,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const searchParamsGet = vi.fn();
 const routerReplace = vi.fn();
+const authRole = vi.hoisted(() => ({ is_admin: false }));
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: authRole }) }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: routerReplace, push: vi.fn() }),
   useSearchParams: () => ({ get: searchParamsGet }),
@@ -82,6 +84,7 @@ function expectSleepAnswerRetained() {
 }
 
 beforeEach(() => {
+  authRole.is_admin = false;
   vi.clearAllMocks();
   requireAiConsent.mockResolvedValue({ 'X-Reva-AI-Subject': '101' });
   Object.defineProperty(window, 'confirm', {
@@ -105,6 +108,16 @@ beforeEach(() => {
       share_url: 'https://health.executor.life/shared/selected-token',
     },
   });
+});
+
+it.each([false, true])('model picker follows authenticated admin role: %s', async (admin) => {
+  authRole.is_admin = admin;
+  apiGet.mockResolvedValue({ data: { model_id: 'qwen3.7-plus', options: [
+    { id: 'qwen3.7-plus', label: 'Qwen3.7 Plus', provider: 'tokenplan', model: 'qwen3.7-plus', speed_tier: 'balanced' },
+  ] } });
+  render(<AIAssistantPage />);
+  await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/me/llm-preference'));
+  await waitFor(() => expect(!!screen.queryByRole('button', { name: /当前模型/ })).toBe(admin));
 });
 
 it('keeps the chat draft intact when AI consent is declined', async () => {

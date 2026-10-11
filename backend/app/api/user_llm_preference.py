@@ -1,6 +1,6 @@
 """用户级 LLM 偏好 API (2026-05-13).
 
-每个登录用户可以选择自己 chat 走哪个 LLM 模型 (model_id from
+只有管理员可以选择自己 chat 走哪个 LLM 模型 (model_id from
 app/services/llm/model_registry.py). 持久化到 user_profiles.llm_model_id.
 
 跟 /admin/llm/* 区别:
@@ -86,7 +86,7 @@ def get_preference(
 ):
     """读当前用户的 LLM 偏好 + 可选模型列表."""
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-    options = _list_options()
+    options = _list_options() if current_user.is_admin is True else []
     selected = getattr(profile, "llm_model_id", None) if profile else None
     return PreferenceResponse(
         model_id=selected if selected in {option.id for option in options} else None,
@@ -101,6 +101,8 @@ def update_preference(
     db: Session = Depends(get_db),
 ):
     """切换当前用户的 LLM 偏好. None / 空 = 恢复默认."""
+    if current_user.is_admin is not True:
+        raise HTTPException(status_code=403, detail="仅管理员可以切换模型")
     new_id = (body.model_id or "").strip() or None
     if new_id is not None:
         allowed = {m.id for m in _list_options()}
@@ -141,6 +143,8 @@ async def selftest(
     给设置页"切换完成"后立刻调用, 让用户**眼见为实**自己选的模型确实生效.
     """
     import time
+    if current_user.is_admin is not True:
+        raise HTTPException(status_code=403, detail="仅管理员可以测试模型")
     model_id = get_preference(current_user=current_user, db=db).model_id
 
     try:

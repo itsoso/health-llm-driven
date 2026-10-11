@@ -10,6 +10,8 @@ const mockEstimate = jest.fn();
 const mockCancelEstimate = jest.fn();
 const mockRouterPush = jest.fn();
 const mockRouterBack = jest.fn();
+const mockRouterReplace = jest.fn();
+let mockCanGoBack = true;
 const mockPushChatWithContext = jest.fn();
 const mockReturnToChatWithContext = jest.fn();
 const mockDietShareComposer = jest.fn();
@@ -18,7 +20,7 @@ const mockToastShow = jest.fn();
 let mockAuth = { token: 'diet-auth-token', user: { id: 1 }, isLoading: false };
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ back: mockRouterBack, push: (...args: any[]) => mockRouterPush(...args) }),
+  useRouter: () => ({ canGoBack: () => mockCanGoBack, replace: mockRouterReplace, back: mockRouterBack, push: (...args: any[]) => mockRouterPush(...args) }),
   useLocalSearchParams: () => mockRouteParams,
 }));
 
@@ -179,7 +181,16 @@ describe('DietScreen capture deeplink', () => {
     fireEvent.press(view.getByRole('button', { name: '返回小巴' }));
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
   });
+  it('returns a directly opened diet screen to chat', async () => {
+    mockCanGoBack = false;
+    const view = render(<DietScreen />);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.press(view.getByRole('button', { name: '返回小巴' }));
+    expect(mockRouterReplace).toHaveBeenCalledWith('/(tabs)/chat');
+    expect(mockRouterBack).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
+    mockCanGoBack = true;
     mockAuth = { token: 'diet-auth-token', user: { id: 1 }, isLoading: false };
     mockMealForm.mockClear();
     mockEstimate.mockClear();

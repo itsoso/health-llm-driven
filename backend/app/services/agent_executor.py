@@ -17008,7 +17008,7 @@ class AgentExecutor:
         self._request_model_id = (
             str(getattr(settings, "health_evidence_model_id", "") or "").strip()
             if health_advice_buffered
-            else _extract_model_id_from_extra_context(extra_context)
+            else self._admin_model_override(extra_context, user_id)
         ) or None
         self._staged_response_mode = _staged_response_mode()
         self._staged_answer_task_tier = None
@@ -22471,15 +22471,25 @@ class AgentExecutor:
             object_key=object_key,
         )
 
+    def _admin_model_override(self, extra_context: Optional[str], user_id: int) -> Optional[str]:
+        selected = _extract_model_id_from_extra_context(extra_context)
+        if not selected:
+            return None
+        from app.models.user import User
+        admin = self.db.query(User.id).filter(User.id == user_id, User.is_admin.is_(True)).first()
+        return selected if admin is not None else None
+
     def _should_send_raw_images_to_primary_model(self, user_id: int) -> bool:
         """Return True when the active chat model should receive image parts directly."""
 
         try:
             from app.models.user_profile import UserProfile
+            from app.models.user import User
             from app.services.llm.model_registry import get_active_model_id, get_model
 
             model_id = self._request_model_id
-            profile = self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+            profile = (self.db.query(UserProfile).join(User, User.id == UserProfile.user_id)
+                       .filter(UserProfile.user_id == user_id, User.is_admin.is_(True)).first())
             if not model_id and profile:
                 model_id = getattr(profile, "llm_model_id", None)
             model_id = model_id or get_active_model_id()
@@ -23177,9 +23187,11 @@ class AgentExecutor:
             return None
         try:
             from app.models.user_profile import UserProfile
+            from app.models.user import User
             profile = (
                 self.db.query(UserProfile)
-                .filter(UserProfile.user_id == self._current_user_id)
+                .join(User, User.id == UserProfile.user_id)
+                .filter(UserProfile.user_id == self._current_user_id, User.is_admin.is_(True))
                 .first()
             )
             pref = getattr(profile, "llm_model_id", None) if profile else None

@@ -19,6 +19,7 @@ export function compactLlmHeaderLabel(label: string): string {
 }
 
 interface ChatHeaderProps {
+  canSelectModel?: boolean;
   activeLlmLabel: string;
   llmModelId: string | null;
   llmOptions: ModelOption[];
@@ -38,6 +39,7 @@ interface ChatHeaderProps {
  * 纯 props 驱动, 无本地状态。testID 「chat-header-surface」+ a11y 标签保持稳定 (测试引用)。
  */
 export default function ChatHeader({
+  canSelectModel = false,
   activeLlmLabel,
   llmModelId,
   llmOptions,
@@ -68,6 +70,7 @@ export default function ChatHeader({
           <XiaoBaAvatar size={22} />
         )}
         <LlmModelPicker
+          canSelectModel={canSelectModel}
           variant="header"
           currentLabel={headerLlmLabel}
           currentModelId={llmModelId}

@@ -123,8 +123,9 @@ jest.mock('../../../services/actionCards', () => ({
   recordCardDecision: (...args: any[]) => mockRecordCardDecision(...args),
 }));
 
+let mockAdminUser = false;
 jest.mock('../../../hooks/useAuth', () => ({
-  useAuth: () => ({ token: 'review-token' }),
+  useAuth: () => ({ token: 'review-token', user: { id: 1, is_admin: mockAdminUser } }),
 }));
 
 jest.mock('../../../services/chatImageSave', () => ({
@@ -234,6 +235,7 @@ import ChatScreen from '../chat';
 describe('ChatScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAdminUser = false;
     // clearAllMocks 不排空 mockResolvedValueOnce 队列 —— 对 fetch mock 显式 reset,
     // 免得上个 test 多排的 once-value 泄漏进下个 test 的 starter/opener 渲染。
     mockFetchConversationStarters.mockReset();
@@ -868,6 +870,7 @@ describe('ChatScreen', () => {
   });
 
   it('shows 小巴 in the header and hides the model name inline (revealed on pull-down)', async () => {
+    mockAdminUser = true;
     // Agent-native header (2026-07-03): 只露品牌名「小巴 ⌄」, 模型名收进下拉 sheet。
     // 当前模型仍进 picker trigger 的 accessibilityLabel(供读屏 + 打开 sheet 时勾选)。
     mockLlmPreference = {
@@ -930,6 +933,7 @@ describe('ChatScreen', () => {
   });
 
   it('opens model switching from the top-left header instead of the more sheet', async () => {
+    mockAdminUser = true;
     mockLlmPreference = {
       model_id: 'qwen3.7-plus',
       options: [
@@ -971,6 +975,7 @@ describe('ChatScreen', () => {
   });
 
   it('keeps the selected model visible and switchable while a reply is streaming', async () => {
+    mockAdminUser = true;
     mockIsStreaming = true;
     mockLlmPreference = {
       model_id: 'qwen3.7-plus',
@@ -1726,6 +1731,15 @@ describe('ChatScreen', () => {
     expect(getByText('更多操作')).toBeTruthy();
     expect(getByTestId('chat-tool-menu-overlay').props.accessible).toBe(false);
     expect(getByTestId('chat-tool-menu-sheet').props.accessible).toBe(false);
+  });
+
+  it('keeps menu destinations scrollable and closes without navigating', () => {
+    const view = render(<ChatScreen />);
+    fireEvent.press(view.getByLabelText('更多会诊操作'));
+    expect(view.getByTestId('chat-tool-menu-scroll')).toBeTruthy();
+    fireEvent.press(view.getByRole('button', { name: '关闭更多操作' }));
+    expect(view.queryByText('更多操作')).toBeNull();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('opens diet records from the more sheet', () => {

@@ -285,8 +285,10 @@ def create_provider_for_user(user_id: int, db, task_tier: str | None = None) -> 
     # 1. 用户偏好
     try:
         from app.models.user_profile import UserProfile
+        from app.models.user import User
         from app.services.llm.model_registry import get_model
-        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        profile = (db.query(UserProfile).join(User, User.id == UserProfile.user_id)
+                   .filter(UserProfile.user_id == user_id, User.is_admin.is_(True)).first())
         model_id = getattr(profile, "llm_model_id", None) if profile else None
         if model_id:
             entry = get_model(model_id)

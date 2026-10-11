@@ -1,3 +1,4 @@
+import { backOrChat } from '../utils/backOrChat';
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Pressable, TextStyle, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -268,7 +269,7 @@ export default function VoiceChatScreen() {
               extractMemoryFromDialog(userTurns, alertId).catch(() => {});
             }
             voice.reset();
-            router.back();
+            backOrChat(router);
           };
 
           if (items.length > 0) {

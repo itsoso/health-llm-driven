@@ -1,3 +1,4 @@
+import { backOrChat } from '../../utils/backOrChat';
 /**
  * Reasoning Trace 详情 - "为什么 AI 这样判断?"
  *
@@ -91,6 +92,9 @@ export default function TraceDetailScreen() {
     return (
       <SafeAreaView style={styles.safe}><View style={styles.center}>
         <ActivityIndicator size="large" color={c.brand} />
+          <TouchableOpacity onPress={() => backOrChat(router)} accessibilityRole="button" accessibilityLabel="返回" style={{ minHeight: 44, justifyContent: 'center' }}>
+            <Text style={{ color: c.brand }}>返回</Text>
+          </TouchableOpacity>
       </View></SafeAreaView>
     );
   }
@@ -98,7 +102,7 @@ export default function TraceDetailScreen() {
     return (
       <SafeAreaView style={styles.safe}><View style={styles.center}>
         <Text style={styles.emptyTitle}>找不到该决策记录</Text>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: spacing.md }}>
+        <TouchableOpacity onPress={() => backOrChat(router)} accessibilityRole="button" accessibilityLabel="返回" style={{ marginTop: spacing.md }}>
           <Text style={{ color: c.brand, fontSize: 15 }}>返回</Text>
         </TouchableOpacity>
       </View></SafeAreaView>
@@ -110,7 +114,7 @@ export default function TraceDetailScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="返回">
+        <TouchableOpacity onPress={() => backOrChat(router)} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>决策回放</Text>

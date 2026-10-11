@@ -4,8 +4,8 @@
 |---|---|
 | slug | meal-photo-routing-delay |
 | 日期 | 2026-10-12 |
-| 当前阶段 | G4 固定候选审查 |
-| 状态 | building |
+| 当前阶段 | G6 后端部署核对完成 |
+| 状态 | complete |
 | 负责 | root |
 
 ## G1 准入
@@ -28,8 +28,8 @@
 
 ## G4 审查
 
-待固定候选独立审查。
+裁决: PASS。a75d2e661固定候选独立GO，1288 passed、1 skipped。运维独立审查发现日志持久化和bytecode加载边界后修复，第三次全新审查GO；全部失败证据保留。
 
 ## G5/G6 交付
 
-未部署，不宣称用户可见提速。后端发布需精确绿色CI、独立GO和持久回执；本次后端修改不需要OTA。
+裁决: PASS。精确a75d2e661完整CI 38183804992 success，本地CI-mode 3593 passed、22 skipped、84 subtests passed。可信后端发布38185005589 success，服务器completed.json同SHA SUCCEEDED，部署仓库干净、四服务active、外网health200/healthy，无发布lease。首次old revoke入口用错路径，在任何写入前被固定路径校验拒绝；只读核对授权未变，独立GO后使用old canonical入口完成，不覆盖原失败日志。新修复后实际用户拍照提速尚未验证，不宣称9秒变为具体值。本次后端修改不需要OTA，真实模型评测按用户长期豁免保持0调用。私有证据索引 docs/reviews/2026-10-12-meal-photo-routing-release-receipt.json。

@@ -59,7 +59,7 @@ export function getSettingsLocationLabel(profile: SettingsLocationProfile): stri
     || '未设置';
 }
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ home = false }: { home?: boolean }) {
   const router = useRouter();
   const { logout, user, isAuthenticated } = useAuth();
   const qc = useQueryClient();
@@ -222,9 +222,8 @@ export default function SettingsScreen() {
     return '手动检查';
   })();
 
-  // 同一组件被 /settings (stack) 和 (tabs)/me 共用. tab 模式下没"上一级"
-  // 可回, 隐藏返回按钮; stack 模式 (env card 齿轮 push) 保留.
-  const canGoBack = router.canGoBack();
+  // Tab 历史不等于父页面：个人中心固定回主屏，设置页保留正常返回。
+  const canGoBack = !home && router.canGoBack();
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -245,7 +244,7 @@ export default function SettingsScreen() {
             <Ionicons name="chevron-back" size={24} color={C.green500} />
           </TouchableOpacity>
         )}
-        <Text style={txt.title}>{canGoBack ? '设置' : '我'}</Text>
+        <Text style={txt.title}>{home ? '个人中心与设置' : '设置'}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -341,6 +340,18 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        <Text style={txt.sectionLabel}>健康管理</Text>
+        <View style={styles.card}>
+          <SettingRow icon="people-outline" label="家庭健康"
+            onPress={() => router.push('/family' as any)} />
+          <SettingRow icon="reader-outline" label="健康日记"
+            onPress={() => router.push('/journal' as any)} />
+          <SettingRow icon="document-text-outline" label="硬性指令"
+            onPress={() => router.push('/directives' as any)} />
+          <SettingRow icon="pulse-outline" label="数据自检" isLast
+            onPress={() => router.push('/data-integrity' as any)} />
+        </View>
+
         <Text style={txt.sectionLabel}>账号与隐私</Text>
         <View style={styles.card}>
           <SettingRow icon="sparkles-outline" label="AI 数据共享"
@@ -350,14 +361,6 @@ export default function SettingsScreen() {
             onPress={() => router.push('/account-security' as any)} />
           <SettingRow icon="shield-checkmark-outline" label="隐私政策"
             onPress={() => router.push('/privacy-policy' as any)} />
-          <SettingRow icon="people-outline" label="家庭健康"
-            onPress={() => router.push('/family' as any)} />
-          <SettingRow icon="reader-outline" label="健康日记"
-            onPress={() => router.push('/journal' as any)} />
-          <SettingRow icon="document-text-outline" label="硬性指令"
-            onPress={() => router.push('/directives' as any)} />
-          <SettingRow icon="pulse-outline" label="数据自检"
-            onPress={() => router.push('/data-integrity' as any)} />
           <SettingRow icon="trash-outline" label="删除账号与数据"
             value={deletionRequesting
               ? '提交中...'

@@ -17,6 +17,7 @@ import type { TimelineThread, TimelineEntry } from '../../../services/clinicalJo
 import { emitClientEvent } from '../../../services/clientEvents';
 import { spacing, radii, typography } from '../../../constants/theme';
 import { ColorPalette, useTheme } from '../../../hooks/useTheme';
+import BackToChatBar from '../../../components/common/BackToChatBar';
 
 const STATUS_LABEL: Record<string, string> = {
   active: '跟进中',
@@ -158,6 +159,7 @@ export default function JournalTimelineScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
+      <BackToChatBar style={{ marginHorizontal: spacing.xl, marginTop: spacing.md }} />
       <View style={styles.topbar}>
         <Text style={styles.topbarTitle}>案例时间线</Text>
       </View>
