@@ -135,3 +135,5 @@ Mobile历史恢复补supplement_draft scoped receipt/decisionStatus，ChatBubble
 整合审读发现对原文直接 strip 会把四空格/Tab 代码材料提升为候选请求；新增反例先 RED 4 failed/33 passed，复用现有原始材料过滤后 GREEN 37 passed。展示、识别分派和持久来源 propose 使用同一封闭请求检查；补源消息反例，不创建写意图或记录。确认仍要求完整持久卡、本人来源、冻结数量与定义、Runtime 锁下准入、原子写入、逐项数据库回执。
 
 真实模型评测按用户长期指令跳过，不把合成图片/模型 fixture 当原图识别或个人记录验收。固定候选 PostgreSQL、独立 G4、CI-mode、完整 main CI、后端及 OTA 尚待后续证据。
+
+独立固定候选 `b348410956e94d9abafd399d57a2b95652e25835` G4 NO-GO：取消照片补剂后若 invalidateQueries 拒绝，ChatBubble 会显示“已写入，页面数据稍后刷新”。未 push/部署；补补剂及用药取消+刷新失败反例，实际 RED 2 failed/100 passed。取消终态在刷新失败提示之前独立处理，不能伪造写入状态或回执；修复后重新固定候选与 G4。

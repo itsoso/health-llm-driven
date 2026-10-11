@@ -580,6 +580,8 @@ function ChatBubbleInner({
           toast.show(descriptor.type === 'supplement_draft'
             ? '确认已过期，未写入；请重新发送完整补剂记录'
             : '确认已过期，未写入；请重新发送完整用药记录', 'info');
+        } else if (receiptlessTerminal) {
+          toast.show(getCardActionSuccessMessage(action, result), getCardActionSuccessType(action, result));
         } else if (receiptPersistenceFailed) {
           toast.show('已写入，但本机未保存防重复凭证', 'error');
         } else {

@@ -1822,6 +1822,54 @@ ${sectionTitle}
     );
   });
 
+  it.each(['supplement_draft', 'medication_draft'] as const)('keeps %s cancellation truthful when refresh fails', async (cardType) => {
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'dismissed',
+      decision_status: 'dismissed',
+    });
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      if (!descriptor.actions?.[0]) return <Text>已取消</Text>;
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>{descriptor.actions[0].label}</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    jest.spyOn(qc, 'invalidateQueries').mockRejectedValue(new Error('synthetic refresh failure'));
+    const message: UIMessage = {
+      id: 'assistant-dismiss-medication',
+      role: 'assistant',
+      content: '',
+      cardType,
+      cardData: { items: [{ medication_name: '伊托必利' }] },
+      cardActions: [{
+        id: 'dismiss-medication-42',
+        label: '取消记录',
+        action: 'write_intent.dismiss',
+        endpoint: '/write-intents/42/dismiss',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+      }],
+    };
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('取消记录'));
+
+    await waitFor(() => expect(mockToastShow).toHaveBeenCalledWith('已忽略', 'success'));
+    expect(mockSaveCardActionReceipt).not.toHaveBeenCalled();
+    expect(mockRememberVerifiedWriteReceipt).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+      'write_receipt_terminal',
+      expect.objectContaining({ action_type: 'write_intent.dismiss', verified: true }),
+    );
+  });
+
   it('shows the authoritative dismissed terminal when a confirm loses the cross-device race', async () => {
     dispatchChatCardAction.mockResolvedValueOnce({
       status: 'dismissed',
