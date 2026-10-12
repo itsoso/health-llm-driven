@@ -26,14 +26,14 @@ jest.mock('expo-router', () => {
 });
 
 jest.mock('expo-status-bar', () => ({ StatusBar: () => null }));
-jest.mock('@tanstack/react-query', () => ({ focusManager: { setFocused: jest.fn() } }));
-jest.mock('@tanstack/react-query-persist-client', () => ({
-  PersistQueryClientProvider: ({ children }: { children: React.ReactNode }) => children,
+jest.mock('@tanstack/react-query', () => ({
+  focusManager: { setFocused: jest.fn() },
+  QueryClientProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 jest.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: ({ children }: { children: React.ReactNode }) => children,
 }));
-jest.mock('../../applib/queryClient', () => ({ queryClient: {}, persistOptions: {} }));
+jest.mock('../../applib/queryClient', () => ({ queryClient: {}, retireLegacyQueryCache: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../applib/sentry', () => ({
   configureSentryForAppMode: jest.fn(),
   Sentry: { wrap: (component: unknown) => component },

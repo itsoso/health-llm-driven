@@ -88,6 +88,32 @@ def test_unrelated_success_cannot_recover_missing_dimension():
     assert "睡眠：本轮查询未完成" in result.trusted_fact_summary
 
 
+@pytest.mark.parametrize('mutation', [
+    lambda p: p.pop('workout_selection'),
+    lambda p: p['workout_selection'].update(matched_count=2),
+    lambda p: p['workout_selection'].update(matched_count=True),
+    lambda p: p['workout_selection'].update(event_identity='confirmed'),
+    lambda p: p['records'][0].update(workout_type='running'),
+])
+def test_typed_workout_selection_requires_matching_server_evidence(mutation):
+    from app.services.agent_longitudinal_read import RecentWorkoutSelection
+    read_scope = OwnedReadScope(({"dimension": "workout", **WINDOW},),
+        ('recent_workout_candidates_not_identified_event',),
+        workout_selection=RecentWorkoutSelection('cycling', 2, '青山湖'))
+    attempt = execution('workout', rows=[{
+        'id': 1, 'record_date': WINDOW['start_date'], 'record_kind': 'workout_record',
+        'source_table': 'workout_records', 'workout_type': 'cycling', 'duration_seconds': 600,
+    }])
+    attempt.content.update(source_scope='owned_actual_workout_records', limitations=[],
+        workout_selection={'workout_type': 'cycling', 'expected_count': 2, 'matched_count': 1,
+                           'event_identity': 'unverified', 'count_status': 'insufficient'})
+    assert evaluate_composed_read_completion(read_scope, [attempt]).complete
+    mutation(attempt.content)
+    result = evaluate_composed_read_completion(read_scope, [attempt])
+    assert not result.complete
+    assert result.goals[0]['reason_code'] == 'query_result_scope_conflict'
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

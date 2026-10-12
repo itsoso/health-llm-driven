@@ -7,6 +7,7 @@ model chooses subqueries inside this scope; tool adapters use the same binder.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 import re
 from zoneinfo import ZoneInfo
 
@@ -21,6 +22,9 @@ from app.services.agent_kernel.health_semantics import (
 from app.services.agent_query_window import resolve_calendar_query_window
 from app.services.agent_read_task_continuation import resolve_read_task_continuation
 from app.services.write_intent_scope import _TRAILING_REVOCATION_CLAUSE_RE
+
+if TYPE_CHECKING:
+    from app.services.agent_longitudinal_read import RecentWorkoutSelection
 
 OWNED_MULTI_READ_TOOL_NAMES = frozenset({
     "health_query", "health_query_batch", "knowledge_search",
@@ -241,6 +245,7 @@ class OwnedReadScope:
     limitations: tuple[str, ...] = ()
     weather_city: str | None = None
     composite_advice: bool = False
+    workout_selection: RecentWorkoutSelection | None = None
 
     def query(self, dimension: str) -> dict[str, str | int] | None:
         return next(
@@ -269,7 +274,7 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
-    from app.services.agent_longitudinal_read import is_recent_workout_read
+    from app.services.agent_longitudinal_read import is_recent_workout_read, resolve_recent_workout_selection
     if is_recent_workout_read(snapshot.envelope.text):
         zone = ZoneInfo(snapshot.context.timezone)
         now = snapshot.context.current_time
@@ -278,6 +283,7 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
             ({"dimension": "workout", "start_date": day, "end_date": day,
               "timezone": snapshot.context.timezone},),
             ("recent_workout_candidates_not_identified_event",),
+            workout_selection=resolve_recent_workout_selection(snapshot.envelope.text),
         )
     from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
     garmin_review = resolve_garmin_workout_review_scope(snapshot.envelope.text)

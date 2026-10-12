@@ -15658,7 +15658,8 @@ class AgentExecutor:
         panel_completion = self._composed_read_completion()
         if panel_completion is not None and not panel_completion.complete:
             full_reply = panel_completion.trusted_fact_summary
-        elif (panel_synthesis_messages is not None or self._focused_read_scopes()[1] is not None) and panel_completion is not None:
+        elif (panel_synthesis_messages is not None or self._focused_read_scopes()[1] is not None
+              or (panel_read_scope is not None and panel_read_scope.workout_selection is not None)) and panel_completion is not None:
             full_reply = panel_completion.trusted_fact_summary + "\n\n" + full_reply
         panel_sync_summary = self._trusted_sync_summary()
         if panel_sync_summary:
@@ -15667,7 +15668,7 @@ class AgentExecutor:
                           else panel_sync_summary + '\n\n' + full_reply)
         if (
             panel_read_scope is not None and panel_read_scope.limitations
-            and panel_synthesis_messages is None
+            and panel_synthesis_messages is None and panel_read_scope.workout_selection is None
             and (panel_completion is None or panel_completion.complete)
         ):
             # Incomplete trusted summaries already carry the canonical notices.
@@ -20207,7 +20208,8 @@ class AgentExecutor:
             full_reply = composed_completion.trusted_fact_summary
             if final_finish_reason != "stop":
                 full_reply += "\n\n本轮没有生成有效回答，请稍后重试。"
-        elif (composed_synthesis_used or self._focused_read_scopes()[1] is not None) and composed_completion is not None:
+        elif (composed_synthesis_used or self._focused_read_scopes()[1] is not None
+              or (read_scope is not None and read_scope.workout_selection is not None)) and composed_completion is not None:
             if final_finish_reason != "stop":
                 # A status flag does not make an incomplete model candidate
                 # safe to publish. Retain verified facts, not partial prose.
@@ -20219,7 +20221,7 @@ class AgentExecutor:
                           else sync_summary + "\n\n" + full_reply)
         if (
             read_scope is not None and read_scope.limitations
-            and not composed_synthesis_used
+            and not composed_synthesis_used and read_scope.workout_selection is None
             and (composed_completion is None or composed_completion.complete)
         ):
             # Incomplete trusted summaries already carry the canonical notices.
@@ -26946,6 +26948,7 @@ class AgentExecutor:
                 parse_query_window, read_calendar_health_query, resolve_calendar_query_window,
             )
             snapshot = self._ensure_agent_kernel_turn()
+            scope = None
             daily_plan = resolve_daily_read_plan(
                 snapshot.envelope.text, snapshot.context.current_time,
                 timezone_name=snapshot.context.timezone,
@@ -26973,7 +26976,10 @@ class AgentExecutor:
                     type(args.get('days')) is not int or args['days'] != query['days']
                 ):
                     return "Error: 查询天数与当前请求不一致。"
-                result = read_longitudinal_health_query(self.db, self._current_user_id, dim, window)
+                result = read_longitudinal_health_query(
+                    self.db, self._current_user_id, dim, window,
+                    selection=scope.workout_selection if scope is not None and dim == 'workout' else None,
+                )
             else:
                 result = read_calendar_health_query(self.db, self._current_user_id, dim, window)
             if daily_plan is not None and daily_plan.sync_status_requested:

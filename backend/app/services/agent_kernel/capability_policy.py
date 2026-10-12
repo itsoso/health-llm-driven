@@ -2765,8 +2765,8 @@ def decide_tool_capability(
         return _decision("block", "current_input_advice_read_not_needed" if optional_read
                          else "current_input_advice_tool_not_allowed", tool_name, args)
     owned_scope = resolve_owned_read_scope(snapshot)
-    from app.services.agent_longitudinal_read import is_recent_workout_read
-    if is_recent_workout_read(snapshot.envelope.text) and owned_scope is None:
+    from app.services.agent_longitudinal_read import has_recent_workout_reference
+    if has_recent_workout_reference(snapshot.envelope.text) and owned_scope is None:
         # A failed authenticated binding must not fall through to legacy reads.
         return _decision("block", "health_query_subject_not_current_user", tool_name, args)
     from app.services.agent_kernel.exercise_plan_scope import (
@@ -2989,6 +2989,14 @@ def decide_tool_capability(
         scope = None if daily is not None else resolve_owned_read_scope(snapshot)
         if scope is not None:
             plan = args.get("plan", args)
+            if scope.workout_selection is not None:
+                raw_proposals = [args] if tool_name == 'health_query' else plan.get('queries') if isinstance(plan, dict) else None
+                if (not isinstance(raw_proposals, list)
+                        or any(not isinstance(p, dict) or set(p) - {'dimension', 'start_date', 'end_date', 'timezone'}
+                               for p in raw_proposals)
+                        or (tool_name == 'health_query_batch' and (
+                            set(args) not in ({'queries'}, {'plan'}) or set(plan) != {'queries'}))):
+                    return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
             if not isinstance(plan, dict):
                 return _decision("block", "health_query_semantics_unresolved", tool_name, args)
             if any(key in candidate for candidate in (args, plan)

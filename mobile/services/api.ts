@@ -10,13 +10,27 @@ export const WEB_SESSION_AUTH_SENTINEL = '__web_cookie_session__';
 // Keep the token returned by a successful login in-process so the first
 // authenticated requests do not race the persistence layer.
 let runtimeAuthToken: string | null = null;
+let authGeneration = 0;
+let authInitialized = false;
+const authChangeListeners = new Set<() => void>();
+
+export function subscribeAuthSessionChange(listener: () => void): () => void {
+  authChangeListeners.add(listener);
+  return () => { authChangeListeners.delete(listener); };
+}
 
 export function isUsableNativeAuthToken(token: string | null | undefined): token is string {
   return Boolean(token && token !== WEB_SESSION_AUTH_SENTINEL);
 }
 
 export function setRuntimeAuthToken(token: string | null): void {
-  runtimeAuthToken = isUsableNativeAuthToken(token) ? token : null;
+  const nextToken = isUsableNativeAuthToken(token) ? token : null;
+  authInitialized = true;
+  if (nextToken !== runtimeAuthToken || nextToken === null) {
+    authGeneration += 1;
+    runtimeAuthToken = nextToken;
+    for (const listener of authChangeListeners) listener();
+  }
   setAIConsentIdentity(runtimeAuthToken);
 }
 
@@ -25,10 +39,36 @@ export const BASE_URL =
   (process.env.EXPO_PUBLIC_API_URL && process.env.EXPO_PUBLIC_API_URL.trim()) ||
   DEFAULT_API;
 
-const api = axios.create({
+const transport = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
+});
+
+// Axios schedules async interceptors after the caller returns. Capture the
+// generation at invocation so an immediate account switch cannot rebind an
+// already-created request to the next account.
+function scopedCall(args: unknown[], configIndex: number): unknown[] {
+  const scoped = [...args];
+  scoped[configIndex] = { ...(scoped[configIndex] as object | undefined), __revaDispatchGeneration: authGeneration };
+  return scoped;
+}
+const readMethods = new Set(['get', 'delete', 'head', 'options']);
+const writeMethods = new Set(['post', 'put', 'patch', 'postForm', 'putForm', 'patchForm']);
+const api = new Proxy(transport, {
+  apply(target, thisArg, args) {
+    return Reflect.apply(target, thisArg, scopedCall(args, typeof args[0] === 'string' ? 1 : 0));
+  },
+  get(target, property, receiver) {
+    const value = Reflect.get(target, property, receiver);
+    if (typeof property !== 'string' || typeof value !== 'function') return value;
+    const configIndex = readMethods.has(property) ? 1 : writeMethods.has(property) ? 2 : null;
+    if (configIndex !== null || property === 'request') {
+      return (...args: unknown[]) => Reflect.apply(value, target,
+        scopedCall(args, configIndex ?? (typeof args[0] === 'string' ? 1 : 0)));
+    }
+    return value;
+  },
 });
 
 export const EXPLICIT_CLOUD_AI_HEADER = 'X-Reva-Explicit-Cloud-AI';
@@ -49,20 +89,33 @@ function isCloudSessionBootstrapRequest(method: string | undefined, url: string 
 
 api.interceptors.request.use(
   async (config) => {
+    const generation = (config as typeof config & { __revaDispatchGeneration?: number }).__revaDispatchGeneration ?? authGeneration;
+    const assertCurrentSession = () => {
+      if (generation !== authGeneration) throw new Error('auth_session_changed');
+    };
+    assertCurrentSession();
     const consentRevision = (config as typeof config & { __revaConsentRevision?: number }).__revaConsentRevision;
     const explicitCloudAI = config.headers.get(EXPLICIT_CLOUD_AI_HEADER) === '1';
     config.headers.delete(EXPLICIT_CLOUD_AI_HEADER);
     let token = runtimeAuthToken;
-    if (!token) {
+    if (!authInitialized) {
+      let persistedToken: string | null = null;
       try {
-        const persistedToken = await SecureStore.getItemAsync(TOKEN_KEY);
-        if (isUsableNativeAuthToken(persistedToken)) {
-          token = persistedToken;
-          setRuntimeAuthToken(persistedToken);
-        }
+        persistedToken = await SecureStore.getItemAsync(TOKEN_KEY);
       } catch {
         // SecureStore not available (e.g. web or a transient iOS keychain
         // window). A token installed by login remains usable in memory.
+      }
+      assertCurrentSession();
+      if (authInitialized) {
+        token = runtimeAuthToken;
+      } else if (isUsableNativeAuthToken(persistedToken)) {
+        token = persistedToken;
+        // Initial keychain hydration belongs to this startup generation.
+        // An explicit login/logout above cannot be replaced by this read.
+        runtimeAuthToken = persistedToken;
+        authInitialized = true;
+        setAIConsentIdentity(runtimeAuthToken);
       }
     }
     await enforceAppEgressAllowed({
@@ -70,6 +123,9 @@ api.interceptors.request.use(
       cloudSessionBootstrap: isCloudSessionBootstrapRequest(config.method, config.url),
       cloudCredentialPresent: isUsableNativeAuthToken(token),
     });
+    assertCurrentSession();
+    config.headers.delete('Authorization');
+    delete config.headers.Authorization;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -77,7 +133,7 @@ api.interceptors.request.use(
       // Lazy load avoids an api → consent → auth → api initialization cycle.
       const { requireAIConsent } = require('./aiConsent') as typeof import('./aiConsent');
       await requireAIConsent();
-      if (token !== runtimeAuthToken) throw new Error('auth_session_changed');
+      assertCurrentSession();
     }
     if (consentRevision !== undefined && consentRevision !== aiConsentRevision()) {
       throw new Error('auth_session_changed');
@@ -88,8 +144,10 @@ api.interceptors.request.use(
     const scopedConfig = config as typeof config & {
       __revaAuthToken?: string | null;
       __revaRequestConsentRevision?: number;
+      __revaAuthGeneration?: number;
     };
     scopedConfig.__revaAuthToken = token;
+    scopedConfig.__revaAuthGeneration = generation;
     scopedConfig.__revaRequestConsentRevision = aiConsentRevision();
     return config;
   },
@@ -101,7 +159,11 @@ let onUnauthorized: (() => void) | null = null;
 export function setOnUnauthorized(cb: (() => void) | null) { onUnauthorized = cb; }
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const generation = (response.config as typeof response.config & { __revaAuthGeneration?: number }).__revaAuthGeneration;
+    if (generation !== undefined && generation !== authGeneration) throw new Error('auth_session_changed');
+    return response;
+  },
   async (error) => {
     if (isAIConsentError(error)) {
       const request = error.config as {
@@ -124,6 +186,7 @@ api.interceptors.response.use(
         !isAuthRequest
         && requestToken !== undefined
         && requestToken === runtimeAuthToken
+        && (error.config as { __revaAuthGeneration?: number } | undefined)?.__revaAuthGeneration === authGeneration
       ) {
         onUnauthorized?.();
       }

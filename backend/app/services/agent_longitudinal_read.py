@@ -7,6 +7,7 @@ execution never resolves a rolling window again or accepts a model owner.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -131,6 +132,45 @@ _RECENT_WORKOUT_READ = re.compile(
     r"(?:运动|锻炼|训练)(?:记录|数据)?[。.!！]?"
 )
 
+@dataclass(frozen=True)
+class RecentWorkoutSelection:
+    workout_type: str
+    expected_count: int | None = None
+    reported_location: str | None = None
+
+
+_RECENT_TYPED_WORKOUT = re.compile(
+    r"(?:请(?:你)?|麻烦)?(?:帮我|给我)?(?:分析|复盘|总结|查看|查询|看看)(?:一下)?"
+    r"(?:我(?:的)?|本人(?:的)?)?"
+    r"(?:(?P<location>[\u4e00-\u9fff]{1,12}(?:湖|公园|绿道|水库|景区))(?P<prefix_kind>骑行|骑车|跑步|步行|游泳))?"
+    r"(?:刚才|刚刚)(?:的)?(?:(?P<count>[一二两三123])(?:段|次|条))?"
+    r"(?P<kind>骑行|骑车|跑步|步行|游泳)(?:记录|数据)?[。.!！]?"
+)
+_RECENT_WORKOUT_KINDS = {'骑行': 'cycling', '骑车': 'cycling', '跑步': 'running',
+                         '步行': 'walking', '游泳': 'swimming'}
+
+
+def resolve_recent_workout_selection(text: str) -> RecentWorkoutSelection | None:
+    """Consume the complete typed event request; a location is reported context.
+
+    This does not attest GPS, grant another owner's data, authorize a sync, or
+    consume extra date/name filters. The dispatcher freezes today's window.
+    """
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+    source = str(text or '').strip()
+    if (active_health_read_authority_text(source) != source or _NEGATIVE.search(source)
+            or _MUTATION.search(source)
+            or re.search(r'朋友|同事|他人|别人|家人|爸爸|妈妈|他的|她的|他们|她们', source)):
+        return None
+    match = _RECENT_TYPED_WORKOUT.fullmatch(source)
+    if match is None:
+        return None
+    kind = _RECENT_WORKOUT_KINDS[match['kind']]
+    if match['prefix_kind'] and _RECENT_WORKOUT_KINDS[match['prefix_kind']] != kind:
+        return None
+    count = {'一': 1, '二': 2, '两': 2, '三': 3, '1': 1, '2': 2, '3': 3}.get(match['count'])
+    return RecentWorkoutSelection(kind, count, match['location'])
+
 
 def is_recent_workout_read(text: str) -> bool:
     """A complete owned read command, not a substring or a sync/write request.
@@ -143,7 +183,14 @@ def is_recent_workout_read(text: str) -> bool:
 
     source = str(text or "")
     return (active_health_read_authority_text(source) == source.strip()
-            and _RECENT_WORKOUT_READ.fullmatch(source.strip()) is not None)
+            and (_RECENT_WORKOUT_READ.fullmatch(source.strip()) is not None
+                 or resolve_recent_workout_selection(source) is not None))
+
+
+def has_recent_workout_reference(text: str) -> bool:
+    """Restrictive detection only; a substring can never grant a personal read."""
+    return re.search(r'(?:刚才|刚刚)[^。\n]*(?:运动|锻炼|训练|骑行|骑车|跑步|步行|游泳)',
+                     str(text or '')) is not None
 
 
 _HTML_READ_FRAME = re.compile(
@@ -843,7 +890,8 @@ def _rows(db, model, day_column, owner: int, window: QueryWindow):
 
 
 def read_longitudinal_health_query(
-    db, user_id: int, dimension: str, window: QueryWindow
+    db, user_id: int, dimension: str, window: QueryWindow, *,
+    selection: RecentWorkoutSelection | None = None,
 ) -> dict:
     """Read actual owned events; no plans, inferred adherence, or remote calls.
 
@@ -962,6 +1010,19 @@ def read_longitudinal_health_query(
     if len(records) > MAX_CALENDAR_ROWS:
         raise ValueError("longitudinal_query_result_limit_exceeded")
     records.sort(key=lambda row: (row["record_date"], row["source_table"], row["id"]))
+    selection_result = None
+    if selection is not None:
+        if dimension != 'workout':
+            raise ValueError('workout_selection_dimension_conflict')
+        records = [row for row in records if row['workout_type'] == selection.workout_type]
+        count = len(records)
+        expected = selection.expected_count
+        selection_result = {
+            'workout_type': selection.workout_type, 'expected_count': expected,
+            'matched_count': count, 'event_identity': 'unverified',
+            'count_status': ('unspecified' if expected is None else 'matched' if count == expected
+                             else 'insufficient' if count < expected else 'ambiguous'),
+        }
     return _bounded_result(
         {
             "dimension": dimension,
@@ -970,6 +1031,7 @@ def read_longitudinal_health_query(
             "source_scope": source,
             "availability": "available" if records else "no_data",
             "limitations": limitations,
+            **({'workout_selection': selection_result} if selection_result is not None else {}),
         }
     )
 

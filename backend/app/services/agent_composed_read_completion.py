@@ -1022,6 +1022,9 @@ def read_scope_notices(scope) -> tuple[str, ...]:
             "本次先查询当前账号当天已保存的运动候选记录；尚不能确认哪条就是刚才那次。"
             "未触发设备同步；没有匹配记录时不能用旧运动代替，多条记录不能合并冒充本次运动。"
         )
+        if scope.workout_selection is not None:
+            lines.append('本次仅查所述运动类型；地点来自用户描述，未核验实际地点。'
+                         '数量不符时只展示候选记录，不把其他记录拼成指定数量的运动。')
     if "scope_diet_sleep_only" in scope.limitations:
         lines.append("本次复盘仅覆盖饮食与睡眠记录；活动等其他健康领域未覆盖。")
     if "default_recent_7_days" in scope.limitations:
@@ -1130,6 +1133,21 @@ def evaluate_composed_read_completion(
             ):
                 continue
             reason = _validate(bounds[dimension], payload)
+            if reason is None and dimension == 'workout' and scope.workout_selection is not None:
+                selection = scope.workout_selection
+                count = len(payload['records'])
+                expected = selection.expected_count
+                status = ('unspecified' if expected is None else 'matched' if count == expected
+                          else 'insufficient' if count < expected else 'ambiguous')
+                metadata = payload.get('workout_selection')
+                if (any(row.get('workout_type') != selection.workout_type for row in payload['records'])
+                        or not isinstance(metadata, dict)
+                        or type(metadata.get('matched_count')) is not int
+                        or metadata != {
+                            'workout_type': selection.workout_type, 'expected_count': expected,
+                            'matched_count': count, 'event_identity': 'unverified', 'count_status': status,
+                        }):
+                    reason = 'query_result_scope_conflict'
             if reason is None:
                 verified[dimension] = payload
                 goals[dimension] = {
@@ -1145,6 +1163,18 @@ def evaluate_composed_read_completion(
                 goals[dimension]["reason_code"] = reason
     missing = tuple(d for d in bounds if d not in verified)
     lines = list(read_scope_notices(scope))
+    if scope.workout_selection is not None and 'workout' in verified:
+        selected = verified['workout']['workout_selection']
+        count = format_display_number(selected['matched_count'])
+        expected = selected['expected_count']
+        if expected is not None:
+            wanted = format_display_number(expected)
+            if selected['count_status'] == 'matched':
+                lines.append(f'当天找到{count}条同类型候选记录，逐条对比；尚不能确认就是所述{wanted}段。')
+            elif selected['count_status'] == 'insufficient':
+                lines.append(f'当天仅找到{count}条同类型候选记录，不足所述{wanted}段；不以旧记录补齐。')
+            else:
+                lines.append(f'当天找到{count}条同类型候选记录，超过所述{wanted}段；暂不能确定对应哪几条，不合并分析。')
     if "diet" in verified and verified["diet"]["records"]:
         lines.append("已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。")
     for dimension, query in bounds.items():

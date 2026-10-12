@@ -11,10 +11,13 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 );
 
-import { queryClient, persistOptions } from '../queryClient';
-import { QueryClient } from '@tanstack/react-query';
+import { queryClient, retireLegacyQueryCache } from '../queryClient';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setRuntimeAuthToken } from '../../services/api';
 
 describe('lib/queryClient', () => {
+  afterEach(() => { queryClient.clear(); });
   it('constructs a QueryClient with 24h gcTime and retry/staleTime defaults', () => {
     expect(queryClient).toBeInstanceOf(QueryClient);
     const defaults = queryClient.getDefaultOptions();
@@ -23,25 +26,45 @@ describe('lib/queryClient', () => {
     expect(defaults.queries?.gcTime).toBe(24 * 60 * 60 * 1000);
   });
 
-  it('persists only successful queries — errors and pending states stay off disk', () => {
-    const shouldDehydrateQuery = persistOptions.dehydrateOptions.shouldDehydrateQuery;
-
-    expect(shouldDehydrateQuery({ state: { status: 'success' } } as never)).toBe(true);
-    expect(shouldDehydrateQuery({ state: { status: 'error' } } as never)).toBe(false);
-    expect(shouldDehydrateQuery({ state: { status: 'pending' } } as never)).toBe(false);
+  it('retires only the legacy health cache without reading or rewriting records', async () => {
+    jest.clearAllMocks();
+    await retireLegacyQueryCache();
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith('HEALTHPILOT_RQ_CACHE_V1');
+    expect(AsyncStorage.getItem).not.toHaveBeenCalled();
+    expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+    expect(AsyncStorage.clear).not.toHaveBeenCalled();
   });
 
-  it('does not persist shared family records marked ephemeral', () => {
-    expect(persistOptions.dehydrateOptions.shouldDehydrateQuery({ state: { status: 'success' }, meta: { persist: false } } as never)).toBe(false);
+  it.each(['switch', 'logout-and-return'])('clears cached data and mounted observer state: %s', change => {
+    setRuntimeAuthToken('synthetic-a');
+    queryClient.setQueryData(['diet', 'today'], { owner: 'synthetic-a' });
+    const observer = new QueryObserver(queryClient, { queryKey: ['diet', 'today'], enabled: false });
+    const stop = observer.subscribe(() => undefined);
+    expect(observer.getCurrentResult().data).toEqual({ owner: 'synthetic-a' });
+    if (change === 'switch') setRuntimeAuthToken('synthetic-b');
+    else { setRuntimeAuthToken(null); setRuntimeAuthToken('synthetic-a'); }
+    expect(queryClient.getQueryData(['diet', 'today'])).toBeUndefined();
+    expect(observer.getCurrentResult().data).toBeUndefined();
+    stop();
+    observer.destroy();
+    observer.getCurrentQuery().destroy();
   });
 
-  it('caps cache age at 24h so stale health data eventually expires', () => {
-    expect(persistOptions.maxAge).toBe(24 * 60 * 60 * 1000);
+  it('does not seed the new account cache from a cancelled old query', async () => {
+    setRuntimeAuthToken('synthetic-a');
+    let finish!: (data: unknown) => void;
+    const pending = queryClient.fetchQuery({ queryKey: ['diet', 'today'],
+      queryFn: () => new Promise(resolve => { finish = resolve; }) });
+    const rejected = expect(pending).rejects.toBeDefined();
+    setRuntimeAuthToken('synthetic-b');
+    finish({ owner: 'synthetic-a' });
+    await rejected;
+    expect(queryClient.getQueryData(['diet', 'today'])).toBeUndefined();
   });
 
-  it('uses a versioned storage key — bumping it invalidates old caches at once', () => {
-    // Key includes a version suffix so a schema change can force-invalidate.
-    // If someone drops the suffix, we lose the ability to invalidate safely.
-    expect(typeof persistOptions.persister.persistClient).toBe('function');
+  it('reports a failed legacy cleanup without hydrating old records', async () => {
+    (AsyncStorage.removeItem as jest.Mock).mockRejectedValueOnce(new Error('synthetic-storage-error'));
+    await expect(retireLegacyQueryCache()).rejects.toThrow('synthetic-storage-error');
+    expect(AsyncStorage.getItem).not.toHaveBeenCalled();
   });
 });

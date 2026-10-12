@@ -1,6 +1,7 @@
 describe('services/api auth failure handling', () => {
   let requestFulfilled: ((config: any) => Promise<any>) | undefined;
   let responseRejected: ((error: any) => Promise<never>) | undefined;
+  let responseFulfilled: ((response: any) => any) | undefined;
   let unauthorized: jest.Mock;
   let enforceAppEgressAllowed: jest.Mock;
 
@@ -8,6 +9,7 @@ describe('services/api auth failure handling', () => {
     jest.resetModules();
     requestFulfilled = undefined;
     responseRejected = undefined;
+    responseFulfilled = undefined;
     unauthorized = jest.fn();
     enforceAppEgressAllowed = jest.fn().mockResolvedValue(undefined);
 
@@ -22,7 +24,8 @@ describe('services/api auth failure handling', () => {
               }),
             },
             response: {
-              use: jest.fn((_ok, rejected) => {
+              use: jest.fn((ok, rejected) => {
+                responseFulfilled = ok;
                 responseRejected = rejected;
               }),
             },
@@ -196,11 +199,14 @@ describe('services/api auth failure handling', () => {
     const { setOnUnauthorized, setRuntimeAuthToken } = require('../api');
     setOnUnauthorized(unauthorized);
     setRuntimeAuthToken('tok_current');
+    const config = await requestFulfilled!({
+      url: '/action-cards', headers: { get: jest.fn(), delete: jest.fn() },
+    });
 
     await expect(
       responseRejected?.({
         response: { status: 401 },
-        config: { url: '/action-cards', __revaAuthToken: 'tok_current' },
+        config,
       }),
     ).rejects.toMatchObject({ response: { status: 401 } });
 
@@ -266,6 +272,52 @@ describe('services/api auth failure handling', () => {
     await requestFulfilled?.(config);
 
     expect(config.__revaAuthToken).toBe('tok_request');
+  });
+
+  it('does not restore an old persisted token after a newer login', async () => {
+    const store = require('expo-secure-store');
+    let finish!: (value: string) => void;
+    store.getItemAsync.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const { setRuntimeAuthToken } = require('../api');
+    const pending = requestFulfilled!({ headers: { get: jest.fn(), delete: jest.fn() }, method: 'get', url: '/diet/records' });
+    setRuntimeAuthToken('new-session');
+    finish('old-session');
+    await expect(pending).rejects.toThrow('auth_session_changed');
+    const headers: any = { get: jest.fn(), delete: jest.fn() };
+    await requestFulfilled!({ headers, method: 'get', url: '/auth/me' });
+    expect(headers.Authorization).toBe('Bearer new-session');
+  });
+
+  it('does not resurrect a persisted credential after explicit logout', async () => {
+    const store = require('expo-secure-store');
+    store.getItemAsync.mockResolvedValue('old-session');
+    const { setRuntimeAuthToken } = require('../api');
+    setRuntimeAuthToken(null);
+    const headers: any = { get: jest.fn(), delete: jest.fn() };
+    await requestFulfilled!({ headers, method: 'get', url: '/auth/me' });
+    expect(headers.Authorization).toBeUndefined();
+    expect(store.getItemAsync).not.toHaveBeenCalled();
+  });
+
+  it.each(['switch', 'logout-and-return'])('rejects ordinary requests after egress wait: %s', async change => {
+    const { setRuntimeAuthToken } = require('../api');
+    setRuntimeAuthToken('session-a');
+    let finish!: () => void;
+    enforceAppEgressAllowed.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const pending = requestFulfilled!({ headers: { get: jest.fn(), delete: jest.fn() }, method: 'get', url: '/data-collection/garmin/me/credential-status' });
+    if (change === 'switch') setRuntimeAuthToken('session-b');
+    else { setRuntimeAuthToken(null); setRuntimeAuthToken('session-a'); }
+    finish();
+    await expect(pending).rejects.toThrow('auth_session_changed');
+  });
+
+  it.each(['switch', 'logout-and-return'])('rejects late successful health responses: %s', async change => {
+    const { setRuntimeAuthToken } = require('../api');
+    setRuntimeAuthToken('session-a');
+    const config = await requestFulfilled!({ headers: { get: jest.fn(), delete: jest.fn() }, method: 'get', url: '/diet/records' });
+    if (change === 'switch') setRuntimeAuthToken('session-b');
+    else { setRuntimeAuthToken(null); setRuntimeAuthToken('session-a'); }
+    expect(() => responseFulfilled!({ config, data: { owner: 'synthetic-old-account' } })).toThrow('auth_session_changed');
   });
 });
 jest.mock('../aiConsent', () => ({ requireAIConsent: jest.fn().mockResolvedValue(undefined) }));

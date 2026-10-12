@@ -3,9 +3,8 @@ import { configureSentryForAppMode, Sentry, SENTRY_ENABLED } from '../applib/sen
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { focusManager } from '@tanstack/react-query';
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { queryClient, persistOptions } from '../applib/queryClient';
+import { focusManager, QueryClientProvider } from '@tanstack/react-query';
+import { queryClient, retireLegacyQueryCache } from '../applib/queryClient';
 import { useAuth } from '../hooks/useAuth';
 import { AppSessionProvider, useAppSession } from '../hooks/useAppSession';
 import { ToastProvider } from '../hooks/useToast';
@@ -276,6 +275,11 @@ function InvitedRegistrationOnboardingRedirect({
 
 export function RootLayout() {
   useRevaFonts();
+  useEffect(() => {
+    void retireLegacyQueryCache().catch(() => {
+      console.warn('[QueryCache] legacy_cache_cleanup_failed');
+    });
+  }, []);
 
   // Connect AppState to React Query for auto-refetch on foreground
   useEffect(() => {
@@ -294,7 +298,7 @@ export function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-    <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
+    <QueryClientProvider client={queryClient}>
       <RootErrorBoundary>
         <AppSessionProvider>
           <ToastProvider>
@@ -306,7 +310,7 @@ export function RootLayout() {
           </ToastProvider>
         </AppSessionProvider>
       </RootErrorBoundary>
-    </PersistQueryClientProvider>
+    </QueryClientProvider>
     </GestureHandlerRootView>
   );
 }

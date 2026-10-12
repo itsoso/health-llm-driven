@@ -35,6 +35,37 @@ def test_recent_workout_reads_current_local_day_candidates(text):
     assert decision.normalized_args == expected
 
 
+def test_named_two_rides_bind_the_screenshot_without_widening_the_tool_arguments():
+    text = '分析青山湖骑行刚才的两段骑行。'
+    turn = snapshot(text)
+    scope = resolve_owned_read_scope(turn)
+    assert scope is not None
+    assert scope.workout_selection.workout_type == 'cycling'
+    assert scope.workout_selection.reported_location == '青山湖'
+    assert scope.workout_selection.expected_count == 2
+    decision = decide_tool_capability(turn, ToolExecutionRequest('health_query', {'dimension': 'workout'}))
+    assert decision.action == 'allow', decision.reason
+    assert decision.normalized_args == scope.query('workout')
+    assert decide_tool_capability(turn, ToolExecutionRequest('health_query', {
+        'dimension': 'workout', 'workout_type': 'running', 'limit': 2,
+    })).action == 'block'
+
+
+@pytest.mark.parametrize('text', [
+    '分析我朋友青山湖骑行刚才的两段骑行。',
+    '不要分析青山湖骑行刚才的两段骑行。',
+    '例句：“分析青山湖骑行刚才的两段骑行。”',
+    '如果有空，分析青山湖骑行刚才的两段骑行。',
+    '分析青山湖骑行刚才的两段骑行，并同步佳明。',
+    '分析青山湖骑行刚才的两段骑行，仅看去年。',
+    '分析青山湖骑行刚才的两段骑行，看看血氧。',
+    '分析小王刚才的两段骑行。',
+])
+def test_named_ride_modifiers_cannot_disappear_into_owned_authority(text):
+    assert decide_tool_capability(snapshot(text), ToolExecutionRequest(
+        'health_query', {'dimension': 'workout'})).action == 'block'
+
+
 @pytest.mark.parametrize("text", [
     "分析小王刚才的运动", "分析我朋友刚才的运动", "分析刚才Alice的运动",
     "不要分析刚才的运动", "解释例句：‘分析刚才的运动’", "如果有空，分析刚才的运动",
@@ -100,8 +131,13 @@ def test_batch_uses_same_owned_candidate_window():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("has_record", [True, False])
+@pytest.mark.parametrize('text,batch', [
+    ('分析刚才的运动', False),
+    ('分析青山湖骑行刚才的两段骑行。', False),
+    ('分析青山湖骑行刚才的两段骑行。', True),
+])
 async def test_screenshot_request_reaches_real_owned_reader_and_saved_reply(
-    db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, has_record,
+    db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, has_record, text, batch,
 ):
     import json
     from datetime import timedelta
@@ -122,9 +158,13 @@ async def test_screenshot_request_reaches_real_owned_reader_and_saved_reply(
     monkeypatch.setattr("app.twin.builder.build_twin", lambda _db, uid, **kwargs:
         HealthTwin(meta=TwinMeta(user_id=uid, generated_at=now)))
     own = WorkoutRecord(user_id=user.id, workout_date=now.date(),
-                        workout_type="running", duration_seconds=1800)
+                        workout_type='cycling' if '骑行' in text else 'running', duration_seconds=1800)
+    second = WorkoutRecord(user_id=user.id, workout_date=now.date(),
+                           workout_type='cycling', duration_seconds=1200)
     if has_record:
         db.add(own)
+        if '骑行' in text:
+            db.add(second)
     db.add_all([
         WorkoutRecord(user_id=other.id, workout_date=now.date(), workout_type="walking"),
         WorkoutRecord(user_id=user.id, workout_date=now.date()-timedelta(days=1), workout_type="cycling"),
@@ -140,7 +180,8 @@ async def test_screenshot_request_reaches_real_owned_reader_and_saved_reply(
         if len(calls) == 1:
             yield {"type": "tool_calls", "tool_calls": [{
                 "id": "recent-workout-read", "type": "function", "function": {
-                    "name": "health_query", "arguments": json.dumps({"dimension": "workout"}),
+                    "name": 'health_query_batch' if batch else 'health_query',
+                    "arguments": json.dumps({'queries': [{'dimension': 'workout'}]} if batch else {'dimension': 'workout'}),
                 }}]}
             yield {"type": "finish", "finish_reason": "tool_calls"}
         else:
@@ -157,18 +198,61 @@ async def test_screenshot_request_reaches_real_owned_reader_and_saved_reply(
     monkeypatch.setattr(executor, "_call_llm_stream", provider)
     monkeypatch.setattr(executor, "_dispatch_tool_request", observe)
     events = [event async for event in executor.run_stream(
-        user.id, "分析刚才的运动", client_turn_id=f"recent-workout-{has_record}")]
+        user.id, text, client_turn_id=f"recent-workout-{has_record}-{batch}")]
     done = next(e["data"] for e in reversed(events) if e.get("event") == "done")
     saved = db.get(AgentMessage, done["message_id"])
     assert done["perf"]["agent_kernel"] == "pi"
     assert {t["function"]["name"] for t in calls[0]} <= {"health_query", "health_query_batch", "knowledge_search"}
     assert len(results) == 1
     request, payload = results[0]
-    assert request.tool_name == "health_query"
-    assert request.arguments["start_date"] == request.arguments["end_date"] == "2026-10-10"
-    assert [r["id"] for r in payload["records"]] == ([own.id] if has_record else [])
+    assert request.tool_name == ('health_query_batch' if batch else 'health_query')
+    query = request.arguments['queries'][0] if batch else request.arguments
+    payload = payload['results'][0] if batch else payload
+    assert query["start_date"] == query["end_date"] == "2026-10-10"
+    assert [r["id"] for r in payload["records"]] == (
+        ([own.id, second.id] if '骑行' in text else [own.id]) if has_record else [])
     assert payload["availability"] == ("available" if has_record else "no_data")
     assert "只能查询当前登录用户" not in saved.content
     assert "候选记录" in saved.content and "尚不能确认" in saved.content
+    assert '本轮数据查询未完成' not in saved.content
+    assert '请明确要查看的数据类别和日期' not in saved.content
+    if '骑行' in text:
+        assert '地点来自用户描述' in saved.content
+        assert ('找到2条' if has_record else '找到0条') in saved.content
     assert not done.get("write_receipts")
     assert [(r.id, r.user_id, r.workout_date) for r in db.query(WorkoutRecord).order_by(WorkoutRecord.id)] == before
+
+
+@pytest.mark.parametrize('count', [0, 1, 2, 3])
+def test_typed_rides_reader_filters_owned_day_and_preserves_ambiguous_candidates(
+    db, auth_user_and_headers, count,
+):
+    from datetime import date, timedelta
+    from app.models.daily_health import WorkoutRecord
+    from app.models.user import User
+    from app.services.agent_longitudinal_read import read_longitudinal_health_query
+    from app.services.agent_query_window import parse_query_window
+    user, _ = auth_user_and_headers
+    other = User(name='Synthetic rider', email='typed-rider@example.test')
+    db.add(other)
+    db.flush()
+    day = date(2026, 10, 10)
+    own = [WorkoutRecord(user_id=user.id, workout_date=day, workout_type='cycling',
+                         workout_name='Synthetic ride', duration_seconds=600 + i)
+           for i in range(count)]
+    db.add_all(own + [
+        WorkoutRecord(user_id=other.id, workout_date=day, workout_type='cycling'),
+        WorkoutRecord(user_id=user.id, workout_date=day, workout_type='running'),
+        WorkoutRecord(user_id=user.id, workout_date=day-timedelta(days=1), workout_type='cycling'),
+    ])
+    db.commit()
+    scope = resolve_owned_read_scope(snapshot('分析青山湖骑行刚才的两段骑行。'))
+    payload = read_longitudinal_health_query(db, user.id, 'workout',
+        parse_query_window(scope.query('workout')), selection=scope.workout_selection)
+    assert [r['id'] for r in payload['records']] == [r.id for r in own]
+    assert payload['workout_selection'] == {
+        'workout_type': 'cycling', 'expected_count': 2,
+        'matched_count': count, 'event_identity': 'unverified',
+        'count_status': 'matched' if count == 2 else 'insufficient' if count < 2 else 'ambiguous',
+    }
+    assert 'reported_location' not in payload['workout_selection']

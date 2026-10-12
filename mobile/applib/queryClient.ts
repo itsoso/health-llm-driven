@@ -1,52 +1,26 @@
-/**
- * React Query client + AsyncStorage persister.
- *
- * Why persist:
- *   Cold-start UX was "6 cards all spinning" because every query rebuilt
- *   from scratch. Persisting the cache means the user sees yesterday's
- *   dashboard immediately, then a background refetch updates it.
- *
- * Cache lifetime:
- *   - gcTime 24h: keep hydrated queries in memory for a full day of use
- *   - maxAge 24h: discard disk cache older than 24h (don't show stale
- *     health readings for days)
- *   - buster = app version: bumping the version (schema changes) wipes
- *     all persisted caches automatically
- *
- * Only *successful* queries are persisted; errors and pending states
- * are never written to disk, so a transient outage can't poison the cache.
- */
-
+/** In-memory health query cache, scoped to the current authenticated session. */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient } from '@tanstack/react-query';
-import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import Constants from 'expo-constants';
-
-const APP_VERSION =
-  (Constants.expoConfig?.version as string | undefined) || '0.0.0';
+import { subscribeAuthSessionChange } from '../services/api';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      retry: 2,
-      staleTime: 60_000,
-      gcTime: 24 * 60 * 60 * 1000,
-    },
+    queries: { retry: 2, staleTime: 60_000, gcTime: 24 * 60 * 60 * 1000 },
   },
 });
 
-export const asyncStoragePersister = createAsyncStoragePersister({
-  storage: AsyncStorage,
-  key: 'HEALTHPILOT_RQ_CACHE_V1',
-  throttleTime: 1_000,
+subscribeAuthSessionChange(() => {
+  // clear() alone leaves the last successful result in mounted observers.
+  for (const query of queryClient.getQueryCache().getAll()) {
+    void query.cancel({ revert: false, silent: true });
+    query.setState({ data: undefined, error: null, dataUpdatedAt: 0,
+      errorUpdatedAt: 0, status: 'pending', fetchStatus: 'idle' });
+  }
+  queryClient.clear();
 });
 
-export const persistOptions = {
-  persister: asyncStoragePersister,
-  maxAge: 24 * 60 * 60 * 1000,
-  buster: APP_VERSION,
-  dehydrateOptions: {
-    shouldDehydrateQuery: (q: { state: { status: string }; meta?: Record<string, unknown> }) =>
-      q.state.status === 'success' && q.meta?.persist !== false,
-  },
-} as const;
+export async function retireLegacyQueryCache(): Promise<void> {
+  // The global plaintext cache cannot attest its owner. Never hydrate it;
+  // remove only this derived cache, preserving drafts and stored records.
+  await AsyncStorage.removeItem('HEALTHPILOT_RQ_CACHE_V1');
+}
