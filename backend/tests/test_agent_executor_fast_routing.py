@@ -1098,6 +1098,9 @@ async def test_staged_high_stakes_overrides_explicit_fast_answer_model(
 ):
     """A UI-selected weak model cannot bypass the medical safety floor."""
     user, _ = auth_user_and_headers
+    # Explicit model-selection scenarios use an authenticated administrator.
+    user.is_admin = True
+    db.flush()
     executor = AgentExecutor(db)
     created = []
 
@@ -1257,6 +1260,9 @@ async def test_staged_model_lookup_failure_revokes_explicit_model_before_picker(
     monkeypatch,
 ):
     user, _ = auth_user_and_headers
+    # Explicit model-selection scenarios use an authenticated administrator.
+    user.is_admin = True
+    db.flush()
     executor = AgentExecutor(db)
     created = []
 
@@ -1680,6 +1686,9 @@ def test_saved_clinician_feedback_recall_prompt_contains_owner_feedback(
 async def test_explicit_model_override_is_honored(db, auth_user_and_headers, monkeypatch):
     """(d) Explicit _request_model_id (UI pick) → honored, not overridden by fast route."""
     user, _ = auth_user_and_headers
+    # Explicit model-selection scenarios use an authenticated administrator.
+    user.is_admin = True
+    db.flush()
     executor = AgentExecutor(db)
     created = []
 
@@ -2129,6 +2138,9 @@ def test_non_streaming_resolve_fail_soft_on_unknown(db):
 async def test_run_stream_emits_thinking_detail_for_non_streaming(db, auth_user_and_headers, monkeypatch):
     """端到端: 非流式模型的分析回合, SSE 里出现带 detail 的 thinking 状态事件。"""
     user, _ = auth_user_and_headers
+    # Explicit model-selection scenarios use an authenticated administrator.
+    user.is_admin = True
+    db.flush()
     executor = AgentExecutor(db)
 
     _wire_common(executor, monkeypatch, lambda mid: _FakeProvider(mid))

@@ -4,6 +4,43 @@ from pathlib import Path
 
 import pytest
 
+
+def _digest_stat_probe(monkeypatch, path, *, atime_delta=0, mtime_ns_delta=0):
+    from types import SimpleNamespace
+    observed = path.lstat()
+    class ProbeStat(SimpleNamespace):
+        def __eq__(self, other):
+            # os.stat_result tuple equality omits the nanosecond attributes.
+            names = ('st_mode', 'st_ino', 'st_dev', 'st_nlink', 'st_uid', 'st_gid', 'st_size', 'st_atime', 'st_mtime', 'st_ctime')
+            return all(getattr(self, n) == getattr(other, n) for n in names)
+        def __ne__(self, other):
+            return not self == other
+    attrs = {n: getattr(observed, n) for n in ('st_mode','st_ino','st_dev','st_nlink','st_uid','st_gid','st_size','st_atime','st_mtime','st_ctime','st_mtime_ns','st_ctime_ns')}
+    before = ProbeStat(**attrs)
+    after = ProbeStat(**{**attrs, 'st_atime': attrs['st_atime'] + atime_delta, 'st_mtime_ns': attrs['st_mtime_ns'] + mtime_ns_delta})
+    original = Path.lstat
+    calls = []
+    def lstat(candidate, *a, **kw):
+        if candidate != path: return original(candidate, *a, **kw)
+        calls.append(True)
+        return before if len(calls) == 1 else after
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    monkeypatch.setattr(neo.os, 'fstat', lambda fd: before)
+
+
+def test_digest_allows_read_access_time_change(monkeypatch, tmp_path):
+    import hashlib
+    path = tmp_path/'fixture';path.write_bytes(b'synthetic')
+    _digest_stat_probe(monkeypatch, path, atime_delta=1)
+    assert neo.file_digest(path)['sha256'] == hashlib.sha256(b'synthetic').hexdigest()
+
+
+def test_digest_blocks_subsecond_modification_even_when_coarse_stat_equal(monkeypatch, tmp_path):
+    path = tmp_path/'fixture';path.write_bytes(b'synthetic')
+    _digest_stat_probe(monkeypatch, path, mtime_ns_delta=1)
+    with pytest.raises(neo.DeployError, match='package file changed'):
+        neo.file_digest(path)
+
 SPEC = importlib.util.spec_from_file_location(
     "neo_deploy", Path(__file__).with_name("trusted_neo_wechat.py")
 )

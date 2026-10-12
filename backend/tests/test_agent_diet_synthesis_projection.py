@@ -166,6 +166,9 @@ async def test_plain_recall_keeps_existing_provider_context(db, auth_user_and_he
 @pytest.mark.asyncio
 async def test_explicit_fast_selection_still_synthesizes_without_lite_tool_stack(db, auth_user_and_headers, monkeypatch):
     user, _ = auth_user_and_headers
+    # Explicit model-selection scenarios use an authenticated administrator.
+    user.is_admin = True
+    db.flush()
     executor, calls, _, _, _ = await _run(db, user, monkeypatch, query='今天我吃的怎么样?', model_id='qwen3.6-flash')
     assert calls[-1].get('tools') is None
     assert 'OLD_ASSISTANT_SENTINEL' not in json.dumps(calls[-1]['messages'])

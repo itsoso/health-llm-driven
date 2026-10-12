@@ -62,6 +62,12 @@ def digest(value):
     return hashlib.sha256(raw).hexdigest()
 
 
+def _file_identity(info):
+    """Track replacement/content/ownership changes, excluding read-only atime."""
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
 def file_digest(path):
     before = path.lstat()
     if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
@@ -70,10 +76,10 @@ def file_digest(path):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, "rb") as stream:
         opened = os.fstat(stream.fileno())
-        if opened != before:
+        if _file_identity(opened) != _file_identity(before):
             raise DeployError("package file changed")
         raw = stream.read(MAX_FILE_BYTES + 1)
-    if len(raw) > MAX_FILE_BYTES or path.lstat() != before:
+    if len(raw) > MAX_FILE_BYTES or _file_identity(path.lstat()) != _file_identity(before):
         raise DeployError("package file changed")
     return {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
 

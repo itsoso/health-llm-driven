@@ -410,6 +410,9 @@ async def test_repaired_single_reads_with_infrastructure_failure_reach_final_ans
 
     monkeypatch.setattr(settings, "app_env", "test")
     user, _ = auth_user_and_headers
+    # Explicit model-selection scenarios use an authenticated administrator.
+    user.is_admin = True
+    db.flush()
     scenario = Scenario("repaired-read-failure", 7, "read_failure", allow_knowledge=True)
     seed_synthetic_records(db, user.id, scenario)
     tools_seen = []
@@ -827,6 +830,9 @@ async def test_production_route_keeps_real_resolver_quality_and_decision_budget(
     from tests.test_decision_routing import wire, fake_result
     monkeypatch.setattr(settings, "app_env", "test")
     user, _ = auth_user_and_headers
+    # Explicit model-selection scenarios use an authenticated administrator.
+    user.is_admin = True
+    db.flush()
     scenario = Scenario("real-route", 31, "available", rich_profile=True)
     seed_synthetic_records(db, user.id, scenario)
     from app.services.decisions import DecisionError

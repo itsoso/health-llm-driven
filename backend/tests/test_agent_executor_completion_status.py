@@ -5508,6 +5508,9 @@ async def test_agent_stream_keeps_same_message_for_independent_rejections(
 @pytest.mark.asyncio
 async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
+    # Explicit model-selection scenarios use an authenticated administrator.
+    user.is_admin = True
+    db.flush()
     db.add(UserProfile(user_id=user.id, llm_model_id="gemini-3.1-pro"))
     db.commit()
 
