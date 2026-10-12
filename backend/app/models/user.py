@@ -76,6 +76,7 @@ class GarminCredential(Base):
     is_cn = Column(Boolean, default=False)  # 是否使用中国服务器 (garmin.cn)
 
     # 同步状态
+    # Persist aware instants; legacy naive values retain the API's UTC contract.
     last_sync_at = Column(DateTime(timezone=True), nullable=True)
     sync_enabled = Column(Boolean, default=True)
     credentials_valid = Column(Boolean, default=True)  # 凭证是否有效（登录失败时设为False）

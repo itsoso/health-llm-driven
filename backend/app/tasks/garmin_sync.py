@@ -307,7 +307,7 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: 
 def sync_all_users_garmin():
     """
     同步所有用户的 Garmin 数据（定时任务，每 4 小时运行）
-    如果用户 3 小时内已同步过，则跳过（避免 Garmin API 限流）。
+    如果用户 90 分钟内已同步过，则跳过（避免 Garmin API 限流）。
     """
     from app.utils.timezone import get_china_now
 
@@ -327,8 +327,13 @@ def sync_all_users_garmin():
         dispatched = []
         skipped = []
         for c in credentials:
-            # 如果 3 小时内已同步过，跳过
-            if c.last_sync_at and (now - c.last_sync_at.replace(tzinfo=now.tzinfo) if c.last_sync_at.tzinfo is None else now - c.last_sync_at) < min_interval:
+            # Legacy naive timestamps follow the same UTC contract as credential-status.
+            # A future timestamp beyond clock skew is not evidence of a recent sync.
+            last_sync = c.last_sync_at
+            if last_sync is not None and last_sync.tzinfo is None:
+                last_sync = last_sync.replace(tzinfo=UTC)
+            age = now - last_sync if last_sync is not None else None
+            if age is not None and -timedelta(minutes=1) <= age < min_interval:
                 skipped.append(c.user_id)
                 logger.info(f"用户 {c.user_id} 近期已同步({c.last_sync_at})，跳过")
             else:

@@ -6,7 +6,7 @@
 3. 端点集成测试（garmin_connect 端点已移除）
 """
 from contextlib import AbstractContextManager
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 from starlette.requests import Request
@@ -480,3 +480,35 @@ class TestGarminCredentialFiltering:
         credential = _create_garmin_credential(db, user_id=1)
         decrypted = garmin_credential_service.decrypt_password(credential.encrypted_password)
         assert decrypted == "test_password"
+
+@pytest.mark.parametrize('age,naive,expected_count', [
+    (timedelta(minutes=20), False, 0),
+    (timedelta(minutes=20), True, 0),
+    (timedelta(hours=2), False, 1),
+    (timedelta(hours=2), True, 1),
+    (-timedelta(hours=8), False, 1),
+    (-timedelta(seconds=30), False, 0),
+])
+def test_scheduled_sync_does_not_treat_future_time_as_recent(monkeypatch, age, naive, expected_count):
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from app.tasks import garmin_sync
+    from app.services.data_collection import garmin_native_auth
+    from app.utils import timezone as timezone_utils
+
+    now = datetime(2026, 10, 12, 2, tzinfo=UTC)
+    last = now - age
+    if naive:
+        last = last.replace(tzinfo=None)
+    credential = SimpleNamespace(user_id=991, last_sync_at=last)
+    session = MagicMock()
+    session.__enter__.return_value.query.return_value.filter.return_value.all.return_value = [credential]
+    monkeypatch.setattr(garmin_sync, 'SessionLocal', lambda: session)
+    monkeypatch.setattr(garmin_native_auth, 'credential_can_sync', lambda _cred: True)
+    monkeypatch.setattr(timezone_utils, 'get_china_now', lambda: now.astimezone(timezone(timedelta(hours=8))))
+    dispatch = MagicMock()
+    monkeypatch.setattr(garmin_sync.sync_user_garmin_data, 'delay', dispatch)
+
+    result = garmin_sync.sync_all_users_garmin.run()
+    assert result['count'] == expected_count
+    assert dispatch.call_count == expected_count

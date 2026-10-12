@@ -37,7 +37,7 @@ import {
   revaType,
 } from '../constants/revaTheme';
 
-type BusyAction = 'connect' | 'mfa' | 'sync' | 'toggle' | 'delete' | null;
+type BusyAction = 'connect' | 'mfa' | 'sync' | 'refresh' | 'toggle' | 'delete' | null;
 
 function statusCopy(status: GarminCredentialStatus): { title: string; body: string; tone: string } {
   if (status.requires_mfa) {
@@ -61,7 +61,8 @@ function statusCopy(status: GarminCredentialStatus): { title: string; body: stri
       tone: revaSemantic.caution.fg,
     };
   }
-  if (status.health === 'healthy') {
+  if (status.health === 'healthy' && !status.last_error &&
+      (status.minutes_since_last_sync == null || status.minutes_since_last_sync >= 0)) {
     return {
       title: '连接正常',
       body: status.minutes_since_last_sync == null
@@ -72,7 +73,9 @@ function statusCopy(status: GarminCredentialStatus): { title: string; body: stri
   }
   return {
     title: '等待数据更新',
-    body: status.last_error || '连接可用，可以立即同步最近的 Garmin 数据。',
+    body: status.last_error || (status.minutes_since_last_sync != null && status.minutes_since_last_sync < 0
+      ? '同步时间异常，暂时无法确认最近同步结果。'
+      : '连接可用，可以立即同步最近的 Garmin 数据。'),
     tone: revaSemantic.caution.fg,
   };
 }
@@ -133,13 +136,27 @@ export default function GarminConnectionScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeIsCaution, setNoticeIsCaution] = useState(false);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
 
   const isBusy = busy !== null;
   const showCredentialForm = !status?.bound || editing;
   const display = status?.bound ? statusCopy(status) : null;
 
   const refreshStatus = async () => {
-    await refetch();
+    const result = await refetch();
+    if (result?.isError) throw result.error;
+  };
+
+  const refreshConnectionStatus = async () => {
+    setRefreshingStatus(true);
+    try {
+      await refreshStatus();
+      setError(null);
+    } catch {
+      setError('连接状态刷新失败，请稍后重试；这不代表同步已停止。');
+    } finally {
+      setRefreshingStatus(false);
+    }
   };
 
   const connect = async () => {
@@ -214,8 +231,12 @@ export default function GarminConnectionScreen() {
       const result = await syncGarmin(1);
       setNotice(result.message || 'Garmin 数据已更新。');
       setNoticeIsCaution(result.status === 'no_data' || result.status === 'skipped');
-      await invalidateHealthSnapshot(queryClient);
-      await refreshStatus();
+      setBusy('refresh');
+      try {
+        await Promise.all([invalidateHealthSnapshot(queryClient), refreshStatus()]);
+      } catch {
+        setError('同步请求已完成，但页面刷新失败。请刷新连接状态核实结果，无需再次同步。');
+      }
     } catch (syncError) {
       setError(garminSyncErrorMessage(syncError));
     } finally {
@@ -453,9 +474,18 @@ export default function GarminConnectionScreen() {
           {status?.bound && !showCredentialForm && !mfaSession ? (
             <View style={styles.actionsCard}>
               <ActionButton
-                label={busy === 'sync' ? '同步中…' : '立即同步 Garmin'}
+                label={busy === 'sync' ? '同步中…' : busy === 'refresh' ? '正在刷新同步结果…' : '立即同步 Garmin'}
                 onPress={() => void runSync()}
                 disabled={isBusy || status.sync_enabled === false}
+              />
+              {busy === 'sync' ? (
+                <Text style={styles.bodyCopy}>正在等待 Garmin 返回数据，最多等待两分钟。可以返回其他页面；请勿重复同步。</Text>
+              ) : null}
+              <ActionButton
+                label={refreshingStatus ? '正在刷新连接状态…' : '刷新连接状态'}
+                variant="secondary"
+                onPress={() => void refreshConnectionStatus()}
+                disabled={refreshingStatus || (isBusy && busy !== 'sync')}
               />
               <ActionButton
                 label={status.sync_enabled === false ? '恢复 Garmin 自动同步' : '暂停 Garmin 自动同步'}

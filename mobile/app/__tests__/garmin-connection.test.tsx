@@ -1,6 +1,6 @@
 /* eslint-disable import/first */
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const mockBack = jest.fn();
@@ -84,6 +84,52 @@ describe('GarminConnectionScreen', () => {
     expect(queryByText('连接正常')).toBeNull();
     expect(queryByText('需要重新连接')).toBeNull();
     expect(queryByText('最近同步：5 分钟前')).toBeNull();
+  });
+
+  it('keeps contradictory healthy status with future time as a warning', () => {
+    mockStatus = { ...mockStatus, bound: true, health: 'healthy', credentials_valid: true,
+      minutes_since_last_sync: -480, last_error: '同步时间异常' };
+    const { getByText, queryByText } = render(<GarminConnectionScreen />);
+    expect(getByText('同步时间异常')).toBeTruthy();
+    expect(queryByText('连接正常')).toBeNull();
+  });
+
+  it('offers read-only status refresh while a sync request is pending', async () => {
+    mockStatus = { ...mockStatus, bound: true, credentials_valid: true };
+    let finish!: (value: unknown) => void;
+    mockSync.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const { getByRole } = render(<GarminConnectionScreen />);
+    fireEvent.press(getByRole('button', { name: '立即同步 Garmin' }));
+    fireEvent.press(getByRole('button', { name: '刷新连接状态' }));
+    await waitFor(() => expect(mockRefetch).toHaveBeenCalledTimes(1));
+    expect(mockSync).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ status: 'success', message: '同步完成' }));
+  });
+
+  it('separates post-sync refresh from sync and does not report refresh failure as sync failure', async () => {
+    mockStatus = { ...mockStatus, bound: true, credentials_valid: true };
+    let fail!: (error: Error) => void;
+    mockInvalidateHealthSnapshot.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+    const { getByRole, getByText, queryByText } = render(<GarminConnectionScreen />);
+    fireEvent.press(getByRole('button', { name: '立即同步 Garmin' }));
+    await waitFor(() => expect(getByRole('button', { name: '正在刷新同步结果…' })).toBeTruthy());
+    expect(queryByText('同步中…')).toBeNull();
+    await act(async () => fail(new Error('synthetic refresh failure')));
+    expect(getByText('同步请求已完成，但页面刷新失败。请刷新连接状态核实结果，无需再次同步。')).toBeTruthy();
+    expect(mockGarminSyncErrorMessage).not.toHaveBeenCalled();
+    expect(mockRefetch).toHaveBeenCalled();
+  });
+
+  it('reports a failed read-only refetch without issuing sync or credential writes', async () => {
+    mockStatus = { ...mockStatus, bound: true, credentials_valid: true };
+    mockRefetch.mockResolvedValueOnce({ isError: true, error: new Error('synthetic') });
+    const { getByRole, getByText } = render(<GarminConnectionScreen />);
+    fireEvent.press(getByRole('button', { name: '刷新连接状态' }));
+    await waitFor(() => expect(getByText('连接状态刷新失败，请稍后重试；这不代表同步已停止。')).toBeTruthy());
+    expect(mockSync).not.toHaveBeenCalled();
+    expect(mockConnectCredentials).not.toHaveBeenCalled();
+    expect(mockSetSyncEnabled).not.toHaveBeenCalled();
+    expect(mockDeleteCredentials).not.toHaveBeenCalled();
   });
 
   it('binds and tests an unbound Garmin account without displaying the password', async () => {
