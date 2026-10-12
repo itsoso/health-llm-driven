@@ -1017,7 +1017,11 @@ def read_scope_notices(scope) -> tuple[str, ...]:
             "本次周健康概览覆盖指定范围内的饮食、睡眠与运动记录；"
             "其他健康领域未查询，不能据此判断总体健康或作出诊断。"
         )
-    if "recent_workout_candidates_not_identified_event" in scope.limitations:
+    if "cycling_html_report_today" in scope.limitations:
+        lines.append('未指定日期，本报告默认覆盖当前账号当天已保存的骑行记录；'
+                     '不是完整骑行历史，也不确认就是刚才所述事件。未触发设备同步；'
+                     '缺少记录时不能用旧记录补齐，未记录不代表未发生。')
+    elif "recent_workout_candidates_not_identified_event" in scope.limitations:
         lines.append(
             "本次先查询当前账号当天已保存的运动候选记录；尚不能确认哪条就是刚才那次。"
             "未触发设备同步；没有匹配记录时不能用旧运动代替，多条记录不能合并冒充本次运动。"
@@ -1195,3 +1199,15 @@ def evaluate_composed_read_completion(
     return ComposedReadCompletion(
         tuple(goals.values()), missing, "\n\n".join(lines), not missing, evidence,
     )
+
+
+def render_owned_cycling_html_report(scope, completion) -> str | None:
+    """Render only adapter-attested facts; model prose cannot become executable HTML."""
+    if scope is None or "cycling_html_report_today" not in scope.limitations:
+        return None
+    from html import escape
+    paragraphs = ''.join('<p>' + escape(part, quote=True).replace('`', '&#96;') + '</p>'
+                         for part in completion.trusted_fact_summary.split('\n\n') if part)
+    return ('```html\n<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8">'
+            '<title>骑行报告</title></head><body><h1>骑行报告</h1>' + paragraphs
+            + '<p>这是本条回复中的静态报告，未发布到外部网站。</p></body></html>\n```')

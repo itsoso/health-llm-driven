@@ -15664,6 +15664,9 @@ class AgentExecutor:
         elif (panel_synthesis_messages is not None or self._focused_read_scopes()[1] is not None
               or (panel_read_scope is not None and panel_read_scope.workout_selection is not None)) and panel_completion is not None:
             full_reply = panel_completion.trusted_fact_summary + "\n\n" + full_reply
+        from app.services.agent_composed_read_completion import render_owned_cycling_html_report
+        if panel_completion is not None and not protocol_failure_text:
+            full_reply = render_owned_cycling_html_report(panel_read_scope, panel_completion) or full_reply
         panel_sync_summary = self._trusted_sync_summary()
         if panel_sync_summary:
             from app.services.agent_kernel.read_task_scope import is_owned_oxygen_sync_diagnostic
@@ -20227,6 +20230,9 @@ class AgentExecutor:
                 # safe to publish. Retain verified facts, not partial prose.
                 full_reply = "本轮没有生成有效回答，请稍后重试。"
             full_reply = composed_completion.trusted_fact_summary + "\n\n" + full_reply
+        from app.services.agent_composed_read_completion import render_owned_cycling_html_report
+        if composed_completion is not None and final_finish_reason == "stop":
+            full_reply = render_owned_cycling_html_report(read_scope, composed_completion) or full_reply
         if sync_summary:
             from app.services.agent_kernel.read_task_scope import is_owned_oxygen_sync_diagnostic
             full_reply = (sync_summary if is_owned_oxygen_sync_diagnostic(self._ensure_agent_kernel_turn())
@@ -22579,6 +22585,12 @@ class AgentExecutor:
         )
         if snapshot is None:
             return []
+        from app.services.agent_longitudinal_read import is_owned_cycling_html_report
+        if is_owned_cycling_html_report(snapshot.envelope.text):
+            return ['[骑行静态报告边界] 用户请求当前账号骑行报告。必须先查询本轮绑定的当天骑行记录；'
+                    '只调用已开放的只读工具，不能同步、保存健康记录或发布外部网站。'
+                    '无数据或查询失败时如实说明，不能从历史对话猜测距离、心率、耗时或运动表现。'
+                    '最终HTML文档由服务端根据核验的查询结果生成，不调用媒体创作工具。']
         scope = resolve_exercise_plan_scope(snapshot.envelope.text)
         return [exercise_plan_prompt(scope)] if scope is not None else []
 

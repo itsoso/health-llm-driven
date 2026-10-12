@@ -150,6 +150,21 @@ _RECENT_WORKOUT_KINDS = {'骑行': 'cycling', '骑车': 'cycling', '跑步': 'ru
                          '步行': 'walking', '游泳': 'swimming'}
 
 
+_CYCLING_HTML_REPORT = re.compile(
+    r"(?:请你?|麻烦)?(?:帮我|给我)?生成(?:一个|一份)?(?:我的?)?"
+    r"(?:今天的?)?骑行的?HTML报告[。.!！]?", re.I,
+)
+
+
+def is_owned_cycling_html_report(text: str) -> bool:
+    """A complete presentation request; implicit owner is the authenticated user.
+
+    Whitespace is lexical only. Unknown owners, dates, quoted material, extra
+    clauses and publication instructions cannot disappear into this grammar.
+    """
+    return _CYCLING_HTML_REPORT.fullmatch(re.sub(r"\s+", "", str(text or ""))) is not None
+
+
 def resolve_recent_workout_selection(text: str) -> RecentWorkoutSelection | None:
     """Consume the complete typed event request; a location is reported context.
 
@@ -162,6 +177,8 @@ def resolve_recent_workout_selection(text: str) -> RecentWorkoutSelection | None
             or _MUTATION.search(source)
             or re.search(r'朋友|同事|他人|别人|家人|爸爸|妈妈|他的|她的|他们|她们', source)):
         return None
+    if is_owned_cycling_html_report(source):
+        return RecentWorkoutSelection('cycling')
     match = _RECENT_TYPED_WORKOUT.fullmatch(source)
     if match is None:
         return None

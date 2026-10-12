@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | shipping |
-| 当前阶段 | G6：骑行照片分流修复已部署；真实账号业务验收待确认 |
+| 当前阶段 | G3：骑行 HTML 报告误判修复验证中；此前发布证据保留 |
 
 Primary controller：health-harness-orchestrator；overlay：safety-gate。真实模型评测按用户要求取消。
 
@@ -94,3 +94,11 @@ a3cefe4f1 仍 NO-GO，未 push / deploy。独立 PostgreSQL 对抗 17 PASS / 3 F
 最终来源 fcca43a1e9b041e669114c38e9169dac45d3b22f。完整当前 main CI、精确本机集成闸、根因 RED、广域 PostgreSQL 与全新独立 G4 均具新鲜证据。官方后端部署终态成功，授权轮换只执行本次四个原包装器一次，旧回执/锁/前端绑定保留，无发布重试。临时真实评测 SHA 豁免在发布后清除，读取确认不存在；首次变量删除请求响应超时保留，读取确认仍是本候选值后才完成这项幂等清理，不把它冒充发布重试或真实评测通过。
 
 本轮教训：图片附件的写指令不能直接等同餐食意图；运动目的应在预处理前排除并在实际写适配器承重。否定、无关词、转述、假设、第三人及同实例下一轮重置必须进入真实 stream 和 PostgreSQL 测试。临时 PostgreSQL 的 pytest 退出码与关闭结果分开记录，关闭默认超时不能被断言绿色掩盖；延长正常关闭或确认已停后保留双方证据。实际手机/账号复验仍待用户正常使用反馈，G6 不记作真实账号通过，Dossier 保持 shipping。
+
+### 新增截图：骑行 HTML 报告被当作他人查询
+
+两句截图原话“生成一个 骑行的html 报告”“生成我的 骑行的html 报告”均被 generic report owner 解析为 nonself。真实 RED 2 FAIL 证明主体误判。补充完整且有限的当前账号骑行 HTML 请求语法，空白仅作为词法分隔；未知所属人、日期、引用、否定或附加发布/同步操作不被删除。未指定日期时只查认证账号当地当天已保存 cycling 记录，在输出中明确默认日期及覆盖局限，不把聊天上下文或风景图片当成已测数据。
+
+复用既有 owner/day/type 绑定及实际读结果完成证明，普通和批量工具同一冻结范围，拒绝模型改变用户、类型、日期或 limit。HTML 由服务端核验后的事实摘要构造，转义标签、引号与 Markdown fence 字符；不接纳模型 HTML、脚本、外部资源或发布指令。仅作为已保存的聊天回复静态文档，复用 Mobile 既有安全 HTML 展示，不新增公开健康报告链接或数据库对象。无记录如实披露；取数失败不伪装成功。全新 PostgreSQL、客户端文档渲染、独立 G4 和发布门禁待完成；用户已取消真实模型评测，不调用实际模型。
+
+增量验证：首轮专用 PostgreSQL 227 PASS，普通/批量截图请求经真实 dispatch 到 owner/day/cycling reader 并保存完整 HTML 回复，空数据与跨用户/日期记录保持隔离，runner 及正常数据库关闭退出 0。Markdown fence 转义后补跑 19 项权限/渲染单元 PASS；Mobile 既有安全静态 HTML 消费者及邻近 UI 102 PASS。System Map、Skill 治理、Dossier 一致性及 diff-check PASS。固定提交后将重跑 PostgreSQL及完整 CI-mode，独立 G4 和上线仍待执行。

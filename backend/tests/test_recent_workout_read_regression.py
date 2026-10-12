@@ -140,6 +140,8 @@ def test_batch_uses_same_owned_candidate_window():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("has_record", [True, False])
 @pytest.mark.parametrize('text,batch', [
+    ('生成一个 骑行的html 报告', False),
+    ('生成我的 骑行的html 报告', True),
     ('分析刚才的运动', False),
     ('分析青山湖骑行刚才的两段骑行。', False),
     ('分析青山湖骑行刚才的两段骑行。', True),
@@ -221,10 +223,17 @@ async def test_screenshot_request_reaches_real_owned_reader_and_saved_reply(
         ([own.id, second.id] if '骑行' in text else [own.id]) if has_record else [])
     assert payload["availability"] == ("available" if has_record else "no_data")
     assert "只能查询当前登录用户" not in saved.content
-    assert "候选记录" in saved.content and "尚不能确认" in saved.content
+    if 'html' in text:
+        assert saved.content.startswith('```html\n<!DOCTYPE html>')
+        assert '本报告默认覆盖当前账号当天' in saved.content
+        assert '完整骑行历史' in saved.content
+        assert done['turn_outcome']['status'] == 'complete'
+        assert '合成' not in saved.content
+    else:
+        assert "候选记录" in saved.content and "尚不能确认" in saved.content
     assert '本轮数据查询未完成' not in saved.content
     assert '请明确要查看的数据类别和日期' not in saved.content
-    if '骑行' in text:
+    if '骑行' in text and 'html' not in text:
         assert '地点来自用户描述' in saved.content
         assert ('找到2条' if has_record else '找到0条') in saved.content
     assert not done.get("write_receipts")
@@ -264,3 +273,48 @@ def test_typed_rides_reader_filters_owned_day_and_preserves_ambiguous_candidates
         'count_status': 'matched' if count == 2 else 'insufficient' if count < 2 else 'ambiguous',
     }
     assert 'reported_location' not in payload['workout_selection']
+
+
+@pytest.mark.parametrize('text', ['生成一个 骑行的html 报告', '生成我的 骑行的html 报告'])
+def test_riding_html_request_binds_only_owned_today_cycling(text):
+    turn = snapshot(text)
+    assert not health_read_has_nonself_subject(text)
+    scope = resolve_owned_read_scope(turn)
+    assert scope is not None
+    assert scope.workout_selection.workout_type == 'cycling'
+    assert scope.workout_selection.expected_count is None
+    assert scope.query('workout')['start_date'] == '2026-10-10'
+    decision = decide_tool_capability(turn, ToolExecutionRequest('health_query', {'dimension':'workout'}))
+    assert decision.action == 'allow', decision.reason
+    assert decision.normalized_args == scope.query('workout')
+
+
+@pytest.mark.parametrize('text', [
+    '生成小王的骑行的html报告', '生成我朋友的骑行html报告',
+    '不要生成我的骑行html报告', '例句：“生成我的骑行html报告”',
+    '如果有空生成我的骑行html报告', '生成我的骑行html报告，查询妈妈的记录',
+    '生成我的骑行html报告并发布', '生成去年骑行html报告',
+    '生成我的骑行html报告并同步佳明',
+])
+def test_html_request_does_not_drop_other_owner_or_extra_authority(text):
+    assert decide_tool_capability(snapshot(text), ToolExecutionRequest(
+        'health_query', {'dimension':'workout'})).action == 'block'
+
+
+@pytest.mark.parametrize('extra', [{'user_id':42}, {'owner_id':42}, {'tenant_id':42},
+    {'dimension':'sleep'}, {'start_date':'2026-10-01'}, {'workout_type':'running'}, {'limit':2}])
+def test_html_model_cannot_change_frozen_query(extra):
+    assert decide_tool_capability(snapshot('生成我的骑行的html报告'), ToolExecutionRequest(
+        'health_query', {'dimension':'workout', **extra})).action == 'block'
+
+
+def test_html_renderer_escapes_record_material_and_ignores_model_output():
+    from app.services.agent_composed_read_completion import ComposedReadCompletion, render_owned_cycling_html_report
+    scope = resolve_owned_read_scope(snapshot('生成我的骑行html报告'))
+    document = render_owned_cycling_html_report(scope, ComposedReadCompletion(
+        (), (), '<script>alert(1)</script> & "quoted"\n\n```reva-ui', True))
+    assert '<script>' not in document
+    assert '&lt;script&gt;' in document and '&amp;' in document and '&quot;' in document
+    assert '&#96;&#96;&#96;reva-ui' in document
+    assert document.count('```') == 2
+    assert document.endswith('</body></html>\n```')

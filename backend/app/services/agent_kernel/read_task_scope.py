@@ -274,7 +274,9 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
-    from app.services.agent_longitudinal_read import is_recent_workout_read, resolve_recent_workout_selection
+    from app.services.agent_longitudinal_read import (
+        is_recent_workout_read, resolve_recent_workout_selection, is_owned_cycling_html_report,
+    )
     if is_recent_workout_read(snapshot.envelope.text):
         zone = ZoneInfo(snapshot.context.timezone)
         now = snapshot.context.current_time
@@ -282,7 +284,9 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         return OwnedReadScope(
             ({"dimension": "workout", "start_date": day, "end_date": day,
               "timezone": snapshot.context.timezone},),
-            ("recent_workout_candidates_not_identified_event",),
+            ("recent_workout_candidates_not_identified_event",) + (
+                ("cycling_html_report_today",) if is_owned_cycling_html_report(snapshot.envelope.text) else ()
+            ),
             workout_selection=resolve_recent_workout_selection(snapshot.envelope.text),
         )
     from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
