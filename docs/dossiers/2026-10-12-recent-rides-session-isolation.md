@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | shipping |
-| 当前阶段 | G3：骑行 HTML 报告误判修复验证中；此前发布证据保留 |
+| 当前阶段 | G6：骑行 HTML 报告修复已部署并完成合成链路复验；真实账号验收待确认 |
 
 Primary controller：health-harness-orchestrator；overlay：safety-gate。真实模型评测按用户要求取消。
 
@@ -102,3 +102,13 @@ a3cefe4f1 仍 NO-GO，未 push / deploy。独立 PostgreSQL 对抗 17 PASS / 3 F
 复用既有 owner/day/type 绑定及实际读结果完成证明，普通和批量工具同一冻结范围，拒绝模型改变用户、类型、日期或 limit。HTML 由服务端核验后的事实摘要构造，转义标签、引号与 Markdown fence 字符；不接纳模型 HTML、脚本、外部资源或发布指令。仅作为已保存的聊天回复静态文档，复用 Mobile 既有安全 HTML 展示，不新增公开健康报告链接或数据库对象。无记录如实披露；取数失败不伪装成功。全新 PostgreSQL、客户端文档渲染、独立 G4 和发布门禁待完成；用户已取消真实模型评测，不调用实际模型。
 
 增量验证：首轮专用 PostgreSQL 227 PASS，普通/批量截图请求经真实 dispatch 到 owner/day/cycling reader 并保存完整 HTML 回复，空数据与跨用户/日期记录保持隔离，runner 及正常数据库关闭退出 0。Markdown fence 转义后补跑 19 项权限/渲染单元 PASS；Mobile 既有安全静态 HTML 消费者及邻近 UI 102 PASS。System Map、Skill 治理、Dossier 一致性及 diff-check PASS。固定提交后将重跑 PostgreSQL及完整 CI-mode，独立 G4 和上线仍待执行。
+
+### 骑行 HTML 报告最终交付
+
+固定运行时候选 `2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c`。G3 PASS：最终专用 PostgreSQL 227、官方 CI 分片运行器的隔离后端集成 227、发布合同 3595 / 22 平台跳过 / 84 subtests、Mobile 102 及实际 backend producer→ChatBubble 1 项均通过并正常退出；离线 gate 12/50/12/9 PASS，无真实模型调用。完整精确主干 [CI 38222008603](https://github.com/itsoso/health-llm-driven/actions/runs/38222008603) SUCCESS，含 PostgreSQL 与后端发布就绪汇总。
+
+G4 GO：全新独立固定提交审查，真实 PostgreSQL 232、两轮 owner/day 隔离 2、独立 Mobile producer/consumer 1 PASS，正常数据库关闭；source、stream/panel、保存回复、查询失败/模型中断与 HTML 转义均确认。首次独立 archive 缺 Pi 本机依赖及 Mobile JSON fixture 形状错误保留，修正验证环境后重跑，不把环境失败当成产品通过。四个 reviewed wrapper 仅 SHA 重绑定，摘要逐项匹配，ops 静态 GO。
+
+G5 PASS：[可信后端发布 38224700093](https://github.com/itsoso/health-llm-driven/actions/runs/38224700093) SUCCESS；四个原包装器各执行一次，旧 backend/OTA/前端历史与原锁保留，无重放发布。生产持久回执精确 `SUCCEEDED`，干净 HEAD 匹配，四个服务 active，公开健康接口 HTTP 200 / healthy，发布锁已释放，四个运行时文件摘要逐项匹配来源。Mobile/Frontend/scripts/.github tree 相对上一运行时均未变化；没有 OTA、原生包或 TestFlight 发布。临时真实模型评测豁免已删除并读取确认不存在，confirmed=false。
+
+G6 技术复验 PASS：生产源码合成探针允许截图两句的 owner/today/cycling 冻结范围，拒绝他人、改日期/维度/类型、否定、引用和附加发布/同步，HTML 围栏及标签转义通过；读取真实 DB 行、发送写请求和真实模型调用均为零。真实账号和真实模型行为未验证，不把合成源代码探针冒充实测骑行报告验收，状态继续 shipping。GitHub 首次终态元数据读取发生 EOF，原 watch 正常退出及后续有界读取确认同 SHA SUCCESS；未重跑发布。最终证据：[骑行 HTML 发布摘要](../reviews/2026-10-12-cycling-html-report-release-summary.json)。

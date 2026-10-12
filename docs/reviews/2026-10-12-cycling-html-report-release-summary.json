@@ -1,0 +1,111 @@
+{
+  "source_sha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+  "previous_runtime_sha": "fcca43a1e9b041e669114c38e9169dac45d3b22f",
+  "ci": {
+    "conclusion": "success",
+    "headSha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+    "status": "completed",
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/38222008603"
+  },
+  "trusted_backend_release": {
+    "conclusion": "success",
+    "headSha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+    "status": "completed",
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/38224700093"
+  },
+  "production": {
+    "receipt": {
+      "sha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+      "state": "SUCCEEDED"
+    },
+    "head": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+    "clean": true,
+    "units": {
+      "health-backend": "active",
+      "celery-worker": "active",
+      "celery-beat": "active",
+      "health-frontend": "active"
+    },
+    "lease_absent": true,
+    "code_hashes": {
+      "backend/app/services/agent_executor.py": "4dcee66d39eb49ac20c5a9ce92f740176fad82efc00cece00a2bb8938983ddec",
+      "backend/app/services/agent_longitudinal_read.py": "a308d13be7da5286156555aac8dc0d6bc875e0a79dc8ecf03e4cfa4a6a810bca",
+      "backend/app/services/agent_composed_read_completion.py": "f2c95a4c37410a3c3d6839fc46dc6411c061f7b975086d812ccd8be4fddae75c",
+      "backend/app/services/agent_kernel/read_task_scope.py": "023acae69434bce034a5041ef9decdc1c0abe9f5e7ffd24546afea9137399dcc"
+    },
+    "health_status": 200,
+    "health": {
+      "status": "healthy"
+    }
+  },
+  "production_synthetic_probe": {
+    "source_sha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+    "synthetic_report_scope_probe": "PASS",
+    "positive_requests": 2,
+    "negative_requests": 5,
+    "database_rows_read": 0,
+    "write_requests_sent": 0,
+    "real_model_calls": 0,
+    "real_account_acceptance": false
+  },
+  "safety_review": {
+    "verdict": "GO",
+    "reviewed_sha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+    "independent_postgres_cases": 232,
+    "independent_two_turn_cases": 2,
+    "independent_mobile_producer_consumer_cases": 1,
+    "normal_cleanup": true,
+    "wrapper_manifest": {
+      "sha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+      "old": "fcca43a1e9b041e669114c38e9169dac45d3b22f",
+      "files": {
+        "/tmp/reva-cycling-html-bootstrap-stage.py": "1be6a7b4a71e1feb3eb8119243cc6d546f0f0e11cdee0c74fd4946f2e6fd1f09",
+        "/tmp/reva-cycling-html-revoke.py": "601dc9f552dce1072e3cbb9d0a0d50c16fcbf1935023367ff12595d6b3a50ed8",
+        "/tmp/reva-cycling-html-key-retirement.py": "a0c5c78e6f54066bd02c18cc170d700ca3006d5803746ceca9128b3a42595721",
+        "/tmp/reva-cycling-html-rotate.py": "233f49555ef7480849505f98b991d1af25cba2bbf038f3aee5a29d1656d59d09"
+      }
+    }
+  },
+  "local_verification": {
+    "root_postgres_cases": 227,
+    "official_backend_ci_mode_cases": 227,
+    "release_contract": {
+      "sha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+      "exit_code": 0,
+      "duration_seconds": 533.7384051249828
+    },
+    "release_contract_cases": 3595,
+    "platform_skips": 22,
+    "subtests_passed": 84,
+    "mobile_existing_cases": 102,
+    "root_mobile_producer_consumer_cases": 1,
+    "offline_llm_gate": "PASS",
+    "live_llm_calls": 0
+  },
+  "unchanged_trees": {
+    "mobile": true,
+    "frontend": true,
+    "scripts": true,
+    ".github": true
+  },
+  "ota_published": false,
+  "native_package_published": false,
+  "waiver_cleanup": {
+    "waiver_name": "HARNESS_LIVE_LLM_EVAL_WAIVED_SHA",
+    "bound_sha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+    "deleted": true,
+    "absence_readback_confirmed": true,
+    "real_model_evaluation_confirmed": false
+  },
+  "real_account_acceptance": false,
+  "limitations": [
+    "No real account health data was read; real model evaluation waived by user.",
+    "Date-unspecified report covers only current authenticated account local today saved cycling records.",
+    "This is a static saved chat reply, not an external published report."
+  ],
+  "preserved_failure_evidence": [
+    "Independent initial archive missing ignored Pi dependencies; fixed harness passed.",
+    "Independent initial Mobile fixture JSON-shape error; corrected fixture passed.",
+    "One GitHub terminal metadata read returned unexpected EOF; bounded readback and original watch exit0 confirmed success."
+  ]
+}
