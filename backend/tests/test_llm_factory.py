@@ -187,10 +187,12 @@ def test_preview_selection_and_actual_provider_remain_distinct(monkeypatch):
     assert create_provider_for_model_id("qwen3.8-max-preview").model == "qwen3.8-max"
 
 
-def test_saved_preview_preference_resolves_without_profile_rewrite(db, auth_user_and_headers, monkeypatch):
+def test_saved_admin_preview_preference_resolves_without_profile_rewrite(db, auth_user_and_headers, monkeypatch):
     from app.models.user_profile import UserProfile
     from app.services.llm.factory import create_provider_for_user
     user, _ = auth_user_and_headers
+    user.is_admin = True
+    db.flush()
     profile = db.query(UserProfile).filter_by(user_id=user.id).first()
     if profile is None:
         profile = UserProfile(user_id=user.id)

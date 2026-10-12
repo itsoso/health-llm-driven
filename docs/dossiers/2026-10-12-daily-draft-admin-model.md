@@ -10,7 +10,7 @@
 
 ## G1/G2
 
-PASS。用户截图“规划今天饮食运动和睡眠”反复出现通用查询失败，并要求优化性能、模型下拉只对管理员开放且不出现tokenplan。准入见 docs/specs/active/2026-10-12-daily-draft-admin-model.md。复用当前输入建议scope，闭合请求只允许通用知识；不新增个人读取或计划写入。管理员模型权限同时覆盖Mobile/Web、API、偏好provider、图片和工具门控consumer、per-request extra_context；当前数据库角色是授权真源。
+裁决: PASS。用户截图“规划今天饮食运动和睡眠”反复出现通用查询失败，并要求优化性能、模型下拉只对管理员开放且不出现tokenplan。准入见 docs/specs/active/2026-10-12-daily-draft-admin-model.md。复用当前输入建议scope，闭合请求只允许通用知识；不新增个人读取或计划写入。管理员模型权限同时覆盖Mobile/Web、API、偏好provider、图片和工具门控consumer、per-request extra_context；当前数据库角色是授权真源。
 
 ## G3
 
@@ -23,3 +23,7 @@ PASS。用户截图“规划今天饮食运动和睡眠”反复出现通用查�
 ## G5/G6
 
 尚未部署本批修复。拍照路由等待修复a75另已部署，不能冒充此新批次。整合另一session已明确交接的菜单返回修复，见其dossier；保留无关benchmark实验。实际Mobile界面需候选模拟器/分发证据；当前OTA原生基线与iPad候选不兼容，不绕闸。
+
+## CI 断点
+
+360bf9f6a完整CI的docs-quality阻断：G1缺机器可识别的裁决前缀、菜单交接dossier缺状态/阶段与G1。补齐真实裁决与字段，不降低检查，不覆盖原运行。360的私有安装包不能作为通过CI的交付候选。

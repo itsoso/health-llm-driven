@@ -105,3 +105,34 @@ it('clears prior authorization when policy fetch fails', async () => {
   expect(hasAIConsent()).toBe(false);
   expect(isAIConsentRequired()).toBe(false);
 });
+
+it('retries one transient policy read without granting or sending content early', async () => {
+  (api.get as jest.Mock).mockRejectedValueOnce({ code: 'ERR_NETWORK' });
+  (api.get as jest.Mock).mockResolvedValueOnce({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
+  await expect(ensureAIConsent()).resolves.toBe(true);
+  expect(api.get).toHaveBeenCalledTimes(2);
+  expect(api.put).not.toHaveBeenCalled();
+  expect(Alert.alert).not.toHaveBeenCalled();
+});
+
+it.each([
+  [{ response: { status: 401 } }, '登录已失效'],
+  [{ response: { status: 503 } }, 'AI 授权服务暂不可用'],
+])('explains policy failures without pretending every failure is offline', async (error, title) => {
+  (api.get as jest.Mock).mockRejectedValue(error);
+  await expect(ensureAIConsent()).resolves.toBe(false);
+  expect(hasAIConsent()).toBe(false);
+  expect(api.get).toHaveBeenCalledTimes(title === '登录已失效' ? 1 : 2);
+  expect(Alert.alert).toHaveBeenCalledWith(title, expect.any(String));
+});
+
+it('does not show a stale policy failure after an account switch', async () => {
+  let rejectRead: (error: unknown) => void = () => {};
+  (api.get as jest.Mock).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRead = reject; }));
+  const pending = ensureAIConsent(); await flush();
+  setAIConsentIdentity('session-b');
+  rejectRead({ code: 'ERR_NETWORK' });
+  await expect(pending).resolves.toBe(false);
+  expect(api.get).toHaveBeenCalledTimes(1);
+  expect(Alert.alert).not.toHaveBeenCalled();
+});

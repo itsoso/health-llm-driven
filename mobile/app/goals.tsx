@@ -18,6 +18,7 @@ import {
 } from '../constants/revaTheme';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createGoalsAgentContext } from '../utils/agentContext';
+import { AIConsentRequiredError, isAIConsentError } from '../services/aiConsentState';
 
 export default function GoalsScreen() {
   const router = useRouter();
@@ -33,7 +34,12 @@ export default function GoalsScreen() {
     try {
       await generateGoalsFromAnalysis();
       qc.invalidateQueries({ queryKey: ['goals'] });
-    } catch {
+    } catch (error) {
+      if (error instanceof AIConsentRequiredError) return;
+      if (isAIConsentError(error)) {
+        Alert.alert('需要重新确认 AI 授权', '授权状态已更新。请再次点击“AI 生成目标”，读取当前授权说明并确认后重试。');
+        return;
+      }
       Alert.alert('生成失败', '请稍后再试');
     } finally {
       setGenerating(false);

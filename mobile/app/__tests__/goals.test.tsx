@@ -1,6 +1,9 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { AIConsentRequiredError } from '../../services/aiConsentState';
+import { generateGoalsFromAnalysis } from '../../services/goals';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockBack = jest.fn();
 
@@ -120,3 +123,26 @@ describe('GoalsScreen', () => {
     expect(queryByText('goal-card-has-onpress')).toBeNull();
   });
 });
+
+ it('does not stack a generation failure over the consent dialog or cancellation', async () => {
+   (generateGoalsFromAnalysis as jest.Mock).mockRejectedValueOnce(new AIConsentRequiredError());
+   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+   const view = render(<GoalsScreen />);
+   fireEvent.press(view.getByText('AI 生成目标'));
+   await waitFor(() => expect(generateGoalsFromAnalysis).toHaveBeenCalled());
+   await waitFor(() => expect(view.getByText('AI 生成目标')).toBeTruthy());
+   expect(alert).not.toHaveBeenCalled();
+   alert.mockRestore();
+ });
+
+ it('explains a server-side policy change without replaying generation', async () => {
+   (generateGoalsFromAnalysis as jest.Mock).mockClear().mockRejectedValueOnce({
+     response: { status: 403, data: { detail: { code: 'ai_consent_required' } } },
+   });
+   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+   const view = render(<GoalsScreen />);
+   fireEvent.press(view.getByText('AI 生成目标'));
+   await waitFor(() => expect(alert).toHaveBeenCalledWith('需要重新确认 AI 授权', expect.any(String)));
+   expect(generateGoalsFromAnalysis).toHaveBeenCalledTimes(1);
+   alert.mockRestore();
+ });
