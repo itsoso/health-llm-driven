@@ -2765,8 +2765,10 @@ def decide_tool_capability(
         return _decision("block", "current_input_advice_read_not_needed" if optional_read
                          else "current_input_advice_tool_not_allowed", tool_name, args)
     owned_scope = resolve_owned_read_scope(snapshot)
-    from app.services.agent_longitudinal_read import has_recent_workout_reference
-    if has_recent_workout_reference(snapshot.envelope.text) and owned_scope is None:
+    from app.services.agent_longitudinal_read import has_recent_workout_reference, is_recent_workout_read
+    if owned_scope is None and (is_recent_workout_read(snapshot.envelope.text)
+            or (has_recent_workout_reference(snapshot.envelope.text)
+                and tool_name not in {'knowledge_search', 'environment_check'})):
         # A failed authenticated binding must not fall through to legacy reads.
         return _decision("block", "health_query_subject_not_current_user", tool_name, args)
     from app.services.agent_kernel.exercise_plan_scope import (

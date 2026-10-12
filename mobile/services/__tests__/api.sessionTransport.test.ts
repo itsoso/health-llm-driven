@@ -1,7 +1,11 @@
 jest.mock('../egressPolicy', () => ({ enforceAppEgressAllowed: jest.fn().mockResolvedValue(undefined) }));
 
 describe('actual Axios session dispatch', () => {
-  beforeEach(() => { jest.resetModules(); jest.unmock('axios'); });
+  beforeEach(async () => {
+    jest.resetModules(); jest.unmock('axios');
+    await require('@react-native-async-storage/async-storage').clear();
+    require('expo-secure-store').getItemAsync.mockReset().mockResolvedValue(null);
+  });
 
   it.each(['get', 'post', 'request', 'call'])('captures the owner before Axios queues %s', async method => {
     const { default: api, setRuntimeAuthToken } = require('../api');
@@ -44,6 +48,35 @@ describe('actual Axios session dispatch', () => {
     setRuntimeAuthToken(null);
     const adapter = jest.fn(async (config: any) => ({ config, status: 200, statusText: 'OK', headers: {}, data: {} }));
     await api.get('/auth/me', { headers: { Authorization: 'Bearer synthetic-old' }, adapter });
+    expect(adapter.mock.calls[0][0].headers.get('Authorization')).toBeUndefined();
+  });
+
+  it.each(['present', 'unreadable', 'absent'])('respects the persistent logout barrier on cold startup: %s', async barrier => {
+    const storage = require('@react-native-async-storage/async-storage');
+    const store = require('expo-secure-store');
+    store.getItemAsync.mockResolvedValue('synthetic-residue');
+    if (barrier === 'present') await storage.setItem('auth:logout_tombstone:v1', '1');
+    if (barrier === 'unreadable') storage.getItem.mockRejectedValueOnce(new Error('synthetic-storage-failure'));
+    const { default: api } = require('../api');
+    const adapter = jest.fn(async (config: any) => ({ config, status: 200, statusText: 'OK', headers: {}, data: {} }));
+    const pending = api.get('/diet/records', { adapter });
+    if (barrier === 'unreadable') {
+      await expect(pending).rejects.toThrow('auth_storage_unavailable');
+      expect(adapter).not.toHaveBeenCalled();
+    } else {
+      await pending;
+      expect(adapter.mock.calls[0][0].headers.get('Authorization')).toBe(
+        barrier === 'present' ? undefined : 'Bearer synthetic-residue');
+    }
+  });
+
+  it('allows explicit new login without an old credential when the barrier is unreadable', async () => {
+    const storage = require('@react-native-async-storage/async-storage');
+    storage.getItem.mockRejectedValueOnce(new Error('synthetic-storage-failure'));
+    require('expo-secure-store').getItemAsync.mockResolvedValue('synthetic-old');
+    const { default: api } = require('../api');
+    const adapter = jest.fn(async (config: any) => ({ config, status: 200, statusText: 'OK', headers: {}, data: {} }));
+    await api.post('/auth/login/json', {}, { adapter });
     expect(adapter.mock.calls[0][0].headers.get('Authorization')).toBeUndefined();
   });
 });

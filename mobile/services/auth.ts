@@ -592,6 +592,16 @@ export async function getToken(
   );
 }
 
+export async function readPersistedApiAuthToken(): Promise<string | null> {
+  // The request bootstrap shares the durable logout barrier and storage queue
+  // with login/logout. It must not install a session or hydrate shared stores.
+  return serializeAuthStorageMutation(async () => {
+    if (await hasAuthLogoutTombstone()) return null;
+    const token = await SecureStore.getItemAsync(TOKEN_KEY);
+    return isUsableNativeAuthToken(token) ? token : null;
+  });
+}
+
 export async function isLoggedIn(): Promise<boolean> {
   const token = await getToken();
   return token !== null;

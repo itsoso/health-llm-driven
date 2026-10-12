@@ -66,6 +66,14 @@ def test_named_ride_modifiers_cannot_disappear_into_owned_authority(text):
         'health_query', {'dimension': 'workout'})).action == 'block'
 
 
+def test_quoted_ride_request_does_not_block_public_knowledge_explanation():
+    turn = snapshot('解释例句：“分析青山湖骑行刚才的两段骑行。”')
+    assert decide_tool_capability(turn, ToolExecutionRequest(
+        'knowledge_search', {'query': '骑行记录是什么意思'})).action == 'allow'
+    assert decide_tool_capability(turn, ToolExecutionRequest(
+        'health_query', {'dimension': 'workout'})).action == 'block'
+
+
 @pytest.mark.parametrize("text", [
     "分析小王刚才的运动", "分析我朋友刚才的运动", "分析刚才Alice的运动",
     "不要分析刚才的运动", "解释例句：‘分析刚才的运动’", "如果有空，分析刚才的运动",

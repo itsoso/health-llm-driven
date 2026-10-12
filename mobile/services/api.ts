@@ -1,5 +1,4 @@
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
 import { enforceAppEgressAllowed } from './egressPolicy';
 import { aiConsentRevision, hasAIConsent, invalidateAIConsent, isAIConsentError, isAIConsentRequired, setAIConsentIdentity } from './aiConsentState';
 
@@ -101,10 +100,14 @@ api.interceptors.request.use(
     if (!authInitialized) {
       let persistedToken: string | null = null;
       try {
-        persistedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+        const { readPersistedApiAuthToken } = require('./auth') as typeof import('./auth');
+        persistedToken = await readPersistedApiAuthToken();
       } catch {
-        // SecureStore not available (e.g. web or a transient iOS keychain
-        // window). A token installed by login remains usable in memory.
+        assertCurrentSession();
+        if (!isCloudSessionBootstrapRequest(config.method, config.url)) {
+          throw new Error('auth_storage_unavailable');
+        }
+        // An explicit new login can proceed without a residual credential.
       }
       assertCurrentSession();
       if (authInitialized) {
