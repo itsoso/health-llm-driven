@@ -1,0 +1,109 @@
+{
+  "source_sha": "fcca43a1e9b041e669114c38e9169dac45d3b22f",
+  "full_ci": {
+    "run_id": 38213822327,
+    "conclusion": "success"
+  },
+  "local_ci": {
+    "sha": "fcca43a1e9b041e669114c38e9169dac45d3b22f",
+    "exit_code": 0,
+    "duration_seconds": 608.8186034170212,
+    "passed": 3595,
+    "skipped": 22,
+    "subtests_passed": 84
+  },
+  "postgresql_regression": {
+    "test_sha": "fcca43a1e9b041e669114c38e9169dac45d3b22f",
+    "postgresql_tests_passed": 282,
+    "pytest_exit_code": 0,
+    "initial_runner_exit_code": 1,
+    "initial_cleanup_timeout_preserved": true,
+    "extended_fast_stop_or_already_stopped_verified": true,
+    "forced_kill": false
+  },
+  "independent_review": {
+    "verdict": "GO",
+    "source_sha": "fcca43a1e9b041e669114c38e9169dac45d3b22f",
+    "postgresql_passed": 47,
+    "normal_runner_exit_code": 0,
+    "actual_stream_adversarial_cases": 24,
+    "same_executor_next_meal_persistence_passed": true,
+    "ops_wrapper_rebinding": "GO"
+  },
+  "prior_rejections": {
+    "76b0a462c": "NO-GO negated or incidental food words could write meals",
+    "a3cefe4f1": "NO-GO hypothetical, example and third-person intake tails could write meals",
+    "published_before_correction": false
+  },
+  "backend": {
+    "workflow_run_id": 38216250186,
+    "conclusion": "success",
+    "production_proof": {
+      "receipt": {
+        "sha": "fcca43a1e9b041e669114c38e9169dac45d3b22f",
+        "state": "SUCCEEDED"
+      },
+      "head": "fcca43a1e9b041e669114c38e9169dac45d3b22f",
+      "clean": true,
+      "units": {
+        "health-backend": "active",
+        "celery-worker": "active",
+        "celery-beat": "active",
+        "health-frontend": "active"
+      },
+      "lease_absent": true,
+      "code_hashes": {
+        "backend/app/services/agent_executor.py": "ff03cf406848c8890c1676a64cf4ec4cfe5b80b8487020178dabaa0733805cd5"
+      },
+      "health_status": 200,
+      "health": {
+        "status": "healthy"
+      }
+    },
+    "production_synthetic_purpose_probe": {
+      "synthetic_purpose_probe": "PASS",
+      "source_sha": "fcca43a1e9b041e669114c38e9169dac45d3b22f",
+      "negative_exercise_cases": 7,
+      "positive_meal_purposes": 4,
+      "database_rows_read": 0,
+      "write_requests_sent": 0,
+      "real_model_calls": 0,
+      "real_account_acceptance": false
+    },
+    "rollback_reference_sha": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae"
+  },
+  "delivery_scope": {
+    "backend_only": true,
+    "mobile_runtime_changed": false,
+    "ota": "not_required",
+    "native_release": "not_required",
+    "existing_build": "280",
+    "existing_build_not_new_acceptance_evidence": true
+  },
+  "real_model_evaluation": {
+    "user_waived": true,
+    "actual_calls": 0,
+    "confirmed": false,
+    "temporary_sha_waiver_cleared_and_readback_absent": true,
+    "initial_delete_timeout_preserved_and_same_value_checked_before_cleanup_retry": true
+  },
+  "gates": {
+    "G3": "PASS",
+    "G4": "GO",
+    "G5": "PASS",
+    "G6": "PENDING_REAL_ACCOUNT_ACCEPTANCE"
+  },
+  "unverified": [
+    "actual anchor account photo/provider response",
+    "previous accidentally stored meal existence or cleanup",
+    "physical camera workflow"
+  ],
+  "offline_llm_gate": {
+    "status": "passed",
+    "actual_model_calls": 0,
+    "invariants": 12,
+    "health_agent_core": 50,
+    "trajectory_contract": 12,
+    "trajectory_goldens": 9
+  }
+}
