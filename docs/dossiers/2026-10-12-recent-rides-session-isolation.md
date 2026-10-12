@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | shipping |
-| 当前阶段 | G6：后端与 280 安装包已发布；真实账号业务验收待确认 |
+| 状态 | building |
+| 当前阶段 | G3：补修骑行照片误入饮食链路；新候选尚未部署 |
 
 Primary controller：health-harness-orchestrator；overlay：safety-gate。真实模型评测按用户要求取消。
 
@@ -23,7 +23,7 @@ Primary controller：health-harness-orchestrator；overlay：safety-gate。真�
 
 ## G3 证据
 
-裁决：绿。最终运行时代码 PostgreSQL 640 PASS；完整 Mobile 347 suites / 3547 PASS、1 SKIP；TypeScript、System Map 与离线合成门通过。实际 Axios/API/cache 52 PASS 正常退出。固定 82fd8d086f4a1e9d9383950a1e49b9e69c488fae 的本机项目 CI-mode 3595 PASS、22 SKIP、84 subtests PASS、exit 0；远端完整恢复 CI 38206912576 与文档 push CI 38206911542 均成功。
+上一已发布批次为绿。当前照片分流修复的完整回归待完成。上一批最终运行时代码 PostgreSQL 640 PASS；完整 Mobile 347 suites / 3547 PASS、1 SKIP；TypeScript、System Map 与离线合成门通过。实际 Axios/API/cache 52 PASS 正常退出。固定 82fd8d086f4a1e9d9383950a1e49b9e69c488fae 的本机项目 CI-mode 3595 PASS、22 SKIP、84 subtests PASS、exit 0；远端完整恢复 CI 38206912576 与文档 push CI 38206911542 均成功。
 
 初始 PostgreSQL 5 FAIL / 50 PASS；reader 新增测试进一步 9 FAIL / 50 PASS。第一轮完整链路发现四个已查询但保存回复未带数量的失败，保留失败并修复。邻近 PostgreSQL 测试第一轮 634 PASS。Mobile API 初始 6 FAIL / 29 PASS，修复后 35 PASS；实际 Axios 排队窗口额外回归待验证。所有数据库测试为独立临时 PostgreSQL、合成用户数据，无线上个人数据读取或同步。
 
@@ -33,11 +33,11 @@ Primary controller：health-harness-orchestrator；overlay：safety-gate。真�
 
 ## G4 安全审查
 
-裁决：GO。固定运行时候选 f6caece330dcfc54f50cfc3bcc278e0a6be02765 独立应用 GO、ops 静态 GO，额外缓存回归 8 PASS，正常退出。独立 reviewer 对最终 82fd8d0 的文档后继与四个精确包装器重新绑定 GO；运行时 tree 与 f6ca 相同。实际 280 IPA 的摘要、签名、原始回执、profile、双 iPad orientation keys 和精确来源独立复核 GO。静态审查之外，官方发布流程实时准入均通过。
+上一已发布批次为 GO；当前照片分流候选待独立审查。固定运行时候选 f6caece330dcfc54f50cfc3bcc278e0a6be02765 独立应用 GO、ops 静态 GO，额外缓存回归 8 PASS，正常退出。独立 reviewer 对最终 82fd8d0 的文档后继与四个精确包装器重新绑定 GO；运行时 tree 与 f6ca 相同。实际 280 IPA 的摘要、签名、原始回执、profile、双 iPad orientation keys 和精确来源独立复核 GO。静态审查之外，官方发布流程实时准入均通过。
 
 ## G5 发布健康
 
-裁决：PASS。精确 82fd8d0 可信后端发布 [38210061452](https://github.com/itsoso/health-llm-driven/actions/runs/38210061452) 成功；生产持久回执为 SUCCEEDED，HEAD 精确匹配且工作树干净，四个服务 active，公开健康接口 HTTP 200 / healthy，发布租约已释放。五个后端实现文件逐项摘要与来源匹配。旧前端制品 tree 未变化并经 canonical 活体绑定校验，旧 backend / OTA 历史回执与锁保留。
+当前照片分流修复尚未发布；下文是此前发布的 PASS 证据。精确 82fd8d0 可信后端发布 [38210061452](https://github.com/itsoso/health-llm-driven/actions/runs/38210061452) 成功；生产持久回执为 SUCCEEDED，HEAD 精确匹配且工作树干净，四个服务 active，公开健康接口 HTTP 200 / healthy，发布租约已释放。五个后端实现文件逐项摘要与来源匹配。旧前端制品 tree 未变化并经 canonical 活体绑定校验，旧 backend / OTA 历史回执与锁保留。
 
 1.3.5（280）按官方 local-qr 流程构建并一次性发布。公开 install.html / manifest.plist / qr.png / app.ipa 均 HTTP 200，整包下载摘要与独立验收 IPA 一致；manifest 绑定 build 280 与实际不可变目录，旧 latest 保留。安装页：[280 iPhone / iPad 安装包](https://health.executor.life/mobile-install/ios/20261012-rides-session-82fd8d086-280/install.html)。包只允许 provisioning profile 中已登记的设备，不代表所有 iPad 已可安装。
 
@@ -66,3 +66,11 @@ Primary controller：health-harness-orchestrator；overlay：safety-gate。真�
 纠正此前“专项正常退出”：API/auth/cache 组合断言通过但实际进程仍存活，不能宣称无 open handles。定位 React Query 在取消 fetch 的 finally 中重新给已移除 query 安排一日 GC 计时器，额外真实 RED 1 FAIL / 6 PASS。退休 query 的 gcTime 归零，不改变新会话默认缓存生命周期；修后 52 项实际 Axios/API/cache 测试与 TypeScript 均真实正常退出 0。调试只发现短期零毫秒退休 GC，不再有一日遗留计时器。81b8 本机 CI-mode 因候选含这项后续修复于 332.95 秒终止、exit -15，保留但不接受。
 
 后续提交需固定新 SHA 重审这项缓存生命周期补丁和四个发布 wrapper，重跑完整 Mobile/CI-mode/精确远端 CI；不得把 81b8 GO 或旧包结果冒充最终发布证据。
+
+### 新增截图：骑行照片误入饮食链路
+
+用户原话“骑行就不要记录为用餐了”，截图为风景照片加“记录青山湖骑行”，进度却显示识别餐食。此次继续修复同一运动记录闭环，退回实现与验证；旧 82fd / 280 发布保持有效，不作为新候选证据。
+
+复现根因：通用图像预处理无条件先调用食物识别；contextual capture 将任意 write 意图升级为 EXPLICIT_CAPTURE。明确运动 caption 可被食物识别误判及旧相机餐食上下文转为饮食候选。新增运动附件排除只撤销饮食权限，不授予运动写入；保留图片原始通用附件，运动类型、时长仍走既有写入/澄清边界，不从风景照片猜距离、GPS 或耗时。明确食物/餐次/摄入对象保留既有饮食管线。
+
+四项 PostgreSQL RED 真实复现：普通和旧餐食 metadata 两种实际 stream 都调用 food recognition；直接 capture 可错误自动记餐；普通 vision 优先调用 food preprocessor。修后四项 PostgreSQL PASS，实际 stream 无 diet_photo 进度，旧餐食 instruction 被剥除，用户图片仍保存为通用附件，diet create/manage 均在 HTTP 前拒绝。全部合成照片/用户，无真实模型和线上个人数据读取。初始测试未设置专用 DB 的连接失败以及 SQLite 被 db fixture 拒绝，均为环境失败，不冒充 RED；后续使用独立临时 PostgreSQL 并正常关闭。完整邻近 PostgreSQL 回归、独立 G4 与新候选 CI/部署尚待完成。

@@ -7845,6 +7845,9 @@ def _contextual_diet_write_rejection(reason: str, *, action: str) -> str:
     if reason == "cancelled":
         message = f"已按你的取消要求处理，本轮没有{action}饮食记录。"
         recovery_guidance = None
+    elif reason == "non_diet_photo_intent":
+        message = f"本轮图片用于运动记录，本轮没有{action}饮食记录。"
+        recovery_guidance = "请继续补充运动类型和时长，不要将运动照片作为餐食保存。"
     elif reason == "capture_failed":
         message = f"图片资产未能安全保存，本轮没有{action}饮食记录。"
         recovery_guidance = "请重新上传图片后再试。"
@@ -16739,6 +16742,14 @@ class AgentExecutor:
         self._turn_contextual_diet_consumed_fraction = None
         self._turn_contextual_diet_write_blocked_reason = None
         self._turn_food_photo_recognition = None
+        if images and self._is_exercise_photo_context(message):
+            self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
+            if _is_diet_photo_auto_save_turn(extra_context, has_images=True):
+                # Current typed purpose overrides stale camera/draft metadata.
+                payload = json.loads(extra_context)
+                for key in ("source", "intent", "instruction", "capture_session_id"):
+                    payload.pop(key, None)
+                extra_context = json.dumps(payload) if payload else None
         self._turn_selected_exam_id = _selected_exam_context_id(extra_context)
         if self._turn_selected_exam_id is not None:
             # Discard the client's report summary, values and control hints.
@@ -17001,6 +17012,7 @@ class AgentExecutor:
         )
         diet_photo_progress_turn = bool(
             images
+            and not self._is_exercise_photo_context(message)
             and (
                 self._diet_photo_auto_save
                 or self._looks_like_food_photo_context(message)
@@ -22530,6 +22542,8 @@ class AgentExecutor:
             # force-tool grammar: complex creative prompts keep the general
             # toolset, but must still never become diet candidates first.
             return False
+        if self._is_exercise_photo_context(message):
+            return not self._should_send_raw_images_to_primary_model(user_id)
         return (
             not self._should_send_raw_images_to_primary_model(user_id)
             or not (message or "").strip()
@@ -24406,7 +24420,9 @@ class AgentExecutor:
 
     async def _analyze_image_with_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """用 vision 模型预分析图片内容，返回文字描述"""
-        structured_food = await self._analyze_food_images_with_structured_vision(user_message, images)
+        structured_food = None
+        if not self._is_exercise_photo_context(user_message):
+            structured_food = await self._analyze_food_images_with_structured_vision(user_message, images)
         if structured_food:
             return structured_food
 
@@ -24464,6 +24480,9 @@ class AgentExecutor:
     async def _analyze_food_images_with_structured_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """Prefer strict food-recognition JSON over free-form vision prose for diet photos."""
         self._turn_food_photo_recognition = None
+        if self._is_exercise_photo_context(user_message):
+            self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
+            return None
         if not images:
             return None
         if len(images) > 3:
@@ -24648,9 +24667,13 @@ class AgentExecutor:
     ) -> Any | None:
         """Persist a qualified chat food photo before the answer model runs.
 
-        This boundary only receives typed semantic intent plus sanitized vision
-        output.  It never scans raw text for a recording keyword.
+        Typed semantic intent and sanitized vision establish meal eligibility.
+        Exercise-purpose exclusions only revoke diet authority; they never
+        authorize a write or trust a food-recognition false positive.
         """
+        if self._is_exercise_photo_context(user_message):
+            self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
+            return None
         user_id = self._current_user_id
         source_message_id = (
             self._current_turn_media_source_message_id
@@ -25195,6 +25218,23 @@ class AgentExecutor:
         if 17 <= hour < 22:
             return "dinner"
         return "snack"
+
+    @staticmethod
+    def _is_exercise_photo_context(user_message: str) -> bool:
+        """Exclude exercise attachments from diet; never grant exercise writes.
+
+        Nutrition words alone (e.g. riding calories) do not identify a meal.
+        Explicit meal/intake subjects keep the existing food safety pipeline.
+        """
+        text = (user_message or "").lower()
+        exercise = any(word in text for word in (
+            "骑行", "骑车", "自行车", "跑步", "散步", "步行", "游泳", "健身", "锻炼", "运动",
+            "cycling", "running", "workout",
+        ))
+        food_subject = any(word in text for word in (
+            "早餐", "午餐", "晚餐", "加餐", "这餐", "这顿", "餐食", "食物", "饮食", "吃", "喝",
+        ))
+        return exercise and not food_subject
 
     @staticmethod
     def _looks_like_food_photo_context(user_message: str) -> bool:

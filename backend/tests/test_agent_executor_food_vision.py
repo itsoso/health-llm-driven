@@ -1708,3 +1708,61 @@ def test_meal_capture_skips_only_redundant_optional_route(message, auto_save, ha
     from app.services.agent_executor import _meal_photo_optional_route_unneeded
     assert _meal_photo_optional_route_unneeded(message, auto_save=auto_save, has_file=has_file,
                                               read_only=read_only, clinical_advice=clinical_advice) is expected
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stale_meal_context', [False, True])
+async def test_riding_photo_stream_never_recognizes_or_records_a_meal(
+    db, tmp_path, monkeypatch, stale_meal_context,
+):
+    from app.services.ai.food_recognition import food_recognition_service
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognition = AsyncMock(return_value=_food_result())
+    monkeypatch.setattr(food_recognition_service, 'recognize_food_from_base64', recognition)
+    monkeypatch.setattr(executor, '_should_send_raw_images_to_primary_model', lambda _: True)
+    llm = AsyncMock(return_value={'content': '这张照片用于骑行记录，请补充骑行时长。', 'finish_reason': 'stop'})
+    monkeypatch.setattr(executor, '_build_system_prompt', lambda *a, **kw: 'SYS')
+    monkeypatch.setattr('app.services.agent_executor.get_health_tools', lambda subset=None: [])
+    monkeypatch.setattr(executor, '_call_llm', llm)
+    monkeypatch.setattr(executor, '_call_llm_stream', _stream_from(llm))
+    context = json.dumps({'source': 'mobile_chat_meal_photo', 'intent': 'diet_photo_record',
+                          'instruction': 'STALE_MEAL_INSTRUCTION', 'capture_session_id': 'old-meal'}) if stale_meal_context else None
+    events = [e async for e in executor.run_stream(user_id=user.id, message='记录青山湖骑行',
+               user_auth_token='synthetic-token', images=[{'base64': VALID_PNG_BASE64, 'type': 'png'}],
+               extra_context=context, client_turn_id='riding-photo-no-meal')]
+    recognition.assert_not_awaited()
+    assert not executor._diet_photo_auto_save
+    assert not any(str(e.get('stage', '')).startswith('diet_photo') for e in events)
+    assert any(e.get('event') == 'request_persisted' and len(e['data']['image_urls']) == 1 for e in events)
+    assert db.query(DietRecord).count() == db.query(DietPhotoDraft).count() == db.query(DietPhotoAsset).count() == 0
+    assert 'STALE_MEAL_INSTRUCTION' not in str(llm.call_args_list)
+    assert executor._turn_contextual_diet_write_blocked_reason == 'non_diet_photo_intent'
+    send = AsyncMock()
+    executor._http_client = type('NoDietHTTP', (), {'post': send, 'put': send, 'delete': send})()
+    for result in [await executor._exec_health_record('https://example.test', {}, {'type': 'diet', 'data': {'food_items': 'hallucinated food'}}),
+                   await executor._exec_health_manage('https://example.test', {}, {'record_type': 'diet', 'operation': 'update', 'record_id': 1, 'data': {'food_items': 'hallucinated food'}})]:
+        assert '饮食' in str(result)
+    send.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_riding_photo_food_capture_defense_ignores_food_vision_false_positive(db, tmp_path, monkeypatch):
+    executor, _ = _food_photo_executor(db, tmp_path, monkeypatch)
+    result = _food_result()
+    assert executor._capture_contextual_meal_photos('记录青山湖骑行', result, image_indexes=[0]) is None
+    assert db.query(DietRecord).count() == db.query(DietPhotoDraft).count() == db.query(DietPhotoAsset).count() == 0
+
+@pytest.mark.asyncio
+async def test_general_vision_for_riding_never_calls_food_preprocessor(db, monkeypatch):
+    executor = AgentExecutor(db)
+    food = AsyncMock(return_value='food hallucination')
+    monkeypatch.setattr(executor, '_analyze_food_images_with_structured_vision', food)
+    monkeypatch.setattr(settings, 'llm_vision_base_url', '')
+    assert await executor._analyze_image_with_vision('记录青山湖骑行', [{'base64': 'fake', 'type': 'jpeg'}]) is None
+    food.assert_not_awaited()
+
+@pytest.mark.parametrize('message', ['记录青山湖骑行', '分析骑行消耗的热量', '记录跑步', '记录今天的游泳'])
+def test_exercise_photo_purpose_is_not_meal_nutrition(message):
+    assert AgentExecutor._is_exercise_photo_context(message)
+
+@pytest.mark.parametrize('message', ['骑行后记录午餐', '运动后吃了鸡蛋', '拍照记餐', '记录这餐', '分析早餐营养'])
+def test_explicit_food_subject_keeps_structured_food_pipeline(message):
+    assert not AgentExecutor._is_exercise_photo_context(message)
