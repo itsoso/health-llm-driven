@@ -1,0 +1,163 @@
+{
+  "source_sha": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae",
+  "ci": {
+    "run_id": 38206912576,
+    "status": "success",
+    "scope": "full",
+    "local_ci_mode": {
+      "passed": 3595,
+      "skipped": 22,
+      "subtests_passed": 84,
+      "exit_code": 0
+    }
+  },
+  "regression": {
+    "postgresql_passed": 640,
+    "mobile_suites_passed": 347,
+    "mobile_tests_passed": 3547,
+    "mobile_tests_skipped": 1,
+    "actual_axios_api_cache_passed": 52,
+    "actual_axios_api_cache_normal_exit": true,
+    "typescript": "PASS",
+    "system_map": "PASS"
+  },
+  "backend": {
+    "workflow_run_id": 38210061452,
+    "workflow_status": "success",
+    "production_proof": {
+      "receipt": {
+        "sha": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae",
+        "state": "SUCCEEDED"
+      },
+      "head": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae",
+      "clean": true,
+      "units": {
+        "health-backend": "active",
+        "celery-worker": "active",
+        "celery-beat": "active",
+        "health-frontend": "active"
+      },
+      "lease_absent": true,
+      "code_hashes": {
+        "backend/app/services/agent_longitudinal_read.py": "aba08542688df05e1a1c84501bc82c487d5586615ac6dbed69ead25bdf86dd90",
+        "backend/app/services/agent_kernel/read_task_scope.py": "bb62f213763028cdc772df1179ef865d78ac78dce2f699ac966561613104939a",
+        "backend/app/services/agent_kernel/capability_policy.py": "acf4a2ecd27e8c010f805d7db8fc64535e5cdda8e8781fa6f2860adc5299c7ea",
+        "backend/app/services/agent_composed_read_completion.py": "c4a56225838b82027a9e7a8b88037eac82c8a719a127fb1f468901b31e406ff6",
+        "backend/app/services/agent_executor.py": "57ff4821985b219d14a72b3c9f8b4b35c13b3692fc6bd793e92bd961c33ee447"
+      },
+      "health_status": 200,
+      "health": {
+        "status": "healthy"
+      }
+    },
+    "synthetic_scope_probe": {
+      "synthetic_scope_probe": "PASS",
+      "sha": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae",
+      "cycling_expected_count": 2,
+      "owned_local_date": "2026-10-12",
+      "database_rows_read": 0,
+      "real_model_calls": 0,
+      "real_account_acceptance": false
+    }
+  },
+  "native": {
+    "version": "1.3.5",
+    "build": "280",
+    "build_id": "20261012-rides-session-82fd8d086-280",
+    "artifact_review": {
+      "verdict": "GO",
+      "sha": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae",
+      "ipa_sha256": "47090ad8772a13b46ed3469fc8c57bdf65d72d937272bd1bb235ddba7241908a",
+      "metadata": {
+        "bundle": "life.executor.health",
+        "version": "1.3.5",
+        "build": "280",
+        "title": "小巴健康",
+        "runtime": "1.3.5",
+        "channel": "production",
+        "device_count": 1,
+        "supports_ipad": true
+      },
+      "profile_expiration_utc": "2027-04-24T13:45:11Z",
+      "profile_currently_valid": true,
+      "device_family": [
+        1,
+        2
+      ],
+      "dual_ipad_orientation_keys_equal": true,
+      "actual_codesign_strict_verify": true,
+      "source_clean": true,
+      "registered_devices_only": true,
+      "no_upload": true,
+      "device_installation_tested": false
+    },
+    "simulator_release": {
+      "source_sha": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae",
+      "build": "280",
+      "install_metadata_verified": true,
+      "test_exit_code": 0,
+      "three_launches_and_rotations": true,
+      "ui_proof": {
+        "sha": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae",
+        "six_screenshot_attachments": true,
+        "portrait_and_landscape_attachments": 3,
+        "landscape_app_frame": [
+          1376,
+          1032
+        ],
+        "screenshots_visually_inspected": [
+          "8588864D-DCB0-4CF3-8C70-E28B7AE20901.png",
+          "B29D11C4-3A3C-4668-A891-6677264D0525.png"
+        ],
+        "three_launches_ui_pass": true,
+        "real_device_verified": false,
+        "note": "PNG stored pixels all 2064x2752; orientation verified from actual XCUITest frames and rendered screenshots, not raw dimensions."
+      }
+    },
+    "public_readback": {
+      "sha": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae",
+      "public_resources_http": {
+        "install.html": 200,
+        "manifest.plist": 200,
+        "qr.png": 200,
+        "app.ipa": 200
+      },
+      "ipa_sha256": "47090ad8772a13b46ed3469fc8c57bdf65d72d937272bd1bb235ddba7241908a",
+      "public_full_download_digest_verified": true,
+      "manifest_binding_verified": true,
+      "install_page": "https://health.executor.life/mobile-install/ios/20261012-rides-session-82fd8d086-280/install.html"
+    },
+    "latest_alias_preserved": true,
+    "registered_devices_only": true
+  },
+  "ota": {
+    "sha": "82fd8d086f4a1e9d9383950a1e49b9e69c488fae",
+    "native_source": "incompatible",
+    "reason": "native or unknown mobile input changed",
+    "vendor_called": false,
+    "claim_consumed": false
+  },
+  "real_model_evaluation": {
+    "waived_by_user": true,
+    "confirmed": false,
+    "actual_calls": 0,
+    "temporary_sha_waiver_cleared": true
+  },
+  "gates": {
+    "G3": "PASS",
+    "G4": "GO",
+    "G5": "PASS",
+    "G6": "PENDING_REAL_ACCOUNT_ACCEPTANCE"
+  },
+  "unverified": [
+    "anchor account saved workout availability and actual two-event identity",
+    "real model answer and latency",
+    "registered device installation and physical camera",
+    "Garmin live synchronization"
+  ],
+  "rollback_reference": {
+    "backend_previous_sha": "04d2724de89a4e90da42a5b2e111c87a878365f7",
+    "previous_native_build": "279"
+  },
+  "release_retries": 0
+}

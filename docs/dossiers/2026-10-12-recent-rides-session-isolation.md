@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | shipping |
-| 当前阶段 | G5：完整 CI 等待中，尚未部署或发布 |
+| 当前阶段 | G6：后端与 280 安装包已发布；真实账号业务验收待确认 |
 
 Primary controller：health-harness-orchestrator；overlay：safety-gate。真实模型评测按用户要求取消。
 
@@ -23,7 +23,7 @@ Primary controller：health-harness-orchestrator；overlay：safety-gate。真�
 
 ## G3 证据
 
-裁决：绿。最终运行时代码 PostgreSQL 640 PASS；完整 Mobile 347 suites / 3547 PASS、1 SKIP；TypeScript、System Map 与离线合成门通过。实际 Axios/API/cache 52 PASS 正常退出；固定 SHA 项目 CI-mode 与远端完整 CI 仍属发布准入，尚未通过。
+裁决：绿。最终运行时代码 PostgreSQL 640 PASS；完整 Mobile 347 suites / 3547 PASS、1 SKIP；TypeScript、System Map 与离线合成门通过。实际 Axios/API/cache 52 PASS 正常退出。固定 82fd8d086f4a1e9d9383950a1e49b9e69c488fae 的本机项目 CI-mode 3595 PASS、22 SKIP、84 subtests PASS、exit 0；远端完整恢复 CI 38206912576 与文档 push CI 38206911542 均成功。
 
 初始 PostgreSQL 5 FAIL / 50 PASS；reader 新增测试进一步 9 FAIL / 50 PASS。第一轮完整链路发现四个已查询但保存回复未带数量的失败，保留失败并修复。邻近 PostgreSQL 测试第一轮 634 PASS。Mobile API 初始 6 FAIL / 29 PASS，修复后 35 PASS；实际 Axios 排队窗口额外回归待验证。所有数据库测试为独立临时 PostgreSQL、合成用户数据，无线上个人数据读取或同步。
 
@@ -33,15 +33,25 @@ Primary controller：health-harness-orchestrator；overlay：safety-gate。真�
 
 ## G4 安全审查
 
-裁决：GO。固定运行时候选 f6caece330dcfc54f50cfc3bcc278e0a6be02765 独立应用 GO、ops 静态 GO，额外缓存回归 8 PASS，正常退出。发布前仍须对当前 tip 与包装器作精确绑定；静态 GO 不替代实时准入。
+裁决：GO。固定运行时候选 f6caece330dcfc54f50cfc3bcc278e0a6be02765 独立应用 GO、ops 静态 GO，额外缓存回归 8 PASS，正常退出。独立 reviewer 对最终 82fd8d0 的文档后继与四个精确包装器重新绑定 GO；运行时 tree 与 f6ca 相同。实际 280 IPA 的摘要、签名、原始回执、profile、双 iPad orientation keys 和精确来源独立复核 GO。静态审查之外，官方发布流程实时准入均通过。
 
 ## G5 发布健康
 
-尚未裁决。远端 f6ca 完整 CI 的 Dossier 一致性检查失败：本文件此前未使用可解析的状态表和 G1 裁决行。仅修正文档格式，保留原失败；文档后继必须主动运行完整 CI，不能仅用 docs-only 绿色替代运行时门禁。未执行部署、OTA 或安装包发布。
+裁决：PASS。精确 82fd8d0 可信后端发布 [38210061452](https://github.com/itsoso/health-llm-driven/actions/runs/38210061452) 成功；生产持久回执为 SUCCEEDED，HEAD 精确匹配且工作树干净，四个服务 active，公开健康接口 HTTP 200 / healthy，发布租约已释放。五个后端实现文件逐项摘要与来源匹配。旧前端制品 tree 未变化并经 canonical 活体绑定校验，旧 backend / OTA 历史回执与锁保留。
+
+1.3.5（280）按官方 local-qr 流程构建并一次性发布。公开 install.html / manifest.plist / qr.png / app.ipa 均 HTTP 200，整包下载摘要与独立验收 IPA 一致；manifest 绑定 build 280 与实际不可变目录，旧 latest 保留。安装页：[280 iPhone / iPad 安装包](https://health.executor.life/mobile-install/ios/20261012-rides-session-82fd8d086-280/install.html)。包只允许 provisioning profile 中已登记的设备，不代表所有 iPad 已可安装。
+
+当前精确源码经官方 OTA validate_source 检查，冻结 native baseline 不兼容；未调用 vendor 或消费 OTA claim，使用新原生包交付，未发 TestFlight。用户明确取消真实模型评测，actual model calls 为零且 confirmed=false。发布后已清除仅绑定本 SHA 的临时仓库豁免变量，读取确认该变量不存在。
+
+历史失败保留：f6ca 完整 CI 38206017342 的 Dossier 一致性检查失败，原因是此前缺可解析状态表和 G1 裁决；82fd 只修正文档格式并主动补跑完整 CI 38206912576。没有取消、重跑原失败或使用 docs-only 绿色代替运行时门禁。
 
 ## G6 上线验收
 
-待固定提交独立安全审查、项目 CI-mode、精确 main CI 和部署回执。未发布本次改动；前次 279 安装包不作为本次修复证据。实际 Garmin 数据同步、真实设备与真实模型表现未验证。
+生产部署源码的合成范围检查通过：截图原话允许 authenticated owner 的今天 cycling 查询，expected_count=2；类型/数量扩大、他人、否定及隐式同步拒绝，数据库读取与实际模型调用均为零。该探针只证明线上代码路径，不证明真实账号已保存两段骑行或青山湖 GPS 身份。
+
+同 SHA 的 Release 模拟器 build 280 实际安装 metadata 已核对；三次启动、横竖屏切换和密码输入框可操作检查通过。六个 XCUIScreen 附件保留，三次 landscape frame 为 1376×1032；实际一张横屏和一张竖屏截图已查看。PNG 存储尺寸带旋转信息，不用原始像素方向代替 UI frame 验收。真机相机、真实账号骑行记录、Garmin 实际同步和真实模型表现未验证，故 G6 不记为真实账号验收通过，状态仍为 shipping。
+
+完整交付证据：[发布摘要](../reviews/2026-10-12-recent-rides-session-release-summary.json)。后端回退参考为 04d2724de89a4e90da42a5b2e111c87a878365f7，旧 279 安装包保留；任何回退仍须官方准入，不能重放本次发布。
 
 ### 首轮独立审查 NO-GO 与修复
 
