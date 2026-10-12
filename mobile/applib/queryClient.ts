@@ -12,6 +12,9 @@ export const queryClient = new QueryClient({
 subscribeAuthSessionChange(() => {
   // clear() alone leaves the last successful result in mounted observers.
   for (const query of queryClient.getQueryCache().getAll()) {
+    // A cancelled fetch's finally can schedule GC after clear() destroyed it.
+    // Retired queries expire immediately; the new session keeps its defaults.
+    query.gcTime = 0;
     void query.cancel({ revert: false, silent: true });
     query.setState({ data: undefined, error: null, dataUpdatedAt: 0,
       errorUpdatedAt: 0, status: 'pending', fetchStatus: 'idle' });

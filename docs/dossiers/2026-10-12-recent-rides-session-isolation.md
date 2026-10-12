@@ -31,3 +31,11 @@ PASS：修复已有运动读取与登录会话隔离。截图原话为“分析�
 两项独立合成 RED：冷启动绕过持久 logout tombstone，残留钥匙串凭证仍可发送；骑行背景/例句中的公开知识请求被误拦。未 push / deploy。对应本机 f117 CI-mode 因候选被否决于 508.95 秒终止，exit -15，不能作为通过证据。
 
 修复复用 auth.ts 的串行存储队列与持久退出屏障，API 仅读已存凭证、不安装 session 或写回共享存储；业务请求屏障读取失败关闭，显式新登录可无残留凭证进行。全句 recent 身份失配保留严格拒绝；未授权近期引用只拦个人工具，公开知识/城市环境仍走其原有权限。退出屏障新增真实 Axios 初始 2 FAIL / 7 PASS，修后 API/实际传输/auth 112 PASS；公开知识回归初始 1 FAIL / 63 PASS，修复后完整 PostgreSQL 待复验。f117 全 Mobile 347 suites / 3542 PASS、1 SKIP 已通过，但不代替修复候选的新全量验证与全新 G4。
+
+### 81b8 G4 GO 与取消查询计时器修复
+
+全新独立 reviewer 对固定 81b8 完整 diff 裁定应用 GO 与 ops 静态 GO；独立 PostgreSQL 640 PASS，TypeScript exit 0。其初次 archive 缺 ignored Pi 依赖导致 9 FAIL，补齐仅本机既有依赖后重跑通过，两轮均保留，未以依赖故障冒充代码通过。父全 Mobile 347 suites / 3546 PASS、1 SKIP，TypeScript PASS。
+
+纠正此前“专项正常退出”：API/auth/cache 组合断言通过但实际进程仍存活，不能宣称无 open handles。定位 React Query 在取消 fetch 的 finally 中重新给已移除 query 安排一日 GC 计时器，额外真实 RED 1 FAIL / 6 PASS。退休 query 的 gcTime 归零，不改变新会话默认缓存生命周期；修后 52 项实际 Axios/API/cache 测试与 TypeScript 均真实正常退出 0。调试只发现短期零毫秒退休 GC，不再有一日遗留计时器。81b8 本机 CI-mode 因候选含这项后续修复于 332.95 秒终止、exit -15，保留但不接受。
+
+后续提交需固定新 SHA 重审这项缓存生命周期补丁和四个发布 wrapper，重跑完整 Mobile/CI-mode/精确远端 CI；不得把 81b8 GO 或旧包结果冒充最终发布证据。

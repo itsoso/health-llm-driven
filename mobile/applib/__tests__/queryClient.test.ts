@@ -67,4 +67,23 @@ describe('lib/queryClient', () => {
     await expect(retireLegacyQueryCache()).rejects.toThrow('synthetic-storage-error');
     expect(AsyncStorage.getItem).not.toHaveBeenCalled();
   });
+
+  it('does not retain a day-long GC timer when an old fetch settles after session removal', async () => {
+    jest.useFakeTimers();
+    try {
+      setRuntimeAuthToken('synthetic-a');
+      let finish!: (data: unknown) => void;
+      const pending = queryClient.fetchQuery({ queryKey: ['retired-fetch'],
+        queryFn: () => new Promise(resolve => { finish = resolve; }) });
+      const rejected = expect(pending).rejects.toBeDefined();
+      setRuntimeAuthToken('synthetic-b');
+      finish({ owner: 'synthetic-a' });
+      await rejected;
+      await Promise.resolve();
+      jest.advanceTimersByTime(0);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
