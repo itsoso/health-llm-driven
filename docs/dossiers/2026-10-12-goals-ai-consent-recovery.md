@@ -4,8 +4,8 @@
 |---|---|
 | slug | goals-ai-consent-recovery |
 | 日期 | 2026-10-12 |
-| 当前阶段 | G4 固定候选审查 |
-| 状态 | building |
+| 当前阶段 | G6 PASS，实现已发布 |
+| 状态 | shipped |
 | 负责 | root |
 
 ## G1 准入
@@ -36,8 +36,14 @@
 - goalsConsentFlow 使用实际 Axios interceptors、consent 与 goals service，仅替换 transport adapter；证明授权失败/拒绝时零生成请求、瞬时读失败恢复后仅一次生成、服务器撤销授权时清除缓存且不自动重放。
 - 初次独立安全审查 NO-GO：过宽 isAIConsentError 会吞服务端 403，造成无反馈。已按上项修复，并补页面与 transport 回归；全新 reviewer goals_consent_rereview 复审 GO，独立运行三个测试文件 22/22 通过。这是本地增量预审，不是固定 SHA 发布裁决。
 - TypeScript：`npx tsc --noEmit` 通过。
-- System Map 官方检查通过。未运行真实模型、生产授权操作或目标生成；没有后端/OTA 发布证据。
+- System Map 官方检查通过。未运行真实模型、生产授权操作或目标生成；本地交接时没有发布证据，最终交付见下方记录；没有OTA操作。
 
 ## 接力
 
 由统一 owner 固定候选、完成独立 SHA 审查与 CI，按发布边界交付。发布后以用户实际操作验证这次授权读取能否成功；若仍失败，按新的错误分类定位会话、网络或服务端问题，不放宽 consent。
+
+## 统一 owner 最终交付
+
+实现已纳入55dad9b3c后端/Web发布及e580383da原生1.3.5(278)。固定候选独立G4、精确绿色CI、本地CI-mode、实际签名/来源/公开完整IPA摘要及模拟器三次启动横屏验证通过；详细SHA、回执、保留失败和未覆盖项见[统一发布dossier](2026-10-12-daily-draft-admin-model.md)。原本地预审与接力边界记录保留为历史，不是当前未发布声明。没有OTA或TestFlight操作。
+
+安装页：[1.3.5(278)](https://health.executor.life/mobile-install/ios/20261012-admin-model-e580383da-278/install.html)。登录后原生业务路径、真实用户截图原始故障与真机安装/硬件未验证；组件、真实路由或Axios transport测试不能冒充这些验收。发布实现不保证截图原始网络/会话原因已经确定。

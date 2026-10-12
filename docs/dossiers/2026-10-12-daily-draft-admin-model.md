@@ -4,8 +4,8 @@
 |---|---|
 | slug | daily-draft-admin-model |
 | 日期 | 2026-10-12 |
-| 当前阶段 | G4 固定候选审查 |
-| 状态 | building |
+| 当前阶段 | G6 PASS，已发布 |
+| 状态 | shipped |
 | 负责 | root |
 
 ## G1/G2
@@ -18,11 +18,11 @@
 
 ## G4
 
-工作树独立安全预审无阻断，补selftest在provider前拒绝及管理员降权后所有consumer测试；待固定候选独立GO。
+补selftest在provider前拒绝及管理员降权后所有consumer测试。360/42/55固定候选及e580原生增量均取得独立GO；55独立468项后端、71项包摘要测试通过，e580独立47项配置测试、类型检查及实际IPA签名/双方向键审核通过。原NO-GO与CI失败仍保留。
 
 ## G5/G6
 
-尚未部署本批修复。拍照路由等待修复a75另已部署，不能冒充此新批次。整合另一session已明确交接的菜单返回修复，见其dossier；保留无关benchmark实验。实际Mobile界面需候选模拟器/分发证据；当前OTA原生基线与iPad候选不兼容，不绕闸。
+本批Backend/Web实际发布SHA为55dad9b3c，原生包为e580383da，后端与Web代码树在两版完全相同，独立兼容性审查通过。拍照路由等待修复a75已包含在55，但实际拍照延时仍未验证。菜单返回与AI consent只读恢复的明确交接已整合，无关benchmark实验保留。OTA原生基线不兼容，按原生扫码安装方式交付。
 
 ## CI 断点
 
@@ -43,3 +43,13 @@
 私有 1.3.5(278) IPA 来源55、独立签名/摘要/iPad配置检查通过，尚未分发。首轮模拟器横屏断言通过，但补采截图及后续启动出现旋转不生效，全部失败与原 xcresult 保留，不豁免。构建依赖 ExpoAppDelegateSubscriberManager 的运行时读取 `UISupportedInterfaceOrientations~pad`，缺失时退回通用 portrait；UIKit标准键 `~ipad` 静态正确不能证明运行时支持。新增4项配置回归先失败，修复后47项通过、Mobile tsc exit0；仅iPad增加与标准键相同四方向的Expo兼容键，所有非iPad variant清除两键并保持通用portrait。不改依赖、权限、签名或健康数据授权。
 
 该原生修复需要新候选精确 CI、独立制品审核及首轮/重新启动旋转验证后重新打包；不能通过OTA。后端与Web树若同55，沿用各自实际55成功回执，不重复部署。真实注册设备安装、相机与登录后原生业务UI未验证；不能以合成组件/路由回归或登录页截图冒充这些验收。
+
+## 最终发布与验证
+
+- Backend：55dad9b3c，精确CI 38190518789、部署38191974216成功；生产对应clean SHA、四服务active、公开health200 healthy、业务lease不存在。
+- Web：同55，独立publication `feb120034c964e9a87a00f0e1ccebdaf` 为FRONTEND_SUCCEEDED；完整frontend tree `58e56fbb0df1716ca237e93f4c84922fc3a61a38`，助手/隐私/连接页面公开回读200。
+- Native：e580383da，精确CI38193333474成功，fresh本地CI-mode3595 passed、22 skipped、84 subtests passed；1.3.5(278)实际签名与来源回执通过独立审核，~pad/~ipad同4方向、通用portrait、family[1,2]、fullscreenfalse。连续3次真实模拟器app launch均能旋转到1376×1032，密码控件可操作，6张完整屏截图保留；不将它当登录后业务流程或真机验收。
+- 分发首次在legacy latest目录保护预检停止；独立只读确认目标目录未创建、无远端上传副作用后，受审继续使用同ID/同IPA与官方--no-latest，在独立clean checkout执行。原失败本地目录、日志、回执均保留，原latest inode5133934未改变。
+- 公开IPA完整下载摘要与受审制品一致：`dab0af9989cb1a41e4b28ef94225023a3d988b5b909211917545bba64f0bc916`。安装页、manifest、IPA、二维码均200。没有OTA/vendor update或TestFlight上传。
+
+安装页：[小巴健康1.3.5(278)](https://health.executor.life/mobile-install/ios/20261012-admin-model-e580383da-278/install.html)。Ad-hoc仅已登记设备可安装；实际目标设备登记/安装、相机硬件、登录后原生业务UI及优化后真实拍照延时未验证。默认模拟器及未覆盖项风险按用户AGENTS选择保留；不得宣称Apple真机测试豁免。完成范围为实现、受审发布与上述验证，真实用户验收仍待使用反馈。

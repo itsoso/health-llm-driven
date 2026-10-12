@@ -1,6 +1,6 @@
 # Feature Spec: 日常安排草稿与管理员模型控制
 
-> Status: implemented, release pending
+> Status: implemented and released; device acceptance pending
 > Owner: root
 > Updated: 2026-10-12
 

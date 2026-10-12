@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "status": "delivered_with_device_acceptance_unverified",
+  "review": "independent_scoped_G6_GO",
+  "backend": {
+    "sha": "55dad9b3c20014c88b5a16d0ec589e08138abe64",
+    "ci_run_id": 38190518789,
+    "ci_status": "success",
+    "deploy_run_id": 38191974216,
+    "receipt_state": "SUCCEEDED",
+    "clean": true,
+    "services_active": [
+      "health-backend",
+      "celery-worker",
+      "celery-beat",
+      "health-frontend"
+    ],
+    "public_health_http": 200
+  },
+  "web": {
+    "publisher_sha": "55dad9b3c20014c88b5a16d0ec589e08138abe64",
+    "production_sha": "55dad9b3c20014c88b5a16d0ec589e08138abe64",
+    "frontend_tree": "58e56fbb0df1716ca237e93f4c84922fc3a61a38",
+    "operation_id": "feb120034c964e9a87a00f0e1ccebdaf",
+    "receipt_state": "FRONTEND_SUCCEEDED",
+    "artifact_digest": "05c1679c9f85a389476614da9e1110589d1fd1416ee21617a1a0a61d9a4aee41",
+    "public_pages_http": {
+      "/privacy": 200,
+      "/connect/health": 200,
+      "/ai-assistant": 200
+    }
+  },
+  "native": {
+    "sha": "e580383dae3ad991079072426a814af5647f13c6",
+    "ci_run_id": 38193333474,
+    "ci_status": "success",
+    "version": "1.3.5",
+    "build": "278",
+    "ipa_sha256": "dab0af9989cb1a41e4b28ef94225023a3d988b5b909211917545bba64f0bc916",
+    "delivery": "signed_local_qr",
+    "publish_id": "20261012-admin-model-e580383da-278",
+    "install_page": "https://health.executor.life/mobile-install/ios/20261012-admin-model-e580383da-278/install.html",
+    "public_full_download_digest_verified": true,
+    "public_resources_http": {
+      "install.html": 200,
+      "manifest.plist": 200,
+      "app.ipa": 200,
+      "qr.png": 200
+    },
+    "supports_ipad": true,
+    "runtime_and_standard_ipad_orientation_masks_match": true,
+    "simulator_app_launches_passed": 3,
+    "simulator_password_controls_hittable": true,
+    "screenshots": 6,
+    "registered_devices_only": true,
+    "legacy_latest_preserved": true
+  },
+  "compatibility": {
+    "native_successor_backend_tree_equals_deployed": true,
+    "native_successor_frontend_tree_equals_published": true,
+    "independent_review": "GO"
+  },
+  "local_ci_mode": {
+    "sha": "e580383dae3ad991079072426a814af5647f13c6",
+    "passed": 3595,
+    "skipped": 22,
+    "subtests_passed": 84,
+    "exit_code": 0
+  },
+  "preserved_failures": [
+    {
+      "stage": "full_ci",
+      "sha": "360bf9f6a7d3597bf12679925b8e7b002b892db8",
+      "run_id": 38186267645
+    },
+    {
+      "stage": "full_ci",
+      "sha": "42f76adb09294e4322159b5795e4c39822b59479",
+      "run_id": 38187042400
+    },
+    {
+      "stage": "local_ci_sync_barrier",
+      "sha": "42f76adb09294e4322159b5795e4c39822b59479"
+    },
+    {
+      "stage": "package_atime_identity",
+      "sha": "42f76adb09294e4322159b5795e4c39822b59479"
+    },
+    {
+      "stage": "native_rotation_relaunch",
+      "sha": "55dad9b3c20014c88b5a16d0ec589e08138abe64"
+    },
+    {
+      "stage": "local_qr_legacy_latest_preflight",
+      "no_remote_side_effect": true,
+      "independent_continuation_review": "GO",
+      "same_publish_id": true
+    }
+  ],
+  "not_performed": [
+    "production_model_evaluation",
+    "OTA_publish",
+    "TestFlight_upload"
+  ],
+  "unverified": [
+    "registered_device_installation",
+    "camera_hardware",
+    "logged_in_native_business_UI",
+    "post_fix_natural_meal_photo_latency"
+  ],
+  "evidence_index": "docs/reviews/2026-10-12-daily-draft-admin-model-release-receipt.json"
+}
