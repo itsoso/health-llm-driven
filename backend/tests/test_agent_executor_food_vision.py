@@ -1766,3 +1766,16 @@ def test_exercise_photo_purpose_is_not_meal_nutrition(message):
 @pytest.mark.parametrize('message', ['骑行后记录午餐', '运动后吃了鸡蛋', '拍照记餐', '记录这餐', '分析早餐营养'])
 def test_explicit_food_subject_keeps_structured_food_pipeline(message):
     assert not AgentExecutor._is_exercise_photo_context(message)
+
+@pytest.mark.parametrize('message', ['记录青山湖骑行，不是食物', '记录青山湖骑行，没吃东西', '记录青山湖骑行，旁边的人在喝彩', '运动后没吃鸡蛋', '例句：“运动后吃了鸡蛋”'])
+def test_negative_or_incidental_food_words_cannot_turn_riding_into_meals(db, tmp_path, monkeypatch, message):
+    executor, _ = _food_photo_executor(db, tmp_path, monkeypatch)
+    result = executor._capture_contextual_meal_photos(message, _food_result(), image_indexes=[0])
+    assert result is None
+    assert db.query(DietRecord).count() == db.query(DietPhotoDraft).count() == db.query(DietPhotoAsset).count() == 0
+
+
+def test_exercise_background_keeps_supplement_photo_preview_preprocessing(db, monkeypatch):
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, '_should_send_raw_images_to_primary_model', lambda _: True)
+    assert executor._should_preprocess_attached_images(1, '运动后记录这瓶补剂')

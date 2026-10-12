@@ -71,6 +71,12 @@ Primary controller：health-harness-orchestrator；overlay：safety-gate。真�
 
 用户原话“骑行就不要记录为用餐了”，截图为风景照片加“记录青山湖骑行”，进度却显示识别餐食。此次继续修复同一运动记录闭环，退回实现与验证；旧 82fd / 280 发布保持有效，不作为新候选证据。
 
-复现根因：通用图像预处理无条件先调用食物识别；contextual capture 将任意 write 意图升级为 EXPLICIT_CAPTURE。明确运动 caption 可被食物识别误判及旧相机餐食上下文转为饮食候选。新增运动附件排除只撤销饮食权限，不授予运动写入；保留图片原始通用附件，运动类型、时长仍走既有写入/澄清边界，不从风景照片猜距离、GPS 或耗时。明确食物/餐次/摄入对象保留既有饮食管线。
+复现根因：通用图像预处理无条件先调用食物识别；contextual capture 将任意 write 意图升级为 EXPLICIT_CAPTURE。明确运动 caption 可被食物识别误判及旧相机餐食上下文转为饮食候选。新增运动附件排除只撤销饮食权限，不授予运动写入；保留图片原始通用附件，运动类型、时长仍走既有写入/澄清边界，不从风景照片猜距离、GPS 或耗时。常规餐食与完整肯定的运动后摄入/餐次指令保留既有饮食管线；复杂混合、否定或转述不据此自动记餐。
 
 四项 PostgreSQL RED 真实复现：普通和旧餐食 metadata 两种实际 stream 都调用 food recognition；直接 capture 可错误自动记餐；普通 vision 优先调用 food preprocessor。修后四项 PostgreSQL PASS，实际 stream 无 diet_photo 进度，旧餐食 instruction 被剥除，用户图片仍保存为通用附件，diet create/manage 均在 HTTP 前拒绝。全部合成照片/用户，无真实模型和线上个人数据读取。初始测试未设置专用 DB 的连接失败以及 SQLite 被 db fixture 拒绝，均为环境失败，不冒充 RED；后续使用独立临时 PostgreSQL 并正常关闭。完整邻近 PostgreSQL 回归、独立 G4 与新候选 CI/部署尚待完成。
+
+### 运动照片首轮独立审查否决与收紧
+
+76b0a462c 本地候选独立 NO-GO，未 push / deploy。三个新增真实 PostgreSQL RED：“记录青山湖骑行，不是食物”“记录青山湖骑行，没吃东西”“记录青山湖骑行，旁边的人在喝彩”均被 raw 食物词解除运动排除，并真实生成饮食及图片资产。独立证据 /tmp/reva-riding-safety-negative-pg.log 保留。
+
+收紧例外为完整、肯定的运动后摄入/餐次语法，否定、转述、其他动作和多子句不解除排除；任意 write 不再一律成为 meal EXPLICIT_CAPTURE，需 diet domain。仅撤销饮食权限；补剂/医疗报告预处理入口仍走其原有规则。新候选等待新鲜复审。第一轮邻近 PostgreSQL 272 项断言通过但 runner 在临时 PG fast-stop 超时退出 1，不能当 runner 正常完成；该旧候选也被否决。第二次测试因旧测试端口尚释放中而在 startup 失败，未跑断言；另用全新独立端口重新验证，不复用前次 DB。

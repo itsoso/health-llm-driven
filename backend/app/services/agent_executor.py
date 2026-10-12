@@ -22542,7 +22542,9 @@ class AgentExecutor:
             # force-tool grammar: complex creative prompts keep the general
             # toolset, but must still never become diet candidates first.
             return False
-        if self._is_exercise_photo_context(message):
+        if (self._is_exercise_photo_context(message)
+                and intent.domain not in {"supplement", "medication", "clinical_context"}
+                and not _looks_like_medical_report_image_context(message)):
             return not self._should_send_raw_images_to_primary_model(user_id)
         return (
             not self._should_send_raw_images_to_primary_model(user_id)
@@ -24726,8 +24728,10 @@ class AgentExecutor:
         intent = classify_agent_utterance(user_message, reference_now=reference_now)
         if intent.primary in {"read", "advice"}:
             semantic_intent = MealPhotoSemanticIntent.ANALYZE_ONLY
-        elif intent.is_write:
+        elif intent.is_write and intent.domain == "diet":
             semantic_intent = MealPhotoSemanticIntent.EXPLICIT_CAPTURE
+        elif intent.is_write:
+            semantic_intent = MealPhotoSemanticIntent.ANALYZE_ONLY
         else:
             # A user-submitted image with no analysis/question intent is an
             # implicit capture candidate. The policy still requires meal time,
@@ -25231,10 +25235,22 @@ class AgentExecutor:
             "骑行", "骑车", "自行车", "跑步", "散步", "步行", "游泳", "健身", "锻炼", "运动",
             "cycling", "running", "workout",
         ))
-        food_subject = any(word in text for word in (
-            "早餐", "午餐", "晚餐", "加餐", "这餐", "这顿", "餐食", "食物", "饮食", "吃", "喝",
+        if not exercise:
+            return False
+        # Only a complete affirmative meal/intake purpose can override the
+        # exercise exclusion. Negated food words or incidental 喝彩 cannot.
+        compact = "".join(text.split()).strip("。.!！")
+        meal_after_exercise = re.fullmatch(
+            r"(?:今天|刚才)?(?:骑行|骑车|跑步|运动|锻炼|游泳)(?:结束)?后"
+            r"(?:我)?(?:吃了|喝了|(?:请|帮我|请帮我)?记录(?:这餐|早餐|午餐|晚餐|加餐))"
+            r"[^，,。.!！?？;；\n]*",
+            compact,
+        )
+        unsafe_context = any(word in compact for word in (
+            "不", "没", "未", "别", "不要", "如果", "假如", "例句", "他说", "她说", "朋友",
+            "并", "然后", "但是", "而是", "“", "”", '"', "‘", "’",
         ))
-        return exercise and not food_subject
+        return not (meal_after_exercise and not unsafe_context)
 
     @staticmethod
     def _looks_like_food_photo_context(user_message: str) -> bool:
