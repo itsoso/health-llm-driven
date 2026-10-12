@@ -250,6 +250,29 @@ describe('app.config app links', () => {
     expect(config.ios?.infoPlist?.['UISupportedInterfaceOrientations~ipad']).toBeUndefined();
   });
 
+  it('gives Expo the same iPad runtime orientation mask as UIKit', () => {
+    const config = configForVariant('production', { REVA_IPAD_ENABLED: '1' });
+    expect(config.ios.infoPlist['UISupportedInterfaceOrientations~pad']).toEqual([
+      'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+      'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight',
+    ]);
+    expect(config.ios.infoPlist['UISupportedInterfaceOrientations~pad']).toEqual(
+      config.ios.infoPlist['UISupportedInterfaceOrientations~ipad'],
+    );
+  });
+
+  it.each(['production', 'preview', 'development'])('removes inherited iPad masks from the iPhone variant: %s', (variant) => {
+    const config = configForVariant(variant, {}, {
+      ios: { infoPlist: {
+        'UISupportedInterfaceOrientations~ipad': ['UIInterfaceOrientationLandscapeLeft'],
+        'UISupportedInterfaceOrientations~pad': ['UIInterfaceOrientationLandscapeRight'],
+      } },
+    });
+    expect(config.ios.infoPlist['UISupportedInterfaceOrientations~ipad']).toBeUndefined();
+    expect(config.ios.infoPlist['UISupportedInterfaceOrientations~pad']).toBeUndefined();
+    expect(config.ios.infoPlist.UISupportedInterfaceOrientations).toEqual(['UIInterfaceOrientationPortrait']);
+  });
+
   it('excludes unverified wearable, glasses, Siri, and background capabilities by default', () => {
     const config = configForVariant('production');
     const plugins = configuredPluginNames(config);

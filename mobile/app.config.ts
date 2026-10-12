@@ -22,6 +22,10 @@ const INCLUDE_ROKID = process.env.ROKID_IOS_SDK_ENABLED === '1';
 const INCLUDE_WATCH = process.env.INCLUDE_WATCH_APP === '1';
 const INCLUDE_SIRI = process.env.INCLUDE_SIRI_INTENTS === '1';
 const IPAD_ENABLED = process.env.REVA_IPAD_ENABLED === '1';
+const IPAD_ORIENTATIONS = [
+  'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+  'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight',
+];
 const IOS_BUILD_NUMBER = process.env.REVA_IOS_BUILD_NUMBER?.trim();
 const LOCAL_UPDATES_CHANNEL = process.env.REVA_LOCAL_UPDATES_CHANNEL;
 
@@ -145,6 +149,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const basePlugins = withoutOptionalNativePlugins(config.plugins);
   const baseInfoPlist = removeKeys((config.ios?.infoPlist ?? {}) as Record<string, any>, [
     'UISupportedInterfaceOrientations~ipad',
+    'UISupportedInterfaceOrientations~pad',
     'UIBackgroundModes',
     'NSLocationAlwaysUsageDescription',
     'NSLocationAlwaysAndWhenInUseUsageDescription',
@@ -222,10 +227,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       CFBundleDisplayName: displayName,
       UISupportedInterfaceOrientations: ['UIInterfaceOrientationPortrait'],
       ...(IPAD_ENABLED ? {
-        'UISupportedInterfaceOrientations~ipad': [
-          'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
-          'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight',
-        ],
+        'UISupportedInterfaceOrientations~ipad': IPAD_ORIENTATIONS,
+        // Expo's current delegate reads ~pad; UIKit reads the standard ~ipad key.
+        'UISupportedInterfaceOrientations~pad': IPAD_ORIENTATIONS,
         UIRequiresFullScreen: false,
       } : {}),
       CFBundleURLTypes: [

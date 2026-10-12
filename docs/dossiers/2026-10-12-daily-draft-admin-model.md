@@ -35,3 +35,11 @@
 本地CI-mode首轮同步点未在45秒内到达、之后实际出现；原测试单独重跑7.86秒通过，保留原失败且不放宽超时。串行完整闸另发现部署包摘要比较包含atime，读取本身可能被误判变化，而os.stat_result的秒级tuple比较可能漏纳秒修改。两个新回归先RED（2 failed），改为比较inode/dev、mode、uid/gid、nlink、size与mtime_ns/ctime_ns，排除只读访问时间；71项Neo部署负向/隔离检查通过，保留内容、替换、权限、链接和大小边界。不启用或部署Neo桥接。
 
 运维包装独立审查补强原锁不可重建、撤权/私钥删除前的完整历史校验与安装executor pin，以及当前live内容校验；封存且已验证的非活动旧备份仍按既定治理跳过正文。全部NO-GO、原失败回执与日志保留；第四次全新静态审查GO，外部操作还须最新精确CI/本地闸通过。
+
+## 原生验收断点
+
+55dad9b3c 完整 CI 38190518789 绿色，本地 CI-mode 3595 passed、22 skipped、84 subtests passed；后端部署 38191974216 成功，生产 clean SHA 55、四服务 active、公开 health 200 healthy。Web 使用独立 frontend publication，不能把后端成功当 Web 生效。
+
+私有 1.3.5(278) IPA 来源55、独立签名/摘要/iPad配置检查通过，尚未分发。首轮模拟器横屏断言通过，但补采截图及后续启动出现旋转不生效，全部失败与原 xcresult 保留，不豁免。构建依赖 ExpoAppDelegateSubscriberManager 的运行时读取 `UISupportedInterfaceOrientations~pad`，缺失时退回通用 portrait；UIKit标准键 `~ipad` 静态正确不能证明运行时支持。新增4项配置回归先失败，修复后47项通过、Mobile tsc exit0；仅iPad增加与标准键相同四方向的Expo兼容键，所有非iPad variant清除两键并保持通用portrait。不改依赖、权限、签名或健康数据授权。
+
+该原生修复需要新候选精确 CI、独立制品审核及首轮/重新启动旋转验证后重新打包；不能通过OTA。后端与Web树若同55，沿用各自实际55成功回执，不重复部署。真实注册设备安装、相机与登录后原生业务UI未验证；不能以合成组件/路由回归或登录页截图冒充这些验收。
