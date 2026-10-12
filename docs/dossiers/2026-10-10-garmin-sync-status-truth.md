@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | G3 本地验证与 G4 文件预审 |
+| 状态 | shipped_with_device_acceptance_unverified |
+| 当前阶段 | G6 后端、迁移、公开包与模拟器验收已完成；真实账号和设备未验证 |
 
 primary controller: health-harness-orchestrator；overlay: safety-gate、add-managed-migration。
 
@@ -60,3 +60,19 @@ SQLite 镜像仅保留兼容性；生产时区语义由 PostgreSQL 验证。接�
 RED：旧列的真实 PostgreSQL 八小时偏移已复现；两方言新迁移行为测试在实现前失败。GREEN：最终临时 PostgreSQL 47 PASS，涵盖旧值/空值、重复应用、已正确列、UTC/上海两种连接时区、真实 credential-status 接口读数、新 aware 写入与 down/forward 往返；临时服务器正常停止。Mobile 连接页/service 17 PASS、设置页 50 PASS，TypeScript exit 0、System Map 官方检查 PASS。未运行真实模型评测。
 
 本节替代此前“无 schema 变化”的本次增量说明；未提交、固定 SHA G4、完整 CI、后端迁移与新移动包发布仍待完成。已发布 1.3.5（278）只包含此前模型权限等改动，不能作为本次 Garmin 交付证据。模拟器未登录真实 Garmin，个人数据补齐和实际设备安装仍未验证。
+
+
+## 2026-10-12 最终交付回执
+
+裁决：独立 scoped G6 GO。Runtime 候选 `04d2724de89a4e90da42a5b2e111c87a878365f7` 已合入 main，精确完整 CI `38197894833` 成功；干净候选本地 CI-mode 3595 PASS、22 SKIP、84 子测试 PASS。固定 SHA 独立 G4 另行复跑 PostgreSQL 47 PASS、Mobile 67 PASS、TypeScript PASS。
+
+后端 trusted run `38199473804` 成功，生产持久回执 `SUCCEEDED`、干净 revision 等于候选，三个后端服务及前端均 active，公开健康检查 200 healthy，无业务 lease。只读数据库元数据确认列已为 `timestamp with time zone`，新 managed migration ledger checksum 与候选源码一致，数据库与主机 UTC 时钟差为零；未读取个人数据、未触发真实同步，不把这项证据称作该用户的数据已补齐。
+
+移动端 1.3.5（279）签名包已按官方 `mobile-local-qr.sh --profile ipad-adhoc --ipa ... --no-latest` 发布至独立不可变地址：
+[安装 279](https://health.executor.life/mobile-install/ios/20261012-garmin-04d2724de-279/install.html)。签名、profile、source SHA、生产 channel/runtime 与实际 iPad 支持通过独立制品审查；完整公开 IPA 下载 SHA256 为 `f238477b159b8cc3bd65498a063a2817f9ade7263cf7fe2f047cd5fe9d4e60da`，与审查包一致。四项公开资源均为 200，manifest 绑定本次包、bundle 和 build 279；旧 278 与 legacy latest 保持不变。
+
+官方 OTA 源码边界检查判定当前原生基线不兼容，未调用 vendor、未消费 OTA claim；没有发 OTA 或 TestFlight。两个本任务 iPad 模拟器分别完成同候选三次启动、真实横屏 1376×1032 与密码控件验收，共保留十二张完整截图。模拟器使用同 SHA 的 simulator Release 构建，不能冒充 device IPA 真机验收。
+
+保留的失败及收敛：首轮本机缺显式 Xcode 工具路径，安装未完成却后续 shell 命令测试了旧包，该结果明确排除；确认实际安装 279 后旧模拟器横屏失败，改测试宿主为同时支持 iPad 仍失败，不能将问题单归因宿主。新模拟器同包原断言通过；旧模拟器正常 shutdown/boot、不 erase、不改包及断言后同样三次通过，只定位为可恢复的模拟器运行状态，不宣称确切缓存根因或真实设备升级验证。初次公开 manifest 读校验误将 build 字段按版本号检查；依据官方生成器改为 build 279，重新只读验证通过，没有再次发布。
+
+限制：ad-hoc 仅 profile 已登记设备可安装；真实设备安装、相机、登录后原生 Garmin 页面和个人 Garmin 数据补齐仍未验证。历史值没有猜测性八小时回写，后续成功同步才产生正确的新 instant。真实模型评测按用户要求未执行。详情见 `docs/reviews/2026-10-12-garmin-sync-release-summary.json`。

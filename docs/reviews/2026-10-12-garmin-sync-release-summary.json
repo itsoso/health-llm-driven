@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "status": "delivered_with_device_acceptance_unverified",
+  "review": "independent_scoped_G6_GO",
+  "sha": "04d2724de89a4e90da42a5b2e111c87a878365f7",
+  "ci_run_id": 38197894833,
+  "ci_status": "success",
+  "backend": {
+    "deploy_run_id": 38199473804,
+    "receipt_state": "SUCCEEDED",
+    "clean": true,
+    "services_active": [
+      "health-backend",
+      "celery-worker",
+      "celery-beat",
+      "health-frontend"
+    ],
+    "public_health_http": 200,
+    "column_type": "timestamp with time zone",
+    "migration": "20261012_110000_garmin_sync_timestamp_timezone",
+    "migration_checksum_verified": true,
+    "user_rows_read": 0,
+    "real_sync_triggered": false
+  },
+  "native": {
+    "version": "1.3.5",
+    "build": "279",
+    "delivery": "signed_local_qr",
+    "publish_id": "20261012-garmin-04d2724de-279",
+    "ipa_sha256": "f238477b159b8cc3bd65498a063a2817f9ade7263cf7fe2f047cd5fe9d4e60da",
+    "install_page": "https://health.executor.life/mobile-install/ios/20261012-garmin-04d2724de-279/install.html",
+    "public_full_download_digest_verified": true,
+    "public_resources_http": {
+      "install.html": 200,
+      "manifest.plist": 200,
+      "app.ipa": 200,
+      "qr.png": 200
+    },
+    "supports_ipad": true,
+    "orientation_masks_match": true,
+    "simulator_launches_passed": 6,
+    "full_screenshots": 12,
+    "legacy_latest_preserved": true,
+    "registered_devices_only": true
+  },
+  "verification": {
+    "postgresql": 47,
+    "mobile": 67,
+    "typescript_exit_code": 0,
+    "system_map_exit_code": 0,
+    "local_ci_mode_passed": 3595,
+    "local_ci_mode_skipped": 22,
+    "local_ci_mode_subtests_passed": 84
+  },
+  "not_performed": [
+    "real_model_evaluation",
+    "OTA_vendor_publication",
+    "TestFlight_upload"
+  ],
+  "preserved_failures": [
+    "initial_simctl_install_and_unqualified_old_app_probe",
+    "existing_simulator_portrait_timeout",
+    "existing_simulator_host_family_control_portrait_timeout",
+    "initial_manifest_reader_invalid_version_expectation"
+  ],
+  "unverified": [
+    "historical_user_row_origin",
+    "real_garmin_data_completion",
+    "logged_in_native_business_UI",
+    "registered_device_installation",
+    "camera_hardware"
+  ]
+}
