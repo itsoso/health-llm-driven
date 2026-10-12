@@ -431,7 +431,7 @@ async def test_low_confidence_mobile_meal_photo_returns_confirmation_without_llm
     ("message", "quantity", "expected_records", "expected_drafts"),
     [("记录晚餐", "1个", 1, 0), ("", "1个", 0, 1),
      ("记录晚餐", None, 0, 1), ("分析这份晚餐订单，不要记录", "1个", 0, 0),
-     ("记录体重71kg", "1个", 0, 1), ("记录订单，明天才吃", "1个", 0, 1),
+     ("记录体重71kg", "1个", 0, 0), ("记录订单，明天才吃", "1个", 0, 1),
      ("记录晚餐，还没吃", "1个", 0, 1), ("记录昨天晚餐", "1个", 0, 1),
      ("记录晚餐", "未知", 0, 1), ("记录晚餐", "数量不清", 0, 1),
      ("记录晚餐", "0个", 0, 1)],
@@ -1763,11 +1763,11 @@ async def test_general_vision_for_riding_never_calls_food_preprocessor(db, monke
 def test_exercise_photo_purpose_is_not_meal_nutrition(message):
     assert AgentExecutor._is_exercise_photo_context(message)
 
-@pytest.mark.parametrize('message', ['骑行后记录午餐', '运动后吃了鸡蛋', '拍照记餐', '记录这餐', '分析早餐营养'])
+@pytest.mark.parametrize('message', ['骑行后记录午餐', '拍照记餐', '记录这餐', '分析早餐营养', '喝了运动饮料'])
 def test_explicit_food_subject_keeps_structured_food_pipeline(message):
     assert not AgentExecutor._is_exercise_photo_context(message)
 
-@pytest.mark.parametrize('message', ['记录青山湖骑行，不是食物', '记录青山湖骑行，没吃东西', '记录青山湖骑行，旁边的人在喝彩', '运动后没吃鸡蛋', '例句：“运动后吃了鸡蛋”'])
+@pytest.mark.parametrize('message', ['记录青山湖骑行，不是食物', '记录青山湖骑行，没吃东西', '记录青山湖骑行，旁边的人在喝彩', '运动后没吃鸡蛋', '例句：“运动后吃了鸡蛋”', '运动后吃了鸡蛋是假设', '运动后吃了鸡蛋这句话仅为示例', '运动后吃了鸡蛋（妈妈的）', '运动后吃了鸡蛋'])
 def test_negative_or_incidental_food_words_cannot_turn_riding_into_meals(db, tmp_path, monkeypatch, message):
     executor, _ = _food_photo_executor(db, tmp_path, monkeypatch)
     result = executor._capture_contextual_meal_photos(message, _food_result(), image_indexes=[0])
@@ -1778,4 +1778,4 @@ def test_negative_or_incidental_food_words_cannot_turn_riding_into_meals(db, tmp
 def test_exercise_background_keeps_supplement_photo_preview_preprocessing(db, monkeypatch):
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, '_should_send_raw_images_to_primary_model', lambda _: True)
-    assert executor._should_preprocess_attached_images(1, '运动后记录这瓶补剂')
+    assert executor._should_preprocess_attached_images(1, '记录补剂，今天骑行')

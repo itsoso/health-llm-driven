@@ -25230,27 +25230,23 @@ class AgentExecutor:
         Nutrition words alone (e.g. riding calories) do not identify a meal.
         Explicit meal/intake subjects keep the existing food safety pipeline.
         """
-        text = (user_message or "").lower()
+        text = (user_message or "").lower().replace("运动饮料", "饮料")
         exercise = any(word in text for word in (
             "骑行", "骑车", "自行车", "跑步", "散步", "步行", "游泳", "健身", "锻炼", "运动",
             "cycling", "running", "workout",
         ))
         if not exercise:
             return False
-        # Only a complete affirmative meal/intake purpose can override the
-        # exercise exclusion. Negated food words or incidental 喝彩 cannot.
+        # A closed meal-record command may explicitly repurpose the photo.
+        # Arbitrary intake tails can contain hypotheticals, quotes or another
+        # person. They never lift this diet exclusion.
         compact = "".join(text.split()).strip("。.!！")
         meal_after_exercise = re.fullmatch(
             r"(?:今天|刚才)?(?:骑行|骑车|跑步|运动|锻炼|游泳)(?:结束)?后"
-            r"(?:我)?(?:吃了|喝了|(?:请|帮我|请帮我)?记录(?:这餐|早餐|午餐|晚餐|加餐))"
-            r"[^，,。.!！?？;；\n]*",
+            r"(?:我)?(?:请|帮我|请帮我)?记录(?:这餐|早餐|午餐|晚餐|加餐)",
             compact,
         )
-        unsafe_context = any(word in compact for word in (
-            "不", "没", "未", "别", "不要", "如果", "假如", "例句", "他说", "她说", "朋友",
-            "并", "然后", "但是", "而是", "“", "”", '"', "‘", "’",
-        ))
-        return not (meal_after_exercise and not unsafe_context)
+        return meal_after_exercise is None
 
     @staticmethod
     def _looks_like_food_photo_context(user_message: str) -> bool:

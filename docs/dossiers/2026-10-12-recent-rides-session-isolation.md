@@ -80,3 +80,9 @@ Primary controller：health-harness-orchestrator；overlay：safety-gate。真�
 76b0a462c 本地候选独立 NO-GO，未 push / deploy。三个新增真实 PostgreSQL RED：“记录青山湖骑行，不是食物”“记录青山湖骑行，没吃东西”“记录青山湖骑行，旁边的人在喝彩”均被 raw 食物词解除运动排除，并真实生成饮食及图片资产。独立证据 /tmp/reva-riding-safety-negative-pg.log 保留。
 
 收紧例外为完整、肯定的运动后摄入/餐次语法，否定、转述、其他动作和多子句不解除排除；任意 write 不再一律成为 meal EXPLICIT_CAPTURE，需 diet domain。仅撤销饮食权限；补剂/医疗报告预处理入口仍走其原有规则。新候选等待新鲜复审。第一轮邻近 PostgreSQL 272 项断言通过但 runner 在临时 PG fast-stop 超时退出 1，不能当 runner 正常完成；该旧候选也被否决。第二次测试因旧测试端口尚释放中而在 startup 失败，未跑断言；另用全新独立端口重新验证，不复用前次 DB。
+
+### 第二轮独立审查否决与闭合命令
+
+a3cefe4f1 仍 NO-GO，未 push / deploy。独立 PostgreSQL 对抗 17 PASS / 3 FAIL：运动后吃了鸡蛋后追加是假设、仅为示例或（妈妈的），任意食物尾文本仍能通过例外并写餐食。新修订移除全部自由摄入尾文本例外，只认可有限运动后背景加完整餐次记录命令；复杂混合摄入仍作为通用附件处理，不自动入饮食。运动饮料为已有食品字面容器，不作为运动事件；这不授予额外写权限。
+
+同步既有体重测试：记录体重71kg不得生成餐食确认草稿，旧期望一份diet draft已改为0。新增补剂预处理正向句改为既有分类器可识别的记录补剂，今天骑行；不把未支持的运动后记录这瓶补剂误记为通过。父 a3ce 邻近 PostgreSQL 1 FAIL / 276 PASS，保留失败不洗绿；对应本机 CI-mode 由于候选被否决仅终止本任务 pytest 子进程，待记录真实终态，不作为通过证据。全新固定候选仍需独立G4。
