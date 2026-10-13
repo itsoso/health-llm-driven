@@ -65,3 +65,5 @@ G1 PASS：截图“加餐一小个桃子”被误当只读请求，并出现计�
 - 会话历史API将UTC存储值序列化为明确+00:00；Mobile兼容旧无偏移UTC，按账户effectiveTimezone显示消息、日界、历史及分享图日期。时区查询按用户隔离并响应设置失效，未取得有效时区时不冒充设备时间。
 - RED：加餐4 FAIL/14 PASS；时间API1 FAIL；Mobile7 FAIL/4 PASS。GREEN：后端相邻1780 PASS，历史API60 PASS；Mobile104 PASS、tsc PASS；System Map及秘密扫描PASS。完整鉴权API写入、持久回执、同client_turn_id去重纳入回归。
 - 隔离PostgreSQL验证进行中；固定提交独立G4及发布尚未完成。当前生产仍为0fd447cbd；既有OTA原生基线不兼容阻断继续保留。
+
+固定实现提交531556db53edbeedbd05ded551c585d63398db4c独立G4 GO：reviewer独立81项后端、104项Mobile及19项额外负例通过。隔离PostgreSQL63 PASS/71.21秒，测试与关闭进程均exit0；本地LLM gate按该精确SHA用户要求waived、confirmed=false。报告/tmp/reva-snack-time-safety.json。当前仅本地修复与验证完成，未push、未部署、未发布OTA/TestFlight，未做原生视觉验收；不得将上一候选发布回执用于本次改动。
