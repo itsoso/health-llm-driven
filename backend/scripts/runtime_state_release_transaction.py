@@ -14,6 +14,7 @@ import os
 import pwd
 import grp
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -1318,15 +1319,52 @@ class ReleaseTransaction:
         self._validate_directory(self.layout.runtime_root, required=True)
         self._validate_directory(self.layout.beat_state_dir, required=True)
         self._validate_directory(self.layout.dedao_workspace, required=True)
-        # Legacy state must stay absent: no implicit migration or deletion.
-        legacy_paths = [self.layout.backend_data / name for name in RUNTIME_ITEMS]
-        legacy_paths.extend(
+        # Git restores tracked knowledge artifacts during checkout. They are
+        # retained in place, never migrated or treated as current runtime data.
+        if any(os.path.lexists(self.layout.backend_data / name) for name in RUNTIME_ITEMS):
+            self._validate_retained_knowledge_authority()
+        # Beat state is mutable scheduling authority, not a tracked artifact.
+        legacy_paths = [
             Path(f"{self.layout.legacy_shelf_base}{suffix}")
             for suffix in SHELF_SUFFIXES
-        )
+        ]
         for path in legacy_paths:
             if path.exists() or path.is_symlink():
                 raise TransactionError("code-only requires migrated persistent state")
+
+    def _validate_retained_knowledge_authority(self) -> None:
+        env = self.layout.repo_root / "backend/.env"
+        metadata = self._validate_regular(env, allow_writable=False)
+        if (metadata.st_uid != self.layout.root_uid
+                or metadata.st_gid not in {self.layout.root_gid, self.layout.health_gid}
+                or stat.S_IMODE(metadata.st_mode) not in {0o600, 0o640}
+                or metadata.st_size > 1024 * 1024):
+            raise TransactionError("unsafe runtime authority environment")
+        expected = {
+            "APP_ENV": "production",
+            "HEALTH_RUNTIME_DATA_DIR": str(self.layout.runtime_root),
+            "HEALTH_GENE_KNOWLEDGE_PATH": str(self.layout.runtime_root / "gene_knowledge.json"),
+        }
+        lines = env.read_text().splitlines()
+        # This gate intentionally accepts only single-line dotenv assignments.
+        # Otherwise apparent authority keys can be text inside a quoted value.
+        try:
+            for line in lines:
+                if line.rstrip().endswith("\\"):
+                    raise ValueError("continued environment value")
+                shlex.split(line, comments=True, posix=True)
+        except ValueError:
+            raise TransactionError("multiline runtime authority environment unsupported") from None
+        for key, value in expected.items():
+            matches = [line for line in lines if re.match(
+                rf"\s*(?:export\s+)?{key}\s*=", line)]
+            if not matches and key == "HEALTH_GENE_KNOWLEDGE_PATH":
+                continue
+            if matches != [f"{key}={value}"]:
+                raise TransactionError("retained knowledge requires canonical external authority")
+        # _validate_layout has also checked every external child for symlinks,
+        # hard links and writable paths. Do not compare or read legacy bodies.
+        self._validate_runtime_root()
 
     def _new_transaction_snapshot(
         self,

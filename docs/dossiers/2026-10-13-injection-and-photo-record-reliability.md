@@ -140,3 +140,29 @@ v2 terminal cleanup在初次清理与after-rename重入都先核验root-owned070
 0629完整CI `38367567897` 32/32 SUCCESS，validate `38369039207` SUCCESS；canonical staging已完成。旧49d canonical revoke完成，旧loopback私钥退役已终态完成；未执行rotate/backend。生产仍49d。执行中pub-history仅0.07秒、read_bytes1691648、backup_integrity=not_checked，但随后动态finalizer.history_evidence仍调用tree_evidence读取previous-node-modules，单次观察累计read_bytes1352876032；这证明先前审查遗漏真实委托链，不能称无备份正文扫描已全链路达成。试图停止读取时原进程已完成，不声称成功中止。旧文件保留，未新增备份。
 
 0629本机native构建仅到CocoaPods准备，已停止该任务自己的进程树，未创建/上传IPA，保留日志。finalizer现在默认original/history证据仅根元数据且integrity=not_checked；旧完整摘要通过严格结构验证后投影为审计比较，绝不回填旧hash伪装新验证。显式单操作verify_backups=True仍核对正文；普通/pending/inspect/finalize所有调用均不遍历备份。真实server→finalizer委托负测先2FAIL，修复后bootstrap/server/finalizer整合354PASS。需全新独立G4及新SHA完整CI后再部署；不重放0629撤权或退钥动作。
+
+
+### 7682 实际部署阻断与遗留知识文件修复
+
+精确 main `7682a97c4e1dc2618de9319622d2308528f80f3f` 全量 CI `38370425250` SUCCESS，trusted validate `38371701593` SUCCESS，canonical stage 与身份轮换成功。backend `38372437284` 只执行一次，终态 FAILURE；原服务端回执 NEEDS_OPERATOR 保留。实际部署预检在停止服务、checkout、事务 prepare 和 env 修改前失败：`code-only requires migrated persistent state`。生产仍为49d90fd24faa0670851da3b4dcf794ee1a5af1b4，backend/worker/beat active。不得重试原 SHA、删锁或伪造成功。
+
+根因是代码强制 backend/data 三个知识文件/目录不存在，但 gene_knowledge.json 与 knowledge_chromadb 部分二进制为 Git 跟踪内容，checkout 会恢复。新增回归实际1 FAIL/3 PASS；本地修复仅在严格验证 canonical production env、外置 runtime root 和可选 gene override 后允许保留已由原布局检查确认安全的遗留文件，不复制、迁移或删除，beat legacy 仍拒绝。外置子树继续拒绝 symlink/hardlink，不读取遗留正文。完整事务测试140 PASS/5.08秒，日志 `/tmp/reva-retained-runtime-final.log`；补丁尚未作为新 release candidate 提交/发布。
+
+只读生产观察 `/tmp/reva-7682-preflight-unchanged-observation.json`：env ctime/mtime早于原lease，started回执早于lease；backend1/worker5/beat1进程均production且外置runtime/gene路径，transaction不存在。此观察不是收口授权，不替代完整时序、源控制流与稳定窗口证明。
+
+新独立 safety reviewer 认定旧 `--retire-unchanged` 不适用：它要求缺失的 env rollback/candidate 文件并复制stage。新的窄无备份preflight-unchanged收口设计有条件GO，但尚未实现/验证；需原canonical控制流、原锁/租约/失败证据、env元数据早于可信发布边界及检查期间身份/当前摘要不变、全部服务进程早于租约并稳定。历史env摘要不存在，必须明确 `historical_env_digest_available=false`，不能补造。仅保留原stage和小型审计，不创建env/stage备份。
+
+本次iPhone/iPad原生281构建在CocoaPods下载阶段暂停后已终止，原session退出143，未archive/export/upload；不能复用为未来不同SHA的发布结果。日志 `/tmp/reva-no-backup-7682-native-build.log` 保留。OTA继续受原生baseline不兼容阻断，无OTA/vendor claim；未执行真实模型评测。当前G5/G6仍BLOCK。
+
+
+runtime补丁第一次独立审查NO-GO：按行regex可能把多行引号内的authority文本误认为赋值。新增引号多行与backslash续行两项实际RED（2 FAIL）；整改明确仅支持单行dotenv，通过逐行shlex闭合检查拒绝多行/续行，再保持关键项exact assignment与重复拒绝。源检查不能替代进程有效配置证明，生产进程观察单列。首次adjacent测试命令引用了不存在的test_deploy_timing.py，pytest4且未运行任何测试，已保留日志并改用真实文件名。
+
+
+修正后独立runtime审查GO，仅覆盖本地源码：142 PASS/6.03秒，两个多行误放行输入独立确认均拒绝；runtime SHA256 `89306f825b3c89da0fc4c515752cc4b8a4f9e6c27dfb74b527cecffc00ba246a`，tests SHA256 `246a1c1438345accb56f4dd6366917242704e77c26593ae7ff2ed6b74b7b2cb0`。生产现行env只读词法检查可被单行规则接受，不输出配置内容。该GO不是失败收口或部署GO；新收口实现仍缺失。
+
+
+### 授权继续：无备份收口实现
+
+用户明确“搞定收口”，沿用原HealthHarness/run。Router incident+safety；最初把overlay传为skill id safety-gate被router拒绝，修正为registry触发名safety。Superpowers不加载。新增窄 `--retire-no-backup-preflight`，绑定受审失败实现摘要、旧生产与原lease/回执/14工具stage、可信env时序和运行进程公开配置；原stage原地保留，原lease只终态移名，审计不复制任何原文件。仅撤销原发布身份，不重新执行失败SHA，不修改原失败终态。
+
+父端无副本consumer/历史衔接先建立RED（2项失败），接入后原contained/recovery121 PASS；加bootstrap衔接279 PASS。proof模块由有互斥文件所有权的bounded实现者编写，最终仍需固定commit新独立安全审查与真实CI。运行时上一轮142项补丁纳入同一候选，不混入benchmark他人WIP。

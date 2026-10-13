@@ -426,6 +426,7 @@ jobs:
           scripts/test_contained_recovery_proof.py
           scripts/test_built_unuploaded_proof.py
           scripts/test_contained_release_retirement.py
+          scripts/test_no_backup_preflight_proof.py
           scripts/test_lost_closure_receipt_acknowledgment.py
           scripts/test_rolled_back_release_operator.py
           scripts/test_rolled_back_release_retirement.py

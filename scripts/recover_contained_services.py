@@ -283,11 +283,13 @@ def main():
                                 help="Close unchanged release after existing Laya reuse verification failed")
         retirement.add_argument("--retire-installed-laya-built-unuploaded", action="store_true",
                                 help="Close audited mixed failure with finished build and no upload claim")
+        retirement.add_argument("--retire-no-backup-preflight", action="store_true",
+                                help="Close verified read-only preflight failure without copying original evidence")
         args = parser.parse_args()
         mixed = args.retire_installed_laya_built_unuploaded
         if mixed != args.mixed_secrets_stdin:
             raise RecoveryError("matching protected operator input required")
-        retire_unchanged = args.retire_unchanged or args.retire_installed_laya or mixed
+        retire_unchanged = args.retire_unchanged or args.retire_installed_laya or mixed or args.retire_no_backup_preflight
         for sha in (args.sha, args.failed_sha, args.production_sha):
             if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
                 raise RecoveryError("exact SHA required")
@@ -328,7 +330,12 @@ def main():
             bootstrap._assert_original_lock(lock, fd)
             bootstrap._recovery_process_proof()
             proof_module = _load(source / "scripts/contained_recovery_proof.py", "contained_proof")
-            underlying = proof_module.RecoveryProof(source, bootstrap, server, args.failed_sha, args.production_sha, token,
+            proof_class = proof_module.RecoveryProof
+            if args.retire_no_backup_preflight:
+                path = source / "scripts/no_backup_preflight_proof.py"
+                bootstrap.secure(path)
+                proof_class = _load(path, "no_backup_preflight").NoBackupPreflightProof
+            underlying = proof_class(source, bootstrap, server, args.failed_sha, args.production_sha, token,
                                                    unchanged=retire_unchanged, installed_laya=args.retire_installed_laya or mixed,
                                                    built_unuploaded=vendor)
             class LockedProof:

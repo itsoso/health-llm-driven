@@ -140,7 +140,24 @@ def _expected_archives(snapshot):
     return {"lease": lease, "stage": artifacts}
 
 
+def _no_backup_module():
+    path = Path(__file__).with_name("no_backup_preflight_proof.py")
+    spec = importlib.util.spec_from_file_location("no_backup_closure_proof", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _no_copy_audit(snapshot):
+    _no_backup_module().validate_snapshot(snapshot)
+    return {"mode": "retained-originals-no-copy-v1",
+            "originals_sha256": _digest(snapshot["stage"]),
+            "backup_integrity": "not_applicable"}
+
+
 def _archives(bootstrap, record, snapshot):
+    if "no_backup_preflight" in snapshot:
+        return _no_copy_audit(snapshot)
     return {name: _archive_inventory(bootstrap, record / name, items)
             for name, items in _expected_archives(snapshot).items()}
 
@@ -264,9 +281,12 @@ class ClosureAdapter:
 
     def archive_and_revoke(self, evidence):
         b, p = self.b, self.proof
-        # Durable copies precede revocation and removal from the active lease
-        # name. The original lease inode is retained on its original filesystem.
-        for name, expected in _expected_archives(evidence["snapshot"]).items():
+        # Legacy profiles preserve their prior archival contract. The explicit
+        # no-backup profile retains originals and writes only metadata audits.
+        # The original lease inode is retained on its original filesystem.
+        copying = ({} if "no_backup_preflight" in evidence["snapshot"]
+                   else _expected_archives(evidence["snapshot"]))
+        for name, expected in copying.items():
             target = self.record / name
             target.mkdir(mode=0o700)
             _sync(self.record)
@@ -350,12 +370,15 @@ class ClosureAdapter:
             raise ClosureError("original restoration or lock evidence changed")
         if self.unchanged:
             profile = unchanged_laya_profile(evidence["snapshot"])
-            expected = evidence["snapshot"][profile]
-            current = (p._laya_installed(started_at=expected["started_at"])
-                       if profile == "installed_laya" else p._laya_unstarted())
-            if (current != expected
-                    or p._file(p.production / "backend/.env")[1] != evidence["snapshot"]["stage"]["live_env"]):
-                raise ClosureError("unchanged Laya state changed during closure")
+            if profile == "no_backup_preflight":
+                p.verify_closed(evidence["snapshot"])
+            else:
+                expected = evidence["snapshot"][profile]
+                current = (p._laya_installed(started_at=expected["started_at"])
+                           if profile == "installed_laya" else p._laya_unstarted())
+                if (current != expected
+                        or p._file(p.production / "backend/.env")[1] != evidence["snapshot"]["stage"]["live_env"]):
+                    raise ClosureError("unchanged Laya state changed during closure")
         self.r._application_probes(p.production_sha, self.sha)
         self.r._http_probes()
         class Services:
@@ -393,7 +416,7 @@ def validate_network_guard_snapshot(snapshot, *, unchanged):
     if "network_guard" not in units:
         return  # Historical closures before this optional profile stay valid.
     evidence = units["network_guard"]
-    installed = snapshot.get("installed_laya", {})
+    installed = snapshot.get("installed_laya", snapshot.get("no_backup_preflight", {}))
     if (not unchanged or not isinstance(installed, dict) or "unstarted_laya" in snapshot
             or not isinstance(evidence, dict) or set(evidence) != {"profile", "started_at", "files", "service"}
             or evidence["profile"] != "network-guard-v1" or evidence["started_at"] != installed.get("started_at")
@@ -480,10 +503,13 @@ def validate_built_snapshot(bootstrap, snapshot, failed_sha, *, unchanged):
 
 
 def unchanged_laya_profile(snapshot):
-    profiles = set(snapshot) & {"unstarted_laya", "installed_laya"}
+    profiles = set(snapshot) & {"unstarted_laya", "installed_laya", "no_backup_preflight"}
     if len(profiles) != 1:
         raise ClosureError("exactly one unchanged Laya profile required")
     profile = next(iter(profiles))
+    if profile == "no_backup_preflight":
+        _no_backup_module().validate_snapshot(snapshot)
+        return profile
     evidence = snapshot[profile]
     if not isinstance(evidence, dict) or not evidence:
         raise ClosureError("unchanged Laya evidence missing")
@@ -546,12 +572,13 @@ def unchanged_laya_profile(snapshot):
     return profile
 
 
-def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False):
+def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False, historical=False):
     """Validate the complete immutable closure while deliberately omitting its secret."""
     state = "CLOSED_UNCHANGED_RELEASE" if unchanged else "CLOSED_RESTORED_RELEASE"
     root = bootstrap.STATE / ("unchanged-release-closures" if unchanged else "contained-release-closures") / sha
     _private_directory(bootstrap, root)
-    if {p.name for p in root.iterdir()} != {"intent.json", "completed.json", "lease", "stage"}:
+    inventory = {p.name for p in root.iterdir()}
+    if inventory not in ({"intent.json", "completed.json"}, {"intent.json", "completed.json", "lease", "stage"}):
         raise ClosureError("closure audit incomplete")
     for name in ("intent.json", "completed.json"):
         bootstrap.secure(root / name, private=True)
@@ -567,6 +594,17 @@ def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False):
             or completed["old_sha"] != sha or completed["state"] != state
             or completed["intent_sha256"] != _digest(intent)):
         raise ClosureError("closure audit binding invalid")
+    expected_inventory = {"intent.json", "completed.json"}
+    if "no_backup_preflight" not in intent["snapshot"]:
+        expected_inventory |= {"lease", "stage"}
+    elif not unchanged:
+        raise ClosureError("no-copy profile requires unchanged closure")
+    else:
+        marker = intent["snapshot"]["no_backup_preflight"]
+        if marker.get("failed_sha") != sha or marker.get("production_sha") != intent["production_sha"]:
+            raise ClosureError("no-copy profile revision binding differs")
+    if inventory != expected_inventory:
+        raise ClosureError("closure profile inventory differs")
     bootstrap.canonical_source(intent["closing_sha"])
     validate_built_snapshot(bootstrap, intent["snapshot"], sha, unchanged=unchanged)
     validate_network_guard_snapshot(intent["snapshot"], unchanged=unchanged)
@@ -589,16 +627,22 @@ def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False):
     if not os.path.lexists(config) and not os.path.lexists(library):
         config, library = bootstrap.CONFIG, bootstrap.INSTALLED.parent
     expected = {"config": {k: v for k, v in intent["config"].items() if k != "loopback.key"}, "library": intent["library"]}
-    if completed["installation"] != expected or bootstrap._installation_evidence(sha, config, library) != expected:
-        raise ClosureError("closed installation or authorization changed")
+    if completed["installation"] != expected:
+        raise ClosureError("closed installation audit changed")
+    # A no-backup rotation removes the revoked installation. The caller's
+    # retirement-history proof validates its saved hashes and public keys.
+    # First consumption still verifies the actual installed, revoked identity.
+    if not (historical and "no_backup_preflight" in intent["snapshot"]):
+        if bootstrap._installation_evidence(sha, config, library) != expected:
+            raise ClosureError("closed installation or authorization changed")
     return {"state": state, "closure": _digest(completed),
             "workspace": intent["snapshot"]["workspace"],
             "production_sha": intent["production_sha"]}
 
 
-def closed_evidence(bootstrap, sha, receipt, *, unchanged=False):
+def closed_evidence(bootstrap, sha, receipt, *, unchanged=False, historical=False):
     """Rotation/history proof. Never uses live service state as historical truth."""
-    evidence = closure_evidence_without_receipt(bootstrap, sha, unchanged=unchanged)
+    evidence = closure_evidence_without_receipt(bootstrap, sha, unchanged=unchanged, historical=historical)
     root = bootstrap.STATE / ("unchanged-release-closures" if unchanged else "contained-release-closures") / sha
     intent = bootstrap._read_json(root / "intent.json")
     verify_receipt(intent, receipt)

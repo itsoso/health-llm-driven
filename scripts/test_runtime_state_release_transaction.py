@@ -3050,3 +3050,74 @@ def test_code_only_terminal_reentry_binds_exact_small_journal(tmp_path, mutation
     else:
         assert transaction.finalize('c' * 40, lock_dir, token) == 'finalized'
         assert not reap.exists()
+
+
+def test_code_only_preserves_non_authoritative_checkout_knowledge(tmp_path, monkeypatch):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    env = layout.repo_root / "backend/.env"
+    env.write_text(f"APP_ENV=production\nHEALTH_RUNTIME_DATA_DIR={layout.runtime_root}\n")
+    env.chmod(0o600)
+    for name, kind in runtime_transaction.RUNTIME_ITEMS.items():
+        path = layout.backend_data / name
+        if kind == "dir":
+            path.mkdir()
+            path = path / "retained.bin"
+        path.write_bytes(b"retained-checkout-artifact")
+    before = _tree_state(layout.backend_data)
+    monkeypatch.setattr(transaction, "_snapshot_locations", lambda *a: pytest.fail("backup"))
+    assert transaction.preflight("b" * 40, "c" * 40, lock_dir, token) == "current"
+    transaction.prepare("b" * 40, "c" * 40, lock_dir, token)
+    transaction.install("b" * 40, "c" * 40, lock_dir, token)
+    _mark_boot_gate_active(transaction)
+    transaction.commit("c" * 40, lock_dir, token)
+    transaction.finalize("c" * 40, lock_dir, token)
+    assert _tree_state(layout.backend_data) == before
+
+
+@pytest.mark.parametrize("extra", [
+    "APP_ENV=development\n",
+    "HEALTH_RUNTIME_DATA_DIR=/tmp/other\n",
+    "HEALTH_GENE_KNOWLEDGE_PATH=/tmp/other.json\n",
+])
+def test_code_only_retained_knowledge_rejects_ambiguous_authority(tmp_path, extra):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    (layout.backend_data / "gene_knowledge.json").write_bytes(b"retained")
+    env = layout.repo_root / "backend/.env"
+    env.write_text(f"APP_ENV=production\nHEALTH_RUNTIME_DATA_DIR={layout.runtime_root}\n" + extra)
+    env.chmod(0o600)
+    with pytest.raises(TransactionError):
+        transaction.preflight("b" * 40, "c" * 40, lock_dir, token)
+    assert not layout.transaction_root.exists()
+
+
+@pytest.mark.parametrize("unsafe", ["external_symlink", "legacy_beat", "missing_env"])
+def test_code_only_retained_knowledge_keeps_state_boundaries(tmp_path, unsafe):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    (layout.backend_data / "gene_knowledge.json").write_bytes(b"retained")
+    env = layout.repo_root / "backend/.env"
+    if unsafe != "missing_env":
+        env.write_text(f"APP_ENV=production\nHEALTH_RUNTIME_DATA_DIR={layout.runtime_root}\n")
+        env.chmod(0o600)
+    if unsafe == "external_symlink":
+        target = layout.runtime_root / "gene_knowledge.json"
+        target.unlink(missing_ok=True)
+        target.symlink_to(layout.backend_data / "gene_knowledge.json")
+    if unsafe == "legacy_beat":
+        layout.legacy_shelf_base.write_bytes(b"must-not-delete")
+    with pytest.raises(TransactionError):
+        transaction.preflight("b" * 40, "c" * 40, lock_dir, token)
+    assert not layout.transaction_root.exists()
+    if unsafe == "legacy_beat":
+        assert layout.legacy_shelf_base.read_bytes() == b"must-not-delete"
+
+
+@pytest.mark.parametrize("prefix,suffix", [('UNRELATED="start\n', 'end"\n'), ("UNRELATED=first\\\n", "")])
+def test_code_only_rejects_authority_inside_multiline_value(tmp_path, prefix, suffix):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    (layout.backend_data / "gene_knowledge.json").write_bytes(b"retained")
+    env = layout.repo_root / "backend/.env"
+    env.write_text(prefix + f"APP_ENV=production\nHEALTH_RUNTIME_DATA_DIR={layout.runtime_root}\n" + suffix)
+    env.chmod(0o600)
+    with pytest.raises(TransactionError):
+        transaction.preflight("b" * 40, "c" * 40, lock_dir, token)
+    assert not layout.transaction_root.exists()

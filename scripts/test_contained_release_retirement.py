@@ -601,3 +601,48 @@ def test_network_guard_history_validates_complete_immutable_shape(tmp_path, dama
         with pytest.raises(m.ClosureError): m.validate_network_guard_snapshot(snapshot, unchanged=damage != 'restored')
     else:
         m.validate_network_guard_snapshot(snapshot, unchanged=True)
+
+
+def test_no_backup_closure_retains_originals_without_copying_stage_or_lease(tmp_path, monkeypatch):
+    m, a, b, r, audit = proof_fixture(tmp_path, monkeypatch, build_lock=False)
+    for path in audit.iterdir():
+        path.unlink()
+    audit.rmdir()
+    a.unchanged = True
+    a.record = b.STATE / "unchanged-release-closures" / a.proof.failed_sha
+    snapshot = a.proof.snapshot()
+    snapshot['no_backup_preflight'] = {'profile': 'synthetic-verified-no-backup', 'failed_sha': a.proof.failed_sha, 'production_sha': a.proof.production_sha}
+    # Proof grammar/production evidence is exercised by the dedicated module;
+    # here exercise the real durable closure and historical consumer.
+    checked = []
+    verifier = SimpleNamespace(validate_snapshot=lambda s: checked.append('validate'),
+                               verify_closed=lambda p, s: checked.append('postcondition'))
+    monkeypatch.setattr(m, '_no_backup_module', lambda: verifier, raising=False)
+    a.proof.verify_closed = lambda snapshot: checked.append('postcondition')
+    for name in ('backend.env.rollback', 'backend.env.candidate'):
+        (a.proof.stage / name).unlink()
+        del snapshot['stage'][name]
+    stage_before = {p.name: p.read_bytes() for p in a.proof.stage.iterdir()}
+    original_terminal = (b.STATE / a.proof.failed_sha / 'completed.json').read_bytes()
+    result = m.close_transaction(a, m.close_transaction(a)['evidence_sha256'])
+    assert set(p.name for p in a.record.iterdir()) == {'intent.json', 'completed.json'}
+    assert {p.name: p.read_bytes() for p in a.proof.stage.iterdir()} == stage_before
+    assert b.AUTHORIZED.read_bytes() == b'unrelated\n'
+    assert not (b.CONFIG / 'loopback.key').exists()
+    assert (b.STATE / a.proof.failed_sha / 'completed.json').read_bytes() == original_terminal
+    assert checked.count('postcondition') == 1
+    assert m.closed_evidence(b, a.proof.failed_sha, result['receipt'], unchanged=True)['state'] == 'CLOSED_UNCHANGED_RELEASE'
+    monkeypatch.setattr(b, '_installation_evidence', lambda *a: pytest.fail('retired installation body read'))
+    assert m.closed_evidence(b, a.proof.failed_sha, result['receipt'], unchanged=True, historical=True)['state'] == 'CLOSED_UNCHANGED_RELEASE'
+    with pytest.raises(pytest.fail.Exception):
+        m.closed_evidence(b, a.proof.failed_sha, result['receipt'], unchanged=True)
+    # Unexpected extra archive bodies must not be silently accepted.
+    (a.record / 'stage').mkdir()
+    with pytest.raises(m.ClosureError):
+        m.closed_evidence(b, a.proof.failed_sha, result['receipt'], unchanged=True)
+
+
+def test_no_backup_marker_does_not_hide_other_profile(monkeypatch):
+    m = load()
+    with pytest.raises(m.ClosureError):
+        m.unchanged_laya_profile({'no_backup_preflight': {'profile': 'x'}, 'unstarted_laya': {'x': True}})

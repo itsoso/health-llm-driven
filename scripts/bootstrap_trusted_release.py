@@ -393,7 +393,7 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         if unchanged_closure:
-            return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt, unchanged=True)
+            return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt, unchanged=True, historical=historical)
         return module.closed_evidence(sys.modules[__name__], sha, recovery_receipt)
     if os.path.lexists(STATE / "recoveries" / sha):
         return _recovered_preparation_evidence(sha, recovery_receipt=recovery_receipt)
