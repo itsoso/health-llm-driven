@@ -2921,7 +2921,7 @@ REMOTE_KB_DIGEST_WRITE
 # 部署后端
 laya_service_command() {
     printf '/usr/bin/python3.12 -I -S -B %q %q --sha %q --lock %q --token %q --stage %q' \
-        "/var/lib/reva-laya-release/sources/$DEPLOY_EXPECTED_SHA/install.py" "$1" \
+        "/var/lib/reva-laya-release/verifiers/$DEPLOY_EXPECTED_SHA/verify_laya_no_backup.py" "$1" \
         "$DEPLOY_EXPECTED_SHA" "$REMOTE_RELEASE_LOCK_DIR" "$REMOTE_RELEASE_LOCK_TOKEN" \
         "$REMOTE_BACKUP_PREFLIGHT_DIR"
 }
@@ -2959,10 +2959,15 @@ private(base, 0o700)
 sources = base / 'sources'
 sources.mkdir(mode=0o700, exist_ok=True)
 private(sources, 0o700)
+verifiers = base / 'verifiers'
+verifiers.mkdir(mode=0o700, exist_ok=True)
+private(verifiers, 0o700)
+verifier = verifiers / sha
 source = sources / sha
 assets = ('install.py', 'serve.py', 'model-manifest.json', 'requirements.lock', 'reva-laya.service.in', 'encoder-config.json.b64', 'rl-agent-config.json.b64', 'tokenizer-config.json.b64', 'model-NOTICE.txt')
 if not source.exists():
     source.mkdir(mode=0o700)
+    verifier.mkdir(mode=0o700)
     env = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1',
            'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
     with tempfile.TemporaryDirectory(dir=base, prefix='proof-') as proof:
@@ -3005,6 +3010,17 @@ if not source.exists():
         head = subprocess.check_output(git + ['rev-parse', 'FETCH_HEAD'], env=env, text=True).strip()
         if head != sha:
             raise SystemExit('Laya bundle candidate mismatch')
+        verifier_data = subprocess.check_output(git + ['show', '--no-textconv', sha + ':backend/scripts/verify_laya_no_backup.py'], env=env)
+        for name, data in [('verify_laya_no_backup.py', verifier_data),
+                           ('source.json', json.dumps({'sha': sha, 'sha256': hashlib.sha256(verifier_data).hexdigest()}, sort_keys=True).encode())]:
+            with (verifier / name).open('xb') as out:
+                out.write(data)
+                os.fchmod(out.fileno(), 0o400)
+                out.flush()
+                os.fsync(out.fileno())
+        verifier_fd = os.open(verifier, os.O_RDONLY | os.O_DIRECTORY)
+        os.fsync(verifier_fd)
+        os.close(verifier_fd)
         hashes = {}
         for name in assets:
             data = subprocess.check_output(git + ['show', '--no-textconv', sha + ':infra/laya/' + name], env=env)
@@ -3038,7 +3054,15 @@ for name in assets:
     private(source / name, 0o400)
     if hashlib.sha256((source / name).read_bytes()).hexdigest() != proof['files'][name]:
         raise SystemExit('Laya source hash mismatch')
-os.execve('/usr/bin/python3.12', ['/usr/bin/python3.12', '-I', '-S', '-B', str(source / 'install.py'),
+private(verifier, 0o700)
+if {p.name for p in verifier.iterdir()} != {'verify_laya_no_backup.py', 'source.json'}:
+    raise SystemExit('Laya verifier inventory mismatch')
+private(verifier / 'verify_laya_no_backup.py', 0o400)
+private(verifier / 'source.json', 0o400)
+binding = json.loads((verifier / 'source.json').read_text())
+if binding != {'sha': sha, 'sha256': hashlib.sha256((verifier / 'verify_laya_no_backup.py').read_bytes()).hexdigest()}:
+    raise SystemExit('Laya verifier binding mismatch')
+os.execve('/usr/bin/python3.12', ['/usr/bin/python3.12', '-I', '-S', '-B', str(verifier / 'verify_laya_no_backup.py'),
           'provision', '--sha', sha, '--lock', lock, '--token', token, '--stage', stage],
           {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/nonexistent', 'LANG': 'C.UTF-8'})
 REMOTE_LAYA_SOURCE

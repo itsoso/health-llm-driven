@@ -187,3 +187,26 @@ runtime补丁第一次独立审查NO-GO：按行regex可能把多行引号内的
 永久修复仅在 `CLOSED_UNCHANGED_RELEASE` 已完成退役分支重新消费完整 `_retired_history`，要求本轮intent精确一致；其他状态保留原检查。真实closure生产、真实旧安装删除、真实历史消费者回归先RED后GREEN；篡改退役completed或closure completed均阻断新安装。父端及独立审查各303 PASS，独立GO报告 `/tmp/reva-forward-install-3680-safety.json`。未降低历史/身份/CI检查，也不复制旧安装。
 
 3680 iOS 1.3.5(283) archive/export成功，支持iPad，仅1个登记设备，尚未上传。trusted OTA source验证仍因相对原生基线7fe06d8的native输入变化而BLOCK；不修改baseline或把ad-hoc原生包冒充OTA。尚无新候选部署/设备验收成功声明。
+
+
+### 最终候选发布执行
+
+3680前向安装实际完成 `FORWARD_INSTALLATION_COMPLETED`，服务健康与原生产49d保持不变，执行退出0；没有重放旧rotate。永久修复已合入 `3fdc3841cefc8a9d1136fb6925400f0cced1e63c`，固定提交独立G4 GO，本地及独立各303 PASS，map/secret/diff检查通过；完整CI `38386441975` 实际SUCCESS，32个job完成且无失败。
+
+3fdc canonical stage、旧3680 revoke、private-key retirement、rotate依次退出0；固定包装器经独立审查，修正revoke使用旧SHA入口并补操作前匿名API预算，没有减少CI/身份检查。3680始终NEVER_STARTED，新授权绑定3fdc，正式backend workflow `38388764461` 仅派发一次，派发前server quota35满足最大重试预算及余量。此处仍等待部署终态。
+
+同3fdc来源的iOS 1.3.5(284)本地archive/export退出0，iPad支持启用，IPA实际SHA256 `115edb8b001672ac78d779bbf359be8c6ecf6bd0e89d0fe553f1b64cbb92e8a6` 与原生构建回执一致，14053956字节。签名仅1个登记设备；原生包尚未上传、未更新latest别名。生产拍照与真实首卡P95仍未验收；未跑真实模型。
+
+
+### 正式后端部署发现 Laya 配置副本消费者遗漏
+
+`38388764461` 真实FAILURE：preflight与build-permission SUCCESS，backend在 `LAYA_BLOCKED:FileNotFoundError` 失败。原3fdc回执NEEDS_OPERATOR保留；生产仍49d，backend/worker/beat均active。原lease inode1402、started2026-10-13T11:14:37Z，stage仍14工具+manifest。没有重跑或清理原锁。
+
+实际2966字节deployment日志证明：runtime preflight-code=current、现行env摘要/权限核对成功，随后Laya导出源后失败，尚未出现deactivation或停止writer。遗漏是 `infra/laya/install.py::context` 仍强制backend.env.candidate；无备份sync_env已取消该副本。之前测试没有覆盖这条真实消费者链，本次不能把此前CI绿当作已上线。
+
+补充两个互斥实现：只读Laya verifier复用原9assets/installer和已安装generation，prepare/activate/verify全部改走该路径；另新增独立laya-context-missing-candidate失败profile，保留原runtime-preflight profile，验证导出源、现行env、原安装/进程及历史消费。verifier不调用模型推理，不生成环境副本、安装generation或重启服务。CI新proof清单回归先1FAIL/16PASS后17PASS。等待固定实现、独立G4和下一精确CI，G5/G6重新BLOCK；284包仅本地构建，不发布。
+
+
+Laya adapter 独立审查先发现3种 pending 安装残留可误通过；新增30项负例实际RED后修复，前置/稳定窗口后/末次复核均以lexists拒绝残留且不清理文件。独立110项Laya相关、3项独立故障复验与185项部署契约通过；原9资产与installer保持不变。父端新鲜收口四文件335 PASS/7.82秒，CI/no-backup契约47 PASS，map/diff通过。收口新profile覆盖真实文件producer、strict snapshot、ClosureAdapter撤权/原lease退役、bound verify_closed与历史消费者；仍待独立最终实现裁决、精确提交完整CI及生产执行。
+
+独立审查另复现新closure proof在健康GET期间出现pending仍被接受的3项RED；末次复证补齐后独立346 PASS，父端六文件390 PASS/14.25秒。严格bool字段与workspace/deployment.env不存在断言同批覆盖。内容G4 GO报告 `/tmp/reva-laya-context-closure-fresh-safety.json`，等待commit绑定与全量CI；没有生产写入。

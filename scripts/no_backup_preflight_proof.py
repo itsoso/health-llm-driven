@@ -31,6 +31,33 @@ FAILED_IMPLEMENTATIONS = {
     'scripts/trusted_release_server.py': '4ec7fd78e5477100c6bbd0612046b40fab28cf27eefe87c56d0fcaeab9d0d226',
     'backend/scripts/runtime_state_release_transaction.py': 'fc46bb5b5874f69ab27f2b8a717b3c7131f1d921eb3147df1964199940122675',
 }
+LAYA_FAILED_IMPLEMENTATIONS = {
+    'deploy.sh': '7444684608ed028f53845e8cc8d94c1dd7c2abd1a0524bf0776898cc32560f90',
+    'scripts/trusted_release_server.py': '4ec7fd78e5477100c6bbd0612046b40fab28cf27eefe87c56d0fcaeab9d0d226',
+    'backend/scripts/runtime_state_release_transaction.py': '89306f825b3c89da0fc4c515752cc4b8a4f9e6c27dfb74b527cecffc00ba246a',
+    'infra/laya/install.py': '306ccb538f0dea31d249488f2eb7663e2e8ba57d4ef22d296070a870ce0bba42',
+}
+_laya_spec = importlib.util.spec_from_file_location('no_backup_laya_context',
+    Path(__file__).with_name('no_backup_laya_context_proof.py'))
+_laya = importlib.util.module_from_spec(_laya_spec)
+_laya_spec.loader.exec_module(_laya)
+LAYA_FAILURE_SUFFIX = (b'LAYA_BLOCKED:FileNotFoundError\n' +
+    '\x1b[0;31m✗\x1b[0m Laya preparation failed; backend writers unchanged, release evidence retained\n'.encode())
+
+
+def validate_laya_failure_log(raw):
+    success = b'RUNTIME_STATE_TRANSACTION_OK command=preflight-code result=current\n'
+    env = '\x1b[0;32m✓\x1b[0m 现行 env 未改变；仅验证摘要与权限，未生成配置副本\n'.encode()
+    if (not isinstance(raw, bytes) or not 0 < len(raw) <= 16_000_000
+            or not raw.endswith(LAYA_FAILURE_SUFFIX) or raw.count(success) != 1 or raw.count(env) != 1
+            or raw.index(success) >= raw.index(env) or raw.count(b'LAYA_BLOCKED:') != 1
+            or any(value in raw for value in (b'RUNTIME_STATE_TRANSACTION_FAILED', b'command=prepare',
+                b'command=install', b'command=commit', b'command=restore', b'phase=deactivation_started',
+                b'phase=guard_started', b'phase=remote_writers_stopped', b'phase=remote_checkout_completed',
+                b'LAYA_INSTALL_STEP', b'LAYA_PREPARED', b'LAYA_INSTALLED', b'systemctl stop'))):
+        raise ProofError('exact Laya context failure before mutation required')
+
+
 FAILURE_SUFFIX = ('RUNTIME_STATE_TRANSACTION_FAILED error=code-only requires migrated persistent state\n'
                   '\x1b[0;31m✗\x1b[0m runtime state 只读预检失败；服务与 live env 尚未变更，现场与租约保留\n').encode()
 AUTHORITY = {
@@ -205,12 +232,21 @@ class NoBackupPreflightProof(RecoveryProof):
         failed = self.bootstrap.canonical_source(self.failed_sha)
         old = self.bootstrap.canonical_source(self.production_sha)
         self.reset._revision_proof(self.production_sha, self.source, self.bootstrap)
-        for relative, digest in FAILED_IMPLEMENTATIONS.items():
-            if self._file(failed / relative)[1]['sha256'] != digest:
-                raise ProofError('failed implementation is not reviewed preflight')
+        binding = {relative: self._file(failed / relative)[1]['sha256'] for relative in FAILED_IMPLEMENTATIONS}
+        if binding == FAILED_IMPLEMENTATIONS:
+            profile, implementations = 'pre-mutation-no-copy-v1', FAILED_IMPLEMENTATIONS
+        elif binding == {key: LAYA_FAILED_IMPLEMENTATIONS[key] for key in FAILED_IMPLEMENTATIONS}:
+            binding['infra/laya/install.py'] = self._file(failed / 'infra/laya/install.py')[1]['sha256']
+            if binding != LAYA_FAILED_IMPLEMENTATIONS:
+                raise ProofError('failed Laya context implementation differs')
+            profile, implementations = 'laya-context-missing-candidate', LAYA_FAILED_IMPLEMENTATIONS
+        else:
+            raise ProofError('failed implementation is not a reviewed independent profile')
+        if profile == 'laya-context-missing-candidate':
+            self._absent(self.bootstrap.STATE / self.failed_sha / 'deployment.env')
         result = {'workspace': self._workspace(failed), 'stage': self._stage(failed)}
         log, _ = self._file(self.bootstrap.STATE / self.failed_sha / 'deployment.log', 0o600)
-        validate_failure_log(log)
+        (validate_failure_log if profile == 'pre-mutation-no-copy-v1' else validate_laya_failure_log)(log)
         transaction = self.runtime.ReleaseTransaction(self.runtime.production_layout(self.stage), self.systemd)
         if not self._closed:
             transaction._assert_release_lock(self.lease, self.token)
@@ -229,12 +265,17 @@ class NoBackupPreflightProof(RecoveryProof):
         result['units'] = self._units(old, transaction, started_at=self._started_text)
         self._services_predate_release()
         result['no_backup_preflight'] = {
-            'profile': 'pre-mutation-no-copy-v1', 'failed_sha': self.failed_sha,
+            'profile': profile, 'failed_sha': self.failed_sha,
             'production_sha': self.production_sha, 'original_stage': str(self.stage),
-            'failed_implementations': dict(FAILED_IMPLEMENTATIONS),
+            'failed_implementations': dict(implementations),
             'chronology': self._chronology, 'started_at': self._started_text, 'historical_env_digest_available': False,
             'laya_install_not_reached': True,
         }
+        if profile == 'laya-context-missing-candidate':
+            try:
+                result['no_backup_preflight']['laya_context'] = _laya.inspect(self, failed, old, result['stage']['live_env'])
+            except Exception:
+                raise ProofError('read-only Laya context proof failed') from None
         validate_snapshot(result)
         return result
 
@@ -271,7 +312,7 @@ def _validate_stage_snapshot(stage, marker):
             or stage['label']['sha256'] != hashlib.sha256(b'deploy:backend\n').hexdigest()
             or stage['started_at']['sha256'] != hashlib.sha256(marker['started_at'].encode()).hexdigest()
             or stage['runtime_state_release_transaction.py']['sha256'] !=
-                FAILED_IMPLEMENTATIONS['backend/scripts/runtime_state_release_transaction.py']):
+                marker['failed_implementations']['backend/scripts/runtime_state_release_transaction.py']):
         raise ProofError('no-backup stage snapshot binding differs')
 
 
@@ -279,10 +320,14 @@ def validate_snapshot(snapshot):
     if not isinstance(snapshot, dict) or set(snapshot) != {'workspace', 'stage', 'terminal', 'units', 'no_backup_preflight'}:
         raise ProofError('no-backup snapshot shape differs')
     marker = snapshot['no_backup_preflight']
-    if (not isinstance(marker, dict) or set(marker) != {'profile', 'failed_sha', 'production_sha',
+    profile = marker.get('profile') if isinstance(marker, dict) else None
+    implementations = (FAILED_IMPLEMENTATIONS if profile == 'pre-mutation-no-copy-v1' else
+                       LAYA_FAILED_IMPLEMENTATIONS if profile == 'laya-context-missing-candidate' else None)
+    additional = {'laya_context'} if profile == 'laya-context-missing-candidate' else set()
+    if (not isinstance(marker, dict) or set(marker) != additional | {'profile', 'failed_sha', 'production_sha',
             'original_stage', 'failed_implementations', 'chronology', 'started_at', 'historical_env_digest_available', 'laya_install_not_reached'}
-            or marker['profile'] != 'pre-mutation-no-copy-v1'
-            or marker['failed_implementations'] != FAILED_IMPLEMENTATIONS
+            or implementations is None
+            or marker['failed_implementations'] != implementations
             or marker['historical_env_digest_available'] is not False or marker['laya_install_not_reached'] is not True
             or any(re.fullmatch(r'[0-9a-f]{40}', marker[key]) is None for key in ('failed_sha','production_sha'))
             or not isinstance(marker['started_at'], str) or re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n', marker['started_at']) is None
@@ -307,6 +352,12 @@ def validate_snapshot(snapshot):
     _retained.VisionBaseView(None, overlay['raw_dropins'])
     _validate_stage_snapshot(snapshot['stage'], marker)
     _validate_identity(snapshot['terminal'])
+    if additional:
+        try:
+            _laya.validate(marker['laya_context'], marker['failed_sha'], marker['production_sha'],
+                chronology['lease_started_ns'], snapshot['stage']['live_env'])
+        except Exception:
+            raise ProofError('historical Laya context grammar differs') from None
     return marker
 
 
@@ -339,3 +390,10 @@ def validate_archived_vision(bootstrap, source, snapshot):
     """
     value = snapshot.get('units', {}).get('vision_overlay')
     _retained.validate_archived_vision(bootstrap, Path(source), value)
+    marker = snapshot.get('no_backup_preflight', {})
+    if marker.get('profile') == 'laya-context-missing-candidate':
+        validate_snapshot(snapshot)
+        try:
+            _laya.validate_history(bootstrap, Path(source), marker['laya_context'])
+        except Exception:
+            raise ProofError('historical canonical Laya evidence differs') from None

@@ -1241,7 +1241,7 @@ NEEDS_OPERATOR 与全部消费记录，不将原发布改为成功，不重试�
 
 ### 无备份发布在只读 preflight 失败后的收口
 
-`recover_contained_services.py --retire-no-backup-preflight` 是独立收口模式，不重试原部署、不重启服务、不改生产 env。仅接受受审实现摘要绑定的无备份部署在 runtime preflight 处失败，原 STARTED/PREPARING/PREPARED/DEPLOYING/NEEDS_OPERATOR、原锁/租约、14个 canonical 工具及 manifest 均完整；未知状态拒绝。与其他恢复/收口模式互斥。
+`recover_contained_services.py --retire-no-backup-preflight` 是独立收口模式，不重试原部署、不重启服务、不改生产 env。仅接受受审实现摘要绑定的无备份部署在 runtime preflight 处失败，或独立 `laya-context-missing-candidate` profile 证明在 Laya context 读取已取消的配置副本时失败；原 STARTED/PREPARING/PREPARED/DEPLOYING/NEEDS_OPERATOR、原锁/租约、14个 canonical 工具及 manifest 均完整；未知状态拒绝。与其他恢复/收口模式互斥。
 
 必须使用精确完整 CI 绿色 current main 的 canonical staging 和系统 Python `-I -S -B`。先只读 inspect，再以相同证据摘要执行；原 lease token 走受保护 stdin，收口 receipt 只进入 root0600 保护文件供 rotate 消费。原失败回执永久保留，任何 intent 后失败禁止重跑。
 
@@ -1250,3 +1250,5 @@ NEEDS_OPERATOR 与全部消费记录，不将原发布改为成功，不重试�
 收口仅写小型 intent/completed 审计，不复制 lease、stage、env、旧代码或运行数据；原 stage 原地保留，原 lease 按既有同文件系统原 inode 终态归档。撤销本次精确 cloud/loopback 授权和已验证旧 loopback 私钥，复证服务与原始证据后才签发 `CLOSED_UNCHANGED_RELEASE`。审计记录保存身份及摘要，后续历史校验不把这些摘要当备份恢复证明，也不重新遍历暂存目录或历史备份正文。无备份身份轮换后的历史校验由 durable retirement audit 绑定原安装摘要和公钥，不要求已退役安装副本存在。
 
 该收口不是 backend SUCCEEDED；后续候选仍需独立安全审查、精确 CI、新授权、部署及对应 OTA/native Gate。
+
+Laya context profile 另绑定失败脚本、runtime 与原 installer 的精确摘要、原日志中 runtime/env 验证成功及唯一终止位置，并拒绝任何停服、事务 prepare 或安装迹象。原 Laya 导出源必须完整，已安装 generation、unit/env、安装回执与运行进程必须早于原租约且稳定；所有 pending 安装路径必须不存在。仅 GET 健康探测，不调用真实模型。后续部署使用单独封存的只读 verifier 复核现有安装，不恢复 env candidate/rollback 副本；原 installer 与 generation 的资产保持不变。收口后仍使用原租约证据复核；历史消费者仅验证保存的证据与 canonical 源，不扫描现行模型或历史备份。
