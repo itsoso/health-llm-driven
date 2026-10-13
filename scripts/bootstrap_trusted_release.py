@@ -1716,9 +1716,13 @@ def _recovered_preparation_evidence(sha, *, recovery_receipt=None):
             raise BootstrapError('retired recovery installation audit differs')
     else:
         config, library = _archives(sha)
+        historical = True
         if not os.path.lexists(config) and not os.path.lexists(library):
             config, library = CONFIG, INSTALLED.parent
-        if completed["installation"] != _installation_evidence(sha, config, library):
+            historical = False
+        if completed["installation"] != _installation_evidence(
+            sha, config, library, history_only=historical
+        ):
             raise BootstrapError("recovered installation differs")
     return {"state": terminal_state, "recovery": _digest_json(completed),
             "workspace": intent["workspace"]}

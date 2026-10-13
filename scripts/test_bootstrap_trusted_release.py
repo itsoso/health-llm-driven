@@ -1094,3 +1094,37 @@ def test_no_backup_rotation_keeps_metadata_audit_without_retired_copies(monkeypa
     assert intent['retirement_policy']=='no-backup-v1'
     assert intent['public_keys']=={'cloud.pub':PUBLIC,'loopback.pub':LOOPBACK}
     assert set(bootstrap._retired_history())=={SHA}
+
+
+def test_legacy_recovered_rotation_history_never_reads_archived_executor(monkeypatch, tmp_path):
+    from test_legacy_release_recovery import recovery_fixture, inspect, recover, NEW_SHA
+    b, workspace, calls = recovery_fixture(monkeypatch, tmp_path)
+    result = recover(b, inspect(b)['evidence_sha256'])
+    saved_workspace = b._workspace_evidence(SHA, recovery_receipt=result['receipt'])
+    installation = b._installation_evidence(SHA, b.CONFIG, b.INSTALLED.parent)
+    config, library = b._archives(SHA)
+    os.rename(b.CONFIG, config)
+    os.rename(b.INSTALLED.parent, library)
+    record = b.STATE / 'retired' / SHA
+    record.mkdir(parents=True, mode=0o700)
+    intent = {'old_sha': SHA, 'new_sha': NEW_SHA, 'installation': installation,
+              'workspace': saved_workspace, 'recovery_receipt': result['receipt']}
+    b._write(record / 'intent.json', json.dumps(intent).encode())
+    b._write(record / 'completed.json', json.dumps(
+        {'old_sha': SHA, 'new_sha': NEW_SHA, 'state': 'RETIRED'}).encode())
+    original = Path.read_bytes
+    def guarded(path):
+        if path == library / b.INSTALLED.name:
+            raise AssertionError('ordinary history read archived executor body')
+        return original(path)
+    monkeypatch.setattr(Path, 'read_bytes', guarded)
+    assert SHA in b._retired_history()
+
+
+def test_recovered_current_installation_still_verifies_executor_body(monkeypatch, tmp_path):
+    from test_legacy_release_recovery import recovery_fixture, inspect, recover
+    b, workspace, calls = recovery_fixture(monkeypatch, tmp_path)
+    result = recover(b, inspect(b)['evidence_sha256'])
+    b.INSTALLED.write_bytes(b'tampered-current-executor')
+    with pytest.raises(b.BootstrapError, match='old executor differs'):
+        b._recovered_preparation_evidence(SHA, recovery_receipt=result['receipt'])

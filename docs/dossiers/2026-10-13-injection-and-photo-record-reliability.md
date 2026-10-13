@@ -114,3 +114,7 @@ G4须固定最终来源做全新独立安全审查，精确主干完整CI与项�
 G3整合终态：root当前源码下授权/运行时/CI整合504 PASS（27.96秒）；最终运行时129 PASS（8.17秒）；deploy三套219 PASS（115.32秒），正常backend env契约8 PASS（SQLite仅用于文件契约，不证明PG语义）。新无备份CI契约先1FAIL/16PASS，再32PASS。bash语法、秘密扫描、Skill治理与System Map PASS；地图首次因PATH无python3.12未运行，补显式.venv PATH后实际PASS，不掩盖第一次退出。无schema/DB语义变化，无真实模型调用。授权链所有最终服务测试及删除失败点116PASS；旧fixture缺canonical flags导致的失败与更早旧契约失败保留于交接日志。
 
 OTA只读source预检在be154上实际BLOCK：自原生基线7fe06d8之后有mobile/app.config.ts等原生输入变化，未领取claim/未vendor update。需在发布阶段核对原生交付与OTA基线，不把旧QR/旧OTA当本候选成功。不放宽native边界来制造OTA绿。
+
+新发布器G4固定93426实际NO-GO：普通retired→historical workspace→旧recovered preparation分支仍读归档executor正文。独立1FAIL/604PASS，报告`/tmp/reva-no-backup-g4.json`完整保留；未push、未生产轮换。root吸收实际复现为仓库回归，1FAIL/1PASS（当前live篡改仍拒绝）后修复：仅archives路径`history_only=True`，fallback当前live保持完整正文摘要验证。修复后整合645 PASS，23.69秒，进程0；需新独立只读reviewer审固定新SHA，不复用旧NO-GO或产品GO。
+
+原生交付独立只读核对：93426原生输入与最新82fd QR相同，但trusted OTA STORE/EAS baseline固定7fe/09719，ad-hoc QR不能替代STORE cohort。production默认配置JSON相等尚不证明prebuild/plugin/签名binary/EAS fingerprint相等。当前可执行原生交付是新精确绿SHA的`mobile-local-qr.sh --profile ipad-adhoc`，不能改旧IPA回执或放宽OTA guard。本报告为边界核对，没有build/vendor写入。
