@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | shipping |
-| 当前阶段 | G2/G3：核验静态报告后重复模型合成的修复；已部署版本保持运行 |
+| 当前阶段 | G5 完成，G6 技术复验通过；真实账号与生产报告时延验收待自然使用确认 |
 
 Primary controller：health-harness-orchestrator；overlay：safety-gate。真实模型评测按用户要求取消。
 
@@ -126,3 +126,13 @@ G6 技术复验 PASS：生产源码合成探针允许截图两句的 owner/today
 增量根因 RED：专用 PostgreSQL 4 FAIL / 6 PASS，四个普通/批量 × 有/无数据 HTML 请求实际调用模型2次。修订后同批10 PASS，runner0、PG正常退出；实际保存内容逐字等于原服务端 renderer，合成调用由2变1。新捷径仅作用于默认 Pi 流式通路，panel 未改，不声称其加速。查询失败和所有闭合边界补验、固定提交完整集成、独立G4与发布仍待执行。
 
 新鲜宽域 PostgreSQL 239 PASS，含实际查询失败的最终状态与9项封闭边界，日志 `/tmp/reva-report-performance-final-pg.log`；pytest0，数据库关闭终态待收集。保留图片被动真实阶段基线与真实报告样本0的缺失，未把合成调用数裁决称为生产时延改善。
+
+### 静态报告性能续接最终交付
+
+运行时候选 `49d90fd24faa0670851da3b4dcf794ee1a5af1b4`。G3 PASS：宽域 PostgreSQL 与官方后端 CI-mode 各239 PASS；pytest、runner及正常数据库关闭均为0。干净固定来源发布合同3595 PASS、22平台跳过、84 subtests PASS，正常退出0；离线门PASS，无真实模型调用。[完整精确主干 CI 38332269936](https://github.com/itsoso/health-llm-driven/actions/runs/38332269936) SUCCESS。
+
+G4 GO：新鲜独立固定提交 PostgreSQL260 PASS，覆盖实际Pi/查询/保存、逐字HTML等价、查询失败、封闭边界和同实例下一账号/日期/会话；pytest与runner0，数据库正常关闭。独立探针首轮自身形状/导入/过严格断言错误保留，修正测试环境后通过，候选代码未改；四个SHA绑定包装器摘要及完整静态审查GO。
+
+G5 PASS：[可信后端发布38333973742](https://github.com/itsoso/health-llm-driven/actions/runs/38333973742) SUCCESS；四个已审查包装器各执行一次，旧回执、原锁和前端绑定保留。生产持久回执精确SUCCEEDED，干净HEAD匹配，四个服务active，HTTPS健康接口200/healthy，发布租约不存在，四个运行时文件摘要逐项匹配。临时真实评测SHA豁免已删除并读取确认不存在，confirmed=false。原CI与发布watch的GitHub连接EOF保留，直接有界终态读取确认同SHA成功，未重跑CI或发布。
+
+G6技术复验PASS：已核对的生产源码12项纯合成完成/封闭边界检查通过，实际DB读取、模型调用、写请求均为0。实际协议合成回归证明正文调用2→1、保存HTML逐字一致；真实报告性能样本仍为0，不宣称生产P50/P95/P99或提速百分比。真实账号与模型行为未验证，状态保持shipping。Mobile/Frontend/scripts/.github树不变，没有OTA、原生包或TestFlight发布。完整证据：[静态报告性能发布摘要](../reviews/2026-10-13-static-report-performance-release-summary.json)。

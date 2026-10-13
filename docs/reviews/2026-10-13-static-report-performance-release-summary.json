@@ -1,0 +1,126 @@
+{
+  "source_sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+  "previous_runtime_sha": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+  "change": "Verified static cycling HTML report skips one discarded model synthesis in default Pi stream; planner and panel unchanged.",
+  "ci": {
+    "conclusion": "success",
+    "head_sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+    "html_url": "https://github.com/itsoso/health-llm-driven/actions/runs/38332269936",
+    "id": 38332269936,
+    "status": "completed"
+  },
+  "trusted_backend_release": {
+    "conclusion": "success",
+    "head_sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+    "html_url": "https://github.com/itsoso/health-llm-driven/actions/runs/38333973742",
+    "id": 38333973742,
+    "status": "completed"
+  },
+  "production": {
+    "receipt": {
+      "sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+      "state": "SUCCEEDED"
+    },
+    "head": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+    "clean": true,
+    "units": {
+      "health-backend": "active",
+      "celery-worker": "active",
+      "celery-beat": "active",
+      "health-frontend": "active"
+    },
+    "lease_absent": true,
+    "code_hashes": {
+      "backend/app/services/agent_executor.py": "aba5e3e42b9ff8faaa7895ab8881c17746f45ae752498fdd1cc20fcf3c77373b",
+      "backend/app/services/agent_longitudinal_read.py": "a308d13be7da5286156555aac8dc0d6bc875e0a79dc8ecf03e4cfa4a6a810bca",
+      "backend/app/services/agent_composed_read_completion.py": "f2c95a4c37410a3c3d6839fc46dc6411c061f7b975086d812ccd8be4fddae75c",
+      "backend/app/services/agent_kernel/read_task_scope.py": "023acae69434bce034a5041ef9decdc1c0abe9f5e7ffd24546afea9137399dcc"
+    },
+    "health_status": 200,
+    "health": {
+      "status": "healthy"
+    }
+  },
+  "production_synthetic_probe": {
+    "status": "PASS",
+    "synthetic_source_guard_checks": 12,
+    "db_reads": 0,
+    "model_calls": 0,
+    "write_requests": 0,
+    "real_account_acceptance": false
+  },
+  "safety_review": {
+    "verdict": "GO",
+    "reviewed_sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+    "independent_postgres_cases": 260,
+    "pytest_exit": 0,
+    "runner_exit": 0,
+    "normal_cleanup": true,
+    "wrapper_manifest": {
+      "sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+      "old": "2bc67e6c901b9a1fae7055f5afb8bfb32fab9b6c",
+      "files": {
+        "/tmp/reva-report-performance-bootstrap-stage.py": "1b40908a3252981bf1fa7b66d3dbb0ee788679b1ff49763a9d78d4f649a8efaf",
+        "/tmp/reva-report-performance-revoke.py": "82d8162074f3b2ff3066d73e52edd19173eeb2d74560c53035dc268079793a37",
+        "/tmp/reva-report-performance-key-retirement.py": "ec1034e5926e697dcfe47169ba4f6e0ebc5020a5bb84a9d73d56823d27f06b32",
+        "/tmp/reva-report-performance-rotate.py": "34c3c1a5c70f76b481d0b59931ea097786b445fdf9c396c94586db35da24953d"
+      }
+    }
+  },
+  "local_verification": {
+    "root_postgres_cases": 239,
+    "official_backend_ci_mode_cases": 239,
+    "release_contract": {
+      "sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+      "exit_code": 0,
+      "duration_seconds": 562.3649180000648
+    },
+    "release_contract_cases": 3595,
+    "platform_skips": 22,
+    "subtests_passed": 84,
+    "offline_llm_gate": "PASS",
+    "live_llm_calls": 0
+  },
+  "protocol_performance_proof": {
+    "model_calls_before": 2,
+    "model_calls_after": 1,
+    "saved_html_byte_identical": true,
+    "synthetic_actual_pi_gateway_reader_persistence": true,
+    "production_report_latency_improvement_measured": false
+  },
+  "natural_baseline_limits": {
+    "report_samples": 0,
+    "report_latency_quantiles": null,
+    "photo_provider_returned_samples": 5,
+    "photo_provider_median_ms": 2497,
+    "photo_decode_returned_samples": 5,
+    "photo_decode_median_ms": 0,
+    "paired_end_to_end": false,
+    "successful_record_proof": false
+  },
+  "unchanged_trees": {
+    "mobile": true,
+    "frontend": true,
+    "scripts": true,
+    ".github": true
+  },
+  "ota_published": false,
+  "native_package_published": false,
+  "waiver_cleanup": {
+    "bound_sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+    "deleted": true,
+    "absence_readback_confirmed": true,
+    "real_model_evaluation_confirmed": false
+  },
+  "real_account_acceptance": false,
+  "limitations": [
+    "No real-model evaluation or real-account health queries; user waiver preserved.",
+    "No measured production latency/P95 or speed percentage improvement.",
+    "Only default Pi static cycling report after attested complete owner/day/type read is optimized."
+  ],
+  "preserved_failure_evidence": [
+    "Reviewer-only probe errors: dataclasses.replace on string result, pytest module import and overstrict model-call assertion",
+    " corrected in independent archive only. Candidate source unchanged. Both failed runner PGs closed normally.",
+    "GitHub original CI and release watches interrupted with unexpected EOF; exact terminal success confirmed by bounded direct readback."
+  ]
+}
