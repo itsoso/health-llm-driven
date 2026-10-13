@@ -45,6 +45,8 @@ def test_guard_has_separate_remote_clock_and_dependency_schema_restart_boundarie
     body = source.split('release_timing_checkpoint guard_started', 1)[1].split('CODE_EXIT=$?', 1)[0]
     assert '$(declare -f release_timing_checkpoint)' in body
     assert 'SECONDS=0' in body
+    assert 'apply_managed_migrations.py' not in body
+    assert 'remote_migrations_completed' not in body
     boundaries = [
         'release_timing_checkpoint remote_guard_started',
         'systemctl stop health-backend.socket',
@@ -53,8 +55,7 @@ def test_guard_has_separate_remote_clock_and_dependency_schema_restart_boundarie
         'release_timing_checkpoint remote_checkout_completed',
         '$remote_dependency_sync',
         'release_timing_checkpoint remote_dependencies_completed',
-        'python scripts/apply_managed_migrations.py',
-        'release_timing_checkpoint remote_migrations_completed',
+        'release_timing_checkpoint remote_schema_check_started',
         'verify_runtime_schema_compatibility.py',
         'release_timing_checkpoint remote_schema_completed',
         'systemctl restart celery-worker celery-beat',

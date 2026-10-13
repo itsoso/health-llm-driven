@@ -126,3 +126,9 @@ root新回归真实8FAIL（`/tmp/reva-no-backup-final-gaps-red2.log`）后修复
 v2 terminal cleanup在初次清理与after-rename重入都先核验root-owned0700目录仅含journal.json，验证严格字段/类型、原SHA/transaction身份、已COMMITTED且gate释放，再清理。未知目录、snapshot、额外journal字段或SHA篡改阻断并保留；无异常场景可以沿原回执继续终结。
 
 专项260PASS/2可选PGskip；补充正式CLI冻结和reap绑定后，整合运行1056PASS/2skip/1FAIL，唯一陈旧all-mode测试仍要求已经冻结的混合发布成功，已同步为不得发生backend/frontend/push事件并单项fresh1PASS。最后完整runtime/no-backup163PASS（9.89秒）。日志均保留；DB/schema语义不变，skip不冒充PG通过。初次diff-check发现一个测试EOF空行已修正，新鲜diff-check PASS。原产品源码/JS blob未变；这仍不是发布或OTA完成证明。
+
+### 无备份发布正式 CI 回归
+
+固定16acd的独立G4 GO：816 PASS/2可选PG SKIP，CI契约32 PASS；三份候选绑定操作包装器也GO。HTTPS推送因OAuth缺少workflow scope被拒绝；既有GitHub SSH身份成功推送，未改账号权限。正式CI `38365168727` 的release-invariants真实失败：248 PASS后，旧timing测试仍要求已移除的managed migration执行和完成事件。生产未部署、未轮换授权、未领取OTA或构建claim。
+
+本地同一timing测试复现1 FAIL/7 PASS；将契约更新为只读schema-check开始/完成边界，并显式禁止migration命令与误导性的migration完成事件，8 PASS。发布器生产源码未改；继续运行CI声明的完整release-invariants测试清单，不把局部绿替代正式CI，旧失败保留。
