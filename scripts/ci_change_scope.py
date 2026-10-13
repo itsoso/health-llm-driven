@@ -37,6 +37,7 @@ RELEASE_ONLY_FILES = {
     "scripts/release-preflight.sh",
     "scripts/test_backup_security.py",
     "scripts/test_deploy_script.py",
+    "scripts/test_deploy_no_backup.py",
     "scripts/test_infrastructure_security.py",
     "scripts/test_release_input_digest.py",
     "scripts/test_release_lock.py",

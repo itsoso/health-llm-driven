@@ -18,6 +18,7 @@ RELEASE_TESTS = (
     "scripts/test_backup_security.py",
     "scripts/test_ci_change_scope.py",
     "scripts/test_deploy_script.py",
+    "scripts/test_deploy_no_backup.py",
     "scripts/test_release_timing.py",
     "scripts/test_release_performance_report.py",
     "scripts/test_trusted_ota_startup.py",

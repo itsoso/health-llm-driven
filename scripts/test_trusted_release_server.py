@@ -674,21 +674,17 @@ def test_deploy_uses_only_fixed_command_and_private_authoritative_env(monkeypatc
     server = setup_state(monkeypatch, tmp_path)
     monkeypatch.setattr(server.time, "time", lambda: 100)
     monkeypatch.setattr(server, "validate_loopback", lambda policy: None)
-    monkeypatch.setattr(server, "read_production_env", lambda: "EXAMPLE_SETTING=fixture\nDEPLOY_SERVER=old\nDEPLOY_PATH=/old\n")
+    monkeypatch.setattr(server, "read_production_env", lambda: "EXAMPLE_SETTING=fixture\nAUTH_PHONE_SELF_REGISTRATION_ENABLED=false\nREGISTRATION_INVITATION_ENFORCEMENT_ENABLED=true\nREGISTRATION_INVITATION_ROLLOUT_ENABLED=true\nHEALTH_EVIDENCE_RUNTIME_ENABLED=false\nDEPLOY_SERVER=old\nDEPLOY_PATH=/old\n")
     monkeypatch.setattr(server, "laya_private_key", lambda: "a" * 43)
     calls = []
     monkeypatch.setattr(server, "execute", lambda args, cwd, env, log: calls.append((args, env)))
     server.deploy(policy(), tmp_path)
     assert calls[-1][0] == ["/bin/bash", str(tmp_path / "source/deploy.sh"), "-b"]
     assert calls[-1][1]["DEPLOY_SOURCE_SHA"] == SHA
-    candidate = (tmp_path / "deployment.env").read_text()
-    assert candidate == ("EXAMPLE_SETTING=fixture\n"
-                         "AUTH_PHONE_SELF_REGISTRATION_ENABLED=false\n"
-                         "REGISTRATION_INVITATION_ENFORCEMENT_ENABLED=true\n"
-                         "REGISTRATION_INVITATION_ROLLOUT_ENABLED=true\n"
-                         + server.initial_laya_config("EXAMPLE_SETTING=fixture")
-                         + "DEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n")
-    assert stat.S_IMODE((tmp_path / "deployment.env").stat().st_mode) == 0o600
+    assert not (tmp_path/'deployment.env').exists()
+    assert calls[-1][1]['DEPLOY_ENV_FILE']=='/opt/health-app/backend/.env'
+    assert calls[-1][1]['DEPLOY_SERVER']=='health'
+    assert calls[-1][1]['DEPLOY_PATH']=='/opt/health-app'
     assert (tmp_path / "bin/ssh").read_text() == '#!/bin/sh\nexec /usr/bin/ssh -F /etc/reva-release/loopback.conf "$@"\n'
 
 
@@ -848,7 +844,7 @@ def test_preparation_cannot_spend_the_reserved_deployment_window(monkeypatch, tm
 def test_last_ci_check_cannot_spend_the_reserved_deployment_window(monkeypatch, tmp_path):
     server = setup_state(monkeypatch, tmp_path)
     monkeypatch.setattr(server, "validate_loopback", lambda policy: None)
-    monkeypatch.setattr(server, "read_production_env", lambda: "EXAMPLE_SETTING=fixture\n")
+    monkeypatch.setattr(server, "read_production_env", lambda: "EXAMPLE_SETTING=fixture\nAUTH_PHONE_SELF_REGISTRATION_ENABLED=false\nREGISTRATION_INVITATION_ENFORCEMENT_ENABLED=true\nREGISTRATION_INVITATION_ROLLOUT_ENABLED=true\nHEALTH_EVIDENCE_RUNTIME_ENABLED=false\n")
     calls = []
     def slow_ci(args, cwd, env, log):
         calls.append(args)
@@ -939,3 +935,21 @@ def test_bound_finish_can_close_without_new_release_admission(monkeypatch, tmp_p
     monkeypatch.setattr(server, rpc, lambda policy, verb: calls.append(verb) or {'state': 'FINISHED'})
     assert server.main() == 0
     assert calls == ['finish']
+
+
+@pytest.mark.parametrize('mutation',['missing','enabled','duplicate','command'])
+def test_deploy_live_environment_validation_never_rewrites_or_copies(monkeypatch,tmp_path,mutation):
+    server=setup_state(monkeypatch,tmp_path)
+    monkeypatch.setattr(server.time,'time',lambda:100)
+    monkeypatch.setattr(server,'validate_loopback',lambda policy:None)
+    production='AUTH_PHONE_SELF_REGISTRATION_ENABLED=false\nREGISTRATION_INVITATION_ENFORCEMENT_ENABLED=true\nREGISTRATION_INVITATION_ROLLOUT_ENABLED=true\nHEALTH_EVIDENCE_RUNTIME_ENABLED=false\n'
+    if mutation=='missing': production=production.replace('HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n','')
+    elif mutation=='enabled': production=production.replace('AUTH_PHONE_SELF_REGISTRATION_ENABLED=false','AUTH_PHONE_SELF_REGISTRATION_ENABLED=true')
+    elif mutation=='duplicate': production+='HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n'
+    else: production=production.replace('HEALTH_EVIDENCE_RUNTIME_ENABLED=false','HEALTH_EVIDENCE_RUNTIME_ENABLED=$(false)')
+    monkeypatch.setattr(server,'read_production_env',lambda:production)
+    monkeypatch.setattr(server,'laya_private_key',lambda:'a'*43)
+    monkeypatch.setattr(server,'execute',lambda *a:pytest.fail('invalid configuration executed'))
+    with pytest.raises(server.LaunchError): server.deploy(policy(),tmp_path)
+    assert not (tmp_path/'deployment.env').exists()
+    assert not (tmp_path/'bin').exists()

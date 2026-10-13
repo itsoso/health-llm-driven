@@ -56,8 +56,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 # 从 .env 读取服务器配置
-SERVER=$(grep "^DEPLOY_SERVER=" "$ENV_FILE" | cut -d'=' -f2)
-REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
+SERVER="${DEPLOY_SERVER:-$(grep "^DEPLOY_SERVER=" "$ENV_FILE" | cut -d'=' -f2)}"
+REMOTE_PATH="${DEPLOY_PATH:-$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)}"
 REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"
 REMOTE_BACKUP_PREFLIGHT_DIR="/tmp/health-app-backup-preflight-$$-$(date +%s)"
 REMOTE_BACKUP_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/backup_db.sh"
@@ -433,7 +433,7 @@ upload_deploy_bundle() {
     fi
 }
 
-# 备份发生在远端 checkout 更新之前。先上传当前已核验 commit 的备份工具，
+# checkout 之前先上传当前精确 SHA 的发布工具；仅校验工具输入，不执行备份，
 # 避免旧 checkout 缺少恢复演练或站外归档闸门。
 stage_backup_preflight_scripts() {
     local scripts=(
@@ -497,11 +497,7 @@ for entry in "$stage_dir"/*; do
         health-backend-runtime-state.conf|\
         celery-worker-runtime-state.conf|\
         celery-beat-runtime-state.conf|\
-        staged.sha256|\
-        backend.env.rollback|\
-        backend.env.candidate|\
-        candidate.env|\
-        guard.env)
+        staged.sha256)
             ;;
         *)
             echo "unknown immutable release artifact: $name" >&2
@@ -575,41 +571,8 @@ test "$stage_artifact_count" = "$manifest_artifact_count"
             allowed += 1
             next
         }
-        $2 == "backend.env.rollback" {
-            backend_rollback += 1
-            allowed += 1
-            next
-        }
-        $2 == "backend.env.candidate" {
-            backend_candidate += 1
-            allowed += 1
-            next
-        }
-        $2 == "candidate.env" {
-            activation_candidate += 1
-            allowed += 1
-            next
-        }
-        $2 == "guard.env" {
-            activation_guard += 1
-            allowed += 1
-            next
-        }
         { exit 1 }
-        END {
-            backend_pair = backend_rollback == 1 &&
-                backend_candidate == 1 &&
-                activation_candidate == 0 &&
-                activation_guard == 0
-            activation_pair = backend_rollback == 0 &&
-                backend_candidate == 0 &&
-                activation_candidate == 1 &&
-                activation_guard == 1
-            if (allowed != 14 &&
-                !(allowed == 16 && (backend_pair || activation_pair))) {
-                exit 1
-            }
-        }
+        END { if (allowed != 14) exit 1 }
     ' staged.sha256
 )
 REMOTE_REUSE_RELEASE_STAGE
@@ -704,7 +667,7 @@ run_runtime_state_transaction() {
                 return 1
             fi
             ;;
-        preflight|prepare|install)
+        preflight-code|prepare-code|install)
             if ! [[ "$first_sha" =~ ^[0-9a-f]{40}$ &&
                   "$second_sha" =~ ^[0-9a-f]{40}$ ]]; then
                 print_error "runtime state transaction SHA 非法"
@@ -814,6 +777,7 @@ inspect_runtime_state_transaction_before_deploy() {
     local release_target
     local next_action
     local state_source
+    local transaction_mode
     local remote_head
 
     # A durable journal depends on the exact immutable stage (including both
@@ -851,6 +815,31 @@ inspect_runtime_state_transaction_before_deploy() {
         RUNTIME_STATE_RESUME_TARGET="none"
         _REMOTE_RELEASE_LOCK_ABANDONED=0
         return 0
+    fi
+    transaction_mode="$(runtime_state_status_field "$status_output" mode)" || transaction_mode=""
+    if [[ "$transaction_mode" != "code-only-no-backup" ]]; then
+        # A completely finalized legacy receipt is an idle baseline only. It
+        # is never accepted as this new candidate's no-backup success proof.
+        if [[ -z "$transaction_mode" && "$state_source" = "terminal" &&
+              "$phase" = "COMMITTED" && "$release_target" = "candidate" &&
+              "$next_action" = "none" &&
+              "$old_sha" =~ ^[0-9a-f]{40}$ &&
+              "$candidate_sha" =~ ^[0-9a-f]{40}$ &&
+              "$old_sha" != "$candidate_sha" &&
+              "$candidate_sha" != "$DEPLOY_EXPECTED_SHA" ]] &&
+           [[ "$(runtime_state_status_field "$status_output" gate_armed)" = false &&
+              "$(runtime_state_status_field "$status_output" gate_released)" = true ]]; then
+            remote_head="$(ssh "$SERVER" "git -C '$REMOTE_PATH' rev-parse HEAD")" || return 1
+            if [[ "$remote_head" = "$candidate_sha" ]]; then
+                RUNTIME_STATE_RESUME_PHASE="NONE"
+                RUNTIME_STATE_RESUME_TARGET="none"
+                _REMOTE_RELEASE_LOCK_ABANDONED=0
+                print_step "旧终态回执仅作为发布前 SHA 基线；未读取或恢复旧快照"
+                return 0
+            fi
+        fi
+        print_error "既有事务不是可接受的 idle baseline 或无备份 code-only 模式；现场与租约保留，未读取旧快照"
+        return 1
     fi
     if ! [[ "$old_sha" =~ ^[0-9a-f]{40}$ &&
           "$candidate_sha" =~ ^[0-9a-f]{40}$ &&
@@ -950,48 +939,12 @@ inspect_runtime_state_transaction_before_deploy() {
     if ! ssh "$SERVER" "
         set -eu
         cd '$REMOTE_BACKUP_PREFLIGHT_DIR'
-        test \"\$(
-            awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-        )\" = 16
+        test \"\$(awk 'NF { count += 1 } END { print count + 0 }' staged.sha256)\" = 14
+        test ! -e backend.env.rollback
+        test ! -e backend.env.candidate
         sha256sum --strict -c staged.sha256 >/dev/null
-        test -f backend.env.candidate
-        test ! -L backend.env.candidate
-        test \"\$(stat -c '%U:%G:%a' backend.env.candidate)\" = root:root:400
-        env_file='$REMOTE_PATH/backend/.env'
-        test -r \"\$env_file\"
-        cmp -s backend.env.candidate \"\$env_file\"
-        awk '
-            /^HEALTH_EVIDENCE_RUNTIME_ENABLED=/ { a += 1 }
-            \$0 == \"HEALTH_EVIDENCE_RUNTIME_ENABLED=false\" { e += 1 }
-            END { exit(a == 1 && e == 1 ? 0 : 1) }
-        ' \"\$env_file\"
-        awk '
-            /^HEALTH_RUNTIME_DATA_DIR=/ { a += 1 }
-            \$0 == \"HEALTH_RUNTIME_DATA_DIR=/var/lib/health-app/runtime\" { e += 1 }
-            END { exit(a == 1 && e == 1 ? 0 : 1) }
-        ' \"\$env_file\"
-        awk '
-            /^HEALTH_UPLOAD_DIR=/ { a += 1 }
-            \$0 == \"HEALTH_UPLOAD_DIR=/var/lib/health-app/uploads\" { e += 1 }
-            END { exit(a == 1 && e == 1 ? 0 : 1) }
-        ' \"\$env_file\"
-        awk '
-            /^HEALTH_SKILLS_CACHE_DIR=/ { a += 1 }
-            \$0 == \"HEALTH_SKILLS_CACHE_DIR=/var/cache/health-app/skills-hub\" { e += 1 }
-            END { exit(a == 1 && e == 1 ? 0 : 1) }
-        ' \"\$env_file\"
-        awk '
-            /^DEDAO_KBASE_REVIEW_ARTIFACT_DIR=/ { a += 1 }
-            \$0 == \"DEDAO_KBASE_REVIEW_ARTIFACT_DIR=/var/lib/health-app/dedao-kbase/workspace\" { e += 1 }
-            END { exit(a == 1 && e == 1 ? 0 : 1) }
-        ' \"\$env_file\"
-        awk '
-            /^LEGACY_KNOWLEDGE_RUNTIME_ENABLED=/ { a += 1 }
-            \$0 == \"LEGACY_KNOWLEDGE_RUNTIME_ENABLED=false\" { e += 1 }
-            END { exit(a == 1 && e == 1 ? 0 : 1) }
-        ' \"\$env_file\"
-    "; then
-        print_error "持久事务 candidate env 终态证明失败"
+    " || ! verify_live_env_matches_candidate; then
+        print_error "code-only 续接制品或现行配置证明失败；现场与租约保留"
         return 1
     fi
 
@@ -1007,7 +960,7 @@ inspect_runtime_state_transaction_before_deploy() {
     fi
     print_warning "续接持久 runtime state transaction: phase=$phase old=${old_sha:0:12} candidate=${candidate_sha:0:12}"
     # An active journal still depends on this exact stage and lease. Finalize
-    # or an exact rollback proof is the only safe point that arms cleanup.
+    # of this exact code-only candidate is the only safe point that arms cleanup.
     _REMOTE_RELEASE_LOCK_ABANDONED=1
 }
 
@@ -1086,8 +1039,8 @@ remote_git_sync_command() {
     cat <<EOF
         test -r '$REMOTE_RELEASE_LOCK_DIR/token' &&
         test "\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')" = '$REMOTE_RELEASE_LOCK_TOKEN' &&
-        echo '暂存服务器本地改动...' &&
-        git stash push -m auto-deploy-stash >/dev/null &&
+        echo '验证服务器工作树干净（不创建旧代码副本）...' &&
+        test -z "\$(git status --porcelain)" &&
         echo '同步到已核验的 main commit $DEPLOY_EXPECTED_SHA...' &&
         ( (git fetch origin main && git cat-file -e '$DEPLOY_EXPECTED_SHA^{commit}') ||
           (echo 'git fetch origin 失败或缺少目标 commit, 使用上传的 deploy bundle...' &&
@@ -1117,8 +1070,8 @@ show_help() {
     echo "  -a, --all       部署前端和后端 (默认)"
     echo "  -f, --frontend  重建远端已部署同一 SHA 的前端（新 commit 请用 --all）"
     echo "  -b, --backend   仅部署后端"
-    echo "  -e, --env       仅同步 .env 到服务器"
-    echo "  -H, --activate-health-evidence  受控启用健康证据运行时"
+    echo "  -e, --env       当前禁止（无备份发布不支持配置变更）"
+    echo "  -H, --activate-health-evidence  当前禁止（需无备份运行态变更协议）"
     echo "  -R, --reset-app-store-review  重置 App Store 审核演示数据（不改密码）"
     echo "  -r, --restart   仅重启服务 (不拉取代码)"
     echo "  -p, --push      仅推送代码到 GitHub (不部署)"
@@ -1149,78 +1102,30 @@ show_help() {
 HEALTH_CHECK_URL=""  # 在 deploy_backend/deploy_frontend 中设置
 DEPLOY_SCORE_THRESHOLD=35  # 部署后健康度最低分（满分60，skip-tests模式）
 
-# 准备发布工具；数据库备份、恢复演练与站外归档仅显式启用时执行。
+# 准备并校验发布工具；禁止新增备份、恢复演练和站外归档。
 backup_database() {
     local delegation_owner=0
-    local backup_enabled="${DEPLOY_DATABASE_BACKUP-0}"
-    local production_sha=""
-    local migration_release=1
-    local diff_status=0
-    local offsite_mode="upload"
-    if [[ "$backup_enabled" != "0" && "$backup_enabled" != "1" ]]; then
-        print_error "DEPLOY_DATABASE_BACKUP 只接受 0/1"
+    if [[ "${DEPLOY_DATABASE_BACKUP-0}" != "0" ]]; then
+        print_error "无备份发布策略禁止 DEPLOY_DATABASE_BACKUP 启用备份；旧配置不构成授权"
         return 1
     fi
-    print_step "准备发布工具..."
+    print_step "准备无备份发布工具..."
     if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
         _REMOTE_RELEASE_LOCK_DELEGATED=1
         delegation_owner=1
     fi
-    # 备份早于远端 git checkout 更新，因此必须执行本次发布 commit 随附的脚本；
-    # 数据库与站外归档配置仍从线上 backend/.env 加载。
     if ! stage_backup_preflight_scripts; then
         _REMOTE_RELEASE_LOCK_ABANDONED=1
-        print_error "无法上传本次发布的数据库备份工具，阻断部署"
-        print_error "远端 stage 结果不明确；发布锁与现场保留"
-        return 1
-    fi
-    # stage 同时承担回滚与运行态事务职责，跳过数据库备份仍须完整校验。
-    if [[ "$backup_enabled" = "0" ]]; then
-        if [ "$delegation_owner" -eq 1 ]; then
-            _REMOTE_RELEASE_LOCK_DELEGATED=0
-        fi
-        print_warning "已跳过数据库备份、恢复演练与站外归档（默认关闭）"
-        return 0
-    fi
-    print_step "备份数据库..."
-    production_sha="$(ssh "$SERVER" "cd '$REMOTE_PATH' && git rev-parse HEAD" 2>/dev/null || true)"
-    if [[ "$production_sha" =~ ^[0-9a-f]{40}$ ]] &&
-       git cat-file -e "${production_sha}^{commit}" 2>/dev/null &&
-       git merge-base --is-ancestor "$production_sha" "$DEPLOY_EXPECTED_SHA" 2>/dev/null; then
-        if git diff --quiet "$production_sha" "$DEPLOY_EXPECTED_SHA" -- backend/migrations/managed; then
-            migration_release=0
-        else
-            diff_status=$?
-            if [ "$diff_status" -ne 1 ]; then
-                print_warning "无法可靠比较数据库迁移范围；按迁移发布执行同步站外备份"
-            fi
-        fi
-    else
-        print_warning "无法确认生产基线 revision 为候选祖先；按迁移发布执行同步站外备份"
-    fi
-    if [ "$migration_release" -eq 0 ]; then
-        if ssh "$SERVER" "set -a; source '$REMOTE_PATH/backend/.env'; set +a; BACKUP_OFFSITE_MAX_AGE_SECONDS=86400 bash '$REMOTE_VERIFY_RECENT_OFFSITE'"; then
-            offsite_mode="skip"
-            print_step "已有 24 小时内经验证的站外备份；本次仅做本地备份与恢复演练"
-        else
-            print_warning "站外备份凭证缺失、过期或不完整；本次将同步补做加密站外备份"
-        fi
-    else
-        print_step "检测到数据库迁移或无法证明无迁移；本次同步执行加密站外备份"
-    fi
-    if ! ssh "$SERVER" "set -a; source '$REMOTE_PATH/backend/.env'; set +a; BACKUP_OFFSITE_REQUIRED=1 BACKUP_OFFSITE_MODE='$offsite_mode' bash \"$REMOTE_BACKUP_RUNNER\""; then
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        print_error "数据库备份、恢复演练或所需站外归档失败，阻断部署"
-        print_error "远端备份结果不明确；发布锁与现场保留"
+        print_error "发布工具准备失败或结果未知；发布锁与现场保留"
         return 1
     fi
     if [ "$delegation_owner" -eq 1 ]; then
         _REMOTE_RELEASE_LOCK_DELEGATED=0
     fi
-    print_success "数据库备份、恢复演练和站外策略检查完成"
+    print_success "发布工具已校验；未执行备份、恢复演练或站外归档"
 }
 
-# 记录当前 commit 用于回滚
+# 记录当前 commit 作为发布前 SHA 证明（不复制旧代码）
 save_rollback_point() {
     local rollback_commit
     rollback_commit=$(
@@ -1228,11 +1133,11 @@ save_rollback_point() {
             true
     )
     if ! [[ "$rollback_commit" =~ ^[0-9a-f]{40}$ ]]; then
-        print_error "无法取得合法的生产回滚点"
+        print_error "无法取得合法的发布前生产 SHA"
         return 1
     fi
     ROLLBACK_CANDIDATE_COMMIT="$rollback_commit"
-    print_step "候选回滚点: ${ROLLBACK_CANDIDATE_COMMIT:0:8}"
+    print_step "发布前 SHA: ${ROLLBACK_CANDIDATE_COMMIT:0:8}"
 }
 
 verify_rollback_point_schema_compatibility() {
@@ -1240,10 +1145,10 @@ verify_rollback_point_schema_compatibility() {
 
     assert_remote_release_lock
     if ! [[ "$ROLLBACK_CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
-        print_error "回滚点 SHA 非法，拒绝兼容性预检"
+        print_error "发布前 SHA 非法，拒绝兼容性预检"
         return 1
     fi
-    print_step "验证当前生产回滚点与实时 schema 兼容..."
+    print_step "验证当前生产 SHA 与实时 schema 兼容..."
     if ! probe_output=$(ssh "$SERVER" "
         set -euo pipefail
         test -r '$REMOTE_RELEASE_LOCK_DIR/token'
@@ -1273,43 +1178,30 @@ verify_rollback_point_schema_compatibility() {
         return 1
     fi
     ROLLBACK_COMMIT="$ROLLBACK_CANDIDATE_COMMIT"
-    print_success "生产回滚点已验证并记录: ${ROLLBACK_COMMIT:0:12}"
+    print_success "发布前生产 SHA 已验证并记录: ${ROLLBACK_COMMIT:0:12}"
+}
+
+verify_code_only_source_changes() {
+    if ! [[ "$ROLLBACK_CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ &&
+            "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "无备份 source compatibility 缺少精确 SHA"
+        return 1
+    fi
+    if ! git -C "$SCRIPT_DIR" diff --quiet "$ROLLBACK_CANDIDATE_COMMIT" "$DEPLOY_EXPECTED_SHA" -- \
+        backend/migrations/managed backend/app/models infra/systemd/dropins; then
+        print_error "无备份 code-only 发布不支持 schema/models/runtime dropin 变更；尚未停写"
+        return 1
+    fi
 }
 
 # 回滚到上一个版本
 rollback_deploy() {
-    if [[ -z "$ROLLBACK_COMMIT" ]]; then
-        print_error "无回滚点，请手动恢复"
-        return 1
-    fi
-    assert_remote_release_lock_if_acquired
-    print_warning "健康度不达标，自动回滚到 ${ROLLBACK_COMMIT:0:8}..."
-    local rollback_output
+    # No new rollback copy exists in code-only releases. Never invoke a legacy
+    # restore script against the current candidate or release its evidence.
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
     _REMOTE_RELEASE_LOCK_DELEGATED=1
-    if ! rollback_output=$(ssh "$SERVER" \
-        "REMOTE_RELEASE_STATE_DIR='$REMOTE_RELEASE_STATE_DIR' bash '$REMOTE_ROLLBACK_RUNNER' '$REMOTE_PATH' '$ROLLBACK_COMMIT' '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN'" 2>&1); then
-        echo "$rollback_output" >&2
-        print_error "自动回滚未通过 exact-SHA 或数据库兼容健康验证"
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        return 1
-    fi
-    echo "$rollback_output"
-    local rollback_marker
-    rollback_marker="ROLLBACK_OK commit=$ROLLBACK_COMMIT kb_quarantine=passed schema_probe=passed auth_probe=passed services=active process_flag=false"
-    if ! printf '%s\n' "$rollback_output" | awk -v marker="$rollback_marker" '
-        $0 == marker " runtime_state=restored" ||
-        $0 == marker " runtime_state=candidate-retained" {
-            accepted += 1
-        }
-        END { exit(accepted == 1 ? 0 : 1) }
-    '; then
-        print_error "自动回滚缺少精确成功证明，拒绝接受"
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        return 1
-    fi
-    _REMOTE_RELEASE_LOCK_DELEGATED=0
-    _REMOTE_RELEASE_LOCK_ABANDONED=0
-    print_success "代码已回滚到 ${ROLLBACK_COMMIT:0:8}，runtime-only KB 已隔离且兼容性已验证 (kb_quarantine=passed)"
+    print_error "NEEDS_OPERATOR：无备份发布失败，未自动恢复旧代码/配置/运行态；发布锁与现场保留"
+    return 1
 }
 
 # 部署后验证（项目的 val_bpb 检查）
@@ -1509,151 +1401,11 @@ validate_langbridge_env() {
     fi
 }
 
-# 备份服务器当前 backend/.env，避免环境变量同步覆盖后无法回退
+# 旧 env 备份入口明确冻结，普通发布只核对现行配置摘要
 backup_remote_env() {
-    local delegation_owner=0
-    local snapshot_mode="${1:-release}"
-    if [[ "$snapshot_mode" != "release" &&
-          "$snapshot_mode" != "rolling-only" ]]; then
-        print_error "env 备份模式非法"
-        return 1
-    fi
-    assert_remote_release_lock_if_acquired
-    print_step "备份服务器 backend/.env..."
-    if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
-        _REMOTE_RELEASE_LOCK_DELEGATED=1
-        delegation_owner=1
-    fi
-
-    if ! ssh "$SERVER" bash -s -- \
-        "$REMOTE_PATH/backend" \
-        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
-        "$REMOTE_BACKEND_ENV_ROLLBACK" \
-        "$REMOTE_RELEASE_LOCK_DIR" \
-        "$REMOTE_RELEASE_LOCK_TOKEN" \
-        "$snapshot_mode" <<'REMOTE_ENV_BACKUP'
-set -euo pipefail
-remote_backend="$1"
-stage_dir="$2"
-rollback_snapshot="$3"
-release_lock_dir="$4"
-release_lock_token="$5"
-snapshot_mode="$6"
-case "$snapshot_mode" in
-    release|rolling-only) ;;
-    *) exit 1 ;;
-esac
-test -r "$release_lock_dir/token"
-test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
-cd "$remote_backend"
-test -f .env
-test ! -L .env
-
-REMOTE_BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"
-CONFIGURED_BACKUP_ROOT=$(grep -m1 '^HEALTH_BACKUP_ROOT=' .env 2>/dev/null | cut -d= -f2- || true)
-if [ -n "$CONFIGURED_BACKUP_ROOT" ]; then
-    REMOTE_BACKUP_ROOT="$CONFIGURED_BACKUP_ROOT"
-fi
-ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"
-BACKUP_TS=$(date +%Y%m%d_%H%M%S)
-mkdir -p "$ENV_BACKUP_DIR"
-chmod 700 "$REMOTE_BACKUP_ROOT" "$ENV_BACKUP_DIR"
-cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"
-chmod 600 "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"
-find "$ENV_BACKUP_DIR" -maxdepth 1 -type f -name '.env.*' -printf '%T@ %p\n' \
-    | sort -nr | awk 'NR > 20 {sub(/^[^ ]+ /, ""); print}' | xargs -r rm --
-if [ "$snapshot_mode" = "rolling-only" ]; then
-    echo "已备份到工作树外: $ENV_BACKUP_DIR/.env.${BACKUP_TS}"
-    exit 0
-fi
-
-if [ -e "$stage_dir" ]; then
-    test -d "$stage_dir"
-    test ! -L "$stage_dir"
-else
-    umask 077
-    mkdir "$stage_dir"
-fi
-test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
-
-# The rollback snapshot preserves every pre-release key/path but guarantees
-# the one safe base flag required by both old and new service processes. A
-# predecessor that predates the flag is bootstrapped by appending false.
-snapshot_tmp="$(mktemp "$stage_dir/.backend.env.rollback.XXXXXX")"
-trap 'rm -f -- "$snapshot_tmp"' EXIT
-awk '
-    /^[[:space:]]*(export[[:space:]]+)?HEALTH_EVIDENCE_RUNTIME_ENABLED[[:space:]]*=/ {
-        assignments += 1
-        if ($0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false") {
-            canonical += 1
-            print "HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
-            next
-        }
-        invalid = 1
-        next
-    }
-    { print }
-    END {
-        if (assignments > 1 || invalid == 1 || canonical > 1) {
-            exit 1
-        }
-        if (assignments == 0) {
-            print "HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
-        }
-    }
-' .env >"$snapshot_tmp"
-chmod 0400 "$snapshot_tmp"
-if [ -e "$rollback_snapshot" ]; then
-    test -f "$rollback_snapshot"
-    test ! -L "$rollback_snapshot"
-    test "$(stat -c '%U:%G:%a' "$rollback_snapshot")" = "root:root:400"
-    if cmp -s "$snapshot_tmp" "$rollback_snapshot"; then
-        :
-    else
-        # A client can disconnect after the sealed candidate was installed
-        # but before runtime-state prepare wrote ARMING. In that exact prefix,
-        # preserve the old snapshot and require the live env to match the
-        # already sealed candidate byte-for-byte.
-        manifest="$stage_dir/staged.sha256"
-        candidate_snapshot="$stage_dir/backend.env.candidate"
-        test -f "$manifest"
-        test ! -L "$manifest"
-        (
-            cd "$stage_dir"
-            test "$(
-                awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-            )" = "16"
-            sha256sum --strict -c staged.sha256 >/dev/null
-        )
-        test -f "$candidate_snapshot"
-        test ! -L "$candidate_snapshot"
-        test "$(stat -c '%U:%G:%a' "$candidate_snapshot")" = \
-            "root:root:400"
-        cmp -s "$snapshot_tmp" "$candidate_snapshot"
-    fi
-else
-    install -o root -g root -m 0400 "$snapshot_tmp" \
-        "${rollback_snapshot}.tmp"
-    sync -f "${rollback_snapshot}.tmp"
-    mv -fT "${rollback_snapshot}.tmp" "$rollback_snapshot"
-    sync -f "$stage_dir"
-    cmp -s "$snapshot_tmp" "$rollback_snapshot"
-fi
-test "$(stat -c '%U:%G:%a' "$rollback_snapshot")" = "root:root:400"
-test -r "$release_lock_dir/token"
-test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
-echo "已备份到工作树外并封存 release rollback env: $ENV_BACKUP_DIR/.env.${BACKUP_TS}"
-REMOTE_ENV_BACKUP
-    then
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        print_error "远端 env 备份结果不明确；发布锁与现场保留"
-        return 1
-    fi
-
-    if [ "$delegation_owner" -eq 1 ]; then
-        _REMOTE_RELEASE_LOCK_DELEGATED=0
-    fi
-    print_success "服务器环境变量备份检查完成"
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    print_error "无备份策略禁止复制旧配置；未创建 env 备份或回退副本"
+    return 1
 }
 
 upload_backend_env_file() {
@@ -1815,91 +1567,9 @@ REMOTE_ENV_STAGE_COMMIT
 }
 
 seal_release_env_snapshots() {
-    assert_remote_release_lock
-    if ! ssh "$SERVER" bash -s -- \
-        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
-        "$REMOTE_BACKEND_ENV_ROLLBACK" \
-        "$REMOTE_BACKEND_ENV_CANDIDATE" \
-        "$REMOTE_BACKEND_ENV_CANDIDATE_SHA" \
-        "$REMOTE_RELEASE_LOCK_DIR" \
-        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_SEAL_RELEASE_ENVS'
-set -euo pipefail
-stage_dir="$1"
-rollback_snapshot="$2"
-candidate_snapshot="$3"
-candidate_hash="$4"
-release_lock_dir="$5"
-release_lock_token="$6"
-manifest="$stage_dir/staged.sha256"
-manifest_tmp="$stage_dir/.staged.sha256.env.tmp"
-trap 'rm -f -- "$manifest_tmp"' EXIT
-test -r "$release_lock_dir/token"
-test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
-test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
-[[ "$candidate_hash" =~ ^[0-9a-f]{64}$ ]]
-for snapshot in "$rollback_snapshot" "$candidate_snapshot"; do
-    test -f "$snapshot"
-    test ! -L "$snapshot"
-    test "$(stat -c '%U:%G:%a' "$snapshot")" = "root:root:400"
-done
-test "$(sha256sum "$candidate_snapshot" | awk '{print $1}')" = \
-    "$candidate_hash"
-(
-    cd "$stage_dir"
-    sha256sum --strict -c staged.sha256 >/dev/null
-    current_count="$(
-        awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-    )"
-    if [ "$current_count" = "16" ]; then
-        for name in backend.env.rollback backend.env.candidate; do
-            awk -v expected="$name" '
-                $2 == expected { matches += 1 }
-                END { exit(matches == 1 ? 0 : 1) }
-            ' staged.sha256
-        done
-        exit 0
-    fi
-    test "$current_count" = "14"
-    sha256sum \
-        backup_db.sh \
-        verify_backup_restore.sh \
-        archive_backup_offsite.sh \
-        verify_recent_offsite_backup.sh \
-        rollback_release.sh \
-        activate_health_evidence_runtime.sh \
-        verify_locked_requirements.py \
-        verify_runtime_schema_compatibility.py \
-        quarantine_runtime_only_kb.py \
-        runtime_state_release_transaction.py \
-        review_manifest.json \
-        health-backend-runtime-state.conf \
-        celery-worker-runtime-state.conf \
-        celery-beat-runtime-state.conf \
-        backend.env.rollback \
-        backend.env.candidate \
-        >"$manifest_tmp"
-)
-if [ -s "$manifest_tmp" ]; then
-    chmod 0400 "$manifest_tmp"
-    sync -f "$manifest_tmp"
-    mv -fT "$manifest_tmp" "$manifest"
-    sync -f "$stage_dir"
-fi
-(
-    cd "$stage_dir"
-    test "$(
-        awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
-    )" = "16"
-    sha256sum --strict -c staged.sha256 >/dev/null
-)
-test -r "$release_lock_dir/token"
-test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
-REMOTE_SEAL_RELEASE_ENVS
-    then
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        print_error "release env 快照封存结果不明确；发布锁与现场保留"
-        return 1
-    fi
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    print_error "无备份策略不支持 env 回退快照；发布锁与现场保留"
+    return 1
 }
 
 require_canonical_env_assignment() {
@@ -1920,55 +1590,60 @@ require_canonical_env_assignment() {
 }
 
 validate_env_sync_safety() {
-    # ── env 守卫(2026-07-12 事故加固,机械拦截,勿删)──────────────────
-    # 事故:从陈旧 checkout 跑 deploy,sync_env 把缺 12 个 key + APP_ENV=development
-    # 的本地 .env 推上 prod → 短信密钥丢失 + dev_code 回显洞重开。
-    # 守卫1:本地 .env 必须是 prod 形态(APP_ENV=production + DEBUG=False)。
-    # 守卫2:prod 现有的 key 本地缺失 → 说明本地 .env 陈旧,推送会删 prod 配置,硬退。
-    # 逃生口:DEPLOY_ENV_FORCE=1(明知故犯,比如刻意删 key)。
-    if [ "${DEPLOY_ENV_FORCE:-0}" != "1" ]; then
-        if ! require_canonical_env_assignment APP_ENV production ||
-            ! require_canonical_env_assignment DEBUG False ||
-            ! require_canonical_env_assignment \
-                HEALTH_RUNTIME_DATA_DIR \
-                /var/lib/health-app/runtime ||
-            ! require_canonical_env_assignment \
-                HEALTH_UPLOAD_DIR \
-                /var/lib/health-app/uploads ||
-            ! require_canonical_env_assignment \
-                HEALTH_SKILLS_CACHE_DIR \
-                /var/cache/health-app/skills-hub ||
-            ! require_canonical_env_assignment \
-                DEDAO_KBASE_REVIEW_ARTIFACT_DIR \
-                /var/lib/health-app/dedao-kbase/workspace ||
-            ! require_canonical_env_assignment \
-                LEGACY_KNOWLEDGE_RUNTIME_ENABLED \
-                false; then
-            print_error "env 守卫:本地 .env 缺少唯一规范的 production/runtime/uploads/cache/Dedao/legacy 配置。"
-            print_error "你可能在用 dev/陈旧 .env。修正后重试,或 DEPLOY_ENV_FORCE=1 强制。"
+    # Current production config is never downloaded or copied into a rollback
+    # artifact. Validate the supplied input, then compare only its digest.
+    local key value
+    while read -r key value; do
+        if ! require_canonical_env_assignment "$key" "$value"; then
+            print_error "env 必须保持规范的 production/runtime 配置；无备份发布不支持配置变更"
             return 1
         fi
-        local guard_remote
-        local missing_keys
-        guard_remote=$(mktemp)
-        chmod 600 "$guard_remote"
-        if scp -q "$SERVER:$REMOTE_PATH/backend/.env" "$guard_remote" \
-            2>/dev/null; then
-            missing_keys=$(comm -13 \
-                <(grep -vE '^#|^$' "$ENV_FILE" |
-                    sed -E 's/=.*//' | sort -u) \
-                <(grep -vE '^#|^$' "$guard_remote" |
-                    sed -E 's/=.*//' | sort -u) |
-                head -20)
-            if [ -n "$missing_keys" ]; then
-                print_error "env 守卫:prod 上存在但本地 .env 缺失的 key(推送会把它们从 prod 删掉):"
-                echo "$missing_keys"
-                print_error "先把这些 key 收敛进本地根 .env(scp prod 值回来),或 DEPLOY_ENV_FORCE=1 强制。"
-                rm -f "$guard_remote"
-                return 1
-            fi
-        fi
-        rm -f "$guard_remote"
+    done <<'CANONICAL_ENV'
+APP_ENV production
+DEBUG False
+HEALTH_RUNTIME_DATA_DIR /var/lib/health-app/runtime
+HEALTH_UPLOAD_DIR /var/lib/health-app/uploads
+HEALTH_SKILLS_CACHE_DIR /var/cache/health-app/skills-hub
+DEDAO_KBASE_REVIEW_ARTIFACT_DIR /var/lib/health-app/dedao-kbase/workspace
+LEGACY_KNOWLEDGE_RUNTIME_ENABLED false
+HEALTH_EVIDENCE_RUNTIME_ENABLED false
+CANONICAL_ENV
+}
+
+verify_live_env_matches_candidate() {
+    local candidate_hash proof
+    candidate_hash="$(
+        set -o pipefail
+        awk '!/^DEPLOY_SERVER=/ && !/^DEPLOY_PATH=/ && !/^#.*服务器信息/ && !/^# -.*deploy\.sh/' "$ENV_FILE" |
+            shasum -a 256 | awk 'NR == 1 { print $1 }'
+    )" || return 1
+    [[ "$candidate_hash" =~ ^[0-9a-f]{64}$ ]] || return 1
+    if ! proof="$(ssh "$SERVER" bash -s -- \
+        "$REMOTE_PATH/backend/.env" "$candidate_hash" <<'REMOTE_CODE_ONLY_ENV'
+set -euo pipefail
+live_env="$1"
+expected_hash="$2"
+test -f "$live_env"
+test ! -L "$live_env"
+test "$(stat -c '%h' "$live_env")" = 1
+metadata="$(stat -c '%U:%G:%a' "$live_env")"
+if [ "$metadata" != root:root:600 ] &&
+   [ "$metadata" != root:root:640 ] &&
+   [ "$metadata" != root:health-app:640 ]; then
+    echo 'unsafe live env metadata' >&2
+    exit 1
+fi
+actual_hash="$(sha256sum "$live_env" | awk 'NR == 1 { print $1 }')"
+test "$actual_hash" = "$expected_hash"
+printf 'CODE_ONLY_ENV_OK sha256=%s\n' "$actual_hash"
+REMOTE_CODE_ONLY_ENV
+    )"; then
+        print_error "现行 env 与候选配置不同或权限不安全；配置尚未改变，无备份发布阻断"
+        return 1
+    fi
+    if [[ "$proof" != "CODE_ONLY_ENV_OK sha256=$candidate_hash" ]]; then
+        print_error "现行 env 摘要证明无效；配置尚未改变"
+        return 1
     fi
 }
 
@@ -1985,10 +1660,14 @@ validate_deploy_env_preflight() {
         return 1
     fi
     if [[ "$ENV_SYNC_SAFETY_VALIDATED_SHA" == "$env_sha" ]]; then
-        return 0
+        verify_live_env_matches_candidate
+        return $?
     fi
     print_step "部署前快速校验生产 env..."
     if ! validate_env_sync_safety || ! validate_langbridge_env; then
+        return 1
+    fi
+    if ! verify_live_env_matches_candidate; then
         return 1
     fi
     ENV_SYNC_SAFETY_VALIDATED_SHA="$env_sha"
@@ -1997,29 +1676,9 @@ validate_deploy_env_preflight() {
 
 # 同步环境变量到服务器
 sync_env() {
-    print_step "同步 .env 到服务器..."
-
-    if ! validate_deploy_env_preflight; then
-        return 1
-    fi
-    if ! backup_remote_env; then
-        return 1
-    fi
-    # From the first remote stage write onward, a lost client must not delete
-    # the evidence needed to decide whether the transition completed.
-    _REMOTE_RELEASE_LOCK_DELEGATED=1
-    if ! upload_backend_env_file "$ENV_FILE"; then
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        print_error "env candidate staging 结果不明确；发布锁与现场保留"
-        return 1
-    fi
-    if [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-        if ! seal_release_env_snapshots; then
-            return 1
-        fi
-    fi
-
-    print_success "发布前/候选 env 已封存并校验；live .env 尚未改变"
+    print_step "验证无备份发布的现行配置..."
+    validate_deploy_env_preflight || return 1
+    print_success "现行 env 未改变；仅验证摘要与权限，未生成配置副本"
 }
 
 # 去激活事务已经完成 backend/Celery 的最后一次重启和逐 PID flag=false
@@ -3405,12 +3064,12 @@ deploy_backend() {
     # 且首阶段禁止生成新 evidence answer。
     validate_runtime_only_kb_staging
 
-    # 环境错误必须在数据库备份、恢复演练和站外归档之前失败。相同文件的
+    # 环境错误必须在远端发布工具准备及停写之前失败。相同文件的
     # 摘要由后续上传阶段复用；文件若在预检后改变，则会自动重新校验。
     validate_deploy_env_preflight
     release_timing_checkpoint env_checked
 
-    # 1. 准备发布工具（数据库备份默认关闭）+ 记录发布前回滚点
+    # 1. 准备无备份发布工具与发布前 SHA 小型证明
     backup_database
     determine_system_kb_activation_need
     inspect_runtime_state_transaction_before_deploy
@@ -3433,6 +3092,7 @@ deploy_backend() {
     if [[ "$RUNTIME_STATE_RESUME_PHASE" = "NONE" ]]; then
         save_rollback_point
         verify_rollback_point_schema_compatibility
+        verify_code_only_source_changes || return 1
 
         # All locally fallible transport and read-only transaction checks run
         # before live env/service mutation. A preflight RPC failure preserves
@@ -3443,7 +3103,7 @@ deploy_backend() {
         fi
         _REMOTE_RELEASE_LOCK_ABANDONED=1
         if ! run_runtime_state_transaction \
-            preflight \
+            preflight-code \
             "$ROLLBACK_CANDIDATE_COMMIT" \
             "$DEPLOY_EXPECTED_SHA"; then
             print_error "runtime state 只读预检失败；服务与 live env 尚未变更，现场与租约保留"
@@ -3467,11 +3127,12 @@ deploy_backend() {
         # between live mutation and the caller restoring the preserve state.
         _REMOTE_RELEASE_LOCK_ABANDONED=1
         release_timing_checkpoint deactivation_started
-        if ! deactivate_health_evidence_runtime_before_mutation; then
+        if ! prove_health_evidence_runtime_process_flag false; then
+            print_error "现行 runtime flag 不是安全关闭状态；服务尚未改变，发布阻断"
             return 1
         fi
     else
-        print_step "沿用持久事务中的已验证回滚点与 candidate env"
+        print_step "沿用 code-only 持久事务的 SHA 与现行配置证明"
     fi
 
     if [[ "$runtime_state_preflight_complete" != "1" ]]; then
@@ -3483,7 +3144,7 @@ deploy_backend() {
             return 1
         fi
         if ! run_runtime_state_transaction \
-            preflight \
+            preflight-code \
             "$ROLLBACK_CANDIDATE_COMMIT" \
             "$DEPLOY_EXPECTED_SHA"; then
             print_error "runtime state 续接预检失败；现场与租约保留"
@@ -3518,7 +3179,7 @@ deploy_backend() {
         release_timing_checkpoint remote_writers_stopped && \
         if [ '$RUNTIME_STATE_RESUME_PHASE' != 'COMMITTED' ]; then \
             /usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \
-                prepare '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA' \
+                prepare-code '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA' \
                 '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN'; \
         fi && \
         cd $REMOTE_PATH && \
@@ -3537,13 +3198,8 @@ deploy_backend() {
         set -a && source .env && set +a && \
         $remote_dependency_sync && \
         release_timing_checkpoint remote_dependencies_completed && \
-        echo '执行受控数据库迁移...' && \
-        test -r /etc/health-app/migration.env && \
-        set -a && source /etc/health-app/migration.env && set +a && \
-        test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
-        test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
-        python scripts/apply_managed_migrations.py && \
-        release_timing_checkpoint remote_migrations_completed && \
+        echo 'code-only：不执行数据库迁移，继续只读 schema 验证...' && \
+        release_timing_checkpoint remote_schema_check_started && \
         unset MIGRATION_DATABASE_URL && \
         (cd '$REMOTE_BACKUP_PREFLIGHT_DIR' && \
             sha256sum --strict -c staged.sha256 >/dev/null) && \
@@ -3579,47 +3235,35 @@ deploy_backend() {
         # ssh rc=0 proves the remote command is terminal, so rollback can now
         # safely own a fresh delegated transaction.
         _REMOTE_RELEASE_LOCK_DELEGATED=0
-        if rollback_deploy; then
-            print_error "后端 guard 终态证明失败，已自动回滚并通过健康检查"
-        else
-            print_error "后端 guard 终态证明失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
-        fi
+        rollback_deploy || true
+        print_error "后端 guard 终态证明失败；NEEDS_OPERATOR，未执行自动恢复，发布锁与现场保留"
         exit 1
     fi
     _REMOTE_RELEASE_LOCK_DELEGATED=0
 
     # 4. 先验证 hold-aware guard；未通过时 KB 尚未写入。
     if ! verify_deployment; then
-        if rollback_deploy; then
-            print_error "后端 guard 健康检查失败，代码已自动回滚并通过健康检查"
-        else
-            print_error "后端 guard 健康检查失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
-        fi
+        rollback_deploy || true
+        print_error "后端 guard 健康检查失败；NEEDS_OPERATOR，未执行自动恢复，发布锁与现场保留"
         exit 1
     fi
 
     if ! verify_deployed_revision; then
-        if rollback_deploy; then
-            print_error "后端 guard revision 校验失败，已自动回滚并通过健康检查"
-        else
-            print_error "后端 guard revision 校验失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
-        fi
+        rollback_deploy || true
+        print_error "后端 guard revision 校验失败；NEEDS_OPERATOR，未执行自动恢复，发布锁与现场保留"
         exit 1
     fi
 
     if ! verify_runtime_only_kb_contract "guard"; then
-        if rollback_deploy; then
-            print_error "后端 guard serving contract 失败，已自动回滚并通过健康检查"
-        else
-            print_error "后端 guard serving contract 失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
-        fi
+        rollback_deploy || true
+        print_error "后端 guard serving contract 失败；NEEDS_OPERATOR，未执行自动恢复，发布锁与现场保留"
         exit 1
     fi
 
     release_timing_checkpoint guard_gates_passed
 
     # 所有 guard Gate 通过后才提交 state transaction。commit 会精确删除
-    # 已迁移的 legacy beat shelf；失败仍可从快照回到发布前 SHA。
+    # code-only 提交不删除既有 runtime 数据；失败保留现场，不自动恢复。
     if ! commit_runtime_state_transaction_after_guard; then
         exit 1
     fi
@@ -3627,7 +3271,7 @@ deploy_backend() {
     # Guard 已健康：从现在起即使 KB activation 失败，也绝不回到不认识
     # generic hold 的旧代码。rollback runner 还会定向 archive 作为第二层防线。
     ROLLBACK_COMMIT="$DEPLOY_EXPECTED_SHA"
-    print_success "generic-hold guard 已成为回滚地板: ${ROLLBACK_COMMIT:0:12}"
+    print_success "generic-hold candidate 已通过 guard 验证: ${ROLLBACK_COMMIT:0:12}"
 
     release_timing_checkpoint kb_activation_started
 
@@ -3666,31 +3310,22 @@ deploy_backend() {
     # 6. 数据激活后再次跑完整健康度；失败回到同一 guard SHA 并隔离 pack。
     if ! verify_deployment; then
         _REMOTE_RELEASE_LOCK_DELEGATED=0
-        if rollback_deploy; then
-            print_error "KB activation 后健康检查失败，guard 代码保留且 runtime-only KB 已隔离"
-        else
-            print_error "KB activation 后健康检查失败，且隔离回滚失败，无法证明服务已停止，请立即人工隔离主机"
-        fi
+        rollback_deploy || true
+        print_error "KB activation 后健康检查失败；NEEDS_OPERATOR，未执行自动恢复，发布锁与现场保留"
         exit 1
     fi
 
     if ! verify_deployed_revision; then
         _REMOTE_RELEASE_LOCK_DELEGATED=0
-        if rollback_deploy; then
-            print_error "KB activation 后 revision 校验失败，guard 代码保留且 runtime-only KB 已隔离"
-        else
-            print_error "KB activation 后 revision 校验失败，且隔离回滚失败，无法证明服务已停止，请立即人工隔离主机"
-        fi
+        rollback_deploy || true
+        print_error "KB activation 后 revision 校验失败；NEEDS_OPERATOR，未执行自动恢复，发布锁与现场保留"
         exit 1
     fi
 
     if ! verify_runtime_only_kb_contract "staged"; then
         _REMOTE_RELEASE_LOCK_DELEGATED=0
-        if rollback_deploy; then
-            print_error "KB activation serving contract 失败，guard 代码保留且 runtime-only KB 已隔离"
-        else
-            print_error "KB activation serving contract 失败，且隔离回滚失败，无法证明服务已停止，请立即人工隔离主机"
-        fi
+        rollback_deploy || true
+        print_error "KB activation serving contract 失败；NEEDS_OPERATOR，未执行自动恢复，发布锁与现场保留"
         exit 1
     fi
     _REMOTE_RELEASE_LOCK_DELEGATED=0
@@ -3705,17 +3340,14 @@ deploy_backend() {
     # Manifest generation can take long enough for a late service crash or
     # restart loop to appear. Re-prove the exact candidate, health, staged KB
     # contract, and a full process-stability window immediately before the
-    # durable rollback snapshot is destroyed.
+    # code-only transaction is finalized.
     if ! verify_laya_service ||
         ! prove_health_evidence_runtime_process_flag false ||
         ! verify_deployment ||
         ! verify_deployed_revision ||
         ! verify_runtime_only_kb_contract "staged"; then
-        if rollback_deploy; then
-            print_error "最终 terminal gate 失败；candidate 已重新安装并通过回滚健康证明"
-        else
-            print_error "最终 terminal gate 失败且恢复失败；服务已隔离或需人工隔离"
-        fi
+        rollback_deploy || true
+        print_error "最终 terminal gate 失败；NEEDS_OPERATOR，未执行自动恢复，发布锁与现场保留"
         exit 1
     fi
 
@@ -4890,6 +4522,13 @@ main() {
                 ;;
         esac
     done
+
+    case "$DEPLOY_MODE" in
+        env|health-evidence)
+            print_error "无备份发布暂不支持配置变更或 runtime 激活；未获取发布锁、未改变线上服务"
+            return 1
+            ;;
+    esac
 
     case $DEPLOY_MODE in
         "all"|"frontend"|"backend"|"env"|"health-evidence"|"app-store-review-reset"|"restart"|"push")

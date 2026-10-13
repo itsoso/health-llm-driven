@@ -72,8 +72,13 @@ def test_invalid_publication_blocks_all_existing_history_callers(evidence, mutat
         op.chmod(0o755)
     else:
         (op / 'previous-next' / 'escape').symlink_to('/tmp')
-    with pytest.raises(server.LaunchError):
+    if mutation in {'backup','symlink'}:
         server.assert_frontend_rebuild_history(state)
+        with pytest.raises(server.LaunchError):
+            server.assert_frontend_publication_history(state,verify_backups=True,_force_operations=(op.name,))
+    else:
+        with pytest.raises(server.LaunchError):
+            server.assert_frontend_rebuild_history(state)
 
 
 @pytest.mark.parametrize('violation', [None, 'owner', 'group', 'mode', 'outside', 'link', 'ownership-drift', 'ancestor'])
@@ -158,13 +163,13 @@ def test_rotation_memo_avoids_duplicate_backup_content_reads(evidence, monkeypat
         return original(path, *args, **kwargs)
     monkeypatch.setattr(server.os, 'open', tracked)
     memo = {}
-    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    server.assert_frontend_publication_history(state, backup_memo=memo, verify_backups=True, _force_operations=(op.name,))
     first = len(reads)
     assert first == 2
-    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    server.assert_frontend_publication_history(state, backup_memo=memo, verify_backups=True, _force_operations=(op.name,))
     assert len(reads) == first
     # New invocation must fully verify again, not trust an earlier run.
-    server.assert_frontend_rebuild_history(state, backup_memo={})
+    server.assert_frontend_publication_history(state, backup_memo={}, verify_backups=True, _force_operations=(op.name,))
     assert len(reads) == 2 * first
 
 
@@ -173,7 +178,7 @@ def test_memo_never_hides_changed_history(evidence, mutation):
     import os
     server, state, op, complete = evidence
     memo = {}
-    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    server.assert_frontend_publication_history(state, backup_memo=memo, verify_backups=True, _force_operations=(op.name,))
     file = op / 'previous-node-modules/file'
     before = file.stat()
     if mutation == 'same-size-restored-time':
@@ -189,16 +194,16 @@ def test_memo_never_hides_changed_history(evidence, mutation):
     else:
         (file.parent / 'escape').symlink_to('/tmp')
     with pytest.raises(server.LaunchError):
-        server.assert_frontend_rebuild_history(state, backup_memo=memo)
+        server.assert_frontend_publication_history(state, backup_memo=memo, verify_backups=True, _force_operations=(op.name,))
 
 
 def test_memo_does_not_hide_invalid_proof(evidence):
     server, state, op, _ = evidence
     memo = {}
-    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    server.assert_frontend_publication_history(state, backup_memo=memo, verify_backups=True, _force_operations=(op.name,))
     (op / 'build.log').write_text('invalid proof')
     with pytest.raises(server.LaunchError):
-        server.assert_frontend_rebuild_history(state, backup_memo=memo)
+        server.assert_frontend_publication_history(state, backup_memo=memo, verify_backups=True, _force_operations=(op.name,))
 
 
 def test_inconsistent_hash_is_never_memoized(evidence, monkeypatch):
@@ -218,7 +223,7 @@ def test_inconsistent_hash_is_never_memoized(evidence, monkeypatch):
 def test_cache_hit_rechecks_end_of_inventory(evidence, monkeypatch):
     server, state, op, _ = evidence
     memo = {}
-    server.assert_frontend_rebuild_history(state, backup_memo=memo)
+    server.assert_frontend_publication_history(state, backup_memo=memo, verify_backups=True, _force_operations=(op.name,))
     original = server._frontend_publication_backup_fingerprint
     calls = 0
     def changing(path):
@@ -229,7 +234,7 @@ def test_cache_hit_rechecks_end_of_inventory(evidence, monkeypatch):
         return original(path)
     monkeypatch.setattr(server, '_frontend_publication_backup_fingerprint', changing)
     with pytest.raises(server.LaunchError, match='changed'):
-        server.assert_frontend_rebuild_history(state, backup_memo=memo)
+        server.assert_frontend_publication_history(state, backup_memo=memo, verify_backups=True, _force_operations=(op.name,))
 
 
 def test_live_artifact_never_populates_or_uses_rotation_memo(evidence, monkeypatch):

@@ -554,9 +554,7 @@ def test_same_cloud_key_survives_consecutive_versions_without_rewriting_history(
     original = lifecycle_snapshot(bootstrap)
     assert bootstrap.rotate(SHA, NEW_SHA, 0, PUBLIC)["state"] == "INSTALLED"
     assert set(bootstrap._retired_history()) == {SHA}
-    archive, _library = bootstrap._archives(SHA)
-    for name in ("cloud.pub", "authorized-release.json"):
-        assert (archive / name).read_bytes() == original[str(bootstrap.CONFIG / name)][2]
+    assert not any(path.exists() for path in bootstrap._archives(SHA))
     assert json.loads((bootstrap.STATE / "retired" / SHA / "intent.json").read_text())["cloud_key_reused"] is True
     first_intent = (bootstrap.STATE / "retired" / SHA / "intent.json").read_bytes()
     bootstrap.revoke(NEW_SHA)
@@ -621,7 +619,7 @@ def test_persistent_mode_cannot_resurrect_replaced_or_loopback_keys(monkeypatch,
 
 
 @pytest.mark.parametrize("succeeded", [True, False])
-def test_rotation_preserves_old_install_and_once_evidence(monkeypatch, tmp_path, succeeded):
+def test_rotation_discards_revoked_install_keeps_once_audit(monkeypatch, tmp_path, succeeded):
     bootstrap, calls = rotation_fixture(monkeypatch, tmp_path, succeeded=succeeded)
     old_config = {p.name: (p.read_bytes(), p.stat().st_ino) for p in bootstrap.CONFIG.iterdir()}
     old_code = bootstrap.INSTALLED.stat().st_ino
@@ -630,8 +628,9 @@ def test_rotation_preserves_old_install_and_once_evidence(monkeypatch, tmp_path,
     assert bootstrap.rotate(SHA, NEW_SHA, 200, HOST) == {"sha": NEW_SHA, "state": "INSTALLED", "retired_sha": SHA}
     config_archive = bootstrap.CONFIG.with_name(bootstrap.CONFIG.name + ".retired-" + SHA)
     code_archive = bootstrap.INSTALLED.parent.with_name(bootstrap.INSTALLED.parent.name + ".retired-" + SHA)
-    assert {p.name: (p.read_bytes(), p.stat().st_ino) for p in config_archive.iterdir()} == old_config
-    assert (code_archive / bootstrap.INSTALLED.name).stat().st_ino == old_code
+    assert not config_archive.exists() and not code_archive.exists()
+    audit=json.loads((bootstrap.STATE/'retired'/SHA/'intent.json').read_text())
+    assert audit['installation']['library'][bootstrap.INSTALLED.name]['inode']==old_code
     assert (bootstrap.STATE / "launcher.lock").stat().st_ino == lock_inode
     if succeeded:
         assert {p.name: p.read_bytes() for p in (bootstrap.STATE / SHA).iterdir()} == old_markers
@@ -777,25 +776,25 @@ def test_rotation_requires_nonblocking_global_lock(monkeypatch, tmp_path):
     assert not (bootstrap.STATE / "retired").exists()
 
 
-@pytest.mark.parametrize("point", ["first-move", "second-move", "new-install", "completion"])
+@pytest.mark.parametrize("point", ["first-delete", "second-delete", "new-install", "completion"])
 def test_interrupted_rotation_is_not_resumable_and_keeps_audit(monkeypatch, tmp_path, point):
     bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)
-    rename, write = bootstrap.os.rename, bootstrap._write
-    def move(source, target):
-        if (point == "first-move" and source == bootstrap.CONFIG) or (point == "second-move" and source == bootstrap.INSTALLED.parent):
+    unlink, write = Path.unlink, bootstrap._write
+    def remove(path, *args, **kwargs):
+        if (point == "first-delete" and path.parent == bootstrap.CONFIG) or (point == "second-delete" and path == bootstrap.INSTALLED):
             raise OSError("injected interruption")
-        return rename(source, target)
+        return unlink(path, *args, **kwargs)
     def fail_write(path, data):
         if (point == "new-install" and path == bootstrap.INSTALLED) or (point == "completion" and path == bootstrap.STATE / "retired" / SHA / "completed.json"):
             raise OSError("injected interruption")
         return write(path, data)
-    monkeypatch.setattr(bootstrap.os, "rename", move)
+    monkeypatch.setattr(Path, "unlink", remove)
     monkeypatch.setattr(bootstrap, "_write", fail_write)
     with pytest.raises(OSError):
         bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
     assert (bootstrap.STATE / "retired" / SHA / "intent.json").exists()
     assert (bootstrap.STATE / SHA / "started.json").exists()
-    monkeypatch.setattr(bootstrap.os, "rename", rename)
+    monkeypatch.setattr(Path, "unlink", unlink)
     monkeypatch.setattr(bootstrap, "_write", write)
     with pytest.raises(bootstrap.BootstrapError):
         bootstrap.rotate(SHA, NEW_SHA, 200, HOST)
@@ -812,9 +811,12 @@ def test_retired_history_is_revalidated_not_a_blanket_started_exemption(monkeypa
     (bootstrap.CONFIG / "loopback.key").unlink()
     archived_config, archived_library = bootstrap._archives(SHA)
     if fault == "hash":
-        (archived_library / bootstrap.INSTALLED.name).write_text("changed")
+        path=bootstrap.STATE/'retired'/SHA/'intent.json'
+        intent=json.loads(path.read_text())
+        intent['installation']['library'][bootstrap.INSTALLED.name]['sha256']='0'*64
+        path.write_text(json.dumps(intent))
     elif fault == "inventory":
-        (archived_config / "unknown").write_text("changed")
+        archived_config.mkdir(mode=0o700)
     elif fault == "receipt":
         (bootstrap.STATE / SHA / "started.json").unlink()
     else:
@@ -1082,3 +1084,13 @@ def test_rotate_shares_memo_only_between_its_two_idle_checks(monkeypatch, tmp_pa
     assert checks[0] is checks[1]
     bootstrap._assert_idle()
     assert checks[-1] is None
+
+
+def test_no_backup_rotation_keeps_metadata_audit_without_retired_copies(monkeypatch,tmp_path):
+    bootstrap,_=rotation_fixture(monkeypatch,tmp_path)
+    assert bootstrap.rotate(SHA,NEW_SHA,0,PUBLIC)['state']=='INSTALLED'
+    assert not any(path.exists() for path in bootstrap._archives(SHA))
+    intent=json.loads((bootstrap.STATE/'retired'/SHA/'intent.json').read_text())
+    assert intent['retirement_policy']=='no-backup-v1'
+    assert intent['public_keys']=={'cloud.pub':PUBLIC,'loopback.pub':LOOPBACK}
+    assert set(bootstrap._retired_history())=={SHA}

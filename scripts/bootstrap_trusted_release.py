@@ -288,7 +288,7 @@ def _read_json(path):
     return json.loads(path.read_bytes(), object_pairs_hook=unique)
 
 
-def _inventory(directory, names):
+def _inventory(directory, names, *, content_digests=None):
     secure(directory)
     if not directory.is_dir() or stat.S_IMODE(directory.lstat().st_mode) != 0o700:
         raise BootstrapError("retirement requires a private directory")
@@ -301,7 +301,8 @@ def _inventory(directory, names):
         result[path.name if path != directory else "."] = {
             "uid": info.st_uid, "gid": info.st_gid, "mode": stat.S_IMODE(info.st_mode),
             "inode": info.st_ino, "device": info.st_dev,
-            "sha256": hashlib.sha256(path.read_bytes()).hexdigest() if path != directory else None,
+            "sha256": (content_digests[path.name] if content_digests is not None
+                       else hashlib.sha256(path.read_bytes()).hexdigest()) if path != directory else None,
         }
     return result
 
@@ -583,6 +584,47 @@ def _archives(sha):
             INSTALLED.parent.with_name(INSTALLED.parent.name + ".retired-" + sha))
 
 
+def _retired_public_keys(sha, evidence):
+    if evidence.get('retirement_policy') == 'no-backup-v1':
+        keys = evidence.get('public_keys')
+        if not isinstance(keys, dict) or set(keys) != {'cloud.pub', 'loopback.pub'}:
+            raise BootstrapError('invalid retired public identity audit')
+        for name, public in keys.items():
+            validate_install(sha, 1, public, now=0)
+            expected = evidence['installation']['config'][name]['sha256']
+            if expected not in {hashlib.sha256(public.encode()).hexdigest(),
+                               hashlib.sha256((public + '\n').encode()).hexdigest()}:
+                raise BootstrapError('retired public identity hash differs')
+        return keys
+    config = _retired_config(sha, evidence)
+    result = {}
+    for name in ('cloud.pub', 'loopback.pub'):
+        secure(config / name, private=True)
+        result[name] = (config / name).read_text().strip()
+    return result
+
+
+def _discard_current_installation(sha, expected):
+    """Remove only the revoked current installation; retain no recovery copy.
+
+    The durable retirement intent precedes removal. A partial failure blocks
+    further rotation, rather than promising an unavailable automatic rollback.
+    """
+    if _installation_evidence(sha, CONFIG, INSTALLED.parent) != expected:
+        raise BootstrapError('installation changed before no-backup retirement')
+    for directory, names in ((CONFIG, expected['config']), (INSTALLED.parent, expected['library'])):
+        for name in sorted(set(names) - {'.'}):
+            path = directory / name
+            secure(path, private=True)
+            info = path.lstat()
+            if (info.st_ino, info.st_dev) != (names[name]['inode'], names[name]['device']):
+                raise BootstrapError('installation inode changed during retirement')
+            path.unlink()
+            _sync_parent(path)
+        directory.rmdir()
+        _sync_parent(directory)
+
+
 def _persistent_cloud_successor(sha, public):
     """Prove uninterrupted, audited reuse up to the current restricted identity."""
     policy = _read_json(CONFIG / "authorized-release.json")
@@ -612,9 +654,7 @@ def _persistent_cloud_successor(sha, public):
                 or not isinstance(next_sha, str) or re.fullmatch(r"[0-9a-f]{40}", next_sha) is None
                 or _read_json(record / "completed.json") != {"old_sha": sha, "new_sha": next_sha, "state": "RETIRED"}):
             raise BootstrapError("cloud identity reuse lacks completed succession audit")
-        archived_public = _archives(sha)[0] / "cloud.pub"
-        secure(archived_public, private=True)
-        if archived_public.read_text().strip() != public:
+        if _retired_public_keys(sha, intent)['cloud.pub'] != public:
             raise BootstrapError("cloud identity changed within succession chain")
         sha = next_sha
     expected, _loopback = key_lines(0, public, public)
@@ -623,10 +663,13 @@ def _persistent_cloud_successor(sha, public):
         raise BootstrapError("reused cloud identity lacks exact restricted authorization")
 
 
-def _installation_evidence(sha, config, library):
+def _installation_evidence(sha, config, library, *, history_only=False):
+    historical_digest = (hashlib.sha256((canonical_source(sha) / "scripts/trusted_release_server.py").read_bytes()).hexdigest()
+                         if history_only else None)
     config_files = {"known_hosts", "loopback.conf", "authorized-release.json", "loopback.pub", "cloud.pub"}
     inventory = {"config": _inventory(config, config_files),
-                 "library": _inventory(library, {INSTALLED.name})}
+                 "library": _inventory(library, {INSTALLED.name},
+                                       content_digests={INSTALLED.name: historical_digest} if history_only else None)}
     policy = _read_json(config / "authorized-release.json")
     if (not isinstance(policy, dict) or set(policy) != {"sha", "expires_at", "executor_sha256"}
             or policy["sha"] != sha or type(policy["expires_at"]) is not int):
@@ -667,7 +710,7 @@ def _retired_history():
             if (not entry.is_dir() or stat.S_IMODE(entry.lstat().st_mode) != 0o700
                     or {p.name for p in entry.iterdir()} != {"config", "executor"}):
                 raise BootstrapError("unexpected legacy retirement inventory")
-            evidence = {"installation": _installation_evidence(entry.name, entry / "config", entry / "executor"),
+            evidence = {"installation": _installation_evidence(entry.name, entry / "config", entry / "executor", history_only=True),
                         "workspace": _workspace_evidence(entry.name, historical=True)}
             digest = hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             if (evidence["workspace"] != {"state": "NEVER_STARTED", "inventory": None}
@@ -677,7 +720,7 @@ def _retired_history():
             continue
         _inventory(entry, {"intent.json", "completed.json"})
         intent = _read_json(entry / "intent.json")
-        if (not isinstance(intent, dict) or set(intent) - {"cloud_key_reused", "finalized_native_advance"} not in (
+        if (not isinstance(intent, dict) or set(intent) - {"cloud_key_reused", "finalized_native_advance", "retirement_policy", "public_keys"} not in (
                 {"old_sha", "new_sha", "installation", "workspace"},
                 {"old_sha", "new_sha", "installation", "workspace", "recovery_receipt"})
                 or ("cloud_key_reused" in intent and intent["cloud_key_reused"] is not True)
@@ -691,9 +734,36 @@ def _retired_history():
                     or intent["workspace"].get("state") != "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"):
                 raise BootstrapError("finalized advance requires native closure receipt")
             _finalized_advance_module().validate_saved(intent["finalized_native_advance"], entry.name)
-        if (_installation_evidence(entry.name, *_archives(entry.name)) != intent["installation"]
-                or _workspace_evidence(entry.name, recovery_receipt=intent.get("recovery_receipt"), historical=True) != intent["workspace"]):
-            raise BootstrapError("retired installation or consumption evidence changed")
+        if 'retirement_policy' in intent or 'public_keys' in intent:
+            if (intent.get('retirement_policy') != 'no-backup-v1'
+                    or any(os.path.lexists(path) for path in _archives(entry.name))):
+                raise BootstrapError('invalid no-backup retirement audit')
+            saved = intent.get('installation')
+            expected_config = {'.','known_hosts','loopback.conf','authorized-release.json','cloud.pub','loopback.pub'}
+            if (not isinstance(saved, dict) or set(saved) != {'config','library'}
+                    or not isinstance(saved['config'], dict) or set(saved['config']) != expected_config
+                    or not isinstance(saved['library'], dict) or set(saved['library']) != {'.',INSTALLED.name}):
+                raise BootstrapError('invalid retired installation hash audit')
+            for part in saved.values():
+                for name, value in part.items():
+                    if (not isinstance(value,dict) or set(value) != {'uid','gid','mode','inode','device','sha256'}
+                            or any(type(value[key]) is not int or value[key] < 0 for key in ('uid','gid','mode','inode','device'))
+                            or (value['sha256'] is not None if name=='.' else not isinstance(value['sha256'],str) or re.fullmatch(r'[0-9a-f]{64}',value['sha256']) is None)):
+                        raise BootstrapError('invalid retired installation hash fields')
+            expected_executor = hashlib.sha256((canonical_source(entry.name) / 'scripts/trusted_release_server.py').read_bytes()).hexdigest()
+            if saved['library'][INSTALLED.name]['sha256'] != expected_executor:
+                raise BootstrapError('retired executor audit differs from canonical source')
+            public_keys = _retired_public_keys(entry.name, intent)
+            secure(AUTHORIZED, private=True)
+            for name, public in public_keys.items():
+                if public.split()[1] in AUTHORIZED.read_text():
+                    if name != 'cloud.pub' or intent.get('cloud_key_reused') is not True:
+                        raise BootstrapError('retired identity is still authorized')
+                    _persistent_cloud_successor(entry.name, public)
+        elif _installation_evidence(entry.name, *_archives(entry.name), history_only=True) != intent["installation"]:
+            raise BootstrapError("retired installation evidence changed")
+        if _workspace_evidence(entry.name, recovery_receipt=intent.get("recovery_receipt"), historical=True) != intent["workspace"]:
+            raise BootstrapError("retired consumption evidence changed")
         history[entry.name] = intent
     return history
 
@@ -924,11 +994,11 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         check_locks()
         if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_PREDEPLOY_ATTESTATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE", "CLOSED_ROLLED_BACK_RELEASE"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
-        retired_keys = {(config / name).read_text().strip()
-                        for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]
-                        for name in ("cloud.pub", "loopback.pub")}
-        loopback_keys = {(config / "loopback.pub").read_text().strip()
-                         for config in [CONFIG, *(_retired_config(old, item) for old, item in history.items())]}
+        current_keys = {name: (CONFIG / name).read_text().strip()
+                        for name in ('cloud.pub', 'loopback.pub')}
+        identity_history = [current_keys, *(_retired_public_keys(old, item) for old, item in history.items())]
+        retired_keys = {public for keys in identity_history for public in keys.values()}
+        loopback_keys = {keys['loopback.pub'] for keys in identity_history}
         reuse_cloud = expiry == 0 and public == (CONFIG / "cloud.pub").read_text().strip()
         if public in loopback_keys or (public in retired_keys and not reuse_cloud):
             raise BootstrapError("only the current cloud identity may be reused for persistent authorization")
@@ -954,8 +1024,8 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
                     STATE, active_operation=active, live_digest=live,
                     sealed_by_sha=sha, backup_memo=backup_memo)
         check_idle("history-before-intent")
-        # Intent is durable before either rename. No cleanup, rollback, or
-        # automatic resume: a partial rotation remains a blocking audit record.
+        # Intent is durable before discarding the revoked current installation.
+        # No backup, rollback, or automatic resume: a partial rotation blocks.
         root = STATE / "retired"
         if not root.exists():
             root.mkdir(mode=0o700)
@@ -963,7 +1033,8 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         record = root / old_sha
         record.mkdir(mode=0o700)
         _sync_parent(record)
-        intent = {"old_sha": old_sha, "new_sha": sha, "installation": installation, "workspace": workspace}
+        intent = {"old_sha": old_sha, "new_sha": sha, "installation": installation, "workspace": workspace,
+                  "retirement_policy": "no-backup-v1", "public_keys": current_keys}
         if reuse_cloud:
             intent["cloud_key_reused"] = True
         if recovery_receipt is not None:
@@ -975,18 +1046,16 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         check_locks()
         check_idle("history-before-retirement")
         check_advance()
-        for current, archive in ((CONFIG, archive_config), (INSTALLED.parent, archive_library)):
-            os.rename(current, archive)
-            _sync_parent(archive)
-        if (_installation_evidence(old_sha, archive_config, archive_library) != installation
-                or inspect_workspace() != workspace):
-            raise BootstrapError("retirement evidence changed during rotation")
-        check_advance()
+        _discard_current_installation(old_sha, installation)
         check_locks()
         # This certifies retirement, not installation success. Reserve the new
         # SHA permanently, and finish audit writes before publishing any key.
         _write(record / "completed.json", json.dumps({"old_sha": old_sha, "new_sha": sha,
                "state": "RETIRED"}, sort_keys=True).encode())
+        if inspect_workspace() != workspace:
+            raise BootstrapError("retirement evidence changed during rotation")
+        check_advance()
+        check_locks()
         result = _install_locked(sha, expiry, public, source, server, retired_keys=retired_keys)
         result["retired_sha"] = old_sha
         return result
@@ -1360,7 +1429,7 @@ def _predeploy_production_proof(old_sha, production_sha, source):
     # This read context supplies only the real terminal/transaction path; it
     # neither constructs a fake release stage nor permits mutation methods.
     layout = SimpleNamespace(transaction_root=proof.runtime_root / 'runtime-state-transaction')
-    transaction = proof.runtime.ReleaseTransaction(layout, proof.systemd)
+    transaction = proof.runtime.ReleaseTransaction(layout, proof.systemd, code_only=True)
     marker = transaction._load_terminal_marker()
     if marker['phase'] != 'COMMITTED' or marker['terminal_sha'] != production_sha:
         raise BootstrapError('predeploy current production terminal differs')
@@ -1631,11 +1700,26 @@ def _recovered_preparation_evidence(sha, *, recovery_receipt=None):
                 "launcher": _recovery_file_identity(STATE / "launcher.lock"),
                 "build": _recovery_build_identity(sha, intent["workspace"])}):
         raise BootstrapError("historical recovery bindings differ")
-    config, library = _archives(sha)
-    if not os.path.lexists(config) and not os.path.lexists(library):
-        config, library = CONFIG, INSTALLED.parent
-    if completed["installation"] != _installation_evidence(sha, config, library):
-        raise BootstrapError("recovered installation differs")
+    retirement = STATE / 'retired' / sha
+    if os.path.lexists(retirement):
+        _inventory(retirement, {'intent.json','completed.json'})
+        saved = _read_json(retirement / 'intent.json')
+    else:
+        saved = None
+    if isinstance(saved, dict) and saved.get('retirement_policy') == 'no-backup-v1':
+        # A closed recovery receipt is historical audit, not a restoration
+        # capability after forward-only retirement removed the old install.
+        if (saved.get('old_sha') != sha or not isinstance(saved.get('new_sha'),str)
+                or re.fullmatch(r'[0-9a-f]{40}',saved['new_sha']) is None
+                or _read_json(retirement/'completed.json') != {'old_sha':sha,'new_sha':saved['new_sha'],'state':'RETIRED'}
+                or saved.get('installation') != completed['installation']):
+            raise BootstrapError('retired recovery installation audit differs')
+    else:
+        config, library = _archives(sha)
+        if not os.path.lexists(config) and not os.path.lexists(library):
+            config, library = CONFIG, INSTALLED.parent
+        if completed["installation"] != _installation_evidence(sha, config, library):
+            raise BootstrapError("recovered installation differs")
     return {"state": terminal_state, "recovery": _digest_json(completed),
             "workspace": intent["workspace"]}
 

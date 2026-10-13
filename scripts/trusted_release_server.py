@@ -740,8 +740,15 @@ def finish_frontend_history_seal(state, *, checkpoint_sha256, live_digest):
 
 
 def assert_frontend_publication_history(state=None, *, pending_stopped_publication=None, backup_memo=None,
-                                        _force_operations=(), _seal_snapshot=None):
-    """New-tree frontend receipts never authorize a backend release."""
+                                        _force_operations=(), _seal_snapshot=None, verify_backups=False):
+    """Validate release receipts, without claiming old backups are restorable.
+
+    Only an explicitly requested single recovery target reads backup contents.
+    Current candidate/live artifact validation remains in its own publisher.
+    """
+    if (type(verify_backups) is not bool or (verify_backups and (len(_force_operations) != 1
+            or not isinstance(_force_operations[0], str) or re.fullmatch(r'[0-9a-f]{32}', _force_operations[0]) is None))):
+        raise LaunchError('explicit target operation required for backup recovery verification')
     started, io_before = time.monotonic(), _release_io_snapshot()
     seal = _seal_snapshot if _seal_snapshot is not None else _frontend_history_seal(state or STATE)
     catalog = {}
@@ -809,6 +816,8 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
             if operation.name != seal['payload']['active_operation'] and operation.name not in _force_operations:
                 archived += 1
                 continue
+        if not verify_backups or operation.name not in _force_operations:
+            continue
         verified += 1
         observed_backups = {
             name: _frontend_publication_backup_digest(operation / name, memo=backup_memo,
@@ -817,6 +826,8 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
         }
         if expected_backups != observed_backups:
             raise LaunchError("frontend publication backup hashes differ")
+    if verify_backups and not set(_force_operations).issubset(catalog):
+        raise LaunchError('requested backup recovery target is absent')
     if seal is not None and not set(seal['payload']['records']).issubset(catalog):
         raise LaunchError("sealed frontend audit disappeared")
     io_after = _release_io_snapshot()
@@ -824,6 +835,7 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
     print(json.dumps(dict(stage='frontend-history', state='VERIFIED',
                           elapsed_seconds=round(time.monotonic() - started, 2),
                           archived_operations=archived, rollback_operations_verified=verified,
+                          backup_integrity='verified' if verify_backups else 'not_checked',
                           io=delta, io_measurement='available' if delta is not None else 'unavailable')),
           file=sys.stderr, flush=True)
     return catalog
@@ -1776,11 +1788,32 @@ def invitation_only_config(production):
     return "\n".join(lines) + "\n" + "".join(f"{key}={value}\n" for key, value in keys.items())
 
 
+def validate_live_deployment_config(production):
+    """Verify fixed safety flags in-place; never normalize or copy live env."""
+    required = {'AUTH_PHONE_SELF_REGISTRATION_ENABLED':'false',
+                'REGISTRATION_INVITATION_ENFORCEMENT_ENABLED':'true',
+                'REGISTRATION_INVITATION_ROLLOUT_ENABLED':'true',
+                'HEALTH_EVIDENCE_RUNTIME_ENABLED':'false'}
+    seen = set()
+    for line in production.splitlines():
+        assignment = re.fullmatch(r'\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)', line)
+        if assignment is None or assignment[1] not in required:
+            continue
+        key, value = assignment.groups()
+        expected = required[key]
+        if key in seen or re.fullmatch(rf"(?:{expected}|'{expected}'|\"{expected}\")\s*(?:#.*)?", value) is None:
+            raise LaunchError('live deployment safety flag is ambiguous or invalid')
+        seen.add(key)
+    if seen != set(required):
+        raise LaunchError('live deployment safety flags are incomplete')
+
+
 def deploy(policy, workspace, *, backend_ci=False):
     # Provisioning remains a separate privileged, reviewed installation step.
     _assert_deployment_window(policy)
     validate_loopback(policy)
     secure_path(Path(PYTHON))
+    validate_live_deployment_config(read_production_env())
     workspace = Path(workspace)
     bindir = workspace / "bin"
     bindir.mkdir(mode=0o700)
@@ -1790,13 +1823,9 @@ def deploy(policy, workspace, *, backend_ci=False):
         wrapper = bindir / command
         _write_private(wrapper, f'#!/bin/sh\nexec {target}{args} "$@"\n'.encode())
         wrapper.chmod(0o700)
-    production = invitation_only_config(read_production_env())
-    lines = [line for line in production.splitlines() if not line.startswith(("DEPLOY_SERVER=", "DEPLOY_PATH="))]
-    candidate = workspace / "deployment.env"
-    _write_private(candidate, ("\n".join(lines) + "\n" + initial_laya_config(production)
-                              + "DEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n").encode())
     env = clean_environment(workspace)
-    env.update(DEPLOY_SOURCE_SHA=policy["sha"], DEPLOY_ENV_FILE=str(candidate))
+    env.update(DEPLOY_SOURCE_SHA=policy["sha"], DEPLOY_ENV_FILE='/opt/health-app/backend/.env',
+               DEPLOY_SERVER='health', DEPLOY_PATH='/opt/health-app')
     source = workspace / "source"
     # Fresh CI/main attestation immediately before business deployment.
     if backend_ci:

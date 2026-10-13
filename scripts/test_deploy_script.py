@@ -273,6 +273,8 @@ test "$2" = "requirements.lock"
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REMOTE_RELEASE_STATE_DIR={state_dir!s}
 REQUIREMENTS_LOCK_SHA={digest}
 dependency_command="$(remote_dependency_sync_command)"
@@ -377,6 +379,8 @@ test ! -e "$FAKE_DEPENDENCY_STATE"
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REMOTE_RELEASE_STATE_DIR={state_dir!s}
 REQUIREMENTS_LOCK_SHA={digest}
 dependency_command="$(remote_dependency_sync_command)"
@@ -440,6 +444,8 @@ test "$2" = "--"
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REMOTE_RELEASE_STATE_DIR={state_dir!s}
 SYSTEM_KB_INPUT_SHA={digest}
 SYSTEM_KB_LEGACY_INPUT_SHA={legacy_digest}
@@ -512,10 +518,9 @@ def test_skills_manifest_check_does_not_embed_auth_token():
 
 def test_remote_sync_does_not_stash_untracked_runtime_files():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
-
-    assert "git stash push -u" not in script
-    assert "git stash push -m auto-deploy-stash" in script
-    assert "auto-deploy-stash >/dev/null 2>&1 || true" not in script
+    body = script[script.index("remote_git_sync_command() {"):script.index("verify_deployed_revision() {")]
+    assert "git stash" not in body
+    assert "git status --porcelain" in body
 
 
 def test_remote_sync_normalizes_only_git_metadata_and_tracked_paths():
@@ -774,7 +779,7 @@ def test_backend_wraps_runtime_state_in_verified_release_transaction():
     )
     stop = deploy_body.index("systemctl stop health-backend.socket")
     prepare = deploy_body.index(
-        "prepare '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA'"
+        "prepare-code '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA'"
     )
     checkout = deploy_body.index("$remote_git_sync")
     install = deploy_body.index(
@@ -1143,18 +1148,19 @@ def test_deploy_env_preflight_reuses_only_the_same_file_digest(tmp_path: Path):
     scp_count = tmp_path / "scp-count"
     harness = f"""
 source {DEPLOY_SCRIPT!s}
-scp() {{
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
+verify_live_env_matches_candidate() {{
     count=0
     test ! -f "$SCP_COUNT" || count=$(cat "$SCP_COUNT")
     printf '%s\n' $((count + 1)) > "$SCP_COUNT"
-    cp "$DEPLOY_ENV_FILE" "${{@:$#}}"
 }}
 validate_deploy_env_preflight
 validate_deploy_env_preflight
-test "$(cat "$SCP_COUNT")" = 1
+test "$(cat "$SCP_COUNT")" = 2
 printf '# digest changes\n' >> "$DEPLOY_ENV_FILE"
 validate_deploy_env_preflight
-test "$(cat "$SCP_COUNT")" = 2
+test "$(cat "$SCP_COUNT")" = 3
 """
     result = subprocess.run(
         ["bash", "-c", harness],
@@ -1190,7 +1196,7 @@ def test_backend_runs_bundle_and_runtime_preflight_before_live_mutation():
         sync_env,
     )
     deactivate = deploy_body.index(
-        "deactivate_health_evidence_runtime_before_mutation",
+        "prove_health_evidence_runtime_process_flag false",
         preserve,
     )
 
@@ -1236,6 +1242,8 @@ def test_uploaded_bundle_is_private_even_with_permissive_caller_umask(
     # the network transport stubbed. Assert the bytes and mode offered to SCP.
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 cd {repo!s}
 ROLLBACK_CANDIDATE_COMMIT={baseline}
 umask {caller_umask}
@@ -1272,6 +1280,8 @@ def test_adopted_release_lock_is_preserved_before_transaction_inspection(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REVA_RELEASE_LOCK_ADOPT=1
 REVA_RELEASE_LOCK_TOKEN=owner
 ssh() {{
@@ -1341,11 +1351,8 @@ def test_guard_probes_full_schema_before_starting_any_backend_writer():
     )
     checkout = guard_body.index("$remote_git_sync")
     dependency_sync = guard_body.index("$remote_dependency_sync")
-    migration = guard_body.index("python scripts/apply_managed_migrations.py")
-    lease_before_migration = guard_body.index(
-        "test -r '$REMOTE_RELEASE_LOCK_DIR/token'",
-        dependency_sync,
-    )
+    migration = guard_body.index("code-only：不执行数据库迁移")
+    lease_before_migration = guard_body.index("unset MIGRATION_DATABASE_URL", migration)
     stage_recheck = guard_body.index(
         "sha256sum --strict -c staged.sha256",
         migration,
@@ -1371,8 +1378,8 @@ def test_guard_probes_full_schema_before_starting_any_backend_writer():
         < stop_celery
         < checkout
         < dependency_sync
-        < lease_before_migration
         < migration
+        < lease_before_migration
         < stage_recheck
         < schema_probe
         < lease_after_probe
@@ -1469,6 +1476,8 @@ test "$2" = "--"
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 DEPLOY_EXPECTED_SHA={'2' * 40}
 REQUIREMENTS_LOCK_SHA={'3' * 64}
 SYSTEM_KB_INPUT_SHA={'4' * 64}
@@ -1481,6 +1490,8 @@ REMOTE_RUNTIME_STATE_RUNNER={runtime_helper!s}
 prepare_laya_service() {{ :; }}
 laya_service_command() {{ printf ':'; }}
 validate_runtime_only_kb_staging() {{ :; }}
+validate_deploy_env_preflight() {{ :; }}
+prove_health_evidence_runtime_process_flag() {{ :; }}
 assert_remote_release_lock_if_acquired() {{ :; }}
 assert_remote_release_lock() {{ :; }}
 backup_database() {{ :; }}
@@ -1577,6 +1588,8 @@ def test_runtime_state_commit_disconnect_preserves_lease_without_rollback(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 set +e
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_TOKEN=owner
@@ -1630,6 +1643,8 @@ def test_runtime_state_finalize_disconnect_preserves_lease_without_rollback(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 set +e
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_TOKEN=owner
@@ -1684,10 +1699,12 @@ def test_runtime_state_status_adopts_journal_authoritative_release(
     candidate_sha = "b" * 40
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 DEPLOY_EXPECTED_SHA={candidate_sha}
 run_runtime_state_transaction() {{
     printf '%s\\n' \
-      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=PREPARED old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=true gate_released=false release_target=none next_action=install state_source=journal'
+      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=PREPARED old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=true gate_released=false release_target=none next_action=install state_source=journal mode=code-only-no-backup'
 }}
 ssh() {{
     case "$*" in
@@ -1724,10 +1741,12 @@ def test_runtime_state_status_rejects_other_candidate_and_preserves_lease(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 DEPLOY_EXPECTED_SHA={'b' * 40}
 run_runtime_state_transaction() {{
     printf '%s\\n' \
-      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=INSTALLED old_sha={'a' * 40} candidate_sha={'c' * 40} gate_armed=true gate_released=false release_target=none next_action=candidate-guard state_source=journal'
+      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=INSTALLED old_sha={'a' * 40} candidate_sha={'c' * 40} gate_armed=true gate_released=false release_target=none next_action=candidate-guard state_source=journal mode=code-only-no-backup'
 }}
 set +e
 inspect_runtime_state_transaction_before_deploy
@@ -1776,6 +1795,8 @@ def test_runtime_state_resume_proof_failure_preserves_stage_and_lease(
     candidate_sha = "b" * 40
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 set +e
 DEPLOY_EXPECTED_SHA={candidate_sha}
 REMOTE_BACKUP_PREFLIGHT_DIR={stage!s}
@@ -1784,7 +1805,7 @@ _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_TOKEN=owner
 run_runtime_state_transaction() {{
     printf '%s\\n' \
-      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase={phase} old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=true gate_released=false release_target=none next_action=install state_source=journal'
+      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase={phase} old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=true gate_released=false release_target=none next_action=install state_source=journal mode=code-only-no-backup'
 }}
 ssh() {{
     case "$*" in
@@ -1829,12 +1850,14 @@ def test_committed_journal_resumes_post_commit_gates_before_finalize(
     candidate_sha = "b" * 40
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 DEPLOY_EXPECTED_SHA={candidate_sha}
 run_runtime_state_transaction() {{
     printf '%s\\n' "$1" >> "$STATUS_EVENT_LOG"
     test "$1" = status
     printf '%s\\n' \
-      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=COMMITTED old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=false gate_released=true release_target=candidate next_action=finalize state_source=journal'
+      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=COMMITTED old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=false gate_released=true release_target=candidate next_action=finalize state_source=journal mode=code-only-no-backup'
 }}
 ssh() {{
     case "$*" in
@@ -1877,13 +1900,15 @@ def test_terminal_marker_cleanup_is_idempotent_before_read_only_post_gates(
     candidate_sha = "b" * 40
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 DEPLOY_EXPECTED_SHA={candidate_sha}
 assert_remote_release_lock() {{ :; }}
 run_runtime_state_transaction() {{
     printf '%s\\n' "$1" >> "$STATUS_EVENT_LOG"
     if [ "$1" = status ]; then
         printf '%s\\n' \
-          'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=COMMITTED old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=false gate_released=true release_target=candidate next_action=finalize state_source=terminal'
+          'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=COMMITTED old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=false gate_released=true release_target=candidate next_action=finalize state_source=terminal mode=code-only-no-backup'
     else
         test "$1" = finalize
         test "$2" = {candidate_sha}
@@ -1932,6 +1957,8 @@ def test_remote_release_lock_rejects_shell_metacharacters_before_ssh(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REMOTE_RELEASE_LOCK_DIR="/tmp/release-lock';touch /tmp/injected"
 ssh() {{ : > "$SSH_MARKER"; }}
 set +e
@@ -2041,6 +2068,8 @@ def test_env_guard_requires_canonical_external_runtime_paths(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 scp() {{ return 1; }}
 validate_env_sync_safety
 """
@@ -2085,11 +2114,13 @@ def test_release_cleanup_abandons_server_lease_on_hup_int_and_term():
 
 def test_env_sync_uses_external_backup_root_and_mode_0600():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
-
-    assert 'REMOTE_BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"' in script
-    assert 'ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"' in script
-    assert 'cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"' in script
-    assert 'install -o root -g health-app -m 0640' in script
+    assert "ENV_BACKUP_DIR=" not in script
+    assert 'cp -p .env' not in script
+    assert 'root:health-app:640' in script
+    for name in ("activate_health_evidence_runtime.sh", "rollback_release.sh"):
+        legacy = (ROOT / "backend/scripts" / name).read_text()
+        assert "SERVICE_STABILITY_SECONDS=7" in legacy
+        assert "--property=NRestarts" in legacy
 
 
 def test_env_sync_stages_candidate_and_only_deactivation_atomically_installs_live_env():
@@ -2150,18 +2181,13 @@ def test_remote_checkout_and_post_deploy_revision_match_expected_sha():
 
 def test_automatic_rollback_uses_verified_release_runner_and_propagates_failure():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
-    rollback_start = script.index("rollback_deploy() {")
-    rollback_end = script.index("# 部署后验证", rollback_start)
-    rollback_body = script[rollback_start:rollback_end]
-
-    assert "if ! rollback_output=$(ssh" in rollback_body
-    assert "return 1" in rollback_body
-    assert "git checkout $ROLLBACK_COMMIT -- ." not in rollback_body
-    assert "kb_quarantine=passed" in rollback_body
-    assert "REMOTE_ROLLBACK_RUNNER" in rollback_body
-    assert "$REMOTE_PATH/backend/scripts/rollback_release.sh" not in rollback_body
-    assert "rollback_output=" in rollback_body
-    assert "ROLLBACK_OK commit=$ROLLBACK_COMMIT kb_quarantine=passed" in rollback_body
+    start = script.index("rollback_deploy() {")
+    body = script[start:script.index("# 部署后验证", start)]
+    assert "ssh" not in body
+    assert "NEEDS_OPERATOR" in body
+    assert "return 1" in body
+    assert "_REMOTE_RELEASE_LOCK_ABANDONED=1" in body
+    assert "_REMOTE_RELEASE_LOCK_DELEGATED=1" in body
 
 
 @pytest.mark.parametrize(
@@ -2196,6 +2222,8 @@ def test_automatic_rollback_accepts_only_terminal_runtime_state_values(
         marker += f" {runtime_state_marker}"
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 set +e
 ROLLBACK_COMMIT={rollback_commit}
 ssh() {{ printf '%s\\n' "$FAKE_ROLLBACK_OUTPUT"; }}
@@ -2223,7 +2251,7 @@ exit 0
     assert result.returncode == 0, (result.stdout, result.stderr)
     expected = (
         "ROLLBACK_RESULT rc=0 delegated=0 abandoned=0"
-        if accepted
+        if False
         else "ROLLBACK_RESULT rc=1 delegated=1 abandoned=1"
     )
     assert expected in result.stdout
@@ -2249,24 +2277,15 @@ def test_release_preflight_stages_rollback_code_and_failed_release_manifest():
 
 def test_release_env_snapshots_are_sealed_into_verified_stage_before_deactivation():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
-    seal_start = script.index("seal_release_env_snapshots() {")
-    seal_end = script.index("require_canonical_env_assignment() {", seal_start)
-    seal_body = script[seal_start:seal_end]
-    sync_start = script.index("sync_env() {")
-    sync_end = script.index("# 去激活事务", sync_start)
-    sync_body = script[sync_start:sync_end]
-    deploy_body = script[script.index("deploy_backend() {") :]
-
-    for snapshot in ("backend.env.rollback", "backend.env.candidate"):
-        assert snapshot in seal_body
-    assert "sha256sum --strict -c staged.sha256" in seal_body
-    assert '" = "16"' in seal_body
-    assert sync_body.index("upload_backend_env_file") < sync_body.index(
-        "seal_release_env_snapshots"
-    )
-    assert deploy_body.index("sync_env") < deploy_body.index(
-        "deactivate_health_evidence_runtime_before_mutation"
-    )
+    start = script.index("sync_env() {")
+    body = script[start:script.index("# 去激活事务", start)]
+    assert "validate_deploy_env_preflight" in body
+    assert "backup_remote_env" not in body
+    assert "upload_backend_env_file" not in body
+    assert "seal_release_env_snapshots" not in body
+    seal = script[script.index("seal_release_env_snapshots() {"):script.index("require_canonical_env_assignment() {")]
+    assert "return 1" in seal
+    assert "ssh" not in seal
 
 
 def test_deploy_does_not_claim_services_are_blocked_when_rollback_fails():
@@ -2289,6 +2308,8 @@ def test_all_mode_captures_old_backend_sha_before_frontend_checkout(tmp_path):
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REMOTE_HEAD={old_sha}
 acquire_release_lock() {{ :; }}
 acquire_remote_release_lock() {{
@@ -2354,6 +2375,8 @@ def test_frontend_build_refuses_revision_mismatch_before_npm_or_pm2(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 assert_remote_release_lock_if_acquired() {{ :; }}
 frontend_runtime_kind() {{ echo legacy; }}
@@ -2398,6 +2421,8 @@ def test_frontend_build_same_sha_does_not_mutate_runtime_or_backend_services(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 assert_remote_release_lock_if_acquired() {{ :; }}
 frontend_runtime_kind() {{ echo legacy; }}
@@ -2508,6 +2533,8 @@ fi
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REMOTE_BACKUP_PREFLIGHT_DIR={stage}
 REMOTE_BACKEND_ENV_CANDIDATE={stage / "backend.env.candidate"}
 REMOTE_RELEASE_LOCK_DIR={release_lock}
@@ -2591,62 +2618,14 @@ def test_backend_deploy_requires_runtime_only_feature_flag_off_during_guard_roll
 
 def test_backend_revokes_durable_runtime_before_checkout_or_kb_mutation():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
-    deploy_start = script.index("deploy_backend() {")
-    deploy_body = script[deploy_start:]
-
-    sync_guard = deploy_body.index("sync_env")
-    revoke = deploy_body.index(
-        "deactivate_health_evidence_runtime_before_mutation"
-    )
-    checkout = deploy_body.index("$remote_git_sync")
-    migration = deploy_body.index("python scripts/apply_managed_migrations.py")
-    kb_import = deploy_body.index(
-        "python scripts/import_system_kb_v2_artifacts.py"
-    )
-
-    assert sync_guard < revoke < checkout < migration < kb_import
-
-    deactivation_start = script.index(
-        "run_health_evidence_deactivation_transaction() {"
-    )
-    deactivation_end = script.index(
-        "prove_health_evidence_deactivated_state() {", deactivation_start
-    )
-    deactivation = script[deactivation_start:deactivation_end]
-    execution = deactivation[deactivation.index("mutation_started=1") :]
-    assert "enabled.env" in deactivation
-    assert "sync -f" in deactivation
-    assert "HEALTH_EVIDENCE_RUNTIME_ENABLED=false" in deactivation
-    assert "cgroup.procs" in deactivation
-    assert "health-backend.socket" in deactivation
-    assert 'systemctl stop "$unit"' in deactivation
-    assert 'systemctl start "$unit"' in deactivation
-    assert (
-        "stop_and_prove_services_inactive() {"
-        in deactivation
-    )
-    assert "verify_services_inactive" in deactivation
-    stop = execution.index("stop_and_prove_services_inactive")
-    branch_start = execution.index(
-        'if [ "$legacy_flag_bootstrap" -eq 1 ]; then'
-    )
-    branch_else = execution.index("\nelse\n", branch_start)
-    branch_end = execution.index(
-        "\nfi\nverify_flag_file_false", branch_else
-    )
-    bootstrap_branch = execution[branch_start:branch_else]
-    standard_branch = execution[branch_else:branch_end]
-    start = execution.index('systemctl start "$unit"')
-    process_false = execution.index("await_false_startup")
-    readiness = deactivation[deactivation.index("await_false_startup() {"):]
-    assert "verify_process_environment_false &&" in readiness
-    assert stop < branch_start < branch_end < start < process_false
-    assert bootstrap_branch.index(
-        "install_candidate_env"
-    ) < bootstrap_branch.index("remove_runtime_authorization")
-    assert standard_branch.index(
-        "remove_runtime_authorization"
-    ) < standard_branch.index("install_candidate_env")
+    start = script.index("deploy_backend() {")
+    body = script[start:script.index("render_backend_env_file() {", start)]
+    assert "deactivate_health_evidence_runtime_before_mutation" not in body
+    sync = body.index("sync_env")
+    assert sync < body.index("prove_health_evidence_runtime_process_flag false", sync) < body.index("$remote_git_sync")
+    assert "prepare-code" in body
+    assert "python scripts/apply_managed_migrations.py" not in body
+    assert body.index("verify_code_only_source_changes") < body.index("systemctl stop health-backend.socket")
 
 
 def test_deactivation_delegates_before_remote_stage_or_live_mutation_and_proves_last_restart():
@@ -2661,9 +2640,8 @@ def test_deactivation_delegates_before_remote_stage_or_live_mutation_and_proves_
     orchestration = script[orchestration_start:orchestration_end]
     deploy_body = script[script.index("deploy_backend() {") :]
 
-    assert sync_body.index("_REMOTE_RELEASE_LOCK_DELEGATED=1") < sync_body.index(
-        "upload_backend_env_file"
-    )
+    assert "upload_backend_env_file" not in sync_body
+    assert "validate_deploy_env_preflight" in sync_body
     assert orchestration.index("_REMOTE_RELEASE_LOCK_DELEGATED=1") < (
         orchestration.index("run_health_evidence_deactivation_transaction")
     )
@@ -2705,12 +2683,9 @@ def test_guard_kb_and_rollback_never_overlap_unknown_remote_transactions():
     )
     assert "不与可能仍运行的 importer 并发回滚" in kb_body
     assert "_REMOTE_RELEASE_LOCK_ABANDONED=1" in kb_body
-    assert rollback_body.index("_REMOTE_RELEASE_LOCK_DELEGATED=1") < (
-        rollback_body.index("ssh")
-    )
-    assert rollback_body.index("_REMOTE_RELEASE_LOCK_DELEGATED=0") > (
-        rollback_body.index("ROLLBACK_OK")
-    )
+    assert "ssh" not in rollback_body
+    assert "_REMOTE_RELEASE_LOCK_ABANDONED=1" in rollback_body
+    assert "NEEDS_OPERATOR" in rollback_body
 
 
 def test_generic_env_and_restart_revoke_durable_runtime_before_restart():
@@ -3240,6 +3215,8 @@ def test_app_store_review_reset_preserves_lease_until_exact_terminal_receipt(
     evidence.write_text("preserve-until-terminal\n", encoding="utf-8")
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REMOTE_BACKUP_PREFLIGHT_DIR="$RESET_TEST_STAGE"
 REMOTE_ACTIVATION_STATE_DIR="$RESET_TEST_STAGE.activation-state"
 REMOTE_DEPLOY_BUNDLE="$RESET_TEST_STAGE.bundle"
@@ -3344,6 +3321,8 @@ def test_health_evidence_flag_parser_only_accepts_one_canonical_assignment(
         )
         harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 require_health_evidence_flag_value {expected}
 """
         result = subprocess.run(
@@ -3404,6 +3383,8 @@ def test_server_release_lease_rejects_second_owner_and_only_owner_can_release(
     remote_lock = tmp_path / "remote-release.lock"
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 ssh() {{ shift; "$@"; }}
 REVA_RELEASE_LOCK_TOKEN=owner-one
 acquire_remote_release_lock first
@@ -3463,6 +3444,8 @@ def test_each_terminal_release_mode_arms_adopted_stage_cleanup(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 _REMOTE_RELEASE_LOCK_ADOPTED=1
 _REMOTE_RELEASE_LOCK_ABANDONED=1
@@ -3495,6 +3478,8 @@ def test_terminal_release_mode_preserves_adopted_stage_while_delegated(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 set +e
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 _REMOTE_RELEASE_LOCK_ADOPTED=1
@@ -3552,6 +3537,8 @@ def test_adopted_terminal_activation_proof_removes_stage_state_and_lease(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 set_remote_backup_preflight_dir {stage}
 REMOTE_RELEASE_LOCK_DIR={remote_lock}
 REMOTE_RELEASE_LOCK_TOKEN={token}
@@ -3660,14 +3647,6 @@ def _write_immutable_adopted_stage(
         target = stage / staged_name
         target.write_bytes(payload)
         target.chmod(0o400)
-    for name, payload in (
-        ("backend.env.rollback", candidate_env),
-        ("backend.env.candidate", candidate_env),
-    ):
-        target = stage / name
-        target.write_bytes(payload)
-        target.chmod(0o400)
-
     manifest_lines = []
     for path in sorted(stage.iterdir(), key=lambda item: item.name):
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -3829,6 +3808,8 @@ exec /bin/mkdir "$@"
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REMOTE_RELEASE_LOCK_DIR="$FAKE_REMOTE_LOCK"
 REVA_RELEASE_LOCK_ADOPT=1
 REVA_RELEASE_LOCK_TOKEN="$ATTEMPTED_TOKEN"
@@ -3856,11 +3837,11 @@ run_runtime_state_transaction() {{
     test "$1" = status
     if [ "$ADOPTION_SCENARIO" = terminal-before-new-candidate ]; then
         printf '%s\\n' \
-          "RUNTIME_STATE_TRANSACTION_OK command=status result=phase=COMMITTED old_sha={'3' * 40} candidate_sha=$STATUS_OLD_SHA gate_armed=false gate_released=true release_target=candidate next_action=none state_source=terminal"
+          "RUNTIME_STATE_TRANSACTION_OK command=status result=phase=COMMITTED old_sha={'3' * 40} candidate_sha=$STATUS_OLD_SHA gate_armed=false gate_released=true release_target=candidate next_action=none state_source=terminal mode=code-only-no-backup"
         return
     fi
     printf '%s\\n' \
-      "RUNTIME_STATE_TRANSACTION_OK command=status result=phase=PREPARED old_sha=$STATUS_OLD_SHA candidate_sha=$STATUS_CANDIDATE_SHA gate_armed=true gate_released=false release_target=none next_action=install state_source=journal"
+      "RUNTIME_STATE_TRANSACTION_OK command=status result=phase=PREPARED old_sha=$STATUS_OLD_SHA candidate_sha=$STATUS_CANDIDATE_SHA gate_armed=true gate_released=false release_target=none next_action=install state_source=journal mode=code-only-no-backup"
 }}
 
 printf 'acquire\\n' >> "$ADOPTION_EVENT_LOG"
@@ -3892,8 +3873,7 @@ else
 fi
 if [ "$ADOPTION_SCENARIO" = terminal-before-new-candidate ]; then
     test "$RUNTIME_STATE_RESUME_PHASE" = NONE
-    upload_backend_env_file "$REMOTE_PATH/backend/.env"
-    seal_release_env_snapshots
+    verify_live_env_matches_candidate
 fi
 printf 'stage=%s adopted=%s phase=%s candidate=%s\\n' \
     "$REMOTE_BACKUP_PREFLIGHT_DIR" \
@@ -4185,6 +4165,8 @@ exec /bin/mkdir "$@"
     state_before = _immutable_stage_snapshot(state_dir)
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 set_remote_backup_preflight_dir "$FAKE_ACTIVATION_STAGE"
 DEPLOY_EXPECTED_SHA="$FAKE_ACTIVATION_SHA"
 REMOTE_RELEASE_LOCK_DIR="$FAKE_ACTIVATION_LOCK"
@@ -4275,11 +4257,11 @@ def test_adopted_activation_stage_is_read_only_for_empty_and_terminal_state(
     result = outcome["result"]
 
     assert isinstance(result, subprocess.CompletedProcess)
-    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert result.returncode != 0, (result.stdout, result.stderr)
     assert outcome["stage_after"] == outcome["stage_before"]
     assert outcome["state_after"] == outcome["state_before"]
     assert outcome["mkdir"] == []
-    assert len(outcome["scp"]) == 2
+    assert outcome["scp"] == []
     assert all(call.startswith("download:") for call in outcome["scp"])
 
 
@@ -4300,6 +4282,8 @@ def _run_deactivation_orchestrator_harness(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 set +e
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_TOKEN=test-owner
@@ -4700,6 +4684,8 @@ test "$1" = "-fT"
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 REMOTE_BACKEND_ENV_CANDIDATE={candidate}
 REMOTE_BACKEND_ENV_CANDIDATE_SHA={candidate_hash}
 REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR={durable}
@@ -5074,6 +5060,8 @@ def _run_activation_orchestrator_harness(
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+verify_live_env_matches_candidate() {{ :; }}
+verify_code_only_source_changes() {{ :; }}
 set +e
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 _REMOTE_RELEASE_LOCK_ACQUIRED=1

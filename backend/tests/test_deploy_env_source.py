@@ -32,23 +32,14 @@ def test_gitignore_protects_primary_and_legacy_secret_files():
 
 
 def test_deploy_script_backs_up_remote_env_before_syncing():
-    deploy_script = (REPO_ROOT / "deploy.sh").read_text()
-    sync_start = deploy_script.index("sync_env() {")
-    sync_end = deploy_script.index("# 去激活事务", sync_start)
-    sync_env = deploy_script[sync_start:sync_end]
-    upload_start = deploy_script.index("upload_backend_env_file() {")
-    upload_end = deploy_script.index("validate_env_sync_safety() {", upload_start)
-    upload_env = deploy_script[upload_start:upload_end]
-
-    assert "backup_remote_env()" in deploy_script
-    assert 'ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"' in deploy_script
-    assert 'cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"' in deploy_script
-    assert sync_env.index("backup_remote_env") < sync_env.index(
-        'upload_backend_env_file "$ENV_FILE"'
-    )
-    assert 'upload_path="${REMOTE_BACKEND_ENV_CANDIDATE}.upload"' in upload_env
-    assert 'scp "$temp_env" "$SERVER:$upload_path"' in upload_env
-    assert '"$REMOTE_BACKEND_ENV_CANDIDATE"' in upload_env
+    script = (REPO_ROOT / "deploy.sh").read_text()
+    start = script.index("sync_env() {")
+    body = script[start:script.index("# 去激活事务", start)]
+    assert "validate_deploy_env_preflight" in body
+    assert "backup_remote_env" not in body
+    assert "upload_backend_env_file" not in body
+    assert "ENV_BACKUP_DIR=" not in script
+    assert "CODE_ONLY_ENV_OK sha256=" in script
 
 
 def test_deploy_bundle_uses_a_unique_remote_path_and_cleans_it_up():
@@ -70,7 +61,7 @@ def test_backend_deploy_activates_kb_only_after_guard_restart_and_contract():
     deploy_end = deploy_script.index("# 查看服务状态", deploy_start)
     deploy_backend = deploy_script[deploy_start:deploy_end]
 
-    migrations = deploy_backend.index("python scripts/apply_managed_migrations.py")
+    migrations = deploy_backend.index("code-only：不执行数据库迁移")
     guard_restart = deploy_backend.index("systemctl restart health-backend")
     guard_contract = deploy_backend.index('verify_runtime_only_kb_contract "guard"')
     rollback_floor = deploy_backend.index('ROLLBACK_COMMIT="$DEPLOY_EXPECTED_SHA"')

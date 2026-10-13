@@ -2869,3 +2869,130 @@ def test_old_journal_without_drain_fields_restores_legacy_dropin(tmp_path):
     assert b'KillMode=mixed\n' in dropin.read_bytes()
     assert transaction.restore('a' * 40, lock_dir, token) == 'restored'
     assert dropin.read_bytes() == legacy
+
+
+def _code_transaction(tmp_path):
+    transaction, layout, lock_dir, token = _transaction(tmp_path)
+    # Establish canonical live layout through the existing migration fixture.
+    transaction.prepare('a' * 40, 'b' * 40, lock_dir, token)
+    transaction.install('a' * 40, 'b' * 40, lock_dir, token)
+    _mark_boot_gate_active(transaction)
+    transaction.commit('b' * 40, lock_dir, token)
+    transaction.finalize('b' * 40, lock_dir, token)
+    transaction.systemd.active_state = 'inactive'
+    transaction.systemd.old_schedule = layout.current_shelf_base
+    transaction.systemd.old_upload_authority = 'external'
+    return ReleaseTransaction(layout, transaction.systemd, code_only=True), layout, lock_dir, token
+
+
+def test_code_only_lifecycle_preserves_data_without_snapshot(tmp_path, monkeypatch):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    record = layout.uploads_root / 'meal.jpg'
+    record.write_bytes(b'private-live-data')
+    record.chmod(0o600)
+    before = _tree_state(layout.runtime_root)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('backup or migration must not run')
+    monkeypatch.setattr(transaction, '_snapshot_locations', forbidden)
+    monkeypatch.setattr(transaction, '_install_uploads', forbidden)
+    monkeypatch.setattr(transaction, '_install_dropins', forbidden)
+    assert transaction.preflight('b' * 40, 'c' * 40, lock_dir, token) == 'current'
+    assert transaction.prepare('b' * 40, 'c' * 40, lock_dir, token) == 'PREPARED'
+    assert _journal(layout)['version'] == 2
+    assert not (layout.transaction_root / 'snapshots').exists()
+    assert 'mode=code-only-no-backup' in transaction.status(lock_dir, token)
+    assert transaction.install('b' * 40, 'c' * 40, lock_dir, token) == 'INSTALLED'
+    with pytest.raises(TransactionError, match='no-backup'):
+        transaction.restore('b' * 40, lock_dir, token)
+    _mark_boot_gate_active(transaction)
+    assert transaction.commit('c' * 40, lock_dir, token) == 'COMMITTED'
+    assert transaction.finalize('c' * 40, lock_dir, token) == 'finalized'
+    assert before == _tree_state(layout.runtime_root)
+    assert record.read_bytes() == b'private-live-data'
+
+
+def test_code_only_rejects_legacy_before_backup_read(tmp_path, monkeypatch):
+    transaction, layout, lock_dir, token = _transaction(tmp_path)
+    transaction.prepare('a' * 40, 'b' * 40, lock_dir, token)
+    strict = ReleaseTransaction(layout, transaction.systemd, code_only=True)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('historical backup read')
+    monkeypatch.setattr(strict, '_verify_all_snapshots', forbidden)
+    with pytest.raises(TransactionError, match='legacy.*explicit recovery'):
+        strict.status(lock_dir, token)
+
+
+def test_code_only_rejects_changed_live_dropin_before_gate(tmp_path):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    path = layout.live_dropins['health-backend.service']
+    path.write_bytes(path.read_bytes() + b'\n# changed\n')
+    with pytest.raises(TransactionError, match='code-only.*drop-in'):
+        transaction.prepare('b' * 40, 'c' * 40, lock_dir, token)
+    assert not layout.transaction_root.exists()
+
+
+def test_code_only_crash_reentry_preserves_intent_and_no_snapshot(tmp_path):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    def crash(point):
+        if point == 'prepare:before-intent-publish':
+            raise RuntimeError('crash')
+    transaction._fault_hook = crash
+    with pytest.raises(RuntimeError, match='crash'):
+        transaction.prepare('b' * 40, 'c' * 40, lock_dir, token)
+    assert 'mode=code-only-no-backup' in transaction.status(lock_dir, token)
+    transaction._fault_hook = lambda point: None
+    assert transaction.prepare('b' * 40, 'c' * 40, lock_dir, token) == 'PREPARED'
+    assert not (layout.transaction_root / 'snapshots').exists()
+
+
+def test_code_only_rejects_snapshot_injected_into_v2_journal(tmp_path):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    transaction.prepare('b' * 40, 'c' * 40, lock_dir, token)
+    journal = _journal(layout)
+    journal['snapshots'] = {}
+    (layout.transaction_root / 'journal.json').write_text(json.dumps(journal))
+    with pytest.raises(TransactionError, match='invalid no-backup journal'):
+        transaction.status(lock_dir, token)
+
+
+def test_code_only_preserves_unexpected_backup_directory(tmp_path):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    transaction.prepare('b' * 40, 'c' * 40, lock_dir, token)
+    backup = layout.transaction_root / 'snapshots'
+    backup.mkdir()
+    record = backup / 'old-private-data'
+    record.write_bytes(b'preserve')
+    with pytest.raises(TransactionError, match='unexpected no-backup'):
+        transaction.install('b' * 40, 'c' * 40, lock_dir, token)
+    assert record.read_bytes() == b'preserve'
+
+
+@pytest.mark.parametrize('command', ['preflight-code', 'prepare-code'])
+def test_no_backup_cli_binds_both_shas_and_lock(command):
+    result = parse_cli([command, 'a' * 40, 'b' * 40, '/var/lock/health-app-release', 'c' * 64])
+    assert result.command == command
+    assert result.first_sha == 'a' * 40
+    assert result.second_sha == 'b' * 40
+    with pytest.raises(TransactionError):
+        parse_cli([command, 'a' * 40, 'b' * 40, '/var/lock/health-app-release'])
+
+
+def test_code_only_accepts_completed_legacy_marker_without_reading_backup(tmp_path):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    assert _terminal_marker(layout).get('mode') is None
+    assert 'next_action=none state_source=terminal' in transaction.status(lock_dir, token)
+    assert transaction.preflight('b' * 40, 'c' * 40, lock_dir, token) == 'current'
+
+
+def test_code_only_refuses_legacy_terminal_reap_without_removing_it(tmp_path):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    marker = _terminal_marker(layout)
+    reap = layout.transaction_root.parent / marker['reap_name']
+    reap.mkdir()
+    private = reap / 'snapshot'
+    private.write_bytes(b'old')
+    with pytest.raises(TransactionError, match='legacy terminal cleanup requires explicit recovery'):
+        transaction.finalize('b' * 40, lock_dir, token)
+    assert private.read_bytes() == b'old'
+    with pytest.raises(TransactionError, match='terminal cleanup pending'):
+        transaction.prepare('b' * 40, 'c' * 40, lock_dir, token)

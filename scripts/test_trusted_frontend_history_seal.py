@@ -1,4 +1,4 @@
-"""Sealing archives removes blob I/O, never operation or rollback validation."""
+"""Ordinary admission checks receipt/seal integrity; explicit recovery checks only its target."""
 import hashlib
 import json
 import shutil
@@ -29,7 +29,7 @@ def seal(server, state, active):
                                                    live_digest='e' * 64)
 
 
-def test_seal_once_then_only_one_rollback_content_read(evidence, monkeypatch):
+def test_seal_and_ordinary_history_read_no_rollback_contents(evidence, monkeypatch):
     server, state, op, _ = evidence
     other = second_operation(server, op)
     original = server._frontend_publication_backup_digest
@@ -40,13 +40,13 @@ def test_seal_once_then_only_one_rollback_content_read(evidence, monkeypatch):
     monkeypatch.setattr(server, '_frontend_publication_backup_digest', digest)
     result = seal(server, state, other.name)
     assert result['state'] == 'FRONTEND_HISTORY_SEALED'
-    assert set(reads) == {op.name, other.name}
+    assert reads == []
     reads.clear()
     server.assert_frontend_publication_history(state)
-    assert reads == [other.name, other.name]
+    assert reads == []
 
 
-def test_archive_blob_not_scanned_but_cannot_be_promoted_corrupt(evidence, monkeypatch):
+def test_old_backup_body_not_scanned_but_explicit_recovery_rejects_corruption(evidence, monkeypatch):
     server, state, op, _ = evidence
     other = second_operation(server, op)
     seal(server, state, other.name)
@@ -60,7 +60,7 @@ def test_archive_blob_not_scanned_but_cannot_be_promoted_corrupt(evidence, monke
         server.assert_frontend_publication_history(state)
     anchor = (state / 'frontend-history-seal/anchor.json').read_bytes()
     with pytest.raises(server.LaunchError):
-        seal(server, state, op.name)
+        server.assert_frontend_publication_history(state,verify_backups=True,_force_operations=(op.name,))
     assert (state / 'frontend-history-seal/anchor.json').read_bytes() == anchor
 
 
@@ -80,7 +80,7 @@ def test_sealing_never_hides_required_operation_validation(evidence, mutation):
     else:
         (op.parent / ('c' * 32)).mkdir(mode=0o700)
     with pytest.raises(server.LaunchError):
-        server.assert_frontend_publication_history(state)
+        server.assert_frontend_publication_history(state,verify_backups=True,_force_operations=(other.name,))
 
 
 @pytest.mark.parametrize('mutation', ['checkpoint', 'anchor', 'key-mode', 'partial', 'extra-file'])
@@ -121,13 +121,13 @@ def test_live_binding_mismatch_cannot_create_seal(evidence):
     assert not (state / 'frontend-history-seal').exists()
 
 
-def test_unsealed_new_operation_is_fully_checked(evidence):
+def test_explicit_recovery_checks_unsealed_target_backup(evidence):
     server, state, op, _ = evidence
     seal(server, state, op.name)
     other = second_operation(server, op)
     (other / 'previous-next/file').write_text('corrupt new rollback')
     with pytest.raises(server.LaunchError):
-        server.assert_frontend_publication_history(state)
+        server.assert_frontend_publication_history(state,verify_backups=True,_force_operations=(other.name,))
 
 
 @pytest.mark.parametrize('sync_number', [3, 4, 5, 6, 7])
@@ -174,7 +174,7 @@ def test_anchor_replace_failure_is_not_success(evidence, monkeypatch):
     server.finish_frontend_history_seal(state, checkpoint_sha256=plan['checkpoint_sha256'], live_digest='e' * 64)
 
 
-@pytest.mark.parametrize('mutation', ['hot', 'audit', 'live', 'new-operation'])
+@pytest.mark.parametrize('mutation', ['audit', 'live', 'new-operation'])
 def test_changes_after_inspection_prevent_finishing(evidence, monkeypatch, mutation):
     server, state, op, _ = evidence
     original = server._history_commit_anchor
@@ -233,7 +233,8 @@ def test_io_receipt_is_explicit_and_contains_no_payload(evidence, monkeypatch, c
     receipt = json.loads(capsys.readouterr().err)
     assert receipt['io'] == ({'rchar': 30, 'read_bytes': 5} if measurement else None)
     assert receipt['io_measurement'] == ('available' if measurement else 'unavailable')
-    assert receipt['rollback_operations_verified'] == 1
+    assert receipt['rollback_operations_verified'] == 0
+    assert receipt['backup_integrity']=='not_checked'
     assert str(state) not in json.dumps(receipt)
 
 
@@ -279,4 +280,35 @@ def test_hot_content_read_count_does_not_grow_with_archive_inventory(evidence, m
     monkeypatch.setattr(server, '_frontend_publication_backup_digest', digest)
     records = server.assert_frontend_publication_history(state)
     assert len(records) == archive_count + 1
-    assert reads == [op.name, op.name]
+    assert reads == []
+
+
+def test_normal_history_never_reads_historical_backup_bodies(evidence,monkeypatch,capsys):
+    server,state,op,_=evidence
+    monkeypatch.setattr(server,'_frontend_publication_backup_digest',lambda *a,**k:pytest.fail('backup body scanned'))
+    assert server.assert_frontend_publication_history(state)
+    report=json.loads(capsys.readouterr().err)
+    assert report['backup_integrity']=='not_checked'
+    assert report['rollback_operations_verified']==0
+
+
+def test_backup_verification_requires_explicit_target_and_checks_only_that_target(evidence,monkeypatch):
+    server,state,op,_=evidence
+    other=second_operation(server,op)
+    with pytest.raises(server.LaunchError,match='explicit target'):
+        server.assert_frontend_publication_history(state,verify_backups=True)
+    read=[]
+    original=server._frontend_publication_backup_digest
+    def digest(path,**kwargs):
+        read.append(path.parent.name)
+        return original(path,**kwargs)
+    monkeypatch.setattr(server,'_frontend_publication_backup_digest',digest)
+    server.assert_frontend_publication_history(state,verify_backups=True,_force_operations=(op.name,))
+    assert read==[op.name,op.name]
+
+
+@pytest.mark.parametrize('target',[('f'*32,),('a'*32,'b'*32),('not-an-operation',)])
+def test_backup_recovery_rejects_missing_or_overbroad_target(evidence,target):
+    server,state,op,_=evidence
+    with pytest.raises(server.LaunchError):
+        server.assert_frontend_publication_history(state,verify_backups=True,_force_operations=target)

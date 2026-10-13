@@ -95,3 +95,22 @@ G4须固定最终来源做全新独立安全审查，精确主干完整CI与项�
 
 
 治理首版全补充检查额外发现fast lane契约要求隔离命令必须直接出现在AGENTS（1 FAIL/177 PASS）；已恢复完整命令及适用范围、默认入口和coverage约束，未改测试断言。最新AGENTS为10201字节（<=10KiB），完整纯工具补充入口178 PASS，8.32秒，进程0；Skill治理检查PASS。产品源码没有变化，此补充验证不替代新候选完整CI。旧main CI终态仍保留失败。
+
+
+### 当前 main 终态读回（本地交接证据）
+
+当前 `main`/`origin/main` 为 `be154938fcc397fa55a9cc63cb00f6360baa4868`。独立G4对治理补丁再次GO，产品10个blob及backend/mobile/frontend/scripts/.github整树与实测e64来源一致，未再跑重复PG。完整恢复CI `38347353279`（workflow_dispatch）实际SUCCESS，32个job全部完成且无失败；同SHA轻量push `38347344545`也SUCCESS。原3640失败及两项汇总依赖失败完整保留，没有cancel/retry旧失败或把轻量绿冒充完整验证。候选绑定临时`HARNESS_LIVE_LLM_EVAL_WAIVED_SHA`已删除；没有调用真实模型。
+
+本地测试、G4和main集成/完整CI完成，生产部署与OTA仍未执行：旧env/运行态回退副本与授权历史核验入口尚未满足用户无备份要求，必须先完成发布生产者/消费者/测试适配。真实手机拍照首卡P95与相机硬件未验收，不宣称3–5秒/8秒目标已生产达标。本段为主干绿色后本地交接记录，未再推纯证据提交制造新SHA或重复CI；当前Dossier本地变更归本任务所有。
+
+### 发布前置改造：无备份链
+
+用户明确授权继续改造并部署/OTA。本阶段使用原controller/run，G3分别由root实现运行时v2、bowel_backend实现deploy/env、injection_food_final_safety实现授权轮换/历史准入，写文件范围互斥。产品源码不再改动；不重新运行真实模型评测。
+
+运行时新增`preflight-code/prepare-code`，生产CLI只接受无备份模式，v2仅允许已迁移canonical布局且live/candidate drop-in完全相同。prepare不复制数据，install不搬迁/改权限/覆盖drop-in，commit不删除旧状态；旧snapshot journal在读取备份正文前明确阻断。v2自动restore禁用，失败保留gate/小型journal，需要按原事务前向恢复；未知snapshot目录保留且阻断。三项新测试先RED（constructor缺参数），实现后三项PASS；旧全域首次119PASS/3FAIL因status追加legacy mode改变兼容字符串，已只对v2追加mode，后续125PASS/8.57秒。日志保留`/tmp/reva-code-only-red.log`、`/tmp/reva-runtime-full.log`、`/tmp/reva-runtime-final.log`。
+
+生产只读确认仍为49d、三个writer服务active、business lease不存在、runtime journal不存在。root crontab确有每天backup_db与verify_backup，已按用户要求受控移除精确两项；读回其他cron原样保留、没有创建备份，也未触碰旧backup。dpkg系统包数据库定时任务不属于Health发布数据，保留。完整改造、安全审查和新main完整CI尚待完成，不能宣称部署或OTA完成。
+
+G3整合终态：root当前源码下授权/运行时/CI整合504 PASS（27.96秒）；最终运行时129 PASS（8.17秒）；deploy三套219 PASS（115.32秒），正常backend env契约8 PASS（SQLite仅用于文件契约，不证明PG语义）。新无备份CI契约先1FAIL/16PASS，再32PASS。bash语法、秘密扫描、Skill治理与System Map PASS；地图首次因PATH无python3.12未运行，补显式.venv PATH后实际PASS，不掩盖第一次退出。无schema/DB语义变化，无真实模型调用。授权链所有最终服务测试及删除失败点116PASS；旧fixture缺canonical flags导致的失败与更早旧契约失败保留于交接日志。
+
+OTA只读source预检在be154上实际BLOCK：自原生基线7fe06d8之后有mobile/app.config.ts等原生输入变化，未领取claim/未vendor update。需在发布阶段核对原生交付与OTA基线，不把旧QR/旧OTA当本候选成功。不放宽native边界来制造OTA绿。

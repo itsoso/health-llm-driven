@@ -266,7 +266,7 @@ def parse_cli(argv: Sequence[str]) -> CliArgs:
             "commit, release-gate, finalize, or status"
         )
     command = argv[0]
-    if command in {"preflight", "prepare", "install"}:
+    if command in {"preflight", "prepare", "install", "preflight-code", "prepare-code"}:
         if len(argv) != 5:
             raise TransactionError(
                 f"{command} requires OLD_SHA CANDIDATE_SHA LOCK_DIR TOKEN"
@@ -415,8 +415,10 @@ class ReleaseTransaction:
         *,
         event_sink: Callable[[str], None] | None = None,
         fault_hook: Callable[[str], None] | None = None,
+        code_only: bool = False,
     ) -> None:
         self.layout = layout
+        self.code_only = code_only
         self.systemd = systemd
         self._event_sink = event_sink or (lambda _event: None)
         self._fault_hook = fault_hook or (lambda _point: None)
@@ -911,10 +913,15 @@ class ReleaseTransaction:
             raise TransactionError("invalid preparing transaction journal") from exc
         if (
             not isinstance(journal, dict)
-            or journal.get("version") != 1
+            or journal.get("version") != (2 if self.code_only else 1)
             or journal.get("phase") != "ARMING"
         ):
             raise TransactionError("invalid preparing transaction journal")
+        if journal.get("version") == 2 and (
+            journal.get("mode") != "code-only-no-backup"
+            or "snapshots" in journal or "metadata" in journal
+        ):
+            raise TransactionError("invalid no-backup preparing journal")
         _validate_sha(str(journal.get("old_sha")), "preparing old SHA")
         _validate_sha(
             str(journal.get("candidate_sha")),
@@ -1030,6 +1037,8 @@ class ReleaseTransaction:
         )
         reap = self._terminal_reap_path(marker["transaction_id"])
         if reap.exists() or reap.is_symlink():
+            if self.code_only and marker.get("mode") != "code-only-no-backup":
+                raise TransactionError("legacy terminal cleanup requires explicit recovery; preserve old backups")
             self._remove_path(reap)
             _fsync_dir(reap.parent)
         return str(marker["result"])
@@ -1081,6 +1090,8 @@ class ReleaseTransaction:
             "result": result,
             "reap_name": reap.name,
         }
+        if journal.get("version") == 2:
+            marker["mode"] = "code-only-no-backup"
         self._atomic_write_json(self._terminal_marker_path(), marker)
         self._fault("terminal:after-marker")
         if reap.exists() or reap.is_symlink():
@@ -1255,6 +1266,33 @@ class ReleaseTransaction:
         )
         return authority
 
+    def _validate_code_only_layout(self, journal: Mapping) -> None:
+        """Admit only an already migrated layout; never move or copy live state."""
+        schedule = self._schedule_path(
+            journal["old_effective"]["celery-beat.service"]["ExecStart"]
+        )
+        if schedule != self.layout.current_shelf_base:
+            raise TransactionError("code-only requires current beat authority")
+        if self._old_upload_authority(journal["old_effective"]) != "external":
+            raise TransactionError("code-only requires external upload authority")
+        for unit, live in self.layout.live_dropins.items():
+            self._validate_regular(live, allow_writable=False)
+            if live.read_bytes() != self.layout.candidate_dropins[unit].read_bytes():
+                raise TransactionError("code-only live drop-in differs from candidate")
+        self._validate_candidate_effective(journal)
+        self._validate_directory(self.layout.runtime_root, required=True)
+        self._validate_directory(self.layout.beat_state_dir, required=True)
+        self._validate_directory(self.layout.dedao_workspace, required=True)
+        # Legacy state must stay absent: no implicit migration or deletion.
+        legacy_paths = [self.layout.backend_data / name for name in RUNTIME_ITEMS]
+        legacy_paths.extend(
+            Path(f"{self.layout.legacy_shelf_base}{suffix}")
+            for suffix in SHELF_SUFFIXES
+        )
+        for path in legacy_paths:
+            if path.exists() or path.is_symlink():
+                raise TransactionError("code-only requires migrated persistent state")
+
     def _new_transaction_snapshot(
         self,
         old_sha: str,
@@ -1270,6 +1308,8 @@ class ReleaseTransaction:
         upload_authority = self._old_upload_authority(old_effective)
         self._assert_release_lock(lock_dir, token)
         authority = "legacy" if schedule == self.layout.legacy_shelf_base else "current"
+        if self.code_only:
+            self._validate_code_only_layout({"old_effective": old_effective})
         return authority, upload_authority, old_effective
 
     def _old_upload_authority(
@@ -1722,8 +1762,17 @@ class ReleaseTransaction:
             journal = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise TransactionError("invalid transaction journal") from exc
-        if not isinstance(journal, dict) or journal.get("version") != 1:
+        if not isinstance(journal, dict) or journal.get("version") not in {1, 2}:
             raise TransactionError("unsupported transaction journal")
+        if self.code_only and journal.get("version") == 1:
+            raise TransactionError("legacy transaction requires explicit recovery; no-backup mode cannot consume snapshots")
+        if journal.get("version") == 2:
+            if journal.get("mode") != "code-only-no-backup" or "snapshots" in journal or "metadata" in journal:
+                raise TransactionError("invalid no-backup journal")
+            if journal.get("beat_authority") != "current" or journal.get("old_upload_authority") != "external" or journal.get("upload_authority") != "external":
+                raise TransactionError("invalid no-backup authority")
+            if journal.get("phase") in {"RESTORED", "RESTORE_FINALIZED"}:
+                raise TransactionError("no-backup journal cannot restore")
         journal["old_effective"] = self._stable_effective_snapshot(
             journal.get("old_effective")
         )
@@ -1741,6 +1790,10 @@ class ReleaseTransaction:
             journal["old_sha"],
             journal["candidate_sha"],
         )
+        if journal.get("version") == 2:
+            allowed = {"journal.json", self._temporary_path(self.layout.transaction_root / "journal.json").name}
+            if any(path.name not in allowed for path in self.layout.transaction_root.iterdir()):
+                raise TransactionError("unexpected no-backup transaction artifacts; preserve for operator")
         if journal.get("phase") not in VALID_PHASES:
             raise TransactionError("invalid transaction phase")
         if journal.get("beat_authority") not in {"legacy", "current"}:
@@ -1758,7 +1811,10 @@ class ReleaseTransaction:
             raise TransactionError("invalid upload authority")
         installed_upload_manifest = journal.get("installed_upload_manifest")
         rollback_upload_manifest = journal.get("rollback_upload_manifest")
-        if upload_authority == "mixed":
+        if journal.get("version") == 2:
+            if installed_upload_manifest is not None or rollback_upload_manifest is not None:
+                raise TransactionError("no-backup journal cannot publish upload manifests")
+        elif upload_authority == "mixed":
             if (
                 installed_upload_manifest is not None
                 or rollback_upload_manifest is not None
@@ -1828,7 +1884,7 @@ class ReleaseTransaction:
         if journal["phase"] == "ARMING":
             if "snapshots" in journal or "metadata" in journal:
                 raise TransactionError("arming journal cannot publish snapshots")
-        else:
+        elif journal.get("version") == 1:
             self._verify_all_snapshots(journal)
             self._validate_journal_metadata(journal.get("metadata"))
             self._validate_metadata_snapshot_consistency(journal)
@@ -1856,6 +1912,11 @@ class ReleaseTransaction:
                 "effective config changed while preparing transaction"
             )
         journal["old_effective"] = expected_effective
+        if journal.get("version") == 2:
+            self._validate_code_only_layout(journal)
+            self._assert_release_lock(lock_dir, token)
+            self._write_journal_phase(journal, "PREPARED")
+            return "PREPARED"
         self._assert_release_lock(lock_dir, token)
         transaction_id = journal["transaction_id"]
         build_root = (
@@ -1911,6 +1972,7 @@ class ReleaseTransaction:
                     "gate_armed=false gate_released=false "
                     "release_target=none next_action=prepare "
                     "state_source=preparing"
+                    + (" mode=code-only-no-backup" if journal.get("version") == 2 else "")
                 )
             marker_path = self._terminal_marker_path()
             if not marker_path.exists() and not marker_path.is_symlink():
@@ -1932,6 +1994,7 @@ class ReleaseTransaction:
                 "gate_armed=false gate_released=true "
                 f"release_target={marker['target']} "
                 f"next_action={next_action} state_source=terminal"
+                + (" mode=code-only-no-backup" if marker.get("mode") == "code-only-no-backup" else "")
             )
         journal = self._load_journal()
         self._assert_release_lock(lock_dir, token)
@@ -1964,6 +2027,7 @@ class ReleaseTransaction:
             f"gate_released={gate_released} "
             f"release_target={release_target} "
             f"next_action={next_action} state_source=journal"
+            + (" mode=code-only-no-backup" if journal.get("version") == 2 else "")
         )
 
     def prepare(
@@ -2028,7 +2092,7 @@ class ReleaseTransaction:
         intent_durable = False
         try:
             journal = {
-                "version": 1,
+                "version": 2 if self.code_only else 1,
                 "old_sha": old_sha,
                 "candidate_sha": candidate_sha,
                 "transaction_id": _transaction_id(
@@ -2038,13 +2102,15 @@ class ReleaseTransaction:
                 "phase": "ARMING",
                 "beat_authority": authority,
                 "old_upload_authority": upload_authority,
-                "upload_authority": "mixed",
+                "upload_authority": "external" if self.code_only else "mixed",
                 "old_effective": old_effective,
                 "original_enablement": original_enablement,
                 "boot_gate_armed": False,
                 "boot_gate_released": False,
                 "release_target": None,
             }
+            if self.code_only:
+                journal["mode"] = "code-only-no-backup"
             self._atomic_write_json(temporary / "journal.json", journal)
             _fsync_dir(temporary)
             intent_durable = True
@@ -2796,6 +2862,13 @@ class ReleaseTransaction:
     def _recover_scoped_orphans(self, journal: Mapping) -> None:
         if journal.get("transaction_id") != self._active_transaction_id:
             raise TransactionError("cannot recover another transaction")
+        if journal.get("version") == 2:
+            temporary = self._temporary_path(self.layout.transaction_root / "journal.json")
+            if temporary.exists() or temporary.is_symlink():
+                self._validate_regular(temporary, allow_writable=False)
+                temporary.unlink()
+                _fsync_dir(temporary.parent)
+            return
         destinations = [
             self.layout.transaction_root / "journal.json",
             self.layout.dedao_container,
@@ -3088,6 +3161,11 @@ class ReleaseTransaction:
         if journal["phase"] not in {"PREPARED", "RESTORED"}:
             raise TransactionError("transaction is not installable")
         self._assert_boot_gate_units_inactive()
+        if journal.get("version") == 2:
+            self._validate_code_only_layout(journal)
+            self._assert_release_lock(lock_dir, token)
+            self._write_journal_phase(journal, "INSTALLED")
+            return "INSTALLED"
         self._validate_install_destinations()
         self._assert_release_lock(lock_dir, token)
         self._install_uploads(journal)
@@ -3232,6 +3310,8 @@ class ReleaseTransaction:
         _validate_sha(rollback_sha, "rollback SHA")
         self._assert_release_lock(lock_dir, token)
         journal = self._load_journal()
+        if journal.get("version") == 2:
+            raise TransactionError("no-backup transaction requires forward recovery; automatic restore is disabled")
         self._recover_scoped_orphans(journal)
         if rollback_sha == journal["candidate_sha"]:
             if journal["release_target"] not in {None, "candidate"}:
@@ -3306,6 +3386,8 @@ class ReleaseTransaction:
             self._assert_release_lock(lock_dir, token)
             return result
         journal = self._load_journal()
+        if journal.get("version") == 2:
+            raise TransactionError("no-backup transaction requires forward recovery; automatic restore is disabled")
         if old_sha != journal["old_sha"]:
             raise TransactionError("release-gate requires the old SHA")
         if journal["phase"] not in {"RESTORED", "RESTORE_FINALIZED"}:
@@ -3360,7 +3442,7 @@ class ReleaseTransaction:
             )
             if journal["phase"] == "INSTALLED":
                 self._write_journal_phase(journal, "COMMITTING")
-            for suffix in SHELF_SUFFIXES:
+            for suffix in (() if journal.get("version") == 2 else SHELF_SUFFIXES):
                 target = Path(f"{self.layout.legacy_shelf_base}{suffix}")
                 if target.exists() or target.is_symlink():
                     self._validate_regular(target, allow_writable=False)
@@ -3424,20 +3506,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         arguments = parse_cli(list(argv if argv is not None else sys.argv[1:]))
         layout = production_layout(Path(__file__).resolve().parent)
-        transaction = ReleaseTransaction(layout, SubprocessSystemd())
+        transaction = ReleaseTransaction(layout, SubprocessSystemd(), code_only=True)
+        if arguments.command in {"prepare", "preflight"}:
+            raise TransactionError("snapshot publishing disabled; use code-only no-backup commands")
         if arguments.command == "status":
             result = transaction.status(
                 arguments.lock_dir,
                 arguments.token,
             )
-        elif arguments.command == "preflight":
+        elif arguments.command == "preflight-code":
             result = transaction.preflight(
                 str(arguments.first_sha),
                 str(arguments.second_sha),
                 arguments.lock_dir,
                 arguments.token,
             )
-        elif arguments.command == "prepare":
+        elif arguments.command == "prepare-code":
             result = transaction.prepare(
                 arguments.first_sha,
                 str(arguments.second_sha),
