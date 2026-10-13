@@ -1888,6 +1888,10 @@ def direct_self_illness_recovery_entity(value: str) -> str | None:
     additional clauses cannot borrow authority from a recovery substring.
     """
     text = normalize_write_scope_text(value).strip("。.!！")
+    # Entity normalization may strip punctuation; never turn a question into
+    # authority by discarding a question mark inside the disease phrase.
+    if "?" in text or "？" in text:
+        return None
     match = _DIRECT_SELF_ILLNESS_RECOVERY_RE.fullmatch(text)
     if match is None:
         return None

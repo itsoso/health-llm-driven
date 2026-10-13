@@ -18,6 +18,8 @@ Router incident + safety，Health Harness控制；未加载已禁用superpowers�
 - PostgreSQL隔离库初次因initdb默认SQL_ASCII无法编码中文失败（49 pass/28 errors），未操作业务数据库；改为UTF8重跑77 PASS/61.77秒，pytest与隔离库停止均exit0。
 - LLM change gate PASS、live_llm_required=false；map/diff通过。无真实模型评测、无备份。
 
+- 独立审查固定提交8a50a04发现中间问号被疾病名称清洗吞掉的授权边界，裁定NO-GO；新增4条疑问反例先RED，再于实体解析前拒绝原句问号，SQLite全套81 PASS。修复提交需重新独立审查。
+
 ## 当前状态
 
 实际DietDraftCardView经React Native Web渲染320/390/768px截图目视通过，均无水平溢出；320两钮各258×48上下排列，390各160×48并排，768各349×48并排。证据 `/tmp/reva-diet-footer-preview/`，合成无照片餐食、仅路由/隐藏编辑器/平台桥接stub；这是浏览器预览，非原生验收。
