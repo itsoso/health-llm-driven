@@ -66,3 +66,11 @@ RED12 FAIL/13 PASS（新增模块未实现），GREEN29 PASS，官方CI-mode run
 3. 从本次最长后端分片的现有timing工件定位耗时用例与安装等待，再按历史多个成功run验证分片或依赖复用；不凭单次数据盲目改worker数。后端410秒须用deploy分段证据继续拆分，不能推断均为构建。
 
 验收目标：正常状态读取单次≤42秒预算，未知不伪装成功；下一版授权事务同批active备份内容读取一次、状态转换仍可检测漂移，发布结果与恢复语义不变。整个发布时长改善仍待后续同范围自然发布确认。本轮工具改进不需要后端重部署、OTA或TestFlight，不修改任何生产授权或历史备份。
+
+### 状态工具交付收口
+
+固定源码7e41307b0819acdfa7468fe3c0f66f83aa372527，独立只读G4 GO：干净快照29 PASS、额外28项边界PASS，无网络/模型/健康数据访问或仓库写入。真实GitHub原发布任务读取返回同id/SHA/attempt completed/success，非授权观察标签保留。[主干完整CI38335673410](https://github.com/itsoso/health-llm-driven/actions/runs/38335673410) SUCCESS。本轮仅工具上游交付，没有生产部署或授权变更。
+
+原49d部署日志分段复核：finalized376秒；远端writer停止至事务prepare与checkout共同完成102秒（同一远端shell基准6→108），不能全部归因为Git；Pi安装7秒（134→141）。优先在停服前准备可验证的候选源码，并进一步拆分事务准备/checkout、守卫与健康等待；实现必须保留租约、事务、来源和回退证据，当前尚未交付。
+
+结构化原始固定计时与本轮工具证据：[发布速度基线与状态工具](../reviews/2026-10-13-release-speed-baseline-and-status-tool.json)。授权事务去重与整体发布提速仍未完成，不以工具CI绿色冒充生产流程时延改善。

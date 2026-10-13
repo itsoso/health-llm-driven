@@ -1,0 +1,181 @@
+{
+  "tool_source_sha": "7e41307b0819acdfa7468fe3c0f66f83aa372527",
+  "baseline_runtime_sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+  "baseline": {
+    "ci_run_id": 38332269936,
+    "ci_execution_span_seconds": 645,
+    "slowest_backend_test_job_seconds": 562,
+    "trusted_release_run_id": 38333973742,
+    "release_execution_span_seconds": 450,
+    "backend_job_seconds": 410,
+    "authorization_step_interval_seconds": 510.61,
+    "authorization_interval_includes_operator_wait": true,
+    "frontend_history_checks": [
+      {
+        "seconds": 52.06,
+        "read_bytes": 868831232
+      },
+      {
+        "seconds": 47.34,
+        "read_bytes": 812875776
+      }
+    ],
+    "deployment_markers": [
+      {
+        "phase": "backend_started",
+        "elapsed_seconds": 10
+      },
+      {
+        "phase": "env_checked",
+        "elapsed_seconds": 10
+      },
+      {
+        "phase": "preparation_checked",
+        "elapsed_seconds": 15
+      },
+      {
+        "phase": "env_staging_started",
+        "elapsed_seconds": 21
+      },
+      {
+        "phase": "deactivation_started",
+        "elapsed_seconds": 64
+      },
+      {
+        "phase": "guard_started",
+        "elapsed_seconds": 114
+      },
+      {
+        "phase": "remote_guard_started",
+        "elapsed_seconds": 0
+      },
+      {
+        "phase": "remote_writers_stopped",
+        "elapsed_seconds": 6
+      },
+      {
+        "phase": "remote_checkout_completed",
+        "elapsed_seconds": 108
+      },
+      {
+        "phase": "remote_pi_install_started",
+        "elapsed_seconds": 134
+      },
+      {
+        "phase": "remote_pi_install_completed",
+        "elapsed_seconds": 141
+      },
+      {
+        "phase": "remote_dependencies_completed",
+        "elapsed_seconds": 165
+      },
+      {
+        "phase": "remote_migrations_completed",
+        "elapsed_seconds": 166
+      },
+      {
+        "phase": "remote_schema_completed",
+        "elapsed_seconds": 169
+      },
+      {
+        "phase": "remote_services_restarted",
+        "elapsed_seconds": 169
+      },
+      {
+        "phase": "guard_command_completed",
+        "elapsed_seconds": 283
+      },
+      {
+        "phase": "guard_gates_passed",
+        "elapsed_seconds": 322
+      },
+      {
+        "phase": "kb_activation_started",
+        "elapsed_seconds": 326
+      },
+      {
+        "phase": "kb_command_completed",
+        "elapsed_seconds": 327
+      },
+      {
+        "phase": "kb_gates_passed",
+        "elapsed_seconds": 336
+      },
+      {
+        "phase": "manifest_passed",
+        "elapsed_seconds": 336
+      },
+      {
+        "phase": "terminal_gates_passed",
+        "elapsed_seconds": 371
+      },
+      {
+        "phase": "finalized",
+        "elapsed_seconds": 376
+      }
+    ],
+    "sample_count": 1,
+    "production_p95_improvement_measured": false
+  },
+  "delivered": {
+    "read_only_run_status_tool": true,
+    "read_timeout_seconds": 12,
+    "max_reads": 3,
+    "backoff_seconds": [
+      2,
+      4
+    ],
+    "release_authority": false,
+    "no_dispatch_rerun_cancel": true,
+    "real_readback": {
+      "run_id": 38333973742,
+      "sha": "49d90fd24faa0670851da3b4dcf794ee1a5af1b4",
+      "attempt": 1,
+      "release_authority": false,
+      "status": "completed",
+      "conclusion": "success"
+    }
+  },
+  "verification": {
+    "red_failed": 12,
+    "previous_tests_passed_in_red": 13,
+    "ci_mode_passed": 29,
+    "ci_mode_exit": 0,
+    "independent_review": {
+      "fixed_commit_archive_pytest": {
+        "passed": 29,
+        "duration_seconds": 0.03,
+        "exit_code": 0
+      },
+      "additional_pure_boundary_checks": {
+        "passed": 28,
+        "exit_code": 0
+      }
+    },
+    "independent_verdict": "GO",
+    "system_map": "PASS",
+    "dossier_consistency": "PASS"
+  },
+  "planned_not_delivered": [
+    "single-lock recoverable authorization transition with ephemeral backup verification memo",
+    "separate stopped-writer transaction preparation and checkout timings before optimizing",
+    "use multiple success-run test timings to evaluate shard changes"
+  ],
+  "production_changes": false,
+  "ota_published": false,
+  "native_published": false,
+  "limitations": [
+    "One natural release baseline, no measured total release speedup.",
+    "No persisted security-decision cache or skipped gate.",
+    "Current main exact CI must be checked separately."
+  ],
+  "ci_observation": {
+    "run_id": 38335673410,
+    "sha": "7e41307b0819acdfa7468fe3c0f66f83aa372527",
+    "attempt": 1,
+    "release_authority": false,
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "ci_url": "https://github.com/itsoso/health-llm-driven/actions/runs/38335673410"
+}
