@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G3 专项验证；G4与发布待完成 |
+| 当前阶段 | G4 产品安全 GO；G5/G6 发布前置条件未满足 |
 
 Primary controller：health-harness-orchestrator；overlay：safety-gate。superpowers禁用。用户明确要求解决注射照片记录、食物无法识别时的错误与拍照记餐性能；真实模型评测继续按用户要求不执行。保留原三个benchmark脏文件与其他历史未跟踪回执，不修改或暂存。
 
@@ -74,3 +74,12 @@ G4须固定最终来源做全新独立安全审查，精确主干完整CI与项�
 食品、草稿、用药与turn outcome宽域在02a来源运行391 PASS，669.21秒，pytest/runner0，PG正常fast关闭；后续源码变动仅为用药精确别名/source药物绑定，对应132项新用药/别名PG全部PASS，319.24秒，正常关闭仍待runner终态读回。新增全剂型带图提案→确认→重放正向stream正在独立定向运行。
 
 02a的本地发布不变量CI-mode因该候选已被第二轮G4拒绝而发SIGINT正常停止，退出2，554.87秒，原结果保留`/tmp/reva-report-performance-final-ci-result.json`；没有将其作为通过，没有取消GitHub CI、生产发布或消费任何新claim。最终候选发布CI-mode仍未通过，发布准入保持BLOCK。
+
+
+### G4 最终 GO
+
+产品固定候选 `e64aa3d6a06dbf0985f2e10251e028fa6915d0be` 新独立 reviewer GO，报告 `/tmp/reva-injection-food-gate3-safety.json`。PG独立20+2 PASS，两个pytest/runner0且正常停库；Mobile消费链10 PASS。审查首轮因临时DB名字不含test触发fixture保护的20个环境ERROR保留，修正审查runner重跑，不改产品代码，不当作产品RED。
+
+已验证source药名/实际量/包装强度、正确hash篡改payload确认拒绝、owner已有全剂型Medication正确确认重放、只读/暂停实际stream不创建餐食或草稿、pending首卡不声称write_verified、no-food与provider真实故障区别。父端132项PG与带图确认2项runner最终均0，正常停库；食品宽域391 PASS、Mobile3549 PASS/1skip、类型与地图/Skill治理均通过。没有执行真实模型评测或生产健康写入。
+
+发布准备仍BLOCK：无备份生产者/消费者尚未适配；最终发布CI-mode未通过；目标main精确完整CI待推送核对。因此当前修复不能声明已部署、已OTA、已TestFlight或真实手机拍照耗时已达标。最后新增文档仅同步终态证据，产品源码不再改变。
