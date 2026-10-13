@@ -1160,3 +1160,83 @@ def test_retired_cloud_does_not_accept_loopback_empty_comment_exception():
     b=load_bootstrap()
     with pytest.raises(b.BootstrapError,match='identity hash differs'):
         b._retired_public_keys(SHA,retired_public_fixture(LOOPBACK, PUBLIC+' \n'))
+
+
+@pytest.mark.parametrize('fault', [None, 'retirement_audit', 'closure_audit'])
+def test_rotation_rechecks_real_no_copy_closure_after_discard(monkeypatch, tmp_path, fault):
+    """Real closure producer/consumer and retirement deletion; no host calls."""
+    from test_contained_release_retirement import proof_fixture
+    fixture_root = tmp_path / 'closure-fixture'
+    fixture_root.mkdir()
+    closure, adapter, _, _, obsolete = proof_fixture(fixture_root, monkeypatch, build_lock=False)
+    for path in obsolete.iterdir(): path.unlink()
+    obsolete.rmdir()
+    rotation_root = tmp_path / 'rotation-fixture'
+    rotation_root.mkdir()
+    bootstrap, calls = rotation_fixture(monkeypatch, rotation_root, succeeded=False)
+    workspace = bootstrap.STATE / SHA
+    workspace.mkdir(mode=0o700)
+    for name, state in [('started.json','STARTED'), ('completed.json','NEEDS_OPERATOR')]:
+        path = workspace / name
+        path.write_text(json.dumps({'sha': SHA, 'state': state}))
+        path.chmod(0o600)
+    # Recreate only synthetic fixture credentials so the real closure producer
+    # performs their one-time revocation before the real rotate deletion.
+    (bootstrap.CONFIG / 'loopback.key').write_text('synthetic fixture key')
+    (bootstrap.CONFIG / 'loopback.key').chmod(0o600)
+    cloud, loopback = bootstrap.key_lines(200, PUBLIC, LOOPBACK)
+    bootstrap.AUTHORIZED.write_text('unrelated\n' + cloud + '\n' + loopback + '\n')
+    monkeypatch.setattr(bootstrap, 'BUSINESS_LEASE', adapter.proof.lease)
+    monkeypatch.setattr(bootstrap, '_recovery_process_proof', lambda: None)
+    adapter.b = bootstrap
+    adapter.unchanged = True
+    adapter.record = bootstrap.STATE / 'unchanged-release-closures' / SHA
+    snapshot = adapter.proof.snapshot()
+    snapshot['workspace'] = {'inventory': ['completed.json','started.json']}
+    snapshot['no_backup_preflight'] = {'profile': 'synthetic', 'failed_sha': SHA,
+                                      'production_sha': adapter.proof.production_sha}
+    # Unit/vision grammar has independent producer/consumer tests. This case
+    # keeps the actual closure files, bindings, receipt and installation consumer.
+    monkeypatch.setattr(closure, '_no_backup_module', lambda: SimpleNamespace(
+        validate_snapshot=lambda value: None, validate_archived_vision=lambda *args: None))
+    adapter.proof.verify_closed = lambda value: None
+    for name in ('backend.env.rollback','backend.env.candidate'):
+        (adapter.proof.stage / name).unlink()
+        del snapshot['stage'][name]
+    result = closure.close_transaction(adapter, closure.close_transaction(adapter)['evidence_sha256'])
+    receipt = result['receipt']
+    assert not bootstrap.BUSINESS_LEASE.exists()
+    consumed = []
+    def workspace_evidence(sha, *, recovery_receipt=None, historical=False):
+        consumed.append((historical, bootstrap.CONFIG.exists()))
+        return closure.closed_evidence(bootstrap, sha, recovery_receipt,
+                                       unchanged=True, historical=historical)
+    monkeypatch.setattr(bootstrap, '_workspace_evidence', workspace_evidence)
+    installed = []
+    monkeypatch.setattr(bootstrap, '_install_locked', lambda *args, **kwargs: installed.append(True) or {'state':'INSTALLED'})
+    write = bootstrap._write
+    def write_with_fault(path, raw):
+        write(path, raw)
+        if path == bootstrap.STATE / 'retired' / SHA / 'completed.json':
+            if fault == 'retirement_audit':
+                value = json.loads(path.read_text())
+                value['new_sha'] = 'd'*40
+                path.write_text(json.dumps(value))
+            elif fault == 'closure_audit':
+                closed = adapter.record / 'completed.json'
+                value = json.loads(closed.read_text())
+                value['intent_sha256'] = 'f'*64
+                closed.write_text(json.dumps(value))
+    monkeypatch.setattr(bootstrap, '_write', write_with_fault)
+    if fault:
+        with pytest.raises((bootstrap.BootstrapError, closure.ClosureError)):
+            bootstrap.rotate(SHA, NEW_SHA, 200, HOST, recovery_receipt=receipt)
+        assert installed == []
+    else:
+        assert bootstrap.rotate(SHA, NEW_SHA, 200, HOST, recovery_receipt=receipt)['state'] == 'INSTALLED'
+        assert installed == [True]
+        assert (True, False) in consumed
+    assert (False, True) in consumed
+    assert not bootstrap.CONFIG.exists() and not bootstrap.INSTALLED.parent.exists()
+    retirement = bootstrap.STATE / 'retired' / SHA
+    assert json.loads((retirement / 'completed.json').read_text())['state'] == 'RETIRED'

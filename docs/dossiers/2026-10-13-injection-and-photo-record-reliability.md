@@ -176,3 +176,14 @@ runtime补丁第一次独立审查NO-GO：按行regex可能把多行引号内的
 进一步只读检查定位旧无备份公钥审计的序列化差异：固定 `ssh-keygen -C ''` 产生的 loopback 公钥末尾为单个空格加 LF，审计保存 stripped 公钥，历史消费者原先仅支持无后缀或 LF。真实生产旧审计摘要仅匹配该固定格式；本机实际 ssh-keygen 复现新增 RED 1 FAIL/5 PASS。仅 loopback 的无注释双字段格式补充精确摘要候选，额外空格、tab、其他注释、换成另一公钥及 cloud 同类变形仍拒绝。不修改历史审计或原公钥，不恢复/创建备份。
 
 `dc00` iOS 本地构建 1.3.5 (282) archive/export 成功，supports_ipad=true，原相邻来源回执完整，签名仅含1个已登记设备；使用 --no-upload --no-latest，未发布。后续源码修正须重新绑定最终来源验证；该包不作为新候选部署/OTA成功证据。OTA原生配置边界仍未满足，未强行发布。
+
+
+### 无备份收口成功与授权安装衔接修复
+
+`3680c4b97365324bcae986bd4979d161307be25a` 完整 CI `38380991619`、trusted validate `38382409609` SUCCESS，独立 G4 641 PASS / 13 可选 PostgreSQL SKIP。原7682失败的正式收口返回 `CLOSED_UNCHANGED_RELEASE`；原NEEDS_OPERATOR回执、stage和旧备份保留，原业务lease同inode终态移名，发布身份撤销，生产49d与三个服务健康不变。
+
+随后轮换完成旧授权退役、尚未安装新授权即失败。真实根因为删除旧config/executor后，post-retirement检查仍以live方式读取它们；没有重跑rotate或改旧审计。只读historical消费与原workspace精确一致，74项历史审计通过。受独立GO审核的固定3680前向完成包装器绑定原retirement、closure receipt、锁、完整CI、原cloud身份及现网健康；独占小型intent后仅调用canonical安装入口，任何部分失败保留现场。
+
+永久修复仅在 `CLOSED_UNCHANGED_RELEASE` 已完成退役分支重新消费完整 `_retired_history`，要求本轮intent精确一致；其他状态保留原检查。真实closure生产、真实旧安装删除、真实历史消费者回归先RED后GREEN；篡改退役completed或closure completed均阻断新安装。父端及独立审查各303 PASS，独立GO报告 `/tmp/reva-forward-install-3680-safety.json`。未降低历史/身份/CI检查，也不复制旧安装。
+
+3680 iOS 1.3.5(283) archive/export成功，支持iPad，仅1个登记设备，尚未上传。trusted OTA source验证仍因相对原生基线7fe06d8的native输入变化而BLOCK；不修改baseline或把ad-hoc原生包冒充OTA。尚无新候选部署/设备验收成功声明。

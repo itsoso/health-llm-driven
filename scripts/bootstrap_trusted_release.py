@@ -1057,7 +1057,18 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         # SHA permanently, and finish audit writes before publishing any key.
         _write(record / "completed.json", json.dumps({"old_sha": old_sha, "new_sha": sha,
                "state": "RETIRED"}, sort_keys=True).encode())
-        if inspect_workspace() != workspace:
+        if workspace.get("state") == "CLOSED_UNCHANGED_RELEASE":
+            # The no-copy closure already proved the revoked installation before
+            # deletion. Reconsume its durable retirement audit now: this checks
+            # canonical executor/public-key hashes, original closure receipt and
+            # workspace bindings without demanding removed installation files.
+            retired = _retired_history().get(old_sha)
+            if retired != intent:
+                raise BootstrapError("completed retirement audit changed during rotation")
+            after_workspace = retired["workspace"]
+        else:
+            after_workspace = inspect_workspace()
+        if after_workspace != workspace:
             raise BootstrapError("retirement evidence changed during rotation")
         check_advance()
         check_locks()
