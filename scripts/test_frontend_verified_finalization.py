@@ -220,10 +220,10 @@ def fixture_original(m, tmp_path, monkeypatch):
 def test_original_evidence_retains_file_and_backup_inodes(tmp_path, monkeypatch):
     m = load()
     state, audit, server = fixture_original(m, tmp_path, monkeypatch)
-    original = m.original_evidence(server, OPERATION, state=state)
+    original = m.original_evidence(server, OPERATION, state=state, verify_backups=True)
     assert original["artifact_digest"] == m.EXPECTED_ARTIFACT
     (audit / "previous-next/file").write_text("tampered backup")
-    assert m.original_evidence(server, OPERATION, state=state) != original
+    assert m.original_evidence(server, OPERATION, state=state, verify_backups=True) != original
 
 
 @pytest.mark.parametrize(
@@ -733,11 +733,11 @@ def test_archived_group_write_mode_remains_part_of_historical_proof(
     state, audit, server = fixture_original(m, tmp_path, monkeypatch)
     file = audit / "previous-next/file"
     file.chmod(0o664)
-    p = plan(m, state, m.original_evidence(server, OPERATION, state=state))
+    p = plan(m, state, m.original_evidence(server, OPERATION, state=state, verify_backups=True))
     m.finalize(p, lambda: p, server, evidence_sha256=m.digest(p), state=state)
     file.chmod(0o644)
     with pytest.raises(m.FinalizationError):
-        m.history_evidence(server, OPERATION, state=state)
+        m.history_evidence(server, OPERATION, state=state, verify_backups=True)
 
 
 @pytest.mark.parametrize("mutation", ["group_write", "hardlink"])
@@ -852,3 +852,63 @@ def test_archive_rejects_noncanonical_path_ancestry(tmp_path, monkeypatch, spell
         server.secure_path = strict_path
     with pytest.raises(m.FinalizationError):
         m.tree_evidence(server, root)
+
+
+def test_ordinary_rebuild_history_never_reads_finalized_backup_bodies(tmp_path, monkeypatch):
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    p = plan(m, state, m.original_evidence(server, OPERATION, state=state))
+    spec = importlib.util.spec_from_file_location(
+        'finalization_history_consumer', Path(__file__).with_name('trusted_release_server.py')
+    )
+    consumer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(consumer)
+    monkeypatch.setattr(consumer, 'secure_path', server.secure_path)
+    monkeypatch.setattr(consumer, '_load_frontend_finalizer', lambda: m)
+    monkeypatch.setattr(m, 'tree_evidence', lambda *a, **k: pytest.fail('backup body traversed'))
+    consumer.assert_frontend_rebuild_history(state, pending_finalization_operation=OPERATION)
+    complete = m.finalize(p, lambda: p, server, evidence_sha256=m.digest(p), state=state)
+    consumer.assert_frontend_rebuild_history(state)
+    assert m.history_evidence(server, OPERATION, state=state) == complete
+
+
+def test_explicit_selected_backup_verification_still_detects_tampering(tmp_path, monkeypatch):
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    p = plan(m, state, m.original_evidence(server, OPERATION, state=state, verify_backups=True))
+    complete = m.finalize(p, lambda: p, server, evidence_sha256=m.digest(p), state=state)
+    assert m.history_evidence(server, OPERATION, state=state, verify_backups=True) == complete
+    (audit / 'previous-next/file').write_text('altered existing backup')
+    assert m.history_evidence(server, OPERATION, state=state) == complete
+    with pytest.raises(m.FinalizationError, match='original frontend evidence changed'):
+        m.history_evidence(server, OPERATION, state=state, verify_backups=True)
+
+
+def test_direct_finalizer_inspection_does_not_read_backups(tmp_path, monkeypatch):
+    m = load()
+    state, audit, server, args, kwargs, events, fail = inspect_fixture(m, tmp_path, monkeypatch)
+    monkeypatch.setattr(m, 'tree_evidence', lambda *a, **k: pytest.fail('backup body traversed'))
+    p = m.inspect_finalization(*args, **kwargs)
+    assert all(item['integrity'] == 'not_checked' for item in p['original']['backups'].values())
+    m.finalize(p, lambda: m.inspect_finalization(*args, **kwargs), server,
+               evidence_sha256=m.digest(p), state=state)
+
+
+@pytest.mark.parametrize('mutation', ['root_swap', 'missing', 'unknown_proof'])
+def test_metadata_only_history_preserves_backup_root_and_audit_binding(tmp_path, monkeypatch, mutation):
+    m = load()
+    state, audit, server = fixture_original(m, tmp_path, monkeypatch)
+    p = plan(m, state, m.original_evidence(server, OPERATION, state=state))
+    m.finalize(p, lambda: p, server, evidence_sha256=m.digest(p), state=state)
+    if mutation == 'root_swap':
+        (audit / 'previous-next').rename(audit / 'saved-original')
+        (audit / 'previous-next').mkdir()
+    elif mutation == 'missing':
+        (audit / 'previous-next').rename(audit / 'saved-original')
+    else:
+        p['original']['backups']['previous-next']['freshly_verified'] = True
+        with pytest.raises(m.FinalizationError):
+            m.original_audit_projection(p['original'])
+        return
+    with pytest.raises((m.FinalizationError, FileNotFoundError)):
+        m.history_evidence(server, OPERATION, state=state)

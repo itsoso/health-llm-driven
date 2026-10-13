@@ -17,6 +17,8 @@
 
 当前无备份发布路径为代码更新：`deploy.sh -b` 保持现行 env 不变，仅核验摘要、权限与固定配置；旧 `DEPLOY_DATABASE_BACKUP=1` 不能重新授权备份。运行时 `preflight-code/prepare-code` 使用 v2 小型事务日志，不复制上传文件、知识库、beat 状态或 drop-in；只允许已迁移布局和相同候选 drop-in。配置、模型/schema、managed 迁移或运行态布局变化在停写前拒绝，env-only 与 Health Evidence 激活入口暂不支持该路径。旧前端发布/重建及 stopped-recovery 的新切换操作已冻结：deploy入口和直接module执行均在产生意图、领取锁或生成previous-*前拒绝；旧回执读取与独立恢复/终态核对消费者继续保留。
 
+前端 finalizer 的普通历史、pending、inspect 和 finalize 路径仅核对备份根目录与审计，记录 `integrity=not_checked`；旧完整摘要只验证其结构和终态绑定，不重读正文或冒充新鲜完整性证明。只有明确请求恢复某一操作时，才显式选择该操作验证正文。
+
 中途失败保留原锁、事务和回执，状态为 NEEDS_OPERATOR；不再承诺通过新副本自动恢复。已有旧事务在普通无备份入口被拒绝，不读取旧 snapshot 正文、不删除旧备份。普通授权准入核验历史签名/终态/身份元数据，明确 `backup_integrity=not_checked`，不表示旧副本已经验证可恢复；用户另行请求恢复时才限定确切操作核验。
 
 授权轮换 `no-backup-v1` 留存身份和来源摘要审计，受控替换已撤销的当前安装，不复制旧配置或发布器。旧归档保留；部分轮换失败保留 intent 并阻断，不自动重发。2026-10-13 已读回确认生产 Health 数据库备份与备份验证两项 root cron 停用，其他任务保留。代码合入不等于新发布器已在生产安装；部署回执必须单独提供。

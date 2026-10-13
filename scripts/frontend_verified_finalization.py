@@ -298,7 +298,9 @@ def validate_original_records(values, operation):
     return {**intent, "artifact_digest": EXPECTED_ARTIFACT}
 
 
-def original_evidence(server, operation, *, state=None):
+def original_evidence(server, operation, *, state=None, verify_backups=False):
+    if type(verify_backups) is not bool:
+        raise FinalizationError("explicit backup verification mode required")
     state = Path(state or STATE)
     checked(operation, 32)
     audit = state / "frontend-rebuilds" / operation
@@ -328,10 +330,16 @@ def original_evidence(server, operation, *, state=None):
         raise FinalizationError(
             "original frontend publisher implementation is not audited"
         )
-    backups = {
-        name: tree_evidence(server, audit / name, state=state)
-        for name in ("previous-next", "previous-node-modules")
-    }
+    backups = {}
+    for name in ("previous-next", "previous-node-modules"):
+        if verify_backups:
+            backups[name] = tree_evidence(server, audit / name, state=state)
+        else:
+            server.secure_path(audit / name, directory=True)
+            info = (audit / name).lstat()
+            if not stat.S_ISDIR(info.st_mode):
+                raise FinalizationError("original backup root must remain a directory")
+            backups[name] = {"root": metadata(info), "integrity": "not_checked"}
     if metadata(audit.lstat()) != identity:
         raise FinalizationError("original frontend audit changed during inspection")
     return {
@@ -343,6 +351,33 @@ def original_evidence(server, operation, *, state=None):
         "before": values["before.json"],
         "old_publisher_code": code,
     }
+
+
+def original_audit_projection(original):
+    """Compare legacy audit bindings without claiming fresh backup integrity."""
+    backups = original.get("backups")
+    if not isinstance(backups, dict) or set(backups) != {"previous-next", "previous-node-modules"}:
+        raise FinalizationError("invalid original backup audit")
+    projected = {}
+    for name, proof in backups.items():
+        if not isinstance(proof, dict):
+            raise FinalizationError("invalid original backup proof")
+        if set(proof) == {"root", "sha256", "entries", "bytes"}:
+            checked(proof["sha256"], 64)
+            if (type(proof["entries"]) is not int or not 1 <= proof["entries"] <= 150000
+                    or type(proof["bytes"]) is not int or not 0 <= proof["bytes"] <= 8_000_000_000):
+                raise FinalizationError("invalid historical backup bounds")
+        elif set(proof) != {"root", "integrity"} or proof["integrity"] != "not_checked":
+            raise FinalizationError("invalid backup integrity claim")
+        root = proof["root"]
+        fields = {"st_dev", "st_ino", "st_mode", "st_nlink", "st_uid", "st_gid",
+                  "st_size", "st_mtime_ns", "st_ctime_ns"}
+        if (not isinstance(root, dict) or set(root) != fields
+                or any(type(value) is not int for value in root.values())
+                or not stat.S_ISDIR(root["st_mode"])):
+            raise FinalizationError("invalid historical backup root")
+        projected[name] = {"root": root, "integrity": "not_checked"}
+    return {**original, "backups": projected}
 
 
 def validate_builder(values, *, profile_verified, cgroup_present):
@@ -575,6 +610,7 @@ def validate_plan(plan):
     checked(plan["operation_id"], 32)
     checked(plan["finalizer_sha256"], 64)
     original = plan["original"]
+    original_audit_projection(original)
     if (
         plan["publisher_sha"] == plan["production_sha"]
         or plan["artifact_digest"] != EXPECTED_ARTIFACT
@@ -660,7 +696,7 @@ def finalize(plan, inspect_again, server, *, evidence_sha256=None, state=None):
     intent_identity, _ = file_evidence(server, record / "intent.json")
     if inspect_again() != plan:
         raise FinalizationError("finalization evidence changed after intent")
-    if original_evidence(server, plan["operation_id"], state=state) != plan["original"]:
+    if original_evidence(server, plan["operation_id"], state=state) != original_audit_projection(plan["original"]):
         raise FinalizationError("original audit changed before terminal")
     current_identity, raw = file_evidence(server, record / "intent.json")
     if (
@@ -682,7 +718,7 @@ def finalize(plan, inspect_again, server, *, evidence_sha256=None, state=None):
     return complete
 
 
-def history_evidence(server, operation, *, state=None):
+def history_evidence(server, operation, *, state=None, verify_backups=False):
     """No service, network, current checkout or live artifact calls are permitted."""
     state = Path(state or STATE)
     checked(operation, 32)
@@ -714,6 +750,8 @@ def history_evidence(server, operation, *, state=None):
     code, _ = file_evidence(server, finalizer, private=False)
     if code["sha256"] != plan["finalizer_sha256"]:
         raise FinalizationError("canonical historical finalizer changed")
-    if original_evidence(server, operation, state=state) != plan["original"]:
+    observed = original_evidence(server, operation, state=state, verify_backups=verify_backups)
+    expected = plan["original"] if verify_backups else original_audit_projection(plan["original"])
+    if observed != expected:
         raise FinalizationError("immutable original frontend evidence changed")
     return complete

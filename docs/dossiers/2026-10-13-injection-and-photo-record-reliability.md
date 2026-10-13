@@ -134,3 +134,9 @@ v2 terminal cleanup在初次清理与after-rename重入都先核验root-owned070
 本地同一timing测试复现1 FAIL/7 PASS；将契约更新为只读schema-check开始/完成边界，并显式禁止migration命令与误导性的migration完成事件，8 PASS。发布器生产源码未改；继续运行CI声明的完整release-invariants测试清单，不把局部绿替代正式CI，旧失败保留。
 
 完整CI测试清单本机运行结束：3623 PASS/22 SKIP/84 subtests，3 FAIL，527.60秒。其中2项旧合成备份测试受macOS mktemp后缀模板兼容限制（正式Linux CI同项已通过）；剩余infrastructure测试仍要求执行已取消的站外备份检查。正式d67 CI `38366412244`也在该断言失败，394 PASS后停止。现将该旧契约改为工具staging、显式备份禁用和失败保留锁；发布生产源码继续不变。两个失败CI均保留，未重发发布操作。
+
+### 生产准备暴露 finalizer 委托遗漏，发布暂停后修复
+
+0629完整CI `38367567897` 32/32 SUCCESS，validate `38369039207` SUCCESS；canonical staging已完成。旧49d canonical revoke完成，旧loopback私钥退役已终态完成；未执行rotate/backend。生产仍49d。执行中pub-history仅0.07秒、read_bytes1691648、backup_integrity=not_checked，但随后动态finalizer.history_evidence仍调用tree_evidence读取previous-node-modules，单次观察累计read_bytes1352876032；这证明先前审查遗漏真实委托链，不能称无备份正文扫描已全链路达成。试图停止读取时原进程已完成，不声称成功中止。旧文件保留，未新增备份。
+
+0629本机native构建仅到CocoaPods准备，已停止该任务自己的进程树，未创建/上传IPA，保留日志。finalizer现在默认original/history证据仅根元数据且integrity=not_checked；旧完整摘要通过严格结构验证后投影为审计比较，绝不回填旧hash伪装新验证。显式单操作verify_backups=True仍核对正文；普通/pending/inspect/finalize所有调用均不遍历备份。真实server→finalizer委托负测先2FAIL，修复后bootstrap/server/finalizer整合354PASS。需全新独立G4及新SHA完整CI后再部署；不重放0629撤权或退钥动作。
