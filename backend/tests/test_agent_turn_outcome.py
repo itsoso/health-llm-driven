@@ -369,3 +369,13 @@ def test_partial_results_do_not_override_medical_or_protocol_safety():
         )
         assert result["reason_code"] == expected
         assert result["status"] != "partial"
+def test_injection_details_clarification_is_waiting_not_a_successful_record():
+    from app.services.agent_turn_outcome import classify_agent_turn_outcome
+    result = classify_agent_turn_outcome(completion_status='complete', final_text='请补充实际注射剂量。',
+        input_clarification_reason='medication_injection_details_required')
+    assert result['status'] == 'waiting_for_user'
+    assert result['category'] == 'clarification_required'
+    blocked = classify_agent_turn_outcome(completion_status='complete', final_text='请补充实际注射剂量。',
+        input_clarification_reason='medication_injection_details_required',
+        capability_block_reasons=['health_query_not_requested'])
+    assert blocked['status'] != 'waiting_for_user'

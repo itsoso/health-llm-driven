@@ -13,6 +13,81 @@ from app.services.medication_intake_batch import WRITE_INTENT_KIND
 EXACT_MESSAGE = "记录服用两种胃药：伊托必利 替普瑞酮 各一粒"
 
 
+@pytest.mark.asyncio
+async def test_injection_restart_photo_clarifies_without_query_or_record(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _forbid_llm(executor, monkeypatch)
+    monkeypatch.setattr(executor, '_upload_chat_image', lambda *a, **k: '/uploads/chat/synthetic.jpg')
+    events = await _run(executor, user.id, '重新开始注射替尔泊肽',
+                        images=[{'base64':'YWJj','type':'jpeg'}], client_turn_id='injection-restart-photo')
+    assert '实际剂量' in _tokens(events)
+    assert '已经注射' in _tokens(events)
+    assert '未授权' not in _tokens(events)
+    assert not _done(events).get('write_receipts')
+    assert _done(events)['turn_outcome']['status'] == 'waiting_for_user'
+    assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 0
+    assert db.query(WriteIntent).filter(WriteIntent.user_id == user.id).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_explicit_injection_photo_requires_confirmation_and_saves_actual_mass(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _forbid_llm(executor, monkeypatch)
+    monkeypatch.setattr(executor, '_upload_chat_image', lambda *a, **k: '/uploads/chat/synthetic.jpg')
+    events = await _run(executor, user.id, '记录刚刚已注射替尔泊肽2.5mg',
+                        images=[{'base64':'YWJj','type':'jpeg'}], client_turn_id='injection-dose-photo')
+    assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 0
+    intent = db.query(WriteIntent).filter(WriteIntent.user_id == user.id).one()
+    assert intent.status == 'pending'
+    confirmed = await _run(executor,user.id,'确认',conversation_id=intent.payload['conversation_id'],
+                           client_turn_id='injection-dose-confirm')
+    log = db.query(MedicationLog).filter(MedicationLog.user_id == user.id).one()
+    assert log.actual_dosage == '2.5mg'
+    assert len(_done(confirmed)['write_receipts']) == 1
+    replay = await _run(executor,user.id,'确认',conversation_id=intent.payload['conversation_id'],
+                        client_turn_id='injection-dose-confirm')
+    assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 1
+    assert _done(replay)['write_receipts'] == _done(confirmed)['write_receipts']
+
+
+@pytest.mark.asyncio
+async def test_injection_photo_cannot_propose_while_runtime_writes_paused(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _forbid_llm(executor, monkeypatch)
+    monkeypatch.setattr(executor,'_upload_chat_image',lambda *a,**k:'/uploads/chat/synthetic.jpg')
+    events = await _run(executor,user.id,'记录刚刚已注射替尔泊肽2.5mg',
+        images=[{'base64':'YWJj','type':'jpeg'}],client_turn_id='paused-injection-photo',
+        runtime_write_block_reason='circuit_paused')
+    assert not _done(events)['cards']
+    assert db.query(WriteIntent).filter(WriteIntent.user_id == user.id).count() == 0
+    assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_injection_confirmation_waits_for_runtime_write_recovery(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _forbid_llm(executor, monkeypatch)
+    proposed = await _run(executor,user.id,'记录刚刚已注射替尔泊肽2.5mg',client_turn_id='injection-pause-plan')
+    conversation_id = _done(proposed)['conversation_id']
+    blocked = await _run(executor,user.id,'确认',conversation_id=conversation_id,
+        client_turn_id='injection-pause-confirm',runtime_write_block_reason='circuit_paused')
+    assert not _done(blocked)['write_receipts']
+    assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 0
+    assert db.query(WriteIntent).filter(WriteIntent.user_id == user.id).one().status == 'pending'
+    # An intervening blocked reply must not weaken the original immediate-turn
+    # confirmation rule. The existing itemized card still targets this plan.
+    from app.services.write_intent_service import confirm
+    intent = db.query(WriteIntent).filter(WriteIntent.user_id == user.id).one()
+    executor._runtime_write_block_reason = None
+    resumed = confirm(db,user.id,intent.id)
+    assert len(resumed['write_receipts']) == 1
+    assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 1
+
+
 def _tokens(events):
     return "".join(
         event.get("data", {}).get("content", "")

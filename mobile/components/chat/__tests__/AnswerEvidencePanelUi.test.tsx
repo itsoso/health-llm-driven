@@ -41,6 +41,22 @@ it.each(['blocked', 'partial', 'failed'] as const)('does not show successful ste
   expect(view.getByLabelText('需要注意：查询失败')).toBeTruthy();
 });
 
+it('shows waiting for user as confirmation rather than a failed turn', () => {
+  const view = render(<AnswerEvidencePanel {...props} terminalStatus="waiting_for_user"
+    thinkingSteps={['识别图片', '理解你的问题']} />);
+  fireEvent.press(view.getByLabelText('展开处理详情'));
+  expect(view.getByText('等待你确认或补充信息')).toBeTruthy();
+  expect(view.queryByText('本轮处理未完成')).toBeNull();
+  expect(view.getByLabelText('处理阶段：识别图片')).toBeTruthy();
+});
+
+it('preserves actual interruption even with a stale waiting status', () => {
+  const view = render(<AnswerEvidencePanel {...props} incomplete terminalStatus="waiting_for_user"
+    thinkingSteps={['识别图片']} />);
+  fireEvent.press(view.getByLabelText('展开处理详情'));
+  expect(view.getByText('本轮处理未完成')).toBeTruthy();
+});
+
 it('does not claim completed steps for an interrupted generated response', () => {
   const view = render(<AnswerEvidencePanel {...props} incomplete terminalStatus="complete"
     thinkingSteps={['整理回复中']} />);

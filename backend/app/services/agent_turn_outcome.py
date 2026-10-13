@@ -313,7 +313,7 @@ def classify_agent_turn_outcome(
             retryable=True,
         )
 
-    if (input_clarification_reason == "meal_photo_details_required"
+    if (input_clarification_reason in {"meal_photo_details_required", "medication_injection_details_required"}
             and not dispatch_started and not receipts and not actions and not goals):
         return outcome(
             status="waiting_for_user", category="clarification_required",

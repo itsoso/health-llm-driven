@@ -153,6 +153,7 @@ export default function AnswerEvidencePanel({
   const [open, setOpen] = useState(false);
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const sourceCount = normalizedAttributionCount(sources);
+  const waitingForUser = terminalStatus === 'waiting_for_user' && !incomplete;
   const businessIncomplete = incomplete || (terminalStatus !== undefined && terminalStatus !== 'complete');
   const processItems = useMemo(
     () => buildEvidenceProcessItems(thinkingSteps, !businessIncomplete),
@@ -163,7 +164,13 @@ export default function AnswerEvidencePanel({
     : 0;
   const evidenceCount = answerEvidence ? structuredCount : sourceCount;
   const evidenceSummary = useMemo(
-    () => businessIncomplete
+    () => waitingForUser
+      ? {
+        title: '等待你确认或补充信息',
+        subtitle: '核对卡片或补充信息后可继续处理',
+        tone: 'warning' as const,
+      }
+      : businessIncomplete
       ? buildEvidenceSummary(sourceCount, processItems, true)
       : answerEvidence
       ? {
@@ -174,7 +181,7 @@ export default function AnswerEvidencePanel({
         tone: answerEvidence.limitations.length > 0 ? 'warning' as const : 'complete' as const,
       }
       : buildEvidenceSummary(sourceCount, processItems),
-    [answerEvidence, processItems, sourceCount, businessIncomplete],
+    [answerEvidence, processItems, sourceCount, businessIncomplete, waitingForUser],
   );
   const technicalRows = [
     ...(profile.milestones.length > 0 ? [{ label: '处理进度', value: profile.milestones.map(s => `${s.label} ${s.value}`).join(' · ') }] : []),

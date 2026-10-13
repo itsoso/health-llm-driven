@@ -7868,7 +7868,7 @@ def _contextual_diet_write_rejection(reason: str, *, action: str) -> str:
 def _contextual_diet_confirmation_reply() -> str:
     """Render a persisted meal-photo draft without asking a model to write it again."""
     return (
-        "已识别这餐，照片和营养估算已保留。"
+        "照片和初步识别结果已保留，食物或份量仍需你核对。"
         "为避免把不确定的图片识别直接写入，请在下方餐食卡片核对后点“确认记录”。"
     )
 
@@ -17500,11 +17500,13 @@ class AgentExecutor:
         # It runs after the durable user ACK but before recipes, prompts, or any
         # model call.  Read-only pregeneration is never allowed to propose or
         # execute a health write.
+        from app.services.medication_intake_batch import parse_medication_injection_caption
+        injection_caption = parse_medication_injection_caption(message)
         if (
             health_evidence_turn is None
             and not self._has_isolated_report_scope()
             and not read_only_tools
-            and not images
+            and (not images or injection_caption is not None)
             and not file_base64
         ):
             medication_batch_result = self._resolve_medication_batch_turn(
@@ -18184,6 +18186,16 @@ class AgentExecutor:
                 _mark_perf_milestone("first_useful_ms")
                 yield {"event": "card", "data": {
                     "anchor": "contextual_meal_receipt", "descriptor": card,
+                }}
+
+        for card in self._verified_contextual_diet_confirmation_cards():
+            before = len(streamed_cards)
+            streamed_cards = _merge_agent_card_descriptors(streamed_cards, [card])
+            if len(streamed_cards) > before:
+                _mark_perf_milestone('first_card_ms')
+                _mark_perf_milestone('first_useful_ms')
+                yield {'event': 'card', 'data': {
+                    'anchor': 'contextual_meal_confirmation', 'descriptor': card,
                 }}
 
         # 2026-07-01: pre-LLM 阶段计时 SSE (纯埋点, mac 端解析未知 event 会 tolerate)。
@@ -21907,6 +21919,27 @@ class AgentExecutor:
             validate_medication_intake_intent,
         )
 
+        from app.services.medication_intake_batch import parse_medication_injection_caption
+        injection = parse_medication_injection_caption(message)
+        if injection is not None and injection['state'] == 'clarify':
+            return {
+                'action': 'clarification',
+                'reply': '可以帮你记录已发生的注射。请确认：这次是否已经注射？实际剂量是多少，什么时候注射的？照片中的包装规格不能代表实际剂量。如果刚刚已经注射，请发送“记录刚刚已注射替尔泊肽＋实际剂量（mg）”，或明确已打了几针／几支，随后确认记录；如果只是计划重新开始，暂不记为已注射。',
+                'write_receipts': [], 'pending_ids': [], 'pending_kinds': [],
+                'cards': [], 'completion_status': 'complete', 'tool_failures': [],
+                'input_clarification_reason': 'medication_injection_details_required',
+            }
+        def runtime_rejection(intent=None):
+            return {
+                'action': 'runtime_blocked',
+                'reply': ('本轮代理记录暂不可用，本次没有新的用药写入。原确认计划仍保留；请核对原卡片后手动确认，避免重新提交造成重复。'
+                          if intent is not None else
+                          '本轮代理记录暂不可用，本次没有新的用药写入。请稍后重试；若已有记录，请先核对，避免重复提交。'),
+                'write_receipts': [], 'cards': [], 'tool_failures': [],
+                'pending_ids': [intent.id] if intent is not None else [],
+                'pending_kinds': [WRITE_INTENT_KIND] if intent is not None else [],
+                'completion_status': 'complete', 'runtime_control_unavailable': True,
+            }
         action = _medication_batch_control_action(message)
         if action:
             intent = self._immediately_pending_medication_intent(
@@ -21917,6 +21950,9 @@ class AgentExecutor:
             )
             if intent is None:
                 return None
+            if (action == 'confirm' and intent.status == 'pending'
+                    and self._runtime_write_block_reason):
+                return runtime_rejection(intent)
             payload = intent.payload or {}
             intent_id = int(intent.id)
             try:
@@ -22042,6 +22078,9 @@ class AgentExecutor:
             conversation_id=conversation_id,
             source_message_id=int(user_message.id),
         )
+        if (intent is not None and intent.status == 'pending'
+                and self._runtime_write_block_reason):
+            return runtime_rejection(intent)
         if intent is None:
             known_names = [
                 row[0]
@@ -22053,6 +22092,8 @@ class AgentExecutor:
             draft = parse_medication_intake_batch(message, known_names=known_names)
             if draft is None:
                 return None
+            if self._runtime_write_block_reason:
+                return runtime_rejection()
             try:
                 intent = propose_medication_intake_batch(
                     self.db,
@@ -22195,6 +22236,8 @@ class AgentExecutor:
             completion_status=completion_status,
             final_text=full_reply,
             tool_failure_tools=result.get("tool_failures") or [],
+            input_clarification_reason=result.get('input_clarification_reason'),
+            runtime_control_unavailable=bool(result.get('runtime_control_unavailable')),
             pending_confirmation_tools=(
                 [WRITE_INTENT_KIND]
                 if result.get("action") == "proposal"
@@ -24576,10 +24619,19 @@ class AgentExecutor:
                     continue
                 seen_image_hashes.add(digest)
                 unique_image_indexes.append(image_index)
-                result = await food_recognition_service.recognize_food_from_base64(
-                    encoded,
-                    image_type=img.get("type", "jpeg"),
-                )
+            # Vision reads may overlap; classification, calibration and database
+            # capture remain ordered on this task. No Session crosses a task.
+            semaphore = asyncio.Semaphore(2)
+            async def recognize_one(image_index):
+                async with semaphore:
+                    img = images[image_index]
+                    return await food_recognition_service.recognize_food_from_base64(
+                        str(img.get('base64') or ''), image_type=img.get('type', 'jpeg'))
+            async with asyncio.TaskGroup() as group:
+                recognition_tasks = {index: group.create_task(recognize_one(index))
+                                     for index in unique_image_indexes}
+            for image_index in unique_image_indexes:
+                result = recognition_tasks[image_index].result()
                 result = sanitize_food_recognition_result(result)
                 if result.get("success") and result.get("foods"):
                     result = apply_user_stated_amount_to_nutrition_label(
@@ -24670,7 +24722,15 @@ class AgentExecutor:
                     "请让用户重新拍摄餐食本身, 或补充真实食物名称和份量。"
                 )
         except Exception as e:  # noqa: BLE001
-            logger.warning("[Vision] structured food recognition failed, fallback to generic vision: %s", e)
+            logger.warning('structured_food_vision_failed error_type=%s', type(e).__name__)
+            if self._looks_like_food_photo_context(user_message):
+                self._turn_food_photo_recognition = {
+                    'user_id': self._current_user_id,
+                    'source_message_id': self._current_turn_source_message_id,
+                    'images': self._food_photo_image_signature(images),
+                    'reason': 'meal_photo_recognition_failed',
+                }
+                return '餐食图片识别暂时未完成，本次没有写入饮食记录。照片已保留，请重试或补充食物名称和份量。'
         return None
 
     @staticmethod
@@ -24959,6 +25019,29 @@ class AgentExecutor:
             [card],
         )
 
+    def _verified_contextual_diet_confirmation_cards(self) -> list[dict]:
+        """Expose only this owner's persisted pending draft, never a write receipt."""
+        from app.models.daily_health import DietPhotoDraft
+        if (self.db is None or self._runtime_write_block_reason or self._read_only_turn
+                or type(self._current_user_id) is not int
+                or type(self._current_turn_source_message_id) is not int):
+            return []
+        candidates = [card for card in self._turn_contextual_diet_cards
+                      if card.get('type') == 'diet_draft' and isinstance(card.get('data'), dict)
+                      and card['data'].get('recorded') is False
+                      and card['data'].get('media_stage') == 'pending_confirmation'
+                      and isinstance(card['data'].get('photo_draft_token'), str)]
+        if not candidates:
+            return []
+        tokens = {row[0] for row in self.db.query(DietPhotoDraft.token).filter(
+            DietPhotoDraft.token.in_([card['data']['photo_draft_token'] for card in candidates]),
+            DietPhotoDraft.user_id == self._current_user_id,
+            DietPhotoDraft.source_message_id == self._current_turn_source_message_id,
+            DietPhotoDraft.status == 'pending',
+            DietPhotoDraft.expires_at > datetime.now(timezone.utc),
+        ).all()}
+        return [card for card in candidates if card['data']['photo_draft_token'] in tokens]
+
     def _contextual_diet_recorded_card(self, result: Any) -> Dict[str, Any]:
         """Build an owner-scoped, durable visual receipt for an auto-save."""
         from app.utils.diet_image_url import diet_response_image_url
@@ -25081,6 +25164,7 @@ class AgentExecutor:
                 "photo_url": photo_urls[0],
                 "photo_urls": photo_urls,
                 "media_stage": "pending_confirmation",
+                "recorded": False,
                 "photo_draft_token": draft.token,
                 "auto_save_fallback": bool(result.fallback_from_auto),
                 "boundary": (

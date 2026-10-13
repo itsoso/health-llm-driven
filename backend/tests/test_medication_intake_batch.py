@@ -11,6 +11,7 @@ from app.models.supplement import SupplementDefinition
 from app.models.user import User
 from app.models.write_intent import WriteIntent
 from app.services import medication_intake_batch as batch
+from app.services.medication_intake_batch import parse_medication_intake_batch
 from app.services import write_intent_service
 from app.services.medication_service import MedicationService
 
@@ -1066,3 +1067,56 @@ def test_other_user_cannot_confirm_batch(db):
     assert db.query(MedicationLog).count() == 0
     db.refresh(intent)
     assert intent.status == "pending"
+@pytest.mark.parametrize('text', ['重新开始注射替尔泊肽', '恢复注射替尔泊肽'])
+def test_injection_restart_caption_requests_fact_clarification(text):
+    from app.services.medication_intake_batch import parse_medication_injection_caption
+    assert parse_medication_injection_caption(text) == {'state': 'clarify'}
+    assert parse_medication_intake_batch(text) is None
+
+
+def test_explicit_injection_actual_mass_is_not_package_strength():
+    text = '记录刚刚已注射替尔泊肽2.5mg'
+    assert parse_medication_intake_batch(text) == {'items': [
+        {'medication_name': '替尔泊肽', 'actual_dosage': '2.5mg', 'observed_strength': None}]}
+
+
+def test_explicit_injection_count_does_not_invent_administered_mass():
+    assert parse_medication_intake_batch('记录刚刚打了替尔泊肽一针') == {'items': [
+        {'medication_name':'替尔泊肽','actual_dosage':'1针','observed_strength':None}]}
+
+
+@pytest.mark.parametrize('mutation', ['caption', 'count', 'missing_images', 'owner'])
+def test_injection_attachment_marker_cannot_change_frozen_source(db, mutation):
+    user = _user(db, 'injection_binding')
+    text = '记录刚刚已注射替尔泊肽2.5mg'
+    conversation, source = _source_message(db, user.id, text + '\n[附图: 1张]')
+    source.image_url = '["/uploads/chat/synthetic.jpg"]'
+    if mutation == 'caption': source.content = '记录刚刚已注射替尔泊肽5mg\n[附图: 1张]'
+    elif mutation == 'count': source.content = text + '\n[附图: 2张]'
+    elif mutation == 'missing_images': source.image_url = None
+    db.commit()
+    with pytest.raises((batch.InvalidMedicationIntakePlan, LookupError)):
+        batch.propose_medication_intake_batch(db, user_id=user.id + (1 if mutation == 'owner' else 0),
+            conversation_id=conversation.id, source_message_id=source.id, text=text, reference_now=FROZEN_NOW)
+
+
+@pytest.mark.parametrize('source_text,dose', [('重新开始注射替尔泊肽','5mg'),
+    ('替尔泊肽包装规格5mg','5mg'), ('记录刚刚已注射替尔泊肽2.5mg','5mg')])
+def test_model_cannot_propose_actual_mass_from_packaging_or_change_caption_dose(db, source_text, dose):
+    user = _user(db,'injection_mass_source')
+    conversation, source = _source_message(db,user.id,source_text)
+    with pytest.raises(batch.InvalidMedicationIntakePlan):
+        batch.propose_medication_intake_items(db,user_id=user.id,conversation_id=conversation.id,
+            source_message_id=source.id,items=[{'medication_name':'替尔泊肽','actual_dosage':dose}],reference_now=FROZEN_NOW)
+
+
+@pytest.mark.parametrize('text', [
+    '计划注射替尔泊肽2.5mg', '妈妈重新开始注射替尔泊肽',
+    '没有注射替尔泊肽2.5mg', '记录刚刚已注射替尔泊肽2.5mg只是例子',
+    '重新开始注射替尔泊肽可以吗', '记录刚刚已注射替尔泊肽0mg',
+    '记录昨天已注射替尔泊肽2.5mg', '重新开始注射替尔泊肽并查询妈妈的记录',
+])
+def test_injection_caption_cannot_expand_authority(text):
+    from app.services.medication_intake_batch import parse_medication_injection_caption
+    assert parse_medication_injection_caption(text) == ({'state':'clarify'} if text.endswith('0mg') else None)
+    assert parse_medication_intake_batch(text) is None

@@ -1,4 +1,5 @@
 import base64
+import asyncio
 import json
 from io import BytesIO
 from datetime import datetime, timezone
@@ -22,6 +23,130 @@ from app.services import chat_utils
 
 
 VALID_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z/QAAAABJRU5ErkJggg=="
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('inputs,indexes', [(['image-1','image-2','image-1'],[0,1]),
+                                          (['image-1','image-2','image-3'],[0,1,2])])
+async def test_food_photo_batch_overlaps_at_most_two_reads_and_preserves_order(monkeypatch, inputs, indexes):
+    from app.services.ai.food_recognition import food_recognition_service
+    executor = AgentExecutor(None)
+    together = asyncio.Event()
+    active, peak = 0, 0
+    calls, captured = [], []
+    async def recognize(encoded, **kwargs):
+        nonlocal active, peak
+        calls.append(encoded)
+        active += 1
+        peak = max(peak, active)
+        if active == 2: together.set()
+        try:
+            await asyncio.wait_for(together.wait(), timeout=0.2)
+            await asyncio.sleep(0.01 if encoded == 'image-2' else 0)
+            result = _food_result()
+            result['foods'][0]['name'] = {'image-1':'米饭','image-2':'鸡蛋','image-3':'青菜'}[encoded]
+            return result
+        finally:
+            active -= 1
+    monkeypatch.setattr(food_recognition_service,'recognize_food_from_base64',recognize)
+    monkeypatch.setattr('app.services.food_nutrition_lookup.calibrate_recognized_foods',lambda *a: None)
+    def capture(message, result, **kwargs):
+        captured.append((result, kwargs))
+        return None
+    monkeypatch.setattr(executor,'_capture_contextual_meal_photos',capture)
+    response = await executor._analyze_food_images_with_structured_vision('分析这餐',
+        [{'base64':value,'type':'jpeg'} for value in inputs])
+    assert response is not None
+    assert calls == [inputs[index] for index in indexes]
+    assert peak == 2 and active == 0
+    assert captured[0][1]['image_indexes'] == indexes
+    assert [food['name'] for food in captured[0][0]['foods']] == ['米饭','鸡蛋','青菜'][:len(indexes)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cancel', [False, True])
+async def test_food_batch_failure_or_cancel_closes_siblings_without_capture(monkeypatch, cancel):
+    from app.services.ai.food_recognition import food_recognition_service
+    executor = AgentExecutor(None)
+    both = asyncio.Event()
+    active, closed = [], []
+    async def recognize(encoded, **kwargs):
+        active.append(encoded)
+        if len(active) == 2: both.set()
+        try:
+            await both.wait()
+            if encoded == 'image-1' and not cancel:
+                raise ValueError('synthetic provider failure')
+            await asyncio.Event().wait()
+        finally:
+            closed.append(encoded)
+    monkeypatch.setattr(food_recognition_service,'recognize_food_from_base64',recognize)
+    capture = AsyncMock(side_effect=AssertionError('failed batch cannot capture'))
+    monkeypatch.setattr(executor,'_capture_contextual_meal_photos',capture)
+    task = asyncio.create_task(executor._analyze_food_images_with_structured_vision('记录这餐',
+        [{'base64':'image-1'},{'base64':'image-2'}]))
+    await asyncio.wait_for(both.wait(), timeout=1)
+    if cancel:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError): await task
+    else:
+        response = await asyncio.wait_for(task, timeout=1)
+        assert '没有写入' in response
+        assert executor._turn_food_photo_recognition['reason'] == 'meal_photo_recognition_failed'
+    assert sorted(closed) == ['image-1','image-2']
+    capture.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_uncertain_photo_emits_durable_confirmation_before_reply(db, tmp_path, monkeypatch):
+    from app.models.agent_conversation import AgentMessage
+    from app.services.ai.food_recognition import food_recognition_service
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    result = _food_result()
+    result['foods'][0]['confidence'] = 0.4
+    monkeypatch.setattr(food_recognition_service, 'recognize_food_from_base64', AsyncMock(return_value=result))
+    monkeypatch.setattr(executor, '_build_system_prompt', lambda *a, **k: 'SYS')
+    monkeypatch.setattr('app.services.agent_executor.get_health_tools', lambda subset=None: [])
+    model = AsyncMock(side_effect=AssertionError('pending photo must not request model synthesis'))
+    monkeypatch.setattr(executor, '_call_llm', model)
+    monkeypatch.setattr(executor, '_call_llm_stream', _stream_from(model))
+    events = [e async for e in executor.run_stream(user.id,'记录这餐', user_auth_token='test-token',
+        images=[{'base64':VALID_PNG_BASE64,'type':'png'}],client_turn_id='uncertain-photo-card')]
+    card_index = next(i for i,e in enumerate(events) if e.get('event') == 'card'
+        and e['data'].get('anchor') == 'contextual_meal_confirmation')
+    token_index = next(i for i,e in enumerate(events) if e.get('event') == 'token')
+    assert card_index < token_index
+    done = next(e['data'] for e in events if e.get('event') == 'done')
+    assert done['turn_outcome']['status'] == 'waiting_for_user'
+    assert done['completion_status'] == 'complete'
+    assert done['cards'] and not done['write_receipts']
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
+    draft = db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).one()
+    assert draft.status == 'pending'
+    assert done['cards'][0]['data']['photo_draft_token'] == draft.token
+    saved = db.query(AgentMessage).filter(AgentMessage.id == done['message_id']).one()
+    assert saved.meta['cards'] == cards_for_persistence(done['cards'])
+    model.assert_not_awaited()
+
+
+@pytest.mark.parametrize('boundary', ['owner','source','expired','cancelled','token','readonly','runtime'])
+def test_early_confirmation_card_requires_current_persisted_pending_draft(db, tmp_path, monkeypatch, boundary):
+    from datetime import timedelta
+    executor, user = _food_photo_executor(db,tmp_path,monkeypatch)
+    recognition = _food_result()
+    recognition['foods'][0]['confidence'] = 0.4
+    result = executor._capture_contextual_meal_photo('',recognition,image_index=0)
+    assert result.photo_draft is not None
+    assert len(executor._verified_contextual_diet_confirmation_cards()) == 1
+    if boundary == 'owner': executor._current_user_id = user.id + 1
+    elif boundary == 'source': executor._current_turn_source_message_id += 1
+    elif boundary == 'expired': result.photo_draft.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    elif boundary == 'cancelled': result.photo_draft.status = 'cancelled'
+    elif boundary == 'token': executor._turn_contextual_diet_cards[0]['data']['photo_draft_token'] = 'foreign-token'
+    elif boundary == 'readonly': executor._read_only_turn = True
+    elif boundary == 'runtime': executor._runtime_write_block_reason = 'circuit_paused'
+    db.commit()
+    assert not executor._verified_contextual_diet_confirmation_cards()
 
 
 def _png_base64(color: tuple[int, int, int]) -> str:
@@ -121,6 +246,7 @@ def _food_photo_executor(db, tmp_path, monkeypatch):
 @pytest.mark.parametrize("results,status", [
     ([{"success": True, "foods": []}], "waiting_for_user"),
     ([{"success": False, "foods": [], "error": "识别超时，请重试"}], "failed"),
+    ([ValueError('synthetic provider failure')], 'failed'),
     ([{"success": True, "foods": []},
       {"success": False, "foods": [], "error": "识别超时，请重试"}], "failed"),
 ])
@@ -416,7 +542,8 @@ async def test_low_confidence_mobile_meal_photo_returns_confirmation_without_llm
     assert llm_calls == 0
     assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
     assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).count() == 1
-    assert "已识别这餐" in rendered
+    assert "初步识别结果已保留" in rendered
+    assert "仍需你核对" in rendered
     assert "记录没有完成" not in rendered
     assert done["data"]["completion_status"] == "complete"
     assert done["data"]["turn_outcome"]["category"] == "confirmation_required"

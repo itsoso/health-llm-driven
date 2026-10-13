@@ -151,6 +151,8 @@ def _normalized_quantity(count: str, unit: str) -> str | None:
         normalized_unit = "单位"
     elif lowered_unit == "ml":
         normalized_unit = "ml"
+    elif lowered_unit in {"mg", "毫克"}:
+        normalized_unit = "mg"
     else:
         normalized_unit = unit
     value = f"{normalized_count}{normalized_unit}"
@@ -160,7 +162,10 @@ def _normalized_quantity(count: str, unit: str) -> str | None:
 def _normalized_quantity_text(value: Any) -> str | None:
     match = _QUANTITY_RE.fullmatch(str(value or "").strip())
     if match is None:
-        return None
+        # Actual administered mass is explicit in injection captions; keep the
+        # oral parser's count-vs-package-strength grammar unchanged.
+        mass = re.fullmatch(r'(\d+(?:\.\d+)?)\s*(mg|毫克|针)', str(value or '').strip(), re.IGNORECASE)
+        return _normalized_quantity(mass[1], mass[2]) if mass is not None else None
     return _normalized_quantity(match.group("count"), match.group("unit"))
 
 
@@ -278,6 +283,31 @@ def _find_name_mentions(
     return mentions
 
 
+def parse_medication_injection_caption(text: str) -> dict[str, Any] | None:
+    """Closed caption facts only; a restart statement never proves an injection.
+
+    Image content is deliberately not an input. Packaging strength is not the
+    administered amount, and only a later explicit confirmation writes a log.
+    """
+    raw = str(text or '').strip()
+    if len(raw) > 200:
+        return None
+    name = r'(?:替尔泊肽|穆峰达|tirzepatide|mounjaro)'
+    if re.fullmatch(rf'(?:我)?(?:重新开始|恢复)注射{name}[。.!！]?', raw, re.IGNORECASE):
+        return {'state': 'clarify'}
+    prefix = r'(?:请)?(?:帮我)?(?:记录|记下)(?:我)?(?:(?:刚刚|刚才)(?:已|已经)?(?:注射(?:了)?|打了)|(?:已|已经)注射(?:了)?|注射了|打了)'
+    match = re.fullmatch(rf'{prefix}{name}(?:\s*(?P<dose>{_COUNT_TOKEN})\s*(?P<unit>mg|毫克|针|支))?[。.!！]?', raw, re.IGNORECASE)
+    if match is None:
+        return None
+    if match.group('dose') is None:
+        return {'state': 'clarify'}
+    dosage = _normalized_quantity(match.group('dose'), match.group('unit'))
+    if dosage is None:
+        return {'state': 'clarify'}
+    return {'state': 'record', 'items': [{'medication_name': '替尔泊肽',
+            'actual_dosage': dosage, 'observed_strength': None}]}
+
+
 def parse_medication_intake_batch(
     text: str,
     *,
@@ -292,6 +322,9 @@ def parse_medication_intake_batch(
     raw = str(text or "").strip()
     if not raw or len(raw) > 1000:
         return None
+    injection = parse_medication_injection_caption(raw)
+    if injection is not None:
+        return {'items': injection['items']} if injection['state'] == 'record' else None
     if not _EXPLICIT_RECORD_RE.search(raw) or not _INGESTION_RE.search(raw):
         return None
     if (
@@ -387,6 +420,29 @@ def parse_medication_intake_batch(
 
 def _source_sha256(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _source_injection_item(source: AgentMessage) -> dict[str, Any] | None:
+    text = source.content or ''
+    try:
+        urls = json.loads(source.image_url or 'null')
+    except (TypeError, ValueError):
+        urls = None
+    if (isinstance(urls, list) and 1 <= len(urls) <= 8
+            and all(isinstance(url, str) and url for url in urls)):
+        suffix = f'\n[附图: {len(urls)}张]'
+        if text.endswith(suffix):
+            text = text[:-len(suffix)]
+    parsed = parse_medication_injection_caption(text)
+    return parsed['items'][0] if parsed is not None and parsed['state'] == 'record' else None
+
+
+def _assert_injection_amount_source(source: AgentMessage, name: str, dosage: str) -> None:
+    if dosage.endswith(('mg', '针')):
+        item = _source_injection_item(source)
+        if (item is None or _canonical_name(name) != item['medication_name']
+                or dosage != item['actual_dosage']):
+            raise InvalidMedicationIntakePlan('actual injected amount must match explicit source caption')
 
 
 def _plan_hash(payload_without_hash: Mapping[str, Any]) -> str:
@@ -486,7 +542,18 @@ def propose_medication_intake_batch(
     if source is None:
         raise LookupError("source user message not found")
     if source.content != text:
-        raise InvalidMedicationIntakePlan("source message content mismatch")
+        injection = parse_medication_injection_caption(text)
+        try:
+            image_urls = json.loads(source.image_url or 'null')
+        except (TypeError, ValueError):
+            image_urls = None
+        # Only the server's exact persisted attachment-count suffix may differ;
+        # the full original source, including that suffix, remains hash-bound.
+        if (injection is None or injection['state'] != 'record'
+                or not isinstance(image_urls, list) or not 1 <= len(image_urls) <= 8
+                or not all(isinstance(url, str) and url for url in image_urls)
+                or source.content != text + f'\n[附图: {len(image_urls)}张]'):
+            raise InvalidMedicationIntakePlan("source message content mismatch")
 
     known_names = [
         row[0]
@@ -675,6 +742,7 @@ def propose_medication_intake_items(
             )
         canonical = _canonical_name(name, aliases)
         raw_key = _normalized_alias(name)
+        _assert_injection_amount_source(source_message, canonical, dosage)
         key = _normalized_alias(canonical)
         if raw_key not in controlled_names and key not in controlled_names:
             raise InvalidMedicationIntakePlan(
@@ -852,6 +920,7 @@ def _validated_plan(
         ):
             raise InvalidMedicationIntakePlan("invalid medication name or actual dosage")
         canonical = _canonical_name(name, aliases)
+        _assert_injection_amount_source(source, canonical, dosage)
         key = _normalized_alias(canonical)
         if not key or key in seen:
             raise InvalidMedicationIntakePlan("duplicate medication in batch")
