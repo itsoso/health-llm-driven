@@ -437,11 +437,14 @@ def _source_injection_item(source: AgentMessage) -> dict[str, Any] | None:
     return parsed['items'][0] if parsed is not None and parsed['state'] == 'record' else None
 
 
-def _assert_injection_amount_source(source: AgentMessage, name: str, dosage: str) -> None:
-    if dosage.endswith(('mg', '针')):
+def _assert_injection_amount_source(
+    source: AgentMessage, name: str, dosage: str, observed_strength: str | None = None,
+) -> None:
+    if _canonical_name(name) == '替尔泊肽' or dosage.endswith(('mg', '针')):
         item = _source_injection_item(source)
         if (item is None or _canonical_name(name) != item['medication_name']
-                or dosage != item['actual_dosage']):
+                or dosage != item['actual_dosage']
+                or observed_strength != item.get('observed_strength')):
             raise InvalidMedicationIntakePlan('actual injected amount must match explicit source caption')
 
 
@@ -566,6 +569,9 @@ def propose_medication_intake_batch(
     if draft is None:
         return None
 
+    for item in draft['items']:
+        _assert_injection_amount_source(source, item['medication_name'], item['actual_dosage'],
+                                        item.get('observed_strength'))
     user_tz = get_user_timezone(db, user_id)
     local_now = reference_now or get_user_now(db, user_id)
     if local_now.tzinfo is None:
@@ -742,7 +748,7 @@ def propose_medication_intake_items(
             )
         canonical = _canonical_name(name, aliases)
         raw_key = _normalized_alias(name)
-        _assert_injection_amount_source(source_message, canonical, dosage)
+        _assert_injection_amount_source(source_message, canonical, dosage, observed_strength)
         key = _normalized_alias(canonical)
         if raw_key not in controlled_names and key not in controlled_names:
             raise InvalidMedicationIntakePlan(
@@ -920,7 +926,7 @@ def _validated_plan(
         ):
             raise InvalidMedicationIntakePlan("invalid medication name or actual dosage")
         canonical = _canonical_name(name, aliases)
-        _assert_injection_amount_source(source, canonical, dosage)
+        _assert_injection_amount_source(source, canonical, dosage, observed_strength)
         key = _normalized_alias(canonical)
         if not key or key in seen:
             raise InvalidMedicationIntakePlan("duplicate medication in batch")

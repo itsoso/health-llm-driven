@@ -24609,6 +24609,7 @@ class AgentExecutor:
 
             recognized_results: List[Dict[str, Any]] = []
             errors: List[str] = []
+            amount_required_indexes: set[int] = set()
             unique_image_indexes: List[int] = []
             image_classifications: Dict[int, str] = {}
             seen_image_hashes: set[str] = set()
@@ -24642,7 +24643,8 @@ class AgentExecutor:
                         errors.append(
                             "已识别营养成分表，但还需要明确实际食用重量。"
                         )
-                        image_classifications[image_index] = "food"
+                        amount_required_indexes.add(image_index)
+                        image_classifications[image_index] = "unknown"
                         continue
                     result = sanitize_food_recognition_result(result)
                     image_classifications[image_index] = "food"
@@ -24700,7 +24702,8 @@ class AgentExecutor:
                     "images": self._food_photo_image_signature(images),
                     "reason": (
                         "meal_photo_details_required"
-                        if all(value == "non_food" for value in image_classifications.values())
+                        if all(value == "non_food" or index in amount_required_indexes
+                               for index, value in image_classifications.items())
                         else "meal_photo_recognition_failed"
                     ),
                 }
@@ -24796,6 +24799,11 @@ class AgentExecutor:
         Exercise-purpose exclusions only revoke diet authority; they never
         authorize a write or trust a food-recognition false positive.
         """
+        if self._read_only_turn or self._runtime_write_block_reason:
+            reason = 'read_only_turn' if self._read_only_turn else 'runtime_write_blocked'
+            self._turn_contextual_diet_write_blocked_reason = reason
+            vision_result['contextual_capture_write_blocked_reason'] = reason
+            return None
         if self._is_exercise_photo_context(user_message):
             self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
             return None
@@ -25288,6 +25296,7 @@ class AgentExecutor:
         # A later correction must refer to structured vision, not model prose.
         # This snapshot is a proposed description only, never a write grant.
         if (result.get("success") and recognized_foods
+                and not self._read_only_turn and not self._runtime_write_block_reason
                 and not result.get("multi_photo_incomplete") and not result.get("multi_photo_conflict")):
             from app.services.diet_photo_correction import save_recognition
 
@@ -25301,6 +25310,11 @@ class AgentExecutor:
                 capture_instruction = (
                     "用户已明确取消本次记餐；严禁调用 health_record 或 "
                     "health_manage，也不得声称已经保存。请简短确认本轮未写入。"
+                )
+            elif result['contextual_capture_write_blocked_reason'] in {'read_only_turn', 'runtime_write_blocked'}:
+                capture_instruction = (
+                    "本轮记录写入受限，照片识别仅供核对；没有写入饮食记录或待确认草稿。"
+                    "严禁调用 health_record 或 health_manage 补写，也不得声称已经保存。"
                 )
             else:
                 capture_instruction = (

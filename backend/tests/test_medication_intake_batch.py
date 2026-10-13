@@ -1120,3 +1120,45 @@ def test_injection_caption_cannot_expand_authority(text):
     from app.services.medication_intake_batch import parse_medication_injection_caption
     assert parse_medication_injection_caption(text) == ({'state':'clarify'} if text.endswith('0mg') else None)
     assert parse_medication_intake_batch(text) is None
+
+
+@pytest.mark.parametrize('source_text,dose', [
+    ('记录刚刚已注射替尔泊肽1支','2支'),
+    ('重新开始注射替尔泊肽','1支'),
+    ('替尔泊肽包装规格1支','1支'),
+    ('记录刚刚已注射替尔泊肽2.5mg','1支'),
+    ('记录刚刚已注射替尔泊肽1支','1片'),
+])
+def test_injection_every_unit_requires_explicit_matching_source(db, source_text, dose):
+    user = _user(db,'injection_all_units')
+    conversation, source = _source_message(db,user.id,source_text)
+    with pytest.raises(batch.InvalidMedicationIntakePlan):
+        batch.propose_medication_intake_items(db,user_id=user.id,conversation_id=conversation.id,
+            source_message_id=source.id,items=[{'medication_name':'替尔泊肽','actual_dosage':dose}],reference_now=FROZEN_NOW)
+
+
+def test_injection_count_does_not_allow_model_to_invent_package_strength(db):
+    user = _user(db,'injection_strength')
+    conversation, source = _source_message(db,user.id,'记录刚刚已注射替尔泊肽1支')
+    with pytest.raises(batch.InvalidMedicationIntakePlan):
+        batch.propose_medication_intake_items(db,user_id=user.id,conversation_id=conversation.id,
+            source_message_id=source.id,items=[{'medication_name':'替尔泊肽','actual_dosage':'1支',
+                'observed_strength':'5mg'}],reference_now=FROZEN_NOW)
+
+
+@pytest.mark.parametrize('dose,strength',[('2支',None),('1片',None),('1支','5mg')])
+def test_injection_confirmation_revalidates_source_despite_valid_payload_hash(db,dose,strength):
+    user=_user(db,'injection_confirm_source')
+    text='记录刚刚已注射替尔泊肽1支'
+    conversation,source=_source_message(db,user.id,text)
+    intent=batch.propose_medication_intake_batch(db,user_id=user.id,conversation_id=conversation.id,
+        source_message_id=source.id,text=text,reference_now=datetime.now(UTC))
+    payload=dict(intent.payload)
+    payload['items']=[{**payload['items'][0],'actual_dosage':dose,'observed_strength':strength}]
+    payload['plan_sha256']=batch._plan_hash(batch._payload_without_hash(payload))
+    intent.payload=payload
+    db.commit()
+    _attach_pending_assistant(db,source,intent)
+    with pytest.raises(batch.InvalidMedicationIntakePlan,match='explicit source'):
+        write_intent_service.confirm(db,user.id,intent.id)
+    assert db.query(MedicationLog).filter(MedicationLog.user_id==user.id).count()==0

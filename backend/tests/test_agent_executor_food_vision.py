@@ -1906,3 +1906,60 @@ def test_exercise_background_keeps_supplement_photo_preview_preprocessing(db, mo
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, '_should_send_raw_images_to_primary_model', lambda _: True)
     assert executor._should_preprocess_attached_images(1, '记录补剂，今天骑行')
+
+
+@pytest.mark.parametrize('boundary',['readonly','runtime'])
+@pytest.mark.parametrize('confidence',[0.4,0.93])
+def test_food_capture_guards_block_actual_record_and_draft(db,tmp_path,monkeypatch,boundary,confidence):
+    executor,user=_food_photo_executor(db,tmp_path,monkeypatch)
+    if boundary == 'readonly': executor._read_only_turn=True
+    else: executor._runtime_write_block_reason='circuit_paused'
+    result=_food_result(); result['foods'][0]['confidence']=confidence
+    capture=executor._capture_contextual_meal_photo('记录这餐',result,image_index=0)
+    assert capture is None
+    assert db.query(DietRecord).filter(DietRecord.user_id==user.id).count()==0
+    assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id==user.id).count()==0
+    assert not executor._turn_contextual_diet_cards
+    assert not executor._turn_contextual_diet_receipts
+
+
+@pytest.mark.asyncio
+async def test_label_missing_amount_cannot_make_partial_multi_photo_meal_complete(db,tmp_path,monkeypatch):
+    from app.services.ai.food_recognition import food_recognition_service
+    executor,user=_food_photo_executor(db,tmp_path,monkeypatch)
+    executor._current_turn_image_urls.append(
+        chat_utils.upload_chat_image(_png_base64((30,40,50)),user.id,'png'))
+    async def recognize(encoded,**kwargs):
+        return _food_result() if encoded=='first-food' else _nutrition_label_food_result()
+    monkeypatch.setattr(food_recognition_service,'recognize_food_from_base64',recognize)
+    response=await executor._analyze_food_images_with_structured_vision('记录这餐',
+        [{'base64':'first-food'},{'base64':'label-food'}])
+    assert response
+    assert db.query(DietRecord).filter(DietRecord.user_id==user.id).count()==0
+    draft=db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id==user.id).one()
+    assert draft.status=='pending'
+    assert executor._turn_contextual_diet_write_blocked_reason=='confirmation_pending'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary",["readonly","runtime"])
+@pytest.mark.parametrize("confidence",[0.4,0.93])
+async def test_food_stream_guards_block_actual_record_and_draft(db,tmp_path,monkeypatch,boundary,confidence):
+    from app.services.ai.food_recognition import food_recognition_service
+    executor,user=_food_photo_executor(db,tmp_path,monkeypatch)
+    result=_food_result();result["foods"][0]["confidence"]=confidence
+    monkeypatch.setattr(food_recognition_service,"recognize_food_from_base64",AsyncMock(return_value=result))
+    monkeypatch.setattr(executor,"_build_system_prompt",lambda *a,**k:"SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools",lambda subset=None:[])
+    model=AsyncMock(return_value={"content":"照片可核对。","finish_reason":"stop"})
+    monkeypatch.setattr(executor,"_call_llm",model)
+    monkeypatch.setattr(executor,"_call_llm_stream",_stream_from(model))
+    args={"read_only_tools":True} if boundary=="readonly" else {"runtime_write_block_reason":"circuit_paused"}
+    events=[e async for e in executor.run_stream(user.id,"记录这餐",user_auth_token="test-token",images=[{"base64":VALID_PNG_BASE64,"type":"png"}],client_turn_id="closed-food-stream",**args)]
+    assert any(e.get("event")=="done" for e in events)
+    assert db.query(DietRecord).filter(DietRecord.user_id==user.id).count()==0
+    assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id==user.id).count()==0
+    from app.models.agent_conversation import AgentMessage, AgentConversation
+    sources=(db.query(AgentMessage).join(AgentConversation)
+        .filter(AgentConversation.user_id==user.id,AgentMessage.role=='user').all())
+    assert all('diet_photo_recognition' not in (source.meta or {}) for source in sources)

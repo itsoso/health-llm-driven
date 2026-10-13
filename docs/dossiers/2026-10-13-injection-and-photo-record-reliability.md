@@ -45,3 +45,14 @@ G4须固定最终来源做全新独立安全审查，精确主干完整CI与项�
 保留原立即相邻两回合的聊天确认规则，没有为了保护状态后的泛化“确认”跳过其他消息；服务恢复后可从原绑定卡片手动确认原计划。新用量mg/针在模型提议及最终payload校验两处都必须与显式source caption一致，包装规格和改剂量都拒绝。source原文连附图标记完整hash绑定。
 
 补充明确刚刚/刚才打针、中文数词与mg/针/支记录，不从针数折算药物质量；0用量只追问，不保存。此次最终来源待固定；最终完整PostgreSQL/全Mobile/独立G4/当前精确CI尚未完成。
+
+
+### G4 首轮 NO-GO 与整改
+
+固定候选 `5b45fdcf3b015804391de6aa815e5a6715ad11f6` 独立审查 NO-GO。PG 373 PASS + 独立注射源绑定 4 FAIL；食品 capture / 实际 run_stream 的 readonly、runtime 暂停边界分别 4 FAIL，Mobile 174 PASS，全部正常停库。报告 `/tmp/reva-injection-photo-fixed-safety.json`。这些是生产者路径真实缺陷，不能用首卡隐藏掩盖。
+
+整改将替尔泊肽所有单位与明确原消息绑定，同时拒绝模型添加包装规格；提案前和确认最终 payload 两处同样验证，哈希正确也不能绕过实际量事实。食品实际捕获入口阻断只读/暂停下的 DietRecord 与 DietPhotoDraft，并阻止将识别快照保存为后续修正依据。
+
+补充多图营养标签缺实际食用重量时标记不完整，不能把另一张成功结果当完整餐食自动保存；仅需补食用量的图片回到等待补充。首轮新增11例 RED 包含10个真实边界失败和1个测试无效图片路径；修正该 fixture 使用真实本地上传后，专项39 PASS，63.08秒，pytest/runner0，PG正常退出。原无效路径失败没有作为部分记餐产品RED；另加载固定5b45方法复现多图标签原行为，结果另记。
+
+最终完整PG、全Mobile、当前固定候选重审尚在推进。工作流 trace `docs/_generated/harness-runs/6a4c749f489b.jsonl` 绑定本Dossier，首轮NO-GO已记录；使用一次 trace，不另建安全ledger。
