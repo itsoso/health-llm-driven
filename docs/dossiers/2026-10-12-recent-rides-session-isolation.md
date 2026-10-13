@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | shipping |
-| 当前阶段 | G6：骑行 HTML 报告修复已部署并完成合成链路复验；真实账号验收待确认 |
+| 当前阶段 | G2/G3：核验静态报告后重复模型合成的修复；已部署版本保持运行 |
 
 Primary controller：health-harness-orchestrator；overlay：safety-gate。真实模型评测按用户要求取消。
 
@@ -112,3 +112,17 @@ G4 GO：全新独立固定提交审查，真实 PostgreSQL 232、两轮 owner/da
 G5 PASS：[可信后端发布 38224700093](https://github.com/itsoso/health-llm-driven/actions/runs/38224700093) SUCCESS；四个原包装器各执行一次，旧 backend/OTA/前端历史与原锁保留，无重放发布。生产持久回执精确 `SUCCEEDED`，干净 HEAD 匹配，四个服务 active，公开健康接口 HTTP 200 / healthy，发布锁已释放，四个运行时文件摘要逐项匹配来源。Mobile/Frontend/scripts/.github tree 相对上一运行时均未变化；没有 OTA、原生包或 TestFlight 发布。临时真实模型评测豁免已删除并读取确认不存在，confirmed=false。
 
 G6 技术复验 PASS：生产源码合成探针允许截图两句的 owner/today/cycling 冻结范围，拒绝他人、改日期/维度/类型、否定、引用和附加发布/同步，HTML 围栏及标签转义通过；读取真实 DB 行、发送写请求和真实模型调用均为零。真实账号和真实模型行为未验证，不把合成源代码探针冒充实测骑行报告验收，状态继续 shipping。GitHub 首次终态元数据读取发生 EOF，原 watch 正常退出及后续有界读取确认同 SHA SUCCESS；未重跑发布。最终证据：[骑行 HTML 发布摘要](../reviews/2026-10-12-cycling-html-report-release-summary.json)。
+
+### 2026-10-13 性能续接：去掉静态报告的重复模型合成
+
+继续同一运动读取/报告闭环，controller 与安全边界不变。源代码确认：Pi 的查询工具完成后再次调用模型，最终回复又被同一服务端 `render_owned_cycling_html_report` 的事实文档覆盖；第二轮正文不参与已交付报告。这是重复生成与额外失败依赖，不调整模型、Prompt 规则、并发、图片参数或写路径。
+
+既有真实自然请求被动指标：最近24小时 base64 provider returned 5 个阶段，中位2497ms、样本P95 7632ms、样本P99 8247ms；decode_sanitize returned 5 个阶段，中位0ms、样本P95 6ms、样本P99 7ms。阶段统计不是配对请求或端到端延迟，returned 不等于成功识别或保存。新报告形态上线后真实报告性能样本0，分位数保持null；仅在服务器以只读SQL汇总系统性能字段与固定文档类型判定，没有导出正文、账户标识或健康载荷，没有新增模型请求。
+
+本次只修复确定性文档已完成后的重复合成依赖，以真实 Pi/网关/读取/保存链路的合成请求证明调用数和输出等价，不把它作为真实模型或生产延迟验收。目标：完整认证查询核验后省去1次正文模型调用，输出与原服务端文档逐字相同；空数据可形成如实文档，查询失败/权限拒绝/尚有工具/写入/医疗封闭状态不取得快速完成。保留所有最后的格式、安全、来源和持久化闸。质量底线为 owner/day/type/缺失语义/HTML安全/文档内容不退化，任何差异退回上游；成本目标只省去被丢弃的合成，不承诺provider首轮等待下降。真实端到端P50/P95/P99改善须后续同范围自然请求确认，当前无提速百分比。
+
+已有 benchmark 三个脏文件仍属前线程，未修改或暂存；本线程使用新测试和本 Dossier 续接，不另建 competing ledger。
+
+增量根因 RED：专用 PostgreSQL 4 FAIL / 6 PASS，四个普通/批量 × 有/无数据 HTML 请求实际调用模型2次。修订后同批10 PASS，runner0、PG正常退出；实际保存内容逐字等于原服务端 renderer，合成调用由2变1。新捷径仅作用于默认 Pi 流式通路，panel 未改，不声称其加速。查询失败和所有闭合边界补验、固定提交完整集成、独立G4与发布仍待执行。
+
+新鲜宽域 PostgreSQL 239 PASS，含实际查询失败的最终状态与9项封闭边界，日志 `/tmp/reva-report-performance-final-pg.log`；pytest0，数据库关闭终态待收集。保留图片被动真实阶段基线与真实报告样本0的缺失，未把合成调用数裁决称为生产时延改善。

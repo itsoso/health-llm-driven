@@ -213,6 +213,13 @@ async def test_screenshot_request_reaches_real_owned_reader_and_saved_reply(
     saved = db.get(AgentMessage, done["message_id"])
     assert done["perf"]["agent_kernel"] == "pi"
     assert {t["function"]["name"] for t in calls[0]} <= {"health_query", "health_query_batch", "knowledge_search"}
+    if 'html' in text:
+        assert len(calls) == 1, 'verified server report must not pay for discarded model synthesis'
+        assert done['perf']['report_render']['model_synthesis_calls_avoided'] == 1
+        from app.services.agent_composed_read_completion import render_owned_cycling_html_report
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+        assert saved.content == render_owned_cycling_html_report(
+            resolve_owned_read_scope(executor._agent_kernel_snapshot), executor._composed_read_completion())
     assert len(results) == 1
     request, payload = results[0]
     assert request.tool_name == ('health_query_batch' if batch else 'health_query')
@@ -318,3 +325,78 @@ def test_html_renderer_escapes_record_material_and_ignores_model_output():
     assert '&#96;&#96;&#96;reva-ui' in document
     assert document.count('```') == 2
     assert document.endswith('</body></html>\n```')
+
+
+@pytest.mark.parametrize('boundary', [
+    'sealed', 'attachment', 'exam', 'confirmation', 'capability', 'tool_failure',
+    'sync', 'current_owner', 'changed_message',
+])
+def test_static_report_shortcut_cannot_ignore_unresolved_boundary(monkeypatch, boundary):
+    from app.services.agent_executor import AgentExecutor
+    executor = AgentExecutor(None)
+    text = '生成我的骑行html报告'
+    executor._agent_kernel_snapshot = snapshot(text)
+    executor._current_turn_user_message = text
+    executor._current_user_id = 41
+    def no_completion():
+        pytest.fail('blocked boundary must not inspect or render completion')
+    monkeypatch.setattr(executor, '_composed_read_completion', no_completion)
+    if boundary == 'attachment': executor._current_turn_has_attachment = True
+    elif boundary == 'exam': executor._turn_selected_exam_id = 9
+    elif boundary == 'confirmation': executor._agent_kernel_pending_confirmation_tools.append('health_record')
+    elif boundary == 'capability': executor._agent_kernel_capability_block_reasons.append('health_query_subject_not_current_user')
+    elif boundary == 'tool_failure': executor._agent_kernel_tool_failure_tools.append('health_query')
+    elif boundary == 'sync': executor._turn_sync_attempted = True
+    elif boundary == 'current_owner': executor._current_user_id = 42
+    elif boundary == 'changed_message': executor._current_turn_user_message += '并同步佳明'
+    assert executor._verified_static_cycling_report(sealed=boundary == 'sealed') is None
+
+
+@pytest.mark.parametrize('complete', [False, True])
+def test_static_report_completion_requirement_and_nonreport_scope(monkeypatch, complete):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_composed_read_completion import ComposedReadCompletion
+    executor = AgentExecutor(None)
+    executor._current_user_id = 41
+    executor._current_turn_user_message = '生成我的骑行html报告'
+    executor._agent_kernel_snapshot = snapshot(executor._current_turn_user_message)
+    monkeypatch.setattr(executor, '_composed_read_completion', lambda:
+        ComposedReadCompletion((), () if complete else ('workout',), '合成已核验摘要', complete))
+    assert bool(executor._verified_static_cycling_report()) is complete
+    executor._current_turn_user_message = '分析刚才的运动'
+    executor._agent_kernel_snapshot = snapshot(executor._current_turn_user_message)
+    assert executor._verified_static_cycling_report() is None
+
+
+@pytest.mark.asyncio
+async def test_report_query_failure_still_uses_normal_failure_path(
+    db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch,
+):
+    from app.services.agent_executor import AgentExecutor
+    from app.models.agent_conversation import AgentMessage
+    executor = AgentExecutor(db)
+    user, _ = auth_user_and_headers
+    dispatch = executor._dispatch_tool_request
+    calls = []
+    async def observe(request, token):
+        result = await dispatch(request, token)
+        from dataclasses import replace
+        return replace(result, content='Error: synthetic query unavailable')
+    async def provider(messages, tools):
+        calls.append(tools)
+        if len(calls) == 1:
+            yield {'type':'tool_calls','tool_calls':[{'id':'query','type':'function','function':{
+                'name':'health_query','arguments':'{"dimension":"workout"}'}}]}
+            yield {'type':'finish','finish_reason':'tool_calls'}
+        else:
+            yield {'type':'content','text':'已生成报告。'}
+            yield {'type':'finish','finish_reason':'stop'}
+    monkeypatch.setattr(executor, '_dispatch_tool_request', observe)
+    monkeypatch.setattr(executor, '_call_llm_stream', provider)
+    events = [e async for e in executor.run_stream(user_id=user.id,channel='typed',message='生成我的骑行html报告')]
+    done = next(e['data'] for e in events if e.get('event') == 'done')
+    assert len(calls) == 2
+    assert 'report_render' not in done['perf']
+    assert done['turn_outcome']['status'] != 'complete'
+    assert '本轮查询未完成' in db.get(AgentMessage,done['message_id']).content
+    assert not done.get('write_receipts')

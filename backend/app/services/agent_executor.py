@@ -13174,6 +13174,36 @@ class AgentExecutor:
         scope = resolve_exercise_plan_scope(snapshot.envelope.text) if snapshot is not None else None
         return exercise_plan_evidence_outcomes(scope, self._turn_composed_read_executions) if scope else []
 
+    def _verified_static_cycling_report(self, *, sealed: bool = False) -> Optional[str]:
+        """Finish an already-attested static document, never replace read authority.
+
+        The final renderer already discards model synthesis for this exact task.
+        Failures, medical/attachment boundaries and incomplete reads keep their
+        ordinary path; no query or user identity is inferred by this shortcut.
+        """
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+        from app.services.agent_composed_read_completion import render_owned_cycling_html_report
+
+        snapshot = self._agent_kernel_snapshot
+        if (sealed or snapshot is None or self._current_turn_has_attachment
+                or self._turn_selected_exam_id is not None
+                or self._agent_kernel_pending_confirmation_tools
+                or self._agent_kernel_capability_block_reasons
+                or self._agent_kernel_tool_failure_tools
+                or self._turn_sync_attempted
+                or snapshot.envelope.text != self._current_turn_user_message
+                or type(self._current_user_id) is not int
+                or snapshot.context.user_id != self._current_user_id
+                or snapshot.envelope.user_id != self._current_user_id):
+            return None
+        scope = resolve_owned_read_scope(snapshot)
+        if scope is None or 'cycling_html_report_today' not in scope.limitations:
+            return None
+        completion = self._composed_read_completion()
+        if completion is None or not completion.complete:
+            return None
+        return render_owned_cycling_html_report(scope, completion)
+
     def _preplanned_owned_read_calls(
         self, round_index: int, messages: list[dict], tools: list[dict], *, sealed: bool = False,
     ) -> list[dict]:
@@ -16888,6 +16918,7 @@ class AgentExecutor:
         daily_diet_evaluation = is_daily_diet_evaluation(self._turn_daily_read_plan)
         composed_synthesis_used = False
         owned_read_preplanned = False
+        static_report_model_calls_avoided = 0
         record_write_requested = (
             completion_intent.primary == "write"
             and completion_intent.is_write
@@ -19288,6 +19319,22 @@ class AgentExecutor:
                                 await pi.respond(request, content=report_receipt.text,
                                                  tool_calls=[], finish_reason="stop")
                                 continue
+                            if (not static_report_model_calls_avoided
+                                    and not remaining_batch_tools and not blocked_pi_calls
+                                    and not pending_pi_writes and not write_receipts
+                                    and not failed_write_operations and not unverified_write_operations
+                                    and not last_recoverable_write_rejection):
+                                static_report = self._verified_static_cycling_report(
+                                    sealed=health_advice_buffered,
+                                )
+                                if static_report is not None:
+                                    # Pi terminates normally; the same final gates,
+                                    # renderer and persistence path still run below.
+                                    await pi.respond(request, content=static_report,
+                                                     tool_calls=[], finish_reason="stop")
+                                    static_report_model_calls_avoided += 1
+                                    self._record_model_fallback_reason("verified_static_cycling_report")
+                                    continue
                             composed_messages = self._composed_synthesis_messages(
                                 user_id, conv.id, user_auth_token, message,
                                 sealed=health_advice_buffered,
@@ -20671,6 +20718,10 @@ class AgentExecutor:
             "model_wait_ms": model_wait_ms,
             "model_call_count": model_call_count,
             "owned_read_preplanned": owned_read_preplanned,
+            **({"report_render": {
+                "kind": "cycling_html",
+                "model_synthesis_calls_avoided": static_report_model_calls_avoided,
+            }} if static_report_model_calls_avoided else {}),
             **(
                 {
                     "deterministic_query": {
