@@ -1,6 +1,6 @@
 # AGENTS.md — Reva / health-llm-driven 研发硬规则
 
-> 本文件只保留高频、可裁决的约束。详细说明和示例放在 `docs/governance/`；研发 Skill 的机器真源是 `docs/governance/agent-skill-registry.json`，不要在这里复制 Skill 清单。
+> 高频硬规则；详细规范见 `docs/governance/`。Skill 真源是 `docs/governance/agent-skill-registry.json`，禁止复制 Skill 清单。
 
 ## 1. 固定启动顺序：Router first，System Map on demand
 
@@ -12,16 +12,16 @@
    ```
 
    `planning` and `verification` are workflow phases, not mode values.
-   有安全、DB、文档漂移等明确风险时才附加对应 `--overlay`；Skill / plugin 治理分别声明 `--capability-trigger skill-governance` / `plugin-authoring`。不要机械叠加多个 controller；feature 的 Health Harness delegate 只在父流程进入 S5 后加载。
-3. 启动只消费推荐结果的 `immediate_skills`，进入实际阶段后才加载 `deferred_by_phase[phase]`。`activation_skills` 是完整有序审计 union；`selected_skills` 保留 v1 非 delegate 选择，`deferred_skills` 只保留 delegate；三者都**禁止作为预载清单**。
-4. **非仓库元任务**（例如 Codex 设置、执行速度、通用问答、个人工作流讨论）不运行 Router，也不加载 System Map。
-5. `system-map` 只在任务实际命中系统现状、架构、跨端/跨组件关系、代码派生结构或漂移需求时，从 `deferred_by_phase.on_demand` 激活：
+   仅安全、DB、文档漂移等明确风险才附加 `--overlay`；Skill/插件治理分别声明 `--capability-trigger skill-governance`/`plugin-authoring`。勿机械叠加 controller；feature 的 Health Harness delegate 仅父流程 S5 后加载。
+3. 只预载 `immediate_skills`，到相应阶段才加载 `deferred_by_phase[phase]`。`activation_skills`、`selected_skills`、`deferred_skills` 三者**禁止作为预载清单**；其审计 union 与 v1 兼容语义见 `docs/governance/agent-skill-governance.md`。
+4. **非仓库元任务**不运行 Router，也不加载 System Map。
+5. 命中系统现状/架构、跨端/组件、代码派生结构或漂移需求时，才从 `deferred_by_phase.on_demand` 激活 `system-map`：
    - 已知路径或局部修改：直接用 `python3.12 scripts/system_map_context.py --path <path> --depth 0`；
    - 已知实体/流：用 `--entity` / `--flow` / `--keyword`，默认零跳，确有需要再增大 `--depth`；
    - onboarding、全局架构或跨域设计：先读 `docs/system-map/INDEX.md` 与 `docs/_generated/system-map-agent-context.md`，再做局部查询。
 6. 打开查询结果指向的源码和邻近测试后，才能形成技术结论或实现计划。
 
-地图不可用或验证失败时，运行 `./scripts/system-map-check.sh`，并直接回到代码、测试和注册表调查。`docs/_generated/system-map.json` 是 canonical graph；摘要与查询结果只是派生视图。
+地图不可用/验证失败，运行 `./scripts/system-map-check.sh` 并调查源码、测试、注册表。`docs/_generated/system-map.json` 是 canonical graph；查询和摘要只是派生视图。
 
 项目级绑定与跨 agent 规则见 `docs/agent-skill-binding.md`、`docs/governance/agent-skill-governance.md`。
 
@@ -52,7 +52,7 @@
 
 - 修复或新增行为先写能失败的测试，再做最小实现；完成声明前运行与风险相称的新鲜验证。
 - 跑测试绝不使用 `| tail`；如需管道必须 `set -o pipefail`，并检查真实退出码。
-- 仅修改 agent-governance、System Map 或 doc-tooling 时，可运行 `uv run --isolated --with-requirements backend/requirements-dev.txt python scripts/run_tooling_pytests.py` 作为 supplemental fast lane；不得作为每个任务的默认入口。该入口跳过 coverage，且不替代常规项目测试、coverage 或 CI Gate。
+- 仅修改 agent-governance、System Map 或 doc-tooling 时，可运行 `uv run --isolated --with-requirements backend/requirements-dev.txt python scripts/run_tooling_pytests.py` 作补充；不得作为每个任务的默认入口。跳过 coverage，不替代常规项目测试、coverage 或 CI Gate。
 - 部署或发布前必须运行项目 CI-mode 集成闸，并核对目标主干对应 revision 的真实 CI 状态；局部测试不能替代。
 - 生产语义与新数据库行为必须用 PostgreSQL 验证；SQLite 只保留快速单元测试与迁移兼容性验证，不能证明约束、并发、JSONB、时区或方言行为。
 - schema/迁移变化必须选择 `add-managed-migration` overlay，同步 ORM、API/客户端类型、迁移、回滚路径和 PostgreSQL 集成证据。
@@ -80,14 +80,14 @@
 - 修改、验证、commit、push、merge、deploy、release 是不同动作。只在用户授权和对应 Gate 满足时执行；分支分叉、主干非绿或工作树来源不明时停止外部写入并报告。
 - 提交消息使用 `<type>(<scope>): <subject>`；提交前检查秘密、依赖、安全、测试、权限、用户隔离、日志和文档。
 - 部署从干净、已验证的目标 revision 进行，完整规则见 `docs/governance/deploy.md`；部署成功不等于上线验证完成。
-- 用户要求（2026-10-13）：后续不执行备份。部署、发布和授权轮换不得新建数据库、配置/env、代码/制品或运行态回退副本，不执行备份恢复演练、站外归档或例行全量旧备份核验；不得由环境变量或旧规范自动重新开启。现有历史备份不自动删除；仅在用户明确要求恢复或重新开启备份时使用对应操作。发布回执、锁、审计记录、候选制品校验、精确 CI 和健康验证仍保留。入口尚依赖备份时须先适配再发布，不能把文档要求冒充脚本已取消。详见部署规范的“后续不执行备份”。
+- 用户要求（2026-10-13）：发布/部署/授权轮换不备份、不建回退副本，不做恢复演练、站外归档、例行旧备份全量核验，旧配置不得重新开启。历史备份不自动删，恢复/开启仅限用户明确要求。保留锁、回执、审计、候选校验、CI及健康闸；依赖备份的入口先适配，文档不等于实现。详见部署规范“后续不执行备份”。
 - 生产 GitHub 代理发布前按 `docs/ops/github-relay.md` 检查；保留 canonical URL/TLS 校验，禁镜像及全局 Git/代理变量绕过隔离。
 
 ## 8. Mobile / 桌面发布
 
 - 用户选择模拟器作为默认验收环境：截图、UI 操作、模拟审核与常规回归都走 iOS 模拟器；除非用户另行要求真机，不主动操作、轮询等待手机或反复要求连接/解锁。
 - 用户已接受模拟器送审的未覆盖项风险；可按 `docs/governance/simulator-review-acceptance.md` 使用候选绑定的替代验收路径。必须逐项保留未验证原因及明确风险接受，失败项和其他最终送审检查不得豁免，不得宣称 Apple 豁免了真机测试。
-- 模拟器不支持的相机实拍、硬件/系统集成与第三方 App 交接等项目明确记为“未验证”，继续完成其余可执行项；不得用 mock、截图或旧包结果冒充真机通过。该默认环境选择不等于正式送审 gate 已通过，最终阻断单独汇报，不阻塞可并行的构建、截图准备与已满足条件的上传。
+- 模拟器不支持的相机实拍、硬件/系统集成、第三方交接标为“未验证”，不得用 mock、截图或旧包冒充真机通过。默认模拟器不代表送审 Gate 通过；最终阻断单列，不阻塞可并行构建、截图准备及已满足条件的上传，继续其他验证。
 - Mobile 纯 JS/TS/UI 且满足 OTA 边界时，使用 `.github/workflows/trusted-ota.yml`：同一当前 main 精确绿色 SHA 先 `validate` 后 `publish`，后端须已部署该 SHA。`mobile-ota.sh` 与 rollback 本机发布入口已冻结；失败不得重发，按 `docs/governance/deploy.md` 保留并恢复原回执。
 - 需要可扫码安装的 iOS 包时，使用 `scripts/mobile-local-qr.sh`；除非用户明确指定，不走 TestFlight/EAS submit。
 - 原生依赖、签名、权限或商店元数据变化不能冒充 OTA；必须走对应 release skill 与审核 Gate。
@@ -104,6 +104,6 @@
 
 ## 10. 规则冲突与完成标准
 
-安全、隐私、测试、DB、部署等工程硬规则由本文件与 `docs/governance/*` 裁决；产品治理决定“该不该做”，Skill registry 决定“由哪个工作流做”。overlay 只能阻断或补充验证，不能另建计划、ledger 或完成状态。
+工程硬规则由本文件与 `docs/governance/*` 裁决；产品治理裁决需求，Skill registry 裁决工作流。overlay 仅补验证或阻断，不另建计划、ledger 或完成状态。
 
-完成必须同时满足：目标行为已实现；相关测试/检查真实通过；安全与数据边界有证据；必要文档和生成物同步；未把未知或计划冒充为已交付。
+完成须满足：目标行为实现；相关测试/检查真实通过；安全与数据边界有证据；文档及生成物同步；未知或计划不得冒充交付。

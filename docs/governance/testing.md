@@ -140,3 +140,14 @@ jobs:
 ```
 
 ---
+
+
+### agent-governance / System Map / doc-tooling 补充验证
+
+仅修改 agent-governance、System Map 或 doc-tooling 时，可运行：
+
+```bash
+uv run --isolated --with-requirements backend/requirements-dev.txt python scripts/run_tooling_pytests.py
+```
+
+这是 supplemental fast lane，不得作为其他任务的默认入口。它跳过 coverage，不能替代常规项目测试、coverage 或 CI Gate。实际测试范围和纯工具 AST 守卫以该脚本及 `scripts/tooling_pytest_guard.py` 为准；不允许为了跳过应用 fixture 将应用行为测试放入此入口。

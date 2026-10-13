@@ -83,3 +83,15 @@ G4须固定最终来源做全新独立安全审查，精确主干完整CI与项�
 已验证source药名/实际量/包装强度、正确hash篡改payload确认拒绝、owner已有全剂型Medication正确确认重放、只读/暂停实际stream不创建餐食或草稿、pending首卡不声称write_verified、no-food与provider真实故障区别。父端132项PG与带图确认2项runner最终均0，正常停库；食品宽域391 PASS、Mobile3549 PASS/1skip、类型与地图/Skill治理均通过。没有执行真实模型评测或生产健康写入。
 
 发布准备仍BLOCK：无备份生产者/消费者尚未适配；最终发布CI-mode未通过；目标main精确完整CI待推送核对。因此当前修复不能声明已部署、已OTA、已TestFlight或真实手机拍照耗时已达标。最后新增文档仅同步终态证据，产品源码不再改变。
+
+
+### 精确 main CI 治理失败与修复
+
+`3640b8041a25856e84a7df96be90cbaed60ae955` 已推送main，CI `38345357344` 的balanced-11实际失败：`test_agents_contract_is_concise_and_does_not_embed_a_skill_catalog`，AGENTS 10872字节超出10KiB；该分片839 PASS、10skip，仅此1 FAIL。其他分片仍以真实终态为准。失败源于先前追加无备份要求后的入口体积，并非注射/餐食行为回归；不取消该CI，不重发同一失败source。
+
+本地首次普通pytest因缺少默认本地PG而在fixture前失败，未进入治理测试；保留原日志。纯工具AST守卫单项随后实际复现1 FAIL，压缩后1 PASS；首次全补充入口也在旧AGENTS上1 FAIL/177 PASS，保留失败。当前仅精简AGENTS叙事，将已有兼容字段语义引用到原治理规范，并将专用隔离测试命令移入测试规范；不删除备份禁止、锁/回执/CI/健康闸、安全或模拟器未验证边界，不修改10KiB断言。首版压缩入口10230字节，完整补充治理检查正在终态读回，产品代码blob仍不变。
+
+下一候选是治理文档修复，不可仅使用纯文档轻量绿色冒充完整发布CI；按既有恢复规则在新main精确SHA补一次完整CI。无备份发布链前置BLOCK仍保留，不调用旧发布脚本。
+
+
+治理首版全补充检查额外发现fast lane契约要求隔离命令必须直接出现在AGENTS（1 FAIL/177 PASS）；已恢复完整命令及适用范围、默认入口和coverage约束，未改测试断言。最新AGENTS为10201字节（<=10KiB），完整纯工具补充入口178 PASS，8.32秒，进程0；Skill治理检查PASS。产品源码没有变化，此补充验证不替代新候选完整CI。旧main CI终态仍保留失败。
