@@ -1,4 +1,4 @@
-"""One-operation recovery must preserve failures and refuse unknown outcomes."""
+"""Frontend helper and historical receipt contracts; new backup publication is frozen."""
 import importlib.util
 from pathlib import Path
 import pytest
@@ -73,52 +73,6 @@ def execution(tmp_path,monkeypatch):
     return m,pub,helper,server,build,events,plan,audit,stage,original
 
 
-def test_resume_switches_original_candidate_and_retains_original_failure(tmp_path,monkeypatch):
-    m,p,h,s,b,events,plan,audit,stage,original=execution(tmp_path,monkeypatch)
-    complete=m.execute(plan,tmp_path,p,h,None,s,b,lambda:events.append(('locks',)))
-    assert complete['state']=='FRONTEND_SUCCEEDED' and not p.LEASE.exists()
-    assert original=={n:(audit/n).read_bytes() for n in original}
-    assert (p.PRODUCTION/'frontend/.next/new').exists() and (audit/'previous-next/old').exists()
-    assert (audit/'recovery-completed.json').exists() and not (audit/'recovery-failed.json').exists()
-    assert ('sandbox-build',) not in events
-
-
-@pytest.mark.parametrize('failure',['lease','evidence','candidate','first-rename','second-rename','pages','completion','lease-release'])
-def test_resume_unknown_outcomes_preserve_failure_and_never_retry(tmp_path,monkeypatch,failure):
-    m,p,h,s,b,events,plan,audit,stage,original=execution(tmp_path,monkeypatch)
-    if failure=='lease':plan['lease']='changed'
-    if failure=='evidence':plan['original_proof']='changed'
-    if failure=='candidate':(stage/'node_modules/new').unlink()
-    if failure in ('first-rename','second-rename'):
-        rename=Path.rename;calls=[]
-        def move(self,target):
-            calls.append(1)
-            if len(calls)==(1 if failure=='first-rename' else 2):raise OSError('rename interrupted')
-            return rename(self,target)
-        monkeypatch.setattr(Path,'rename',move)
-    if failure=='pages':monkeypatch.setattr(p,'verify_pages',lambda:(_ for _ in ()).throw(OSError('page failed')))
-    if failure=='completion':
-        original_write=b.write_json
-        def write(server,path,value):
-            if path.name=='completed.json':raise OSError('disk failed')
-            return original_write(server,path,value)
-        b.write_json=write
-    if failure=='lease-release':
-        unlink=Path.unlink
-        def remove(self,*a,**kw):
-            if self==p.LEASE/'token':raise OSError('release failed')
-            return unlink(self,*a,**kw)
-        monkeypatch.setattr(Path,'unlink',remove)
-    with pytest.raises(m.RecoveryError):m.execute(plan,tmp_path,p,h,None,s,b,lambda:None)
-    assert p.LEASE.exists() and original=={n:(audit/n).read_bytes() for n in original}
-    if failure in ('lease','evidence','candidate'):
-        assert not (audit/'recovery-intent.json').exists()
-        assert ('/usr/bin/systemctl','stop','health-frontend') not in events
-    else:
-        assert (audit/'recovery-failed.json').exists()
-        with pytest.raises(m.RecoveryError):m.execute(plan,tmp_path,p,h,None,s,b,lambda:None)
-
-
 @pytest.mark.parametrize('mutation',[None,'failed-bytes','original-inode','recovery-intent',
     'recovery-completion','completion-binding','backup','unfinished','other-operation'])
 def test_recovered_history_requires_complete_immutable_chain(tmp_path,monkeypatch,mutation):
@@ -157,7 +111,12 @@ def test_recovered_history_requires_complete_immutable_chain(tmp_path,monkeypatc
     if mutation=='backup':(op/'previous-next/file').write_text('changed')
     if mutation=='unfinished':(op/'completed.json').unlink()
     if mutation=='other-operation':op.rename(op.with_name('b'*32))
-    if mutation:
+    if mutation == 'backup':
+        server.assert_frontend_rebuild_history(state)
+        with pytest.raises(server.LaunchError):
+            server.assert_frontend_publication_history(
+                state, verify_backups=True, _force_operations=(m.OPERATION,))
+    elif mutation:
         with pytest.raises(server.LaunchError):server.assert_frontend_rebuild_history(state)
     else:server.assert_frontend_rebuild_history(state)
 

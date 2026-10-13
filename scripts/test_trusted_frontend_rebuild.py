@@ -1,4 +1,4 @@
-"""Offline tests; npm configuration probes never install or use the network."""
+"""Frontend helper and historical receipt contracts; new backup publication is frozen."""
 
 import importlib.util
 import hashlib
@@ -76,7 +76,8 @@ def test_real_npm_starts_with_isolated_distinct_configuration(tmp_path):
 def test_deploy_entry_precedes_env_and_never_reinterprets_normal_frontend_mode():
     script = (Path(__file__).resolve().parents[1] / "deploy.sh").read_text()
     assert script.index('--rebuild-deployed-frontend') < script.index('ENV_FILE=')
-    assert '"$SCRIPT_DIR/scripts/trusted_frontend_rebuild.py" "$@"' in script
+    assert '"$SCRIPT_DIR/scripts/trusted_frontend_rebuild.py" "$@"' not in script
+    assert "无备份策略冻结旧前端发布/重建入口" in script
     assert 'if ! verify_deployed_revision; then' in script
 
 
@@ -438,65 +439,6 @@ def execution(tmp_path, monkeypatch):
     plan = {"publisher_sha": "a" * 40, "production_sha": "b" * 40,
             "operation_id": "c" * 32, "frontend_tree": "d" * 40, "public_build_env": {}}
     return m, plan, helper, server, events
-
-
-def test_execution_preserves_old_artifacts_and_only_stops_frontend(execution):
-    m, plan, helper, server, events = execution
-    result = m.execute(plan, Path("/unused"), helper, None, server)
-    assert result["state"] == "FRONTEND_SUCCEEDED"
-    assert events == ["build-inputs", "build", "unchanged", "stop", "stopped", "restart", "readback", "unchanged"]
-    audit = m.STATE / "frontend-rebuilds" / plan["operation_id"]
-    assert (audit / "previous-next/payload").read_text() == "old"
-    assert (audit / "previous-node-modules/payload").read_text() == "old"
-    assert (m.PRODUCTION / "frontend/.next/payload").read_text() == "new"
-    assert not m.LEASE.exists()
-    assert not (m.STATE / plan["publisher_sha"]).exists()
-    with pytest.raises(FileExistsError):
-        m.execute(plan, Path("/unused"), helper, None, server)
-
-
-def test_execution_completes_after_real_symlink_lease_parent_sync(execution, tmp_path, monkeypatch):
-    m, plan, helper, server, _ = execution
-    parent = tmp_path / "run-lock"
-    parent.mkdir()
-    alias = tmp_path / "var-lock"
-    alias.symlink_to(parent, target_is_directory=True)
-    monkeypatch.setattr(m, "LEASE", alias / "health-app-release")
-
-    def sync(path):
-        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-
-    server._sync_directory = sync
-    server._sync_business_lease_parent = lambda: sync(parent)
-    result = m.execute(plan, Path("/unused"), helper, None, server)
-    audit = m.STATE / "frontend-rebuilds" / plan["operation_id"]
-    assert result["state"] == "FRONTEND_SUCCEEDED"
-    assert (audit / "verified.json").exists() and (audit / "completed.json").exists()
-    assert not (audit / "failed.json").exists()
-    assert not m.LEASE.exists()
-    assert alias.is_symlink()
-
-
-@pytest.mark.parametrize("failure", ["assert_unchanged", "assert_frontend_stopped", "verify_pages"])
-def test_failed_or_unverified_execution_retains_lease_and_never_claims_success(execution, monkeypatch, failure):
-    m, plan, helper, server, events = execution
-    def fail(*a):
-        raise m.RebuildError("test failure")
-    monkeypatch.setattr(m, failure, fail)
-    with pytest.raises(m.RebuildError):
-        m.execute(plan, Path("/unused"), helper, None, server)
-    audit = m.STATE / "frontend-rebuilds" / plan["operation_id"]
-    assert m.LEASE.is_dir()
-    assert (audit / "failed.json").is_file()
-    assert not (audit / "completed.json").exists()
-    if failure == "assert_unchanged":
-        assert "stop" not in events
-    if failure == "assert_frontend_stopped":
-        assert (m.PRODUCTION / "frontend/.next/payload").read_text() == "old"
 
 
 @pytest.mark.skipif(os.environ.get("REVA_TEST_FRONTEND_SANDBOX") != "1", reason="requires isolated Linux systemd runner")

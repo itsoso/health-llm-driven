@@ -1039,9 +1039,40 @@ class ReleaseTransaction:
         if reap.exists() or reap.is_symlink():
             if self.code_only and marker.get("mode") != "code-only-no-backup":
                 raise TransactionError("legacy terminal cleanup requires explicit recovery; preserve old backups")
+            if marker.get("mode") == "code-only-no-backup":
+                self._validate_no_backup_cleanup(reap, marker)
             self._remove_path(reap)
             _fsync_dir(reap.parent)
         return str(marker["result"])
+
+    def _validate_no_backup_cleanup(self, root: Path, marker: Mapping) -> None:
+        state = self._validate_directory(root, required=True)
+        if (state.st_uid != self.layout.root_uid or state.st_gid != self.layout.root_gid
+                or stat.S_IMODE(state.st_mode) != 0o700
+                or {path.name for path in root.iterdir()} != {"journal.json"}):
+            raise TransactionError("no-backup terminal cleanup has unknown artifacts; preserve evidence")
+        path = root / "journal.json"
+        self._validate_regular(path, allow_writable=False)
+        try:
+            journal = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise TransactionError("no-backup terminal cleanup journal invalid") from exc
+        fields = {"version", "mode", "old_sha", "candidate_sha", "transaction_id", "phase",
+                  "beat_authority", "old_upload_authority", "upload_authority", "old_effective",
+                  "original_enablement", "boot_gate_armed", "boot_gate_released", "release_target"}
+        expected = {"version": 2, "mode": "code-only-no-backup", "phase": "COMMITTED",
+                    "beat_authority": "current", "old_upload_authority": "external",
+                    "upload_authority": "external", "boot_gate_armed": False,
+                    "boot_gate_released": True, "release_target": "candidate"}
+        expected.update({key: marker[key] for key in ("old_sha", "candidate_sha", "transaction_id")})
+        if (not isinstance(journal, dict) or set(journal) != fields
+                or type(journal.get("version")) is not int
+                or type(journal.get("boot_gate_armed")) is not bool
+                or type(journal.get("boot_gate_released")) is not bool
+                or any(journal.get(key) != value for key, value in expected.items())):
+            raise TransactionError("no-backup terminal cleanup binding mismatch; preserve evidence")
+        self._stable_effective_snapshot(journal["old_effective"])
+        self._validate_enablement_manifest(journal["original_enablement"])
 
     def _terminalize(
         self,
@@ -1092,6 +1123,8 @@ class ReleaseTransaction:
         }
         if journal.get("version") == 2:
             marker["mode"] = "code-only-no-backup"
+        if journal.get("version") == 2:
+            self._validate_no_backup_cleanup(self.layout.transaction_root, marker)
         self._atomic_write_json(self._terminal_marker_path(), marker)
         self._fault("terminal:after-marker")
         if reap.exists() or reap.is_symlink():
@@ -1099,6 +1132,8 @@ class ReleaseTransaction:
         os.replace(self.layout.transaction_root, reap)
         _fsync_dir(reap.parent)
         self._fault("terminal:after-rename")
+        if journal.get("version") == 2:
+            self._validate_no_backup_cleanup(reap, marker)
         self._remove_path(reap)
         _fsync_dir(reap.parent)
         self._fault("terminal:after-reap")

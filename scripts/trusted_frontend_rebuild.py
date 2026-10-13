@@ -360,66 +360,8 @@ def verify_pages():
 
 
 def execute(plan, source, helper, bootstrap, server):
-    publisher, production, operation, tree = (plan[key] for key in ("publisher_sha", "production_sha", "operation_id", "frontend_tree"))
-    root = STATE / "frontend-rebuilds"
-    root.mkdir(mode=0o700, exist_ok=True)
-    server.secure_path(root, directory=True)
-    audit = root / operation
-    audit.mkdir(mode=0o700)
-    server._sync_directory(root)
-    write_json(server, audit / "intent.json", receipt(publisher, production, operation, tree, "FRONTEND_STARTED", None))
-    write_json(server, audit / "before.json", plan)
-    # Durable intent precedes lease and build/service mutations. Never reclaim a stale lease.
-    LEASE.mkdir(mode=0o700)
-    token = secrets.token_hex(32)
-    for name, value in {"token": token, "label": "frontend-rebuild", "stage": str(audit), "started_at": str(int(time.time()))}.items():
-        server._write_private(LEASE / name, (value + "\n").encode())
-    identity = helper._lease_identity(str(LEASE), token, bootstrap, server)
-    stage = BUILDS / operation
-    try:
-        copy_build_inputs(source, stage, plan["public_build_env"])
-        with (audit / "build.log").open("xb") as log:
-            subprocess.run(build_command(operation, stage), env=ENV, stdin=subprocess.DEVNULL,
-                           stdout=log, stderr=subprocess.STDOUT, check=True, timeout=1900)
-        # systemd --wait must finish the service and its control group, not merely npm's shell.
-        cgroup = Path("/sys/fs/cgroup/system.slice") / f"reva-frontend-build-{operation}.service"
-        if cgroup.exists() and any(p.read_text().strip() for p in cgroup.rglob("cgroup.procs")):
-            raise RebuildError("build descendants remain")
-        digest = freeze_artifacts(stage)
-        assert_unchanged(plan, source, helper, bootstrap, server)
-        if helper._lease_identity(str(LEASE), token, bootstrap, server) != identity:
-            raise RebuildError("business lease changed")
-        for name in (".next", "node_modules"):
-            live = PRODUCTION / "frontend" / name
-            if not stat.S_ISDIR(live.lstat().st_mode) or live.stat().st_dev != audit.stat().st_dev or live.stat().st_dev != (stage / "frontend" / name).stat().st_dev:
-                raise RebuildError("frontend artifact switch requires normal same-filesystem directories")
-        write_json(server, audit / "install-started.json", receipt(publisher, production, operation, tree, "FRONTEND_INSTALLING", digest))
-        run(["/usr/bin/pm2", "stop", "health-frontend"])
-        assert_frontend_stopped()
-        for name, backup in ((".next", "previous-next"), ("node_modules", "previous-node-modules")):
-            (PRODUCTION / "frontend" / name).rename(audit / backup)
-            (stage / "frontend" / name).rename(PRODUCTION / "frontend" / name)
-        server._sync_directory(PRODUCTION / "frontend")
-        server._sync_directory(audit)
-        run(["/usr/bin/pm2", "restart", "health-frontend"])
-        verify_pages()
-        assert_unchanged(plan, source, helper, bootstrap, server)
-        if helper._lease_identity(str(LEASE), token, bootstrap, server) != identity:
-            raise RebuildError("business lease changed after readback")
-        write_json(server, audit / "verified.json", receipt(publisher, production, operation, tree, "FRONTEND_VERIFIED", digest))
-        # Under the original launcher flock. If interrupted, the unfinished audit blocks future launchers.
-        for name in ("token", "label", "stage", "started_at"):
-            (LEASE / name).unlink()
-        LEASE.rmdir()
-        server._sync_business_lease_parent()
-        complete = receipt(publisher, production, operation, tree, "FRONTEND_SUCCEEDED", digest)
-        write_json(server, audit / "completed.json", complete)
-        return complete
-    except BaseException:
-        # Never restart the backend, auto-rollback, erase evidence, or retry with another ID.
-        if not (audit / "failed.json").exists():
-            write_json(server, audit / "failed.json", receipt(publisher, production, operation, tree, "FRONTEND_NEEDS_OPERATOR", None))
-        raise RebuildError("frontend rebuild stopped; lease and evidence retained; no retry") from None
+    """Frozen: the legacy publisher creates rollback copies."""
+    raise RebuildError("no-backup policy freezes legacy frontend publication; evidence preserved")
 
 
 def evidence_digest(value):
@@ -623,73 +565,8 @@ def finalize_verified(args, source, helper, bootstrap, server, gate, launcher_fd
 
 
 def main():
-    parser = argparse.ArgumentParser(allow_abbrev=False)
-    parser.add_argument("--publisher-sha", required=True)
-    parser.add_argument("--production-sha", required=True)
-    parser.add_argument("--operation-id", required=True)
-    parser.add_argument("--evidence-sha256")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--retire-failed", action="store_true")
-    mode.add_argument("--acknowledge-retirement", action="store_true")
-    mode.add_argument("--finalize-verified", action="store_true")
-    args = parser.parse_args()
-    try:
-        if (not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode
-                or os.geteuid() != 0 or sys.executable != "/usr/bin/python3.12"):
-            raise RebuildError("isolated system Python root operator required")
-        for value in (args.publisher_sha, args.production_sha):
-            checked_hex(value, 40)
-        checked_hex(args.operation_id, 32)
-        if args.evidence_sha256 is not None:
-            checked_hex(args.evidence_sha256, 64)
-        os.umask(0o077)
-        source, helper, bootstrap, server, gate = load_reviewed(args.publisher_sha)
-        lock = STATE / "launcher.lock"
-        server.secure_path(lock, private=True)
-        with lock.open("r+b") as stream:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            helper._assert_lock(server, lock, stream.fileno())
-            if args.finalize_verified:
-                print(json.dumps(finalize_verified(args, source, helper, bootstrap, server, gate, stream.fileno())))
-                return 0
-            if args.acknowledge_retirement:
-                if args.evidence_sha256 is not None:
-                    raise RebuildError("acknowledgment accepts only a protected stdin receipt")
-                issued = sys.stdin.buffer.read(66).decode().removesuffix("\n")
-                print(json.dumps(acknowledge_retirement(args.publisher_sha, args.production_sha,
-                                                       args.operation_id, server, gate, issued)))
-                return 0
-            if args.retire_failed:
-                closure = STATE / "frontend-rebuild-closures" / args.operation_id
-                if os.path.lexists(closure) or os.path.lexists(retired_lease(args.operation_id)):
-                    raise RebuildError("retirement already attempted; retry forbidden")
-                def inspect_again(archived=False):
-                    return inspect_failed(args.publisher_sha, args.production_sha, args.operation_id,
-                                          source, helper, bootstrap, server, gate, stream.fileno(), archived=archived)
-                plan = inspect_again()
-                digest = evidence_digest(plan)
-                if args.evidence_sha256 is None:
-                    print(json.dumps({"state": "FRONTEND_RETIREMENT_PREFLIGHT", "operation_id": args.operation_id,
-                                      "evidence_sha256": digest}))
-                    return 0
-                if args.evidence_sha256 != digest:
-                    raise RebuildError("frontend retirement evidence changed")
-                print(json.dumps(retire_failure(plan, inspect_again, server)))
-                return 0
-            plan = inspect(args.publisher_sha, args.production_sha, args.operation_id, source, helper, bootstrap, server, gate)
-            digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-            if args.evidence_sha256 is None:
-                print(json.dumps({"state": "FRONTEND_PREFLIGHT", "publisher_sha": args.publisher_sha,
-                                  "production_sha": args.production_sha, "frontend_tree": plan["frontend_tree"], "evidence_sha256": digest}))
-                return 0
-            if args.evidence_sha256 != digest:
-                raise RebuildError("frontend preflight evidence changed")
-            helper._assert_lock(server, lock, stream.fileno())
-            print(json.dumps(execute(plan, source, helper, bootstrap, server), sort_keys=True))
-        return 0
-    except Exception:
-        print("frontend rebuild: blocked or failed; inspect private evidence; no automatic retry", file=sys.stderr)
-        return 1
+    print("no-backup policy freezes legacy frontend publication/rebuild", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

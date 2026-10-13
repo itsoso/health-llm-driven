@@ -199,3 +199,51 @@ exit 1
 ''')
     assert (result.returncode == 0) is allowed, (result.stdout, result.stderr)
     assert 'forbidden-' not in result.stdout
+
+
+@pytest.mark.parametrize('option', ['-f', '-a', '--publish-frontend', '--rebuild-deployed-frontend'])
+def test_legacy_frontend_entries_block_before_any_external_action(tmp_path, option):
+    result = run(tmp_path, f'''
+acquire_release_lock() {{ echo forbidden-lock; return 99; }}
+ssh() {{ echo forbidden-ssh; return 99; }}
+main {option}
+''') if option.startswith('-') and not option.startswith('--') else subprocess.run(
+        ['bash', str(SCRIPT), option], capture_output=True, text=True, timeout=5)
+    assert result.returncode != 0
+    assert '无备份' in result.stdout + result.stderr
+    assert 'forbidden-' not in result.stdout
+
+
+@pytest.mark.parametrize('module_name', ['trusted_frontend_publish', 'trusted_frontend_rebuild', 'frontend_stopped_recovery'])
+def test_frontend_direct_execute_is_frozen_without_touching_live_or_history(tmp_path, module_name):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(module_name, ROOT / 'scripts' / (module_name + '.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    live = tmp_path / 'live'
+    live.mkdir()
+    record = live / 'existing-bundle'
+    record.write_bytes(b'keep-live-and-history')
+    module.PRODUCTION = live
+    module.STATE = tmp_path / 'state'
+    plan = {'publisher_sha': 'a' * 40, 'production_sha': 'b' * 40,
+            'operation_id': 'c' * 32, 'frontend_tree': 'd' * 40}
+    count = {'trusted_frontend_publish': 7, 'trusted_frontend_rebuild': 5,
+             'frontend_stopped_recovery': 8}[module_name]
+    args = (plan,) + (None,) * (count - 1)
+    with pytest.raises(Exception, match='no-backup'):
+        module.execute(*args)
+    assert record.read_bytes() == b'keep-live-and-history'
+    assert list(tmp_path.iterdir()) == [live]
+
+
+@pytest.mark.parametrize('name', ['trusted_frontend_publish', 'trusted_frontend_rebuild'])
+def test_direct_frontend_cli_is_frozen_before_argument_loading_or_locks(monkeypatch, name):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, ROOT / 'scripts' / (name + '.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('loader reached')
+    monkeypatch.setattr(module, 'load_reviewed', forbidden)
+    assert module.main() == 1

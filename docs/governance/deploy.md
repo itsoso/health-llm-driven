@@ -15,7 +15,7 @@
 - 发布锁、精确 SHA/CI、权限与来源校验、回执、审计、迁移兼容性和线上健康验证继续执行；这些小型状态证明与当前候选制品校验不属于备份。
 - 不再依赖新备份承诺自动回退。现有发布器若仍将备份/回退副本作为前置契约，先同步修改生产者、消费者与测试，再执行后续发布；禁止仅跳过原检查后伪装成功。
 
-当前无备份发布路径为代码更新：`deploy.sh -b` 保持现行 env 不变，仅核验摘要、权限与固定配置；旧 `DEPLOY_DATABASE_BACKUP=1` 不能重新授权备份。运行时 `preflight-code/prepare-code` 使用 v2 小型事务日志，不复制上传文件、知识库、beat 状态或 drop-in；只允许已迁移布局和相同候选 drop-in。配置、模型/schema、managed 迁移或运行态布局变化在停写前拒绝，env-only 与 Health Evidence 激活入口暂不支持该路径。
+当前无备份发布路径为代码更新：`deploy.sh -b` 保持现行 env 不变，仅核验摘要、权限与固定配置；旧 `DEPLOY_DATABASE_BACKUP=1` 不能重新授权备份。运行时 `preflight-code/prepare-code` 使用 v2 小型事务日志，不复制上传文件、知识库、beat 状态或 drop-in；只允许已迁移布局和相同候选 drop-in。配置、模型/schema、managed 迁移或运行态布局变化在停写前拒绝，env-only 与 Health Evidence 激活入口暂不支持该路径。旧前端发布/重建及 stopped-recovery 的新切换操作已冻结：deploy入口和直接module执行均在产生意图、领取锁或生成previous-*前拒绝；旧回执读取与独立恢复/终态核对消费者继续保留。
 
 中途失败保留原锁、事务和回执，状态为 NEEDS_OPERATOR；不再承诺通过新副本自动恢复。已有旧事务在普通无备份入口被拒绝，不读取旧 snapshot 正文、不删除旧备份。普通授权准入核验历史签名/终态/身份元数据，明确 `backup_integrity=not_checked`，不表示旧副本已经验证可恢复；用户另行请求恢复时才限定确切操作核验。
 

@@ -118,3 +118,11 @@ OTA只读source预检在be154上实际BLOCK：自原生基线7fe06d8之后有mob
 新发布器G4固定93426实际NO-GO：普通retired→historical workspace→旧recovered preparation分支仍读归档executor正文。独立1FAIL/604PASS，报告`/tmp/reva-no-backup-g4.json`完整保留；未push、未生产轮换。root吸收实际复现为仓库回归，1FAIL/1PASS（当前live篡改仍拒绝）后修复：仅archives路径`history_only=True`，fallback当前live保持完整正文摘要验证。修复后整合645 PASS，23.69秒，进程0；需新独立只读reviewer审固定新SHA，不复用旧NO-GO或产品GO。
 
 原生交付独立只读核对：93426原生输入与最新82fd QR相同，但trusted OTA STORE/EAS baseline固定7fe/09719，ad-hoc QR不能替代STORE cohort。production默认配置JSON相等尚不证明prebuild/plugin/签名binary/EAS fingerprint相等。当前可执行原生交付是新精确绿SHA的`mobile-local-qr.sh --profile ipad-adhoc`，不能改旧IPA回执或放宽OTA guard。本报告为边界核对，没有build/vendor写入。
+
+第二轮独立G4固定f1再次NO-GO（`/tmp/reva-no-backup-fixed-g4.json`）：NB-F1旧frontend publish/rebuild/stopped-recovery切换还新建previous-*，NB-F2 v2终态rename后重入会递归删除未知reap工件；独立712PASS不抵消真实负向probe。均未push/部署。
+
+root新回归真实8FAIL（`/tmp/reva-no-backup-final-gaps-red2.log`）后修复：冻结deploy的frontend/all与两个旧flag，直接frontend publication/rebuild main及三个execute生产者均提前拒绝；删除20个已经取消的备份生产行为测试，保留完整历史回执、恢复状态、来源、隔离和终态消费测试，新测试验证正常入口及直接调用都没有产生副本/锁/意图。不是新增测试开关、环境变量或隐藏legacy执行入口。旧production资料保留。
+
+v2 terminal cleanup在初次清理与after-rename重入都先核验root-owned0700目录仅含journal.json，验证严格字段/类型、原SHA/transaction身份、已COMMITTED且gate释放，再清理。未知目录、snapshot、额外journal字段或SHA篡改阻断并保留；无异常场景可以沿原回执继续终结。
+
+专项260PASS/2可选PGskip；补充正式CLI冻结和reap绑定后，整合运行1056PASS/2skip/1FAIL，唯一陈旧all-mode测试仍要求已经冻结的混合发布成功，已同步为不得发生backend/frontend/push事件并单项fresh1PASS。最后完整runtime/no-backup163PASS（9.89秒）。日志均保留；DB/schema语义不变，skip不冒充PG通过。初次diff-check发现一个测试EOF空行已修正，新鲜diff-check PASS。原产品源码/JS blob未变；这仍不是发布或OTA完成证明。

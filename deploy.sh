@@ -31,12 +31,12 @@ if [[ "${1:-}" = "--prepare-frontend-artifact" ]]; then
     exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_frontend_artifact.py" "$@"
 fi
 if [[ "${1:-}" = "--publish-frontend" ]]; then
-    shift
-    exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_frontend_publish.py" "$@"
+    echo "无备份策略冻结旧前端发布/重建入口；未执行外部操作" >&2
+    exit 1
 fi
 if [[ "${1:-}" = "--rebuild-deployed-frontend" ]]; then
-    shift
-    exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_frontend_rebuild.py" "$@"
+    echo "无备份策略冻结旧前端发布/重建入口；未执行外部操作" >&2
+    exit 1
 fi
 if [[ "${1:-}" = "--security-hardening" ]]; then
     shift
@@ -4524,8 +4524,8 @@ main() {
     done
 
     case "$DEPLOY_MODE" in
-        env|health-evidence)
-            print_error "无备份发布暂不支持配置变更或 runtime 激活；未获取发布锁、未改变线上服务"
+        all|frontend|env|health-evidence)
+            print_error "无备份发布暂不支持旧前端发布、配置变更或 runtime 激活；未获取发布锁、未改变线上服务"
             return 1
             ;;
     esac

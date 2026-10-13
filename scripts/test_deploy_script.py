@@ -2295,7 +2295,7 @@ def test_deploy_does_not_claim_services_are_blocked_when_rollback_fails():
     assert "无法证明服务已停止" in script
 
 
-def test_all_mode_captures_old_backend_sha_before_frontend_checkout(tmp_path):
+def test_all_mode_blocks_before_backend_or_frontend_mutation(tmp_path):
     env_file = tmp_path / "deploy.env"
     event_log = tmp_path / "deploy.events"
     old_sha = "1" * 40
@@ -2353,13 +2353,9 @@ main --all --yes
         },
     )
 
-    assert result.returncode == 0, (result.stdout, result.stderr)
-    assert event_log.read_text(encoding="utf-8").splitlines() == [
-        "push",
-        f"backend-floor:{old_sha}",
-        f"frontend-checkout:{new_sha}",
-        "status",
-    ]
+    assert result.returncode == 1, (result.stdout, result.stderr)
+    assert "无备份发布暂不支持旧前端发布" in result.stdout
+    assert not event_log.exists()
 
 
 def test_frontend_build_refuses_revision_mismatch_before_npm_or_pm2(

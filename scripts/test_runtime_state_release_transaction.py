@@ -2996,3 +2996,57 @@ def test_code_only_refuses_legacy_terminal_reap_without_removing_it(tmp_path):
     assert private.read_bytes() == b'old'
     with pytest.raises(TransactionError, match='terminal cleanup pending'):
         transaction.prepare('b' * 40, 'c' * 40, lock_dir, token)
+
+
+def test_code_only_terminal_reentry_preserves_unknown_reap_backup(tmp_path):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    transaction.prepare('b' * 40, 'c' * 40, lock_dir, token)
+    transaction.install('b' * 40, 'c' * 40, lock_dir, token)
+    _mark_boot_gate_active(transaction)
+    transaction.commit('c' * 40, lock_dir, token)
+    def crash(point):
+        if point == 'terminal:after-rename':
+            raise RuntimeError('crash-after-rename')
+    transaction._fault_hook = crash
+    with pytest.raises(RuntimeError):
+        transaction.finalize('c' * 40, lock_dir, token)
+    reap = layout.transaction_root.parent / _terminal_marker(layout)['reap_name']
+    backup = reap / 'snapshots'
+    backup.mkdir()
+    private = backup / 'historical-backup'
+    private.write_bytes(b'preserve')
+    transaction._fault_hook = lambda point: None
+    with pytest.raises(TransactionError, match='no-backup.*cleanup'):
+        transaction.finalize('c' * 40, lock_dir, token)
+    assert private.read_bytes() == b'preserve'
+
+
+@pytest.mark.parametrize('mutation', [None, 'binding', 'unknown-field'])
+def test_code_only_terminal_reentry_binds_exact_small_journal(tmp_path, mutation):
+    transaction, layout, lock_dir, token = _code_transaction(tmp_path)
+    transaction.prepare('b' * 40, 'c' * 40, lock_dir, token)
+    transaction.install('b' * 40, 'c' * 40, lock_dir, token)
+    _mark_boot_gate_active(transaction)
+    transaction.commit('c' * 40, lock_dir, token)
+    def crash(point):
+        if point == 'terminal:after-rename':
+            raise RuntimeError('crash')
+    transaction._fault_hook = crash
+    with pytest.raises(RuntimeError):
+        transaction.finalize('c' * 40, lock_dir, token)
+    reap = layout.transaction_root.parent / _terminal_marker(layout)['reap_name']
+    path = reap / 'journal.json'
+    journal = json.loads(path.read_text())
+    if mutation == 'binding':
+        journal['candidate_sha'] = 'd' * 40
+    if mutation == 'unknown-field':
+        journal['backup'] = 'unexpected'
+    path.write_text(json.dumps(journal))
+    transaction._fault_hook = lambda point: None
+    if mutation:
+        with pytest.raises(TransactionError, match='no-backup terminal cleanup binding'):
+            transaction.finalize('c' * 40, lock_dir, token)
+        assert path.exists()
+    else:
+        assert transaction.finalize('c' * 40, lock_dir, token) == 'finalized'
+        assert not reap.exists()
