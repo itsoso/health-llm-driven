@@ -34,3 +34,20 @@ it('does not show a saved-record link on an unconfirmed draft', () => {
   expect(screen.queryByRole('button', { name: '查看饮食记录' })).toBeNull();
   expect(mockPush).not.toHaveBeenCalled();
 });
+
+
+it('keeps saved meal actions together after the nutrition and estimate note', () => {
+  const screen = render(<DietDraftCardView recorded source="photo" food_items="米饭" protein={10}
+    adjust_record={{ record_id: 42, food_items: '米饭', meal_type: 'dinner' }} record_id={42} />);
+  const tree = JSON.stringify(screen.toJSON());
+  const note = tree.indexOf('营养为图片估算，如有偏差请继续修正。');
+  const footer = tree.indexOf('diet-record-actions');
+  expect(note).toBeGreaterThan(-1);
+  expect(footer).toBeGreaterThan(note);
+  const actions = screen.getByTestId('diet-record-actions');
+  expect(actions.findAllByProps({ accessibilityRole: 'button' }).length).toBeGreaterThanOrEqual(2);
+  fireEvent.press(screen.getByRole('button', { name: '继续修正本餐' }));
+  expect(screen.getByTestId('diet-adjust-inline-editor')).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: '收起本餐修正' }));
+  expect(screen.queryByTestId('diet-adjust-inline-editor')).toBeNull();
+});

@@ -643,109 +643,6 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         </View>
       ) : null}
 
-      {isRecorded ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="查看饮食记录"
-          accessibilityHint="弹出饮食记录，可查看当天其他餐食"
-          onPress={() => {
-            const date = text(data.record_date);
-            const parsed = date && /^\d{4}-\d{2}-\d{2}$/.test(date)
-              ? new Date(`${date}T00:00:00Z`)
-              : null;
-            if (parsed && Number.isFinite(parsed.getTime())
-              && parsed.toISOString().slice(0, 10) === date) {
-              router.push({ pathname: '/diet', params: { date } });
-            } else {
-              router.push('/diet');
-            }
-          }}
-          style={({ pressed }) => [styles.recordedAdjustButton, pressed && styles.editButtonPressed]}
-        >
-          <View style={styles.recordedAdjustIcon}>
-            <Ionicons name="list-outline" size={15} color={C.green700} />
-          </View>
-          <View style={styles.recordedAdjustCopy}>
-            <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>查看饮食记录</Text>
-            <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustHint}>查看当天餐食与营养汇总</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={C.green700} />
-        </Pressable>
-      ) : null}
-
-      {isRecorded && adjustRecord && adjustRecordId != null ? (
-        <>
-          <Pressable
-            onPress={() => setSavedAdjustOpen((current) => !current)}
-            accessibilityRole="button"
-            accessibilityLabel={savedAdjustOpen ? '收起本餐修正' : '继续修正本餐'}
-            accessibilityHint="修改餐次、食物或营养估算"
-            accessibilityState={{ expanded: savedAdjustOpen }}
-            style={({ pressed }) => [
-              styles.recordedAdjustButton,
-              savedAdjustOpen && styles.recordedAdjustButtonOpen,
-              pressed && styles.editButtonPressed,
-            ]}
-          >
-            <View style={styles.recordedAdjustIcon}>
-              <Ionicons name="create-outline" size={15} color={C.green700} />
-            </View>
-            <View style={styles.recordedAdjustCopy}>
-              <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>
-                {savedAdjustOpen ? '收起修正' : '继续修正本餐'}
-              </Text>
-              <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustHint}>
-                修改餐次、食物或营养估算
-              </Text>
-            </View>
-            <Ionicons
-              name={savedAdjustOpen ? 'chevron-up' : 'chevron-forward'}
-              size={16}
-              color={C.green700}
-            />
-          </Pressable>
-
-          {showSavedAdjustEditor ? (
-            <DietRecordAdjustEditor
-              recordId={adjustRecordId}
-              seed={{
-                ...adjustRecord,
-                ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'fiber')
-                  ? { fiber: data.fiber }
-                  : {}),
-                ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'updated_at')
-                  ? { updated_at: data.updated_at }
-                  : {}),
-              }}
-              onSaved={(applied) => {
-                setSavedAdjustOpen(false);
-                if (!data.onDraftChange) return;
-                const {
-                  onDraftChange,
-                  confirmAction,
-                  confirmActionState,
-                  onConfirmAction,
-                  ...cardData
-                } = data;
-                const currentData = clearDietDraftNutritionDerivations(cardData);
-                const remainingSections = (Array.isArray(data.expanded_sections) ? data.expanded_sections : [])
-                  .map((item) => text(item))
-                  .filter((item): item is string => (
-                    Boolean(item) && item !== 'adjust_record' && item !== 'next_meal'
-                  ));
-                onDraftChange({
-                  ...currentData,
-                  ...applied.adjustRecord,
-                  adjust_record: applied.adjustRecord,
-                  expanded_sections: remainingSections,
-                  adjust_saved: true,
-                });
-              }}
-            />
-          ) : null}
-        </>
-      ) : null}
-
       {data.adjust_saved === true ? (
         <View style={styles.adjustSavedRow}>
           <Ionicons name="checkmark-circle" size={13} color={C.green600} />
@@ -1024,6 +921,92 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
           {boundary}
         </Text>
       </View>
+      {isRecorded ? (
+        <View testID="diet-record-actions" style={styles.recordedActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="查看饮食记录"
+            accessibilityHint="弹出饮食记录，可查看当天其他餐食"
+            onPress={() => {
+              const date = text(data.record_date);
+              const parsed = date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+                ? new Date(`${date}T00:00:00Z`)
+                : null;
+              if (parsed && Number.isFinite(parsed.getTime())
+                && parsed.toISOString().slice(0, 10) === date) {
+                router.push({ pathname: '/diet', params: { date } });
+              } else {
+                router.push('/diet');
+              }
+            }}
+            style={({ pressed }) => [styles.recordedAdjustButton, pressed && styles.editButtonPressed]}
+          >
+            <Ionicons name="list-outline" size={16} color={C.green700} />
+            <View style={styles.recordedAdjustCopy}>
+              <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>查看饮食记录</Text>
+            </View>
+          </Pressable>
+          {adjustRecord && adjustRecordId != null ? (
+            <Pressable
+              onPress={() => setSavedAdjustOpen((current) => !current)}
+              accessibilityRole="button"
+              accessibilityLabel={savedAdjustOpen ? '收起本餐修正' : '继续修正本餐'}
+              accessibilityHint="修改餐次、食物或营养估算"
+              accessibilityState={{ expanded: savedAdjustOpen }}
+              style={({ pressed }) => [
+                styles.recordedAdjustButton,
+                savedAdjustOpen && styles.recordedAdjustButtonOpen,
+                pressed && styles.editButtonPressed,
+              ]}
+            >
+              <Ionicons name="create-outline" size={16} color={C.green700} />
+              <View style={styles.recordedAdjustCopy}>
+                <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>
+                  {savedAdjustOpen ? '收起修正' : '继续修正本餐'}
+                </Text>
+              </View>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+      {isRecorded && adjustRecord && adjustRecordId != null && showSavedAdjustEditor ? (
+        <DietRecordAdjustEditor
+          recordId={adjustRecordId}
+          seed={{
+            ...adjustRecord,
+            ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'fiber')
+              ? { fiber: data.fiber }
+              : {}),
+            ...(!Object.prototype.hasOwnProperty.call(adjustRecord, 'updated_at')
+              ? { updated_at: data.updated_at }
+              : {}),
+          }}
+          onSaved={(applied) => {
+            setSavedAdjustOpen(false);
+            if (!data.onDraftChange) return;
+            const {
+              onDraftChange,
+              confirmAction,
+              confirmActionState,
+              onConfirmAction,
+              ...cardData
+            } = data;
+            const currentData = clearDietDraftNutritionDerivations(cardData);
+            const remainingSections = (Array.isArray(data.expanded_sections) ? data.expanded_sections : [])
+              .map((item) => text(item))
+              .filter((item): item is string => (
+                Boolean(item) && item !== 'adjust_record' && item !== 'next_meal'
+              ));
+            onDraftChange({
+              ...currentData,
+              ...applied.adjustRecord,
+              adjust_record: applied.adjustRecord,
+              expanded_sections: remainingSections,
+              adjust_saved: true,
+            });
+          }}
+        />
+      ) : null}
       <MealPhotoGallery
         visible={galleryVisible}
         uris={photoUris}
@@ -1679,12 +1662,23 @@ const styles = StyleSheet.create({
     color: C.green700,
     fontWeight: '900',
   } as TextStyle,
+  recordedActions: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.green100,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   recordedAdjustButton: {
-    minHeight: 52,
-    marginTop: 9,
+    minHeight: 48,
+    flexBasis: 140,
+    flexGrow: 1,
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
     borderRadius: revaRadii.md,
     backgroundColor: 'rgba(255,255,255,0.88)',
     borderWidth: StyleSheet.hairlineWidth,
@@ -1693,14 +1687,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   recordedAdjustButtonOpen: {
-    backgroundColor: C.green50,
-  },
-  recordedAdjustIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: C.green50,
   },
   recordedAdjustCopy: {
@@ -1714,13 +1700,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     color: C.green700,
     fontWeight: '900',
-  } as TextStyle,
-  recordedAdjustHint: {
-    fontFamily: revaFonts.sans,
-    fontSize: 11,
-    lineHeight: 15,
-    color: C.ink3,
-    fontWeight: '600',
   } as TextStyle,
   inlineHeader: {
     flexDirection: 'row',

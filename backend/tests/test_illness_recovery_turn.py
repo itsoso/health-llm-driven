@@ -12,7 +12,12 @@ from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext
 from app.services.write_intent_scope import has_explicit_authorizing_update_request
 
-MESSAGES = ("我感冒痊愈了", "更新我的感冒状态：已经痊愈", "我的感冒已经康复了", "请更新我的感冒状态:已康复")
+MESSAGES = (
+    "感冒好了", "我感冒好了", "我的感冒已经好了", "感冒已经完全好了。",
+    "感冒痊愈了", "我感冒痊愈了", "更新我的感冒状态：已经痊愈",
+    "我的感冒已经康复了", "请更新我的感冒状态:已康复",
+)
+FLOW_MESSAGES = (MESSAGES[0], MESSAGES[1], MESSAGES[5], MESSAGES[6])
 
 
 def _goal(message):
@@ -36,6 +41,11 @@ def test_recovery_is_typed_owned_update_not_a_history_query(message):
 
 
 @pytest.mark.parametrize("message", (
+    "感冒好了吗？", "感冒好了？", "感冒快好了", "感冒基本好了", "感冒好了点",
+    "感冒好了一些", "感冒可能好了", "感冒还没好", "感冒没好了", "感冒好多了",
+    "妈妈感冒好了", "朋友的感冒好了", "他说感冒好了", "医生说感冒好了",
+    "如果感冒好了", "感冒好了就去跑步", "感冒好了，不要记录", "感冒好了但又发烧",
+    "感冒好了，停止吃药", "示例：感冒好了", "“感冒好了”", "感冒和鼻炎好了",
     "我朋友感冒痊愈了", "我的朋友的感冒已经痊愈了", "我妈妈感冒痊愈了",
     "更新妈妈的感冒状态：已经痊愈", "更新我的朋友的感冒状态：已经痊愈",
     "我感冒可能痊愈了", "我感冒痊愈了吗？", "我感冒痊愈了？",
@@ -62,7 +72,7 @@ def _seed(db, *, duplicates=1):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("message", MESSAGES[:2])
+@pytest.mark.parametrize("message", FLOW_MESSAGES)
 @pytest.mark.parametrize("duplicates", (0, 1, 2))
 @pytest.mark.parametrize("historical", (False, True))
 async def test_real_gateway_and_api_persist_only_unique_owned_recovery(db, client, monkeypatch, message, duplicates, historical):
@@ -118,7 +128,7 @@ async def test_real_gateway_and_api_persist_only_unique_owned_recovery(db, clien
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("message", MESSAGES[:2])
+@pytest.mark.parametrize("message", FLOW_MESSAGES)
 async def test_screenshot_statement_reaches_pi_saved_answer_and_verified_receipt(
     db, client, isolated_agent_protocol_transport, monkeypatch, message,
 ):

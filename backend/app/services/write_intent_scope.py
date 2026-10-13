@@ -1873,14 +1873,17 @@ def explicit_whole_record_delete_target(value: str) -> tuple[str, int] | None:
 
 _DIRECT_SELF_ILLNESS_RECOVERY_RE = re.compile(
     r"^(?:(?:请|请帮我|帮我)?更新我的(?P<command_entity>.{2,100}?)"
-    r"(?:的)?状态[：:]|我(?:的)?(?P<self_entity>.{2,100}?))"
-    r"(?:已经|已)?(?:完全|彻底)?(?:痊愈|康复)(?:了)?$"
+    r"(?:的)?状态[：:]|(?:我(?:的)?)?(?P<self_entity>.{2,100}?))"
+    r"(?:已经|已)?(?:完全|彻底)?(?:好了|(?:痊愈|康复)(?:了)?)$"
 )
 
 
 def direct_self_illness_recovery_entity(value: str) -> str | None:
     """One closed self report authorizes resolution, never guessed disease/owner.
 
+    A bare exact disease plus completed recovery (e.g. 感冒好了) is a self
+    report, consistent with other direct health entries. The exact entity
+    resolver still rejects third-party owners and uncertain modifiers.
     Keep the full original turn: quoted, uncertain, conditional, retracted or
     additional clauses cannot borrow authority from a recovery substring.
     """

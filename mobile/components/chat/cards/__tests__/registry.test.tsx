@@ -2384,7 +2384,7 @@ describe('renderCard 安全降级', () => {
     const { getByLabelText, getByText, getByTestId, queryByText } = render(element!);
 
     expect(getByText('继续修正本餐')).toBeTruthy();
-    expect(getByText('修改餐次、食物或营养估算')).toBeTruthy();
+    expect(getByLabelText('继续修正本餐').props.accessibilityHint).toBe('修改餐次、食物或营养估算');
     expect(queryByText('调整记录')).toBeNull();
     fireEvent.press(getByLabelText('继续修正本餐'));
 
