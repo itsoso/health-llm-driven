@@ -5,6 +5,18 @@
 
 ### 8.1 部署方式
 
+#### 后续不执行备份（用户要求，2026-10-13）
+
+用户明确要求：“后续不要备份，取消备份的操作，写入到要求里边”。此要求持续适用于后续部署、发布及其授权准备，优先于本文件下方旧的自动备份、回退副本和历史备份全量核验条款。
+
+- 不新增数据库备份、配置/env 备份、旧代码/前端制品备份或运行态回退快照；不得将同一操作改称“归档”或“快照”继续执行。
+- 不执行随发布触发的备份恢复演练、备份站外归档，或为了普通发布例行遍历、读取、哈希历史备份正文。自动备份任务也不得作为替代手段新建备份；已有任务是否停用须以真实配置检查为证，不能仅据此文档宣称已停用。
+- 旧备份保留，不自动删除。只有用户明确要求恢复时，才核验所需的目标备份；不扩展为扫描全部历史。重新开启备份需用户新的明确指令，`DEPLOY_DATABASE_BACKUP=1` 或其他旧配置本身不构成授权。
+- 发布锁、精确 SHA/CI、权限与来源校验、回执、审计、迁移兼容性和线上健康验证继续执行；这些小型状态证明与当前候选制品校验不属于备份。
+- 不再依赖新备份承诺自动回退。现有发布器若仍将备份/回退副本作为前置契约，先同步修改生产者、消费者与测试，再执行后续发布；禁止仅跳过原检查后伪装成功。
+
+当前实现核对：`deploy.sh::backup_database` 的默认值已为 `DEPLOY_DATABASE_BACKUP=0`，数据库备份、恢复演练与站外归档默认跳过；配置备份、运行态副本及历史核验仍存在。本次将用户要求写入治理文件，不代表这些剩余入口或服务器定时任务已完成代码/配置适配，后续发布必须先核对并适配。
+
 #### 复用候选的完整 CI
 
 `main` 的非纯文档 push 首次即运行完整 CI；PR 和本地预检保留按变更范围执行，
@@ -965,7 +977,7 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
 2. 把本次提交的 backup/rollback/schema-probe 工具和生产 systemd runtime
    drop-in 上传到 root-only stage，并逐文件校验 Git blob hash；候选 effective
    unit 还必须通过目标 systemd 版本的 `systemd-analyze verify`。
-3. 按用户明确要求，发布默认跳过数据库备份、恢复演练和站外归档。
+3. 以下为旧实现说明，受“后续不执行备份”要求覆盖，不得据此重新开启备份。发布默认跳过数据库备份、恢复演练和站外归档。
    只有显式设置 `DEPLOY_DATABASE_BACKUP=1` 才执行以下备份策略；`0` 为跳过，其他值阻断。
    跳过备份仍须准备并校验发布工具、验证回滚 schema 和运行态事务，不跳过健康验收。
    显式启用时，在 Git 工作树外创建数据库备份并完成临时库恢复演练。普通无迁移发布还必须
@@ -976,7 +988,7 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
 4. 在修改 live env、checkout 或停服前，使用 staged probe 验证“当前生产 SHA 与
    实时 schema 兼容”。只有 stage hash、HEAD、clean tree、完整表/列/零行写探针及
    release token 前后均通过，才记录 rollback point。
-5. 同步根目录 `.env` 时先备份到 `/var/backups/health-app/env/`；发布前 env
+5. 旧实现（须按“后续不执行备份”适配）：同步根目录 `.env` 时先备份到 `/var/backups/health-app/env/`；发布前 env
    （legacy 缺 flag 时只追加唯一规范的 false）与候选 env 一起进入 root-only
    stage，并与 release 工具统一写入 SHA-256 manifest。候选再由去激活事务原子
    安装。live 文件强制为 `root:health-app`、`0640`，外部滚动备份为 `0600`。
@@ -1074,14 +1086,14 @@ vim .env
 ./deploy.sh -e
 ```
 
-同步前 `deploy.sh` 会自动备份服务器当前 `backend/.env` 到 Git 工作树外，并保留最近 20 份。长期密钥管理策略见 `docs/ops/secrets-management.md`。
+旧实现会在同步前自动备份服务器当前 `backend/.env`，并保留最近 20 份；这不是后续执行许可，须按“后续不执行备份”适配入口。长期密钥管理策略见 `docs/ops/secrets-management.md`。
 
 ### 8.6 注意事项
 
 - ❌ **禁止** 直接在服务器上修改 `.env` 文件 (会被下次部署覆盖)
 - ❌ **禁止** 将 `.env` 提交到 git
 - ✅ **必须** 通过 `deploy.sh` 进行所有部署操作
-- ✅ **必须** 在本地维护 `.env` 的备份
+- 按用户“后续不执行备份”要求，不自动维护本地 `.env` 备份；禁止将 `.env` 或历史备份提交到 Git。
 
 ---
 
