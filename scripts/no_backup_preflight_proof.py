@@ -21,6 +21,10 @@ _contained = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_contained)
 ARTIFACTS, UNITS = _contained.ARTIFACTS, _contained.UNITS
 ProofError, RecoveryProof = _contained.ProofError, _contained.RecoveryProof
+_retained_spec = importlib.util.spec_from_file_location(
+    "no_backup_retained_vision", Path(__file__).with_name("retained_candidate_retirement.py"))
+_retained = importlib.util.module_from_spec(_retained_spec)
+_retained_spec.loader.exec_module(_retained)
 
 FAILED_IMPLEMENTATIONS = {
     'deploy.sh': '7444684608ed028f53845e8cc8d94c1dd7c2abd1a0524bf0776898cc32560f90',
@@ -92,6 +96,24 @@ class NoBackupPreflightProof(RecoveryProof):
 
     def verify_closed(self, expected_snapshot):
         return verify_closed(self, expected_snapshot)
+
+    def _units(self, old_source, transaction, *, started_at=None):
+        # Project only the exact independently proven vision drop-in. All other
+        # effective properties, including EnvironmentFiles, remain unmodified.
+        raw_systemd = self.systemd
+        raw_transaction_systemd = transaction.systemd
+        overlay = _retained.inspect_vision_overlay(self.bootstrap, self.source, raw_systemd)
+        view = _retained.VisionBaseView(raw_systemd, overlay['raw_dropins'])
+        self.systemd = transaction.systemd = view
+        try:
+            units = super()._units(old_source, transaction, started_at=started_at)
+        finally:
+            self.systemd = raw_systemd
+            transaction.systemd = raw_transaction_systemd
+        if _retained.inspect_vision_overlay(self.bootstrap, self.source, raw_systemd) != overlay:
+            raise ProofError('vision overlay changed during no-backup proof')
+        units['vision_overlay'] = overlay
+        return units
 
     def _lease_snapshot(self):
         if self._closed:
@@ -276,6 +298,13 @@ def validate_snapshot(snapshot):
         raise ProofError('no-backup lease chronology binding differs')
     if chronology != expected or not all(isinstance(snapshot[key], dict) and snapshot[key] for key in ('workspace','stage','terminal','units')):
         raise ProofError('no-backup evidence incomplete')
+    overlay = snapshot['units'].get('vision_overlay')
+    if (not isinstance(overlay, dict) or set(overlay) != {'model', 'history', 'files', 'services', 'raw_dropins'}
+            or overlay['model'] != 'qwen3.8-flash'
+            or any(not isinstance(overlay[key], dict) or not overlay[key]
+                   for key in ('history', 'files', 'services', 'raw_dropins'))):
+        raise ProofError('no-backup vision evidence missing')
+    _retained.VisionBaseView(None, overlay['raw_dropins'])
     _validate_stage_snapshot(snapshot['stage'], marker)
     _validate_identity(snapshot['terminal'])
     return marker
@@ -300,3 +329,13 @@ def verify_closed(proof, expected_snapshot):
     finally:
         proof._workspace = original_workspace
         proof._closed = False
+
+
+def validate_archived_vision(bootstrap, source, snapshot):
+    """Consume original vision audits and fixed public configuration evidence.
+
+    This validates historical evidence without querying today's live services,
+    reading backup trees, or involving Laya assets.
+    """
+    value = snapshot.get('units', {}).get('vision_overlay')
+    _retained.validate_archived_vision(bootstrap, Path(source), value)

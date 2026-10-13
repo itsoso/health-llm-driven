@@ -166,3 +166,13 @@ runtime补丁第一次独立审查NO-GO：按行regex可能把多行引号内的
 用户明确“搞定收口”，沿用原HealthHarness/run。Router incident+safety；最初把overlay传为skill id safety-gate被router拒绝，修正为registry触发名safety。Superpowers不加载。新增窄 `--retire-no-backup-preflight`，绑定受审失败实现摘要、旧生产与原lease/回执/14工具stage、可信env时序和运行进程公开配置；原stage原地保留，原lease只终态移名，审计不复制任何原文件。仅撤销原发布身份，不重新执行失败SHA，不修改原失败终态。
 
 父端无副本consumer/历史衔接先建立RED（2项失败），接入后原contained/recovery121 PASS；加bootstrap衔接279 PASS。proof模块由有互斥文件所有权的bounded实现者编写，最终仍需固定commit新独立安全审查与真实CI。运行时上一轮142项补丁纳入同一候选，不混入benchmark他人WIP。
+
+### 真实收口只读检查暴露的兼容修正
+
+`dc00dd37580e46740cdc3a2477553de3b140e879` 完整 CI `38377898843` 全部通过，独立 G4 GO（546 项）。生产 canonical staging 成功；原只读 inspect 失败，未创建 closure intent、未撤权、未移动租约、未重启服务。原失败回执和只读失败证据保留。
+
+脱敏堆栈定位 `contained_recovery_proof._units`：线上三个 service 已有受审 `zzzz-reva-vision-model.conf`，该收口分支遗漏兼容。复用既有完整 vision overlay 原操作审计、文件、有效配置与进程模型证明；只在该证明通过后临时投影精确 drop-in，前后复证且 finally 恢复真实 systemd 对象。收口后的独立复核和历史消费同样覆盖，未知配置继续拒绝。
+
+进一步只读检查定位旧无备份公钥审计的序列化差异：固定 `ssh-keygen -C ''` 产生的 loopback 公钥末尾为单个空格加 LF，审计保存 stripped 公钥，历史消费者原先仅支持无后缀或 LF。真实生产旧审计摘要仅匹配该固定格式；本机实际 ssh-keygen 复现新增 RED 1 FAIL/5 PASS。仅 loopback 的无注释双字段格式补充精确摘要候选，额外空格、tab、其他注释、换成另一公钥及 cloud 同类变形仍拒绝。不修改历史审计或原公钥，不恢复/创建备份。
+
+`dc00` iOS 本地构建 1.3.5 (282) archive/export 成功，supports_ipad=true，原相邻来源回执完整，签名仅含1个已登记设备；使用 --no-upload --no-latest，未发布。后续源码修正须重新绑定最终来源验证；该包不作为新候选部署/OTA成功证据。OTA原生配置边界仍未满足，未强行发布。

@@ -190,7 +190,9 @@ def complete_snapshot():
     stage['label'] = identity(raw=b'deploy:backend\n')
     stage['started_at'] = identity(raw=started.encode())
     stage['runtime_state_release_transaction.py']['sha256'] = proof.FAILED_IMPLEMENTATIONS['backend/scripts/runtime_state_release_transaction.py']
-    return {'workspace': {'original': True}, 'units': {'original': True}, 'terminal': identity(),
+    return {'workspace': {'original': True}, 'units': {'vision_overlay': {
+        'model': 'qwen3.8-flash', 'history': {'original': True}, 'files': {'original': True},
+        'services': {'original': True}, 'raw_dropins': {unit: ' '.join(proof._retained.vision_paths(unit)) for unit in proof.UNITS[1:]}}}, 'terminal': identity(),
             'stage': stage, 'no_backup_preflight': marker}
 
 
@@ -218,5 +220,83 @@ def test_nested_snapshot_rejects_invalid_or_unbound_evidence(damage):
     elif damage == 'terminal': snapshot['terminal'] = {'some': 'metadata'}
     elif damage == 'bool_inode': stage['backup_db.sh']['ino'] = True
     else: stage['live_env']['gid'] = -1
+    with pytest.raises(proof.ProofError):
+        proof.validate_snapshot(snapshot)
+
+
+@pytest.mark.parametrize('fault', [None, 'unknown_dropin', 'wrong_process_model', 'missing_terminal', 'changed_after_units', 'base_units_failed'])
+def test_real_vision_overlay_producer_consumer(monkeypatch, tmp_path, fault):
+    from test_retained_candidate_retirement import overlay_fixture
+    m, bootstrap, root, systemd, physical, raw, model, audit = overlay_fixture(monkeypatch, tmp_path)
+    monkeypatch.setattr(proof, '_retained', m)
+    instance = proof.NoBackupPreflightProof.__new__(proof.NoBackupPreflightProof)
+    instance.bootstrap, instance.source, instance.systemd = bootstrap, root, systemd
+    from types import SimpleNamespace
+    transaction = SimpleNamespace(systemd=systemd)
+    observed = []
+    def base_units(self, old, tx, *, started_at=None):
+        assert self.systemd is tx.systemd
+        assert self.systemd.show('health-backend.service', 'DropInPaths') == ' '.join(m.vision_paths('health-backend.service')[:-1])
+        assert self.systemd.show('health-backend.service', 'EnvironmentFiles') == 'unmodified'
+        observed.append(True)
+        if fault == 'base_units_failed':
+            raise proof.ProofError('base unit failed')
+        if fault == 'changed_after_units':
+            model['value'] = 'unexpected-model'
+        return {'base': 'verified'}
+    monkeypatch.setattr(proof.RecoveryProof, '_units', base_units)
+    if fault == 'unknown_dropin': raw['health-backend.service'] += ' /tmp/unknown.conf'
+    if fault == 'wrong_process_model': model['value'] = 'unexpected-model'
+    if fault == 'missing_terminal': (audit / 'completed.json').unlink()
+    if fault:
+        expected_errors = (proof.ProofError, m.RetirementError, bootstrap.BootstrapError,
+            m.load(bootstrap, root / 'scripts/trusted_vision_model.py', 'unused').VisionError,
+            m.load(bootstrap, root / 'scripts/trusted_release_server.py', 'unused').LaunchError)
+        with pytest.raises(expected_errors):
+            instance._units(root, transaction, started_at='2020-01-01T00:00:00Z\n')
+    else:
+        result = instance._units(root, transaction, started_at='2020-01-01T00:00:00Z\n')
+        assert result['base'] == 'verified'
+        proof.validate_archived_vision(bootstrap, root, {'units': result})
+        assert observed == [True]
+    assert instance.systemd is systemd
+    assert transaction.systemd is systemd
+
+
+def test_postlease_network_guard_consumes_full_vision_overlay(monkeypatch, tmp_path):
+    from test_retained_candidate_retirement import overlay_fixture
+    from test_contained_release_retirement import load as load_closure
+    from types import SimpleNamespace
+    import copy
+    m, bootstrap, root, systemd, physical, raw, model, audit = overlay_fixture(monkeypatch, tmp_path)
+    monkeypatch.setattr(proof, '_retained', m)
+    instance = proof.NoBackupPreflightProof.__new__(proof.NoBackupPreflightProof)
+    instance.bootstrap, instance.source, instance.systemd = bootstrap, root, systemd
+    instance.stage, instance.failed_sha, instance.production_sha = tmp_path, 'a'*40, 'c'*40
+    instance._file = lambda *a: pytest.fail('must not read active lease')
+    instance.runtime = SimpleNamespace(production_layout=lambda stage: stage,
+                                      ReleaseTransaction=lambda *args: SimpleNamespace(systemd=systemd))
+    guard = {'profile': 'network-guard-v1', 'started_at': '2020-01-01T00:00:00Z\n'}
+    def base_units(self, old, transaction, *, started_at=None):
+        assert started_at == guard['started_at']
+        assert self.systemd.show('health-backend.service', 'DropInPaths') == ' '.join(m.vision_paths('health-backend.service')[:-1])
+        return {'network_guard': guard.copy()}
+    monkeypatch.setattr(proof.RecoveryProof, '_units', base_units)
+    units = instance._units(root, instance.runtime.ReleaseTransaction(), started_at=guard['started_at'])
+    closure = load_closure()
+    adapter = closure.ClosureAdapter(instance, bootstrap, None, 'b'*40, lambda: None, unchanged=True)
+    evidence = {'snapshot': {'units': units}}
+    adapter._verify_network_guard(evidence)
+    changed = copy.deepcopy(evidence)
+    changed['snapshot']['units']['vision_overlay']['model'] = 'other'
+    with pytest.raises(closure.ClosureError):
+        adapter._verify_network_guard(changed)
+    assert instance.systemd is systemd
+
+
+def test_snapshot_requires_vision_overlay():
+    snapshot = complete_snapshot()
+    snapshot['units'].pop('vision_overlay')
+    snapshot['units']['network_guard'] = {'present': True}
     with pytest.raises(proof.ProofError):
         proof.validate_snapshot(snapshot)

@@ -1128,3 +1128,35 @@ def test_recovered_current_installation_still_verifies_executor_body(monkeypatch
     b.INSTALLED.write_bytes(b'tampered-current-executor')
     with pytest.raises(b.BootstrapError, match='old executor differs'):
         b._recovered_preparation_evidence(SHA, recovery_receipt=result['receipt'])
+
+
+def retired_public_fixture(loopback_raw, cloud_raw=PUBLIC):
+    return {'retirement_policy':'no-backup-v1',
+            'public_keys':{'cloud.pub':PUBLIC,'loopback.pub':LOOPBACK},
+            'installation':{'config':{
+                'cloud.pub':{'sha256':hashlib.sha256(cloud_raw.encode()).hexdigest()},
+                'loopback.pub':{'sha256':hashlib.sha256(loopback_raw.encode()).hexdigest()}}}}
+
+
+def test_retired_loopback_accepts_exact_ssh_keygen_empty_comment_format(tmp_path):
+    import subprocess
+    b=load_bootstrap()
+    key=tmp_path/'generated'
+    subprocess.run(['ssh-keygen','-q','-t','ed25519','-N','','-C','','-f',str(key)],check=True)
+    raw=key.with_suffix('.pub').read_text()
+    assert raw==raw.strip()+' \n'
+    evidence=retired_public_fixture(LOOPBACK+' \n')
+    assert b._retired_public_keys(SHA,evidence)==evidence['public_keys']
+
+
+@pytest.mark.parametrize('raw',[LOOPBACK+'  \n',LOOPBACK+'\t\n',LOOPBACK+' comment\n',PUBLIC+' \n'])
+def test_retired_loopback_rejects_other_serializations(raw):
+    b=load_bootstrap()
+    with pytest.raises(b.BootstrapError,match='identity hash differs'):
+        b._retired_public_keys(SHA,retired_public_fixture(raw))
+
+
+def test_retired_cloud_does_not_accept_loopback_empty_comment_exception():
+    b=load_bootstrap()
+    with pytest.raises(b.BootstrapError,match='identity hash differs'):
+        b._retired_public_keys(SHA,retired_public_fixture(LOOPBACK, PUBLIC+' \n'))

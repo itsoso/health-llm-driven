@@ -592,8 +592,13 @@ def _retired_public_keys(sha, evidence):
         for name, public in keys.items():
             validate_install(sha, 1, public, now=0)
             expected = evidence['installation']['config'][name]['sha256']
-            if expected not in {hashlib.sha256(public.encode()).hexdigest(),
-                               hashlib.sha256((public + '\n').encode()).hexdigest()}:
+            encodings = {public, public + '\n'}
+            # Our fixed ssh-keygen -C '' invocation writes an empty comment as
+            # space+LF. Retirement stores stripped public text, so reconstruct
+            # only this exact producer format, never arbitrary whitespace.
+            if name == 'loopback.pub' and len(public.split()) == 2:
+                encodings.add(public + ' \n')
+            if expected not in {hashlib.sha256(value.encode()).hexdigest() for value in encodings}:
                 raise BootstrapError('retired public identity hash differs')
         return keys
     config = _retired_config(sha, evidence)

@@ -605,7 +605,9 @@ def closure_evidence_without_receipt(bootstrap, sha, *, unchanged=False, histori
             raise ClosureError("no-copy profile revision binding differs")
     if inventory != expected_inventory:
         raise ClosureError("closure profile inventory differs")
-    bootstrap.canonical_source(intent["closing_sha"])
+    closing_source = bootstrap.canonical_source(intent["closing_sha"])
+    if "no_backup_preflight" in intent["snapshot"]:
+        _no_backup_module().validate_archived_vision(bootstrap, closing_source, intent["snapshot"])
     validate_built_snapshot(bootstrap, intent["snapshot"], sha, unchanged=unchanged)
     validate_network_guard_snapshot(intent["snapshot"], unchanged=unchanged)
     if unchanged:

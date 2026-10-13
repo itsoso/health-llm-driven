@@ -616,6 +616,7 @@ def test_no_backup_closure_retains_originals_without_copying_stage_or_lease(tmp_
     # here exercise the real durable closure and historical consumer.
     checked = []
     verifier = SimpleNamespace(validate_snapshot=lambda s: checked.append('validate'),
+                               validate_archived_vision=lambda b, src, s: checked.append('vision-history'),
                                verify_closed=lambda p, s: checked.append('postcondition'))
     monkeypatch.setattr(m, '_no_backup_module', lambda: verifier, raising=False)
     a.proof.verify_closed = lambda snapshot: checked.append('postcondition')
@@ -632,10 +633,18 @@ def test_no_backup_closure_retains_originals_without_copying_stage_or_lease(tmp_
     assert (b.STATE / a.proof.failed_sha / 'completed.json').read_bytes() == original_terminal
     assert checked.count('postcondition') == 1
     assert m.closed_evidence(b, a.proof.failed_sha, result['receipt'], unchanged=True)['state'] == 'CLOSED_UNCHANGED_RELEASE'
+    assert 'vision-history' in checked
     monkeypatch.setattr(b, '_installation_evidence', lambda *a: pytest.fail('retired installation body read'))
     assert m.closed_evidence(b, a.proof.failed_sha, result['receipt'], unchanged=True, historical=True)['state'] == 'CLOSED_UNCHANGED_RELEASE'
     with pytest.raises(pytest.fail.Exception):
         m.closed_evidence(b, a.proof.failed_sha, result['receipt'], unchanged=True)
+    original_vision_consumer = verifier.validate_archived_vision
+    def reject_vision(*args):
+        raise m.ClosureError('vision audit changed')
+    verifier.validate_archived_vision = reject_vision
+    with pytest.raises(m.ClosureError, match='vision audit changed'):
+        m.closed_evidence(b, a.proof.failed_sha, result['receipt'], unchanged=True, historical=True)
+    verifier.validate_archived_vision = original_vision_consumer
     # Unexpected extra archive bodies must not be silently accepted.
     (a.record / 'stage').mkdir()
     with pytest.raises(m.ClosureError):
