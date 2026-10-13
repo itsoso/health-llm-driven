@@ -1791,3 +1791,18 @@ def test_agent_conversations_search_no_duplicate_rows_on_multi_message_match(
     ids = [it["id"] for it in data["items"]]
     assert ids.count(conv.id) == 1
     assert data["total"] == 1
+
+
+def test_history_timestamps_identify_utc_instant(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    conv = _create_conversation(db, user.id)
+    message = _add_message(db, conv.id, 'user', 'synthetic timestamp fixture')
+    instant = datetime(2026, 10, 13, 15, 6)
+    message.created_at = conv.created_at = conv.updated_at = instant
+    db.commit()
+    listing = client.get('/api/v1/agent/conversations', headers=headers).json()['items'][0]
+    detail = client.get(f'/api/v1/agent/conversations/{conv.id}', headers=headers).json()
+    for value in (listing['created_at'], listing['updated_at'], detail['messages'][0]['created_at']):
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        assert parsed.tzinfo is not None
+        assert parsed == instant.replace(tzinfo=UTC)

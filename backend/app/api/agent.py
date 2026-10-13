@@ -10,6 +10,7 @@ import logging
 import math
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Optional, List
 
 
@@ -49,6 +50,12 @@ _BACKGROUND_AGENT_TASKS_BY_RUN: dict[str, set[asyncio.Task]] = {}
 _BACKGROUND_AGENT_TASK_OWNERS: dict[str, int] = {}
 _BACKGROUND_AGENT_RUNS_BY_TURN: dict[tuple[int, str], str] = {}
 router = APIRouter()
+
+
+def _history_timestamp(value: datetime) -> str:
+    """History columns store UTC; always identify the instant on the wire."""
+    aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    return aware.astimezone(timezone.utc).isoformat()
 
 
 class AgentTurnStatusResponse(BaseModel):
@@ -2684,8 +2691,8 @@ async def list_conversations(
                 "id": c.id,
                 "title": c.title,
                 "last_message": last_msgs.get(c.id),
-                "created_at": str(c.created_at),
-                "updated_at": str(c.updated_at),
+                "created_at": _history_timestamp(c.created_at),
+                "updated_at": _history_timestamp(c.updated_at),
                 "mode": "agent",
             }
             for c in convs
@@ -2805,7 +2812,7 @@ async def get_conversation(
                     current_user.id,
                 ),
                 "rating": message.rating,
-                "created_at": str(message.created_at),
+                "created_at": _history_timestamp(message.created_at),
                 "meta": projection.meta,
             }
         )

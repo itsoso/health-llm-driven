@@ -5,6 +5,8 @@ import {
   ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { useQuery } from '@tanstack/react-query';
+import { getEffectiveTimezone } from '../../services/location';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +21,7 @@ import ChatTodayFocusCard from '../../components/chat/ChatTodayFocusCard';
 import { buildTodayFocusModel } from '../../components/chat/todayFocus';
 import {
   buildMessageTimeDividerItems,
+  formatConversationDate,
   type ChatMessageListItem,
 } from '../../components/chat/messageTime';
 import EmptyStateHome, {
@@ -160,6 +163,13 @@ function ChatTimeDivider({ label }: { label: string }) {
 
 export default function ChatScreen() {
   const { token: authToken, user: authUser } = useAuth();
+  const { data: effectiveTimezone } = useQuery({
+    queryKey: ['effectiveTimezone', authUser?.id],
+    queryFn: getEffectiveTimezone,
+    enabled: Boolean(authToken && authUser?.id),
+    staleTime: 30_000,
+  });
+  const timezone = effectiveTimezone?.timezone;
   const chat = useChatEngine();
   const {
     messages,
@@ -1100,8 +1110,8 @@ export default function ChatScreen() {
     ? { ...todayFocusModel, contextStrip: null }
     : todayFocusModel;
   const messageListItems = useMemo(
-    () => buildMessageTimeDividerItems(messages),
-    [messages],
+    () => buildMessageTimeDividerItems(messages, timezone),
+    [messages, timezone],
   );
   const retryLastTextTurn = () => {
     if (!retryableTextMessage || !activeTurn.retryMode || isStreaming) return;
@@ -1293,7 +1303,7 @@ export default function ChatScreen() {
               ref={shareImageRef}
               messages={imageExportMessages}
               imageAuthToken={authToken}
-              dateLabel={new Date().toLocaleDateString('zh-CN')}
+              dateLabel={formatConversationDate(new Date().toISOString(), timezone)}
               onReady={captureSelectedImage}
             />
           </View>
@@ -1452,6 +1462,7 @@ export default function ChatScreen() {
         </Pressable>
       </Modal>
       <ConversationSheet
+        timezone={timezone}
         visible={historyVisible}
         onClose={() => setHistoryVisible(false)}
         conversations={conversations}

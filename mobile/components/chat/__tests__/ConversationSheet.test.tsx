@@ -5,6 +5,7 @@ import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import ConversationSheet from '../ConversationSheet';
 
 const baseProps = {
+  timezone: 'UTC',
   visible: true,
   onClose: jest.fn(),
   setConversations: jest.fn(),
@@ -332,4 +333,14 @@ describe('ConversationSheet 无限下拉分页', () => {
     fireEvent.press(rr.getByLabelText('加载失败，点击重试'));
     expect(onLoadMore).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it('renders the conversation date in the selected account timezone and updates on change', () => {
+  const conversations = [{ id: 1, title: '时区回归', created_at: '2026-10-13T16:01:00' }];
+  const view = render(<ConversationSheet {...baseProps} conversations={conversations} timezone="Asia/Shanghai" />);
+  expect(view.getByText('2026-10-14')).toBeTruthy();
+  view.rerender(<ConversationSheet {...baseProps} conversations={conversations} timezone="America/Los_Angeles" />);
+  expect(view.getByText('2026-10-13')).toBeTruthy();
+  expect(view.queryByText('2026-10-14')).toBeNull();
 });

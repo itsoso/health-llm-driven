@@ -16,6 +16,7 @@ from app.services.agent_executor import AgentExecutor
         "测试标记 QA-MEAL-A",
     ),
     ("记录今天午餐：白米饭100克、鸡蛋1个。备注 QA-MEAL-B。", "QA-MEAL-B"),
+    ("加餐一小个桃子", None),
 ))
 async def test_reviewer_meal_reaches_authenticated_api_and_durable_receipt(
     db, client, auth_user_and_headers, monkeypatch, message, notes,
@@ -23,9 +24,10 @@ async def test_reviewer_meal_reaches_authenticated_api_and_durable_receipt(
     user, headers = auth_user_and_headers
     executor = AgentExecutor(db)
     posts = []
+    expected_food = "一小个桃子" if message == "加餐一小个桃子" else "白米饭100克、鸡蛋1个"
 
     async def estimate(food_items):
-        assert food_items == "白米饭100克、鸡蛋1个"
+        assert food_items == expected_food
         # Synthetic estimator output; this test proves persistence, not accuracy.
         return dict(calories=210, protein=9, carbs=29, fat=6, fiber=1)
 
@@ -69,7 +71,8 @@ async def test_reviewer_meal_reaches_authenticated_api_and_durable_receipt(
     assert len(done["write_receipts"]) == 1
     assert posts == ["/api/v1/diet/records"]
     record = db.query(DietRecord).filter_by(user_id=user.id).one()
-    assert record.food_items == "白米饭100克、鸡蛋1个"
+    assert record.food_items == expected_food
+    assert record.meal_type == ("snack" if message == "加餐一小个桃子" else "lunch")
     assert record.notes == notes
     assert record.calories == 210
     assert str(record.id) == str(done["write_receipts"][0]["resource_id"])

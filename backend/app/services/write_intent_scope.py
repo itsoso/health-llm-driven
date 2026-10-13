@@ -1998,6 +1998,25 @@ def has_explicit_authorizing_update_request(value: str) -> bool:
     )
 
 
+# A bounded nominal food fact: meal + quantity + a known food noun. Unknown
+# nouns, plans, trailing attribution/questions and compounds remain ungranted;
+# an explicit record command still supports the existing general food parser.
+_NOMINAL_MEAL_FACT_RE = re.compile(
+    r"(?:今天|今日|刚才|刚刚)?(?:我(?:的)?)?"
+    r"(?:早餐|早饭|午餐|午饭|晚餐|晚饭|加餐|零食|夜宵)[:：]?"
+    r"(?:[1-9][0-9]*(?:\.[0-9]+)?|[一二两三四五六七八九十百]+|半)"
+    r"(?:小|大)?(?:个|根|片|块|杯|碗|份|克|g|毫升|ml)"
+    r"(?:桃子|水蜜桃|苹果|香蕉|橘子|橙子|梨|猕猴桃|草莓|蓝莓|葡萄|"
+    r"西瓜|哈密瓜|芒果|鸡蛋|面包|酸奶|牛奶|豆浆|米饭|燕麦|红薯|玉米)"
+    r"[。.!！]*"
+)
+
+
+def is_quantified_meal_observation(value: str) -> bool:
+    """Recognize a complete current-self nominal food fact without inference."""
+    return _NOMINAL_MEAL_FACT_RE.fullmatch(normalize_write_scope_text(value)) is not None
+
+
 def direct_remember_fact_values(value: str) -> dict[str, str] | None:
     """Compile a direct stable-profile fact from user-owned text."""
     normalized = normalize_write_scope_text(value).strip("，,。.!！；;：:?？")

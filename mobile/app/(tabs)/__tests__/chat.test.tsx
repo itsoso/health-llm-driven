@@ -35,6 +35,7 @@ let mockIsLoadingMoreHistory = false;
 let mockTodayTimelineData: any = undefined;
 let mockTodayDynamicViewData: any = undefined;
 let mockDailyPlanData: any = undefined;
+let mockTimezone: string | undefined = undefined;
 
 jest.mock('expo-router', () => ({
   router: {
@@ -51,6 +52,7 @@ jest.mock('expo-router', () => ({
 jest.mock('@tanstack/react-query', () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     const key = JSON.stringify(queryKey);
+    if (key.includes('effectiveTimezone')) return { data: mockTimezone ? { timezone: mockTimezone } : undefined };
     if (key.includes('today-dynamic-view')) {
       return { data: mockTodayDynamicViewData, isLoading: false, isSuccess: Boolean(mockTodayDynamicViewData) };
     }
@@ -257,12 +259,25 @@ describe('ChatScreen', () => {
     mockTodayTimelineData = undefined;
     mockTodayDynamicViewData = undefined;
     mockDailyPlanData = undefined;
+    mockTimezone = undefined;
     mockLoadLatestConversation.mockResolvedValue(undefined);
     mockSaveChatImageToLibrary.mockResolvedValue(undefined);
     mockShareImage.mockResolvedValue(undefined);
     mockShareLongImage.mockResolvedValue(undefined);
     mockShareLocalImage.mockResolvedValue(undefined);
     mockCaptureRef.mockResolvedValue('/tmp/reva-conversation-long-image.png');
+  });
+
+  it('updates message timestamps from the account timezone without changing stored message instants', () => {
+    mockMessages = [{ id: 'u-time', role: 'user', content: '时区回归', createdAt: '2026-10-13T15:06:00' }];
+    mockTimezone = 'Asia/Shanghai';
+    const view = render(<ChatScreen />);
+    expect(view.getByText(/23:06/)).toBeTruthy();
+    mockTimezone = 'America/Los_Angeles';
+    view.rerender(<ChatScreen />);
+    expect(view.getByText(/08:06/)).toBeTruthy();
+    expect(view.queryByText(/23:06/)).toBeNull();
+    expect(mockMessages[0].createdAt).toBe('2026-10-13T15:06:00');
   });
 
   it('renders an edge-to-edge root surface for the whole chat page', async () => {

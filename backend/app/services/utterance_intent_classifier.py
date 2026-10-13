@@ -43,6 +43,7 @@ from app.services.utterance_intent_lexicon import (
 )
 from app.services.write_intent_scope import (
     direct_event_values,
+    is_quantified_meal_observation,
     direct_self_illness_recovery_entity,
     direct_remember_fact_values,
     direct_supplement_group_values,
@@ -343,6 +344,11 @@ def classify_agent_utterance(
         focus=(_read_focus(normalized) if has_read else None),
         reference_now=reference_now,
     )
+    if is_quantified_meal_observation(raw):
+        return _intent(
+            raw, normalized, "write", "diet", "create", 0.96,
+            "quantified_meal_observation", scope, is_write=True,
+        )
     domain = _infer_domain(normalized)
     has_question = _has_question_signal(normalized) or write_capability_question
     has_write = _has_any(normalized, WRITE_ACTIONS)

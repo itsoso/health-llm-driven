@@ -56,3 +56,12 @@ a17884a8c固定提交独立安全复审GO；最终PostgreSQL81 PASS、相邻3437
 固定dfdd提交独立G4裁定NO-GO：实际列表证据生产器遗漏start_date，绕过未来起病检查；日期归一化与授权归一化不一致，空格/尾部标点可丢失明确今天。新增实际GET→更新网关反例与日期归一化/缺失日期反例先RED（4 FAIL/3 PASS），修复只在illness列表证据保留start_date，恢复分支要求合法且不晚于用户当天的起病日期；今天解析复用normalize_write_scope_text。修复后3589 PASS，System Map检查通过。原PG145 PASS但停止进程返回非零，已确认没有遗留该测试PostgreSQL进程；新增152项隔离PG正在重跑，不把旧结果代替新结果。
 
 agent_executor变更触发真实模型评测门槛；沿用用户明确“后续不需要真实评测”，对最终精确SHA设置waiver，绝不伪造confirmed。新候选仍须独立G4、完整CI、部署与原生/OTA实际回执后才能声明交付。
+
+## 加餐短句与账户时区续修
+
+G1 PASS：截图“加餐一小个桃子”被误当只读请求，并出现计划草稿失败；同页23:06显示15:06。沿用当前Dossier与Health Harness，incident+safety，不运行真实模型评测或备份。
+
+- 完整餐次+份量+已知食物名的当前本人陈述进入既有饮食记录目标；拒绝未来、他人、否定、疑问、引用、药物及复合动作。不放宽网关用户隔离或回执要求。通用失败文案不再误称计划草稿。
+- 会话历史API将UTC存储值序列化为明确+00:00；Mobile兼容旧无偏移UTC，按账户effectiveTimezone显示消息、日界、历史及分享图日期。时区查询按用户隔离并响应设置失效，未取得有效时区时不冒充设备时间。
+- RED：加餐4 FAIL/14 PASS；时间API1 FAIL；Mobile7 FAIL/4 PASS。GREEN：后端相邻1780 PASS，历史API60 PASS；Mobile104 PASS、tsc PASS；System Map及秘密扫描PASS。完整鉴权API写入、持久回执、同client_turn_id去重纳入回归。
+- 隔离PostgreSQL验证进行中；固定提交独立G4及发布尚未完成。当前生产仍为0fd447cbd；既有OTA原生基线不兼容阻断继续保留。

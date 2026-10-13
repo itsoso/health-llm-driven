@@ -12,9 +12,11 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
+import { formatConversationDate } from './messageTime';
 import { useSheetDismiss } from '../../hooks/useSheetDismiss';
 
 interface Props {
+  timezone?: string;
   visible: boolean;
   onClose: () => void;
   conversations: any[];
@@ -39,7 +41,7 @@ interface Props {
 }
 
 export default function ConversationSheet({
-  visible, onClose, conversations, setConversations,
+  timezone, visible, onClose, conversations, setConversations,
   currentConversationId, onSelectConversation, onDeleteConversation,
   onRenameConversation, loading, error, onRetry,
   hasMore, loadingMore, loadMoreError, onLoadMore, total,
@@ -218,7 +220,7 @@ export default function ConversationSheet({
                             {item.title || `对话 #${item.id}`}
                           </Text>
                           <Text style={styles.rowDate}>
-                            {(item.updated_at || item.created_at)?.slice(0, 10) || ''}
+                            {formatConversationDate(item.updated_at || item.created_at, timezone)}
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
