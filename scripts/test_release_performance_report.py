@@ -6,6 +6,75 @@ from pathlib import Path
 import pytest
 
 
+def status_module():
+    spec = importlib.util.spec_from_file_location('release_run_status', Path(__file__).with_name('release_run_status.py'))
+    result = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(result)
+    return result
+
+
+def status_sample(**changes):
+    value = dict(id=12, head_sha='a' * 40, run_attempt=1, name='CI', status='completed', conclusion='success')
+    return {**value, **changes}
+
+
+def test_status_read_retries_transport_only_without_restarting_run():
+    import subprocess
+    s = status_module()
+    calls, sleeps = [], []
+    def read(run_id):
+        calls.append(run_id)
+        if len(calls) < 3:
+            raise subprocess.TimeoutExpired('gh', 12)
+        return status_sample()
+    result, code = s.observe(12, 'a' * 40, 1, read=read, sleep=sleeps.append)
+    assert code == 0 and result['status'] == 'completed'
+    assert result['release_authority'] is False
+    assert calls == [12, 12, 12] and sleeps == [2, 4]
+
+
+@pytest.mark.parametrize('changes', [{'id':13}, {'head_sha':'b'*40}, {'run_attempt':2}, {'name':'foreign'}, {'name':[]}, {'status':[]}, {'conclusion':[]}, {'status':'completed','conclusion':None}])
+def test_status_binding_mismatch_stops_without_retry(changes):
+    s = status_module()
+    calls = []
+    result, code = s.observe(12, 'a'*40, 1, read=lambda n: calls.append(n) or status_sample(**changes), sleep=lambda _: pytest.fail('invalid metadata must not retry'))
+    assert code == 2 and result['status'] == 'unknown' and calls == [12]
+
+
+def test_status_exhausted_read_does_not_leak_error_or_report_success():
+    import subprocess
+    s = status_module()
+    def read(_):
+        raise subprocess.CalledProcessError(1, 'gh', stderr='SECRET-private-error')
+    result, code = s.observe(12, 'a'*40, 1, read=read, sleep=lambda _: None)
+    assert code == 2 and result['status'] == 'unknown'
+    assert 'SECRET' not in str(result)
+
+
+@pytest.mark.parametrize('status,conclusion,expected', [('in_progress',None,3), ('queued',None,3), ('completed','failure',1), ('completed','cancelled',1)])
+def test_status_pending_and_failure_are_distinct(status, conclusion, expected):
+    result, code = status_module().observe(12, 'a'*40, 1, read=lambda _: status_sample(status=status,conclusion=conclusion), sleep=lambda _: None)
+    assert code == expected and result['release_authority'] is False
+
+
+def test_status_gh_is_one_fixed_read_with_deadline(monkeypatch):
+    import json
+    import subprocess
+    s = status_module()
+    def run(argv, **kwargs):
+        assert argv[:3] == ['gh','api','repos/itsoso/health-llm-driven/actions/runs/12']
+        assert kwargs['timeout'] == 12 and kwargs['check'] is True
+        return subprocess.CompletedProcess(argv,0,stdout=json.dumps(status_sample()))
+    monkeypatch.setattr(s.subprocess,'run',run)
+    assert s.read_run(12) == status_sample()
+
+
+def test_status_real_trusted_run_title_binds_input_sha():
+    s = status_module()
+    for name, expected in [('Trusted release · backend · '+'a'*40,0), ('Trusted OTA · publish · '+'a'*40,0), ('Trusted release · backend · '+'b'*40,2)]:
+        assert s.observe(12,'a'*40,1,read=lambda _, name=name: status_sample(name=name))[1] == expected
+
+
 def module():
     spec = importlib.util.spec_from_file_location('release_performance_report', Path(__file__).with_name('release_performance_report.py'))
     result = importlib.util.module_from_spec(spec)
