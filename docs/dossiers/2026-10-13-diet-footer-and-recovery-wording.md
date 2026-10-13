@@ -44,3 +44,11 @@ a17884a8c固定提交独立安全复审GO；最终PostgreSQL81 PASS、相邻3437
 ## TestFlight 与 OTA 续发授权
 
 用户在后端与直接安装包发布后明确要求“发Testflight和OTA”。TestFlight使用独立纯交付文档提交及trusted-release target=testflight，保持已部署运行树不变，不重复后端部署、不复用288 ad-hoc包冒充STORE。OTA先检查固定原生baseline、production cohort fingerprint和精确SHA后端条件；未通过时不领取publish claim。新原生构建完成并不自动更新baseline，不将TestFlight上传、Apple processing与测试可用混为一谈。沿用不备份、不真实模型评测及模拟器默认验收要求。
+
+## 恢复确认截图续修
+
+用户继续提供“感冒确认痊愈今天”截图：前文病程名称是“感冒样不适”，当前句式与三层精确名称授权均未衔接。新增3种明确确认表达先RED 3 FAIL/9 PASS；恢复分支仅以闭合原句解析目标，在本人本轮列表中同时考虑“感冒”和固定“感冒样不适”标签，必须唯一active/improving，不按子串或历史助手文字猜ID，不改病程名称。明确今天/今日从执行上下文用户日期构造end_date；只允许status及同日字段，模型缺日期时补同日，其他日期或额外字段拒绝。未来或非法起病日期不自动恢复。
+
+起病日期边界先RED 1 FAIL；修复后恢复145项与相邻3437项共3582 PASS，CI=true隔离合成环境。首次新增单测fixture误用了ActionableReference.source导致11项TypeError，修正后重跑，不作为产品RED。PostgreSQL145项正在运行；map、secret scan和LLM change gate通过，真实模型不要求亦未执行。
+
+原d461纯文档续发候选完整CI已取消且未开始授权/构建/上传；本次新后端变更将按新精确SHA完整CI与独立G4后使用target=release，让后端部署与TestFlight构建走既有流程。OTA仍单独核对原生基线，不因新包构建成功而跳闸。

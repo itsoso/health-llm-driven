@@ -1873,8 +1873,9 @@ def explicit_whole_record_delete_target(value: str) -> tuple[str, int] | None:
 
 _DIRECT_SELF_ILLNESS_RECOVERY_RE = re.compile(
     r"^(?:(?:请|请帮我|帮我)?更新我的(?P<command_entity>.{2,100}?)"
-    r"(?:的)?状态[：:]|(?:我(?:的)?)?(?P<self_entity>.{2,100}?))"
-    r"(?:已经|已)?(?:完全|彻底)?(?:好了|(?:痊愈|康复)(?:了)?)$"
+    r"(?:的)?状态[：:]|(?:确认)?(?:我(?:的)?)?(?P<self_entity>.{2,100}?))"
+    r"(?:确认)?(?:已经|已)?(?:完全|彻底)?(?:好了|(?:痊愈|康复)(?:了)?)"
+    r"(?:[，,]?(?:今天|今日))?$"
 )
 
 

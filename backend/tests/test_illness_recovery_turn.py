@@ -16,8 +16,9 @@ MESSAGES = (
     "感冒好了", "我感冒好了", "我的感冒已经好了", "感冒已经完全好了。",
     "感冒痊愈了", "我感冒痊愈了", "更新我的感冒状态：已经痊愈",
     "我的感冒已经康复了", "请更新我的感冒状态:已康复",
+    "感冒确认痊愈今天", "感冒确认痊愈，今天", "确认感冒痊愈，今天",
 )
-FLOW_MESSAGES = (MESSAGES[0], MESSAGES[1], MESSAGES[5], MESSAGES[6])
+FLOW_MESSAGES = (MESSAGES[0], MESSAGES[1], MESSAGES[5], MESSAGES[6], MESSAGES[9])
 
 
 def _goal(message):
@@ -41,6 +42,9 @@ def test_recovery_is_typed_owned_update_not_a_history_query(message):
 
 
 @pytest.mark.parametrize("message", (
+    "感冒确认痊愈明天", "感冒确认痊愈昨天", "感冒确认痊愈今天？",
+    "妈妈感冒确认痊愈今天", "如果感冒确认痊愈今天", "感冒确认基本痊愈今天",
+    "感冒确认痊愈今天，不要记录", "感冒确认痊愈今天，停止吃药",
     "感冒？好了", "感冒?好了", "我感冒？痊愈了", "更新我的感冒？状态：好了",
     "感冒好了吗？", "感冒好了？", "感冒快好了", "感冒基本好了", "感冒好了点",
     "感冒好了一些", "感冒可能好了", "感冒还没好", "感冒没好了", "感冒好多了",
@@ -61,12 +65,12 @@ def test_quoted_uncertain_nonself_or_retracted_recovery_has_no_mutation_authorit
     assert goal.kind != "health_manage_mutation"
 
 
-def _seed(db, *, duplicates=1):
+def _seed(db, *, duplicates=1, record_name="感冒"):
     users = [User(username=f"recovery-{i}", email=f"recovery-{i}@example.test", hashed_password="synthetic", name="Synthetic recovery", is_active=True, is_approved=True) for i in range(2)]
     db.add_all(users)
     db.flush()
     other = IllnessEpisode(user_id=users[1].id, name="感冒", start_date=date.today(), status="active")
-    own = [IllnessEpisode(user_id=users[0].id, name="感冒", start_date=date.today(), status="active") for _ in range(duplicates)]
+    own = [IllnessEpisode(user_id=users[0].id, name=record_name if i == 0 else "感冒", start_date=date.today(), status="active") for i in range(duplicates)]
     db.add_all([other, *own])
     db.commit()
     return users[0], own, other
@@ -76,8 +80,9 @@ def _seed(db, *, duplicates=1):
 @pytest.mark.parametrize("message", FLOW_MESSAGES)
 @pytest.mark.parametrize("duplicates", (0, 1, 2))
 @pytest.mark.parametrize("historical", (False, True))
-async def test_real_gateway_and_api_persist_only_unique_owned_recovery(db, client, monkeypatch, message, duplicates, historical):
-    user, own, other = _seed(db, duplicates=duplicates)
+@pytest.mark.parametrize("record_name", ("感冒", "感冒样不适"))
+async def test_real_gateway_and_api_persist_only_unique_owned_recovery(db, client, monkeypatch, message, duplicates, historical, record_name):
+    user, own, other = _seed(db, duplicates=duplicates, record_name=record_name)
     old = None
     if historical:
         old = IllnessEpisode(user_id=user.id, name="感冒", start_date=date(2025, 1, 1), end_date=date(2025, 1, 5), status="resolved")
@@ -130,15 +135,16 @@ async def test_real_gateway_and_api_persist_only_unique_owned_recovery(db, clien
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("message", FLOW_MESSAGES)
+@pytest.mark.parametrize("record_name", ("感冒", "感冒样不适"))
 async def test_screenshot_statement_reaches_pi_saved_answer_and_verified_receipt(
-    db, client, isolated_agent_protocol_transport, monkeypatch, message,
+    db, client, isolated_agent_protocol_transport, monkeypatch, message, record_name,
 ):
     from datetime import datetime, timezone
     from app.models.agent_conversation import AgentMessage
     from app.services.auth import auth_service
     from app.twin.schema import HealthTwin, TwinMeta
 
-    user, own, other = _seed(db)
+    user, own, other = _seed(db, record_name=record_name)
     now = datetime.now(timezone.utc)
     monkeypatch.setattr("app.twin.builder.build_twin", lambda _db, uid, **kwargs:
         HealthTwin(meta=TwinMeta(user_id=uid, generated_at=now)))
@@ -185,6 +191,7 @@ async def test_screenshot_statement_reaches_pi_saved_answer_and_verified_receipt
     db.refresh(other)
     assert done["perf"]["agent_kernel"] == "pi"
     assert own[0].status == "resolved" and other.status == "active"
+    assert own[0].name == record_name
     assert [method for method, _ in http_calls] == ["GET", "PUT"]
     assert len(done["write_receipts"]) == 1
     receipt = done["write_receipts"][0]
@@ -193,3 +200,51 @@ async def test_screenshot_statement_reaches_pi_saved_answer_and_verified_receipt
     assert saved.meta["write_receipts"] == done["write_receipts"]
     assert "这次查询未执行" not in saved.content
     assert "没有授权" not in saved.content
+
+
+def _confirmation_snapshot(record):
+    from datetime import datetime, timezone
+    from app.services.agent_kernel.types import ActionableReference, TurnSnapshot
+    context = ExecutionContext.now(user_id=1, channel="typed", timezone_name="Asia/Shanghai",
+                                   now_utc=datetime(2026, 10, 13, 17, 0, tzinfo=timezone.utc))
+    envelope = AgentEnvelope(user_id=1, channel="typed", text="感冒确认痊愈今天")
+    return TurnSnapshot(envelope=envelope, context=context,
+        intent=build_intent_frame(envelope, context), actionable_references=(
+            ActionableReference(kind="owner_scoped_health_manage_list",
+                                data={"record_type": "illness", "records": [record]}),))
+
+
+def test_explicit_today_uses_user_day_and_replaces_old_end_date():
+    from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
+    snapshot = _confirmation_snapshot({"id": 7, "name": "感冒样不适", "status": "active",
+                                       "start_date": "2026-10-07", "end_date": "2026-10-08"})
+    result = _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 7)
+    assert result["data"] == {"status": "resolved", "end_date": "2026-10-14"}
+
+
+@pytest.mark.parametrize("patch", (
+    {"status": "resolved", "end_date": "2026-10-13"},
+    {"status": "resolved", "name": "感冒"},
+    {"status": "resolved", "notes": "停止用药"},
+    {"status": "active"},
+))
+def test_confirmation_does_not_authorize_model_added_fields_or_wrong_day(patch):
+    from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
+    snapshot = _confirmation_snapshot({"id": 7, "name": "感冒样不适", "status": "active",
+                                       "start_date": "2026-10-07"})
+    assert _authorized_illness_update_args(snapshot, {"data": patch}, 7) is None
+    assert _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 8) is None
+
+
+@pytest.mark.parametrize("name", ("感冒药过敏", "流感", "重感冒", "朋友的感冒", "感冒样不适伴肺炎"))
+def test_confirmation_never_uses_substring_or_other_disease_candidates(name):
+    from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
+    snapshot = _confirmation_snapshot({"id": 7, "name": name, "status": "active"})
+    assert _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 7) is None
+
+
+def test_confirmation_cannot_resolve_before_episode_started():
+    from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
+    snapshot = _confirmation_snapshot({"id": 7, "name": "感冒样不适", "status": "active",
+                                       "start_date": "2026-10-15"})
+    assert _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 7) is None

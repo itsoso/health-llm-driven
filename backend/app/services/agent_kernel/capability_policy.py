@@ -1206,14 +1206,38 @@ def _authorized_illness_update_args(
     records = _owner_scoped_manage_list_records(snapshot, "illness")
     recovery_entity = direct_self_illness_recovery_entity(snapshot.envelope.text)
     if recovery_entity is not None:
-        # A current recovery report cannot rewrite a historical resolved episode.
-        # Only one matching ongoing episode can bind the model's proposed ID.
-        records = tuple(
+        # Only this bounded label set supports the user's shorthand. This is
+        # episode selection, never a diagnosis or a change to its stored name.
+        target_names = {_normalize_entity_name(recovery_entity)}
+        if recovery_entity == "感冒":
+            target_names.add(_normalize_entity_name("感冒样不适"))
+        candidates = tuple(
             record for record in records
             if record.get("status") in {"active", "improving"}
-            and _normalize_entity_name(record.get("name"))
-            == _normalize_entity_name(recovery_entity)
+            and _normalize_entity_name(record.get("name")) in target_names
         )
+        if len(candidates) != 1 or canonical_health_manage_record_id(
+            candidates[0].get("id", candidates[0].get("record_id"))
+        ) != requested_id:
+            return None
+        patch = _illness_update_patch(snapshot, requested_id)
+        started = candidates[0].get("start_date")
+        if started is not None:
+            try:
+                started_day = date.fromisoformat(str(started))
+            except (TypeError, ValueError):
+                return None
+            if started_day > snapshot.context.current_time.date():
+                return None
+        requested_data = args.get("data")
+        # A missing explicit-today field may be supplied from this turn, but
+        # model-provided dates or extra fields never override the user's scope.
+        if patch is None or requested_data not in (patch, {"status": "resolved"}):
+            return None
+        return {
+            "record_type": "illness", "operation": "update",
+            "record_id": requested_id, "data": patch,
+        }
     requested_record = next(
         (
             record
@@ -1283,7 +1307,11 @@ def _illness_update_patch(
     from app.services.write_intent_scope import direct_self_illness_recovery_entity
 
     if direct_self_illness_recovery_entity(snapshot.envelope.text) is not None:
-        return {"status": "resolved"}
+        patch = {"status": "resolved"}
+        recovery_text = normalize_health_authorization_text(snapshot.envelope.text)
+        if re.search(r"(?:今天|今日)[。.!！]*$", recovery_text):
+            patch["end_date"] = snapshot.context.current_time.date().isoformat()
+        return patch
     text = "".join(
         normalize_health_authorization_text(snapshot.envelope.text).split()
     )
