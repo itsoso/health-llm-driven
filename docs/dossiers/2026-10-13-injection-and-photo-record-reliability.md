@@ -132,3 +132,5 @@ v2 terminal cleanup在初次清理与after-rename重入都先核验root-owned070
 固定16acd的独立G4 GO：816 PASS/2可选PG SKIP，CI契约32 PASS；三份候选绑定操作包装器也GO。HTTPS推送因OAuth缺少workflow scope被拒绝；既有GitHub SSH身份成功推送，未改账号权限。正式CI `38365168727` 的release-invariants真实失败：248 PASS后，旧timing测试仍要求已移除的managed migration执行和完成事件。生产未部署、未轮换授权、未领取OTA或构建claim。
 
 本地同一timing测试复现1 FAIL/7 PASS；将契约更新为只读schema-check开始/完成边界，并显式禁止migration命令与误导性的migration完成事件，8 PASS。发布器生产源码未改；继续运行CI声明的完整release-invariants测试清单，不把局部绿替代正式CI，旧失败保留。
+
+完整CI测试清单本机运行结束：3623 PASS/22 SKIP/84 subtests，3 FAIL，527.60秒。其中2项旧合成备份测试受macOS mktemp后缀模板兼容限制（正式Linux CI同项已通过）；剩余infrastructure测试仍要求执行已取消的站外备份检查。正式d67 CI `38366412244`也在该断言失败，394 PASS后停止。现将该旧契约改为工具staging、显式备份禁用和失败保留锁；发布生产源码继续不变。两个失败CI均保留，未重发发布操作。

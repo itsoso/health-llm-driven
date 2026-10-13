@@ -165,19 +165,20 @@ def test_frontend_production_server_binds_to_loopback() -> None:
     assert "-p 30001" in start
 
 
-def test_deploy_stages_current_backup_scripts_before_preflight() -> None:
+def test_deploy_stages_verified_tools_without_running_backup_pipeline() -> None:
     body = (ROOT / "deploy.sh").read_text()
-    backup_body = body[body.index("backup_database() {") :]
-    stage_call = backup_body.index("stage_backup_preflight_scripts")
-    freshness_call = backup_body.index("REMOTE_VERIFY_RECENT_OFFSITE")
-    backup_call = backup_body.index('BACKUP_OFFSITE_MODE=')
-
-    assert stage_call < freshness_call < backup_call
+    backup_body = body.split("backup_database() {", 1)[1].split("\n}", 1)[0]
+    assert backup_body.index('DEPLOY_DATABASE_BACKUP-0') < backup_body.index(
+        "stage_backup_preflight_scripts"
+    )
+    assert "if ! stage_backup_preflight_scripts; then" in backup_body
+    assert "_REMOTE_RELEASE_LOCK_ABANDONED=1" in backup_body
+    for forbidden in ("REMOTE_VERIFY_RECENT_OFFSITE", "BACKUP_OFFSITE_MODE=", "ssh "):
+        assert forbidden not in backup_body
     for script_name in (
-        "backup_db.sh",
-        "verify_backup_restore.sh",
-        "archive_backup_offsite.sh",
-        "verify_recent_offsite_backup.sh",
+        "verify_locked_requirements.py",
+        "verify_runtime_schema_compatibility.py",
+        "runtime_state_release_transaction.py",
     ):
         assert script_name in body
 
