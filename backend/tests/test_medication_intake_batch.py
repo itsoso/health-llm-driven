@@ -1162,3 +1162,52 @@ def test_injection_confirmation_revalidates_source_despite_valid_payload_hash(db
     with pytest.raises(batch.InvalidMedicationIntakePlan,match='explicit source'):
         write_intent_service.confirm(db,user.id,intent.id)
     assert db.query(MedicationLog).filter(MedicationLog.user_id==user.id).count()==0
+
+
+@pytest.mark.parametrize('source_name',['替尔泊肽','替尔泊肽注射液'])
+def test_registered_tirzepatide_formulation_cannot_bypass_source_amount(db,source_name):
+    user=_user(db,'injection_full_name')
+    db.add(Medication(user_id=user.id,name='替尔泊肽注射液',dosage='1支'))
+    db.commit()
+    conversation,source=_source_message(db,user.id,f'记录刚刚已注射{source_name}1支')
+    with pytest.raises(batch.InvalidMedicationIntakePlan):
+        batch.propose_medication_intake_items(db,user_id=user.id,conversation_id=conversation.id,
+            source_message_id=source.id,items=[{'medication_name':'替尔泊肽注射液','actual_dosage':'2支'}],
+            reference_now=FROZEN_NOW)
+
+
+def test_registered_formulation_confirmation_cannot_bypass_source_with_valid_hash(db):
+    user=_user(db,'injection_full_confirm')
+    db.add(Medication(user_id=user.id,name='替尔泊肽注射液',dosage='1支'))
+    db.commit()
+    text='记录刚刚已注射替尔泊肽1支'
+    conversation,source=_source_message(db,user.id,text)
+    intent=batch.propose_medication_intake_batch(db,user_id=user.id,conversation_id=conversation.id,
+        source_message_id=source.id,text=text,reference_now=datetime.now(UTC))
+    payload=dict(intent.payload)
+    payload['items']=[{**payload['items'][0],'medication_name':'替尔泊肽注射液','actual_dosage':'2支'}]
+    payload['plan_sha256']=batch._plan_hash(batch._payload_without_hash(payload))
+    intent.payload=payload
+    db.commit()
+    _attach_pending_assistant(db,source,intent)
+    with pytest.raises(batch.InvalidMedicationIntakePlan,match='explicit source'):
+        write_intent_service.confirm(db,user.id,intent.id)
+    assert db.query(MedicationLog).filter(MedicationLog.user_id==user.id).count()==0
+
+
+def test_explicit_tirzepatide_formulation_caption_keeps_actual_injection_quantity():
+    assert parse_medication_intake_batch('记录刚刚已注射替尔泊肽注射液1支')=={'items':[
+        {'medication_name':'替尔泊肽','actual_dosage':'1支','observed_strength':None}]}
+
+
+@pytest.mark.parametrize('source_text',[
+    '记录刚刚已注射替尔泊肽1支','重新开始注射替尔泊肽'])
+def test_injection_caption_cannot_authorize_another_registered_formulation(db,source_text):
+    user=_user(db,'injection_free_name')
+    db.add(Medication(user_id=user.id,name='个人登记的注射药',dosage='1支'))
+    db.commit()
+    conversation,source=_source_message(db,user.id,source_text)
+    with pytest.raises(batch.InvalidMedicationIntakePlan):
+        batch.propose_medication_intake_items(db,user_id=user.id,conversation_id=conversation.id,
+            source_message_id=source.id,items=[{'medication_name':'个人登记的注射药','actual_dosage':'1支'}],
+            reference_now=FROZEN_NOW)

@@ -56,3 +56,21 @@ G4须固定最终来源做全新独立安全审查，精确主干完整CI与项�
 补充多图营养标签缺实际食用重量时标记不完整，不能把另一张成功结果当完整餐食自动保存；仅需补食用量的图片回到等待补充。首轮新增11例 RED 包含10个真实边界失败和1个测试无效图片路径；修正该 fixture 使用真实本地上传后，专项39 PASS，63.08秒，pytest/runner0，PG正常退出。原无效路径失败没有作为部分记餐产品RED；另加载固定5b45方法复现多图标签原行为，结果另记。
 
 最终完整PG、全Mobile、当前固定候选重审尚在推进。工作流 trace `docs/_generated/harness-runs/6a4c749f489b.jsonl` 绑定本Dossier，首轮NO-GO已记录；使用一次 trace，不另建安全ledger。
+
+
+### G4 第二轮 NO-GO 与全剂型事实绑定
+
+固定 `02a93ad0320edb6afc87ffd98e367ac8105e42c5` 独立 reviewer 发现 owner 已有“替尔泊肽注射液”名称时可用错误2支绕过source1支，真实manual confirm产生MedicationLog。独立PG确认1 FAIL，正常停库；此前注射4例、食品实际stream4例整改均独立PASS。报告 `/tmp/reva-injection-food-final-safety.json`；归档环境缺Pi依赖造成的宽域失败单列，不覆盖此真实阻断。
+
+新增精确全剂型别名，不做substring folding；明确注射caption下，模型不能以其他owner登记自由药名替换药物或量。restart只允许追问，不允许生成另一药名的用药提案。新增4个全名/确认/解析实际RED和2个自由名称实际RED，pytest/runner均1、PG正常停库；整改后的132项用药与别名回归正在运行。
+
+修正图片fixture后，加载固定5b45原方法独立实际复现多图营养标签缺份量时错误自动保存（DietRecord=1），1 FAIL；当前39专项中的对应完整性用例已PASS。该基线加载仅使用旧方法+同一输入，不访问真实模型。
+
+全Mobile 347套、3549 PASS、1 skip，112.269秒；TypeScript无错误、System Map和Skill治理通过。离线LLM gate通过，真实模型gate仅按用户既有豁免绑定02a完整SHA，confirmed=false，不宣称真实评测。完整发布不变量CI-mode在02a固定Git来源运行，后续药名改动未由其结果证明。
+
+
+### 最新验证终态
+
+食品、草稿、用药与turn outcome宽域在02a来源运行391 PASS，669.21秒，pytest/runner0，PG正常fast关闭；后续源码变动仅为用药精确别名/source药物绑定，对应132项新用药/别名PG全部PASS，319.24秒，正常关闭仍待runner终态读回。新增全剂型带图提案→确认→重放正向stream正在独立定向运行。
+
+02a的本地发布不变量CI-mode因该候选已被第二轮G4拒绝而发SIGINT正常停止，退出2，554.87秒，原结果保留`/tmp/reva-report-performance-final-ci-result.json`；没有将其作为通过，没有取消GitHub CI、生产发布或消费任何新claim。最终候选发布CI-mode仍未通过，发布准入保持BLOCK。

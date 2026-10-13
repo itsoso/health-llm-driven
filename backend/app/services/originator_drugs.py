@@ -118,6 +118,7 @@ _ALIASES: dict[str, str] = {
     "诺和力": "利拉鲁肽", "victoza": "利拉鲁肽", "liraglutide": "利拉鲁肽",
     "诺和泰": "司美格鲁肽", "ozempic": "司美格鲁肽", "semaglutide": "司美格鲁肽",
     "穆峰达": "替尔泊肽", "mounjaro": "替尔泊肽", "tirzepatide": "替尔泊肽",
+    "替尔泊肽注射液": "替尔泊肽",
     # 降压(续)/心血管
     "倍他乐克": "美托洛尔", "betaloc": "美托洛尔", "metoprolol": "美托洛尔",
     "拜新同": "硝苯地平", "adalat": "硝苯地平", "nifedipine": "硝苯地平",

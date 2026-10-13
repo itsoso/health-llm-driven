@@ -31,12 +31,14 @@ async def test_injection_restart_photo_clarifies_without_query_or_record(db, aut
 
 
 @pytest.mark.asyncio
-async def test_explicit_injection_photo_requires_confirmation_and_saves_actual_mass(db, auth_user_and_headers, monkeypatch):
+@pytest.mark.parametrize('caption,dose', [('记录刚刚已注射替尔泊肽2.5mg','2.5mg'),
+    ('记录刚刚已注射替尔泊肽注射液1支','1支')])
+async def test_explicit_injection_photo_requires_confirmation_and_saves_actual_mass(db, auth_user_and_headers, monkeypatch, caption, dose):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _forbid_llm(executor, monkeypatch)
     monkeypatch.setattr(executor, '_upload_chat_image', lambda *a, **k: '/uploads/chat/synthetic.jpg')
-    events = await _run(executor, user.id, '记录刚刚已注射替尔泊肽2.5mg',
+    events = await _run(executor, user.id, caption,
                         images=[{'base64':'YWJj','type':'jpeg'}], client_turn_id='injection-dose-photo')
     assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 0
     intent = db.query(WriteIntent).filter(WriteIntent.user_id == user.id).one()
@@ -44,7 +46,7 @@ async def test_explicit_injection_photo_requires_confirmation_and_saves_actual_m
     confirmed = await _run(executor,user.id,'确认',conversation_id=intent.payload['conversation_id'],
                            client_turn_id='injection-dose-confirm')
     log = db.query(MedicationLog).filter(MedicationLog.user_id == user.id).one()
-    assert log.actual_dosage == '2.5mg'
+    assert log.actual_dosage == dose
     assert len(_done(confirmed)['write_receipts']) == 1
     replay = await _run(executor,user.id,'确认',conversation_id=intent.payload['conversation_id'],
                         client_turn_id='injection-dose-confirm')

@@ -292,7 +292,7 @@ def parse_medication_injection_caption(text: str) -> dict[str, Any] | None:
     raw = str(text or '').strip()
     if len(raw) > 200:
         return None
-    name = r'(?:替尔泊肽|穆峰达|tirzepatide|mounjaro)'
+    name = r'(?:替尔泊肽(?:注射液)?|穆峰达|tirzepatide|mounjaro)'
     if re.fullmatch(rf'(?:我)?(?:重新开始|恢复)注射{name}[。.!！]?', raw, re.IGNORECASE):
         return {'state': 'clarify'}
     prefix = r'(?:请)?(?:帮我)?(?:记录|记下)(?:我)?(?:(?:刚刚|刚才)(?:已|已经)?(?:注射(?:了)?|打了)|(?:已|已经)注射(?:了)?|注射了|打了)'
@@ -422,7 +422,7 @@ def _source_sha256(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def _source_injection_item(source: AgentMessage) -> dict[str, Any] | None:
+def _source_injection_caption(source: AgentMessage) -> dict[str, Any] | None:
     text = source.content or ''
     try:
         urls = json.loads(source.image_url or 'null')
@@ -433,15 +433,15 @@ def _source_injection_item(source: AgentMessage) -> dict[str, Any] | None:
         suffix = f'\n[附图: {len(urls)}张]'
         if text.endswith(suffix):
             text = text[:-len(suffix)]
-    parsed = parse_medication_injection_caption(text)
-    return parsed['items'][0] if parsed is not None and parsed['state'] == 'record' else None
+    return parse_medication_injection_caption(text)
 
 
 def _assert_injection_amount_source(
     source: AgentMessage, name: str, dosage: str, observed_strength: str | None = None,
 ) -> None:
-    if _canonical_name(name) == '替尔泊肽' or dosage.endswith(('mg', '针')):
-        item = _source_injection_item(source)
+    parsed = _source_injection_caption(source)
+    if parsed is not None or _canonical_name(name) == '替尔泊肽' or dosage.endswith(('mg', '针')):
+        item = parsed['items'][0] if parsed is not None and parsed['state'] == 'record' else None
         if (item is None or _canonical_name(name) != item['medication_name']
                 or dosage != item['actual_dosage']
                 or observed_strength != item.get('observed_strength')):
