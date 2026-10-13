@@ -248,3 +248,58 @@ def test_confirmation_cannot_resolve_before_episode_started():
     snapshot = _confirmation_snapshot({"id": 7, "name": "感冒样不适", "status": "active",
                                        "start_date": "2026-10-15"})
     assert _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 7) is None
+
+
+@pytest.mark.asyncio
+async def test_real_gateway_rejects_recovery_before_owned_episode_started(db, client, monkeypatch):
+    from datetime import timedelta
+    from app.services.auth import auth_service
+    user, own, _ = _seed(db, record_name="感冒样不适")
+    own[0].start_date = date.today() + timedelta(days=2)
+    db.commit()
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._turn_channel = "typed"
+    executor._current_turn_user_message = "感冒确认痊愈今天"
+    calls = []
+
+    async def request(method, url, headers, payload=None):
+        calls.append(method)
+        response = client.request(method, "/api/v1" + url.split("/api/v1", 1)[1],
+            headers=headers, **({"json": payload} if payload is not None else {}))
+        assert response.status_code == 200
+        return json.dumps(response.json(), ensure_ascii=False)
+
+    async def get(url, headers):
+        return await request("GET", url, headers)
+
+    async def put(url, headers, payload):
+        return await request("PUT", url, headers, payload)
+
+    monkeypatch.setattr(executor, "_api_get", get)
+    monkeypatch.setattr(executor, "_api_put", put)
+    token = auth_service.create_access_token({"sub": str(user.id)})
+    await executor._execute_tool("health_manage", {"record_type": "illness", "operation": "list"}, token)
+    result = await executor._execute_tool("health_manage", {"record_type": "illness", "operation": "update",
+        "record_id": own[0].id, "data": {"status": "resolved"}}, token)
+    db.refresh(own[0])
+    assert calls == ["GET"]
+    assert own[0].status == "active" and own[0].end_date is None
+    assert json.loads(result)["success"] is False
+
+
+@pytest.mark.parametrize("message", ("感冒确认痊愈 今 天", "感冒确认痊愈今天。 ！"))
+def test_explicit_today_normalization_matches_authorization(message):
+    from dataclasses import replace
+    from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
+    snapshot = _confirmation_snapshot({"id": 7, "name": "感冒样不适", "status": "active", "start_date": "2026-10-07"})
+    snapshot = replace(snapshot, envelope=replace(snapshot.envelope, text=message))
+    result = _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 7)
+    assert result["data"] == {"status": "resolved", "end_date": "2026-10-14"}
+
+
+@pytest.mark.parametrize("started", (None, "", "unknown", "2026-02-30"))
+def test_confirmation_requires_valid_start_date_evidence(started):
+    from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
+    snapshot = _confirmation_snapshot({"id": 7, "name": "感冒样不适", "status": "active", "start_date": started})
+    assert _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 7) is None

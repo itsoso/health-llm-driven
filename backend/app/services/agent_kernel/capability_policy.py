@@ -1222,13 +1222,12 @@ def _authorized_illness_update_args(
             return None
         patch = _illness_update_patch(snapshot, requested_id)
         started = candidates[0].get("start_date")
-        if started is not None:
-            try:
-                started_day = date.fromisoformat(str(started))
-            except (TypeError, ValueError):
-                return None
-            if started_day > snapshot.context.current_time.date():
-                return None
+        try:
+            started_day = date.fromisoformat(str(started))
+        except (TypeError, ValueError):
+            return None
+        if started_day > snapshot.context.current_time.date():
+            return None
         requested_data = args.get("data")
         # A missing explicit-today field may be supplied from this turn, but
         # model-provided dates or extra fields never override the user's scope.
@@ -1308,7 +1307,9 @@ def _illness_update_patch(
 
     if direct_self_illness_recovery_entity(snapshot.envelope.text) is not None:
         patch = {"status": "resolved"}
-        recovery_text = normalize_health_authorization_text(snapshot.envelope.text)
+        from app.services.write_intent_scope import normalize_write_scope_text
+
+        recovery_text = normalize_write_scope_text(snapshot.envelope.text)
         if re.search(r"(?:今天|今日)[。.!！]*$", recovery_text):
             patch["end_date"] = snapshot.context.current_time.date().isoformat()
         return patch

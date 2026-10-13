@@ -13573,6 +13573,8 @@ class AgentExecutor:
             "status",
             "calories", "protein", "carbs", "fat", "fiber", "alcohol_units",
         }
+        if record_type == "illness":
+            allowed_fields.add("start_date")
         records = tuple(
             {
                 key: item[key]

@@ -52,3 +52,7 @@ a17884a8c固定提交独立安全复审GO；最终PostgreSQL81 PASS、相邻3437
 起病日期边界先RED 1 FAIL；修复后恢复145项与相邻3437项共3582 PASS，CI=true隔离合成环境。首次新增单测fixture误用了ActionableReference.source导致11项TypeError，修正后重跑，不作为产品RED。PostgreSQL145项正在运行；map、secret scan和LLM change gate通过，真实模型不要求亦未执行。
 
 原d461纯文档续发候选完整CI已取消且未开始授权/构建/上传；本次新后端变更将按新精确SHA完整CI与独立G4后使用target=release，让后端部署与TestFlight构建走既有流程。OTA仍单独核对原生基线，不因新包构建成功而跳闸。
+
+固定dfdd提交独立G4裁定NO-GO：实际列表证据生产器遗漏start_date，绕过未来起病检查；日期归一化与授权归一化不一致，空格/尾部标点可丢失明确今天。新增实际GET→更新网关反例与日期归一化/缺失日期反例先RED（4 FAIL/3 PASS），修复只在illness列表证据保留start_date，恢复分支要求合法且不晚于用户当天的起病日期；今天解析复用normalize_write_scope_text。修复后3589 PASS，System Map检查通过。原PG145 PASS但停止进程返回非零，已确认没有遗留该测试PostgreSQL进程；新增152项隔离PG正在重跑，不把旧结果代替新结果。
+
+agent_executor变更触发真实模型评测门槛；沿用用户明确“后续不需要真实评测”，对最终精确SHA设置waiver，绝不伪造confirmed。新候选仍须独立G4、完整CI、部署与原生/OTA实际回执后才能声明交付。
