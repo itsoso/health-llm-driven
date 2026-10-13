@@ -32,3 +32,15 @@ Router incident + safety，Health Harness控制；未加载已禁用superpowers�
 实际DietDraftCardView经React Native Web渲染320/390/768px截图目视通过，均无水平溢出；320两钮各258×48上下排列，390各160×48并排，768各349×48并排。证据 `/tmp/reva-diet-footer-preview/`，合成无照片餐食、仅路由/隐藏编辑器/平台桥接stub；这是浏览器预览，非原生验收。
 
 a17884a8c固定提交独立安全复审GO；最终PostgreSQL81 PASS、相邻3437 PASS。首次CI38400854262因本Dossier缺状态表及G1准入段失败，已补齐，需新候选完整CI。本轮尚未发布。模拟器/真机实际UI与拍照时延未验。
+
+## 发布回执追加
+
+最终ba53273c01f04af20958e364fa255a648947857e：独立安全复审GO、正常成功版授权轮换包装器GO。完整CI38401354358全部32项通过；同SHA文档push CI38401353204及trusted validate38403191359通过。旧a178候选CI原文档失败保留，后续取消其剩余任务释放资源；未取消最终SHA的运行。
+
+后端38404091257成功，root SUCCEEDED、runtime COMMITTED、生产HEAD相同，backend/worker/beat均active，公开健康接口healthy，发布lease不存在。实际deploy阶段266秒。线上纯解析合成3正例/6反例通过，零模型调用、零数据库写入；不冒充真实账号端到端验收。
+
+原生1.3.5(288)精确源构建并发布，支持iPad，签名仅1个已登记设备；5项上传摘要及公开IPA读回一致，latest别名未改。安装页与完整证据见 `docs/reviews/2026-10-13-diet-footer-recovery-release-receipt.json`。未发OTA（既有native baseline不兼容），未发TestFlight。未做真实模型评测、真实相机/设备验收或拍照时延验收；无备份。此追加证据保留本地，避免改变已发布SHA。
+
+## TestFlight 与 OTA 续发授权
+
+用户在后端与直接安装包发布后明确要求“发Testflight和OTA”。TestFlight使用独立纯交付文档提交及trusted-release target=testflight，保持已部署运行树不变，不重复后端部署、不复用288 ad-hoc包冒充STORE。OTA先检查固定原生baseline、production cohort fingerprint和精确SHA后端条件；未通过时不领取publish claim。新原生构建完成并不自动更新baseline，不将TestFlight上传、Apple processing与测试可用混为一谈。沿用不备份、不真实模型评测及模拟器默认验收要求。
