@@ -88,18 +88,30 @@ def is_wearable_placement_question(text: str) -> bool:
     return bool(isinstance(text, str) and _WEARABLE_PLACEMENT_QUESTION.fullmatch(text.strip()))
 
 
+_DAILY_DOMAINS = r"(?:饮食|运动|睡眠)(?:(?:和|与|及|、|以及)?(?:饮食|运动|睡眠)){1,2}"
+_DAILY_HORIZON = r"(?:今天|明天|本周|这周|下周)"
 _DAILY_PLAN_RE = re.compile(
     r"(?:请你?|麻烦你?)?(?:(?:帮|为|给)我)?(?:规划|安排|制定)(?:一下)?"
-    r"(?:我(?:的)?)?(?:今天|明天|本周|这周|下周)的?"
-    r"(?:饮食|运动|睡眠)(?:(?:和|与|及|、|以及)?(?:饮食|运动|睡眠)){1,2}"
+    rf"(?:我(?:的)?)?{_DAILY_HORIZON}的?{_DAILY_DOMAINS}"
     r"(?:的)?(?:计划|安排|方案|草稿)?[。？?！!]?"
+)
+# A plan's time horizon is not a historical read window. Consume the complete
+# question in either word order; do not strip basis clauses or unknown residue.
+_DAILY_QUESTION_RE = re.compile(
+    rf"(?:请问|请你?|麻烦你?)?(?:我)?{_DAILY_HORIZON}(?:我)?"
+    rf"(?:(?:应该|该|应|要)?(?:如何|怎么|怎样)(?:安排|规划|制定)?{_DAILY_DOMAINS}"
+    rf"(?:的)?(?:计划|安排|方案|草稿)?|"
+    rf"的?{_DAILY_DOMAINS}(?:应该|该|应|要)?(?:如何|怎么|怎样)(?:安排|规划|制定))"
+    r"[。？?！!]?"
 )
 
 
 def is_daily_planning_advice(text: str) -> bool:
     """A fully consumed draft request grants no personal read or write."""
-    return bool(isinstance(text, str) and len(text) <= 128
-                and _DAILY_PLAN_RE.fullmatch(text.replace(' ', '').replace('\u3000', '')))
+    if not isinstance(text, str) or len(text) > 128:
+        return False
+    candidate = text.replace(' ', '').replace('\u3000', '')
+    return bool(_DAILY_PLAN_RE.fullmatch(candidate) or _DAILY_QUESTION_RE.fullmatch(candidate))
 
 
 def is_current_input_advice(text: str) -> bool:
@@ -130,7 +142,12 @@ def current_input_advice_instructions(text: str) -> str:
         return (CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS
                 + '\n本轮任务是饮食、运动和睡眠的通用安排草稿。直接按用户指定的领域和期限给出有条件、可选择的安排，'
                 '而不是睡前问答；不查询个人记录，不要求查询日期。明确未核验个人数据、未保存计划。'
-                '不使用历史上下文推断当前健康状况，不保证运动安全或给出用药补剂指令。')
+                '不使用历史上下文推断当前健康状况，不保证运动安全或给出用药补剂指令。'
+                '\n先说明本轮未查询个人记录、未保存计划，再分别给所问领域的简短选项。'
+                '用户没有提供目标、体能、禁忌或营养需求时，不默认减重或建议主食减半、制造热量缺口；'
+                '不指定训练强度或要求完成固定运动量。运动选项须以无明显不适、符合已有医嘱和自身能力为前提。'
+                '不能仅凭当前钟点断言适合入睡、保证睡眠时长或指定必须就寝时间；参考平时作息、困意和次日起床安排。'
+                '若已到晚上，只安排余下时间，不补做白天任务。结尾可询问用户目标或需要考虑的限制。')
     if is_wearable_placement_question(text):
         return _WEARABLE_PLACEMENT_INSTRUCTIONS
     if is_current_input_recovery_advice(text):
