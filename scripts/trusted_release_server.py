@@ -367,6 +367,41 @@ def _load_frontend_finalizer():
     return module
 
 
+def _load_ota_unclaimed_retirement():
+    """Load only the helper committed alongside this canonical executor."""
+    entry = Path(__file__).absolute()
+    if entry == Path("/usr/local/lib/reva-release/trusted_release_server.py"):
+        policy = validate_policy(_json(_read_private(POLICY)), now=0)
+        secure_path(entry)
+        if hashlib.sha256(entry.read_bytes()).hexdigest() != policy["executor_sha256"]:
+            raise LaunchError("installed executor binding differs")
+        sha = policy["sha"]
+        source = STATE / "bootstrap" / sha / "source"
+    else:
+        source = entry.parent.parent
+        sha = source.parent.name
+        if (re.fullmatch(r"[0-9a-f]{40}", sha) is None
+                or source != STATE / "bootstrap" / sha / "source"
+                or entry != source / "scripts/trusted_release_server.py"):
+            raise LaunchError("canonical OTA preclaim history helper source required")
+    script = source / "scripts/trusted_ota_unclaimed_retirement.py"
+    secure_path(script)
+    if os.path.lexists(script.parent / "__pycache__"):
+        raise LaunchError("cached OTA preclaim history helper forbidden")
+    env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
+    expected = subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source),
+                               "show", sha + ":scripts/trusted_ota_unclaimed_retirement.py"],
+                              env=env, stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=30).stdout
+    if script.read_bytes() != expected:
+        raise LaunchError("OTA preclaim history helper differs from canonical source")
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location("canonical_ota_unclaimed_retirement", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _frontend_publication_backup_entries(root, *, live=False):
     """Revalidate every entry on every pass, including cache hits."""
     root = Path(root)
@@ -1454,11 +1489,24 @@ def assert_ota_history():
     """Every started OTA must finish before any later publisher or rotation."""
     assert_retained_history()
     root = STATE / "ota"
+    closures = STATE / "ota-preclaim-closures"
+    if os.path.lexists(closures):
+        secure_path(closures, directory=True)
+        if stat.S_IMODE(closures.stat().st_mode) != 0o700:
+            raise LaunchError("invalid OTA preclaim closure root")
+        for closure in closures.iterdir():
+            secure_path(closure, directory=True)
+            if (re.fullmatch(r"[0-9a-f]{40}", closure.name) is None
+                    or not os.path.lexists(root / closure.name)):
+                raise LaunchError("orphan OTA preclaim closure")
     if not os.path.lexists(root):
         return
     secure_path(root, directory=True)
     for operation in root.iterdir():
         secure_path(operation, directory=True)
+        if os.path.lexists(closures / operation.name):
+            _load_ota_unclaimed_retirement().validate_closed_history(SimpleNamespace(**globals()), operation)
+            continue
         if (re.fullmatch(r"[0-9a-f]{40}", operation.name) is None
                 or stat.S_IMODE(operation.stat().st_mode) != 0o700
                 or {p.name for p in operation.iterdir()} != {"intent.json", "lease.json", "claimed.json", "verified.json", "completed.json", "released-lease"}):
@@ -1854,8 +1902,10 @@ def main():
             raise LaunchError("installed executor differs from reviewed authorization")
         secure_path(STATE, directory=True)
         workspace = STATE / policy["sha"]
+        # OTA claim's byte-bound helper performs exact full CI under its original
+        # locks before intent; duplicating it here wastes the same server quota.
         if command not in {"status", "check", "check-backend-v1", "run-backend-v1",
-                           "finish-ota", "finish-retained-testflight"}:
+                           "claim-ota", "finish-ota", "finish-retained-testflight"}:
             attest_full_ci(policy)
         if command == "status":
             result = release_status(policy["sha"], workspace)

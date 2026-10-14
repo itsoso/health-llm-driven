@@ -489,6 +489,21 @@ receipt 不同、租约身份改变、未知部分 claim 或在终态持久化�
 保留原现场人工取证。已完成回执重放不释放后来者的 lease。旧版本回滚同样需要新的
 受审发布操作，不能借旧本机 rollback 脚本越过上述边界。
 
+OTA 的网络 CI 准入必须在写入 intent 与领取 business lease 之前完成；同一进程、
+原双锁内仅允许短时单用的精确 SHA 证明，取得租约后仍完整核验本地生产源码、
+成功回执、服务健康与租约身份。相同生产 SHA 不重复查询已刚刚验证的 CI；
+不同生产 SHA 的原生续发仍须独立核验。额度不足在消费前拒绝，不跳过 CI。
+
+已遗留的未完成 claim 不适用普通 recover。专用 canonical
+`trusted_ota_unclaimed_retirement.py` 仅处理受审的未发布失败形态：原 workflow
+精确 SHA/run/attempt 的终态、官方审计制品摘要、固定 publisher 控制流及原
+intent/lease 必须相互一致，证明该流程未进入 vendor publish。任何 claimed、
+vendor 回执、未知文件、活跃发布进程或租约身份变化均拒绝。关闭保留原失败
+证据，先落小型审计意图，再按原租约身份收尾，最后写独立失败终态；不创建
+配置/代码/应用制品备份，不伪造 OTA SUCCEEDED，不允许原 SHA 再次发布。
+未完成关闭仍阻断后续操作，新的授权轮换只有在历史消费者验证关闭证据后
+才可继续；新候选仍须自己的完整 CI、后端部署与 OTA validate/publish。
+
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
 核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的

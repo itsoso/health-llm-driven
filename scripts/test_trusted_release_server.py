@@ -894,7 +894,8 @@ def test_workspace_parent_fsync_failure_preserves_marker_and_blocks_all_work(mon
 
 @pytest.mark.parametrize('action,gate_name', [
     ('run', 'attest_full_ci'), ('claim-build', 'attest_full_ci'),
-    ('claim-ota', 'attest_full_ci'), ('claim-retained-testflight', 'attest_full_ci'),
+    ('claim-testflight-build', 'attest_full_ci'), ('claim-testflight-upload', 'attest_full_ci'),
+    ('claim-retained-testflight', 'attest_full_ci'),
     ('run-backend-v1', 'attest_backend_ci'), ('check-backend-v1', 'attest_backend_ci'),
 ])
 def test_main_rejects_ci_before_creating_workspace_or_claim(monkeypatch, tmp_path, action, gate_name):
@@ -953,3 +954,35 @@ def test_deploy_live_environment_validation_never_rewrites_or_copies(monkeypatch
     with pytest.raises(server.LaunchError): server.deploy(policy(),tmp_path)
     assert not (tmp_path/'deployment.env').exists()
     assert not (tmp_path/'bin').exists()
+
+
+@pytest.mark.parametrize('scenario', ['valid', 'missing', 'tampered', 'inner_gate_failure'])
+def test_main_ota_uses_only_byte_bound_inner_ci_rpc(monkeypatch, tmp_path, scenario):
+    server = load_server()
+    monkeypatch.setattr(server, 'sys', SimpleNamespace(flags=SimpleNamespace(isolated=1), argv=['fixed'], stderr=io.StringIO(), stdin=SimpleNamespace(buffer=io.BytesIO(b'{}'))))
+    monkeypatch.setattr(server.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(server.os, 'umask', lambda _: None)
+    monkeypatch.setattr(server.time, 'time', lambda: 100)
+    monkeypatch.setattr(server, 'STATE', tmp_path)
+    monkeypatch.setattr(server, 'secure_path', lambda *a, **kw: None)
+    executor = hashlib.sha256(SCRIPT.read_bytes()).hexdigest()
+    monkeypatch.setattr(server, '_read_private', lambda _: json.dumps(policy(executor_sha256=executor)).encode())
+    monkeypatch.setenv('SSH_ORIGINAL_COMMAND', 'claim-ota ' + SHA)
+    monkeypatch.setattr(server, 'attest_full_ci', lambda _: pytest.fail('duplicate outer CI forbidden'))
+    helper = tmp_path / 'bootstrap' / SHA / 'source/scripts/trusted_ota_server.py'
+    helper.parent.mkdir(parents=True)
+    if scenario != 'missing': helper.write_bytes(b'tampered' if scenario == 'tampered' else b'canonical helper')
+    calls = []
+    def run(args, **kw):
+        calls.append(args)
+        if args[0] == '/usr/bin/git':
+            assert args[-2:] == ['show', SHA + ':scripts/trusted_ota_server.py']
+            return SimpleNamespace(stdout=b'canonical helper')
+        assert args == [server.PYTHON, '-I', '-S', '-B', str(helper), '--sha', SHA, '--action', 'claim']
+        if scenario == 'inner_gate_failure': raise subprocess.CalledProcessError(1, args)
+        return SimpleNamespace(stdout=json.dumps({'sha': SHA, 'state': 'CLAIMED'}).encode())
+    monkeypatch.setattr(server.subprocess, 'run', run)
+    assert server.main() == (0 if scenario == 'valid' else 1)
+    assert len(calls) == (1 if scenario in {'missing', 'tampered'} else 2)
+    assert not (tmp_path / SHA).exists()
+    assert not (tmp_path / 'ota' / SHA).exists()

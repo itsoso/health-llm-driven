@@ -21,6 +21,8 @@ def state(tmp_path, monkeypatch):
     server = load('trusted_release_server')
     ota = load('trusted_ota_server')
     contract = load('trusted_ota')
+    monkeypatch.setattr(ota, 'assert_ci_budget', lambda sha: None)
+    monkeypatch.setattr(ota, 'prepare_backend_proof', lambda sha: lambda lease: server.testflight_backend_proof({'sha': sha}, lease=lease))
     monkeypatch.setattr(server, 'STATE', tmp_path)
     monkeypatch.setattr(ota, 'STATE', tmp_path)
     monkeypatch.setattr(server, 'BUSINESS_LEASE', tmp_path / 'business-lease')
@@ -276,3 +278,55 @@ def test_archive_parent_sync_failure_preserves_same_receipt_and_cannot_republish
     monkeypatch.setattr(o, 'manifest', lambda _: (_ for _ in ()).throw(AssertionError('vendor request forbidden')))
     assert o.finish(s, c, SHA, receipt)['state'] == 'SUCCEEDED'
     assert syncs == ['failed', 'synced-original']
+
+
+def test_quota_failure_does_not_consume_ota_or_lease(state, monkeypatch):
+    s,o,c,value=state
+    def blocked(*args): raise ValueError('insufficient CI quota')
+    monkeypatch.setattr(o,'assert_ci_budget',blocked,raising=False)
+    with pytest.raises(ValueError):o.claim(s,c,{'sha':SHA},value)
+    assert not (s.STATE/'ota'/SHA).exists()
+    assert not s.BUSINESS_LEASE.exists()
+
+
+def test_ci_budget_rejects_unknown_or_small_quota(monkeypatch):
+    from types import SimpleNamespace
+    o=load('trusted_ota_server')
+    for value in (0,19,True,None,'60'):
+        monkeypatch.setattr(o,'load',lambda *args:SimpleNamespace(_get_json=lambda url:{'resources':{'core':{'remaining':value}}}))
+        with pytest.raises(ValueError):o.assert_ci_budget(SHA)
+    monkeypatch.setattr(o,'load',lambda *args:SimpleNamespace(_get_json=lambda url:{'resources':{'core':{'remaining':20}}}))
+    o.assert_ci_budget(SHA)
+
+
+def test_full_ci_failure_precedes_ota_consumption(state, monkeypatch):
+    s, o, c, value = state
+    def fail(*a): raise OSError('GitHub unavailable')
+    monkeypatch.setattr(o, 'prepare_backend_proof', fail)
+    with pytest.raises(OSError): o.claim(s, c, {'sha': SHA}, value)
+    assert not (s.STATE / 'ota' / SHA).exists()
+    assert not s.BUSINESS_LEASE.exists()
+
+
+def test_closed_preclaim_history_uses_explicit_operator_consumer(state, monkeypatch):
+    s, o, c, value = state
+    monkeypatch.setattr(s, 'testflight_backend_proof', lambda *a, **k: (_ for _ in ()).throw(ValueError('local proof failed')))
+    with pytest.raises(ValueError): o.claim(s, c, {'sha': SHA}, value)
+    closure = s.STATE / 'ota-preclaim-closures' / SHA
+    closure.parent.mkdir(mode=0o700)
+    closure.mkdir(mode=0o700)
+    from types import SimpleNamespace
+    seen = []
+    monkeypatch.setattr(s, '_load_ota_unclaimed_retirement', lambda: SimpleNamespace(validate_closed_history=lambda server, operation: seen.append(operation)))
+    s.assert_ota_history()
+    assert seen == [s.STATE / 'ota' / SHA]
+    def fail(*a): raise ValueError('incomplete closure')
+    monkeypatch.setattr(s, '_load_ota_unclaimed_retirement', lambda: SimpleNamespace(validate_closed_history=fail))
+    with pytest.raises(ValueError): s.assert_ota_history()
+
+
+def test_orphan_closed_preclaim_history_is_not_ignored(state):
+    s, o, c, value = state
+    (s.STATE / 'ota-preclaim-closures').mkdir(mode=0o700)
+    (s.STATE / 'ota-preclaim-closures' / SHA).mkdir(mode=0o700)
+    with pytest.raises(s.LaunchError): s.assert_ota_history()

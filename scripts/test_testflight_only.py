@@ -208,3 +208,100 @@ def test_workflow_offers_native_only_without_backend_execution():
         assert "inputs.target == 'testflight'" in workflow["jobs"][job]["if"]
     for rpc in ("check-testflight", "claim-testflight-build", "claim-testflight-upload"):
         assert rpc in json.dumps(workflow)
+
+
+def test_current_live_sha_never_repeats_full_ci_latest_query():
+    from types import SimpleNamespace
+    import importlib.util
+    from pathlib import Path
+    spec=importlib.util.spec_from_file_location('test_native_ci_budget',Path(__file__).with_name('trusted_testflight_preflight.py'))
+    m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+    calls=[]
+    gate=SimpleNamespace(_get_json=object(),_latest=lambda get,sha:calls.append(sha))
+    m.attest_deployed_revision(gate,'a'*40,'a'*40)
+    assert calls==[]
+    m.attest_deployed_revision(gate,'a'*40,'b'*40)
+    assert calls==['b'*40]
+
+
+def test_ota_prepare_requires_exact_ci_before_returning_callback(monkeypatch):
+    helper = load_proof()
+    from types import SimpleNamespace
+    events = []
+    gate = SimpleNamespace(verify_release=lambda *a: events.append('ci'))
+    monkeypatch.setattr(helper, '_context', lambda sha: (None, None, None, None, gate))
+    monkeypatch.setattr(helper, 'git', lambda *a: b'a' * 40)
+    monkeypatch.setattr(helper, '_prove_local', lambda *a, **kw: events.append('local') or {'state': 'COMPATIBLE'})
+    callback = helper.prepare_ota('a' * 40)
+    assert events == ['ci']
+    assert callback({}) == {'state': 'COMPATIBLE'}
+    assert events == ['ci', 'local']
+    with pytest.raises(Exception):
+        callback({})
+
+
+def test_ota_prepare_ci_failure_returns_no_callback(monkeypatch):
+    helper = load_proof()
+    from types import SimpleNamespace
+    def fail(*a): raise OSError('network')
+    monkeypatch.setattr(helper, '_context', lambda sha: (None, None, None, None, SimpleNamespace(verify_release=fail)))
+    with pytest.raises(OSError): helper.prepare_ota('a' * 40)
+
+
+@pytest.mark.parametrize('change', ['expired', 'production'])
+def test_ota_prepared_ci_cannot_be_reused_after_state_change(monkeypatch, change):
+    helper = load_proof()
+    from types import SimpleNamespace
+    gate = SimpleNamespace(verify_release=lambda *a: None)
+    monkeypatch.setattr(helper, '_context', lambda sha: (None, None, None, None, gate))
+    monkeypatch.setattr(helper, 'git', lambda *a: b'a' * 40)
+    clock = [0]
+    monkeypatch.setattr(helper.time, 'monotonic', lambda: clock[0])
+    callback = helper.prepare_ota('a' * 40)
+    if change == 'expired': clock[0] = helper.OTA_PREPARED_PROOF_TTL_SECONDS + 1
+    else: monkeypatch.setattr(helper, 'git', lambda *a: b'b' * 40)
+    with pytest.raises(helper.PreflightError): callback({})
+
+
+def test_ota_prepared_ci_runs_actual_local_proof_without_second_github_call(monkeypatch, tmp_path):
+    helper = load_proof()
+    from types import SimpleNamespace
+    sha = 'a' * 40
+    seen = []
+    gate = SimpleNamespace(verify_release=lambda *a: seen.append('ci'),
+        is_release_documentation=lambda p: False,
+        _latest=lambda *a: pytest.fail('second CI after consumption'))
+    server = SimpleNamespace(assert_frontend_rebuild_history=lambda: seen.append('history'),
+        _assert_testflight_lease=lambda *a: seen.append('lease'))
+    bootstrap = SimpleNamespace(_read_json=lambda p: {'sha': sha, 'state': 'SUCCEEDED'})
+    revision = SimpleNamespace(_revision_proof=lambda *a: seen.append('revision'),
+        _assert_previous_resets=lambda *a: seen.append('resets'))
+    context = (tmp_path, bootstrap, server, revision, gate)
+    monkeypatch.setattr(helper, '_context', lambda s: context)
+    monkeypatch.setattr(helper, 'git', lambda repo, *a: sha.encode() if a[0] == 'rev-parse' else b'100644 blob abc\tapp.py\0')
+    monkeypatch.setattr(helper, 'run', lambda cmd: b'ActiveState=active\nSubState=running\nMainPID=2\n')
+    class Response:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def read(self, limit): return json.dumps({'status':'healthy','services':{'api':'running','database':'connected','redis':'connected','celery':'connected'}}).encode()
+    monkeypatch.setattr(helper.urllib.request, 'build_opener', lambda *a: SimpleNamespace(open=lambda *a, **kw: Response()))
+    callback = helper.prepare_ota(sha)
+    assert seen == ['ci']
+    assert callback({}) == {'sha':sha,'production_sha':sha,'state':'COMPATIBLE'}
+    assert seen == ['ci','revision','resets','history','lease','lease']
+
+
+def test_ota_prepared_ci_expires_during_local_proof(monkeypatch):
+    helper = load_proof()
+    from types import SimpleNamespace
+    monkeypatch.setattr(helper, '_context', lambda sha: (None, None, None, None, SimpleNamespace(verify_release=lambda *a: None)))
+    monkeypatch.setattr(helper, 'git', lambda *a: b'a' * 40)
+    clock = [0]
+    monkeypatch.setattr(helper.time, 'monotonic', lambda: clock[0])
+    def slow(*a, **kw):
+        clock[0] = helper.OTA_PREPARED_PROOF_TTL_SECONDS + 1
+        return {'state': 'COMPATIBLE'}
+    monkeypatch.setattr(helper, '_prove_local', slow)
+    callback = helper.prepare_ota('a' * 40)
+    with pytest.raises(helper.PreflightError): callback({})

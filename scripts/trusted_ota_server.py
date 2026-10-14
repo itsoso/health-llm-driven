@@ -159,6 +159,22 @@ def archive_lease(server, operation, lease):
     server.validate_ota_archive(operation)
 
 
+def assert_ci_budget(sha):
+    """Fail before intent; reserve worst-case retries for the full exact CI gate."""
+    source = STATE / 'bootstrap' / sha / 'source'
+    gate = load(source, sha, 'trusted_release_gate.py')
+    value = gate._get_json('https://api.github.com/rate_limit')
+    remaining = value.get('resources', {}).get('core', {}).get('remaining')
+    if type(remaining) is not int or remaining < 20:
+        raise ValueError('insufficient fresh CI quota before OTA consumption')
+
+
+def prepare_backend_proof(sha):
+    source = STATE / 'bootstrap' / sha / 'source'
+    helper = load(source, sha, 'trusted_testflight_preflight.py')
+    return helper.prepare_ota(sha)
+
+
 def claim(server, contract, policy, value):
     sha = policy['sha']
     validate_input(contract, sha, value)
@@ -173,13 +189,15 @@ def claim(server, contract, policy, value):
     operation = root / sha
     if os.path.lexists(operation) or os.path.lexists(server.BUSINESS_LEASE):
         raise ValueError('OTA already claimed or business lease exists')
+    assert_ci_budget(sha)
+    prepared_proof = prepare_backend_proof(sha)
     # Consumption precedes lease initialization. Any partial state blocks, never retries.
     operation.mkdir(mode=0o700)
     server._sync_directory(root)
     write(server, operation / 'intent.json', value)
     lease = server._acquire_testflight_lease(STATE / sha)
     write(server, operation / 'lease.json', lease)
-    proof = server.testflight_backend_proof(policy, lease=lease)
+    proof = prepared_proof(lease)
     if proof != {'sha': sha, 'production_sha': sha, 'state': 'COMPATIBLE'}:
         raise ValueError('production revision differs')
     server._assert_testflight_lease(lease, STATE / sha)

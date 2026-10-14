@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G4 安全复审通过；G5 精确 CI 待完成 |
+| 当前阶段 | da91 后端已部署；OTA claim 失败，回 G3 补安全关闭与发布准入 |
 
 ## G1 需求与范围
 
@@ -96,3 +96,15 @@ G1 PASS：截图病程实际标签为“感冒样不适（用户自述）”；�
 当前为G3完成/补验阶段，未发布这些新改动。后续须固定提交独立G4、精确SHA完整CI、后端部署与trusted OTA validate/publish真实回执。沿用用户不备份、不真实模型评测要求；agent_executor变更使用最终精确SHA豁免，不伪造confirmed。不以合成测试冒充真实账号、相机、设备或线上时延验收。
 
 最终补测：Mobile旧餐卡同步保留服务端编辑种子的原始营养精度，先RED后12PASS；全程无额外模型调用。System Map、TypeScript、秘密扫描及diff检查通过。
+
+## da91b5de 后端交付与 OTA 领取阶段失败
+
+固定 da91b5de303313f1fb014bbe045e8f1597d15229 独立 G4 GO，完整 CI 38506475019 全部32项通过。trusted validate 38507720283 与 backend 38508552627 成功；实际生产 HEAD、root SUCCEEDED、runtime COMMITTED 一致，backend/worker/beat active，公开健康接口 API/数据库/Redis/Celery healthy。线上部署代码12项纯合成检查 PASS，未访问业务数据库或模型，不代替真实账号验收。
+
+OTA validate 38509087278 返回 PREPARATION_PASSED。publish 38509318595 attempt1 在 claim-ota 阶段 command_failed，未进入受审 publisher 的 vendor-publish 调用。官方 artifact 11869725525 的 ZIP SHA256 为 dba9fdf15b0098e982627210ea67f29a146d038729ccc2e405fb6230beb2050a，与下载字节一致；仅有 ota-diagnostic.json、ota-claim.json、ota-preflight.json。生产原 OTA 目录保留 intent.json 与 lease.json，未生成 claimed.json，业务租约仍保留。没有重发、删除锁或伪造成功回执。
+
+只读复测 canonical backend proof 在 trusted_testflight_preflight.py 的 gate.verify_release HTTP 请求处失败；同刻生产 GitHub 匿名额度0/60，重置时间2026-10-14 04:43:40 UTC。这是当前诊断证据，不能单凭复测断言原失败唯一原因。现有 recover 只支持已有 claimed 和 vendor receipt 的同回执收尾，不能用于本次部分 claim。下一阶段在同一 Harness 中补受审的未发布 claim 失败关闭与消费前额度检查；旧操作必须以明确失败终态保留，不能改称 OTA 成功或复用原 SHA 再发布。
+
+发布准入补修：claim-ota 的完整精确 CI 移至 intent/lease 之前，取消同一入口外层重复核验；同一生产 SHA 不再重复_latest。额度不足在消费前拒绝，原双锁、本地源码/成功回执/服务/租约复核保留。证明只在进程内单用，前后核验有效期，不新增CLI绕过参数。现有线上只读阶段实测 revision 46.58秒、历史reset审计73.29秒、frontend审计0.09秒，关键链约119.96秒，因此有效期采用240秒而非未经测量的120秒；这是发布证明耗时，不是拍照识别耗时。177项离线相关回归通过；新未发布操作关闭器仍待完整验证与固定候选独立G4。
+
+补修整体验证：关闭器47项纯合成专项测试，发布准入/历史 adapter177项通过；合并运行八套发布相关 CI-mode 测试647 PASS，System Map和文档漂移检查通过。关闭器只接受固定失败workflow/attempt/job和官方artifact ZIP及三项内容摘要，保留原两文件及租约身份；执行前后健康/进程/双锁复核，失败终态与成功发布分离。真实下载证据通过纯验证器校验；尚未执行生产关闭。待固定提交G4、完整CI后按inspect摘要执行一次；无重复OTA或备份。

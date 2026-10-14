@@ -12,11 +12,14 @@ import re
 import stat
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
 STATE = Path("/var/lib/reva-release")
 PRODUCTION = Path("/opt/health-app")
+# Production read-only local phases measured ~120s; bound at twice that budget.
+OTA_PREPARED_PROOF_TTL_SECONDS = 240
 ENV = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C",
        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
        "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
@@ -89,7 +92,14 @@ def load_module(source, sha, name, filename):
     return module
 
 
-def prove(sha, lease):
+def attest_deployed_revision(gate, sha, live):
+    # verify_release already proved this exact SHA/current main in this call.
+    # A distinct native-only production revision still needs its own CI proof.
+    if live != sha:
+        gate._latest(gate._get_json, live)
+
+
+def _context(sha):
     source = STATE / "bootstrap" / sha / "source"
     if Path(__file__).absolute() != source / "scripts/trusted_testflight_preflight.py":
         raise PreflightError("fixed canonical staging required")
@@ -99,13 +109,54 @@ def prove(sha, lease):
         raise PreflightError("candidate source differs")
     helper = load_module(source, sha, "native_revision", "trusted_review_reset.py")
     gate = load_module(source, sha, "native_ci", "trusted_release_gate.py")
+    return source, bootstrap, server, helper, gate
+
+
+def prove(sha, lease):
+    context = _context(sha)
+    gate = context[-1]
     gate.verify_release(sha, sha)
+    return _prove_local(sha, lease, context)
+
+
+def prepare_ota(sha):
+    """In-process, single-use proof; all GitHub I/O finishes before consumption.
+
+    Never exposed as a CLI option or serializable attestation. The caller holds
+    the original transaction locks throughout preparation and lease validation.
+    """
+    context = _context(sha)
+    context[-1].verify_release(sha, sha)
+    if git(PRODUCTION, "rev-parse", "HEAD").decode().strip() != sha:
+        raise PreflightError("exact OTA production revision required")
+    deadline = time.monotonic() + OTA_PREPARED_PROOF_TTL_SECONDS
+    used = False
+    def validate(lease):
+        nonlocal used
+        if used or time.monotonic() > deadline:
+            raise PreflightError("prepared OTA proof expired or consumed")
+        used = True
+        if git(PRODUCTION, "rev-parse", "HEAD").decode().strip() != sha:
+            raise PreflightError("production revision changed after CI")
+        result = _prove_local(sha, lease, context, exact_ota=True)
+        if time.monotonic() > deadline:
+            raise PreflightError("prepared OTA proof expired during local validation")
+        return result
+    return validate
+
+
+def _prove_local(sha, lease, context, *, exact_ota=False):
+    source, bootstrap, server, helper, gate = context
     live = git(PRODUCTION, "rev-parse", "HEAD").decode().strip()
     if re.fullmatch(r"[0-9a-f]{40}", live) is None:
         raise PreflightError("invalid production revision")
     helper._revision_proof(live, source, bootstrap)
     validate_receipt(live, bootstrap._read_json(STATE / live / "completed.json"))
-    gate._latest(gate._get_json, live)
+    if exact_ota:
+        if live != sha:
+            raise PreflightError("production revision changed after CI")
+    else:
+        attest_deployed_revision(gate, sha, live)
     helper._assert_previous_resets(bootstrap, server)
     server.assert_frontend_rebuild_history()
     server._assert_testflight_lease(lease, STATE / sha)
