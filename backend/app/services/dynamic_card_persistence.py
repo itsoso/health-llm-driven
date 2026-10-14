@@ -45,7 +45,6 @@ def message_metas_for_delivery(
     signed URLs without turning message metadata into capability storage.
     """
     delivered = deepcopy(metas)
-    _refresh_record_quality_edits(db, delivered, owner_id)
     diet_card_data: list[
         tuple[dict[str, Any], dict[str, Any], list[str], int | None, bool]
     ] = []
@@ -100,6 +99,7 @@ def message_metas_for_delivery(
                 ))
 
     if not asset_ids and not capture_origin_message_ids:
+        _refresh_record_quality_edits(db, delivered, owner_id)
         return delivered
 
     from app.models.daily_health import DietPhotoAsset
@@ -249,11 +249,27 @@ def message_metas_for_delivery(
             data.pop("photo_urls", None)
             data["photo_unavailable_count"] = unavailable_basis
             data["media_stage"] = "unavailable"
+    # Photo confirmation can change the authoritative parent from draft to
+    # saved record. Refresh nutrition only after that transition is resolved.
+    _refresh_record_quality_edits(db, delivered, owner_id)
     return delivered
 
 
+def _unavailable_saved_diet_card(card: dict, record_id: int | None = None) -> None:
+    previous = card["data"]
+    card["data"] = {
+        "card_id": previous.get("card_id"),
+        "recorded": False,
+        "record_unavailable": True,
+        "receipt_message": "记录不可用，请到饮食页核对。",
+    }
+    if record_id is not None:
+        card["data"]["record_id"] = record_id
+    card["actions"] = []
+
+
 def _refresh_record_quality_edits(db: Session, metas: list, owner_id: int) -> None:
-    """Refresh editable meal snapshots in a delivery copy, never persisted history.
+    """Refresh saved meal snapshots in a delivery copy, never persisted history.
 
     One owner-scoped batch per 200 distinct records; no model calls or writes.
     A stale conversation/action patch must not become the next edit's baseline.
@@ -266,14 +282,23 @@ def _refresh_record_quality_edits(db: Session, metas: list, owner_id: int) -> No
         if not isinstance(meta, dict) or not isinstance(meta.get("cards"), list):
             continue
         for card in meta["cards"]:
-            if not isinstance(card, dict) or card.get("type") != "record_quality":
+            if not isinstance(card, dict) or card.get("type") not in ("record_quality", "diet_draft"):
                 continue
             data = card.get("data")
-            if not isinstance(data, dict) or data.get("domain") != "diet":
+            if not isinstance(data, dict):
+                continue
+            saved_photo = card.get("type") == "diet_draft"
+            if saved_photo and data.get("recorded") is not True:
+                continue
+            if not saved_photo and data.get("domain") != "diet":
                 continue
             seed = data.get("adjust_record")
-            raw_id = data.get("record_id", seed.get("record_id") if isinstance(seed, dict) else None)
+            raw_id = data.get("record_id") if saved_photo else data.get(
+                "record_id", seed.get("record_id") if isinstance(seed, dict) else None,
+            )
             if isinstance(raw_id, bool) or not str(raw_id).isdigit() or int(raw_id) <= 0:
+                if saved_photo:
+                    _unavailable_saved_diet_card(card)
                 continue
             cards_by_id.setdefault(int(raw_id), []).append(card)
 
@@ -291,6 +316,9 @@ def _refresh_record_quality_edits(db: Session, metas: list, owner_id: int) -> No
             for card in cards_by_id[record_id]:
                 data = card["data"]
                 if record is None:
+                    if card.get("type") == "diet_draft":
+                        _unavailable_saved_diet_card(card, record_id)
+                        continue
                     card["data"] = {"domain": "diet", "title": "记录不可用",
                                     "summary": "该记录已删除或当前账号无法访问，请到饮食页核对。"}
                     card["actions"] = []
@@ -299,6 +327,30 @@ def _refresh_record_quality_edits(db: Session, metas: list, owner_id: int) -> No
                 seed.update(record_id=record.id, updated_at=(
                     record.updated_at.isoformat() if record.updated_at is not None else None
                 ))
+                if card.get("type") == "diet_draft":
+                    from app.utils.number_format import format_card_numbers
+
+                    data.update(format_card_numbers({field: seed[field] for field in fields}))
+                    data.update(record_id=record.id, user_id=record.user_id, recorded=True,
+                                record_date=record.record_date.isoformat(),
+                                updated_at=seed["updated_at"],
+                                source=record.source,
+                                confidence=format_display_number(record.ai_confidence),
+                                boundary="营养信息以当前饮食记录为准，可继续修正本餐。",
+                                adjust_record=deepcopy(seed))
+                    data.pop("record_unavailable", None)
+                    # Advice and totals from the original photo are not facts
+                    # about the updated record; this SELECT cannot recompute them.
+                    for key in ("health_tips", "progress", "goal_progress", "primary_judgement",
+                                "personal_cautions", "next_action", "next_meal_detail"):
+                        data.pop(key, None)
+                    for action in card.get("actions") or []:
+                        payload = action.get("payload") if isinstance(action, dict) else None
+                        if (isinstance(payload, dict) and action.get("action") == "ui.inline.expand"
+                                and payload.get("target") == "adjust_record"):
+                            payload["patch"] = {"expanded_sections": ["adjust_record"],
+                                                "adjust_record": deepcopy(seed)}
+                    continue
                 old_seed = data.get("adjust_record")
                 changed = not isinstance(old_seed, dict) or any(
                     old_seed.get(field) != seed[field] for field in fields

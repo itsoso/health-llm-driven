@@ -6,8 +6,9 @@ import * as SecureStore from 'expo-secure-store';
 import * as Haptics from 'expo-haptics';
 import { ensureAIConsent } from '../../services/aiConsent';
 import { hasAIConsent } from '../../services/aiConsentState';
+import { publishDietRecordUpdate } from '../../services/dietRecordUpdates';
 jest.mock('../../services/aiConsent', () => ({ ensureAIConsent: jest.fn().mockResolvedValue(true) }));
-jest.mock('../../services/aiConsentState', () => ({ hasAIConsent: jest.fn(() => true) }));
+jest.mock('../../services/aiConsentState', () => ({ hasAIConsent: jest.fn(() => true), aiConsentRevision: jest.fn(() => 0) }));
 
 const mockStreamChat = jest.fn();
 const mockGetConversations = jest.fn();
@@ -840,6 +841,58 @@ describe('useChatEngine', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.useRealTimers();
+  });
+
+  it('refreshes the visible saved meal when background nutrition has actually persisted', async () => {
+    const { result } = renderHook(() => useChatEngine());
+    act(() => result.current.setMessages([{
+      id: 'meal', role: 'assistant', content: '', cardType: 'diet_draft',
+      cardData: { recorded: true, record_id: 1175, user_id: 7, calories: null, updated_at: null },
+    }]));
+    await act(async () => {
+      publishDietRecordUpdate({ id: 1175, user_id: 7, calories: 650,
+        protein: 28, carbs: 70, fat: 24, fiber: null,
+        food_items: '面和饮品', meal_type: 'breakfast', record_date: '2026-10-14',
+        updated_at: '2026-10-14T10:01:00Z' }, 0);
+    });
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].cardData).toMatchObject({ calories: 650, fiber: null });
+    expect(mockStreamChat).not.toHaveBeenCalled();
+  });
+
+  it('ignores a background record from a different current owner', async () => {
+    const { result } = renderHook(() => useChatEngine());
+    act(() => result.current.setMessages([{
+      id: 'meal', role: 'assistant', content: '', cardType: 'diet_draft',
+      cardData: { recorded: true, record_id: 1175, user_id: 8, calories: null, updated_at: null },
+    }]));
+    await act(async () => {
+      publishDietRecordUpdate({ id: 1175, user_id: 8, calories: 650,
+        protein: 28, carbs: 70, fat: 24, fiber: null,
+        food_items: '面和饮品', meal_type: 'breakfast', record_date: '2026-10-14',
+        updated_at: '2026-10-14T10:01:00Z' }, 0);
+    });
+    expect(result.current.messages[0].cardData.calories).toBeNull();
+  });
+
+  it('refreshes a saved meal when a later completed turn supplies a newer record projection', async () => {
+    const fresh = { type: 'diet_draft', data: {
+      card_id: 'meal-refreshed', recorded: true, record_id: 1175, food_items: '面和饮品',
+      updated_at: '2026-10-14T10:01:00Z', calories: 650, protein: null,
+    } };
+    mockStreamChat.mockImplementation(async function* () {
+      yield { type: 'start', conversationId: 777 };
+      yield { type: 'done', conversationId: 777, messageId: 90, completionStatus: 'complete', cards: [fresh] };
+    });
+    const { result } = renderHook(() => useChatEngine());
+    act(() => result.current.setMessages([{
+      id: 'original-meal', role: 'assistant', content: '', cardType: 'diet_draft',
+      cardData: { card_id: 'meal-original', recorded: true, record_id: 1175,
+        updated_at: '2026-10-14T10:00:00Z', calories: null, protein: null },
+    }]));
+    await act(async () => { await result.current.sendMessage('补充本餐营养'); });
+    expect(result.current.messages.find(message => message.id === 'original-meal')?.cardData)
+      .toMatchObject({ calories: 650, protein: null, updated_at: '2026-10-14T10:01:00Z' });
   });
 
   it('discards an older conversation response that resolves after a newer selection', async () => {

@@ -1,3 +1,4 @@
+import { reconcileRecordedDietCards } from '../utils/recordedDietCardSync';
 import { normalizeAgentTerminalStatus, type AgentTerminalStatus } from '../utils/agentTurnState';
 import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { AppState } from 'react-native';
@@ -14,7 +15,8 @@ import {
 } from '../components/chat/cards/cardIdentity';
 import api, { BASE_URL } from '../services/api';
 import { ensureAIConsent } from '../services/aiConsent';
-import { hasAIConsent } from '../services/aiConsentState';
+import { hasAIConsent, aiConsentRevision } from '../services/aiConsentState';
+import { subscribeDietRecordUpdates } from '../services/dietRecordUpdates';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
 import { sanitizeChatErrorMessage, sanitizeChatStreamToken } from '../utils/chatErrorMessage';
 import {
@@ -484,25 +486,15 @@ export function restoreMessagesFromHistory(
             ?? messageMeta.decisionStatus,
         } : {}),
       };
-      if (stableId) {
-        const existingIndex = restored.findIndex((message) => (
-          !!message.cardType
-          && stableServerCardId({
-            type: message.cardType,
-            data: message.cardData,
-            actions: message.cardActions,
-          }) === stableId
-        ));
-        if (existingIndex >= 0) restored.splice(existingIndex, 1);
-      }
       restored.push(restoredCard);
     });
   });
-  return restored;
+  return dedupeStableCardMessages(restored);
 }
 
 /** Keep the newest projection of each durable server card across history pages. */
 export function dedupeStableCardMessages(messages: UIMessage[]): UIMessage[] {
+  messages = reconcileRecordedDietCards(messages);
   const seenStableIds = new Set<string>();
   const dedupedReversed: UIMessage[] = [];
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -820,7 +812,16 @@ function upsertCardMessagesAfterAssistant(
   sourceMessageId?: number,
 ): UIMessage[] {
   if (cards.length === 0) return messages;
-  let nextMessages = messages;
+  // Reconcile before stable-card deduplication can discard a newer saved row.
+  const projected = reconcileRecordedDietCards([
+    ...messages,
+    ...cards.map((card, index): UIMessage => ({
+      id: `projection-${index}`, role: 'assistant', content: '',
+      cardType: card.type, cardData: card.data,
+    })),
+  ]);
+  let nextMessages = projected.slice(0, messages.length);
+  cards = cards.map((card, index) => ({ ...card, data: projected[messages.length + index].cardData }));
   const newCards: ServerCardDescriptor[] = [];
   cards.forEach((card) => {
     const stableId = stableServerCardId(card);
@@ -910,6 +911,26 @@ async function hasFreshPendingStream(): Promise<boolean> {
 export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const messagesRef = useRef<UIMessage[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    const unsubscribe = subscribeDietRecordUpdates(({ record, revision }) => {
+      void getAuthStorageScope().then(scope => {
+        if (!mounted || revision !== aiConsentRevision() || scope !== `user-${record.user_id}`) return;
+        setMessages(current => {
+          if (revision !== aiConsentRevision()) return current;
+          const projection: UIMessage = { id: 'diet-update-projection', role: 'assistant', content: '',
+            cardType: 'diet_draft', cardData: { ...record, record_id: record.id, recorded: true } };
+          // The extra row is only input evidence; never add a second visible meal.
+          return reconcileRecordedDietCards([...current, projection]).slice(0, current.length);
+        });
+      }).catch(() => {
+        // An unreadable/expired identity cannot authorize projecting private data.
+        // Keep the current card until authenticated history can be loaded again.
+      });
+    });
+    return () => { mounted = false; unsubscribe(); };
+  }, []);
+
   const [isStreaming, setIsStreaming] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
   const [runningTurnId, setRunningTurnId] = useState<string | undefined>(undefined);

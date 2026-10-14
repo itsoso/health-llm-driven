@@ -1,10 +1,11 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord
 from app.services.dynamic_card_persistence import (
     cards_for_persistence,
     message_metas_for_delivery,
 )
+
 from tests.conftest import create_authenticated_user
 
 
@@ -23,13 +24,145 @@ def _record_quality_meta(record_id):
     }]}
 
 
+def _saved_photo_meta(record_id):
+    seed = {"record_id": record_id, "food_items": "旧食物", "calories": None,
+            "updated_at": None}
+    return {"cards": [{"type": "diet_draft", "data": {
+        "card_id": f"diet-record:{record_id}", "recorded": True,
+        "record_id": record_id, "food_items": "旧食物", "calories": None,
+        "protein": None, "adjust_record": seed,
+    }, "actions": [{"action": "ui.inline.expand", "payload": {
+        "target": "adjust_record", "patch": {"adjust_record": seed},
+    }}]}]}
+
+
+def test_saved_photo_history_refreshes_later_nutrition_write(client, db, auth_user_and_headers):
+    from copy import deepcopy
+
+    from app.models.agent_conversation import AgentConversation, AgentMessage
+
+    user, headers = auth_user_and_headers
+    record = DietRecord(user_id=user.id, record_date=date.today(), meal_type="lunch",
+                        food_items="合成食物", calories=None,
+                        updated_at=datetime(2026, 10, 14, 8, tzinfo=UTC))
+    db.add(record)
+    db.flush()
+    meta = _saved_photo_meta(record.id)
+    # Same message can contain two receipts for the same saved record.
+    meta["cards"].append(deepcopy(meta["cards"][0]))
+    meta["cards"][1]["data"]["card_id"] = "diet-capture:synthetic"
+    conversation = AgentConversation(user_id=user.id, title="合成营养回填")
+    db.add(conversation)
+    db.flush()
+    message = AgentMessage(conversation_id=conversation.id, role="assistant",
+                           content="已记录", meta=meta)
+    db.add(message)
+    db.commit()
+    response = client.put(f"/api/v1/diet/records/{record.id}", headers=headers,
+                          json={"calories": 221.2345, "protein": 9.87654, "carbs": None,
+                                "expected_updated_at": record.updated_at.isoformat()})
+    assert response.status_code == 200, response.status_code
+    saved = response.json()
+    response = client.get(f"/api/v1/agent/conversations/{conversation.id}", headers=headers)
+    assert response.status_code == 200
+    for card in response.json()["messages"][0]["meta"]["cards"]:
+        assert card["data"]["calories"] == 221.23
+        assert card["data"]["protein"] == 9.88
+        assert card["data"]["carbs"] is None  # missing is not zero
+        assert card["data"]["food_items"] == "合成食物"
+        assert card["data"]["updated_at"] == saved["updated_at"]
+        assert card["data"]["adjust_record"]["calories"] == 221.2345
+        assert card["actions"][0]["payload"]["patch"]["adjust_record"] == card["data"]["adjust_record"]
+    db.refresh(message)
+    assert message.meta == meta  # materialization is read-only
+
+
+def test_saved_photo_history_rejects_foreign_deleted_and_missing_parents(db):
+    owner, _ = create_authenticated_user(db)
+    viewer, _ = create_authenticated_user(db)
+    record = DietRecord(user_id=owner.id, record_date=date.today(), meal_type="lunch",
+                        food_items="私有合成食物", calories=500)
+    db.add(record)
+    db.commit()
+    original = _saved_photo_meta(record.id)
+    foreign = message_metas_for_delivery(db, [original], viewer.id)[0]["cards"][0]
+    assert foreign["data"]["record_unavailable"] is True
+    assert foreign["data"]["recorded"] is False
+    assert "adjust_record" not in foreign["data"]
+    assert "food_items" not in foreign["data"]
+    assert foreign["actions"] == []
+    db.delete(record)
+    db.commit()
+    deleted = message_metas_for_delivery(db, [original], owner.id)[0]["cards"][0]
+    assert deleted == foreign
+    missing_id = _saved_photo_meta(None)
+    invalid = message_metas_for_delivery(db, [missing_id], owner.id)[0]["cards"][0]
+    assert invalid["data"]["record_unavailable"] is True
+
+
+def test_saved_photo_projection_does_not_promote_unconfirmed_draft(db):
+    owner, _ = create_authenticated_user(db)
+    record = DietRecord(user_id=owner.id, record_date=date.today(), meal_type="lunch",
+                        food_items="合成食物", calories=500)
+    db.add(record)
+    db.commit()
+    draft = _saved_photo_meta(record.id)
+    draft["cards"][0]["data"]["recorded"] = False
+    projected = message_metas_for_delivery(db, [draft], owner.id)[0]["cards"][0]
+    assert projected["data"]["recorded"] is False
+    assert projected["data"]["calories"] is None
+
+
+def test_saved_photo_projection_batches_mixed_cards_and_binds_their_own_record(db):
+    from copy import deepcopy
+
+    from sqlalchemy import event
+
+    owner, _ = create_authenticated_user(db)
+    records = [DietRecord(user_id=owner.id, record_date=date.today(), meal_type="lunch",
+                          food_items=f"合成食物{index}", calories=100 + index)
+               for index in range(3)]
+    db.add_all(records)
+    db.commit()
+    metas = [_saved_photo_meta(record.id) for record in records]
+    metas[0]["cards"][0]["data"]["adjust_record"]["record_id"] = records[1].id
+    metas[0]["cards"].append(_record_quality_meta(records[0].id)["cards"][0])
+    original = deepcopy(metas)
+    statements = []
+    def capture(_conn, _cursor, statement, _params, _context, _many):
+        statements.append(statement)
+    owner_id = owner.id
+    event.listen(db.get_bind(), "before_cursor_execute", capture)
+    try:
+        delivered = message_metas_for_delivery(db, metas, owner_id)
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", capture)
+    assert len(statements) == 1 and statements[0].lstrip().upper().startswith("SELECT")
+    assert metas == original
+    for index, meta in enumerate(delivered):
+        card = meta["cards"][0]
+        assert card["data"]["calories"] == 100 + index
+        assert card["data"]["adjust_record"]["record_id"] == records[index].id
+
+
+def test_saved_photo_projection_database_failure_is_not_hidden(monkeypatch):
+    from unittest.mock import Mock
+
+    import pytest
+
+    db = Mock()
+    db.query.side_effect = RuntimeError("unavailable")
+    with pytest.raises(RuntimeError, match="unavailable"):
+        message_metas_for_delivery(db, [_saved_photo_meta(1)], 1)
+
+
 def test_quality_history_reload_uses_saved_record_not_old_action_seed(client, db, auth_user_and_headers):
     from app.models.agent_conversation import AgentConversation, AgentMessage
 
     user, headers = auth_user_and_headers
     record = DietRecord(user_id=user.id, record_date=date.today(), meal_type="lunch",
                         food_items="米饭150克", calories=195.1234, protein=3.5,
-                        updated_at=datetime(2026, 9, 10, 8, tzinfo=timezone.utc))
+                        updated_at=datetime(2026, 9, 10, 8, tzinfo=UTC))
     db.add(record)
     db.flush()
     original = _record_quality_meta(record.id)
@@ -76,6 +209,7 @@ def test_quality_history_does_not_restore_foreign_or_deleted_record(db):
 
 def test_quality_history_batches_reads_and_does_not_mutate_input(db):
     from copy import deepcopy
+
     from sqlalchemy import event
 
     owner, _ = create_authenticated_user(db)
@@ -100,8 +234,9 @@ def test_quality_history_batches_reads_and_does_not_mutate_input(db):
 
 
 def test_quality_history_database_failure_is_not_hidden(monkeypatch):
-    import pytest
     from unittest.mock import Mock
+
+    import pytest
 
     db = Mock()
     db.query.side_effect = RuntimeError("unavailable")
@@ -174,7 +309,7 @@ def test_draft_card_recovers_current_record_parent_after_confirmation(db):
         image_type="jpeg",
         recognition_result={"food_items": "鸡胸肉", "calories": 220},
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
     asset = DietPhotoAsset(
         id="stable-card-asset",

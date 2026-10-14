@@ -425,3 +425,32 @@ describe('dedupeStableCardMessages', () => {
     expect(merged[0].cardData.photo_urls).toHaveLength(2);
   });
 });
+
+it('restores later nutrition into the earlier saved meal snapshot without turning missing values into zero', () => {
+  const meta = (card_id: string, updated_at: string, calories: number | null) => ({
+    completion_status: 'complete', cards: [{ type: 'diet_draft', data: {
+      card_id, recorded: true, record_id: 1175, food_items: '面和饮品', updated_at,
+      calories, protein: null, carbs: null, fat: null, fiber: null,
+    } }],
+  });
+  const restored = restoreMessagesFromHistory([
+    { id: 801, role: 'assistant', content: '已记录', meta: meta('original', '2026-10-14T10:00:00Z', null) },
+    { id: 802, role: 'assistant', content: '已补充营养', meta: meta('updated', '2026-10-14T10:01:00Z', 650) },
+  ]);
+  const cards = restored.filter(message => message.cardType === 'diet_draft');
+  expect(cards).toHaveLength(2);
+  expect(cards[0].cardData).toMatchObject({ calories: 650, protein: null, updated_at: '2026-10-14T10:01:00Z' });
+});
+
+it('does not regress record nutrition when duplicate card snapshots arrive out of revision order', () => {
+  const row = (id: number, updated_at: string, calories: number | null) => ({ id, role: 'assistant', content: '', meta: {
+    completion_status: 'complete', cards: [{ type: 'diet_draft', data: {
+      card_id: 'same-meal', recorded: true, record_id: 1175, updated_at, calories,
+    } }],
+  } });
+  const restored = restoreMessagesFromHistory([
+    row(901, '2026-10-14T10:01:00Z', 650), row(902, '2026-10-14T10:00:00Z', null),
+  ]);
+  expect(restored.filter(message => message.cardType === 'diet_draft')).toHaveLength(1);
+  expect(restored.find(message => message.cardType === 'diet_draft')?.cardData.calories).toBe(650);
+});

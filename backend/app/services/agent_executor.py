@@ -25087,11 +25087,13 @@ class AgentExecutor:
         adjust_record = adjust_action["payload"]["patch"]["adjust_record"]
         return {
             "type": "diet_draft",
-            "data": format_card_numbers({
+            "data": {**format_card_numbers({
                 "card_id": f"diet-capture:{capture_session_id}",
                 "capture_session_id": capture_session_id,
                 "recorded": True,
                 "record_id": record.id,
+                "user_id": record.user_id,
+                "updated_at": (record.updated_at.isoformat() if getattr(record, "updated_at", None) is not None else None),
                 "record_date": record.record_date.isoformat(),
                 "meal_type": record.meal_type,
                 "food_items": record.food_items,
@@ -25110,7 +25112,7 @@ class AgentExecutor:
                 "receipt_message": "已计入今日饮食，照片已关联。",
                 "boundary": "营养为图片估算，如有偏差可继续修正本餐。",
                 "adjust_record": adjust_record,
-            }),
+            }), "adjust_record": adjust_record},
             "actions": [adjust_action],
         }
 
@@ -28961,6 +28963,54 @@ class AgentExecutor:
         logger.info(f"[garmin_sync] enqueued background sync user={user_id}")
         return _garmin_sync_queued_message()
 
+    def _diet_updated_recorded_card(self, args: dict, result: Any) -> Optional[Dict[str, Any]]:
+        """Project an authenticated successful PUT row, never the requested estimates."""
+        if args.get("record_type") != "diet" or args.get("operation") != "update":
+            return None
+        receipt = _write_receipt_from_tool_result("health_manage", args, result)
+        payload = _write_result_payload(result)
+        if receipt is None or payload is None:
+            return None
+        if (type(self._current_user_id) is not int
+                or type(payload.get("user_id")) is not int
+                or payload["user_id"] != self._current_user_id):
+            return None
+        revision = payload.get("updated_at")
+        if (not isinstance(revision, str)
+                or not re.match(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}", revision)):
+            return None
+        if (not isinstance(payload.get("food_items"), str) or not payload["food_items"].strip()
+                or payload.get("meal_type") not in {"breakfast", "lunch", "dinner", "snack"}):
+            return None
+        try:
+            datetime.fromisoformat(revision.replace("Z", "+00:00"))
+            date.fromisoformat(payload.get("record_date", ""))
+        except (ValueError, TypeError):
+            return None
+        nutrient_fields = ("calories", "protein", "carbs", "fat", "fiber")
+        if any(field not in payload for field in nutrient_fields):
+            return None
+        if any(value is not None and (isinstance(value, bool)
+                or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0)
+                for value in (payload[field] for field in nutrient_fields)):
+            return None
+        record_id = int(receipt["resource_id"])
+        action = build_diet_adjust_action(record_id, payload, current_record=payload)
+        adjust_record = action["payload"]["patch"]["adjust_record"]
+        data = format_card_numbers({
+            "card_id": f"diet-record:{record_id}",
+            "record_id": record_id, "user_id": self._current_user_id,
+            "recorded": True, "adjust_saved": True,
+            "updated_at": revision,
+            **{field: payload.get(field) for field in (
+                "record_date", "meal_type", "food_items", "source", *nutrient_fields,
+            )},
+            "receipt_message": "饮食记录已更新。",
+            "boundary": "营养为估算值，如有偏差请继续修正。",
+        })
+        data["adjust_record"] = adjust_record
+        return {"type": "diet_draft", "data": data, "actions": [action]}
+
     async def _exec_health_manage(
         self, base: str, headers: dict, args: dict
     ) -> str:
@@ -29193,7 +29243,10 @@ class AgentExecutor:
                     payload = json.loads(result)
                 except (json.JSONDecodeError, TypeError, ValueError):
                     payload = None
-                if isinstance(payload, dict):
+                updated_card = self._diet_updated_recorded_card(args, result)
+                if updated_card is not None:
+                    self._upsert_turn_contextual_diet_card(updated_card)
+                if isinstance(payload, dict) and _write_receipt_from_tool_result("health_manage", args, result):
                     meal_label = _MEAL_TYPE_ZH.get(target_meal_type or "", "饮食")
                     food_items = str(data.get("food_items") or "").strip()
                     payload["message"] = (

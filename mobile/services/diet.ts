@@ -1,6 +1,7 @@
 import api from './api';
 import type { AxiosRequestConfig } from 'axios';
 import { aiConsentRevision } from './aiConsentState';
+import { publishDietRecordUpdate } from './dietRecordUpdates';
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type VoiceMealType = MealType | 'extra';
@@ -265,8 +266,10 @@ function dietEditConfig(options?: DietEditOptions): AxiosRequestConfig & { __rev
 }
 
 export async function updateDietRecord(id: number, patch: DietRecordUpdate, options?: DietEditOptions): Promise<DietRecord> {
+  const revision = aiConsentRevision();
   const { data } = await api.put<DietRecord>(`/diet/records/${id}`, patch, options ? dietEditConfig(options) : undefined);
   if (options) dietEditConfig(options);
+  if (data?.id === id) publishDietRecordUpdate(data, revision);
   return data;
 }
 
@@ -281,12 +284,14 @@ export async function recalculateDietRecordNutrition(
     throw new Error('diet_recalculation_idempotency_key_required');
   }
   const config = dietEditConfig(options);
+  const revision = aiConsentRevision();
   const { data } = await api.post<DietRecord>(
     `/diet/records/${id}/recalculate-nutrition`,
     request,
     { ...config, headers: { ...config.headers, 'Idempotency-Key': operationKey } },
   );
   if (options) dietEditConfig(options);
+  if (data?.id === id) publishDietRecordUpdate(data, revision);
   return data;
 }
 

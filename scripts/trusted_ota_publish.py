@@ -143,6 +143,16 @@ def identifier(value):
     return isinstance(value, str) and re.fullmatch(UUID, value) is not None
 
 
+# Closed set, not a fingerprint allowlist. Exact build/source identities must
+# accompany both fingerprints; any future production build requires new review.
+REVIEWED_NATIVE_COHORT = {
+    "09719eb6-2887-4100-9ccb-6533fd9d71ed": (
+        "7fe06d8b34750b6bd56db8d5ec45d1aee705b02e", "11aca32700f896b9e3f46e8587dc052de72090dd"),
+    "c25970ce-a54b-4241-8310-b27a9af9d18c": (
+        "0fd447cbd07e4fc3e8c47fff52769f1b34f9a293", "f672b986f213e7592eb627cc8114638fa166fdae"),
+}
+
+
 def validate_builds(base, cohort):
     def validate(item, *, pinned=False):
         if (
@@ -187,11 +197,13 @@ def validate_builds(base, cohort):
         or not 0 < len(cohort) < 100
         or any(not isinstance(b, dict) for b in cohort)
         or len({b.get("id") for b in cohort}) != len(cohort)
-        or NATIVE_BUILD not in {b.get("id") for b in cohort}
+        or set(REVIEWED_NATIVE_COHORT) != {b.get("id") for b in cohort}
     ):
         raise PublishError("native cohort incomplete or duplicated")
+    if (base.get("gitCommitHash"), expected) != REVIEWED_NATIVE_COHORT[NATIVE_BUILD]:
+        raise PublishError("production runtime native fingerprints differ")
     for item in cohort:
-        if validate(item) != expected:
+        if (item.get("gitCommitHash"), validate(item)) != REVIEWED_NATIVE_COHORT[item["id"]]:
             raise PublishError("production runtime native fingerprints differ")
     return expected
 

@@ -51,3 +51,13 @@ it('keeps saved meal actions together after the nutrition and estimate note', ()
   fireEvent.press(screen.getByRole('button', { name: '收起本餐修正' }));
   expect(screen.queryByTestId('diet-adjust-inline-editor')).toBeNull();
 });
+
+it('renders an unavailable stored record as read-only instead of a confirmable draft', () => {
+  const onConfirmAction = jest.fn();
+  const view = render(<DietDraftCardView recorded={false} record_unavailable record_id={1175}
+    food_items="旧餐食不应显示" calories={650} confirmActionState="done" onConfirmAction={onConfirmAction} />);
+  expect(view.getByText('记录不可用，请到饮食页核对。')).toBeTruthy();
+  expect(view.queryByText('旧餐食不应显示')).toBeNull();
+  expect(view.queryByText(/确认记录/)).toBeNull();
+  expect(view.queryByLabelText('继续修正本餐')).toBeNull();
+});

@@ -6,6 +6,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -40,13 +41,41 @@ def read_json(stream, bound=2000000):
     return json.loads(raw, object_pairs_hook=unique)
 
 
-def validate_runtime_changes(paths):
+# Fixed production-only native equivalence, evidenced by the actual EAS
+# 276/277 fingerprint sources and both canonical plugin execution paths.
+# This is not permission to change a native file: each exception is byte-bound.
+REVIEWED_NATIVE_SOURCE = {
+    "mobile/app.config.ts": "e376406f4098135db5e3b42c878ddb5d811401d6cb89e35a00ea9cf595d1abe9",
+    "mobile/eas.json": "ec4f30cb042955ce954c8b1c6bebbcf21b91af8dba0bf3f8a03119412489bb07",
+    "mobile/plugins/withIosSupportedOrientations.js": "8bcd2bc518af7495f532614c706368f1f563abeabf35ec5f5c41ba076937e9f8",
+    "mobile/plugins/__tests__/withIosSupportedOrientations.test.js": "a06a176647eb365e660c7d1dfdf6bace8c55271c82ab596130a5d1df24681e52",
+    "mobile/jest.config.js": "79e24af57d97f428692fbaae79fb267147c5235fdb2f2cede9fdf9d67573c354"
+}
+
+
+def validate_production_environment():
+    if os.environ.get('APP_VARIANT', 'production') != 'production' or any(
+            os.environ.get(key, '') not in ('', '0') for key in (
+                'REVA_IPAD_ENABLED', 'ROKID_IOS_SDK_ENABLED', 'INCLUDE_WATCH_APP',
+                'INCLUDE_SIRI_INTENTS', 'REVA_ANDROID_INTERNAL')):
+        raise ValueError('native or unknown mobile input changed')
+
+
+def validate_runtime_changes(paths, *, root=None):
+    validate_production_environment()
     # A conservative OTA boundary. Anything outside known JS source/test or
     # asset directories requires a reviewed native baseline update.
     prefixes = ('mobile/app/', 'mobile/components/', 'mobile/hooks/', 'mobile/services/',
                 'mobile/types/', 'mobile/constants/', 'mobile/stores/', 'mobile/utils/',
                 'mobile/contexts/', 'mobile/lib/', 'mobile/applib/', 'mobile/__tests__/', 'packages/shared/src/')
     for path in paths:
+        if root is not None and path in REVIEWED_NATIVE_SOURCE:
+            native = Path(root) / path
+            if (any(parent.is_symlink() for parent in (native, *native.parents))
+                    or not native.is_file()
+                    or hashlib.sha256(native.read_bytes()).hexdigest() != REVIEWED_NATIVE_SOURCE[path]):
+                raise ValueError('native or unknown mobile input changed')
+            continue
         if path.startswith(prefixes) and Path(path).suffix in ('.ts', '.tsx', '.js', '.jsx', '.json'):
             continue
         if path.startswith('mobile/assets/') and Path(path).suffix in ('.png', '.jpg', '.jpeg', '.webp', '.svg'):
@@ -65,7 +94,7 @@ def validate_source(root, sha):
         raise ValueError('dirty runtime source')
     git(root, 'merge-base', '--is-ancestor', NATIVE_SHA, sha)
     changed = git(root, 'diff', '--name-only', '--no-renames', NATIVE_SHA, sha, '--', 'mobile', 'packages/shared').decode().splitlines()
-    validate_runtime_changes(changed)
+    validate_runtime_changes(changed, root=root)
     config = json.loads((root / 'mobile/app.json').read_text())['expo']
     if (config['version'] != RUNTIME or config['runtimeVersion'] != {'policy': 'appVersion'} or config['extra']['eas']['projectId'] != PROJECT):
         raise ValueError('runtime/project binding differs')

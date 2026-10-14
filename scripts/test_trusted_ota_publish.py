@@ -29,7 +29,7 @@ def build(m, *, identifier=None, sha=None):
         "app": {"id": m.PROJECT},
         "updateChannel": {"name": "production"},
         "runtime": {"version": m.RUNTIME},
-        "fingerprint": {"hash": "a" * 40},
+        "fingerprint": {"hash": "11aca32700f896b9e3f46e8587dc052de72090dd"},
         "isForIosSimulator": False,
     }
 
@@ -69,11 +69,20 @@ def update(m):
     ]
 
 
-def test_native_fingerprint_cohort_must_be_complete_and_same():
+def reviewed_cohort(m):
+    other = build(m, identifier="c25970ce-a54b-4241-8310-b27a9af9d18c",
+                  sha="0fd447cbd07e4fc3e8c47fff52769f1b34f9a293")
+    other["fingerprint"]["hash"] = "f672b986f213e7592eb627cc8114638fa166fdae"
+    return [build(m), other]
+
+
+def test_native_fingerprint_cohort_must_be_exact_reviewed_builds():
     m = load()
     base = build(m)
+    assert m.validate_builds(base, reviewed_cohort(m)) == base["fingerprint"]["hash"]
     other = build(m, identifier="55555555-5555-4555-8555-555555555555", sha="b" * 40)
-    assert m.validate_builds(base, [base, other]) == "a" * 40
+    with pytest.raises(m.PublishError):
+        m.validate_builds(base, [base, other])
 
 
 @pytest.mark.parametrize(
@@ -95,7 +104,7 @@ def test_native_fingerprint_cohort_must_be_complete_and_same():
 def test_incompatible_or_incomplete_native_cohort_blocks(mutation):
     m = load()
     base = build(m)
-    cohort = [copy.deepcopy(base)]
+    cohort = reviewed_cohort(m)
     if mutation == "missing":
         base["fingerprint"] = None
     elif mutation == "different":
@@ -318,7 +327,7 @@ class Fake:
         if tag == "baseline":
             return build(self.m)
         if tag == "cohort":
-            return [build(self.m)]
+            return reviewed_cohort(self.m)
         if tag.startswith("channel"):
             self.channel_calls += 1
             c = channel(self.m)
@@ -513,7 +522,9 @@ def test_cohort_uses_two_bounded_pages_and_rejects_full_second_page(tmp_path):
         return original(args, tag)
 
     f.eas = eas
-    assert m.publish(f, "c" * 40)["state"] == "SUCCEEDED"
+    with pytest.raises(m.PublishError):
+        m.publish(f, "c" * 40)
+    assert f.vendor_calls == 0
     args = next(args for tag, args in seen if tag == "cohort-next")
     assert (
         args[args.index("--limit") + 1] == "50"
@@ -861,7 +872,7 @@ def test_vendor_admission_has_no_export_claim_or_update(tmp_path):
     m = load()
     f = Fake(m, tmp_path)
     result = m.vendor_admission(f)
-    assert result[0] == 'a' * 40
+    assert result[0] == build(m)['fingerprint']['hash']
     assert f.events == ['gate', 'source', 'baseline', 'cohort', 'channel-before', 'environment']
     assert f.vendor_calls == 0
 
@@ -1195,3 +1206,40 @@ def test_prepare_cli_export_failure_is_not_passed_and_retains_safe_diagnostic(mo
     assert saved == [json.loads(captured.err)]
     assert f.events.count('export') == 1
     assert f.vendor_calls == 0 and 'claim-ota' not in f.events
+
+
+def test_reviewed_276_277_exact_cohort_accepts_equivalent_fingerprints():
+    m=load()
+    base=build(m);base['fingerprint']['hash']='11aca32700f896b9e3f46e8587dc052de72090dd'
+    other=build(m,identifier='c25970ce-a54b-4241-8310-b27a9af9d18c',sha='0fd447cbd07e4fc3e8c47fff52769f1b34f9a293')
+    other['fingerprint']['hash']='f672b986f213e7592eb627cc8114638fa166fdae'
+    assert m.validate_builds(base,[base,other])==base['fingerprint']['hash']
+    for damaged in ([base], [other], [base,other,build(m,identifier='55555555-5555-4555-8555-555555555555')]):
+        with pytest.raises(m.PublishError): m.validate_builds(base,damaged)
+    other['gitCommitHash']='e'*40
+    with pytest.raises(m.PublishError): m.validate_builds(base,[base,other])
+
+
+def test_fixed_cohort_evidence_matches_implementation():
+    m=load()
+    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-14-ota-native-equivalence.json').read_text())
+    assert {b['id']:(b['git_sha'],b['fingerprint']) for b in evidence['builds']}==m.REVIEWED_NATIVE_COHORT
+
+
+@pytest.mark.parametrize('damage', ['extra_same_fingerprint','swapped_hash','base_wrong_hash','known_id_wrong_sha','ipad_profile'])
+def test_fixed_equivalent_cohort_fails_before_claim(tmp_path,damage):
+    m=load();f=Fake(m,tmp_path);original=f.eas
+    cohort=reviewed_cohort(m)
+    if damage=='extra_same_fingerprint':cohort.append(build(m,identifier='55555555-5555-4555-8555-555555555555'))
+    elif damage=='swapped_hash':cohort[1]['fingerprint']=cohort[0]['fingerprint']
+    elif damage=='known_id_wrong_sha':cohort[1]['gitCommitHash']='e'*40
+    elif damage=='ipad_profile':cohort[1]['buildProfile']='ipad-adhoc'
+    def eas(args,tag):
+        if tag=='cohort':return cohort
+        value=original(args,tag)
+        if tag=='baseline' and damage=='base_wrong_hash':value['fingerprint']['hash']='a'*40
+        return value
+    f.eas=eas
+    with pytest.raises(m.PublishError):m.publish(f,'c'*40)
+    assert f.vendor_calls==0
+    assert 'claim' not in f.events

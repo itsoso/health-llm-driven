@@ -81,3 +81,18 @@ G1 PASS：截图“加餐一小个桃子”被误当只读请求，并出现计�
 发布仍统一交由“优化 README”线程；本线程未stage/commit/push/deploy/OTA。待最终固定SHA独立审查、完整CI及发布回执后补交付结论；不复用旧候选回执，不重试既有失败OTA。
 
 隔离PG清理已由接手会话独立复核：2026-10-14 09:52:44（Asia/Shanghai）server.log明确database system is shut down；对实际数据目录/tmp/reva-recovery-pg.U5Tk0G执行pg_ctl status确认no server running，postmaster.pid不存在。首次fast等待超时是144.59秒检查点超过默认等待，不改变181项测试PASS，也不虚报首次关闭命令成功。固定SHA G4、完整CI及本次新修复发布仍待完成。
+
+
+## 2026-10-14 痊愈来源标签与餐卡营养同步续修
+
+G1 PASS：截图病程实际标签为“感冒样不适（用户自述）”；此前已部署72b4a09a修复本地日期，但固定名称集合没有此来源后缀。新截图还显示已保存餐卡热量缺失且后续未更新。本轮修复既有记录选择与投影，不新增诊疗决策或数据结构。
+
+- 只增加精确“用户自述”括号来源后缀的名称等价，非任意括号剥离；他人、待核实、复合疾病限定继续拒绝。截图原句、唯一本人病程、日期和重复候选边界均回归。先RED3FAIL，SQLite285PASS、相邻授权4446PASS、隔离PostgreSQL285PASS，测试及停库exit0。
+- 已保存餐卡的历史交付从本人真实DietRecord批量刷新营养、食物、日期、版本及未降精度的编辑基线；照片parent转换后再刷新。删除/不存在/跨owner返回不可用状态，不展示旧营养或动作。先真实合成PUT→历史卡RED，SQLite76PASS、PostgreSQL76PASS，两项退出均0。
+- Mobile按同owner、同record_id及更高updated_at同步后续轮和历史餐卡；明确null初始版本可被第一次真实更新替换，未知版本不可猜。后台PUT/重估成功结果发进程内通知，账号代际与当前身份复验后更新现有餐卡，不增加识别、轮询或重复显示；缺失营养保持null。事件链先RED，相关7套188PASS，补跨账号测试后事件/聊天144PASS，TypeScript通过。
+- Live自动保存producer补user_id和数据库版本；health_manage成功PUT只有在结构化写回执、owner/ID、版本及完整返回字段验证后才产已保存餐卡。只使用API返回行，不使用模型文字或请求估算；完整执行链已在隔离PostgreSQL验证：14PASS（其中1项run_stream→真实网关→鉴权PUT→DB→回执→done餐卡→AgentMessage.meta），单次成功写入900→450，fiber保持null；测试及停库exit0。相邻执行/照片/历史卡311PASS、1既有skip。
+- OTA原生阻断已取得实际EAS276/277指纹来源证据：287项中285项一致，唯eas.json与方向插件源码不同；精确Git摘要匹配，production配置相同且supportsTablet=false，插件12组输入24次输出一致。仅为固定双构建cohort及精确原生源摘要例外，不对未知差异放行；先4RED，264PASS/1既有skip。独立固定SHA审核尚未完成。
+
+当前为G3完成/补验阶段，未发布这些新改动。后续须固定提交独立G4、精确SHA完整CI、后端部署与trusted OTA validate/publish真实回执。沿用用户不备份、不真实模型评测要求；agent_executor变更使用最终精确SHA豁免，不伪造confirmed。不以合成测试冒充真实账号、相机、设备或线上时延验收。
+
+最终补测：Mobile旧餐卡同步保留服务端编辑种子的原始营养精度，先RED后12PASS；全程无额外模型调用。System Map、TypeScript、秘密扫描及diff检查通过。

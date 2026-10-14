@@ -107,6 +107,7 @@ interface DietDraftData {
   media_stage?: unknown;
   card_id?: unknown;
   recorded?: unknown;
+  record_unavailable?: unknown;
   receipt_message?: unknown;
   auto_save_fallback?: unknown;
   record_id?: unknown;
@@ -424,6 +425,14 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
     if (fat != null) next.fat = fat;
     onDraftChange?.(next);
   }, [data, draftCalories, draftCarbs, draftFat, draftFood, draftMealType, draftProtein]);
+
+  if (data.record_unavailable === true) {
+    return (
+      <CardShell icon="information-circle-outline" iconColor={C.ink3} title="饮食记录不可用" bg={C.paper}>
+        <Text style={styles.boundary}>记录不可用，请到饮食页核对。</Text>
+      </CardShell>
+    );
+  }
 
   if (!isRecorded && !editing) {
     return (

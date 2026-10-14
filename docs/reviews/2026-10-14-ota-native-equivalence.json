@@ -1,0 +1,78 @@
+{
+  "state": "EVIDENCE_ONLY_REQUIRES_FIXED_COMMIT_REVIEW",
+  "raw_sources_sha256": "b6424865c30ec5a3e5f2bef12af0a594d1912e902805ec702a02b60372e66e3a",
+  "builds": [
+    {
+      "id": "09719eb6-2887-4100-9ccb-6533fd9d71ed",
+      "git_sha": "7fe06d8b34750b6bd56db8d5ec45d1aee705b02e",
+      "fingerprint": "11aca32700f896b9e3f46e8587dc052de72090dd"
+    },
+    {
+      "id": "c25970ce-a54b-4241-8310-b27a9af9d18c",
+      "git_sha": "0fd447cbd07e4fc3e8c47fff52769f1b34f9a293",
+      "fingerprint": "f672b986f213e7592eb627cc8114638fa166fdae"
+    }
+  ],
+  "source_count": 287,
+  "equal_source_count": 285,
+  "differences": [
+    {
+      "path": "mobile/eas.json",
+      "versions": [
+        {
+          "source_sha": "7fe06d8b34750b6bd56db8d5ec45d1aee705b02e",
+          "fingerprint_file_sha1": "1d5fe2bb11e7cd48643ad05407325d4e162dd483",
+          "sha256": "5bc3d2a782228051e4fd5348a56a08628c41f6cc73773684f455ca9efa39d51f"
+        },
+        {
+          "source_sha": "0fd447cbd07e4fc3e8c47fff52769f1b34f9a293",
+          "fingerprint_file_sha1": "9fb618407a664566e464f496464cc24b628413db",
+          "sha256": "ec4f30cb042955ce954c8b1c6bebbcf21b91af8dba0bf3f8a03119412489bb07"
+        }
+      ]
+    },
+    {
+      "path": "mobile/plugins/withIosSupportedOrientations.js",
+      "versions": [
+        {
+          "source_sha": "7fe06d8b34750b6bd56db8d5ec45d1aee705b02e",
+          "fingerprint_file_sha1": "90c62f793bb2e7b033e275570be5e7dd3df3ebc5",
+          "sha256": "e4d1d29536d0da92af800643b064122784852dd9f8748176d91b232208fa69d1"
+        },
+        {
+          "source_sha": "0fd447cbd07e4fc3e8c47fff52769f1b34f9a293",
+          "fingerprint_file_sha1": "3d96956e7798135b138417f7b0c65d04d3ea8107",
+          "sha256": "8bcd2bc518af7495f532614c706368f1f563abeabf35ec5f5c41ba076937e9f8"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Not current implementation approval: publisher/source gates still block",
+    "Only named production iOS cohort with observed supportsTablet=false",
+    "Unknown fingerprint, source, profile, native dependency or environment remains blocked",
+    "No binary executable comparison claimed",
+    "Fresh complete cohort inventory needed at admission; no ignored additional build"
+  ],
+  "equal_sources_sha256": "f7fdb6d8a4ca51fc642a2dfeb169d99b66ce5678f4593306d70a3877d0ede58b",
+  "observed_production_supports_tablet": false,
+  "plugin_execution": {
+    "canonical_versions": [
+      "7fe06d8b34750b6bd56db8d5ec45d1aee705b02e",
+      "0fd447cbd07e4fc3e8c47fff52769f1b34f9a293"
+    ],
+    "fixtures": 12,
+    "callback_comparisons": 24,
+    "result": "equal",
+    "scope": "withInfoPlist and withDangerousMod actual canonical callbacks, real plist parser and temporary file IO; hook registration shim only",
+    "binary_equivalence_claimed": false
+  },
+  "production_config_equal": true,
+  "candidate_source_exceptions": {
+    "mobile/app.config.ts": "e376406f4098135db5e3b42c878ddb5d811401d6cb89e35a00ea9cf595d1abe9",
+    "mobile/eas.json": "ec4f30cb042955ce954c8b1c6bebbcf21b91af8dba0bf3f8a03119412489bb07",
+    "mobile/plugins/withIosSupportedOrientations.js": "8bcd2bc518af7495f532614c706368f1f563abeabf35ec5f5c41ba076937e9f8",
+    "mobile/plugins/__tests__/withIosSupportedOrientations.test.js": "a06a176647eb365e660c7d1dfdf6bace8c55271c82ab596130a5d1df24681e52",
+    "mobile/jest.config.js": "79e24af57d97f428692fbaae79fb267147c5235fdb2f2cede9fdf9d67573c354"
+  }
+}

@@ -81,7 +81,7 @@ def _seed(db, *, duplicates=1, record_name="感冒"):
 @pytest.mark.parametrize("message", FLOW_MESSAGES)
 @pytest.mark.parametrize("duplicates", (0, 1, 2))
 @pytest.mark.parametrize("historical", (False, True))
-@pytest.mark.parametrize("record_name", ("感冒", "感冒样不适"))
+@pytest.mark.parametrize("record_name", ("感冒", "感冒样不适", "感冒样不适（用户自述）", "感冒样不适 (用户自述)"))
 async def test_real_gateway_and_api_persist_only_unique_owned_recovery(db, client, monkeypatch, message, duplicates, historical, record_name):
     user, own, other = _seed(db, duplicates=duplicates, record_name=record_name)
     old = None
@@ -136,7 +136,7 @@ async def test_real_gateway_and_api_persist_only_unique_owned_recovery(db, clien
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("message", FLOW_MESSAGES)
-@pytest.mark.parametrize("record_name", ("感冒", "感冒样不适"))
+@pytest.mark.parametrize("record_name", ("感冒", "感冒样不适", "感冒样不适（用户自述）", "感冒样不适 (用户自述)"))
 @pytest.mark.parametrize("model_includes_day", (False, True))
 async def test_screenshot_statement_reaches_pi_saved_answer_and_verified_receipt(
     db, client, isolated_agent_protocol_transport, monkeypatch, message, record_name, model_includes_day,
@@ -326,3 +326,21 @@ def test_screenshot_recovery_binds_current_user_day_without_explicit_today(with_
     assert result["data"] == {"status": "resolved", "end_date": "2026-10-14"}
     assert _authorized_illness_update_args(snapshot, {"data": patch}, 8) is None
     assert _authorized_illness_update_args(snapshot, {"data": {"status": "resolved", "end_date": "2026-10-13"}}, 7) is None
+
+
+@pytest.mark.parametrize("name", ("感冒样不适（用户自述）", "感冒样不适 (用户自述)", "感冒（用户自述）"))
+def test_self_report_provenance_label_remains_unique_owned_recovery(name):
+    from dataclasses import replace
+    from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
+    snapshot = _confirmation_snapshot({"id": 7, "name": name, "status": "active", "start_date": "2026-10-07"})
+    snapshot = replace(snapshot, envelope=replace(snapshot.envelope, text="我的感冒已经痊愈了。"))
+    result = _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 7)
+    assert result is not None
+    assert result["data"] == {"status": "resolved", "end_date": "2026-10-14"}
+
+
+@pytest.mark.parametrize("name", ("感冒样不适（朋友自述）", "感冒样不适（用户自述待核实）", "感冒样不适（用户自述，疑似肺炎）", "感冒样不适（用户自述）伴肺炎", "感冒（药物过敏）"))
+def test_recovery_does_not_strip_arbitrary_qualifiers(name):
+    from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
+    snapshot = _confirmation_snapshot({"id": 7, "name": name, "status": "active", "start_date": "2026-10-07"})
+    assert _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 7) is None

@@ -1211,6 +1211,12 @@ def _authorized_illness_update_args(
         target_names = {_normalize_entity_name(recovery_entity)}
         if recovery_entity == "感冒":
             target_names.add(_normalize_entity_name("感冒样不适"))
+        # Only this exact provenance label is equivalent for episode selection.
+        # Do not strip arbitrary parentheses or clinical/ownership qualifiers.
+        target_names |= {
+            name + suffix for name in tuple(target_names)
+            for suffix in ("（用户自述）", "(用户自述)")
+        }
         candidates = tuple(
             record for record in records
             if record.get("status") in {"active", "improving"}

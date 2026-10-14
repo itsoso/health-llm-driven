@@ -461,6 +461,14 @@ RPC 或 vendor update，也不注入 SSH 私钥。`--admission` 保留为不导�
 仅允许相对固定原生 build 的已知 JS/TS/图片变动。实际 production channel、完整
 runtime 原生 build cohort 的 fingerprint、远端 production 环境变量都须匹配；
 未知路径、缺失 fingerprint、超过有界分页、分流 channel、未受审环境输入即阻断。
+2026-10-14 固定等价例外：runtime 1.3.5 的 production iOS STORE cohort 仅允许已取证的
+276/277 两个具体 build ID、source SHA 与 fingerprint 组合。实际 EAS 指纹来源中除
+`eas.json` 和方向插件外逐项一致；两版插件在已观察到的 `supportsTablet=false`
+配置执行结果一致。源码闸仅允许已审文件的精确 SHA256，禁止新的原生差异、未知构建、
+iPad/其他原生开关及非 production 环境。证据见
+[`固定原生等价证据`](../reviews/2026-10-14-ota-native-equivalence.json)。此为源码/配置等价审定，
+不宣称 IPA 二进制逐字一致；候选仍须独立安全审查、完整 CI、实时 cohort 和远端环境复验。
+
 只导出一次 iOS 制品，SHA256 绑定实际 bundle 和全部 asset 字节，不凭 CLI 成功判断上线。
 
 服务器在 launcher 与原 build 双锁内验证同 SHA 后端 SUCCEEDED、真实生产健康和 CI，
