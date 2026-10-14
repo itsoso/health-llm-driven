@@ -25,6 +25,34 @@ def load_server():
     return module
 
 
+@pytest.mark.parametrize('entrypoint', ['assert_neo_wechat_history',
+    'assert_vision_model_history', 'assert_frontend_rebuild_history', 'assert_ota_history'])
+@pytest.mark.parametrize('shape', ['empty', 'completed', 'file', 'dangling_link'])
+def test_unacknowledged_lifecycle_blocks_every_history_chain(monkeypatch, tmp_path, entrypoint, shape):
+    server = load_server()
+    monkeypatch.setattr(server, 'STATE', tmp_path)
+    root = tmp_path / 'neo-wechat-lifecycle'
+    if shape == 'file':
+        root.write_text('{}')
+    elif shape == 'dangling_link':
+        root.symlink_to(tmp_path / 'missing')
+    else:
+        root.mkdir()
+        if shape == 'completed':
+            operation = root / 'runtime-lifecycle-v1' / ('a' * 32)
+            operation.mkdir(parents=True)
+            # Neither visible completion nor a caller-created ack is authority.
+            (operation / 'completed.json').write_text('{"state":"ACTIVE_UNVERIFIED"}')
+            (operation / 'final-guard.json').write_text('{"confirmed":true}')
+    with pytest.raises(server.LaunchError, match='bridge lifecycle closure'):
+        getattr(server, entrypoint)(*(() if entrypoint == 'assert_ota_history' else (tmp_path,)))
+    assert os.path.lexists(root)
+
+
+def test_no_bridge_history_does_not_block_existing_release_chain(tmp_path):
+    load_server().assert_neo_wechat_history(tmp_path)
+
+
 @pytest.mark.parametrize("accepted", [True, False])
 def test_readiness_drift_requires_canonical_gate_before_loopback(monkeypatch, tmp_path, accepted):
     server = setup_state(monkeypatch, tmp_path)

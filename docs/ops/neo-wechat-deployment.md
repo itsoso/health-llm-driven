@@ -36,10 +36,19 @@ path. If not, a separate bounded release-trust repair needs its own G2/G4 and
 rollout evidence. If PR252 merges first, its freeze must be reconciled through the
 approved external-launcher feature; this bridge adds no exemption.
 
-The 06:38 UTC concurrent release report for production candidate `637520e25`
-had successful preflight/readiness but no terminal receipt. This task did not
-inspect or alter that operation. Fresh production revision, completion evidence
-and both locks must be established before any bridge operation or executor rotation.
+The original release owner supplied fresh read-only evidence at 08:57:32 UTC on
+2026-10-10 through task `01a120c7-1ba0-75c3-9487-447bd5bfa28f` (`优化 README`).
+Production was clean at `346035f78b362804df06e1524099f87294286ef6`; backend,
+frontend, worker and beat were active. Candidate `637520e25` still had the trusted
+terminal `NEEDS_OPERATOR`, and workflow `38031474956` remained failed. The
+launcher inode was present with no holder observed in that instantaneous kernel
+snapshot, and the business lease was absent. Runtime remained paused with
+generation 8 and acknowledged generation 7. These observations do not authorize
+release: original failed-attempt markers remain preserved, and the original
+release owner plus authenticated administrator retain closure responsibility.
+This bridge must not retry, clear locks, or delete that history. Fresh admission
+and release ownership must be established before any bridge operation or executor
+rotation; this task performed no production writes.
 
 Before executing any repository bytes as root, the authorized operator must use
 the existing trusted bootstrap to establish the canonical origin, exact reviewed
@@ -205,13 +214,45 @@ the original live lease, exact current readback, and independently authenticated
 fsync/final-guard acknowledgement are all required even to classify an original
 completion. A visible completion file or matching hashes alone are insufficient.
 
-These modules have no production host adapter, command runner, lifecycle dispatcher
-or integration with installed release-history admission. They do not authorize
-execution from user-supplied snapshots. Tests inject synthetic hosts and faults;
-they do not establish actual systemd/nginx activation. Both units remain static:
-host-reboot startup needs later reviewed integration and real acceptance;
-`Restart=on-failure` alone is not evidence for that behavior. The input-adapter
-decision is separate from this implementation work and remains pending.
+`neo_wechat_host.py` now contains descriptor-relative file operations and an exact
+command allowlist with a clean environment, bounded output and deadlines. Its
+only admission factory requires a temporary filesystem and a recording runner;
+production admission is deliberately unavailable. A private Python object is not
+canonical provenance, current-main CI or G4 approval. The fixed nginx strategy
+requires a previously reviewed, pinned server file with exactly one
+`include /etc/nginx/neo-wechat/*.conf;` slot and a dedicated directory; it does not
+infer or rewrite production topology. Only `locations.conf` can be published or
+removed, and removal requires exact prior inode ownership as well as content.
+No current CLI invokes this adapter or starts a production lifecycle.
+
+One concrete stop limitation remains: after stopping both units but before nginx
+unpublish/reload, the public discovery request can return 502. That response is
+not proof of nginx's loaded configuration. The adapter retains an uncertain
+operation instead of treating cached HTTP success or a caller boolean as fresh
+proof. A reviewed loaded-generation proof or separately versioned stop protocol
+is needed before production stop can be admitted. Synthetic recording-runner
+success exercises sequencing and filesystem effects only; the realistic 502
+case must remain a blocking regression.
+
+`neo_wechat_installed_history.py` reads bounded metadata histories using pinned
+nofollow descriptors. It rejects unknown files, links, changed identities and
+malformed ordered records, and never reads credential or lease-token contents.
+Its diagnostics grant no actions. The actual installed release server uses an
+even smaller fail-closed rule: any `neo-wechat-lifecycle` namespace blocks new
+release admission until an independently reviewed closure protocol is available.
+Backend/frontend, OTA, retained-build claims and bootstrap install/rotation all
+reach this gate before consuming new work. A completion file or caller-created
+acknowledgement cannot lift the block. Existing exact credential revocation and
+receipt-bound completion paths retain their established scope.
+
+`neo_wechat_boot.py` implements exact two-unit startup-link creation and removal
+with durable intents, fsync and ownership readback. Only a temporary-directory
+test permission can enable links; production startup remains denied. The current
+templates remain static and this helper is not called by the runtime transaction.
+A real boot guard must establish confirmed closure before any restart activation;
+`Restart=on-failure` alone is not evidence for host-reboot behavior. No production
+systemd/nginx operation or closed-Mac acceptance is established by synthetic tests.
+The separate owner-input surface decision remains pending.
 
 `neo_wechat_linux_probe.py` adds an ephemeral-runner-only synthetic systemd test
 using retained directives from the real unit template. It exercises effective
