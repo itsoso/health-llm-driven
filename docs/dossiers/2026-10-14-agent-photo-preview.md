@@ -45,7 +45,9 @@
 - RED：后端新增测试在旧实现为 6 failed / 1 passed；移动端封面测试因仍请求原图失败。
 - GREEN：后端预览、上传隔离、聊天图片生命周期 28 passed（SQLite 快速行为验证）；卡片注册及交互 103 passed；Mobile TypeScript 检查通过。
 - API 类型生成完成，System Map / 导航 / 文档漂移检查通过。
-- PostgreSQL / CI-mode 集成验证、安全裁决、线上配对复测及发布证据待补。
+- PostgreSQL（独立本地 UTF-8 测试库、APP_ENV=test、CI=true）：预览/隔离/生命周期及 `test_integration.py` 共 31 passed。首次环境因 initdb 的 SQL_ASCII 编码失败，重建本任务临时空测试库为 UTF-8 后通过；未操作生产库。
+- 首次独立安全评审发现 JPEG COM 注释随 Pillow 图像 info 传播；补充注释剥离测试在旧代码为 RED，编码前清空 info。复审及最终候选验证待补。
+- 线上配对复测、精确提交 CI 与发布证据待补。
 
 ## CDN 判断
 

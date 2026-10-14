@@ -102,9 +102,12 @@ def test_preview_orients_and_strips_metadata(tmp_path):
     exif = Image.Exif()
     exif[274] = 6
     exif[315] = "private fixture metadata"
-    Image.new("RGB", (1600, 1200), "orange").save(file, exif=exif)
+    Image.new("RGB", (1600, 1200), "orange").save(
+        file, exif=exif, comment=b"private fixture location",
+    )
     data, media_type = load_preview(str(file))
     preview = Image.open(io.BytesIO(data))
     assert preview.size == (720, 960)
     assert not preview.getexif()
+    assert "comment" not in preview.info
     assert media_type == "image/jpeg"

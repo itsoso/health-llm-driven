@@ -47,6 +47,8 @@ def load_preview(filepath: str) -> tuple[bytes, str]:
             preview = preview.convert("RGB")
         output = io.BytesIO()
         # Explicitly omit EXIF/location and other original metadata.
+        # Pillow otherwise inherits JPEG COM comments from image.info.
+        preview.info.clear()
         preview.save(output, format="JPEG", quality=80, optimize=True)
     result = (output.getvalue(), "image/jpeg")
     if len(result[0]) <= _MAX_ENTRY_BYTES:
