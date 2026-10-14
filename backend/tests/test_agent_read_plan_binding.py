@@ -93,11 +93,29 @@ def test_colloquial_summary_model_owner_keys_cannot_change_authenticated_scope()
     result = decide("今天我过得怎么样?", "health_query", {
         "dimension": "diet", "user_id": 999, "owner_id": 999, "tenant_id": 999,
     })
-    assert result.action == "allow", result.reason
-    assert result.normalized_args == {
-        "dimension": "diet", "start_date": "2026-07-17",
-        "end_date": "2026-07-17", "timezone": "Asia/Shanghai",
-    }
+    assert result.action == "block"
+    assert result.reason == "health_query_subject_not_current_user"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["enforce", "shadow"])
+@pytest.mark.parametrize("key", ["user_id", "owner_id", "tenant_id"])
+@pytest.mark.parametrize("tool", ["health_query", "health_query_batch"])
+async def test_daily_model_owner_keys_never_reach_adapter(mode, key, tool):
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    calls = []
+
+    async def dispatch(request):
+        calls.append(request)
+        return "unexpected"
+
+    query = {"dimension": "diet", key: 999}
+    args = query if tool == "health_query" else {"queries": [query]}
+    gateway = ToolGateway(replace(snapshot("今天我过得怎么样?"), policy_mode=mode))
+    result = await gateway.execute(ToolExecutionRequest(tool, args), dispatch)
+    assert result.decision.action == "block"
+    assert result.decision.reason == "health_query_subject_not_current_user"
+    assert not calls
 
 
 def test_model_cannot_change_explicit_date_for_shared_plan():

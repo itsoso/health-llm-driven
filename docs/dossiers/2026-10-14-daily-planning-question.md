@@ -65,3 +65,5 @@ Mobile 与 shared 树分别为 60e59ed75ba566dcb741c983497d87a1f3d19ea2、4bfc70
 ## 最终整合畸形查询参数修复
 
 566f7c5fa 的独立复核发现新饮食 batch 中 dimension 为列表或对象会在 scope 集合判断抛 TypeError，真实 Gateway 转为 ToolPreflightError，零 dispatch；代码 NO-GO，未推送或部署。新增 210 个单项/batch/plan、五个维度别名、enforce/shadow 的公共 Gateway 回归先失败，另5个合法别名通过。修复在维度归一化与 scope 匹配之前拒绝任何已提供的非字符串维度或别名，使用已有强制阻断 reason，不将异常值字符串化；未提供的字段及合法别名保持既有语义。修复后整合相关测试608通过，相邻能力、Gateway、维度归一化与Garmin状态5818 tests通过；无新schema、权限或写路径。System Map/Dossier、秘密扫描与LLM change gate通过（live_llm_required=false）。后续使用新固定提交复审、精确完整CI和CI-mode，旧候选证据不代替。
+
+远端 d586 CI 的 balanced-08 发现旧测试仍预期忽略模型传入其他owner后继续读取；本次566安全语义已明确拒绝模型身份字段，因此更新过时allow预期，不回退账号隔离。新增single/batch × user_id/owner_id/tenant_id × enforce/shadow的公共Gateway零dispatch测试。相关回归319 passed/12既有skipped；新owner测试单独13 passed，无跳过。此收口仅修改测试和文档，生产runtime与已独立GO的d586字节一致；仍需新候选精确完整CI。
