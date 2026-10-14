@@ -6,6 +6,8 @@ from app.services.agent_conversation_service import AgentConversationService
 from app.services.agent_executor import AgentExecutor
 from tests.test_conversational_advice_scope import BEDTIME, ACTION
 
+DAILY = '今天如何运动 饮食和 睡眠'
+
 
 def forbid_heavy_work(executor, monkeypatch):
     def unexpected(*args, **kwargs):
@@ -45,7 +47,7 @@ async def test_local_answer_is_public_persisted_and_replay_identical(db, auth_us
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('original,attachment', [(BEDTIME, None), ('我胸痛，现在可以睡觉了吗？', None), (BEDTIME, 'synthetic.jpg')])
+@pytest.mark.parametrize('original,attachment', [(BEDTIME, None), ('我胸痛，现在可以睡觉了吗？', None), (BEDTIME, 'synthetic.jpg'), (DAILY, 'synthetic.jpg')])
 async def test_ack_recovery_binds_original_request(db, auth_user_and_headers, monkeypatch, original, attachment):
     user, _ = auth_user_and_headers
     svc = AgentConversationService(db)
@@ -85,7 +87,8 @@ async def test_other_goals_still_reach_existing_pipeline(db, auth_user_and_heade
 
 
 @pytest.mark.asyncio
-async def test_local_advice_cannot_use_another_users_conversation(db, auth_user_and_headers, monkeypatch):
+@pytest.mark.parametrize('message', [BEDTIME, DAILY])
+async def test_local_advice_cannot_use_another_users_conversation(db, auth_user_and_headers, monkeypatch, message):
     from tests.conftest import create_authenticated_user
     user, _ = auth_user_and_headers
     other, _ = create_authenticated_user(db)
@@ -94,12 +97,13 @@ async def test_local_advice_cannot_use_another_users_conversation(db, auth_user_
     executor = AgentExecutor(db)
     forbid_heavy_work(executor, monkeypatch)
     with pytest.raises(ValueError, match='对话不存在'):
-        _ = [e async for e in executor.run_stream(user.id, BEDTIME, conversation_id=conv.id)]
+        _ = [e async for e in executor.run_stream(user.id, message, conversation_id=conv.id)]
     assert db.query(AgentMessage).filter_by(conversation_id=conv.id).count() == 0
 
 
 @pytest.mark.asyncio
-async def test_failed_persistence_cannot_emit_success_or_answer(db, auth_user_and_headers, monkeypatch):
+@pytest.mark.parametrize('message', [BEDTIME, DAILY])
+async def test_failed_persistence_cannot_emit_success_or_answer(db, auth_user_and_headers, monkeypatch, message):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     forbid_heavy_work(executor, monkeypatch)
@@ -111,6 +115,6 @@ async def test_failed_persistence_cannot_emit_success_or_answer(db, auth_user_an
     monkeypatch.setattr(AgentConversationService, 'save_message', fail_assistant)
     events = []
     with pytest.raises(RuntimeError, match='synthetic persistence failure'):
-        async for event in executor.run_stream(user.id, BEDTIME, client_turn_id='failed-advice'):
+        async for event in executor.run_stream(user.id, message, client_turn_id='failed-advice'):
             events.append(event)
     assert not any(e.get('event') in ('token', 'done') for e in events)

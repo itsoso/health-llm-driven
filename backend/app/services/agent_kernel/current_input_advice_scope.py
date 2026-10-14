@@ -182,14 +182,36 @@ CURRENT_INPUT_UNVERIFIED_ANSWER_NOTICE = (
 )
 
 
+_DAILY_GUIDANCE = {
+    "运动": "没有明显不适，且符合已有医嘱和自身能力时，可选一种熟悉的轻松活动，如散步或舒缓拉伸；感觉疲劳时可以休息，不必为完成安排额外加量。出现胸痛、明显呼吸困难或突然加重的不适时，停止活动并及时就医。",
+    "饮食": "结合饥饿感和原有进餐节奏安排日常饮食，选择自己能耐受的食物，并遵守已知过敏限制和医生的饮食要求。已经吃过的餐次不用补吃；这里没有设定减重目标或调整摄入量。",
+    "睡眠": "结合困意、平时作息和次日起床安排准备休息；可以先减少干扰，做熟悉的放松活动。有明显不适时先处理不适或寻求医疗帮助，不用强迫自己在某个钟点入睡。",
+}
+
+
+def _daily_planning_response(message: str) -> str:
+    """Render only reviewed prose and closed domain/horizon tokens; no context."""
+    if not is_daily_planning_advice(message):
+        raise ValueError("Daily planning response requires a complete advice goal")
+    candidate = message.replace(" ", "").replace("\u3000", "")
+    horizon = re.search(_DAILY_HORIZON, candidate).group()
+    domains = dict.fromkeys(re.findall(r"饮食|运动|睡眠", candidate))
+    lines = [f"{horizon}的通用安排", "本轮未查询个人记录、未保存计划。以下选项需要结合你的实际状态选择，不能据此确认运动或饮食方案适合你。"]
+    lines.extend(f"**{domain}**：{_DAILY_GUIDANCE[domain]}" for domain in domains)
+    lines.extend(["按所问时段里还没过去的时间安排即可，不必补做已经错过的事项。",
+                  "你更希望关注恢复、规律作息，还是建立活动习惯？也可以告诉我需要考虑的限制。"])
+    return "\n\n".join(lines)
+
+
 def local_advice_response(message: str) -> tuple[str, str] | None:
     """Return a proven goal kind and its reviewed exact answer, without reads.
 
     Existing symptom-recovery remains on its existing model/medical pipeline.
     A bare general-health request is not silently changed into sleep advice.
     """
+    if is_daily_planning_advice(message):
+        return "daily_planning_advice", _daily_planning_response(message)
     if (is_current_input_recovery_advice(message) or is_wearable_placement_question(message)
-            or is_daily_planning_advice(message)
             or not is_current_input_advice(message)):
         return None
     candidate = message.replace(" ", "").replace("\u3000", "")

@@ -42,7 +42,9 @@
       "model": "MiniMax-M2.5"
     }
   ],
-  "quality_observation": "Both complete and disclose no personal reads. No read tools dispatched or write receipts. Earlier model draft suggested unrequested restriction; prompt strengthened. Model wording and timing remain variable.",
+  "quality_observation": "Functional completion only; rejected because output still used clock-only exercise suitability and fixed bedtime. Initial raw finding artifact was overwritten; not retained as claimed. Final implementation uses reviewed deterministic guidance; these timings are not its performance evidence.",
   "api_usage_calls": 3,
-  "api_usage_verified": true
+  "api_usage_verified": true,
+  "candidate": "f6b526671ebf781ea28b958cf9560292c8bf153b",
+  "status": "REJECTED_BY_G4"
 }

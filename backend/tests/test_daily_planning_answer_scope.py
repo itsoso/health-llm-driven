@@ -15,7 +15,7 @@ REQUESTS = ['规划今天饮食运动和睡眠', '请帮我规划今天的饮食
             '请问明天怎么规划饮食和睡眠',
             '今天饮食、运动和睡眠应该怎么安排？',
             '今天的运动和饮食如何安排',
-            '本周如何制定运动和睡眠计划？']
+            '本周如何制定运动和睡眠计划？', '今 天 如 何 运 动 饮 食 和 睡 眠']
 
 @pytest.fixture(autouse=True)
 def _transport(isolated_agent_protocol_transport):
@@ -26,7 +26,9 @@ def test_daily_draft_has_answer_scope_without_personal_reads(text):
     from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice, local_advice_response
     from tests.test_sleep_oxygen_read_scope import decide
     assert is_current_input_advice(text)
-    assert local_advice_response(text) is None  # not a bedtime-only canned reply
+    kind, answer = local_advice_response(text)
+    assert kind == 'daily_planning_advice'
+    assert '本轮未查询个人记录、未保存计划' in answer
     assert decide({'dimension': 'sleep'}, text).action == 'block'
 
 
@@ -62,7 +64,7 @@ def test_unknown_owner_basis_or_write_does_not_become_general_advice(text):
 
 @pytest.mark.parametrize('panel', [False, True])
 @pytest.mark.parametrize('query', [REQUESTS[0], '今天如何运动 饮食和 睡眠'])
-async def test_screenshot_turn_finishes_in_one_answer_round_without_reads(db, owned_data, monkeypatch, panel, query):
+async def test_screenshot_turn_finishes_without_model_or_personal_reads(db, owned_data, monkeypatch, panel, query):
     from tests.test_agent_read_repair_round_budget import batch_trace
     answer = '本轮未查询个人记录。以下是通用安排草稿：规律进餐、按身体感受选择轻松活动，晚间预留休息时间；有不适时暂停。'
     monkeypatch.setattr('tests.test_agent_read_repair_round_budget.ANSWER', answer)
@@ -71,11 +73,10 @@ async def test_screenshot_turn_finishes_in_one_answer_round_without_reads(db, ow
     assert done['completion_status'] == 'complete'
     assert done['turn_outcome']['status'] == 'complete'
     assert not trace.dispatches
-    assert len(trace.calls) == 1
+    assert not trace.calls
     assert '本轮数据查询未完成' not in saved.content
-    assert all(t['function']['name'] == 'knowledge_search' for t in trace.calls[0][1])
-    assert any('本轮任务是饮食、运动和睡眠的通用安排草稿' in str(m.get('content', ''))
-               for m in trace.calls[0][0])
+    assert done['model_call_count'] == 0
+    assert '本轮未查询个人记录、未保存计划' in saved.content
 
 
 @pytest.mark.parametrize('panel', [False, True])
@@ -100,9 +101,8 @@ async def test_question_after_failed_read_does_not_inherit_previous_goal(db, own
     assert done['completion_status'] == 'complete'
     assert done['turn_outcome']['status'] == 'complete'
     assert not trace.dispatches
-    assert len(trace.calls) == 1
-    assert answer in saved.content
-    assert all(t['function']['name'] == 'knowledge_search' for t in trace.calls[0][1])
+    assert not trace.calls
+    assert '本轮未查询个人记录、未保存计划' in saved.content
 
 
 @pytest.mark.parametrize('tool,args', [
@@ -118,18 +118,13 @@ def test_question_never_grants_personal_tool_authority(tool, args):
                                else 'current_input_advice_read_not_needed')
 
 
-async def test_model_read_attempt_cannot_execute_or_replace_advice_goal(db, owned_data, monkeypatch):
-    from tests.test_agent_read_repair_round_budget import batch_trace
-    answer = '本轮未查询个人记录。运动、饮食和睡眠仅提供有条件的通用安排，未保存计划。'
-    trace = batch_trace(db, monkeypatch, [
-        [('health_query', {'dimension': 'sleep'})], answer,
-    ])
-    done, saved = await consume_advice(db, trace, owned_data, query='今天如何运动 饮食和 睡眠')
-    assert not trace.dispatches
-    assert len(trace.calls) == 2
-    assert done['turn_outcome']['status'] == 'complete'
-    assert done['completion_status'] == 'complete'
-    assert answer in saved.content
+def test_model_prose_cannot_replace_reviewed_daily_answer():
+    from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+    message = '今天如何运动 饮食和 睡眠'
+    answer, verified = guard_current_input_answer(message, '根据个人记录，主食减半，22:30入睡。')
+    assert not verified
+    assert '已停止提供这部分结论' in answer
+    assert '主食减半' not in answer
 
 
 async def consume_advice(db, trace, user, *, panel=False, query, conversation_id=None):
@@ -140,12 +135,40 @@ async def consume_advice(db, trace, user, *, panel=False, query, conversation_id
     )]
     done = next(event['data'] for event in reversed(events) if event.get('event') == 'done')
     saved = db.get(AgentMessage, done['message_id'])
-    # The health-advice publication guard may select the normal buffered path
-    # even when the client requests a panel. Verify the public entry point.
-    assert done['mode'] in {'agent', 'multi_model'}
+    assert done['route'] == 'current_input_local_advice'
     assert saved.meta['turn_outcome'] == done['turn_outcome']
     assert saved.meta['completion_status'] == done['completion_status']
     assert ''.join(event['data'].get('content', '') for event in events
                    if event.get('event') == 'token') == saved.content
     assert not done['write_receipts']
     return done, saved
+
+
+@pytest.mark.parametrize('message', REQUESTS)
+@pytest.mark.parametrize('panel', [False, True])
+async def test_daily_question_has_reviewed_zero_model_answer(db, auth_user_and_headers, monkeypatch, message, panel):
+    from tests.test_local_advice_response import forbid_heavy_work
+    from app.services.agent_executor import AgentExecutor
+    from app.models.agent_conversation import AgentMessage
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    forbid_heavy_work(executor, monkeypatch)
+    turn_id = 'daily-question-replay'
+    async def send():
+        return [e async for e in executor.run_stream(user.id, message, client_turn_id=turn_id,
+                    extra_context=json.dumps({'multi_model': panel}))]
+    events = await send()
+    done = next(e['data'] for e in reversed(events) if e.get('event') == 'done')
+    assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
+    assert done['model_call_count'] == 0
+    assert done['advice_kind'] == 'daily_planning_advice'
+    answer = ''.join(e['data']['content'] for e in events if e.get('event') == 'token')
+    assert '本轮未查询个人记录、未保存计划' in answer
+    assert '已有医嘱' in answer or '饮食要求' in answer
+    assert not any(term in answer for term in ('主食减半', '热量缺口', '分钟', '22:', '23:'))
+    assert not done['write_receipts'] and not done['turn_outcome']['dispatch_started']
+    assert db.get(AgentMessage, done['message_id']).content == answer
+    replay = await send()
+    assert replay[-1]['data']['message_id'] == done['message_id']
+    assert ''.join(e['data']['content'] for e in replay if e.get('event') == 'token') == answer
+    assert db.query(AgentMessage).filter_by(conversation_id=done['conversation_id']).count() == 2
