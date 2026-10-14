@@ -1,12 +1,13 @@
-.workspace{margin:80px 16px 24px;--paper:#faf8f3;--ink:#342d28;--copper:#a46243;--line:#e7e0d5;display:grid;grid-template-columns:218px minmax(0,1fr);background:var(--paper);color:var(--ink);min-height:85vh;border:1px solid var(--line);border-radius:20px;font-family:inherit;isolation:isolate;max-width:100%}
+/* Navigation owns the fixed bar spacer; this margin is only the page gutter. */
+.workspace{margin:12px 16px 24px;--paper:#faf8f3;--ink:#342d28;--copper:#a46243;--line:#e7e0d5;display:grid;grid-template-columns:218px minmax(0,1fr);background:var(--paper);color:var(--ink);min-height:85vh;border:1px solid var(--line);border-radius:20px;font-family:inherit;isolation:isolate;max-width:100%}
 
 .workspace *{box-sizing:border-box}
-.sidebar{padding:28px 18px;background:#f3efe7;border-right:1px solid var(--line);border-radius:20px 0 0 20px;position:sticky;top:80px;align-self:start;min-height:calc(85vh - 32px)}
+.sidebar{padding:18px 14px;background:#f3efe7;border-right:1px solid var(--line);border-radius:20px 0 0 20px;position:sticky;top:80px;align-self:start;min-height:calc(85vh - 32px)}
 .brandRow{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink);font-size:23px;font-weight:700;letter-spacing:-.6px}
 .brandMark{width:40px;height:40px;display:grid;place-items:center;background:#a46243;color:#fff8ee;border-radius:13px}
 .brandSub{display:block;color:#85766a;font-size:10px;font-weight:500;letter-spacing:1px;margin-top:2px}
-.tabs{display:flex;flex-direction:column;gap:24px;margin-top:38px}
+.tabs{display:flex;flex-direction:column;gap:18px;margin-top:24px}
 .navGroup{display:grid;gap:5px}
 .navLabel{font-size:10px;color:#988778;font-weight:600;letter-spacing:1.5px;padding:0 12px;margin-bottom:5px}
 .workspace .tab{display:flex;align-items:center;gap:12px;text-align:left;border:1px solid transparent;background:transparent;border-radius:9px;padding:12px;font-size:13px;color:#77675b;cursor:pointer;min-height:44px}
@@ -16,7 +17,7 @@
 .sidebarNote{color:#9a8c7d;font-size:10px;line-height:2;letter-spacing:1px;margin:48px 12px 0}
 .workspace .menuButton{display:none}
 .content{min-width:0}
-.header{position:sticky;top:64px;z-index:10;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:19px 32px;background:#faf8f3f5;border-bottom:1px solid var(--line);border-radius:0 20px 0 0;backdrop-filter:blur(12px)}
+.header{position:sticky;top:64px;z-index:10;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 24px;background:#faf8f3f5;border-bottom:1px solid var(--line);border-radius:0 20px 0 0;backdrop-filter:blur(12px)}
 .header h1{font-size:21px;font-weight:650;letter-spacing:-.4px;line-height:1.4}
 .eyebrow{display:block;font-size:10px;color:#9c775e;font-weight:600;letter-spacing:1.5px;line-height:1.8}
 .saveActions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
@@ -31,17 +32,17 @@
 .workspace .button:disabled,.workspace .iconButton:disabled{opacity:.4;cursor:not-allowed}
 .workspace .primary{background:var(--copper);color:#fffaf5;border-color:var(--copper)}
 .workspace .primary:hover{background:#8e5135;border-color:#8e5135}
-.body{padding:24px 32px 12px;max-width:1250px;margin:0 auto;min-width:0}
-.pageIntro{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 23px}
-.pageIntro>p{font-family:Georgia,'Songti SC',serif;font-size:19px;letter-spacing:1px}
+.body{padding:16px 24px 12px;min-width:0}
+.pageIntro{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+.pageIntro>p{font-family:Georgia,'Songti SC',serif;font-size:16px;letter-spacing:1px}
 .muted{color:#8c7f72;font-size:12px;line-height:1.8}
-.datePanel{border:1px solid var(--line);background:#fffcf7;border-radius:13px;padding:18px 20px 12px;margin-bottom:22px}
+.datePanel{border:1px solid var(--line);background:#fffcf7;border-radius:13px;padding:12px 16px 10px;margin-bottom:14px}
 .weekHeader{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap}
 .weekHeader h2{font-size:17px;font-weight:650}
 .weekHeader h2 span{font-size:11px;color:#9a8b7a;font-weight:400;margin-left:12px;white-space:nowrap}
 .datePicker{display:flex;flex-direction:column;font-size:10px;color:#89786a;gap:3px}
 .datePicker .input{width:135px;padding:5px 8px;font-size:11px;height:31px}
-.dayStrip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px;margin-top:16px;border-top:1px solid #eee7dd;padding-top:13px}
+.dayStrip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px;margin-top:10px;border-top:1px solid #eee7dd;padding-top:8px}
 .workspace .dayButton{display:flex;flex-direction:column;align-items:center;gap:5px;background:transparent;border:1px solid transparent;border-radius:9px;padding:8px 2px;cursor:pointer;color:#847466;min-width:0}
 .workspace .dayButton>span:first-child{font-size:11px}
 .workspace .dayButton strong{font-size:20px;font-weight:500;line-height:1.25}
@@ -52,7 +53,7 @@
 .quickLinks{display:flex;gap:22px;padding:1px 0 16px;font-size:12px;color:#907d6a}
 .quickLinks a{text-decoration:none;position:relative}
 .quickLinks a:hover{color:var(--copper)}
-.focusCard{background:#3e3028;border:1px solid #47372b;border-radius:15px;display:flex;justify-content:space-between;gap:30px;padding:29px 30px;color:#f6eee3;margin-bottom:30px;background-image:radial-gradient(ellipse at 95% 0%,#6d503155,transparent 65%)}
+.focusCard{background:#3e3028;border:1px solid #47372b;border-radius:15px;display:flex;justify-content:space-between;gap:24px;padding:20px 24px;color:#f6eee3;margin-bottom:20px;background-image:radial-gradient(ellipse at 95% 0%,#6d503155,transparent 65%)}
 .focusCopy{min-width:0;max-width:75%}
 .focusEyebrow{font-size:9px;letter-spacing:2px;color:#c9a98b}
 .focusCard h2{font-family:Georgia,'Songti SC',serif;font-size:25px;font-weight:500;line-height:1.5;margin:12px 0 9px;overflow-wrap:anywhere}
@@ -111,14 +112,10 @@
 .workspace :is(a,button,summary):focus-visible{outline:2px solid #a56a42;outline-offset:3px}
 .workspace input[type=file]{max-width:100%;font-size:11px}
 
-@media(min-width:1550px){.body{padding:30px 44px 12px}
-.header{padding:20px 44px}
-}
-
 @media(max-width:1100px){.workspace{grid-template-columns:180px minmax(0,1fr)}
 .sidebar{padding:23px 12px}
-.header{padding:16px 20px}
-.body{padding:22px 20px 12px}
+.header{padding:12px 20px}
+.body{padding:16px 20px 12px}
 .saveActions{gap:7px}
 .saveStatus{width:100%;text-align:right}
 .slotGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -126,7 +123,7 @@
 .header h1{font-size:19px}
 }
 
-@media(max-width:760px){.workspace{margin:72px 8px 16px;display:block;border-radius:14px;min-height:85vh}
+@media(max-width:760px){.workspace{margin:8px 8px 16px;display:block;border-radius:14px;min-height:85vh}
 .sidebar{position:static;min-height:0;padding:14px 16px;border-right:0;border-bottom:1px solid var(--line);border-radius:14px 14px 0 0}
 .brand{font-size:20px}
 .brandMark{width:34px;height:34px;border-radius:10px}
@@ -146,8 +143,8 @@
 .workspace .saveActions .button{padding:8px 9px;font-size:11px;min-height:35px}
 .historyActions{gap:1px}
 .workspace .historyActions .iconButton{padding:7px;min-height:35px}
-.body{padding:20px 16px 12px}
-.pageIntro{margin-bottom:18px}
+.body{padding:14px 16px 12px}
+.pageIntro{margin-bottom:12px}
 .pageIntro>p{font-size:17px}
 .pageIntro>.muted{font-size:10px}
 .datePanel{padding:14px 12px 10px}
