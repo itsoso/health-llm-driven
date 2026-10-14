@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, TextStyle,
   Alert, ActivityIndicator, Pressable,
 } from 'react-native';
-import { Image } from 'expo-image';
+import { ChatMessageImage } from './ChatMessageImage';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
@@ -952,10 +952,9 @@ function ChatBubbleInner({
               accessibilityRole="imagebutton"
               accessibilityLabel={`打开图片 ${i + 1}`}
             >
-              <Image
+              <ChatMessageImage
                 source={source}
                 style={images.length === 1 ? styles.msgImageSingle : styles.msgImageGrid}
-                contentFit="cover"
               />
             </TouchableOpacity>
           );

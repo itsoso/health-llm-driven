@@ -1341,6 +1341,7 @@ describe('useChatEngine', () => {
       );
     });
     expect(mockGetConversationMessages).toHaveBeenCalledWith(321, { limit: 80 });
+    expect(mockGetConversations).toHaveBeenCalledWith(undefined, { resumeOnly: true, limit: 1 });
     expect(mockGetConversations).not.toHaveBeenCalledWith('每日健康简报');
   });
 

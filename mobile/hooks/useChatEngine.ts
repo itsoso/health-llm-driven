@@ -1366,7 +1366,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       // Web / Mobile 共用同一条默认续接规则：服务端 owner-scoped resume_only
       // 列表中最近一个包含用户消息的 durable conversation。assistant-only 的
       // 每日简报仍可从历史显式打开，但不应成为默认恢复目标。
-      const convs = await getConversations(undefined, { resumeOnly: true });
+      const convs = await getConversations(undefined, { resumeOnly: true, limit: 1 });
       if (requestGeneration !== conversationRequestGenerationRef.current) return;
       if (localStreamOwnsState()) return;
 

@@ -4,7 +4,7 @@ const mockGetToken = jest.fn<Promise<string | null>, []>();
 jest.mock('../auth', () => ({ getToken: () => mockGetToken() }));
 jest.mock('../api', () => ({ BASE_URL: 'https://example.invalid' }));
 
-import { getConversationsPage, streamChat } from '../chat';
+import { getConversations, getConversationsPage, streamChat } from '../chat';
 import { setAppEgressMode } from '../egressPolicy';
 
 describe('chat direct fetch egress guard', () => {
@@ -55,5 +55,16 @@ describe('chat direct fetch egress guard', () => {
     } finally {
       global.XMLHttpRequest = originalXHR;
     }
+  });
+
+  it('requests one resume item while retaining the default history page size', async () => {
+    mockGetToken.mockResolvedValue('persisted-token');
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true, json: async () => ({ items: [{ id: 7 }], total: 20 }),
+    } as Response);
+    await expect(getConversations(undefined, { resumeOnly: true, limit: 1 })).resolves.toEqual([{ id: 7 }]);
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://example.invalid/agent/conversations?limit=1&offset=0&resume_only=true');
+    await getConversations();
+    expect(fetchSpy.mock.calls[1][0]).toBe('https://example.invalid/agent/conversations?limit=20&offset=0');
   });
 });

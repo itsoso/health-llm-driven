@@ -3,7 +3,7 @@
 | 字段 | 值 |
 |---|---|
 | 状态 | building |
-| 当前阶段 | S6 验证 |
+| 当前阶段 | S7 线上请求验证通过；客户端体验待验收 |
 
 ## G1 范围准入
 
@@ -13,7 +13,7 @@
 
 - 用户提供 iOS Agent 餐食卡片截图，要求优化图片加载，并询问是否需要阿里云 CDN。
 - quick_fix + safety-gate；只优化图片读取与卡片展示，不改变记录、识别或营养数据。
-- 实现及局部验证完成；独立安全裁决、精确提交 CI、后端与 OTA 发布、模拟器验收待完成。不得将预览体积改善写成手机端已提速。
+- 实现、独立安全复审、精确提交 CI 与后端发布完成；线上同照片配对请求通过。OTA 已成功发布。当前模拟器未找到小巴应用，本候选模拟器与手机体验未验证。
 
 ## 基线与验收预算
 
@@ -46,9 +46,21 @@
 - GREEN：后端预览、上传隔离、聊天图片生命周期 28 passed（SQLite 快速行为验证）；卡片注册及交互 103 passed；Mobile TypeScript 检查通过。
 - API 类型生成完成，System Map / 导航 / 文档漂移检查通过。
 - PostgreSQL（独立本地 UTF-8 测试库、APP_ENV=test、CI=true）：预览/隔离/生命周期及 `test_integration.py` 共 31 passed。首次环境因 initdb 的 SQL_ASCII 编码失败，重建本任务临时空测试库为 UTF-8 后通过；未操作生产库。
-- 首次独立安全评审发现 JPEG COM 注释随 Pillow 图像 info 传播；补充注释剥离测试在旧代码为 RED，编码前清空 info。复审及最终候选验证待补。
-- 线上配对复测、精确提交 CI 与发布证据待补。
+- 首次独立安全评审发现 JPEG COM 注释随 Pillow 图像 info 传播；补充注释剥离测试在旧代码为 RED，编码前清空 info。复审对 `3d3d578b2c960d5929bc1ef7b899005423c96819` 裁决 GO；最终 PostgreSQL 元数据回归 7 passed。
+- 干净候选 CI-mode 发布集成闸：3774 passed、22 skipped、84 subtests；精确 SHA CI `38544376683` success。
+- 后端 validate `38546697827` 与 backend `38546748468` success；生产同 SHA，SUCCEEDED / COMMITTED，三个服务 active，公开 `/api/v1/health` healthy，无遗留业务 lease。
+- 线上同照片五组交替配对请求：原图 486805 bytes，预览 117530 bytes（720×960）；总时长 P50 666.75 → 229.61 ms，P95/P99 757.8 → 316.38 ms。仅开发电脑网络诊断样本，不代表手机延迟或生产长尾。
+- 原图 SHA-256 与源文件一致；预览无 EXIF/COM，响应 private,no-store。初次复测脚本缺少生产 APP_ENV 导致本地默认上传目录不存在，按服务实际配置修正后通过；未修改服务配置。
+- 脱敏证据见 `docs/reviews/2026-10-14-agent-photo-preview-release-receipt.json`。发布未建立任何备份。
 
 ## CDN 判断
 
 当前先减少卡片传输体积。仅在优化后跨地区 TTFB/传输仍超预算时评估阿里云；健康照片需要私有源站与边缘访问鉴权，不能直接公开现有上传目录或剥离签名以提高命中。
+
+## 发布结果与验收边界
+
+- 候选 `3d3d578b2c960d5929bc1ef7b899005423c96819`：后端部署及 OTA 均完成。
+- Trusted OTA validate `38547576240`、publish `38547820281` 均 success；服务器终态 SUCCEEDED，发布回执与 intent 摘要匹配，业务 lease 已释放。iOS production runtime 1.3.5。
+- G3 测试与精确 CI PASS；G4 独立安全复审 GO；G5 生产健康与同照片读路径 PASS。G6 的真实客户端体验尚未验证，不能将 HTTP 结果表述为手机端已提速。
+- 当前模拟器未找到小巴健康/Reva 应用，未用旧包或截图冒充候选验收。用户可在设置中检查更新，应用更新后查看 Agent 餐食卡片；点开大图仍读取原图。
+- 本次后验收证据保存在工作树 Dossier 与脱敏 receipt；运行时交付 SHA 保持上述精确候选，未把后续记录改动冒称为已部署代码。

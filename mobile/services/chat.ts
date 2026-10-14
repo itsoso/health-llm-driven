@@ -842,6 +842,8 @@ export interface ConversationsPage {
 export interface ConversationListOptions {
   /** Only conversations with at least one user turn, for default resume. */
   resumeOnly?: boolean;
+  /** Resume only needs the first item; history callers retain the default page size. */
+  limit?: number;
 }
 
 /**

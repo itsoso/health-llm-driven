@@ -3,6 +3,8 @@ import { Alert, StyleSheet, TextInput } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
+import { Image } from 'expo-image';
+import { BASE_URL } from '../../../services/api';
 
 import type { UIMessage } from '../../../hooks/useChatEngine';
 
@@ -112,6 +114,25 @@ const CONTENT = '## 睡眠分析\n\n你昨晚睡了 7 小时。\n\n建议保持�
 describe('ChatBubble streaming degraded render', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+  it('loads a private preview in the bubble, falls back once, and opens the original', () => {
+    const uri = `${new URL(BASE_URL).origin}/api/v1/upload/files/chat/7/meal.jpg?expires=123&signature=abc`;
+    const onViewImage = jest.fn();
+    const view = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble item={{ id: 'preview', role: 'user', content: '', imageUris: [uri] }}
+          imageAuthToken="auth-token" onViewImage={onViewImage} />
+      </QueryClientProvider>,
+    );
+    expect(view.UNSAFE_getByType(Image).props.source).toEqual({
+      uri: `${uri}&variant=preview`, headers: { Authorization: 'Bearer auth-token' },
+    });
+    fireEvent.press(view.getByLabelText('打开图片 1'));
+    expect(onViewImage).toHaveBeenCalledWith(uri, [uri]);
+    fireEvent(view.UNSAFE_getByType(Image), 'error', { error: 'preview unavailable' });
+    expect(view.UNSAFE_getByType(Image).props.source.uri).toBe(uri);
+    fireEvent(view.UNSAFE_getByType(Image), 'error', { error: 'original unavailable' });
+    expect(view.UNSAFE_getByType(Image).props.source.uri).toBe(uri);
   });
 
   it('renders rich Markdown while the assistant reply is streaming', () => {
