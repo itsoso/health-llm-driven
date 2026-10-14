@@ -1043,6 +1043,13 @@ function MealPhotoCover({
   onOpen: () => void;
   onError: () => void;
 }) {
+  const [failedPreviewUri, setFailedPreviewUri] = React.useState<string | null>(null);
+  const previewUri = React.useMemo(() => {
+    const url = new URL(uri);
+    url.searchParams.set('variant', 'preview');
+    return url.toString();
+  }, [uri]);
+  const usingOriginal = failedPreviewUri === uri;
   return (
     <Pressable
       testID="diet-photo-cover"
@@ -1053,11 +1060,16 @@ function MealPhotoCover({
     >
       <Image
         testID="diet-draft-photo"
-        source={{ uri }}
+        source={{ uri: usingOriginal ? uri : previewUri }}
+        cachePolicy="memory-disk"
+        recyclingKey={uri}
         style={StyleSheet.absoluteFill}
         contentFit="cover"
         transition={120}
-        onError={onError}
+        onError={() => {
+          if (usingOriginal) onError();
+          else setFailedPreviewUri(uri);
+        }}
         accessibilityLabel="本次识别的餐食照片"
       />
       {totalCount > 1 ? (

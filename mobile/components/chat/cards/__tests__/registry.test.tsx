@@ -37,6 +37,7 @@ import {
 import type { CardContext } from '../types';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Animated, AppState, Modal } from 'react-native';
+import { Image } from 'expo-image';
 import NetInfo from '@react-native-community/netinfo';
 import * as WebBrowser from 'expo-web-browser';
 import api from '../../../../services/api';
@@ -200,6 +201,30 @@ describe('dispatchCard', () => {
 });
 
 describe('renderCard 安全降级', () => {
+  it('loads a lightweight cover, opens the original, and retries the original if preview fails', () => {
+    const uri = 'https://health.executor.life/api/v1/upload/files/diet/1/meal.jpg?expires=123&signature=signed';
+    const screen = render(renderCard({ type: 'diet_draft', data: {
+      meal_type: 'lunch', food_items: '餐食', recorded: true, photo_url: uri,
+    } })!);
+    const image = () => screen.getByTestId('diet-draft-photo');
+    expect(image()).toHaveProp('source', expect.arrayContaining([
+      expect.objectContaining({ uri: `${uri}&variant=preview` }),
+    ]));
+    expect(image()).toHaveProp('cachePolicy', 'memory-disk');
+    expect(screen.queryByTestId('diet-photo-gallery')).toBeNull();
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+    expect(screen.getByTestId('diet-photo-gallery')).toBeTruthy();
+    const original = screen.UNSAFE_getAllByType(Image).find(node =>
+      node.props.source?.uri === uri);
+    expect(original?.props.source).toEqual({ uri });
+    fireEvent(image(), 'error', { nativeEvent: {} });
+    expect(image()).toHaveProp('source', expect.arrayContaining([
+      expect.objectContaining({ uri }),
+    ]));
+    fireEvent(image(), 'error', { nativeEvent: {} });
+    expect(screen.queryByTestId('diet-draft-photo')).toBeNull();
+  });
+
   it('未知 type 返回 null, 不抛异常', () => {
     expect(renderCard({ type: 'fake_xxx', data: {} })).toBeNull();
   });
@@ -227,7 +252,7 @@ describe('renderCard 安全降级', () => {
       'source',
       expect.arrayContaining([
         expect.objectContaining({
-          uri: 'https://health.executor.life/api/v1/upload/files/diet/1/lunch.jpg?expires=1&signature=signed',
+          uri: 'https://health.executor.life/api/v1/upload/files/diet/1/lunch.jpg?expires=1&signature=signed&variant=preview',
         }),
       ]),
     );
@@ -458,6 +483,8 @@ describe('renderCard 安全降级', () => {
       },
     })!);
 
+    fireEvent(screen.getByTestId('diet-draft-photo'), 'error', { nativeEvent: {} });
+    // The preview fails first, then the original; only then show the retry UI.
     fireEvent(screen.getByTestId('diet-draft-photo'), 'error', { nativeEvent: {} });
     const retry = screen.getByRole('button', { name: '重试加载餐食照片' });
     fireEvent.press(retry);

@@ -54205,6 +54205,7 @@ export interface operations {
     get_private_chat_image_api_v1_upload_files_chat__owner_id___filename__get: {
         parameters: {
             query?: {
+                variant?: "original" | "preview";
                 expires?: number | null;
                 signature?: string | null;
             };
@@ -54241,6 +54242,7 @@ export interface operations {
         parameters: {
             query?: {
                 owner_id?: number | null;
+                variant?: "original" | "preview";
                 expires?: number | null;
                 signature?: string | null;
             };
@@ -54275,6 +54277,7 @@ export interface operations {
     get_private_uploaded_file_api_v1_upload_files__category___owner_id___filename__get: {
         parameters: {
             query?: {
+                variant?: "original" | "preview";
                 expires?: number | null;
                 signature?: string | null;
             };
@@ -54312,6 +54315,7 @@ export interface operations {
         parameters: {
             query?: {
                 owner_id?: number | null;
+                variant?: "original" | "preview";
                 expires?: number | null;
                 signature?: string | null;
             };

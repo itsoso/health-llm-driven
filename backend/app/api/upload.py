@@ -7,7 +7,7 @@ from datetime import datetime
 from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.models.user import User
@@ -20,6 +20,7 @@ from app.services.private_uploads import (
 )
 from app.utils.image_compression import compress_image, should_compress
 from app.utils.runtime_data import upload_dir
+from app.utils.private_image_preview import private_preview_response
 from app.services.secure_upload import (
     UploadContentInvalid,
     UploadTooLarge,
@@ -334,6 +335,7 @@ async def upload_image_base64(
 async def get_private_chat_image(
     owner_id: int,
     filename: str,
+    variant: Literal["original", "preview"] = Query(default="original"),
     expires: Optional[int] = Query(default=None),
     signature: Optional[str] = Query(default=None),
     current_user: Optional[User] = Depends(get_current_user),
@@ -358,6 +360,8 @@ async def get_private_chat_image(
         raise HTTPException(status_code=403, detail="访问被拒绝")
     if not os.path.isfile(filepath):
         raise HTTPException(status_code=404, detail="文件不存在")
+    if variant == "preview":
+        return await private_preview_response(filepath)
     return FileResponse(filepath)
 
 
@@ -365,6 +369,7 @@ async def get_private_chat_image(
 async def get_legacy_private_chat_image(
     filename: str,
     owner_id: Optional[int] = Query(default=None),
+    variant: Literal["original", "preview"] = Query(default="original"),
     expires: Optional[int] = Query(default=None),
     signature: Optional[str] = Query(default=None),
     current_user: Optional[User] = Depends(get_current_user),
@@ -403,6 +408,8 @@ async def get_legacy_private_chat_image(
         raise HTTPException(status_code=403, detail="访问被拒绝")
     if not os.path.isfile(filepath):
         raise HTTPException(status_code=404, detail="文件不存在")
+    if variant == "preview":
+        return await private_preview_response(filepath)
     return FileResponse(filepath)
 
 
@@ -411,6 +418,7 @@ async def get_private_uploaded_file(
     category: str,
     owner_id: int,
     filename: str,
+    variant: Literal["original", "preview"] = Query(default="original"),
     expires: Optional[int] = Query(default=None),
     signature: Optional[str] = Query(default=None),
     current_user: Optional[User] = Depends(get_current_user),
@@ -442,6 +450,8 @@ async def get_private_uploaded_file(
         raise HTTPException(status_code=403, detail="访问被拒绝")
     if not os.path.isfile(filepath):
         raise HTTPException(status_code=404, detail="文件不存在")
+    if variant == "preview" and normalized_category == "diet":
+        return await private_preview_response(filepath)
     return FileResponse(filepath)
 
 
@@ -450,6 +460,7 @@ async def get_uploaded_file(
     category: str,
     filename: str,
     owner_id: Optional[int] = Query(default=None),
+    variant: Literal["original", "preview"] = Query(default="original"),
     expires: Optional[int] = Query(default=None),
     signature: Optional[str] = Query(default=None),
     current_user: Optional[User] = Depends(get_current_user),
@@ -511,4 +522,6 @@ async def get_uploaded_file(
     if not real_path.startswith(f"{category_root}{os.sep}"):
         raise HTTPException(status_code=403, detail="访问被拒绝")
 
+    if variant == "preview" and normalized_category == "diet":
+        return await private_preview_response(filepath)
     return FileResponse(filepath)
