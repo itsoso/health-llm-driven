@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| status | verifying |
-| current_stage | G4 fixed-commit safety review |
+| status | shipping |
+| current_stage | S6 release validation |
 | Primary controller | health-harness-orchestrator (incident) |
 | Overlay | safety-gate |
 | Source baseline | 93725987775cbe6c9e11cb24f48779049acc319f |
@@ -45,10 +45,15 @@ All fixtures are synthetic; no user health text or identifiers are retained.
 
 ## G4 Safety review
 
-Independent read-only working-diff review found no blocking issue. It verified
+裁决: GO
+
+Independent fixed-commit review of ad2645dd095ebd40b8375569643307eb0aa1c51d
+found no blocking issue. It verified
 closed matching for cancellation, extra reads/writes, third-party text and unknown
 annotations; direct personal tool proposals remained blocked in enforce and
-shadow modes with no dispatch. Fixed-commit review is pending.
+shadow modes with no dispatch. The reviewer independently checked the final
+six-file scope, generator-to-persisted-answer cases and both test logs. This
+follow-up changes delivery evidence only; the reviewed runtime is unchanged.
 
 ## Delivery boundary
 
