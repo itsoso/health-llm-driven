@@ -821,13 +821,10 @@ def _suggest_acwr(signals: StarterSignals) -> Optional[SuggestionCandidate]:
 
 def _suggest_acute_illness(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if signals.should_rest_from_training:
+        from app.services.agent_kernel.current_input_advice_scope import build_current_input_recovery_advice
+
         ill = _format_illness_phrase(signals.illness_names)
-        if ill:
-            # 若病症名已自带"发作"/"症状"结尾, 不再补"症状" (避免"发作症状"结巴)。
-            if ill.endswith(("发作", "症状", "急性发作")):
-                return SuggestionCandidate(100, f"我有{ill}，今天该怎么休息和恢复？")
-            return SuggestionCandidate(100, f"我有{ill}症状，今天该怎么休息和恢复？")
-        return SuggestionCandidate(100, "我身体不太舒服，今天该怎么休息和恢复？")
+        return SuggestionCandidate(100, build_current_input_recovery_advice(ill))
     return None
 
 

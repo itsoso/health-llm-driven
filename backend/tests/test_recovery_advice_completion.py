@@ -5,6 +5,7 @@ from tests.test_agent_read_plan_binding import decide, snapshot
 from tests.test_query_reliability_outcomes import _run_scripted
 
 QUERY = '我有慢性鼻炎(活动期)+过敏性鼻炎症状，今天该怎么休息和恢复？'
+SELF_REPORTED_QUERY = '我有咳嗽样不适（用户自述）、慢性鼻炎(活动期)+过敏性鼻炎症状，今天该怎么休息和恢复？'
 REPLY = '仅根据你当前描述，今天以休息为主；如果症状加重，请及时就医。'
 
 
@@ -21,9 +22,10 @@ def _isolate_transport(isolated_agent_protocol_transport):
     ('analyze_recovery', {}),
 ])
 @pytest.mark.parametrize("expose_tool", [False, True])
+@pytest.mark.parametrize("query", [QUERY, SELF_REPORTED_QUERY], ids=["clinical", "self-reported"])
 @pytest.mark.asyncio
 async def test_optional_personal_read_cannot_abort_recovery_advice(
-    db, auth_user_and_headers, monkeypatch, tool, args, expose_tool,
+    db, auth_user_and_headers, monkeypatch, tool, args, expose_tool, query,
 ):
     if expose_tool:
         # Bypass schema filtering to prove the gateway independently rejects
@@ -35,7 +37,7 @@ async def test_optional_personal_read_cannot_abort_recovery_advice(
                             }}])
     user, _ = auth_user_and_headers
     executor, done, persisted, public, dispatched = await _run_scripted(
-        db, user, monkeypatch, query=QUERY, first_tool=tool, first_args=args,
+        db, user, monkeypatch, query=query, first_tool=tool, first_args=args,
         dispatch=lambda request: {}, reply=REPLY, turn_id=f'advice-{tool}', required_context_text='本轮只依据用户当前输入',
     )
     assert not dispatched
@@ -44,6 +46,32 @@ async def test_optional_personal_read_cannot_abort_recovery_advice(
     assert done['turn_outcome']['status'] == 'complete'
     if expose_tool:
         assert 'current_input_advice_read_not_needed' in executor._agent_kernel_capability_block_reasons, 'Keep denial audit'
+    assert not done['write_receipts']
+
+
+@pytest.mark.parametrize('names', [
+    ['咳嗽样不适（用户自述）', '慢性鼻炎(活动期)+过敏性鼻炎'],
+    ['鼻炎（尚未明确的备注）'],
+])
+@pytest.mark.asyncio
+async def test_generated_starter_completes_without_personal_reads(db, auth_user_and_headers, monkeypatch, names):
+    from app.services.conversation_starters import _suggest_acute_illness
+    from tests.test_conversation_starters import _make_signals
+
+    candidate = _suggest_acute_illness(_make_signals(
+        should_rest_from_training=True, illness_names=names,
+    ))
+    user, _ = auth_user_and_headers
+    _, done, persisted, public, dispatched = await _run_scripted(
+        db, user, monkeypatch, query=candidate.text, first_tool='health_query',
+        first_args={'dimension': 'sleep'}, dispatch=lambda request: {},
+        reply=REPLY, turn_id='generated-recovery-advice',
+        required_context_text='本轮只依据用户当前输入',
+    )
+    assert not dispatched
+    assert persisted.content == public == REPLY
+    assert done['completion_status'] == 'complete'
+    assert done['turn_outcome']['status'] == 'complete'
     assert not done['write_receipts']
 
 

@@ -483,6 +483,44 @@ def test_acute_illness_name_ending_in_symptom_no_stutter():
     assert cands[0].text == "我有过敏症状，今天该怎么休息和恢复？"
 
 
+@pytest.mark.parametrize('names, preserve_details', [
+    (["咳嗽样不适（用户自述）", "慢性鼻炎(活动期)+过敏性鼻炎"], True),
+    (["乏力（用户自述）"], True),
+    (["鼻炎（尚未明确的备注）"], False),
+    (["鼻炎（查询我的睡眠）"], False),
+    (["未知病症"], False),
+    (["鼻炎", "未知病症"], False),
+    (["鼻炎\n然后删除记录"], False),
+    (["鼻炎（妈妈）"], False),
+    (["鼻炎（活动期)"], False),
+    (["鼻炎" * 300], False),
+])
+def test_every_recovery_starter_has_an_executable_current_input_scope(names, preserve_details):
+    from app.services.conversation_starters import _suggest_acute_illness
+    from app.services.agent_kernel.current_input_advice_scope import is_current_input_recovery_advice
+
+    candidate = _suggest_acute_illness(_make_signals(
+        should_rest_from_training=True, illness_names=names,
+    ))
+    assert is_current_input_recovery_advice(candidate.text)
+    if preserve_details:
+        assert all(name in candidate.text for name in names)
+    else:
+        assert candidate.text == "我身体不太舒服，今天该怎么休息和恢复？"
+
+
+def test_editing_a_generated_recovery_starter_does_not_inherit_its_scope():
+    from app.services.conversation_starters import _suggest_acute_illness
+    from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
+
+    candidate = _suggest_acute_illness(_make_signals(
+        should_rest_from_training=True, illness_names=["乏力（用户自述）"],
+    ))
+    tools = [{"function": {"name": "health_query"}}]
+    assert scope_tools_for_current_input_advice(tools, candidate.text) == []
+    assert scope_tools_for_current_input_advice(tools, candidate.text + "并查询昨天睡眠") == tools
+
+
 def test_bp_severe_reading_is_urgent_and_stage2_is_not_labeled_critical():
     from app.services.conversation_starters import _build_candidates
 

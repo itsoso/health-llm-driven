@@ -25,8 +25,9 @@ _UNSPECIFIED_RE = re.compile(r"我身体不太舒服[，,]今天该怎么休息�
 # Stage annotations are literal clinical data, not discarded arbitrary text.
 # Matching brackets and one annotation per entity are intentional boundaries.
 _STAGE = r"(?:[AHS][12]期|(?:I{1,3}|IV|[ⅠⅡⅢⅣ一二三四1-4])期|急性期|慢性期|活动期|恢复期|缓解期)"
+_CONDITION_NOTE = rf"(?:{_STAGE}|用户自述)"
 _CONDITION_RE = re.compile(
-    rf"(?P<name>[\u4e00-\u9fff]{{1,40}})(?:\({_STAGE}\)|（{_STAGE}）)?"
+    rf"(?P<name>[\u4e00-\u9fff]{{1,40}})(?:\({_CONDITION_NOTE}\)|（{_CONDITION_NOTE}）)?"
 )
 _CLINICAL_TERM_RE = re.compile(
     r"(?:急性|慢性|复发性|过敏性|非过敏性|萎缩性|非萎缩性|感染性|病毒性|细菌性){0,3}"
@@ -237,7 +238,7 @@ def _is_bounded_condition(value: str) -> bool:
     match = _CONDITION_RE.fullmatch(value)
     if match is None:
         return False
-    name = match["name"]
+    name = match["name"].removesuffix("样不适")
     if name in _SYMPTOMS or _CLINICAL_TERM_RE.fullmatch(name) is not None:
         return True
     # Reuse the existing exact terminology contract for other known illnesses;
@@ -264,6 +265,20 @@ def is_current_input_recovery_advice(text: str) -> bool:
         return False
     parts = re.split(r"[、+]", conditions)
     return 1 <= len(parts) <= 6 and all(_is_bounded_condition(part) for part in parts)
+
+
+def build_current_input_recovery_advice(illness_phrase: str) -> str:
+    """Only emit starters the answer-scope parser can consume in full.
+
+    Preserve accepted qualifiers verbatim. Unsupported labels use the existing
+    general discomfort question instead of emitting an unexecutable read goal.
+    Submitted text is still revalidated; this builder confers no authority.
+    """
+    suffix = "" if illness_phrase.endswith(("发作", "症状")) else "症状"
+    candidate = f"我有{illness_phrase}{suffix}，今天该怎么休息和恢复？"
+    if illness_phrase and is_current_input_recovery_advice(candidate):
+        return candidate
+    return "我身体不太舒服，今天该怎么休息和恢复？"
 
 
 def current_input_advice_scope_contract_payload() -> dict[str, str]:
