@@ -65,7 +65,7 @@ from app.services.agent_kernel.write_safety import (
     is_explicit_write_cancellation,
 )
 from app.services.clinician_provenance_guard import classify_clinician_turn
-from app.services.health_query_dimensions import normalize_health_query_args
+from app.services.health_query_dimensions import HEALTH_QUERY_DIM_KEYS, normalize_health_query_args
 from app.services.utterance_intent_classifier import MEAL_TYPES
 
 READ_ONLY_TOOLS = frozenset(
@@ -2652,6 +2652,19 @@ def decide_tool_capability(
 
     if not tool_name:
         return _decision("block", "missing_tool_name", tool_name, args)
+    if tool_name in {"health_query", "health_query_batch"}:
+        plan = args.get("plan", args)
+        proposals = ([args] if tool_name == "health_query" else
+                     plan.get("queries", []) if isinstance(plan, dict) else [])
+        # Normalization preserves malformed values; reject them before scope
+        # matching or alias/set lookups, including in shadow-mode execution.
+        if isinstance(proposals, list) and any(
+            isinstance(proposal, dict)
+            and any(key in proposal and not isinstance(proposal[key], str)
+                    for key in HEALTH_QUERY_DIM_KEYS)
+            for proposal in proposals
+        ):
+            return _decision("block", "health_query_semantics_unresolved", tool_name, args)
     if health_record_alias_conflict:
         return _decision(
             "block",

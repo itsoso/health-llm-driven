@@ -65,3 +65,39 @@ def test_diet_entry_cannot_expand_read_or_write(tool, args):
 ])
 def test_diet_entry_batch_rejects_expanded_or_malformed_plan(args):
     assert decide(args, text=REQUEST, tool='health_query_batch').action == 'block'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('mode', ['enforce', 'shadow'])
+@pytest.mark.parametrize('shape', ['single', 'batch', 'plan'])
+@pytest.mark.parametrize('key', ['dimension', 'type', 'query_type', 'category', 'kind'])
+@pytest.mark.parametrize('value', [[], {}, ['diet'], {'dimension': 'diet'}, None, True, 1])
+async def test_diet_entry_gateway_rejects_invalid_dimension_without_preflight_error(mode, shape, key, value):
+    from dataclasses import replace
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    from app.services.agent_kernel.types import ToolExecutionRequest
+
+    query = {key: value}
+    tool, args = ('health_query', query) if shape == 'single' else (
+        'health_query_batch', {'queries': [query]} if shape == 'batch' else {'plan': {'queries': [query]}})
+    dispatched = []
+
+    async def dispatch(request):
+        dispatched.append(request)
+        return '{"records":[]}'
+
+    result = await ToolGateway(replace(snapshot(REQUEST), policy_mode=mode)).execute(
+        ToolExecutionRequest(tool, args), dispatch)
+    assert result.decision.action == 'block'
+    assert result.decision.reason == 'health_query_semantics_unresolved'
+    assert not dispatched
+
+
+@pytest.mark.parametrize('key', ['dimension', 'type', 'query_type', 'category', 'kind'])
+def test_diet_entry_valid_dimension_aliases_keep_the_owned_day(key):
+    decision = decide({'queries': [{key: 'food'}]}, text=REQUEST, tool='health_query_batch')
+    assert decision.action == 'allow', decision.reason
+    assert decision.normalized_args == {'queries': [{
+        'dimension': 'diet', 'start_date': '2026-09-13', 'end_date': '2026-09-13',
+        'timezone': 'Asia/Shanghai',
+    }]}

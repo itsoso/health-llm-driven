@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 |---|---|
-| 当前阶段 | G3 验证 |
-| 状态 | building |
+| 当前阶段 | G4 统一发布复审 |
+| 状态 | shipping |
 | 负责 | 主会话；safety-gate 独立复核 |
 | 反馈环 | 饮食页点击、Pi 工具执行、PostgreSQL、发布回执 |
 
@@ -28,4 +28,14 @@
 
 ## G4–G6 发布边界
 
-尚未提交、推送或发布。只提交本任务文件，保留其他会话改动。安全独立复核、完整精确 CI、发布锁和后端回执满足后才推进 OTA。遵循现行无备份发布规范；模拟器界面结果、后端部署与 OTA 终态分别记录，不冒充完成。
+代码候选 `566f7c5fa` 已仅提交本任务七个文件，保留其他会话改动。独立 `diet_entry_safety_review` 对固定提交裁决 GO：独立 SQLite/Pi 回归 200 通过，附加 36 个否定、引用、假设、限制、未来/非法日期、身份和既有 batch 探针通过。独立结果不代替本会话 PostgreSQL 或模拟器验收。
+
+最终代码相关回归 306 passed / 1 skipped；CI=true 集成 smoke 3 passed；Mobile 57 passed、TypeScript 与 ESLint exit0；System Map、Dossier 一致性、Skill governance、高置信秘密扫描、diff-check 通过。LLM change gate：`live_llm_required=false`、`confirmed=false`、`waived=false`，没有真实模型评测。
+
+只读发现其他会话正在处理 daily-planning 统一发布，并已因主干变化暂停。本会话未 push、轮换授权、deploy 或 OTA，已请求用户允许通知现有发布会话将本修复一起发布。当前生产只读 HEAD 为 `b5110ff144dc840732fa8458dc336a221fb5f787`；后端及 GitHub relay active，relay enabled。这些状态不证明本候选上线。
+
+当前文档补充作为待交接工作树证据保留。完整精确 CI、发布锁和后端回执满足后才推进 OTA。遵循现行无备份发布规范；模拟器界面结果、后端部署与 OTA 终态分别记录，不冒充完成。
+
+## 统一发布交接后复核
+
+用户明确授权与其他发布一起合入main并发布OTA。原任务停止后续外部写入，由daily-planning主会话唯一收口。统一复核发现畸形dimension列表/对象导致预检异常，566候选未推送；补充公共Gateway拒绝测试并在能力入口校验维度及别名类型，保留账号/日期/数据类型边界，210个新负例与5个合法别名通过，整合相关608 tests通过。新的固定提交需再次独立GO及完整精确CI；真实移动端改动须同SHA后端后trusted OTA validate/publish，不沿用旧同树免OTA结论。模拟器点击仍未验证。

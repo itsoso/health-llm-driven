@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 |---|---|
-| 状态 | building |
-| 当前阶段 | G3/G4 修复复审 |
+| 状态 | shipping |
+| 当前阶段 | G4 最终整合复审 |
 | Controller | health-harness-orchestrator / incident |
 | Overlay | safety-gate |
 
@@ -39,3 +39,29 @@ G3：原语法 7 个新增问句失败；真实流未限制个人工具；旧 pa
 新增无模型/上下文/工具调用的真实公开入口测试先 20 failed，再修复；覆盖两种客户端 panel 选择、原句和语序/空格变体、持久化与重复请求逐字重放。补充准确原句的其他账号会话拒绝、持久化故障和源附件恢复边界。原模型候选的 5–12 秒结果不属于最终版本性能证据；最终版本不调用模型，本机/PostgreSQL 与线上检查分别记账。
 
 最终本地候选：关联回归 304 passed；一次性 PostgreSQL 84 passed / 93.93s，stop exit 0。离线 LLM invariant/trajectory 闸、System Map、Dossier 与 diff 检查通过。尚待新固定提交的独立复审、完整 CI、发布与线上验收；首版的包装脚本 GO 不替代新 SHA 复审。
+
+## 主干集成与发布归属断点
+
+推送前 fetch 发现 main 已由另一任务更新为 b5110ff144dc840732fa8458dc336a221fb5f787（LifeNav UI；精确 CI 38572169088 success）。在推送前的显式相等检查停止，未执行 push、授权轮换、部署或 OTA。按 AGENTS 第 7 节已向用户询问发布归属；未以无 lease 推断另一任务已经放弃发布。
+
+本地无冲突合并产生 fcc323c3159f94bc48b95cc48f240ad2aedf96b2。Agent 文件与已审 3f62 逐字一致，LifeNav 9 个文件与远端 b511 逐字一致，其他 dirty 文件保持原样。整合后 Mobile 33 tests、TypeScript exit0、System Map 和 Dossier 闸通过；独立集成复审 code/wrappers GO，仍显式要求 ownership 澄清后才能外部写入。最终精确候选的本地 CI-mode 闸在执行；前两次因候选被否决/替换的本地闸主动中止且保留原结果，不能计为通过。发布后真账号/手机端验收尚未发生。
+
+最终集成 SHA 的 clean CI-mode 发布不变量闸通过：3774 passed、22 skipped、84 subtests passed / 547.17s，真实 exit0。仍未 push，故精确主干 CI、生产部署、OTA 和手机验收未发生。唯一当前交接阻断为发布归属待用户澄清；既有本地修复及完整证据可继续沿同一 trace 交付。
+
+## 用户授权后的统一发布
+
+用户明确回复“ 一起发布 ”，发布归属解除；精确候选 fcc323c3159f94bc48b95cc48f240ad2aedf96b2 已正常推送 main，远端完整 CI 38578258596 开始执行。生产只读复核发现 LifeNav b5110ff 已先完成 backend 38574797238 与 OTA publish 38576013830，生产 SUCCEEDED、无业务租约或运行态事务。旧 e9ca 前序绑定不可继续执行；四份包装脚本仅将前序 SHA 改为 b511，并提交独立安全复审。
+
+Mobile 与 shared 树分别为 60e59ed75ba566dcb741c983497d87a1f3d19ea2、4bfc7001affb763d9fa08dced80111a92aec83d9，候选与已发布 b511 完全一致。已回读 production iOS runtime1.3.5 的 OTA durable intent/verified/completed 摘要一致，update 01a13ab6-5f2b-7fb8-9ab2-42edd1d5964e；不将旧 SHA OTA 冒充 fcc OTA，也不重复发布内容相同的空 OTA。待本次后端成功后，以同树复用说明汇报两端实际发布状态。
+
+精确 main CI 38578258596 全部 32 项检查成功；trusted-release validate 38580047831 成功。重绑定 b511 前序的独立安全复核 code/wrappers GO（/tmp/reva-daily-question-unified-g4.json）。服务器匿名 GitHub API 余量 20，低于整套轮换所需额度；等待 reset 后才允许 stage/revoke，不降低阈值或提前撤销旧授权。
+
+等待额度期间主干新增 93725987775cbe6c9e11cb24f48779049acc319f（仅 LifeNav Web CSS 与验收文档）。按用户一起发布指令将本地 main fast-forward，无源码冲突，Agent/backend/Mobile/shared 均未改；新候选重跑 clean CI-mode，等待远端 CI38580123045，并仅替换包装脚本候选 SHA 后独立复核。此前 fcc 的 CI/validate 仅归档作旧候选证据。网页发布仍受现有无备份冻结入口约束，本次不调用 Web publisher，也不把后端部署称为网页上线。
+
+937 的本地 CI-mode 3774 passed/22 skipped/84 subtests 与 remote CI32项、validate38582489426 均通过后，生产只读最后检查在 current-main 相等断言失败，未执行 staging、撤权或轮换。主干由 ad2645dd0、1f061b942 更新恢复建议语法及开场白，涉及同一 scope 文件，不能归为纯文档。已再次请求暂停其他推送并明确统一归属；外部写入暂停，本地 fast-forward 到1f061b942 并继续独立集成复核及全新 CI-mode。现有生产 b511 和原锁/授权未由本会话改动。
+
+用户在处理新增附件会话明确回复“合并到main 跟其他发布一起发 包括ota”；已通过 read_thread 核验原始用户消息。该会话交接566f7c5fa并停止继续 commit/push/deploy/rotate/OTA，本会话统一发布。新候选包含饮食页返回主Agent及单日读取修复，需新的OTA，旧同树免OTA结论不再适用。重新绑定最终G4和全新CI-mode；不带入其他dirty文件。
+
+## 最终整合畸形查询参数修复
+
+566f7c5fa 的独立复核发现新饮食 batch 中 dimension 为列表或对象会在 scope 集合判断抛 TypeError，真实 Gateway 转为 ToolPreflightError，零 dispatch；代码 NO-GO，未推送或部署。新增 210 个单项/batch/plan、五个维度别名、enforce/shadow 的公共 Gateway 回归先失败，另5个合法别名通过。修复在维度归一化与 scope 匹配之前拒绝任何已提供的非字符串维度或别名，使用已有强制阻断 reason，不将异常值字符串化；未提供的字段及合法别名保持既有语义。修复后整合相关测试608通过，相邻能力、Gateway、维度归一化与Garmin状态5818 tests通过；无新schema、权限或写路径。System Map/Dossier、秘密扫描与LLM change gate通过（live_llm_required=false）。后续使用新固定提交复审、精确完整CI和CI-mode，旧候选证据不代替。
