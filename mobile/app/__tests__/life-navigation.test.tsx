@@ -3,7 +3,7 @@ import { Alert, AppState } from 'react-native';
 import { render, waitFor, fireEvent, act } from '@testing-library/react-native';
 let mockOwner = 1;
 jest.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: mockOwner } }) }));
-jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }), Stack: { Screen: () => null }, useFocusEffect: (cb: () => void) => require('react').useEffect(cb, [cb]) }));
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }), Stack: { Screen: ({ options }: any) => options.headerRight?.() ?? null }, useFocusEffect: (cb: () => void) => require('react').useEffect(cb, [cb]) }));
 jest.mock('../../services/lifeNavigation', () => ({ fetchLifeWorkspace: jest.fn(), saveLifeWorkspace: jest.fn(), fetchLifeHistory: jest.fn().mockResolvedValue([]), restoreLifeWorkspace: jest.fn(), fetchLifeBackup: jest.fn(), importLifeBackup: jest.fn() }));
 import { fetchLifeWorkspace, saveLifeWorkspace, fetchLifeHistory, importLifeBackup, restoreLifeWorkspace } from '../../services/lifeNavigation';
 jest.mock('../../utils/lifeNavigationFiles', () => ({ exportLifeBackup: jest.fn(), pickLifeBackup: jest.fn() }), { virtual: true });
@@ -18,11 +18,13 @@ it('only reports a personal task saved after the server confirms', async () => {
     (saveLifeWorkspace as jest.Mock).mockRejectedValue({ response: { status: 409 } });
     const view = render(<Screen />);
     await waitFor(() => view.getByText('还没有个人安排。'));
+    fireEvent.press(view.getByLabelText('添加任务'));
     fireEvent.changeText(view.getByLabelText('个人任务标题'), '读书');
     fireEvent.press(view.getByText('加入今日安排'));
-    fireEvent.press(view.getByText('保存个人安排'));
+    fireEvent.press(view.getByLabelText('保存个人安排'));
     await waitFor(() => view.getByText('另一设备已更新，草稿已保留，请重新读取后核对。'));
     expect(view.queryByText('已保存个人安排')).toBeNull();
+    fireEvent.press(view.getByLabelText('展开任务 读书'));
     expect(view.getAllByDisplayValue('读书')).toHaveLength(1);
 });
 it('clears write busy after an in-flight save crosses background and foreground', async () => {
@@ -33,12 +35,13 @@ it('clears write busy after an in-flight save crosses background and foreground'
     (saveLifeWorkspace as jest.Mock).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
     const view = render(<Screen />);
     await waitFor(() => view.getByText('还没有个人安排。'));
+    fireEvent.press(view.getByLabelText('添加任务'));
     fireEvent.changeText(view.getByLabelText('个人任务标题'), '读书');
     fireEvent.press(view.getByText('加入今日安排'));
-    fireEvent.press(view.getByText('保存个人安排'));
+    fireEvent.press(view.getByLabelText('保存个人安排'));
     act(() => { listener('background'); listener('active'); });
     await act(async () => { finish({ revision: 1, data: { weeks: {} } }); });
-    await waitFor(() => expect(view.getByLabelText('加入今日安排').props.accessibilityState.disabled).toBe(false));
+    await waitFor(() => expect(view.getByLabelText('添加任务').props.accessibilityState.disabled).toBe(false));
     jest.restoreAllMocks();
 });
 it('offers all eight native views and never writes merely navigating', async () => {
@@ -55,22 +58,24 @@ it('offers all eight native views and never writes merely navigating', async () 
 });
 it('creates a task in the selected weekly time slot',async()=>{
  const view=render(<Screen/>);await waitFor(()=>view.getByText('还没有个人安排。'));
- fireEvent.press(view.getByLabelText('周计划'));
+ await act(async()=>{fireEvent.press(view.getByLabelText('周计划'));});
  const day=localDate();fireEvent.press(view.getByLabelText('添加安排 '+day+' morning'));
  fireEvent.changeText(view.getByLabelText('个人任务标题'),'晨间阅读');fireEvent.press(view.getByText('加入今日安排'));
- fireEvent.press(view.getByText('保存个人安排'));
+ fireEvent.press(view.getByLabelText('保存个人安排'));
  await waitFor(()=>expect(saveLifeWorkspace).toHaveBeenCalled());
  expect((saveLifeWorkspace as jest.Mock).mock.calls[0][2].weeks[mondayOf(day)].tasks[0].slot).toBe('morning');
 });
 it('uses one task across today and the seven day table and enforces one main', async () => {
     const view = render(<Screen />);
     await waitFor(() => view.getByText('还没有个人安排。'));
+    fireEvent.press(view.getByLabelText('添加任务'));
     fireEvent.changeText(view.getByLabelText('个人任务标题'), '阅读');
     fireEvent.press(view.getByText('加入今日安排'));
+    fireEvent.press(view.getByLabelText('添加任务'));
     fireEvent.changeText(view.getByLabelText('个人任务标题'), '第二主任务');
     fireEvent.press(view.getByText('加入今日安排'));
     expect(view.getByText('每日最多一项主任务、两项辅助任务，每周最多100项任务。')).toBeTruthy();
-    fireEvent.press(view.getByLabelText('周计划'));
+    await act(async()=>{fireEvent.press(view.getByLabelText('周计划'));});
     expect(view.getByText('阅读')).toBeTruthy();
     fireEvent.press(view.getByText('阅读'));
     expect(view.getByDisplayValue('阅读')).toBeTruthy();
@@ -120,8 +125,8 @@ it('ends persisted focus without completing its linked task', async () => {
     (fetchLifeWorkspace as jest.Mock).mockResolvedValue(w);
     (saveLifeWorkspace as jest.Mock).mockImplementation((_owner, revision, data) => Promise.resolve({ ...w, revision: revision + 1, data }));
     const view = render(<Screen />);
-    await waitFor(() => view.getByDisplayValue('计时任务'));
-    fireEvent.press(view.getByLabelText('时段导航'));
+    await waitFor(() => view.getByText('计时任务'));
+    await act(async()=>{fireEvent.press(view.getByLabelText('时段导航'));});
     fireEvent.press(view.getByText('结束计时并保存'));
     await waitFor(() => expect(saveLifeWorkspace).toHaveBeenCalled());
     expect((saveLifeWorkspace as jest.Mock).mock.calls[0][2].weeks[key].tasks[0].status).toBe('planned');
@@ -157,7 +162,7 @@ it('hides private content in background and restores the same unsaved draft with
     expect(view.queryByDisplayValue('未保存私密草稿')).toBeNull();
     act(() => listener('active'));
     expect(view.getByLabelText('愿景').props.value).toBe('未保存私密草稿');
-    fireEvent.press(view.getByText('保存个人安排'));
+    fireEvent.press(view.getByLabelText('保存个人安排'));
     await waitFor(() => expect(saveLifeWorkspace).toHaveBeenCalled());
     expect((saveLifeWorkspace as jest.Mock).mock.calls[0][1]).toBe(7);
     spy.mockRestore();
@@ -196,4 +201,130 @@ it('allows its own picker inactive active handoff and previews only in the same 
 it('cancels picker results after a real background transition',async()=>{
  let listener!:(s:string)=>void;jest.spyOn(AppState,'addEventListener').mockImplementation((_e,cb)=>{listener=cb as (s:string)=>void;return {remove:jest.fn()}});let finish!:(v:unknown)=>void;(pickLifeBackup as jest.Mock).mockImplementation(()=>new Promise(r=>finish=r));
  const view=render(<Screen/>);await waitFor(()=>view.getByText('还没有个人安排。'));fireEvent.press(view.getByLabelText('备份'));fireEvent.press(view.getByText('选择备份并预览'));act(()=>listener('inactive'));act(()=>listener('background'));act(()=>listener('active'));await act(async()=>finish({schema_version:'life_navigation.backup.v1',workspace:workspace(),history:[]}));expect(view.queryByText('确认替换工作区')).toBeNull();
+});
+
+it('uses compact date selection without saving personal data',async()=>{
+ const view=render(<Screen/>);await waitFor(()=>view.getByText('还没有个人安排。'));
+ expect(view.queryByLabelText('查看日期 YYYY-MM-DD')).toBeNull();
+ fireEvent.press(view.getByLabelText('选择日期'));
+ fireEvent.changeText(view.getByLabelText('查看日期 YYYY-MM-DD'),'2028-02-29');
+ fireEvent.press(view.getByLabelText('查看该日期'));
+ expect(view.getByLabelText('选择日期').props.accessibilityValue.text).toBe('2028-02-29');
+ expect(view.queryByLabelText('查看日期 YYYY-MM-DD')).toBeNull();
+ await act(async()=>{fireEvent.press(view.getByLabelText('周计划'));});
+ expect(view.getByLabelText('前一天')).toBeTruthy();
+ expect(view.getByLabelText('后一天')).toBeTruthy();
+ expect(saveLifeWorkspace).not.toHaveBeenCalled();
+});
+
+it('keeps task editors collapsed and preserves edits while switching the expanded task',async()=>{
+ const w=workspace(),day=localDate(),key=mondayOf(day);
+ const first=blankTask(day,'main'),second=blankTask(day,'auxiliary');
+ first.title='紧凑任务一';second.title='紧凑任务二';
+ w.data.weeks[key]=blankWeek();w.data.weeks[key].tasks=[first,second];
+ (fetchLifeWorkspace as jest.Mock).mockResolvedValue(w);
+ const view=render(<Screen/>);await waitFor(()=>view.getByText('紧凑任务一'));
+ expect(view.queryByLabelText('任务标题 '+first.id)).toBeNull();
+ fireEvent.press(view.getByLabelText('展开任务 紧凑任务一'));
+ fireEvent.changeText(view.getByLabelText('任务标题 '+first.id),'修改后的任务一');
+ fireEvent.press(view.getByLabelText('展开任务 紧凑任务二'));
+ expect(view.queryByLabelText('任务标题 '+first.id)).toBeNull();
+ expect(view.getByLabelText('任务标题 '+second.id)).toBeTruthy();
+ fireEvent.press(view.getByLabelText('展开任务 修改后的任务一'));
+ expect(view.getByLabelText('任务标题 '+first.id).props.value).toBe('修改后的任务一');
+ expect(view.queryByLabelText('任务标题 '+second.id)).toBeNull();
+ expect(saveLifeWorkspace).not.toHaveBeenCalled();
+});
+
+it('keeps introductory guidance behind an explicit help control',async()=>{
+ const view=render(<Screen/>);await waitFor(()=>view.getByText('还没有个人安排。'));
+ expect(view.queryByText(/后台会隐藏正文/)).toBeNull();
+ expect(view.queryByLabelText('查看健康周导航')).toBeNull();
+ fireEvent.press(view.getByLabelText('使用说明'));
+ expect(view.getByText(/后台会隐藏正文/)).toBeTruthy();
+ expect(view.getByLabelText('查看健康周导航')).toBeTruthy();
+ fireEvent.press(view.getByLabelText('收起说明'));
+ expect(view.queryByText(/后台会隐藏正文/)).toBeNull();
+ expect(saveLifeWorkspace).not.toHaveBeenCalled();
+});
+
+it('opens task and note forms on demand and retains their local drafts when collapsed', async () => {
+    const view = render(<Screen />);
+    await waitFor(() => view.getByLabelText('添加任务'));
+    expect(view.queryByLabelText('个人任务标题')).toBeNull();
+    expect(view.queryByLabelText('今日所学')).toBeNull();
+    fireEvent.press(view.getByLabelText('添加任务'));
+    fireEvent.changeText(view.getByLabelText('个人任务标题'), '保留任务草稿');
+    fireEvent.changeText(view.getByLabelText('完成标准'), '写下三个要点');
+    expect(view.getByText('任务待加入')).toBeTruthy();
+    expect(view.queryByText('任务输入尚未加入安排，请先加入今日安排，再保存。')).toBeNull();
+    fireEvent.press(view.getByLabelText('收起新任务'));
+    expect(view.queryByLabelText('个人任务标题')).toBeNull();
+    fireEvent.press(view.getByLabelText('继续填写任务'));
+    expect(view.getByLabelText('个人任务标题').props.value).toBe('保留任务草稿');
+    expect(view.getByLabelText('完成标准').props.value).toBe('写下三个要点');
+    fireEvent.press(view.getByLabelText('加入今日安排'));
+    expect(view.getByLabelText('展开任务 保留任务草稿')).toBeTruthy();
+    expect(view.queryByLabelText('个人任务标题')).toBeNull();
+    fireEvent.press(view.getByLabelText('日记录'));
+    fireEvent.changeText(view.getByLabelText('今日所学'), '保留今日所学');
+    expect(view.getByText('有未保存草稿')).toBeTruthy();
+    expect(view.queryByText('草稿尚未保存')).toBeNull();
+    fireEvent.press(view.getByLabelText('收起日记录'));
+    expect(view.queryByLabelText('今日所学')).toBeNull();
+    fireEvent.press(view.getByLabelText('日记录'));
+    expect(view.getByLabelText('今日所学').props.value).toBe('保留今日所学');
+    expect(saveLifeWorkspace).not.toHaveBeenCalled();
+});
+
+it('marks the current tab as selected without dimming or disabling it', async () => {
+    const view = render(<Screen />);
+    await waitFor(() => view.getByText('还没有个人安排。'));
+    expect(view.getByRole('tab', { name: '今日' }).props.accessibilityState).toMatchObject({selected:true,disabled:false});
+    await act(async () => { fireEvent.press(view.getByRole('tab', { name: '周计划' })); });
+    expect(view.getByRole('tab', { name: '周计划' }).props.accessibilityState).toMatchObject({selected:true,disabled:false});
+    expect(view.getByRole('tab', { name: '今日' }).props.accessibilityState.selected).toBe(false);
+    expect(saveLifeWorkspace).not.toHaveBeenCalled();
+});
+
+it('retains edits to finished tasks while folding the group and opens them directly from the weekly calendar', async () => {
+    const w = workspace(), day = localDate(), key = mondayOf(day), item = blankTask(day, 'main');
+    item.title = '已完成的阅读'; item.status = 'done'; item.slot = 'morning';
+    w.data.weeks[key] = blankWeek(); w.data.weeks[key].tasks = [item];
+    (fetchLifeWorkspace as jest.Mock).mockResolvedValue(w);
+    const view = render(<Screen />);
+    await waitFor(() => view.getByLabelText('展开已结束任务'));
+    expect(view.queryByText('已完成的阅读')).toBeNull();
+    await act(async () => { fireEvent.press(view.getByLabelText('周计划')); });
+    await waitFor(() => view.getByText('已完成的阅读'));
+    fireEvent.press(view.getByText('已完成的阅读'));
+    expect(view.getByLabelText('任务标题 ' + item.id).props.value).toBe('已完成的阅读');
+    fireEvent.changeText(view.getByLabelText('任务标题 ' + item.id), '保留完成记录草稿');
+    fireEvent.press(view.getByLabelText('收起已结束任务'));
+    expect(view.queryByLabelText('任务标题 ' + item.id)).toBeNull();
+    fireEvent.press(view.getByLabelText('展开已结束任务'));
+    fireEvent.press(view.getByLabelText('展开任务 保留完成记录草稿'));
+    expect(view.getByLabelText('任务标题 ' + item.id).props.value).toBe('保留完成记录草稿');
+    expect(saveLifeWorkspace).not.toHaveBeenCalled();
+});
+
+it('searches from the header without saving, and keeps edited task drafts when leaving search', async () => {
+    const w = workspace(), day = localDate(), key = mondayOf(day);
+    const first = blankTask(day, 'main'), second = blankTask(day, 'auxiliary');
+    first.title = 'AI 研究'; second.title = '产品周会';
+    w.data.weeks[key] = blankWeek(); w.data.weeks[key].tasks = [first,second];
+    (fetchLifeWorkspace as jest.Mock).mockResolvedValue(w);
+    const view = render(<Screen />);
+    await waitFor(() => view.getByLabelText('查找当日任务'));
+    expect(view.queryByLabelText('搜索当日任务')).toBeNull();
+    fireEvent.press(view.getByLabelText('查找当日任务'));
+    fireEvent.changeText(view.getByLabelText('搜索当日任务'), 'AI');
+    expect(view.queryByText('产品周会')).toBeNull();
+    fireEvent.press(view.getByLabelText('展开任务 AI 研究'));
+    fireEvent.changeText(view.getByLabelText('任务标题 '+first.id), '产品研究草稿');
+    expect(view.getByLabelText('任务标题 '+first.id).props.value).toBe('产品研究草稿');
+    fireEvent.press(view.getByLabelText('退出任务搜索'));
+    expect(view.getByText('产品周会')).toBeTruthy();
+    expect(view.getByLabelText('任务标题 '+first.id).props.value).toBe('产品研究草稿');
+    expect(saveLifeWorkspace).not.toHaveBeenCalled();
 });

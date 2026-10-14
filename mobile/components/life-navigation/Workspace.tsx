@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Stack, useFocusEffect } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { subscribeAIConsentInvalidation } from '../../services/aiConsentState';
 import { fetchLifeWorkspace, saveLifeWorkspace, fetchLifeHistory, restoreLifeWorkspace, fetchLifeBackup, importLifeBackup, type LifeData, type LifeWorkspace, type LifeTask, type LifeBackup, type LifeVersion } from '../../services/lifeNavigation';
 import { addDays, applyReviewDraft, blankData, blankTask, blankWeek, copy, ensureWeek, focusAdvance, focusEnd, focusPause, focusResume, focusStart, localDate, mondayOf, newId, reviewDraft, slotLabels, statusLabels, tracks, validateData } from '../../utils/lifeNavigationModel';
 import { exportLifeBackup, pickLifeBackup } from '../../utils/lifeNavigationFiles';
+import TaskCard from './TaskCard';
+import TodayTaskList from './TodayTaskList';
+import DateNavigation from './DateNavigation';
 const tabs = ['今日', '周计划', '时段导航', '周复盘', '成果', '方向与季度', '机会', '备份'] as const;
 const reviewFields = { summary: '复盘总结', gap: '差距与根因', learning: '复盘收获', next_week: '下周改进' };
 const noteFields = { valuable: '有价值的事', beautiful: '美好的事', mistake: '失误', learning: '今日所学' };
@@ -17,6 +20,11 @@ export default function Workspace({ owner, onViewHealth }: {
 }) {
     const { c } = useTheme();
     const [workspace, setWorkspace] = useState<LifeWorkspace | null>(null), [draft, setDraft] = useState<LifeData | null>(null), [tab, setTab] = useState<typeof tabs[number]>('今日'), [date, setDate] = useState(localDate()), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [dirty, setDirty] = useState(false), [refresh, setRefresh] = useState(0), [now, setNow] = useState(Date.now());
+    const [expandedTask,setExpandedTask]=useState<string|null>(null);
+    const [showHelp,setShowHelp]=useState(false);
+    const [showTaskSearch,setShowTaskSearch]=useState(false);
+    const [showComposer,setShowComposer]=useState(false), [showNotes,setShowNotes]=useState(false);
+    const [expandedTrack,setExpandedTrack]=useState<string|null>(null);
     const [title, setTitle] = useState(''), [criterion, setCriterion] = useState(''), [role, setRole] = useState<LifeTask['role']>('main'), [newSlot,setNewSlot]=useState<LifeTask['slot']>('flexible'), [history, setHistory] = useState<LifeVersion[]>([]), [preview, setPreview] = useState<LifeBackup | null>(null), [generated, setGenerated] = useState<ReturnType<typeof reviewDraft> | null>(null);
     const snapshot = useRef<{
         workspace: LifeWorkspace | null;
@@ -61,7 +69,7 @@ export default function Workspace({ owner, onViewHealth }: {
         setMessage('个人安排暂不可用，请重新读取。'); }); return () => { active.current = false; suspended.current = null; clear(); }; }, [owner, refresh, clear]));
     const week = draft?.weeks[monday] ?? blankWeek(), tasks = week.tasks, focus = draft?.focus;
     function edit(change: (d: LifeData) => void) { if (!draft || lock.current)
-        return; const next = ensureWeek(draft, monday); change(next); setDraft(next); setDirty(true); setMessage('草稿尚未保存'); }
+        return; const next = ensureWeek(draft, monday); change(next); setDraft(next); setDirty(true); setMessage(''); }
     function editWeek(change: (w: typeof week) => void) { edit(d => change(d.weeks[monday])); }
     async function write(send: () => Promise<LifeWorkspace>) { if (!workspace || lock.current || !alive.current || !active.current)
         return; lock.current = true; setBusy(true); const version = ++epoch.current; try {
@@ -101,9 +109,9 @@ export default function Workspace({ owner, onViewHealth }: {
         return; const data = copy(draft); data.focus = next; setDraft(data); setDirty(true); void write(() => checkedSave(data)); }
     const names: Record<string, string> = { main: '主任务', auxiliary: '辅助任务', other: '可选任务', aux1: '辅助一', aux2: '辅助二', important: '重要事项', misc: '其他事项', morning: '上午', afternoon: '下午', evening: '晚上', flexible: '灵活', planned: '未开始', doing: '进行中', done: '已完成', skipped: '已跳过', macro: '宏观', industry: '行业', people: '人群', customer: '客户', unknown: '未知', hypothesis: '假设', signal: '信号', supported: '有支持证据', low: '低', medium: '中', high: '高', idle: '未启动', focus: '专注', rest: '休息', paused: '已暂停' };
     const cleanLabel = (value: string) => value.replace(/ [a-f0-9]{8}-[a-f0-9-]{27,}$/i, '');
-    const text = (value: string) => <Text style={{ color: c.labelPrimary }}>{value}</Text>;
-    const button = (label: string, onPress: () => void, disabled = false, visibleLabel?: string) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} disabled={busy || disabled} onPress={onPress} style={{ padding: 12, borderWidth: 1, borderColor: c.separator, borderRadius: 12, opacity: (busy || disabled) ? 0.5 : 1 }}><Text style={{ color: c.brand, fontWeight: '600' }}>{visibleLabel ?? cleanLabel(label)}</Text></Pressable>;
-    const field = (label: string, value: string, onChange: (v: string) => void, maxLength = 4000, numeric = false) => <View key={label} style={{ gap: 5 }}>{text(cleanLabel(label))}<TextInput accessibilityLabel={label} value={value} onChangeText={onChange} editable={!busy} maxLength={maxLength} multiline={!numeric} keyboardType={numeric ? 'number-pad' : 'default'} style={{ padding: 12, borderWidth: 1, borderColor: c.separator, borderRadius: 10, color: c.labelPrimary, minHeight: 44 }}/></View>;
+    const text = (value: string) => <Text style={{ fontSize: 13, lineHeight: 18, color: c.labelPrimary }}>{value}</Text>;
+    const button = (label: string, onPress: () => void, disabled = false, visibleLabel?: string) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} disabled={busy || disabled} onPress={onPress} style={{ paddingHorizontal: 10, paddingVertical: 6, minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: c.separator, borderRadius: 8, opacity: (busy || disabled) ? 0.5 : 1 }}><Text style={{ fontSize: 13, lineHeight: 18, color: c.brand, fontWeight: '600' }}>{visibleLabel ?? cleanLabel(label)}</Text></Pressable>;
+    const field = (label: string, value: string, onChange: (v: string) => void, maxLength = 4000, numeric = false) => <View key={label} style={{ gap: 5 }}>{text(cleanLabel(label))}<TextInput accessibilityLabel={label} value={value} onChangeText={onChange} editable={!busy} maxLength={maxLength} multiline={!numeric} keyboardType={numeric ? 'number-pad' : 'default'} style={{ fontSize: 13, lineHeight: 18, padding: 8, borderWidth: 1, borderColor: c.separator, borderRadius: 10, color: c.labelPrimary, minHeight: 44 }}/></View>;
     const choices = <T extends string>(label: string, value: T, values: readonly T[], onChange: (v: T) => void) => <View style={{ gap: 5 }}>{text(`${label}：${names[value] ?? value}`)}<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{values.map(v => button(`${label} ${v}`, () => onChange(v), v === value, names[v] ?? v))}</View></View>;
     function updateTask(id: string, patch: Partial<LifeTask>) { const current = tasks.find(t => t.id === id); if (!current)
         return; const next = { ...current, ...patch }, same = tasks.filter(t => t.id !== id && t.date === next.date && t.role === next.role); if (mondayOf(next.date) !== monday || (next.role === 'main' && same.length >= 1) || (next.role === 'auxiliary' && same.length >= 2)) {
@@ -116,10 +124,10 @@ export default function Workspace({ owner, onViewHealth }: {
         setMessage('每日最多一项主任务、两项辅助任务，每周最多100项任务。');
         return;
     } editWeek(w => { const task = blankTask(date, role); task.title = title.trim(); task.criterion = criterion; task.slot=newSlot; if (role === 'auxiliary' && same.length)
-        task.track_id = 'aux2'; w.tasks.push(task); }); setTitle(''); setCriterion(''); }
-    const taskCard = (task: LifeTask) => <View key={task.id} style={{ padding: 16, gap: 10, borderRadius: 14, backgroundColor: c.bgCard }}>{text(`${task.role === 'main' ? '主任务' : task.role === 'auxiliary' ? '辅助任务' : '可选任务'} · ${task.date}`)}{choices('任务日期', task.date, days, v => updateTask(task.id, { date: v }))}{choices('任务角色', task.role, ['main', 'auxiliary', 'other'], v => updateTask(task.id, { role: v }))}{field(`任务标题 ${task.id}`, task.title, v => updateTask(task.id, { title: v }))}{field(`完成标准 ${task.id}`, task.criterion, v => updateTask(task.id, { criterion: v }))}{choices('时段', task.slot, Object.keys(slotLabels) as LifeTask['slot'][], v => updateTask(task.id, { slot: v }))}{choices('任务主线', task.track_id, tracks.map(t => t.id), v => updateTask(task.id, { track_id: v }))}{choices('状态', task.status, Object.keys(statusLabels) as LifeTask['status'][], v => updateTask(task.id, { status: v }))}{(['estimated_minutes', 'actual_minutes'] as const).map(k => field(`${k === 'estimated_minutes' ? '预计' : '实际'}分钟 ${task.id}`, task[k] === null ? '' : String(task[k]), v => { if (v === '' || /^\d{1,4}$/.test(v) && Number(v) <= 1440)
+        task.track_id = 'aux2'; w.tasks.push(task); }); setTitle(''); setCriterion(''); setShowComposer(false); }
+    const taskCard = (task: LifeTask) => <TaskCard key={task.id} task={task} expanded={expandedTask===task.id} disabled={busy} onToggle={()=>setExpandedTask(expandedTask===task.id?null:task.id)}>{choices('任务日期', task.date, days, v => updateTask(task.id, { date: v }))}{choices('任务角色', task.role, ['main', 'auxiliary', 'other'], v => updateTask(task.id, { role: v }))}{field(`任务标题 ${task.id}`, task.title, v => updateTask(task.id, { title: v }))}{field(`完成标准 ${task.id}`, task.criterion, v => updateTask(task.id, { criterion: v }))}{choices('时段', task.slot, Object.keys(slotLabels) as LifeTask['slot'][], v => updateTask(task.id, { slot: v }))}{choices('任务主线', task.track_id, tracks.map(t => t.id), v => updateTask(task.id, { track_id: v }))}{choices('状态', task.status, Object.keys(statusLabels) as LifeTask['status'][], v => updateTask(task.id, { status: v }))}{(['estimated_minutes', 'actual_minutes'] as const).map(k => field(`${k === 'estimated_minutes' ? '预计' : '实际'}分钟 ${task.id}`, task[k] === null ? '' : String(task[k]), v => { if (v === '' || /^\d{1,4}$/.test(v) && Number(v) <= 1440)
         updateTask(task.id, { [k]: v === '' ? null : Number(v) }); }, 4, true))}{(['result', 'root_cause', 'improvement'] as const).map((k, i) => field(`${['任务结果', '根因', '改进'][i]} ${task.id}`, task[k], v => updateTask(task.id, { [k]: v })))}{button('开始此任务计时 ' + task.id, () => focus && persistFocus(focusStart(focus, task.id, Date.now())))}{button('删除任务 ' + task.id, () => ask('删除任务', '确认移除此任务？尚未保存的修改也会保留在草稿中。', () => edit(d => { d.weeks[monday].tasks = d.weeks[monday].tasks.filter(t => t.id !== task.id); if (d.focus.task_id === task.id)
-        d.focus = focusEnd(d.focus); })))}</View>;
+        d.focus = focusEnd(d.focus); })))}</TaskCard>;
     async function readExtras(kind: 'history' | 'backup' | 'pick' | 'draft') { const version = epoch.current; nativeDialog.current=kind!=='history';try {
         if (kind === 'history') {
             const data = await fetchLifeHistory(owner);
@@ -144,22 +152,35 @@ export default function Workspace({ owner, onViewHealth }: {
         if (version === epoch.current)
             setMessage('备份或历史读取失败，请检查文件格式与大小。');
     } finally {nativeDialog.current=false;} }
-    return <><Stack.Screen options={{ title: '人生战略导航仪', headerShown: true, headerBackTitle: '返回' }}/><ScrollView style={{ backgroundColor: c.bgPrimary }} contentContainerStyle={{ padding: 20, gap: 14 }}><Text style={{ fontSize: 25, fontWeight: '700', color: c.labelPrimary }}>人生战略导航仪</Text>{text('个人安排、记录与方向 · 健康执行请在 Health 中确认。后台会隐藏正文；返回恢复同账号草稿，离开页面或切换账号会清除未保存草稿。')}{button('查看健康周导航', onViewHealth)}
- <ScrollView horizontal><View style={{ flexDirection: 'row', gap: 8 }}>{tabs.map(t => button(t, () => setTab(t), tab === t))}</View></ScrollView>
+    return <><Stack.Screen options={{ title: tab === '今日' ? '今日安排' : tab, headerShown: true, headerBackTitle: '返回', headerRight: tab === '今日' && draft ? () => <Pressable accessibilityRole="button" accessibilityLabel={showTaskSearch?'退出任务搜索':'查找当日任务'} accessibilityState={{expanded:showTaskSearch,disabled:busy}} aria-expanded={showTaskSearch} disabled={busy} onPress={()=>setShowTaskSearch(v=>!v)} style={{minWidth:44,minHeight:44,justifyContent:'center',alignItems:'center',opacity:busy?0.5:1}}><Text style={{fontSize:13,lineHeight:18,color:c.brand}}>{showTaskSearch?'取消':'查找'}</Text></Pressable> : undefined }}/><ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'web' ? 'none' : 'on-drag'} automaticallyAdjustKeyboardInsets style={{ backgroundColor: c.bgPrimary }} contentContainerStyle={{ padding: 12, gap: 8 }}>
+ <View style={{flexDirection:'row',alignItems:'center',gap:6}}><ScrollView horizontal style={{flex:1}} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"><View accessibilityRole="tablist" style={{ flexDirection: 'row', gap: 6 }}>{tabs.map(t => <Pressable key={t} accessibilityRole="tab" accessibilityLabel={t} aria-selected={tab===t} accessibilityState={{selected:tab===t,disabled:busy}} disabled={busy} onPress={()=>setTab(t)} style={{minHeight:44,justifyContent:'center',paddingHorizontal:10,paddingVertical:6,borderWidth:1,borderRadius:8,borderColor:tab===t?c.brand:'transparent',backgroundColor:tab===t?c.bgCard:'transparent',opacity:busy?0.5:1}}><Text style={{fontSize:13,lineHeight:18,fontWeight:tab===t?'600':'400',color:tab===t?c.brand:c.labelSecondary}}>{t}</Text></Pressable>)}</View></ScrollView><Pressable accessibilityRole="button" accessibilityLabel={showHelp?'收起说明':'使用说明'} accessibilityState={{expanded:showHelp}} onPress={()=>setShowHelp(v=>!v)} style={{minWidth:44,minHeight:44,justifyContent:'center',alignItems:'center'}}><Text style={{fontSize:12,lineHeight:16,color:c.labelSecondary}}>说明</Text></Pressable></View>
+ {showHelp&&<View style={{padding:10,gap:6,borderWidth:1,borderColor:c.separator,borderRadius:8}}>{text('个人安排、记录与方向 · 健康执行请在 Health 中确认。后台会隐藏正文；返回恢复同账号草稿，离开页面或切换账号会清除未保存草稿。')}{workspace&&text(`本周 ${monday} · 已保存版本 ${workspace.revision}`)}{button('查看健康周导航',onViewHealth)}</View>}
  {message ? <Text accessibilityRole="alert" style={{ color: c.labelSecondary }}>{message}</Text> : null}
  {!draft || !workspace ? <ActivityIndicator /> : <>
- {text(`本周 ${monday} · 已保存版本 ${workspace.revision} · ${dirty ? '有未保存草稿' : title || criterion ? '任务输入尚未加入安排，加入后再保存' : '已与服务端同步'}`)}{button('保存个人安排', save, !dirty)}
- <View style={{ flexDirection: 'row', gap: 8 }}>{button('前一天', () => { setDate(addDays(date, -1)); setGenerated(null); })}{button('后一天', () => { setDate(addDays(date, 1)); setGenerated(null); })}</View>{text('所选日期 ' + date)}
+ <DateNavigation key={date} date={date} disabled={busy}
+     status={dirty ? '有未保存草稿' : title || criterion ? '任务待加入' : '已同步'}
+     trailing={button('保存个人安排', save, !dirty, '保存')}
+     onDate={value=>{setDate(value);setGenerated(null);}}/>
  {tab === '今日' && <>
- {!tasks.filter(t => t.date === date).length && text('还没有个人安排。')}{tasks.filter(t => t.date === date).map(taskCard)}
- {choices('新任务角色', role, ['main', 'auxiliary', 'other'], setRole)}{choices('新任务时段',newSlot,Object.keys(slotLabels) as LifeTask['slot'][],setNewSlot)}{field('个人任务标题', title, v => { setTitle(v); setMessage('任务输入尚未加入安排，请先加入今日安排，再保存。'); })}{field('完成标准', criterion, v => { setCriterion(v); setMessage('任务输入尚未加入安排，请先加入今日安排，再保存。'); })}{button('加入今日安排', add)}
- {Object.entries(noteFields).map(([k, label]) => field(label, week.notes[date]?.[k as keyof typeof noteFields] ?? '', v => editWeek(w => { w.notes[date] ??= { valuable: '', beautiful: '', mistake: '', learning: '' }; w.notes[date][k as keyof typeof noteFields] = v; })))}
+ <TodayTaskList key={date} tasks={tasks.filter(t=>t.date===date)} expandedTaskId={expandedTask} onCollapseTask={()=>setExpandedTask(null)} renderTask={taskCard} disabled={busy} searchOpen={showTaskSearch}/>
+ <View style={{flexDirection:'row',flexWrap:'wrap',gap:6}}>
+ {[
+     {id:'task',label:showComposer?'收起新任务':title||criterion?'继续填写任务':'添加任务',expanded:showComposer,toggle:()=>setShowComposer(v=>!v)},
+     {id:'notes',label:showNotes?'收起日记录':'日记录',expanded:showNotes,toggle:()=>setShowNotes(v=>!v)},
+ ].map(action=><Pressable key={action.id} accessibilityRole="button" accessibilityLabel={action.label} accessibilityState={{expanded:action.expanded,disabled:busy}} disabled={busy} onPress={action.toggle} style={{minHeight:44,paddingHorizontal:10,paddingVertical:6,justifyContent:'center',borderWidth:1,borderColor:c.separator,borderRadius:8,opacity:busy?0.5:1}}><Text style={{fontSize:13,lineHeight:18,color:c.brand,fontWeight:'600'}}>{action.label}</Text></Pressable>)}
+ </View>
+ {showComposer&&<View style={{gap:8,padding:10,backgroundColor:c.bgCard,borderRadius:8}}>
+ {field('个人任务标题', title, v => { setTitle(v); setMessage(''); })}{field('完成标准', criterion, v => { setCriterion(v); setMessage(''); })}
+ {choices('新任务角色', role, ['main', 'auxiliary', 'other'], setRole)}{choices('新任务时段',newSlot,Object.keys(slotLabels) as LifeTask['slot'][],setNewSlot)}{button('加入今日安排', add, !title.trim())}
+ </View>}
+ {showNotes&&<View style={{gap:8,padding:10,backgroundColor:c.bgCard,borderRadius:8}}>{Object.entries(noteFields).map(([k, label]) => field(label, week.notes[date]?.[k as keyof typeof noteFields] ?? '', v => editWeek(w => { w.notes[date] ??= { valuable: '', beautiful: '', mistake: '', learning: '' }; w.notes[date][k as keyof typeof noteFields] = v; })))}</View>}
+
  </>}
- {tab === '周计划' && <>{tracks.map(t => { const track = week.tracks.find(v => v.id === t.id) ?? { id: t.id, title: '', criterion: '', strategy_link: '', next_step: '' }; return <View key={t.id} style={{ padding: 16, gap: 10, backgroundColor: c.bgCard, borderRadius: 14 }}>{text(t.label)}{(['title', 'criterion', 'strategy_link', 'next_step'] as const).map((k, i) => field(`${t.label}${['标题', '标准', '战略关联', '下一步'][i]}`, track[k], v => editWeek(w => { let item = w.tracks.find(x => x.id === t.id); if (!item) {
+ {tab === '周计划' && <>{tracks.map(t => { const track = week.tracks.find(v => v.id === t.id) ?? { id: t.id, title: '', criterion: '', strategy_link: '', next_step: '' }; return <View key={t.id} style={{ padding: 10, gap: 6, backgroundColor: c.bgCard, borderRadius: 8 }}><View style={{flexDirection:'row',alignItems:'center',gap:8}}><Text style={{flex:1,fontSize:13,lineHeight:18,color:c.labelPrimary}}>{t.label+' · '+(track.title||'尚未填写')}</Text>{button((expandedTrack===t.id?'收起':'编辑')+t.label,()=>setExpandedTrack(expandedTrack===t.id?null:t.id))}</View>{track.next_step?text(track.next_step):null}{expandedTrack===t.id&&(['title', 'criterion', 'strategy_link', 'next_step'] as const).map((k, i) => field(`${t.label}${['标题', '标准', '战略关联', '下一步'][i]}`, track[k], v => editWeek(w => { let item = w.tracks.find(x => x.id === t.id); if (!item) {
             item = { ...track };
             w.tracks.push(item);
         } item[k] = v; })))}</View>; })}</>}
- {(tab === '周计划' || tab === '时段导航') && <ScrollView horizontal><View style={{ gap: 8 }}>{days.map(day => <View key={day} style={{ flexDirection: 'row', gap: 8 }}><Text style={{ width: 90, color: c.labelPrimary }}>{day}</Text>{(Object.keys(slotLabels) as LifeTask['slot'][]).map(slot => <View key={slot} style={{ width: 180, padding: 10, borderWidth: 1, borderColor: c.separator, borderRadius: 8, gap: 8 }}>{text(slotLabels[slot])}{!tasks.some(t => t.date === day && t.slot === slot) && button('添加安排 ' + day + ' ' + slot, () => { setDate(day); setNewSlot(slot); setTab('今日'); }, false, '添加安排')}{tasks.filter(t => t.date === day && t.slot === slot).map(t => button(t.title || '未命名任务', () => { setDate(day); setTab('今日'); }))}</View>)}</View>)}</View></ScrollView>}
+ {(tab === '周计划' || tab === '时段导航') && <ScrollView horizontal><View style={{ gap: 8 }}>{days.map(day => <View key={day} style={{ flexDirection: 'row', gap: 8 }}><Text style={{ width: 90, color: c.labelPrimary }}>{day}</Text>{(Object.keys(slotLabels) as LifeTask['slot'][]).map(slot => <View key={slot} style={{ width: 180, padding: 10, borderWidth: 1, borderColor: c.separator, borderRadius: 8, gap: 8 }}>{text(slotLabels[slot])}{!tasks.some(t => t.date === day && t.slot === slot) && button('添加安排 ' + day + ' ' + slot, () => { setDate(day); setNewSlot(slot); setShowComposer(true); setTab('今日'); }, false, '添加安排')}{tasks.filter(t => t.date === day && t.slot === slot).map(t => button(t.title || '未命名任务', () => { setDate(day); setExpandedTask(t.id); setTab('今日'); }))}</View>)}</View>)}</View></ScrollView>}
  {tab === '时段导航' && focus && <>
  {text('计时只记录时段；结束不会完成任务。计时操作会保存当前全部草稿。')}{text(`阶段 ${names[focus.phase]} · 轮次 ${focus.current_round}/${focus.rounds} · 剩余 ${focus.phase === 'paused' ? focus.remaining_seconds ?? 0 : focus.deadline ? Math.max(0, Math.ceil((Date.parse(focus.deadline) - now) / 1000)) : 0} 秒`)}
  {(['focus_minutes', 'rest_minutes', 'rounds'] as const).map((k, i) => field(['专注分钟', '休息分钟', '轮数'][i], String(focus[k]), v => { const max = [180, 60, 12][i]; if (/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= max)
