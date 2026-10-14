@@ -67,3 +67,17 @@ G1 PASS：截图“加餐一小个桃子”被误当只读请求，并出现计�
 - 隔离PostgreSQL验证进行中；固定提交独立G4及发布尚未完成。当前生产仍为0fd447cbd；既有OTA原生基线不兼容阻断继续保留。
 
 固定实现提交531556db53edbeedbd05ded551c585d63398db4c独立G4 GO：reviewer独立81项后端、104项Mobile及19项额外负例通过。隔离PostgreSQL63 PASS/71.21秒，测试与关闭进程均exit0；本地LLM gate按该精确SHA用户要求waived、confirmed=false。报告/tmp/reva-snack-time-safety.json。当前仅本地修复与验证完成，未push、未部署、未发布OTA/TestFlight，未做原生视觉验收；不得将上一候选发布回执用于本次改动。
+
+## 2026-10-14 直接痊愈陈述的隐含当天日期续修
+
+用户再次提供“我的感冒已经痊愈了。”被拒截图并要求修复发布。可复现分支：闭合本人当前痊愈语法此前仅在显式今天时构造end_date，模型传正确同日日期也被精确patch检查拒绝；status-only依赖API服务器日期或已有日期。未读取截图对应生产工具参数，不把此分支宣称为唯一根因。
+
+本轮仅修改capability_policy.py及test_illness_recovery_turn.py：直接当前痊愈语句由系统绑定context.current_time用户本地日，接受status-only或完全一致的同日patch。仍要求本人列表唯一active/improving、精确候选ID、合法且不晚于当天的起病日；模型历史日期、附加字段和错ID继续拒绝，不读取历史助手文字作为授权，不修改服药记录。
+
+证据：新增固定UTC/上海跨日用例先RED 2 FAIL；扩展截图原句的run_stream→鉴权API→真实数据库→持久回执链路，SQLite181 PASS，相邻授权2501 PASS，隔离PostgreSQL181 PASS（133.17秒）。模型使用scripted provider，未做真实模型或真实账号验收。独立安全文件预审GO，尚非固定SHA G4。System Map、任务文件秘密扫描、diff检查通过；LLM change gate报告live_llm_required=false、confirmed=false。最后将全链路测试日期断言改为账户时区以避免UTC CI时间窗口差异，正在重新验证。
+
+日期断言调整后SQLite181重新PASS（31.94秒）。PG测试已通过，但第一次pg_ctl fast关闭等候超时（检查点未结束），正在仅对本轮隔离测试cluster延长等待；不把测试结果与清理结果混同。
+
+发布仍统一交由“优化 README”线程；本线程未stage/commit/push/deploy/OTA。待最终固定SHA独立审查、完整CI及发布回执后补交付结论；不复用旧候选回执，不重试既有失败OTA。
+
+隔离PG清理已由接手会话独立复核：2026-10-14 09:52:44（Asia/Shanghai）server.log明确database system is shut down；对实际数据目录/tmp/reva-recovery-pg.U5Tk0G执行pg_ctl status确认no server running，postmaster.pid不存在。首次fast等待超时是144.59秒检查点超过默认等待，不改变181项测试PASS，也不虚报首次关闭命令成功。固定SHA G4、完整CI及本次新修复发布仍待完成。

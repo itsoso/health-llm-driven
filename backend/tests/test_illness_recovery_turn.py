@@ -17,8 +17,9 @@ MESSAGES = (
     "感冒痊愈了", "我感冒痊愈了", "更新我的感冒状态：已经痊愈",
     "我的感冒已经康复了", "请更新我的感冒状态:已康复",
     "感冒确认痊愈今天", "感冒确认痊愈，今天", "确认感冒痊愈，今天",
+    "我的感冒已经痊愈了。",
 )
-FLOW_MESSAGES = (MESSAGES[0], MESSAGES[1], MESSAGES[5], MESSAGES[6], MESSAGES[9])
+FLOW_MESSAGES = (MESSAGES[0], MESSAGES[1], MESSAGES[5], MESSAGES[6], MESSAGES[9], MESSAGES[-1])
 
 
 def _goal(message):
@@ -136,16 +137,19 @@ async def test_real_gateway_and_api_persist_only_unique_owned_recovery(db, clien
 @pytest.mark.asyncio
 @pytest.mark.parametrize("message", FLOW_MESSAGES)
 @pytest.mark.parametrize("record_name", ("感冒", "感冒样不适"))
+@pytest.mark.parametrize("model_includes_day", (False, True))
 async def test_screenshot_statement_reaches_pi_saved_answer_and_verified_receipt(
-    db, client, isolated_agent_protocol_transport, monkeypatch, message, record_name,
+    db, client, isolated_agent_protocol_transport, monkeypatch, message, record_name, model_includes_day,
 ):
     from datetime import datetime, timezone
     from app.models.agent_conversation import AgentMessage
     from app.services.auth import auth_service
     from app.twin.schema import HealthTwin, TwinMeta
+    from app.utils.timezone import get_user_timezone
 
     user, own, other = _seed(db, record_name=record_name)
     now = datetime.now(timezone.utc)
+    recovery_day = now.astimezone(get_user_timezone(db, user.id)).date()
     monkeypatch.setattr("app.twin.builder.build_twin", lambda _db, uid, **kwargs:
         HealthTwin(meta=TwinMeta(user_id=uid, generated_at=now)))
     executor = AgentExecutor(db)
@@ -156,7 +160,8 @@ async def test_screenshot_statement_reaches_pi_saved_answer_and_verified_receipt
         if len(rounds) <= 2:
             name, args = (("health_query", {"dimension": "illness"}) if len(rounds) == 1 else
                           ("health_manage", {"record_type": "illness", "operation": "update",
-                                             "record_id": own[0].id, "data": {"status": "resolved"}}))
+                                             "record_id": own[0].id, "data": {"status": "resolved",
+                                                 **({"end_date": recovery_day.isoformat()} if model_includes_day else {})}}))
             yield {"type": "tool_calls", "tool_calls": [{"id": f"recovery-{len(rounds)}", "type": "function",
                    "function": {"name": name, "arguments": json.dumps(args)}}]}
             yield {"type": "finish", "finish_reason": "tool_calls"}
@@ -191,6 +196,7 @@ async def test_screenshot_statement_reaches_pi_saved_answer_and_verified_receipt
     db.refresh(other)
     assert done["perf"]["agent_kernel"] == "pi"
     assert own[0].status == "resolved" and other.status == "active"
+    assert own[0].end_date == recovery_day
     assert own[0].name == record_name
     assert [method for method, _ in http_calls] == ["GET", "PUT"]
     assert len(done["write_receipts"]) == 1
@@ -303,3 +309,20 @@ def test_confirmation_requires_valid_start_date_evidence(started):
     from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
     snapshot = _confirmation_snapshot({"id": 7, "name": "感冒样不适", "status": "active", "start_date": started})
     assert _authorized_illness_update_args(snapshot, {"data": {"status": "resolved"}}, 7) is None
+
+
+@pytest.mark.parametrize("with_day", (False, True))
+def test_screenshot_recovery_binds_current_user_day_without_explicit_today(with_day):
+    from dataclasses import replace
+    from app.services.agent_kernel.capability_policy import _authorized_illness_update_args
+    snapshot = _confirmation_snapshot({"id": 7, "name": "感冒样不适", "status": "active",
+                                       "start_date": "2026-10-07"})
+    snapshot = replace(snapshot, envelope=replace(snapshot.envelope, text="我的感冒已经痊愈了。"))
+    patch = {"status": "resolved"}
+    if with_day:
+        patch["end_date"] = "2026-10-14"
+    result = _authorized_illness_update_args(snapshot, {"data": patch}, 7)
+    assert result is not None
+    assert result["data"] == {"status": "resolved", "end_date": "2026-10-14"}
+    assert _authorized_illness_update_args(snapshot, {"data": patch}, 8) is None
+    assert _authorized_illness_update_args(snapshot, {"data": {"status": "resolved", "end_date": "2026-10-13"}}, 7) is None

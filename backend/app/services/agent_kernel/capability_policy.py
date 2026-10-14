@@ -1229,7 +1229,7 @@ def _authorized_illness_update_args(
         if started_day > snapshot.context.current_time.date():
             return None
         requested_data = args.get("data")
-        # A missing explicit-today field may be supplied from this turn, but
+        # A missing current-day field may be supplied from this turn, but
         # model-provided dates or extra fields never override the user's scope.
         if patch is None or requested_data not in (patch, {"status": "resolved"}):
             return None
@@ -1306,13 +1306,13 @@ def _illness_update_patch(
     from app.services.write_intent_scope import direct_self_illness_recovery_entity
 
     if direct_self_illness_recovery_entity(snapshot.envelope.text) is not None:
-        patch = {"status": "resolved"}
-        from app.services.write_intent_scope import normalize_write_scope_text
-
-        recovery_text = normalize_write_scope_text(snapshot.envelope.text)
-        if re.search(r"(?:今天|今日)[。.!！]*$", recovery_text):
-            patch["end_date"] = snapshot.context.current_time.date().isoformat()
-        return patch
+        # This closed grammar reports current recovery, with no historical
+        # date. Bind the user's local day even when “today” is implicit, rather
+        # than relying on the API's server-local date or a model's history.
+        return {
+            "status": "resolved",
+            "end_date": snapshot.context.current_time.date().isoformat(),
+        }
     text = "".join(
         normalize_health_authorization_text(snapshot.envelope.text).split()
     )
