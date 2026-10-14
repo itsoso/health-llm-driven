@@ -51,13 +51,21 @@ def test_edited_recommendation_does_not_retain_daily_authority(edit):
 
 @pytest.mark.parametrize("dimension", ["diet", "sleep"])
 def test_starter_permission_is_bound_without_trusting_model_scope(dimension):
-    result = decide(generated_starter(), "health_query", {"dimension": dimension, "days": 30, "user_id": 999})
+    result = decide(generated_starter(), "health_query", {"dimension": dimension, "days": 30})
     assert result.action == "allow", result.reason
     assert result.normalized_args == {
         "dimension": dimension, "start_date": "2026-07-17", "end_date": "2026-07-17", "timezone": "Asia/Shanghai",
     }
     wrong_day = decide(generated_starter(), "health_query", {"dimension": dimension, "start_date": "2020-01-01", "end_date": "2020-01-01"})
     assert wrong_day.action == "block"
+
+
+@pytest.mark.parametrize("dimension", ["diet", "sleep"])
+@pytest.mark.parametrize("key", ["user_id", "owner_id", "tenant_id"])
+def test_evening_starter_rejects_model_supplied_owner(dimension, key):
+    result = decide(generated_starter(), "health_query", {"dimension": dimension, key: 999})
+    assert result.action == "block"
+    assert result.reason == "health_query_subject_not_current_user"
 
 
 @pytest.mark.parametrize("tool,args", [
