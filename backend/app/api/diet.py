@@ -14,7 +14,7 @@ from time import perf_counter
 from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc, or_
 from typing import List, Optional
 from datetime import date, timedelta, datetime, time, timezone
@@ -871,7 +871,9 @@ def get_user_diet_records(
 ):
     """获取用户饮食记录"""
     _assert_diet_user_access(user_id, current_user)
-    query = db.query(DietRecordModel).filter(DietRecordModel.user_id == user_id)
+    query = db.query(DietRecordModel).options(
+        selectinload(DietRecordModel.photo_assets),
+    ).filter(DietRecordModel.user_id == user_id)
 
     if start_date:
         query = query.filter(DietRecordModel.record_date >= start_date)
@@ -897,7 +899,9 @@ def get_daily_diet_summary(
 ):
     """获取某日饮食汇总"""
     _assert_diet_user_access(user_id, current_user)
-    records = db.query(DietRecordModel).filter(
+    records = db.query(DietRecordModel).options(
+        selectinload(DietRecordModel.photo_assets),
+    ).filter(
         DietRecordModel.user_id == user_id,
         DietRecordModel.record_date == record_date
     ).order_by(DietRecordModel.created_at).all()
@@ -974,7 +978,9 @@ def get_my_diet_records(
     db: Session = Depends(get_db)
 ):
     """获取当前用户饮食记录（需要登录）"""
-    query = db.query(DietRecordModel).filter(DietRecordModel.user_id == current_user.id)
+    query = db.query(DietRecordModel).options(
+        selectinload(DietRecordModel.photo_assets),
+    ).filter(DietRecordModel.user_id == current_user.id)
 
     if start_date:
         query = query.filter(DietRecordModel.record_date >= start_date)
@@ -998,7 +1004,9 @@ def get_my_daily_diet_summary(
     db: Session = Depends(get_db)
 ):
     """获取当前用户某日饮食汇总（需要登录）"""
-    records = db.query(DietRecordModel).filter(
+    records = db.query(DietRecordModel).options(
+        selectinload(DietRecordModel.photo_assets),
+    ).filter(
         DietRecordModel.user_id == current_user.id,
         DietRecordModel.record_date == record_date
     ).order_by(DietRecordModel.created_at).all()

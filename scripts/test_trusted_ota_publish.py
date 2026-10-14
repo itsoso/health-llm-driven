@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from test_trusted_release_gate import load_gate as _budget_load_gate, run as _budget_ci_run
+
 
 def load():
     spec = importlib.util.spec_from_file_location(
@@ -1242,4 +1244,82 @@ def test_fixed_equivalent_cohort_fails_before_claim(tmp_path,damage):
     f.eas=eas
     with pytest.raises(m.PublishError):m.publish(f,'c'*40)
     assert f.vendor_calls==0
-    assert 'claim' not in f.events
+    assert 'claim-ota' not in f.events
+
+
+# Included in release-invariants CI through this existing test module.
+
+CI_BUDGET_SHA = 'c' * 40
+CI_BUDGET_BASE = 'https://api.github.com/repos/itsoso/health-llm-driven'
+
+
+class GateCalls:
+    def __init__(self, *, fail_gate=None, drift=None):
+        self.count = 0
+        self.gates = 0
+        self.fail_gate = fail_gate
+        self.drift = drift
+        self.verifier = _budget_load_gate()
+
+    def gate(self):
+        self.gates += 1
+        main_reads = 0
+        def get(url):
+            nonlocal main_reads
+            self.count += 1
+            drift = self.drift if self.gates == self.fail_gate else None
+            if url == CI_BUDGET_BASE + '/git/ref/heads/main':
+                main_reads += 1
+                sha = 'b' * 40 if drift == 'main' and main_reads == 2 else CI_BUDGET_SHA
+                return {'ref':'refs/heads/main', 'object':{'type':'commit', 'sha':sha}}
+            if url == CI_BUDGET_BASE + '/actions/workflows/251604315/runs?head_sha=' + CI_BUDGET_SHA + '&per_page=100':
+                return {'total_count':1,'workflow_runs':[_budget_ci_run(head_sha='b' * 40 if drift == 'sha' else CI_BUDGET_SHA)]}
+            if url == CI_BUDGET_BASE + '/actions/runs/42':
+                return _budget_ci_run(head_sha=CI_BUDGET_SHA, run_attempt=2 if drift == 'attempt' else 1)
+            raise AssertionError('Unexpected GitHub destination')
+        return self.verifier.verify_release(CI_BUDGET_SHA, CI_BUDGET_SHA, _get_json=get)
+
+
+def external_gates(target):
+    import yaml
+    document = yaml.safe_load((Path(__file__).resolve().parents[1] / '.github/workflows/trusted-ota.yml').read_text())
+    steps = document['jobs']['ota']['steps']
+    assert steps[0]['run'].count('trusted_release_gate.py') == 1
+    assert 'secrets.' not in str(steps[0])
+    count = 0
+    for step in steps:
+        condition = step.get('if', '')
+        if condition.startswith('inputs.target == ') and condition != "inputs.target == '" + target + "'":
+            continue
+        count += sum('trusted_release_gate.py' in line for line in step.get('run','').splitlines())
+    return count
+
+
+@pytest.mark.parametrize('target', ['validate','publish'])
+def test_ota_exact_main_workflow_budget_is_three_real_ci_gates(tmp_path, target):
+    calls = GateCalls()
+    for _ in range(external_gates(target)):
+        calls.gate()
+    publisher = load()
+    adapter = Fake(publisher, tmp_path)
+    adapter.gate = calls.gate
+    (publisher.prepare if target == 'validate' else publisher.publish)(adapter, CI_BUDGET_SHA)
+    assert calls.gates == 3
+    assert calls.count == 15
+    assert adapter.vendor_calls == (0 if target == 'validate' else 1)
+    assert adapter.events.count('claim-ota') == (0 if target == 'validate' else 1)
+
+
+@pytest.mark.parametrize('target', ['validate','publish'])
+@pytest.mark.parametrize('stage', [1,2], ids=['admission','after-export'])
+@pytest.mark.parametrize('drift', ['main','sha','attempt'])
+def test_remaining_real_gates_reject_drift_before_any_claim_or_vendor(tmp_path,target,stage,drift):
+    publisher = load()
+    adapter = Fake(publisher,tmp_path)
+    calls = GateCalls(fail_gate=stage,drift=drift)
+    adapter.gate = calls.gate
+    with pytest.raises(publisher.PublishError):
+        (publisher.prepare if target == 'validate' else publisher.publish)(adapter,CI_BUDGET_SHA)
+    assert adapter.vendor_calls == 0
+    assert 'claim-ota' not in adapter.events
+    assert calls.gates == stage

@@ -569,7 +569,8 @@ def test_vendor_admission_only_follows_all_uncredentialed_gates():
     assert steps.index(named('Read-only publisher context')) < steps.index(admission)
     assert admission['env'] == {'TARGET_SHA': '${{ inputs.sha }}', 'EXPO_TOKEN': '${{ secrets.REVA_RELEASE_EXPO_TOKEN }}'}
     assert '--prepare' in admission['run'] and '--preflight' not in admission['run']
-    assert 'trusted_release_gate.py' in admission['run']
+    # The byte-bound publisher performs admission CI before vendor access.
+    assert 'trusted_release_gate.py' not in admission['run']
     assert 'env -i' in admission['run'] and '-I -S -B' in admission['run']
     assert 'RELEASE_KEY' not in str(admission) and 'RELEASE_HOST_KEYS' not in str(admission)
 
