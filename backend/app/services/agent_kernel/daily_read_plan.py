@@ -63,6 +63,13 @@ _SYNC_STATUS_SUFFIX_RE = re.compile(
     r'同步(?:完了|完成了|完成|好了|好|完)(?:吗|了没有|没有)[？?。.!！]*$',
     re.IGNORECASE,
 )
+# The diet-screen entry is a single-day read followed by answer-generation
+# goals. Consume the entire frame so future advice cannot widen the read date
+# and appended restrictions cannot disappear during projection.
+_DIET_ENTRY_RE = re.compile(
+    rf"(?P<day>{_SUMMARY_DAY}|\d{{4}}-\d{{1,2}}-\d{{1,2}})饮食结构怎么样[?？]"
+    r"蛋白质够吗[?？]帮我给出下一餐调整建议[。.!！]?"
+)
 
 
 @dataclass(frozen=True)
@@ -97,6 +104,9 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
     original = re.sub(r"\s+", "", normalize_health_authorization_text(text))
     normalized = re.sub(r"\s+", "", normalize_health_authorization_text(
         active_health_read_clause(text)))
+    diet_entry = _DIET_ENTRY_RE.fullmatch(normalized)
+    if diet_entry and normalized == original:
+        return diet_entry['day'], ('diet',), True, False, None, False
     sync_status = _SYNC_STATUS_SUFFIX_RE.search(normalized)
     if sync_status:
         normalized = normalized[:sync_status.start()]

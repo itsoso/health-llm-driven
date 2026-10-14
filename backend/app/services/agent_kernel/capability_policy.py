@@ -3023,6 +3023,30 @@ def decide_tool_capability(
         # Preserve the existing exact-day/meal binder where it applies.
         daily = resolve_daily_read_plan(snapshot.envelope.text, snapshot.context.current_time,
                                         timezone_name=snapshot.context.timezone)
+        if daily is not None:
+            if (type(snapshot.context.user_id) is not int or snapshot.context.user_id <= 0
+                    or type(snapshot.envelope.user_id) is not int
+                    or snapshot.envelope.user_id != snapshot.context.user_id
+                    or any(key in args for key in ('user_id', 'owner_id', 'tenant_id'))):
+                return _decision('block', 'health_query_subject_not_current_user', tool_name, args)
+            if tool_name == 'health_query_batch' and not daily.meal_type:
+                plan = args.get('plan', args)
+                proposals = plan.get('queries') if isinstance(plan, dict) else None
+                if (set(args) not in ({'queries'}, {'plan'}) or not isinstance(plan, dict)
+                        or set(plan) != {'queries'} or not isinstance(proposals, list)
+                        or not 1 <= len(proposals) <= len(daily.dimensions)
+                        or any(not isinstance(p, dict) for p in proposals)):
+                    return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
+                bound = []
+                for proposal in proposals:
+                    decision = decide_tool_capability(snapshot, ToolExecutionRequest('health_query', proposal))
+                    if decision.action != 'allow':
+                        return _decision('block', decision.reason, tool_name, args)
+                    bound.append(decision.normalized_args)
+                if len({q['dimension'] for q in bound}) != len(bound):
+                    return _decision('block', 'health_query_dimension_conflict', tool_name, args)
+                return _decision('allow', 'health_query_projected_to_calendar_window', tool_name,
+                                 {'queries': bound})
         scope = None if daily is not None else resolve_owned_read_scope(snapshot)
         if scope is not None:
             plan = args.get("plan", args)

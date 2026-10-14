@@ -175,6 +175,26 @@ describe('atomic diet correction routing', () => {
 });
 
 describe('DietScreen capture deeplink', () => {
+  it('returns the daily diet analysis entry to the main Agent with context', async () => {
+    const view = render(<DietScreen />);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.press(view.getByRole('button', { name: '跟小巴详细聊今日饮食' }));
+    expect(mockReturnToChatWithContext).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      prompt: '今天饮食结构怎么样? 蛋白质够吗? 帮我给出下一餐调整建议。',
+      context: {},
+      badge: '基于今天饮食 0 餐',
+    }));
+    expect(mockPushChatWithContext).not.toHaveBeenCalled();
+  });
+  it('uses an unambiguous full date when discussing historical diet records', async () => {
+    mockRouteParams.date = '2026-08-01';
+    const view = render(<DietScreen />);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.press(view.getByRole('button', { name: '跟小巴详细聊今日饮食' }));
+    expect(mockReturnToChatWithContext).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      prompt: '2026-08-01饮食结构怎么样? 蛋白质够吗? 帮我给出下一餐调整建议。',
+    }));
+  });
   it('exposes an accessible back action that returns to the previous screen', async () => {
     const view = render(<DietScreen />);
     await act(async () => { await Promise.resolve(); });

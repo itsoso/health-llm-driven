@@ -34,7 +34,7 @@ import {
   revaSemantic,
   revaFonts,
 } from '../constants/revaTheme';
-import { createDietAgentContext, pushChatWithContext, returnToChatWithContext } from '../utils/agentContext';
+import { createDietAgentContext, returnToChatWithContext } from '../utils/agentContext';
 import { todayStr, offsetDate } from '../utils/dietDate';
 import { assertDietFoodItemsAllowed } from '../utils/dietIntakeGuard';
 import { buildChatImageSource } from '../utils/chatImageSource';
@@ -1391,12 +1391,12 @@ export default function DietScreen() {
 
   const handleChatDiet = useCallback(() => {
     if (!daily) return;
-    pushChatWithContext(router, {
-      prompt: `${dateLabel}饮食结构怎么样? 蛋白质够吗? 帮我给出下一餐调整建议。`,
+    returnToChatWithContext(router, {
+      prompt: `${isToday ? '今天' : date}饮食结构怎么样? 蛋白质够吗? 帮我给出下一餐调整建议。`,
       context: createDietAgentContext(daily),
       badge: `基于${dateLabel}饮食 ${daily.meals_count ?? daily.meals?.length ?? 0} 餐`,
     });
-  }, [daily, dateLabel, router]);
+  }, [daily, date, dateLabel, isToday, router]);
 
   const handleAskRevaFromShare = useCallback((record: DietRecord) => {
     returnToChatWithContext(router, {
