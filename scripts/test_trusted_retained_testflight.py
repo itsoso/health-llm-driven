@@ -729,7 +729,9 @@ def test_fidelity_reuses_actual_steps_omitting_only_release_admission():
     steps = w['jobs']['retained-testflight']['steps']
     materialize = fidelity_command('materialize')
     assert 'test "$GITHUB_REF" = refs/heads/main' not in materialize
-    assert 'trusted_release_gate.py --sha' not in materialize
+    assert 'trusted_release_gate.py' not in materialize
+    assert 'GH_TOKEN' not in materialize
+    assert '--token-stdin' not in materialize
     assert 'test "$TARGET_SHA" = "$GITHUB_SHA"' in materialize
     assert 'GITHUB_REPOSITORY' in materialize
     assert "harden(Path('/opt'))" in materialize
@@ -738,6 +740,21 @@ def test_fidelity_reuses_actual_steps_omitting_only_release_admission():
     assert 'secrets.' not in ''.join(fidelity_command(p) for p in ('materialize', 'tools', 'smoke'))
     with pytest.raises(ValueError):
         fidelity_command('upload')
+
+
+@pytest.mark.parametrize('replacement', ['', 'test -n "$CHANGED_TOKEN"'])
+def test_fidelity_rejects_changed_auth_admission(monkeypatch, replacement):
+    original = Path.read_text
+
+    def changed_workflow(path, *args, **kwargs):
+        text = original(path, *args, **kwargs)
+        if str(path) == '.github/workflows/trusted-release.yml':
+            text = text.replace('test -n "$GH_TOKEN"', replacement)
+        return text
+
+    monkeypatch.setattr(Path, 'read_text', changed_workflow)
+    with pytest.raises(ValueError, match='production admission changed'):
+        fidelity_command('materialize')
 
 
 def test_fidelity_ci_uses_pinned_node_and_all_three_real_phases():
@@ -849,7 +866,8 @@ retain canonical URL, real branch SHA, clean source, root and loader checks.
     body = selected[0]['run']
     if phase == 'materialize':
         omissions = ['test "$GITHUB_REF" = refs/heads/main',
-                     '/usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"']
+                     'test -n "$GH_TOKEN"',
+                     "printf '%s' \"$GH_TOKEN\" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin --sha \"$TARGET_SHA\" --workflow-sha \"$GITHUB_SHA\""]
         for omitted in omissions:
             lines = body.splitlines()
             if sum(line.strip() == omitted for line in lines) != 1:

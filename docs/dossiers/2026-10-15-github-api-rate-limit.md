@@ -28,3 +28,5 @@
 初轮OTA集成267 passed / 1既有skip；发布workflow shell语法30个step通过。既有workflow已共用concurrency group，此次不重复加锁。自动GitHub App签发/刷新和跨进程冷却调度不在本次候选中，生产认证需受控配置及真实只读API验收，不把本地合成结果称为线上提额成功。
 
 最终固定文件凭据测试230 passed，先RED12；相关release/OTA/admission集成476 passed / 1既有skip。Dossier一致性、System Map、diff检查通过。固定本地提交后做独立G4；未push、未部署、未启用真实生产凭据。
+
+固定候选9161f46d7独立G4 GO，但完整CI-mode发现retained-TestFlight无凭据启动测试适配器仍匹配旧gate命令（1840 passed / 1 failed / 10 skipped），不能发布。仅同步测试适配器精确剔除新的认证断言与stdin gate命令，保留逐行唯一匹配及其他物化边界；增加认证断言删除/变更必须失败的回归。生产workflow与鉴权实现未放宽。修复后重新绑定候选做独立审查与完整CI-mode。
