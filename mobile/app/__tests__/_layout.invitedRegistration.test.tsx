@@ -7,6 +7,9 @@ const mockClearInvite = jest.fn();
 let mockInviteToken: string | null = null;
 let mockSession: { mode: 'cloud_account'; cloudUser: { id: number } } | null = null;
 let mockAuthenticated = false;
+let mockLoading = false;
+let mockLocked = false;
+let mockSessionError: string | null = null;
 
 jest.mock('expo-router', () => {
   const ReactRuntime = require('react');
@@ -52,13 +55,13 @@ jest.mock('../../hooks/useAppSession', () => ({
     const { View } = require('react-native');
     return <View testID="app-session-provider">{children}</View>;
   },
-  useAppSession: () => ({ session: mockSession, isLoading: false, errorCode: null }),
+  useAppSession: () => ({ session: mockSession, isLoading: mockLoading, errorCode: mockSessionError }),
 }));
 jest.mock('../../hooks/useToast', () => ({ ToastProvider: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('../../hooks/useAppUpdate', () => ({ AppUpdateProvider: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('../../hooks/useNotifications', () => ({ useNotifications: jest.fn() }));
 jest.mock('../../hooks/useEyeBreakReminders', () => ({ useEyeBreakReminders: jest.fn() }));
-jest.mock('../../hooks/useBiometricLock', () => ({ useBiometricLock: () => ({ isLocked: false, authenticate: jest.fn() }) }));
+jest.mock('../../hooks/useBiometricLock', () => ({ useBiometricLock: () => ({ isLocked: mockLocked, authenticate: jest.fn() }) }));
 jest.mock('../../hooks/useGPSAutoRefresh', () => ({ useGPSAutoRefresh: jest.fn() }));
 jest.mock('../../hooks/useDeviceTimezoneSync', () => ({ useDeviceTimezoneSync: jest.fn() }));
 jest.mock('../../hooks/useHealthKitForegroundSync', () => ({ useHealthKitForegroundSync: jest.fn() }));
@@ -110,6 +113,7 @@ jest.mock('../login', () => ({
   },
 }));
 
+import { useNotifications } from '../../hooks/useNotifications';
 import { AppContent, RootLayout } from '../_layout';
 
 describe('invited registration root integration', () => {
@@ -118,6 +122,9 @@ describe('invited registration root integration', () => {
     mockInviteToken = null;
     mockSession = null;
     mockAuthenticated = false;
+    mockLoading = false;
+    mockLocked = false;
+    mockSessionError = null;
   });
 
   it('clears an in-memory invite as soon as auth is known, before session hydration, and does not revive it after logout', async () => {
@@ -151,5 +158,28 @@ describe('invited registration root integration', () => {
     render(<RootLayout />);
     expect(screen.getAllByTestId('app-session-provider')).toHaveLength(1);
     expect(screen.getByTestId('login-invite-token')).toBeTruthy();
+  });
+});
+
+describe('notification navigation readiness', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSession = { mode: 'cloud_account', cloudUser: { id: 7 } };
+    mockAuthenticated = true;
+    mockLoading = false;
+    mockLocked = false;
+    mockSessionError = null;
+  });
+  it.each(['loading', 'locked', 'recovering'])('retains a cold-start tap until the root stack mounts: %s', (state) => {
+    mockLoading = state === 'loading';
+    mockLocked = state === 'locked';
+    mockSessionError = state === 'recovering' ? 'session_recovery_required' : null;
+    const view = render(<AppContent />);
+    expect(useNotifications).toHaveBeenLastCalledWith(false);
+    mockLoading = false;
+    mockLocked = false;
+    mockSessionError = null;
+    view.rerender(<AppContent />);
+    expect(useNotifications).toHaveBeenLastCalledWith(true);
   });
 });

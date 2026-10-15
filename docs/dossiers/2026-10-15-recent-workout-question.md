@@ -108,3 +108,12 @@ G1 PASS：修复现有按钮到查询/建议与详情展示闭环；沿用本 Do
 - RED：实际 MarkdownRenderer DOM 测试复现找不到 table；GREEN：分享目录 19 项通过，frontend tsc --noEmit 通过，git diff --check 通过。日志 /tmp/reva-share-render-red.log、/tmp/reva-share-render-all.log、/tmp/reva-share-render-tsc.log。
 - 前一候选 74bfb102d 的 CI-mode 已结束：3983 collected、0 failure、23 skipped；本次增量不冒用该 SHA 的发布证据。
 - 尚未发布：仍待并行通知发布者交接确认、新候选完整 CI 与部署。该增量只改 Web；此前待发布 Mobile 修复仍需同批适用 OTA。未读取真实分享/健康数据，未做真实模型评测、备份或生产修改；Web 真机视觉验收尚未完成。
+
+
+### 推送点击无法打开（2026-10-15，交付继续）
+
+- 用户报告 push 消息打不开；已询问具体渠道与表现，未收到渠道补充。以下是源码和合成测试确认的 iOS 问题，不宣称已复现用户真机。
+- APNs 真实发送函数原先仅 payload.update(data)。锁定版本 expo-notifications 55.0.24 的 NotificationRecords.swift 对远程通知只取 userInfo["body"] 作为 content.data；因此顶层 deep_link 无法进入现有 JS 路由解析。统一 APNs 构造同时保留旧顶层字段和 Expo body 数据对象，系统 aps 由发送函数维护，不能被自定义数据覆盖。alert/body 锁屏文案保持独立，不新增通知出口，不绕过原隐私策略。
+- AppContent 在 cloudActive 为真但登录恢复/加载/生物识别锁仍遮住 Stack 时注册通知处理。增加路由可用条件，待实际 Stack 可见后再恢复原通知消费，避免过早跳转；不改变任何通知按钮写入逻辑。
+- RED：APNs 两个传输测试因 body 缺失失败；根组件三个加载/锁定/恢复场景失败。GREEN：后端相关 126 项及后续 reserved-field 4 项通过；Mobile 50 项通过，tsc 和 System Map 通过。未做真实推送发送、真实健康记录读取或模型评测。合成 APNs HTTP 捕获不能证明设备点击已验收。
+- 前一版本 b1dd 后端与 Web 已成功，OTA validate 成功但 publish run 38726280487 在 claim-ota/command_failed 阻断；无 server intent/lease，未到 vendor update。当前服务器 remaining=8 与额度门拒绝一致，但现有闭集诊断不足以唯一证明失败当时原因。保留原失败证据；新修复不能作为换 SHA 绕过失败的依据。待安全复核及合法后续发布路径，未部署本节变更。

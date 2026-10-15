@@ -11,6 +11,13 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 
+def _apns_payload(aps: Dict[str, Any], data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    # Expo iOS remote notifications expose only userInfo["body"] as content.data.
+    # Keep legacy top-level keys for existing native/background consumers too.
+    custom = dict(data or {})
+    return {**custom, "aps": aps, "body": custom}
+
+
 class IOSPushService:
     """
     iOS APNs 推送服务
@@ -173,10 +180,7 @@ class IOSPushService:
         if category:
             aps["category"] = category
 
-        payload = {"aps": aps}
-
-        if data:
-            payload.update(data)
+        payload = _apns_payload(aps, data)
 
         # 发送请求
         url = f"{self.base_url}/3/device/{device_token}"
@@ -241,12 +245,7 @@ class IOSPushService:
         if not jwt_token:
             return {"success": False, "error": "生成 JWT Token 失败"}
 
-        payload = {
-            "aps": {
-                "content-available": 1
-            }
-        }
-        payload.update(data)
+        payload = _apns_payload({"content-available": 1}, data)
 
         url = f"{self.base_url}/3/device/{device_token}"
 

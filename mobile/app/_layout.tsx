@@ -69,7 +69,10 @@ export function AppContent() {
     }
   }, [clearRegistrationInviteLink, isAuthenticated, registrationInviteToken, session]);
 
-  useNotifications(cloudActive);
+  // A remote tap must remain pending until the authenticated root Stack exists.
+  // Auth can be known while session recovery or biometric unlock still hides it.
+  useNotifications(cloudActive && !isLoading && !isLocked
+    && errorCode !== 'session_recovery_required' && registrationPhase !== 'welcome');
   useGPSAutoRefresh(cloudActive);
   useDeviceTimezoneSync(cloudActive);
   useHealthKitForegroundSync(cloudActive && !isLocked);
