@@ -257,11 +257,32 @@ def has_recent_workout_reference(text: str) -> bool:
     source = str(text or '')
     # Reject unresolved subday requests before generic rolling-read fallback.
     # Restrictive recognition does not grant a scope, including future/mixed days.
-    subday_reference = re.search(
-        rf'(?:上午|下午|晚上|早上|早晨|(?:今|昨|明|前|后)(?:早|晚))'
-        rf'(?:的)?(?:我(?:的)?|本人(?:的)?)?(?:运动|锻炼|训练|{_RECENT_REFERENCE_KIND}|(?:{_RECENT_SHORT_KIND})(?={_RECENT_QUESTION_END}))',
-        source,
+    temporal = re.compile(
+        r'(?:上午|下午|晚上|早上|早晨|(?:今|昨|明|前|后)(?:早|晚)|早(?!餐|饭)|晚(?!餐|饭))'
     )
+    operand = re.compile(
+        rf'运动|锻炼|训练|{_RECENT_REFERENCE_KIND}|(?:{_RECENT_SHORT_KIND})(?={_RECENT_QUESTION_END})'
+    )
+    # Unknown times, owners and punctuation must not erase an expressed bound.
+    # A different health domain before the workout owns its own temporal operand.
+    # Read/evaluation roles below distinguish reads from writes or prospective advice.
+    other_operand = re.compile(r'睡|饮食|吃|餐|饭|血氧|心率|HRV|补剂', re.I)
+    subday_reference = None
+    for marker in temporal.finditer(source):
+        remainder = re.split(r'[。；;！？!?\n]', source[marker.end():], maxsplit=1)[0]
+        workout = operand.search(remainder)
+        if workout is None:
+            continue
+        residual = remainder[:workout.start()]
+        prefix = re.split(r'[，,。；;！？!?\n]', source[:marker.start()])[-1]
+        suffix = re.split(r'[，,]', remainder[workout.end():], maxsplit=1)[0]
+        read_role = re.search(r'分析|复盘|总结|查看|查询|看看|评估', prefix + residual + suffix)
+        evaluation_role = re.match(_RECENT_QUESTION_END, remainder[workout.end():])
+        if not (read_role or evaluation_role):
+            continue
+        if not other_operand.search(residual):
+            subday_reference = workout
+            break
     return subday_reference is not None or re.search(
         rf'(?:刚才|刚刚)(?:[^。\n]*(?:运动|锻炼|训练|{_RECENT_REFERENCE_KIND})|'
         rf'(?:的)?(?:{_RECENT_SHORT_KIND})(?={_RECENT_QUESTION_END}))', source,

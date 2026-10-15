@@ -57,3 +57,9 @@
 - 首次 PostgreSQL 408 passed（停止测试库退出码 0），最终源追加范围原因及限制语法后重新验证中。
 - System Map 和秘密扫描通过；LLM change gate live_llm_required=false；没有真实模型/用户数据调用。
 - 本地提交供固定范围 G4 与 CI-mode 验证；远端 main 暂保持 2fbc 以收口已绑定旧发布，不宣称追加场景已部署。
+
+### G4 修复迭代
+
+529f3cf36 独立审查 NO-GO：未知时刻、其他主体修饰及独立早晚别名可绕过限制检测，退回滚动查询。已扩大仅拒绝用途的时间对象识别，同时保留读取/评价语义角色，覆盖前后置动词与逗号拆分；纯运动写入不受新读取守卫影响，睡眠及饮食建议不误绑定为运动时段。新增实际 Gateway enforce/shadow 不派发回归。
+
+529 候选相关 6249 passed，PostgreSQL 415 passed（测试库正常停止）。修订后聚焦 255 passed（日志 /tmp/subday-postfixed-green.log）；最后固定提交将重新接受独立 G4 及相关验证。没有推送被拒绝候选或执行其发布。

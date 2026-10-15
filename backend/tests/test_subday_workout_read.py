@@ -223,3 +223,91 @@ def test_rejected_subday_cannot_fall_back_to_rolling_read(text):
 def test_subday_reference_does_not_attach_sleep_or_diet_to_workout(text):
     from app.services.agent_longitudinal_read import has_recent_workout_reference
     assert not has_recent_workout_reference(text)
+
+@pytest.mark.parametrize('text', ['分析上午八点的跑步', '分析我上午8点的跑步',
+                                 '分析上午我朋友的跑步', '分析早的跑步并同步',
+                                 '分析上午，跑步', '分析上午八点，跑步'])
+def test_unresolved_subday_operands_never_grant_rolling_read(text):
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    for tool,args in [('health_query',{'dimension':'workout'}),
+                      ('health_query_batch',{'queries':[{'dimension':'workout'}]})]:
+        assert decide_tool_capability(snapshot(text),ToolExecutionRequest(tool,args)).action=='block'
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text', ['分析上午八点的跑步', '分析我上午8点的跑步',
+                                 '分析上午我朋友的跑步', '分析早的跑步并同步',
+                                 '分析上午，跑步', '分析上午八点，跑步'])
+@pytest.mark.parametrize('mode',['enforce','shadow'])
+async def test_gateway_never_dispatches_unresolved_subday(text,mode):
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    turn=replace(snapshot(text),policy_mode=mode)
+    calls=[]
+    async def dispatch(request):
+        calls.append(request)
+        return '{}'
+    result=await ToolGateway(turn).execute(ToolExecutionRequest('health_query',{'dimension':'workout'}),dispatch)
+    assert result.decision.action=='block'
+    assert calls==[]
+
+@pytest.mark.parametrize('text',['早餐后适合锻炼吗？','晚餐后适合跑步吗？'])
+def test_meal_nouns_not_subday_workout_reference(text):
+    from app.services.agent_longitudinal_read import has_recent_workout_reference
+    assert not has_recent_workout_reference(text)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('mode',['enforce','shadow'])
+async def test_advice_word_cannot_erase_later_explicit_read(mode):
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    turn=replace(snapshot('上午应该分析我的跑步'),policy_mode=mode)
+    assert resolve_owned_read_scope(turn) is None
+    request=ToolExecutionRequest('health_query',{'dimension':'workout'})
+    assert decide_tool_capability(turn,request).action=='block'
+    calls=[]
+    async def dispatch(request):
+        calls.append(request)
+        return '{}'
+    result=await ToolGateway(turn).execute(request,dispatch)
+    assert result.decision.action=='block'
+    assert not calls
+
+@pytest.mark.parametrize('text',['今天上午跑步30分钟，帮我记录','记录上午的跑步'])
+def test_write_only_subday_not_captured_by_read_guard(text):
+    from app.services.agent_longitudinal_read import has_recent_workout_reference
+    assert not has_recent_workout_reference(text)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('mode',['enforce','shadow'])
+async def test_existing_subday_exercise_write_keeps_its_canonical_policy(mode,monkeypatch):
+    from app.services import agent_longitudinal_read
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    turn=replace(snapshot('今天上午跑步30分钟，帮我记录'),policy_mode=mode)
+    request=ToolExecutionRequest('health_record',{'record_type':'exercise','data':{'exercise_type':'跑步','duration':30}})
+    # Before this change the recent-only detector did not match subday phrases.
+    with monkeypatch.context() as patch:
+        patch.setattr(agent_longitudinal_read,'has_recent_workout_reference',lambda text: False)
+        baseline=decide_tool_capability(turn,request)
+    actual=decide_tool_capability(turn,request)
+    assert actual==baseline
+    assert actual.action=='allow'
+    calls=[]
+    async def dispatch(request):
+        calls.append(request)
+        return '{}'
+    result=await ToolGateway(turn).execute(request,dispatch)
+    assert result.decision.action=='allow'
+    assert len(calls)==1
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text',['上午的跑步分析一下','上午我朋友的跑步帮我分析','上午八点的跑步给我总结下'])
+@pytest.mark.parametrize('mode',['enforce','shadow'])
+async def test_postfixed_read_role_cannot_drop_subday_bounds(text,mode):
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    turn=replace(snapshot(text),policy_mode=mode)
+    assert resolve_owned_read_scope(turn) is None
+    calls=[]
+    async def dispatch(request):
+        calls.append(request)
+        return '{}'
+    result=await ToolGateway(turn).execute(ToolExecutionRequest('health_query',{'dimension':'workout'}),dispatch)
+    assert result.decision.action=='block'
+    assert not calls
