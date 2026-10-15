@@ -216,6 +216,7 @@ async def test_health_alert_message_keeps_markdown_for_formatted_callers(monkeyp
     "a*b `c [d] e_f \\_g",               # 四个特殊字符 + 文本里原有的反斜杠
 ])
 async def test_push_telegram_fallback_plain_text_shows_verbatim(db, monkeypatch, content):
+    from html import escape
     from app.services.notification.push_service import PushService
 
     sent = _capture_send_message(monkeypatch)
@@ -223,7 +224,52 @@ async def test_push_telegram_fallback_plain_text_shows_verbatim(db, monkeypatch,
         1, "health_alert", "⚠️ 标题_x", content, {"severity": "warning"}, "info"
     )
     assert result == {"success": True}
-    assert _parse_legacy_markdown(sent[0]["text"]) == f"🟡 ⚠️ 标题_x\n\n{content}"
+    assert sent[0]["parse_mode"] == "HTML"
+    assert sent[0]["text"] == f"🟡 <b>⚠️ 标题_x</b>\n\n{escape(content)}"
+
+
+@pytest.mark.asyncio
+async def test_plain_alert_escapes_html_without_changing_visible_text(monkeypatch):
+    sent = _capture_send_message(monkeypatch)
+    await TelegramPushService().send_health_alert(
+        "跑后 <点评>", "心率 < 150 & 保持节奏", plain_text=True,
+    )
+    assert sent[0] == {
+        "parse_mode": "HTML",
+        "text": "🟡 <b>跑后 &lt;点评&gt;</b>\n\n心率 &lt; 150 &amp; 保持节奏",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content,sensitive", [
+    ("这次跑步分布合理，建议保持节奏。", False),
+    ("跑后建议使用二甲双胍。", True),
+])
+async def test_workout_html_push_retains_privacy_gate(db, monkeypatch, content, sensitive):
+    from datetime import datetime
+    from app.models.notification import UserNotificationSetting
+    from app.models.user import User
+    from app.services.notification.push_service import PushService
+
+    user = User(username="workout_tg", email="workout_tg@test.local", name="Test", hashed_password="x")
+    db.add(user)
+    db.flush()
+    db.add(UserNotificationSetting(user_id=user.id, enabled=True))
+    db.commit()
+    sent = _capture_send_message(monkeypatch)
+    with patch("app.services.notification.push_service.get_china_now",
+               return_value=datetime(2026, 10, 15, 15, 0)):
+        result = await PushService(db).send_notification(
+            user_id=user.id, notification_type="workout_analysis",
+            title="跑后教练", content=content, channels=["telegram"],
+            data={"rule_id": "workout_synthetic", "kind": "workout_analysis"},
+        )
+    assert result["success"] is True
+    assert sent[0]["parse_mode"] == "HTML"
+    if sensitive:
+        assert "二甲双胍" not in sent[0]["text"]
+    else:
+        assert content in sent[0]["text"]
 
 
 @pytest.mark.asyncio

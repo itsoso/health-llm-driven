@@ -10,22 +10,65 @@ from __future__ import annotations
 import re
 
 
+def _prose_text(text: str) -> str:
+    """Keep prose and headings; tables and fenced code are not spoken copy."""
+    lines = text.splitlines()
+    result: list[str] = []
+    fence = ""
+    in_table = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        marker = re.match(r"^(`{3,}|~{3,})", stripped)
+        if marker:
+            if not fence:
+                fence = marker.group(1)
+            elif stripped.startswith(fence):
+                fence = ""
+            result.append("")
+            continue
+        if fence:
+            continue
+        next_line = lines[index + 1].strip() if index + 1 < len(lines) else ""
+        cells = next_line.strip("|").split("|")
+        table_header = "|" in stripped and len(cells) > 1 and all(
+            re.fullmatch(r"\s*:?-{3,}:?\s*", cell) for cell in cells
+        )
+        if table_header or stripped.startswith("|") or (in_table and "|" in stripped):
+            in_table = True
+            result.append("")
+            continue
+        in_table = False
+        result.append(line)
+    return "\n".join(result)
+
+
+def _plain_copy(text: str) -> str:
+    text = re.sub(r"\[([^\]]+)\]\([^\s)]+\)", r"\1", text)
+    text = re.sub(r"(\*\*|__)(.+?)\1", r"\2", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"(?<!\w)(\*|_)([^\n]+?)\1(?!\w)", r"\2", text)
+    return re.sub(r"^\s*(?:[-*•·>]\s+|\d+[.)、]\s+)", "", text).strip()
+
+
+def _truncate_copy(text: str, max_len: int) -> str:
+    if max_len <= 0:
+        return ""
+    return text if len(text) <= max_len else text[:max_len - 1] + "…"
+
+
 def first_paragraph(text: str, max_len: int = 160) -> str:
     """aggregation 第一段正文 (跳过 markdown 标题行), 截到 max_len."""
     if not text:
         return ""
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    paragraphs = [p.strip() for p in _prose_text(text).split("\n\n") if p.strip()]
     for p in paragraphs:
-        first_line = p.splitlines()[0].strip()
-        if first_line.startswith("#"):
-            rest = "\n".join(p.splitlines()[1:]).strip()
-            if rest:
-                return rest[:max_len]
-            continue
-        clean = p.replace("**", "").lstrip("-*•· ").strip()
+        lines = [line for line in p.splitlines() if not re.match(
+            r"^\s*#{1,6}\s", line
+        )]
+        clean = " ".join(_plain_copy(line) for line in lines).strip()
         if clean:
-            return clean[:max_len]
-    return text.strip()[:max_len]
+            return _truncate_copy(clean, max_len)
+    return ""
 
 
 def coach_oneliner(aggregation: str, max_len: int = 80) -> str:
@@ -40,6 +83,7 @@ def coach_oneliner(aggregation: str, max_len: int = 80) -> str:
     """
     if not aggregation:
         return ""
+    aggregation = _prose_text(aggregation)
 
     # 按 markdown 标题切段
     sections: dict[str, str] = {}
@@ -83,7 +127,7 @@ def coach_oneliner(aggregation: str, max_len: int = 80) -> str:
     evaluation = ""
     if hr_section:
         for sent in re.split(r"[。！？\n]", hr_section):
-            sent = sent.strip().lstrip("-*•· ").replace("**", "")
+            sent = _plain_copy(sent)
             if not sent:
                 continue
             if any(w in sent for w in ("强度过大", "强度偏大", "强度过高", "强度过小", "强度偏低",
@@ -103,7 +147,7 @@ def coach_oneliner(aggregation: str, max_len: int = 80) -> str:
     if next_section:
         candidates: list[str] = []
         for sent in re.split(r"[。！？\n]", next_section):
-            sent = sent.strip().lstrip("-*•· ").replace("**", "")
+            sent = _plain_copy(sent)
             if not sent:
                 continue
             if sent.startswith(("建议", "下次", "可选择")) or ("建议" in sent and len(sent) < 30):
@@ -145,9 +189,7 @@ def coach_oneliner(aggregation: str, max_len: int = 80) -> str:
     else:
         out = first_paragraph(aggregation, max_len=max_len)
 
-    if len(out) > max_len:
-        out = out[: max_len - 1] + "…"
-    return out
+    return _truncate_copy(out, max_len)
 
 
 def workout_voice_script(
@@ -177,7 +219,7 @@ def workout_voice_script(
 
     body = coach_oneliner(aggregation, max_len=max_len - len(lead) - 10)
     if not body:
-        body = "整体表现平稳，保持这个节奏。"
+        body = "请打开运动详情查看完整分析。"
     if not body.endswith(("。", "！", "？", "…")):
         body += "。"
 

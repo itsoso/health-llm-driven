@@ -828,14 +828,13 @@ class PushService:
         severity: str = "info",
     ) -> Dict[str, Any]:
         """发送 Telegram 推送（Agent Native 告警通道）"""
-        from .telegram_push import escape_markdown
-
         # data 显式标注优先(anomaly / delayed 回放); 缺省回落推送档位 —— 否则只传
         # severity 参数的 Safety Guardian HIGH/CRITICAL 会被渲染成 info
         return await self.telegram.send_health_alert(
             title=title,
-            message=escape_markdown(content),  # 推送正文是纯文本
+            message=content,
             severity=(data or {}).get("severity") or severity,
+            plain_text=True,
         )
 
     def _get_wechat_template(

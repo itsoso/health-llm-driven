@@ -17,6 +17,7 @@ Agent Native 告警通道：当 iOS APNs 不可用时（App 未构建），
 
 import logging
 import re
+from html import escape
 from typing import Optional
 
 import httpx
@@ -137,13 +138,18 @@ class TelegramPushService:
         message: str,
         severity: str = "warning",
         chat_id: Optional[str] = None,
+        *,
+        plain_text: bool = False,
     ) -> dict:
         """发送格式化的健康告警。
 
         title 是纯文本;message 按旧 Markdown 原样发送(eval_runner 依赖其格式),
-        纯文本调用方须先 escape_markdown。
+        纯文本调用方传 plain_text=True，以安全 HTML 粗体标题展示。
         """
         emoji = _SEVERITY_EMOJI.get(str(severity or "").lower(), "⚪")
+        if plain_text:
+            text = f"{emoji} <b>{escape(title)}</b>\n\n{escape(message)}"
+            return await self.send_message(text, chat_id=chat_id, parse_mode="HTML")
         # 粗体实体内不允许转义,只有 `*` 会提前闭合实体 → 闭合、转义、重开(Telegram 文档写法)
         bold_title = title.replace("*", "*\\**")
 
