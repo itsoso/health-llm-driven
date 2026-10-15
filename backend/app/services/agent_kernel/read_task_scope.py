@@ -276,6 +276,16 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
+    from app.services.agent_kernel.post_record_recovery_scope import is_post_record_recovery_request
+    if is_post_record_recovery_request(snapshot.envelope.text):
+        zone = ZoneInfo(snapshot.context.timezone)
+        now = snapshot.context.current_time
+        today = (now.replace(tzinfo=zone) if now.utcoffset() is None else now.astimezone(zone)).date()
+        return OwnedReadScope(tuple(
+            {"dimension": dimension, "start_date": (today - timedelta(days=6)).isoformat(),
+             "end_date": today.isoformat(), "timezone": snapshot.context.timezone}
+            for dimension in ('sleep', 'heart_rate')
+        ), ('default_recent_7_days', 'post_record_recovery_material_unverified'), composite_advice=True)
     from app.services.agent_longitudinal_read import (
         is_recent_workout_read, resolve_recent_workout_selection, is_owned_cycling_html_report,
     )

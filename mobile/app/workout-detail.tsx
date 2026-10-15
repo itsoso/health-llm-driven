@@ -4,8 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import MapView, { Polyline as MapPolyline, Marker } from 'react-native-maps';
-import Markdown from 'react-native-markdown-display';
-import { prepareSafeMarkdown, safeMarkdownIt } from '../utils/safeMarkdown';
+import SafeTableMarkdown from '../components/shared/SafeTableMarkdown';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkoutDetail } from '../hooks/useWorkouts';
 import { useWorkoutAutoAnalysis } from '../hooks/useWorkoutAutoAnalysis';
@@ -645,7 +644,7 @@ export default function WorkoutDetailScreen() {
               <Text style={T.placeholder}>AI 正在分析运动数据...</Text>
             </View>
           ) : postContent ? (
-            <Markdown style={MD} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(postContent)}</Markdown>
+            <SafeTableMarkdown content={postContent} style={MD} />
           ) : analysis ? (
             <View style={{ gap: 8 }}>
               <Text style={T.analysisText}>{analysis.intensity_assessment}</Text>
@@ -792,8 +791,13 @@ const T = {
 // Markdown 样式(AI 分析渲染)—— 走 Reva sans / ink。
 const MD = StyleSheet.create({
   body: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, color: C.ink1 },
-  heading2: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: C.ink1, marginTop: 8, marginBottom: 4 },
-  heading3: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600', color: C.ink1, marginTop: 6, marginBottom: 2 },
+  // Explicit line heights avoid inheriting the 21px body line box (which clips h1 on iOS).
+  heading1: { fontFamily: revaFonts.sans, fontSize: 20, lineHeight: 28, fontWeight: '700', color: C.ink1, marginTop: 8, marginBottom: 6 },
+  heading2: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, fontWeight: '600', color: C.ink1, marginTop: 8, marginBottom: 4 },
+  heading3: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, fontWeight: '600', color: C.ink1, marginTop: 6, marginBottom: 2 },
+  heading4: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, fontWeight: '600', color: C.ink1, marginTop: 6, marginBottom: 2 },
+  heading5: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, fontWeight: '600', color: C.ink1, marginTop: 6, marginBottom: 2 },
+  heading6: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, fontWeight: '600', color: C.ink1, marginTop: 6, marginBottom: 2 },
   strong: { fontWeight: '600' },
   bullet_list: { marginVertical: 2 },
   list_item: { flexDirection: 'row', marginVertical: 1 },

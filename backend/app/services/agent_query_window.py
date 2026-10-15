@@ -165,7 +165,9 @@ def read_calendar_health_query(
         return read_sleep_oxygen_window(db, user_id, window)
     if window.period is not None:
         raise ValueError('calendar_query_period_unsupported')
-    if dimension not in SUPPORTED_CALENDAR_DIMENSIONS:
+    # Heart-rate access is bound by the closed post-record recovery scope;
+    # do not broaden the generic natural-language calendar resolver.
+    if dimension not in SUPPORTED_CALENDAR_DIMENSIONS | {'heart_rate'}:
         raise ValueError("calendar_query_dimension_unsupported")
     from app.models.daily_health import DietRecord, GarminData
 
@@ -192,10 +194,15 @@ def read_calendar_health_query(
     keys = ("sleep_score", "total_sleep_duration", "deep_sleep_duration",
             "rem_sleep_duration", "light_sleep_duration", "awake_duration",
             "sleep_start_time", "sleep_end_time")
-    result["date_attribution"] = "wake_date"
+    if dimension == 'heart_rate':
+        keys = ('avg_heart_rate', 'max_heart_rate', 'min_heart_rate', 'resting_heart_rate')
+    result["date_attribution"] = "wake_date" if dimension == 'sleep' else 'source_record_date'
     result["sync_status"] = "unknown"
     result["limitations"] = ["sync_status_unknown", "daily_rows_not_full_episode_timestamps",
                              "missing_metric_is_unknown_not_abnormal"]
+    if dimension == 'heart_rate':
+        result['limitations'] = ['sync_status_unknown', 'daily_summary_not_workout_measurement',
+                                'missing_metric_is_unknown_not_abnormal']
     by_day: dict[date, list[Any]] = {}
     for row in rows:
         by_day.setdefault(row.record_date, []).append(row)

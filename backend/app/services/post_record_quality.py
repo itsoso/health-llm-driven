@@ -1023,7 +1023,7 @@ def build_post_record_quality_response(
                         "ask-recovery",
                         "问小巴恢复",
                         (
-                            f"基于我刚记录的运动（{exercise} · {detail}），结合最近恢复、睡眠和心率数据，"
+                            "基于我刚记录的运动，结合最近恢复、睡眠和心率数据，"
                             "给我今天剩余时间的恢复建议。"
                         ),
                         badge="运动记录",

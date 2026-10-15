@@ -605,5 +605,6 @@ def test_multi_record_quality_responses_are_aggregated_not_last_one_wins():
     exercise_actions = combined["cards"][1]["actions"]
     exercise_follow_up_route = unquote(exercise_actions[2]["payload"]["route"])
     assert exercise_follow_up_route.startswith("/(tabs)/chat?")
-    assert "俯卧撑" in exercise_follow_up_route
+    assert "基于我刚记录的运动，结合最近恢复、睡眠和心率数据" in exercise_follow_up_route
+    assert "俯卧撑" in combined["cards"][1]["data"]["summary"]
     assert "恢复" in exercise_follow_up_route

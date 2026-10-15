@@ -2577,7 +2577,9 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     from app.services.agent_kernel.current_input_advice_scope import current_input_advice_scope_contract_payload
     from app.services.agent_kernel.garmin_workout_review_scope import garmin_workout_review_scope_contract_payload
     from app.services.agent_kernel.medical_narrative_read_scope import medical_narrative_read_scope_contract_payload
+    from app.services.agent_kernel.post_record_recovery_scope import post_record_recovery_scope_contract_payload
     return {
+        "post_record_recovery_scope": post_record_recovery_scope_contract_payload(),
         "medical_narrative_read_scope": medical_narrative_read_scope_contract_payload(),
         "garmin_workout_review_scope": garmin_workout_review_scope_contract_payload(),
         "current_input_advice_scope": current_input_advice_scope_contract_payload(),
@@ -2840,6 +2842,9 @@ def decide_tool_capability(
         return _decision("block", "current_input_advice_read_not_needed" if optional_read
                          else "current_input_advice_tool_not_allowed", tool_name, args)
     owned_scope = resolve_owned_read_scope(snapshot)
+    from app.services.agent_kernel.post_record_recovery_scope import has_post_record_recovery_reference
+    if owned_scope is None and has_post_record_recovery_reference(snapshot.envelope.text):
+        return _decision('block', 'longitudinal_read_scope_unresolved', tool_name, args)
     from app.services.agent_longitudinal_read import (
         has_recent_workout_reference, is_recent_workout_read, has_subday_workout_reference,
     )
@@ -3065,7 +3070,9 @@ def decide_tool_capability(
             in {"diet", "sleep", "spo2", "workout", "supplements"}
             for proposal in read_proposals
         )
-        if guarding_longitudinal_domain and longitudinal_read_restrictions_unresolved(snapshot):
+        if (guarding_longitudinal_domain
+                and not (owned_scope is not None and 'post_record_recovery_material_unverified' in owned_scope.limitations)
+                and longitudinal_read_restrictions_unresolved(snapshot)):
             # Preserve the existing ownership denial when both checks fail;
             # ownership can change the rejection reason, never grant scope.
             reason = ("health_query_subject_not_current_user"
@@ -3102,7 +3109,7 @@ def decide_tool_capability(
         scope = None if daily is not None else resolve_owned_read_scope(snapshot)
         if scope is not None:
             plan = args.get("plan", args)
-            if scope.workout_selection is not None:
+            if scope.workout_selection is not None or 'post_record_recovery_material_unverified' in scope.limitations:
                 raw_proposals = [args] if tool_name == 'health_query' else plan.get('queries') if isinstance(plan, dict) else None
                 if (not isinstance(raw_proposals, list)
                         or any(not isinstance(p, dict) or set(p) - {'dimension', 'start_date', 'end_date', 'timezone'}

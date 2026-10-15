@@ -1,13 +1,13 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import { Platform } from 'react-native';
+import { Platform, StyleSheet, Text } from 'react-native';
 import Constants from 'expo-constants';
 
 jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { extra: {} } } }));
 jest.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: undefined }) }));
 jest.mock('../../hooks/useWorkouts', () => ({ useWorkoutDetail: jest.fn() }));
 jest.mock('../../hooks/useWorkoutAutoAnalysis', () => ({
-  useWorkoutAutoAnalysis: () => ({ analysis: null, postAnalysis: null, fromCache: false }),
+  useWorkoutAutoAnalysis: jest.fn(() => ({ analysis: null, postAnalysis: null, fromCache: false })),
 }));
 jest.mock('../../services/workouts', () => ({}));
 jest.mock('../../services/cloudTts', () => ({}));
@@ -28,6 +28,7 @@ jest.mock('react-native-maps', () => {
 
 import MapView from 'react-native-maps';
 import { useWorkoutDetail } from '../../hooks/useWorkouts';
+import { useWorkoutAutoAnalysis } from '../../hooks/useWorkoutAutoAnalysis';
 import WorkoutDetailScreen from '../workout-detail';
 
 const unavailableMessage = '当前设备暂不支持地图展示，其他运动数据仍可查看。';
@@ -81,5 +82,61 @@ describe('workout detail native Maps capability', () => {
     const screen = render(<WorkoutDetailScreen />);
     expect(MapView).not.toHaveBeenCalled();
     expect(screen.queryByText(unavailableMessage)).toBeNull();
+  });
+});
+
+
+describe('workout analysis report rendering', () => {
+  const report = [
+    '# 运动数据分析与专业指导',
+    '',
+    '## 本次训练总结',
+    '',
+    '| 指标 | 本次数据 | 评价 || --- | --- | --- |',
+    '| 距离 | 2.03km | 较前两次显著增加（+95%） |',
+    '| 时长 | 19.4分钟 | 节奏放缓 |',
+    '',
+    '### 心率分布',
+    '#### 第四级',
+    '##### 第五级',
+    '###### 第六级',
+    '',
+    '',
+    '| 区间 | 范围 | 占比 |',
+    '| --- | --- | --- |',
+    '| 有氧区 | 129–141 bpm | 60% |',
+  ].join('\n');
+
+  beforeEach(() => {
+    (useWorkoutDetail as jest.Mock).mockReturnValue({ isLoading: false, data: { id: 1, workout_type: 'running' } });
+    (useWorkoutAutoAnalysis as jest.Mock).mockReturnValue({ analysis: null, postAnalysis: { content: report }, fromCache: true });
+  });
+
+  it('renders saved malformed and valid tables as readable mobile rows without raw delimiters', () => {
+    const screen = render(<WorkoutDetailScreen />);
+    expect(screen.getByText('运动数据分析与专业指导')).toBeTruthy();
+    const displayed = JSON.stringify(screen.toJSON());
+    expect(displayed).not.toContain('|| ---');
+    expect(displayed).not.toContain('| 距离 |');
+    expect(displayed).toContain('2.03km');
+    expect(displayed).toContain('129–141 bpm');
+    expect(displayed).toContain('60%');
+  });
+
+  it('gives all heading levels enough line height and wrapping space', () => {
+    const screen = render(<WorkoutDetailScreen />);
+    for (const title of ['运动数据分析与专业指导', '本次训练总结', '心率分布', '第四级', '第五级', '第六级']) {
+      const headingNode = screen.getByText(title);
+      const styles = [];
+      let node: any = headingNode;
+      while (node) {
+        if (node.type === Text || node.type === 'Text') styles.unshift(node.props.style);
+        node = node.parent;
+      }
+      const heading = StyleSheet.flatten(styles);
+      expect(heading).toBeDefined();
+      expect(heading.lineHeight).toBeGreaterThanOrEqual(heading.fontSize * 1.3);
+      expect(heading.fontSize).toBeLessThanOrEqual(20);
+    }
   });
 });

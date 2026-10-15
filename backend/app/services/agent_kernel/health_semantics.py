@@ -2639,6 +2639,10 @@ def health_read_has_nonself_subject(text: str) -> bool:
     from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
     from app.services.agent_longitudinal_read import is_recent_workout_read
 
+    from app.services.agent_kernel.post_record_recovery_scope import is_post_record_recovery_request
+    if is_post_record_recovery_request(text):
+        return False  # Full role proof only; evidence/window still gateway-bound.
+
     if is_recent_workout_read(text):
         return False  # Whole-command subject proof; dates/tools remain gateway-bound.
 

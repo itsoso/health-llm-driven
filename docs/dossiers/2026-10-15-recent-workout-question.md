@@ -82,3 +82,19 @@ f4448dfb完整CI与后端发布成功后，用户15:28再次发送“分析上�
 - RED：隔离 PostgreSQL legacy DDL 3 个用例均复现 workout_event_timezone_missing；GREEN：8 个专项用例通过，414 项相关 PostgreSQL 回归通过（含 executor 与保存回复）；临时实例正常停止。证据 `/tmp/reva-legacy-workout-pg-red-result.json`、`/tmp/reva-legacy-workout-pg-green-result.json`、`/tmp/reva-legacy-workout-related-pg-result.json`。此前 SQLite 测试环境被 PG fixture 拒绝，已改用隔离 PG 完整重跑，不计为通过。
 - System Map 检查通过；LLM 变更门判定 live_llm_required=false。固定提交 G4、CI-mode、远端完整 CI 和部署仍待完成；不宣称截图对应真实记录已验证。
 - 独立 G4 首审发现 legacy limitation 存在但行同时缺失 provenance 双字段时仍通过；已强制完整字段对并增加 missing_both 反例。新鲜 PostgreSQL 415 项通过（`/tmp/reva-legacy-workout-reviewed-pg.log`），待修正提交重新 G4。
+
+## 追加闭环：运动记录后的恢复建议与详情渲染
+
+上一 legacy timestamp 修复已以 e6aa51fb1768637c90fbca9e41f34bfa7ba07aa5 上线：415 PostgreSQL 测试、本地 CI-mode 3983 项及完整远端 CI 38702515148 通过；后端 38704803587 成功，生产 SUCCEEDED/COMMITTED 与公网健康已回读。未读真实健康记录。
+
+2026-10-15 新截图：产品“问小巴恢复”生成的“基于我刚记录的运动（俯卧撑 · 20次），结合最近恢复、睡眠和心率数据，给我今天剩余时间的恢复建议。”被误判为非本人；运动详情 Markdown 首标题裁切，紧邻表头/分隔符的表格未渲染。
+
+G1 PASS：修复现有按钮到查询/建议与详情展示闭环；沿用本 Dossier，不新增用户读写权。已合成复现有效 owner=41 仍被 health_query_subject_not_current_user 阻断。根因是归属解析把“基于我刚记录”当作未知所有者；历史窗口和建议期限未分离，现有纵向读缺少心率适配，不能仅跳过 subject 校验。新完整作用域须消费整句、绑定本人近7天睡眠和心率，明确当前运动材料不是记录身份凭据；禁止宽分析和写入。
+
+渲染调查：运动详情直接使用 Markdown，未复用 SafeTableMarkdown；标题继承小于字号的行高。拟统一现有安全渲染入口和标题行高，验证窄屏与表格布局。移动纯 JS 变更在原生兼容成立后按同一精确绿色 SHA 先后端、再 OTA validate/publish。
+
+验证、独立 G4、完整 CI 与发布回执待补；不进行真实模型评测、不备份、不读取真实健康记录。
+
+- 移动渲染 RED：真实 screen 组件显示粘连表格原文、h1 32px 继承21px行高；GREEN：21 项聚焦用例与 TypeScript 通过。复用 SafeTableMarkdown，h1–h6 明确行高。日志 `/tmp/reva-workout-render-red.log`、`/tmp/reva-workout-render-green.log`、`/tmp/reva-workout-render-tsc.log`。当前候选未完成原生模拟器视觉验收，不以旧包截图冒充。
+- 新按钮将运动材料与授权请求解耦，采用稳定恢复文本；旧截图模板保留闭合兼容。只读取本人睡眠与心率的固定7个本地日期，运动材料不证明事件身份。已有心率查询的通用自然语言日期准入不扩展，仅已绑定作用域使用新的有界读取。
+- 新恢复链路 RED 为3项真实PG失败；冻结专项97项通过，PG117项通过并正常停止（新旧模板、有/无数据、回复保存）。新增换行/CRLF的4个真实gateway拒绝用例先RED后GREEN；最终包含它们的PG收口另记回执。预审发现shadow继续dispatch与换行宽工具回落，两处已修；固定提交需独立G4重新裁决。System Map生成并通过，LLM change gate无需真实模型。

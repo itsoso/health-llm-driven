@@ -21,7 +21,7 @@ from app.services.agent_write_outcome import result_declares_explicit_failure
 from app.services.genui.table_builder import load_tool_result_json
 from app.utils.number_format import format_display_number
 
-_LABELS = {"diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂", "spo2": "血氧"}
+_LABELS = {"heart_rate": "心率", "diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂", "spo2": "血氧"}
 _ACTUAL_SOURCES = {
     "workout": ("owned_actual_workout_records", {"workout_record", "exercise_record"}),
     "supplements": (
@@ -44,6 +44,8 @@ class ComposedReadCompletion:
 # These fields mirror the bounded calendar and actual-intake adapters. Extra
 # record metadata never enters the answer model; source identity stays data.
 _EVIDENCE_FIELDS = {
+    "heart_rate": ("record_date", "avg_heart_rate", "max_heart_rate", "min_heart_rate",
+                   "resting_heart_rate", "sources", "source_row_updates"),
     "spo2": ("record_date", "daily_metrics", "daily_sources", "sample_summaries"),
     "diet": ("id", "record_date", "meal_type", "meal_time", "food_name", "food_items",
              "quantity", "unit", "calories", "protein", "carbs", "fat", "fiber"),
@@ -59,9 +61,10 @@ _NUMERIC_FIELDS = frozenset({
     "quantity", "calories", "protein", "carbs", "fat", "fiber", "sleep_score",
     "total_sleep_duration", "deep_sleep_duration", "rem_sleep_duration",
     "light_sleep_duration", "awake_duration", "duration_seconds", "distance_meters",
-    "avg_heart_rate", "dosage",
+    "avg_heart_rate", "max_heart_rate", "min_heart_rate", "resting_heart_rate", "dosage",
 })
 _FIELD_UNITS = {
+    "heart_rate": {field: "beats_per_minute" for field in ('avg_heart_rate', 'max_heart_rate', 'min_heart_rate', 'resting_heart_rate')},
     "spo2": {"daily_metrics": "percent", "sample_summaries": "percent; data_points=count"},
     "diet": {"calories": "kcal", "protein": "g", "carbs": "g", "fat": "g", "fiber": "g",
              "quantity": "per_record_unit"},
@@ -145,6 +148,7 @@ def _verified_evidence(bounds, verified, limitations):
 # Only clinically relevant returned fields become deterministic disclosures.
 # Names, arbitrary payload keys, and model requests never supply this vocabulary.
 _GAP_LABELS = {
+    "heart_rate": {"avg_heart_rate": "平均心率", "max_heart_rate": "最高心率", "min_heart_rate": "最低心率", "resting_heart_rate": "静息心率"},
     "spo2": {},  # Source-specific sparse observations are disclosed in _facts.
     "diet": {"calories": "热量", "protein": "蛋白质", "carbs": "碳水化合物",
              "fat": "脂肪", "fiber": "膳食纤维"},
@@ -898,6 +902,7 @@ def _facts(dimension: str, payload: dict) -> str:
     label, rows = _LABELS[dimension], payload["records"]
     if not rows:
         absence = {
+            "heart_rate": "，不能据此判断恢复程度或心率正常与否。",
             "spo2": "，不能判断血氧正常或异常；已排除不用于血氧判断的来源。",
             "diet": "，不代表没有进食。",
             "sleep": "，不能据此判断睡眠情况。",
@@ -925,6 +930,8 @@ def _facts(dimension: str, payload: dict) -> str:
                 f"已知热量小计{total}千卡；另{format_display_number(len(rows) - len(known))}"
                 "条缺少有效热量读数，无法给出完整合计。"
             )
+    elif dimension == "heart_rate":
+        text = f"心率：查询到{count}天的日汇总；不是这次运动中的实测心率，不能据此判断训练安全或恢复程度。"
     elif dimension == "spo2":
         text = (f"血氧：目标日期内有{count}天的合格来源观测，不代表连续整夜监测。"
                 "未验证采样的睡眠区间，不能推算ODI；不能据此确诊睡眠呼吸暂停。")
@@ -1021,6 +1028,9 @@ def read_scope_synthesis_instructions(scope, *, include_layout: bool = True) -> 
 def read_scope_notices(scope) -> tuple[str, ...]:
     """One disclosure source for the prompt, final answer, and trusted facts."""
     lines = []
+    if 'post_record_recovery_material_unverified' in scope.limitations:
+        lines.append('建议期限是今天剩余时间；最近7天仅查询本人睡眠和心率日汇总。'
+                     '刚记录的运动来自本条描述，未核验记录身份、未重新读取运动事件；恢复程度不能由这些记录直接确定。')
     if "health_overview_lifestyle_only" in scope.limitations:
         lines.append(
             "本次周健康概览覆盖指定范围内的饮食、睡眠与运动记录；"
