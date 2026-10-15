@@ -5,6 +5,42 @@ _first_paragraph / _coach_oneliner 是纯文本处理, 不依赖 DB, 可单元�
 """
 from app.tasks.garmin_sync import _first_paragraph, _coach_oneliner
 from app.services.workout_coach_copy import workout_voice_script
+import pytest
+
+
+@pytest.mark.parametrize("table", [
+    "| 指标 | 本次数据 | 评价 |\n| --- | --- | --- |\n| 距离 | 3km | 分布合理 |",
+    "指标 | 本次数据 | 评价\n--- | --- | ---\n距离 | 3km | 分布合理",
+    "指标 | 数据\n--- | ---\n距离 | 3km",
+])
+@pytest.mark.parametrize("heading", ["## 数据概览", "## 心率区间分析"])
+def test_coach_summary_skips_tables_before_prose(table, heading):
+    text = f"{heading}\n{table}\n\n本次运动分析已完成，请查看完整点评。"
+    assert _coach_oneliner(text) == "本次运动分析已完成，请查看完整点评。"
+
+
+def test_table_only_summary_does_not_read_markup_or_invent_advice():
+    text = "## 数据\n\n| 指标 | 数据 |\n| --- | --- |\n| 距离 | 3km |"
+    assert _coach_oneliner(text) == ""
+    assert _first_paragraph(text) == ""
+    voice = workout_voice_script("跑步", None, None, text)
+    assert "查看完整分析" in voice
+    assert "平稳" not in voice
+
+
+def test_summary_skips_code_and_cleans_inline_formatting():
+    text = "## 数据\n```text\n不要读出代码块\n```\n\n- **点评**：请查看[完整分析](https://example.test)，关注 `Z2` 区间。"
+    assert _coach_oneliner(text) == "点评：请查看完整分析，关注 Z2 区间。"
+
+
+def test_long_summary_marks_truncation():
+    assert _coach_oneliner("长篇点评" * 50, max_len=40).endswith("…")
+
+
+def test_standalone_bold_warning_remains_the_first_paragraph():
+    text = "**出现胸痛时请立即停止运动。**\n\n本次运动数据已记录。"
+    assert _first_paragraph(text) == "出现胸痛时请立即停止运动。"
+    assert _coach_oneliner(text) == "出现胸痛时请立即停止运动。"
 
 
 class TestFirstParagraph:
@@ -119,4 +155,4 @@ class TestWorkoutVoiceScript:
         )
         assert "跑步" in out
         assert "5.0 公里" in out
-        assert "保持" in out or "平稳" in out  # fallback 结尾
+        assert "查看完整分析" in out
