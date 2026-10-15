@@ -909,7 +909,9 @@ def test_admission_cli_does_not_require_ssh_credentials_or_publish(monkeypatch, 
     monkeypatch.setattr(m, 'persist_diagnostic', lambda data: None)
     monkeypatch.setattr(m, 'publish', lambda *a: pytest.fail('no publish in admission'))
     monkeypatch.setenv('EXPO_TOKEN', 'private-token')
-    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40, '--admission'])
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40, '--admission', '--github-token-stdin'])
+    import io
+    monkeypatch.setattr(m.sys, 'stdin', io.TextIOWrapper(io.BytesIO(b'synthetic-github-token')))
     assert m.cli() == 0
     output = json.loads(capsys.readouterr().out)
     assert output['state'] == 'ADMISSION_PASSED'
@@ -1005,7 +1007,9 @@ def test_admission_rejects_invalid_credential_before_adapter(monkeypatch, capsys
     monkeypatch.setattr(m, 'Adapter', lambda *a: pytest.fail('no vendor before credential check'))
     monkeypatch.setattr(m, 'persist_diagnostic', saved.append)
     monkeypatch.setenv('EXPO_TOKEN', token)
-    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40, '--admission'])
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c'*40, '--admission', '--github-token-stdin'])
+    import io
+    monkeypatch.setattr(m.sys, 'stdin', io.TextIOWrapper(io.BytesIO(b'synthetic-github-token')))
     assert m.cli() == 1
     output = json.loads(capsys.readouterr().err)
     assert output['phase'] == 'credential'
@@ -1143,7 +1147,9 @@ def test_prepare_cli_exports_without_ssh_credentials_or_publish(monkeypatch, tmp
     monkeypatch.setattr(m, 'persist_diagnostic', saved.append)
     monkeypatch.setattr(m, 'publish', lambda *args: pytest.fail('preparation cannot publish'))
     monkeypatch.setenv('EXPO_TOKEN', 'private-token')
-    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c' * 40, '--prepare'])
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c' * 40, '--prepare', '--github-token-stdin'])
+    import io
+    monkeypatch.setattr(m.sys, 'stdin', io.TextIOWrapper(io.BytesIO(b'synthetic-github-token')))
     assert m.cli() == 0
     output = json.loads(capsys.readouterr().out)
     assert output == {'sha': 'c' * 40, 'state': 'PREPARATION_PASSED',
@@ -1198,7 +1204,9 @@ def test_prepare_cli_export_failure_is_not_passed_and_retains_safe_diagnostic(mo
     monkeypatch.setattr(m, 'Adapter', lambda *args: f)
     monkeypatch.setattr(m, 'persist_diagnostic', saved.append)
     monkeypatch.setenv('EXPO_TOKEN', 'private-token')
-    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c' * 40, '--prepare'])
+    monkeypatch.setattr(m.sys, 'argv', ['publisher', '--sha', 'c' * 40, '--prepare', '--github-token-stdin'])
+    import io
+    monkeypatch.setattr(m.sys, 'stdin', io.TextIOWrapper(io.BytesIO(b'synthetic-github-token')))
     assert m.cli() == 1
     captured = capsys.readouterr()
     assert not captured.out
@@ -1323,3 +1331,95 @@ def test_remaining_real_gates_reject_drift_before_any_claim_or_vendor(tmp_path,t
     assert adapter.vendor_calls == 0
     assert 'claim-ota' not in adapter.events
     assert calls.gates == stage
+
+
+def test_github_credential_only_enters_gate_stdin(monkeypatch, tmp_path):
+    m = load()
+    monkeypatch.setattr(m, 'ROOT', tmp_path)
+    token = b'synthetic-github-token'
+    adapter = m.Adapter('c' * 40, None, 'expo-secret', github_token=token)
+    calls = []
+    monkeypatch.setattr(adapter, 'run', lambda argv, tag, **kw: calls.append((argv, tag, kw)))
+    adapter.gate()
+    argv, tag, kwargs = calls[0]
+    assert argv[-1] == '--token-stdin'
+    assert token.decode() not in repr(argv)
+    assert kwargs == {'data': token}
+    assert 'GH_TOKEN' not in m.environment('expo-secret')
+    assert 'GITHUB_TOKEN' not in m.environment(None)
+
+
+def test_gate_requires_explicit_github_credential(monkeypatch):
+    m = load()
+    monkeypatch.setenv('GH_TOKEN', 'ambient-must-not-be-used')
+    adapter = m.Adapter('c' * 40, None, 'expo-secret')
+    monkeypatch.setattr(adapter, 'run', lambda *a, **kw: pytest.fail('no unauthenticated API call'))
+    with pytest.raises(m.PublishError):
+        adapter.gate()
+
+
+@pytest.mark.parametrize('raw', [b'', b'x'*4097, b'a\nb', b'a b', b'\xff'])
+def test_github_stdin_is_bounded_and_rejects_invalid_bytes(raw):
+    import io
+    m = load()
+    with pytest.raises(m.PublishError):
+        m.read_github_token(io.BytesIO(raw))
+
+
+def test_github_stdin_preserves_valid_token_without_echo():
+    import io
+    m = load()
+    assert m.read_github_token(io.BytesIO(b'synthetic-token')) == b'synthetic-token'
+
+
+def test_real_adapter_gate_secret_never_reaches_vendor_environment_or_logs(monkeypatch, tmp_path):
+    m = load()
+    monkeypatch.setattr(m, 'ROOT', tmp_path)
+    monkeypatch.setattr(m, 'SOURCE', tmp_path / 'source')
+    github = b'synthetic-github-token'
+    calls = []
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        kwargs['stdout'].write(b'{}')
+        return type('Result', (), {'returncode': 0})()
+    monkeypatch.setattr(m.subprocess, 'run', run)
+    monkeypatch.setenv('GH_TOKEN', github.decode())
+    adapter = m.Adapter('c'*40, None, 'expo-secret', github_token=github)
+    adapter.gate()
+    adapter.run(['expo', 'export'], 'synthetic-export', with_token=True)
+    assert calls[0][1]['input'] == github
+    assert calls[1][1]['input'] is None
+    for argv, kwargs in calls:
+        assert github.decode() not in repr(argv)
+        assert github.decode() not in repr(kwargs['env'])
+    assert all(github not in p.read_bytes() for p in tmp_path.iterdir() if p.is_file())
+
+
+@pytest.mark.parametrize('flag,raw', [(False,b'synthetic-token'),(True,b''),(True,b'bad token')])
+def test_cli_missing_github_auth_fails_before_adapter_without_echo(monkeypatch, capsys, flag, raw):
+    import io
+    m=load()
+    monkeypatch.setattr(m, 'preflight', lambda sha: None)
+    monkeypatch.setattr(m, 'context', lambda *a, **kw: object())
+    monkeypatch.setattr(m, 'persist_diagnostic', lambda d: None)
+    monkeypatch.setattr(m, 'Adapter', lambda *a: pytest.fail('no adapter before valid auth'))
+    monkeypatch.setenv('EXPO_TOKEN', 'expo-secret')
+    monkeypatch.setenv('GH_TOKEN', 'ambient-must-not-be-used')
+    monkeypatch.setattr(m.sys, 'argv', ['publisher','--sha','c'*40,'--prepare'] + (['--github-token-stdin'] if flag else []))
+    monkeypatch.setattr(m.sys, 'stdin', io.TextIOWrapper(io.BytesIO(raw)))
+    assert m.cli() == 1
+    output=capsys.readouterr()
+    assert 'ambient' not in output.err and 'bad token' not in output.err
+    assert json.loads(output.err)['phase'] == 'credential'
+
+
+def test_github_token_reader_uses_one_bounded_read():
+    m=load()
+    class Source:
+        def __init__(self): self.calls=[]
+        def read(self, count):
+            self.calls.append(count)
+            return b'x'*4096
+    source=Source()
+    assert m.read_github_token(source) == b'x'*4096
+    assert source.calls == [4097]

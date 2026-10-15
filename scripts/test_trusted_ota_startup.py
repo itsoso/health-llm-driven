@@ -34,7 +34,8 @@ def test_fidelity_reuses_actual_bootstrap_dependencies_and_preflight():
 
 @pytest.mark.parametrize('omission', [
     'test "$GITHUB_REF" = refs/heads/main',
-    '/usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"',
+    'test -n "$GH_TOKEN"',
+    'printf \'%s\' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_release_gate.py --sha "$TARGET_SHA" --workflow-sha "$TARGET_SHA" --token-stdin',
 ])
 @pytest.mark.parametrize('mutation', ['remove', 'duplicate', 'change'])
 def test_changed_admission_cannot_be_silently_omitted(monkeypatch, omission, mutation):
@@ -194,7 +195,7 @@ PY_EXPORT
 
 
 def fidelity_command(phase):
-    """Source-derived shell; only two explicit release-admission omissions.
+    """Source-derived shell; only explicit release-admission omissions.
 
     No production helper is patched. Export calls unchanged production methods
     with no token and cannot reach a gate, server RPC or vendor mutation.
@@ -209,7 +210,8 @@ def fidelity_command(phase):
         body = bodies[0]
         omissions = (
             'test "$GITHUB_REF" = refs/heads/main',
-            '/usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"',
+            'test -n "$GH_TOKEN"',
+            'printf \'%s\' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_release_gate.py --sha "$TARGET_SHA" --workflow-sha "$TARGET_SHA" --token-stdin',
         )
         for omitted in omissions:
             lines = body.splitlines()

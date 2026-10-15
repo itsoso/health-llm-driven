@@ -493,11 +493,20 @@ def fsync_directory(path):
         os.close(fd)
 
 
+def read_github_token(stream):
+    """Read only an explicit bounded credential; never consult ambient env."""
+    raw = stream.read(4097)
+    if not isinstance(raw, bytes) or not raw or len(raw) > 4096 or re.fullmatch(rb"[A-Za-z0-9_.-]+", raw) is None:
+        raise PublishError("github credential invalid")
+    return raw
+
+
 class Adapter:
-    def __init__(self, sha, contract, token):
+    def __init__(self, sha, contract, token, github_token=None):
         self.sha = sha
         self.contract = contract
         self.token = token
+        self.github_token = github_token
 
     def run(self, args, tag, *, data=None, with_token=False, timeout=120):
         out_path = ROOT / (tag + ".stdout")
@@ -536,6 +545,8 @@ class Adapter:
             raise CommandError("command_unavailable") from None
 
     def gate(self):
+        if not self.github_token:
+            raise PublishError("github credential required")
         # Each invocation gets a unique read-only log name; publication is never repeated.
         suffix = "before" if not (ROOT / "gate-before.stdout").exists() else "preclaim"
         self.run(
@@ -549,8 +560,10 @@ class Adapter:
                 self.sha,
                 "--workflow-sha",
                 self.sha,
+                "--token-stdin",
             ],
             "gate-" + suffix,
+            data=self.github_token,
         )
 
     def validate_source(self):
@@ -817,6 +830,7 @@ def preflight(sha):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--sha", required=True)
+    parser.add_argument("--github-token-stdin", action="store_true")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--preflight", action="store_true")
     mode.add_argument("--admission", action="store_true")
@@ -836,7 +850,15 @@ def main():
         token = os.environ.get("EXPO_TOKEN", "")
         if not token or len(token) > 8192 or any(c.isspace() for c in token):
             raise PhaseError("credential", "operation_failed")
-        adapter = Adapter(args.sha, contract, token)
+        github_token = None
+        if args.github_token_stdin:
+            try:
+                github_token = read_github_token(sys.stdin.buffer)
+            except (PublishError, OSError, ValueError):
+                raise PhaseError("credential", "operation_failed") from None
+        else:
+            raise PhaseError("credential", "operation_failed")
+        adapter = Adapter(args.sha, contract, token, github_token)
         if args.prepare:
             phase_call("publication", prepare, adapter, args.sha)
             result = diagnostic(args.sha, "PREPARATION_PASSED", "preparation", "verified")

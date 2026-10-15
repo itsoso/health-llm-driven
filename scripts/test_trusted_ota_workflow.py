@@ -567,7 +567,7 @@ def test_vendor_admission_only_follows_all_uncredentialed_gates():
     admission = named('Prepare exact OTA artifact')
     assert admission['if'] == "inputs.target == 'validate'"
     assert steps.index(named('Read-only publisher context')) < steps.index(admission)
-    assert admission['env'] == {'TARGET_SHA': '${{ inputs.sha }}', 'EXPO_TOKEN': '${{ secrets.REVA_RELEASE_EXPO_TOKEN }}'}
+    assert admission['env'] == {'TARGET_SHA': '${{ inputs.sha }}', 'EXPO_TOKEN': '${{ secrets.REVA_RELEASE_EXPO_TOKEN }}', 'GH_TOKEN': '${{ github.token }}'}
     assert '--prepare' in admission['run'] and '--preflight' not in admission['run']
     # The byte-bound publisher performs admission CI before vendor access.
     assert 'trusted_release_gate.py' not in admission['run']
@@ -611,3 +611,18 @@ def test_preparation_diagnostic_round_trip_does_not_allow_false_success():
     for changes in ({"phase": "vendor-publish"}, {"reason": "command_failed"}, {"state": "BLOCKED"}):
         with pytest.raises(ValueError):
             validate({"ota-diagnostic.json": {**value, **changes}}, "c" * 40)
+
+
+def test_all_ota_api_gates_receive_explicit_readonly_github_stdin():
+    steps = workflow()['jobs']['ota']['steps']
+    source = next(s for s in steps if s['name'].startswith('Materialize exact'))
+    prepare = next(s for s in steps if s['name'].startswith('Prepare exact OTA'))
+    publish = next(s for s in steps if s['name'].startswith('Publish one bound'))
+    for step in (source, prepare, publish):
+        assert step['env']['GH_TOKEN'] == '${{ github.token }}'
+        assert 'test -n "$GH_TOKEN"' in step['run']
+        assert 'printf' in step['run'] and '"$GH_TOKEN" |' in step['run']
+        assert 'GH_TOKEN="$GH_TOKEN"' not in step['run']
+    assert source['run'].index("' reva-bootstrap") < source['run'].index('--token-stdin')
+    for step in (prepare, publish):
+        assert '--github-token-stdin' in step['run']

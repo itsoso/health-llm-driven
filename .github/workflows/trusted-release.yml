@@ -30,6 +30,7 @@ jobs:
     steps:
       - name: Materialize canonical source and check exact CI without production credentials
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
           CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
         run: |
@@ -46,8 +47,9 @@ jobs:
             test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
             /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1" --target "$2"
           ' reva-bootstrap "$TARGET_SHA" "$CI_TARGET"
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA" --target "$CI_TARGET"
       - name: Probe fixed production TCP and SSH banner without credentials
         run: |
           /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
@@ -64,6 +66,7 @@ jobs:
     steps:
       - name: Independently materialize and recheck before read-only server readiness checks
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
           CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
         run: |
@@ -80,10 +83,12 @@ jobs:
             test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
             /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1" --target "$2"
           ' reva-bootstrap "$TARGET_SHA" "$CI_TARGET"
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA" --target "$CI_TARGET"
       - name: Check actual server readiness without consuming authorization
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
           CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
           RELEASE_RPC: ${{ inputs.target == 'testflight' && 'check-testflight' || inputs.target == 'backend-v1' && 'check-backend-v1' || 'check' }}
@@ -93,8 +98,9 @@ jobs:
         run: |
           test -n "$RELEASE_KEY"
           test -n "$RELEASE_HOST_KEYS"
-          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
-            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin \
               --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA" --target "$CI_TARGET"
           umask 077
           private_dir="$(mktemp -d)"
@@ -122,6 +128,7 @@ jobs:
     steps:
       - name: Independently materialize and recheck before accessing production credentials
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
           CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
         run: |
@@ -138,8 +145,9 @@ jobs:
             test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
             /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1" --target "$2"
           ' reva-bootstrap "$TARGET_SHA" "$CI_TARGET"
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA" --target "$CI_TARGET"
       - name: Start the fixed server-side release capability
         env:
           TARGET_SHA: ${{ inputs.sha }}
@@ -180,6 +188,7 @@ jobs:
     steps:
       - name: Independently materialize and recheck before parallel native build
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
         run: |
           test "$GITHUB_REF" = refs/heads/main
@@ -195,8 +204,9 @@ jobs:
             test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
             /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
           ' reva-bootstrap "$TARGET_SHA"
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
       - name: Fixed Node toolchain
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
@@ -231,6 +241,7 @@ jobs:
             "$node_bin/node" --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
       - name: Claim one build in this job before every vendor create attempt
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
           RELEASE_RPC: ${{ inputs.target == 'testflight' && 'claim-testflight-build' || 'claim-build' }}
           RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
@@ -241,8 +252,9 @@ jobs:
           test -n "$RELEASE_HOST_KEYS"
           test -n "$EXPO_TOKEN"
           case "$EXPO_TOKEN" in *[[:space:]]*) exit 1 ;; esac
-          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
-            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin \
               --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
           node_bin="$(dirname "$(command -v node)")"
           if ! /usr/bin/sudo /usr/bin/env -i PATH="$node_bin:/usr/bin:/bin" HOME=/root \
@@ -275,12 +287,14 @@ jobs:
       - name: Build once without uploading to Apple
         id: build
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
           EXPO_TOKEN: ${{ secrets.REVA_RELEASE_EXPO_TOKEN }}
         run: |
           test -n "$EXPO_TOKEN"
-          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
-            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin \
               --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
           node_bin="$(dirname "$(command -v node)")"
           cd /opt/reva-release/source/mobile
@@ -303,6 +317,7 @@ jobs:
     steps:
       - name: Independently materialize and recheck as soon as the build finishes
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
         run: |
           test "$GITHUB_REF" = refs/heads/main
@@ -318,8 +333,9 @@ jobs:
             test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
             /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
           ' reva-bootstrap "$TARGET_SHA"
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
       - name: Fixed Node toolchain
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
@@ -354,6 +370,7 @@ jobs:
             "$node_bin/node" --test /opt/reva-release/source/scripts/release-tools/compat.test.cjs
       - name: Claim one-time TestFlight upload permission before exposing vendor credentials
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
           RELEASE_RPC: ${{ inputs.target == 'testflight' && 'claim-testflight-upload' || 'claim-testflight' }}
           RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
@@ -361,8 +378,9 @@ jobs:
         run: |
           test -n "$RELEASE_KEY"
           test -n "$RELEASE_HOST_KEYS"
-          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
-            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin \
               --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
           umask 077
           private_dir="$(mktemp -d)"
@@ -384,14 +402,16 @@ jobs:
           # deliberately NOT reset. Query EAS for the accepted build; never retry create.
       - name: Revalidate and upload the exact finished build
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
           BUILD_ID: ${{ needs.ios-build.outputs.build-id }}
           EXPO_TOKEN: ${{ secrets.REVA_RELEASE_EXPO_TOKEN }}
         run: |
           test -n "$EXPO_TOKEN"
           [[ "$BUILD_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
-          /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
-            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py \
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin \
               --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
           node_bin="$(dirname "$(command -v node)")"
           cd /opt/reva-release/source/mobile
@@ -416,6 +436,7 @@ jobs:
     steps:
       - name: Materialize exact publisher and fixed retained source before credentials
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
         run: |
           test "$GITHUB_REF" = refs/heads/main
@@ -494,8 +515,9 @@ jobs:
             /usr/bin/git -c core.hooksPath=/dev/null fetch --depth=1 origin 514c8c28a87ad5761a6f66b284c19a69dff33e8f
             test "$(/usr/bin/git rev-parse FETCH_HEAD)" = 514c8c28a87ad5761a6f66b284c19a69dff33e8f
             test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-            /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
           ' reva-bootstrap "$TARGET_SHA"
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA"
       - name: Fixed Node toolchain
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:

@@ -7,9 +7,12 @@ The executor must run it immediately before each privileged release stage.
 
 import argparse
 import json
+import math
+from email.utils import parsedate_to_datetime
 import os
 import re
 import ssl
+import stat
 import sys
 import time
 import urllib.error
@@ -20,10 +23,149 @@ _REPOSITORY = "itsoso/health-llm-driven"
 _WORKFLOW_ID = 251604315
 _TIMEOUT = 10
 _MAX_RESPONSE = 2_000_000
+_MAX_TOKEN_BYTES = 4096
+_ENV_TOKEN = object()
+_CREDENTIAL_PATH = '/etc/reva-github-api/credential.json'
+_MAX_CREDENTIAL_BYTES = 8192
 
 
 class GateError(Exception):
     """Sanitized, fail-closed gate rejection."""
+
+
+class RateLimitError(GateError):
+    """Sanitized scheduler hint; still a failed gate, never release authority."""
+
+    def __init__(self, headers, *, confirmed=True):
+        now = math.ceil(time.time())
+        # Unknown secondary limits require at least a minute, not a tight loop.
+        not_before = now + 60
+        retry_after = headers.get('Retry-After')
+        reset = headers.get('X-RateLimit-Reset')
+        if isinstance(retry_after, str):
+            if re.fullmatch(r'[0-9]{1,9}', retry_after):
+                not_before = max(not_before, now + int(retry_after))
+            elif len(retry_after) <= 128:
+                try:
+                    parsed = parsedate_to_datetime(retry_after)
+                    if parsed.utcoffset() is not None:
+                        not_before = max(not_before, math.ceil(parsed.timestamp()))
+                except (ValueError, TypeError, OverflowError):
+                    not_before = max(not_before, now + 60)  # Invalid hint: fail closed.
+        if isinstance(reset, str) and re.fullmatch(r'[0-9]{1,10}', reset):
+            not_before = max(not_before, int(reset))
+        self.not_before = not_before
+        self.retry_after_seconds = not_before - now
+        self.code = 'github_rate_limited' if confirmed else 'github_access_denied_or_secondary_limit'
+        message = ('GitHub rate limit exhausted' if confirmed else 'GitHub access denied or secondary rate limit')
+        super().__init__(f'{message}; code={self.code} not_before={self.not_before} '
+                         f'retry_after_seconds={self.retry_after_seconds}; retry validation later')
+
+
+def _stdin_token():
+    try:
+        raw = sys.stdin.buffer.read(_MAX_TOKEN_BYTES + 1)
+    except (OSError, ValueError, AttributeError):
+        raise GateError('Release token stdin unavailable') from None
+    if not isinstance(raw, bytes) or len(raw) > _MAX_TOKEN_BYTES:
+        raise GateError('Invalid release token stdin')
+    # Permit printf with no terminator or a single conventional line ending.
+    if raw.endswith(b'\n'):
+        raw = raw[:-1]
+        if raw.endswith(b'\r'):
+            raw = raw[:-1]
+    if not raw or re.fullmatch(rb'[A-Za-z0-9_.-]+', raw) is None:
+        raise GateError('Invalid release token stdin')
+    return raw.decode('ascii')
+
+
+
+def _read_credential_file(path, *, _anchor='/', _owner_uid=0):
+    """Read through verified directory descriptors; test anchors are internal only."""
+    path = os.fspath(path)
+    anchor = os.fspath(_anchor)
+    relative = os.path.relpath(path, anchor)
+    parts = relative.split(os.sep)
+    if not parts or any(part in {'', '.', '..'} for part in parts):
+        raise GateError('Invalid release credential path')
+    directory_fd = None
+    directory_chain = []
+    file_fd = None
+    try:
+        directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        directory_fd = os.open(anchor, directory_flags)
+        directory_chain.append((directory_fd, os.fstat(directory_fd)))
+        for component in parts[:-1] + [None]:
+            info = os.fstat(directory_fd)
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != _owner_uid or info.st_mode & 0o022:
+                raise GateError('Unsafe release credential directory')
+            if component is not None:
+                next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+                directory_fd = next_fd
+                directory_chain.append((directory_fd, os.fstat(directory_fd)))
+        file_fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                          dir_fd=directory_fd)
+        before = os.fstat(file_fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != _owner_uid
+                or stat.S_IMODE(before.st_mode) != 0o600 or before.st_nlink != 1
+                or not 0 < before.st_size <= _MAX_CREDENTIAL_BYTES):
+            raise GateError('Unsafe release credential file')
+        raw = os.read(file_fd, _MAX_CREDENTIAL_BYTES + 1)
+        after = os.fstat(file_fd)
+        named = os.stat(parts[-1], dir_fd=directory_fd, follow_symlinks=False)
+        fields = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink',
+                  'st_size', 'st_mtime_ns', 'st_ctime_ns')
+        if (len(raw) != before.st_size or len(raw) > _MAX_CREDENTIAL_BYTES
+                or any(getattr(before, key) != getattr(after, key) for key in fields)
+                or any(getattr(after, key) != getattr(named, key) for key in fields)):
+            raise GateError('Release credential changed during read')
+        for index, (fd, original) in enumerate(directory_chain):
+            current = os.fstat(fd)
+            if any(getattr(original, key) != getattr(current, key)
+                   for key in ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode')):
+                raise GateError('Release credential directory changed during read')
+            if index:
+                parent_fd = directory_chain[index - 1][0]
+                linked = os.stat(parts[index - 1], dir_fd=parent_fd, follow_symlinks=False)
+                if linked.st_dev != current.st_dev or linked.st_ino != current.st_ino:
+                    raise GateError('Release credential directory changed during read')
+        def unique_object(pairs):
+            result = dict(pairs)
+            if len(result) != len(pairs):
+                raise GateError('Duplicate release credential fields')
+            return result
+        data = json.loads(raw, object_pairs_hook=unique_object)
+        if (not isinstance(data, dict) or set(data) != {'repository', 'token', 'expires_at'}
+                or data['repository'] != _REPOSITORY
+                or type(data['expires_at']) is not int or data['expires_at'] <= time.time()
+                or not isinstance(data['token'], str)
+                or not 1 <= len(data['token']) <= _MAX_TOKEN_BYTES
+                or re.fullmatch(r'[A-Za-z0-9_.-]+', data['token']) is None):
+            raise GateError('Invalid or expired release credential')
+        return data['token']
+    except GateError:
+        raise
+    except (OSError, ValueError, TypeError):
+        raise GateError('Release credential unavailable or malformed') from None
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+        for fd, _ in reversed(directory_chain):
+            os.close(fd)
+
+
+def _configured_token():
+    # An absent optional file retains compatibility. Any configured-but-invalid
+    # file fails closed, even when a legacy environment token is available.
+    try:
+        os.lstat(_CREDENTIAL_PATH)
+    except FileNotFoundError:
+        return os.environ.get('GH_TOKEN')
+    except OSError:
+        raise GateError('Release credential metadata unavailable') from None
+    if os.geteuid() != 0:
+        raise GateError('Release credential requires root process')
+    return _read_credential_file(_CREDENTIAL_PATH)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -31,7 +173,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise GateError("GitHub redirect rejected")
 
 
-def _get_json(url):
+def _get_json(url, *, token=_ENV_TOKEN):
     # Ignore proxy and custom CA environment variables. Trust only the Python
     # installation's system CA locations, not caller-selected trust roots.
     defaults = ssl.get_default_verify_paths()
@@ -51,7 +193,8 @@ def _get_json(url):
         "User-Agent": "reva-trusted-release-gate",
         "Cache-Control": "no-cache",
     }
-    token = os.environ.get("GH_TOKEN")
+    if token is _ENV_TOKEN:
+        token = _configured_token()
     if token:
         headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(url, headers=headers, method="GET")
@@ -83,15 +226,13 @@ def _get_json(url):
             retry_after = response_headers.get("Retry-After")
             error.close()
             if rate_limited:
-                message = "GitHub rate limit exhausted; wait for API quota recovery before release validation"
-                if error.code == 403:
-                    raise GateError(message) from None
+                raise RateLimitError(response_headers) from None
             elif error.code == 401:
                 raise GateError("GitHub authentication rejected; verify release credential configuration") from None
             elif error.code == 404:
                 raise GateError("GitHub metadata not found; verify repository and candidate identity") from None
             elif error.code == 403:
-                raise GateError("GitHub access denied; verify release API access") from None
+                raise RateLimitError(response_headers, confirmed=False) from None
             elif 500 <= error.code <= 599:
                 message = "GitHub service unavailable; retry release validation later"
             else:
@@ -387,9 +528,14 @@ def main():
     parser.add_argument("--workflow-sha", required=True)
     parser.add_argument("--observed-main")
     parser.add_argument("--target", choices=("full", "backend-v1"), default="full")
+    parser.add_argument("--token-stdin", action="store_true", help="Read API token once from bounded stdin; never fall back to environment")
     args = parser.parse_args()
     try:
-        receipt = verify_release(args.sha, args.workflow_sha, observed_main=args.observed_main, target=args.target)
+        options = {}
+        if args.token_stdin:
+            token = _stdin_token()
+            options['_get_json'] = lambda url: _get_json(url, token=token)
+        receipt = verify_release(args.sha, args.workflow_sha, observed_main=args.observed_main, target=args.target, **options)
     except GateError as error:
         print(f"release gate: {error}", file=sys.stderr)
         return 1

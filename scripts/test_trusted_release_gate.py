@@ -566,7 +566,7 @@ def test_transport_rate_limit_is_actionable_and_sanitized(monkeypatch):
     assert 'secret' not in str(caught.value) and 'private' not in str(caught.value)
 
 
-@pytest.mark.parametrize('status', [429, 500, 502, 503])
+@pytest.mark.parametrize('status', [500, 502, 503])
 def test_transient_http_retry_stays_inside_original_budget(monkeypatch, status):
     import urllib.error
     gate = load_gate()
@@ -640,3 +640,209 @@ def test_tls_validation_failure_is_not_retried(monkeypatch):
     with pytest.raises(gate.GateError, match='TLS verification failed'):
         gate._get_json(BASE + '/git/ref/heads/main')
     assert calls == [10]
+
+@pytest.mark.parametrize('status,headers,expected', [
+    (429, {}, 1060), (429, {'Retry-After':'1'}, 1060),
+    (403, {'X-RateLimit-Remaining':'0','X-RateLimit-Reset':'1300'}, 1300),
+    (403, {}, 1060), (429, {'Retry-After':'120','X-RateLimit-Reset':'1400'}, 1400),
+    (429, {'Retry-After':'Thu, 01 Jan 1970 00:20:00 GMT'}, 1200),
+])
+def test_rate_limit_exits_once_with_sanitized_not_before(monkeypatch,status,headers,expected):
+    import urllib.error
+    gate=load_gate()
+    clock,calls=transport_sequence(monkeypatch,gate,[urllib.error.HTTPError(BASE,status,'secret',headers,None)])
+    monkeypatch.setattr(gate.time,'time',lambda:1000)
+    with pytest.raises(gate.GateError) as caught:
+        gate._get_json(BASE+'/git/ref/heads/main')
+    assert calls==[10] and clock[0]==0
+    assert caught.value.not_before==expected
+    assert caught.value.retry_after_seconds==expected-1000
+    assert 'not_before='+str(expected) in str(caught.value)
+    assert 'secret' not in str(caught.value)
+
+@pytest.mark.parametrize('raw',[b'',b'\n',b'abc\ndef',b'a'*4097,b'bad token',b'\xff',b'abc\x00'])
+def test_explicit_stdin_token_invalid_never_falls_back(monkeypatch,capsys,raw):
+    from types import SimpleNamespace
+    gate=load_gate()
+    monkeypatch.setattr(gate.sys,'flags',SimpleNamespace(isolated=1))
+    monkeypatch.setattr(gate.sys,'argv',['gate','--sha',SHA,'--workflow-sha',SHA,'--token-stdin'])
+    monkeypatch.setattr(gate.sys,'stdin',SimpleNamespace(buffer=io.BytesIO(raw)))
+    monkeypatch.setenv('GH_TOKEN','legacy_secret')
+    calls=[]
+    monkeypatch.setattr(gate,'verify_release',lambda *a,**kw:calls.append(kw) or {})
+    assert gate.main()==1
+    assert not calls
+    assert 'legacy_secret' not in capsys.readouterr().err
+
+
+def test_stdin_token_is_bounded_once_private_and_not_argv(monkeypatch,capsys):
+    from types import SimpleNamespace
+    gate=load_gate()
+    reads=[]
+    class Stream:
+        def read(self,size):
+            reads.append(size)
+            return b'github_pat_synthetic\n'
+    monkeypatch.setattr(gate.sys,'flags',SimpleNamespace(isolated=1))
+    monkeypatch.setattr(gate.sys,'argv',['gate','--sha',SHA,'--workflow-sha',SHA,'--token-stdin'])
+    monkeypatch.setattr(gate.sys,'stdin',SimpleNamespace(buffer=Stream()))
+    monkeypatch.setenv('GH_TOKEN','legacy_secret')
+    seen=[]
+    monkeypatch.setattr(gate,'_get_json',lambda url,**kw:seen.append(kw) or {})
+    monkeypatch.setattr(gate,'verify_release',lambda *a,**kw:kw['_get_json'](BASE) or {})
+    assert gate.main()==0
+    assert reads==[4097]
+    assert seen==[{'token':'github_pat_synthetic'}]
+    output=capsys.readouterr()
+    assert 'synthetic' not in output.out+output.err
+
+@pytest.mark.parametrize('explicit',[False,True])
+def test_transport_token_source_is_explicit_and_environment_compatible(monkeypatch,explicit):
+    gate=load_gate()
+    seen=[]
+    class Response(io.BytesIO):
+        status=200
+        def geturl(self): return BASE+'/git/ref/heads/main'
+    class Opener:
+        def open(self,request,timeout):
+            seen.append(request.get_header('Authorization'))
+            return Response(b'{}')
+    monkeypatch.setenv('GH_TOKEN','environment_secret')
+    monkeypatch.setattr(gate.urllib.request,'build_opener',lambda *args:Opener())
+    gate._get_json(BASE+'/git/ref/heads/main',**({'token':'stdin_secret'} if explicit else {}))
+    assert seen==['Bearer '+('stdin_secret' if explicit else 'environment_secret')]
+    assert os.environ['GH_TOKEN']=='environment_secret'
+
+
+def test_cli_stdin_io_failure_is_sanitized_and_never_calls_gate(monkeypatch,capsys):
+    from types import SimpleNamespace
+    gate=load_gate()
+    class Stream:
+        def read(self,size): raise OSError('secret private path')
+    monkeypatch.setattr(gate.sys,'flags',SimpleNamespace(isolated=1))
+    monkeypatch.setattr(gate.sys,'argv',['gate','--sha',SHA,'--workflow-sha',SHA,'--token-stdin'])
+    monkeypatch.setattr(gate.sys,'stdin',SimpleNamespace(buffer=Stream()))
+    assert gate.main()==1
+    assert capsys.readouterr().err=='release gate: Release token stdin unavailable\n'
+
+
+def credential_file(tmp_path, **overrides):
+    path=tmp_path/'credential.json'
+    data={'repository':'itsoso/health-llm-driven','token':'synthetic_credential','expires_at':4102444800}
+    data.update(overrides)
+    path.write_text(json.dumps(data))
+    path.chmod(0o600)
+    return path
+
+
+def test_root_credential_reader_uses_real_bounded_fd(tmp_path):
+    gate=load_gate()
+    path=credential_file(tmp_path)
+    assert gate._read_credential_file(path, _anchor=tmp_path, _owner_uid=os.getuid())=='synthetic_credential'
+
+@pytest.mark.parametrize('case',['expired','repository','extra','token','file_mode','parent_mode','symlink','hardlink','directory','oversize'])
+def test_invalid_configured_credential_fails_closed(tmp_path,case):
+    gate=load_gate()
+    path=credential_file(tmp_path)
+    if case=='expired': path=credential_file(tmp_path,expires_at=1)
+    if case=='repository': path=credential_file(tmp_path,repository='other/repo')
+    if case=='extra': path=credential_file(tmp_path,unexpected='field')
+    if case=='token': path=credential_file(tmp_path,token='bad token')
+    if case=='file_mode': path.chmod(0o640)
+    if case=='parent_mode': tmp_path.chmod(0o777)
+    if case=='symlink':
+        target=tmp_path/'original';path.rename(target);path.symlink_to(target)
+    if case=='hardlink': os.link(path,tmp_path/'link')
+    if case=='directory': path.unlink();path.mkdir(mode=0o700)
+    if case=='oversize': path.write_bytes(b'x'*8193)
+    with pytest.raises(gate.GateError,match='credential'):
+        gate._read_credential_file(path,_anchor=tmp_path,_owner_uid=os.getuid())
+
+
+def test_stdin_does_not_inspect_optional_file(monkeypatch,capsys):
+    from types import SimpleNamespace
+    gate=load_gate()
+    monkeypatch.setattr(gate.sys,'flags',SimpleNamespace(isolated=1))
+    monkeypatch.setattr(gate.sys,'argv',['gate','--sha',SHA,'--workflow-sha',SHA,'--token-stdin'])
+    monkeypatch.setattr(gate.sys,'stdin',SimpleNamespace(buffer=io.BytesIO(b'synthetic')))
+    monkeypatch.setattr(gate,'_configured_token',lambda:pytest.fail('stdin must bypass file and environment'))
+    monkeypatch.setattr(gate,'verify_release',lambda *a,**kw:{})
+    assert gate.main()==0
+    capsys.readouterr()
+
+
+def test_optional_credential_missing_retains_environment(monkeypatch,tmp_path):
+    gate=load_gate()
+    monkeypatch.setattr(gate,'_CREDENTIAL_PATH',str(tmp_path/'missing.json'))
+    monkeypatch.setenv('GH_TOKEN','legacy_secret')
+    assert gate._configured_token()=='legacy_secret'
+
+
+def test_optional_credential_nonroot_never_falls_back(monkeypatch,tmp_path):
+    gate=load_gate()
+    path=credential_file(tmp_path)
+    monkeypatch.setattr(gate,'_CREDENTIAL_PATH',str(path))
+    monkeypatch.setattr(gate.os,'geteuid',lambda:501)
+    monkeypatch.setenv('GH_TOKEN','legacy_secret')
+    with pytest.raises(gate.GateError,match='root process'):
+        gate._configured_token()
+
+
+def test_optional_credential_precedes_environment_and_invalid_never_falls_back(monkeypatch,tmp_path):
+    gate=load_gate()
+    path=credential_file(tmp_path)
+    reader=gate._read_credential_file
+    monkeypatch.setattr(gate,'_CREDENTIAL_PATH',str(path))
+    monkeypatch.setattr(gate.os,'geteuid',lambda:0)
+    monkeypatch.setattr(gate,'_read_credential_file',lambda value:reader(value,_anchor=tmp_path,_owner_uid=os.getuid()))
+    monkeypatch.setenv('GH_TOKEN','legacy_secret')
+    assert gate._configured_token()=='synthetic_credential'
+    path.write_text('{}')
+    with pytest.raises(gate.GateError): gate._configured_token()
+
+
+def test_programmatic_transport_uses_optional_credential_resolver(monkeypatch):
+    gate=load_gate()
+    selected=[]
+    monkeypatch.setattr(gate,'_configured_token',lambda:selected.append(True) or 'fixed_file_secret')
+    transport_sequence(monkeypatch,gate,[{'ok':True}])
+    assert gate._get_json(BASE+'/git/ref/heads/main')=={'ok':True}
+    assert selected==[True]
+
+@pytest.mark.parametrize('case',['duplicate','changed','parent_symlink','wrong_owner'])
+def test_credential_reader_rejects_races_and_untrusted_ancestors(tmp_path,monkeypatch,case):
+    gate=load_gate()
+    parent=tmp_path/'nested';parent.mkdir(mode=0o700)
+    path=credential_file(parent)
+    if case=='duplicate': path.write_text('{"repository":"itsoso/health-llm-driven","token":"one","token":"two","expires_at":4102444800}')
+    if case=='parent_symlink':
+        moved=tmp_path/'moved';parent.rename(moved);parent.symlink_to(moved,target_is_directory=True)
+    if case=='changed':
+        original=gate.os.read
+        def changed(fd,size):
+            raw=original(fd,size)
+            path.write_text('{}')
+            return raw
+        monkeypatch.setattr(gate.os,'read',changed)
+    with pytest.raises(gate.GateError,match='credential'):
+        gate._read_credential_file(path,_anchor=tmp_path,_owner_uid=os.getuid()+1 if case=='wrong_owner' else os.getuid())
+
+
+def test_imported_verify_release_uses_configured_source_without_main(monkeypatch):
+    gate=load_gate()
+    api=API()
+    seen=[]
+    monkeypatch.setattr(gate,'_configured_token',lambda:'fixed_file_secret')
+    class Response(io.BytesIO):
+        status=200
+        def __init__(self,url):
+            self.url=url
+            super().__init__(json.dumps(api(url)).encode())
+        def geturl(self): return self.url
+    class Opener:
+        def open(self,request,timeout):
+            seen.append(request.get_header('Authorization'))
+            return Response(request.full_url)
+    monkeypatch.setattr(gate.urllib.request,'build_opener',lambda *args:Opener())
+    assert gate.verify_release(SHA,SHA)['sha']==SHA
+    assert seen and set(seen)=={'Bearer fixed_file_secret'}

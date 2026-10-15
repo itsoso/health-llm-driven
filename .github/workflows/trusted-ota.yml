@@ -34,6 +34,7 @@ jobs:
     - name: Materialize exact canonical source and verify current main CI before credentials
       env:
         TARGET_SHA: ${{ inputs.sha }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         test "$GITHUB_REF" = refs/heads/main
         test "$GITHUB_REPOSITORY" = itsoso/health-llm-driven
@@ -127,8 +128,9 @@ jobs:
           test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
           /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
           test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"
-          /usr/bin/python3 -I scripts/trusted_release_gate.py --sha "$1" --workflow-sha "$1"
         ' reva-bootstrap "$TARGET_SHA"
+        test -n "$GH_TOKEN"
+        printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_release_gate.py --sha "$TARGET_SHA" --workflow-sha "$TARGET_SHA" --token-stdin
     - name: Canonical source metadata after_checkout
       run: |
         /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B - <<'PY'
@@ -289,14 +291,17 @@ jobs:
       env:
         TARGET_SHA: ${{ inputs.sha }}
         EXPO_TOKEN: ${{ secrets.REVA_RELEASE_EXPO_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
-        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root EXPO_TOKEN="$EXPO_TOKEN" /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_ota_publish.py --sha "$TARGET_SHA" --prepare
+        test -n "$GH_TOKEN"
+        printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root EXPO_TOKEN="$EXPO_TOKEN" /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_ota_publish.py --sha "$TARGET_SHA" --prepare --github-token-stdin
     - name: Publish one bound iOS artifact and verify server receipt
       if: inputs.target == 'publish'
       env:
         TARGET_SHA: ${{ inputs.sha }}
         EXPO_TOKEN: ${{ secrets.REVA_RELEASE_EXPO_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
         RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
         RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
       run: |
@@ -312,7 +317,8 @@ jobs:
         /usr/bin/sudo /usr/bin/install -m 0600 "$private_dir/key" /opt/reva-release/key
         /usr/bin/sudo /usr/bin/install -m 0600 "$private_dir/known_hosts" /opt/reva-release/known_hosts
         unset RELEASE_KEY RELEASE_HOST_KEYS
-        /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root EXPO_TOKEN="$EXPO_TOKEN" /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_ota_publish.py --sha "$TARGET_SHA"
+        test -n "$GH_TOKEN"
+        printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root EXPO_TOKEN="$EXPO_TOKEN" /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_ota_publish.py --sha "$TARGET_SHA" --github-token-stdin
         /usr/bin/sudo /usr/bin/cat /opt/reva-release/ota-receipt.json >> "$GITHUB_STEP_SUMMARY"
     - name: Stage validated OTA audit even when publication is incomplete
       id: ota-audit
