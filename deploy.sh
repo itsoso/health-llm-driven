@@ -30,6 +30,10 @@ if [[ "${1:-}" = "--prepare-frontend-artifact" ]]; then
     shift
     exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_frontend_artifact.py" "$@"
 fi
+if [[ "${1:-}" = "--publish-frontend-no-backup" ]]; then
+    shift
+    exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_frontend_no_backup.py" "$@"
+fi
 if [[ "${1:-}" = "--publish-frontend" ]]; then
     echo "无备份策略冻结旧前端发布/重建入口；未执行外部操作" >&2
     exit 1

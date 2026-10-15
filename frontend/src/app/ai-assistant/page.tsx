@@ -909,25 +909,30 @@ function AIAssistantInner() {
 
   return (
     <main className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#F7F6F2] text-[#16201B]">
-      <header className="relative z-[70] shrink-0 overflow-visible border-b border-[#E7E5DE] bg-[#F7F6F2]/95 px-3 py-2.5 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            <Link
-              href="/"
-              aria-label="返回首页"
-              title="返回首页"
-              className="mr-1 inline-flex h-9 shrink-0 items-center gap-2 rounded-xl px-1 text-sm font-medium text-[#16201B] transition-colors hover:bg-[#E8F2EC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B]"
-            >
-              <Image src="/logo.png" alt="自由是自律的泡沫" width={28} height={28} className="shrink-0 rounded-lg" />
-              <span className="hidden sm:inline">首页</span>
-            </Link>
-            <button
-              onClick={() => setHistoryOpen(open => !open)}
-              className="mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[#8A938D] transition-colors hover:bg-[#E8F2EC] hover:text-[#16201B]"
-              title="打开/收起历史记录"
-            >
-              <PanelLeft className="h-4.5 w-4.5" />
-            </button>
+      <header className="relative z-[70] flex h-16 shrink-0 items-stretch overflow-visible border-b border-[#E7E5DE] bg-[#F7F6F2]/95 backdrop-blur">
+        <div className={`flex shrink-0 items-center justify-between gap-4 pl-3 sm:pl-5 md:pr-3 ${historyOpen ? 'md:w-64 md:border-r md:border-[#E5E1D5] md:bg-[#F0EDE4]' : ''}`}>
+          <Link
+            href="/"
+            aria-label="返回首页"
+            title="返回首页"
+            className="inline-flex h-11 shrink-0 items-center gap-2.5 rounded-xl text-[#16201B] transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-4"
+          >
+            <Image src="/logo.png" alt="" width={32} height={32} className="shrink-0 rounded-[10px]" />
+            <span className="hidden text-lg font-semibold tracking-tight sm:inline">Reva</span>
+          </Link>
+          <button
+            onClick={() => setHistoryOpen(open => !open)}
+            className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[#5C6660] transition-colors hover:bg-[#E8E4D8] hover:text-[#16201B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] md:flex"
+            aria-label={historyOpen ? '收起历史记录' : '展开历史记录'}
+            aria-expanded={historyOpen}
+            aria-controls={historyOpen ? 'conversation-history' : undefined}
+            title={historyOpen ? '收起历史记录' : '展开历史记录'}
+          >
+            <PanelLeft className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 sm:gap-3 sm:px-6">
+          <div className="min-w-0 flex-1">
             <LlmModelPicker
               canSelectModel={authUser?.is_admin === true}
               currentLabel={llmPref.label || '系统默认'}
@@ -941,7 +946,7 @@ function AIAssistantInner() {
           </div>
           <button
             onClick={startNewConversation}
-            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-[#D7D5CC] bg-[#FFFFFF] px-3 text-sm font-medium text-[#16201B] transition-colors hover:border-[#1F8A5B] hover:bg-[#E8F2EC]"
+            className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-[#D7D5CC] bg-[#FFFFFF] px-3 text-sm font-medium text-[#16201B] transition-colors hover:border-[#1F8A5B] hover:bg-[#E8F2EC] ${historyOpen ? 'md:hidden' : ''}`}
             aria-label="新对话"
           >
             <MessageSquarePlus className="h-4 w-4" />

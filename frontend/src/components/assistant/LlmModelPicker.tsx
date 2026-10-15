@@ -94,7 +94,7 @@ export default function LlmModelPicker({
       {open && (
         <div
           data-testid="llm-model-picker-menu"
-          className="absolute left-0 top-full z-[80] mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[#E5E1D5] bg-[#FCFBF7] p-2 shadow-xl shadow-[#29261F]/12"
+          className="absolute left-0 top-full z-[80] mt-2 w-[min(22rem,calc(100vw-5rem))] overflow-hidden rounded-2xl border border-[#E5E1D5] bg-[#FCFBF7] p-2 shadow-xl shadow-[#29261F]/12"
         >
           <div className="px-2 pb-2 pt-1 text-xs text-[#948F80]">本页直接切换，下一条消息立即生效</div>
           <button

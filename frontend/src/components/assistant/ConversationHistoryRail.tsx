@@ -92,7 +92,7 @@ export default function ConversationHistoryRail({
   };
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-[#E5E1D5] bg-[#F0EDE4] p-3 md:flex md:flex-col">
+    <aside id="conversation-history" className="hidden w-64 shrink-0 border-r border-[#E5E1D5] bg-[#F0EDE4] p-3 md:flex md:flex-col">
       <button
         onClick={onNew}
         className="mb-3 flex h-10 items-center justify-center gap-2 rounded-[10px] border border-[#D8D3C4] bg-[#FCFBF7] text-[13.5px] font-medium text-[#29261F] transition-colors hover:border-[#C96442]"

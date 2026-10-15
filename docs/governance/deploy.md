@@ -23,6 +23,12 @@
 
 当前无备份发布路径为代码更新：`deploy.sh -b` 保持现行 env 不变，仅核验摘要、权限与固定配置；旧 `DEPLOY_DATABASE_BACKUP=1` 不能重新授权备份。运行时 `preflight-code/prepare-code` 使用 v2 小型事务日志，不复制上传文件、知识库、beat 状态或 drop-in；只允许已迁移布局和相同候选 drop-in。配置、模型/schema、managed 迁移或运行态布局变化在停写前拒绝，env-only 与 Health Evidence 激活入口暂不支持该路径。旧前端发布/重建及 stopped-recovery 的新切换操作已冻结：deploy入口和直接module执行均在产生意图、领取锁或生成previous-*前拒绝；旧回执读取与独立恢复/终态核对消费者继续保留。
 
+新的 Web 发布使用显式 `deploy.sh --publish-frontend-no-backup`，旧 `--publish-frontend`、重建和 stopped-recovery 切换入口仍冻结。新入口只能消费由 `--prepare-frontend-artifact` 完成的同 operation-id 制品，不能在停服后编译。候选须为精确完整 CI 绿色的 current main，先通过独立安全审查并以既有 canonical bootstrap 安装该候选的历史消费者；入口核验当前授权 SHA、有效期与实际 installed server 摘要。后端可保持原已部署且有 SUCCEEDED 回执的 revision，不制造后端发布回执，也不重复发布没有 Mobile 变化的 OTA。
+
+在 `/var/lib/reva-release/bootstrap/<publisher-sha>/source` 使用系统 Python 的固定 deploy 入口，传入 `--publisher-sha`、`--production-sha`、`--frontend-tree`、`--operation-id`；先只读预检，确认返回的证据后再加 `--evidence-sha256` 执行。原 launcher/build 锁和 business lease 继续互斥。停服前完成候选校验，核验固定 live 目录、父/根 inode、同设备且无嵌套挂载；确认 systemd control-group 已停空后删除旧 `.next` / `node_modules`，移入已验证的新制品并同步两个父目录，不保留旧制品副本。全部制品摘要一致才启动，公共/本地页面与后端保持证据均通过后才写终态并释放租约。删除、移动、fsync、启动或回读异常均保留原租约与 NEEDS_OPERATOR，不自动回滚、重试或换 operation-id。
+
+新发布回执以 `publication_policy=no-backup-v1` 绑定全部阶段，`backups_digest={}`；历史消费者复核完整 phase/proof 及原 prepared artifact 的 intent/ready/claim、构建日志和 manifest 摘要，不访问已移动的 stage。新旧历史进入同一 catalog/seal 链；旧历史检查不放宽，新格式拒绝 previous-*、recovery 附件、未知 policy 与部分终态。显式要求验证新格式的备份恢复集会拒绝，不能将空集称作可恢复。后续 seal/rotate 沿既有 canonical 路径更新。
+
 前端 finalizer 的普通历史、pending、inspect 和 finalize 路径仅核对备份根目录与审计，记录 `integrity=not_checked`；旧完整摘要只验证其结构和终态绑定，不重读正文或冒充新鲜完整性证明。只有明确请求恢复某一操作时，才显式选择该操作验证正文。
 
 中途失败保留原锁、事务和回执，状态为 NEEDS_OPERATOR；不再承诺通过新副本自动恢复。已有旧事务在普通无备份入口被拒绝，不读取旧 snapshot 正文、不删除旧备份。普通授权准入核验历史签名/终态/身份元数据，明确 `backup_integrity=not_checked`，不表示旧副本已经验证可恢复；用户另行请求恢复时才限定确切操作核验。

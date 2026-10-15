@@ -14,6 +14,7 @@ RELEASE_TESTS = (
     "scripts/test_backend_release_wiring.py",
     "scripts/test_trusted_frontend_artifact.py",
     "scripts/test_trusted_frontend_publish.py",
+    "scripts/test_frontend_no_backup.py",
     "scripts/test_trusted_frontend_publish_history.py",
     "scripts/test_backup_security.py",
     "scripts/test_ci_change_scope.py",

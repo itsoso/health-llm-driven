@@ -120,6 +120,31 @@ it.each([false, true])('model picker follows authenticated admin role: %s', asyn
   await waitFor(() => expect(!!screen.queryByRole('button', { name: /当前模型/ })).toBe(admin));
 });
 
+it('keeps the branded home link and draft available when toggling conversation history', async () => {
+  searchParamsGet.mockReturnValue(null);
+  render(<AIAssistantPage />);
+  await waitFor(() => expect(getConversations).toHaveBeenCalled());
+  const home = screen.getByRole('link', { name: '返回首页' });
+  expect(home).toHaveAttribute('href', '/');
+  expect(home).toHaveTextContent('Reva');
+  const draft = screen.getByPlaceholderText(/发消息/);
+  fireEvent.change(draft, { target: { value: '尚未发送的草稿' } });
+
+  const toggle = screen.getByRole('button', { name: '收起历史记录' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(document.getElementById(toggle.getAttribute('aria-controls')!)).toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '展开历史记录' })).toHaveAttribute('aria-expanded', 'false');
+  expect(draft).toHaveValue('尚未发送的草稿');
+  expect(home).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: '展开历史记录' }));
+  expect(screen.getByRole('complementary')).toBeInTheDocument();
+  expect(draft).toHaveValue('尚未发送的草稿');
+  expect(streamMessage).not.toHaveBeenCalled();
+});
+
 it('keeps the chat draft intact when AI consent is declined', async () => {
   requireAiConsent.mockRejectedValueOnce(new Error('尚未同意，内容未发送'));
   render(<AIAssistantPage />);

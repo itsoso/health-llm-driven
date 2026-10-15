@@ -774,6 +774,48 @@ def finish_frontend_history_seal(state, *, checkpoint_sha256, live_digest):
                 generation=seal['payload']['generation'], active_operation=seal['payload']['active_operation'])
 
 
+def _frontend_no_backup_provenance(state, operation, intent, before, complete):
+    """Check consumed build provenance without reading moved build directories."""
+    root = Path(state) / 'frontend-artifacts'
+    artifact = root / operation.name
+    for path in (root, artifact):
+        secure_path(path, directory=True)
+        if stat.S_IMODE(path.lstat().st_mode) != 0o700:
+            raise LaunchError('unsafe consumed frontend artifact audit')
+    if {p.name for p in artifact.iterdir()} != {'prepare.lock', 'intent.json', 'build.log', 'ready.json', 'claim.json'}:
+        raise LaunchError('consumed frontend artifact audit differs')
+    _read_private(artifact / 'prepare.lock')
+    raw = _read_private(artifact / 'ready.json')
+    ready = _json(raw)
+    proof = before.get('prepared_artifact')
+    if (not isinstance(ready, dict)
+            or set(ready) != {'binding', 'state', 'artifact_digest', 'intent_sha256', 'build_log_sha256'}
+            or ready['state'] != 'FRONTEND_ARTIFACT_READY'
+            or ready['artifact_digest'] != complete['artifact_digest']
+            or proof != {'artifact_id': operation.name, 'manifest_sha256': hashlib.sha256(raw).hexdigest(), 'manifest': ready}):
+        raise LaunchError('consumed frontend artifact proof differs')
+    binding = ready['binding']
+    expected_keys = {'schema_version', 'publisher_sha', 'frontend_tree', 'artifact_id', 'package_lock_sha256',
+                     'public_build_env', 'toolchain', 'recipe_sha256'}
+    if (not isinstance(binding, dict) or set(binding) != expected_keys
+            or type(binding['schema_version']) is not int or binding['schema_version'] != 1
+            or any(binding[k] != intent[k] for k in ('publisher_sha', 'frontend_tree'))
+            or binding['artifact_id'] != operation.name
+            or binding['public_build_env'] != before.get('public_build_env')
+            or any(not isinstance(binding[k], str) or re.fullmatch('[0-9a-f]{64}', binding[k]) is None
+                   for k in ('package_lock_sha256', 'recipe_sha256'))):
+        raise LaunchError('consumed frontend artifact binding differs')
+    original = _read_private(artifact / 'intent.json')
+    if (_json(original) != {'binding': binding, 'state': 'FRONTEND_ARTIFACT_PREPARING'}
+            or hashlib.sha256(original).hexdigest() != ready['intent_sha256']
+            or _frontend_publication_file_digest(artifact / 'build.log') != ready['build_log_sha256']
+            or _frontend_publication_file_digest(operation / 'build.log') != ready['build_log_sha256']
+            or _json(_read_private(artifact / 'claim.json')) != {
+                'schema_version': 1, 'artifact_id': operation.name, 'operation_id': operation.name,
+                'production_sha': intent['production_sha'], 'manifest_sha256': proof['manifest_sha256']}):
+        raise LaunchError('consumed frontend claim or source hashes differ')
+
+
 def assert_frontend_publication_history(state=None, *, pending_stopped_publication=None, backup_memo=None,
                                         _force_operations=(), _seal_snapshot=None, verify_backups=False):
     """Validate release receipts, without claiming old backups are restorable.
@@ -797,8 +839,8 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
     if stat.S_IMODE(root.lstat().st_mode) != 0o700:
         raise LaunchError("frontend publication root must remain private")
     proof_names = {"before.json", "build.log", "install-started.json", "verified.json"}
-    backups = {"previous-next", "previous-node-modules"}
-    keys = {"kind", "publisher_sha", "production_sha", "operation_id", "frontend_tree", "state", "artifact_digest"}
+    legacy_backups = {"previous-next", "previous-node-modules"}
+    base_keys = {"kind", "publisher_sha", "production_sha", "operation_id", "frontend_tree", "state", "artifact_digest"}
     for operation in root.iterdir():
         secure_path(operation, directory=True)
         inventory={p.name for p in operation.iterdir()}
@@ -807,13 +849,22 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
                 raise LaunchError('stopped recovery already attempted or partial switch')
             frontend_stopped_failure(operation)
             continue
+        if 'intent.json' not in inventory:
+            raise LaunchError('unfinished frontend publication; operator review required')
+        intent = _json(_read_private(operation / "intent.json"))
+        no_backup = isinstance(intent, dict) and intent.get('publication_policy') == 'no-backup-v1'
+        if isinstance(intent, dict) and 'publication_policy' in intent and not no_backup:
+            raise LaunchError('unknown frontend publication policy')
+        keys = base_keys | ({'publication_policy'} if no_backup else set())
+        backups = set() if no_backup else legacy_backups
         recovered='recovery-completed.json' in inventory
+        if no_backup and (recovered or (verify_backups and operation.name in _force_operations)):
+            raise LaunchError('no-backup publication has no recovery set')
         extras={'failed.json','recovery-intent.json','recovery-completed.json'} if recovered else set()
         if (stat.S_IMODE(operation.lstat().st_mode) != 0o700
                 or re.fullmatch(r"[0-9a-f]{32}", operation.name) is None
                 or inventory != proof_names | backups | {"intent.json", "completed.json"} | extras):
             raise LaunchError("unfinished or unknown frontend publication; operator review required")
-        intent = _json(_read_private(operation / "intent.json"))
         if (not isinstance(intent, dict) or set(intent) != keys or intent["kind"] != "frontend-publication"
                 or intent["operation_id"] != operation.name or intent["state"] != "FRONTEND_STARTED"
                 or intent["artifact_digest"] is not None
@@ -841,6 +892,10 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
         expected_backups = complete["backups_digest"]
         if not isinstance(expected_backups, dict) or set(expected_backups) != backups:
             raise LaunchError("invalid frontend publication backup proof")
+        if no_backup:
+            if before.get('publication_policy') != 'no-backup-v1':
+                raise LaunchError('frontend publication preflight policy differs')
+            _frontend_no_backup_provenance(state or STATE, operation, intent, before, complete)
         catalog[operation.name] = hashlib.sha256(_history_json({'intent': intent, 'completed': complete})).hexdigest()
         if seal is not None and operation.name in seal['payload']['records']:
             if (operation.name == seal['payload']['active_operation']
