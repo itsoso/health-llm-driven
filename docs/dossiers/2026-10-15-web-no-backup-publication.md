@@ -38,7 +38,16 @@ The compact LifeNav layout is already in the baseline and awaits Web publication
 G3: initial no-backup tests failed before the new entry existed. Focused helper
 and history regressions passed after implementation; broader release integration
 is running. Frontend regression passed 97 files / 549 tests, with one existing skip.
-System Map check and production build passed. Fixed-commit G4 remains pending.
+System Map check and production build passed.
+
+G4 rejected candidate 03be013b346b0c5dbea4eb018676732250cc4f93: same-device
+Linux bind mounts can evade device/is_mount checks during recursive deletion.
+The correction reads the kernel mount inventory, fails closed on unavailable or
+malformed data, and rejects mounts at or below each artifact root, including a
+fresh check at the deletion boundary. Seven new regressions failed before the
+fix; focused publisher/history/artifact/CI-contract tests then passed. CI also
+runs an actual same-device bind mount in a disposable private Linux namespace;
+that native result remains pending. The corrected candidate requires G4 review.
 
 Exact-SHA CI remains pending. GitHub CLI returned HTTP 401 at startup;
 the user was asked to restore authentication while local implementation proceeds.

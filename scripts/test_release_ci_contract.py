@@ -56,6 +56,21 @@ def _run_bodies(job: dict) -> str:
     )
 
 
+def test_frontend_mount_boundary_runs_in_real_linux_namespace():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text())
+    jobs = workflow['jobs']
+    job = next(job for job in jobs.values() if any(
+        step.get('name') == 'Reject real Linux bind mounts before frontend deletion'
+        for step in job.get('steps', [])))
+    assert str(job['runs-on']).startswith('ubuntu')
+    step = next(step for step in job['steps'] if step.get('name') ==
+                'Reject real Linux bind mounts before frontend deletion')
+    command = step['run']
+    assert command.startswith('sudo env REVA_TEST_FRONTEND_MOUNT=1 ')
+    assert 'scripts/test_frontend_no_backup.py -k real_linux_same_device_bind_mount' in command
+    assert 'continue-on-error' not in step
+
+
 def _action_runtime_version(action: str, version: str) -> str:
     # Same reviewed v5 pin as the trusted publisher; never accept arbitrary SHAs.
     reviewed = {("actions/setup-node", "a0853c24544627f65ddf259abe73b1d18a591444"): "v5"}

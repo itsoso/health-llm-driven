@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
+import subprocess
+import sys
 
 import pytest
 
@@ -17,6 +19,19 @@ def load():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(autouse=True)
+def test_mount_namespace(tmp_path, monkeypatch):
+    # Ordinary tests run on macOS too. The native test below uses real procfs.
+    mountinfo = tmp_path / 'mountinfo'
+    mountinfo.write_text('1 0 0:1 / / rw - rootfs rootfs rw\n')
+    original = load
+    def configured():
+        module = original()
+        monkeypatch.setattr(module, 'MOUNTINFO', mountinfo, raising=False)
+        return module
+    monkeypatch.setitem(globals(), 'load', configured)
 
 
 def setup(tmp_path, monkeypatch):
@@ -201,6 +216,76 @@ def test_stopped_requires_contained_service_and_no_descendants(tmp_path, monkeyp
     m = load(); p = SimpleNamespace(stopped_runtime=lambda _: None)
     with pytest.raises(m.PublicationError, match='containment'):
         m.assert_stopped(p, SimpleNamespace(run=lambda _: 'process'))
+
+
+@pytest.mark.parametrize('record', [
+    '2 1 0:1 /external {path} rw - ext4 /dev/root rw\n',
+    '2 1 0:1 /external {path}/child rw - ext4 /dev/root rw\n',
+])
+def test_same_device_bind_mount_blocks_without_is_mount_hint(tmp_path, monkeypatch, record):
+    m = load(); monkeypatch.setattr(m, 'OWNER', os.getuid())
+    front = tmp_path / 'front space'; front.mkdir(); live = front / '.next'; live.mkdir()
+    (live / 'child').mkdir(); (live / 'child/keep').write_text('outside')
+    # Linux bind mounts can share st_dev and return false from is_mount().
+    monkeypatch.setattr(Path, 'is_mount', lambda _: False)
+    escaped = str(live).replace(' ', '\\040')
+    m.MOUNTINFO.write_text(record.format(path=escaped))
+    with pytest.raises(m.PublicationError, match='mount'):
+        m.remove_live(front, '.next', m.identity(front), m.identity(live))
+    assert (live / 'child/keep').read_text() == 'outside'
+
+
+@pytest.mark.parametrize('raw', ['', 'broken', '1 0 0:1 / relative rw - ext4 dev rw\n',
+                                  '1 0 0:1 / /bad\\999 rw - ext4 dev rw\n'])
+def test_unknown_mount_inventory_fails_closed(raw):
+    m = load(); m.MOUNTINFO.write_text(raw)
+    with pytest.raises(m.PublicationError): m.mount_points()
+
+
+def test_missing_mount_inventory_fails_closed():
+    m = load(); m.MOUNTINFO.unlink()
+    with pytest.raises(m.PublicationError): m.mount_points()
+
+
+def test_mount_inventory_is_rechecked_at_deletion_boundary(tmp_path, monkeypatch):
+    m = load(); monkeypatch.setattr(m, 'OWNER', os.getuid())
+    front = tmp_path / 'front'; front.mkdir(); live = front / '.next'; live.mkdir()
+    (live / 'keep').write_text('untouched')
+    scans = iter([[Path('/')], [Path('/'), live]])
+    monkeypatch.setattr(m, 'mount_points', lambda: next(scans))
+    with pytest.raises(m.PublicationError, match='mount'):
+        m.remove_live(front, '.next', m.identity(front), m.identity(live))
+    assert (live / 'keep').read_text() == 'untouched'
+
+
+@pytest.mark.skipif(os.environ.get('REVA_TEST_FRONTEND_MOUNT') != '1', reason='requires disposable Linux root mount namespace')
+def test_real_linux_same_device_bind_mount_is_not_deleted(tmp_path):
+    assert sys.platform == 'linux' and os.geteuid() == 0
+    script = '''
+import importlib.util, pathlib, subprocess, sys
+entry, root = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+spec = importlib.util.spec_from_file_location('native_no_backup', entry)
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+front = root / 'frontend'; front.mkdir()
+live = front / '.next'; live.mkdir()
+nested = live / 'bind'; nested.mkdir()
+outside = root / 'outside'; outside.mkdir(); (outside / 'keep').write_text('untouched')
+subprocess.run(['/usr/bin/mount', '--bind', str(outside), str(nested)], check=True)
+try:
+    assert nested.stat().st_dev == live.stat().st_dev
+    try:
+        m.remove_live(front, '.next', m.identity(front), m.identity(live))
+    except m.PublicationError as exc:
+        assert 'mount' in str(exc)
+    else:
+        raise AssertionError('same-device bind mount was not blocked')
+    assert (outside / 'keep').read_text() == 'untouched'
+finally:
+    subprocess.run(['/usr/bin/umount', str(nested)], check=True)
+'''
+    subprocess.run(['/usr/bin/unshare', '--mount', '--propagation', 'private', '--fork', sys.executable,
+                    '-I', '-B', '-c', script, str(Path(__file__).with_name('trusted_frontend_no_backup.py')), str(tmp_path)],
+                   check=True, timeout=30)
 
 
 def test_legacy_seal_accepts_new_policy_then_binds_it(tmp_path, monkeypatch, evidence):

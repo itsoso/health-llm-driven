@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import stat
@@ -20,6 +21,7 @@ from types import ModuleType
 OWNER = 0
 POLICY = 'no-backup-v1'
 STATE = Path('/var/lib/reva-release')
+MOUNTINFO = Path('/proc/self/mountinfo')
 
 
 class PublicationError(Exception):
@@ -33,9 +35,49 @@ def identity(path):
     return info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode
 
 
+def mount_points():
+    """Read the kernel mount inventory, including same-device bind mounts."""
+    try:
+        with MOUNTINFO.open('rb') as stream:
+            raw = stream.read(4 * 1024 * 1024 + 1)
+        if not raw or len(raw) > 4 * 1024 * 1024:
+            raise ValueError('mount inventory size')
+        points, identifiers = [], set()
+        escapes = {'040': ' ', '011': '\t', '012': '\n', '134': '\\'}
+        for line in raw.decode('utf-8', errors='strict').splitlines():
+            fields, separator, suffix = line.partition(' - ')
+            fields = fields.split(' ')
+            if (not separator or len(fields) < 6 or len(suffix.split(' ')) != 3
+                    or any(not field for field in fields + suffix.split(' '))
+                    or not all(re.fullmatch(r'[0-9]+', value) for value in fields[:2])
+                    or not re.fullmatch(r'[0-9]+:[0-9]+', fields[2])
+                    or fields[0] in identifiers):
+                raise ValueError('mount inventory format')
+            identifiers.add(fields[0])
+            value = fields[4]
+            if not re.fullmatch(r'(?:[^\\\x00-\x20]|\\(?:040|011|012|134))*', value):
+                raise ValueError('mount path encoding')
+            value = re.sub(r'\\(040|011|012|134)', lambda match: escapes[match[1]], value)
+            path = Path(value)
+            if not path.is_absolute() or '..' in path.parts or str(path) != value:
+                raise ValueError('mount path format')
+            points.append(path)
+        if not points:
+            raise ValueError('empty mount inventory')
+        return points
+    except (OSError, UnicodeError, ValueError) as error:
+        raise PublicationError('mount inventory unavailable or malformed') from error
+
+
+def assert_no_mounts(root):
+    if any(point == root or point.is_relative_to(root) for point in mount_points()):
+        raise PublicationError('artifact contains a mount boundary')
+
+
 def check_removal_tree(root, parent_identity):
     """Do not let a fixed-name recursive deletion cross a mount boundary."""
     root_identity = identity(root)
+    assert_no_mounts(root)
     if root_identity[0] != parent_identity[0]:
         raise PublicationError('artifact filesystem differs')
     pending = [root]
@@ -70,6 +112,7 @@ def remove_live(frontend, name, parent_identity, root_identity):
         current = os.stat(name, dir_fd=fd, follow_symlinks=False)
         if (current.st_dev, current.st_ino, current.st_uid, current.st_gid, current.st_mode) != root_identity:
             raise PublicationError('artifact root changed at deletion boundary')
+        assert_no_mounts(frontend / name)
         shutil.rmtree(name, dir_fd=fd)
         os.fsync(fd)
     finally:

@@ -488,6 +488,8 @@ jobs:
           python-version: "3.12"
       - name: Install isolated artifact test dependencies
         run: python -m pip install pytest==9.1.1
+      - name: Reject real Linux bind mounts before frontend deletion
+        run: sudo env REVA_TEST_FRONTEND_MOUNT=1 "$(command -v python)" -m pytest --noconftest -c /dev/null -o addopts= -q scripts/test_frontend_no_backup.py -k real_linux_same_device_bind_mount
       - name: Build and consume a real frontend artifact without recompiling
         run: |
           # setup-node lives in /opt, which the real production sandbox must hide.
