@@ -69,3 +69,15 @@
 9058907 独立 G4 仍为 NO-GO：“吃饭后的跑步”、后置评价等仍能退回滚动查询。停止通过有限措辞例外修补，恢复最近运动检测的原实现，独立检测时段与运动共现；未生成完整 OwnedReadScope 时，按工具实际读取面阻断 workout、manual_exercise、comprehensive、批量、综合分析及 specialist 等可能读取运动的入口。明确其他领域读取继续接受其原有范围校验；纯写操作不经该新增读取守卫。限制检测不授予任何权限。
 
 新增实际 Gateway enforce/shadow 回归覆盖两轮 G4 反例及各工具读取面，最终聚焦 289 passed（/tmp/subday-architecture-final3.log）。广泛回归、PostgreSQL 与新固定提交 G4 正在重跑；未推送或部署此前 NO-GO 候选。
+
+### 部署后截图回归：生产时间列漂移
+
+f4448dfb完整CI与后端发布成功后，用户15:28再次发送“分析上午的跑步”，范围识别正确但显示查询未完成。只读聚合07:25–07:37 UTC操作元数据（未读聊天正文或健康记录）显示health_query/health_query_batch已调用，goal reason=query_result_unavailable。服务日志同窗口仅提取异常类计数，有ValueError；未输出错误原文或用户载荷。
+
+只读information_schema证实生产workout_records.start_time/end_time为timestamp without time zone，ORM声明timezone=True，数据库默认TimeZone为Asia/Shanghai，无角色/数据库覆盖。subday reader在PostgreSQL拿到naive datetime会抛workout_event_timezone_missing；既有PG测试用ORM新建timestamptz表，未覆盖真实旧DDL。时区格式漂移可解释本次失败，需合成旧DDL复现闭环。历史写入存在startTimeLocal naive和后续GMT aware两种路径，不能未经证实将全部旧值补UTC。
+
+另发现provider漏工具时single-workout不补读，但本次操作元数据证明不是直接原因，暂不混入本修复。当前修复与验收必须保留owner、日期、运动类型和真实时间来源边界，并明确legacy时区解释来源；不读取真实健康记录、不触发设备同步、不调用真实模型。
+
+- 修复采用同一 PostgreSQL SELECT 的显式 timestamptz 转换，查询、排序和返回共用表达式；legacy 行保留数据库解释时区与未核验原设备时区声明。不修改表、历史记录或认证范围。
+- RED：隔离 PostgreSQL legacy DDL 3 个用例均复现 workout_event_timezone_missing；GREEN：8 个专项用例通过，414 项相关 PostgreSQL 回归通过（含 executor 与保存回复）；临时实例正常停止。证据 `/tmp/reva-legacy-workout-pg-red-result.json`、`/tmp/reva-legacy-workout-pg-green-result.json`、`/tmp/reva-legacy-workout-related-pg-result.json`。此前 SQLite 测试环境被 PG fixture 拒绝，已改用隔离 PG 完整重跑，不计为通过。
+- System Map 检查通过；LLM 变更门判定 live_llm_required=false。固定提交 G4、CI-mode、远端完整 CI 和部署仍待完成；不宣称截图对应真实记录已验证。

@@ -50,7 +50,7 @@ _EVIDENCE_FIELDS = {
     "sleep": ("record_date", "sleep_score", "total_sleep_duration", "deep_sleep_duration",
               "rem_sleep_duration", "light_sleep_duration", "awake_duration",
               "sleep_start_time", "sleep_end_time", "sources", "source_row_updates"),
-    "workout": ("id", "record_kind", "source_table", "record_date", "event_start_time", "workout_type",
+    "workout": ("id", "record_kind", "source_table", "record_date", "event_start_time", "event_time_basis", "event_storage_timezone", "workout_type",
                 "duration_seconds", "distance_meters", "calories", "avg_heart_rate"),
     "supplements": ("id", "record_kind", "source_table", "record_date", "taken",
                     "supplement_name", "dosage", "unit", "intake_time"),
@@ -875,6 +875,14 @@ def _validate(bound: dict, payload) -> str | None:
             return "query_result_source_conflict"
         if bound["dimension"] == "supplements" and row.get("taken") is not True:
             return "query_result_source_conflict"
+        if bound['dimension'] == 'workout' and (
+            'event_time_basis' in row or 'event_storage_timezone' in row
+        ):
+            zone = row.get('event_storage_timezone')
+            if (row.get('event_time_basis') != 'database_session_timezone_compatibility'
+                    or not isinstance(zone, str) or not re.fullmatch(r'[A-Za-z0-9_+/:.\-]{1,128}', zone)
+                    or 'database_session_timezone_compatibility' not in limitations):
+                return 'query_result_source_conflict'
         try:
             day = date.fromisoformat(str(row.get("record_date"))).isoformat()
         except ValueError:
@@ -1201,6 +1209,10 @@ def evaluate_composed_read_completion(
                 lines.append(f'当天仅找到{count}条同类型候选记录，不足所述{wanted}段；不以旧记录补齐。')
             else:
                 lines.append(f'当天找到{count}条同类型候选记录，超过所述{wanted}段；暂不能确定对应哪几条，不合并分析。')
+    if 'database_session_timezone_compatibility' in verified.get('workout', {}).get('limitations', []):
+        zones = sorted({row['event_storage_timezone'] for row in verified['workout']['records']
+                        if row.get('event_time_basis') == 'database_session_timezone_compatibility'})
+        lines.append('旧运动记录按数据库时区（' + '、'.join(zones) + '）解释开始时间；原设备时区未核验。')
     if "diet" in verified and verified["diet"]["records"]:
         lines.append("已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。")
     for dimension, query in bounds.items():

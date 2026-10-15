@@ -1007,19 +1007,45 @@ def read_longitudinal_health_query(
         subday = selection is not None and selection.period is not None
         if subday:
             start, end = workout_period_bounds(window, selection)
-            workout_rows = (db.query(WorkoutRecord).filter(
+            postgres = db.get_bind().dialect.name == 'postgresql'
+            event_column = WorkoutRecord.start_time
+            query = db.query(WorkoutRecord)
+            if postgres:
+                from sqlalchemy import DateTime, String, cast, func
+                # Legacy physical columns may be timestamp without time zone.
+                # Match PostgreSQL's comparison semantics in the returned value,
+                # on the same connection, instead of assigning a Python timezone.
+                event_column = cast(WorkoutRecord.start_time, DateTime(timezone=True))
+                query = query.add_columns(
+                    event_column.label('scoped_event_time'),
+                    cast(func.pg_typeof(WorkoutRecord.start_time), String),
+                    func.current_setting('TimeZone'),
+                )
+            workout_rows = (query.filter(
                 WorkoutRecord.user_id == user_id,
                 WorkoutRecord.workout_type == selection.workout_type,
-                WorkoutRecord.start_time >= start.astimezone(timezone.utc),
-                WorkoutRecord.start_time < end.astimezone(timezone.utc),
-            ).order_by(WorkoutRecord.start_time, WorkoutRecord.id).limit(MAX_CALENDAR_ROWS + 1).all())
+                event_column >= start.astimezone(timezone.utc),
+                event_column < end.astimezone(timezone.utc),
+            ).order_by(event_column, WorkoutRecord.id).limit(MAX_CALENDAR_ROWS + 1).all())
             if len(workout_rows) > MAX_CALENDAR_ROWS:
                 raise ValueError('longitudinal_query_result_limit_exceeded')
             limitations.append('missing_event_time_excluded')
         else:
             workout_rows = _rows(db, WorkoutRecord, WorkoutRecord.workout_date, user_id, window)
-        for row in workout_rows:
-            event_time = row.start_time
+        for entry in workout_rows:
+            time_provenance = {}
+            if subday and postgres:
+                row, event_time, storage_type, storage_zone = entry
+                if storage_type == 'timestamp without time zone':
+                    basis = 'database_session_timezone_compatibility'
+                    time_provenance = {'event_time_basis': basis, 'event_storage_timezone': storage_zone}
+                    if basis not in limitations:
+                        limitations.append(basis)
+                elif storage_type != 'timestamp with time zone':
+                    raise ValueError('workout_event_storage_type_unsupported')
+            else:
+                row = entry
+                event_time = row.start_time
             if subday:
                 # SQLite drops timezone information; PostgreSQL returns aware timestamps.
                 if event_time.utcoffset() is None:
@@ -1033,7 +1059,7 @@ def read_longitudinal_health_query(
                     "record_kind": "workout_record",
                     "source_table": "workout_records",
                     "record_date": event_time.date().isoformat() if subday else row.workout_date.isoformat(),
-                    **({'event_start_time': event_time.isoformat()} if subday else {}),
+                    **({'event_start_time': event_time.isoformat(), **time_provenance} if subday else {}),
                     "workout_type": row.workout_type,
                     "duration_seconds": row.duration_seconds,
                     "distance_meters": row.distance_meters,
