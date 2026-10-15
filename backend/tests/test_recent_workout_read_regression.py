@@ -47,6 +47,12 @@ def test_recent_question_modifiers_do_not_grant_owned_reads(text):
         'health_query', {'dimension': 'workout'})).action == 'block'
 
 
+@pytest.mark.parametrize('text', ['刚才旅游回来', '刚才跑腿买了东西', '刚才骑马回来'])
+def test_short_workout_verbs_do_not_match_other_words(text):
+    from app.services.agent_longitudinal_read import has_recent_workout_reference
+    assert not has_recent_workout_reference(text)
+
+
 @pytest.mark.parametrize('zone,day', [('Asia/Shanghai', '2026-10-10'), ('America/Los_Angeles', '2026-10-09')])
 def test_recent_question_uses_account_local_day(zone, day):
     from dataclasses import replace

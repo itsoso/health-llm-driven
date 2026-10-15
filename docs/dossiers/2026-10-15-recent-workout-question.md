@@ -27,3 +27,7 @@
 - System Map 验证通过；LLM change gate `live_llm_required=false`。没有 schema、API、客户端契约或原生变更。
 - 最终相邻回归 443 passed；独立本地 PostgreSQL 152 passed，测试库停止退出码 0。原始日志 `/tmp/reva-recent-run-related-final.log`、`/tmp/reva-recent-run-pg-final-tests.log`。没有连接真实账号或调用真实模型。
 - 独立固定提交 G4、精确主干 CI、部署与 OTA 证据待完成后补充。不得将本地合成验证称为真实用户/手机验收。
+
+## G4 收口
+
+独立审查首候选 863c68424 为 GO；独立152项与19个额外边界探测通过。为避免短动词误匹配“旅游、跑腿、骑马”，新增三个直接负例先 RED，再将短动词限制为同一评价问句词尾，正式运动名的原限制检测不变。最终相邻446项通过，最终固定提交重新审查，不复用旧SHA裁决。先前完整能力/网关5772项通过；最终 PostgreSQL 和发布证据由交付回执单列。

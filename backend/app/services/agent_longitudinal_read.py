@@ -154,10 +154,14 @@ _RECENT_WORKOUT_KINDS = {'骑行': 'cycling', '骑车': 'cycling', '跑步': 'ru
 _RECENT_QUESTION_KINDS = {**_RECENT_WORKOUT_KINDS, '跑': 'running',
                           '骑': 'cycling', '游': 'swimming'}
 _RECENT_QUESTION_KIND = '|'.join(_RECENT_QUESTION_KINDS)
+_RECENT_QUESTION_END = r'(?:的|得)?(?:情况|表现)?(?:怎么样|怎样|如何)'
 _RECENT_WORKOUT_QUESTION = re.compile(
     r'(?:我(?:的)?|本人(?:的)?)?(?:刚才|刚刚)(?:的)?'
-    rf'(?P<kind>{_RECENT_QUESTION_KIND})(?:的|得)?(?:情况|表现)?'
-    r'(?:怎么样|怎样|如何)[?？。.!！]?'
+    rf'(?P<kind>{_RECENT_QUESTION_KIND}){_RECENT_QUESTION_END}[?？。.!！]?'
+)
+_RECENT_REFERENCE_KIND = '|'.join(
+    re.escape(kind) if len(kind) > 1 else rf'{re.escape(kind)}(?={_RECENT_QUESTION_END})'
+    for kind in _RECENT_QUESTION_KINDS
 )
 
 
@@ -220,7 +224,7 @@ def is_recent_workout_read(text: str) -> bool:
 
 def has_recent_workout_reference(text: str) -> bool:
     """Restrictive detection only; a substring can never grant a personal read."""
-    return re.search(rf'(?:刚才|刚刚)[^。\n]*(?:运动|锻炼|训练|{_RECENT_QUESTION_KIND})',
+    return re.search(rf'(?:刚才|刚刚)[^。\n]*(?:运动|锻炼|训练|{_RECENT_REFERENCE_KIND})',
                      str(text or '')) is not None
 
 
