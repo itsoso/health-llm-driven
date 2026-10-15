@@ -17,6 +17,58 @@ def snapshot(text):
     return TurnSnapshot(envelope, context, build_intent_frame(envelope, context))
 
 
+@pytest.mark.parametrize('text,kind', [
+    ('刚才跑的怎么样？', 'running'), ('我刚刚跑得怎么样?', 'running'),
+    ('刚才的跑步如何？', 'running'), ('刚刚骑得怎么样？', 'cycling'),
+    ('刚才游得怎样？', 'swimming'), ('本人刚才的步行怎么样？', 'walking'),
+])
+def test_recent_workout_questions_bind_authenticated_owner_and_type(text, kind):
+    turn = snapshot(text)
+    scope = resolve_owned_read_scope(turn)
+    assert scope is not None
+    assert scope.workout_selection.workout_type == kind
+    assert scope.query('workout') == {
+        'dimension': 'workout', 'start_date': '2026-10-10',
+        'end_date': '2026-10-10', 'timezone': 'Asia/Shanghai',
+    }
+    decision = decide_tool_capability(turn, ToolExecutionRequest('health_query', {'dimension': 'workout'}))
+    assert decision.action == 'allow', decision.reason
+
+
+@pytest.mark.parametrize('text', [
+    '刚才跑的怎么样？查询妈妈的记录', '小王刚才跑的怎么样？',
+    '我朋友刚才跑的怎么样？', '如果问刚才跑的怎么样？',
+    '解释“刚才跑的怎么样？”', '不要查询刚才跑的怎么样？',
+    '刚才跑的怎么样？只看去年', '刚才跑的怎么样？删除记录',
+    '刚才跑的怎么样？同步佳明', '刚才跑的不错',
+])
+def test_recent_question_modifiers_do_not_grant_owned_reads(text):
+    assert decide_tool_capability(snapshot(text), ToolExecutionRequest(
+        'health_query', {'dimension': 'workout'})).action == 'block'
+
+
+@pytest.mark.parametrize('zone,day', [('Asia/Shanghai', '2026-10-10'), ('America/Los_Angeles', '2026-10-09')])
+def test_recent_question_uses_account_local_day(zone, day):
+    from dataclasses import replace
+    turn = snapshot('刚才跑的怎么样？')
+    turn = replace(turn, context=replace(turn.context, timezone=zone))
+    scope = resolve_owned_read_scope(turn)
+    assert scope.query('workout')['start_date'] == day
+    assert scope.query('workout')['end_date'] == day
+
+
+def test_unresolved_read_notice_does_not_prove_missing_user_identity():
+    from app.services.agent_executor import AgentExecutor
+    executor = AgentExecutor(None)
+    executor._agent_kernel_snapshot = snapshot('查询运动情况')
+    executor._current_user_id = 41
+    executor._current_turn_user_message = '查询运动情况'
+    executor._agent_kernel_capability_block_reasons = ['health_query_semantics_unresolved']
+    assert '本轮数据查询未完成' in executor._unresolved_read_failure_notice()
+    executor._agent_kernel_capability_block_reasons = ['health_query_subject_not_current_user']
+    assert executor._unresolved_read_failure_notice() is None
+
+
 @pytest.mark.parametrize("text", [
     "分析刚才的运动", "分析我刚才的运动", "请帮我分析一下刚刚的运动记录。",
     "看看我刚才的锻炼数据", "复盘刚刚的训练",
@@ -90,8 +142,9 @@ def test_other_owner_and_unconsumed_restrictions_stay_blocked(text):
     {"start_date": "2026-10-01"}, {"end_date": "2026-10-11"}, {"timezone": "UTC"},
     {"dimension": "sleep"},
 ])
-def test_model_cannot_widen_recent_workout_scope(extra):
-    decision = decide_tool_capability(snapshot("分析刚才的运动"), ToolExecutionRequest(
+@pytest.mark.parametrize('text', ['分析刚才的运动', '刚才跑的怎么样？'])
+def test_model_cannot_widen_recent_workout_scope(extra, text):
+    decision = decide_tool_capability(snapshot(text), ToolExecutionRequest(
         "health_query", {"dimension": "workout", **extra}))
     assert decision.action == "block"
 
@@ -104,13 +157,14 @@ def test_recent_workout_read_does_not_authorize_sync_or_writes():
 
 
 @pytest.mark.parametrize("owner,envelope_owner", [(42, 41), (0, 0), (1, True), (True, 1)])
+@pytest.mark.parametrize('text', ['分析刚才的运动', '刚才跑的怎么样？'])
 @pytest.mark.parametrize("tool,args", [
     ("health_query", {"dimension": "workout"}),
     ("health_query_batch", {"queries": [{"dimension": "workout"}]}),
 ])
-def test_invalid_authenticated_owner_never_falls_back_to_rolling_read(owner, envelope_owner, tool, args):
+def test_invalid_authenticated_owner_never_falls_back_to_rolling_read(owner, envelope_owner, tool, args, text):
     from dataclasses import replace
-    turn = snapshot("分析刚才的运动")
+    turn = snapshot(text)
     turn = replace(turn, context=replace(turn.context, user_id=owner),
                    envelope=replace(turn.envelope, user_id=envelope_owner))
     decision = decide_tool_capability(turn, ToolExecutionRequest(tool, args))
@@ -121,8 +175,9 @@ def test_invalid_authenticated_owner_never_falls_back_to_rolling_read(owner, env
     ("health_analysis", {"analysis_type": "exercise", "days": 365}),
     ("health_manage", {"record_type": "exercise", "operation": "list"}),
 ] + [(tool, {}) for tool in sorted(SPECIALIST_READ_ONLY_TOOLS)])
-def test_other_tools_cannot_bypass_candidate_window(tool, args):
-    assert decide_tool_capability(snapshot("分析刚才的运动"), ToolExecutionRequest(tool, args)).action == "block"
+@pytest.mark.parametrize('text', ['分析刚才的运动', '刚才跑的怎么样？'])
+def test_other_tools_cannot_bypass_candidate_window(tool, args, text):
+    assert decide_tool_capability(snapshot(text), ToolExecutionRequest(tool, args)).action == "block"
 
 
 def test_batch_uses_same_owned_candidate_window():
@@ -143,6 +198,8 @@ def test_batch_uses_same_owned_candidate_window():
     ('生成一个 骑行的html 报告', False),
     ('生成我的 骑行的html 报告', True),
     ('分析刚才的运动', False),
+    ('刚才跑的怎么样？', False),
+    ('刚才跑的怎么样？', True),
     ('分析青山湖骑行刚才的两段骑行。', False),
     ('分析青山湖骑行刚才的两段骑行。', True),
 ])
@@ -248,8 +305,12 @@ async def test_screenshot_request_reaches_real_owned_reader_and_saved_reply(
 
 
 @pytest.mark.parametrize('count', [0, 1, 2, 3])
+@pytest.mark.parametrize('text,kind,expected', [
+    ('分析青山湖骑行刚才的两段骑行。', 'cycling', 2),
+    ('刚才跑的怎么样？', 'running', None),
+])
 def test_typed_rides_reader_filters_owned_day_and_preserves_ambiguous_candidates(
-    db, auth_user_and_headers, count,
+    db, auth_user_and_headers, count, text, kind, expected,
 ):
     from datetime import date, timedelta
     from app.models.daily_health import WorkoutRecord
@@ -261,23 +322,24 @@ def test_typed_rides_reader_filters_owned_day_and_preserves_ambiguous_candidates
     db.add(other)
     db.flush()
     day = date(2026, 10, 10)
-    own = [WorkoutRecord(user_id=user.id, workout_date=day, workout_type='cycling',
+    own = [WorkoutRecord(user_id=user.id, workout_date=day, workout_type=kind,
                          workout_name='Synthetic ride', duration_seconds=600 + i)
            for i in range(count)]
     db.add_all(own + [
-        WorkoutRecord(user_id=other.id, workout_date=day, workout_type='cycling'),
-        WorkoutRecord(user_id=user.id, workout_date=day, workout_type='running'),
-        WorkoutRecord(user_id=user.id, workout_date=day-timedelta(days=1), workout_type='cycling'),
+        WorkoutRecord(user_id=other.id, workout_date=day, workout_type=kind),
+        WorkoutRecord(user_id=user.id, workout_date=day, workout_type='walking'),
+        WorkoutRecord(user_id=user.id, workout_date=day-timedelta(days=1), workout_type=kind),
     ])
     db.commit()
-    scope = resolve_owned_read_scope(snapshot('分析青山湖骑行刚才的两段骑行。'))
+    scope = resolve_owned_read_scope(snapshot(text))
     payload = read_longitudinal_health_query(db, user.id, 'workout',
         parse_query_window(scope.query('workout')), selection=scope.workout_selection)
     assert [r['id'] for r in payload['records']] == [r.id for r in own]
     assert payload['workout_selection'] == {
-        'workout_type': 'cycling', 'expected_count': 2,
+        'workout_type': kind, 'expected_count': expected,
         'matched_count': count, 'event_identity': 'unverified',
-        'count_status': 'matched' if count == 2 else 'insufficient' if count < 2 else 'ambiguous',
+        'count_status': ('unspecified' if expected is None else
+                         'matched' if count == 2 else 'insufficient' if count < 2 else 'ambiguous'),
     }
     assert 'reported_location' not in payload['workout_selection']
 

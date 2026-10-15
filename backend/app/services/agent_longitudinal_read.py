@@ -148,6 +148,17 @@ _RECENT_TYPED_WORKOUT = re.compile(
 )
 _RECENT_WORKOUT_KINDS = {'骑行': 'cycling', '骑车': 'cycling', '跑步': 'running',
                          '步行': 'walking', '游泳': 'swimming'}
+# Spoken event questions carry the same bounded read intent as an imperative.
+# Share lexical forms with the restrictive detector, but grant authority only
+# after consuming the entire question (never by matching a substring).
+_RECENT_QUESTION_KINDS = {**_RECENT_WORKOUT_KINDS, '跑': 'running',
+                          '骑': 'cycling', '游': 'swimming'}
+_RECENT_QUESTION_KIND = '|'.join(_RECENT_QUESTION_KINDS)
+_RECENT_WORKOUT_QUESTION = re.compile(
+    r'(?:我(?:的)?|本人(?:的)?)?(?:刚才|刚刚)(?:的)?'
+    rf'(?P<kind>{_RECENT_QUESTION_KIND})(?:的|得)?(?:情况|表现)?'
+    r'(?:怎么样|怎样|如何)[?？。.!！]?'
+)
 
 
 _CYCLING_HTML_REPORT = re.compile(
@@ -179,6 +190,9 @@ def resolve_recent_workout_selection(text: str) -> RecentWorkoutSelection | None
         return None
     if is_owned_cycling_html_report(source):
         return RecentWorkoutSelection('cycling')
+    question = _RECENT_WORKOUT_QUESTION.fullmatch(source)
+    if question is not None:
+        return RecentWorkoutSelection(_RECENT_QUESTION_KINDS[question['kind']])
     match = _RECENT_TYPED_WORKOUT.fullmatch(source)
     if match is None:
         return None
@@ -206,7 +220,7 @@ def is_recent_workout_read(text: str) -> bool:
 
 def has_recent_workout_reference(text: str) -> bool:
     """Restrictive detection only; a substring can never grant a personal read."""
-    return re.search(r'(?:刚才|刚刚)[^。\n]*(?:运动|锻炼|训练|骑行|骑车|跑步|步行|游泳)',
+    return re.search(rf'(?:刚才|刚刚)[^。\n]*(?:运动|锻炼|训练|{_RECENT_QUESTION_KIND})',
                      str(text or '')) is not None
 
 
