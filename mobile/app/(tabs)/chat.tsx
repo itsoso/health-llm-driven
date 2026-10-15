@@ -756,6 +756,11 @@ export default function ChatScreen() {
     }, 300);
   }, [loadConversationHistory]);
 
+  const openLifeNavigation = useCallback(() => {
+    setToolMenuVisible(false);
+    router.push('/life-navigation');
+  }, []);
+
   const openHistory = useCallback(() => {
     setToolMenuVisible(false);
     setHistoryVisible(true);
@@ -1214,16 +1219,34 @@ export default function ChatScreen() {
             scrollEventThrottle={100}
             ListEmptyComponent={
               bootstrapReady ? (
-                <EmptyStateHome
-                  freshStart={freshStart}
-                  memoryOpener={memoryOpener}
-                  opener={opener}
-                  onOpenMemory={() => router.push('/memory')}
-                  onOpenerQuickReply={handleOpenerQuickReply}
-                  onboarding={startersOnboarding}
-                  onQuickAction={handleQuickAction}
-                  showReplyActions={!keyboardVisible}
-                />
+                <>
+                  <EmptyStateHome
+                    freshStart={freshStart}
+                    memoryOpener={memoryOpener}
+                    opener={opener}
+                    onOpenMemory={() => router.push('/memory')}
+                    onOpenerQuickReply={handleOpenerQuickReply}
+                    onboarding={startersOnboarding}
+                    onQuickAction={handleQuickAction}
+                    showReplyActions={!keyboardVisible}
+                  />
+                  {!keyboardVisible && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="人生导航"
+                      accessibilityHint="打开今日安排、周计划和复盘，保留当前对话"
+                      onPress={openLifeNavigation}
+                      style={({ pressed }) => [styles.lifeNavigationEntry, pressed && { backgroundColor: C.green50 }]}
+                    >
+                      <Ionicons name="compass-outline" size={21} color={C.green600} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={txt.lifeNavigationTitle}>人生导航</Text>
+                        <Text style={txt.lifeNavigationSubtitle}>今日安排 · 周计划 · 复盘</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={C.ink3} />
+                    </Pressable>
+                  )}
+                </>
               ) : <AgentHomeBootstrapLoading />
             }
           />
@@ -1400,6 +1423,11 @@ export default function ChatScreen() {
             <ScrollView testID="chat-tool-menu-scroll" keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }}>
               <Text style={txt.toolMenuGroup}>常用功能</Text>
               <ToolMenuRow
+                icon="compass-outline"
+                label="人生导航"
+                onPress={openLifeNavigation}
+              />
+              <ToolMenuRow
                 icon="call-outline"
                 label="实时语音对话"
                 onPress={openVoiceConversation}
@@ -1528,6 +1556,20 @@ const styles = StyleSheet.create({
   messageListShell: { flex: 1, minHeight: 0 },
   messageListViewport: { flex: 1, minHeight: 0 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
+  lifeNavigationEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s3,
+    minHeight: 60,
+    marginHorizontal: revaSpacing.s4,
+    marginTop: revaSpacing.s2,
+    marginBottom: revaSpacing.s3,
+    padding: revaSpacing.s3,
+    borderRadius: revaRadii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.surface,
+  },
   scrollToBottomButton: {
     position: 'absolute',
     right: revaSpacing.s4,
@@ -1667,6 +1709,8 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
+  lifeNavigationTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: C.ink1 } as TextStyle,
+  lifeNavigationSubtitle: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, marginTop: 2, color: C.ink3 } as TextStyle,
   bootstrapLoading: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   loadEarlier: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, fontWeight: '700' } as TextStyle,
   timeDivider: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 14, color: C.ink3, fontWeight: '700' } as TextStyle,

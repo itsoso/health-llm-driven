@@ -1381,6 +1381,7 @@ describe('ChatScreen', () => {
 
     const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
     await waitFor(() => expect(getByLabelText('一键回复: 做到了')).toBeTruthy());
+    expect(getByLabelText('人生导航')).toBeTruthy();
 
     act(() => {
       keyboardListeners.keyboardDidShow({
@@ -1391,6 +1392,9 @@ describe('ChatScreen', () => {
     expect(queryByLabelText('一键回复: 做到了')).toBeNull();
     expect(queryByLabelText('一键回复: 调整计划')).toBeNull();
     expect(queryByLabelText('换个话题')).toBeNull();
+    expect(queryByLabelText('人生导航')).toBeNull();
+    act(() => { keyboardListeners.keyboardDidHide({}); });
+    expect(getByLabelText('人生导航')).toBeTruthy();
     keyboardSpy.mockRestore();
   });
 
@@ -1755,6 +1759,34 @@ describe('ChatScreen', () => {
     fireEvent.press(view.getByRole('button', { name: '关闭更多操作' }));
     expect(view.queryByText('更多操作')).toBeNull();
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('opens life navigation from the Agent home without sending a message', async () => {
+    const view = render(<ChatScreen />);
+    await waitFor(() => expect(view.getByRole('button', { name: '人生导航' })).toBeTruthy());
+
+    fireEvent.press(view.getByRole('button', { name: '人生导航' }));
+
+    expect(mockPush).toHaveBeenCalledWith('/life-navigation');
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockNewChat).not.toHaveBeenCalled();
+  });
+
+  it('opens life navigation from an ongoing conversation and preserves the conversation', async () => {
+    mockMessages = [{ id: 'life-entry-message', role: 'user', content: '保留这段对话' }];
+    const view = render(<ChatScreen />);
+    await waitFor(() => expect(view.getByLabelText('message-life-entry-message')).toBeTruthy());
+    expect(view.queryByRole('button', { name: '人生导航' })).toBeNull();
+
+    fireEvent.press(view.getByLabelText('更多会诊操作'));
+    fireEvent.press(within(view.getByTestId('chat-tool-menu-sheet')).getByRole('button', { name: '人生导航' }));
+
+    expect(mockPush).toHaveBeenCalledWith('/life-navigation');
+    expect(view.queryByText('更多操作')).toBeNull();
+    expect(view.getByLabelText('message-life-entry-message')).toBeTruthy();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockNewChat).not.toHaveBeenCalled();
+    expect(mockSetMessages).not.toHaveBeenCalled();
   });
 
   it('opens diet records from the more sheet', () => {
