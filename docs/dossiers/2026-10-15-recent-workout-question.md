@@ -98,3 +98,13 @@ G1 PASS：修复现有按钮到查询/建议与详情展示闭环；沿用本 Do
 - 移动渲染 RED：真实 screen 组件显示粘连表格原文、h1 32px 继承21px行高；GREEN：21 项聚焦用例与 TypeScript 通过。复用 SafeTableMarkdown，h1–h6 明确行高。日志 `/tmp/reva-workout-render-red.log`、`/tmp/reva-workout-render-green.log`、`/tmp/reva-workout-render-tsc.log`。当前候选未完成原生模拟器视觉验收，不以旧包截图冒充。
 - 新按钮将运动材料与授权请求解耦，采用稳定恢复文本；旧截图模板保留闭合兼容。只读取本人睡眠与心率的固定7个本地日期，运动材料不证明事件身份。已有心率查询的通用自然语言日期准入不扩展，仅已绑定作用域使用新的有界读取。
 - 新恢复链路 RED 为3项真实PG失败；冻结专项97项通过，PG117项通过并正常停止（新旧模板、有/无数据、回复保存）。新增换行/CRLF的4个真实gateway拒绝用例先RED后GREEN；最终包含它们的PG收口另记回执。预审发现shadow继续dispatch与换行宽工具回落，两处已修；固定提交需独立G4重新裁决。System Map生成并通过，LLM change gate无需真实模型。
+
+
+### Web 运动分享旧表格渲染修复（2026-10-15）
+
+- 用户补充：分享页把运动分析表格的管道符显示成一段正文。
+- 源码链路：Mobile workout-detail 的分享调用 voice-coach 短稿，再经 text share 保存；Web SharedPage 已使用 MarkdownRenderer，但旧短稿中的三列表格已失去行边界，无法由 GFM 直接识别。当前合并的通知修复已在新短稿源头过滤表格；本补丁针对已保存的旧分享提供展示兼容。
+- 修改：仅识别有完整分隔行的“指标 / 本次数据 / 评价”旧格式，将完整三单元格恢复成表格行，保留署名和正文；不补造缺失数据。普通管道、代码块及正常表格保持不变，不启用 HTML。
+- RED：实际 MarkdownRenderer DOM 测试复现找不到 table；GREEN：分享目录 19 项通过，frontend tsc --noEmit 通过，git diff --check 通过。日志 /tmp/reva-share-render-red.log、/tmp/reva-share-render-all.log、/tmp/reva-share-render-tsc.log。
+- 前一候选 74bfb102d 的 CI-mode 已结束：3983 collected、0 failure、23 skipped；本次增量不冒用该 SHA 的发布证据。
+- 尚未发布：仍待并行通知发布者交接确认、新候选完整 CI 与部署。该增量只改 Web；此前待发布 Mobile 修复仍需同批适用 OTA。未读取真实分享/健康数据，未做真实模型评测、备份或生产修改；Web 真机视觉验收尚未完成。

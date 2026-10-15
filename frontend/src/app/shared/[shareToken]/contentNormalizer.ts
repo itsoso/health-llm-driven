@@ -329,7 +329,37 @@ function structureFlattenedGeneralAdvice(content: string): string {
   return [structured, signature].filter(Boolean).join('\n\n');
 }
 
+// Older workout voice summaries flattened Markdown rows before creating a share.
+// Recover only the known three-column report shape; never infer missing values.
+function restoreWorkoutTable(content: string): string {
+  if (content.includes('```') || content.includes('~~~')) return content;
+  const header = /\|\s*指标\s*\|\s*本次数据\s*\|\s*评价\s*\|[ \t]*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|/u;
+  const match = header.exec(content);
+  if (!match) return content;
+  const rest = content.slice(match.index + match[0].length);
+  const boundary = rest.search(/\n|\s+—\s*/u);
+  const body = boundary < 0 ? rest : rest.slice(0, boundary);
+  const suffix = boundary < 0 ? '' : rest.slice(boundary).trim();
+  const rows: string[][] = [];
+  let remaining = body.trim();
+  while (remaining) {
+    const row = /^\|[ \t]*([^|\n]+)\|([^|\n]+)\|([^|\n]+)(?:\||$)/u.exec(remaining);
+    if (!row) return content;
+    rows.push(row.slice(1, 4).map(cell => cell.trim()));
+    remaining = remaining.slice(row[0].length).trim();
+  }
+  if (!rows.length || rows.some(row => row.some(cell => !cell))) return content;
+  return [
+    content.slice(0, match.index).trimEnd(),
+    ['| 指标 | 本次数据 | 评价 |', '| --- | --- | --- |',
+      ...rows.map(row => `| ${row.join(' | ')} |`)].join('\n'),
+    suffix,
+  ].filter(Boolean).join('\n\n');
+}
+
 export function normalizeSharedAgentContent(content: string): string {
+  const restored = restoreWorkoutTable(content);
+  if (restored !== content) return restored;
   if (/\n\s*\|.+\|\s*\n\s*\|[\s|:-]+\|/u.test(content)) {
     return content;
   }
