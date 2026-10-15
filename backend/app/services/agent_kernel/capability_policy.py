@@ -2203,6 +2203,33 @@ def _query_dimension_match_embedded_in_illness_name(
     )
 
 
+def _may_read_subday_workouts(tool_name: str, args: dict) -> bool:
+    """Unknown/broad read selectors cannot discard a user's event-time bound.
+
+    Explicit other-domain proposals still pass through their existing scope and
+    subject validation below; this function never authorizes those proposals.
+    """
+    def may_read(query):
+        if not isinstance(query, dict):
+            return True
+        normalized = normalize_health_query_args(query)
+        dimension = _semantic_query_dimension(normalized.get('dimension'))
+        return dimension in {'workout', 'manual_exercise', 'comprehensive'} or dimension not in _QUERY_DIMENSION_TEXT_TERMS
+
+    if tool_name == 'health_query':
+        return may_read(args)
+    if tool_name == 'health_query_batch':
+        plan = args.get('plan', args)
+        queries = plan.get('queries') if isinstance(plan, dict) else None
+        return not isinstance(queries, list) or not queries or any(may_read(q) for q in queries)
+    if tool_name == 'health_manage':
+        if args.get('operation') != 'list':
+            return False
+        kind = canonical_health_manage_record_type(args.get('record_type'))
+        return kind is None or kind in {'exercise', 'workout'}
+    return tool_name == 'health_analysis' or tool_name in SPECIALIST_READ_ONLY_TOOLS
+
+
 def _semantic_query_dimension(dimension: str) -> str:
     normalized = str(dimension or "").strip().lower()
     return _QUERY_DIMENSION_SEMANTIC_ALIASES.get(normalized, normalized)
@@ -2813,10 +2840,14 @@ def decide_tool_capability(
         return _decision("block", "current_input_advice_read_not_needed" if optional_read
                          else "current_input_advice_tool_not_allowed", tool_name, args)
     owned_scope = resolve_owned_read_scope(snapshot)
-    from app.services.agent_longitudinal_read import has_recent_workout_reference, is_recent_workout_read
+    from app.services.agent_longitudinal_read import (
+        has_recent_workout_reference, is_recent_workout_read, has_subday_workout_reference,
+    )
     if owned_scope is None and (is_recent_workout_read(snapshot.envelope.text)
             or (has_recent_workout_reference(snapshot.envelope.text)
-                and tool_name not in {'knowledge_search', 'environment_check'})):
+                and tool_name not in {'knowledge_search', 'environment_check'})
+            or (has_subday_workout_reference(snapshot.envelope.text)
+                and _may_read_subday_workouts(tool_name, args))):
         # Neither identity failure nor an unresolved event scope may fall
         # through to legacy reads. Keep both terminal, but do not tell an
         # authenticated user that a parsing failure is an identity problem.

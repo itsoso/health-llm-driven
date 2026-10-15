@@ -63,3 +63,9 @@
 529f3cf36 独立审查 NO-GO：未知时刻、其他主体修饰及独立早晚别名可绕过限制检测，退回滚动查询。已扩大仅拒绝用途的时间对象识别，同时保留读取/评价语义角色，覆盖前后置动词与逗号拆分；纯运动写入不受新读取守卫影响，睡眠及饮食建议不误绑定为运动时段。新增实际 Gateway enforce/shadow 不派发回归。
 
 529 候选相关 6249 passed，PostgreSQL 415 passed（测试库正常停止）。修订后聚焦 255 passed（日志 /tmp/subday-postfixed-green.log）；最后固定提交将重新接受独立 G4 及相关验证。没有推送被拒绝候选或执行其发布。
+
+### 工具读取面修复
+
+9058907 独立 G4 仍为 NO-GO：“吃饭后的跑步”、后置评价等仍能退回滚动查询。停止通过有限措辞例外修补，恢复最近运动检测的原实现，独立检测时段与运动共现；未生成完整 OwnedReadScope 时，按工具实际读取面阻断 workout、manual_exercise、comprehensive、批量、综合分析及 specialist 等可能读取运动的入口。明确其他领域读取继续接受其原有范围校验；纯写操作不经该新增读取守卫。限制检测不授予任何权限。
+
+新增实际 Gateway enforce/shadow 回归覆盖两轮 G4 反例及各工具读取面，最终聚焦 289 passed（/tmp/subday-architecture-final3.log）。广泛回归、PostgreSQL 与新固定提交 G4 正在重跑；未推送或部署此前 NO-GO 候选。

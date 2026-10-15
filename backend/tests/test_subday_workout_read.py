@@ -311,3 +311,60 @@ async def test_postfixed_read_role_cannot_drop_subday_bounds(text,mode):
     result=await ToolGateway(turn).execute(ToolExecutionRequest('health_query',{'dimension':'workout'}),dispatch)
     assert result.decision.action=='block'
     assert not calls
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text',['分析上午吃饭后的跑步','分析上午睡醒后的跑步','上午的跑步，帮我分析',
+                                 '评价上午八点的跑步','点评上午的跑步','上午八点的跑步好吗'])
+async def test_unresolved_subday_all_read_paths_stop_before_dispatch(text):
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    from app.services.agent_kernel.capability_policy import SPECIALIST_READ_ONLY_TOOLS
+    requests=[('health_query',{'dimension':'workout'}),('health_query',{'dimension':'exercise'}),
+              ('health_query_batch',{'queries':[{'dimension':'workout'}]}),
+              ('health_analysis',{'analysis_type':'exercise','days':7}),
+              ('health_manage',{'record_type':'exercise','operation':'list'})]
+    requests += [(tool,{}) for tool in sorted(SPECIALIST_READ_ONLY_TOOLS)]
+    for tool,args in requests:
+        calls=[]
+        async def dispatch(request):
+            calls.append(request)
+            return '{}'
+        result=await ToolGateway(snapshot(text)).execute(ToolExecutionRequest(tool,args),dispatch)
+        assert result.decision.action=='block', (text,tool)
+        assert not calls
+
+@pytest.mark.parametrize('text',['分析上午吃饭后的跑步','分析上午睡醒后的跑步','上午的跑步，帮我分析',
+                                 '评价上午八点的跑步','点评上午的跑步','上午八点的跑步好吗'])
+def test_invalid_single_workout_request_cannot_read_any_other_domain(text):
+    from app.services.agent_kernel.capability_policy import _QUERY_DIMENSION_TEXT_TERMS
+    for dimension in _QUERY_DIMENSION_TEXT_TERMS:
+        assert decide_tool_capability(snapshot(text),ToolExecutionRequest('health_query',{'dimension':dimension})).action=='block'
+
+@pytest.mark.parametrize('args',[
+    {'queries':[{'dimension':'exercise'}]}, {'queries':[{'dimension':'sleep'},{'dimension':'workout'}]},
+    {'queries':[{}]}, {'queries':[None]}, {'queries':[]}, {'queries':{}},
+    {'queries':[{'dimension':'unknown'}]}, {'plan':{'queries':[{'dimension':'workout'}]}},
+])
+def test_subday_batch_unknown_or_workout_selector_cannot_widen(args):
+    assert decide_tool_capability(snapshot('点评上午的跑步'),ToolExecutionRequest('health_query_batch',args)).action=='block'
+
+@pytest.mark.parametrize('text',['跑步是在上午八点，帮我分析','上午吃饭后的跑步如何'])
+def test_subday_detection_order_independent(text):
+    from app.services.agent_longitudinal_read import has_subday_workout_reference
+    assert has_subday_workout_reference(text)
+    assert decide_tool_capability(snapshot(text),ToolExecutionRequest('health_query',{'dimension':'workout'})).action=='block'
+
+@pytest.mark.parametrize('text,dimension',[
+    ('分析上午的运动和综合健康情况','comprehensive'),
+    ('分析上午的运动和俯卧撑','manual_exercise'),
+])
+@pytest.mark.parametrize('batch',[False,True])
+def test_broad_and_manual_workout_readouts_cannot_bypass_subday(text,dimension,batch):
+    args={'queries':[{'dimension':dimension}]} if batch else {'dimension':dimension}
+    assert decide_tool_capability(snapshot(text),ToolExecutionRequest('health_query_batch' if batch else 'health_query',args)).action=='block'
+
+@pytest.mark.parametrize('dimension',['workout','exercise','manual_exercise','comprehensive'])
+@pytest.mark.parametrize('batch',[False,True])
+def test_read_surface_classifies_all_actual_workout_adapters(dimension,batch):
+    from app.services.agent_kernel.capability_policy import _may_read_subday_workouts
+    assert _may_read_subday_workouts('health_query_batch' if batch else 'health_query',
+        {'queries':[{'dimension':dimension}]} if batch else {'dimension':dimension})
