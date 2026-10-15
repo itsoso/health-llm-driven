@@ -81,3 +81,4 @@ f4448dfb完整CI与后端发布成功后，用户15:28再次发送“分析上�
 - 修复采用同一 PostgreSQL SELECT 的显式 timestamptz 转换，查询、排序和返回共用表达式；legacy 行保留数据库解释时区与未核验原设备时区声明。不修改表、历史记录或认证范围。
 - RED：隔离 PostgreSQL legacy DDL 3 个用例均复现 workout_event_timezone_missing；GREEN：8 个专项用例通过，414 项相关 PostgreSQL 回归通过（含 executor 与保存回复）；临时实例正常停止。证据 `/tmp/reva-legacy-workout-pg-red-result.json`、`/tmp/reva-legacy-workout-pg-green-result.json`、`/tmp/reva-legacy-workout-related-pg-result.json`。此前 SQLite 测试环境被 PG fixture 拒绝，已改用隔离 PG 完整重跑，不计为通过。
 - System Map 检查通过；LLM 变更门判定 live_llm_required=false。固定提交 G4、CI-mode、远端完整 CI 和部署仍待完成；不宣称截图对应真实记录已验证。
+- 独立 G4 首审发现 legacy limitation 存在但行同时缺失 provenance 双字段时仍通过；已强制完整字段对并增加 missing_both 反例。新鲜 PostgreSQL 415 项通过（`/tmp/reva-legacy-workout-reviewed-pg.log`），待修正提交重新 G4。

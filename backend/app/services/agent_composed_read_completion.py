@@ -876,7 +876,8 @@ def _validate(bound: dict, payload) -> str | None:
         if bound["dimension"] == "supplements" and row.get("taken") is not True:
             return "query_result_source_conflict"
         if bound['dimension'] == 'workout' and (
-            'event_time_basis' in row or 'event_storage_timezone' in row
+            'database_session_timezone_compatibility' in limitations
+            or 'event_time_basis' in row or 'event_storage_timezone' in row
         ):
             zone = row.get('event_storage_timezone')
             if (row.get('event_time_basis') != 'database_session_timezone_compatibility'

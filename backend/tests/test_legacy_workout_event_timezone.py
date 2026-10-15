@@ -92,7 +92,7 @@ def test_legacy_storage_zone_and_account_zone_are_distinct(legacy_workout_db):
     assert payload['records'][0]['event_time_basis']==BASIS
 
 
-@pytest.mark.parametrize('mutation', ['basis', 'zone', 'missing_zone', 'missing_limitation'])
+@pytest.mark.parametrize('mutation', ['basis', 'zone', 'missing_zone', 'missing_both', 'missing_limitation'])
 def test_legacy_provenance_tampering_fails_completion(legacy_workout_db, mutation):
     db = legacy_workout_db
     db.add(WorkoutRecord(user_id=41, workout_date=date(2026, 10, 10),
@@ -108,6 +108,9 @@ def test_legacy_provenance_tampering_fails_completion(legacy_workout_db, mutatio
     elif mutation == 'zone':
         record['event_storage_timezone'] = 'untrusted zone\n'
     elif mutation == 'missing_zone':
+        record.pop('event_storage_timezone')
+    elif mutation == 'missing_both':
+        record.pop('event_time_basis')
         record.pop('event_storage_timezone')
     else:
         payload['limitations'].remove(BASIS)
