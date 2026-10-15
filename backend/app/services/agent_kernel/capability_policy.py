@@ -2817,8 +2817,16 @@ def decide_tool_capability(
     if owned_scope is None and (is_recent_workout_read(snapshot.envelope.text)
             or (has_recent_workout_reference(snapshot.envelope.text)
                 and tool_name not in {'knowledge_search', 'environment_check'})):
-        # A failed authenticated binding must not fall through to legacy reads.
-        return _decision("block", "health_query_subject_not_current_user", tool_name, args)
+        # Neither identity failure nor an unresolved event scope may fall
+        # through to legacy reads. Keep both terminal, but do not tell an
+        # authenticated user that a parsing failure is an identity problem.
+        owner = snapshot.context.user_id
+        identity_valid = (type(owner) is int and owner > 0
+                          and type(snapshot.envelope.user_id) is int
+                          and snapshot.envelope.user_id == owner)
+        reason = ("longitudinal_read_scope_unresolved" if identity_valid
+                  else "health_query_subject_not_current_user")
+        return _decision("block", reason, tool_name, args)
     from app.services.agent_kernel.exercise_plan_scope import (
         resolve_exercise_plan_scope, has_unresolved_exercise_plan_basis,
     )

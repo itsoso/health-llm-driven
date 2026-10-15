@@ -8,7 +8,7 @@ execution never resolves a rolling window again or accepts a model owner.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, time, timedelta, timezone
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -137,6 +137,8 @@ class RecentWorkoutSelection:
     workout_type: str
     expected_count: int | None = None
     reported_location: str | None = None
+    period: str | None = None
+    day_offset: int = 0
 
 
 _RECENT_TYPED_WORKOUT = re.compile(
@@ -159,6 +161,30 @@ _RECENT_WORKOUT_QUESTION = re.compile(
     r'(?:我(?:的)?|本人(?:的)?)?(?:刚才|刚刚)(?:的)?'
     rf'(?P<kind>{_RECENT_QUESTION_KIND}){_RECENT_QUESTION_END}[?？。.!！]?'
 )
+_SUBDAY_WORKOUT = re.compile(
+    r'(?:请你?|麻烦)?(?:帮我|给我)?(?:分析|复盘|总结|查看|查询|看看)(?:一下)?'
+    r'(?:我(?:的)?|本人(?:的)?)?(?P<day>今天|昨天|今|昨)?'
+    r'(?P<period>上午|早上|早晨|下午|晚上|早|晚)(?:的)?'
+    r'(?P<kind>跑步|骑行|骑车|步行|游泳)(?:记录|数据)?[。.!！]?'
+)
+_SUBDAY_WORKOUT_QUESTION = re.compile(
+    r'(?:我(?:的)?|本人(?:的)?)?(?P<day>今天|昨天|今|昨)?'
+    r'(?P<period>上午|早上|早晨|下午|晚上|早|晚)(?:的)?'
+    rf'(?P<kind>{_RECENT_QUESTION_KIND}){_RECENT_QUESTION_END}[?？。.!！]?'
+)
+_WORKOUT_PERIODS = {'morning': (0, 12), 'afternoon': (12, 18), 'evening': (18, 24)}
+
+
+def workout_period_bounds(window, selection):
+    """Server-selected half-open local-time interval; no model filters."""
+    if selection.period not in _WORKOUT_PERIODS or window.start_date != window.end_date:
+        raise ValueError('workout_period_scope_invalid')
+    zone = ZoneInfo(window.timezone)
+    midnight = datetime.combine(window.start_date, time.min, tzinfo=zone)
+    start, end = _WORKOUT_PERIODS[selection.period]
+    return midnight + timedelta(hours=start), midnight + timedelta(hours=end)
+
+
 _RECENT_REFERENCE_KIND = '|'.join(re.escape(kind) for kind in _RECENT_QUESTION_KINDS if len(kind) > 1)
 _RECENT_SHORT_KIND = '|'.join(re.escape(kind) for kind in _RECENT_QUESTION_KINDS if len(kind) == 1)
 
@@ -182,7 +208,7 @@ def resolve_recent_workout_selection(text: str) -> RecentWorkoutSelection | None
     """Consume the complete typed event request; a location is reported context.
 
     This does not attest GPS, grant another owner's data, authorize a sync, or
-    consume extra date/name filters. The dispatcher freezes today's window.
+    consume extra date/name filters. The dispatcher freezes the account-local window.
     """
     from app.services.agent_kernel.health_semantics import active_health_read_authority_text
     source = str(text or '').strip()
@@ -190,6 +216,12 @@ def resolve_recent_workout_selection(text: str) -> RecentWorkoutSelection | None
             or _MUTATION.search(source)
             or re.search(r'朋友|同事|他人|别人|家人|爸爸|妈妈|他的|她的|他们|她们', source)):
         return None
+    subday = _SUBDAY_WORKOUT.fullmatch(source) or _SUBDAY_WORKOUT_QUESTION.fullmatch(source)
+    if subday is not None:
+        period = ('afternoon' if subday['period'] == '下午' else
+                  'evening' if subday['period'] in {'晚上', '晚'} else 'morning')
+        return RecentWorkoutSelection(_RECENT_QUESTION_KINDS[subday['kind']],
+                                      period=period, day_offset=-1 if subday['day'] in {'昨天', '昨'} else 0)
     if is_owned_cycling_html_report(source):
         return RecentWorkoutSelection('cycling')
     question = _RECENT_WORKOUT_QUESTION.fullmatch(source)
@@ -222,9 +254,18 @@ def is_recent_workout_read(text: str) -> bool:
 
 def has_recent_workout_reference(text: str) -> bool:
     """Restrictive detection only; a substring can never grant a personal read."""
-    return re.search(rf'(?:刚才|刚刚)(?:[^。\n]*(?:运动|锻炼|训练|{_RECENT_REFERENCE_KIND})|'
-                     rf'(?:的)?(?:{_RECENT_SHORT_KIND})(?={_RECENT_QUESTION_END}))',
-                     str(text or '')) is not None
+    source = str(text or '')
+    # Reject unresolved subday requests before generic rolling-read fallback.
+    # Restrictive recognition does not grant a scope, including future/mixed days.
+    subday_reference = re.search(
+        rf'(?:上午|下午|晚上|早上|早晨|(?:今|昨|明|前|后)(?:早|晚))'
+        rf'(?:的)?(?:我(?:的)?|本人(?:的)?)?(?:运动|锻炼|训练|{_RECENT_REFERENCE_KIND}|(?:{_RECENT_SHORT_KIND})(?={_RECENT_QUESTION_END}))',
+        source,
+    )
+    return subday_reference is not None or re.search(
+        rf'(?:刚才|刚刚)(?:[^。\n]*(?:运动|锻炼|训练|{_RECENT_REFERENCE_KIND})|'
+        rf'(?:的)?(?:{_RECENT_SHORT_KIND})(?={_RECENT_QUESTION_END}))', source,
+    ) is not None
 
 
 _HTML_READ_FRAME = re.compile(
@@ -953,15 +994,36 @@ def read_longitudinal_health_query(
         "missing_metric_is_unknown_not_zero",
     ]
     if dimension == "workout":
-        for row in _rows(
-            db, WorkoutRecord, WorkoutRecord.workout_date, user_id, window
-        ):
+        subday = selection is not None and selection.period is not None
+        if subday:
+            start, end = workout_period_bounds(window, selection)
+            workout_rows = (db.query(WorkoutRecord).filter(
+                WorkoutRecord.user_id == user_id,
+                WorkoutRecord.workout_type == selection.workout_type,
+                WorkoutRecord.start_time >= start.astimezone(timezone.utc),
+                WorkoutRecord.start_time < end.astimezone(timezone.utc),
+            ).order_by(WorkoutRecord.start_time, WorkoutRecord.id).limit(MAX_CALENDAR_ROWS + 1).all())
+            if len(workout_rows) > MAX_CALENDAR_ROWS:
+                raise ValueError('longitudinal_query_result_limit_exceeded')
+            limitations.append('missing_event_time_excluded')
+        else:
+            workout_rows = _rows(db, WorkoutRecord, WorkoutRecord.workout_date, user_id, window)
+        for row in workout_rows:
+            event_time = row.start_time
+            if subday:
+                # SQLite drops timezone information; PostgreSQL returns aware timestamps.
+                if event_time.utcoffset() is None:
+                    if db.get_bind().dialect.name != 'sqlite':
+                        raise ValueError('workout_event_timezone_missing')
+                    event_time = event_time.replace(tzinfo=timezone.utc)
+                event_time = event_time.astimezone(ZoneInfo(window.timezone))
             records.append(
                 {
                     "id": row.id,
                     "record_kind": "workout_record",
                     "source_table": "workout_records",
-                    "record_date": row.workout_date.isoformat(),
+                    "record_date": event_time.date().isoformat() if subday else row.workout_date.isoformat(),
+                    **({'event_start_time': event_time.isoformat()} if subday else {}),
                     "workout_type": row.workout_type,
                     "duration_seconds": row.duration_seconds,
                     "distance_meters": row.distance_meters,
@@ -969,9 +1031,10 @@ def read_longitudinal_health_query(
                     "avg_heart_rate": row.avg_heart_rate,
                 }
             )
-        for row in _rows(
+        # ExerciseRecord has no event timestamp; created_at is ingestion time.
+        for row in ([] if subday else _rows(
             db, ExerciseRecord, ExerciseRecord.record_date, user_id, window
-        ):
+        )):
             records.append(
                 {
                     "id": row.id,
@@ -1054,6 +1117,7 @@ def read_longitudinal_health_query(
         selection_result = {
             'workout_type': selection.workout_type, 'expected_count': expected,
             'matched_count': count, 'event_identity': 'unverified',
+            **({'period': selection.period, 'start_time': start.isoformat(), 'end_time': end.isoformat()} if selection.period else {}),
             'count_status': ('unspecified' if expected is None else 'matched' if count == expected
                              else 'insufficient' if count < expected else 'ambiguous'),
         }

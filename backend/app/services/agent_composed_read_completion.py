@@ -8,7 +8,7 @@ identity; the scoped dispatcher does that. Sync job receipts are not read data.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 import re
 from typing import Iterable
@@ -50,7 +50,7 @@ _EVIDENCE_FIELDS = {
     "sleep": ("record_date", "sleep_score", "total_sleep_duration", "deep_sleep_duration",
               "rem_sleep_duration", "light_sleep_duration", "awake_duration",
               "sleep_start_time", "sleep_end_time", "sources", "source_row_updates"),
-    "workout": ("id", "record_kind", "source_table", "record_date", "workout_type",
+    "workout": ("id", "record_kind", "source_table", "record_date", "event_start_time", "workout_type",
                 "duration_seconds", "distance_meters", "calories", "avg_heart_rate"),
     "supplements": ("id", "record_kind", "source_table", "record_date", "taken",
                     "supplement_name", "dosage", "unit", "intake_time"),
@@ -1017,6 +1017,12 @@ def read_scope_notices(scope) -> tuple[str, ...]:
             "本次周健康概览覆盖指定范围内的饮食、睡眠与运动记录；"
             "其他健康领域未查询，不能据此判断总体健康或作出诊断。"
         )
+    if "subday_workout_timestamp_scope" in scope.limitations:
+        period = scope.workout_selection.period
+        label = {'morning': '上午（00:00至12:00）', 'afternoon': '下午（12:00至18:00）',
+                 'evening': '晚上（18:00至次日00:00）'}[period]
+        lines.append(f'本次按账号时区查询指定日期{label}开始的同类型运动记录，结束边界不包含在内。'
+                     '缺少实际开始时间的记录未纳入，未用录入时间或全天记录代替；未触发设备同步。')
     if "cycling_html_report_today" in scope.limitations:
         lines.append('未指定日期，本报告默认覆盖当前账号当天已保存的骑行记录；'
                      '不是完整骑行历史，也不确认就是刚才所述事件。未触发设备同步；'
@@ -1144,12 +1150,28 @@ def evaluate_composed_read_completion(
                 status = ('unspecified' if expected is None else 'matched' if count == expected
                           else 'insufficient' if count < expected else 'ambiguous')
                 metadata = payload.get('workout_selection')
+                period_metadata = {}
+                if selection.period:
+                    from app.services.agent_longitudinal_read import workout_period_bounds
+                    start, end = workout_period_bounds(parse_query_window(bounds[dimension]), selection)
+                    period_metadata = {'period': selection.period, 'start_time': start.isoformat(), 'end_time': end.isoformat()}
+                    for row in payload['records']:
+                        try:
+                            stamp = datetime.fromisoformat(row['event_start_time'])
+                            if (stamp.utcoffset() is None or not start <= stamp < end
+                                    or row.get('record_kind') != 'workout_record'
+                                    or row.get('source_table') != 'workout_records'
+                                    or stamp.astimezone(start.tzinfo).date().isoformat() != row['record_date']):
+                                reason = 'query_result_scope_conflict'
+                        except (KeyError, ValueError, TypeError):
+                            reason = 'query_result_scope_conflict'
                 if (any(row.get('workout_type') != selection.workout_type for row in payload['records'])
                         or not isinstance(metadata, dict)
                         or type(metadata.get('matched_count')) is not int
                         or metadata != {
                             'workout_type': selection.workout_type, 'expected_count': expected,
                             'matched_count': count, 'event_identity': 'unverified', 'count_status': status,
+                            **period_metadata,
                         }):
                     reason = 'query_result_scope_conflict'
             if reason is None:

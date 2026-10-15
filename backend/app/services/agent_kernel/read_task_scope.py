@@ -7,6 +7,7 @@ model chooses subqueries inside this scope; tool adapters use the same binder.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING
 import re
 from zoneinfo import ZoneInfo
@@ -260,7 +261,8 @@ def owned_read_tool_names(scope: OwnedReadScope) -> frozenset[str]:
 
 def requires_owned_read_tool_scope(scope: OwnedReadScope) -> bool:
     return (len(scope.queries) > 1 or scope.composite_advice
-            or "recent_workout_candidates_not_identified_event" in scope.limitations)
+            or "recent_workout_candidates_not_identified_event" in scope.limitations
+            or "subday_workout_timestamp_scope" in scope.limitations)
 
 
 def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
@@ -280,14 +282,16 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     if is_recent_workout_read(snapshot.envelope.text):
         zone = ZoneInfo(snapshot.context.timezone)
         now = snapshot.context.current_time
-        day = (now.replace(tzinfo=zone) if now.utcoffset() is None else now.astimezone(zone)).date().isoformat()
+        selection = resolve_recent_workout_selection(snapshot.envelope.text)
+        day = ((now.replace(tzinfo=zone) if now.utcoffset() is None else now.astimezone(zone)).date()
+               + timedelta(days=selection.day_offset if selection else 0)).isoformat()
         return OwnedReadScope(
             ({"dimension": "workout", "start_date": day, "end_date": day,
               "timezone": snapshot.context.timezone},),
-            ("recent_workout_candidates_not_identified_event",) + (
+            (("subday_workout_timestamp_scope",) if selection and selection.period else ("recent_workout_candidates_not_identified_event",)) + (
                 ("cycling_html_report_today",) if is_owned_cycling_html_report(snapshot.envelope.text) else ()
             ),
-            workout_selection=resolve_recent_workout_selection(snapshot.envelope.text),
+            workout_selection=selection,
         )
     from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
     garmin_review = resolve_garmin_workout_review_scope(snapshot.envelope.text)
