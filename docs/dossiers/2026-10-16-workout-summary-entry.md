@@ -1,8 +1,19 @@
 # 运动记录入口与跑后总结回看
 
+| Field | Value |
+| --- | --- |
+| status | building |
+| current_stage | G3 verification / G4 review |
+| Controller | health-harness-orchestrator |
+| Overlay | safety-gate |
+
 - 日期：2026-10-16
 - 状态：S5 实现与验证中；尚未发布
 - Controller：health-harness-orchestrator；overlay：safety-gate
+
+## G1 Scope admission
+
+裁决: PASS。恢复现有运动回看入口及完整口语查询，不新增权限或健康写入。
 
 ## 问题与准入
 
@@ -26,3 +37,21 @@
 ## 发布授权
 
 沿用本会话统一发布及改完默认部署、OTA 的授权。不备份，不启动第二发布者，不重放旧候选发布流程。
+
+## 交付检查点
+
+- 候选：be332385228e1390b7e4b9d2b6154bf162fe2b67；本地独立 G4 GO。
+- Mobile 全量：357 suites、3693 passed、1 skipped；类型与导航图检查通过。
+- 旧候选本地 CI-mode 发布不变量 3983 项无失败，但 dossier 格式检查失败；已补齐结构并通过一致性检查。追加修复后的新候选仍需完整 CI。
+- 外部 Web 操作 b6dd746e9c404d50ad28ea0af5616ca5 已有终态、锁释放；b294 后端与服务正常。但发布者归属/交接尚未确认，已询问用户。不能用锁释放代替交接。
+- 暂未 push，精确远端 CI、后端、OTA 均未开始；新候选 wrappers 仅准备，不执行旧流程。
+- React Native Web 实际列表组件合成预览验证了点击路由；不代表 iOS 原生候选或真实账号验收。
+- 详细状态：docs/reviews/2026-10-16-workout-summary-entry-release-receipt.json。
+
+## 追加：口语倒装查询
+
+用户补充截图：“刚才对我的运动做下分析”被未解析范围拦截。已在合成认证身份下复现三种完整倒装句失败（3 failed / 22 passed）。现有语法只支持前置分析动词，缺少“刚才对本人运动做下分析”的完整读请求形式。
+
+新增完整匹配的后置分析语法，复用现有 OwnedReadScope，当地当天本人 workout 候选范围不变；不丢弃其他主体、引用、否定、额外日期、同步或写入约束。截图原句通过真实 Gateway、合成数据库查询与回复保存链路验证，含单次/批量读取和有/无记录。
+
+SQLite 相邻回归 170 passed；PostgreSQL 独立验证 170 passed、测试库正常停止。旧 be332 候选 CI 与 wrappers 不可用于追加修改后的发布；需绑定新候选重审与完整 CI。不做真实模型评测或读取真实健康数据。

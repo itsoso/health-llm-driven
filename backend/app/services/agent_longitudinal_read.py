@@ -132,6 +132,14 @@ _RECENT_WORKOUT_READ = re.compile(
     r"(?:运动|锻炼|训练)(?:记录|数据)?[。.!！]?"
 )
 
+# Spoken object-before-action requests still require a complete, owned command.
+_RECENT_WORKOUT_POSTFIX_READ = re.compile(
+    r"(?:请(?:你)?|麻烦)?(?:帮我|给我)?"
+    r"(?:(?:刚才|刚刚)对(?:我|本人)的|对(?:我|本人)(?:刚才|刚刚)的)"
+    r"(?:运动|锻炼|训练)(?:记录|数据)?"
+    r"(?:做(?:一?下|个)|进行)(?:分析|复盘|总结)[。.!！]?"
+)
+
 @dataclass(frozen=True)
 class RecentWorkoutSelection:
     workout_type: str
@@ -249,6 +257,7 @@ def is_recent_workout_read(text: str) -> bool:
     source = str(text or "")
     return (active_health_read_authority_text(source) == source.strip()
             and (_RECENT_WORKOUT_READ.fullmatch(source.strip()) is not None
+                 or _RECENT_WORKOUT_POSTFIX_READ.fullmatch(source.strip()) is not None
                  or resolve_recent_workout_selection(source) is not None))
 
 

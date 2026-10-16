@@ -79,6 +79,8 @@ def test_unresolved_read_notice_does_not_prove_missing_user_identity():
 @pytest.mark.parametrize("text", [
     "分析刚才的运动", "分析我刚才的运动", "请帮我分析一下刚刚的运动记录。",
     "看看我刚才的锻炼数据", "复盘刚刚的训练",
+    "刚才对我的运动做下分析", "刚刚对本人的训练做一下复盘。",
+    "请对我刚才的运动做一下分析",
 ])
 def test_recent_workout_reads_current_local_day_candidates(text):
     turn = snapshot(text)
@@ -138,6 +140,9 @@ def test_quoted_ride_request_does_not_block_public_knowledge_explanation():
     "不要分析刚才的运动", "解释例句：‘分析刚才的运动’", "如果有空，分析刚才的运动",
     "分析刚才的运动，只看别人的记录", "分析刚才的运动，范围是去年",
     "刚才的运动", "刚才的运动不错", "刚才的运动是谁的",
+    "刚才对朋友的运动做下分析", "不要刚才对我的运动做下分析",
+    "解释‘刚才对我的运动做下分析’", "刚才对我的运动做下分析，只看去年",
+    "刚才对我的运动做下分析，并同步佳明", "刚才对我的运动做下分析并删除记录",
 ])
 def test_other_owner_and_unconsumed_restrictions_stay_blocked(text):
     decision = decide_tool_capability(snapshot(text), ToolExecutionRequest("health_query", {"dimension": "workout"}))
@@ -205,6 +210,8 @@ def test_batch_uses_same_owned_candidate_window():
     ('生成一个 骑行的html 报告', False),
     ('生成我的 骑行的html 报告', True),
     ('分析刚才的运动', False),
+    ('刚才对我的运动做下分析', False),
+    ('刚才对我的运动做下分析', True),
     ('刚才跑的怎么样？', False),
     ('刚才跑的怎么样？', True),
     ('分析青山湖骑行刚才的两段骑行。', False),
