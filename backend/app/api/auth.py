@@ -1706,3 +1706,30 @@ async def verify_garmin_mfa(
             success=False,
             message=safe_garmin_error_message(e),
         )
+
+
+@router.post("/sso/kbase", summary="使用当前账号登录关联知识库")
+@limiter.limit("10/minute")
+async def kbase_login_ticket(
+    request: Request, response: Response, body: dict = Body(...),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.kbase_sso import issue_ticket
+    from app.services.web_session import enforce_cookie_request_origin
+
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if (getattr(request.state, "auth_type", None) != "cookie"
+            or getattr(request.state, "is_proxy_mode", False)):
+        raise HTTPException(403, "请使用本人 Web 账号登录")
+    enforce_cookie_request_origin(request)
+    if (set(body) != {"state", "expected_user_id"}
+            or type(body.get("expected_user_id")) is not int):
+        raise HTTPException(400, "登录请求格式无效")
+    result = issue_ticket(current_user, body.get("state"), body["expected_user_id"])
+    db.add(AgentAuditLog(user_id=current_user.id, agent_type="auth_sso",
+        specialist_name="kbase_login", action="login_ticket_issued",
+        result_summary="identity_only", result_detail={"audience": "kbase", "ttl_seconds": 60}))
+    db.commit()
+    return result

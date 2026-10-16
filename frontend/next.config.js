@@ -46,7 +46,7 @@ const nextConfig = {
       "worker-src 'self' blob:",
       "upgrade-insecure-requests",
     ].join('; ');
-    return [{
+    const headers = [{
       source: '/:path*',
       headers: [
         { key: 'Content-Security-Policy', value: contentSecurityPolicy },
@@ -55,6 +55,21 @@ const nextConfig = {
         { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(self)' },
       ],
     }];
+    const configuredOrigin = process.env.KBASE_SSO_ORIGIN;
+    if (configuredOrigin) {
+      const origin = new URL(configuredOrigin);
+      if (origin.protocol !== 'https:' || origin.origin !== configuredOrigin || origin.username || origin.password
+          || (origin.port && origin.port !== '443')) throw new Error('Invalid KBASE_SSO_ORIGIN');
+      headers.push({
+        source: '/connect/kbase',
+        headers: [
+          { key: 'Content-Security-Policy', value: contentSecurityPolicy.replace("form-action 'self'", `form-action 'self' ${origin.origin}`) },
+          { key: 'Referrer-Policy', value: 'strict-origin' },
+          { key: 'Cache-Control', value: 'no-store' },
+        ],
+      });
+    }
+    return headers;
   },
 
   // Web 代理到后端
