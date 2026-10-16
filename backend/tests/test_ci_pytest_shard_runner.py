@@ -151,6 +151,22 @@ def test_observed_slow_alphabetic_families_run_in_single_letter_shards():
     assert by_label["o"]["paths"] == "tests/test_o*.py"
 
 
+def test_c_shard_isolates_growing_composed_and_conversational_suites():
+    from scripts.build_ci_pytest_matrix import load_catalog
+    from scripts.run_ci_pytest_worker import shard_processes
+
+    shard = next(item for item in load_catalog(SHARD_CATALOG) if item["label"] == "c")
+    processes = shard_processes(shard, cwd=ROOT / "backend")
+    assert [name for name, *_ in processes] == ["c-composed", "c-conversational", "c-rest"]
+    paths = [path for _, group, *_ in processes for path in group]
+    expected = {str(path.relative_to(ROOT / "backend"))
+                for path in (ROOT / "backend/tests").glob("test_c*.py")}
+    assert len(paths) == len(set(paths))
+    assert set(paths) == expected
+    assert all(group for _, group, *_ in processes)
+    assert all(deadline == 222 and attempts == 2 for _, _, _, deadline, attempts in processes)
+
+
 def test_build_pytest_command_keeps_the_shard_in_one_process():
     from scripts.run_ci_pytest_shard import build_pytest_command
 
