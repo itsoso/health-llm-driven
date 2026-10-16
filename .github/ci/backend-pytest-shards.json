@@ -26,7 +26,11 @@
     {"label":"agent-r","paths":["tests/test_agent_r*.py"],"estimated_seconds":120.444,"scheduling_seconds":166.141},
     {"label":"agent-s-v","paths":["tests/test_agent_[s-v]*.py"],"estimated_seconds":77.539,"scheduling_seconds":124.689},
     {"label":"agent-w-z","paths":["tests/test_agent_[w-z]*.py"],"estimated_seconds":57.2,"scheduling_seconds":51.195},
-    {"label":"c","paths":["tests/test_c*.py"],"estimated_seconds":73.804,"scheduling_seconds":116.805},
+    {"label":"c","paths":["tests/test_c*.py"],"estimated_seconds":73.804,"scheduling_seconds":116.805,"process_groups":[
+      {"label":"composed","paths":["tests/test_composed*.py"]},
+      {"label":"conversational","paths":["tests/test_conversational*.py"]},
+      {"label":"rest","paths":["tests/test_c*.py"],"exclude_paths":["tests/test_composed*.py","tests/test_conversational*.py"]}
+    ]},
     {"label":"d-dedao","paths":["tests/test_dedao*.py","tests/test_down_dedao*.py"],"estimated_seconds":22.392,"scheduling_seconds":25.933},
     {"label":"d-diet","paths":["tests/test_diet*.py"],"estimated_seconds":85.007,"scheduling_seconds":98.999},
     {"label":"d-data-device","paths":["tests/test_daily*.py","tests/test_data*.py","tests/test_day*.py","tests/test_desktop*.py","tests/test_device*.py"],"estimated_seconds":23.193,"scheduling_seconds":29.38},
