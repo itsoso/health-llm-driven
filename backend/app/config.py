@@ -674,6 +674,12 @@ class Settings(BaseSettings):
                         "invitation registration is enabled in production"
                     )
 
+    kbase_sso_enabled: bool = False
+    kbase_sso_secret: str = Field(default="", repr=False)
+    kbase_sso_owner_id: int = 0
+    kbase_sso_origin: str = ""
+    kbase_sso_issuer: str = ""
+
     remote_health_enabled: bool = False
     health_navigation_enabled: bool = False
     lifenav_integration_enabled: bool = False
