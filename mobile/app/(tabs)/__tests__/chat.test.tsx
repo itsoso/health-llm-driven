@@ -29,6 +29,7 @@ let mockCanGoBack = true;
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
 let mockIsStreaming = false;
+let mockQueuedCount = 0;
 let mockActiveTurn: any = { phase: 'idle', recoverable: false, label: undefined };
 let mockHasMoreHistory = false;
 let mockIsLoadingMoreHistory = false;
@@ -73,6 +74,7 @@ jest.mock('../../../hooks/useChatEngine', () => ({
     messages: mockMessages,
     isStreaming: mockIsStreaming,
     activeTurn: mockActiveTurn,
+    queuedCount: mockQueuedCount,
     conversationId: undefined,
     sendMessage: mockSendMessage,
     newChat: mockNewChat,
@@ -253,6 +255,7 @@ describe('ChatScreen', () => {
     mockLlmPreference = { model_id: null, options: [] };
     mockMessages = [];
     mockIsStreaming = false;
+    mockQueuedCount = 0;
     mockActiveTurn = { phase: 'idle', recoverable: false, label: undefined };
     mockHasMoreHistory = false;
     mockIsLoadingMoreHistory = false;
@@ -798,6 +801,19 @@ describe('ChatScreen', () => {
     mockActiveTurn = { phase: 'completed', recoverable: false, turnId: 'turn-recovering' };
     view.rerender(<ChatScreen />);
     expect(view.queryByText('连接中断，正在从服务端恢复')).toBeNull();
+  });
+
+  it('shows an actually queued busy turn as waiting and keeps failures visible', () => {
+    mockQueuedCount = 1;
+    mockActiveTurn = { phase: 'interrupted', recoverable: true, errorCode: 'server_busy_queued', label: '上一条仍在处理，本条已排队。' };
+    const view = render(<ChatScreen />);
+    expect(StyleSheet.flatten(view.getByText('上一条仍在处理，本条已排队。').props.style).color).toBe(revaColors.green600);
+    mockQueuedCount = 0;
+    view.rerender(<ChatScreen />);
+    expect(StyleSheet.flatten(view.getByText('上一条仍在处理，本条已排队。').props.style).color).toBe(revaSemantic.risk.fg);
+    mockActiveTurn = { phase: 'failed', recoverable: true, errorCode: 'server_busy_timeout', label: '等待超时，请稍后重试' };
+    view.rerender(<ChatScreen />);
+    expect(StyleSheet.flatten(view.getByText('等待超时，请稍后重试').props.style).color).toBe(revaSemantic.risk.fg);
   });
 
   it.each(['blocked', 'refused'])('distinguishes %s from an interrupted connection', phase => {

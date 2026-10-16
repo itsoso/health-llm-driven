@@ -5,6 +5,7 @@ from app.services.utterance_intent_classifier import classify_agent_utterance, h
 
 
 REQUEST = "记录下来，我的头痛已经消失了。目前一切正常，除了偶尔有点鼻塞之外。"
+DIARRHEA_REQUEST = "记录下来，稍微有点拉肚子，跟昨天晚上吃海鲜有一定的关系。"
 APPROX_REQUEST = "记录下来，我的感冒症状已经消失了。目前一切正常，除了偶尔打三四个喷嚏之外。"
 
 
@@ -89,7 +90,12 @@ def test_status_count_is_preserved_as_text_not_rhinitis_quantification():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_behavior", ["symptom_tool", "no_tool", "wrong_tool"])
 @pytest.mark.parametrize("message,expected_write,read_only", [
-    (REQUEST, True, False), (COUNT_REQUEST, True, False), (APPROX_REQUEST, True, False),
+    (DIARRHEA_REQUEST, True, False),
+    (DIARRHEA_REQUEST.replace("稍微有点", "我妈妈稍微有点"), False, False),
+    (DIARRHEA_REQUEST.replace("稍微有点", "没有"), False, False),
+    ('“' + DIARRHEA_REQUEST + '”', False, False),
+    (DIARRHEA_REQUEST + "不要记录。", False, False),
+    (DIARRHEA_REQUEST, False, True), (REQUEST, True, False), (COUNT_REQUEST, True, False), (APPROX_REQUEST, True, False),
     (REQUEST + "不要记录。", False, False),
     (REQUEST.replace("我的头痛", "我妈妈的头痛"), False, False),
     ('他说："' + REQUEST + '"', False, False),
@@ -103,12 +109,15 @@ async def test_stream_persists_exact_status_without_illness_mutation(
     from datetime import date, datetime, timezone
     from app.services.agent_executor import AgentExecutor
     from app.models.symptom_entry import SymptomEntry
+    from app.models.daily_health import DietRecord
     from app.models.illness import IllnessEpisode, IllnessUpdate
     from app.twin.schema import HealthTwin, TwinMeta
 
     user, headers = auth_user_and_headers
     episode = IllnessEpisode(user_id=user.id, name="合成观察基线", start_date=date.today(), status="active")
     db.add(episode)
+    historical_meal = DietRecord(user_id=user.id, record_date=date(2026, 1, 1), meal_type="晚餐", food_items="合成海鲜", calories=123)
+    db.add(historical_meal)
     db.commit()
     monkeypatch.setattr("app.twin.builder.build_twin", lambda _db, user_id, **kw:
         HealthTwin(meta=TwinMeta(user_id=user_id, generated_at=datetime.now(timezone.utc))))
@@ -153,6 +162,9 @@ async def test_stream_persists_exact_status_without_illness_mutation(
         channel="typed", read_only_tools=read_only,
     )]
     rows = db.query(SymptomEntry).filter_by(user_id=user.id).all()
+    db.refresh(historical_meal)
+    assert historical_meal.food_items == "合成海鲜" and historical_meal.calories == 123
+    assert db.query(DietRecord).filter_by(user_id=user.id).count() == 1
     done = next(event["data"] for event in events if event.get("event") == "done")
     if not expected_write:
         assert rows == []
@@ -179,3 +191,53 @@ async def test_stream_persists_exact_status_without_illness_mutation(
     assert done["turn_outcome"]["category"] == "success"
     assert "symptom_status_observation_preplanned" in done["fallback_reasons"]
     assert calls == 0
+
+
+@pytest.mark.parametrize("text", [DIARRHEA_REQUEST, "记录一下，我现在有点腹泻，可能跟昨晚吃海鲜有关。"])
+def test_self_diarrhea_with_user_suspected_food_context_is_symptom_not_meal(text):
+    assert parse(text) == {"body_part": "general", "description": text}
+    intent = classify_agent_utterance(text)
+    assert (intent.primary, intent.domain, intent.operation) == ("write", "symptom", "create")
+
+
+@pytest.mark.parametrize("text", [
+    DIARRHEA_REQUEST.replace("稍微有点", "我妈妈稍微有点"),
+    DIARRHEA_REQUEST.replace("稍微有点", "没有"),
+    '“' + DIARRHEA_REQUEST + '”',
+    "他说：" + DIARRHEA_REQUEST,
+    DIARRHEA_REQUEST + "不要记录。",
+    DIARRHEA_REQUEST + "顺便记录昨天晚餐。",
+    DIARRHEA_REQUEST + "确诊食物中毒。",
+    DIARRHEA_REQUEST.replace("稍微有点", "昨天稍微有点"),
+    DIARRHEA_REQUEST.replace("跟昨天晚上吃海鲜有一定的关系", "跟妈妈昨天晚上吃海鲜有一定的关系"),
+])
+def test_diarrhea_context_never_proves_foreign_negated_or_extra_action(text):
+    assert parse(text) is None
+
+
+def test_diarrhea_food_association_never_compiles_a_diet_preplan():
+    from app.services.agent_kernel.goal_spec import compile_goal_spec
+    from app.services.agent_kernel.intent_frame import build_intent_frame
+    from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext
+    from app.services.agent_executor import _build_preplanned_simple_diet_tool_call
+    context = ExecutionContext.for_test(user_id=17, channel="mobile")
+    envelope = AgentEnvelope(user_id=17, channel="mobile", text=DIARRHEA_REQUEST)
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=build_intent_frame(envelope, context))
+    assert goal is None or goal.domain != "diet"
+    assert _build_preplanned_simple_diet_tool_call(goal, write_receipts=[]) is None
+
+@pytest.mark.parametrize('food', ['牛奶', '烧烤', '辣椒'])
+def test_other_suspected_food_is_not_a_diet_write_or_exact_symptom_proof(food):
+    text = DIARRHEA_REQUEST.replace('海鲜', food)
+    assert parse(text) is None
+    intent = classify_agent_utterance(text)
+    assert intent.domain == 'symptom'
+
+
+def test_leading_meal_command_is_not_reclassified_by_later_symptom():
+    assert classify_agent_utterance('记录午餐吃了米饭，另外有点腹泻。').domain == 'diet'
+
+@pytest.mark.parametrize('text', ['拉肚子怎么办', '腹泻吃什么', '我妈妈拉肚子怎么办', '他说腹泻吃什么'])
+def test_digestive_advice_never_authorizes_observation(text):
+    assert not classify_agent_utterance(text).is_write
+    assert parse(text) is None

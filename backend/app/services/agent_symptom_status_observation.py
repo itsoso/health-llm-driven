@@ -24,6 +24,20 @@ _STATUS = re.compile(
 )
 
 
+# A food mention subordinate to a present symptom is the user's suspected
+# association, never a meal-write instruction or a medically established cause.
+# Match the whole utterance: no arbitrary food/tail capture can hide another
+# owner, a negation, a diagnosis, or an additional action.
+_DIGESTIVE_OBSERVATION = re.compile(
+    rf"(?:请记录|记录下来|记录一下|帮我记录一下|帮我记录){_SEP}?"
+    r"(?:我)?(?:现在|目前|今天)?(?:稍微)?(?:有点|有一点|有些|有)?(?:拉肚子|腹泻)"
+    rf"(?:{_SEP}(?:我觉得|我怀疑)?(?:可能)?(?:跟|和)"
+    r"(?:昨天晚上|昨晚|昨天|今天)?吃(?:了|的)?海鲜"
+    r"(?:有一定的关系|有关系|有关))?"
+    r"[。.]?"
+)
+
+
 def parse_symptom_status_observation(message: object) -> dict[str, str] | None:
     """Return an exact write payload only for the entire explicit self request.
 
@@ -36,6 +50,9 @@ def parse_symptom_status_observation(message: object) -> dict[str, str] | None:
     if any(unicodedata.category(char).startswith("C") for char in message):
         return None
     normalized = message.replace(" ", "").replace("\u3000", "")
-    if _STATUS.fullmatch(normalized) is None:
+    if (
+        _STATUS.fullmatch(normalized) is None
+        and _DIGESTIVE_OBSERVATION.fullmatch(normalized) is None
+    ):
         return None
     return {"body_part": "general", "description": message}

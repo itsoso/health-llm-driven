@@ -175,6 +175,7 @@ export default function ChatScreen() {
     messages,
     isStreaming,
     activeTurn,
+    queuedCount,
     conversationId,
     sendMessage,
     stopStreaming,
@@ -1062,9 +1063,13 @@ export default function ChatScreen() {
     && activeTurn.errorCode === 'stream_transport_interrupted'
     && activeTurn.recoverable
     && !activeTurn.retryMode;
+  const serverBusyQueued = activeTurn.phase === 'interrupted'
+    && activeTurn.errorCode === 'server_busy_queued'
+    && activeTurn.recoverable
+    && queuedCount > 0;
   const activeTurnHasErrorTone = (
     activeTurn.phase === 'failed'
-    || (activeTurn.phase === 'interrupted' && !legacyTransportRecovery)
+    || (activeTurn.phase === 'interrupted' && !legacyTransportRecovery && !serverBusyQueued)
     || activeTurn.phase === 'blocked'
     || activeTurn.phase === 'refused'
     || activeTurn.phase === 'reconciliation_required'
