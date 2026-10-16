@@ -15,7 +15,7 @@ def test_patch_preserves_unrelated_bytes():
 
 @pytest.mark.parametrize('raw', [b'KBASE_SSO_ENABLED=false\nKBASE_SSO_ENABLED=false\n',
     b'export KBASE_SSO_ENABLED=false\n', b' KBASE_SSO_ENABLED = false\n',
-    b'KBASE_SSO_ENABLED="false"\n', b'KBASE_SSO_ENABLED=false\\\n'])
+    b'KBASE_SSO_ENABLED="false"\n', b'KBASE_SSO_ENABLED=false\\\n', b'kbase_sso_enabled=true\n'])
 def test_ambiguous_target_rejected(raw):
     with pytest.raises(m.ActivationError):
         m.patch_env(raw, {'KBASE_SSO_ENABLED': 'true'})
@@ -30,7 +30,12 @@ def test_owner_is_exact_active_unmanaged(user):
 
 
 def test_owner_from_authenticated_identity():
-    m.check_owner(dict(id=3, is_active=True, is_approved=True, is_managed=None), 3)
+    m.check_owner(dict(id=3, is_active=True, is_approved=True, is_managed=False), 3)
+
+
+def test_missing_managed_evidence_is_not_accepted():
+    with pytest.raises(m.ActivationError):
+        m.check_owner(dict(id=3, is_active=True, is_approved=True), 3)
 
 
 @pytest.mark.parametrize('failure', range(6))
@@ -88,12 +93,17 @@ def test_real_file_transaction_resumes_without_rotating_secret(tmp_path, monkeyp
     bootstrap = SimpleNamespace(CONFIG=tmp_path, INSTALLED=installed,
         _read_json=lambda path: policy if path.name == 'authorized-release.json' else {'sha': args.production_sha, 'state': 'SUCCEEDED'})
     server = SimpleNamespace(validate_policy=lambda value, now: value, assert_frontend_rebuild_history=lambda: None, assert_ota_history=lambda: None)
-    helper = SimpleNamespace(_revision_proof=lambda *args: None)
+    helper = SimpleNamespace(_revision_proof=lambda *args: None, _validate_venv=lambda *args: None)
     gate = SimpleNamespace(verify_release=lambda *args: None)
     monkeypatch.setattr(m, 'load', lambda _: (source, helper, bootstrap, server, gate))
     monkeypatch.setattr(m, 'owner_proof', lambda *args: None)
+    monkeypatch.setattr(m, 'owner_database', lambda *args: None)
     monkeypatch.setattr(m, 'frontend_proof', lambda: None)
-    monkeypatch.setattr(m, 'runtime_revision', lambda _: None)
+    def revision_proof(_):
+        if args.resume and not runtime['kbase']:
+            raise m.ActivationError('service is down before continuation')
+    monkeypatch.setattr(m, 'runtime_revision', revision_proof)
+    monkeypatch.setattr(m, 'wait_ready', lambda _: None)
     runtime = {'health': {}, 'kbase': {}}
     monkeypatch.setattr(m, 'service', lambda which, **kwargs: runtime[which])
     interrupted = False
@@ -111,8 +121,9 @@ def test_real_file_transaction_resumes_without_rotating_secret(tmp_path, monkeyp
     monkeypatch.setattr(m, 'atomic', write)
     def run(*command):
         which = next(key for key, value in m.SERVICES.items() if value == command[-1])
-        runtime[which] = m.selected(files[which].read_bytes())
+        runtime[which] = {}
         interrupt('restart-' + which)
+        runtime[which] = m.selected(files[which].read_bytes())
     monkeypatch.setattr(m, 'run', run)
     def request(url, **kwargs):
         if url.endswith('/browser/health/config'):
@@ -137,3 +148,22 @@ def test_real_file_transaction_resumes_without_rotating_secret(tmp_path, monkeyp
         assert path.stat().st_mode & 0o777 == 0o640
         assert original_secret.decode() in path.read_text()
     assert original_secret not in (root / 'journal.json').read_bytes()
+
+
+def test_stat_identity_ignores_access_time_only():
+    from types import SimpleNamespace
+    fields = dict(st_dev=1, st_ino=2, st_mode=0o100640, st_nlink=1, st_uid=0, st_gid=10,
+                  st_size=10, st_mtime_ns=100, st_ctime_ns=100)
+    assert m.identity(SimpleNamespace(**fields, st_atime_ns=100)) == m.identity(SimpleNamespace(**fields, st_atime_ns=200))
+    assert m.identity(SimpleNamespace(**fields)) != m.identity(SimpleNamespace(**{**fields, 'st_mtime_ns': 101}))
+
+
+def test_proxy_jwt_never_sent_as_owner_proof(monkeypatch):
+    monkeypatch.setattr(m, 'request', lambda *args, **kwargs: pytest.fail('JWT must be rejected before request'))
+    with pytest.raises(m.ActivationError):
+        m.owner_proof('header.payload.signature', 3)
+
+
+def test_unknown_pending_phase_rejected():
+    with pytest.raises(m.ActivationError):
+        m.advance({'done': [], 'pending': 'wrong'}, [('write', lambda: None)], lambda _: None)

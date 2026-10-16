@@ -24,7 +24,7 @@ import urllib.request
 
 STATE = Path('/var/lib/reva-release')
 ROOT = Path('/var/lib/reva-kbase-login')
-LEASE = Path('/var/lock/health-app-release')
+LEASE = Path('/run/lock/health-app-release')
 HEALTH = 'https://health.executor.life'
 KBASE = 'https://kbase.executor.life'
 FILES = {'health': Path('/opt/health-app/backend/.env'), 'kbase': Path('/etc/dedao-kbase/kbase.env')}
@@ -45,6 +45,8 @@ def sha(raw):
 def secure(path, directory=False):
     for item in [*reversed(path.parents), path]:
         info = item.lstat()
+        if item == Path('/run/lock') and stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o1777:
+            continue
         is_dir = item != path or directory
         if (info.st_uid != 0 or info.st_mode & 0o022 or
                 not (stat.S_ISDIR(info.st_mode) if is_dir else stat.S_ISREG(info.st_mode)) or
@@ -53,13 +55,17 @@ def secure(path, directory=False):
     return info
 
 
+def identity(info):
+    return tuple(getattr(info, 'st_' + key) for key in ('dev', 'ino', 'mode', 'nlink', 'uid', 'gid', 'size', 'mtime_ns', 'ctime_ns'))
+
+
 def read(path):
     before = secure(path)
     if before.st_size > 1024 * 1024:
         raise ActivationError('configuration exceeds size bound')
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as stream:
         raw = stream.read(1024 * 1024 + 1)
-        if os.fstat(stream.fileno()) != before or path.lstat() != before:
+        if identity(os.fstat(stream.fileno())) != identity(before) or identity(path.lstat()) != identity(before):
             raise ActivationError('configuration changed while reading')
     return raw
 
@@ -87,7 +93,7 @@ def atomic(path, raw, expected=None):
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        if before and (path.lstat() != before or (expected is not None and sha(read(path)) != expected)):
+        if before and (identity(path.lstat()) != identity(before) or (expected is not None and sha(read(path)) != expected)):
             raise ActivationError('configuration changed at replacement boundary')
         os.replace(temporary, path)
         sync(path.parent)
@@ -101,7 +107,7 @@ def selected(raw):
     for line in raw.decode('utf-8').splitlines():
         if not line.strip() or line.lstrip().startswith('#'):
             continue
-        if any(prefix in line.split('=', 1)[0] for prefix in PREFIXES):
+        if any(prefix in line.split('=', 1)[0].upper() for prefix in PREFIXES):
             key, sep, value = line.partition('=')
             if (not sep or key in result or not re.fullmatch(r'KBASE_(?:SSO|HEALTH_LOGIN)_[A-Z_]+', key)
                     or not re.fullmatch(r'[A-Za-z0-9_:/.-]*', value)):
@@ -128,7 +134,7 @@ def patch_env(raw, values):
 
 def check_owner(value, owner):
     if (type(value.get('id')) is not int or value['id'] != owner or value.get('is_active') is not True
-            or value.get('is_approved') is not True or value.get('is_managed') not in (None, False)
+            or value.get('is_approved') is not True or value.get('is_managed') is not False
             or value.get('is_proxy') or value.get('proxy_user_id')):
         raise ActivationError('authenticated identity is not the approved owner')
 
@@ -151,15 +157,38 @@ def request(url, *, headers=None, data=None):
 
 
 def owner_proof(token, owner):
+    # The live auth dependency accepts an opaque non-JWT Bearer only through
+    # its API-key branch, which explicitly binds is_proxy_mode=False.
+    if not re.fullmatch('[A-Za-z0-9_-]{1,4096}', token):
+        raise ActivationError('non-proxy opaque API credential required')
     status, _, raw = request(HEALTH + '/api/v1/auth/me', headers={'Authorization': 'Bearer ' + token})
     if status != 200:
         raise ActivationError('owner identity verification failed')
-    check_owner(json.loads(raw), owner)
+    value = json.loads(raw)
+    if (type(value.get('id')) is not int or value['id'] != owner or value.get('is_active') is not True
+            or value.get('is_approved') is not True):
+        raise ActivationError('authenticated owner differs')
 
 
-def run(*args):
+def owner_database(owner):
+    # Fixed read-only columns; no password, health data, token or family roster.
+    code = '''import json,sys
+sys.path.insert(0, '/opt/health-app/backend')
+from sqlalchemy import text
+from app.database import SessionLocal
+with SessionLocal() as db:
+    db.execute(text('SET TRANSACTION READ ONLY'))
+    row = db.execute(text('SELECT id,is_active,is_approved,is_managed FROM users WHERE id=:owner'), {'owner': int(sys.argv[1])}).mappings().one()
+    print(json.dumps(dict(row)))
+'''
+    value = run('/usr/sbin/runuser', '--user', 'health-app', '--', '/usr/bin/env', '-i', 'PATH=/usr/bin:/bin',
+                '/opt/health-app/backend/venv/bin/python', '-I', '-B', '-c', code, str(owner), cwd='/opt/health-app/backend')
+    check_owner(json.loads(value), owner)
+
+
+def run(*args, cwd=None):
     try:
-        return subprocess.run(args, env=ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        return subprocess.run(args, cwd=cwd, env=ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=120, check=True, text=True).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         raise ActivationError('fixed service operation failed') from None
@@ -176,7 +205,7 @@ def service(which, *, allow_stopped=False):
             or props.get('PassEnvironment') or props.get('UnsetEnvironment')
             or (not allow_stopped and props.get('ActiveState') != 'active')):
         raise ActivationError('service configuration source or identity differs')
-    if any(item.startswith(PREFIXES) for item in shlex.split(props.get('Environment', ''))):
+    if any(item.upper().startswith(PREFIXES) for item in shlex.split(props.get('Environment', ''))):
         raise ActivationError('unit overrides authentication settings')
     if which == 'health':
         for path in (Path('/var/lib/reva-health-evidence-runtime/enabled.env'), Path('/var/lib/reva-vision-model/model.env')):
@@ -189,7 +218,22 @@ def service(which, *, allow_stopped=False):
         raise ActivationError('running service required')
     entries = Path(f'/proc/{pid}/environ').read_bytes().split(b'\0')
     return {key.decode(): value.decode() for item in entries if b'=' in item
-            for key, value in [item.split(b'=', 1)] if key.decode().startswith(PREFIXES)}
+            for key, value in [item.split(b'=', 1)] if key.decode().upper().startswith(PREFIXES)}
+
+
+def wait_ready(which):
+    endpoint = 'http://127.0.0.1:8000/health' if which == 'health' else 'http://127.0.0.1:8719/health'
+    for _ in range(20):
+        try:
+            status, _, raw = request(endpoint)
+            value = json.loads(raw)
+            ready = status == 200 and (value.get('status') == 'healthy' if which == 'health' else value.get('ok') is True)
+        except (OSError, ValueError):
+            ready = False
+        if ready:
+            return
+        time.sleep(1)
+    raise ActivationError('service readiness timed out')
 
 
 def frontend_proof():
@@ -217,7 +261,9 @@ def settings(owner, secret):
 def advance(journal, actions, save):
     names = [name for name, _ in actions]
     done = journal['done']
-    if done != names[:len(done)] or len(done) > len(names):
+    pending = journal.get('pending')
+    if (not isinstance(done, list) or done != names[:len(done)] or len(done) > len(names)
+            or pending not in (None, names[len(done)] if len(done) < len(names) else None)):
         raise ActivationError('unknown activation journal phase')
     for name, action in actions[len(done):]:
         journal['pending'] = name
@@ -259,10 +305,13 @@ def execute(args, token):
     expected = sha((source / 'scripts/trusted_release_server.py').read_bytes())
     if policy['sha'] != args.publisher_sha or policy['executor_sha256'] != expected or sha(read(bootstrap.INSTALLED)) != expected:
         raise ActivationError('installed authorization differs')
+    helper._validate_venv(server)
+    owner_database(args.owner_id)
     if not args.resume:
         owner_proof(token, args.owner_id)
     frontend_proof()
-    runtime_revision(args.kbase_sha)
+    if not args.resume:
+        runtime_revision(args.kbase_sha)
     lock = STATE / 'launcher.lock'
     secure(lock)
     with lock.open('r+b') as stream:
@@ -300,17 +349,22 @@ def execute(args, token):
             if any(journal.get(key) != value for key, value in binding.items()):
                 raise ActivationError('original activation binding differs')
             if journal['state'] == 'CONFIGURATION_SUCCEEDED' and not LEASE.exists():
-                return dict(state='CONFIGURATION_SUCCEEDED', browser_acceptance='required', **binding)
+                raise ActivationError('activation already completed; use fresh readback for acceptance')
             if not args.resume or not args.apply:
                 raise ActivationError('explicit resume of original activation required')
         secure(LEASE, directory=True)
         if read(LEASE / 'label') != b'kbase-login\n' or read(LEASE / 'stage') != (str(ROOT) + '\n').encode():
             raise ActivationError('activation lease differs')
+        lease_identity, lease_token = identity(LEASE.lstat()), read(LEASE / 'token')
+        def check_lease():
+            if identity(LEASE.lstat()) != lease_identity or read(LEASE / 'token') != lease_token:
+                raise ActivationError('activation lease changed')
         secret = read(ROOT / 'secret').decode()
         if not re.fullmatch('[a-f0-9]{64}', secret):
             raise ActivationError('original secret malformed')
         target = settings(args.owner_id, secret)
         def save(value):
+            check_lease()
             atomic(ROOT / 'journal.json', json.dumps(value, sort_keys=True).encode())
         def write_env(which):
             current = read(FILES[which])
@@ -330,6 +384,7 @@ def execute(args, token):
                 raise ActivationError('configuration missing before restart')
             if service(which, allow_stopped=True) != target[which]:
                 run('/usr/bin/systemctl', 'restart', SERVICES[which])
+            wait_ready(which)
             if service(which) != target[which]:
                 raise ActivationError('effective configuration differs')
         def verify(which):
@@ -357,6 +412,7 @@ def execute(args, token):
             frontend_proof()
             journal['state'] = 'CONFIGURATION_SUCCEEDED'
             save(journal)
+            check_lease()
             if {item.name for item in LEASE.iterdir()} != {'token', 'label', 'stage', 'started_at'}:
                 raise ActivationError('lease inventory changed')
             for item in LEASE.iterdir():
@@ -384,7 +440,7 @@ def main():
                 or args.owner_id <= 0 or any(not re.fullmatch('[a-f0-9]{40}', value) for value in (args.publisher_sha, args.production_sha, args.kbase_sha))):
             raise ActivationError('isolated root and exact bindings required')
         token = sys.stdin.buffer.read(4098).rstrip(b'\n')
-        if not re.fullmatch(rb'[A-Za-z0-9_.-]{1,4096}', token):
+        if not re.fullmatch(rb'[A-Za-z0-9_-]{1,4096}', token):
             raise ActivationError('bounded owner credential stdin required')
         os.umask(0o077)
         os.environ.clear()
