@@ -5,6 +5,7 @@ import NotificationBanner from '../NotificationBanner';
 
 const mockAnimationCallbacks: ((finished?: boolean) => void)[] = [];
 let mockForegroundListener: ((notification: Notification) => void) | null = null;
+const mockConsumeResponse = jest.fn().mockResolvedValue(true);
 
 jest.mock('react-native-reanimated', () => {
   const { View } = jest.requireActual('react-native');
@@ -26,6 +27,7 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 
 jest.mock('../../../hooks/useNotifications', () => ({
+  consumeNotificationResponse: (...args: unknown[]) => mockConsumeResponse(...args),
   setOnForegroundNotification: (listener: ((notification: Notification) => void) | null) => {
     mockForegroundListener = listener;
   },
@@ -78,5 +80,18 @@ describe('NotificationBanner', () => {
     });
 
     expect(screen.getByText('第二条提醒')).toBeTruthy();
+  });
+
+  it('opens a foreground notification through the shared tap handler without clearing another native response', () => {
+    const screen = render(<NotificationBanner />);
+    const received = notification('landing', '打开跑后分析');
+    received.request.content.data = { deep_link: '/workout-detail?id=123' };
+    act(() => mockForegroundListener?.(received));
+    fireEvent.press(screen.getByText('打开跑后分析'));
+    expect(mockConsumeResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ notification: received, actionIdentifier: expect.any(String) }),
+      undefined,
+      { clearNativeResponse: false },
+    );
   });
 });

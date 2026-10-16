@@ -1,3 +1,4 @@
+/* eslint-disable import/first */
 /**
  * SUPPLEMENT_REMINDER 通知后台动作(已服用 / 跳过)单测。
  *
@@ -93,6 +94,19 @@ describe('SUPPLEMENT_REMINDER background action', () => {
     // 补剂打卡卡片读 dashboard(record.tsx),与 App 内打卡同一刷新
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard'] });
     expect(mockEmitClientEvent).not.toHaveBeenCalled();
+  });
+
+  it('still handles an explicit TAKEN action while page navigation is unavailable', async () => {
+    await expect(consumeNotificationResponse(
+      supplementResponse('supp-taken-locked', 'TAKEN', { reminder_type: 'supplement', supplement_id: 12 }),
+      undefined,
+      { canNavigate: () => false },
+    )).resolves.toBe(true);
+
+    expect(mockPost).toHaveBeenCalledWith('/supplements/records/batch', {
+      record_date: '2026-10-01',
+      checkins: [{ supplement_id: 12, taken: true }],
+    });
   });
 
   it('TAKEN sends a numeric-string supplement_id from the push payload as a JSON integer', async () => {

@@ -48,13 +48,17 @@ export function setOnForegroundNotification(
   _onForeground = cb;
 }
 
-export function useNotifications(isAuthenticated: boolean) {
+export function useNotifications(isAuthenticated: boolean, navigationReady = isAuthenticated) {
   const { show } = useToast();
+  const navigationReadyRef = useRef(navigationReady);
+  navigationReadyRef.current = navigationReady;
   const receivedSub = useRef<Notifications.EventSubscription | null>(null);
   const responseSub = useRef<Notifications.EventSubscription | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    let active = true;
+    const responseOptions = { canNavigate: () => active && navigationReadyRef.current };
 
     void syncGrantedPushRegistration();
     void registerNotificationCategories().catch((error) => {
@@ -67,7 +71,7 @@ export function useNotifications(isAuthenticated: boolean) {
     const retryPendingAction = () => {
       void (async () => {
         const drained = await drainPendingMedicationActions(feedback);
-        if (drained) await consumeLastNotificationResponse(feedback);
+        if (drained && active) await consumeLastNotificationResponse(feedback, responseOptions);
       })();
     };
     retryPendingAction();
@@ -80,7 +84,7 @@ export function useNotifications(isAuthenticated: boolean) {
 
     responseSub.current = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        void consumeNotificationResponse(response, feedback);
+        if (active) void consumeNotificationResponse(response, feedback, responseOptions);
       },
     );
 
@@ -92,12 +96,13 @@ export function useNotifications(isAuthenticated: boolean) {
     });
 
     return () => {
+      active = false;
       receivedSub.current?.remove();
       responseSub.current?.remove();
       unsubscribeNetwork();
       appStateSub.remove();
     };
-  }, [isAuthenticated, show]);
+  }, [isAuthenticated, navigationReady, show]);
 }
 
 export type PushRegistrationResult = {
@@ -203,6 +208,7 @@ interface NotificationActionFeedback {
 
 interface ConsumeNotificationResponseOptions {
   clearNativeResponse?: boolean;
+  canNavigate?: () => boolean;
 }
 
 function isMedicationActionResponse(response: Notifications.NotificationResponse): boolean {
@@ -273,6 +279,7 @@ async function showMedicationFailureNotification(data?: Record<string, any>) {
 
 async function processNotificationResponse(
   response: Notifications.NotificationResponse,
+  options: ConsumeNotificationResponseOptions,
 ): Promise<boolean> {
   const notification = response.notification;
   const actionId = response.actionIdentifier;
@@ -308,9 +315,10 @@ async function processNotificationResponse(
     await recordBehaviorLoopAction(actionId, data);
     return true;
   }
+  if (options.canNavigate && !options.canNavigate()) return false;
   if (actionId === 'VIEW_PROGRESS') {
     const link = resolveNotificationRoute(data) ?? '/intervention-cycle';
-    try { router.push(link as any); } catch { router.push('/(tabs)' as any); }
+    router.push(link as any);
     return true;
   }
 
@@ -324,25 +332,23 @@ async function processNotificationResponse(
   // Handle tap-to-open routing.
   // resolveNotificationRoute centralises both forms (plain expo-router path + custom-scheme URL)
   // and the legacy data.screen enum; same helper backs the history feed (notification-history.tsx).
-  // Always fall back to home on any miss / bad link — never crash on a user tap.
+  // Missing destinations still have a landing page. Navigation failures must
+  // leave the native response pending so unlock/cold-start replay can retry.
   const route = resolveNotificationRoute(data);
-  try {
-    router.push((route ?? '/(tabs)') as any);
-  } catch {
-    router.push('/(tabs)' as any);
-  }
+  router.push((route ?? '/notification-history') as any);
   return true;
 }
 
 export async function handleNotificationResponse(
   response: Notifications.NotificationResponse,
+  options: ConsumeNotificationResponseOptions = {},
 ): Promise<boolean> {
   const key = notificationResponseKey(response);
   if (processedNotificationResponses.has(key)) return true;
   const existing = inFlightNotificationResponses.get(key);
   if (existing) return existing;
 
-  const task = processNotificationResponse(response);
+  const task = processNotificationResponse(response, options);
   inFlightNotificationResponses.set(key, task);
   try {
     const handled = await task;
@@ -376,7 +382,7 @@ export async function consumeNotificationResponse(
     }
   }
   try {
-    const handled = await handleNotificationResponse(response);
+    const handled = await handleNotificationResponse(response, options);
     if (handled) {
       if (pendingKey) {
         try {
@@ -405,11 +411,12 @@ export async function consumeNotificationResponse(
 
 export async function consumeLastNotificationResponse(
   feedback?: NotificationActionFeedback,
+  options: ConsumeNotificationResponseOptions = {},
 ): Promise<boolean | null> {
   try {
     const response = await Notifications.getLastNotificationResponseAsync();
     if (!response) return null;
-    return consumeNotificationResponse(response, feedback);
+    return consumeNotificationResponse(response, feedback, options);
   } catch (error) {
     console.warn('[useNotifications] cold-start notification action failed', error);
     return false;

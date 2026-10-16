@@ -10,6 +10,11 @@ let mockAuthenticated = false;
 let mockLoading = false;
 let mockLocked = false;
 let mockSessionError: string | null = null;
+let mockLockReady = true;
+let mockLockInitializationFailed = false;
+let mockNavigationKey: string | undefined = 'root';
+const mockUseNotifications = jest.fn();
+const mockRetryLockInitialization = jest.fn();
 
 jest.mock('expo-router', () => {
   const ReactRuntime = require('react');
@@ -24,6 +29,7 @@ jest.mock('expo-router', () => {
   return {
     Stack,
     useRouter: () => ({ replace: mockReplace }),
+    useRootNavigationState: () => mockNavigationKey ? { key: mockNavigationKey } : undefined,
     ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
   };
 });
@@ -59,9 +65,17 @@ jest.mock('../../hooks/useAppSession', () => ({
 }));
 jest.mock('../../hooks/useToast', () => ({ ToastProvider: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('../../hooks/useAppUpdate', () => ({ AppUpdateProvider: ({ children }: { children: React.ReactNode }) => children }));
-jest.mock('../../hooks/useNotifications', () => ({ useNotifications: jest.fn() }));
+jest.mock('../../hooks/useNotifications', () => ({ useNotifications: (...args: unknown[]) => mockUseNotifications(...args) }));
 jest.mock('../../hooks/useEyeBreakReminders', () => ({ useEyeBreakReminders: jest.fn() }));
-jest.mock('../../hooks/useBiometricLock', () => ({ useBiometricLock: () => ({ isLocked: mockLocked, authenticate: jest.fn() }) }));
+jest.mock('../../hooks/useBiometricLock', () => ({
+  useBiometricLock: () => ({
+    isLocked: mockLocked,
+    isReady: mockLockReady,
+    initializationFailed: mockLockInitializationFailed,
+    retryInitialization: mockRetryLockInitialization,
+    authenticate: jest.fn(),
+  }),
+}));
 jest.mock('../../hooks/useGPSAutoRefresh', () => ({ useGPSAutoRefresh: jest.fn() }));
 jest.mock('../../hooks/useDeviceTimezoneSync', () => ({ useDeviceTimezoneSync: jest.fn() }));
 jest.mock('../../hooks/useHealthKitForegroundSync', () => ({ useHealthKitForegroundSync: jest.fn() }));
@@ -113,7 +127,6 @@ jest.mock('../login', () => ({
   },
 }));
 
-import { useNotifications } from '../../hooks/useNotifications';
 import { AppContent, RootLayout } from '../_layout';
 
 describe('invited registration root integration', () => {
@@ -125,6 +138,40 @@ describe('invited registration root integration', () => {
     mockLoading = false;
     mockLocked = false;
     mockSessionError = null;
+    mockLockReady = true;
+    mockLockInitializationFailed = false;
+    mockNavigationKey = 'root';
+  });
+
+  it('defers notification consumption until the app is unlocked and navigation is mounted', () => {
+    mockAuthenticated = true;
+    mockSession = { mode: 'cloud_account', cloudUser: { id: 7 } };
+    mockLocked = true;
+    const view = render(<AppContent />);
+    expect(mockUseNotifications).toHaveBeenLastCalledWith(true, false);
+
+    mockLocked = false;
+    mockNavigationKey = undefined;
+    view.rerender(<AppContent />);
+    expect(mockUseNotifications).toHaveBeenLastCalledWith(true, false);
+
+    mockNavigationKey = 'ready';
+    view.rerender(<AppContent />);
+    expect(mockUseNotifications).toHaveBeenLastCalledWith(true, true);
+  });
+
+  it('keeps authenticated content hidden until app lock initialization succeeds', () => {
+    mockAuthenticated = true;
+    mockSession = { mode: 'cloud_account', cloudUser: { id: 7 } };
+    mockLockReady = false;
+    mockLockInitializationFailed = true;
+
+    render(<AppContent />);
+
+    expect(screen.getByText('暂时无法确认应用锁状态')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('重试应用锁检查'));
+    expect(mockRetryLockInitialization).toHaveBeenCalledTimes(1);
+    expect(mockUseNotifications).toHaveBeenLastCalledWith(true, false);
   });
 
   it('clears an in-memory invite as soon as auth is known, before session hydration, and does not revive it after logout', async () => {
@@ -169,17 +216,19 @@ describe('notification navigation readiness', () => {
     mockLoading = false;
     mockLocked = false;
     mockSessionError = null;
+    mockLockReady = true;
+    mockNavigationKey = 'root';
   });
   it.each(['loading', 'locked', 'recovering'])('retains a cold-start tap until the root stack mounts: %s', (state) => {
     mockLoading = state === 'loading';
     mockLocked = state === 'locked';
     mockSessionError = state === 'recovering' ? 'session_recovery_required' : null;
     const view = render(<AppContent />);
-    expect(useNotifications).toHaveBeenLastCalledWith(false);
+    expect(mockUseNotifications).toHaveBeenLastCalledWith(true, false);
     mockLoading = false;
     mockLocked = false;
     mockSessionError = null;
     view.rerender(<AppContent />);
-    expect(useNotifications).toHaveBeenLastCalledWith(true);
+    expect(mockUseNotifications).toHaveBeenLastCalledWith(true, true);
   });
 });

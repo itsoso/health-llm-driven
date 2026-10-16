@@ -9,27 +9,31 @@ export function useBiometricLock(isAuthenticated: boolean) {
   const [isLocked, setIsLocked] = useState(false);
   const [isEnabled, setIsEnabled] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
+  const [isReady, setIsReady] = useState(Platform.OS === 'web');
+  const [initializationFailed, setInitializationFailed] = useState(false);
   const appState = useRef(AppState.currentState);
   const wasBackground = useRef(false);
 
-  useEffect(() => {
+  const initialize = useCallback(async () => {
     if (Platform.OS === 'web') return;
-    (async () => {
+    setIsReady(false);
+    setInitializationFailed(false);
+    try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      const stored = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
       setIsSupported(hasHardware && isEnrolled);
-
-      try {
-        const stored = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
-        if (stored === 'true' && hasHardware && isEnrolled) {
-          setIsEnabled(true);
-          setIsLocked(true);
-        }
-      } catch (e) {
-        if (__DEV__) console.warn('[biometric] SecureStore read failed:', e);
-      }
-    })();
+      const enabled = stored === 'true' && hasHardware && isEnrolled;
+      setIsEnabled(enabled);
+      setIsLocked(enabled);
+      setIsReady(true);
+    } catch {
+      console.warn('[biometric] app lock initialization failed');
+      setInitializationFailed(true);
+    }
   }, []);
+
+  useEffect(() => { void initialize(); }, [initialize]);
 
   useEffect(() => {
     if (!isAuthenticated || !isEnabled) return;
@@ -72,5 +76,6 @@ export function useBiometricLock(isAuthenticated: boolean) {
     await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, String(newVal));
   }, [isSupported, isEnabled]);
 
-  return { isLocked, isEnabled, isSupported, authenticate, toggleEnabled };
+  return { isLocked, isEnabled, isSupported, isReady, initializationFailed,
+    retryInitialization: initialize, authenticate, toggleEnabled };
 }
