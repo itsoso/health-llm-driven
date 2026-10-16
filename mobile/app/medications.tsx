@@ -248,6 +248,7 @@ export default function MedicationsScreen() {
                 key={m.id} med={m}
                 tab={tab}
                 onEdit={() => router.push(`/medication-edit?id=${m.id}` as any)}
+                onReminder={() => router.push(`/medication-reminder?id=${m.id}` as any)}
                 onDeactivate={() => handleDeactivate(m)}
                 onRestore={() => handleRestore(m)}
               />
@@ -296,10 +297,11 @@ function currentTimeLabel() {
 }
 
 function MedicationRow({
-  med, tab, onEdit, onDeactivate, onRestore,
+  med, tab, onEdit, onReminder, onDeactivate, onRestore,
 }: {
   med: Medication; tab: TabKey;
   onEdit: () => void;
+  onReminder: () => void;
   onDeactivate: () => void; onRestore: () => void;
 }) {
   const confirmDeactivate = () => {
@@ -332,6 +334,7 @@ function MedicationRow({
           <Text style={txt.medPurpose} numberOfLines={1}>{med.purpose}</Text>
         )}
       </TouchableOpacity>
+      {tab === 'active' && <TouchableOpacity onPress={onReminder} style={[styles.actionBtn, { minWidth: 44, minHeight: 44 }]} accessibilityRole="button" accessibilityLabel={`查看 ${med.name} 的提醒`}><Ionicons name="notifications-outline" size={23} color={C.green600} /></TouchableOpacity>}
       {tab === 'active' ? (
         <TouchableOpacity onPress={confirmDeactivate} hitSlop={8} style={styles.actionBtn}>
           <Ionicons name="pause-circle-outline" size={24} color={revaSemantic.risk.fg} />

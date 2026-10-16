@@ -2,7 +2,8 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Dict, Any, List, Optional
+from sqlalchemy.exc import IntegrityError
+from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel, field_validator
 
 from datetime import date
@@ -80,6 +81,56 @@ class MedicationLogCreate(BaseModel):
         return normalized
 
 
+class ReminderMedication(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    dosage: Optional[str]
+    frequency: Optional[str]
+    is_active: bool
+    reminder_times: List[str]
+    timing_label: Optional[str]
+    safety_alerts: List[Dict[str, Any]]
+
+
+class ReminderLog(BaseModel):
+    id: int
+    medication_id: int
+    taken_date: str
+    taken_time: Optional[str]
+    status: str
+
+
+class ReminderContext(BaseModel):
+    user_id: int
+    timezone: str
+    today_date: str
+    date: str
+    time: Optional[str]
+    requires_date_confirmation: bool
+    revision: str
+    medication: ReminderMedication
+    log: Optional[ReminderLog]
+    actionable: bool
+    reason: Optional[str]
+
+
+class ReminderLogCreate(BaseModel):
+    date: date
+    time: str
+    timezone: str
+    expected_revision: str
+    status: Literal['taken', 'skipped']
+
+    @field_validator('time')
+    @classmethod
+    def validate_time(cls, value: str) -> str:
+        import re
+        if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', value):
+            raise ValueError('time must be HH:MM')
+        return value
+
+
 class MedicationLogUpdate(BaseModel):
     medication_id: Optional[int] = None
     taken_time: Optional[str] = None
@@ -145,6 +196,77 @@ async def get_medication(
     if not med:
         raise HTTPException(status_code=404, detail="药品不存在")
     return _serialize_medication(med, safety_alerts=_medication_safety_alerts(db, current_user.id))
+
+
+@router.get('/medications/{medication_id}/reminder', response_model=ReminderContext)
+async def get_medication_reminder(
+    medication_id: int,
+    date: Optional[date] = None,
+    time: Optional[str] = Query(default=None, pattern=r'^([01]\d|2[0-3]):[0-5]\d$'),
+    source_timezone: Optional[str] = None,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.medication_reminder_context import reminder_context
+    med = medication_service.get_medication(db, medication_id, current_user.id)
+    if med is None:
+        raise HTTPException(status_code=404, detail='药品不存在')
+    context = reminder_context(db, current_user.id, med, date, time, source_timezone)
+    context['medication']['safety_alerts'] = _medication_safety_alerts(db, current_user.id)
+    return context
+
+
+@router.post('/medications/{medication_id}/reminder/log', response_model=ReminderLog)
+async def log_medication_reminder(
+    medication_id: int,
+    data: ReminderLogCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.medication_reminder_context import reminder_context
+    # Hold the medication row lock through the occurrence write transaction.
+    med = (
+        db.query(Medication)
+        .filter(Medication.id == medication_id, Medication.user_id == current_user.id)
+        .populate_existing().with_for_update().first()
+    )
+    if med is None:
+        raise HTTPException(status_code=404, detail='药品不存在')
+    context = reminder_context(db, current_user.id, med, data.date, data.time, data.timezone)
+    if context['revision'] != data.expected_revision:
+        raise HTTPException(status_code=409, detail='medication_changed')
+    if context['reason'] not in (None, 'already_recorded'):
+        raise HTTPException(status_code=409, detail=context['reason'])
+    if context['log']:
+        # Landing logs are terminal; duplicate responses expose conflicts unchanged.
+        return context['log']
+    try:
+        # A concurrent generic log writer may occupy the slot without locking the
+        # medication. Recover the unique conflict within a savepoint so the
+        # medication validation lock is not released by a full rollback.
+        with db.begin_nested():
+            log = medication_service.log_medication(
+                db, current_user.id, med.id, data.time,
+                status=data.status, taken_date=data.date, commit=False,
+            )
+    except IntegrityError:
+        log = db.query(MedicationLog).filter(
+            MedicationLog.user_id == current_user.id,
+            MedicationLog.medication_id == med.id,
+            MedicationLog.taken_date == data.date,
+            MedicationLog.taken_time == data.time,
+        ).first()
+        if log is None:
+            raise
+    db.commit()
+    db.refresh(log)
+    persisted = MedicationLogCreate(
+        medication_id=log.medication_id, taken_date=log.taken_date,
+        taken_time=log.taken_time, status=log.status, skip_reason=log.skip_reason,
+    )
+    _writeback_agenda_completion(db, current_user.id, med, persisted)
+    _invalidate_twin(current_user.id)
+    return {'id': log.id, 'medication_id': log.medication_id, 'taken_date': str(log.taken_date), 'taken_time': log.taken_time, 'status': log.status}
 
 
 @router.put("/medications/{medication_id}")
@@ -288,7 +410,10 @@ async def log_medication(
         taken_date=data.taken_date,
     )
     # 反向完成链:药物归属已在写日志前验证；完成链失败不拖垮已落库事实。
-    _writeback_agenda_completion(db, current_user.id, med, data)
+    _writeback_agenda_completion(db, current_user.id, med, data.model_copy(update={
+        "taken_date": log.taken_date, "taken_time": log.taken_time,
+        "status": log.status, "skip_reason": log.skip_reason,
+    }))
     _invalidate_twin(current_user.id)
     return {
         "id": log.id,

@@ -7909,6 +7909,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/medication/medications/{medication_id}/reminder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Medication Reminder */
+        get: operations["get_medication_reminder_api_v1_medication_medications__medication_id__reminder_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medication/medications/{medication_id}/reminder/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Log Medication Reminder */
+        post: operations["log_medication_reminder_api_v1_medication_medications__medication_id__reminder_log_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/medication/medications/{medication_id}/restore": {
         parameters: {
             query?: never;
@@ -31171,6 +31205,29 @@ export interface components {
             /** Expires At */
             expires_at?: string | null;
         };
+        /** ReminderContext */
+        ReminderContext: {
+            /** User Id */
+            user_id: number;
+            /** Timezone */
+            timezone: string;
+            /** Today Date */
+            today_date: string;
+            /** Date */
+            date: string;
+            /** Time */
+            time: string | null;
+            /** Requires Date Confirmation */
+            requires_date_confirmation: boolean;
+            /** Revision */
+            revision: string;
+            medication: components["schemas"]["ReminderMedication"];
+            log: components["schemas"]["ReminderLog"] | null;
+            /** Actionable */
+            actionable: boolean;
+            /** Reason */
+            reason: string | null;
+        };
         /**
          * ReminderCreate
          * @description 创建提醒
@@ -31226,6 +31283,61 @@ export interface components {
              * @description 重复: daily/weekdays/weekly:1,3,5
              */
             recurrence?: string | null;
+        };
+        /** ReminderLog */
+        ReminderLog: {
+            /** Id */
+            id: number;
+            /** Medication Id */
+            medication_id: number;
+            /** Taken Date */
+            taken_date: string;
+            /** Taken Time */
+            taken_time: string | null;
+            /** Status */
+            status: string;
+        };
+        /** ReminderLogCreate */
+        ReminderLogCreate: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Time */
+            time: string;
+            /** Timezone */
+            timezone: string;
+            /** Expected Revision */
+            expected_revision: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "taken" | "skipped";
+        };
+        /** ReminderMedication */
+        ReminderMedication: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /** Name */
+            name: string;
+            /** Dosage */
+            dosage: string | null;
+            /** Frequency */
+            frequency: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Reminder Times */
+            reminder_times: string[];
+            /** Timing Label */
+            timing_label: string | null;
+            /** Safety Alerts */
+            safety_alerts: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * ReminderUpdate
@@ -49101,6 +49213,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_medication_reminder_api_v1_medication_medications__medication_id__reminder_get: {
+        parameters: {
+            query?: {
+                date?: string | null;
+                time?: string | null;
+                source_timezone?: string | null;
+            };
+            header?: never;
+            path: {
+                medication_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderContext"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    log_medication_reminder_api_v1_medication_medications__medication_id__reminder_log_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                medication_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReminderLogCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderLog"];
                 };
             };
             /** @description Validation Error */

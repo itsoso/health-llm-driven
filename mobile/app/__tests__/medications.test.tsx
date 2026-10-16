@@ -86,3 +86,12 @@ describe('MedicationsScreen', () => {
     });
   });
 });
+
+
+it('offers a permanent reminder entry without inferring a dose slot', async () => {
+  mockParams = {}; mockListMedications.mockResolvedValue([{ id: 7, name: '药品甲', is_active: true }]);
+  const screen = renderWithProviders(<MedicationsScreen />);
+  await waitFor(() => expect(screen.getByLabelText('查看 药品甲 的提醒')).toBeTruthy());
+  fireEvent.press(screen.getByLabelText('查看 药品甲 的提醒'));
+  expect(mockPush).toHaveBeenCalledWith('/medication-reminder?id=7');
+});

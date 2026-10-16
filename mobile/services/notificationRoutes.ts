@@ -51,6 +51,35 @@ const SCREEN_ROUTES: Record<string, string> = {
   home: '/(tabs)',
 };
 
+/** Only identifiers and occurrence fields travel in routes; labels are fetched after auth. */
+function medicationReminderRoute(data: Record<string, any>): string {
+  const parts: string[] = [];
+  let invalid = false;
+  if (data.medication_id !== undefined) {
+    const raw = String(data.medication_id);
+    if (/^[1-9]\d*$/.test(raw) && Number.isSafeInteger(Number(raw))) parts.push(`id=${raw}`);
+    else invalid = true;
+  }
+  const date = data.scheduled_date;
+  if (date !== undefined) {
+    const parsed = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00Z`) : null;
+    if (parsed && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date) parts.push(`date=${date}`);
+    else invalid = true;
+  }
+  // Local quiet-hour adjustment changes delivery time, not the original dose slot.
+  const time = data.kind === 'medication_reminder' ? data.taken_time : data.scheduled_time;
+  if (time !== undefined) {
+    if (typeof time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(time)) parts.push(`time=${encodeURIComponent(time)}`);
+    else invalid = true;
+  }
+  if (data.scheduled_timezone !== undefined) {
+    if (typeof data.scheduled_timezone === 'string' && data.scheduled_timezone.length <= 80 && data.scheduled_timezone.trim()) parts.push(`sourceTimezone=${encodeURIComponent(data.scheduled_timezone)}`);
+    else invalid = true;
+  }
+  if (invalid) return '/medication-reminder?invalid=1';
+  return `/medication-reminder${parts.length ? `?${parts.join('&')}` : ''}`;
+}
+
 /**
  * 从通知 data 解析出一个可 push 的 router 路径; 解析不出返回 null.
  * 优先级: data.deep_link / data.deeplink (归一) > data.screen 枚举.
@@ -69,13 +98,13 @@ export function resolveNotificationRoute(
   const explicit = (data.deep_link ?? data.deeplink) as unknown;
   if (typeof explicit === 'string' && explicit.trim()) {
     const route = normalizeKnownAliases(stripScheme(explicit));
-    if (medicationReminder && ['/(tabs)', '/(tabs)/record', '/'].includes(route)) {
-      return '/medications';
+    if (medicationReminder && ['/(tabs)', '/(tabs)/record', '/', '/medications', '/medication-reminder'].includes(route)) {
+      return medicationReminderRoute(data);
     }
     return route;
   }
 
-  if (medicationReminder) return '/medications';
+  if (medicationReminder) return medicationReminderRoute(data);
 
   const screen = data.screen as string | undefined;
   if (screen && screen in SCREEN_ROUTES) {

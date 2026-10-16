@@ -75,10 +75,23 @@ describe('medication reminder landing', () => {
     { reminder_type: 'medication', deep_link: '/(tabs)' },
     { reminder_type: 'medication' },
   ])('opens medications for existing reminder payload %j', (data) => {
-    expect(resolveNotificationRoute(data)).toBe('/medications');
+    expect(resolveNotificationRoute(data)).toBe('/medication-reminder');
   });
   it('preserves a specific destination and unrelated record notifications', () => {
     expect(resolveNotificationRoute({ reminder_type: 'medication', deep_link: '/medication-edit?id=7' })).toBe('/medication-edit?id=7');
     expect(resolveNotificationRoute({ deep_link: '/(tabs)/record' })).toBe('/(tabs)/record');
+  });
+});
+
+
+describe('precise medication reminder target', () => {
+  it('carries remote occurrence without private display fields', () => {
+    expect(resolveNotificationRoute({ reminder_type: 'medication', medication_id: 7, scheduled_date: '2026-10-16', scheduled_time: '18:00', scheduled_timezone: 'Asia/Shanghai', medication_name: 'secret', dosage: 'secret', deep_link: '/medications' })).toBe('/medication-reminder?id=7&date=2026-10-16&time=18%3A00&sourceTimezone=Asia%2FShanghai');
+  });
+  it('preserves original local slot and leaves date unconfirmed', () => {
+    expect(resolveNotificationRoute({ kind: 'medication_reminder', medication_id: 7, taken_time: '06:00', scheduled_time: '08:00', deep_link: '/medications' })).toBe('/medication-reminder?id=7&time=06%3A00');
+  });
+  it('does not infer an id or use malformed time/date', () => {
+    expect(resolveNotificationRoute({ reminder_type: 'medication', medication_id: '7x', scheduled_date: '2026-02-31', scheduled_time: '28:00' })).toBe('/medication-reminder?invalid=1');
   });
 });
