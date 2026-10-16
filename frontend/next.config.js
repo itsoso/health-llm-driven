@@ -55,7 +55,7 @@ const nextConfig = {
         { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(self)' },
       ],
     }];
-    const configuredOrigin = process.env.KBASE_SSO_ORIGIN;
+    const configuredOrigin = process.env.KBASE_SSO_ORIGIN ?? 'https://kbase.executor.life';
     if (configuredOrigin) {
       const origin = new URL(configuredOrigin);
       if (origin.protocol !== 'https:' || origin.origin !== configuredOrigin || origin.username || origin.password
