@@ -313,6 +313,8 @@ def test_bare_portion_never_inherits_unverified_or_stale_context(db, meal_receip
     "刚才午餐吃了三分之一",
     "我只吃了三分之一",
     "我只吃了其中的三分之一。",
+    "水饺吃了一半",
+    "饺子吃了一半",
 ])
 async def test_real_pi_gateway_executes_exact_correction_without_model_tool_call(
         db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, message):
@@ -323,16 +325,19 @@ async def test_real_pi_gateway_executes_exact_correction_without_model_tool_call
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "Use authorized tools.")
     conversation_id = None
-    if message in {"我只吃了三分之一", "我只吃了其中的三分之一。"}:
+    if message in {"我只吃了三分之一", "我只吃了其中的三分之一。", "水饺吃了一半", "饺子吃了一半"}:
         from app.models.agent_conversation import AgentConversation, AgentMessage
         now = datetime.now(timezone.utc)
         conv = AgentConversation(user_id=user.id)
         db.add(conv); db.flush()
         conversation_id = conv.id
         db.add(DietRecord(id=42, user_id=user.id, record_date=now.astimezone(NOW.tzinfo).date(),
-                          meal_type="lunch", food_items="合成餐", calories=900))
+                          meal_type="lunch", food_items="水饺1盘", calories=900))
         db.add(AgentMessage(conversation_id=conv.id, role="assistant", content="已保存午餐",
-            created_at=now, meta={"client_turn_finalized": True, "write_receipts": [{
+            # Message timestamps are naive UTC. Passing an aware value to
+            # PostgreSQL's timestamp column converts via the session timezone
+            # and can put this prior answer after the current user message.
+            created_at=(now - timedelta(minutes=1)).replace(tzinfo=None), meta={"client_turn_finalized": True, "write_receipts": [{
                 "verified": True, "status": "verified", "resource_type": "diet_record",
                 "resource_id": "42", "action": "create", "completed_at": now.isoformat(),
             }]}))
@@ -346,7 +351,7 @@ async def test_real_pi_gateway_executes_exact_correction_without_model_tool_call
         from urllib.parse import parse_qs
         day = parse_qs(urlsplit(url).query)["start_date"][0]
         return [{"id": 42, "record_date": day, "meal_type": "lunch",
-                 "food_items": "合成餐", "calories": 900}], None
+                 "food_items": "水饺1盘", "calories": 900}], None
     async def dispatch(request, token):
         calls.append(request)
         return json.dumps({"id": 42, "resource_type": "diet_record", "status": "verified"})
@@ -359,7 +364,7 @@ async def test_real_pi_gateway_executes_exact_correction_without_model_tool_call
     assert len(calls) == 1, done
     assert calls[0].arguments["operation"] == "update"
     assert calls[0].arguments["record_id"] == 42
-    expected = 180 if "五分之一" in message else 300
+    expected = 450 if "一半" in message else (180 if "五分之一" in message else 300)
     assert calls[0].arguments["data"]["calories"] == expected
     assert done["completion_status"] == "complete"
     assert done["write_receipts"][0]["resource_id"] == "42"

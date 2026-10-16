@@ -6889,6 +6889,10 @@ def _diet_correction_update_data(
         if correction.get("target") == "latest"
         else correction.get("meal_type")
     )
+    if correction.get("food_component"):
+        from app.services.agent_diet_continuation import named_food_matches_single_record
+        if not named_food_matches_single_record(correction, existing_record):
+            return None
     replacement = correction.get("food_items")
     if replacement:
         return {
@@ -26030,6 +26034,13 @@ class AgentExecutor:
                     unresolved_reason = "target_not_found"
                 elif len(candidate_rows) > 1:
                     unresolved_reason = "ambiguous_target"
+                elif correction.get("food_component"):
+                    raise _SimpleRecordTerminal(
+                        "尚未修改。你说的是水饺这一项，不能把整餐热量减半。"
+                        "当前记录无法单独核实水饺的原始份量和营养；"
+                        "请点‘继续修正本餐’，填写水饺实际吃了几个或多少克，保留其他食物的份量。",
+                        satisfied=False,
+                    )
                 else:
                     unresolved_reason = "record_has_no_scalable_nutrition"
                 logger.warning(
@@ -27106,6 +27117,7 @@ class AgentExecutor:
         self, base: str, headers: dict, args: dict
     ) -> str:
         """执行健康数据查询"""
+        supplied_args = dict(args)
         args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
         if dim == "medical_exam" and self._turn_selected_exam_id is not None:
@@ -27160,6 +27172,21 @@ class AgentExecutor:
                         and status_scope.query('sleep') is not None))
                 self._turn_sync_status_result = status
                 return json.dumps(status, ensure_ascii=False, default=str)
+        if dim == 'medication':
+            from app.services.agent_kernel.medication_review_scope import is_medication_review_request
+            snapshot = self._ensure_agent_kernel_turn()
+            if is_medication_review_request(snapshot.envelope.text):
+                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+                from app.services.agent_query_window import parse_query_window
+                from app.services.medication_review_read import read_medication_review
+                scope = resolve_owned_read_scope(snapshot)
+                expected = scope.query('medication') if scope is not None else None
+                if (expected is None or supplied_args != expected
+                        or self._current_user_id != snapshot.context.user_id):
+                    return 'Error: 用药查询范围与当前请求不一致。'
+                return json.dumps(read_medication_review(
+                    self.db, self._current_user_id, parse_query_window(expected)),
+                    ensure_ascii=False, default=str)
         if any(key in args for key in ("start_date", "end_date", "timezone")):
             from app.services.agent_query_window import (
                 parse_query_window, read_calendar_health_query, resolve_calendar_query_window,

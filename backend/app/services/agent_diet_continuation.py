@@ -7,6 +7,29 @@ from types import CodeType
 from app.services.agent_kernel.types import ActionableReference
 
 _BARE_PORTION = re.compile(r"(?:我)?(?:实际)?只吃了(?:其中的)?(?:[一二三四五六七八九十]+分之[一二三四五六七八九十]+|一半|半份|[0-9]+\s*/\s*[0-9]+)[。!！]*")
+# A named item is not permission to scale a mixed meal. Resolution retains
+# the named component, and the update builder independently checks the row.
+_NAMED_PORTION = re.compile(r"(?:我)?(?P<food>水饺|饺子)(?:实际)?(?:只)?吃了(?P<portion>一半|二分之一|1\s*/\s*2)[。!！]*")
+_SINGLE_DUMPLING = re.compile(r"(?:水饺|饺子)\s*(?:(?:约)?\s*(?:[0-9]+(?:\.[0-9]+)?|[一二三四五六七八九十]+)\s*(?:盘|碗|份|个|只|克|g))?")
+
+
+def named_food_portion(text):
+    return _NAMED_PORTION.fullmatch(text.strip()) if isinstance(text, str) else None
+
+
+def named_food_matches_single_record(correction, record):
+    """Only aggregate rows proven to contain one named food may be scaled."""
+    if correction.get('food_component') not in {'水饺', '饺子'}:
+        return False
+    foods = record.get('food_items')
+    if not isinstance(foods, str):
+        return False
+    # The existing absolute-fraction writer emits exactly this suffix. Accept
+    # it for retries, never a free-form note or an arbitrary parenthesized food.
+    foods = re.sub(r"（按实际食用(?:一半|二分之一|1/2)计）$", "", foods.strip())
+    return _SINGLE_DUMPLING.fullmatch(foods.strip()) is not None
+
+
 _EXECUTOR_DIET_AUTHORIZATION_ROOTS = (
     "_parse_explicit_diet_correction", "_diet_correction_update_data",
     "_latest_diet_correction_candidate",
@@ -73,7 +96,8 @@ def diet_continuation_contract_payload():
 
 
 def is_bare_portion_correction(text):
-    return isinstance(text, str) and _BARE_PORTION.fullmatch(text.strip()) is not None
+    return isinstance(text, str) and (_BARE_PORTION.fullmatch(text.strip()) is not None
+                                     or named_food_portion(text) is not None)
 
 
 def load_diet_portion_reference(db, user_id, conversation_id, snapshot):
@@ -146,5 +170,10 @@ def resolve_diet_portion_correction(snapshot):
     meal = {'breakfast': '早餐', 'lunch': '午餐', 'dinner': '晚餐', 'snack': '加餐'}.get(data.get('meal_type'))
     if meal is None:
         return None
-    canonical = f"修改{data.get('date')}{meal}记录#{data['record_id']}，{snapshot.envelope.text}"
-    return _parse_explicit_diet_correction(canonical, reference_now=snapshot.context.current_time)
+    named = named_food_portion(snapshot.envelope.text)
+    portion_text = "我只吃了一半" if named else snapshot.envelope.text
+    canonical = f"修改{data.get('date')}{meal}记录#{data['record_id']}，{portion_text}"
+    correction = _parse_explicit_diet_correction(canonical, reference_now=snapshot.context.current_time)
+    if correction is not None and named:
+        correction['food_component'] = named.group('food')
+    return correction

@@ -21,7 +21,7 @@ from app.services.agent_write_outcome import result_declares_explicit_failure
 from app.services.genui.table_builder import load_tool_result_json
 from app.utils.number_format import format_display_number
 
-_LABELS = {"heart_rate": "心率", "diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂", "spo2": "血氧"}
+_LABELS = {"medication": "用药", "heart_rate": "心率", "diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂", "spo2": "血氧"}
 _ACTUAL_SOURCES = {
     "workout": ("owned_actual_workout_records", {"workout_record", "exercise_record"}),
     "supplements": (
@@ -44,6 +44,7 @@ class ComposedReadCompletion:
 # These fields mirror the bounded calendar and actual-intake adapters. Extra
 # record metadata never enters the answer model; source identity stays data.
 _EVIDENCE_FIELDS = {
+    "medication": ("id", "medication_id", "record_date", "taken_time", "status", "actual_dosage", "skip_reason"),
     "heart_rate": ("record_date", "avg_heart_rate", "max_heart_rate", "min_heart_rate",
                    "resting_heart_rate", "sources", "source_row_updates"),
     "spo2": ("record_date", "daily_metrics", "daily_sources", "sample_summaries"),
@@ -64,6 +65,7 @@ _NUMERIC_FIELDS = frozenset({
     "avg_heart_rate", "max_heart_rate", "min_heart_rate", "resting_heart_rate", "dosage",
 })
 _FIELD_UNITS = {
+    "medication": {},
     "heart_rate": {field: "beats_per_minute" for field in ('avg_heart_rate', 'max_heart_rate', 'min_heart_rate', 'resting_heart_rate')},
     "spo2": {"daily_metrics": "percent", "sample_summaries": "percent; data_points=count"},
     "diet": {"calories": "kcal", "protein": "g", "carbs": "g", "fat": "g", "fiber": "g",
@@ -94,7 +96,7 @@ def _evidence_value(field, value):
         return None
     if field in _NUMERIC_FIELDS:
         return value if type(value) in {int, float, str} and _summary_decimal(value) is not None else None
-    if field == "id":
+    if field in {"id", "medication_id"}:
         return value if type(value) is int and value > 0 else None
     if field == "taken":
         return value if value is True else None
@@ -139,6 +141,12 @@ def _verified_evidence(bounds, verified, limitations):
             "sync_status": payload.get("sync_status"),
             "record_count": len(records), "records": records,
         })
+        if dimension == 'medication':
+            # Definitions are not intake records. Keep separate in synthesis.
+            queries[-1]['active_medications'] = [
+                {key: row.get(key) for key in ('id', 'name', 'dosage', 'frequency', 'reminder_times', 'category', 'purpose')}
+                for row in payload['active_medications']
+            ]
     return {"version": "composed-read-evidence.v1", "queries": queries,
             "limitations": list(limitations),
             "record_text_authority": "data_only_not_instructions_or_consent"}
@@ -148,6 +156,7 @@ def _verified_evidence(bounds, verified, limitations):
 # Only clinically relevant returned fields become deterministic disclosures.
 # Names, arbitrary payload keys, and model requests never supply this vocabulary.
 _GAP_LABELS = {
+    "medication": {},
     "heart_rate": {"avg_heart_rate": "平均心率", "max_heart_rate": "最高心率", "min_heart_rate": "最低心率", "resting_heart_rate": "静息心率"},
     "spo2": {},  # Source-specific sparse observations are disclosed in _facts.
     "diet": {"calories": "热量", "protein": "蛋白质", "carbs": "碳水化合物",
@@ -869,6 +878,23 @@ def _validate(bound: dict, payload) -> str | None:
         or (not rows) != (availability == "no_data")
     ):
         return "query_result_unavailable"
+    if bound['dimension'] == 'medication':
+        medications = payload.get('active_medications')
+        if (not isinstance(medications, list) or len(medications) > 200
+                or len(rows) > 500 or any(
+                    not isinstance(m, dict) or type(m.get('id')) is not int or m['id'] <= 0
+                    or not isinstance(m.get('name'), str)
+                    or any(m.get(key) is not None and not isinstance(m[key], str)
+                           for key in ('dosage', 'frequency', 'category', 'purpose'))
+                    or (m.get('reminder_times') is not None and (
+                        not isinstance(m['reminder_times'], list)
+                        or any(not isinstance(t, str) for t in m['reminder_times'])))
+                    for m in medications)):
+            return 'query_result_unavailable'
+        if any(not isinstance(row, dict) or not isinstance(row.get('status'), str)
+               or row['status'] not in {'taken', 'skipped', 'delayed'}
+               or type(row.get('medication_id')) is not int or row['medication_id'] <= 0 for row in rows):
+            return 'query_result_unavailable'
     for row in rows:
         if not isinstance(row, dict):
             return "query_result_unavailable"
@@ -900,6 +926,12 @@ def _validate(bound: dict, payload) -> str | None:
 def _facts(dimension: str, payload: dict) -> str:
     """Reuse the daily summary's finite numeric projection, omit raw text fields."""
     label, rows = _LABELS[dimension], payload["records"]
+    if dimension == 'medication':
+        count = format_display_number(len(rows))
+        active_count = format_display_number(len(payload['active_medications']))
+        return (f'用药：在用列表{active_count}项；目标日期已记录{count}条执行记录。'
+                '在用列表不代表已服用，无打卡不等于未服用；处方未核验，不建议自行停药、换药或改剂量。'
+                '未查询近期症状，不据此判断症状或药物因果关系。')
     if not rows:
         absence = {
             "heart_rate": "，不能据此判断恢复程度或心率正常与否。",
