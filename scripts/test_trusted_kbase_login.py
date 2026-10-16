@@ -181,3 +181,36 @@ def test_csp_rejects_inexact_form_destinations(policies):
 
 def test_csp_accepts_only_fixed_destination():
     assert m.exact_form_policy(["default-src 'self'; form-action 'self' https://kbase.executor.life; script-src 'self'"])
+
+
+@pytest.mark.parametrize('scenario', ['optional-absent', 'optional-clean', 'optional-override', 'mandatory-absent', 'optional-dangling', 'optional-parent-unsafe'])
+def test_health_service_environment_sources(tmp_path, monkeypatch, scenario):
+    optional = tmp_path / 'enabled.env'
+    required = tmp_path / 'model.env'
+    required.write_bytes(b'MODEL=unchanged\n')
+    if scenario in ('optional-clean', 'mandatory-absent'): optional.write_bytes(b'EVIDENCE_ENABLED=true\n')
+    if scenario == 'optional-override': optional.write_bytes(b'KBASE_SSO_ENABLED=true\n')
+    if scenario == 'mandatory-absent': required.unlink()
+    if scenario == 'optional-dangling': optional.symlink_to(tmp_path / 'missing')
+    original_path = Path
+    mapped = {'/var/lib/reva-health-evidence-runtime/enabled.env': optional,
+              '/var/lib/reva-vision-model/model.env': required}
+    monkeypatch.setattr(m, 'Path', lambda value: mapped.get(str(value), original_path(value)))
+    checked = []
+    def secure(path, directory=False):
+        checked.append((path, directory))
+        if scenario == 'optional-parent-unsafe' and path == tmp_path and directory:
+            raise m.ActivationError('unsafe environment parent')
+        if path.is_symlink(): raise m.ActivationError('unsafe environment source')
+        return path.lstat()
+    monkeypatch.setattr(m, 'secure', secure)
+    read_bytes = Path.read_bytes
+    monkeypatch.setattr(Path, 'read_bytes', lambda path: b'OTHER=unchanged\0' if str(path) == '/proc/123/environ' else read_bytes(path))
+    monkeypatch.setattr(m, 'run', lambda *a, **kw: 'User=health-app\nActiveState=active\nMainPID=123\nEnvironmentFiles=/opt/health-app/backend/.env (ignore_errors=no) /var/lib/reva-health-evidence-runtime/enabled.env (ignore_errors=yes) /var/lib/reva-vision-model/model.env (ignore_errors=no)\nEnvironment=\nPassEnvironment=\nUnsetEnvironment=')
+    if scenario in ('optional-override', 'optional-dangling', 'optional-parent-unsafe'):
+        with pytest.raises(m.ActivationError): m.service('health')
+    elif scenario == 'mandatory-absent':
+        with pytest.raises(FileNotFoundError): m.service('health')
+    else:
+        assert m.service('health') == {}
+        if scenario == 'optional-absent': assert (optional.parent, True) in checked
