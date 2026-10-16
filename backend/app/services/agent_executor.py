@@ -26035,6 +26035,7 @@ class AgentExecutor:
                 elif len(candidate_rows) > 1:
                     unresolved_reason = "ambiguous_target"
                 elif correction.get("food_component"):
+                    self._turn_diet_correction_unresolved_reason = "food_component_unverified"
                     raise _SimpleRecordTerminal(
                         "尚未修改。你说的是水饺这一项，不能把整餐热量减半。"
                         "当前记录无法单独核实水饺的原始份量和营养；"

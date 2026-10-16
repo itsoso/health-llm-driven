@@ -187,3 +187,81 @@ async def test_named_dumpling_postgres_owned_update_absolute_retry(
         assert db.get(DietRecord, target.id).calories == 450
     assert db.query(DietRecord).count() == 2
     assert db.get(DietRecord, foreign.id).calories == 1200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["水饺吃了一半", "饺子吃了一半"])
+async def test_mixed_food_stream_persists_specific_clarification_without_write(
+    db,
+    meal_receipt_context,
+    monkeypatch,
+    isolated_agent_protocol_transport,
+    message,
+):
+    from datetime import datetime, timedelta, timezone
+    from app.models.agent_conversation import AgentMessage
+    from app.twin.schema import HealthTwin, TwinMeta
+
+    executor, user, conv, target, answer, current = meal_receipt_context
+    now = datetime.now(timezone.utc)
+    target.record_date = now.astimezone(NOW.tzinfo).date()
+    target.food_items = "水饺1盘，米饭1碗"
+    answer.created_at = (now - timedelta(minutes=1)).replace(tzinfo=None)
+    answer.meta = {
+        **answer.meta,
+        "write_receipts": [
+            {**answer.meta["write_receipts"][0], "completed_at": now.isoformat()}
+        ],
+    }
+    db.delete(current)
+    db.commit()
+    monkeypatch.setattr(
+        "app.twin.builder.build_twin",
+        lambda _db, user_id, **kwargs: HealthTwin(
+            meta=TwinMeta(user_id=user_id, generated_at=now)
+        ),
+    )
+    monkeypatch.setattr(
+        executor, "_build_system_prompt", lambda *a, **k: "Use authorized tools."
+    )
+
+    async def provider(messages, tools):
+        yield {"type": "content", "text": "已按要求修正。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    executor._call_llm_stream = provider
+    executor._api_get_json = AsyncMock(
+        return_value=(
+            [
+                {
+                    "id": target.id,
+                    "record_date": target.record_date.isoformat(),
+                    "meal_type": "lunch",
+                    "food_items": target.food_items,
+                    "calories": 900,
+                }
+            ],
+            None,
+        )
+    )
+    executor._dispatch_tool_request = AsyncMock()
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            conversation_id=conv.id,
+            user_auth_token="test-token",
+        )
+    ]
+    done = events[-1]["data"]
+    reply = db.get(AgentMessage, done["message_id"]).content
+    assert "不能把整餐热量减半" in reply
+    assert "继续修正本餐" in reply
+    assert "你可以重试" not in reply
+    assert done["record_intent_no_tool"] is False
+    assert not done["write_receipts"]
+    executor._dispatch_tool_request.assert_not_awaited()
+    db.refresh(target)
+    assert target.calories == 900
+    assert target.food_items == "水饺1盘，米饭1碗"

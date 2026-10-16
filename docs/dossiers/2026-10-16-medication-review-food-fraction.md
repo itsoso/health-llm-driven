@@ -9,7 +9,7 @@
 
 ## G1 Scope admission
 
-PASS：修复已有用药页查询入口和餐食续接，不扩大用户数据权限、不推断服药完成、不将单项食物修正应用于整餐。
+裁决: PASS。修复已有用药页查询入口和餐食续接，不扩大用户数据权限、不推断服药完成、不将单项食物修正应用于整餐。
 
 ## 验收输入
 
@@ -42,3 +42,5 @@ PASS：修复已有用药页查询入口和餐食续接，不扩大用户数据�
 - 日志：/tmp/med-review-final-verified.log、/tmp/reva-medication-review-pg-verified.log、/tmp/reva-dumpling-pg-final4-tests.log、/tmp/reva-med-review-terminal-state.log。
 - 阻断级 Ruff、System Map 生成与检查、dossier consistency、diff check 通过。
 - 大范围组合回归运行中；G4 和候选绑定 CI 尚未完成，不将针对性通过替代这些闸。
+- 首轮本地 CI-mode 候选 84efd37d4 的 dossier 裁决格式检查失败；改为治理解析器要求的显式裁决格式。审查另发现混合餐澄清可能被最终通用失败文案覆盖，已退回实现；该候选的本地 CI 主动中止（退出 2），不作为绿色发布证据。
+- 独立 G4 对 84efd37d4 正式 BLOCK，唯一项为上述终态覆盖。已补 food_component_unverified 标记；真实 stream 的两条混合餐 RED 均复现旧通用失败，修复后 SQLite 97 passed / 3 PG-only skipped、PostgreSQL 87 passed，验证保存后的澄清、零工具写入、零回执及原餐不变。新候选须重新 G4。
