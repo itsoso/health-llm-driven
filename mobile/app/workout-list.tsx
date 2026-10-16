@@ -61,6 +61,8 @@ export default function WorkoutListScreen() {
     const durationMin = item.duration_seconds ? Math.round(item.duration_seconds / 60) : 0;
     return (
       <TouchableOpacity style={styles.row}
+        accessibilityRole="button"
+        accessibilityLabel={`查看${item.workout_name || item.workout_type || '运动'}详情与总结`}
         onPress={() => router.push(`/workout-detail?id=${item.id}` as any)}
         activeOpacity={0.7}>
         <View style={styles.iconCircle}>
@@ -90,6 +92,10 @@ export default function WorkoutListScreen() {
           <Ionicons name="sync-outline" size={20} color={syncing ? C.ink3 : C.green500} />
         </TouchableOpacity>
       </View>
+
+      <Text style={[txt.time, { paddingHorizontal: revaSpacing.s4, marginBottom: revaSpacing.s3 }]}>
+        选择一次运动，查看训练详情与已保存的总结
+      </Text>
 
       {/* Stats summary */}
       {stats && (

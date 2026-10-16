@@ -1449,6 +1449,14 @@ export default function ChatScreen() {
                 }}
               />
               <ToolMenuRow
+                icon="fitness-outline"
+                label="运动记录"
+                onPress={() => {
+                  setToolMenuVisible(false);
+                  router.push('/workout-list');
+                }}
+              />
+              <ToolMenuRow
                 icon="navigate-outline"
                 label="这一路 · 月度足迹"
                 onPress={() => {

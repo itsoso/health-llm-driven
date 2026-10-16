@@ -324,6 +324,7 @@ describe('SettingsScreen', () => {
     ['补剂库存', '/supplement-inventory'],
     ['我的基因', '/genetic-report'],
     ['健康目标', '/goals'],
+    ['运动记录', '/workout-list'],
     ['今日议程', '/agenda'],
     ['今日时间轴 · 工作时间', '/day-schedule'],
     ['日历 · 日程 + 多源管理', '/calendar'],

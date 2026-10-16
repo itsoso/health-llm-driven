@@ -67,6 +67,16 @@ describe('workout detail native Maps capability', () => {
     expect(screen.queryByText(unavailableMessage)).toBeNull();
   });
 
+  it('keeps a saved summary visible and explains a cache refresh failure', () => {
+    (useWorkoutAutoAnalysis as jest.Mock).mockReturnValueOnce({
+      analysis: null, postAnalysis: { success: true, summary: '已保存的跑后总结' },
+      fromCache: true, cacheReadError: true,
+    });
+    const screen = render(<WorkoutDetailScreen />);
+    expect(screen.getByText('已保存的跑后总结')).toBeTruthy();
+    expect(screen.getByText('总结刷新失败，已保留上次保存的内容。')).toBeTruthy();
+  });
+
   it('preserves iOS Maps without an Android key', () => {
     Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
     const screen = render(<WorkoutDetailScreen />);

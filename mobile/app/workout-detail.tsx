@@ -213,6 +213,7 @@ export default function WorkoutDetailScreen() {
   const {
     analysis,
     postAnalysis,
+    cacheReadError,
     setPostAnalysis,
     fromCache,
     setFromCache,
@@ -638,6 +639,11 @@ export default function WorkoutDetailScreen() {
             </View>
           )}
 
+          {cacheReadError && (
+            <Text accessibilityRole="alert" style={T.placeholder}>
+              {hasAnalysis ? '总结刷新失败，已保留上次保存的内容。' : '暂时无法读取已保存的总结，请稍后重新打开。'}
+            </Text>
+          )}
           {postAnalyzing ? (
             <View style={{ alignItems: 'center', paddingVertical: 16, gap: 8 }}>
               <ActivityIndicator color={HUES.purple.fg} />

@@ -1789,6 +1789,18 @@ describe('ChatScreen', () => {
     expect(mockSetMessages).not.toHaveBeenCalled();
   });
 
+  it('reopens workout records from more without creating a new conversation', () => {
+    const view = render(<ChatScreen />);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      fireEvent.press(view.getByLabelText('更多会诊操作'));
+      fireEvent.press(within(view.getByTestId('chat-tool-menu-sheet')).getByRole('button', { name: '运动记录' }));
+      expect(mockPush).toHaveBeenLastCalledWith('/workout-list');
+      expect(view.queryByText('更多操作')).toBeNull();
+    }
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockNewChat).not.toHaveBeenCalled();
+  });
+
   it('opens diet records from the more sheet', () => {
     const { getByLabelText, getByText } = render(<ChatScreen />);
 

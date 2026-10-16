@@ -299,6 +299,9 @@ export default function SettingsScreen({ home = false }: { home?: boolean }) {
 
         <Text style={txt.sectionLabel}>复盘与计划</Text>
         <View style={styles.card}>
+          <SettingRow icon="fitness-outline" label="运动记录"
+            value="训练详情 / 跑后总结"
+            onPress={() => router.push('/workout-list' as any)} />
           <SettingRow icon="today-outline" label="今日议程"
             onPress={() => router.push('/agenda' as any)} />
           <SettingRow icon="time-outline" label="今日时间轴 · 工作时间"
