@@ -15,6 +15,12 @@ existing private KBase workspace. It is not multi-tenant account provisioning.
 A different Health account, managed account, unapproved/inactive account,
 family proxy, API key or native bearer credential cannot mint a login ticket.
 
+The Web page-freeze exception is limited to `/connect/kbase`: the requested
+browser sign-in needs an explicit account confirmation in the Health cookie
+origin before returning to KBase. A native-only screen cannot complete that
+browser-bound exchange. `FREEZE_OVERRIDE` records this reason in the commit;
+the existing freeze gate remains unchanged.
+
 ## Contract
 
 1. KBase POST `/browser/health/start` validates its own Origin and existing
