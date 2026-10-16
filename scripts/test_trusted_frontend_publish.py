@@ -302,3 +302,34 @@ def test_raw_git_config_reader_does_not_normalize_line_endings(tmp_path):
         else:
             with pytest.raises(m.PublishError):
                 m.validate_runtime_input_change(['frontend/next.config.js'], previous, actual)
+
+
+def test_complete_page_readback_accepts_csr_login_without_translated_text(monkeypatch):
+    from types import SimpleNamespace
+    m = load(); visited = []
+    class Response:
+        status = 200
+        def __init__(self, url):
+            self.url = url
+            self.headers = login_headers("'self' https://kbase.executor.life" if url.endswith('/connect/kbase') else "'self'")
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def geturl(self): return self.url
+        def read(self, bound):
+            path = self.url.split('/', 3)[3]
+            return {'privacy': '可选足迹与分享', 'connect/health': '小巴健康 · 数据连接',
+                    'connect/kbase': '登录知识库 <meta name="referrer" content="strict-origin">',
+                    'login': '<!DOCTYPE html><html><body><div id="root"></div></body></html>'}[path].encode()
+    def request(req, **kwargs):
+        visited.append(req.full_url)
+        return Response(req.full_url)
+    monkeypatch.setattr(m.urllib.request, 'build_opener', lambda *args: SimpleNamespace(open=request))
+    m.verify_pages()
+    assert len(visited) == 8 and len(set(visited)) == 8
+    monkeypatch.setattr(m.time, 'sleep', lambda _: None)
+    original = Response.__init__
+    def bad(self, url):
+        original(self, url)
+        if url.endswith('/login'): self.headers = login_headers("'self' https://evil.test")
+    monkeypatch.setattr(Response, '__init__', bad)
+    with pytest.raises(m.PublishError): m.verify_pages()
