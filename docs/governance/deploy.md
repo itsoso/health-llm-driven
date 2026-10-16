@@ -1287,3 +1287,27 @@ NEEDS_OPERATOR 与全部消费记录，不将原发布改为成功，不重试�
 该收口不是 backend SUCCEEDED；后续候选仍需独立安全审查、精确 CI、新授权、部署及对应 OTA/native Gate。
 
 Laya context profile 另绑定失败脚本、runtime 与原 installer 的精确摘要、原日志中 runtime/env 验证成功及唯一终止位置，并拒绝任何停服、事务 prepare 或安装迹象。原 Laya 导出源必须完整，已安装 generation、unit/env、安装回执与运行进程必须早于原租约且稳定；所有 pending 安装路径必须不存在。仅 GET 健康探测，不调用真实模型。后续部署使用单独封存的只读 verifier 复核现有安装，不恢复 env candidate/rollback 副本；原 installer 与 generation 的资产保持不变。收口后仍使用原租约证据复核；历史消费者仅验证保存的证据与 canonical 源，不扫描现行模型或历史备份。
+
+### 首次 Health / KBase 认证启用（独立无备份配置入口）
+
+`deploy.sh --activate-kbase-login` 是普通 env-only 冻结之外的明确、受审例外，
+不放宽 `-e` 或旧发布入口。仅首次关联同机已部署的 Health 和 KBase，保留原后端
+revision。参数绑定当前受审 publisher SHA、原生产 backend SHA、KBase SHA 和
+经本人现有 Health 凭据 `/auth/me` 验证的 owner；凭据仅通过有界 stdin 输入，
+不保存、不记录、不转成浏览器会话。先完成精确绿色 CI、独立安全审查和 canonical
+bootstrap，再从该 root-owned staging 调用。默认只读预检，`--apply` 才执行。
+
+启用前必须实际读回专用确认页的固定 KBase form-action、strict-origin、no-store，
+以及两端未配置认证、原 backend SUCCEEDED 回执与唯一环境来源。前端固定公开
+origin 只放行确认页的表单目标，不启用签发。服务身份、其它 env 与 drop-in 不改。
+
+新密钥仅在服务器生成，保存在 root-only 操作目录并写入两个既有 env 文件；
+只变更 KBASE_SSO_* 与 KBASE_HEALTH_LOGIN_* 固定字段，逐文件原子替换并保留
+其它字节、所有者与权限。整体分阶段执行：KBase 写入/重启/验证后，Health
+写入/重启/验证。每一步前后 fsync journal；无备份、无自动回退。
+
+小型状态放在 `/var/lib/reva-kbase-login`，独立于既有发布历史目录；全过程使用
+原 launcher flock 和 business lease。失败留下原 intent、同一新密钥与 lease，
+只能显式 `--resume --apply` 续接同一版本绑定；不得重新生成密钥或新建事务替代。
+`CONFIGURATION_SUCCEEDED` 后还须另验本人真实浏览器回传、匿名/过期/重放拒绝及
+KBase 注销，不能把配置成功写成登录验收完成。全局退出联动不在本入口范围。
