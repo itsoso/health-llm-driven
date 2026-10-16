@@ -29,7 +29,7 @@ import { revaColors as C, revaFonts, revaRadii, revaSemantic } from '../../../co
 
 // 饮食类目 accent (橙) = 「是饮食卡」装饰色, 保留字面量 (= legacy orange/tintOrange).
 const DIET_ACCENT = '#C97A2E';
-const DIET_TINT = '#F6E9DA';
+const DIET_TINT = '#FAF1E7';
 const PHOTO_DISMISS_ACTIVATION_DISTANCE = 12;
 const PHOTO_DISMISS_DISTANCE = 96;
 const PHOTO_DISMISS_VELOCITY = 0.9;
@@ -825,10 +825,12 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         <View style={styles.macroGrid}>
           {macros.map((row) => (
             <View key={row.label} style={styles.macroCell}>
-              <View style={[styles.macroDot, { backgroundColor: row.color }]} />
-              <Text maxFontSizeMultiplier={1.1} style={styles.macroLabel} numberOfLines={1}>
-                {row.label}
-              </Text>
+              <View style={styles.macroHeading}>
+                <View style={[styles.macroDot, { backgroundColor: row.color }]} />
+                <Text maxFontSizeMultiplier={1.1} style={styles.macroLabel}>
+                  {row.label}
+                </Text>
+              </View>
               <Text maxFontSizeMultiplier={1.1} style={[styles.macroValue, { color: row.color }]}>
                 {Math.round(row.value!)}{row.suffix}
               </Text>
@@ -948,7 +950,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
                 router.push('/diet');
               }
             }}
-            style={({ pressed }) => [styles.recordedAdjustButton, pressed && styles.editButtonPressed]}
+            style={({ pressed }) => [styles.recordedAdjustButton, styles.recordedViewButton, pressed && styles.editButtonPressed]}
           >
             <Ionicons name="list-outline" size={16} color={C.green700} />
             <View style={styles.recordedAdjustCopy}>
@@ -1646,7 +1648,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   chipsWrap: {
-    marginTop: 10,
+    marginTop: 12,
+    columnGap: 6,
+    rowGap: 8,
   },
   nutritionStatusRow: {
     flexDirection: 'row',
@@ -1706,6 +1710,10 @@ const styles = StyleSheet.create({
     borderColor: C.green100,
     paddingHorizontal: 11,
     paddingVertical: 8,
+  },
+  recordedViewButton: {
+    backgroundColor: C.green50,
+    borderColor: C.green100,
   },
   recordedAdjustButtonOpen: {
     backgroundColor: C.green50,
@@ -1890,14 +1898,23 @@ const styles = StyleSheet.create({
   macroGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 10,
+    justifyContent: 'space-between',
+    rowGap: 8,
+    marginTop: 14,
   },
   macroCell: {
-    width: '50%',
+    width: '48%',
+    minWidth: 0,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: revaRadii.sm,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+  },
+  macroHeading: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 5,
   },
   macroDot: {
     width: 8,
@@ -1913,7 +1930,7 @@ const styles = StyleSheet.create({
   } as TextStyle,
   macroValue: {
     fontFamily: revaFonts.mono,
-    fontSize: 13,
+    fontSize: 18,
     fontWeight: '900',
     fontVariant: ['tabular-nums'] as const,
   } as TextStyle,
