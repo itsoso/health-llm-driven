@@ -53,7 +53,8 @@ jest.mock('expo-device', () => ({ __esModule: true, isDevice: false }));
 jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { ios: {} } } }));
 jest.mock('../../services/notifications', () => ({ bindIOSToken: jest.fn() }));
 jest.mock('../../services/clientEvents', () => ({ emitClientEvent: jest.fn() }));
-jest.mock('../../services/notificationRoutes', () => ({ resolveNotificationRoute: jest.fn() }));
+jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
+import { router } from 'expo-router';
 
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -425,5 +426,23 @@ describe('Watch medication reminder action', () => {
     expect(mockLogMedication).toHaveBeenCalledTimes(4);
     expect(await listPendingMedicationActions()).toEqual([]);
     warn.mockRestore();
+  });
+});
+
+
+describe('medication notification body tap', () => {
+  it.each([
+    { kind: 'medication_reminder', reminder_type: 'medication', screen: 'home' },
+    { category: 'MEDICATION_REMINDER', reminder_type: 'medication', deep_link: '/(tabs)/record' },
+  ])('opens a landing page without recording a dose: %j', async (data) => {
+    jest.clearAllMocks();
+    const response = {
+      actionIdentifier: Notifications.DEFAULT_ACTION_IDENTIFIER,
+      notification: { date: 0, request: { identifier: `landing-${data.kind ?? data.category}`, content: { data } } },
+    } as unknown as Notifications.NotificationResponse;
+    await expect(consumeNotificationResponse(response)).resolves.toBe(true);
+    expect(router.push).toHaveBeenCalledWith('/medications');
+    expect(mockLogMedication).not.toHaveBeenCalled();
+    expect(mockCompleteAgendaItem).not.toHaveBeenCalled();
   });
 });

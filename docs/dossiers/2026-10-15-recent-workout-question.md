@@ -117,3 +117,12 @@ G1 PASS：修复现有按钮到查询/建议与详情展示闭环；沿用本 Do
 - AppContent 在 cloudActive 为真但登录恢复/加载/生物识别锁仍遮住 Stack 时注册通知处理。增加路由可用条件，待实际 Stack 可见后再恢复原通知消费，避免过早跳转；不改变任何通知按钮写入逻辑。
 - RED：APNs 两个传输测试因 body 缺失失败；根组件三个加载/锁定/恢复场景失败。GREEN：后端相关 126 项及后续 reserved-field 4 项通过；Mobile 50 项通过，tsc 和 System Map 通过。未做真实推送发送、真实健康记录读取或模型评测。合成 APNs HTTP 捕获不能证明设备点击已验收。
 - 前一版本 b1dd 后端与 Web 已成功，OTA validate 成功但 publish run 38726280487 在 claim-ota/command_failed 阻断；无 server intent/lease，未到 vendor update。当前服务器 remaining=8 与额度门拒绝一致，但现有闭集诊断不足以唯一证明失败当时原因。保留原失败证据；新修复不能作为换 SHA 绕过失败的依据。待安全复核及合法后续发布路径，未部署本节变更。
+
+
+## 2026-10-16 用药提醒落地页修复
+
+用户反馈点击用药提醒没有落地页。源码确认：每日本地通知使用 `screen=home`，远程定时通知使用通用 `/(tabs)/record`；上一轮 APNs 数据及解锁时机修复没有修正这两个生产者的目的地。
+
+本次将两端新提醒统一指向已有 `/medications` 页面，并在通知与历史列表共用路由解析器兼容旧用药提醒的首页/记录页目的地。具体已有深链接与其他类型通知保持不变。页面继续从认证 API 读取本人药品，推送中的药名、剂量不作为页面数据或写入授权；默认点按只导航，不调用服药记录或议程完成接口。TAKEN/SKIP 动作原流程保留。
+
+验证：Mobile RED 9 failed/29 passed；后端生产者目的地断言 RED 1 failed。GREEN Mobile 40 passed（真实路由解析+通知消费+现有落地页）；后端隐私与 APNs 101 passed；TypeScript、System Map、diff check PASS。无数据库语义/API/schema/native变化，SQLite仅验证合成任务载荷；完整 CI-mode、精确远端 CI、G4、部署及 OTA 由交付回执追踪。未发送真实推送，未读取真实健康记录，未验证硬件点击。

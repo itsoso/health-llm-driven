@@ -61,10 +61,21 @@ export function resolveNotificationRoute(
 ): string | null {
   if (!data) return null;
 
+  // Older local reminders targeted home; remote reminders targeted the generic
+  // record tab. Keep already delivered notifications useful after an OTA.
+  const medicationReminder = data.reminder_type === 'medication'
+    || data.kind === 'medication_reminder'
+    || data.category === 'MEDICATION_REMINDER';
   const explicit = (data.deep_link ?? data.deeplink) as unknown;
   if (typeof explicit === 'string' && explicit.trim()) {
-    return normalizeKnownAliases(stripScheme(explicit));
+    const route = normalizeKnownAliases(stripScheme(explicit));
+    if (medicationReminder && ['/(tabs)', '/(tabs)/record', '/'].includes(route)) {
+      return '/medications';
+    }
+    return route;
   }
+
+  if (medicationReminder) return '/medications';
 
   const screen = data.screen as string | undefined;
   if (screen && screen in SCREEN_ROUTES) {

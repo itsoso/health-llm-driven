@@ -2174,7 +2174,7 @@ def scan_medication_reminders():
                         "scheduled_date": today_date,
                         "scheduled_time": cur_hhmm,
                         "scheduled_timezone": "Asia/Shanghai",
-                        "deep_link": "/(tabs)/record",
+                        "deep_link": "/medications",
                         # title 泛化后所有药共享同一 title;dedup 必须改走 rule_id
                         # (per 药×日×时点),否则同日第二种药/第二剂会被 title 去重吞掉。
                         "rule_id": f"medication_reminder.{med.id}.{today_date}.{cur_hhmm}",

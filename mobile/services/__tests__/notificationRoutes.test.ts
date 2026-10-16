@@ -64,3 +64,21 @@ describe('resolveNotificationRoute', () => {
     );
   });
 });
+
+
+describe('medication reminder landing', () => {
+  it.each([
+    { reminder_type: 'medication', screen: 'home' },
+    { kind: 'medication_reminder', screen: 'home' },
+    { category: 'MEDICATION_REMINDER', deep_link: '/(tabs)/record' },
+    { reminder_type: 'medication', deep_link: 'health://(tabs)/record' },
+    { reminder_type: 'medication', deep_link: '/(tabs)' },
+    { reminder_type: 'medication' },
+  ])('opens medications for existing reminder payload %j', (data) => {
+    expect(resolveNotificationRoute(data)).toBe('/medications');
+  });
+  it('preserves a specific destination and unrelated record notifications', () => {
+    expect(resolveNotificationRoute({ reminder_type: 'medication', deep_link: '/medication-edit?id=7' })).toBe('/medication-edit?id=7');
+    expect(resolveNotificationRoute({ deep_link: '/(tabs)/record' })).toBe('/(tabs)/record');
+  });
+});

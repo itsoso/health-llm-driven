@@ -126,7 +126,7 @@ export async function scheduleMedicationReminders(meds: ReminderSource[]): Promi
             dosage: e.dosage,
             taken_time: e.time,
             scheduled_time: scheduledHHMM,
-            screen: 'home',
+            deep_link: '/medications',
           },
         },
         trigger: {

@@ -470,6 +470,7 @@ def test_medication_reminder_no_drug_name_on_lock_screen(db):
     # 名称/剂量在 data payload(App 解锁后渲染)
     assert kwargs["data"]["medication_name"] == "二甲双胍"
     assert kwargs["data"]["dosage"] == "500mg"
+    assert kwargs["data"]["deep_link"] == "/medications"
     assert kwargs["data"]["category"] == "MEDICATION_REMINDER"
     assert kwargs["data"]["reminder_type"] == "medication"
     assert kwargs["data"]["scheduled_date"] == fixed_now.date().isoformat()

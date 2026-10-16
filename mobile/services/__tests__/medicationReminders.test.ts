@@ -104,6 +104,7 @@ describe('scheduleMedicationReminders', () => {
       medication_id: 1,
       taken_time: '08:00',
       scheduled_time: '09:00',
+      deep_link: '/medications',
     });
   });
 
