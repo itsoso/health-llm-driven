@@ -6,10 +6,10 @@
     "mobile_routes": 138,
     "model_files": 122,
     "safety_rules_total": 65,
-    "service_files": 483,
+    "service_files": 484,
     "specialists": 13,
     "twin_partitions": 15,
-    "web_pages": 81
+    "web_pages": 82
   },
   "coverage": {
     "api_boundaries": {
@@ -3070,6 +3070,20 @@
     },
     {
       "coverage": "complete",
+      "id": "surface.web.connect.kbase",
+      "kind": "surface",
+      "name": "Web /connect/kbase",
+      "owner": "web",
+      "source": {
+        "path": "frontend/src/app/connect/kbase/page.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "coverage": "complete",
       "id": "surface.web.daily-insights",
       "kind": "surface",
       "name": "Web /daily-insights",
@@ -4266,6 +4280,16 @@
         "type": "code"
       },
       "to": "surface.web.connect.health",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.frontend",
+      "source": {
+        "path": "frontend/src/app/connect/kbase/page.tsx",
+        "type": "code"
+      },
+      "to": "surface.web.connect.kbase",
       "type": "renders"
     },
     {
