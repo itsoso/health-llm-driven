@@ -167,3 +167,17 @@ def test_proxy_jwt_never_sent_as_owner_proof(monkeypatch):
 def test_unknown_pending_phase_rejected():
     with pytest.raises(m.ActivationError):
         m.advance({'done': [], 'pending': 'wrong'}, [('write', lambda: None)], lambda _: None)
+
+
+@pytest.mark.parametrize('policies', [
+    ["form-action 'self' https://kbase.executor.life.evil"],
+    ["form-action 'self' https://kbase.executor.life *"],
+    ["form-action 'self' https://kbase.executor.life; form-action *"],
+    ["form-action 'self' https://kbase.executor.life", "form-action 'self'"], [],
+])
+def test_csp_rejects_inexact_form_destinations(policies):
+    assert not m.exact_form_policy(policies)
+
+
+def test_csp_accepts_only_fixed_destination():
+    assert m.exact_form_policy(["default-src 'self'; form-action 'self' https://kbase.executor.life; script-src 'self'"])

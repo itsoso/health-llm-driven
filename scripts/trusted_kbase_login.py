@@ -236,10 +236,17 @@ def wait_ready(which):
     raise ActivationError('service readiness timed out')
 
 
+def exact_form_policy(policies):
+    if len(policies) != 1:
+        return False
+    directives = [part.split() for part in policies[0].split(';') if part.strip()]
+    return [item[1:] for item in directives if item[0].lower() == 'form-action'] == [["'self'", KBASE]]
+
+
 def frontend_proof():
     status, headers, raw = request(HEALTH + '/connect/kbase')
     policies = headers.get_all('Content-Security-Policy', [])
-    if (status != 200 or not policies or any("form-action 'self' " + KBASE not in policy for policy in policies)
+    if (status != 200 or not exact_form_policy(policies)
             or headers.get('Referrer-Policy') != 'strict-origin' or 'no-store' not in headers.get('Cache-Control', '')
             or b'name="referrer" content="strict-origin"' not in raw):
         raise ActivationError('served login page policy differs')
