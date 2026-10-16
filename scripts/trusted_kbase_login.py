@@ -209,6 +209,9 @@ def service(which, *, allow_stopped=False):
         raise ActivationError('unit overrides authentication settings')
     if which == 'health':
         for path in (Path('/var/lib/reva-health-evidence-runtime/enabled.env'), Path('/var/lib/reva-vision-model/model.env')):
+            if path == Path('/var/lib/reva-health-evidence-runtime/enabled.env') and not os.path.lexists(path):
+                secure(path.parent, directory=True)
+                continue
             if selected(read(path)):
                 raise ActivationError('later environment source overrides authentication')
     pid = int(props['MainPID'])

@@ -27,7 +27,11 @@
 
 在 `/var/lib/reva-release/bootstrap/<publisher-sha>/source` 使用系统 Python 的固定 deploy 入口，传入 `--publisher-sha`、`--production-sha`、`--frontend-tree`、`--operation-id`；先只读预检，确认返回的证据后再加 `--evidence-sha256` 执行。原 launcher/build 锁和 business lease 继续互斥。停服前完成候选校验，核验固定 live 目录、父/根 inode、同设备且无嵌套挂载；确认 systemd control-group 已停空后删除旧 `.next` / `node_modules`，移入已验证的新制品并同步两个父目录，不保留旧制品副本。全部制品摘要一致才启动，公共/本地页面与后端保持证据均通过后才写终态并释放租约。删除、移动、fsync、启动或回读异常均保留原租约与 NEEDS_OPERATOR，不自动回滚、重试或换 operation-id。
 
+Web 制品发布保留生产跟踪配置，默认拒绝 `public` 与 `next.config.*` 差异。唯一已审查例外为 `trusted_frontend_publish.py` 固定内容摘要对绑定的 KBase `headers()` 默认来源变更；不接受任意配置改动或逆向摘要对。生产 Next 从候选 `routes-manifest.json` 读取响应头，发布后同时核验内网与公网 `/connect/kbase` 的唯一 CSP、精确 form-action、strict-origin 和 no-store，并核验 `/login` 仍仅允许 self。源 staging 必须包含保留的后端 revision 对象用于差异核验；缺失时只从 canonical GitHub 获取精确对象，不能跳过对比。发布器代码变化须重新绑定候选及制品，不能修改旧 READY 回执复用。
+
 新发布回执以 `publication_policy=no-backup-v1` 绑定全部阶段，`backups_digest={}`；历史消费者复核完整 phase/proof 及原 prepared artifact 的 intent/ready/claim、构建日志和 manifest 摘要，不访问已移动的 stage。新旧历史进入同一 catalog/seal 链；旧历史检查不放宽，新格式拒绝 previous-*、recovery 附件、未知 policy 与部分终态。显式要求验证新格式的备份恢复集会拒绝，不能将空集称作可恢复。后续 seal/rotate 沿既有 canonical 路径更新。
+
+`scripts/frontend_no_backup_finalization.py --finalizer-sha <current-main>` 仅收尾代码中固定绑定的已安装 no-backup Web 发布。该次 `/login` 为 CSR，初始 HTML 没有登录文案导致验收误判；新验收保留 200、固定 URL、有界 HTML 和 CSP 检查。入口先只读预检，再以返回的 `--evidence-sha256` 执行；只接受新精确绿色主干 canonical 源码，验证原安装授权、原制品/claim、后端配置快照、稳定进程、内外网页面和原租约。原 operation 的全部文件保持原 inode/内容，`failed.json` 不改写；新 sibling `frontend-publication-finalizations/<operation>` 写 intent/verified/completed，小审计闭合后历史消费者才承认安装已验收。收尾不重建、不切换、不重启、不建备份；任一步中断保持阻断，不自动重试。它先在旧授权仍安装时收尾，随后新 canonical bootstrap 才能 seal/rotate 安装新消费者，避免租约与授权循环。
 
 前端 finalizer 的普通历史、pending、inspect 和 finalize 路径仅核对备份根目录与审计，记录 `integrity=not_checked`；旧完整摘要只验证其结构和终态绑定，不重读正文或冒充新鲜完整性证明。只有明确请求恢复某一操作时，才显式选择该操作验证正文。
 

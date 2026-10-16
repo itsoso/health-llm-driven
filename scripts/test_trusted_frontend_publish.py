@@ -230,3 +230,106 @@ def test_old_availability_verifies_only_fixed_internal_and_public_privacy(monkey
     monkeypatch.setattr(m.urllib.request,'build_opener',lambda *a:SimpleNamespace(open=open_request))
     m.verify_availability_pages()
     assert urls==['http://127.0.0.1:30001/privacy','https://health.executor.life/privacy']
+
+
+def kbase_config_pair():
+    candidate = (Path(__file__).parents[1] / 'frontend/next.config.js').read_bytes()
+    previous = candidate.replace(b"process.env.KBASE_SSO_ORIGIN ?? 'https://kbase.executor.life'", b"process.env.KBASE_SSO_ORIGIN")
+    return previous, candidate
+
+
+def test_only_reviewed_build_time_header_config_pair_is_allowed():
+    m = load()
+    previous, candidate = kbase_config_pair()
+    m.validate_runtime_input_change(['frontend/next.config.js'], previous, candidate)
+    for paths, before, after in [
+        (['frontend/next.config.js'], candidate, previous),
+        (['frontend/next.config.js'], previous, candidate + b'\n'),
+        (['frontend/next.config.js'], previous + b'\n', candidate),
+        (['frontend/next.config.mjs'], previous, candidate),
+        (['frontend/next.config.js', 'frontend/public/icon.svg'], previous, candidate),
+        (['frontend/public/icon.svg'], previous, candidate),
+    ]:
+        with pytest.raises(m.PublishError):
+            m.validate_runtime_input_change(paths, before, after)
+
+
+def login_headers(form="'self' https://kbase.executor.life"):
+    from email.message import Message
+    headers = Message()
+    headers['Content-Security-Policy'] = "default-src 'self'; form-action " + form
+    headers['Referrer-Policy'] = 'strict-origin'
+    headers['Cache-Control'] = 'private, no-cache, no-store, max-age=0'
+    return headers
+
+
+def test_served_login_policy_requires_exact_single_csp_and_private_response():
+    m = load()
+    assert m.valid_login_headers(login_headers(), '/connect/kbase')
+    assert m.valid_login_headers(login_headers("'self'"), '/login')
+    assert not m.valid_login_headers(login_headers(), '/login')
+    for form in ["'self'", "'self' https://evil.test", "'self' https://kbase.executor.life *", "'self' https://kbase.executor.life; form-action 'self'"]:
+        assert not m.valid_login_headers(login_headers(form), '/connect/kbase')
+    for key, value in [('Content-Security-Policy', "form-action 'self'"), ('Referrer-Policy', 'unsafe-url'), ('Cache-Control', 'public')]:
+        headers = login_headers()
+        if key != 'Content-Security-Policy': del headers[key]
+        headers[key] = value
+        assert not m.valid_login_headers(headers, '/connect/kbase')
+
+
+def test_raw_git_config_reader_does_not_normalize_line_endings(tmp_path):
+    import subprocess
+    from types import SimpleNamespace
+    m = load()
+    previous, candidate = kbase_config_pair()
+    env = {'PATH': '/usr/bin:/bin', 'HOME': str(tmp_path), 'GIT_CONFIG_NOSYSTEM': '1',
+           'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null',
+           'GIT_AUTHOR_NAME': 'Test', 'GIT_AUTHOR_EMAIL': 'test@example.test',
+           'GIT_COMMITTER_NAME': 'Test', 'GIT_COMMITTER_EMAIL': 'test@example.test'}
+    def git(*args, data=None):
+        return subprocess.run(['/usr/bin/git', '-C', str(tmp_path), *args], input=data,
+                              env=env, capture_output=True, check=True).stdout.strip()
+    git('init')
+    for raw in (candidate, candidate.replace(b'\n', b'\r\n')):
+        blob = git('hash-object', '-w', '--stdin', data=raw)
+        subtree = git('mktree', data=b'100644 blob ' + blob + b'\tnext.config.js\n')
+        tree = git('mktree', data=b'040000 tree ' + subtree + b'\tfrontend\n')
+        revision = git('commit-tree', tree.decode(), '-m', 'fixture').decode()
+        actual = m.runtime_config_bytes(tmp_path, revision, SimpleNamespace(ENV=env))
+        assert actual == raw
+        if raw == candidate:
+            m.validate_runtime_input_change(['frontend/next.config.js'], previous, actual)
+        else:
+            with pytest.raises(m.PublishError):
+                m.validate_runtime_input_change(['frontend/next.config.js'], previous, actual)
+
+
+def test_complete_page_readback_accepts_csr_login_without_translated_text(monkeypatch):
+    from types import SimpleNamespace
+    m = load(); visited = []
+    class Response:
+        status = 200
+        def __init__(self, url):
+            self.url = url
+            self.headers = login_headers("'self' https://kbase.executor.life" if url.endswith('/connect/kbase') else "'self'")
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def geturl(self): return self.url
+        def read(self, bound):
+            path = self.url.split('/', 3)[3]
+            return {'privacy': '可选足迹与分享', 'connect/health': '小巴健康 · 数据连接',
+                    'connect/kbase': '登录知识库 <meta name="referrer" content="strict-origin">',
+                    'login': '<!DOCTYPE html><html><body><div id="root"></div></body></html>'}[path].encode()
+    def request(req, **kwargs):
+        visited.append(req.full_url)
+        return Response(req.full_url)
+    monkeypatch.setattr(m.urllib.request, 'build_opener', lambda *args: SimpleNamespace(open=request))
+    m.verify_pages()
+    assert len(visited) == 8 and len(set(visited)) == 8
+    monkeypatch.setattr(m.time, 'sleep', lambda _: None)
+    original = Response.__init__
+    def bad(self, url):
+        original(self, url)
+        if url.endswith('/login'): self.headers = login_headers("'self' https://evil.test")
+    monkeypatch.setattr(Response, '__init__', bad)
+    with pytest.raises(m.PublishError): m.verify_pages()

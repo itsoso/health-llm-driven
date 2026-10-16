@@ -126,6 +126,27 @@ def configuration(build):
     return environment, fingerprints
 
 
+def runtime_config_bytes(source, revision, build):
+    try:
+        return subprocess.run(
+            ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
+             '-C', str(source), 'show', revision + ':frontend/next.config.js'],
+            env=build.ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=90, check=True).stdout
+    except (subprocess.SubprocessError, OSError):
+        raise PublishError('runtime configuration bytes unavailable') from None
+
+
+def validate_runtime_input_change(paths, before, after):
+    # This reviewed headers() default is baked into routes-manifest.json.
+    # Production keeps its tracked config; no other runtime input may differ.
+    expected = ('d19b9498bfa9b1b121045423352ecd52bcea0af2e82b1fe2c38b34d16b59250a',
+                'd6d9e7fd433568c15b2e10e83f22745bcb50add4a348928af7a3cab7115cc6a4')
+    actual = (hashlib.sha256(before).hexdigest(), hashlib.sha256(after).hexdigest())
+    if paths != ['frontend/next.config.js'] or actual != expected:
+        raise PublishError('runtime source inputs require a separately reviewed publication')
+
+
 def inspect(args, source, helper, bootstrap, server, gate, build):
     gate.verify_release(args.publisher_sha, args.publisher_sha)
     gate._latest(gate._get_json, args.production_sha)
@@ -134,8 +155,12 @@ def inspect(args, source, helper, bootstrap, server, gate, build):
     # Only compiled application artifacts switch. Runtime configuration/public
     # assets remain tracked at the preserved production revision.
     runtime_inputs = ('frontend/public', 'frontend/next.config.js', 'frontend/next.config.mjs', 'frontend/next.config.ts')
-    if build.git(source, 'diff', '--name-only', args.production_sha, args.publisher_sha, '--', *runtime_inputs):
-        raise PublishError('runtime source inputs require a separately reviewed publication')
+    changed = build.git(source, 'diff', '--name-only', args.production_sha, args.publisher_sha, '--', *runtime_inputs)
+    if changed:
+        if changed.splitlines() != ['frontend/next.config.js']:
+            raise PublishError('runtime source inputs require a separately reviewed publication')
+        validate_runtime_input_change(changed.splitlines(), runtime_config_bytes(source, args.production_sha, build),
+                                      runtime_config_bytes(source, args.publisher_sha, build))
     old_package = json.loads(build.git(PRODUCTION, 'show', args.production_sha+':frontend/package.json'))
     new_package = json.loads((source/'frontend/package.json').read_text())
     if old_package.get('type') != new_package.get('type'):
@@ -207,6 +232,19 @@ def verify_availability_pages():
     _verify_pages(include_connection=False)
 
 
+def valid_login_headers(headers, path):
+    policies = headers.get_all('Content-Security-Policy', [])
+    if len(policies) != 1:
+        return False
+    directives = [part.split() for part in policies[0].split(';') if part.strip()]
+    expected = ["'self'"] + (['https://kbase.executor.life'] if path == '/connect/kbase' else [])
+    if [item[1:] for item in directives if item[0].lower() == 'form-action'] != [expected]:
+        return False
+    return path != '/connect/kbase' or (
+        headers.get_all('Referrer-Policy', []) == ['strict-origin']
+        and 'no-store' in [item.strip().lower() for item in headers.get('Cache-Control', '').split(',')])
+
+
 def _verify_pages(*, include_connection):
     context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     defaults=ssl.get_default_verify_paths()
@@ -217,7 +255,9 @@ def _verify_pages(*, include_connection):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),urllib.request.HTTPSHandler(context=context))
     for host in ('http://127.0.0.1:30001', 'https://health.executor.life'):
         routes=[('/privacy','可选足迹与分享')]
-        if include_connection: routes.append(('/connect/health','小巴健康 · 数据连接'))
+        if include_connection:
+            routes.extend([('/connect/health', '小巴健康 · 数据连接'),
+                           ('/connect/kbase', '登录知识库'), ('/login', '<html')])
         for path, marker in routes:
             success = False
             for _ in range(10):
@@ -225,6 +265,10 @@ def _verify_pages(*, include_connection):
                     with opener.open(urllib.request.Request(host+path, headers={'Cache-Control':'no-cache'}), timeout=10) as response:
                         raw=response.read(2_000_001)
                         success=response.status == 200 and response.geturl() == host+path and len(raw)<=2_000_000 and marker in raw.decode()
+                        if success and path in ('/connect/kbase', '/login'):
+                            success = valid_login_headers(response.headers, path)
+                            if path == '/connect/kbase':
+                                success = success and b'name="referrer" content="strict-origin"' in raw
                 except (OSError, UnicodeError):
                     success=False
                 if success: break
