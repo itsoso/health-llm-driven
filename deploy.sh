@@ -18,6 +18,10 @@ NC='\033[0m' # No Color
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" = "--activate-kbase-login" ]]; then
+    shift
+    exec /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_kbase_login.py" "$@"
+fi
 if [[ "${1:-}" = "--neo-wechat" ]]; then
     shift
     exec /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3.12 -I -S -B "$SCRIPT_DIR/scripts/trusted_neo_wechat.py" "$@"
