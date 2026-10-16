@@ -1,5 +1,15 @@
 # 餐食卡片视觉整理
 
+| Field | Value |
+| --- | --- |
+| status | building |
+| current_stage | G3 verification / G4 review |
+| Controller | quick_fix |
+
+## G1 Scope admission
+
+裁决: PASS。现有餐食卡视觉修正，不增加用户行为、健康建议或写权限。
+
 ## 范围
 
 仅调整 `mobile/components/chat/cards/DietDraftCard.tsx` 的视觉层，不改识别、记录、确认、数据计算、健康建议或导航行为。保留其他会话修改。
