@@ -230,3 +230,48 @@ def test_old_availability_verifies_only_fixed_internal_and_public_privacy(monkey
     monkeypatch.setattr(m.urllib.request,'build_opener',lambda *a:SimpleNamespace(open=open_request))
     m.verify_availability_pages()
     assert urls==['http://127.0.0.1:30001/privacy','https://health.executor.life/privacy']
+
+
+def kbase_config_pair():
+    candidate = (Path(__file__).parents[1] / 'frontend/next.config.js').read_bytes()
+    previous = candidate.replace(b"process.env.KBASE_SSO_ORIGIN ?? 'https://kbase.executor.life'", b"process.env.KBASE_SSO_ORIGIN")
+    return previous, candidate
+
+
+def test_only_reviewed_build_time_header_config_pair_is_allowed():
+    m = load()
+    previous, candidate = kbase_config_pair()
+    m.validate_runtime_input_change(['frontend/next.config.js'], previous, candidate)
+    for paths, before, after in [
+        (['frontend/next.config.js'], candidate, previous),
+        (['frontend/next.config.js'], previous, candidate + b'\n'),
+        (['frontend/next.config.js'], previous + b'\n', candidate),
+        (['frontend/next.config.mjs'], previous, candidate),
+        (['frontend/next.config.js', 'frontend/public/icon.svg'], previous, candidate),
+        (['frontend/public/icon.svg'], previous, candidate),
+    ]:
+        with pytest.raises(m.PublishError):
+            m.validate_runtime_input_change(paths, before, after)
+
+
+def login_headers(form="'self' https://kbase.executor.life"):
+    from email.message import Message
+    headers = Message()
+    headers['Content-Security-Policy'] = "default-src 'self'; form-action " + form
+    headers['Referrer-Policy'] = 'strict-origin'
+    headers['Cache-Control'] = 'private, no-cache, no-store, max-age=0'
+    return headers
+
+
+def test_served_login_policy_requires_exact_single_csp_and_private_response():
+    m = load()
+    assert m.valid_login_headers(login_headers(), '/connect/kbase')
+    assert m.valid_login_headers(login_headers("'self'"), '/login')
+    assert not m.valid_login_headers(login_headers(), '/login')
+    for form in ["'self'", "'self' https://evil.test", "'self' https://kbase.executor.life *", "'self' https://kbase.executor.life; form-action 'self'"]:
+        assert not m.valid_login_headers(login_headers(form), '/connect/kbase')
+    for key, value in [('Content-Security-Policy', "form-action 'self'"), ('Referrer-Policy', 'unsafe-url'), ('Cache-Control', 'public')]:
+        headers = login_headers()
+        if key != 'Content-Security-Policy': del headers[key]
+        headers[key] = value
+        assert not m.valid_login_headers(headers, '/connect/kbase')
