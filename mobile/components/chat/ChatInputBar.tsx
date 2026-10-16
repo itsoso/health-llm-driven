@@ -24,6 +24,7 @@ import {
   type ChatMedicalExamImportSkillResult,
 } from '../../services/chatMedicalExamImportSkill';
 import MedicalExamImportFlow from '../medical/MedicalExamImportFlow';
+import SupplementQuickCheckinSheet from '../supplements/SupplementQuickCheckinSheet';
 import {
   cleanupAbandonedChatDraftFiles,
   clearPersistedChatDraft,
@@ -177,6 +178,7 @@ export default function ChatInputBar({
 }: Props) {
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
+  const [showSupplementCheckin, setShowSupplementCheckin] = useState(false);
   const closeAttachmentMenu = useCallback(() => setShowMenu(false), []);
   const attachmentDismiss = useSheetDismiss(closeAttachmentMenu, showMenu);
   React.useEffect(() => {
@@ -1231,6 +1233,16 @@ export default function ChatInputBar({
               <AttachmentGridItem icon="images-outline" label="相册" hint={`从相册选择照片，当前最多${pendingImageLimit}张`} onPress={handlePickImage} />
               <AttachmentGridItem icon="document-outline" label="文件" hint="选择文档或报告" onPress={handlePickFile} />
               <AttachmentGridItem
+                icon="checkbox-outline"
+                label="补剂打卡"
+                hint="勾选已有补剂，确认本次已服用"
+                onPress={() => {
+                  closeAttachmentMenu();
+                  Keyboard.dismiss();
+                  setShowSupplementCheckin(true);
+                }}
+              />
+              <AttachmentGridItem
                 icon="clipboard-outline"
                 label="排便记录"
                 hint="填写状态，可拍照留存私人记录"
@@ -1390,6 +1402,9 @@ export default function ChatInputBar({
         </View>
       </View>
 
+      {showSupplementCheckin && (
+        <SupplementQuickCheckinSheet onClose={() => setShowSupplementCheckin(false)} />
+      )}
       <MedicalExamImportFlow
         visible={showMedicalImportFlow}
         onClose={() => setShowMedicalImportFlow(false)}

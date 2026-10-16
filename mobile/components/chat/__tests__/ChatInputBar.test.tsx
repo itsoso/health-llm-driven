@@ -16,6 +16,14 @@ import ChatInputBar from '../ChatInputBar';
 import { acceptAIConsentRevision, aiConsentRevision, invalidateAIConsent, setAIConsentIdentity } from '../../../services/aiConsentState';
 import { revaColors } from '../../../constants/revaTheme';
 
+jest.mock('../../supplements/SupplementQuickCheckinSheet', () => {
+  const React = require('react');
+  const { Pressable, Text } = require('react-native');
+  return { __esModule: true, default: ({ onClose }: any) => (
+    <Pressable accessibilityLabel="关闭补剂弹窗" onPress={onClose}><Text>补剂选择弹窗</Text></Pressable>
+  ) };
+}, { virtual: true });
+
 const mockExecuteMedicalExamImport = jest.fn();
 const mockRouterPush = jest.fn();
 const mockStartDictation = jest.fn();
@@ -404,6 +412,21 @@ describe('ChatInputBar', () => {
     expect(itemStyle.flexGrow).toBe(1);
     expect(itemStyle.minHeight).toBeGreaterThanOrEqual(44);
     expect(getByText('导入体检报告').props.numberOfLines).toBeUndefined();
+  });
+
+  it('opens and dismisses supplement selection without sending a chat or losing its draft', () => {
+    const onSend = jest.fn();
+    const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    enterKeyboardMode(view);
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    fireEvent.changeText(view.getByLabelText('消息输入框'), '未发送草稿');
+    fireEvent.press(view.getByLabelText('补剂打卡'));
+    expect(view.getByText('补剂选择弹窗')).toBeTruthy();
+    expect(view.queryByTestId('attachment-action-grid')).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.press(view.getByLabelText('关闭补剂弹窗'));
+    expect(view.queryByText('补剂选择弹窗')).toBeNull();
+    expect(view.getByDisplayValue('未发送草稿')).toBeTruthy();
   });
 
   it('opens private bowel recording from chat without sending the photo to the conversation', () => {
