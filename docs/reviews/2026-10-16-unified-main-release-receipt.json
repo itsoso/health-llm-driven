@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "status": "DEPLOYED_AND_OTA_PUBLISHED",
+  "released_sha": "c2b6f87469999f134bd1853274def9e0f4153f95",
+  "observed_at": "2026-10-16T15:57:19.589140+00:00",
+  "included_upstream": [
+    "513f4e4a2570276171335b5851ea8f44558d28a7",
+    "5b8f7c430096cf63a1534ef9e0de48930a03272b"
+  ],
+  "scope": [
+    "owned medication review query",
+    "named dumpling portion continuation",
+    "medication reminder landing",
+    "workout persistent entry and recent workout phrasing",
+    "symptom observation routing",
+    "notification unlock routing",
+    "current main release and authentication fixes"
+  ],
+  "ci": {
+    "run_id": 38922978423,
+    "conclusion": "success",
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/38922978423"
+  },
+  "local_ci_mode": {
+    "sha": "c2b6f87469999f134bd1853274def9e0f4153f95",
+    "source": "/tmp/reva-subday-ci-8jv3il6m/source",
+    "platform": "Darwin",
+    "uid": 501,
+    "gid": 20,
+    "tmp_gid": 20,
+    "linux_native_checks": "not_proven_by_macos_run",
+    "environment_single_exit": 0,
+    "dossier_check_exit": 0,
+    "dossier_tests_exit": 0,
+    "invariants_exit": 0,
+    "junit": {
+      "tests": 4060,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 23
+    },
+    "source_status": "",
+    "elapsed_seconds": 508.93
+  },
+  "mobile": {
+    "suites_passed": 362,
+    "tests_passed": 3740,
+    "tests_skipped": 1,
+    "typecheck": "passed",
+    "native_inputs_changed": false
+  },
+  "safety": {
+    "integrated_release_delta": {
+      "verdict": "GO",
+      "sha": "d8e4d64f4f7ff4903922bad6b1702404258e1331",
+      "base_sha": "01afa5345ca58f03b216427ab246551898ea24b1",
+      "scope": "Independent safety review of 11 changed files from PR284-286; prior application candidate safety reviews inherited only for unchanged application trees.",
+      "findings": [],
+      "checks": [
+        {
+          "name": "focused synthetic release, history, authentication regression",
+          "command": "backend/venv/bin/python -m pytest -q scripts/test_frontend_no_backup_finalization.py scripts/test_trusted_frontend_publish.py scripts/test_frontend_history_seal_bootstrap.py scripts/test_trusted_kbase_login.py scripts/test_trusted_frontend_publish_history.py scripts/test_trusted_frontend_history_seal.py",
+          "exit_code": 0,
+          "passed": 214,
+          "elapsed_seconds": 3.45,
+          "log": "/tmp/reva-latest-main-g4-tests.log"
+        },
+        {
+          "name": "git diff --check base..candidate",
+          "exit_code": 0
+        }
+      ],
+      "reviewed_boundaries": [
+        "Runtime config exception accepts only exact next.config.js forward raw-byte digest pair; other public/config changes reject. Inner and public login readbacks preserve unique CSP and exact form-action, with KBase strict-origin and no-store.",
+        "No-backup finalizer accepts one hard-coded operation, original publisher/production/tree/artifact tuple, original installed authorization, consumed artifact provenance, stable live process and unchanged artifact. It performs no rebuild/switch/restart/backup.",
+        "Original failure files retain identity/content; sibling finalization audit must close fully. Interrupted writes, fsync, lease release, rebound lease and drift tests retain blocking history. Unknown finalization profiles fail closed.",
+        "Optional environment source absence is allowed only for systemd ignore_errors=yes exact path with secure parent. Dangling links, unsafe paths, authentication overrides and absent required source remain rejected."
+      ],
+      "release_conditions": [
+        "GO is code review only, not deployment or OTA completion. Final current-main exact CI, canonical operation state and owner handoff remain required.",
+        "Finalizer profile c140343fa265bb6d2214a3b9eda4e98b is not authorization to finalize older operation 94c0e2210b5e3a44c09784ac6b9373bd or replay old transports.",
+        "No remote mutation, real model invocation, health record read or backup operation performed. Native hardware and Linux production execution not verified by these synthetic tests."
+      ],
+      "successor_completion_review": {
+        "verdict": "GO_FOR_PUSH_AND_NEW_GATED_RELEASE_PREPARATION",
+        "evidence": [
+          "/tmp/reva-history-current-verify.json",
+          "/tmp/reva-latest-finalization-readonly.json",
+          "/tmp/reva-latest-main-readonly.json",
+          "/tmp/reva-origin-main-ci.json"
+        ],
+        "reason": [
+          "94c0e2210b5e3a44c09784ac6b9373bd is present only as a prepared artifact with no claim and no publication directory; reviewed consume path writes claim before consumption. This is not evidence of an installed operation needing a fabricated completion. Preserve it untouched.",
+          "The successor c140343fa265bb6d2214a3b9eda4e98b has canonical FINALIZED_NO_BACKUP_PUBLICATION sibling receipt retaining its original failed evidence. Current installed executor validates complete frontend and OTA histories.",
+          "Authorized policy513f4e4a2570276171335b5851ea8f44558d28a7 matches installed/canonical executor hash25744743a662226f831e1f0852055eb9781799307a30a63db60a0c68e2425bd7; that exact upstream CI succeeded. KBase journal is CONFIGURATION_SUCCEEDED with no pending step and all6 configuration/verify stages done.",
+          "Together with user designation of this chat as publisher, independently verified successor completion supersedes the prior unknown-operation blocker. Absence of locks alone was not used as proof."
+        ],
+        "remaining_requirements": [
+          "Before push: recheck remote main ancestry and open publisher activity, preserve other working tree edits, exact reviewed commit only and correct exact-SHA realmodel waiver.",
+          "Before deploy: candidate remote fullCI and local CI-mode, current canonical preflight with process proof/lock/lease checks; prepare a fresh candidate-bound reviewed transition from actual513 policy. Never replay old rotation/stage/revoke scripts.",
+          "Backend candidate success receipt and health must precede sameSHA trustedOTA validate then publish; native fingerprint compatibility remains required.",
+          "No claim that KBase browser/device acceptance or candidate backend/OTA deployment has completed."
+        ]
+      }
+    },
+    "notification_delta": {
+      "verdict": "GO",
+      "sha": "c2b6f87469999f134bd1853274def9e0f4153f95",
+      "base_sha": "d8e4d64f4f7ff4903922bad6b1702404258e1331",
+      "scope": "Independent review of 9-file notification unlock merge delta and integrated medication-reminder route. Prior d8 code review inherited for unchanged paths.",
+      "findings": [],
+      "verification": {
+        "focused_jest": {
+          "exit_code": 0,
+          "suites": 7,
+          "passed": 52,
+          "duration_seconds": 3.215,
+          "log": "/tmp/reva-latest-notification-merge-g4-tests.log"
+        },
+        "git_diff_check": {
+          "exit_code": 0
+        }
+      },
+      "review_notes": [
+        "Lock initialization now fails closed and keeps authenticated content hidden pending SecureStore/hardware checks. Navigation readiness requires lockReady, unlocked, authenticated cloud session, idle registration and mounted root navigation.",
+        "Cold-start response readiness is rechecked after asynchronous native read. Failed router push is not marked processed and native response remains pending; explicit background TAKEN actions intentionally remain separate from view navigation.",
+        "Foreground banner renders only in authenticated root content and delegates default tap to common route handling without clearing another native response. Opening a medication reminder remains a read-only landing; explicit check-in actions retain existing write handlers.",
+        "Integrated medication landing owner/token invalidation remains intact; focused tests include stale account response protection, legacy notification routing and no navigation before unlock.",
+        "No changes to native dependencies, permissions or signing in this delta. Runtime fingerprint and exact-SHA backend-before-OTA checks remain release responsibilities."
+      ],
+      "limitations": [
+        "Synthetic tests do not prove native OS lockscreen delivery, FaceID hardware behavior or installed-device OTA uptake.",
+        "This GO covers changed behavior, not a new audit of all preexisting background-action persistence. Existing write authorization remains enforced server-side; no authorization bypass introduced in reviewed diff.",
+        "Current candidate fullCI, CI-mode, live release ownership/preflight and backend receipt remain required before OTA publish."
+      ]
+    },
+    "transport": {
+      "verdict": "GO",
+      "scope": "Static independent review only of newly generated current-state-bound transport; wrappers were NOT executed",
+      "candidate_sha": "c2b6f87469999f134bd1853274def9e0f4153f95",
+      "old_policy_sha": "513f4e4a2570276171335b5851ea8f44558d28a7",
+      "preserved_production_sha": "b2948b77b0b3df260d03623c5b3cfb6539e5d640",
+      "reviewed_manifest": {
+        "stage": {
+          "path": "/tmp/reva-current-release-stage.py",
+          "sha256": "ce368b49c9d02b7609493ef4ed920fa95366cdc993c0b1b6e3e95578039c832e"
+        },
+        "revoke": {
+          "path": "/tmp/reva-current-release-revoke.py",
+          "sha256": "4465c447f8e191f415a2d39fa561bfc1387b8b3bc758533bbe96e611d2dfb49a"
+        },
+        "key-retirement": {
+          "path": "/tmp/reva-current-release-key-retirement.py",
+          "sha256": "ca85342d71e68e9370107a6846a6166129f1b2e99b191aadd8733ca1e19ed067"
+        },
+        "rotate": {
+          "path": "/tmp/reva-current-release-rotate.py",
+          "sha256": "3b1f9f3113f1820642637592fcb9f2ae271d34ef64222c1f3d1cbf8b9d1d9761"
+        }
+      },
+      "findings": [],
+      "validation": [
+        "All four wrapper AST syntax parses passed; all manifest content hashes matched.",
+        "Bound bootstrap, gate, executor and runtime transaction hashes independently match git objects at candidate SHA.",
+        "Stage rejects existing staging and binds canonical origin/TLS, clean exact checkout, production receipt/runtime terminal and NEVER_STARTED authority. It performs no production artifact replacement.",
+        "Revoke holds original launcher lock and requires absent old build/workspace/business lease, validates history/process idleness and calls canonical locked revocation. Exclusive private operation log prevents normal replay.",
+        "Key retirement checks managed public keys absent from authorized_keys, verifies private-to-public match without exposing private bytes, binds inode/hash, writes exclusive intent, deletes only revoked loopback private key and records completion.",
+        "Rotate requires exact completed key-retirement audit, verifies source/current policy and delegates full exact-main CI plus mutual exclusion and no-backup-v1 retirement/install to canonical rotate. No old wrapper is reused or retried.",
+        "Canonical rotate writes durable retirement intent/completion, rejects partial existing states and does not create backup copies. Operator logs and receipts are private0600 under secure root path."
+      ],
+      "execution_prerequisites": [
+        "Wait for current candidate exact full CI and local CI-mode success; this report does not certify in-progress gates.",
+        "Refresh canonical production/policy/history/process state immediately before the sequence. Fail on any drift from OLD513/PRODb294/NEVER_STARTED; do not edit constants and proceed without new review.",
+        "Execute each phase once, in stage -> revoke -> key-retirement -> rotate order, retaining originals and terminal logs. Any nonzero exit/uncertain outcome requires read-only reconciliation and fresh review, never replay.",
+        "Wrapper preconditions and Python assertions must remain enabled; invoke reviewed bytes with system python3.12 -I -S -B, without -O.",
+        "After rotation, verify current policy/executor/retirement and unchanged production before separately gated deploy; backend receipt before same-SHA OTA validate and publish."
+      ]
+    }
+  },
+  "backend": {
+    "run_id": 38926157732,
+    "conclusion": "success",
+    "receipt": {
+      "sha": "c2b6f87469999f134bd1853274def9e0f4153f95",
+      "state": "SUCCEEDED"
+    },
+    "runtime": {
+      "phase": "COMMITTED",
+      "terminal_sha": "c2b6f87469999f134bd1853274def9e0f4153f95"
+    },
+    "services": {
+      "celery-beat": "active",
+      "celery-worker": "active",
+      "health-backend": "active",
+      "health-frontend": "active",
+      "reva-github-relay": "active"
+    },
+    "health": {
+      "status": "healthy",
+      "services": {
+        "api": "running",
+        "database": "connected",
+        "redis": "connected",
+        "celery": "connected"
+      }
+    },
+    "unauthenticated_reminder_route_status": 401
+  },
+  "ota": {
+    "validate_run": 38927046827,
+    "validate_state": "PREPARATION_PASSED",
+    "publish_run": 38927440294,
+    "publish_conclusion": "success",
+    "channel": "production",
+    "platform": "ios",
+    "verified": {
+      "group_id": "85055500-5e6c-4852-87f5-a354f38f8088",
+      "sha": "c2b6f87469999f134bd1853274def9e0f4153f95",
+      "update_id": "01a1456d-c68d-73f9-8661-93ac7c9bbff1"
+    },
+    "server_receipt": {
+      "intent_sha256": "b82510a0c889fc2a386f7b939c91469fa1254b1786827f29bd8775d484acb4ec",
+      "receipt_sha256": "cad3e74e9326e9dcd3a82b528ba1271faba241d9b1b7386f3fd3152d1d2a0ef4",
+      "sha": "c2b6f87469999f134bd1853274def9e0f4153f95",
+      "state": "SUCCEEDED"
+    },
+    "inventory": [
+      "claimed.json",
+      "completed.json",
+      "intent.json",
+      "lease.json",
+      "released-lease",
+      "verified.json"
+    ]
+  },
+  "release_locks": {
+    "business_lease_exists": false,
+    "launcher_busy": false,
+    "runtime_pending": false
+  },
+  "limits": [
+    "No device uptake or Face ID/camera hardware acceptance performed.",
+    "No real health records read and no live model evaluations performed.",
+    "Release checks do not prove production photo latency or live model quality.",
+    "Named food correction remains bounded; mixed-meal components require clarification."
+  ],
+  "backup_operations_performed": false
+}
