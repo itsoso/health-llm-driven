@@ -6,13 +6,14 @@ Original failure evidence stays immutable. Any partial finalization blocks.
 import argparse
 import fcntl
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import stat
 import sys
+import subprocess
+from types import ModuleType
 import time
 
 STATE = Path('/var/lib/reva-release')
@@ -34,9 +35,26 @@ def load(sha):
                     or not (stat.S_ISDIR(info.st_mode) if item != path else stat.S_ISREG(info.st_mode))
                     or (item == path and info.st_nlink != 1)):
                 raise FinalizationError('unsafe canonical finalizer source')
-    spec = importlib.util.spec_from_file_location('finalization_publisher', source / 'scripts/trusted_frontend_publish.py')
-    publisher = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(publisher)
+    entry = source / 'scripts/trusted_frontend_artifact.py'
+    for item in (*reversed(entry.parents), entry):
+        info = item.lstat()
+        if (info.st_uid != 0 or info.st_mode & 0o022
+                or not (stat.S_ISREG(info.st_mode) if item == entry else stat.S_ISDIR(info.st_mode))
+                or (item == entry and info.st_nlink != 1)):
+            raise FinalizationError('unsafe canonical loader')
+    raw = entry.read_bytes()
+    environment = dict(PATH='/usr/bin:/bin', HOME='/root', LC_ALL='C', GIT_CONFIG_NOSYSTEM='1',
+                       GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_SYSTEM='/dev/null', GIT_NO_REPLACE_OBJECTS='1')
+    canonical = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
+                                '-C', str(source), 'show', sha + ':scripts/trusted_frontend_artifact.py'],
+                               env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, timeout=30, check=True).stdout
+    if raw != canonical:
+        raise FinalizationError('canonical loader bytes differ')
+    artifact = ModuleType('finalization_artifact')
+    artifact.__file__ = str(entry)
+    exec(compile(raw, str(entry), 'exec', dont_inherit=True), artifact.__dict__)
+    publisher = artifact.canonical_module('finalization_publisher', source / 'scripts/trusted_frontend_publish.py', source, sha)
     checked, helper, bootstrap, server, gate, build = publisher.load_reviewed(sha)
     if checked != source:
         raise FinalizationError('canonical source differs')
@@ -117,6 +135,10 @@ def inspect(sha, context):
     if publisher.runtime(build) != process:
         raise FinalizationError('frontend changed during readback')
     publisher.assert_preserved(before, source, helper, bootstrap, server, build)
+    if publisher.bundle_digest(publisher.PRODUCTION / 'frontend', build) != binding['artifact_digest']:
+        raise FinalizationError('installed artifact changed after readback')
+    if publisher.runtime(build) != process:
+        raise FinalizationError('frontend changed after artifact verification')
     if (server.no_backup_finalization_original(STATE, binding['operation_id']) != original
             or lease_evidence(server, operation) != lease):
         raise FinalizationError('original evidence changed')
@@ -124,7 +146,7 @@ def inspect(sha, context):
             'original': original, 'lease': lease, 'process': process}
 
 
-def finalize(plan, inspect_again, server, bootstrap, check_locks):
+def finalize(plan, inspect_again, server, bootstrap, check_locks, verify_live):
     if inspect_again() != plan:
         raise FinalizationError('finalization evidence changed before intent')
     check_locks()
@@ -144,6 +166,7 @@ def finalize(plan, inspect_again, server, bootstrap, check_locks):
         bootstrap._write(audit / name, raw)
         return hashlib.sha256(raw).hexdigest()
     intent_hash = write('intent.json', plan)
+    verify_live()
     operation = STATE / 'frontend-publications' / operation_id
     if (server.no_backup_finalization_original(STATE, operation_id) != plan['original']
             or lease_evidence(server, operation) != plan['lease']):
@@ -170,7 +193,17 @@ def finalize(plan, inspect_again, server, bootstrap, check_locks):
                 'finalizer_sha': plan['finalizer_sha'], 'intent_sha256': intent_hash,
                 'verified_sha256': verified_hash}
     check_locks()
-    write('completed.json', complete)
+    committing = {'state': 'FINALIZATION_PENDING', 'intent_sha256': intent_hash}
+    try:
+        write('committing.json', committing)
+        write('completed.json', complete)
+        (audit / 'committing.json').unlink()
+        server._sync_directory(audit)
+    except BaseException:
+        # Keep a visible blocker even when completed bytes preceded fsync failure.
+        if not os.path.lexists(audit / 'committing.json'):
+            write('committing.json', committing)
+        raise
     return server.no_backup_finalization_completion(STATE, operation_id)
 
 
@@ -214,7 +247,14 @@ def main():
                 elif digest != args.evidence_sha256:
                     raise FinalizationError('preflight evidence changed')
                 else:
-                    print(json.dumps(finalize(plan, inspect_locked, server, bootstrap, check_locks)))
+                    def verify_live():
+                        before = server._json(server._read_private(STATE / 'frontend-publications' / plan['original']['binding']['operation_id'] / 'before.json'))
+                        publisher.assert_preserved(before, source, helper, bootstrap, server, build)
+                        if publisher.bundle_digest(publisher.PRODUCTION / 'frontend', build) != plan['original']['binding']['artifact_digest']:
+                            raise FinalizationError('installed artifact changed before release')
+                        if publisher.runtime(build) != plan['process']:
+                            raise FinalizationError('frontend changed before release')
+                    print(json.dumps(finalize(plan, inspect_locked, server, bootstrap, check_locks, verify_live)))
             finally:
                 if build_fd is not None:
                     os.close(build_fd)

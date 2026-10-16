@@ -45,7 +45,7 @@ def installed(tmp_path, monkeypatch):
 
 def finish(values):
     f, s, plan, b, *_ = values
-    return f.finalize(plan, lambda: plan, s, b, lambda: None)
+    return f.finalize(plan, lambda: plan, s, b, lambda: None, lambda: None)
 
 
 def test_finalization_preserves_original_evidence_and_never_mutates_service(installed):
@@ -57,7 +57,7 @@ def test_finalization_preserves_original_evidence_and_never_mutates_service(inst
     assert not f.LEASE.exists()
     assert {p.name: s._finalization_file_evidence(p) for p in operation.iterdir()} == before
     assert events == service_events
-    assert writes == ['intent.json', 'verified.json', 'completed.json']
+    assert writes == ['intent.json', 'verified.json', 'committing.json', 'completed.json']
     catalog = s.assert_frontend_publication_history(f.STATE)
     assert set(catalog) == {operation.name}
     assert s.frontend_publication_completion(f.STATE, operation.name) == result
@@ -82,7 +82,7 @@ def test_history_rejects_changed_original_or_partial_finalization(installed, mut
     with pytest.raises(s.LaunchError): s.assert_frontend_publication_history(f.STATE)
 
 
-@pytest.mark.parametrize('step', ['intent.json', 'verified.json', 'completed.json'])
+@pytest.mark.parametrize('step', ['intent.json', 'verified.json', 'committing.json', 'completed.json'])
 def test_write_failure_never_becomes_success(installed, step):
     f, s, plan, b, operation, *_ = installed
     original = b._write
@@ -93,7 +93,7 @@ def test_write_failure_never_becomes_success(installed, step):
     with pytest.raises(OSError): finish(installed)
     with pytest.raises(s.LaunchError): s.assert_frontend_publication_history(f.STATE)
     assert (operation / 'failed.json').exists()
-    if step != 'completed.json': assert f.LEASE.exists()
+    if step in ('intent.json', 'verified.json'): assert f.LEASE.exists()
 
 
 @pytest.mark.parametrize('step', ['root-parent', 'audit-parent', 'lease-parent', 'label', 'stage', 'started_at', 'token', 'lease-directory'])
@@ -137,3 +137,39 @@ def test_pending_exception_is_only_the_bound_profile_and_other_failures_block(in
     with pytest.raises(s.LaunchError): s.assert_frontend_publication_history(f.STATE, pending_no_backup_finalization='0' * 32)
     (operation.parent / ('1' * 32)).mkdir(mode=0o700)
     with pytest.raises(s.LaunchError): s.assert_frontend_publication_history(f.STATE, pending_no_backup_finalization=operation.name)
+
+
+@pytest.mark.parametrize('step', ['committing.json', 'completed.json'])
+def test_written_terminal_with_failed_fsync_is_not_success(installed, step):
+    f, s, plan, b, operation, *_ = installed
+    original = b._write
+    def fail_after_write(path, raw):
+        original(path, raw)
+        if path.name == step: raise OSError('fsync failed after content')
+    b._write = fail_after_write
+    with pytest.raises(OSError): finish(installed)
+    assert not f.LEASE.exists()
+    with pytest.raises(s.LaunchError): s.assert_frontend_publication_history(f.STATE)
+
+
+def test_failed_final_commit_directory_sync_recreates_blocker(installed, monkeypatch):
+    f, s, plan, _, operation, *_ = installed
+    audit = f.STATE / 'frontend-publication-finalizations' / operation.name
+    sync = s._sync_directory
+    def fail(path):
+        if path == audit and (audit / 'completed.json').exists() and not (audit / 'committing.json').exists():
+            raise OSError('commit directory sync failed')
+        sync(path)
+    monkeypatch.setattr(s, '_sync_directory', fail)
+    with pytest.raises(OSError): finish(installed)
+    assert (audit / 'committing.json').exists()
+    with pytest.raises(s.LaunchError): s.assert_frontend_publication_history(f.STATE)
+
+
+def test_live_drift_before_release_preserves_lease(installed):
+    f, s, plan, b, operation, *_ = installed
+    def drift(): raise f.FinalizationError('artifact or process changed')
+    with pytest.raises(f.FinalizationError):
+        f.finalize(plan, lambda: plan, s, b, lambda: None, drift)
+    assert f.LEASE.exists()
+    with pytest.raises(s.LaunchError): s.assert_frontend_publication_history(f.STATE)
