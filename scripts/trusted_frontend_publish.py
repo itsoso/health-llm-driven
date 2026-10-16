@@ -126,6 +126,17 @@ def configuration(build):
     return environment, fingerprints
 
 
+def runtime_config_bytes(source, revision, build):
+    try:
+        return subprocess.run(
+            ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
+             '-C', str(source), 'show', revision + ':frontend/next.config.js'],
+            env=build.ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=90, check=True).stdout
+    except (subprocess.SubprocessError, OSError):
+        raise PublishError('runtime configuration bytes unavailable') from None
+
+
 def validate_runtime_input_change(paths, before, after):
     # This reviewed headers() default is baked into routes-manifest.json.
     # Production keeps its tracked config; no other runtime input may differ.
@@ -148,10 +159,8 @@ def inspect(args, source, helper, bootstrap, server, gate, build):
     if changed:
         if changed.splitlines() != ['frontend/next.config.js']:
             raise PublishError('runtime source inputs require a separately reviewed publication')
-        def config_bytes(revision):
-            return build.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
-                              '-C', str(source), 'show', revision + ':frontend/next.config.js']).encode()
-        validate_runtime_input_change(changed.splitlines(), config_bytes(args.production_sha), config_bytes(args.publisher_sha))
+        validate_runtime_input_change(changed.splitlines(), runtime_config_bytes(source, args.production_sha, build),
+                                      runtime_config_bytes(source, args.publisher_sha, build))
     old_package = json.loads(build.git(PRODUCTION, 'show', args.production_sha+':frontend/package.json'))
     new_package = json.loads((source/'frontend/package.json').read_text())
     if old_package.get('type') != new_package.get('type'):

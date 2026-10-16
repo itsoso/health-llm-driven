@@ -275,3 +275,30 @@ def test_served_login_policy_requires_exact_single_csp_and_private_response():
         if key != 'Content-Security-Policy': del headers[key]
         headers[key] = value
         assert not m.valid_login_headers(headers, '/connect/kbase')
+
+
+def test_raw_git_config_reader_does_not_normalize_line_endings(tmp_path):
+    import subprocess
+    from types import SimpleNamespace
+    m = load()
+    previous, candidate = kbase_config_pair()
+    env = {'PATH': '/usr/bin:/bin', 'HOME': str(tmp_path), 'GIT_CONFIG_NOSYSTEM': '1',
+           'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null',
+           'GIT_AUTHOR_NAME': 'Test', 'GIT_AUTHOR_EMAIL': 'test@example.test',
+           'GIT_COMMITTER_NAME': 'Test', 'GIT_COMMITTER_EMAIL': 'test@example.test'}
+    def git(*args, data=None):
+        return subprocess.run(['/usr/bin/git', '-C', str(tmp_path), *args], input=data,
+                              env=env, capture_output=True, check=True).stdout.strip()
+    git('init')
+    for raw in (candidate, candidate.replace(b'\n', b'\r\n')):
+        blob = git('hash-object', '-w', '--stdin', data=raw)
+        subtree = git('mktree', data=b'100644 blob ' + blob + b'\tnext.config.js\n')
+        tree = git('mktree', data=b'040000 tree ' + subtree + b'\tfrontend\n')
+        revision = git('commit-tree', tree.decode(), '-m', 'fixture').decode()
+        actual = m.runtime_config_bytes(tmp_path, revision, SimpleNamespace(ENV=env))
+        assert actual == raw
+        if raw == candidate:
+            m.validate_runtime_input_change(['frontend/next.config.js'], previous, actual)
+        else:
+            with pytest.raises(m.PublishError):
+                m.validate_runtime_input_change(['frontend/next.config.js'], previous, actual)
