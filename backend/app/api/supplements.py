@@ -42,6 +42,48 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+from app.schemas.supplement_groups import (
+    SupplementGroupCreate, SupplementGroupUpdate, SupplementGroupConfirm,
+    SupplementGroupResponse, SupplementGroupListResponse,
+    SupplementGroupConfirmation, SupplementGroupArchiveResponse,
+)
+from app.services import supplement_groups
+
+
+def _group_call(fn, *args):
+    try:
+        return fn(*args)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/groups", response_model=SupplementGroupListResponse)
+def get_supplement_groups(db: Session = Depends(get_db), current_user: User = Depends(get_current_user_required)):
+    return supplement_groups.list_groups(db, current_user.id)
+
+
+@router.post("/groups", response_model=SupplementGroupResponse)
+def create_supplement_group(data: SupplementGroupCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user_required)):
+    return _group_call(supplement_groups.save_group, db, current_user.id, data.name, data.supplement_ids)
+
+
+@router.put("/groups/{group_id}", response_model=SupplementGroupResponse)
+def update_supplement_group(group_id: int, data: SupplementGroupUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user_required)):
+    return _group_call(supplement_groups.save_group, db, current_user.id, data.name, data.supplement_ids, group_id, data.revision)
+
+
+@router.delete("/groups/{group_id}", response_model=SupplementGroupArchiveResponse)
+def archive_supplement_group(group_id: int, revision: str = Query(min_length=1, max_length=64), db: Session = Depends(get_db), current_user: User = Depends(get_current_user_required)):
+    return _group_call(supplement_groups.archive_group, db, current_user.id, group_id, revision)
+
+
+@router.post("/groups/{group_id}/confirm", response_model=SupplementGroupConfirmation)
+def confirm_supplement_group(group_id: int, data: SupplementGroupConfirm, db: Session = Depends(get_db), current_user: User = Depends(get_current_user_required)):
+    result = _group_call(supplement_groups.confirm_group, db, current_user.id, group_id, data.revision, data.record_date)
+    _invalidate_twin(current_user.id)
+    return result
+
+
 def _normalized_supplement_name(value: str) -> str:
     """Match the agent gateway's punctuation-insensitive supplement identity."""
     import re

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -7,6 +7,7 @@ import { recordMutationQueryKeys } from '../../applib/queryKeys';
 import { useAuth } from '../../hooks/useAuth';
 import { subscribeAuthSessionChange } from '../../services/api';
 import { loadSupplementSnapshot, submitSupplementSelection, type SupplementSnapshot } from '../../services/supplementQuickCheckin';
+import SupplementGroupsPanel from './SupplementGroupsPanel';
 import { revaColors as colors, revaSemantic } from '../../constants/revaTheme';
 
 /** Mounted only while open. No defaults, model calls, or implicit dosage writes. */
@@ -29,6 +30,7 @@ export default function SupplementQuickCheckinSheet({ onClose }: { onClose: () =
   const loadingRef = useRef(false);
   const invalidSession = useRef(false);
   const snapshotRef = useRef<SupplementSnapshot | null>(null);
+  const groupRefreshRequested = useRef(false);
   const identity = `${user?.id ?? ''}:${token ?? ''}`;
   const identityRef = useRef(identity);
   // Invalidate synchronously during a new auth render, before pending promises resume.
@@ -86,6 +88,20 @@ export default function SupplementQuickCheckinSheet({ onClose }: { onClose: () =
     const listener = AppState.addEventListener('change', state => { if (state === 'active') void refresh(true); });
     return () => { mounted.current = false; epoch.current += 1; loadingRef.current = false; unsubscribe(); clearInterval(timer); listener.remove(); };
   }, [refresh]);
+  const handleGroupBusy = useCallback((value: boolean) => {
+    busyRef.current = value; setBusy(value);
+    if (!value && groupRefreshRequested.current) {
+      groupRefreshRequested.current = false;
+      void refresh(true);
+    }
+  }, [refresh]);
+  const handleGroupRecorded = () => {
+    groupRefreshRequested.current = true;
+    setSelected([]);
+    void Promise.all([...recordMutationQueryKeys, ['supplements']].map(queryKey =>
+      queryClient.invalidateQueries({ queryKey, refetchType: 'none' }),
+    )).catch(() => { if (mounted.current && !invalidSession.current) setMessage('记录页面可能需要手动刷新'); });
+  };
   const close = () => { if (!busyRef.current) onClose(); };
   const submit = async () => {
     if (busyRef.current || loadingRef.current || uncertain || loadError || invalidSession.current || !snapshot || !selected.length) return;
@@ -123,7 +139,7 @@ export default function SupplementQuickCheckinSheet({ onClose }: { onClose: () =
   const manage = () => { if (!busyRef.current) { onClose(); router.push('/(tabs)/record'); } };
   return (
     <Modal transparent animationType="slide" visible onRequestClose={close}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <Pressable style={StyleSheet.absoluteFill} onPress={close} accessibilityLabel="收起补剂打卡" disabled={busy} />
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]} accessibilityViewIsModal>
           <View style={styles.handle} />
@@ -135,8 +151,9 @@ export default function SupplementQuickCheckinSheet({ onClose }: { onClose: () =
             <Pressable accessibilityRole="button" accessibilityLabel="关闭补剂打卡" accessibilityState={{ disabled: busy }} disabled={busy} onPress={close} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
           </View>
           <View style={styles.notice}><Text style={styles.noticeText}>只记录已服状态，不记录本次剂量。常规用量仅供核对，不是服用建议。</Text></View>
-          <ScrollView style={styles.list} contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+          <ScrollView style={styles.list} contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             {sessionChanged || invalidSession.current ? <Text style={styles.empty}>登录状态已变化，请关闭后重新打开</Text> : loading ? <View style={styles.loading}><ActivityIndicator color={colors.green500} /><Text style={styles.subtitle}>正在加载我的补剂…</Text></View> : <>
+              {snapshot && !loadError && <SupplementGroupsPanel snapshot={snapshot} disabled={disabled} onBusyChange={handleGroupBusy} onRecorded={handleGroupRecorded} onUncertain={() => setUncertain(true)} />}
               {!!message && <Text accessibilityRole="alert" style={[styles.message, uncertain || loadError ? styles.warning : null]}>{message}</Text>}
               {loadError ? <Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.secondary}><Text style={styles.linkText}>重新加载</Text></Pressable> : <>
                 {snapshot?.rows.length === 0 && <View style={styles.emptyBlock}><Text style={styles.emptyTitle}>暂无可勾选的补剂</Text><Text style={styles.subtitle}>请先在对话中添加补剂清单，再回来打卡。</Text></View>}
@@ -164,7 +181,7 @@ export default function SupplementQuickCheckinSheet({ onClose }: { onClose: () =
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

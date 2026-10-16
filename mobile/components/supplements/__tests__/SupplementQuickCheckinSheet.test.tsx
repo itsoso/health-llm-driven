@@ -2,6 +2,8 @@ import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import Sheet from '../SupplementQuickCheckinSheet';
 import { loadSupplementSnapshot, submitSupplementSelection } from '../../../services/supplementQuickCheckin';
+let mockGroupProps: any;
+jest.mock('../SupplementGroupsPanel', () => ({ __esModule: true, default: (props: any) => { mockGroupProps = props; return null; } }));
 let mockAuthListener: (() => void) | undefined;
 const mockPush = jest.fn();
 const mockInvalidate = jest.fn().mockResolvedValue(undefined);
@@ -75,4 +77,14 @@ test('unmount invalidates in-flight guard', async () => {
 test('strict effect remount does not get stuck loading', async () => {
   const ui = render(<React.StrictMode><Sheet onClose={jest.fn()} /></React.StrictMode>);
   expect(await ui.findByLabelText('测试补剂 A')).toBeTruthy();
+});
+test('group operation blocks closing and refreshes individual statuses only after unlocking', async () => {
+  const close = jest.fn(); const ui = render(<Sheet onClose={close} />); await ui.findByLabelText('测试补剂 A');
+  act(() => mockGroupProps.onBusyChange(true)); fireEvent.press(ui.getByLabelText('关闭补剂打卡')); expect(close).not.toHaveBeenCalled();
+  act(() => mockGroupProps.onRecorded()); expect(load).toHaveBeenCalledTimes(1);
+  await act(async () => mockGroupProps.onBusyChange(false)); expect(load).toHaveBeenCalledTimes(2);
+});
+test('unknown group write also disables individual submission in this sheet', async () => {
+  const ui = render(<Sheet onClose={jest.fn()} />); await ui.findByLabelText('测试补剂 A');
+  act(() => mockGroupProps.onUncertain()); expect(ui.getByLabelText('测试补剂 A').props.accessibilityState.disabled).toBe(true);
 });

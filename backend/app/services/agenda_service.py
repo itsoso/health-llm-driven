@@ -782,7 +782,7 @@ def _daily_plan_action_items(
 # 自动写(R4 / under-alarm 防御:依从数据喂 DDI/PGx,误写后果严重)。权威来源是协议的
 # source_model(_write_domain_record 据它分派),不是 domain —— 二者结构上可漂移
 # (如 hydration-domain 协议带 source_model=medication_logs)。
-_MEDICAL_GRADE_SOURCE_MODELS = frozenset({"medication_logs", "supplement_records"})
+_MEDICAL_GRADE_SOURCE_MODELS = frozenset({"medication_logs", "supplement_records", "supplement_group"})
 # 复查/随访 domain 协议(source_model 多为 None)也排除:确认复查须用户在手机上显式操作。
 _NON_VOICE_DOMAINS = frozenset({"checkup", "follow_up", "followup"})
 

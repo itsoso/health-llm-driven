@@ -232,6 +232,10 @@ async def archive(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    if not svc.archive_protocol(db, protocol_id, current_user.id):
+    try:
+        archived = svc.archive_protocol(db, protocol_id, current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not archived:
         raise HTTPException(status_code=404, detail="协议不存在")
     return {"protocol_id": protocol_id, "status": "archived"}

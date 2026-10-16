@@ -6994,6 +6994,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supplements/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Supplement Groups */
+        get: operations["get_supplement_groups_api_v1_supplements_groups_get"];
+        put?: never;
+        /** Create Supplement Group */
+        post: operations["create_supplement_group_api_v1_supplements_groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supplements/groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Supplement Group */
+        put: operations["update_supplement_group_api_v1_supplements_groups__group_id__put"];
+        post?: never;
+        /** Archive Supplement Group */
+        delete: operations["archive_supplement_group_api_v1_supplements_groups__group_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/supplements/groups/{group_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Supplement Group */
+        post: operations["confirm_supplement_group_api_v1_supplements_groups__group_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supplements/definitions": {
         parameters: {
             query?: never;
@@ -32811,6 +32864,116 @@ export interface components {
             /** Product Id */
             product_id?: number | null;
         };
+        /** SupplementGroupArchiveResponse */
+        SupplementGroupArchiveResponse: {
+            /**
+             * Archived
+             * @constant
+             */
+            archived: true;
+        };
+        /** SupplementGroupConfirm */
+        SupplementGroupConfirm: {
+            /** Revision */
+            revision: string;
+            /**
+             * Record Date
+             * Format: date
+             */
+            record_date: string;
+            /**
+             * Confirmed
+             * @constant
+             */
+            confirmed: true;
+        };
+        /** SupplementGroupConfirmation */
+        SupplementGroupConfirmation: {
+            /** Event Id */
+            event_id: number;
+            /** Group Id */
+            group_id: number;
+            /** Name */
+            name: string;
+            /** Revision */
+            revision: string;
+            /**
+             * Record Date
+             * Format: date
+             */
+            record_date: string;
+            /**
+             * Source
+             * @constant
+             */
+            source: "manual_group";
+            /** Members */
+            members: components["schemas"]["SupplementGroupSnapshotMember"][];
+        };
+        /** SupplementGroupCreate */
+        SupplementGroupCreate: {
+            /** Name */
+            name: string;
+            /** Supplement Ids */
+            supplement_ids: number[];
+        };
+        /** SupplementGroupListResponse */
+        SupplementGroupListResponse: {
+            /**
+             * Record Date
+             * Format: date
+             */
+            record_date: string;
+            /** Timezone */
+            timezone: string;
+            /** Groups */
+            groups: components["schemas"]["SupplementGroupResponse"][];
+        };
+        /** SupplementGroupMember */
+        SupplementGroupMember: {
+            /** Supplement Id */
+            supplement_id: number;
+            /** Name */
+            name: string;
+            /** Reference Dosage */
+            reference_dosage: string | null;
+            /** Available */
+            available: boolean;
+        };
+        /** SupplementGroupResponse */
+        SupplementGroupResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Revision */
+            revision: string;
+            /** Members */
+            members: components["schemas"]["SupplementGroupMember"][];
+            today_confirmation: components["schemas"]["SupplementGroupConfirmation"] | null;
+        };
+        /** SupplementGroupSnapshotMember */
+        SupplementGroupSnapshotMember: {
+            /** Supplement Id */
+            supplement_id: number;
+            /** Name */
+            name: string;
+            /** Reference Dosage */
+            reference_dosage: string | null;
+            /** Record Id */
+            record_id: number;
+            /** Already Taken */
+            already_taken: boolean;
+        };
+        /** SupplementGroupUpdate */
+        SupplementGroupUpdate: {
+            /** Name */
+            name: string;
+            /** Supplement Ids */
+            supplement_ids: number[];
+            /** Revision */
+            revision: string;
+        };
         /** SupplementIntakeBatchCreate */
         SupplementIntakeBatchCreate: {
             /**
@@ -47226,6 +47389,162 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_supplement_groups_api_v1_supplements_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplementGroupListResponse"];
+                };
+            };
+        };
+    };
+    create_supplement_group_api_v1_supplements_groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplementGroupCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplementGroupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_supplement_group_api_v1_supplements_groups__group_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplementGroupUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplementGroupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_supplement_group_api_v1_supplements_groups__group_id__delete: {
+        parameters: {
+            query: {
+                revision: string;
+            };
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplementGroupArchiveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_supplement_group_api_v1_supplements_groups__group_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplementGroupConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplementGroupConfirmation"];
                 };
             };
             /** @description Validation Error */

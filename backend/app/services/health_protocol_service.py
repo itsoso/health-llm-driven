@@ -28,11 +28,14 @@ logger = logging.getLogger(__name__)
 _MEDICAL_SOURCE_MODEL_DOMAINS = {
     "medication_logs": "medication",
     "supplement_records": "supplement",
+    "supplement_group": "supplement",
     "diet_records": "diet",
 }
 
 
 def create_protocol(db: Session, user_id: int, data: Dict[str, Any]) -> HealthProtocol:
+    if data.get("source_model") == "supplement_group":
+        raise ValueError("补剂组合必须使用专用确认入口")
     domain = data.get("domain")
     if domain not in PROTOCOL_DOMAINS:
         raise ValueError(f"未知 domain: {domain}")
@@ -71,16 +74,20 @@ def create_protocol(db: Session, user_id: int, data: Dict[str, Any]) -> HealthPr
 
 
 def list_protocols(db: Session, user_id: int, active_only: bool = True) -> List[HealthProtocol]:
-    q = db.query(HealthProtocol).filter(HealthProtocol.user_id == user_id)
+    q = db.query(HealthProtocol).filter(HealthProtocol.user_id == user_id,
+        (HealthProtocol.source_model.is_(None)) | (HealthProtocol.source_model != "supplement_group"))
     if active_only:
         q = q.filter(HealthProtocol.status == "active")
     return q.order_by(HealthProtocol.created_at.desc()).all()
 
 
 def get_protocol(db: Session, protocol_id: int, user_id: int) -> Optional[HealthProtocol]:
-    return db.query(HealthProtocol).filter(
+    p = db.query(HealthProtocol).filter(
         HealthProtocol.id == protocol_id, HealthProtocol.user_id == user_id
     ).first()
+    if p is not None and p.source_model == "supplement_group":
+        raise ValueError("补剂组合必须使用专用确认入口")
+    return p
 
 
 def archive_protocol(db: Session, protocol_id: int, user_id: int) -> bool:

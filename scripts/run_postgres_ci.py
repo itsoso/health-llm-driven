@@ -36,6 +36,7 @@ SHARDS = (
     (
         "tests/test_agent_runtime_concurrency.py",
         "tests/test_supplement_taken_count_drop_migration.py",
+        "tests/test_supplement_groups.py",
         "tests/test_diet_spoken_fraction_correction.py",
         "tests/test_pi_kernel_write_reconciliation.py",
         "tests/test_medication_intake_batch.py",
