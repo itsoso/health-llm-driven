@@ -128,6 +128,7 @@ def test_binding_requires_live_match_or_explicit_disambiguation(monkeypatch, tmp
     server._frontend_publication_backup_digest = lambda path, **kw: validated.append((path.name, kw))
     server._read_private = lambda path: path.read_bytes()
     server._json = json.loads
+    server.frontend_publication_completion = lambda state, name: json.loads((state / 'frontend-publications' / name / 'completed.json').read_text())
     if valid:
         assert binding(source, server, active_operation=explicit) == (explicit or matches[0], LIVE)
     else:

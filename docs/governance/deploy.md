@@ -31,6 +31,8 @@ Web 制品发布保留生产跟踪配置，默认拒绝 `public` 与 `next.confi
 
 新发布回执以 `publication_policy=no-backup-v1` 绑定全部阶段，`backups_digest={}`；历史消费者复核完整 phase/proof 及原 prepared artifact 的 intent/ready/claim、构建日志和 manifest 摘要，不访问已移动的 stage。新旧历史进入同一 catalog/seal 链；旧历史检查不放宽，新格式拒绝 previous-*、recovery 附件、未知 policy 与部分终态。显式要求验证新格式的备份恢复集会拒绝，不能将空集称作可恢复。后续 seal/rotate 沿既有 canonical 路径更新。
 
+`scripts/frontend_no_backup_finalization.py --finalizer-sha <current-main>` 仅收尾代码中固定绑定的已安装 no-backup Web 发布。该次 `/login` 为 CSR，初始 HTML 没有登录文案导致验收误判；新验收保留 200、固定 URL、有界 HTML 和 CSP 检查。入口先只读预检，再以返回的 `--evidence-sha256` 执行；只接受新精确绿色主干 canonical 源码，验证原安装授权、原制品/claim、后端配置快照、稳定进程、内外网页面和原租约。原 operation 的全部文件保持原 inode/内容，`failed.json` 不改写；新 sibling `frontend-publication-finalizations/<operation>` 写 intent/verified/completed，小审计闭合后历史消费者才承认安装已验收。收尾不重建、不切换、不重启、不建备份；任一步中断保持阻断，不自动重试。它先在旧授权仍安装时收尾，随后新 canonical bootstrap 才能 seal/rotate 安装新消费者，避免租约与授权循环。
+
 前端 finalizer 的普通历史、pending、inspect 和 finalize 路径仅核对备份根目录与审计，记录 `integrity=not_checked`；旧完整摘要只验证其结构和终态绑定，不重读正文或冒充新鲜完整性证明。只有明确请求恢复某一操作时，才显式选择该操作验证正文。
 
 中途失败保留原锁、事务和回执，状态为 NEEDS_OPERATOR；不再承诺通过新副本自动恢复。已有旧事务在普通无备份入口被拒绝，不读取旧 snapshot 正文、不删除旧备份。普通授权准入核验历史签名/终态/身份元数据，明确 `backup_integrity=not_checked`，不表示旧副本已经验证可恢复；用户另行请求恢复时才限定确切操作核验。

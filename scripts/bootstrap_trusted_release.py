@@ -868,7 +868,7 @@ def _frontend_live_seal_binding(source, server, *, active_operation=None):
     root = STATE / 'frontend-publications'
     candidates = []
     for operation in root.iterdir():
-        complete = server._json(server._read_private(operation / 'completed.json'))
+        complete = server.frontend_publication_completion(STATE, operation.name)
         if complete.get('artifact_digest') == digest:
             candidates.append(operation.name)
     if active_operation is not None:

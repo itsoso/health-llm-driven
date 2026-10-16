@@ -257,7 +257,7 @@ def _verify_pages(*, include_connection):
         routes=[('/privacy','可选足迹与分享')]
         if include_connection:
             routes.extend([('/connect/health', '小巴健康 · 数据连接'),
-                           ('/connect/kbase', '登录知识库'), ('/login', '登录')])
+                           ('/connect/kbase', '登录知识库'), ('/login', '<html')])
         for path, marker in routes:
             success = False
             for _ in range(10):

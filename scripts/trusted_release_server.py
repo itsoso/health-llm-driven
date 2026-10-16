@@ -723,7 +723,7 @@ def seal_frontend_publication_history(state, *, active_operation, live_digest,
     old = _frontend_history_seal(state)
     records = assert_frontend_publication_history(state, backup_memo=backup_memo,
                                                  _force_operations={active_operation})
-    complete = _json(_read_private(Path(state) / 'frontend-publications' / active_operation / 'completed.json'))
+    complete = frontend_publication_completion(state, active_operation)
     if active_operation not in records or complete['artifact_digest'] != live_digest:
         raise LaunchError("active frontend differs from original publication")
     if not 1 <= len(records) <= 4096:
@@ -816,8 +816,93 @@ def _frontend_no_backup_provenance(state, operation, intent, before, complete):
         raise LaunchError('consumed frontend claim or source hashes differ')
 
 
+# One reviewed false-negative readback profile; not a retry of publication.
+NO_BACKUP_FINALIZATION_OPERATION = 'c140343fa265bb6d2214a3b9eda4e98b'
+NO_BACKUP_FINALIZATION_BINDING = {
+    'publisher_sha': '65fe758296487bb552cfdc0e3c98554aab7a0b0e',
+    'production_sha': 'b2948b77b0b3df260d03623c5b3cfb6539e5d640',
+    'frontend_tree': '668fa6267030b8e97d5f4bff3824cf669e6d460e',
+    'operation_id': NO_BACKUP_FINALIZATION_OPERATION,
+    'artifact_digest': '07eee86c85dce19e35318857cb372ea2a4adb921e458ac553a3f79328ac09550',
+}
+NO_BACKUP_ORIGINAL_FILES = {'intent.json', 'before.json', 'build.log', 'install-started.json', 'failed.json'}
+
+
+def _finalization_file_evidence(path):
+    secure_path(path, private=True)
+    before = path.lstat()
+    raw = _read_private(path)
+    after = path.lstat()
+    fields = ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+    if any(getattr(before, name) != getattr(after, name) for name in fields):
+        raise LaunchError('finalization evidence changed while reading')
+    return {'sha256': hashlib.sha256(raw).hexdigest(), **{name: getattr(after, name) for name in fields}}
+
+
+def no_backup_finalization_original(state, operation_id):
+    if operation_id != NO_BACKUP_FINALIZATION_OPERATION:
+        raise LaunchError('unknown no-backup finalization profile')
+    operation = Path(state) / 'frontend-publications' / operation_id
+    secure_path(operation, directory=True)
+    if stat.S_IMODE(operation.lstat().st_mode) != 0o700 or {p.name for p in operation.iterdir()} != NO_BACKUP_ORIGINAL_FILES:
+        raise LaunchError('original failed publication inventory differs')
+    files = {name: _finalization_file_evidence(operation / name) for name in NO_BACKUP_ORIGINAL_FILES}
+    binding = NO_BACKUP_FINALIZATION_BINDING
+    intent = {**binding, 'kind': 'frontend-publication', 'state': 'FRONTEND_STARTED',
+              'artifact_digest': None, 'publication_policy': 'no-backup-v1'}
+    if _json(_read_private(operation / 'intent.json')) != intent:
+        raise LaunchError('original failed publication binding differs')
+    for name, status, digest in [('install-started.json', 'FRONTEND_INSTALLING', binding['artifact_digest']),
+                                 ('failed.json', 'FRONTEND_NEEDS_OPERATOR', None)]:
+        if _json(_read_private(operation / name)) != {**intent, 'state': status, 'artifact_digest': digest}:
+            raise LaunchError('original failure phase differs')
+    before = _json(_read_private(operation / 'before.json'))
+    if (not isinstance(before, dict) or before.get('publication_policy') != 'no-backup-v1'
+            or any(before.get(k) != binding[k] for k in ('publisher_sha', 'production_sha', 'frontend_tree', 'operation_id'))):
+        raise LaunchError('original failure plan differs')
+    _frontend_no_backup_provenance(state, operation, intent, before, binding)
+    return {'binding': binding, 'files': files}
+
+
+def no_backup_finalization_completion(state, operation_id):
+    original = no_backup_finalization_original(state, operation_id)
+    root = Path(state) / 'frontend-publication-finalizations'
+    audit = root / operation_id
+    for path in (root, audit):
+        secure_path(path, directory=True)
+        if stat.S_IMODE(path.lstat().st_mode) != 0o700:
+            raise LaunchError('finalization audit directory differs')
+    if {p.name for p in audit.iterdir()} != {'intent.json', 'verified.json', 'completed.json'}:
+        raise LaunchError('incomplete no-backup finalization')
+    raw = _read_private(audit / 'intent.json')
+    plan = _json(raw)
+    if (not isinstance(plan, dict) or set(plan) != {'schema_version', 'profile', 'finalizer_sha', 'original', 'lease', 'process'}
+            or type(plan['schema_version']) is not int or plan['schema_version'] != 1
+            or plan['profile'] != 'csr-login-readback-v1' or plan['original'] != original
+            or not isinstance(plan['finalizer_sha'], str) or re.fullmatch('[a-f0-9]{40}', plan['finalizer_sha']) is None
+            or not isinstance(plan['process'], dict) or not isinstance(plan['lease'], dict)):
+        raise LaunchError('finalization intent binding differs')
+    verified = _json(_read_private(audit / 'verified.json'))
+    if verified != {'state': 'LIVE_VERIFIED', 'intent_sha256': hashlib.sha256(raw).hexdigest()}:
+        raise LaunchError('finalization verification differs')
+    complete = _json(_read_private(audit / 'completed.json'))
+    expected = {'state': 'FINALIZED_NO_BACKUP_PUBLICATION', **NO_BACKUP_FINALIZATION_BINDING,
+                'finalizer_sha': plan['finalizer_sha'], 'intent_sha256': hashlib.sha256(raw).hexdigest(),
+                'verified_sha256': _frontend_publication_file_digest(audit / 'verified.json')}
+    if complete != expected:
+        raise LaunchError('finalization terminal differs')
+    return complete
+
+
+def frontend_publication_completion(state, operation_id):
+    finalized = Path(state) / 'frontend-publication-finalizations' / operation_id
+    if os.path.lexists(finalized):
+        return no_backup_finalization_completion(state, operation_id)
+    return _json(_read_private(Path(state) / 'frontend-publications' / operation_id / 'completed.json'))
+
+
 def assert_frontend_publication_history(state=None, *, pending_stopped_publication=None, backup_memo=None,
-                                        _force_operations=(), _seal_snapshot=None, verify_backups=False):
+                                        _force_operations=(), _seal_snapshot=None, verify_backups=False, pending_no_backup_finalization=None):
     """Validate release receipts, without claiming old backups are restorable.
 
     Only an explicitly requested single recovery target reads backup contents.
@@ -826,6 +911,17 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
     if (type(verify_backups) is not bool or (verify_backups and (len(_force_operations) != 1
             or not isinstance(_force_operations[0], str) or re.fullmatch(r'[0-9a-f]{32}', _force_operations[0]) is None))):
         raise LaunchError('explicit target operation required for backup recovery verification')
+    if pending_no_backup_finalization not in (None, NO_BACKUP_FINALIZATION_OPERATION):
+        raise LaunchError('unknown selected no-backup finalization')
+    finalizations = Path(state or STATE) / 'frontend-publication-finalizations'
+    if os.path.lexists(finalizations):
+        secure_path(finalizations, directory=True)
+        if stat.S_IMODE(finalizations.lstat().st_mode) != 0o700:
+            raise LaunchError('unsafe no-backup finalization root')
+        for finalized in finalizations.iterdir():
+            if finalized.name == pending_no_backup_finalization:
+                raise LaunchError('no-backup finalization already attempted')
+            no_backup_finalization_completion(state or STATE, finalized.name)
     started, io_before = time.monotonic(), _release_io_snapshot()
     seal = _seal_snapshot if _seal_snapshot is not None else _frontend_history_seal(state or STATE)
     catalog = {}
@@ -844,6 +940,21 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
     for operation in root.iterdir():
         secure_path(operation, directory=True)
         inventory={p.name for p in operation.iterdir()}
+        if operation.name == pending_no_backup_finalization:
+            no_backup_finalization_original(state or STATE, operation.name)
+            continue
+        if os.path.lexists(finalizations / operation.name):
+            if verify_backups and operation.name in _force_operations:
+                raise LaunchError('no-backup finalization has no backup set')
+            complete = no_backup_finalization_completion(state or STATE, operation.name)
+            intent = _json(_read_private(operation / 'intent.json'))
+            catalog[operation.name] = hashlib.sha256(_history_json({'intent': intent, 'completed': complete})).hexdigest()
+            if seal is not None and operation.name in seal['payload']['records']:
+                if (seal['payload']['records'][operation.name] != catalog[operation.name]
+                        or (operation.name == seal['payload']['active_operation'] and complete['artifact_digest'] != seal['payload']['live_digest'])):
+                    raise LaunchError('sealed finalization binding differs')
+                if operation.name != seal['payload']['active_operation']: archived += 1
+            continue
         if pending_stopped_publication is not None and operation.name==pending_stopped_publication:
             if inventory!={'intent.json','before.json','build.log','install-started.json','failed.json'} or stat.S_IMODE(operation.lstat().st_mode)!=0o700:
                 raise LaunchError('stopped recovery already attempted or partial switch')
@@ -1013,10 +1124,11 @@ def assert_vision_model_history(state=None, *, pending_operation=None):
             raise LaunchError('configuration cannot manufacture model acceptance')
 
 
-def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None, backup_memo=None, _seal_snapshot=None):
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None, backup_memo=None, _seal_snapshot=None, pending_no_backup_finalization=None):
     """Independent frontend evidence must never count as backend success."""
     assert_vision_model_history(state,pending_operation=pending_vision_operation)
-    publication_options = dict(pending_stopped_publication=pending_stopped_publication, backup_memo=backup_memo)
+    publication_options = dict(pending_stopped_publication=pending_stopped_publication, backup_memo=backup_memo,
+                               pending_no_backup_finalization=pending_no_backup_finalization)
     if _seal_snapshot is not None:
         publication_options['_seal_snapshot'] = _seal_snapshot
     assert_frontend_publication_history(state, **publication_options)
