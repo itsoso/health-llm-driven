@@ -1,7 +1,7 @@
 import { configureSentryForAppMode, Sentry, SENTRY_ENABLED } from '../applib/sentry';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRootNavigationState, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { focusManager, QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, retireLegacyQueryCache } from '../applib/queryClient';
@@ -53,7 +53,9 @@ export function AppContent() {
   const [sessionRecoveryError, setSessionRecoveryError] = useState(false);
   const [registrationPhase, setRegistrationPhase] = useState<'idle' | 'welcome' | 'onboarding'>('idle');
   const cloudActive = session?.mode === 'cloud_account' && isAuthenticated;
-  const { isLocked, authenticate } = useBiometricLock(cloudActive);
+  const { isLocked, isReady: lockReady, initializationFailed: lockInitializationFailed,
+    retryInitialization: retryLockInitialization, authenticate } = useBiometricLock(cloudActive);
+  const navigationState = useRootNavigationState();
   const releaseCapabilities = getReleaseCapabilities();
   const {
     token: registrationInviteToken,
@@ -69,10 +71,10 @@ export function AppContent() {
     }
   }, [clearRegistrationInviteLink, isAuthenticated, registrationInviteToken, session]);
 
-  // A remote tap must remain pending until the authenticated root Stack exists.
-  // Auth can be known while session recovery or biometric unlock still hides it.
-  useNotifications(cloudActive && !isLoading && !isLocked
-    && errorCode !== 'session_recovery_required' && registrationPhase !== 'welcome');
+  // Leave the native response pending until the destination stack can accept it.
+  useNotifications(cloudActive, cloudActive && lockReady && !isLoading && !isLocked
+    && errorCode !== 'session_recovery_required' && registrationPhase === 'idle'
+    && Boolean(navigationState?.key));
   useGPSAutoRefresh(cloudActive);
   useDeviceTimezoneSync(cloudActive);
   useHealthKitForegroundSync(cloudActive && !isLocked);
@@ -169,6 +171,22 @@ export function AppContent() {
         onInvitationLinkCleared={clearRegistrationInviteLink}
         onInvitedRegistrationComplete={() => setRegistrationPhase('welcome')}
       />
+    );
+  }
+
+  if (cloudActive && !lockReady) {
+    return (
+      <View style={styles.sessionRecoveryContainer}>
+        {lockInitializationFailed ? (
+          <>
+            <Text style={styles.sessionRecoveryTitle}>暂时无法确认应用锁状态</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="重试应用锁检查"
+              onPress={() => void retryLockInitialization()} style={styles.sessionRecoveryButton}>
+              <Text style={styles.sessionRecoveryButtonText}>重试</Text>
+            </Pressable>
+          </>
+        ) : <ActivityIndicator size="large" color={c.brand} />}
+      </View>
     );
   }
 

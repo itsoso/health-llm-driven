@@ -3,8 +3,8 @@ import { Text, StyleSheet, TextStyle, TouchableOpacity } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import type { Notification } from 'expo-notifications';
-import { setOnForegroundNotification } from '../../hooks/useNotifications';
+import { DEFAULT_ACTION_IDENTIFIER, type Notification } from 'expo-notifications';
+import { consumeNotificationResponse, setOnForegroundNotification } from '../../hooks/useNotifications';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
@@ -69,8 +69,17 @@ export default function NotificationBanner({ onTap }: { onTap?: (n: Notification
         onPress={() => {
           const tappedNotification = current;
           dismiss(tappedNotification.request.identifier);
-          onTap?.(tappedNotification);
+          if (onTap) {
+            onTap(tappedNotification);
+          } else {
+            void consumeNotificationResponse({
+              notification: tappedNotification,
+              actionIdentifier: DEFAULT_ACTION_IDENTIFIER,
+            }, undefined, { clearNativeResponse: false });
+          }
         }}
+        accessibilityRole="button"
+        accessibilityLabel={`打开通知：${title}`}
         activeOpacity={0.85}
       >
         <Ionicons name="notifications" size={20} color={c.brand} />
