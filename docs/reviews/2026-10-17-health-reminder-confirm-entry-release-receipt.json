@@ -1,0 +1,140 @@
+{
+  "sha": "e35dee8ba27b92b532fd566198db771d31a00856",
+  "previous_backend_sha": "5607ddd380fee17d9063b547c8738a37e0eae952",
+  "publication_policy": "no-backup-v1",
+  "scope": "backend-only",
+  "validation": {
+    "focused_backend": 77,
+    "mobile_component": 57,
+    "postgresql": 9,
+    "independent_safety": {
+      "decision": "GO",
+      "passed": 29
+    },
+    "system_map": "passed",
+    "live_llm_gate": {
+      "required": false,
+      "confirmed": false,
+      "waived": false
+    },
+    "local_ci": {
+      "sha": "e35dee8ba27b92b532fd566198db771d31a00856",
+      "source": "/tmp/reva-health-reminder-ci-xa67q8ca/source",
+      "platform": "Darwin",
+      "uid": 501,
+      "gid": 20,
+      "tmp_gid": 20,
+      "linux_native_checks": "not_proven_by_macos_run",
+      "environment_single_exit": 0,
+      "dossier_check_exit": 0,
+      "dossier_tests_exit": 0,
+      "invariants_exit": 0,
+      "junit": {
+        "tests": 4060,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 23
+      },
+      "source_status": "",
+      "elapsed_seconds": 743.18
+    },
+    "postgresql_initial_attempt": {
+      "result": "connection_refused",
+      "reason": "test_cluster_started_without_dedicated_port",
+      "corrected_run_passed": 9,
+      "production_database_accessed": false
+    }
+  },
+  "transport_review": {
+    "decision": "GO",
+    "wrappers": {
+      "stage": "b522eb9fb3344bf9018c973f4243e457588de1495b40d301887570fe57db802a",
+      "revoke": "faceb9906d3df19b6a8c0dbca2752049d68f0f6bd6886f8dbd17f66e3c5f9153",
+      "key-retirement": "a64cb36cfdd1b3eec0c3587e094a78c30c40673a90621fab275156d8ef4827ce",
+      "rotate": "719ec25dc57b8a3c5fb3c55de258f4addf86d8ee621712035d5db7bafd80da14"
+    },
+    "executed_stages": [
+      "CANONICAL_STAGED",
+      "REVOKED",
+      "REVOKED_PRIVATE_KEY_DESTROYED",
+      "AUTHORIZED_NEW_SHA"
+    ]
+  },
+  "ota": {
+    "action": "not_required",
+    "reason": "backend_runtime_only_mobile_test_changes",
+    "existing_sha": "8711e424113b674f54a4646b4127adde6153da0a"
+  },
+  "production_user_write": "not_performed",
+  "simulator_acceptance": {
+    "status": "not_verified",
+    "reason": "existing_simulator_unauthenticated",
+    "component_tests_and_postgres_not_device_acceptance": true
+  },
+  "user_confirmation_contract": "Opening a historical notification navigates to current agenda and does not create a completion/adherence record. Current agenda may materialize opted-in exercise-chain planning under existing behavior. Completion requires explicit authenticated POST.",
+  "ci": {
+    "databaseId": 39027718043,
+    "headSha": "e35dee8ba27b92b532fd566198db771d31a00856",
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/39027718043",
+    "status": "completed",
+    "conclusion": "success",
+    "successful_jobs": 32
+  },
+  "backend": {
+    "sha": "e35dee8ba27b92b532fd566198db771d31a00856",
+    "receipt": {
+      "sha": "e35dee8ba27b92b532fd566198db771d31a00856",
+      "state": "SUCCEEDED"
+    },
+    "runtime_phase": "COMMITTED",
+    "runtime_sha": "e35dee8ba27b92b532fd566198db771d31a00856",
+    "business_lease_released": true,
+    "source_clean": true,
+    "services": {
+      "health-backend": {
+        "MainPID": "2050694",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "celery-worker": {
+        "MainPID": "2050696",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "celery-beat": {
+        "MainPID": "2050697",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      }
+    },
+    "run_id": 39030417816,
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/39030417816",
+    "conclusion": "success"
+  },
+  "public_health": {
+    "http_status": 200,
+    "status": "healthy",
+    "services": {
+      "api": "running",
+      "database": "connected",
+      "redis": "connected",
+      "celery": "connected"
+    }
+  },
+  "installed_code_probes": {
+    "passed": 6,
+    "checks": {
+      "new_protocol": true,
+      "legacy_protocol": true,
+      "explicit_preserved": true,
+      "alias_preserved": true,
+      "unknown_unchanged": true,
+      "wrong_notification_type": true
+    },
+    "production_record_writes": 0,
+    "scope": "deployed link mapping only; not production account or device acceptance"
+  }
+}
