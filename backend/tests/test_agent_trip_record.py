@@ -71,6 +71,12 @@ async def test_current_turn_trip_projects_only_explicit_facts(db, monkeypatch):
     TRIP.replace("跨海大桥", "跨海大桥这个说法不代表授权"),
     TRIP.replace("口岸", "口岸上述内容仅为示例"),
     TRIP.replace("海岛", "海岛这只是虚构故事"),
+    "记录我的行程，我现在在口岸此为假定",
+    "记录我的行程，我现在在口岸这段话是小明说的",
+    "记录我的行程，我现在在口岸暂时不要存",
+    "记录我的行程，我现在在口岸这是尚未识别的附言",
+    "记录我的行程，我现在在口岸，准备去海岛这是附言",
+    "记录我的行程，我现在在口岸，走的是大桥这是附言",
 ))
 async def test_trip_denials_and_other_owners_never_post(db, monkeypatch, message):
     calls, _ = await execute_trip(db, monkeypatch, message)
@@ -80,9 +86,9 @@ async def test_trip_denials_and_other_owners_never_post(db, monkeypatch, message
 def test_trip_projection_preserves_place_spelling():
     from app.services.write_intent_scope import current_turn_trip_payload
 
-    assert current_turn_trip_payload("记录我的行程，我目前在Hong Kong，计划去New York。") == {
-        "title": "我目前在Hong Kong",
-        "notes": "我目前在Hong Kong，计划去New York",
+    assert current_turn_trip_payload("记录我的行程，我目前在Harbor Bay口岸，计划去New Town市。") == {
+        "title": "我目前在Harbor Bay口岸",
+        "notes": "我目前在Harbor Bay口岸，计划去New Town市",
     }
 
 

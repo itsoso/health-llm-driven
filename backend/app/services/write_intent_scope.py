@@ -389,9 +389,17 @@ _DIRECT_EVENT_RESOURCE_WRITE_RE = re.compile(
 # Location fields cannot carry prose about authorization or the provenance of
 # the report. Check before binding the opaque server-authorized event payload.
 _TRIP_REPORT_QUALIFIER_RE = re.compile(
-    r"(?:授权|同意|示例|例句|例子|举例|假设|虚构|编造|模拟|"
+    r"(?:授权|同意|示例|例句|例子|举例|假设|假定|虚构|编造|模拟|"
     r"转述|复述|引用|原话|说法|故事|开玩笑|仅为|只是|不代表)"
 )
+# These are bounded facility/administrative/route noun phrases, not a general
+# place-name or prose recognizer. Stop at the FIRST entity ending: trailing
+# text is an unmodeled clause, even if it ends in another geographic noun.
+_TRIP_PLACE_ENDINGS = {
+    "location": r"口岸|机场|车站|码头|酒店|饭店|餐厅|公园|景区|观景台|服务区|市|省|县|区|镇|村",
+    "destination": r"机场|车站|码头|酒店|公园|景区|市|省|县|区|镇|村|岛|港|城",
+    "route": r"大桥|桥|公路|高速|大道|隧道|航线|铁路|路",
+}
 _CURRENT_OWNER_WORDS = frozenset(
     {
         "我",
@@ -1152,6 +1160,14 @@ def is_direct_event_resource_write(value: str) -> bool:
     return _DIRECT_EVENT_RESOURCE_WRITE_RE.fullmatch(normalized) is not None
 
 
+def _is_bounded_trip_place(value: str, kind: str) -> bool:
+    match = re.match(
+        rf"[\u4e00-\u9fffA-Za-z0-9· -]{{0,60}}?(?:{_TRIP_PLACE_ENDINGS[kind]})",
+        value,
+    )
+    return match is not None and match.end() == len(value)
+
+
 def current_turn_trip_payload(value: str) -> dict[str, str] | None:
     """Bind an explicit trip command to a bounded first-person location report.
 
@@ -1171,11 +1187,17 @@ def current_turn_trip_payload(value: str) -> dict[str, str] | None:
         or _TRIP_REPORT_QUALIFIER_RE.search(normalize_write_scope_text(value))
     ):
         return None
-    place = r"[\u4e00-\u9fffA-Za-z0-9· -]{1,60}"
-    if not re.fullmatch(rf"我(?:现在|目前)?在{place}", parts[1]):
+    location = re.fullmatch(r"我(?:现在|目前)?在(?P<place>.+)", parts[1])
+    if location is None or not _is_bounded_trip_place(location.group("place"), "location"):
         return None
     for part in parts[2:]:
-        if not re.fullmatch(rf"(?:我)?(?:准备去|打算去|计划去|走的是|途经){place}", part):
+        planned = re.fullmatch(
+            r"(?:我)?(?P<action>准备去|打算去|计划去|走的是|途经)(?P<place>.+)", part,
+        )
+        if planned is None:
+            return None
+        kind = "route" if planned.group("action") in {"走的是", "途经"} else "destination"
+        if not _is_bounded_trip_place(planned.group("place"), kind):
             return None
     return {"title": parts[1], "notes": "，".join(parts[1:])}
 
