@@ -133,8 +133,13 @@ def test_classifier_uses_exact_legacy_question_and_mutation_negation_views():
     )
 
 
-def test_short_trip_record_command_is_an_explicit_event_write():
-    intent = classify_agent_utterance("记录行程")
+@pytest.mark.parametrize("message", (
+    "记录行程",
+    "记录我的行程",
+    "记录我的行程，我现在在口岸，准备去海岛，走的是跨海大桥。",
+))
+def test_short_trip_record_command_is_an_explicit_event_write(message):
+    intent = classify_agent_utterance(message)
 
     assert (
         intent.primary,

@@ -383,6 +383,7 @@ _DIRECT_EVENT_RESOURCE_WRITE_RE = re.compile(
     r"^(?:(?:请|请你|麻烦|麻烦你|帮我|请帮我|请你帮我|麻烦帮我|"
     r"可以帮我|能帮我|给我|为我|我想|我要|我希望|我需要))?"
     r"(?:记录|记一下|记下|保存|录入|登记|写入|新增|打卡)(?:一下)?"
+    r"(?:(?:我|本人|自己)(?:的)?)?"
     r"(?:行程|旅程|旅途|出行|事件|生活事件)$"
 )
 _CURRENT_OWNER_WORDS = frozenset(
@@ -1143,6 +1144,31 @@ def is_direct_event_resource_write(value: str) -> bool:
         return False
     normalized = normalize_write_scope_text(value).strip("，,。.!！；;：: ")
     return _DIRECT_EVENT_RESOURCE_WRITE_RE.fullmatch(normalized) is not None
+
+
+def current_turn_trip_payload(value: str) -> dict[str, str] | None:
+    """Bind an explicit trip command to a bounded first-person location report.
+
+    Preserve the user's planned destination/route verbatim. This is a record
+    of the current report, never evidence that a future arrival has happened.
+    Unknown clauses fail closed instead of being silently dropped.
+    """
+    normalized = normalize_write_scope_text(value).strip("。.!！ ")
+    parts = tuple(part.strip() for part in re.split(r"[，,。.!！；;：:]", normalized))
+    if not 2 <= len(parts) <= 4 or not is_direct_event_resource_write(parts[0]):
+        return None
+    if (
+        has_non_authorizing_write_context(value)
+        or not has_explicit_authorizing_write_request(value)
+    ):
+        return None
+    place = r"[\u4e00-\u9fffA-Za-z0-9·（）() -]{1,60}"
+    if not re.fullmatch(rf"我(?:现在|目前)?在{place}", parts[1]):
+        return None
+    for part in parts[2:]:
+        if not re.fullmatch(rf"(?:我)?(?:准备去|打算去|计划去|走的是|途经){place}", part):
+            return None
+    return {"title": parts[1], "notes": "，".join(parts[1:])}
 
 
 def _is_explicit_dated_backfill(value: str) -> bool:

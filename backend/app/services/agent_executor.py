@@ -10304,8 +10304,15 @@ def _contextual_event_payload_from_recent_turn(
     user_message: str,
     recent_messages: Sequence[dict[str, Any]],
 ) -> Optional[dict[str, Any]]:
-    """Project only event fields visibly proposed in the preceding assistant turn."""
-    from app.services.write_intent_scope import is_direct_event_resource_write
+    """Project explicit current-turn trip facts or a visible preceding proposal."""
+    from app.services.write_intent_scope import (
+        current_turn_trip_payload,
+        is_direct_event_resource_write,
+    )
+
+    current_trip = current_turn_trip_payload(user_message)
+    if current_trip is not None:
+        return current_trip
 
     if not is_direct_event_resource_write(user_message):
         return None
