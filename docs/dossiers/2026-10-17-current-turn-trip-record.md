@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | 创建日期 | 2026-10-17 |
-| 当前阶段 | S6 发布验证 |
-| 状态 | shipping |
+| 当前阶段 | S7 发布回读完成；设备生效未验证 |
+| 状态 | shipped |
 | 范围 | 现有生活事件记录的授权与本轮事实投影修复 |
 
 ## G1 · 修复准入
@@ -16,7 +16,7 @@
 
 - 现有生活事件记录能力的局部修复；不增加产品对象、API、表结构或移动端行为。
 - Router: `quick_fix` + `safety` overlay；发布阶段 `release/backend`。遵守用户禁用 superpowers 的要求，不加载其能力。
-- 当前状态：最终代码候选 `af2f0cdec91351f462646d3668645b6f7a10b8a9` 本地验证、真实模型闸及独立安全重审 GO；用户已明确要求接管发布。等待修正文档后的精确候选完整 CI，尚未部署本修复。
+- 当前状态：发布版本 `8711e424113b674f54a4646b4127adde6153da0a` 完整 CI、后端部署、production iOS OTA 和公开 manifest 回读均成功；设备拉取与真实账号写入未重放。
 - 不回填截图中的真实行程；测试使用合成地点和隔离测试账号。
 
 ## 根因与改动
@@ -60,4 +60,16 @@
 - 用户明确指令“忽略另外一个发布流程，直接接管和发布”。已复核上一候选 `fad84c255` 后端 SUCCEEDED、服务正常、无活动发布进程/业务租约；其 OTA 在 claim 前失败且服务器未创建 OTA operation。保留原回执，不重放旧失败操作。
 - 新候选 `d18434bea` 已推送；绑定该 SHA 的真实模型 gate 5/5、平均 0.94，其他合成评测全通过。CI `39002909907` 的 dossier consistency 发现本文件缺少状态字段与 G1 段，现补齐真实准入范围和发布阶段；代码未改变。修正后须等待新 SHA 全量 CI。
 - 接管 transport 独立审查 GO：使用 canonical staging、原锁内撤权、销毁已撤销私钥及 no-backup rotate；所有外部写入仍待新候选精确绿色 CI、本机 CI-mode 和足够 GitHub API 预算。旧候选 wrapper 未执行，新的 SHA 绑定将重新审查。
-- 当前上线验收与 OTA 仍待完成；不会把本地验证、已推送或已批准接管当作发布成功。
+- 当时上线验收与 OTA 尚待完成；未把本地验证、已推送或已批准接管当作发布成功。最终结果见下节。
+
+
+## 最终发布结果（8711e424）
+
+- 用户授权接管已完成。新候选与安全 GO 代码 `af2f0cdec` 的 backend/scripts/.github 内容一致，仅补全文档。四个绑定最终 SHA 的 transport 包装脚本独立 GO；原锁、原回执保留，未备份、未重放旧失败 OTA。
+- 完整 CI：[39003285151](https://github.com/itsoso/health-llm-driven/actions/runs/39003285151) success，32 个 job 成功。自动文档 CI 39003205667 success 不替代完整 CI；旧 d184 的失败文档已修正，旧 run 39002909907 已取消。
+- 最终 SHA 本机 CI-mode：3,953 passed、84 subtests passed、23 平台限定 skips；JUnit 4,060 项、0 failures/errors；Dossier 一致性与 18 项测试通过，干净验证 checkout，退出码 0。真实模型闸 5/5、平均 0.96，invariants 12/12、health_agent_core 50/50、trajectory 12/12、goldens 9/9。
+- 后端：[39004592806](https://github.com/itsoso/health-llm-driven/actions/runs/39004592806) success；服务器 completed=SUCCEEDED、runtime=COMMITTED，生产 SHA 精确一致，backend/worker/beat active，无 pending/preparing 或业务租约。当前客户端 API 域名为 health.executor.life；公开 `/api/v1/health` healthy。旧 skill 中 health-api.executor.life 地址已不适合作为当前验收地址，此次未修改 DNS/TLS 配置。
+- 上线行为复核：生产源码绑定候选 SHA，合成行程事实投影及 6 个拒绝误写探针通过；无数据库访问或真实用户写入。完整 stream → gateway → API → PostgreSQL → write receipt 已在隔离合成测试中通过；线上真实账号写入未重放，不冒充真实设备验收。
+- OTA：[validate 39005027157](https://github.com/itsoso/health-llm-driven/actions/runs/39005027157) 与 [publish 39005169224](https://github.com/itsoso/health-llm-driven/actions/runs/39005169224) 均 success；服务器 completed=SUCCEEDED。group `bedc735f-39d7-401f-89cd-aaf9f89fa387`，update `01a14847-14cc-79a7-b277-3cc5b5d35aeb`，runtime `1.3.5`，公开 manifest 实时回读匹配。
+- 本次 OTA 一并交付上一候选尚未发布的用药提醒按钮 JS/TS 修复；相对上一已发布版本无原生依赖、签名或权限变更。未操作真机，设备拉取、模拟器端实际加载未验证。
+- 结构化回执：`docs/reviews/2026-10-17-trip-record-release-receipt.json`。发布之后的证据提交只修改本 Dossier 与回执，不改变已上线版本。
