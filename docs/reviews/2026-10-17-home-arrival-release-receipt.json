@@ -1,0 +1,157 @@
+{
+  "sha": "2d17fba5544ea3aadcb4604ac95a6907a5d2662f",
+  "scope": "backend-only",
+  "red": {
+    "failed": 7,
+    "passed": 43
+  },
+  "sqlite_focused": 50,
+  "postgresql_final": 50,
+  "postgresql_adjacent_passed": 187,
+  "postgresql_initial_test_errors": 5,
+  "adjacent_regression": {
+    "passed": 3786,
+    "skipped": 11,
+    "failed": 1,
+    "failure": "existing diet timing <1.5s; baseline unchanged SHA also fails on host",
+    "baseline_sha": "ebe376c13132c9f15ccc1e3d29bc51b906b57a7a"
+  },
+  "live_model": {
+    "passed": 5,
+    "total": 5,
+    "avg": 0.98
+  },
+  "safety_review": "GO",
+  "transport_review": "GO",
+  "wrappers": {
+    "stage": {
+      "path": "/tmp/reva-home-arrival-stage.py",
+      "sha256": "fe1f24b08c185fffa2564959615e07de64a2c49e577bdd0b92347495b24ff53e"
+    },
+    "revoke": {
+      "path": "/tmp/reva-home-arrival-revoke.py",
+      "sha256": "a42022c4806bbb15a9b6fbc52ee44381aa8d2679f3048dfb13de45174cf7c699"
+    },
+    "key-retirement": {
+      "path": "/tmp/reva-home-arrival-key-retirement.py",
+      "sha256": "94d444cdd7f1352cba4c273db91ca84567ccedf893d6d4f6f4ddee0b4dd53b60"
+    },
+    "rotate": {
+      "path": "/tmp/reva-home-arrival-rotate.py",
+      "sha256": "13e80ff26354236d94e549adb9fb0b8f6d2940fa4f0198e8611b2f5907e90fdb"
+    }
+  },
+  "production_mutations": true,
+  "cloud_ci": {
+    "run_id": 39043236856,
+    "conclusion": "success",
+    "successful_jobs": 32,
+    "diet_timing_test": {
+      "seconds": 0.631,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/39043236856"
+  },
+  "local_ci": {
+    "sha": "2d17fba5544ea3aadcb4604ac95a6907a5d2662f",
+    "source": "/tmp/reva-home-arrival-ci-kn7ibqkg/source",
+    "platform": "Darwin",
+    "uid": 501,
+    "gid": 20,
+    "tmp_gid": 20,
+    "linux_native_checks": "not_proven_by_macos_run",
+    "environment_single_exit": 0,
+    "dossier_check_exit": 0,
+    "dossier_tests_exit": 0,
+    "invariants_exit": 0,
+    "junit": {
+      "tests": 4060,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 23
+    },
+    "source_status": "",
+    "elapsed_seconds": 926.93
+  },
+  "transport_steps": [
+    "CANONICAL_STAGED",
+    "REVOKED",
+    "REVOKED_PRIVATE_KEY_DESTROYED",
+    "AUTHORIZED_NEW_SHA"
+  ],
+  "backend_run_id": 39044651127,
+  "backend_status": "success",
+  "backend": {
+    "sha": "2d17fba5544ea3aadcb4604ac95a6907a5d2662f",
+    "receipt": {
+      "sha": "2d17fba5544ea3aadcb4604ac95a6907a5d2662f",
+      "state": "SUCCEEDED"
+    },
+    "runtime_phase": "COMMITTED",
+    "runtime_sha": "2d17fba5544ea3aadcb4604ac95a6907a5d2662f",
+    "business_lease_released": true,
+    "source_clean": true,
+    "services": {
+      "health-backend": {
+        "MainPID": "2541340",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "celery-worker": {
+        "MainPID": "2541342",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "celery-beat": {
+        "MainPID": "2541343",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      }
+    },
+    "public_health": {
+      "http_status": 200,
+      "status": "healthy",
+      "services": {
+        "api": "running",
+        "database": "connected",
+        "redis": "connected",
+        "celery": "connected"
+      }
+    }
+  },
+  "installed_code_probes": {
+    "checks": {
+      "home_record_intent": true,
+      "only_current_facts": true,
+      "no_implicit_home_write": true,
+      "gate_context": true,
+      "rejected_unbound_0": true,
+      "rejected_unbound_1": true,
+      "rejected_unbound_2": true,
+      "rejected_unbound_3": true,
+      "rejected_unbound_4": true,
+      "rejected_unbound_5": true,
+      "rejected_unbound_6": true,
+      "rejected_unbound_7": true,
+      "rejected_unbound_8": true
+    },
+    "passed": 13,
+    "production_record_writes": 0,
+    "scope": "deployed classifier/parser only; no production-account stream or device UI"
+  },
+  "backend_url": "https://github.com/itsoso/health-llm-driven/actions/runs/39044651127",
+  "publication_policy": "no-backup-v1",
+  "ota": {
+    "action": "not_required",
+    "reason": "backend_only_no_mobile_runtime_changes",
+    "existing_sha": "8711e424113b674f54a4646b4127adde6153da0a"
+  },
+  "device_acceptance": "not_performed",
+  "production_user_write": "not_performed",
+  "test_database_shutdown": "original fast shutdown completed normally after checkpoint; no restart or forced termination"
+}
