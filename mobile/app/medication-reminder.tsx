@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../hooks/useAuth';
 import { subscribeAuthSessionChange } from '../services/api';
-import { loadMedicationReminder, submitMedicationReminder, isReminderDate, isReminderTime, type MedicationReminderContext, type MedicationReminderTarget } from '../services/medicationReminderLanding';
+import { confirmTodayMedicationTaken, loadMedicationReminder, submitMedicationReminder, isReminderDate, isReminderTime, type MedicationReminderContext, type MedicationReminderTarget } from '../services/medicationReminderLanding';
 import MedicationReminderView from '../components/medication/MedicationReminderView';
 
 export default function MedicationReminderScreen() {
@@ -72,16 +72,20 @@ export default function MedicationReminderScreen() {
     // routeKey includes all route primitive fields.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeKey, refresh]);
-  const submit = async (status: 'taken' | 'skipped') => {
+  const submit = async (status: 'taken' | 'skipped', confirmToday = false) => {
     const original = contextRef.current;
-    if (!original?.actionable || original.log || original.requires_date_confirmation || loading || busyRef.current || uncertainRef.current || invalidSession.current) return;
+    if (!original || original.log || loading || busyRef.current || uncertainRef.current || invalidSession.current) return;
+    if (confirmToday ? !original.requires_date_confirmation || !original.time : !original.actionable || original.requires_date_confirmation) return;
     busyRef.current = true; setBusy(true); setError(null); setMessage(null);
     const epoch = generation.current;
     const current = () => mounted.current && !invalidSession.current && epoch === generation.current;
     try {
-      const result = await submitMedicationReminder(original, status, current);
+      const result = confirmToday
+        ? await confirmTodayMedicationTaken(original, current)
+        : await submitMedicationReminder(original, status, current);
       if (!current()) return;
       store(result.context);
+      if (!result.context.requires_date_confirmation) targetRef.current = { id: result.context.medication.id, date: result.context.date, time: result.context.time ?? undefined, sourceTimezone: result.context.timezone };
       uncertainRef.current = result.status === 'uncertain';
       const messages = {
         saved: status === 'taken' ? '已记录本次已服用' : '已记录本次未服用',
@@ -103,7 +107,7 @@ export default function MedicationReminderScreen() {
       if (current()) { busyRef.current = false; setBusy(false); }
     }
   };
-  const visibleContext = invalidSession.current ? null : context && uncertainRef.current ? { ...context, actionable: false } : context;
+  const visibleContext = invalidSession.current ? null : context && uncertainRef.current ? { ...context, actionable: false, requires_date_confirmation: false } : context;
   return <MedicationReminderView
     context={visibleContext} loading={loading} busy={busy} error={error} message={message}
     onBack={() => router.back()} onManage={() => router.push('/medications')}
@@ -117,6 +121,7 @@ export default function MedicationReminderScreen() {
       if (!isReminderTime(time) || busyRef.current || invalidSession.current) return;
       void refresh({ ...targetRef.current, time });
     }}
+    onConfirmTodayTaken={() => { void submit('taken', true); }}
     onTaken={() => { void submit('taken'); }} onSkipped={() => { void submit('skipped'); }}
   />;
 }

@@ -16,12 +16,13 @@ export interface MedicationReminderViewProps {
   onRetry: () => void;
   onConfirmDate: () => void;
   onTaken: () => void;
+  onConfirmTodayTaken?: () => void;
   onSkipped: () => void;
   onSelectTime?: (time: string) => void;
 }
 
 const reasons: Record<string, string> = {
-  date_confirmation_required: '这条提醒没有明确日期。请先核对今天的日期，再查看今天这一剂的记录。',
+  date_confirmation_required: '这条提醒未附日期。若你已服用，请核对上方今天的日期、时间和剂量，再记录；打开提醒不会自动打卡。',
   time_required: '这条提醒缺少用药时间，请到用药管理中核对。',
   timezone_mismatch: '提醒时区与当前账户时区不一致，请先核对提醒设置。',
   inactive: '这项用药已不在使用中，请到用药管理中核对。',
@@ -84,8 +85,14 @@ export default function MedicationReminderView(p: MedicationReminderViewProps) {
             {p.error && <View style={s.notice} accessibilityLiveRegion="polite"><Text style={s.noticeTitle}>暂未完成核对</Text><Text style={s.body}>{p.error}</Text></View>}
             {!c && !p.error && <View style={s.card}><Text style={s.noticeTitle}>暂时无法打开这次提醒</Text><Text style={s.body}>请重新核对，或到用药管理中查看当前安排。</Text></View>}
             {!!p.message && <Text style={s.message} accessibilityLiveRegion="polite">{p.message}</Text>}
-            {confirmation && <TouchableOpacity accessibilityRole="button" accessibilityLabel="查看今天这次提醒" disabled={p.busy} accessibilityState={{ disabled: p.busy }} onPress={p.onConfirmDate} style={[s.primary, p.busy && s.disabled]}>
-              <Text style={s.primaryText}>查看今天这次提醒</Text></TouchableOpacity>}
+            {confirmation && c?.time && p.onConfirmTodayTaken && <View style={s.actions}>
+              <Text style={s.body}>将记录为 {c.today_date} {c.time} 这次已服用</Text>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="确认今天这次已服用" disabled={p.busy} accessibilityState={{ disabled: p.busy, busy: p.busy }} onPress={p.onConfirmTodayTaken} style={[s.primary, p.busy && s.disabled]}>
+                {p.busy && <ActivityIndicator color={C.greenOn} />}<Text style={s.primaryText}>{p.busy ? '正在保存记录…' : '确认今天这次已服用'}</Text>
+              </TouchableOpacity>
+            </View>}
+            {confirmation && <TouchableOpacity accessibilityRole="button" accessibilityLabel="查看今天这次提醒" disabled={p.busy} accessibilityState={{ disabled: p.busy }} onPress={p.onConfirmDate} style={[s.secondaryButton, p.busy && s.disabled]}>
+              <Text style={s.secondaryButtonText}>查看今天这次提醒</Text></TouchableOpacity>}
             {canAct && <View style={s.actions}>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel="确认已服用" accessibilityState={{ disabled: p.busy, busy: p.busy }} disabled={p.busy} onPress={p.onTaken} style={[s.primary, p.busy && s.disabled]}>
                 {p.busy && <ActivityIndicator color={C.greenOn} />}<Text style={s.primaryText}>{p.busy ? '正在保存记录…' : '确认已服用'}</Text>

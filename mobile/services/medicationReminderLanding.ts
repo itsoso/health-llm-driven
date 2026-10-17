@@ -63,3 +63,13 @@ export async function submitMedicationReminder(original: MedicationReminderConte
     }
   }
 }
+
+/** Explicit user confirmation of both the displayed account-local date and actual intake. */
+export async function confirmTodayMedicationTaken(original: MedicationReminderContext, current: CurrentSession): Promise<MedicationReminderSubmitResult> {
+  if (!original.requires_date_confirmation || original.reason !== 'date_confirmation_required' || !original.time || original.log || !isReminderDate(original.today_date)) {
+    throw new Error('medication_reminder_date_confirmation_unavailable');
+  }
+  // Only resolve the missing date. The normal submit path must still re-read the
+  // owner, schedule, revision, local day and actionability before any POST.
+  return submitMedicationReminder({ ...original, date: original.today_date, requires_date_confirmation: false, actionable: true }, 'taken', current);
+}

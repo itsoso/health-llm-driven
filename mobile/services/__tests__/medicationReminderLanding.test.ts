@@ -1,5 +1,5 @@
 import api from '../api';
-import { loadMedicationReminder, submitMedicationReminder } from '../medicationReminderLanding';
+import { confirmTodayMedicationTaken, loadMedicationReminder, submitMedicationReminder } from '../medicationReminderLanding';
 jest.mock('../api', () => ({ __esModule: true, default: { get: jest.fn(), post: jest.fn() } }));
 const get = api.get as jest.Mock;
 const post = api.post as jest.Mock;
@@ -51,4 +51,25 @@ it('account changes prevent stale read and subsequent post', async () => {
   let active = true;
   get.mockImplementation(async () => { active = false; return { data: context() }; });
   await expect(submitMedicationReminder(context(), 'taken', () => active)).rejects.toThrow(); expect(post).not.toHaveBeenCalled();
+});
+
+const undated = () => ({ ...context(), actionable: false, requires_date_confirmation: true, reason: 'date_confirmation_required' });
+it('explicit today-and-taken confirmation revalidates and records the displayed slot', async () => {
+  const result = await confirmTodayMedicationTaken(undated(), () => true);
+  expect(result.status).toBe('saved');
+  expect(post).toHaveBeenCalledWith('/medication/medications/7/reminder/log', expect.objectContaining({ date: '2026-10-16', time: '18:00', status: 'taken' }));
+});
+it.each([
+  { today_date: '2026-10-17' }, { timezone: 'UTC' }, { revision: 'new' },
+  { actionable: false, reason: 'future_occurrence' },
+  { actionable: false, reason: 'inactive' },
+])('does not write if today confirmation becomes stale or blocked: %j', async delta => {
+  get.mockResolvedValue({ data: { ...context(), ...delta } });
+  expect((await confirmTodayMedicationTaken(undated(), () => true)).status).toBe('changed');
+  expect(post).not.toHaveBeenCalled();
+});
+it('today confirmation requires a known time and an undated reminder', async () => {
+  await expect(confirmTodayMedicationTaken({ ...undated(), time: null }, () => true)).rejects.toThrow();
+  await expect(confirmTodayMedicationTaken(context(), () => true)).rejects.toThrow();
+  expect(post).not.toHaveBeenCalled();
 });

@@ -97,3 +97,17 @@ it('provides read-only retry for an uncertain outcome without exposing another w
   fireEvent.press(screen.getByRole('button', { name: '重新核对' }));
   expect(p.onRetry).toHaveBeenCalledTimes(1);
 });
+
+it('offers explicit dated intake for legacy reminders without recording on open', () => {
+  const onConfirmTodayTaken = jest.fn();
+  const p = props({ onConfirmTodayTaken, context: { ...context, actionable: false, requires_date_confirmation: true, reason: 'date_confirmation_required' } });
+  const screen = render(<MedicationReminderView {...p} />);
+  expect(screen.getByText('将记录为 2026-10-16 18:00 这次已服用')).toBeTruthy();
+  expect(onConfirmTodayTaken).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByRole('button', { name: '确认今天这次已服用' }));
+  expect(onConfirmTodayTaken).toHaveBeenCalledTimes(1);
+  expect(p.onConfirmDate).not.toHaveBeenCalled();
+  screen.rerender(<MedicationReminderView {...p} busy />);
+  fireEvent.press(screen.getByRole('button', { name: '确认今天这次已服用' }));
+  expect(onConfirmTodayTaken).toHaveBeenCalledTimes(1);
+});
