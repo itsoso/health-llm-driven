@@ -443,7 +443,8 @@ _EVENT_WRITE_SCAFFOLD_RE = re.compile(
     r"^(?:(?:请|请你|麻烦|麻烦你|帮我|请帮我|请你帮我|麻烦帮我|"
     r"可以帮我|能帮我|替我|给我|为我|我想|我要|我希望|我需要))?"
     r"(?:记录|记一下|记下|保存|录入|写入|新增|打卡)(?:一下)?"
-    r"(?:生活事件)?[：:]?"
+    r"(?:(?:我|本人|自己)(?:的)?)?"
+    r"(?:生活事件|行程|旅程|旅途|出行|事件)?[：:]?"
 )
 _EXTERNAL_PROVENANCE_RE = re.compile(
     r"(?:(?:(?:来自|来源于|摘(?:录)?自|转自|出自|按|按照|依照|依据|"
@@ -1178,8 +1179,12 @@ def current_turn_trip_payload(value: str) -> dict[str, str] | None:
     # Authorization normalizes internally; persisted facts retain the user's
     # place spelling, including case and spaces in Latin names.
     raw = str(value or "").strip().rstrip("。.!！ ")
-    parts = tuple(part.strip() for part in re.split(r"[，,。.!！；;：:]", raw))
-    if not 2 <= len(parts) <= 4 or not is_direct_event_resource_write(parts[0]):
+    command = re.match(_DIRECT_EVENT_RESOURCE_WRITE_RE.pattern.removesuffix("$"), raw)
+    if command is None:
+        return None
+    facts = raw[command.end():].lstrip("，,：: ")
+    parts = tuple(part.strip() for part in re.split(r"[，,。.!！；;：:]", facts))
+    if not 1 <= len(parts) <= 3:
         return None
     if (
         has_non_authorizing_write_context(value)
@@ -1187,10 +1192,15 @@ def current_turn_trip_payload(value: str) -> dict[str, str] | None:
         or _TRIP_REPORT_QUALIFIER_RE.search(normalize_write_scope_text(value))
     ):
         return None
-    location = re.fullmatch(r"我(?:现在|目前)?在(?P<place>.+)", parts[1])
+    location = re.fullmatch(r"我(?:现在|目前)?在(?P<place>.+)", parts[0])
+    if location is None:
+        location = re.fullmatch(
+            r"(?:我)?(?:现在|目前)?(?:已经|刚刚|刚|已)?"
+            r"(?:到了|到达|抵达)(?P<place>.+?)(?:了)?", parts[0],
+        )
     if location is None or not _is_bounded_trip_place(location.group("place"), "location"):
         return None
-    for part in parts[2:]:
+    for part in parts[1:]:
         planned = re.fullmatch(
             r"(?:我)?(?P<action>准备去|打算去|计划去|走的是|途经)(?P<place>.+)", part,
         )
@@ -1199,7 +1209,7 @@ def current_turn_trip_payload(value: str) -> dict[str, str] | None:
         kind = "route" if planned.group("action") in {"走的是", "途经"} else "destination"
         if not _is_bounded_trip_place(planned.group("place"), kind):
             return None
-    return {"title": parts[1], "notes": "，".join(parts[1:])}
+    return {"title": parts[0], "notes": "，".join(parts)}
 
 
 def _is_explicit_dated_backfill(value: str) -> bool:

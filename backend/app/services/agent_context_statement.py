@@ -53,6 +53,15 @@ _NON_PLACE_LANGUAGE = (
 )
 
 
+def _known_context_places() -> set[str]:
+    """Admit exact city/facility phrases, never free text ending in 机场."""
+    from app.services.environment.weather_service import WeatherService
+
+    cities = set(WeatherService._CITY_LOCATION_IDS) | {"香港", "澳门", "台北"}
+    return {city + suffix for city in cities
+            for suffix in ("", "市", "机场", "国际机场", "火车站", "高铁站", "口岸")}
+
+
 def parse_context_statement(message: str | None) -> ContextStatement | None:
     raw = unicodedata.normalize("NFKC", message or "").strip()
     if not raw or len(raw) > 100 or any(char in raw for char in "\n\r\t"):
@@ -64,9 +73,7 @@ def parse_context_statement(message: str | None) -> ContextStatement | None:
             continue
         place = match.group("place")
         if kind in {"arrival", "business_trip"}:
-            from app.services.environment.weather_service import WeatherService
-
-            if place.removesuffix("市") not in WeatherService._CITY_LOCATION_IDS:
+            if place not in _known_context_places():
                 return None
         if any(marker in place for marker in _NON_PLACE_LANGUAGE):
             return None
@@ -78,6 +85,44 @@ def parse_context_statement(message: str | None) -> ContextStatement | None:
             return None
         return ContextStatement(kind=kind, place=place)
     return None
+
+
+def _is_closed_trip_pair(source, answer) -> bool:
+    """Only a completed owned trip receipt closes the preceding write task."""
+    from app.services.write_intent_scope import current_turn_trip_payload
+    from app.services.llm.task_routing import has_sensitive_health_language
+
+    if (source.role != "user" or answer.role != "assistant"
+            or current_turn_trip_payload(source.content) is None
+            or has_sensitive_health_language(source.content or "")):
+        return False
+    meta = answer.meta or {}
+    if not isinstance(meta, dict):
+        return False
+    outcome = meta.get("turn_outcome") or {}
+    source_meta = source.meta or {}
+    if not isinstance(outcome, dict) or not isinstance(source_meta, dict):
+        return False
+    write_state = source_meta.get("write_state") or {}
+    if not isinstance(write_state, dict) or write_state.get("status") not in {None, "verified"}:
+        return False
+    receipts = meta.get("write_receipts")
+    closed_text = (answer.content or "").strip().replace(" ", "").rstrip("。.!！")
+    return bool(
+        closed_text in {"✅已记录", "已记录", "行程已记录"}
+        and meta.get("client_turn_finalized") is True
+        and meta.get("completion_status") == "complete"
+        and outcome.get("status") == "complete"
+        and not outcome.get("confirmation_required")
+        and not meta.get("pending_choice") and not meta.get("health_fact_draft")
+        and isinstance(receipts, list) and len(receipts) == 1
+        and isinstance(receipts[0], dict)
+        and receipts[0].get("verified") is True
+        and receipts[0].get("status") == "verified"
+        and receipts[0].get("action") == "create"
+        and receipts[0].get("resource_type") == "health_episode"
+        and str(receipts[0].get("resource_id") or "").isdigit()
+    )
 
 
 def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None) -> bool:
@@ -97,7 +142,11 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
         raise ValueError("对话不存在")
     query = db.query(AgentMessage).filter(AgentMessage.conversation_id == owned.id)
     recent = query.order_by(AgentMessage.id.desc()).limit(8).all()
-    for item in recent:
+    closed_trip_answers = {
+        recent[index - 1].id for index, item in enumerate(recent) if index > 0
+        and _is_closed_trip_pair(item, recent[index - 1])
+    }
+    for index, item in enumerate(recent):
         if item.role == "user":
             if item.image_url or any((item.meta or {}).get(key) for key in (
                 "images", "attachments", "file_name", "file_base64", "extra_context",
@@ -113,7 +162,8 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
                 unicodedata.normalize("NFKC", item.content or "").strip().rstrip("。.!！"),
                 re.IGNORECASE,
             )
-            if not ((previous is not None and previous.allows_local_reply) or plain_record):
+            closed_trip = index > 0 and recent[index - 1].id in closed_trip_answers
+            if not ((previous is not None and previous.allows_local_reply) or plain_record or closed_trip):
                 return False
     latest_answer = next((item for item in recent if item.role == "assistant"), None)
     if latest_answer is not None:
@@ -126,13 +176,11 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
         # Unknown assistant prose may ask for a continuation without a question
         # mark. Admit only complete, closed acknowledgements or our exact
         # inert guard refusal, never absence of a question/symptom keyword.
-        from app.services.environment.weather_service import WeatherService
         from app.services.guidance_validator import _ADVICE_HOLD
 
         answer = (latest_answer.content or "").strip()
-        known_ack = any(answer == ContextStatement(kind, city + suffix).reply
-                        for city in WeatherService._CITY_LOCATION_IDS
-                        for suffix in ("", "市")
+        known_ack = any(answer == ContextStatement(kind, place).reply
+                        for place in _known_context_places()
                         for kind in ("arrival", "business_trip"))
         plain_receipt = re.fullmatch(r"(?:早餐|午餐|晚餐)记录已保存。", answer)
         guard_refusal = answer in {
@@ -142,6 +190,6 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
             "信息来源：上下文信息（未逐项核验）、模型推断。\n" + _ADVICE_HOLD,
             "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n" + _ADVICE_HOLD,
         }
-        if not (known_ack or plain_receipt or guard_refusal):
+        if not (known_ack or plain_receipt or guard_refusal or latest_answer.id in closed_trip_answers):
             return False
     return True

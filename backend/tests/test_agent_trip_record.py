@@ -93,8 +93,13 @@ def test_trip_projection_preserves_place_spelling():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("message,expected_title,expected_notes", (
+    (TRIP, "我现在在口岸", FACTS),
+    ("记录行程现在到了上海国际机场", "现在到了上海国际机场", "现在到了上海国际机场"),
+    ("记录我的行程，现在到了上海国际机场。", "现在到了上海国际机场", "现在到了上海国际机场"),
+))
 async def test_stream_trip_persists_owned_event_and_receipt(
-    db, client, auth_user_and_headers, monkeypatch,
+    db, client, auth_user_and_headers, monkeypatch, message, expected_title, expected_notes,
 ):
     from app.models.agent_conversation import AgentConversation, AgentMessage
     from app.models.episode import HealthEpisode
@@ -137,17 +142,30 @@ async def test_stream_trip_persists_owned_event_and_receipt(
     monkeypatch.setattr(executor, "_call_llm_stream", model_stream)
     monkeypatch.setattr(executor, "_api_post", post)
     events = [event async for event in executor.run_stream(
-        user_id=user.id, message=TRIP, conversation_id=conversation.id,
+        user_id=user.id, message=message, conversation_id=conversation.id,
         user_auth_token=headers["Authorization"].removeprefix("Bearer "),
         client_turn_id="test-current-trip",
     )]
     rows = db.query(HealthEpisode).filter_by(episode_type="life_event").all()
     assert len(rows) == 1
     assert rows[0].user_id == user.id
-    assert rows[0].headline == "我现在在口岸"
-    assert rows[0].context_snapshot["notes"] == FACTS
+    assert rows[0].headline == expected_title
+    assert rows[0].context_snapshot["notes"] == expected_notes
     done = next(event["data"] for event in events if event.get("event") == "done")
     assert done["write_receipts"]
     assert done["write_receipts"][0]["verified"] is True
     saved = db.get(AgentMessage, done["message_id"])
     assert saved.meta["write_receipts"] == done["write_receipts"]
+
+    # A subsequent location assertion closes as context, not a health query
+    # or another write. Exercise actual persisted receipt metadata above.
+    def unexpected(*args, **kwargs):
+        pytest.fail("Completed trip context must not invoke health data/model work")
+    monkeypatch.setattr(executor, "_build_system_prompt", unexpected)
+    followup = [e async for e in executor.run_stream(user_id=user.id,
+        message="现在到了北京国际机场", conversation_id=conversation.id,
+        client_turn_id="test-trip-arrival-context")]
+    followup_done = next(e["data"] for e in followup if e.get("event") == "done")
+    assert followup_done["route"] == "context_statement"
+    assert followup_done["completion_status"] == "complete"
+    assert db.query(HealthEpisode).filter_by(episode_type="life_event").count() == 1
