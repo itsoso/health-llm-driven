@@ -1,0 +1,139 @@
+{
+  "sha": "5607ddd380fee17d9063b547c8738a37e0eae952",
+  "previous_backend_sha": "8711e424113b674f54a4646b4127adde6153da0a",
+  "publication_policy": "no-backup-v1",
+  "scope": "backend-only",
+  "validation": {
+    "focused_regression": 5082,
+    "postgresql": 60,
+    "independent_safety": {
+      "decision": "GO",
+      "passed": 168,
+      "negative_probes": 15
+    },
+    "synthetic_live_arrival": {
+      "completion_status": "complete",
+      "outcome": "complete",
+      "model_call_count": null,
+      "rows": 1,
+      "verified_receipts": 1
+    },
+    "live_harness": {
+      "orchestrator_passed": 5,
+      "orchestrator_total": 5,
+      "average": 0.94,
+      "invariants": 12,
+      "health_agent_core": 50,
+      "trajectory_contract": 12,
+      "trajectory_goldens": 9
+    },
+    "local_ci_first_attempt": {
+      "result": "failed",
+      "passed": 1861,
+      "skipped": 10,
+      "failed_test": "scripts/test_trusted_frontend_rebuild.py::test_retirement_preserves_failed_audit_and_archives_lease_before_release",
+      "reason": "configuration changed while opening",
+      "isolated_recheck": "passed",
+      "code_changed": false
+    },
+    "local_ci_recheck": {
+      "sha": "5607ddd380fee17d9063b547c8738a37e0eae952",
+      "source": "/tmp/reva-arrival-ci-recheck-0je2_9cp/source",
+      "platform": "Darwin",
+      "uid": 501,
+      "gid": 20,
+      "tmp_gid": 20,
+      "linux_native_checks": "not_proven_by_macos_run",
+      "environment_single_exit": 0,
+      "dossier_check_exit": 0,
+      "dossier_tests_exit": 0,
+      "invariants_exit": 0,
+      "junit": {
+        "tests": 4060,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 23
+      },
+      "source_status": "",
+      "elapsed_seconds": 723.34
+    }
+  },
+  "transport_review": {
+    "decision": "GO",
+    "wrappers": {
+      "stage": "4609841bfc297f3cc15efcbfd449ea66b1b6b99ee47170842f5288e1c2b310e9",
+      "revoke": "9672871f1181260f4a6bcf23d4e1989c086038b2efa906f62c85f14270a4e613",
+      "key-retirement": "af797c4e14df8766aafe2b3c7232cb4ff4538b4563002e25bc44fd854729331d",
+      "rotate": "17cb0336f67c1af434e6dc500342de9e49474980b2d4c4e8bd9ec503bc191f77"
+    },
+    "executed_stages": [
+      "CANONICAL_STAGED",
+      "REVOKED",
+      "REVOKED_PRIVATE_KEY_DESTROYED",
+      "AUTHORIZED_NEW_SHA"
+    ]
+  },
+  "ota": {
+    "action": "not_required",
+    "reason": "backend_only_no_mobile_changes",
+    "existing_sha": "8711e424113b674f54a4646b4127adde6153da0a"
+  },
+  "production_user_write": "not_performed",
+  "device_acceptance": "not_performed",
+  "ci": {
+    "run_id": 39024606318,
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/39024606318",
+    "status": "completed",
+    "conclusion": "success",
+    "successful_jobs": 32
+  },
+  "backend": {
+    "run_id": 39026622329,
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/39026622329",
+    "conclusion": "success",
+    "sha": "5607ddd380fee17d9063b547c8738a37e0eae952",
+    "receipt": {
+      "sha": "5607ddd380fee17d9063b547c8738a37e0eae952",
+      "state": "SUCCEEDED"
+    },
+    "runtime_phase": "COMMITTED",
+    "runtime_sha": "5607ddd380fee17d9063b547c8738a37e0eae952",
+    "business_lease_released": true,
+    "source_clean": true,
+    "services": {
+      "health-backend": {
+        "MainPID": "1833072",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "celery-worker": {
+        "MainPID": "1833074",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "celery-beat": {
+        "MainPID": "1833075",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      }
+    }
+  },
+  "public_health": {
+    "http_status": 200,
+    "status": "healthy",
+    "services": {
+      "api": "running",
+      "database": "connected",
+      "redis": "connected",
+      "celery": "connected"
+    }
+  },
+  "installed_code_probes": {
+    "passed": 5,
+    "production_record_writes": 0,
+    "scope": "parser classifier payload and safety guards on deployed source; not device or production-account stream"
+  }
+}

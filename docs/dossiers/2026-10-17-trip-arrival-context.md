@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | 创建日期 | 2026-10-17 |
-| 当前阶段 | S5 实现与验证 |
-| 状态 | building |
+| 当前阶段 | S7 后端发布与回读完成 |
+| 状态 | shipped |
 | 范围 | 现有行程记录与非写入位置背景的语义一致性 |
 
 ## G1 · 修复准入
@@ -26,5 +26,16 @@
 - System Map 局部路径未索引，已回到源码与邻近测试；完整 `system-map-check.sh` 通过。
 - PostgreSQL 实际 stream → gateway → HTTP → DB → 回执与连续位置背景测试 60 passed；完整相关回归 5,082 passed。
 - 实际配置模型合成验收 1 passed：测试账号经正常 AI 同意 API 授权，真实模型/提示词 + TestClient HTTP + PostgreSQL 写入 1 条本人事件，complete 终态与 verified 回执 1 条；未调用生产账户或补写用户真实行程。首次因缺少同意被正确拒绝，未绕过披露/同意守卫。
-- 独立安全 review、精确 SHA 发布闸和后端发布待完成。
+- 独立安全 review、精确 SHA 发布闸和后端发布已完成，证据见下。
 - 上一已发布后端/OTA `8711e424`；此修复只有后端运行代码变化，不发布内容相同的空 OTA。持续发布授权有效，仍保留精确 SHA CI、生产互斥、回执和 no-backup 闸。
+
+## 发布与验收
+
+- 发布 SHA `5607ddd380fee17d9063b547c8738a37e0eae952`；独立安全审查 **GO**，168 项独立测试和 15 条额外拒绝误写探针通过。Transport 独立审查 GO，绑定四份 wrapper 摘要，按 canonical staging、原锁内撤权、旧私钥退役、no-backup rotate 单次执行，原回执保留。
+- 真实模型发布闸：orchestrator 5/5，平均 0.94；invariants 12/12、health_agent_core 50/50、trajectory contract 12/12、goldens 9/9。确认变量精确绑定该候选。
+- 本机 CI-mode 首轮在 `test_retirement_preserves_failed_audit_and_archives_lease_before_release` 检测到 `configuration changed while opening`，1 failed / 1,861 passed。没有改代码或削弱检查，单项复验通过；从新干净 checkout 完整重验 **3,953 passed、84 subtests passed、23 环境/平台限定 skips**，JUnit 4,060 项、0 errors/failures；Dossier 一致性与 18 项测试通过。原失败证据保留在结构化回执中，不把首次运行描述为通过。
+- [完整 CI 39024606318](https://github.com/itsoso/health-llm-driven/actions/runs/39024606318)：精确 SHA、32 jobs success。Linux 发布约束与 PostgreSQL 检查均通过。
+- [后端发布 39026622329](https://github.com/itsoso/health-llm-driven/actions/runs/39026622329)：success；服务器 `SUCCEEDED`，runtime `COMMITTED`，生产源码 SHA 一致且干净，业务租约已释放。backend/worker/beat 均 active/running，NRestarts=0。
+- 公开 `/api/v1/health` HTTP 200，API/database/Redis/Celery 健康；已部署源码 5 项合成分类/载荷/安全边界探针通过。完整真实模型与 PostgreSQL 写链路在隔离账号中验证；未重放截图账户写入，未操作或声称通过真实设备/模拟器 UI 验收。
+- 仅后端运行代码有变化；保留已发布 `8711e424` 的 OTA，不发布内容相同的空 OTA。本次用户无需安装新 App 才能使用后端修复。
+- 结构化回执：`docs/reviews/2026-10-17-trip-arrival-release-receipt.json`。证据提交不改变已上线代码。
