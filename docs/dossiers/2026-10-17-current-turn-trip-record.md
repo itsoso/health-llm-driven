@@ -4,7 +4,7 @@
 
 - 现有生活事件记录能力的局部修复；不增加产品对象、API、表结构或移动端行为。
 - Router: `quick_fix` + `safety` overlay；发布阶段 `release/backend`。遵守用户禁用 superpowers 的要求，不加载其能力。
-- 当前状态：本地实现和 PostgreSQL 验证通过；安全重审待完成；配置修正后真实模型闸已通过，最终候选需重新绑定验证，尚未推送或部署。
+- 当前状态：最终代码候选 `af2f0cdec91351f462646d3668645b6f7a10b8a9` 本地验证、真实模型闸及独立安全重审 GO；另一个发布流程持有候选授权且未交接，本任务未推送或部署。
 - 不回填截图中的真实行程；测试使用合成地点和隔离测试账号。
 
 ## 根因与改动
@@ -29,11 +29,15 @@
 - 补充真实网关负例和保真测试，修复前 5 failed / 9 passed。修复后拒绝元语言限定词和括号，授权检查与原始事实投影分离；PostgreSQL 新文件 18 passed。待固定新提交重新独立审查。
 - 完整 executor completion 状态回归 178 passed。
 - 第二轮 `519de2e98` 仍 NO-GO：地点后的未知假定、转述、撤回附言可被吞入。新增 6 个失败网关用例后，改用正向有界实体终结词，匹配首次地理实体结尾，任何剩余附言均拒绝授权。支持口岸等设施、行政区/港岛目的地和桥路等路线；未覆盖的地名表达不自动授权。PostgreSQL 新文件 24 passed；截图原句无持久化探针仍通过。旧候选完整相关回归为 4,775 passed。
+- 最终代码候选：相关分类/授权/gateway/文本恢复/行程回归 **4,781 passed**；PostgreSQL **24 passed**；System Map 和 diff check 通过。
+- 第三位独立只读 reviewer `/root/trip_safety_final` 对固定 `fad84c255..af2f0cdec` 裁定 **GO**：额外 57 条撤回/转述/假设/历史附言探针全部拒绝；新增行程、分类与 completion 共 **1,082 passed，退出码 0**。同时确认拒绝不会借用旧上下文授权、规范载荷进入原有去重身份计算。
 
 ## 发布断点
 
 `APP_ENV=test DATABASE_URL=sqlite:///:memory: python scripts/harness_llm_regression_gate.py --include-live-llm` 返回失败：离线 invariants 12/12、health_agent_core 50/50、trajectory contract 12/12、goldens 9/9 通过；真实 orchestrator 0/5。默认 provider 报 ValueError，OpenAI 备用路径被 `recipient_not_disclosed` 拦截。没有修改披露/同意配置，没有设置 confirmed 或 waiver 冒充通过。
 
-已定位本地现有发布配置内的模型连接参数。只在进程内加载限定的模型参数用于合成评测，数据库强制保持隔离内存测试库，不输出凭据、不变更生产配置或披露规则。真实 orchestrator 5/5、平均 0.96，其余离线/trajectory 闸均通过；最终候选重新验证后再绑定确认。
+已定位本地现有发布配置内的模型连接参数。只在进程内加载限定的模型参数用于合成评测，数据库强制保持隔离内存测试库，不输出凭据、不变更生产配置或披露规则。第一次配置修正评测 5/5、平均 0.96；最终代码候选重新评测 **orchestrator 5/5、平均 0.94**，其余离线/trajectory 闸均通过。
 
-需要完成真实模型闸，再绑定精确提交确认、推送并等待完整 CI；之后按受控后端发布流程执行。此变更没有 Mobile JS/原生差异，无需单独 OTA。生产路径与模拟器复验尚未完成。保留开工前全部其他任务的工作区改动。
+2026-10-17 只读发布现场：生产仍 `c2b6f87469999f134bd1853274def9e0f4153f95`，backend 与 GitHub relay active；服务器当前授权已绑定另一任务的 `fad84c25524e73d3c4df8bac1e80dfb5915577a1`。该任务在本轮 11:50–11:57 更新了 canonical staging / revoke / rotate 证据，且未向本任务移交发布归属。无锁不视为交接。没有更新远端 main、CI 确认变量或生产授权，避免破坏对方精确主干准入。
+
+交接后需绑定最终发布 SHA 的真实模型确认，推送并等待完整 CI，再按受控后端发布流程执行。此修复没有 Mobile JS/原生差异；其他候选包含的 Mobile 改动仍由相应发布任务核对 OTA。生产路径与模拟器复验尚未完成。保留开工前全部其他任务的工作区改动；本任务临时 PostgreSQL 已正常停止。
