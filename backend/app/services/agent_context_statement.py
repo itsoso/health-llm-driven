@@ -15,15 +15,24 @@ import unicodedata
 class ContextStatement:
     kind: str
     place: str
+    flight_time: str | None = None
+    flight_event: str | None = None
+    expected: bool = False
 
     @property
     def allows_local_reply(self) -> bool:
         # An arbitrary hotel name is only an intent hint, never proof that its
         # free-text slot contains no additional obligation or medical concern.
-        return self.kind in {"arrival", "business_trip"}
+        return self.kind in {"arrival", "business_trip", "gate_arrival"}
 
     @property
     def reply(self) -> str:
+        if self.kind == "gate_arrival":
+            reply = f"收到，你已到{self.place}。"
+            if self.flight_time is not None:
+                qualifier = "预计" if self.expected else ""
+                reply += f"你补充的{qualifier}{self.flight_event}时间是{self.flight_time}。"
+            return reply
         if self.kind == "arrival":
             return f"收到，你已到{self.place}。"
         if self.kind == "business_trip":
@@ -36,6 +45,13 @@ class ContextStatement:
 # and all safety checks; a suffix/character class does not establish semantics.
 _PLACE = r"[\u4e00-\u9fffA-Za-z·]{2,30}?"
 _LEAD = r"(?:我)?(?:今天|现在)?(?:已经|刚刚|刚|已)?"
+# Exact bounded gate/clock syntax, not arbitrary travel-looking free text.
+# A stated clock is echoed without inferring a date, timezone or completion.
+_GATE_ARRIVAL = re.compile(
+    rf"{_LEAD}(?:抵达|到达|到了)(?P<place>[A-Z]?[1-9][0-9]{{0,2}}(?:号门|号?登机口))"
+    r"(?:了)?(?:[,，;；]?(?P<expected>预计)?"
+    r"(?P<time>(?:[01][0-9]|2[0-3]):[0-5][0-9])(?P<event>降落|落地|起飞))?"
+)
 _PATTERNS = (
     ("arrival", re.compile(rf"{_LEAD}(?:落地|抵达|到达|到了)(?P<place>{_PLACE})(?:了)?")),
     ("arrival", re.compile(rf"{_LEAD}到(?P<place>{_PLACE})了")),
@@ -67,6 +83,13 @@ def parse_context_statement(message: str | None) -> ContextStatement | None:
     if not raw or len(raw) > 100 or any(char in raw for char in "\n\r\t"):
         return None
     text = raw.replace(" ", "").rstrip("。.!！")
+    gate = _GATE_ARRIVAL.fullmatch(text)
+    if gate is not None:
+        return ContextStatement(
+            kind="gate_arrival", place=gate.group("place"),
+            flight_time=gate.group("time"), flight_event=gate.group("event"),
+            expected=gate.group("expected") is not None,
+        )
     for kind, pattern in _PATTERNS:
         match = pattern.fullmatch(text)
         if match is None:
@@ -182,6 +205,14 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
         known_ack = any(answer == ContextStatement(kind, place).reply
                         for place in _known_context_places()
                         for kind in ("arrival", "business_trip"))
+        # Gate replies contain bounded user-supplied clocks. Match the actual
+        # owned prior statement, never arbitrary assistant prose or a prefix.
+        known_ack = known_ack or any(
+            item.role == "user"
+            and (statement := parse_context_statement(item.content)) is not None
+            and statement.kind == "gate_arrival" and answer == statement.reply
+            for item in recent
+        )
         plain_receipt = re.fullmatch(r"(?:早餐|午餐|晚餐)记录已保存。", answer)
         guard_refusal = answer in {
             _ADVICE_HOLD,
