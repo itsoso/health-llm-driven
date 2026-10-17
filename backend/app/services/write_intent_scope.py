@@ -1169,6 +1169,27 @@ def _is_bounded_trip_place(value: str, kind: str) -> bool:
     return match is not None and match.end() == len(value)
 
 
+def current_turn_home_arrival_payload(value: str) -> dict[str, str] | None:
+    """Bind a whole current-user arrival plus an explicit record command.
+
+    No free-text slots: dates, other owners, questions, revocations and extra
+    obligations cannot become part of the arrival or be silently discarded.
+    Preserve the assertion, without deriving a home address or arrival clock.
+    """
+    raw = str(value or "").strip()
+    fact = r"(?:我)?(?:现在)?(?:已经|刚刚|刚|已)?(?:回)?到家了"
+    command = r"(?:请)?(?:帮我)?(?:记录(?:一下|下来)?|记一下|记下来)"
+    separator = r"[，,。；;：:]\s*"
+    match = re.fullmatch(
+        rf"(?:(?P<before>{fact}){separator}{command}|"
+        rf"{command}{separator}(?P<after>{fact}))[。！!]?", raw,
+    )
+    if match is None:
+        return None
+    title = match.group("before") or match.group("after")
+    return {"title": title, "notes": title}
+
+
 def current_turn_trip_payload(value: str) -> dict[str, str] | None:
     """Bind an explicit trip command to a bounded first-person location report.
 
@@ -1176,6 +1197,9 @@ def current_turn_trip_payload(value: str) -> dict[str, str] | None:
     of the current report, never evidence that a future arrival has happened.
     Unknown clauses fail closed instead of being silently dropped.
     """
+    home_arrival = current_turn_home_arrival_payload(value)
+    if home_arrival is not None:
+        return home_arrival
     # Authorization normalizes internally; persisted facts retain the user's
     # place spelling, including case and spaces in Latin names.
     raw = str(value or "").strip().rstrip("。.!！ ")

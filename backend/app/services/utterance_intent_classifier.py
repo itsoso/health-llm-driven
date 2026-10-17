@@ -42,6 +42,7 @@ from app.services.utterance_intent_lexicon import (
     WRITE_COMMAND_ACTIONS,
 )
 from app.services.write_intent_scope import (
+    current_turn_home_arrival_payload,
     direct_event_values,
     is_quantified_meal_observation,
     direct_self_illness_recovery_entity,
@@ -313,6 +314,13 @@ def classify_agent_utterance(
                 "analyzed_material", requires_reliable_tool_model=True,
             )
         return _intent(raw, normalized, "unknown", "unknown", "none", 0.0, "empty")
+
+    if current_turn_home_arrival_payload(raw) is not None:
+        return _intent(
+            raw, normalized, "write", "event", "create", 0.96,
+            "explicit_home_arrival_record", is_write=True,
+            requires_reliable_tool_model=True,
+        )
 
     if direct_self_illness_recovery_entity(raw) is not None:
         return _intent(

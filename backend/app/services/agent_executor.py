@@ -6028,6 +6028,13 @@ def _record_intent_needs_detail_message(
     """
     text = (record_text or "").strip()
     if "health_record_target_mismatch" in reason_codes:
+        from app.services.write_intent_scope import current_turn_trip_payload
+
+        if current_turn_trip_payload(text) is not None:
+            return (
+                "这次生活事件还没记下来：待保存的事件内容未能与这条请求准确对应。"
+                "本轮没有执行记录。"
+            )
         if has_images and "补剂" in text:
             return (
                 "这次补剂还没记下来：图片识别结果未能与本次要求逐项对应。"

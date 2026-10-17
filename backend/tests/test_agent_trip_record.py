@@ -97,6 +97,8 @@ def test_trip_projection_preserves_place_spelling():
     (TRIP, "我现在在口岸", FACTS),
     ("记录行程现在到了上海国际机场", "现在到了上海国际机场", "现在到了上海国际机场"),
     ("记录我的行程，现在到了上海国际机场。", "现在到了上海国际机场", "现在到了上海国际机场"),
+    ("到家了。记录下来。", "到家了", "到家了"),
+    ("我到家了，帮我记一下。", "我到家了", "我到家了"),
 ))
 async def test_stream_trip_persists_owned_event_and_receipt(
     db, client, auth_user_and_headers, monkeypatch, message, expected_title, expected_notes,
@@ -110,6 +112,11 @@ async def test_stream_trip_persists_owned_event_and_receipt(
     db.flush()
     db.add(AgentMessage(conversation_id=conversation.id, role="assistant",
                         content="上一餐摄入约500千卡。"))
+    if "到家" in message:
+        db.add(AgentMessage(conversation_id=conversation.id, role="user",
+                            content="到了18号门 20:40 降落"))
+        db.add(AgentMessage(conversation_id=conversation.id, role="assistant",
+                            content="本轮数据查询未完成，请明确数据类别和日期。"))
     db.commit()
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
@@ -151,17 +158,42 @@ async def test_stream_trip_persists_owned_event_and_receipt(
     assert rows[0].user_id == user.id
     assert rows[0].headline == expected_title
     assert rows[0].context_snapshot["notes"] == expected_notes
+    # The existing API anchors an undated current event to request time.
+    # A clock from previous chat/model output must never become its raw time.
+    assert rows[0].context_snapshot["occurred_raw"] is None
     done = next(event["data"] for event in events if event.get("event") == "done")
     assert done["write_receipts"]
     assert done["write_receipts"][0]["verified"] is True
     saved = db.get(AgentMessage, done["message_id"])
     assert saved.meta["write_receipts"] == done["write_receipts"]
+    assert done["completion_status"] == done["turn_outcome"]["status"] == "complete"
+    assert "剂量" not in saved.content and "查询未完成" not in saved.content
+
+    replay = [e async for e in executor.run_stream(
+        user_id=user.id, message=message, conversation_id=conversation.id,
+        user_auth_token=headers["Authorization"].removeprefix("Bearer "),
+        client_turn_id="test-current-trip",
+    )]
+    replay_done = next(e["data"] for e in replay if e.get("event") == "done")
+    assert replay_done["message_id"] == done["message_id"]
+    assert db.query(HealthEpisode).filter_by(episode_type="life_event").count() == 1
+
+    from tests.conftest import create_authenticated_user
+    _, other_token = create_authenticated_user(db)
+    owned_read = client.get("/api/v1/episodes/me/life-events", headers=headers)
+    assert owned_read.status_code == 200
+    assert [row["id"] for row in owned_read.json()] == [rows[0].id]
+    other_read = client.get("/api/v1/episodes/me/life-events",
+                            headers={"Authorization": f"Bearer {other_token}"})
+    assert other_read.status_code == 200 and other_read.json() == []
 
     # A subsequent location assertion closes as context, not a health query
     # or another write. Exercise actual persisted receipt metadata above.
     def unexpected(*args, **kwargs):
         pytest.fail("Completed trip context must not invoke health data/model work")
     monkeypatch.setattr(executor, "_build_system_prompt", unexpected)
+    if "到家" in message:
+        return  # The earlier query failure is deliberately unresolved history.
     followup = [e async for e in executor.run_stream(user_id=user.id,
         message="现在到了北京国际机场", conversation_id=conversation.id,
         client_turn_id="test-trip-arrival-context")]
