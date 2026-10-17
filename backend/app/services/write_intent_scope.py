@@ -386,6 +386,12 @@ _DIRECT_EVENT_RESOURCE_WRITE_RE = re.compile(
     r"(?:(?:我|本人|自己)(?:的)?)?"
     r"(?:行程|旅程|旅途|出行|事件|生活事件)$"
 )
+# Location fields cannot carry prose about authorization or the provenance of
+# the report. Check before binding the opaque server-authorized event payload.
+_TRIP_REPORT_QUALIFIER_RE = re.compile(
+    r"(?:授权|同意|示例|例句|例子|举例|假设|虚构|编造|模拟|"
+    r"转述|复述|引用|原话|说法|故事|开玩笑|仅为|只是|不代表)"
+)
 _CURRENT_OWNER_WORDS = frozenset(
     {
         "我",
@@ -1153,16 +1159,19 @@ def current_turn_trip_payload(value: str) -> dict[str, str] | None:
     of the current report, never evidence that a future arrival has happened.
     Unknown clauses fail closed instead of being silently dropped.
     """
-    normalized = normalize_write_scope_text(value).strip("。.!！ ")
-    parts = tuple(part.strip() for part in re.split(r"[，,。.!！；;：:]", normalized))
+    # Authorization normalizes internally; persisted facts retain the user's
+    # place spelling, including case and spaces in Latin names.
+    raw = str(value or "").strip().rstrip("。.!！ ")
+    parts = tuple(part.strip() for part in re.split(r"[，,。.!！；;：:]", raw))
     if not 2 <= len(parts) <= 4 or not is_direct_event_resource_write(parts[0]):
         return None
     if (
         has_non_authorizing_write_context(value)
         or not has_explicit_authorizing_write_request(value)
+        or _TRIP_REPORT_QUALIFIER_RE.search(normalize_write_scope_text(value))
     ):
         return None
-    place = r"[\u4e00-\u9fffA-Za-z0-9·（）() -]{1,60}"
+    place = r"[\u4e00-\u9fffA-Za-z0-9· -]{1,60}"
     if not re.fullmatch(rf"我(?:现在|目前)?在{place}", parts[1]):
         return None
     for part in parts[2:]:

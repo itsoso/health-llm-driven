@@ -23,8 +23,16 @@
 - `PATH="$PWD/.venv/bin:$PATH" ./scripts/system-map-check.sh` 通过；该局部实现未改变生成图结构。
 - `git diff --check` 通过。
 
+## 独立安全审查与修复
+
+- 首轮固定候选 `a790be24e`：独立 reviewer 裁定 NO-GO。宽地点字符集吞入括号示例/假设或句尾授权否认；授权规范化还会损失英文地点大小写及空格。
+- 补充真实网关负例和保真测试，修复前 5 failed / 9 passed。修复后拒绝元语言限定词和括号，授权检查与原始事实投影分离；PostgreSQL 新文件 18 passed。待固定新提交重新独立审查。
+- 完整 executor completion 状态回归 178 passed。
+
 ## 发布断点
 
 `APP_ENV=test DATABASE_URL=sqlite:///:memory: python scripts/harness_llm_regression_gate.py --include-live-llm` 返回失败：离线 invariants 12/12、health_agent_core 50/50、trajectory contract 12/12、goldens 9/9 通过；真实 orchestrator 0/5。默认 provider 报 ValueError，OpenAI 备用路径被 `recipient_not_disclosed` 拦截。没有修改披露/同意配置，没有设置 confirmed 或 waiver 冒充通过。
 
-需要在已正确配置且授权披露完整的评测环境完成真实模型闸，再绑定精确提交确认、推送并等待完整 CI；之后按受控后端发布流程执行。此变更没有 Mobile JS/原生差异，无需单独 OTA。生产路径与模拟器复验尚未完成。保留开工前全部其他任务的工作区改动。
+已定位本地现有发布配置内的模型连接参数。只在进程内加载限定的模型参数用于合成评测，数据库强制保持隔离内存测试库，不输出凭据、不变更生产配置或披露规则。重新评测中。
+
+需要完成真实模型闸，再绑定精确提交确认、推送并等待完整 CI；之后按受控后端发布流程执行。此变更没有 Mobile JS/原生差异，无需单独 OTA。生产路径与模拟器复验尚未完成。保留开工前全部其他任务的工作区改动。

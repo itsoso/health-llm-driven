@@ -65,10 +65,25 @@ async def test_current_turn_trip_projects_only_explicit_facts(db, monkeypatch):
     TRIP.replace("我现在", "小明现在"),
     TRIP + "这是小明的行程。",
     TRIP.replace("。", "吗？"),
+    TRIP.replace("口岸", "口岸（上述内容仅为示例）"),
+    TRIP.replace("口岸", "口岸（仅为举例）"),
+    TRIP.replace("口岸", "口岸（此为假设）"),
+    TRIP.replace("跨海大桥", "跨海大桥这个说法不代表授权"),
+    TRIP.replace("口岸", "口岸上述内容仅为示例"),
+    TRIP.replace("海岛", "海岛这只是虚构故事"),
 ))
 async def test_trip_denials_and_other_owners_never_post(db, monkeypatch, message):
     calls, _ = await execute_trip(db, monkeypatch, message)
     assert calls == []
+
+
+def test_trip_projection_preserves_place_spelling():
+    from app.services.write_intent_scope import current_turn_trip_payload
+
+    assert current_turn_trip_payload("记录我的行程，我目前在Hong Kong，计划去New York。") == {
+        "title": "我目前在Hong Kong",
+        "notes": "我目前在Hong Kong，计划去New York",
+    }
 
 
 @pytest.mark.asyncio
