@@ -48,4 +48,20 @@ describe('NotificationHistoryScreen', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/workout-detail?id=123');
   });
+
+  it('opens today actions for a protocol history link without submitting completion', async () => {
+    mockGetLogs.mockResolvedValue([{
+      id: 2, notification_type: 'reminder', channel: 'ios_apns',
+      title: '健康提醒', content: '完成后确认', status: 'sent',
+      deep_link: '/agenda',
+      data: { kind: 'protocol', category: 'AGENDA_ACTION',
+        complete_ref: { object_type: 'health_protocol', object_id: 42 } },
+    }]);
+    const screen = renderWithProviders(<NotificationHistoryScreen />);
+    const row = await screen.findByLabelText('打开 健康提醒');
+    expect(row).not.toBeDisabled();
+    fireEvent.press(row);
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith('/agenda');
+  });
 });

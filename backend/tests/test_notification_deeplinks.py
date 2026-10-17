@@ -34,6 +34,7 @@ from app.services.notification.deeplinks import deeplink_for
         ("calendar", "/calendar"),
         ("movement", "/fitness-plan"),
         ("exercise", "/fitness-plan"),
+        ("protocol", "/agenda"),
         ("health_alert", "/(tabs)/alerts"),
     ],
 )

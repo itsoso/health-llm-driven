@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.database import get_db
 from app.api.deps import get_current_user_required
 from app.models.user import User
+from app.services.notification.deeplinks import history_deeplink
 from app.models.notification import (
     UserNotificationSetting,
     ReminderConfig,
@@ -360,7 +361,7 @@ def get_notification_logs(
                 "sent_at": log.sent_at.isoformat() if log.sent_at else None,
                 "created_at": log.created_at.isoformat() if log.created_at else None,
                 "data": log.data or {},
-                "deep_link": (log.data or {}).get("deep_link"),
+                "deep_link": history_deeplink(log.notification_type, log.data),
                 # 新结构: channels JSON 列, 为空则前端 fallback 按 channel 列展示 (兼容旧 row)
                 "channels": getattr(log, "channels", None),
             }

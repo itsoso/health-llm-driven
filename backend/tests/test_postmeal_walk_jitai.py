@@ -125,6 +125,39 @@ def test_watch_complete_postmeal_walk_writes_exercise_once(client, auth_user_and
     assert events[0].status == "completed"
 
 
+def test_reminder_history_to_agenda_requires_explicit_completion(client, auth_user_and_headers, db):
+    from app.models.notification import NotificationLog
+    from tests.conftest import create_authenticated_user
+
+    user, headers = auth_user_and_headers
+    assert _post_diet(client, headers, "dinner").status_code == 200
+    walk = _postmeal_walk_protocols(db, user.id)[0]
+    source = {"object_type": "health_protocol", "object_id": walk.id}
+    db.add(NotificationLog(user_id=user.id, notification_type="reminder", channel="ios_apns",
+                           title="健康提醒", content="合成行动提醒", status="sent",
+                           data={"kind": "protocol", "category": "AGENDA_ACTION", "complete_ref": source}))
+    db.commit()
+    logs = client.get("/api/v1/notification/logs", headers=headers).json()["logs"]
+    assert logs[0]["deep_link"] == "/agenda"
+    items = client.get("/api/v1/agenda/today", headers=headers).json()["items"]
+    assert next(item for item in items if item["source"] == source)["status"] == "pending"
+    assert db.query(ExerciseRecord).filter_by(user_id=user.id).count() == 0
+    assert db.query(HealthProtocolEvent).filter_by(user_id=user.id).count() == 0
+    _, token = create_authenticated_user(db)
+    denied = client.post("/api/v1/agenda/complete", headers={"Authorization": f"Bearer {token}"},
+                         json={**source, "status": "done", "track": "protocol"})
+    assert denied.status_code == 404
+    for _ in range(2):
+        response = client.post("/api/v1/agenda/complete", headers=headers,
+                               json={**source, "status": "done", "track": "protocol"})
+        assert response.status_code == 200, response.text
+    assert db.query(ExerciseRecord).filter_by(user_id=user.id).count() == 1
+    event = db.query(HealthProtocolEvent).filter_by(user_id=user.id).one()
+    assert event.protocol_id == walk.id and event.status == "completed"
+    items = client.get("/api/v1/agenda/today", headers=headers).json()["items"]
+    assert next(item for item in items if item["source"] == source)["status"] == "completed"
+
+
 def test_watch_push_exercise_pending_respects_safety_and_frequency_gate(
     db, auth_user_and_headers, monkeypatch
 ):

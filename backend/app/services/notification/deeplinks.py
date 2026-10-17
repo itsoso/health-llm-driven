@@ -33,6 +33,8 @@ _KIND_ROUTES: dict[str, str] = {
     # 锻炼 / movement pre_event → 健身计划页
     "movement": "/fitness-plan",
     "exercise": "/fitness-plan",
+    # 行为协议在今日行动中显式完成；打开通知本身不写依从记录。
+    "protocol": "/agenda",
     # 健康告警 (vitals / DDI / PGx / anomaly) → 安全告警 tab
     "health_alert": "/(tabs)/alerts",
 }
@@ -71,3 +73,19 @@ def deeplink_for(kind: str, **params) -> Optional[str]:
         return "/(tabs)"
 
     return _KIND_ROUTES.get(kind)
+
+
+def history_deeplink(notification_type: str, data: dict | None) -> Optional[str]:
+    """Project missing legacy protocol links without rewriting sent history.
+
+    An old reminder opens today's authenticated action list, never replays its
+    completion reference or assumes the historical occurrence was completed.
+    """
+    data = data or {}
+    explicit = data.get("deep_link") or data.get("deeplink")
+    if explicit:
+        return explicit
+    if (notification_type == "reminder" and data.get("kind") == "protocol"
+            and data.get("category") == "AGENDA_ACTION"):
+        return deeplink_for("protocol")
+    return None

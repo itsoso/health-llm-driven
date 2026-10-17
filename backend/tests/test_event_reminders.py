@@ -302,3 +302,6 @@ def test_scanner_matches_each_users_local_clock(db):
 
     assert result["sent"] == 1
     assert db.query(SentEventReminder).one().remind_date == local_now.date()
+    data = push_instance.send_notification.call_args.kwargs["data"]
+    assert data["deep_link"] == "/agenda"
+    assert data["complete_ref"] == item["complete_ref"]
