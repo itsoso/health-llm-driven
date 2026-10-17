@@ -1,0 +1,169 @@
+{
+  "sha": "e75b182637ea6ca658a18e35368774ccb83c9322",
+  "previous_backend_sha": "e35dee8ba27b92b532fd566198db771d31a00856",
+  "publication_policy": "no-backup-v1",
+  "scope": "backend-only",
+  "validation": {
+    "red": {
+      "failed": 8,
+      "passed": 21
+    },
+    "focused_sqlite": 197,
+    "postgresql": 199,
+    "independent_safety": {
+      "decision": "GO",
+      "passed": 139,
+      "accepted_probes": 3,
+      "rejected_probes": 14
+    },
+    "system_map": "passed",
+    "llm_change_gate": {
+      "status": "passed",
+      "live_llm_required": false,
+      "confirmed": false,
+      "waived": false,
+      "waiver_env": "HARNESS_LIVE_LLM_EVAL_WAIVED_SHA",
+      "waiver_reason": null,
+      "confirmation_env": "HARNESS_LIVE_LLM_EVAL_CONFIRMED",
+      "expected_confirmation": null,
+      "changed_paths": [
+        "backend/app/services/agent_context_statement.py",
+        "backend/tests/test_agent_gate_arrival.py",
+        "docs/dossiers/2026-10-17-gate-time-context.md"
+      ],
+      "matched_paths": [],
+      "next_steps": "",
+      "errors": []
+    },
+    "local_ci": {
+      "sha": "e75b182637ea6ca658a18e35368774ccb83c9322",
+      "source": "/tmp/reva-gate-time-ci-71s7na1o/source",
+      "platform": "Darwin",
+      "uid": 501,
+      "gid": 20,
+      "tmp_gid": 20,
+      "linux_native_checks": "not_proven_by_macos_run",
+      "environment_single_exit": 0,
+      "dossier_check_exit": 0,
+      "dossier_tests_exit": 0,
+      "invariants_exit": 0,
+      "junit": {
+        "tests": 4060,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 23
+      },
+      "source_status": "",
+      "elapsed_seconds": 900.23
+    },
+    "test_database_shutdown": "initial pg_ctl wait timed out while checkpoint pending; original shutdown completed normally, no restart or forced kill"
+  },
+  "transport_review": {
+    "decision": "GO",
+    "wrappers": {
+      "stage": "77f724156339dfde4f97530905746f90387192623950648b137d6bfd06c12d2e",
+      "revoke": "d38237489010c00a4c8ac1d4980c98b6dbd89e14329d46735b2439232b5a9a30",
+      "key-retirement": "1707dba0b1ccd515b38fe18632f0af614ea933c38d04390339962e667efa39f9",
+      "rotate": "100280d95115cb0b46ce422f7935736939edbc137c7f7feafff830627d71284b"
+    },
+    "rotation_transport_exit": 255,
+    "rotation_replayed": false,
+    "canonical_rotation_terminal": "INSTALLED",
+    "readback": {
+      "decision": "GO",
+      "sha256": "1c629cc1104dd976feadbd18d03ffe2d6ac7d3d6f4f9de364f4dbc9f59d8c564",
+      "exit_code": 0,
+      "result": {
+        "state": "AUTHORIZED_NEW_SHA_READBACK",
+        "sha": "e75b182637ea6ca658a18e35368774ccb83c9322",
+        "canonical_rotation_terminal": "INSTALLED",
+        "old_terminal": "RETIRED",
+        "old_workspace_succeeded": true,
+        "original_launcher_idle": true,
+        "production_healthy": true,
+        "mutation_performed": false
+      }
+    },
+    "executed_stages": [
+      "CANONICAL_STAGED",
+      "REVOKED",
+      "REVOKED_PRIVATE_KEY_DESTROYED",
+      "INSTALLED",
+      "AUTHORIZED_NEW_SHA_READBACK"
+    ]
+  },
+  "ota": {
+    "action": "not_required",
+    "reason": "backend_only_no_mobile_runtime_changes",
+    "existing_sha": "8711e424113b674f54a4646b4127adde6153da0a"
+  },
+  "production_user_write": "not_performed",
+  "device_acceptance": "not_performed",
+  "live_model_acceptance": "not_required_by_machine_gate; deterministic path tested with model calls forbidden",
+  "ci": {
+    "databaseId": 39038027218,
+    "headSha": "e75b182637ea6ca658a18e35368774ccb83c9322",
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/39038027218",
+    "status": "completed",
+    "conclusion": "success",
+    "successful_jobs": 32
+  },
+  "backend": {
+    "sha": "e75b182637ea6ca658a18e35368774ccb83c9322",
+    "receipt": {
+      "sha": "e75b182637ea6ca658a18e35368774ccb83c9322",
+      "state": "SUCCEEDED"
+    },
+    "runtime_phase": "COMMITTED",
+    "runtime_sha": "e75b182637ea6ca658a18e35368774ccb83c9322",
+    "business_lease_released": true,
+    "source_clean": true,
+    "services": {
+      "health-backend": {
+        "MainPID": "2323594",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "celery-worker": {
+        "MainPID": "2323596",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "celery-beat": {
+        "MainPID": "2323597",
+        "NRestarts": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      }
+    },
+    "run_id": 39040820061,
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/39040820061",
+    "conclusion": "success"
+  },
+  "public_health": {
+    "http_status": 200,
+    "status": "healthy",
+    "services": {
+      "api": "running",
+      "database": "connected",
+      "redis": "connected",
+      "celery": "connected"
+    }
+  },
+  "installed_code_probes": {
+    "checks": {
+      "screenshot_context": true,
+      "nonwriting_intent": true,
+      "no_trip_write": true,
+      "bounded_reply": true,
+      "medical_not_intercepted": true,
+      "invalid_clock_rejected": true,
+      "reminder_not_intercepted": true
+    },
+    "passed": 7,
+    "production_record_writes": 0,
+    "scope": "deployed classifier/parser only, not device UI or production-account stream"
+  }
+}
