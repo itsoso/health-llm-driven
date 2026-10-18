@@ -9,7 +9,7 @@
 
 本地每日提醒与服务端扫描同时启用；本地取消/重排异步可重叠，每药每时点又各排一次。现统一服务端每用户/日期/时点一条，旧本地排程启动/前台清理。点击带核实问题进入 Agent 草稿；无 context 自动发送和自动打卡。
 
-扫描加入 PostgreSQL owner 连接锁，保留原 rule_id 回执去重。进一步真实 PostgreSQL 双 worker 测试复现延迟队列仍会发送两次：旧代码“先查再标 pending”不是原子认领；现使用条件更新后才能发送。
+扫描加入 PostgreSQL owner/date/time 连接锁，复用 rule_id 回执去重。进一步真实 PostgreSQL 双 worker 测试复现延迟队列仍会发送两次：旧代码“先查再标 pending”不是原子认领；现使用条件更新后才能发送。
 
 ## 增量证据
 
@@ -38,3 +38,10 @@
 - `3912ef754` 第二次独立审查 NO-GO：旧 `medicine` producer 经共享出口产生 `/notification-history?detailId=123`，未覆盖到 Agent 草稿。独立回归 135 passed / 2 PostgreSQL skips，其余受审改动未发现阻断。
 - 先新增真实历史入口与详情入口用例，RED 为两条仍返回 history/detail；现仅对已识别用药提醒覆盖通用目的地。仅从 `/medication-reminder` 提取旧药品/剂次参数，通用详情 ID、日期与时间不冒充剂次；其他通知与专属编辑页仍保留原入口。
 - 冻结复测 Mobile 7 suites / 76 passed、TypeScript 与定向 ESLint exit 0；日志 `/tmp/reva-med-generic-route-red.log`、`/tmp/reva-med-generic-route-green.log`。本轮无后端变更，保留上轮 CI-mode/PG 证据；等待新固定候选独立安全裁决。
+
+## 固定代码 GO 与发布断点
+
+- 新独立 reviewer 对 `8459819641a48804ba220724d361e9549afec512`（总基线 `46304ef7a`）裁决代码 GO：真实 medicine→共享历史链接→resolver→实时/历史点击已闭合，通用通知字段不冒充剂次，无自动发送或打卡；完整差异未发现新增安全阻断。独立 Mobile 5 suites / 71 passed，System Map 和 diff 检查通过。
+- 最终只读 GitHub 回查 scopes 仍为 `admin:public_key, gist, read:org, repo`，缺 `workflow`。前置 GPS 提交修改 workflow，此前推送已被权限拒绝；未重试拒绝操作或切换身份绕过。需用户完成既已说明的 `gh auth refresh -h github.com -s workflow`，再走当前 main 精确远端 CI。
+- G5/G6 未完成：本任务未 push、后端部署、OTA validate/publish 或原生上传。Mac 锁屏断点尚无解除证据，模拟器未验收；当前 main 原生 GPS runtime 变化仍需相应发布路径，旧 IPA/旧 runtime OTA 不代表包含本修复。
+- 自建 PostgreSQL 测试 cluster 已正常停止并确认无 server running。用户及其它任务 dirty 文件保持原状；本任务仅提交指定文件，无备份或回退副本。
