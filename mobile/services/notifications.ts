@@ -82,6 +82,22 @@ export interface NotificationLog {
   channels?: Array<{ name: string; status: string; error?: string | null }> | null;
 }
 
+/** Saved notification text; server resolves ownership and excludes opaque payload data. */
+export interface NotificationDetail {
+  id: number;
+  notification_type: string;
+  title: string;
+  content: string;
+  created_at: string | null;
+  sent_at: string | null;
+  content_source: 'saved_full_text' | 'saved_notification_text';
+}
+
+export async function getNotificationDetail(id: number): Promise<NotificationDetail> {
+  const { data } = await api.get<NotificationDetail>(`/notification/logs/${id}`);
+  return data;
+}
+
 export async function bindIOSToken(deviceToken: string, bundleId?: string): Promise<void> {
   await api.post('/notification/bind/ios', { device_token: deviceToken, bundle_id: bundleId });
 }

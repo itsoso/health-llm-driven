@@ -8,6 +8,7 @@ import { getLogs, type NotificationLog } from '../services/notifications';
 import { resolveNotificationRoute } from '../services/notificationRoutes';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
+import { useAuth } from '../hooks/useAuth';
 
 function buildTypeMeta(c: ColorPalette): Record<string, { icon: string; color: string }> {
   return {
@@ -69,29 +70,36 @@ function collapseMultiChannel(logs: NotificationLog[]): Array<NotificationLog & 
 /**
  * 历史行的目的地: 走与活推送同一个 resolveNotificationRoute (含 scheme 归一 + legacy screen).
  * 该 log 的 deep_link 既可能在 data.deep_link, 也可能在顶层列 log.deep_link — 合并后再解析.
- * 解析不出再退到 workout_analysis 的 workout_id 兜底; 都没有 → null (行不可点).
+ * 保留专属页面；缺少目的地的旧记录进入保存的推送详情。
  */
 function getLogDeepLink(log: NotificationLog): string | null {
   const merged = { ...(log.data ?? {}), deep_link: log.deep_link ?? log.data?.deep_link };
   const route = resolveNotificationRoute(merged);
-  if (route) return route;
+  if (route && !route.startsWith('/notification-detail?')) return route;
+  // A server-projected generic detail must not supersede a legacy screen destination.
+  const legacyRoute = resolveNotificationRoute(log.data ?? {});
+  if (legacyRoute) return legacyRoute;
   if (log.notification_type === 'workout_analysis' && log.data?.workout_id) {
     return `/workout-detail?id=${log.data.workout_id}`;
   }
-  return null;
+  return route ?? (Number.isSafeInteger(log.id) && log.id > 0 ? `/notification-detail?id=${log.id}` : null);
 }
 
 export default function NotificationHistoryScreen() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const router = useRouter();
+  const { user, isAuthenticated } = useAuth();
+  const canRead = isAuthenticated && Boolean(user?.id);
 
-  const { data: logs = [], isLoading } = useQuery({
-    queryKey: ['notificationLogs'],
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['notificationLogs', user?.id],
+    enabled: canRead,
     queryFn: () => getLogs(100),
     staleTime: 30_000,
   });
 
+  const logs = useMemo(() => canRead ? data ?? [] : [], [canRead, data]);
   const collapsed = React.useMemo(() => collapseMultiChannel(logs), [logs]);
   const sections = groupByDate(collapsed);
 
@@ -105,8 +113,15 @@ export default function NotificationHistoryScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      {isLoading ? (
+      {!canRead ? (
+        <View style={styles.center}><Text style={styles.empty}>请先登录后查看推送历史</Text></View>
+      ) : isLoading ? (
         <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
+      ) : isError ? (
+        <View style={styles.center}>
+          <Text style={styles.empty}>暂时无法读取推送历史</Text>
+          <TouchableOpacity accessibilityRole="button" onPress={() => { void refetch(); }}><Text style={{ color: c.brand }}>重试</Text></TouchableOpacity>
+        </View>
       ) : logs.length === 0 ? (
         <View style={styles.center}>
           <Ionicons name="notifications-off-outline" size={48} color={c.labelTertiary} />

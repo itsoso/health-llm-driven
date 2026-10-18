@@ -3,10 +3,10 @@
   "counts": {
     "api_routers": 173,
     "celery_tasks": 74,
-    "mobile_routes": 145,
+    "mobile_routes": 147,
     "model_files": 123,
     "safety_rules_total": 65,
-    "service_files": 489,
+    "service_files": 490,
     "specialists": 13,
     "twin_partitions": 15,
     "web_pages": 82
@@ -2377,6 +2377,20 @@
       "owner": "mobile",
       "source": {
         "path": "mobile/app/my-progress.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "mobile"
+      ]
+    },
+    {
+      "coverage": "complete",
+      "id": "surface.mobile.notification-detail",
+      "kind": "surface",
+      "name": "Mobile /notification-detail",
+      "owner": "mobile",
+      "source": {
+        "path": "mobile/app/notification-detail.tsx",
         "type": "code"
       },
       "tags": [
@@ -5738,6 +5752,16 @@
         "type": "code"
       },
       "to": "surface.mobile.my-progress",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.mobile",
+      "source": {
+        "path": "mobile/app/notification-detail.tsx",
+        "type": "code"
+      },
+      "to": "surface.mobile.notification-detail",
       "type": "renders"
     },
     {

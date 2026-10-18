@@ -509,6 +509,10 @@ async def test_flush_delayed_pushes_waits_until_morning_floor(db):
     svc = PushService(db)
 
     fake_now = datetime(2026, 5, 12, 8, 0, 0)
+    # Production get_china_now is aware, as is PostgreSQL TIMESTAMPTZ. Keep
+    # SQLite's naive fixture while exercising the real clock contract on PG.
+    if db.get_bind().dialect.name == "postgresql":
+        fake_now = fake_now.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
     log = NotificationLog(
         user_id=user.id,
         notification_type="reminder",
@@ -531,8 +535,11 @@ async def test_flush_delayed_pushes_waits_until_morning_floor(db):
     assert send_mock.await_count == 0
     db.refresh(log)
     assert log.status == NotificationStatus.DELAYED.value
-    assert log.scheduled_at.hour == 9
-    assert log.scheduled_at.minute == 0
+    scheduled = log.scheduled_at
+    if scheduled.tzinfo is not None:
+        scheduled = scheduled.astimezone(ZoneInfo("Asia/Shanghai"))
+    assert scheduled.hour == 9
+    assert scheduled.minute == 0
 
 
 @pytest.mark.asyncio

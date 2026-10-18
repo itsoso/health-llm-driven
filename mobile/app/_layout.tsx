@@ -252,6 +252,7 @@ export function AppContent() {
         <Stack.Screen name="notification-settings" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="reminders" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="notification-history" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="notification-detail" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="consultations" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="consultations/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="sleep" options={{ headerShown: false, presentation: 'modal' }} />

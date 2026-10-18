@@ -29,6 +29,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.services.agent_context_statement import ContextStatement
+from app.services.notification.detail import (
+    NOTIFICATION_REVIEW_PROMPT, selected_notification_id,
+    read_notification_detail, notification_review_context,
+)
 from app.services.tool_schema_registry import (
     ANALYSIS_TURN_TOOL_NAMES,
     DIET_TURN_TOOL_NAMES,
@@ -12331,6 +12335,8 @@ class AgentExecutor:
         self._turn_contextual_diet_write_blocked_reason: Optional[str] = None
         self._turn_food_photo_recognition: dict[str, Any] | None = None
         self._turn_selected_exam_id: Optional[int] = None
+        self._turn_selected_notification_id: Optional[int] = None
+        self._turn_notification_detail: dict | None = None
         self._turn_pending_write_intent_ids: list[int] = []
         self._turn_pending_write_intent_kinds: list[str] = []
         self._turn_medication_tool_intent_id: Optional[int] = None
@@ -12939,13 +12945,15 @@ class AgentExecutor:
     def _focused_read_scopes(self):
         from app.services.agent_kernel.medical_narrative_read_scope import resolve_medical_narrative_read_scope
         from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
-        if self._turn_selected_exam_id is not None:
+        if self._turn_selected_exam_id is not None or self._turn_selected_notification_id is not None:
             return None, None
         text = self._current_turn_user_message
         return resolve_medical_narrative_read_scope(text), resolve_garmin_workout_review_scope(text)
 
     def _has_isolated_report_scope(self) -> bool:
-        return self._turn_selected_exam_id is not None or any(scope is not None for scope in self._focused_read_scopes())
+        return (self._turn_selected_exam_id is not None
+                or self._turn_selected_notification_id is not None
+                or any(scope is not None for scope in self._focused_read_scopes()))
 
     def _all_scoped_reads_verified(self) -> bool:
         if self._turn_daily_read_plan is not None:
@@ -16071,6 +16079,7 @@ class AgentExecutor:
         supplement_unit_followup: bool = False,
         meal_input_clarification: MealInputClarification | None = None,
         diet_review_record_unavailable: bool = False,
+        notification_unavailable: bool = False,
         request_started_at: float | None = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Persist a local clarification or context acknowledgement without a model."""
@@ -16097,7 +16106,11 @@ class AgentExecutor:
                 client_turn_id=client_turn_id,
                 meta={"client_turn_id": client_turn_id} if client_turn_id else None,
             )
-        if diet_review_record_unavailable:
+        if notification_unavailable:
+            text = '这条推送暂时无法读取。请回到推送历史重新选择；本轮没有分析其他日期的数据，也没有修改健康记录。'
+            reason_code = 'notification_unavailable'
+            route = 'notification_review_clarification'
+        elif diet_review_record_unavailable:
             text = '暂时无法确认这条饮食记录及其日期。请回到饮食页选择已保存的记录，或直接告诉我要复盘哪一天的饮食。'
             reason_code = 'diet_review_record_unavailable'
             route = 'diet_review_clarification'
@@ -16277,6 +16290,21 @@ class AgentExecutor:
         runs the same synthesis pipeline but can never mutate user data.
         """
         request_started_at = time.time()
+        selection = selected_notification_id(extra_context)
+        self._turn_selected_notification_id = (
+            selection if message.strip() == NOTIFICATION_REVIEW_PROMPT
+            and not images and not file_base64 else None
+        )
+        self._turn_notification_detail = None
+        if selection is not None:
+            # An edited request (especially an acute symptom) follows the normal
+            # health pipeline; client prose/flags never become saved evidence.
+            extra_context = (
+                json.dumps({'from': f'notification/{selection}'})
+                if self._turn_selected_notification_id is not None else None
+            )
+        if self._turn_selected_notification_id is not None:
+            read_only_tools = True
         staged_mode = _staged_response_mode()
         phase_one_label = (
             _phase_one_acknowledgement(
@@ -16454,7 +16482,8 @@ class AgentExecutor:
                     user_id=user_id,
                     user_message=recovered_user_message,
                 )
-            elif not images and not file_base64 and _selected_exam_context_id(extra_context) is None:
+            elif (not images and not file_base64 and _selected_exam_context_id(extra_context) is None
+                  and self._turn_selected_notification_id is None):
                 retry_recovery = resolve_retryable_turn_recovery(
                     self.db,
                     user_id=user_id,
@@ -16525,6 +16554,7 @@ class AgentExecutor:
                 not effective_images and not file_base64
                 and isinstance(choice_conversation_id, int)
                 and _selected_exam_context_id(extra_context) is None
+                and self._turn_selected_notification_id is None
                 and needs_input_clarification(effective_message)
             ):
                 from app.services.agent_pending_choice import resolve_pending_choice
@@ -16561,6 +16591,7 @@ class AgentExecutor:
             owned_read_followup = (
                 conversation_id is not None
                 and _selected_exam_context_id(extra_context) is None
+                and self._turn_selected_notification_id is None
                 and not effective_images and not file_base64
                 and load_read_task_reference(
                     self.db, user_id, conversation_id, self._agent_kernel_snapshot,
@@ -16646,6 +16677,21 @@ class AgentExecutor:
                         recovered_user_message,
                         client_turn_id,
                     ):
+                        yield self._attach_runtime_identity(event)
+                    return
+            if self._turn_selected_notification_id is not None:
+                self._turn_notification_detail = read_notification_detail(
+                    self.db, user_id, self._turn_selected_notification_id,
+                )
+                if self._turn_notification_detail is None:
+                    async for event in self._run_input_clarification_stream(
+                        user_id=user_id, message=display_message,
+                        conversation_id=conversation_id, client_turn_id=client_turn_id,
+                        recovered_user_message=recovered_user_message,
+                        notification_unavailable=True, request_started_at=request_started_at,
+                    ):
+                        if event.get('event') == 'done':
+                            kernel_completion_status = 'complete'
                         yield self._attach_runtime_identity(event)
                     return
             if diet_review_record_unavailable:
@@ -17845,7 +17891,10 @@ class AgentExecutor:
                 turn_context_parts.append(database_verification_snapshot)
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
-        if self._turn_selected_exam_id is not None:
+        if self._turn_selected_notification_id is not None:
+            turn_context_parts.append(notification_review_context(self._turn_notification_detail))
+            sources_used.append('所选历史推送（原始指标未重新核验）')
+        elif self._turn_selected_exam_id is not None:
             turn_context_parts.append(
                 "## 所选体检报告范围\n"
                 "入口意图：exam_abnormal_review（体检异常解读与就医问题准备，仅阅读，不授权写入）。\n"
@@ -18207,6 +18256,8 @@ class AgentExecutor:
         tools = scope_tools_for_owned_read(tools, read_scope)
         if self._turn_selected_exam_id is not None:
             tools = _selected_exam_provider_tools(tools)
+        if self._turn_selected_notification_id is not None:
+            tools = [tool for tool in tools if (tool.get('function') or {}).get('name') == 'knowledge_search']
         medical_scope, garmin_scope = self._focused_read_scopes()
         if medical_scope is not None or garmin_scope is not None:
             allowed = {'health_query', 'knowledge_search'}
@@ -26309,6 +26360,15 @@ class AgentExecutor:
         from app.services.agent_policy_retry import is_terminal_policy_reason
 
         parsed_args = _parse_tool_arguments_for_telemetry(args_raw)
+        if self._turn_selected_notification_id is not None and tool_name != 'knowledge_search':
+            decision = CapabilityDecision('block', 'selected_notification_scope_required', tool_name, parsed_args)
+            self._agent_kernel_record_capability_decision(tool_name, decision)
+            result = json.dumps({
+                'status': 'failed', 'success': False, 'error_code': decision.reason,
+                'retryable': False, 'dispatch_started': False,
+                'message': '本轮仅解读所选历史推送，不执行其它个人数据查询或健康记录修改。',
+            }, ensure_ascii=False)
+            return self._agent_kernel_record_tool_result(tool_name, parsed_args, result)
         if self._turn_selected_exam_id is not None and not _selected_exam_tool_allowed(tool_name, parsed_args):
             decision = CapabilityDecision("block", "selected_report_scope_required", tool_name, parsed_args)
             self._agent_kernel_record_capability_decision(tool_name, decision)

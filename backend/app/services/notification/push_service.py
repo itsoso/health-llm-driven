@@ -16,6 +16,7 @@ from app.models.notification import (
 )
 from app.services.advice_guard import AdviceCandidate, guard_and_record_advice
 from app.services.notification.gatekeeper import gate_proactive_notification
+from app.services.notification.deeplinks import history_deeplink
 from app.services.notification.push_privacy import lock_screen_privacy_backstop
 from app.utils.timezone import get_china_now
 
@@ -435,6 +436,7 @@ class PushService:
         dedup_window_hours: int = 24,
         quiet_hours_policy: Optional[QuietHoursPolicy] = None,
         log_delivery: bool = True,
+        _replay_log_id: int | None = None,
     ) -> Dict[str, Any]:
         """
         发送推送通知
@@ -468,10 +470,25 @@ class PushService:
                                 得在这里给它开显式豁免, 别默默依赖 min()。
             log_delivery: 是否新写 NotificationLog. flush delayed push 时为 False,
                           由原 delayed row 承接 sent/failed/再延迟 状态, 避免重复展示。
+            _replay_log_id: 内部延迟回放的原日志 ID，必须属于本用户且已置 pending。
 
         Returns:
             发送结果 {"success": bool, "channels": {...}}
         """
+        delivery_log = None
+        if not log_delivery:
+            delivery_log = (
+                self.db.query(NotificationLog)
+                .filter(
+                    NotificationLog.id == _replay_log_id,
+                    NotificationLog.user_id == user_id,
+                    NotificationLog.status == NotificationStatus.PENDING.value,
+                )
+                .first()
+            )
+            if delivery_log is None:
+                return {"success": False, "reason": "invalid_delivery_log"}
+
         rule_id = (data or {}).get("rule_id") if data else None
         severity = _resolve_severity(notification_type, severity, user_id=user_id, rule_id=rule_id)
         # critical 可穿透普通静默 (见 resolve_quiet_hours_policy docstring);
@@ -503,7 +520,7 @@ class PushService:
         # WSCLA 深链注入: data 带 action_card_id → 自动生成 health://card/{id} 深链.
         # 客户端点击通知 → 调 P1-5 click endpoint 回写 push_clicked_at, 然后跳卡片详情页.
         # 已有 deep_link 时不覆盖 (调用方显式优先).
-        if data and data.get("action_card_id") and not data.get("deep_link"):
+        if data and data.get("action_card_id") and not (data.get("deep_link") or data.get("deeplink")):
             data = dict(data)  # 不污染调用方的字典
             data["deep_link"] = f"health://card/{data['action_card_id']}"
 
@@ -544,6 +561,7 @@ class PushService:
 
         # Final shared privacy choke point. Producer-level guards remain useful
         # for better category wording, but every channel receives this backstop.
+        original_title, original_content = title, content
         title, content, privacy_redacted = lock_screen_privacy_backstop(
             notification_type=notification_type,
             title=title,
@@ -554,6 +572,10 @@ class PushService:
         if privacy_redacted:
             data = dict(data or {})
             data["lock_screen_redacted"] = True
+            # Keep the original only on the owned detail record. Producer-saved
+            # originals may predate another privacy pass, so never replace them.
+            data.setdefault("full_title", original_title)
+            data.setdefault("full_content", original_content)
 
         # 去重检查必须先于 quiet-hours 延迟队列。
         # 否则夜间同一提醒会被重复写成多条 delayed, 到 09:00 一起 flush 出去。
@@ -643,21 +665,44 @@ class PushService:
                 "reason": "没有可用的推送渠道"
             }
 
-        # 逐渠道发送 — 收集各通道结果, 最后写 1 行汇总 log (2026-05-07 重构)
+        # Persist the tap target before a channel can deliver it. A crash after
+        # sending leaves an auditable pending row, which existing dedup includes;
+        # do not resend an uncertain delivery. Replay reuses its owned pending row.
+        if delivery_log is None:
+            delivery_log = NotificationLog(
+                user_id=user_id, notification_type=notification_type, channel="multi",
+                title=title, content=content, status=NotificationStatus.PENDING.value,
+            )
+            self.db.add(delivery_log)
+            self.db.flush()
+        data = dict(data or {})
+        link = history_deeplink(notification_type, data, log_id=delivery_log.id)
+        if link and not (data.get("deep_link") or data.get("deeplink")):
+            data["deep_link"] = link
+        delivery_log.data = data
+        delivery_log.title = title
+        delivery_log.content = content
+        self.db.commit()
+        # These originals are an authenticated in-app detail source, never
+        # transport metadata. Keep existing routing/occurrence fields unchanged.
+        channel_data = {key: value for key, value in data.items()
+                        if key not in {"full_title", "full_content"}}
+
+        # 逐渠道发送 — 收集各通道结果, 最后更新同一行汇总 log。
         channels_log: list[dict] = []
         for channel in channels:
             try:
                 if channel == NotificationChannel.WECHAT.value:
                     result = await self._send_wechat(
-                        user_id, settings, notification_type, title, content, data
+                        user_id, settings, notification_type, title, content, channel_data
                     )
                 elif channel == NotificationChannel.IOS_APNS.value:
                     result = await self._send_ios(
-                        user_id, settings, notification_type, title, content, data
+                        user_id, settings, notification_type, title, content, channel_data
                     )
                 elif channel == "telegram":
                     result = await self._send_telegram(
-                        user_id, notification_type, title, content, data, severity
+                        user_id, notification_type, title, content, channel_data, severity
                     )
                 else:
                     result = {"success": False, "error": f"不支持的渠道: {channel}"}
@@ -704,6 +749,7 @@ class PushService:
                 status=overall_status,
                 channels=channels_log,
                 error_message=overall_err,
+                existing_log=delivery_log,
             )
         else:
             results["_log_status"] = overall_status
@@ -887,24 +933,25 @@ class PushService:
         status: str,
         channels: list[dict],
         error_message: Optional[str] = None,
+        existing_log: NotificationLog | None = None,
     ):
         """记录推送日志 (new: 单 row 汇总所有通道).
 
         channel 列存 'multi', channels JSON 存各通道状态.
         旧查询 / 旧 row 仍兼容 (channel 列还在, 值不同而已).
         """
-        log = NotificationLog(
-            user_id=user_id,
-            notification_type=notification_type,
-            channel="multi",
-            title=title,
-            content=content,
-            data=data,
-            status=status,
-            error_message=error_message,
-            channels=channels,
-            sent_at=get_china_now() if status == NotificationStatus.SENT.value else None,
-        )
+        log = existing_log or NotificationLog(user_id=user_id)
+        if log.user_id != user_id:
+            raise ValueError("Notification delivery owner mismatch")
+        log.notification_type = notification_type
+        log.channel = "multi"
+        log.title = title
+        log.content = content
+        log.data = data
+        log.status = status
+        log.error_message = error_message
+        log.channels = channels
+        log.sent_at = get_china_now() if status == NotificationStatus.SENT.value else None
         self.db.add(log)
         self.db.commit()
 
@@ -1058,6 +1105,7 @@ class PushService:
                     severity=severity,
                     dedup_window_hours=0,  # flush 跳过 dedup, 因为这些是已经决定要发的
                     log_delivery=False,
+                    _replay_log_id=log.id,
                 )
 
                 if result.get("success"):

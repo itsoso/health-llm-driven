@@ -72,7 +72,7 @@ def test_history_preserves_explicit_links_and_does_not_infer_from_health_title(c
                               title="健康提醒", content="合成提醒", status="sent", data=payload)
         db.add(row)
         db.flush()
-        expected[row.id] = link
+        expected[row.id] = link or f"/notification-detail?id={row.id}"
     db.commit()
     response = client.get("/api/v1/notification/logs", headers=headers)
     assert response.status_code == 200

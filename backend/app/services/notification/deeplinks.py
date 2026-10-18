@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 # 静态 kind → 路由 的数据驱动映射 (无参数的简单场景)。
@@ -75,8 +76,10 @@ def deeplink_for(kind: str, **params) -> Optional[str]:
     return _KIND_ROUTES.get(kind)
 
 
-def history_deeplink(notification_type: str, data: dict | None) -> Optional[str]:
-    """Project missing legacy protocol links without rewriting sent history.
+def history_deeplink(
+    notification_type: str, data: dict | None, *, log_id: int | None = None,
+) -> Optional[str]:
+    """Project legacy links and an ID-only detail fallback without rewriting history.
 
     An old reminder opens today's authenticated action list, never replays its
     completion reference or assumes the historical occurrence was completed.
@@ -88,4 +91,18 @@ def history_deeplink(notification_type: str, data: dict | None) -> Optional[str]
     if (notification_type == "reminder" and data.get("kind") == "protocol"
             and data.get("category") == "AGENDA_ACTION"):
         return deeplink_for("protocol")
+    # The mobile resolver already interprets these payloads, including medication
+    # occurrence validation. Do not replace its specialized destination.
+    if (data.get("reminder_type") == "medication"
+            or data.get("kind") == "medication_reminder"
+            or data.get("category") == "MEDICATION_REMINDER"
+            or data.get("screen") in {"alerts", "record", "chat", "diet", "sleep"}):
+        return None
+    workout_id = data.get("workout_id")
+    if (notification_type == "workout_analysis"
+            and type(workout_id) in {int, str}
+            and re.fullmatch(r"[1-9][0-9]{0,9}", str(workout_id))):
+        return deeplink_for("workout_analysis", workout_id=workout_id)
+    if type(log_id) is int and log_id > 0:
+        return f"/notification-detail?id={log_id}"
     return None

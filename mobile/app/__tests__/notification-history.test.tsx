@@ -5,6 +5,8 @@ import { fireEvent, waitFor } from '@testing-library/react-native';
 const mockBack = jest.fn();
 const mockPush = jest.fn();
 const mockGetLogs = jest.fn();
+let mockUserId: number | null = 7;
+jest.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: mockUserId ? { id: mockUserId } : null, isAuthenticated: Boolean(mockUserId) }) }));
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockBack, push: mockPush }),
@@ -20,6 +22,7 @@ import { renderWithProviders } from '../../test-utils';
 describe('NotificationHistoryScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUserId = 7;
     mockGetLogs.mockResolvedValue([
       {
         id: 1,
@@ -64,4 +67,34 @@ describe('NotificationHistoryScreen', () => {
     expect(mockPush).toHaveBeenCalledTimes(1);
     expect(mockPush).toHaveBeenCalledWith('/agenda');
   });
+  it('opens saved sleep advice without a legacy deep link', async () => {
+    mockGetLogs.mockResolvedValue([{
+      id: 81, notification_type: 'ai_advice', title: '睡眠质量明显下滑',
+      content: '历史推送内容', status: 'sent', channel: 'ios_apns',
+    }]);
+    const screen = renderWithProviders(<NotificationHistoryScreen />);
+    fireEvent.press(await screen.findByLabelText('打开 睡眠质量明显下滑'));
+    expect(mockPush).toHaveBeenCalledWith('/notification-detail?id=81');
+    expect(screen.queryClient.getQueryData(['notificationLogs', 7])).toBeTruthy();
+  });
+
+  it.each([undefined, '/notification-detail?id=82'])('preserves legacy screen destinations before generic detail %p', async deep_link => {
+    mockGetLogs.mockResolvedValue([{
+      id: 82, notification_type: 'ai_advice', title: '睡眠建议',
+      content: '内容', status: 'sent', channel: 'ios_apns', data: { screen: 'sleep' }, deep_link,
+    }]);
+    const screen = renderWithProviders(<NotificationHistoryScreen />);
+    fireEvent.press(await screen.findByLabelText('打开 睡眠建议'));
+    expect(mockPush).toHaveBeenCalledWith('/sleep');
+  });
+
+  it('hides the previous owner history when switching accounts', async () => {
+    const screen = renderWithProviders(<NotificationHistoryScreen />);
+    await screen.findByText('跑后教练: 跑步 (2.9km · 20分钟)');
+    mockUserId = 8;
+    mockGetLogs.mockReturnValue(new Promise(() => {}));
+    screen.rerender(<NotificationHistoryScreen />);
+    expect(screen.queryByText('跑后教练: 跑步 (2.9km · 20分钟)')).toBeNull();
+  });
+
 });
