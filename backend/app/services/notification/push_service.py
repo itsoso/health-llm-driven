@@ -475,6 +475,11 @@ class PushService:
         Returns:
             发送结果 {"success": bool, "channels": {...}}
         """
+        # Retire the former per-medication pre-event producer, including queued
+        # copies. The due-time scanner now preserves explicit and solved slots.
+        if (notification_type == "reminder" and (data or {}).get("reminder_type") == "pre_event"
+                and (data or {}).get("kind") == "medication"):
+            return {"success": False, "reason": "superseded_medication_pre_event"}
         delivery_log = None
         if not log_delivery:
             delivery_log = (

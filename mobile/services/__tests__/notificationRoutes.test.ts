@@ -119,3 +119,17 @@ describe('medication reminder Agent destination', () => {
     expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('日期未确认');
   });
 });
+
+ it('routes old medication pre-event notifications to an unsent Agent draft', () => {
+    const route = resolveNotificationRoute({ reminder_type: 'pre_event', kind: 'medication', category: 'AGENDA_ACTION', deep_link: '/(tabs)/record', complete_ref: { object_type: 'medication', object_id: 7, slot: '18:30' }, item_title: 'private' })!;
+    expect(route.split('?')[0]).toBe('/(tabs)/chat');
+    expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('日期未确认');
+    expect(new URLSearchParams(route.split('?')[1]).has('context')).toBe(false);
+    expect(decodeURIComponent(route)).not.toContain('private');
+ });
+
+ it('retains validated non-China reminder timezone without passing a context payload', () => {
+   const route = resolveNotificationRoute({ reminder_type: 'medication', scheduled_date: '2026-10-18', scheduled_time: '18:30', scheduled_timezone: 'America/New_York' })!;
+   expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('America/New_York');
+   expect(new URLSearchParams(route.split('?')[1]).has('context')).toBe(false);
+ });

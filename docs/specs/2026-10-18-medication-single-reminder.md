@@ -6,12 +6,12 @@
 
 ## 行为合同
 
-- 服务端为唯一新用药提醒生产者；同用户、北京时间日期、计划时点的多药合并为一条。不同用户、下一时点、下一日期不得合并掉。
+- 服务端到点扫描为唯一新药域提醒生产者；停止 medication 提前 15 分钟路径及待发送副本。同用户、同一触发分钟的多药合并一条。显式 reminder_times 保持既有北京时间语义；缺少显式时点的活跃本人药物只从 day_schedule.scheduled 取得解算时点，并保持用户时区，排除 rejected/deferred/他人/补剂项。补剂原有预提醒和显式时点行为保留。不同用户、下一时点、下一日期不得合并掉。
 - App 启动（包括未登录）和回到前台清理 kind=medication_reminder 的旧本地排程；dashboard 兼容入口只清理，绝不再创建本地通知。保留其它提醒。清理异常可见并在下一前台/刷新重试，不伪装成功。
 - 服务端沿用配置、许可、去重、静默与隐私 choke point。锁屏不显示药名/剂量；组合通知无单药 TAKEN/SKIP 操作。
-- PostgreSQL 独立连接持有 owner advisory lock，跨 PushService 提交保留；重复扫描按已持久化 owner/date/time rule_id 去重。获取或释放结果未知时丢弃连接，避免锁回池。
+- PostgreSQL 独立连接持有 owner/date/time advisory lock，跨 PushService 提交保留；重复扫描按已持久化 owner/date/time rule_id 去重（含 owner 避免客户端切账号后消费标记碰撞）。获取或释放结果未知时丢弃连接，避免锁回池。
 - 延迟出队用 delayed→pending 条件更新原子认领，避免两个 worker 从旧快照重复发送；不重发未知 pending。无 schema 变更。
-- 新旧用药提醒的普通点击和历史点击进入 `/(tabs)/chat`，预填日期、原始计划时间和只读核实问题；不携药名/剂量，不自动发送，不自动打卡。chat 的 context 会立即发送，因此此入口只传 prompt/badge/newChat/contextEntry，不传 context/autoSend。
+- 新旧用药提醒（包括 pre_event medication）的普通点击和历史点击进入 `/(tabs)/chat`，预填日期、原始计划时间和只读核实问题；不携药名/剂量，不自动发送，不自动打卡。chat 的 context 会立即发送，因此此入口只传 prompt/badge/newChat/contextEntry，不传 context/autoSend。
 - 缺日期旧本地通知明确“日期未确认”，不得默认为今天。非法值进入通用核实草稿。用户编辑并发送后沿现有健康 Agent 安全链路处理；新入口不把推送文字当作已核验健康事实。
 - 用药管理页的专用确认页面仍保留；已到达的锁屏通知不冒充已撤回。关闭本地副本后提醒依赖服务端推送可达性，不新增离线备用生产者。
 

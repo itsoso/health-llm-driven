@@ -482,7 +482,7 @@ def test_medication_reminder_no_drug_name_on_lock_screen(db):
     assert kwargs["data"]["scheduled_time"] == cur_hhmm
     assert kwargs["data"]["scheduled_timezone"] == "Asia/Shanghai"
     # One reminder groups all medications at this owner/date/time.
-    assert kwargs["data"]["rule_id"] == f"medication_reminder.slot.{fixed_now.date().isoformat()}.{cur_hhmm}"
+    assert kwargs["data"]["rule_id"] == f"medication_reminder.slot.{user.id}.{fixed_now.date().isoformat()}.{cur_hhmm}"
     assert cur_hhmm in kwargs["data"]["rule_id"]
 
 

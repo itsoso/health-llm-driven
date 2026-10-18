@@ -8,7 +8,7 @@
 (绝不消耗 P0 预算);洗鼻类遇活跃禁忌红旗(鼻出血/鼻痛/发热/术后)抑制提醒(§3)。
 
 提前量(分钟,常量;后续可做成 per-user 配置):
-    会议/日历 = 10、服药 = 15、补剂 = 15、锻炼(workout) = 20、餐(diet) = 0、睡眠 = 0。
+    会议/日历 = 10、服药 = 0（统一到点提醒）、补剂 = 15、锻炼(workout) = 20、餐(diet) = 0、睡眠 = 0。
 0 表示不做事件前提醒(餐/睡眠由既有分时提醒覆盖,这里不重复打扰)。
 
 触发窗口:项开始 T,当 now ∈ [T − lead, T − lead + 1min) 时推(1 分钟扫描节拍)。
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 # 每类事件前提醒提前量(分钟)。0 = 不做事件前提醒。
 LEAD_MINUTES: dict[str, int] = {
     "meeting": 10,      # 日历会议
-    "medication": 15,
+    "medication": 0,   # 单一到点 producer 合并，避免提前/到点重复
     "supplement": 15,
     "movement": 20,     # 锻炼/workout
     "diet": 0,          # 餐 — 由既有分时提醒覆盖

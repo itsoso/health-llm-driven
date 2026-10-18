@@ -434,6 +434,7 @@ describe('medication notification body tap', () => {
   it.each([
     { kind: 'medication_reminder', reminder_type: 'medication', screen: 'home' },
     { category: 'MEDICATION_REMINDER', reminder_type: 'medication', deep_link: '/(tabs)/record' },
+    { category: 'AGENDA_ACTION', reminder_type: 'pre_event', kind: 'medication', deep_link: '/(tabs)/record' },
   ])('opens a landing page without recording a dose: %j', async (data) => {
     jest.clearAllMocks();
     const response = {
@@ -446,3 +447,18 @@ describe('medication notification body tap', () => {
     expect(mockCompleteAgendaItem).not.toHaveBeenCalled();
   });
 });
+
+ it('same-slot notifications from different owners navigate separately while duplicate callbacks do not', async () => {
+    jest.clearAllMocks();
+    const response = (owner: number) => ({
+      actionIdentifier: Notifications.DEFAULT_ACTION_IDENTIFIER,
+      notification: { date: 0, request: { identifier: `owner-slot-${owner}`, content: { data: {
+        reminder_type: 'medication', rule_id: `medication_reminder.slot.${owner}.2026-10-19.18:30`, deep_link: '/(tabs)/chat', scheduled_date: '2026-10-19', scheduled_time: '18:30',
+      } } } },
+    } as unknown as Notifications.NotificationResponse);
+    await consumeNotificationResponse(response(91));
+    await consumeNotificationResponse(response(92));
+    await consumeNotificationResponse(response(91));
+    expect(router.push).toHaveBeenCalledTimes(2);
+    expect(mockLogMedication).not.toHaveBeenCalled();
+ });

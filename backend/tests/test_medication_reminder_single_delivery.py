@@ -37,6 +37,7 @@ def test_scans_group_same_slot_and_retries_do_not_send_again(db):
         assert first['sent'] == 2 and second['sent'] == 0
         rows = db.query(NotificationLog).all()
         assert len(rows) == 2
+        assert len({row.data['rule_id'] for row in rows}) == 2
         mine = next(row for row in rows if row.user_id == users[0].id)
         assert mine.data['medication_ids'] == [meds[0].id, meds[1].id]
         assert mine.data['scheduled_date'] == '2026-10-18'
@@ -68,14 +69,16 @@ def test_postgres_dispatch_lock_survives_service_commit_and_releases(db):
     from app.services.notification.medication_reminders import medication_dispatch_lock
     from sqlalchemy.orm import Session
     with Session(db.bind) as second:
-        with medication_dispatch_lock(db, 17) as acquired:
+        with medication_dispatch_lock(db, 17, '2026-10-18.18:30') as acquired:
             assert acquired
             db.commit()
-            with medication_dispatch_lock(second, 17) as duplicate:
+            with medication_dispatch_lock(second, 17, '2026-10-18.18:30') as duplicate:
                 assert not duplicate
-            with medication_dispatch_lock(second, 18) as other_owner:
+            with medication_dispatch_lock(second, 18, '2026-10-18.18:30') as other_owner:
                 assert other_owner
-        with medication_dispatch_lock(second, 17) as released:
+            with medication_dispatch_lock(second, 17, '2026-10-18.18:31') as next_slot:
+                assert next_slot
+        with medication_dispatch_lock(second, 17, '2026-10-18.18:30') as released:
             assert released
 
 
@@ -118,6 +121,43 @@ def test_dispatch_lock_discards_connection_when_acquisition_outcome_is_unknown()
     connection.scalar.return_value = True
     connection.commit.side_effect = RuntimeError('connection lost after acquisition')
     with pytest.raises(RuntimeError):
-        with medication_dispatch_lock(session, 17):
+        with medication_dispatch_lock(session, 17, '2026-10-18.18:30'):
             pytest.fail('must not dispatch after uncertain lock acquisition')
     connection.invalidate.assert_called_once()
+
+
+def test_retired_pre_event_and_queued_copies_do_not_send(db):
+    users, _ = _seed(db)
+    clock = datetime(2026, 10, 18, 18, 30)
+    old = {'reminder_type': 'pre_event', 'kind': 'medication', 'rule_id': 'pre_event.med:1.2026-10-18'}
+    db.add(NotificationLog(user_id=users[0].id, notification_type='reminder', channel='multi', title='用药提醒', content='Synthetic', status='delayed', scheduled_at=clock, data=old))
+    db.commit()
+    svc = PushService(db)
+    with patch('app.services.notification.push_service.get_china_now', return_value=clock), patch.object(PushService, '_send_ios', return_value={'success': True}) as send:
+        result = asyncio.run(svc.send_notification(user_id=users[0].id, notification_type='reminder', title='用药提醒', content='Synthetic', data=old))
+        assert result['reason'] == 'superseded_medication_pre_event'
+        asyncio.run(svc.flush_delayed_pushes())
+        send.assert_not_called()
+        assert db.query(NotificationLog).one().error_message == 'superseded_medication_pre_event'
+
+
+def test_unscheduled_medication_keeps_solved_user_local_slot_without_rejected_items(db):
+    from zoneinfo import ZoneInfo
+    from app.tasks.notifications import scan_medication_reminders
+    users, meds = _seed(db)
+    for med in meds: med.reminder_times = None
+    db.commit()
+    @contextmanager
+    def session(): yield db
+    @contextmanager
+    def fake_lock(*args): yield True
+    def schedule(_db, owner):
+        return {'scheduled': [{'id': f'med:{meds[0].id}', 'domain': 'medication', 'time': '18:30'}], 'rejected': [{'id': f'med:{meds[1].id}', 'domain': 'medication', 'time': '18:30'}]}
+    fn = scan_medication_reminders.run
+    with patch.dict(fn.__globals__, {'SessionLocal': session, 'get_china_now': lambda: datetime(2026, 10, 19, 6, 30), 'run_async': asyncio.run, 'medication_dispatch_lock': fake_lock}), patch('app.services.day_schedule_service.build_day_schedule', side_effect=schedule), patch('app.utils.timezone.get_user_timezone', return_value=ZoneInfo('America/New_York')), patch.object(PushService, 'send_notification', return_value={'success': True}) as send:
+        assert fn()['sent'] == 1
+        data = send.call_args.kwargs['data']
+        assert data['medication_ids'] == [meds[0].id]
+        assert data['scheduled_date'] == '2026-10-18'
+        assert data['scheduled_time'] == '18:30'
+        assert data['scheduled_timezone'] == 'America/New_York'

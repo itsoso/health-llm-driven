@@ -66,8 +66,8 @@ def _run(db, *, now, schedule_items=None, can_notify=True, push_result=None):
 
 
 # ── 提前量窗口 ─────────────────────────────────────────────────────────────
-def test_medication_fires_at_lead_window(db):
-    """服药 lead=15: 项 09:00 → 08:45 推一次。"""
+def test_medication_does_not_duplicate_due_time_producer(db):
+    """用药不再提前再发一轮；到点由单一 producer 合并。"""
     _make_user(db)
     db.add(Medication(id=1, user_id=1, name="雷贝拉唑", category="处方药", is_active=True))
     db.commit()
@@ -75,10 +75,10 @@ def test_medication_fires_at_lead_window(db):
     items = [{"id": "med:1", "title": "雷贝拉唑", "domain": "medication", "time": "09:00"}]
     result, push = _run(db, now=_patched_now(8, 45), schedule_items=items)
 
-    assert result["sent"] == 1
-    assert push.send_notification.call_count == 1
+    assert result["sent"] == 0
+    assert push.send_notification.call_count == 0
     # 占坑记账写了一行
-    assert db.query(SentEventReminder).filter_by(user_id=1, item_key="med:1").count() == 1
+    assert db.query(SentEventReminder).filter_by(user_id=1, item_key="med:1").count() == 0
 
 
 def test_no_fire_outside_window(db):
@@ -87,7 +87,7 @@ def test_no_fire_outside_window(db):
     db.add(Medication(id=1, user_id=1, name="药", category="处方药", is_active=True))
     db.commit()
 
-    items = [{"id": "med:1", "title": "药", "domain": "medication", "time": "09:00"}]
+    items = [{"id": "med:1", "title": "药", "domain": "supplement", "time": "09:00"}]
     result, push = _run(db, now=_patched_now(8, 44), schedule_items=items)
 
     assert result["sent"] == 0
@@ -123,7 +123,7 @@ def test_dedup_no_second_push_same_day(db):
     _make_user(db)
     db.add(Medication(id=1, user_id=1, name="药", category="处方药", is_active=True))
     db.commit()
-    items = [{"id": "med:1", "title": "药", "domain": "medication", "time": "09:00"}]
+    items = [{"id": "med:1", "title": "药", "domain": "supplement", "time": "09:00"}]
 
     r1, p1 = _run(db, now=_patched_now(8, 45), schedule_items=items)
     assert r1["sent"] == 1
@@ -140,7 +140,7 @@ def test_failed_push_releases_claim_and_can_retry_in_same_minute(db):
     _make_user(db)
     db.add(Medication(id=1, user_id=1, name="药", category="处方药", is_active=True))
     db.commit()
-    items = [{"id": "med:1", "title": "药", "domain": "medication", "time": "09:00"}]
+    items = [{"id": "med:1", "title": "药", "domain": "supplement", "time": "09:00"}]
 
     failed, _ = _run(
         db,
@@ -162,7 +162,7 @@ def test_scarcity_gate_blocks_push(db):
     _make_user(db)
     db.add(Medication(id=1, user_id=1, name="药", category="处方药", is_active=True))
     db.commit()
-    items = [{"id": "med:1", "title": "药", "domain": "medication", "time": "09:00"}]
+    items = [{"id": "med:1", "title": "药", "domain": "supplement", "time": "09:00"}]
 
     result, push = _run(db, now=_patched_now(8, 45), schedule_items=items, can_notify=False)
     assert result["sent"] == 0
@@ -219,7 +219,7 @@ def test_fail_soft_one_user_failure_does_not_abort(db):
 
     items_for = {
         1: RuntimeError("boom"),
-        2: [{"id": "med:2", "title": "药2", "domain": "medication", "time": "09:00"}],
+        2: [{"id": "med:2", "title": "药2", "domain": "supplement", "time": "09:00"}],
     }
 
     def fake_build(_db, user_id, **kw):
@@ -249,7 +249,7 @@ def test_fail_soft_one_user_failure_does_not_abort(db):
 def test_lead_minutes_constants():
     from app.tasks.event_reminders import LEAD_MINUTES
     assert LEAD_MINUTES["meeting"] == 10
-    assert LEAD_MINUTES["medication"] == 15
+    assert LEAD_MINUTES["medication"] == 0
     assert LEAD_MINUTES["supplement"] == 15
     assert LEAD_MINUTES["movement"] == 20
     assert LEAD_MINUTES["diet"] == 0

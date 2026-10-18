@@ -96,18 +96,18 @@ def _captured_data(push_mock) -> dict:
 
 
 def test_event_reminder_push_carries_deep_link(db):
-    """医疗 pre_event 提醒: push data 带 deep_link=/(tabs)/record。
+    """补剂 pre_event 提醒: push data 带 deep_link=/supplement-inventory。
 
     Increment 1 起,可完成的行动项(med/supplement)还带 complete_ref + AGENDA_ACTION
     类目 + complete_endpoint(供推送上的「完成」按钮调闭环完成端点)。
     """
     _make_user(db)
-    db.add(Medication(id=1, user_id=1, name="雷贝拉唑", category="处方药", is_active=True))
+    db.add(Medication(id=1, user_id=1, name="合成补剂", category="补剂", is_active=True))
     db.commit()
 
     push_instance = MagicMock()
     push_instance.send_notification.return_value = {"success": True}
-    items = [{"id": "med:1", "title": "雷贝拉唑", "domain": "medication", "time": "09:00"}]
+    items = [{"id": "med:1", "title": "合成补剂", "domain": "supplement", "time": "09:00"}]
 
     with patch("app.tasks.event_reminders.SessionLocal", side_effect=lambda: _session_cm(db)), \
          patch("app.tasks.event_reminders.get_china_now", return_value=datetime(2026, 6, 19, 8, 45)), \
@@ -124,13 +124,13 @@ def test_event_reminder_push_carries_deep_link(db):
 
     assert result["sent"] == 1
     data = _captured_data(push_instance)
-    assert data["deep_link"] == "/(tabs)/record"
+    assert data["deep_link"] == "/supplement-inventory"
     # 既有字段保留, 没被替换。
-    assert data["kind"] == "medication"
+    assert data["kind"] == "supplement"
     assert data["item_key"] == "med:1"
     # 可完成的用药行动项 → 闭环类目 + complete_ref + 完成端点(Increment 1)。
     assert data["category"] == "AGENDA_ACTION"
-    assert data["complete_ref"] == {"object_type": "medication", "object_id": 1}
+    assert data["complete_ref"] == {"object_type": "supplement", "object_id": 1}
     assert "complete_endpoint" in data
 
 

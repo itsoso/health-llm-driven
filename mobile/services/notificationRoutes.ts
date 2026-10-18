@@ -73,14 +73,17 @@ function medicationReminderRoute(data: Record<string, any>): string {
     else invalid = true;
   }
   if (data.scheduled_timezone !== undefined) {
-    if (typeof data.scheduled_timezone === 'string' && data.scheduled_timezone.length <= 80 && data.scheduled_timezone.trim()) parts.push(`sourceTimezone=${encodeURIComponent(data.scheduled_timezone)}`);
-    else invalid = true;
+    try {
+      if (typeof data.scheduled_timezone !== 'string' || !data.scheduled_timezone.trim() || data.scheduled_timezone.length > 80) throw new Error('invalid timezone');
+      const zone = new Intl.DateTimeFormat('en', { timeZone: data.scheduled_timezone }).resolvedOptions().timeZone;
+      parts.push(`sourceTimezone=${encodeURIComponent(zone)}`);
+    } catch { invalid = true; }
   }
   const occurrence = new URLSearchParams(parts.join('&'));
   const dateLabel = occurrence.get('date') ?? '日期未确认';
   const timeLabel = occurrence.get('time') ?? '时间未确认';
   const timezone = occurrence.get('sourceTimezone');
-  const zoneLabel = timezone === 'Asia/Shanghai' ? '（北京时间）' : '（请核实提醒时区）';
+  const zoneLabel = timezone === 'Asia/Shanghai' ? '（北京时间）' : timezone ? `（${timezone}）` : '（请核实提醒时区）';
   const prompt = invalid
     ? '请帮我查看用药提醒。通知信息不完整，请先核实，不要记录服药。'
     : `请帮我查看 ${dateLabel} ${timeLabel} ${zoneLabel} 的用药提醒，先查询核实药品、计划时间和记录状态，不要记录服药。`;
@@ -102,7 +105,8 @@ export function resolveNotificationRoute(
 
   // Older local reminders targeted home; remote reminders targeted the generic
   // record tab. Keep already delivered notifications useful after an OTA.
-  const medicationReminder = data.reminder_type === 'medication'
+  const medicationReminder = ['medication', 'medicine'].includes(data.reminder_type)
+    || (data.reminder_type === 'pre_event' && data.kind === 'medication')
     || data.kind === 'medication_reminder'
     || data.category === 'MEDICATION_REMINDER';
   const explicit = (data.deep_link ?? data.deeplink) as unknown;

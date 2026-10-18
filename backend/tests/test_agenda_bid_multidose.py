@@ -272,18 +272,21 @@ def test_multidose_slot_done_detection_robust_to_zero_pad(db, auth_user_and_head
     assert by_slot["20:00"]["status"] == "pending"
 
 
-def test_bid_reminder_emits_two_complete_refs_with_slots(db, auth_user_and_headers):
-    """提醒桥:BID 药 → _collect_timed_items 出两条带各自 slot 的 complete_ref。"""
+def test_supplement_bid_pre_reminder_retains_two_complete_refs_with_slots(db, auth_user_and_headers):
+    """提醒桥:BID 补剂 → _collect_timed_items 出两条带各自 slot 的 complete_ref。"""
     from app.tasks.event_reminders import _collect_timed_items
 
     user, _ = auth_user_and_headers
     med = _seed_bid(db, user.id, reminder_times=["08:00", "20:00"])
 
+    med.category = "supplement"
+    db.commit()
+
     items = _collect_timed_items(db, user.id, date.today())
     med_items = [
         it for it in items
         if (it.get("complete_ref") or {}).get("object_id") == med.id
-        and (it.get("complete_ref") or {}).get("object_type") == "medication"
+        and (it.get("complete_ref") or {}).get("object_type") == "supplement"
     ]
     assert len(med_items) == 2, f"BID 提醒应出两条,实得 {len(med_items)}"
     slots = sorted(it["complete_ref"].get("slot") for it in med_items)

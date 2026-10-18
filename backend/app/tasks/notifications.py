@@ -2136,26 +2136,61 @@ def scan_medication_reminders():
         for med in meds:
             if isinstance(med.reminder_times, list) and cur_hhmm in med.reminder_times:
                 due_by_owner.setdefault(med.user_id, []).append(med.id)
+        # Retain solved medication slots formerly handled by pre-event reminders.
+        # Only unconfigured active owned medications qualify; rejected/deferred
+        # items and supplement pre-reminders remain outside this fallback.
+        from app.services.day_schedule_service import build_day_schedule
+        from app.services.timing_adapter import _domain
+        from app.utils.timezone import CHINA_TIMEZONE, get_user_timezone
+
+        fallback_by_owner: dict[int, set[int]] = {}
+        for med in meds:
+            if not med.reminder_times and _domain(med) == "medication":
+                fallback_by_owner.setdefault(med.user_id, set()).add(med.id)
+        slot_clocks = {}
+        for user_id, eligible in fallback_by_owner.items():
+            try:
+                timezone = get_user_timezone(db, user_id)
+                instant = now_cn if now_cn.tzinfo else now_cn.replace(tzinfo=CHINA_TIMEZONE)
+                local_now = instant.astimezone(timezone)
+                schedule = build_day_schedule(db, user_id)
+                matching = []
+                for item in schedule.get("scheduled", []):
+                    if item.get("domain") != "medication" or item.get("time") != local_now.strftime("%H:%M"):
+                        continue
+                    target = str(item.get("id", ""))
+                    if target.startswith("med:") and target[4:].isdigit() and int(target[4:]) in eligible:
+                        matching.append(int(target[4:]))
+                if matching:
+                    if user_id not in due_by_owner:
+                        zone_name = "Asia/Shanghai" if timezone == CHINA_TIMEZONE else str(timezone)
+                        slot_clocks[user_id] = (local_now.date().isoformat(), local_now.strftime("%H:%M"), zone_name)
+                    due_by_owner.setdefault(user_id, []).extend(matching)
+            except Exception as exc:
+                db.rollback()
+                failed += 1
+                logger.warning("[MedicationReminder] solved schedule unavailable error_type=%s", type(exc).__name__)
         push_service = PushService(db)
         for user_id, medication_ids in due_by_owner.items():
             try:
-                with medication_dispatch_lock(db, user_id) as acquired:
+                with medication_dispatch_lock(db, user_id, f"{today_date}.{cur_hhmm}") as acquired:
                     if not acquired:
                         continue
+                    slot_date, slot_time, slot_zone = slot_clocks.get(user_id, (today_date, cur_hhmm, "Asia/Shanghai"))
                     result = run_async(push_service.send_notification(
                         user_id=user_id,
                         notification_type="reminder",
                         title="用药提醒",
-                        content=f"有用药事项到点了（{cur_hhmm}），点开与小巴查看。",
+                        content=f"有用药事项到点了（{slot_time}），点开与小巴查看。",
                         data={
                             "reminder_type": "medication",
-                            "medication_ids": medication_ids,
-                            "scheduled_date": today_date,
-                            "scheduled_time": cur_hhmm,
-                            "scheduled_timezone": "Asia/Shanghai",
+                            "medication_ids": sorted(set(medication_ids)),
+                            "scheduled_date": slot_date,
+                            "scheduled_time": slot_time,
+                            "scheduled_timezone": slot_zone,
                             "deep_link": "/(tabs)/chat",
                             # A group has no single-dose TAKEN/SKIP action category.
-                            "rule_id": f"medication_reminder.slot.{today_date}.{cur_hhmm}",
+                            "rule_id": f"medication_reminder.slot.{user_id}.{today_date}.{cur_hhmm}",
                         },
                     ))
                     sent += int(bool(result.get("success")))
