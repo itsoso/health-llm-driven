@@ -340,6 +340,11 @@ def classify_agent_utterance(
     if _is_conversation_feedback_only(normalized):
         return _intent(raw, normalized, "chat", "unknown", "none", 0.94, "conversation_feedback")
 
+    from app.services.agent_kernel.daily_read_plan import is_post_confirm_diet_review
+    if is_post_confirm_diet_review(raw):
+        return _intent(raw, normalized, "advice", "diet", "analyze", 0.96,
+                       "post_confirm_diet_review", requires_reliable_tool_model=True)
+
     write_capability_question = is_write_capability_question(normalized)
     has_read = (
         _has_any(normalized, READ_ACTIONS)

@@ -76,7 +76,8 @@ from app.services.agent_daily_read_execution import (
     sleep_sync_reply, sync_status_goal, is_daily_diet_evaluation,
 )
 from app.services.agent_kernel.daily_read_plan import (
-    POST_CONFIRM_DIET_REVIEW_PROMPT, resolve_daily_read_plan, is_daily_summary_request,
+    POST_CONFIRM_DIET_REVIEW_PROMPT, is_post_confirm_diet_review,
+    resolve_daily_read_plan, is_daily_summary_request,
 )
 from app.services.agent_output_quality import (
     clarification_reply,
@@ -19823,6 +19824,37 @@ class AgentExecutor:
                                         ]
                                     elif event.get("type") == "finish":
                                         finish_reason = event.get("finish_reason")
+                            if (diet_synthesis_round and is_post_confirm_diet_review(message)
+                                    and finish_reason == 'stop' and not proposed_calls
+                                    and summary_advice_contract_failure(
+                                        summary_advice_text(candidate, require_heading=True))):
+                                # One correction of the answer only. The same
+                                # verified read is reused; no tools or extra
+                                # scope are granted, and final validation still
+                                # rejects an invalid or incomplete correction.
+                                self._record_model_fallback_reason('post_confirm_diet_advice_correction')
+                                correction_messages = [*messages,
+                                    {'role': 'assistant', 'content': candidate},
+                                    {'role': 'user', 'content': (
+                                        '上一版建议未通过校验，请重新生成。只输出“建议”标题和两三句定性建议。'
+                                        '不要复述任何热量或营养数字，不要把所选历史日期称为今天。'
+                                        '不把单条记录当作一整餐或全天摄入，不推断缺餐、摄入不足或过量。'
+                                        '只用已经核验的食物信息；无法判断时说明具体边界。'
+                                        '不提供个体食物份量或用餐时间处方，不提出删改、补录或提醒。'
+                                        '不调用任何工具。'
+                                    )},
+                                ]
+                                candidate, proposed_calls, finish_reason = '', [], None
+                                correction_tool_requested = False
+                                async for event in self._call_llm_stream(correction_messages, []):
+                                    if event.get('type') == 'content':
+                                        candidate += event.get('text') or ''
+                                    elif event.get('type') == 'tool_calls':
+                                        correction_tool_requested = True
+                                    elif event.get('type') == 'finish':
+                                        finish_reason = event.get('finish_reason')
+                                if correction_tool_requested:
+                                    candidate, finish_reason = '', 'error'
                             if (
                                 not proposed_calls
                                 and candidate.strip()

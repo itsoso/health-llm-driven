@@ -9,6 +9,16 @@ from tests.test_longitudinal_read_scope_policy import decide, snapshot
 REQUEST = '今天饮食结构怎么样? 蛋白质够吗? 帮我给出下一餐调整建议。'
 
 
+@pytest.mark.parametrize('text', [
+    '帮我复盘这一天的饮食，给出下一餐的调整建议。',
+    '帮我复盘2026-09-12的饮食，给出下一餐的调整建议。',
+])
+def test_post_confirm_adjustment_advice_is_not_a_record_mutation(text):
+    from app.services.utterance_intent_classifier import classify_agent_utterance
+    intent = classify_agent_utterance(text)
+    assert (intent.primary, intent.domain, intent.operation, intent.is_write) == ('advice', 'diet', 'analyze', False)
+
+
 @pytest.mark.parametrize('day,expected', [('今天', '2026-09-13'), ('昨天', '2026-09-12'), ('2026-09-10', '2026-09-10')])
 @pytest.mark.parametrize('punctuation', ['?', '？'])
 def test_diet_entry_binds_exact_read_day(day, expected, punctuation):

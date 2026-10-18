@@ -125,6 +125,28 @@ async def test_edited_shortcut_uses_current_text_not_stale_selected_day(db, owne
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('correction,expected', [
+    ('建议：仅凭现有记录无法判断全天饮食是否均衡。下一餐可结合自己的日常饮食安排搭配。', 'complete'),
+    ('建议：全天只吃了200千卡，摄入不足。', 'partial'),
+    (('health_record', {'record_type': 'diet', 'data': {'food_items': 'rice'}}), 'partial'),
+])
+async def test_post_confirm_advice_has_one_tool_free_correction(db, owned_data, monkeypatch, correction, expected):
+    selected = db.query(DietRecord).filter_by(user_id=owned_data.id).one()
+    trace = script_executor(db, monkeypatch, [
+        ('health_query', {'dimension': 'diet'}),
+        '建议：晚餐只有200千卡，全天热量严重不足。', correction,
+    ])
+    done, saved = await run(db, trace, owned_data, POST_CONFIRM_REQUEST,
+                            extra_context=post_confirm_context(selected.id))
+    assert len(trace.calls) == 3
+    assert trace.calls[-1][1] == []
+    assert len(trace.dispatches) == 1 and trace.dispatches[0].tool_name == 'health_query'
+    assert done['turn_outcome']['status'] == expected
+    assert not done['write_receipts']
+    assert '全天热量严重不足' not in saved.content
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('batch', [False, True])
 async def test_diet_entry_reads_owned_day_without_scope_refusal(db, owned_data, clock, monkeypatch, batch):
     today = clock[0].date()

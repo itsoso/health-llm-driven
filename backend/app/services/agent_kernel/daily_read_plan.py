@@ -76,6 +76,12 @@ _DATED_DIET_REVIEW_RE = re.compile(
 )
 
 
+def is_post_confirm_diet_review(text: str) -> bool:
+    """Classify the entire shortcut without granting a deictic date scope."""
+    return (text.strip() == POST_CONFIRM_DIET_REVIEW_PROMPT
+            or _DATED_DIET_REVIEW_RE.fullmatch(text.strip()) is not None)
+
+
 @dataclass(frozen=True)
 class DailyReadPlan:
     dimensions: tuple[str, ...]
