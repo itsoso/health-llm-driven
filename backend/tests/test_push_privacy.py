@@ -451,12 +451,17 @@ def test_medication_reminder_no_drug_name_on_lock_screen(db):
     # patch("app.tasks.notifications.X")。test_notification_tasks 的 fixture 曾
     # del sys.modules 造成模块重建,而 celery registry 缓存旧 task 对象——其
     # run.__globals__ 指向旧 module dict,按路径 patch 会打空(任务打到真 Postgres)。
+    @contextmanager
+    def fake_lock(*args):
+        yield True
+
     task_fn = scan_medication_reminders.run
     with patch.dict(task_fn.__globals__, {
         "SessionLocal": _session_ctx,
         "get_china_now": lambda: fixed_now,
         "run_async": _run_async_sync,
         "PushService": _FakePushService,
+        "medication_dispatch_lock": fake_lock,
     }):
         result = task_fn()
 
@@ -466,18 +471,18 @@ def test_medication_reminder_no_drug_name_on_lock_screen(db):
     assert "二甲双胍" not in kwargs["title"]
     assert "二甲双胍" not in kwargs["content"]
     assert "500mg" not in kwargs["content"]
-    assert "点「服用」自动打卡" in kwargs["content"]
-    # 名称/剂量在 data payload(App 解锁后渲染)
-    assert kwargs["data"]["medication_name"] == "二甲双胍"
-    assert kwargs["data"]["dosage"] == "500mg"
-    assert kwargs["data"]["deep_link"] == "/medications"
-    assert kwargs["data"]["category"] == "MEDICATION_REMINDER"
+    assert "点开与小巴查看" in kwargs["content"]
+    assert "medication_name" not in kwargs["data"]
+    assert "dosage" not in kwargs["data"]
+    assert kwargs["data"]["medication_ids"] == [med.id]
+    assert kwargs["data"]["deep_link"] == "/(tabs)/chat"
+    assert "category" not in kwargs["data"]
     assert kwargs["data"]["reminder_type"] == "medication"
     assert kwargs["data"]["scheduled_date"] == fixed_now.date().isoformat()
     assert kwargs["data"]["scheduled_time"] == cur_hhmm
     assert kwargs["data"]["scheduled_timezone"] == "Asia/Shanghai"
-    # title 泛化后 dedup 必须有 per 药×日×时点的 rule_id,防同日第二种药被 title 去重吞
-    assert str(med.id) in kwargs["data"]["rule_id"]
+    # One reminder groups all medications at this owner/date/time.
+    assert kwargs["data"]["rule_id"] == f"medication_reminder.slot.{fixed_now.date().isoformat()}.{cur_hhmm}"
     assert cur_hhmm in kwargs["data"]["rule_id"]
 
 

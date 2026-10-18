@@ -1068,6 +1068,17 @@ class PushService:
         deduped = 0
         redelayed = 0
         for log in delayed_logs:
+            # Both workers may have selected this delayed row. Only the atomic
+            # winner can send; an uncertain committed claim remains pending.
+            claimed = self.db.query(NotificationLog).filter(
+                NotificationLog.id == log.id,
+                NotificationLog.status == NotificationStatus.DELAYED.value,
+                NotificationLog.scheduled_at <= now,
+            ).update({NotificationLog.status: NotificationStatus.PENDING.value}, synchronize_session=False)
+            self.db.commit()
+            if not claimed:
+                continue
+            self.db.refresh(log)
             flushed += 1
             # 缺失时传 None 交给 _resolve_severity: health_alert 旧行不能被当 "info" 静默丢掉。
             severity = (log.data or {}).get("severity")
@@ -1090,10 +1101,6 @@ class PushService:
                     self.db.commit()
                     deduped += 1
                     continue
-
-                # 标记为 pending 再发, 防止 flush 任务重叠
-                log.status = NotificationStatus.PENDING.value
-                self.db.commit()
 
                 result = await self.send_notification(
                     user_id=log.user_id,

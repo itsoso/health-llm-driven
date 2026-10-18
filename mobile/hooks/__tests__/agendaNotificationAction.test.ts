@@ -441,7 +441,7 @@ describe('medication notification body tap', () => {
       notification: { date: 0, request: { identifier: `landing-${data.kind ?? data.category}`, content: { data } } },
     } as unknown as Notifications.NotificationResponse;
     await expect(consumeNotificationResponse(response)).resolves.toBe(true);
-    expect(router.push).toHaveBeenCalledWith('/medication-reminder');
+    expect(router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/\(tabs\)\/chat\?prompt=/));
     expect(mockLogMedication).not.toHaveBeenCalled();
     expect(mockCompleteAgendaItem).not.toHaveBeenCalled();
   });

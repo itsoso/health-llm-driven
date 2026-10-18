@@ -44,6 +44,7 @@ SHARDS = (
         "tests/test_medication_intake_batch.py",
         "tests/test_write_intent_medication_batch_schema.py",
         "tests/test_medication_intake_batch_postgres.py",
+        "tests/test_medication_reminder_single_delivery.py",
         "tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss",
         "tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract",
         "tests/test_invited_phone_registration_postgres.py",

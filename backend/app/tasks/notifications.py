@@ -16,6 +16,7 @@ from app.services.notification.deeplinks import deeplink_for
 from app.services.notification.evidence_policy import build_notification_evidence_data
 from app.services.notification.push_privacy import llm_push_backstop, safety_alert_push_text
 from app.services.notification.push_service import PushService
+from app.services.notification.medication_reminders import medication_dispatch_lock
 from app.utils.timezone import get_china_now
 from app.utils.async_helpers import run_async
 
@@ -2118,75 +2119,53 @@ def generate_doctor_weekly_report():
 
 @celery_app.task
 def scan_medication_reminders():
-    """每分钟扫描 active medications，匹配当前 HH:MM（北京时间）的推 APNs。
+    """One owner/date/time reminder, with committed receipts and concurrent admission lock.
 
-    - reminder_times 是 JSONB 数组，例 ["09:00", "14:00", "21:00"]
-    - 不去重：只要时间对上就推，一分钟内跑完。下一分钟不会再匹配
-    - 失败不影响其他用户 / 药
+    Mobile retires its old repeating schedules; this is the sole medication
+    notification producer. Different dose times and owners remain independent.
     """
-    from app.models.medication import Medication, medication_timing_label
+    from app.models.medication import Medication
 
     now_cn = get_china_now()
     cur_hhmm = now_cn.strftime("%H:%M")
     today_date = now_cn.date().isoformat()
-
-    sent = 0
+    sent = delayed = failed = 0
     with SessionLocal() as db:
-        meds = (
-            db.query(Medication)
-            .filter(Medication.is_active.is_(True))
-            .all()
-        )
-        push_service = PushService(db)
-
+        meds = db.query(Medication).filter(Medication.is_active.is_(True)).order_by(Medication.id).all()
+        due_by_owner: dict[int, list[int]] = {}
         for med in meds:
+            if isinstance(med.reminder_times, list) and cur_hhmm in med.reminder_times:
+                due_by_owner.setdefault(med.user_id, []).append(med.id)
+        push_service = PushService(db)
+        for user_id, medication_ids in due_by_owner.items():
             try:
-                times = med.reminder_times or []
-                if not isinstance(times, list):
-                    continue
-                if cur_hhmm not in times:
-                    continue
-
-                # 隐私(§5 推送隐私):锁屏可见的 title/content 绝不带药名/剂量 ——
-                # iOS 默认在锁屏渲染推送标题,药名可反推诊断(二甲双胍→糖尿病)。
-                # 药名/剂量只进 data payload,App 解锁后应用内渲染。
-                # timing(空腹/饭前/饭后)不指认具体药物,保留在正文维持"照做"价值。
-                title = "💊 用药提醒"
-                body_parts = []
-                timing = medication_timing_label(med.timing_relation, med.meal_anchor)
-                if timing:
-                    body_parts.append(timing)
-                body_parts.append(f"现在 {cur_hhmm} 有一次用药到点了，点「服用」自动打卡。")
-                body = "，".join(body_parts)
-
-                run_async(push_service.send_notification(
-                    user_id=med.user_id,
-                    notification_type="reminder",
-                    title=title,
-                    content=body,
-                    data={
-                        "category": "MEDICATION_REMINDER",
-                        "reminder_type": "medication",
-                        "medication_id": med.id,
-                        "medication_name": med.name,
-                        "dosage": med.dosage,
-                        "timing": timing,
-                        "scheduled_date": today_date,
-                        "scheduled_time": cur_hhmm,
-                        "scheduled_timezone": "Asia/Shanghai",
-                        "deep_link": "/medications",
-                        # title 泛化后所有药共享同一 title;dedup 必须改走 rule_id
-                        # (per 药×日×时点),否则同日第二种药/第二剂会被 title 去重吞掉。
-                        "rule_id": f"medication_reminder.{med.id}.{today_date}.{cur_hhmm}",
-                    },
-                ))
-                sent += 1
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"[MedicationReminder] user={med.user_id} med={med.id} 失败: {e}")
-
-    if sent:
-        logger.info(f"[MedicationReminder] {today_date} {cur_hhmm} 发送 {sent} 条")
-    return {"scheduled_time": cur_hhmm, "sent": sent}
+                with medication_dispatch_lock(db, user_id) as acquired:
+                    if not acquired:
+                        continue
+                    result = run_async(push_service.send_notification(
+                        user_id=user_id,
+                        notification_type="reminder",
+                        title="用药提醒",
+                        content=f"有用药事项到点了（{cur_hhmm}），点开与小巴查看。",
+                        data={
+                            "reminder_type": "medication",
+                            "medication_ids": medication_ids,
+                            "scheduled_date": today_date,
+                            "scheduled_time": cur_hhmm,
+                            "scheduled_timezone": "Asia/Shanghai",
+                            "deep_link": "/(tabs)/chat",
+                            # A group has no single-dose TAKEN/SKIP action category.
+                            "rule_id": f"medication_reminder.slot.{today_date}.{cur_hhmm}",
+                        },
+                    ))
+                    sent += int(bool(result.get("success")))
+                    delayed += int(result.get("reason") == "delayed_for_quiet_hours")
+                    failed += int(not result.get("success") and result.get("reason") not in {"dedup", "delayed_for_quiet_hours", "dropped_for_quiet_hours"})
+            except Exception as exc:
+                db.rollback()
+                failed += 1
+                logger.warning("[MedicationReminder] dispatch failed error_type=%s", type(exc).__name__)
+    return {"scheduled_time": cur_hhmm, "sent": sent, "delayed": delayed, "failed": failed}
 
 
 @celery_app.task

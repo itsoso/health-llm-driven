@@ -5,12 +5,7 @@ import {
 } from '../services/medicationReminders';
 import type { MedicationTodayItem } from '../services/medications';
 
-/**
- * 按今日在服药品的 reminder_times 调度每日本地通知。
- * - items 变化 (药品列表 / 提醒时间增删) 时重排; 先 cancel 旧的再排新的。
- * - 用 reminder_times 的指纹去抖, 避免 dashboard 每次刷新(taken_count 变)都重排。
- * - 无通知权限时 scheduleMedicationReminders 内部静默跳过。
- */
+/** Dashboard fallback cleanup for retired local reminders; server owns delivery. */
 export function useMedicationReminders(
   items: MedicationTodayItem[] | null | undefined,
   enabled: boolean,
@@ -29,7 +24,8 @@ export function useMedicationReminders(
     lastFingerprint.current = fingerprint;
 
     scheduleMedicationReminders(todayItemsToSources(items)).catch(() => {
-      // 排程失败不影响 UI
+      lastFingerprint.current = null;
+      console.warn('[medicationReminders] legacy cleanup failed; retry on refresh');
     });
   }, [items, enabled]);
 }

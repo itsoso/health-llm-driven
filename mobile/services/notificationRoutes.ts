@@ -76,8 +76,18 @@ function medicationReminderRoute(data: Record<string, any>): string {
     if (typeof data.scheduled_timezone === 'string' && data.scheduled_timezone.length <= 80 && data.scheduled_timezone.trim()) parts.push(`sourceTimezone=${encodeURIComponent(data.scheduled_timezone)}`);
     else invalid = true;
   }
-  if (invalid) return '/medication-reminder?invalid=1';
-  return `/medication-reminder${parts.length ? `?${parts.join('&')}` : ''}`;
+  const occurrence = new URLSearchParams(parts.join('&'));
+  const dateLabel = occurrence.get('date') ?? '日期未确认';
+  const timeLabel = occurrence.get('time') ?? '时间未确认';
+  const timezone = occurrence.get('sourceTimezone');
+  const zoneLabel = timezone === 'Asia/Shanghai' ? '（北京时间）' : '（请核实提醒时区）';
+  const prompt = invalid
+    ? '请帮我查看用药提醒。通知信息不完整，请先核实，不要记录服药。'
+    : `请帮我查看 ${dateLabel} ${timeLabel} ${zoneLabel} 的用药提醒，先查询核实药品、计划时间和记录状态，不要记录服药。`;
+  // Chat treats any context payload as an immediate send. Medication taps
+  // deliberately carry only a draft: no model call and no write on opening.
+  const params = new URLSearchParams({ prompt, badge: '用药提醒', newChat: '1', contextEntry: '1' });
+  return `/(tabs)/chat?${params.toString()}`;
 }
 
 /**
@@ -98,8 +108,16 @@ export function resolveNotificationRoute(
   const explicit = (data.deep_link ?? data.deeplink) as unknown;
   if (typeof explicit === 'string' && explicit.trim()) {
     const route = normalizeKnownAliases(stripScheme(explicit));
-    if (medicationReminder && ['/(tabs)', '/(tabs)/record', '/', '/medications', '/medication-reminder'].includes(route)) {
-      return medicationReminderRoute(data);
+    const path = route.split('?')[0];
+    if (medicationReminder && ['/(tabs)', '/(tabs)/record', '/(tabs)/chat', '/', '/medications', '/medication-reminder'].includes(path)) {
+      const legacy = new URLSearchParams(route.split('?')[1] ?? '');
+      return medicationReminderRoute({
+        ...data,
+        medication_id: data.medication_id ?? legacy.get('id') ?? undefined,
+        scheduled_date: data.scheduled_date ?? legacy.get('date') ?? undefined,
+        scheduled_time: data.scheduled_time ?? legacy.get('time') ?? undefined,
+        scheduled_timezone: data.scheduled_timezone ?? legacy.get('sourceTimezone') ?? undefined,
+      });
     }
     return route;
   }

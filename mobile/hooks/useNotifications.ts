@@ -22,6 +22,7 @@ import {
   type PendingMedicationActionData,
 } from '../services/pendingMedicationActions';
 import { useToast } from './useToast';
+import { cancelMedicationReminders } from '../services/medicationReminders';
 
 const SILENT_SCREENS = new Set(['home']);
 
@@ -54,6 +55,19 @@ export function useNotifications(isAuthenticated: boolean, navigationReady = isA
   navigationReadyRef.current = navigationReady;
   const receivedSub = useRef<Notifications.EventSubscription | null>(null);
   const responseSub = useRef<Notifications.EventSubscription | null>(null);
+
+  useEffect(() => {
+    const retireLocalReminders = () => {
+      void cancelMedicationReminders().catch(() => {
+        console.warn('[useNotifications] legacy medication cleanup failed; retry on foreground');
+      });
+    };
+    retireLocalReminders();
+    const cleanupSub = AppState.addEventListener('change', state => {
+      if (state === 'active') retireLocalReminders();
+    });
+    return () => cleanupSub.remove();
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
