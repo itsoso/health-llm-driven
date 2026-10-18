@@ -39,6 +39,29 @@ it('does not collect on open and requires explicit disclosure acceptance before 
   await waitFor(() => expect(mockCapture.start).toHaveBeenCalledWith({ retentionDays: 7, consent: true }));
 });
 
+it.each([[7, 1], [1, 7]] as const)('shows an unconfirmed %s-day request conflict and allows selecting the original term after %s-day retry', async (original, changed) => {
+  mockSnapshot = { status: 'interrupted', session: null, pendingCount: 0, offline: true, error: null };
+  const message = `上次保留 ${original} 天的开始请求尚未确认，请选择原来的 ${original} 天重试确认；确认后可在历史列表删除，再按新期限开启。`;
+  const notify = () => (mockCapture.subscribe as jest.Mock).mock.calls[0][0]();
+  mockCapture.start.mockImplementationOnce(async () => {
+    mockSnapshot = { ...mockSnapshot, error: message }; notify(); throw new Error(message);
+  }).mockImplementationOnce(async () => {
+    mockSnapshot = { status: 'active', session: { ...session, status: 'active', retention_days: original }, pendingCount: 0, offline: false, error: null }; notify();
+  });
+  const view = render(<DailyJourneyScreen />);
+  await waitFor(() => expect(view.getByLabelText('记录今天行程').props.accessibilityState.disabled).toBe(false));
+  fireEvent.press(view.getByText('记录今天行程'));
+  fireEvent.press(view.getByText(changed === 7 ? '7 天（默认）' : '1 天'));
+  fireEvent.press(view.getByText('同意并开始记录'));
+  expect(await view.findByText(message)).toBeTruthy();
+  await waitFor(() => expect(view.getByLabelText('同意并开始记录').props.accessibilityState.disabled).toBe(false));
+  fireEvent.press(view.getByText(original === 7 ? '7 天（默认）' : '1 天'));
+  fireEvent.press(view.getByText('同意并开始记录'));
+  await waitFor(() => expect(mockCapture.start).toHaveBeenNthCalledWith(2, { retentionDays: original, consent: true }));
+  expect(await view.findByText('暂停记录')).toBeTruthy();
+  expect(view.queryByText(message)).toBeNull();
+});
+
 it('keeps old native packages blocked while history remains readable', async () => {
   mockNative = false;
   const view = render(<DailyJourneyScreen />);

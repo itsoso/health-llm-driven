@@ -131,6 +131,43 @@ it('failed start retries the same idempotency key and clears stale pending pause
   await processDailyJourneyLocations([position()] as any);
   expect(dailyJourneyAPI.points).toHaveBeenCalledTimes(1);
 });
+it.each([[7, 1], [1, 7]] as const)('rejects retention change %s to %s while start is unconfirmed, then restores the exact original request', async (original, changed) => {
+  (dailyJourneyAPI.start as jest.Mock).mockRejectedValueOnce(new Error('timeout'));
+  await expect(dailyJourneyCapture.start({ retentionDays: original, consent: true })).rejects.toThrow();
+  const pending = JSON.parse(JSON.stringify(stored));
+  const permissionCalls = (Location.requestForegroundPermissionsAsync as jest.Mock).mock.calls.length;
+  const credentialCalls = (setBackgroundAuthAccess as jest.Mock).mock.calls.length;
+  await expect(dailyJourneyCapture.start({ retentionDays: changed, consent: true })).rejects.toThrow(`保留 ${original} 天`);
+  expect(dailyJourneyAPI.start).toHaveBeenCalledTimes(1);
+  expect(stored).toEqual(pending);
+  expect(Location.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(permissionCalls);
+  expect(setBackgroundAuthAccess).toHaveBeenCalledTimes(credentialCalls);
+  expect(dailyJourneyCapture.getSnapshot().error).toContain(`请选择原来的 ${original} 天`);
+  (dailyJourneyAPI.start as jest.Mock).mockResolvedValue({ ...session, retention_days: original });
+  await dailyJourneyCapture.start({ retentionDays: original, consent: true });
+  const requests = (dailyJourneyAPI.start as jest.Mock).mock.calls.map(call => call[0]);
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
+  expect(stored.session.retention_days).toBe(original);
+  expect(dailyJourneyCapture.getSnapshot()).toMatchObject({ status: 'active', error: null });
+  await dailyJourneyCapture.remove('session');
+  expect(stored).toBeNull();
+  (uuid.v4 as jest.Mock).mockReturnValue('new-request');
+  (dailyJourneyAPI.start as jest.Mock).mockResolvedValue({ ...session, id: 'new-session', retention_days: changed });
+  await dailyJourneyCapture.start({ retentionDays: changed, consent: true });
+  expect(dailyJourneyAPI.start).toHaveBeenLastCalledWith(expect.objectContaining({ request_id: 'new-request', retention_days: changed }), 'owner-A');
+  expect(stored.session.retention_days).toBe(changed);
+});
+it('cold hydration also rejects a changed retention without replacing the saved request', async () => {
+  (dailyJourneyAPI.start as jest.Mock).mockRejectedValueOnce(new Error('timeout'));
+  await expect(start()).rejects.toThrow();
+  const pending = stored;
+  await dailyJourneyCapture.clearForAuthChange(); stored = pending;
+  await expect(dailyJourneyCapture.start({ retentionDays: 1, consent: true })).rejects.toThrow('保留 7 天');
+  expect(dailyJourneyAPI.start).toHaveBeenCalledTimes(1);
+  expect(stored.requestId).toBe(pending.requestId);
+  expect(stored.retentionDays).toBe(7);
+});
 it('rechecks background permission on every native callback', async () => {
   await start();
   (Location.getBackgroundPermissionsAsync as jest.Mock).mockResolvedValue({ granted: false });

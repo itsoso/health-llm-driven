@@ -290,6 +290,12 @@ export const dailyJourneyCapture = {
       await restoreRecord(guard); checkEpoch(guard);
       if (record?.session && (record.status !== 'ended' || record.points.length || record.pendingAction)) throw new CaptureError('请先继续、同步或删除上一次行程');
       const token = await ownerToken(); checkEpoch(guard);
+      // An uncertain start keeps its idempotency key and consent parameters together.
+      // Never silently submit the original retention after the user selects a different one.
+      if (record && !record.session && record.token === token && record.intentExpiresAt > Date.now()
+        && record.retentionDays !== options.retentionDays) {
+        throw new CaptureError(`上次保留 ${record.retentionDays} 天的开始请求尚未确认，不能直接改为 ${options.retentionDays} 天。请选择原来的 ${record.retentionDays} 天重试确认；确认后可在历史列表删除，再按新期限开启。`);
+      }
       await permissions(true); await owned(guard, token);
       await backgroundAuthAccess(true, token); await owned(guard, token);
       backgroundToken = token;
