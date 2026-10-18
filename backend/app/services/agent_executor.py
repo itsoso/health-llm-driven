@@ -18457,6 +18457,7 @@ class AgentExecutor:
         # output gate, but give the same sealed context one bounded chance to
         # produce ordinary user-facing prose before failing the turn.
         answer_protocol_recovery_attempted = False
+        post_confirm_advice_correction_attempted = False
 
         # Pi owns the model/tool loop. Reva's callback retains health-specific
         # receipts, safety checks and client projections; it never chooses the
@@ -19825,6 +19826,7 @@ class AgentExecutor:
                                     elif event.get("type") == "finish":
                                         finish_reason = event.get("finish_reason")
                             if (diet_synthesis_round and is_post_confirm_diet_review(message)
+                                    and not post_confirm_advice_correction_attempted
                                     and finish_reason == 'stop' and not proposed_calls
                                     and summary_advice_contract_failure(
                                         summary_advice_text(candidate, require_heading=True))):
@@ -19833,13 +19835,14 @@ class AgentExecutor:
                                 # scope are granted, and final validation still
                                 # rejects an invalid or incomplete correction.
                                 self._record_model_fallback_reason('post_confirm_diet_advice_correction')
+                                post_confirm_advice_correction_attempted = True
                                 correction_messages = [*messages,
-                                    {'role': 'assistant', 'content': candidate},
                                     {'role': 'user', 'content': (
-                                        '上一版建议未通过校验，请重新生成。只输出“建议”标题和两三句定性建议。'
-                                        '不要复述任何热量或营养数字，不要把所选历史日期称为今天。'
-                                        '不把单条记录当作一整餐或全天摄入，不推断缺餐、摄入不足或过量。'
-                                        '只用已经核验的食物信息；无法判断时说明具体边界。'
+                                        '上一版个性化建议未通过事实校验。重新生成时只提供通用搭配思路，'
+                                        '明确写“建议（通用搭配）”标题，正文两句以内。'
+                                        '事实段已单独展示，禁止再陈述用户的日期、餐次、食物或营养读数，'
+                                        '禁止推断用户缺餐、缺乏营养、摄入不足或过量。'
+                                        '只给下一餐一般性的食物搭配思路，并说明这不是对全天摄入的判断。'
                                         '不提供个体食物份量或用餐时间处方，不提出删改、补录或提醒。'
                                         '不调用任何工具。'
                                     )},
@@ -19853,12 +19856,14 @@ class AgentExecutor:
                                         correction_tool_requested = True
                                     elif event.get('type') == 'finish':
                                         finish_reason = event.get('finish_reason')
-                                if correction_tool_requested:
+                                if (correction_tool_requested or finish_reason != 'stop'
+                                        or 'protocol_leak' in enforce_agent_output_quality(candidate).flags):
                                     candidate, finish_reason = '', 'error'
                             if (
                                 not proposed_calls
                                 and candidate.strip()
                                 and not answer_protocol_recovery_attempted
+                                and not post_confirm_advice_correction_attempted
                                 and "protocol_leak"
                                 in enforce_agent_output_quality(candidate).flags
                             ):

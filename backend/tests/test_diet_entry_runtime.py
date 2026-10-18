@@ -129,6 +129,7 @@ async def test_edited_shortcut_uses_current_text_not_stale_selected_day(db, owne
     ('建议：仅凭现有记录无法判断全天饮食是否均衡。下一餐可结合自己的日常饮食安排搭配。', 'complete'),
     ('建议：全天只吃了200千卡，摄入不足。', 'partial'),
     (('health_record', {'record_type': 'diet', 'data': {'food_items': 'rice'}}), 'partial'),
+    ('<tool_call>{"name":"health_record","arguments":{"record_type":"diet"}}</tool_call>', 'partial'),
 ])
 async def test_post_confirm_advice_has_one_tool_free_correction(db, owned_data, monkeypatch, correction, expected):
     selected = db.query(DietRecord).filter_by(user_id=owned_data.id).one()
@@ -144,6 +145,29 @@ async def test_post_confirm_advice_has_one_tool_free_correction(db, owned_data, 
     assert done['turn_outcome']['status'] == expected
     assert not done['write_receipts']
     assert '全天热量严重不足' not in saved.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('finish', ['length', 'error'])
+async def test_post_confirm_incomplete_correction_stops_without_another_generation(db, owned_data, monkeypatch, finish):
+    selected = db.query(DietRecord).filter_by(user_id=owned_data.id).one()
+    trace = script_executor(db, monkeypatch, [
+        ('health_query', {'dimension': 'diet'}),
+        '建议：全天只有200千卡，摄入不足。',
+        '建议：下一餐可考虑主食、蔬菜和蛋白质来源的搭配。',
+    ])
+    original = trace.executor._call_llm_stream
+    async def interrupted(messages, tools):
+        async for event in original(messages, tools):
+            if len(trace.calls) == 3 and event.get('type') == 'finish':
+                event = {**event, 'finish_reason': finish}
+            yield event
+    monkeypatch.setattr(trace.executor, '_call_llm_stream', interrupted)
+    done, _ = await run(db, trace, owned_data, POST_CONFIRM_REQUEST,
+                        extra_context=post_confirm_context(selected.id))
+    assert len(trace.calls) == 3 and len(trace.dispatches) == 1
+    assert done['turn_outcome']['status'] == 'partial'
+    assert not done['write_receipts']
 
 
 @pytest.mark.asyncio

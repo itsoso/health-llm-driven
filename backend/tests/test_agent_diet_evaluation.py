@@ -5,6 +5,12 @@ import pytest
 from tests.test_query_reliability_outcomes import _run_scripted, _calendar_payload
 
 
+def test_plain_qualified_advice_heading_preserves_disclosed_general_guidance():
+    from app.services.agent_daily_read_execution import summary_advice_text
+    text = '建议（通用搭配）\n\n下一餐可考虑主食、蔬菜和蛋白质来源的搭配。这不是对全天摄入的判断。'
+    assert summary_advice_text(text, require_heading=True) == text
+
+
 @pytest.fixture(autouse=True)
 def isolated(isolated_agent_protocol_transport):
     """Exercise Pi and the real gateway, with no external provider or cache."""
