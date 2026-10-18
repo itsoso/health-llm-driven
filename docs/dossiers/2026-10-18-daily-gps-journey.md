@@ -4,8 +4,8 @@
 |---|---|
 | slug | daily-gps-journey |
 | 创建日期 | 2026-10-18 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S6 验证 / G4 复核 |
+| 状态 | validating |
 | 负责 | Codex / 用户 |
 | 反馈环 | PostgreSQL / Mobile tests / iOS 模拟器 / 原生扫码包 / backend |
 
@@ -55,3 +55,24 @@
 - 补齐后端和 Mobile 精确位置遥测出口屏蔽。后台凭据权限仅在显式开启后扩大；恢复标记不包含 Token，记录缺失时可恢复前台访问等级。账号删除申请停止采集的集成正在验证。
 - 发布实际阻断：现有 no-backup code-only 发布拒绝新增模型/managed migration。正在实现仅绑定本次新增表的受审迁移分支，不能绕过检查，也未恢复备份。
 - 未部署、未分发原生包、未读取用户 GPS；硬件锁屏连续性与电量未验证。
+
+## G3 稳定功能候选
+- 本地提交：`d1780551d17f3314cf401b91c4846c826fe07c5d`；未 push。
+- Mobile：368 suites passed，3847 tests passed，1 skipped；TypeScript 无错误。
+- 后端 CI=true 集成切片：41 passed；新增 API / service 覆盖率 94.53%。首次覆盖命令继承全仓 `--cov=app` 导致 19.84% 阈值失败；随后明确目标模块重新运行并通过，不将切片覆盖率称作全仓覆盖。
+- PostgreSQL 40 passed；API 两端生成校验、System Map、秘密扫描通过。真实 LLM 闸裁定本次无需真实模型评测（不把 GPS 送模型）。
+- 固定候选独立 G4 已发起；发布 helper 和隐私说明补充将形成后续候选，需再验证。
+- CUA 明确因 Mac 锁屏拒绝模拟器操作；未用替代 UI 通道绕过，无视觉通过结论。已请求用户解锁 Mac，其他工作继续。
+
+## G4 首轮固定候选裁决与补充
+- `d1780551d17f3314cf401b91c4846c826fe07c5d` 独立裁决 NO-GO：首次开启请求超时后重试沿用原 intent，用户更改 7→1 天时仍可能确认 7 天；正在补双向参数变化回归并保留原幂等保护。固定候选中的两端旧隐私政策还否认后台采集，也构成阻断。
+- 隐私声明修正提交 `8253fc89b`：Mobile/Web 页面与隐私标签草稿区分城市足迹和每日 GPS，明确保留与删除边界；两端新增 4 项渲染回归、现有 3 项隐私对齐检查通过。没有更新 App Store Connect。
+- 受控无备份新增表发布支持提交 `6a345e6ec`，仅准入本次固定模型/SQL 摘要；专用单测及真实 PostgreSQL 56 passed，既有部署回归 231 passed。已提交另一位未参与实现的 reviewer 独立检查，未执行生产迁移。
+- CI 显式 PostgreSQL 分片已加入新 API/数据库测试，release-invariants 及独立 PostgreSQL step 已覆盖迁移 helper；这些配置仍待最终候选真实 CI。
+- 生产 GitHub relay 只读检查 enabled/active、IPv6 loopback、canonical TLS Git 查询通过；远端 main 仍为 `25b85536e3722dc111c528b8a915062a3f971397`。未推送、未发布新能力。
+
+## G4 修复后裁决
+- 功能与隐私候选 `bf89865ed174ab2882bfbc9819f4dbae063eb58f` 独立复核 GO：原期限与幂等键绑定，改变期限在权限和凭据调整前明确拒绝；原期限恢复、删除后新期限开启、冷启动及 UI 恢复通过。独立 Mobile 64 passed、Web 2 passed；实现者相关切片 62 passed，TypeScript 通过。
+- 发布 adapter `6a345e6ec29057c43dbf22a0683c1bcbd9591e43` 独立复核 GO：新鲜 helper/真实 PostgreSQL/runner 63 passed、3 skipped（跳过为 runner 额外 Redis 环境项，GPS PG 6 项均运行）；既有部署回归 215 passed。不是生产迁移成功证明。
+- 最终功能候选两端 TypeScript、秘密扫描通过；新增隐私测试带来的生成地图变化已重新生成并通过完整 System Map 校验。最终 Mobile 全量测试与精确主干 CI 待完成；G5/G6 仍未通过。
+- 原生扫码构建计划为 1.3.6 (289)：本地回执与公开 manifest 可证前一个 QR build 为 288。已安装 ad-hoc profile 有效，公开 latest 是旧实体目录，因此只发布唯一版本目录并使用 `--no-latest`；不替换旧目录。未预留或上传 Apple 构建。
