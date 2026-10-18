@@ -103,6 +103,24 @@ describe('precise medication reminder target', () => {
 });
 
 describe('medication reminder Agent destination', () => {
+  it.each([
+    { reminder_type: 'medicine', reminder_id: 7, deep_link: '/notification-history?detailId=123' },
+    { reminder_type: 'medication', deep_link: '/notification-detail?id=invalid&date=2026-10-18&time=18%3A30' },
+  ])('overrides generic medication destinations without reading notification query fields as dose fields: %j', (data) => {
+    const route = resolveNotificationRoute(data)!;
+    expect(route.split('?')[0]).toBe('/(tabs)/chat');
+    const params = new URLSearchParams(route.split('?')[1]);
+    expect(params.get('prompt')).toContain('日期未确认 时间未确认');
+    expect(params.has('context')).toBe(false);
+    expect(params.has('autoSend')).toBe(false);
+  });
+  it('keeps unrelated history/detail links and extracts only legacy medication occurrence fields', () => {
+    for (const deep_link of ['/notification-history?detailId=123', '/notification-detail?id=123']) {
+      expect(resolveNotificationRoute({ deep_link })).toBe(deep_link);
+    }
+    const route = resolveNotificationRoute({ reminder_type: 'medication', deep_link: '/medication-reminder?id=7&date=2026-10-18&time=18%3A30&sourceTimezone=Asia%2FShanghai' })!;
+    expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('2026-10-18 18:30 （北京时间）');
+  });
   it.each(['/medications', '/medication-reminder?id=7&date=2026-10-18&time=18%3A30', '/(tabs)/chat'])('opens a draft for %s without automatic send or private text', (deep_link) => {
     const route = resolveNotificationRoute({ reminder_type: 'medication', medication_id: 7, scheduled_date: '2026-10-18', scheduled_time: '18:30', scheduled_timezone: 'Asia/Shanghai', deep_link, medication_name: 'private-secret' })!;
     expect(route.split('?')[0]).toBe('/(tabs)/chat');

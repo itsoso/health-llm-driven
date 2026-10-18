@@ -32,3 +32,9 @@
 - 稳定 SHA256 锁键纳入 owner/date/time，同槽互斥但下一时点可并行；rule_id 纳入 owner。Mobile 补旧 pre_event/medicine 普通点击兼容，验证非中国时区；仍无自动发送/写剂次。
 - 回归保留预提醒不发、旧 delayed 副本拒绝、跨账号 key、下一时点锁、非中国跨日解算、补剂预提醒保留等证据。一次空批次 slot_time 未赋值与补剂旧目的地断言失败已修复并整批重验。
 - 修正冻结后：CI-mode 扩大至通知/推送、事件提醒、议程用药/BID/协议链路，384 passed / 2 PostgreSQL 专属 skips；实际 PostgreSQL 20 passed（含全部新并发测试和 event reminders）；Mobile 7 suites / 73 passed。TypeScript、定向 lint、Ruff 和 System Map 通过。此前 PG 81 passed 仍作为未变出队/静默兼容切片证据，最终改动以本段新鲜结果为准。
+
+## 通用历史入口兼容复审
+
+- `3912ef754` 第二次独立审查 NO-GO：旧 `medicine` producer 经共享出口产生 `/notification-history?detailId=123`，未覆盖到 Agent 草稿。独立回归 135 passed / 2 PostgreSQL skips，其余受审改动未发现阻断。
+- 先新增真实历史入口与详情入口用例，RED 为两条仍返回 history/detail；现仅对已识别用药提醒覆盖通用目的地。仅从 `/medication-reminder` 提取旧药品/剂次参数，通用详情 ID、日期与时间不冒充剂次；其他通知与专属编辑页仍保留原入口。
+- 冻结复测 Mobile 7 suites / 76 passed、TypeScript 与定向 ESLint exit 0；日志 `/tmp/reva-med-generic-route-red.log`、`/tmp/reva-med-generic-route-green.log`。本轮无后端变更，保留上轮 CI-mode/PG 证据；等待新固定候选独立安全裁决。

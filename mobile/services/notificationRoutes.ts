@@ -113,8 +113,9 @@ export function resolveNotificationRoute(
   if (typeof explicit === 'string' && explicit.trim()) {
     const route = normalizeKnownAliases(stripScheme(explicit));
     const path = route.split('?')[0];
-    if (medicationReminder && ['/(tabs)', '/(tabs)/record', '/(tabs)/chat', '/', '/medications', '/medication-reminder'].includes(path)) {
-      const legacy = new URLSearchParams(route.split('?')[1] ?? '');
+    if (medicationReminder && ['/(tabs)', '/(tabs)/record', '/(tabs)/chat', '/', '/medications', '/medication-reminder', '/notification-history', '/notification-detail'].includes(path)) {
+      // Generic destinations carry notification IDs, never medication occurrence fields.
+      const legacy = new URLSearchParams(path === '/medication-reminder' ? route.split('?')[1] ?? '' : '');
       return medicationReminderRoute({
         ...data,
         medication_id: data.medication_id ?? legacy.get('id') ?? undefined,
