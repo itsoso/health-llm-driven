@@ -200,6 +200,7 @@
       "examples": [
         "precise_location_selected_by_user_for_weather_air_quality_and_outdoor_activity_context",
         "user_confirmed_city_attached_to_a_record_for_monthly_journey_recap",
+        "daily_gps_coordinates_timestamps_accuracy_and_available_speed_for_explicitly_enabled_private_journey_review",
         "one_time_precise_location_sent_via_backend_to_amap_with_separate_consent_for_meal_share_place_candidates"
       ],
       "purpose": [
@@ -220,7 +221,7 @@
           "used_for_tracking": false
         }
       },
-      "collection_notes": "Journey locations are optional, explicitly confirmed city labels linked to the user's existing records. Journey records do not store coordinates or collect background routes. Separately, the meal share editor offers AMap place lookup only after session-specific consent: coordinates (for GPS) or keywords (for search) pass through the authenticated backend to AMap, without account identifiers or health content. Reva does not persist lookup coordinates, queries or candidates. Public place labels require separate confirmation and remain session-only until exported. Updating this declaration does not update App Store Connect."
+      "collection_notes": "City footprints are optional, explicitly confirmed city labels linked to the user's existing records; that city-label feature does not store coordinates or collect background routes. Separately, daily GPS journeys in supported app versions are off by default and require a fresh manual start each day, explicit purpose and retention consent, and separate system location permission. During that day, background and lock-screen capture is best effort and may have gaps; it stops accepting new positions at the end of the starting timezone's day, within 24 hours. Coordinates, timestamps, accuracy, available speed and user corrections are encrypted in local storage and owner-scoped cloud storage for private deterministic route, stop, distance and transport-mode review. They are not sent to AI or used for advertising, marketing, public sharing or health inference. Raw data and derived review expire 1 or 7 days from session start (default 7); access is blocked at expiry, followed by scheduled server physical cleanup and local cleanup on the next run. Pause, end or permission revocation stops future collection without automatically deleting history. User deletion removes raw points, corrections and derived review; offline deletion remains unconfirmed until acknowledged by the server. Only opaque random replay-prevention identifiers and necessary security audit without GPS, place labels or route content remain until account deletion. Separately, the meal share editor offers AMap place lookup only after session-specific consent: coordinates (for GPS) or keywords (for search) pass through the authenticated backend to AMap, without account identifiers or health content. Reva does not persist lookup coordinates, queries or candidates. Public place labels require separate confirmation and remain session-only until exported. Updating this declaration does not update App Store Connect."
     }
   ],
   "manual_review_required_before_submission": [
