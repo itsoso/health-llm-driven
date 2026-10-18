@@ -1,6 +1,6 @@
 # 推送详情与历史解读
 
-- 当前阶段：S5 verification；状态 in_progress（发布和界面验收待外部条件）。
+- 当前阶段：S5 verification；G3/G4 本地代码候选通过，G5/G6 待外部条件。
 - 用户原话：“睡眠质量下滑等推送需要有一个landing页面点进去可以分析，现在无法点击。”
 - 四问：对象为本人推送；场景为历史行和推送点击；结果为读原文并解读；不新增自动完成或处方。
 - 父 trace：`docs/_generated/harness-runs/40a67f45f448.jsonl`。
@@ -43,3 +43,11 @@ GPS 候选已遇 GitHub OAuth workflow scope 不足；native runtime 变化不�
 - 定向真实 Agent 使用合成旧睡眠推送、正式同意及真实供应商，完成回答且无写回执。首次测试缺少临时 HMAC key，修正隔离测试配置后通过；不使用生产密钥或数据库。实际回答暴露完整性误读和对空 sent_at 的投递猜测，已收窄证据投影并明确未知，不把本轮未截断等同完整原文。新增回归断言与最终真实模型复测。
 - 最终冻结后相关 CI-mode 集成 414 passed（`/tmp/reva-notification-ci-mode-final.log`）；PostgreSQL 本人详情/选择器/API 28 passed（`/tmp/reva-notification-postgres-final.log`）。地图与导航生成物已同步，检查通过。
 - 最终定向真实 Agent 复测完成：`/tmp/reva-notification-live-probe-final.log` exit 0，实际供应商调用 2 条 usage，turn complete / read_only=true、无写回执。人工核读回答明确“完整性未知”“保存时间不是采样时间”“投递状态未知”，未替换为今天的个人数据。样本为合成数据，不等同真实账户验收。
+
+## 固定修正候选与交付断点
+
+- 修正候选 `36cb449772811ade3e764982bf3fc4d6f0aa8363`；包含 history 兼容桥接及历史证据投影收窄。最终官方 live gate 67/67、trajectory contract 12/12、trajectory goldens 9/9 通过（`/tmp/reva-notification-live-gate-final.log`）；精确候选本地 LLM change gate 通过（`/tmp/reva-notification-llm-change-final.json`），未使用 waiver。仓库 CI confirmation 尚未写入，须在实际授权推送前绑定最终 SHA。
+- GitHub 再次只读回查仍缺 workflow scope；整批 main 因前置 GPS workflow 变更无法推送。没有精确远端 CI，后端部署、OTA validate/publish 和原生分发均未执行。
+- 前置 GPS 原生包为 1.3.6 (289)，仅在旧本地候选构建未上传；本次详情代码不在该旧包中。不能把该 IPA 或旧运行时 OTA 当成本次功能交付。
+- 模拟器仍未获得解锁回复；没有 UI 点击/视觉验收结论。外部条件未解除前保留本地可审查候选，不声称已上线。
+- 独立 G4 复审对 `36cb449772811ade3e764982bf3fc4d6f0aa8363` 裁决代码 GO：旧客户端 P2 已关闭，未发现新增阻断；检查增量源码、测试及真实 Agent 探针，没有宣称自行重跑整套测试。发布仍未获 GO，必须继续完成模拟器、精确远端 CI、原生运行时与实际分发证据。后续仅 Dossier 记录提交，不改变该受审功能字节。
