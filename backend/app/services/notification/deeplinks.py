@@ -104,5 +104,7 @@ def history_deeplink(
             and re.fullmatch(r"[1-9][0-9]{0,9}", str(workout_id))):
         return deeplink_for("workout_analysis", workout_id=workout_id)
     if type(log_id) is int and log_id > 0:
-        return f"/notification-detail?id={log_id}"
+        # Older clients already know history; they can ignore the selector
+        # instead of opening a detail route that their bundle does not contain.
+        return f"/notification-history?detailId={log_id}"
     return None

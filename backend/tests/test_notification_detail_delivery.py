@@ -1,5 +1,7 @@
 """A tap's persisted notification ID exists before delivery and survives replay."""
 from datetime import datetime
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,7 +25,7 @@ def sender(db):
 
 
 @pytest.mark.parametrize("data,expected", [
-    ({}, "/notification-detail?id=7"),
+    ({}, "/notification-history?detailId=7"),
     ({"deep_link": "/diet"}, "/diet"),
     ({"deeplink": "health://card/3"}, "health://card/3"),
     ({"kind": "protocol", "category": "AGENDA_ACTION"}, "/agenda"),
@@ -31,8 +33,8 @@ def sender(db):
     ({"kind": "medication_reminder"}, None),
     ({"category": "MEDICATION_REMINDER"}, None),
     ({"screen": "sleep"}, None),
-    ({"screen": "home"}, "/notification-detail?id=7"),
-    ({"workout_id": 42}, "/notification-detail?id=7"),
+    ({"screen": "home"}, "/notification-history?detailId=7"),
+    ({"workout_id": 42}, "/notification-history?detailId=7"),
 ])
 def test_history_fallback_preserves_specialized_destinations(data, expected):
     assert history_deeplink("reminder", data, log_id=7) == expected
@@ -51,7 +53,7 @@ async def test_detail_record_committed_before_channel_and_finalized_once(db, sen
         log = logs[0]
         assert log.status == "pending"
         assert log.user_id == uid
-        assert data["deep_link"] == f"/notification-detail?id={log.id}"
+        assert data["deep_link"] == f"/notification-history?detailId={log.id}"
         assert log.data["deep_link"] == data["deep_link"]
         # The pre-send commit has ended the write transaction; a separate session
         # can read the same row in PostgreSQL integration runs as well.
@@ -103,7 +105,7 @@ async def test_delayed_replay_uses_original_id_and_keeps_single_row(db, sender):
     log = db.query(NotificationLog).one()
     assert log.id == original_id
     assert log.status == "sent"
-    assert send.call_args.args[-1]["deep_link"] == f"/notification-detail?id={original_id}"
+    assert send.call_args.args[-1]["deep_link"] == f"/notification-history?detailId={original_id}"
     assert log.data["deep_link"] == send.call_args.args[-1]["deep_link"]
 
 
@@ -138,7 +140,7 @@ async def test_saved_originals_never_leave_in_channel_payload(db, sender, text, 
     assert result["success"]
     wire = send.call_args.args[-1]
     assert "full_title" not in wire and "full_content" not in wire
-    assert wire["deep_link"].startswith("/notification-detail?id=")
+    assert wire["deep_link"].startswith("/notification-history?detailId=")
     if redacted:
         assert "二甲双胍" not in send.call_args.args[-2]
         assert wire["lock_screen_redacted"] is True
@@ -209,8 +211,8 @@ async def test_rejected_delivery_does_not_create_pending_record(db, sender, disa
 
 @pytest.mark.parametrize("workout_id,expected", [
     (42, "/workout-detail?id=42"), ("42", "/workout-detail?id=42"),
-    (0, "/notification-detail?id=7"), (True, "/notification-detail?id=7"),
-    ("42&content=private", "/notification-detail?id=7"),
+    (0, "/notification-history?detailId=7"), (True, "/notification-history?detailId=7"),
+    ("42&content=private", "/notification-history?detailId=7"),
 ])
 def test_workout_history_route_is_type_bound_and_validated(workout_id, expected):
     assert history_deeplink("workout_analysis", {"workout_id": workout_id}, log_id=7) == expected
@@ -234,3 +236,13 @@ async def test_shared_privacy_guard_saves_original_only_in_owned_log(db, sender)
 
 def test_workout_identifier_does_not_override_legacy_screen_destination():
     assert history_deeplink("workout_analysis", {"screen": "alerts", "workout_id": 42}, log_id=7) is None
+
+
+def test_generic_delivery_bridge_uses_existing_history_surface():
+    route = urlsplit(history_deeplink("ai_advice", {}, log_id=7))
+    # Old clients know this route and ignore the new selector; newer clients can
+    # enter the owned detail after their history screen validates the selector.
+    assert route.path == "/notification-history"
+    assert parse_qs(route.query) == {"detailId": ["7"]}
+    mobile_route = Path(__file__).resolve().parents[2] / "mobile" / "app" / f"{route.path.lstrip('/')}.tsx"
+    assert mobile_route.is_file()

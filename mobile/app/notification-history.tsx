@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SectionList, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { getLogs, type NotificationLog } from '../services/notifications';
 import { resolveNotificationRoute } from '../services/notificationRoutes';
@@ -72,13 +72,20 @@ function collapseMultiChannel(logs: NotificationLog[]): Array<NotificationLog & 
  * 该 log 的 deep_link 既可能在 data.deep_link, 也可能在顶层列 log.deep_link — 合并后再解析.
  * 保留专属页面；缺少目的地的旧记录进入保存的推送详情。
  */
+function isGenericDetailRoute(route: string | null): boolean {
+  return Boolean(route?.startsWith('/notification-detail?') || route?.startsWith('/notification-history?detailId='));
+}
+
 function getLogDeepLink(log: NotificationLog): string | null {
   const merged = { ...(log.data ?? {}), deep_link: log.deep_link ?? log.data?.deep_link };
   const route = resolveNotificationRoute(merged);
-  if (route && !route.startsWith('/notification-detail?')) return route;
+  if (route && !isGenericDetailRoute(route)) return route;
   // A server-projected generic detail must not supersede a legacy screen destination.
   const legacyRoute = resolveNotificationRoute(log.data ?? {});
-  if (legacyRoute) return legacyRoute;
+  if (legacyRoute && !isGenericDetailRoute(legacyRoute)) return legacyRoute;
+  // New generic payloads may also carry a legacy screen or workout selector.
+  const screenRoute = resolveNotificationRoute({ ...log.data, deep_link: undefined, deeplink: undefined });
+  if (screenRoute) return screenRoute;
   if (log.notification_type === 'workout_analysis' && log.data?.workout_id) {
     return `/workout-detail?id=${log.data.workout_id}`;
   }
@@ -90,16 +97,28 @@ export default function NotificationHistoryScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
+  const { detailId: rawDetailId } = useLocalSearchParams();
+  const parsedDetailId = typeof rawDetailId === 'string' && /^[1-9]\d{0,9}$/.test(rawDetailId) ? Number(rawDetailId) : null;
+  const detailId = parsedDetailId !== null && parsedDetailId <= 2147483647 ? parsedDetailId : null;
   const canRead = isAuthenticated && Boolean(user?.id);
+  const isDetailBridge = canRead && detailId !== null;
+  const forwarded = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isDetailBridge) { forwarded.current = null; return; }
+    const key = `${user?.id}:${detailId}`;
+    if (forwarded.current === key) return;
+    forwarded.current = key;
+    router.replace(`/notification-detail?id=${detailId}` as never);
+  }, [detailId, isDetailBridge, router, user?.id]);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['notificationLogs', user?.id],
-    enabled: canRead,
+    enabled: canRead && !isDetailBridge,
     queryFn: () => getLogs(100),
     staleTime: 30_000,
   });
 
-  const logs = useMemo(() => canRead ? data ?? [] : [], [canRead, data]);
+  const logs = useMemo(() => canRead && !isDetailBridge ? data ?? [] : [], [canRead, data, isDetailBridge]);
   const collapsed = React.useMemo(() => collapseMultiChannel(logs), [logs]);
   const sections = groupByDate(collapsed);
 
@@ -115,7 +134,7 @@ export default function NotificationHistoryScreen() {
 
       {!canRead ? (
         <View style={styles.center}><Text style={styles.empty}>请先登录后查看推送历史</Text></View>
-      ) : isLoading ? (
+      ) : isDetailBridge || isLoading ? (
         <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
       ) : isError ? (
         <View style={styles.center}>

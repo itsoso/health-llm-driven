@@ -33,7 +33,7 @@ spec_required: yes
 
 ## 流程与跨端契约
 
-- 历史列表无专属路由时打开 `/notification-detail?id=<positive-id>`；新推送在实际发送前保留 pending 日志，携带仅含 ID 的链接，完成后更新同一行；静默延迟回放复用原日志。
+- 服务端为无专属路由的记录提供 `/notification-history?detailId=<positive-id>`，兼容旧 App 已存在的历史页；新版登录后校验 ID、一次性 replace 到 `/notification-detail?id=<positive-id>`。非法或数组参数停留历史页，桥接期间不请求历史列表。新推送在实际发送前保留 pending 日志，携带仅含 ID 的链接，完成后更新同一行；静默延迟回放复用原日志。
 - `GET /notification/logs/{id}` 按认证 user_id + id 查询；缺失和他人 ID 均为 404。返回 id、notification_type、title、content、created_at、sent_at、content_source；标题正文优先已保存 full_title/full_content。不返回完整内部 data/完成引用。
 - Mobile 详情展示完整存留正文、日期和“历史推送，未重新核验原始数据”；旧日志可能只保留摘要，不捏造完整报告。错误可重试，加载/错误时不提供分析。
 - “让小巴解读”返回主对话并预填问题；仅传 `{from: notification/<id>}`，用户发送后执行。服务端重新读取本人记录，丢弃客户端附加内容，范围只含这条通知及公开知识。历史推送不是已核验的个人事实；不补查其他日期/个人域，不授予写权限。紧急症状仍遵守共享健康安全链路。
@@ -44,7 +44,7 @@ spec_required: yes
 
 复用 NotificationLog，无 schema/迁移。pending 是既有状态，不代表已发送；异常不得变成功。保留现有 dedup、静默、许可、隐私出口。详情阅读不修改已读、依从或用药状态。URL 不放健康内容；新详情不扩大 APNs 原文载荷。现有专属跳转仍负责其显式确认。
 
-解读复用主 Agent 及共享安全处理，不单建医疗模型调用。通知选择器限制所有模型工具为公开 knowledge_search；禁止健康写入和其他个人数据读取。客户端不能以伪造 ID、标题、日期、角色或 flags 扩权。未知历史原文、原始指标和时间必须明确未知。
+解读复用主 Agent 及共享安全处理，不单建医疗模型调用。通知选择器限制所有模型工具为公开 knowledge_search；禁止健康写入和其他个人数据读取。客户端不能以伪造 ID、标题、日期、角色或 flags 扩权。未知历史原文、原始指标和时间必须明确未知。给模型的保存时间不代表采样时间；完整性未知的旧文本不能因本轮未截断而称为完整原文。解读不提供投递/已读状态，也不得推断是否送达。
 
 ## 验收与验证
 

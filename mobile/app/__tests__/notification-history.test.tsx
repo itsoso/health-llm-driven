@@ -1,15 +1,18 @@
 /* eslint-disable import/first */
 import React from 'react';
-import { fireEvent, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, waitFor } from '@testing-library/react-native';
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
+const mockReplace = jest.fn();
+let mockDetailId: unknown;
 const mockGetLogs = jest.fn();
 let mockUserId: number | null = 7;
 jest.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: mockUserId ? { id: mockUserId } : null, isAuthenticated: Boolean(mockUserId) }) }));
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ back: mockBack, push: mockPush }),
+  useRouter: () => ({ back: mockBack, push: mockPush, replace: mockReplace }),
+  useLocalSearchParams: () => ({ detailId: mockDetailId }),
 }));
 
 jest.mock('../../services/notifications', () => ({
@@ -23,6 +26,7 @@ describe('NotificationHistoryScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUserId = 7;
+    mockDetailId = undefined;
     mockGetLogs.mockResolvedValue([
       {
         id: 1,
@@ -78,7 +82,7 @@ describe('NotificationHistoryScreen', () => {
     expect(screen.queryClient.getQueryData(['notificationLogs', 7])).toBeTruthy();
   });
 
-  it.each([undefined, '/notification-detail?id=82'])('preserves legacy screen destinations before generic detail %p', async deep_link => {
+  it.each([undefined, '/notification-detail?id=82', '/notification-history?detailId=82'])('preserves legacy screen destinations before generic detail %p', async deep_link => {
     mockGetLogs.mockResolvedValue([{
       id: 82, notification_type: 'ai_advice', title: '睡眠建议',
       content: '内容', status: 'sent', channel: 'ios_apns', data: { screen: 'sleep' }, deep_link,
@@ -95,6 +99,76 @@ describe('NotificationHistoryScreen', () => {
     mockGetLogs.mockReturnValue(new Promise(() => {}));
     screen.rerender(<NotificationHistoryScreen />);
     expect(screen.queryByText('跑后教练: 跑步 (2.9km · 20分钟)')).toBeNull();
+  });
+
+  it('bridges an authenticated compatibility link once, without fetching history', () => {
+    mockDetailId = '81';
+    const screen = renderWithProviders(<React.StrictMode><NotificationHistoryScreen /></React.StrictMode>);
+    expect(mockReplace).toHaveBeenCalledWith('/notification-detail?id=81');
+    screen.rerender(<React.StrictMode><NotificationHistoryScreen /></React.StrictMode>);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockGetLogs).not.toHaveBeenCalled();
+  });
+
+  it('defers the bridge until authenticated and resets for another owner or id', () => {
+    mockDetailId = '81'; mockUserId = null;
+    const screen = renderWithProviders(<NotificationHistoryScreen />);
+    expect(screen.getByText('请先登录后查看推送历史')).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockGetLogs).not.toHaveBeenCalled();
+    mockUserId = 7;
+    screen.rerender(<NotificationHistoryScreen />);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    mockUserId = 8;
+    screen.rerender(<NotificationHistoryScreen />);
+    expect(mockReplace).toHaveBeenCalledTimes(2);
+    mockDetailId = '82';
+    screen.rerender(<NotificationHistoryScreen />);
+    expect(mockReplace).toHaveBeenLastCalledWith('/notification-detail?id=82');
+    expect(mockReplace).toHaveBeenCalledTimes(3);
+    expect(mockGetLogs).not.toHaveBeenCalled();
+  });
+
+  it.each(['0', '-1', '1.5', '81oops', '2147483648', ['81'], ['81', '82'], ''])('keeps malformed bridge id %p on safe history without looping', async detailId => {
+    mockDetailId = detailId;
+    const screen = renderWithProviders(<NotificationHistoryScreen />);
+    await screen.findByText('跑后教练: 跑步 (2.9km · 20分钟)');
+    screen.rerender(<NotificationHistoryScreen />);
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockGetLogs).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reveal a pending previous-owner history response while bridging', async () => {
+    let resolveOld!: (value: unknown[]) => void;
+    mockGetLogs.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
+    const screen = renderWithProviders(<NotificationHistoryScreen />);
+    mockUserId = 8; mockDetailId = '81';
+    screen.rerender(<NotificationHistoryScreen />);
+    await act(async () => { resolveOld([{ id: 1, title: '旧账号私密推送', content: '旧内容' }]); });
+    expect(screen.queryByText('旧账号私密推送')).toBeNull();
+    expect(mockGetLogs).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['/notification-detail?id=83', '/notification-history?detailId=83'])('keeps workout destinations before generic payload link %s', async deep_link => {
+    mockGetLogs.mockResolvedValue([{
+      id: 83, notification_type: 'workout_analysis', title: '运动分析', content: '内容',
+      status: 'sent', channel: 'ios_apns', data: { deep_link, workout_id: 123 }, deep_link,
+    }]);
+    const screen = renderWithProviders(<NotificationHistoryScreen />);
+    fireEvent.press(await screen.findByLabelText('打开 运动分析'));
+    expect(mockPush).toHaveBeenCalledWith('/workout-detail?id=123');
+  });
+
+  it('preserves legacy screen even when the generic compatibility link is inside data', async () => {
+    mockGetLogs.mockResolvedValue([{
+      id: 84, notification_type: 'ai_advice', title: '睡眠建议', content: '内容', status: 'sent',
+      channel: 'ios_apns', data: { deep_link: '/notification-history?detailId=84', screen: 'sleep' },
+    }]);
+    const screen = renderWithProviders(<NotificationHistoryScreen />);
+    fireEvent.press(await screen.findByLabelText('打开 睡眠建议'));
+    expect(mockPush).toHaveBeenCalledWith('/sleep');
   });
 
 });

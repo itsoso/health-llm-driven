@@ -54,7 +54,7 @@ def test_legacy_detail_and_history_fallback(client, db, auth_user_and_headers):
     assert detail['content'] == 'Saved summary'
     assert detail['content_source'] == 'saved_notification_text'
     logs = client.get('/api/v1/notification/logs', headers=headers).json()['logs']
-    assert logs[0]['deep_link'] == f'/notification-detail?id={row.id}'
+    assert logs[0]['deep_link'] == f'/notification-history?detailId={row.id}'
 
 
 @pytest.mark.asyncio
@@ -187,3 +187,16 @@ def test_long_saved_notice_keeps_page_full_but_review_marks_limit(db, auth_user_
     assert '"content_truncated_for_review": true' in review
     assert '合成正文' * 4000 in review
     assert '合成正文' * 4001 not in review
+
+
+def test_review_does_not_infer_complete_original_or_delivery_from_legacy_text(db, auth_user_and_headers):
+    from app.services.notification.detail import read_notification_detail, notification_review_context
+    user, _ = auth_user_and_headers
+    row = _notice(db, user.id)
+    review = notification_review_context(read_notification_detail(db, user.id, row.id))
+    evidence = json.loads(review.split('\n')[-1])
+    assert evidence['text_completeness'] == 'unknown_may_be_summary'
+    assert evidence['content_truncated_for_review'] is False
+    assert 'sent_at' not in evidence and 'status' not in evidence
+    assert '也不能称其为完整正文' in review
+    assert '不得据此判断推送是否发出、送达或被看到' in review

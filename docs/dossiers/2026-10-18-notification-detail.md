@@ -1,6 +1,6 @@
 # 推送详情与历史解读
 
-- 当前阶段：S5 implementation；状态 in_progress。
+- 当前阶段：S5 verification；状态 in_progress（发布和界面验收待外部条件）。
 - 用户原话：“睡眠质量下滑等推送需要有一个landing页面点进去可以分析，现在无法点击。”
 - 四问：对象为本人推送；场景为历史行和推送点击；结果为读原文并解读；不新增自动完成或处方。
 - 父 trace：`docs/_generated/harness-runs/40a67f45f448.jsonl`。
@@ -27,11 +27,19 @@ GPS 候选已遇 GitHub OAuth workflow scope 不足；native runtime 变化不�
 - 冻结运行的 CI-mode 相关集成：412 passed（`/tmp/reva-notification-ci-mode-frozen.log`）。包括 notification/push 全套、Agent 安全/健康证据流程、所选报告兼容。
 - PostgreSQL：本人详情/选择器/API 16 passed；独立 delivery/静默/去重 74 passed。旧 quiet-hours 测试用 naive 模拟真实 aware 时钟，PG 先失败；仅修正测试时钟与本地小时断言后通过，生产时间规则未改。
 - Mobile：4 suites / 64 tests passed，TypeScript 与定向 ESLint exit 0；fatal Python Ruff、git diff-check、System Map/nav/doc drift 通过。API 类型生成器在锁定环境同步 Mobile/Web 生成物。
-- 独立安全审查待固定提交后执行；这些结果是本地/合成证据，不是真实设备或真实模型成功。
+- 初始候选 `c24b8e211d2d84ee98ed51689d598fe2d582e094` 已提交；后续兼容性和真实模型发现见下节。测试使用合成数据，未修改真实用户通知。
 
 ## 尚未解除的交付 Gate
 
-- G3 live LLM：实际运行 `harness_llm_regression_gate.py --include-live-llm`，offline 12+50 用例与 trajectory checks 通过，但 live orchestrator 5 errored。环境缺少 TOKENPLAN/OpenAI 配置，回退被 `recipient_not_disclosed` 阻断。未绕过 consent/disclosure，未设置已通过确认变量或 waiver。
+- G3 初始 live LLM 因测试环境缺少模型配置失败，保留 `recipient_not_disclosed` 证据；随后仅载入既有模型配置白名单、隔离内存数据库并使用正式合成同意流程，官方 gate 67/67 和 trajectories 通过。没有绕过 consent/disclosure 或使用 waiver。
 - 当前 GitHub OAuth scopes 新鲜只读回查为 `admin:public_key, gist, read:org, repo`，无 workflow；前置 GPS 提交修改 workflow，不能推送整批候选。未重试被拒发布或切换身份绕过。
 - 模拟器：CUA 实际返回 Mac locked，已请求手动解锁；未进行界面验收，未用其他工具绕过。
-- G5/G6：未 push/deploy/OTA，不能宣称用户截图问题已在线解决。完成局部审查后保留可恢复候选，待真实模型配置、workflow 授权和模拟器可用后续行；native runtime 兼容仍须按 GPS 候选发布条件核验。
+- G5/G6：未 push/deploy/OTA，不能宣称用户截图问题已在线解决。完成局部审查后保留可恢复候选，待 workflow 授权和模拟器可用后续行；native runtime 兼容仍须按 GPS 候选发布条件核验。
+
+## G4 反馈与兼容修正
+
+- 初次固定提交独立审查给出 GO，追加旧版 App 兼容审查后改判 NO-GO：服务端直接返回新增详情路由，会令尚未升级的 App 显示页面不存在。改用既有 history 路由携带 detailId；新版认证后一次跳转详情，旧版至少可打开历史。没有以初次 GO 覆盖后续发现。
+- 桥接测试先 RED（Mobile 7 项、delivery 12 项），再 GREEN。保留 screen/运动/用药专属目的地；校验非法、数组、溢出 ID；覆盖登录、StrictMode、重复渲染、账号切换及迟到响应。Mobile 4 suites / 79 passed，tsc 与 ESLint 无错误。Delivery 聚焦 52 passed。
+- 定向真实 Agent 使用合成旧睡眠推送、正式同意及真实供应商，完成回答且无写回执。首次测试缺少临时 HMAC key，修正隔离测试配置后通过；不使用生产密钥或数据库。实际回答暴露完整性误读和对空 sent_at 的投递猜测，已收窄证据投影并明确未知，不把本轮未截断等同完整原文。新增回归断言与最终真实模型复测。
+- 最终冻结后相关 CI-mode 集成 414 passed（`/tmp/reva-notification-ci-mode-final.log`）；PostgreSQL 本人详情/选择器/API 28 passed（`/tmp/reva-notification-postgres-final.log`）。地图与导航生成物已同步，检查通过。
+- 最终定向真实 Agent 复测完成：`/tmp/reva-notification-live-probe-final.log` exit 0，实际供应商调用 2 条 usage，turn complete / read_only=true、无写回执。人工核读回答明确“完整性未知”“保存时间不是采样时间”“投递状态未知”，未替换为今天的个人数据。样本为合成数据，不等同真实账户验收。
