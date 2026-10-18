@@ -9,6 +9,7 @@ import { revaColors as C, type RevaStatus } from '../../constants/revaTheme';
 import { Button, Card, Chip, DayProgress, Icon, LabRow, MetricTile, SectionLabel, TopBar } from './RevaKit';
 import { useActiveCycle, useMetabolicProfile, useRecheckCycle, useStartCycle, useTreatmentEffect } from '../../hooks/useHealthOs';
 import type { BiomarkerObs, OutcomeMetric } from '../../services/healthOs';
+import { backOrChat } from '../../utils/backOrChat';
 
 const body = { padding: 16, paddingBottom: 32, gap: 22 } as const;
 
@@ -154,12 +155,18 @@ export function InterventionCycleView() {
   const router = useRouter();
   // 裁决只在已复查时拉(零复查周期不空跑);hooks 须在早返回前无条件调用。
   const effect = useTreatmentEffect(cycle?.id, cycle?.latest_snapshot_id != null);
-  if (isLoading) return <Loading />;
+  const onBack = () => backOrChat(router);
+  if (isLoading) return (
+    <>
+      <TopBar title="干预周期" onBack={onBack} />
+      <Loading />
+    </>
+  );
 
   if (!cycle) {
     return (
       <>
-        <TopBar sub="代谢健康 + 运动恢复" title="干预周期" />
+        <TopBar sub="代谢健康 + 运动恢复" title="干预周期" onBack={onBack} />
         <ScrollView contentContainerStyle={body}>
           <Card>
             <Text style={{ fontFamily: 'NotoSansSC', fontWeight: '700', fontSize: 16, color: C.ink1 }}>
@@ -186,7 +193,7 @@ export function InterventionCycleView() {
 
   return (
     <>
-      <TopBar sub={cycle.status === 'active' ? '进行中' : cycle.status} title="代谢干预 · 90 天" />
+      <TopBar sub={cycle.status === 'active' ? '进行中' : cycle.status} title="代谢干预 · 90 天" onBack={onBack} />
       <ScrollView contentContainerStyle={body}>
         <Card><DayProgress day={day} total={total} /></Card>
 

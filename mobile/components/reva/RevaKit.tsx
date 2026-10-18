@@ -117,11 +117,20 @@ export function Button({ children, variant = 'primary', size = 'md', icon, onPre
   );
 }
 
-export function TopBar({ title, sub, mark = true, right, dark }: { title: string; sub?: string; mark?: boolean; right?: React.ReactNode; dark?: boolean }) {
+export function TopBar({ title, sub, mark = true, right, dark, onBack }: { title: string; sub?: string; mark?: boolean; right?: React.ReactNode; dark?: boolean; onBack?: () => void }) {
   return (
     <View style={[k.topbar, { backgroundColor: dark ? C.focusBg : C.paper, borderBottomColor: dark ? C.focusLine : C.line }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11, flex: 1 }}>
-        {mark ? <RevaMark /> : null}
+        {onBack ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="返回"
+            onPress={onBack}
+            style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+          >
+            <Icon name="chevron-left" size={26} color={dark ? C.focusInk1 : C.ink1} />
+          </Pressable>
+        ) : mark ? <RevaMark /> : null}
         <View style={{ flex: 1 }}>
           {sub ? <Text style={{ fontSize: 12, fontWeight: '600', color: dark ? C.focusInk2 : C.ink3 }}>{sub}</Text> : null}
           <Text style={{ fontSize: 21, fontWeight: '800', letterSpacing: 0, color: dark ? C.focusInk1 : C.ink1 }} numberOfLines={1}>{title}</Text>
