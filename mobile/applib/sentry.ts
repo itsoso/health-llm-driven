@@ -11,6 +11,7 @@
 
 import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
+import { protectLocationTelemetry } from './locationTelemetry';
 
 const SENTRY_DSN =
   process.env.EXPO_PUBLIC_SENTRY_DSN ||
@@ -28,8 +29,9 @@ export function configureSentryForAppMode(mode: 'cloud' | 'local'): void {
     environment: __DEV__ ? 'development' : 'production',
     sendDefaultPii: false,
     tracesSampleRate: mode === 'cloud' ? 0.1 : 0,
-    beforeSend: mode === 'cloud' ? undefined : () => null,
-    beforeSendTransaction: mode === 'cloud' ? undefined : () => null,
+    beforeSend: mode === 'cloud' ? protectLocationTelemetry : () => null,
+    beforeSendTransaction: mode === 'cloud' ? protectLocationTelemetry : () => null,
+    beforeBreadcrumb: mode === 'cloud' ? protectLocationTelemetry : () => null,
   });
 }
 

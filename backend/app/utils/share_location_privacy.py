@@ -37,7 +37,12 @@ def install_location_log_filters():
 
 def _contains_location(value):
     if isinstance(value, str):
-        return "/share-location/" in value or "restapi.amap.com" in value or "app.api.share_location" in value
+        return any(marker in value for marker in (
+            "/share-location/", "restapi.amap.com", "app.api.share_location",
+            "/daily-journeys", "app.api.daily_journey",
+            "app.services.daily_journey", "app.models.daily_journey",
+            "/daily_journey.py",
+        ))
     if isinstance(value, dict):
         return any(_contains_location(v) for v in value.values())
     if isinstance(value, (list, tuple)):

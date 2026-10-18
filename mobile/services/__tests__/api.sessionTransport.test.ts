@@ -79,4 +79,26 @@ describe('actual Axios session dispatch', () => {
     await api.post('/auth/login/json', {}, { adapter });
     expect(adapter.mock.calls[0][0].headers.get('Authorization')).toBeUndefined();
   });
+
+  it('rejects a persisted journey batch bound to a different credential before dispatch', async () => {
+    const { default: api, setRuntimeAuthToken } = require('../api');
+    setRuntimeAuthToken('synthetic-new-owner');
+    const adapter = jest.fn();
+    await expect(api.post('/daily-journeys/sessions/synthetic/points', {}, {
+      adapter, __revaExpectedAuthToken: 'synthetic-old-owner',
+    })).rejects.toThrow('auth_session_changed');
+    expect(adapter).not.toHaveBeenCalled();
+  });
+
+  it('exposes a copy of the current dispatch identity and advances it even on same-token relogin', () => {
+    const { getAuthSessionSnapshot, setRuntimeAuthToken } = require('../api');
+    setRuntimeAuthToken('synthetic-owner');
+    const before = getAuthSessionSnapshot();
+    expect(before).toMatchObject({ token: 'synthetic-owner', initialized: true });
+    setRuntimeAuthToken(null);
+    setRuntimeAuthToken('synthetic-owner');
+    expect(getAuthSessionSnapshot().generation).toBeGreaterThan(before.generation);
+    before.token = 'caller-mutated';
+    expect(getAuthSessionSnapshot().token).toBe('synthetic-owner');
+  });
 });

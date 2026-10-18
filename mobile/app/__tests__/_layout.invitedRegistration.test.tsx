@@ -85,6 +85,8 @@ jest.mock('../../components/notifications/NotificationBanner', () => () => null)
 jest.mock('../../components/updates/AppUpdateBanner', () => () => null);
 jest.mock('../../components/RootErrorBoundary', () => ({ children }: { children: React.ReactNode }) => children);
 jest.mock('../../services/backgroundLocationTask', () => ({ registerBackgroundLocationTask: jest.fn() }));
+const mockJourneyInitialize = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../services/dailyJourneyCapture', () => ({ dailyJourneyCapture: { initialize: () => mockJourneyInitialize() } }));
 jest.mock('../../config/releaseCapabilities', () => ({ getReleaseCapabilities: () => ({ backgroundLocation: false }) }));
 jest.mock('../../services/dietPhotoDraftStorage', () => ({
   loadDietPhotoDraft: jest.fn().mockResolvedValue(null),
@@ -141,6 +143,15 @@ describe('invited registration root integration', () => {
     mockLockReady = true;
     mockLockInitializationFailed = false;
     mockNavigationKey = 'root';
+  });
+
+  it('checks an existing journey only after authenticated hydration; never requests a new start', () => {
+    const view = render(<AppContent />);
+    expect(mockJourneyInitialize).not.toHaveBeenCalled();
+    mockAuthenticated = true;
+    mockSession = { mode: 'cloud_account', cloudUser: { id: 7 } };
+    view.rerender(<AppContent />);
+    expect(mockJourneyInitialize).toHaveBeenCalledTimes(1);
   });
 
   it('defers notification consumption until the app is unlocked and navigation is mounted', () => {

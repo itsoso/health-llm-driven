@@ -11,10 +11,15 @@ const mockPush = jest.fn();
 const mockLogout = jest.fn();
 const mockRequestAccountDeletion = jest.fn();
 const mockGetAccountDeletionRequest = jest.fn();
+const mockClearDailyJourney = jest.fn();
+const mockRecoverBackgroundAuth = jest.fn();
+const mockSetQueryData = jest.fn();
+let mockDeletionRequest: any = null;
+let mockAuthSession = { generation: 1, token: 'owner-A', initialized: true };
 const mockCheckNow = jest.fn();
 const mockApiPost = jest.fn();
 const mockInvalidateQueries = jest.fn();
-const mockQueryClient = { invalidateQueries: mockInvalidateQueries };
+const mockQueryClient = { invalidateQueries: mockInvalidateQueries, setQueryData: mockSetQueryData };
 const mockReadGPSRefreshStatus = jest.fn();
 let mockGPSRefreshStatusListener: ((status: { state: string }) => void) | null = null;
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
@@ -37,6 +42,7 @@ jest.mock('@tanstack/react-query', () => ({
     if (key.includes('profile')) {
       return { data: mockProfile };
     }
+    if (key.includes('accountDeletionRequest')) return { data: mockDeletionRequest };
     if (key.includes('garminStatus')) {
       return { data: mockGarminStatus, refetch: jest.fn() };
     }
@@ -113,13 +119,19 @@ jest.mock('../../components/AppleHealthRow', () => {
 
 jest.mock('../../services/api', () => ({
   __esModule: true,
+  getAuthSessionSnapshot: () => ({ ...mockAuthSession }),
   default: {
     get: jest.fn(),
     post: (...args: unknown[]) => mockApiPost(...args),
   },
 }));
 
+jest.mock('../../services/dailyJourneyCapture', () => ({
+  dailyJourneyCapture: { clearForAuthChange: (...args: unknown[]) => mockClearDailyJourney(...args) },
+}));
+
 jest.mock('../../services/auth', () => ({
+  recoverBackgroundAuthAccess: (...args: unknown[]) => mockRecoverBackgroundAuth(...args),
   requestAccountDeletion: (...args: unknown[]) => mockRequestAccountDeletion(...args),
   getAccountDeletionRequest: (...args: unknown[]) => mockGetAccountDeletionRequest(...args),
   authLogoutErrorCode: (error: unknown) => (
@@ -144,6 +156,11 @@ describe('SettingsScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCanGoBack = false;
+    mockDeletionRequest = null;
+    mockAuthSession = { generation: 1, token: 'owner-A', initialized: true };
+    mockClearDailyJourney.mockResolvedValue(undefined);
+    mockRecoverBackgroundAuth.mockResolvedValue(undefined);
+    mockSetQueryData.mockImplementation((_key, value) => { mockDeletionRequest = value; });
     mockGarminStatus = { health: 'healthy', minutes_since_last_sync: 3 };
     mockProfile = {
       use_manual_location: false,
@@ -403,6 +420,85 @@ describe('SettingsScreen', () => {
       expect.stringContaining('7 天'),
       expect.any(Array),
     );
+    alertSpy.mockRestore();
+  });
+
+  it('stops and clears daily capture only after the deletion request is confirmed', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+      if (title === '删除账号与数据') void buttons?.find(button => button.style === 'destructive')?.onPress?.();
+    });
+    const view = render(<SettingsScreen />);
+    fireEvent.press(view.getByText('删除账号与数据'));
+    await waitFor(() => expect(mockClearDailyJourney).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockRecoverBackgroundAuth).toHaveBeenCalledTimes(1));
+    expect(mockRequestAccountDeletion.mock.invocationCallOrder[0]).toBeLessThan(mockClearDailyJourney.mock.invocationCallOrder[0]);
+    expect(mockClearDailyJourney.mock.invocationCallOrder[0]).toBeLessThan(mockRecoverBackgroundAuth.mock.invocationCallOrder[0]);
+    expect(mockSetQueryData).toHaveBeenCalledWith(['accountDeletionRequest'], expect.objectContaining({ request_id: 42, status: 'requested' }));
+    expect(mockLogout).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it.each(['capture', 'credential'])('retains accepted deletion status when %s cleanup fails', async phase => {
+    if (phase === 'capture') mockClearDailyJourney.mockRejectedValueOnce(new Error('storage error'));
+    else mockRecoverBackgroundAuth.mockRejectedValueOnce(new Error('keychain error'));
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+      if (title === '删除账号与数据') void buttons?.find(button => button.style === 'destructive')?.onPress?.();
+    });
+    const view = render(<SettingsScreen />);
+    fireEvent.press(view.getByText('删除账号与数据'));
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('删除请求已提交', expect.stringContaining('本机行程清理未完成'), expect.any(Array)));
+    expect(mockRecoverBackgroundAuth).toHaveBeenCalledTimes(1);
+    expect(mockSetQueryData).toHaveBeenCalledWith(['accountDeletionRequest'], expect.objectContaining({ status: 'requested' }));
+    expect(alertSpy.mock.calls.some(([title]) => title === '提交失败')).toBe(false);
+    alertSpy.mockRestore();
+  });
+
+  it('does not claim acceptance or clear capture after deletion request failure', async () => {
+    mockRequestAccountDeletion.mockRejectedValueOnce(new Error('offline'));
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+      if (title === '删除账号与数据') void buttons?.find(button => button.style === 'destructive')?.onPress?.();
+    });
+    const view = render(<SettingsScreen />);
+    fireEvent.press(view.getByText('删除账号与数据'));
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('提交失败', expect.any(String)));
+    expect(mockClearDailyJourney).not.toHaveBeenCalled();
+    expect(mockRecoverBackgroundAuth).not.toHaveBeenCalled();
+    expect(mockSetQueryData).not.toHaveBeenCalled();
+    expect(alertSpy.mock.calls.some(([title]) => title === '删除请求已提交')).toBe(false);
+    alertSpy.mockRestore();
+  });
+
+  it('ignores an old account deletion acknowledgement after switching accounts', async () => {
+    let finishRequest: ((value: unknown) => void) | undefined;
+    mockRequestAccountDeletion.mockImplementationOnce(() => new Promise(resolve => { finishRequest = resolve; }));
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+      if (title === '删除账号与数据') void buttons?.find(button => button.style === 'destructive')?.onPress?.();
+    });
+    const view = render(<SettingsScreen />);
+    fireEvent.press(view.getByText('删除账号与数据'));
+    await waitFor(() => expect(mockRequestAccountDeletion).toHaveBeenCalledTimes(1));
+    mockAuthSession = { generation: 2, token: 'owner-B', initialized: true };
+    await act(async () => { finishRequest?.({ request_id: 42, status: 'requested' }); });
+    expect(mockClearDailyJourney).not.toHaveBeenCalled();
+    expect(mockRecoverBackgroundAuth).not.toHaveBeenCalled();
+    expect(mockSetQueryData).not.toHaveBeenCalled();
+    expect(alertSpy.mock.calls.some(([title]) => title === '删除请求已提交')).toBe(false);
+    alertSpy.mockRestore();
+  });
+
+  it('does not change the next account credential after local cleanup awaits', async () => {
+    let finishCleanup: (() => void) | undefined;
+    mockClearDailyJourney.mockImplementationOnce(() => new Promise<void>(resolve => { finishCleanup = resolve; }));
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+      if (title === '删除账号与数据') void buttons?.find(button => button.style === 'destructive')?.onPress?.();
+    });
+    const view = render(<SettingsScreen />);
+    fireEvent.press(view.getByText('删除账号与数据'));
+    await waitFor(() => expect(mockClearDailyJourney).toHaveBeenCalledTimes(1));
+    mockAuthSession = { generation: 2, token: 'owner-B', initialized: true };
+    await act(async () => { finishCleanup?.(); });
+    expect(mockRecoverBackgroundAuth).not.toHaveBeenCalled();
+    expect(alertSpy.mock.calls.some(([title]) => title === '删除请求已提交')).toBe(false);
     alertSpy.mockRestore();
   });
 

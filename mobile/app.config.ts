@@ -28,6 +28,9 @@ const IPAD_ORIENTATIONS = [
 ];
 const IOS_BUILD_NUMBER = process.env.REVA_IOS_BUILD_NUMBER?.trim();
 const LOCAL_UPDATES_CHANNEL = process.env.REVA_LOCAL_UPDATES_CHANNEL;
+const DAILY_JOURNEY_RUNTIME = '1.3.6';
+const JOURNEY_LOCATION_USAGE = '用于查询天气、空气质量；你主动同意时单次查找餐厅或记录足迹；主动开启“记录今天行程”后记录路线与停留，可随时暂停、结束或删除';
+const JOURNEY_BACKGROUND_USAGE = '仅在你主动开启“记录今天行程”后，在锁屏或切换应用时继续记录当天路线与停留；你可随时暂停、结束或删除，当天结束后不再保存新的位置';
 
 const BUNDLE_ID_BASE = 'life.executor.health';
 const APP_LINK_DOMAIN = 'health.executor.life';
@@ -146,7 +149,21 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   )) {
     throw new Error('Local updates channel does not match the native app variant/capabilities');
   }
-  const basePlugins = withoutOptionalNativePlugins(config.plugins);
+  const dailyJourney = config.version === DAILY_JOURNEY_RUNTIME
+    && !IS_ANDROID_INTERNAL && process.env.EAS_BUILD_PLATFORM !== 'android';
+  const basePlugins = withoutOptionalNativePlugins(config.plugins).map((plugin) => {
+    if (pluginName(plugin) !== 'expo-location') return plugin;
+    const options = Array.isArray(plugin) ? plugin[1] ?? {} : {};
+    return ['expo-location', {
+      ...options,
+      ...(dailyJourney ? { locationWhenInUsePermission: JOURNEY_LOCATION_USAGE } : {}),
+      locationAlwaysPermission: false,
+      locationAlwaysAndWhenInUsePermission: dailyJourney ? JOURNEY_BACKGROUND_USAGE : false,
+      isIosBackgroundLocationEnabled: dailyJourney,
+      isAndroidBackgroundLocationEnabled: false,
+      isAndroidForegroundServiceEnabled: false,
+    }] as [string, Record<string, unknown>];
+  });
   const baseInfoPlist = removeKeys((config.ios?.infoPlist ?? {}) as Record<string, any>, [
     'UISupportedInterfaceOrientations~ipad',
     'UISupportedInterfaceOrientations~pad',
@@ -242,11 +259,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...(INCLUDE_ROKID ? {
         LSApplicationQueriesSchemes: ROKID_QUERY_SCHEMES,
         RokidCXRAuthCallbackScheme: ROKID_CALLBACK_SCHEME,
-        UIBackgroundModes: ['bluetooth-central'],
         NSBluetoothAlwaysUsageDescription:
           '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
         NSBluetoothPeripheralUsageDescription:
           '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
+      } : {}),
+      ...((dailyJourney || INCLUDE_ROKID) ? {
+        UIBackgroundModes: [...(dailyJourney ? ['location'] : []), ...(INCLUDE_ROKID ? ['bluetooth-central'] : [])],
+      } : {}),
+      ...(dailyJourney ? {
+        NSLocationWhenInUseUsageDescription: JOURNEY_LOCATION_USAGE,
+        NSLocationAlwaysAndWhenInUseUsageDescription: JOURNEY_BACKGROUND_USAGE,
       } : {}),
       ...(INCLUDE_SIRI ? {
         NSSiriUsageDescription: '使用 Siri 语音快速记录或分析健康数据',
@@ -274,7 +297,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         // the native configuration's presence, never the Maps key itself.
         androidGoogleMapsConfigured: typeof config.android?.config?.googleMaps?.apiKey === 'string'
           && config.android.config.googleMaps.apiKey.trim().length > 0,
-        backgroundLocation: !IS_ANDROID_INTERNAL && (IS_DEV || IS_PREVIEW),
+        // Legacy automatic city refresh stays disabled in production. The new
+        // dailyJourney capability is consumed only by explicit recording sessions.
+        backgroundLocation: !IS_ANDROID_INTERNAL && process.env.EAS_BUILD_PLATFORM !== 'android' && (IS_DEV || IS_PREVIEW),
+        dailyJourney,
         rokid: INCLUDE_ROKID,
         siri: INCLUDE_SIRI,
         watch: INCLUDE_WATCH,

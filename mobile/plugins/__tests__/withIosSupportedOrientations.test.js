@@ -76,3 +76,28 @@ describe('withIosSupportedOrientations', () => {
     expect(infoPlist.NSLocationWhenInUseUsageDescription).toBe('foreground only');
   });
 });
+
+
+describe('daily journey generated native plist', () => {
+  it('preserves only authorized location and strips legacy always permission', () => {
+    const result = _applyIosReleaseScopeToInfoPlist({
+      UIBackgroundModes: ['location', 'fetch', 'audio', 'processing'],
+      NSLocationAlwaysUsageDescription: 'legacy',
+      NSLocationAlwaysAndWhenInUseUsageDescription: '记录今天行程',
+    }, true);
+    expect(result.UIBackgroundModes).toEqual(['location']);
+    expect(result.NSLocationAlwaysAndWhenInUseUsageDescription).toBe('记录今天行程');
+    expect(result.NSLocationAlwaysUsageDescription).toBeUndefined();
+  });
+  it('retains required declarations in the actual generated main-app plist', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'journey-plist-'));
+    try {
+      const file = path.join(root, 'app', 'Info.plist');
+      writeInfoPlist(file, { CFBundleIdentifier: 'life.executor.health', UIBackgroundModes: ['location', 'fetch'], NSLocationAlwaysAndWhenInUseUsageDescription: '记录今天行程' });
+      _patchGeneratedInfoPlist(root, { projectName: 'app' }, false, true);
+      const actual = plist.parse(fs.readFileSync(file, 'utf8'));
+      expect(actual.UIBackgroundModes).toEqual(['location']);
+      expect(actual.NSLocationAlwaysAndWhenInUseUsageDescription).toBe('记录今天行程');
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+});

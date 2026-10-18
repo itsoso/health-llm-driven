@@ -21,6 +21,7 @@ jest.mock('../api', () => ({
   TOKEN_KEY: 'auth_token',
   setOnUnauthorized: jest.fn(),
   setRuntimeAuthToken: jest.fn(),
+  getAuthSessionSnapshot: jest.fn(() => ({ initialized: false, token: null, generation: 0 })),
   isUsableNativeAuthToken: (token: string | null | undefined) => (
     Boolean(token && token !== '__web_cookie_session__')
   ),
@@ -33,7 +34,7 @@ jest.mock('../../modules/shared-keychain', () => ({
 }));
 
 import {
-  login, logout, getToken, isLoggedIn, fetchCurrentUser,
+  login, logout, getToken, isLoggedIn, fetchCurrentUser, setBackgroundAuthAccess, recoverBackgroundAuthAccess,
   requestPhoneCode, loginByPhoneCode, setPassword, changePassword,
   verifyPhoneCode, completeInvitedRegistration,
   RegistrationFlowError, registrationAuthErrorCode,
@@ -100,6 +101,60 @@ describe('services/auth', () => {
     mockedSave.mockResolvedValue(0);
     mockedDelete.mockResolvedValue(undefined);
     mockedReadShared.mockResolvedValue(null);
+  });
+
+  describe('explicit background auth access', () => {
+    it('changes only the matching canonical credential and verifies it', async () => {
+      secureItems[TOKEN_KEY] = 'journey-token';
+      await setBackgroundAuthAccess(true, 'journey-token');
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(TOKEN_KEY, 'journey-token', {
+        keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+      });
+      await setBackgroundAuthAccess(false, 'journey-token');
+      expect(SecureStore.setItemAsync).toHaveBeenLastCalledWith(TOKEN_KEY, 'journey-token', {
+        keychainAccessible: SecureStore.WHEN_UNLOCKED,
+      });
+      expect(mockedSetRuntimeToken).not.toHaveBeenCalled();
+      expect(mockedSave).not.toHaveBeenCalled();
+    });
+    it('rejects another account or durable logout without rewriting credentials', async () => {
+      secureItems[TOKEN_KEY] = 'new-account';
+      await expect(setBackgroundAuthAccess(true, 'old-account')).rejects.toThrow();
+      await AsyncStorage.setItem(LOGOUT_TOMBSTONE_KEY, '1');
+      await expect(setBackgroundAuthAccess(true, 'new-account')).rejects.toThrow();
+      expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+    });
+    it('rolls back expanded access if the user action becomes stale during persistence', async () => {
+      secureItems[TOKEN_KEY] = 'journey-token';
+      let current = true;
+      (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key, value) => { secureItems[key] = value; if (key === TOKEN_KEY) current = false; });
+      await expect(setBackgroundAuthAccess(true, 'journey-token', { isCurrent: () => current })).rejects.toThrow();
+      expect(SecureStore.setItemAsync).toHaveBeenLastCalledWith(TOKEN_KEY, 'journey-token', {
+        keychainAccessible: SecureStore.WHEN_UNLOCKED,
+      });
+    });
+    it('recovers expanded access after process death before a journey record is persisted', async () => {
+      secureItems[TOKEN_KEY] = 'journey-token';
+      await setBackgroundAuthAccess(true, 'journey-token');
+      expect(secureItems.daily_journey_background_auth_v1).toBe('pending');
+      await recoverBackgroundAuthAccess();
+      expect(SecureStore.setItemAsync).toHaveBeenLastCalledWith(TOKEN_KEY, 'journey-token', { keychainAccessible: SecureStore.WHEN_UNLOCKED });
+      expect(secureItems.daily_journey_background_auth_v1).toBeUndefined();
+    });
+    it('retains recovery intent on failed downgrade and removes it on logout', async () => {
+      secureItems[TOKEN_KEY] = 'journey-token';
+      await setBackgroundAuthAccess(true, 'journey-token');
+      (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(new Error('locked'));
+      await expect(setBackgroundAuthAccess(false, 'journey-token')).rejects.toThrow();
+      expect(secureItems.daily_journey_background_auth_v1).toBe('pending');
+      await logout();
+      expect(secureItems.daily_journey_background_auth_v1).toBeUndefined();
+    });
+    it('surfaces a failed write instead of claiming background readiness', async () => {
+      secureItems[TOKEN_KEY] = 'journey-token';
+      (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(new Error('locked'));
+      await expect(setBackgroundAuthAccess(true, 'journey-token')).rejects.toThrow('background_auth_access_failed');
+    });
   });
 
   describe('login', () => {

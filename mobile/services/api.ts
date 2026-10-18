@@ -13,6 +13,11 @@ let authGeneration = 0;
 let authInitialized = false;
 const authChangeListeners = new Set<() => void>();
 
+/** Snapshot only: callers cannot mutate the transport's credential or generation. */
+export function getAuthSessionSnapshot(): { generation: number; token: string | null; initialized: boolean } {
+  return { generation: authGeneration, token: runtimeAuthToken, initialized: authInitialized };
+}
+
 export function subscribeAuthSessionChange(listener: () => void): () => void {
   authChangeListeners.add(listener);
   return () => { authChangeListeners.delete(listener); };
@@ -120,6 +125,10 @@ api.interceptors.request.use(
         authInitialized = true;
         setAIConsentIdentity(runtimeAuthToken);
       }
+    }
+    const expectedToken = (config as typeof config & { __revaExpectedAuthToken?: string }).__revaExpectedAuthToken;
+    if (expectedToken !== undefined && (!isUsableNativeAuthToken(expectedToken) || expectedToken !== token)) {
+      throw new Error('auth_session_changed');
     }
     await enforceAppEgressAllowed({
       explicitCloudAI,

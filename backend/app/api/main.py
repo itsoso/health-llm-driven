@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import (
     auth,
     journey,
+    daily_journey,
     share_location,
     admin,
     admin_decisions,
@@ -177,6 +178,7 @@ from app.api import life_navigation
 
 api_router = APIRouter()
 api_router.include_router(journey.router)
+api_router.include_router(daily_journey.router)
 api_router.include_router(share_location.router)
 
 # ── Auth & Access Control ──────────────────────────────────────────

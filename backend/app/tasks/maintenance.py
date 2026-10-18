@@ -10,6 +10,27 @@ from app.utils.timezone import get_china_now
 logger = logging.getLogger(__name__)
 
 
+@celery_app.task(time_limit=55, name="app.tasks.maintenance.purge_expired_daily_journeys")
+def purge_expired_daily_journeys():
+    """Bounded physical retention sweep; reads already exclude expired data."""
+    from app.services.daily_journey import purge_expired
+
+    try:
+        total = 0
+        with SessionLocal() as db:
+            for _ in range(10):
+                count = purge_expired(db, batch_size=100)
+                total += count
+                if count < 100:
+                    break
+        logger.info("daily journey retention deleted_sessions=%s", total)
+        return {"deleted_sessions": total, "batch_limit_reached": count == 100}
+    except Exception:
+        logger.error("daily journey retention failed")
+    # Do not attach SQL parameters or sensitive crypto errors to Celery logs.
+    raise RuntimeError("daily_journey_retention_failed") from None
+
+
 def _agent_runtime_unleased_grace_seconds() -> int:
     from app.config import settings
 

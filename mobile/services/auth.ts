@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import type { components as ApiComponents } from '../types/api.generated';
 import api, {
   TOKEN_KEY,
+  getAuthSessionSnapshot,
   isUsableNativeAuthToken,
   setRuntimeAuthToken,
 } from './api';
@@ -148,6 +149,8 @@ function assertOperationCurrent(options?: AuthOperationOptions): void {
   }
 }
 
+const BACKGROUND_AUTH_MARKER = 'daily_journey_background_auth_v1';
+const BACKGROUND_MARKER_OPTIONS = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY };
 let authStorageMutation: Promise<unknown> = Promise.resolve();
 
 function serializeAuthStorageMutation<T>(operation: () => Promise<T>): Promise<T> {
@@ -462,6 +465,8 @@ export async function logout(): Promise<void> {
 
     try {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
+      await SecureStore.deleteItemAsync(BACKGROUND_AUTH_MARKER);
+      if (await SecureStore.getItemAsync(BACKGROUND_AUTH_MARKER)) cleanupFailed = true;
       const remaining = await SecureStore.getItemAsync(TOKEN_KEY);
       if (isUsableNativeAuthToken(remaining)) cleanupFailed = true;
     } catch {
@@ -497,6 +502,7 @@ export async function logout(): Promise<void> {
 async function cleanupLoggedOutResidueBestEffort(): Promise<void> {
   try {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await SecureStore.deleteItemAsync(BACKGROUND_AUTH_MARKER);
   } catch {
     console.warn('[auth] logged-out SecureStore residue cleanup incomplete');
   }
@@ -600,6 +606,85 @@ export async function readPersistedApiAuthToken(): Promise<string | null> {
     const token = await SecureStore.getItemAsync(TOKEN_KEY);
     return isUsableNativeAuthToken(token) ? token : null;
   });
+}
+
+/** Explicit daily-journey opt-in; never installs or changes an account. */
+export async function setBackgroundAuthAccess(
+  enabled: boolean,
+  expectedToken: string,
+  options?: AuthOperationOptions,
+): Promise<void> {
+  const initial = getAuthSessionSnapshot();
+  const current = () => {
+    assertOperationCurrent(options);
+    const session = getAuthSessionSnapshot();
+    if (session.generation !== initial.generation
+      || (session.initialized && session.token !== expectedToken)) {
+      throw new AuthOperationSuperseded();
+    }
+  };
+  return serializeAuthStorageMutation(async () => {
+    let wrote = false;
+    try {
+      current();
+      if (!isUsableNativeAuthToken(expectedToken) || await hasAuthLogoutTombstone()) {
+        throw new AuthOperationSuperseded();
+      }
+      current();
+      if (await SecureStore.getItemAsync(TOKEN_KEY) !== expectedToken) {
+        throw new AuthOperationSuperseded();
+      }
+      current();
+      if (enabled) {
+        // Non-secret recovery intent precedes expanded access, covering a crash
+        // before the capture session's encrypted record is persisted.
+        await SecureStore.setItemAsync(BACKGROUND_AUTH_MARKER, 'pending', BACKGROUND_MARKER_OPTIONS);
+        current();
+      }
+      await SecureStore.setItemAsync(TOKEN_KEY, expectedToken, {
+        keychainAccessible: enabled
+          ? SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY
+          : SecureStore.WHEN_UNLOCKED,
+      });
+      wrote = true;
+      current();
+      if (await SecureStore.getItemAsync(TOKEN_KEY) !== expectedToken) {
+        throw new Error('background_auth_access_verification_failed');
+      }
+      current();
+      if (!enabled) await SecureStore.deleteItemAsync(BACKGROUND_AUTH_MARKER);
+    } catch {
+      // A superseded opt-in must not leave expanded access behind. All token
+      // writers use this same queue; never overwrite a different credential.
+      if (enabled && wrote && await SecureStore.getItemAsync(TOKEN_KEY) === expectedToken) {
+        await SecureStore.setItemAsync(TOKEN_KEY, expectedToken, {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED,
+        });
+      }
+      throw new Error('background_auth_access_failed');
+    }
+  });
+}
+
+/** Called only after capture reconciliation confirms no active/pending record. */
+export async function recoverBackgroundAuthAccess(options?: AuthOperationOptions): Promise<void> {
+  const generation = getAuthSessionSnapshot().generation;
+  const isCurrent = () => generation === getAuthSessionSnapshot().generation
+    && (options?.isCurrent?.() ?? true);
+  const token = await serializeAuthStorageMutation(async () => {
+    assertOperationCurrent({ isCurrent });
+    if (!await SecureStore.getItemAsync(BACKGROUND_AUTH_MARKER, BACKGROUND_MARKER_OPTIONS)) return null;
+    assertOperationCurrent({ isCurrent });
+    const loggedOut = await hasAuthLogoutTombstone();
+    const currentToken = await SecureStore.getItemAsync(TOKEN_KEY);
+    assertOperationCurrent({ isCurrent });
+    if (loggedOut || !isUsableNativeAuthToken(currentToken)) {
+      await SecureStore.deleteItemAsync(BACKGROUND_AUTH_MARKER);
+      return null;
+    }
+    return currentToken;
+  });
+  if (token) await setBackgroundAuthAccess(false, token, { isCurrent });
 }
 
 export async function isLoggedIn(): Promise<boolean> {

@@ -133,6 +133,11 @@ function JourneyContent({ token }: { token: string }) {
       <Text style={s.note}>月度足迹</Text>
     </View>
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+      <Pressable accessibilityRole="button" style={s.card} onPress={() => router.navigate('/daily-journey')}>
+        <Text style={s.heading}>每日行程 · 主动记录今天</Text>
+        <Text style={s.note}>主动开启定位，复盘路线、停留与缺失区间。</Text>
+        <Text style={s.link}>查看每日行程 →</Text>
+      </Pressable>
       <View style={s.between}>
         <Pressable onPress={() => switchMonth(-1)} accessibilityLabel="上个月" style={s.secondary}><Text style={s.link}>←</Text></Pressable>
         <Text style={s.heading}>{month}</Text>

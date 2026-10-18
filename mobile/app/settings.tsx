@@ -5,12 +5,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import api from '../services/api';
+import api, { getAuthSessionSnapshot } from '../services/api';
+import { dailyJourneyCapture } from '../services/dailyJourneyCapture';
 import { manageAIConsent } from '../services/aiConsent';
 import {
   authLogoutErrorCode,
   getAccountDeletionRequest,
   requestAccountDeletion,
+  recoverBackgroundAuthAccess,
 } from '../services/auth';
 import { connectionStatusSummary, fetchDataConnections } from '../services/dataConnections';
 import { useAuth } from '../hooks/useAuth';
@@ -163,16 +165,43 @@ export default function SettingsScreen({ home = false }: { home?: boolean }) {
           onPress: async () => {
             if (deletionRequesting) return;
             setDeletionRequesting(true);
+            const owner = getAuthSessionSnapshot();
+            const isCurrent = () => {
+              const current = getAuthSessionSnapshot();
+              return current.generation === owner.generation && current.token === owner.token;
+            };
             try {
-              const result = await requestAccountDeletion();
+              let result;
+              try {
+                result = await requestAccountDeletion();
+              } catch {
+                if (isCurrent()) Alert.alert('提交失败', '暂未确认删除申请是否保存，请联网刷新申请状态后再操作。');
+                return;
+              }
+              if (!isCurrent()) return;
+              // The server acknowledgement is authoritative even if local cleanup
+              // fails. Cache it before cleanup so a retry cannot claim no request.
+              qc.setQueryData(['accountDeletionRequest'], result);
+              let cleanupFailed = false;
+              try {
+                await dailyJourneyCapture.clearForAuthChange();
+              } catch {
+                cleanupFailed = true;
+              }
+              if (!isCurrent()) return;
+              try {
+                await recoverBackgroundAuthAccess({ isCurrent });
+              } catch {
+                cleanupFailed = true;
+              }
+              if (!isCurrent()) return;
               Alert.alert(
                 '删除请求已提交',
-                result.message || `请求 #${result.request_id ?? '-'} 已记录,预计 ${result.estimated_completion_days ?? 7} 天内完成处理。`,
+                cleanupFailed
+                  ? '申请已提交，本机行程清理未完成，请重新打开应用检查。无需重复提交删除申请，可在账号与隐私查看处理进度。'
+                  : (result.message || `请求 #${result.request_id ?? '-'} 已记录,预计 ${result.estimated_completion_days ?? 7} 天内完成处理。`),
                 [{ text: '知道了' }],
               );
-              await qc.invalidateQueries({ queryKey: ['accountDeletionRequest'] });
-            } catch {
-              Alert.alert('提交失败', '删除请求没有保存成功,请稍后重试。');
             } finally {
               setDeletionRequesting(false);
             }

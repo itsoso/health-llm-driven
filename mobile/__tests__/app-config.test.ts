@@ -104,6 +104,7 @@ describe('app.config app links', () => {
       expect(config.name).toBe('小巴健康 Preview');
       expect(config.updates.enabled).toBe(false);
       expect(config.extra.release.capabilities.backgroundLocation).toBe(false);
+      expect(config.extra.release.capabilities.dailyJourney).toBe(false);
       expect(config.extra.release.capabilities.androidGoogleMapsConfigured).toBe(false);
     });
 
@@ -130,10 +131,10 @@ describe('app.config app links', () => {
     });
   });
 
-  it('separates the native candidate from the incompatible 1.3.4 OTA runtime', () => {
+  it('separates the native candidate from the incompatible 1.3.5 OTA runtime', () => {
     const config = configForVariant('production');
 
-    expect(config.version).toBe('1.3.5');
+    expect(config.version).toBe('1.3.6');
     expect(config.runtimeVersion).toEqual({ policy: 'appVersion' });
     expect(config.extra?.release).toEqual({
       variant: 'production',
@@ -141,6 +142,7 @@ describe('app.config app links', () => {
         advancedSettings: false,
         androidGoogleMapsConfigured: false,
         backgroundLocation: false,
+        dailyJourney: true,
         rokid: false,
         siri: false,
         watch: false,
@@ -273,7 +275,7 @@ describe('app.config app links', () => {
     expect(config.ios.infoPlist.UISupportedInterfaceOrientations).toEqual(['UIInterfaceOrientationPortrait']);
   });
 
-  it('excludes unverified wearable, glasses, Siri, and background capabilities by default', () => {
+  it('excludes unrelated wearable, glasses, Siri, and background capabilities by default', () => {
     const config = configForVariant('production');
     const plugins = configuredPluginNames(config);
     const infoPlist = config.ios?.infoPlist ?? {};
@@ -284,8 +286,8 @@ describe('app.config app links', () => {
     expect(plugins).not.toContain('./plugins/withRokidPushupApk');
     expect(plugins).not.toContain('./plugins/withIntentsExtension');
     expect(config.extra?.eas?.build?.experimental?.ios?.appExtensions).toBeUndefined();
-    expect(infoPlist.UIBackgroundModes).toBeUndefined();
-    expect(infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription).toBeUndefined();
+    expect(infoPlist.UIBackgroundModes).toEqual(['location']);
+    expect(infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription).toContain('记录今天行程');
     expect(infoPlist.NSBluetoothAlwaysUsageDescription).toBeUndefined();
     expect(infoPlist.NSSiriUsageDescription).toBeUndefined();
     expect(infoPlist.RokidCXRAuthCallbackScheme).toBeUndefined();
@@ -294,7 +296,7 @@ describe('app.config app links', () => {
     ]));
   });
 
-  it('keeps location permission foreground-only in the App Store binary', () => {
+  it('declares only opted-in daily journey background location in the new iOS binary', () => {
     const config = configForVariant('production');
     const locationPlugin = (config.plugins ?? []).find((plugin: any) => (
       Array.isArray(plugin) && plugin[0] === 'expo-location'
@@ -303,8 +305,10 @@ describe('app.config app links', () => {
     expect(locationPlugin?.[1]).toEqual(expect.objectContaining({
       locationWhenInUsePermission: expect.stringContaining('天气'),
       locationAlwaysPermission: false,
-      locationAlwaysAndWhenInUsePermission: false,
-      isIosBackgroundLocationEnabled: false,
+      locationAlwaysAndWhenInUsePermission: expect.stringContaining('记录今天行程'),
+      isIosBackgroundLocationEnabled: true,
+      isAndroidBackgroundLocationEnabled: false,
+      isAndroidForegroundServiceEnabled: false,
     }));
     expect(locationPlugin?.[1].locationWhenInUsePermission).toContain('足迹');
     expect(locationPlugin?.[1].locationWhenInUsePermission).toContain('单次');
@@ -467,4 +471,24 @@ describe('app.config app links', () => {
 
     expect(buildProperties?.[1]?.ios?.privacyManifestAggregationEnabled).toBe(true);
   });
+});
+
+
+describe('daily journey native scope', () => {
+  it('removes unrelated background modes even when inherited config declares them', () => {
+    const config = configForVariant('production', {}, { ios: { infoPlist: { UIBackgroundModes: ['fetch', 'audio', 'processing', 'location'] } } });
+    expect(config.ios.infoPlist.UIBackgroundModes).toEqual(['location']);
+  });
+  it('does not enable daily journey for Android builds', () => {
+    const config = configForVariant('production', { EAS_BUILD_PLATFORM: 'android' });
+    expect(config.extra.release.capabilities.dailyJourney).toBe(false);
+    expect(config.extra.release.capabilities.backgroundLocation).toBe(false);
+  });
+});
+
+
+it('does not activate legacy automatic city refresh when opting into the daily journey binary', () => {
+  const config = configForVariant('production');
+  expect(config.extra.release.capabilities.dailyJourney).toBe(true);
+  expect(config.extra.release.capabilities.backgroundLocation).toBe(false);
 });

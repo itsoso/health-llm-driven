@@ -21,16 +21,17 @@ function applySupportedOrientationsToInfoPlist(infoPlist, supportsTablet = false
   return infoPlist;
 }
 
-function applyIosReleaseScopeToInfoPlist(infoPlist) {
+function applyIosReleaseScopeToInfoPlist(infoPlist, dailyJourney = false) {
   delete infoPlist.NSLocationAlwaysUsageDescription;
-  delete infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription;
+  if (!dailyJourney) delete infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription;
 
   const backgroundModes = Array.isArray(infoPlist.UIBackgroundModes)
     ? infoPlist.UIBackgroundModes
     : [];
-  const retainedModes = process.env.ROKID_IOS_SDK_ENABLED === '1'
-    ? backgroundModes.filter((mode) => mode === 'bluetooth-central')
-    : [];
+  const retainedModes = [...new Set(backgroundModes.filter((mode) => (
+    (dailyJourney && mode === 'location')
+    || (process.env.ROKID_IOS_SDK_ENABLED === '1' && mode === 'bluetooth-central')
+  )))];
   if (retainedModes.length > 0) {
     infoPlist.UIBackgroundModes = retainedModes;
   } else {
@@ -84,7 +85,7 @@ function resolveGeneratedInfoPlistPath(platformProjectRoot, modRequest = {}) {
   return path.join(platformProjectRoot, 'HealthPilot', 'Info.plist');
 }
 
-function patchGeneratedInfoPlist(platformProjectRoot, modRequest = {}, supportsTablet = false) {
+function patchGeneratedInfoPlist(platformProjectRoot, modRequest = {}, supportsTablet = false, dailyJourney = false) {
   const infoPlistPath = resolveGeneratedInfoPlistPath(platformProjectRoot, modRequest);
   if (!fs.existsSync(infoPlistPath)) {
     throw new Error(`withIosSupportedOrientations could not find ${infoPlistPath}`);
@@ -93,21 +94,24 @@ function patchGeneratedInfoPlist(platformProjectRoot, modRequest = {}, supportsT
   const current = plist.parse(fs.readFileSync(infoPlistPath, 'utf8'));
   const patched = applyIosReleaseScopeToInfoPlist(
     applySupportedOrientationsToInfoPlist(current, supportsTablet),
+    dailyJourney,
   );
   fs.writeFileSync(infoPlistPath, plist.build(patched), 'utf8');
 }
 
 function withIosSupportedOrientations(config) {
+  const dailyJourney = config.version === '1.3.6'
+    && config.extra?.release?.capabilities?.dailyJourney === true;
   config = withInfoPlist(config, (mod) => {
     applySupportedOrientationsToInfoPlist(mod.modResults, config.ios?.supportsTablet === true);
-    applyIosReleaseScopeToInfoPlist(mod.modResults);
+    applyIosReleaseScopeToInfoPlist(mod.modResults, dailyJourney);
     return mod;
   });
 
   return withDangerousMod(config, [
     'ios',
     (cfg) => {
-      patchGeneratedInfoPlist(cfg.modRequest.platformProjectRoot, cfg.modRequest, cfg.ios?.supportsTablet === true);
+      patchGeneratedInfoPlist(cfg.modRequest.platformProjectRoot, cfg.modRequest, cfg.ios?.supportsTablet === true, dailyJourney);
       return cfg;
     },
   ]);

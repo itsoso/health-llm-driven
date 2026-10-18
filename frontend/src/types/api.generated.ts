@@ -89,6 +89,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/daily-journeys/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sessions */
+        get: operations["sessions_api_v1_daily_journeys_sessions_get"];
+        put?: never;
+        /** Start */
+        post: operations["start_api_v1_daily_journeys_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-journeys/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get */
+        get: operations["get_api_v1_daily_journeys_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete */
+        delete: operations["delete_api_v1_daily_journeys_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-journeys/sessions/{session_id}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** State */
+        post: operations["state_api_v1_daily_journeys_sessions__session_id__state_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-journeys/sessions/{session_id}/points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Points */
+        post: operations["points_api_v1_daily_journeys_sessions__session_id__points_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-journeys/sessions/{session_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Review */
+        get: operations["review_api_v1_daily_journeys_sessions__session_id__review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-journeys/sessions/{session_id}/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Annotations */
+        patch: operations["annotations_api_v1_daily_journeys_sessions__session_id__annotations_patch"];
+        trace?: never;
+    };
     "/api/v1/share-location/availability": {
         parameters: {
             query?: never;
@@ -27678,6 +27782,34 @@ export interface components {
             /** Group Name */
             group_name: string;
         };
+        /** JourneyAnnotation */
+        JourneyAnnotation: {
+            /** Target Id */
+            target_id: string;
+            /** Label */
+            label?: string | null;
+            /** Mode */
+            mode?: ("unknown" | "walking" | "cycling" | "vehicle") | null;
+        };
+        /** JourneyAnnotations */
+        JourneyAnnotations: {
+            /** Expected Version */
+            expected_version: number;
+            /** Annotations */
+            annotations: components["schemas"]["JourneyAnnotation"][];
+        };
+        /** JourneyBatch */
+        JourneyBatch: {
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+            /** Segment */
+            segment: number;
+            /** Points */
+            points: components["schemas"]["JourneyPoint"][];
+        };
         /** JourneyExportItem */
         JourneyExportItem: {
             /** City */
@@ -27715,6 +27847,24 @@ export interface components {
             version: number;
             /** Image Keys */
             image_keys: string[];
+        };
+        /** JourneyGap */
+        JourneyGap: {
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Ended At
+             * Format: date-time
+             */
+            ended_at: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "pause" | "signal_gap" | "low_accuracy" | "implausible_speed";
         };
         /** JourneyImage */
         JourneyImage: {
@@ -27801,6 +27951,145 @@ export interface components {
              */
             image_status: "ready" | "unavailable" | "none";
         };
+        /** JourneyPoint */
+        JourneyPoint: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /** Accuracy M */
+            accuracy_m: number;
+            /** Speed Mps */
+            speed_mps?: number | null;
+        };
+        /** JourneyReview */
+        JourneyReview: {
+            session: components["schemas"]["JourneySessionResponse"];
+            /** Points */
+            points: components["schemas"]["JourneyReviewPoint"][];
+            /** Segments */
+            segments: components["schemas"]["JourneySegment"][];
+            /** Stops */
+            stops: components["schemas"]["JourneyStop"][];
+            /** Gaps */
+            gaps: components["schemas"]["JourneyGap"][];
+            summary: components["schemas"]["JourneySummary"];
+        };
+        /** JourneyReviewPoint */
+        JourneyReviewPoint: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /** Accuracy M */
+            accuracy_m: number;
+            /** Speed Mps */
+            speed_mps?: number | null;
+            /** Segment */
+            segment: number;
+        };
+        /** JourneySegment */
+        JourneySegment: {
+            /** Id */
+            id: string;
+            /** Point Ids */
+            point_ids: string[];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Ended At
+             * Format: date-time
+             */
+            ended_at: string;
+            /** Distance M */
+            distance_m: number;
+            /** Distance Display */
+            distance_display: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "unknown" | "walking" | "cycling" | "vehicle";
+            /**
+             * Mode Source
+             * @enum {string}
+             */
+            mode_source: "estimated" | "user";
+            /** Label */
+            label: string | null;
+        };
+        /** JourneySessionList */
+        JourneySessionList: {
+            /** Items */
+            items: components["schemas"]["JourneySessionResponse"][];
+        };
+        /** JourneySessionResponse */
+        JourneySessionResponse: {
+            /** Id */
+            id: string;
+            /** Client Id */
+            client_id: string;
+            /**
+             * Local Date
+             * Format: date
+             */
+            local_date: string;
+            /** Timezone */
+            timezone: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "paused" | "ended";
+            /** Version */
+            version: number;
+            /** Segment */
+            segment: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Deadline At
+             * Format: date-time
+             */
+            deadline_at: string;
+            /** Ended At */
+            ended_at: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Retention Days */
+            retention_days: number;
+            /** Point Count */
+            point_count: number;
+        };
         /** JourneySource */
         JourneySource: {
             /**
@@ -27841,6 +28130,97 @@ export interface components {
             offset: number;
             /** Limit */
             limit: number;
+        };
+        /** JourneyStart */
+        JourneyStart: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+            /** Timezone */
+            timezone: string;
+            /**
+             * Retention Days
+             * @default 7
+             * @enum {integer}
+             */
+            retention_days: 1 | 7;
+            /**
+             * Consent
+             * @constant
+             */
+            consent: true;
+        };
+        /** JourneyStateChange */
+        JourneyStateChange: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "pause" | "resume" | "end";
+            /** Expected Version */
+            expected_version: number;
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+        };
+        /** JourneyStop */
+        JourneyStop: {
+            /** Id */
+            id: string;
+            /** Latitude */
+            latitude: number;
+            /** Longitude */
+            longitude: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Ended At
+             * Format: date-time
+             */
+            ended_at: string;
+            /** Duration Seconds */
+            duration_seconds: number;
+            /** Duration Display */
+            duration_display: string;
+            /** Label */
+            label: string | null;
+        };
+        /** JourneySummary */
+        JourneySummary: {
+            /** Distance M */
+            distance_m: number;
+            /** Distance Display */
+            distance_display: string;
+            /** Observed Seconds */
+            observed_seconds: number;
+            /** Observed Display */
+            observed_display: string;
+            /** Stop Count */
+            stop_count: number;
+            /** Point Count */
+            point_count: number;
+            /** Note */
+            note: string;
+        };
+        /** JourneyUploadResponse */
+        JourneyUploadResponse: {
+            /** Accepted */
+            accepted: number;
+            /** Duplicate */
+            duplicate: number;
+            session: components["schemas"]["JourneySessionResponse"];
         };
         /** JourneyWrite */
         JourneyWrite: {
@@ -36155,6 +36535,266 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JourneyExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sessions_api_v1_daily_journeys_sessions_get: {
+        parameters: {
+            query: {
+                date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneySessionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_v1_daily_journeys_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JourneyStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneySessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_api_v1_daily_journeys_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneySessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_api_v1_daily_journeys_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    state_api_v1_daily_journeys_sessions__session_id__state_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JourneyStateChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneySessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    points_api_v1_daily_journeys_sessions__session_id__points_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JourneyBatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneyUploadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_api_v1_daily_journeys_sessions__session_id__review_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneyReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotations_api_v1_daily_journeys_sessions__session_id__annotations_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JourneyAnnotations"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneySessionResponse"];
                 };
             };
             /** @description Validation Error */

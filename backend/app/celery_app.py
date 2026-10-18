@@ -188,6 +188,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=5),  # 凌晨3:05
     },
 
+    "purge-daily-journeys": {
+        "task": "app.tasks.maintenance.purge_expired_daily_journeys",
+        "schedule": crontab(minute=10),
+    },
+
     # 每日数据完整性巡检(系统自我监控:量纲错/层断连/空目标静默损坏自曝)
     "data-integrity-scan": {
         "task": "app.tasks.data_integrity_scan.data_integrity_scan",

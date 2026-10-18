@@ -23,6 +23,7 @@ import RootErrorBoundary from '../components/RootErrorBoundary';
 import LoginScreen from './login';
 // Side-effect import: TaskManager.defineTask 必须在 module load 时跑 (React 树挂载前).
 import { registerBackgroundLocationTask } from '../services/backgroundLocationTask';
+import { dailyJourneyCapture } from '../services/dailyJourneyCapture';
 import { getReleaseCapabilities } from '../config/releaseCapabilities';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { loadDietPhotoDraft } from '../services/dietPhotoDraftStorage';
@@ -89,6 +90,22 @@ export function AppContent() {
       registerBackgroundLocationTask();
     }
   }, [cloudActive, releaseCapabilities.backgroundLocation]);
+
+  // Register the native task at module load; only reconcile an existing,
+  // explicitly started session after auth hydration. Never request GPS here.
+  useEffect(() => {
+    if (!cloudActive) return;
+    const reconcile = () => {
+      void dailyJourneyCapture.initialize().catch(() => {
+        console.warn('[DailyJourney] existing_session_reconciliation_failed');
+      });
+    };
+    reconcile();
+    const subscription = AppState.addEventListener('change', status => {
+      if (status === 'active') reconcile();
+    });
+    return () => subscription.remove();
+  }, [cloudActive, user?.id]);
 
   useEffect(() => {
     if (!cloudActive || !user?.id) return;

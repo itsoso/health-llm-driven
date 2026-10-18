@@ -38,6 +38,12 @@ beforeEach(() => {
 });
 
 describe('monthly journey page', () => {
+  it('opens the opt-in daily route without starting location collection', async () => {
+    const view = render(<JourneyScreen />);
+    await waitFor(() => expect(view.getByText('私密饮食文字')).toBeTruthy());
+    fireEvent.press(view.getByText('每日行程 · 主动记录今天'));
+    expect(router.navigate).toHaveBeenCalledWith('/daily-journey');
+  });
   it('measures editor safe areas inside its own full-screen modal window', async () => {
     const view = render(<JourneyScreen />);
     await waitFor(() => expect(view.getByText('私密饮食文字')).toBeTruthy());
