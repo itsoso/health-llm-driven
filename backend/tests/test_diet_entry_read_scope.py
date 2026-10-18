@@ -101,3 +101,26 @@ def test_diet_entry_valid_dimension_aliases_keep_the_owned_day(key):
         'dimension': 'diet', 'start_date': '2026-09-13', 'end_date': '2026-09-13',
         'timezone': 'Asia/Shanghai',
     }]}
+
+
+@pytest.mark.parametrize('tool,args', [
+    ('health_query', {'dimension': 'sleep'}),
+    ('health_query', {'dimension': 'diet', 'user_id': 42}),
+    ('health_query', {'dimension': 'diet', 'start_date': '2026-09-12'}),
+    ('health_query_batch', {'queries': [{'dimension': 'diet'}, {'dimension': 'sleep'}]}),
+    ('health_record', {'record_type': 'diet', 'data': {'food_items': 'rice'}}),
+])
+def test_dated_post_confirm_review_cannot_expand_read_or_write(tool, args):
+    text = '帮我复盘2026-09-13的饮食，给出下一餐的调整建议。'
+    assert decide(args, text=text, tool=tool).action == 'block'
+
+
+@pytest.mark.parametrize('prefix,suffix', [
+    ('妈妈的', ''), ('如果可以，', ''), ('解释例句：“', '”'),
+    ('', '只看上午。'), ('', '不要查询我的记录。'), ('', '只查昨天。'),
+    ('', '删除昨天的记录。'), ('', '查询朋友的睡眠。'),
+])
+def test_dated_post_confirm_review_preserves_edits(prefix, suffix):
+    text = prefix + '帮我复盘2026-09-13的饮食，给出下一餐的调整建议。' + suffix
+    assert resolve_daily_read_plan(text, snapshot(text).context.current_time) is None
+    assert decide({'dimension': 'diet'}, text=text).action == 'block'

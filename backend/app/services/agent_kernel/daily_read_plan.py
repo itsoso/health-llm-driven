@@ -70,6 +70,10 @@ _DIET_ENTRY_RE = re.compile(
     rf"(?P<day>{_SUMMARY_DAY}|\d{{4}}-\d{{1,2}}-\d{{1,2}})饮食结构怎么样[?？]"
     r"蛋白质够吗[?？]帮我给出下一餐调整建议[。.!！]?"
 )
+POST_CONFIRM_DIET_REVIEW_PROMPT = '帮我复盘这一天的饮食，给出下一餐的调整建议。'
+_DATED_DIET_REVIEW_RE = re.compile(
+    r'帮我复盘(?P<day>\d{4}-\d{2}-\d{2})的饮食[，,]给出下一餐的调整建议[。.!！]?'
+)
 
 
 @dataclass(frozen=True)
@@ -107,6 +111,9 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
     diet_entry = _DIET_ENTRY_RE.fullmatch(normalized)
     if diet_entry and normalized == original:
         return diet_entry['day'], ('diet',), True, False, None, False
+    dated_review = _DATED_DIET_REVIEW_RE.fullmatch(normalized)
+    if dated_review and normalized == original:
+        return dated_review['day'], ('diet',), True, False, None, False
     sync_status = _SYNC_STATUS_SUFFIX_RE.search(normalized)
     if sync_status:
         normalized = normalized[:sync_status.start()]

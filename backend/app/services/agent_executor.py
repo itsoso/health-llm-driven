@@ -75,7 +75,9 @@ from app.services.agent_daily_read_execution import (
     verified_daily_summary, verified_daily_diet_evidence, summary_advice_contract_failure, summary_advice_text,
     sleep_sync_reply, sync_status_goal, is_daily_diet_evaluation,
 )
-from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan, is_daily_summary_request
+from app.services.agent_kernel.daily_read_plan import (
+    POST_CONFIRM_DIET_REVIEW_PROMPT, resolve_daily_read_plan, is_daily_summary_request,
+)
 from app.services.agent_output_quality import (
     clarification_reply,
     enforce_agent_output_quality,
@@ -854,6 +856,49 @@ def _extract_desktop_response_instruction(extra_context: Optional[str]) -> Optio
     if not instruction:
         return None
     return instruction[:1200]
+
+
+def _post_confirm_diet_context(extra_context: Optional[str]) -> dict | None:
+    try:
+        payload = json.loads(extra_context) if extra_context else None
+    except (ValueError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) and payload.get('from') == 'diet/post_confirm' else None
+
+
+def _resolve_post_confirm_diet_review(
+    db: Session, user_id: int, message: str, extra_context: Optional[str],
+) -> tuple[str, str] | None:
+    """Resolve a deictic shortcut using only an authenticated, persisted selector.
+
+    The client's date, totals, owner and instructions are not evidence. The
+    complete user request must still match: edits/restrictions cannot be erased.
+    """
+    if message.strip() != POST_CONFIRM_DIET_REVIEW_PROMPT or type(user_id) is not int or user_id <= 0:
+        return None
+    payload = _post_confirm_diet_context(extra_context)
+    verification = payload.get('database_verification') if payload else None
+    if not isinstance(verification, dict):
+        return None
+    record_id = verification.get('verify_record_id')
+    if type(record_id) is not int or record_id <= 0:
+        return None
+    for key in ('verify_record_id', 'created_id'):
+        if key in payload and (type(payload[key]) is not int or payload[key] != record_id):
+            return None
+    from app.models.daily_health import DietRecord
+    record = db.query(DietRecord).filter(
+        DietRecord.user_id == user_id, DietRecord.id == record_id,
+    ).one_or_none()
+    if record is None:
+        return None
+    day = record.record_date.isoformat()
+    # Keep database verification, but rebuild every field on the server.
+    context = json.dumps({'from': 'diet/post_confirm', 'database_verification': {
+        'required': True, 'date': day, 'verify_record_id': record.id,
+        'query_scope': 'daily_diet_records', 'totals_source': 'database',
+    }})
+    return f'帮我复盘{day}的饮食，给出下一餐的调整建议。', context
 
 
 def _extract_database_verification_instruction(extra_context: Optional[str]) -> Optional[str]:
@@ -16024,6 +16069,7 @@ class AgentExecutor:
         supplement_missing_units: tuple[str, ...] = (),
         supplement_unit_followup: bool = False,
         meal_input_clarification: MealInputClarification | None = None,
+        diet_review_record_unavailable: bool = False,
         request_started_at: float | None = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Persist a local clarification or context acknowledgement without a model."""
@@ -16050,7 +16096,11 @@ class AgentExecutor:
                 client_turn_id=client_turn_id,
                 meta={"client_turn_id": client_turn_id} if client_turn_id else None,
             )
-        if context_statement is not None:
+        if diet_review_record_unavailable:
+            text = '暂时无法确认这条饮食记录及其日期。请回到饮食页选择已保存的记录，或直接告诉我要复盘哪一天的饮食。'
+            reason_code = 'diet_review_record_unavailable'
+            route = 'diet_review_clarification'
+        elif context_statement is not None:
             text = context_statement.reply
             reason_code = "context_statement_acknowledged"
             route = "context_statement"
@@ -16450,6 +16500,21 @@ class AgentExecutor:
                     })
                     return
 
+            diet_review_record_unavailable = False
+            if retry_recovery is None and not effective_images and not file_base64:
+                selected_diet_context = _post_confirm_diet_context(extra_context)
+                if effective_message.strip() == POST_CONFIRM_DIET_REVIEW_PROMPT:
+                    bound_review = _resolve_post_confirm_diet_review(
+                        self.db, user_id, effective_message, extra_context,
+                    )
+                    diet_review_record_unavailable = bound_review is None
+                    if bound_review is not None:
+                        effective_message, extra_context = bound_review
+                    else:
+                        extra_context = None
+                elif selected_diet_context is not None:
+                    # A changed user request must be compiled on its own merits.
+                    extra_context = None
             pending_choice_resolution = None
             choice_conversation_id = (
                 recovered_user_message.conversation_id
@@ -16582,6 +16647,17 @@ class AgentExecutor:
                     ):
                         yield self._attach_runtime_identity(event)
                     return
+            if diet_review_record_unavailable:
+                async for event in self._run_input_clarification_stream(
+                    user_id=user_id, message=display_message,
+                    conversation_id=conversation_id, client_turn_id=client_turn_id,
+                    recovered_user_message=recovered_user_message,
+                    diet_review_record_unavailable=True, request_started_at=request_started_at,
+                ):
+                    if event.get('event') == 'done':
+                        kernel_completion_status = 'complete'
+                    yield self._attach_runtime_identity(event)
+                return
             # Durable replay and uncertain-write recovery take precedence. Both
             # ordinary and panel requests then use exactly the same no-model
             # answer, without loading private context or interpreting opaque
