@@ -1190,6 +1190,7 @@ verify_rollback_point_schema_compatibility() {
 }
 
 verify_code_only_source_changes() {
+    DAILY_JOURNEY_ADDITIVE=0
     if ! [[ "$ROLLBACK_CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ &&
             "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
         print_error "无备份 source compatibility 缺少精确 SHA"
@@ -1197,9 +1198,66 @@ verify_code_only_source_changes() {
     fi
     if ! git -C "$SCRIPT_DIR" diff --quiet "$ROLLBACK_CANDIDATE_COMMIT" "$DEPLOY_EXPECTED_SHA" -- \
         backend/migrations/managed backend/app/models infra/systemd/dropins; then
-        print_error "无备份 code-only 发布不支持 schema/models/runtime dropin 变更；尚未停写"
+        local admission
+        if ! admission=$(python3 "$SCRIPT_DIR/scripts/daily_journey_release.py" source-check \
+            "$ROLLBACK_CANDIDATE_COMMIT" "$DEPLOY_EXPECTED_SHA" --source "$SCRIPT_DIR") ||
+            [[ "$admission" != "DAILY_JOURNEY_ADDITIVE" ]]; then
+            print_error "无备份发布拒绝未受审的 schema/models/runtime 变更；尚未停写"
+            return 1
+        fi
+        DAILY_JOURNEY_ADDITIVE=1
+    fi
+}
+
+daily_journey_release_command() {
+    local phase="$1" loader
+    [[ "$phase" = preflight || "$phase" = apply || "$phase" = readback ]] || return 1
+    [[ "$REMOTE_PATH" = /opt/health-app && "$REMOTE_RELEASE_LOCK_DIR" = /var/lock/health-app-release ]] || return 1
+    # Authenticate the immutable canonical helper before executing any of its
+    # Python. No code/credential is uploaded, and no secret enters this argv.
+    loader="$(cat <<'DAILY_JOURNEY_LOADER'
+import hashlib, os, pathlib, re, stat, subprocess, sys
+try:
+    sha, old, token, phase = sys.argv[1:]
+    if not re.fullmatch('[0-9a-f]{40}', sha):
+        raise ValueError('binding')
+    source = pathlib.Path('/var/lib/reva-release/bootstrap') / sha / 'source'
+    entry = source / 'scripts/daily_journey_release.py'
+    for path in [*reversed(entry.parents), entry, source / '.git/config']:
+        item = path.lstat()
+        file = path in (entry, source / '.git/config')
+        if item.st_uid != 0 or item.st_mode & 0o022 or not (stat.S_ISREG(item.st_mode) if file else stat.S_ISDIR(item.st_mode)) or (file and item.st_nlink != 1):
+            raise ValueError('metadata')
+    env = {'PATH':'/usr/bin:/bin','HOME':'/nonexistent','LC_ALL':'C','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null','GIT_CONFIG_SYSTEM':'/dev/null','GIT_NO_REPLACE_OBJECTS':'1'}
+    def git(*args):
+        return subprocess.run(['/usr/bin/git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',str(source),*args],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,check=True,timeout=30).stdout.strip()
+    raw = entry.read_bytes()
+    if git('rev-parse','HEAD') != sha.encode() or len(raw) > 1000000 or hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest().encode() != git('rev-parse',sha+':scripts/daily_journey_release.py'):
+        raise ValueError('source')
+    executable = '/opt/health-app/backend/venv/bin/python'
+    os.execve(executable,[executable,'-I','-B',str(entry),phase,old,sha,'--lease-token',token],env)
+except Exception:
+    print('DAILY_JOURNEY_RELEASE_BLOCKED: canonical helper admission failed',file=sys.stderr)
+    raise SystemExit(70)
+DAILY_JOURNEY_LOADER
+)" || return 1
+    printf '/usr/bin/python3.12 -I -S -B -c %q %q %q %q %q' \
+        "$loader" "$DEPLOY_EXPECTED_SHA" "$ROLLBACK_CANDIDATE_COMMIT" "$REMOTE_RELEASE_LOCK_TOKEN" "$phase"
+}
+
+daily_journey_release_preflight() {
+    [[ "${DAILY_JOURNEY_ADDITIVE:-0}" = 1 ]] || return 0
+    local command output
+    command="$(daily_journey_release_command preflight)" || return 1
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    if ! output=$(ssh "$SERVER" "$command") ||
+       [[ "$output" != "DAILY_JOURNEY_PREFLIGHT_OK pending=1" &&
+          "$output" != "DAILY_JOURNEY_READBACK_OK committed=1" ]]; then
+        print_error "行程新增表预检未通过；未停写，原租约和迁移意图保留"
         return 1
     fi
+    _REMOTE_RELEASE_LOCK_ABANDONED=0
+    printf '%s\n' "$output"
 }
 
 # 回滚到上一个版本
@@ -3084,6 +3142,7 @@ verify_laya_service() {
 deploy_backend() {
     local runtime_state_preflight_complete=0
     local remote_dependency_sync
+    local daily_journey_apply="true"
     local activate_laya_service
     activate_laya_service="$(laya_service_command activate)"
 
@@ -3107,6 +3166,8 @@ deploy_backend() {
     inspect_runtime_state_transaction_before_deploy
     release_timing_checkpoint preparation_checked
     if [[ "$RUNTIME_STATE_ALREADY_FINALIZED" = "1" ]]; then
+        verify_code_only_source_changes || return 1
+        daily_journey_release_preflight || return 1
         if ! verify_laya_service ||
             ! prove_health_evidence_runtime_process_flag false ||
             ! verify_deployment ||
@@ -3125,6 +3186,7 @@ deploy_backend() {
         save_rollback_point
         verify_rollback_point_schema_compatibility
         verify_code_only_source_changes || return 1
+        daily_journey_release_preflight || return 1
 
         # All locally fallible transport and read-only transaction checks run
         # before live env/service mutation. A preflight RPC failure preserves
@@ -3165,6 +3227,8 @@ deploy_backend() {
         fi
     else
         print_step "沿用 code-only 持久事务的 SHA 与现行配置证明"
+        verify_code_only_source_changes || return 1
+        daily_journey_release_preflight || return 1
     fi
 
     if [[ "$runtime_state_preflight_complete" != "1" ]]; then
@@ -3186,6 +3250,9 @@ deploy_backend() {
             print_error "Laya resume preparation failed; existing release evidence retained"
             return 1
         fi
+    fi
+    if [[ "${DAILY_JOURNEY_ADDITIVE:-0}" = 1 ]]; then
+        daily_journey_apply="$(daily_journey_release_command apply)" || return 1
     fi
     local remote_git_sync
     remote_git_sync="$(remote_git_sync_command)"
@@ -3230,7 +3297,11 @@ deploy_backend() {
         set -a && source .env && set +a && \
         $remote_dependency_sync && \
         release_timing_checkpoint remote_dependencies_completed && \
-        echo 'code-only：不执行数据库迁移，继续只读 schema 验证...' && \
+        if [ '${DAILY_JOURNEY_ADDITIVE:-0}' = 1 ]; then \
+            $daily_journey_apply; \
+        else \
+            echo 'code-only：不执行数据库迁移，继续只读 schema 验证...'; \
+        fi && \
         release_timing_checkpoint remote_schema_check_started && \
         unset MIGRATION_DATABASE_URL && \
         (cd '$REMOTE_BACKUP_PREFLIGHT_DIR' && \

@@ -367,6 +367,7 @@ jobs:
           scripts/test_ci_change_scope.py
           scripts/test_deploy_script.py
           scripts/test_deploy_no_backup.py
+          scripts/test_daily_journey_release.py
           scripts/test_release_timing.py
           scripts/test_release_performance_report.py
           scripts/test_trusted_ota_startup.py
@@ -588,6 +589,11 @@ jobs:
           APP_ENV: test
           RETAINED_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
         run: python -m pytest -q --noconftest --no-cov scripts/test_rolled_back_release_operator.py -k postgres
+
+      - name: Verify bounded no-backup daily journey migration on PostgreSQL
+        env:
+          DAILY_JOURNEY_RELEASE_TEST_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+        run: python -m pytest -q --noconftest --no-cov scripts/test_daily_journey_release_postgres.py
 
       - name: Verify Runtime migration upgrade and idempotency
         working-directory: backend

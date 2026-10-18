@@ -23,6 +23,14 @@
 
 当前无备份发布路径为代码更新：`deploy.sh -b` 保持现行 env 不变，仅核验摘要、权限与固定配置；旧 `DEPLOY_DATABASE_BACKUP=1` 不能重新授权备份。运行时 `preflight-code/prepare-code` 使用 v2 小型事务日志，不复制上传文件、知识库、beat 状态或 drop-in；只允许已迁移布局和相同候选 drop-in。配置、模型/schema、managed 迁移或运行态布局变化在停写前拒绝，env-only 与 Health Evidence 激活入口暂不支持该路径。旧前端发布/重建及 stopped-recovery 的新切换操作已冻结：deploy入口和直接module执行均在产生意图、领取锁或生成previous-*前拒绝；旧回执读取与独立恢复/终态核对消费者继续保留。
 
+本次每日 GPS 行程有一个精确限定的无备份新增表例外，由 `scripts/daily_journey_release.py` 随同 `deploy.sh -b` 执行，不是通用迁移放行：只允许固定摘要的 `20261018_120000_daily_journeys` PostgreSQL/SQLite 文件、新模型从不存在变为受审字节，以及 `models/__init__.py` 的唯一 import 插入；所有其他模型、迁移或 drop-in 差异仍在停写前拒绝。精确 current-main CI、canonical bootstrap、原发布租约、旧版本 schema 兼容检查和候选启动前完整 schema 检查保持不变。迁移仅创建三个新表和索引，保留旧表及账户删除 CASCADE 语义；不恢复旧代码、不复制数据。
+
+该例外只从 root 保护的 canonical 候选加载 helper。helper 直接读取固定 `/etc/health-app/migration.env` 的唯一字面 `MIGRATION_DATABASE_URL`；不将凭据放入参数、日志、发布父环境或 stage，不接受调用者环境注入。预检要求 PostgreSQL TCP 连接实际地址/端口与库名一致（不扩大权限读取 Unix socket 私有配置）、不同且无 superuser/BYPASSRLS/建库/建角色权限的运行与迁移角色，拒绝运行角色继承迁移角色或拥有 schema CREATE。已有 managed ledger 必须存在，除本迁移外不得有 pending/checksum 漂移；目标表必须全部不存在。文件缺失、不安全权限或角色权限不足均保留阻断。
+
+停写和精确候选 checkout 后，在 `/var/lib/reva-release/daily-journey-migrations/<candidate-sha>/` 先落盘并 fsync 小型 intent（旧/新 SHA、迁移摘要、租约及数据库身份摘要）。三个表、索引、只给实际 runtime role 的 CRUD grants、managed ledger 和表 COMMENT 中的小型 schema/binding 证明在一个 PostgreSQL 事务中提交，并使用事务 advisory lock。禁止额外角色或 PUBLIC 读取位置表，禁止 runtime 的 TRUNCATE/TRIGGER/REFERENCES 权限。提交后回读目录证明、FK/check/index 元数据和实际 CRUD 权限才写 `completed.json`；之后原发布流程用 runtime role 验证候选完整 schema 再启动服务。
+
+中断后同一 intent 只可回读：ledger 与 schema/binding 完全匹配才能确认已提交并补齐完成回执；ledger 仍 pending、表不完整、intent 缺失或身份漂移均 NEEDS_OPERATOR，绝不自动重放 DDL、清除意图、领取新操作或改用通用 migration runner。该入口不创建或检查任何备份。合入与本地 PostgreSQL 测试仅证明实现；生产角色/固定凭据就绪及精确候选发布回执必须另行验证。
+
 新的 Web 发布使用显式 `deploy.sh --publish-frontend-no-backup`，旧 `--publish-frontend`、重建和 stopped-recovery 切换入口仍冻结。新入口只能消费由 `--prepare-frontend-artifact` 完成的同 operation-id 制品，不能在停服后编译。候选须为精确完整 CI 绿色的 current main，先通过独立安全审查并以既有 canonical bootstrap 安装该候选的历史消费者；入口核验当前授权 SHA、有效期与实际 installed server 摘要。后端可保持原已部署且有 SUCCEEDED 回执的 revision，不制造后端发布回执，也不重复发布没有 Mobile 变化的 OTA。
 
 在 `/var/lib/reva-release/bootstrap/<publisher-sha>/source` 使用系统 Python 的固定 deploy 入口，传入 `--publisher-sha`、`--production-sha`、`--frontend-tree`、`--operation-id`；先只读预检，确认返回的证据后再加 `--evidence-sha256` 执行。原 launcher/build 锁和 business lease 继续互斥。停服前完成候选校验，核验固定 live 目录、父/根 inode、同设备且无嵌套挂载；确认 systemd control-group 已停空后删除旧 `.next` / `node_modules`，移入已验证的新制品并同步两个父目录，不保留旧制品副本。全部制品摘要一致才启动，公共/本地页面与后端保持证据均通过后才写终态并释放租约。删除、移动、fsync、启动或回读异常均保留原租约与 NEEDS_OPERATOR，不自动回滚、重试或换 operation-id。

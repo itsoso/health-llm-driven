@@ -30,6 +30,8 @@ SHARDS = (
         "tests/test_agent_supplement_persistence_postgres.py",  # 17s
         "tests/test_pi_kernel_executor.py",  # 10s
         "tests/test_latest_meal_correction.py",  # 4s
+        "tests/test_daily_journey.py",
+        "tests/test_daily_journey_postgres.py",
         "tests/test_life_navigation.py",
         "tests/test_health_navigation_concurrency.py",
     ),
