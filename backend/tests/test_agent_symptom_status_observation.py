@@ -7,6 +7,37 @@ from app.services.utterance_intent_classifier import classify_agent_utterance, h
 REQUEST = "记录下来，我的头痛已经消失了。目前一切正常，除了偶尔有点鼻塞之外。"
 DIARRHEA_REQUEST = "记录下来，稍微有点拉肚子，跟昨天晚上吃海鲜有一定的关系。"
 APPROX_REQUEST = "记录下来，我的感冒症状已经消失了。目前一切正常，除了偶尔打三四个喷嚏之外。"
+ONGOING_PAIN_REQUEST = "下午仍然隐隐肚子痛"
+
+
+@pytest.mark.parametrize("text", [
+    ONGOING_PAIN_REQUEST, "我下午仍然隐隐肚子痛", "今天下午仍然隐隐肚子痛。",
+    "下午我仍然隐隐肚子痛", "现在还是隐隐约约腹痛", "记录一下，我目前还有点胃痛。",
+])
+def test_current_abdominal_pain_is_exact_observation_not_illness_update(text):
+    from app.services.agent_executor import _extract_clear_symptom_record, _apply_authorized_symptom_payload
+    assert parse(text) == {"body_part": "digestive", "description": text}
+    assert _extract_clear_symptom_record(text) == parse(text)
+    intent = classify_agent_utterance(text)
+    assert (intent.primary, intent.domain, intent.operation) == ("write", "symptom", "create")
+    assert _apply_authorized_symptom_payload({"record_type": "symptom", "data": {
+        "severity": 8, "occurred_at": "2020-01-01T15:00:00Z", "user_id": 999,
+        "diagnosis": "模型推断", "description": "模型改写",
+    }}, parse(text)) == {"record_type": "symptom", "data": parse(text)}
+
+
+@pytest.mark.parametrize("text", [
+    "妈妈下午仍然隐隐肚子痛", "我朋友下午仍然隐隐肚子痛", "下午他仍然隐隐肚子痛",
+    "如果下午仍然隐隐肚子痛", "明天下午仍然隐隐肚子痛", "昨天下午仍然隐隐肚子痛",
+    "下午没有肚子痛", "下午不再肚子痛", "下午可能仍然隐隐肚子痛",
+    "下午仍然隐隐肚子痛？", "下午仍然隐隐肚子痛怎么办", "下午仍然隐隐肚子痛，需要就医吗？",
+    "他说：下午仍然隐隐肚子痛", "“下午仍然隐隐肚子痛”", "翻译：下午仍然隐隐肚子痛",
+    ONGOING_PAIN_REQUEST + "，不要记录", ONGOING_PAIN_REQUEST + "，不是我，是妈妈",
+    ONGOING_PAIN_REQUEST + "，更新病程", ONGOING_PAIN_REQUEST + "，删除饮食记录",
+    ONGOING_PAIN_REQUEST + "，诊断为胃炎", ONGOING_PAIN_REQUEST + "\u200b",
+])
+def test_current_pain_proof_rejects_unknown_owner_time_and_tail(text):
+    assert parse(text) is None
 
 
 def parse(text):
@@ -90,6 +121,10 @@ def test_status_count_is_preserved_as_text_not_rhinitis_quantification():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_behavior", ["symptom_tool", "no_tool", "wrong_tool"])
 @pytest.mark.parametrize("message,expected_write,read_only", [
+    (ONGOING_PAIN_REQUEST, True, False),
+    (ONGOING_PAIN_REQUEST, False, True),
+    ("妈妈" + ONGOING_PAIN_REQUEST, False, False),
+    (ONGOING_PAIN_REQUEST + "，不要记录", False, False),
     (DIARRHEA_REQUEST, True, False),
     (DIARRHEA_REQUEST.replace("稍微有点", "我妈妈稍微有点"), False, False),
     (DIARRHEA_REQUEST.replace("稍微有点", "没有"), False, False),
@@ -111,6 +146,8 @@ async def test_stream_persists_exact_status_without_illness_mutation(
     from app.models.symptom_entry import SymptomEntry
     from app.models.daily_health import DietRecord
     from app.models.illness import IllnessEpisode, IllnessUpdate
+    from app.models.agent_conversation import AgentConversation, AgentMessage
+    from app.models.user import User
     from app.twin.schema import HealthTwin, TwinMeta
 
     user, headers = auth_user_and_headers
@@ -119,6 +156,25 @@ async def test_stream_persists_exact_status_without_illness_mutation(
     historical_meal = DietRecord(user_id=user.id, record_date=date(2026, 1, 1), meal_type="晚餐", food_items="合成海鲜", calories=123)
     db.add(historical_meal)
     db.commit()
+    conversation_id = None
+    protected_symptoms = []
+    if ONGOING_PAIN_REQUEST in message:
+        other = User(username="pain-other", email="pain-other@example.test", name="Synthetic other", hashed_password="synthetic",
+                     is_active=True, is_approved=True)
+        db.add(other)
+        db.flush()
+        protected_symptoms = [SymptomEntry(user_id=owner, body_part="digestive", description="合成旧症状")
+                              for owner in (user.id, other.id)]
+        db.add_all(protected_symptoms)
+        conversation = AgentConversation(user_id=user.id, title="合成饮食上下文")
+        db.add(conversation)
+        db.flush()
+        conversation_id = conversation.id
+        db.add_all([
+            AgentMessage(conversation_id=conversation_id, role="user", content="记录午餐米饭"),
+            AgentMessage(conversation_id=conversation_id, role="assistant", content="这餐尚未完成，可继续修正本餐。"),
+        ])
+        db.commit()
     monkeypatch.setattr("app.twin.builder.build_twin", lambda _db, user_id, **kw:
         HealthTwin(meta=TwinMeta(user_id=user_id, generated_at=datetime.now(timezone.utc))))
     executor = AgentExecutor(db)
@@ -159,9 +215,14 @@ async def test_stream_persists_exact_status_without_illness_mutation(
     monkeypatch.setattr(executor, "_api_post", api_post)
     events = [event async for event in executor.run_stream(
         user_id=user.id, message=message, user_auth_token=headers["Authorization"].split(" ", 1)[1],
-        channel="typed", read_only_tools=read_only,
+        channel="typed", read_only_tools=read_only, conversation_id=conversation_id,
     )]
-    rows = db.query(SymptomEntry).filter_by(user_id=user.id).all()
+    protected_ids = {row.id for row in protected_symptoms}
+    rows = [row for row in db.query(SymptomEntry).filter_by(user_id=user.id).all() if row.id not in protected_ids]
+    for row in protected_symptoms:
+        db.refresh(row)
+        assert row.description == "合成旧症状" and row.severity is None
+    assert db.query(SymptomEntry).count() == len(protected_symptoms) + len(rows)
     db.refresh(historical_meal)
     assert historical_meal.food_items == "合成海鲜" and historical_meal.calories == 123
     assert db.query(DietRecord).filter_by(user_id=user.id).count() == 1
@@ -176,7 +237,7 @@ async def test_stream_persists_exact_status_without_illness_mutation(
         return
     assert len(rows) == 1
     assert rows[0].description == message
-    assert rows[0].body_part == "general"
+    assert rows[0].body_part == ("digestive" if message == ONGOING_PAIN_REQUEST else "general")
     assert rows[0].severity is None
     assert rows[0].notes is None
     assert len(posted) == 1

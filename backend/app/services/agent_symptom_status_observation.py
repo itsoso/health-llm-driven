@@ -38,11 +38,24 @@ _DIGESTIVE_OBSERVATION = re.compile(
 )
 
 
-def parse_symptom_status_observation(message: object) -> dict[str, str] | None:
-    """Return an exact write payload only for the entire explicit self request.
+# A present, continuing abdominal-pain statement is a new observation. The
+# continuity word does not identify or authorize an update to an old episode.
+# Keep time-of-day and qualitative intensity in the user's text, never infer
+# a clock time, numerical severity, diagnosis, or cause from them.
+_CURRENT_TIME = r"(?:现在|目前|此刻|今天(?:早上|上午|中午|下午|晚上)?|早上|上午|中午|下午|晚上)"
+_ONGOING_ABDOMINAL_PAIN = re.compile(
+    rf"(?:(?:请记录|记录下来|记录一下|帮我记录一下|帮我记录){_SEP}?)?"
+    rf"(?:我(?:{_CURRENT_TIME})?|{_CURRENT_TIME}(?:我)?)"
+    r"(?:仍然|仍|还是|还|一直)(?:有点|有一点|有些|有)?"
+    r"(?:隐隐约约|隐隐|轻微)?(?:肚子痛|肚子疼|腹痛|胃痛|胃疼)[。.]?"
+)
 
-    Keep negative/resolved and residual facts together, without assigning an
-    anatomical location or severity. Reject oversized text instead of clipping
+
+def parse_symptom_status_observation(message: object) -> dict[str, str] | None:
+    """Return an exact payload only for a complete self request or observation.
+
+    Keep negative/resolved and residual facts together. Only explicitly named
+    abdominal pain maps to digestive; never infer severity. Reject oversized text instead of clipping
     its authorization or description. No context or model data supplies proof.
     """
     if not isinstance(message, str) or not message or len(message) > 500:
@@ -50,6 +63,8 @@ def parse_symptom_status_observation(message: object) -> dict[str, str] | None:
     if any(unicodedata.category(char).startswith("C") for char in message):
         return None
     normalized = message.replace(" ", "").replace("\u3000", "")
+    if _ONGOING_ABDOMINAL_PAIN.fullmatch(normalized) is not None:
+        return {"body_part": "digestive", "description": message}
     if (
         _STATUS.fullmatch(normalized) is None
         and _DIGESTIVE_OBSERVATION.fullmatch(normalized) is None
