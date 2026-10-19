@@ -16,11 +16,10 @@ def test_shared_matching_view_resolves_inline_html_entities_and_boundaries(html,
 
 
 def test_safe_html_output_is_preserved_byte_for_byte():
-    from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
-    from types import SimpleNamespace
+    from app.services.agent_composed_read_completion import ComposedReadCompletion, enforce_composed_synthesis_boundaries
 
     html = "<p>不能仅凭记录确认你的恢复状态<strong>良好</strong>。</p>"
-    completion = SimpleNamespace(complete=True, verified_evidence={"queries": [
+    completion = ComposedReadCompletion(goals=(), missing_dimensions=(), trusted_fact_summary="已核验记录。", complete=True, verified_evidence={"queries": [
         {"query": {"dimension": "diet"}}, {"query": {"dimension": "sleep"}},
     ]})
     result = enforce_composed_synthesis_boundaries(html, completion)
@@ -46,10 +45,9 @@ def test_safe_html_output_is_preserved_byte_for_byte():
     '<table><tr><td>无法确认</td></tr>你的蛋白质摄入不足。</table>',
 ])
 def test_nonsemantic_html_cannot_supply_visibility_or_hidden_negation(html):
-    from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
-    from types import SimpleNamespace
+    from app.services.agent_composed_read_completion import ComposedReadCompletion, enforce_composed_synthesis_boundaries
 
-    completion = SimpleNamespace(complete=True, trusted_fact_summary="已核验记录。",
+    completion = ComposedReadCompletion(goals=(), missing_dimensions=(), complete=True, trusted_fact_summary="已核验记录。",
         verified_evidence={"queries": [{"query": {"dimension": "diet"}}]})
     result = enforce_composed_synthesis_boundaries(html, completion, require_advice_boundary=True)
     assert result.flagged
