@@ -27361,6 +27361,21 @@ class AgentExecutor:
                 self._turn_sync_status_result = status
                 return json.dumps(status, ensure_ascii=False, default=str)
         if dim == 'medication':
+            from app.services.agent_kernel.medication_review_scope import symptom_record_review_request
+            snapshot = self._ensure_agent_kernel_turn()
+            if symptom_record_review_request(snapshot.envelope.text) is not None:
+                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+                from app.services.agent_query_window import parse_query_window
+                from app.services.medication_review_read import read_medication_history
+                scope = resolve_owned_read_scope(snapshot)
+                expected = scope.query('medication') if scope is not None else None
+                if (expected is None or supplied_args != expected
+                        or self._current_user_id != snapshot.context.user_id):
+                    return 'Error: 用药查询范围与当前请求不一致。'
+                return json.dumps(read_medication_history(
+                    self.db, self._current_user_id, parse_query_window(expected)),
+                    ensure_ascii=False, default=str)
+        if dim == 'medication':
             from app.services.agent_kernel.medication_review_scope import is_medication_review_request
             snapshot = self._ensure_agent_kernel_turn()
             if is_medication_review_request(snapshot.envelope.text):

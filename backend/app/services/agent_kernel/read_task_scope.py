@@ -276,7 +276,23 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
-    from app.services.agent_kernel.medication_review_scope import is_medication_review_request
+    from app.services.agent_kernel.medication_review_scope import (
+        is_medication_review_request, symptom_record_review_request,
+        has_symptom_record_review_reference,
+    )
+    review = symptom_record_review_request(snapshot.envelope.text)
+    if review is not None:
+        days, domains = review
+        zone = ZoneInfo(snapshot.context.timezone)
+        now = snapshot.context.current_time
+        today = (now.replace(tzinfo=zone) if now.utcoffset() is None else now.astimezone(zone)).date()
+        return OwnedReadScope(tuple(
+            {'dimension': dimension, 'start_date': (today - timedelta(days=days - 1)).isoformat(),
+             'end_date': today.isoformat(), 'timezone': snapshot.context.timezone}
+            for dimension in domains
+        ), ('symptom_record_review',), composite_advice=True)
+    if has_symptom_record_review_reference(snapshot.envelope.text):
+        return None
     if is_medication_review_request(snapshot.envelope.text):
         zone = ZoneInfo(snapshot.context.timezone)
         now = snapshot.context.current_time
