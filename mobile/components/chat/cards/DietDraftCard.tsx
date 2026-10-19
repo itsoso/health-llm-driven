@@ -574,11 +574,10 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       icon={MEAL_ICONS[mealType]}
       iconColor={DIET_ACCENT}
       title={isRecorded ? `${mealLabel}已记录` : `${mealLabel} · 待确认`}
-      // 已记录态靠标题「…已记录」+ hero 勾图标表达, 不再加 badge(避免与 action-bar「已记录」撞文本);
-      // 草稿态给「草稿」chip。
+      // 已记录态在热量旁保留完整回执；草稿态保留「草稿」chip。
       badge={isRecorded ? undefined : '草稿'}
       badgeColor={revaSemantic.caution.fg}
-      bg={DIET_TINT}
+      bg={isRecorded ? C.surface : DIET_TINT}
     >
       {photoUri ? (
         <MealPhotoCover
@@ -630,7 +629,12 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
           ) : null}
         </View>
         {isRecorded ? (
-          <Ionicons name="checkmark-circle" size={20} color={C.green500} />
+          <View style={styles.recordedProgressPill}>
+            <Ionicons name="checkmark-done-circle" size={13} color={C.green600} />
+            <Text maxFontSizeMultiplier={1.12} style={styles.recordedProgressText}>
+              {receiptMessage || '已计入今日饮食'}
+            </Text>
+          </View>
         ) : null}
       </View>
 
@@ -642,15 +646,6 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         fiber={numberValue(data.fiber)}
         style={styles.macroBar}
       />
-
-      {isRecorded ? (
-        <View style={styles.recordedProgressPill}>
-          <Ionicons name="checkmark-done-circle" size={13} color={C.green600} />
-          <Text maxFontSizeMultiplier={1.12} style={styles.recordedProgressText}>
-            {receiptMessage || '已计入今日饮食'}
-          </Text>
-        </View>
-      ) : null}
 
       {data.adjust_saved === true ? (
         <View style={styles.adjustSavedRow}>
@@ -820,18 +815,18 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         </View>
       ) : null}
 
-      {/* 2×2 营养网格：彩色圆点 + 标签 + 克数，只渲染存在的 macro。 */}
+      {/* 已记录态使用紧凑的标签 / 读数布局，只渲染存在的 macro。 */}
       {macros.length > 0 ? (
         <View style={styles.macroGrid}>
           {macros.map((row) => (
-            <View key={row.label} style={styles.macroCell}>
+            <View key={row.label} style={[styles.macroCell, isRecorded && styles.recordedMacroCell]}>
               <View style={styles.macroHeading}>
                 <View style={[styles.macroDot, { backgroundColor: row.color }]} />
                 <Text maxFontSizeMultiplier={1.1} style={styles.macroLabel}>
                   {row.label}
                 </Text>
               </View>
-              <Text maxFontSizeMultiplier={1.1} style={[styles.macroValue, { color: row.color }]}>
+              <Text maxFontSizeMultiplier={1.1} style={[styles.macroValue, isRecorded && styles.recordedMacroValue, { color: row.color }]}>
                 {Math.round(row.value!)}{row.suffix}
               </Text>
             </View>
@@ -1476,6 +1471,7 @@ const styles = StyleSheet.create({
   } as TextStyle,
   heroRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
@@ -1669,7 +1665,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     maxWidth: '100%',
     minHeight: 26,
-    marginTop: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -1678,6 +1673,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green100,
     paddingHorizontal: 9,
+    paddingVertical: 4,
   },
   recordedProgressText: {
     flexShrink: 1,
@@ -1698,17 +1694,18 @@ const styles = StyleSheet.create({
   },
   recordedAdjustButton: {
     minHeight: 48,
-    flexBasis: 140,
+    flexBasis: 120,
     flexGrow: 1,
     flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
     borderRadius: revaRadii.md,
     backgroundColor: 'rgba(255,255,255,0.88)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green100,
-    paddingHorizontal: 11,
+    paddingHorizontal: 8,
     paddingVertical: 8,
   },
   recordedViewButton: {
@@ -1719,16 +1716,17 @@ const styles = StyleSheet.create({
     backgroundColor: C.green50,
   },
   recordedAdjustCopy: {
-    flex: 1,
+    flexShrink: 1,
     minWidth: 0,
     gap: 1,
   },
   recordedAdjustTitle: {
     fontFamily: revaFonts.sans,
-    fontSize: 13,
+    fontSize: 12,
     lineHeight: 17,
     color: C.green700,
     fontWeight: '900',
+    textAlign: 'center',
   } as TextStyle,
   inlineHeader: {
     flexDirection: 'row',
@@ -1911,6 +1909,19 @@ const styles = StyleSheet.create({
     borderRadius: revaRadii.sm,
     backgroundColor: 'rgba(255,255,255,0.65)',
   },
+  recordedMacroCell: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: C.paper2,
+  },
+  recordedMacroValue: {
+    fontSize: 16,
+  } as TextStyle,
   macroHeading: {
     flexDirection: 'row',
     alignItems: 'center',
