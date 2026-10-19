@@ -289,6 +289,14 @@ def apply_exact(connection, source, plan, runtime_role):
     sql(connection, 'INSERT INTO public.schema_migrations(id,checksum) VALUES(:id,:checksum)', id=MIGRATION, checksum=SQL_HASH)
 
 
+def load_runtime_settings(config_bytes, path):
+    namespace = {'__name__': 'daily_journey_release_settings', '__file__': str(path)}
+    # The helper uses postponed annotations; the canonical config does not.
+    # Preserve the config's own semantics rather than inheriting our future flags.
+    exec(compile(config_bytes, str(path), 'exec', dont_inherit=True), namespace)
+    return namespace['settings']
+
+
 def remote_run(source, old, candidate, token, phase):
     if os.geteuid() != 0 or source != Path('/var/lib/reva-release/bootstrap') / candidate / 'source':
         raise ReleaseBlocked('fixed root canonical staging required')
@@ -315,9 +323,7 @@ def remote_run(source, old, candidate, token, phase):
     if config_bytes != git(source, 'show', 'HEAD:backend/app/config.py'):
         raise ReleaseBlocked('runtime settings source drift')
     # Compile verified bytes directly: no ignored/stale Python cache is loaded.
-    namespace = {'__name__': 'daily_journey_release_settings', '__file__': str(path)}
-    exec(compile(config_bytes, str(path), 'exec'), namespace)
-    settings = namespace['settings']
+    settings = load_runtime_settings(config_bytes, path)
     if settings.app_env.lower() != 'production':
         raise ReleaseBlocked('production runtime configuration required')
     from sqlalchemy import create_engine
@@ -407,6 +413,24 @@ def remote_run(source, old, candidate, token, phase):
         migration.dispose()
 
 
+
+def failure_diagnostic(error, phase):
+    """Bounded code metadata only: never exception text, SQL, locals or paths."""
+    allowed = {'ValueError', 'TypeError', 'KeyError', 'OSError', 'FileNotFoundError',
+               'PermissionError', 'TimeoutError', 'TimeoutExpired', 'CalledProcessError',
+               'OperationalError', 'ProgrammingError', 'InterfaceError', 'InternalError',
+               'IntegrityError', 'DatabaseError', 'ModuleNotFoundError', 'ImportError', 'PydanticUserError'}
+    name = type(error).__name__
+    line = None
+    trace = error.__traceback__
+    while trace is not None:
+        if trace.tb_frame.f_code.co_filename == __file__:
+            line = trace.tb_lineno
+        trace = trace.tb_next
+    return {'phase': phase if phase in ('source-check', 'preflight', 'apply', 'readback') else 'unknown',
+            'exception': name if name in allowed else 'Exception', 'helper_line': line}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('phase', choices=('source-check', 'preflight', 'apply', 'readback'))
@@ -424,7 +448,8 @@ def main():
     except ReleaseBlocked as error:
         print('DAILY_JOURNEY_RELEASE_BLOCKED: ' + str(error), file=sys.stderr)
         return 70
-    except Exception:
+    except Exception as error:
+        print("DAILY_JOURNEY_DIAGNOSTIC: " + json.dumps(failure_diagnostic(error, args.phase), sort_keys=True), file=sys.stderr)
         # Database drivers may include credentials, SQL and connection details.
         # The preserved lease/intent is the diagnostic authority, never repr(e).
         print('DAILY_JOURNEY_RELEASE_BLOCKED: prerequisites or outcome require operator review; evidence retained', file=sys.stderr)

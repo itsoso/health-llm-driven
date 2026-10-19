@@ -175,3 +175,40 @@ def test_remote_loader_verifies_code_and_does_not_forward_credentials():
     assert "os.execve(executable" in loader
     assert 'MIGRATION_DATABASE_URL' not in loader
     assert 'migration.env' not in loader
+
+
+def test_unexpected_failure_exposes_only_bounded_diagnostic(monkeypatch, capsys):
+    m = module()
+    monkeypatch.setattr(m.sys, 'argv', [str(ENTRY), 'preflight', 'a' * 40, 'b' * 40])
+    def fail(*args):
+        raise ValueError('postgresql://private:secret@internal/health')
+    monkeypatch.setattr(m, 'remote_run', fail)
+    assert m.main() == 70
+    error = capsys.readouterr().err
+    diagnostic = json.loads(error.split('DAILY_JOURNEY_DIAGNOSTIC: ', 1)[1].splitlines()[0])
+    assert set(diagnostic) == {'phase', 'exception', 'helper_line'}
+    assert diagnostic['phase'] == 'preflight' and diagnostic['exception'] == 'ValueError'
+    assert isinstance(diagnostic['helper_line'], int) and diagnostic['helper_line'] > 0
+    assert 'private' not in error and 'secret' not in error and 'internal' not in error
+
+
+def test_diagnostic_does_not_echo_custom_exception_name():
+    m = module()
+    secret_type = type('PatientSecret', (Exception,), {})
+    assert m.failure_diagnostic(secret_type('password'), 'preflight')['exception'] == 'Exception'
+
+
+def test_runtime_settings_does_not_inherit_release_helper_future_annotations():
+    m = module()
+    config = b"from typing import List\nfrom pydantic import BaseModel\nclass Settings(BaseModel):\n    values: List[str] = []\nsettings = Settings()\n"
+    settings = m.load_runtime_settings(config, Path('/canonical/config.py'))
+    assert settings.values == []
+
+
+def test_load_actual_runtime_configuration_in_isolated_namespace(tmp_path, monkeypatch):
+    m = module()
+    path = ROOT / 'backend/app/config.py'
+    monkeypatch.chdir(tmp_path)
+    settings = m.load_runtime_settings(path.read_bytes(), path)
+    assert isinstance(settings.app_env, str)
+    assert isinstance(settings.effective_database_url, str)
