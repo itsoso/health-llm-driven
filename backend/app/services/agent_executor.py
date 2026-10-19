@@ -16918,7 +16918,10 @@ class AgentExecutor:
         self._turn_contextual_diet_consumed_fraction = None
         self._turn_contextual_diet_write_blocked_reason = None
         self._turn_food_photo_recognition = None
-        if images and self._is_non_diet_photo_context(message):
+        self._diet_photo_auto_save = _is_diet_photo_auto_save_turn(
+            extra_context, has_images=bool(images),
+        )
+        if images and not self._has_food_photo_purpose(message):
             self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
             if _is_diet_photo_auto_save_turn(extra_context, has_images=True):
                 # Current typed purpose overrides stale camera/draft metadata.
@@ -17187,14 +17190,7 @@ class AgentExecutor:
             extra_context,
             has_images=bool(images),
         )
-        diet_photo_progress_turn = bool(
-            images
-            and not self._is_non_diet_photo_context(message)
-            and (
-                self._diet_photo_auto_save
-                or self._looks_like_food_photo_context(message)
-            )
-        )
+        diet_photo_progress_turn = bool(images and self._has_food_photo_purpose(message))
         self._request_model_id = (
             str(getattr(settings, "health_evidence_model_id", "") or "").strip()
             if health_advice_buffered
@@ -18059,9 +18055,8 @@ class AgentExecutor:
         messages.insert(0, {"role": "system", "content": system_content})
         pre_stages["history_ms"] = _pre_stage(_t_stage)
 
-        # 如果有图片：明确的普通图片可直传商用多模态模型；食物语境和
-        # Mobile 的默认纯图片提示必须先走结构化识别，避免 provider 选择
-        # 绕过饮食清洗、校准与写入边界。
+        # 普通附件按通用图片处理；明确餐食用途才走结构化识别。
+        # 默认“分析图片”不证明食物类别，也不授予饮食写入权限。
         _t_stage = time.time()
         vision_description = None
         if images:
@@ -22832,10 +22827,9 @@ class AgentExecutor:
             return not self._should_send_raw_images_to_primary_model(user_id)
         return (
             not self._should_send_raw_images_to_primary_model(user_id)
-            or not (message or "").strip()
-            or intent.domain == "diet"
-            or self._is_default_image_analysis_prompt(message)
-            or intent.is_write
+            or self._has_food_photo_purpose(message)
+            or intent.domain in {"supplement", "medication", "clinical_context"}
+            or _looks_like_medical_report_image_context(message)
         )
 
     def _build_tool_decision_system_prompt(self) -> str:
@@ -24713,7 +24707,7 @@ class AgentExecutor:
     async def _analyze_image_with_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """用 vision 模型预分析图片内容，返回文字描述"""
         structured_food = None
-        if not self._is_non_diet_photo_context(user_message):
+        if self._has_food_photo_purpose(user_message):
             structured_food = await self._analyze_food_images_with_structured_vision(user_message, images)
         if structured_food:
             return structured_food
@@ -24729,7 +24723,7 @@ class AgentExecutor:
                 "餐食的结构化识别由独立且可校准的链路负责。用简洁中文回复。"
             )},
             {"role": "user", "content": [
-                {"type": "text", "text": user_message or "请识别这张图片中的食物"},
+                {"type": "text", "text": user_message or "请客观描述这张图片中的内容"},
             ]},
         ]
         for img in images:
@@ -24772,7 +24766,7 @@ class AgentExecutor:
     async def _analyze_food_images_with_structured_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """Prefer strict food-recognition JSON over free-form vision prose for diet photos."""
         self._turn_food_photo_recognition = None
-        if self._is_non_diet_photo_context(user_message):
+        if not self._has_food_photo_purpose(user_message):
             self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
             return None
         if not images:
@@ -24988,8 +24982,11 @@ class AgentExecutor:
             self._turn_contextual_diet_write_blocked_reason = reason
             vision_result['contextual_capture_write_blocked_reason'] = reason
             return None
-        if self._is_non_diet_photo_context(user_message):
-            self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
+        if not self._has_food_photo_purpose(user_message):
+            reason = ('cancelled' if _diet_write_is_explicitly_cancelled(user_message)
+                      else 'non_diet_photo_intent')
+            self._turn_contextual_diet_write_blocked_reason = reason
+            vision_result['contextual_capture_write_blocked_reason'] = reason
             return None
         user_id = self._current_user_id
         source_message_id = (
@@ -25569,6 +25566,24 @@ class AgentExecutor:
         if 17 <= hour < 22:
             return "dinner"
         return "snack"
+
+    def _has_food_photo_purpose(self, user_message: str) -> bool:
+        """Require positive meal purpose before recognition or capture.
+
+        Ordinary uploads are general images. A meal-camera hint may supply
+        purpose only for an empty/default caption; typed non-meal text wins.
+        This routes recognition, never grants a write by itself.
+        """
+        if (self._is_non_diet_photo_context(user_message)
+                or _looks_like_medical_report_image_context(user_message)):
+            return False
+        text = user_message or ''
+        if not text.strip() or self._is_default_image_analysis_prompt(text):
+            return bool(self._diet_photo_auto_save)
+        intent = classify_agent_utterance(text, reference_now=self._agent_kernel_reference_now())
+        if intent.domain in {'supplement', 'medication', 'clinical_context'}:
+            return False
+        return intent.domain == 'diet' or self._looks_like_food_photo_context(text)
 
     @classmethod
     def _is_non_diet_photo_context(cls, user_message: str) -> bool:
