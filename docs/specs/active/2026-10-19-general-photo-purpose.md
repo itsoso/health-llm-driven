@@ -1,6 +1,6 @@
 # 普通照片不默认进入食物识别
 
-Status: implementing
+Status: implemented and verified locally; safety review GO; deployment blocked
 Updated: 2026-10-19
 Related PRD: `docs/prd/reva-personal-health-os-prd.md`
 

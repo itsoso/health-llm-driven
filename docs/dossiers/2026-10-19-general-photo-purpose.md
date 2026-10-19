@@ -1,7 +1,7 @@
 # 普通照片用途修复
 
 Updated: 2026-10-19
-Status: local regression passed; PostgreSQL and G4 pending; not deployed
+Status: locally verified; G4 GO for 9a7bacf3c; deployment blocked
 Spec: `docs/specs/active/2026-10-19-general-photo-purpose.md`
 Workflow: quick_fix, safety overlay; no superpowers skills used.
 
@@ -24,11 +24,14 @@ G1: PASS，普通附件默认用途纠错，沿用 ExecutionEvent / WriteIntent�
 - 中间回归 16 failed / 257 passed / 1 skipped 保留。修正取消原因回传，并将旧空说明餐食 fixture 明确绑定记餐入口；未知体重附件不再要求食物上下文。
 - GREEN: 普通照片新测试及食物识别、capture policy/service、图片生命周期、补剂图片回归 **371 passed / 1 skipped**；日志 `/tmp/reva-general-photo-regression.log`。
 - System Map、mobile-nav、doc-drift 和 `git diff --check` 通过；没有结构生成物变化。
-- PostgreSQL 独立 UTF8 数据库验证运行中；不以 SQLite 代替生产数据库语义。
+- PostgreSQL 独立 UTF8 库严格验证 **49 passed / 1 deselected**（91.40s，退出 0）；日志 `/tmp/reva-general-photo-postgres-final.log`。未处理线程异常设置为测试错误，最终只有既有依赖弃用警告。
+- PG 首轮显示 50 passed，但 SQLite 专用 `test_sqlite_capture_session_lock_serializes_same_source_message` 错误复用同一 Session 跨线程，发出 `PytestUnhandledThreadExceptionWarning`；原日志保留，不作为干净并发验证。最终 PG 范围排除这一个方言专用测试；它已在本轮 SQLite 完整回归中通过。未修改生产代码或吞掉异常以制造通过。
+- 固定实现提交 `9a7bacf3c48947fee7716a84e98d50fc378d80ff` 独立 reviewer `photo_safety_review` 裁定 **GO**，并独立复跑新增测试 **27 passed**。确认每轮重置、旧记餐元数据撤销、真实 capture 与写适配器阻断；明确餐食、补剂、报告和取消/归属边界保留。仅覆盖该提交，不代表发布准入。
 - 图片和模型回复均为合成 fixture。未发送用户照片给模型，未读取生产健康记录；没有真实模型质量、生产用户或模拟器验收证据。
 
 ## 发布边界
 
 仅修改本任务文件，保留共享工作区其他改动。开工时本地主干 ahead 5；最新只读远端 main 已推进到 `9d80d2d46f826ed023291a0d010be8d2e2acf3be`。
-G4 待固定提交独立安全审查；G5 精确候选完整 CI/CI-mode、既有发布阻断收口与发布准入未完成。未推送、未部署，不能宣称用户线上已修复。
+G4 GO；G5 精确候选完整 CI/CI-mode、既有发布阻断收口与发布准入未完成。未推送、未部署，不能宣称用户线上已修复。
+新鲜只读 CI 核验：远端 `9d80d2d46` 的完整 CI `39275331153` 为 failure；balanced-11 的 `agent-s-v` 两次 233 秒 timeout（第二次虽已打印 979 passed / 10 skipped，进程仍退出 124），汇总与 backend-release-ready 因此失败。日志 `/tmp/reva-main-9d80-ci-failed.log`；不将用例输出替代工作流成功，不重发既有操作或擅改测试超时。按 AGENTS §7 主干非绿停止外部写入。
 本任务只有后端改动，无需 Mobile OTA；未备份、未重放既有失败发布或维护操作。
