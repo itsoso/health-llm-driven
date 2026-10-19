@@ -1,9 +1,29 @@
 """OTA claims bind bytes; unknown native changes and manifests fail closed."""
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
+
+
+# Immutable source that matched the reviewed 276/277 equivalence hashes. The
+# working tree can legitimately move to a new native runtime without changing
+# what the old production OTA contract admits.
+REVIEWED_EQUIVALENT_SHA = '25b85536e3722dc111c528b8a915062a3f971397'
+GPS_NATIVE_SHA = 'd1780551d17f3314cf401b91c4846c826fe07c5d'
+
+
+def source_bytes(sha, relative):
+    repository = Path(__file__).resolve().parents[1]
+    return subprocess.check_output(['git', '-C', str(repository), 'show', f'{sha}:{relative}'])
+
+
+def materialize_sources(root, sha, paths):
+    for relative in paths:
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source_bytes(sha, relative))
 
 
 def module():
@@ -65,15 +85,15 @@ def test_native_baseline_matches_delivered_testflight_276():
     expected = ('1.3.5', '7fe06d8b34750b6bd56db8d5ec45d1aee705b02e', '09719eb6-2887-4100-9ccb-6533fd9d71ed')
     for contract in (m, publisher):
         assert (contract.RUNTIME, contract.NATIVE_SHA, contract.NATIVE_BUILD) == expected
-    assert json.loads((root / 'mobile/app.json').read_text())['expo']['version'] == m.RUNTIME
+    assert json.loads(source_bytes(m.NATIVE_SHA, 'mobile/app.json'))['expo']['version'] == m.RUNTIME
 
 
-def test_fixed_native_equivalence_source_hashes_and_environment(monkeypatch):
-    import subprocess
+def test_fixed_native_equivalence_source_hashes_and_environment(tmp_path, monkeypatch):
     m = module()
-    root = Path(__file__).resolve().parents[1]
+    root = tmp_path
     paths = ['mobile/app.config.ts', 'mobile/eas.json', 'mobile/plugins/withIosSupportedOrientations.js',
              'mobile/plugins/__tests__/withIosSupportedOrientations.test.js', 'mobile/jest.config.js']
+    materialize_sources(root, REVIEWED_EQUIVALENT_SHA, paths)
     m.validate_runtime_changes(paths, root=root)
     for variable in ('REVA_IPAD_ENABLED', 'ROKID_IOS_SDK_ENABLED', 'INCLUDE_WATCH_APP', 'INCLUDE_SIRI_INTENTS'):
         monkeypatch.setenv(variable, '1')
@@ -112,7 +132,8 @@ def test_fixed_equivalence_real_git_source_contract(tmp_path, monkeypatch):
     git('add', 'mobile'); git('commit', '-qm', 'baseline')
     monkeypatch.setattr(m, 'NATIVE_SHA', git('rev-parse', 'HEAD'))
     for relative in m.REVIEWED_NATIVE_SOURCE:
-        (tmp_path/relative).write_bytes((repository/relative).read_bytes())
+        (tmp_path/relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path/relative).write_bytes(source_bytes(REVIEWED_EQUIVALENT_SHA, relative))
     git('add', 'mobile'); git('commit', '-qm', 'reviewed equivalent production config')
     sha=git('rev-parse','HEAD')
     m.validate_source(tmp_path, sha)
@@ -122,7 +143,7 @@ def test_fixed_equivalence_real_git_source_contract(tmp_path, monkeypatch):
     with pytest.raises(ValueError): m.validate_source(tmp_path,git('rev-parse','HEAD'))
 
 
-def test_fixed_equivalence_evidence_matches_implementation():
+def test_fixed_equivalence_evidence_matches_reviewed_source():
     import hashlib
     m=module();root=Path(__file__).resolve().parents[1]
     evidence=json.loads((root/'docs/reviews/2026-10-14-ota-native-equivalence.json').read_text())
@@ -131,4 +152,28 @@ def test_fixed_equivalence_evidence_matches_implementation():
     assert evidence['production_config_equal'] is True
     assert evidence['observed_production_supports_tablet'] is False
     for relative, expected in m.REVIEWED_NATIVE_SOURCE.items():
-        assert hashlib.sha256((root/relative).read_bytes()).hexdigest()==expected
+        assert hashlib.sha256(source_bytes(REVIEWED_EQUIVALENT_SHA, relative)).hexdigest()==expected
+
+
+@pytest.mark.parametrize('relative', [
+    'mobile/app.json', 'mobile/app.config.ts',
+    'mobile/plugins/withIosSupportedOrientations.js',
+])
+def test_gps_native_candidate_is_rejected_by_delivered_ota_contract(tmp_path, relative):
+    m = module()
+    materialize_sources(tmp_path, GPS_NATIVE_SHA, [relative])
+    with pytest.raises(ValueError, match='native or unknown mobile input changed'):
+        m.validate_runtime_changes([relative], root=tmp_path)
+
+
+def test_gps_runtime_manifest_is_rejected_by_delivered_ota_contract():
+    m = module()
+    gps_runtime = json.loads(source_bytes(GPS_NATIVE_SHA, 'mobile/app.json'))['expo']['version']
+    assert gps_runtime != m.RUNTIME
+    proof = {'launch': m.digest(b'bundle'), 'assets': []}
+    ident = 'a1234567-1234-1234-1234-123456789abc'
+    payload = {'id': ident, 'runtimeVersion': gps_runtime,
+               'launchAsset': {'hash': proof['launch']}, 'assets': [],
+               'extra': {'eas': {'projectId': m.PROJECT}}}
+    with pytest.raises(ValueError):
+        m.validate_manifest(payload, ident, proof)

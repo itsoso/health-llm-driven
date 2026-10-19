@@ -1,5 +1,17 @@
 # 用药单次提醒与 Agent 入口
 
+| 字段 | 值 |
+|---|---|
+| slug | medication-single-reminder |
+| 当前阶段 | S6 验证，发布待完成 |
+| 状态 | building |
+
+## G1 准入
+
+- 裁决: PASS。既有通知循环修复；本人用药，显式人工发送，不新增健康写授权。原合同已记录产品准入 GO。
+
+## 需求与背景
+
 - 用户证据：2026-10-18 18:30 锁屏同一分钟出现两条“吃药提醒”和一条“用药提醒”；要求只一次并点击进 Agent。
 - 工作流：Router quick_fix + safety-gate，跨端调查启用 System Map；不调用全局禁用的 superpowers。单任务记录，独立安全评审待固定提交。
 - 基线 `46304ef7a`（main 已超前 8 个未推送提交）；保护既有 benchmark、Dossier/receipt，未修改旧工作。

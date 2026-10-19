@@ -27,7 +27,7 @@
 - first_class_objects: ExecutionEvent / HealthTwin evidence；core_loop_step: execution -> review。
 - target_surface: Mobile；safety_level: privacy_sensitive；autonomy_tier: manual_confirm（每次有截止时间的 session）。
 - 最小切片：开启 -> GPS -> 结束 -> 只读复盘 -> 删除；保留既有城市标注。
-- 裁决 PASS；用户“按你说的来”授权所述范围，GPS 不推断医疗结果。
+- 裁决: PASS；用户“按你说的来”授权所述范围，GPS 不推断医疗结果。
 
 ## S2/S3
 - PRD: ../prd/2026-10-18-daily-gps-journey.md
