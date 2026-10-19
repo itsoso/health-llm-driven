@@ -25581,7 +25581,8 @@ class AgentExecutor:
         if cls._is_exercise_photo_context(user_message):
             return True
         return bool(re.search(
-            r"皮肤|皮疹|伤口|磨破|擦伤|破皮|红疹|湿疹|荨麻疹|水疱|水泡|"
+            r"皮肤|皮疹|伤口|磨破|擦伤|破皮|红疹|湿疹|荨麻疹|水疱|"
+            r"(?:手|脚|足|腿|胳膊|皮肤|腕|指头|掌).{0,8}水泡|"
             r"烫伤|晒伤|蚊虫叮咬|表带.*(?:过敏|红肿|痒)|"
             r"\b(?:rash|wound|blister|abrasion|eczema)\b|skin\s+irritation",
             user_message or "", re.I,

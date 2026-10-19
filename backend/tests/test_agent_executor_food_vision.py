@@ -1967,11 +1967,11 @@ async def test_food_stream_guards_block_actual_record_and_draft(db,tmp_path,monk
     assert all('diet_photo_recognition' not in (source.meta or {}) for source in sources)
 
 
-@pytest.mark.parametrize('message', ['记录这餐', '鸡皮和鱼皮各吃了一点', '骑行后记录午餐', '分析早餐营养'])
+@pytest.mark.parametrize('message', ['记录这餐', '鸡皮和鱼皮各吃了一点', '记录早餐：开水泡燕麦', '记录这餐，米饭用水泡软了', '骑行后记录午餐', '分析早餐营养'])
 def test_food_subjects_do_not_match_skin_photo_exclusion(message):
     assert not AgentExecutor._is_non_diet_photo_context(message)
 
-@pytest.mark.parametrize('message', ['手腕因为佩戴Garmin手表磨破了皮肤怎么办？', '看看伤口', '照片中皮疹如何处理', 'watch strap skin irritation', 'a blister on my wrist'])
+@pytest.mark.parametrize('message', ['手腕因为佩戴Garmin手表磨破了皮肤怎么办？', '看看伤口', '脚上起了水泡', '照片中皮疹如何处理', 'watch strap skin irritation', 'a blister on my wrist'])
 @pytest.mark.asyncio
 async def test_skin_photo_general_vision_skips_structured_food(db, monkeypatch, message):
     executor = AgentExecutor(db)
